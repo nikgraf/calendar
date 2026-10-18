@@ -2,35 +2,58 @@ import type { AudioRecorder, RecorderState } from 'expo-audio';
 import { createRequire } from 'node:module';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
+const URI = 'file:///recording.wav';
 /** The level the fake recorder reports while it records, in dBFS; the test moves it. */
 let metering = -60;
-/** Whether `record()` starts the recorder: off for the test of one that does not. */
+/** Whether `record()` starts a prepared recorder: off for the test of one that does not. */
 let starts = true;
 /** Runs inside `prepareToRecordAsync`: a test gives a start up from here. */
 let whilePreparing: (() => void) | undefined;
-const transcribe = vi.fn(async () => ({ segments: [{ text: 'Lunch with Anna' }] }));
+/** `prepareToRecordAsync` waits for this first, when set: a start held mid-way. */
+let prepareGate: Promise<void> | undefined;
+/** `transcribe` waits for this first, when set: a phrase that takes a while to read. */
+let transcribeGate: Promise<void> | undefined;
+/** The module's audio mode, as the last `setAudioModeAsync` left it. */
+let allowsRecording = false;
+const transcribe = vi.fn(async () => {
+  await transcribeGate;
+  return { segments: [{ text: 'Lunch with Anna' }] };
+});
 const deleted: Array<string> = [];
-/** The options each recorder was constructed with. */
-const constructed: Array<Record<string, unknown>> = [];
+const released: Array<string> = [];
+/** Every recorder constructed, in order — the native registry. */
+const recorders: Array<FakeRecorder> = [];
 /** Every `setAudioModeAsync` call's `allowsRecording`. */
 const audioModes: Array<boolean> = [];
 
 /**
  * expo-audio 57's recorder, as far as the adapter drives it: it records
- * only once prepared (unprepared, `record()` starts nothing), its file is
- * the `uri` property, and the meter of a recorder that is not running
- * reads digital silence.
+ * only once prepared (unprepared, `record()` starts nothing), only while
+ * the audio mode allows recording (`record()` throws otherwise, and a
+ * mode taken out of record mode stops every recorder), its file is the
+ * `uri` property, the meter of a recorder that is not running reads
+ * digital silence, and nothing of it can be read once released.
  */
 class FakeRecorder implements Pick<
   AudioRecorder,
-  'getStatus' | 'isRecording' | 'prepareToRecordAsync' | 'record' | 'stop' | 'uri'
+  'getStatus' | 'isRecording' | 'prepareToRecordAsync' | 'record' | 'release' | 'stop' | 'uri'
 > {
+  allowsRecording = allowsRecording;
   isRecording = false;
+  readonly options: Record<string, unknown>;
   prepared = false;
-  readonly uri = 'file:///recording.wav';
+  private released = false;
 
   constructor(options: Record<string, unknown>) {
-    constructed.push(options);
+    this.options = options;
+    recorders.push(this);
+  }
+
+  get uri() {
+    if (this.released) {
+      throw new Error('Unable to access a released shared object.');
+    }
+    return URI;
   }
 
   getStatus = (): RecorderState => ({
@@ -39,18 +62,28 @@ class FakeRecorder implements Pick<
     isRecording: this.isRecording,
     mediaServicesDidReset: false,
     metering: this.isRecording ? metering : -160,
-    url: this.uri,
+    url: URI,
   });
 
   prepareToRecordAsync = async () => {
+    await prepareGate;
     this.prepared = true;
     whilePreparing?.();
   };
 
   record = () => {
+    if (!this.allowsRecording) {
+      throw new Error('Recording is disabled.');
+    }
     if (this.prepared && starts) {
       this.isRecording = true;
     }
+  };
+
+  release = () => {
+    this.isRecording = false;
+    this.released = true;
+    released.push(URI);
   };
 
   stop = async () => {
@@ -70,8 +103,15 @@ const modules: Record<string, unknown> = {
   'expo-audio': {
     AudioModule: { AudioRecorder: FakeRecorder },
     requestRecordingPermissionsAsync: async () => ({ granted: true }),
-    setAudioModeAsync: async ({ allowsRecording }: { allowsRecording: boolean }) => {
-      audioModes.push(allowsRecording);
+    setAudioModeAsync: async (mode: { allowsRecording: boolean }) => {
+      audioModes.push(mode.allowsRecording);
+      allowsRecording = mode.allowsRecording;
+      for (const recorder of recorders) {
+        recorder.allowsRecording = mode.allowsRecording;
+        if (!mode.allowsRecording) {
+          recorder.isRecording = false;
+        }
+      }
     },
   },
   'expo-file-system': {
@@ -99,14 +139,30 @@ afterAll(() => {
   }
 });
 
+/** A promise to open by hand. */
+const gate = () => {
+  let open!: () => void;
+  const promise = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  return { open, promise };
+};
+
+/** Lets every settled promise run its continuation. */
+const settle = () => vi.advanceTimersByTimeAsync(0);
+
 beforeEach(() => {
   vi.useFakeTimers();
   metering = -60;
   starts = true;
   whilePreparing = undefined;
+  prepareGate = undefined;
+  transcribeGate = undefined;
+  allowsRecording = false;
   transcribe.mockClear();
   deleted.length = 0;
-  constructed.length = 0;
+  released.length = 0;
+  recorders.length = 0;
   audioModes.length = 0;
 });
 
@@ -131,24 +187,28 @@ describe('appleSpeech hands-free listening', () => {
 
     expect(await appleSpeech.stopRecording()).toBe('Lunch with Anna');
     expect(transcribe).toHaveBeenCalledTimes(1);
-    expect(deleted).toEqual(['file:///recording.wav']);
+    // The audio deleted and the native recorder released.
+    expect(deleted).toEqual([URI]);
+    expect(released).toEqual([URI]);
   });
 
-  it('hands the recorder its options flat, and prepares it before it records', async () => {
+  it('hands the recorder its options flat, in a session put in record mode first', async () => {
     const { appleSpeech } = await import('./appleSpeech.ts');
     await appleSpeech.startRecording();
     // The format keys at the top level, where the native constructor reads
     // them; under `ios` they would be dropped.
-    expect(constructed).toHaveLength(1);
-    expect(constructed[0]).toMatchObject({
+    expect(recorders).toHaveLength(1);
+    expect(recorders[0]?.options).toMatchObject({
       extension: '.wav',
       isMeteringEnabled: true,
       outputFormat: 'lpcm',
       sampleRate: 16_000,
     });
-    expect(constructed[0]).not.toHaveProperty('ios');
-    // The session was put in record mode before the recorder was made.
+    expect(recorders[0]?.options).not.toHaveProperty('ios');
+    // Record mode before the recorder was made (it takes the mode then),
+    // and `record()` after `prepareToRecordAsync()`: it is recording.
     expect(audioModes).toEqual([true]);
+    expect(recorders[0]?.isRecording).toBe(true);
 
     expect(await appleSpeech.stopRecording()).toBe('Lunch with Anna');
     expect(audioModes).toEqual([true, false]);
@@ -164,7 +224,7 @@ describe('appleSpeech hands-free listening', () => {
     // The level can miss a quiet phrase: a press of the microphone must not lose it.
     expect(await appleSpeech.stopRecording()).toBe('Lunch with Anna');
     expect(transcribe).toHaveBeenCalledTimes(1);
-    expect(deleted).toEqual(['file:///recording.wav']);
+    expect(deleted).toEqual([URI]);
   });
 
   it('stops reading the level once the recording is cancelled', async () => {
@@ -177,7 +237,8 @@ describe('appleSpeech hands-free listening', () => {
     await vi.advanceTimersByTimeAsync(3000);
 
     expect(events).toEqual([]);
-    expect(deleted).toEqual(['file:///recording.wav']);
+    expect(deleted).toEqual([URI]);
+    expect(released).toEqual([URI]);
     expect(audioModes).toEqual([true, false]);
   });
 
@@ -196,7 +257,7 @@ describe('appleSpeech hands-free listening', () => {
     const events: Array<string> = [];
     await expect(
       appleSpeech.startRecording({ onSpeech: (event) => events.push(event) }),
-    ).rejects.toThrow();
+    ).rejects.toThrow('did not start');
     metering = -20;
     await vi.advanceTimersByTimeAsync(3000);
 
@@ -204,8 +265,28 @@ describe('appleSpeech hands-free listening', () => {
     // Nothing became the recording, and nothing of it stayed behind.
     expect(await appleSpeech.stopRecording()).toBeUndefined();
     expect(transcribe).not.toHaveBeenCalled();
-    expect(deleted).toEqual(['file:///recording.wav']);
+    expect(deleted).toEqual([URI]);
+    expect(released).toEqual([URI]);
     expect(audioModes).toEqual([true, false]);
+  });
+
+  it('a recorder that refuses to record leaves nothing behind either', async () => {
+    const { appleSpeech } = await import('./appleSpeech.ts');
+    const { open, promise } = gate();
+    prepareGate = promise;
+    const start = appleSpeech.startRecording();
+    await settle();
+    // The mode left record mode while it prepared: `record()` throws.
+    allowsRecording = false;
+    for (const recorder of recorders) {
+      recorder.allowsRecording = false;
+    }
+    open();
+    await expect(start).rejects.toThrow('disabled');
+
+    expect(deleted).toEqual([URI]);
+    expect(released).toEqual([URI]);
+    expect(await appleSpeech.stopRecording()).toBeUndefined();
   });
 
   it('a start given up while the recorder prepares records nothing', async () => {
@@ -223,7 +304,38 @@ describe('appleSpeech hands-free listening', () => {
     expect(events).toEqual([]);
     expect(await appleSpeech.stopRecording()).toBeUndefined();
     expect(transcribe).not.toHaveBeenCalled();
-    expect(deleted).toEqual(['file:///recording.wav']);
+    // Released: expo-audio would start a prepared recorder it still knew
+    // when the app next comes to the foreground.
+    expect(deleted).toEqual([URI]);
+    expect(released).toEqual([URI]);
     expect(audioModes).toEqual([true, false]);
+  });
+
+  it('a stop still reading its phrase leaves the session to a start under way', async () => {
+    const { appleSpeech } = await import('./appleSpeech.ts');
+    // The first field's phrase is being read (a transcription takes a while)…
+    await appleSpeech.startRecording();
+    const reading = gate();
+    transcribeGate = reading.promise;
+    const stop = appleSpeech.stopRecording();
+    await settle();
+    expect(transcribe).toHaveBeenCalledTimes(1);
+    // …when a second field starts, and is still preparing its recorder.
+    const preparing = gate();
+    prepareGate = preparing.promise;
+    const start = appleSpeech.startRecording();
+    await settle();
+    expect(audioModes).toEqual([true, true]);
+    // The first phrase lands: the session stays in record mode for the second.
+    reading.open();
+    expect(await stop).toBe('Lunch with Anna');
+    expect(audioModes).toEqual([true, true]);
+    preparing.open();
+    await start;
+    expect(recorders[1]?.isRecording).toBe(true);
+
+    expect(await appleSpeech.stopRecording()).toBe('Lunch with Anna');
+    expect(audioModes).toEqual([true, true, false]);
+    expect(released).toEqual([URI, URI]);
   });
 });

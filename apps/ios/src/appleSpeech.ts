@@ -70,6 +70,11 @@ const load = () => {
 
 /** The in-flight recording, if any. */
 let recorder: AudioRecorder | undefined;
+/**
+ * Starts under way: the session is in record mode for them, and their
+ * recorder is not the current one yet.
+ */
+let starting = 0;
 /** Hands-free only: the timer feeding the recording's ear its level. */
 let levelPoll: ReturnType<typeof setInterval> | undefined;
 
@@ -78,20 +83,39 @@ const stopListening = () => {
   levelPoll = undefined;
 };
 
-const releaseSession = (audio: typeof import('expo-audio')) => {
-  // Leaving the session in record mode keeps the microphone indicator lit
-  // and routes every later sound as record-capable.
+/**
+ * Leaving the session in record mode keeps the microphone indicator lit
+ * and routes every later sound as record-capable. Taking it out stops
+ * every recorder there is and forbids them to record, so it waits while a
+ * recording runs or a start is on its way to one — either may be a newer
+ * caller's.
+ */
+const releaseSessionUnlessBusy = (audio: typeof import('expo-audio')) => {
+  if (recorder || starting > 0) {
+    return;
+  }
   void audio.setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
 };
 
-const discard = (files: typeof import('expo-file-system'), uri: string | undefined) => {
-  if (!uri) {
-    return;
+/**
+ * A recorder that is done with: its audio deleted, its native object
+ * released. Released, so nothing wakes it — expo-audio starts every
+ * prepared recorder it still knows when the app comes to the foreground.
+ */
+const dispose = (files: typeof import('expo-file-system'), instance: AudioRecorder) => {
+  // The file first: the properties are gone once released.
+  const uri = instance.uri ?? undefined;
+  if (uri) {
+    try {
+      new files.File(uri).delete();
+    } catch {
+      // Already gone.
+    }
   }
   try {
-    new files.File(uri).delete();
+    instance.release();
   } catch {
-    // Already gone.
+    // Already released.
   }
 };
 
@@ -115,10 +139,8 @@ export const appleSpeech: SpeechToText = {
     } catch {
       // Stopping a dead recorder is not worth reporting.
     } finally {
-      discard(modules.files, instance.uri ?? undefined);
-      if (!recorder) {
-        releaseSession(modules.audio);
-      }
+      dispose(modules.files, instance);
+      releaseSessionUnlessBusy(modules.audio);
     }
   },
   isSupported: async () => load() !== undefined,
@@ -157,60 +179,58 @@ export const appleSpeech: SpeechToText = {
     if (signal?.aborted) {
       return;
     }
-    await modules.audio.setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
-    // Given up meanwhile: record nothing, and leave the session in record
-    // mode if a recording is running — it may be a newer caller's.
-    if (signal?.aborted) {
-      if (!recorder) {
-        releaseSession(modules.audio);
-      }
-      return;
-    }
-    const instance = new (
-      modules.audio as unknown as {
-        AudioModule: { AudioRecorder: new (options: unknown) => AudioRecorder };
-      }
-    ).AudioModule.AudioRecorder(RECORDING_OPTIONS);
-    // This recorder never became the recording: nothing of it stays behind.
-    const abandon = () => {
-      discard(modules.files, instance.uri ?? undefined);
-      if (!recorder) {
-        releaseSession(modules.audio);
-      }
-    };
-    // The recorder records only once prepared. Unprepared, `record()`
-    // returns having started nothing — and the meter of a recorder that is
-    // not running reads digital silence, so no pause is ever heard.
+    starting += 1;
+    let instance: AudioRecorder | undefined;
+    let current = false;
     try {
+      await modules.audio.setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+      // Given up meanwhile: record nothing.
+      if (signal?.aborted) {
+        return;
+      }
+      instance = new (
+        modules.audio as unknown as {
+          AudioModule: { AudioRecorder: new (options: unknown) => AudioRecorder };
+        }
+      ).AudioModule.AudioRecorder(RECORDING_OPTIONS);
+      // The recorder records only once prepared. Unprepared, `record()`
+      // returns having started nothing — and the meter of a recorder that
+      // is not running reads digital silence, so no pause is ever heard.
       await instance.prepareToRecordAsync();
-    } catch (error) {
-      abandon();
-      throw error;
-    }
-    if (signal?.aborted) {
-      abandon();
-      return;
-    }
-    instance.record();
-    if (!instance.isRecording) {
-      // Said so, rather than a lit microphone over nothing.
-      abandon();
-      throw new Error('The recorder did not start.');
-    }
-    recorder = instance;
-    stopListening();
-    if (onSpeech) {
-      const ear = createEndpointer();
-      levelPoll = setInterval(() => {
-        const level = instance.getStatus().metering;
-        if (level === undefined) {
-          return;
-        }
-        const event = ear.push(level, Date.now());
-        if (event) {
-          onSpeech(event);
-        }
-      }, LEVEL_POLL_MS);
+      if (signal?.aborted) {
+        return;
+      }
+      instance.record();
+      if (!instance.isRecording) {
+        // Said so, rather than a lit microphone over nothing.
+        throw new Error('The recorder did not start.');
+      }
+      recorder = instance;
+      current = true;
+      stopListening();
+      if (onSpeech) {
+        const ear = createEndpointer();
+        const running = instance;
+        levelPoll = setInterval(() => {
+          const level = running.getStatus().metering;
+          if (level === undefined) {
+            return;
+          }
+          const event = ear.push(level, Date.now());
+          if (event) {
+            onSpeech(event);
+          }
+        }, LEVEL_POLL_MS);
+      }
+    } finally {
+      starting -= 1;
+      // Never became the recording (given up, failed, or did not start):
+      // nothing of it stays behind, and the session is left to whoever
+      // else holds it.
+      if (instance && !current) {
+        dispose(modules.files, instance);
+      }
+      releaseSessionUnlessBusy(modules.audio);
     }
   },
   stopRecording: async () => {
@@ -232,10 +252,8 @@ export const appleSpeech: SpeechToText = {
       return transcriptFromSegments(result.segments);
     } finally {
       // Runs however this ended, so audio never lingers on disk.
-      discard(modules.files, uri);
-      if (!recorder) {
-        releaseSession(modules.audio);
-      }
+      dispose(modules.files, instance);
+      releaseSessionUnlessBusy(modules.audio);
     }
   },
 };
