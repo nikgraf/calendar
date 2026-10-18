@@ -2041,10 +2041,14 @@ describe('an event that ends on a later day', () => {
   // Built in the device's zone, which the editor's fields are wall clock in.
   const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const today = Temporal.Now.plainDateISO(zone);
+  // Days count from this week's Monday, not today: a span that starts
+  // on a Sunday runs on into next week's buffer columns, where the
+  // harness cannot click its block.
+  const base = today.subtract({ days: today.dayOfWeek - 1 });
   const localAt = (date: Temporal.PlainDate, hour: number): number =>
     date.toZonedDateTime({ plainTime: new Temporal.PlainTime(hour), timeZone: zone })
       .epochMilliseconds;
-  const day = (offset: number): string => today.add({ days: offset }).toString();
+  const day = (offset: number): string => base.add({ days: offset }).toString();
   let spanApp: App;
 
   beforeAll(async () => {
@@ -2071,8 +2075,8 @@ describe('an event that ends on a later day', () => {
           'evt-night',
           'cal-work',
           'Night shift',
-          localAt(today, 22) + 30_000,
-          localAt(today.add({ days: 1 }), 1),
+          localAt(base, 22) + 30_000,
+          localAt(base.add({ days: 1 }), 1),
           {
             startTimeZone: zone,
           },
