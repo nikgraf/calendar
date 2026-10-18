@@ -13,6 +13,8 @@ let whilePreparing: (() => void) | undefined;
 let prepareGate: Promise<void> | undefined;
 /** `transcribe` waits for this first, when set: a phrase that takes a while to read. */
 let transcribeGate: Promise<void> | undefined;
+/** `setAudioModeAsync` waits for this first, when set: a start held at the mode call. */
+let modeGate: Promise<void> | undefined;
 /** The module's audio mode, as the last `setAudioModeAsync` left it. */
 let allowsRecording = false;
 const transcribe = vi.fn(async () => {
@@ -20,7 +22,8 @@ const transcribe = vi.fn(async () => {
   return { segments: [{ text: 'Lunch with Anna' }] };
 });
 const deleted: Array<string> = [];
-const released: Array<string> = [];
+/** The recorders released, by their place in `recorders`. */
+const released: Array<number> = [];
 /** Every recorder constructed, in order — the native registry. */
 const recorders: Array<FakeRecorder> = [];
 /** Every `setAudioModeAsync` call's `allowsRecording`. */
@@ -39,6 +42,8 @@ class FakeRecorder implements Pick<
   'getStatus' | 'isRecording' | 'prepareToRecordAsync' | 'record' | 'release' | 'stop' | 'uri'
 > {
   allowsRecording = allowsRecording;
+  /** The file this recorder writes: a media-services reset re-prepares it onto a new one. */
+  file = URI;
   isRecording = false;
   readonly options: Record<string, unknown>;
   prepared = false;
@@ -50,28 +55,31 @@ class FakeRecorder implements Pick<
   }
 
   get uri() {
-    if (this.released) {
-      throw new Error('Unable to access a released shared object.');
-    }
-    return URI;
+    this.alive();
+    return this.file;
   }
 
-  getStatus = (): RecorderState => ({
-    canRecord: this.prepared,
-    durationMillis: 0,
-    isRecording: this.isRecording,
-    mediaServicesDidReset: false,
-    metering: this.isRecording ? metering : -160,
-    url: URI,
-  });
+  getStatus = (): RecorderState => {
+    this.alive();
+    return {
+      canRecord: this.prepared,
+      durationMillis: 0,
+      isRecording: this.isRecording,
+      mediaServicesDidReset: false,
+      metering: this.isRecording ? metering : -160,
+      url: this.file,
+    };
+  };
 
   prepareToRecordAsync = async () => {
+    this.alive();
     await prepareGate;
     this.prepared = true;
     whilePreparing?.();
   };
 
   record = () => {
+    this.alive();
     if (!this.allowsRecording) {
       throw new Error('Recording is disabled.');
     }
@@ -83,12 +91,20 @@ class FakeRecorder implements Pick<
   release = () => {
     this.isRecording = false;
     this.released = true;
-    released.push(URI);
+    released.push(recorders.indexOf(this));
   };
 
   stop = async () => {
+    this.alive();
     this.isRecording = false;
   };
+
+  /** Nothing of a released shared object can be reached. */
+  private alive() {
+    if (this.released) {
+      throw new Error('Unable to access a released shared object.');
+    }
+  }
 }
 
 /**
@@ -104,6 +120,7 @@ const modules: Record<string, unknown> = {
     AudioModule: { AudioRecorder: FakeRecorder },
     requestRecordingPermissionsAsync: async () => ({ granted: true }),
     setAudioModeAsync: async (mode: { allowsRecording: boolean }) => {
+      await modeGate;
       audioModes.push(mode.allowsRecording);
       allowsRecording = mode.allowsRecording;
       for (const recorder of recorders) {
@@ -152,12 +169,18 @@ const gate = () => {
 const settle = () => vi.advanceTimersByTimeAsync(0);
 
 beforeEach(() => {
+  // The adapter's state (the recording, the starts under way, the poll)
+  // lives in its module: each test imports a fresh one, so a failure
+  // cannot spill into the next. The fakes sit in Node's require cache,
+  // which this does not touch.
+  vi.resetModules();
   vi.useFakeTimers();
   metering = -60;
   starts = true;
   whilePreparing = undefined;
   prepareGate = undefined;
   transcribeGate = undefined;
+  modeGate = undefined;
   allowsRecording = false;
   transcribe.mockClear();
   deleted.length = 0;
@@ -189,7 +212,7 @@ describe('appleSpeech hands-free listening', () => {
     expect(transcribe).toHaveBeenCalledTimes(1);
     // The audio deleted and the native recorder released.
     expect(deleted).toEqual([URI]);
-    expect(released).toEqual([URI]);
+    expect(released).toEqual([0]);
   });
 
   it('hands the recorder its options flat, in a session put in record mode first', async () => {
@@ -238,7 +261,7 @@ describe('appleSpeech hands-free listening', () => {
 
     expect(events).toEqual([]);
     expect(deleted).toEqual([URI]);
-    expect(released).toEqual([URI]);
+    expect(released).toEqual([0]);
     expect(audioModes).toEqual([true, false]);
   });
 
@@ -266,8 +289,21 @@ describe('appleSpeech hands-free listening', () => {
     expect(await appleSpeech.stopRecording()).toBeUndefined();
     expect(transcribe).not.toHaveBeenCalled();
     expect(deleted).toEqual([URI]);
-    expect(released).toEqual([URI]);
+    expect(released).toEqual([0]);
     expect(audioModes).toEqual([true, false]);
+  });
+
+  it('a media-services reset mid-recording leaves no file behind', async () => {
+    const { appleSpeech } = await import('./appleSpeech.ts');
+    await appleSpeech.startRecording();
+    // The system re-prepared the recorder onto a new file.
+    const reset = 'file:///recording-after-reset.wav';
+    recorders[0]!.file = reset;
+
+    await appleSpeech.stopRecording();
+    // The file it was started with and the one it ended with: both gone.
+    expect(deleted).toEqual([URI, reset]);
+    expect(released).toEqual([0]);
   });
 
   it('a recorder that refuses to record leaves nothing behind either', async () => {
@@ -285,7 +321,7 @@ describe('appleSpeech hands-free listening', () => {
     await expect(start).rejects.toThrow('disabled');
 
     expect(deleted).toEqual([URI]);
-    expect(released).toEqual([URI]);
+    expect(released).toEqual([0]);
     expect(await appleSpeech.stopRecording()).toBeUndefined();
   });
 
@@ -307,7 +343,7 @@ describe('appleSpeech hands-free listening', () => {
     // Released: expo-audio would start a prepared recorder it still knew
     // when the app next comes to the foreground.
     expect(deleted).toEqual([URI]);
-    expect(released).toEqual([URI]);
+    expect(released).toEqual([0]);
     expect(audioModes).toEqual([true, false]);
   });
 
@@ -336,6 +372,32 @@ describe('appleSpeech hands-free listening', () => {
 
     expect(await appleSpeech.stopRecording()).toBe('Lunch with Anna');
     expect(audioModes).toEqual([true, true, false]);
-    expect(released).toEqual([URI, URI]);
+    expect(released).toEqual([0, 1]);
+  });
+
+  it('a stop landing while a start still asks for record mode leaves the session to it', async () => {
+    const { appleSpeech } = await import('./appleSpeech.ts');
+    // The first field's phrase is being read…
+    await appleSpeech.startRecording();
+    const reading = gate();
+    transcribeGate = reading.promise;
+    const stop = appleSpeech.stopRecording();
+    await settle();
+    // …when a second field starts and is held at its very first step, the
+    // mode call: a start counts from before it, or a stop landing now
+    // would queue "no recording" behind the second field's "recording".
+    const mode = gate();
+    modeGate = mode.promise;
+    const start = appleSpeech.startRecording();
+    await settle();
+    reading.open();
+    expect(await stop).toBe('Lunch with Anna');
+    mode.open();
+    await start;
+    expect(audioModes).toEqual([true, true]);
+    expect(recorders[1]?.isRecording).toBe(true);
+
+    expect(await appleSpeech.stopRecording()).toBe('Lunch with Anna');
+    expect(audioModes).toEqual([true, true, false]);
   });
 });

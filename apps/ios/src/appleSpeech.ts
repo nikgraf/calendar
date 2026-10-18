@@ -68,8 +68,8 @@ const load = () => {
   }
 };
 
-/** The in-flight recording, if any. */
-let recorder: AudioRecorder | undefined;
+/** The in-flight recording, if any, with the file it was started with. */
+let recording: { readonly instance: AudioRecorder; readonly uri: string | undefined } | undefined;
 /**
  * Starts under way: the session is in record mode for them, and their
  * recorder is not the current one yet.
@@ -91,7 +91,7 @@ const stopListening = () => {
  * caller's.
  */
 const releaseSessionUnlessBusy = (audio: typeof import('expo-audio')) => {
-  if (recorder || starting > 0) {
+  if (recording || starting > 0) {
     return;
   }
   void audio.setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
@@ -101,13 +101,28 @@ const releaseSessionUnlessBusy = (audio: typeof import('expo-audio')) => {
  * A recorder that is done with: its audio deleted, its native object
  * released. Released, so nothing wakes it — expo-audio starts every
  * prepared recorder it still knows when the app comes to the foreground.
+ * `uri` is the file it was started with: a media-services reset
+ * re-prepares a recorder onto a new file, so the one it ends with may
+ * differ — both go.
  */
-const dispose = (files: typeof import('expo-file-system'), instance: AudioRecorder) => {
-  // The file first: the properties are gone once released.
-  const uri = instance.uri ?? undefined;
-  if (uri) {
+const dispose = (
+  files: typeof import('expo-file-system'),
+  instance: AudioRecorder,
+  uri: string | undefined,
+) => {
+  // The files first: the properties are gone once released.
+  let current: string | undefined;
+  try {
+    current = instance.uri ?? undefined;
+  } catch {
+    // Released already.
+  }
+  for (const path of new Set([uri, current])) {
+    if (!path) {
+      continue;
+    }
     try {
-      new files.File(uri).delete();
+      new files.File(path).delete();
     } catch {
       // Already gone.
     }
@@ -128,18 +143,18 @@ export const appleSpeech: SpeechToText = {
   cancelRecording: async () => {
     stopListening();
     const modules = load();
-    const instance = recorder;
-    if (!modules || !instance) {
+    const current = recording;
+    if (!modules || !current) {
       return;
     }
     // Given up before the stop lands: a start meanwhile is not this one.
-    recorder = undefined;
+    recording = undefined;
     try {
-      await instance.stop();
+      await current.instance.stop();
     } catch {
       // Stopping a dead recorder is not worth reporting.
     } finally {
-      dispose(modules.files, instance);
+      dispose(modules.files, current.instance, current.uri);
       releaseSessionUnlessBusy(modules.audio);
     }
   },
@@ -181,6 +196,7 @@ export const appleSpeech: SpeechToText = {
     }
     starting += 1;
     let instance: AudioRecorder | undefined;
+    let uri: string | undefined;
     let current = false;
     try {
       await modules.audio.setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
@@ -197,6 +213,7 @@ export const appleSpeech: SpeechToText = {
       // returns having started nothing — and the meter of a recorder that
       // is not running reads digital silence, so no pause is ever heard.
       await instance.prepareToRecordAsync();
+      uri = instance.uri ?? undefined;
       if (signal?.aborted) {
         return;
       }
@@ -205,7 +222,7 @@ export const appleSpeech: SpeechToText = {
         // Said so, rather than a lit microphone over nothing.
         throw new Error('The recorder did not start.');
       }
-      recorder = instance;
+      recording = { instance, uri };
       current = true;
       stopListening();
       if (onSpeech) {
@@ -228,7 +245,7 @@ export const appleSpeech: SpeechToText = {
       // nothing of it stays behind, and the session is left to whoever
       // else holds it.
       if (instance && !current) {
-        dispose(modules.files, instance);
+        dispose(modules.files, instance, uri);
       }
       releaseSessionUnlessBusy(modules.audio);
     }
@@ -236,12 +253,12 @@ export const appleSpeech: SpeechToText = {
   stopRecording: async () => {
     stopListening();
     const modules = load();
-    if (!modules || !recorder) {
+    const current = recording;
+    if (!modules || !current) {
       return undefined;
     }
-    const instance = recorder;
-    recorder = undefined;
-    const uri = instance.uri ?? undefined;
+    recording = undefined;
+    const { instance, uri } = current;
     try {
       await instance.stop();
       if (!uri) {
@@ -252,7 +269,7 @@ export const appleSpeech: SpeechToText = {
       return transcriptFromSegments(result.segments);
     } finally {
       // Runs however this ended, so audio never lingers on disk.
-      dispose(modules.files, instance);
+      dispose(modules.files, instance, uri);
       releaseSessionUnlessBusy(modules.audio);
     }
   },
