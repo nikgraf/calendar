@@ -27,6 +27,7 @@ import {
 import { Pressable as GesturePressable } from 'react-native-gesture-handler';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import {
+  actionText,
   BOX_FONT_SCALE,
   chipTextColor,
   groupedGround,
@@ -1139,9 +1140,7 @@ const makeStyles = (colors: ThemeColors) =>
       justifyContent: 'center',
       width: 30,
     },
-    tint: {
-      color: colors.primary,
-    },
+    tint: actionText(colors),
     title: {
       color: colors.text,
       fontSize: 17,

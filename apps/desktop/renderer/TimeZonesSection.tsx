@@ -16,7 +16,7 @@ import {
 } from '@calendar/core';
 import { useState } from 'react';
 import { TimeZonePicker } from './TimeZonePicker.tsx';
-import { SETTINGS_BUTTON_CLASS } from './ui/buttonStyles.ts';
+import { SETTINGS_BUTTON_CLASS, TEXT_ACTION_CLASS } from './ui/buttonStyles.ts';
 import { LocationIcon } from './ui/icons.tsx';
 
 /**
@@ -80,7 +80,7 @@ export function TimeZonesSection() {
               ) : (
                 <button
                   aria-label={`Make ${name} primary`}
-                  className="text-xs text-primary hover:underline"
+                  className={`text-xs ${TEXT_ACTION_CLASS.primary}`}
                   onClick={() => save(withPrimary(settings, zone))}
                   type="button"
                 >
@@ -90,7 +90,7 @@ export function TimeZonesSection() {
               {device ? null : (
                 <button
                   aria-label={`Remove ${city}`}
-                  className="text-xs text-danger hover:underline"
+                  className={`text-xs ${TEXT_ACTION_CLASS.danger}`}
                   onClick={() => save(withZoneRemoved(settings, zone))}
                   type="button"
                 >

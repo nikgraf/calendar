@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Glyph, Row } from './GroupedList.tsx';
-import { type ThemeColors, useStyles, useTheme } from './theme.ts';
+import { actionText, type ThemeColors, useStyles, useTheme } from './theme.ts';
 
 /**
  * The Due row of a task that has no due day: the calendar shows it on
@@ -68,7 +68,7 @@ export function DueRow({
 const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
     action: {
-      color: colors.primary,
+      ...actionText(colors),
       fontSize: 17,
     },
     pair: {

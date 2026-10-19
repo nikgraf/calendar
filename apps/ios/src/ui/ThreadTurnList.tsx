@@ -9,7 +9,7 @@ import Animated, {
   ReduceMotion,
   useReducedMotion,
 } from 'react-native-reanimated';
-import { BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme } from './theme.ts';
+import { actionText, BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme } from './theme.ts';
 
 /** A turn arriving: it settles into the top row from just above it. */
 const ENTER = FadeInUp.duration(220)
@@ -159,9 +159,8 @@ const makeStyles = (colors: ThemeColors) =>
       paddingVertical: 9,
     },
     moreLabel: {
-      color: colors.primary,
+      ...actionText(colors),
       fontSize: 13,
-      fontWeight: '600',
     },
     pressed: {
       backgroundColor: colors.border,
@@ -187,9 +186,8 @@ const makeStyles = (colors: ThemeColors) =>
       paddingVertical: 8,
     },
     undo: {
-      color: colors.primary,
+      ...actionText(colors),
       fontSize: 15,
-      fontWeight: '600',
     },
     utterance: {
       color: colors.text,

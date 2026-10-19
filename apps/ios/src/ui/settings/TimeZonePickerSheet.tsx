@@ -126,7 +126,7 @@ export function TimeZonePickerSheet({
 const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
     cancel: {
-      color: colors.primary,
+      color: colors['text-secondary'],
       fontSize: 17,
     },
     header: {

@@ -18,6 +18,7 @@ import { LocationMap } from './LocationMap.tsx';
 import { RemindersFields } from './RemindersFields.tsx';
 import { RepeatRuleFields } from './RepeatRuleFields.tsx';
 import { ZoneLines } from './ZoneLines.tsx';
+import { TEXT_LINK_CLASS } from '../ui/buttonStyles.ts';
 
 /** Calendars grouped the way the sidebar shows them: per account, Apple per source. */
 const groupLabel = (calendar: CalendarInfo, accountLabel: (accountId: string) => string): string =>
@@ -284,7 +285,7 @@ export function EventEditorForm({ model }: { model: ReturnType<typeof useEventEd
                   ? 'Apple calendars can’t add invitees here — add them in Calendar.'
                   : 'Apple calendars can’t add invitees here — save, then add them in Calendar.'}{' '}
                 <button
-                  className="text-primary hover:underline"
+                  className={TEXT_LINK_CLASS}
                   onClick={() => void window.calendarBridge.appleCalendarOpen()}
                   type="button"
                 >

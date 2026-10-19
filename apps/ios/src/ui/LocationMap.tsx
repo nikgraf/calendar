@@ -1,7 +1,7 @@
 import { type useEventEditorModel } from '@calendar/app-state';
 import { isMappableLocation } from '@calendar/core';
 import { Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
-import { type ThemeColors, useStyles } from './theme.ts';
+import { actionText, type ThemeColors, useStyles } from './theme.ts';
 
 /**
  * expo-maps' Apple Maps view is SwiftUI Map, available from iOS 17 — and
@@ -85,7 +85,7 @@ const makeStyles = (colors: ThemeColors) =>
       marginTop: 12,
     },
     link: {
-      color: colors.primary,
+      ...actionText(colors),
       fontSize: 14,
     },
     map: {

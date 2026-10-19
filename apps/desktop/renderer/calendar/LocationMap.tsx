@@ -1,6 +1,7 @@
 import { type EventPlace, useMapSnapshot } from '@calendar/app-state';
 import { isMappableLocation } from '@calendar/core';
 import { useColorScheme } from '../theme.ts';
+import { TEXT_ACTION_CLASS } from '../ui/buttonStyles.ts';
 
 /** Points; the editor panel is 420 wide with 24 of padding per side. */
 const MAP_WIDTH = 372;
@@ -63,7 +64,7 @@ export function LocationMap({ place }: { place: EventPlace }) {
         <div className="h-40 animate-pulse rounded-lg bg-fill" data-map-state="loading" />
       ) : null}
       <a
-        className="self-start text-xs text-primary hover:underline"
+        className={`self-start text-xs ${TEXT_ACTION_CLASS.primary}`}
         data-open-in-maps
         href={mapsUrl}
         onClick={(clickEvent) => {

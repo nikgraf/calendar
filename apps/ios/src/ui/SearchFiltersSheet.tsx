@@ -12,7 +12,7 @@ import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { dateForPicker, dateStringFromPicker } from './pickerDates.ts';
 import { SegmentedControl } from './SegmentedControl.tsx';
-import { BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme } from './theme.ts';
+import { actionText, BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme } from './theme.ts';
 
 /**
  * The search's filters, edited by hand: when, which kind, all-day or
@@ -272,9 +272,8 @@ const makeStyles = (colors: ThemeColors) =>
       gap: 8,
     },
     done: {
-      color: colors.primary,
+      ...actionText(colors),
       fontSize: 16,
-      fontWeight: '600',
       textAlign: 'right',
     },
     header: {
@@ -296,7 +295,7 @@ const makeStyles = (colors: ThemeColors) =>
       paddingVertical: 10,
     },
     link: {
-      color: colors.primary,
+      ...actionText(colors),
       fontSize: 16,
     },
     option: {
