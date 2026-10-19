@@ -6,6 +6,7 @@ import {
   isMappableLocation,
   mergePlaceCandidates,
   normalizeLocationKey,
+  type PastPlace,
   type PlaceCandidate,
   placeMatch,
   placesResembling,
@@ -44,6 +45,11 @@ const CANDIDATE_LIMIT = 5;
 const REGION_HISTORY_MS = 90 * 24 * 60 * 60 * 1000;
 /** How far back the user's events say where they have been: the past places a text may name. */
 const PLACE_HISTORY_MS = 365 * 24 * 60 * 60 * 1000;
+/** The past places last read, per event store: a year's occurrences are not expanded per turn. */
+const pastPlaces = new WeakMap<
+  object,
+  { readonly at: number; readonly places: ReadonlyArray<PastPlace> }
+>();
 /**
  * How long the candidates wait for MapKit: a draft is being made, and
  * its title and times must not hang on a search (the helper's own
@@ -139,19 +145,26 @@ export const locationHandlers: Pick<
         return [];
       }
       // The user's own past places first: a year of events, each
-      // occurrence's place with the text it was written as.
+      // occurrence's place with the text it was written as — read once
+      // per `REGION_HINT_TTL_MS`, like the region hint.
       const now = yield* Clock.currentTimeMillis;
-      const past = yield* loadEventsInRange(now - PLACE_HISTORY_MS, now).pipe(
-        Effect.orElseSucceed((): ReadonlyArray<EventRecord> => []),
-      );
-      const history = rankPastPlaces(
-        location,
-        past.flatMap((event) =>
+      const store = yield* EventRepo;
+      const known = pastPlaces.get(store);
+      let places: ReadonlyArray<PastPlace>;
+      if (known && now - known.at < REGION_HINT_TTL_MS) {
+        places = known.places;
+      } else {
+        const past = yield* loadEventsInRange(now - PLACE_HISTORY_MS, now).pipe(
+          Effect.orElseSucceed((): ReadonlyArray<EventRecord> => []),
+        );
+        places = past.flatMap((event) =>
           event.geo !== undefined && event.status !== 'cancelled'
             ? [{ geo: event.geo, lastUsedUtc: event.startUtc }]
             : [],
-        ),
-      );
+        );
+        pastPlaces.set(store, { at: now, places });
+      }
+      const history = rankPastPlaces(location, places);
       // Then MapKit, asked two ways side by side: the natural-language
       // search, which reads a misspelling, and the completer's rows,
       // which know a place's branches, each row resolved to its exact
@@ -160,9 +173,12 @@ export const locationHandlers: Pick<
       // the name and address, as a picked typeahead row would.
       const geo = yield* GeoClient;
       const region = yield* regionHint;
-      const searched = geo
-        .resolve({ limit: CANDIDATE_LIMIT, query: location, region })
-        .pipe(Effect.catch(() => Effect.succeed([])));
+      // Each way on its own clock: what one answers is kept when the
+      // other stalls.
+      const searched = geo.resolve({ limit: CANDIDATE_LIMIT, query: location, region }).pipe(
+        Effect.timeout(CANDIDATE_SEARCH_TIMEOUT),
+        Effect.catch(() => Effect.succeed([])),
+      );
       const completed = geo.search({ limit: CANDIDATE_LIMIT, query: location, region }).pipe(
         Effect.flatMap((rows) =>
           Effect.forEach(
@@ -178,19 +194,12 @@ export const locationHandlers: Pick<
         Effect.map((places) =>
           places.filter((place): place is GeoPlaceJson => place !== undefined),
         ),
+        Effect.timeout(CANDIDATE_SEARCH_TIMEOUT),
         Effect.catch(() => Effect.succeed([])),
       );
       const [fromSearch, fromRows] = yield* Effect.all([searched, completed], {
         concurrency: 'unbounded',
-      }).pipe(
-        Effect.timeout(CANDIDATE_SEARCH_TIMEOUT),
-        Effect.catch(() =>
-          Effect.succeed([[], []] as readonly [
-            ReadonlyArray<GeoPlaceJson>,
-            ReadonlyArray<GeoPlaceJson>,
-          ]),
-        ),
-      );
+      });
       const hits = [...fromSearch, ...fromRows];
       const candidate = (place: GeoPlaceJson, match: PlaceCandidate['match']): PlaceCandidate => {
         const name = place.name ?? location;

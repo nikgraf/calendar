@@ -41,6 +41,15 @@ describe('rankPastPlaces', () => {
     expect(rankPastPlaces('Room 4', [figlmueller, central])).toEqual([]);
   });
 
+  it('lists one place written two ways once, under its better-ranked text', () => {
+    // Review: both texts for the same spot became two chips.
+    // Both are exact for "Figlmüller" (one by text, one by MapKit's name): the later use stays.
+    const wollzeile = past('Figlmüller Wollzeile', 5, 'Figlmüller', { lat: 48.2, lng: 16.3701 });
+    expect(rankPastPlaces('Figlmüller', [wollzeile, figlmueller]).map((c) => c.geo.source)).toEqual(
+      ['Figlmüller'],
+    );
+  });
+
   it('keeps one entry per place text, the latest, and the most recent first among equals', () => {
     const older = past('Café Central', 1, 'Café Central', { lat: 48.2, lng: 16.3 });
     const ranked = rankPastPlaces('Café', [sperl, older, central]);

@@ -13,6 +13,7 @@ import {
   type FreeSlot,
   type GeoLocation,
   draftMinutes,
+  normalizeLocationKey,
   type PlaceCandidate,
   Temporal,
 } from '@calendar/core';
@@ -331,7 +332,10 @@ const withPlace = (
         },
         ...chosen,
       },
-      said: choice ? [`${String(choice.candidates.length)} places`] : [],
+      said:
+        choice && choice.candidates.length > 1
+          ? [`${String(choice.candidates.length)} places`]
+          : [],
     };
   }
   return {
@@ -796,6 +800,8 @@ export const firstDraftExtras = (extras: DraftExtras | undefined): DraftExtras |
 const DEFAULT_SLOT_MINUTES = 60;
 /** How long a turn waits for a place's candidates at most; past it the text stays as said. */
 const PLACE_LOOKUP_TIMEOUT = '5 seconds';
+/** A turn that took the place away: nothing to choose from, the choice before it goes. */
+const NO_PLACE: PlaceChange = { candidates: [], text: '' };
 
 /**
  * The thread as a hook: the state above, what a phrase does (`phrase`:
@@ -909,13 +915,17 @@ export const useDraftThread = ({
             ? [
                 (async (): Promise<DraftChange> => {
                   const isEvent = draft.item.kind === 'event';
-                  // A place the turn set anew is looked up; one it left alone is not.
+                  // A place the turn set anew is looked up; one it left alone
+                  // (or only re-spelled) is not; one it took away clears the
+                  // choice with it.
                   const before = isEvent ? draft.item.prefill.location : undefined;
+                  const after = result.prefill.location;
+                  const moved =
+                    isEvent &&
+                    normalizeLocationKey(after ?? '') !== normalizeLocationKey(before ?? '');
                   const [guests, placeFound] = await Promise.all([
                     isEvent ? guestsOf(result.invite, result.uninvite) : undefined,
-                    isEvent && result.prefill.location !== before
-                      ? placesOf(result.prefill.location)
-                      : undefined,
+                    moved ? placesOf(after).then((found) => found ?? NO_PLACE) : undefined,
                   ]);
                   return {
                     ...(guests ? { guests } : {}),

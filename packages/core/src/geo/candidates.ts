@@ -66,16 +66,24 @@ export const rankPastPlaces = (
       latest.set(key, place);
     }
   }
-  return [...latest.values()]
+  const ranked = [...latest.values()]
     .flatMap((place) => {
       const match = pastPlaceMatch(text, place.geo);
       return match === undefined ? [] : [{ match, place }];
     })
     .sort((a, b) => RANK[a.match] - RANK[b.match] || b.place.lastUsedUtc - a.place.lastUsedUtc)
     .map(({ match, place }) => ({ geo: place.geo, match, source: 'history' as const }));
+  // One place written two ways is one place: the better-ranked text stays.
+  const once: Array<PlaceCandidate> = [];
+  for (const candidate of ranked) {
+    if (!listed(candidate.geo, once)) {
+      once.push(candidate);
+    }
+  }
+  return once;
 };
 
-/** Nearer than this, a search hit is a place already listed over again. */
+/** Nearer than this, a hit is a place already listed over again. */
 const SAME_PLACE_METERS = 100;
 
 /** Whether the place is one already listed: the same text, or within a hundred meters. */

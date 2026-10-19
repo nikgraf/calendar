@@ -295,9 +295,11 @@ deliberately.
   location text (`geoMatches`); every local write goes through
   `withConsistentGeo`, and an update PATCH touches the private geo keys
   only when the record has coordinates (values) or the edit dropped them
-  (`PendingOp.geoCleared` → nulls). Only picked or already-mirrored
-  coordinates are pushed; open-time lookups of free text stay on the
-  device. Geocoding runs on demand, never during sync.
+  (`PendingOp.geoCleared` → nulls). Only vouched coordinates are pushed:
+  a typeahead row the user picked, a place candidate the draft thread
+  took or the user picked from its chips (`applyPlace`), or ones already
+  mirrored; the open-time lookup of free text stays on the device.
+  Geocoding runs on demand, never during sync.
 - The desktop helper's main thread runs `RunLoop.main.run()`, not
   `dispatchMain()`: MKLocalSearchCompleter never calls back without
   run-loop timers, and a main thread blocked in `readLine()` never

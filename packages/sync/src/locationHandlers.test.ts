@@ -351,6 +351,64 @@ describe('the resemblance gate', () => {
     },
   );
 
+  it.effect('finds a branch only the completer knows, resolved to its place', () => {
+    const { client } = makeFakeGeoClient({ places: figlmuellers });
+    return Effect.gen(function* () {
+      // The search reads nothing in "Wollzeile" (no title is in it); the completer's row is.
+      const candidates = yield* locationHandlers.placeCandidates({ location: 'Wollzeile' });
+      expect(candidates.map((c) => [c.geo.name, c.match])).toEqual([
+        ['Figlmüller Wollzeile', 'words'],
+      ]);
+    }).pipe(Effect.provide(setup(client)));
+  });
+
+  it.effect('keeps what the search answered when the completer stalls', () => {
+    // Review: one timeout over both ways threw the finished answer away too.
+    const stalledRows: GeoClientShape = {
+      ...makeFakeGeoClient({ places: figlmuellers }).client,
+      search: () => Effect.never,
+    };
+    return Effect.gen(function* () {
+      const asked = yield* Effect.forkChild(
+        locationHandlers.placeCandidates({ location: 'Figlmüller' }),
+      );
+      yield* TestClock.adjust(CANDIDATE_SEARCH_TIMEOUT);
+      const candidates = yield* Fiber.join(asked);
+      expect(candidates.map((c) => c.geo.name)).toEqual([
+        'Figlmüller Wollzeile',
+        'Figlmüller Bäckerstrasse',
+        'Figl Bar',
+      ]);
+    }).pipe(Effect.provide(setup(stalledRows)));
+  });
+
+  it.effect('reads the past places once for a while, then again', () => {
+    // Review: a year of occurrences was expanded on every turn.
+    const { client } = makeFakeGeoClient({ places });
+    return Effect.gen(function* () {
+      expect(yield* locationHandlers.placeCandidates({ location: 'Café Central' })).toEqual([]);
+      yield* seedPlaced([
+        new EventRecord({
+          ...placedEvent('coffee', 20, { lat: 48.21, lng: 16.365 }),
+          geo: new GeoLocation({
+            lat: 48.21,
+            lng: 16.365,
+            name: 'Café Central',
+            source: 'Café Central',
+          }),
+          location: 'Café Central',
+        }),
+      ]);
+      expect(yield* locationHandlers.placeCandidates({ location: 'Café Central' })).toEqual([]);
+      yield* TestClock.adjust(REGION_HINT_TTL_MS + 1);
+      expect(
+        (yield* locationHandlers.placeCandidates({ location: 'Café Central' })).map(
+          (c) => c.source,
+        ),
+      ).toEqual(['history']);
+    }).pipe(Effect.provide(setup(client)));
+  });
+
   it.effect('answers the past places alone when the search stalls', () => {
     // Review: a stalled MapKit request held the whole draft, title and times too.
     const stalled: GeoClientShape = {

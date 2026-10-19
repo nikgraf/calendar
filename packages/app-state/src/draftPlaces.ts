@@ -44,23 +44,21 @@ export const pickedCandidate = (
 ): PlaceCandidate | undefined =>
   choice.candidates.find((candidate) => same(candidate.geo.source, location));
 
-/** Whether the location reads the text as said, not a candidate. */
+/** Whether the location reads the text as said and no candidate: a past place with that very text is the candidate. */
 export const readsAsSaid = (choice: PlaceChoice, location: string): boolean =>
-  same(choice.text, location);
+  same(choice.text, location) && pickedCandidate(choice, location) === undefined;
 
 /**
  * What a turn's candidates come to: the best one that resembles the
- * text is taken (`preselectedPlace`); the choice stays whenever there is
- * anything to pick from — more than the one taken, or any at all when
- * none was — and is nothing for a text nobody knows.
+ * text is taken (`preselectedPlace`), and the choice stays whenever
+ * there is anything at all — a lone taken place too, so the text as
+ * said is one chip away — and is nothing for a text nobody knows.
  */
 export const settlePlace = (
   change: PlaceChange,
 ): { readonly choice?: PlaceChoice; readonly taken?: PlaceCandidate } => {
   const taken = preselectedPlace(change.candidates);
   const choice =
-    change.candidates.length > (taken ? 1 : 0)
-      ? { candidates: change.candidates, text: change.text }
-      : undefined;
+    change.candidates.length > 0 ? { candidates: change.candidates, text: change.text } : undefined;
   return { ...(choice ? { choice } : {}), ...(taken ? { taken } : {}) };
 };

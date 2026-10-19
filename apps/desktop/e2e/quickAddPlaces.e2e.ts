@@ -128,7 +128,9 @@ describe('Places from a quick-add phrase', () => {
     await openNew();
     await phrase('Coffee | +0 | 10:00-11:00 | Cafe Zentral');
     await cdp.waitFor(`${location} === 'Café Central'`);
-    expect(await cdp.eval<boolean>(choices)).toBe(false);
+    // The lone place taken is a chip too, pressed, with the text as said beside it.
+    await cdp.waitFor(choices);
+    expect(await cdp.eval<string>(pressed)).toBe('draft-place-pick-0');
     await cdp.clickButtonWithText('Save');
     await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);
     await expect
