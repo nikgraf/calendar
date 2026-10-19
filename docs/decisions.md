@@ -1102,11 +1102,11 @@ first. The decisions, one line each:
   split from `primary`). The plum stays in the identity only.
 - **Text actions** (2026-10-19, #228) — with `primary` at the text's
   charcoal, text that acts gets a second cue: a link inside a sentence is
-  underlined in the control-boundary grey (its own color on hover), a
-  standalone text action (Make primary, Open in Maps, Add due date) wears
-  the Button's medium weight (semibold on iOS; a hover underline on the
-  desktop), and Cancel / Close take secondary text. Rejected: an
-  underline on every text action (busy in Settings rows of two or three)
-  and `text-secondary` for all of them (reads as a caption). Fills, today
-  markers, icons and checks keep plain `primary`; iOS has no link inside
-  a sentence yet.
+  underlined in the control-boundary grey, a standalone one (Make
+  primary, Open in Maps, Add due date) takes the Button's medium weight
+  (semibold on iOS, plus a hover underline on the desktop, where a red
+  Remove beside it matches), and iOS Cancel / Close go secondary; iOS red
+  rows keep the system's regular weight. Rejected: an underline on every
+  text action (busy in rows of two or three) and `text-secondary` for all
+  (reads as a caption). Fills, today markers, icons and checks keep plain
+  `primary`; iOS has no link inside a sentence yet.

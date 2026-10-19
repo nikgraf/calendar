@@ -983,7 +983,12 @@ gateway carries all of it. Details, limits and the threat model:
   calendar-colored block or chip goes through `eventTint(hex, scheme)`:
   hue and chroma from the calendar, lightness from the theme, text on
   fill at 4.5:1; the brand `event-*` tokens are for items with no
-  calendar. A box that asks or warns uses `CALLOUT_CLASS`.
+  calendar. A box that asks or warns uses `CALLOUT_CLASS`. Text that acts
+  takes a second cue, since `primary` is the text's own charcoal: a link
+  inside a sentence `TEXT_LINK_CLASS`, a standalone text action
+  `TEXT_ACTION_CLASS.primary` / `.danger` (`ui/buttonStyles.ts`; the theme
+  test also fails on a hand-made `hover:underline`), and on iOS
+  `actionText(colors)`, with Cancel / Close in secondary text.
 - **Desktop shell** (`renderer/calendar/`): a toolbar (`Toolbar.tsx`:
   sidebar toggle, title, ‹ Today ›, Day/Week/Month, Search, the Today
   panel toggle, New), a collapsible sidebar (mini month, calendars and

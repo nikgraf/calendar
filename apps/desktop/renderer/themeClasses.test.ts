@@ -14,9 +14,12 @@ const RAW_PALETTE =
   /-(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-(?:50|[1-9]00|950)\b|\b(?:bg|text|border|ring|outline|fill|stroke|from|via|to|divide|decoration|caret)-white\b/;
 
 /**
- * A text action that draws itself (`text-primary hover:underline`): since
- * `primary` is the text's own charcoal, it reads as plain text. The link
- * and action looks live in `ui/buttonStyles.ts`.
+ * A text action that draws its own hover underline (`text-primary
+ * hover:underline`, the look before the shared ones): since `primary` is
+ * the text's own charcoal, that reads as plain text until hovered. The
+ * link and action looks in `ui/buttonStyles.ts` add the missing cue. A
+ * bare `text-primary` button still passes; this only keeps the old idiom
+ * from coming back.
  */
 const OWN_TEXT_ACTION = /\bhover:underline\b/;
 
@@ -40,7 +43,7 @@ describe('renderer colors', () => {
     expect(linesMatching(RAW_PALETTE, sources())).toEqual([]);
   });
 
-  it('give text actions the shared link and action looks', () => {
+  it('leave hover underlines to the shared link and action looks', () => {
     const paths = sources().filter((path) => path !== join('ui', 'buttonStyles.ts'));
     expect(linesMatching(OWN_TEXT_ACTION, paths)).toEqual([]);
   });

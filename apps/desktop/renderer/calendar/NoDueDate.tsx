@@ -9,7 +9,7 @@ import { TEXT_ACTION_CLASS } from '../ui/buttonStyles.ts';
 export function RemoveDueDate({ onRemove }: { onRemove: (() => void) | undefined }) {
   return onRemove ? (
     <button
-      className={`text-xs normal-case tracking-normal ${TEXT_ACTION_CLASS.primary}`}
+      className={`text-xs ${TEXT_ACTION_CLASS.primary}`}
       data-testid="task-remove-due-date"
       onClick={onRemove}
       type="button"

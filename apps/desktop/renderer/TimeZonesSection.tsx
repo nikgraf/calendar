@@ -68,7 +68,9 @@ export function TimeZonesSection() {
               ) : (
                 <span className="w-3.5 shrink-0" />
               )}
-              <span className="font-medium">{city}</span>
+              <span className="font-medium" data-testid="time-zone-city">
+                {city}
+              </span>
               <span className="text-xs text-ink-secondary">
                 {device ? 'Current time zone' : zone}
               </span>
