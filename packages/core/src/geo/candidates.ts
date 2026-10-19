@@ -83,15 +83,23 @@ export const rankPastPlaces = (
   return once;
 };
 
-/** Nearer than this, a hit is a place already listed over again. */
+/** Nearer than this, a hit of the same name is a place already listed over again. */
 const SAME_PLACE_METERS = 100;
 
-/** Whether the place is one already listed: the same text, or within a hundred meters. */
+/** A place's name as its own: MapKit's, else the text it was written as. */
+const nameOf = (place: GeoLocation): string => normalizeLocationKey(place.name ?? place.source);
+
+/**
+ * Whether the place is one already listed: the same text, or the same
+ * name within a hundred meters (a branch around the corner with a name
+ * of its own is another place).
+ */
 const listed = (place: GeoLocation, among: ReadonlyArray<PlaceCandidate>): boolean =>
   among.some(
     (candidate) =>
       normalizeLocationKey(candidate.geo.source) === normalizeLocationKey(place.source) ||
-      distanceMeters(candidate.geo, place) <= SAME_PLACE_METERS,
+      (nameOf(candidate.geo) === nameOf(place) &&
+        distanceMeters(candidate.geo, place) <= SAME_PLACE_METERS),
   );
 
 /**

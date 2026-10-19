@@ -16,7 +16,7 @@ import {
 } from '@calendar/core';
 import { type DeviceSettingsRepo, EventRepo, LocationGeoRepo } from '@calendar/db';
 import { GeoClient, type GeoPlaceJson } from '@calendar/geo';
-import { Clock, Effect } from 'effect';
+import { Clock, Effect, Ref } from 'effect';
 import type { EventRecord } from '@calendar/core';
 import type { AppleCalendarEvents } from './appleCalendarEvents.ts';
 import { readPrimaryTimeZone } from './deviceSettings.ts';
@@ -179,23 +179,33 @@ export const locationHandlers: Pick<
         Effect.timeout(CANDIDATE_SEARCH_TIMEOUT),
         Effect.catch(() => Effect.succeed([])),
       );
+      // The rows within the same budget, each kept as it resolves: one
+      // that stalls costs itself, not the ones that answered. In the
+      // completer's order — the first of them may be the one taken.
+      const resolved = yield* Ref.make(new Map<number, GeoPlaceJson>());
       const completed = geo.search({ limit: CANDIDATE_LIMIT, query: location, region }).pipe(
         Effect.flatMap((rows) =>
           Effect.forEach(
             rows,
-            (row) =>
+            (row, index) =>
               geo.resolve({ limit: 1, query: placeSuggestionLabel(row), suggestion: row }).pipe(
-                Effect.map((places) => places[0]),
-                Effect.catch(() => Effect.succeed(undefined)),
+                Effect.flatMap((places) => {
+                  const place = places[0];
+                  return place === undefined
+                    ? Effect.void
+                    : Ref.update(resolved, (byRow) => new Map(byRow).set(index, place));
+                }),
+                Effect.catch(() => Effect.void),
               ),
-            { concurrency: 'unbounded' },
+            { concurrency: 'unbounded', discard: true },
           ),
         ),
-        Effect.map((places) =>
-          places.filter((place): place is GeoPlaceJson => place !== undefined),
-        ),
         Effect.timeout(CANDIDATE_SEARCH_TIMEOUT),
-        Effect.catch(() => Effect.succeed([])),
+        Effect.catch(() => Effect.void),
+        Effect.flatMap(() => Ref.get(resolved)),
+        Effect.map((byRow) =>
+          [...byRow.entries()].sort(([a], [b]) => a - b).map(([, place]) => place),
+        ),
       );
       const [fromSearch, fromRows] = yield* Effect.all([searched, completed], {
         concurrency: 'unbounded',

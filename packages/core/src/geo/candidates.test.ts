@@ -42,12 +42,19 @@ describe('rankPastPlaces', () => {
   });
 
   it('lists one place written two ways once, under its better-ranked text', () => {
-    // Review: both texts for the same spot became two chips.
+    // Review: both texts for the same spot became two chips. The same spot
+    // is MapKit's name within 100 m — not the spot alone, which merged two
+    // branches around the corner from each other.
     // Both are exact for "Figlmüller" (one by text, one by MapKit's name): the later use stays.
+    const typed = past('Figlmüller', 10, 'Figlmüller', { lat: 48.2, lng: 16.37 });
     const wollzeile = past('Figlmüller Wollzeile', 5, 'Figlmüller', { lat: 48.2, lng: 16.3701 });
-    expect(rankPastPlaces('Figlmüller', [wollzeile, figlmueller]).map((c) => c.geo.source)).toEqual(
-      ['Figlmüller'],
-    );
+    expect(rankPastPlaces('Figlmüller', [wollzeile, typed]).map((c) => c.geo.source)).toEqual([
+      'Figlmüller',
+    ]);
+    const lugeckBranch = past('Figlmüller', 8, 'Figlmüller Lugeck', { lat: 48.2, lng: 16.3701 });
+    expect(
+      rankPastPlaces('Figlmüller', [wollzeile, lugeckBranch]).map((c) => c.geo.source),
+    ).toEqual(['Figlmüller', 'Figlmüller Wollzeile']);
   });
 
   it('keeps one entry per place text, the latest, and the most recent first among equals', () => {
@@ -87,6 +94,20 @@ describe('mergePlaceCandidates', () => {
       ['mapkit', 'Figlmüller Bäckerstrasse'],
     ]);
     expect(mergePlaceCandidates([], found, 2)).toHaveLength(2);
+  });
+
+  it('keeps a branch around the corner that has a name of its own', () => {
+    // Review: the real Figlmüllers are ~90 m apart; proximity alone merged them.
+    const wollzeile = mapkit('Figlmüller', { lat: 48.209, lng: 16.375 }, 'Wollzeile 5');
+    const baeckerstrasse = mapkit(
+      'Figlmüller Bäckerstrasse',
+      { lat: 48.2095, lng: 16.376 },
+      'Bäckerstraße 6',
+    );
+    const twin = mapkit('Figlmüller', { lat: 48.2091, lng: 16.3751 }, 'Wollzeile 5');
+    expect(
+      mergePlaceCandidates([], [wollzeile, baeckerstrasse, twin]).map((c) => c.geo.source),
+    ).toEqual(['Figlmüller', 'Figlmüller Bäckerstrasse']);
   });
 });
 

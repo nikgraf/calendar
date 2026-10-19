@@ -848,6 +848,17 @@ export const useEventEditorModel = ({
     setGeo(place);
   };
 
+  /**
+   * The location text as said, no place for it: the pin a taken or
+   * picked place left goes (a past place with that very text would
+   * otherwise keep it), and the text is not looked up again.
+   */
+  const keepLocationText = (text: string) => {
+    setLocation(text);
+    setGivenLocation('');
+    setGeo(undefined);
+  };
+
   /** Server facts for a chip (response, organizer) — only for guests already on the event. */
   const attendeeStatus = (email: string): Attendee | undefined =>
     existing?.attendees?.find((attendee) => emailKey(attendee.email) === emailKey(email));
@@ -1112,6 +1123,7 @@ export const useEventEditorModel = ({
     isAllDay,
     isRecurring,
     joinUrl,
+    keepLocationText,
     location,
     /** Coordinates to map for the current text, if known. */
     mapGeo,

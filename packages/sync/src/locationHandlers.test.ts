@@ -362,6 +362,30 @@ describe('the resemblance gate', () => {
     }).pipe(Effect.provide(setup(client)));
   });
 
+  it.effect('keeps the completer rows that resolved when one of them stalls', () => {
+    // Review: one stalled row timed the whole batch out, finished rows included.
+    // The budget stays one: the rows resolve within the completer's
+    // 3 s, so the hook's 5 s (`placesOf`) is never passed.
+    const base = makeFakeGeoClient({ places: figlmuellers }).client;
+    const oneStalls: GeoClientShape = {
+      ...base,
+      resolve: (params) =>
+        params.suggestion === undefined
+          ? Effect.succeed([])
+          : params.suggestion.title === 'Figlmüller'
+            ? Effect.never
+            : base.resolve(params),
+    };
+    return Effect.gen(function* () {
+      const asked = yield* Effect.forkChild(
+        locationHandlers.placeCandidates({ location: 'Figlmüller' }),
+      );
+      yield* TestClock.adjust(CANDIDATE_SEARCH_TIMEOUT);
+      const candidates = yield* Fiber.join(asked);
+      expect(candidates.map((c) => c.geo.name)).toEqual(['Figlmüller Wollzeile']);
+    }).pipe(Effect.provide(setup(oneStalls)));
+  });
+
   it.effect('keeps what the search answered when the completer stalls', () => {
     // Review: one timeout over both ways threw the finished answer away too.
     const stalledRows: GeoClientShape = {

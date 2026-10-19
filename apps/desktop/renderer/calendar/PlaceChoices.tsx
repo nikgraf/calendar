@@ -1,5 +1,5 @@
 import { type PlaceChoice, pickedCandidate, readsAsSaid } from '@calendar/app-state';
-import { type PlaceCandidate, placeCandidateLabel } from '@calendar/core';
+import { type GeoLocation, type PlaceCandidate, placeCandidateLabel } from '@calendar/core';
 import { Button } from '../ui/Button.tsx';
 import { IconButton } from '../ui/IconButton.tsx';
 import { XIcon } from '../ui/icons.tsx';
@@ -13,6 +13,7 @@ import { XIcon } from '../ui/icons.tsx';
 export function PlaceChoices({
   choice,
   disabled,
+  geo,
   location,
   onDismiss,
   onKeep,
@@ -20,14 +21,16 @@ export function PlaceChoices({
 }: {
   readonly choice: PlaceChoice;
   readonly disabled: boolean;
+  /** The coordinates the form vouches for now, if any. */
+  readonly geo: GeoLocation | undefined;
   /** The location field as it reads now. */
   readonly location: string;
   readonly onDismiss: () => void;
   readonly onKeep: () => void;
   readonly onPick: (candidate: PlaceCandidate) => void;
 }) {
-  const picked = pickedCandidate(choice, location);
-  const asSaid = readsAsSaid(choice, location);
+  const picked = pickedCandidate(choice, location, geo);
+  const asSaid = readsAsSaid(choice, location, geo);
   return (
     <div className="flex flex-col gap-1" data-testid="draft-place-choices">
       <div className="flex items-center justify-between gap-2">

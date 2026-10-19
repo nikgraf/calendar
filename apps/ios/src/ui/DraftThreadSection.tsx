@@ -52,6 +52,7 @@ export function DraftThreadSection({
     pickInvitee,
     pickPlaceChoice,
     placeChoice,
+    placeGeo,
     settled,
     switchFocus,
     thread,
@@ -139,7 +140,8 @@ export function DraftThreadSection({
             style={styles.chipScroller}
           >
             {placeChoice.candidates.map((candidate, index) => {
-              const chosen = pickedCandidate(placeChoice, eventModel.location) === candidate;
+              const chosen =
+                pickedCandidate(placeChoice, eventModel.location, placeGeo) === candidate;
               return (
                 <Pressable
                   accessibilityHint={candidate.geo.name ?? candidate.geo.source}
@@ -164,7 +166,7 @@ export function DraftThreadSection({
               accessibilityRole="button"
               accessibilityState={{
                 disabled: !settled,
-                selected: readsAsSaid(placeChoice, eventModel.location),
+                selected: readsAsSaid(placeChoice, eventModel.location, placeGeo),
               }}
               disabled={!settled}
               onPress={keepPlace}

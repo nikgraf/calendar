@@ -1,4 +1,9 @@
-import { normalizeLocationKey, type PlaceCandidate, preselectedPlace } from '@calendar/core';
+import {
+  type GeoLocation,
+  normalizeLocationKey,
+  type PlaceCandidate,
+  preselectedPlace,
+} from '@calendar/core';
 
 /**
  * The places a turn's location text could mean: the candidates
@@ -37,16 +42,31 @@ export const livePlaceChoice = (
     ? choice
     : undefined;
 
-/** The candidate the location reads now, if one. */
+/**
+ * The candidate the form holds now: the location reads its text and the
+ * pin is its (`geo`, the coordinates the form vouches for — none, and no
+ * candidate is held, whatever the text says).
+ */
 export const pickedCandidate = (
   choice: PlaceChoice,
   location: string,
+  geo: GeoLocation | undefined,
 ): PlaceCandidate | undefined =>
-  choice.candidates.find((candidate) => same(candidate.geo.source, location));
+  geo === undefined
+    ? undefined
+    : choice.candidates.find(
+        (candidate) =>
+          same(candidate.geo.source, location) &&
+          candidate.geo.lat === geo.lat &&
+          candidate.geo.lng === geo.lng,
+      );
 
-/** Whether the location reads the text as said and no candidate: a past place with that very text is the candidate. */
-export const readsAsSaid = (choice: PlaceChoice, location: string): boolean =>
-  same(choice.text, location) && pickedCandidate(choice, location) === undefined;
+/** Whether the form holds the text as said with no place for it. */
+export const readsAsSaid = (
+  choice: PlaceChoice,
+  location: string,
+  geo: GeoLocation | undefined,
+): boolean => same(choice.text, location) && pickedCandidate(choice, location, geo) === undefined;
 
 /**
  * What a turn's candidates come to: the best one that resembles the

@@ -983,16 +983,22 @@ describe('places from the words', () => {
     expect(livePlaceChoice(choice, 'Figlmüller')).toBe(choice);
     expect(livePlaceChoice(choice, '  figlmüller ')).toBe(choice);
     expect(livePlaceChoice(choice, 'Figlmüller, B')).toBe(choice);
-    expect(pickedCandidate(choice, 'Figlmüller, B')).toBe(choice.candidates[1]);
-    expect(pickedCandidate(choice, 'Figlmüller')).toBeUndefined();
-    expect(readsAsSaid(choice, 'figlmüller')).toBe(true);
+    const b = choice.candidates[1]!;
+    expect(pickedCandidate(choice, 'Figlmüller, B', b.geo)).toBe(b);
+    // Review: the text alone said nothing about the pin — held means the pin is its.
+    expect(pickedCandidate(choice, 'Figlmüller, B', undefined)).toBeUndefined();
+    expect(pickedCandidate(choice, 'Figlmüller', b.geo)).toBeUndefined();
+    expect(readsAsSaid(choice, 'figlmüller', undefined)).toBe(true);
     // A past place whose text is the text as said is that chip, not "as said".
     const ownText = {
       candidates: [{ ...figl('Figlmüller'), source: 'history' as const }],
       text: 'Figlmüller',
     };
-    expect(readsAsSaid(ownText, 'Figlmüller')).toBe(false);
-    expect(pickedCandidate(ownText, 'Figlmüller')).toBe(ownText.candidates[0]);
+    const own = ownText.candidates[0]!;
+    expect(readsAsSaid(ownText, 'Figlmüller', own.geo)).toBe(false);
+    expect(pickedCandidate(ownText, 'Figlmüller', own.geo)).toBe(own);
+    // …until the pin is let go: then it is the text as said.
+    expect(readsAsSaid(ownText, 'Figlmüller', undefined)).toBe(true);
     expect(livePlaceChoice(choice, 'Figlmüller Lugeck')).toBeUndefined();
     expect(livePlaceChoice(choice, '')).toBeUndefined();
     expect(livePlaceChoice(undefined, 'Figlmüller')).toBeUndefined();

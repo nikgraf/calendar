@@ -123,6 +123,7 @@ export function EditorPanel({
     pickInvitee,
     pickPlaceChoice,
     placeChoice,
+    placeGeo,
     settled,
     switchFocus,
     taskModel,
@@ -267,6 +268,7 @@ export function EditorPanel({
               <PlaceChoices
                 choice={placeChoice}
                 disabled={!settled}
+                geo={placeGeo}
                 location={eventModel.location}
                 onDismiss={dismissPlace}
                 onKeep={keepPlace}

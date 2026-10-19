@@ -86,6 +86,7 @@ const EVENT_EDITS = [
   'addReminder',
   'applyPlace',
   'applySlot',
+  'keepLocationText',
   'pickPlace',
   'removeAttendee',
   'removeReminder',
@@ -579,8 +580,10 @@ export const useThreadEditor = ({
       return;
     }
     edited();
-    eventModel.setLocation(placeChoice.text);
+    eventModel.keepLocationText(placeChoice.text);
   };
+  /** The coordinates the form vouches for now, for the chips to tell a held place from its text. */
+  const placeGeo = eventModel.extras().geo;
   const dismissPlace = () => {
     if (settled) {
       thread.dropPlace(focused);
@@ -738,8 +741,10 @@ export const useThreadEditor = ({
     pickInvitee,
     /** A place picked among a turn's candidates: the form takes its text and pin. */
     pickPlaceChoice,
-    /** The places the focused event's last turn could have meant, the one the field reads among them. */
+    /** The places the focused event's last turn could have meant, the one the form holds among them. */
     placeChoice,
+    /** The coordinates the form vouches for now: which chip is held, if any. */
+    placeGeo,
     settled,
     switchFocus,
     taskModel: reportingEdits(taskModel, TASK_EDITS, edited),
