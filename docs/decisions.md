@@ -1109,4 +1109,4 @@ first. The decisions, one line each:
   rows keep the system's regular weight. Rejected: an underline on every
   text action (busy in rows of two or three) and `text-secondary` for all
   (reads as a caption). Fills, today markers, icons and checks keep plain
-  `primary`; iOS has no link inside a sentence yet.
+  `primary`. Open: iOS has no link inside a sentence yet.

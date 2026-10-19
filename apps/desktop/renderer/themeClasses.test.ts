@@ -42,7 +42,9 @@ describe('renderer colors', () => {
   it('come from the brand tokens, never from Tailwind’s palette', () => {
     expect(linesMatching(RAW_PALETTE, sources())).toEqual([]);
   });
+});
 
+describe('renderer text actions', () => {
   it('leave hover underlines to the shared link and action looks', () => {
     const paths = sources().filter((path) => path !== join('ui', 'buttonStyles.ts'));
     expect(linesMatching(OWN_TEXT_ACTION, paths)).toEqual([]);

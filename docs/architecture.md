@@ -988,7 +988,8 @@ gateway carries all of it. Details, limits and the threat model:
   inside a sentence `TEXT_LINK_CLASS`, a standalone text action
   `TEXT_ACTION_CLASS.primary` / `.danger` (`ui/buttonStyles.ts`; the theme
   test also fails on a hand-made `hover:underline`), and on iOS
-  `actionText(colors)`, with Cancel / Close in secondary text.
+  `actionText(colors)` (`src/ui/theme.ts`), with Cancel / Close in
+  secondary text.
 - **Desktop shell** (`renderer/calendar/`): a toolbar (`Toolbar.tsx`:
   sidebar toggle, title, ‹ Today ›, Day/Week/Month, Search, the Today
   panel toggle, New), a collapsible sidebar (mini month, calendars and
