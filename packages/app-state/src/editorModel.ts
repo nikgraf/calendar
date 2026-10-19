@@ -18,7 +18,6 @@ import {
   editorDatesOf,
   emailKey,
   geoMatches,
-  isMappableLocation,
   meetingUrl,
   openInMapsUrl,
   placeSuggestionLabel,
@@ -48,6 +47,7 @@ import {
 } from '@calendar/core';
 import { useCallback, useRef, useState } from 'react';
 import { deleteQuestion } from './deleteQuestion.ts';
+import { keptAsSaid, latestWord, locationToLookUp } from './editorLocation.ts';
 import { eventEditorChanges, type EventEditorText, vouchedGeo } from './eventEditorChanges.ts';
 import { useAccounts, useBackendMutations, useEventMaster, useLocationGeo } from './hooks.ts';
 import { useOneWrite } from './oneWrite.ts';
@@ -457,6 +457,9 @@ export const useEventEditorModel = ({
   // The text the editor opened with, or a parsed phrase set (see
   // `applyPrefill`): the one text that is looked up without a pick.
   const [givenLocation, setGivenLocation] = useState(location);
+  // The text kept as said (`keepLocationText`): no place for it, none
+  // looked up, until the field reads something else.
+  const [asSaid, setAsSaid] = useState('');
   // Coordinates for the location text, from the event (server-mirrored) or
   // a picked suggestion. Never cleared on typing: they count only while
   // geoMatches, so retyping the original text brings the map back.
@@ -466,10 +469,7 @@ export const useEventEditorModel = ({
   // before this feature, another client's edit, a quick-add location):
   // geocoded once. Typing never geocodes — the picker does that — so an
   // edit away from the given text stops the lookup.
-  const lookupLocation =
-    location === givenLocation && !geoMatches(geo, location) && isMappableLocation(location)
-      ? location
-      : '';
+  const lookupLocation = locationToLookUp({ asSaid, geo, given: givenLocation, location });
   const lookup = useLocationGeo(lookupLocation);
   const mapGeo = geoMatches(geo, location)
     ? geo
@@ -707,6 +707,7 @@ export const useEventEditorModel = ({
     description,
     // The picked coordinates, while they still match the text (`geoMatches`).
     geo: geoMatches(geo, location.trim()) ? geo : undefined,
+    locationAsSaid: keptAsSaid(asSaid, location) ? location : undefined,
     reminders: remindersDirty ? reminders : undefined,
   });
 
@@ -723,6 +724,7 @@ export const useEventEditorModel = ({
           readonly calendarKey?: string | undefined;
           readonly description: string;
           readonly geo?: GeoLocation | undefined;
+          readonly locationAsSaid?: string | undefined;
           readonly reminders: EventReminders | undefined;
         }
       | undefined,
@@ -733,6 +735,7 @@ export const useEventEditorModel = ({
     setAttendeesDirty((next?.attendees.length ?? 0) > 0);
     setDescription(next?.description ?? '');
     setGeo(next?.geo);
+    setAsSaid(next?.locationAsSaid ?? '');
     if (next?.reminders) {
       updateReminders(next.reminders);
     } else {
@@ -816,18 +819,23 @@ export const useEventEditorModel = ({
     setAttendeesDirty(true);
   };
 
+  // The last word on the place: a pick's late answer counts only while
+  // no chip or "As said" spoke after it.
+  const placeWord = useRef(latestWord()).current;
   /**
    * A typeahead row was picked: its label becomes the location text and
    * MapKit resolves that exact place. A slow answer for an older pick is
-   * harmless — coordinates only count while they match the current text.
+   * harmless — coordinates only count while they match the current text —
+   * unless "As said" put that very text back meanwhile: then it is dropped.
    */
   const pickPlace = async (suggestion: PlaceSuggestion) => {
     const label = placeSuggestionLabel(suggestion);
+    const word = placeWord.speak();
     setLocation(label);
     setPicking(true);
     try {
       const resolved = await mutations.resolveLocation({ location: label, suggestion });
-      if (resolved) {
+      if (resolved && placeWord.stands(word)) {
         setGeo(resolved);
       }
     } catch {
@@ -843,19 +851,24 @@ export const useEventEditorModel = ({
    * is that text), so Save sends the coordinates.
    */
   const applyPlace = (place: GeoLocation) => {
+    placeWord.speak();
     setLocation(place.source);
     setGivenLocation(place.source);
+    setAsSaid('');
     setGeo(place);
   };
 
   /**
    * The location text as said, no place for it: the pin a taken or
    * picked place left goes (a past place with that very text would
-   * otherwise keep it), and the text is not looked up again.
+   * otherwise keep it), and the text is not looked up — now, or when a
+   * turn or a draft switch gives it to the form again (`asSaid` travels
+   * in the extras).
    */
   const keepLocationText = (text: string) => {
+    placeWord.speak();
     setLocation(text);
-    setGivenLocation('');
+    setAsSaid(text);
     setGeo(undefined);
   };
 

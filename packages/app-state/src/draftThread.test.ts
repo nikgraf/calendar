@@ -887,6 +887,35 @@ describe('places from the words', () => {
     expect(state.turns[0]?.summary).toBe('Dinner with Teo · Fri, Aug 28 · 19:00–20:00');
   });
 
+  it('a place taken anew lets go of a text kept as said', () => {
+    // Review: "As said" travels with the draft (a turn re-gives the text to
+    // the form); a turn that moves the place must not carry it along.
+    const kept = startThread([said('Figlmüller')], 'dinner at Figlmüller', {
+      extras: {
+        attendees: [],
+        description: '',
+        locationAsSaid: 'Figlmüller',
+        reminders: undefined,
+      },
+      id: ids(),
+    });
+    expect(kept.drafts[0]?.extras?.locationAsSaid).toBe('Figlmüller');
+    const moved = refineThread(
+      kept,
+      'at Cafe Zentral',
+      [
+        {
+          id: 'd1',
+          item: said('Cafe Zentral'),
+          place: { candidates: [central], text: 'Cafe Zentral' },
+        },
+      ],
+      ids(),
+    );
+    expect(moved.drafts[0]?.extras).toMatchObject({ geo: central.geo });
+    expect(moved.drafts[0]?.extras?.locationAsSaid).toBeUndefined();
+  });
+
   it('a turn that takes the place away takes its choice with it', () => {
     // Review: the old choice lingered, hidden, and came back with the same text retyped.
     const started = startThread([said('Figlmüller')], 'dinner at Figlmüller', {

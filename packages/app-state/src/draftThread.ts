@@ -57,6 +57,8 @@ export interface DraftExtras {
   readonly geo?: GeoLocation | undefined;
   /** The list picked for the draft (`accountId:listId`), when the form showed it as a to-do. */
   readonly listKey?: string | undefined;
+  /** The location text kept as said: no place for it, none looked up (`keepLocationText`). */
+  readonly locationAsSaid?: string | undefined;
   /** A to-do's Reminders-only fields, when the form showed the draft as one. */
   readonly reminder?: ReminderFields | undefined;
   /** The notifications as edited; undefined while untouched (the calendar's default). */
@@ -325,7 +327,8 @@ const withPlace = (
     return {
       draft: {
         ...rest,
-        extras: { ...(draft.extras ?? BLANK_EXTRAS), geo: taken.geo },
+        // A place taken anew: a text kept as said before is said no more.
+        extras: { ...(draft.extras ?? BLANK_EXTRAS), geo: taken.geo, locationAsSaid: undefined },
         item: {
           kind: 'event',
           prefill: { ...draft.item.prefill, location: taken.geo.source },
