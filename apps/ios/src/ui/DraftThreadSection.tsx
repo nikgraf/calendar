@@ -1,4 +1,11 @@
-import { choiceLabel, choiceQuestion, isAtSlot, type useThreadEditor } from '@calendar/app-state';
+import {
+  choiceLabel,
+  choiceQuestion,
+  isAtSlot,
+  pickedCandidate,
+  readsAsSaid,
+  type useThreadEditor,
+} from '@calendar/app-state';
 import { formatSlotLabel, placeCandidateLabel } from '@calendar/core';
 import { SymbolView } from 'expo-symbols';
 import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
@@ -33,7 +40,9 @@ export function DraftThreadSection({
     batchError,
     canAddAll,
     dismissInvitee,
+    dismissPlace,
     drafts,
+    eventModel,
     focused,
     focusedDraft,
     inviteeChoices,
@@ -103,7 +112,25 @@ export function DraftThreadSection({
       ) : null}
       {placeChoice ? (
         <View style={styles.choice} testID="draft-place-choices">
-          <Text style={styles.note}>Which place for “{placeChoice.text}”?</Text>
+          <View style={styles.choiceHeader}>
+            <Text style={[styles.note, styles.choiceQuestion]}>Place for “{placeChoice.text}”</Text>
+            <Pressable
+              accessibilityLabel="Hide the places"
+              accessibilityRole="button"
+              disabled={!settled}
+              hitSlop={8}
+              onPress={dismissPlace}
+              style={!settled && styles.disabled}
+              testID="draft-place-dismiss"
+            >
+              <SymbolView
+                name="xmark"
+                size={12}
+                tintColor={colors['text-secondary']}
+                weight="semibold"
+              />
+            </Pressable>
+          </View>
           <ScrollView
             contentContainerStyle={styles.chips}
             horizontal
@@ -111,32 +138,41 @@ export function DraftThreadSection({
             showsHorizontalScrollIndicator={false}
             style={styles.chipScroller}
           >
-            {placeChoice.candidates.map((candidate, index) => (
-              <Pressable
-                accessibilityHint={candidate.geo.name ?? candidate.geo.source}
-                accessibilityRole="button"
-                accessibilityState={{ disabled: !settled }}
-                disabled={!settled}
-                key={`${candidate.source}:${candidate.geo.source}`}
-                onPress={() => pickPlaceChoice(candidate)}
-                style={styles.chip}
-                testID={`draft-place-pick-${String(index)}`}
-              >
-                <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.chipLabel}>
-                  {placeCandidateLabel(candidate)}
-                </Text>
-              </Pressable>
-            ))}
+            {placeChoice.candidates.map((candidate, index) => {
+              const chosen = pickedCandidate(placeChoice, eventModel.location) === candidate;
+              return (
+                <Pressable
+                  accessibilityHint={candidate.geo.name ?? candidate.geo.source}
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: !settled, selected: chosen }}
+                  disabled={!settled}
+                  key={`${candidate.source}:${candidate.geo.source}`}
+                  onPress={() => pickPlaceChoice(candidate)}
+                  style={[styles.chip, chosen && styles.chipChosen]}
+                  testID={`draft-place-pick-${String(index)}`}
+                >
+                  <Text
+                    maxFontSizeMultiplier={BOX_FONT_SCALE}
+                    style={[styles.chipLabel, chosen && styles.chipLabelChosen]}
+                  >
+                    {placeCandidateLabel(candidate)}
+                  </Text>
+                </Pressable>
+              );
+            })}
             <Pressable
               accessibilityRole="button"
-              accessibilityState={{ disabled: !settled }}
+              accessibilityState={{
+                disabled: !settled,
+                selected: readsAsSaid(placeChoice, eventModel.location),
+              }}
               disabled={!settled}
               onPress={keepPlace}
               style={styles.keep}
               testID="draft-place-keep"
             >
               <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.secondary}>
-                Keep “{placeChoice.text}”
+                As said: “{placeChoice.text}”
               </Text>
             </Pressable>
           </ScrollView>

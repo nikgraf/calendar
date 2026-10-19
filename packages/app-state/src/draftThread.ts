@@ -79,9 +79,9 @@ export interface Draft {
   readonly item: QuickAddItem;
   /**
    * The places the last turn's location text could mean, for the user to
-   * pick from (`draftPlaces.ts`), when none was taken without asking. It
-   * stays until picked or kept as said, or a turn sets another place;
-   * Undo brings back the one a turn settled.
+   * pick from (`draftPlaces.ts`) — the one taken marked. It stays until
+   * dismissed, or a turn sets another place; Undo brings back the one a
+   * turn settled.
    */
   readonly placeChoice?: PlaceChoice | undefined;
   /**
@@ -302,11 +302,13 @@ const withGuests = (
 };
 
 /**
- * A turn's place folded into a draft: the one taken without asking
- * becomes the location, pin and all (its text replaces what was said,
- * so a dictated "Cafe Zentral" reads Café Central); else the choice
- * waits on the draft, or nothing — the text stays as said. What it
- * says: "which “Cafe Zentral”?" for a choice.
+ * A turn's place folded into a draft: the best one that resembles the
+ * text becomes the location, pin and all (its text replaces what was
+ * said, so a dictated "Cafe Zentral" reads Café Central), and the rest
+ * stay on the draft to pick from; with none resembling it the text
+ * stays as said and the hits wait as the choice. What it says: "3
+ * places" beside the place taken, "which “Kaffee Sperl”?" for a choice
+ * alone.
  */
 const withPlace = (
   draft: Draft,
@@ -317,6 +319,7 @@ const withPlace = (
   }
   const { placeChoice: _choice, ...rest } = draft;
   const { choice, taken } = settlePlace(change);
+  const chosen = choice ? { placeChoice: choice } : {};
   if (taken) {
     return {
       draft: {
@@ -326,12 +329,13 @@ const withPlace = (
           kind: 'event',
           prefill: { ...draft.item.prefill, location: taken.geo.source },
         },
+        ...chosen,
       },
-      said: [],
+      said: choice ? [`${String(choice.candidates.length)} places`] : [],
     };
   }
   return {
-    draft: choice ? { ...rest, placeChoice: choice } : rest,
+    draft: { ...rest, ...chosen },
     said: choice ? [`which “${choice.text}”?`] : [],
   };
 };

@@ -1,11 +1,11 @@
 import { normalizeLocationKey, type PlaceCandidate, preselectedPlace } from '@calendar/core';
 
 /**
- * The places a turn's location text could mean, left for the user to
- * choose from when none could be taken without asking: the candidates
- * (`placeCandidates`: past places first, then MapKit's matches) and the
- * text as said. A pick makes the place the draft's, pin and all; "keep"
- * leaves the text as it is.
+ * The places a turn's location text could mean: the candidates
+ * (`placeCandidates`: past places first, then MapKit's hits) and the
+ * text as said. The best one that resembles the text is taken at once;
+ * the row stays, the taken one marked, so another can be picked (pin and
+ * all) or the text had back as said.
  */
 export interface PlaceChoice {
   readonly candidates: ReadonlyArray<PlaceCandidate>;
@@ -19,34 +19,48 @@ export interface PlaceChange {
   readonly text: string;
 }
 
+const same = (a: string, b: string): boolean => normalizeLocationKey(a) === normalizeLocationKey(b);
+
 /**
  * The choice as it applies to the form now: only while the location
- * still reads the text the candidates were found for. Edited by hand,
- * picked from the typeahead or cleared, the field names something else,
- * and the chips would put the old place over it.
+ * reads the text it was found for, or one of its candidates. Edited by
+ * hand, picked from the typeahead or cleared, the field names something
+ * else, and the chips would put an old place over it.
  */
 export const livePlaceChoice = (
   choice: PlaceChoice | undefined,
   location: string,
 ): PlaceChoice | undefined =>
-  choice !== undefined && normalizeLocationKey(choice.text) === normalizeLocationKey(location)
+  choice !== undefined &&
+  (same(choice.text, location) ||
+    choice.candidates.some((candidate) => same(candidate.geo.source, location)))
     ? choice
     : undefined;
 
+/** The candidate the location reads now, if one. */
+export const pickedCandidate = (
+  choice: PlaceChoice,
+  location: string,
+): PlaceCandidate | undefined =>
+  choice.candidates.find((candidate) => same(candidate.geo.source, location));
+
+/** Whether the location reads the text as said, not a candidate. */
+export const readsAsSaid = (choice: PlaceChoice, location: string): boolean =>
+  same(choice.text, location);
+
 /**
- * What a turn's candidates come to: the one place to take without
- * asking (`preselectedPlace`), else a choice when there is anything to
- * choose from, else nothing — the text stays as said, a room name or a
- * place nobody knows.
+ * What a turn's candidates come to: the best one that resembles the
+ * text is taken (`preselectedPlace`); the choice stays whenever there is
+ * anything to pick from — more than the one taken, or any at all when
+ * none was — and is nothing for a text nobody knows.
  */
 export const settlePlace = (
   change: PlaceChange,
 ): { readonly choice?: PlaceChoice; readonly taken?: PlaceCandidate } => {
   const taken = preselectedPlace(change.candidates);
-  if (taken) {
-    return { taken };
-  }
-  return change.candidates.length > 0
-    ? { choice: { candidates: change.candidates, text: change.text } }
-    : {};
+  const choice =
+    change.candidates.length > (taken ? 1 : 0)
+      ? { candidates: change.candidates, text: change.text }
+      : undefined;
+  return { ...(choice ? { choice } : {}), ...(taken ? { taken } : {}) };
 };

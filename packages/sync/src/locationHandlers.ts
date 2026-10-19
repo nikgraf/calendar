@@ -9,6 +9,7 @@ import {
   type PlaceCandidate,
   placeMatch,
   placesResembling,
+  placeSuggestionLabel,
   rankPastPlaces,
   regionForTimeZone,
 } from '@calendar/core';
@@ -151,34 +152,68 @@ export const locationHandlers: Pick<
             : [],
         ),
       );
-      // Then MapKit's matches, each with the text a pick writes: the
-      // name and address, as a picked typeahead row would.
+      // Then MapKit, asked two ways side by side: the natural-language
+      // search, which reads a misspelling, and the completer's rows,
+      // which know a place's branches, each row resolved to its exact
+      // place. The hits that resemble the text come first, the others
+      // after them, to pick from. Each carries the text a pick writes:
+      // the name and address, as a picked typeahead row would.
       const geo = yield* GeoClient;
       const region = yield* regionHint;
-      const places = yield* geo.resolve({ limit: CANDIDATE_LIMIT, query: location, region }).pipe(
-        Effect.timeout(CANDIDATE_SEARCH_TIMEOUT),
+      const searched = geo
+        .resolve({ limit: CANDIDATE_LIMIT, query: location, region })
+        .pipe(Effect.catch(() => Effect.succeed([])));
+      const completed = geo.search({ limit: CANDIDATE_LIMIT, query: location, region }).pipe(
+        Effect.flatMap((rows) =>
+          Effect.forEach(
+            rows,
+            (row) =>
+              geo.resolve({ limit: 1, query: placeSuggestionLabel(row), suggestion: row }).pipe(
+                Effect.map((places) => places[0]),
+                Effect.catch(() => Effect.succeed(undefined)),
+              ),
+            { concurrency: 'unbounded' },
+          ),
+        ),
+        Effect.map((places) =>
+          places.filter((place): place is GeoPlaceJson => place !== undefined),
+        ),
         Effect.catch(() => Effect.succeed([])),
       );
-      const found = placesResembling(location, places).flatMap((place): Array<PlaceCandidate> => {
-        const match = placeMatch(location, place);
-        if (match === undefined) {
-          return [];
-        }
+      const [fromSearch, fromRows] = yield* Effect.all([searched, completed], {
+        concurrency: 'unbounded',
+      }).pipe(
+        Effect.timeout(CANDIDATE_SEARCH_TIMEOUT),
+        Effect.catch(() =>
+          Effect.succeed([[], []] as readonly [
+            ReadonlyArray<GeoPlaceJson>,
+            ReadonlyArray<GeoPlaceJson>,
+          ]),
+        ),
+      );
+      const hits = [...fromSearch, ...fromRows];
+      const candidate = (place: GeoPlaceJson, match: PlaceCandidate['match']): PlaceCandidate => {
         const name = place.name ?? location;
-        return [
-          {
-            ...(place.address ? { address: place.address } : {}),
-            geo: new GeoLocation({
-              lat: place.lat,
-              lng: place.lng,
-              name: place.name,
-              source: place.address ? `${name}, ${place.address}` : name,
-            }),
-            match,
-            source: 'mapkit',
-          },
-        ];
-      });
+        return {
+          ...(place.address ? { address: place.address } : {}),
+          geo: new GeoLocation({
+            lat: place.lat,
+            lng: place.lng,
+            name: place.name,
+            source: place.address ? `${name}, ${place.address}` : name,
+          }),
+          match,
+          source: 'mapkit',
+        };
+      };
+      const found = [
+        ...placesResembling(location, hits).map((place) =>
+          candidate(place, placeMatch(location, place) ?? 'search'),
+        ),
+        ...hits
+          .filter((place) => placeMatch(location, place) === undefined)
+          .map((place) => candidate(place, 'search')),
+      ];
       return mergePlaceCandidates(history, found);
     }),
 

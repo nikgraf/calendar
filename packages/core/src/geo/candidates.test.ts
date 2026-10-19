@@ -63,11 +63,13 @@ const mapkit = (
 });
 
 describe('mergePlaceCandidates', () => {
-  it('puts history first and leaves out a search hit that is a past place over again', () => {
+  it('puts history first and lists each place once, however many searches found it', () => {
     const history = rankPastPlaces('Figlmüller', [figlmueller, lugeck]);
     const found = [
       mapkit('Figlmüller', { lat: 48.2001, lng: 16.3701 }, 'Wollzeile 5'),
       mapkit('Figlmüller Bäckerstrasse', { lat: 48.23, lng: 16.4 }, 'Bäckerstraße 6'),
+      // The completer's row for the same place: the same text.
+      mapkit('Figlmüller Bäckerstrasse', { lat: 48.2301, lng: 16.4001 }, 'Bäckerstraße 6'),
       mapkit('figlmüller', { lat: 48.25, lng: 16.45 }),
     ];
     expect(mergePlaceCandidates(history, found).map((c) => [c.source, c.geo.source])).toEqual([
@@ -91,23 +93,20 @@ const found = (source: string, match: PlaceCandidate['match']): PlaceCandidate =
 });
 
 describe('preselectedPlace', () => {
-  it('takes a past place, or a search match by name or words, when nothing ranks beside it', () => {
+  it('takes the best candidate that resembles the text, whatever ranks beside it', () => {
     expect(preselectedPlace([history('Café Central', 'phonetic')])?.geo.source).toBe(
       'Café Central',
     );
     expect(
       preselectedPlace([found('Figlmüller', 'words'), found('Figl', 'phonetic')])?.geo.source,
     ).toBe('Figlmüller');
-    expect(
-      preselectedPlace([history('Figlmüller', 'exact'), history('Figlmüller Lugeck', 'words')])?.geo
-        .source,
-    ).toBe('Figlmüller');
+    expect(preselectedPlace([found('Café Central', 'phonetic')])?.geo.source).toBe('Café Central');
+    // Two ranking the same: the first still, the other a chip away.
+    expect(preselectedPlace([found('A', 'words'), found('B', 'words')])?.geo.source).toBe('A');
   });
 
-  it('asks instead when the first is a search hit by sound alone, or two rank the same', () => {
-    expect(preselectedPlace([found('Café Central', 'phonetic')])).toBeUndefined();
-    expect(preselectedPlace([history('Tom', 'words'), history('Tim', 'words')])).toBeUndefined();
-    expect(preselectedPlace([found('A', 'words'), found('B', 'words')])).toBeUndefined();
+  it('takes nothing when the best is a hit that does not resemble the text', () => {
+    expect(preselectedPlace([found('Kaffeeweg', 'search')])).toBeUndefined();
     expect(preselectedPlace([])).toBeUndefined();
   });
 });

@@ -108,6 +108,7 @@ export function EditorPanel({
     batchError,
     canAddAll,
     dismissInvitee,
+    dismissPlace,
     drafts,
     eventModel,
     flash,
@@ -266,6 +267,8 @@ export function EditorPanel({
               <PlaceChoices
                 choice={placeChoice}
                 disabled={!settled}
+                location={eventModel.location}
+                onDismiss={dismissPlace}
                 onKeep={keepPlace}
                 onPick={pickPlaceChoice}
               />

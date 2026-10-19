@@ -559,11 +559,11 @@ export const useThreadEditor = ({
   };
 
   /**
-   * The places the focused event's last turn could have meant, when none
-   * was taken without asking — while the field still reads that text
-   * (`livePlaceChoice`). A pick makes it the form's place, pin and all,
-   * as a hand edit; "keep" leaves the text as said. Either way the
-   * choice goes.
+   * The places the focused event's last turn could have meant, the one
+   * the field reads marked — while it reads that text or one of them
+   * (`livePlaceChoice`). A pick makes a place the form's, pin and all,
+   * as a hand edit; "as said" gives the text back as it was said, pin
+   * gone; the row stays until dismissed.
    */
   const placeChoice =
     mode === 'event' ? livePlaceChoice(focusedDraft?.placeChoice, eventModel.location) : undefined;
@@ -573,9 +573,15 @@ export const useThreadEditor = ({
     }
     edited();
     eventModel.applyPlace(candidate.geo);
-    thread.dropPlace(focused);
   };
   const keepPlace = () => {
+    if (!settled || placeChoice === undefined) {
+      return;
+    }
+    edited();
+    eventModel.setLocation(placeChoice.text);
+  };
+  const dismissPlace = () => {
     if (settled) {
       thread.dropPlace(focused);
     }
@@ -710,6 +716,8 @@ export const useThreadEditor = ({
     canAddAll,
     /** A name let go of: no contact is picked for it. */
     dismissInvitee,
+    /** The place row let go of; the field keeps what it reads. */
+    dismissPlace,
     drafts,
     /** For the forms: the setters a person moves count as `userEdits`. */
     eventModel: reportingEdits(eventModel, EVENT_EDITS, edited),
@@ -719,7 +727,7 @@ export const useThreadEditor = ({
     focusedDraft,
     /** Names the focused event's turns invited that need a contact picked. */
     inviteeChoices,
-    /** The location text kept as said: no place is picked for it. */
+    /** The location text back as said, pin gone; the row stays. */
     keepPlace,
     /** The kind control's switch counts as an edit too. */
     kinds: reportingEdits(kinds, ['switchTo'], edited),
@@ -730,7 +738,7 @@ export const useThreadEditor = ({
     pickInvitee,
     /** A place picked among a turn's candidates: the form takes its text and pin. */
     pickPlaceChoice,
-    /** The places the focused event's last turn could have meant, for the user to pick from. */
+    /** The places the focused event's last turn could have meant, the one the field reads among them. */
     placeChoice,
     settled,
     switchFocus,

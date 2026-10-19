@@ -285,9 +285,10 @@ describe('the resemblance gate', () => {
       subtitle: 'Wollzeile 5, 1010 Wien',
       title: 'Figlmüller Wollzeile',
     },
+    // Streets apart from the Wollzeile one: nearer than 100 m they would be one place.
     {
-      lat: 48.2095,
-      lng: 16.376,
+      lat: 48.212,
+      lng: 16.379,
       name: 'Figlmüller Bäckerstrasse',
       subtitle: 'Bäckerstraße 6, 1010 Wien',
       title: 'Figlmüller',
@@ -324,18 +325,25 @@ describe('the resemblance gate', () => {
   });
 
   it.effect(
-    'offers every match that resembles the text as a candidate, best first, uncached',
+    'offers the hits that resemble the text first, then the rest, each once, uncached',
     () => {
       const { client, state } = makeFakeGeoClient({ places: figlmuellers });
       return Effect.gen(function* () {
         const candidates = yield* locationHandlers.placeCandidates({ location: 'Figlmüller' });
-        expect(candidates.map((candidate) => candidate.geo.name)).toEqual([
-          'Figlmüller Wollzeile',
-          'Figlmüller Bäckerstrasse',
+        // The search and the completer both answer the Figlmüllers: listed once.
+        expect(candidates.map((candidate) => [candidate.geo.name, candidate.match])).toEqual([
+          ['Figlmüller Wollzeile', 'words'],
+          ['Figlmüller Bäckerstrasse', 'words'],
+          ['Figl Bar', 'search'],
         ]);
-        expect(candidates[0]).toMatchObject({ match: 'words', source: 'mapkit' });
+        // A pick writes the name and address, as a picked typeahead row would.
+        expect(candidates[0]).toMatchObject({
+          address: 'Wollzeile 5, 1010 Wien',
+          geo: { source: 'Figlmüller Wollzeile, Wollzeile 5, 1010 Wien' },
+          source: 'mapkit',
+        });
         yield* locationHandlers.placeCandidates({ location: 'Figlmüller' });
-        expect(state.calls).toEqual(['resolve:Figlmüller', 'resolve:Figlmüller']);
+        expect(state.calls.filter((call) => call === 'resolve:Figlmüller')).toHaveLength(2);
         expect(
           yield* locationHandlers.placeCandidates({ location: 'https://zoom.us/j/1' }),
         ).toEqual([]);

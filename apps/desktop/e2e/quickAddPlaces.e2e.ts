@@ -5,9 +5,9 @@ import { type App, launchApp, readEvents } from './harness.ts';
 // The place a phrase names: the fixture model takes the location part of
 // its grammar as written, and the thread looks it up — the user's own
 // past places first (a seeded event with coordinates), then the geo
-// fixture's places in MapKit's stead. A past place found by sound is
-// taken without asking, text and pin; two search hits that rank the
-// same are a choice under the field; a text nobody knows stays as said.
+// fixture's places in MapKit's stead. The best one that resembles the
+// text is taken at once, text and pin, and the rest wait as chips under
+// the field, the taken one pressed; a text nobody knows stays as said.
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 const CENTRAL = new GeoLocation({
@@ -64,7 +64,8 @@ const seed = {
   ],
 };
 
-// Two Figlmüllers for the search: neither outranks the other.
+// Two Figlmüllers for the search, streets apart (nearer than 100 m they
+// would be one place): neither outranks the other.
 const geo = {
   fixture: {
     places: [
@@ -76,8 +77,8 @@ const geo = {
         title: 'Figlmüller',
       },
       {
-        lat: 48.2095,
-        lng: 16.376,
+        lat: 48.212,
+        lng: 16.379,
         name: 'Figlmüller',
         subtitle: 'Bäckerstraße 6, 1010 Wien',
         title: 'Figlmüller Bäckerstrasse',
@@ -90,6 +91,7 @@ const INPUT = '[data-testid="quick-add-input"]';
 const COMMAND_N = `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', metaKey: true }))`;
 const location = `(document.querySelector('input[aria-label="Location"]')?.value ?? '')`;
 const choices = `!!document.querySelector('[data-testid="draft-place-choices"]')`;
+const pressed = `(document.querySelector('[data-testid="draft-place-choices"] [aria-pressed="true"]')?.dataset.testid ?? '')`;
 const newestSummary = `document.querySelector('[data-testid="draft-turn-summary"]')?.textContent ?? ''`;
 
 describe('Places from a quick-add phrase', () => {
@@ -136,15 +138,24 @@ describe('Places from a quick-add phrase', () => {
       .toMatchObject({ geo: { lat: CENTRAL.lat, lng: CENTRAL.lng, source: 'Café Central' } });
   });
 
-  it('asks which of two search hits, takes the pick, and keeps a text nobody knows', async () => {
+  it('takes the first of two search hits, offers the other, gives the text back, and hides the row', async () => {
     const { cdp } = app;
     await openNew();
     await phrase('Lunch | +0 | 12:00-13:00 | Figlmüller');
-    await cdp.waitFor(choices);
-    expect(await cdp.eval<string>(location)).toBe('Figlmüller');
-    expect(await cdp.eval<string>(newestSummary)).toContain('which “Figlmüller”?');
-    await cdp.clickTestId('draft-place-pick-0');
+    // The first is taken at once; both are chips, the taken one pressed.
     await cdp.waitFor(`${location} === 'Figlmüller, Wollzeile 5, 1010 Wien'`);
+    await cdp.waitFor(choices);
+    expect(await cdp.eval<string>(newestSummary)).toContain('2 places');
+    expect(await cdp.eval<string>(pressed)).toBe('draft-place-pick-0');
+    await cdp.clickTestId('draft-place-pick-1');
+    await cdp.waitFor(`${location} === 'Figlmüller, Bäckerstraße 6, 1010 Wien'`);
+    expect(await cdp.eval<string>(pressed)).toBe('draft-place-pick-1');
+    // The text back as said: no place, the row stays.
+    await cdp.clickTestId('draft-place-keep');
+    await cdp.waitFor(`${location} === 'Figlmüller'`);
+    expect(await cdp.eval<string>(pressed)).toBe('draft-place-keep');
+    expect(await cdp.eval<boolean>(choices)).toBe(true);
+    await cdp.clickTestId('draft-place-dismiss');
     await cdp.waitFor(`!${choices}`);
 
     // A later turn: a place nobody knows stays as said, nothing to pick.
@@ -152,11 +163,14 @@ describe('Places from a quick-add phrase', () => {
     await cdp.waitFor(`${location} === 'Room 9'`);
     expect(await cdp.eval<boolean>(choices)).toBe(false);
 
-    // "Keep" leaves the text as said.
+    // Edited by hand to something else, the row goes by itself.
     await phrase('| | | Figlmüller');
     await cdp.waitFor(choices);
-    await cdp.clickTestId('draft-place-keep');
+    await cdp.eval(`(() => {
+      const input = document.querySelector('input[aria-label="Location"]');
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(input, 'Figlmüller Lugeck');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`);
     await cdp.waitFor(`!${choices}`);
-    expect(await cdp.eval<string>(location)).toBe('Figlmüller');
   });
 });

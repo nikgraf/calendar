@@ -23,7 +23,7 @@ import {
   updateDraft,
 } from './draftThread.ts';
 import { Contact, GeoLocation, type PlaceCandidate } from '@calendar/core';
-import { livePlaceChoice } from './draftPlaces.ts';
+import { livePlaceChoice, pickedCandidate, readsAsSaid } from './draftPlaces.ts';
 import type { QuickAddItem } from './quickAddItem.ts';
 
 const dinner: QuickAddItem = {
@@ -885,18 +885,30 @@ describe('places from the words', () => {
     expect(state.turns[0]?.summary).toBe('Dinner with Teo · Fri, Aug 28 · 19:00–20:00');
   });
 
-  it('leaves a choice when the search found several, and nothing for none', () => {
+  it('takes the best of several and keeps the rest to pick from; a text nobody knows stays', () => {
     const two = [figl('Figlmüller, Wollzeile 5'), figl('Figlmüller, Bäckerstraße 6')];
     const state = startThread([said('Figlmüller')], 'dinner at Figlmüller', {
       id: ids(),
       place: { candidates: two, text: 'Figlmüller' },
     });
     expect(state.drafts[0]).toMatchObject({
-      item: { prefill: { location: 'Figlmüller' } },
+      extras: { geo: two[0]!.geo },
+      item: { prefill: { location: 'Figlmüller, Wollzeile 5' } },
       placeChoice: { candidates: two, text: 'Figlmüller' },
     });
-    expect(state.drafts[0]?.extras).toBeUndefined();
-    expect(state.turns[0]?.summary).toContain('which “Figlmüller”?');
+    expect(state.turns[0]?.summary).toContain('2 places');
+    // A hit that does not resemble the text is offered, not taken.
+    const other: PlaceCandidate = { ...figl('Kaffeeweg'), match: 'search' };
+    const offered = startThread([said('Kaffee Sperl')], 'at Kaffee Sperl', {
+      id: ids(),
+      place: { candidates: [other], text: 'Kaffee Sperl' },
+    });
+    expect(offered.drafts[0]).toMatchObject({
+      item: { prefill: { location: 'Kaffee Sperl' } },
+      placeChoice: { candidates: [other] },
+    });
+    expect(offered.drafts[0]?.extras).toBeUndefined();
+    expect(offered.turns[0]?.summary).toContain('which “Kaffee Sperl”?');
     const none = startThread([said('Room 4')], 'dinner in Room 4', {
       id: ids(),
       place: { candidates: [], text: 'Room 4' },
@@ -942,11 +954,18 @@ describe('places from the words', () => {
     expect(kept.drafts[0]?.placeChoice?.text).toBe('Figlmüller');
   });
 
-  it('applies to the form only while the location still reads its text', () => {
+  it('applies to the form while the location reads its text or one of its places', () => {
     // Review: an edited or cleared location kept the old chips, whose pick put the old place over it.
-    const choice = { candidates: [figl('A'), figl('B')], text: 'Figlmüller' };
+    const choice = {
+      candidates: [figl('Figlmüller, A'), figl('Figlmüller, B')],
+      text: 'Figlmüller',
+    };
     expect(livePlaceChoice(choice, 'Figlmüller')).toBe(choice);
     expect(livePlaceChoice(choice, '  figlmüller ')).toBe(choice);
+    expect(livePlaceChoice(choice, 'Figlmüller, B')).toBe(choice);
+    expect(pickedCandidate(choice, 'Figlmüller, B')).toBe(choice.candidates[1]);
+    expect(pickedCandidate(choice, 'Figlmüller')).toBeUndefined();
+    expect(readsAsSaid(choice, 'figlmüller')).toBe(true);
     expect(livePlaceChoice(choice, 'Figlmüller Lugeck')).toBeUndefined();
     expect(livePlaceChoice(choice, '')).toBeUndefined();
     expect(livePlaceChoice(undefined, 'Figlmüller')).toBeUndefined();

@@ -16,7 +16,8 @@ export const PlaceCandidate = Schema.Struct({
   address: Schema.optional(Schema.String),
   /** The coordinates; `source` is the text the location field takes on a pick. */
   geo: GeoLocation,
-  match: Schema.Literals(['exact', 'phonetic', 'words']),
+  /** How it resembles the text; `search`: a hit that does not, offered but never taken unasked. */
+  match: Schema.Literals(['exact', 'phonetic', 'search', 'words']),
   /** `history`: a place of the user's own past events; `mapkit`: a search match. */
   source: Schema.Literals(['history', 'mapkit']),
 });
@@ -74,51 +75,47 @@ export const rankPastPlaces = (
     .map(({ match, place }) => ({ geo: place.geo, match, source: 'history' as const }));
 };
 
-/** Nearer than this, a search hit is the past place over again. */
+/** Nearer than this, a search hit is a place already listed over again. */
 const SAME_PLACE_METERS = 100;
 
+/** Whether the place is one already listed: the same text, or within a hundred meters. */
+const listed = (place: GeoLocation, among: ReadonlyArray<PlaceCandidate>): boolean =>
+  among.some(
+    (candidate) =>
+      normalizeLocationKey(candidate.geo.source) === normalizeLocationKey(place.source) ||
+      distanceMeters(candidate.geo, place) <= SAME_PLACE_METERS,
+  );
+
 /**
- * History first, then the search's matches that are not a past place
- * over again (the same text, or within a hundred meters), at most
- * `limit` in all.
+ * History first, then the search's hits in their order, each once (two
+ * searches answer the same place; the same text, or within a hundred
+ * meters, is one place), at most `limit` in all.
  */
 export const mergePlaceCandidates = (
   history: ReadonlyArray<PlaceCandidate>,
   found: ReadonlyArray<PlaceCandidate>,
   limit: number = PLACE_CANDIDATE_LIMIT,
 ): ReadonlyArray<PlaceCandidate> => {
-  const known = history.map((candidate) => candidate.geo);
-  const fresh = found.filter(
-    (candidate) =>
-      !known.some(
-        (place) =>
-          normalizeLocationKey(place.source) === normalizeLocationKey(candidate.geo.source) ||
-          distanceMeters(place, candidate.geo) <= SAME_PLACE_METERS,
-      ),
-  );
-  return [...history, ...fresh].slice(0, limit);
+  const merged: Array<PlaceCandidate> = [...history];
+  for (const candidate of found) {
+    if (!listed(candidate.geo, merged)) {
+      merged.push(candidate);
+    }
+  }
+  return merged.slice(0, limit);
 };
 
 /**
- * The candidate a turn may take without asking: the first, when it is a
- * past place, or a search match by name or words (never by sound alone),
- * and nothing else ranks beside it — two past places matching the same
- * way are a question, not a pick.
+ * The candidate a turn takes without asking: the best one, when it
+ * resembles the text at all — a past place, or a search match by name,
+ * words or sound. A hit that does not resemble the text is offered, never
+ * taken: the text stays as said.
  */
 export const preselectedPlace = (
   candidates: ReadonlyArray<PlaceCandidate>,
 ): PlaceCandidate | undefined => {
-  const [first, second] = candidates;
-  if (first === undefined) {
-    return undefined;
-  }
-  if (first.source === 'mapkit' && first.match === 'phonetic') {
-    return undefined;
-  }
-  if (second !== undefined && second.source === first.source && second.match === first.match) {
-    return undefined;
-  }
-  return first;
+  const [first] = candidates;
+  return first !== undefined && first.match !== 'search' ? first : undefined;
 };
 
 /** A candidate as a chip names it: a past place by its text, a search hit by its name and address. */
