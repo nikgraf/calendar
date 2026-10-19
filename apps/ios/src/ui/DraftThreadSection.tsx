@@ -329,14 +329,14 @@ const makeStyles = (colors: ThemeColors) =>
       paddingVertical: 7,
     },
     chipChosen: {
-      backgroundColor: colors.selection,
+      backgroundColor: colors.primary,
     },
     chipLabel: {
       color: colors.text,
       fontSize: 15,
     },
     chipLabelChosen: {
-      color: colors['on-selection'],
+      color: colors['on-primary'],
       fontWeight: '600',
     },
     // A horizontal ScrollView in a column stretches unless told not to.

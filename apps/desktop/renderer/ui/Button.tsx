@@ -16,7 +16,7 @@ const SIZE = {
 
 /**
  * A text button in one of the four roles the design uses: the one filled
- * plum action of a surface, a soft-filled secondary, a quiet ghost, and a
+ * ink action of a surface, a soft-filled secondary, a quiet ghost, and a
  * red-text destructive one. Always `type="button"` unless told otherwise.
  */
 export function Button({

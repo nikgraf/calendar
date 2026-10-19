@@ -138,7 +138,7 @@ export function SettingsWindow() {
       aria-controls={`settings-pane-${entry.id}`}
       aria-selected={pane === entry.id}
       className={`flex h-8 items-center gap-2.5 rounded-control px-2 text-left text-[13px] ${
-        pane === entry.id ? 'bg-selection text-on-selection' : 'hover:bg-fill'
+        pane === entry.id ? 'bg-selection font-medium text-on-selection' : 'hover:bg-fill'
       }`}
       data-testid={`settings-tab-${entry.id}`}
       key={entry.id}

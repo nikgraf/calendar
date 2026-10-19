@@ -51,7 +51,7 @@ a:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline: 3px solid var(--focus, #85658e);
+  outline: 3px solid var(--focus, #6e6478);
   outline-offset: 4px;
 }
 img {
@@ -896,7 +896,7 @@ main,
   justify-content: center;
   gap: 14px;
   border: 0;
-  background: var(--primary, #6b5473);
+  background: var(--primary, #2b2630);
   color: var(--on-primary, #fff);
   padding: 11px 17px;
   border-radius: 8px;
@@ -1062,7 +1062,7 @@ footer {
     transform: translateY(-3px);
   }
   .primary-button:hover {
-    background: var(--primary-hover, #584360);
+    background: var(--primary-hover, #17141b);
   }
   .quiet-button:hover {
     background: var(--surface-subtle);
