@@ -67,7 +67,8 @@ tags:
       # (empty parts unchanged) moves the times and lists a turn; Undo takes
       # it back; a finder phrase as a later turn puts the draft in the best
       # free slot of next week's mornings and offers the others as chips;
-      # a turn that invites makes guests of the contacts it names.
+      # a turn that invites makes guests of the contacts it names; a turn
+      # that sets a place takes a past place said by sound.
       # The calendar behind the sheet draws the draft: lowered to half
       # height (a tap on the grabber), it shows the draft's day with a
       # dashed block the grid scrolled to above the sheet, and the block
@@ -153,6 +154,25 @@ tags:
                 direction: DOWN
                 timeout: 10000
             - assertVisible: 'Anna Lee'
+            # A turn that sets a place: the fixture takes the location
+            # part as written, and the thread finds it among the past
+            # places by sound — the fixture coffee at Café Central — so the
+            # field reads the place's own text, pin and all.
+            - runFlow:
+                file: ../common/apply-quick-add.yaml
+                env:
+                  PHRASE: '| | | Cafe Zentral'
+            # The invitee steps scrolled the form down; the field is above.
+            - scrollUntilVisible:
+                element:
+                  id: 'location-input'
+                direction: UP
+                timeout: 10000
+            - extendedWaitUntil:
+                visible:
+                  id: 'location-input'
+                  text: 'Café Central'
+                timeout: 20000
       # Dictation is deliberately not asserted here: Maestro cannot inject
       # audio and simulators carry no speech assets, so the mic disables
       # itself once prepare() fails. Gating an assertion on the mic being

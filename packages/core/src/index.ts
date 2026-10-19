@@ -26,6 +26,7 @@ export * from './editor/taskMoveLoss.ts';
 export * from './editor/writable.ts';
 export * from './eventIdentity.ts';
 export * from './experimental.ts';
+export * from './geo/candidates.ts';
 export * from './geo/location.ts';
 export * from './geo/phonetic.ts';
 export * from './geo/regions.ts';

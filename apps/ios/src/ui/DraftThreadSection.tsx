@@ -1,5 +1,12 @@
-import { choiceLabel, choiceQuestion, isAtSlot, type useThreadEditor } from '@calendar/app-state';
-import { formatSlotLabel } from '@calendar/core';
+import {
+  choiceLabel,
+  choiceQuestion,
+  isAtSlot,
+  pickedCandidate,
+  readsAsSaid,
+  type useThreadEditor,
+} from '@calendar/app-state';
+import { formatSlotLabel, placeCandidateLabel } from '@calendar/core';
 import { SymbolView } from 'expo-symbols';
 import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { ThreadTurnList } from './ThreadTurnList.tsx';
@@ -33,13 +40,19 @@ export function DraftThreadSection({
     batchError,
     canAddAll,
     dismissInvitee,
+    dismissPlace,
     drafts,
+    eventModel,
     focused,
     focusedDraft,
     inviteeChoices,
+    keepPlace,
     liveItem,
     moveToSlot,
     pickInvitee,
+    pickPlaceChoice,
+    placeChoice,
+    placeGeo,
     settled,
     switchFocus,
     thread,
@@ -97,6 +110,73 @@ export function DraftThreadSection({
             );
           })}
         </ScrollView>
+      ) : null}
+      {placeChoice ? (
+        <View style={styles.choice} testID="draft-place-choices">
+          <View style={styles.choiceHeader}>
+            <Text style={[styles.note, styles.choiceQuestion]}>Place for “{placeChoice.text}”</Text>
+            <Pressable
+              accessibilityLabel="Hide the places"
+              accessibilityRole="button"
+              disabled={!settled}
+              hitSlop={8}
+              onPress={dismissPlace}
+              style={!settled && styles.disabled}
+              testID="draft-place-dismiss"
+            >
+              <SymbolView
+                name="xmark"
+                size={12}
+                tintColor={colors['text-secondary']}
+                weight="semibold"
+              />
+            </Pressable>
+          </View>
+          {/* Wrapped, not scrolled: a place's label is its name and address,
+              wider than the sheet at times — in a horizontal row one such
+              label wrapped and stretched every pill to two lines, and the
+              first filled the row with the rest out of sight. */}
+          <View style={styles.placeChips}>
+            {placeChoice.candidates.map((candidate, index) => {
+              const chosen =
+                pickedCandidate(placeChoice, eventModel.location, placeGeo) === candidate;
+              return (
+                <Pressable
+                  accessibilityHint={candidate.geo.name ?? candidate.geo.source}
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: !settled, selected: chosen }}
+                  disabled={!settled}
+                  key={`${candidate.source}:${candidate.geo.source}`}
+                  onPress={() => pickPlaceChoice(candidate)}
+                  style={[styles.chip, styles.placeChip, chosen && styles.chipChosen]}
+                  testID={`draft-place-pick-${String(index)}`}
+                >
+                  <Text
+                    maxFontSizeMultiplier={BOX_FONT_SCALE}
+                    style={[styles.chipLabel, chosen && styles.chipLabelChosen]}
+                  >
+                    {placeCandidateLabel(candidate)}
+                  </Text>
+                </Pressable>
+              );
+            })}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{
+                disabled: !settled,
+                selected: readsAsSaid(placeChoice, eventModel.location, placeGeo),
+              }}
+              disabled={!settled}
+              onPress={keepPlace}
+              style={styles.keep}
+              testID="draft-place-keep"
+            >
+              <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.secondary}>
+                As said: “{placeChoice.text}”
+              </Text>
+            </Pressable>
+          </View>
+        </View>
       ) : null}
       {inviteeChoices.length > 0 ? (
         <View style={styles.choices} testID="draft-invitee-choices">
@@ -289,10 +369,16 @@ const makeStyles = (colors: ThemeColors) =>
       color: colors.danger,
       fontSize: 13,
     },
+    keep: {
+      justifyContent: 'center',
+      paddingHorizontal: 6,
+      paddingVertical: 7,
+    },
     note: {
       color: colors['text-secondary'],
       fontSize: 13,
     },
+    // A pill no wider than the row: a label past it wraps inside its own pill.
     pager: {
       alignItems: 'center',
       flexDirection: 'row',
@@ -302,6 +388,15 @@ const makeStyles = (colors: ThemeColors) =>
       alignItems: 'center',
       flexDirection: 'row',
       gap: 10,
+    },
+    placeChip: {
+      flexShrink: 1,
+    },
+    placeChips: {
+      alignItems: 'flex-start',
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 6,
     },
     position: {
       color: colors['text-secondary'],

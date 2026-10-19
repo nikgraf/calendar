@@ -4,13 +4,20 @@ import {
   GeoLocation,
   type GeoRegion,
   isMappableLocation,
+  mergePlaceCandidates,
   normalizeLocationKey,
+  type PastPlace,
+  type PlaceCandidate,
+  placeMatch,
   placesResembling,
+  placeSuggestionLabel,
+  rankPastPlaces,
   regionForTimeZone,
 } from '@calendar/core';
 import { type DeviceSettingsRepo, EventRepo, LocationGeoRepo } from '@calendar/db';
 import { GeoClient, type GeoPlaceJson } from '@calendar/geo';
-import { Clock, Effect } from 'effect';
+import { Clock, Effect, Ref } from 'effect';
+import type { EventRecord } from '@calendar/core';
 import type { AppleCalendarEvents } from './appleCalendarEvents.ts';
 import { readPrimaryTimeZone } from './deviceSettings.ts';
 import { loadEventsInRange } from './eventsInRange.ts';
@@ -36,6 +43,19 @@ const LOCATION_CACHE_ROWS = 2000;
 const CANDIDATE_LIMIT = 5;
 /** How far back the user's events say where they are. */
 const REGION_HISTORY_MS = 90 * 24 * 60 * 60 * 1000;
+/** How far back the user's events say where they have been: the past places a text may name. */
+const PLACE_HISTORY_MS = 365 * 24 * 60 * 60 * 1000;
+/** The past places last read, per event store: a year's occurrences are not expanded per turn. */
+const pastPlaces = new WeakMap<
+  object,
+  { readonly at: number; readonly places: ReadonlyArray<PastPlace> }
+>();
+/**
+ * How long the candidates wait for MapKit: a draft is being made, and
+ * its title and times must not hang on a search (the helper's own
+ * timeout is 15 s). Past it, the past places answer alone.
+ */
+export const CANDIDATE_SEARCH_TIMEOUT = '3 seconds';
 /**
  * How long a region hint is reused: the typeahead asks on every pause
  * in typing, and the hint reads a quarter's events (EventKit too).
@@ -124,12 +144,96 @@ export const locationHandlers: Pick<
       if (!isMappableLocation(location)) {
         return [];
       }
+      // The user's own past places first: a year of events, each
+      // occurrence's place with the text it was written as — read once
+      // per `REGION_HINT_TTL_MS`, like the region hint.
+      const now = yield* Clock.currentTimeMillis;
+      const store = yield* EventRepo;
+      const known = pastPlaces.get(store);
+      let places: ReadonlyArray<PastPlace>;
+      if (known && now - known.at < REGION_HINT_TTL_MS) {
+        places = known.places;
+      } else {
+        const past = yield* loadEventsInRange(now - PLACE_HISTORY_MS, now).pipe(
+          Effect.orElseSucceed((): ReadonlyArray<EventRecord> => []),
+        );
+        places = past.flatMap((event) =>
+          event.geo !== undefined && event.status !== 'cancelled'
+            ? [{ geo: event.geo, lastUsedUtc: event.startUtc }]
+            : [],
+        );
+        pastPlaces.set(store, { at: now, places });
+      }
+      const history = rankPastPlaces(location, places);
+      // Then MapKit, asked two ways side by side: the natural-language
+      // search, which reads a misspelling, and the completer's rows,
+      // which know a place's branches, each row resolved to its exact
+      // place. The hits that resemble the text come first, the others
+      // after them, to pick from. Each carries the text a pick writes:
+      // the name and address, as a picked typeahead row would.
       const geo = yield* GeoClient;
       const region = yield* regionHint;
-      const places = yield* geo
-        .resolve({ limit: CANDIDATE_LIMIT, query: location, region })
-        .pipe(Effect.catch(() => Effect.succeed([])));
-      return placesResembling(location, places).map((place) => toGeo(place, location));
+      // Each way on its own clock: what one answers is kept when the
+      // other stalls.
+      const searched = geo.resolve({ limit: CANDIDATE_LIMIT, query: location, region }).pipe(
+        Effect.timeout(CANDIDATE_SEARCH_TIMEOUT),
+        Effect.catch(() => Effect.succeed([])),
+      );
+      // The rows within the same budget, each kept as it resolves: one
+      // that stalls costs itself, not the ones that answered. In the
+      // completer's order — the first of them may be the one taken.
+      const resolved = yield* Ref.make(new Map<number, GeoPlaceJson>());
+      const completed = geo.search({ limit: CANDIDATE_LIMIT, query: location, region }).pipe(
+        Effect.flatMap((rows) =>
+          Effect.forEach(
+            rows,
+            (row, index) =>
+              geo.resolve({ limit: 1, query: placeSuggestionLabel(row), suggestion: row }).pipe(
+                Effect.flatMap((places) => {
+                  const place = places[0];
+                  return place === undefined
+                    ? Effect.void
+                    : Ref.update(resolved, (byRow) => new Map(byRow).set(index, place));
+                }),
+                Effect.catch(() => Effect.void),
+              ),
+            { concurrency: 'unbounded', discard: true },
+          ),
+        ),
+        Effect.timeout(CANDIDATE_SEARCH_TIMEOUT),
+        Effect.catch(() => Effect.void),
+        Effect.flatMap(() => Ref.get(resolved)),
+        Effect.map((byRow) =>
+          [...byRow.entries()].sort(([a], [b]) => a - b).map(([, place]) => place),
+        ),
+      );
+      const [fromSearch, fromRows] = yield* Effect.all([searched, completed], {
+        concurrency: 'unbounded',
+      });
+      const hits = [...fromSearch, ...fromRows];
+      const candidate = (place: GeoPlaceJson, match: PlaceCandidate['match']): PlaceCandidate => {
+        const name = place.name ?? location;
+        return {
+          ...(place.address ? { address: place.address } : {}),
+          geo: new GeoLocation({
+            lat: place.lat,
+            lng: place.lng,
+            name: place.name,
+            source: place.address ? `${name}, ${place.address}` : name,
+          }),
+          match,
+          source: 'mapkit',
+        };
+      };
+      const found = [
+        ...placesResembling(location, hits).map((place) =>
+          candidate(place, placeMatch(location, place) ?? 'search'),
+        ),
+        ...hits
+          .filter((place) => placeMatch(location, place) === undefined)
+          .map((place) => candidate(place, 'search')),
+      ];
+      return mergePlaceCandidates(history, found);
     }),
 
   resolveLocation: ({ location, suggestion }) =>

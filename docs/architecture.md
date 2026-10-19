@@ -1170,8 +1170,21 @@ gateway carries all of it. Details, limits and the threat model:
   the place's name or address words, or the same Kölner Phonetik key as
   the name's first words — "Cafe Zentral" as dictated is Café Central);
   a picked suggestion is that exact place. `placeCandidates` returns
-  every resembling match, best first and uncached, for offering a
-  choice. Both lookups and the typeahead carry a region hint
+  the user's own past places the text names first (core
+  `rankPastPlaces`: a year of occurrences, matched by the text they were
+  written as, MapKit's name or sound, one per text, the latest use) and
+  then the search's resembling matches not among them
+  (`mergePlaceCandidates`; MapKit is asked two ways side by side, the
+  natural-language search and the completer's rows resolved, and hits
+  that do not resemble the text follow as `search`), best first and
+  uncached. The draft thread (app-state `draftPlaces.ts`) asks for them
+  whenever a turn sets a place: the best resembling one is taken at once
+  (`preselectedPlace`) — its text becomes the location and its pin counts
+  as a pick (`applyPlace`) — and the candidates stay on the draft as
+  `placeChoice`, chips under the quick-add field with the one the field
+  reads pressed and "As said" beside them, until dismissed, or a turn
+  sets another place; the row shows only while the field reads the text
+  or one of them (`livePlaceChoice`). Both lookups and the typeahead carry a region hint
   (`regionHint`: the densest cluster of coordinates on the last 90 days'
   events, the most recent first, else the primary time zone's city from
   a small table), which MapKit takes as a bias, never a filter — and

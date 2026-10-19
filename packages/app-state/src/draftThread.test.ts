@@ -3,6 +3,7 @@ import {
   changedDraftFields,
   describeDraftItem,
   dropInviteeChoice,
+  dropPlaceChoice,
   EMPTY_THREAD,
   firstDraftExtras,
   focusDraft,
@@ -21,7 +22,8 @@ import {
   undoTurn,
   updateDraft,
 } from './draftThread.ts';
-import { Contact } from '@calendar/core';
+import { Contact, GeoLocation, type PlaceCandidate } from '@calendar/core';
+import { livePlaceChoice, pickedCandidate, readsAsSaid } from './draftPlaces.ts';
 import type { QuickAddItem } from './quickAddItem.ts';
 
 const dinner: QuickAddItem = {
@@ -849,5 +851,197 @@ describe('guests from the words', () => {
     expect(settled.turns).toBe(started.turns);
     expect(dropInviteeChoice(settled, 0, 'Sarah').drafts[0]).not.toHaveProperty('inviteeChoices');
     expect(dropInviteeChoice(settled, 3, 'Sarah')).toBe(settled);
+  });
+});
+
+const figl = (source: string): PlaceCandidate => ({
+  address: 'Wollzeile 5',
+  geo: new GeoLocation({ lat: 48.209, lng: 16.375, name: 'Figlmüller', source }),
+  match: 'words',
+  source: 'mapkit',
+});
+const said = (location: string): QuickAddItem => ({
+  kind: 'event',
+  prefill: { ...dinner.prefill, location },
+});
+
+describe('places from the words', () => {
+  const central: PlaceCandidate = {
+    geo: new GeoLocation({ lat: 48.21, lng: 16.365, name: 'Café Central', source: 'Café Central' }),
+    match: 'phonetic',
+    source: 'history',
+  };
+
+  it('takes a past place without asking: the text becomes its, the pin with it, the text as said a chip away', () => {
+    const state = startThread([said('Cafe Zentral')], 'dinner at Cafe Zentral', {
+      id: ids(),
+      place: { candidates: [central], text: 'Cafe Zentral' },
+    });
+    expect(state.drafts[0]).toMatchObject({
+      extras: { attendees: [], geo: central.geo },
+      item: { prefill: { location: 'Café Central' } },
+      // Review: a lone taken place left no way back to the text as said.
+      placeChoice: { candidates: [central], text: 'Cafe Zentral' },
+    });
+    // One place is no count worth saying.
+    expect(state.turns[0]?.summary).toBe('Dinner with Teo · Fri, Aug 28 · 19:00–20:00');
+  });
+
+  it('a place taken anew lets go of a text kept as said', () => {
+    // Review: "As said" travels with the draft (a turn re-gives the text to
+    // the form); a turn that moves the place must not carry it along.
+    const kept = startThread([said('Figlmüller')], 'dinner at Figlmüller', {
+      extras: {
+        attendees: [],
+        description: '',
+        locationAsSaid: 'Figlmüller',
+        reminders: undefined,
+      },
+      id: ids(),
+    });
+    expect(kept.drafts[0]?.extras?.locationAsSaid).toBe('Figlmüller');
+    const moved = refineThread(
+      kept,
+      'at Cafe Zentral',
+      [
+        {
+          id: 'd1',
+          item: said('Cafe Zentral'),
+          place: { candidates: [central], text: 'Cafe Zentral' },
+        },
+      ],
+      ids(),
+    );
+    expect(moved.drafts[0]?.extras).toMatchObject({ geo: central.geo });
+    expect(moved.drafts[0]?.extras?.locationAsSaid).toBeUndefined();
+  });
+
+  it('a turn that takes the place away takes its choice with it', () => {
+    // Review: the old choice lingered, hidden, and came back with the same text retyped.
+    const started = startThread([said('Figlmüller')], 'dinner at Figlmüller', {
+      id: ids(),
+      place: { candidates: [figl('A'), figl('B')], text: 'Figlmüller' },
+    });
+    const cleared = refineThread(
+      started,
+      'remove the location',
+      [{ id: 'd1', item: dinner, place: { candidates: [], text: '' } }],
+      ids(),
+    );
+    expect(cleared.drafts[0]).not.toHaveProperty('placeChoice');
+  });
+
+  it('takes the best of several and keeps the rest to pick from; a text nobody knows stays', () => {
+    const two = [figl('Figlmüller, Wollzeile 5'), figl('Figlmüller, Bäckerstraße 6')];
+    const state = startThread([said('Figlmüller')], 'dinner at Figlmüller', {
+      id: ids(),
+      place: { candidates: two, text: 'Figlmüller' },
+    });
+    expect(state.drafts[0]).toMatchObject({
+      extras: { geo: two[0]!.geo },
+      item: { prefill: { location: 'Figlmüller, Wollzeile 5' } },
+      placeChoice: { candidates: two, text: 'Figlmüller' },
+    });
+    expect(state.turns[0]?.summary).toContain('2 places');
+    // A hit that does not resemble the text is offered, not taken.
+    const other: PlaceCandidate = { ...figl('Kaffeeweg'), match: 'search' };
+    const offered = startThread([said('Kaffee Sperl')], 'at Kaffee Sperl', {
+      id: ids(),
+      place: { candidates: [other], text: 'Kaffee Sperl' },
+    });
+    expect(offered.drafts[0]).toMatchObject({
+      item: { prefill: { location: 'Kaffee Sperl' } },
+      placeChoice: { candidates: [other] },
+    });
+    expect(offered.drafts[0]?.extras).toBeUndefined();
+    expect(offered.turns[0]?.summary).toContain('which “Kaffee Sperl”?');
+    const none = startThread([said('Room 4')], 'dinner in Room 4', {
+      id: ids(),
+      place: { candidates: [], text: 'Room 4' },
+    });
+    expect(none.drafts[0]).not.toHaveProperty('placeChoice');
+    expect(none.turns[0]?.summary).not.toContain('which');
+  });
+
+  it('a turn that sets a place replaces the choice and says the place it took; Undo brings the choice back', () => {
+    const started = startThread([said('Figlmüller')], 'dinner at Figlmüller', {
+      id: ids(),
+      place: { candidates: [figl('A'), figl('B')], text: 'Figlmüller' },
+    });
+    const moved = refineThread(
+      started,
+      'at Cafe Zentral instead',
+      [
+        {
+          id: 'd1',
+          item: said('Cafe Zentral'),
+          place: { candidates: [central], text: 'Cafe Zentral' },
+        },
+      ],
+      ids(),
+    );
+    expect(moved.drafts[0]).toMatchObject({
+      item: { prefill: { location: 'Café Central' } },
+      // The new turn's own row, the lone place taken on it.
+      placeChoice: { candidates: [central], text: 'Cafe Zentral' },
+    });
+    // The summary names the place taken, not the text said.
+    expect(moved.turns.at(-1)?.summary).toBe('→ Café Central');
+    expect(undoTurn(moved).drafts[0]?.placeChoice?.text).toBe('Figlmüller');
+    // A turn about something else keeps the choice.
+    const kept = refineThread(
+      started,
+      'at 8',
+      [
+        {
+          id: 'd1',
+          item: { kind: 'event', prefill: { ...later.prefill, location: 'Figlmüller' } },
+        },
+      ],
+      ids(),
+    );
+    expect(kept.drafts[0]?.placeChoice?.text).toBe('Figlmüller');
+  });
+
+  it('applies to the form while the location reads its text or one of its places', () => {
+    // Review: an edited or cleared location kept the old chips, whose pick put the old place over it.
+    const choice = {
+      candidates: [figl('Figlmüller, A'), figl('Figlmüller, B')],
+      text: 'Figlmüller',
+    };
+    expect(livePlaceChoice(choice, 'Figlmüller')).toBe(choice);
+    expect(livePlaceChoice(choice, '  figlmüller ')).toBe(choice);
+    expect(livePlaceChoice(choice, 'Figlmüller, B')).toBe(choice);
+    const b = choice.candidates[1]!;
+    expect(pickedCandidate(choice, 'Figlmüller, B', b.geo)).toBe(b);
+    // Review: the text alone said nothing about the pin — held means the pin is its.
+    expect(pickedCandidate(choice, 'Figlmüller, B', undefined)).toBeUndefined();
+    expect(pickedCandidate(choice, 'Figlmüller', b.geo)).toBeUndefined();
+    expect(readsAsSaid(choice, 'figlmüller', undefined)).toBe(true);
+    // A past place whose text is the text as said is that chip, not "as said".
+    const ownText = {
+      candidates: [{ ...figl('Figlmüller'), source: 'history' as const }],
+      text: 'Figlmüller',
+    };
+    const own = ownText.candidates[0]!;
+    expect(readsAsSaid(ownText, 'Figlmüller', own.geo)).toBe(false);
+    expect(pickedCandidate(ownText, 'Figlmüller', own.geo)).toBe(own);
+    // …until the pin is let go: then it is the text as said.
+    expect(readsAsSaid(ownText, 'Figlmüller', undefined)).toBe(true);
+    expect(livePlaceChoice(choice, 'Figlmüller Lugeck')).toBeUndefined();
+    expect(livePlaceChoice(choice, '')).toBeUndefined();
+    expect(livePlaceChoice(undefined, 'Figlmüller')).toBeUndefined();
+  });
+
+  it('drops a choice settled by hand, without a turn or a version', () => {
+    const started = startThread([said('Figlmüller')], 'dinner at Figlmüller', {
+      id: ids(),
+      place: { candidates: [figl('A'), figl('B')], text: 'Figlmüller' },
+    });
+    const settled = dropPlaceChoice(started, 0);
+    expect(settled.drafts[0]).not.toHaveProperty('placeChoice');
+    expect(settled.version).toBe(started.version);
+    expect(settled.turns).toBe(started.turns);
+    expect(dropPlaceChoice(settled, 0)).toBe(settled);
   });
 });

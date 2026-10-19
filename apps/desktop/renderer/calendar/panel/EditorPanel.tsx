@@ -23,6 +23,7 @@ import { ChevronLeftIcon, ChevronRightIcon, VideoIcon, XIcon } from '../../ui/ic
 import { SegmentedControl } from '../../ui/SegmentedControl.tsx';
 import { EventEditorForm } from '../EventEditorForm.tsx';
 import { InviteeChoices } from '../InviteeChoices.tsx';
+import { PlaceChoices } from '../PlaceChoices.tsx';
 import { MoveConfirm } from '../MoveConfirm.tsx';
 import { QuickAddBar } from '../QuickAddBar.tsx';
 import { ReminderEditorForm } from '../ReminderEditorForm.tsx';
@@ -107,17 +108,22 @@ export function EditorPanel({
     batchError,
     canAddAll,
     dismissInvitee,
+    dismissPlace,
     drafts,
     eventModel,
     flash,
     focused,
     focusedDraft,
     inviteeChoices,
+    keepPlace,
     kinds,
     liveItem,
     moveToSlot,
     onPhrase,
     pickInvitee,
+    pickPlaceChoice,
+    placeChoice,
+    placeGeo,
     settled,
     switchFocus,
     taskModel,
@@ -224,6 +230,7 @@ export function EditorPanel({
         {threadNote ||
         threadSlots ||
         inviteeChoices.length > 0 ||
+        placeChoice ||
         drafts.length > 1 ||
         batchError ? (
           <div className="mb-3 flex flex-col gap-2" data-testid="draft-thread">
@@ -256,6 +263,17 @@ export function EditorPanel({
                   })}
                 </div>
               </div>
+            ) : null}
+            {placeChoice ? (
+              <PlaceChoices
+                choice={placeChoice}
+                disabled={!settled}
+                geo={placeGeo}
+                location={eventModel.location}
+                onDismiss={dismissPlace}
+                onKeep={keepPlace}
+                onPick={pickPlaceChoice}
+              />
             ) : null}
             {inviteeChoices.length > 0 ? (
               <InviteeChoices

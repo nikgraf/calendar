@@ -90,7 +90,7 @@ export const makeGeoClient = (
           ResolveResult,
         ),
         // A native side from before `places`: its one place is the list.
-        (r) => r.places ?? (r.place ? [r.place] : []),
+        (r) => (r.places ?? (r.place ? [r.place] : [])).map(oneLineAddress),
       ),
     search: (params) =>
       Effect.map(
@@ -115,6 +115,24 @@ export const unavailableGeoClient = (reason: string): GeoClientShape => {
   const fail = <A>(): Effect.Effect<A, GeoError> =>
     Effect.fail(new GeoUnavailableError({ message: reason }));
   return { resolve: () => fail(), search: () => fail(), snapshot: () => fail() };
+};
+
+/**
+ * MapKit's address as one line. On iOS 26 `fullAddress` of a place
+ * resolved from a completer row comes in postal lines ("Stephansplatz 11\n1010
+ * Wien\nÖsterreich") where the search's places read "…, 1010 Vienna, Austria";
+ * a chip or a location field is one line either way.
+ */
+const oneLineAddress = (place: GeoPlaceJson): GeoPlaceJson => {
+  if (place.address === undefined || !/\n/.test(place.address)) {
+    return place;
+  }
+  const address = place.address
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line !== '')
+    .join(', ');
+  return { ...place, address };
 };
 
 /** One layer per host — see contactsLayer for the shape. No change events. */

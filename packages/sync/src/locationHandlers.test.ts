@@ -24,13 +24,14 @@ import {
 } from '@calendar/geo';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
-import { Effect, Layer } from 'effect';
+import { Effect, Fiber, Layer } from 'effect';
 import { TestClock } from 'effect/testing';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
 import { describe } from 'vite-plus/test';
 import { appleCalendarServicesLayer } from './appleCalendarEvents.ts';
 import { writeTimeZoneSettings } from './deviceSettings.ts';
 import {
+  CANDIDATE_SEARCH_TIMEOUT,
   LOCATION_MISS_TTL_MS,
   LOCATION_REFRESH_AFTER_MS,
   locationHandlers,
@@ -284,9 +285,10 @@ describe('the resemblance gate', () => {
       subtitle: 'Wollzeile 5, 1010 Wien',
       title: 'Figlmüller Wollzeile',
     },
+    // Streets apart from the Wollzeile one: nearer than 100 m they would be one place.
     {
-      lat: 48.2095,
-      lng: 16.376,
+      lat: 48.212,
+      lng: 16.379,
       name: 'Figlmüller Bäckerstrasse',
       subtitle: 'Bäckerstraße 6, 1010 Wien',
       title: 'Figlmüller',
@@ -323,24 +325,143 @@ describe('the resemblance gate', () => {
   });
 
   it.effect(
-    'offers every match that resembles the text as a candidate, best first, uncached',
+    'offers the hits that resemble the text first, then the rest, each once, uncached',
     () => {
       const { client, state } = makeFakeGeoClient({ places: figlmuellers });
       return Effect.gen(function* () {
         const candidates = yield* locationHandlers.placeCandidates({ location: 'Figlmüller' });
-        expect(candidates.map((place) => place.name)).toEqual([
-          'Figlmüller Wollzeile',
-          'Figlmüller Bäckerstrasse',
+        // The search and the completer both answer the Figlmüllers: listed once.
+        expect(candidates.map((candidate) => [candidate.geo.name, candidate.match])).toEqual([
+          ['Figlmüller Wollzeile', 'words'],
+          ['Figlmüller Bäckerstrasse', 'words'],
+          ['Figl Bar', 'search'],
         ]);
-        expect(candidates[0]?.source).toBe('Figlmüller');
+        // A pick writes the name and address, as a picked typeahead row would.
+        expect(candidates[0]).toMatchObject({
+          address: 'Wollzeile 5, 1010 Wien',
+          geo: { source: 'Figlmüller Wollzeile, Wollzeile 5, 1010 Wien' },
+          source: 'mapkit',
+        });
         yield* locationHandlers.placeCandidates({ location: 'Figlmüller' });
-        expect(state.calls).toEqual(['resolve:Figlmüller', 'resolve:Figlmüller']);
+        expect(state.calls.filter((call) => call === 'resolve:Figlmüller')).toHaveLength(2);
         expect(
           yield* locationHandlers.placeCandidates({ location: 'https://zoom.us/j/1' }),
         ).toEqual([]);
       }).pipe(Effect.provide(setup(client)));
     },
   );
+
+  it.effect('finds a branch only the completer knows, resolved to its place', () => {
+    const { client } = makeFakeGeoClient({ places: figlmuellers });
+    return Effect.gen(function* () {
+      // The search reads nothing in "Wollzeile" (no title is in it); the completer's row is.
+      const candidates = yield* locationHandlers.placeCandidates({ location: 'Wollzeile' });
+      expect(candidates.map((c) => [c.geo.name, c.match])).toEqual([
+        ['Figlmüller Wollzeile', 'words'],
+      ]);
+    }).pipe(Effect.provide(setup(client)));
+  });
+
+  it.effect('keeps the completer rows that resolved when one of them stalls', () => {
+    // Review: one stalled row timed the whole batch out, finished rows included.
+    // The budget stays one: the rows resolve within the completer's
+    // 3 s, so the hook's 5 s (`placesOf`) is never passed.
+    const base = makeFakeGeoClient({ places: figlmuellers }).client;
+    const oneStalls: GeoClientShape = {
+      ...base,
+      resolve: (params) =>
+        params.suggestion === undefined
+          ? Effect.succeed([])
+          : params.suggestion.title === 'Figlmüller'
+            ? Effect.never
+            : base.resolve(params),
+    };
+    return Effect.gen(function* () {
+      const asked = yield* Effect.forkChild(
+        locationHandlers.placeCandidates({ location: 'Figlmüller' }),
+      );
+      yield* TestClock.adjust(CANDIDATE_SEARCH_TIMEOUT);
+      const candidates = yield* Fiber.join(asked);
+      expect(candidates.map((c) => c.geo.name)).toEqual(['Figlmüller Wollzeile']);
+    }).pipe(Effect.provide(setup(oneStalls)));
+  });
+
+  it.effect('keeps what the search answered when the completer stalls', () => {
+    // Review: one timeout over both ways threw the finished answer away too.
+    const stalledRows: GeoClientShape = {
+      ...makeFakeGeoClient({ places: figlmuellers }).client,
+      search: () => Effect.never,
+    };
+    return Effect.gen(function* () {
+      const asked = yield* Effect.forkChild(
+        locationHandlers.placeCandidates({ location: 'Figlmüller' }),
+      );
+      yield* TestClock.adjust(CANDIDATE_SEARCH_TIMEOUT);
+      const candidates = yield* Fiber.join(asked);
+      expect(candidates.map((c) => c.geo.name)).toEqual([
+        'Figlmüller Wollzeile',
+        'Figlmüller Bäckerstrasse',
+        'Figl Bar',
+      ]);
+    }).pipe(Effect.provide(setup(stalledRows)));
+  });
+
+  it.effect('reads the past places once for a while, then again', () => {
+    // Review: a year of occurrences was expanded on every turn.
+    const { client } = makeFakeGeoClient({ places });
+    return Effect.gen(function* () {
+      expect(yield* locationHandlers.placeCandidates({ location: 'Café Central' })).toEqual([]);
+      yield* seedPlaced([
+        new EventRecord({
+          ...placedEvent('coffee', 20, { lat: 48.21, lng: 16.365 }),
+          geo: new GeoLocation({
+            lat: 48.21,
+            lng: 16.365,
+            name: 'Café Central',
+            source: 'Café Central',
+          }),
+          location: 'Café Central',
+        }),
+      ]);
+      expect(yield* locationHandlers.placeCandidates({ location: 'Café Central' })).toEqual([]);
+      yield* TestClock.adjust(REGION_HINT_TTL_MS + 1);
+      expect(
+        (yield* locationHandlers.placeCandidates({ location: 'Café Central' })).map(
+          (c) => c.source,
+        ),
+      ).toEqual(['history']);
+    }).pipe(Effect.provide(setup(client)));
+  });
+
+  it.effect('answers the past places alone when the search stalls', () => {
+    // Review: a stalled MapKit request held the whole draft, title and times too.
+    const stalled: GeoClientShape = {
+      ...makeFakeGeoClient({ places }).client,
+      resolve: () => Effect.never,
+    };
+    return Effect.gen(function* () {
+      yield* seedPlaced([
+        new EventRecord({
+          ...placedEvent('coffee', 20, { lat: 48.21, lng: 16.365 }),
+          geo: new GeoLocation({
+            lat: 48.21,
+            lng: 16.365,
+            name: 'Café Central',
+            source: 'Café Central',
+          }),
+          location: 'Café Central',
+        }),
+      ]);
+      const asked = yield* Effect.forkChild(
+        locationHandlers.placeCandidates({ location: 'Café Central' }),
+      );
+      yield* TestClock.adjust(CANDIDATE_SEARCH_TIMEOUT);
+      const candidates = yield* Fiber.join(asked);
+      expect(candidates.map((c) => [c.source, c.geo.source])).toEqual([
+        ['history', 'Café Central'],
+      ]);
+    }).pipe(Effect.provide(setup(stalled)));
+  });
 
   it.effect('has no candidates without a bridge', () =>
     Effect.gen(function* () {
