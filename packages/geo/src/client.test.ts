@@ -15,7 +15,13 @@ describe('makeGeoClient', () => {
               place: { lat: 48.2, lng: 16.36, name: 'Naschmarkt' },
               places: [
                 { lat: 48.2, lng: 16.36, name: 'Naschmarkt' },
-                { lat: 48.19, lng: 16.36, name: 'Naschmarkt Deli' },
+                // iOS 26 hands a completer row's place its address in postal lines.
+                {
+                  address: 'Linke Wienzeile 4\n1060 Wien\nÖsterreich\n',
+                  lat: 48.19,
+                  lng: 16.36,
+                  name: 'Naschmarkt Deli',
+                },
               ],
             },
       );
@@ -33,7 +39,12 @@ describe('makeGeoClient', () => {
       ),
     ).toEqual([
       { lat: 48.2, lng: 16.36, name: 'Naschmarkt' },
-      { lat: 48.19, lng: 16.36, name: 'Naschmarkt Deli' },
+      {
+        address: 'Linke Wienzeile 4, 1060 Wien, Österreich',
+        lat: 48.19,
+        lng: 16.36,
+        name: 'Naschmarkt Deli',
+      },
     ]);
     // Only what is set goes on the wire.
     expect(calls).toEqual([

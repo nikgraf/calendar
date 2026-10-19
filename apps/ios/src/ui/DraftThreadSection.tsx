@@ -132,13 +132,11 @@ export function DraftThreadSection({
               />
             </Pressable>
           </View>
-          <ScrollView
-            contentContainerStyle={styles.chips}
-            horizontal
-            keyboardShouldPersistTaps="handled"
-            showsHorizontalScrollIndicator={false}
-            style={styles.chipScroller}
-          >
+          {/* Wrapped, not scrolled: a place's label is its name and address,
+              wider than the sheet at times — in a horizontal row one such
+              label wrapped and stretched every pill to two lines, and the
+              first filled the row with the rest out of sight. */}
+          <View style={styles.placeChips}>
             {placeChoice.candidates.map((candidate, index) => {
               const chosen =
                 pickedCandidate(placeChoice, eventModel.location, placeGeo) === candidate;
@@ -150,7 +148,7 @@ export function DraftThreadSection({
                   disabled={!settled}
                   key={`${candidate.source}:${candidate.geo.source}`}
                   onPress={() => pickPlaceChoice(candidate)}
-                  style={[styles.chip, chosen && styles.chipChosen]}
+                  style={[styles.chip, styles.placeChip, chosen && styles.chipChosen]}
                   testID={`draft-place-pick-${String(index)}`}
                 >
                   <Text
@@ -177,7 +175,7 @@ export function DraftThreadSection({
                 As said: “{placeChoice.text}”
               </Text>
             </Pressable>
-          </ScrollView>
+          </View>
         </View>
       ) : null}
       {inviteeChoices.length > 0 ? (
@@ -374,11 +372,13 @@ const makeStyles = (colors: ThemeColors) =>
     keep: {
       justifyContent: 'center',
       paddingHorizontal: 6,
+      paddingVertical: 7,
     },
     note: {
       color: colors['text-secondary'],
       fontSize: 13,
     },
+    // A pill no wider than the row: a label past it wraps inside its own pill.
     pager: {
       alignItems: 'center',
       flexDirection: 'row',
@@ -388,6 +388,15 @@ const makeStyles = (colors: ThemeColors) =>
       alignItems: 'center',
       flexDirection: 'row',
       gap: 10,
+    },
+    placeChip: {
+      flexShrink: 1,
+    },
+    placeChips: {
+      alignItems: 'flex-start',
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 6,
     },
     position: {
       color: colors['text-secondary'],
