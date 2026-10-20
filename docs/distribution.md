@@ -157,8 +157,15 @@ label build shifts the baseline — JS-only merges then full-build until
 that PR merges, after which its merge ships as an OTA on top of the label
 build instead of rebuilding.
 
-Every PR push publishes an **OTA preview update** to channel `pr-<number>`
-in ~30s and comments the channel name on the PR.
+Every PR push publishes an **OTA preview update** with
+`eas update --channel pr-<number>` in ~30s and comments the channel name on
+the PR. The first push creates channel `pr-<number>` pointing at a
+same-named branch; a later one publishes to the branch the channel points
+at. (`--branch` alone creates only the branch, and the app, which asks for
+a channel, gets a 404.) Closing the PR deletes the channel, then the branch
+with its updates (`preview-cleanup`). Deleting a channel also deletes the
+EAS builds on it, so a channel that has one is left in place; no profile
+builds on a `pr-*` channel.
 
 ## Two variants: production and dev
 
@@ -219,7 +226,9 @@ Instead:
 - **JS/TS changes (almost all agent PRs)** — keep the installed TestFlight
   build and switch channels in-app: **Settings › Advanced › PR Preview** → enter
   `pr-<number>` (from the PR comment) → Load. "Back to main" returns to the
-  main channel. If no update loads immediately, force-quit and reopen.
+  main channel. If no update loads immediately, force-quit and reopen. Once
+  the PR closes its channel is gone, and a phone still on it gets no
+  updates until "Back to main".
 - **Native changes** (new native deps, config plugins, Expo SDK bumps) change
   the update **fingerprint** (`runtimeVersion.policy: fingerprint`), so OTA
   previews from such PRs are invisible to the installed build — deliberately,

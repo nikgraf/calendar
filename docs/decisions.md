@@ -25,6 +25,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   gets a `pr-<n>` OTA channel loadable in-app; the `testflight` label
   ships a real build for a native PR. No per-PR TestFlight builds by
   default (cost and latency).
+- **PR preview channels** (2026-10-20, #229) — the preview job published
+  with `eas update --branch pr-<n>`, which makes only a branch, so the
+  app's channel request answered 404 and no PR preview had ever loaded.
+  `--channel pr-<n>` creates a missing channel on a same-named branch.
+  Rejected: `channel:view || channel:create` before `--branch` (two calls
+  for what `--channel` does). Closing the PR deletes the channel, then the
+  branch; a channel with a build stays (the build would go with it).
+  Open: `--channel` follows a channel repointed by hand; branches of PRs
+  closed earlier, or closed with a merge conflict (no run), stay until
+  swept by hand.
 - **Production and dev side by side** (2026-10-01, #100) — the real
   accounts live in the production app, test accounts in a dev variant
   next to it, on the Mac (a run from source) and on the phone
