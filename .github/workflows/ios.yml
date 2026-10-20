@@ -261,9 +261,12 @@ jobs:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           NAME: pr-${{ github.event.number }}
         working-directory: apps/ios
+        # The default shell is `bash -e`, without pipefail. A failed lookup
+        # leaves stdout empty, and plain `jq` passes that; `-e` does not.
         run: |
+          set -o pipefail
           BUILDS=$(pnpm exec eas build:list --channel "$NAME" --limit 1 \
-            --json --non-interactive | jq length)
+            --json --non-interactive | jq -e length)
           if [ "$BUILDS" != "0" ]; then
             echo "::warning::$NAME has EAS builds, which deleting the channel would delete — left in place"
             exit 0

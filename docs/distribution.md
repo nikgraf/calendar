@@ -165,9 +165,10 @@ at. (`--branch` alone creates only the branch, and the app, which asks for
 a channel, gets a 404.) Closing the PR deletes the channel, then the branch
 with its updates (`preview-cleanup`). Deleting a channel also deletes the
 EAS builds on it, so a preview whose channel has one is left in place,
-branch included; no profile builds on a `pr-*` channel. PR runs share a
-concurrency group keyed on the PR number, not `github.ref`, which is
-`refs/heads/main` for a merged PR's close and would put it in main's group.
+branch included; no profile builds on a `pr-*` channel. A PR's runs share
+a concurrency group keyed on its number (label runs a second one), not on
+`github.ref`, which is `refs/heads/main` for a merged PR's close and would
+put it in main's group.
 
 ## Two variants: production and dev
 
