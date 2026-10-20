@@ -19,12 +19,17 @@ on:
 concurrency:
   # A label is not a new push: in the push's group it cancelled that
   # push's in-progress OTA preview (and any label did, not just
-  # `testflight`). Label runs get their own group.
-  group: ios-${{ github.workflow }}-${{ github.ref }}${{ github.event.action == 'labeled' && '-label' || '' }}
-  # PR pushes supersede each other; main pushes must all complete — a
-  # cancelled testing-build ships no artifact, and a cancelled EAS
-  # publish silently strands testers on old JS.
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  # `testflight`). Label runs get their own group. PR runs are keyed on
+  # the number, not github.ref: a merged PR's `closed` run has the ref
+  # refs/heads/main, and in main's group it would replace the merge's
+  # pending push run (the next run queued replaces a pending one,
+  # whatever cancel-in-progress says).
+  group: ios-${{ github.workflow }}-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.ref }}${{ github.event.action == 'labeled' && '-label' || '' }}
+  # PR runs supersede each other (a close cancels a preview still
+  # publishing); main pushes must all complete — a cancelled
+  # testing-build ships no artifact, and a cancelled EAS publish silently
+  # strands testers on old JS.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read
@@ -224,11 +229,12 @@ jobs:
           fi
 
   # A closed PR's preview goes: its channel, then its branch with the
-  # updates on it. The close shares the push's concurrency group, so a
+  # updates on it. The close shares the PR's concurrency group, so a
   # preview still publishing is cancelled first. A name already gone (the
   # preview never ran, a second close) is fine; any other error fails the
-  # job. Deleting a channel also deletes its builds, so a channel that has
-  # one is left alone (none should: label builds ship on `main`).
+  # job. Deleting a channel also deletes its builds, so a preview whose
+  # channel has one is left alone (none should: label builds ship on
+  # `main`).
   preview-cleanup:
     name: Delete PR preview (EAS)
     needs: [preflight]
@@ -265,7 +271,7 @@ jobs:
           for KIND in channel branch; do
             if OUT=$(pnpm exec eas "$KIND:delete" "$NAME" --non-interactive 2>&1); then
               echo "$OUT"
-            elif grep -q "Could not find" <<< "$OUT"; then
+            elif grep -qE "Could not find (channel with the name|branch) $NAME( |$)" <<< "$OUT"; then
               echo "No $KIND $NAME to delete"
             else
               echo "$OUT"
