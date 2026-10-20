@@ -125,8 +125,8 @@ const makeStyles = (colors: ThemeColors) =>
     },
     button: {
       alignItems: 'center',
-      backgroundColor: colors.surface,
-      borderRadius: 8,
+      backgroundColor: colors.fill,
+      borderRadius: 10,
       flexDirection: 'row',
       gap: 6,
       paddingHorizontal: 14,
@@ -156,11 +156,12 @@ const makeStyles = (colors: ThemeColors) =>
       color: colors['text-secondary'],
       fontSize: 13,
     },
+    // A card on the form's ground, in the field's place.
     notice: {
-      backgroundColor: colors.fill,
-      borderRadius: 12,
+      backgroundColor: colors.surface,
+      borderRadius: 14,
       gap: 10,
-      padding: 14,
+      padding: 16,
     },
     result: {
       color: colors['text-secondary'],

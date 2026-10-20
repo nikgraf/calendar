@@ -489,7 +489,7 @@ export function WeekView({
                 return (
                   <div
                     aria-label={`${day.toLocaleString('en-US', { day: 'numeric', month: 'long', weekday: 'long' })}: press Enter for a new event`}
-                    className="relative border-l border-hairline outline-none focus-visible:bg-selection/40"
+                    className="relative border-l border-hairline outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-inset"
                     key={iso}
                     onClick={(clickEvent) => {
                       // Both flags are consumed, so neither leaks into the next click.

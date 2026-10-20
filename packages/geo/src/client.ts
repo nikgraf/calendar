@@ -25,8 +25,12 @@ export class GeoRequestError extends Data.TaggedError('GeoRequestError')<{
 export type GeoError = GeoRequestError | GeoUnavailableError;
 
 export interface GeoClientShape {
-  /** Coordinates for free text or a picked suggestion; null when nothing matched. */
-  readonly resolve: (params: ResolveParams) => Effect.Effect<GeoPlaceJson | null, GeoError>;
+  /**
+   * The places free text or a picked suggestion resolve to, MapKit's
+   * best first; empty when nothing matched. A picked suggestion is one
+   * exact place.
+   */
+  readonly resolve: (params: ResolveParams) => Effect.Effect<ReadonlyArray<GeoPlaceJson>, GeoError>;
   /** Typeahead rows for partial location text. */
   readonly search: (
     params: SearchParams,
@@ -36,6 +40,10 @@ export interface GeoClientShape {
 }
 
 export class GeoClient extends Context.Service<GeoClient, GeoClientShape>()('geo/GeoClient') {}
+
+/** Only what is set goes on the wire: an older native side knows no region. */
+const defined = (params: Record<string, unknown>): Record<string, unknown> =>
+  Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined));
 
 /**
  * A transport-agnostic implementation over "send a method + JSON params,
@@ -73,20 +81,26 @@ export const makeGeoClient = (
       Effect.map(
         call(
           GEO_METHODS.resolve,
-          params.suggestion
-            ? { query: params.query, suggestion: { ...params.suggestion } }
-            : { query: params.query },
+          defined({
+            limit: params.limit,
+            query: params.query,
+            region: params.region && { ...params.region },
+            suggestion: params.suggestion && { ...params.suggestion },
+          }),
           ResolveResult,
         ),
-        (r) => r.place,
+        // A native side from before `places`: its one place is the list.
+        (r) => (r.places ?? (r.place ? [r.place] : [])).map(oneLineAddress),
       ),
     search: (params) =>
       Effect.map(
         call(
           GEO_METHODS.search,
-          params.limit === undefined
-            ? { query: params.query }
-            : { limit: params.limit, query: params.query },
+          defined({
+            limit: params.limit,
+            query: params.query,
+            region: params.region && { ...params.region },
+          }),
           SearchResult,
         ),
         (r) => r.results,
@@ -101,6 +115,24 @@ export const unavailableGeoClient = (reason: string): GeoClientShape => {
   const fail = <A>(): Effect.Effect<A, GeoError> =>
     Effect.fail(new GeoUnavailableError({ message: reason }));
   return { resolve: () => fail(), search: () => fail(), snapshot: () => fail() };
+};
+
+/**
+ * MapKit's address as one line. On iOS 26 `fullAddress` of a place
+ * resolved from a completer row comes in postal lines ("Stephansplatz 11\n1010
+ * Wien\nÖsterreich") where the search's places read "…, 1010 Vienna, Austria";
+ * a chip or a location field is one line either way.
+ */
+const oneLineAddress = (place: GeoPlaceJson): GeoPlaceJson => {
+  if (place.address === undefined || !/\n/.test(place.address)) {
+    return place;
+  }
+  const address = place.address
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line !== '')
+    .join(', ');
+  return { ...place, address };
 };
 
 /** One layer per host — see contactsLayer for the shape. No change events. */

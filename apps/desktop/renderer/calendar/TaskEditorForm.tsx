@@ -1,28 +1,22 @@
-import type { useMoveConfirmation, useTaskEditorModel } from '@calendar/app-state';
+import type { useTaskEditorModel } from '@calendar/app-state';
 import type { TaskRecord } from '@calendar/core';
-import { Button } from '../ui/Button.tsx';
 import { TaskDoneToggle } from './TaskDoneToggle.tsx';
 import { NoDueDate, RemoveDueDate } from './NoDueDate.tsx';
 import { FIELD_CLASS, LABEL_CLASS } from '../ui/fieldStyles.ts';
 import { TaskListSelect } from './TaskListSelect.tsx';
 import { useFieldFlash } from '../ui/useFlash.ts';
+import { TEXT_ACTION_CLASS } from '../ui/buttonStyles.ts';
 
 /**
  * The Google Tasks form: title, due day, list, notes. Picking a list in
- * another account or provider moves the task on Save. The e2e suite
- * relies on the Title placeholder and the Delete/Cancel/Save labels.
+ * another account or provider moves the task on Save; the panel's footer
+ * carries Delete, Cancel and Save. The e2e suite relies on the Title
+ * placeholder.
  */
 export function TaskEditorForm({
-  moveConfirmation,
-  onClose,
-  saveDisabled = false,
   task,
   taskModel,
 }: {
-  moveConfirmation: ReturnType<typeof useMoveConfirmation>;
-  onClose: () => void;
-  /** Another write of the editor's is running (the thread's "Add all"): one at a time. */
-  saveDisabled?: boolean | undefined;
   task: TaskRecord | undefined;
   taskModel: ReturnType<typeof useTaskEditorModel>;
 }) {
@@ -30,21 +24,23 @@ export function TaskEditorForm({
   const titleFlash = useFieldFlash<HTMLInputElement>('title');
   const dateFlash = useFieldFlash<HTMLInputElement>('date');
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-4">
       {taskModel.error ? (
         <p className="select-text rounded-control bg-fill p-2 text-sm text-danger">
           {taskModel.error}
         </p>
       ) : null}
-      <input
-        autoFocus={!task}
-        className={FIELD_CLASS}
-        onChange={(input) => taskModel.setTitle(input.target.value)}
-        placeholder="Title"
-        ref={titleFlash}
-        value={taskModel.title}
-      />
-      {task ? <TaskDoneToggle task={task} /> : null}
+      <div className="flex flex-col gap-2">
+        <input
+          autoFocus={!task}
+          className={`${FIELD_CLASS} py-2 text-base`}
+          onChange={(input) => taskModel.setTitle(input.target.value)}
+          placeholder="Title"
+          ref={titleFlash}
+          value={taskModel.title}
+        />
+        {task ? <TaskDoneToggle task={task} /> : null}
+      </div>
       {taskModel.dated ? (
         <label className={LABEL_CLASS}>
           <span className="flex items-center justify-between">
@@ -74,41 +70,13 @@ export function TaskEditorForm({
       </label>
       {task?.webViewLink ? (
         <button
-          className="self-start text-sm text-primary hover:underline"
+          className={`self-start text-sm ${TEXT_ACTION_CLASS.primary}`}
           onClick={() => window.open(task.webViewLink ?? '', '_blank', 'noopener')}
           type="button"
         >
           Open in Google Tasks
         </button>
       ) : null}
-      <div className="mt-2 flex items-center justify-between">
-        {task ? (
-          <Button
-            aria-busy={taskModel.busy}
-            onClick={() => void taskModel.remove()}
-            size="sm"
-            variant="danger"
-          >
-            Delete
-          </Button>
-        ) : (
-          <span />
-        )}
-        <div className="flex gap-2">
-          <Button onClick={onClose} size="sm" variant="ghost">
-            Cancel
-          </Button>
-          <Button
-            aria-busy={taskModel.busy}
-            disabled={moveConfirmation.pending !== null || saveDisabled}
-            onClick={() => void taskModel.save()}
-            size="sm"
-            variant="primary"
-          >
-            Save
-          </Button>
-        </div>
-      </div>
     </div>
   );
 }

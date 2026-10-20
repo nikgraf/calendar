@@ -70,6 +70,12 @@ tags:
     file: ../open-event.yaml
     env:
       BLOCK: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-c-mine2.*'
+# Delete is the form's last card: scroll it into reach.
+- scrollUntilVisible:
+    element:
+      id: 'event-delete'
+    direction: DOWN
+    timeout: 10000
 - tapOn:
     id: 'event-delete'
 # The confirmation alert (deleteQuestion).

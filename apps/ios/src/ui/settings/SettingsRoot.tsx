@@ -17,7 +17,7 @@ import {
   NavRow,
   Section,
   SettingsPage,
-} from './GroupedList.tsx';
+} from '../GroupedList.tsx';
 import { useSettingsConnections } from './SettingsContext.tsx';
 
 /** The avatar tints, one per Google account in turn. */

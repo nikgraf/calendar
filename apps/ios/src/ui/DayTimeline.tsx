@@ -43,7 +43,14 @@ import Animated, {
 } from 'react-native-reanimated';
 import { AllDayColumn } from './AllDayColumn.tsx';
 import { DayColumn } from './DayColumn.tsx';
-import { BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme, zoneColor } from './theme.ts';
+import {
+  actionText,
+  BOX_FONT_SCALE,
+  type ThemeColors,
+  useStyles,
+  useTheme,
+  zoneColor,
+} from './theme.ts';
 import { useEdgeScroll } from './useEdgeScroll.ts';
 import { useTaskDrag } from './useTaskDrag.ts';
 import { WeekStripCell } from './WeekStrip.tsx';
@@ -717,9 +724,7 @@ const makeStyles = (colors: ThemeColors) =>
       top: 0,
       zIndex: 20,
     },
-    gutterAction: {
-      color: colors.primary,
-    },
+    gutterAction: actionText(colors),
     gutterLabel: {
       color: colors['text-secondary'],
       fontSize: 10,

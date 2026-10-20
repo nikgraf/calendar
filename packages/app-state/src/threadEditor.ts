@@ -5,6 +5,7 @@ import {
   type Contact,
   emailKey,
   type FreeSlot,
+  type PlaceCandidate,
   type ItemKind,
   type TaskListInfo,
   type TaskRecord,
@@ -35,6 +36,7 @@ import {
 } from './editorModel.ts';
 import { useEditorKinds } from './editorKinds.ts';
 import type { EditorSourceKind } from './editorSwitch.ts';
+import { livePlaceChoice } from './draftPlaces.ts';
 import { useBackendMutations } from './hooks.ts';
 import { useOneWrite } from './oneWrite.ts';
 import type { QuickAddItem } from './quickAddItem.ts';
@@ -82,7 +84,9 @@ const NO_CALENDAR_COLOR = '#8a8a8a';
 const EVENT_EDITS = [
   'addAttendee',
   'addReminder',
+  'applyPlace',
   'applySlot',
+  'keepLocationText',
   'pickPlace',
   'removeAttendee',
   'removeReminder',
@@ -555,6 +559,37 @@ export const useThreadEditor = ({
     }
   };
 
+  /**
+   * The places the focused event's last turn could have meant, the one
+   * the field reads marked — while it reads that text or one of them
+   * (`livePlaceChoice`). A pick makes a place the form's, pin and all,
+   * as a hand edit; "as said" gives the text back as it was said, pin
+   * gone; the row stays until dismissed.
+   */
+  const placeChoice =
+    mode === 'event' ? livePlaceChoice(focusedDraft?.placeChoice, eventModel.location) : undefined;
+  const pickPlaceChoice = (candidate: PlaceCandidate) => {
+    if (!settled) {
+      return;
+    }
+    edited();
+    eventModel.applyPlace(candidate.geo);
+  };
+  const keepPlace = () => {
+    if (!settled || placeChoice === undefined) {
+      return;
+    }
+    edited();
+    eventModel.keepLocationText(placeChoice.text);
+  };
+  /** The coordinates the form vouches for now, for the chips to tell a held place from its text. */
+  const placeGeo = eventModel.extras().geo;
+  const dismissPlace = () => {
+    if (settled) {
+      thread.dropPlace(focused);
+    }
+  };
+
   /** Another draft takes the form; the form's edits stay on the one leaving it. Not mid-write. */
   const switchFocus = (index: number) => {
     if (index === focused || drafts[index] === undefined || !settled) {
@@ -684,6 +719,8 @@ export const useThreadEditor = ({
     canAddAll,
     /** A name let go of: no contact is picked for it. */
     dismissInvitee,
+    /** The place row let go of; the field keeps what it reads. */
+    dismissPlace,
     drafts,
     /** For the forms: the setters a person moves count as `userEdits`. */
     eventModel: reportingEdits(eventModel, EVENT_EDITS, edited),
@@ -693,6 +730,8 @@ export const useThreadEditor = ({
     focusedDraft,
     /** Names the focused event's turns invited that need a contact picked. */
     inviteeChoices,
+    /** The location text back as said, pin gone; the row stays. */
+    keepPlace,
     /** The kind control's switch counts as an edit too. */
     kinds: reportingEdits(kinds, ['switchTo'], edited),
     liveItem,
@@ -700,6 +739,12 @@ export const useThreadEditor = ({
     onPhrase,
     /** A contact picked for a name a turn invited: the guest joins the form. */
     pickInvitee,
+    /** A place picked among a turn's candidates: the form takes its text and pin. */
+    pickPlaceChoice,
+    /** The places the focused event's last turn could have meant, the one the form holds among them. */
+    placeChoice,
+    /** The coordinates the form vouches for now: which chip is held, if any. */
+    placeGeo,
     settled,
     switchFocus,
     taskModel: reportingEdits(taskModel, TASK_EDITS, edited),

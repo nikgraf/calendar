@@ -6,6 +6,8 @@ import {
   reminderLabel,
 } from '@calendar/core';
 import { FIELD_CLASS as field } from '../ui/fieldStyles.ts';
+import { FormSection } from './FormSection.tsx';
+import { TEXT_ACTION_CLASS } from '../ui/buttonStyles.ts';
 
 /**
  * The event's reminders. Google: a "calendar default" checkbox (what it
@@ -53,26 +55,21 @@ export function RemindersFields({ model }: { model: ReturnType<typeof useEventEd
             `${override.method === 'email' ? 'Email · ' : ''}${reminderLabel(override.minutes, isAllDay)}`,
         );
     return (
-      <div
-        className="rounded-lg border border-hairline bg-surface p-3"
-        data-testid="event-reminders"
-      >
-        <p className="mb-1 text-xs font-medium text-ink-secondary uppercase">Notifications</p>
+      <FormSection label="Notifications" testId="event-reminders">
         <ul className="text-sm text-ink-secondary">
           {listed.length === 0 ? <li className="text-ink-secondary">None</li> : null}
           {listed.map((label) => (
             <li key={label}>{label}</li>
           ))}
         </ul>
-      </div>
+      </FormSection>
     );
   }
 
   return (
-    <div className="rounded-lg border border-hairline bg-surface p-3" data-testid="event-reminders">
-      <p className="mb-1 text-xs font-medium text-ink-secondary uppercase">Notifications</p>
+    <FormSection label="Notifications" testId="event-reminders">
       {canUseDefaultReminders ? (
-        <label className="mb-2 flex items-center gap-2 text-sm">
+        <label className="flex items-center gap-2 text-sm">
           <input
             aria-label="Use calendar default"
             checked={reminders.useDefault}
@@ -119,7 +116,7 @@ export function RemindersFields({ model }: { model: ReturnType<typeof useEventEd
             <p className="text-sm text-ink-secondary">None</p>
           ) : null}
           <button
-            className="self-start text-sm text-primary hover:underline disabled:text-ink-secondary"
+            className={`self-start text-sm ${TEXT_ACTION_CLASS.primary}`}
             data-testid="event-reminder-add"
             disabled={full || nextPreset === undefined}
             onClick={() => nextPreset !== undefined && addReminder(nextPreset)}
@@ -130,6 +127,6 @@ export function RemindersFields({ model }: { model: ReturnType<typeof useEventEd
           </button>
         </div>
       )}
-    </div>
+    </FormSection>
   );
 }

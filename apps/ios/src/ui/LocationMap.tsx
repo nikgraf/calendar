@@ -1,7 +1,7 @@
 import { type useEventEditorModel } from '@calendar/app-state';
 import { isMappableLocation } from '@calendar/core';
 import { Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
-import { type ThemeColors, useStyles } from './theme.ts';
+import { actionText, type ThemeColors, useStyles } from './theme.ts';
 
 /**
  * expo-maps' Apple Maps view is SwiftUI Map, available from iOS 17 — and
@@ -78,24 +78,27 @@ export function LocationMap({ model }: { model: ReturnType<typeof useEventEditor
 
 const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
+    // Under the title card, in its inset.
     container: {
       gap: 6,
-      marginTop: 8,
+      marginHorizontal: 16,
+      marginTop: 12,
     },
     link: {
-      color: colors.primary,
+      ...actionText(colors),
       fontSize: 14,
     },
     map: {
-      borderRadius: 10,
+      borderRadius: 16,
       height: 160,
       overflow: 'hidden',
     },
     placeholder: {
       alignItems: 'center',
-      backgroundColor: colors.fill,
+      backgroundColor: colors.surface,
       justifyContent: 'center',
-      marginTop: 8,
+      marginHorizontal: 16,
+      marginTop: 12,
     },
     placeholderLabel: {
       color: colors['text-secondary'],

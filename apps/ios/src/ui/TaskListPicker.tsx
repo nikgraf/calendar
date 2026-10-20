@@ -1,7 +1,6 @@
 import { taskListGroups, useAccounts, type useTaskEditorModel } from '@calendar/app-state';
 import { APPLE_REMINDERS_ACCOUNT_ID, type TaskListInfo } from '@calendar/core';
-import { Pressable, Text, View } from 'react-native';
-import { useSheetStyles } from './editSheetShared.ts';
+import { CardCaption, CheckRow, ColorDot, Section } from './GroupedList.tsx';
 
 /** Which account a task list belongs to; the Reminders account is the one synthetic one. */
 const groupLabel = (list: TaskListInfo, emailOf: (accountId: string) => string): string =>
@@ -9,8 +8,10 @@ const groupLabel = (list: TaskListInfo, emailOf: (accountId: string) => string):
 
 /**
  * The task editor's list picker, shared by the Google and Reminders forms:
- * every writable list of every account, grouped per account. Picking a
- * list elsewhere moves the task on Save.
+ * every writable list of every account as one card of check rows, each
+ * account named over its lists (also with one account: the e2e flows
+ * read the fixture account's address there to know it is signed in).
+ * Picking a list elsewhere moves the task on Save.
  */
 export function TaskListPicker({
   disabled,
@@ -19,39 +20,29 @@ export function TaskListPicker({
   disabled: boolean;
   taskModel: ReturnType<typeof useTaskEditorModel>;
 }) {
-  const styles = useSheetStyles();
   const accounts = useAccounts();
   const emailOf = (accountId: string) =>
     accounts.find((account) => account.id === accountId)?.email ?? accountId;
+  const groups = taskListGroups(taskModel.taskLists, (list) => groupLabel(list, emailOf));
   return (
-    <>
-      <Text style={styles.label}>List</Text>
-      {taskListGroups(taskModel.taskLists, (list) => groupLabel(list, emailOf)).map((group) => (
-        <View key={group.label}>
-          <Text style={styles.calendarGroup}>{group.label}</Text>
-          {group.lists.map((list) => {
-            const key = `${list.accountId}:${list.id}`;
-            const selected = key === taskModel.listKey;
-            return (
-              <Pressable
-                disabled={disabled}
-                key={key}
-                onPress={() => taskModel.setListKey(key)}
-                style={styles.calendarRow}
-                testID="task-list-option"
-              >
-                {list.colorHex ? (
-                  <View style={[styles.swatch, { backgroundColor: list.colorHex }]} />
-                ) : null}
-                <Text style={[styles.calendarName, selected && styles.calendarSelected]}>
-                  {list.title}
-                </Text>
-                {selected ? <Text style={styles.check}>✓</Text> : null}
-              </Pressable>
-            );
-          })}
-        </View>
-      ))}
-    </>
+    <Section header="List" tight>
+      {groups.flatMap((group) => [
+        <CardCaption key={`caption:${group.label}`}>{group.label}</CardCaption>,
+        ...group.lists.map((list) => {
+          const key = `${list.accountId}:${list.id}`;
+          return (
+            <CheckRow
+              checked={key === taskModel.listKey}
+              disabled={disabled}
+              key={key}
+              leading={list.colorHex ? <ColorDot color={list.colorHex} /> : undefined}
+              onPress={() => taskModel.setListKey(key)}
+              testID="task-list-option"
+              title={list.title}
+            />
+          );
+        }),
+      ])}
+    </Section>
   );
 }

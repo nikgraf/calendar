@@ -514,6 +514,33 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   open sheet. Review: a failed Apple read or lost access answered no
   events, read as "deleted"; the lookup now asks `strictApple`. Open: an
   Apple event moved over a day away closes it (no lookup by id).
+- **Place candidates** (2026-10-18, #225) — a free-text lookup takes only
+  a MapKit match that resembles the text, and asks for the top five so a
+  choice can be offered (`placeCandidates`, uncached); a region hint from
+  the user's own events, else the primary time zone's city. Probed first
+  (Vienna names): the natural-language search recovers "Fickelmüller",
+  the completer does not; neither recovers a dictated "Cafe Zentral",
+  which a Kölner Phonetik key over past places will (phase 2); "Room 4"
+  got a pin in Weidling, "the office" a bar. A model place must be in
+  the phrase, and one that is title words too only after "at", "in",
+  "bei", "im"…: "Dentist" and "Board review" were places. Rejected: a
+  location permission (the geo seam never prompts); keeping a place that
+  is the title's start ("New York trip" — the user adds it; "Dentist" was
+  the common case). Open: chips for the candidates and past places.
+- **Place choices** (2026-10-18, #226) — a phrase's place is looked up
+  when a turn sets it: the user's own past places first (a year of
+  occurrences, matched by the text they were written as, MapKit's name,
+  or sound — the dictated "Cafe Zentral" case MapKit cannot recover),
+  then MapKit asked two ways (the search reads a misspelling, the
+  completer knows a place's branches), hits that do not resemble the
+  text last. The best resembling one is taken at once — its text replaces
+  what was said and its pin is vouched, so Save sends the coordinates —
+  and every candidate stays as a chip under the quick-add field, the
+  taken one pressed, with "As said" and ×: Nik wants the top match
+  applied and the alternatives always in sight (2026-10-19; a first cut
+  asked instead of taking when two ranked the same, and hid the row once
+  one was taken). Rejected: an "assumed" tint on the field; asking the
+  model. Open: the typeahead's empty state as recent places.
 
 ## Invitees, contacts and birthdays
 
@@ -851,6 +878,21 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   height, which buys one or three form rows and costs the calendar the
   half sheet is for (on an iPhone 17 Pro about 3.5 or 1 hour of timeline
   stay in view instead of 5).
+- **Editor forms as grouped cards, the header given room** (2026-10-17,
+  #223) — #190's squeeze read as bad design once the half sheet was in
+  hand. The iOS editor now draws its forms as iOS inset grouped cards on
+  the Settings pages' rows (`GroupedList`, moved out of `settings/`), in
+  Calendar's and Reminders' own order with the calendar card before the
+  repeat card (picked far more often), a card's header uppercase
+  ("CALENDAR", "REPEAT", "LIST"); the fixed header keeps the Cancel ·
+  title · Save row and the quick-add field (a card on the ground, 17 pt)
+  with its thread, and the kind control scrolls with the form. The
+  desktop panel gets a header that stays (title, Close), captioned
+  sections (When, Where, Repeat, …) and a footer that stays with Delete ·
+  Cancel · Save. Rejected: a taller starting detent (#190's reasons
+  hold), a pushed calendar picker (the inline rows stay the flows'
+  targets and one tap), Repeat inside the dates card (its conditional
+  rows made it long). Open: the chips at the accessibility text sizes.
 - **Slot proposals in the create thread** (2026-10-12, #185) — a phrase
   that asks for free time is routed by code (`isFinderPhrase`: English
   and German cues, a search verb or question beside a time word) to the
@@ -1053,3 +1095,22 @@ first. The decisions, one line each:
   `pnpm brand:build`; the dark icon is the iOS dev variant's. An icon
   change alters the native fingerprint, so it reaches testers only
   through a TestFlight build.
+- **Ink primary** (2026-10-18, #227) — the filled action, the today marker,
+  the now-line, done checks and active chips take the text's warm charcoal
+  (`primary` #2B2630 light / #ECE6EE dark); the focus ring is a grey-plum,
+  selection and the changed-field flash are steps of each scheme's own grey. Replaces the
+  darkened brand plum #584360 and the lilac tints, which weighed on the
+  editor and colored its fields after a quick-add turn. Rejected: the brand
+  plum as-is, mauve, green / blue / warm accents, and a charcoal button with
+  plum or slate signals (needs an `accent` token the apps would have to
+  split from `primary`). The plum stays in the identity only.
+- **Text actions** (2026-10-19, #228) — with `primary` at the text's
+  charcoal, text that acts gets a second cue: a link inside a sentence is
+  underlined in the control-boundary grey, a standalone one (Make
+  primary, Open in Maps, Add due date) takes the Button's medium weight
+  (semibold on iOS, plus a hover underline on the desktop, where a red
+  Remove beside it matches), and iOS Cancel / Close go secondary; iOS red
+  rows keep the system's regular weight. Rejected: an underline on every
+  text action (busy in rows of two or three) and `text-secondary` for all
+  (reads as a caption). Fills, today markers, icons and checks keep plain
+  `primary`. Open: iOS has no link inside a sentence yet.

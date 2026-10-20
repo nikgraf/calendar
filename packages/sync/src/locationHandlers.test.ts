@@ -1,5 +1,21 @@
-import { GeoLocation } from '@calendar/core';
-import { LocationGeoRepo, runMigrations } from '@calendar/db';
+import {
+  Account,
+  CalendarInfo,
+  DEVICE_ZONE,
+  EventRecord,
+  GeoLocation,
+  HISTORY_REGION_RADIUS_METERS,
+  TIME_ZONE_REGION_RADIUS_METERS,
+} from '@calendar/core';
+import {
+  AccountRepo,
+  CalendarRepo,
+  EventRepo,
+  LocationGeoRepo,
+  reposLayer,
+  runMigrations,
+} from '@calendar/db';
+import { makeFakeAppleCalendarClient } from '@calendar/apple-calendar';
 import {
   GeoClient,
   type GeoClientShape,
@@ -8,14 +24,19 @@ import {
 } from '@calendar/geo';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
-import { Effect, Layer } from 'effect';
+import { Effect, Fiber, Layer } from 'effect';
 import { TestClock } from 'effect/testing';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
 import { describe } from 'vite-plus/test';
+import { appleCalendarServicesLayer } from './appleCalendarEvents.ts';
+import { writeTimeZoneSettings } from './deviceSettings.ts';
 import {
+  CANDIDATE_SEARCH_TIMEOUT,
   LOCATION_MISS_TTL_MS,
   LOCATION_REFRESH_AFTER_MS,
   locationHandlers,
+  REGION_HINT_TTL_MS,
+  regionHint,
 } from './locationHandlers.ts';
 
 const places = [
@@ -31,12 +52,67 @@ const places = [
 const setup = (client: GeoClientShape) =>
   Layer.mergeAll(
     Layer.succeed(GeoClient, client),
-    LocationGeoRepo.layer.pipe(
+    appleCalendarServicesLayer(makeFakeAppleCalendarClient().client).pipe(
+      Layer.provideMerge(reposLayer),
       Layer.provideMerge(Layer.effectDiscard(runMigrations)),
       Layer.provideMerge(SqliteClient.layer({ filename: ':memory:' })),
       Layer.provideMerge(reactivityLayer),
     ),
   );
+
+const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
+const VIENNA = { lat: 48.2082, lng: 16.3738 };
+const BERLIN = { lat: 52.52, lng: 13.405 };
+
+/** An event with coordinates, `daysAgo` days back from the test clock's zero. */
+const placedEvent = (id: string, daysAgo: number, at: { lat: number; lng: number }) =>
+  new EventRecord({
+    accountId: 'acc',
+    calendarId: 'cal',
+    endUtc: -daysAgo * DAY_MS + HOUR_MS,
+    etag: `"${id}"`,
+    geo: new GeoLocation({ ...at, source: id }),
+    id,
+    isAllDay: false,
+    location: id,
+    startTimeZone: 'UTC',
+    startUtc: -daysAgo * DAY_MS,
+    status: 'confirmed',
+    syncedAt: 1,
+    syncStatus: 'synced',
+    title: id,
+    updatedAt: 1,
+  });
+
+const seedPlaced = (events: ReadonlyArray<EventRecord>) =>
+  Effect.gen(function* () {
+    yield* (yield* AccountRepo).upsert(
+      new Account({
+        contactsEnabled: false,
+        createdAt: 1,
+        email: 'e2e@example.com',
+        id: 'acc',
+        provider: 'google',
+        status: 'ok',
+        tasksEnabled: false,
+      }),
+    );
+    yield* (yield* CalendarRepo).upsertMany([
+      new CalendarInfo({
+        accessRole: 'owner',
+        accountId: 'acc',
+        colorHex: '#4285f4',
+        id: 'cal',
+        isPrimary: true,
+        isVisible: true,
+        provider: 'google',
+        summary: 'Work',
+        timeZone: 'UTC',
+      }),
+    ]);
+    yield* (yield* EventRepo).upsertMany(events);
+  });
 
 describe('searchPlaces', () => {
   it.effect('returns suggestions for place text', () => {
@@ -192,5 +268,292 @@ describe('mapSnapshot', () => {
         { appearance: 'light', height: 1200, lat: 1, lng: 2, scale: 3, width: 372 },
       ]);
     }).pipe(Effect.provide(setup(recording)));
+  });
+});
+
+describe('the resemblance gate', () => {
+  // What a search answers for a text that names no such place.
+  const junk = [
+    { lat: 48.3, lng: 16.3, name: 'Am Rahm 4', subtitle: '3400 Weidling', title: 'Rahm 4' },
+  ];
+  const figlmuellers = [
+    { lat: 48.21, lng: 16.37, name: 'Figl Bar', subtitle: 'Wien', title: 'Figl' },
+    {
+      lat: 48.209,
+      lng: 16.375,
+      name: 'Figlmüller Wollzeile',
+      subtitle: 'Wollzeile 5, 1010 Wien',
+      title: 'Figlmüller Wollzeile',
+    },
+    // Streets apart from the Wollzeile one: nearer than 100 m they would be one place.
+    {
+      lat: 48.212,
+      lng: 16.379,
+      name: 'Figlmüller Bäckerstrasse',
+      subtitle: 'Bäckerstraße 6, 1010 Wien',
+      title: 'Figlmüller',
+    },
+  ];
+
+  it.effect(
+    'gives free text no pin for a match that does not resemble it, and caches the miss',
+    () => {
+      const { client, state } = makeFakeGeoClient({ places: junk });
+      return Effect.gen(function* () {
+        expect(yield* locationHandlers.resolveLocation({ location: 'Room 4' })).toBeNull();
+        expect(yield* locationHandlers.resolveLocation({ location: 'Room 4' })).toBeNull();
+        expect(state.calls).toEqual(['resolve:Room 4']);
+        // A picked suggestion is that place, whatever it is called.
+        expect(
+          yield* locationHandlers.resolveLocation({
+            location: 'Room 4',
+            suggestion: { subtitle: '3400 Weidling', title: 'Rahm 4' },
+          }),
+        ).toMatchObject({ name: 'Am Rahm 4' });
+      }).pipe(Effect.provide(setup(client)));
+    },
+  );
+
+  it.effect('takes the first match that resembles the text as the pin', () => {
+    const { client } = makeFakeGeoClient({ places: figlmuellers });
+    return Effect.gen(function* () {
+      expect(yield* locationHandlers.resolveLocation({ location: 'Figlmüller' })).toMatchObject({
+        name: 'Figlmüller Wollzeile',
+        source: 'Figlmüller',
+      });
+    }).pipe(Effect.provide(setup(client)));
+  });
+
+  it.effect(
+    'offers the hits that resemble the text first, then the rest, each once, uncached',
+    () => {
+      const { client, state } = makeFakeGeoClient({ places: figlmuellers });
+      return Effect.gen(function* () {
+        const candidates = yield* locationHandlers.placeCandidates({ location: 'Figlmüller' });
+        // The search and the completer both answer the Figlmüllers: listed once.
+        expect(candidates.map((candidate) => [candidate.geo.name, candidate.match])).toEqual([
+          ['Figlmüller Wollzeile', 'words'],
+          ['Figlmüller Bäckerstrasse', 'words'],
+          ['Figl Bar', 'search'],
+        ]);
+        // A pick writes the name and address, as a picked typeahead row would.
+        expect(candidates[0]).toMatchObject({
+          address: 'Wollzeile 5, 1010 Wien',
+          geo: { source: 'Figlmüller Wollzeile, Wollzeile 5, 1010 Wien' },
+          source: 'mapkit',
+        });
+        yield* locationHandlers.placeCandidates({ location: 'Figlmüller' });
+        expect(state.calls.filter((call) => call === 'resolve:Figlmüller')).toHaveLength(2);
+        expect(
+          yield* locationHandlers.placeCandidates({ location: 'https://zoom.us/j/1' }),
+        ).toEqual([]);
+      }).pipe(Effect.provide(setup(client)));
+    },
+  );
+
+  it.effect('finds a branch only the completer knows, resolved to its place', () => {
+    const { client } = makeFakeGeoClient({ places: figlmuellers });
+    return Effect.gen(function* () {
+      // The search reads nothing in "Wollzeile" (no title is in it); the completer's row is.
+      const candidates = yield* locationHandlers.placeCandidates({ location: 'Wollzeile' });
+      expect(candidates.map((c) => [c.geo.name, c.match])).toEqual([
+        ['Figlmüller Wollzeile', 'words'],
+      ]);
+    }).pipe(Effect.provide(setup(client)));
+  });
+
+  it.effect('keeps the completer rows that resolved when one of them stalls', () => {
+    // Review: one stalled row timed the whole batch out, finished rows included.
+    // The budget stays one: the rows resolve within the completer's
+    // 3 s, so the hook's 5 s (`placesOf`) is never passed.
+    const base = makeFakeGeoClient({ places: figlmuellers }).client;
+    const oneStalls: GeoClientShape = {
+      ...base,
+      resolve: (params) =>
+        params.suggestion === undefined
+          ? Effect.succeed([])
+          : params.suggestion.title === 'Figlmüller'
+            ? Effect.never
+            : base.resolve(params),
+    };
+    return Effect.gen(function* () {
+      const asked = yield* Effect.forkChild(
+        locationHandlers.placeCandidates({ location: 'Figlmüller' }),
+      );
+      yield* TestClock.adjust(CANDIDATE_SEARCH_TIMEOUT);
+      const candidates = yield* Fiber.join(asked);
+      expect(candidates.map((c) => c.geo.name)).toEqual(['Figlmüller Wollzeile']);
+    }).pipe(Effect.provide(setup(oneStalls)));
+  });
+
+  it.effect('keeps what the search answered when the completer stalls', () => {
+    // Review: one timeout over both ways threw the finished answer away too.
+    const stalledRows: GeoClientShape = {
+      ...makeFakeGeoClient({ places: figlmuellers }).client,
+      search: () => Effect.never,
+    };
+    return Effect.gen(function* () {
+      const asked = yield* Effect.forkChild(
+        locationHandlers.placeCandidates({ location: 'Figlmüller' }),
+      );
+      yield* TestClock.adjust(CANDIDATE_SEARCH_TIMEOUT);
+      const candidates = yield* Fiber.join(asked);
+      expect(candidates.map((c) => c.geo.name)).toEqual([
+        'Figlmüller Wollzeile',
+        'Figlmüller Bäckerstrasse',
+        'Figl Bar',
+      ]);
+    }).pipe(Effect.provide(setup(stalledRows)));
+  });
+
+  it.effect('reads the past places once for a while, then again', () => {
+    // Review: a year of occurrences was expanded on every turn.
+    const { client } = makeFakeGeoClient({ places });
+    return Effect.gen(function* () {
+      expect(yield* locationHandlers.placeCandidates({ location: 'Café Central' })).toEqual([]);
+      yield* seedPlaced([
+        new EventRecord({
+          ...placedEvent('coffee', 20, { lat: 48.21, lng: 16.365 }),
+          geo: new GeoLocation({
+            lat: 48.21,
+            lng: 16.365,
+            name: 'Café Central',
+            source: 'Café Central',
+          }),
+          location: 'Café Central',
+        }),
+      ]);
+      expect(yield* locationHandlers.placeCandidates({ location: 'Café Central' })).toEqual([]);
+      yield* TestClock.adjust(REGION_HINT_TTL_MS + 1);
+      expect(
+        (yield* locationHandlers.placeCandidates({ location: 'Café Central' })).map(
+          (c) => c.source,
+        ),
+      ).toEqual(['history']);
+    }).pipe(Effect.provide(setup(client)));
+  });
+
+  it.effect('answers the past places alone when the search stalls', () => {
+    // Review: a stalled MapKit request held the whole draft, title and times too.
+    const stalled: GeoClientShape = {
+      ...makeFakeGeoClient({ places }).client,
+      resolve: () => Effect.never,
+    };
+    return Effect.gen(function* () {
+      yield* seedPlaced([
+        new EventRecord({
+          ...placedEvent('coffee', 20, { lat: 48.21, lng: 16.365 }),
+          geo: new GeoLocation({
+            lat: 48.21,
+            lng: 16.365,
+            name: 'Café Central',
+            source: 'Café Central',
+          }),
+          location: 'Café Central',
+        }),
+      ]);
+      const asked = yield* Effect.forkChild(
+        locationHandlers.placeCandidates({ location: 'Café Central' }),
+      );
+      yield* TestClock.adjust(CANDIDATE_SEARCH_TIMEOUT);
+      const candidates = yield* Fiber.join(asked);
+      expect(candidates.map((c) => [c.source, c.geo.source])).toEqual([
+        ['history', 'Café Central'],
+      ]);
+    }).pipe(Effect.provide(setup(stalled)));
+  });
+
+  it.effect('has no candidates without a bridge', () =>
+    Effect.gen(function* () {
+      expect(yield* locationHandlers.placeCandidates({ location: 'Figlmüller' })).toEqual([]);
+    }).pipe(Effect.provide(setup(unavailableGeoClient('off')))),
+  );
+});
+
+describe('regionHint', () => {
+  it.effect(
+    'looks around the densest cluster of recent events, the latest first among equals',
+    () => {
+      const { client, state } = makeFakeGeoClient({ places });
+      return Effect.gen(function* () {
+        yield* seedPlaced([
+          placedEvent('berlin', 3, BERLIN),
+          placedEvent('vienna-1', 10, VIENNA),
+          placedEvent('vienna-2', 20, { lat: 48.21, lng: 16.4 }),
+          // Beyond the window: does not count.
+          placedEvent('old', 120, { lat: 0, lng: 0 }),
+        ]);
+        const region = yield* regionHint;
+        expect(region?.radiusMeters).toBe(HISTORY_REGION_RADIUS_METERS);
+        expect(region?.lat).toBeCloseTo((VIENNA.lat + 48.21) / 2, 4);
+        // Both lookups carry it.
+        yield* locationHandlers.searchPlaces({ query: 'Blue Bottle' });
+        yield* locationHandlers.resolveLocation({ location: 'Blue Bottle Coffee' });
+        expect(state.regions.map((hint) => hint?.radiusMeters)).toEqual([
+          HISTORY_REGION_RADIUS_METERS,
+          HISTORY_REGION_RADIUS_METERS,
+        ]);
+        // A picked suggestion needs no hint.
+        yield* locationHandlers.resolveLocation({
+          location: 'Blue Bottle Coffee',
+          suggestion: { subtitle: '66 Mint St, San Francisco', title: 'Blue Bottle Coffee' },
+        });
+        expect(state.regions.at(-1)).toBeUndefined();
+      }).pipe(Effect.provide(setup(client)));
+    },
+  );
+
+  it.effect('counts the occurrences that were, not a series once or a future override', () => {
+    // Review: a daily Vienna series with tomorrow's Berlin override chose Berlin.
+    const { client } = makeFakeGeoClient({ places });
+    return Effect.gen(function* () {
+      const series = placedEvent('series', 30, VIENNA);
+      yield* seedPlaced([
+        new EventRecord({ ...series, recurrence: ['RRULE:FREQ=DAILY'] }),
+        new EventRecord({
+          ...placedEvent('series_tomorrow', -1, BERLIN),
+          originalStartUtc: DAY_MS,
+          recurringEventId: 'series',
+        }),
+        new EventRecord({ ...placedEvent('gone', 2, BERLIN), status: 'cancelled' }),
+      ]);
+      const region = yield* regionHint;
+      expect(region?.lat).toBeCloseTo(VIENNA.lat, 3);
+      expect(region?.lng).toBeCloseTo(VIENNA.lng, 3);
+    }).pipe(Effect.provide(setup(client)));
+  });
+
+  it.effect('reuses the hint for a while, then reads the events again', () => {
+    // Review: every keystroke read a quarter's events and clustered them.
+    const { client } = makeFakeGeoClient({ places });
+    return Effect.gen(function* () {
+      yield* seedPlaced([placedEvent('vienna', 1, VIENNA)]);
+      expect((yield* regionHint)?.lat).toBeCloseTo(VIENNA.lat, 3);
+      yield* (yield* EventRepo).upsertMany([
+        placedEvent('berlin-1', 0, BERLIN),
+        placedEvent('berlin-2', 0, { lat: 52.5, lng: 13.4 }),
+      ]);
+      expect((yield* regionHint)?.lat).toBeCloseTo(VIENNA.lat, 3);
+      yield* TestClock.adjust(REGION_HINT_TTL_MS + 1);
+      expect((yield* regionHint)?.lat).toBeCloseTo(BERLIN.lat, 1);
+    }).pipe(Effect.provide(setup(client)));
+  });
+
+  it.effect('falls back to the primary time zone’s city, else to no hint', () => {
+    const { client } = makeFakeGeoClient({ places });
+    return Effect.gen(function* () {
+      yield* writeTimeZoneSettings({
+        primary: 'Europe/Vienna',
+        zones: [DEVICE_ZONE, 'Europe/Vienna'],
+      });
+      expect(yield* regionHint).toEqual({
+        ...VIENNA,
+        radiusMeters: TIME_ZONE_REGION_RADIUS_METERS,
+      });
+      yield* writeTimeZoneSettings({ primary: 'Etc/UTC', zones: [DEVICE_ZONE, 'Etc/UTC'] });
+      // The hint is reused for a while: the new zone counts once it expires.
+      yield* TestClock.adjust(REGION_HINT_TTL_MS + 1);
+      expect(yield* regionHint).toBeUndefined();
+    }).pipe(Effect.provide(setup(client)));
   });
 });

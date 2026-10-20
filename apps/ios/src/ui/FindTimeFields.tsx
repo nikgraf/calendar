@@ -14,20 +14,22 @@ import {
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { backendClient } from '../backend.ts';
 import { languageModel } from '../model.ts';
-import { chip, chipLabel, useSheetStyles } from './editSheetShared.ts';
+import { Chip } from './Chip.tsx';
+import { ActionRow, RowSlot } from './GroupedList.tsx';
 import { onAppActive } from './QuickAddBar.tsx';
-import { BOX_FONT_SCALE, type ThemeColors, useStyles } from './theme.ts';
+import { BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme } from './theme.ts';
 
 /**
- * "Find a time" under the event's date and times: a few preset chip rows
- * over the pure solver (window, hours, days, duration), a Search, and the
- * free slots as chips — a tap moves the event there. With the on-device
- * model a phrase fills the presets; without it the finder works the
- * same. The duration starts as the form's own.
+ * "Find a time" at the foot of the event's dates card: a row that opens
+ * the finder in its place — a few preset chip rows over the pure solver
+ * (window, hours, days, duration), a Search, and the free slots as chips,
+ * a tap moving the event there. With the on-device model a phrase fills
+ * the presets; without it the finder works the same. The duration starts
+ * as the form's own.
  */
 export function FindTimeFields({ model }: { model: ReturnType<typeof useEventEditorModel> }) {
-  const sheetStyles = useSheetStyles();
   const styles = useStyles(makeStyles);
+  const { colors } = useTheme();
   const { status } = useModelAvailability(languageModel, onAppActive);
   const { existing, scope } = model;
   const finder = useFindTimeModel({
@@ -50,18 +52,7 @@ export function FindTimeFields({ model }: { model: ReturnType<typeof useEventEdi
     return null;
   }
   if (!finder.open) {
-    return (
-      <Pressable
-        accessibilityRole="button"
-        onPress={finder.openFinder}
-        style={styles.openButton}
-        testID="find-time"
-      >
-        <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.openLabel}>
-          Find a time
-        </Text>
-      </Pressable>
-    );
+    return <ActionRow onPress={finder.openFinder} testID="find-time" title="Find a time" />;
   }
   const row = <T extends string>(
     label: string,
@@ -70,29 +61,31 @@ export function FindTimeFields({ model }: { model: ReturnType<typeof useEventEdi
     pick: (value: T) => void,
     testIDPrefix: string,
   ) => (
-    <View>
-      <Text style={sheetStyles.label}>{label}</Text>
-      <View style={sheetStyles.scopeRow}>
+    <View style={styles.group}>
+      <Text style={styles.groupLabel}>{label}</Text>
+      <View style={styles.chips}>
         {options.map((option) => (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityState={{ selected: option.value === selected }}
+          <Chip
             key={option.value}
+            label={option.label}
             onPress={() => pick(option.value)}
-            style={chip(sheetStyles, option.value === selected)}
+            selected={option.value === selected}
             testID={`${testIDPrefix}-${option.value}`}
-          >
-            <Text style={chipLabel(sheetStyles, option.value === selected)}>{option.label}</Text>
-          </Pressable>
+          />
         ))}
       </View>
     </View>
   );
   return (
-    <View style={styles.box} testID="find-time-fields">
+    <RowSlot testID="find-time-fields">
       <View style={styles.header}>
         <Text style={styles.eyebrow}>Find a time</Text>
-        <Pressable accessibilityRole="button" onPress={finder.close} testID="find-time-close">
+        <Pressable
+          accessibilityRole="button"
+          hitSlop={8}
+          onPress={finder.close}
+          testID="find-time-close"
+        >
           <Text style={styles.closeLabel}>Close</Text>
         </Pressable>
       </View>
@@ -104,6 +97,7 @@ export function FindTimeFields({ model }: { model: ReturnType<typeof useEventEdi
             onChangeText={finder.setPhrase}
             onSubmitEditing={() => void finder.readPhrase()}
             placeholder="90 min focus next week, mornings"
+            placeholderTextColor={colors['text-secondary']}
             returnKeyType="go"
             style={styles.phrase}
             testID="find-time-phrase"
@@ -157,7 +151,7 @@ export function FindTimeFields({ model }: { model: ReturnType<typeof useEventEdi
         )}
       </View>
       {finder.slots && finder.slots.length > 0 ? (
-        <View style={styles.slots} testID="find-time-slots">
+        <View style={styles.chips} testID="find-time-slots">
           {finder.slots.map((slot, index) => (
             <Pressable
               accessibilityRole="button"
@@ -174,7 +168,7 @@ export function FindTimeFields({ model }: { model: ReturnType<typeof useEventEdi
           ))}
         </View>
       ) : null}
-    </View>
+    </RowSlot>
   );
 }
 
@@ -186,16 +180,9 @@ const makeStyles = (colors: ThemeColors) =>
       justifyContent: 'space-between',
       minHeight: 36,
     },
-    box: {
-      backgroundColor: colors['surface-subtle'],
-      borderRadius: 12,
-      gap: 10,
-      marginBottom: 14,
-      padding: 12,
-    },
     button: {
       backgroundColor: colors.primary,
-      borderRadius: 8,
+      borderRadius: 10,
       paddingHorizontal: 14,
       paddingVertical: 8,
     },
@@ -204,9 +191,14 @@ const makeStyles = (colors: ThemeColors) =>
       fontSize: 15,
       fontWeight: '600',
     },
+    chips: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+    },
     closeLabel: {
       color: colors['text-secondary'],
-      fontSize: 14,
+      fontSize: 15,
     },
     disabled: {
       opacity: 0.4,
@@ -215,8 +207,16 @@ const makeStyles = (colors: ThemeColors) =>
       color: colors.danger,
     },
     eyebrow: {
-      color: colors.primary,
-      fontSize: 12,
+      color: colors.text,
+      fontSize: 17,
+      fontWeight: '600',
+    },
+    group: {
+      gap: 8,
+    },
+    groupLabel: {
+      color: colors['text-secondary'],
+      fontSize: 13,
       fontWeight: '600',
     },
     header: {
@@ -224,28 +224,14 @@ const makeStyles = (colors: ThemeColors) =>
       flexDirection: 'row',
       justifyContent: 'space-between',
     },
-    openButton: {
-      alignSelf: 'flex-start',
-      backgroundColor: colors.fill,
-      borderRadius: 8,
-      marginBottom: 14,
-      marginTop: 4,
-      paddingHorizontal: 12,
-      paddingVertical: 7,
-    },
-    openLabel: {
-      color: colors.text,
-      fontSize: 14,
-      fontWeight: '600',
-    },
     phrase: {
       backgroundColor: colors.fill,
-      borderRadius: 8,
+      borderRadius: 10,
       color: colors.text,
       flex: 1,
       fontSize: 15,
-      paddingHorizontal: 10,
-      paddingVertical: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 9,
     },
     phraseRow: {
       alignItems: 'center',
@@ -254,29 +240,24 @@ const makeStyles = (colors: ThemeColors) =>
     },
     secondaryButton: {
       backgroundColor: colors.fill,
-      borderRadius: 8,
+      borderRadius: 10,
       paddingHorizontal: 12,
-      paddingVertical: 8,
+      paddingVertical: 9,
     },
     secondaryLabel: {
       color: colors.text,
-      fontSize: 14,
+      fontSize: 15,
       fontWeight: '600',
     },
     slotChip: {
       backgroundColor: colors.selection,
-      borderRadius: 16,
-      paddingHorizontal: 12,
-      paddingVertical: 6,
+      borderRadius: 999,
+      paddingHorizontal: 14,
+      paddingVertical: 7,
     },
     slotLabel: {
       color: colors['on-selection'],
-      fontSize: 14,
-    },
-    slots: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: 8,
+      fontSize: 15,
     },
     status: {
       color: colors['text-secondary'],

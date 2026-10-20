@@ -20,25 +20,30 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
+  type TextInputProps,
   View,
 } from 'react-native';
 import { Pressable as GesturePressable } from 'react-native-gesture-handler';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import {
+  actionText,
   BOX_FONT_SCALE,
   chipTextColor,
   groupedGround,
   type ThemeColors,
   useStyles,
   useTheme,
-} from '../theme.ts';
+} from './theme.ts';
 
 /**
- * The building blocks of the Settings pages: iOS's inset grouped list —
- * sections of rows on a tinted ground, an uppercase header above a
- * section, explanations in its footer — drawn on the brand tokens. Rows
- * use the real controls (SwiftUI's toggle through `@expo/ui`) and a
- * separator that starts at the text, not under the icon.
+ * The building blocks of the Settings pages and the editor's forms:
+ * iOS's inset grouped list — sections of rows on a tinted ground, an
+ * uppercase header above a section, explanations in its footer — drawn
+ * on the brand tokens. Rows use the real controls (SwiftUI's toggle
+ * through `@expo/ui`) and a separator that starts at the text, not under
+ * the icon. The forms add rows that are a text field, a row of chips
+ * under a label, and free content (`FieldRow`, `ChipsRow`, `RowSlot`).
  */
 
 /**
@@ -87,38 +92,129 @@ export function SettingsPage({ children, testID }: { children: ReactNode; testID
   );
 }
 
-/** A section: optional header, its rows in one rounded card, optional footer text. */
+/**
+ * A section: optional header, its rows in one rounded card, optional
+ * footer text. `tight`: the editor's forms, whose sections sit closer
+ * than Settings' (more of them, few footers between).
+ */
 export function Section({
   children,
   footer,
   header,
   testID,
+  tight = false,
 }: {
   children?: ReactNode;
   footer?: ReactNode;
   header?: string;
   testID?: string;
+  tight?: boolean;
 }) {
   const styles = useStyles(makeStyles);
   const rows = Children.toArray(children);
   return (
-    <View style={styles.section} testID={testID}>
+    <View style={[styles.section, tight && styles.sectionTight]} testID={testID}>
       {header ? <Text style={styles.header}>{header}</Text> : null}
       {rows.length > 0 ? (
         <View style={styles.card}>
-          {rows.map((row, index) => (
-            <FirstRowContext.Provider
-              key={isValidElement(row) && row.key !== null ? row.key : index}
-              value={index === 0}
-            >
-              {row}
-            </FirstRowContext.Provider>
-          ))}
+          <Rows first>{rows}</Rows>
         </View>
       ) : null}
       {typeof footer === 'string' ? <Footer>{footer}</Footer> : footer}
     </View>
   );
+}
+
+/**
+ * Several rows from one component (a field with its suggestions under
+ * it): each but the first draws its separator, and the first draws one
+ * only when something in the card precedes the group. A Section sees the
+ * component as one child, so this hands the card's position on.
+ */
+export function Rows({ children, first }: { children: ReactNode; first?: boolean }) {
+  const inherited = useContext(FirstRowContext);
+  const leads = first ?? inherited;
+  return Children.toArray(children).map((row, index) => (
+    <FirstRowContext.Provider
+      key={isValidElement(row) && row.key !== null ? row.key : index}
+      value={index === 0 && leads}
+    >
+      {row}
+    </FirstRowContext.Provider>
+  ));
+}
+
+/**
+ * A row that is a text field — the editor's Title, Location, Notes and
+ * URL: the field fills the row, so a tap anywhere in it lands in the
+ * field, and a multiline one grows with its text. The ink is set: a
+ * TextInput's defaults to black whatever the appearance.
+ */
+export function FieldRow({
+  multiline = false,
+  style,
+  ...input
+}: TextInputProps & { multiline?: boolean }) {
+  const styles = useStyles(makeStyles);
+  const { colors } = useTheme();
+  const first = useContext(FirstRowContext);
+  return (
+    <View style={[styles.fieldRow, !first && styles.separator]}>
+      <TextInput
+        placeholderTextColor={colors['text-secondary']}
+        {...input}
+        multiline={multiline}
+        style={[styles.field, multiline && styles.fieldMultiline, style]}
+      />
+    </View>
+  );
+}
+
+/** Free content in a row's box, with the row's insets and separator (a field with chips, a finder). */
+export function RowSlot({ children, testID }: { children: ReactNode; testID?: string }) {
+  const styles = useStyles(makeStyles);
+  const first = useContext(FirstRowContext);
+  return (
+    <View style={[styles.slot, !first && styles.separator]} testID={testID}>
+      {children}
+    </View>
+  );
+}
+
+/**
+ * A row of chips, under a label when the card's header does not name
+ * them — the editor's repeat, priority, alert and notification choices.
+ */
+export function ChipsRow({
+  children,
+  label,
+  testID,
+}: {
+  children: ReactNode;
+  label?: string;
+  testID?: string;
+}) {
+  const styles = useStyles(makeStyles);
+  const first = useContext(FirstRowContext);
+  return (
+    <View style={[styles.slot, !first && styles.separator]} testID={testID}>
+      {label ? <Text style={styles.title}>{label}</Text> : null}
+      <View style={styles.chips}>{children}</View>
+    </View>
+  );
+}
+
+/** A caption inside a card over the rows it groups (an account's calendars). */
+export function CardCaption({ children }: { children: string }) {
+  const styles = useStyles(makeStyles);
+  const first = useContext(FirstRowContext);
+  return <Text style={[styles.caption, !first && styles.separator]}>{children}</Text>;
+}
+
+/** A calendar's or list's color as a small dot, leading its row. */
+export function ColorDot({ color }: { color: string }) {
+  const styles = useStyles(makeStyles);
+  return <View style={[styles.dot, { backgroundColor: color }]} />;
 }
 
 /**
@@ -805,6 +901,16 @@ const makeStyles = (colors: ThemeColors) =>
     capsulePressed: {
       opacity: 0.6,
     },
+    // Inset like a row's text, so the separator above it starts there too.
+    caption: {
+      color: colors['text-secondary'],
+      fontSize: 13,
+      lineHeight: 18,
+      marginLeft: 16,
+      paddingBottom: 4,
+      paddingRight: 16,
+      paddingTop: 12,
+    },
     card: {
       backgroundColor: colors.surface,
       borderRadius: 20,
@@ -829,6 +935,11 @@ const makeStyles = (colors: ThemeColors) =>
     },
     checkSpace: {
       width: 17,
+    },
+    chips: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
     },
     colorCheck: {
       alignItems: 'center',
@@ -877,6 +988,11 @@ const makeStyles = (colors: ThemeColors) =>
     disabled: {
       opacity: 0.4,
     },
+    dot: {
+      borderRadius: 7,
+      height: 14,
+      width: 14,
+    },
     experimental: {
       alignItems: 'center',
       gap: 6,
@@ -887,6 +1003,23 @@ const makeStyles = (colors: ThemeColors) =>
       fontSize: 13,
       lineHeight: 18,
       textAlign: 'center',
+    },
+    // The field's own padding makes the row's height (a 17 pt line in 52 pt).
+    field: {
+      color: colors.text,
+      fontSize: 17,
+      minHeight: 52,
+      paddingRight: 16,
+      paddingVertical: 15,
+    },
+    fieldMultiline: {
+      minHeight: 100,
+      paddingTop: 14,
+      textAlignVertical: 'top',
+    },
+    // Inset like a row's text, so the separator above it starts there too.
+    fieldRow: {
+      marginLeft: 16,
     },
     footer: {
       color: colors['text-secondary'],
@@ -950,9 +1083,19 @@ const makeStyles = (colors: ThemeColors) =>
     section: {
       marginTop: 28,
     },
+    sectionTight: {
+      marginTop: 20,
+    },
     separator: {
       borderTopColor: colors.border,
       borderTopWidth: StyleSheet.hairlineWidth,
+    },
+    // Inset like a row's text, so the separator above it starts there too.
+    slot: {
+      gap: 10,
+      marginLeft: 16,
+      paddingRight: 16,
+      paddingVertical: 13,
     },
     subtitle: {
       color: colors['text-secondary'],
@@ -997,9 +1140,7 @@ const makeStyles = (colors: ThemeColors) =>
       justifyContent: 'center',
       width: 30,
     },
-    tint: {
-      color: colors.primary,
-    },
+    tint: actionText(colors),
     title: {
       color: colors.text,
       fontSize: 17,

@@ -18,7 +18,7 @@ import {
 import { useEffect, useEffectEvent, useState } from 'react';
 import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { confirmEditorRequest } from './EventEditSheet.tsx';
-import { BOX_FONT_SCALE, type ThemeColors, useEventTint, useStyles } from './theme.ts';
+import { actionText, BOX_FONT_SCALE, type ThemeColors, useEventTint, useStyles } from './theme.ts';
 import { ZoneLines } from './ZoneLines.tsx';
 
 const STATUS_LABEL: Record<string, string> = {
@@ -333,9 +333,8 @@ const makeStyles = (colors: ThemeColors) =>
       width: 10,
     },
     edit: {
-      color: colors.primary,
+      ...actionText(colors),
       fontSize: 16,
-      fontWeight: '600',
     },
     error: {
       color: colors.danger,

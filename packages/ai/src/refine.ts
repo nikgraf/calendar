@@ -204,15 +204,11 @@ export const normalizeRefine = (
     guests && (invite.length > 0 || uninvite.length > 0 || invitesAnyone(utterance));
   const title = aboutGuests ? draft.title : renamed;
   const text = words(utterance);
-  // Beside guests, a place only as the words say it: the model made up
-  // "Bob's house" for "make it 8pm and invite Bob" (observed).
-  const said = meaningfulText(parse.location);
-  const place = aboutGuests && said !== undefined && !text.includes(words(said)) ? undefined : said;
-  const location = CLEAR_PLACE.test(text)
-    ? undefined
-    : place === undefined
-      ? draft.location
-      : placeOf(place, title);
+  // A place only as the words say it (`placeOf`): the model made up
+  // "Bob's house" for "make it 8pm and invite Bob", and echoes the
+  // draft's own place, which then stays as it is.
+  const place = placeOf(meaningfulText(parse.location), title, utterance);
+  const location = CLEAR_PLACE.test(text) ? undefined : (place ?? draft.location);
 
   const modelDate = realDate(parse.date?.trim());
   let date =

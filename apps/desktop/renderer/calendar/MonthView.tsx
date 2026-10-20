@@ -224,9 +224,9 @@ export function MonthView({
                 events: dayEvents.length,
                 tasks: dayTasks.length,
               })}
-              className={`flex min-h-0 cursor-default flex-col items-stretch gap-0.5 border-r border-b border-hairline p-1 text-left outline-none focus-visible:bg-selection/40 ${
+              className={`flex min-h-0 cursor-default flex-col items-stretch gap-0.5 border-r border-b border-hairline p-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-inset ${
                 inMonth ? 'bg-surface' : 'bg-surface-subtle'
-              } hover:bg-selection/40`}
+              } hover:bg-selection`}
               key={iso}
               onClick={() => onSelectDay(date)}
               onKeyDown={(key) => {

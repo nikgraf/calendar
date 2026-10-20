@@ -6,6 +6,7 @@ export * from './captureModel.ts';
 export * from './draftPreview.ts';
 export * from './draftAtoms.ts';
 export * from './draftInvitees.ts';
+export * from './draftPlaces.ts';
 export * from './draftThread.ts';
 export * from './editorKinds.ts';
 export * from './editorOptions.ts';

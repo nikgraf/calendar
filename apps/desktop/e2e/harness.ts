@@ -517,47 +517,79 @@ export class Cdp {
 
   /**
    * Center-ish point of the nth *interactable* element matching the selector.
-   * Skips elements outside the horizontal viewport — the week grid renders
-   * clipped pan-buffer day columns whose blocks precede the visible ones in
-   * DOM order, so raw indexing would target unclickable coordinates. Scrolls
-   * the element into the middle of its container — on CI the week grid can
+   * Measures only the part of the element that is on screen: the week grid
+   * renders clipped pan-buffer day columns whose blocks precede the visible
+   * ones in DOM order (raw indexing would target unclickable coordinates),
+   * and a block can run past the grid's edge — a multi-day event that
+   * starts on the week's last day reaches into next week's hidden columns,
+   * so its own centre is off screen while its visible part is not. A
+   * scrolling ancestor's scrollbar is not on screen either. Scrolls the
+   * element into the middle of its container — on CI the week grid can
    * land scrolled differently, leaving early-morning blocks under the sticky
    * header — and hit-tests the final point so transient overlays retry
    * instead of clicking through to the wrong element.
+   *
+   * `avoid`: a selector for parts of the element the point must not land
+   * on (a task chip's checkbox button); the point then moves along the
+   * visible part until it clears them.
    */
   async locate(
     selector: string,
-    options: { atBottom?: boolean; index?: number } = {},
+    options: { atBottom?: boolean; avoid?: string; index?: number } = {},
   ): Promise<{ x: number; y: number }> {
     const point = await this.waitFor<string>(`(() => {
-      const horizontallyVisible = (el) => {
+      // The element's horizontal span left once the viewport and every
+      // clipping ancestor's content box (scrollbars excluded) cut it.
+      const visibleSpan = (el) => {
         const r = el.getBoundingClientRect();
-        const centerX = r.x + r.width / 2;
-        if (centerX < 0 || centerX > window.innerWidth) return false;
-        // Clipped by any overflow ancestor (e.g. the pan-buffer day columns
-        // hidden behind the week grid's viewport)?
+        let left = Math.max(r.left, 0);
+        let right = Math.min(r.right, window.innerWidth);
         for (let a = el.parentElement; a; a = a.parentElement) {
           if (getComputedStyle(a).overflowX !== 'visible') {
             const ar = a.getBoundingClientRect();
-            if (centerX < ar.x || centerX > ar.x + ar.width) return false;
+            const inner = ar.left + a.clientLeft;
+            left = Math.max(left, inner);
+            right = Math.min(right, inner + a.clientWidth);
           }
         }
-        return true;
+        return right - left >= 8 ? { left, right } : null;
       };
       const visible = [...document.querySelectorAll(${JSON.stringify(selector)})].filter(
-        horizontallyVisible,
+        (el) => visibleSpan(el) !== null,
       );
       const el = visible[${options.index ?? 0}];
       if (!el) return '';
       el.scrollIntoView({ block: 'center', inline: 'nearest' });
+      const span = visibleSpan(el);
+      if (!span) return '';
       const r = el.getBoundingClientRect();
-      const x = Math.floor(r.x + r.width / 2);
       const y = ${options.atBottom ? 'Math.floor(r.bottom) - 3' : 'Math.floor(r.y) + 8'};
-      const hit = document.elementFromPoint(x, y);
-      if (!hit || !(el === hit || el.contains(hit) || hit.contains(el))) return '';
-      return JSON.stringify({ x, y });
+      const avoid = ${JSON.stringify(options.avoid ?? null)};
+      // The middle of the visible part first; with \`avoid\`, further right
+      // (a chip's checkbox leads it), then left of the middle.
+      const fractions = avoid ? [0.5, 0.7, 0.85, 0.3] : [0.5];
+      for (const fraction of fractions) {
+        const x = Math.floor(span.left + (span.right - span.left) * fraction);
+        const hit = document.elementFromPoint(x, y);
+        if (!hit || !(el === hit || el.contains(hit) || hit.contains(el))) continue;
+        const blocked = avoid ? hit.closest(avoid) : null;
+        if (blocked && blocked !== el && el.contains(blocked)) continue;
+        return JSON.stringify({ x, y });
+      }
+      return '';
     })()`);
     return JSON.parse(point) as { x: number; y: number };
+  }
+
+  /**
+   * Clicks a task chip's body to open its editor: on the chip wherever its
+   * column is, never on its leading checkbox (a click there completes the
+   * task). A fixed offset from the chip's centre fell under the week grid's
+   * scrollbar when the chip sat in the last column — every Sunday.
+   */
+  async clickTaskChip(selector: string): Promise<void> {
+    const body = await this.locate(selector, { avoid: 'button' });
+    await this.click(body.x, body.y);
   }
 
   async mouse(

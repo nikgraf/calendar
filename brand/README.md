@@ -72,27 +72,27 @@ The iOS adapter deliberately checks the named SVG shapes and fails if it cannot 
 
 ## Colors and interface roles
 
-| Brand color | Hex       | Role                                                |
-| ----------- | --------- | --------------------------------------------------- |
-| Soft ivory  | `#FFFAEC` | Near-white paper with a hint of warmth              |
-| Mint        | `#BDD5CE` | Signature fold and supporting accents               |
-| Blush       | `#F3D0C5` | Continuous backing and supporting warmth            |
-| Plum        | `#6B5473` | Identity, brand text and light-theme primary action |
+| Brand color | Hex       | Role                                                     |
+| ----------- | --------- | -------------------------------------------------------- |
+| Soft ivory  | `#FFFAEC` | Near-white paper with a hint of warmth                   |
+| Mint        | `#BDD5CE` | Signature fold and supporting accents                    |
+| Blush       | `#F3D0C5` | Continuous backing and supporting warmth                 |
+| Plum        | `#6B5473` | Identity and brand text: the icon numerals, the wordmark |
 
-These are flat identity colors. The existing `ivory` token name is retained for soft ivory; flat icons and reversed wordmarks use `#FFFAEC`. The calendar uses neutral surfaces so event colors remain readable and user-selectable.
+These are flat identity colors. The existing `ivory` token name is retained for soft ivory; flat icons and reversed wordmarks use `#FFFAEC`. The calendar uses neutral surfaces so event colors remain readable and user-selectable. The filled action, the today marker, the now-line, done checks and active chips take the text's warm charcoal (`primary`); selection and the changed-field flash are steps of each scheme's own grey. The plum stays in the identity, not in the controls. Text that acts takes `primary` plus a second cue, since `primary` is the text's own charcoal: a link inside a sentence is underlined, and a standalone text action is set in medium (semibold on iOS, where red destructive rows keep the system's regular weight).
 
 The approved A1 paper gradient uses `#FFFDF5` at 0%, `#FFFAEC` at 43%, `#FFF8E6` at 80%, and `#F7EDDA` at 100%. Its edge shade is `#B7B0A3` and the final rim highlight is `#FAF0DE`. These colors lighten the paper toward white while preserving its depth. Keep the mint fold, blush backing, plum numerals and all icon geometry unchanged when applying this treatment.
 
 | UI role                    | Light     | Dark      |
 | -------------------------- | --------- | --------- |
-| Canvas                     | `#FAF9F6` | `#19171D` |
+| Canvas                     | `#FFFFFF` | `#19171D` |
 | Surface                    | `#FFFFFF` | `#242129` |
 | Primary text               | `#302A34` | `#F5F0F5` |
 | Secondary text             | `#706875` | `#BBB0C1` |
-| Primary action             | `#6B5473` | `#CDB8D6` |
-| Text on action             | `#FFFFFF` | `#302238` |
+| Primary action             | `#2B2630` | `#ECE6EE` |
+| Text on action             | `#FFFFFF` | `#1E1923` |
 | Essential control boundary | `#948899` | `#82718C` |
-| Focus ring                 | `#85658E` | `#D6BDE5` |
+| Focus ring                 | `#6E6478` | `#A99DB3` |
 
 Use semantic token pairs from `tokens.json` for text and controls (the desktop maps them to Tailwind utilities, iOS reads them through `useTheme`). The build requires at least **4.5:1** for the checked normal-text pairs and **3:1** for focus rings and essential control borders on their intended surfaces. Decorative dividers have lower contrast and cannot be the only way to identify an input. Calculated color contrast is not a complete accessibility audit.
 

@@ -84,7 +84,10 @@ export const googleFixture: GoogleFixture = {
       summary: 'Mock Shared',
     },
   ],
-  // One event the mirror flow copies, weeks out so no day-view flow meets it.
+  // One event the mirror flow copies, weeks out so no day-view flow meets
+  // it; one weeks back at a place with coordinates, the quick-add flow's
+  // past place (a dictated "Cafe Zentral" is found among past places by
+  // sound, with no MapKit in CI's bundle).
   events: {
     'mock-calendar': [
       {
@@ -94,6 +97,21 @@ export const googleFixture: GoogleFixture = {
         start: { dateTime: weeksOut(5, 10) },
         status: 'confirmed',
         summary: 'Fixture planning',
+      },
+      {
+        end: { dateTime: weeksOut(-3, 10) },
+        extendedProperties: {
+          private: {
+            'solunivo.geo': '48.2105,16.3655',
+            'solunivo.geoName': 'Café Central',
+            'solunivo.geoSource': 'Café Central',
+          },
+        },
+        id: 'fixture-coffee',
+        location: 'Café Central',
+        start: { dateTime: weeksOut(-3, 9) },
+        status: 'confirmed',
+        summary: 'Fixture coffee',
       },
     ],
     // The zone-series flow's event: weekly in Asia/Kolkata, which Hermes

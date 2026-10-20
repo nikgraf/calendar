@@ -53,6 +53,18 @@ export const groupedGround = (colors: ThemeColors): string =>
 export const zoneColor = (colors: ThemeColors, index: number): string =>
   [colors.text, colors['text-secondary'], colors['text-tertiary']][Math.min(index, 2)]!;
 
+/**
+ * Text that acts — Save, Undo, Open in Maps, an action row: `primary` in
+ * semibold, spread first into a style (`{ ...actionText(colors), fontSize }`).
+ * `primary` is the text's own charcoal, so the weight is what sets an action
+ * apart from the words beside it. Cancel and Close take secondary text
+ * instead, as the editor's Cancel does.
+ */
+export const actionText = (colors: ThemeColors): { color: string; fontWeight: '600' } => ({
+  color: colors.primary,
+  fontWeight: '600',
+});
+
 /** Shared radii, matching the desktop's `--radius-*` tokens. */
 export const RADIUS = { control: 8, event: 6, popover: 12 } as const;
 

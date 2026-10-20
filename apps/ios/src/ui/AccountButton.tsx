@@ -1,7 +1,7 @@
 import { useAccounts, usePendingOps } from '@calendar/app-state';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useEditorHost } from './EditorHost.tsx';
-import { Avatar, Glyph } from './settings/GroupedList.tsx';
+import { Avatar, Glyph } from './GroupedList.tsx';
 import { avatarColors, initialOf } from './settings/SettingsRoot.tsx';
 import { BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme } from './theme.ts';
 

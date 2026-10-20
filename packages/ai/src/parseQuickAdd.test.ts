@@ -186,19 +186,50 @@ describe('parseQuickAdd', () => {
     ).toMatchObject({ kind: 'rejected' });
   });
 
-  it('drops a location that is the title over again', async () => {
-    // Observed on device: "Dentist" as the location of "Dentist Thursday".
+  it('keeps a place only as the phrase says it', async () => {
+    // Observed on device: "Dentist" as the location of "Dentist Thursday",
+    // "Board review" of "Board review Thursday 2pm" — title words copied over.
     expect(
       (await prefillOf({ location: 'Dentist', title: 'Dentist' }, 'Dentist Thursday')).location,
     ).toBeUndefined();
     expect(
+      (
+        await prefillOf(
+          { location: 'Dentist', title: 'Dentist tomorrow at 9' },
+          'Dentist tomorrow at 9',
+        )
+      ).location,
+    ).toBeUndefined();
+    expect(
       (await prefillOf({ location: 'Figlmüller', title: 'Lunch' }, 'Lunch at Figlmüller')).location,
     ).toBe('Figlmüller');
-    // Review: a place that is part of the title is still a place.
+    // Part of the title too, but after a place cue: a place.
+    expect(
+      (
+        await prefillOf(
+          { location: 'the office', title: 'Meeting at the office' },
+          'Meeting at the office tomorrow',
+        )
+      ).location,
+    ).toBe('the office');
+    expect(
+      (await prefillOf({ location: 'Café Central', title: 'Kaffee' }, 'Kaffee im Café Central'))
+        .location,
+    ).toBe('Café Central');
+    expect(
+      (await prefillOf({ location: 'Figlmüller', title: 'Lunch' }, 'Lunch at 1 at Figlmüller'))
+        .location,
+    ).toBe('Figlmüller');
+    // Not in the phrase at all: made up ("Bob's house" was observed), or echoed.
+    expect(
+      (await prefillOf({ location: "Bob's house", title: 'Dinner' }, 'Dinner Friday 7pm')).location,
+    ).toBeUndefined();
+    // The title's start with no cue reads as title, not place — the user
+    // adds "New York" by hand; "Dentist" was the far more common case.
     expect(
       (await prefillOf({ location: 'New York', title: 'New York trip' }, 'New York trip in May'))
         .location,
-    ).toBe('New York');
+    ).toBeUndefined();
   });
 
   it('drops a repeat that only happens once', async () => {
@@ -550,6 +581,15 @@ describe('parseQuickAdd invitees', () => {
     await parseQuickAdd(model, { phrase: 'Lunch at 1, invite Sarah', ...CONTEXT });
     expect(model.prompts).toHaveLength(4);
     expect(model.prompts[2]).toContain('Sentence: Lunch at 1, invite Sarah');
+  });
+
+  it('keeps a capture’s place as it is, even the title over again', () => {
+    // Review: a captured reservation titled and placed "Figlmüller" lost its place.
+    const result = normalizeQuickAdd(
+      { location: 'Figlmüller', startTime: '19:00', title: 'Figlmüller' },
+      CONTEXT,
+    );
+    expect(result).toMatchObject({ kind: 'parsed', prefill: { location: 'Figlmüller' } });
   });
 
   it('leaves a capture (no phrase) without invitees', () => {

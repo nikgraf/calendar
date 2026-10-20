@@ -417,9 +417,7 @@ describe('Apple Reminders UI', () => {
 
   it('opens the Reminders form (time, priority, movable list) instead of the Google one', async () => {
     const { cdp } = app;
-    const chip = await cdp.locate('[data-testid="timed-task-ek-rem-1"]');
-    // Skip the leading checkbox, like the task-editor test does.
-    await cdp.click(chip.x + 40, chip.y);
+    await cdp.clickTaskChip('[data-testid="timed-task-ek-rem-1"]');
     try {
       await cdp.waitFor(`document.body.textContent.includes('Edit reminder')`);
       const facts = await cdp.waitFor<string>(`JSON.stringify({
@@ -525,8 +523,7 @@ describe('Apple Reminders UI', () => {
 
   it('a reminder in a read-only list opens as a viewer: note shown, no Save, no Delete', async () => {
     const { cdp } = app;
-    const chip = await cdp.locate('[title="Bin day"]');
-    await cdp.click(chip.x + 40, chip.y);
+    await cdp.clickTaskChip('[title="Bin day"]');
     try {
       await cdp.waitFor(`!!document.querySelector('[data-testid="task-read-only"]')`);
       const facts = await cdp.waitFor<string>(`JSON.stringify({
@@ -577,8 +574,7 @@ describe('Reminder repeat rules with weekdays', () => {
    */
   const openChip = async (id: string) => {
     await app.cdp.waitFor<boolean>(`!(${EDITOR_OPEN})`);
-    const chip = await app.cdp.locate(`[data-testid="all-day-task-${id}"]`);
-    await app.cdp.click(chip.x + 40, chip.y);
+    await app.cdp.clickTaskChip(`[data-testid="all-day-task-${id}"]`);
     await app.cdp.waitFor(`document.body.textContent.includes('Edit reminder')`);
   };
   const repeatFacts = () =>

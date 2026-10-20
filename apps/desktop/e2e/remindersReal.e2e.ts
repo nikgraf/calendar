@@ -96,8 +96,7 @@ describe.skipIf(!REAL)('Apple Reminders through the real helper', () => {
    */
   const openChip = async (title: string) => {
     await app.cdp.waitFor<boolean>(`!(${EDITOR_OPEN})`);
-    const chip = await app.cdp.locate(`[title=${JSON.stringify(title)}]`);
-    await app.cdp.click(chip.x + 40, chip.y);
+    await app.cdp.clickTaskChip(`[title=${JSON.stringify(title)}]`);
     await app.cdp.waitFor(`document.body.textContent.includes('Edit reminder')`);
   };
 

@@ -17,6 +17,7 @@ import { DraftChip } from './DraftBlock.tsx';
 import { TaskCheck } from './TaskCheck.tsx';
 import { eventLook, stripes, useTint } from './tint.ts';
 import { useDropTarget, type useEventDrag } from './useEventDrag.ts';
+import { TEXT_ACTION_CLASS } from '../ui/buttonStyles.ts';
 
 /** One column's horizontal placement, as the strip's percentage geometry. */
 const columnStyle = (startDayIndex: number, endDayIndex: number, stripLength: number) => ({
@@ -233,7 +234,7 @@ export function AllDayLane({
         {collapsible && !collapsed ? (
           <button
             aria-label="Collapse the all-day lane"
-            className="block w-full cursor-pointer text-right text-primary hover:underline"
+            className={`block w-full cursor-pointer text-right ${TEXT_ACTION_CLASS.primary}`}
             data-testid="all-day-less"
             onClick={() => onSetCollapsed(true)}
             type="button"

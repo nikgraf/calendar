@@ -174,8 +174,7 @@ describe('Converting tasks against the fake Google API', () => {
   });
 
   const open = async (title: string, heading: string) => {
-    const chip = await app.cdp.locate(`[title=${JSON.stringify(title)}]`);
-    await app.cdp.click(chip.x + 40, chip.y);
+    await app.cdp.clickTaskChip(`[title=${JSON.stringify(title)}]`);
     await app.cdp.waitFor(`document.body.textContent.includes(${JSON.stringify(heading)})`);
   };
   const clickTestId = async (testId: string) => {
@@ -361,8 +360,7 @@ describe('Converting tasks against the fake Google API', () => {
 
   it('a reminder moved to Google pushes and gets a server id', async () => {
     const { cdp } = app;
-    const chip = await cdp.locate('[data-testid="timed-task-ek-rem-1"]');
-    await cdp.click(chip.x + 40, chip.y);
+    await cdp.clickTaskChip('[data-testid="timed-task-ek-rem-1"]');
     await cdp.waitFor(`document.body.textContent.includes('Edit reminder')`);
     await clickTestId('mode-task');
     await cdp.waitFor(`document.body.textContent.includes('Move to task')`);

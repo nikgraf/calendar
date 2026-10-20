@@ -986,7 +986,13 @@ gateway carries all of it. Details, limits and the threat model:
   calendar-colored block or chip goes through `eventTint(hex, scheme)`:
   hue and chroma from the calendar, lightness from the theme, text on
   fill at 4.5:1; the brand `event-*` tokens are for items with no
-  calendar. A box that asks or warns uses `CALLOUT_CLASS`.
+  calendar. A box that asks or warns uses `CALLOUT_CLASS`. Text that acts
+  takes a second cue, since `primary` is the text's own charcoal: a link
+  inside a sentence `TEXT_LINK_CLASS`, a standalone text action
+  `TEXT_ACTION_CLASS.primary` / `.danger` (`ui/buttonStyles.ts`; the theme
+  test also fails on a hand-made `hover:underline`), and on iOS
+  `actionText(colors)` (`src/ui/theme.ts`), with Cancel / Close in
+  secondary text.
 - **Desktop shell** (`renderer/calendar/`): a toolbar (`Toolbar.tsx`:
   sidebar toggle, title, ‹ Today ›, Day/Week/Month, Search, the Today
   panel toggle, New), a collapsible sidebar (mini month, calendars and
@@ -997,7 +1003,13 @@ gateway carries all of it. Details, limits and the threat model:
   search (⌘F), an event's read-first inspector after a grid click or a
   search result (`EventInspector.tsx`), or the inline editor
   (`EditorPanel.tsx`) from Edit, a slot, New (⌘N; ⌘K goes
-  straight into its quick-add field), a task chip or a result. Single
+  straight into its quick-add field), a task chip or a result. The editor
+  is a header that stays (the title, Join meeting, Close), a body that
+  scrolls (the quick-add field, the kind control, the form as captioned
+  sections — When, Where, Invitees, Notifications, Notes;
+  `FormSection.tsx`) and a footer that stays (Delete · Cancel · Save,
+  the question before a lossy change above them), so the save and the
+  way out are in reach wherever the form is scrolled to. Single
   keys: T = today, ←/→ step the view; ⌘, opens Settings from the menu. A new
   item's editor is the one add path: the quick-add field on top
   (`QuickAddBar`, a phrase typed or dictated hands-free fills the form), the Event |
@@ -1062,7 +1074,7 @@ gateway carries all of it. Details, limits and the threat model:
   (`(tabs)/`: Calendar · Tasks · Search, the last a stack of one screen
   whose `Stack.SearchBar` is the system search field) and Settings as a
   modal route holding its own native stack (`settings/`: the root list, a
-  page per pane; rows drawn by `src/ui/settings/GroupedList.tsx`,
+  page per pane; rows drawn by `src/ui/GroupedList.tsx`,
   switches through `@expo/ui`). `src/ui/CalendarScreen.tsx` is the
   calendar tab: a header (title, the view menu Day · 2 Days · Week ·
   Month · Agenda, ‹ Today ›, the account avatar into Settings carrying the
@@ -1099,9 +1111,20 @@ gateway carries all of it. Details, limits and the threat model:
   field does not take the focus there (the keyboard raises a half sheet
   to full; once it hides, the sheet returns to the detent it had). The
   sheet lays its content out once, as at most two subviews: a header
-  that must not be flattened (`collapsable={false}`) and one scroll view
-  that stays across a kind switch — the forms render `bare` inside it
-  (`FormScroll`). The calendar draws the thread's drafts from
+  that must not be flattened (`collapsable={false}`) — the Cancel ·
+  title · Save row and, for a new item, the quick-add field with its
+  thread — and one scroll view that stays across a kind switch — the
+  kind control at its top, then the form, which renders `bare` inside it
+  (`FormScroll`). The forms are iOS inset grouped cards on the grouped
+  ground, drawn with the Settings pages' rows (`GroupedList.tsx`:
+  `Section`, `Row`, `SwitchRow`, `CheckRow`, `ActionRow`, and the forms'
+  own `FieldRow`, `ChipsRow`, `RowSlot`, `CardCaption`; a choice is a
+  `Chip`), in Calendar's order for an event (title and location; all-day,
+  the dates, the finder; repeat; calendar; invitees; notifications;
+  notes; Delete) and Reminders' for a to-do (title and notes; list; due
+  day and time; repeat; priority, alert, URL; Delete). A card's header
+  renders uppercase, which is what the flows tap to dismiss a keyboard
+  ("CALENDAR", "LIST"). The calendar draws the thread's drafts from
   `useDraftPreviews` (`DraftBlock.tsx`): dashed blocks tagged "Draft" in
   the timeline, chips in the all-day lane, a ringed dot in the month
   grid, the free slots as fainter dotted "Option" blocks, a ring on the
@@ -1149,7 +1172,33 @@ gateway carries all of it. Details, limits and the threat model:
   misses for 3 days, hits refreshed in the background after 14 days,
   pruned to 2000 rows, wiped from Settings) for the map on this device
   only; typing never geocodes — the typeahead (`searchPlaces`) and a
-  picked row do. URLs and meeting links are never looked up. Desktop
+  picked row do. URLs and meeting links are never looked up. A search
+  answers something for almost any text ("Room 4" found a street in
+  Weidling), so free text gets a pin only from a match that resembles it
+  (core `placesResembling`: the same name, every word beginning one of
+  the place's name or address words, or the same Kölner Phonetik key as
+  the name's first words — "Cafe Zentral" as dictated is Café Central);
+  a picked suggestion is that exact place. `placeCandidates` returns
+  the user's own past places the text names first (core
+  `rankPastPlaces`: a year of occurrences, matched by the text they were
+  written as, MapKit's name or sound, one per text, the latest use) and
+  then the search's resembling matches not among them
+  (`mergePlaceCandidates`; MapKit is asked two ways side by side, the
+  natural-language search and the completer's rows resolved, and hits
+  that do not resemble the text follow as `search`), best first and
+  uncached. The draft thread (app-state `draftPlaces.ts`) asks for them
+  whenever a turn sets a place: the best resembling one is taken at once
+  (`preselectedPlace`) — its text becomes the location and its pin counts
+  as a pick (`applyPlace`) — and the candidates stay on the draft as
+  `placeChoice`, chips under the quick-add field with the one the field
+  reads pressed and "As said" beside them, until dismissed, or a turn
+  sets another place; the row shows only while the field reads the text
+  or one of them (`livePlaceChoice`). Both lookups and the typeahead carry a region hint
+  (`regionHint`: the densest cluster of coordinates on the last 90 days'
+  events, the most recent first, else the primary time zone's city from
+  a small table), which MapKit takes as a bias, never a filter — and
+  never a location permission. The bridge returns `places` beside
+  `place`; a native side from before it answers one place. Desktop
   draws a static `MKMapSnapshotter` PNG (`mapSnapshot`); iOS a live
   `expo-maps` view (iOS 17+, else only the Open in Maps link).
 - **Device settings and the settings document**: `device_settings` is a

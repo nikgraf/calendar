@@ -1,5 +1,5 @@
 import { StyleSheet } from 'react-native';
-import { type ThemeColors, useStyles } from './theme.ts';
+import { actionText, groupedGround, type ThemeColors, useStyles } from './theme.ts';
 
 /**
  * The editor models store wall-clock strings (YYYY-MM-DD / HH:MM) shared
@@ -31,196 +31,96 @@ export const toTimeString = (value: Date): string =>
 // Option tables: REPEAT_OPTIONS, REPEAT_ENDS_OPTIONS, SCOPE_OPTIONS, RSVP_OPTIONS in
 // @calendar/app-state (editorOptions); the chips render their `short` text.
 
+/**
+ * The editor's shell and the pieces of its forms that are not grouped-list
+ * rows (`GroupedList.tsx` draws the rows and cards): the Cancel · title ·
+ * Save row, the notes above the form, the controls over the cards.
+ */
 const makeSheetStyles = (colors: ThemeColors) =>
   StyleSheet.create({
-    attendee: {
-      color: colors['text-secondary'],
-      fontSize: 14,
-      paddingVertical: 2,
+    /** A number field at a row's end: the repeat interval, the occurrence count. */
+    accessoryField: {
+      color: colors.text,
+      fontSize: 17,
+      minWidth: 64,
+      paddingVertical: 14,
+      textAlign: 'right',
     },
     /** Save and Delete while a save or delete is running (a press does nothing then). */
     busy: {
       opacity: 0.4,
     },
-    calendarGroup: {
-      color: colors['text-secondary'],
-      fontSize: 12,
-      paddingTop: 8,
-      textTransform: 'uppercase',
-    },
-    calendarName: {
-      color: colors['text-secondary'],
-      flex: 1,
-      fontSize: 15,
-    },
-    calendarRow: {
-      alignItems: 'center',
-      flexDirection: 'row',
-      gap: 8,
-      paddingVertical: 6,
-    },
-    calendarSelected: {
-      color: colors.text,
-      fontWeight: '600',
-    },
     cancel: {
       color: colors['text-secondary'],
-      fontSize: 16,
-    },
-    check: {
-      color: colors.primary,
-      fontSize: 16,
-      fontWeight: '700',
-    },
-    chip: {
-      alignItems: 'center',
-      backgroundColor: colors.fill,
-      borderRadius: 8,
-      flexDirection: 'row',
-      gap: 6,
-      paddingHorizontal: 8,
-      paddingVertical: 4,
-    },
-    chipDot: {
-      borderRadius: 3,
-      height: 6,
-      width: 6,
-    },
-    chipLabel: {
-      color: colors.text,
-      fontSize: 14,
-    },
-    chipMeta: {
-      color: colors['text-secondary'],
-      fontSize: 12,
-    },
-    chipRemove: {
-      color: colors['text-secondary'],
-      fontSize: 16,
-      paddingHorizontal: 2,
-    },
-    chipRow: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: 6,
-      marginBottom: 8,
+      fontSize: 17,
     },
     container: {
       backgroundColor: colors.canvas,
       flex: 1,
     },
+    /**
+     * The form's scroll content: the cards carry their own insets. Room
+     * below the last control (Delete): on a phone the form can end
+     * exactly at the home indicator, where a tap never lands (CI runs
+     * 35591082639 and 35594605564 tapped Delete's cut-off edge).
+     */
     content: {
-      padding: 16,
-      // Room below the last control (Delete): on a phone the form can end
-      // exactly at the home indicator, where a tap never lands (CI runs
-      // 35591082639 and 35594605564 tapped Delete's cut-off edge).
       paddingBottom: 48,
+      paddingTop: 4,
     },
-    deleteButton: {
-      alignItems: 'center',
-      borderColor: colors['event-blush'],
-      borderRadius: 10,
-      borderWidth: 1,
-      marginTop: 24,
-      paddingVertical: 12,
-    },
-    deleteLabel: {
-      color: colors.danger,
-      fontSize: 15,
-      fontWeight: '600',
-    },
-    error: {
+    /** A failure above the form, in the cards' text inset. */
+    formError: {
       color: colors.danger,
       fontSize: 13,
-      marginBottom: 10,
+      lineHeight: 18,
+      marginHorizontal: 32,
+      marginTop: 12,
+    },
+    /** A note above the form (a read-only calendar or list). */
+    formNote: {
+      color: colors['text-secondary'],
+      fontSize: 13,
+      lineHeight: 18,
+      marginHorizontal: 32,
+      marginTop: 12,
     },
     header: {
       alignItems: 'center',
       flexDirection: 'row',
       justifyContent: 'space-between',
+      paddingBottom: 10,
       paddingHorizontal: 16,
-      paddingVertical: 14,
+      paddingTop: 16,
     },
-    // The editor's Cancel · title · Save row: tighter than the other
-    // sheets', the header above its form holds the quick-add field, the
-    // thread and the kind control too.
-    headerCompact: {
-      paddingVertical: 10,
+    headerEnd: {
+      alignItems: 'flex-end',
+    },
+    /** The header's sides are as wide as each other, so the title sits centred. */
+    headerSide: {
+      minWidth: 64,
     },
     hint: {
       color: colors['text-secondary'],
       fontSize: 13,
-      marginTop: 4,
-    },
-    input: {
-      backgroundColor: colors.surface,
-      borderColor: colors.border,
-      borderRadius: 10,
-      borderWidth: StyleSheet.hairlineWidth,
-      // A TextInput's ink defaults to black whatever the appearance.
-      color: colors.text,
-      fontSize: 16,
-      marginBottom: 12,
-      paddingHorizontal: 12,
-      paddingVertical: 10,
-    },
-    /**
-     * A text field's box drawn by a `FieldFlash` around it (`inputBox` +
-     * `inputInBox`), so a turn's tint fills the field as it does on the
-     * desktop: the input inside is transparent and borderless.
-     */
-    inputBox: {
-      backgroundColor: colors.surface,
-      borderColor: colors.border,
-      borderRadius: 10,
-      borderWidth: StyleSheet.hairlineWidth,
-      marginBottom: 12,
-      overflow: 'hidden',
-    },
-    inputInBox: {
-      backgroundColor: 'transparent',
-      borderWidth: 0,
-      marginBottom: 0,
+      lineHeight: 18,
     },
     joinButton: {
       alignItems: 'center',
       backgroundColor: colors.success,
-      borderRadius: 10,
-      marginBottom: 12,
-      paddingVertical: 10,
+      borderRadius: 14,
+      marginHorizontal: 16,
+      marginTop: 12,
+      paddingVertical: 12,
     },
     joinLabel: {
-      color: colors['on-primary'],
+      color: colors['on-success'],
       fontSize: 15,
       fontWeight: '700',
-    },
-    label: {
-      color: colors['text-secondary'],
-      fontSize: 12,
-      fontWeight: '600',
-      marginBottom: 4,
-      textTransform: 'uppercase',
     },
     // A row, so the kind control's own `flex: 1` (grow) stays horizontal.
     modeFlash: {
       flex: 1,
       flexDirection: 'row',
-    },
-    modeRow: {
-      flexDirection: 'row',
-      gap: 8,
-      paddingBottom: 8,
-      paddingHorizontal: 16,
-      paddingTop: 4,
-    },
-    notesInput: {
-      minHeight: 72,
-      textAlignVertical: 'top',
-    },
-    pickerRow: {
-      alignItems: 'center',
-      flexDirection: 'row',
-      justifyContent: 'space-between',
     },
     /** A date picker and its time picker, side by side at a row's end. */
     pickerPair: {
@@ -231,114 +131,30 @@ const makeSheetStyles = (colors: ThemeColors) =>
     readOnly: {
       opacity: 0.6,
     },
-    readOnlyNote: {
-      color: colors['text-secondary'],
-      fontSize: 13,
-      marginBottom: 8,
-    },
     save: {
-      color: colors.primary,
-      fontSize: 16,
-      fontWeight: '700',
+      ...actionText(colors),
+      fontSize: 17,
     },
-    scopeChip: {
-      borderColor: colors.border,
-      borderRadius: 16,
-      borderWidth: 1,
-      paddingHorizontal: 12,
-      paddingVertical: 6,
-    },
-    scopeChipActive: {
-      backgroundColor: colors.primary,
-      borderColor: colors.primary,
-    },
-    scopeChipDisabled: {
-      opacity: 0.4,
-    },
-    scopeLabel: {
-      color: colors['text-secondary'],
-      fontSize: 13,
-      fontWeight: '600',
-    },
-    scopeLabelActive: {
-      color: colors['on-primary'],
-    },
-    scopeRow: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: 8,
-      marginBottom: 14,
-    },
-    suggestion: {
-      borderBottomColor: colors.border,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      paddingHorizontal: 12,
-      paddingVertical: 10,
-    },
-    suggestionMeta: {
-      color: colors['text-secondary'],
-      fontSize: 13,
-    },
-    suggestions: {
-      backgroundColor: colors.surface,
-      borderColor: colors.border,
-      borderRadius: 10,
-      borderWidth: StyleSheet.hairlineWidth,
-      marginBottom: 12,
-      marginTop: -6,
-    },
-    suggestionStale: {
-      opacity: 0.5,
-    },
-    suggestionTitle: {
-      color: colors.text,
-      fontSize: 16,
-    },
-    // The form-sheet editor's header: the sheet's own color behind it.
+    // The form-sheet editor's header: on the form's ground, as a Settings page's bar is.
     sheetHeader: {
-      backgroundColor: colors.canvas,
-    },
-    swatch: {
-      borderRadius: 4,
-      height: 14,
-      width: 14,
-    },
-    switchRow: {
-      alignItems: 'center',
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      marginVertical: 10,
-    },
-    timeField: {
-      flex: 1,
-    },
-    timesRow: {
-      flexDirection: 'row',
-      gap: 12,
+      backgroundColor: groupedGround(colors),
     },
     title: {
       color: colors.text,
+      flex: 1,
       fontSize: 17,
-      fontWeight: '700',
+      fontWeight: '600',
+      textAlign: 'center',
     },
-    webLink: {
-      color: colors.primary,
-      fontSize: 14,
-      marginTop: 4,
+    /** A control over the cards (the kind control, "Apply to"), in the cards' inset. */
+    topControl: {
+      flexDirection: 'row',
+      marginHorizontal: 16,
+      marginTop: 12,
     },
   });
 
 export type SheetStyles = ReturnType<typeof makeSheetStyles>;
-
-/** A selectable chip's style: the shared scope chip, filled when active. */
-export const chip = (sheetStyles: SheetStyles, active: boolean) => [
-  sheetStyles.scopeChip,
-  active && sheetStyles.scopeChipActive,
-];
-export const chipLabel = (sheetStyles: SheetStyles, active: boolean) => [
-  sheetStyles.scopeLabel,
-  active && sheetStyles.scopeLabelActive,
-];
 
 /** The edit sheets' shared styles, in the current appearance. */
 export const useSheetStyles = () => useStyles(makeSheetStyles);

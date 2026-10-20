@@ -16,7 +16,7 @@ import {
   SettingsPage,
   SwipeRow,
   SwitchRow,
-} from './GroupedList.tsx';
+} from '../GroupedList.tsx';
 import { notificationsBlocked, useNotificationSettings } from './NotificationSettings.tsx';
 
 /**

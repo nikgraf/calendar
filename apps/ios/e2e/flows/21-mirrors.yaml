@@ -59,6 +59,10 @@ tags:
 # (one element: the row reads as its name, status and On together). The
 # count is whatever the source holds by now: an earlier flow that failed
 # before its clean-up leaves its event there (run 37314663224 mirrored 2).
+# Until the launch's sync pass has finished the row reads "Waiting for the
+# calendars to finish syncing."; the pass's end runs the mirror again (3 s
+# debounce), which on a slow runner took longer than 20 s (run
+# 39037062304). The wait ends as soon as the row is up to date.
 - scrollUntilVisible:
     element:
       id: 'mirror-row-.*'
@@ -66,7 +70,7 @@ tags:
     timeout: 10000
 - extendedWaitUntil:
     visible: '.*Up to date — [1-9][0-9]* events? mirrored\..*'
-    timeout: 20000
+    timeout: 60000
 # Leave the settings as found for the next flow: delete it from its page.
 - tapOn:
     id: 'mirror-row-.*'

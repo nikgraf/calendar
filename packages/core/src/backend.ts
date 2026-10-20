@@ -9,6 +9,7 @@ import {
 import { EventToTaskPreview, TaskToEventLoss } from './editor/convertLoss.ts';
 import { MoveLoss } from './editor/moveLoss.ts';
 import { TaskMoveLoss } from './editor/taskMoveLoss.ts';
+import { PlaceCandidate } from './geo/candidates.ts';
 import { PlaceSuggestion } from './geo/location.ts';
 import { MirrorCalendarRef, MirrorDefinition } from './mirror/definition.ts';
 import { MirrorPreview, MirrorView } from './mirror/status.ts';
@@ -681,9 +682,24 @@ export class AppBackendRpcs extends RpcGroup.make(
     payload: { choice: ConflictChoice, opId: Schema.String },
   }),
   /**
+   * The places free location text could name, best first: the user's
+   * own past places that resemble it (`rankPastPlaces`, by text, name or
+   * sound), then MapKit's matches that do (`placesResembling`), looked
+   * up around the user's recent events. Not cached — for offering a
+   * choice, where `resolveLocation` gives the one best guess. Empty when
+   * the text is not a place or nothing resembles it; without a bridge
+   * the past places alone.
+   */
+  Rpc.make('placeCandidates', {
+    error: BackendError,
+    payload: { location: Schema.String },
+    success: Schema.Array(PlaceCandidate),
+  }),
+  /**
    * Coordinates for a location string, on-device and cached per string.
    * `suggestion` is the typeahead row the user picked (resolves exactly);
-   * null when the text is not a place or nothing was found.
+   * null when the text is not a place, nothing resembling it was found,
+   * or there is no bridge.
    */
   Rpc.make('resolveLocation', {
     error: BackendError,

@@ -1,4 +1,10 @@
-import { type ByDay, type RecurrenceFrequency, Temporal, validateEventDraft } from '@calendar/core';
+import {
+  type ByDay,
+  foldSearchText,
+  type RecurrenceFrequency,
+  Temporal,
+  validateEventDraft,
+} from '@calendar/core';
 import { groundDate, groundTime, isTodoPhrase } from './grounding.ts';
 import { inviteesOf, titleWithoutInvitees } from './invitees.ts';
 import type { QuickAddParse } from './quickAdd.ts';
@@ -90,13 +96,58 @@ export const addHour = (time: string): string => {
 const TODO_CUE_PREFIX =
   /^(?:remind me to|reminder:?|to-?do:?|don'?t forget to|i (?:need|have) to|i must|ich muss|nicht vergessen:?)\s+/i;
 
+/** Lower-case, accent-free text with straight apostrophes and "ss" for ß. */
+const fold = (text: string): string =>
+  foldSearchText(text)
+    .replaceAll(/[‘’`]/g, "'")
+    .replaceAll('ß', 'ss');
+
 /**
- * A location that is the title over again ("Dentist" for "Dentist
- * Thursday") is the title copied over, not a place. Only the whole title
- * counts: "New York" is the place of "New York trip".
+ * The words that put a place after them ("at Figlmüller", "in Vienna",
+ * "bei Anna", "im Café Central"), an article allowed between.
  */
-export const placeOf = (location: string | undefined, title: string): string | undefined =>
-  location !== undefined && location.toLowerCase() === title.toLowerCase() ? undefined : location;
+const PLACE_CUE =
+  /(?:^|[^\p{L}])(?:at|in|@|bei|beim|im|am|ins|zum|zur|in der|in dem|an der|auf der|auf dem|vor dem|vor der|chez)\s+(?:(?:the|a|an|der|die|das|dem|den|ein|eine|einem|einer)\s+)?$/u;
+
+/**
+ * The place the model extracted, held against the phrase: it must be in
+ * the words (the real model made up "Bob's house" and "unknown"), and
+ * where it is also part of the title ("Dentist" for "Dentist tomorrow
+ * at 9", "Board review" for "Board review Thursday 2pm") it counts only
+ * after a place cue in the phrase ("Meeting at the office"). The title
+ * over again is never a place. Without a phrase (capture) the model's
+ * place stands as it is, as it always did — a reservation titled and
+ * placed "Figlmüller" keeps its place.
+ */
+export const placeOf = (
+  location: string | undefined,
+  title: string,
+  phrase?: string,
+): string | undefined => {
+  // Capture (no phrase) keeps the model's place as it is, as it always did.
+  if (location === undefined || phrase === undefined) {
+    return location;
+  }
+  if (fold(location) === fold(title)) {
+    return undefined;
+  }
+  const words = fold(phrase);
+  const place = fold(location);
+  const at = words.indexOf(place);
+  if (at === -1) {
+    return undefined;
+  }
+  if (!fold(title).includes(place)) {
+    return location;
+  }
+  // Any occurrence after a cue will do ("at 1 at Figlmüller" has two "at"s).
+  for (let from = at; from !== -1; from = words.indexOf(place, from + 1)) {
+    if (PLACE_CUE.test(words.slice(0, from))) {
+      return location;
+    }
+  }
+  return undefined;
+};
 
 /**
  * The repeat the model returned, as the editor's fields, or none.
@@ -228,9 +279,8 @@ export const normalizeQuickAdd = (
     return { kind: 'rejected', reason: invalid };
   }
 
-  const place = meaningfulText(parse.location);
   // Capture passes no phrase and keeps its locations as before.
-  const location = phrase === undefined ? place : placeOf(place, title);
+  const location = placeOf(meaningfulText(parse.location), title, phrase);
   const recurrence = recurrenceFromParse(parse.recurrence, resolvedDate);
 
   return {

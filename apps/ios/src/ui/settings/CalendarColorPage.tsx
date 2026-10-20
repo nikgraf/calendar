@@ -3,7 +3,7 @@ import { CALENDAR_PALETTE, isAppleCalendarAccount } from '@calendar/core';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { type ThemeColors, useStyles } from '../theme.ts';
-import { Footer, Row, Section, SettingsPage } from './GroupedList.tsx';
+import { Footer, Row, Section, SettingsPage } from '../GroupedList.tsx';
 
 /**
  * One calendar's color: the 24 palette swatches in a grid, the current

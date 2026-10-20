@@ -150,7 +150,7 @@ describe('time zones: the settings section', () => {
     ).toBe(true);
     expect(await stored()).toBeNull();
     // Nothing stored: the device's own zone, named by the city it is in, is the primary and has no Remove.
-    expect(await text(cdp, `${DEVICE_ROW} .font-medium`)).toBe(deviceCity);
+    expect(await text(cdp, `${DEVICE_ROW} [data-testid="time-zone-city"]`)).toBe(deviceCity);
     expect(await cdp.eval(`document.querySelector('${DEVICE_ROW}')?.dataset.primary`)).toBe('true');
     expect(
       await cdp.eval(`!!document.querySelector('${DEVICE_ROW} button[aria-label^="Remove"]')`),
