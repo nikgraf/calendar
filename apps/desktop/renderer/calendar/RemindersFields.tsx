@@ -7,6 +7,7 @@ import {
 } from '@calendar/core';
 import { FIELD_CLASS as field } from '../ui/fieldStyles.ts';
 import { FormSection } from './FormSection.tsx';
+import { TEXT_ACTION_CLASS } from '../ui/buttonStyles.ts';
 
 /**
  * The event's reminders. Google: a "calendar default" checkbox (what it
@@ -115,7 +116,7 @@ export function RemindersFields({ model }: { model: ReturnType<typeof useEventEd
             <p className="text-sm text-ink-secondary">None</p>
           ) : null}
           <button
-            className="self-start text-sm text-primary hover:underline disabled:text-ink-secondary"
+            className={`self-start text-sm ${TEXT_ACTION_CLASS.primary}`}
             data-testid="event-reminder-add"
             disabled={full || nextPreset === undefined}
             onClick={() => nextPreset !== undefined && addReminder(nextPreset)}

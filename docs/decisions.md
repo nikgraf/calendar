@@ -1099,5 +1099,14 @@ first. The decisions, one line each:
   editor and colored its fields after a quick-add turn. Rejected: the brand
   plum as-is, mauve, green / blue / warm accents, and a charcoal button with
   plum or slate signals (needs an `accent` token the apps would have to
-  split from `primary`). Open: text links in `primary` now sit close to
-  body text; the plum stays in the identity only.
+  split from `primary`). The plum stays in the identity only.
+- **Text actions** (2026-10-19, #228) — with `primary` at the text's
+  charcoal, text that acts gets a second cue: a link inside a sentence is
+  underlined in the control-boundary grey, a standalone one (Make
+  primary, Open in Maps, Add due date) takes the Button's medium weight
+  (semibold on iOS, plus a hover underline on the desktop, where a red
+  Remove beside it matches), and iOS Cancel / Close go secondary; iOS red
+  rows keep the system's regular weight. Rejected: an underline on every
+  text action (busy in rows of two or three) and `text-secondary` for all
+  (reads as a caption). Fills, today markers, icons and checks keep plain
+  `primary`. Open: iOS has no link inside a sentence yet.

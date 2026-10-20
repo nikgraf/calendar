@@ -8,6 +8,7 @@ import {
   Temporal,
 } from '@calendar/core';
 import { useState } from 'react';
+import { TEXT_ACTION_CLASS } from '../ui/buttonStyles.ts';
 
 // Through a PlainDate in a leap year: the polyfill cannot localise a
 // PlainMonthDay ("cannot format PlainMonthDay with calendar iso8601"),
@@ -54,7 +55,7 @@ function BirthdayReminders({ record }: { record: BirthdayRecord }) {
         <p className="text-xs font-medium text-ink-secondary uppercase">Reminders</p>
         {editor.overridden ? (
           <button
-            className="rounded px-1.5 text-xs text-primary hover:bg-fill"
+            className={`text-xs ${TEXT_ACTION_CLASS.primary}`}
             data-testid="birthday-reminders-custom"
             onClick={() => run(editor.reset())}
             type="button"

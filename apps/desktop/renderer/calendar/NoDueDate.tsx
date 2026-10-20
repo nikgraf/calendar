@@ -1,4 +1,5 @@
 import { LABEL_CLASS } from '../ui/fieldStyles.ts';
+import { TEXT_ACTION_CLASS } from '../ui/buttonStyles.ts';
 
 /**
  * Beside the Due label: takes the day away, so the task is saved undated
@@ -8,7 +9,7 @@ import { LABEL_CLASS } from '../ui/fieldStyles.ts';
 export function RemoveDueDate({ onRemove }: { onRemove: (() => void) | undefined }) {
   return onRemove ? (
     <button
-      className="text-xs font-normal normal-case tracking-normal text-primary hover:underline"
+      className={`text-xs ${TEXT_ACTION_CLASS.primary}`}
       data-testid="task-remove-due-date"
       onClick={onRemove}
       type="button"
@@ -29,7 +30,7 @@ export function NoDueDate({ onAdd }: { onAdd: () => void }) {
       <p className="mt-1 flex items-center justify-between gap-3 text-sm text-ink-secondary">
         No due date — shown on today until it is done.
         <button
-          className="shrink-0 text-primary hover:underline"
+          className={`shrink-0 ${TEXT_ACTION_CLASS.primary}`}
           data-testid="task-add-due-date"
           onClick={onAdd}
           type="button"

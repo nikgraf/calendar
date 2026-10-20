@@ -39,7 +39,7 @@ import {
   View,
 } from 'react-native';
 import { TaskCheck } from '../TaskCheck.tsx';
-import { BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme } from '../theme.ts';
+import { actionText, BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme } from '../theme.ts';
 
 const zoned = (ms: number, timeZone: string): Temporal.ZonedDateTime =>
   Temporal.Instant.fromEpochMilliseconds(ms).toZonedDateTimeISO(timeZone);
@@ -196,7 +196,7 @@ export function MirrorEditSheet({
             onPress={onClose}
             testID="mirror-cancel"
           >
-            <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.link}>
+            <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.cancel}>
               Cancel
             </Text>
           </Pressable>
@@ -433,6 +433,10 @@ const makeStyles = (colors: ThemeColors) =>
     addRow: {
       marginTop: 10,
     },
+    cancel: {
+      color: colors['text-secondary'],
+      fontSize: 14,
+    },
     check: {
       alignItems: 'center',
       flexDirection: 'row',
@@ -480,9 +484,8 @@ const makeStyles = (colors: ThemeColors) =>
       textTransform: 'uppercase',
     },
     link: {
-      color: colors.primary,
+      ...actionText(colors),
       fontSize: 14,
-      fontWeight: '600',
     },
     meta: {
       color: colors['text-secondary'],

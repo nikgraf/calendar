@@ -36,7 +36,11 @@ import {
 import { useEffect, useState } from 'react';
 import { Dialog } from './Dialog.tsx';
 import { CALLOUT_CLASS } from './ui/calloutStyles.ts';
-import { SETTINGS_BUTTON_CLASS as BUTTON } from './ui/buttonStyles.ts';
+import {
+  SETTINGS_BUTTON_CLASS as BUTTON,
+  TEXT_ACTION_CLASS,
+  TEXT_LINK_CLASS,
+} from './ui/buttonStyles.ts';
 
 const PRIMARY =
   'rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-on-primary hover:bg-primary-hover disabled:opacity-50';
@@ -136,7 +140,7 @@ function MirrorRow({
           : ` Last run ${relativeTime(status.lastRunAt)}.`}
         {status.state === 'off' ? null : (
           <button
-            className="ml-2 text-primary hover:underline"
+            className={`ml-2 ${TEXT_LINK_CLASS}`}
             data-testid={`mirror-run-${definition.id}`}
             onClick={() => void mutations.runMirrorsNow(undefined)}
             type="button"
@@ -408,7 +412,7 @@ function MirrorEditor({
       </div>
 
       <button
-        className="mt-2 text-xs text-primary hover:underline"
+        className={`mt-2 text-xs ${TEXT_ACTION_CLASS.primary}`}
         data-testid="mirror-advanced"
         onClick={() => setAdvanced(!advanced)}
         type="button"

@@ -197,7 +197,7 @@ const makeStyles = (colors: ThemeColors) =>
       gap: 8,
     },
     closeLabel: {
-      color: colors.primary,
+      color: colors['text-secondary'],
       fontSize: 15,
     },
     disabled: {

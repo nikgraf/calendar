@@ -5,6 +5,7 @@ import { NoDueDate, RemoveDueDate } from './NoDueDate.tsx';
 import { FIELD_CLASS, LABEL_CLASS } from '../ui/fieldStyles.ts';
 import { TaskListSelect } from './TaskListSelect.tsx';
 import { useFieldFlash } from '../ui/useFlash.ts';
+import { TEXT_ACTION_CLASS } from '../ui/buttonStyles.ts';
 
 /**
  * The Google Tasks form: title, due day, list, notes. Picking a list in
@@ -69,7 +70,7 @@ export function TaskEditorForm({
       </label>
       {task?.webViewLink ? (
         <button
-          className="self-start text-sm text-primary hover:underline"
+          className={`self-start text-sm ${TEXT_ACTION_CLASS.primary}`}
           onClick={() => window.open(task.webViewLink ?? '', '_blank', 'noopener')}
           type="button"
         >

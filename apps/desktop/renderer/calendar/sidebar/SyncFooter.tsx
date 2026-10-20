@@ -16,6 +16,7 @@ import {
   SlidersIcon,
 } from '../../ui/icons.tsx';
 import { ConflictActions } from '../ConflictBanner.tsx';
+import { TEXT_ACTION_CLASS } from '../../ui/buttonStyles.ts';
 
 /** One field of a change: what it was (struck through) and what it becomes. */
 interface DetailLine {
@@ -134,7 +135,7 @@ export function SyncFooter({ onManageAccounts }: { onManageAccounts: () => void 
                         <ConflictActions op={op} size="sm" />
                       ) : (
                         <button
-                          className="text-xs text-danger hover:underline"
+                          className={`text-xs ${TEXT_ACTION_CLASS.danger}`}
                           data-testid="pending-op-discard"
                           onClick={() => {
                             setExpandedId(null);

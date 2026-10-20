@@ -15,6 +15,7 @@ import {
 } from '@calendar/core';
 import { useState } from 'react';
 import { CALLOUT_CLASS } from './ui/calloutStyles.ts';
+import { TEXT_ACTION_CLASS, TEXT_LINK_CLASS } from './ui/buttonStyles.ts';
 
 /** The connected accounts and their calendars: the top of the settings window's Accounts pane. */
 export function AccountsView() {
@@ -128,7 +129,7 @@ export function AccountsView() {
                     </span>
                   ) : (
                     <button
-                      className="ml-2 text-primary hover:underline disabled:opacity-50"
+                      className={`ml-2 ${TEXT_LINK_CLASS}`}
                       disabled={busy}
                       onClick={() => void addAccount(account.email)}
                       type="button"
@@ -140,7 +141,7 @@ export function AccountsView() {
               </p>
             </div>
             <button
-              className="text-sm text-danger hover:underline"
+              className={`text-sm ${TEXT_ACTION_CLASS.danger}`}
               data-testid={`remove-account-${account.id}`}
               onClick={() => remove(account)}
               type="button"

@@ -10,7 +10,7 @@ import {
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Chip } from './Chip.tsx';
-import { type ThemeColors, useStyles } from './theme.ts';
+import { actionText, type ThemeColors, useStyles } from './theme.ts';
 
 // Through a PlainDate in a leap year: the polyfill cannot localise a
 // PlainMonthDay ("cannot format PlainMonthDay with calendar iso8601"),
@@ -178,9 +178,8 @@ const makeStyles = (colors: ThemeColors) =>
       justifyContent: 'space-between',
     },
     reset: {
-      color: colors.primary,
+      ...actionText(colors),
       fontSize: 13,
-      fontWeight: '600',
     },
     source: {
       color: colors.text,

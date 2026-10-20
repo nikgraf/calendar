@@ -13,6 +13,7 @@ import {
   leadDaysSummary,
 } from '@calendar/core';
 import { useState } from 'react';
+import { TEXT_ACTION_CLASS } from './ui/buttonStyles.ts';
 
 /**
  * Lead times and delivery time for birthday notifications. Device-local
@@ -106,7 +107,7 @@ export function BirthdayRemindersSection() {
                 </span>
                 <button
                   aria-label={`Reset reminders for ${override.displayName}`}
-                  className="rounded px-1.5 text-xs text-primary hover:bg-fill"
+                  className={`text-xs ${TEXT_ACTION_CLASS.primary}`}
                   onClick={() =>
                     void setBirthdayReminderOverride({ ...override, leadDays: null }).catch(
                       (error: unknown) =>

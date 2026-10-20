@@ -1,7 +1,7 @@
 import { type SearchFilterChip, searchChipId } from '@calendar/core';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text } from 'react-native';
 import { FlashView } from './FlashView.tsx';
-import { BOX_FONT_SCALE, type ThemeColors, useStyles } from './theme.ts';
+import { actionText, BOX_FONT_SCALE, type ThemeColors, useStyles } from './theme.ts';
 
 /**
  * The search's filters as a row of chips under the header: a tap opens
@@ -112,9 +112,8 @@ const makeStyles = (colors: ThemeColors) =>
       paddingVertical: 5,
     },
     addLabel: {
-      color: colors.primary,
+      ...actionText(colors),
       fontSize: 14,
-      fontWeight: '500',
     },
     chip: {
       alignItems: 'center',

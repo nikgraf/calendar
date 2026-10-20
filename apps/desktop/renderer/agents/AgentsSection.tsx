@@ -27,7 +27,11 @@ import { CALLOUT_CLASS } from '../ui/calloutStyles.ts';
 import { ARM_DELAY_MS } from './AgentApprovalDialog.tsx';
 import { type AgentAction, agentActionQuestion } from './agentActions.ts';
 import { useAgentsLoad } from './useAgentsState.ts';
-import { SETTINGS_BUTTON_CLASS as BUTTON } from '../ui/buttonStyles.ts';
+import {
+  SETTINGS_BUTTON_CLASS as BUTTON,
+  TEXT_ACTION_CLASS,
+  TEXT_LINK_CLASS,
+} from '../ui/buttonStyles.ts';
 
 const SELECT = 'w-44 shrink-0 rounded-md border border-hairline bg-surface px-1.5 py-1 text-xs';
 const DEFAULT = '__default__';
@@ -81,7 +85,7 @@ function Copyable({ label, testId, text }: { label: string; testId: string; text
     <div className="mt-2">
       <div className="flex items-center justify-between">
         <span className="text-xs font-medium text-ink-secondary">{label}</span>
-        <button className="text-xs text-primary hover:underline" onClick={copy} type="button">
+        <button className={`text-xs ${TEXT_ACTION_CLASS.primary}`} onClick={copy} type="button">
           {copied ? 'Copied' : 'Copy'}
         </button>
       </div>
@@ -434,7 +438,7 @@ export function AgentsSection() {
         <p className="mt-2 text-xs text-danger" data-testid="agents-error" role="alert">
           The agents could not be refreshed ({error}), so this may be out of date.{' '}
           <button
-            className="text-primary hover:underline"
+            className={TEXT_LINK_CLASS}
             data-testid="agents-retry"
             onClick={retry}
             type="button"
@@ -464,7 +468,7 @@ export function AgentsSection() {
                 </div>
                 <button
                   aria-expanded={openId === agent.id}
-                  className="text-xs text-primary hover:underline"
+                  className={`text-xs ${TEXT_ACTION_CLASS.primary}`}
                   data-testid="agent-edit"
                   onClick={() => setOpenId(openId === agent.id ? null : agent.id)}
                   type="button"
@@ -472,7 +476,7 @@ export function AgentsSection() {
                   {openId === agent.id ? 'Close' : 'Access…'}
                 </button>
                 <button
-                  className="text-xs text-primary hover:underline disabled:opacity-50"
+                  className={`text-xs ${TEXT_ACTION_CLASS.primary}`}
                   data-testid="agent-rotate"
                   disabled={busy}
                   onClick={() => setAsking({ action: 'rotate', id: agent.id })}
@@ -482,7 +486,7 @@ export function AgentsSection() {
                 </button>
                 <button
                   aria-label={`Remove ${agent.name}`}
-                  className="text-xs text-danger hover:underline disabled:opacity-50"
+                  className={`text-xs ${TEXT_ACTION_CLASS.danger}`}
                   data-testid="agent-remove"
                   disabled={busy}
                   onClick={() => setAsking({ action: 'remove', id: agent.id })}

@@ -1,5 +1,5 @@
 import { StyleSheet } from 'react-native';
-import { groupedGround, type ThemeColors, useStyles } from './theme.ts';
+import { actionText, groupedGround, type ThemeColors, useStyles } from './theme.ts';
 
 /**
  * The editor models store wall-clock strings (YYYY-MM-DD / HH:MM) shared
@@ -132,9 +132,8 @@ const makeSheetStyles = (colors: ThemeColors) =>
       opacity: 0.6,
     },
     save: {
-      color: colors.primary,
+      ...actionText(colors),
       fontSize: 17,
-      fontWeight: '600',
     },
     // The form-sheet editor's header: on the form's ground, as a Settings page's bar is.
     sheetHeader: {

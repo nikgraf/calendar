@@ -78,8 +78,10 @@ dictation and capture from text or photo.
   (macOS) regenerates the committed app icons, `tokens.css` (the desktop
   imports it; `App.css` maps the variables to Tailwind utilities — the
   renderer's only colors, `themeClasses.test.ts` fails on Tailwind's own
-  palette — and `data-theme` on `<html>` follows the OS appearance) and
-  `packages/core/src/theme/tokens.ts` (iOS reads it through `useTheme`),
+  palette and on a hand-made `hover:underline`; text actions take the
+  shared looks in `ui/buttonStyles.ts` — and `data-theme` on `<html>`
+  follows the OS appearance) and `packages/core/src/theme/tokens.ts`
+  (iOS reads it through `useTheme`),
   and CI fails on stale exports via `pnpm brand:check`. Edit
   `tokens/tokens.json` and the masters, never the generated files.
 
