@@ -228,10 +228,14 @@ Instead:
 
 - **JS/TS changes (almost all agent PRs)** — keep the installed TestFlight
   build and switch channels in-app: **Settings › Advanced › PR Preview** → enter
-  `pr-<number>` (from the PR comment) → Load. "Back to main" returns to the
-  main channel. If no update loads immediately, force-quit and reopen. Once
-  the PR closes its channel is gone, and a phone still on it gets no
-  updates until "Back to main".
+  `pr-<number>` (from the PR comment) → Load, and the app restarts into the
+  PR's update. Running Now › Branch names the branch the running update
+  came from; Channel is the one the build asks for at every launch, kept
+  on the device until "Back to Main". If the PR already runs, Load says so;
+  if it has no update for this build's runtime (natively behind or ahead
+  of the build, or CI hasn't published yet), Load says that and keeps the
+  previous channel. Once the PR closes its channel is gone, and a phone
+  still on it gets no updates until "Back to Main".
 - **Native changes** (new native deps, config plugins, Expo SDK bumps) change
   the update **fingerprint** (`runtimeVersion.policy: fingerprint`), so OTA
   previews from such PRs are invisible to the installed build — deliberately,
