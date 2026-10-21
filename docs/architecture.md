@@ -116,7 +116,10 @@ Diagnostics, which always asks the device's model, never the e2e
 fixture. Dictation audio is captured by the UI layer (renderer
 `getUserMedia` → 16 kHz WAV) and only transcribed natively. Dictation
 is hands-free: each adapter reads the level as it records (the
-worklet's blocks on the desktop, expo-audio metering on iOS) and
+worklet's blocks on the desktop; on iOS the expo-audio recorder's
+`getStatus().metering`, on a recorder prepared before it records —
+unprepared, `record()` starts nothing and the meter reads digital
+silence) and
 `createEndpointer` (`packages/ai/src/endpointer.ts`) hears a phrase
 begin and the pause that ends it, against the room's own floor.
 `useQuickAddModel`

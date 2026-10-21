@@ -918,7 +918,11 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   partial words (a new iOS module and a helper push channel), recording
   while a phrase is read (words said then would queue against a form
   still changing). Open: the pause length and margins by ear on real
-  rooms, a live transcript, saying "undo".
+  rooms, a live transcript, saying "undo". Fixed (2026-10-18, #224): on an
+  iPhone no recording had ever started or been transcribed — expo-audio's
+  `record()` starts nothing on an unprepared recorder, and its file is the
+  `uri` property, not a `getURI()`; the adapter now prepares first, reads
+  `uri`, and refuses to pass a recorder that did not start off as listening.
 - **The model says why it is unavailable** (2026-10-10, #168) —
   `ModelStatus` carries disabled / not-ready / unsupported (Apple
   Intelligence switches itself off on a Siri-vs-Mac language mismatch); a
