@@ -1106,7 +1106,12 @@ gateway carries all of it. Details, limits and the threat model:
   (`app/editor.tsx`), a react-native-screens form sheet with a half and
   a full detent: a new item opens at half height over the live calendar,
   an existing one at full; the host pushes the route and pops it on
-  Cancel or Save, and a swipe that dismisses it is Cancel. UIKit
+  Cancel or Save, and a swipe that dismisses it is Cancel. The editor's
+  own close (Cancel, or Save and Delete once the write answers) applies
+  only while the sheet still holds its opening, and the detail's Delete
+  only while the sheet shows an event that delete took (`sheets.ts`,
+  over `deleteTakes`), so a reply landing after a tap behind a
+  half-height editor leaves what that tap opened. UIKit
   presents one sheet at a time, so the push waits for a page sheet
   (detail, birthday) to slide away, and a page sheet opened from the
   calendar behind a half-height editor waits for the form sheet (the

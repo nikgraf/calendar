@@ -549,8 +549,18 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   meanwhile included. A late reply used to close whatever was opened
   since (EventKit can take hundreds of ms). Rejected: ignoring grid
   clicks while a write runs; dropping the close inside the shared editor
-  models on unmount. Open: iOS's `EditorHost` closes with an unscoped
-  `setSheet(NONE)`; a reminder reopened during its own Delete stays up.
+  models on unmount. Open: a reminder reopened during its own Delete
+  stays up. iOS followed in #232.
+- **iOS sheets close only their own** (2026-10-21, #232) — the iOS
+  editor route closes on its write's reply only while the host's sheet
+  still holds that opening (`closeEditor`), and the detail's Delete only
+  a sheet showing an event it took (`closeDeleted` over `deleteTakes`,
+  an editor Edit or Convert opened meanwhile included), as the desktop
+  since #230. A half-height editor takes taps behind it, so a detail or
+  a slot's editor opened while the write ran closed with its reply.
+  Rejected, as on the desktop: ignoring taps behind the sheet while a
+  write runs; dropping the close when the editor unmounts. Open: an
+  item reopened during its own editor's Delete stays up, as there.
 
 ## Invitees, contacts and birthdays
 
