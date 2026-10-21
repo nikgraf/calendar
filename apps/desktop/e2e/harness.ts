@@ -752,6 +752,12 @@ export interface App {
   readonly closeSettings: () => Promise<void>;
   readonly dump: (label: string) => Promise<void>;
   /**
+   * Holds or lets go of the Reminders fixture's writes — needs
+   * `reminders: { fixture }` (remindersClient.ts reads the marker file):
+   * while held, a save waits for its reply as on a slow EventKit.
+   */
+  readonly holdReminderWrites: (held: boolean) => void;
+  /**
    * Opens the settings window on a pane — through the main window's bridge,
    * as its buttons do — and returns a client attached to it. An open
    * window is moved to the pane and its client reused.
@@ -990,6 +996,7 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
             return {
               CALENDAR_REMINDERS: 'fixture',
               CALENDAR_REMINDERS_FIXTURE: fixturePath,
+              CALENDAR_REMINDERS_HOLD: join(userDataDir, 'reminders-hold'),
             };
           })();
 
@@ -1165,6 +1172,15 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
       await dumpPage(cdp, dir, safe);
       if (settings && !settings.closed) {
         await dumpPage(settings, dir, `${safe}.settings`);
+      }
+    },
+    holdReminderWrites: (held: boolean) => {
+      // The marker remindersClient.ts polls under CALENDAR_REMINDERS=fixture.
+      const marker = join(userDataDir, 'reminders-hold');
+      if (held) {
+        writeFileSync(marker, '');
+      } else {
+        rmSync(marker, { force: true });
       }
     },
     openSettings: async (pane: SettingsPane) => {

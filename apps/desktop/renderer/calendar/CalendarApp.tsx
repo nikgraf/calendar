@@ -499,7 +499,13 @@ function CalendarBody({
     return () => window.removeEventListener('paste', onPaste);
   }, [capture, dialogOpen]);
 
-  const closePanel = () => setPanel(backFrom(panel));
+  // An editor closes itself — Cancel, or Save and Delete once the write's
+  // reply is back — only while the panel still holds its opening: a reply
+  // landing after another chip, slot or event was opened leaves that one up.
+  const closeEditor = (opening: number) => () =>
+    setPanel((current) =>
+      'opening' in current && current.opening === opening ? backFrom(current) : current,
+    );
   const openSearch = () => {
     setPanel({ kind: 'search', selectText: true });
     setSearchFocus((count) => count + 1);
@@ -692,7 +698,7 @@ function CalendarBody({
                 calendars={calendars}
                 initialKind={panel.mode}
                 onCapture={capture.start}
-                onClose={closePanel}
+                onClose={closeEditor(panel.opening)}
                 quickAddFocus={quickAddFocus}
                 seed={panel.seed}
                 taskLists={taskLists}
@@ -702,7 +708,7 @@ function CalendarBody({
               <EditorPanel
                 calendars={calendars}
                 onCapture={capture.start}
-                onClose={closePanel}
+                onClose={closeEditor(panel.opening)}
                 seed={{ initialDate: focused }}
                 task={panel.task}
                 taskLists={taskLists}
