@@ -7,7 +7,6 @@ import {
   useTaskLists,
   useTimeZones,
   type EventEditorPrefill,
-  type TaskEditorSeed,
 } from '@calendar/app-state';
 import {
   availableItemKinds,
@@ -39,6 +38,7 @@ import { languageModel, modelFixture, textRecognizer } from '../model.ts';
 import { CaptureBanner } from './CaptureBanner.tsx';
 import { EventDetailSheet } from './EventDetailSheet.tsx';
 import { EventEditSheet, type EditSeed } from './EventEditSheet.tsx';
+import { closeDeleted, closeEditor, type EditSheet, NONE, type Sheet } from './sheets.ts';
 
 /** The share extension opens the app at `<scheme>://expo-sharing` once the payload is stored. */
 const isShareUrl = (url: string) => /^[a-z-]+:\/\/expo-sharing/i.test(url);
@@ -77,38 +77,12 @@ export interface EditorHost {
 }
 
 /**
- * One sheet at a time, in a small set of states. The detail and the
- * birthday are page sheets (React Native Modals); the editor is a form
- * sheet route (`app/editor.tsx`) the host pushes and pops as the state
- * says. The detail hands over to the editor by replacing itself. An
- * editor carries its opening's number: each opening mounts a fresh editor
- * (its forms and thread seed once).
- */
-interface EditSheet {
-  readonly initialKind?: ItemKind | undefined;
-  readonly kind: 'edit';
-  readonly opening: number;
-  readonly seed: EditSeed;
-  readonly task?: TaskRecord | undefined;
-  readonly taskSeed?: Pick<TaskEditorSeed, 'dated' | 'listKey'> | undefined;
-}
-
-type Sheet =
-  | { readonly kind: 'none' }
-  /** The event as it was opened; the sheet follows it from there. */
-  | { readonly event: EventRecord; readonly kind: 'detail' }
-  | EditSheet
-  | { readonly birthday: BirthdayOccurrence; readonly kind: 'birthday' };
-
-/**
  * How long a sheet takes to slide away: UIKit presents one at a time, so
  * the editor's form sheet waits for a page sheet (detail, birthday) to
  * leave, and a page sheet for the form sheet.
  */
 const PAGE_SHEET_DISMISS_MS = 450;
 const FORM_SHEET_DISMISS_MS = 500;
-
-const NONE: Sheet = { kind: 'none' };
 
 let openings = 0;
 const nextOpening = (): number => {
@@ -382,14 +356,15 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
       router.push('/settings');
     },
     // Keyed per opening: an editor seeds its form fields (and its thread)
-    // from its seed once, on mount.
+    // from its seed once, on mount. It closes only its own opening: a
+    // write's reply can land after the sheet moved on (`closeEditor`).
     renderEditor: () =>
       routeSheet === null ? null : (
         <EventEditSheet
           calendars={calendars}
           initialKind={routeSheet.initialKind}
           key={`edit:${String(routeSheet.opening)}`}
-          onClose={() => setSheet(NONE)}
+          onClose={() => setSheet(closeEditor(routeSheet.opening))}
           presentation="route"
           seed={routeSheet.seed}
           task={routeSheet.task}
@@ -443,6 +418,7 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
               },
             })
           }
+          onDeleted={(scope) => setSheet(closeDeleted(sheet.event, scope))}
           onEdit={(event) =>
             setSheet({
               kind: 'edit',
