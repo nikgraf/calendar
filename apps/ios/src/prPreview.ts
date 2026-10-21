@@ -146,8 +146,21 @@ export const switchChannel = async (
     }
     const step = loadStep({ fetched, previous, running, runtime, target });
     if (step.kind === 'reload') {
-      await updates.reload();
-      return { saved, status: null };
+      try {
+        await updates.reload();
+        return { saved, status: null };
+      } catch (error) {
+        // A reload picks only from stored updates, and the cache drops ones
+        // older than the running update, the build's own bundle included; a
+        // cold start stores that bundle again and runs the chosen channel.
+        return {
+          saved,
+          status: {
+            failed: true,
+            text: `Couldn't restart. Force-quit and reopen the app to run ${target}. ${errorText(error)}`,
+          },
+        };
+      }
     }
     if (step.kind === 'restore') {
       updates.setOverride(overrideFor(previous));

@@ -188,6 +188,40 @@ describe('switchChannel', () => {
         saved: 'main',
         target: 'pr-224',
       }),
-    ).toEqual({ saved: 'pr-224', status: { failed: true, text: 'reload failed' } });
+    ).toEqual({
+      saved: 'pr-224',
+      status: {
+        failed: true,
+        text: "Couldn't restart. Force-quit and reopen the app to run pr-224. reload failed",
+      },
+    });
+  });
+
+  it('sends Back to Main to a cold start when nothing stored can run main', async () => {
+    // The cache dropped main's updates and the build's own bundle while the
+    // pull request ran; offline, a reload has nothing to pick.
+    const { calls, updates } = fakeUpdates(
+      async () => {
+        throw new Error('offline');
+      },
+      async () => {
+        throw new Error('No launchable update.');
+      },
+    );
+    expect(
+      await switchChannel(updates, {
+        running: 'pr-224',
+        runtime: RUNTIME,
+        saved: 'pr-224',
+        target: 'main',
+      }),
+    ).toEqual({
+      saved: 'main',
+      status: {
+        failed: true,
+        text: "Couldn't restart. Force-quit and reopen the app to run main. No launchable update.",
+      },
+    });
+    expect(calls).toEqual(['override main', 'reload']);
   });
 });

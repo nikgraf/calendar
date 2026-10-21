@@ -236,7 +236,8 @@ Instead:
   of the build), Load says that and keeps the previous channel. Before
   CI's first publish the channel doesn't exist: Load shows EAS's 404 and
   keeps the previous channel too. Back to Main offline runs the build's own
-  bundle until main answers. Once the PR closes its channel is gone, and a
+  bundle until main answers; if the cache already dropped that bundle, the
+  page asks for a force-quit, since only a cold start stores it again. Once the PR closes its channel is gone, and a
   phone still on it gets no updates until "Back to Main".
 - **Native changes** (new native deps, config plugins, Expo SDK bumps) change
   the update **fingerprint** (`runtimeVersion.policy: fingerprint`), so OTA
