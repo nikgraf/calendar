@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { loadStep, overrideFor, runningBranch } from './prPreview.ts';
+import {
+  loadStep,
+  overrideFor,
+  runningBranch,
+  switchChannel,
+  type UpdatesApi,
+} from './prPreview.ts';
 
 const RUNTIME = 'f3ec89d7a97e1d2ebbe38d17f12f2b7d4fb7f3f0';
 
@@ -70,5 +76,118 @@ describe('loadStep', () => {
       expect(back('none', 'main')).toEqual({ kind: 'stay', message: 'Already on main.' });
       expect(back('none', null)).toEqual({ kind: 'stay', message: 'Already on main.' });
     });
+  });
+});
+
+/** A stand-in for expo-updates that records each override and reload. */
+const fakeUpdates = (
+  fetch: () => Promise<{ isNew: boolean; isRollBackToEmbedded: boolean }>,
+  reload: () => Promise<void> = async () => {},
+) => {
+  const calls: Array<string> = [];
+  const updates: UpdatesApi = {
+    fetchUpdate: fetch,
+    reload: async () => {
+      calls.push('reload');
+      await reload();
+    },
+    setOverride: (headers) => {
+      calls.push(headers === null ? 'override main' : `override ${headers['expo-channel-name']}`);
+    },
+  };
+  return { calls, updates };
+};
+
+const nothing = async () => ({ isNew: false, isRollBackToEmbedded: false });
+
+describe('switchChannel', () => {
+  it('restarts into a downloaded update and keeps the new channel', async () => {
+    const { calls, updates } = fakeUpdates(async () => ({
+      isNew: true,
+      isRollBackToEmbedded: false,
+    }));
+    expect(
+      await switchChannel(updates, {
+        running: 'main',
+        runtime: RUNTIME,
+        saved: 'main',
+        target: 'pr-224',
+      }),
+    ).toEqual({ saved: 'pr-224', status: null });
+    expect(calls).toEqual(['override pr-224', 'reload']);
+  });
+
+  it('restarts into a rollback like an update', async () => {
+    const { calls, updates } = fakeUpdates(async () => ({
+      isNew: false,
+      isRollBackToEmbedded: true,
+    }));
+    await switchChannel(updates, {
+      running: 'main',
+      runtime: RUNTIME,
+      saved: 'main',
+      target: 'pr-224',
+    });
+    expect(calls).toEqual(['override pr-224', 'reload']);
+  });
+
+  it('puts the previous channel back when the pull request cannot load', async () => {
+    const { calls, updates } = fakeUpdates(async () => {
+      throw new Error('404: There is no channel named pr-9');
+    });
+    const result = await switchChannel(updates, {
+      running: 'main',
+      runtime: RUNTIME,
+      saved: 'main',
+      target: 'pr-9',
+    });
+    expect(result).toEqual({
+      saved: 'main',
+      status: {
+        failed: true,
+        text: "Couldn't load pr-9. Still on main. 404: There is no channel named pr-9",
+      },
+    });
+    expect(calls).toEqual(['override pr-9', 'override main']);
+  });
+
+  it('keeps main after a Back to Main that needed no restart, so a failed Load does not bring the old pull request back', async () => {
+    // The phone asks for pr-224 but runs the build's own bundle: none of
+    // pr-224 was ever stored for this runtime. Back to Main finds nothing
+    // newer on main and stays; the launch-time channel still says pr-224.
+    const { calls, updates } = fakeUpdates(nothing);
+    const back = await switchChannel(updates, {
+      running: null,
+      runtime: RUNTIME,
+      saved: 'pr-224',
+      target: 'main',
+    });
+    expect(back).toEqual({ saved: 'main', status: { failed: false, text: 'Already on main.' } });
+
+    const load = await switchChannel(updates, {
+      running: null,
+      runtime: RUNTIME,
+      saved: back.saved,
+      target: 'pr-9',
+    });
+    expect(load.saved).toBe('main');
+    expect(calls).toEqual(['override main', 'override pr-9', 'override main']);
+  });
+
+  it('keeps the new channel when the restart itself fails', async () => {
+    const { updates } = fakeUpdates(
+      async () => ({ isNew: true, isRollBackToEmbedded: false }),
+      async () => {
+        throw new Error('reload failed');
+      },
+    );
+    expect(
+      await switchChannel(updates, {
+        running: 'main',
+        runtime: RUNTIME,
+        saved: 'main',
+        target: 'pr-224',
+      }),
+    ).toEqual({ saved: 'pr-224', status: { failed: true, text: 'reload failed' } });
   });
 });

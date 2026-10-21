@@ -33,7 +33,10 @@ export const runningBranch = (manifest: object, isEmbeddedLaunch: boolean): stri
   return typeof metadata.branchName === 'string' ? metadata.branchName : null;
 };
 
-/** What `fetchUpdateAsync` answered: a new update, nothing to load, or an error's text. */
+/**
+ * What `fetchUpdateAsync` answered: something to restart into (a new update
+ * or a rollback to the build's own bundle), nothing, or an error's text.
+ */
 export type FetchOutcome = 'new' | 'none' | { readonly error: string };
 
 export type LoadStep =
@@ -45,10 +48,10 @@ export type LoadStep =
   | { readonly kind: 'restore'; readonly message: string };
 
 /**
- * What Load does once the fetch answered. expo-updates reports nothing new
- * only when the channel's update already runs or the channel has none for
- * this build's runtime, and a restart helps with neither, so the page
- * never asks for one.
+ * What Load does once the fetch answered. Short of a rollback, expo-updates
+ * reports nothing new only when the channel's update already runs or the
+ * channel has none for this build's runtime, and a restart helps with
+ * neither, so the page never asks for one.
  */
 export const loadStep = ({
   fetched,
@@ -71,7 +74,8 @@ export const loadStep = ({
   const runs = running ?? MAIN_CHANNEL;
   if (target === MAIN_CHANNEL) {
     // Main needs no download: without the override, a relaunch runs main's
-    // newest stored update or the build's own bundle, offline too.
+    // newest stored update, or offline the build's own bundle (the stored
+    // manifest filter still names the PR's branch until main answers).
     return runs === MAIN_CHANNEL
       ? { kind: 'stay', message: 'Already on main.' }
       : { kind: 'reload' };
@@ -89,4 +93,68 @@ export const loadStep = ({
     kind: 'restore',
     message: `${target} has no update for this build's runtime (${runtime.slice(0, 8)}). Still on ${previous}.`,
   };
+};
+
+/** The parts of expo-updates the page drives. */
+export interface UpdatesApi {
+  readonly fetchUpdate: () => Promise<{
+    readonly isNew: boolean;
+    readonly isRollBackToEmbedded: boolean;
+  }>;
+  readonly reload: () => Promise<void>;
+  readonly setOverride: (requestHeaders: Record<string, string> | null) => void;
+}
+
+export interface Status {
+  readonly failed: boolean;
+  readonly text: string;
+}
+
+const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+/**
+ * Load (or Back to Main, with `target` main). Answers the channel the build
+ * now asks for — Back to Main can change it without a restart, so the
+ * launch-time `Updates.channel` is only where it starts — and the line to
+ * show, or none when the app restarts.
+ */
+export const switchChannel = async (
+  updates: UpdatesApi,
+  {
+    running,
+    runtime,
+    saved: previous,
+    target,
+  }: {
+    readonly running: string | null;
+    readonly runtime: string;
+    /** The channel the build asks for before this switch. */
+    readonly saved: string;
+    readonly target: string;
+  },
+): Promise<{ readonly saved: string; readonly status: Status | null }> => {
+  let saved = previous;
+  try {
+    let fetched: FetchOutcome;
+    try {
+      updates.setOverride(overrideFor(target));
+      saved = target;
+      const result = await updates.fetchUpdate();
+      fetched = result.isNew || result.isRollBackToEmbedded ? 'new' : 'none';
+    } catch (error) {
+      fetched = { error: errorText(error) };
+    }
+    const step = loadStep({ fetched, previous, running, runtime, target });
+    if (step.kind === 'reload') {
+      await updates.reload();
+      return { saved, status: null };
+    }
+    if (step.kind === 'restore') {
+      updates.setOverride(overrideFor(previous));
+      saved = previous;
+    }
+    return { saved, status: { failed: step.kind === 'restore', text: step.message } };
+  } catch (error) {
+    return { saved, status: { failed: true, text: errorText(error) } };
+  }
 };

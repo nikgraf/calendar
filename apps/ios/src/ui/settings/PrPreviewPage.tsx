@@ -3,6 +3,7 @@ import {
   createdAt as updateCreatedAt,
   fetchUpdateAsync,
   isEmbeddedLaunch,
+  isEmergencyLaunch,
   isEnabled as updatesEnabled,
   manifest,
   reloadAsync,
@@ -13,20 +14,27 @@ import {
 import { useState } from 'react';
 import { StyleSheet, TextInput, View } from 'react-native';
 import {
-  type FetchOutcome,
-  loadStep,
   MAIN_CHANNEL,
-  overrideFor,
   runningBranch,
+  type Status,
+  switchChannel,
+  type UpdatesApi,
 } from '../../prPreview.ts';
 import { type ThemeColors, useStyles, useTheme } from '../theme.ts';
 import { ActionRow, Footer, Row, Section, SettingsPage } from '../GroupedList.tsx';
 
 const running = runningBranch(manifest, isEmbeddedLaunch);
-// The native constant is '' when the build asks for no channel.
-const chosen = updatesChannel || MAIN_CHANNEL;
 
-const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
+const updates: UpdatesApi = {
+  fetchUpdate: fetchUpdateAsync,
+  reload: reloadAsync,
+  setOverride: setUpdateRequestHeadersOverride,
+};
+
+// The channel the build asks for. It starts as the launch's (the native
+// constant is '' when the build asks for none) and outlives the page, since
+// Back to Main can change it without a restart.
+let savedChannel = updatesChannel || MAIN_CHANNEL;
 
 /**
  * Internal-testing helper: loads a pull request's OTA update channel
@@ -34,53 +42,38 @@ const errorText = (error: unknown) => (error instanceof Error ? error.message : 
  * expo-updates request-header override, and switches back to main. Only
  * meaningful in update-enabled (TestFlight) builds — dev clients load from
  * Metro and show a hint instead. Running Now names the branch the running
- * update came from; Channel is the one the build asks for, which Load
- * changes only by restarting into it.
+ * update came from; Channel is the one the build asks for.
  */
 export function PrPreviewPage() {
   const { colors } = useTheme();
   const styles = useStyles(makeStyles);
   const [channelInput, setChannelInput] = useState('');
-  const [status, setStatus] = useState<{ failed: boolean; text: string } | null>(null);
+  const [saved, setSaved] = useState(savedChannel);
+  const [status, setStatus] = useState<Status | null>(null);
   const [switching, setSwitching] = useState(false);
 
   const switchTo = async (target: string) => {
     setSwitching(true);
     setStatus(null);
-    try {
-      let fetched: FetchOutcome;
-      try {
-        setUpdateRequestHeadersOverride(overrideFor(target));
-        fetched = (await fetchUpdateAsync()).isNew ? 'new' : 'none';
-      } catch (error) {
-        fetched = { error: errorText(error) };
-      }
-      const step = loadStep({
-        fetched,
-        previous: chosen,
-        running,
-        runtime: runtimeVersion ?? '',
-        target,
-      });
-      if (step.kind === 'reload') {
-        await reloadAsync();
-        return;
-      }
-      if (step.kind === 'restore') {
-        setUpdateRequestHeadersOverride(overrideFor(chosen));
-      }
-      setStatus({ failed: step.kind === 'restore', text: step.message });
-    } catch (error) {
-      setStatus({ failed: true, text: errorText(error) });
-    } finally {
-      setSwitching(false);
-    }
+    const result = await switchChannel(updates, {
+      running,
+      runtime: runtimeVersion ?? '',
+      saved: savedChannel,
+      target,
+    });
+    savedChannel = result.saved;
+    setSaved(result.saved);
+    setStatus(result.status);
+    setSwitching(false);
   };
 
   return (
     <SettingsPage testID="settings-page-pr-preview">
       <Section header="Running Now">
-        <Row title="Branch" value={running ?? (isEmbeddedLaunch ? 'Built in' : 'none')} />
+        <Row
+          title="Branch"
+          value={running ?? (isEmbeddedLaunch || isEmergencyLaunch ? 'Built in' : 'none')}
+        />
         <Row title="Update" value={updateId ? updateId.slice(0, 8) : 'embedded'} />
         {updateCreatedAt ? (
           <Row title="Published" value={updateCreatedAt.toLocaleString()} />
@@ -97,7 +90,7 @@ export function PrPreviewPage() {
           }
           header="Load a Pull Request"
         >
-          <Row title="Channel" value={chosen} />
+          <Row title="Channel" value={saved} />
           <View style={styles.field}>
             <TextInput
               accessibilityLabel="Update channel"

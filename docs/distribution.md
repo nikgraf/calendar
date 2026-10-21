@@ -233,9 +233,11 @@ Instead:
   came from; Channel is the one the build asks for at every launch, kept
   on the device until "Back to Main". If the PR already runs, Load says so;
   if it has no update for this build's runtime (natively behind or ahead
-  of the build, or CI hasn't published yet), Load says that and keeps the
-  previous channel. Once the PR closes its channel is gone, and a phone
-  still on it gets no updates until "Back to Main".
+  of the build), Load says that and keeps the previous channel. Before
+  CI's first publish the channel doesn't exist: Load shows EAS's 404 and
+  keeps the previous channel too. Back to Main offline runs the build's own
+  bundle until main answers. Once the PR closes its channel is gone, and a
+  phone still on it gets no updates until "Back to Main".
 - **Native changes** (new native deps, config plugins, Expo SDK bumps) change
   the update **fingerprint** (`runtimeVersion.policy: fingerprint`), so OTA
   previews from such PRs are invisible to the installed build — deliberately,
