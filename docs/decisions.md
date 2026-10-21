@@ -28,13 +28,13 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
 - **PR preview channels** (2026-10-20, #229) — `eas update --branch pr-<n>`
   made only a branch, so the app's channel request answered 404 and no
   PR preview had ever loaded; `--channel pr-<n>` creates a missing
-  channel on a same-named branch. Rejected: `channel:view ||
-  channel:create` before `--branch` (two calls for what `--channel` does).
-  Closing the PR deletes the channel, then the branch; a preview whose
-  channel has a build stays (the build would go with it). PR runs'
-  concurrency is keyed on the number, as a merged close's `github.ref` is
-  main. Open: `--channel` follows a channel repointed by hand; previews of
-  PRs closed before this, or with a merge conflict (no run), stay.
+  channel on a same-named branch (rejected: `channel:view ||
+  channel:create` before `--branch`, two calls for one). Closing the PR
+  deletes the channel, then the branch, unless the channel holds a build
+  (it would go too). PR runs' concurrency is keyed on the number: a merged
+  close's `github.ref` is main. Older closed PRs' 188 branches were
+  deleted by hand (2026-10-21). Open: `--channel` follows a channel
+  repointed by hand; a PR closed with a merge conflict gets no run.
 - **Production and dev side by side** (2026-10-01, #100) — the real
   accounts live in the production app, test accounts in a dev variant
   next to it, on the Mac (a run from source) and on the phone
