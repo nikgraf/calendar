@@ -278,6 +278,22 @@ describe('Apple Calendar', () => {
   });
 });
 
+/** A daily Apple series whose delete takes all of it, one per attempt of the spec below. */
+const shift = (attempt: number, hour: number) => {
+  const first = new Date();
+  first.setDate(first.getDate() - 14);
+  first.setHours(hour, 0, 0, 0);
+  return {
+    event: appleEvent({
+      endUtc: first.getTime() + 3_600_000,
+      id: `ek-shift-${String(attempt)}`,
+      startUtc: first.getTime(),
+      title: `Apple shift ${String(attempt)}`,
+    }),
+    recurrence: ['RRULE:FREQ=DAILY'],
+  };
+};
+
 /** A plain Apple event to delete, one per attempt of the spec below. */
 const errand = (attempt: number, hour: number) => ({
   event: appleEvent({
@@ -296,7 +312,17 @@ describe('A late delete reply meets the next inspector', () => {
   beforeAll(async () => {
     app = await launchApp(seed, {
       appleCalendar: {
-        fixture: { ...fixture, events: [errand(1, 7), errand(2, 8), errand(3, 18), errand(4, 19)] },
+        fixture: {
+          ...fixture,
+          events: [
+            errand(1, 7),
+            errand(2, 8),
+            errand(3, 18),
+            errand(4, 19),
+            shift(1, 20),
+            shift(2, 21),
+          ],
+        },
       },
     });
   }, 60_000);
@@ -358,5 +384,40 @@ describe('A late delete reply meets the next inspector', () => {
     await cdp.waitFor<boolean>(
       `!document.querySelector(${JSON.stringify(`[title^="${doomed}"]`)})`,
     );
+  });
+
+  let shifts = 0;
+  it("closes an editor opened on another occurrence while the series' delete ran, once it answers", async () => {
+    const { cdp } = app;
+    shifts += 1;
+    const title = `Apple shift ${String(shifts)}`;
+    const blocks = `[title^=${JSON.stringify(`${title} ·`)}]`;
+    const first = await cdp.locate(blocks);
+    await cdp.click(first.x, first.y);
+    await cdp.waitFor<boolean>(`${INSPECTOR_TITLE} === ${JSON.stringify(title)}`);
+    await cdp.eval(
+      `[...document.querySelectorAll('[aria-label="Apply to"] [role="radio"]')].find((b) => b.textContent?.trim() === 'All events')?.click()`,
+    );
+    await cdp.waitFor<boolean>(
+      `document.querySelector('[aria-label="Apply to"] [aria-checked="true"]')?.textContent?.trim() === 'All events'`,
+    );
+    app.holdEventKitWrites(true);
+    await cdp.clickButtonWithText('Delete');
+    await cdp.confirmDelete();
+    // Another day's occurrence, which the series' delete takes too: its own
+    // inspector (its block carries the outline), then Edit.
+    const second = await cdp.locate(blocks, { index: 1 });
+    await cdp.eval(
+      `document.elementFromPoint(${String(second.x)}, ${String(second.y)})?.closest('[role="button"]')?.setAttribute('data-e2e-next', '')`,
+    );
+    await cdp.click(second.x, second.y);
+    await cdp.waitFor<boolean>(`!!document.querySelector('[data-e2e-next][data-selected]')`);
+    await cdp.clickTestId('inspector-edit');
+    await cdp.waitFor<boolean>(
+      `document.querySelector('[data-testid="editor-title"]')?.textContent === 'Edit event'`,
+    );
+    app.holdEventKitWrites(false);
+    await cdp.waitFor<boolean>(`!document.querySelector('[data-testid="editor"]')`);
+    await cdp.waitFor<boolean>(`!document.querySelector(${JSON.stringify(blocks)})`);
   });
 });

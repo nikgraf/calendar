@@ -12,6 +12,7 @@ import {
   draftZoneRanges,
   type EventRecord,
   formatPlainTime,
+  type RecurringScope,
   type RsvpResponse,
   Temporal,
   utcMsToPlainDate,
@@ -67,8 +68,8 @@ export function EventInspector({
   onClose: () => void;
   /** Convert to a task: opens the editor in task mode. */
   onConvert: () => void;
-  /** Delete went through: the event is gone. */
-  onDeleted: () => void;
+  /** Delete went through, with this scope: the event is gone, and with a series' scope its siblings. */
+  onDeleted: (scope: RecurringScope) => void;
   onEdit: () => void;
   timeZone: string;
 }) {
@@ -76,7 +77,9 @@ export function EventInspector({
   const model = useEventEditorModel({
     calendars,
     confirm: moveConfirmation.request,
-    onClose: onDeleted,
+    // Called only after Delete, from the render it was pressed in: that
+    // render's scope is the one the delete ran with.
+    onClose: () => onDeleted(model.scope),
     seed: { event, initialDate: Temporal.PlainDate.from(utcMsToPlainDate(event.startUtc)) },
     timeZone,
   });

@@ -1,3 +1,4 @@
+import type { RecurringScope } from './backend.ts';
 import type { EventRecord } from './types.ts';
 
 type Identified = Pick<
@@ -41,3 +42,37 @@ export const findSameEvent = (
   events: ReadonlyArray<EventRecord>,
   event: Identified,
 ): EventRecord | undefined => events.find((candidate) => isSameEvent(candidate, event));
+
+/**
+ * Whether deleting `deleted` with `scope` takes `event` with it, as the
+ * editors delete: an occurrence with its scope (the one slot, it and the
+ * later ones, or the whole series and its master); anything else alone,
+ * a series' master with its occurrences.
+ */
+export const deleteTakes = (
+  deleted: Identified & Pick<EventRecord, 'startUtc'>,
+  scope: RecurringScope,
+  event: Identified & Pick<EventRecord, 'startUtc'>,
+): boolean => {
+  if (isSameEvent(deleted, event)) {
+    return true;
+  }
+  if (event.accountId !== deleted.accountId || event.calendarId !== deleted.calendarId) {
+    return false;
+  }
+  const master = deleted.recurringEventId;
+  if (master === undefined) {
+    return event.recurringEventId === deleted.id;
+  }
+  switch (scope) {
+    case 'following':
+      return (
+        event.recurringEventId === master &&
+        (event.originalStartUtc ?? event.startUtc) >= (deleted.originalStartUtc ?? deleted.startUtc)
+      );
+    case 'instance':
+      return false;
+    case 'series':
+      return event.id === master || event.recurringEventId === master;
+  }
+};

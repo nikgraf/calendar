@@ -1,5 +1,6 @@
 import {
   type BirthdayOccurrence,
+  deleteTakes,
   EMPTY_SEARCH_QUERY,
   eventIdentity,
   type EventRecord,
@@ -8,6 +9,7 @@ import {
   type NotificationTarget,
   PAN_BUFFER_DAYS,
   parseNotificationTarget,
+  type RecurringScope,
   type TaskRecord,
   Temporal,
   toZonedDateTime,
@@ -507,10 +509,10 @@ function CalendarBody({
       'opening' in current && current.opening === opening ? backFrom(current) : current,
     );
   // The inspector's Delete likewise, once the write answers: it closes the
-  // panel only while that shows the event (by identity, which a refresh in
-  // place keeps) — the inspector, or an editor that Edit or Convert opened
-  // on it meanwhile, since the event is gone.
-  const closeDeleted = (identity: string) => () =>
+  // panel only while that shows an event the delete took (`deleteTakes`:
+  // this one, or a sibling with a series' scope) — an inspector, or an
+  // editor that Edit or Convert opened meanwhile, since the event is gone.
+  const closeDeleted = (deleted: EventRecord) => (scope: RecurringScope) =>
     setPanel((current) => {
       const shown =
         current.kind === 'inspector'
@@ -518,7 +520,9 @@ function CalendarBody({
           : current.kind === 'editEvent'
             ? current.seed.event
             : undefined;
-      return shown !== undefined && eventIdentity(shown) === identity ? backFrom(current) : current;
+      return shown !== undefined && deleteTakes(deleted, scope, shown)
+        ? backFrom(current)
+        : current;
     });
   const openSearch = () => {
     setPanel({ kind: 'search', selectText: true });
@@ -697,7 +701,7 @@ function CalendarBody({
                     seed: { event: panel.event, initialDate: focused, initialScope: 'series' },
                   })
                 }
-                onDeleted={closeDeleted(eventIdentity(panel.event))}
+                onDeleted={closeDeleted(panel.event)}
                 onEdit={() =>
                   setPanel({
                     fromSearch: panel.fromSearch,

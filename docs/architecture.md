@@ -1067,8 +1067,9 @@ gateway carries all of it. Details, limits and the threat model:
   editor keeps its seed. An editor's own close (Cancel, or Save and
   Delete once the write answers) applies only while the panel still
   holds its opening, and the inspector's Delete only while the panel
-  shows that event (an editor opened on it meanwhile included), so a
-  late reply never closes what was opened since.
+  shows an event that delete took (`deleteTakes`: the event, or with a
+  series' scope its siblings; an editor opened on one meanwhile
+  included), so a late reply never closes what was opened since.
   Notices (`NoticeStack`: failed write, discarded
   change, conflict banner) stack in one column inside the grid's area.
   Every editor write runs through one slot (`useOneWrite`); deletes ask
