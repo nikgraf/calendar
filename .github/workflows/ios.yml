@@ -3,8 +3,9 @@ name: iOS
 # Publishing on main is fingerprint-gated: a push whose native fingerprint
 # matches the latest TestFlight build ships as an OTA update (~30s); only a
 # changed fingerprint (new pods, config plugins, SDK bumps) costs a full EAS
-# build + TestFlight submit. PRs get an OTA preview on every push, and the
-# `testflight` label forces a real build from a PR branch. Setup + tester
+# build + TestFlight submit. PRs get an OTA preview on every push (closing
+# the PR deletes it), and the `testflight` label forces a real build from
+# a PR branch. Setup + tester
 # flow: docs/distribution.md. Separate workflow file so `labeled` events
 # don't re-trigger or cancel the main CI's gate/e2e.
 
@@ -12,18 +13,23 @@ on:
   push:
     branches: [main]
   pull_request:
-    types: [opened, synchronize, reopened, labeled]
+    types: [opened, synchronize, reopened, labeled, closed]
   workflow_dispatch:
 
 concurrency:
   # A label is not a new push: in the push's group it cancelled that
   # push's in-progress OTA preview (and any label did, not just
-  # `testflight`). Label runs get their own group.
-  group: ios-${{ github.workflow }}-${{ github.ref }}${{ github.event.action == 'labeled' && '-label' || '' }}
-  # PR pushes supersede each other; main pushes must all complete — a
-  # cancelled testing-build ships no artifact, and a cancelled EAS
-  # publish silently strands testers on old JS.
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  # `testflight`). Label runs get their own group. PR runs are keyed on
+  # the number, not github.ref: a merged PR's `closed` run has the ref
+  # refs/heads/main, and in main's group it would replace the merge's
+  # pending push run (the next run queued replaces a pending one,
+  # whatever cancel-in-progress says).
+  group: ios-${{ github.workflow }}-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.ref }}${{ github.event.action == 'labeled' && '-label' || '' }}
+  # PR runs supersede each other (a close cancels a preview still
+  # publishing); main pushes must all complete — a cancelled
+  # testing-build ships no artifact, and a cancelled EAS publish silently
+  # strands testers on old JS.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read
@@ -54,8 +60,11 @@ jobs:
   # workflows, so the same reusable gate runs here too.
   verify:
     name: Gate
-    # A label other than `testflight` publishes nothing: no gate to run.
-    if: github.event.action != 'labeled' || github.event.label.name == 'testflight'
+    # A label other than `testflight` publishes nothing, and a closed PR
+    # only has its preview deleted: no gate to run.
+    if: >-
+      github.event.action != 'closed' &&
+      (github.event.action != 'labeled' || github.event.label.name == 'testflight')
     uses: ./.github/workflows/gate.yml
 
   # Build only when necessary: with runtimeVersion.policy "fingerprint",
@@ -175,6 +184,7 @@ jobs:
       needs.preflight.outputs.has_token == 'true' &&
       github.event_name == 'pull_request' &&
       github.event.action != 'labeled' &&
+      github.event.action != 'closed' &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -189,6 +199,10 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # `--channel`, not `--branch`: the app asks for a channel, and a
+      # branch alone answers 404 "no channel named pr-<n>". A missing
+      # channel is created pointing at a same-named branch (an existing
+      # one is reused); an existing channel publishes to its one branch.
       - name: Publish OTA update to channel pr-${{ github.event.number }}
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
@@ -196,7 +210,7 @@ jobs:
           PR_TITLE: ${{ github.event.pull_request.title }}
         working-directory: apps/ios
         run: |
-          pnpm exec eas update --branch "pr-${{ github.event.number }}" \
+          pnpm exec eas update --channel "pr-${{ github.event.number }}" \
             --non-interactive --message "$PR_TITLE @ ${HEAD_SHA:0:7}"
       - name: Upsert PR comment with the preview channel
         env:
@@ -213,6 +227,60 @@ jobs:
           else
             gh api "repos/${{ github.repository }}/issues/${{ github.event.number }}/comments" -f body="$BODY" > /dev/null
           fi
+
+  # A closed PR's preview goes: its channel, then its branch with the
+  # updates on it. The close shares the PR's concurrency group, so a
+  # preview still publishing is cancelled first. A name already gone (the
+  # preview never ran, a second close) is fine; any other error fails the
+  # job. Deleting a channel also deletes its builds, so a preview whose
+  # channel has one is left alone (none should: label builds ship on
+  # `main`).
+  preview-cleanup:
+    name: Delete PR preview (EAS)
+    needs: [preflight]
+    if: >-
+      needs.preflight.outputs.has_token == 'true' &&
+      github.event_name == 'pull_request' &&
+      github.event.action == 'closed' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # A closed PR's merge ref can be gone; main has the same project.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Delete channel and branch pr-${{ github.event.number }}
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          NAME: pr-${{ github.event.number }}
+        working-directory: apps/ios
+        # The default shell is `bash -e`, without pipefail. A failed lookup
+        # leaves stdout empty, and plain `jq` passes that; `-e` does not.
+        run: |
+          set -o pipefail
+          BUILDS=$(pnpm exec eas build:list --channel "$NAME" --limit 1 \
+            --json --non-interactive | jq -e length)
+          if [ "$BUILDS" != "0" ]; then
+            echo "::warning::$NAME has EAS builds, which deleting the channel would delete — left in place"
+            exit 0
+          fi
+          for KIND in channel branch; do
+            if OUT=$(pnpm exec eas "$KIND:delete" "$NAME" --non-interactive 2>&1); then
+              echo "$OUT"
+            elif grep -qE "Could not find (channel with the name|branch) $NAME( |$)" <<< "$OUT"; then
+              echo "No $KIND $NAME to delete"
+            else
+              echo "$OUT"
+              exit 1
+            fi
+          done
 
   # Full TestFlight build from a PR branch, for PRs that change native code
   # (new pods, config plugins — anything the OTA fingerprint can't cover).
