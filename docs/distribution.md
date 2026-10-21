@@ -303,9 +303,9 @@ dragging the `.app` in.
 module, config plugin, Swift bridge change, or Expo SDK bump). JS-only
 changes reload over Metro. `apps/ios/scripts/check-devclient.mjs` (run by
 `pnpm test:e2e:ios`) warns when the installed client's fingerprint differs
-from the working tree's. Updates are disabled in dev builds, so
-**Settings › Advanced › PR Preview** shows "Updates are disabled in this
-build" instead of channel controls.
+from the working tree's. A dev build loads from Metro: **Settings ›
+Advanced › PR Preview** still shows the channel controls there, but
+expo-updates refuses the override and the page shows its error.
 
 Maestro e2e (`pnpm test:e2e:ios`) runs against this dev client, so install a
 fresh one before those flows after a native change.

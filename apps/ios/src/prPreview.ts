@@ -49,9 +49,10 @@ export type LoadStep =
 
 /**
  * What Load does once the fetch answered. Short of a rollback, expo-updates
- * reports nothing new only when the channel's update already runs or the
- * channel has none for this build's runtime, and a restart helps with
- * neither, so the page never asks for one.
+ * reports nothing new when the channel has no update for this build's
+ * runtime newer than what runs (usually it already runs, or the PR's native
+ * code differs), and a restart helps with neither, so the page never asks
+ * for one.
  */
 export const loadStep = ({
   fetched,
@@ -133,12 +134,20 @@ export const switchChannel = async (
     readonly target: string;
   },
 ): Promise<{ readonly saved: string; readonly status: Status | null }> => {
-  let saved = previous;
+  try {
+    updates.setOverride(overrideFor(target));
+  } catch (error) {
+    // Nothing changed: expo-updates refused the override (a dev client
+    // refuses every one).
+    return {
+      saved: previous,
+      status: { failed: true, text: `Couldn't switch to ${target}. ${errorText(error)}` },
+    };
+  }
+  let saved = target;
   try {
     let fetched: FetchOutcome;
     try {
-      updates.setOverride(overrideFor(target));
-      saved = target;
       const result = await updates.fetchUpdate();
       fetched = result.isNew || result.isRollBackToEmbedded ? 'new' : 'none';
     } catch (error) {
@@ -170,4 +179,51 @@ export const switchChannel = async (
   } catch (error) {
     return { saved, status: { failed: true, text: errorText(error) } };
   }
+};
+
+export interface PreviewState {
+  /** The channel the build asks for. */
+  readonly saved: string;
+  readonly status: Status | null;
+  readonly switching: boolean;
+}
+
+/**
+ * The page's state, kept outside the page: a switch goes on when the page
+ * is left mid-fetch, the page shows it on return, and a second switch waits
+ * until the first is done instead of crossing its override.
+ */
+export const createPreviewStore = (
+  updates: UpdatesApi,
+  {
+    running,
+    runtime,
+    saved,
+  }: { readonly running: string | null; readonly runtime: string; readonly saved: string },
+) => {
+  let state: PreviewState = { saved, status: null, switching: false };
+  const listeners = new Set<() => void>();
+  const set = (next: PreviewState) => {
+    state = next;
+    for (const listener of listeners) {
+      listener();
+    }
+  };
+  return {
+    getState: () => state,
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    switchTo: async (target: string) => {
+      if (state.switching) {
+        return;
+      }
+      set({ ...state, status: null, switching: true });
+      const result = await switchChannel(updates, { running, runtime, saved: state.saved, target });
+      set({ saved: result.saved, status: result.status, switching: false });
+    },
+  };
 };

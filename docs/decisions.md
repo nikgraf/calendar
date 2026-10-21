@@ -37,8 +37,8 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   repointed by hand; a PR closed with a merge conflict gets no run.
 - **PR Preview page** (2026-10-21, #231) — Load kept the override when
   nothing loaded and said to force-quit, but short of a rollback
-  expo-updates reports nothing new only when the PR already runs or has no
-  update for this runtime, and a restart fixes neither. Load now restarts,
+  expo-updates reports nothing new when the PR has nothing for this
+  runtime newer than what runs, and a restart fixes neither. Load now restarts,
   says the PR runs, or puts the previous channel back and says why; Back to
   Main restarts unless main runs. The page names the running update's
   branch (`metadata.branchName`) and tracks the chosen channel itself,

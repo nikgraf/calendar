@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
 import {
+  createPreviewStore,
   loadStep,
   overrideFor,
   runningBranch,
@@ -151,27 +152,47 @@ describe('switchChannel', () => {
     expect(calls).toEqual(['override pr-9', 'override main']);
   });
 
-  it('keeps main after a Back to Main that needed no restart, so a failed Load does not bring the old pull request back', async () => {
-    // The phone asks for pr-224 but runs the build's own bundle: none of
-    // pr-224 was ever stored for this runtime. Back to Main finds nothing
-    // newer on main and stays; the launch-time channel still says pr-224.
-    const { calls, updates } = fakeUpdates(nothing);
-    const back = await switchChannel(updates, {
-      running: null,
-      runtime: RUNTIME,
+  it('reports an override expo-updates refused, and changes nothing', async () => {
+    const calls: Array<string> = [];
+    const result = await switchChannel(
+      {
+        fetchUpdate: async () => {
+          calls.push('fetch');
+          return { isNew: false, isRollBackToEmbedded: false };
+        },
+        reload: async () => {},
+        setOverride: () => {
+          throw new Error('not supported in development builds.');
+        },
+      },
+      { running: null, runtime: RUNTIME, saved: 'pr-224', target: 'main' },
+    );
+    expect(result).toEqual({
       saved: 'pr-224',
-      target: 'main',
+      status: {
+        failed: true,
+        text: "Couldn't switch to main. not supported in development builds.",
+      },
     });
-    expect(back).toEqual({ saved: 'main', status: { failed: false, text: 'Already on main.' } });
+    expect(calls).toEqual([]);
+  });
 
-    const load = await switchChannel(updates, {
-      running: null,
-      runtime: RUNTIME,
-      saved: back.saved,
-      target: 'pr-9',
-    });
-    expect(load.saved).toBe('main');
-    expect(calls).toEqual(['override main', 'override pr-9', 'override main']);
+  it('keeps the pull request when putting the previous channel back fails', async () => {
+    let overrides = 0;
+    const result = await switchChannel(
+      {
+        fetchUpdate: nothing,
+        reload: async () => {},
+        setOverride: () => {
+          overrides += 1;
+          if (overrides === 2) {
+            throw new Error('restore refused');
+          }
+        },
+      },
+      { running: 'main', runtime: RUNTIME, saved: 'main', target: 'pr-9' },
+    );
+    expect(result).toEqual({ saved: 'pr-9', status: { failed: true, text: 'restore refused' } });
   });
 
   it('keeps the new channel when the restart itself fails', async () => {
@@ -223,5 +244,42 @@ describe('switchChannel', () => {
       },
     });
     expect(calls).toEqual(['override main', 'reload']);
+  });
+});
+
+describe('createPreviewStore', () => {
+  it('keeps main after a Back to Main that needed no restart, so a failed Load does not bring the old pull request back', async () => {
+    // The phone asks for pr-224 but runs the build's own bundle: none of
+    // pr-224 was ever stored for this runtime. Back to Main finds nothing
+    // newer on main and stays; the launch-time channel still says pr-224.
+    const { calls, updates } = fakeUpdates(nothing);
+    const store = createPreviewStore(updates, { running: null, runtime: RUNTIME, saved: 'pr-224' });
+    await store.switchTo('main');
+    expect(store.getState()).toEqual({
+      saved: 'main',
+      status: { failed: false, text: 'Already on main.' },
+      switching: false,
+    });
+    await store.switchTo('pr-9');
+    expect(store.getState().saved).toBe('main');
+    expect(calls).toEqual(['override main', 'override pr-9', 'override main']);
+  });
+
+  it('ignores a second switch until the first is done', async () => {
+    const { promise: fetched, resolve: answer } = Promise.withResolvers<{
+      isNew: boolean;
+      isRollBackToEmbedded: boolean;
+    }>();
+    const { calls, updates } = fakeUpdates(() => fetched);
+    const store = createPreviewStore(updates, { running: 'main', runtime: RUNTIME, saved: 'main' });
+    const changes: Array<boolean> = [];
+    store.subscribe(() => changes.push(store.getState().switching));
+    const first = store.switchTo('pr-1');
+    await store.switchTo('pr-2');
+    answer({ isNew: false, isRollBackToEmbedded: false });
+    await first;
+    expect(calls).toEqual(['override pr-1', 'override main']);
+    expect(changes).toEqual([true, false]);
+    expect(store.getState().status?.text).toContain('pr-1 has no update');
   });
 });

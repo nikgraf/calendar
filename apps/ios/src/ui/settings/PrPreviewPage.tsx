@@ -11,61 +11,39 @@ import {
   setUpdateRequestHeadersOverride,
   updateId,
 } from 'expo-updates';
-import { useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import { StyleSheet, TextInput, View } from 'react-native';
-import {
-  MAIN_CHANNEL,
-  runningBranch,
-  type Status,
-  switchChannel,
-  type UpdatesApi,
-} from '../../prPreview.ts';
+import { createPreviewStore, MAIN_CHANNEL, runningBranch } from '../../prPreview.ts';
 import { type ThemeColors, useStyles, useTheme } from '../theme.ts';
 import { ActionRow, Footer, Row, Section, SettingsPage } from '../GroupedList.tsx';
 
 const running = runningBranch(manifest, isEmbeddedLaunch);
 
-const updates: UpdatesApi = {
-  fetchUpdate: fetchUpdateAsync,
-  reload: reloadAsync,
-  setOverride: setUpdateRequestHeadersOverride,
-};
-
-// The channel the build asks for. It starts as the launch's (the native
-// constant is '' when the build asks for none) and outlives the page, since
-// Back to Main can change it without a restart.
-let savedChannel = updatesChannel || MAIN_CHANNEL;
+// Seeded with the launch's channel: the native constant is '' when the
+// build asks for none.
+const preview = createPreviewStore(
+  {
+    fetchUpdate: fetchUpdateAsync,
+    reload: reloadAsync,
+    setOverride: setUpdateRequestHeadersOverride,
+  },
+  { running, runtime: runtimeVersion ?? '', saved: updatesChannel || MAIN_CHANNEL },
+);
 
 /**
  * Internal-testing helper: loads a pull request's OTA update channel
  * (published by CI as `pr-<number>`) into this installed build via the
  * expo-updates request-header override, and switches back to main. Only
- * meaningful in update-enabled (TestFlight) builds — dev clients load from
- * Metro and show a hint instead. Running Now names the branch the running
- * update came from; Channel is the one the build asks for.
+ * meaningful in TestFlight builds: a dev client loads from Metro and
+ * refuses the override, which the page reports. Running Now names the
+ * branch the running update came from; Channel is the one the build asks
+ * for.
  */
 export function PrPreviewPage() {
   const { colors } = useTheme();
   const styles = useStyles(makeStyles);
   const [channelInput, setChannelInput] = useState('');
-  const [saved, setSaved] = useState(savedChannel);
-  const [status, setStatus] = useState<Status | null>(null);
-  const [switching, setSwitching] = useState(false);
-
-  const switchTo = async (target: string) => {
-    setSwitching(true);
-    setStatus(null);
-    const result = await switchChannel(updates, {
-      running,
-      runtime: runtimeVersion ?? '',
-      saved: savedChannel,
-      target,
-    });
-    savedChannel = result.saved;
-    setSaved(result.saved);
-    setStatus(result.status);
-    setSwitching(false);
-  };
+  const { saved, status, switching } = useSyncExternalStore(preview.subscribe, preview.getState);
 
   return (
     <SettingsPage testID="settings-page-pr-preview">
@@ -106,17 +84,17 @@ export function PrPreviewPage() {
           </View>
           <ActionRow
             disabled={switching || channelInput.trim() === ''}
-            onPress={() => void switchTo(channelInput.trim())}
+            onPress={() => void preview.switchTo(channelInput.trim())}
             title={switching ? 'Switching…' : 'Load PR Channel'}
           />
           <ActionRow
             disabled={switching}
-            onPress={() => void switchTo(MAIN_CHANNEL)}
+            onPress={() => void preview.switchTo(MAIN_CHANNEL)}
             title="Back to Main"
           />
         </Section>
       ) : (
-        <Footer>Updates are disabled in this build (a dev client loads from Metro).</Footer>
+        <Footer>Updates are disabled in this build.</Footer>
       )}
     </SettingsPage>
   );
