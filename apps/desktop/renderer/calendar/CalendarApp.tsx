@@ -506,12 +506,20 @@ function CalendarBody({
     setPanel((current) =>
       'opening' in current && current.opening === opening ? backFrom(current) : current,
     );
-  // The inspector likewise (×, Results, or Delete once the write answers),
-  // by its event's identity, which a refresh in place keeps.
-  const closeInspector = (identity: string, to: PanelState) => () =>
-    setPanel((current) =>
-      current.kind === 'inspector' && eventIdentity(current.event) === identity ? to : current,
-    );
+  // The inspector's Delete likewise, once the write answers: it closes the
+  // panel only while that shows the event (by identity, which a refresh in
+  // place keeps) — the inspector, or an editor that Edit or Convert opened
+  // on it meanwhile, since the event is gone.
+  const closeDeleted = (identity: string) => () =>
+    setPanel((current) => {
+      const shown =
+        current.kind === 'inspector'
+          ? current.event
+          : current.kind === 'editEvent'
+            ? current.seed.event
+            : undefined;
+      return shown !== undefined && eventIdentity(shown) === identity ? backFrom(current) : current;
+    });
   const openSearch = () => {
     setPanel({ kind: 'search', selectText: true });
     setSearchFocus((count) => count + 1);
@@ -678,10 +686,8 @@ function CalendarBody({
               <EventInspector
                 calendars={calendars}
                 event={panel.event}
-                onBack={
-                  panel.fromSearch ? closeInspector(eventIdentity(panel.event), RESULTS) : undefined
-                }
-                onClose={closeInspector(eventIdentity(panel.event), RAIL)}
+                onBack={panel.fromSearch ? () => setPanel(RESULTS) : undefined}
+                onClose={() => setPanel(RAIL)}
                 onConvert={() =>
                   setPanel({
                     fromSearch: panel.fromSearch,
@@ -691,6 +697,7 @@ function CalendarBody({
                     seed: { event: panel.event, initialDate: focused, initialScope: 'series' },
                   })
                 }
+                onDeleted={closeDeleted(eventIdentity(panel.event))}
                 onEdit={() =>
                   setPanel({
                     fromSearch: panel.fromSearch,

@@ -295,7 +295,9 @@ describe('A late delete reply meets the next inspector', () => {
   let app: App;
   beforeAll(async () => {
     app = await launchApp(seed, {
-      appleCalendar: { fixture: { ...fixture, events: [errand(1, 8), errand(2, 18)] } },
+      appleCalendar: {
+        fixture: { ...fixture, events: [errand(1, 7), errand(2, 8), errand(3, 18), errand(4, 19)] },
+      },
     });
   }, 60_000);
   afterAll(async () => {
@@ -308,8 +310,9 @@ describe('A late delete reply meets the next inspector', () => {
     }
   });
 
-  const INSPECTOR_TITLE = `document.querySelector('[data-testid="inspector-title"]')?.textContent ?? null`;
-  // An event of its own per attempt: a retry finds the first one deleted.
+  const INSPECTOR_TITLE = `document.querySelector('[data-testid="inspector-title"]')?.textContent`;
+  // An event of its own per attempt (four: two tests, a retry each): a
+  // retry finds the first one deleted.
   let attempt = 0;
 
   it("keeps the next event's inspector open when the last one's delete answers after it opened", async () => {
@@ -332,6 +335,28 @@ describe('A late delete reply meets the next inspector', () => {
     // invalidation asked for is back, and the main process answers that
     // after the delete's own reply: the delete has closed what it closes.
     await cdp.waitFor<boolean>(`!${block}`);
-    expect(await cdp.eval<string | null>(INSPECTOR_TITLE)).toBe('Google sync');
+    expect(await cdp.eval<string | null>(`${INSPECTOR_TITLE} ?? null`)).toBe('Google sync');
+  });
+
+  it('closes an editor opened on the event while its delete ran, once the delete answers', async () => {
+    const { cdp } = app;
+    attempt += 1;
+    const doomed = `Apple errand ${String(attempt)}`;
+    await cdp.openInspector(`[title^=${JSON.stringify(doomed)}]`);
+    await cdp.waitFor<boolean>(`${INSPECTOR_TITLE} === ${JSON.stringify(doomed)}`);
+    app.holdEventKitWrites(true);
+    await cdp.clickButtonWithText('Delete');
+    await cdp.confirmDelete();
+    // Edit stays live while the delete waits: it opens the event's editor.
+    await cdp.clickTestId('inspector-edit');
+    await cdp.waitFor<boolean>(
+      `document.querySelector('[data-testid="editor-title"]')?.textContent === 'Edit event'`,
+    );
+    app.holdEventKitWrites(false);
+    // The event is gone, so the delete's reply closes its editor too.
+    await cdp.waitFor<boolean>(`!document.querySelector('[data-testid="editor"]')`);
+    await cdp.waitFor<boolean>(
+      `!document.querySelector(${JSON.stringify(`[title^="${doomed}"]`)})`,
+    );
   });
 });

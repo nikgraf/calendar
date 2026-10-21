@@ -1064,10 +1064,12 @@ gateway carries all of it. Details, limits and the threat model:
   search result closes back to the results. The inspector follows its
   event by identity (core `eventIdentity`), reads from the grid's current
   row (or `findCurrentEvent`), and closes when the event is gone; an
-  editor keeps its seed. A panel's own close (Cancel, ×, Results, or
-  Save and Delete once the write answers) applies only while the panel
-  still holds that editor's opening or that inspector's event, so a late
-  reply never closes what was opened since. Notices (`NoticeStack`: failed write, discarded
+  editor keeps its seed. An editor's own close (Cancel, or Save and
+  Delete once the write answers) applies only while the panel still
+  holds its opening, and the inspector's Delete only while the panel
+  shows that event (an editor opened on it meanwhile included), so a
+  late reply never closes what was opened since.
+  Notices (`NoticeStack`: failed write, discarded
   change, conflict banner) stack in one column inside the grid's area.
   Every editor write runs through one slot (`useOneWrite`); deletes ask
   first. `lastView` and `sidebarCollapsed` are device taste in the view

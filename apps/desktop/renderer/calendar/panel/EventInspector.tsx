@@ -56,16 +56,19 @@ export function EventInspector({
   onBack,
   onClose,
   onConvert,
+  onDeleted,
   onEdit,
   timeZone,
 }: {
   calendars: ReadonlyArray<CalendarInfo>;
   event: EventRecord;
-  /** Opened from search: "Results" goes back there, and so does a delete. */
+  /** Opened from search: "Results" goes back there. */
   onBack?: (() => void) | undefined;
   onClose: () => void;
   /** Convert to a task: opens the editor in task mode. */
   onConvert: () => void;
+  /** Delete went through: the event is gone. */
+  onDeleted: () => void;
   onEdit: () => void;
   timeZone: string;
 }) {
@@ -73,7 +76,7 @@ export function EventInspector({
   const model = useEventEditorModel({
     calendars,
     confirm: moveConfirmation.request,
-    onClose: onBack ?? onClose,
+    onClose: onDeleted,
     seed: { event, initialDate: Temporal.PlainDate.from(utcMsToPlainDate(event.startUtc)) },
     timeZone,
   });

@@ -543,14 +543,14 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   model. Open: the typeahead's empty state as recent places.
 - **A save closes only its own panel** (2026-10-21, #230) — a desktop
   editor's close (Cancel, or Save and Delete once the write answers)
-  applies only while the panel still holds that editor's opening, the
-  inspector's (×, Results, Delete) only while it shows that event. A
-  reply landing after another chip, slot or event was opened used to
-  close that one: EventKit can take hundreds of ms on real data. Rejected:
-  ignoring grid clicks while a write runs (the panel stops answering);
-  dropping the close inside the shared editor models on unmount (iOS
-  keys its sheets apart). Open: iOS's `EditorHost` closes with an
-  unscoped `setSheet(NONE)` too.
+  applies only while the panel still holds that editor's opening; the
+  inspector's Delete only while the panel shows that event, an editor
+  opened on it meanwhile included. A late reply used to close whatever
+  was opened since (EventKit can take hundreds of ms). Rejected: ignoring
+  grid clicks while a write runs; dropping the close inside the shared
+  editor models on unmount (iOS keys its sheets apart). Open: iOS's
+  `EditorHost` closes with an unscoped `setSheet(NONE)` too; an editor
+  reopened on a reminder while its own Delete runs stays up.
 
 ## Invitees, contacts and birthdays
 
