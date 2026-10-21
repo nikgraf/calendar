@@ -506,6 +506,12 @@ function CalendarBody({
     setPanel((current) =>
       'opening' in current && current.opening === opening ? backFrom(current) : current,
     );
+  // The inspector likewise (×, Results, or Delete once the write answers),
+  // by its event's identity, which a refresh in place keeps.
+  const closeInspector = (identity: string, to: PanelState) => () =>
+    setPanel((current) =>
+      current.kind === 'inspector' && eventIdentity(current.event) === identity ? to : current,
+    );
   const openSearch = () => {
     setPanel({ kind: 'search', selectText: true });
     setSearchFocus((count) => count + 1);
@@ -672,8 +678,10 @@ function CalendarBody({
               <EventInspector
                 calendars={calendars}
                 event={panel.event}
-                onBack={panel.fromSearch ? () => setPanel(RESULTS) : undefined}
-                onClose={() => setPanel(RAIL)}
+                onBack={
+                  panel.fromSearch ? closeInspector(eventIdentity(panel.event), RESULTS) : undefined
+                }
+                onClose={closeInspector(eventIdentity(panel.event), RAIL)}
                 onConvert={() =>
                   setPanel({
                     fromSearch: panel.fromSearch,

@@ -934,7 +934,7 @@ describe('A late save reply meets the next editor', () => {
     await app.stop();
   });
   afterEach(async (context) => {
-    app.holdReminderWrites(false);
+    app.holdEventKitWrites(false);
     if (context.task.result?.state === 'fail') {
       await app.dump(context.task.name);
     }
@@ -960,7 +960,7 @@ describe('A late save reply meets the next editor', () => {
       setter.call(input, ${JSON.stringify(renamed)});
       input.dispatchEvent(new Event('input', { bubbles: true }));
     })()`);
-    app.holdReminderWrites(true);
+    app.holdEventKitWrites(true);
     await cdp.clickButtonWithText('Save');
     // Under way: Save dims while the write waits for EventKit.
     await cdp.waitFor<boolean>(
@@ -971,7 +971,7 @@ describe('A late save reply meets the next editor', () => {
     // Still held: the next editor opened before the save could answer.
     expect((await taskById('ek-rem-milk'))?.title).not.toBe(renamed);
 
-    app.holdReminderWrites(false);
+    app.holdEventKitWrites(false);
     await expect
       .poll(() => taskById('ek-rem-milk'), { timeout: 5000 })
       .toMatchObject({ title: renamed });

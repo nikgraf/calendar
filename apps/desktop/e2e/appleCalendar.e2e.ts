@@ -6,7 +6,7 @@ import {
   CalendarInfo,
   EventRecord,
 } from '@calendar/core';
-import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vite-plus/test';
 import {
   type AppleCalendarFixture,
   type App,
@@ -275,5 +275,63 @@ describe('Apple Calendar', () => {
       `[...document.querySelectorAll('aside button')].find(b => b.textContent?.trim() === 'Home')?.click()`,
     );
     await cdp.waitFor(`!document.querySelector('[title^="Google sync"]')`);
+  });
+});
+
+/** A plain Apple event to delete, one per attempt of the spec below. */
+const errand = (attempt: number, hour: number) => ({
+  event: appleEvent({
+    endUtc: at(hour + 1),
+    id: `ek-errand-${String(attempt)}`,
+    startUtc: at(hour),
+    title: `Apple errand ${String(attempt)}`,
+  }),
+});
+
+// The inspector's Delete closes it once the write's reply is back, and
+// EventKit can take a while to answer: an event opened meanwhile used to
+// close in its place.
+describe('A late delete reply meets the next inspector', () => {
+  let app: App;
+  beforeAll(async () => {
+    app = await launchApp(seed, {
+      appleCalendar: { fixture: { ...fixture, events: [errand(1, 8), errand(2, 18)] } },
+    });
+  }, 60_000);
+  afterAll(async () => {
+    await app.stop();
+  });
+  afterEach(async (context) => {
+    app.holdEventKitWrites(false);
+    if (context.task.result?.state === 'fail') {
+      await app.dump(context.task.name);
+    }
+  });
+
+  const INSPECTOR_TITLE = `document.querySelector('[data-testid="inspector-title"]')?.textContent ?? null`;
+  // An event of its own per attempt: a retry finds the first one deleted.
+  let attempt = 0;
+
+  it("keeps the next event's inspector open when the last one's delete answers after it opened", async () => {
+    const { cdp } = app;
+    attempt += 1;
+    const doomed = `Apple errand ${String(attempt)}`;
+    const block = `document.querySelector(${JSON.stringify(`[title^="${doomed}"]`)})`;
+    await cdp.openInspector(`[title^=${JSON.stringify(doomed)}]`);
+    await cdp.waitFor<boolean>(`${INSPECTOR_TITLE} === ${JSON.stringify(doomed)}`);
+    app.holdEventKitWrites(true);
+    await cdp.clickButtonWithText('Delete');
+    await cdp.confirmDelete();
+    await cdp.openInspector('[title^="Google sync"]');
+    await cdp.waitFor<boolean>(`${INSPECTOR_TITLE} === 'Google sync'`);
+    // Still held: the next inspector opened before the delete could answer.
+    expect(await cdp.eval<boolean>(`!!${block}`)).toBe(true);
+
+    app.holdEventKitWrites(false);
+    // The block leaves the grid only once the refresh the write's
+    // invalidation asked for is back, and the main process answers that
+    // after the delete's own reply: the delete has closed what it closes.
+    await cdp.waitFor<boolean>(`!${block}`);
+    expect(await cdp.eval<string | null>(INSPECTOR_TITLE)).toBe('Google sync');
   });
 });

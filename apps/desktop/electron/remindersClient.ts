@@ -1,24 +1,13 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import {
   makeFakeRemindersClient,
   RemindersClient,
   remindersClientFrom,
   type RemindersClientShape,
 } from '@calendar/reminders';
-import { Duration, Effect, Layer } from 'effect';
+import { Layer } from 'effect';
+import { afterHold } from './eventKitHold.ts';
 import { helperTransport } from './helperProcess.ts';
-
-/** How often a held fixture write checks its marker file. */
-const HOLD_POLL = Duration.millis(50);
-
-/**
- * Waits while the marker file exists: a spec holds a fixture write's
- * reply, as a slow EventKit would, to act while the save is under way.
- */
-const whileHeld = (path: string): Effect.Effect<void> =>
-  Effect.suspend(() =>
-    existsSync(path) ? Effect.sleep(HOLD_POLL).pipe(Effect.andThen(whileHeld(path))) : Effect.void,
-  );
 
 const fixtureClient = (): RemindersClientShape | undefined => {
   const path = process.env['CALENDAR_REMINDERS_FIXTURE'];
@@ -29,17 +18,13 @@ const fixtureClient = (): RemindersClientShape | undefined => {
     typeof makeFakeRemindersClient
   >[0];
   const client = makeFakeRemindersClient({ ...fixture, authorization: 'fullAccess' }).client;
-  const hold = process.env['CALENDAR_REMINDERS_HOLD'];
-  if (!hold) {
-    return client;
-  }
-  const held = whileHeld(hold);
+  // Its writes wait while a spec holds them (eventKitHold.ts).
   return {
     ...client,
-    create: (params) => held.pipe(Effect.andThen(client.create(params))),
-    delete: (params) => held.pipe(Effect.andThen(client.delete(params))),
-    setCompleted: (params) => held.pipe(Effect.andThen(client.setCompleted(params))),
-    update: (params) => held.pipe(Effect.andThen(client.update(params))),
+    create: (params) => afterHold(client.create(params)),
+    delete: (params) => afterHold(client.delete(params)),
+    setCompleted: (params) => afterHold(client.setCompleted(params)),
+    update: (params) => afterHold(client.update(params)),
   };
 };
 
