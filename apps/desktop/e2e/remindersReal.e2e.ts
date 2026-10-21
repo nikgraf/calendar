@@ -71,9 +71,17 @@ describe.skipIf(!REAL)('Apple Reminders through the real helper', () => {
       await app.dump(context.task.name);
     }
     // A failure above must not strand its editor: `openChip` waits for it
-    // to close.
-    if (await app.cdp.eval<boolean>(EDITOR_OPEN)) {
-      await app.cdp.clickButtonWithText('Cancel');
+    // to close. A saved editor also closes by itself once the write's reply
+    // is back, which can land just after the test saw the database, so
+    // Cancel is found and clicked in one eval: waiting for it hung the hook.
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      if (!(await app.cdp.eval<boolean>(EDITOR_OPEN))) {
+        return;
+      }
+      await app.cdp.eval(
+        `[...document.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Cancel')?.click()`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 150));
     }
   });
 
