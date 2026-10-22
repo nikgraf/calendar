@@ -152,6 +152,12 @@ export function SettingsRoot() {
             testID="settings-row-notifications"
             title="Notifications"
           />
+          <NavRow
+            href="/settings/getting-started"
+            leading={<IconTile color={colors['event-lilac-edge']} name="graduationcap.fill" />}
+            testID="settings-row-getting-started"
+            title="Getting Started"
+          />
         </Section>
 
         <Section>

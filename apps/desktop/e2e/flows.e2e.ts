@@ -1553,6 +1553,7 @@ describe('calendar desktop e2e', () => {
       'AI Model',
       'Screen Sharing',
       'Settings File',
+      'Getting Started',
       'Advanced',
       'Mirrors',
       'Agents',

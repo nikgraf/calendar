@@ -14,6 +14,8 @@ describe('filterPanes', () => {
     expect(filterPanes('privacy').map((pane) => pane.id)).toEqual(['sharing']);
     expect(filterPanes('location').map((pane) => pane.id)).toEqual(['advanced']);
     expect(filterPanes('settings file').map((pane) => pane.id)).toEqual(['file']);
+    expect(filterPanes('lessons').map((pane) => pane.id)).toEqual(['gettingstarted']);
+    expect(filterPanes('getting started').map((pane) => pane.id)).toEqual(['gettingstarted']);
     expect(filterPanes('import').map((pane) => pane.id)).toEqual(['file']);
     // "reminders" is both an Accounts connection and a Notifications setting.
     expect(filterPanes('reminders').map((pane) => pane.id)).toEqual(['accounts', 'notifications']);
@@ -33,6 +35,7 @@ describe('filterPanes', () => {
 describe('isExperimentalPane', () => {
   it('lists mirrors and agents last, after every other pane', () => {
     expect(SETTINGS_PANES.map((pane) => isExperimentalPane(pane.id))).toEqual([
+      false,
       false,
       false,
       false,

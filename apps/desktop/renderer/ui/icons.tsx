@@ -236,6 +236,12 @@ export const PANE_ICON_PATHS = {
       <path d="M13.5 3.5v5h5M9 13h6M9 16.5h4" />
     </>
   ),
+  gettingstarted: (
+    <>
+      <path d="M12 4.5 2.5 9.25 12 14l9.5-4.75z" />
+      <path d="M6.5 11.5v4.25c1.4 1.5 3.3 2.25 5.5 2.25s4.1-.75 5.5-2.25V11.5M21.5 9.25v5" />
+    </>
+  ),
   mirrors: (
     <>
       <rect height="11" rx="2" width="8" x="3" y="6.5" />

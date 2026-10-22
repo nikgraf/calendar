@@ -359,6 +359,7 @@ export type SettingsPane =
   | 'advanced'
   | 'agents'
   | 'file'
+  | 'gettingstarted'
   | 'mirrors'
   | 'model'
   | 'notifications'
