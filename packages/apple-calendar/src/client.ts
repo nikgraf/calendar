@@ -138,10 +138,17 @@ export const makeAppleCalendarClient = (
   // status read right after can still say notDetermined (20 s+ on a CI
   // runner), which read as "the prompt never opened" and flagged a freshly
   // granted account. Once a prompt was answered in this process, that
-  // answer is the truth until the system reports something definite.
+  // answer is the truth until the system reports something definite —
+  // then the lag is over, and a later notDetermined is a real reset (the
+  // Mac keeps running through `tccutil reset`).
   let answered: CalendarAuthorization | undefined;
-  const settled = (status: CalendarAuthorization): CalendarAuthorization =>
-    status === 'notDetermined' && answered !== undefined ? answered : status;
+  const settled = (status: CalendarAuthorization): CalendarAuthorization => {
+    if (status !== 'notDetermined') {
+      answered = undefined;
+      return status;
+    }
+    return answered ?? status;
+  };
 
   const call = <A, I>(
     method: string,
@@ -159,7 +166,7 @@ export const makeAppleCalendarClient = (
           // the account the user just connected.
           if (status === 'notDetermined' && answered === 'fullAccess') {
             return new AppleCalendarRequestError({
-              message: `${message} (iOS has not recorded the granted access yet)`,
+              message: `${message} (the system has not recorded the granted access yet)`,
               method,
             });
           }

@@ -50,10 +50,14 @@ const failure = async (client: ReturnType<typeof makeRemindersClient>) => {
 
 describe('makeRemindersClient error mapping', () => {
   it('maps an access failure to RemindersAccessError on both transports', async () => {
-    for (const message of [
-      'accessDenied: denied',
-      "FunctionCallException: Calling the 'invoke' function has failed\n→ Caused by: RemindersBridgeError: accessDenied: restricted",
-    ]) {
+    for (const [message, authorization] of [
+      ['accessDenied: denied', 'denied'],
+      // The iOS module's own words, throw site included.
+      [
+        "FunctionCallException: Calling the 'invoke' function has failed\n→ Caused by: RemindersBridgeError: accessDenied: restricted (at SolunivoReminders/SolunivoRemindersModule.swift:36)",
+        'restricted',
+      ],
+    ] as const) {
       const result = await Effect.runPromise(
         Effect.result(clientRejectingWith(message).listLists()),
       );
@@ -61,7 +65,7 @@ describe('makeRemindersClient error mapping', () => {
       if (result._tag === 'Failure') {
         expect(result.failure._tag).toBe('RemindersAccessError');
         expect(result.failure._tag === 'RemindersAccessError' && result.failure.authorization).toBe(
-          message.endsWith('denied') ? 'denied' : 'restricted',
+          authorization,
         );
       }
     }
@@ -113,5 +117,30 @@ describe('makeRemindersClient error mapping', () => {
     const denied = lagging(false);
     await Effect.runPromise(denied.requestAccess());
     expect((await failure(denied))?._tag).toBe('RemindersAccessError');
+  });
+
+  it('ends that grace once the system reports a definite status: a later notDetermined is a reset', async () => {
+    let status = 'notDetermined';
+    const client = makeRemindersClient((method) => {
+      if (method === 'reminders.requestAccess') {
+        return Promise.resolve({ granted: true });
+      }
+      if (method === 'reminders.status') {
+        return Promise.resolve({ authorization: status });
+      }
+      return status === 'fullAccess'
+        ? Promise.resolve({ lists: [] })
+        : Promise.reject(new Error(`accessDenied: ${status}`));
+    });
+    await Effect.runPromise(client.requestAccess());
+    // The system caught up …
+    status = 'fullAccess';
+    expect(await Effect.runPromise(client.status())).toBe('fullAccess');
+    // … then access was reset with the app running (`tccutil reset` on a Mac).
+    status = 'notDetermined';
+    expect(await Effect.runPromise(client.status())).toBe('notDetermined');
+    const reset = await failure(client);
+    expect(reset?._tag).toBe('RemindersAccessError');
+    expect(reset?._tag === 'RemindersAccessError' && reset.authorization).toBe('notDetermined');
   });
 });

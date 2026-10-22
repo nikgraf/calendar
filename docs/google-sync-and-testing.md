@@ -260,7 +260,9 @@ suite). When touching sync code, treat these as invariants.
   the bridge's check before every read and write reads it too: the TS
   clients take this process's granted answer over that notDetermined,
   for `status` and for a refusal (one failed call, never lost access —
-  else the pass started by Connect flags the account it just made).
+  else the pass started by Connect flags the account it just made),
+  until the system first reports a definite status; a notDetermined
+  after that is a real reset (`tccutil reset` on a running Mac).
 - **The helper is a bare executable**, so its usage strings ride in an
   embedded `__TEXT,__info_plist` (Package.swift `-sectcreate`); the app's
   Info.plist carries them too (forge `extendInfo`). Hardened runtime

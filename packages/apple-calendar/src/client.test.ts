@@ -89,4 +89,28 @@ describe('makeAppleCalendarClient', () => {
     const refused = await Effect.runPromise(Effect.flip(denied.listCalendars()));
     expect(refused._tag).toBe('AppleCalendarAccessError');
   });
+
+  it('ends that grace once the system reports a definite status: a later notDetermined is a reset', async () => {
+    let status = 'notDetermined';
+    const client = makeAppleCalendarClient((method) => {
+      if (method === 'calendar.requestAccess') {
+        return Promise.resolve({ granted: true });
+      }
+      if (method === 'calendar.status') {
+        return Promise.resolve({ authorization: status });
+      }
+      return status === 'fullAccess'
+        ? Promise.resolve({ calendars: [] })
+        : Promise.reject(new Error(`accessDenied: ${status}`));
+    });
+    await Effect.runPromise(client.requestAccess());
+    // The system caught up …
+    status = 'fullAccess';
+    expect(await Effect.runPromise(client.status())).toBe('fullAccess');
+    // … then access was reset with the app running (`tccutil reset` on a Mac).
+    status = 'notDetermined';
+    expect(await Effect.runPromise(client.status())).toBe('notDetermined');
+    const reset = await Effect.runPromise(Effect.flip(client.listCalendars()));
+    expect(reset._tag).toBe('AppleCalendarAccessError');
+  });
 });
