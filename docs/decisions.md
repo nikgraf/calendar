@@ -35,6 +35,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   close's `github.ref` is main. Older closed PRs' 188 branches were
   deleted by hand (2026-10-21). Open: `--channel` follows a channel
   repointed by hand; a PR closed with a merge conflict gets no run.
+- **PR Preview page** (2026-10-21, #231) — Load kept the override when
+  nothing loaded and said to force-quit, but short of a rollback
+  expo-updates reports nothing new when the PR has nothing for this
+  runtime newer than what runs, and a restart fixes neither. Load now restarts,
+  says the PR runs, or puts the previous channel back and says why; Back to
+  Main restarts unless main runs. The page names the running update's
+  branch (`metadata.branchName`) and tracks the chosen channel itself,
+  since `Updates.channel` is read at launch and Back to Main can change it
+  without one. Open: `MAIN_CHANNEL` copies eas.json's testflight channel.
 - **Production and dev side by side** (2026-10-01, #100) — the real
   accounts live in the production app, test accounts in a dev variant
   next to it, on the Mac (a run from source) and on the phone
