@@ -1,6 +1,6 @@
 import { BirthdayOccurrence, BirthdayRecord, EventRecord, Temporal } from '@calendar/core';
 import { describe, expect, it } from 'vite-plus/test';
-import { closeDeleted, closeEditor, NONE, type Sheet } from './sheets.ts';
+import { captureMayOpen, closeDeleted, closeEditor, NONE, type Sheet } from './sheets.ts';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -113,5 +113,24 @@ describe('closeDeleted', () => {
     expect(closeDeleted(occurrence(1), 'instance')(sibling)).toBe(sibling);
     expect(closeDeleted(occurrence(1), 'following')(sibling)).toBe(NONE);
     expect(closeDeleted(occurrence(1), 'series')(editing(7, occurrence(0)))).toBe(NONE);
+  });
+});
+
+// The host asks on every render while a finished capture's thread is held.
+describe('captureMayOpen', () => {
+  it('opens at once over nothing, a detail or a birthday', () => {
+    expect(captureMayOpen(NONE, true)).toBe(true);
+    expect(captureMayOpen(detail(event()), true)).toBe(true);
+    expect(captureMayOpen(birthday, true)).toBe(true);
+  });
+
+  it('waits while an editor the user opened during the run is up', () => {
+    expect(captureMayOpen(newItem(1), true)).toBe(false);
+    expect(captureMayOpen(editing(2, event()), true)).toBe(false);
+  });
+
+  it("waits until that editor's form sheet is gone after it closed", () => {
+    expect(captureMayOpen(NONE, false)).toBe(false);
+    expect(captureMayOpen(detail(event({ id: 'lunch', title: 'Lunch' })), false)).toBe(false);
   });
 });

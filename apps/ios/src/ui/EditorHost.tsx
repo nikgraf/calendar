@@ -38,7 +38,14 @@ import { languageModel, modelFixture, textRecognizer } from '../model.ts';
 import { CaptureBanner } from './CaptureBanner.tsx';
 import { EventDetailSheet } from './EventDetailSheet.tsx';
 import { EventEditSheet, type EditSeed } from './EventEditSheet.tsx';
-import { closeDeleted, closeEditor, type EditSheet, NONE, type Sheet } from './sheets.ts';
+import {
+  captureMayOpen,
+  closeDeleted,
+  closeEditor,
+  type EditSheet,
+  NONE,
+  type Sheet,
+} from './sheets.ts';
 
 /** The share extension opens the app at `<scheme>://expo-sharing` once the payload is stored. */
 const isShareUrl = (url: string) => /^[a-z-]+:\/\/expo-sharing/i.test(url);
@@ -209,16 +216,28 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
     }, FORM_SHEET_DISMISS_MS);
   }, []);
 
+  // A page sheet waits until the editor's form sheet is gone: a tap on the
+  // calendar behind a half-height editor opens the detail while the route
+  // is still sliding away, and UIKit presents one sheet at a time. A
+  // finished capture's thread waits for it too.
+  const formSheetGone = routeSheet === null && !formSheetLeaving;
+
   // What a capture found opens the editor as one thread of drafts on the
   // first one's day, as on the desktop: each is seen in the editor before
   // anything is written; the pager steps through them, "Add all" writes
-  // them.
+  // them. An editor the user opened while it ran stays: the thread is held
+  // until that editor's sheet is gone (`captureMayOpen`).
+  const [captured, setCaptured] = useState<EditSheet | null>(null);
+  if (captured !== null && captureMayOpen(sheet, formSheetGone)) {
+    setCaptured(null);
+    setSheet(captured);
+  }
   const openThread = (prefills: ReadonlyArray<EventEditorPrefill>, note?: string) => {
     const first = prefills[0];
     if (!first) {
       return;
     }
-    setSheet({
+    setCaptured({
       kind: 'edit',
       opening: nextOpening(),
       seed: {
@@ -238,15 +257,22 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
     recognizer: textRecognizer,
     timeZone,
   });
+  // A dismissed capture leaves nothing behind, a held thread included.
+  const dismissCapture = () => {
+    capture.dismiss();
+    setCaptured(null);
+  };
 
   // Something shared into the app (the share sheet, or the e2e flows' deep
   // link under the fixture model) starts a capture — over whatever sheet was
   // open, since the share is what the user is doing now. The extension
   // stores the payload and opens the app, so it is picked up on that URL and
   // again whenever the app comes to the foreground; a store read twice is
-  // empty the second time.
+  // empty the second time. A thread still held from an earlier share gives
+  // way to it.
   const startCapture = (source: CaptureSource, onSettled?: () => void) => {
     setSheet(NONE);
+    setCaptured(null);
     capture.start(source, onSettled);
   };
   // The subscriptions below are made once, but `startCapture` closes over
@@ -293,12 +319,13 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
   // A tapped event reminder opens that occurrence's detail, over any tab
   // and in place of whatever sheet was open — a capture's review included,
   // which would otherwise stay up beside it (two sheets cannot present) and
-  // could replace the detail when its run finished. An event deleted since
-  // opens nothing and leaves the capture alone.
+  // could replace the detail when its run finished, or its held thread
+  // once an editor closed. An event deleted since opens nothing and leaves
+  // the capture alone.
   const onNotificationTap = useEffectEvent((target: NotificationTarget) => {
     void findNotificationEvent(backendClient, target).then((event) => {
       if (event) {
-        capture.dismiss();
+        dismissCapture();
         setSheet({ event, kind: 'detail' });
       }
     });
@@ -376,13 +403,9 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
   };
   const close = host.closeAll;
 
-  // A page sheet waits until the editor's form sheet is gone: a tap on the
-  // calendar behind a half-height editor opens the detail while the route
-  // is still sliding away, and UIKit presents one sheet at a time.
-  const pageSheetFree = routeSheet === null && !formSheetLeaving;
   // The birthday detail is its own page sheet, conditionally mounted.
   const birthdaySheet =
-    sheet.kind === 'birthday' && pageSheetFree ? (
+    sheet.kind === 'birthday' && formSheetGone ? (
       <EventEditSheet
         birthday={sheet.birthday}
         calendars={calendars}
@@ -397,7 +420,7 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
   return (
     <EditorHostContext.Provider value={host}>
       {children}
-      {sheet.kind === 'detail' && pageSheetFree ? (
+      {sheet.kind === 'detail' && formSheetGone ? (
         <EventDetailSheet
           calendars={calendars}
           event={sheet.event}
@@ -430,7 +453,7 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
         />
       ) : null}
       {birthdaySheet}
-      <CaptureBanner onDismiss={capture.dismiss} state={capture.state} />
+      <CaptureBanner onDismiss={dismissCapture} state={capture.state} />
     </EditorHostContext.Provider>
   );
 }
