@@ -111,17 +111,24 @@ suite). When touching sync code, treat these as invariants.
 - **URL-encode calendar ids** in paths: birthday/holiday calendars contain
   `#` (`addressbook#contacts@group.v.calendar.google.com`) — unencoded,
   the id is truncated as a URL fragment.
-- **A deleted calendar lingers.** After `calendars.delete`, a full
-  `calendarList.list` keeps naming the calendar for minutes and
-  `events.list` still answers 200; later `events.list` turns 404 while the
-  list may still name it, and an incremental list never reports a
-  deletion that predates its token. A 404 is no proof of deletion either
-  (Google's error guide says to retry it; it also covers "a calendar the
-  user can not access"). So the engine skips that calendar for the pass,
+- **A deleted calendar lingers.** Google's replicas disagree about a
+  deleted calendar for minutes. Probed 2026-10-22 (one calendar, every
+  15 s): a full `calendarList.list` still named it on some polls 5½
+  minutes after `calendars.delete`, and `events.list` answered 200 on
+  some and 404 on others. A delta on a token from before the delete
+  reported it `deleted` for the first second, then named it as listed
+  (+2 s), then left it out (+4 s), and a delta that missed the deletion
+  never reports it later. A client can meet only lagging answers for
+  minutes: on three of fifteen nightlies the calendar's `events.list`
+  never answered 404 within three minutes. A 404 is no proof of
+  deletion either (Google's error guide says to retry it; it also covers
+  "a calendar the user can not access"). So the engine skips that calendar for the pass,
   keeps its rows, and drops the calendarList token so the next pass
   lists calendars in full — which removes the calendar once Google stops
-  naming it, and keeps it, retrying its events, if it recovers. A
-  `tasks.list` 404 skips that list the same way.
+  naming it, and keeps it, retrying its events, if it recovers. How soon
+  is Google's to decide: `calendarList.live.ts` polls six minutes, then
+  skips while Google itself still lists the calendar or serves its
+  event. A `tasks.list` 404 skips that list the same way.
 
 ### Misc
 
@@ -528,9 +535,10 @@ guest-side RSVP (needs a second account).
   `makeScratchRuntime` for `beforeAll`/`afterAll`. Tests use `it.live`
   (real `Clock`); never `TestClock`. `vite.config.ts` switches on
   `GOOGLE_LIVE=1`: only `live/**/*.live.ts`, one file at a time, 120 s
-  hooks, 300 s tests, no retry (a retry repeats real writes). `drain` in
-  `live/support.ts` keeps draining until only parked ops are left and
-  fails after two minutes, listing each op still queued.
+  hooks, 300 s tests (`calendarList.live.ts` 480 s), no retry (a retry
+  repeats real writes). `drain` in `live/support.ts` keeps draining until
+  only parked ops are left and fails after two minutes, listing each op
+  still queued.
 - **Desktop.** `CALENDAR_GOOGLE=live` + `CALENDAR_GOOGLE_LIVE=<json>`
   (`{email, refreshToken, tasksEnabled, contactsEnabled}` — the harness
   writes it into the run's temp profile, mode 600, deleted with it) and
