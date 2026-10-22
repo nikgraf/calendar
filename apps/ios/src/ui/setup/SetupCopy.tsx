@@ -2,7 +2,7 @@ import { useRouter } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 import { Footer } from '../GroupedList.tsx';
 import { useSettingsTransfer } from '../settings/useSettingsTransfer.ts';
-import { type ThemeColors, useStyles } from '../theme.ts';
+import { useStyles } from '../theme.ts';
 import { useSetup } from './SetupContext.tsx';
 import { SetupButton, SetupNote, SetupPoint, SetupScreen } from './SetupScreen.tsx';
 
@@ -74,6 +74,3 @@ const makeStyles = () =>
       gap: 10,
     },
   });
-
-// The styles take no colors; the signature keeps `useStyles` happy.
-void (null as unknown as ThemeColors);

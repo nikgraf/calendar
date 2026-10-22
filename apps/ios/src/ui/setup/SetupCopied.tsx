@@ -1,6 +1,7 @@
 import {
   useAccounts,
   useBackendMutations,
+  useBirthdayReminderSettings,
   useEventNotificationSettings,
 } from '@calendar/app-state';
 import {
@@ -42,10 +43,12 @@ export function SetupCopied() {
     !accounts.some(isAppleRemindersAccount);
   const contactsPending = contacts === 'notDetermined';
 
-  // Alerts: the file's event notifications switch is applied; what iOS
-  // still needs is the one-time permission, asked by saving them enabled.
-  const { setEventNotificationSettings } = useBackendMutations();
+  // Alerts: the file's notification switches are applied; what iOS still
+  // needs is the one-time permission, asked by saving a switched-on one
+  // again as it is — never by turning one on the file left off.
+  const { setBirthdayReminderSettings, setEventNotificationSettings } = useBackendMutations();
   const notifications = useEventNotificationSettings();
+  const birthdayReminders = useBirthdayReminderSettings();
   const [permission, setPermission] = useState<NotificationPermission | null>(null);
   const [asking, setAsking] = useState(false);
   useEffect(() => {
@@ -59,14 +62,17 @@ export function SetupCopied() {
       mounted = false;
     };
   }, []);
-  const alertsPending = permission === 'undetermined';
+  const alertsPending =
+    permission === 'undetermined' &&
+    (notifications?.enabled === true || birthdayReminders?.enabled === true);
   const allowAlerts = async () => {
     setAsking(true);
     try {
-      await setEventNotificationSettings({
-        enabled: true,
-        includeAppleCalendar: notifications?.includeAppleCalendar ?? false,
-      });
+      if (notifications?.enabled === true) {
+        await setEventNotificationSettings(notifications);
+      } else if (birthdayReminders?.enabled === true) {
+        await setBirthdayReminderSettings(birthdayReminders);
+      }
       setPermission(await notificationPermission());
     } finally {
       setAsking(false);

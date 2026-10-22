@@ -41,11 +41,7 @@ export function Sidebar({
         today={today}
         visible={visible}
       />
-      <GettingStartedCard
-        accountCount={accounts.length}
-        onOpenLesson={onOpenLesson}
-        onOpenSetup={onOpenSetup}
-      />
+      <GettingStartedCard onOpenLesson={onOpenLesson} onOpenSetup={onOpenSetup} />
       <CalendarList accounts={accounts} calendars={calendars} />
       <SyncFooter onManageAccounts={onManageAccounts} />
     </aside>

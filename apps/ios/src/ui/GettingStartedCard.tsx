@@ -1,4 +1,4 @@
-import { useAccounts, useOnboarding, useUpdateOnboarding } from '@calendar/app-state';
+import { useAccountCount, useOnboarding, useUpdateOnboarding } from '@calendar/app-state';
 import {
   cardVisible,
   type LessonId,
@@ -33,12 +33,13 @@ export function GettingStartedCard({ timeZone }: { timeZone: string }) {
   const enabled = useOnboardingEnabled();
   const state = useOnboarding();
   const update = useUpdateOnboarding();
-  const accounts = useAccounts();
-  if (!enabled || state === null || !cardVisible(state)) {
+  // Null until read: the empty fallback would draw "Add your accounts" for a beat.
+  const accountCount = useAccountCount();
+  if (!enabled || state === null || !cardVisible(state) || accountCount === null) {
     return null;
   }
   const progress = lessonProgress(state);
-  const rows = lessonRows(state, { accountCount: accounts.length });
+  const rows = lessonRows(state, { accountCount });
   const open = (id: LessonRowId) => {
     if (id === 'accounts') {
       router.push('/setup/sources');

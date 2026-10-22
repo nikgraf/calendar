@@ -1,4 +1,4 @@
-import { useOnboarding, useUpdateOnboarding } from '@calendar/app-state';
+import { useAccountCount, useOnboarding, useUpdateOnboarding } from '@calendar/app-state';
 import {
   cardVisible,
   type LessonId,
@@ -25,19 +25,19 @@ import { Popover } from '../../ui/Popover.tsx';
  * brings it back.
  */
 export function GettingStartedCard({
-  accountCount,
   onOpenLesson,
   onOpenSetup,
 }: {
-  accountCount: number;
   onOpenLesson: (id: LessonId) => void;
   onOpenSetup: () => void;
 }) {
   const enabled = useOnboardingEnabled();
   const state = useOnboarding();
   const update = useUpdateOnboarding();
+  // Null until read: the empty fallback would draw "Add your accounts" for a beat.
+  const accountCount = useAccountCount();
   const [menu, setMenu] = useState<{ readonly x: number; readonly y: number } | null>(null);
-  if (!enabled || state === null || !cardVisible(state)) {
+  if (!enabled || state === null || !cardVisible(state) || accountCount === null) {
     return null;
   }
   const progress = lessonProgress(state);

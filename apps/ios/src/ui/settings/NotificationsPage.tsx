@@ -74,7 +74,7 @@ export function NotificationsSections() {
 
   return (
     <>
-      {inLesson && permission === 'undetermined' ? (
+      {inLesson && permission === 'undetermined' && events.settings ? (
         <Section footer="iOS asks once whether Solunivo may notify you.">
           <ActionRow
             leading={<LeadingSymbol color={colors.primary} name="bell.badge" />}
