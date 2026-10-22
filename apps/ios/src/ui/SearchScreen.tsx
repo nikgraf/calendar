@@ -2,6 +2,7 @@ import { isSearchFilterPhrase } from '@calendar/ai';
 import {
   type SearchState,
   useCalendars,
+  useMarkLesson,
   useModelAvailability,
   useSearch,
   useSearchThread,
@@ -19,6 +20,7 @@ import {
   searchFilterChips,
   type SearchNames,
   type SearchQuery,
+  searchQueryKey,
   searchQuerySentence,
   searchTaskWhen,
   type TaskListInfo,
@@ -26,13 +28,14 @@ import {
   Temporal,
   withoutSearchFilter,
 } from '@calendar/core';
-import { Stack } from 'expo-router';
+import { Stack, useLocalSearchParams } from 'expo-router';
 import { type ReactElement, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { SearchBarCommands } from 'react-native-screens';
 import { languageModel } from '../model.ts';
 import { useEditorHost } from './EditorHost.tsx';
+import { LessonBanner } from './lesson/LessonBanner.tsx';
 import { onAppActive } from './QuickAddBar.tsx';
 import { SearchFilterChips } from './SearchFilterChips.tsx';
 import { SearchFiltersSheet } from './SearchFiltersSheet.tsx';
@@ -75,6 +78,7 @@ export function SearchScreen() {
   const searchBar = useRef<SearchBarCommands>(null);
   const [threadError, setThreadError] = useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const lesson = useSearchLesson(thread, status, (text) => searchBar.current?.setText(text));
 
   // A turn, an Undo or Clear: the native field takes the thread's text
   // over (it is not controlled; typing never moves the version).
@@ -123,6 +127,19 @@ export function SearchScreen() {
       <SearchResultsList
         header={
           <SearchThreadHeader
+            banner={
+              lesson.open ? (
+                <LessonBanner
+                  id="search"
+                  note={
+                    modelReady
+                      ? undefined
+                      : 'Reading a sentence needs Apple Intelligence, which is not ready on this iPhone — plain words still search.'
+                  }
+                  onSkip={lesson.skip}
+                />
+              ) : null
+            }
             error={threadError}
             onClear={() => {
               setThreadError(null);
@@ -157,14 +174,73 @@ export function SearchScreen() {
   );
 }
 
+/**
+ * The Search with AI lesson, opened from the Getting started card with a
+ * sentence (`phrase`, `lesson` and a fresh `at` per opening, as route
+ * params): the sentence goes into the field and, with the model ready,
+ * is read into chips. Once that settled, the person's first change (a
+ * sentence, a chip, Undo, typing) ticks the lesson as done; Skip ticks it
+ * as skipped.
+ */
+const useSearchLesson = (
+  thread: ReturnType<typeof useSearchThread>,
+  status: string | null,
+  /** The native field is not controlled: the sentence is put into it directly. */
+  showText: (text: string) => void,
+): { readonly open: boolean; readonly skip: () => void } => {
+  const params = useLocalSearchParams<{ at?: string; lesson?: string; phrase?: string }>();
+  const markLesson = useMarkLesson();
+  const [open, setOpen] = useState(false);
+  const taken = useRef<string | undefined>(undefined);
+  const baseline = useRef<string | null>(null);
+  const threadKey = `${String(thread.state.version)}|${searchQueryKey(thread.state.query)}`;
+  const { phrase: sentence } = params;
+  useEffect(() => {
+    if (params.lesson !== '1' || !sentence || status === null || taken.current === params.at) {
+      return;
+    }
+    taken.current = params.at;
+    thread.clear();
+    thread.setText(sentence);
+    showText(sentence);
+    if (status === 'ready') {
+      void thread.phrase(sentence);
+    }
+    baseline.current = null;
+    setOpen(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one opening per `at`
+  }, [params.at, params.lesson, sentence, status]);
+  useEffect(() => {
+    if (!open || thread.busy) {
+      return;
+    }
+    if (baseline.current === null) {
+      baseline.current = threadKey;
+    } else if (baseline.current !== threadKey) {
+      setOpen(false);
+      void markLesson('search', 'done');
+    }
+  }, [markLesson, open, thread.busy, threadKey]);
+  return {
+    open,
+    skip: () => {
+      setOpen(false);
+      void markLesson('search', 'skipped');
+    },
+  };
+};
+
 /** The chips ("Filters" a spinner while a sentence is read), the turns newest first with Undo, and why a sentence was not read. */
 function SearchThreadHeader({
+  banner,
   error,
   onClear,
   onOpenFilters,
   onUndo,
   thread,
 }: {
+  /** The Search lesson's frame, above the chips while it runs. */
+  banner: ReactElement | null;
   error: string | null;
   onClear: () => void;
   onOpenFilters: () => void;
@@ -175,6 +251,7 @@ function SearchThreadHeader({
   const { query, turns } = thread.state;
   return (
     <View style={styles.threadHeader}>
+      {banner}
       <SearchFilterChips
         busy={thread.busy}
         chips={searchFilterChips(query, thread.names)}

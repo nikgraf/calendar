@@ -43,6 +43,7 @@ import { ADD_BUTTON_CLEARANCE, AddButton } from './AddButton.tsx';
 import { AgendaView } from './AgendaView.tsx';
 import { DayTimeline } from './DayTimeline.tsx';
 import { useEditorHost } from './EditorHost.tsx';
+import { GettingStartedCard } from './GettingStartedCard.tsx';
 import { MonthGrid } from './MonthGrid.tsx';
 import {
   ConflictBanner,
@@ -313,6 +314,9 @@ function CalendarBody({
           <AccountButton />
         </View>
       </View>
+
+      {/* Getting started, between the header and the view, until it leaves. */}
+      <GettingStartedCard timeZone={timeZone} />
 
       {view === 'month' ? (
         <MonthGrid

@@ -1,6 +1,6 @@
 import { useUpdateOnboarding } from '@calendar/app-state';
 import type { SettingsImportSummary, SetupOutcome } from '@calendar/core';
-import { useNavigation } from 'expo-router';
+import { router, useNavigation } from 'expo-router';
 import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from 'react';
 
 /** What "What do you use?" offers; Google Calendar and Tasks share a sign-in. */
@@ -52,9 +52,9 @@ const stepPath = (step: SetupStep): `/setup/${SetupStep}` => `/setup/${step}`;
 /**
  * The first run's own state, above its pages: what was ticked, the
  * steps that follow from it, and the way out — the outcome written to
- * the device, then the modal closed from whatever page it is on (the
- * pages' own stack sits inside the root's `setup` screen, so its parent
- * is what goes back).
+ * the device, then the modal closed from whatever page it is on. Mounted
+ * in the setup's layout, whose navigation is the root stack's for the
+ * `setup` screen: going back there takes the whole modal away.
  */
 export function SetupProvider({ children }: { children: ReactNode }) {
   const navigation = useNavigation();
@@ -66,7 +66,7 @@ export function SetupProvider({ children }: { children: ReactNode }) {
   const finish = useCallback(
     (outcome: SetupOutcome) => {
       void update({ setup: outcome });
-      navigation.getParent()?.goBack();
+      navigation.goBack();
     },
     [navigation, update],
   );
@@ -77,10 +77,10 @@ export function SetupProvider({ children }: { children: ReactNode }) {
       if (following === undefined) {
         finish('done');
       } else {
-        navigation.navigate(stepPath(following) as never);
+        router.push(stepPath(following));
       }
     },
-    [finish, navigation, steps],
+    [finish, steps],
   );
 
   const value = useMemo<SetupValue>(

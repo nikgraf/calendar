@@ -1,4 +1,9 @@
-import { useBackendMutations, useBirthdayReminderOverrides } from '@calendar/app-state';
+import {
+  useBackendMutations,
+  useBirthdayReminderOverrides,
+  useInLesson,
+  useLessonTried,
+} from '@calendar/app-state';
 import { DEVICE_ONLY_SETTING_COPY, leadDaysSummary } from '@calendar/core';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useState } from 'react';
@@ -27,16 +32,58 @@ import { notificationsBlocked, useNotificationSettings } from './NotificationSet
  * for permission, and the page says up front when iOS has said no.
  */
 export function NotificationsPage() {
+  return (
+    <SettingsPage testID="settings-page-notifications">
+      <NotificationsSections />
+    </SettingsPage>
+  );
+}
+
+/**
+ * The Notifications page's sections, also the Alerts lesson's body. In
+ * a lesson, iOS not having been asked yet puts "Allow Notifications" on
+ * top — a save with event notifications on, which asks — and any change
+ * ticks the lesson (`useLessonTried`).
+ */
+export function NotificationsSections() {
   const { colors } = useTheme();
   const { setBirthdayReminderOverride } = useBackendMutations();
   const overrides = useBirthdayReminderOverrides() ?? [];
-  const { birthdays, events, permission } = useNotificationSettings();
+  const notifications = useNotificationSettings();
+  const { permission } = notifications;
   const [overrideFailure, setOverrideFailure] = useState<string | null>(null);
+  const tried = useLessonTried();
+  // Every change is a try, in a lesson; outside one `tried` is nothing.
+  const events = {
+    ...notifications.events,
+    save: (change: Parameters<typeof notifications.events.save>[0]) => {
+      notifications.events.save(change);
+      tried();
+    },
+  };
+  const birthdays = {
+    ...notifications.birthdays,
+    save: (change: Parameters<typeof notifications.birthdays.save>[0]) => {
+      notifications.birthdays.save(change);
+      tried();
+    },
+  };
   const blocked =
     notificationsBlocked(events, permission) || notificationsBlocked(birthdays, permission);
+  const inLesson = useInLesson();
 
   return (
-    <SettingsPage testID="settings-page-notifications">
+    <>
+      {inLesson && permission === 'undetermined' ? (
+        <Section footer="iOS asks once whether Solunivo may notify you.">
+          <ActionRow
+            leading={<LeadingSymbol color={colors.primary} name="bell.badge" />}
+            onPress={() => events.save({ enabled: true })}
+            testID="notifications-allow"
+            title="Allow Notifications"
+          />
+        </Section>
+      ) : null}
       {blocked ? (
         <Section
           footer="Allow Solunivo under Settings › Notifications, or none of the notifications below can reach you."
@@ -174,6 +221,6 @@ export function NotificationsPage() {
       ) : null}
 
       <Footer testID="notifications-device-only">{DEVICE_ONLY_SETTING_COPY}</Footer>
-    </SettingsPage>
+    </>
   );
 }

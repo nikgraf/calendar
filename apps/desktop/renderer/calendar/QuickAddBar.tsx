@@ -50,6 +50,7 @@ export function QuickAddBar({
   fallbackDate,
   focusSignal,
   hold,
+  initialText,
   onApply,
   onCapture,
   onPhrase,
@@ -66,6 +67,8 @@ export function QuickAddBar({
   focusSignal: number;
   /** The form is still taking the last phrase in: dictation waits to listen again. */
   hold?: boolean | undefined;
+  /** What the field holds on open, selected (the Create lesson's phrase). */
+  initialText?: string | undefined;
   onApply: (item: QuickAddItem) => void;
   /** A pasted email or image is not a phrase: it goes to capture. */
   onCapture: (source: CaptureSource) => void;
@@ -94,6 +97,7 @@ export function QuickAddBar({
     editKey,
     fallbackDate,
     hold,
+    initialText,
     model: desktopLanguageModel,
     onApply,
     onPhrase,

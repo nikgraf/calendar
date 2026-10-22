@@ -4,6 +4,7 @@ import {
   type EditorSourceKind,
   editorTitle,
   isAtSlot,
+  useMarkLesson,
   useMoveConfirmation,
   useThreadEditor,
   type TaskEditorSeed,
@@ -15,8 +16,10 @@ import {
   type TaskListInfo,
   type TaskRecord,
 } from '@calendar/core';
+import { useEffect, useEffectEvent, useRef } from 'react';
 import { desktopLanguageModel } from '../../ai/desktopModel.ts';
 import { backend } from '../../backend.ts';
+import { LessonBanner } from '../../onboarding/LessonBanner.tsx';
 import { Button } from '../../ui/Button.tsx';
 import { IconButton } from '../../ui/IconButton.tsx';
 import { ChevronLeftIcon, ChevronRightIcon, VideoIcon, XIcon } from '../../ui/icons.tsx';
@@ -102,6 +105,24 @@ export function EditorPanel({
 }) {
   const sourceKind: EditorSourceKind = task ? 'task' : seed.event ? 'event' : 'new';
   const moveConfirmation = useMoveConfirmation();
+  // The Create lesson: the first phrase taken, or a save, ticks it as
+  // done; the editor going away without either (Cancel, Skip, Escape,
+  // another item opened in the panel) ticks it as skipped.
+  const lesson = seed.lesson;
+  const markLesson = useMarkLesson();
+  const lessonTried = useRef(false);
+  const lessonDone = () => {
+    if (lesson && !lessonTried.current) {
+      lessonTried.current = true;
+      void markLesson(lesson, 'done');
+    }
+  };
+  const leaveLesson = useEffectEvent(() => {
+    if (lesson && !lessonTried.current) {
+      void markLesson(lesson, 'skipped');
+    }
+  });
+  useEffect(() => () => leaveLesson(), []);
   const {
     addAll,
     applying,
@@ -138,7 +159,10 @@ export function EditorPanel({
     initialKind,
     model: desktopLanguageModel,
     onClose,
-    onSaved,
+    onSaved: () => {
+      lessonDone();
+      onSaved?.();
+    },
     seed,
     sourceKind,
     task,
@@ -204,15 +228,26 @@ export function EditorPanel({
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pt-1 pb-4">
+        {lesson ? <LessonBanner id={lesson} onSkip={onClose} /> : null}
         {sourceKind === 'new' ? (
           <QuickAddBar
             editKey={userEdits}
             fallbackDate={seed.initialDate.toString()}
             focusSignal={quickAddFocus}
             hold={applying}
-            onApply={(item) => void apply(item)}
+            initialText={seed.quickAddText}
+            onApply={(item) => {
+              lessonDone();
+              void apply(item);
+            }}
             onCapture={onCapture}
-            onPhrase={onPhrase}
+            onPhrase={async (text) => {
+              const message = await onPhrase(text);
+              if (message === undefined) {
+                lessonDone();
+              }
+              return message;
+            }}
             placeholder={drafts.length > 0 ? CHANGE_PLACEHOLDER : undefined}
             timeZone={timeZone}
           >

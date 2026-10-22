@@ -1,6 +1,7 @@
 import {
   useBackendMutations,
   useDeviceZone,
+  useLessonTried,
   useSettingsEditor,
   useTimeZoneSettings,
 } from '@calendar/app-state';
@@ -39,7 +40,17 @@ import { TimeZonePickerSheet } from './TimeZonePickerSheet.tsx';
  * drift apart.
  */
 export function TimeZonesPage() {
+  return (
+    <SettingsPage testID="settings-page-time-zones">
+      <TimeZonesSections />
+    </SettingsPage>
+  );
+}
+
+/** The Time Zones page's list and picker, also the Time zones lesson's body. */
+export function TimeZonesSections() {
   const { colors } = useTheme();
+  const tried = useLessonTried();
   const mutations = useBackendMutations();
   const [settings, persist] = useSettingsEditor(
     useTimeZoneSettings(),
@@ -52,12 +63,15 @@ export function TimeZonesPage() {
   const full = settings !== null && settings.zones.length >= MAX_TIME_ZONES;
   const save = (next: NonNullable<typeof settings>) =>
     void persist(next).then(
-      () => setNotice(null),
+      () => {
+        tried();
+        setNotice(null);
+      },
       (error: unknown) => setNotice(String(error)),
     );
 
   return (
-    <SettingsPage testID="settings-page-time-zones">
+    <>
       {settings ? (
         <Section
           footer={
@@ -132,6 +146,6 @@ export function TimeZonesPage() {
           visible={picking}
         />
       ) : null}
-    </SettingsPage>
+    </>
   );
 }

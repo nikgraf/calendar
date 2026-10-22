@@ -1,6 +1,7 @@
 import {
   useBackendMutations,
   useEventNotificationSettings,
+  useLessonTried,
   useSettingsEditor,
 } from '@calendar/app-state';
 import { DEVICE_ONLY_SETTING_COPY, type EventNotificationSettings } from '@calendar/core';
@@ -19,18 +20,21 @@ export function EventNotificationsSection() {
     setEventNotificationSettings,
   );
   const [notice, setNotice] = useState<string | null>(null);
+  const tried = useLessonTried();
 
   if (!settings) {
     return null;
   }
   const save = (next: Partial<EventNotificationSettings>) =>
     void persist(next).then(
-      ({ notificationsGranted }) =>
+      ({ notificationsGranted }) => {
+        tried();
         setNotice(
           notificationsGranted
             ? null
             : 'Notifications are off — allow Solunivo in System Settings › Notifications.',
-        ),
+        );
+      },
       (error: unknown) => setNotice(error instanceof Error ? error.message : String(error)),
     );
 

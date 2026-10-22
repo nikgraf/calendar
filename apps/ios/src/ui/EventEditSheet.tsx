@@ -3,6 +3,7 @@ import {
   type EditorSeed,
   type EditorSourceKind,
   editorTitle,
+  useMarkLesson,
   useThreadEditor,
   type TaskEditorSeed,
 } from '@calendar/app-state';
@@ -13,6 +14,7 @@ import {
   type TaskListInfo,
   type TaskRecord,
 } from '@calendar/core';
+import { useEffect, useEffectEvent, useRef } from 'react';
 import { Alert, Modal, Pressable, SafeAreaView, ScrollView, Text, View } from 'react-native';
 import { backendClient } from '../backend.ts';
 import { languageModel } from '../model.ts';
@@ -21,6 +23,7 @@ import { DraftThreadSection } from './DraftThreadSection.tsx';
 import { useSheetStyles } from './editSheetShared.ts';
 import { EventEditForm } from './EventEditForm.tsx';
 import { FieldFlashContext, FlashView } from './FlashView.tsx';
+import { LessonBanner } from './lesson/LessonBanner.tsx';
 import { QuickAddBar } from './QuickAddBar.tsx';
 import { ReminderEditForm } from './ReminderEditForm.tsx';
 import { SegmentedControl } from './SegmentedControl.tsx';
@@ -147,6 +150,24 @@ export function EventEditSheet({
       : seed.event
         ? 'event'
         : 'new';
+  // The Create lesson: the first phrase taken, or a save, ticks it as
+  // done; the editor going away without either (Cancel, Skip, a swipe
+  // down) ticks it as skipped.
+  const lesson = seed.lesson;
+  const markLesson = useMarkLesson();
+  const lessonTried = useRef(false);
+  const lessonDone = () => {
+    if (lesson && !lessonTried.current) {
+      lessonTried.current = true;
+      void markLesson(lesson, 'done');
+    }
+  };
+  const leaveLesson = useEffectEvent(() => {
+    if (lesson && !lessonTried.current) {
+      void markLesson(lesson, 'skipped');
+    }
+  });
+  useEffect(() => () => leaveLesson(), []);
   const editor = useThreadEditor({
     backend: backendClient,
     calendars,
@@ -154,7 +175,10 @@ export function EventEditSheet({
     initialKind,
     model: languageModel,
     onClose,
-    onSaved,
+    onSaved: () => {
+      lessonDone();
+      onSaved?.();
+    },
     seed,
     sourceKind,
     task,
@@ -213,6 +237,7 @@ export function EventEditSheet({
   const headerRest =
     sourceKind === 'new' ? (
       <>
+        {lesson ? <LessonBanner id={lesson} onSkip={onClose} /> : null}
         <QuickAddBar
           // The thread's turns hang under the field (`DraftThreadSection`).
           attached={editor.turns.length > 0}
@@ -220,8 +245,18 @@ export function EventEditSheet({
           editKey={editor.userEdits}
           fallbackDate={seed.initialDate.toString()}
           hold={editor.applying}
-          onApply={(item) => void apply(item)}
-          onPhrase={onPhrase}
+          initialText={seed.quickAddText}
+          onApply={(item) => {
+            lessonDone();
+            void apply(item);
+          }}
+          onPhrase={async (text) => {
+            const message = await onPhrase(text);
+            if (message === undefined) {
+              lessonDone();
+            }
+            return message;
+          }}
           placeholder={drafts.length > 0 ? CHANGE_PLACEHOLDER : undefined}
           timeZone={timeZone}
         />

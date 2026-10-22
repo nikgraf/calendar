@@ -15,6 +15,7 @@ export * from './findTimeModel.ts';
 export * from './eventReadout.ts';
 export * from './hooks.ts';
 export * from './inviteeField.ts';
+export * from './lessonTried.ts';
 export * from './locationField.ts';
 export * from './editorModel.ts';
 export * from './mirrorEditorModel.ts';
