@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { eventIdentity, findSameEvent, isSameEvent } from './eventIdentity.ts';
+import { deleteTakes, eventIdentity, findSameEvent, isSameEvent } from './eventIdentity.ts';
 import { assembleWindow } from './recurrence/window.ts';
 import { EventRecord } from './types.ts';
 
@@ -109,5 +109,47 @@ describe('findSameEvent', () => {
     const rows = [event({ id: 'other' }), refreshed];
     expect(findSameEvent(rows, opened)).toBe(refreshed);
     expect(findSameEvent([event({ id: 'other' })], opened)).toBeUndefined();
+  });
+});
+
+/** An occurrence of the series `series`, `day` days after `start`. */
+const occurrence = (day: number, overrides: Partial<EventRecord> = {}) =>
+  event({
+    id: `series__${String(day)}`,
+    originalStartUtc: start + day * DAY,
+    recurringEventId: 'series',
+    startUtc: start + day * DAY,
+    ...overrides,
+  });
+
+describe('deleteTakes', () => {
+  it('takes the event itself, also as a refreshed or edited row of it', () => {
+    expect(deleteTakes(event(), 'instance', event({ title: 'Renamed' }))).toBe(true);
+    expect(deleteTakes(occurrence(1), 'instance', occurrence(1, { id: 'google-instance' }))).toBe(
+      true,
+    );
+  });
+
+  it('leaves other events, other calendars and other accounts alone', () => {
+    expect(deleteTakes(event(), 'series', event({ id: 'other' }))).toBe(false);
+    expect(deleteTakes(occurrence(1), 'series', occurrence(2, { calendarId: 'other' }))).toBe(
+      false,
+    );
+    expect(deleteTakes(occurrence(1), 'series', occurrence(2, { accountId: 'other' }))).toBe(false);
+  });
+
+  it("takes an occurrence's siblings by its scope", () => {
+    expect(deleteTakes(occurrence(1), 'instance', occurrence(2))).toBe(false);
+    expect(deleteTakes(occurrence(2), 'following', occurrence(1))).toBe(false);
+    expect(deleteTakes(occurrence(2), 'following', occurrence(3))).toBe(true);
+    // A moved occurrence keeps its slot: it goes by where it was.
+    expect(deleteTakes(occurrence(2), 'following', occurrence(3, { startUtc: start }))).toBe(true);
+    expect(deleteTakes(occurrence(2), 'series', occurrence(1))).toBe(true);
+    expect(deleteTakes(occurrence(2), 'series', event({ id: 'series' }))).toBe(true);
+    expect(deleteTakes(occurrence(2), 'following', event({ id: 'series' }))).toBe(false);
+  });
+
+  it("takes a series' occurrences with its master", () => {
+    expect(deleteTakes(event({ id: 'series' }), 'instance', occurrence(3))).toBe(true);
   });
 });

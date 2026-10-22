@@ -6,6 +6,7 @@ import {
   type RemindersClientShape,
 } from '@calendar/reminders';
 import { Layer } from 'effect';
+import { afterHold } from './eventKitHold.ts';
 import { helperTransport } from './helperProcess.ts';
 
 const fixtureClient = (): RemindersClientShape | undefined => {
@@ -16,7 +17,15 @@ const fixtureClient = (): RemindersClientShape | undefined => {
   const fixture = JSON.parse(readFileSync(path, 'utf8')) as Parameters<
     typeof makeFakeRemindersClient
   >[0];
-  return makeFakeRemindersClient({ ...fixture, authorization: 'fullAccess' }).client;
+  const client = makeFakeRemindersClient({ ...fixture, authorization: 'fullAccess' }).client;
+  // Its writes wait while a spec holds them (eventKitHold.ts).
+  return {
+    ...client,
+    create: (params) => afterHold(client.create(params)),
+    delete: (params) => afterHold(client.delete(params)),
+    setCompleted: (params) => afterHold(client.setCompleted(params)),
+    update: (params) => afterHold(client.update(params)),
+  };
 };
 
 /**

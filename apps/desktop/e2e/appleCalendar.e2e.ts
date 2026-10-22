@@ -6,7 +6,7 @@ import {
   CalendarInfo,
   EventRecord,
 } from '@calendar/core';
-import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vite-plus/test';
 import {
   type AppleCalendarFixture,
   type App,
@@ -275,5 +275,149 @@ describe('Apple Calendar', () => {
       `[...document.querySelectorAll('aside button')].find(b => b.textContent?.trim() === 'Home')?.click()`,
     );
     await cdp.waitFor(`!document.querySelector('[title^="Google sync"]')`);
+  });
+});
+
+/** A daily Apple series whose delete takes all of it, one per attempt of the spec below. */
+const shift = (attempt: number, hour: number) => {
+  const first = new Date();
+  first.setDate(first.getDate() - 14);
+  first.setHours(hour, 0, 0, 0);
+  return {
+    event: appleEvent({
+      endUtc: first.getTime() + 3_600_000,
+      id: `ek-shift-${String(attempt)}`,
+      startUtc: first.getTime(),
+      title: `Apple shift ${String(attempt)}`,
+    }),
+    recurrence: ['RRULE:FREQ=DAILY'],
+  };
+};
+
+/** A plain Apple event to delete, one per attempt of the spec below. */
+const errand = (attempt: number, hour: number) => ({
+  event: appleEvent({
+    endUtc: at(hour + 1),
+    id: `ek-errand-${String(attempt)}`,
+    startUtc: at(hour),
+    title: `Apple errand ${String(attempt)}`,
+  }),
+});
+
+// The inspector's Delete closes it once the write's reply is back, and
+// EventKit can take a while to answer: an event opened meanwhile used to
+// close in its place.
+describe('A late delete reply meets the next inspector', () => {
+  let app: App;
+  beforeAll(async () => {
+    app = await launchApp(seed, {
+      appleCalendar: {
+        fixture: {
+          ...fixture,
+          events: [
+            errand(1, 7),
+            errand(2, 8),
+            errand(3, 18),
+            errand(4, 19),
+            shift(1, 20),
+            shift(2, 21),
+          ],
+        },
+      },
+    });
+  }, 60_000);
+  afterAll(async () => {
+    await app.stop();
+  });
+  afterEach(async (context) => {
+    app.holdEventKitWrites(false);
+    if (context.task.result?.state === 'fail') {
+      await app.dump(context.task.name);
+    }
+  });
+
+  const INSPECTOR_TITLE = `document.querySelector('[data-testid="inspector-title"]')?.textContent`;
+  // An event of its own per attempt (four: two tests, a retry each): a
+  // retry finds the first one deleted.
+  let attempt = 0;
+
+  it("keeps the next event's inspector open when the last one's delete answers after it opened", async () => {
+    const { cdp } = app;
+    attempt += 1;
+    const doomed = `Apple errand ${String(attempt)}`;
+    const block = `document.querySelector(${JSON.stringify(`[title^="${doomed}"]`)})`;
+    await cdp.openInspector(`[title^=${JSON.stringify(doomed)}]`);
+    await cdp.waitFor<boolean>(`${INSPECTOR_TITLE} === ${JSON.stringify(doomed)}`);
+    app.holdEventKitWrites(true);
+    await cdp.clickButtonWithText('Delete');
+    await cdp.confirmDelete();
+    await cdp.openInspector('[title^="Google sync"]');
+    await cdp.waitFor<boolean>(`${INSPECTOR_TITLE} === 'Google sync'`);
+    // Still held: the next inspector opened before the delete could answer.
+    expect(await cdp.eval<boolean>(`!!${block}`)).toBe(true);
+
+    app.holdEventKitWrites(false);
+    // The block leaves the grid only once the refresh the write's
+    // invalidation asked for is back, and the main process answers that
+    // after the delete's own reply: the delete has closed what it closes.
+    await cdp.waitFor<boolean>(`!${block}`);
+    expect(await cdp.eval<string | null>(`${INSPECTOR_TITLE} ?? null`)).toBe('Google sync');
+  });
+
+  it('closes an editor opened on the event while its delete ran, once the delete answers', async () => {
+    const { cdp } = app;
+    attempt += 1;
+    const doomed = `Apple errand ${String(attempt)}`;
+    await cdp.openInspector(`[title^=${JSON.stringify(doomed)}]`);
+    await cdp.waitFor<boolean>(`${INSPECTOR_TITLE} === ${JSON.stringify(doomed)}`);
+    app.holdEventKitWrites(true);
+    await cdp.clickButtonWithText('Delete');
+    await cdp.confirmDelete();
+    // Edit stays live while the delete waits: it opens the event's editor.
+    await cdp.clickTestId('inspector-edit');
+    await cdp.waitFor<boolean>(
+      `document.querySelector('[data-testid="editor-title"]')?.textContent === 'Edit event'`,
+    );
+    app.holdEventKitWrites(false);
+    // The event is gone, so the delete's reply closes its editor too.
+    await cdp.waitFor<boolean>(`!document.querySelector('[data-testid="editor"]')`);
+    await cdp.waitFor<boolean>(
+      `!document.querySelector(${JSON.stringify(`[title^="${doomed}"]`)})`,
+    );
+  });
+
+  let shifts = 0;
+  it("closes an editor opened on another occurrence while the series' delete ran, once it answers", async () => {
+    const { cdp } = app;
+    shifts += 1;
+    const title = `Apple shift ${String(shifts)}`;
+    const blocks = `[title^=${JSON.stringify(`${title} ·`)}]`;
+    const first = await cdp.locate(blocks);
+    await cdp.click(first.x, first.y);
+    await cdp.waitFor<boolean>(`${INSPECTOR_TITLE} === ${JSON.stringify(title)}`);
+    await cdp.eval(
+      `[...document.querySelectorAll('[aria-label="Apply to"] [role="radio"]')].find((b) => b.textContent?.trim() === 'All events')?.click()`,
+    );
+    await cdp.waitFor<boolean>(
+      `document.querySelector('[aria-label="Apply to"] [aria-checked="true"]')?.textContent?.trim() === 'All events'`,
+    );
+    app.holdEventKitWrites(true);
+    await cdp.clickButtonWithText('Delete');
+    await cdp.confirmDelete();
+    // Another day's occurrence, which the series' delete takes too: its own
+    // inspector (its block carries the outline), then Edit.
+    const second = await cdp.locate(blocks, { index: 1 });
+    await cdp.eval(
+      `document.elementFromPoint(${String(second.x)}, ${String(second.y)})?.closest('[role="button"]')?.setAttribute('data-e2e-next', '')`,
+    );
+    await cdp.click(second.x, second.y);
+    await cdp.waitFor<boolean>(`!!document.querySelector('[data-e2e-next][data-selected]')`);
+    await cdp.clickTestId('inspector-edit');
+    await cdp.waitFor<boolean>(
+      `document.querySelector('[data-testid="editor-title"]')?.textContent === 'Edit event'`,
+    );
+    app.holdEventKitWrites(false);
+    await cdp.waitFor<boolean>(`!document.querySelector('[data-testid="editor"]')`);
+    await cdp.waitFor<boolean>(`!document.querySelector(${JSON.stringify(blocks)})`);
   });
 });

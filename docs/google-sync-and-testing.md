@@ -587,7 +587,10 @@ sets `CALENDAR_REMINDERS=off`, `CALENDAR_CONTACTS=off`,
 `CALENDAR_E2E_INPUT=cdp`; `launchApp(seed, options)` opts a spec into a
 fixture or a real bridge (`appleCalendar`, `captureWatch`, `contacts`,
 `geo`, `google`, `microphone`, `model`, `reminders`, `agents`,
-`settingsFile`, `window`). `microphone` stands in for the page's
+`settingsFile`, `window`). The `reminders` and `appleCalendar` fixtures'
+writes can be held (`App.holdEventKitWrites`, a marker file under the
+profile) so a spec acts while a save or delete waits for EventKit.
+`microphone` stands in for the page's
 `getUserMedia` with a Web Audio loop of quiet room and a phrase-long
 tone (Chromium's fake audio device never opens under Electron), and
 `CALENDAR_MICROPHONE=fixture` answers each transcription with the

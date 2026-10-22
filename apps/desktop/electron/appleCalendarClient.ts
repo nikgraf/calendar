@@ -6,6 +6,7 @@ import {
   makeFakeAppleCalendarClient,
 } from '@calendar/apple-calendar';
 import { Layer } from 'effect';
+import { afterHold } from './eventKitHold.ts';
 import { helperTransport } from './helperProcess.ts';
 
 /**
@@ -21,7 +22,18 @@ const fixtureClient = (): AppleCalendarClientShape | undefined => {
   const fixture = JSON.parse(readFileSync(path, 'utf8')) as Parameters<
     typeof makeFakeAppleCalendarClient
   >[0];
-  return makeFakeAppleCalendarClient({ ...fixture, authorization: 'fullAccess' }).client;
+  const client = makeFakeAppleCalendarClient({ ...fixture, authorization: 'fullAccess' }).client;
+  // Its writes wait while a spec holds them (eventKitHold.ts).
+  return {
+    ...client,
+    applyBatch: (params) => afterHold(client.applyBatch(params)),
+    create: (params) => afterHold(client.create(params)),
+    createCalendar: (params) => afterHold(client.createCalendar(params)),
+    delete: (params) => afterHold(client.delete(params)),
+    move: (params) => afterHold(client.move(params)),
+    setColor: (params) => afterHold(client.setColor(params)),
+    update: (params) => afterHold(client.update(params)),
+  };
 };
 
 /**

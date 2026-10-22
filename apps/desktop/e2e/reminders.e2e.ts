@@ -929,3 +929,68 @@ describe('Apple Reminders mutation failures', () => {
     );
   });
 });
+
+// A save closes its editor once the write's reply is back. EventKit can
+// take a while to answer, and meanwhile another chip opens its own editor:
+// the late reply used to close that one instead.
+describe('A late save reply meets the next editor', () => {
+  let app: App;
+  beforeAll(async () => {
+    app = await launchApp(seed, { reminders: { fixture: remindersFixture } });
+  }, 60_000);
+  afterAll(async () => {
+    await app.stop();
+  });
+  afterEach(async (context) => {
+    app.holdEventKitWrites(false);
+    if (context.task.result?.state === 'fail') {
+      await app.dump(context.task.name);
+    }
+  });
+
+  const taskById = async (id: string) =>
+    (await readTasks(app.userDataDir)).find((task) => task.id === id);
+  /** The open reminder editor's title field, if a reminder editor is open. */
+  const TITLE_FIELD = `document.querySelector('[data-testid="panel"][data-panel-kind="editTask"] input[placeholder="Title"]')`;
+  const editorTitle = () => app.cdp.eval<string | null>(`${TITLE_FIELD}?.value ?? null`);
+  // A title of its own per attempt: a retry finds the first one's write.
+  let attempt = 0;
+
+  it("keeps the next reminder's editor open when the last one's save answers after it opened", async () => {
+    const { cdp } = app;
+    attempt += 1;
+    const renamed = `Buy oat milk ${String(attempt)}`;
+    await cdp.clickTaskChip('[data-testid="all-day-task-ek-rem-milk"]');
+    await cdp.waitFor<boolean>(`${TITLE_FIELD}?.value.startsWith('Buy') === true`);
+    await cdp.eval(`(() => {
+      const input = ${TITLE_FIELD};
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      setter.call(input, ${JSON.stringify(renamed)});
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`);
+    app.holdEventKitWrites(true);
+    await cdp.clickButtonWithText('Save');
+    // Under way: Save dims while the write waits for EventKit.
+    await cdp.waitFor<boolean>(
+      `[...document.querySelectorAll('button')].some((b) => b.textContent?.trim() === 'Save' && b.getAttribute('aria-busy') === 'true')`,
+    );
+    await cdp.clickTaskChip('[data-testid="all-day-task-ek-rem-allday"]');
+    await cdp.waitFor<boolean>(`${TITLE_FIELD}?.value === 'Water plants'`);
+    // Still held: the next editor opened before the save could answer.
+    expect((await taskById('ek-rem-milk'))?.title).not.toBe(renamed);
+
+    app.holdEventKitWrites(false);
+    await expect
+      .poll(() => taskById('ek-rem-milk'), { timeout: 5000 })
+      .toMatchObject({ title: renamed });
+    // The chip reads the new title only once the refresh the write's
+    // invalidation asked for is back, and the main process answers that
+    // after the save's own reply: the save has closed what it closes.
+    await cdp.waitFor<boolean>(
+      `document.querySelector('[data-testid="all-day-task-ek-rem-milk"]')?.textContent?.includes(${JSON.stringify(renamed)}) === true`,
+    );
+    expect(await editorTitle()).toBe('Water plants');
+    await cdp.clickButtonWithText('Cancel');
+    await cdp.waitFor<boolean>(`!${TITLE_FIELD}`);
+  });
+});

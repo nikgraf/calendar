@@ -551,6 +551,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   asked instead of taking when two ranked the same, and hid the row once
   one was taken). Rejected: an "assumed" tint on the field; asking the
   model. Open: the typeahead's empty state as recent places.
+- **A save closes only its own panel** (2026-10-21, #230) — a desktop
+  editor's close (Cancel, or Save and Delete once the write answers)
+  applies only while the panel still holds that editor's opening; the
+  inspector's Delete only while the panel shows an event it took (core
+  `deleteTakes`: a series' scope takes siblings), an editor opened on it
+  meanwhile included. A late reply used to close whatever was opened
+  since (EventKit can take hundreds of ms). Rejected: ignoring grid
+  clicks while a write runs; dropping the close inside the shared editor
+  models on unmount. Open: iOS's `EditorHost` closes with an unscoped
+  `setSheet(NONE)`; a reminder reopened during its own Delete stays up.
 
 ## Invitees, contacts and birthdays
 

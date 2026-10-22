@@ -752,6 +752,12 @@ export interface App {
   readonly closeSettings: () => Promise<void>;
   readonly dump: (label: string) => Promise<void>;
   /**
+   * Holds or lets go of the Reminders and Apple Calendar fixtures' writes
+   * (eventKitHold.ts reads the marker file): while held, a save or delete
+   * waits for its reply as on a slow EventKit.
+   */
+  readonly holdEventKitWrites: (held: boolean) => void;
+  /**
    * Opens the settings window on a pane — through the main window's bridge,
    * as its buttons do — and returns a client attached to it. An open
    * window is moved to the pane and its client reused.
@@ -1086,6 +1092,8 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
       // The windows take no OS input: a developer typing or touching the
       // trackpad during a run must not reach the test (windows.ts).
       CALENDAR_E2E_INPUT: 'cdp',
+      // The marker the EventKit fixtures' writes wait on (holdEventKitWrites).
+      CALENDAR_EVENTKIT_HOLD: join(userDataDir, 'eventkit-hold'),
       // A seeded birthday with reminders on must never post a real banner.
       CALENDAR_NOTIFICATIONS: 'off',
       CALENDAR_SETTINGS_FILE: settingsFilePath,
@@ -1165,6 +1173,15 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
       await dumpPage(cdp, dir, safe);
       if (settings && !settings.closed) {
         await dumpPage(settings, dir, `${safe}.settings`);
+      }
+    },
+    holdEventKitWrites: (held: boolean) => {
+      // The marker eventKitHold.ts polls (CALENDAR_EVENTKIT_HOLD).
+      const marker = join(userDataDir, 'eventkit-hold');
+      if (held) {
+        writeFileSync(marker, '');
+      } else {
+        rmSync(marker, { force: true });
       }
     },
     openSettings: async (pane: SettingsPane) => {

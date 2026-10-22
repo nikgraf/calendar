@@ -1,5 +1,6 @@
 import {
   type BirthdayOccurrence,
+  deleteTakes,
   EMPTY_SEARCH_QUERY,
   eventIdentity,
   type EventRecord,
@@ -8,6 +9,7 @@ import {
   type NotificationTarget,
   PAN_BUFFER_DAYS,
   parseNotificationTarget,
+  type RecurringScope,
   type TaskRecord,
   Temporal,
   toZonedDateTime,
@@ -499,7 +501,29 @@ function CalendarBody({
     return () => window.removeEventListener('paste', onPaste);
   }, [capture, dialogOpen]);
 
-  const closePanel = () => setPanel(backFrom(panel));
+  // An editor closes itself — Cancel, or Save and Delete once the write's
+  // reply is back — only while the panel still holds its opening: a reply
+  // landing after another chip, slot or event was opened leaves that one up.
+  const closeEditor = (opening: number) => () =>
+    setPanel((current) =>
+      'opening' in current && current.opening === opening ? backFrom(current) : current,
+    );
+  // The inspector's Delete likewise, once the write answers: it closes the
+  // panel only while that shows an event the delete took (`deleteTakes`:
+  // this one, or a sibling with a series' scope) — an inspector, or an
+  // editor that Edit or Convert opened meanwhile, since the event is gone.
+  const closeDeleted = (deleted: EventRecord) => (scope: RecurringScope) =>
+    setPanel((current) => {
+      const shown =
+        current.kind === 'inspector'
+          ? current.event
+          : current.kind === 'editEvent'
+            ? current.seed.event
+            : undefined;
+      return shown !== undefined && deleteTakes(deleted, scope, shown)
+        ? backFrom(current)
+        : current;
+    });
   const openSearch = () => {
     setPanel({ kind: 'search', selectText: true });
     setSearchFocus((count) => count + 1);
@@ -677,6 +701,7 @@ function CalendarBody({
                     seed: { event: panel.event, initialDate: focused, initialScope: 'series' },
                   })
                 }
+                onDeleted={closeDeleted(panel.event)}
                 onEdit={() =>
                   setPanel({
                     fromSearch: panel.fromSearch,
@@ -692,7 +717,7 @@ function CalendarBody({
                 calendars={calendars}
                 initialKind={panel.mode}
                 onCapture={capture.start}
-                onClose={closePanel}
+                onClose={closeEditor(panel.opening)}
                 quickAddFocus={quickAddFocus}
                 seed={panel.seed}
                 taskLists={taskLists}
@@ -702,7 +727,7 @@ function CalendarBody({
               <EditorPanel
                 calendars={calendars}
                 onCapture={capture.start}
-                onClose={closePanel}
+                onClose={closeEditor(panel.opening)}
                 seed={{ initialDate: focused }}
                 task={panel.task}
                 taskLists={taskLists}
