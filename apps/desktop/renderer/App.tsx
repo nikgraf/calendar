@@ -4,6 +4,7 @@ import { CaptureHint } from './CaptureHint.tsx';
 import { CalendarApp } from './calendar/CalendarApp.tsx';
 import { ErrorBoundary } from './ErrorBoundary.tsx';
 import { NoticeStack } from './NoticeStack.tsx';
+import { SetupDialog } from './onboarding/SetupDialog.tsx';
 import { SettingsWindow } from './SettingsWindow.tsx';
 import { backend, subscribeInvalidations } from './backend.ts';
 
@@ -11,14 +12,17 @@ const backendAtoms = makeBackendAtoms(backend);
 
 /**
  * The calendar window's root. Its notices (toasts and the conflict banner)
- * live in the calendar's grid column — see NoticeStack. Both windows show
- * the capture hint: either can be the one left out of a screenshot.
+ * live in the calendar's grid column — see NoticeStack. The first run's
+ * setup dialog sits over the calendar here, like the agent approval. Both
+ * windows show the capture hint: either can be the one left out of a
+ * screenshot.
  */
 function Bridge() {
   useBackendInvalidations(subscribeInvalidations);
   return (
     <>
       <CalendarApp />
+      <SetupDialog />
       <AgentApprovalDialog />
       <CaptureHint />
     </>
