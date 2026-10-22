@@ -730,6 +730,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   Repeat to Never first; a rule the form cannot show keeps its day.
   Relative alerts stay on an undated reminder; moving an undated task
   to another list still asks for a day (todo.md).
+- **Access lag after Allow** (2026-10-22, #236) — iOS can report a just-
+  granted Reminders or Calendar prompt as notDetermined for seconds, and
+  the Swift bridges refuse every read and write on that status, so the
+  pass Connect starts flagged the new account "Access off". A refusal
+  citing notDetermined after this process's granted prompt is now one
+  failed call (a request error), never lost access; `bridgeMessage` drops
+  the throw site Expo appends, which hid every iOS refusal's status.
+  Rejected: relaxing the bridge's check (a store without access answers
+  with no calendars, and an empty snapshot wipes the mirror). Open: lists
+  wait for the next pass if the lag outlasts the first one.
 
 ## Apple Calendar
 

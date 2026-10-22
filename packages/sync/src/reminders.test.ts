@@ -17,7 +17,12 @@ import {
   GoogleTasksClient,
   type GoogleTasksClientShape,
 } from '@calendar/google';
-import { makeFakeRemindersClient, RemindersClient } from '@calendar/reminders';
+import {
+  makeFakeRemindersClient,
+  makeRemindersClient,
+  REMINDERS_METHODS,
+  RemindersClient,
+} from '@calendar/reminders';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
 import { Deferred, Effect, Fiber, Layer } from 'effect';
@@ -60,7 +65,7 @@ const inertPeopleClient: GooglePeopleClientShape = {
 };
 
 const testLayer = (
-  fake: ReturnType<typeof makeFakeRemindersClient>,
+  fake: Pick<ReturnType<typeof makeFakeRemindersClient>, 'client'>,
   overrides: Layer.Layer<never, never, TaskRepo> = Layer.empty,
 ) =>
   SyncEngine.layer.pipe(
@@ -360,6 +365,45 @@ describe('reminders sync', () => {
       expect((yield* accounts.list())[0]?.status).toBe('ok');
       expect((yield* windowRows).length).toBe(4);
     }).pipe(Effect.provide(testLayer(fake)));
+  });
+
+  it.effect('a pass before iOS has recorded a granted prompt leaves the account connected', () => {
+    // The real client over a bridge answering as iOS does right after
+    // "Allow": the prompt granted, the system status (which the bridge
+    // also checks before every read) still notDetermined.
+    let recorded = false;
+    const calls: Array<string> = [];
+    const client = makeRemindersClient((method) => {
+      calls.push(method);
+      if (method === REMINDERS_METHODS.requestAccess) {
+        return Promise.resolve({ granted: true });
+      }
+      if (method === REMINDERS_METHODS.status) {
+        return Promise.resolve({ authorization: recorded ? 'fullAccess' : 'notDetermined' });
+      }
+      if (!recorded) {
+        return Promise.reject(new Error('accessDenied: notDetermined'));
+      }
+      return Promise.resolve(
+        method === REMINDERS_METHODS.listLists ? { lists: [listA] } : { changed: [], ids: [] },
+      );
+    });
+    return Effect.gen(function* () {
+      yield* seedApple();
+      yield* client.requestAccess();
+      const engine = yield* SyncEngine;
+      yield* engine.syncAll();
+      const accounts = yield* AccountRepo;
+      expect(calls).toContain(REMINDERS_METHODS.listLists);
+      expect((yield* accounts.list())[0]?.status).toBe('ok');
+
+      // Recorded now: the next pass reads what the refused one could not.
+      recorded = true;
+      yield* engine.syncAll();
+      const lists = yield* (yield* TaskRepo).listLists(APPLE_REMINDERS_ACCOUNT_ID);
+      expect(lists.map((list) => list.id)).toEqual(['list-a']);
+      expect((yield* accounts.list())[0]?.status).toBe('ok');
+    }).pipe(Effect.provide(testLayer({ client })));
   });
 });
 

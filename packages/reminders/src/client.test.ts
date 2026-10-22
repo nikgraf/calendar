@@ -13,10 +13,40 @@ describe('bridgeMessage', () => {
     ).toBe('accessDenied: denied');
     expect(bridgeMessage('Something → Caused by: notFound: abc')).toBe('notFound: abc');
   });
+
+  it('drops the throw site expo-modules-core appends', () => {
+    expect(
+      bridgeMessage(
+        "FunctionCallException: Calling the 'invoke' function has failed\n→ Caused by: RemindersBridgeError: accessDenied: notDetermined (at SolunivoReminders/SolunivoRemindersModule.swift:36)",
+      ),
+    ).toBe('accessDenied: notDetermined');
+    // A parenthesis of the message's own stays.
+    expect(bridgeMessage('notFound: rem-1 (list gone)')).toBe('notFound: rem-1 (list gone)');
+  });
 });
 
 const clientRejectingWith = (message: string) =>
   makeRemindersClient(() => Promise.reject(new Error(message)));
+
+/**
+ * A prompt answered with `granted`, while iOS still reports notDetermined
+ * — refused the way the iOS module words it.
+ */
+const lagging = (granted: boolean) =>
+  makeRemindersClient((method) =>
+    method === 'reminders.requestAccess'
+      ? Promise.resolve({ granted })
+      : Promise.reject(
+          new Error(
+            "FunctionCallException: Calling the 'invoke' function has failed\n→ Caused by: RemindersBridgeError: accessDenied: notDetermined (at SolunivoReminders/SolunivoRemindersModule.swift:36)",
+          ),
+        ),
+  );
+
+const failure = async (client: ReturnType<typeof makeRemindersClient>) => {
+  const result = await Effect.runPromise(Effect.result(client.listLists()));
+  return result._tag === 'Failure' ? result.failure : undefined;
+};
 
 describe('makeRemindersClient error mapping', () => {
   it('maps an access failure to RemindersAccessError on both transports', async () => {
@@ -68,5 +98,20 @@ describe('makeRemindersClient error mapping', () => {
     // A definite system answer is never overridden.
     status = 'denied';
     expect(await Effect.runPromise(client.status())).toBe('denied');
+  });
+
+  it('reads a refusal over that stale status after a granted prompt as a failed call, not lost access', async () => {
+    // Never asked in this process: the refusal is what it says.
+    expect((await failure(lagging(true)))?._tag).toBe('RemindersAccessError');
+
+    const granted = lagging(true);
+    await Effect.runPromise(granted.requestAccess());
+    const lag = await failure(granted);
+    expect(lag?._tag).toBe('RemindersRequestError');
+    expect(lag?._tag === 'RemindersRequestError' && lag.method).toBe('reminders.listLists');
+
+    const denied = lagging(false);
+    await Effect.runPromise(denied.requestAccess());
+    expect((await failure(denied))?._tag).toBe('RemindersAccessError');
   });
 });
