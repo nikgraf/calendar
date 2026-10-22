@@ -1,0 +1,166 @@
+appId: com.solunivo.app.dev
+name: The first run, the Getting started card, a lesson, and Settings › Getting Started
+tags:
+  - ci
+---
+# The e2e bundle keeps the setup and the card away
+# (EXPO_PUBLIC_CALENDAR_ONBOARDING=off), so every other flow starts on the
+# calendar. Under the fixture model the `onboarding-fixture` deep link
+# turns both on for this launch, resets the stored state and presents the
+# setup. A bundle without the fixture ignores the link, and the flow
+# passes without asserting.
+- runFlow: ../common/launch.yaml
+- openLink: 'solunivo-dev://onboarding-fixture'
+# The "Open in Solunivo Dev?" alert, confirmed once and any leftover
+# cancelled while an "Open" is still up (see flow 22: the steps below
+# have no Cancel of their own to lose, but the editor later does).
+- extendedWaitUntil:
+    visible: 'Open'
+    timeout: 15000
+    optional: true
+- runFlow:
+    when:
+      visible: 'Open'
+    commands:
+      - tapOn: 'Open'
+- retry:
+    maxRetries: 3
+    commands:
+      - runFlow:
+          when:
+            true: ${output.cancelAlert === true}
+          commands:
+            - tapOn: 'Cancel'
+      - evalScript: ${output.cancelAlert = true}
+      - extendedWaitUntil:
+          notVisible: 'Open'
+          timeout: 3000
+- extendedWaitUntil:
+    visible:
+      id: 'setup-welcome'
+    timeout: 20000
+    optional: true
+- runFlow:
+    when:
+      visible:
+        id: 'setup-welcome'
+    commands:
+      - evalScript: ${output.onboarding = true}
+      - waitForAnimationToEnd:
+          timeout: 5000
+      # Set up → What do you use? Google Calendar, Tasks and Apple
+      # Calendar come ticked; Reminders is ticked here, so its step shows.
+      - tapOn:
+          id: 'setup-start'
+      - extendedWaitUntil:
+          visible:
+            id: 'setup-sources'
+          timeout: 5000
+      - waitForAnimationToEnd:
+          timeout: 3000
+      - tapOn:
+          id: 'setup-source-reminders'
+      - extendedWaitUntil:
+          visible:
+            id: 'setup-source-reminders-on'
+          timeout: 5000
+      - tapOn:
+          id: 'setup-continue'
+      # Google: the fixture account is connected already; "Add another
+      # account" signs the fixture in again, in place (Tasks ticked, so
+      # the account keeps its task lists for the other flows).
+      - extendedWaitUntil:
+          visible:
+            id: 'setup-google'
+          timeout: 5000
+      - assertVisible: '.*fixture@solunivo.test.*'
+      - tapOn:
+          id: 'setup-add-google'
+      - extendedWaitUntil:
+          visible: 'Add another account'
+          timeout: 10000
+      - tapOn:
+          id: 'setup-continue'
+      # The Apple steps: Not now on both, so no Apple account is left
+      # behind for the other flows.
+      - extendedWaitUntil:
+          visible:
+            id: 'setup-apple-calendar'
+          timeout: 5000
+      - waitForAnimationToEnd:
+          timeout: 3000
+      - tapOn:
+          id: 'setup-not-now'
+      - extendedWaitUntil:
+          visible:
+            id: 'setup-reminders'
+          timeout: 5000
+      - waitForAnimationToEnd:
+          timeout: 3000
+      - tapOn:
+          id: 'setup-not-now'
+      # The calendar, with the card on top: every lesson, no "Add your
+      # accounts" row (an account is connected).
+      - extendedWaitUntil:
+          visible:
+            id: 'getting-started'
+          timeout: 10000
+      - assertVisible:
+          id: 'getting-started-row-create'
+      - assertNotVisible:
+          id: 'getting-started-row-accounts'
+      - assertVisible: '0 of 6'
+      # Create with AI: the editor with the phrase in its quick-add field
+      # and the lesson's banner over it. Cancel without trying ticks it
+      # as skipped.
+      - tapOn:
+          id: 'getting-started-row-create'
+      - extendedWaitUntil:
+          visible:
+            id: 'lesson-banner'
+          timeout: 10000
+      - waitForAnimationToEnd:
+          timeout: 5000
+      - copyTextFrom:
+          id: 'quick-add-input'
+      - assertTrue: ${maestro.copiedText === 'Lunch with Sam tomorrow at 12:30 at Mercato'}
+      - tapOn: 'Cancel'
+      - extendedWaitUntil:
+          notVisible:
+            id: 'lesson-banner'
+          timeout: 10000
+      - extendedWaitUntil:
+          visible: 'Create with AI, done'
+          timeout: 10000
+      - assertVisible: '1 of 6'
+      # The chevron folds the card to one line; a tap opens it again.
+      - tapOn:
+          id: 'getting-started-collapse'
+      - extendedWaitUntil:
+          visible: 'Getting started · 1 of 6'
+          timeout: 5000
+      - tapOn:
+          id: 'getting-started'
+      - extendedWaitUntil:
+          visible:
+            id: 'getting-started-row-create'
+          timeout: 5000
+      # Settings › Getting Started: the lesson ticked, then Start Over.
+      - runFlow: ../common/open-settings.yaml
+      - runFlow:
+          file: ../common/open-settings-page.yaml
+          env:
+            PAGE: getting-started
+      - assertVisible:
+          id: 'getting-started-lesson-create-done'
+      - assertVisible: '.*1 of 6 done.*'
+      - tapOn:
+          id: 'getting-started-start-over'
+      - extendedWaitUntil:
+          visible:
+            id: 'getting-started-lesson-create'
+          timeout: 5000
+      - runFlow: ../common/close-settings.yaml
+      - extendedWaitUntil:
+          visible: '0 of 6'
+          timeout: 5000

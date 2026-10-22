@@ -35,7 +35,11 @@ import Constants from 'expo-constants';
 import { AFTER_FIRST_UNLOCK, deleteItemAsync, getItemAsync, setItemAsync } from 'expo-secure-store';
 import { Data, Duration, Effect, Layer, ManagedRuntime } from 'effect';
 import { FetchHttpClient } from 'effect/http';
-import { googleFixtureLayer, seedFixtureAccounts } from '@calendar/sync/testing/googleFixture';
+import {
+  fixtureSignIn,
+  googleFixtureLayer,
+  seedFixtureAccounts,
+} from '@calendar/sync/testing/googleFixture';
 import { liveWireLayer, seedLiveAccount } from '@calendar/sync/testing/liveWire';
 import { googleFixture } from '../e2e/fixtures/google.ts';
 import { signInWithGoogle } from './googleAuth.ts';
@@ -150,6 +154,12 @@ const handlers: BackendHandlers<CommonBackendServices | TokenManager> = {
 
   addAccount: ({ loginHint, tasks }) =>
     Effect.gen(function* () {
+      // The fake API (e2e bundles): the fixture's account, no sign-in sheet.
+      if (useGoogleFixture) {
+        return yield* finishAddAccount(fixtureSignIn(googleFixture, { loginHint, tasks }), () =>
+          crypto.randomUUID(),
+        );
+      }
       if (!iosClientId) {
         return yield* Effect.fail(
           new OAuthNotConfiguredError({

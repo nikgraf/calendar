@@ -7,11 +7,13 @@ import {
   type GcalTask,
   type GcalTaskList,
   GOOGLE_SCOPES,
+  googleScopes,
   TokenStore,
 } from '@calendar/google';
 import { Effect, Layer } from 'effect';
 import type { HttpClient } from 'effect/http';
 import type { SqlError } from 'effect/sql/SqlError';
+import type { SignInResult } from '../addAccount.ts';
 import { FakeGoogle } from './fakeGoogle.ts';
 
 /**
@@ -41,6 +43,14 @@ export interface GoogleFixture {
   readonly events?: Readonly<Record<string, ReadonlyArray<GcalEvent>>> | undefined;
   /** Saved contacts, served to every account whose contacts are on. */
   readonly people?: ReadonlyArray<GcalPerson> | undefined;
+  /**
+   * Who "Add Google Account" signs in: never seeded, so a spec can start
+   * with no account and sign one in through the setup. Absent: the first
+   * fixture account again (signed in in place, as a reconnect is).
+   */
+  readonly signIn?:
+    | { readonly displayName?: string | undefined; readonly email: string }
+    | undefined;
   readonly taskLists?: ReadonlyArray<GcalTaskList> | undefined;
   /** Tasks per list id; `due` as RFC 3339 midnight UTC, like the API. */
   readonly tasks?: Readonly<Record<string, ReadonlyArray<GcalTask>>> | undefined;
@@ -117,3 +127,30 @@ export const seedFixtureAccounts = (
       );
     }
   });
+
+/**
+ * A completed sign-in against the fixture, for `addAccount` under the
+ * fake API: a reconnect (`loginHint`) signs that address in, otherwise
+ * the fixture's `signIn` account or its first one. The tokens carry the
+ * scopes the sign-in asked for, so an unticked Tasks box gives an account
+ * without tasks, as Google's consent would.
+ */
+export const fixtureSignIn = (
+  fixture: GoogleFixture,
+  {
+    loginHint,
+    tasks = true,
+  }: { readonly loginHint?: string | undefined; readonly tasks?: boolean | undefined },
+): SignInResult => {
+  const email =
+    loginHint ?? fixture.signIn?.email ?? fixture.accounts[0]?.email ?? 'fixture@example.com';
+  return {
+    profile: {
+      ...(fixture.signIn?.email === email && fixture.signIn.displayName
+        ? { displayName: fixture.signIn.displayName }
+        : {}),
+      email,
+    },
+    tokens: new TokenSet({ ...FIXTURE_TOKENS, scopes: [...googleScopes({ tasks })] }),
+  };
+};

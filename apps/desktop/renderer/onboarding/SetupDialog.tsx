@@ -86,33 +86,26 @@ export function SetupDialog() {
   const enabled = useOnboardingEnabled();
   const due = useSetupNeeded();
   const update = useUpdateOnboarding();
-  // Asked for by the card: opens on the sources whatever the state says.
-  const [requested, setRequested] = useState(false);
-  // Closed here already; the refetch that makes `due` false follows.
-  const [closed, setClosed] = useState(false);
-  useEffect(
-    () =>
-      onSetupRequested(() => {
-        setRequested(true);
-      }),
-    [],
-  );
-  const shown = requested || (enabled === true && due === true && !closed);
-  if (!shown) {
+  // Where the dialog is open on, or null: once open it stays until it is
+  // finished, though "nothing connected" stops being true as soon as the
+  // Google step signs the first account in.
+  const [open, setOpen] = useState<Step | null>(null);
+  // Opened on its own once per launch at most; a Skip is not met again.
+  const [autoOpened, setAutoOpened] = useState(false);
+  if (enabled === true && due === true && !autoOpened) {
+    // Render-phase state adjustment (the React "derive from props" pattern).
+    setAutoOpened(true);
+    setOpen('welcome');
+  }
+  useEffect(() => onSetupRequested(() => setOpen('sources')), []);
+  if (open === null) {
     return null;
   }
   const finish = (outcome: SetupOutcome) => {
-    setRequested(false);
-    setClosed(true);
+    setOpen(null);
     void update({ setup: outcome });
   };
-  return (
-    <SetupPanel
-      initialStep={requested ? 'sources' : 'welcome'}
-      key={String(requested)}
-      onFinish={finish}
-    />
-  );
+  return <SetupPanel initialStep={open} key={open} onFinish={finish} />;
 }
 
 function SetupPanel({

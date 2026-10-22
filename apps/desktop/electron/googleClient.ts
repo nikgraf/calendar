@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { GuestNotifications, type TokenStore } from '@calendar/google';
+import type { SignInResult } from '@calendar/sync';
 import {
+  fixtureSignIn,
   type GoogleFixture,
   googleFixtureLayer,
   seedFixtureAccounts,
@@ -56,3 +58,15 @@ export const seedDesktopGoogleAccounts = googleFixture
   : googleLive
     ? seedLiveAccount(googleLive)
     : Effect.void;
+
+/**
+ * Under `CALENDAR_GOOGLE=fixture`, what "Add Google Account" signs in
+ * instead of opening the browser (the setup e2e spec); undefined
+ * otherwise, and the real loopback flow runs.
+ */
+export const desktopFixtureSignIn:
+  | ((options: {
+      readonly loginHint?: string | undefined;
+      readonly tasks?: boolean | undefined;
+    }) => SignInResult)
+  | undefined = googleFixture ? (options) => fixtureSignIn(googleFixture, options) : undefined;
