@@ -6,9 +6,7 @@ const DISCOVERY = {
   tokenEndpoint: 'https://oauth2.googleapis.com/token',
 };
 
-import { GOOGLE_SCOPES } from '@calendar/google';
-
-const SCOPES = [...GOOGLE_SCOPES];
+import { googleScopes } from '@calendar/google';
 
 /** iOS OAuth clients redirect to the reversed client id scheme. */
 const redirectUriFor = (clientId: string): string => {
@@ -27,11 +25,15 @@ export interface AuthGrant {
  * returns the authorization code; the shared TokenManager does the exchange.
  * A dismissed sheet or a refused consent throws SignInCancelledError, which
  * the UI does not show as an error. `loginHint` (a reconnect) opens Google
- * on that account rather than the chooser.
+ * on that account rather than the chooser; `tasks: false` (the setup's
+ * Tasks box unticked) leaves the tasks scope off the consent screen.
  */
 export const signInWithGoogle = async (
   clientId: string,
-  loginHint?: string,
+  {
+    loginHint,
+    tasks = true,
+  }: { readonly loginHint?: string | undefined; readonly tasks?: boolean | undefined } = {},
 ): Promise<AuthGrant> => {
   const redirectUri = redirectUriFor(clientId);
   const config: AuthRequestConfig = {
@@ -42,7 +44,7 @@ export const signInWithGoogle = async (
       prompt: loginHint ? 'consent' : 'consent select_account',
     },
     redirectUri,
-    scopes: SCOPES,
+    scopes: [...googleScopes({ tasks })],
     usePKCE: true,
   };
   const request = new AuthRequest(config);

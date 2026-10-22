@@ -295,7 +295,10 @@ export class BackendError extends Schema.Error<BackendError>('core/BackendError'
  * picking another account by mistake no longer adds that one.
  */
 export const AddAccountParams = Schema.Struct({
+  /** The account being reconnected: Google opens on it instead of the chooser. */
   loginHint: Schema.optional(Schema.String),
+  /** Ask for Google Tasks too (the default); false leaves the tasks scope off the consent screen. */
+  tasks: Schema.optional(Schema.Boolean),
 });
 export type AddAccountParams = Schema.Schema.Type<typeof AddAccountParams>;
 

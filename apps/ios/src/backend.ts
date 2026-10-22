@@ -148,7 +148,7 @@ const runtime = ManagedRuntime.make(appLayer);
 const handlers: BackendHandlers<CommonBackendServices | TokenManager> = {
   ...commonBackendHandlers,
 
-  addAccount: ({ loginHint }) =>
+  addAccount: ({ loginHint, tasks }) =>
     Effect.gen(function* () {
       if (!iosClientId) {
         return yield* Effect.fail(
@@ -166,7 +166,7 @@ const handlers: BackendHandlers<CommonBackendServices | TokenManager> = {
           error instanceof SignInCancelledError
             ? error
             : new OAuthNotConfiguredError({ message: String(error) }),
-        try: () => signInWithGoogle(iosClientId ?? '', loginHint),
+        try: () => signInWithGoogle(iosClientId ?? '', { loginHint, tasks }),
       });
       const result = yield* tokenManager.exchangeCode(grant);
       return yield* finishAddAccount(result, () => crypto.randomUUID());

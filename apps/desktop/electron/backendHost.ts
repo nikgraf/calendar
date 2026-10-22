@@ -134,10 +134,10 @@ export const startBackendHost = (): BackendHost => {
   const handlers: BackendHandlers<CommonBackendServices | TokenManager> = {
     ...commonBackendHandlers,
 
-    addAccount: ({ loginHint }) =>
+    addAccount: ({ loginHint, tasks }) =>
       Effect.gen(function* () {
         const config = yield* requireOAuth;
-        const result = yield* runGoogleSignIn(config.clientId, { loginHint });
+        const result = yield* runGoogleSignIn(config.clientId, { loginHint, tasks });
         return yield* finishAddAccount(result, randomUUID);
       }),
   };
