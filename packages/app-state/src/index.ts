@@ -23,6 +23,7 @@ export * from './modelAvailability.ts';
 export * from './mutationGuard.ts';
 export * from './notices.ts';
 export * from './notificationTarget.ts';
+export * from './onboarding.ts';
 export * from './oneWrite.ts';
 export * from './pendingOpLabel.ts';
 export * from './permissionCopy.ts';

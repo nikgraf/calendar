@@ -14,6 +14,7 @@ import type {
   EventNotificationSettings,
   EventRecord,
   GeoLocation,
+  OnboardingState,
   PendingOpSummary,
   PlaceSuggestion,
   TaskListInfo,
@@ -548,6 +549,12 @@ export const useTimeZones = (): TimeZones => {
   );
 };
 
+/** The first run and the Getting started card on this device; null until the first read resolves. */
+export const useOnboarding = (): OnboardingState | null => {
+  const result = useAtomValue(useBackendAtoms().onboarding);
+  return Option.getOrNull(AsyncResult.value(result));
+};
+
 /** The device-local view preferences; null until the first read resolves (treat as the defaults). */
 export const useViewPreferences = (): ViewPreferences | null => {
   const result = useAtomValue(useBackendAtoms().viewPreferences);
@@ -653,6 +660,7 @@ export const useBackendMutations = () => {
       setCalendarVisible: set('setCalendarVisible'),
       setEventNotificationSettings: set('setEventNotificationSettings'),
       setMirrorEnabled: set('setMirrorEnabled'),
+      setOnboarding: set('setOnboarding'),
       setTaskListVisible: set('setTaskListVisible'),
       setTimeZoneSettings: set('setTimeZoneSettings'),
       setViewPreferences: set('setViewPreferences'),

@@ -33,6 +33,7 @@ import {
   TaskStatus,
 } from './types.ts';
 import { TimeZoneSettings } from './timeZoneSettings.ts';
+import { OnboardingState } from './onboarding.ts';
 import { ViewPreferences } from './viewPreferences.ts';
 
 /**
@@ -491,6 +492,11 @@ export class AppBackendRpcs extends RpcGroup.make(
     },
     success: Schema.Array(EventRecord),
   }),
+  /** The first run and the Getting started card on this device (never synced). */
+  Rpc.make('getOnboarding', {
+    error: BackendError,
+    success: OnboardingState,
+  }),
   Rpc.make('getOverdueTasks', {
     error: BackendError,
     /** Open tasks due strictly before `before` ('YYYY-MM-DD'), visible lists only; drawn on today. */
@@ -799,6 +805,10 @@ export class AppBackendRpcs extends RpcGroup.make(
       calendarId: Schema.String,
       isVisible: Schema.Boolean,
     },
+  }),
+  Rpc.make('setOnboarding', {
+    error: BackendError,
+    payload: OnboardingState,
   }),
   Rpc.make('setTaskListVisible', {
     error: BackendError,

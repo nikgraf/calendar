@@ -108,6 +108,7 @@ export const useGuardedMutations = () => {
         'save the event notifications',
         mutations.setEventNotificationSettings,
       ),
+      setOnboarding: guardMutation('save the Getting started card', mutations.setOnboarding),
       setTaskListVisible: guardMutation('toggle the task list', mutations.setTaskListVisible),
       setTimeZoneSettings: guardMutation('save the time zones', mutations.setTimeZoneSettings),
       setViewPreferences: guardMutation('save the view settings', mutations.setViewPreferences),

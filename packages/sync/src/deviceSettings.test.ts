@@ -1,5 +1,6 @@
 import {
   DEFAULT_BIRTHDAY_REMINDER_SETTINGS,
+  DEFAULT_ONBOARDING_STATE,
   DEFAULT_TIME_ZONE_SETTINGS,
   DEFAULT_VIEW_PREFERENCES,
   Temporal,
@@ -13,8 +14,10 @@ import { describe } from 'vite-plus/test';
 import {
   BIRTHDAY_REMINDER_OVERRIDES_KEY,
   BIRTHDAY_REMINDERS_KEY,
+  ONBOARDING_KEY,
   readBirthdayReminderOverrides,
   readBirthdayReminderSettings,
+  readOnboarding,
   readPrimaryTimeZone,
   readTimeZoneSettings,
   readViewPreferences,
@@ -22,6 +25,7 @@ import {
   VIEW_PREFERENCES_KEY,
   writeBirthdayReminderOverrides,
   writeBirthdayReminderSettings,
+  writeOnboarding,
   writeTimeZoneSettings,
   writeViewPreferences,
 } from './deviceSettings.ts';
@@ -148,6 +152,36 @@ describe('time zone settings', () => {
       // A list without the device entry is not patched here.
       yield* repo.set(TIME_ZONES_KEY, { primary: 'UTC', zones: ['UTC'] });
       expect(yield* readTimeZoneSettings).toEqual(DEFAULT_TIME_ZONE_SETTINGS);
+    }).pipe(Effect.provide(dbLayer())),
+  );
+});
+
+describe('onboarding state', () => {
+  it.effect('defaults to the setup due and the card open; round-trips the canonical shape', () =>
+    Effect.gen(function* () {
+      expect(yield* readOnboarding).toEqual(DEFAULT_ONBOARDING_STATE);
+      yield* writeOnboarding({
+        card: 'collapsed',
+        lessons: { alerts: undefined, create: 'skipped', zones: 'done' },
+        setup: 'done',
+      });
+      expect(yield* readOnboarding).toEqual({
+        card: 'collapsed',
+        lessons: { create: 'skipped', zones: 'done' },
+        setup: 'done',
+      });
+      expect(yield* (yield* DeviceSettingsRepo).get(ONBOARDING_KEY)).toEqual({
+        card: 'collapsed',
+        lessons: { create: 'skipped', zones: 'done' },
+        setup: 'done',
+      });
+    }).pipe(Effect.provide(dbLayer())),
+  );
+
+  it.effect('a stored value that no longer decodes reads as the default', () =>
+    Effect.gen(function* () {
+      yield* (yield* DeviceSettingsRepo).set(ONBOARDING_KEY, { card: 'open', lessons: {} });
+      expect(yield* readOnboarding).toEqual(DEFAULT_ONBOARDING_STATE);
     }).pipe(Effect.provide(dbLayer())),
   );
 });

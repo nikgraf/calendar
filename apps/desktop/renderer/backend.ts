@@ -1,6 +1,6 @@
 import type { AgentPolicy } from '@calendar/agent/policy';
 import type { AgentRequestView, AgentsState, AgentView } from '@calendar/agent/view';
-import { AppBackendRpcs, type BackendClient } from '@calendar/core';
+import { AppBackendRpcs, type BackendClient, type LessonId } from '@calendar/core';
 import { duplexClientProtocol } from '@calendar/sync/rpcDuplex';
 import { Context, Effect, Fiber, Layer, ManagedRuntime, Stream } from 'effect';
 import { RpcClient, RpcSerialization } from 'effect/rpc';
@@ -94,6 +94,10 @@ declare global {
         locale: string,
       ) => Promise<{ segments: ReadonlyArray<{ text: string }> }>;
       onAgentsChanged: (listener: () => void) => () => void;
+      /** False under CALENDAR_ONBOARDING=off (the e2e default): no first run, no card. */
+      onboardingEnabled: () => Promise<boolean>;
+      /** A lesson the settings window asked the calendar to open; decode with `parseLessonId`. */
+      onLessonOpen: (listener: (id: unknown) => void) => () => void;
       onModelProviderChanged: (listener: (view: ModelProviderView) => void) => () => void;
       /** Clicked event reminders, the one waiting first; decode with `parseNotificationTarget`. */
       onNotificationOpen: (listener: (target: unknown) => void) => () => void;
@@ -102,6 +106,8 @@ declare global {
       onPrivacyChanged: (listener: (state: PrivacyState) => void) => () => void;
       onRpcMessage: (listener: (data: string | Uint8Array) => void) => () => void;
       onSettingsFileChanged: (listener: (status: SettingsFileStatus) => void) => () => void;
+      /** Opens a Getting started lesson in the calendar window, bringing it forward. */
+      openLesson: (id: LessonId) => Promise<void>;
       /** Opens the settings window (or focuses it), on `pane` when given. */
       openSettings: (pane?: SettingsPaneId) => Promise<void>;
       privacyGet: () => Promise<PrivacyState>;
