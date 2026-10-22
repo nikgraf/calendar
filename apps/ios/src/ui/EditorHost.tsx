@@ -229,9 +229,19 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
   // a detail, Settings): the thread is held until that has closed
   // (`captureMayOpen`).
   const pathname = usePathname();
-  const settingsOpen = pathname === '/settings' || pathname.startsWith('/settings/');
+  const settingsShown = pathname === '/settings' || pathname.startsWith('/settings/');
+  // Settings asked for and not showing yet: the router dispatches a push a
+  // commit later, and from behind an editor the push waits for its form
+  // sheet. A sheet asked for meanwhile takes over, as from `afterFormSheet`.
+  const [settingsAsked, setSettingsAsked] = useState(false);
+  if (settingsAsked && (settingsShown || sheet.kind !== 'none')) {
+    setSettingsAsked(false);
+  }
   const [captured, setCaptured] = useState<EditSheet | null>(null);
-  if (captured !== null && captureMayOpen(sheet, { formSheetGone, settingsOpen })) {
+  if (
+    captured !== null &&
+    captureMayOpen(sheet, { formSheetGone, settingsOpen: settingsShown || settingsAsked })
+  ) {
     setCaptured(null);
     setSheet(captured);
   }
@@ -375,6 +385,7 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
       if (afterFormSheet.current) {
         return;
       }
+      setSettingsAsked(true);
       if (routeMounted.current) {
         afterFormSheet.current = () => router.push('/settings');
         setSheet(NONE);
