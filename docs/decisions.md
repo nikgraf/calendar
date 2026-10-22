@@ -214,6 +214,12 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   it for the pass and drops the calendarList token so the next pass lists
   in full; purging on the 404 was rejected in review (Google says to retry
   404s, and a delta never brings an unchanged calendar back).
+- **A gone calendar's purge is Google's timing** (2026-10-22, #235)
+  — `calendarList.live.ts` red on 3 of 15 nightlies: the calendar's events
+  never 404'd in three minutes, so nothing told the engine to relist. The
+  test polls six minutes, then skips while Google still lists the calendar
+  or serves its event. Rejected: a longer budget alone (the lag has no
+  known bound), a full calendarList every pass (lagging replicas list it).
 - **Re-auth and sync kicks** — a 401 flags the account `reauth_required`
   and keeps its ops queued for after the reconnect (same id, by email);
   wake/unlock/focus/foreground kick a sync, throttled to one per 15 s,

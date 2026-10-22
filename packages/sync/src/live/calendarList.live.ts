@@ -9,20 +9,21 @@ import {
   liveGoogleConfigFromEnv,
   scratchName,
 } from '../testing/liveGoogle.ts';
-import { bootstrap, hoursFromNow, titleFor, drain } from './support.ts';
+import { bootstrap, deletedStatus, drain, hoursFromNow, httpStatus, titleFor } from './support.ts';
 
 /**
  * The calendarList sync token on the real API: a calendar created after
  * the first pass arrives incrementally, and one deleted on Google takes
- * its events and its events sync state with it.
+ * its events and its events sync state with it once Google lets go of it.
  */
 
 const config = liveGoogleConfigFromEnv();
 // This file creates (and deletes) its own calendar inside the test —
 // creating one is what it tests.
 
-describe('live Google: calendarList', () => {
-  it.live('a calendar created after the first pass arrives, and its removal cascades', () =>
+// Six minutes of polling plus the setup: past the 300 s default.
+describe('live Google: calendarList', { timeout: 480_000 }, () => {
+  it.live('a calendar created after the first pass arrives, and its removal cascades', (ctx) =>
     Effect.gen(function* () {
       const { engine, mutations, scratch } = yield* bootstrap(config);
       const calendars = yield* CalendarRepo;
@@ -52,21 +53,50 @@ describe('live Google: calendarList', () => {
         expect((yield* state.get(LIVE_ACCOUNT_ID, eventsScope(id)))?.syncToken).toBeTruthy();
 
         yield* scratch.deleteCalendar(id);
-        // Google's calendarList can keep naming a deleted calendar for
-        // minutes, and the delta may not report the deletion at all; the
-        // engine then relists in full once the calendar's events 404, and
-        // drops it when Google stops naming it. Poll for that, well inside
-        // the 300 s test timeout.
-        const deadline = Date.now() + 180_000;
+        const deletedAt = Date.now();
+        const purged = Effect.map(
+          calendars.list(LIVE_ACCOUNT_ID),
+          (rows) => !rows.some((entry) => entry.id === id),
+        );
+        // Google's replicas disagree about a deleted calendar for minutes.
+        // A delta reports the deletion only if its replica has it, and one
+        // that missed it never does later; a lagging replica still lists
+        // the calendar and answers 200 for its events. The engine then
+        // waits for a 404 to relist in full, so how soon the purge lands is
+        // Google's to decide: past three minutes on three nightlies, five
+        // to six in a probe. Poll for six.
         let removed = false;
-        while (!removed && Date.now() < deadline) {
+        while (!removed && Date.now() < deletedAt + 360_000) {
           yield* engine.syncAll();
-          removed = !(yield* calendars.list(LIVE_ACCOUNT_ID)).some((entry) => entry.id === id);
+          removed = yield* purged;
           if (!removed) {
             yield* Effect.sleep('10 seconds');
           }
         }
-        expect(removed, 'the deleted calendar is purged within three minutes').toBe(true);
+        if (!removed) {
+          // Still here: ask Google itself. While it lists the calendar or
+          // serves its event, there is nothing to purge yet — that is a
+          // skip, not an engine failure.
+          const listed = yield* scratch.getCalendarListEntry(id).pipe(
+            Effect.as(true),
+            Effect.catchTag('LiveGoogleError', (error) =>
+              httpStatus(error) === 404 ? Effect.succeed(false) : Effect.fail(error),
+            ),
+          );
+          const served = (yield* deletedStatus(scratch, id, record.id)) === 'confirmed';
+          if (listed || served) {
+            const seconds = Math.round((Date.now() - deletedAt) / 1000);
+            ctx.skip(
+              `Google still ${listed ? 'lists the calendar' : 'serves its event'} ${seconds} s after deleting it`,
+            );
+          }
+          // Gone on Google: one pass may only meet the 404, the next relists.
+          for (let pass = 0; pass < 2 && !removed; pass++) {
+            yield* engine.syncAll();
+            removed = yield* purged;
+          }
+        }
+        expect(removed, 'the calendar is purged once Google no longer has it').toBe(true);
         expect(yield* (yield* EventRepo).getById(LIVE_ACCOUNT_ID, id, record.id)).toBeNull();
         expect(yield* state.get(LIVE_ACCOUNT_ID, eventsScope(id))).toBeNull();
       }).pipe(Effect.ensuring(Effect.ignore(scratch.deleteCalendar(id))));
