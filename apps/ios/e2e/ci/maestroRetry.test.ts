@@ -2,7 +2,11 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vite-plus/test';
 import { decideRetry, latchedCommand, parseJUnit } from './maestroRetry.ts';
 
-/** Maestro 2.10's own output after its driver was killed mid-flow (stack traces trimmed). */
+/**
+ * Maestro 2.10's own output: a report and run log after its driver was
+ * killed mid-flow (stack traces trimmed), and the console of a run whose
+ * driver never started.
+ */
 const fixture = (name: string): string =>
   readFileSync(new URL(`fixtures/${name}`, import.meta.url), 'utf8');
 

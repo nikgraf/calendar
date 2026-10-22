@@ -776,9 +776,9 @@ Electron binary (`electron --version`) and run spec files sequentially.
   instead of 120 (`MAESTRO_DRIVER_STARTUP_TIMEOUT`). Each attempt's
   report, console output and logs are in `~/.maestro/tests/<label>-<n>`
   (`--debug-output`, flattened: otherwise the run's log lands in a hidden
-  folder the artifact upload skips). A failed shard's artifact carries those reports, any crash
-  report and the app's `calendar.db` as the shard left it
-  (`e2e-app-state/`). To reproduce a CI run locally: `eas build:list
+  folder the artifact upload skips). A failed shard's artifact carries
+  those reports, any crash report and the app's `calendar.db` as the shard
+  left it (`e2e-app-state/`). To reproduce a CI run locally: `eas build:list
   --build-profile e2e-simulator`, `fetch-eas-build.sh <fingerprint>
   e2e-simulator build/e2e-app`, `repack-app.sh`, a fresh simulator, then
   `SIMULATOR_UDID=… node e2e/ci/run-flows.ts <label>` with the shard's
