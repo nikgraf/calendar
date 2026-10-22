@@ -115,76 +115,85 @@ const summary = (line: string): void => {
   }
 };
 
-const first = await attempt(1, flows);
-if (first.status === 0) {
-  process.exit(0);
-}
-
-// The run log (and each flow's copy of it) says whether the driver died.
-const runLog = readAll(filesUnder(first.dir, (name) => name === 'maestro.log'));
-const decision = decideRetry({
-  flows,
-  output: readFileSync(first.output, 'utf8'),
-  report: existsSync(first.report) ? readFileSync(first.report, 'utf8') : undefined,
-  runLog,
-});
-if (decision.kind !== 'retry') {
-  say(
-    decision.kind === 'pass'
-      ? 'maestro failed, but every flow passed'
-      : `no retry: ${decision.reason}`,
-  );
-  process.exit(first.status);
-}
-
-const retried = decision.flows.join(', ');
-summary(`### Maestro retry (${label})`);
-if (decision.cause === 'never-started') {
-  say(`::warning::The Maestro driver never started; running ${retried} again`);
-  summary(
-    `The XCTest driver never started. Ran again: ${decision.flows.map((flow) => `\`${flow}\``).join(', ')}.`,
-  );
-} else {
-  const command = latchedCommand(runLog) ?? 'unknown';
-  // XCTest's own account of why it lost the app: a main thread that would
-  // not answer is the app hanging (or starved), not Maestro.
-  const mainThreadBusy = /main thread busy/.test(
-    readAll(filesUnder(first.dir, (name) => /xctest/i.test(name) && name.endsWith('.log'))),
-  );
-  say(
-    `::warning::The Maestro driver died during ${command}${
-      mainThreadBusy ? ' (XCTest: app main thread busy)' : ''
-    }; running ${retried} again`,
-  );
-  summary(
-    `The XCTest driver died during \`${command}\`${
-      mainThreadBusy ? ', after XCTest found the app main thread busy' : ''
-    }. Ran again: ${decision.flows.map((flow) => `\`${flow}\``).join(', ')}.`,
-  );
-}
-
-// A hung app or a half-dead runner must not carry into the next invocation.
-for (const bundle of ['dev.mobile.maestro-driver-iosUITests.xctrunner', BUNDLE_ID]) {
-  spawnSync('xcrun', ['simctl', 'terminate', udid, bundle], { stdio: 'ignore' });
-}
-// The flow the driver died in stopped halfway: what it had changed (a
-// primary time zone in the app's data, a reminder in the device's
-// EventKit) would break its own first check. On CI the second run starts
-// from an erased simulator with the app installed and set up again, as
-// the first did.
-const app = process.env['E2E_APP'];
-if (app) {
-  const prepared = spawnSync(
-    'bash',
-    [fileURLToPath(new URL('prepare-simulator.sh', import.meta.url)), 'reset', app],
-    { stdio: 'inherit' },
-  );
-  if (prepared.status !== 0) {
-    say('::error::resetting the simulator for the second run failed');
-    process.exit(first.status);
+/**
+ * The run, answering the exit code. The process ends on its own with it:
+ * on a pipe, stdout and stderr write asynchronously, and `process.exit`
+ * would drop Maestro's last output still queued for the job log.
+ */
+const main = async (): Promise<number> => {
+  const first = await attempt(1, flows);
+  if (first.status === 0) {
+    return 0;
   }
-}
 
-const second = await attempt(2, decision.flows);
-summary(second.status === 0 ? 'The second run passed.' : 'The second run failed too.');
-process.exit(second.status);
+  // The run log (and each flow's copy of it) says whether the driver died.
+  const runLog = readAll(filesUnder(first.dir, (name) => name === 'maestro.log'));
+  const decision = decideRetry({
+    flows,
+    output: readFileSync(first.output, 'utf8'),
+    report: existsSync(first.report) ? readFileSync(first.report, 'utf8') : undefined,
+    runLog,
+  });
+  if (decision.kind !== 'retry') {
+    say(
+      decision.kind === 'pass'
+        ? 'maestro failed, but every flow passed'
+        : `no retry: ${decision.reason}`,
+    );
+    return first.status;
+  }
+
+  const retried = decision.flows.join(', ');
+  summary(`### Maestro retry (${label})`);
+  if (decision.cause === 'never-started') {
+    say(`::warning::The Maestro driver never started; running ${retried} again`);
+    summary(
+      `The XCTest driver never started. Ran again: ${decision.flows.map((flow) => `\`${flow}\``).join(', ')}.`,
+    );
+  } else {
+    const command = latchedCommand(runLog) ?? 'unknown';
+    // XCTest's own account of why it lost the app: a main thread that would
+    // not answer is the app hanging (or starved), not Maestro.
+    const mainThreadBusy = /main thread busy/.test(
+      readAll(filesUnder(first.dir, (name) => /xctest/i.test(name) && name.endsWith('.log'))),
+    );
+    say(
+      `::warning::The Maestro driver died during ${command}${
+        mainThreadBusy ? ' (XCTest: app main thread busy)' : ''
+      }; running ${retried} again`,
+    );
+    summary(
+      `The XCTest driver died during \`${command}\`${
+        mainThreadBusy ? ', after XCTest found the app main thread busy' : ''
+      }. Ran again: ${decision.flows.map((flow) => `\`${flow}\``).join(', ')}.`,
+    );
+  }
+
+  // A hung app or a half-dead runner must not carry into the next invocation.
+  for (const bundle of ['dev.mobile.maestro-driver-iosUITests.xctrunner', BUNDLE_ID]) {
+    spawnSync('xcrun', ['simctl', 'terminate', udid, bundle], { stdio: 'ignore' });
+  }
+  // The flow the driver died in stopped halfway: what it had changed (a
+  // primary time zone in the app's data, a reminder in the device's
+  // EventKit) would break its own first check. On CI the second run starts
+  // from an erased simulator with the app installed and set up again, as
+  // the first did.
+  const app = process.env['E2E_APP'];
+  if (app) {
+    const prepared = spawnSync(
+      'bash',
+      [fileURLToPath(new URL('prepare-simulator.sh', import.meta.url)), 'reset', app],
+      { stdio: 'inherit' },
+    );
+    if (prepared.status !== 0) {
+      say('::error::resetting the simulator for the second run failed');
+      return first.status;
+    }
+  }
+
+  const second = await attempt(2, decision.flows);
+  summary(second.status === 0 ? 'The second run passed.' : 'The second run failed too.');
+  return second.status;
+};
+
+process.exitCode = await main();

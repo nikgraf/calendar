@@ -183,15 +183,18 @@ describe('decideRetry', () => {
     ).toEqual({ cause: 'never-started', flows: FLOWS, kind: 'retry' });
   });
 
-  it('fails without a report when the driver timed out after the session opened', () => {
-    // A runner restart mid-run can time out too; flows may have run (and
-    // failed on their own) before it, so nothing says a retry is safe.
-    const midRun = fixture('driver-never-started.console.log').replaceAll(
-      /\tat maestro\.cli\.session\.MaestroSessionManager\.newSession[^\n]*\n/g,
-      '\tat maestro.orchestra.Orchestra.runFlow(Orchestra.kt:212)\n',
+  it('fails without a report when the driver timed out anywhere but session creation', () => {
+    // Maestro 2.10 throws this only while creating the session, but a
+    // timeout from inside a flow would also pass `newSession`, which runs
+    // the flows: flows may have run (and failed on their own) before it.
+    const inFlow = fixture('driver-never-started.console.log').replace(
+      /\tat maestro\.cli\.session\.MaestroSessionManager\.createIOS[^\n]*\n\tat maestro\.cli\.session\.MaestroSessionManager\.createMaestro[^\n]*\n/,
+      '\tat maestro.cli.runner.TestSuiteInteractor.runFlow(TestSuiteInteractor.kt:230)\n',
     );
-    expect(midRun).toContain('IOSDriverTimeoutException');
-    expect(decideRetry({ flows: FLOWS, output: midRun, report: undefined, runLog: '' })).toEqual({
+    expect(inFlow).toContain('IOSDriverTimeoutException');
+    expect(inFlow).toContain('MaestroSessionManager.newSession(');
+    expect(inFlow).not.toContain('createMaestro');
+    expect(decideRetry({ flows: FLOWS, output: inFlow, report: undefined, runLog: '' })).toEqual({
       kind: 'fail',
       reason: 'Maestro wrote no JUnit report',
     });

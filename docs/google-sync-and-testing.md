@@ -770,7 +770,7 @@ Electron binary (`electron --version`) and run spec files sequentially.
   writes no report (runs 39144942743: XCTest timed out waiting for
   accessibility; 39668426261: the runner answered at 132 s). Only
   Maestro's console shows that (`IOSDriverTimeoutException` with a stack
-  through `MaestroSessionManager.newSession`), so the wrapper copies what
+  through `MaestroSessionManager.createMaestro`), so the wrapper copies what
   Maestro prints to `console.log` while streaming it; a missing report
   for any other reason still fails. The job also gives the runner 240 s
   instead of 120 (`MAESTRO_DRIVER_STARTUP_TIMEOUT`). Each attempt's

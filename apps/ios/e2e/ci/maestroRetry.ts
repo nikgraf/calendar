@@ -58,13 +58,14 @@ const UNREACHABLE_FAILURE =
   /^\s*(?:[\w.$]+\.)?(?:DeviceUnreachableException|IOSDriverTimeoutException)\b/;
 
 /**
- * The driver's wait running out while Maestro opened its session, in
- * Maestro's console output: the exception's own stack trace reaches
- * `MaestroSessionManager.newSession`, which runs before the first flow.
+ * The driver's wait running out while Maestro created its session, in
+ * Maestro's console output: the exception's own stack trace passes
+ * `MaestroSessionManager.createMaestro`, which opens the device before the
+ * first flow. `newSession` alone would not do: the flows run inside it too.
  * The run log (`maestro.log`) has only the failed status checks.
  */
 const NEVER_STARTED =
-  /IOSDriverTimeoutException\b[^\n]*(?:\n[ \t]+at [^\n]*)*?\n[ \t]+at maestro\.cli\.session\.MaestroSessionManager\.newSession\b/;
+  /IOSDriverTimeoutException\b[^\n]*(?:\n[ \t]+at [^\n]*)*?\n[ \t]+at maestro\.cli\.session\.MaestroSessionManager\.createMaestro\b/;
 
 const ENTITIES: Readonly<Record<string, string>> = {
   amp: '&',
