@@ -2,6 +2,7 @@ import type { CaptureSource } from '@calendar/ai';
 import {
   defaultTodoKind,
   findNotificationEvent,
+  useBackendMutations,
   useCalendars,
   useCaptureModel,
   useTaskLists,
@@ -11,6 +12,7 @@ import {
 import {
   availableItemKinds,
   type BirthdayOccurrence,
+  DEFAULT_ONBOARDING_STATE,
   eventIdentity,
   type EventRecord,
   type ItemKind,
@@ -35,6 +37,7 @@ import { backendClient } from '../backend.ts';
 import { fixtureShareFromUrl, takeIncomingShare } from '../incomingShare.ts';
 import { subscribeNotificationTaps } from '../notifications.ts';
 import { languageModel, modelFixture, textRecognizer } from '../model.ts';
+import { forceOnboarding } from '../onboarding.ts';
 import { CaptureBanner } from './CaptureBanner.tsx';
 import { EventDetailSheet } from './EventDetailSheet.tsx';
 import { EventEditSheet, type EditSeed } from './EventEditSheet.tsx';
@@ -49,6 +52,8 @@ import {
 
 /** The share extension opens the app at `<scheme>://expo-sharing` once the payload is stored. */
 const isShareUrl = (url: string) => /^[a-z-]+:\/\/expo-sharing/i.test(url);
+/** The e2e flows' `<scheme>://onboarding-fixture`: the first run from the top, under the fixture model only. */
+const isOnboardingFixtureUrl = (url: string) => /^[a-z-]+:\/\/onboarding-fixture/i.test(url);
 
 /** What a "+" asks for: a new item on the day being viewed. */
 export interface NewItemRequest {
@@ -126,6 +131,7 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
   const [sheet, setSheet] = useState<Sheet>(NONE);
   const calendars = useCalendars();
   const taskLists = useTaskLists();
+  const mutations = useBackendMutations();
 
   // The editor route follows the state: pushed when an editor opens (half
   // height for a new item, full for an existing one), popped when the
@@ -295,6 +301,15 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
   const onIncoming = useEffectEvent((source: CaptureSource, onSettled?: () => void) => {
     startCapture(source, onSettled);
   });
+  // The onboarding flow's deep link (fixture builds only): the stored
+  // state back to a fresh install's, onboarding switched on for this
+  // launch whatever the bundle says, and the setup presented — over any
+  // sheet, as a share is.
+  const onOnboardingFixture = useEffectEvent(() => {
+    forceOnboarding();
+    setSheet(NONE);
+    void mutations.setOnboarding(DEFAULT_ONBOARDING_STATE).then(() => router.push('/setup'));
+  });
   useEffect(() => {
     const pickUpShare = () => {
       const share = takeIncomingShare();
@@ -308,6 +323,10 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
       }
       if (isShareUrl(url)) {
         pickUpShare();
+        return;
+      }
+      if (modelFixture && isOnboardingFixtureUrl(url)) {
+        onOnboardingFixture();
         return;
       }
       const fixtureSource = modelFixture ? fixtureShareFromUrl(url) : undefined;

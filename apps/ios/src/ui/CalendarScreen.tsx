@@ -10,6 +10,7 @@ import {
   useOnDraftReveal,
   useOverdueTasksStable,
   useRequestDraftFocus,
+  useSetupNeeded,
   useBirthdaysInRangeStable,
   useEventReadOnlyLookup,
   useTaskReadOnlyLookup,
@@ -29,12 +30,14 @@ import {
   WEEK_SWIPE_BUFFER,
   weekStart,
 } from '@calendar/core';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { MenuView } from '@expo/ui/community/menu';
+import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { AppState, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import { kickSync, runLocalNotifications, startSync, subscribeInvalidations } from '../backend.ts';
 import { registerBackgroundRefresh } from '../backgroundTask.ts';
+import { useOnboardingEnabled } from '../onboarding.ts';
 import { AccountButton } from './AccountButton.tsx';
 import { ADD_BUTTON_CLEARANCE, AddButton } from './AddButton.tsx';
 import { AgendaView } from './AgendaView.tsx';
@@ -83,6 +86,7 @@ export function CalendarScreen() {
     });
     return () => subscription.remove();
   }, []);
+  useFirstRun();
   const zones = useTimeZones();
   const prefs = useViewPreferences();
   if (!zones.loaded || prefs === null) {
@@ -96,6 +100,25 @@ export function CalendarScreen() {
     />
   );
 }
+
+/**
+ * The first run: once the accounts and the onboarding state are read and
+ * nothing is connected and the setup never ran, the setup modal goes up
+ * over the calendar — once per launch, so a Skip is not met by it again
+ * on the next read. Off under EXPO_PUBLIC_CALENDAR_ONBOARDING=off.
+ */
+const useFirstRun = () => {
+  const router = useRouter();
+  const enabled = useOnboardingEnabled();
+  const due = useSetupNeeded();
+  const presented = useRef(false);
+  useEffect(() => {
+    if (enabled && due === true && !presented.current) {
+      presented.current = true;
+      router.push('/setup');
+    }
+  }, [due, enabled, router]);
+};
 
 function CalendarBody({
   initialView,

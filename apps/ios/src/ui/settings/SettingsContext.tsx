@@ -29,13 +29,21 @@ export type Connection = 'calendar' | 'contacts' | 'google' | 'reminders';
 export type DeviceConnection = Exclude<Connection, 'google'>;
 
 interface SettingsConnections {
-  /** Google sign-in; `loginHint` is the account being reconnected, so Google opens on it. */
-  addAccount: (loginHint?: string) => Promise<void>;
+  /**
+   * Google sign-in; `loginHint` is the account being reconnected, so
+   * Google opens on it, and `tasks: false` (the setup's Tasks box
+   * unticked) leaves the tasks scope off the consent screen.
+   */
+  addAccount: (options?: {
+    readonly loginHint?: string | undefined;
+    readonly tasks?: boolean | undefined;
+  }) => Promise<void>;
   /** A sign-in or device connection is in flight; every connect action waits. */
   busy: boolean;
   /** The Apple Calendar permission status (`checking…` until read). */
   calendar: string;
-  connectDevice: (provider: DeviceConnection) => Promise<void>;
+  /** Asks iOS, connects on a grant; resolves with whether it was granted (undefined: the ask itself failed). */
+  connectDevice: (provider: DeviceConnection) => Promise<boolean | undefined>;
   connecting: Connection | null;
   contacts: string;
   /** The last Contacts connection did not finish, whatever iOS reports now. */
@@ -101,9 +109,9 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   }, [refreshPermissions]);
 
   const connectDevice = useCallback(
-    async (provider: DeviceConnection) => {
+    async (provider: DeviceConnection): Promise<boolean | undefined> => {
       if (busyRef.current) {
-        return;
+        return undefined;
       }
       busyRef.current = true;
       setConnecting(provider);
@@ -162,6 +170,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         busyRef.current = false;
         setConnecting(null);
       }
+      return granted;
     },
     [mutations, refreshPermissions],
   );
@@ -177,7 +186,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const addAccount = useCallback(
-    async (loginHint?: string) => {
+    async (options: { readonly loginHint?: string; readonly tasks?: boolean } = {}) => {
       if (busyRef.current) {
         return;
       }
@@ -185,7 +194,10 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       setConnecting('google');
       setError(null);
       try {
-        await mutations.addAccount(loginHint === undefined ? {} : { loginHint });
+        await mutations.addAccount({
+          ...(options.loginHint === undefined ? {} : { loginHint: options.loginHint }),
+          ...(options.tasks === undefined ? {} : { tasks: options.tasks }),
+        });
       } catch (error) {
         // A dismissed sheet is the user changing their mind, not an error.
         if (!isSignInCancelled(error)) {
