@@ -118,19 +118,27 @@ describe('closeDeleted', () => {
 
 // The host asks on every render while a finished capture's thread is held.
 describe('captureMayOpen', () => {
-  it('opens at once over nothing, a detail or a birthday', () => {
-    expect(captureMayOpen(NONE, true)).toBe(true);
-    expect(captureMayOpen(detail(event()), true)).toBe(true);
-    expect(captureMayOpen(birthday, true)).toBe(true);
+  const calendar = { formSheetGone: true, settingsOpen: false };
+
+  it('opens at once when nothing is up', () => {
+    expect(captureMayOpen(NONE, calendar)).toBe(true);
   });
 
   it('waits while an editor the user opened during the run is up', () => {
-    expect(captureMayOpen(newItem(1), true)).toBe(false);
-    expect(captureMayOpen(editing(2, event()), true)).toBe(false);
+    expect(captureMayOpen(newItem(1), calendar)).toBe(false);
+    expect(captureMayOpen(editing(2, event()), calendar)).toBe(false);
   });
 
   it("waits until that editor's form sheet is gone after it closed", () => {
-    expect(captureMayOpen(NONE, false)).toBe(false);
-    expect(captureMayOpen(detail(event({ id: 'lunch', title: 'Lunch' })), false)).toBe(false);
+    expect(captureMayOpen(NONE, { ...calendar, formSheetGone: false })).toBe(false);
+  });
+
+  it('waits for a detail or a birthday, also one tapped behind the closing editor', () => {
+    expect(captureMayOpen(detail(event({ id: 'lunch', title: 'Lunch' })), calendar)).toBe(false);
+    expect(captureMayOpen(birthday, calendar)).toBe(false);
+  });
+
+  it('waits while Settings is open, the avatar tapped from the editor included', () => {
+    expect(captureMayOpen(NONE, { ...calendar, settingsOpen: true })).toBe(false);
   });
 });

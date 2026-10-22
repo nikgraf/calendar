@@ -19,7 +19,7 @@ import {
   type TaskRecord,
   Temporal,
 } from '@calendar/core';
-import { router } from 'expo-router';
+import { router, usePathname } from 'expo-router';
 import {
   createContext,
   type ReactNode,
@@ -225,10 +225,13 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
   // What a capture found opens the editor as one thread of drafts on the
   // first one's day, as on the desktop: each is seen in the editor before
   // anything is written; the pager steps through them, "Add all" writes
-  // them. An editor the user opened while it ran stays: the thread is held
-  // until that editor's sheet is gone (`captureMayOpen`).
+  // them. It never replaces what the user opened while it ran (an editor,
+  // a detail, Settings): the thread is held until that has closed
+  // (`captureMayOpen`).
+  const pathname = usePathname();
+  const settingsOpen = pathname === '/settings' || pathname.startsWith('/settings/');
   const [captured, setCaptured] = useState<EditSheet | null>(null);
-  if (captured !== null && captureMayOpen(sheet, formSheetGone)) {
+  if (captured !== null && captureMayOpen(sheet, { formSheetGone, settingsOpen })) {
     setCaptured(null);
     setSheet(captured);
   }
@@ -320,7 +323,7 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
   // and in place of whatever sheet was open — a capture's review included,
   // which would otherwise stay up beside it (two sheets cannot present) and
   // could replace the detail when its run finished, or its held thread
-  // once an editor closed. An event deleted since opens nothing and leaves
+  // once the detail closed. An event deleted since opens nothing and leaves
   // the capture alone.
   const onNotificationTap = useEffectEvent((target: NotificationTarget) => {
     void findNotificationEvent(backendClient, target).then((event) => {

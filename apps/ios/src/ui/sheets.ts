@@ -48,15 +48,17 @@ export const closeEditor =
     current.kind === 'edit' && current.opening === opening ? NONE : current;
 
 /**
- * Whether a finished capture's thread may open now. It takes the place of
- * nothing, a detail or a birthday (read-only: nothing is lost), but never
- * of an open editor, whose unsaved input would go with it — the user may
- * open one while the capture runs, since its banner blocks nothing. It
- * waits until that editor's form sheet is gone (`formSheetGone`), so its
- * own route is not pushed while the old one pops.
+ * Whether a finished capture's thread may open now: only once nothing else
+ * is up. Its banner blocks nothing, so while it runs the user may open an
+ * editor (whose unsaved input would go with a replaced sheet), a detail,
+ * a birthday or Settings; the thread waits until that has closed, and the
+ * editor's form sheet is gone too (`formSheetGone`), so its own route is
+ * not pushed while the old one pops.
  */
-export const captureMayOpen = (current: Sheet, formSheetGone: boolean): boolean =>
-  current.kind !== 'edit' && formSheetGone;
+export const captureMayOpen = (
+  current: Sheet,
+  { formSheetGone, settingsOpen }: { formSheetGone: boolean; settingsOpen: boolean },
+): boolean => current.kind === 'none' && formSheetGone && !settingsOpen;
 
 /**
  * The detail's Delete likewise, once the write answers: it closes the
