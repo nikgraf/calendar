@@ -571,6 +571,14 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   Rejected, as on the desktop: ignoring taps behind the sheet while a
   write runs; dropping the close when the editor unmounts. Open: an
   item reopened during its own editor's Delete stays up, as there.
+- **A share's thread waits for an open editor** (2026-10-22, #237) — an
+  iOS capture runs under a banner that blocks nothing, so the user can
+  open an editor meanwhile; its thread replaced that editor and dropped
+  what was typed. It now waits until that editor's sheet is gone, and
+  opens at once over nothing, a detail or a birthday, as before. The
+  desktop's capture dialog is modal. Rejected: offering the result from
+  the banner (a step more when nothing is open); dropping the result.
+  Open: nothing says a thread is waiting.
 
 ## Invitees, contacts and birthdays
 
