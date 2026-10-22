@@ -112,6 +112,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   per-spec retry, and Maestro's `retry` command (it retries assertions and
   cannot outlive the latch). Simulator prep turns keyboard predictions off
   and boots out apsd's log flood. Open: whether the keyboard hang gets rarer.
+- **Maestro driver that never starts** (2026-10-22) — four shard-1 runs
+  failed before any flow: Maestro gave up on its XCTest runner while
+  opening the session and wrote no report, so #205's retry never applied.
+  `run-flows.ts` now copies Maestro's console to `console.log` and runs
+  every flow once more when the timeout's stack reaches `newSession`; the
+  runner also gets 240 s (`MAESTRO_DRIVER_STARTUP_TIMEOUT`). Rejected: a
+  retry for any missing report (a mid-run restart can follow a flow that
+  failed on its own), and the longer timeout alone (an XCTest that never
+  initializes still fails). Open: whether the cold-runner case returns.
 - **iOS e2e without MapKit** (2026-10-15, `todo/ios-geo-off`) — CI's bundle
   sets `EXPO_PUBLIC_CALENDAR_GEO=off`, the desktop's `CALENDAR_GEO=off`:
   flow 22's "Room 4" was geocoded live on every run (once to a place named

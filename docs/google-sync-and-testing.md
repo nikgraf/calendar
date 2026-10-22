@@ -764,10 +764,19 @@ Electron binary (`electron --version`) and run spec files sequentially.
   died on and whether XCTest found the app's main thread busy. A flow that
   failed on its own (an assertion, an element not found, anything but
   `DeviceUnreachableException`) fails the job without a retry, even beside
-  a dead driver, and so does a second death. Each attempt's report and
-  logs are in `~/.maestro/tests/<label>-<n>` (`--debug-output`, flattened:
-  otherwise the run's log lands in a hidden folder the artifact upload
-  skips). A failed shard's artifact carries those reports, any crash
+  a dead driver, and so does a second death. A driver that never starts
+  gets the same single retry for every flow of the invocation: Maestro
+  gives up on its runner while opening the session, before any flow, and
+  writes no report (runs 39144942743: XCTest timed out waiting for
+  accessibility; 39668426261: the runner answered at 132 s). Only
+  Maestro's console shows that (`IOSDriverTimeoutException` with a stack
+  through `MaestroSessionManager.newSession`), so the wrapper copies what
+  Maestro prints to `console.log` while streaming it; a missing report
+  for any other reason still fails. The job also gives the runner 240 s
+  instead of 120 (`MAESTRO_DRIVER_STARTUP_TIMEOUT`). Each attempt's
+  report, console output and logs are in `~/.maestro/tests/<label>-<n>`
+  (`--debug-output`, flattened: otherwise the run's log lands in a hidden
+  folder the artifact upload skips). A failed shard's artifact carries those reports, any crash
   report and the app's `calendar.db` as the shard left it
   (`e2e-app-state/`). To reproduce a CI run locally: `eas build:list
   --build-profile e2e-simulator`, `fetch-eas-build.sh <fingerprint>

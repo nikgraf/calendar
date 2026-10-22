@@ -218,6 +218,11 @@ jobs:
       # Pinned + checksum-verified below; bump both together.
       MAESTRO_VERSION: 2.10.0
       MAESTRO_SHA256: 29b675e10cc12080e445e9bfb2e2b4e4dfb9c0f2e30d5884120d258b5e1cd991
+      # How long Maestro waits for its XCTest runner (ms; 120 s by default).
+      # A cold runner answered at 132 s and Maestro had already given up
+      # (run 39668426261); a runner that never answers still fails after
+      # this and run-flows.ts runs the flows once more.
+      MAESTRO_DRIVER_STARTUP_TIMEOUT: 240000
     steps:
       - uses: actions/checkout@v7
       # First, in the background: a runner's first boot spends about two
