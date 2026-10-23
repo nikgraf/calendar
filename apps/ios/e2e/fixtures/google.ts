@@ -59,7 +59,8 @@ const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
  * birthday flow, three contacts for the quick-add flow's guests. A
  * second account is listed but signed out, as an import leaves one: its
  * row makes the Settings root scroll, as it does for anyone with two
- * accounts (Back to such a root froze iOS 26 while it had a large title).
+ * accounts (Back to such a root froze iOS 26 while it had a large title),
+ * and the header's account button carries its sign-in dot.
  * Served by the in-process fake API; nothing here ever reaches Google.
  */
 export const googleFixture: GoogleFixture = {
