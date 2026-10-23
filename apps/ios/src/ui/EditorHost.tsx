@@ -2,8 +2,8 @@ import type { CaptureSource } from '@calendar/ai';
 import {
   defaultTodoKind,
   findNotificationEvent,
-  useBackendMutations,
   useCalendars,
+  useUpdateOnboarding,
   useCaptureModel,
   useTaskLists,
   useTimeZones,
@@ -12,7 +12,6 @@ import {
 import {
   availableItemKinds,
   type BirthdayOccurrence,
-  DEFAULT_ONBOARDING_STATE,
   eventIdentity,
   type EventRecord,
   type ItemKind,
@@ -131,7 +130,7 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
   const [sheet, setSheet] = useState<Sheet>(NONE);
   const calendars = useCalendars();
   const taskLists = useTaskLists();
-  const mutations = useBackendMutations();
+  const updateOnboarding = useUpdateOnboarding();
 
   // The editor route follows the state: pushed when an editor opens (half
   // height for a new item, full for an existing one), popped when the
@@ -308,7 +307,8 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
   const onOnboardingFixture = useEffectEvent(() => {
     forceOnboarding();
     setSheet(NONE);
-    void mutations.setOnboarding(DEFAULT_ONBOARDING_STATE).then(() => router.push('/setup'));
+    // Guarded: a failed reset is a toast, and the setup still goes up.
+    void updateOnboarding({ reset: 'all' }).then(() => router.push('/setup'));
   });
   useEffect(() => {
     const pickUpShare = () => {

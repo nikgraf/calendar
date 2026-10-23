@@ -14,7 +14,7 @@ import {
   isSignInCancelled,
   type SetupOutcome,
 } from '@calendar/core';
-import { type ReactNode, useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { Dialog } from '../Dialog.tsx';
 import { type PendingImport, pickSettingsFile, shortPath } from '../settingsTransfer.ts';
 import { Button } from '../ui/Button.tsx';
@@ -77,10 +77,11 @@ const readContactsStatus = () => window.calendarBridge.contactsStatus();
  * The first run on the Mac: the iPhone's screens as one dialog over the
  * calendar — Welcome, "What do you use?", one step per ticked source,
  * and the copy door (a settings file for now). It opens on its own when
- * nothing is connected and the setup never ran, or on request from the
- * sidebar card's "Add your accounts" row; Skip, Escape and the scrim
- * leave it as skipped, the last step as done. Mounted once, in the
- * calendar window's root, beside the agent approval dialog.
+ * the window's first read finds nothing connected and the setup never
+ * ran, or on request from the sidebar card's "Add your accounts" row;
+ * Skip, Escape and the scrim leave it as skipped, the last step as done.
+ * Mounted once, in the calendar window's root, beside the agent approval
+ * dialog.
  */
 export function SetupDialog() {
   const enabled = useOnboardingEnabled();
@@ -90,40 +91,89 @@ export function SetupDialog() {
   // finished, though "nothing connected" stops being true as soon as the
   // Google step signs the first account in.
   const [open, setOpen] = useState<Step | null>(null);
-  // Opened on its own once per launch at most; a Skip is not met again.
-  const [autoOpened, setAutoOpened] = useState(false);
-  if (enabled === true && due === true && !autoOpened) {
-    // Render-phase state adjustment (the React "derive from props" pattern).
-    setAutoOpened(true);
-    setOpen('welcome');
+  // Whether it opens on its own is decided once per window, from the
+  // first read: a Skip is not met again, and the last account removed
+  // later (in the Settings window) does not open it mid-session.
+  const [decided, setDecided] = useState(false);
+  // Opened on its own and still on Welcome, untouched. If accounts arrive
+  // some other way meanwhile — the watched settings file is imported a
+  // beat after launch, possibly after the first read — there is nothing
+  // left to set up: it closes again, recording nothing.
+  const [untouched, setUntouched] = useState(false);
+  // Render-phase state adjustments (the React "derive from props" pattern).
+  if (enabled === true && due !== null && !decided) {
+    setDecided(true);
+    if (due) {
+      setOpen('welcome');
+      setUntouched(true);
+    }
   }
-  useEffect(() => onSetupRequested(() => setOpen('sources')), []);
+  if (untouched && due === false) {
+    setUntouched(false);
+    setOpen(null);
+  }
+  useEffect(
+    () =>
+      onSetupRequested(() => {
+        setUntouched(false);
+        setOpen('sources');
+      }),
+    [],
+  );
   if (open === null) {
     return null;
   }
   const finish = (outcome: SetupOutcome) => {
+    setUntouched(false);
     setOpen(null);
     void update({ setup: outcome });
   };
-  return <SetupPanel initialStep={open} key={open} onFinish={finish} />;
+  return (
+    <SetupPanel
+      initialStep={open}
+      key={open}
+      onFinish={finish}
+      onStepChange={() => setUntouched(false)}
+    />
+  );
 }
 
 function SetupPanel({
   initialStep,
   onFinish,
+  onStepChange,
 }: {
   initialStep: Step;
   onFinish: (outcome: SetupOutcome) => void;
+  /** Any step taken: the dialog is no longer an untouched Welcome. */
+  onStepChange: () => void;
 }) {
-  const [step, setStep] = useState<Step>(initialStep);
+  const [step, showStep] = useState<Step>(initialStep);
+  const setStep = (to: Step) => {
+    onStepChange();
+    showStep(to);
+  };
   const [sources, setSources] = useState<Sources>(DEFAULT_SOURCES);
   const [imported, setImported] = useState<PendingImport | null>(null);
   const steps = stepsFor(sources);
-  const skip = () => onFinish('skipped');
+  // Ended once: an answer that comes in after Skip (macOS granting access
+  // while the ask was still on screen) neither moves on nor turns the
+  // skip into done.
+  const ended = useRef(false);
+  const end = (outcome: SetupOutcome) => {
+    if (!ended.current) {
+      ended.current = true;
+      onFinish(outcome);
+    }
+  };
+  const skip = () => end('skipped');
   const next = (from: Step) => {
+    if (ended.current) {
+      return;
+    }
     const following = steps[steps.indexOf(from) + 1];
     if (following === undefined) {
-      onFinish('done');
+      end('done');
     } else {
       setStep(following);
     }
@@ -204,7 +254,7 @@ function SetupPanel({
             onSkip={skip}
           />
         ) : (
-          <CopiedStep imported={imported} onFinish={() => onFinish('done')} />
+          <CopiedStep imported={imported} onFinish={() => end('done')} />
         )}
       </div>
     </Dialog>

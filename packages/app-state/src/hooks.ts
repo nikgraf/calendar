@@ -660,12 +660,12 @@ export const useBackendMutations = () => {
       setCalendarVisible: set('setCalendarVisible'),
       setEventNotificationSettings: set('setEventNotificationSettings'),
       setMirrorEnabled: set('setMirrorEnabled'),
-      setOnboarding: set('setOnboarding'),
       setTaskListVisible: set('setTaskListVisible'),
       setTimeZoneSettings: set('setTimeZoneSettings'),
       setViewPreferences: set('setViewPreferences'),
       syncNow: set('syncNow'),
       updateEvent: set('updateEvent'),
+      updateOnboarding: set('updateOnboarding'),
       updateRecurring: set('updateRecurring'),
       updateTask: set('updateTask'),
     };

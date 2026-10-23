@@ -1,6 +1,7 @@
 import { Schema } from 'effect';
 import { describe, expect, it } from 'vite-plus/test';
 import {
+  applyOnboardingChange,
   canonicalOnboardingState,
   cardVisible,
   DEFAULT_ONBOARDING_STATE,
@@ -103,6 +104,52 @@ describe('marks', () => {
       lessons: {},
       setup: 'done',
     });
+  });
+});
+
+describe('applyOnboardingChange', () => {
+  const stored: OnboardingState = {
+    card: 'collapsed',
+    lessons: { create: 'done', zones: 'skipped' },
+    setup: 'skipped',
+  };
+
+  it('changes only what it names, keeping the marks and the outcome', () => {
+    expect(applyOnboardingChange(stored, { card: 'hidden' })).toEqual({
+      ...stored,
+      card: 'hidden',
+    });
+    expect(applyOnboardingChange(stored, { setup: 'done' })).toEqual({ ...stored, setup: 'done' });
+    expect(applyOnboardingChange(stored, { lesson: { id: 'alerts', mark: 'skipped' } })).toEqual({
+      ...stored,
+      lessons: { ...stored.lessons, alerts: 'skipped' },
+    });
+  });
+
+  it('never downgrades a try to a skip', () => {
+    expect(applyOnboardingChange(stored, { lesson: { id: 'create', mark: 'skipped' } })).toBe(
+      stored,
+    );
+  });
+
+  it('two changes made from the same read both land, in either order', () => {
+    const first = { lesson: { id: 'alerts', mark: 'skipped' } } as const;
+    const second = { lesson: { id: 'search', mark: 'done' } } as const;
+    const expected = {
+      ...stored,
+      lessons: { ...stored.lessons, alerts: 'skipped', search: 'done' },
+    };
+    expect(applyOnboardingChange(applyOnboardingChange(stored, first), second)).toEqual(expected);
+    expect(applyOnboardingChange(applyOnboardingChange(stored, second), first)).toEqual(expected);
+  });
+
+  it('resets: Start Over keeps the outcome, all is a fresh install', () => {
+    expect(applyOnboardingChange(stored, { reset: 'lessons' })).toEqual({
+      card: 'expanded',
+      lessons: {},
+      setup: 'skipped',
+    });
+    expect(applyOnboardingChange(stored, { reset: 'all' })).toEqual(DEFAULT_ONBOARDING_STATE);
   });
 });
 

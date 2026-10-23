@@ -16,7 +16,7 @@ import {
   type TaskListInfo,
   type TaskRecord,
 } from '@calendar/core';
-import { useEffect, useEffectEvent, useRef } from 'react';
+import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import { desktopLanguageModel } from '../../ai/desktopModel.ts';
 import { backend } from '../../backend.ts';
 import { LessonBanner } from '../../onboarding/LessonBanner.tsx';
@@ -111,9 +111,13 @@ export function EditorPanel({
   const lesson = seed.lesson;
   const markLesson = useMarkLesson();
   const lessonTried = useRef(false);
+  // Once tried, the banner keeps its hint over the draft but loses Skip,
+  // which closes the editor — with the draft in it.
+  const [lessonOpen, setLessonOpen] = useState(lesson !== undefined);
   const lessonDone = () => {
     if (lesson && !lessonTried.current) {
       lessonTried.current = true;
+      setLessonOpen(false);
       void markLesson(lesson, 'done');
     }
   };
@@ -228,7 +232,7 @@ export function EditorPanel({
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pt-1 pb-4">
-        {lesson ? <LessonBanner id={lesson} onSkip={onClose} /> : null}
+        {lesson ? <LessonBanner id={lesson} onSkip={lessonOpen ? onClose : undefined} /> : null}
         {sourceKind === 'new' ? (
           <QuickAddBar
             editKey={userEdits}

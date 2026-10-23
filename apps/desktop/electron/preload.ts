@@ -32,12 +32,12 @@ contextBridge.exposeInMainWorld('calendarBridge', {
   modelStatus: () => ipcRenderer.invoke('model:status'),
   modelTranscribe: (audioBase64: string, locale: string) =>
     ipcRenderer.invoke('model:transcribe', audioBase64, locale),
-  /** Whether the first run and the Getting started card show at all (CALENDAR_ONBOARDING=off: never). */
   onAgentsChanged: (listener: () => void) => {
     const wrapped = () => listener();
     ipcRenderer.on('agents:changed', wrapped);
     return () => ipcRenderer.off('agents:changed', wrapped);
   },
+  /** Whether the first run and the Getting started card show at all (CALENDAR_ONBOARDING=off: never). */
   onboardingEnabled: () => ipcRenderer.invoke('onboarding:enabled'),
   /**
    * Lessons asked for from the settings window (`openLesson`), to open in

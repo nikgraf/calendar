@@ -112,12 +112,12 @@ const stubHandlers: BackendHandlers = {
   setCalendarVisible: () => Effect.void,
   setEventNotificationSettings: () => Effect.succeed({ notificationsGranted: true }),
   setMirrorEnabled: notStubbed,
-  setOnboarding: () => Effect.void,
   setTaskListVisible: () => Effect.void,
   setTimeZoneSettings: () => Effect.void,
   setViewPreferences: () => Effect.void,
   syncNow: notStubbed,
   updateEvent: () => Effect.void,
+  updateOnboarding: () => Effect.void,
   updateRecurring: () => Effect.void,
   updateTask: () => Effect.void,
 };

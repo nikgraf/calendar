@@ -33,7 +33,7 @@ import {
   TaskStatus,
 } from './types.ts';
 import { TimeZoneSettings } from './timeZoneSettings.ts';
-import { OnboardingState } from './onboarding.ts';
+import { OnboardingChange, OnboardingState } from './onboarding.ts';
 import { ViewPreferences } from './viewPreferences.ts';
 
 /**
@@ -809,10 +809,6 @@ export class AppBackendRpcs extends RpcGroup.make(
       isVisible: Schema.Boolean,
     },
   }),
-  Rpc.make('setOnboarding', {
-    error: BackendError,
-    payload: OnboardingState,
-  }),
   Rpc.make('setTaskListVisible', {
     error: BackendError,
     payload: {
@@ -838,6 +834,11 @@ export class AppBackendRpcs extends RpcGroup.make(
       changes: UpdateEventChanges,
       eventId: Schema.String,
     },
+  }),
+  /** One change to this device's onboarding state, applied to what is stored (`applyOnboardingChange`). */
+  Rpc.make('updateOnboarding', {
+    error: BackendError,
+    payload: OnboardingChange,
   }),
   Rpc.make('updateRecurring', {
     error: BackendError,

@@ -11,8 +11,8 @@ const HINTS: Partial<Record<LessonId, string>> = {
 /**
  * The lesson's frame when the lesson is an existing surface: a line
  * above the editor's quick-add field or the search field saying which
- * lesson this is and what to try, with Skip. The surface itself is the
- * real thing; nothing else changes.
+ * lesson this is and what to try, with Skip until it was tried. The
+ * surface itself is the real thing; nothing else changes.
  */
 export function LessonBanner({
   id,
@@ -22,7 +22,8 @@ export function LessonBanner({
   id: LessonId;
   /** In place of the hint: why the lesson cannot run as drawn (the model is not ready). */
   note?: string | undefined;
-  onSkip: () => void;
+  /** Absent once the lesson was tried: the hint stays, Skip has nothing left to skip. */
+  onSkip?: (() => void) | undefined;
 }) {
   const copy = lessonCopy(id, 'mac');
   return (
@@ -38,9 +39,11 @@ export function LessonBanner({
         </p>
         <p className="mt-0.5 text-xs text-ink-secondary">{note ?? HINTS[id] ?? copy.intro}</p>
       </div>
-      <Button data-testid="lesson-skip" onClick={onSkip} size="sm" variant="ghost">
-        Skip
-      </Button>
+      {onSkip ? (
+        <Button data-testid="lesson-skip" onClick={onSkip} size="sm" variant="ghost">
+          Skip
+        </Button>
+      ) : null}
     </div>
   );
 }

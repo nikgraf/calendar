@@ -118,6 +118,12 @@ describe('first run: the setup dialog, the Getting started card and its lessons'
     await expect
       .poll(async () => (await onboarding(app))?.lessons.create, { timeout: 10_000 })
       .toBe('done');
+    // Tried: the hint stays over the draft, but Skip leaves — it would
+    // close the editor and lose the draft.
+    await cdp.waitFor(`!document.querySelector('[data-testid="lesson-skip"]')`);
+    expect(
+      await cdp.eval<boolean>(`!!document.querySelector('[data-testid="lesson-banner"]')`),
+    ).toBe(true);
     // Leaving after a try keeps it done.
     await cdp.clickTestId('editor-close');
     await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);
@@ -153,6 +159,15 @@ describe('first run: the setup dialog, the Getting started card and its lessons'
         `document.querySelector('[data-testid="search-turn"]')?.textContent ?? ''`,
       ),
     ).toContain(LESSON_SEARCH_PHRASE);
+    // Opened again while it is up: the thread starts over, which is not a
+    // try — the lesson stays open with its banner.
+    await cdp.clickTestId('getting-started-row-search');
+    await cdp.waitFor(`!!document.querySelector('[data-testid="search-turn"]')`);
+    await sleep(500);
+    expect(
+      await cdp.eval<boolean>(`!!document.querySelector('[data-testid="lesson-banner"]')`),
+    ).toBe(true);
+    expect((await onboarding(app))?.lessons.search).toBeUndefined();
     await cdp.clickTestId('lesson-skip');
     await cdp.waitFor(`!document.querySelector('[data-testid="lesson-banner"]')`);
     await expect.poll(async () => (await onboarding(app))?.lessons.search).toBe('skipped');

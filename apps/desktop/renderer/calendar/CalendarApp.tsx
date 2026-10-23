@@ -91,8 +91,12 @@ type PanelState =
   | { readonly kind: 'rail' }
   | {
       readonly kind: 'search';
-      /** The Search with AI lesson: its banner above the field until the first change. */
-      readonly lesson?: boolean | undefined;
+      /**
+       * The Search with AI lesson, numbered per opening: its banner above
+       * the field until the first change. Opened again while it is up, the
+       * new number tells the panel the restarted thread is no change.
+       */
+      readonly lesson?: number | undefined;
       /** Opened by ⌘F or the toolbar: the field's text is selected (typing replaces it). */
       readonly selectText: boolean;
     }
@@ -566,7 +570,7 @@ function CalendarBody({
         void searchThread.startWith(LESSON_SEARCH_PHRASE, {
           read: searchModel.status === 'ready',
         });
-        setPanel({ kind: 'search', lesson: true, selectText: false });
+        setPanel({ kind: 'search', lesson: nextOpening(), selectText: false });
         setSearchFocus((count) => count + 1);
         return;
       }
@@ -734,7 +738,7 @@ function CalendarBody({
                 onClose={() => setPanel(RAIL)}
                 onLessonEnd={() =>
                   setPanel((current) =>
-                    current.kind === 'search' ? { ...current, lesson: false } : current,
+                    current.kind === 'search' ? { ...current, lesson: undefined } : current,
                   )
                 }
                 onOpenEvent={openSearchEvent}

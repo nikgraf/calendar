@@ -5,7 +5,6 @@ import {
   lessonCopy,
   lessonProgress,
   Temporal,
-  withLessonsReset,
 } from '@calendar/core';
 import { useEditorHost } from '../EditorHost.tsx';
 import {
@@ -45,7 +44,7 @@ export function GettingStartedPage() {
               !on
                 ? { card: 'hidden' }
                 : progress.done >= progress.total
-                  ? withLessonsReset(state)
+                  ? { reset: 'lessons' }
                   : { card: 'expanded' },
             )
           }
@@ -86,7 +85,7 @@ export function GettingStartedPage() {
       </Section>
       <Section>
         <ActionRow
-          onPress={() => void update(withLessonsReset(state))}
+          onPress={() => void update({ reset: 'lessons' })}
           testID="getting-started-start-over"
           title="Start Over"
         />

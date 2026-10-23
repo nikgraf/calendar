@@ -39,8 +39,10 @@ export function ContactsSection() {
   const connect = async () => {
     setBusy(true);
     try {
-      await connectContacts(undefined);
-      tried();
+      // Only a grant is a try; a refusal leaves a lesson open.
+      if ((await connectContacts(undefined)).granted) {
+        tried();
+      }
     } finally {
       setStatus(await window.calendarBridge.contactsStatus());
       setBusy(false);

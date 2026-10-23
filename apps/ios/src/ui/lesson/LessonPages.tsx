@@ -33,9 +33,12 @@ function ContactsBody() {
   const tried = useLessonTried();
   const connected =
     (contacts === 'authorized' || contacts === 'limited') && !contactsConnectionFailed;
+  // Only a grant is a try: a refusal, or a tap while another ask is on
+  // screen, leaves the lesson open.
   const allow = async () => {
-    await connectDevice('contacts');
-    tried();
+    if ((await connectDevice('contacts')) === true) {
+      tried();
+    }
   };
   return (
     <>
@@ -106,9 +109,11 @@ function OtherDeviceBody() {
   const { colors } = useTheme();
   const { busy, exportSettings, notice } = useSettingsTransfer();
   const tried = useLessonTried();
+  // Only a file that went somewhere is a try, not a dismissed sheet.
   const share = async () => {
-    await exportSettings();
-    tried();
+    if (await exportSettings()) {
+      tried();
+    }
   };
   return (
     <>

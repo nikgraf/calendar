@@ -91,7 +91,7 @@ function ResultGroup({
 export function SearchPanel({
   calendars,
   focusSignal,
-  lesson = false,
+  lesson,
   modelReady,
   onClose,
   onLessonEnd,
@@ -108,8 +108,11 @@ export function SearchPanel({
   calendars: ReadonlyArray<CalendarInfo>;
   /** Changes each time ⌘F or the toolbar asks for the field, which then takes focus. */
   focusSignal: number;
-  /** Opened as the Search with AI lesson: its banner above the field, until the first change or Skip. */
-  lesson?: boolean | undefined;
+  /**
+   * Opened as the Search with AI lesson, numbered per opening: its banner
+   * above the field, until the first change or Skip.
+   */
+  lesson?: number | undefined;
   /** A model can read a sentence into filters. */
   modelReady: boolean;
   onClose: () => void;
@@ -134,30 +137,32 @@ export function SearchPanel({
   // the banner up, ticks it as skipped.
   const markLesson = useMarkLesson();
   const lessonEnded = useRef(false);
-  const lessonBaseline = useRef<string | null>(null);
+  const lessonBaseline = useRef<{ readonly key: string; readonly opening: number } | null>(null);
   const threadKey = `${String(thread.state.version)}|${searchQueryKey(thread.state.query)}`;
   const endLesson = (mark: 'done' | 'skipped') => {
-    if (lesson && !lessonEnded.current) {
+    if (lesson !== undefined && !lessonEnded.current) {
       lessonEnded.current = true;
       void markLesson('search', mark);
       onLessonEnd?.();
     }
   };
   const settleLesson = useEffectEvent(() => {
-    if (!lesson) {
+    if (lesson === undefined) {
       lessonBaseline.current = null;
       lessonEnded.current = false;
     } else if (thread.busy) {
       // The lesson's own sentence is still being read.
-    } else if (lessonBaseline.current === null) {
-      lessonBaseline.current = threadKey;
-    } else if (lessonBaseline.current !== threadKey) {
+    } else if (lessonBaseline.current?.opening !== lesson) {
+      // Opened, or opened again while up: the thread as the lesson started
+      // it is the baseline, so starting it over is not a change.
+      lessonBaseline.current = { key: threadKey, opening: lesson };
+    } else if (lessonBaseline.current.key !== threadKey) {
       endLesson('done');
     }
   });
   useEffect(() => settleLesson(), [lesson, thread.busy, threadKey]);
   const leaveLesson = useEffectEvent(() => {
-    if (lesson && !lessonEnded.current) {
+    if (lesson !== undefined && !lessonEnded.current) {
       void markLesson('search', 'skipped');
     }
   });
@@ -338,7 +343,7 @@ export function SearchPanel({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="search-panel">
-      {lesson ? (
+      {lesson !== undefined ? (
         <div className="px-3 pt-3">
           <LessonBanner
             id="search"

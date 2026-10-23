@@ -3,8 +3,8 @@ import { Schema } from 'effect';
 /**
  * The first run, and the Getting started card after it. Neither syncs:
  * the state lives in `device_settings` under `onboarding`, read and
- * written over the `getOnboarding` / `setOnboarding` rpcs, and stays out
- * of the settings document (a copied setup starts its own lessons).
+ * changed over the `getOnboarding` / `updateOnboarding` rpcs, and stays
+ * out of the settings document (a copied setup starts its own lessons).
  */
 
 /** The lessons of the Getting started card, in the order the card lists them. */
@@ -16,7 +16,8 @@ export const LESSON_IDS = [
   'zones',
   'otherDevice',
 ] as const;
-export type LessonId = (typeof LESSON_IDS)[number];
+export const LessonId = Schema.Literals(LESSON_IDS);
+export type LessonId = typeof LessonId.Type;
 export const LESSON_COUNT = LESSON_IDS.length;
 
 /** How a lesson was ticked: tried in place, or skipped (Skip, or Done without trying). */
@@ -110,6 +111,46 @@ export const withLessonsReset = (state: OnboardingState): OnboardingState => ({
   card: 'expanded',
   lessons: {},
 });
+
+/**
+ * One change to the onboarding state, sent as what it changes and
+ * applied by the backend to what is stored (`applyOnboardingChange`) —
+ * never a whole state built from what a window last read, which a second
+ * change sent before the first was read back would undo (a lesson's frame
+ * ticking skipped as it closes while the next lesson ticks done; the
+ * Settings window and the calendar window).
+ */
+export const OnboardingChange = Schema.Struct({
+  card: Schema.optional(OnboardingCard),
+  lesson: Schema.optional(Schema.Struct({ id: LessonId, mark: LessonMark })),
+  /** `lessons`: Start Over (`withLessonsReset`); `all`: a fresh install's state, the setup due again. */
+  reset: Schema.optional(Schema.Literals(['all', 'lessons'])),
+  setup: Schema.optional(SetupOutcome),
+});
+export type OnboardingChange = typeof OnboardingChange.Type;
+
+/** The change on the stored state: the reset first, then the card, the setup and the mark. */
+export const applyOnboardingChange = (
+  state: OnboardingState,
+  change: OnboardingChange,
+): OnboardingState => {
+  let next =
+    change.reset === 'all'
+      ? DEFAULT_ONBOARDING_STATE
+      : change.reset === 'lessons'
+        ? withLessonsReset(state)
+        : state;
+  if (change.card !== undefined) {
+    next = { ...next, card: change.card };
+  }
+  if (change.setup !== undefined) {
+    next = { ...next, setup: change.setup };
+  }
+  if (change.lesson !== undefined) {
+    next = withLessonMark(next, change.lesson.id, change.lesson.mark);
+  }
+  return next;
+};
 
 /** The card's rows: the lessons, led by "Add your accounts" while nothing is connected. */
 export type LessonRowId = LessonId | 'accounts';

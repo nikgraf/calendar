@@ -171,12 +171,12 @@ const MUTATION_REACTIVITY = {
   setCalendarVisible: [CALENDARS_KEY, EVENTS_KEY],
   setEventNotificationSettings: [deviceSettingsKey('eventNotifications')],
   setMirrorEnabled: [MIRRORS_LOCAL_KEY],
-  setOnboarding: [deviceSettingsKey('onboarding')],
   setTaskListVisible: [TASKLISTS_KEY, TASKS_KEY],
   setTimeZoneSettings: [deviceSettingsKey('timeZones')],
   setViewPreferences: [deviceSettingsKey('viewPreferences')],
   syncNow: [],
   updateEvent: [EVENTS_KEY],
+  updateOnboarding: [deviceSettingsKey('onboarding')],
   updateRecurring: [EVENTS_KEY],
   updateTask: [TASKS_KEY],
 } satisfies Partial<Record<keyof BackendClient, ReadonlyArray<string>>>;

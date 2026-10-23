@@ -1,8 +1,8 @@
 import {
   useAccounts,
-  useBackendMutations,
   useBirthdayReminderSettings,
   useEventNotificationSettings,
+  useGuardedMutations,
 } from '@calendar/app-state';
 import {
   describeImportSummary,
@@ -45,8 +45,9 @@ export function SetupCopied() {
 
   // Alerts: the file's notification switches are applied; what iOS still
   // needs is the one-time permission, asked by saving a switched-on one
-  // again as it is — never by turning one on the file left off.
-  const { setBirthdayReminderSettings, setEventNotificationSettings } = useBackendMutations();
+  // again as it is — never by turning one on the file left off. Guarded:
+  // a failed save is a toast, not an unhandled rejection.
+  const { setBirthdayReminderSettings, setEventNotificationSettings } = useGuardedMutations();
   const notifications = useEventNotificationSettings();
   const birthdayReminders = useBirthdayReminderSettings();
   const [permission, setPermission] = useState<NotificationPermission | null>(null);

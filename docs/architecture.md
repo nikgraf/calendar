@@ -933,20 +933,29 @@ gateway carries all of it. Details, limits and the threat model:
 - **State.** One `device_settings` key, `onboarding` (core
   `onboarding.ts`: `OnboardingState` — the card `expanded` / `collapsed` /
   `hidden`, a mark per lesson, `done` or `skipped`, and how the setup
-  ended), read and written over `getOnboarding` / `setOnboarding` in the
-  view-preferences shape; `useUpdateOnboarding` and `useMarkLesson` merge
-  into the struct, and a try is never downgraded to a skip
-  (`withLessonMark`). Per device: not in the settings document and not a
-  settings-file trigger key, so a copied setup starts its own lessons.
-- **First run.** Shown while nothing is connected and the setup was
+  ended), read over `getOnboarding` and changed over `updateOnboarding`:
+  a window sends what changes (`OnboardingChange` — the card, the setup's
+  outcome, one lesson's mark, a reset), never a whole state, and the
+  backend applies it to what is stored under a lock
+  (`applyOnboardingChange`), so two windows' changes, or a frame ticking
+  skipped as the next lesson ticks done, both land. A try is never
+  downgraded to a skip (`withLessonMark`). Per device: not in the
+  settings document and not a settings-file trigger key, so a copied
+  setup starts its own lessons.
+- **First run.** Shown when nothing is connected and the setup was
   neither finished nor skipped (`useSetupNeeded`, null until the accounts
-  and the state are read). iOS: a `fullScreenModal` route group
-  `app/setup/` the calendar pushes once per launch, its pages sharing
+  and the state are read), decided once per launch (iOS) or window (Mac)
+  from that first read — removing the last account later does not bring
+  it up mid-session. Once ended, a late answer (a permission granted
+  after Skip) changes nothing. iOS: a `fullScreenModal` route group
+  `app/setup/` the calendar pushes, its pages sharing
   Settings' `SettingsProvider` (statuses, Google sign-in, device
   connects) and a `SetupProvider` (the ticked sources, the steps they
   lead through). Mac: `SetupDialog` on `Dialog` in the calendar window's
   root, latched open until finished — the first account it signs in
-  ends "nothing connected" mid-flow. The Google step's Tasks box is
+  ends "nothing connected" mid-flow — except an untouched Welcome, which
+  closes again when accounts arrive another way (the watched settings
+  file is imported a beat after launch). The Google step's Tasks box is
   `AddAccountParams.tasks` → `googleScopes({ tasks })`; the copy door
   imports a settings file (`useSettingsTransfer` / `settingsTransfer.ts`,
   shared with Settings File) and lists what the device still has to do.
@@ -959,12 +968,16 @@ gateway carries all of it. Details, limits and the threat model:
   desktop panel's thread, iOS route params on the Search tab); Alerts,
   Contacts, Time zones and "Set up your Mac/iPhone" frame the Settings
   sections (iOS `app/lesson/` modal, desktop `PanelState` `lesson`). A
-  section reports a change through `useLessonTried` (`LessonTriedContext`;
-  nothing outside a lesson), which ticks the lesson done; leaving a frame
-  without one ticks it skipped. Settings › Getting Started (iOS page,
+  section reports a change that went through — a setting saved, an
+  access granted, a file shared — through `useLessonTried`
+  (`LessonTriedContext`; nothing outside a lesson), which ticks the
+  lesson done; leaving a frame without one ticks it skipped. Once tried,
+  a banner keeps its hint and loses Skip. Settings › Getting Started (iOS page,
   desktop pane `gettingstarted`) reopens lessons — the desktop's through
-  `lesson:open` IPC, which shows the calendar window — and Start Over
-  clears the ticks.
+  `lesson:open` IPC, which keeps the lesson in main, shows the calendar
+  window and nudges it; the calendar collects it with `lesson:take` when
+  nudged and when it subscribes, as with `notifications:take` — and Start
+  Over clears the ticks.
 - **Switches.** `CALENDAR_ONBOARDING=off` (desktop, answered over
   `onboarding:enabled`; the e2e harness's default) and
   `EXPO_PUBLIC_CALENDAR_ONBOARDING=off` (the CI and live iOS bundles) keep

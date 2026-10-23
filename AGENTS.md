@@ -178,7 +178,9 @@ deliberately.
   (brings Calendar.app forward), `settings:open`,
   `settingsFile:*`, `auth:cancel` (stops a sign-in waiting on the
   browser), `notifications:take` (the event reminder clicked last — a
-  ref; the event itself is read over rpc) and `agents:*`) use plain
+  ref; the event itself is read over rpc), `onboarding:enabled`,
+  `lesson:open` / `lesson:take` (a lesson Settings opened, kept in main
+  until the calendar window takes it) and `agents:*`) use plain
   preload IPC; calendar data — reminders, Apple events and contact rows
   included — goes through the typed rpc seam only.
 - The desktop has two windows on one renderer bundle: the calendar and

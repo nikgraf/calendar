@@ -103,19 +103,25 @@ export function CalendarScreen() {
 }
 
 /**
- * The first run: once the accounts and the onboarding state are read and
- * nothing is connected and the setup never ran, the setup modal goes up
- * over the calendar — once per launch, so a Skip is not met by it again
- * on the next read. Off under EXPO_PUBLIC_CALENDAR_ONBOARDING=off.
+ * The first run, decided once per launch from the first read of the
+ * accounts and the onboarding state: nothing connected and the setup
+ * never ran puts the setup modal up over the calendar. Decided then and
+ * only then — a Skip is not met again on the next read, and removing the
+ * last account later (in Settings, on an install from before the setup
+ * existed) does not bring it up mid-session. Off under
+ * EXPO_PUBLIC_CALENDAR_ONBOARDING=off.
  */
 const useFirstRun = () => {
   const router = useRouter();
   const enabled = useOnboardingEnabled();
   const due = useSetupNeeded();
-  const presented = useRef(false);
+  const decided = useRef(false);
   useEffect(() => {
-    if (enabled && due === true && !presented.current) {
-      presented.current = true;
+    if (!enabled || due === null || decided.current) {
+      return;
+    }
+    decided.current = true;
+    if (due) {
       router.push('/setup');
     }
   }, [due, enabled, router]);

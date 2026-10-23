@@ -1,4 +1,5 @@
 import {
+  applyOnboardingChange,
   BirthdayReminderOverride,
   type BirthdayReminderOverrides,
   BirthdayReminderSettings,
@@ -10,6 +11,7 @@ import {
   DEFAULT_TIME_ZONE_SETTINGS,
   DEFAULT_VIEW_PREFERENCES,
   EventNotificationSettings,
+  type OnboardingChange,
   OnboardingState,
   resolveTimeZones,
   Temporal,
@@ -192,6 +194,23 @@ export const writeOnboarding = (
   Effect.flatMap(DeviceSettingsRepo, (repo) =>
     // Canonical: only the marks that are set, in card order.
     repo.set(ONBOARDING_KEY, canonicalOnboardingState(state)),
+  );
+
+const onboardingLock = Semaphore.makeUnsafe(1);
+
+/**
+ * Read-modify-write of the onboarding state, one change at a time: every
+ * window's change lands on the one before it, whatever each window last
+ * read (a lesson ticked skipped as its frame closes, the next one ticked
+ * done a moment later).
+ */
+export const updateOnboarding = (
+  change: OnboardingChange,
+): Effect.Effect<void, SqlError, DeviceSettingsRepo> =>
+  onboardingLock.withPermits(1)(
+    Effect.flatMap(readOnboarding, (current) =>
+      writeOnboarding(applyOnboardingChange(current, change)),
+    ),
   );
 
 /** The device_settings key for the time zones. */

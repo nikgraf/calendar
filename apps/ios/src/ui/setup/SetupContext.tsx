@@ -1,7 +1,15 @@
 import { useUpdateOnboarding } from '@calendar/app-state';
 import type { SettingsImportSummary, SetupOutcome } from '@calendar/core';
 import { router, useNavigation } from 'expo-router';
-import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from 'react';
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 /** What "What do you use?" offers; Google Calendar and Tasks share a sign-in. */
 export interface SetupSources {
@@ -62,9 +70,17 @@ export function SetupProvider({ children }: { children: ReactNode }) {
   const [sources, setSources] = useState<SetupSources>(DEFAULT_SOURCES);
   const [imported, setImported] = useState<SettingsImportSummary | null>(null);
   const steps = useMemo(() => setupSteps(sources), [sources]);
+  // Ended once: an answer that comes in after Skip (iOS still confirming
+  // a grant while "Asking iOS…" was on screen) neither pushes the next
+  // step back up nor turns the skip into done.
+  const ended = useRef(false);
 
   const finish = useCallback(
     (outcome: SetupOutcome) => {
+      if (ended.current) {
+        return;
+      }
+      ended.current = true;
       void update({ setup: outcome });
       navigation.goBack();
     },
@@ -73,6 +89,9 @@ export function SetupProvider({ children }: { children: ReactNode }) {
 
   const next = useCallback(
     (step: SetupStep) => {
+      if (ended.current) {
+        return;
+      }
       const following = steps[steps.indexOf(step) + 1];
       if (following === undefined) {
         finish('done');

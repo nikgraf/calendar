@@ -49,7 +49,7 @@ import {
   readPrimaryTimeZone,
   readTimeZoneSettings,
   readViewPreferences,
-  writeOnboarding,
+  updateOnboarding,
   writeViewPreferences,
 } from './deviceSettings.ts';
 import { NotificationSink } from './notificationSink.ts';
@@ -547,8 +547,6 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
 
   setEventNotificationSettings: (settings) => applyEventNotificationSettings(settings),
 
-  setOnboarding: (state) => writeOnboarding(state),
-
   setTaskListVisible: ({ accountId, isVisible, taskListId }) =>
     Effect.gen(function* () {
       const taskRepo = yield* TaskRepo;
@@ -571,6 +569,7 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       yield* mutations.updateEvent(params);
     }),
 
+  updateOnboarding: (change) => updateOnboarding(change),
   updateRecurring: (params) =>
     Effect.gen(function* () {
       const mutations = yield* EventMutations;

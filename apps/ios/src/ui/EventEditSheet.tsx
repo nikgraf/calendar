@@ -14,7 +14,7 @@ import {
   type TaskListInfo,
   type TaskRecord,
 } from '@calendar/core';
-import { useEffect, useEffectEvent, useRef } from 'react';
+import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import { Alert, Modal, Pressable, SafeAreaView, ScrollView, Text, View } from 'react-native';
 import { backendClient } from '../backend.ts';
 import { languageModel } from '../model.ts';
@@ -156,9 +156,13 @@ export function EventEditSheet({
   const lesson = seed.lesson;
   const markLesson = useMarkLesson();
   const lessonTried = useRef(false);
+  // Once tried, the banner keeps its hint over the draft but loses Skip,
+  // which closes the editor — with the draft in it.
+  const [lessonOpen, setLessonOpen] = useState(lesson !== undefined);
   const lessonDone = () => {
     if (lesson && !lessonTried.current) {
       lessonTried.current = true;
+      setLessonOpen(false);
       void markLesson(lesson, 'done');
     }
   };
@@ -237,7 +241,7 @@ export function EventEditSheet({
   const headerRest =
     sourceKind === 'new' ? (
       <>
-        {lesson ? <LessonBanner id={lesson} onSkip={onClose} /> : null}
+        {lesson ? <LessonBanner id={lesson} onSkip={lessonOpen ? onClose : undefined} /> : null}
         <QuickAddBar
           // The thread's turns hang under the field (`DraftThreadSection`).
           attached={editor.turns.length > 0}

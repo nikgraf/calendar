@@ -12,8 +12,8 @@ const HINTS: Partial<Record<LessonId, string>> = {
 /**
  * The lesson's frame when the lesson is an existing surface: a line
  * above the editor's quick-add field or the search chips saying which
- * lesson this is and what to try, with Skip. The surface itself is the
- * real thing; nothing else changes.
+ * lesson this is and what to try, with Skip until it was tried. The
+ * surface itself is the real thing; nothing else changes.
  */
 export function LessonBanner({
   id,
@@ -23,7 +23,8 @@ export function LessonBanner({
   id: LessonId;
   /** In place of the hint: why the lesson cannot run as drawn (the model is not ready). */
   note?: string | undefined;
-  onSkip: () => void;
+  /** Absent once the lesson was tried: the hint stays, Skip has nothing left to skip. */
+  onSkip?: (() => void) | undefined;
 }) {
   const styles = useStyles(makeStyles);
   const { colors } = useTheme();
@@ -37,15 +38,17 @@ export function LessonBanner({
         </Text>
         <Text style={styles.hint}>{note ?? HINTS[id] ?? copy.intro}</Text>
       </View>
-      <Pressable
-        accessibilityRole="button"
-        hitSlop={8}
-        onPress={onSkip}
-        style={({ pressed }) => pressed && styles.pressed}
-        testID="lesson-skip"
-      >
-        <Text style={styles.skip}>Skip</Text>
-      </Pressable>
+      {onSkip ? (
+        <Pressable
+          accessibilityRole="button"
+          hitSlop={8}
+          onPress={onSkip}
+          style={({ pressed }) => pressed && styles.pressed}
+          testID="lesson-skip"
+        >
+          <Text style={styles.skip}>Skip</Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }

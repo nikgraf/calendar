@@ -41,8 +41,11 @@ const confirmImport = (lines: ReadonlyArray<string>) =>
 
 export interface SettingsTransfer {
   readonly busy: boolean;
-  /** The settings document as a file, handed to the share sheet. */
-  readonly exportSettings: () => Promise<void>;
+  /**
+   * The settings document as a file, handed to the share sheet: whether
+   * it went somewhere (false when the sheet was dismissed or it failed).
+   */
+  readonly exportSettings: () => Promise<boolean>;
   /**
    * The document picker, the preview as an alert, then the import: what it
    * did, or null when the picker or the alert was cancelled.
@@ -80,19 +83,18 @@ export const useSettingsTransfer = (): SettingsTransfer => {
     }
   };
 
-  const exportSettings = async () => {
-    await run(async () => {
+  const exportSettings = async () =>
+    (await run(async () => {
       const native = load();
       if (!native) {
-        return { notice: 'Exporting needs a newer app build.', result: null };
+        return { notice: 'Exporting needs a newer app build.', result: false };
       }
       const document = await mutations.exportSettings(undefined);
       const file = new native.files.File(native.files.Paths.cache, FILE_NAME);
       file.write(formatSettingsDocument(document));
-      await Share.share({ title: FILE_NAME, url: file.uri });
-      return { notice: null, result: null };
-    });
-  };
+      const shared = await Share.share({ title: FILE_NAME, url: file.uri });
+      return { notice: null, result: shared.action === Share.sharedAction };
+    })) === true;
 
   const importSettings = () =>
     run<SettingsImportSummary | null>(async () => {

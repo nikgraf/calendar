@@ -1,11 +1,5 @@
 import { useOnboarding, useUpdateOnboarding } from '@calendar/app-state';
-import {
-  DEFAULT_ONBOARDING_STATE,
-  LESSON_IDS,
-  lessonCopy,
-  lessonProgress,
-  withLessonsReset,
-} from '@calendar/core';
+import { DEFAULT_ONBOARDING_STATE, LESSON_IDS, lessonCopy, lessonProgress } from '@calendar/core';
 import { SETTINGS_BUTTON_CLASS, TEXT_ACTION_CLASS } from './ui/buttonStyles.ts';
 import { CheckCircleIcon } from './ui/icons.tsx';
 
@@ -33,7 +27,7 @@ export function GettingStartedSection() {
                 !change.target.checked
                   ? { card: 'hidden' }
                   : progress.done >= progress.total
-                    ? withLessonsReset(state)
+                    ? { reset: 'lessons' }
                     : { card: 'expanded' },
               )
             }
@@ -100,7 +94,7 @@ export function GettingStartedSection() {
         <button
           className={`${SETTINGS_BUTTON_CLASS} mt-3`}
           data-testid="getting-started-start-over"
-          onClick={() => void update(withLessonsReset(state))}
+          onClick={() => void update({ reset: 'lessons' })}
           type="button"
         >
           Start Over

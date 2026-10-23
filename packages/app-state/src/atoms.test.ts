@@ -141,12 +141,12 @@ const makeStubClient = () => {
       }),
     setEventNotificationSettings: () => Effect.succeed({ notificationsGranted: true }),
     setMirrorEnabled: () => fail('not stubbed'),
-    setOnboarding: () => Effect.void,
     setTaskListVisible: () => Effect.void,
     setTimeZoneSettings: () => Effect.void,
     setViewPreferences: () => Effect.void,
     syncNow: () => Effect.void,
     updateEvent: () => fail('not stubbed'),
+    updateOnboarding: () => Effect.void,
     updateRecurring: () => fail('not stubbed'),
     updateTask: () => Effect.void,
   };
