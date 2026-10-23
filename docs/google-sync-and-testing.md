@@ -893,8 +893,11 @@ Selector gotchas (each caused a real failure):
   row reads as one element (title, subtitle and value together), so match
   with `.*` around the text. Decorative symbols stay out of labels
   (`Glyph`).
-- A list row's label is title + swatch + check mark, so rows are picked
-  by `id: task-list-option`; a chip body is tapped by its full text
+- A picker row (a radio `CheckRow`) reads as its title alone; the check
+  mark is a `Glyph`, so a pick is proven by the row's `selected: true`
+  (`checked` on a checkbox `CheckRow`), never by a "✓" in its text. Rows are picked by `id: task-list-option` /
+  `calendar-option`, or by full name where it is unique (the live suite's
+  `pick-row.yaml`); a chip body is tapped by its full text
   (`[0-9]+:[0-9]+ !!! <title>` for a timed reminder), because
   `.*<title>` also matches the checkbox's "Toggle <title>" label.
 - Never select by `local-…` task ids (the op push swaps them to server
