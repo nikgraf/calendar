@@ -14,6 +14,24 @@ except the two below; their entries are in `docs/decisions.md` under
 The 2026-10-02 review's findings are closed in `docs/decisions.md`
 (Review fixes, #110–#142).
 
+- [ ] iOS background refresh on a cold background launch (since Expo SDK
+      58, `todo/expo-sdk-58`): React Native starts only in
+      `ExpoAppSceneDelegate.scene(_:willConnectTo:)`, and a
+      BGProcessingTask launch of a terminated app connects no scene, so
+      `backgroundTask.ts` never runs; it still runs while the app is
+      suspended in memory. `EXTaskService` falls back to a
+      `react-native-experience` app loader that only Expo Go registers.
+      Fix: start React Native without a window when no scene connects,
+      through expo-updates' launch path (it picks the bundle), and have
+      the scene take over that app instead of mounting a second one (a
+      local Expo module plus a SceneDelegate config plugin). Verify a
+      cold background launch on a device; the simulator cannot make one.
+- [ ] File the issue at expo/expo for the item above: scene-less
+      background launches start no React Native in SDK 58, so
+      expo-task-manager tasks (expo-background-task, background fetch)
+      never run after the app was terminated. Code path:
+      `ExpoAppSceneDelegate.swift:66`, `EXTaskService.m` `_loadAppWithId`.
+
 ## Tier 1 — CI and distribution
 
 - [ ] PR videos (designed, not built) — every PR with a visible change
@@ -236,8 +254,3 @@ decision and platform notes live in `docs/decisions.md`.
     - special feature: automatically sync those e.g. meetup event gets synced to family calendar
     - special feature: add in one calendar as normal even, but show in others as blocked or only share certain information
 - Prefetch week±1 in the range LRU (noted when the LRU landed)
-- Next Expo SDK: takes react-native 0.87, reanimated 4.7 / worklets 0.13,
-  gesture-handler 3, react 19.3, datetimepicker 9.2, safe-area-context
-  5.10, screens 4.28 with it (all held back by the 2026-10-09 dependency
-  sweep because SDK 57 bundles the older ones), and drops the SDK 57
-  `trustPolicyExclude` list in `pnpm-workspace.yaml`

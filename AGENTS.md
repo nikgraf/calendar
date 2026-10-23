@@ -315,7 +315,8 @@ deliberately.
   run-loop timers, and a main thread blocked in `readLine()` never
   delivers `EKEventStoreChanged` (stdin is read on a background thread).
 - Dependencies: `effect*` exact through the catalog (Dependabot ignores
-  them); `react` tilde-pinned to the React Native renderer's version; the
+  them); `react` and `react-dom` pinned exactly to the React Native
+  renderer's version (react-dom throws unless it equals react); the
   Expo-bound React Native stack moves only with the SDK (`npx expo install
   --check` is the oracle); `vitest` equals the version vite-plus bundles.
   The 2-day `minimumReleaseAge` gate is never bypassed, and a

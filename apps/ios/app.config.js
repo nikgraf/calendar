@@ -58,8 +58,8 @@ module.exports = ({ config }) => {
     // dev client never loaded ("The request timed out"). The e2e jobs pin
     // the version to the hash they already computed: the manifest is
     // instant and still matches the EAS dev client built for that
-    // fingerprint. Set for Metro only, never while the fingerprint itself
-    // is computed — an explicit runtimeVersion would change it.
+    // fingerprint. Set for Metro only; the fingerprint's `balanced` preset
+    // leaves a string runtimeVersion out, so it would not move it anyway.
     runtimeVersion: process.env.EXPO_RUNTIME_VERSION_PIN || config.runtimeVersion,
   };
   if (variant() === 'production') {

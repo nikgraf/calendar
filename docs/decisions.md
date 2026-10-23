@@ -165,17 +165,29 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   clock, 12- or 24-hour) and a launcher-row tap racing the dev client's
   own reopen. Rejected: a fixed settle delay after launch. Open: the
   slide-to-type card and the dev menu's onboarding never showed locally.
-- **Dependencies** (2026-09-14, 2026-10-09, 2026-10-03) — every sweep is
+- **Dependencies** (2026-09-14, 2026-10-09, 2026-10-03, 2026-10-23) — every sweep is
   one commit per group, each droppable. `effect*` exact (the pin stays
   exact on 4.x: rpc, sql, http and reactivity are `@stability unstable`),
   Dependabot ignores them; the deep SQL imports stay deep for Metro. React
-  is held to the React Native renderer's version with tilde ranges (a
-  caret once let the lockfile resolve past it); the Expo-bound RN stack
-  moves only with the SDK. Vite+ 1.1 brought Vitest 5, `vp pack` for the
-  main bundle and tests importing from `vite-plus/test`; vitest must equal
-  what vite-plus bundles. The 2-day release-age gate is never bypassed
-  (stable Effect was waited out); Expo SDK 57 patches are trust-excluded
-  by exact version after an audit (`pnpm-workspace.yaml`).
+  and react-dom are pinned exactly to the React Native renderer's version
+  (react-dom throws unless it equals react, and a tilde let the two
+  resolve to different patches; a caret once resolved past the renderer);
+  the Expo-bound RN stack moves only with the SDK. Vite+ 1.1 brought
+  Vitest 5, `vp pack` for the main bundle and tests importing from
+  `vite-plus/test`; vitest must equal what vite-plus bundles. The 2-day
+  release-age gate is never bypassed (stable Effect was waited out); a
+  trust exclude is added only by exact version after an audit
+  (`pnpm-workspace.yaml`).
+- **Expo SDK 58** (2026-10-23, `todo/expo-sdk-58`) — React Native 0.88,
+  React 19.3, Gesture Handler 3, Reanimated 4.7. Effect moved to 4.0.5 for
+  the scheduler 0.28 peer. op-sqlite went to 18 past the Effect adapter's
+  `< 18` (17 no longer compiles; the adapter's calls are unchanged in 18),
+  allowed in `peerDependencyRules` until Effect-TS/effect#9868 widens it.
+  The pans use the hook API (`usePanGesture`; the task drag is a per-item
+  hook); rejected: keeping the deprecated builder for now. The fingerprint
+  takes Expo's `balanced` preset, so a version bump needs a manual build.
+  Shipped with a known regression: React Native now starts with a scene, so
+  a cold background launch runs no `backgroundTask.ts` (todo.md Tier 0).
 
 ## Architecture and sync path
 
