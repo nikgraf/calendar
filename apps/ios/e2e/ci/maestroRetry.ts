@@ -1,13 +1,20 @@
 /**
  * Whether a failed `maestro test` run on CI may run again, and which flows.
  *
- * One cause only: the XCTest driver went away mid-run (an app main thread
- * stuck in UIKit's keyboard queue starved its snapshot for 90 s on run
- * 38466668240). Maestro then latches the device as unreachable, and every
- * later flow in that invocation fails within seconds. Those flows never ran,
- * so a fresh invocation runs them once. A failure the app caused (an
- * assertion, an element not found, anything unknown) is never retried: it
- * fails the job as before, so a retry cannot hide an app race.
+ * Two causes only, both the XCTest driver's:
+ * - It went away mid-run (an app main thread stuck in UIKit's keyboard queue
+ *   starved its snapshot for 90 s on run 38466668240). Maestro then latches
+ *   the device as unreachable, and every later flow in that invocation fails
+ *   within seconds. Those flows never ran, so a fresh invocation runs them
+ *   once.
+ * - It never started: Maestro gave up waiting for the runner while opening
+ *   its session, before any flow, and wrote no report (runs 39144942743 and
+ *   39668426261: the runner came up after Maestro's wait, or XCTest timed
+ *   out waiting for accessibility). Every flow runs once more.
+ *
+ * A failure the app caused (an assertion, an element not found, anything
+ * unknown) is never retried: it fails the job as before, so a retry cannot
+ * hide an app race.
  *
  * Free of workspace imports on purpose: Node 24 runs `run-flows.ts` (and
  * this file with it) as-is, by type stripping.
@@ -25,7 +32,12 @@ export type JUnitCase = {
 
 export type RetryDecision =
   | { readonly kind: 'pass' }
-  | { readonly flows: ReadonlyArray<string>; readonly kind: 'retry' }
+  | {
+      /** The driver died under these flows, or never started for any. */
+      readonly cause: 'died' | 'never-started';
+      readonly flows: ReadonlyArray<string>;
+      readonly kind: 'retry';
+    }
   | { readonly kind: 'fail'; readonly reason: string };
 
 /** Statuses Maestro counts as a passed flow (WARNING: only optional steps failed). */
@@ -44,6 +56,16 @@ const LATCH =
  */
 const UNREACHABLE_FAILURE =
   /^\s*(?:[\w.$]+\.)?(?:DeviceUnreachableException|IOSDriverTimeoutException)\b/;
+
+/**
+ * The driver's wait running out while Maestro created its session, in
+ * Maestro's console output: the exception's own stack trace passes
+ * `MaestroSessionManager.createMaestro`, which opens the device before the
+ * first flow. `newSession` alone would not do: the flows run inside it too.
+ * The run log (`maestro.log`) has only the failed status checks.
+ */
+const NEVER_STARTED =
+  /IOSDriverTimeoutException\b[^\n]*(?:\n[ \t]+at [^\n]*)*?\n[ \t]+at maestro\.cli\.session\.MaestroSessionManager\.createMaestro\b/;
 
 const ENTITIES: Readonly<Record<string, string>> = {
   amp: '&',
@@ -94,21 +116,28 @@ const passed = (testCase: JUnitCase): boolean =>
 
 /**
  * What to do after a failed run of `flows`. Fails closed: the run retries
- * only when the log shows the driver's death, the report accounts for every
- * flow, and every failed flow was lost to that death.
+ * only when the driver never started (no report, and the output shows the
+ * session never opened), or when the log shows the driver's death, the
+ * report accounts for every flow, and every failed flow was lost to that
+ * death.
  */
 export const decideRetry = ({
   flows,
+  output,
   report,
   runLog,
 }: {
   readonly flows: ReadonlyArray<string>;
+  /** What Maestro printed (stdout and stderr). */
+  readonly output: string;
   /** The JUnit XML; undefined when Maestro wrote none. */
   readonly report: string | undefined;
   readonly runLog: string;
 }): RetryDecision => {
   if (report === undefined) {
-    return { kind: 'fail', reason: 'Maestro wrote no JUnit report' };
+    return NEVER_STARTED.test(output)
+      ? { cause: 'never-started', flows, kind: 'retry' }
+      : { kind: 'fail', reason: 'Maestro wrote no JUnit report' };
   }
   const cases = parseJUnit(report);
   const byFile = new Map(cases.map((testCase) => [testCase.file, testCase]));
@@ -135,7 +164,7 @@ export const decideRetry = ({
       reason: `failed on their own: ${ownFailures.map((testCase) => testCase.file).join(', ')}`,
     };
   }
-  return { flows: failed.map((testCase) => testCase.file), kind: 'retry' };
+  return { cause: 'died', flows: failed.map((testCase) => testCase.file), kind: 'retry' };
 };
 
 /** The command the driver died on, from the run log (`… while processing inputText …`). */
