@@ -12,13 +12,13 @@ import {
 import { useState } from 'react';
 import { usePanGesture } from 'react-native-gesture-handler';
 import {
-  runOnJS,
   useAnimatedReaction,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
 import { HOUR_HEIGHT } from './timelineLayout.ts';
 import type { EdgeScroll } from './useEdgeScroll.ts';
 
@@ -235,14 +235,14 @@ export const useTaskDragGesture = (
     enabled: !readOnly,
     onActivate: (start) => {
       lift(start.absoluteX, start.absoluteY);
-      runOnJS(beginThis)();
+      scheduleOnRN(beginThis);
     },
     onDeactivate: (end) => {
-      runOnJS(finishThis)(end.canceled ? null : targetAt(end.absoluteX, end.absoluteY));
+      scheduleOnRN(finishThis, end.canceled ? null : targetAt(end.absoluteX, end.absoluteY));
     },
     onFinalize: () => {
       settle();
-      runOnJS(clear)();
+      scheduleOnRN(clear);
     },
     onUpdate: (update) => {
       follow(update.absoluteX, update.absoluteY);

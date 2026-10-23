@@ -39,8 +39,6 @@ import {
 import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
 import Animated, {
   cancelAnimation,
-  runOnJS,
-  runOnUI,
   useAnimatedRef,
   useAnimatedScrollHandler,
   useAnimatedStyle,
@@ -49,6 +47,7 @@ import Animated, {
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
+import { scheduleOnRN, scheduleOnUI } from 'react-native-worklets';
 import { AllDayColumn } from './AllDayColumn.tsx';
 import { DayColumn } from './DayColumn.tsx';
 import {
@@ -106,7 +105,7 @@ const useDaySwipe = ({
     'worklet';
     setShared(navigatedPx, navigatedPx.value + commit * columnWidth);
     setShared(panX, panX.value + commit * columnWidth);
-    runOnJS(onSwipe)(commit, navigatedPx.value);
+    scheduleOnRN(onSwipe, commit, navigatedPx.value);
   };
 
   return usePanGesture({
@@ -473,12 +472,12 @@ export function DayTimeline({
       previous.count !== days.length ||
       previous.first.until(first).days !== swiped.columns - previous.columns
     ) {
-      runOnUI(() => {
+      scheduleOnUI(() => {
         'worklet';
         cancelAnimation(panX);
         setShared(pending, 0);
         setShared(panX, 0);
-      })();
+      });
     }
   }, [firstIso, days.length, swiped.columns, panX, pending]);
 
