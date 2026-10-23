@@ -2,6 +2,7 @@ import {
   useBackendMutations,
   useBirthdayReminderOverrides,
   useBirthdayReminderSettings,
+  useLessonTried,
   useSettingsEditor,
 } from '@calendar/app-state';
 import {
@@ -30,18 +31,21 @@ export function BirthdayRemindersSection() {
     setBirthdayReminderSettings,
   );
   const [notice, setNotice] = useState<string | null>(null);
+  const tried = useLessonTried();
 
   if (!settings) {
     return null;
   }
   const save = (next: Partial<BirthdayReminderSettings>) =>
     void persist(next).then(
-      ({ notificationsGranted }) =>
+      ({ notificationsGranted }) => {
+        tried();
         setNotice(
           notificationsGranted
             ? null
             : 'Notifications are off — allow Solunivo in System Settings › Notifications.',
-        ),
+        );
+      },
       (error: unknown) => setNotice(error instanceof Error ? error.message : String(error)),
     );
   const toggleLead = (lead: BirthdayLeadDays, on: boolean) =>

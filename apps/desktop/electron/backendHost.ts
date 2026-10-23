@@ -34,7 +34,11 @@ import { getPrivacyState, setPrivacyChoice } from './privacy.ts';
 import { desktopAppleCalendarLayer } from './appleCalendarClient.ts';
 import { desktopContactsLayer } from './contactsClient.ts';
 import { desktopGeoLayer } from './geoClient.ts';
-import { desktopGoogleLayer, seedDesktopGoogleAccounts } from './googleClient.ts';
+import {
+  desktopFixtureSignIn,
+  desktopGoogleLayer,
+  seedDesktopGoogleAccounts,
+} from './googleClient.ts';
 import { desktopNotificationSink } from './notifications.ts';
 import { desktopRemindersLayer } from './remindersClient.ts';
 import { rpcServerProtocol } from './rpcProtocol.ts';
@@ -134,10 +138,14 @@ export const startBackendHost = (): BackendHost => {
   const handlers: BackendHandlers<CommonBackendServices | TokenManager> = {
     ...commonBackendHandlers,
 
-    addAccount: ({ loginHint }) =>
+    addAccount: ({ loginHint, tasks }) =>
       Effect.gen(function* () {
+        // The fake API (e2e): the fixture's account, no browser.
+        if (desktopFixtureSignIn) {
+          return yield* finishAddAccount(desktopFixtureSignIn({ loginHint, tasks }), randomUUID);
+        }
         const config = yield* requireOAuth;
-        const result = yield* runGoogleSignIn(config.clientId, { loginHint });
+        const result = yield* runGoogleSignIn(config.clientId, { loginHint, tasks });
         return yield* finishAddAccount(result, randomUUID);
       }),
   };

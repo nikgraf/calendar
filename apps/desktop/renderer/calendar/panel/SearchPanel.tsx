@@ -1,5 +1,10 @@
 import { isSearchFilterPhrase } from '@calendar/ai';
-import { type SearchState, type useSearchThread, useToday } from '@calendar/app-state';
+import {
+  type SearchState,
+  useMarkLesson,
+  type useSearchThread,
+  useToday,
+} from '@calendar/app-state';
 import {
   type CalendarInfo,
   type EventRecord,
@@ -9,6 +14,7 @@ import {
   makeColorLookup,
   SEARCH_WINDOW_YEARS,
   searchEventWhen,
+  searchQueryKey,
   searchQuerySentence,
   searchTaskWhen,
   type TaskListInfo,
@@ -18,11 +24,13 @@ import {
   type KeyboardEvent,
   type ReactNode,
   useEffect,
+  useEffectEvent,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from 'react';
+import { LessonBanner } from '../../onboarding/LessonBanner.tsx';
 import { IconButton } from '../../ui/IconButton.tsx';
 import { RepeatIcon, SearchIcon, SparkleIcon, SpinnerIcon, XIcon } from '../../ui/icons.tsx';
 import { TaskCheckMark } from '../TaskCheck.tsx';
@@ -83,8 +91,10 @@ function ResultGroup({
 export function SearchPanel({
   calendars,
   focusSignal,
+  lesson,
   modelReady,
   onClose,
+  onLessonEnd,
   onOpenEvent,
   onOpenTask,
   readScrollTop,
@@ -98,9 +108,16 @@ export function SearchPanel({
   calendars: ReadonlyArray<CalendarInfo>;
   /** Changes each time ⌘F or the toolbar asks for the field, which then takes focus. */
   focusSignal: number;
+  /**
+   * Opened as the Search with AI lesson, numbered per opening: its banner
+   * above the field, until the first change or Skip.
+   */
+  lesson?: number | undefined;
   /** A model can read a sentence into filters. */
   modelReady: boolean;
   onClose: () => void;
+  /** The lesson's banner is done with: tried, or skipped. */
+  onLessonEnd?: (() => void) | undefined;
   onOpenEvent: (event: EventRecord) => void;
   onOpenTask: (task: TaskRecord) => void;
   /** Where the list was scrolled, kept by the app across a visit to a result. */
@@ -114,6 +131,50 @@ export function SearchPanel({
   timeZone: string;
 }) {
   const { text } = thread.state;
+  // The Search lesson: once its own sentence has been read, the first
+  // change (a sentence, a chip, Undo, typing) or a result opened ticks it
+  // as done and takes the banner away. Skip, or closing the panel with
+  // the banner up, ticks it as skipped.
+  const markLesson = useMarkLesson();
+  const lessonEnded = useRef(false);
+  const lessonBaseline = useRef<{ readonly key: string; readonly opening: number } | null>(null);
+  const threadKey = `${String(thread.state.version)}|${searchQueryKey(thread.state.query)}`;
+  const endLesson = (mark: 'done' | 'skipped') => {
+    if (lesson !== undefined && !lessonEnded.current) {
+      lessonEnded.current = true;
+      void markLesson('search', mark);
+      onLessonEnd?.();
+    }
+  };
+  const settleLesson = useEffectEvent(() => {
+    if (lesson === undefined) {
+      lessonBaseline.current = null;
+      lessonEnded.current = false;
+    } else if (thread.busy) {
+      // The lesson's own sentence is still being read.
+    } else if (lessonBaseline.current?.opening !== lesson) {
+      // Opened, or opened again while up: the thread as the lesson started
+      // it is the baseline, so starting it over is not a change.
+      lessonBaseline.current = { key: threadKey, opening: lesson };
+    } else if (lessonBaseline.current.key !== threadKey) {
+      endLesson('done');
+    }
+  });
+  useEffect(() => settleLesson(), [lesson, thread.busy, threadKey]);
+  const leaveLesson = useEffectEvent(() => {
+    if (lesson !== undefined && !lessonEnded.current) {
+      void markLesson('search', 'skipped');
+    }
+  });
+  useEffect(() => () => leaveLesson(), []);
+  const openEvent = (event: EventRecord) => {
+    endLesson('done');
+    onOpenEvent(event);
+  };
+  const openTask = (task: TaskRecord) => {
+    endLesson('done');
+    onOpenTask(task);
+  };
   // Back from a result, the turns stand where they were; only new ones ease in.
   const [restingTurns] = useState(() => new Set(thread.state.turns.map((turn) => turn.id)));
   const blank = isBlankSearchQuery(thread.state.query);
@@ -200,7 +261,7 @@ export function SearchPanel({
           className={ROW_CLASS}
           data-search-result
           data-testid="search-event"
-          onClick={() => onOpenEvent(event)}
+          onClick={() => openEvent(event)}
           type="button"
         >
           <span
@@ -242,7 +303,7 @@ export function SearchPanel({
           className={ROW_CLASS}
           data-search-result
           data-testid="search-task"
-          onClick={() => onOpenTask(task)}
+          onClick={() => openTask(task)}
           type="button"
         >
           {/* Wrapped, so the row's hover does not preview a tick: the row opens the task. */}
@@ -282,6 +343,19 @@ export function SearchPanel({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="search-panel">
+      {lesson !== undefined ? (
+        <div className="px-3 pt-3">
+          <LessonBanner
+            id="search"
+            note={
+              modelReady
+                ? undefined
+                : 'Reading a sentence needs the on-device model, which is not ready on this Mac — plain words still search. Settings › AI Model says why.'
+            }
+            onSkip={() => endLesson('skipped')}
+          />
+        </div>
+      ) : null}
       <div className="flex items-start gap-2 px-3 pt-3 pb-2">
         {/* One card: the field, the turns its sentences made, and why the
             last one was not read — hung under it as part of it. */}

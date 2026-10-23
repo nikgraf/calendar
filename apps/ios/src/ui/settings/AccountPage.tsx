@@ -127,7 +127,7 @@ export function AccountPage() {
           <ActionRow
             disabled={busy}
             leading={<LeadingSpace />}
-            onPress={() => void addAccount(account.email)}
+            onPress={() => void addAccount({ loginHint: account.email })}
             testID={`reconnect-account-${account.id}`}
             title={account.displayName ? 'Sign In Again' : 'Sign In'}
           />
@@ -206,7 +206,7 @@ export function AccountPage() {
         >
           <ActionRow
             disabled={busy}
-            onPress={() => void addAccount(account.email)}
+            onPress={() => void addAccount({ loginHint: account.email })}
             testID={`allow-tasks-${account.id}`}
             title="Allow Google Tasks…"
           />

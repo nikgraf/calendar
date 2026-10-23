@@ -10,6 +10,7 @@ import { startCaptureHint } from './captureHint.ts';
 import { registerModelHelper } from './modelHelper.ts';
 import { initModelProvider } from './modelProvider.ts';
 import { registerNotificationIpc } from './notifications.ts';
+import { registerOnboardingIpc } from './onboardingIpc.ts';
 import { registerAppleCalendarIpc } from './appleCalendarIpc.ts';
 import { registerContactsIpc } from './contactsIpc.ts';
 import { registerRemindersIpc } from './remindersIpc.ts';
@@ -154,6 +155,7 @@ void app.whenReady().then(() => {
   registerAppleCalendarIpc();
   registerSettingsIpc();
   registerNotificationIpc();
+  registerOnboardingIpc();
   startCaptureHint(app.getPath('userData'));
   installApplicationMenu();
   if (!startInBackground) {

@@ -6,6 +6,9 @@ import {
   type EventRecord,
   findSameEvent,
   type ItemKind,
+  LESSON_CREATE_PHRASE,
+  LESSON_SEARCH_PHRASE,
+  type LessonId,
   type NotificationTarget,
   PAN_BUFFER_DAYS,
   parseNotificationTarget,
@@ -53,6 +56,8 @@ import { backend } from '../backend.ts';
 import { desktopTextRecognizer } from '../ai/desktopTextRecognizer.ts';
 import { Dialog, isDialogOpen } from '../Dialog.tsx';
 import { NoticeStack } from '../NoticeStack.tsx';
+import { parseLessonId } from '../onboarding/lessons.ts';
+import { requestSetup } from '../onboarding/setupRequests.ts';
 import { useMediaQuery } from '../useMediaQuery.ts';
 import { BirthdayDetail } from './BirthdayDetail.tsx';
 import { CaptureDialog } from './CaptureDialog.tsx';
@@ -62,6 +67,7 @@ import { MonthView } from './MonthView.tsx';
 import { DragGhost } from './panel/DragGhost.tsx';
 import { EditorPanel } from './panel/EditorPanel.tsx';
 import { EventInspector } from './panel/EventInspector.tsx';
+import { LessonPanel, type PanelLessonId } from './panel/LessonPanel.tsx';
 import { SearchPanel } from './panel/SearchPanel.tsx';
 import { onWindowFocus } from './QuickAddBar.tsx';
 import { TodayRail } from './panel/TodayRail.tsx';
@@ -74,19 +80,27 @@ type MainView = 'day' | 'month' | 'week';
 
 /**
  * What the side panel shows: the Today rail at rest, search (⌘F), an
- * event's inspector after a click on the grid or a search result, or an
- * inline editor (Edit, a slot, New, a task chip or result). A panel
- * opened from a search result goes back to the results when it closes
- * (`fromSearch`). The inspector's `event` is kept current (see
- * CalendarBody); an editor's seed is the draft's start and stays put.
+ * event's inspector after a click on the grid or a search result, an
+ * inline editor (Edit, a slot, New, a task chip or result), or a Getting
+ * started lesson around a settings section. A panel opened from a search
+ * result goes back to the results when it closes (`fromSearch`). The
+ * inspector's `event` is kept current (see CalendarBody); an editor's
+ * seed is the draft's start and stays put.
  */
 type PanelState =
   | { readonly kind: 'rail' }
   | {
       readonly kind: 'search';
+      /**
+       * The Search with AI lesson, numbered per opening: its banner above
+       * the field until the first change. Opened again while it is up, the
+       * new number tells the panel the restarted thread is no change.
+       */
+      readonly lesson?: number | undefined;
       /** Opened by ⌘F or the toolbar: the field's text is selected (typing replaces it). */
       readonly selectText: boolean;
     }
+  | { readonly id: PanelLessonId; readonly kind: 'lesson' }
   | {
       readonly event: EventRecord;
       readonly fromSearch?: boolean | undefined;
@@ -114,7 +128,8 @@ const RESULTS: PanelState = { kind: 'search', selectText: false };
 
 /** Whether the panel is search or something opened from its results. */
 const isSearching = (panel: PanelState): boolean =>
-  panel.kind === 'search' || (panel.kind !== 'rail' && panel.fromSearch === true);
+  panel.kind === 'search' ||
+  (panel.kind !== 'rail' && panel.kind !== 'lesson' && panel.fromSearch === true);
 
 /** Where closing a panel leads: from a search result back to the results, else the rail. */
 const backFrom = (panel: PanelState): PanelState =>
@@ -528,6 +543,48 @@ function CalendarBody({
     setPanel({ kind: 'search', selectText: true });
     setSearchFocus((count) => count + 1);
   };
+  // A Getting started lesson, from the sidebar card or the settings
+  // window (`lesson:open`): Create with AI is the editor on today with
+  // the phrase in its quick-add field; Search with AI is the search with
+  // its sentence read; the rest frame a settings section in the panel.
+  const openLesson = (id: LessonId) => {
+    switch (id) {
+      case 'create': {
+        const day = Temporal.PlainDate.from(today);
+        goToDay(day);
+        setPanel({
+          kind: 'editEvent',
+          opening: nextOpening(),
+          seed: {
+            initialDate: day,
+            initialHour: 12,
+            lesson: 'create',
+            quickAddText: LESSON_CREATE_PHRASE,
+          },
+        });
+        return;
+      }
+      case 'search': {
+        // A fresh thread, whatever an earlier search left. Without the
+        // model the words search as plain words; the banner says why.
+        void searchThread.startWith(LESSON_SEARCH_PHRASE, {
+          read: searchModel.status === 'ready',
+        });
+        setPanel({ kind: 'search', lesson: nextOpening(), selectText: false });
+        setSearchFocus((count) => count + 1);
+        return;
+      }
+      default:
+        setPanel({ id, kind: 'lesson' });
+    }
+  };
+  const onLessonOpen = useEffectEvent((value: unknown) => {
+    const id = parseLessonId(value);
+    if (id) {
+      openLesson(id);
+    }
+  });
+  useEffect(() => window.calendarBridge.onLessonOpen((value) => onLessonOpen(value)), []);
   // A result: its day in the grid (its own week, even after a pan rolled
   // the window elsewhere), and the occurrence in the inspector. A timed one
   // out of the time grid's view is scrolled into it, so its outlined block
@@ -563,7 +620,9 @@ function CalendarBody({
         ? `event:${panel.seed.event?.id ?? 'new'}:${String(panel.opening)}`
         : panel.kind === 'editTask'
           ? `task:${panel.task?.id ?? 'new'}:${String(panel.opening)}`
-          : panel.kind;
+          : panel.kind === 'lesson'
+            ? `lesson:${panel.id}`
+            : panel.kind;
 
   return (
     <div className="flex h-screen flex-col bg-canvas text-ink">
@@ -589,6 +648,8 @@ function CalendarBody({
             calendars={calendars}
             focused={focused}
             onManageAccounts={() => void window.calendarBridge.openSettings('accounts')}
+            onOpenLesson={openLesson}
+            onOpenSetup={requestSetup}
             onPickDay={scrollToDay}
             today={Temporal.PlainDate.from(today)}
             visible={view === 'month' ? null : { end: days.at(-1)!, start: days[0]! }}
@@ -672,8 +733,14 @@ function CalendarBody({
               <SearchPanel
                 calendars={calendars}
                 focusSignal={searchFocus}
+                lesson={panel.lesson}
                 modelReady={searchModel.status === 'ready'}
                 onClose={() => setPanel(RAIL)}
+                onLessonEnd={() =>
+                  setPanel((current) =>
+                    current.kind === 'search' ? { ...current, lesson: undefined } : current,
+                  )
+                }
                 onOpenEvent={openSearchEvent}
                 onOpenTask={(task) =>
                   setPanel({ fromSearch: true, kind: 'editTask', opening: nextOpening(), task })
@@ -712,6 +779,8 @@ function CalendarBody({
                 }
                 timeZone={timeZone}
               />
+            ) : panel.kind === 'lesson' ? (
+              <LessonPanel id={panel.id} onClose={() => setPanel(RAIL)} />
             ) : panel.kind === 'editEvent' ? (
               <EditorPanel
                 calendars={calendars}

@@ -928,6 +928,67 @@ backend itself has no caller identity or permission checks, so the
 gateway carries all of it. Details, limits and the threat model:
 `docs/agent-gateway.md`.
 
+## Onboarding (first run and Getting started)
+
+- **State.** One `device_settings` key, `onboarding` (core
+  `onboarding.ts`: `OnboardingState` — the card `expanded` / `collapsed` /
+  `hidden`, a mark per lesson, `done` or `skipped`, and how the setup
+  ended), read over `getOnboarding` and changed over `updateOnboarding`:
+  a window sends what changes (`OnboardingChange` — the card, the setup's
+  outcome, one lesson's mark, a reset), never a whole state, and the
+  backend applies it to what is stored under a lock
+  (`applyOnboardingChange`), so two windows' changes, or a frame ticking
+  skipped as the next lesson ticks done, both land. A try is never
+  downgraded to a skip (`withLessonMark`). Per device: not in the
+  settings document and not a settings-file trigger key, so a copied
+  setup starts its own lessons.
+- **First run.** Shown when nothing is connected and the setup was
+  neither finished nor skipped (`useSetupNeeded`, null until the accounts
+  and the state are read), decided once per launch (iOS) or window (Mac)
+  from that first read — removing the last account later does not bring
+  it up mid-session. Once ended, a late answer (a permission granted
+  after Skip) changes nothing. iOS: a `fullScreenModal` route group
+  `app/setup/` the calendar pushes, its pages sharing
+  Settings' `SettingsProvider` (statuses, Google sign-in, device
+  connects) and a `SetupProvider` (the ticked sources, the steps they
+  lead through). Mac: `SetupDialog` on `Dialog` in the calendar window's
+  root, latched open until finished — the first account it signs in
+  ends "nothing connected" mid-flow — except an untouched Welcome, which
+  closes again when accounts arrive another way (the watched settings
+  file is imported a beat after launch). The Google step's Tasks box is
+  `AddAccountParams.tasks` → `googleScopes({ tasks })`; the copy door
+  imports a settings file (`useSettingsTransfer` / `settingsTransfer.ts`,
+  shared with Settings File) and lists what the device still has to do.
+- **Card and lessons.** `lessonRows` gives the card its rows ("Add your
+  accounts" first while nothing is connected); the card leaves once every
+  lesson is ticked. A lesson is an existing surface plus a frame: Create
+  with AI is the editor seeded with `quickAddText` + `lesson`
+  (`EditorSeed`; `initialText` on both QuickAddBars) under a
+  `LessonBanner`; Search with AI is search with its sentence read (the
+  desktop panel's thread, iOS route params on the Search tab); Alerts,
+  Contacts, Time zones and "Set up your Mac/iPhone" frame the Settings
+  sections (iOS `app/lesson/` modal, desktop `PanelState` `lesson`). A
+  section reports a change that went through — a setting saved, an
+  access granted, a file shared — through `useLessonTried`
+  (`LessonTriedContext`; nothing outside a lesson), which ticks the
+  lesson done; leaving a frame without one ticks it skipped. Once tried,
+  a banner keeps its hint and loses Skip. On iOS the card shows folded
+  while the Create lesson's editor is up (`EditorHost.lessonEditor`, per
+  opening; a tap unfolds it), the stored fold untouched: open, the card
+  and the half-height sheet left no hour of the day for the draft. Settings › Getting Started (iOS page,
+  desktop pane `gettingstarted`) reopens lessons — the desktop's through
+  `lesson:open` IPC, which keeps the lesson in main, shows the calendar
+  window and nudges it; the calendar collects it with `lesson:take` when
+  nudged and when it subscribes, as with `notifications:take` — and Start
+  Over clears the ticks.
+- **Switches.** `CALENDAR_ONBOARDING=off` (desktop, answered over
+  `onboarding:enabled`; the e2e harness's default) and
+  `EXPO_PUBLIC_CALENDAR_ONBOARDING=off` (the CI and live iOS bundles) keep
+  the setup and the card away whatever the state says. Under the fixture
+  model the iOS `onboarding-fixture` deep link resets the state and forces
+  both on for that launch (flow 26), and under the fake Google API
+  "Add Google Account" signs the fixture in (`fixtureSignIn`).
+
 ## Platform seams
 
 - **rpc vs IPC.** Calendar data crosses process boundaries **only**
@@ -964,7 +1025,8 @@ gateway carries all of it. Details, limits and the threat model:
   maximizable). Settings opens from the application menu (`menu.ts`:
   Settings…, ⌘,) — also with no main window — or over `settings:open`. It
   is a sidebar of panes (Accounts, Notifications, Time Zones, AI Model,
-  Screen Sharing, Settings File, Advanced, then Mirrors and Agents under
+  Screen Sharing, Settings File, Getting Started, Advanced, then Mirrors
+  and Agents under
   an "Experimental" heading) with a search field (`filterPanes`). The pane is the URL hash (`#settings/<pane>`): the main
   process moves an open window by navigating the hash, the page only ever
   reads it. Each window is its own rpc client with its own atoms, kept in
@@ -1221,8 +1283,9 @@ gateway carries all of it. Details, limits and the threat model:
   key/value table for preferences that never sync to Google
   (`birthdayReminders`, `birthdayReminderOverrides` — keyed through
   `birthdayMergeKey`, so an override survives a source coming or going —
-  `eventNotifications`, `timeZones`, `viewPreferences`, `mirrors`,
-  `mirrors.local`, `importedVisibility`, `localNotifications.*`), behind
+  `eventNotifications`, `timeZones`, `viewPreferences`, `onboarding`,
+  `mirrors`, `mirrors.local`, `importedVisibility`,
+  `localNotifications.*`), behind
   rpc because the consumer is a backend job in both hosts. The portable
   subset travels in `SettingsDocument` (core): Export/Import on both apps
   and the desktop's watched `~/.solunivo/solunivo.jsonc`, two-way (file →

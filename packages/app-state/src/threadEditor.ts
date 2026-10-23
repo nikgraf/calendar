@@ -70,8 +70,17 @@ export interface DraftFlash {
 const guestKeys = (attendees: ReadonlyArray<{ readonly email: string }>): string =>
   attendees.map((attendee) => emailKey(attendee.email)).join('\n');
 
-/** Existing event (edit mode), a prefilled slot (create mode), or a thread of drafts. */
-export type EditorSeed = EventEditorSeed & { readonly thread?: ThreadSeed | undefined };
+/**
+ * Existing event (edit mode), a prefilled slot (create mode), or a thread
+ * of drafts. The Create with AI lesson opens a new item with a phrase
+ * already in the quick-add field (`quickAddText`) and its frame above it
+ * (`lesson`).
+ */
+export type EditorSeed = EventEditorSeed & {
+  readonly lesson?: 'create' | undefined;
+  readonly quickAddText?: string | undefined;
+  readonly thread?: ThreadSeed | undefined;
+};
 
 /** A draft whose calendar has no color yet (no writable calendar): a neutral hue. */
 const NO_CALENDAR_COLOR = '#8a8a8a';

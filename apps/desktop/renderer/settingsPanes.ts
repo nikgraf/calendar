@@ -41,6 +41,12 @@ export const SETTINGS_PANES = [
     label: 'Settings File',
   },
   {
+    // Letters only, like `file`: windows.ts accepts nothing else in a pane id.
+    id: 'gettingstarted',
+    keywords: ['onboarding', 'lessons', 'tutorial', 'help', 'start over', 'card', 'tips'],
+    label: 'Getting Started',
+  },
+  {
     id: 'advanced',
     keywords: ['location', 'map', 'cache', 'places'],
     label: 'Advanced',

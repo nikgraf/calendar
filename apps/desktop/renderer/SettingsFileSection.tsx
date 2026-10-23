@@ -1,19 +1,16 @@
 import { useBackendMutations } from '@calendar/app-state';
-import {
-  describeImportSummary,
-  formatSettingsDocument,
-  parseSettingsDocument,
-  type SettingsDocument,
-  type SettingsImportSummary,
-} from '@calendar/core';
-import { Effect } from 'effect';
+import { describeImportSummary } from '@calendar/core';
 import { useEffect, useState } from 'react';
 import type { SettingsFileStatus } from './backend.ts';
 import { Dialog } from './Dialog.tsx';
+import {
+  exportSettingsToFile,
+  type PendingImport,
+  pickSettingsFile,
+  shortPath,
+} from './settingsTransfer.ts';
 import { CALLOUT_CLASS } from './ui/calloutStyles.ts';
 import { SETTINGS_BUTTON_CLASS as BUTTON } from './ui/buttonStyles.ts';
-
-const shortPath = (path: string): string => path.replace(/^\/Users\/[^/]+/, '~');
 
 const timeLabel = (epochMs: number): string =>
   new Date(epochMs).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
@@ -40,37 +37,23 @@ const useAction = () => {
  * One-off Export/Import of the settings document: a copy to carry to
  * another device, nothing watched. Files are a window concern (dialogs go
  * through the preload bridge); the document itself only travels over the
- * rpc seam, decoded here before it goes.
+ * rpc seam, decoded before it goes (`settingsTransfer.ts`, shared with
+ * the setup dialog's copy door and the "Set up your iPhone" lesson).
  */
 export function SettingsTransferSection() {
   const mutations = useBackendMutations();
   const { busy, notice, run } = useAction();
-  const [pending, setPending] = useState<{
-    document: SettingsDocument;
-    path: string;
-    summary: SettingsImportSummary;
-  } | null>(null);
+  const [pending, setPending] = useState<PendingImport | null>(null);
 
   const exportToFile = () =>
     run(async () => {
-      const document = await mutations.exportSettings(undefined);
-      const result = await window.calendarBridge.settingsFileSave(formatSettingsDocument(document));
-      return 'canceled' in result ? null : `Saved to ${shortPath(result.path)}.`;
+      const path = await exportSettingsToFile(mutations);
+      return path === null ? null : `Saved to ${shortPath(path)}.`;
     });
 
   const importFromFile = () =>
     run(async () => {
-      const opened = await window.calendarBridge.settingsFileOpen();
-      if ('canceled' in opened) {
-        return null;
-      }
-      const document = await Effect.runPromise(
-        parseSettingsDocument(opened.text).pipe(
-          Effect.mapError((error) => new Error(`${shortPath(opened.path)}: ${error.message}`)),
-        ),
-      );
-      const summary = await mutations.previewSettingsImport({ document });
-      setPending({ document, path: opened.path, summary });
+      setPending(await pickSettingsFile(mutations));
       return null;
     });
 

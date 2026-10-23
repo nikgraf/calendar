@@ -1,6 +1,7 @@
 import {
   useBackendMutations,
   useDeviceZone,
+  useLessonTried,
   useSettingsEditor,
   useTimeZoneSettings,
 } from '@calendar/app-state';
@@ -33,6 +34,7 @@ export function TimeZonesSection() {
   const deviceZone = useDeviceZone();
   const [picking, setPicking] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const tried = useLessonTried();
 
   if (!settings) {
     return null;
@@ -40,7 +42,10 @@ export function TimeZonesSection() {
   const full = settings.zones.length >= MAX_TIME_ZONES;
   const save = (next: typeof settings) =>
     void persist(next).then(
-      () => setNotice(null),
+      () => {
+        tried();
+        setNotice(null);
+      },
       (error: unknown) => setNotice(error instanceof Error ? error.message : String(error)),
     );
 

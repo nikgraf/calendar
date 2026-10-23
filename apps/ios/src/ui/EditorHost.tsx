@@ -3,6 +3,7 @@ import {
   defaultTodoKind,
   findNotificationEvent,
   useCalendars,
+  useUpdateOnboarding,
   useCaptureModel,
   useTaskLists,
   useTimeZones,
@@ -35,6 +36,7 @@ import { backendClient } from '../backend.ts';
 import { fixtureShareFromUrl, takeIncomingShare } from '../incomingShare.ts';
 import { subscribeNotificationTaps } from '../notifications.ts';
 import { languageModel, modelFixture, textRecognizer } from '../model.ts';
+import { forceOnboarding } from '../onboarding.ts';
 import { CaptureBanner } from './CaptureBanner.tsx';
 import { EventDetailSheet } from './EventDetailSheet.tsx';
 import { EventEditSheet, type EditSeed } from './EventEditSheet.tsx';
@@ -49,6 +51,8 @@ import {
 
 /** The share extension opens the app at `<scheme>://expo-sharing` once the payload is stored. */
 const isShareUrl = (url: string) => /^[a-z-]+:\/\/expo-sharing/i.test(url);
+/** The e2e flows' `<scheme>://onboarding-fixture`: the first run from the top, under the fixture model only. */
+const isOnboardingFixtureUrl = (url: string) => /^[a-z-]+:\/\/onboarding-fixture/i.test(url);
 
 /** What a "+" asks for: a new item on the day being viewed. */
 export interface NewItemRequest {
@@ -68,6 +72,12 @@ export interface EditorHost {
   readonly editEvent: (seed: EditSeed, options?: { readonly initialKind?: ItemKind }) => void;
   /** The task editor for an existing task. */
   readonly editTask: (task: TaskRecord) => void;
+  /**
+   * The Create lesson's editor, while it is up: its opening's number
+   * (each opening its own). The Getting started card shows folded for it,
+   * so the draft is in view between the card and the half-height sheet.
+   */
+  readonly lessonEditor: number | undefined;
   /** The editor's form-sheet route went away (Cancel, Save, or a swipe down). */
   readonly onEditorDismissed: () => void;
   /** The editor's form-sheet route mounted. */
@@ -126,6 +136,7 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
   const [sheet, setSheet] = useState<Sheet>(NONE);
   const calendars = useCalendars();
   const taskLists = useTaskLists();
+  const updateOnboarding = useUpdateOnboarding();
 
   // The editor route follows the state: pushed when an editor opens (half
   // height for a new item, full for an existing one), popped when the
@@ -295,6 +306,16 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
   const onIncoming = useEffectEvent((source: CaptureSource, onSettled?: () => void) => {
     startCapture(source, onSettled);
   });
+  // The onboarding flow's deep link (fixture builds only): the stored
+  // state back to a fresh install's, onboarding switched on for this
+  // launch whatever the bundle says, and the setup presented — over any
+  // sheet, as a share is.
+  const onOnboardingFixture = useEffectEvent(() => {
+    forceOnboarding();
+    setSheet(NONE);
+    // Guarded: a failed reset is a toast, and the setup still goes up.
+    void updateOnboarding({ reset: 'all' }).then(() => router.push('/setup'));
+  });
   useEffect(() => {
     const pickUpShare = () => {
       const share = takeIncomingShare();
@@ -308,6 +329,10 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
       }
       if (isShareUrl(url)) {
         pickUpShare();
+        return;
+      }
+      if (modelFixture && isOnboardingFixtureUrl(url)) {
+        onOnboardingFixture();
         return;
       }
       const fixtureSource = modelFixture ? fixtureShareFromUrl(url) : undefined;
@@ -361,6 +386,7 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
         seed: { initialDate: Temporal.Now.plainDateISO(timeZone) },
         task,
       }),
+    lessonEditor: routeSheet?.seed.lesson === undefined ? undefined : routeSheet.opening,
     onEditorDismissed,
     onEditorShown,
     openBirthday: (birthday) => setSheet({ birthday, kind: 'birthday' }),

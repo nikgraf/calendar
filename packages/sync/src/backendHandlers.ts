@@ -45,9 +45,11 @@ import {
   readBirthdayReminderOverrides,
   readBirthdayReminderSettings,
   readEventNotificationSettings,
+  readOnboarding,
   readPrimaryTimeZone,
   readTimeZoneSettings,
   readViewPreferences,
+  updateOnboarding,
   writeViewPreferences,
 } from './deviceSettings.ts';
 import { NotificationSink } from './notificationSink.ts';
@@ -286,6 +288,8 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
     strictApple === true
       ? loadEventsInRangeOrFail(rangeStartUtc, rangeEndUtc)
       : loadEventsInRange(rangeStartUtc, rangeEndUtc),
+
+  getOnboarding: () => readOnboarding,
 
   getOverdueTasks: ({ before }) =>
     Effect.gen(function* () {
@@ -565,6 +569,7 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       yield* mutations.updateEvent(params);
     }),
 
+  updateOnboarding: (change) => updateOnboarding(change),
   updateRecurring: (params) =>
     Effect.gen(function* () {
       const mutations = yield* EventMutations;

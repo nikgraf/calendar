@@ -57,6 +57,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   pushed the dev client's first request past its 10 s budget on CI. Apple
   data is not separated by nature; withhold the permissions from the dev
   app or start a dev run with the `CALENDAR_*=off` switches.
+- **Onboarding** (2026-10-22, #238) — accounts first in a setup you can
+  skip at every step (Welcome, "What do you use?", one screen per ticked
+  source; on the Mac one dialog over the calendar), then a "Getting
+  started" card whose six rows are lessons tried in the real surfaces, and
+  Settings › Getting Started. Google Calendar and Tasks share one sign-in;
+  the Tasks box only decides the tasks scope. State is per device, never
+  in the settings document. Rejected: the empty state alone (explains
+  nothing), a full wizard before the app, the card without a setup.
+  Open: the welcome's copy door uses the settings file until
+  `todo/settings-code` adds the QR code; mirrors stay out of the lessons.
 - **Versions** (2026-09-11) — the apps are `0.1.0` with a CHANGELOG;
   bump together when a release is worth a number.
 - **Schema baseline** (2026-09-15, again 2026-10-15) — the pre-release

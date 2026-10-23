@@ -112,6 +112,7 @@ export const useGuardedMutations = () => {
       setTimeZoneSettings: guardMutation('save the time zones', mutations.setTimeZoneSettings),
       setViewPreferences: guardMutation('save the view settings', mutations.setViewPreferences),
       updateEvent: guardMutation('reschedule the event', mutations.updateEvent),
+      updateOnboarding: guardMutation('save the Getting started card', mutations.updateOnboarding),
       updateRecurring: guardMutation('reschedule the event', mutations.updateRecurring),
       updateTask: guardMutation('reschedule the reminder', mutations.updateTask),
     }),

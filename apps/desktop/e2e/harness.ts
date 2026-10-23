@@ -359,6 +359,7 @@ export type SettingsPane =
   | 'advanced'
   | 'agents'
   | 'file'
+  | 'gettingstarted'
   | 'mirrors'
   | 'model'
   | 'notifications'
@@ -873,6 +874,12 @@ export interface LaunchOptions {
     readonly model: string;
   };
   /**
+   * 'off' (default): no first-run setup dialog and no Getting started card
+   * (CALENDAR_ONBOARDING=off) — a seeded profile with no account would
+   * otherwise open the setup over the calendar. 'on': the onboarding spec.
+   */
+  readonly onboarding?: 'off' | 'on';
+  /**
    * 'off' (default): no EventKit. 'real': the helper. A fixture uses the
    * in-memory Reminders client so mutation e2e tests never touch personal data.
    */
@@ -1096,6 +1103,8 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
       CALENDAR_EVENTKIT_HOLD: join(userDataDir, 'eventkit-hold'),
       // A seeded birthday with reminders on must never post a real banner.
       CALENDAR_NOTIFICATIONS: 'off',
+      // No setup dialog and no Getting started card unless a spec asks.
+      CALENDAR_ONBOARDING: options.onboarding ?? 'off',
       CALENDAR_SETTINGS_FILE: settingsFilePath,
       CALENDAR_USERDATA: userDataDir,
       ...(options.window

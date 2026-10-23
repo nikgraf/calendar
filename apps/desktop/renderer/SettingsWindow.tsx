@@ -6,6 +6,7 @@ import { AppleCalendarSection } from './AppleCalendarSection.tsx';
 import { BirthdayRemindersSection } from './BirthdayRemindersSection.tsx';
 import { ContactsSection } from './ContactsSection.tsx';
 import { EventNotificationsSection } from './EventNotificationsSection.tsx';
+import { GettingStartedSection } from './GettingStartedSection.tsx';
 import { LocationsSection } from './LocationsSection.tsx';
 import { MirrorsSection } from './MirrorsSection.tsx';
 import { ModelSection } from './ModelSection.tsx';
@@ -52,6 +53,7 @@ const PANE_CONTENT: Record<SettingsPaneId, ReactNode> = {
       <SettingsFileSection />
     </>
   ),
+  gettingstarted: <GettingStartedSection />,
   mirrors: <MirrorsSection />,
   model: <ModelSection />,
   notifications: (
@@ -70,6 +72,7 @@ const PANE_TINT: Record<SettingsPaneId, string> = {
   advanced: 'bg-fill text-ink-secondary',
   agents: 'bg-event-lilac text-on-event-lilac',
   file: 'bg-fill text-ink-secondary',
+  gettingstarted: 'bg-event-blush text-on-event-blush',
   mirrors: 'bg-event-mint text-on-event-mint',
   model: 'bg-event-lilac text-on-event-lilac',
   notifications: 'bg-event-blush text-on-event-blush',

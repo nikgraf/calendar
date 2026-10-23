@@ -1,5 +1,10 @@
 import { TokenSet } from '@calendar/core';
-import { TokenManager, TokenRefreshError, type TokenManagerShape } from '@calendar/google';
+import {
+  TASKS_SCOPE,
+  TokenManager,
+  TokenRefreshError,
+  type TokenManagerShape,
+} from '@calendar/google';
 import { Effect, Exit, Layer } from 'effect';
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 
@@ -36,7 +41,7 @@ const exchangeOk: TokenManagerShape['exchangeCode'] = () =>
 /** Starts a sign-in and waits for the browser to be sent to Google. */
 const start = async (
   exchange: TokenManagerShape['exchangeCode'] = exchangeOk,
-  options: { readonly loginHint?: string } = {},
+  options: { readonly loginHint?: string; readonly tasks?: boolean } = {},
 ) => {
   opened.length = 0;
   const outcome = Effect.runPromiseExit(
@@ -122,5 +127,17 @@ describe('runGoogleSignIn', () => {
     const add = await start();
     expect(add.auth.searchParams.get('login_hint')).toBeNull();
     expect(add.auth.searchParams.get('prompt')).toBe('consent select_account');
+  });
+
+  it('asks for the tasks scope unless the setup unticked Google Tasks', async () => {
+    const withTasks = await start();
+    expect(withTasks.auth.searchParams.get('scope')).toContain(TASKS_SCOPE);
+    cancelGoogleSignIn();
+    await withTasks.outcome;
+
+    const withoutTasks = await start(exchangeOk, { tasks: false });
+    const scope = withoutTasks.auth.searchParams.get('scope') ?? '';
+    expect(scope).not.toContain(TASKS_SCOPE);
+    expect(scope).toContain('https://www.googleapis.com/auth/calendar.events');
   });
 });

@@ -33,6 +33,7 @@ import {
   TaskStatus,
 } from './types.ts';
 import { TimeZoneSettings } from './timeZoneSettings.ts';
+import { OnboardingChange, OnboardingState } from './onboarding.ts';
 import { ViewPreferences } from './viewPreferences.ts';
 
 /**
@@ -294,7 +295,10 @@ export class BackendError extends Schema.Error<BackendError>('core/BackendError'
  * picking another account by mistake no longer adds that one.
  */
 export const AddAccountParams = Schema.Struct({
+  /** The account being reconnected: Google opens on it instead of the chooser. */
   loginHint: Schema.optional(Schema.String),
+  /** Ask for Google Tasks too (the default); false leaves the tasks scope off the consent screen. */
+  tasks: Schema.optional(Schema.Boolean),
 });
 export type AddAccountParams = Schema.Schema.Type<typeof AddAccountParams>;
 
@@ -490,6 +494,11 @@ export class AppBackendRpcs extends RpcGroup.make(
       strictApple: Schema.optional(Schema.Boolean),
     },
     success: Schema.Array(EventRecord),
+  }),
+  /** The first run and the Getting started card on this device (never synced). */
+  Rpc.make('getOnboarding', {
+    error: BackendError,
+    success: OnboardingState,
   }),
   Rpc.make('getOverdueTasks', {
     error: BackendError,
@@ -825,6 +834,11 @@ export class AppBackendRpcs extends RpcGroup.make(
       changes: UpdateEventChanges,
       eventId: Schema.String,
     },
+  }),
+  /** One change to this device's onboarding state, applied to what is stored (`applyOnboardingChange`). */
+  Rpc.make('updateOnboarding', {
+    error: BackendError,
+    payload: OnboardingChange,
   }),
   Rpc.make('updateRecurring', {
     error: BackendError,

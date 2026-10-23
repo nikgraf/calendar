@@ -35,7 +35,11 @@ import Constants from 'expo-constants';
 import { AFTER_FIRST_UNLOCK, deleteItemAsync, getItemAsync, setItemAsync } from 'expo-secure-store';
 import { Data, Duration, Effect, Layer, ManagedRuntime } from 'effect';
 import { FetchHttpClient } from 'effect/http';
-import { googleFixtureLayer, seedFixtureAccounts } from '@calendar/sync/testing/googleFixture';
+import {
+  fixtureSignIn,
+  googleFixtureLayer,
+  seedFixtureAccounts,
+} from '@calendar/sync/testing/googleFixture';
 import { liveWireLayer, seedLiveAccount } from '@calendar/sync/testing/liveWire';
 import { googleFixture } from '../e2e/fixtures/google.ts';
 import { signInWithGoogle } from './googleAuth.ts';
@@ -148,8 +152,14 @@ const runtime = ManagedRuntime.make(appLayer);
 const handlers: BackendHandlers<CommonBackendServices | TokenManager> = {
   ...commonBackendHandlers,
 
-  addAccount: ({ loginHint }) =>
+  addAccount: ({ loginHint, tasks }) =>
     Effect.gen(function* () {
+      // The fake API (e2e bundles): the fixture's account, no sign-in sheet.
+      if (useGoogleFixture) {
+        return yield* finishAddAccount(fixtureSignIn(googleFixture, { loginHint, tasks }), () =>
+          crypto.randomUUID(),
+        );
+      }
       if (!iosClientId) {
         return yield* Effect.fail(
           new OAuthNotConfiguredError({
@@ -166,7 +176,7 @@ const handlers: BackendHandlers<CommonBackendServices | TokenManager> = {
           error instanceof SignInCancelledError
             ? error
             : new OAuthNotConfiguredError({ message: String(error) }),
-        try: () => signInWithGoogle(iosClientId ?? '', loginHint),
+        try: () => signInWithGoogle(iosClientId ?? '', { loginHint, tasks }),
       });
       const result = yield* tokenManager.exchangeCode(grant);
       return yield* finishAddAccount(result, () => crypto.randomUUID());

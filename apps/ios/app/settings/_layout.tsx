@@ -56,6 +56,7 @@ export default function SettingsLayout() {
             <Stack.Screen name="device" options={{ title: 'On This iPhone' }} />
             <Stack.Screen name="time-zones" options={{ title: 'Time Zones' }} />
             <Stack.Screen name="notifications" options={{ title: 'Notifications' }} />
+            <Stack.Screen name="getting-started" options={{ title: 'Getting Started' }} />
             <Stack.Screen name="birthday-leads" options={{ title: 'Remind Me' }} />
             <Stack.Screen name="mirrors" options={{ title: '' }} />
             <Stack.Screen name="mirror" options={{ title: '' }} />

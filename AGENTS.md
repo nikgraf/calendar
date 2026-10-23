@@ -112,8 +112,9 @@ deliberately.
   (`brew install mobile-dev-inc/tap/maestro`) and a JDK on PATH
   (`brew install openjdk`, then `JAVA_HOME=$(brew --prefix openjdk)`).
   Start Metro with `EXPO_PUBLIC_CALENDAR_GOOGLE=fixture` for the Google
-  halves of the flows. Flow conventions: `docs/google-sync-and-testing.md`,
-  "iOS e2e".
+  halves of the flows (and `EXPO_PUBLIC_CALENDAR_MODEL=fixture
+  EXPO_PUBLIC_CALENDAR_ONBOARDING=off` to match CI's bundle). Flow
+  conventions: `docs/google-sync-and-testing.md`, "iOS e2e".
 - `GOOGLE_LIVE=1 pnpm exec vp test run` — the live Google suite
   (`packages/sync/src/live/*.live.ts`) against the dedicated test account
   over the real API; desktop
@@ -177,7 +178,9 @@ deliberately.
   (brings Calendar.app forward), `settings:open`,
   `settingsFile:*`, `auth:cancel` (stops a sign-in waiting on the
   browser), `notifications:take` (the event reminder clicked last — a
-  ref; the event itself is read over rpc) and `agents:*`) use plain
+  ref; the event itself is read over rpc), `onboarding:enabled`,
+  `lesson:open` / `lesson:take` (a lesson Settings opened, kept in main
+  until the calendar window takes it) and `agents:*`) use plain
   preload IPC; calendar data — reminders, Apple events and contact rows
   included — goes through the typed rpc seam only.
 - The desktop has two windows on one renderer bundle: the calendar and
@@ -215,8 +218,13 @@ deliberately.
   `apple-calendar`): branch with `isAppleRemindersAccount` /
   `isAppleCalendarAccount`, never on `provider === 'apple'` alone.
 - The e2e harness sets `CALENDAR_REMINDERS=off`, `CALENDAR_CONTACTS=off`,
-  `CALENDAR_APPLE_CALENDAR=off`, `CALENDAR_GEO=off` and
-  `CALENDAR_CAPTURE_WATCH=off`: seeded Apple rows must never be replaced
+  `CALENDAR_APPLE_CALENDAR=off`, `CALENDAR_GEO=off`,
+  `CALENDAR_CAPTURE_WATCH=off` and `CALENDAR_ONBOARDING=off` (no first-run
+  setup or Getting started card over a seeded profile; the onboarding
+  spec opts in with `onboarding: 'on'`, and the CI and live iOS bundles
+  set `EXPO_PUBLIC_CALENDAR_ONBOARDING=off`, which flow 26's
+  `onboarding-fixture` link overrides for its own launch): seeded Apple
+  rows must never be replaced
   by a real EventKit sync, no bridge may trigger a TCC prompt or read a
   developer's data, no run may depend on MapKit's network, and a
   developer's screenshot mid-run must not draw the capture hint

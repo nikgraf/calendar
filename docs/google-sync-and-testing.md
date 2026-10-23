@@ -601,12 +601,15 @@ per file and run in file order — later tests must tolerate earlier
 tests' data (relative assertions, unique titles). The harness always
 sets `CALENDAR_REMINDERS=off`, `CALENDAR_CONTACTS=off`,
 `CALENDAR_APPLE_CALENDAR=off`, `CALENDAR_GEO=off`,
-`CALENDAR_CAPTURE_WATCH=off` and `CALENDAR_NOTIFICATIONS=off`, points `CALENDAR_SETTINGS_FILE` and
+`CALENDAR_CAPTURE_WATCH=off`, `CALENDAR_NOTIFICATIONS=off` and
+`CALENDAR_ONBOARDING=off`, points `CALENDAR_SETTINGS_FILE` and
 `CALENDAR_AGENT_SOCKET` under the temp profile, and sets
 `CALENDAR_E2E_INPUT=cdp`; `launchApp(seed, options)` opts a spec into a
 fixture or a real bridge (`appleCalendar`, `captureWatch`, `contacts`,
-`geo`, `google`, `microphone`, `model`, `reminders`, `agents`,
-`settingsFile`, `window`). The `reminders` and `appleCalendar` fixtures'
+`geo`, `google`, `microphone`, `model`, `onboarding`, `reminders`,
+`agents`, `settingsFile`, `window`). Under the `google` fixture "Add
+Google Account" signs in the fixture's `signIn` account (else its first)
+with the scopes asked for, no browser. The `reminders` and `appleCalendar` fixtures'
 writes can be held (`App.holdEventKitWrites`, a marker file under the
 profile) so a spec acts while a save or delete waits for EventKit.
 `microphone` stands in for the page's
@@ -642,7 +645,10 @@ wording when the server is down); `reminders` and
 EventKit, read-only viewer, moves both ways); `location` (the picker and
 map over the geo fixture); `birthdays` (device-contacts fixture, chip,
 detail, device-only reminder settings); `eventReminders`; `timeZones`;
-`settingsFile`; `mirrors`; `edgeScroll` (task, event and resize drags held at the grid's edges,
+`settingsFile`; `onboarding` (a fresh profile through the setup dialog
+with a fixture sign-in, the card's lessons and their ticks, fold and
+Hide, Settings › Getting Started; Skip's "Add your accounts" row; no
+setup with an account or the switch off); `mirrors`; `edgeScroll` (task, event and resize drags held at the grid's edges,
 the lane chip that enters without scrolling, a wheel scroll mid-drag);
 `taskConvert` (Google writes left queued) and
 `taskConvertGoogle` (the fake Google API, so pushes land; the rail's
@@ -836,7 +842,11 @@ directory's flows in a non-deterministic order, so every flow must be
 independent of what ran before. Locally the flows run against the dev
 client and Metro (`pnpm --filter @calendar/ios start`); the Google halves
 are no-ops unless Metro was started with
-`EXPO_PUBLIC_CALENDAR_GOOGLE=fixture`, and the Reminders flows (09, 17)
+`EXPO_PUBLIC_CALENDAR_GOOGLE=fixture`, and Metro needs
+`EXPO_PUBLIC_CALENDAR_ONBOARDING=off` as CI's bundle has it (else the
+Getting started card sits over the calendar the flows tap; flow 26 turns
+onboarding on for its own launch through the `onboarding-fixture` link,
+under the fixture model), and the Reminders flows (09, 17)
 are no-ops until the simulator has a connected list — on CI, keyed on
 the fixture account (`fixture@solunivo.test`, list "Mock Tasks", calendar
 "Mock Calendar"), they connect Reminders themselves, write through real
@@ -873,8 +883,9 @@ whose value reads "Half screen", up to full), `open-event-editor.yaml`
 (Edit on the detail sheet a tap opens), `switch-view.yaml` (the header's menu, `VIEW`;
 done once the button reads "View: `VIEW`"),
 `switch-to-task.yaml`, `open-settings.yaml` (waits for `settings-root`),
-`open-settings-page.yaml` (`PAGE`: `device`, `general`, `notifications`,
-`file`, `advanced`, `mirrors`, `unsynced`; rows `settings-row-<page>`, pages
+`open-settings-page.yaml` (`PAGE`: `device`, `time-zones`,
+`notifications`, `getting-started`, `file`, `advanced`, `mirrors`,
+`unsynced`; rows `settings-row-<page>`, pages
 `settings-page-<page>`), `close-settings.yaml` (`BackButton` until the
 root shows, then Done), `search-for.yaml` (`QUERY` typed into the Search
 tab's system field until `RESULT` shows; a sentence for the search

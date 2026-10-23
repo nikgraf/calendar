@@ -36,3 +36,13 @@ export const GOOGLE_SCOPES: ReadonlyArray<string> = [
   TASKS_SCOPE,
   ...CONTACTS_SCOPES,
 ];
+
+/**
+ * The scopes a sign-in asks for. Google Calendar and Google Tasks share
+ * one sign-in: the setup's Tasks checkbox only decides whether the tasks
+ * scope is on the consent screen (`tasks: false` leaves it out), and the
+ * app derives `tasksEnabled` from what was granted either way — ticking
+ * it later re-consents in place.
+ */
+export const googleScopes = ({ tasks }: { readonly tasks: boolean }): ReadonlyArray<string> =>
+  tasks ? GOOGLE_SCOPES : GOOGLE_SCOPES.filter((scope) => scope !== TASKS_SCOPE);

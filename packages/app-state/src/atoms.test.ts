@@ -75,6 +75,7 @@ const makeStubClient = () => {
         calls.events += 1;
         return [] as ReadonlyArray<EventRecord>;
       }),
+    getOnboarding: () => Effect.succeed({ card: 'expanded' as const, lessons: {} }),
     getOverdueTasks: () => Effect.succeed([]),
     getTasksInRange: () => Effect.succeed([]),
     getTimeZoneSettings: () =>
@@ -145,6 +146,7 @@ const makeStubClient = () => {
     setViewPreferences: () => Effect.void,
     syncNow: () => Effect.void,
     updateEvent: () => fail('not stubbed'),
+    updateOnboarding: () => Effect.void,
     updateRecurring: () => fail('not stubbed'),
     updateTask: () => Effect.void,
   };

@@ -28,6 +28,8 @@ export interface QuickAddModelOptions {
   readonly fallbackDate?: string | undefined;
   /** The form is still taking the last phrase in: hands-free waits before listening again. */
   readonly hold?: boolean | undefined;
+  /** What the field holds on open (the Create lesson's phrase); empty otherwise. */
+  readonly initialText?: string | undefined;
   readonly model: LanguageModel;
   /**
    * Receives what the phrase was understood as: the editor below the
@@ -64,13 +66,14 @@ export const useQuickAddModel = ({
   editKey,
   fallbackDate,
   hold = false,
+  initialText,
   model,
   onApply,
   onPhrase,
   speech,
   timeZone,
 }: QuickAddModelOptions) => {
-  const [phrase, setPhrase] = useState('');
+  const [phrase, setPhrase] = useState(initialText ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [voice, setVoice] = useState<VoiceState>('idle');

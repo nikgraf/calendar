@@ -289,6 +289,10 @@ jobs:
           # quick-add (06) and capture (22) assert real outcomes instead of
           # whatever the runner's Apple Intelligence allows.
           EXPO_PUBLIC_CALENDAR_MODEL: fixture
+          # No first-run setup and no Getting started card: every flow
+          # starts on the calendar as it was. Flow 26 turns both on for its
+          # own launch through the `onboarding-fixture` deep link.
+          EXPO_PUBLIC_CALENDAR_ONBOARDING: 'off'
         run: bash e2e/ci/repack-app.sh build/e2e-app/Solunivo.app build/e2e-repacked/Solunivo.app
       - name: Install on the simulator, pre-grant Reminders
         run: bash apps/ios/e2e/ci/prepare-simulator.sh install apps/ios/build/e2e-repacked/Solunivo.app

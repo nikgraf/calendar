@@ -10,6 +10,7 @@ import {
   useOnDraftReveal,
   useOverdueTasksStable,
   useRequestDraftFocus,
+  useSetupNeeded,
   useBirthdaysInRangeStable,
   useEventReadOnlyLookup,
   useTaskReadOnlyLookup,
@@ -29,17 +30,20 @@ import {
   WEEK_SWIPE_BUFFER,
   weekStart,
 } from '@calendar/core';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { MenuView } from '@expo/ui/community/menu';
+import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { AppState, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import { kickSync, runLocalNotifications, startSync, subscribeInvalidations } from '../backend.ts';
 import { registerBackgroundRefresh } from '../backgroundTask.ts';
+import { useOnboardingEnabled } from '../onboarding.ts';
 import { AccountButton } from './AccountButton.tsx';
 import { ADD_BUTTON_CLEARANCE, AddButton } from './AddButton.tsx';
 import { AgendaView } from './AgendaView.tsx';
 import { DayTimeline } from './DayTimeline.tsx';
 import { useEditorHost } from './EditorHost.tsx';
+import { GettingStartedCard } from './GettingStartedCard.tsx';
 import { MonthGrid } from './MonthGrid.tsx';
 import {
   ConflictBanner,
@@ -83,6 +87,7 @@ export function CalendarScreen() {
     });
     return () => subscription.remove();
   }, []);
+  useFirstRun();
   const zones = useTimeZones();
   const prefs = useViewPreferences();
   if (!zones.loaded || prefs === null) {
@@ -96,6 +101,31 @@ export function CalendarScreen() {
     />
   );
 }
+
+/**
+ * The first run, decided once per launch from the first read of the
+ * accounts and the onboarding state: nothing connected and the setup
+ * never ran puts the setup modal up over the calendar. Decided then and
+ * only then — a Skip is not met again on the next read, and removing the
+ * last account later (in Settings, on an install from before the setup
+ * existed) does not bring it up mid-session. Off under
+ * EXPO_PUBLIC_CALENDAR_ONBOARDING=off.
+ */
+const useFirstRun = () => {
+  const router = useRouter();
+  const enabled = useOnboardingEnabled();
+  const due = useSetupNeeded();
+  const decided = useRef(false);
+  useEffect(() => {
+    if (!enabled || due === null || decided.current) {
+      return;
+    }
+    decided.current = true;
+    if (due) {
+      router.push('/setup');
+    }
+  }, [due, enabled, router]);
+};
 
 function CalendarBody({
   initialView,
@@ -290,6 +320,9 @@ function CalendarBody({
           <AccountButton />
         </View>
       </View>
+
+      {/* Getting started, between the header and the view, until it leaves. */}
+      <GettingStartedCard timeZone={timeZone} />
 
       {view === 'month' ? (
         <MonthGrid

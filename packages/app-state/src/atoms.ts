@@ -94,6 +94,7 @@ export interface BackendAtoms {
   readonly mapSnapshot: ReturnType<typeof buildAtoms>['mapSnapshot'];
   readonly mirrors: ReturnType<typeof buildAtoms>['mirrors'];
   readonly mutationCall: ReturnType<typeof buildAtoms>['mutationCall'];
+  readonly onboarding: ReturnType<typeof buildAtoms>['onboarding'];
   readonly overdueTasks: ReturnType<typeof buildAtoms>['overdueTasks'];
   readonly pendingOps: ReturnType<typeof buildAtoms>['pendingOps'];
   readonly placesSearch: ReturnType<typeof buildAtoms>['placesSearch'];
@@ -175,6 +176,7 @@ const MUTATION_REACTIVITY = {
   setViewPreferences: [deviceSettingsKey('viewPreferences')],
   syncNow: [],
   updateEvent: [EVENTS_KEY],
+  updateOnboarding: [deviceSettingsKey('onboarding')],
   updateRecurring: [EVENTS_KEY],
   updateTask: [TASKS_KEY],
 } satisfies Partial<Record<keyof BackendClient, ReadonlyArray<string>>>;
@@ -361,6 +363,17 @@ const buildAtoms = (client: BackendClient, deviceZone: Atom.Atom<string>) => {
       }),
     )
     .pipe(Atom.withReactivity([deviceSettingsKey('timeZones')]));
+
+  // The first run and the Getting started card on this device; refetched
+  // only when written (a tick, a collapse, Hide, Start Over).
+  const onboarding = runtime
+    .atom(
+      Effect.gen(function* () {
+        const backend = yield* AppBackend;
+        return yield* backend.getOnboarding(undefined);
+      }),
+    )
+    .pipe(Atom.withReactivity([deviceSettingsKey('onboarding')]));
 
   // Device-local view preferences; refetched only when they are written.
   const viewPreferences = runtime
@@ -568,6 +581,7 @@ const buildAtoms = (client: BackendClient, deviceZone: Atom.Atom<string>) => {
     mapSnapshot,
     mirrors,
     mutationCall,
+    onboarding,
     overdueTasks,
     pendingOps,
     placesSearch,

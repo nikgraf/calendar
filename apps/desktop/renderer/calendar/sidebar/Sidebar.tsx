@@ -1,14 +1,17 @@
-import type { Account, CalendarInfo, Temporal } from '@calendar/core';
+import type { Account, CalendarInfo, LessonId, Temporal } from '@calendar/core';
 import { CalendarList } from './CalendarList.tsx';
+import { GettingStartedCard } from './GettingStartedCard.tsx';
 import { MiniMonth } from './MiniMonth.tsx';
 import { SyncFooter } from './SyncFooter.tsx';
 
-/** The left column: a month at a glance, the calendars and lists, and sync. */
+/** The left column: a month at a glance, the Getting started card while it is needed, the calendars and lists, and sync. */
 export function Sidebar({
   accounts,
   calendars,
   focused,
   onManageAccounts,
+  onOpenLesson,
+  onOpenSetup,
   onPickDay,
   today,
   visible,
@@ -17,6 +20,10 @@ export function Sidebar({
   calendars: ReadonlyArray<CalendarInfo>;
   focused: Temporal.PlainDate;
   onManageAccounts: () => void;
+  /** A Getting started row: its lesson opens in the side panel. */
+  onOpenLesson: (id: LessonId) => void;
+  /** "Add your accounts": the setup dialog on "What do you use?". */
+  onOpenSetup: () => void;
   onPickDay: (date: Temporal.PlainDate) => void;
   today: Temporal.PlainDate;
   /** The main view's first and last day, highlighted in the month; null in the month view. */
@@ -34,6 +41,7 @@ export function Sidebar({
         today={today}
         visible={visible}
       />
+      <GettingStartedCard onOpenLesson={onOpenLesson} onOpenSetup={onOpenSetup} />
       <CalendarList accounts={accounts} calendars={calendars} />
       <SyncFooter onManageAccounts={onManageAccounts} />
     </aside>

@@ -12,8 +12,7 @@ import { Cause, Data, Effect, Exit } from 'effect';
 
 const AUTH_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth';
 
-export { GOOGLE_SCOPES } from '@calendar/google';
-import { GOOGLE_SCOPES } from '@calendar/google';
+import { googleScopes } from '@calendar/google';
 
 export class AuthFlowError extends Data.TaggedError('AuthFlowError')<{
   readonly reason: string;
@@ -69,11 +68,12 @@ export const cancelGoogleSignIn = (): void => {
  * code exchange. It used to say "Signed in" before a single check, over a
  * refused consent, a forged state or a failed exchange alike.
  * `loginHint` (a reconnect) opens Google on that account rather than the
- * account chooser.
+ * account chooser; `tasks: false` (the setup's Tasks box unticked) leaves
+ * the tasks scope off the consent screen.
  */
 export const runGoogleSignIn = (
   clientId: string,
-  options: { readonly loginHint?: string | undefined } = {},
+  options: { readonly loginHint?: string | undefined; readonly tasks?: boolean | undefined } = {},
 ): Effect.Effect<CodeExchangeResult, AuthFlowError | SignInCancelledError, TokenManager> =>
   Effect.gen(function* () {
     const tokenManager = yield* TokenManager;
@@ -155,7 +155,7 @@ export const runGoogleSignIn = (
             prompt: options.loginHint ? 'consent' : 'consent select_account',
             redirect_uri: `http://127.0.0.1:${port}/callback`,
             response_type: 'code',
-            scope: GOOGLE_SCOPES.join(' '),
+            scope: googleScopes({ tasks: options.tasks ?? true }).join(' '),
             state,
           }).toString();
           void shell.openExternal(authUrl.toString());

@@ -1,13 +1,18 @@
 import {
+  applyOnboardingChange,
   BirthdayReminderOverride,
   type BirthdayReminderOverrides,
   BirthdayReminderSettings,
   canonicalBirthdayOverrides,
+  canonicalOnboardingState,
   DEFAULT_BIRTHDAY_REMINDER_SETTINGS,
   DEFAULT_EVENT_NOTIFICATION_SETTINGS,
+  DEFAULT_ONBOARDING_STATE,
   DEFAULT_TIME_ZONE_SETTINGS,
   DEFAULT_VIEW_PREFERENCES,
   EventNotificationSettings,
+  type OnboardingChange,
+  OnboardingState,
   resolveTimeZones,
   Temporal,
   TimeZoneSettings,
@@ -162,6 +167,50 @@ export const writeViewPreferences = (
         ? {}
         : { sidebarCollapsed: preferences.sidebarCollapsed }),
     }),
+  );
+
+/**
+ * The device_settings key for the first run and the Getting started
+ * card. Per device, like the view preferences: not in the settings
+ * document, and not one of the keys that write the settings file back.
+ */
+export const ONBOARDING_KEY = 'onboarding';
+
+const decodeOnboarding = Schema.decodeUnknownEffect(OnboardingState);
+
+/** The stored onboarding state, or the default (the setup due, the card open) when nothing decodable is stored. */
+export const readOnboarding: Effect.Effect<OnboardingState, SqlError, DeviceSettingsRepo> =
+  Effect.gen(function* () {
+    const raw = yield* (yield* DeviceSettingsRepo).get(ONBOARDING_KEY);
+    if (raw === null) {
+      return DEFAULT_ONBOARDING_STATE;
+    }
+    return yield* decodeOnboarding(raw).pipe(Effect.orElseSucceed(() => DEFAULT_ONBOARDING_STATE));
+  });
+
+export const writeOnboarding = (
+  state: OnboardingState,
+): Effect.Effect<void, SqlError, DeviceSettingsRepo> =>
+  Effect.flatMap(DeviceSettingsRepo, (repo) =>
+    // Canonical: only the marks that are set, in card order.
+    repo.set(ONBOARDING_KEY, canonicalOnboardingState(state)),
+  );
+
+const onboardingLock = Semaphore.makeUnsafe(1);
+
+/**
+ * Read-modify-write of the onboarding state, one change at a time: every
+ * window's change lands on the one before it, whatever each window last
+ * read (a lesson ticked skipped as its frame closes, the next one ticked
+ * done a moment later).
+ */
+export const updateOnboarding = (
+  change: OnboardingChange,
+): Effect.Effect<void, SqlError, DeviceSettingsRepo> =>
+  onboardingLock.withPermits(1)(
+    Effect.flatMap(readOnboarding, (current) =>
+      writeOnboarding(applyOnboardingChange(current, change)),
+    ),
   );
 
 /** The device_settings key for the time zones. */

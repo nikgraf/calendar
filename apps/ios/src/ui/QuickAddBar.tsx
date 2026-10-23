@@ -55,6 +55,7 @@ export function QuickAddBar({
   editKey,
   fallbackDate,
   hold,
+  initialText,
   onApply,
   onPhrase,
   placeholder = 'Lunch with Sarah tomorrow at 1',
@@ -74,6 +75,8 @@ export function QuickAddBar({
   fallbackDate: string;
   /** The form is still taking the last phrase in: dictation waits to listen again. */
   hold?: boolean | undefined;
+  /** What the field holds on open (the Create lesson's phrase). */
+  initialText?: string | undefined;
   onApply: (item: QuickAddItem) => void;
   /**
    * Takes the phrase over (the editor's draft thread): resolves a message
@@ -107,6 +110,7 @@ export function QuickAddBar({
     editKey,
     fallbackDate,
     hold,
+    initialText,
     model: languageModel,
     onApply,
     onPhrase:

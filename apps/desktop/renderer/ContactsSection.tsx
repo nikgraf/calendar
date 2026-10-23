@@ -1,4 +1,9 @@
-import { contactsStatusCopy, useAccounts, useBackendMutations } from '@calendar/app-state';
+import {
+  contactsStatusCopy,
+  useAccounts,
+  useBackendMutations,
+  useLessonTried,
+} from '@calendar/app-state';
 import { useEffect, useState } from 'react';
 
 const SETTINGS_PATH = 'System Settings › Privacy & Security';
@@ -13,6 +18,7 @@ export function ContactsSection() {
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const { connectContacts } = useBackendMutations();
+  const tried = useLessonTried();
   const accounts = useAccounts();
   const googleWithout = accounts.filter(
     (account) => account.provider === 'google' && !account.contactsEnabled,
@@ -33,7 +39,10 @@ export function ContactsSection() {
   const connect = async () => {
     setBusy(true);
     try {
-      await connectContacts(undefined);
+      // Only a grant is a try; a refusal leaves a lesson open.
+      if ((await connectContacts(undefined)).granted) {
+        tried();
+      }
     } finally {
       setStatus(await window.calendarBridge.contactsStatus());
       setBusy(false);

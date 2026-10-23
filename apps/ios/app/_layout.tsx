@@ -36,6 +36,10 @@ export default function RootLayout() {
             <Stack screenOptions={{ headerShown: false }}>
               <Stack.Screen name="(tabs)" />
               <Stack.Screen name="settings" options={{ presentation: 'modal' }} />
+              {/* The first run: full screen over the tabs, its steps a stack of its own. */}
+              <Stack.Screen name="setup" options={{ presentation: 'fullScreenModal' }} />
+              {/* A Getting started lesson that is a page of its own (Alerts, Contacts…). */}
+              <Stack.Screen name="lesson" options={{ presentation: 'modal' }} />
               {/* The editor: a form sheet at half height for a new item (the
                   calendar behind stays live and draws the drafts), full for
                   an existing one; `detent` comes with the push. Its forms

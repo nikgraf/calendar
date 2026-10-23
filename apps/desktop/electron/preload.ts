@@ -37,6 +37,25 @@ contextBridge.exposeInMainWorld('calendarBridge', {
     ipcRenderer.on('agents:changed', wrapped);
     return () => ipcRenderer.off('agents:changed', wrapped);
   },
+  /** Whether the first run and the Getting started card show at all (CALENDAR_ONBOARDING=off: never). */
+  onboardingEnabled: () => ipcRenderer.invoke('onboarding:enabled'),
+  /**
+   * Lessons asked for from the settings window (`openLesson`), to open in
+   * the calendar: the one waiting at subscription (it may have opened this
+   * window), then one per request.
+   */
+  onLessonOpen: (listener: (id: unknown) => void) => {
+    const take = () => {
+      void ipcRenderer.invoke('lesson:take').then((id: unknown) => {
+        if (id) {
+          listener(id);
+        }
+      });
+    };
+    ipcRenderer.on('lesson:open', take);
+    take();
+    return () => ipcRenderer.off('lesson:open', take);
+  },
   onModelProviderChanged: (listener: (view: unknown) => void) => {
     const wrapped = (_event: unknown, view: unknown) => listener(view);
     ipcRenderer.on('model:providerChanged', wrapped);
@@ -91,6 +110,8 @@ contextBridge.exposeInMainWorld('calendarBridge', {
     ipcRenderer.on('settingsFile:changed', wrapped);
     return () => ipcRenderer.off('settingsFile:changed', wrapped);
   },
+  /** Opens a Getting started lesson in the calendar window (Settings › Getting Started › Open). */
+  openLesson: (id: string) => ipcRenderer.invoke('lesson:open', id),
   openSettings: (pane?: string) => ipcRenderer.invoke('settings:open', pane),
   privacyGet: () => ipcRenderer.invoke('privacy:get'),
   privacySet: (choice: string) => ipcRenderer.invoke('privacy:set', choice),
