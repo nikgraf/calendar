@@ -9,6 +9,7 @@ import {
 } from '@calendar/core';
 import { MenuView } from '@expo/ui/community/menu';
 import { useRouter } from 'expo-router';
+import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useOnboardingEnabled } from '../onboarding.ts';
 import { useEditorHost } from './EditorHost.tsx';
@@ -23,7 +24,9 @@ import { BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme } from './theme.t
  * while nothing is connected and opens the setup. The chevron folds the
  * card to one line, the menu removes it; it leaves by itself once every
  * row is ticked, and never re-expands on its own — Settings › Getting
- * Started brings it back.
+ * Started brings it back. While the Create lesson's editor is up it shows
+ * folded, without changing the stored fold: open, the card and the
+ * half-height sheet would leave no hour of the day for the draft.
  */
 export function GettingStartedCard({ timeZone }: { timeZone: string }) {
   const styles = useStyles(makeStyles);
@@ -35,9 +38,13 @@ export function GettingStartedCard({ timeZone }: { timeZone: string }) {
   const update = useUpdateOnboarding();
   // Null until read: the empty fallback would draw "Add your accounts" for a beat.
   const accountCount = useAccountCount();
+  // The Create lesson's opening the card was unfolded for by a tap on the
+  // folded bar; the next opening folds it again.
+  const [unfoldedFor, setUnfoldedFor] = useState<number | undefined>(undefined);
   if (!enabled || state === null || !cardVisible(state) || accountCount === null) {
     return null;
   }
+  const foldedForLesson = host.lessonEditor !== undefined && unfoldedFor !== host.lessonEditor;
   const progress = lessonProgress(state);
   const rows = lessonRows(state, { accountCount });
   const open = (id: LessonRowId) => {
@@ -48,12 +55,19 @@ export function GettingStartedCard({ timeZone }: { timeZone: string }) {
     }
   };
 
-  if (state.card === 'collapsed') {
+  if (state.card === 'collapsed' || foldedForLesson) {
     return (
       <Pressable
         accessibilityHint="Shows the lessons"
         accessibilityRole="button"
-        onPress={() => void update({ card: 'expanded' })}
+        onPress={() => {
+          if (foldedForLesson) {
+            setUnfoldedFor(host.lessonEditor);
+          }
+          if (state.card === 'collapsed') {
+            void update({ card: 'expanded' });
+          }
+        }}
         style={({ pressed }) => [styles.bar, pressed && styles.pressed]}
         testID="getting-started"
       >

@@ -972,7 +972,10 @@ gateway carries all of it. Details, limits and the threat model:
   access granted, a file shared — through `useLessonTried`
   (`LessonTriedContext`; nothing outside a lesson), which ticks the
   lesson done; leaving a frame without one ticks it skipped. Once tried,
-  a banner keeps its hint and loses Skip. Settings › Getting Started (iOS page,
+  a banner keeps its hint and loses Skip. On iOS the card shows folded
+  while the Create lesson's editor is up (`EditorHost.lessonEditor`, per
+  opening; a tap unfolds it), the stored fold untouched: open, the card
+  and the half-height sheet left no hour of the day for the draft. Settings › Getting Started (iOS page,
   desktop pane `gettingstarted`) reopens lessons — the desktop's through
   `lesson:open` IPC, which keeps the lesson in main, shows the calendar
   window and nudges it; the calendar collects it with `lesson:take` when
