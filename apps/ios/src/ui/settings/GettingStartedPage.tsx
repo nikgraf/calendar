@@ -13,7 +13,6 @@ import {
   Chevron,
   Footer,
   Glyph,
-  LeadingSpace,
   Row,
   Section,
   SettingsPage,
@@ -87,7 +86,6 @@ export function GettingStartedPage() {
       </Section>
       <Section>
         <ActionRow
-          leading={<LeadingSpace />}
           onPress={() => void update(withLessonsReset(state))}
           testID="getting-started-start-over"
           title="Start Over"

@@ -183,7 +183,7 @@ const makeStyles = (colors: ThemeColors) =>
       opacity: 0.4,
     },
     dot: {
-      backgroundColor: colors.border,
+      backgroundColor: colors['border-strong'],
       borderRadius: 3,
       height: 6,
       width: 6,

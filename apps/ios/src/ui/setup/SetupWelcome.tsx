@@ -143,8 +143,9 @@ const makeStyles = (colors: ThemeColors) =>
     doorPrimary: {
       backgroundColor: colors.primary,
     },
+    // On the welcome's canvas ground: the fill, so the card reads as one.
     doorQuiet: {
-      backgroundColor: colors.surface,
+      backgroundColor: colors.fill,
     },
     doors: {
       gap: 12,
