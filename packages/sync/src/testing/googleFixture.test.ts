@@ -20,7 +20,10 @@ import { EventMutations } from '../mutations.ts';
 import { type GoogleFixture, googleFixtureLayer, seedFixtureAccounts } from './googleFixture.ts';
 
 const fixture: GoogleFixture = {
-  accounts: [{ email: 'fixture@solunivo.test', id: 'fixture-google', tasksEnabled: true }],
+  accounts: [
+    { email: 'fixture@solunivo.test', id: 'fixture-google', tasksEnabled: true },
+    { email: 'imported@example.com', id: 'signed-out', signedOut: true, tasksEnabled: true },
+  ],
   taskLists: [{ id: 'mock-list', title: 'Mock Tasks' }],
   tasks: {
     'mock-list': [
@@ -53,15 +56,18 @@ const appLayer = SyncEngine.layer.pipe(
 );
 
 describe('googleFixtureLayer', () => {
-  it.effect('seeds the account, hands out a token, and syncs lists and tasks from the fake', () =>
+  it.effect('seeds the accounts, hands out a token, and syncs lists and tasks from the fake', () =>
     Effect.gen(function* () {
       yield* seedFixtureAccounts(fixture);
       yield* seedFixtureAccounts(fixture); // idempotent
       const accounts = yield* (yield* AccountRepo).list();
+      // In the fixture's order; the signed-out one waits for a sign-in.
       expect(accounts.map((account) => [account.id, account.status])).toEqual([
         ['fixture-google', 'ok'],
+        ['signed-out', 'reauth_required'],
       ]);
       expect(yield* (yield* TokenStore).get('fixture-google')).not.toBeNull();
+      expect(yield* (yield* TokenStore).get('signed-out')).toBeNull();
       yield* (yield* SyncEngine).syncAll();
       const repo = yield* TaskRepo;
       expect((yield* repo.listLists('fixture-google')).map((list) => list.title)).toEqual([
@@ -72,6 +78,9 @@ describe('googleFixtureLayer', () => {
       ]);
       // Still 'ok': the token was accepted, no reauth flip.
       expect((yield* (yield* AccountRepo).get('fixture-google'))?.status).toBe('ok');
+      // The pass skipped the signed-out account: nothing synced for it.
+      expect(yield* repo.listLists('signed-out')).toEqual([]);
+      expect((yield* (yield* AccountRepo).get('signed-out'))?.status).toBe('reauth_required');
     }).pipe(Effect.provide(appLayer)),
   );
 

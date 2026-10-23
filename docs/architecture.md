@@ -1081,7 +1081,8 @@ gateway carries all of it. Details, limits and the threat model:
   whose `Stack.SearchBar` is the system search field) and Settings as a
   modal route holding its own native stack (`settings/`: the root list, a
   page per pane; rows drawn by `src/ui/GroupedList.tsx`,
-  switches through `@expo/ui`). `src/ui/CalendarScreen.tsx` is the
+  switches through `@expo/ui`; small titles only — a large one on a root
+  that scrolls froze iOS 26 on Back). `src/ui/CalendarScreen.tsx` is the
   calendar tab: a header (title, the view menu Day · 2 Days · Week ·
   Month · Agenda, ‹ Today ›, the account avatar into Settings carrying the
   unsynced badge), the week strip, the timeline / month grid / agenda,
