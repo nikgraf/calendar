@@ -15,12 +15,16 @@ tags:
       - tapOn:
           id: 'calendar-option'
           index: 0
+      # All-day first, while no keyboard is up (a new event's editor focuses
+      # nothing): after typing the title its keyboard covers the switch, and
+      # Maestro's visibility check ignores it, so the tap landed on the
+      # keyboard and the event saved as a timed 9-10 block.
+      - tapOn:
+          id: 'event-all-day'
       - tapOn:
           id: 'event-title'
       # ASCII only — unicode through XCTest typing is a known flaky spot.
       - inputText: 'Solunivo e2e all-day to delete'
-      - tapOn:
-          id: 'event-all-day'
       - tapOn:
           id: 'event-save'
       - extendedWaitUntil:
