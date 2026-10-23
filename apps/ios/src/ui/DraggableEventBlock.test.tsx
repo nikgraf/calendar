@@ -30,14 +30,16 @@ vi.mock('react-native-gesture-handler', () => ({
 }));
 vi.mock('react-native-reanimated', () => ({
   default: { View: 'Animated.View' },
-  runOnJS: (callback: Callback) => callback,
-  runOnUI: (callback: Callback) => callback,
   useAnimatedReaction: (_prepare: unknown, react: (value: unknown, previous: unknown) => void) => {
     reactions.push(react);
   },
   useAnimatedStyle: () => ({}),
   useSharedValue: <T,>(value: T) => ({ value }),
   withTiming: <T,>(value: T) => value,
+}));
+vi.mock('react-native-worklets', () => ({
+  scheduleOnRN: (callback: Callback, ...args: Array<unknown>) => callback(...args),
+  scheduleOnUI: (callback: Callback, ...args: Array<unknown>) => callback(...args),
 }));
 vi.mock('./theme.ts', () => ({
   BOX_FONT_SCALE: 1.35,

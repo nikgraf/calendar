@@ -19,7 +19,8 @@ import {
 import { useState } from 'react';
 import { StyleSheet, Text, View, type DimensionValue } from 'react-native';
 import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
-import { runOnJS, useSharedValue, type SharedValue } from 'react-native-reanimated';
+import { useSharedValue, type SharedValue } from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
 import { DraftBlock } from './DraftBlock.tsx';
 import { DraggableEventBlock } from './DraggableEventBlock.tsx';
 import { NowIndicator } from './NowIndicator.tsx';
@@ -144,7 +145,7 @@ export function DayColumn({
       const slot = slotFromHold(anchor.value, minuteOfDay(start.y, HOUR_HEIGHT));
       setShared(shownStart, slot.startMinute);
       setShared(shownEnd, slot.endMinute);
-      runOnJS(setSelection)(slot);
+      scheduleOnRN(setSelection, slot);
     },
     // The anchor is where the finger touched down, not where it rests once
     // the hold completes: the recognizer tolerates a few points of drift
@@ -156,20 +157,20 @@ export function DayColumn({
     // finger lifts: lifting drifts too.
     onDeactivate: (end) => {
       if (!end.canceled && shownStart.value >= 0) {
-        runOnJS(createSlot)(shownStart.value, shownEnd.value);
+        scheduleOnRN(createSlot, shownStart.value, shownEnd.value);
       }
     },
     onFinalize: () => {
       setShared(shownStart, -1);
       setShared(shownEnd, -1);
-      runOnJS(clearSelection)();
+      scheduleOnRN(clearSelection);
     },
     onUpdate: (update) => {
       const slot = slotFromHold(anchor.value, minuteOfDay(update.y, HOUR_HEIGHT));
       if (slot.startMinute !== shownStart.value || slot.endMinute !== shownEnd.value) {
         setShared(shownStart, slot.startMinute);
         setShared(shownEnd, slot.endMinute);
-        runOnJS(setSelection)(slot);
+        scheduleOnRN(setSelection, slot);
       }
     },
   });
