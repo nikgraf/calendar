@@ -7,7 +7,7 @@ import type {
 } from '@calendar/google';
 import { TokenManager, type TokenManagerShape } from '@calendar/google';
 import { Effect, Layer } from 'effect';
-import { HttpClient, HttpClientResponse, type HttpClientRequest } from 'effect/http';
+import { HttpClient, HttpClientResponse, UrlParams, type HttpClientRequest } from 'effect/http';
 
 /**
  * An in-process Google (Calendar + Tasks) behind effect's HttpClient, so
@@ -317,7 +317,8 @@ export class FakeGoogle {
     request: HttpClientRequest.HttpClientRequest,
   ): HttpClientResponse.HttpClientResponse {
     const url = new URL(request.url);
-    for (const [key, value] of request.urlParams.params) {
+    // `toString` unwraps Redacted values, as the real client sends them.
+    for (const [key, value] of new URLSearchParams(UrlParams.toString(request.urlParams))) {
       url.searchParams.set(key, value);
     }
     const call = { method: request.method, url: url.toString() };
