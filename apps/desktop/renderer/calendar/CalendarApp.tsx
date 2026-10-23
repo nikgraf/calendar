@@ -561,12 +561,11 @@ function CalendarBody({
         return;
       }
       case 'search': {
-        searchThread.clear();
-        searchThread.setText(LESSON_SEARCH_PHRASE);
-        // Without the model the words search as plain words; the banner says why.
-        if (searchModel.status === 'ready') {
-          void searchThread.phrase(LESSON_SEARCH_PHRASE);
-        }
+        // A fresh thread, whatever an earlier search left. Without the
+        // model the words search as plain words; the banner says why.
+        void searchThread.startWith(LESSON_SEARCH_PHRASE, {
+          read: searchModel.status === 'ready',
+        });
         setPanel({ kind: 'search', lesson: true, selectText: false });
         setSearchFocus((count) => count + 1);
         return;

@@ -118,6 +118,13 @@ export const clearSearchThread = (state: SearchThreadState): SearchThreadState =
 });
 
 /**
+ * A fresh thread holding `text` as its words: no filters, no turns — what
+ * the Search lesson opens with, whatever an earlier search left.
+ */
+export const restartSearchThread = (state: SearchThreadState, text: string): SearchThreadState =>
+  setSearchText(clearSearchThread(state), text);
+
+/**
  * The thread as a hook. A sentence (`phrase`, the field's text unless
  * given) goes to the model with the filters as they stand and no words —
  * the field holds every word, so the sentence is the words — and lands as
@@ -149,14 +156,18 @@ export const useSearchThread = ({
     today,
   };
 
-  const phrase = async (text: string = state.text): Promise<string | undefined> => {
+  /** Reads a sentence against `from` (the thread as it stands, or a fresh one). */
+  const read = async (
+    text: string,
+    from: Pick<SearchThreadState, 'query' | 'settledTerms'>,
+  ): Promise<string | undefined> => {
     const utterance = text.trim();
     if (utterance === '') {
       return undefined;
     }
     const mine = ++request.current;
-    const current: SearchQuery = { ...state.query, terms: [] };
-    const before: SearchQuery = { ...state.query, terms: state.settledTerms };
+    const current: SearchQuery = { ...from.query, terms: [] };
+    const before: SearchQuery = { ...from.query, terms: from.settledTerms };
     setBusy(true);
     try {
       const result = await parseSearchQuery(model, {
@@ -199,6 +210,8 @@ export const useSearchThread = ({
     }
   };
 
+  const phrase = (text: string = state.text): Promise<string | undefined> => read(text, state);
+
   const newest = state.turns.at(-1);
   const flash = useFleetingFlash(
     newest !== undefined && newest.id === landed
@@ -224,10 +237,21 @@ export const useSearchThread = ({
       setBusy(false);
       setState((latest) => setSearchQuery(latest, query));
     },
+    /**
+     * A fresh thread with `text` in the field, read into filters when
+     * `read` (the model is ready) — against no filters, not the ones the
+     * last render held: a reset has not rendered yet when this runs.
+     */
     setText: (text: string) => {
       request.current += 1;
       setBusy(false);
       setState((latest) => setSearchText(latest, text));
+    },
+    startWith: (text: string, { read: andRead }: { readonly read: boolean }) => {
+      request.current += 1;
+      setBusy(false);
+      setState((latest) => restartSearchThread(latest, text));
+      return andRead ? read(text, EMPTY_SEARCH_THREAD) : Promise.resolve(undefined);
     },
     state,
     undo: () => {

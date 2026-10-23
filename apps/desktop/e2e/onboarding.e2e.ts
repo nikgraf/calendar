@@ -128,17 +128,31 @@ describe('first run: the setup dialog, the Getting started card and its lessons'
     );
   });
 
-  it('opens Search with AI with its sentence read, and Skip ticks it as skipped', async () => {
+  it('opens Search with AI from a fresh thread, its sentence read, and Skip ticks it as skipped', async () => {
     const { cdp } = app;
+    // An earlier search left a place filter: the lesson starts without it.
+    await cdp.clickTestId('search-toggle');
+    await cdp.type('[data-testid="search-input"]', 'lunch | | Hafen');
+    await cdp.clickTestId('search-ask');
+    await cdp.waitFor(`!!document.querySelector('[data-testid^="search-chip-location"]')`);
+    await cdp.clickTestId('search-close');
     await cdp.clickTestId('getting-started-row-search');
     await cdp.waitFor(
       `document.querySelector('[data-testid="lesson-banner"]')?.dataset.lesson === 'search'`,
     );
-    // The fixture model reads the sentence as a turn of plain words.
+    // The fixture model reads the sentence as a turn of plain words, and
+    // the earlier search's place filter is gone.
     await cdp.waitFor(
       `!!document.querySelector('[data-testid="search-turn"], [data-testid="search-turn-summary"]')`,
     );
-    expect(LESSON_SEARCH_PHRASE.length).toBeGreaterThan(0);
+    expect(
+      await cdp.eval<boolean>(`!!document.querySelector('[data-testid^="search-chip-location"]')`),
+    ).toBe(false);
+    expect(
+      await cdp.eval<string>(
+        `document.querySelector('[data-testid="search-turn"]')?.textContent ?? ''`,
+      ),
+    ).toContain(LESSON_SEARCH_PHRASE);
     await cdp.clickTestId('lesson-skip');
     await cdp.waitFor(`!document.querySelector('[data-testid="lesson-banner"]')`);
     await expect.poll(async () => (await onboarding(app))?.lessons.search).toBe('skipped');

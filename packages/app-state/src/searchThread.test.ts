@@ -3,6 +3,7 @@ import {
   applySearchTurn,
   clearSearchThread,
   EMPTY_SEARCH_THREAD,
+  restartSearchThread,
   setSearchQuery,
   setSearchText,
   undoSearchTurn,
@@ -77,5 +78,21 @@ describe('the search thread', () => {
       { summary: 's' },
     );
     expect(clearSearchThread(turned)).toEqual({ ...EMPTY_SEARCH_THREAD, version: 2 });
+  });
+
+  it('a restart drops the filters and turns an earlier search left, and holds the new words', () => {
+    const earlier = applySearchTurn(
+      setSearchQuery(EMPTY_SEARCH_THREAD, { location: 'Hafen', terms: [] }),
+      'in the harbour',
+      { location: 'Hafen', terms: ['lunch'] },
+      { summary: 'in Hafen' },
+      'turn-1',
+    );
+    const restarted = restartSearchThread(earlier, 'meetings with Sam last month');
+    expect(restarted.query).toEqual({ terms: ['meetings', 'with', 'Sam', 'last', 'month'] });
+    expect(restarted.turns).toEqual([]);
+    expect(restarted.history).toEqual([]);
+    expect(restarted.text).toBe('meetings with Sam last month');
+    expect(restarted.version).toBe(earlier.version + 1);
   });
 });

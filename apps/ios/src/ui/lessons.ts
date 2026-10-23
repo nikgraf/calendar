@@ -53,7 +53,8 @@ export const openLesson = (
     case 'search':
       leaveSettings(() =>
         router.navigate({
-          params: { lesson: '1', phrase: LESSON_SEARCH_PHRASE },
+          // `at` makes every opening a new one: the screen reads each once.
+          params: { at: String(Date.now()), lesson: '1', phrase: LESSON_SEARCH_PHRASE },
           pathname: '/search',
         }),
       );

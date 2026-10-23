@@ -18,6 +18,15 @@ export function LessonAlerts() {
 
 /** Contacts on this iPhone: the one ask, and what it is for. */
 export function LessonContacts() {
+  return (
+    <LessonFrame id="contacts">
+      <ContactsBody />
+    </LessonFrame>
+  );
+}
+
+/** Below the frame, so `useLessonTried` reads the frame's context. */
+function ContactsBody() {
   const { colors } = useTheme();
   const { busy, connectDevice, connecting, contacts, contactsConnectionFailed, error } =
     useSettingsConnections();
@@ -29,7 +38,7 @@ export function LessonContacts() {
     tried();
   };
   return (
-    <LessonFrame id="contacts">
+    <>
       <Section
         footer={
           <>
@@ -70,7 +79,7 @@ export function LessonContacts() {
           title="Birthdays"
         />
       </Section>
-    </LessonFrame>
+    </>
   );
 }
 
@@ -85,6 +94,15 @@ export function LessonZones() {
 
 /** Set up your Mac, for now: the settings document as a file to AirDrop over. */
 export function LessonOtherDevice() {
+  return (
+    <LessonFrame id="otherDevice">
+      <OtherDeviceBody />
+    </LessonFrame>
+  );
+}
+
+/** Below the frame, so `useLessonTried` reads the frame's context. */
+function OtherDeviceBody() {
   const { colors } = useTheme();
   const { busy, exportSettings, notice } = useSettingsTransfer();
   const tried = useLessonTried();
@@ -93,7 +111,7 @@ export function LessonOtherDevice() {
     tried();
   };
   return (
-    <LessonFrame id="otherDevice">
+    <>
       <Section
         footer={
           <>
@@ -114,6 +132,6 @@ export function LessonOtherDevice() {
           tone="tint"
         />
       </Section>
-    </LessonFrame>
+    </>
   );
 }

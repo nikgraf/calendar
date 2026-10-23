@@ -133,11 +133,55 @@ tags:
           visible: 'Create with AI, done'
           timeout: 10000
       - assertVisible: '1 of 6'
+      # Search with AI: the Search tab with the lesson's banner over its
+      # chips, the sentence read; Skip ticks it.
+      - tapOn:
+          id: 'getting-started-row-search'
+      - extendedWaitUntil:
+          visible:
+            id: 'lesson-banner'
+          timeout: 10000
+      - tapOn:
+          id: 'lesson-skip'
+      - extendedWaitUntil:
+          notVisible:
+            id: 'lesson-banner'
+          timeout: 5000
+      - tapOn: 'Calendar'
+      - extendedWaitUntil:
+          visible: 'Search with AI, done'
+          timeout: 10000
+      # Contacts on this iPhone (access granted ahead, as on CI): the ask
+      # answers at once, which ticks the lesson done; Done closes it.
+      - tapOn:
+          id: 'getting-started-row-contacts'
+      - extendedWaitUntil:
+          visible:
+            id: 'lesson-contacts'
+          timeout: 10000
+      - waitForAnimationToEnd:
+          timeout: 3000
+      - runFlow:
+          when:
+            visible:
+              id: 'lesson-allow-contacts'
+          commands:
+            - tapOn:
+                id: 'lesson-allow-contacts'
+            - extendedWaitUntil:
+                notVisible:
+                  id: 'lesson-allow-contacts'
+                timeout: 10000
+      - tapOn: 'Done'
+      - extendedWaitUntil:
+          visible: 'Contacts on this iPhone, done'
+          timeout: 10000
+      - assertVisible: '3 of 6'
       # The chevron folds the card to one line; a tap opens it again.
       - tapOn:
           id: 'getting-started-collapse'
       - extendedWaitUntil:
-          visible: 'Getting started · 1 of 6'
+          visible: 'Getting started · 3 of 6'
           timeout: 5000
       - tapOn:
           id: 'getting-started'
@@ -153,7 +197,7 @@ tags:
             PAGE: getting-started
       - assertVisible:
           id: 'getting-started-lesson-create-done'
-      - assertVisible: '.*1 of 6 done.*'
+      - assertVisible: '.*3 of 6 done.*'
       - tapOn:
           id: 'getting-started-start-over'
       - extendedWaitUntil:

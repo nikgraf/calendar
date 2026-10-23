@@ -1,4 +1,4 @@
-import { LESSON_IDS } from '@calendar/core';
+import { LESSON_IDS, type LessonId } from '@calendar/core';
 import { ipcMain } from 'electron';
 import { isOwnPage, mainWindowContents, showMainWindow } from './windows.ts';
 
@@ -10,12 +10,24 @@ import { isOwnPage, mainWindowContents, showMainWindow } from './windows.ts';
  */
 const onboardingEnabled = process.env['CALENDAR_ONBOARDING'] !== 'off';
 
+const isLessonId = (value: unknown): value is LessonId =>
+  typeof value === 'string' && (LESSON_IDS as ReadonlyArray<string>).includes(value);
+
+/**
+ * The lesson Settings asked for, kept until the calendar window takes it:
+ * a window that is still opening subscribes only once its first reads are
+ * in, well after its page has loaded, so a message sent then would be
+ * lost. The notification click's path, the same way (`notifications:take`).
+ */
+let pendingLesson: LessonId | null = null;
+
 /**
  * Window-level onboarding concerns over plain preload IPC: whether it is
- * on at all, and `lesson:open` — Settings › Getting Started › Open lives
- * in the settings window, the lesson in the calendar window, so the
- * request hops through main: the calendar window is shown (created when
- * the app ran without one) and told which lesson, once its page can hear.
+ * on at all, and the hop for Settings › Getting Started › Open — the
+ * lesson lives in the calendar window, so `lesson:open` keeps the lesson,
+ * shows that window (created when the app ran without one) and nudges it;
+ * the calendar collects it with `lesson:take` when nudged and when it
+ * subscribes.
  */
 export const registerOnboardingIpc = (): void => {
   ipcMain.handle('onboarding:enabled', () => onboardingEnabled);
@@ -23,19 +35,23 @@ export const registerOnboardingIpc = (): void => {
     if (!event.senderFrame || !isOwnPage(event.senderFrame.url)) {
       throw new Error('lesson: untrusted sender');
     }
-    if (typeof id !== 'string' || !LESSON_IDS.includes(id as (typeof LESSON_IDS)[number])) {
+    if (!isLessonId(id)) {
       return;
     }
+    pendingLesson = id;
     showMainWindow();
-    const contents = mainWindowContents();
-    if (!contents) {
-      return;
+    mainWindowContents()?.send('lesson:open');
+  });
+  ipcMain.handle('lesson:take', (event) => {
+    if (
+      !event.senderFrame ||
+      !isOwnPage(event.senderFrame.url) ||
+      event.sender !== mainWindowContents()
+    ) {
+      throw new Error('lesson: untrusted sender');
     }
-    if (contents.isLoading()) {
-      // A window just created: its page listens only once it has loaded.
-      contents.once('did-finish-load', () => contents.send('lesson:open', id));
-    } else {
-      contents.send('lesson:open', id);
-    }
+    const id = pendingLesson;
+    pendingLesson = null;
+    return id;
   });
 };

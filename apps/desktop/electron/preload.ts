@@ -39,11 +39,22 @@ contextBridge.exposeInMainWorld('calendarBridge', {
     return () => ipcRenderer.off('agents:changed', wrapped);
   },
   onboardingEnabled: () => ipcRenderer.invoke('onboarding:enabled'),
-  /** A lesson asked for from the settings window (`openLesson`), to open in the calendar. */
+  /**
+   * Lessons asked for from the settings window (`openLesson`), to open in
+   * the calendar: the one waiting at subscription (it may have opened this
+   * window), then one per request.
+   */
   onLessonOpen: (listener: (id: unknown) => void) => {
-    const wrapped = (_event: unknown, id: unknown) => listener(id);
-    ipcRenderer.on('lesson:open', wrapped);
-    return () => ipcRenderer.off('lesson:open', wrapped);
+    const take = () => {
+      void ipcRenderer.invoke('lesson:take').then((id: unknown) => {
+        if (id) {
+          listener(id);
+        }
+      });
+    };
+    ipcRenderer.on('lesson:open', take);
+    take();
+    return () => ipcRenderer.off('lesson:open', take);
   },
   onModelProviderChanged: (listener: (view: unknown) => void) => {
     const wrapped = (_event: unknown, view: unknown) => listener(view);

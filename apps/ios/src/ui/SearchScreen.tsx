@@ -196,16 +196,18 @@ const useSearchLesson = (
   const threadKey = `${String(thread.state.version)}|${searchQueryKey(thread.state.query)}`;
   const { phrase: sentence } = params;
   useEffect(() => {
-    if (params.lesson !== '1' || !sentence || status === null || taken.current === params.at) {
+    if (
+      params.lesson !== '1' ||
+      !sentence ||
+      !params.at ||
+      status === null ||
+      taken.current === params.at
+    ) {
       return;
     }
     taken.current = params.at;
-    thread.clear();
-    thread.setText(sentence);
     showText(sentence);
-    if (status === 'ready') {
-      void thread.phrase(sentence);
-    }
+    void thread.startWith(sentence, { read: status === 'ready' });
     baseline.current = null;
     setOpen(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- one opening per `at`

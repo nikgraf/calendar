@@ -177,7 +177,10 @@ function SetupPanel({
             <GoogleStep tasks={sources.googleTasks} />
           </StepFrame>
         ) : step === 'appleCalendar' ? (
+          // Keyed: the two Apple steps are separate asks, and a refusal
+          // on one must not carry over to the other.
           <AppleStep
+            key="calendar"
             onNext={() => next('appleCalendar')}
             onSkip={skip}
             provider="calendar"
@@ -185,6 +188,7 @@ function SetupPanel({
           />
         ) : step === 'reminders' ? (
           <AppleStep
+            key="reminders"
             onNext={() => next('reminders')}
             onSkip={skip}
             provider="reminders"
