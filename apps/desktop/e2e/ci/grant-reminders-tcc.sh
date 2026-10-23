@@ -25,9 +25,13 @@ SERVICE="${2:-kTCCServiceReminders}"
 # the resolved binary_path (.build/arm64-apple-macosx/release/…).
 HELPER=$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$HELPER")
 DB="$HOME/Library/Application Support/com.apple.TCC/TCC.db"
+# tccd writes this database too, so a statement can find it locked for a
+# moment; without a busy timeout sqlite3 fails at once ("database is
+# locked", exit 5) instead of waiting for the lock to clear.
+tcc() { sudo sqlite3 -cmd '.timeout 30000' "$DB" "$@"; }
 
 echo "--- access table schema on $(sw_vers -productVersion)"
-sudo sqlite3 "$DB" ".schema access"
+tcc ".schema access"
 
 # The helper's designated requirement, compiled to the blob TCC stores.
 CSREQ_HEX=""
@@ -46,7 +50,7 @@ NOW=$(date +%s)
 grant() {
   local csreq="NULL"
   if [ "$3" = "csreq" ] && [ -n "$CSREQ_HEX" ]; then csreq="X'$CSREQ_HEX'"; fi
-  sudo sqlite3 "$DB" "INSERT OR REPLACE INTO access
+  tcc "INSERT OR REPLACE INTO access
     (service, client, client_type, auth_value, auth_reason, auth_version,
      csreq, policy_id, indirect_object_identifier_type,
      indirect_object_identifier, indirect_object_code_identity, flags,
@@ -77,4 +81,4 @@ done
 
 sudo killall tccd 2>/dev/null || true
 echo "--- $SERVICE rows"
-sudo sqlite3 "$DB" "SELECT client, client_type, auth_value, length(csreq) FROM access WHERE service = '$SERVICE'"
+tcc "SELECT client, client_type, auth_value, length(csreq) FROM access WHERE service = '$SERVICE'"

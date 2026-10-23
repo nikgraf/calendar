@@ -24,7 +24,7 @@ echo "helper: $RESPONSE"
 STATUS=$(printf '%s' "$RESPONSE" | jq -r '.result.authorization // empty' 2>/dev/null || true)
 if [ "$STATUS" != "fullAccess" ]; then
   echo "--- TCC rows after the check (a new row names the identity tccd used)"
-  sudo sqlite3 "$DB" "SELECT service, client, client_type, auth_value, auth_reason FROM access
+  sudo sqlite3 -cmd '.timeout 30000' "$DB" "SELECT service, client, client_type, auth_value, auth_reason FROM access
     WHERE service = '$SERVICE' OR last_modified > strftime('%s','now') - 600" || true
   echo "--- tccd log (last 5 minutes, $SERVICE)"
   sudo log show --last 5m --predicate 'subsystem == "com.apple.TCC"' 2>/dev/null \
