@@ -186,8 +186,9 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   The pans use the hook API (`usePanGesture`; the task drag is a per-item
   hook); rejected: keeping the deprecated builder for now. The fingerprint
   takes Expo's `balanced` preset, so a version bump needs a manual build.
-  Shipped with a known regression: React Native now starts with a scene, so
-  a cold background launch runs no `backgroundTask.ts` (todo.md Tier 0).
+  React Native now starts with a scene; a background launch that connects
+  none starts it headless (Notifications › "Background launch without a
+  scene").
 
 ## Architecture and sync path
 
@@ -1071,6 +1072,17 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   a notification pass, in `packages/sync` so the ordering is unit-tested;
   defined before the root component registers. Google tokens moved to
   `AFTER_FIRST_UNLOCK` (chosen by Nik) so a pull can run while locked.
+- **Background launch without a scene** (2026-10-24, `todo/expo-sdk-58`) —
+  under SDK 58 only a scene started React Native, so the task's launch of
+  a terminated app ran no JS. A local module starts the React host with no
+  view when no scene has connected 2 s after launch, once expo-updates
+  picked the bundle; a later scene adds its surface to that host.
+  Rejected: the app-delegate life cycle (Xcode 27 requires scenes), an
+  expo-task-manager app loader (consulted only with an app URL, which a
+  bare app never stores), deciding on the next main-queue turn (the scene
+  arrives as its own event). Open: only a device makes the cold launch; a
+  link bringing a scene up over that host has no `getInitialURL` (the
+  expo-linking registry has it).
 - **Notification taps and zones** (#119, #142) — the text is in the
   device's zone, an all-day reminder counts from midnight in the
   calendar's; a planned notification carries a target the tap resolves
