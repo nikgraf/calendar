@@ -739,7 +739,8 @@ Electron binary (`electron --version`) and run spec files sequentially.
 - `e2e-reminders` (macos-26): the **real** EventKit path on the desktop.
   Builds the helper, seeds the runner's per-user TCC database
   (`apps/desktop/e2e/ci/grant-reminders-tcc.sh`, Reminders and
-  Calendars; named columns, every plausible client identity), then
+  Calendars; named columns, every plausible client identity, each
+  `sqlite3` call waiting up to 30 s on a lock tccd holds), then
   `probe-helper-access.sh` requires `reminders.status` = fullAccess
   before `remindersReal` and `appleCalendarReal` run. The seed is not an
   Apple-supported interface: when a new runner image breaks it the job
