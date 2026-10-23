@@ -1118,7 +1118,11 @@ gateway carries all of it. Details, limits and the threat model:
   route unmounts as its sheet starts to leave, not after). Nothing
   stacks on the editor: the avatar closes it before Settings opens, as
   a tap on an event behind it does, so the host's pop is always the
-  editor's. The quick-add
+  editor's. A capture runs under a banner that blocks nothing; its
+  thread never replaces what the user opened meanwhile (an editor, a
+  detail, a birthday, Settings) but opens once that has closed and the
+  editor's form sheet is gone (`captureMayOpen`). A new share drops a
+  waiting thread, as does a tapped reminder whose detail opens. The quick-add
   field does not take the focus there (the keyboard raises a half sheet
   to full; once it hides, the sheet returns to the detent it had). The
   sheet lays its content out once, as at most two subviews: a header
