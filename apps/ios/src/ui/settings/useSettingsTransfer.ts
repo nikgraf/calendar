@@ -91,7 +91,7 @@ export const useSettingsTransfer = (): SettingsTransfer => {
       }
       const document = await mutations.exportSettings(undefined);
       const file = new native.files.File(native.files.Paths.cache, FILE_NAME);
-      file.write(formatSettingsDocument(document));
+      await file.write(formatSettingsDocument(document));
       const shared = await Share.share({ title: FILE_NAME, url: file.uri });
       return { notice: null, result: shared.action === Share.sharedAction };
     })) === true;

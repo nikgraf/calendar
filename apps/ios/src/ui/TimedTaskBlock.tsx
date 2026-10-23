@@ -6,7 +6,7 @@ import {
   taskRepeats,
 } from '@calendar/core';
 import { Pressable, StyleSheet, Text, View, type DimensionValue } from 'react-native';
-import { GestureDetector, type PanGesture } from 'react-native-gesture-handler';
+import { GestureDetector, type LegacyPanGesture } from 'react-native-gesture-handler';
 import { TaskCheck } from './TaskCheck.tsx';
 import { BOX_FONT_SCALE, type ThemeColors, useStyles } from './theme.ts';
 
@@ -31,7 +31,7 @@ export function TimedTaskBlock({
   compact: boolean;
   /** This block is the one being dragged. */
   dimmed: boolean;
-  gesture: PanGesture;
+  gesture: LegacyPanGesture;
   left: DimensionValue;
   listColor: string | undefined;
   onPress: () => void;

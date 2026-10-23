@@ -6,7 +6,7 @@ import { SetupProvider } from '../../src/ui/setup/SetupContext.tsx';
 import { groupedGround, useTheme } from '../../src/ui/theme.ts';
 
 /** A step opened directly lands over the welcome, so Back always leads somewhere. */
-export const unstable_settings = { initialRouteName: 'index' };
+export const unstable_settings = { anchor: 'index' };
 
 /**
  * The first run: a full-screen modal over the tabs holding its own stack

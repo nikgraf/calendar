@@ -10,6 +10,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  type TextInputInstance,
   View,
 } from 'react-native';
 import { appleSpeech } from '../appleSpeech.ts';
@@ -90,7 +91,7 @@ export function QuickAddBar({
 }) {
   const styles = useStyles(makeStyles);
   const { colors } = useTheme();
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<TextInputInstance>(null);
   const { availability, checkedAt, lastManualCheck, manualChecking, retry, status } =
     useModelAvailability(languageModel, onAppActive);
   const {

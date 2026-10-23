@@ -14,37 +14,6 @@ trustPolicy: no-downgrade
 trustPolicyExclude:
   - semver@6.3.1
   - '@octokit/endpoint@9.0.6'
-  # Expo moved SDK 58 to npm trusted publishing (GitHub Actions) on
-  # 2026-09-29, but still publishes SDK 57 patch releases with a maintainer
-  # token, so pnpm reads every SDK 57 package published since as a trust
-  # downgrade. These are the SDK 57 release of 2026-10-06, each audited on
-  # 2026-10-09: published by the same Expo maintainer as every earlier
-  # SDK 57 release, all from one gitHead (50ac74f, the "Publish packages"
-  # commit on expo/expo's sdk-57 branch). Pinned by version, so the next
-  # SDK 57 patch is checked again; drop the list with SDK 58.
-  - '@expo/cli@57.0.28'
-  - '@expo/config-plugins@57.0.10'
-  - '@expo/config@57.0.10'
-  - '@expo/image-utils@0.11.6'
-  - '@expo/metro-config@57.0.13'
-  - '@expo/metro-file-map@57.0.4'
-  - '@expo/prebuild-config@57.0.17'
-  - '@expo/require-utils@57.0.6'
-  - '@expo/router-server@57.0.12'
-  - '@expo/ui@57.0.22'
-  - 'babel-preset-expo@57.0.14'
-  - 'expo-asset@57.0.19'
-  - 'expo-auth-session@57.0.14'
-  - 'expo-constants@57.0.21'
-  - 'expo-eas-client@57.0.5'
-  - 'expo-linking@57.0.12'
-  - 'expo-maps@57.0.4'
-  - 'expo-modules-autolinking@57.0.14'
-  - 'expo-modules-core@57.0.21'
-  - 'expo-notifications@57.0.22'
-  - 'expo-router@57.0.25'
-  - 'expo-updates@57.0.25'
-  - 'expo@57.0.27'
 blockExoticSubdeps: true
 
 catalog:
@@ -54,13 +23,14 @@ catalog:
   '@effect/sql-sqlite-react-native': 4.0.5
   '@effect/vitest': 4.0.5
   '@js-temporal/polyfill': ^0.5.1
-  # react, react-dom and their types stay on 19.2 (tilde, not caret) for
-  # both apps: React Native 0.86 renders with a 19.2.3 renderer and Expo
-  # SDK 57 expects react 19.2 (`npx expo install --check`). A caret let the
-  # lockfile resolve 19.3.0 (#144).
-  react: ~19.2.8
-  react-dom: ~19.2.8
-  '@types/react': ~19.2.18
+  # react and react-dom are pinned exactly, for both apps, to the React
+  # Native renderer's version: React Native 0.88 renders with 19.3.0 and
+  # Expo SDK 58 expects it (`npx expo install --check`). react-dom throws
+  # unless it equals react, and a tilde let the two resolve to different
+  # patches; a caret once let the lockfile resolve past the renderer (#144).
+  react: 19.3.0
+  react-dom: 19.3.0
+  '@types/react': ~19.3.0
   rrule-temporal: ^2.2.8
   typescript: ^7.0.2
   vite: npm:@voidzero-dev/vite-plus-core@1.1.0
@@ -75,7 +45,7 @@ onlyBuiltDependencies:
 
 overrides:
   # The react-dom pnpm installs for Expo's optional web peer
-  # (@expo/metro-runtime) would otherwise be the newest, past the 19.2 hold.
+  # (@expo/metro-runtime) would otherwise be the newest, past the 19.3 hold.
   react-dom: 'catalog:'
   vite@*: 'catalog:'
   vitest@*: 'catalog:'
@@ -93,3 +63,9 @@ peerDependencyRules:
   allowedVersions:
     vite: '*'
     vitest: '*'
+    # op-sqlite 17 does not compile on React Native 0.88 (it reached the
+    # runtime through RCTCxxBridge, which 0.88 removed); 18 does. The adapter
+    # still declares < 18 (4.0.6 too), but every op-sqlite call it makes —
+    # open, execute(Sync), executeRaw(Sync), close — is unchanged in 18.
+    # Drop this once the adapter's range includes 18 (Effect-TS/effect#9868).
+    '@effect/sql-sqlite-react-native>@op-engineering/op-sqlite': '18'

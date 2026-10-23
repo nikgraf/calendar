@@ -24,7 +24,7 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Pressable as GesturePressable } from 'react-native-gesture-handler';
+import { LegacyPressable as GesturePressable } from 'react-native-gesture-handler';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AccountButton } from '../../src/ui/AccountButton.tsx';

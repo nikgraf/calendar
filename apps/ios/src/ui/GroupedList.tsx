@@ -24,7 +24,7 @@ import {
   type TextInputProps,
   View,
 } from 'react-native';
-import { Pressable as GesturePressable } from 'react-native-gesture-handler';
+import { LegacyPressable as GesturePressable } from 'react-native-gesture-handler';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import {
   actionText,
