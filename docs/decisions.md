@@ -57,7 +57,7 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   pushed the dev client's first request past its 10 s budget on CI. Apple
   data is not separated by nature; withhold the permissions from the dev
   app or start a dev run with the `CALENDAR_*=off` switches.
-- **Onboarding** (2026-10-22, #237) — accounts first in a setup you can
+- **Onboarding** (2026-10-22, #238) — accounts first in a setup you can
   skip at every step (Welcome, "What do you use?", one screen per ticked
   source; on the Mac one dialog over the calendar), then a "Getting
   started" card whose six rows are lessons tried in the real surfaces, and
