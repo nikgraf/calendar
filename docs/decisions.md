@@ -463,6 +463,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   Sharing: Hidden", and it is where someone looks before a call. A
   single-card pane drops the card's heading rather than repeat the title;
   a window remembered on `general` falls back to Accounts.
+- **No large title in iOS Settings** (2026-10-23, #240) — Back to a
+  Settings root tall enough to scroll (two accounts do it) froze iOS 26
+  once the mirror editor sheet had been up: UIKit flipped the root
+  between its large and small title on every layout pass, and
+  react-native-screens kept asking for another pass. The root takes the
+  pages' small title. Rejected: patching react-native-screens (no native
+  patches; it moves with the SDK), padding the root out of the bad
+  heights. A signed-out second fixture account makes CI's root scroll.
+  Search keeps its large title (nothing pops to it).
 - **Search** (2026-10-09, #152) — one rpc over what the views can show:
   a two-year window either side of today, not the history (full-text
   recall is a backlog item); a matching series is walked outward from

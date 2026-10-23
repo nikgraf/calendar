@@ -39,10 +39,10 @@ const googleLive = live();
 /**
  * The Google wire: fetch plus the safeStorage token store, or — with
  * `CALENDAR_GOOGLE=fixture` — the in-process fake API and a token store
- * that already holds a token for every fixture account, so e2e can watch
- * queued writes push and temp ids get swapped without a Google account;
- * or, with `CALENDAR_GOOGLE=live`, the real API signed in as the live
- * test account.
+ * that already holds a token for every signed-in fixture account, so e2e
+ * can watch queued writes push and temp ids get swapped without a Google
+ * account; or, with `CALENDAR_GOOGLE=live`, the real API signed in as the
+ * live test account.
  */
 export const desktopGoogleLayer: Layer.Layer<HttpClient.HttpClient | TokenStore> = googleFixture
   ? googleFixtureLayer(googleFixture)

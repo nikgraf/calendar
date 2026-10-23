@@ -56,7 +56,11 @@ const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
  * with EXPO_PUBLIC_CALENDAR_GOOGLE=fixture (CI does): one writable
  * calendar for the create-event flow, one task list for the task lane,
  * task-convert and navigation flows, one contact birthday for the
- * birthday flow, three contacts for the quick-add flow's guests.
+ * birthday flow, three contacts for the quick-add flow's guests. A
+ * second account is listed but signed out, as an import leaves one: its
+ * row makes the Settings root scroll, as it does for anyone with two
+ * accounts (Back to such a root froze iOS 26 while it had a large title),
+ * and the header's account button carries its sign-in dot.
  * Served by the in-process fake API; nothing here ever reaches Google.
  */
 export const googleFixture: GoogleFixture = {
@@ -66,6 +70,12 @@ export const googleFixture: GoogleFixture = {
       email: 'fixture@solunivo.test',
       id: 'fixture-google',
       tasksEnabled: true,
+    },
+    {
+      email: 'imported@example.com',
+      id: 'fixture-google-signed-out',
+      signedOut: true,
+      tasksEnabled: false,
     },
   ],
   calendars: [

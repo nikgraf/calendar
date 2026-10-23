@@ -840,7 +840,11 @@ are no-ops unless Metro was started with
 are no-ops until the simulator has a connected list — on CI, keyed on
 the fixture account (`fixture@solunivo.test`, list "Mock Tasks", calendar
 "Mock Calendar"), they connect Reminders themselves, write through real
-EventKit and remove the account again. Maestro needs a JDK on PATH
+EventKit and remove the account again. The fixture also lists a second,
+signed-out account (`imported@example.com`, no token, never synced):
+its row makes the Settings root scroll, as it does for anyone with two
+accounts — Back to such a root once froze iOS 26 (flow 21; see
+decisions.md, "No large title in iOS Settings"). Maestro needs a JDK on PATH
 (Apple's `/usr/bin/java` stub is not one; see AGENTS.md).
 
 Those halves and the quick-add outcome branch on a script flag: the

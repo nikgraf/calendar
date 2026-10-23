@@ -33,21 +33,23 @@ export default function SettingsLayout() {
         <NotificationSettingsProvider>
           {/* A transparent header over the page's ground, iOS 26's own bar
               (a glass edge once content scrolls under it). A background
-              color instead hid the root's large title, and left an opaque
-              band of the system background above every pushed page. */}
+              color instead left an opaque band of the system background
+              above every pushed page. The root has a small title too: Back
+              to a large-titled root tall enough to scroll froze iOS 26 —
+              the bar flipped between the large and the small title on every
+              layout pass, and react-native-screens asks for another pass
+              after each one. */}
           <Stack
             screenOptions={{
               contentStyle: { backgroundColor: ground },
               headerBackButtonDisplayMode: 'minimal',
-              headerLargeTitleShadowVisible: false,
-              headerLargeTitleStyle: { color: colors.text },
               headerShadowVisible: false,
               headerTintColor: colors.primary,
               headerTitleStyle: { color: colors.text },
               headerTransparent: true,
             }}
           >
-            <Stack.Screen name="index" options={{ headerLargeTitle: true, title: 'Settings' }} />
+            <Stack.Screen name="index" options={{ title: 'Settings' }} />
             <Stack.Screen name="unsynced" options={{ title: 'Unsynced Changes' }} />
             <Stack.Screen name="account" options={{ title: '' }} />
             <Stack.Screen name="calendar" options={{ title: '' }} />

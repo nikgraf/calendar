@@ -29,6 +29,11 @@ export interface GoogleFixture {
     readonly contactsEnabled?: boolean | undefined;
     readonly email: string;
     readonly id: string;
+    /**
+     * Listed but never signed in here, as an import leaves an account:
+     * seeded `reauth_required` with no token, so no pass syncs it.
+     */
+    readonly signedOut?: boolean | undefined;
     readonly tasksEnabled: boolean;
   }>;
   readonly calendars?: ReadonlyArray<GcalCalendarListEntry> | undefined;
@@ -71,8 +76,8 @@ export const fakeGoogleFrom = (fixture: GoogleFixture): FakeGoogle => {
 
 /**
  * The fake as the app's HttpClient plus a token store that already holds
- * a token for every fixture account: the real TokenManager, request core
- * and clients run unchanged, only the wire is faked.
+ * a token for every signed-in fixture account: the real TokenManager,
+ * request core and clients run unchanged, only the wire is faked.
  */
 export const googleFixtureLayer = (
   fixture: GoogleFixture,
@@ -80,26 +85,33 @@ export const googleFixtureLayer = (
   Layer.mergeAll(
     fakeGoogleFrom(fixture).httpLayer,
     TokenStore.layerMemoryWith(
-      fixture.accounts.map((account) => [account.id, FIXTURE_TOKENS] as const),
+      fixture.accounts
+        .filter((account) => account.signedOut !== true)
+        .map((account) => [account.id, FIXTURE_TOKENS] as const),
     ),
   );
 
-/** Upserts the fixture's account rows (idempotent; run before the engine starts). */
+/**
+ * Upserts the fixture's account rows (idempotent; run before the engine
+ * starts), stamped in the fixture's order: accounts list by creation, and
+ * the header's avatar is the first one's.
+ */
 export const seedFixtureAccounts = (
   fixture: GoogleFixture,
 ): Effect.Effect<void, SqlError, AccountRepo> =>
   Effect.gen(function* () {
     const accounts = yield* AccountRepo;
-    for (const entry of fixture.accounts) {
+    const now = Date.now();
+    for (const [index, entry] of fixture.accounts.entries()) {
       const existing = yield* accounts.get(entry.id);
       yield* accounts.upsert(
         new Account({
           contactsEnabled: entry.contactsEnabled ?? false,
-          createdAt: existing?.createdAt ?? Date.now(),
+          createdAt: existing?.createdAt ?? now + index,
           email: entry.email,
           id: entry.id,
           provider: 'google',
-          status: 'ok',
+          status: entry.signedOut === true ? 'reauth_required' : 'ok',
           tasksEnabled: entry.tasksEnabled,
         }),
       );
