@@ -4,7 +4,7 @@
 import { type EventRecord, formatClockTime, formatZoneRange } from '@calendar/core';
 import { useLayoutEffect } from 'react';
 import { Pressable, StyleSheet, Text, type DimensionValue } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
 import Animated, {
   runOnJS,
   runOnUI,
@@ -204,24 +204,21 @@ export function DraggableEventBlock({
   // move: a pan that took the bottom edge at once won the touch from the
   // ScrollView, and on a short block the edge is much of the block.
   const drawnHeight = Math.max(height - 2, SNAP_PX);
-  const pan = Gesture.Pan()
-    .enabled(draggable)
-    .activateAfterLongPress(250)
-    .onBegin((down) => {
-      onEdge.value = down.y >= drawnHeight - RESIZE_EDGE;
-    })
-    .onStart((start) => {
+  const pan = usePanGesture({
+    activateAfterLongPress: 250,
+    enabled: draggable,
+    onActivate: (start) => {
       begin(onEdge.value ? RESIZE : MOVE, start.absoluteY);
-    })
-    .onUpdate((change) => {
-      update(change.translationY, change.absoluteY);
-    })
-    .onEnd((end, success) => {
+    },
+    onBegin: (down) => {
+      onEdge.value = down.y >= drawnHeight - RESIZE_EDGE;
+    },
+    onDeactivate: (end) => {
       if (dragging.value === 0) {
         return;
       }
       // A cancelled pan (the system took the touch) changes nothing.
-      if (!success) {
+      if (end.canceled) {
         goBack(drags.value);
         return;
       }
@@ -231,10 +228,14 @@ export function DraggableEventBlock({
       } else {
         runOnJS(commitResize)(travel(end.translationY), drags.value);
       }
-    })
-    .onFinalize(() => {
+    },
+    onFinalize: () => {
       finish();
-    });
+    },
+    onUpdate: (change) => {
+      update(change.translationY, change.absoluteY);
+    },
+  });
 
   const tint = useEventTint(color);
   const animatedStyle = useAnimatedStyle(() => ({

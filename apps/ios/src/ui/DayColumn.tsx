@@ -18,7 +18,7 @@ import {
 } from '@calendar/core';
 import { useState } from 'react';
 import { StyleSheet, Text, View, type DimensionValue } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
 import { runOnJS, useSharedValue, type SharedValue } from 'react-native-reanimated';
 import { DraftBlock } from './DraftBlock.tsx';
 import { DraggableEventBlock } from './DraggableEventBlock.tsx';
@@ -138,40 +138,41 @@ export function DayColumn({
   // day swipe pages exactly as before — the arrangement the event blocks'
   // own long-press drag relies on. Blocks are drawn above this layer, so a
   // touch on an event never reaches it.
-  const createPan = Gesture.Pan()
-    .activateAfterLongPress(HOLD_TO_CREATE_MS)
-    // The anchor is where the finger touched down, not where it rests once
-    // the hold completes: the recognizer tolerates a few points of drift
-    // during the hold, which is a couple of minutes on this grid.
-    .onBegin((begin) => {
-      setShared(anchor, minuteOfDay(begin.y, HOUR_HEIGHT));
-    })
-    .onStart((start) => {
+  const createPan = usePanGesture({
+    activateAfterLongPress: HOLD_TO_CREATE_MS,
+    onActivate: (start) => {
       const slot = slotFromHold(anchor.value, minuteOfDay(start.y, HOUR_HEIGHT));
       setShared(shownStart, slot.startMinute);
       setShared(shownEnd, slot.endMinute);
       runOnJS(setSelection)(slot);
-    })
-    .onUpdate((update) => {
+    },
+    // The anchor is where the finger touched down, not where it rests once
+    // the hold completes: the recognizer tolerates a few points of drift
+    // during the hold, which is a couple of minutes on this grid.
+    onBegin: (begin) => {
+      setShared(anchor, minuteOfDay(begin.y, HOUR_HEIGHT));
+    },
+    // Create exactly the slot on screen, not one recomputed from where the
+    // finger lifts: lifting drifts too.
+    onDeactivate: (end) => {
+      if (!end.canceled && shownStart.value >= 0) {
+        runOnJS(createSlot)(shownStart.value, shownEnd.value);
+      }
+    },
+    onFinalize: () => {
+      setShared(shownStart, -1);
+      setShared(shownEnd, -1);
+      runOnJS(clearSelection)();
+    },
+    onUpdate: (update) => {
       const slot = slotFromHold(anchor.value, minuteOfDay(update.y, HOUR_HEIGHT));
       if (slot.startMinute !== shownStart.value || slot.endMinute !== shownEnd.value) {
         setShared(shownStart, slot.startMinute);
         setShared(shownEnd, slot.endMinute);
         runOnJS(setSelection)(slot);
       }
-    })
-    // Create exactly the slot on screen, not one recomputed from where the
-    // finger lifts: lifting drifts too.
-    .onEnd((_end, success) => {
-      if (success && shownStart.value >= 0) {
-        runOnJS(createSlot)(shownStart.value, shownEnd.value);
-      }
-    })
-    .onFinalize(() => {
-      setShared(shownStart, -1);
-      setShared(shownEnd, -1);
-      runOnJS(clearSelection)();
-    });
+    },
+  });
 
   return (
     <View style={[styles.dayColumn, divided && styles.dayColumnDivided, { width }]}>
@@ -202,13 +203,14 @@ export function DayColumn({
             <TimedTaskBlock
               compact={compact}
               dimmed={draggingKey === box.id}
-              gesture={taskDrag.gestureFor(task, 'grid', isTaskReadOnly(task))}
               key={box.id}
               left={`${box.left * 100}%` as DimensionValue}
               listColor={listColorOf(task)}
               onPress={() => onTaskPress(task)}
               onToggle={() => onToggleTask(task)}
+              readOnly={isTaskReadOnly(task)}
               task={task}
+              taskDrag={taskDrag}
               top={box.top * 24 * HOUR_HEIGHT}
               width={`${box.width * 100}%` as DimensionValue}
             />

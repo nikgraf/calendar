@@ -36,7 +36,7 @@ import {
   View,
   type ViewInstance,
 } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
 import Animated, {
   cancelAnimation,
   runOnJS,
@@ -73,6 +73,100 @@ import { ALL_DAY_ROW_HEIGHT, EDGE_INSET, gutterWidth, HOUR_HEIGHT } from './time
 const setShared = (shared: SharedValue<number>, value: number) => {
   'worklet';
   shared.value = value;
+};
+
+/**
+ * The horizontal pan that pages the strip by whole columns. Not compiled:
+ * its callbacks go to a hook, so the compiler would key its memo on the
+ * shared values' `.value`s and read them during every render.
+ */
+const useDaySwipe = ({
+  buffer,
+  columnWidth,
+  navigatedPx,
+  onSwipe,
+  panStart,
+  panX,
+  pending,
+  swipedPx,
+}: {
+  buffer: number;
+  columnWidth: number;
+  navigatedPx: SharedValue<number>;
+  /** A swipe's page change: the columns it moved and the strip's offset after it. */
+  onSwipe: (commit: number, px: number) => void;
+  panStart: SharedValue<number>;
+  panX: SharedValue<number>;
+  pending: SharedValue<number>;
+  swipedPx: number;
+}) => {
+  'use no memo';
+  // Navigates by `commit` columns now, keeping the strip where it is.
+  const navigate = (commit: number) => {
+    'worklet';
+    setShared(navigatedPx, navigatedPx.value + commit * columnWidth);
+    setShared(panX, panX.value + commit * columnWidth);
+    runOnJS(onSwipe)(commit, navigatedPx.value);
+  };
+
+  return usePanGesture({
+    // Only clearly horizontal movement pans; vertical stays with the ScrollView,
+    // and event blocks win the arena via their long-press activation.
+    activeOffsetX: [-15, 15],
+    failOffsetY: [-12, 12],
+    onActivate: () => {
+      // A second swipe inside the first one's commit animation: the first
+      // still counts. Its page is taken now, and this swipe carries on
+      // from wherever the strip is.
+      cancelAnimation(panX);
+      if (pending.value !== 0) {
+        const commit = pending.value;
+        setShared(pending, 0);
+        navigate(commit);
+      }
+      setShared(panStart, panX.value);
+    },
+    onDeactivate: (end) => {
+      // Snap to the nearest column boundary: whole columns crossed, plus
+      // the flick / quarter rule on the remainder. A cancelled pan (the
+      // system took the touch) commits nothing.
+      const commit = !end.canceled
+        ? swipeReleaseColumns(
+            panStart.value,
+            end.translationX,
+            end.velocityX,
+            columnWidth,
+            buffer,
+            swipeLag(navigatedPx.value, swipedPx, columnWidth),
+          )
+        : 0;
+      if (commit === 0) {
+        setShared(panX, withTiming(0, { duration: 160 }));
+        return;
+      }
+      setShared(pending, commit);
+      setShared(
+        panX,
+        withTiming(-commit * columnWidth, { duration: 180 }, (finished) => {
+          if (finished && pending.value === commit) {
+            setShared(pending, 0);
+            navigate(commit);
+          }
+        }),
+      );
+    },
+    onUpdate: (update) => {
+      setShared(
+        panX,
+        clampSwipeOffset(
+          panStart.value + update.translationX,
+          columnWidth,
+          buffer,
+          swipeLag(navigatedPx.value, swipedPx, columnWidth),
+        ),
+      );
+    },
+  });
 };
 
 /**
@@ -392,71 +486,16 @@ export function DayTimeline({
     setSwiped((current) => ({ columns: current.columns + commit, px }));
     onNavigate(commit);
   };
-  // Navigates by `commit` columns now, keeping the strip where it is.
-  const navigate = (commit: number) => {
-    'worklet';
-    setShared(navigatedPx, navigatedPx.value + commit * columnWidth);
-    setShared(panX, panX.value + commit * columnWidth);
-    runOnJS(reportSwipe)(commit, navigatedPx.value);
-  };
-
-  const swipe = Gesture.Pan()
-    // Only clearly horizontal movement pans; vertical stays with the ScrollView,
-    // and event blocks win the arena via their long-press activation.
-    .activeOffsetX([-15, 15])
-    .failOffsetY([-12, 12])
-    .onStart(() => {
-      // A second swipe inside the first one's commit animation: the first
-      // still counts. Its page is taken now, and this swipe carries on
-      // from wherever the strip is.
-      cancelAnimation(panX);
-      if (pending.value !== 0) {
-        const commit = pending.value;
-        setShared(pending, 0);
-        navigate(commit);
-      }
-      setShared(panStart, panX.value);
-    })
-    .onUpdate((update) => {
-      setShared(
-        panX,
-        clampSwipeOffset(
-          panStart.value + update.translationX,
-          columnWidth,
-          buffer,
-          swipeLag(navigatedPx.value, swiped.px, columnWidth),
-        ),
-      );
-    })
-    .onEnd((end, success) => {
-      // Snap to the nearest column boundary: whole columns crossed, plus
-      // the flick / quarter rule on the remainder. A cancelled pan (the
-      // system took the touch) commits nothing.
-      const commit = success
-        ? swipeReleaseColumns(
-            panStart.value,
-            end.translationX,
-            end.velocityX,
-            columnWidth,
-            buffer,
-            swipeLag(navigatedPx.value, swiped.px, columnWidth),
-          )
-        : 0;
-      if (commit === 0) {
-        setShared(panX, withTiming(0, { duration: 160 }));
-        return;
-      }
-      setShared(pending, commit);
-      setShared(
-        panX,
-        withTiming(-commit * columnWidth, { duration: 180 }, (finished) => {
-          if (finished && pending.value === commit) {
-            setShared(pending, 0);
-            navigate(commit);
-          }
-        }),
-      );
-    });
+  const swipe = useDaySwipe({
+    buffer,
+    columnWidth,
+    navigatedPx,
+    onSwipe: reportSwipe,
+    panStart,
+    panX,
+    pending,
+    swipedPx: swiped.px,
+  });
 
   const stripStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: panX.value - navigatedPx.value }],
