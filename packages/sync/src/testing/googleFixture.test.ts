@@ -61,11 +61,13 @@ describe('googleFixtureLayer', () => {
       yield* seedFixtureAccounts(fixture);
       yield* seedFixtureAccounts(fixture); // idempotent
       const accounts = yield* (yield* AccountRepo).list();
-      // In the fixture's order; the signed-out one waits for a sign-in.
+      // In the fixture's order, stamped apart rather than tied on one
+      // millisecond; the signed-out one waits for a sign-in.
       expect(accounts.map((account) => [account.id, account.status])).toEqual([
         ['fixture-google', 'ok'],
         ['signed-out', 'reauth_required'],
       ]);
+      expect(accounts[1]!.createdAt).toBeGreaterThan(accounts[0]!.createdAt);
       expect(yield* (yield* TokenStore).get('fixture-google')).not.toBeNull();
       expect(yield* (yield* TokenStore).get('signed-out')).toBeNull();
       yield* (yield* SyncEngine).syncAll();
@@ -78,7 +80,7 @@ describe('googleFixtureLayer', () => {
       ]);
       // Still 'ok': the token was accepted, no reauth flip.
       expect((yield* (yield* AccountRepo).get('fixture-google'))?.status).toBe('ok');
-      // The pass skipped the signed-out account: nothing synced for it.
+      // Nothing synced for the signed-out account, still waiting for a sign-in.
       expect(yield* repo.listLists('signed-out')).toEqual([]);
       expect((yield* (yield* AccountRepo).get('signed-out'))?.status).toBe('reauth_required');
     }).pipe(Effect.provide(appLayer)),

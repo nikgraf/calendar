@@ -71,10 +71,11 @@ const FirstRowContext = createContext(true);
 
 /**
  * One Settings page: a scroll view that runs to the screen edges (a
- * clipped control still counts as visible to Maestro) and lets the large
- * title collapse. `keyboardShouldPersistTaps`: a Modal a page opens (the
- * time-zone picker, the mirror editor) is its child in the React tree, so
- * without it the first tap on the Modal's rows only dismisses the keyboard.
+ * clipped control still counts as visible to Maestro) and is inset below
+ * the transparent bar. `keyboardShouldPersistTaps`: a Modal a page opens
+ * (the time-zone picker, the mirror editor) is its child in the React
+ * tree, so without it the first tap on the Modal's rows only dismisses
+ * the keyboard.
  */
 export function SettingsPage({ children, testID }: { children: ReactNode; testID: string }) {
   const styles = useStyles(makeStyles);

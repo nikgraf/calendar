@@ -837,8 +837,8 @@ export interface LaunchOptions {
   /**
    * Absent (default): the real Google clients — a seeded account has no
    * token, so its writes stay queued. A fixture runs the in-process fake
-   * Google API with a token for every fixture account: lists and tasks
-   * arrive through the first sync and queued writes push, so e2e can
+   * Google API with a token for every signed-in fixture account: lists and
+   * tasks arrive through the first sync and queued writes push, so e2e can
    * watch a temp `local-…` id become a server id. `live` signs the real
    * API in as the live test account (googleLive.e2e.ts only): the seed
    * goes into a JSON file in the run's userData dir, the OAuth client
