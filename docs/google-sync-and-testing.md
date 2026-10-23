@@ -262,7 +262,14 @@ suite). When touching sync code, treat these as invariants.
   `authorizationStatus(for: .reminder)` distinguishes fullAccess /
   writeOnly / denied / restricted / notDetermined. Access can be revoked
   in System Settings at any time — treat every pass's status check as the
-  account's health, not the initial grant.
+  account's health, not the initial grant. Right after a prompt the
+  status can still say notDetermined (seconds; 20 s+ on a CI runner), and
+  the bridge's check before every read and write reads it too: the TS
+  clients take this process's granted answer over that notDetermined,
+  for `status` and for a refusal (one failed call, never lost access —
+  else the pass started by Connect flags the account it just made),
+  until the system first reports a definite status; a notDetermined
+  after that is a real reset (`tccutil reset` on a running Mac).
 - **The helper is a bare executable**, so its usage strings ride in an
   embedded `__TEXT,__info_plist` (Package.swift `-sectcreate`); the app's
   Info.plist carries them too (forge `extendInfo`). Hardened runtime
@@ -277,9 +284,11 @@ suite). When touching sync code, treat these as invariants.
   answers notFound — treated as done.
 - **Errors cross Expo as an envelope**: expo-modules-core rethrows a Swift
   throw as `FunctionCallException … → Caused by: RemindersBridgeError:
-  <message>`; the client unwraps the last `Caused by:` segment before
-  matching the `accessDenied:` / `notFound:` prefixes (the helper sends
-  the message verbatim).
+  <message> (at SolunivoReminders/SolunivoRemindersModule.swift:36)`; the
+  client unwraps the last `Caused by:` segment and drops the throw site
+  before matching the `accessDenied:` / `notFound:` prefixes (the helper
+  sends the message verbatim). With the site left on, every iOS access
+  error named an unknown status.
 - **Store lifetime**: the `EKEventStore` is created by the pre-prompt
   status call and `reset()` after a successful grant — a store created
   without access can keep answering with no calendars.
@@ -331,7 +340,9 @@ against a real store.
 - **Access** is its own TCC entity: `requestFullAccessToEvents` /
   `authorizationStatus(for: .event)`, independent of the Reminders
   grant. Same lifecycle as Reminders: `store.reset()` after a grant, the
-  status check is the account's health, `writeOnly` is not enough.
+  status check is the account's health, the same notDetermined lag after
+  a prompt (a refusal then is one failed call), `writeOnly` is not
+  enough.
 - **Bounded queries only**: `predicateForEvents(withStart:end:calendars:)`
   matches a four-year span at most, so the bridge chunks longer ranges
   and de-duplicates events spanning a chunk edge by

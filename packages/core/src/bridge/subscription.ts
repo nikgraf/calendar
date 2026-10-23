@@ -25,13 +25,19 @@ export const changesFromSubscription = (
 /**
  * The bridge's own message, whatever the transport wrapped around it. The
  * helper emits it verbatim; expo-modules-core rethrows it as
- * "FunctionCallException: … → Caused by: RemindersBridgeError: <message>",
- * so take the last "Caused by:" segment and strip the exception name.
+ * "FunctionCallException: … → Caused by: RemindersBridgeError: <message>
+ * (at SolunivoReminders/SolunivoRemindersModule.swift:36)", so take the
+ * last "Caused by:" segment and strip the exception name and the throw
+ * site. Left on, the site made every iOS "accessDenied: <status>" name an
+ * unknown status.
  */
 export const bridgeMessage = (raw: string): string => {
   const causedBy = raw.lastIndexOf('Caused by:');
   const inner = causedBy === -1 ? raw : raw.slice(causedBy + 'Caused by:'.length);
-  return inner.replace(/^\s*\w*BridgeError:\s*/, '').trim();
+  return inner
+    .replace(/^\s*\w*BridgeError:\s*/, '')
+    .replace(/\s*\(at [^()]+:\d+\)\s*$/, '')
+    .trim();
 };
 
 /**
