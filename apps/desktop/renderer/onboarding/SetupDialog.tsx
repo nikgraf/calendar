@@ -288,6 +288,8 @@ function Welcome({
       </div>
       <div className="flex flex-col gap-2">
         <button
+          // The dialog's first focus: the way forward, not Skip.
+          autoFocus
           className="flex items-center gap-3 rounded-xl bg-primary px-4 py-3 text-left text-on-primary hover:bg-primary-hover"
           data-testid="setup-start"
           onClick={onStart}
