@@ -35,6 +35,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   close's `github.ref` is main. Older closed PRs' 188 branches were
   deleted by hand (2026-10-21). Open: `--channel` follows a channel
   repointed by hand; a PR closed with a merge conflict gets no run.
+- **PR Preview page** (2026-10-21, #231) — Load kept the override when
+  nothing loaded and said to force-quit, but short of a rollback
+  expo-updates reports nothing new when the PR has nothing for this
+  runtime newer than what runs, and a restart fixes neither. Load now restarts,
+  says the PR runs, or puts the previous channel back and says why; Back to
+  Main restarts unless main runs. The page names the running update's
+  branch (`metadata.branchName`) and tracks the chosen channel itself,
+  since `Updates.channel` is read at launch and Back to Main can change it
+  without one. Open: `MAIN_CHANNEL` copies eas.json's testflight channel.
 - **Production and dev side by side** (2026-10-01, #100) — the real
   accounts live in the production app, test accounts in a dev variant
   next to it, on the Mac (a run from source) and on the phone
@@ -112,6 +121,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   per-spec retry, and Maestro's `retry` command (it retries assertions and
   cannot outlive the latch). Simulator prep turns keyboard predictions off
   and boots out apsd's log flood. Open: whether the keyboard hang gets rarer.
+- **Maestro driver that never starts** (2026-10-22) — four shard-1 runs
+  failed before any flow: Maestro gave up on its XCTest runner while
+  opening the session and wrote no report, so #205's retry never applied.
+  `run-flows.ts` now copies Maestro's console to `console.log` and runs
+  every flow once more when the timeout's stack passes session creation
+  (`createMaestro`); the runner also gets 240 s
+  (`MAESTRO_DRIVER_STARTUP_TIMEOUT`). Rejected: a retry for any missing
+  report (only session creation proves no flow ran), and the longer
+  timeout alone (an XCTest that never initializes still fails). Open:
+  whether the cold-runner case returns.
 - **iOS e2e without MapKit** (2026-10-15, `todo/ios-geo-off`) — CI's bundle
   sets `EXPO_PUBLIC_CALENDAR_GEO=off`, the desktop's `CALENDAR_GEO=off`:
   flow 22's "Room 4" was geocoded live on every run (once to a place named
@@ -205,6 +224,12 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   it for the pass and drops the calendarList token so the next pass lists
   in full; purging on the 404 was rejected in review (Google says to retry
   404s, and a delta never brings an unchanged calendar back).
+- **A gone calendar's purge is Google's timing** (2026-10-22, #235)
+  — `calendarList.live.ts` red on 3 of 15 nightlies: the calendar's events
+  never 404'd in three minutes, so nothing told the engine to relist. The
+  test polls six minutes, then skips while Google still lists the calendar
+  or serves its event. Rejected: a longer budget alone (the lag has no
+  known bound), a full calendarList every pass (lagging replicas list it).
 - **Re-auth and sync kicks** — a 401 flags the account `reauth_required`
   and keeps its ops queued for after the reconnect (same id, by email);
   wake/unlock/focus/foreground kick a sync, throttled to one per 15 s,
@@ -739,6 +764,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   Repeat to Never first; a rule the form cannot show keeps its day.
   Relative alerts stay on an undated reminder; moving an undated task
   to another list still asks for a day (todo.md).
+- **Access lag after Allow** (2026-10-22, #236) — iOS can report a just-
+  granted Reminders or Calendar prompt as notDetermined for seconds, and
+  the Swift bridges refuse every read and write on that status, so the
+  pass Connect starts flagged the new account "Access off". A refusal
+  citing notDetermined after this process's granted prompt is now one
+  failed call (a request error), never lost access; `bridgeMessage` drops
+  the throw site Expo appends, which hid every iOS refusal's status.
+  Rejected: relaxing the bridge's check (a store without access answers
+  with no calendars, and an empty snapshot wipes the mirror). Open: lists
+  wait for the next pass if the lag outlasts the first one.
 
 ## Apple Calendar
 

@@ -134,6 +134,22 @@ export const makeAppleCalendarClient = (
   invoke: (method: string, params?: Record<string, unknown>) => Promise<unknown>,
   changes: Stream.Stream<void> = Stream.empty,
 ): AppleCalendarClientShape => {
+  // iOS records a prompt's answer a moment after the alert closes; the
+  // status read right after can still say notDetermined (20 s+ on a CI
+  // runner), which read as "the prompt never opened" and flagged a freshly
+  // granted account. Once a prompt was answered in this process, that
+  // answer is the truth until the system reports something definite —
+  // then the lag is over, and a later notDetermined is a real reset (the
+  // Mac keeps running through `tccutil reset`).
+  let answered: CalendarAuthorization | undefined;
+  const settled = (status: CalendarAuthorization): CalendarAuthorization => {
+    if (status !== 'notDetermined') {
+      answered = undefined;
+      return status;
+    }
+    return answered ?? status;
+  };
+
   const call = <A, I>(
     method: string,
     result: Schema.Codec<A, I>,
@@ -144,6 +160,16 @@ export const makeAppleCalendarClient = (
         const message = bridgeMessage(error instanceof Error ? error.message : String(error));
         if (message.startsWith('accessDenied: ')) {
           const status = message.slice('accessDenied: '.length);
+          // The bridge checks the same lagging status before every read and
+          // write: after a granted prompt its notDetermined is that lag, not
+          // lost access. Fail this call only — an access error would flag
+          // the account the user just connected.
+          if (status === 'notDetermined' && answered === 'fullAccess') {
+            return new AppleCalendarRequestError({
+              message: `${message} (the system has not recorded the granted access yet)`,
+              method,
+            });
+          }
           return new AppleCalendarAccessError({
             authorization: isAuthorization(status) ? status : 'denied',
           });
@@ -164,15 +190,6 @@ export const makeAppleCalendarClient = (
         ),
       ),
     );
-
-  // iOS records a prompt's answer a moment after the alert closes; the
-  // status read right after can still say notDetermined (20 s+ on a CI
-  // runner), which read as "the prompt never opened" and flagged a freshly
-  // granted account. Once a prompt was answered in this process, that
-  // answer is the truth until the system reports something definite.
-  let answered: CalendarAuthorization | undefined;
-  const settled = (status: CalendarAuthorization): CalendarAuthorization =>
-    status === 'notDetermined' && answered !== undefined ? answered : status;
 
   return {
     applyBatch: ({ ops }) =>

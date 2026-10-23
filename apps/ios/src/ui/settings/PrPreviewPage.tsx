@@ -2,56 +2,56 @@ import {
   channel as updatesChannel,
   createdAt as updateCreatedAt,
   fetchUpdateAsync,
+  isEmbeddedLaunch,
+  isEmergencyLaunch,
   isEnabled as updatesEnabled,
+  manifest,
   reloadAsync,
+  runtimeVersion,
   setUpdateRequestHeadersOverride,
   updateId,
 } from 'expo-updates';
-import { useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import { StyleSheet, TextInput, View } from 'react-native';
+import { createPreviewStore, MAIN_CHANNEL, runningBranch } from '../../prPreview.ts';
 import { type ThemeColors, useStyles, useTheme } from '../theme.ts';
 import { ActionRow, Footer, Row, Section, SettingsPage } from '../GroupedList.tsx';
+
+const running = runningBranch(manifest, isEmbeddedLaunch);
+
+// Seeded with the launch's channel: the native constant is '' when the
+// build asks for none.
+const preview = createPreviewStore(
+  {
+    fetchUpdate: fetchUpdateAsync,
+    reload: reloadAsync,
+    setOverride: setUpdateRequestHeadersOverride,
+  },
+  { running, runtime: runtimeVersion ?? '', saved: updatesChannel || MAIN_CHANNEL },
+);
 
 /**
  * Internal-testing helper: loads a pull request's OTA update channel
  * (published by CI as `pr-<number>`) into this installed build via the
  * expo-updates request-header override, and switches back to main. Only
- * meaningful in update-enabled (TestFlight) builds — dev clients load from
- * Metro and show a hint instead.
+ * meaningful in TestFlight builds: a dev client loads from Metro and
+ * refuses the override, which the page reports. Running Now names the
+ * branch the running update came from; Channel is the one the build asks
+ * for.
  */
 export function PrPreviewPage() {
   const { colors } = useTheme();
   const styles = useStyles(makeStyles);
   const [channelInput, setChannelInput] = useState('');
-  const [status, setStatus] = useState<string | null>(null);
-  const [switching, setSwitching] = useState(false);
-
-  const switchTo = async (channel: string | null) => {
-    setSwitching(true);
-    setStatus(null);
-    try {
-      setUpdateRequestHeadersOverride(channel ? { 'expo-channel-name': channel } : null);
-      const result = await fetchUpdateAsync();
-      if (result.isNew) {
-        await reloadAsync();
-        return;
-      }
-      setStatus(
-        channel
-          ? `Override set for ${channel}. No update fetched yet — force-quit and reopen the app.`
-          : 'Back on the main channel. Force-quit and reopen to be sure.',
-      );
-    } catch (error) {
-      setStatus(String(error));
-    } finally {
-      setSwitching(false);
-    }
-  };
+  const { saved, status, switching } = useSyncExternalStore(preview.subscribe, preview.getState);
 
   return (
     <SettingsPage testID="settings-page-pr-preview">
-      <Section header="This Build">
-        <Row title="Channel" value={updatesChannel ?? 'none'} />
+      <Section header="Running Now">
+        <Row
+          title="Branch"
+          value={running ?? (isEmbeddedLaunch || isEmergencyLaunch ? 'Built in' : 'none')}
+        />
         <Row title="Update" value={updateId ? updateId.slice(0, 8) : 'embedded'} />
         {updateCreatedAt ? (
           <Row title="Published" value={updateCreatedAt.toLocaleString()} />
@@ -59,9 +59,16 @@ export function PrPreviewPage() {
       </Section>
       {updatesEnabled ? (
         <Section
-          footer={status ? <Footer>{status}</Footer> : undefined}
+          footer={
+            status ? (
+              <Footer selectable tone={status.failed ? 'danger' : 'secondary'}>
+                {status.text}
+              </Footer>
+            ) : undefined
+          }
           header="Load a Pull Request"
         >
+          <Row title="Channel" value={saved} />
           <View style={styles.field}>
             <TextInput
               accessibilityLabel="Update channel"
@@ -77,17 +84,17 @@ export function PrPreviewPage() {
           </View>
           <ActionRow
             disabled={switching || channelInput.trim() === ''}
-            onPress={() => void switchTo(channelInput.trim())}
+            onPress={() => void preview.switchTo(channelInput.trim())}
             title={switching ? 'Switching…' : 'Load PR Channel'}
           />
           <ActionRow
             disabled={switching}
-            onPress={() => void switchTo(null)}
+            onPress={() => void preview.switchTo(MAIN_CHANNEL)}
             title="Back to Main"
           />
         </Section>
       ) : (
-        <Footer>Updates are disabled in this build (a dev client loads from Metro).</Footer>
+        <Footer>Updates are disabled in this build.</Footer>
       )}
     </SettingsPage>
   );

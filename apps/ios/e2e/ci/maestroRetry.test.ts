@@ -2,7 +2,11 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vite-plus/test';
 import { decideRetry, latchedCommand, parseJUnit } from './maestroRetry.ts';
 
-/** Maestro 2.10's own output after its driver was killed mid-flow (stack traces trimmed). */
+/**
+ * Maestro 2.10's own output: a report and run log after its driver was
+ * killed mid-flow (stack traces trimmed), and the console of a run whose
+ * driver never started.
+ */
 const fixture = (name: string): string =>
   readFileSync(new URL(`fixtures/${name}`, import.meta.url), 'utf8');
 
@@ -56,10 +60,12 @@ describe('decideRetry', () => {
           'e2e/flows/07-create-event.yaml',
           'e2e/flows/25-search.yaml',
         ],
+        output: '',
         report: fixture('driver-died.junit.xml'),
         runLog: fixture('driver-died.maestro.log'),
       }),
     ).toEqual({
+      cause: 'died',
       flows: ['e2e/flows/07-create-event.yaml', 'e2e/flows/25-search.yaml'],
       kind: 'retry',
     });
@@ -69,6 +75,7 @@ describe('decideRetry', () => {
     expect(
       decideRetry({
         flows: FLOWS,
+        output: '',
         report: report(
           testCase(FLOWS[0] ?? '', 'SUCCESS'),
           testCase(FLOWS[1] ?? '', 'WARNING'),
@@ -83,6 +90,7 @@ describe('decideRetry', () => {
     expect(
       decideRetry({
         flows: FLOWS,
+        output: '',
         report: report(
           testCase(FLOWS[0] ?? '', 'SUCCESS'),
           testCase(FLOWS[1] ?? '', 'ERROR', UNREACHABLE),
@@ -94,13 +102,14 @@ describe('decideRetry', () => {
         ),
         runLog: LATCHED_LOG,
       }),
-    ).toEqual({ flows: [FLOWS[1], FLOWS[2]], kind: 'retry' });
+    ).toEqual({ cause: 'died', flows: [FLOWS[1], FLOWS[2]], kind: 'retry' });
   });
 
   it('never retries when a flow failed on its own, even beside a dead driver', () => {
     expect(
       decideRetry({
         flows: FLOWS,
+        output: '',
         report: report(
           testCase(
             FLOWS[0] ?? '',
@@ -119,6 +128,7 @@ describe('decideRetry', () => {
     expect(
       decideRetry({
         flows: FLOWS,
+        output: '',
         report: report(
           testCase(FLOWS[0] ?? '', 'SUCCESS'),
           testCase(FLOWS[1] ?? '', 'ERROR', 'Element not found: Id matching regex: event-save'),
@@ -137,6 +147,7 @@ describe('decideRetry', () => {
       expect(
         decideRetry({
           flows: FLOWS,
+          output: '',
           report: report(
             testCase(FLOWS[0] ?? '', 'SUCCESS'),
             lost,
@@ -152,6 +163,7 @@ describe('decideRetry', () => {
     expect(
       decideRetry({
         flows: FLOWS,
+        output: '',
         report: report(
           testCase(FLOWS[0] ?? '', 'SUCCESS'),
           testCase(FLOWS[1] ?? '', 'ERROR', UNREACHABLE),
@@ -159,13 +171,60 @@ describe('decideRetry', () => {
         runLog: LATCHED_LOG,
       }),
     ).toEqual({ kind: 'fail', reason: `the report has no result for ${FLOWS[2]}` });
-    expect(decideRetry({ flows: FLOWS, report: undefined, runLog: LATCHED_LOG }).kind).toBe('fail');
+    expect(
+      decideRetry({ flows: FLOWS, output: '', report: undefined, runLog: LATCHED_LOG }).kind,
+    ).toBe('fail');
+  });
+
+  it('retries every flow when the driver never started, as Maestro printed it', () => {
+    expect(
+      decideRetry({
+        flows: FLOWS,
+        output: fixture('driver-never-started.console.log'),
+        report: undefined,
+        runLog: '',
+      }),
+    ).toEqual({ cause: 'never-started', flows: FLOWS, kind: 'retry' });
+  });
+
+  it('fails without a report when the driver timed out anywhere but session creation', () => {
+    // Maestro 2.10 throws this only while creating the session, but a
+    // timeout from inside a flow would also pass `newSession`, which runs
+    // the flows: flows may have run (and failed on their own) before it.
+    const inFlow = fixture('driver-never-started.console.log').replace(
+      /\tat maestro\.cli\.session\.MaestroSessionManager\.createIOS[^\n]*\n\tat maestro\.cli\.session\.MaestroSessionManager\.createMaestro[^\n]*\n/,
+      '\tat maestro.cli.runner.TestSuiteInteractor.runFlow(TestSuiteInteractor.kt:230)\n',
+    );
+    expect(inFlow).toContain('IOSDriverTimeoutException');
+    expect(inFlow).toContain('MaestroSessionManager.newSession(');
+    expect(inFlow).not.toContain('createMaestro');
+    expect(decideRetry({ flows: FLOWS, output: inFlow, report: undefined, runLog: '' })).toEqual({
+      kind: 'fail',
+      reason: 'Maestro wrote no JUnit report',
+    });
+  });
+
+  it('reads the never-started rule only when Maestro wrote no report', () => {
+    // A report decides on its own: a flow that failed on its own still fails.
+    expect(
+      decideRetry({
+        flows: FLOWS,
+        output: fixture('driver-never-started.console.log'),
+        report: report(
+          testCase(FLOWS[0] ?? '', 'ERROR', 'Assertion is false: "Today" is visible'),
+          testCase(FLOWS[1] ?? '', 'SUCCESS'),
+          testCase(FLOWS[2] ?? '', 'SUCCESS'),
+        ),
+        runLog: '',
+      }),
+    ).toEqual({ kind: 'fail', reason: 'no driver failure in the run log' });
   });
 
   it('fails when the run log shows no driver failure', () => {
     expect(
       decideRetry({
         flows: FLOWS,
+        output: '',
         report: report(
           testCase(FLOWS[0] ?? '', 'SUCCESS'),
           testCase(FLOWS[1] ?? '', 'ERROR', UNREACHABLE),

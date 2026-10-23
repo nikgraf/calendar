@@ -111,17 +111,24 @@ suite). When touching sync code, treat these as invariants.
 - **URL-encode calendar ids** in paths: birthday/holiday calendars contain
   `#` (`addressbook#contacts@group.v.calendar.google.com`) — unencoded,
   the id is truncated as a URL fragment.
-- **A deleted calendar lingers.** After `calendars.delete`, a full
-  `calendarList.list` keeps naming the calendar for minutes and
-  `events.list` still answers 200; later `events.list` turns 404 while the
-  list may still name it, and an incremental list never reports a
-  deletion that predates its token. A 404 is no proof of deletion either
-  (Google's error guide says to retry it; it also covers "a calendar the
-  user can not access"). So the engine skips that calendar for the pass,
+- **A deleted calendar lingers.** Google's replicas disagree about a
+  deleted calendar for minutes. Probed 2026-10-22 (one calendar, every
+  15 s): a full `calendarList.list` still named it on some polls 5½
+  minutes after `calendars.delete`, and `events.list` answered 200 on
+  some and 404 on others. A delta on a token from before the delete
+  reported it `deleted` for the first second, then named it as listed
+  (+2 s), then left it out (+4 s), and a delta that missed the deletion
+  never reports it later. A client can meet only lagging answers for
+  minutes: on three of fifteen nightlies the calendar's `events.list`
+  never answered 404 within three minutes. A 404 is no proof of
+  deletion either (Google's error guide says to retry it; it also covers
+  "a calendar the user can not access"). So the engine skips that calendar for the pass,
   keeps its rows, and drops the calendarList token so the next pass
   lists calendars in full — which removes the calendar once Google stops
-  naming it, and keeps it, retrying its events, if it recovers. A
-  `tasks.list` 404 skips that list the same way.
+  naming it, and keeps it, retrying its events, if it recovers. How soon
+  is Google's to decide: `calendarList.live.ts` polls six minutes, then
+  skips while Google itself still lists the calendar or serves its
+  event. A `tasks.list` 404 skips that list the same way.
 
 ### Misc
 
@@ -255,7 +262,14 @@ suite). When touching sync code, treat these as invariants.
   `authorizationStatus(for: .reminder)` distinguishes fullAccess /
   writeOnly / denied / restricted / notDetermined. Access can be revoked
   in System Settings at any time — treat every pass's status check as the
-  account's health, not the initial grant.
+  account's health, not the initial grant. Right after a prompt the
+  status can still say notDetermined (seconds; 20 s+ on a CI runner), and
+  the bridge's check before every read and write reads it too: the TS
+  clients take this process's granted answer over that notDetermined,
+  for `status` and for a refusal (one failed call, never lost access —
+  else the pass started by Connect flags the account it just made),
+  until the system first reports a definite status; a notDetermined
+  after that is a real reset (`tccutil reset` on a running Mac).
 - **The helper is a bare executable**, so its usage strings ride in an
   embedded `__TEXT,__info_plist` (Package.swift `-sectcreate`); the app's
   Info.plist carries them too (forge `extendInfo`). Hardened runtime
@@ -270,9 +284,11 @@ suite). When touching sync code, treat these as invariants.
   answers notFound — treated as done.
 - **Errors cross Expo as an envelope**: expo-modules-core rethrows a Swift
   throw as `FunctionCallException … → Caused by: RemindersBridgeError:
-  <message>`; the client unwraps the last `Caused by:` segment before
-  matching the `accessDenied:` / `notFound:` prefixes (the helper sends
-  the message verbatim).
+  <message> (at SolunivoReminders/SolunivoRemindersModule.swift:36)`; the
+  client unwraps the last `Caused by:` segment and drops the throw site
+  before matching the `accessDenied:` / `notFound:` prefixes (the helper
+  sends the message verbatim). With the site left on, every iOS access
+  error named an unknown status.
 - **Store lifetime**: the `EKEventStore` is created by the pre-prompt
   status call and `reset()` after a successful grant — a store created
   without access can keep answering with no calendars.
@@ -324,7 +340,9 @@ against a real store.
 - **Access** is its own TCC entity: `requestFullAccessToEvents` /
   `authorizationStatus(for: .event)`, independent of the Reminders
   grant. Same lifecycle as Reminders: `store.reset()` after a grant, the
-  status check is the account's health, `writeOnly` is not enough.
+  status check is the account's health, the same notDetermined lag after
+  a prompt (a refusal then is one failed call), `writeOnly` is not
+  enough.
 - **Bounded queries only**: `predicateForEvents(withStart:end:calendars:)`
   matches a four-year span at most, so the bridge chunks longer ranges
   and de-duplicates events spanning a chunk edge by
@@ -528,9 +546,10 @@ guest-side RSVP (needs a second account).
   `makeScratchRuntime` for `beforeAll`/`afterAll`. Tests use `it.live`
   (real `Clock`); never `TestClock`. `vite.config.ts` switches on
   `GOOGLE_LIVE=1`: only `live/**/*.live.ts`, one file at a time, 120 s
-  hooks, 300 s tests, no retry (a retry repeats real writes). `drain` in
-  `live/support.ts` keeps draining until only parked ops are left and
-  fails after two minutes, listing each op still queued.
+  hooks, 300 s tests (`calendarList.live.ts` 480 s), no retry (a retry
+  repeats real writes). `drain` in `live/support.ts` keeps draining until
+  only parked ops are left and fails after two minutes, listing each op
+  still queued.
 - **Desktop.** `CALENDAR_GOOGLE=live` + `CALENDAR_GOOGLE_LIVE=<json>`
   (`{email, refreshToken, tasksEnabled, contactsEnabled}` — the harness
   writes it into the run's temp profile, mode 600, deleted with it) and
@@ -764,12 +783,21 @@ Electron binary (`electron --version`) and run spec files sequentially.
   died on and whether XCTest found the app's main thread busy. A flow that
   failed on its own (an assertion, an element not found, anything but
   `DeviceUnreachableException`) fails the job without a retry, even beside
-  a dead driver, and so does a second death. Each attempt's report and
-  logs are in `~/.maestro/tests/<label>-<n>` (`--debug-output`, flattened:
-  otherwise the run's log lands in a hidden folder the artifact upload
-  skips). A failed shard's artifact carries those reports, any crash
-  report and the app's `calendar.db` as the shard left it
-  (`e2e-app-state/`). To reproduce a CI run locally: `eas build:list
+  a dead driver, and so does a second death. A driver that never starts
+  gets the same single retry for every flow of the invocation: Maestro
+  gives up on its runner while opening the session, before any flow, and
+  writes no report (runs 39144942743: XCTest timed out waiting for
+  accessibility; 39668426261: the runner answered at 132 s). Only
+  Maestro's console shows that (`IOSDriverTimeoutException` with a stack
+  through `MaestroSessionManager.createMaestro`), so the wrapper copies what
+  Maestro prints to `console.log` while streaming it; a missing report
+  for any other reason still fails. The job also gives the runner 240 s
+  instead of 120 (`MAESTRO_DRIVER_STARTUP_TIMEOUT`). Each attempt's
+  report, console output and logs are in `~/.maestro/tests/<label>-<n>`
+  (`--debug-output`, flattened: otherwise the run's log lands in a hidden
+  folder the artifact upload skips). A failed shard's artifact carries
+  those reports, any crash report and the app's `calendar.db` as the shard
+  left it (`e2e-app-state/`). To reproduce a CI run locally: `eas build:list
   --build-profile e2e-simulator`, `fetch-eas-build.sh <fingerprint>
   e2e-simulator build/e2e-app`, `repack-app.sh`, a fresh simulator, then
   `SIMULATOR_UDID=… node e2e/ci/run-flows.ts <label>` with the shard's
@@ -876,8 +904,11 @@ Selector gotchas (each caused a real failure):
   row reads as one element (title, subtitle and value together), so match
   with `.*` around the text. Decorative symbols stay out of labels
   (`Glyph`).
-- A list row's label is title + swatch + check mark, so rows are picked
-  by `id: task-list-option`; a chip body is tapped by its full text
+- A picker row (a radio `CheckRow`) reads as its title alone; the check
+  mark is a `Glyph`, so a pick is proven by the row's `selected: true`
+  (`checked` on a checkbox `CheckRow`), never by a "✓" in its text. Rows are picked by `id: task-list-option` /
+  `calendar-option`, or by full name where it is unique (the live suite's
+  `pick-row.yaml`); a chip body is tapped by its full text
   (`[0-9]+:[0-9]+ !!! <title>` for a timed reminder), because
   `.*<title>` also matches the checkbox's "Toggle <title>" label.
 - Never select by `local-…` task ids (the op push swaps them to server

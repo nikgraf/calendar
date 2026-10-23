@@ -228,10 +228,17 @@ Instead:
 
 - **JS/TS changes (almost all agent PRs)** — keep the installed TestFlight
   build and switch channels in-app: **Settings › Advanced › PR Preview** → enter
-  `pr-<number>` (from the PR comment) → Load. "Back to main" returns to the
-  main channel. If no update loads immediately, force-quit and reopen. Once
-  the PR closes its channel is gone, and a phone still on it gets no
-  updates until "Back to main".
+  `pr-<number>` (from the PR comment) → Load, and the app restarts into the
+  PR's update. Running Now › Branch names the branch the running update
+  came from; Channel is the one the build asks for at every launch, kept
+  on the device until "Back to Main". If the PR already runs, Load says so;
+  if it has no update for this build's runtime (natively behind or ahead
+  of the build), Load says that and keeps the previous channel. Before
+  CI's first publish the channel doesn't exist: Load shows EAS's 404 and
+  keeps the previous channel too. Back to Main offline runs the build's own
+  bundle until main answers; if the cache already dropped that bundle, the
+  page asks for a force-quit, since only a cold start stores it again. Once the PR closes its channel is gone, and a
+  phone still on it gets no updates until "Back to Main".
 - **Native changes** (new native deps, config plugins, Expo SDK bumps) change
   the update **fingerprint** (`runtimeVersion.policy: fingerprint`), so OTA
   previews from such PRs are invisible to the installed build — deliberately,
@@ -296,9 +303,9 @@ dragging the `.app` in.
 module, config plugin, Swift bridge change, or Expo SDK bump). JS-only
 changes reload over Metro. `apps/ios/scripts/check-devclient.mjs` (run by
 `pnpm test:e2e:ios`) warns when the installed client's fingerprint differs
-from the working tree's. Updates are disabled in dev builds, so
-**Settings › Advanced › PR Preview** shows "Updates are disabled in this
-build" instead of channel controls.
+from the working tree's. A dev build loads from Metro: **Settings ›
+Advanced › PR Preview** still shows the channel controls there, but
+expo-updates refuses the override and the page shows its error.
 
 Maestro e2e (`pnpm test:e2e:ios`) runs against this dev client, so install a
 fresh one before those flows after a native change.
