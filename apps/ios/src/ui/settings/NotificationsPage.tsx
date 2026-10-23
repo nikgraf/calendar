@@ -169,10 +169,8 @@ export function NotificationsSections() {
                 accessibilityLabel="Reminder time"
                 display="compact"
                 mode="time"
-                onChange={(_, picked) => {
-                  if (picked) {
-                    birthdays.save({ time: toTimeString(picked) });
-                  }
+                onValueChange={(_, picked) => {
+                  birthdays.save({ time: toTimeString(picked) });
                 }}
                 testID="birthday-time"
                 value={dateFromParts('2026-01-01', birthdays.settings.time)}

@@ -59,7 +59,7 @@ export function TaskEditForm({
               <DateTimePicker
                 display="compact"
                 mode="date"
-                onChange={(_, picked) => picked && taskModel.setDueDate(toDateString(picked))}
+                onValueChange={(_, picked) => taskModel.setDueDate(toDateString(picked))}
                 value={dateFromParts(taskModel.dueDate)}
               />
             </DueRow>

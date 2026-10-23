@@ -180,7 +180,7 @@ export function RepeatRuleChips({
               display="compact"
               minimumDate={dateFromParts(anchorDate)}
               mode="date"
-              onChange={(_, picked) => picked && state.setRepeatUntil(toDateString(picked))}
+              onValueChange={(_, picked) => state.setRepeatUntil(toDateString(picked))}
               value={dateFromParts(state.repeatUntil || anchorDate)}
             />
           }
