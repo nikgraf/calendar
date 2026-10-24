@@ -15,6 +15,11 @@ export const SETTINGS_PANES = [
     label: 'Accounts',
   },
   {
+    id: 'calendar',
+    keywords: ['weekend', 'saturday', 'sunday', 'friday', 'shade', 'days', 'background', 'view'],
+    label: 'Calendar',
+  },
+  {
     id: 'notifications',
     keywords: ['alerts', 'reminders', 'birthdays', 'events'],
     label: 'Notifications',

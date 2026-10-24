@@ -183,6 +183,7 @@ export function AllDayLane({
   stripStyle,
   taskById,
   today,
+  weekendColumns,
 }: {
   allDayById: ReadonlyMap<string, EventRecord>;
   birthdayById: ReadonlyMap<string, BirthdayOccurrence>;
@@ -218,6 +219,8 @@ export function AllDayLane({
   stripStyle: CSSProperties;
   taskById: ReadonlyMap<string, TaskRecord>;
   today: string;
+  /** The strip columns drawn with the weekend background, under the chips. */
+  weekendColumns: ReadonlyArray<{ readonly dayIndex: number; readonly iso: string }>;
 }) {
   const tintOf = useTint();
   return (
@@ -245,6 +248,19 @@ export function AllDayLane({
       </div>
       <div className="min-w-0 flex-1 overflow-hidden">
         <div className="relative h-full" style={stripStyle}>
+          {weekendColumns.map(({ dayIndex, iso }) => (
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-y-0 bg-weekend"
+              data-day={iso}
+              data-weekend="true"
+              key={`weekend:${iso}`}
+              style={{
+                left: `${(dayIndex / stripLength) * 100}%`,
+                width: `${(1 / stripLength) * 100}%`,
+              }}
+            />
+          ))}
           <LaneDropIndicator drag={drag} stripLength={stripLength} />
           {moreByDay.map((hidden, dayIndex) =>
             hidden > 0 ? (

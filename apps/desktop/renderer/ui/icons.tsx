@@ -230,6 +230,12 @@ export const PANE_ICON_PATHS = {
       <path d="m7.5 10 2.5 2.25L7.5 14.5M12.5 14.5h4" />
     </>
   ),
+  calendar: (
+    <>
+      <rect height="15" rx="2.5" width="18" x="3" y="5" />
+      <path d="M3 9.5h18M8 3v3.5M16 3v3.5M15 9.5V20" />
+    </>
+  ),
   file: (
     <>
       <path d="M13.5 3.5h-6a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V8.5z" />

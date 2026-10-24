@@ -20,6 +20,7 @@
   --color-canvas: var(--canvas);
   --color-surface: var(--surface);
   --color-surface-subtle: var(--surface-subtle);
+  --color-weekend: var(--weekend);
   --color-surface-raised: var(--surface-raised);
   --color-fill: var(--fill);
   --color-hairline: var(--border);

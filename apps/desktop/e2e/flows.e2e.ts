@@ -1469,6 +1469,78 @@ describe('calendar desktop e2e', () => {
     await app.closeSettings();
   });
 
+  it('shades the weekend days, and Settings › Calendar picks them or turns the shade off', async () => {
+    const { cdp } = app;
+    // The weekdays of the shaded columns (or month cells) in view, as
+    // weekday codes: the week strip always holds every weekday, so the
+    // answer is the same on any date.
+    const shadedIn = (root: string) =>
+      cdp.eval<Array<string>>(
+        `[...new Set([...document.querySelectorAll('[data-testid="${root}"] [data-weekend]')].map((cell) => ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'][new Date(cell.dataset.day + 'T12:00:00').getDay()]))].sort()`,
+      );
+    const stored = () => readDeviceSetting(app.userDataDir, 'viewPreferences');
+    await cdp.waitFor(`!!document.querySelector('[data-testid="week-grid"] [data-weekend]')`);
+    expect(await shadedIn('week-grid')).toEqual(['SA', 'SU']);
+    expect(await shadedIn('all-day-lane')).toEqual(['SA', 'SU']);
+
+    const settings = await app.openSettings('calendar');
+    const pressed = (day: string) =>
+      settings.eval<string | null>(
+        `document.querySelector('[data-testid="weekend-day-${day}"]')?.getAttribute('aria-pressed') ?? null`,
+      );
+    const toggleDay = async (day: string, to: boolean) => {
+      await settings.eval(`document.querySelector('[data-testid="weekend-day-${day}"]')?.click()`);
+      await settings.waitFor(
+        `document.querySelector('[data-testid="weekend-day-${day}"]')?.getAttribute('aria-pressed') === ${JSON.stringify(String(to))}`,
+      );
+    };
+    const shadeWeekends = () =>
+      settings.eval(`document.querySelector('input[aria-label="Shade weekends"]')?.click()`);
+    try {
+      expect(await pressed('SA')).toBe('true');
+      expect(await pressed('FR')).toBe('false');
+      await toggleDay('FR', true);
+      await toggleDay('SU', false);
+      await expect.poll(stored, { timeout: 10_000 }).toMatchObject({ weekendDays: ['FR', 'SA'] });
+      // The calendar window follows a change made in the settings window.
+      await expect.poll(() => shadedIn('week-grid'), { timeout: 10_000 }).toEqual(['FR', 'SA']);
+      await cdp.clickTestId('view-month');
+      try {
+        await expect.poll(() => shadedIn('month-grid'), { timeout: 10_000 }).toEqual(['FR', 'SA']);
+      } finally {
+        await cdp.clickTestId('view-week');
+      }
+
+      // Off: nothing is shaded, and the days stay as picked.
+      await shadeWeekends();
+      await settings.waitFor(
+        `document.querySelector('[data-testid="weekend-day-FR"]')?.disabled === true`,
+      );
+      await expect.poll(() => shadedIn('week-grid'), { timeout: 10_000 }).toEqual([]);
+      expect(await stored()).toMatchObject({ weekendDays: ['FR', 'SA'], weekendShading: false });
+    } finally {
+      // Back to the defaults for the remaining flows.
+      if (
+        await settings.eval<boolean>(
+          `document.querySelector('input[aria-label="Shade weekends"]')?.checked === false`,
+        )
+      ) {
+        await shadeWeekends();
+        await settings.waitFor(
+          `document.querySelector('[data-testid="weekend-day-FR"]')?.disabled === false`,
+        );
+      }
+      if ((await pressed('FR')) === 'true') {
+        await toggleDay('FR', false);
+      }
+      if ((await pressed('SU')) === 'false') {
+        await toggleDay('SU', true);
+      }
+      await app.closeSettings();
+    }
+    await expect.poll(() => shadedIn('week-grid'), { timeout: 10_000 }).toEqual(['SA', 'SU']);
+  });
+
   it('says so while a screen capture leaves the window out, and pauses privacy from there', async () => {
     const { cdp } = app;
     const phase = () =>

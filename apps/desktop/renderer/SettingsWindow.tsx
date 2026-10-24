@@ -25,6 +25,7 @@ import {
 } from './settingsPanes.ts';
 import { TimeZonesSection } from './TimeZonesSection.tsx';
 import { PaneIcon, SearchIcon } from './ui/icons.tsx';
+import { WeekendsSection } from './WeekendsSection.tsx';
 
 const LAST_PANE_KEY = 'settings.lastPane';
 
@@ -48,6 +49,7 @@ const PANE_CONTENT: Record<SettingsPaneId, ReactNode> = {
   ),
   advanced: <LocationsSection />,
   agents: <AgentsSection />,
+  calendar: <WeekendsSection />,
   file: (
     <>
       <SettingsCodeSection />
@@ -73,6 +75,7 @@ const PANE_TINT: Record<SettingsPaneId, string> = {
   accounts: 'bg-event-blue text-on-event-blue',
   advanced: 'bg-fill text-ink-secondary',
   agents: 'bg-event-lilac text-on-event-lilac',
+  calendar: 'bg-event-lilac text-on-event-lilac',
   file: 'bg-fill text-ink-secondary',
   gettingstarted: 'bg-event-blush text-on-event-blush',
   mirrors: 'bg-event-mint text-on-event-mint',

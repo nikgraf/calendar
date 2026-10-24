@@ -13,16 +13,12 @@ import {
   type Weekday,
 } from '@calendar/core';
 import { FIELD_CLASS, LABEL_CLASS } from '../ui/fieldStyles.ts';
+import { WeekdayToggles } from '../ui/WeekdayToggles.tsx';
 import { FormSection } from './FormSection.tsx';
 import { useFieldFlash } from '../ui/useFlash.ts';
 
 /** The repeat form state both editors expose (everything but the spec exit). */
 export type RepeatRuleState = Omit<ReturnType<typeof useRepeatState>, 'toSpec'>;
-
-const toggle = (active: boolean) =>
-  `flex-1 rounded-md px-1 py-1 text-xs font-medium ${
-    active ? 'bg-primary text-on-primary' : 'text-ink-secondary hover:bg-fill'
-  }`;
 
 /** "Day 14" for the anchor date, or a neutral label while the date field is mid-edit. */
 const dayOfMonthLabel = (anchorDate: string): string => {
@@ -84,28 +80,12 @@ export function RepeatRuleFields({
         )}
       </div>
       {state.repeat === 'weekly' ? (
-        <div
-          aria-label="Repeat on"
-          className="flex gap-1 rounded-lg border border-hairline bg-fill p-1"
-          role="group"
-        >
-          {WEEKDAY_OPTIONS.map((option) => {
-            const pressed = state.repeatWeekdays.includes(option.value);
-            return (
-              <button
-                aria-label={option.label}
-                aria-pressed={pressed}
-                className={toggle(pressed)}
-                data-testid={`repeat-weekday-${option.value}`}
-                key={option.value}
-                onClick={() => state.toggleWeekday(option.value)}
-                type="button"
-              >
-                {option.short}
-              </button>
-            );
-          })}
-        </div>
+        <WeekdayToggles
+          label="Repeat on"
+          onToggle={state.toggleWeekday}
+          selected={state.repeatWeekdays}
+          testIdPrefix="repeat-weekday"
+        />
       ) : null}
       {state.repeat === 'monthly' ? (
         <div className="flex gap-3">
