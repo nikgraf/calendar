@@ -647,6 +647,18 @@ describe('parseQuickAdd for tasks', () => {
     });
   });
 
+  it("keeps a to-do's place in its title, having no place field", async () => {
+    // Codex: the pickup place vanished.
+    const result = await parseQuickAdd(
+      fakeModel({ location: 'reception', title: 'Pick up the keys at reception' }),
+      { phrase: 'remind me to pick up the keys at reception tomorrow', ...CONTEXT },
+    );
+    expect(result).toMatchObject({
+      kind: 'task',
+      prefill: { title: 'Pick up the keys at reception' },
+    });
+  });
+
   it('gives an undated to-do the fallback day and no time', async () => {
     const result = await parseQuickAdd(fakeModel({ title: 'Buy milk' }), {
       fallbackDate: '2026-08-30',

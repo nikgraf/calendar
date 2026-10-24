@@ -254,10 +254,18 @@ export const normalizeQuickAdd = (
     said === undefined
       ? undefined
       : titleWithoutInvitees(phrase === undefined ? said : groundTitle(said, phrase), invite);
-  const title =
-    named && phrase !== undefined
-      ? capitalized(trimWhen(withoutPlace(trimWhen(named), meaningfulText(parse.location))))
-      : named;
+  const kept = named && phrase !== undefined ? trimWhen(named) : named;
+  // The place leaves an event's title only when its field keeps it; a
+  // to-do has no place field.
+  const placeless =
+    kept && phrase !== undefined && !todo
+      ? trimWhen(withoutPlace(kept, meaningfulText(parse.location)))
+      : kept;
+  const placed =
+    placeless !== kept && placeOf(meaningfulText(parse.location), placeless ?? '', phrase)
+      ? placeless
+      : kept;
+  const title = placed && phrase !== undefined ? capitalized(placed) : placed;
   if (!title) {
     return { kind: 'rejected', reason: 'No event title was recognised.' };
   }

@@ -1049,7 +1049,7 @@ const DAY_AT_START = new RegExp(
  * leaves them.
  */
 const OWNS_WHEN =
-  /^(?:until|till|til|bis|through|thru|to|from|von|between|zwischen|after|before|nach|vor|ab|seit|since|with|w|mit|and|und|or|oder|&|good|black|cyber|easter|palm|ash|holy|maundy|taco|throwback|giving|bowl|guten|every|each|jede[nmrs]?|alle|am|on|this|next|coming|in|at|um|the|of)$/;
+  /^(?:until|till|til|bis|through|thru|to|from|von|between|zwischen|after|before|nach|vor|ab|seit|since|with|w|mit|and|und|or|oder|&|good|black|cyber|easter|palm|ash|holy|maundy|taco|throwback|giving|bowl|guten|by|for|last|past|previous|letzten?|every|each|jede[nmrs]?|alle|am|on|this|next|coming|in|at|um|the|of)$/;
 
 /** A clock written as a bound ("until 5pm", "before 10", "after 5", "ab 9") is no start: the title's. */
 const BOUND = /^(?:until|till|bis|to|before|vor|after|nach|ab)\b/;

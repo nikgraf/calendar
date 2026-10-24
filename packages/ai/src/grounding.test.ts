@@ -766,6 +766,9 @@ describe('trimWhen', () => {
     expect(trimWhen('Coffee with Tue tomorrow')).toBe('Coffee with Tue');
     expect(trimWhen('Call with Jan 15')).toBe('Call with Jan 15');
     expect(trimWhen('Gym Mon and Wed')).toBe('Gym Mon and Wed');
+    // Codex: qualifiers the run does not take.
+    expect(trimWhen('Submit report by Friday')).toBe('Submit report by Friday');
+    expect(trimWhen('Review notes from last Friday')).toBe('Review notes from last Friday');
   });
 
   it('reads a repeat with a part of the day, and leaves one it cannot read', () => {
@@ -789,7 +792,7 @@ describe('trimWhen', () => {
   });
 
   it('keeps the word before a day, and takes the one that leads into a time', () => {
-    expect(trimWhen('Drop by tomorrow')).toBe('Drop by');
+    expect(trimWhen('Drop by tomorrow')).toBe('Drop by tomorrow');
     // A lead word left before a day: a construction the code does not read.
     expect(trimWhen('Finish this tomorrow')).toBe('Finish this tomorrow');
     expect(trimWhen('Carry on tomorrow')).toBe('Carry on tomorrow');
