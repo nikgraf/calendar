@@ -1,14 +1,18 @@
-import { type ReactNode, useEffect, useRef } from 'react';
-import { openDialogLayer } from '../Dialog.tsx';
+import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { openFocusLayer } from '../Dialog.tsx';
+import { popoverTop } from './popoverPlacement.ts';
 
 /**
  * A small panel anchored at a screen point, over a transparent backdrop
  * that closes it (so does Escape). Fixed-positioned, so a scrolling
  * parent cannot clip it — the Getting started card's menu, a search
- * filter's choices, the calendar color picker in Settings › Accounts. The backdrop's name is what tests and screen
- * readers see, so it is required.
+ * filter's choices, the calendar color picker in Settings › Accounts.
+ * The window cannot clip it either: with no room under its opener it
+ * opens above (`popoverTop`). The backdrop's name is what tests and
+ * screen readers see, so it is required.
  */
 export function Popover({
+  align = 'start',
   anchor,
   children,
   className = '',
@@ -16,8 +20,19 @@ export function Popover({
   label,
   onClose,
 }: {
-  /** Top-left of the panel in viewport px; null = closed. */
-  readonly anchor: { readonly x: number; readonly y: number } | null;
+  /** 'end': the panel's right edge at `anchor.x`, for an opener at the end of a row. */
+  readonly align?: 'end' | 'start';
+  /**
+   * Where the panel opens, in viewport px: its top at `y`, its left edge
+   * at `x` (right edge with `align: 'end'`); null = closed. `above` is
+   * the opener's top, where the panel's bottom goes when it does not fit
+   * under `y`.
+   */
+  readonly anchor: {
+    readonly above?: number | undefined;
+    readonly x: number;
+    readonly y: number;
+  } | null;
   readonly children: ReactNode;
   readonly className?: string;
   readonly closeLabel: string;
@@ -25,6 +40,8 @@ export function Popover({
   readonly onClose: () => void;
 }) {
   const open = anchor !== null;
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [top, setTop] = useState<number | null>(null);
   // Callers pass inline closures; the layer is registered once per opening.
   const onCloseRef = useRef(onClose);
   useEffect(() => {
@@ -32,13 +49,29 @@ export function Popover({
   }, [onClose]);
   // On the dialog stack, like the modals: Escape reaches the topmost
   // surface only, so a picker over an editor closes alone, and the
-  // calendar's own Escape (which leaves the side panel) stands back.
+  // calendar's own Escape (which leaves the side panel) stands back. Tab
+  // stays inside, so a keyboard cannot switch the settings pane under an
+  // open picker and leave it waiting, hidden, for the next Escape.
   useEffect(() => {
     if (!open) {
       return;
     }
-    return openDialogLayer(50, () => onCloseRef.current());
+    return openFocusLayer(50, panelRef.current, () => onCloseRef.current());
   }, [open]);
+
+  // Measured before paint, and again whenever the panel's content resizes.
+  useLayoutEffect(() => {
+    const panel = panelRef.current;
+    if (!anchor || !panel) {
+      setTop(null);
+      return;
+    }
+    const place = () => setTop(popoverTop(anchor, panel.offsetHeight, window.innerHeight));
+    place();
+    const observer = new ResizeObserver(place);
+    observer.observe(panel);
+    return () => observer.disconnect();
+  }, [anchor]);
 
   if (!anchor) {
     return null;
@@ -53,9 +86,17 @@ export function Popover({
       />
       <div
         aria-label={label}
-        className={`fixed z-50 rounded-popover border border-hairline bg-surface-raised p-2 shadow-xl ${className}`}
+        className={`fixed z-50 rounded-popover border border-hairline bg-surface-raised p-2 shadow-xl outline-none ${className}`}
+        ref={panelRef}
         role="dialog"
-        style={{ left: anchor.x, top: anchor.y }}
+        style={
+          align === 'end'
+            ? // `right`, not a left edge shifted back: a panel whose left edge
+              // sits by the window's right would shrink to the sliver left.
+              { right: document.documentElement.clientWidth - anchor.x, top: top ?? anchor.y }
+            : { left: anchor.x, top: top ?? anchor.y }
+        }
+        tabIndex={-1}
       >
         {children}
       </div>

@@ -1985,6 +1985,103 @@ describe('Google task chips drag along the lane but never into the grid', () => 
   });
 });
 
+describe('the color picker in a long Settings › Accounts list', () => {
+  let listApp: App;
+
+  beforeAll(async () => {
+    listApp = await launchApp({
+      accounts: [account],
+      calendars: Array.from({ length: 14 }, (_, index) =>
+        calendar(`cal-${String(index)}`, `Calendar ${String(index).padStart(2, '0')}`, '#4986e7'),
+      ),
+      events: [],
+    });
+  }, 60_000);
+
+  afterEach(async (context) => {
+    if (context.task.result?.state === 'fail') {
+      await listApp?.dump(context.task.name);
+    }
+  });
+
+  afterAll(async () => {
+    await listApp?.stop();
+  });
+
+  it('opens above a low row inside the fixed window, keeps Tab inside, and recolors', async () => {
+    const settings = await listApp.openSettings('accounts');
+    try {
+      await settings.waitFor(
+        `document.querySelectorAll('[aria-label^="Change color"]').length === 14`,
+      );
+      // The lowest well that shows unscrolled: the 560 px window has no
+      // room for the picker under it.
+      const well = await settings.eval<{
+        label: string;
+        top: number;
+        x: number;
+        y: number;
+      }>(`(() => {
+        const wells = [...document.querySelectorAll('[aria-label^="Change color"]')]
+          .filter((el) => el.getBoundingClientRect().bottom <= window.innerHeight);
+        const el = wells.at(-1);
+        const r = el.getBoundingClientRect();
+        return { label: el.getAttribute('aria-label'), top: r.top, x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      })()`);
+      expect(well.top).toBeGreaterThan(400);
+      await settings.click(well.x, well.y);
+      const panel = `document.querySelector('[role="dialog"][aria-label^="Color of"]')`;
+      await settings.waitFor(`!!${panel}`);
+      const rect = await settings.eval<{ bottom: number; top: number }>(
+        `(() => { const r = ${panel}.getBoundingClientRect(); return { bottom: r.bottom, top: r.top }; })()`,
+      );
+      expect(rect.top).toBeGreaterThanOrEqual(0);
+      expect(rect.bottom).toBeLessThanOrEqual(await settings.eval<number>('window.innerHeight'));
+      expect(rect.bottom).toBeLessThanOrEqual(well.top);
+
+      // 24 swatches and the Custom field: a full lap and more, both ways,
+      // never reaching the pane tabs behind the backdrop.
+      const focused = `(${panel}.contains(document.activeElement) ? document.activeElement.getAttribute('aria-label') : null)`;
+      // Focus opens on the calendar's current color.
+      expect(await settings.eval<string | null>(focused)).toBe('Set color #4986e7');
+      for (const shift of [false, true]) {
+        const seen = new Set<string | null>();
+        for (let press = 0; press < 30; press += 1) {
+          await settings.send('Input.dispatchKeyEvent', {
+            code: 'Tab',
+            key: 'Tab',
+            modifiers: shift ? 8 : 0,
+            type: 'rawKeyDown',
+            windowsVirtualKeyCode: 9,
+          });
+          seen.add(await settings.eval<string | null>(focused));
+        }
+        expect(seen.has(null)).toBe(false);
+        expect(seen.size).toBe(25);
+      }
+
+      const swatch = await settings.locate('[aria-label="Set color #16a765"]');
+      await settings.click(swatch.x, swatch.y);
+      await settings.waitFor(`!${panel}`);
+      // Focus is back on the well it opened from.
+      expect(
+        await settings.eval<string | null>(`document.activeElement?.getAttribute('aria-label')`),
+      ).toBe(well.label);
+      const summary = well.label.replace('Change color: ', '');
+      await expect
+        .poll(
+          async () =>
+            (await readCalendars(listApp.userDataDir)).find(
+              (calendar) => calendar.summary === summary,
+            )?.colorHex,
+        )
+        .toBe('#16a765');
+    } finally {
+      await listApp.closeSettings();
+    }
+  });
+});
+
 describe('an event in a read-only calendar', () => {
   let viewerApp: App;
 

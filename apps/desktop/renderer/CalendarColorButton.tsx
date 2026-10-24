@@ -7,8 +7,8 @@ import { Popover } from './ui/Popover.tsx';
 /**
  * A calendar's color in Settings › Accounts, the one place it changes: a
  * well at the end of the calendar's row that opens a color picker in a
- * popover. The popover hangs from the well's right edge, so it stays
- * inside the pane.
+ * popover. The popover hangs from the well's right edge, under it or,
+ * for a row low in the fixed-height window, above it.
  */
 export function CalendarColorButton({ calendar }: { calendar: CalendarInfo }) {
   const { setCalendarColor } = useGuardedMutations();
@@ -33,7 +33,9 @@ export function CalendarColorButton({ calendar }: { calendar: CalendarInfo }) {
         disabled={readOnly}
         onClick={(clickEvent) => {
           const rect = clickEvent.currentTarget.getBoundingClientRect();
-          setAnchor((current) => (current ? null : { x: rect.right, y: rect.bottom + 4 }));
+          setAnchor((current) =>
+            current ? null : { above: rect.top - 4, x: rect.right, y: rect.bottom + 4 },
+          );
         }}
         title={readOnly ? 'Apple Calendar does not allow changing this calendar' : 'Change color'}
         type="button"
@@ -46,10 +48,8 @@ export function CalendarColorButton({ calendar }: { calendar: CalendarInfo }) {
         <ChevronDownIcon size={12} />
       </button>
       <Popover
+        align="end"
         anchor={anchor}
-        // Fixed at the pane's right edge, the panel would shrink to what is
-        // left of the window: max-content keeps the palette's six columns.
-        className="w-max -translate-x-full"
         closeLabel="Close color picker"
         label={`Color of ${calendar.summary}`}
         onClose={() => setAnchor(null)}
@@ -61,6 +61,8 @@ export function CalendarColorButton({ calendar }: { calendar: CalendarInfo }) {
               className={`size-5 rounded ${
                 hex === calendar.colorHex ? 'ring-2 ring-focus ring-offset-1' : ''
               }`}
+              // Focus opens on the current color, not the palette's first.
+              data-initial-focus={hex === calendar.colorHex ? '' : undefined}
               key={hex}
               onClick={() => choose(hex)}
               style={{ backgroundColor: hex }}
