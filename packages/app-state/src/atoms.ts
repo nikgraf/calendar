@@ -7,6 +7,7 @@ import {
   EVENTS_KEY,
   LOCATION_GEO_KEY,
   OPS_KEY,
+  SETTINGS_DOCUMENT_KEYS,
   SYNC_STATE_KEY,
   TASKLISTS_KEY,
   TASKS_KEY,
@@ -99,6 +100,8 @@ export interface BackendAtoms {
   readonly pendingOps: ReturnType<typeof buildAtoms>['pendingOps'];
   readonly placesSearch: ReturnType<typeof buildAtoms>['placesSearch'];
   readonly search: ReturnType<typeof buildAtoms>['search'];
+  /** What Export writes, re-read only when something it holds changes: the settings code's source. */
+  readonly settingsDocument: ReturnType<typeof buildAtoms>['settingsDocument'];
   readonly syncStatus: ReturnType<typeof buildAtoms>['syncStatus'];
   readonly taskLists: ReturnType<typeof buildAtoms>['taskLists'];
   readonly tasksInRange: ReturnType<typeof buildAtoms>['tasksInRange'];
@@ -375,6 +378,17 @@ const buildAtoms = (client: BackendClient, deviceZone: Atom.Atom<string>) => {
     )
     .pipe(Atom.withReactivity([deviceSettingsKey('onboarding')]));
 
+  // The settings document, for the settings code. Its keys exclude events
+  // and tasks, so a sync page never rebuilds the code.
+  const settingsDocument = runtime
+    .atom(
+      Effect.gen(function* () {
+        const backend = yield* AppBackend;
+        return yield* backend.exportSettings(undefined);
+      }),
+    )
+    .pipe(Atom.withReactivity([...SETTINGS_DOCUMENT_KEYS]));
+
   // Device-local view preferences; refetched only when they are written.
   const viewPreferences = runtime
     .atom(
@@ -586,6 +600,7 @@ const buildAtoms = (client: BackendClient, deviceZone: Atom.Atom<string>) => {
     pendingOps,
     placesSearch,
     search,
+    settingsDocument,
     syncStatus,
     taskLists,
     tasksInRange,

@@ -1,6 +1,8 @@
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
+import { useEffect } from 'react';
 import { StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { setSetupPhase } from '../../src/settingsCodeInbox.ts';
 import { SettingsProvider } from '../../src/ui/settings/SettingsContext.tsx';
 import { SetupProvider } from '../../src/ui/setup/SetupContext.tsx';
 import { groupedGround, useTheme } from '../../src/ui/theme.ts';
@@ -19,6 +21,13 @@ export const unstable_settings = { initialRouteName: 'index' };
  */
 export default function SetupLayout() {
   const { colors } = useTheme();
+  const router = useRouter();
+  // The settings-code inbox: while the setup is up, a code that arrives
+  // goes to its copy step; once it is gone, to Settings.
+  useEffect(() => {
+    setSetupPhase('open');
+    return () => setSetupPhase('closed', router);
+  }, [router]);
   return (
     <GestureHandlerRootView style={styles.root}>
       <SettingsProvider>

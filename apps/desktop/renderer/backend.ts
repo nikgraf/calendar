@@ -69,6 +69,12 @@ declare global {
       appleCalendarStatus: () => Promise<string>;
       /** Stops a Google sign-in waiting on the browser: it fails as cancelled. */
       authCancel: () => Promise<void>;
+      /** 'unavailable' under CALENDAR_CAMERA=off (the e2e default): the reader offers paste only. */
+      cameraAsk: () => Promise<'denied' | 'granted' | 'unavailable'>;
+      /** Every QR payload in one JPEG frame; `error` when the helper could not read it. */
+      cameraReadQr: (
+        imageBase64: string,
+      ) => Promise<{ codes: ReadonlyArray<string>; error?: string }>;
       contactsStatus: () => Promise<string>;
       logError?: (text: string) => void;
       modelGenerate: (schema: unknown, prompt: string) => Promise<{ json: string }>;

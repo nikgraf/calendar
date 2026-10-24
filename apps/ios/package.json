@@ -32,6 +32,8 @@
     "expo-audio": "^57.0.5",
     "expo-auth-session": "~57.0.14",
     "expo-background-task": "~57.0.21",
+    "expo-camera": "~57.0.6",
+    "expo-clipboard": "~57.0.2",
     "expo-constants": "~57.0.21",
     "expo-crypto": "~57.0.3",
     "expo-dev-client": "~57.0.19",

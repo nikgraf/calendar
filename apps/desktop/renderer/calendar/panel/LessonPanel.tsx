@@ -4,6 +4,7 @@ import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import { BirthdayRemindersSection } from '../../BirthdayRemindersSection.tsx';
 import { ContactsSection } from '../../ContactsSection.tsx';
 import { EventNotificationsSection } from '../../EventNotificationsSection.tsx';
+import { SettingsCodeCard } from '../../settingsCode/SettingsCodeCard.tsx';
 import { exportSettingsToFile, shortPath } from '../../settingsTransfer.ts';
 import { TimeZonesSection } from '../../TimeZonesSection.tsx';
 import { Button } from '../../ui/Button.tsx';
@@ -16,7 +17,7 @@ export type PanelLessonId = Exclude<LessonId, 'create' | 'search'>;
  * A lesson in the side panel: the frame ("Getting started · n of 6", the
  * title, one paragraph, Done) around the Settings section it teaches —
  * Alerts, Contacts, Time zones as they are in the settings window, and
- * Set up your iPhone around the export. The first thing tried ticks the
+ * Set up your iPhone around this Mac's settings code (the export below it). The first thing tried ticks the
  * lesson as done; leaving it without trying ticks it as skipped.
  */
 export function LessonPanel({ id, onClose }: { id: PanelLessonId; onClose: () => void }) {
@@ -69,7 +70,16 @@ export function LessonPanel({ id, onClose }: { id: PanelLessonId; onClose: () =>
           ) : id === 'zones' ? (
             <TimeZonesSection />
           ) : (
-            <ExportCard onTried={onTried} />
+            <>
+              <section
+                className="flex flex-col gap-2 rounded-popover bg-surface-subtle p-4"
+                data-testid="lesson-code"
+              >
+                <h3 className="font-medium">This Mac’s code</h3>
+                <SettingsCodeCard onTried={onTried} qrSize={280} />
+              </section>
+              <ExportCard onTried={onTried} />
+            </>
           )}
         </LessonTriedContext>
       </div>
@@ -77,7 +87,7 @@ export function LessonPanel({ id, onClose }: { id: PanelLessonId; onClose: () =>
   );
 }
 
-/** Set up your iPhone, for now: the settings document as a file to AirDrop over. */
+/** The same settings as a file, for when a code will not do: Export here, AirDrop, Import there. */
 function ExportCard({ onTried }: { onTried: () => void }) {
   const mutations = useBackendMutations();
   const [busy, setBusy] = useState(false);
@@ -99,10 +109,10 @@ function ExportCard({ onTried }: { onTried: () => void }) {
   };
   return (
     <section className="rounded-popover bg-surface-subtle p-4" data-testid="lesson-export">
-      <h3 className="font-medium">Export these settings</h3>
+      <h3 className="font-medium">Or as a file</h3>
       <p className="mt-1 text-sm text-ink-secondary">
-        On the iPhone, Solunivo’s welcome screen offers “Copy from your Mac”, and Settings ›
-        Settings File imports the same file any time.
+        Export the settings, AirDrop the file to the iPhone, and import it there under Settings ›
+        Settings File.
       </p>
       <button
         className={`${SETTINGS_BUTTON_CLASS} mt-3`}
