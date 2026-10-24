@@ -632,6 +632,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   for an editor only (a detail tapped behind it never showed, Settings
   got the thread on top); offering the result from the banner (a step
   more when nothing is open); dropping it. Open: nothing says it waits.
+- **Today's backlog folds, a long lane scrolls** (2026-10-24, #247) —
+  two or more overdue or undated tasks on today fold into one chip per
+  group ("⚠ 12 overdue", "11 no date") opening their list (a desktop
+  popover whose rows drag out, an iOS page sheet), which keeps a ticked
+  row struck through; a lone task stays a chip. Expanded, the lane stops
+  at a third of the view and scrolls inside itself, cut halfway into the
+  next chip; "less" became a chevron. Rejected: always folding, one chip
+  for both groups, dropping the collapsed mode (its "+N more" names the
+  day), a draggable divider. Open: the month cell still lists the
+  backlog; late completions still add struck chips on today.
 
 ## Invitees, contacts and birthdays
 
