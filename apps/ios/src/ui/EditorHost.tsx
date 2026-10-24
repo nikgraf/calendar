@@ -320,10 +320,11 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
   // was open has gone: Settings › Read Code pushed over a half-height
   // editor would be what the editor's own dismissal pops (as for
   // `openSettings`), and UIKit presents one sheet at a time. With nothing
-  // open it still waits a task: a share's URL sends the router to `/`
-  // (`+native-intent.tsx`) in a microtask after this listener, and that
-  // navigation would pop a reader pushed before it. Until the reader is
-  // up, a capture's thread waits (`codeAsked`, then `settingsAsked`).
+  // open it still waits a task: a share's URL also sends the router to `/`
+  // (`+native-intent.tsx`) from expo-router's own URL listener, and that
+  // navigation must land before the reader's push, not pop it — whichever
+  // listener runs first. Until the reader is up, a capture's thread waits
+  // (`codeAsked`, then `settingsAsked`).
   const onSettingsCode = useEffectEvent((code: string) => {
     setCodeAsked(true);
     const deliver = () => {
