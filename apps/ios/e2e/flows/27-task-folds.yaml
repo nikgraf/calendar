@@ -1,0 +1,75 @@
+appId: com.solunivo.app.dev
+name: Today's overdue and undated tasks fold into a chip each that opens their list
+tags:
+  - ci
+---
+# Needs the fixture Google account (EXPO_PUBLIC_CALENDAR_GOOGLE=fixture,
+# as CI does): its list holds two late tasks and two undated ones
+# (e2e/fixtures/google.ts), drawn on today as one chip per pair.
+- runFlow: ../common/launch.yaml
+# The day view, where the lane is one column wide. A tap on a menu item
+# can report COMPLETED with the menu still open: re-pick until the
+# header's button names the view (common/switch-view.yaml proves it).
+- retry:
+    maxRetries: 2
+    commands:
+      - runFlow:
+          file: ../common/switch-view.yaml
+          env:
+            VIEW: 'Day'
+- tapOn: 'Today'
+# The tasks sync lands shortly after launch.
+- extendedWaitUntil:
+    visible:
+      id: 'all-day-fold-overdue'
+    timeout: 20000
+- assertVisible: '2 overdue tasks, show the list'
+- assertVisible: '2 tasks with no date, show the list'
+# A late task has no chip of its own while it is folded.
+- assertNotVisible:
+    id: 'task-chip-task-late-form'
+
+- tapOn:
+    id: 'all-day-fold-overdue'
+- extendedWaitUntil:
+    visible:
+      id: 'task-fold-sheet-overdue'
+    timeout: 5000
+- assertVisible: 'Sign the school form, due .*'
+- assertVisible: 'Return the rental bike, due .*'
+# A ticked task stays in the list, to reopen: the rows never shift under
+# the finger. Reopened again, so the fixture is as the next flow expects.
+- tapOn:
+    id: 'fold-task-toggle-task-late-form'
+- extendedWaitUntil:
+    visible: 'Reopen Sign the school form'
+    timeout: 10000
+- assertVisible: 'Return the rental bike, due .*'
+- tapOn: 'Reopen Sign the school form'
+- extendedWaitUntil:
+    visible: 'Complete Sign the school form'
+    timeout: 10000
+- tapOn:
+    id: 'task-fold-close'
+- extendedWaitUntil:
+    notVisible:
+      id: 'task-fold-sheet-overdue'
+    timeout: 5000
+
+# A row opens its task in the editor, in the list's place.
+- tapOn:
+    id: 'all-day-fold-undated'
+- extendedWaitUntil:
+    visible:
+      id: 'task-fold-sheet-undated'
+    timeout: 5000
+- tapOn: 'Sort the receipts'
+- extendedWaitUntil:
+    visible: 'Edit (Task|Reminder)'
+    timeout: 10000
+- tapOn: 'Cancel'
+- extendedWaitUntil:
+    notVisible: 'Edit (Task|Reminder)'
+    timeout: 10000
+- assertVisible:
+    id: 'all-day-fold-undated'
