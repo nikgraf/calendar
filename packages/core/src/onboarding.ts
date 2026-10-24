@@ -236,8 +236,8 @@ export const lessonCopy = (id: LessonRowId, device: OnboardingDevice): LessonCop
       };
     case 'otherDevice':
       return {
-        intro: `Carry this setup over as a file: export it here, send it to ${other} (AirDrop works), and import it there under Settings › Settings File. It never holds passwords or tokens; each Google account signs in once there.`,
-        subtitle: 'Carry this setup over as a file',
+        intro: `Show this code to Solunivo on ${other}: its welcome offers “Copy from your ${DEVICE_NAME[device]}”, and Settings › Settings File reads a code any time. The code holds account addresses and calendar choices, never passwords or tokens; each Google account signs in once there.`,
+        subtitle: 'Copy this setup over with a code',
         title: `Set up ${other}`,
       };
   }
