@@ -363,6 +363,15 @@ func handleLine(_ line: String) {
       } catch {
         emitError(request.id, "capture failed: \(error.localizedDescription)")
       }
+    case "barcode.readQr":
+      do {
+        emitResult(
+          request.id, try BarcodeDispatch.invoke(params: params.mapValues { $0.anyValue }))
+      } catch let error as HelperError {
+        emitError(request.id, error.message)
+      } catch {
+        emitError(request.id, "barcode failed: \(error.localizedDescription)")
+      }
     case let method where method.hasPrefix("reminders."):
       do {
         let result = try await RemindersDispatch.invoke(
