@@ -61,7 +61,8 @@ import { requestSetup } from '../onboarding/setupRequests.ts';
 import { useMediaQuery } from '../useMediaQuery.ts';
 import { BirthdayDetail } from './BirthdayDetail.tsx';
 import { CaptureDialog } from './CaptureDialog.tsx';
-import { captureSourceOf, isCapturable, readPaste } from './captureClipboard.ts';
+import { requestCodeImport } from '../settingsCode/codeImportRequests.ts';
+import { captureSourceOf, isCapturable, readPaste, settingsCodeOf } from './captureClipboard.ts';
 import { makeColorLookup } from './colors.ts';
 import { MonthView } from './MonthView.tsx';
 import { DragGhost } from './panel/DragGhost.tsx';
@@ -494,7 +495,8 @@ function CalendarBody({
   }, [dialogOpen, editing, goToday, openNew, panel, step]);
 
   // ⌘V on the calendar itself: an email or a screenshot becomes events to
-  // review. Not while a dialog is open or a field has focus — those pastes
+  // review; a settings code (the iPhone's, through Universal Clipboard)
+  // opens the import preview instead. Not while a dialog is open or a field has focus — those pastes
   // are theirs. The stock Edit › Paste menu role fires the same event.
   useEffect(() => {
     const onPaste = (event: ClipboardEvent) => {
@@ -502,6 +504,12 @@ function CalendarBody({
         return;
       }
       const pasted = readPaste(event.clipboardData);
+      const code = settingsCodeOf(pasted);
+      if (code) {
+        event.preventDefault();
+        requestCodeImport(code);
+        return;
+      }
       if (!isCapturable(pasted)) {
         return;
       }

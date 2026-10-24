@@ -10,6 +10,7 @@ import { startCaptureHint } from './captureHint.ts';
 import { registerModelHelper } from './modelHelper.ts';
 import { initModelProvider } from './modelProvider.ts';
 import { registerNotificationIpc } from './notifications.ts';
+import { registerCameraIpc } from './cameraIpc.ts';
 import { registerOnboardingIpc } from './onboardingIpc.ts';
 import { registerAppleCalendarIpc } from './appleCalendarIpc.ts';
 import { registerContactsIpc } from './contactsIpc.ts';
@@ -156,6 +157,7 @@ void app.whenReady().then(() => {
   registerSettingsIpc();
   registerNotificationIpc();
   registerOnboardingIpc();
+  registerCameraIpc();
   startCaptureHint(app.getPath('userData'));
   installApplicationMenu();
   if (!startInBackground) {

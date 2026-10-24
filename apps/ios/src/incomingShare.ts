@@ -1,4 +1,5 @@
 import type { CaptureSource } from '@calendar/ai';
+import { extractSettingsCode } from '@calendar/core/settingsCode';
 import { File } from 'expo-file-system';
 
 /** What the share extension left for the app (expo-sharing's `SharePayload`). */
@@ -109,3 +110,11 @@ export const fixtureShareFromUrl = (url: string): CaptureSource | undefined => {
     return undefined;
   }
 };
+
+/**
+ * A settings code in what was shared (the Mac's "Copy as text", sent to
+ * Solunivo from Notes or Messages): it goes to the code reader, never to
+ * the AI as an event to read.
+ */
+export const settingsCodeOf = (source: CaptureSource): string | null =>
+  source.kind === 'text' ? extractSettingsCode(source.text) : null;

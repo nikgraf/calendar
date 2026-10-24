@@ -8,7 +8,8 @@
 // geo.* (GeoBridge.swift: MapKit place search, geocoding, map images) |
 // calendar.* (AppleCalendarBridge.swift: EventKit calendars and events) |
 // capture.watch {on} (CaptureWatch.swift: screen captures under way, as
-// capture.started / capture.ended events).
+// capture.started / capture.ended events) | barcode.readQr {imageBase64}
+// (BarcodeReader.swift: the QR codes in a camera frame).
 // Version 2.
 import Foundation
 
@@ -83,14 +84,23 @@ enum JSONValue: Decodable, Sendable {
 
 let emitLock = NSLock()
 
+/// The protocol's own channel: a copy of stdout taken before anything else
+/// runs, after which stdout itself points at stderr (which the app
+/// ignores). Frameworks print to stdout — Vision's E5RT runtime does, on a
+/// Mac without a Neural Engine — and a stray line there, or half a line
+/// glued to a reply, would cost the app that reply.
+let protocolOut: FileHandle = {
+  let channel = dup(STDOUT_FILENO)
+  dup2(STDERR_FILENO, STDOUT_FILENO)
+  return FileHandle(fileDescriptor: channel, closeOnDealloc: false)
+}()
+
 func emit(_ payload: [String: Any]) {
-  guard let data = try? JSONSerialization.data(withJSONObject: payload),
-    let line = String(data: data, encoding: .utf8)
-  else { return }
+  guard var data = try? JSONSerialization.data(withJSONObject: payload) else { return }
+  data.append(0x0A)
   // Requests run concurrently; the write is the only shared resource.
   emitLock.lock()
-  print(line)
-  fflush(stdout)
+  try? protocolOut.write(contentsOf: data)
   emitLock.unlock()
 }
 
@@ -362,6 +372,15 @@ func handleLine(_ line: String) {
         emitError(request.id, error.message)
       } catch {
         emitError(request.id, "capture failed: \(error.localizedDescription)")
+      }
+    case "barcode.readQr":
+      do {
+        emitResult(
+          request.id, try BarcodeDispatch.invoke(params: params.mapValues { $0.anyValue }))
+      } catch let error as HelperError {
+        emitError(request.id, error.message)
+      } catch {
+        emitError(request.id, "barcode failed: \(error.localizedDescription)")
       }
     case let method where method.hasPrefix("reminders."):
       do {

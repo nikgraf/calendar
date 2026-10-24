@@ -33,6 +33,7 @@ export * from './quickAddModel.ts';
 export * from './repeatState.ts';
 export * from './search.ts';
 export * from './searchThread.ts';
+export * from './settingsCode.ts';
 export * from './taskDrop.ts';
 export * from './threadEditor.ts';
 export * from './threadTurns.ts';

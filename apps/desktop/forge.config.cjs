@@ -60,6 +60,10 @@ module.exports = {
     buildVersion: process.env.BUILD_VERSION,
     executableName: 'solunivo',
     extendInfo: {
+      // Mandatory under the hardened runtime: without it the first camera
+      // access ends the process instead of asking.
+      NSCameraUsageDescription:
+        'Solunivo reads the setup code your iPhone shows. The image stays on this Mac.',
       NSMicrophoneUsageDescription:
         'Solunivo uses the microphone to turn what you say into an event. ' +
         'Audio is transcribed on your device and never uploaded.',

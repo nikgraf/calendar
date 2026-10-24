@@ -15,6 +15,10 @@ contextBridge.exposeInMainWorld('calendarBridge', {
   appleCalendarStatus: () => ipcRenderer.invoke('appleCalendar:status'),
   /** Stops a Google sign-in waiting on the browser (Accounts › Cancel). */
   authCancel: () => ipcRenderer.invoke('auth:cancel'),
+  /** Camera access for reading a settings code: asks macOS once (CALENDAR_CAMERA=off: unavailable). */
+  cameraAsk: () => ipcRenderer.invoke('camera:ask'),
+  /** The QR codes in one JPEG camera frame, read by the helper's Vision. */
+  cameraReadQr: (imageBase64: string) => ipcRenderer.invoke('camera:read-qr', imageBase64),
   contactsStatus: () => ipcRenderer.invoke('contacts:status'),
   logError: (text: string) => ipcRenderer.send('renderer-error', text),
   modelGenerate: (schema: unknown, prompt: string) =>

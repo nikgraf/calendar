@@ -816,6 +816,14 @@ export interface LaunchOptions {
    */
   readonly appleCalendar?: 'off' | 'real' | { readonly fixture: AppleCalendarFixture };
   /**
+   * Absent (default): no camera (CALENDAR_CAMERA=off) — the settings-code
+   * reader offers its paste field only and nothing asks TCC. Present: the
+   * camera is granted without asking, each window's `getUserMedia` answers
+   * a drawn canvas stream (`fakeCamera`), and every frame reads as `code`.
+   * The helper's own reading (Vision) is proven in qrReader.e2e.ts.
+   */
+  readonly camera?: { readonly code: string };
+  /**
    * 'off' (default): the app never watches for screen captures, so a
    * developer's screenshot mid-run cannot draw the capture hint. 'fixture':
    * captures start and end through `App.setCapturing`.
@@ -954,6 +962,27 @@ const fakeMicrophone = (): string => {
     };
   })()`;
 };
+
+/**
+ * The page's camera, stood in for: `getUserMedia` answers a 640×480
+ * canvas stream that keeps drawing (a frame the reader can encode); what
+ * it "sees" is up to CALENDAR_CAMERA_CODE in the main process.
+ */
+const fakeCamera = (): string => `(() => {
+  navigator.mediaDevices.getUserMedia = async () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 640;
+    canvas.height = 480;
+    const context = canvas.getContext('2d');
+    let tick = 0;
+    setInterval(() => {
+      tick += 1;
+      context.fillStyle = tick % 2 ? '#fff' : '#eee';
+      context.fillRect(0, 0, 640, 480);
+    }, 50);
+    return canvas.captureStream(20);
+  };
+})()`;
 
 /** One window's DOM and screenshot, for a failed test's artifacts. */
 const dumpPage = async (page: Cdp, dir: string, name: string) => {
@@ -1095,6 +1124,9 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
       ...microphoneEnv,
       ...(options.model === 'fixture' ? { CALENDAR_MODEL: 'fixture' } : {}),
       CALENDAR_AGENT_SOCKET: agentSocketPath,
+      // No camera, no TCC prompt, unless a spec stands one in.
+      CALENDAR_CAMERA: options.camera ? 'fixture' : 'off',
+      ...(options.camera ? { CALENDAR_CAMERA_CODE: options.camera.code } : {}),
       CALENDAR_CAPTURE_WATCH: options.captureWatch ?? 'off',
       // The windows take no OS input: a developer typing or touching the
       // trackpad during a run must not reach the test (windows.ts).
@@ -1135,6 +1167,9 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
     await cdp.waitFor(`document.body.textContent.includes('Today')`);
     if (options.microphone) {
       await cdp.eval(fakeMicrophone());
+    }
+    if (options.camera) {
+      await cdp.eval(fakeCamera());
     }
   } catch (error) {
     // A launch failure happens in beforeAll, where no test dump runs:
@@ -1199,6 +1234,9 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
       await page.waitFor(
         `document.querySelector('[data-testid="settings-pane-${pane}"]')?.hidden === false`,
       );
+      if (options.camera) {
+        await page.eval(fakeCamera());
+      }
       return page;
     },
     setCapturing: (active: boolean) => {

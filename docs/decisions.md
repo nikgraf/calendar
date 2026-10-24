@@ -65,8 +65,17 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   the Tasks box only decides the tasks scope. State is per device, never
   in the settings document. Rejected: the empty state alone (explains
   nothing), a full wizard before the app, the card without a setup.
-  Open: the welcome's copy door uses the settings file until
-  `todo/settings-code` adds the QR code; mirrors stay out of the lessons.
+  Open: mirrors stay out of the lessons.
+- **Settings code** (2026-10-24, #243) — a setup copied between iPhone
+  and Mac by a QR of the settings document: in-app text `SOLUNIVO:1:` +
+  base32 of deflate-raw, without what an import never reads. Base32 over
+  base45 (spaces, `%`, `+` break in pastes) and base64 (QR byte mode, 2–4
+  versions larger). The Mac reads by camera through the helper's Vision
+  (Electron 44 has no `BarcodeDetector`) and by paste; iOS by expo-camera
+  and paste, the QR a PNG (no react-native-svg). Shown behind Show Code; a
+  pasted code never reaches the AI. Rejected: LAN pairing, iCloud or
+  Google storage, Handoff, a universal link. Open: Camera's "Open in
+  Solunivo", the webcam on dense codes, parked Google prefs untitled.
 - **Versions** (2026-09-11) — the apps are `0.1.0` with a CHANGELOG;
   bump together when a release is worth a number.
 - **Schema baseline** (2026-09-15, again 2026-10-15) — the pre-release

@@ -1,0 +1,185 @@
+appId: com.solunivo.app.dev
+name: The settings code — read in the setup's copy door, shown in the lesson and in Settings
+tags:
+  - ci
+---
+# The setup's "Copy from your Mac" door reads the Mac's settings code.
+# The simulator has no camera, so the code arrives the way a share does:
+# under the fixture model the `capture-fixture` link feeds the share path,
+# and a settings code there goes to a reader instead of the AI — the copy
+# step, which the inbox brings up over the welcome. The
+# code carries only the fixture account (fixture@solunivo.test), so the
+# preview reads "Nothing differs from this device" and nothing is left
+# behind for the shard's later flows. It is the IOS_FLOW_CODE that
+# packages/core/src/settingsCode.test.ts keeps decoding. A bundle without
+# the fixture model ignores both links, and the flow passes without
+# asserting.
+- runFlow: ../common/launch.yaml
+- openLink: 'solunivo-dev://onboarding-fixture'
+# The "Open in Solunivo Dev?" alert, confirmed once and any leftover
+# cancelled while an "Open" is still up — inline, not confirm-open.yaml:
+# its clean-up taps every "Cancel", and the import's preview alert has one.
+- extendedWaitUntil:
+    visible: 'Open'
+    timeout: 15000
+    optional: true
+- runFlow:
+    when:
+      visible: 'Open'
+    commands:
+      - tapOn: 'Open'
+- retry:
+    maxRetries: 3
+    commands:
+      - runFlow:
+          when:
+            true: ${output.cancelAlert === true}
+          commands:
+            - tapOn: 'Cancel'
+      - evalScript: ${output.cancelAlert = true}
+      - extendedWaitUntil:
+          notVisible: 'Open'
+          timeout: 3000
+- extendedWaitUntil:
+    visible:
+      id: 'setup-welcome'
+    timeout: 20000
+    optional: true
+- runFlow:
+    when:
+      visible:
+        id: 'setup-welcome'
+    commands:
+      - waitForAnimationToEnd:
+          timeout: 5000
+      # The Mac's code, shared in while the welcome is up (URL-encoded: the
+      # colons): the inbox brings up the copy step, whose reader previews
+      # it as a settings file is previewed.
+      - openLink: 'solunivo-dev://capture-fixture?text=SOLUNIVO%3A1%3ABXEUCCUAEAIALUF37S2QI3K5OWHWQIJWZGIDTYEMCKEHPL7VDMEDCSRLU3YPWAB5QEZTYLT6VVK5UVDSFPOGKMKSQPB43ZP4HGE2ITEYQ5B2PKRMAV7J2HY'
+      - extendedWaitUntil:
+          visible: 'Import settings\?|Open'
+          timeout: 15000
+      - runFlow:
+          when:
+            visible: 'Open'
+          commands:
+            - tapOn: 'Open'
+      - extendedWaitUntil:
+          visible: 'Import settings?'
+          timeout: 10000
+      # Turned down, on the copy step it opened.
+      - tapOn: 'Cancel'
+      - extendedWaitUntil:
+          visible:
+            id: 'code-paste'
+          timeout: 5000
+      - assertVisible:
+          id: 'code-scan'
+      # Not a code: said so on Return, and nothing is read.
+      - tapOn:
+          id: 'code-paste'
+      - inputText: 'HELLO'
+      - pressKey: Enter
+      - extendedWaitUntil:
+          visible:
+            id: 'code-paste-error'
+          timeout: 5000
+      - hideKeyboard
+      # The same code again: asked again, so read again — the preview, as
+      # for a settings file: nothing differs here.
+      - openLink: 'solunivo-dev://capture-fixture?text=SOLUNIVO%3A1%3ABXEUCCUAEAIALUF37S2QI3K5OWHWQIJWZGIDTYEMCKEHPL7VDMEDCSRLU3YPWAB5QEZTYLT6VVK5UVDSFPOGKMKSQPB43ZP4HGE2ITEYQ5B2PKRMAV7J2HY'
+      - extendedWaitUntil:
+          visible: 'Import settings\?|Open'
+          timeout: 15000
+      - runFlow:
+          when:
+            visible: 'Open'
+          commands:
+            - tapOn: 'Open'
+      - extendedWaitUntil:
+          visible: 'Import settings?'
+          timeout: 10000
+      - assertVisible: '.*Nothing differs from this device.*'
+      - tapOn: 'Import'
+      - extendedWaitUntil:
+          visible:
+            id: 'setup-copied'
+          timeout: 10000
+      - waitForAnimationToEnd:
+          timeout: 3000
+      - tapOn:
+          id: 'setup-finish'
+      # The "Set up your Mac" lesson: the code waits behind Show Code, and
+      # the reveal ticks the lesson.
+      - extendedWaitUntil:
+          visible:
+            id: 'getting-started'
+          timeout: 10000
+      - scrollUntilVisible:
+          element:
+            id: 'getting-started-row-otherDevice'
+          direction: DOWN
+          timeout: 5000
+      - tapOn:
+          id: 'getting-started-row-otherDevice'
+      - extendedWaitUntil:
+          visible:
+            id: 'settings-code-show'
+          timeout: 10000
+      - assertNotVisible:
+          id: 'settings-code-image'
+      - tapOn:
+          id: 'settings-code-show'
+      - extendedWaitUntil:
+          visible:
+            id: 'settings-code-image'
+          timeout: 10000
+      - tapOn: 'Done'
+      - extendedWaitUntil:
+          visible: 'Set up your Mac, done'
+          timeout: 10000
+      # Shared in over the calendar, the code opens Settings › Read Code:
+      # after the share's own trip to the calendar, which would otherwise
+      # pop the page pushed before it.
+      - openLink: 'solunivo-dev://capture-fixture?text=SOLUNIVO%3A1%3ABXEUCCUAEAIALUF37S2QI3K5OWHWQIJWZGIDTYEMCKEHPL7VDMEDCSRLU3YPWAB5QEZTYLT6VVK5UVDSFPOGKMKSQPB43ZP4HGE2ITEYQ5B2PKRMAV7J2HY'
+      - extendedWaitUntil:
+          visible: 'Import settings\?|Open'
+          timeout: 15000
+      - runFlow:
+          when:
+            visible: 'Open'
+          commands:
+            - tapOn: 'Open'
+      - extendedWaitUntil:
+          visible: 'Import settings?'
+          timeout: 10000
+      - assertVisible:
+          id: 'settings-page-read-code'
+      - tapOn: 'Cancel'
+      - extendedWaitUntil:
+          notVisible: 'Import settings?'
+          timeout: 5000
+      - assertVisible:
+          id: 'settings-page-read-code'
+      - runFlow: ../common/close-settings.yaml
+# Settings › Settings File › Show Code for Your Mac: the code at once,
+# what it carries, and its text to copy.
+- runFlow: ../common/open-settings.yaml
+- runFlow:
+    file: ../common/open-settings-page.yaml
+    env:
+      PAGE: 'file'
+- tapOn:
+    id: 'settings-row-code'
+- extendedWaitUntil:
+    visible:
+      id: 'settings-page-code'
+    timeout: 5000
+- extendedWaitUntil:
+    visible:
+      id: 'settings-code-image'
+    timeout: 10000
+- assertVisible: 'In the code'
+- assertVisible:
+    id: 'settings-code-copy'
+- runFlow: ../common/close-settings.yaml

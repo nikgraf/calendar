@@ -21,6 +21,7 @@ import {
   type TaskRecord,
   Temporal,
 } from '@calendar/core';
+import { extractSettingsCode } from '@calendar/core/settingsCode';
 import { router, usePathname } from 'expo-router';
 import {
   createContext,
@@ -34,10 +35,11 @@ import {
 } from 'react';
 import { AppState, Linking } from 'react-native';
 import { backendClient } from '../backend.ts';
-import { fixtureShareFromUrl, takeIncomingShare } from '../incomingShare.ts';
+import { fixtureShareFromUrl, settingsCodeOf, takeIncomingShare } from '../incomingShare.ts';
 import { subscribeNotificationTaps } from '../notifications.ts';
 import { languageModel, modelFixture, textRecognizer } from '../model.ts';
 import { forceOnboarding } from '../onboarding.ts';
+import { deliverSettingsCode } from '../settingsCodeInbox.ts';
 import { CaptureBanner } from './CaptureBanner.tsx';
 import { EventDetailSheet } from './EventDetailSheet.tsx';
 import { EventEditSheet, type EditSeed } from './EventEditSheet.tsx';
@@ -245,17 +247,30 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
   // (`captureMayOpen`).
   const pathname = usePathname();
   const settingsShown = pathname === '/settings' || pathname.startsWith('/settings/');
+  // The first-run setup holds a capture too: a warm share leaves it up
+  // (`+native-intent.tsx`), and the thread waits for it to close.
+  const setupShown = pathname === '/setup' || pathname.startsWith('/setup/');
   // Settings asked for and not showing yet: the router dispatches a push a
   // commit later, and from behind an editor the push waits for its form
   // sheet. A sheet asked for meanwhile takes over, as from `afterFormSheet`.
   const [settingsAsked, setSettingsAsked] = useState(false);
+  // A settings code on its way to a reader (`onSettingsCode`).
+  const [codeAsked, setCodeAsked] = useState(false);
   if (settingsAsked && (settingsShown || sheet.kind !== 'none')) {
     setSettingsAsked(false);
+  }
+  // A sheet opened meanwhile takes over from a code's delivery, as from
+  // `afterFormSheet`: nothing holds the thread for it any more.
+  if (codeAsked && sheet.kind !== 'none') {
+    setCodeAsked(false);
   }
   const [captured, setCaptured] = useState<EditSheet | null>(null);
   if (
     captured !== null &&
-    captureMayOpen(sheet, { formSheetGone, settingsOpen: settingsShown || settingsAsked })
+    captureMayOpen(sheet, {
+      formSheetGone,
+      settingsOpen: settingsShown || settingsAsked || setupShown || codeAsked,
+    })
   ) {
     setCaptured(null);
     setSheet(captured);
@@ -303,11 +318,47 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
     setCaptured(null);
     capture.start(source, onSettled);
   };
+  // A settings code from outside a reader: a share, or the Camera app's
+  // "Open in Solunivo" (the code parses as a `solunivo:` URL). The inbox
+  // brings up the right reader (settingsCodeInbox.ts) once the sheet that
+  // was open has gone: Settings › Read Code pushed over a half-height
+  // editor would be what the editor's own dismissal pops (as for
+  // `openSettings`), and UIKit presents one sheet at a time. With nothing
+  // open it still waits a task: a share's URL also sends the router to `/`
+  // (`+native-intent.tsx`) from expo-router's own URL listener, and that
+  // navigation must land before the reader's push, not pop it — whichever
+  // listener runs first. Until the reader is up, a capture's thread waits
+  // (`codeAsked`, then `settingsAsked`).
+  const onSettingsCode = useEffectEvent((code: string) => {
+    setCodeAsked(true);
+    const deliver = () => {
+      setCodeAsked(false);
+      if (deliverSettingsCode(code, router) === '/settings/read-code') {
+        setSettingsAsked(true);
+      }
+    };
+    if (routeMounted.current) {
+      afterFormSheet.current = deliver;
+      setSheet(NONE);
+      return;
+    }
+    const pageSheet = sheet.kind === 'detail' || sheet.kind === 'birthday';
+    setSheet(NONE);
+    setTimeout(deliver, pageSheet ? PAGE_SHEET_DISMISS_MS : 0);
+  });
   // The subscriptions below are made once, but `startCapture` closes over
   // this render's model, recognizer and time zone (a share after the
   // primary zone changed must resolve "tomorrow" in the new zone), so they
   // go through an effect event, which always runs the latest render's.
   const onIncoming = useEffectEvent((source: CaptureSource, onSettled?: () => void) => {
+    // A settings code (the Mac's, shared as text) is not an event to read:
+    // it goes to the code reader, over whatever sheet was open.
+    const code = settingsCodeOf(source);
+    if (code) {
+      onSettled?.();
+      onSettingsCode(code);
+      return;
+    }
     startCapture(source, onSettled);
   });
   // The onboarding flow's deep link (fixture builds only): the stored
@@ -329,6 +380,11 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
     };
     const onUrl = (url: string | null) => {
       if (!url) {
+        return;
+      }
+      const code = url.toLowerCase().startsWith('solunivo:') ? extractSettingsCode(url) : null;
+      if (code) {
+        onSettingsCode(code);
         return;
       }
       if (isShareUrl(url)) {

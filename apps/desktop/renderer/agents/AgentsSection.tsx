@@ -24,6 +24,7 @@ import {
 import { useEffect, useId, useState } from 'react';
 import { Button } from '../ui/Button.tsx';
 import { CALLOUT_CLASS } from '../ui/calloutStyles.ts';
+import { Copyable } from '../ui/Copyable.tsx';
 import { ARM_DELAY_MS } from './AgentApprovalDialog.tsx';
 import { type AgentAction, agentActionQuestion } from './agentActions.ts';
 import { useAgentsLoad } from './useAgentsState.ts';
@@ -68,36 +69,6 @@ const STATUS_LABEL: Record<AgentRequestView['status'], string> = {
   failed: 'Failed',
   pending: 'Waiting for you',
 };
-
-/** A line of text the user copies (a token, a config snippet). */
-function Copyable({ label, testId, text }: { label: string; testId: string; text: string }) {
-  const [copied, setCopied] = useState(false);
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // The text is selectable: copying by hand still works.
-    }
-  };
-  return (
-    <div className="mt-2">
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-medium text-ink-secondary">{label}</span>
-        <button className={`text-xs ${TEXT_ACTION_CLASS.primary}`} onClick={copy} type="button">
-          {copied ? 'Copied' : 'Copy'}
-        </button>
-      </div>
-      <pre
-        className="mt-1 max-h-72 overflow-auto rounded-lg border border-hairline bg-fill p-2 text-xs break-all whitespace-pre-wrap text-ink select-text"
-        data-testid={testId}
-      >
-        {text}
-      </pre>
-    </div>
-  );
-}
 
 /** Shown once, right after a token was created or replaced. */
 function TokenPanel({

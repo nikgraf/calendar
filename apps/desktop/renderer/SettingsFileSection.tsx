@@ -3,6 +3,7 @@ import { describeImportSummary } from '@calendar/core';
 import { useEffect, useState } from 'react';
 import type { SettingsFileStatus } from './backend.ts';
 import { Dialog } from './Dialog.tsx';
+import { ImportPreview } from './settingsCode/ImportPreview.tsx';
 import {
   exportSettingsToFile,
   type PendingImport,
@@ -65,7 +66,7 @@ export function SettingsTransferSection() {
     setPending(null);
     void run(async () => {
       const summary = await mutations.importSettings({ document: current.document });
-      return `Imported ${shortPath(current.path)}. ${describeImportSummary(summary).join(' ')}`;
+      return `Imported ${current.source}. ${describeImportSummary(summary).join(' ')}`;
     });
   };
 
@@ -109,32 +110,12 @@ export function SettingsTransferSection() {
           panelClassName="w-[28rem] rounded-2xl bg-surface p-5 shadow-xl"
           zIndex={40}
         >
-          <div data-testid="settings-import-preview">
-            <h3 className="font-medium">Import {shortPath(pending.path)}?</h3>
-            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-ink-secondary">
-              {describeImportSummary(pending.summary).map((line) => (
-                <li key={line}>{line}</li>
-              ))}
-            </ul>
-            <p className="mt-3 text-xs text-ink-secondary">Nothing is removed by an import.</p>
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                className="rounded-lg px-3 py-1.5 text-sm text-ink-secondary hover:bg-fill"
-                onClick={() => setPending(null)}
-                type="button"
-              >
-                Cancel
-              </button>
-              <button
-                aria-label="Import settings"
-                className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-on-primary hover:bg-primary-hover"
-                onClick={confirmImport}
-                type="button"
-              >
-                Import
-              </button>
-            </div>
-          </div>
+          <ImportPreview
+            onCancel={() => setPending(null)}
+            onConfirm={confirmImport}
+            pending={pending}
+            testId="settings-import-preview"
+          />
         </Dialog>
       ) : null}
     </section>
