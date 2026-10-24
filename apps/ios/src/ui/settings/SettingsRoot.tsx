@@ -141,6 +141,12 @@ export function SettingsRoot() {
 
         <Section>
           <NavRow
+            href="/settings/calendar-view"
+            leading={<IconTile color={colors['event-blue-edge']} name="calendar" />}
+            testID="settings-row-calendar-view"
+            title="Calendar"
+          />
+          <NavRow
             href="/settings/time-zones"
             leading={<IconTile color={colors['event-mint-edge']} name="globe" />}
             testID="settings-row-time-zones"
