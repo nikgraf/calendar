@@ -35,8 +35,8 @@ export function BirthdayRemindersSection() {
   if (!settings) {
     return null;
   }
-  const save = (next: Partial<BirthdayReminderSettings>) =>
-    void persist(next).then(
+  const save = (next: Partial<BirthdayReminderSettings>): Promise<void> =>
+    persist(next).then(
       ({ notificationsGranted }) => {
         tried();
         setNotice(
@@ -57,7 +57,7 @@ export function BirthdayRemindersSection() {
         <input
           aria-label="Remind me about birthdays"
           checked={settings.enabled}
-          onChange={(change) => save({ enabled: change.target.checked })}
+          onChange={(change) => void save({ enabled: change.target.checked })}
           type="checkbox"
         />
         Remind me about birthdays

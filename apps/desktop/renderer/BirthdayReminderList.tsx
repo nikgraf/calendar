@@ -24,11 +24,11 @@ function ReminderTimeInput({
   value,
 }: {
   label: string;
-  onCommit: (time: string) => void;
+  onCommit: (time: string) => Promise<void>;
   value: string;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
-  // The typed time not yet saved, for the cleanup and pagehide, which
+  // The typed time not yet saved, for the cleanup and beforeunload, which
   // would read a stale `draft`.
   const pending = useRef<string | null>(null);
   const commitRef = useRef(onCommit);
@@ -36,26 +36,36 @@ function ReminderTimeInput({
     commitRef.current = onCommit;
   }, [onCommit]);
   useEffect(() => {
-    // Neither an unmount nor a closing window blurs the field first.
-    const flush = () => {
+    // Neither an unmount (Escape closing the dialog) nor a closing window
+    // blurs the field first. A window closing waits for the save: its rpc
+    // client goes with it and would cut an unfinished save off. Electron
+    // cancels a close that beforeunload marks, without asking.
+    const holdClose = (event: BeforeUnloadEvent) => {
+      const time = pending.current;
+      if (time === null) {
+        return;
+      }
+      pending.current = null;
+      event.preventDefault();
+      event.returnValue = false;
+      void commitRef.current(time).finally(() => window.close());
+    };
+    window.addEventListener('beforeunload', holdClose);
+    return () => {
+      window.removeEventListener('beforeunload', holdClose);
       const time = pending.current;
       pending.current = null;
       if (time !== null) {
-        commitRef.current(time);
+        void commitRef.current(time);
       }
-    };
-    window.addEventListener('pagehide', flush);
-    return () => {
-      window.removeEventListener('pagehide', flush);
-      flush();
     };
   }, []);
   const commit = () => {
     const time = pending.current;
     pending.current = null;
     setDraft(null);
-    if (time !== null && time !== value) {
-      commitRef.current(time);
+    if (time !== null) {
+      void commitRef.current(time);
     }
   };
   return (
@@ -93,7 +103,8 @@ export function BirthdayReminderList({
   reminders,
 }: {
   disabled?: boolean;
-  onChange: (reminders: ReadonlyArray<BirthdayReminder>) => void;
+  /** Saves the list; a time field closing its window waits for the promise. */
+  onChange: (reminders: ReadonlyArray<BirthdayReminder>) => Promise<unknown> | void;
   reminders: ReadonlyArray<BirthdayReminder>;
 }) {
   // The list as last drawn, for a time field saving late (left, or going
@@ -105,10 +116,13 @@ export function BirthdayReminderList({
   useLayoutEffect(() => {
     latest.current = { onChange, reminders };
   });
-  const commitTime = (lead: BirthdayReminder['leadDays'], time: string) => {
+  // A time already there saves nothing: for a person on the general
+  // reminders, a save would give them their own list.
+  const commitTime = async (lead: BirthdayReminder['leadDays'], time: string) => {
     const current = latest.current;
-    if (current.reminders.some((reminder) => reminder.leadDays === lead)) {
-      current.onChange(setBirthdayReminderTime(current.reminders, lead, time));
+    const reminder = current.reminders.find((candidate) => candidate.leadDays === lead);
+    if (reminder && reminder.time !== time) {
+      await current.onChange(setBirthdayReminderTime(current.reminders, lead, time));
     }
   };
   return (

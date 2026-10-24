@@ -199,6 +199,21 @@ describe('contact birthdays', () => {
     await expect
       .poll(stored, { timeout: 10_000 })
       .toEqual({ enabled: false, reminders: [at(0), at(7, '18:30')] });
+    // A time typed and the window closed at once: the close waits for the save.
+    await cdp.eval(setInput('input[aria-label="Time on the day"]', '07:45'));
+    await app.closeSettings();
+    await expect
+      .poll(stored, { timeout: 10_000 })
+      .toEqual({ enabled: false, reminders: [at(0, '07:45'), at(7, '18:30')] });
+    const back = await app.openSettings('notifications');
+    await back.waitFor(
+      `document.querySelector('input[aria-label="Time on the day"]')?.value === '07:45'`,
+    );
+    await back.eval(setInput('input[aria-label="Time on the day"]', '09:00'));
+    await back.eval(leave('input[aria-label="Time on the day"]'));
+    await expect
+      .poll(stored, { timeout: 10_000 })
+      .toEqual({ enabled: false, reminders: [at(0), at(7, '18:30')] });
     await app.closeSettings();
   });
 
@@ -237,6 +252,17 @@ describe('contact birthdays', () => {
       cdp.eval(
         `document.querySelector(${JSON.stringify(`[data-testid="birthday-reminders"] ${selector}`)})?.click()`,
       );
+
+    // A time put back to what it was saves nothing, even as the dialog
+    // closes: saving would give the person a list of their own.
+    await openDetail();
+    const weekTime = '[data-testid="birthday-reminders"] input[aria-label="Time 1 week before"]';
+    await cdp.eval(setInput(weekTime, '06:00'));
+    await cdp.eval(setInput(weekTime, '18:30'));
+    await cdp.pressEscape();
+    await cdp.waitFor(`!document.querySelector('[role="dialog"][aria-label="Birthday"]')`);
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    expect(await stored()).toBeNull();
 
     await openDetail();
     // The previous test left the general reminders at on the day 09:00 and

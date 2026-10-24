@@ -40,8 +40,8 @@ function BirthdayReminders({ record }: { record: BirthdayRecord }) {
   if (!editor.loaded) {
     return null;
   }
-  const run = (save: Promise<void>) =>
-    void save.then(
+  const run = (save: Promise<void>): Promise<void> =>
+    save.then(
       () => setError(null),
       (error: unknown) => setError(error instanceof Error ? error.message : String(error)),
     );
@@ -56,7 +56,7 @@ function BirthdayReminders({ record }: { record: BirthdayRecord }) {
           <button
             className={`text-xs ${TEXT_ACTION_CLASS.primary}`}
             data-testid="birthday-reminders-custom"
-            onClick={() => run(editor.reset())}
+            onClick={() => void run(editor.reset())}
             type="button"
           >
             Use defaults
