@@ -11,6 +11,10 @@ const setInput = (selector: string, value: string) => `(() => {
   element.dispatchEvent(new Event('input', { bubbles: true }));
 })()`;
 
+/** Leaves a field, which is when a time field saves (React's onBlur listens for focusout). */
+const leave = (selector: string) =>
+  `document.querySelector(${JSON.stringify(selector)}).dispatchEvent(new FocusEvent('focusout', { bubbles: true }))`;
+
 // Birthdays come from two sources: a Google People row seeded into SQLite
 // and the same person in a device-contacts fixture (the harness swaps the
 // helper for the in-memory fake, so no TCC prompt and no real address
@@ -176,8 +180,12 @@ describe('contact birthdays', () => {
     await cdp.waitFor(
       `document.querySelector('input[aria-label="Time 1 week before"]')?.value === '09:00'`,
     );
-    // Each lead keeps its own time.
+    // Each lead keeps its own time, saved once the field is left: a time
+    // half typed is not saved (it would re-plan at a passed time).
     await cdp.eval(setInput('input[aria-label="Time 1 week before"]', '18:30'));
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    expect(await stored()).toEqual({ enabled: true, reminders: [at(0), at(7)] });
+    await cdp.eval(leave('input[aria-label="Time 1 week before"]'));
     await expect
       .poll(stored, { timeout: 10_000 })
       .toEqual({ enabled: true, reminders: [at(0), at(7, '18:30')] });
@@ -257,13 +265,16 @@ describe('contact birthdays', () => {
         reminders: [at(0), at(7, '18:30'), at(14, '18:30')],
       },
     ]);
-    // A time of this person's own.
+    // A time of this person's own, typed and closed with Escape at once:
+    // the field saves as it goes away.
     await cdp.eval(
       setInput(
         '[data-testid="birthday-reminders"] input[aria-label="Time 2 weeks before"]',
         '08:15',
       ),
     );
+    await cdp.pressEscape();
+    await cdp.waitFor(`!document.querySelector('[role="dialog"][aria-label="Birthday"]')`);
     await expect.poll(stored, { timeout: 10_000 }).toEqual([
       {
         day: person.day,
@@ -272,8 +283,6 @@ describe('contact birthdays', () => {
         reminders: [at(0), at(7, '18:30'), at(14, '08:15')],
       },
     ]);
-    await cdp.pressEscape();
-    await cdp.waitFor(`!document.querySelector('[role="dialog"][aria-label="Birthday"]')`);
 
     // Reopened: read back from SQLite, with the way back to the defaults.
     await openDetail();

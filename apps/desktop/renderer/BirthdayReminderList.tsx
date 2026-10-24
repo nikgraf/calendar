@@ -8,15 +8,14 @@ import {
 } from '@calendar/core';
 import { useEffect, useRef, useState } from 'react';
 
-/** How long typing in a time field pauses before the time is saved. */
-const TIME_COMMIT_MS = 600;
-
 /**
- * A reminder's time field that saves once typing pauses, or as it loses
- * focus. Every keystroke is a whole time to the field ("1" of "19" reads
- * 01:00), and saving each one re-planned at it: for a birthday today, a
- * passed time fires at once, and the time typed after it has the same
- * notification key, so it never fires. The save runs through the latest
+ * A reminder's time field that saves when it is done with — on blur or
+ * Enter, or as it goes away (the dialog closed with Escape, the window
+ * closed), never per keystroke. Every keystroke is a whole time to the
+ * field ("1" of "19" reads 01:00; a 12-hour clock reads AM until the
+ * last segment), and a saved time re-plans at once: for a birthday today
+ * a passed time fires straight away, and the time meant after it has the
+ * same notification key, so it never fires. Saves go through the latest
  * `onCommit`, never one from the keystroke's render, which would undo a
  * box ticked meanwhile.
  */
@@ -30,17 +29,33 @@ function ReminderTimeInput({
   value: string;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // The typed time not yet saved, for the cleanup and pagehide, which
+  // would read a stale `draft`.
+  const pending = useRef<string | null>(null);
   const commitRef = useRef(onCommit);
   useEffect(() => {
     commitRef.current = onCommit;
   }, [onCommit]);
-  useEffect(() => () => clearTimeout(timer.current), []);
-  const flush = (time: string | null) => {
-    clearTimeout(timer.current);
-    timer.current = undefined;
+  useEffect(() => {
+    // Neither an unmount nor a closing window blurs the field first.
+    const flush = () => {
+      const time = pending.current;
+      pending.current = null;
+      if (time !== null) {
+        commitRef.current(time);
+      }
+    };
+    window.addEventListener('pagehide', flush);
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      flush();
+    };
+  }, []);
+  const commit = () => {
+    const time = pending.current;
+    pending.current = null;
     setDraft(null);
-    if (time !== null) {
+    if (time !== null && time !== value) {
       commitRef.current(time);
     }
   };
@@ -48,15 +63,18 @@ function ReminderTimeInput({
     <input
       aria-label={label}
       className="rounded-lg border border-hairline bg-surface px-2 py-0.5 text-sm text-ink"
-      onBlur={() => flush(draft)}
+      onBlur={commit}
       onChange={(change) => {
         const time = change.target.value;
-        if (!time) {
-          return;
+        if (time) {
+          pending.current = time;
+          setDraft(time);
         }
-        setDraft(time);
-        clearTimeout(timer.current);
-        timer.current = setTimeout(() => flush(time), TIME_COMMIT_MS);
+      }}
+      onKeyDown={(key) => {
+        if (key.key === 'Enter') {
+          commit();
+        }
       }}
       type="time"
       value={draft ?? value}

@@ -476,7 +476,8 @@ export const useEventNotificationSettings = (): EventNotificationSettings | null
  * truth again: other editors write the same keys (the Getting started
  * lessons hold their own, an import, the settings file), and a last
  * value kept for good hid their changes and wrote over them on the next
- * save. A failed save falls back to the stored one.
+ * save. A failed save falls back to the stored one (the last save only:
+ * an earlier one failing leaves a later one's value in place).
  */
 export const useSettingsEditor = <A extends object, R>(
   stored: A | null,
@@ -484,6 +485,7 @@ export const useSettingsEditor = <A extends object, R>(
 ): readonly [current: A | null, save: (change: Partial<A>) => Promise<R>] => {
   const [sent, setSent] = useState<A | null>(null);
   const [inFlight, setInFlight] = useState(0);
+  const lastSeq = useRef(0);
   const { current, landed } = settingsEditorView(sent, stored, inFlight);
   if (landed) {
     // Render-phase state adjustment (the React "derive from props" pattern).
@@ -494,11 +496,16 @@ export const useSettingsEditor = <A extends object, R>(
       return Promise.reject(new Error('The setting has not loaded yet.'));
     }
     const next = { ...current, ...change };
+    lastSeq.current += 1;
+    const seq = lastSeq.current;
     setSent(next);
     setInFlight((count) => count + 1);
     return persist(next)
       .catch((error: unknown) => {
-        setSent(null);
+        // Back to the stored value, unless a later save holds a newer one.
+        if (seq === lastSeq.current) {
+          setSent(null);
+        }
         throw error;
       })
       .finally(() => setInFlight((count) => count - 1));
