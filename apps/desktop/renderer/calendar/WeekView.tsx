@@ -10,6 +10,8 @@ import {
   capAllDayLane,
   dayRange,
   type EventRecord,
+  expandedAllDayRows,
+  foldTaskBacklog,
   formatPlainTime,
   layoutAllDayLane,
   layoutDayColumn,
@@ -17,6 +19,7 @@ import {
   PAN_BUFFER_DAYS,
   partitionCalendarTasks,
   taskCalendarDate,
+  taskFoldKey,
   secondaryHourLabels,
   type Slide,
   slideSpan,
@@ -31,7 +34,7 @@ import {
   zoneSlug,
 } from '@calendar/core';
 import { type RefObject, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { AllDayLane } from './AllDayLane.tsx';
+import { AllDayLane, type FoldEntry, LANE_ROW_PX } from './AllDayLane.tsx';
 import { type ColorLookup } from './colors.ts';
 import { DayHeaders } from './DayHeaders.tsx';
 import { DraftBlock } from './DraftBlock.tsx';
@@ -260,6 +263,20 @@ export function WeekView({
     observer.observe(scroller);
     return () => observer.disconnect();
   }, [scrollRef]);
+  // The view's height (day headers to bottom): an expanded all-day lane
+  // takes at most a third of it before it scrolls inside itself.
+  const [viewHeight, setViewHeight] = useState(0);
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (!root) {
+      return;
+    }
+    const measure = () => setViewHeight(root.clientHeight);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(root);
+    return () => observer.disconnect();
+  }, []);
 
   const allDayEvents = events.filter((event) => event.isAllDay);
   const timedEvents = events.filter((event) => !event.isAllDay);
@@ -288,17 +305,24 @@ export function WeekView({
       ? []
       : [{ endDayIndex: index + 1, id: calendarTaskKey(task), startDayIndex: index }];
   });
-  // Overdue and undated tasks sit on today's column until they are done.
+  // Overdue and undated tasks sit on today's column until they are done,
+  // each group of two or more folded into one chip.
   const todayIndex = dayIndexOf(todayIso, strip);
   const todayTasks = calendarTasks.overdue.concat(calendarTasks.undated);
-  const overdueSpans =
+  const backlog = foldTaskBacklog(calendarTasks.overdue, calendarTasks.undated);
+  const backlogSpans =
     todayIndex === -1
       ? []
-      : todayTasks.map((task) => ({
+      : backlog.map((entry) => ({
           endDayIndex: todayIndex + 1,
-          id: calendarTaskKey(task),
+          id: entry.kind === 'fold' ? taskFoldKey(entry.fold) : calendarTaskKey(entry.task),
           startDayIndex: todayIndex,
         }));
+  const foldById = new Map(
+    backlog.flatMap((entry): Array<[string, FoldEntry]> =>
+      entry.kind === 'fold' ? [[taskFoldKey(entry.fold), entry]] : [],
+    ),
+  );
   const overdueKeys = new Set(calendarTasks.overdue.map(calendarTaskKey));
   const taskById = new Map(
     calendarTasks.allDay.concat(todayTasks).map((task) => [calendarTaskKey(task), task]),
@@ -314,7 +338,7 @@ export function WeekView({
   const birthdayById = new Map(birthdays.map((birthday) => [birthdayKey(birthday), birthday]));
 
   const { placed: allDayPlaced, rowCount } = layoutAllDayLane(
-    overdueSpans.concat(
+    backlogSpans.concat(
       taskSpans,
       birthdaySpans,
       draftSpans,
@@ -389,10 +413,12 @@ export function WeekView({
         colorOf={colorOf}
         draftById={draftByKey}
         drag={drag}
+        foldById={foldById}
         gutterClassName={gutterClassName}
         isTaskReadOnly={isTaskReadOnly}
         laneRef={laneRef}
         listColorOf={listColorOf}
+        maxRows={expandedAllDayRows(viewHeight, LANE_ROW_PX)}
         moreByDay={capped?.moreByDay ?? []}
         onBirthdayClick={onBirthdayClick}
         onDraftClick={onDraftClick}

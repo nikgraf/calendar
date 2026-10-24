@@ -2221,7 +2221,12 @@ describe('collapsible all-day lane', () => {
     expect(await visibleChores()).toBe(5);
     expect(await cdp.eval(`!!document.querySelector('[data-testid="all-day-more"]')`)).toBe(false);
 
-    const less = await cdp.locate('[data-testid="all-day-less"]');
+    const toggle = () =>
+      cdp.eval<string | null>(
+        `document.querySelector('[data-testid="all-day-toggle"]')?.getAttribute('aria-expanded') ?? null`,
+      );
+    expect(await toggle()).toBe('true');
+    const less = await cdp.locate('[data-testid="all-day-toggle"]');
     await cdp.click(less.x, less.y);
     await expect
       .poll(() => readDeviceSetting(laneApp.userDataDir, 'viewPreferences'))
@@ -2231,7 +2236,8 @@ describe('collapsible all-day lane', () => {
     );
     expect(await laneHeight()).toBe(3 * LANE_ROW + LANE_PADDING);
     expect(await visibleChores()).toBe(2);
-    expect(await cdp.eval(`!!document.querySelector('[data-testid="all-day-less"]')`)).toBe(false);
+    // The chevron stays where it was, turned down.
+    expect(await toggle()).toBe('false');
 
     const more = await cdp.locate('[data-testid="all-day-more"]');
     await cdp.click(more.x, more.y);
@@ -2241,6 +2247,183 @@ describe('collapsible all-day lane', () => {
     await cdp.waitFor(`document.querySelectorAll('[title^="Chore "]').length === 5`);
     expect(await laneHeight()).toBe(5 * LANE_ROW + LANE_PADDING);
     expect(await cdp.eval(`!!document.querySelector('[data-testid="all-day-more"]')`)).toBe(false);
+
+    // The chevron collapses and expands it too.
+    const down = await cdp.locate('[data-testid="all-day-toggle"]');
+    await cdp.click(down.x, down.y);
+    await cdp.waitFor(`!!document.querySelector('[data-testid="all-day-more"]')`);
+    const up = await cdp.locate('[data-testid="all-day-toggle"]');
+    await cdp.click(up.x, up.y);
+    await cdp.waitFor(`document.querySelectorAll('[title^="Chore "]').length === 5`);
+    expect(await toggle()).toBe('true');
+  });
+});
+
+/** An open Google task in the seed's list; `undefined` leaves it undated. */
+const chore = (id: string, title: string, dueDate: string | undefined) =>
+  new TaskRecord({
+    accountId: 'acc-e2e',
+    ...(dueDate === undefined ? {} : { dueDate }),
+    id,
+    listId: 'list-e2e',
+    provider: 'google',
+    status: 'needsAction',
+    title,
+    updatedAt: 1,
+  });
+
+describe("today's backlog and a long all-day lane", () => {
+  let backlogApp: App;
+
+  beforeAll(async () => {
+    // Three late tasks and two undated ones (each group folds into one
+    // chip on today) and twenty chores due today: today's column needs
+    // 22 rows, more than a third of any window holds.
+    backlogApp = await launchApp({
+      ...seed,
+      events: [],
+      tasks: [
+        chore('late-1', 'Late 1', localIsoDaysAgo(3)),
+        chore('late-2', 'Late 2', localIsoDaysAgo(2)),
+        chore('late-3', 'Late 3', localIsoDaysAgo(1)),
+        chore('loose-1', 'Loose 1', undefined),
+        chore('loose-2', 'Loose 2', undefined),
+        ...Array.from({ length: 20 }, (_, index) =>
+          chore(`today-${String(index + 1)}`, `Chore ${String(index + 1)}`, todayLocalIso()),
+        ),
+      ],
+    });
+  }, 60_000);
+
+  afterEach(async (context) => {
+    if (context.task.result?.state === 'fail') {
+      await backlogApp?.dump(context.task.name);
+    }
+  });
+
+  afterAll(async () => {
+    await backlogApp?.stop();
+  });
+
+  const foldText = (fold: string) =>
+    backlogApp.cdp.eval<string | null>(
+      `document.querySelector('[data-testid="all-day-fold-${fold}"]')?.textContent ?? null`,
+    );
+  const taskById = async (id: string) =>
+    (await readTasks(backlogApp.userDataDir)).find((task) => task.id === id);
+
+  it('folds each backlog group into one chip on today', async () => {
+    const { cdp } = backlogApp;
+    await cdp.locate('[data-testid="all-day-fold-overdue"]');
+    expect(await foldText('overdue')).toContain('3 overdue');
+    expect(await foldText('undated')).toBe('2 no date');
+    // No chip of their own, on today or on their past days.
+    expect(
+      await cdp.eval<number>(
+        `document.querySelectorAll('[title^="Late "], [title^="Loose "]').length`,
+      ),
+    ).toBe(0);
+    const inTodayColumn = await cdp.eval<boolean>(`(() => {
+      const cell = document.querySelector('[data-testid="today-header"]').getBoundingClientRect();
+      return ['overdue', 'undated'].every((fold) => {
+        const chip = document
+          .querySelector('[data-testid="all-day-fold-' + fold + '"]')
+          .getBoundingClientRect();
+        return chip.left >= cell.left - 1 && chip.right <= cell.right + 1;
+      });
+    })()`);
+    expect(inTodayColumn).toBe(true);
+  });
+
+  it('caps the expanded lane at a third of the view and scrolls the rest inside it', async () => {
+    const { cdp } = backlogApp;
+    const geometry = () =>
+      cdp.eval<{
+        clientHeight: number;
+        grid: number;
+        lane: number;
+        scrollHeight: number;
+        scrolls: boolean;
+        view: number;
+      }>(`(() => {
+        const lane = document.querySelector('[data-testid="all-day-lane"]');
+        const scroller = document.querySelector('[data-testid="all-day-scroller"]');
+        return {
+          clientHeight: scroller.clientHeight,
+          grid: document.querySelector('[data-testid="week-scroller"]').getBoundingClientRect().height,
+          lane: lane.getBoundingClientRect().height,
+          scrollHeight: scroller.scrollHeight,
+          scrolls: lane.hasAttribute('data-scrolls'),
+          view: document.querySelector('[data-testid="week-view"]').clientHeight,
+        };
+      })()`);
+    const before = await geometry();
+    const rows = Math.max(3, Math.floor(before.view / 3 / 24));
+    // Whole rows, then half of the next chip.
+    expect(before).toMatchObject({ lane: rows * 24 + 14, scrolls: true });
+    expect(before.scrollHeight).toBe(22 * 24 + 8);
+    expect(before.grid).toBeGreaterThan(before.view / 2);
+    // The last chore scrolls into view inside the lane, not the window.
+    await cdp.locate('[title="Chore 20"]');
+    const shown = await cdp.eval<boolean>(`(() => {
+      const chip = document.querySelector('[title="Chore 20"]').getBoundingClientRect();
+      const lane = document.querySelector('[data-testid="all-day-scroller"]').getBoundingClientRect();
+      return chip.top >= lane.top && chip.bottom <= lane.bottom;
+    })()`);
+    expect(shown).toBe(true);
+    expect((await geometry()).lane).toBe(before.lane);
+    await cdp.eval(`document.querySelector('[data-testid="all-day-scroller"]').scrollTop = 0`);
+  });
+
+  it("lists a fold's tasks and keeps a ticked one in its place", async () => {
+    const { cdp } = backlogApp;
+    const chip = await cdp.locate('[data-testid="all-day-fold-overdue"]');
+    await cdp.click(chip.x, chip.y);
+    await cdp.waitFor(`!!document.querySelector('[data-testid="all-day-fold-list-overdue"]')`);
+    const rows = () =>
+      cdp.eval<Array<string>>(
+        `[...document.querySelectorAll('[data-testid^="fold-task-"]')].map((row) => row.dataset.testid)`,
+      );
+    // Oldest due day first, as in the inbox.
+    expect(await rows()).toEqual(['fold-task-late-1', 'fold-task-late-2', 'fold-task-late-3']);
+    const box = await cdp.locate('[aria-label="Mark done: Late 2"]');
+    await cdp.click(box.x, box.y);
+    await expect.poll(async () => (await taskById('late-2'))?.status).toBe('completed');
+    // Still listed, now to reopen; the list stays open and the chip counts two.
+    await cdp.waitFor(`!!document.querySelector('[aria-label="Reopen: Late 2"]')`);
+    expect(await rows()).toEqual(['fold-task-late-1', 'fold-task-late-2', 'fold-task-late-3']);
+    expect(await foldText('overdue')).toContain('2 overdue');
+    // A row opens its task in the side panel and the list closes.
+    const title = await cdp.locate('[data-testid="fold-task-late-1"] button + button');
+    await cdp.click(title.x, title.y);
+    await cdp.waitFor(`!!document.querySelector('[data-testid="editor"]')`);
+    expect(
+      await cdp.eval<boolean>(
+        `!!document.querySelector('[data-testid="all-day-fold-list-overdue"]')`,
+      ),
+    ).toBe(false);
+    await cdp.clickButtonWithText('Cancel');
+    await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);
+  });
+
+  it('drags a row from a fold list onto the lane and dates it', async () => {
+    const { cdp } = backlogApp;
+    // Measured before the list opens: its backdrop covers the calendar.
+    const column = await cdp.locate('[data-testid="today-header"]');
+    const lane = await cdp.locate('[data-testid="all-day-lane"]');
+    const chip = await cdp.locate('[data-testid="all-day-fold-overdue"]');
+    await cdp.click(chip.x, chip.y);
+    const row = await cdp.locate('[data-testid="fold-task-late-3"] button + button');
+    await cdp.drag(row, { x: column.x, y: lane.y });
+    await expect.poll(async () => (await taskById('late-3'))?.dueDate).toBe(todayLocalIso());
+    // A drop, not a click: the list closed and no editor opened.
+    await cdp.waitFor(`!document.querySelector('[data-testid="all-day-fold-list-overdue"]')`);
+    expect(await cdp.eval<boolean>(`!!document.querySelector('[data-testid="editor"]')`)).toBe(
+      false,
+    );
+    // One late task left: it is its own chip again, no fold.
+    await cdp.locate('[data-overdue][title^="Late 1"]');
+    expect(await foldText('overdue')).toBe(null);
   });
 });
 
