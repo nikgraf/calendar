@@ -38,6 +38,7 @@ import { AppState, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react
 import { kickSync, runLocalNotifications, startSync, subscribeInvalidations } from '../backend.ts';
 import { registerBackgroundRefresh } from '../backgroundTask.ts';
 import { useOnboardingEnabled } from '../onboarding.ts';
+import { setSetupPhase } from '../settingsCodeInbox.ts';
 import { AccountButton } from './AccountButton.tsx';
 import { ADD_BUTTON_CLEARANCE, AddButton } from './AddButton.tsx';
 import { AgendaView } from './AgendaView.tsx';
@@ -117,12 +118,21 @@ const useFirstRun = () => {
   const due = useSetupNeeded();
   const decided = useRef(false);
   useEffect(() => {
-    if (!enabled || due === null || decided.current) {
+    // No setup on the way: a settings code waiting in the inbox (opened
+    // from the Camera app at launch) goes to Settings › Read Code now.
+    if (!enabled) {
+      setSetupPhase('closed', router);
+      return;
+    }
+    if (due === null || decided.current) {
       return;
     }
     decided.current = true;
     if (due) {
+      setSetupPhase('opening');
       router.push('/setup');
+    } else {
+      setSetupPhase('closed', router);
     }
   }, [due, enabled, router]);
 };

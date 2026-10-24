@@ -20,6 +20,7 @@ import {
   type TaskRecord,
   Temporal,
 } from '@calendar/core';
+import { extractSettingsCode } from '@calendar/core/settingsCode';
 import { router, usePathname } from 'expo-router';
 import {
   createContext,
@@ -33,10 +34,11 @@ import {
 } from 'react';
 import { AppState, Linking } from 'react-native';
 import { backendClient } from '../backend.ts';
-import { fixtureShareFromUrl, takeIncomingShare } from '../incomingShare.ts';
+import { fixtureShareFromUrl, settingsCodeOf, takeIncomingShare } from '../incomingShare.ts';
 import { subscribeNotificationTaps } from '../notifications.ts';
 import { languageModel, modelFixture, textRecognizer } from '../model.ts';
 import { forceOnboarding } from '../onboarding.ts';
+import { deliverSettingsCode } from '../settingsCodeInbox.ts';
 import { CaptureBanner } from './CaptureBanner.tsx';
 import { EventDetailSheet } from './EventDetailSheet.tsx';
 import { EventEditSheet, type EditSeed } from './EventEditSheet.tsx';
@@ -299,11 +301,26 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
     setCaptured(null);
     capture.start(source, onSettled);
   };
+  // A settings code from outside a reader: a share, or the Camera app's
+  // "Open in Solunivo" (the code parses as a `solunivo:` URL). The inbox
+  // brings up the right reader (settingsCodeInbox.ts).
+  const onSettingsCode = useEffectEvent((code: string) => {
+    setSheet(NONE);
+    deliverSettingsCode(code, router);
+  });
   // The subscriptions below are made once, but `startCapture` closes over
   // this render's model, recognizer and time zone (a share after the
   // primary zone changed must resolve "tomorrow" in the new zone), so they
   // go through an effect event, which always runs the latest render's.
   const onIncoming = useEffectEvent((source: CaptureSource, onSettled?: () => void) => {
+    // A settings code (the Mac's, shared as text) is not an event to read:
+    // it goes to the code reader, over whatever sheet was open.
+    const code = settingsCodeOf(source);
+    if (code) {
+      onSettled?.();
+      onSettingsCode(code);
+      return;
+    }
     startCapture(source, onSettled);
   });
   // The onboarding flow's deep link (fixture builds only): the stored
@@ -325,6 +342,11 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
     };
     const onUrl = (url: string | null) => {
       if (!url) {
+        return;
+      }
+      const code = url.toLowerCase().startsWith('solunivo:') ? extractSettingsCode(url) : null;
+      if (code) {
+        onSettingsCode(code);
         return;
       }
       if (isShareUrl(url)) {

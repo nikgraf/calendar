@@ -1,15 +1,19 @@
 import { useRouter } from 'expo-router';
+import { useEffect } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSettingsCodeWaiting } from '../../settingsCodeInbox.ts';
 import { Glyph } from '../GroupedList.tsx';
 import { type ThemeColors, useStyles, useTheme } from '../theme.ts';
 import { useSetup } from './SetupContext.tsx';
 
 /**
  * The first screen of a fresh install: what Solunivo is in two lines,
- * and two doors — set up from scratch, or copy a setup from the Mac (a
- * settings file for now; a code later). Skip goes straight to the
- * calendar, where the Getting started card picks the setup up again.
+ * and two doors — set up from scratch, or copy a setup from the Mac by
+ * its settings code. Skip goes straight to the calendar, where the
+ * Getting started card picks the setup up again. A code that arrived
+ * before the setup was up (opened from the Camera app on a fresh install)
+ * goes straight to the copy door.
  */
 export function SetupWelcome() {
   const styles = useStyles(makeStyles);
@@ -17,6 +21,12 @@ export function SetupWelcome() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { finish } = useSetup();
+  const codeWaiting = useSettingsCodeWaiting();
+  useEffect(() => {
+    if (codeWaiting) {
+      router.push('/setup/copy');
+    }
+  }, [codeWaiting, router]);
   return (
     <View
       style={[
@@ -59,8 +69,8 @@ export function SetupWelcome() {
         />
         <Door
           onPress={() => router.push('/setup/copy')}
-          subtitle="Already using Solunivo there? Bring its settings over and skip the setup"
-          symbol="doc.badge.arrow.up"
+          subtitle="Already using Solunivo there? Scan its code and skip the setup"
+          symbol="qrcode.viewfinder"
           testID="setup-copy"
           title="Copy from your Mac"
         />
@@ -84,7 +94,7 @@ function Door({
   onPress: () => void;
   primary?: boolean;
   subtitle: string;
-  symbol: 'calendar.badge.plus' | 'doc.badge.arrow.up';
+  symbol: 'calendar.badge.plus' | 'qrcode.viewfinder';
   testID: string;
   title: string;
 }) {
