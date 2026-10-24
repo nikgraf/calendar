@@ -303,10 +303,24 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
   };
   // A settings code from outside a reader: a share, or the Camera app's
   // "Open in Solunivo" (the code parses as a `solunivo:` URL). The inbox
-  // brings up the right reader (settingsCodeInbox.ts).
+  // brings up the right reader (settingsCodeInbox.ts) once the sheet that
+  // was open has gone: Settings › Read Code pushed over a half-height
+  // editor would be what the editor's own dismissal pops (as for
+  // `openSettings`), and UIKit presents one sheet at a time.
   const onSettingsCode = useEffectEvent((code: string) => {
+    const deliver = () => deliverSettingsCode(code, router);
+    if (routeMounted.current) {
+      afterFormSheet.current = deliver;
+      setSheet(NONE);
+      return;
+    }
+    const pageSheet = sheet.kind === 'detail' || sheet.kind === 'birthday';
     setSheet(NONE);
-    deliverSettingsCode(code, router);
+    if (pageSheet) {
+      setTimeout(deliver, PAGE_SHEET_DISMISS_MS);
+      return;
+    }
+    deliver();
   });
   // The subscriptions below are made once, but `startCapture` closes over
   // this render's model, recognizer and time zone (a share after the

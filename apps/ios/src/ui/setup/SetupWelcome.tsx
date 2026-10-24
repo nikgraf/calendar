@@ -2,7 +2,7 @@ import { useRouter } from 'expo-router';
 import { useEffect } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useSettingsCodeWaiting } from '../../settingsCodeInbox.ts';
+import { settingsCodeWaiting } from '../../settingsCodeInbox.ts';
 import { Glyph } from '../GroupedList.tsx';
 import { type ThemeColors, useStyles, useTheme } from '../theme.ts';
 import { useSetup } from './SetupContext.tsx';
@@ -21,12 +21,12 @@ export function SetupWelcome() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { finish } = useSetup();
-  const codeWaiting = useSettingsCodeWaiting();
+  // Once, on mount: later codes are the inbox's to route.
   useEffect(() => {
-    if (codeWaiting) {
+    if (settingsCodeWaiting()) {
       router.push('/setup/copy');
     }
-  }, [codeWaiting, router]);
+  }, [router]);
   return (
     <View
       style={[

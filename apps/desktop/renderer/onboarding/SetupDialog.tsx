@@ -673,13 +673,20 @@ function CopyStep({
 }) {
   const mutations = useBackendMutations();
   const [pending, setPending] = useState<PendingImport | null>(null);
+  // The code behind the preview, and the last one Cancel turned down: the
+  // reader comes back with the iPhone still showing it, and must not
+  // reopen the same preview from the camera.
+  const [pendingCode, setPendingCode] = useState<string | null>(null);
+  const [declined, setDeclined] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const pick = async () => {
     setBusy(true);
     setNotice(null);
     try {
-      setPending(await pickSettingsFile(mutations));
+      const picked = await pickSettingsFile(mutations);
+      setPendingCode(null);
+      setPending(picked);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : String(error));
     } finally {
@@ -707,7 +714,15 @@ function CopyStep({
       actions={
         pending ? (
           <>
-            <Button disabled={busy} onClick={() => setPending(null)} variant="ghost">
+            <Button
+              data-testid="setup-import-cancel"
+              disabled={busy}
+              onClick={() => {
+                setDeclined(pendingCode);
+                setPending(null);
+              }}
+              variant="ghost"
+            >
               Cancel
             </Button>
             <Button
@@ -746,7 +761,14 @@ function CopyStep({
         </div>
       ) : (
         <>
-          <ReadCodePanel camera onRead={setPending} />
+          <ReadCodePanel
+            camera
+            declined={declined}
+            onRead={(next, code) => {
+              setPendingCode(code);
+              setPending(next);
+            }}
+          />
           <p className="text-xs text-ink-secondary">
             What comes over: accounts as a sign-in list, which calendars and lists are shown, time
             zones, alerts and birthday reminders. Never passwords or sign-in tokens: each Google

@@ -22,8 +22,8 @@ export function ReadCodePage() {
       <Section footer="On the Mac, open Solunivo › Settings › Settings File and choose Show Code.">
         <RowSlot>
           <View style={styles.reader}>
-            <CodeScanner onCode={reader.read} onStart={reader.reset} />
-            <CodePasteField disabled={reader.busy} onCode={reader.read} />
+            <CodeScanner onCode={reader.scan} onStart={reader.reset} />
+            <CodePasteField disabled={reader.busy} onCode={reader.paste} />
           </View>
         </RowSlot>
       </Section>

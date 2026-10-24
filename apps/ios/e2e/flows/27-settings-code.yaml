@@ -6,7 +6,8 @@ tags:
 # The setup's "Copy from your Mac" door reads the Mac's settings code.
 # The simulator has no camera, so the code arrives the way a share does:
 # under the fixture model the `capture-fixture` link feeds the share path,
-# and a settings code there goes to the open reader instead of the AI. The
+# and a settings code there goes to a reader instead of the AI — the copy
+# step, which the inbox brings up over the welcome. The
 # code carries only the fixture account (fixture@solunivo.test), so the
 # preview reads "Nothing differs from this device" and nothing is left
 # behind for the shard's later flows. It is the IOS_FLOW_CODE that
@@ -51,9 +52,23 @@ tags:
     commands:
       - waitForAnimationToEnd:
           timeout: 5000
-      # The welcome's door (the copy screen reuses its id, but is not up yet).
-      - tapOn:
-          id: 'setup-copy'
+      # The Mac's code, shared in while the welcome is up (URL-encoded: the
+      # colons): the inbox brings up the copy step, whose reader previews
+      # it as a settings file is previewed.
+      - openLink: 'solunivo-dev://capture-fixture?text=SOLUNIVO%3A1%3ABXEUCCUAEAIALUF37S2QI3K5OWHWQIJWZGIDTYEMCKEHPL7VDMEDCSRLU3YPWAB5QEZTYLT6VVK5UVDSFPOGKMKSQPB43ZP4HGE2ITEYQ5B2PKRMAV7J2HY'
+      - extendedWaitUntil:
+          visible: 'Import settings\?|Open'
+          timeout: 15000
+      - runFlow:
+          when:
+            visible: 'Open'
+          commands:
+            - tapOn: 'Open'
+      - extendedWaitUntil:
+          visible: 'Import settings?'
+          timeout: 10000
+      # Turned down, on the copy step it opened.
+      - tapOn: 'Cancel'
       - extendedWaitUntil:
           visible:
             id: 'code-paste'
@@ -70,18 +85,17 @@ tags:
             id: 'code-paste-error'
           timeout: 5000
       - hideKeyboard
-      # The Mac's code, shared in (URL-encoded: the colons).
+      # The same code again: asked again, so read again — the preview, as
+      # for a settings file: nothing differs here.
       - openLink: 'solunivo-dev://capture-fixture?text=SOLUNIVO%3A1%3ABXEUCCUAEAIALUF37S2QI3K5OWHWQIJWZGIDTYEMCKEHPL7VDMEDCSRLU3YPWAB5QEZTYLT6VVK5UVDSFPOGKMKSQPB43ZP4HGE2ITEYQ5B2PKRMAV7J2HY'
       - extendedWaitUntil:
-          visible: 'Open'
+          visible: 'Import settings\?|Open'
           timeout: 15000
-          optional: true
       - runFlow:
           when:
             visible: 'Open'
           commands:
             - tapOn: 'Open'
-      # The preview, as for a settings file: nothing differs here.
       - extendedWaitUntil:
           visible: 'Import settings?'
           timeout: 10000

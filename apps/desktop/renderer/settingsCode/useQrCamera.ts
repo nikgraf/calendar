@@ -47,6 +47,17 @@ export const useQrCamera = ({
     let attached: HTMLVideoElement | null = null;
     let timer: number | undefined;
     const canvas = document.createElement('canvas');
+    // The camera off: its light goes out with the tracks.
+    const release = () => {
+      for (const track of stream?.getTracks() ?? []) {
+        track.stop();
+      }
+      stream = null;
+      if (attached) {
+        attached.srcObject = null;
+        attached = null;
+      }
+    };
 
     const readFrame = async (video: HTMLVideoElement, failures: number) => {
       if (stopped) {
@@ -68,6 +79,8 @@ export const useQrCamera = ({
         }
         next = reply.error ? failures + 1 : 0;
         if (next >= MAX_FAILURES) {
+          // Given up: nothing reads the frames any more, so the camera stops too.
+          release();
           setState('failed');
           return;
         }
@@ -121,12 +134,7 @@ export const useQrCamera = ({
     return () => {
       stopped = true;
       window.clearTimeout(timer);
-      for (const track of stream?.getTracks() ?? []) {
-        track.stop();
-      }
-      if (attached) {
-        attached.srcObject = null;
-      }
+      release();
     };
   }, [active]);
 

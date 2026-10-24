@@ -57,8 +57,8 @@ export function SetupCopy() {
       title="Copy from your Mac"
     >
       <View style={styles.reader}>
-        <CodeScanner onCode={reader.read} onStart={reader.reset} />
-        <CodePasteField disabled={reader.busy} onCode={reader.read} />
+        <CodeScanner onCode={reader.scan} onStart={reader.reset} />
+        <CodePasteField disabled={reader.busy} onCode={reader.paste} />
       </View>
       {reader.notice ? <Footer testID="setup-copy-notice">{reader.notice}</Footer> : null}
       <View style={styles.points}>

@@ -10,6 +10,7 @@ import {
   encodeSettingsCode,
   extractSettingsCode,
   isSettingsCode,
+  MAX_CODE_LENGTH,
   qrPathData,
   qrPng,
   settingsCodeDocument,
@@ -226,7 +227,7 @@ describe('decodeSettingsCode', () => {
     expect(failure(`SOLUNIVO:1:${base32Encode(strToU8('not deflate at all'))}`)).toContain(
       'damaged',
     );
-    expect(failure(`SOLUNIVO:1:${'A'.repeat(9000)}`)).toContain('too long');
+    expect(failure(`SOLUNIVO:1:${'A'.repeat(MAX_CODE_LENGTH + 1)}`)).toContain('too long');
   });
 
   it('refuses a code that expands past a settings document', () => {
@@ -253,6 +254,38 @@ describe('the QR', () => {
   it('fails past version 40', () => {
     const exit = Effect.runSyncExit(settingsCodeQr(`SOLUNIVO:1:${'A'.repeat(4000)}`));
     expect(Exit.isFailure(exit)).toBe(true);
+  });
+
+  it('leaves a setup too large for any QR to the text, which still decodes', () => {
+    // 200 calendars with long random ids (seeded): deflate barely helps.
+    let seed = 42;
+    const next = () => {
+      seed = (seed * 1_103_515_245 + 12_345) % 2_147_483_648;
+      return seed;
+    };
+    const id = () =>
+      `${Array.from({ length: 64 }, () => 'abcdefghijklmnopqrstuvwxyz0123456789'[next() % 36]).join('')}@group.calendar.google.com`;
+    const large: SettingsDocument = {
+      accounts: [
+        {
+          calendars: Array.from({ length: 200 }, (_, n) => ({
+            id: id(),
+            title: `Calendar ${n}`,
+            visible: n % 3 !== 0,
+          })),
+          email: 'large@example.com',
+          kind: 'google',
+        },
+      ],
+      version: 1,
+    };
+    const text = encodeSettingsCode(large);
+    expect(text.length).toBeGreaterThan(8000);
+    expect(text.length).toBeLessThan(MAX_CODE_LENGTH);
+    expect(Exit.isFailure(Effect.runSyncExit(settingsCodeQr(text)))).toBe(true);
+    const decoded = Effect.runSync(decodeSettingsCode(text));
+    const [decodedAccount] = decoded.accounts ?? [];
+    expect(decodedAccount?.kind === 'google' ? decodedAccount.calendars : []).toHaveLength(200);
   });
 
   it('draws one path of runs', () => {

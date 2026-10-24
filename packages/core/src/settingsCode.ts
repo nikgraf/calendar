@@ -29,10 +29,15 @@ import { isDeviceZone } from './timeZoneSettings.ts';
 export const SETTINGS_CODE_VERSION = 1;
 export const SETTINGS_CODE_PREFIX = 'SOLUNIVO';
 
-/** Longer input than any version-40 QR could hold is not a code worth inflating. */
-const MAX_CODE_LENGTH = 8000;
 /** The JSON a code may expand to; deflate's 1:1000 ratio makes a cap necessary. */
 const MAX_INFLATED_BYTES = 256 * 1024;
+/**
+ * The longest payload worth decoding: that JSON deflated at its worst
+ * (stored blocks, 5 bytes each per 64 KB, and a little slack), in base32's
+ * 8 characters per 5 bytes. A code too large for a QR travels as text, so
+ * every document the decoder would accept must fit — not just a QR's worth.
+ */
+export const MAX_CODE_LENGTH = Math.ceil(((MAX_INFLATED_BYTES + 1024) * 8) / 5);
 
 const BASE32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 

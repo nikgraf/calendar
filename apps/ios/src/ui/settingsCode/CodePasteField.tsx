@@ -7,8 +7,9 @@ import { type ThemeColors, useStyles, useTheme } from '../theme.ts';
  * A field to paste a settings code into (the Mac's "Copy as text",
  * through Universal Clipboard). Pasting into a field is the person's own
  * act, so iOS shows no "Allow Paste" prompt — reading the clipboard from
- * code would. A code anywhere in what lands reads at once; Return on
- * anything else says it is not a code.
+ * code would. A code reads at once when one lands (not again while typing
+ * around it); Return reads the code in the field again, or says the text
+ * is not a code.
  */
 export function CodePasteField({
   disabled = false,
@@ -29,14 +30,22 @@ export function CodePasteField({
         autoCorrect={false}
         editable={!disabled}
         onChangeText={(value) => {
+          const before = extractSettingsCode(text);
           setText(value);
           setNotCode(false);
           const code = extractSettingsCode(value);
-          if (code) {
+          if (code && code !== before) {
             onCode(code);
           }
         }}
-        onSubmitEditing={() => setNotCode(text.trim() !== '' && !extractSettingsCode(text))}
+        onSubmitEditing={() => {
+          const code = extractSettingsCode(text);
+          if (code) {
+            onCode(code);
+            return;
+          }
+          setNotCode(text.trim() !== '');
+        }}
         placeholder="Paste a code"
         placeholderTextColor={colors['text-secondary']}
         returnKeyType="done"

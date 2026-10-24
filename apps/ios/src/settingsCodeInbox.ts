@@ -1,3 +1,4 @@
+import { useIsFocused } from 'expo-router';
 import { useEffect, useEffectEvent, useSyncExternalStore } from 'react';
 
 /**
@@ -71,29 +72,39 @@ export const setSetupPhase = (phase: SetupPhase, router?: Router): void => {
   }
 };
 
-/** Whether a code waits for a reader (the setup's welcome forwards to the copy step). */
-export const useSettingsCodeWaiting = (): boolean =>
-  useSyncExternalStore(subscribe, () => pending !== null);
+/**
+ * Whether a code waits for a reader. The setup's welcome asks once, on
+ * mount: a code that came before the setup was up goes to the copy step;
+ * one that comes later is routed here (`route`), never by the welcome too.
+ */
+export const settingsCodeWaiting = (): boolean => pending !== null;
 
 /**
- * A reader's side: registered while mounted, so a code that arrives goes
- * to it rather than to a new screen; `onCode` hears the waiting code (now,
- * or when it arrives), which is then gone from the inbox.
+ * A reader's side: registered while its screen is in front, so a code
+ * that arrives goes to it rather than to a new screen; `onCode` hears the
+ * waiting code (now, or when it arrives), which is then gone from the
+ * inbox. A stack keeps the screens under the top one mounted (the copy
+ * step under the copied one, under "Set up by hand"): those neither count
+ * as a reader nor take a code.
  */
 export const useSettingsCodeReader = (onCode: (code: string) => void): void => {
+  const focused = useIsFocused();
   const code = useSyncExternalStore(subscribe, () => pending);
   const take = useEffectEvent((value: string) => onCode(value));
   useEffect(() => {
+    if (!focused) {
+      return;
+    }
     readers += 1;
     return () => {
       readers -= 1;
     };
-  }, []);
+  }, [focused]);
   useEffect(() => {
-    if (code !== null) {
+    if (focused && code !== null) {
       pending = null;
       notify();
       take(code);
     }
-  }, [code]);
+  }, [code, focused]);
 };

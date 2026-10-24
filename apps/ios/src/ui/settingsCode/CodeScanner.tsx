@@ -34,7 +34,9 @@ type ScannerState =
  * own, so no permission alert comes up unasked (or in a test). Only while
  * the screen is in front: a page pushed over it (the copied step) stops
  * it. `onCode` hears every settings code the camera sees; the reader
- * ignores repeats and reads while busy.
+ * ignores repeats and reads while busy, and answers true for a read that
+ * ran. Once one has (imported, declined or failed), the camera stops and
+ * the button is back: the same code again is a fresh scan.
  */
 export function CodeScanner({
   label = 'Scan the Code',
@@ -42,7 +44,7 @@ export function CodeScanner({
   onStart,
 }: {
   label?: string;
-  onCode: (code: string) => void;
+  onCode: (code: string) => Promise<boolean>;
   /** A fresh scan: the reader may read a code it declined before. */
   onStart?: () => void;
 }) {
@@ -71,7 +73,11 @@ export function CodeScanner({
           onBarcodeScanned={({ data }) => {
             const code = extractSettingsCode(data);
             if (code) {
-              onCode(code);
+              void onCode(code).then((ran) => {
+                if (ran) {
+                  setState((current) => (current.kind === 'live' ? { kind: 'idle' } : current));
+                }
+              });
             }
           }}
           onMountError={() => setState({ kind: 'missing' })}

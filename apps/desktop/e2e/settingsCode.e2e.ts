@@ -166,9 +166,19 @@ describe('settings code: the setup dialog’s copy door reads the iPhone’s cod
     );
     await cdp.clickTestId('setup-copy');
     await expect.poll(step).toBe('copy');
+    const preview = `!!document.querySelector('[data-testid="setup-import-preview"]')`;
     // The fixture camera sees the code in its first frame.
-    await cdp.waitFor(`!!document.querySelector('[data-testid="setup-import-preview"]')`);
+    await cdp.waitFor(preview);
     expect(await textOf(cdp, 'setup-import-preview')).toContain('someone@example.com');
+    // Turned down: the camera, still seeing it every frame, leaves it be…
+    await cdp.clickTestId('setup-import-cancel');
+    await cdp.waitFor(`!${preview}`);
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    expect(await cdp.eval(preview)).toBe(false);
+    expect(await step()).toBe('copy');
+    // …while pasting it is asking again.
+    await cdp.eval(paste(otherCode, `document.querySelector('[data-testid="code-paste"]')`));
+    await cdp.waitFor(preview);
     await cdp.clickTestId('setup-import-confirm');
     await expect.poll(step).toBe('copied');
     const someone = (await readAccounts(app.userDataDir)).find(

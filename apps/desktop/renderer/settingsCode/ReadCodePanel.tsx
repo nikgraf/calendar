@@ -16,18 +16,23 @@ const CAMERA_NOTE: Record<Exclude<QrCameraState, 'live'>, string | null> = {
 
 /**
  * Reads a settings code by camera or by paste and previews it: `onRead`
- * hears the decoded settings with what importing them would change, and
- * the caller shows its own confirm. The camera runs while `camera` is on
- * and macOS allows it (CALENDAR_CAMERA=off: never, the paste field only).
- * The same text is read once, however many frames show it; a code that
- * fails to decode says why and is not tried again until it changes.
+ * hears the decoded settings with what importing them would change (and
+ * the code), and the caller shows its own confirm. The camera runs while
+ * `camera` is on and macOS allows it (CALENDAR_CAMERA=off: never, the
+ * paste field only). The same text is read once, however many frames show
+ * it; a code that fails to decode says why and is not tried again until it
+ * changes. The caller's preview replaces this panel, so a code declined
+ * there comes back as `declined`: the camera, still pointed at the iPhone,
+ * leaves it alone, while a paste of it is read again.
  */
 export function ReadCodePanel({
   camera,
+  declined = null,
   onRead,
 }: {
   camera: boolean;
-  onRead: (pending: PendingImport) => void;
+  declined?: string | null;
+  onRead: (pending: PendingImport, code: string) => void;
 }) {
   const mutations = useBackendMutations();
   const [text, setText] = useState('');
@@ -35,20 +40,20 @@ export function ReadCodePanel({
   const [notice, setNotice] = useState<string | null>(null);
   const tried = useRef<string | null>(null);
 
-  const read = async (raw: string) => {
+  const read = async (raw: string, from: 'camera' | 'paste') => {
     const code = extractSettingsCode(raw);
     if (code === null) {
       setNotice(raw.trim() ? 'That isn’t a Solunivo code.' : null);
       return;
     }
-    if (busy || tried.current === code) {
+    if (busy || tried.current === code || (from === 'camera' && code === declined)) {
       return;
     }
     tried.current = code;
     setBusy(true);
     setNotice(null);
     try {
-      onRead(await readSettingsCode(mutations, code));
+      onRead(await readSettingsCode(mutations, code), code);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : String(error));
     } finally {
@@ -58,7 +63,7 @@ export function ReadCodePanel({
 
   const { state, videoRef } = useQrCamera({
     active: camera && !busy,
-    onCode: (code) => void read(code),
+    onCode: (code) => void read(code, 'camera'),
   });
 
   const showVideo = camera && (state === 'live' || state === 'asking');
@@ -100,13 +105,13 @@ export function ReadCodePanel({
           onChange={(event) => {
             setText(event.target.value);
             if (extractSettingsCode(event.target.value)) {
-              void read(event.target.value);
+              void read(event.target.value, 'paste');
             }
           }}
           onKeyDown={(event) => {
             if (event.key === 'Enter') {
               event.preventDefault();
-              void read(text);
+              void read(text, 'paste');
             }
           }}
           onPaste={(event) => {
@@ -114,7 +119,7 @@ export function ReadCodePanel({
             const pasted = event.clipboardData.getData('text/plain');
             event.preventDefault();
             setText(pasted);
-            void read(pasted);
+            void read(pasted, 'paste');
           }}
           placeholder="SOLUNIVO:1:…"
           spellCheck={false}
