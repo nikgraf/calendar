@@ -6,10 +6,12 @@ import {
   TIMED_TASK_LAYOUT_MINUTES,
   calendarTaskKey,
   dropTaskChanges,
+  foldTaskBacklog,
   isOverdue,
   moveTimedTask,
   partitionCalendarTasks,
   taskCalendarDate,
+  taskFoldKey,
   timedTaskSlot,
 } from './taskTiming.ts';
 
@@ -359,5 +361,42 @@ describe('dropTaskChanges', () => {
     expect(dropTaskChanges(overdue, grid('2026-03-28', 11 * 60))).toEqual({
       changes: { dueDate: '2026-03-28', dueTime: '11:00' },
     });
+  });
+});
+
+const late = (id: string) => task({ dueDate: '2026-03-20', id });
+const loose = (id: string) => task({ dueDate: undefined, id });
+
+describe('foldTaskBacklog', () => {
+  it('folds each group of two or more into one entry, overdue first', () => {
+    const overdue = [late('a'), late('b')];
+    const undated = [loose('c'), loose('d'), loose('e')];
+    expect(foldTaskBacklog(overdue, undated)).toEqual([
+      { fold: 'overdue', kind: 'fold', tasks: overdue },
+      { fold: 'undated', kind: 'fold', tasks: undated },
+    ]);
+  });
+
+  it("keeps a group of one as that task, in its group's place", () => {
+    const lone = late('a');
+    const undated = [loose('c'), loose('d')];
+    expect(foldTaskBacklog([lone], undated)).toEqual([
+      { kind: 'task', task: lone },
+      { fold: 'undated', kind: 'fold', tasks: undated },
+    ]);
+    const single = loose('c');
+    expect(foldTaskBacklog([late('a'), late('b')], [single]).at(-1)).toEqual({
+      kind: 'task',
+      task: single,
+    });
+  });
+
+  it('is empty without a backlog', () => {
+    expect(foldTaskBacklog([], [])).toEqual([]);
+  });
+
+  it('keys a fold apart from every task', () => {
+    expect(taskFoldKey('overdue')).toBe('fold:overdue');
+    expect(taskFoldKey('undated')).not.toBe(calendarTaskKey(loose('undated')));
   });
 });

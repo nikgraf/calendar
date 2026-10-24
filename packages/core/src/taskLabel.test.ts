@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vite-plus/test';
 import {
+  dueDayLabel,
   OVERDUE_MARKER,
   overdueLabel,
   priorityMarker,
   REPEAT_MARKER,
   taskChipLabel,
+  taskFoldDescription,
+  taskFoldLabel,
+  taskFoldTitle,
   taskRepeats,
 } from './taskLabel.ts';
 
@@ -48,6 +52,7 @@ describe('overdueLabel', () => {
       'Overdue · due Dec 30, 2025',
     );
     expect(overdueLabel({}, '2026-09-20')).toBe('Overdue');
+    expect(dueDayLabel('2026-09-17', '2026-09-20')).toBe('due Sep 17');
   });
 });
 
@@ -56,5 +61,20 @@ describe('taskRepeats', () => {
     expect(taskRepeats({})).toBe(false);
     expect(taskRepeats({ recurrence: { freq: 'weekly', interval: 1 } })).toBe(true);
     expect(taskRepeats({ recurrenceUnsupported: true })).toBe(true);
+  });
+});
+
+describe('taskFoldLabel', () => {
+  it('leads with the count, the overdue fold with the warning marker too', () => {
+    expect(taskFoldLabel('overdue', 12)).toBe(`${OVERDUE_MARKER} 12 overdue`);
+    expect(taskFoldLabel('undated', 11)).toBe('11 no date');
+  });
+
+  it('names the list and spells the fold out for screen readers', () => {
+    expect(taskFoldTitle('overdue')).toBe('Overdue');
+    expect(taskFoldTitle('undated')).toBe('No date');
+    expect(taskFoldDescription('overdue', 12)).toBe('12 overdue tasks');
+    expect(taskFoldDescription('undated', 2)).toBe('2 tasks with no date');
+    expect(taskFoldDescription('undated', 1)).toBe('1 task with no date');
   });
 });
