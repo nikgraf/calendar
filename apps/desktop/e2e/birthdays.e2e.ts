@@ -331,9 +331,28 @@ describe('contact birthdays', () => {
         reminders: [at(0), at(7, '18:30'), at(14, '18:30')],
       },
     ]);
-    await clickInDetail('[data-testid="birthday-reminders-custom"]');
+    // A time typed but not saved yet, then the person reset elsewhere:
+    // their two-week field goes away with the override and drops the
+    // time rather than saving the list it was typed into back.
+    const twoWeeks = '[data-testid="birthday-reminders"] input[aria-label="Time 2 weeks before"]';
+    await cdp.eval(setInput(twoWeeks, '06:00'));
+    const again = await app.openSettings('notifications');
+    await again.waitFor(`!!document.querySelector('[data-testid="birthday-overrides"]')`);
+    await again.eval(
+      `document.querySelector('button[aria-label="Reset reminders for Alice Example"]')?.click()`,
+    );
     await expect.poll(stored, { timeout: 10_000 }).toEqual([]);
+    await app.closeSettings();
+    await cdp.waitFor(`!document.querySelector(${JSON.stringify(twoWeeks)})`);
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    expect(await stored()).toEqual([]);
+    expect(
+      await cdp.eval<boolean>(
+        `!document.querySelector('[data-testid="birthday-reminders-custom"]')`,
+      ),
+    ).toBe(true);
     await cdp.pressEscape();
     await cdp.waitFor(`!document.querySelector('[role="dialog"][aria-label="Birthday"]')`);
+    expect(await stored()).toEqual([]);
   });
 });

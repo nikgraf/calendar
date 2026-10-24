@@ -6,7 +6,7 @@ import {
   removeBirthdayReminder,
   setBirthdayReminderTime,
 } from '@calendar/core';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 /**
  * A reminder's time field that saves when it is done with — on blur or
@@ -15,9 +15,8 @@ import { useEffect, useRef, useState } from 'react';
  * field ("1" of "19" reads 01:00; a 12-hour clock reads AM until the
  * last segment), and a saved time re-plans at once: for a birthday today
  * a passed time fires straight away, and the time meant after it has the
- * same notification key, so it never fires. Saves go through the latest
- * `onCommit`, never one from the keystroke's render, which would undo a
- * box ticked meanwhile.
+ * same notification key, so it never fires. `onCommit` applies the time
+ * to the list as last drawn (see `BirthdayReminderList`).
  */
 function ReminderTimeInput({
   label,
@@ -97,6 +96,21 @@ export function BirthdayReminderList({
   onChange: (reminders: ReadonlyArray<BirthdayReminder>) => void;
   reminders: ReadonlyArray<BirthdayReminder>;
 }) {
+  // The list as last drawn, for a time field saving late (left, or going
+  // away). By then a change from elsewhere may have replaced the list — a
+  // reset in Settings, an import — and the one from the field's own
+  // render would bring it back; a lead no longer there drops the time.
+  // Synced in a layout effect: a removed field's unmount runs after it.
+  const latest = useRef({ onChange, reminders });
+  useLayoutEffect(() => {
+    latest.current = { onChange, reminders };
+  });
+  const commitTime = (lead: BirthdayReminder['leadDays'], time: string) => {
+    const current = latest.current;
+    if (current.reminders.some((reminder) => reminder.leadDays === lead)) {
+      current.onChange(setBirthdayReminderTime(current.reminders, lead, time));
+    }
+  };
   return (
     <fieldset className="flex flex-col gap-1" disabled={disabled}>
       {BIRTHDAY_LEAD_DAYS.map((lead) => {
@@ -125,7 +139,7 @@ export function BirthdayReminderList({
                 at
                 <ReminderTimeInput
                   label={`Time ${label.toLowerCase()}`}
-                  onCommit={(time) => onChange(setBirthdayReminderTime(reminders, lead, time))}
+                  onCommit={(time) => commitTime(lead, time)}
                   value={reminder.time}
                 />
               </label>
