@@ -48,6 +48,12 @@
       "@react-native-community/datetimepicker",
       "expo-background-task",
       "expo-router",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Solunivo reads the setup code your Mac shows. The image stays on this iPhone."
+        }
+      ],
       "./plugins/withShareExtension.cjs",
       "./plugins/withLocalNotificationsOnly.cjs"
     ],

@@ -18,7 +18,9 @@ dictation and capture from text or photo.
   fill/text/edge per scheme), up-next / task-inbox / agenda grouping,
   task order (where a dropped row goes, provisional positions),
   search (`search/`: accent- and case-folded every-word matching, one
-  hit per series), the settings document, the mirror model. Pure; no IO.
+  hit per series), the settings document and its QR settings code
+  (`settingsCode.ts`, imported by subpath so its deflate stays out of
+  Electron main), the mirror model. Pure; no IO.
 - `packages/db` — SQLite repos (accounts/calendars/events/tasks/task_lists/
   pending_ops/sync_state/contacts/device_settings/…), the custom
   migration runner, Reactivity keys + invalidation forwarding.
@@ -69,8 +71,10 @@ dictation and capture from text or photo.
 - `apps/ios` — Expo dev client on expo-router (`app/`: native tabs
   Calendar · Tasks · Search (a stack whose `Stack.SearchBar` is the system
   search field), Settings as a modal holding its own stack of pages
-  (`app/settings/`), `+native-intent.tsx` keeps share/OAuth URLs off the
-  router; `src/ui/EditorHost.tsx` owns every sheet); `@expo/ui` for
+  (`app/settings/`), `+native-intent.tsx` keeps share/OAuth URLs and
+  settings codes off the router; `src/ui/EditorHost.tsx` owns every sheet;
+  `src/settingsCodeInbox.ts` hands a code that arrives from outside to a
+  reader); `@expo/ui` for
   drop-in native controls; zero-hop direct backend; @react-native-ai/apple
   for on-device model access; the local Expo modules under `modules/`;
   `expo-maps` draws the editor map.
@@ -178,7 +182,9 @@ deliberately.
   (brings Calendar.app forward), `settings:open`,
   `settingsFile:*`, `auth:cancel` (stops a sign-in waiting on the
   browser), `notifications:take` (the event reminder clicked last — a
-  ref; the event itself is read over rpc), `onboarding:enabled`,
+  ref; the event itself is read over rpc), `camera:ask` /
+  `camera:read-qr` (the settings-code reader: the camera's TCC status,
+  then a frame read by the helper's Vision), `onboarding:enabled`,
   `lesson:open` / `lesson:take` (a lesson Settings opened, kept in main
   until the calendar window takes it) and `agents:*`) use plain
   preload IPC; calendar data — reminders, Apple events and contact rows
@@ -218,7 +224,7 @@ deliberately.
   `apple-calendar`): branch with `isAppleRemindersAccount` /
   `isAppleCalendarAccount`, never on `provider === 'apple'` alone.
 - The e2e harness sets `CALENDAR_REMINDERS=off`, `CALENDAR_CONTACTS=off`,
-  `CALENDAR_APPLE_CALENDAR=off`, `CALENDAR_GEO=off`,
+  `CALENDAR_APPLE_CALENDAR=off`, `CALENDAR_GEO=off`, `CALENDAR_CAMERA=off`,
   `CALENDAR_CAPTURE_WATCH=off` and `CALENDAR_ONBOARDING=off` (no first-run
   setup or Getting started card over a seeded profile; the onboarding
   spec opts in with `onboarding: 'on'`, and the CI and live iOS bundles

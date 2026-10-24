@@ -61,6 +61,8 @@ export default function SettingsLayout() {
             <Stack.Screen name="mirrors" options={{ title: '' }} />
             <Stack.Screen name="mirror" options={{ title: '' }} />
             <Stack.Screen name="file" options={{ title: 'Settings File' }} />
+            <Stack.Screen name="code" options={{ title: 'Code for Your Mac' }} />
+            <Stack.Screen name="read-code" options={{ title: 'Read a Code' }} />
             <Stack.Screen name="advanced" options={{ title: 'Advanced' }} />
             <Stack.Screen name="diagnostics" options={{ title: 'Diagnostics' }} />
             <Stack.Screen name="pr-preview" options={{ title: 'PR Preview' }} />

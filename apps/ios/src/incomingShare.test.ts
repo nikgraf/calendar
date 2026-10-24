@@ -27,7 +27,7 @@ const storeWith = (payloads: Array<SharePayload>): SharingModule => {
   };
 };
 
-const { fixtureShareFromUrl, sourceFromPayloads, takeIncomingShare } =
+const { fixtureShareFromUrl, settingsCodeOf, sourceFromPayloads, takeIncomingShare } =
   await import('./incomingShare.ts');
 type SharePayload = import('./incomingShare.ts').SharePayload;
 type SharingModule = import('./incomingShare.ts').SharingModule;
@@ -94,5 +94,17 @@ describe('fixtureShareFromUrl', () => {
     );
     expect(fixtureShareFromUrl('solunivo://expo-sharing')).toBeUndefined();
     expect(fixtureShareFromUrl('solunivo-dev://capture-fixture?text=%E0%A4%A')).toBeUndefined();
+  });
+});
+
+describe('settingsCodeOf', () => {
+  it('finds a settings code in shared text, and nothing in an image or plain text', () => {
+    expect(
+      settingsCodeOf({ kind: 'text', text: 'From the Mac:\nSOLUNIVO:1:MZXW6YTBOIMZXW6YTBOI\n' }),
+    ).toBe('SOLUNIVO:1:MZXW6YTBOIMZXW6YTBOI');
+    expect(settingsCodeOf({ kind: 'text', text: 'Lunch with Sam tomorrow at 12:30' })).toBeNull();
+    expect(
+      settingsCodeOf({ image: { kind: 'uri', uri: 'file:///group/a.png' }, kind: 'image' }),
+    ).toBeNull();
   });
 });

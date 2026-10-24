@@ -1,4 +1,5 @@
 import type { CaptureSource } from '@calendar/ai';
+import { extractSettingsCode } from '@calendar/core/settingsCode';
 
 /**
  * What a paste carried. Read synchronously inside the event handler — a
@@ -18,6 +19,12 @@ export const readPaste = (data: DataTransfer | null): PastedContent => {
     : null;
   return { image: image ?? undefined, text: data?.getData('text/plain') ?? '' };
 };
+
+/**
+ * A settings code in a paste — the iPhone's "Copy as Text" through
+ * Universal Clipboard. It goes to the import preview, never to the AI.
+ */
+export const settingsCodeOf = ({ text }: PastedContent): string | null => extractSettingsCode(text);
 
 /** A paste worth extracting events from on the grid: any image, or any text at all. */
 export const isCapturable = ({ image, text }: PastedContent): boolean =>

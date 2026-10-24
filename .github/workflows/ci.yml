@@ -172,6 +172,9 @@ jobs:
           bash apps/desktop/e2e/ci/probe-helper-access.sh apps/desktop/helper/.build/release/solunivo-model-helper calendar
       - run: E2E=1 CALENDAR_E2E_REMINDERS=real pnpm exec vp test run apps/desktop/e2e/remindersReal.e2e.ts
       - run: E2E=1 CALENDAR_E2E_APPLE_CALENDAR=real pnpm exec vp test run apps/desktop/e2e/appleCalendarReal.e2e.ts
+      # The settings code's camera reader: the helper's Vision reads the QR
+      # the app draws (Electron has no BarcodeDetector). No TCC involved.
+      - run: E2E=1 CALENDAR_E2E_HELPER=real pnpm exec vp test run apps/desktop/e2e/qrReader.e2e.ts
       - name: Upload e2e diagnostics
         if: failure()
         uses: actions/upload-artifact@v7

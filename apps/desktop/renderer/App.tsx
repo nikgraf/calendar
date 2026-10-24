@@ -5,6 +5,7 @@ import { CalendarApp } from './calendar/CalendarApp.tsx';
 import { ErrorBoundary } from './ErrorBoundary.tsx';
 import { NoticeStack } from './NoticeStack.tsx';
 import { SetupDialog } from './onboarding/SetupDialog.tsx';
+import { CodeImportHost } from './settingsCode/CodeImportDialog.tsx';
 import { SettingsWindow } from './SettingsWindow.tsx';
 import { backend, subscribeInvalidations } from './backend.ts';
 
@@ -23,6 +24,7 @@ function Bridge() {
     <>
       <CalendarApp />
       <SetupDialog />
+      <CodeImportHost />
       <AgentApprovalDialog />
       <CaptureHint />
     </>
