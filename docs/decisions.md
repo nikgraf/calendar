@@ -891,6 +891,17 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   forbade inventing), asking the model where a value came from. Open:
   capture items (no phrase per item), German "morgen" (also "morning"),
   an "assumed" badge for the default times — with the draft thread.
+- **The title holds only the phrase's words** (2026-10-24) — "lunch with
+  tom tomorrow" came back "Lunch with Sarah": the model copies a prompt's
+  example title into any phrase of its shape. The quick-add prompt lost its
+  examples; `groundTitle` keeps the model's title only when every word is
+  the phrase's and it names more than a when, else the phrase stands in;
+  `trimWhen` takes days, times, repeats and dates off the title's ends; a
+  first word in lower case is capitalized. Rejected: the example kept
+  behind the check (still copied), a rule-only prompt (date words stay), a
+  code-only title (breaks the fixture grammar and other languages). Open:
+  when-words mid-title, a title that drops a word ("tomorrow lunch with
+  tom" → "Lunch", "tom" taken as the place), refine and capture titles.
 - **A served model beside Apple's** (2026-10-12, #184)
   — the desktop can answer `generateJson` from a model served over HTTP
   on this Mac: Ollama through its own API (the schema as `format`,

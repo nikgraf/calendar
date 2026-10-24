@@ -60,6 +60,11 @@ export const QUICK_ADD_PHRASE_MARKER = 'Phrase: ';
  * Builds the extraction prompt. The reference date and zone are injected
  * rather than assumed, so relative phrases ("next Tuesday") resolve
  * deterministically and the same phrase can be replayed in tests.
+ *
+ * The title rule has no example: the model copies an example's title
+ * into any phrase of its shape ("Lunch with Sarah" for "lunch with tom
+ * tomorrow"). The title is held against the phrase afterwards
+ * (`groundTitle`), and the code takes the words about when off it.
  */
 export const buildQuickAddPrompt = ({
   phrase,
@@ -81,11 +86,10 @@ export const buildQuickAddPrompt = ({
     'startTime only for a clock time the phrase states.',
     'Omit fields the phrase does not state — never invent a location, a time,',
     'or a repeat, and never write placeholders like "unknown".',
-    'The title is only what the event is: leave date, time and location words',
-    'out of it ("Lunch with Sarah next Tuesday at 1pm" has the title',
-    '"Lunch with Sarah"; "Remind me to call the bank" has the title "Call the',
-    'bank"). The phrase may be in any language; the title keeps its original',
-    'language.',
+    "The title is only what the event is, in the phrase's own words: leave",
+    'date, time and location words out of it, but keep who it is with. A',
+    'person is never the location. The phrase may be in any language; the',
+    'title keeps its original language.',
     `${QUICK_ADD_PHRASE_MARKER}${phrase}`,
   ]
     .filter(Boolean)

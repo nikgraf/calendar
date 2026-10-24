@@ -46,7 +46,10 @@ meal and part-of-day words (one table: quick-add defaults and the
 finder's bounds), weekdays, to-do cues, the finder's windows and
 durations — and the normalizers keep a model value only where the phrase
 supports it, correct one it contradicts and drop the rest (a phrase
-without a time is an all-day event, whatever the model returned). A
+without a time is an all-day event, whatever the model returned). The
+title too is only the phrase's words — one naming anything else gives way
+to the phrase — with the words about when taken off its ends; no prompt
+shows an example title, since the model copies it. A
 refinement (`refine.ts`) is one more bounded prompt — the draft as a
 line of JSON and the change — merged by the same rules with the draft as
 the anchor (an open "at 8" reads next to the draft's own start); the

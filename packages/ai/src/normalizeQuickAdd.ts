@@ -5,7 +5,7 @@ import {
   Temporal,
   validateEventDraft,
 } from '@calendar/core';
-import { groundDate, groundTime, isTodoPhrase } from './grounding.ts';
+import { groundDate, groundTime, groundTitle, isTodoPhrase, trimWhen } from './grounding.ts';
 import { inviteesOf, titleWithoutInvitees } from './invitees.ts';
 import type { QuickAddParse } from './quickAdd.ts';
 import { meaningfulText, realDate, realTime } from './shared.ts';
@@ -96,6 +96,15 @@ export const addHour = (time: string): string => {
 const TODO_CUE_PREFIX =
   /^(?:remind me to|reminder:?|to-?do:?|don'?t forget to|i (?:need|have) to|i must|ich muss|nicht vergessen:?)\s+/i;
 
+/**
+ * The first letter upper-cased when the first word is all lower case
+ * ("lunch with tom" is "Lunch with tom"); "iPhone repair" stays as typed.
+ */
+const capitalized = (title: string): string =>
+  /\p{Lu}/u.test(/^\S*/u.exec(title)![0])
+    ? title
+    : title.replace(/^\p{Ll}/u, (letter) => letter.toLocaleUpperCase());
+
 /** Lower-case, accent-free text with straight apostrophes and "ss" for ß. */
 const fold = (text: string): string =>
   foldSearchText(text)
@@ -184,8 +193,9 @@ export const recurrenceFromParse = (
  * the phrase states or the default of a meal or part of the day it names,
  * else the event is all day; the end comes only from a stated range; a
  * weekday the phrase names is where the date lands; the phrase is a
- * to-do only on a to-do cue; and only the people it says to invite are
- * invited (`invitees.ts`), the invitation kept out of the title. Capture
+ * to-do only on a to-do cue; only the people it says to invite are
+ * invited (`invitees.ts`), the invitation kept out of the title; and the
+ * title is the phrase's own words, without the when at its ends. Capture
  * has no one phrase per item, so it passes none and the model's times
  * stand as validated.
  */
@@ -217,7 +227,13 @@ export const normalizeQuickAdd = (
   // me to invite Tom" is the thing to do); capture reads no one.
   const { invite } = phrase === undefined || todo ? { invite: [] } : inviteesOf(people, phrase);
   const said = meaningfulText(parse.title);
-  const title = said === undefined ? undefined : titleWithoutInvitees(said, invite);
+  // Only the phrase's words, without the invitation and the when at its
+  // ends (`grounding.ts`). Capture has no phrase: the model's title stands.
+  const named =
+    said === undefined
+      ? undefined
+      : titleWithoutInvitees(phrase === undefined ? said : groundTitle(said, phrase), invite);
+  const title = named && phrase !== undefined ? capitalized(trimWhen(named)) : named;
   if (!title) {
     return { kind: 'rejected', reason: 'No event title was recognised.' };
   }
@@ -243,7 +259,7 @@ export const normalizeQuickAdd = (
       prefill: {
         date: resolvedDate,
         ...(startTime ? { time: startTime } : {}),
-        title: title.replace(TODO_CUE_PREFIX, '') || title,
+        title: capitalized(title.replace(TODO_CUE_PREFIX, '') || title),
       },
     };
   }
