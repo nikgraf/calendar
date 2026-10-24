@@ -270,13 +270,27 @@ describe('setBirthdayReminderOverride', () => {
   it.effect('stores, replaces and removes one person, re-planning without a prompt', () => {
     const { ensurePermission, layer, run } = birthdaySetup('scheduled');
     return Effect.gen(function* () {
-      yield* setBirthdayReminderOverride({ ...alice, leadDays: [14, 0] });
-      expect(yield* getBirthdayReminderOverrides).toEqual([{ ...alice, leadDays: [0, 14] }]);
-      yield* setBirthdayReminderOverride({ ...alice, displayName: 'alice', leadDays: [] });
+      yield* setBirthdayReminderOverride({
+        ...alice,
+        reminders: [
+          { leadDays: 14, time: '09:00' },
+          { leadDays: 0, time: '09:00' },
+        ],
+      });
       expect(yield* getBirthdayReminderOverrides).toEqual([
-        { ...alice, displayName: 'alice', leadDays: [] },
+        {
+          ...alice,
+          reminders: [
+            { leadDays: 0, time: '09:00' },
+            { leadDays: 14, time: '09:00' },
+          ],
+        },
       ]);
-      yield* setBirthdayReminderOverride({ ...alice, leadDays: null });
+      yield* setBirthdayReminderOverride({ ...alice, displayName: 'alice', reminders: [] });
+      expect(yield* getBirthdayReminderOverrides).toEqual([
+        { ...alice, displayName: 'alice', reminders: [] },
+      ]);
+      yield* setBirthdayReminderOverride({ ...alice, reminders: null });
       expect(yield* getBirthdayReminderOverrides).toEqual([]);
       expect(run).toHaveBeenCalledTimes(3);
       expect(ensurePermission).not.toHaveBeenCalled();
@@ -285,13 +299,24 @@ describe('setBirthdayReminderOverride', () => {
 });
 
 describe('setBirthdayReminderSettings', () => {
-  const on: BirthdayReminderSettings = { enabled: true, leadDays: [0], time: '09:00' };
+  const on: BirthdayReminderSettings = {
+    enabled: true,
+    reminders: [{ leadDays: 0, time: '09:00' }],
+  };
 
   it.effect('an immediate sink is asked once, as the reminders turn on', () => {
     const { ensurePermission, layer } = birthdaySetup('immediate');
     return Effect.gen(function* () {
       expect(yield* setBirthdayReminderSettings(on)).toEqual({ notificationsGranted: true });
-      expect(yield* setBirthdayReminderSettings({ ...on, leadDays: [0, 1] })).toEqual({
+      expect(
+        yield* setBirthdayReminderSettings({
+          ...on,
+          reminders: [
+            { leadDays: 0, time: '09:00' },
+            { leadDays: 1, time: '09:00' },
+          ],
+        }),
+      ).toEqual({
         notificationsGranted: true,
       });
       expect(ensurePermission).toHaveBeenCalledOnce();
@@ -312,7 +337,7 @@ describe('setBirthdayReminderSettings', () => {
     const { ensurePermission, layer } = birthdaySetup('scheduled');
     return Effect.gen(function* () {
       yield* setBirthdayReminderSettings(on);
-      yield* setBirthdayReminderSettings({ ...on, time: '08:00' });
+      yield* setBirthdayReminderSettings({ ...on, reminders: [{ leadDays: 0, time: '08:00' }] });
       expect(ensurePermission).toHaveBeenCalledTimes(2);
       yield* setBirthdayReminderSettings({ ...on, enabled: false });
       expect(ensurePermission).toHaveBeenCalledTimes(2);

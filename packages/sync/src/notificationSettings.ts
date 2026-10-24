@@ -1,5 +1,5 @@
 import {
-  type BirthdayLeadDays,
+  type BirthdayReminder,
   type BirthdayReminderSettings,
   type EventNotificationSettings,
   type TimeZoneSettings,
@@ -58,13 +58,13 @@ export const applyBirthdayReminderSettings = (
 export interface BirthdayReminderOverrideInput {
   readonly day: number;
   readonly displayName: string;
-  /** `null` returns the person to the general lead days. */
-  readonly leadDays: ReadonlyArray<BirthdayLeadDays> | null;
   readonly month: number;
+  /** `null` returns the person to the general reminders. */
+  readonly reminders: ReadonlyArray<BirthdayReminder> | null;
 }
 
 /**
- * Saves one person's lead days and re-plans right away: LocalNotifications
+ * Saves one person's reminders and re-plans right away: LocalNotifications
  * only listens for birthday and event changes, so a settings write would
  * otherwise wait for the next minute's pass. No permission prompt — an
  * override never turns the reminders on.
@@ -74,7 +74,7 @@ export const applyBirthdayReminderOverride = (
 ): Effect.Effect<void, SqlError, DeviceSettingsRepo | LocalNotifications> =>
   Effect.gen(function* () {
     yield* updateBirthdayReminderOverrides((overrides) =>
-      withBirthdayOverride(overrides, input, input.leadDays),
+      withBirthdayOverride(overrides, input, input.reminders),
     );
     yield* Effect.forkDetach((yield* LocalNotifications).run());
   });

@@ -1,13 +1,12 @@
 import { useBirthdayOverrideEditor } from '@calendar/app-state';
 import {
-  BIRTHDAY_LEAD_DAYS,
   type BirthdayOccurrence,
   type BirthdayRecord,
   describeBirthday,
-  leadDaysLabel,
   Temporal,
 } from '@calendar/core';
 import { useState } from 'react';
+import { BirthdayReminderList } from '../BirthdayReminderList.tsx';
 import { TEXT_ACTION_CLASS } from '../ui/buttonStyles.ts';
 
 // Through a PlainDate in a leap year: the polyfill cannot localise a
@@ -31,7 +30,7 @@ const countdown = (daysUntil: number, ageTurning: number | undefined): string =>
 };
 
 /**
- * This person's reminder lead days: the general ones until a box is
+ * This person's reminders: the general ones until a box or a time is
  * changed, then their own (saved at once, no Save button). "Use defaults"
  * hands them back to the general list.
  */
@@ -64,19 +63,10 @@ function BirthdayReminders({ record }: { record: BirthdayRecord }) {
           </button>
         ) : null}
       </div>
-      <div className="flex flex-col gap-1">
-        {BIRTHDAY_LEAD_DAYS.map((lead) => (
-          <label className="flex items-center gap-2 text-sm" key={lead}>
-            <input
-              aria-label={`Remind ${leadDaysLabel(lead).toLowerCase()}`}
-              checked={editor.leadDays.includes(lead)}
-              onChange={() => run(editor.toggle(lead))}
-              type="checkbox"
-            />
-            {leadDaysLabel(lead)}
-          </label>
-        ))}
-      </div>
+      <BirthdayReminderList
+        onChange={(reminders) => run(editor.save(reminders))}
+        reminders={editor.reminders}
+      />
       {editor.enabled ? null : (
         <p className="mt-2 text-xs text-ink-secondary" data-testid="birthday-reminders-off">
           Birthday reminders are off — turn them on in Settings › Notifications.
@@ -93,7 +83,7 @@ function BirthdayReminders({ record }: { record: BirthdayRecord }) {
 
 /**
  * The editor for a birthday: who, when, and where it came from, plus this
- * person's reminder lead days. The birthday itself is read-only —
+ * person's reminders. The birthday itself is read-only —
  * birthdays live in Contacts and Google Contacts; this view only names
  * its sources so the user knows where.
  */

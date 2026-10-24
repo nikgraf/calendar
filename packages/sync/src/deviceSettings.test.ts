@@ -1,4 +1,5 @@
 import {
+  type BirthdayLeadDays,
   DEFAULT_BIRTHDAY_REMINDER_SETTINGS,
   DEFAULT_ONBOARDING_STATE,
   DEFAULT_TIME_ZONE_SETTINGS,
@@ -31,6 +32,8 @@ import {
   writeViewPreferences,
 } from './deviceSettings.ts';
 
+const at = (leadDays: BirthdayLeadDays, time = '09:00') => ({ leadDays, time });
+
 const dbLayer = () =>
   reposLayer.pipe(
     Layer.provideMerge(Layer.effectDiscard(runMigrations)),
@@ -42,19 +45,64 @@ describe('birthday reminder settings', () => {
   it.effect('defaults when nothing is stored, round-trips canonical values', () =>
     Effect.gen(function* () {
       expect(yield* readBirthdayReminderSettings).toEqual(DEFAULT_BIRTHDAY_REMINDER_SETTINGS);
-      yield* writeBirthdayReminderSettings({ enabled: true, leadDays: [7, 0, 7], time: '18:30' });
+      yield* writeBirthdayReminderSettings({
+        enabled: true,
+        reminders: [at(7, '18:30'), at(0, '08:00'), at(7, '19:00')],
+      });
       expect(yield* readBirthdayReminderSettings).toEqual({
         enabled: true,
-        leadDays: [0, 7],
-        time: '18:30',
+        reminders: [at(0, '08:00'), at(7, '19:00')],
       });
     }).pipe(Effect.provide(dbLayer())),
   );
 
   it.effect('a stored value that no longer decodes reads as the defaults', () =>
     Effect.gen(function* () {
-      yield* (yield* DeviceSettingsRepo).set(BIRTHDAY_REMINDERS_KEY, { leadDays: [5] });
+      yield* (yield* DeviceSettingsRepo).set(BIRTHDAY_REMINDERS_KEY, { reminders: [at(0)] });
       expect(yield* readBirthdayReminderSettings).toEqual(DEFAULT_BIRTHDAY_REMINDER_SETTINGS);
+    }).pipe(Effect.provide(dbLayer())),
+  );
+
+  it.effect('reads a value saved before each reminder had its own time at its one time', () =>
+    Effect.gen(function* () {
+      const repo = yield* DeviceSettingsRepo;
+      yield* repo.set(BIRTHDAY_REMINDERS_KEY, { enabled: true, leadDays: [7, 1], time: '18:30' });
+      yield* repo.set(BIRTHDAY_REMINDER_OVERRIDES_KEY, [
+        { day: 4, displayName: 'Alice', leadDays: [14], month: 3 },
+      ]);
+      expect(yield* readBirthdayReminderSettings).toEqual({
+        enabled: true,
+        reminders: [at(1, '18:30'), at(7, '18:30')],
+      });
+      expect(yield* readBirthdayReminderOverrides).toEqual([
+        { day: 4, displayName: 'Alice', month: 3, reminders: [at(14, '18:30')] },
+      ]);
+    }).pipe(Effect.provide(dbLayer())),
+  );
+
+  it.effect('the first save over the old shape keeps the people at its time', () =>
+    Effect.gen(function* () {
+      const repo = yield* DeviceSettingsRepo;
+      yield* repo.set(BIRTHDAY_REMINDERS_KEY, { enabled: true, leadDays: [0], time: '18:30' });
+      yield* repo.set(BIRTHDAY_REMINDER_OVERRIDES_KEY, [
+        { day: 4, displayName: 'Alice', leadDays: [1], month: 3 },
+      ]);
+      yield* writeBirthdayReminderSettings({ enabled: true, reminders: [at(0, '07:00')] });
+      expect(yield* repo.get(BIRTHDAY_REMINDER_OVERRIDES_KEY)).toEqual([
+        { day: 4, displayName: 'Alice', month: 3, reminders: [at(1, '18:30')] },
+      ]);
+      expect(yield* readBirthdayReminderOverrides).toEqual([
+        { day: 4, displayName: 'Alice', month: 3, reminders: [at(1, '18:30')] },
+      ]);
+    }).pipe(Effect.provide(dbLayer())),
+  );
+
+  it.effect('a save creates no per-person list where there was none', () =>
+    Effect.gen(function* () {
+      const repo = yield* DeviceSettingsRepo;
+      yield* repo.set(BIRTHDAY_REMINDERS_KEY, { enabled: true, leadDays: [0], time: '18:30' });
+      yield* writeBirthdayReminderSettings({ enabled: false, reminders: [at(0)] });
+      expect(yield* repo.get(BIRTHDAY_REMINDER_OVERRIDES_KEY)).toBe(null);
     }).pipe(Effect.provide(dbLayer())),
   );
 });
@@ -64,13 +112,13 @@ describe('birthday reminder overrides', () => {
     Effect.gen(function* () {
       expect(yield* readBirthdayReminderOverrides).toEqual([]);
       yield* writeBirthdayReminderOverrides([
-        { day: 10, displayName: 'Bob', leadDays: [7, 0, 7], month: 3 },
-        { day: 4, displayName: 'Alice', leadDays: [1], month: 3 },
-        { day: 4, displayName: 'alice', leadDays: [14], month: 3 },
+        { day: 10, displayName: 'Bob', month: 3, reminders: [at(7), at(0), at(7, '20:00')] },
+        { day: 4, displayName: 'Alice', month: 3, reminders: [at(1)] },
+        { day: 4, displayName: 'alice', month: 3, reminders: [at(14)] },
       ]);
       expect(yield* (yield* DeviceSettingsRepo).get(BIRTHDAY_REMINDER_OVERRIDES_KEY)).toEqual([
-        { day: 4, displayName: 'alice', leadDays: [14], month: 3 },
-        { day: 10, displayName: 'Bob', leadDays: [0, 7], month: 3 },
+        { day: 4, displayName: 'alice', month: 3, reminders: [at(14)] },
+        { day: 10, displayName: 'Bob', month: 3, reminders: [at(0), at(7, '20:00')] },
       ]);
     }).pipe(Effect.provide(dbLayer())),
   );
@@ -78,11 +126,11 @@ describe('birthday reminder overrides', () => {
   it.effect('an entry that no longer decodes is skipped, the others survive', () =>
     Effect.gen(function* () {
       yield* (yield* DeviceSettingsRepo).set(BIRTHDAY_REMINDER_OVERRIDES_KEY, [
-        { day: 4, displayName: 'Alice', leadDays: [5], month: 3 },
-        { day: 10, displayName: 'Bob', leadDays: [14], month: 3 },
+        { day: 4, displayName: 'Alice', month: 3, reminders: [{ leadDays: 5, time: '09:00' }] },
+        { day: 10, displayName: 'Bob', month: 3, reminders: [at(14)] },
       ]);
       expect(yield* readBirthdayReminderOverrides).toEqual([
-        { day: 10, displayName: 'Bob', leadDays: [14], month: 3 },
+        { day: 10, displayName: 'Bob', month: 3, reminders: [at(14)] },
       ]);
       yield* (yield* DeviceSettingsRepo).set(BIRTHDAY_REMINDER_OVERRIDES_KEY, { not: 'a list' });
       expect(yield* readBirthdayReminderOverrides).toEqual([]);

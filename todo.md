@@ -220,7 +220,7 @@ decision and platform notes live in `docs/decisions.md`.
   - Weather (also show on the day?)
   - Food tracking (nutrition data + macros)
   - Garmin data e.g. body battery
-  - Birthdays (shown since 2026-09-12; per-person reminder lead days since 2026-10-04)
+  - Birthdays (shown since 2026-09-12; per-person reminders since 2026-10-04, a time per reminder since 2026-10-24)
   - Different views:
     - Business view(s) with certain selected calendar
       - What can other people see e.g. impersonation of a colleage

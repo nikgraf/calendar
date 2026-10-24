@@ -4,6 +4,7 @@ import {
   type BirthdayReminderOverrides,
   BirthdayReminderSettings,
   canonicalBirthdayOverrides,
+  canonicalBirthdayReminders,
   canonicalOnboardingState,
   DEFAULT_BIRTHDAY_REMINDER_SETTINGS,
   DEFAULT_EVENT_NOTIFICATION_SETTINGS,
@@ -16,6 +17,7 @@ import {
   resolveTimeZones,
   Temporal,
   TimeZoneSettings,
+  upgradeBirthdayReminderData,
   ViewPreferences,
 } from '@calendar/core';
 import { DeviceSettingsRepo } from '@calendar/db';
@@ -27,40 +29,71 @@ export const BIRTHDAY_REMINDERS_KEY = 'birthdayReminders';
 
 const decodeSettings = Schema.decodeUnknownEffect(BirthdayReminderSettings);
 
+/** The device_settings key for per-person birthday reminders. */
+export const BIRTHDAY_REMINDER_OVERRIDES_KEY = 'birthdayReminderOverrides';
+
+/**
+ * Both birthday keys as stored, in today's shape: a device that saved
+ * them before each reminder had its own time reads every lead at the one
+ * time it had then (`upgradeBirthdayReminderData`). `staleOverrides`
+ * says per-person entries are still in that shape, timed from the
+ * general settings as they are now.
+ */
+const readStoredBirthdays = Effect.gen(function* () {
+  const repo = yield* DeviceSettingsRepo;
+  const settings = yield* repo.get(BIRTHDAY_REMINDERS_KEY);
+  const overrides = yield* repo.get(BIRTHDAY_REMINDER_OVERRIDES_KEY);
+  const upgraded = upgradeBirthdayReminderData({ overrides, settings });
+  const staleOverrides =
+    Array.isArray(overrides) &&
+    Array.isArray(upgraded.overrides) &&
+    upgraded.overrides.some((entry, index) => entry !== overrides[index]);
+  return { ...upgraded, staleOverrides };
+});
+
 /** The stored preferences, or the defaults when nothing (or nothing decodable) is stored. */
 export const readBirthdayReminderSettings: Effect.Effect<
   BirthdayReminderSettings,
   SqlError,
   DeviceSettingsRepo
 > = Effect.gen(function* () {
-  const raw = yield* (yield* DeviceSettingsRepo).get(BIRTHDAY_REMINDERS_KEY);
-  if (raw === null) {
+  const { settings } = yield* readStoredBirthdays;
+  if (settings === null) {
     return DEFAULT_BIRTHDAY_REMINDER_SETTINGS;
   }
-  return yield* decodeSettings(raw).pipe(
+  return yield* decodeSettings(settings).pipe(
+    Effect.map((decoded) => ({
+      enabled: decoded.enabled,
+      reminders: canonicalBirthdayReminders(decoded.reminders),
+    })),
     Effect.orElseSucceed(() => DEFAULT_BIRTHDAY_REMINDER_SETTINGS),
   );
 });
 
+/**
+ * Saves the general preferences. The first save over the old shape takes
+ * its shared time with it, so per-person entries still in that shape are
+ * rewritten first, at that time: a later change to the general reminders
+ * must not move them.
+ */
 export const writeBirthdayReminderSettings = (
   settings: BirthdayReminderSettings,
 ): Effect.Effect<void, SqlError, DeviceSettingsRepo> =>
-  Effect.flatMap(DeviceSettingsRepo, (repo) =>
-    repo.set(BIRTHDAY_REMINDERS_KEY, {
+  Effect.gen(function* () {
+    if ((yield* readStoredBirthdays).staleOverrides) {
+      yield* updateBirthdayReminderOverrides((current) => current);
+    }
+    yield* (yield* DeviceSettingsRepo).set(BIRTHDAY_REMINDERS_KEY, {
       enabled: settings.enabled,
-      // Deduped and ordered so the stored value is canonical.
-      leadDays: [...new Set(settings.leadDays)].sort((a, b) => a - b),
-      time: settings.time,
-    }),
-  );
-
-/** The device_settings key for per-person birthday lead days. */
-export const BIRTHDAY_REMINDER_OVERRIDES_KEY = 'birthdayReminderOverrides';
+      // One per lead, ordered, so the stored value is canonical.
+      reminders: canonicalBirthdayReminders(settings.reminders),
+    });
+  });
 
 const decodeOverride = Schema.decodeUnknownEffect(BirthdayReminderOverride);
 
 /**
- * The stored per-person lead days. An entry that no longer decodes (a
+ * The stored per-person reminders. An entry that no longer decodes (a
  * hand edit in the settings file) is skipped rather than taking the
  * others with it.
  */
@@ -69,7 +102,7 @@ export const readBirthdayReminderOverrides: Effect.Effect<
   SqlError,
   DeviceSettingsRepo
 > = Effect.gen(function* () {
-  const raw = yield* (yield* DeviceSettingsRepo).get(BIRTHDAY_REMINDER_OVERRIDES_KEY);
+  const raw = (yield* readStoredBirthdays).overrides;
   if (!Array.isArray(raw)) {
     return [];
   }

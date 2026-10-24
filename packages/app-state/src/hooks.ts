@@ -3,9 +3,9 @@ import type {
   AccountSyncStatus,
   MirrorView,
   BackendPayload,
-  BirthdayLeadDays,
   BirthdayOccurrence,
   BirthdayRecord,
+  BirthdayReminder,
   BirthdayReminderOverrides,
   BirthdayReminderSettings,
   BackendSuccess,
@@ -24,6 +24,7 @@ import type {
 } from '@calendar/core';
 import {
   birthdayMergeKey,
+  canonicalBirthdayReminders,
   findBirthdayOverride,
   isCalendarWritable,
   msUntilNextMidnight,
@@ -53,6 +54,7 @@ import {
   rangeKey,
   runMutation,
 } from './atoms.ts';
+import { settingsEditorView } from './settingsEditor.ts';
 
 const AtomsContext = createContext<BackendAtoms | null>(null);
 
@@ -336,7 +338,7 @@ export const useBirthdayReminderSettings = (): BirthdayReminderSettings | null =
   return Option.getOrNull(AsyncResult.value(result));
 };
 
-/** People with their own birthday lead days; null until the first read resolves. */
+/** People with their own birthday reminders; null until the first read resolves. */
 export const useBirthdayReminderOverrides = (): BirthdayReminderOverrides | null => {
   const result = useAtomValue(useBackendAtoms().birthdayReminderOverrides);
   return Option.getOrNull(AsyncResult.value(result));
@@ -345,16 +347,16 @@ export const useBirthdayReminderOverrides = (): BirthdayReminderOverrides | null
 export interface BirthdayOverrideEditor {
   /** Whether birthday reminders are on at all; an override fires only then. */
   readonly enabled: boolean;
-  /** The lead days that apply to this person: their own, else the general ones. */
-  readonly leadDays: ReadonlyArray<BirthdayLeadDays>;
   /** false until both settings have been read. */
   readonly loaded: boolean;
-  /** Whether this person has their own lead days. */
+  /** Whether this person has their own reminders. */
   readonly overridden: boolean;
-  /** Back to the general lead days. */
+  /** The reminders that apply to this person: their own, else the general ones. */
+  readonly reminders: ReadonlyArray<BirthdayReminder>;
+  /** Back to the general reminders. */
   readonly reset: () => Promise<void>;
-  /** Turns one lead day on or off for this person, starting from what applies now. */
-  readonly toggle: (lead: BirthdayLeadDays) => Promise<void>;
+  /** Makes `reminders` this person's own (`[]`: none for them). */
+  readonly save: (reminders: ReadonlyArray<BirthdayReminder>) => Promise<void>;
 }
 
 /**
@@ -406,11 +408,11 @@ export const useBirthdayOverrideEditor = (
   const { setBirthdayReminderOverride } = useBackendMutations();
   const key = birthdayMergeKey(record);
   // The latest save, shown until stored data has caught up with it.
-  // `leadDays: null` sent "use the general ones".
+  // `reminders: null` sent "use the general ones".
   const [sent, setSent] = useState<
     | {
         readonly key: string;
-        readonly leadDays: ReadonlyArray<BirthdayLeadDays> | null;
+        readonly reminders: ReadonlyArray<BirthdayReminder> | null;
         /** The backend acknowledged it; its refetch was already under way. */
         readonly saved: boolean;
         readonly seq: number;
@@ -428,19 +430,19 @@ export const useBirthdayOverrideEditor = (
     // Render-phase state adjustment (the React "derive from props" pattern).
     setSent(undefined);
   }
-  const stored = overrides ? findBirthdayOverride(overrides, record)?.leadDays : undefined;
-  const own = pending ? pending.leadDays : stored;
-  const general = settings?.leadDays ?? [];
-  const leadDays = own ?? general;
-  const save = (next: ReadonlyArray<BirthdayLeadDays> | null): Promise<void> => {
+  const stored = overrides ? findBirthdayOverride(overrides, record)?.reminders : undefined;
+  const own = pending ? pending.reminders : stored;
+  const general = settings?.reminders ?? [];
+  const save = (next: ReadonlyArray<BirthdayReminder> | null): Promise<void> => {
     lastSeq.current += 1;
     const seq = lastSeq.current;
-    setSent({ key, leadDays: next, saved: false, seq });
+    const reminders = next === null ? null : canonicalBirthdayReminders(next);
+    setSent({ key, reminders, saved: false, seq });
     return setBirthdayReminderOverride({
       day: record.day,
       displayName: record.displayName,
-      leadDays: next,
       month: record.month,
+      reminders,
     }).then(
       () => setSent((current) => (current?.seq === seq ? { ...current, saved: true } : current)),
       (error: unknown) => {
@@ -451,16 +453,11 @@ export const useBirthdayOverrideEditor = (
   };
   return {
     enabled: settings?.enabled ?? false,
-    leadDays,
     loaded,
     overridden: own !== undefined && own !== null,
+    reminders: own ?? general,
     reset: () => save(null),
-    toggle: (lead) =>
-      save(
-        leadDays.includes(lead)
-          ? leadDays.filter((value) => value !== lead)
-          : [...leadDays, lead].sort((a, b) => a - b),
-      ),
+    save,
   };
 };
 
@@ -472,18 +469,25 @@ export const useEventNotificationSettings = (): EventNotificationSettings | null
 
 /**
  * A device-local setting as its editor sees it: the stored value until
- * the first change, then the last value sent. Merging a change into the
- * read value instead loses the previous change whenever the second click
- * lands before the re-read (two quick toggles). The settings UI is the
- * only writer of these keys, so its own last value is the truth; a failed
- * save falls back to the stored one.
+ * the first change, then the last value sent until the stored value has
+ * caught up with it. Merging a change into the read value instead loses
+ * the previous change whenever the second click lands before the re-read
+ * (two quick toggles). Once the save has landed the stored value is the
+ * truth again: other editors write the same keys (the Getting started
+ * lessons hold their own, an import, the settings file), and a last
+ * value kept for good hid their changes and wrote over them on the next
+ * save. A failed save falls back to the stored one.
  */
 export const useSettingsEditor = <A extends object, R>(
   stored: A | null,
   persist: (next: A) => Promise<R>,
 ): readonly [current: A | null, save: (change: Partial<A>) => Promise<R>] => {
   const [sent, setSent] = useState<A | null>(null);
-  const current = sent ?? stored;
+  const { current, landed } = settingsEditorView(sent, stored);
+  if (landed) {
+    // Render-phase state adjustment (the React "derive from props" pattern).
+    setSent(null);
+  }
   const save = (change: Partial<A>): Promise<R> => {
     if (!current) {
       return Promise.reject(new Error('The setting has not loaded yet.'));
