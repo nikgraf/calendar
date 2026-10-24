@@ -469,8 +469,8 @@ export const useEventNotificationSettings = (): EventNotificationSettings | null
 
 /**
  * A device-local setting as its editor sees it: the stored value until
- * the first change, then the last value sent until the stored value has
- * caught up with it. Merging a change into the read value instead loses
+ * the first change, then the last value sent until its saves are back and
+ * the stored value has caught up with it. Merging a change into the read value instead loses
  * the previous change whenever the second click lands before the re-read
  * (two quick toggles). Once the save has landed the stored value is the
  * truth again: other editors write the same keys (the Getting started
@@ -483,7 +483,8 @@ export const useSettingsEditor = <A extends object, R>(
   persist: (next: A) => Promise<R>,
 ): readonly [current: A | null, save: (change: Partial<A>) => Promise<R>] => {
   const [sent, setSent] = useState<A | null>(null);
-  const { current, landed } = settingsEditorView(sent, stored);
+  const [inFlight, setInFlight] = useState(0);
+  const { current, landed } = settingsEditorView(sent, stored, inFlight);
   if (landed) {
     // Render-phase state adjustment (the React "derive from props" pattern).
     setSent(null);
@@ -494,10 +495,13 @@ export const useSettingsEditor = <A extends object, R>(
     }
     const next = { ...current, ...change };
     setSent(next);
-    return persist(next).catch((error: unknown) => {
-      setSent(null);
-      throw error;
-    });
+    setInFlight((count) => count + 1);
+    return persist(next)
+      .catch((error: unknown) => {
+        setSent(null);
+        throw error;
+      })
+      .finally(() => setInFlight((count) => count - 1));
   };
   return [current, save];
 };

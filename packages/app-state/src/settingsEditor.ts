@@ -27,14 +27,18 @@ const sameValue = (a: unknown, b: unknown): boolean => {
 
 /**
  * What a settings editor shows (`useSettingsEditor`): the stored value,
- * or the last value sent while the stored one has not caught up with it.
- * `landed`: it has, and the editor drops what it sent — from then on a
- * change another editor makes to the same key shows.
+ * or the last value sent while saves are in flight or the stored one has
+ * not caught up with it. `landed`: every save is back and the stored value
+ * matches, so the editor drops what it sent — from then on a change
+ * another editor makes to the same key shows. Not before every save is
+ * back: a change undone at once (tick, untick) matches the stored value
+ * before the first save's re-read brings the ticked one in.
  */
 export const settingsEditorView = <A>(
   sent: A | null,
   stored: A | null,
+  inFlight: number,
 ): { readonly current: A | null; readonly landed: boolean } => {
-  const landed = sent !== null && stored !== null && sameValue(sent, stored);
+  const landed = sent !== null && stored !== null && inFlight === 0 && sameValue(sent, stored);
   return { current: landed ? stored : (sent ?? stored), landed };
 };

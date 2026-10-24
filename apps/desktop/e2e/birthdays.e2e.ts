@@ -152,7 +152,14 @@ describe('contact birthdays', () => {
     // permission prompt; notifications are off in the harness anyway).
     const clickInput = (label: string) =>
       cdp.eval(`document.querySelector('input[aria-label=${JSON.stringify(label)}]')?.click()`);
-    const stored = () => readDeviceSetting(app.userDataDir, 'birthdayReminders');
+    // Just today's fields: the row also keeps the old ones for older apps.
+    const stored = async () => {
+      const row = (await readDeviceSetting(app.userDataDir, 'birthdayReminders')) as {
+        enabled: boolean;
+        reminders: unknown;
+      } | null;
+      return row && { enabled: row.enabled, reminders: row.reminders };
+    };
     await clickInput('Remind me about birthdays');
     await expect.poll(stored, { timeout: 10_000 }).toEqual({ enabled: true, reminders: [at(0)] });
     await cdp.waitFor(
@@ -189,7 +196,26 @@ describe('contact birthdays', () => {
 
   it('gives one person their own reminders from the detail, and resets them', async () => {
     const { cdp } = app;
-    const stored = () => readDeviceSetting(app.userDataDir, 'birthdayReminderOverrides');
+    // Just today's fields: the rows also keep the old ones for older apps.
+    const stored = async () => {
+      const rows = (await readDeviceSetting(
+        app.userDataDir,
+        'birthdayReminderOverrides',
+      )) as Array<{
+        day: number;
+        displayName: string;
+        month: number;
+        reminders: unknown;
+      }> | null;
+      return (
+        rows?.map(({ day, displayName, month, reminders }) => ({
+          day,
+          displayName,
+          month,
+          reminders,
+        })) ?? null
+      );
+    };
     const checked = (label: string) =>
       cdp.eval<boolean>(
         `document.querySelector('[data-testid="birthday-reminders"] input[aria-label=${JSON.stringify(label)}]')?.checked ?? false`,

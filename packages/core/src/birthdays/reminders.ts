@@ -31,11 +31,11 @@ export const BirthdayReminderSettings = Schema.Struct({
 export type BirthdayReminderSettings = typeof BirthdayReminderSettings.Type;
 
 /** Where a reminder lands when nothing else suggests a time. */
-const DEFAULT_REMINDER_TIME = '09:00';
+export const DEFAULT_BIRTHDAY_REMINDER_TIME = '09:00';
 
 export const DEFAULT_BIRTHDAY_REMINDER_SETTINGS: BirthdayReminderSettings = {
   enabled: false,
-  reminders: [{ leadDays: 0, time: DEFAULT_REMINDER_TIME }],
+  reminders: [{ leadDays: 0, time: DEFAULT_BIRTHDAY_REMINDER_TIME }],
 };
 
 /**
@@ -85,7 +85,7 @@ export const newBirthdayReminderTime = (
       nearest = reminder;
     }
   }
-  return nearest?.time ?? DEFAULT_REMINDER_TIME;
+  return nearest?.time ?? DEFAULT_BIRTHDAY_REMINDER_TIME;
 };
 
 /** The list with a reminder at `leadDays` added (at `newBirthdayReminderTime`); already there, unchanged. */
@@ -185,7 +185,7 @@ export const upgradeBirthdayReminderData = (stored: {
       ? (settings['reminders'] as ReadonlyArray<unknown>).find(isRecord)?.['time']
       : undefined;
   const sharedTime = isLegacy(settings) ? settings['time'] : firstTime;
-  const time = typeof sharedTime === 'string' ? sharedTime : DEFAULT_REMINDER_TIME;
+  const time = typeof sharedTime === 'string' ? sharedTime : DEFAULT_BIRTHDAY_REMINDER_TIME;
   const remindersOf = (leadDays: ReadonlyArray<unknown>) =>
     leadDays.map((lead) => ({ leadDays: lead, time }));
   return {

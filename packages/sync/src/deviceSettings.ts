@@ -1,5 +1,6 @@
 import {
   applyOnboardingChange,
+  type BirthdayReminder,
   BirthdayReminderOverride,
   type BirthdayReminderOverrides,
   BirthdayReminderSettings,
@@ -7,6 +8,7 @@ import {
   canonicalBirthdayReminders,
   canonicalOnboardingState,
   DEFAULT_BIRTHDAY_REMINDER_SETTINGS,
+  DEFAULT_BIRTHDAY_REMINDER_TIME,
   DEFAULT_EVENT_NOTIFICATION_SETTINGS,
   DEFAULT_ONBOARDING_STATE,
   DEFAULT_TIME_ZONE_SETTINGS,
@@ -71,24 +73,43 @@ export const readBirthdayReminderSettings: Effect.Effect<
 });
 
 /**
- * Saves the general preferences. The first save over the old shape takes
- * its shared time with it, so per-person entries still in that shape are
+ * The lead days alone, beside `reminders` in what is stored: an older
+ * app reading this database (a PR Preview loaded on the iPhone and rolled
+ * back, a downgrade) requires `leadDays` (and `time`) and would read
+ * reminders off and drop every person on its next save. It ignores
+ * `reminders`, and this app ignores these; they can go once no installed
+ * app predates `reminders`.
+ */
+const legacyLeadDays = (reminders: ReadonlyArray<BirthdayReminder>) =>
+  reminders.map((reminder) => reminder.leadDays);
+
+const settingsLock = Semaphore.makeUnsafe(1);
+
+/**
+ * Saves the general preferences, one save at a time so they land in the
+ * order they were made. The first save over the old shape takes its
+ * shared time with it, so per-person entries still in that shape are
  * rewritten first, at that time: a later change to the general reminders
  * must not move them.
  */
 export const writeBirthdayReminderSettings = (
   settings: BirthdayReminderSettings,
 ): Effect.Effect<void, SqlError, DeviceSettingsRepo> =>
-  Effect.gen(function* () {
-    if ((yield* readStoredBirthdays).staleOverrides) {
-      yield* updateBirthdayReminderOverrides((current) => current);
-    }
-    yield* (yield* DeviceSettingsRepo).set(BIRTHDAY_REMINDERS_KEY, {
-      enabled: settings.enabled,
+  settingsLock.withPermits(1)(
+    Effect.gen(function* () {
+      if ((yield* readStoredBirthdays).staleOverrides) {
+        yield* updateBirthdayReminderOverrides((current) => current);
+      }
       // One per lead, ordered, so the stored value is canonical.
-      reminders: canonicalBirthdayReminders(settings.reminders),
-    });
-  });
+      const reminders = canonicalBirthdayReminders(settings.reminders);
+      yield* (yield* DeviceSettingsRepo).set(BIRTHDAY_REMINDERS_KEY, {
+        enabled: settings.enabled,
+        leadDays: legacyLeadDays(reminders),
+        reminders,
+        time: reminders[0]?.time ?? DEFAULT_BIRTHDAY_REMINDER_TIME,
+      });
+    }),
+  );
 
 const decodeOverride = Schema.decodeUnknownEffect(BirthdayReminderOverride);
 
@@ -121,7 +142,16 @@ export const writeBirthdayReminderOverrides = (
 ): Effect.Effect<void, SqlError, DeviceSettingsRepo> =>
   Effect.flatMap(DeviceSettingsRepo, (repo) =>
     // Canonical, so an unchanged set writes identical text to the settings file.
-    repo.set(BIRTHDAY_REMINDER_OVERRIDES_KEY, canonicalBirthdayOverrides(overrides)),
+    repo.set(
+      BIRTHDAY_REMINDER_OVERRIDES_KEY,
+      canonicalBirthdayOverrides(overrides).map((override) => ({
+        day: override.day,
+        displayName: override.displayName,
+        leadDays: legacyLeadDays(override.reminders),
+        month: override.month,
+        reminders: override.reminders,
+      })),
+    ),
   );
 
 const overridesLock = Semaphore.makeUnsafe(1);

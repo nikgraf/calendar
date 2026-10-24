@@ -6,6 +6,63 @@ import {
   removeBirthdayReminder,
   setBirthdayReminderTime,
 } from '@calendar/core';
+import { useEffect, useRef, useState } from 'react';
+
+/** How long typing in a time field pauses before the time is saved. */
+const TIME_COMMIT_MS = 600;
+
+/**
+ * A reminder's time field that saves once typing pauses, or as it loses
+ * focus. Every keystroke is a whole time to the field ("1" of "19" reads
+ * 01:00), and saving each one re-planned at it: for a birthday today, a
+ * passed time fires at once, and the time typed after it has the same
+ * notification key, so it never fires. The save runs through the latest
+ * `onCommit`, never one from the keystroke's render, which would undo a
+ * box ticked meanwhile.
+ */
+function ReminderTimeInput({
+  label,
+  onCommit,
+  value,
+}: {
+  label: string;
+  onCommit: (time: string) => void;
+  value: string;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const commitRef = useRef(onCommit);
+  useEffect(() => {
+    commitRef.current = onCommit;
+  }, [onCommit]);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  const flush = (time: string | null) => {
+    clearTimeout(timer.current);
+    timer.current = undefined;
+    setDraft(null);
+    if (time !== null) {
+      commitRef.current(time);
+    }
+  };
+  return (
+    <input
+      aria-label={label}
+      className="rounded-lg border border-hairline bg-surface px-2 py-0.5 text-sm text-ink"
+      onBlur={() => flush(draft)}
+      onChange={(change) => {
+        const time = change.target.value;
+        if (!time) {
+          return;
+        }
+        setDraft(time);
+        clearTimeout(timer.current);
+        timer.current = setTimeout(() => flush(time), TIME_COMMIT_MS);
+      }}
+      type="time"
+      value={draft ?? value}
+    />
+  );
+}
 
 /**
  * Birthday reminders as the lead times to pick from, each a checkbox; a
@@ -48,14 +105,9 @@ export function BirthdayReminderList({
             {reminder ? (
               <label className="flex items-center gap-2 text-ink-secondary">
                 at
-                <input
-                  aria-label={`Time ${label.toLowerCase()}`}
-                  className="rounded-lg border border-hairline bg-surface px-2 py-0.5 text-sm text-ink"
-                  onChange={(change) =>
-                    change.target.value &&
-                    onChange(setBirthdayReminderTime(reminders, lead, change.target.value))
-                  }
-                  type="time"
+                <ReminderTimeInput
+                  label={`Time ${label.toLowerCase()}`}
+                  onCommit={(time) => onChange(setBirthdayReminderTime(reminders, lead, time))}
                   value={reminder.time}
                 />
               </label>

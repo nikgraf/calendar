@@ -9,7 +9,7 @@ import {
 import { DeviceSettingsRepo, reposLayer, runMigrations } from '@calendar/db';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
-import { Effect, Layer } from 'effect';
+import { Deferred, Effect, Layer, Schema } from 'effect';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
 import { describe } from 'vite-plus/test';
 import {
@@ -89,10 +89,114 @@ describe('birthday reminder settings', () => {
       ]);
       yield* writeBirthdayReminderSettings({ enabled: true, reminders: [at(0, '07:00')] });
       expect(yield* repo.get(BIRTHDAY_REMINDER_OVERRIDES_KEY)).toEqual([
-        { day: 4, displayName: 'Alice', month: 3, reminders: [at(1, '18:30')] },
+        { day: 4, displayName: 'Alice', leadDays: [1], month: 3, reminders: [at(1, '18:30')] },
       ]);
       expect(yield* readBirthdayReminderOverrides).toEqual([
         { day: 4, displayName: 'Alice', month: 3, reminders: [at(1, '18:30')] },
+      ]);
+    }).pipe(Effect.provide(dbLayer())),
+  );
+
+  it.effect('two saves over the old shape land in the order they were made', () =>
+    Effect.gen(function* () {
+      const repo = yield* DeviceSettingsRepo;
+      yield* repo.set(BIRTHDAY_REMINDERS_KEY, { enabled: true, leadDays: [0], time: '18:30' });
+      yield* repo.set(BIRTHDAY_REMINDER_OVERRIDES_KEY, [
+        { day: 4, displayName: 'Alice', leadDays: [1], month: 3 },
+      ]);
+      // The first one rewrites Alice first; a second made just then sees
+      // nothing left to rewrite and must still not overtake it.
+      const real = yield* DeviceSettingsRepo;
+      const rewritten = yield* Deferred.make<void>();
+      const pausing = DeviceSettingsRepo.of({
+        ...real,
+        set: (key, value) =>
+          Effect.andThen(
+            real.set(key, value),
+            key === BIRTHDAY_REMINDER_OVERRIDES_KEY
+              ? Effect.andThen(
+                  Deferred.succeed(rewritten, undefined),
+                  Effect.repeat(Effect.yieldNow, { times: 20 }),
+                )
+              : Effect.void,
+          ),
+      });
+      yield* Effect.all(
+        [
+          writeBirthdayReminderSettings({ enabled: true, reminders: [at(0, '07:00')] }),
+          Deferred.await(rewritten).pipe(
+            Effect.andThen(
+              writeBirthdayReminderSettings({ enabled: true, reminders: [at(0, '08:00')] }),
+            ),
+          ),
+        ],
+        { concurrency: 'unbounded' },
+      ).pipe(Effect.provideService(DeviceSettingsRepo, pausing));
+      expect(yield* readBirthdayReminderSettings).toEqual({
+        enabled: true,
+        reminders: [at(0, '08:00')],
+      });
+    }).pipe(Effect.provide(dbLayer())),
+  );
+
+  it.effect('also stores the old fields, so an older app on this database still reads them', () =>
+    Effect.gen(function* () {
+      const repo = yield* DeviceSettingsRepo;
+      yield* writeBirthdayReminderSettings({
+        enabled: true,
+        reminders: [at(3, '18:00'), at(1, '07:00')],
+      });
+      expect(yield* repo.get(BIRTHDAY_REMINDERS_KEY)).toEqual({
+        enabled: true,
+        leadDays: [1, 3],
+        reminders: [at(1, '07:00'), at(3, '18:00')],
+        time: '07:00',
+      });
+      yield* writeBirthdayReminderOverrides([
+        { day: 4, displayName: 'Alice', month: 3, reminders: [at(14, '19:00'), at(0)] },
+        { day: 10, displayName: 'Bob', month: 3, reminders: [] },
+      ]);
+      expect(yield* repo.get(BIRTHDAY_REMINDER_OVERRIDES_KEY)).toEqual([
+        {
+          day: 4,
+          displayName: 'Alice',
+          leadDays: [0, 14],
+          month: 3,
+          reminders: [at(0), at(14, '19:00')],
+        },
+        { day: 10, displayName: 'Bob', leadDays: [], month: 3, reminders: [] },
+      ]);
+      // The schema before each reminder had its own time reads both.
+      const OldSettings = Schema.Struct({
+        enabled: Schema.Boolean,
+        leadDays: Schema.Array(Schema.Number),
+        time: Schema.String,
+      });
+      const OldOverride = Schema.Struct({
+        day: Schema.Number,
+        displayName: Schema.String,
+        leadDays: Schema.Array(Schema.Number),
+        month: Schema.Number,
+      });
+      expect(
+        yield* Schema.decodeUnknownEffect(OldSettings)(yield* repo.get(BIRTHDAY_REMINDERS_KEY)),
+      ).toEqual({ enabled: true, leadDays: [1, 3], time: '07:00' });
+      expect(
+        yield* Schema.decodeUnknownEffect(Schema.Array(OldOverride))(
+          yield* repo.get(BIRTHDAY_REMINDER_OVERRIDES_KEY),
+        ),
+      ).toEqual([
+        { day: 4, displayName: 'Alice', leadDays: [0, 14], month: 3 },
+        { day: 10, displayName: 'Bob', leadDays: [], month: 3 },
+      ]);
+      // And today's reads ignore them.
+      expect(yield* readBirthdayReminderSettings).toEqual({
+        enabled: true,
+        reminders: [at(1, '07:00'), at(3, '18:00')],
+      });
+      expect(yield* readBirthdayReminderOverrides).toEqual([
+        { day: 4, displayName: 'Alice', month: 3, reminders: [at(0), at(14, '19:00')] },
+        { day: 10, displayName: 'Bob', month: 3, reminders: [] },
       ]);
     }).pipe(Effect.provide(dbLayer())),
   );
@@ -116,7 +220,7 @@ describe('birthday reminder overrides', () => {
         { day: 4, displayName: 'Alice', month: 3, reminders: [at(1)] },
         { day: 4, displayName: 'alice', month: 3, reminders: [at(14)] },
       ]);
-      expect(yield* (yield* DeviceSettingsRepo).get(BIRTHDAY_REMINDER_OVERRIDES_KEY)).toEqual([
+      expect(yield* readBirthdayReminderOverrides).toEqual([
         { day: 4, displayName: 'alice', month: 3, reminders: [at(14)] },
         { day: 10, displayName: 'Bob', month: 3, reminders: [at(0), at(7, '20:00')] },
       ]);
