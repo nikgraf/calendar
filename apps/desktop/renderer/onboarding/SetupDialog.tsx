@@ -718,7 +718,10 @@ function CopyStep({
               data-testid="setup-import-cancel"
               disabled={busy}
               onClick={() => {
-                setDeclined(pendingCode);
+                // A file's preview declines no code: the last one stays declined.
+                if (pendingCode !== null) {
+                  setDeclined(pendingCode);
+                }
                 setPending(null);
               }}
               variant="ghost"

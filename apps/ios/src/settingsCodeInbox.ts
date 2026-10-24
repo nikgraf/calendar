@@ -39,22 +39,28 @@ const subscribe = (listener: () => void): (() => void) => {
   };
 };
 
-const route = (router: Router) => {
+type Href = Parameters<Router['push']>[0];
+
+const route = (router: Router): Href | null => {
   if (pending === null || readers > 0) {
-    return;
+    return null;
   }
-  if (setup === 'open') {
-    router.push('/setup/copy');
-  } else if (setup === 'closed') {
-    router.push('/settings/read-code');
+  const href = setup === 'open' ? '/setup/copy' : setup === 'closed' ? '/settings/read-code' : null;
+  if (href) {
+    router.push(href);
   }
+  return href;
 };
 
-/** A code from outside: kept, and the right reader brought up. */
-export const deliverSettingsCode = (code: string, router: Router): void => {
+/**
+ * A code from outside: kept, and the right reader brought up. Answers the
+ * screen it pushed, if any (the host holds a capture's thread while
+ * Settings is on its way).
+ */
+export const deliverSettingsCode = (code: string, router: Router): Href | null => {
   pending = code;
   notify();
-  route(router);
+  return route(router);
 };
 
 /**

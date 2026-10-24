@@ -250,15 +250,22 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
   // commit later, and from behind an editor the push waits for its form
   // sheet. A sheet asked for meanwhile takes over, as from `afterFormSheet`.
   const [settingsAsked, setSettingsAsked] = useState(false);
+  // A settings code on its way to a reader (`onSettingsCode`).
+  const [codeAsked, setCodeAsked] = useState(false);
   if (settingsAsked && (settingsShown || sheet.kind !== 'none')) {
     setSettingsAsked(false);
+  }
+  // A sheet opened meanwhile takes over from a code's delivery, as from
+  // `afterFormSheet`: nothing holds the thread for it any more.
+  if (codeAsked && sheet.kind !== 'none') {
+    setCodeAsked(false);
   }
   const [captured, setCaptured] = useState<EditSheet | null>(null);
   if (
     captured !== null &&
     captureMayOpen(sheet, {
       formSheetGone,
-      settingsOpen: settingsShown || settingsAsked || setupShown,
+      settingsOpen: settingsShown || settingsAsked || setupShown || codeAsked,
     })
   ) {
     setCaptured(null);
@@ -312,9 +319,19 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
   // brings up the right reader (settingsCodeInbox.ts) once the sheet that
   // was open has gone: Settings › Read Code pushed over a half-height
   // editor would be what the editor's own dismissal pops (as for
-  // `openSettings`), and UIKit presents one sheet at a time.
+  // `openSettings`), and UIKit presents one sheet at a time. With nothing
+  // open it still waits a task: a share's URL sends the router to `/`
+  // (`+native-intent.tsx`) in a microtask after this listener, and that
+  // navigation would pop a reader pushed before it. Until the reader is
+  // up, a capture's thread waits (`codeAsked`, then `settingsAsked`).
   const onSettingsCode = useEffectEvent((code: string) => {
-    const deliver = () => deliverSettingsCode(code, router);
+    setCodeAsked(true);
+    const deliver = () => {
+      setCodeAsked(false);
+      if (deliverSettingsCode(code, router) === '/settings/read-code') {
+        setSettingsAsked(true);
+      }
+    };
     if (routeMounted.current) {
       afterFormSheet.current = deliver;
       setSheet(NONE);
@@ -322,11 +339,7 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
     }
     const pageSheet = sheet.kind === 'detail' || sheet.kind === 'birthday';
     setSheet(NONE);
-    if (pageSheet) {
-      setTimeout(deliver, PAGE_SHEET_DISMISS_MS);
-      return;
-    }
-    deliver();
+    setTimeout(deliver, pageSheet ? PAGE_SHEET_DISMISS_MS : 0);
   });
   // The subscriptions below are made once, but `startCapture` closes over
   // this render's model, recognizer and time zone (a share after the

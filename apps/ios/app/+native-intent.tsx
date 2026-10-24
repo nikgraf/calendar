@@ -18,14 +18,17 @@ const decoded = (path: string): string => {
  * the router itself just stays on the calendar instead of showing an
  * unmatched-route screen.
  *
- * A URL that carries a settings code (the Camera app's "Open in
- * Solunivo", or the e2e link that stands in for a share) is read where the
- * person is: in a running app it moves nothing (null) — sending it to `/`
- * would close the setup whose copy step is waiting for it — and only a
- * cold start gets the calendar. A share's own URL carries no text (the
+ * A settings code that is the URL (the Camera app's "Open in Solunivo":
+ * `SOLUNIVO:1:…` parses as a `solunivo:` URL) is read where the person
+ * is: in a running app it moves nothing (null) — sending it to `/` would
+ * close the setup whose copy step is waiting for it — and only a cold
+ * start gets the calendar. A share's own URL carries no text (the
  * extension stores it), so while the setup is up or a code reader is in
  * front a warm share moves nothing either: it may well be the Mac's code,
- * shared in for that reader.
+ * shared in for that reader. Elsewhere a share goes to the calendar, and
+ * EditorHost hands a code in it over only after that navigation. The e2e
+ * `capture-fixture` link stands in for a share and takes the same path,
+ * code or not.
  */
 export function redirectSystemPath({
   initial,
@@ -34,7 +37,7 @@ export function redirectSystemPath({
   initial: boolean;
   path: string;
 }): string | null {
-  if (extractSettingsCode(decoded(path))) {
+  if (/^solunivo:/i.test(path) && extractSettingsCode(decoded(path))) {
     return initial ? '/' : null;
   }
   if (!initial && awaitingCode() && /expo-sharing|capture-fixture/i.test(path)) {

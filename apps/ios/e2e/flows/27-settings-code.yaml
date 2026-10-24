@@ -138,6 +138,30 @@ tags:
       - extendedWaitUntil:
           visible: 'Set up your Mac, done'
           timeout: 10000
+      # Shared in over the calendar, the code opens Settings › Read Code:
+      # after the share's own trip to the calendar, which would otherwise
+      # pop the page pushed before it.
+      - openLink: 'solunivo-dev://capture-fixture?text=SOLUNIVO%3A1%3ABXEUCCUAEAIALUF37S2QI3K5OWHWQIJWZGIDTYEMCKEHPL7VDMEDCSRLU3YPWAB5QEZTYLT6VVK5UVDSFPOGKMKSQPB43ZP4HGE2ITEYQ5B2PKRMAV7J2HY'
+      - extendedWaitUntil:
+          visible: 'Import settings\?|Open'
+          timeout: 15000
+      - runFlow:
+          when:
+            visible: 'Open'
+          commands:
+            - tapOn: 'Open'
+      - extendedWaitUntil:
+          visible: 'Import settings?'
+          timeout: 10000
+      - assertVisible:
+          id: 'settings-page-read-code'
+      - tapOn: 'Cancel'
+      - extendedWaitUntil:
+          notVisible: 'Import settings?'
+          timeout: 5000
+      - assertVisible:
+          id: 'settings-page-read-code'
+      - runFlow: ../common/close-settings.yaml
 # Settings › Settings File › Show Code for Your Mac: the code at once,
 # what it carries, and its text to copy.
 - runFlow: ../common/open-settings.yaml
