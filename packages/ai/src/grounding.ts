@@ -1016,7 +1016,8 @@ const TRAILING = /[\s.,;:!?)\]"'”“»–—-]+$/u;
  * The words that say when, as one run that ends a title: a day, a weekday
  * ("on Friday", "next Tuesday", "am Montag"), a part of the day after
  * "this" or "in the", a repeat ("every Monday", "weekly", "jeden Tag"), a
- * month date ("Sep 1", "1st of May", "17.10."), all day. Clock times are
+ * month date ("Sep 1", "1st of May", "17.10."), all day ("every Monday
+ * morning", "jeden Morgen"). Clock times are
  * read by `scan`, as for the start.
  */
 const WHEN_AT_END = new RegExp(
@@ -1025,7 +1026,7 @@ const WHEN_AT_END = new RegExp(
       `(?:${DAY_WORDS})${DAY_PART}`,
       `(?:(?:on|this|next|coming|am|nachsten|nachste|kommenden|kommende|diesen|diese)\\s+)?(?:${DAY_NAMES})${DAY_PART}`,
       String.raw`(?:this|in the)\s+(?:morning|afternoon|evening)|at night|morgens|vormittags|mittags|nachmittags|abends|nachts`,
-      `(?:every|each|jede[nmrs]?|alle)\\s+(?:(?:other|second|\\d+|${NUMBER_WORD}|zweiten?)\\s+)?(?:days?|weeks?|months?|years?|weekdays?|weekends?|tage?|wochen?|monate?|jahre?|werktage?|${DAY_NAMES})`,
+      `(?:every|each|jede[nmrs]?|alle)\\s+(?:(?:other|second|\\d+|${NUMBER_WORD}|zweiten?)\\s+)?(?:days?|weeks?|months?|years?|weekdays?|weekends?|tage?|wochen?|monate?|jahre?|werktage?|mornings?|afternoons?|evenings?|nights?|morgen|vormittag|mittag|nachmittag|abend|nacht|${DAY_NAMES})${DAY_PART}`,
       String.raw`weekly|daily|monthly|yearly|annually|wochentlich|taglich|monatlich|jahrlich`,
       `(?:(?:on|am)\\s+)?(?:(?:the\\s+)?\\d{1,2}(?:st|nd|rd|th)?\\.?\\s+(?:of\\s+)?(?:${MONTHS})\\.?|(?:${MONTHS})\\.?\\s+\\d{1,2}(?:st|nd|rd|th)?|\\d{1,2}\\.\\d{1,2}\\.(?:\\d{2,4})?)(?:,?\\s+\\d{4})?`,
       String.raw`all[- ]day|whole day|ganztag(?:ig|s)?|(?:den\s+)?ganzen tag`,
@@ -1041,12 +1042,14 @@ const DAY_AT_START = new RegExp(
 /**
  * The word before a when that makes it the title's own, not the event's:
  * a span or a bound ("until Friday", "bis Montag", "Monday to Friday",
- * "after 5"), company or a list ("with Thu", "Mon and Wed"), or a day's
- * own name ("Black Friday", "Easter Sunday", "Taco Tuesday", "Guten
- * Morgen"). The code does not read those, so it leaves them.
+ * "after 5"), company or a list ("with Thu", "Mon and Wed"), a day's own
+ * name ("Black Friday", "Easter Sunday", "Taco Tuesday", "Guten Morgen"),
+ * or a lead word the run did not take with it ("every …", "am Morgen" —
+ * "in the morning", not "tomorrow"). The code does not read those, so it
+ * leaves them.
  */
 const OWNS_WHEN =
-  /^(?:until|till|til|bis|through|thru|to|from|von|between|zwischen|after|before|nach|vor|ab|seit|since|with|w|mit|and|und|or|oder|&|good|black|cyber|easter|palm|ash|holy|maundy|taco|throwback|giving|bowl|guten)$/;
+  /^(?:until|till|til|bis|through|thru|to|from|von|between|zwischen|after|before|nach|vor|ab|seit|since|with|w|mit|and|und|or|oder|&|good|black|cyber|easter|palm|ash|holy|maundy|taco|throwback|giving|bowl|guten|every|each|jede[nmrs]?|alle|am|on|this|next|coming|in|at|um|the|of)$/;
 
 /** A clock written as a bound ("until 5pm", "before 10", "after 5", "ab 9") is no start: the title's. */
 const BOUND = /^(?:until|till|bis|to|before|vor|after|nach|ab)\b/;
@@ -1121,9 +1124,15 @@ const whenless = (
   let first = leading ? leading[0].split(' ').length : 0;
   if (leading) {
     first += clockAtStart(folded.slice(first, last).join(' '));
+    while (first < last && HANGING.test(folded[first]!)) {
+      first += 1;
+    }
   }
   return first < last ? { first, last, onlyWhen: false } : { first: 0, last, onlyWhen: true };
 };
+
+/** The text says nothing but when ("tomorrow", "next Tuesday at 1pm"). */
+export const saysOnlyWhen = (text: string): boolean => whenless(text).onlyWhen;
 
 /**
  * The title without the words about when at its ends: "lunch with tom
@@ -1145,7 +1154,10 @@ export const trimWhen = (title: string): string => {
     return title;
   }
   const end = tokens[last - 1]!;
-  return title.slice(tokens[first]!.index, end.index + end[0].length).replace(TRAILING, '');
+  const trimmed = title
+    .slice(tokens[first]!.index, end.index + end[0].length)
+    .replace(TRAILING, '');
+  return trimmed === '' ? title : trimmed;
 };
 
 /** The words that lead into a place ("at the office", "im Café"), with the article after them. */
@@ -1180,9 +1192,11 @@ const ARTICLES = new Set([
 ]);
 
 /**
- * The title without the event's place at its end ("Drinks with Jo at Loos
- * Bar" with the place "Loos Bar" is "Drinks with Jo"): the place has its
- * own field. A title that is only the place stays.
+ * The title without the event's place at its end, when a word leads into
+ * it ("Drinks with Jo at Loos Bar" with the place "Loos Bar" is "Drinks
+ * with Jo"): the place has its own field. A place without such a word is
+ * part of what the title says ("Trip to Vienna", "Fahrt nach Wien"), and
+ * a title that is only the place stays.
  */
 export const withoutPlace = (title: string, place: string | undefined): string => {
   const named =
@@ -1197,6 +1211,8 @@ export const withoutPlace = (title: string, place: string | undefined): string =
     kept -= 2;
   } else if (PLACE_LEADS.has(folded[kept - 1]!)) {
     kept -= 1;
+  } else {
+    return title;
   }
   if (kept === 0) {
     return title;
@@ -1250,8 +1266,9 @@ const GENERIC = new Set([
 
 /**
  * The title the phrase supports: the model's, when every word of it is
- * one the phrase says (or one that names no one, `GENERIC`) and it names
- * more than a when — else the phrase itself. The model copies titles it
+ * one the phrase says (or one that names no one, `GENERIC`), one of them
+ * the phrase's own, and it names more than a when — else the phrase
+ * itself. The model copies titles it
  * has seen ("Lunch with Sarah" for "lunch with tom tomorrow", the
  * prompt's old example) and keeps a when alone ("tomorrow" for "dinner
  * with tom tomorrow"); the user's own words are never wrong about who and
@@ -1259,6 +1276,11 @@ const GENERIC = new Set([
  */
 export const groundTitle = (title: string, phrase: string): string => {
   const said = new Set(wordsOf(phrase));
-  const fromPhrase = wordsOf(title).every((word) => said.has(word) || GENERIC.has(word));
-  return fromPhrase && !whenless(title).onlyWhen ? title : phrase.trim();
+  const named = wordsOf(title);
+  const fromPhrase = named.every((word) => said.has(word) || GENERIC.has(word));
+  // Generic words alone stand only for a phrase that names nothing but
+  // when ("Meeting" for "tomorrow at 9", not for "standup tomorrow at 9").
+  const namesWhat =
+    named.some((word) => said.has(word) && !GENERIC.has(word)) || whenless(phrase).onlyWhen;
+  return fromPhrase && namesWhat && !whenless(title).onlyWhen ? title : phrase.trim();
 };

@@ -687,6 +687,9 @@ describe('groundTitle', () => {
     );
     expect(groundTitle('Dentist appointment', 'dentist tomorrow 9')).toBe('Dentist appointment');
     expect(groundTitle('Meeting', 'tomorrow at 9')).toBe('Meeting');
+    // Review: generic words alone are no stand-in for what the phrase names.
+    expect(groundTitle('Meeting', 'standup tomorrow at 9')).toBe('standup tomorrow at 9');
+    expect(groundTitle('Termin', 'Zahnarzt morgen um 9')).toBe('Zahnarzt morgen um 9');
   });
 
   it('takes the phrase when the title is nothing but when', () => {
@@ -765,6 +768,16 @@ describe('trimWhen', () => {
     expect(trimWhen('Gym Mon and Wed')).toBe('Gym Mon and Wed');
   });
 
+  it('reads a repeat with a part of the day, and leaves one it cannot read', () => {
+    // Review: "every" stayed behind.
+    expect(trimWhen('Standup every Monday morning')).toBe('Standup');
+    expect(trimWhen('Call mom every Sunday night')).toBe('Call mom');
+    expect(trimWhen('Meditation jeden Morgen')).toBe('Meditation');
+    expect(trimWhen('Training jeden Montag Abend')).toBe('Training');
+    // "am Morgen" is "in the morning", not "tomorrow".
+    expect(trimWhen('Joggen am Morgen')).toBe('Joggen am Morgen');
+  });
+
   it('leaves a day that is part of a name', () => {
     expect(trimWhen('Black Friday')).toBe('Black Friday');
     expect(trimWhen('Easter Sunday')).toBe('Easter Sunday');
@@ -777,8 +790,9 @@ describe('trimWhen', () => {
 
   it('keeps the word before a day, and takes the one that leads into a time', () => {
     expect(trimWhen('Drop by tomorrow')).toBe('Drop by');
-    expect(trimWhen('Finish this tomorrow')).toBe('Finish this');
-    expect(trimWhen('Carry on tomorrow')).toBe('Carry on');
+    // A lead word left before a day: a construction the code does not read.
+    expect(trimWhen('Finish this tomorrow')).toBe('Finish this tomorrow');
+    expect(trimWhen('Carry on tomorrow')).toBe('Carry on tomorrow');
     // German "ab" is "from": a span, so the day stays (and so does Ab's name).
     expect(trimWhen('Urlaub ab morgen')).toBe('Urlaub ab morgen');
     expect(trimWhen('Lunch with Ab tomorrow')).toBe('Lunch with Ab tomorrow');
@@ -791,6 +805,9 @@ describe('trimWhen', () => {
     expect(trimWhen('Lunch (3pm)')).toBe('Lunch');
     expect(trimWhen('Lunch “tomorrow”')).toBe('Lunch');
     expect(trimWhen('At five guys')).toBe('At five guys');
+    expect(trimWhen('Tomorrow - lunch with Tom')).toBe('lunch with Tom');
+    expect(trimWhen('Today – call bank')).toBe('call bank');
+    expect(trimWhen('- tomorrow')).toBe('- tomorrow');
   });
 
   it('keeps the original spelling of what is left', () => {
@@ -802,7 +819,6 @@ describe('trimWhen', () => {
 describe('withoutPlace', () => {
   it('takes the place and the word leading into it off the end', () => {
     expect(withoutPlace('Drinks with Jo at Loos Bar', 'Loos Bar')).toBe('Drinks with Jo');
-    expect(withoutPlace('Mittagessen Figlmüller', 'Figlmüller')).toBe('Mittagessen');
     expect(withoutPlace('Meeting at the office', 'office')).toBe('Meeting');
     expect(withoutPlace('Kaffee im Café Central', 'Café Central')).toBe('Kaffee');
   });
@@ -810,6 +826,10 @@ describe('withoutPlace', () => {
   it('leaves a title that is only the place, or does not end with it', () => {
     expect(withoutPlace('Figlmüller', 'Figlmüller')).toBe('Figlmüller');
     expect(withoutPlace('Figlmüller dinner', 'Figlmüller')).toBe('Figlmüller dinner');
+    // Review: a place no word leads into is what the title says.
+    expect(withoutPlace('Trip to Vienna', 'Vienna')).toBe('Trip to Vienna');
+    expect(withoutPlace('Fahrt nach Wien', 'Wien')).toBe('Fahrt nach Wien');
+    expect(withoutPlace('Mittagessen Figlmüller', 'Figlmüller')).toBe('Mittagessen Figlmüller');
     expect(withoutPlace('Dinner', undefined)).toBe('Dinner');
   });
 });

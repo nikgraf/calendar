@@ -10,6 +10,7 @@ import {
   groundTime,
   groundTitle,
   isTodoPhrase,
+  saysOnlyWhen,
   trimWhen,
   withoutPlace,
 } from './grounding.ts';
@@ -101,7 +102,7 @@ export const addHour = (time: string): string => {
  * thing to do.
  */
 const TODO_CUE_PREFIX =
-  /^(?:remind me(?:\s+\S+){0,3}?\s+to|reminder:?|to-?do:?|don'?t forget to|i (?:need|have) to|i must|ich muss|nicht vergessen:?)\s+/i;
+  /^(?:remind me(?:\s+(?:today|tonight|tomorrow|(?:on|next|this)\s+\w+|(?:mon|tues|wednes|thurs|fri|satur|sun)days?|in the (?:morning|afternoon|evening)|at\s+\d{1,2}(?::\d{2})?\s*(?:[ap]m)?|\d{1,2}(?::\d{2})?\s*[ap]m)){0,3}\s+to|reminder:?|to-?do:?|don'?t forget to|i (?:need|have) to|i must|ich muss|nicht vergessen:?)\s+/i;
 
 /**
  * The first letter upper-cased when the first word is all lower case
@@ -125,10 +126,14 @@ const fold = (text: string): string =>
 const PLACE_CUE =
   /(?:^|[^\p{L}])(?:at|in|@|bei|beim|im|am|ins|zum|zur|in der|in dem|an der|auf der|auf dem|vor dem|vor der|chez)\s+(?:(?:the|a|an|der|die|das|dem|den|ein|eine|einem|einer)\s+)?$/u;
 
+/** Company, not a place: a name right after "with" ("lunch with tom", "Essen mit Anna"). */
+const COMPANY = /(?:^|[^\p{L}])(?:with|w\/|mit|and|und|&)\s+$/u;
+
 /**
  * The place the model extracted, held against the phrase: it must be in
- * the words (the real model made up "Bob's house" and "unknown"), and
- * where it is also part of the title ("Dentist" for "Dentist tomorrow
+ * the words (the real model made up "Bob's house" and "unknown"), never
+ * only a when ("tomorrow") or the company the words name ("tom" for
+ * "tomorrow lunch with tom"), and where it is also part of the title ("Dentist" for "Dentist tomorrow
  * at 9", "Board review" for "Board review Thursday 2pm") it counts only
  * after a place cue in the phrase ("Meeting at the office"). The title
  * over again is never a place. Without a phrase (capture) the model's
@@ -150,19 +155,27 @@ export const placeOf = (
   const words = fold(phrase);
   const place = fold(location);
   const at = words.indexOf(place);
-  if (at === -1) {
+  if (at === -1 || saysOnlyWhen(location)) {
+    return undefined;
+  }
+  // Where the place stands as words of its own ("tom", not the start of "tomorrow").
+  const occurrences: Array<number> = [];
+  for (let from = at; from !== -1; from = words.indexOf(place, from + 1)) {
+    if (
+      !/[\p{L}\p{N}]/u.test(words[from - 1] ?? ' ') &&
+      !/[\p{L}\p{N}]/u.test(words[from + place.length] ?? ' ')
+    ) {
+      occurrences.push(from);
+    }
+  }
+  if (occurrences.length > 0 && occurrences.every((from) => COMPANY.test(words.slice(0, from)))) {
     return undefined;
   }
   if (!fold(title).includes(place)) {
     return location;
   }
   // Any occurrence after a cue will do ("at 1 at Figlmüller" has two "at"s).
-  for (let from = at; from !== -1; from = words.indexOf(place, from + 1)) {
-    if (PLACE_CUE.test(words.slice(0, from))) {
-      return location;
-    }
-  }
-  return undefined;
+  return occurrences.some((from) => PLACE_CUE.test(words.slice(0, from))) ? location : undefined;
 };
 
 /**
@@ -234,20 +247,16 @@ export const normalizeQuickAdd = (
   // me to invite Tom" is the thing to do); capture reads no one.
   const { invite } = phrase === undefined || todo ? { invite: [] } : inviteesOf(people, phrase);
   const said = meaningfulText(parse.title);
-  // The place as the words say it (`placeOf`), judged by the title the
-  // model meant: a title of the phrase's own words names its place too.
-  // Capture passes no phrase and keeps its locations as before.
-  const location = placeOf(meaningfulText(parse.location), said ?? '', phrase);
   // Only the phrase's words, without the invitation, the when at its ends
-  // and the place (`grounding.ts`). Capture has no phrase: the model's
-  // title stands.
+  // and a place it leads into (`grounding.ts`). Capture has no phrase: the
+  // model's title stands.
   const named =
     said === undefined
       ? undefined
       : titleWithoutInvitees(phrase === undefined ? said : groundTitle(said, phrase), invite);
   const title =
     named && phrase !== undefined
-      ? capitalized(trimWhen(withoutPlace(trimWhen(named), location)))
+      ? capitalized(trimWhen(withoutPlace(trimWhen(named), meaningfulText(parse.location))))
       : named;
   if (!title) {
     return { kind: 'rejected', reason: 'No event title was recognised.' };
@@ -310,6 +319,8 @@ export const normalizeQuickAdd = (
     return { kind: 'rejected', reason: invalid };
   }
 
+  // Capture passes no phrase and keeps its locations as before.
+  const location = placeOf(meaningfulText(parse.location), title, phrase);
   const recurrence = recurrenceFromParse(parse.recurrence, resolvedDate);
 
   return {

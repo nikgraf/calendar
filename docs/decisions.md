@@ -893,14 +893,14 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   an "assumed" badge for the default times — with the draft thread.
 - **The title holds only the phrase's words** (2026-10-24) — "lunch with
   tom tomorrow" came back "Lunch with Sarah": the model copies a prompt's
-  example title into any phrase of its shape. The quick-add prompt lost its
-  examples; `groundTitle` keeps the model's title only when its words are
-  the phrase's (or name no one: "with", "appointment"), else the phrase
-  stands in; `trimWhen` takes days, times, repeats and dates off the ends,
-  never a span's or a name's ("until Friday", "Black Friday"); the place
-  leaves for its field; a lower-case first word is capitalized. Rejected:
-  the example behind the check, a rule-only prompt, a code-only title.
-  Open: mid-title when-words, "tomorrow lunch with tom" → "Lunch".
+  example title into any phrase of its shape. The prompt lost its examples;
+  `groundTitle` keeps the model's title only when its words are the
+  phrase's (plus ones naming no one: "with"), else the phrase stands in;
+  `trimWhen` takes the when off the ends, never a span's, a name's or one
+  it half-reads ("until Friday", "Black Friday"); a place a cue leads into
+  leaves for its field, and a when or company is no place. Rejected: the
+  example behind the check, a rule-only prompt, a code-only title. Open:
+  mid-title when-words, "tomorrow lunch with tom" → "Lunch".
 - **A served model beside Apple's** (2026-10-12, #184)
   — the desktop can answer `generateJson` from a model served over HTTP
   on this Mac: Ollama through its own API (the schema as `format`,

@@ -436,10 +436,48 @@ describe('parseQuickAdd titles', () => {
         'drinks with jo at Loos Bar friday 7pm',
       ),
     ).toMatchObject({ location: 'Loos Bar', title: 'Drinks with jo' });
-    // A translated title gives way to the phrase; its place stays the place.
+    // A translated title gives way to the phrase, and a place no word
+    // leads into is part of it.
+    const translated = await prefillOf(
+      { location: 'Figlmüller', title: 'Lunch' },
+      'Mittagessen Figlmüller morgen',
+    );
+    expect(translated.title).toBe('Mittagessen Figlmüller');
+    expect(translated.location).toBeUndefined();
+    // Review: a place after "to" stays in the title, and a title is never
+    // its own place.
+    const trip = await prefillOf(
+      { location: 'Vienna', title: 'Business trip' },
+      'trip to Vienna friday',
+    );
+    expect(trip.title).toBe('Trip to Vienna');
+    expect(trip.location).toBeUndefined();
+    const yoga = await prefillOf(
+      { location: 'Yoga', startTime: '07:00', title: 'Morning workout' },
+      'Yoga tomorrow 7am',
+    );
+    expect(yoga.title).toBe('Yoga');
+    expect(yoga.location).toBeUndefined();
+  });
+
+  it('takes no when and no company for the place', async () => {
+    // Observed on the real model: "tomorrow" and "tom" as the location.
     expect(
-      await prefillOf({ location: 'Figlmüller', title: 'Lunch' }, 'Mittagessen Figlmüller morgen'),
-    ).toMatchObject({ location: 'Figlmüller', title: 'Mittagessen' });
+      (
+        await prefillOf(
+          { location: 'tomorrow', title: 'Lunch with Tom' },
+          'Tomorrow - lunch with Tom',
+        )
+      ).location,
+    ).toBeUndefined();
+    expect(
+      (await prefillOf({ location: 'tom', title: 'tomorrow lunch' }, 'tomorrow lunch with tom'))
+        .location,
+    ).toBeUndefined();
+    // A name said with "with" can still be the place where a cue says so.
+    expect(
+      (await prefillOf({ location: 'Anna', title: 'Coffee' }, 'coffee with Anna at Anna')).location,
+    ).toBe('Anna');
   });
 
   it('capitalizes a first word typed in lower case, and nothing else', async () => {
@@ -594,6 +632,18 @@ describe('parseQuickAdd for tasks', () => {
     expect(result).toMatchObject({
       kind: 'task',
       prefill: { date: '2026-08-23', title: 'Call the bank' },
+    });
+  });
+
+  it('reads a cue only with when-words before its "to"', async () => {
+    // Review: "to Paris" read as the cue's "to".
+    const result = await parseQuickAdd(fakeModel({ title: 'remind me about the trip to Paris' }), {
+      phrase: 'remind me about the trip to Paris',
+      ...CONTEXT,
+    });
+    expect(result).toMatchObject({
+      kind: 'task',
+      prefill: { title: 'Remind me about the trip to Paris' },
     });
   });
 
