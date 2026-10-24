@@ -1006,6 +1006,12 @@ const DAY_PART = String.raw`(?:\s+(?:morning|afternoon|evening|night|fruh|vormit
 /** A day said in words, at the start or end of a title. */
 const DAY_WORDS = String.raw`(?:the\s+)?day after tomorrow|tomorrow|today|tonight|heute|morgen|ubermorgen`;
 
+/** Opening and closing marks around a word: brackets and quotes, straight or curly. */
+const OPENS = String.raw`[(\["'“„«]?`;
+const CLOSES = String.raw`[)\]"'”“»]*`;
+/** What may follow a title's last word: closing marks and punctuation. */
+const TRAILING = /[\s.,;:!?)\]"'”“»–—-]+$/u;
+
 /**
  * The words that say when, as one run that ends a title: a day, a weekday
  * ("on Friday", "next Tuesday", "am Montag"), a part of the day after
@@ -1014,7 +1020,7 @@ const DAY_WORDS = String.raw`(?:the\s+)?day after tomorrow|tomorrow|today|tonigh
  * read by `scan`, as for the start.
  */
 const WHEN_AT_END = new RegExp(
-  String.raw`(?:^|\s)[(\["']?(?:` +
+  String.raw`(?:^|\s)${OPENS}(?:` +
     [
       `(?:${DAY_WORDS})${DAY_PART}`,
       `(?:(?:on|this|next|coming|am|nachsten|nachste|kommenden|kommende|diesen|diese)\\s+)?(?:${DAY_NAMES})${DAY_PART}`,
@@ -1024,29 +1030,61 @@ const WHEN_AT_END = new RegExp(
       `(?:(?:on|am)\\s+)?(?:(?:the\\s+)?\\d{1,2}(?:st|nd|rd|th)?\\.?\\s+(?:of\\s+)?(?:${MONTHS})\\.?|(?:${MONTHS})\\.?\\s+\\d{1,2}(?:st|nd|rd|th)?|\\d{1,2}\\.\\d{1,2}\\.(?:\\d{2,4})?)(?:,?\\s+\\d{4})?`,
       String.raw`all[- ]day|whole day|ganztag(?:ig|s)?|(?:den\s+)?ganzen tag`,
     ].join('|') +
-    String.raw`)[)\]"'.,;:!?–-]*$`,
+    String.raw`)${CLOSES}[.,;:!?–—-]*$`,
 );
 
 /** A day said first ("Tomorrow: lunch with Tom"); a weekday first names the event ("Monday standup"). */
-const DAY_AT_START = new RegExp(String.raw`^[(\["']?(?:${DAY_WORDS})[)\]"'.,;:!?–-]*(?=\s)`);
+const DAY_AT_START = new RegExp(
+  String.raw`^${OPENS}(?:${DAY_WORDS})${DAY_PART}${CLOSES}[.,;:!?–—-]*(?=\s)`,
+);
 
-/** A word left hanging once the when after it is gone ("Lunch at", "Treffen um", "Dinner for"). */
-const HANGING =
-  /^(?:on|at|um|am|by|for|fur|from|von|ab|gegen|this|next|nachsten|kommenden|[,;:@–-])$/;
+/**
+ * The word before a when that makes it the title's own, not the event's:
+ * a span or a bound ("until Friday", "bis Montag", "Monday to Friday",
+ * "after 5"), company or a list ("with Thu", "Mon and Wed"), or a day's
+ * own name ("Black Friday", "Easter Sunday", "Taco Tuesday", "Guten
+ * Morgen"). The code does not read those, so it leaves them.
+ */
+const OWNS_WHEN =
+  /^(?:until|till|til|bis|through|thru|to|from|von|between|zwischen|after|before|nach|vor|ab|seit|since|with|w|mit|and|und|or|oder|&|good|black|cyber|easter|palm|ash|holy|maundy|taco|throwback|giving|bowl|guten)$/;
+
+/** A clock written as a bound ("until 5pm", "before 10", "after 5", "ab 9") is no start: the title's. */
+const BOUND = /^(?:until|till|bis|to|before|vor|after|nach|ab)\b/;
+
+/** The word that leads into a clock time ("at", "um"), taken off with it. */
+const CLOCK_LEAD = /(?:^|\s)(?:at|um|gegen|@)$/;
+
+/** A mark left hanging once the when after it is gone ("Lunch with Tom, tomorrow"). */
+const HANGING = /^[,;:@&–—-]$/;
+
+/** A word without its marks, for a comparison. */
+const bare = (token: string): string => token.replaceAll(/[^\p{L}\p{N}&]/gu, '');
 
 /** Where the run of when-words that ends `text` starts, at a word; undefined for none. */
 const whenAtEnd = (text: string): number | undefined => {
-  const tail = text.replace(/[\s.,;:!?)\]"'–-]+$/, '').length;
+  const tail = text.replace(TRAILING, '').length;
   const starts = scan(text)
-    .filter(
-      ({ end, index }) => index < tail && end >= tail && (index === 0 || text[index - 1] === ' '),
-    )
-    .map(({ index }) => index);
+    .filter(({ end, index }) => index < tail && end >= tail && !BOUND.test(text.slice(index)))
+    .map(({ index }) => (text[index - 1] === '(' ? index - 1 : index))
+    .filter((index) => index === 0 || text[index - 1] === ' ')
+    .map((index) => {
+      const lead = CLOCK_LEAD.exec(text.slice(0, index).trimEnd());
+      return lead ? lead.index + (lead[0].startsWith(' ') ? 1 : 0) : index;
+    });
   const match = WHEN_AT_END.exec(text);
   if (match) {
     starts.push(match[0].startsWith(' ') ? match.index + 1 : match.index);
   }
   return starts.length === 0 ? undefined : Math.min(...starts);
+};
+
+/** How many words of `text` a clock time at its very start takes ("at 1", "9am"); 0 for none. */
+const clockAtStart = (text: string): number => {
+  const ends = scan(text)
+    .filter(({ index }) => index === 0 && !BOUND.test(text))
+    .map(({ end }) => end)
+    .filter((end) => end === text.length || /[\s.,;:!?)]/.test(text[end]!));
+  return ends.length === 0 ? 0 : text.slice(0, Math.max(...ends)).split(' ').length;
 };
 
 /**
@@ -1063,19 +1101,27 @@ const whenless = (
   for (;;) {
     const text = folded.slice(0, last).join(' ');
     const start = whenAtEnd(text);
-    if (start === 0) {
-      return { first: 0, last, onlyWhen: true };
-    }
     if (start === undefined) {
       break;
     }
-    last = text.slice(0, start).trimEnd().split(' ').length;
+    const kept = start === 0 ? 0 : text.slice(0, start).trimEnd().split(' ').length;
+    if (kept > 0 && OWNS_WHEN.test(bare(folded[kept - 1]!))) {
+      break;
+    }
+    if (kept === 0) {
+      return { first: 0, last, onlyWhen: true };
+    }
+    last = kept;
     while (last > 1 && HANGING.test(folded[last - 1]!)) {
       last -= 1;
     }
   }
+  // A day said first, and a time right after it ("tomorrow at 1 lunch").
   const leading = DAY_AT_START.exec(folded.slice(0, last).join(' '));
-  const first = leading ? leading[0].split(' ').length : 0;
+  let first = leading ? leading[0].split(' ').length : 0;
+  if (leading) {
+    first += clockAtStart(folded.slice(first, last).join(' '));
+  }
   return first < last ? { first, last, onlyWhen: false } : { first: 0, last, onlyWhen: true };
 };
 
@@ -1085,10 +1131,12 @@ const whenless = (
  * "Team standup", "Zahnarzt Dienstag um 10" is "Zahnarzt", "Tomorrow:
  * lunch with Tom" is "lunch with Tom". The day, the time and the repeat
  * are read from the phrase itself, and the model leaves their words in
- * the title as often as not. Only the ends: a weekday that opens a title
- * names the event ("Monday standup"), words in the middle stay, and a
- * bare number is no time ("Room 9"). A title that is nothing but when
- * stays as it is.
+ * the title as often as not. Only the ends, and only a when the event
+ * has: a weekday that opens a title names the event ("Monday standup"),
+ * as does a day after its own name ("Black Friday"); a span or company
+ * keeps its day ("until Friday", "with Thu"); words in the middle stay,
+ * and a bare number is no time ("Room 9"). A title that is nothing but
+ * when stays as it is.
  */
 export const trimWhen = (title: string): string => {
   const tokens = [...title.matchAll(/\S+/g)];
@@ -1097,22 +1145,120 @@ export const trimWhen = (title: string): string => {
     return title;
   }
   const end = tokens[last - 1]!;
-  return title.slice(tokens[first]!.index, end.index + end[0].length).replace(/[\s,;:–—-]+$/u, '');
+  return title.slice(tokens[first]!.index, end.index + end[0].length).replace(TRAILING, '');
+};
+
+/** The words that lead into a place ("at the office", "im Café"), with the article after them. */
+const PLACE_LEADS = new Set([
+  'at',
+  'in',
+  '@',
+  'bei',
+  'beim',
+  'im',
+  'am',
+  'an',
+  'auf',
+  'ins',
+  'zum',
+  'zur',
+  'chez',
+]);
+const ARTICLES = new Set([
+  'the',
+  'a',
+  'an',
+  'der',
+  'die',
+  'das',
+  'dem',
+  'den',
+  'ein',
+  'eine',
+  'einem',
+  'einer',
+]);
+
+/**
+ * The title without the event's place at its end ("Drinks with Jo at Loos
+ * Bar" with the place "Loos Bar" is "Drinks with Jo"): the place has its
+ * own field. A title that is only the place stays.
+ */
+export const withoutPlace = (title: string, place: string | undefined): string => {
+  const named =
+    place === undefined ? [] : [...place.matchAll(/\S+/g)].map(([token]) => bare(words(token)));
+  const tokens = [...title.matchAll(/\S+/g)];
+  const folded = tokens.map(([token]) => bare(words(token)));
+  let kept = folded.length - named.length;
+  if (named.length === 0 || kept <= 0 || named.some((word, at) => folded[kept + at] !== word)) {
+    return title;
+  }
+  if (kept > 1 && ARTICLES.has(folded[kept - 1]!) && PLACE_LEADS.has(folded[kept - 2]!)) {
+    kept -= 2;
+  } else if (PLACE_LEADS.has(folded[kept - 1]!)) {
+    kept -= 1;
+  }
+  if (kept === 0) {
+    return title;
+  }
+  const end = tokens[kept - 1]!;
+  return title.slice(0, end.index + end[0].length).replace(TRAILING, '');
 };
 
 /** The words of a text, folded: its runs of letters and digits ("Tom's" is "tom" and "s"). */
 const wordsOf = (text: string): ReadonlyArray<string> => words(text).match(/[\p{L}\p{N}]+/gu) ?? [];
 
 /**
+ * Words a model may add to a title that name no one and nothing: articles
+ * and joints ("w/" written "with"), and what any event is ("Dentist
+ * appointment").
+ */
+const GENERIC = new Set([
+  'a',
+  'am',
+  'an',
+  'and',
+  'anruf',
+  'appointment',
+  'at',
+  'call',
+  'das',
+  'dem',
+  'den',
+  'der',
+  'die',
+  'ein',
+  'eine',
+  'einen',
+  'event',
+  'for',
+  'im',
+  'in',
+  'meeting',
+  'mit',
+  'of',
+  'on',
+  'termin',
+  'the',
+  'to',
+  'treffen',
+  'und',
+  'with',
+  'zum',
+  'zur',
+]);
+
+/**
  * The title the phrase supports: the model's, when every word of it is
- * one the phrase says and it names more than a when — else the phrase
- * itself. The model copies titles it has seen ("Lunch with Sarah" for
- * "lunch with tom tomorrow", the prompt's old example) and keeps a when
- * alone ("tomorrow" for "dinner with tom tomorrow"); the user's own words
- * are never wrong about who and what.
+ * one the phrase says (or one that names no one, `GENERIC`) and it names
+ * more than a when — else the phrase itself. The model copies titles it
+ * has seen ("Lunch with Sarah" for "lunch with tom tomorrow", the
+ * prompt's old example) and keeps a when alone ("tomorrow" for "dinner
+ * with tom tomorrow"); the user's own words are never wrong about who and
+ * what.
  */
 export const groundTitle = (title: string, phrase: string): string => {
   const said = new Set(wordsOf(phrase));
-  const fromPhrase = wordsOf(title).every((word) => said.has(word));
+  const fromPhrase = wordsOf(title).every((word) => said.has(word) || GENERIC.has(word));
   return fromPhrase && !whenless(title).onlyWhen ? title : phrase.trim();
 };

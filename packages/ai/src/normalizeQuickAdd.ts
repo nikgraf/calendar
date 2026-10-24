@@ -5,7 +5,14 @@ import {
   Temporal,
   validateEventDraft,
 } from '@calendar/core';
-import { groundDate, groundTime, groundTitle, isTodoPhrase, trimWhen } from './grounding.ts';
+import {
+  groundDate,
+  groundTime,
+  groundTitle,
+  isTodoPhrase,
+  trimWhen,
+  withoutPlace,
+} from './grounding.ts';
 import { inviteesOf, titleWithoutInvitees } from './invitees.ts';
 import type { QuickAddParse } from './quickAdd.ts';
 import { meaningfulText, realDate, realTime } from './shared.ts';
@@ -94,7 +101,7 @@ export const addHour = (time: string): string => {
  * thing to do.
  */
 const TODO_CUE_PREFIX =
-  /^(?:remind me to|reminder:?|to-?do:?|don'?t forget to|i (?:need|have) to|i must|ich muss|nicht vergessen:?)\s+/i;
+  /^(?:remind me(?:\s+\S+){0,3}?\s+to|reminder:?|to-?do:?|don'?t forget to|i (?:need|have) to|i must|ich muss|nicht vergessen:?)\s+/i;
 
 /**
  * The first letter upper-cased when the first word is all lower case
@@ -227,13 +234,21 @@ export const normalizeQuickAdd = (
   // me to invite Tom" is the thing to do); capture reads no one.
   const { invite } = phrase === undefined || todo ? { invite: [] } : inviteesOf(people, phrase);
   const said = meaningfulText(parse.title);
-  // Only the phrase's words, without the invitation and the when at its
-  // ends (`grounding.ts`). Capture has no phrase: the model's title stands.
+  // The place as the words say it (`placeOf`), judged by the title the
+  // model meant: a title of the phrase's own words names its place too.
+  // Capture passes no phrase and keeps its locations as before.
+  const location = placeOf(meaningfulText(parse.location), said ?? '', phrase);
+  // Only the phrase's words, without the invitation, the when at its ends
+  // and the place (`grounding.ts`). Capture has no phrase: the model's
+  // title stands.
   const named =
     said === undefined
       ? undefined
       : titleWithoutInvitees(phrase === undefined ? said : groundTitle(said, phrase), invite);
-  const title = named && phrase !== undefined ? capitalized(trimWhen(named)) : named;
+  const title =
+    named && phrase !== undefined
+      ? capitalized(trimWhen(withoutPlace(trimWhen(named), location)))
+      : named;
   if (!title) {
     return { kind: 'rejected', reason: 'No event title was recognised.' };
   }
@@ -295,8 +310,6 @@ export const normalizeQuickAdd = (
     return { kind: 'rejected', reason: invalid };
   }
 
-  // Capture passes no phrase and keeps its locations as before.
-  const location = placeOf(meaningfulText(parse.location), title, phrase);
   const recurrence = recurrenceFromParse(parse.recurrence, resolvedDate);
 
   return {

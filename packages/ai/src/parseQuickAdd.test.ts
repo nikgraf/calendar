@@ -420,6 +420,28 @@ describe('parseQuickAdd titles', () => {
     ).toMatchObject({ location: 'Mercato', title: 'Lunch with Sam' });
   });
 
+  it('keeps the place out of the title and in its field', async () => {
+    // Review: a model title with "with" for "w/" fell back to the phrase,
+    // place and all.
+    expect(
+      await prefillOf(
+        { location: 'Figlmüller', startTime: '13:00', title: 'Lunch with Tom' },
+        'Lunch w/ Tom at Figlmüller tomorrow at 1',
+      ),
+    ).toMatchObject({ location: 'Figlmüller', title: 'Lunch with Tom' });
+    // Observed: the place left in a title the model kept a day in.
+    expect(
+      await prefillOf(
+        { location: 'Loos Bar', startTime: '19:00', title: 'drinks with jo at Loos Bar friday' },
+        'drinks with jo at Loos Bar friday 7pm',
+      ),
+    ).toMatchObject({ location: 'Loos Bar', title: 'Drinks with jo' });
+    // A translated title gives way to the phrase; its place stays the place.
+    expect(
+      await prefillOf({ location: 'Figlmüller', title: 'Lunch' }, 'Mittagessen Figlmüller morgen'),
+    ).toMatchObject({ location: 'Figlmüller', title: 'Mittagessen' });
+  });
+
   it('capitalizes a first word typed in lower case, and nothing else', async () => {
     expect((await prefillOf({ title: 'coffee with max' }, 'coffee with max')).title).toBe(
       'Coffee with max',
@@ -562,6 +584,17 @@ describe('parseQuickAdd for tasks', () => {
     expect(
       await parseQuickAdd(fakeModel({ title: 'Reminder' }), { phrase: 'reminder', ...CONTEXT }),
     ).toMatchObject({ kind: 'task', prefill: { title: 'Reminder' } });
+  });
+
+  it('leaves the cue out of a title made of the phrase, a day inside it too', async () => {
+    const result = await parseQuickAdd(fakeModel({ title: 'Phone the bank' }), {
+      phrase: 'remind me tomorrow to call the bank',
+      ...CONTEXT,
+    });
+    expect(result).toMatchObject({
+      kind: 'task',
+      prefill: { date: '2026-08-23', title: 'Call the bank' },
+    });
   });
 
   it('gives an undated to-do the fallback day and no time', async () => {
