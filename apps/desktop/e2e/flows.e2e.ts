@@ -1497,7 +1497,10 @@ describe('calendar desktop e2e', () => {
     const shadeWeekends = () =>
       settings.eval(`document.querySelector('input[aria-label="Shade weekends"]')?.click()`);
     try {
-      expect(await pressed('SA')).toBe('true');
+      // The pane draws its days once this window's own read of the preferences lands.
+      await settings.waitFor(
+        `document.querySelector('[data-testid="weekend-day-SA"]')?.getAttribute('aria-pressed') === 'true'`,
+      );
       expect(await pressed('FR')).toBe('false');
       await toggleDay('FR', true);
       await toggleDay('SU', false);

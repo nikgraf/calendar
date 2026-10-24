@@ -7,7 +7,9 @@ import { WeekdayToggles } from './ui/WeekdayToggles.tsx';
  * all. A view preference that travels in the settings file, like the
  * all-day lane cap. Written through `useUpdateViewPreferences` rather than
  * a settings editor: the calendar window writes the same struct (opening
- * view, sidebar), so each change merges onto the latest stored value.
+ * view, sidebar), and a settings editor would keep sending its own first
+ * copy of those. Each change merges onto this window's last read, which
+ * every write in either window refreshes within a few milliseconds.
  */
 export function WeekendsSection() {
   const preferences = useViewPreferences();
