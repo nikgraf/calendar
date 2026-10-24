@@ -128,6 +128,7 @@ describe('extractSettingsCode', () => {
   it('finds a code wrapped, spaced or inside other text', () => {
     const payload = code.slice('SOLUNIVO:1:'.length);
     expect(extractSettingsCode(code)).toBe(code);
+    expect(extractSettingsCode(`solunivo: 1 ${code}`)).toBe(code);
     expect(extractSettingsCode(`  ${code}\n`)).toBe(code);
     expect(extractSettingsCode(`SOLUNIVO:1:${payload.slice(0, 5)}\n${payload.slice(5)}`)).toBe(
       code,
@@ -139,6 +140,10 @@ describe('extractSettingsCode', () => {
   it('says there is none for other text', () => {
     expect(extractSettingsCode('Lunch with Sam tomorrow at 12:30')).toBeNull();
     expect(extractSettingsCode('SOLUNIVO:1:')).toBeNull();
+    // A note that only starts like one: spaces in the prefix, a short payload.
+    expect(extractSettingsCode('Solunivo: 2: Design review Tuesday 3pm')).toBeNull();
+    expect(extractSettingsCode('Solunivo:2:Design review Tuesday 3pm')).toBeNull();
+    expect(extractSettingsCode('SOLUNIVO:1:K')).toBeNull();
     expect(isSettingsCode('HELLO')).toBe(false);
     expect(isSettingsCode(code)).toBe(true);
   });
@@ -222,8 +227,8 @@ describe('decodeSettingsCode', () => {
 
   it('names what is wrong', () => {
     expect(failure('HELLO')).toContain('isn’t a Solunivo code');
-    expect(failure('SOLUNIVO:2:MZXW6')).toContain('newer Solunivo');
-    expect(failure('SOLUNIVO:0:MZXW6')).toContain('Unsupported code version 0');
+    expect(failure(`SOLUNIVO:2:${'MZXW6'.repeat(4)}`)).toContain('newer Solunivo');
+    expect(failure(`SOLUNIVO:0:${'MZXW6'.repeat(4)}`)).toContain('Unsupported code version 0');
     expect(failure(`SOLUNIVO:1:${base32Encode(strToU8('not deflate at all'))}`)).toContain(
       'damaged',
     );

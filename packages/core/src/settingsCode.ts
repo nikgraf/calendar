@@ -93,24 +93,29 @@ export const base32Decode = (text: string): Uint8Array | null => {
   return out;
 };
 
-const PREFIX_PATTERN = new RegExp(`${SETTINGS_CODE_PREFIX}:(\\d+):`, 'i');
+const PREFIX_PATTERN = new RegExp(`${SETTINGS_CODE_PREFIX}:(\\d+):`, 'gi');
 const PAYLOAD_PATTERN = /^[A-Z2-7]+/;
+/** Shorter than any document deflates to: "Solunivo:2:Design…" in a note is no code. */
+const MIN_PAYLOAD_LENGTH = 16;
 
 /**
  * The code inside a paste, a share or a URL, in its one spelling; null
- * when there is none. Whitespace goes first (a mail client may wrap a long
- * line, and the alphabet has no space); the prefix matches in any case,
- * since a URL's scheme may arrive lowercased; the payload is upper case
- * and ends at the first character outside the alphabet.
+ * when there is none. The prefix must stand as written (any case — a URL's
+ * scheme may arrive lowercased — but no spaces in it), so a note that
+ * merely starts "Solunivo: 2: …" stays a note for the AI. After it,
+ * whitespace goes (a mail client may wrap a long line, and the alphabet
+ * has no space); the payload is upper case, ends at the first character
+ * outside the alphabet, and is long enough to hold a document.
  */
 export const extractSettingsCode = (text: string): string | null => {
-  const compact = text.replaceAll(/\s+/g, '');
-  const prefix = PREFIX_PATTERN.exec(compact);
-  if (!prefix) {
-    return null;
+  for (const prefix of text.matchAll(PREFIX_PATTERN)) {
+    const rest = text.slice(prefix.index + prefix[0].length).replaceAll(/\s+/g, '');
+    const payload = PAYLOAD_PATTERN.exec(rest)?.[0];
+    if (payload !== undefined && payload.length >= MIN_PAYLOAD_LENGTH) {
+      return `${SETTINGS_CODE_PREFIX}:${prefix[1]}:${payload}`;
+    }
   }
-  const payload = PAYLOAD_PATTERN.exec(compact.slice(prefix.index + prefix[0].length));
-  return payload ? `${SETTINGS_CODE_PREFIX}:${prefix[1]}:${payload[0]}` : null;
+  return null;
 };
 
 export const isSettingsCode = (text: string): boolean => extractSettingsCode(text) !== null;
@@ -198,7 +203,7 @@ export const decodeSettingsCode = (
       return yield* fail('That is too long to be a Solunivo code.');
     }
     const packed = base32Decode(payload);
-    if (packed === null) {
+    if (packed === null || packed.length === 0) {
       return yield* fail('The code is damaged: it has characters a code never has.');
     }
     const out = new Uint8Array(MAX_INFLATED_BYTES + 1);

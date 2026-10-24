@@ -99,9 +99,9 @@ describe('fixtureShareFromUrl', () => {
 
 describe('settingsCodeOf', () => {
   it('finds a settings code in shared text, and nothing in an image or plain text', () => {
-    expect(settingsCodeOf({ kind: 'text', text: 'From the Mac:\nSOLUNIVO:1:MZXW6YTB\n' })).toBe(
-      'SOLUNIVO:1:MZXW6YTB',
-    );
+    expect(
+      settingsCodeOf({ kind: 'text', text: 'From the Mac:\nSOLUNIVO:1:MZXW6YTBOIMZXW6YTBOI\n' }),
+    ).toBe('SOLUNIVO:1:MZXW6YTBOIMZXW6YTBOI');
     expect(settingsCodeOf({ kind: 'text', text: 'Lunch with Sam tomorrow at 12:30' })).toBeNull();
     expect(
       settingsCodeOf({ image: { kind: 'uri', uri: 'file:///group/a.png' }, kind: 'image' }),

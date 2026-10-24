@@ -1,4 +1,5 @@
 import { extractSettingsCode } from '@calendar/core/settingsCode';
+import { setupIsUp } from '../src/settingsCodeInbox.ts';
 
 const decoded = (path: string): string => {
   try {
@@ -21,7 +22,10 @@ const decoded = (path: string): string => {
  * Solunivo", or the e2e link that stands in for a share) is read where the
  * person is: in a running app it moves nothing (null) — sending it to `/`
  * would close the setup whose copy step is waiting for it — and only a
- * cold start gets the calendar.
+ * cold start gets the calendar. A share's own URL carries no text (the
+ * extension stores it), so while the setup is up a warm share moves
+ * nothing either: it may well be the Mac's code, shared in for the copy
+ * step.
  */
 export function redirectSystemPath({
   initial,
@@ -32,6 +36,9 @@ export function redirectSystemPath({
 }): string | null {
   if (extractSettingsCode(decoded(path))) {
     return initial ? '/' : null;
+  }
+  if (!initial && setupIsUp() && /expo-sharing|capture-fixture/i.test(path)) {
+    return null;
   }
   return path.startsWith('/') &&
     !/expo-sharing|capture-fixture|onboarding-fixture|oauth/i.test(path)

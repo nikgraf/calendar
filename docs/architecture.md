@@ -1307,7 +1307,9 @@ gateway carries all of it. Details, limits and the threat model:
   titles stay (they are the match keys). A typical three-account setup is
   about a thousand characters, QR version ~22 at error correction M; past
   version 40 the QR gives way to the text alone. The decoder finds a code
-  in any text (wrapped, inside a sentence, a lowercased scheme), caps the
+  in any text (wrapped, inside a sentence, a lowercased scheme; the prefix
+  as written and a document's worth of payload, so a note that starts
+  "Solunivo: 2:" stays a note), caps the
   input and the inflated size, says when a newer app made the code, and
   ends in `parseSettingsDocument`, so a code imports exactly as a file
   does. `useSettingsCode` (app-state) rebuilds it from a `settingsDocument`
@@ -1329,6 +1331,8 @@ gateway carries all of it. Details, limits and the threat model:
   setup is up or due, else Settings › Read Code. Such a URL moves nothing
   on the router in a running app (`redirectSystemPath` answers null): the
   usual `/` would dismiss the setup whose copy step is waiting for it.
+  While the setup is up a share's own URL moves nothing either (it carries
+  no text), and a capture it starts waits for the setup to close.
 - **Time zones**: up to three entries per device, one primary, which
   replaces the device zone for everything the UI draws (both roots gate
   on `useTimeZones()`); the others hang under each hour in the gutter,

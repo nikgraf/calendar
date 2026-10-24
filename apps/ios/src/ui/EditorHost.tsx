@@ -243,6 +243,9 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
   // (`captureMayOpen`).
   const pathname = usePathname();
   const settingsShown = pathname === '/settings' || pathname.startsWith('/settings/');
+  // The first-run setup holds a capture too: a warm share leaves it up
+  // (`+native-intent.tsx`), and the thread waits for it to close.
+  const setupShown = pathname === '/setup' || pathname.startsWith('/setup/');
   // Settings asked for and not showing yet: the router dispatches a push a
   // commit later, and from behind an editor the push waits for its form
   // sheet. A sheet asked for meanwhile takes over, as from `afterFormSheet`.
@@ -253,7 +256,10 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
   const [captured, setCaptured] = useState<EditSheet | null>(null);
   if (
     captured !== null &&
-    captureMayOpen(sheet, { formSheetGone, settingsOpen: settingsShown || settingsAsked })
+    captureMayOpen(sheet, {
+      formSheetGone,
+      settingsOpen: settingsShown || settingsAsked || setupShown,
+    })
   ) {
     setCaptured(null);
     setSheet(captured);

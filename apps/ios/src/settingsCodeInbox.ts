@@ -73,6 +73,13 @@ export const setSetupPhase = (phase: SetupPhase, router?: Router): void => {
 };
 
 /**
+ * Whether the setup is up or on its way: a share that opens the app then
+ * must not move the router, or its `/` would dismiss the setup whose copy
+ * step is about to read it (`+native-intent.tsx`).
+ */
+export const setupIsUp = (): boolean => setup === 'open' || setup === 'opening';
+
+/**
  * Whether a code waits for a reader. The setup's welcome asks once, on
  * mount: a code that came before the setup was up goes to the copy step;
  * one that comes later is routed here (`route`), never by the welcome too.
@@ -101,7 +108,8 @@ export const useSettingsCodeReader = (onCode: (code: string) => void): void => {
     };
   }, [focused]);
   useEffect(() => {
-    if (focused && code !== null) {
+    // Still waiting: two readers that rendered the same code take it once.
+    if (focused && code !== null && pending === code) {
       pending = null;
       notify();
       take(code);
