@@ -621,7 +621,17 @@ export class FakeGoogle {
             delete (patched as Record<string, unknown>)[key];
           }
         }
-        store.set(taskId, { task: patched, updatedAt: this.stamp() });
+        const updatedAt = this.stamp();
+        // Google stamps `completed` itself when a task is completed (the
+        // client sends only the status), and reopening clears it above.
+        if (
+          patched.status === 'completed' &&
+          existing.task.status !== 'completed' &&
+          patched.completed === undefined
+        ) {
+          patched.completed = new Date(updatedAt).toISOString();
+        }
+        store.set(taskId, { task: patched, updatedAt });
         // A completion moves the list's `updated`; a title, notes or due
         // edit does not (verified live for title, notes and completion).
         if (patched.status !== existing.task.status) {
