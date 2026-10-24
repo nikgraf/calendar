@@ -51,6 +51,29 @@ describe('birthday reminder settings', () => {
     }).pipe(Effect.provide(dbLayer())),
   );
 
+  it.effect('round-trips the weekend, days Monday first, and reads an older row as before', () =>
+    Effect.gen(function* () {
+      // A row written before the weekend fields existed keeps its fields.
+      yield* (yield* DeviceSettingsRepo).set(VIEW_PREFERENCES_KEY, {
+        allDayLaneCollapsed: true,
+        lastView: 'month',
+      });
+      expect(yield* readViewPreferences).toEqual({ allDayLaneCollapsed: true, lastView: 'month' });
+      yield* writeViewPreferences({
+        allDayLaneCollapsed: true,
+        lastView: 'month',
+        weekendDays: ['SA', 'FR'],
+        weekendShading: false,
+      });
+      expect(yield* readViewPreferences).toEqual({
+        allDayLaneCollapsed: true,
+        lastView: 'month',
+        weekendDays: ['FR', 'SA'],
+        weekendShading: false,
+      });
+    }).pipe(Effect.provide(dbLayer())),
+  );
+
   it.effect('a stored value that no longer decodes reads as the defaults', () =>
     Effect.gen(function* () {
       yield* (yield* DeviceSettingsRepo).set(BIRTHDAY_REMINDERS_KEY, { leadDays: [5] });

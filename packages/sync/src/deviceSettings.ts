@@ -14,6 +14,7 @@ import {
   type OnboardingChange,
   OnboardingState,
   resolveTimeZones,
+  sortWeekdays,
   Temporal,
   TimeZoneSettings,
   ViewPreferences,
@@ -166,6 +167,12 @@ export const writeViewPreferences = (
       ...(preferences.sidebarCollapsed === undefined
         ? {}
         : { sidebarCollapsed: preferences.sidebarCollapsed }),
+      ...(preferences.weekendDays === undefined
+        ? {}
+        : { weekendDays: sortWeekdays(preferences.weekendDays) }),
+      ...(preferences.weekendShading === undefined
+        ? {}
+        : { weekendShading: preferences.weekendShading }),
     }),
   );
 

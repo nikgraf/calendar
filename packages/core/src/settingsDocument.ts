@@ -15,7 +15,7 @@ import { MirrorDefinition } from './mirror/definition.ts';
 import { EventNotificationSettings } from './notifications/settings.ts';
 import { canonicalZoneId, runtimeZoneId } from './time/zones.ts';
 import { isDeviceZone, TimeZoneSettings } from './timeZoneSettings.ts';
-import { ViewPreferences } from './viewPreferences.ts';
+import { PortableViewPreferences } from './viewPreferences.ts';
 
 /**
  * The portable settings document: what Export writes, Import reads and the
@@ -120,7 +120,7 @@ export const SettingsDocument = Schema.Struct({
   mirrors: Schema.optional(Schema.Array(MirrorDefinition)),
   timeZones: Schema.optional(TimeZoneSettings),
   version: Schema.Literal(SETTINGS_DOCUMENT_VERSION),
-  view: Schema.optional(ViewPreferences),
+  view: Schema.optional(PortableViewPreferences),
 });
 export type SettingsDocument = typeof SettingsDocument.Type;
 
@@ -260,6 +260,8 @@ const SETTINGS_LEAF_PATHS: ReadonlyArray<readonly [keyof SettingsDocument, strin
   ['timeZones', 'primary'],
   ['timeZones', 'zones'],
   ['view', 'allDayLaneCollapsed'],
+  ['view', 'weekendDays'],
+  ['view', 'weekendShading'],
 ];
 
 /**

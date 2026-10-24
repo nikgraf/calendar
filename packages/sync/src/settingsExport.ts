@@ -6,6 +6,7 @@ import {
   type GoogleTaskListPref,
   isAppleCalendarAccount,
   isAppleRemindersAccount,
+  portableViewPreferences,
   SETTINGS_DOCUMENT_VERSION,
   type SettingsAccount,
   type SettingsDocument,
@@ -162,7 +163,7 @@ export const buildSettingsDocument: Effect.Effect<
     mirrors: yield* readMirrors,
     timeZones: yield* readTimeZoneSettings,
     version: SETTINGS_DOCUMENT_VERSION,
-    // Only the lane cap travels; the opening view and the sidebar are this device's taste.
-    view: { allDayLaneCollapsed: (yield* readViewPreferences).allDayLaneCollapsed },
+    // The lane cap and the weekend travel; the opening view and the sidebar are this device's taste.
+    view: portableViewPreferences(yield* readViewPreferences),
   });
 });

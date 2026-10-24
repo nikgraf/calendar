@@ -1296,7 +1296,10 @@ gateway carries all of it. Details, limits and the threat model:
   `jsonc-parser` edits so comments survive). Accounts are a sign-in
   checklist, never tokens; an import never removes anything and never
   connects an Apple provider; visibility for rows not synced yet is
-  parked in `importedVisibility` and applied after each list pass.
+  parked in `importedVisibility` and applied after each list pass. Of
+  `viewPreferences` only `PortableViewPreferences` travels (the lane cap,
+  `weekendDays`, `weekendShading`), each field optional and imported
+  only when present; the opening view and the sidebar stay on the device.
 - **Settings code**: the settings document as one line a QR code carries,
   for copying a setup between the iPhone and the Mac (core
   `settingsCode.ts`): `SOLUNIVO:1:` + RFC 4648 base32 (no padding) of the

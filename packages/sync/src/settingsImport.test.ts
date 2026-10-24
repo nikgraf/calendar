@@ -7,7 +7,9 @@ import {
   readBirthdayReminderOverrides,
   readEventNotificationSettings,
   readTimeZoneSettings,
+  readViewPreferences,
   writeBirthdayReminderOverrides,
+  writeViewPreferences,
 } from './deviceSettings.ts';
 import {
   applyPendingVisibility,
@@ -81,6 +83,28 @@ describe('importSettings', () => {
       // A second import of the same file is quiet.
       expect((yield* importSettings(document)).settingsChanged).toEqual([]);
       expect(applied).toHaveLength(1);
+    }).pipe(Effect.provide(layer));
+  });
+
+  it.effect('imports the view fields the file holds and keeps the device-local ones', () => {
+    const { layer } = makeSettingsTestLayer({});
+    return Effect.gen(function* () {
+      yield* writeViewPreferences({ allDayLaneCollapsed: true, lastView: 'month' });
+      // The default weekend, spelled out, is no change.
+      const same: SettingsDocument = { version: 1, view: { weekendDays: ['SU', 'SA'] } };
+      expect((yield* previewSettingsImport(same)).settingsChanged).toEqual([]);
+      const document: SettingsDocument = {
+        version: 1,
+        view: { weekendDays: ['SA', 'FR'], weekendShading: false },
+      };
+      expect((yield* importSettings(document)).settingsChanged).toEqual(['view']);
+      expect(yield* readViewPreferences).toEqual({
+        allDayLaneCollapsed: true,
+        lastView: 'month',
+        weekendDays: ['FR', 'SA'],
+        weekendShading: false,
+      });
+      expect((yield* importSettings(document)).settingsChanged).toEqual([]);
     }).pipe(Effect.provide(layer));
   });
 

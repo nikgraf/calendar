@@ -54,7 +54,11 @@ describe('buildSettingsDocument', () => {
         zones: ['device', 'Asia/Kolkata', 'UTC'],
       });
       expect(document.eventNotifications).toEqual({ enabled: true, includeAppleCalendar: false });
-      expect(document.view).toEqual({ allDayLaneCollapsed: false });
+      expect(document.view).toEqual({
+        allDayLaneCollapsed: false,
+        weekendDays: ['SA', 'SU'],
+        weekendShading: true,
+      });
       expect(document.accounts).toEqual([
         {
           calendars: [

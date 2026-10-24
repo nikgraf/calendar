@@ -8,12 +8,14 @@ import {
   type EventNotificationSettings,
   isAppleCalendarAccount,
   isAppleRemindersAccount,
+  portableViewPreferences,
   type ScreenPrivacy,
   type SettingsDocument,
   type SettingsImportSummary,
   type SettingsSection,
   type TimeZoneSettings,
   type ViewPreferences,
+  withPortableViewPreferences,
 } from '@calendar/core';
 import { AccountRepo, CalendarRepo, DeviceSettingsRepo, TaskRepo } from '@calendar/db';
 import { Clock, Effect } from 'effect';
@@ -142,12 +144,16 @@ const planSettingsImport = (
         settingsChanged.push('birthdayReminderOverrides');
       }
     }
-    // Only the lane cap is imported; the device-local fields (opening view,
-    // sidebar) keep whatever this device chose.
+    // The lane cap and the weekend are imported, each only when the file
+    // holds it; the device-local fields (opening view, sidebar) keep
+    // whatever this device chose.
     const currentView = yield* readViewPreferences;
+    const nextView = document.view
+      ? withPortableViewPreferences(currentView, document.view)
+      : undefined;
     const view =
-      document.view && document.view.allDayLaneCollapsed !== currentView.allDayLaneCollapsed
-        ? { ...currentView, allDayLaneCollapsed: document.view.allDayLaneCollapsed }
+      nextView && !same(portableViewPreferences(nextView), portableViewPreferences(currentView))
+        ? nextView
         : undefined;
     if (view) {
       settingsChanged.push('view');
