@@ -73,11 +73,13 @@ export const setSetupPhase = (phase: SetupPhase, router?: Router): void => {
 };
 
 /**
- * Whether the setup is up or on its way: a share that opens the app then
- * must not move the router, or its `/` would dismiss the setup whose copy
- * step is about to read it (`+native-intent.tsx`).
+ * Whether a share that opens the app now may well be a code for a reader:
+ * the setup is up or on its way, or a reader is in front (Settings › Read
+ * Code). Then a share must not move the router (`+native-intent.tsx`): its
+ * `/` would dismiss the screen that is about to read it, and could leave
+ * the code waiting with nothing to route it.
  */
-export const setupIsUp = (): boolean => setup === 'open' || setup === 'opening';
+export const awaitingCode = (): boolean => setup === 'open' || setup === 'opening' || readers > 0;
 
 /**
  * Whether a code waits for a reader. The setup's welcome asks once, on

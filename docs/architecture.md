@@ -1331,8 +1331,9 @@ gateway carries all of it. Details, limits and the threat model:
   setup is up or due, else Settings › Read Code. Such a URL moves nothing
   on the router in a running app (`redirectSystemPath` answers null): the
   usual `/` would dismiss the setup whose copy step is waiting for it.
-  While the setup is up a share's own URL moves nothing either (it carries
-  no text), and a capture it starts waits for the setup to close.
+  While the setup is up or a reader is in front, a share's own URL moves
+  nothing either (it carries no text), and a capture it starts waits for
+  the setup or Settings to close.
 - **Time zones**: up to three entries per device, one primary, which
   replaces the device zone for everything the UI draws (both roots gate
   on `useTimeZones()`); the others hang under each hour in the gutter,

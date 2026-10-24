@@ -1,5 +1,5 @@
 import { extractSettingsCode } from '@calendar/core/settingsCode';
-import { setupIsUp } from '../src/settingsCodeInbox.ts';
+import { awaitingCode } from '../src/settingsCodeInbox.ts';
 
 const decoded = (path: string): string => {
   try {
@@ -23,9 +23,9 @@ const decoded = (path: string): string => {
  * person is: in a running app it moves nothing (null) — sending it to `/`
  * would close the setup whose copy step is waiting for it — and only a
  * cold start gets the calendar. A share's own URL carries no text (the
- * extension stores it), so while the setup is up a warm share moves
- * nothing either: it may well be the Mac's code, shared in for the copy
- * step.
+ * extension stores it), so while the setup is up or a code reader is in
+ * front a warm share moves nothing either: it may well be the Mac's code,
+ * shared in for that reader.
  */
 export function redirectSystemPath({
   initial,
@@ -37,7 +37,7 @@ export function redirectSystemPath({
   if (extractSettingsCode(decoded(path))) {
     return initial ? '/' : null;
   }
-  if (!initial && setupIsUp() && /expo-sharing|capture-fixture/i.test(path)) {
+  if (!initial && awaitingCode() && /expo-sharing|capture-fixture/i.test(path)) {
     return null;
   }
   return path.startsWith('/') &&

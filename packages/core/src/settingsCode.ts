@@ -94,7 +94,8 @@ export const base32Decode = (text: string): Uint8Array | null => {
 };
 
 const PREFIX_PATTERN = new RegExp(`${SETTINGS_CODE_PREFIX}:(\\d+):`, 'gi');
-const PAYLOAD_PATTERN = /^[A-Z2-7]+/;
+const PAYLOAD_CHAR = /[A-Z2-7]/;
+const SPACE = /\s/;
 /** Shorter than any document deflates to: "Solunivo:2:Design…" in a note is no code. */
 const MIN_PAYLOAD_LENGTH = 16;
 
@@ -109,9 +110,19 @@ const MIN_PAYLOAD_LENGTH = 16;
  */
 export const extractSettingsCode = (text: string): string | null => {
   for (const prefix of text.matchAll(PREFIX_PATTERN)) {
-    const rest = text.slice(prefix.index + prefix[0].length).replaceAll(/\s+/g, '');
-    const payload = PAYLOAD_PATTERN.exec(rest)?.[0];
-    if (payload !== undefined && payload.length >= MIN_PAYLOAD_LENGTH) {
+    // Walk this payload only — up to the first character that is neither
+    // in the alphabet nor a space — so many failed prefixes cost a line
+    // each, never the rest of the text each.
+    const start = prefix.index + prefix[0].length;
+    let end = start;
+    while (
+      end < text.length &&
+      (PAYLOAD_CHAR.test(text.charAt(end)) || SPACE.test(text.charAt(end)))
+    ) {
+      end++;
+    }
+    const payload = text.slice(start, end).replaceAll(/\s+/g, '');
+    if (payload.length >= MIN_PAYLOAD_LENGTH) {
       return `${SETTINGS_CODE_PREFIX}:${prefix[1]}:${payload}`;
     }
   }

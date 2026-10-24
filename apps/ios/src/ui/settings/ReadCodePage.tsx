@@ -16,7 +16,12 @@ import { type ThemeColors, useStyles } from '../theme.ts';
 export function ReadCodePage() {
   const styles = useStyles(makeStyles);
   const [applied, setApplied] = useState<ReadonlyArray<string> | null>(null);
-  const reader = useCodeReader((summary) => setApplied(describeImportSummary(summary)));
+  // Each read shows its own outcome: a later code that fails says so,
+  // in place of the earlier one's "Copied".
+  const reader = useCodeReader(
+    (summary) => setApplied(describeImportSummary(summary)),
+    () => setApplied(null),
+  );
   return (
     <SettingsPage testID="settings-page-read-code">
       <Section footer="On the Mac, open Solunivo › Settings › Settings File and choose Show Code.">

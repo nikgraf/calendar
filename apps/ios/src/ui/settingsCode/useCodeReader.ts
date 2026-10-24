@@ -14,9 +14,13 @@ import { useSettingsTransfer } from '../settings/useSettingsTransfer.ts';
  *
  * `read` answers whether it ran (a camera repeat, or anything while a read
  * is under way, does not): the scanner goes back to its button after one
- * that ran, so scanning the same code again is a tap away.
+ * that ran, so scanning the same code again is a tap away. `onReading`
+ * hears each read that starts, before its outcome.
  */
-export const useCodeReader = (onImported: (summary: SettingsImportSummary) => void) => {
+export const useCodeReader = (
+  onImported: (summary: SettingsImportSummary) => void,
+  onReading?: () => void,
+) => {
   const transfer = useSettingsTransfer();
   const tried = useRef<string | null>(null);
   const reading = useRef(false);
@@ -27,6 +31,7 @@ export const useCodeReader = (onImported: (summary: SettingsImportSummary) => vo
     }
     tried.current = code;
     reading.current = true;
+    onReading?.();
     try {
       const summary = await transfer.importCode(code);
       if (summary) {

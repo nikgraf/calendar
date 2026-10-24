@@ -144,6 +144,11 @@ describe('extractSettingsCode', () => {
     expect(extractSettingsCode('Solunivo: 2: Design review Tuesday 3pm')).toBeNull();
     expect(extractSettingsCode('Solunivo:2:Design review Tuesday 3pm')).toBeNull();
     expect(extractSettingsCode('SOLUNIVO:1:K')).toBeNull();
+    // Many prefixes that come to nothing: each is looked at once, in a
+    // line's time, not the rest of the text's (that was seconds).
+    const started = performance.now();
+    expect(extractSettingsCode('SOLUNIVO:1:\n'.repeat(40_000))).toBeNull();
+    expect(performance.now() - started).toBeLessThan(1000);
     expect(isSettingsCode('HELLO')).toBe(false);
     expect(isSettingsCode(code)).toBe(true);
   });
