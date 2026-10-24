@@ -32,7 +32,14 @@ const callHelper = (method: string, params: Record<string, unknown>): Promise<un
       reject(new Error(`helper ${method}: no answer`));
     }, 15_000);
     lines.on('line', (line) => {
-      const message = JSON.parse(line) as { error?: string; id?: number; result?: unknown };
+      // Not every line is the helper's (a framework may print), and the
+      // app skips what is not JSON; so does this.
+      let message: { error?: string; id?: number; result?: unknown };
+      try {
+        message = JSON.parse(line) as typeof message;
+      } catch {
+        return;
+      }
       if (message.id !== 1) {
         return;
       }
