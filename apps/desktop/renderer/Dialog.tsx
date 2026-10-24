@@ -16,58 +16,12 @@ const dialogs = makeDialogStack(window);
 export const isDialogOpen = (): boolean => dialogs.isOpen();
 
 /**
- * Puts a surface on the stack — a dialog or a popover — so only the
- * topmost one answers Escape and the calendar's keys stand back while it
- * is open. Focus moves inside `panel` and is trapped there (Tab cycles),
- * so a keyboard can't reach what the surface covers, and goes back to
- * the opener on close. Returns what closes it.
+ * Registers a lighter surface (a popover) with the same stack, so only
+ * the topmost one answers Escape and the calendar's keys stand back
+ * while it is open. Returns what closes it.
  */
-export const openFocusLayer = (
-  zIndex: number,
-  panel: HTMLElement | null,
-  onEscape: () => void,
-): (() => void) => {
-  const active = document.activeElement as HTMLElement | null;
-  const opener = active && typeof active.focus === 'function' ? active : null;
-  // Focus the control marked `data-initial-focus`, else the first one,
-  // unless something inside already took it (an autofocused title field).
-  if (panel && !panel.contains(document.activeElement)) {
-    const first =
-      panel.querySelector<HTMLElement>('[data-initial-focus]') ??
-      panel.querySelector<HTMLElement>(FOCUSABLE);
-    (first ?? panel).focus();
-  }
-  const trapTab = (key: KeyboardEvent) => {
-    if (key.key !== 'Tab' || !panel) {
-      return;
-    }
-    const focusable = [...panel.querySelectorAll<HTMLElement>(FOCUSABLE)];
-    if (focusable.length === 0) {
-      key.preventDefault();
-      return;
-    }
-    const first = focusable[0]!;
-    const last = focusable.at(-1)!;
-    // Focus that fell out (a clicked control unmounted) comes back in.
-    if (!panel.contains(document.activeElement)) {
-      key.preventDefault();
-      (key.shiftKey ? last : first).focus();
-    } else if (key.shiftKey && document.activeElement === first) {
-      key.preventDefault();
-      last.focus();
-    } else if (!key.shiftKey && document.activeElement === last) {
-      key.preventDefault();
-      first.focus();
-    }
-  };
-  // On window, capture phase: real key events pass through here first,
-  // and the e2e suite's synthetic Escape is dispatched on window.
-  const close = dialogs.open(zIndex, { onEscape, onKey: trapTab });
-  return () => {
-    close();
-    opener?.focus();
-  };
-};
+export const openDialogLayer = (zIndex: number, onEscape: () => void): (() => void) =>
+  dialogs.open(zIndex, { onEscape, onKey: () => {} });
 
 /**
  * The one modal shell for the editor, the ⌘K bar and the dialogs inside
@@ -103,12 +57,48 @@ export function Dialog({
     onCloseRef.current = onClose;
   }, [onClose]);
 
-  useEffect(
-    () => openFocusLayer(zIndex, panelRef.current, () => onCloseRef.current()),
+  useEffect(() => {
+    const active = document.activeElement as HTMLElement | null;
+    const opener = active && typeof active.focus === 'function' ? active : null;
+    const panel = panelRef.current;
+    // Focus the first control unless something inside already took it
+    // (an autofocused title field).
+    if (panel && !panel.contains(document.activeElement)) {
+      const first = panel.querySelector<HTMLElement>(FOCUSABLE);
+      (first ?? panel).focus();
+    }
+    const trapTab = (key: KeyboardEvent) => {
+      if (key.key !== 'Tab' || !panel) {
+        return;
+      }
+      const focusable = [...panel.querySelectorAll<HTMLElement>(FOCUSABLE)];
+      if (focusable.length === 0) {
+        key.preventDefault();
+        return;
+      }
+      const first = focusable[0]!;
+      const last = focusable.at(-1)!;
+      if (key.shiftKey && document.activeElement === first) {
+        key.preventDefault();
+        last.focus();
+      } else if (!key.shiftKey && document.activeElement === last) {
+        key.preventDefault();
+        first.focus();
+      }
+    };
+    // On window, capture phase: real key events pass through here first,
+    // and the e2e suite's synthetic Escape is dispatched on window.
+    const close = dialogs.open(zIndex, {
+      onEscape: () => onCloseRef.current(),
+      onKey: trapTab,
+    });
+    return () => {
+      close();
+      opener?.focus();
+    };
     // zIndex is fixed per call site; re-running would re-open the dialog.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
+  }, []);
 
   // The scrim is black in both appearances, not a token: it dims whatever
   // is under it, light or dark.

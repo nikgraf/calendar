@@ -61,8 +61,6 @@ export function CalendarColorButton({ calendar }: { calendar: CalendarInfo }) {
               className={`size-5 rounded ${
                 hex === calendar.colorHex ? 'ring-2 ring-focus ring-offset-1' : ''
               }`}
-              // Focus opens on the current color, not the palette's first.
-              data-initial-focus={hex === calendar.colorHex ? '' : undefined}
               key={hex}
               onClick={() => choose(hex)}
               style={{ backgroundColor: hex }}

@@ -2008,7 +2008,7 @@ describe('the color picker in a long Settings › Accounts list', () => {
     await listApp?.stop();
   });
 
-  it('opens above a low row inside the fixed window, keeps Tab inside, and recolors', async () => {
+  it('opens above a low row inside the fixed window, recolors, and closes with its pane', async () => {
     const settings = await listApp.openSettings('accounts');
     try {
       await settings.waitFor(
@@ -2018,6 +2018,7 @@ describe('the color picker in a long Settings › Accounts list', () => {
       // room for the picker under it.
       const well = await settings.eval<{
         label: string;
+        right: number;
         top: number;
         x: number;
         y: number;
@@ -2026,47 +2027,33 @@ describe('the color picker in a long Settings › Accounts list', () => {
           .filter((el) => el.getBoundingClientRect().bottom <= window.innerHeight);
         const el = wells.at(-1);
         const r = el.getBoundingClientRect();
-        return { label: el.getAttribute('aria-label'), top: r.top, x: r.x + r.width / 2, y: r.y + r.height / 2 };
+        return { label: el.getAttribute('aria-label'), right: r.right, top: r.top, x: r.x + r.width / 2, y: r.y + r.height / 2 };
       })()`);
       expect(well.top).toBeGreaterThan(400);
       await settings.click(well.x, well.y);
       const panel = `document.querySelector('[role="dialog"][aria-label^="Color of"]')`;
       await settings.waitFor(`!!${panel}`);
-      const rect = await settings.eval<{ bottom: number; top: number }>(
-        `(() => { const r = ${panel}.getBoundingClientRect(); return { bottom: r.bottom, top: r.top }; })()`,
+      const rect = await settings.eval<{
+        bottom: number;
+        left: number;
+        right: number;
+        top: number;
+        width: number;
+      }>(
+        `(() => { const r = ${panel}.getBoundingClientRect(); return { bottom: r.bottom, left: r.left, right: r.right, top: r.top, width: r.width }; })()`,
       );
       expect(rect.top).toBeGreaterThanOrEqual(0);
       expect(rect.bottom).toBeLessThanOrEqual(await settings.eval<number>('window.innerHeight'));
       expect(rect.bottom).toBeLessThanOrEqual(well.top);
-
-      // 24 swatches and the Custom field: a full lap and more, both ways,
-      // never reaching the pane tabs behind the backdrop.
-      const focused = `(${panel}.contains(document.activeElement) ? document.activeElement.getAttribute('aria-label') : null)`;
-      // Focus opens on the calendar's current color.
-      expect(await settings.eval<string | null>(focused)).toBe('Set color #4986e7');
-      for (const shift of [false, true]) {
-        const seen = new Set<string | null>();
-        for (let press = 0; press < 30; press += 1) {
-          await settings.send('Input.dispatchKeyEvent', {
-            code: 'Tab',
-            key: 'Tab',
-            modifiers: shift ? 8 : 0,
-            type: 'rawKeyDown',
-            windowsVirtualKeyCode: 9,
-          });
-          seen.add(await settings.eval<string | null>(focused));
-        }
-        expect(seen.has(null)).toBe(false);
-        expect(seen.size).toBe(25);
-      }
+      // Hung from the well's right edge at the palette's full width (six
+      // 20 px swatches, not squeezed to what is left of the window).
+      expect(rect.left).toBeGreaterThanOrEqual(0);
+      expect(Math.abs(rect.right - well.right)).toBeLessThanOrEqual(1);
+      expect(rect.width).toBeGreaterThan(6 * 20);
 
       const swatch = await settings.locate('[aria-label="Set color #16a765"]');
       await settings.click(swatch.x, swatch.y);
       await settings.waitFor(`!${panel}`);
-      // Focus is back on the well it opened from.
-      expect(
-        await settings.eval<string | null>(`document.activeElement?.getAttribute('aria-label')`),
-      ).toBe(well.label);
       const summary = well.label.replace('Change color: ', '');
       await expect
         .poll(
@@ -2076,6 +2063,14 @@ describe('the color picker in a long Settings › Accounts list', () => {
             )?.colorHex,
         )
         .toBe('#16a765');
+
+      // Another pane only hides Accounts: a picker left open there would
+      // take the next Escape, so the pane switch closes it.
+      await settings.click(well.x, well.y);
+      await settings.waitFor(`!!${panel}`);
+      await settings.eval(`location.replace('#settings/notifications')`);
+      await settings.waitFor(`!${panel}`);
+      await settings.waitFor(`!document.querySelector('[aria-label="Close color picker"]')`);
     } finally {
       await listApp.closeSettings();
     }

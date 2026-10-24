@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { openFocusLayer } from '../Dialog.tsx';
+import { openDialogLayer } from '../Dialog.tsx';
 import { popoverTop } from './popoverPlacement.ts';
 
 /**
@@ -49,14 +49,20 @@ export function Popover({
   }, [onClose]);
   // On the dialog stack, like the modals: Escape reaches the topmost
   // surface only, so a picker over an editor closes alone, and the
-  // calendar's own Escape (which leaves the side panel) stands back. Tab
-  // stays inside, so a keyboard cannot switch the settings pane under an
-  // open picker and leave it waiting, hidden, for the next Escape.
+  // calendar's own Escape (which leaves the side panel) stands back. A
+  // new settings pane closes it too: the old pane is only hidden, and a
+  // picker left open in it would take the next Escape from the new one.
   useEffect(() => {
     if (!open) {
       return;
     }
-    return openFocusLayer(50, panelRef.current, () => onCloseRef.current());
+    const close = () => onCloseRef.current();
+    window.addEventListener('hashchange', close);
+    const closeLayer = openDialogLayer(50, close);
+    return () => {
+      window.removeEventListener('hashchange', close);
+      closeLayer();
+    };
   }, [open]);
 
   // Measured before paint, and again whenever the panel's content resizes.
@@ -86,7 +92,7 @@ export function Popover({
       />
       <div
         aria-label={label}
-        className={`fixed z-50 rounded-popover border border-hairline bg-surface-raised p-2 shadow-xl outline-none ${className}`}
+        className={`fixed z-50 rounded-popover border border-hairline bg-surface-raised p-2 shadow-xl ${className}`}
         ref={panelRef}
         role="dialog"
         style={
@@ -96,7 +102,6 @@ export function Popover({
               { right: document.documentElement.clientWidth - anchor.x, top: top ?? anchor.y }
             : { left: anchor.x, top: top ?? anchor.y }
         }
-        tabIndex={-1}
       >
         {children}
       </div>
