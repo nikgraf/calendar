@@ -1620,6 +1620,7 @@ describe('calendar desktop e2e', () => {
       ),
     ).toEqual([
       'Accounts',
+      'Calendar',
       'Notifications',
       'Time Zones',
       'AI Model',
@@ -1678,7 +1679,7 @@ describe('calendar desktop e2e', () => {
       setter.call(input, '');
       input.dispatchEvent(new Event('input', { bubbles: true }));
     })()`);
-    await settings.waitFor(`document.querySelectorAll('[role="tab"]').length === 10`);
+    await settings.waitFor(`document.querySelectorAll('[role="tab"]').length === 11`);
 
     // The main process reads the pane from the window's URL, so it must
     // have followed the tab click: asking for Accounts again moves back.
