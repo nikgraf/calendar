@@ -7,7 +7,13 @@ import { modelUnavailableCopy } from '../ai/modelUnavailableCopy.ts';
 import { Button } from '../ui/Button.tsx';
 import { IconButton } from '../ui/IconButton.tsx';
 import { MicIcon, SparkleIcon, SpinnerIcon } from '../ui/icons.tsx';
-import { captureSourceOf, isCapturableInPhrase, readPaste } from './captureClipboard.ts';
+import { requestCodeImport } from '../settingsCode/codeImportRequests.ts';
+import {
+  captureSourceOf,
+  isCapturableInPhrase,
+  readPaste,
+  settingsCodeOf,
+} from './captureClipboard.ts';
 
 /** The field's placeholder; the e2e specs find the field by it. */
 export const QUICK_ADD_PLACEHOLDER = 'Lunch with Sarah tomorrow at 1';
@@ -188,6 +194,14 @@ export function QuickAddBar({
             }}
             onPaste={(event) => {
               const pasted = readPaste(event.clipboardData);
+              // A settings code is one line, so it would paste as a phrase.
+              const code = settingsCodeOf(pasted);
+              if (code) {
+                event.preventDefault();
+                event.currentTarget.blur();
+                requestCodeImport(code);
+                return;
+              }
               if (!isCapturableInPhrase(pasted)) {
                 return;
               }

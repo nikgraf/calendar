@@ -5,16 +5,18 @@ import {
   type SettingsDocument,
   type SettingsImportSummary,
 } from '@calendar/core';
+import { decodeSettingsCode } from '@calendar/core/settingsCode';
 import { Effect } from 'effect';
 
 export const shortPath = (path: string): string => path.replace(/^\/Users\/[^/]+/, '~');
 
 type Mutations = ReturnType<typeof useBackendMutations>;
 
-/** A settings file chosen and read, with what importing it would do; the person confirms next. */
+/** Settings read from a file or a code, with what importing them would do; the person confirms next. */
 export interface PendingImport {
   readonly document: SettingsDocument;
-  readonly path: string;
+  /** What the preview names: the file's short path, or "these settings" for a code. */
+  readonly source: string;
   readonly summary: SettingsImportSummary;
 }
 
@@ -47,5 +49,22 @@ export const pickSettingsFile = async (mutations: Mutations): Promise<PendingImp
     ),
   );
   const summary = await mutations.previewSettingsImport({ document });
-  return { document, path: opened.path, summary };
+  return { document, source: shortPath(opened.path), summary };
+};
+
+/**
+ * The same first half for a settings code (scanned or pasted): decode —
+ * a failure says what is wrong with the code — and preview. Shared by the
+ * code readers in Settings › Settings File, the setup dialog and the
+ * calendar's ⌘V.
+ */
+export const readSettingsCode = async (
+  mutations: Mutations,
+  text: string,
+): Promise<PendingImport> => {
+  const document = await Effect.runPromise(
+    decodeSettingsCode(text).pipe(Effect.mapError((error) => new Error(error.message))),
+  );
+  const summary = await mutations.previewSettingsImport({ document });
+  return { document, source: 'these settings', summary };
 };

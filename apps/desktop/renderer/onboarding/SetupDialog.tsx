@@ -16,7 +16,8 @@ import {
 } from '@calendar/core';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { Dialog } from '../Dialog.tsx';
-import { type PendingImport, pickSettingsFile, shortPath } from '../settingsTransfer.ts';
+import { ReadCodePanel } from '../settingsCode/ReadCodePanel.tsx';
+import { type PendingImport, pickSettingsFile } from '../settingsTransfer.ts';
 import { Button } from '../ui/Button.tsx';
 import { CalendarIcon, ChevronRightIcon, CloudUpIcon } from '../ui/icons.tsx';
 import { useOnboardingEnabled } from './enabled.ts';
@@ -368,7 +369,7 @@ function Welcome({
           <span className="flex min-w-0 flex-1 flex-col">
             <span className="font-medium">Copy from your iPhone</span>
             <span className="text-sm text-ink-secondary">
-              Already using Solunivo there? Bring its settings over and skip the setup
+              Already using Solunivo there? Read its code and skip the setup
             </span>
           </span>
           <ChevronRightIcon className="text-ink-secondary" size={16} />
@@ -657,7 +658,10 @@ function AppleStep({
   );
 }
 
-/** The copy door: a settings file from the iPhone (Export there, AirDrop here), previewed before it applies. */
+/**
+ * The copy door: the iPhone's settings code, read by this Mac's camera or
+ * pasted (a settings file still imports), previewed before it applies.
+ */
 function CopyStep({
   onByHand,
   onImported,
@@ -720,24 +724,19 @@ function CopyStep({
             <Button data-testid="setup-by-hand" onClick={onByHand} variant="ghost">
               Set up by hand instead
             </Button>
-            <Button
-              data-testid="setup-import-file"
-              disabled={busy}
-              onClick={() => void pick()}
-              variant="primary"
-            >
+            <Button data-testid="setup-import-file" disabled={busy} onClick={() => void pick()}>
               Import a settings file…
             </Button>
           </>
         )
       }
-      lead="Bring the iPhone’s settings over as a file, and this Mac starts from them."
+      lead="Show the code on the iPhone — Solunivo › Settings › Settings File › Show Code for Your Mac — and hold it up to this Mac’s camera, or paste it."
       onSkip={onSkip}
       title="Copy from your iPhone"
     >
       {pending ? (
         <div data-testid="setup-import-preview">
-          <h3 className="text-sm font-medium">Copy {shortPath(pending.path)}?</h3>
+          <h3 className="text-sm font-medium">Copy {pending.source}?</h3>
           <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-ink-secondary">
             {describeImportSummary(pending.summary).map((line) => (
               <li key={line}>{line}</li>
@@ -746,19 +745,14 @@ function CopyStep({
           <p className="mt-3 text-xs text-ink-secondary">Nothing is removed by an import.</p>
         </div>
       ) : (
-        <ul className="flex flex-col gap-1.5 text-sm">
-          <Point>
-            On the iPhone, open Settings › Settings File and choose Export Settings…, then AirDrop
-            the file to this Mac.
-          </Point>
-          <Point>
+        <>
+          <ReadCodePanel camera onRead={setPending} />
+          <p className="text-xs text-ink-secondary">
             What comes over: accounts as a sign-in list, which calendars and lists are shown, time
-            zones, alerts and birthday reminders.
-          </Point>
-          <Point>
-            What never does: passwords and sign-in tokens. Each Google account signs in once here.
-          </Point>
-        </ul>
+            zones, alerts and birthday reminders. Never passwords or sign-in tokens: each Google
+            account signs in once here.
+          </p>
+        </>
       )}
       {notice ? (
         <p className="text-sm text-danger" data-testid="setup-copy-notice">
@@ -770,7 +764,7 @@ function CopyStep({
 }
 
 /**
- * After the copy: what the file set is listed as done; what is this
+ * After the copy: what the code (or file) set is listed as done; what is this
  * Mac's own stays to do — a sign-in per Google account, the Apple
  * permissions the file says were on, Contacts. "Open the calendar" ends
  * the setup with them done or not.

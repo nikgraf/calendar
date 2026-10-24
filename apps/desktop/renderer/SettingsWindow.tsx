@@ -12,6 +12,7 @@ import { MirrorsSection } from './MirrorsSection.tsx';
 import { ModelSection } from './ModelSection.tsx';
 import { PrivacySection } from './PrivacySection.tsx';
 import { RemindersSection } from './RemindersSection.tsx';
+import { SettingsCodeSection } from './settingsCode/SettingsCodeSection.tsx';
 import { SettingsFileSection, SettingsTransferSection } from './SettingsFileSection.tsx';
 import {
   filterPanes,
@@ -49,6 +50,7 @@ const PANE_CONTENT: Record<SettingsPaneId, ReactNode> = {
   agents: <AgentsSection />,
   file: (
     <>
+      <SettingsCodeSection />
       <SettingsTransferSection />
       <SettingsFileSection />
     </>
