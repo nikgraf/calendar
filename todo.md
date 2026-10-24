@@ -55,14 +55,6 @@ The 2026-10-02 review's findings are closed in `docs/decisions.md`
 
 ## Tier 2 — features (near-term, well-scoped)
 
-- [ ] Settings code (`todo/settings-code`, PR B of onboarding; plan in the
-      2026-10-22 canvas) — the settings document compressed into a QR code
-      (`SOLUNIVO:1:` + base45 of deflate-raw, titles dropped when it does
-      not fit), shown in Settings › Settings File and read by the other
-      device's camera or pasted; replaces the setup's file-based copy door
-      and the "Set up your Mac/iPhone" lesson body. Adds `expo-camera` and
-      `expo-clipboard` (native fingerprint, TestFlight build) and the Mac's
-      camera permission string.
 - [ ] Per-calendar "keep only N years" switch — only should storage ever
       matter (2026-10-04: 303 events in 380 KB; the RDATE and COUNT
       follow-ups shipped, see `docs/decisions.md`). Google calendars only

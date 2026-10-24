@@ -5,6 +5,7 @@ import { NotificationsSections } from '../settings/NotificationsPage.tsx';
 import { IOS_SETTINGS_PATH, useSettingsConnections } from '../settings/SettingsContext.tsx';
 import { TimeZonesSections } from '../settings/TimeZonesPage.tsx';
 import { useSettingsTransfer } from '../settings/useSettingsTransfer.ts';
+import { SettingsCodePanel } from '../settingsCode/SettingsCodePanel.tsx';
 import { LessonFrame } from './LessonFrame.tsx';
 
 /** Alerts: the Notifications page's sections, as they are in Settings. */
@@ -95,7 +96,7 @@ export function LessonZones() {
   );
 }
 
-/** Set up your Mac, for now: the settings document as a file to AirDrop over. */
+/** Set up your Mac: this iPhone's settings code, and the file as the fallback. */
 export function LessonOtherDevice() {
   return (
     <LessonFrame id="otherDevice">
@@ -104,12 +105,15 @@ export function LessonOtherDevice() {
   );
 }
 
-/** Below the frame, so `useLessonTried` reads the frame's context. */
+/**
+ * Below the frame, so `useLessonTried` reads the frame's context. The code
+ * waits behind Show Code; the reveal, its copy, or a file that went
+ * somewhere is the try.
+ */
 function OtherDeviceBody() {
   const { colors } = useTheme();
   const { busy, exportSettings, notice } = useSettingsTransfer();
   const tried = useLessonTried();
-  // Only a file that went somewhere is a try, not a dismissed sheet.
   const share = async () => {
     if (await exportSettings()) {
       tried();
@@ -117,12 +121,13 @@ function OtherDeviceBody() {
   };
   return (
     <>
+      <SettingsCodePanel onTried={tried} reveal />
       <Section
         footer={
           <>
             <Footer>
-              On the Mac, Solunivo’s welcome dialog offers “Copy from your iPhone”, and Settings ›
-              Settings File imports the same file any time.
+              Or as a file: export it, AirDrop it to the Mac, and import it there under Settings ›
+              Settings File.
             </Footer>
             {notice ? <Footer testID="lesson-export-notice">{notice}</Footer> : null}
           </>

@@ -957,8 +957,9 @@ gateway carries all of it. Details, limits and the threat model:
   closes again when accounts arrive another way (the watched settings
   file is imported a beat after launch). The Google step's Tasks box is
   `AddAccountParams.tasks` → `googleScopes({ tasks })`; the copy door
-  imports a settings file (`useSettingsTransfer` / `settingsTransfer.ts`,
-  shared with Settings File) and lists what the device still has to do.
+  reads the other device's settings code (camera or paste; a settings
+  file still imports there — see "Settings code" below) and lists what
+  the device still has to do.
 - **Card and lessons.** `lessonRows` gives the card its rows ("Add your
   accounts" first while nothing is connected); the card leaves once every
   lesson is ticked. A lesson is an existing surface plus a frame: Create
@@ -967,9 +968,11 @@ gateway carries all of it. Details, limits and the threat model:
   `LessonBanner`; Search with AI is search with its sentence read (the
   desktop panel's thread, iOS route params on the Search tab); Alerts,
   Contacts, Time zones and "Set up your Mac/iPhone" frame the Settings
-  sections (iOS `app/lesson/` modal, desktop `PanelState` `lesson`). A
-  section reports a change that went through — a setting saved, an
-  access granted, a file shared — through `useLessonTried`
+  sections (iOS `app/lesson/` modal, desktop `PanelState` `lesson`; "Set
+  up your Mac/iPhone" shows this device's settings code behind Show Code,
+  the export kept under it). A section reports a change that went
+  through — a setting saved, an access granted, a file shared, the code
+  revealed or copied — through `useLessonTried`
   (`LessonTriedContext`; nothing outside a lesson), which ticks the
   lesson done; leaving a frame without one ticks it skipped. Once tried,
   a banner keeps its hint and loses Skip. On iOS the card shows folded
@@ -1296,6 +1299,43 @@ gateway carries all of it. Details, limits and the threat model:
   checklist, never tokens; an import never removes anything and never
   connects an Apple provider; visibility for rows not synced yet is
   parked in `importedVisibility` and applied after each list pass.
+- **Settings code**: the settings document as one line a QR code carries,
+  for copying a setup between the iPhone and the Mac (core
+  `settingsCode.ts`): `SOLUNIVO:1:` + RFC 4648 base32 (no padding) of the
+  raw-deflated JSON — base32 stays in the QR alphanumeric set and has no
+  space, `%` or `+` for a paste to mangle. What an import never reads is
+  left out: Google calendar and list titles (Google matches by id),
+  Google titles in mirror refs, the Mac-only `desktop` section; Apple
+  titles stay (they are the match keys). A typical three-account setup is
+  about a thousand characters, QR version ~22 at error correction M; past
+  version 40 the QR gives way to the text alone. The decoder finds a code
+  in any text (wrapped, inside a sentence, a lowercased scheme; the prefix
+  as written and a document's worth of payload, so a note that starts
+  "Solunivo: 2:" stays a note), caps the
+  input and the inflated size, says when a newer app made the code, and
+  ends in `parseSettingsDocument`, so a code imports exactly as a file
+  does. `useSettingsCode` (app-state) rebuilds it from a `settingsDocument`
+  atom keyed on `SETTINGS_DOCUMENT_KEYS` (db keys: the ones the watched
+  file writes back on — never events or tasks). Shown behind a Show Code
+  reveal where it is not asked for (the lesson, the Mac's Settings File
+  card): it holds account addresses and calendar choices. Read on iOS
+  by expo-camera (started by a tap, only while the screen is in front) or
+  a paste field (no "Allow Paste" prompt); on the Mac by the FaceTime
+  camera — Electron's Chromium has no `BarcodeDetector`, so the renderer
+  sends a JPEG frame a few times a second over `camera:read-qr` and the
+  helper reads it with Vision (`barcode.readQr`, `BarcodeReader.swift`) —
+  or a paste. A pasted or shared code never reaches the AI capture: ⌘V on
+  the Mac's calendar or in ⌘K opens the import preview
+  (`codeImportRequests.ts`), and on iOS a code shared in, or opened from
+  the Camera app's "Open in Solunivo" (it parses as a `solunivo:` URL;
+  production only, the dev app owns `solunivo-dev`), waits in
+  `settingsCodeInbox.ts` for a reader: the setup's copy step while the
+  setup is up or due, else Settings › Read Code. Such a URL moves nothing
+  on the router in a running app (`redirectSystemPath` answers null): the
+  usual `/` would dismiss the setup whose copy step is waiting for it.
+  While the setup is up or a reader is in front, a share's own URL moves
+  nothing either (it carries no text), and a capture it starts waits for
+  the setup or Settings to close.
 - **Time zones**: up to three entries per device, one primary, which
   replaces the device zone for everything the UI draws (both roots gate
   on `useTimeZones()`); the others hang under each hour in the gutter,

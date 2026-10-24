@@ -1,10 +1,11 @@
 import { useTheme } from '../theme.ts';
-import { Footer, Glyph, Row, Section, SettingsPage } from '../GroupedList.tsx';
+import { Footer, Glyph, NavRow, Row, Section, SettingsPage } from '../GroupedList.tsx';
 import { useSettingsTransfer } from './useSettingsTransfer.ts';
 
 /**
- * Settings File: the settings document carried between devices as a
- * file — the Mac's pane minus its watched file. Export writes the
+ * Settings File: the settings document carried between devices — first
+ * as a code (show this iPhone's to the Mac, or read the Mac's), then as a
+ * file, the Mac's pane minus its watched file. Export writes the
  * settings document to the cache folder and hands it to the share sheet
  * (AirDrop it to the Mac, save it to Files); Import picks a file and shows
  * what it would do before applying. The document never contains tokens: a
@@ -17,6 +18,18 @@ export function SettingsFilePage() {
 
   return (
     <SettingsPage testID="settings-page-file">
+      <Section
+        footer="The quickest way to the Mac and back: one device shows its code, the other reads it. It holds account addresses and calendar choices, never passwords or tokens."
+        header="Copy to Another Device"
+        testID="settings-code-rows"
+      >
+        <NavRow href="/settings/code" testID="settings-row-code" title="Show Code for Your Mac" />
+        <NavRow
+          href="/settings/read-code"
+          testID="settings-row-read-code"
+          title="Read Code from Your Mac"
+        />
+      </Section>
       <Section
         footer={
           <>

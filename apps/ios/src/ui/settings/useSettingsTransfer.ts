@@ -5,6 +5,7 @@ import {
   parseSettingsDocument,
   type SettingsImportSummary,
 } from '@calendar/core';
+import { decodeSettingsCode } from '@calendar/core/settingsCode';
 import { Effect } from 'effect';
 import { useState } from 'react';
 import { Alert, Share } from 'react-native';
@@ -47,6 +48,13 @@ export interface SettingsTransfer {
    */
   readonly exportSettings: () => Promise<boolean>;
   /**
+   * A settings code (scanned, pasted, shared, or opened from the Camera
+   * app): decoded, previewed as the same alert, imported. What it did, or
+   * null when the alert was cancelled or the code would not read — the
+   * notice then says why.
+   */
+  readonly importCode: (text: string) => Promise<SettingsImportSummary | null>;
+  /**
    * The document picker, the preview as an alert, then the import: what it
    * did, or null when the picker or the alert was cancelled.
    */
@@ -56,8 +64,9 @@ export interface SettingsTransfer {
 }
 
 /**
- * Export and Import of the settings document on this iPhone, shared by
- * Settings › Settings File and the setup's "Copy from your Mac" door.
+ * Export and Import of the settings document on this iPhone, and the
+ * import of a settings code, shared by Settings › Settings File, the
+ * setup's "Copy from your Mac" door and the "Set up your Mac" lesson.
  * The document never contains tokens: a Google account from another
  * device shows up as "Sign in" until it signs in here.
  */
@@ -130,5 +139,21 @@ export const useSettingsTransfer = (): SettingsTransfer => {
       };
     });
 
-  return { busy, exportSettings, importSettings, notice };
+  const importCode = (text: string) =>
+    run<SettingsImportSummary | null>(async () => {
+      const document = await Effect.runPromise(
+        decodeSettingsCode(text).pipe(Effect.mapError((error) => new Error(error.message))),
+      );
+      const preview = await mutations.previewSettingsImport({ document });
+      if (!(await confirmImport(describeImportSummary(preview)))) {
+        return { notice: null, result: null };
+      }
+      const summary = await mutations.importSettings({ document });
+      return {
+        notice: `Imported the code. ${describeImportSummary(summary).join(' ')}`,
+        result: summary,
+      };
+    });
+
+  return { busy, exportSettings, importCode, importSettings, notice };
 };
