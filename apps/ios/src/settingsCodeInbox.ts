@@ -16,7 +16,10 @@ import { useEffect, useEffectEvent, useSyncExternalStore } from 'react';
  * - otherwise: Settings › Settings File › Read Code.
  */
 interface Router {
-  readonly push: (href: '/settings/read-code' | '/setup/copy') => void;
+  readonly push: (
+    href: '/settings/read-code' | '/setup/copy',
+    options?: { readonly withAnchor?: boolean },
+  ) => void;
 }
 
 type SetupPhase = 'closed' | 'open' | 'opening' | 'unknown';
@@ -46,7 +49,11 @@ const route = (router: Router): Href | null => {
     return null;
   }
   const href = setup === 'open' ? '/setup/copy' : setup === 'closed' ? '/settings/read-code' : null;
-  if (href) {
+  if (href === '/settings/read-code') {
+    // From outside Settings: its root goes under the page, so Back leads
+    // to it (and its Done closes Settings) instead of a lone page.
+    router.push(href, { withAnchor: true });
+  } else if (href) {
     router.push(href);
   }
   return href;
