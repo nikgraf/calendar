@@ -384,6 +384,14 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
 - **Per-calendar colors** — optimistic local update, write-back through
   `calendarList.patch?colorRgbFormat=true` as a `calendarColor` op kind
   coalescing per account; invalid hex rejected, 4xx dropped.
+- **Sidebar rows show and hide, Settings recolors** (2026-10-24, #245) — the
+  whole desktop calendar row toggles, its swatch a square checkbox in the
+  calendar's color (checked when shown). The picker moved to a well at
+  the end of each calendar's row in Settings › Accounts: the swatch had
+  opened it while only the name toggled, and it looked like a checkbox.
+  Task-list rows already toggled whole and keep their round dot (a round
+  dot with a check reads as a done task). Rejected: a right-click Color
+  menu (no context menus in the app yet). iOS already worked this way.
 - **RSVP** — a dedicated `rsvp` op sending an attendees-only patch that
   survives content-edit coalescing; responding from an occurrence answers
   the series. It carries If-Match on the queued etag since #125 (so an

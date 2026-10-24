@@ -1079,17 +1079,30 @@ describe('calendar desktop e2e', () => {
     expect(events.some((event) => event.title === 'Daily standup v2')).toBe(true);
   });
 
-  it('toggles calendar visibility from the sidebar', async () => {
+  it('toggles calendar visibility from anywhere on its sidebar row, the swatch included', async () => {
     const { cdp } = app;
-    // Sidebar calendar rows are buttons labelled by summary.
-    await cdp.eval(
-      `[...document.querySelectorAll('aside button')].find(b => b.textContent?.includes('Personal'))?.click()`,
+    const row = '[data-testid="sidebar-calendar-cal-personal"]';
+    const pressed = `document.querySelector('${row}')?.getAttribute('aria-pressed')`;
+    // The sidebar has no color control: the swatch is the row's checkbox.
+    expect(await cdp.eval<boolean>(`!document.querySelector('[aria-label^="Change color"]')`)).toBe(
+      true,
     );
+    const swatch = await cdp.locate(`${row} > span[aria-hidden]`);
+    await cdp.click(swatch.x, swatch.y);
+    await cdp.waitFor(`${pressed} === 'false'`);
     await cdp.waitFor(`!document.querySelector('[title^="Gym session"]')`);
-    await cdp.eval(
-      `[...document.querySelectorAll('aside button')].find(b => b.textContent?.includes('Personal'))?.click()`,
-    );
-    await cdp.waitFor(`!!document.querySelector('[title^="Gym session"]')`);
+    await expect
+      .poll(
+        async () =>
+          (await readCalendars(app.userDataDir)).find((calendar) => calendar.id === 'cal-personal')
+            ?.isVisible,
+      )
+      .toBe(false);
+
+    const name = await cdp.locate(`${row} > span:last-child`);
+    await cdp.click(name.x, name.y);
+    await cdp.waitFor(`${pressed} === 'true'`);
+    await cdp.locate('[title^="Gym session"]');
   });
 
   it('deletes an event through the editor, after asking', async () => {
@@ -1374,13 +1387,19 @@ describe('calendar desktop e2e', () => {
     expect(ops.some((op) => op.kind === 'completeTask' && op.eventId === 'task-rent')).toBe(true);
   });
 
-  it('recolors a calendar through the sidebar picker', async () => {
+  it('recolors a calendar from Settings › Accounts', async () => {
     const { cdp } = app;
-    const point = await cdp.locate('[aria-label="Change color: Personal"]');
-    await cdp.click(point.x, point.y);
-    await cdp.waitFor(`!!document.querySelector('[aria-label="Set color #16a765"]')`);
-    const swatch = await cdp.locate('[aria-label="Set color #16a765"]');
-    await cdp.click(swatch.x, swatch.y);
+    const settings = await app.openSettings('accounts');
+    try {
+      const point = await settings.locate('[aria-label="Change color: Personal"]');
+      await settings.click(point.x, point.y);
+      await settings.waitFor(`!!document.querySelector('[aria-label="Set color #16a765"]')`);
+      const swatch = await settings.locate('[aria-label="Set color #16a765"]');
+      await settings.click(swatch.x, swatch.y);
+      await settings.waitFor(`!document.querySelector('[aria-label="Close color picker"]')`);
+    } finally {
+      await app.closeSettings();
+    }
 
     const deadline = Date.now() + 10_000;
     let personal = (await readCalendars(app.userDataDir)).find(
@@ -1399,7 +1418,7 @@ describe('calendar desktop e2e', () => {
     );
     expect(colorOps).toHaveLength(1);
     expect(colorOps[0]!.colorHex).toBe('#16a765');
-    // The event chip repaints from the calendars atom.
+    // The calendar window's chip repaints from its own calendars atom.
     await cdp.waitFor(
       `(() => { const el = document.querySelector('[title^="Gym session"]'); return el && el.dataset.color === '#16a765'; })()`,
     );
@@ -1707,22 +1726,6 @@ describe('calendar desktop e2e', () => {
       await cdp.eval<string>(`document.querySelector('textarea[placeholder="Add notes"]').value`),
     ).toBe('Bring the resistance bands');
     await cdp.clickButtonWithText('Cancel');
-    await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);
-  });
-
-  it('closes only the color picker on Escape, keeping the editor and its draft', async () => {
-    const { cdp } = app;
-    await cdp.openEditor('[title^="Gym session"]');
-    await setEditorTitle('Gym session (draft)');
-    const swatch = await cdp.locate('[aria-label="Change color: Personal"]');
-    await cdp.click(swatch.x, swatch.y);
-    await cdp.waitFor(`!!document.querySelector('[aria-label="Close color picker"]')`);
-    await cdp.pressEscape();
-    await cdp.waitFor(`!document.querySelector('[aria-label="Close color picker"]')`);
-    expect(
-      await cdp.eval<string>(`document.querySelector('input[placeholder="Title"]')?.value`),
-    ).toBe('Gym session (draft)');
-    await cdp.pressEscape();
     await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);
   });
 

@@ -4,8 +4,8 @@ import { openDialogLayer } from '../Dialog.tsx';
 /**
  * A small panel anchored at a screen point, over a transparent backdrop
  * that closes it (so does Escape). Fixed-positioned, so a scrolling
- * parent cannot clip it — the sidebar's color picker, the quick-add
- * field's review card. The backdrop's name is what tests and screen
+ * parent cannot clip it — the Getting started card's menu, a search
+ * filter's choices, the calendar color picker in Settings › Accounts. The backdrop's name is what tests and screen
  * readers see, so it is required.
  */
 export function Popover({

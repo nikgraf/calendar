@@ -1061,7 +1061,9 @@ gateway carries all of it. Details, limits and the threat model:
 - **Desktop shell** (`renderer/calendar/`): a toolbar (`Toolbar.tsx`:
   sidebar toggle, title, ‹ Today ›, Day/Week/Month, Search, the Today
   panel toggle, New), a collapsible sidebar (mini month, calendars and
-  lists per account, the sync footer with the unsynced changes), the
+  lists per account — a click anywhere on a row shows or hides it, and
+  a calendar's color changes in Settings › Accounts — the sync footer
+  with the unsynced changes), the
   grid, and a side panel (`panel/`, 360 px whatever it shows) that is
   one `PanelState` in `CalendarApp.tsx`: the Today rail at rest
   (`UpNextCard` + `TaskInbox`),
