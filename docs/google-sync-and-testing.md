@@ -605,9 +605,9 @@ sets `CALENDAR_REMINDERS=off`, `CALENDAR_CONTACTS=off`,
 `CALENDAR_ONBOARDING=off`, points `CALENDAR_SETTINGS_FILE` and
 `CALENDAR_AGENT_SOCKET` under the temp profile, and sets
 `CALENDAR_E2E_INPUT=cdp`; `launchApp(seed, options)` opts a spec into a
-fixture or a real bridge (`appleCalendar`, `captureWatch`, `contacts`,
-`geo`, `google`, `microphone`, `model`, `onboarding`, `reminders`,
-`agents`, `settingsFile`, `window`). Under the `google` fixture "Add
+fixture or a real bridge (`appleCalendar`, `camera`, `captureWatch`,
+`contacts`, `geo`, `google`, `microphone`, `model`, `onboarding`,
+`reminders`, `agents`, `settingsFile`, `window`). Under the `google` fixture "Add
 Google Account" signs in the fixture's `signIn` account (else its first)
 with the scopes asked for, no browser. The `reminders` and `appleCalendar` fixtures'
 writes can be held (`App.holdEventKitWrites`, a marker file under the
@@ -616,7 +616,12 @@ profile) so a spec acts while a save or delete waits for EventKit.
 `getUserMedia` with a Web Audio loop of quiet room and a phrase-long
 tone (Chromium's fake audio device never opens under Electron), and
 `CALENDAR_MICROPHONE=fixture` answers each transcription with the
-spec's next phrase, nothing asked or installed.
+spec's next phrase, nothing asked or installed. `camera` likewise: the
+page's `getUserMedia` answers a drawn canvas stream, the camera counts as
+granted with no TCC prompt (`CALENDAR_CAMERA=fixture`, else `off`: no
+camera, the paste field only), and every frame reads as the spec's code
+(`CALENDAR_CAMERA_CODE`); the helper's own Vision read is proven apart,
+in `qrReader`.
 
 The specs: `flows` (rendering, views, trackpad pan, editor CRUD, drag
 move/resize/cancel, slot drag, recurring scopes, RSVP, visibility,
@@ -645,7 +650,15 @@ wording when the server is down); `reminders` and
 EventKit, read-only viewer, moves both ways); `location` (the picker and
 map over the geo fixture); `birthdays` (device-contacts fixture, chip,
 detail, device-only reminder settings); `eventReminders`; `timeZones`;
-`settingsFile`; `onboarding` (a fresh profile through the setup dialog
+`settingsFile`; `settingsCode` (the Settings File card's code behind
+Show Code, decoded in the spec to the seeded state; a code pasted in
+"Copy from iPhone…" previewed and imported, its unknown account left to
+sign in; a code pasted on the calendar or in ⌘K opening that preview,
+never a capture; the setup's copy door reading the fake camera through
+to the copied step; the lesson's reveal ticking it); `qrReader` (CI's
+`e2e-reminders` job, which builds the helper:
+`CALENDAR_E2E_HELPER=real`, the helper's Vision reading a drawn code down
+to two pixels a module); `onboarding` (a fresh profile through the setup dialog
 with a fixture sign-in, the card's lessons and their ticks, fold and
 Hide, Settings › Getting Started; Skip's "Add your accounts" row; no
 setup with an account or the switch off); `mirrors`; `edgeScroll` (task, event and resize drags held at the grid's edges,
@@ -844,9 +857,12 @@ client and Metro (`pnpm --filter @calendar/ios start`); the Google halves
 are no-ops unless Metro was started with
 `EXPO_PUBLIC_CALENDAR_GOOGLE=fixture`, and Metro needs
 `EXPO_PUBLIC_CALENDAR_ONBOARDING=off` as CI's bundle has it (else the
-Getting started card sits over the calendar the flows tap; flow 26 turns
-onboarding on for its own launch through the `onboarding-fixture` link,
-under the fixture model), and the Reminders flows (09, 17)
+Getting started card sits over the calendar the flows tap; flows 26 and
+27 turn onboarding on for their own launch through the
+`onboarding-fixture` link, under the fixture model, and since the
+simulator has no camera, 27 hands the setup's copy door the Mac's
+settings code through the `capture-fixture` link, as a share would),
+and the Reminders flows (09, 17)
 are no-ops until the simulator has a connected list — on CI, keyed on
 the fixture account (`fixture@solunivo.test`, list "Mock Tasks", calendar
 "Mock Calendar"), they connect Reminders themselves, write through real
@@ -907,9 +923,9 @@ placeholder while it is empty).
 Selector gotchas (each caused a real failure):
 
 - `confirm-open.yaml` cancels every "Cancel" on screen to clear stacked
-  URL alerts; a flow whose link opens a sheet with its own Cancel (the
-  editor, flow 22) confirms the alert inline and cancels only while an
-  "Open" is still up.
+  URL alerts; a flow whose link opens something with its own Cancel (the
+  editor, flow 22; the import preview's alert, flow 27) confirms the
+  alert inline and cancels only while an "Open" is still up.
 - The editor is a form sheet: at half height the calendar above it is
   live, and Maestro's scrolls swipe at the screen's centre — on the
   calendar. A flow that fills the form expands the sheet first

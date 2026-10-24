@@ -89,10 +89,13 @@ useful after adding/rotating secrets.
   extracted from the exact ZIP to be uploaded, and checks that the app and
   helper remain executable.
 - The same step checks the app and Swift helper signatures for the Address Book
-  and Calendars entitlements (`apps/desktop/scripts/check-privacy-entitlements.sh`).
-  Hardened runtime needs these for Contacts and EventKit permission prompts,
-  even without App Sandbox; usage descriptions in Info.plist alone are
-  insufficient.
+  and Calendars entitlements, and the app's for the camera
+  (`apps/desktop/scripts/check-privacy-entitlements.sh`): the settings-code
+  reader opens the camera in the renderer, and the helper only reads the
+  frames it is sent. Hardened runtime needs these for the Contacts,
+  EventKit and camera permission prompts, even without App Sandbox; usage
+  descriptions in Info.plist alone (`NSCameraUsageDescription` sits in
+  `forge.config.cjs`) are insufficient.
 - The Developer ID cert lives only in a temporary keychain created from the
   secret for the duration of the job and is deleted in an `always()` step.
 - Notarization adds ~2–10 minutes; the job timeout is 30.
@@ -135,6 +138,16 @@ entitlement, which the App Store profile does not carry. Notifications are
 local only, so `apps/ios/plugins/withLocalNotificationsOnly.cjs` (listed
 last in `app.json` plugins) removes the entitlement again; the resolved
 entitlements are visible with `expo config --type introspect`.
+
+`expo-camera` (the settings-code scanner) and `expo-clipboard` (its Copy
+as Text) are native modules, so adding them moved the fingerprint. The
+camera plugin is configured with `cameraPermission` only and sits before
+`withShareExtension.cjs`: passing `microphonePermission: false` would
+delete `NSMicrophoneUsageDescription`, which dictation needs. Check both
+strings with `APP_VARIANT=development npx expo config --type introspect`.
+The JS requires both modules lazily, so an OTA preview on an older binary
+does not crash: the scanner says there is no camera and leaves the paste
+field, and Copy as Text goes through the share sheet.
 
 `apps/ios/app.json` declares `NSLocationWhenInUseUsageDescription`
 although nothing in the app asks for location: App Store Connect's static
