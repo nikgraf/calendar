@@ -7,7 +7,7 @@ import {
   GeoLocation,
   type SearchQuery,
 } from '@calendar/core';
-import { ACCOUNTS_KEY, EVENTS_KEY } from '@calendar/db/keys';
+import { ACCOUNTS_KEY, deviceSettingsKey, EVENTS_KEY } from '@calendar/db/keys';
 import { Effect } from 'effect';
 import { AsyncResult, Atom, AtomRegistry } from 'effect/reactivity';
 import { describe, expect, it, vi } from 'vite-plus/test';
@@ -37,6 +37,7 @@ const makeStubClient = () => {
   const calls = {
     accounts: 0,
     events: 0,
+    exports: 0,
     places: [] as Array<string>,
     resolved: [] as Array<string>,
     searches: [] as Array<{ readonly query: SearchQuery; readonly timeZone: string }>,
@@ -62,7 +63,11 @@ const makeStubClient = () => {
     deleteRecurring: () => fail('not stubbed'),
     deleteTask: () => Effect.void,
     discardPendingOp: () => Effect.void,
-    exportSettings: () => Effect.succeed({ version: 1 as const }),
+    exportSettings: () =>
+      Effect.sync(() => {
+        calls.exports += 1;
+        return { version: 1 as const };
+      }),
     getBirthdayReminderOverrides: () => Effect.succeed([]),
     getBirthdayReminderSettings: () =>
       Effect.succeed({ enabled: false, leadDays: [0 as const], time: '09:00' }),
@@ -306,6 +311,38 @@ describe('backend atoms', () => {
       () => calls.accounts >= 2,
     );
     expect(calls.accounts).toBe(2);
+
+    unbind();
+    unmount();
+    registry.dispose();
+  });
+
+  it('the settings document is re-read for a settings change, never for an event change', async () => {
+    const { calls, client } = makeStubClient();
+    const atoms = makeBackendAtoms(client);
+    const registry = AtomRegistry.make();
+    const unmount = registry.mount(atoms.settingsDocument);
+    await waitFor(() => registry.get(atoms.settingsDocument), AsyncResult.isSuccess);
+
+    let emit: ((keys: ReadonlyArray<unknown>) => void) | undefined;
+    const unbind = atoms.bindInvalidations(registry, (listener) => {
+      emit = listener;
+      return () => {
+        emit = undefined;
+      };
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    emit?.([EVENTS_KEY]);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(calls.exports).toBe(1);
+
+    emit?.([deviceSettingsKey('timeZones')]);
+    await waitFor(
+      () => registry.get(atoms.settingsDocument),
+      () => calls.exports >= 2,
+    );
+    expect(calls.exports).toBe(2);
 
     unbind();
     unmount();

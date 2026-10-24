@@ -7,7 +7,7 @@ import {
   type SettingsDocument,
   type SettingsImportSummary,
 } from '@calendar/core';
-import { ACCOUNTS_KEY, CALENDARS_KEY, deviceSettingsKey, TASKLISTS_KEY } from '@calendar/db';
+import { SETTINGS_DOCUMENT_KEYS } from '@calendar/db';
 import { Effect } from 'effect';
 
 /**
@@ -111,18 +111,7 @@ export interface SettingsFileStatus {
 }
 
 /** The invalidation keys after which the file is brought up to date. */
-export const SETTINGS_FILE_TRIGGER_KEYS: ReadonlySet<string> = new Set([
-  ACCOUNTS_KEY,
-  CALENDARS_KEY,
-  TASKLISTS_KEY,
-  deviceSettingsKey('birthdayReminderOverrides'),
-  deviceSettingsKey('birthdayReminders'),
-  deviceSettingsKey('eventNotifications'),
-  deviceSettingsKey('importedVisibility'),
-  deviceSettingsKey('mirrors'),
-  deviceSettingsKey('timeZones'),
-  deviceSettingsKey('viewPreferences'),
-]);
+export const SETTINGS_FILE_TRIGGER_KEYS: ReadonlySet<string> = new Set(SETTINGS_DOCUMENT_KEYS);
 
 export const settingsTextHash = (text: string): string =>
   createHash('sha256').update(text).digest('hex');

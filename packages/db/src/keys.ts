@@ -33,6 +33,25 @@ export const BIRTHDAYS_KEY = 'birthdays';
  */
 export const deviceSettingsKey = (key: string): string => `deviceSettings:${key}`;
 
+/**
+ * Every key whose change alters the settings document (`exportSettings`):
+ * the desktop's watched file writes itself back after one of these, and
+ * the settings code is re-read. Not the events or tasks keys — a sync
+ * page must not rebuild the document.
+ */
+export const SETTINGS_DOCUMENT_KEYS: ReadonlyArray<string> = [
+  ACCOUNTS_KEY,
+  CALENDARS_KEY,
+  TASKLISTS_KEY,
+  deviceSettingsKey('birthdayReminderOverrides'),
+  deviceSettingsKey('birthdayReminders'),
+  deviceSettingsKey('eventNotifications'),
+  deviceSettingsKey('importedVisibility'),
+  deviceSettingsKey('mirrors'),
+  deviceSettingsKey('timeZones'),
+  deviceSettingsKey('viewPreferences'),
+];
+
 /** The on-device location geocode cache changed (a refresh landed, or it was cleared). */
 export const LOCATION_GEO_KEY = 'locationGeo';
 
