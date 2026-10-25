@@ -58,8 +58,8 @@ catalog:
   # both apps: React Native 0.86 renders with a 19.2.3 renderer and Expo
   # SDK 57 expects react 19.2 (`npx expo install --check`). A caret let the
   # lockfile resolve 19.3.0 (#144).
-  react: ~19.2.8
-  react-dom: ~19.2.8
+  react: ~19.2.9
+  react-dom: ~19.2.9
   '@types/react': ~19.2.18
   rrule-temporal: ^2.2.8
   typescript: ^7.0.2
