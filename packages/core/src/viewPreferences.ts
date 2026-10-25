@@ -33,6 +33,19 @@ export const DEFAULT_VIEW_PREFERENCES: ViewPreferences = { allDayLaneCollapsed: 
 /** Rows the all-day lane shows while collapsed; the last one hosts "+N more" where a day overflows. */
 export const MAX_ALL_DAY_ROWS = 3;
 
+/** The share of the calendar's height an expanded all-day lane may take before it scrolls. */
+const EXPANDED_LANE_SHARE = 1 / 3;
+
+/**
+ * Whole rows an expanded all-day lane shows before it scrolls inside
+ * itself: a third of the calendar's height (header to bottom), never
+ * fewer than the collapsed lane's MAX_ALL_DAY_ROWS. Each app stops a
+ * taller lane partway into the next chip, so the cut says there is more,
+ * and the timed grid keeps the rest of the view.
+ */
+export const expandedAllDayRows = (viewHeight: number, rowHeight: number): number =>
+  Math.max(MAX_ALL_DAY_ROWS, Math.floor((viewHeight * EXPANDED_LANE_SHARE) / rowHeight));
+
 /**
  * Saturday and Sunday. Weekends differ by country (Friday and Saturday in
  * much of the Middle East), but the app reads no region: the days are the

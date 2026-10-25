@@ -14,10 +14,11 @@ tags:
 # async availability check resolves, so wait for the marker the app emits
 # either way before deciding to skip — checking `quick-add-input` directly
 # would race the mount and report a silent pass on hardware that does have
-# a model.
+# a model. Under the fixture model (CI's bundle) the marker's id ends in
+# `-fixture`.
 - extendedWaitUntil:
     visible:
-      id: 'quick-add-state'
+      id: 'quick-add-state(-fixture)?'
     timeout: 30000
 - runFlow:
     when:
@@ -35,11 +36,8 @@ tags:
       # enabled) passes the availability check and then fails to
       # generate — the field shows its "couldn't be read" copy. Either
       # outcome proves the field, Apply and the error path; the filled
-      # form is asserted wherever a model actually answers. The phrase
-      # must have been read, not just echoed: the e2e bundle's fixture
-      # model (CI) makes the whole phrase the title; a real model
-      # extracts "Lunch with Sarah". The title is checked by id — the
-      # quick-add field above it holds the same words.
+      # form is asserted wherever a model actually answers. The title is
+      # checked by id — the quick-add field above it holds the same words.
       - extendedWaitUntil:
           visible:
             id: 'event-title'
@@ -61,9 +59,10 @@ tags:
             true: ${output.read !== true}
           commands:
             - assertVisible: 'That couldn.t be read.*'
-      # The thread, under the fixture model (CI's bundle) — its signal is the
-      # whole phrase as the title; a real model extracts "Lunch with Sarah"
-      # and the steps below are skipped. A change in the fixture's grammar
+      # The thread, under the fixture model (CI's bundle; a real model skips
+      # the steps below). The fixture makes the whole phrase the title, and
+      # the normalizer takes "next Tuesday at 1pm" off its end, as off any
+      # model's. A change in the fixture's grammar
       # (empty parts unchanged) moves the times and lists a turn; Undo takes
       # it back; a finder phrase as a later turn puts the draft in the best
       # free slot of next week's mornings and offers the others as chips;
@@ -76,9 +75,11 @@ tags:
       - runFlow:
           when:
             visible:
-              id: 'event-title'
-              text: 'Lunch with Sarah next Tuesday at 1pm'
+              id: 'quick-add-state-fixture'
           commands:
+            - assertVisible:
+                id: 'event-title'
+                text: 'Lunch with Sarah'
             - assertVisible:
                 id: 'draft-thread'
             - tapOn: 'Expanded'
@@ -123,7 +124,7 @@ tags:
             # The draft keeps its title; only its time moved.
             - assertVisible:
                 id: 'event-title'
-                text: 'Lunch with Sarah next Tuesday at 1pm'
+                text: 'Lunch with Sarah'
             - tapOn:
                 id: 'draft-slot-1'
             - assertVisible:

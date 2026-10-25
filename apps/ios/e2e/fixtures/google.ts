@@ -190,6 +190,34 @@ export const googleFixture: GoogleFixture = {
         title: 'Fixture task',
         updated: '2026-01-01T00:00:00.000Z',
       },
+      // Today's backlog: two late tasks and two undated ones, each pair
+      // folded into one chip on today's column (flow 27).
+      {
+        due: dueIn(-2),
+        id: 'task-late-bike',
+        status: 'needsAction',
+        title: 'Return the rental bike',
+        updated: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        due: dueIn(-5),
+        id: 'task-late-form',
+        status: 'needsAction',
+        title: 'Sign the school form',
+        updated: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        id: 'task-loose-receipts',
+        status: 'needsAction',
+        title: 'Sort the receipts',
+        updated: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        id: 'task-loose-dinner',
+        status: 'needsAction',
+        title: 'Plan a birthday dinner',
+        updated: '2026-01-01T00:00:00.000Z',
+      },
       // The navigation flow's parent and subtask: three weeks out, so they
       // sit in the Tasks tab's "Upcoming" and on no day a timeline flow visits.
       // The subtask's title sorts after its parent's: outdented, it is the

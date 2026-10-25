@@ -46,7 +46,10 @@ meal and part-of-day words (one table: quick-add defaults and the
 finder's bounds), weekdays, to-do cues, the finder's windows and
 durations — and the normalizers keep a model value only where the phrase
 supports it, correct one it contradicts and drop the rest (a phrase
-without a time is an all-day event, whatever the model returned). A
+without a time is an all-day event, whatever the model returned). The
+title too is only the phrase's words — one naming anything else gives way
+to the phrase — with the words about when taken off its ends; no prompt
+shows an example title, since the model copies it. A
 refinement (`refine.ts`) is one more bounded prompt — the draft as a
 line of JSON and the change — merged by the same rules with the draft as
 the anchor (an open "at 8" reads next to the draft's own start); the
@@ -1061,7 +1064,9 @@ gateway carries all of it. Details, limits and the threat model:
 - **Desktop shell** (`renderer/calendar/`): a toolbar (`Toolbar.tsx`:
   sidebar toggle, title, ‹ Today ›, Day/Week/Month, Search, the Today
   panel toggle, New), a collapsible sidebar (mini month, calendars and
-  lists per account, the sync footer with the unsynced changes), the
+  lists per account — a click anywhere on a row shows or hides it, and
+  a calendar's color changes in Settings › Accounts — the sync footer
+  with the unsynced changes), the
   grid, and a side panel (`panel/`, 360 px whatever it shows) that is
   one `PanelState` in `CalendarApp.tsx`: the Today rail at rest
   (`UpNextCard` + `TaskInbox`),
@@ -1220,8 +1225,16 @@ gateway carries all of it. Details, limits and the threat model:
   Text that cannot grow (grid blocks, chips, the gutter, bars) is capped
   at `BOX_FONT_SCALE` for Dynamic Type; the rest scales fully.
 - **Views**: day/week time grid (with "2 Days" and a two-week agenda on
-  iOS), month grid, and an all-day lane for date-only tasks that
-  collapses to three rows with "+N more" (a device setting). Timed Apple
+  iOS), month grid, and an all-day lane for date-only tasks. Expanded,
+  the lane takes at most a third of the view (`expandedAllDayRows`) and
+  then scrolls inside itself, stopping halfway into the next chip;
+  collapsed, it shows three rows with "+N more". The chevron under
+  "all-day" switches the two (a device setting). On today, two or more
+  overdue or undated tasks fold into one chip per group
+  (`foldTaskBacklog`) that opens their list: a popover on the desktop
+  (rows tick, open, or drag onto the calendar), a page sheet on iOS
+  (`TaskFoldSheet`, held by `EditorHost`); a list keeps the rows it
+  opened with, so a ticked one stays, struck through. Timed Apple
   Reminders share the day-column overlap layout with events as compact,
   move-only blocks; their due time is wall-clock data, and the day column
   is a fixed 24-hour wall clock (`layoutDayColumn` places every box by

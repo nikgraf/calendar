@@ -5,7 +5,15 @@ import {
   Temporal,
   validateEventDraft,
 } from '@calendar/core';
-import { groundDate, groundTime, isTodoPhrase } from './grounding.ts';
+import {
+  groundDate,
+  groundTime,
+  groundTitle,
+  isTodoPhrase,
+  saysOnlyWhen,
+  trimWhen,
+  withoutPlace,
+} from './grounding.ts';
 import { inviteesOf, titleWithoutInvitees } from './invitees.ts';
 import type { QuickAddParse } from './quickAdd.ts';
 import { meaningfulText, realDate, realTime } from './shared.ts';
@@ -94,7 +102,16 @@ export const addHour = (time: string): string => {
  * thing to do.
  */
 const TODO_CUE_PREFIX =
-  /^(?:remind me to|reminder:?|to-?do:?|don'?t forget to|i (?:need|have) to|i must|ich muss|nicht vergessen:?)\s+/i;
+  /^(?:remind me(?:\s+(?:today|tonight|tomorrow|(?:on|next|this)\s+\w+|(?:mon|tues|wednes|thurs|fri|satur|sun)days?|in the (?:morning|afternoon|evening)|at\s+\d{1,2}(?::\d{2})?\s*(?:[ap]m)?|\d{1,2}(?::\d{2})?\s*[ap]m)){0,3}\s+to|reminder:?|to-?do:?|don'?t forget to|i (?:need|have) to|i must|ich muss|nicht vergessen:?)\s+/i;
+
+/**
+ * The first letter upper-cased when the first word is all lower case
+ * ("lunch with tom" is "Lunch with tom"); "iPhone repair" stays as typed.
+ */
+const capitalized = (title: string): string =>
+  /\p{Lu}/u.test(/^\S*/u.exec(title)![0])
+    ? title
+    : title.replace(/^\p{Ll}/u, (letter) => letter.toLocaleUpperCase());
 
 /** Lower-case, accent-free text with straight apostrophes and "ss" for ß. */
 const fold = (text: string): string =>
@@ -109,10 +126,14 @@ const fold = (text: string): string =>
 const PLACE_CUE =
   /(?:^|[^\p{L}])(?:at|in|@|bei|beim|im|am|ins|zum|zur|in der|in dem|an der|auf der|auf dem|vor dem|vor der|chez)\s+(?:(?:the|a|an|der|die|das|dem|den|ein|eine|einem|einer)\s+)?$/u;
 
+/** Company, not a place: a name right after "with" ("lunch with tom", "Essen mit Anna"). */
+const COMPANY = /(?:^|[^\p{L}])(?:with|w\/|mit|and|und|&)\s+$/u;
+
 /**
  * The place the model extracted, held against the phrase: it must be in
- * the words (the real model made up "Bob's house" and "unknown"), and
- * where it is also part of the title ("Dentist" for "Dentist tomorrow
+ * the words (the real model made up "Bob's house" and "unknown"), never
+ * only a when ("tomorrow") or the company the words name ("tom" for
+ * "tomorrow lunch with tom"), and where it is also part of the title ("Dentist" for "Dentist tomorrow
  * at 9", "Board review" for "Board review Thursday 2pm") it counts only
  * after a place cue in the phrase ("Meeting at the office"). The title
  * over again is never a place. Without a phrase (capture) the model's
@@ -134,19 +155,27 @@ export const placeOf = (
   const words = fold(phrase);
   const place = fold(location);
   const at = words.indexOf(place);
-  if (at === -1) {
+  if (at === -1 || saysOnlyWhen(location)) {
+    return undefined;
+  }
+  // Where the place stands as words of its own ("tom", not the start of "tomorrow").
+  const occurrences: Array<number> = [];
+  for (let from = at; from !== -1; from = words.indexOf(place, from + 1)) {
+    if (
+      !/[\p{L}\p{N}]/u.test(words[from - 1] ?? ' ') &&
+      !/[\p{L}\p{N}]/u.test(words[from + place.length] ?? ' ')
+    ) {
+      occurrences.push(from);
+    }
+  }
+  if (occurrences.length > 0 && occurrences.every((from) => COMPANY.test(words.slice(0, from)))) {
     return undefined;
   }
   if (!fold(title).includes(place)) {
     return location;
   }
   // Any occurrence after a cue will do ("at 1 at Figlmüller" has two "at"s).
-  for (let from = at; from !== -1; from = words.indexOf(place, from + 1)) {
-    if (PLACE_CUE.test(words.slice(0, from))) {
-      return location;
-    }
-  }
-  return undefined;
+  return occurrences.some((from) => PLACE_CUE.test(words.slice(0, from))) ? location : undefined;
 };
 
 /**
@@ -184,8 +213,9 @@ export const recurrenceFromParse = (
  * the phrase states or the default of a meal or part of the day it names,
  * else the event is all day; the end comes only from a stated range; a
  * weekday the phrase names is where the date lands; the phrase is a
- * to-do only on a to-do cue; and only the people it says to invite are
- * invited (`invitees.ts`), the invitation kept out of the title. Capture
+ * to-do only on a to-do cue; only the people it says to invite are
+ * invited (`invitees.ts`), the invitation kept out of the title; and the
+ * title is the phrase's own words, without the when at its ends. Capture
  * has no one phrase per item, so it passes none and the model's times
  * stand as validated.
  */
@@ -217,7 +247,26 @@ export const normalizeQuickAdd = (
   // me to invite Tom" is the thing to do); capture reads no one.
   const { invite } = phrase === undefined || todo ? { invite: [] } : inviteesOf(people, phrase);
   const said = meaningfulText(parse.title);
-  const title = said === undefined ? undefined : titleWithoutInvitees(said, invite);
+  // Only the phrase's words, without the invitation, the when at its ends
+  // and a place it leads into (`grounding.ts`). Capture has no phrase: the
+  // model's title stands.
+  const named =
+    said === undefined
+      ? undefined
+      : titleWithoutInvitees(phrase === undefined ? said : groundTitle(said, phrase), invite);
+  const kept =
+    named && phrase !== undefined ? trimWhen(named, meaningfulText(parse.location)) : named;
+  // The place leaves an event's title only when its field keeps it; a
+  // to-do has no place field.
+  const placeless =
+    kept && phrase !== undefined && !todo
+      ? trimWhen(withoutPlace(kept, meaningfulText(parse.location)), meaningfulText(parse.location))
+      : kept;
+  const placed =
+    placeless !== kept && placeOf(meaningfulText(parse.location), placeless ?? '', phrase)
+      ? placeless
+      : kept;
+  const title = placed && phrase !== undefined ? capitalized(placed) : placed;
   if (!title) {
     return { kind: 'rejected', reason: 'No event title was recognised.' };
   }
@@ -243,7 +292,7 @@ export const normalizeQuickAdd = (
       prefill: {
         date: resolvedDate,
         ...(startTime ? { time: startTime } : {}),
-        title: title.replace(TODO_CUE_PREFIX, '') || title,
+        title: capitalized(title.replace(TODO_CUE_PREFIX, '') || title),
       },
     };
   }

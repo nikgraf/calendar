@@ -2,21 +2,22 @@ import { useBackendMutations, useGuardedMutations, useTaskLists } from '@calenda
 import {
   type Account,
   type CalendarInfo,
+  contrastingTextColor,
   isAppleCalendarAccount,
   isAppleRemindersAccount,
   type TaskListInfo,
 } from '@calendar/core';
 import { useState } from 'react';
-import { CalendarColorButton } from '../CalendarColorButton.tsx';
 
 const quietButton =
   'w-full rounded-control px-2 py-1 text-left text-xs text-ink-secondary hover:bg-fill hover:text-ink';
 
 /**
  * The sidebar's calendars and task lists, per account (Apple calendars
- * per EventKit source): the name toggles visibility, the swatch opens the
- * color picker. Connect and re-sign-in actions sit with the account they
- * concern.
+ * per EventKit source): a click anywhere on a row shows or hides it. A
+ * calendar's color changes in Settings › Accounts, never here, so the
+ * swatch is only ever a checkbox. Connect and re-sign-in actions sit with
+ * the account they concern.
  */
 export function CalendarList({
   accounts,
@@ -64,23 +65,41 @@ export function CalendarList({
     });
 
   const calendarRow = (calendar: CalendarInfo) => (
-    <div
-      className="flex h-6.5 w-full items-center gap-2 rounded-control px-2 hover:bg-fill"
+    <button
+      aria-pressed={calendar.isVisible}
+      className="flex h-6.5 w-full items-center gap-2 rounded-control px-2 text-left text-sm hover:bg-fill"
       data-testid={`sidebar-calendar-${calendar.id}`}
       key={calendar.id}
+      onClick={() => toggle(calendar)}
+      type="button"
     >
-      <CalendarColorButton calendar={calendar} />
-      <button
-        aria-pressed={calendar.isVisible}
-        className="min-w-0 flex-1 text-left text-sm"
-        onClick={() => toggle(calendar)}
-        type="button"
+      {/* A checkbox in the calendar's color: square, so it never reads as a task's round check. */}
+      <span
+        aria-hidden
+        className="flex size-3.5 shrink-0 items-center justify-center rounded"
+        style={{
+          backgroundColor: calendar.isVisible ? calendar.colorHex : 'transparent',
+          border: `2px solid ${calendar.colorHex}`,
+        }}
       >
-        <span className={`block truncate ${calendar.isVisible ? '' : 'text-ink-secondary'}`}>
-          {calendar.summary}
-        </span>
-      </button>
-    </div>
+        {calendar.isVisible ? (
+          <svg
+            className="size-full"
+            fill="none"
+            stroke={contrastingTextColor(calendar.colorHex)}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2.6}
+            viewBox="0 0 16 16"
+          >
+            <path d="M2.5 8.5 6 12l7.5-8" />
+          </svg>
+        ) : null}
+      </span>
+      <span className={`block truncate ${calendar.isVisible ? '' : 'text-ink-secondary'}`}>
+        {calendar.summary}
+      </span>
+    </button>
   );
 
   /** Apple Calendar lists its calendars per EventKit source (iCloud, On My Mac…). */

@@ -384,6 +384,14 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
 - **Per-calendar colors** — optimistic local update, write-back through
   `calendarList.patch?colorRgbFormat=true` as a `calendarColor` op kind
   coalescing per account; invalid hex rejected, 4xx dropped.
+- **Sidebar rows show and hide, Settings recolors** (2026-10-24, #245) — the
+  whole desktop calendar row toggles, its swatch a square checkbox in the
+  calendar's color (checked when shown). The picker moved to a well at
+  the end of each calendar's row in Settings › Accounts: the swatch had
+  opened it while only the name toggled, and it looked like a checkbox.
+  Task-list rows already toggled whole and keep their round dot (a round
+  dot with a check reads as a done task). Rejected: a right-click Color
+  menu (no context menus in the app yet). iOS already worked this way.
 - **RSVP** — a dedicated `rsvp` op sending an attendees-only patch that
   survives content-edit coalescing; responding from an occurrence answers
   the series. It carries If-Match on the queued etag since #125 (so an
@@ -642,6 +650,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   alone would split the platforms). Open: find-time's "Weekends" and
   quick-add's "weekends" still mean Sat+Sun; Desktop dark mode's shade
   reads lighter than the grid but darker than the lane and Month.
+- **Today's backlog folds, a long lane scrolls** (2026-10-24, #247) —
+  two or more overdue or undated tasks on today fold into one chip per
+  group ("⚠ 12 overdue", "11 no date") opening their list (a desktop
+  popover whose rows drag out, an iOS page sheet), which keeps a ticked
+  row struck through; a lone task stays a chip. Expanded, the lane stops
+  at a third of the view and scrolls inside itself, cut halfway into the
+  next chip; "less" became a chevron. Rejected: always folding, one chip
+  for both groups, dropping the collapsed mode (its "+N more" names the
+  day), a draggable divider. Open: the month cell still lists the
+  backlog; late completions still add struck chips on today.
 
 ## Invitees, contacts and birthdays
 
@@ -911,6 +929,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   forbade inventing), asking the model where a value came from. Open:
   capture items (no phrase per item), German "morgen" (also "morning"),
   an "assumed" badge for the default times — with the draft thread.
+- **The title holds only the phrase's words** (2026-10-24, #248) — "lunch with
+  tom tomorrow" came back "Lunch with Sarah": the model copies a prompt's
+  example title into any phrase of its shape. The prompt lost its examples;
+  `groundTitle` keeps the model's title only when its words are the
+  phrase's (plus ones naming no one: "with"), else the phrase stands in;
+  `trimWhen` takes the when off the ends, never a span's, a name's or one
+  it half-reads ("until Friday", "Black Friday"); a place a cue leads into
+  leaves for its field, and a when or company is no place. Rejected: the
+  example behind the check, a rule-only prompt, a code-only title. Open:
+  mid-title when-words, "tomorrow lunch with tom" → "Lunch".
 - **A served model beside Apple's** (2026-10-12, #184)
   — the desktop can answer `generateJson` from a model served over HTTP
   on this Mac: Ollama through its own API (the schema as `format`,

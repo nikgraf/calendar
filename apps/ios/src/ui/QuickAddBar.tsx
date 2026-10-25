@@ -13,7 +13,7 @@ import {
   View,
 } from 'react-native';
 import { appleSpeech } from '../appleSpeech.ts';
-import { languageModel } from '../model.ts';
+import { languageModel, modelFixture } from '../model.ts';
 import { checkResultLine } from '../modelAvailabilityCopy.ts';
 import { ModelAvailabilityNotice } from './ModelAvailabilityNotice.tsx';
 import { BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme } from './theme.ts';
@@ -193,12 +193,17 @@ export function QuickAddBar({
     return () => clearTimeout(timer);
   }, [status, autoFocus]);
 
-  // The marker renders once the availability check resolved, whatever it said.
+  // The marker renders once the availability check resolved, whatever it
+  // said. Its id also says when the fixture model answers (the e2e
+  // bundle): a flow cannot tell the models apart by what they return.
   if (status === null) {
     return null;
   }
   return (
-    <View style={[styles.bar, attached && styles.barAttached]} testID="quick-add-state">
+    <View
+      style={[styles.bar, attached && styles.barAttached]}
+      testID={modelFixture ? 'quick-add-state-fixture' : 'quick-add-state'}
+    >
       {unavailable && availability ? (
         <ModelAvailabilityNotice
           availability={availability}

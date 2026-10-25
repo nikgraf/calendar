@@ -399,6 +399,7 @@ function CalendarBody({
             }
             onDraftPress={requestDraftFocus}
             onEventPress={host.openEvent}
+            onFoldPress={host.openTaskFold}
             onNavigate={panByDays}
             onSelectDay={(day) => {
               setFocused(day);

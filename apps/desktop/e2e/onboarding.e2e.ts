@@ -199,6 +199,28 @@ describe('first run: the setup dialog, the Getting started card and its lessons'
     );
   });
 
+  it('closes only the card menu on Escape, keeping an open editor and its draft', async () => {
+    const { cdp } = app;
+    const add = await cdp.locate('button[aria-label="New event"]');
+    await cdp.click(add.x, add.y);
+    await cdp.waitFor(`!!document.querySelector('input[placeholder="Title"]')`);
+    await cdp.eval(`(() => {
+      const input = document.querySelector('input[placeholder="Title"]');
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      setter.call(input, 'Draft under the menu');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`);
+    await cdp.clickTestId('getting-started-more');
+    await cdp.waitFor(`!!document.querySelector('[aria-label="Close menu"]')`);
+    await cdp.pressEscape();
+    await cdp.waitFor(`!document.querySelector('[aria-label="Close menu"]')`);
+    expect(
+      await cdp.eval<string>(`document.querySelector('input[placeholder="Title"]')?.value`),
+    ).toBe('Draft under the menu');
+    await cdp.pressEscape();
+    await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);
+  });
+
   it('folds to one line and back, and Hide removes the card', async () => {
     const { cdp } = app;
     await cdp.clickTestId('getting-started-collapse');

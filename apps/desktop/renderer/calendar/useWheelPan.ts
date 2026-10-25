@@ -54,7 +54,9 @@ export const useWheelPan = ({
   rootRef: RefObject<HTMLElement | null>;
   /**
    * Vertical scroller: consumed (prevented) pan events apply their deltaY
-   * here manually, so diagonal gestures scroll both dimensions at once.
+   * here manually, so diagonal gestures scroll both dimensions at once —
+   * or to the `[data-wheel-scroll]` box the gesture started over (the
+   * all-day lane, which scrolls on its own).
    */
   scrollerRef: RefObject<HTMLElement | null>;
   /** The extra days drawn on each side while sliding to a picked first day. */
@@ -226,8 +228,12 @@ export const useWheelPan = ({
         // preventDefault kills native scrolling for this event, so apply its
         // vertical component by hand — diagonal pans scroll both dimensions.
         const deltaY = wheelDeltaToPx(event.deltaY, event.deltaMode);
-        if (deltaY !== 0 && scrollerRef.current) {
-          scrollerRef.current.scrollTop += deltaY;
+        // A wheel event's target is an element: text nodes never get one.
+        const scroller =
+          (event.target as Element | null)?.closest<HTMLElement>('[data-wheel-scroll]') ??
+          scrollerRef.current;
+        if (deltaY !== 0 && scroller) {
+          scroller.scrollTop += deltaY;
         }
         // A pan grabbing a slide takes its offset as is (the settle frames
         // wrote it to the pan): its commits shift back over the slide's days

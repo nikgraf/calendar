@@ -8,6 +8,7 @@ import {
   groundDate,
   groundDays,
   groundTime,
+  groundTitle,
   isAllDayPhrase,
   isTodoPhrase,
   mentionsDate,
@@ -18,7 +19,9 @@ import {
   statedTimes,
   statesClockTime,
   statesDuration,
+  trimWhen,
   windowOf,
+  withoutPlace,
 } from './grounding.ts';
 
 // 2026-08-22 is a Saturday.
@@ -650,5 +653,215 @@ describe('groundBounds', () => {
         'Find an hour next week, not in the morning',
       ),
     ).toEqual({ earliestTime: '12:00', latestTime: '20:00' });
+  });
+});
+
+describe('groundTitle', () => {
+  it("keeps a title made of the phrase's words", () => {
+    expect(groundTitle('Lunch with Sarah', 'lunch with Sarah tue 1pm at Figlmüller')).toBe(
+      'Lunch with Sarah',
+    );
+    expect(groundTitle('Call the bank', 'remind me to call the bank tomorrow')).toBe(
+      'Call the bank',
+    );
+    expect(groundTitle('Zahnarzt', 'Zahnarzt nächsten Dienstag um halb drei')).toBe('Zahnarzt');
+    expect(groundTitle("Tom's birthday", "tom's birthday saturday")).toBe("Tom's birthday");
+  });
+
+  it('takes the phrase when the title names words it never said', () => {
+    // Observed on device: the prompt's example title, copied.
+    expect(groundTitle('Lunch with Sarah', 'lunch with tom tomorrow ')).toBe(
+      'lunch with tom tomorrow',
+    );
+    expect(groundTitle('Dinner with Sarah', 'dinner with tom tomorrow')).toBe(
+      'dinner with tom tomorrow',
+    );
+    expect(groundTitle('Call the bank', 'remind me to call mom')).toBe('remind me to call mom');
+    // A name mangled by the model is not the one typed.
+    expect(groundTitle('Lunch with Järg', 'Lunch with Jörg')).toBe('Lunch with Jörg');
+  });
+
+  it('lets a model add words that name no one', () => {
+    expect(groundTitle('Lunch with Tom', 'Lunch w/ Tom at Figlmüller tomorrow at 1')).toBe(
+      'Lunch with Tom',
+    );
+    expect(groundTitle('Dentist appointment', 'dentist tomorrow 9')).toBe('Dentist appointment');
+    expect(groundTitle('Meeting', 'tomorrow at 9')).toBe('Meeting');
+    // Review: generic words alone are no stand-in for what the phrase names.
+    expect(groundTitle('Meeting', 'standup tomorrow at 9')).toBe('standup tomorrow at 9');
+    expect(groundTitle('Termin', 'Zahnarzt morgen um 9')).toBe('Zahnarzt morgen um 9');
+  });
+
+  it('takes the phrase when the title is nothing but when', () => {
+    // Observed: "tomorrow" for the title, "tom" for the place.
+    expect(groundTitle('tomorrow', 'dinner with tom tomorrow')).toBe('dinner with tom tomorrow');
+    expect(groundTitle('next Tuesday at 1pm', 'Lunch next Tuesday at 1pm')).toBe(
+      'Lunch next Tuesday at 1pm',
+    );
+  });
+});
+
+describe('trimWhen', () => {
+  it('takes the words about when off the end', () => {
+    expect(trimWhen('lunch with tom tomorrow')).toBe('lunch with tom');
+    expect(trimWhen('Lunch with Sam tomorrow at 12:30')).toBe('Lunch with Sam');
+    expect(trimWhen('coffee with max next tuesday at 3')).toBe('coffee with max');
+    expect(trimWhen('dinner with anna friday')).toBe('dinner with anna');
+    expect(trimWhen('Team standup every monday at 9')).toBe('Team standup');
+    expect(trimWhen('Standup every weekday at 9:30')).toBe('Standup');
+    expect(trimWhen('Sync weekly')).toBe('Sync');
+    expect(trimWhen('Workshop 2-4pm tomorrow')).toBe('Workshop');
+    expect(trimWhen('Dentist 9am tomorrow')).toBe('Dentist');
+    expect(trimWhen('Conference Sep 1')).toBe('Conference');
+    expect(trimWhen('Conference on the 3rd of October')).toBe('Conference');
+    expect(trimWhen('Run tomorrow morning')).toBe('Run');
+    expect(trimWhen('Party on Friday night')).toBe('Party');
+    expect(trimWhen('Offsite all day')).toBe('Offsite');
+    expect(trimWhen('Lunch with Tom, tomorrow')).toBe('Lunch with Tom');
+    expect(trimWhen('Dinner at noon')).toBe('Dinner');
+    expect(trimWhen('Drinks at eight')).toBe('Drinks');
+  });
+
+  it('reads German the same way', () => {
+    expect(trimWhen('Mittagessen mit Tom morgen')).toBe('Mittagessen mit Tom');
+    expect(trimWhen('Zahnarzt Dienstag um 10')).toBe('Zahnarzt');
+    expect(trimWhen('Zahnarzt nächsten Dienstag um halb drei')).toBe('Zahnarzt');
+    expect(trimWhen('Treffen am Montag Abend')).toBe('Treffen');
+    expect(trimWhen('Training jeden Mittwoch 18 Uhr')).toBe('Training');
+    expect(trimWhen('Jour fixe wöchentlich')).toBe('Jour fixe');
+    expect(trimWhen('Essen übermorgen')).toBe('Essen');
+    expect(trimWhen('Konferenz 17.10.')).toBe('Konferenz');
+  });
+
+  it('takes a day said first, but not a weekday', () => {
+    expect(trimWhen('tomorrow lunch with tom')).toBe('lunch with tom');
+    expect(trimWhen('Tomorrow: lunch with Tom at 1')).toBe('lunch with Tom');
+    expect(trimWhen('Monday standup')).toBe('Monday standup');
+    expect(trimWhen('Sunday brunch tomorrow')).toBe('Sunday brunch');
+  });
+
+  it('leaves the middle, bare numbers and a title that is only when', () => {
+    expect(trimWhen('lunch tomorrow with tom')).toBe('lunch tomorrow with tom');
+    expect(trimWhen('Room 9')).toBe('Room 9');
+    expect(trimWhen('Room 9 at 10')).toBe('Room 9');
+    expect(trimWhen('Lunch with Sam tomorrow at 12:30 at Mercato')).toBe(
+      'Lunch with Sam tomorrow at 12:30 at Mercato',
+    );
+    expect(trimWhen('Planning 2027')).toBe('Planning 2027');
+    expect(trimWhen('tomorrow')).toBe('tomorrow');
+    expect(trimWhen('tomorrow at 9')).toBe('tomorrow at 9');
+    expect(trimWhen('Lunch')).toBe('Lunch');
+  });
+
+  it('leaves a day a span, a bound or company holds', () => {
+    // Review: only the day came off, the word before it hung on.
+    expect(trimWhen('Vacation until Friday')).toBe('Vacation until Friday');
+    expect(trimWhen('Out of office until Monday')).toBe('Out of office until Monday');
+    expect(trimWhen('Urlaub bis Montag')).toBe('Urlaub bis Montag');
+    expect(trimWhen('Trip from Monday to Friday')).toBe('Trip from Monday to Friday');
+    expect(trimWhen('Conference through Friday')).toBe('Conference through Friday');
+    expect(trimWhen('Open until 5pm')).toBe('Open until 5pm');
+    expect(trimWhen('Call before 10')).toBe('Call before 10');
+    expect(trimWhen('Lunch with Thu')).toBe('Lunch with Thu');
+    expect(trimWhen('Coffee with Tue tomorrow')).toBe('Coffee with Tue');
+    expect(trimWhen('Call with Jan 15')).toBe('Call with Jan 15');
+    expect(trimWhen('Gym Mon and Wed')).toBe('Gym Mon and Wed');
+    // Codex: qualifiers the run does not take.
+    expect(trimWhen('Submit report by Friday')).toBe('Submit report by Friday');
+    expect(trimWhen('Review notes from last Friday')).toBe('Review notes from last Friday');
+  });
+
+  it('reads a repeat with a part of the day, and leaves one it cannot read', () => {
+    // Review: "every" stayed behind.
+    expect(trimWhen('Standup every Monday morning')).toBe('Standup');
+    expect(trimWhen('Call mom every Sunday night')).toBe('Call mom');
+    expect(trimWhen('Meditation jeden Morgen')).toBe('Meditation');
+    expect(trimWhen('Training jeden Montag Abend')).toBe('Training');
+    // "am Morgen" is "in the morning", not "tomorrow".
+    expect(trimWhen('Joggen am Morgen')).toBe('Joggen am Morgen');
+  });
+
+  it('leaves a day that is part of a name', () => {
+    expect(trimWhen('Black Friday')).toBe('Black Friday');
+    expect(trimWhen('Easter Sunday')).toBe('Easter Sunday');
+    expect(trimWhen('Cyber Monday')).toBe('Cyber Monday');
+    expect(trimWhen('Super Bowl Sunday')).toBe('Super Bowl Sunday');
+    expect(trimWhen('Taco Tuesday')).toBe('Taco Tuesday');
+    expect(trimWhen('taco tuesday every week')).toBe('taco tuesday');
+    expect(trimWhen('Guten Morgen')).toBe('Guten Morgen');
+  });
+
+  it('keeps the word before a day, and takes the one that leads into a time', () => {
+    expect(trimWhen('Drop by tomorrow')).toBe('Drop by tomorrow');
+    // A lead word left before a day: a construction the code does not read.
+    expect(trimWhen('Finish this tomorrow')).toBe('Finish this tomorrow');
+    expect(trimWhen('Carry on tomorrow')).toBe('Carry on tomorrow');
+    // German "ab" is "from": a span, so the day stays (and so does Ab's name).
+    expect(trimWhen('Urlaub ab morgen')).toBe('Urlaub ab morgen');
+    expect(trimWhen('Lunch with Ab tomorrow')).toBe('Lunch with Ab tomorrow');
+    expect(trimWhen('Zahnarzt um viertel nach zehn')).toBe('Zahnarzt');
+  });
+
+  it('takes a time after a day said first, marks and quotes around a when', () => {
+    expect(trimWhen('tomorrow at 1 lunch w/ tom')).toBe('lunch w/ tom');
+    expect(trimWhen('Tomorrow morning: run')).toBe('run');
+    expect(trimWhen('Lunch (3pm)')).toBe('Lunch');
+    expect(trimWhen('Lunch “tomorrow”')).toBe('Lunch');
+    expect(trimWhen('At five guys')).toBe('At five guys');
+    expect(trimWhen('Tomorrow - lunch with Tom')).toBe('lunch with Tom');
+    expect(trimWhen('Today – call bank')).toBe('call bank');
+    expect(trimWhen('- tomorrow')).toBe('- tomorrow');
+  });
+
+  it("leaves a day ruled out, a dash span, and the title's own closing marks", () => {
+    // Codex round 2.
+    expect(trimWhen('Meeting tomorrow but not Friday')).toBe('Meeting tomorrow but not Friday');
+    expect(trimWhen('Standup every weekday except Friday')).toBe(
+      'Standup every weekday except Friday',
+    );
+    expect(trimWhen('Urlaub außer Montag')).toBe('Urlaub außer Montag');
+    expect(trimWhen('Vacation Monday - Friday')).toBe('Vacation Monday - Friday');
+    expect(trimWhen('Vacation Mon – Fri')).toBe('Vacation Mon – Fri');
+    expect(trimWhen('Team review (phase 2) tomorrow')).toBe('Team review (phase 2)');
+    expect(trimWhen('Read "Dune" tomorrow')).toBe('Read "Dune"');
+  });
+
+  it("never trims the event's place", () => {
+    // Codex: a venue named for a weekday lost its weekday.
+    expect(trimWhen('Dinner at Ruby Tuesday tomorrow', 'Ruby Tuesday')).toBe(
+      'Dinner at Ruby Tuesday',
+    );
+    expect(trimWhen('Dinner at Ruby Tuesday', 'Ruby Tuesday')).toBe('Dinner at Ruby Tuesday');
+    expect(trimWhen('Brunch at the Sunday Club tomorrow at 11', 'Sunday Club')).toBe(
+      'Brunch at the Sunday Club',
+    );
+    // Without the place, the weekday reads as the day.
+    expect(trimWhen('Dinner at Ruby Tuesday')).toBe('Dinner at Ruby');
+    expect(trimWhen('Ruby Tuesday tomorrow', 'Ruby Tuesday')).toBe('Ruby Tuesday');
+    // A place that is only a when holds nothing.
+    expect(trimWhen('dinner with anna tuesday', 'tuesday')).toBe('dinner with anna');
+  });
+
+  it('keeps the original spelling of what is left', () => {
+    expect(trimWhen('Grüße an Jörg morgen')).toBe('Grüße an Jörg');
+    expect(trimWhen('Straße fegen heute')).toBe('Straße fegen');
+  });
+});
+
+describe('withoutPlace', () => {
+  it('takes the place and the word leading into it off the end', () => {
+    expect(withoutPlace('Drinks with Jo at Loos Bar', 'Loos Bar')).toBe('Drinks with Jo');
+    expect(withoutPlace('Meeting at the office', 'office')).toBe('Meeting');
+    expect(withoutPlace('Kaffee im Café Central', 'Café Central')).toBe('Kaffee');
+  });
+
+  it('leaves a title that is only the place, or does not end with it', () => {
+    expect(withoutPlace('Figlmüller', 'Figlmüller')).toBe('Figlmüller');
+    expect(withoutPlace('Figlmüller dinner', 'Figlmüller')).toBe('Figlmüller dinner');
+    // Review: a place no word leads into is what the title says.
+    expect(withoutPlace('Trip to Vienna', 'Vienna')).toBe('Trip to Vienna');
+    expect(withoutPlace('Fahrt nach Wien', 'Wien')).toBe('Fahrt nach Wien');
+    expect(withoutPlace('Mittagessen Figlmüller', 'Figlmüller')).toBe('Mittagessen Figlmüller');
+    expect(withoutPlace('Dinner', undefined)).toBe('Dinner');
   });
 });
