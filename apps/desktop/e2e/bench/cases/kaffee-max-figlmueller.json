@@ -1,0 +1,19 @@
+{
+  "lang": "de",
+  "tags": ["basic", "de", "location"],
+  "turns": [
+    {
+      "input": {
+        "audio": "kaffee-max-figlmueller-1.m4a",
+        "transcript": "Kaffee mit Max um 10 Uhr im Figlmüller"
+      },
+      "expect": {
+        "title": "kaffee mit max",
+        "startTime": "10:00",
+        "endTime": "11:00",
+        "location": "figlmuller",
+        "guests": {}
+      }
+    }
+  ]
+}

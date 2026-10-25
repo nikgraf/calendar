@@ -1,0 +1,16 @@
+{
+  "lang": "en",
+  "tags": ["repeat"],
+  "turns": [
+    {
+      "input": { "text": "Book club every month on Wednesday at 7pm" },
+      "expect": {
+        "title": "book club",
+        "weekday": 3,
+        "startTime": "19:00",
+        "endTime": "20:00",
+        "repeat": { "freq": "monthly" }
+      }
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "lang": "en",
+  "tags": ["guests"],
+  "turns": [
+    {
+      "input": {
+        "audio": "invite-tom-baker-1.m4a",
+        "transcript": "Lunch tomorrow at noon, invite Tom Baker"
+      },
+      "expect": {
+        "title": "lunch",
+        "dayOffset": 1,
+        "startTime": "12:00",
+        "endTime": "13:00",
+        "guests": { "emails": ["tom.baker@example.com"] }
+      }
+    }
+  ]
+}

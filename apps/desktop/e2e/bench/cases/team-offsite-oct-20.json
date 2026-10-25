@@ -1,0 +1,10 @@
+{
+  "lang": "en",
+  "tags": ["basic"],
+  "turns": [
+    {
+      "input": { "text": "Team offsite Oct 20" },
+      "expect": { "title": "team offsite", "isAllDay": true }
+    }
+  ]
+}

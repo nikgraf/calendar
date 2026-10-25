@@ -1,0 +1,16 @@
+{
+  "lang": "en",
+  "tags": ["basic"],
+  "turns": [
+    {
+      "input": { "text": "Dinner with Teo at 8 next Friday" },
+      "expect": {
+        "title": "dinner with teo",
+        "weekday": 5,
+        "startTime": "20:00",
+        "endTime": "21:00",
+        "assumedTime": false
+      }
+    }
+  ]
+}

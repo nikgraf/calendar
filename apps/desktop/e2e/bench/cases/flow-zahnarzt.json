@@ -1,0 +1,35 @@
+{
+  "lang": "de",
+  "tags": ["flow", "de", "location"],
+  "turns": [
+    {
+      "input": {
+        "audio": "zahnarzt-dienstag-halb-drei-1.m4a",
+        "transcript": "Zahnarzt nächsten Dienstag um halb drei"
+      },
+      "expect": {
+        "title": "zahnarzt",
+        "weekday": 2,
+        "startTime": "14:30",
+        "endTime": "15:30",
+        "location": null
+      }
+    },
+    {
+      "input": { "audio": "flow-zahnarzt-2.m4a", "transcript": "lieber Mittwoch" },
+      "expect": { "weekday": 3 }
+    },
+    {
+      "input": { "audio": "flow-zahnarzt-3.m4a", "transcript": "um 16 Uhr" },
+      "expect": { "startTime": "16:00", "endTime": "17:00" }
+    },
+    {
+      "input": { "audio": "flow-zahnarzt-4.m4a", "transcript": "in der Praxis Dr. Huber" },
+      "expect": { "location": "praxis dr. huber" }
+    },
+    {
+      "input": { "audio": "flow-zahnarzt-5.m4a", "transcript": "nenn es Kontrolle" },
+      "expect": { "title": "kontrolle" }
+    }
+  ]
+}

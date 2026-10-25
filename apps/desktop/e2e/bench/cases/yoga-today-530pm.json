@@ -1,0 +1,10 @@
+{
+  "lang": "en",
+  "tags": ["basic"],
+  "turns": [
+    {
+      "input": { "text": "Yoga today at 5:30pm" },
+      "expect": { "title": "yoga", "dayOffset": 0, "startTime": "17:30", "endTime": "18:30" }
+    }
+  ]
+}

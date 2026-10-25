@@ -1,0 +1,24 @@
+{
+  "lang": "en",
+  "tags": ["flow", "notes"],
+  "turns": [
+    {
+      "input": { "text": "Call with Anna Lee tomorrow at 11" },
+      "expect": {
+        "title": "call with anna lee",
+        "dayOffset": 1,
+        "startTime": "11:00",
+        "endTime": "12:00",
+        "guests": {}
+      }
+    },
+    {
+      "input": { "text": "note: discuss the roadmap" },
+      "expect": { "notes": "discuss the roadmap" }
+    },
+    {
+      "input": { "text": "also add to the notes: bring the slides" },
+      "expect": { "notes": "bring the slides" }
+    }
+  ]
+}

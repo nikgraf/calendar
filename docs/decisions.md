@@ -1125,6 +1125,17 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   plugin. Open: the real share sheet on a device (both variants), HEIC
   from Photos, whether 6000 chars / 8 events fit the context.
 
+- **The model bench** (2026-10-25, #254) — `apps/desktop/e2e/bench/`
+  grows the #184 phrase table into cases with turns (a phrase, then the
+  changes a thread would make) through `parseQuickAdd` and `parseRefine`
+  on Apple's model and any served one; a turn is text or a recording
+  with its transcript; expectations per field, by where a person would
+  put the event, a later turn held to leave what it was not about; a
+  JSON report to diff two commits by. Measured, never gated. Rejected:
+  exact-JSON snapshots (wording and dates drift), prompt variants as a
+  parameter (two runs on two commits do), a CI gate (no model there).
+  Open: the gaps the baseline shows, listed in todo.md (Tier 3).
+
 ## Notifications
 
 - **Event reminders** (2026-09-22, #84) — reminders are data on the

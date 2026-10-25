@@ -1,0 +1,23 @@
+{
+  "lang": "en",
+  "tags": ["long", "guests", "location", "notes", "notifications"],
+  "turns": [
+    {
+      "input": {
+        "audio": "long-workshop-full-1.m4a",
+        "transcript": "Workshop with the design team on Tuesday from 2 to 4 in the big meeting room, invite tom.baker@example.com and Anna Berger, notes: bring the printouts, notification 30 minutes before"
+      },
+      "expect": {
+        "kind": "event",
+        "title": "workshop with the design team",
+        "weekday": 2,
+        "startTime": "14:00",
+        "endTime": "16:00",
+        "location": "big meeting room",
+        "guests": { "emails": ["tom.baker@example.com", "anna.berger@example.com"] },
+        "notes": "bring the printouts",
+        "reminders": [30]
+      }
+    }
+  ]
+}

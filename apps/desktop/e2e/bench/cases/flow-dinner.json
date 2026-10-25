@@ -1,0 +1,40 @@
+{
+  "lang": "en",
+  "tags": ["flow", "location", "guests"],
+  "turns": [
+    {
+      "input": {
+        "audio": "dinner-teo-next-friday-1.m4a",
+        "transcript": "Dinner with Teo next Friday"
+      },
+      "expect": {
+        "title": "dinner with teo",
+        "weekday": 5,
+        "startTime": "19:00",
+        "endTime": "20:00",
+        "guests": {},
+        "location": null
+      }
+    },
+    {
+      "input": { "audio": "flow-dinner-2.m4a", "transcript": "make it 8" },
+      "expect": { "startTime": "20:00", "endTime": "21:00" }
+    },
+    {
+      "input": { "audio": "flow-dinner-3.m4a", "transcript": "Thursday instead" },
+      "expect": { "weekday": 4 }
+    },
+    {
+      "input": { "audio": "flow-dinner-4.m4a", "transcript": "at Loos Bar" },
+      "expect": { "location": "loos bar" }
+    },
+    {
+      "input": { "audio": "flow-dinner-5.m4a", "transcript": "invite Tom Baker" },
+      "expect": { "guests": { "emails": ["tom.baker@example.com"] } }
+    },
+    {
+      "input": { "audio": "flow-dinner-6.m4a", "transcript": "call it team dinner" },
+      "expect": { "title": "team dinner" }
+    }
+  ]
+}

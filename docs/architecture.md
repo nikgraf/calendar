@@ -99,9 +99,11 @@ dictation and text recognition stay with the helper. `ModelInfo`
 text by it (`captureTextBudget`). A served model's failure is worded by
 server (`modelUnavailableCopy`), and a host that is not loopback gets a
 notice in Settings: text typed into the AI fields leaves the Mac then.
-The bench (`apps/desktop/e2e/bench/modelBench.e2e.ts`, run by path with
-`MODEL_BENCH=1 E2E=1`) runs a phrase set through Apple's model and any
-Ollama models side by side. iOS reaches the same models via
+The model bench (`apps/desktop/e2e/bench/`, run by path with
+`MODEL_BENCH=1 E2E=1`) runs its cases — a phrase and the changes a
+thread would make to it, as text or recordings — through the same
+pipelines on Apple's model and any served one, side by side (its README;
+docs/google-sync-and-testing.md → Unit tests). iOS reaches the same models via
 `@react-native-ai/apple` and Vision through the `solunivo-ocr` Expo
 module; why the model cannot run comes from the `solunivo-model-availability`
 module (Foundation Models' reason, bounded to 5 s — the package answers

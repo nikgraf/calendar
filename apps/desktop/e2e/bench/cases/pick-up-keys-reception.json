@@ -1,0 +1,10 @@
+{
+  "lang": "en",
+  "tags": ["basic", "task", "title"],
+  "turns": [
+    {
+      "input": { "text": "remind me to pick up the keys at reception tomorrow" },
+      "expect": { "kind": "task", "title": "pick up the keys at reception", "dayOffset": 1 }
+    }
+  ]
+}

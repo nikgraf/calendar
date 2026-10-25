@@ -1,0 +1,19 @@
+{
+  "lang": "de",
+  "tags": ["basic", "de"],
+  "turns": [
+    {
+      "input": {
+        "audio": "abendessen-teo-freitag-1.m4a",
+        "transcript": "Abendessen mit Teo nächsten Freitag"
+      },
+      "expect": {
+        "title": "abendessen mit teo",
+        "weekday": 5,
+        "startTime": "19:00",
+        "endTime": "20:00",
+        "assumedTime": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "lang": "en",
+  "tags": ["basic"],
+  "turns": [
+    {
+      "input": {
+        "audio": "dinner-teo-next-friday-1.m4a",
+        "transcript": "Dinner with Teo next Friday"
+      },
+      "expect": {
+        "kind": "event",
+        "title": "dinner with teo",
+        "weekday": 5,
+        "startTime": "19:00",
+        "endTime": "20:00",
+        "assumedTime": true,
+        "guests": {}
+      }
+    }
+  ]
+}

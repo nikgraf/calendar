@@ -1,0 +1,18 @@
+{
+  "lang": "en",
+  "tags": ["flow", "task"],
+  "turns": [
+    {
+      "input": { "text": "remind me to call the bank tomorrow" },
+      "expect": { "kind": "task", "title": "call the bank", "dayOffset": 1, "isAllDay": true }
+    },
+    {
+      "input": { "text": "at 9" },
+      "expect": { "startTime": "09:00" }
+    },
+    {
+      "input": { "text": "Friday instead" },
+      "expect": { "weekday": 5 }
+    }
+  ]
+}

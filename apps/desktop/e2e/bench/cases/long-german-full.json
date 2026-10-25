@@ -1,0 +1,22 @@
+{
+  "lang": "de",
+  "tags": ["long", "de", "location", "notes", "notifications"],
+  "turns": [
+    {
+      "input": {
+        "audio": "long-german-full-1.m4a",
+        "transcript": "Trag mir für nächsten Mittwoch um 10 Uhr einen Zahnarzttermin in der Praxis Dr. Huber ein, erinnere mich eine Stunde vorher und notier, dass ich die Versicherungskarte mitnehmen muss"
+      },
+      "expect": {
+        "kind": "event",
+        "titleIncludes": "zahnarzttermin",
+        "weekday": 3,
+        "startTime": "10:00",
+        "endTime": "11:00",
+        "location": "praxis dr. huber",
+        "reminders": [60],
+        "notes": "versicherungskarte"
+      }
+    }
+  ]
+}

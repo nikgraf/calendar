@@ -1,0 +1,10 @@
+{
+  "lang": "en",
+  "tags": ["basic", "title"],
+  "turns": [
+    {
+      "input": { "text": "Vacation until Friday" },
+      "expect": { "title": "vacation until friday", "isAllDay": true }
+    }
+  ]
+}

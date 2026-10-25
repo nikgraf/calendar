@@ -1,0 +1,13 @@
+{
+  "team": [
+    { "displayName": "Tom Baker", "email": "tom.baker@example.com" },
+    { "displayName": "Anna Lee", "email": "anna.lee@example.com" },
+    { "displayName": "Anna Berger", "email": "anna.berger@example.com" },
+    { "displayName": "Sarah Novak", "email": "sarah.novak@example.com" },
+    { "displayName": "Teo Marin", "email": "teo.marin@example.com" },
+    { "displayName": "Jörg Müller", "email": "joerg.mueller@example.com" },
+    { "displayName": "Max Huber", "email": "max.huber@example.com" },
+    { "displayName": "Max Huber", "email": "max@example.com" },
+    { "displayName": "Jo Winter", "email": "jo@example.com" }
+  ]
+}
