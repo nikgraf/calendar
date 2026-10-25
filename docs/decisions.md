@@ -891,7 +891,7 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   forbade inventing), asking the model where a value came from. Open:
   capture items (no phrase per item), German "morgen" (also "morning"),
   an "assumed" badge for the default times — with the draft thread.
-- **The title holds only the phrase's words** (2026-10-24) — "lunch with
+- **The title holds only the phrase's words** (2026-10-24, #248) — "lunch with
   tom tomorrow" came back "Lunch with Sarah": the model copies a prompt's
   example title into any phrase of its shape. The prompt lost its examples;
   `groundTitle` keeps the model's title only when its words are the

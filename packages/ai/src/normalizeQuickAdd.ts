@@ -254,7 +254,8 @@ export const normalizeQuickAdd = (
     said === undefined
       ? undefined
       : titleWithoutInvitees(phrase === undefined ? said : groundTitle(said, phrase), invite);
-  const kept = named && phrase !== undefined ? trimWhen(named) : named;
+  const kept =
+    named && phrase !== undefined ? trimWhen(named, meaningfulText(parse.location)) : named;
   // The place leaves an event's title only when its field keeps it; a
   // to-do has no place field.
   const placeless =

@@ -460,6 +460,16 @@ describe('parseQuickAdd titles', () => {
     expect(yoga.location).toBeUndefined();
   });
 
+  it('keeps a venue named for a day whole, in its field', async () => {
+    // Codex: "Dinner at Ruby" with the place "Ruby Tuesday".
+    expect(
+      await prefillOf(
+        { location: 'Ruby Tuesday', title: 'Dinner at Ruby Tuesday' },
+        'Dinner at Ruby Tuesday tomorrow',
+      ),
+    ).toMatchObject({ date: '2026-08-23', location: 'Ruby Tuesday', title: 'Dinner' });
+  });
+
   it('takes no when and no company for the place', async () => {
     // Observed on the real model: "tomorrow" and "tom" as the location.
     expect(

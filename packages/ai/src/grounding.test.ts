@@ -813,6 +813,22 @@ describe('trimWhen', () => {
     expect(trimWhen('- tomorrow')).toBe('- tomorrow');
   });
 
+  it("never trims the event's place", () => {
+    // Codex: a venue named for a weekday lost its weekday.
+    expect(trimWhen('Dinner at Ruby Tuesday tomorrow', 'Ruby Tuesday')).toBe(
+      'Dinner at Ruby Tuesday',
+    );
+    expect(trimWhen('Dinner at Ruby Tuesday', 'Ruby Tuesday')).toBe('Dinner at Ruby Tuesday');
+    expect(trimWhen('Brunch at the Sunday Club tomorrow at 11', 'Sunday Club')).toBe(
+      'Brunch at the Sunday Club',
+    );
+    // Without the place, the weekday reads as the day.
+    expect(trimWhen('Dinner at Ruby Tuesday')).toBe('Dinner at Ruby');
+    expect(trimWhen('Ruby Tuesday tomorrow', 'Ruby Tuesday')).toBe('Ruby Tuesday');
+    // A place that is only a when holds nothing.
+    expect(trimWhen('dinner with anna tuesday', 'tuesday')).toBe('dinner with anna');
+  });
+
   it('keeps the original spelling of what is left', () => {
     expect(trimWhen('Grüße an Jörg morgen')).toBe('Grüße an Jörg');
     expect(trimWhen('Straße fegen heute')).toBe('Straße fegen');

@@ -1090,76 +1090,6 @@ const clockAtStart = (text: string): number => {
   return ends.length === 0 ? 0 : text.slice(0, Math.max(...ends)).split(' ').length;
 };
 
-/**
- * The title's words without the when at its ends: the first and the
- * past-the-last word kept, and whether nothing but when is left.
- */
-const whenless = (
-  title: string,
-): { readonly first: number; readonly last: number; readonly onlyWhen: boolean } => {
-  // Folded word by word and joined by one space, so a place in the text
-  // is a count of words in the title.
-  const folded = [...title.matchAll(/\S+/g)].map(([token]) => words(token));
-  let last = folded.length;
-  for (;;) {
-    const text = folded.slice(0, last).join(' ');
-    const start = whenAtEnd(text);
-    if (start === undefined) {
-      break;
-    }
-    const kept = start === 0 ? 0 : text.slice(0, start).trimEnd().split(' ').length;
-    if (kept > 0 && OWNS_WHEN.test(bare(folded[kept - 1]!))) {
-      break;
-    }
-    if (kept === 0) {
-      return { first: 0, last, onlyWhen: true };
-    }
-    last = kept;
-    while (last > 1 && HANGING.test(folded[last - 1]!)) {
-      last -= 1;
-    }
-  }
-  // A day said first, and a time right after it ("tomorrow at 1 lunch").
-  const leading = DAY_AT_START.exec(folded.slice(0, last).join(' '));
-  let first = leading ? leading[0].split(' ').length : 0;
-  if (leading) {
-    first += clockAtStart(folded.slice(first, last).join(' '));
-    while (first < last && HANGING.test(folded[first]!)) {
-      first += 1;
-    }
-  }
-  return first < last ? { first, last, onlyWhen: false } : { first: 0, last, onlyWhen: true };
-};
-
-/** The text says nothing but when ("tomorrow", "next Tuesday at 1pm"). */
-export const saysOnlyWhen = (text: string): boolean => whenless(text).onlyWhen;
-
-/**
- * The title without the words about when at its ends: "lunch with tom
- * tomorrow" is "lunch with tom", "Team standup every Monday at 9" is
- * "Team standup", "Zahnarzt Dienstag um 10" is "Zahnarzt", "Tomorrow:
- * lunch with Tom" is "lunch with Tom". The day, the time and the repeat
- * are read from the phrase itself, and the model leaves their words in
- * the title as often as not. Only the ends, and only a when the event
- * has: a weekday that opens a title names the event ("Monday standup"),
- * as does a day after its own name ("Black Friday"); a span or company
- * keeps its day ("until Friday", "with Thu"); words in the middle stay,
- * and a bare number is no time ("Room 9"). A title that is nothing but
- * when stays as it is.
- */
-export const trimWhen = (title: string): string => {
-  const tokens = [...title.matchAll(/\S+/g)];
-  const { first, last, onlyWhen } = whenless(title);
-  if (onlyWhen || (first === 0 && last === tokens.length)) {
-    return title;
-  }
-  const end = tokens[last - 1]!;
-  const trimmed = title
-    .slice(tokens[first]!.index, end.index + end[0].length)
-    .replace(TRAILING, '');
-  return trimmed === '' ? title : trimmed;
-};
-
 /** The words that lead into a place ("at the office", "im Café"), with the article after them. */
 const PLACE_LEADS = new Set([
   'at',
@@ -1190,6 +1120,106 @@ const ARTICLES = new Set([
   'einem',
   'einer',
 ]);
+
+/**
+ * Where the event's place sits among the title's folded words, as
+ * [first, past-the-last) ("Dinner at Ruby Tuesday"): its words are the
+ * place's, never a when to trim. A place that is only a when
+ * ("tomorrow") holds nothing.
+ */
+const placeSpan = (
+  folded: ReadonlyArray<string>,
+  place: string | undefined,
+): readonly [number, number] | undefined => {
+  const named =
+    place === undefined ? [] : [...place.matchAll(/\S+/g)].map(([token]) => bare(words(token)));
+  if (named.length === 0 || saysOnlyWhen(place!)) {
+    return undefined;
+  }
+  for (let at = folded.length - named.length; at >= 0; at -= 1) {
+    if (named.every((word, offset) => bare(folded[at + offset]!) === word)) {
+      return [at, at + named.length];
+    }
+  }
+  return undefined;
+};
+
+/**
+ * The title's words without the when at its ends: the first and the
+ * past-the-last word kept, and whether nothing but when is left. The
+ * words of the event's place are never trimmed (`placeSpan`).
+ */
+const whenless = (
+  title: string,
+  place?: string,
+): { readonly first: number; readonly last: number; readonly onlyWhen: boolean } => {
+  // Folded word by word and joined by one space, so a place in the text
+  // is a count of words in the title.
+  const folded = [...title.matchAll(/\S+/g)].map(([token]) => words(token));
+  const held = placeSpan(folded, place);
+  let last = folded.length;
+  for (;;) {
+    const text = folded.slice(0, last).join(' ');
+    const start = whenAtEnd(text);
+    if (start === undefined) {
+      break;
+    }
+    const before = start === 0 ? 0 : text.slice(0, start).trimEnd().split(' ').length;
+    if ((held && before < held[1]) || (before > 0 && OWNS_WHEN.test(bare(folded[before - 1]!)))) {
+      break;
+    }
+    if (before === 0) {
+      return { first: 0, last, onlyWhen: true };
+    }
+    last = before;
+    while (last > 1 && HANGING.test(folded[last - 1]!)) {
+      last -= 1;
+    }
+  }
+  // A day said first, and a time right after it ("tomorrow at 1 lunch").
+  const leading = DAY_AT_START.exec(folded.slice(0, last).join(' '));
+  let first = leading ? leading[0].split(' ').length : 0;
+  if (leading) {
+    first += clockAtStart(folded.slice(first, last).join(' '));
+    while (first < last && HANGING.test(folded[first]!)) {
+      first += 1;
+    }
+    if (held && first > held[0]) {
+      first = 0;
+    }
+  }
+  return first < last ? { first, last, onlyWhen: false } : { first: 0, last, onlyWhen: true };
+};
+
+/** The text says nothing but when ("tomorrow", "next Tuesday at 1pm"). */
+export const saysOnlyWhen = (text: string): boolean => whenless(text).onlyWhen;
+
+/**
+ * The title without the words about when at its ends: "lunch with tom
+ * tomorrow" is "lunch with tom", "Team standup every Monday at 9" is
+ * "Team standup", "Zahnarzt Dienstag um 10" is "Zahnarzt", "Tomorrow:
+ * lunch with Tom" is "lunch with Tom". The day, the time and the repeat
+ * are read from the phrase itself, and the model leaves their words in
+ * the title as often as not. Only the ends, and only a when the event
+ * has: a weekday that opens a title names the event ("Monday standup"),
+ * as does a day after its own name ("Black Friday"); a span or company
+ * keeps its day ("until Friday", "with Thu"); words in the middle stay,
+ * and a bare number is no time ("Room 9"). Given the event's place, its
+ * words stay too ("Dinner at Ruby Tuesday"). A title that is nothing but
+ * when stays as it is.
+ */
+export const trimWhen = (title: string, place?: string): string => {
+  const tokens = [...title.matchAll(/\S+/g)];
+  const { first, last, onlyWhen } = whenless(title, place);
+  if (onlyWhen || (first === 0 && last === tokens.length)) {
+    return title;
+  }
+  const end = tokens[last - 1]!;
+  const trimmed = title
+    .slice(tokens[first]!.index, end.index + end[0].length)
+    .replace(TRAILING, '');
+  return trimmed === '' ? title : trimmed;
+};
 
 /**
  * The title without the event's place at its end, when a word leads into
