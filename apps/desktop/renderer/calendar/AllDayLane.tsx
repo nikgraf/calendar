@@ -354,6 +354,7 @@ export function AllDayLane({
       <div
         className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto [scrollbar-width:none]"
         data-testid="all-day-scroller"
+        data-wheel-scroll
       >
         {/* Exactly the room inside the hairline: a lane that fits has nothing to scroll. */}
         <div className="relative overflow-hidden" style={{ height: contentHeight - BORDER_PX }}>

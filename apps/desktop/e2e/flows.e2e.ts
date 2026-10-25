@@ -2278,6 +2278,60 @@ const chore = (id: string, title: string, dueDate: string | undefined) =>
     updatedAt: 1,
   });
 
+describe('a fold list in a short window', () => {
+  let shortApp: App;
+
+  beforeAll(async () => {
+    // Twelve late and twelve undated tasks in the shortest window the app
+    // allows: the undated chip sits on the lane's second row, lower still.
+    shortApp = await launchApp(
+      {
+        ...seed,
+        events: [],
+        tasks: Array.from({ length: 12 }, (_, index) => [
+          chore(`late-${String(index + 1)}`, `Late ${String(index + 1)}`, localIsoDaysAgo(1)),
+          chore(`loose-${String(index + 1)}`, `Loose ${String(index + 1)}`, undefined),
+        ]).flat(),
+      },
+      { window: { height: 400, width: 1024 } },
+    );
+  }, 60_000);
+
+  afterEach(async (context) => {
+    if (context.task.result?.state === 'fail') {
+      await shortApp?.dump(context.task.name);
+    }
+  });
+
+  afterAll(async () => {
+    await shortApp?.stop();
+  });
+
+  it('fits the room below its chip and scrolls to its last row', async () => {
+    const { cdp } = shortApp;
+    const chip = await cdp.locate('[data-testid="all-day-fold-undated"]');
+    await cdp.click(chip.x, chip.y);
+    await cdp.waitFor(`!!document.querySelector('[data-testid="all-day-fold-list-undated"]')`);
+    const fits = await cdp.eval<boolean>(`(() => {
+      const panel = document
+        .querySelector('[data-testid="all-day-fold-list-undated"]')
+        .closest('[role="dialog"]')
+        .getBoundingClientRect();
+      return panel.bottom <= window.innerHeight;
+    })()`);
+    expect(fits).toBe(true);
+    const lastShown = await cdp.eval<boolean>(`(() => {
+      const rows = document.querySelectorAll('[data-testid^="fold-task-"]');
+      const last = rows[rows.length - 1];
+      last.scrollIntoView({ block: 'nearest' });
+      const box = last.getBoundingClientRect();
+      return rows.length === 12 && box.bottom <= window.innerHeight && box.top >= 0;
+    })()`);
+    expect(lastShown).toBe(true);
+    await cdp.pressEscape();
+  });
+});
+
 describe("today's backlog and a long all-day lane", () => {
   let backlogApp: App;
 
@@ -2378,6 +2432,29 @@ describe("today's backlog and a long all-day lane", () => {
     })()`);
     expect(shown).toBe(true);
     expect((await geometry()).lane).toBe(before.lane);
+
+    // A diagonal swipe that starts a pan scrolls the lane it began over,
+    // not the hours. (Synthetic events: the app's listener moves both.)
+    await cdp.eval(`document.querySelector('[data-testid="all-day-scroller"]').scrollTop = 0`);
+    const scrollTops = () =>
+      cdp.eval<{ grid: number; lane: number }>(`({
+        grid: document.querySelector('[data-testid="week-scroller"]').scrollTop,
+        lane: document.querySelector('[data-testid="all-day-scroller"]').scrollTop,
+      })`);
+    const start = await scrollTops();
+    await cdp.wheelBurst('[data-testid="all-day-scroller"]', {
+      count: 2,
+      deltaX: 12,
+      deltaY: 10,
+      gapMs: 16,
+    });
+    const moved = await scrollTops();
+    expect(moved.grid).toBe(start.grid);
+    expect(moved.lane).toBeGreaterThan(start.lane);
+    // The short pan settles back onto the same week.
+    await cdp.waitFor(
+      `getComputedStyle(document.querySelector('[data-testid="week-view"]')).getPropertyValue('--pan-x').trim() === '0px'`,
+    );
     await cdp.eval(`document.querySelector('[data-testid="all-day-scroller"]').scrollTop = 0`);
   });
 

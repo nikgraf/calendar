@@ -21,6 +21,11 @@ const rowKey = (task: TaskRecord): string => `fold:${calendarTaskKey(task)}`;
 const DRAG_THRESHOLD_PX = 4;
 /** The panel's padding around the list (`p-2`): a press still inside it has not left. */
 const PANEL_INSET_PX = 8;
+/** The panel around the rows: its padding, border and heading, plus a margin to the window's edge. */
+const PANEL_CHROME_PX = 56;
+/** The rows' tallest (`26rem`) and shortest heights; past the shortest the rows scroll. */
+const LIST_MAX_PX = 416;
+const LIST_MIN_PX = 96;
 
 /** A press on a row: where it began, and whether it has left the list since. */
 interface Press {
@@ -70,6 +75,16 @@ export function TaskFoldPopover({
   today: string;
 }) {
   const title = taskFoldTitle(fold);
+  // The rows fit the room below the chip, so a short window still shows
+  // the list's end (they scroll inside it).
+  const listMaxHeight = Math.max(
+    Math.min(
+      LIST_MAX_PX,
+      window.innerHeight * 0.6,
+      window.innerHeight - (anchor?.y ?? 0) - PANEL_CHROME_PX,
+    ),
+    LIST_MIN_PX,
+  );
   const listRef = useRef<HTMLDivElement>(null);
   // The row a press began on: only its release closes the list — a
   // checkbox's (which keeps its press to itself) leaves it open.
@@ -134,7 +149,7 @@ export function TaskFoldPopover({
         <h3 className="px-1 pb-1 text-[11px] font-semibold tracking-wide text-ink-secondary uppercase">
           {title}
         </h3>
-        <ul className="max-h-[min(60vh,26rem)] overflow-y-auto">
+        <ul className="overflow-y-auto" style={{ maxHeight: listMaxHeight }}>
           {tasks.map((task) => {
             const done = task.status === 'completed';
             const readOnly = isTaskReadOnly(task);
