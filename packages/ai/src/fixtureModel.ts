@@ -24,7 +24,7 @@ import { TextRecognitionError, type ImageInput, type TextRecognizer } from './te
  * event; any other phrase becomes a title on its own, which the normalizer
  * places on the fallback day as an all-day event — unless the phrase's own
  * words say otherwise, which the normalizer reads the same way for every
- * model ("Lunch tomorrow at 1" lands tomorrow at 13:00). A refinement is
+ * model ("Lunch tomorrow at 1" lands tomorrow at 13:00, titled "Lunch"). A refinement is
  * the same grammar with empty parts meaning "unchanged" — `| | 10:00-11:00`
  * moves the times only — applied to the draft in the prompt; a sentence
  * leaves the draft as it is, and the normalizer reads the sentence. A

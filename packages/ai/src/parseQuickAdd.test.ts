@@ -372,6 +372,157 @@ describe('parseQuickAdd', () => {
     expect(prompt).toContain('Sat 2026-08-22 (today)');
     expect(prompt).toContain('Tue 2026-08-25');
   });
+
+  it('shows the model no example title to copy', async () => {
+    // An example's title came back for phrases of its shape.
+    const model = fakeModel({ title: 'x' });
+    await parseQuickAdd(model, { phrase: 'lunch with tom tomorrow', ...CONTEXT });
+    const [prompt] = model.prompts;
+    expect(prompt).not.toMatch(/has the title|Sarah|Call the bank/);
+  });
+});
+
+describe('parseQuickAdd titles', () => {
+  it('never takes a name the phrase did not say', async () => {
+    // The reported bug, on device: "lunch with tom tomorrow" came back as
+    // "Lunch with Sarah", the prompt's example.
+    const prefill = await prefillOf(
+      { date: '2026-08-23', endTime: '13:00', startTime: '12:00', title: 'Lunch with Sarah' },
+      'lunch with tom tomorrow ',
+    );
+    expect(prefill).toEqual({
+      assumedTime: true,
+      date: '2026-08-23',
+      endTime: '13:30',
+      isAllDay: false,
+      startTime: '12:30',
+      title: 'Lunch with tom',
+    });
+    expect(
+      (await prefillOf({ location: 'tom', title: 'tomorrow' }, 'dinner with tom tomorrow')).title,
+    ).toBe('Dinner with tom');
+  });
+
+  it('takes the words about when off the title', async () => {
+    expect(
+      (
+        await prefillOf(
+          { startTime: '09:00', title: 'Team standup every monday at 9' },
+          'Team standup every monday at 9',
+        )
+      ).title,
+    ).toBe('Team standup');
+    expect(
+      await prefillOf(
+        { location: 'Mercato', startTime: '12:30', title: 'Lunch with Sam tomorrow at 12:30' },
+        'Lunch with Sam tomorrow at 12:30 at Mercato',
+      ),
+    ).toMatchObject({ location: 'Mercato', title: 'Lunch with Sam' });
+  });
+
+  it('keeps the place out of the title and in its field', async () => {
+    // Review: a model title with "with" for "w/" fell back to the phrase,
+    // place and all.
+    expect(
+      await prefillOf(
+        { location: 'Figlmüller', startTime: '13:00', title: 'Lunch with Tom' },
+        'Lunch w/ Tom at Figlmüller tomorrow at 1',
+      ),
+    ).toMatchObject({ location: 'Figlmüller', title: 'Lunch with Tom' });
+    // Observed: the place left in a title the model kept a day in.
+    expect(
+      await prefillOf(
+        { location: 'Loos Bar', startTime: '19:00', title: 'drinks with jo at Loos Bar friday' },
+        'drinks with jo at Loos Bar friday 7pm',
+      ),
+    ).toMatchObject({ location: 'Loos Bar', title: 'Drinks with jo' });
+    // A translated title gives way to the phrase, and a place no word
+    // leads into is part of it.
+    const translated = await prefillOf(
+      { location: 'Figlmüller', title: 'Lunch' },
+      'Mittagessen Figlmüller morgen',
+    );
+    expect(translated.title).toBe('Mittagessen Figlmüller');
+    expect(translated.location).toBeUndefined();
+    // Review: a place after "to" stays in the title, and a title is never
+    // its own place.
+    const trip = await prefillOf(
+      { location: 'Vienna', title: 'Business trip' },
+      'trip to Vienna friday',
+    );
+    expect(trip.title).toBe('Trip to Vienna');
+    expect(trip.location).toBeUndefined();
+    const yoga = await prefillOf(
+      { location: 'Yoga', startTime: '07:00', title: 'Morning workout' },
+      'Yoga tomorrow 7am',
+    );
+    expect(yoga.title).toBe('Yoga');
+    expect(yoga.location).toBeUndefined();
+  });
+
+  it('keeps a venue named for a day whole, in its field', async () => {
+    // Codex: "Dinner at Ruby" with the place "Ruby Tuesday".
+    expect(
+      await prefillOf(
+        { location: 'Ruby Tuesday', title: 'Dinner at Ruby Tuesday' },
+        'Dinner at Ruby Tuesday tomorrow',
+      ),
+    ).toMatchObject({ date: '2026-08-23', location: 'Ruby Tuesday', title: 'Dinner' });
+  });
+
+  it('keeps a venue that is the whole title', async () => {
+    // Codex round 2: the second trim ran without the place.
+    expect(
+      (
+        await prefillOf(
+          { location: 'Ruby Tuesday', title: 'Ruby Tuesday' },
+          'Ruby Tuesday tomorrow',
+        )
+      ).title,
+    ).toBe('Ruby Tuesday');
+  });
+
+  it('takes no when and no company for the place', async () => {
+    // Observed on the real model: "tomorrow" and "tom" as the location.
+    expect(
+      (
+        await prefillOf(
+          { location: 'tomorrow', title: 'Lunch with Tom' },
+          'Tomorrow - lunch with Tom',
+        )
+      ).location,
+    ).toBeUndefined();
+    expect(
+      (await prefillOf({ location: 'tom', title: 'tomorrow lunch' }, 'tomorrow lunch with tom'))
+        .location,
+    ).toBeUndefined();
+    // A name said with "with" can still be the place where a cue says so.
+    expect(
+      (await prefillOf({ location: 'Anna', title: 'Coffee' }, 'coffee with Anna at Anna')).location,
+    ).toBe('Anna');
+  });
+
+  it('capitalizes a first word typed in lower case, and nothing else', async () => {
+    expect((await prefillOf({ title: 'coffee with max' }, 'coffee with max')).title).toBe(
+      'Coffee with max',
+    );
+    expect((await prefillOf({ title: 'iPhone repair' }, 'iPhone repair friday')).title).toBe(
+      'iPhone repair',
+    );
+    expect((await prefillOf({ title: 'Zahnarzt' }, 'Zahnarzt morgen')).title).toBe('Zahnarzt');
+  });
+
+  it('keeps an invitation out of a title made of the phrase', async () => {
+    const result = await parseQuickAdd(
+      fakeModel({ people: ['Tom'], startTime: '13:00', title: 'Lunch with Sarah and Tom' }),
+      { phrase: 'lunch with sam tomorrow at 1, invite Tom', ...CONTEXT },
+    );
+    expect(result).toMatchObject({
+      invite: ['Tom'],
+      kind: 'parsed',
+      prefill: { title: 'Lunch with sam' },
+    });
+  });
 });
 
 describe('parseQuickAdd holds the answer against the phrase', () => {
@@ -488,11 +639,46 @@ describe('parseQuickAdd for tasks', () => {
       fakeModel({ date: '2026-08-25', startTime: '09:30', title: 'remind me to call the bank' }),
       { phrase: 'remind me to call the bank tue 9:30', ...CONTEXT },
     );
-    expect(result).toMatchObject({ kind: 'task', prefill: { title: 'call the bank' } });
+    expect(result).toMatchObject({ kind: 'task', prefill: { title: 'Call the bank' } });
     // A title that is nothing but the cue stays as it is rather than going blank.
     expect(
       await parseQuickAdd(fakeModel({ title: 'Reminder' }), { phrase: 'reminder', ...CONTEXT }),
     ).toMatchObject({ kind: 'task', prefill: { title: 'Reminder' } });
+  });
+
+  it('leaves the cue out of a title made of the phrase, a day inside it too', async () => {
+    const result = await parseQuickAdd(fakeModel({ title: 'Phone the bank' }), {
+      phrase: 'remind me tomorrow to call the bank',
+      ...CONTEXT,
+    });
+    expect(result).toMatchObject({
+      kind: 'task',
+      prefill: { date: '2026-08-23', title: 'Call the bank' },
+    });
+  });
+
+  it('reads a cue only with when-words before its "to"', async () => {
+    // Review: "to Paris" read as the cue's "to".
+    const result = await parseQuickAdd(fakeModel({ title: 'remind me about the trip to Paris' }), {
+      phrase: 'remind me about the trip to Paris',
+      ...CONTEXT,
+    });
+    expect(result).toMatchObject({
+      kind: 'task',
+      prefill: { title: 'Remind me about the trip to Paris' },
+    });
+  });
+
+  it("keeps a to-do's place in its title, having no place field", async () => {
+    // Codex: the pickup place vanished.
+    const result = await parseQuickAdd(
+      fakeModel({ location: 'reception', title: 'Pick up the keys at reception' }),
+      { phrase: 'remind me to pick up the keys at reception tomorrow', ...CONTEXT },
+    );
+    expect(result).toMatchObject({
+      kind: 'task',
+      prefill: { title: 'Pick up the keys at reception' },
+    });
   });
 
   it('gives an undated to-do the fallback day and no time', async () => {

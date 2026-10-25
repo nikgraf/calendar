@@ -29,7 +29,8 @@ describe('makeFixtureLanguageModel', () => {
 
   it('leaves the phrase words to the normalizer, like any model', async () => {
     // The fixture says nothing about the day or time; the normalizer reads
-    // "tomorrow" and "at 1" off the phrase itself.
+    // "tomorrow" and "at 1" off the phrase itself, and takes them off the
+    // title the fixture made of the whole phrase.
     const result = await parseQuickAdd(model, {
       fallbackDate: '2026-09-25',
       phrase: 'Lunch with Sarah tomorrow at 1',
@@ -42,7 +43,7 @@ describe('makeFixtureLanguageModel', () => {
         endTime: '14:00',
         isAllDay: false,
         startTime: '13:00',
-        title: 'Lunch with Sarah tomorrow at 1',
+        title: 'Lunch with Sarah',
       },
     });
   });
@@ -189,7 +190,7 @@ describe('makeFixtureLanguageModel invitees', () => {
     expect(result).toMatchObject({
       invite: ['Tom Baker', 'Anna', 'Bo'],
       kind: 'parsed',
-      prefill: { startTime: '13:00', title: 'Lunch tomorrow at 1' },
+      prefill: { startTime: '13:00', title: 'Lunch' },
     });
   });
 });
