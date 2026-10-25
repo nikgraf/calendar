@@ -392,6 +392,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   Task-list rows already toggled whole and keep their round dot (a round
   dot with a check reads as a done task). Rejected: a right-click Color
   menu (no context menus in the app yet). iOS already worked this way.
+- **Popovers and dialogs keep Tab inside** (2026-10-25, #252) — focus
+  guards: an empty focusable stop on each side of the panel takes focus
+  on its way out and hands it to the other end, so the browser still
+  moves focus and a date field keeps its segment-by-segment Tab.
+  Rejected: a keydown wrap at the last control (tried in #245: Tab in
+  To's month wrapped to From) and letting Tab out, then pulling focus
+  back on a timer (it showed outside the panel first). Popovers now move
+  focus in and give it back like the dialogs; the color picker opens on
+  the current color. Open: Shift+Tab that wraps onto a date field lands
+  on its first segment — script focus cannot pick the last.
 - **RSVP** — a dedicated `rsvp` op sending an attendees-only patch that
   survives content-edit coalescing; responding from an occurrence answers
   the series. It carries If-Match on the queued etag since #125 (so an

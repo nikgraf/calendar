@@ -688,6 +688,17 @@ export class Cdp {
     });
   }
 
+  /** Tab, or Shift+Tab: the browser moves focus as it would for the real key. */
+  async pressTab(shift = false): Promise<void> {
+    await this.send('Input.dispatchKeyEvent', {
+      code: 'Tab',
+      key: 'Tab',
+      modifiers: shift ? 8 : 0,
+      type: 'rawKeyDown',
+      windowsVirtualKeyCode: 9,
+    });
+  }
+
   /** Focuses the element and types text into it (React-compatible). */
   async type(selector: string, text: string): Promise<void> {
     await this.eval(`document.querySelector(${JSON.stringify(selector)})?.focus()`);

@@ -1038,6 +1038,19 @@ gateway carries all of it. Details, limits and the threat model:
   the conflict banner and the dropped-change toast live in the main
   window only. Find the main window through `showMainWindow` /
   `hasMainWindow`, never `getAllWindows()[0]`.
+- **Modal surfaces (desktop).** `Dialog` (the modals) and `Popover` (a
+  panel anchored over a transparent backdrop: the Getting started menu,
+  the search filter editors, the calendar color picker) share two
+  pieces. The window's dialog stack (`dialogStack.ts`) gives Escape to
+  the topmost surface alone and makes the calendar's own keys stand
+  back. `ui/FocusTrap.tsx` keeps the keyboard inside: focus moves in on
+  open (a `data-initial-focus` control, else the first, unless an
+  `autoFocus` field took it), Tab and Shift+Tab cycle, a control removed
+  with focus in it hands focus to the first one, and the opener — read
+  while rendering, before React's commit runs `autoFocus` — gets it back
+  on close. Tab is never intercepted: a focusable guard on each side of
+  the panel catches focus on its way out and passes it to the other end,
+  so a date or time field keeps Chromium's segment-by-segment Tab.
 - **Theme.** `brand/tokens/tokens.json` is the one source. `pnpm
   brand:build` writes `brand/tokens/tokens.css` (`:root` and
   `[data-theme='dark']`) and `packages/core/src/theme/tokens.ts`
@@ -1126,8 +1139,8 @@ gateway carries all of it. Details, limits and the threat model:
   (`draftAtoms.ts`: `useDraftPreviews`, `useOnDraftReveal`,
   `useRequestDraftFocus`). The panel never
   joins the dialog stack
-  (`dialogStack.ts`: the topmost dialog alone answers Escape and traps
-  Tab), so a real dialog over it keeps Escape; a panel opened from a
+  (`dialogStack.ts`: the topmost dialog alone answers Escape), so a real
+  dialog over it keeps Escape; a panel opened from a
   search result closes back to the results. The inspector follows its
   event by identity (core `eventIdentity`), reads from the grid's current
   row (or `findCurrentEvent`), and closes when the event is gone; an

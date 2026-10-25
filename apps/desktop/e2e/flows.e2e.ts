@@ -2084,7 +2084,7 @@ describe('the color picker in a long Settings › Accounts list', () => {
     await listApp?.stop();
   });
 
-  it('opens above a low row inside the fixed window, recolors, and closes with its pane', async () => {
+  it('opens above a low row inside the fixed window, keeps Tab inside, recolors, and closes with its pane', async () => {
     const settings = await listApp.openSettings('accounts');
     try {
       await settings.waitFor(
@@ -2127,9 +2127,31 @@ describe('the color picker in a long Settings › Accounts list', () => {
       expect(Math.abs(rect.right - well.right)).toBeLessThanOrEqual(1);
       expect(rect.width).toBeGreaterThan(6 * 20);
 
+      // Focus opens on the calendar's current color. Tab and Shift+Tab go
+      // round the 24 swatches and the Custom field, in order, past both
+      // ends — never to the pane tabs behind the backdrop.
+      const focused = `(${panel}.contains(document.activeElement) ? document.activeElement.getAttribute('aria-label') : 'outside')`;
+      const stops = await settings.eval<Array<string>>(
+        `[...${panel}.querySelectorAll('button, input')].map((stop) => stop.getAttribute('aria-label'))`,
+      );
+      expect(stops).toHaveLength(25);
+      let at = stops.indexOf('Set color #4986e7');
+      expect(await settings.eval<string>(focused)).toBe(stops[at]);
+      for (const step of [1, -1]) {
+        for (let press = 0; press < stops.length + 2; press += 1) {
+          await settings.pressTab(step === -1);
+          at = (at + step + stops.length) % stops.length;
+          expect(await settings.eval<string>(focused)).toBe(stops[at]);
+        }
+      }
+
       const swatch = await settings.locate('[aria-label="Set color #16a765"]');
       await settings.click(swatch.x, swatch.y);
       await settings.waitFor(`!${panel}`);
+      // Focus is back on the well it opened from.
+      expect(
+        await settings.eval<string | null>(`document.activeElement?.getAttribute('aria-label')`),
+      ).toBe(well.label);
       const summary = well.label.replace('Change color: ', '');
       await expect
         .poll(

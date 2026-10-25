@@ -8,7 +8,9 @@ import { Popover } from './ui/Popover.tsx';
  * A calendar's color in Settings › Accounts, the one place it changes: a
  * well at the end of the calendar's row that opens a color picker in a
  * popover. The popover hangs from the well's right edge, under it or,
- * for a row low in the fixed-height window, above it.
+ * for a row low in the fixed-height window, above it. It opens with focus
+ * on the current color: its swatch, or the Custom field for a color off
+ * the palette.
  */
 export function CalendarColorButton({ calendar }: { calendar: CalendarInfo }) {
   const { setCalendarColor } = useGuardedMutations();
@@ -61,6 +63,7 @@ export function CalendarColorButton({ calendar }: { calendar: CalendarInfo }) {
               className={`size-5 rounded ${
                 hex === calendar.colorHex ? 'ring-2 ring-focus ring-offset-1' : ''
               }`}
+              data-initial-focus={hex === calendar.colorHex || undefined}
               key={hex}
               onClick={() => choose(hex)}
               style={{ backgroundColor: hex }}
@@ -73,6 +76,7 @@ export function CalendarColorButton({ calendar }: { calendar: CalendarInfo }) {
           <input
             aria-label="Custom color"
             className="h-6 w-10 cursor-pointer"
+            data-initial-focus={!CALENDAR_PALETTE.includes(calendar.colorHex) || undefined}
             onChange={(changeEvent) => choose(changeEvent.target.value)}
             type="color"
             value={calendar.colorHex}
