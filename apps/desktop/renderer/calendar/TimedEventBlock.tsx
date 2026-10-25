@@ -2,14 +2,14 @@ import {
   type EventRecord,
   formatClockTime,
   formatZoneRange,
+  moveEventTimes,
   type PositionedBox,
+  resizeEventEnd,
 } from '@calendar/core';
 import { useCallback, useSyncExternalStore } from 'react';
 import { RepeatIcon, VideoIcon } from '../ui/icons.tsx';
 import { eventLook, stripes, useTint } from './tint.ts';
 import type { useEventDrag } from './useEventDrag.ts';
-
-const MINUTE_MS = 60 * 1000;
 
 /**
  * A timed event in a day column, with its live drag/resize preview. Only
@@ -61,11 +61,12 @@ export function TimedEventBlock({
   const dayMinutes = 24 * 60;
   const topMinutes = box.top * dayMinutes + moveMinutes;
   const heightMinutes = Math.max(box.height * dayMinutes + resizeMinutes, 15);
-  const previewStart = event.startUtc + moveMinutes * MINUTE_MS;
-  const previewEnd =
-    dragging?.mode === 'resize'
-      ? Math.max(event.endUtc + resizeMinutes * MINUTE_MS, event.startUtc + 15 * MINUTE_MS)
-      : event.endUtc + moveMinutes * MINUTE_MS;
+  // What a release would store, so the label reads where the block lands.
+  const { endUtc: previewEnd, startUtc: previewStart } = !dragging
+    ? event
+    : dragging.mode === 'resize'
+      ? { ...event, ...resizeEventEnd(event, timeZone, resizeMinutes) }
+      : moveEventTimes(event, timeZone, moveMinutes, deltaDays);
   const pixelHeight = (heightMinutes / 60) * hourHeight;
   const compact = pixelHeight < 28;
   // Three lines need ~46px; the primary line alone hides below 28.

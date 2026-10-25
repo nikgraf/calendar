@@ -176,9 +176,11 @@ export const moveTimedTask = (
     minutes === 0
       ? Temporal.PlainTime.from(task.dueTime)
       : new Temporal.PlainTime(Math.floor(slot.startMinute / 60), slot.startMinute % 60);
+  // Apart: one duration cannot mix signs (a day right, an hour up).
   const moved = Temporal.PlainDate.from(task.dueDate)
     .toPlainDateTime(from)
-    .add({ days: deltaDays, minutes });
+    .add({ days: deltaDays })
+    .add({ minutes });
   const dueDate = moved.toPlainDate().toString();
   const dueTime = `${pad2(moved.hour)}:${pad2(moved.minute)}`;
   if (dueDate === task.dueDate && dueTime === task.dueTime) {

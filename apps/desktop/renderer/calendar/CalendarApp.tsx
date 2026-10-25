@@ -424,6 +424,7 @@ function CalendarBody({
     onTaskClick: (task) => setPanel({ kind: 'editTask', opening: nextOpening(), task }),
     scrollerRef: scrollRef,
     strip,
+    timeZone,
   });
 
   const captureOpen = capture.state.kind !== 'idle';

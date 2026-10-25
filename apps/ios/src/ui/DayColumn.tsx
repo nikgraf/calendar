@@ -224,8 +224,12 @@ export function DayColumn({
             height={Math.max(box.height * 24 * HOUR_HEIGHT, 22)}
             key={box.id}
             left={`${box.left * 100}%` as DimensionValue}
-            onCommitMove={(deltaMinutes) => onCommit(event, moveEventTimes(event, deltaMinutes))}
-            onCommitResize={(deltaMinutes) => onCommit(event, resizeEventEnd(event, deltaMinutes))}
+            onCommitMove={(deltaMinutes) =>
+              onCommit(event, moveEventTimes(event, timeZone, deltaMinutes))
+            }
+            onCommitResize={(deltaMinutes) =>
+              onCommit(event, resizeEventEnd(event, timeZone, deltaMinutes))
+            }
             onPress={() => onEventPress(event)}
             readOnly={isEventReadOnly(event)}
             secondaryZones={secondaryZones}
