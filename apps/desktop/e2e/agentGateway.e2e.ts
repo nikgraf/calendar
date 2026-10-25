@@ -640,8 +640,10 @@ describe('agent gateway: other agents reach the app over the CLI and MCP', () =>
       `document.querySelector('[data-testid="agent-approval-title"]')?.textContent.includes('Asked lunch')`,
     );
     const second = runAgentCli(app, ASKER, newEvent(work, 'Asked dinner', 19));
+    // The dialog itself counts both, so the second is queued behind it, not
+    // still on its way to the renderer.
     await cdp.waitFor(
-      `window.calendarBridge.agentsState().then((state) => state.pending.length === 2)`,
+      `document.querySelector('[data-testid="agent-approval"]')?.textContent.includes('1 of 2')`,
     );
     expect(
       await cdp.eval<boolean>(
