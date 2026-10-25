@@ -1,6 +1,6 @@
 import { Effect, Schema } from 'effect';
 import { deflateSync, inflateSync, strFromU8, strToU8, zlibSync } from 'fflate';
-import { encode as encodeQr } from 'uqr';
+import { encodeQR } from 'qr';
 import type { MirrorCalendarRef, MirrorDefinition, MirrorSourceRef } from './mirror/definition.ts';
 import {
   parseSettingsDocument,
@@ -248,8 +248,9 @@ export const settingsCodeQr = (
   Effect.try({
     catch: () => new SettingsCodeTooLargeError({ length: code.length }),
     try: () => {
-      const qr = encodeQr(code, { border: QUIET_ZONE, ecc: 'M' });
-      return { modules: qr.data, size: qr.size, version: qr.version };
+      const modules = encodeQR(code, 'raw', { border: QUIET_ZONE, ecc: 'medium' });
+      // A version-v symbol is 17 + 4v modules a side, before the quiet zone.
+      return { modules, size: modules.length, version: (modules.length - 17 - 2 * QUIET_ZONE) / 4 };
     },
   });
 

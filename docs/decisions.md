@@ -185,6 +185,13 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   what vite-plus bundles. The 2-day release-age gate is never bypassed
   (stable Effect was waited out); Expo SDK 57 patches are trust-excluded
   by exact version after an audit (`pnpm-workspace.yaml`).
+- **QR encoder** (2026-10-25, `todo/qr-library`) — the settings code's QR
+  comes from paulmillr's `qr`, not `uqr`: actively maintained, no
+  dependencies, and the same version at every code length (v1–v40, both
+  refusing past 3391 characters); at 79 of 3381 lengths the mask differed,
+  nothing else. About 3 KB gzipped more. Unused: its GIF
+  and SVG output (the 1-bit PNG is far smaller) and its decoder (Vision
+  and expo-camera read the code).
 
 ## Architecture and sync path
 
