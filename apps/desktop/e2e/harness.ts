@@ -358,6 +358,7 @@ export type SettingsPane =
   | 'accounts'
   | 'advanced'
   | 'agents'
+  | 'calendar'
   | 'file'
   | 'gettingstarted'
   | 'mirrors'

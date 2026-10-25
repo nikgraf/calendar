@@ -1,5 +1,10 @@
-import { DEFAULT_VIEW_PREFERENCES, type ViewPreferences } from '@calendar/core';
-import { useCallback } from 'react';
+import {
+  DEFAULT_VIEW_PREFERENCES,
+  shadedWeekdays,
+  type ViewPreferences,
+  type Weekday,
+} from '@calendar/core';
+import { useCallback, useMemo } from 'react';
 import { useViewPreferences } from './hooks.ts';
 import { useGuardedMutations } from './mutationGuard.ts';
 
@@ -18,4 +23,15 @@ export const useUpdateViewPreferences = (): ((patch: Partial<ViewPreferences>) =
     },
     [current, setViewPreferences],
   );
+};
+
+const NO_DAYS: ReadonlySet<Weekday> = new Set();
+
+/**
+ * The weekdays the grids shade. None until the preferences load, so a
+ * device that turned shading off never flashes the default weekend.
+ */
+export const useShadedWeekdays = (): ReadonlySet<Weekday> => {
+  const preferences = useViewPreferences();
+  return useMemo(() => (preferences ? shadedWeekdays(preferences) : NO_DAYS), [preferences]);
 };

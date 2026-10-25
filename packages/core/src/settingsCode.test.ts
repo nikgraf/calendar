@@ -254,8 +254,8 @@ describe('decodeSettingsCode', () => {
   });
 
   it('passes the document through the settings parser', () => {
-    const code = `SOLUNIVO:1:${base32Encode(deflateSync(strToU8('{"version":1,"view":{}}')))}`;
-    expect(failure(code)).toContain('allDayLaneCollapsed');
+    const code = `SOLUNIVO:1:${base32Encode(deflateSync(strToU8('{"version":1,"view":{"weekendDays":["XX"]}}')))}`;
+    expect(failure(code)).toContain('weekendDays');
   });
 });
 

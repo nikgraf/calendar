@@ -107,6 +107,12 @@ describe('settings file: applied at launch and while running, written back on ed
     await expect.poll(() => fileText(app), { timeout: 10_000 }).toContain('"e2e@example.com"');
     expect(fileText(app)).toContain('// the machine setup file');
     expect(fileText(app)).toContain('"cal-work"');
+    // The weekend the grids shade travels beside the lane cap, defaults spelled out.
+    expect(JSON.parse(fileText(app).replaceAll(/^\s*\/\/.*$/gm, '')).view).toEqual({
+      allDayLaneCollapsed: true,
+      weekendDays: ['SA', 'SU'],
+      weekendShading: true,
+    });
   });
 
   it('applies an edit saved while the app runs', async () => {
@@ -130,9 +136,10 @@ describe('settings file: applied at launch and while running, written back on ed
         { timeout: 15_000 },
       )
       .toBe(false);
+    // The file spells the weekend out, so the import stores it as written.
     await expect
       .poll(() => readDeviceSetting(app.userDataDir, 'viewPreferences'), { timeout: 10_000 })
-      .toEqual({ allDayLaneCollapsed: false });
+      .toEqual({ allDayLaneCollapsed: false, weekendDays: ['SA', 'SU'], weekendShading: true });
   });
 
   it('writes a settings change back, keeping the comments', async () => {

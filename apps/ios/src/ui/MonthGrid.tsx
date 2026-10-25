@@ -1,4 +1,4 @@
-import type { DraftOccurrence } from '@calendar/app-state';
+import { type DraftOccurrence, useShadedWeekdays } from '@calendar/app-state';
 import {
   BIRTHDAY_ACCENT,
   type BirthdayOccurrence,
@@ -7,6 +7,7 @@ import {
   type EventRecord,
   groupByDate,
   groupEventsByDay,
+  isShadedDay,
   monthCellLabel,
   partitionCalendarTasks,
   taskCalendarDate,
@@ -56,6 +57,7 @@ export function MonthGrid({
 }) {
   const { colors } = useTheme();
   const styles = useStyles(makeStyles);
+  const shaded = useShadedWeekdays();
   const today = Temporal.PlainDate.from(todayIso);
   const weeks = buildMonthGrid(yearMonth, today);
 
@@ -111,6 +113,7 @@ export function MonthGrid({
             const dayBirthdays = birthdaysByDay.get(iso) ?? [];
             const dayTasks = (isToday ? todayTasks : []).concat(tasksByDay.get(iso) ?? []);
             const dayDrafts = draftsByDay.get(iso) ?? [];
+            const weekend = isShadedDay(shaded, date);
             const dots: Array<Dot> = [
               ...dayDrafts.map((draft) => ({
                 key: `draft:${draft.key}`,
@@ -145,7 +148,8 @@ export function MonthGrid({
                 accessibilityRole="button"
                 key={iso}
                 onPress={() => onSelectDay(date)}
-                style={styles.dayCell}
+                style={[styles.dayCell, weekend && styles.weekend]}
+                testID={weekend ? `month-weekend-${iso}` : undefined}
               >
                 <View style={[styles.dayNumberWrap, isToday && styles.todayWrap]}>
                   <Text
@@ -229,6 +233,9 @@ const makeStyles = (colors: ThemeColors) =>
     weekdayRow: {
       flexDirection: 'row',
       paddingVertical: 6,
+    },
+    weekend: {
+      backgroundColor: colors.weekend,
     },
     weekRow: {
       flexDirection: 'row',

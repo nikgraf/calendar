@@ -53,6 +53,7 @@ export default function SettingsLayout() {
             <Stack.Screen name="unsynced" options={{ title: 'Unsynced Changes' }} />
             <Stack.Screen name="account" options={{ title: '' }} />
             <Stack.Screen name="calendar" options={{ title: '' }} />
+            <Stack.Screen name="calendar-view" options={{ title: 'Calendar' }} />
             <Stack.Screen name="device" options={{ title: 'On This iPhone' }} />
             <Stack.Screen name="time-zones" options={{ title: 'Time Zones' }} />
             <Stack.Screen name="notifications" options={{ title: 'Notifications' }} />

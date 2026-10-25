@@ -47,7 +47,7 @@ const full: SettingsDocument = {
   eventNotifications: { enabled: false, includeAppleCalendar: true },
   timeZones: { primary: 'device', zones: ['device', 'UTC'] },
   version: 1,
-  view: { allDayLaneCollapsed: true },
+  view: { allDayLaneCollapsed: true, weekendDays: ['FR', 'SA'], weekendShading: true },
 };
 
 /** A document holding only a zone list. */
@@ -126,6 +126,19 @@ describe('parseSettingsDocument', () => {
     );
   });
 
+  it('accepts a view section holding any of its fields', () => {
+    expect(parse('{ "version": 1, "view": { "weekendDays": ["FR", "SA"] } }').view).toEqual({
+      weekendDays: ['FR', 'SA'],
+    });
+    expect(parse('{ "version": 1, "view": {} }').view).toEqual({});
+  });
+
+  it('rejects a weekend day that is not a weekday code', () => {
+    expect(failure('{ "version": 1, "view": { "weekendDays": ["Friday"] } }')).toContain(
+      'weekendDays',
+    );
+  });
+
   it('rejects an unknown account kind and reports the path', () => {
     expect(failure('{ "version": 1, "accounts": [{ "kind": "outlook" }] }')).toContain('accounts');
   });
@@ -197,6 +210,19 @@ describe('mergeSettingsDocument', () => {
     expect(parse(merged)).toEqual({ ...full, timeZones: full.timeZones });
     expect(merged).toContain('// keep me');
     expect(merged).not.toContain('old@example.com');
+  });
+
+  it('writes the weekend leaves into an existing view section', () => {
+    const merged = mergeSettingsDocument(
+      '{\n  "version": 1,\n  "view": {\n    "allDayLaneCollapsed": false // mine\n  }\n}\n',
+      { version: 1, view: { weekendDays: ['FR', 'SA'], weekendShading: false } },
+    );
+    expect(merged).toContain('// mine');
+    expect(parse(merged).view).toEqual({
+      allDayLaneCollapsed: false,
+      weekendDays: ['FR', 'SA'],
+      weekendShading: false,
+    });
   });
 
   it('replaces the per-person birthday list as a whole, keeping the comments around it', () => {

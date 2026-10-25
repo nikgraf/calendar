@@ -1,3 +1,4 @@
+import { useShadedWeekdays } from '@calendar/app-state';
 import {
   type BirthdayOccurrence,
   birthdayChipLabel,
@@ -7,6 +8,7 @@ import {
   formatClockTime,
   groupByDate,
   groupEventsByDay,
+  isShadedDay,
   monthCellLabel,
   overdueLabel,
   partitionCalendarTasks,
@@ -71,6 +73,7 @@ export function MonthView({
   yearMonth: Temporal.PlainYearMonth;
 }) {
   const tintOf = useTint();
+  const shaded = useShadedWeekdays();
   const today = Temporal.PlainDate.from(todayIso);
   const weeks = buildMonthGrid(yearMonth, today);
 
@@ -216,6 +219,7 @@ export function MonthView({
             ...dayTasks.map((task): CellItem => ({ kind: 'task', task })),
           ];
           const overflow = items.length - MAX_CHIPS;
+          const weekend = isShadedDay(shaded, date);
           return (
             // A div, not a button: the chips inside are buttons of their own.
             <div
@@ -224,9 +228,13 @@ export function MonthView({
                 events: dayEvents.length,
                 tasks: dayTasks.length,
               })}
+              // A weekend day outside the month keeps the weekend shade; its
+              // dimmed number already says it is outside.
               className={`flex min-h-0 cursor-default flex-col items-stretch gap-0.5 border-r border-b border-hairline p-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-inset ${
-                inMonth ? 'bg-surface' : 'bg-surface-subtle'
+                weekend ? 'bg-weekend' : inMonth ? 'bg-surface' : 'bg-surface-subtle'
               } hover:bg-selection`}
+              data-day={iso}
+              data-weekend={weekend ? 'true' : undefined}
               key={iso}
               onClick={() => onSelectDay(date)}
               onKeyDown={(key) => {
