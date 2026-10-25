@@ -16,22 +16,26 @@ export interface EventTimes {
 const shiftWallClock = (
   epochMs: EpochMs,
   timeZone: string,
-  days: number,
-  minutes: number,
+  deltas: ReadonlyArray<Temporal.DurationLike>,
   offset?: string,
 ): EpochMs => {
   const from = Temporal.Instant.fromEpochMilliseconds(epochMs).toZonedDateTimeISO(timeZone);
   // Apart: one duration cannot mix signs (a day right, an hour up).
-  const to = from.toPlainDateTime().add({ days }).add({ minutes });
+  const to = deltas.reduce<Temporal.PlainDateTime>(
+    (wall, delta) => wall.add(delta),
+    from.toPlainDateTime(),
+  );
   // `with` keeps an offset (`from`'s unless one is named) while it is valid
   // at the new wall clock, so the second 02:30 of a fall-back night moves on
   // from the second one.
   return from.with({
     day: to.day,
     hour: to.hour,
+    millisecond: to.millisecond,
     minute: to.minute,
     month: to.month,
     offset: offset ?? from.offset,
+    second: to.second,
     year: to.year,
   }).epochMilliseconds;
 };
@@ -49,7 +53,10 @@ export const moveEventTimes = (
   deltaMinutes: number,
   deltaDays = 0,
 ): Pick<EventTimes, 'endUtc' | 'startUtc'> => {
-  const startUtc = shiftWallClock(event.startUtc, timeZone, deltaDays, snapMinutes(deltaMinutes));
+  const startUtc = shiftWallClock(event.startUtc, timeZone, [
+    { days: deltaDays },
+    { minutes: snapMinutes(deltaMinutes) },
+  ]);
   return { endUtc: startUtc + (event.endUtc - event.startUtc), startUtc };
 };
 
@@ -57,7 +64,8 @@ export const moveEventTimes = (
  * Applies the wall-clock difference between two instants (in `timeZone`) to
  * a third one — used to shift a whole series by the delta the user applied
  * to one occurrence, without picking up DST offset differences between the
- * occurrence's date and the series start.
+ * occurrence's date and the series start. The delta is exact, seconds
+ * included: a series starting at 09:00:30 retimed to 10:00 starts at 10:00.
  */
 export const applyWallClockDelta = (
   baseUtc: EpochMs,
@@ -67,11 +75,11 @@ export const applyWallClockDelta = (
 ): EpochMs => {
   const from = Temporal.Instant.fromEpochMilliseconds(fromUtc).toZonedDateTimeISO(timeZone);
   const to = Temporal.Instant.fromEpochMilliseconds(toUtc).toZonedDateTimeISO(timeZone);
-  const days = from.toPlainDate().until(to.toPlainDate()).total({ unit: 'days' });
-  const minutes =
-    to.hour * 60 + to.minute + to.second / 60 - (from.hour * 60 + from.minute + from.second / 60);
+  // One sign throughout: `until` balances a day later and 30 s earlier into
+  // 23:59:30, which wall-clock arithmetic adds back the same.
+  const delta = from.toPlainDateTime().until(to.toPlainDateTime());
   // The pass of a repeated hour the occurrence was moved into, not the base's.
-  return shiftWallClock(baseUtc, timeZone, days, minutes, to.offset);
+  return shiftWallClock(baseUtc, timeZone, [delta], to.offset);
 };
 
 /**
@@ -84,7 +92,7 @@ export const resizeEventEnd = (
   deltaMinutes: number,
 ): Pick<EventTimes, 'endUtc'> => ({
   endUtc: Math.max(
-    shiftWallClock(event.endUtc, timeZone, 0, snapMinutes(deltaMinutes)),
+    shiftWallClock(event.endUtc, timeZone, [{ minutes: snapMinutes(deltaMinutes) }]),
     event.startUtc + MIN_DURATION_MS,
   ),
 });
