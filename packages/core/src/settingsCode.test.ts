@@ -251,19 +251,34 @@ describe('decodeSettingsCode', () => {
   });
 });
 
+// ISO/IEC 18004 Table 7: at level M, version 1 holds 20 alphanumeric characters and version 40 holds 3391.
+const ofLength = (length: number) =>
+  settingsCodeQr(`SOLUNIVO:1:${'A'.repeat(length - 'SOLUNIVO:1:'.length)}`);
+
 describe('the QR', () => {
   const code = encodeSettingsCode(full);
   const qr = Effect.runSync(settingsCodeQr(code));
 
   it('carries a quiet zone of four modules', () => {
-    expect(qr.size).toBe(17 + 4 * qr.version + 8);
+    expect(qr.modules).toHaveLength(qr.size);
     expect(qr.modules[3]?.some(Boolean)).toBe(false);
     expect(qr.modules[4]?.[4]).toBe(true);
   });
 
+  it('takes the smallest version that holds the code at level M', () => {
+    const sides = [20, 21, 3391].map((length) => {
+      const { size, version } = Effect.runSync(ofLength(length));
+      return [version, size];
+    });
+    expect(sides).toEqual([
+      [1, 29],
+      [2, 33],
+      [40, 185],
+    ]);
+  });
+
   it('fails past version 40', () => {
-    const exit = Effect.runSyncExit(settingsCodeQr(`SOLUNIVO:1:${'A'.repeat(4000)}`));
-    expect(Exit.isFailure(exit)).toBe(true);
+    expect(Exit.isFailure(Effect.runSyncExit(ofLength(3392)))).toBe(true);
   });
 
   it('leaves a setup too large for any QR to the text, which still decodes', () => {

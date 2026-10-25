@@ -187,8 +187,9 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   by exact version after an audit (`pnpm-workspace.yaml`).
 - **QR encoder** (2026-10-25, `todo/qr-library`) — the settings code's QR
   comes from paulmillr's `qr`, not `uqr`: actively maintained, no
-  dependencies, and the same version at every code length tried (v6–v38);
-  only a mask choice differed. About 3 KB gzipped more. Unused: its GIF
+  dependencies, and the same version at every code length (v1–v40, both
+  refusing past 3391 characters); at 79 of 3381 lengths the mask differed,
+  nothing else. About 3 KB gzipped more. Unused: its GIF
   and SVG output (the 1-bit PNG is far smaller) and its decoder (Vision
   and expo-camera read the code).
 
