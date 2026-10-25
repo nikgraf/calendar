@@ -1529,11 +1529,18 @@ describe('calendar desktop e2e', () => {
         `document.querySelector('[data-testid="weekend-day-SA"]')?.getAttribute('aria-pressed') === 'true'`,
       );
       expect(await pressed('FR')).toBe('false');
-      await toggleDay('FR', true);
-      await toggleDay('SU', false);
+      // Two clicks straight after each other, each its own task as a
+      // person's are: the second builds on the first, so Friday stays. The
+      // spec cannot hold a save's read-back, so it shows the chain, not the
+      // race with a slow read-back (useSettingsEditor's tests cover that).
+      await settings.eval(`document.querySelector('[data-testid="weekend-day-FR"]').click()`);
+      await settings.eval(`document.querySelector('[data-testid="weekend-day-SU"]').click()`);
       await expect.poll(stored, { timeout: 10_000 }).toMatchObject({ weekendDays: ['FR', 'SA'] });
+      expect(await pressed('FR')).toBe('true');
+      expect(await pressed('SU')).toBe('false');
       // The calendar window follows a change made in the settings window.
       await expect.poll(() => shadedIn('week-grid'), { timeout: 10_000 }).toEqual(['FR', 'SA']);
+      expect(await shadedIn('all-day-lane')).toEqual(['FR', 'SA']);
       await cdp.clickTestId('view-month');
       try {
         await expect.poll(() => shadedIn('month-grid'), { timeout: 10_000 }).toEqual(['FR', 'SA']);

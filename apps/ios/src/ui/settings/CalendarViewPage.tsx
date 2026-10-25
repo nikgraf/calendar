@@ -1,5 +1,4 @@
-import { useUpdateViewPreferences, useViewPreferences, WEEKDAY_OPTIONS } from '@calendar/app-state';
-import { DEFAULT_WEEKEND_DAYS, sortWeekdays, type Weekday } from '@calendar/core';
+import { useWeekendEditor, WEEKDAY_OPTIONS } from '@calendar/app-state';
 import { CheckRow, Section, SettingsPage, SwitchRow } from '../GroupedList.tsx';
 
 /**
@@ -7,19 +6,10 @@ import { CheckRow, Section, SettingsPage, SwitchRow } from '../GroupedList.tsx';
  * grids shade them. A view preference that travels in the settings file.
  */
 export function CalendarViewPage() {
-  const preferences = useViewPreferences();
-  const update = useUpdateViewPreferences();
-  if (!preferences) {
+  const weekend = useWeekendEditor();
+  if (!weekend) {
     return <SettingsPage testID="settings-page-calendar-view">{null}</SettingsPage>;
   }
-  const shading = preferences.weekendShading ?? true;
-  const days = preferences.weekendDays ?? DEFAULT_WEEKEND_DAYS;
-  const toggle = (day: Weekday) =>
-    update({
-      weekendDays: sortWeekdays(
-        days.includes(day) ? days.filter((other) => other !== day) : [...days, day],
-      ),
-    });
   return (
     <SettingsPage testID="settings-page-calendar-view">
       <Section
@@ -27,22 +17,22 @@ export function CalendarViewPage() {
         header="Weekends"
       >
         <SwitchRow
-          onValueChange={(weekendShading) => update({ weekendShading })}
+          onValueChange={weekend.setShading}
           switchTestID="weekend-shading"
           title="Shade Weekends"
-          value={shading}
+          value={weekend.shading}
         />
       </Section>
       <Section header="Weekend Days">
         {WEEKDAY_OPTIONS.map((option) => {
-          const checked = days.includes(option.value);
+          const checked = weekend.days.includes(option.value);
           return (
             <CheckRow
               checked={checked}
-              disabled={!shading}
+              disabled={!weekend.shading}
               key={option.value}
               kind="checkbox"
-              onPress={() => toggle(option.value)}
+              onPress={() => weekend.toggleDay(option.value)}
               testID={`weekend-day-${option.value}${checked ? '-on' : ''}`}
               title={option.label}
             />

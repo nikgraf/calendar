@@ -666,6 +666,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   for an editor only (a detail tapped behind it never showed, Settings
   got the thread on top); offering the result from the banner (a step
   more when nothing is open); dropping it. Open: nothing says it waits.
+- **Weekend shading** (2026-10-24, #246) — the weekend's days sit on the
+  `weekend` token in the time grids, the all-day lane and Month on both
+  apps; Settings › Calendar turns it off and picks the days (Sat+Sun by
+  default), and both travel in the settings document. The days are the
+  user's, not the region's: iOS has no region API here (no
+  expo-localization, Hermes lacks `Intl.Locale`) and the app ignores the
+  region elsewhere. Rejected: region detection (Electron's `getWeekInfo`
+  alone would split the platforms). Open: find-time's "Weekends" and
+  quick-add's "weekends" still mean Sat+Sun; Desktop dark mode's shade
+  reads lighter than the grid but darker than the lane and Month.
 - **Today's backlog folds, a long lane scrolls** (2026-10-24, #247) —
   two or more overdue or undated tasks on today fold into one chip per
   group ("⚠ 12 overdue", "11 no date") opening their list (a desktop
