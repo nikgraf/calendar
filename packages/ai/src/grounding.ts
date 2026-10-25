@@ -1011,6 +1011,8 @@ const OPENS = String.raw`[(\["'“„«]?`;
 const CLOSES = String.raw`[)\]"'”“»]*`;
 /** What may follow a title's last word: closing marks and punctuation. */
 const TRAILING = /[\s.,;:!?)\]"'”“»–—-]+$/u;
+/** What a cut leaves hanging at the end of what stays: separators, never a closing mark of its own. */
+const SEPARATORS = /[\s,;:–—-]+$/u;
 
 /**
  * The words that say when, as one run that ends a title: a day, a weekday
@@ -1044,18 +1046,22 @@ const DAY_AT_START = new RegExp(
  * a span or a bound ("until Friday", "bis Montag", "Monday to Friday",
  * "after 5"), company or a list ("with Thu", "Mon and Wed"), a day's own
  * name ("Black Friday", "Easter Sunday", "Taco Tuesday", "Guten Morgen"),
- * or a lead word the run did not take with it ("every …", "am Morgen" —
- * "in the morning", not "tomorrow"). The code does not read those, so it
- * leaves them.
+ * a lead word the run did not take with it ("every …", "am Morgen" —
+ * "in the morning", not "tomorrow"), or a day ruled out ("but not
+ * Friday", "except Friday"). The code does not read those, so it leaves
+ * them; a dash before the run is a span too ("Monday - Friday").
  */
 const OWNS_WHEN =
-  /^(?:until|till|til|bis|through|thru|to|from|von|between|zwischen|after|before|nach|vor|ab|seit|since|with|w|mit|and|und|or|oder|&|good|black|cyber|easter|palm|ash|holy|maundy|taco|throwback|giving|bowl|guten|by|for|last|past|previous|letzten?|every|each|jede[nmrs]?|alle|am|on|this|next|coming|in|at|um|the|of)$/;
+  /^(?:until|till|til|bis|through|thru|to|from|von|between|zwischen|after|before|nach|vor|ab|seit|since|with|w|mit|and|und|or|oder|&|good|black|cyber|easter|palm|ash|holy|maundy|taco|throwback|giving|bowl|guten|by|for|last|past|previous|letzten?|not|except|but|than|nicht|ausser|ohne|keine?n?|every|each|jede[nmrs]?|alle|am|on|this|next|coming|in|at|um|the|of)$/;
 
 /** A clock written as a bound ("until 5pm", "before 10", "after 5", "ab 9") is no start: the title's. */
 const BOUND = /^(?:until|till|bis|to|before|vor|after|nach|ab)\b/;
 
 /** The word that leads into a clock time ("at", "um"), taken off with it. */
 const CLOCK_LEAD = /(?:^|\s)(?:at|um|gegen|@)$/;
+
+/** A dash between two days or times: a span ("Monday - Friday"). */
+const DASH = /^[–—-]$/;
 
 /** A mark left hanging once the when after it is gone ("Lunch with Tom, tomorrow"). */
 const HANGING = /^[,;:@&–—-]$/;
@@ -1165,7 +1171,8 @@ const whenless = (
       break;
     }
     const before = start === 0 ? 0 : text.slice(0, start).trimEnd().split(' ').length;
-    if ((held && before < held[1]) || (before > 0 && OWNS_WHEN.test(bare(folded[before - 1]!)))) {
+    const lead = before > 0 ? folded[before - 1]! : '';
+    if ((held && before < held[1]) || OWNS_WHEN.test(bare(lead)) || DASH.test(lead)) {
       break;
     }
     if (before === 0) {
@@ -1217,7 +1224,7 @@ export const trimWhen = (title: string, place?: string): string => {
   const end = tokens[last - 1]!;
   const trimmed = title
     .slice(tokens[first]!.index, end.index + end[0].length)
-    .replace(TRAILING, '');
+    .replace(SEPARATORS, '');
   return trimmed === '' ? title : trimmed;
 };
 
@@ -1248,7 +1255,7 @@ export const withoutPlace = (title: string, place: string | undefined): string =
     return title;
   }
   const end = tokens[kept - 1]!;
-  return title.slice(0, end.index + end[0].length).replace(TRAILING, '');
+  return title.slice(0, end.index + end[0].length).replace(SEPARATORS, '');
 };
 
 /** The words of a text, folded: its runs of letters and digits ("Tom's" is "tom" and "s"). */

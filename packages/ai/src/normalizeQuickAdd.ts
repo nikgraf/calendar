@@ -260,7 +260,7 @@ export const normalizeQuickAdd = (
   // to-do has no place field.
   const placeless =
     kept && phrase !== undefined && !todo
-      ? trimWhen(withoutPlace(kept, meaningfulText(parse.location)))
+      ? trimWhen(withoutPlace(kept, meaningfulText(parse.location)), meaningfulText(parse.location))
       : kept;
   const placed =
     placeless !== kept && placeOf(meaningfulText(parse.location), placeless ?? '', phrase)

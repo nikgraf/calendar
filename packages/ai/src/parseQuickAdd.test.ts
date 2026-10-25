@@ -470,6 +470,18 @@ describe('parseQuickAdd titles', () => {
     ).toMatchObject({ date: '2026-08-23', location: 'Ruby Tuesday', title: 'Dinner' });
   });
 
+  it('keeps a venue that is the whole title', async () => {
+    // Codex round 2: the second trim ran without the place.
+    expect(
+      (
+        await prefillOf(
+          { location: 'Ruby Tuesday', title: 'Ruby Tuesday' },
+          'Ruby Tuesday tomorrow',
+        )
+      ).title,
+    ).toBe('Ruby Tuesday');
+  });
+
   it('takes no when and no company for the place', async () => {
     // Observed on the real model: "tomorrow" and "tom" as the location.
     expect(

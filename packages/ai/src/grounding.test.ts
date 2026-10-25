@@ -813,6 +813,19 @@ describe('trimWhen', () => {
     expect(trimWhen('- tomorrow')).toBe('- tomorrow');
   });
 
+  it("leaves a day ruled out, a dash span, and the title's own closing marks", () => {
+    // Codex round 2.
+    expect(trimWhen('Meeting tomorrow but not Friday')).toBe('Meeting tomorrow but not Friday');
+    expect(trimWhen('Standup every weekday except Friday')).toBe(
+      'Standup every weekday except Friday',
+    );
+    expect(trimWhen('Urlaub außer Montag')).toBe('Urlaub außer Montag');
+    expect(trimWhen('Vacation Monday - Friday')).toBe('Vacation Monday - Friday');
+    expect(trimWhen('Vacation Mon – Fri')).toBe('Vacation Mon – Fri');
+    expect(trimWhen('Team review (phase 2) tomorrow')).toBe('Team review (phase 2)');
+    expect(trimWhen('Read "Dune" tomorrow')).toBe('Read "Dune"');
+  });
+
   it("never trims the event's place", () => {
     // Codex: a venue named for a weekday lost its weekday.
     expect(trimWhen('Dinner at Ruby Tuesday tomorrow', 'Ruby Tuesday')).toBe(
