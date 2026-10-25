@@ -1,15 +1,13 @@
 import { useBirthdayOverrideEditor } from '@calendar/app-state';
 import {
-  BIRTHDAY_LEAD_DAYS,
   type BirthdayOccurrence,
   type BirthdayRecord,
   describeBirthday,
-  leadDaysLabel,
   Temporal,
 } from '@calendar/core';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Chip } from './Chip.tsx';
+import { BirthdayReminderRows } from './BirthdayReminderRows.tsx';
 import { actionText, type ThemeColors, useStyles } from './theme.ts';
 
 // Through a PlainDate in a leap year: the polyfill cannot localise a
@@ -33,9 +31,9 @@ const countdown = (daysUntil: number, ageTurning: number | undefined): string =>
 };
 
 /**
- * This person's reminder lead days as toggle chips: the general ones
- * until a chip is changed, then their own (saved at once). "Use defaults"
- * hands them back to the general list.
+ * This person's reminders, each at its own time: the general ones until
+ * one is added, deleted or moved, then their own (saved at once). "Use
+ * defaults" hands them back to the general list.
  */
 function BirthdayReminders({ record }: { record: BirthdayRecord }) {
   const styles = useStyles(makeStyles);
@@ -64,20 +62,13 @@ function BirthdayReminders({ record }: { record: BirthdayRecord }) {
           </Pressable>
         ) : null}
       </View>
-      <View style={styles.chips}>
-        {BIRTHDAY_LEAD_DAYS.map((lead) => {
-          const selected = editor.leadDays.includes(lead);
-          return (
-            <Chip
-              key={lead}
-              label={leadDaysLabel(lead)}
-              onPress={() => run(editor.toggle(lead))}
-              selected={selected}
-              // The suffix lets the e2e flow assert the state without a query.
-              testID={`birthday-override-${String(lead)}${selected ? '-on' : ''}`}
-            />
-          );
-        })}
+      {/* Boxed like Source: the sheet is the rows' own surface colour. */}
+      <View style={styles.reminders}>
+        <BirthdayReminderRows
+          onChange={(reminders) => run(editor.save(reminders))}
+          reminders={editor.reminders}
+          testIDPrefix="birthday-override"
+        />
       </View>
       {editor.enabled ? null : (
         <Text style={styles.note} testID="birthday-reminders-off">
@@ -130,12 +121,6 @@ export function BirthdayDetail({
 
 const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
-    chips: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: 8,
-      marginBottom: 14,
-    },
     content: {
       padding: 16,
       paddingBottom: 48,
@@ -171,6 +156,14 @@ const makeStyles = (colors: ThemeColors) =>
       color: colors['text-secondary'],
       fontSize: 13,
       marginBottom: 8,
+    },
+    reminders: {
+      backgroundColor: colors.surface,
+      borderColor: colors.border,
+      borderRadius: 10,
+      borderWidth: StyleSheet.hairlineWidth,
+      marginBottom: 8,
+      overflow: 'hidden',
     },
     remindersHeader: {
       alignItems: 'center',

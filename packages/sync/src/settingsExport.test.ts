@@ -41,12 +41,12 @@ describe('buildSettingsDocument', () => {
         zones: ['device', 'Asia/Calcutta', 'UTC'],
       });
       yield* writeBirthdayReminderOverrides([
-        { day: 4, displayName: 'Alice', leadDays: [14], month: 3 },
+        { day: 4, displayName: 'Alice', month: 3, reminders: [{ leadDays: 14, time: '09:00' }] },
       ]);
       const document = yield* buildSettingsDocument;
       expect(document.version).toBe(1);
       expect(document.birthdayReminderOverrides).toEqual([
-        { day: 4, displayName: 'Alice', leadDays: [14], month: 3 },
+        { day: 4, displayName: 'Alice', month: 3, reminders: [{ leadDays: 14, time: '09:00' }] },
       ]);
       expect(document.desktop).toEqual({ screenPrivacy: 'visible' });
       expect(document.timeZones).toEqual({

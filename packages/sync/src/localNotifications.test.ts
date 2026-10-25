@@ -101,8 +101,10 @@ const setClock = (iso: string) => TestClock.adjust(Duration.millis(Date.parse(is
 
 const enableBirthdays = writeBirthdayReminderSettings({
   enabled: true,
-  leadDays: [0, 1],
-  time: '09:00',
+  reminders: [
+    { leadDays: 0, time: '09:00' },
+    { leadDays: 1, time: '09:00' },
+  ],
 });
 
 const popup = (minutes: number) => new ReminderOverride({ method: 'popup', minutes });
@@ -174,9 +176,12 @@ describe('LocalNotifications', () => {
   it.effect("a person's own lead days replace the general ones", () => {
     const { shown, sink } = immediateSink();
     return Effect.gen(function* () {
-      yield* writeBirthdayReminderSettings({ enabled: true, leadDays: [0], time: '09:00' });
+      yield* writeBirthdayReminderSettings({
+        enabled: true,
+        reminders: [{ leadDays: 0, time: '09:00' }],
+      });
       yield* writeBirthdayReminderOverrides([
-        { day: 4, displayName: 'Alice', leadDays: [1], month: 3 },
+        { day: 4, displayName: 'Alice', month: 3, reminders: [{ leadDays: 1, time: '09:00' }] },
       ]);
       const notifications = yield* LocalNotifications;
       yield* setClock('2026-03-03T10:00:00Z');
@@ -199,7 +204,7 @@ describe('LocalNotifications', () => {
         'birthday:device:a:2026-03-04:0',
       ]);
       yield* writeBirthdayReminderOverrides([
-        { day: 4, displayName: 'Alice', leadDays: [], month: 3 },
+        { day: 4, displayName: 'Alice', month: 3, reminders: [] },
       ]);
       yield* notifications.run();
       expect(scheduled.schedules.at(-1)).toEqual([]);
@@ -306,7 +311,13 @@ describe('LocalNotifications', () => {
           'birthday:device:a:2026-03-04:0',
         ]);
 
-        yield* writeBirthdayReminderSettings({ enabled: false, leadDays: [0, 1], time: '09:00' });
+        yield* writeBirthdayReminderSettings({
+          enabled: false,
+          reminders: [
+            { leadDays: 0, time: '09:00' },
+            { leadDays: 1, time: '09:00' },
+          ],
+        });
         yield* notifications.run();
         yield* notifications.run();
         expect(scheduled.schedules).toHaveLength(3);
@@ -405,7 +416,13 @@ describe('LocalNotifications', () => {
       yield* notifications.run();
       expect(scheduled.schedules).toHaveLength(1);
       // Same keys, later delivery time: the OS must hear about it.
-      yield* writeBirthdayReminderSettings({ enabled: true, leadDays: [0, 1], time: '15:00' });
+      yield* writeBirthdayReminderSettings({
+        enabled: true,
+        reminders: [
+          { leadDays: 0, time: '15:00' },
+          { leadDays: 1, time: '15:00' },
+        ],
+      });
       yield* notifications.run();
       expect(scheduled.schedules).toHaveLength(2);
       expect(scheduled.schedules[1]![0]!.fireAt).toBe(Date.parse('2026-03-03T15:00:00Z'));
@@ -484,7 +501,13 @@ describe('LocalNotifications', () => {
         yield* setClock('2026-03-01T12:00:00Z');
         const slow = yield* Effect.forkChild(notifications.run());
         yield* Effect.yieldNow;
-        yield* writeBirthdayReminderSettings({ enabled: false, leadDays: [0, 1], time: '09:00' });
+        yield* writeBirthdayReminderSettings({
+          enabled: false,
+          reminders: [
+            { leadDays: 0, time: '09:00' },
+            { leadDays: 1, time: '09:00' },
+          ],
+        });
         const disabling = yield* Effect.forkChild(notifications.run());
         yield* Effect.yieldNow;
         yield* Deferred.succeed(release, undefined);

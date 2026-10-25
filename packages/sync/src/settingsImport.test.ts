@@ -124,14 +124,14 @@ describe('importSettings', () => {
     const { layer } = makeSettingsTestLayer();
     return Effect.gen(function* () {
       yield* writeBirthdayReminderOverrides([
-        { day: 4, displayName: 'Alice', leadDays: [1], month: 3 },
-        { day: 10, displayName: 'Bob', leadDays: [7], month: 3 },
+        { day: 4, displayName: 'Alice', month: 3, reminders: [{ leadDays: 1, time: '09:00' }] },
+        { day: 10, displayName: 'Bob', month: 3, reminders: [{ leadDays: 7, time: '09:00' }] },
       ]);
       const document: SettingsDocument = {
         birthdayReminderOverrides: [
           // The same person as "Alice", spelled as the other device has her.
-          { day: 4, displayName: 'alice', leadDays: [14], month: 3 },
-          { day: 20, displayName: 'Carol', leadDays: [], month: 5 },
+          { day: 4, displayName: 'alice', month: 3, reminders: [{ leadDays: 14, time: '09:00' }] },
+          { day: 20, displayName: 'Carol', month: 5, reminders: [] },
         ],
         version: 1,
       };
@@ -140,9 +140,9 @@ describe('importSettings', () => {
       ]);
       yield* importSettings(document);
       expect(yield* readBirthdayReminderOverrides).toEqual([
-        { day: 4, displayName: 'alice', leadDays: [14], month: 3 },
-        { day: 10, displayName: 'Bob', leadDays: [7], month: 3 },
-        { day: 20, displayName: 'Carol', leadDays: [], month: 5 },
+        { day: 4, displayName: 'alice', month: 3, reminders: [{ leadDays: 14, time: '09:00' }] },
+        { day: 10, displayName: 'Bob', month: 3, reminders: [{ leadDays: 7, time: '09:00' }] },
+        { day: 20, displayName: 'Carol', month: 5, reminders: [] },
       ]);
       expect((yield* importSettings(document)).settingsChanged).toEqual([]);
     }).pipe(Effect.provide(layer));
@@ -162,14 +162,21 @@ describe('importSettings', () => {
       });
       yield* Effect.gen(function* () {
         yield* writeBirthdayReminderOverrides([
-          { day: 4, displayName: 'Alice', leadDays: [1], month: 3 },
-          { day: 10, displayName: 'Bob', leadDays: [7], month: 3 },
+          { day: 4, displayName: 'Alice', month: 3, reminders: [{ leadDays: 1, time: '09:00' }] },
+          { day: 10, displayName: 'Bob', month: 3, reminders: [{ leadDays: 7, time: '09:00' }] },
         ]);
         // Turning the reminders on asks (iOS) before the overrides are written.
         const running = yield* Effect.forkChild(
           importSettings({
-            birthdayReminderOverrides: [{ day: 4, displayName: 'Alice', leadDays: [14], month: 3 }],
-            birthdayReminders: { enabled: true, leadDays: [0], time: '09:00' },
+            birthdayReminderOverrides: [
+              {
+                day: 4,
+                displayName: 'Alice',
+                month: 3,
+                reminders: [{ leadDays: 14, time: '09:00' }],
+              },
+            ],
+            birthdayReminders: { enabled: true, reminders: [{ leadDays: 0, time: '09:00' }] },
             version: 1,
           }),
         );
@@ -178,14 +185,14 @@ describe('importSettings', () => {
         yield* applyBirthdayReminderOverride({
           day: 10,
           displayName: 'Bob',
-          leadDays: [],
           month: 3,
+          reminders: [],
         });
         yield* Deferred.succeed(answer, true);
         yield* Fiber.join(running);
         expect(yield* readBirthdayReminderOverrides).toEqual([
-          { day: 4, displayName: 'Alice', leadDays: [14], month: 3 },
-          { day: 10, displayName: 'Bob', leadDays: [], month: 3 },
+          { day: 4, displayName: 'Alice', month: 3, reminders: [{ leadDays: 14, time: '09:00' }] },
+          { day: 10, displayName: 'Bob', month: 3, reminders: [] },
         ]);
       }).pipe(Effect.provide(layer));
     }),

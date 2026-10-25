@@ -1238,7 +1238,7 @@ gateway carries all of it. Details, limits and the threat model:
   (Feb 29 lands on Feb 28 in common years), and both lanes draw a neutral
   chip with a fixed pink accent (`birthdayChipLabel`). The detail view
   lists every source; the birthday itself is read-only, and the one thing
-  it edits is that person's reminder lead days.
+  it edits is that person's reminders.
 - **Locations and maps**: Google stores only location text, so
   coordinates (`EventRecord.geo`: lat, lng, name, and `source`, the text
   they came from) are derived on-device through `GeoClient` (MapKit) and
@@ -1285,7 +1285,9 @@ gateway carries all of it. Details, limits and the threat model:
 - **Device settings and the settings document**: `device_settings` is a
   key/value table for preferences that never sync to Google
   (`birthdayReminders`, `birthdayReminderOverrides` — keyed through
-  `birthdayMergeKey`, so an override survives a source coming or going —
+  `birthdayMergeKey`, so an override survives a source coming or going;
+  both read values saved before each reminder had its own time through
+  `upgradeBirthdayReminderData`, as the settings document does —
   `eventNotifications`, `timeZones`, `viewPreferences`, `onboarding`,
   `mirrors`, `mirrors.local`, `importedVisibility`,
   `localNotifications.*`), behind
@@ -1360,8 +1362,10 @@ gateway carries all of it. Details, limits and the threat model:
   own loop — outside the sync pass — over two producers, `loadEventPlans`
   (visible calendars, a week ahead, `useDefault` resolved against the
   calendar's `defaultReminders`, Apple Calendar events only when the
-  setting includes them) and `loadBirthdayPlans` (a person's own lead
-  days replace the general ones; the general switch gates both), merged
+  setting includes them) and `loadBirthdayPlans` (one notification per
+  reminder — a lead time and its own time of day, one per lead; a
+  person's own reminders replace the general ones; the general switch
+  gates both), merged
   into one `PlannedNotification` list, each carrying a `target` the tap
   resolves (`findNotificationEvent`). A producer whose setting is off
   returns nothing; the OS schedule is cleared only when both do. The

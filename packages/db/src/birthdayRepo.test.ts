@@ -111,8 +111,8 @@ describe('DeviceSettingsRepo', () => {
     Effect.gen(function* () {
       const repo = yield* DeviceSettingsRepo;
       expect(yield* repo.get('birthdayReminders')).toBeNull();
-      yield* repo.set('birthdayReminders', { enabled: true, leadDays: [0, 7] });
-      expect(yield* repo.get('birthdayReminders')).toEqual({ enabled: true, leadDays: [0, 7] });
+      yield* repo.set('birthdayReminders', { enabled: true, reminders: [] });
+      expect(yield* repo.get('birthdayReminders')).toEqual({ enabled: true, reminders: [] });
       yield* repo.set('birthdayReminders', { enabled: false });
       expect(yield* repo.get('birthdayReminders')).toEqual({ enabled: false });
     }).pipe(Effect.provide(freshDbLayer())),

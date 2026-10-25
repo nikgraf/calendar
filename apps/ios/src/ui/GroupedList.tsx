@@ -372,11 +372,28 @@ export function Row({
 }: RowProps) {
   const styles = useStyles(makeStyles);
   const first = useContext(FirstRowContext);
+  const actions = swipeAction ? [{ label: swipeAction.label, name: 'swipeAction' }] : undefined;
+  const onAction = swipeAction
+    ? (event: AccessibilityActionEvent) => {
+        if (event.nativeEvent.actionName === 'swipeAction') {
+          swipeAction.run();
+        }
+      }
+    : undefined;
+  // A swipe row holding a control of its own (a time picker) gives its
+  // label the action: made one element, the row hid the control from
+  // VoiceOver, which then could delete the row but not change it.
+  const labelActs = swipeAction !== undefined && accessory !== undefined && !onPress;
   const body = (
     <>
       {leading ? <View style={styles.leading}>{leading}</View> : null}
       <View style={[styles.body, !first && styles.separator]}>
-        <View style={styles.text}>
+        <View
+          accessibilityActions={labelActs ? actions : undefined}
+          accessible={labelActs ? true : undefined}
+          onAccessibilityAction={labelActs ? onAction : undefined}
+          style={styles.text}
+        >
           <Text
             style={[
               styles.title,
@@ -405,20 +422,12 @@ export function Row({
       </View>
     </>
   );
-  const actions = swipeAction ? [{ label: swipeAction.label, name: 'swipeAction' }] : undefined;
-  const onAction = swipeAction
-    ? (event: AccessibilityActionEvent) => {
-        if (event.nativeEvent.actionName === 'swipeAction') {
-          swipeAction.run();
-        }
-      }
-    : undefined;
   if (!onPress) {
     return (
       <View
-        accessibilityActions={actions}
-        accessible={swipeAction ? true : undefined}
-        onAccessibilityAction={onAction}
+        accessibilityActions={labelActs ? undefined : actions}
+        accessible={swipeAction && !labelActs ? true : undefined}
+        onAccessibilityAction={labelActs ? undefined : onAction}
         style={[styles.row, disabled && styles.disabled]}
         testID={testID}
       >

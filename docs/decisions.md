@@ -666,6 +666,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   record id, which changes when a source comes or goes and differs per
   device. Accepted: a rename drops the override. Travels in the settings
   document; an import joins by person and never removes one.
+- **A time per reminder** (2026-10-24, #244) — each birthday reminder is a
+  lead plus its own time, general and per person, one per lead; a lead
+  added starts at the nearest one's time. Rejected: one default time plus
+  per-lead exceptions (a hidden field once every lead has its own). Data
+  and files in the old shape upgrade on read at the one time they had;
+  the format kept version 1, so an older app reading a new file gets a
+  schema error, not "update the app". iOS lists the reminders on the page
+  itself (Add Reminder sheet, swipe to Delete): the pushed Remind Me page,
+  opened from the Alerts lesson, landed in Settings' stack, whose separate
+  editor never saw the change. `useSettingsEditor` yields once it lands.
 - **Invitees from a phrase** (2026-10-17, #222) — only words that ask for
   an invitation invite; "with Sarah" never does, since an invite emails
   them. Who is a people-only second prompt, asked when code sees a cue:

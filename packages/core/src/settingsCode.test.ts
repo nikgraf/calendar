@@ -62,8 +62,16 @@ const full: SettingsDocument = {
     { calendars: [{ source: 'iCloud', title: 'Home', visible: true }], kind: 'apple-calendar' },
     { kind: 'apple-reminders', taskLists: [{ title: 'Groceries', visible: false }] },
   ],
-  birthdayReminderOverrides: [{ day: 4, displayName: 'Alice', leadDays: [14], month: 3 }],
-  birthdayReminders: { enabled: true, leadDays: [0, 7], time: '08:30' },
+  birthdayReminderOverrides: [
+    { day: 4, displayName: 'Alice', month: 3, reminders: [{ leadDays: 14, time: '19:00' }] },
+  ],
+  birthdayReminders: {
+    enabled: true,
+    reminders: [
+      { leadDays: 0, time: '08:30' },
+      { leadDays: 7, time: '18:00' },
+    ],
+  },
   desktop: { screenPrivacy: 'visible' },
   eventNotifications: { enabled: true, includeAppleCalendar: false },
   mirrors: [mirror],

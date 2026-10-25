@@ -2,6 +2,19 @@ import { Account, CalendarInfo, GoogleBirthday } from '@calendar/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
 import { type App, launchApp, readDeviceSetting } from './harness.ts';
 
+const at = (leadDays: number, time = '09:00') => ({ leadDays, time });
+
+/** Sets a controlled input the way typing would, so React sees the change. */
+const setInput = (selector: string, value: string) => `(() => {
+  const element = document.querySelector(${JSON.stringify(selector)});
+  Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(element, ${JSON.stringify(value)});
+  element.dispatchEvent(new Event('input', { bubbles: true }));
+})()`;
+
+/** Leaves a field, which is when a time field saves (React's onBlur listens for focusout). */
+const leave = (selector: string) =>
+  `document.querySelector(${JSON.stringify(selector)}).dispatchEvent(new FocusEvent('focusout', { bubbles: true }))`;
+
 // Birthdays come from two sources: a Google People row seeded into SQLite
 // and the same person in a device-contacts fixture (the harness swaps the
 // helper for the in-memory fake, so no TCC prompt and no real address
@@ -129,7 +142,7 @@ describe('contact birthdays', () => {
     await cdp.waitFor(`!document.querySelector('[role="dialog"][aria-label="Birthday"]')`);
   });
 
-  it('stores birthday reminder lead times on this device only', async () => {
+  it('stores birthday reminders, each at its own time, on this device only', async () => {
     const cdp = await app.openSettings('notifications');
     await cdp.waitFor(`document.body.textContent.includes('Birthday reminders')`);
     expect(
@@ -143,32 +156,89 @@ describe('contact birthdays', () => {
     // permission prompt; notifications are off in the harness anyway).
     const clickInput = (label: string) =>
       cdp.eval(`document.querySelector('input[aria-label=${JSON.stringify(label)}]')?.click()`);
-    const stored = () => readDeviceSetting(app.userDataDir, 'birthdayReminders');
+    // Just today's fields: the row also keeps the old ones for older apps.
+    const stored = async () => {
+      const row = (await readDeviceSetting(app.userDataDir, 'birthdayReminders')) as {
+        enabled: boolean;
+        reminders: unknown;
+      } | null;
+      return row && { enabled: row.enabled, reminders: row.reminders };
+    };
     await clickInput('Remind me about birthdays');
-    await expect
-      .poll(stored, { timeout: 10_000 })
-      .toEqual({ enabled: true, leadDays: [0], time: '09:00' });
+    await expect.poll(stored, { timeout: 10_000 }).toEqual({ enabled: true, reminders: [at(0)] });
     await cdp.waitFor(
       `document.querySelector('input[aria-label="Remind 1 week before"]')?.disabled === false`,
     );
+    // Only a checked lead has a time field.
+    expect(
+      await cdp.eval<boolean>(`!document.querySelector('input[aria-label="Time 1 week before"]')`),
+    ).toBe(true);
     await clickInput('Remind 1 week before');
     await expect
       .poll(stored, { timeout: 10_000 })
-      .toEqual({ enabled: true, leadDays: [0, 7], time: '09:00' });
+      .toEqual({ enabled: true, reminders: [at(0), at(7)] });
     await cdp.waitFor(
-      `document.querySelector('input[aria-label="Remind 1 week before"]')?.checked === true`,
+      `document.querySelector('input[aria-label="Time 1 week before"]')?.value === '09:00'`,
     );
-    // Off again: the lead times survive, the switch does not.
+    // Each lead keeps its own time, saved once the field is left: a time
+    // half typed is not saved (it would re-plan at a passed time).
+    await cdp.eval(setInput('input[aria-label="Time 1 week before"]', '18:30'));
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    expect(await stored()).toEqual({ enabled: true, reminders: [at(0), at(7)] });
+    await cdp.eval(leave('input[aria-label="Time 1 week before"]'));
+    await expect
+      .poll(stored, { timeout: 10_000 })
+      .toEqual({ enabled: true, reminders: [at(0), at(7, '18:30')] });
+    expect(
+      await cdp.eval<string>(
+        `document.querySelector('input[aria-label="Time on the day"]')?.value ?? ''`,
+      ),
+    ).toBe('09:00');
+    // Off again: the reminders survive, the switch does not.
     await clickInput('Remind me about birthdays');
     await expect
       .poll(stored, { timeout: 10_000 })
-      .toEqual({ enabled: false, leadDays: [0, 7], time: '09:00' });
+      .toEqual({ enabled: false, reminders: [at(0), at(7, '18:30')] });
+    // A time typed and the window closed at once: the close waits for the save.
+    await cdp.eval(setInput('input[aria-label="Time on the day"]', '07:45'));
+    await app.closeSettings();
+    await expect
+      .poll(stored, { timeout: 10_000 })
+      .toEqual({ enabled: false, reminders: [at(0, '07:45'), at(7, '18:30')] });
+    const back = await app.openSettings('notifications');
+    await back.waitFor(
+      `document.querySelector('input[aria-label="Time on the day"]')?.value === '07:45'`,
+    );
+    await back.eval(setInput('input[aria-label="Time on the day"]', '09:00'));
+    await back.eval(leave('input[aria-label="Time on the day"]'));
+    await expect
+      .poll(stored, { timeout: 10_000 })
+      .toEqual({ enabled: false, reminders: [at(0), at(7, '18:30')] });
     await app.closeSettings();
   });
 
-  it('gives one person their own lead days from the detail, and resets them', async () => {
+  it('gives one person their own reminders from the detail, and resets them', async () => {
     const { cdp } = app;
-    const stored = () => readDeviceSetting(app.userDataDir, 'birthdayReminderOverrides');
+    // Just today's fields: the rows also keep the old ones for older apps.
+    const stored = async () => {
+      const rows = (await readDeviceSetting(
+        app.userDataDir,
+        'birthdayReminderOverrides',
+      )) as Array<{
+        day: number;
+        displayName: string;
+        month: number;
+        reminders: unknown;
+      }> | null;
+      return (
+        rows?.map(({ day, displayName, month, reminders }) => ({
+          day,
+          displayName,
+          month,
+          reminders,
+        })) ?? null
+      );
+    };
     const checked = (label: string) =>
       cdp.eval<boolean>(
         `document.querySelector('[data-testid="birthday-reminders"] input[aria-label=${JSON.stringify(label)}]')?.checked ?? false`,
@@ -183,33 +253,67 @@ describe('contact birthdays', () => {
         `document.querySelector(${JSON.stringify(`[data-testid="birthday-reminders"] ${selector}`)})?.click()`,
       );
 
+    // A time put back to what it was saves nothing, even as the dialog
+    // closes: saving would give the person a list of their own.
     await openDetail();
-    // The previous test left the general lead days at [0, 7] with the
-    // switch off: the boxes show them, and the detail says reminders are off.
+    const weekTime = '[data-testid="birthday-reminders"] input[aria-label="Time 1 week before"]';
+    await cdp.eval(setInput(weekTime, '06:00'));
+    await cdp.eval(setInput(weekTime, '18:30'));
+    await cdp.pressEscape();
+    await cdp.waitFor(`!document.querySelector('[role="dialog"][aria-label="Birthday"]')`);
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    expect(await stored()).toBeNull();
+
+    await openDetail();
+    // The previous test left the general reminders at on the day 09:00 and
+    // a week before 18:30, switched off: the boxes show them, and the
+    // detail says reminders are off.
     expect(await checked('Remind on the day')).toBe(true);
     expect(await checked('Remind 1 week before')).toBe(true);
     expect(await checked('Remind 2 weeks before')).toBe(false);
+    expect(
+      await cdp.eval<string>(
+        `document.querySelector('[data-testid="birthday-reminders"] input[aria-label="Time 1 week before"]')?.value ?? ''`,
+      ),
+    ).toBe('18:30');
     expect(
       await cdp.eval<boolean>(`!!document.querySelector('[data-testid="birthday-reminders-off"]')`),
     ).toBe(true);
     expect(await stored()).toBeNull();
 
+    // Two weeks starts at the time of the nearest lead, a week before.
     await clickInDetail('input[aria-label="Remind 2 weeks before"]');
     await expect.poll(stored, { timeout: 10_000 }).toEqual([
       {
         day: person.day,
         displayName: 'Alice Example',
-        leadDays: [0, 7, 14],
         month: person.month,
+        reminders: [at(0), at(7, '18:30'), at(14, '18:30')],
       },
     ]);
+    // A time of this person's own, typed and closed with Escape at once:
+    // the field saves as it goes away.
+    await cdp.eval(
+      setInput(
+        '[data-testid="birthday-reminders"] input[aria-label="Time 2 weeks before"]',
+        '08:15',
+      ),
+    );
     await cdp.pressEscape();
     await cdp.waitFor(`!document.querySelector('[role="dialog"][aria-label="Birthday"]')`);
+    await expect.poll(stored, { timeout: 10_000 }).toEqual([
+      {
+        day: person.day,
+        displayName: 'Alice Example',
+        month: person.month,
+        reminders: [at(0), at(7, '18:30'), at(14, '08:15')],
+      },
+    ]);
 
     // Reopened: read back from SQLite, with the way back to the defaults.
     await openDetail();
     await cdp.waitFor(
-      `document.querySelector('[data-testid="birthday-reminders"] input[aria-label="Remind 2 weeks before"]')?.checked === true`,
+      `document.querySelector('[data-testid="birthday-reminders"] input[aria-label="Time 2 weeks before"]')?.value === '08:15'`,
     );
     await clickInDetail('[data-testid="birthday-reminders-custom"]');
     await expect.poll(stored, { timeout: 10_000 }).toEqual([]);
@@ -225,12 +329,12 @@ describe('contact birthdays', () => {
     await expect
       .poll(stored, { timeout: 10_000 })
       .toEqual([
-        { day: person.day, displayName: 'Alice Example', leadDays: [], month: person.month },
+        { day: person.day, displayName: 'Alice Example', month: person.month, reminders: [] },
       ]);
 
     const settings = await app.openSettings('notifications');
     await settings.waitFor(
-      `document.querySelector('[data-testid="birthday-overrides"]')?.textContent?.includes('Alice Example · No reminder') ?? false`,
+      `document.querySelector('[data-testid="birthday-overrides"] li')?.textContent === 'Alice ExampleNo reminderReset'`,
     );
     await settings.eval(
       `document.querySelector('button[aria-label="Reset reminders for Alice Example"]')?.click()`,
@@ -243,19 +347,38 @@ describe('contact birthdays', () => {
       `!document.querySelector('[data-testid="birthday-reminders-custom"]') && document.querySelector('[data-testid="birthday-reminders"] input[aria-label="Remind on the day"]')?.checked === true`,
     );
     expect(await checked('Remind 1 week before')).toBe(true);
-    // A toggle now starts from the general lead days, not the muted list.
+    // A toggle now starts from the general reminders, not the muted list.
     await clickInDetail('input[aria-label="Remind 2 weeks before"]');
     await expect.poll(stored, { timeout: 10_000 }).toEqual([
       {
         day: person.day,
         displayName: 'Alice Example',
-        leadDays: [0, 7, 14],
         month: person.month,
+        reminders: [at(0), at(7, '18:30'), at(14, '18:30')],
       },
     ]);
-    await clickInDetail('[data-testid="birthday-reminders-custom"]');
+    // A time typed but not saved yet, then the person reset elsewhere:
+    // their two-week field goes away with the override and drops the
+    // time rather than saving the list it was typed into back.
+    const twoWeeks = '[data-testid="birthday-reminders"] input[aria-label="Time 2 weeks before"]';
+    await cdp.eval(setInput(twoWeeks, '06:00'));
+    const again = await app.openSettings('notifications');
+    await again.waitFor(`!!document.querySelector('[data-testid="birthday-overrides"]')`);
+    await again.eval(
+      `document.querySelector('button[aria-label="Reset reminders for Alice Example"]')?.click()`,
+    );
     await expect.poll(stored, { timeout: 10_000 }).toEqual([]);
+    await app.closeSettings();
+    await cdp.waitFor(`!document.querySelector(${JSON.stringify(twoWeeks)})`);
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    expect(await stored()).toEqual([]);
+    expect(
+      await cdp.eval<boolean>(
+        `!document.querySelector('[data-testid="birthday-reminders-custom"]')`,
+      ),
+    ).toBe(true);
     await cdp.pressEscape();
     await cdp.waitFor(`!document.querySelector('[role="dialog"][aria-label="Birthday"]')`);
+    expect(await stored()).toEqual([]);
   });
 });
