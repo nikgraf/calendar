@@ -1502,9 +1502,10 @@ describe('calendar desktop e2e', () => {
         `document.querySelector('[data-testid="weekend-day-SA"]')?.getAttribute('aria-pressed') === 'true'`,
       );
       expect(await pressed('FR')).toBe('false');
-      // Two clicks, each its own task as a person's are, the second before
-      // the first save is read back: it builds on the first rather than on
-      // the stored days, so Friday stays.
+      // Two clicks straight after each other, each its own task as a
+      // person's are: the second builds on the first, so Friday stays. The
+      // spec cannot hold a save's read-back, so it shows the chain, not the
+      // race with a slow read-back (useSettingsEditor's tests cover that).
       await settings.eval(`document.querySelector('[data-testid="weekend-day-FR"]').click()`);
       await settings.eval(`document.querySelector('[data-testid="weekend-day-SU"]').click()`);
       await expect.poll(stored, { timeout: 10_000 }).toMatchObject({ weekendDays: ['FR', 'SA'] });
