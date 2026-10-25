@@ -105,6 +105,15 @@ describe('importSettings', () => {
         weekendShading: false,
       });
       expect((yield* importSettings(document)).settingsChanged).toEqual([]);
+      // A file from before the weekend existed changes the lane cap only.
+      const older: SettingsDocument = { version: 1, view: { allDayLaneCollapsed: false } };
+      expect((yield* importSettings(older)).settingsChanged).toEqual(['view']);
+      expect(yield* readViewPreferences).toEqual({
+        allDayLaneCollapsed: false,
+        lastView: 'month',
+        weekendDays: ['FR', 'SA'],
+        weekendShading: false,
+      });
     }).pipe(Effect.provide(layer));
   });
 

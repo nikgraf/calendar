@@ -1502,11 +1502,17 @@ describe('calendar desktop e2e', () => {
         `document.querySelector('[data-testid="weekend-day-SA"]')?.getAttribute('aria-pressed') === 'true'`,
       );
       expect(await pressed('FR')).toBe('false');
-      await toggleDay('FR', true);
-      await toggleDay('SU', false);
+      // Two clicks before the first save is read back: the second builds on
+      // the first rather than on the stored days, so Friday stays.
+      await settings.eval(
+        `['FR', 'SU'].forEach((day) => document.querySelector('[data-testid="weekend-day-' + day + '"]').click())`,
+      );
       await expect.poll(stored, { timeout: 10_000 }).toMatchObject({ weekendDays: ['FR', 'SA'] });
+      expect(await pressed('FR')).toBe('true');
+      expect(await pressed('SU')).toBe('false');
       // The calendar window follows a change made in the settings window.
       await expect.poll(() => shadedIn('week-grid'), { timeout: 10_000 }).toEqual(['FR', 'SA']);
+      expect(await shadedIn('all-day-lane')).toEqual(['FR', 'SA']);
       await cdp.clickTestId('view-month');
       try {
         await expect.poll(() => shadedIn('month-grid'), { timeout: 10_000 }).toEqual(['FR', 'SA']);
