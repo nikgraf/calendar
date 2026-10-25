@@ -116,6 +116,7 @@ export function SearchFilterChips({
             <label className="flex items-center justify-between gap-2">
               From
               <input
+                autoFocus
                 className={`${FIELD_CLASS} w-40`}
                 data-testid="search-filter-from"
                 onChange={(input) =>

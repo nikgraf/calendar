@@ -624,6 +624,58 @@ describe('agent gateway: other agents reach the app over the CLI and MCP', () =>
     await cdp.waitFor(`!document.querySelector('[data-testid="agent-approval"]')`);
   });
 
+  it('focus is back in the field it left once the queued requests are answered', async () => {
+    const { cdp } = app;
+    const work = await calendarRef(app, ASKER, 'Work');
+    const TITLE = `document.querySelector('input[placeholder="Title"]')`;
+    const DIALOG = `document.querySelector('[data-testid="agent-approval"]')`;
+    // Typing a new event's title when four requests come in.
+    await cdp.eval(
+      `void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', metaKey: true }))`,
+    );
+    await cdp.waitFor(`!!${TITLE}`);
+    await cdp.eval(`${TITLE}.focus()`);
+    await cdp.waitFor(`document.activeElement === ${TITLE}`);
+    const asks = [12, 14, 16, 18].map((hour) =>
+      runAgentCli(app, ASKER, newEvent(work, `Asked at ${String(hour)}`, hour)),
+    );
+    // The dialog itself counts them, so all are queued behind it, not still
+    // on their way to the renderer.
+    await cdp.waitFor(`${DIALOG}?.textContent.includes('1 of 4')`);
+    expect(
+      await cdp.eval<boolean>(
+        `!!document.activeElement?.closest('[data-testid="agent-approval"]')`,
+      ),
+    ).toBe(true);
+
+    // Each answer opens the next request in a dialog of its own, whichever
+    // way it was given: Escape, Decline (whose click disables the button
+    // and drops focus on the page) or a click on the scrim.
+    await cdp.pressEscape();
+    await cdp.waitFor(`${DIALOG}?.textContent.includes('1 of 3')`);
+    await cdp.waitFor(`document.querySelector('[data-testid="agent-deny"]')?.disabled === false`);
+    await cdp.clickTestId('agent-deny');
+    await cdp.waitFor(`${DIALOG}?.textContent.includes('1 of 2')`);
+    await cdp.click(8, 8);
+    await cdp.waitFor(`!!${DIALOG} && !${DIALOG}.textContent.includes(' of ')`);
+    await cdp.pressEscape();
+    await cdp.waitFor(`!${DIALOG}`);
+    expect(await cdp.eval<boolean>(`document.activeElement === ${TITLE}`)).toBe(true);
+
+    for (const request of (
+      await cdp.eval<{ pending: ReadonlyArray<{ id: string }> }>(
+        `window.calendarBridge.agentsState()`,
+      )
+    ).pending) {
+      await cdp.eval(`window.calendarBridge.agentsDecide(${JSON.stringify(request.id)}, 'deny')`);
+    }
+    for (const ask of asks) {
+      expect((await ask).code).toBe(1);
+    }
+    await cdp.pressEscape();
+    await cdp.waitFor(`!document.body.textContent.includes('New event')`);
+  });
+
   it('Settings → Agents: answering one request disarms the next one sliding up', async () => {
     const work = await calendarRef(app, ASKER, 'Work');
     const first = runAgentCli(app, ASKER, newEvent(work, 'Asked lunch', 12));

@@ -246,11 +246,54 @@ describe('Search filters', () => {
         setter.call(input, ${JSON.stringify(value)});
         input.dispatchEvent(new Event('input', { bubbles: true }));
       })()`);
+    // Picking When focuses From, as Place and People focus their field.
+    const FOCUSED = `document.activeElement?.closest('[role="dialog"]') ? document.activeElement.dataset.testid : 'outside'`;
+    await cdp.waitFor(`(${FOCUSED}) === 'search-filter-from'`);
     await setDate('search-filter-from', utcDay(1));
     await cdp.waitFor(has('search-chip-dates'));
     await setDate('search-filter-to', utcDay(2));
+
+    // Tab steps through each date field's segments as Chromium does, and
+    // wraps from To's last one to From — never out to the page behind.
+    const press = async (shift: boolean) => {
+      const seen: Array<string> = [];
+      for (let count = 0; count < 16; count += 1) {
+        await cdp.pressTab(shift);
+        seen.push(await cdp.eval<string>(FOCUSED));
+      }
+      expect(
+        seen.filter((field) => field !== 'search-filter-from' && field !== 'search-filter-to'),
+      ).toEqual([]);
+      // How many presses in a row each field kept, the partial first and last runs left out.
+      const runs: Array<{ field: string; length: number }> = [];
+      for (const field of seen) {
+        if (runs.at(-1)?.field === field) {
+          runs.at(-1)!.length += 1;
+        } else {
+          runs.push({ field, length: 1 });
+        }
+      }
+      return runs.slice(1, -1);
+    };
+    const forward = await press(false);
+    // Month, day, year, and the picker button: the same count in each field.
+    expect(forward.length).toBeGreaterThanOrEqual(2);
+    const stops = forward[0]!.length;
+    expect(stops).toBeGreaterThanOrEqual(3);
+    expect(forward.map((run) => run.length)).toEqual(forward.map(() => stops));
+    // Back through From's segments too. Shift+Tab wraps onto To's first
+    // segment, not its last (script focus cannot pick one), so To's runs
+    // are short.
+    const backFrom = (await press(true)).filter((run) => run.field === 'search-filter-from');
+    expect(backFrom.length).toBeGreaterThanOrEqual(1);
+    expect(backFrom.map((run) => run.length)).toEqual(backFrom.map(() => stops));
+
     await cdp.pressEscape();
     await cdp.waitFor(SETTLED);
+    // Focus is back on "+ Filter", which opened the popover.
+    expect(await cdp.eval<string | undefined>(`document.activeElement?.dataset.testid`)).toBe(
+      'search-add-filter',
+    );
     // Tomorrow's standup and the day after's planning; the tasks due on those days.
     await cdp.waitFor(
       `document.querySelectorAll('[data-testid="search-group-upcoming"] [data-testid="search-title"]').length === 2`,

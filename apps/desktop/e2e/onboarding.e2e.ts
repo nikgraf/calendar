@@ -57,6 +57,11 @@ describe('first run: the setup dialog, the Getting started card and its lessons'
     await cdp.waitFor(
       `document.querySelector('[data-testid="setup-dialog"]')?.dataset.step === 'sources'`,
     );
+    // The button that had focus went with Welcome: focus stays on the
+    // dialog itself, not on Skip, where the next Enter would end the setup.
+    await cdp.waitFor(
+      `document.activeElement?.getAttribute('role') === 'dialog' && document.activeElement.contains(document.querySelector('[data-testid="setup-dialog"]'))`,
+    );
     // Google Calendar without Tasks: the sign-in leaves the tasks scope out.
     await cdp.clickTestId('setup-source-googleTasks');
     await cdp.waitFor(

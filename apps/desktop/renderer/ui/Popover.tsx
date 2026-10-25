@@ -1,5 +1,6 @@
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { openDialogLayer } from '../Dialog.tsx';
+import { FocusTrap } from './FocusTrap.tsx';
 import { popoverTop } from './popoverPlacement.ts';
 
 /**
@@ -8,8 +9,10 @@ import { popoverTop } from './popoverPlacement.ts';
  * parent cannot clip it — the Getting started card's menu, a search
  * filter's choices, the calendar color picker in Settings › Accounts.
  * The window cannot clip it either: with no room under its opener it
- * opens above (`popoverTop`). The backdrop's name is what tests and
- * screen readers see, so it is required.
+ * opens above (`popoverTop`). The keyboard stays inside while it is open
+ * (`FocusTrap`) and goes back to the opener when it closes. The
+ * backdrop's name is what tests and screen readers see, so it is
+ * required.
  */
 export function Popover({
   align = 'start',
@@ -90,21 +93,24 @@ export function Popover({
         onClick={onClose}
         type="button"
       />
-      <div
-        aria-label={label}
-        className={`fixed z-50 rounded-popover border border-hairline bg-surface-raised p-2 shadow-xl ${className}`}
-        ref={panelRef}
-        role="dialog"
-        style={
-          align === 'end'
-            ? // `right`, not a left edge shifted back: a panel whose left edge
-              // sits by the window's right would shrink to the sliver left.
-              { right: document.documentElement.clientWidth - anchor.x, top: top ?? anchor.y }
-            : { left: anchor.x, top: top ?? anchor.y }
-        }
-      >
-        {children}
-      </div>
+      <FocusTrap panelRef={panelRef}>
+        <div
+          aria-label={label}
+          className={`fixed z-50 rounded-popover border border-hairline bg-surface-raised p-2 shadow-xl outline-none ${className}`}
+          ref={panelRef}
+          role="dialog"
+          style={
+            align === 'end'
+              ? // `right`, not a left edge shifted back: a panel whose left edge
+                // sits by the window's right would shrink to the sliver left.
+                { right: document.documentElement.clientWidth - anchor.x, top: top ?? anchor.y }
+              : { left: anchor.x, top: top ?? anchor.y }
+          }
+          tabIndex={-1}
+        >
+          {children}
+        </div>
+      </FocusTrap>
     </>
   );
 }

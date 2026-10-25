@@ -1,17 +1,12 @@
 /** Where a window's dialogs listen for keys (the window itself, in the app). */
 type KeyTarget = Pick<EventTarget, 'addEventListener' | 'removeEventListener'>;
 
-interface DialogKeys {
-  readonly onEscape: () => void;
-  /** Any other key, while this dialog is on top (Tab is trapped here). */
-  readonly onKey: (key: KeyboardEvent) => void;
-}
-
 /**
- * The open dialogs of a window, in mount order. Each listens for keys on
+ * The open dialogs of a window, in mount order. Each listens for Escape on
  * the window, in the capture phase; only the topmost — highest zIndex,
- * then the last opened — answers them. One Escape used to close them all,
+ * then the last opened — answers it. One Escape used to close them all,
  * so dismissing an agent request also threw away a half-edited event.
+ * (Tab is kept inside each dialog by its own `FocusTrap`.)
  *
  * Escape stops with stopImmediatePropagation, not stopPropagation: the
  * other dialogs listen on the same target, which stopPropagation does not
@@ -31,20 +26,17 @@ export const makeDialogStack = (target: KeyTarget) => {
     /** Whether any dialog is open: the calendar's own keys stand back. */
     isOpen: (): boolean => open.length > 0,
     /** Registers an open dialog; returns what closes it. */
-    open: (zIndex: number, keys: DialogKeys): (() => void) => {
+    open: (zIndex: number, onEscape: () => void): (() => void) => {
       const entry = { zIndex };
       open.push(entry);
       const onKeyDown = (event: Event) => {
         if (topmost() !== entry) {
           return;
         }
-        const key = event as KeyboardEvent;
-        if (key.key === 'Escape') {
-          key.stopImmediatePropagation();
-          keys.onEscape();
-          return;
+        if ((event as KeyboardEvent).key === 'Escape') {
+          event.stopImmediatePropagation();
+          onEscape();
         }
-        keys.onKey(key);
       };
       target.addEventListener('keydown', onKeyDown, true);
       return () => {

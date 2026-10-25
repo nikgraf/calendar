@@ -11,19 +11,13 @@ describe('makeDialogStack', () => {
     // The agent request (z 50) opened first, the editor (z 30) after it —
     // a quick-add that finished while the request was up. Its close runs
     // at once, as React's commit does between a native key's listeners.
-    const closeApproval = dialogs.open(50, {
-      onEscape: () => {
-        closed.push('approval');
-        closeApproval();
-      },
-      onKey: () => undefined,
+    const closeApproval = dialogs.open(50, () => {
+      closed.push('approval');
+      closeApproval();
     });
-    const closeEditor = dialogs.open(30, {
-      onEscape: () => {
-        closed.push('editor');
-        closeEditor();
-      },
-      onKey: () => undefined,
+    const closeEditor = dialogs.open(30, () => {
+      closed.push('editor');
+      closeEditor();
     });
 
     window.dispatchEvent(key('Escape'));
@@ -38,17 +32,16 @@ describe('makeDialogStack', () => {
     const window = new EventTarget();
     const dialogs = makeDialogStack(window);
     const seen: Array<string> = [];
-    const listen = (name: string) => ({
-      onEscape: () => undefined,
-      onKey: (event: KeyboardEvent) => seen.push(`${name}:${event.key}`),
-    });
+    const listen = (name: string) => () => {
+      seen.push(name);
+    };
     dialogs.open(30, listen('editor'));
     const closeApproval = dialogs.open(50, listen('approval'));
     dialogs.open(30, listen('bar'));
 
-    window.dispatchEvent(key('Tab'));
+    window.dispatchEvent(key('Escape'));
     closeApproval();
-    window.dispatchEvent(key('Tab'));
-    expect(seen).toEqual(['approval:Tab', 'bar:Tab']);
+    window.dispatchEvent(key('Escape'));
+    expect(seen).toEqual(['approval', 'bar']);
   });
 });
