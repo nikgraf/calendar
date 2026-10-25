@@ -19,23 +19,23 @@ describe('dragMath', () => {
   });
 
   it('moves preserving duration, snapped', () => {
-    const moved = moveEventTimes(event, 37); // snaps to 30
+    const moved = moveEventTimes(event, 'UTC', 37); // snaps to 30
     expect(moved.startUtc).toBe(Date.parse('2026-07-03T10:30:00Z'));
     expect(moved.endUtc - moved.startUtc).toBe(HOUR);
   });
 
   it('moves across days and backwards', () => {
-    const moved = moveEventTimes(event, -30, 2);
+    const moved = moveEventTimes(event, 'UTC', -30, 2);
     expect(moved.startUtc).toBe(Date.parse('2026-07-05T09:30:00Z'));
     expect(moved.endUtc - moved.startUtc).toBe(HOUR);
   });
 
   it('resizes the end with snapping', () => {
-    expect(resizeEventEnd(event, 44).endUtc).toBe(Date.parse('2026-07-03T11:45:00Z'));
+    expect(resizeEventEnd(event, 'UTC', 44).endUtc).toBe(Date.parse('2026-07-03T11:45:00Z'));
   });
 
   it('clamps resize to the minimum duration', () => {
-    expect(resizeEventEnd(event, -3 * 60).endUtc).toBe(event.startUtc + 15 * 60 * 1000);
+    expect(resizeEventEnd(event, 'UTC', -3 * 60).endUtc).toBe(event.startUtc + 15 * 60 * 1000);
   });
 });
 
@@ -46,9 +46,9 @@ describe('DST-aware shifts', () => {
       {
         // Sat Mar 28, 09:00 Vienna (+01:00)
         endUtc: Date.parse('2026-03-28T09:00:00Z'),
-        startTimeZone: 'Europe/Vienna',
         startUtc: Date.parse('2026-03-28T08:00:00Z'),
       },
+      'Europe/Vienna',
       0,
       1,
     );
@@ -57,13 +57,83 @@ describe('DST-aware shifts', () => {
     expect(moved.endUtc - moved.startUtc).toBe(60 * 60 * 1000);
   });
 
-  it('falls back to instant math without a zone', () => {
+  // The grid's zone counts, not the event's: the block lands on the row it
+  // was dropped on even when only one of the two zones changes that night.
+  it('moves in the grid zone when the event is in another one', () => {
+    // A Vienna event on a UTC grid: Sat Oct 24, 09:00 UTC (11:00 Vienna),
+    // dropped one column right and two hours down, on Sunday's 11:00 row.
     const moved = moveEventTimes(
-      { endUtc: Date.parse('2026-03-28T09:00:00Z'), startUtc: Date.parse('2026-03-28T08:00:00Z') },
-      0,
+      { endUtc: Date.parse('2026-10-24T10:00:00Z'), startUtc: Date.parse('2026-10-24T09:00:00Z') },
+      'UTC',
+      120,
       1,
     );
-    expect(moved.startUtc).toBe(Date.parse('2026-03-29T08:00:00Z'));
+    // In Vienna's wall clock it would be Sun 13:00 (+01:00), 12:00Z.
+    expect(moved.startUtc).toBe(Date.parse('2026-10-25T11:00:00Z'));
+    expect(moved.endUtc).toBe(Date.parse('2026-10-25T12:00:00Z'));
+  });
+
+  it('resizes to the row the end was dropped on across a change', () => {
+    // Vienna falls back on 2026-10-25: an end at 01:30 (+02:00) dragged two
+    // hours down lands on the 03:30 row (+01:00), three hours later.
+    const resized = resizeEventEnd(
+      {
+        endUtc: Date.parse('2026-10-24T23:30:00Z'),
+        startUtc: Date.parse('2026-10-24T22:30:00Z'),
+      },
+      'Europe/Vienna',
+      120,
+    );
+    expect(resized.endUtc).toBe(Date.parse('2026-10-25T02:30:00Z'));
+  });
+
+  it('moves diagonally: days one way, minutes the other', () => {
+    // Fri Jul 3, 12:00 Vienna (+02:00).
+    const vienna = {
+      endUtc: Date.parse('2026-07-03T11:00:00Z'),
+      startUtc: Date.parse('2026-07-03T10:00:00Z'),
+    };
+    expect(moveEventTimes(vienna, 'Europe/Vienna', -30, 2).startUtc).toBe(
+      Date.parse('2026-07-05T09:30:00Z'),
+    );
+    expect(moveEventTimes(vienna, 'Europe/Vienna', 60, -1).startUtc).toBe(
+      Date.parse('2026-07-02T11:00:00Z'),
+    );
+    // A series follows an occurrence moved a day later and half an hour earlier.
+    expect(
+      applyWallClockDelta(
+        vienna.startUtc,
+        'Europe/Vienna',
+        vienna.startUtc,
+        Date.parse('2026-07-04T09:30:00Z'),
+      ),
+    ).toBe(Date.parse('2026-07-04T09:30:00Z'));
+  });
+
+  it('keeps the second pass through the repeated hour', () => {
+    // 02:00–02:30 Vienna for the second time (+01:00). Picking the first
+    // 02:45 (+02:00) would end it before it starts, clamped short.
+    const event = {
+      endUtc: Date.parse('2026-10-25T01:30:00Z'),
+      startUtc: Date.parse('2026-10-25T01:00:00Z'),
+    };
+    expect(resizeEventEnd(event, 'Europe/Vienna', 15).endUtc).toBe(
+      Date.parse('2026-10-25T01:45:00Z'),
+    );
+    expect(moveEventTimes(event, 'Europe/Vienna', 15)).toEqual({
+      endUtc: Date.parse('2026-10-25T01:45:00Z'),
+      startUtc: Date.parse('2026-10-25T01:15:00Z'),
+    });
+    // A delta that snaps to nothing leaves it where it is.
+    expect(moveEventTimes(event, 'Europe/Vienna', 5)).toEqual(event);
+    // The first 02:00 (+02:00) a day later takes +01:00, the only offset left.
+    const first = {
+      endUtc: Date.parse('2026-10-25T00:30:00Z'),
+      startUtc: Date.parse('2026-10-25T00:00:00Z'),
+    };
+    expect(moveEventTimes(first, 'Europe/Vienna', 0, 1).startUtc).toBe(
+      Date.parse('2026-10-26T01:00:00Z'),
+    );
   });
 
   it('applies a wall-clock series delta across DST regimes', () => {
@@ -78,6 +148,15 @@ describe('DST-aware shifts', () => {
     );
     // Wall delta is exactly +2 days: Jun 3, 09:00 Vienna.
     expect(shifted).toBe(Date.parse('2026-06-03T07:00:00Z'));
+  });
+
+  it('shifts a series into the pass of the repeated hour its occurrence took', () => {
+    // The first occurrence, Sun Oct 25 04:00 Vienna (+01:00), retimed to the
+    // first 02:30 (+02:00): the series starts there, not at the second one.
+    const start = Date.parse('2026-10-25T03:00:00Z');
+    expect(
+      applyWallClockDelta(start, 'Europe/Vienna', start, Date.parse('2026-10-25T00:30:00Z')),
+    ).toBe(Date.parse('2026-10-25T00:30:00Z'));
   });
 
   it('applies pure time-of-day deltas', () => {

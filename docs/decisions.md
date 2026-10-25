@@ -333,6 +333,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   finalized, so the block stayed lifted and took no drag until a
   relaunch. Rejected: keeping two pans behind an owner guard (the
   missing finalize is RNGH's, out of the app's reach).
+- **Drops land where they are drawn** (2026-10-25, #250) — a move or
+  resize shifts by the wall clock in the grid's (primary) zone, not the
+  event's own, keeping its offset through a repeated hour. Across a DST
+  change in only one of the two (a Vienna event on a UTC grid) the
+  event-zone rule stored it an hour from its row. Adding days and minutes
+  apart also fixed diagonal drags (a day right, an hour up) throwing for
+  events with a zone and for timed reminders. Rejected: keeping the
+  event's wall clock and drawing the preview with it (the block would land
+  on a row nobody picked). Open: a series shift stays in the series' zone.
 - **Recurring editing** — scopes instance / series / following; an
   instance edit materializes an exception under Google's canonical
   instance id so the later pull upserts idempotently; following truncates

@@ -863,8 +863,12 @@ details, or Custom), so a calendar can be shared without the details.
   ignored mid-press and a lost capture ends the drag); iOS
   `DraggableEventBlock` (250 ms long press, then drag; one pan for both,
   and a touch-down on the block's bottom 16 pt resizes instead of
-  moving). Both commit through the op queue. The desktop hook is owned
-  by the app, not the week view, so the panel's
+  moving). Both commit through the op queue. A move or resize is wall
+  clock in the zone the grid draws in (`moveEventTimes` /
+  `resizeEventEnd` take the primary zone), so the block lands on the row
+  it was dropped on whatever the event's own zone, and the desktop
+  block's label while dragging reads those same times. The desktop hook
+  is owned by the app, not the week view, so the panel's
   task rows drag onto the grid and lane too; a task drop is judged by
   where the pointer is released (`dropTargetAt`) under one pure rule
   (`dropTaskChanges`: a grid drop sets day and time, a lane drop clears

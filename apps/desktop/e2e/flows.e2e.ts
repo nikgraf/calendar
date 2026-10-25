@@ -898,7 +898,15 @@ describe('calendar desktop e2e', () => {
       await cdp.eval<boolean>(`!!document.querySelector('[data-testid="slot-selection"]')`),
     ).toBe(false);
     expect(await cdp.eval<boolean>(`document.body.textContent.includes('New event')`)).toBe(false);
-    const expected = before + 2 * HOUR_MS + 24 * HOUR_MS;
+    // It lands on the row it was dropped on: two hours later on the next
+    // day of the grid, wall clock in the device zone the grid draws in. A
+    // fixed 26 h is an hour off on the eve of a DST change there.
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const expected = Temporal.Instant.fromEpochMilliseconds(before)
+      .toZonedDateTimeISO(zone)
+      .toPlainDateTime()
+      .add({ days: 1, hours: 2 })
+      .toZonedDateTime(zone).epochMilliseconds;
     await cdp.waitFor(`true`);
     const deadline = Date.now() + 10_000;
     let moved = await eventStart('Standup meeting');

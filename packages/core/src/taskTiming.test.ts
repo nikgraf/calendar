@@ -286,6 +286,17 @@ describe('moveTimedTask', () => {
     });
   });
 
+  it('moves diagonally: a day one way, the time the other', () => {
+    expect(moveTimedTask(task({ dueTime: '10:00' }), -60, 1)).toEqual({
+      dueDate: '2026-03-29',
+      dueTime: '09:00',
+    });
+    expect(moveTimedTask(task({ dueTime: '10:00' }), 60, -1)).toEqual({
+      dueDate: '2026-03-27',
+      dueTime: '11:00',
+    });
+  });
+
   it('keeps the stored time on a day-only move', () => {
     expect(moveTimedTask(task({ dueTime: '23:50' }), 0, 1)).toEqual({ dueDate: '2026-03-29' });
   });

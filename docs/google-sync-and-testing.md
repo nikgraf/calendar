@@ -400,7 +400,11 @@ place "today" by the UTC date (`todayAt`), which matches the local date
 on CI (UTC) and in Vienna except between local midnight and 02:00 CEST —
 a run in that window creates tasks on yesterday's column and fails
 `convert` and the task editor test; rerun with `TZ=UTC` rather than
-chasing a code bug.
+chasing a code bug. A drag moves an event by the wall clock in the
+zone the grid draws in (`moveEventTimes`; the device's in e2e, whatever
+the event's own zone), so a spec computes the expected start with
+Temporal in the device zone: a `DAY_MS` sum is an hour off on the eve of
+a DST change there.
 
 ### Unit tests (`vp test`, @effect/vitest)
 

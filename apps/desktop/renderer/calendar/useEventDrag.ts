@@ -139,6 +139,7 @@ export const useEventDrag = ({
   onTaskClick,
   scrollerRef,
   strip,
+  timeZone,
 }: {
   /** The timed strip: its rect gives the column width and where minute 0 sits. */
   gridRef: RefObject<HTMLDivElement | null>;
@@ -153,6 +154,8 @@ export const useEventDrag = ({
   scrollerRef: RefObject<HTMLDivElement | null>;
   /** The rendered day columns, buffer included. */
   strip: ReadonlyArray<Temporal.PlainDate>;
+  /** The zone the grid draws in: a drop lands on its row there. */
+  timeZone: string;
 }) => {
   const { updateEvent, updateRecurring, updateTask } = useGuardedMutations();
   const [preview, setPreview] = useState<DragPreview | null>(null);
@@ -602,8 +605,8 @@ export const useEventDrag = ({
     const event = origin.target.event;
     const changes =
       origin.mode === 'move'
-        ? moveEventTimes(event, deltaMinutes, deltaDays)
-        : resizeEventEnd(event, deltaMinutes);
+        ? moveEventTimes(event, timeZone, deltaMinutes, deltaDays)
+        : resizeEventEnd(event, timeZone, deltaMinutes);
     if (event.recurringEventId) {
       void updateRecurring({
         accountId: event.accountId,
