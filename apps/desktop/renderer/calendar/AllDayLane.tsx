@@ -41,6 +41,8 @@ export type FoldEntry = Extract<TaskBacklogEntry, { kind: 'fold' }>;
 /** The open fold list: the rows its chip held when it opened, and where it hangs. */
 interface OpenFold {
   readonly anchor: { readonly x: number; readonly y: number };
+  /** Takes the focus back when the list is dismissed. */
+  readonly chip: HTMLElement;
   readonly fold: TaskFold;
   readonly keys: ReadonlyArray<string>;
 }
@@ -165,7 +167,7 @@ function FoldChip({
   stripLength,
 }: {
   entry: FoldEntry;
-  onOpen: (entry: FoldEntry, chip: DOMRect) => void;
+  onOpen: (entry: FoldEntry, chip: HTMLElement) => void;
   open: boolean;
   span: PlacedSpan;
   stripLength: number;
@@ -180,7 +182,7 @@ function FoldChip({
         entry.fold === 'overdue' ? 'text-danger' : 'text-ink'
       }`}
       data-testid={`all-day-fold-${entry.fold}`}
-      onClick={(event) => onOpen(entry, event.currentTarget.getBoundingClientRect())}
+      onClick={(event) => onOpen(entry, event.currentTarget)}
       style={{
         ...columnStyle(span.startDayIndex, span.endDayIndex, stripLength),
         top: span.row * LANE_ROW_PX + 4,
@@ -303,15 +305,18 @@ export function AllDayLane({
   const contentHeight = Math.max(rowCount, 1) * LANE_ROW_PX + 8;
   // Collapsed, `rowCount` is at most MAX_ALL_DAY_ROWS, never past `maxRows`.
   const scrolls = rowCount > maxRows;
-  const showFold = (entry: FoldEntry, chip: DOMRect) =>
+  const showFold = (entry: FoldEntry, chip: HTMLElement) => {
+    const box = chip.getBoundingClientRect();
     setOpenFold({
       anchor: {
-        x: Math.max(Math.min(chip.left, window.innerWidth - FOLD_POPOVER_WIDTH - 8), 8),
-        y: chip.bottom + 4,
+        x: Math.max(Math.min(box.left, window.innerWidth - FOLD_POPOVER_WIDTH - 8), 8),
+        y: box.bottom + 4,
       },
+      chip,
       fold: entry.fold,
       keys: entry.tasks.map(calendarTaskKey),
     });
+  };
   return (
     <div
       className="flex shrink-0 border-b border-hairline bg-surface"
@@ -480,6 +485,13 @@ export function AllDayLane({
           isTaskReadOnly={isTaskReadOnly}
           listColorOf={listColorOf}
           onClose={() => setOpenFold(null)}
+          onDismiss={() => {
+            setOpenFold(null);
+            // Back to the chip, unless it is gone (the group shrank to one).
+            if (openFold.chip.isConnected) {
+              openFold.chip.focus();
+            }
+          }}
           onTaskClick={onTaskClick}
           onToggleTask={onToggleTask}
           tasks={openFold.keys.flatMap((key) => taskById.get(key) ?? [])}

@@ -2406,6 +2406,68 @@ describe("today's backlog and a long all-day lane", () => {
     await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);
   });
 
+  it('drops nothing from a press inside the list, and Escape mid-drag only ends the drag', async () => {
+    const { cdp } = backlogApp;
+    const listOpen = () =>
+      cdp.eval<boolean>(`!!document.querySelector('[data-testid="all-day-fold-list-overdue"]')`);
+    const due = (await taskById('late-3'))?.dueDate;
+    const chip = await cdp.locate('[data-testid="all-day-fold-overdue"]');
+    await cdp.click(chip.x, chip.y);
+    await cdp.waitFor(`!!document.querySelector('[data-testid="all-day-fold-list-overdue"]')`);
+    // The keyboard starts on the first row.
+    expect(
+      await cdp.eval<string | null>(
+        `document.activeElement?.closest('[data-testid^="fold-task-"]')?.dataset.testid ?? null`,
+      ),
+    ).toBe('fold-task-late-1');
+
+    // Past the click threshold but never out of the list: no drop, no click.
+    const row = await cdp.locate('[data-testid="fold-task-late-3"] button + button');
+    await cdp.mouse('mousePressed', row.x, row.y);
+    await cdp.mouse('mouseMoved', row.x + 6, row.y + 2);
+    await cdp.mouse('mouseMoved', row.x + 12, row.y + 3);
+    await cdp.mouse('mouseReleased', row.x + 12, row.y + 3);
+    expect(await listOpen()).toBe(true);
+    expect(await cdp.eval<boolean>(`!!document.querySelector('[data-testid="editor"]')`)).toBe(
+      false,
+    );
+
+    // Pulled out over the grid, Escape ends the drag and the list comes back.
+    const away = await cdp.eval<{ x: number; y: number }>(`(() => {
+      const list = document
+        .querySelector('[data-testid="all-day-fold-list-overdue"]')
+        .getBoundingClientRect();
+      const grid = document.querySelector('[data-testid="week-scroller"]').getBoundingClientRect();
+      return {
+        x: Math.round(list.left - grid.left > 120 ? grid.left + 90 : list.right + 40),
+        y: Math.round(grid.top + grid.height / 2),
+      };
+    })()`);
+    await cdp.mouse('mousePressed', row.x, row.y);
+    for (let step = 1; step <= 6; step += 1) {
+      await cdp.mouse(
+        'mouseMoved',
+        Math.round(row.x + ((away.x - row.x) * step) / 6),
+        Math.round(row.y + ((away.y - row.y) * step) / 6),
+      );
+    }
+    await cdp.waitFor(`!!document.querySelector('[data-testid="drag-ghost"]')`);
+    await cdp.pressEscape();
+    await cdp.waitFor(`!document.querySelector('[data-testid="drag-ghost"]')`);
+    expect(await listOpen()).toBe(true);
+    await cdp.mouse('mouseReleased', away.x, away.y);
+    expect(await listOpen()).toBe(true);
+    expect((await taskById('late-3'))?.dueDate).toBe(due);
+
+    // Escape now closes the list and gives the focus back to its chip.
+    await cdp.pressEscape();
+    await cdp.waitFor(`!document.querySelector('[data-testid="all-day-fold-list-overdue"]')`);
+    expect(await cdp.eval<string | null>(`document.activeElement?.dataset.testid ?? null`)).toBe(
+      'all-day-fold-overdue',
+    );
+    expect((await taskById('late-3'))?.dueDate).toBe(due);
+  });
+
   it('drags a row from a fold list onto the lane and dates it', async () => {
     const { cdp } = backlogApp;
     // Measured before the list opens: its backdrop covers the calendar.

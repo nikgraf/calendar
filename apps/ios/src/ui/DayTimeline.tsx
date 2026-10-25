@@ -385,12 +385,14 @@ export function DayTimeline({
   // move on from the new page. A swipe's own page change moved the first
   // day by exactly the columns it reported.
   const firstIso = days[0]!.toString();
-  // Another page starts the lane at its top; one that scrolls shows its
+  // Another page, or the lane collapsing or growing past its cap, starts
+  // the lane at its top (a collapse left scrolled down would show blank
+  // rows it no longer scrolls back from); one that scrolls shows its
   // indicator a moment, as a list that just appeared does.
   const laneScrollRef = useRef<ScrollView>(null);
   useEffect(() => {
     laneScrollRef.current?.scrollTo({ animated: false, y: 0 });
-  }, [firstIso]);
+  }, [firstIso, laneScrolls]);
   useEffect(() => {
     if (laneScrolls) {
       laneScrollRef.current?.flashScrollIndicators();

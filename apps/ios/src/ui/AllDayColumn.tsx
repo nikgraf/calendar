@@ -286,10 +286,13 @@ function FoldChip({
       <Text
         maxFontSizeMultiplier={BOX_FONT_SCALE}
         numberOfLines={1}
+        // Shrinks beside the icon, so a week-narrow chip cuts the label
+        // inside itself instead of running into the next column.
         style={[
           styles.allDayText,
           compact && styles.allDayTextCompact,
           styles.taskText,
+          styles.taskBody,
           overdue && styles.taskTextOverdue,
         ]}
       >

@@ -342,7 +342,7 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
       setSheet(NONE);
       return;
     }
-    const pageSheet = sheet.kind === 'detail' || sheet.kind === 'birthday';
+    const pageSheet = sheet.kind === 'detail' || sheet.kind === 'birthday' || sheet.kind === 'fold';
     setSheet(NONE);
     setTimeout(deliver, pageSheet ? PAGE_SHEET_DISMISS_MS : 0);
   });

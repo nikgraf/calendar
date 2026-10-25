@@ -6,7 +6,7 @@ import {
   taskFoldTitle,
   type TaskRecord,
 } from '@calendar/core';
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { Popover } from '../ui/Popover.tsx';
 import { TaskCheck } from './TaskCheck.tsx';
 import type { useEventDrag } from './useEventDrag.ts';
@@ -17,14 +17,30 @@ export const FOLD_POPOVER_WIDTH = 288;
 /** Drag keys of the popover's rows, apart from the chips' and the rail's. */
 const rowKey = (task: TaskRecord): string => `fold:${calendarTaskKey(task)}`;
 
+/** The drag hook's own threshold: below it a release is a click. */
+const DRAG_THRESHOLD_PX = 4;
+/** The panel's padding around the list (`p-2`): a press still inside it has not left. */
+const PANEL_INSET_PX = 8;
+
+/** A press on a row: where it began, and whether it has left the list since. */
+interface Press {
+  left: boolean;
+  readonly row: string;
+  readonly x: number;
+  readonly y: number;
+}
+
 /**
  * The list behind a fold chip in the all-day lane: today's overdue or
  * undated tasks, each with its checkbox. The rows are the ones the chip
  * held when it opened, drawn as they are now: a task ticked here stays,
  * struck through, so the rows never shift under the pointer and a slip
- * can be undone. A row drags onto the grid or the lane like the rail's
- * (the popover steps aside while it does); a click opens the task in the
- * side panel. Either closes the popover.
+ * can be undone. A row pulled out of the list drags onto the grid or the
+ * lane like the rail's (the list steps aside while it does); a press that
+ * moves but stays inside the list drops nothing, since the calendar under
+ * it is hidden. A click opens the task in the side panel. Either closes
+ * the list; Escape mid-drag only ends the drag. Focus starts on the first
+ * row.
  */
 export function TaskFoldPopover({
   anchor,
@@ -33,6 +49,7 @@ export function TaskFoldPopover({
   isTaskReadOnly,
   listColorOf,
   onClose,
+  onDismiss,
   onTaskClick,
   onToggleTask,
   tasks,
@@ -43,27 +60,53 @@ export function TaskFoldPopover({
   fold: TaskFold;
   isTaskReadOnly: (task: TaskRecord) => boolean;
   listColorOf: (task: TaskRecord) => string | undefined;
+  /** A row was opened or dropped: the list is done. */
   onClose: () => void;
+  /** Escape or a click beside the list: closed with nothing done. */
+  onDismiss: () => void;
   onTaskClick: (task: TaskRecord) => void;
   onToggleTask: (task: TaskRecord) => void;
   tasks: ReadonlyArray<TaskRecord>;
   today: string;
 }) {
   const title = taskFoldTitle(fold);
+  const listRef = useRef<HTMLDivElement>(null);
   // The row a press began on: only its release closes the list — a
   // checkbox's (which keeps its press to itself) leaves it open.
-  const pressedRef = useRef<string | null>(null);
+  const pressRef = useRef<Press | null>(null);
   // Hidden, not unmounted: the dragged row holds the pointer capture.
   const dragging = drag.preview?.itemKey.startsWith('fold:') === true;
+  useEffect(() => {
+    listRef.current?.querySelector<HTMLElement>('[data-row-title]')?.focus();
+  }, []);
+  const inList = (event: React.PointerEvent) => {
+    const box = listRef.current?.getBoundingClientRect();
+    return (
+      box !== undefined &&
+      event.clientX >= box.left - PANEL_INSET_PX &&
+      event.clientX <= box.right + PANEL_INSET_PX &&
+      event.clientY >= box.top - PANEL_INSET_PX &&
+      event.clientY <= box.bottom + PANEL_INSET_PX
+    );
+  };
   return (
     <Popover
       anchor={anchor}
       className={`w-72 ${dragging ? 'pointer-events-none opacity-0' : ''}`}
       closeLabel={`Close the ${title.toLowerCase()} list`}
       label={title}
-      onClose={onClose}
+      onClose={() => {
+        // The list's Escape runs ahead of the drag hook's: mid-drag it
+        // ends the drag and the list comes back.
+        if (pressRef.current !== null && dragging) {
+          pressRef.current = null;
+          drag.abandon();
+          return;
+        }
+        onDismiss();
+      }}
     >
-      <div data-testid={`all-day-fold-list-${fold}`}>
+      <div data-testid={`all-day-fold-list-${fold}`} ref={listRef}>
         <h3 className="px-1 pb-1 text-[11px] font-semibold tracking-wide text-ink-secondary uppercase">
           {title}
         </h3>
@@ -80,11 +123,14 @@ export function TaskFoldPopover({
                   }`}
                   data-testid={`fold-task-${task.id}`}
                   onPointerCancel={(event) => {
-                    pressedRef.current = null;
+                    pressRef.current = null;
                     drag.onPointerCancel(event);
                   }}
                   onPointerDown={(event) => {
-                    pressedRef.current = event.button === 0 ? rowKey(task) : null;
+                    pressRef.current =
+                      event.button === 0
+                        ? { left: false, row: rowKey(task), x: event.clientX, y: event.clientY }
+                        : null;
                     drag.onTaskPointerDown(
                       task,
                       rowKey(task),
@@ -92,14 +138,35 @@ export function TaskFoldPopover({
                       event,
                     );
                   }}
-                  onPointerMove={drag.onPointerMove}
+                  onPointerMove={(event) => {
+                    // The drag starts once the row is pulled out of the list.
+                    const press = pressRef.current;
+                    if (press !== null && !press.left) {
+                      if (inList(event)) {
+                        return;
+                      }
+                      press.left = true;
+                    }
+                    drag.onPointerMove(event);
+                  }}
                   onPointerUp={(event) => {
-                    const pressed = pressedRef.current === rowKey(task);
-                    pressedRef.current = null;
+                    const press = pressRef.current;
+                    pressRef.current = null;
+                    if (
+                      press?.row === rowKey(task) &&
+                      !press.left &&
+                      Math.hypot(event.clientX - press.x, event.clientY - press.y) >=
+                        DRAG_THRESHOLD_PX
+                    ) {
+                      // Moved, but never out of the list: neither a click
+                      // nor a drop, and the list stays.
+                      drag.onPointerCancel(event);
+                      return;
+                    }
                     drag.onPointerUp(event);
                     // A release in place opened the task (the drag hook's
                     // click), a drag dropped it: either leaves the list.
-                    if (pressed) {
+                    if (press?.row === rowKey(task)) {
                       onClose();
                     }
                   }}
@@ -117,6 +184,7 @@ export function TaskFoldPopover({
                   {/* The press-and-release opens the task through the drag hook; the button keeps the keyboard. */}
                   <button
                     className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm outline-none focus-visible:underline"
+                    data-row-title
                     onKeyDown={(key) => {
                       if (key.key === 'Enter' || key.key === ' ') {
                         key.preventDefault();
