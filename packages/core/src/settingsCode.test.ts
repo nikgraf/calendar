@@ -259,9 +259,12 @@ describe('the QR', () => {
   const code = encodeSettingsCode(full);
   const qr = Effect.runSync(settingsCodeQr(code));
 
-  it('carries a quiet zone of four modules', () => {
-    expect(qr.modules).toHaveLength(qr.size);
-    expect(qr.modules[3]?.some(Boolean)).toBe(false);
+  it('is square, with a quiet zone of four modules on every side', () => {
+    const edge = (i: number) => i < 4 || i >= qr.size - 4;
+    expect(qr.modules.every((row) => row.length === qr.size)).toBe(true);
+    expect(qr.modules.some((row, y) => row.some((dark, x) => dark && (edge(x) || edge(y))))).toBe(
+      false,
+    );
     expect(qr.modules[4]?.[4]).toBe(true);
   });
 
