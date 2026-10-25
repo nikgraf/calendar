@@ -246,8 +246,7 @@ describe('Search filters', () => {
         setter.call(input, ${JSON.stringify(value)});
         input.dispatchEvent(new Event('input', { bubbles: true }));
       })()`);
-    // The menu row that had focus is gone: focus moves on to From, not
-    // out of the popover.
+    // Picking When focuses From, as Place and People focus their field.
     const FOCUSED = `document.activeElement?.closest('[role="dialog"]') ? document.activeElement.dataset.testid : 'outside'`;
     await cdp.waitFor(`(${FOCUSED}) === 'search-filter-from'`);
     await setDate('search-filter-from', utcDay(1));

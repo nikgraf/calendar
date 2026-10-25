@@ -1046,13 +1046,13 @@ gateway carries all of it. Details, limits and the threat model:
   back. `ui/FocusTrap.tsx` keeps the keyboard inside: focus moves in on
   open (a `data-initial-focus` control, else the first, unless an
   `autoFocus` field took it), Tab and Shift+Tab cycle, a control removed
-  with focus in it hands focus to the first one, and the opener — read
-  while rendering, before React's commit runs `autoFocus` — gets it back
-  on close (or, when the opener went with a dialog that closed first,
-  such as the agent request the next one replaced, that dialog's
-  opener). Tab is never intercepted: a focusable guard on each side of
-  the panel catches focus on its way out and passes it to the other end,
-  so a date or time field keeps Chromium's segment-by-segment Tab.
+  with focus in it leaves focus on the panel itself, and the opener —
+  read while rendering, before React's commit runs `autoFocus` — gets it
+  back on close. A dialog that replaces another in one commit (the
+  agent's next request) gives focus back where that one did. Tab is
+  never intercepted: a focusable guard on each side of the panel catches
+  focus on its way out and passes it to the other end, so a date or time
+  field keeps Chromium's segment-by-segment Tab.
 - **Theme.** `brand/tokens/tokens.json` is the one source. `pnpm
   brand:build` writes `brand/tokens/tokens.css` (`:root` and
   `[data-theme='dark']`) and `packages/core/src/theme/tokens.ts`

@@ -81,7 +81,7 @@ export function Dialog({
         <div
           aria-label={label}
           aria-modal="true"
-          className={`relative ${panelClassName}`}
+          className={`relative outline-none ${panelClassName}`}
           ref={panelRef}
           role="dialog"
           tabIndex={-1}

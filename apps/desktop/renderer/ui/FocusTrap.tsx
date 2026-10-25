@@ -28,33 +28,21 @@ function FocusGuard({ onFocus }: { onFocus: (from: Element | null) => void }) {
   );
 }
 
-/** Each trap's panel and the opener it gives focus back to, kept after it closes. */
-const openers = new WeakMap<Element, HTMLElement | null>();
-
 /**
- * Where a closing trap gives focus back: its opener, or — when the opener
- * went with a panel that closed before it — that panel's own opener, and
- * so on out. A dialog keyed by its item (the agent's next request) is
- * replaced in one commit, so the new one saw focus on a button in the old.
+ * Where the last trap to close gave focus back, until its commit is done.
+ * A trap that opens in that same commit — a dialog keyed by its item,
+ * replaced by the next one (the agent's queued requests) — gives focus
+ * back there too: what it saw focused while rendering is gone by then (a
+ * button or the scrim of the dialog it replaces) or is the page (a click
+ * on Decline disables the button that had focus).
  */
-const returnTarget = (opener: HTMLElement | null): HTMLElement | null => {
-  let target = opener;
-  while (target && !target.isConnected) {
-    // A removed subtree keeps its parents: walk up to the closed panel.
-    let node: Element | null = target;
-    while (node && !openers.has(node)) {
-      node = node.parentElement;
-    }
-    target = node ? (openers.get(node) ?? null) : null;
-  }
-  return target;
-};
+let handedBack: HTMLElement | null = null;
 
 /**
  * Keeps the keyboard inside a modal panel — a Dialog or a Popover — for
  * as long as this is mounted: focus moves in when it mounts, Tab and
  * Shift+Tab cycle the panel's controls, and focus returns to the opener
- * when it unmounts (`returnTarget`). `children` is the panel itself, with `panelRef` on it
+ * when it unmounts. `children` is the panel itself, with `panelRef` on it
  * and `tabIndex={-1}` so it can hold focus when nothing in it can.
  *
  * Tab is never intercepted. A keydown trap that wraps at the last control
@@ -80,7 +68,7 @@ export function FocusTrap({
 }) {
   // Read while rendering: React focuses an autoFocus field in the panel
   // during the commit, before any effect here could see the opener.
-  const [opener] = useState(() => {
+  const [seen] = useState(() => {
     const active = document.activeElement as HTMLElement | null;
     return active && typeof active.focus === 'function' ? active : null;
   });
@@ -90,7 +78,9 @@ export function FocusTrap({
     if (!panel) {
       return;
     }
-    openers.set(panel, opener);
+    // Gone by now, or the page: then a trap this one replaced in this
+    // commit has given focus back already, and this one returns there.
+    const opener = seen?.isConnected && seen !== document.body ? seen : (handedBack ?? seen);
     if (!panel.contains(document.activeElement)) {
       (
         panel.querySelector<HTMLElement>('[data-initial-focus]') ??
@@ -98,16 +88,17 @@ export function FocusTrap({
         panel
       ).focus();
     }
-    // A control that goes away with focus in it (the filter menu's row,
-    // replaced by the filter it picked) drops focus onto the page: it
-    // comes back to the panel's first control.
+    // A control that goes away with focus in it (a setup step's button,
+    // replaced by the next step) drops focus onto the page: it comes back
+    // to the panel itself, where Enter does nothing and Tab goes on. Not
+    // to the first control — a step's first is Skip.
     let focused = document.activeElement;
     const track = (focusEvent: FocusEvent) => {
       focused = focusEvent.target as Element;
     };
     const refocus = new MutationObserver(() => {
       if (document.activeElement === document.body && !focused?.isConnected) {
-        (tabbables(panel)[0] ?? panel).focus();
+        panel.focus();
       }
     });
     panel.addEventListener('focusin', track);
@@ -115,9 +106,13 @@ export function FocusTrap({
     return () => {
       refocus.disconnect();
       panel.removeEventListener('focusin', track);
-      returnTarget(opener)?.focus();
+      opener?.focus();
+      handedBack = opener?.isConnected ? opener : null;
+      queueMicrotask(() => {
+        handedBack = null;
+      });
     };
-  }, [opener, panelRef]);
+  }, [seen, panelRef]);
 
   // Focus arriving from inside the panel is leaving it: on through to the
   // other end. From outside (the page before or after), it is entering.
