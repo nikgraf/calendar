@@ -15,6 +15,7 @@ import {
   taskRepeats,
 } from '@calendar/core';
 import type { DraftOccurrence } from '@calendar/app-state';
+import { createPortal } from 'react-dom';
 import {
   useCallback,
   useState,
@@ -34,6 +35,8 @@ import { useDropTarget, type useEventDrag } from './useEventDrag.ts';
 export const LANE_ROW_PX = 24;
 /** How much of the first chip below the fold a scrolling lane shows: half of it, so the cut reads as "more". */
 const PEEK_PX = 10;
+/** The lane's bottom hairline, inside its fixed height (border-box). */
+const BORDER_PX = 1;
 
 /** A fold's chip in the lane. */
 export type FoldEntry = Extract<TaskBacklogEntry, { kind: 'fold' }>;
@@ -324,7 +327,7 @@ export function AllDayLane({
       data-testid="all-day-lane"
       ref={laneRef}
       style={{
-        height: scrolls ? maxRows * LANE_ROW_PX + 4 + PEEK_PX : contentHeight,
+        height: scrolls ? maxRows * LANE_ROW_PX + 4 + PEEK_PX + BORDER_PX : contentHeight,
         paddingRight: scrollbarWidth,
       }}
     >
@@ -352,7 +355,8 @@ export function AllDayLane({
         className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto [scrollbar-width:none]"
         data-testid="all-day-scroller"
       >
-        <div className="relative overflow-hidden" style={{ height: contentHeight }}>
+        {/* Exactly the room inside the hairline: a lane that fits has nothing to scroll. */}
+        <div className="relative overflow-hidden" style={{ height: contentHeight - BORDER_PX }}>
           <div className="relative h-full" style={stripStyle}>
             <LaneDropIndicator drag={drag} stripLength={stripLength} />
             {moreByDay.map((hidden, dayIndex) =>
@@ -477,27 +481,34 @@ export function AllDayLane({
           </div>
         </div>
       </div>
-      {openFold ? (
-        <TaskFoldPopover
-          anchor={openFold.anchor}
-          drag={drag}
-          fold={openFold.fold}
-          isTaskReadOnly={isTaskReadOnly}
-          listColorOf={listColorOf}
-          onClose={() => setOpenFold(null)}
-          onDismiss={() => {
-            setOpenFold(null);
-            // Back to the chip, unless it is gone (the group shrank to one).
-            if (openFold.chip.isConnected) {
-              openFold.chip.focus();
-            }
-          }}
-          onTaskClick={onTaskClick}
-          onToggleTask={onToggleTask}
-          tasks={openFold.keys.flatMap((key) => taskById.get(key) ?? [])}
-          today={today}
-        />
-      ) : null}
+      {/* On the body, outside the week view: a wheel over the list or its
+          backdrop must not reach the view's pan and slide the days away
+          under it. Keyed by fold, so the other chip's list mounts anew. */}
+      {openFold
+        ? createPortal(
+            <TaskFoldPopover
+              anchor={openFold.anchor}
+              drag={drag}
+              fold={openFold.fold}
+              isTaskReadOnly={isTaskReadOnly}
+              key={openFold.fold}
+              listColorOf={listColorOf}
+              onClose={() => setOpenFold(null)}
+              onDismiss={() => {
+                setOpenFold(null);
+                // Back to the chip, unless it is gone (the group shrank to one).
+                if (openFold.chip.isConnected) {
+                  openFold.chip.focus();
+                }
+              }}
+              onTaskClick={onTaskClick}
+              onToggleTask={onToggleTask}
+              tasks={openFold.keys.flatMap((key) => taskById.get(key) ?? [])}
+              today={today}
+            />,
+            document.body,
+          )
+        : null}
     </div>
   );
 }

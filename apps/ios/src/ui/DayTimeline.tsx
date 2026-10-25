@@ -301,6 +301,12 @@ export function DayTimeline({
   // and scrolls inside itself past that, stopping halfway into the next
   // chip so the cut says there is more; the timed grid keeps the rest.
   const [viewHeight, setViewHeight] = useState(0);
+  // Measured before the first paint (layout reads are synchronous in a
+  // layout effect under the New Architecture), so a busy lane does not
+  // start at the minimum and then grow; `onLayout` follows later changes.
+  useLayoutEffect(() => {
+    containerRef.current?.measureInWindow((_x, _y, _width, height) => setViewHeight(height));
+  }, []);
   const laneRows = expandedAllDayRows(viewHeight, ALL_DAY_ROW_HEIGHT);
   /** Every row a page needs (collapsed: at most MAX_ALL_DAY_ROWS). */
   const contentHeightFor = (rows: number) =>
@@ -393,11 +399,12 @@ export function DayTimeline({
   useEffect(() => {
     laneScrollRef.current?.scrollTo({ animated: false, y: 0 });
   }, [firstIso, laneScrolls]);
+  const measured = viewHeight > 0;
   useEffect(() => {
-    if (laneScrolls) {
+    if (laneScrolls && measured) {
       laneScrollRef.current?.flashScrollIndicators();
     }
-  }, [laneScrolls, firstIso]);
+  }, [laneScrolls, firstIso, measured]);
   const rendered = useRef({ columns: swiped.columns, count: days.length, first: days[0]! });
   useLayoutEffect(() => {
     const previous = rendered.current;

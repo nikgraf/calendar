@@ -106,7 +106,31 @@ export function TaskFoldPopover({
         onDismiss();
       }}
     >
-      <div data-testid={`all-day-fold-list-${fold}`} ref={listRef}>
+      {/* Tab stays in the list, as in a dialog: behind it the calendar is covered. */}
+      <div
+        data-testid={`all-day-fold-list-${fold}`}
+        onKeyDown={(key) => {
+          if (key.key !== 'Tab') {
+            return;
+          }
+          const stops = [
+            ...(listRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled)') ?? []),
+          ];
+          const at = stops.indexOf(document.activeElement as HTMLElement);
+          const next = key.shiftKey
+            ? at <= 0
+              ? stops.at(-1)
+              : stops[at - 1]
+            : at === stops.length - 1
+              ? stops[0]
+              : stops[at + 1];
+          if (next) {
+            key.preventDefault();
+            next.focus();
+          }
+        }}
+        ref={listRef}
+      >
         <h3 className="px-1 pb-1 text-[11px] font-semibold tracking-wide text-ink-secondary uppercase">
           {title}
         </h3>
@@ -122,6 +146,12 @@ export function TaskFoldPopover({
                     readOnly ? '' : 'cursor-grab'
                   }`}
                   data-testid={`fold-task-${task.id}`}
+                  onLostPointerCapture={() => {
+                    // A capture lost without a release (the drag hook
+                    // abandons the press then): no later release on this
+                    // row, a checkbox's included, may act on it.
+                    pressRef.current = null;
+                  }}
                   onPointerCancel={(event) => {
                     pressRef.current = null;
                     drag.onPointerCancel(event);
@@ -152,21 +182,33 @@ export function TaskFoldPopover({
                   onPointerUp={(event) => {
                     const press = pressRef.current;
                     pressRef.current = null;
-                    if (
-                      press?.row === rowKey(task) &&
-                      !press.left &&
+                    if (press?.row !== rowKey(task)) {
+                      drag.onPointerUp(event);
+                      return;
+                    }
+                    const moved =
                       Math.hypot(event.clientX - press.x, event.clientY - press.y) >=
-                        DRAG_THRESHOLD_PX
-                    ) {
+                      DRAG_THRESHOLD_PX;
+                    // Released out of the list without a move out there (a
+                    // flick): the drag starts at the release.
+                    if (moved && !press.left && !inList(event)) {
+                      press.left = true;
+                      drag.onPointerMove(event);
+                    }
+                    if (moved && !press.left) {
                       // Moved, but never out of the list: neither a click
                       // nor a drop, and the list stays.
                       drag.onPointerCancel(event);
                       return;
                     }
+                    // Read before the release clears it: whether it lands.
+                    const drops = moved && drag.getDeltas().target !== null;
                     drag.onPointerUp(event);
                     // A release in place opened the task (the drag hook's
-                    // click), a drag dropped it: either leaves the list.
-                    if (press?.row === rowKey(task)) {
+                    // click), a drop moved it: either leaves the list. A
+                    // drag that lands nowhere (a read-only row, a release
+                    // over the sidebar) changed nothing, and the list stays.
+                    if (!moved || drops) {
                       onClose();
                     }
                   }}

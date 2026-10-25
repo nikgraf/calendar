@@ -2216,8 +2216,14 @@ describe('collapsible all-day lane', () => {
     const visibleChores = () =>
       cdp.eval<number>(`document.querySelectorAll('[title^="Chore "]').length`);
     await cdp.locate('[title="Chore 5"]');
-    // Expanded by default: every chip drawn, no "+N more".
+    // Expanded by default: every chip drawn, no "+N more", nothing to scroll.
     expect(await laneHeight()).toBe(5 * LANE_ROW + LANE_PADDING);
+    expect(
+      await cdp.eval<boolean>(`(() => {
+        const scroller = document.querySelector('[data-testid="all-day-scroller"]');
+        return scroller.scrollHeight === scroller.clientHeight;
+      })()`),
+    ).toBe(true);
     expect(await visibleChores()).toBe(5);
     expect(await cdp.eval(`!!document.querySelector('[data-testid="all-day-more"]')`)).toBe(false);
 
@@ -2359,9 +2365,9 @@ describe("today's backlog and a long all-day lane", () => {
       })()`);
     const before = await geometry();
     const rows = Math.max(3, Math.floor(before.view / 3 / 24));
-    // Whole rows, then half of the next chip.
-    expect(before).toMatchObject({ lane: rows * 24 + 14, scrolls: true });
-    expect(before.scrollHeight).toBe(22 * 24 + 8);
+    // Whole rows, then half of the next chip (the hairline under it included).
+    expect(before).toMatchObject({ lane: rows * 24 + 15, scrolls: true });
+    expect(before.scrollHeight).toBe(22 * 24 + 7);
     expect(before.grid).toBeGreaterThan(before.view / 2);
     // The last chore scrolls into view inside the lane, not the window.
     await cdp.locate('[title="Chore 20"]');
@@ -2386,11 +2392,17 @@ describe("today's backlog and a long all-day lane", () => {
       );
     // Oldest due day first, as in the inbox.
     expect(await rows()).toEqual(['fold-task-late-1', 'fold-task-late-2', 'fold-task-late-3']);
-    const box = await cdp.locate('[aria-label="Mark done: Late 2"]');
+    // Scoped to the list: the rail, when the window is wide enough for it,
+    // has a checkbox of the same name under the list's backdrop.
+    const box = await cdp.locate(
+      '[data-testid="all-day-fold-list-overdue"] [aria-label="Mark done: Late 2"]',
+    );
     await cdp.click(box.x, box.y);
     await expect.poll(async () => (await taskById('late-2'))?.status).toBe('completed');
     // Still listed, now to reopen; the list stays open and the chip counts two.
-    await cdp.waitFor(`!!document.querySelector('[aria-label="Reopen: Late 2"]')`);
+    await cdp.waitFor(
+      `!!document.querySelector('[data-testid="all-day-fold-list-overdue"] [aria-label="Reopen: Late 2"]')`,
+    );
     expect(await rows()).toEqual(['fold-task-late-1', 'fold-task-late-2', 'fold-task-late-3']);
     expect(await foldText('overdue')).toContain('2 overdue');
     // A row opens its task in the side panel and the list closes.
@@ -2443,6 +2455,17 @@ describe("today's backlog and a long all-day lane", () => {
         y: Math.round(grid.top + grid.height / 2),
       };
     })()`);
+    // A sideways wheel over the list's backdrop leaves the days where they are.
+    const todayLeft = () =>
+      cdp.eval<number>(
+        `document.querySelector('[data-testid="today-header"]').getBoundingClientRect().left`,
+      );
+    const before = await todayLeft();
+    await cdp.wheel(away.x, away.y, 600, 0);
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(await todayLeft()).toBe(before);
+    expect(await listOpen()).toBe(true);
+
     await cdp.mouse('mousePressed', row.x, row.y);
     for (let step = 1; step <= 6; step += 1) {
       await cdp.mouse(
