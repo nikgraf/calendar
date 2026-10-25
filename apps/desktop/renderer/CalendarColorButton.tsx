@@ -1,16 +1,20 @@
 import { useGuardedMutations } from '@calendar/app-state';
 import { CALENDAR_PALETTE, type CalendarInfo } from '@calendar/core';
 import { useState } from 'react';
-import { Popover } from '../ui/Popover.tsx';
+import { ChevronDownIcon } from './ui/icons.tsx';
+import { Popover } from './ui/Popover.tsx';
 
 /**
- * The calendar row's swatch: shows visibility state and opens a color
- * picker in a popover (fixed-positioned, so the sidebar's scroll
- * container cannot clip it).
+ * A calendar's color in Settings › Accounts, the one place it changes: a
+ * well at the end of the calendar's row that opens a color picker in a
+ * popover. The popover hangs from the well's right edge, under it or,
+ * for a row low in the fixed-height window, above it.
  */
 export function CalendarColorButton({ calendar }: { calendar: CalendarInfo }) {
   const { setCalendarColor } = useGuardedMutations();
   const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null);
+  // EventKit refuses to recolor a calendar it will not let us write.
+  const readOnly = calendar.provider === 'apple' && calendar.accessRole === 'reader';
 
   const choose = (colorHex: string) => {
     setAnchor(null);
@@ -25,20 +29,26 @@ export function CalendarColorButton({ calendar }: { calendar: CalendarInfo }) {
     <>
       <button
         aria-label={`Change color: ${calendar.summary}`}
-        className="inline-flex size-3.5 shrink-0 items-center justify-center rounded"
-        // EventKit refuses to recolor a calendar it will not let us write.
-        disabled={calendar.provider === 'apple' && calendar.accessRole === 'reader'}
+        className="flex shrink-0 items-center gap-1 rounded-control border border-hairline px-1.5 py-1 text-ink-secondary hover:bg-fill hover:text-ink disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent"
+        disabled={readOnly}
         onClick={(clickEvent) => {
           const rect = clickEvent.currentTarget.getBoundingClientRect();
-          setAnchor((current) => (current ? null : { x: rect.left, y: rect.bottom + 4 }));
+          setAnchor((current) =>
+            current ? null : { above: rect.top - 4, x: rect.right, y: rect.bottom + 4 },
+          );
         }}
-        style={{
-          backgroundColor: calendar.isVisible ? calendar.colorHex : 'transparent',
-          border: `2px solid ${calendar.colorHex}`,
-        }}
+        title={readOnly ? 'Apple Calendar does not allow changing this calendar' : 'Change color'}
         type="button"
-      />
+      >
+        <span
+          aria-hidden
+          className="size-3.5 rounded-full"
+          style={{ backgroundColor: calendar.colorHex }}
+        />
+        <ChevronDownIcon size={12} />
+      </button>
       <Popover
+        align="end"
         anchor={anchor}
         closeLabel="Close color picker"
         label={`Color of ${calendar.summary}`}
