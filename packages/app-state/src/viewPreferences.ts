@@ -6,8 +6,8 @@ import {
   type ViewPreferences,
   type Weekday,
 } from '@calendar/core';
-import { useCallback, useMemo, useRef, useState } from 'react';
-import { useBackendMutations, useViewPreferences } from './hooks.ts';
+import { useCallback, useMemo } from 'react';
+import { useBackendMutations, useSettingsEditor, useViewPreferences } from './hooks.ts';
 import { guardMutation, useGuardedMutations } from './mutationGuard.ts';
 
 /**
@@ -51,44 +51,44 @@ export interface WeekendEditor extends WeekendChoice {
 
 /**
  * The weekend fields as Settings › Calendar edits them; null until the
- * preferences load. A change builds on the last one sent, not on the last
- * read, so a second tap before the first save is read back keeps the
- * first (the page is these fields' only writer while it is open, as with
- * `useSettingsEditor`). Every save sends both fields, over the other view
- * preferences as last read; a failed one shows the stored values again.
+ * preferences load. A `useSettingsEditor` over just these two: a second
+ * tap before the first save is read back builds on the first, and once
+ * the saves have landed the stored values show again, so an import or the
+ * settings file changing them while the page is open is not overwritten.
+ * Every save sends both fields over the other view preferences as last
+ * read; a failure is reported through the notice bus.
  */
 export const useWeekendEditor = (): WeekendEditor | null => {
   const preferences = useViewPreferences();
   const { setViewPreferences } = useBackendMutations();
-  const [sent, setSent] = useState<WeekendChoice | null>(null);
-  // Read by the handlers: two taps inside one frame chain too.
-  const latest = useRef<WeekendChoice | null>(null);
-  if (!preferences) {
+  const [current, save] = useSettingsEditor<WeekendChoice, void>(
+    preferences && {
+      days: sortWeekdays(preferences.weekendDays ?? DEFAULT_WEEKEND_DAYS),
+      shading: preferences.weekendShading ?? true,
+    },
+    (next) =>
+      setViewPreferences({
+        ...(preferences ?? DEFAULT_VIEW_PREFERENCES),
+        weekendDays: [...next.days],
+        weekendShading: next.shading,
+      }),
+  );
+  if (!current) {
     return null;
   }
-  const current = sent ?? {
-    days: preferences.weekendDays ?? DEFAULT_WEEKEND_DAYS,
-    shading: preferences.weekendShading ?? true,
-  };
-  const save = (change: Partial<WeekendChoice>) => {
-    const next = { ...(latest.current ?? current), ...change };
-    latest.current = next;
-    setSent(next);
-    void guardMutation('save the weekend', (payload: ViewPreferences) =>
-      setViewPreferences(payload).catch((error: unknown) => {
-        latest.current = null;
-        setSent(null);
-        throw error;
-      }),
-    )({ ...preferences, weekendDays: sortWeekdays(next.days), weekendShading: next.shading });
-  };
+  const change = (next: Partial<WeekendChoice>) =>
+    void guardMutation('save the weekend', save)(next);
   return {
     days: current.days,
-    setShading: (shading) => save({ shading }),
+    setShading: (shading) => change({ shading }),
     shading: current.shading,
-    toggleDay: (day) => {
-      const { days } = latest.current ?? current;
-      save({ days: days.includes(day) ? days.filter((other) => other !== day) : [...days, day] });
-    },
+    toggleDay: (day) =>
+      change({
+        days: sortWeekdays(
+          current.days.includes(day)
+            ? current.days.filter((other) => other !== day)
+            : [...current.days, day],
+        ),
+      }),
   };
 };

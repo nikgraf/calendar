@@ -1502,11 +1502,11 @@ describe('calendar desktop e2e', () => {
         `document.querySelector('[data-testid="weekend-day-SA"]')?.getAttribute('aria-pressed') === 'true'`,
       );
       expect(await pressed('FR')).toBe('false');
-      // Two clicks before the first save is read back: the second builds on
-      // the first rather than on the stored days, so Friday stays.
-      await settings.eval(
-        `['FR', 'SU'].forEach((day) => document.querySelector('[data-testid="weekend-day-' + day + '"]').click())`,
-      );
+      // Two clicks, each its own task as a person's are, the second before
+      // the first save is read back: it builds on the first rather than on
+      // the stored days, so Friday stays.
+      await settings.eval(`document.querySelector('[data-testid="weekend-day-FR"]').click()`);
+      await settings.eval(`document.querySelector('[data-testid="weekend-day-SU"]').click()`);
       await expect.poll(stored, { timeout: 10_000 }).toMatchObject({ weekendDays: ['FR', 'SA'] });
       expect(await pressed('FR')).toBe('true');
       expect(await pressed('SU')).toBe('false');

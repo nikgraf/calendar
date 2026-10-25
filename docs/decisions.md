@@ -638,10 +638,10 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   default), and both travel in the settings document. The days are the
   user's, not the region's: iOS has no region API here (no
   expo-localization, Hermes lacks `Intl.Locale`) and the app ignores the
-  region elsewhere. iOS draws bands under the hour lines, which a
-  column's own background would cover. Rejected: region detection
-  (Electron's `getWeekInfo` alone would split the platforms). Open:
-  find-time's "Weekends" and quick-add's "weekends" still mean Sat+Sun.
+  region elsewhere. Rejected: region detection (Electron's `getWeekInfo`
+  alone would split the platforms). Open: find-time's "Weekends" and
+  quick-add's "weekends" still mean Sat+Sun; Desktop dark mode's shade
+  reads lighter than the grid but darker than the lane and Month.
 
 ## Invitees, contacts and birthdays
 
