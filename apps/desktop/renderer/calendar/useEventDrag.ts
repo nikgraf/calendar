@@ -640,6 +640,8 @@ export const useEventDrag = ({
   );
 
   return {
+    /** Ends the press under way without a drop: what Escape does, for a surface whose own Escape runs first. */
+    abandon: abandonPress,
     consumeSuppressedClick,
     /** Current offsets; pair with `subscribeDeltas` in useSyncExternalStore. */
     getDeltas,

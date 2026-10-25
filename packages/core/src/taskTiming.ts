@@ -95,6 +95,41 @@ export const partitionCalendarTasks = (
   return { allDay, overdue, timed, undated };
 };
 
+/** A group of today's backlog that the all-day lane can fold into one chip. */
+export type TaskFold = 'overdue' | 'undated';
+
+/** The lane's id for a fold's chip, apart from every task's `calendarTaskKey`. */
+export const taskFoldKey = (fold: TaskFold): string => `fold:${fold}`;
+
+/** One entry of today's backlog in the lane: a folded group, or a task drawn as its own chip. */
+export type TaskBacklogEntry =
+  | { readonly fold: TaskFold; readonly kind: 'fold'; readonly tasks: ReadonlyArray<TaskRecord> }
+  | { readonly kind: 'task'; readonly task: TaskRecord };
+
+const backlogEntries = (
+  fold: TaskFold,
+  tasks: ReadonlyArray<TaskRecord>,
+): Array<TaskBacklogEntry> =>
+  tasks.length > 1
+    ? [{ fold, kind: 'fold', tasks }]
+    : tasks.map((task) => ({ kind: 'task', task }));
+
+/**
+ * The overdue and undated tasks today's column carries, as the all-day
+ * lane draws them: a group of two or more folds into one chip that opens
+ * its list — a backlog is a to-do list, not the day's agenda, and a chip
+ * per task pushed the timed grid off the screen — while a group of one
+ * stays that task's own chip. Overdue first, each group in
+ * `partitionCalendarTasks`' order.
+ */
+export const foldTaskBacklog = (
+  overdue: ReadonlyArray<TaskRecord>,
+  undated: ReadonlyArray<TaskRecord>,
+): Array<TaskBacklogEntry> => [
+  ...backlogEntries('overdue', overdue),
+  ...backlogEntries('undated', undated),
+];
+
 const DAY_MINUTES = 24 * 60;
 
 const minutesOf = (time: string): number => {

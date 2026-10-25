@@ -5,13 +5,15 @@ import {
   type EventRecord,
   type ItemKind,
   type RecurringScope,
+  type TaskFold,
   type TaskRecord,
 } from '@calendar/core';
 import type { EditSeed } from './EventEditSheet.tsx';
 
 /**
- * One sheet at a time, in a small set of states (`EditorHost`). The detail
- * and the birthday are page sheets (React Native Modals); the editor is a
+ * One sheet at a time, in a small set of states (`EditorHost`). The detail,
+ * the birthday and a fold's task list are page sheets (React Native
+ * Modals); the editor is a
  * form sheet route (`app/editor.tsx`) the host pushes and pops as the
  * state says. The detail hands over to the editor by replacing itself. An
  * editor carries its opening's number: each opening mounts a fresh editor
@@ -31,7 +33,9 @@ export type Sheet =
   /** The event as it was opened; the sheet follows it from there. */
   | { readonly event: EventRecord; readonly kind: 'detail' }
   | EditSheet
-  | { readonly birthday: BirthdayOccurrence; readonly kind: 'birthday' };
+  | { readonly birthday: BirthdayOccurrence; readonly kind: 'birthday' }
+  /** A fold chip's list: the tasks it held when tapped, drawn as they are now. */
+  | { readonly fold: TaskFold; readonly kind: 'fold'; readonly tasks: ReadonlyArray<TaskRecord> };
 
 export const NONE: Sheet = { kind: 'none' };
 

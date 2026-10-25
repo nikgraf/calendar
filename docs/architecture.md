@@ -1225,8 +1225,16 @@ gateway carries all of it. Details, limits and the threat model:
   Text that cannot grow (grid blocks, chips, the gutter, bars) is capped
   at `BOX_FONT_SCALE` for Dynamic Type; the rest scales fully.
 - **Views**: day/week time grid (with "2 Days" and a two-week agenda on
-  iOS), month grid, and an all-day lane for date-only tasks that
-  collapses to three rows with "+N more" (a device setting). Timed Apple
+  iOS), month grid, and an all-day lane for date-only tasks. Expanded,
+  the lane takes at most a third of the view (`expandedAllDayRows`) and
+  then scrolls inside itself, stopping halfway into the next chip;
+  collapsed, it shows three rows with "+N more". The chevron under
+  "all-day" switches the two (a device setting). On today, two or more
+  overdue or undated tasks fold into one chip per group
+  (`foldTaskBacklog`) that opens their list: a popover on the desktop
+  (rows tick, open, or drag onto the calendar), a page sheet on iOS
+  (`TaskFoldSheet`, held by `EditorHost`); a list keeps the rows it
+  opened with, so a ticked one stays, struck through. Timed Apple
   Reminders share the day-column overlap layout with events as compact,
   move-only blocks; their due time is wall-clock data, and the day column
   is a fixed 24-hour wall clock (`layoutDayColumn` places every box by

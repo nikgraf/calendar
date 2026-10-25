@@ -5,22 +5,28 @@ import {
   calendarTaskKey,
   type EventRecord,
   overdueLabel,
+  type TaskBacklogEntry,
   taskChipLabel,
+  type TaskFold,
+  taskFoldDescription,
+  taskFoldKey,
+  taskFoldLabel,
   type TaskRecord,
   taskRepeats,
 } from '@calendar/core';
+import { SymbolView } from 'expo-symbols';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { GestureDetector } from 'react-native-gesture-handler';
 import { DraftChip } from './DraftBlock.tsx';
 import { TaskCheck } from './TaskCheck.tsx';
-import { BOX_FONT_SCALE, type ThemeColors, useEventTint, useStyles } from './theme.ts';
+import { BOX_FONT_SCALE, type ThemeColors, useEventTint, useStyles, useTheme } from './theme.ts';
 import { ALL_DAY_ROW_HEIGHT } from './timelineLayout.ts';
 import type { TaskDrag } from './useTaskDrag.ts';
 
 /**
  * One day's all-day chips (the open editor's drafts first — what is being
- * made — then date-only tasks, birthdays and events), one
- * chip per row. Past `maxChips` the column shows the first rows and a
+ * made — then date-only tasks, today's folded backlog among them,
+ * birthdays and events), one chip per row. Past `maxChips` the column shows the first rows and a
  * "+N more" chip that expands the lane. A task chip's body long-presses
  * into a drag (another day, or a time in the grid); the chip dims while
  * its ghost travels.
@@ -31,6 +37,7 @@ export function AllDayColumn({
   compact,
   drafts,
   draggingKey,
+  entries,
   events,
   isTaskReadOnly,
   listColorOf,
@@ -38,12 +45,12 @@ export function AllDayColumn({
   onBirthdayPress,
   onDraftPress,
   onEventPress,
+  onFoldPress,
   onShowMore,
   onTaskPress,
   onToggleTask,
   overdueKeys,
   taskDrag,
-  tasks,
   today,
   width,
 }: {
@@ -55,6 +62,8 @@ export function AllDayColumn({
   drafts: ReadonlyArray<DraftOccurrence>;
   /** The task being dragged, if any: its source chip dims. */
   draggingKey: string | null;
+  /** Date-only tasks on this day, as the lane draws them: today's backlog folds (`foldTaskBacklog`). */
+  entries: ReadonlyArray<TaskBacklogEntry>;
   /** All-day events on this day. */
   events: ReadonlyArray<EventRecord>;
   isTaskReadOnly: (task: TaskRecord) => boolean;
@@ -64,24 +73,24 @@ export function AllDayColumn({
   /** A draft chip tapped: the editor focuses that draft. */
   onDraftPress: (draftId: string) => void;
   onEventPress: (event: EventRecord) => void;
+  /** A fold chip tapped: its list, with the tasks it holds. */
+  onFoldPress: (fold: TaskFold, tasks: ReadonlyArray<TaskRecord>) => void;
   onShowMore: () => void;
   onTaskPress: (task: TaskRecord) => void;
   onToggleTask: (task: TaskRecord) => void;
   /** Task keys drawn here because their due day has passed (today's column only). */
   overdueKeys: ReadonlySet<string>;
   taskDrag: TaskDrag;
-  /** Tasks due on this day. */
-  tasks: ReadonlyArray<TaskRecord>;
   today: string;
   width: number;
 }) {
   const styles = useStyles(makeStyles);
-  const total = drafts.length + tasks.length + birthdays.length + events.length;
+  const total = drafts.length + entries.length + birthdays.length + events.length;
   // A column that fits shows everything; one that overflows gives its
   // last row to the "+N more" chip.
   const limit = total > maxChips ? maxChips - 1 : total;
   const visibleDrafts = drafts.slice(0, limit);
-  const visibleTasks = tasks.slice(0, Math.max(limit - visibleDrafts.length, 0));
+  const visibleTasks = entries.slice(0, Math.max(limit - visibleDrafts.length, 0));
   const visibleBirthdays = birthdays.slice(
     0,
     Math.max(limit - visibleDrafts.length - visibleTasks.length, 0),
@@ -106,7 +115,18 @@ export function AllDayColumn({
           onPress={onDraftPress}
         />
       ))}
-      {visibleTasks.map((task) => {
+      {visibleTasks.map((entry) => {
+        if (entry.kind === 'fold') {
+          return (
+            <FoldChip
+              compact={compact}
+              entry={entry}
+              key={taskFoldKey(entry.fold)}
+              onPress={onFoldPress}
+            />
+          );
+        }
+        const { task } = entry;
         const key = calendarTaskKey(task);
         const done = task.status === 'completed';
         const overdue = overdueKeys.has(key);
@@ -230,6 +250,55 @@ export function AllDayColumn({
         </Pressable>
       ) : null}
     </View>
+  );
+}
+
+/**
+ * Today's overdue or undated backlog folded into one chip: the count
+ * leads, so a week-narrow column still shows it; a tap opens the list.
+ */
+function FoldChip({
+  compact,
+  entry,
+  onPress,
+}: {
+  compact: boolean;
+  entry: Extract<TaskBacklogEntry, { kind: 'fold' }>;
+  onPress: (fold: TaskFold, tasks: ReadonlyArray<TaskRecord>) => void;
+}) {
+  const styles = useStyles(makeStyles);
+  const { colors } = useTheme();
+  const count = entry.tasks.length;
+  const overdue = entry.fold === 'overdue';
+  return (
+    <Pressable
+      accessibilityLabel={`${taskFoldDescription(entry.fold, count)}, show the list`}
+      accessibilityRole="button"
+      hitSlop={4}
+      onPress={() => onPress(entry.fold, entry.tasks)}
+      style={[styles.allDayChip, styles.taskChip]}
+      testID={`all-day-fold-${entry.fold}`}
+    >
+      {/* The overdue label carries its own warning marker. */}
+      {overdue ? null : (
+        <SymbolView name="list.bullet" size={11} tintColor={colors.text} weight="semibold" />
+      )}
+      <Text
+        maxFontSizeMultiplier={BOX_FONT_SCALE}
+        numberOfLines={1}
+        // Shrinks beside the icon, so a week-narrow chip cuts the label
+        // inside itself instead of running into the next column.
+        style={[
+          styles.allDayText,
+          compact && styles.allDayTextCompact,
+          styles.taskText,
+          styles.taskBody,
+          overdue && styles.taskTextOverdue,
+        ]}
+      >
+        {taskFoldLabel(entry.fold, count)}
+      </Text>
+    </Pressable>
   );
 }
 

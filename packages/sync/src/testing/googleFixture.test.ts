@@ -109,4 +109,24 @@ describe('googleFixtureLayer', () => {
       expect(pushed?.updatedAt).toBeGreaterThan(Date.now() - 60_000);
     }).pipe(Effect.provide(appLayer)),
   );
+
+  it.effect('a completion comes back stamped with when it was done, as from Google', () =>
+    Effect.gen(function* () {
+      yield* seedFixtureAccounts(fixture);
+      yield* (yield* SyncEngine).syncAll();
+      const mutations = yield* EventMutations;
+      yield* mutations.completeTask({
+        accountId: 'fixture-google',
+        status: 'completed',
+        taskId: 'task-seeded',
+        taskListId: 'mock-list',
+      });
+      yield* mutations.processPendingOps();
+      yield* (yield* SyncEngine).syncAll();
+      const done = yield* (yield* TaskRepo).get('fixture-google', 'mock-list', 'task-seeded');
+      // Without it a late completion has no day to sit on and drops off the calendar.
+      expect(done?.status).toBe('completed');
+      expect(done?.completedAt).toBeGreaterThan(Date.now() - 60_000);
+    }).pipe(Effect.provide(appLayer)),
+  );
 });

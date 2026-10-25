@@ -17,6 +17,7 @@ import {
   type ItemKind,
   type NotificationTarget,
   resolveItemKind,
+  type TaskFold,
   type TaskRecord,
   Temporal,
 } from '@calendar/core';
@@ -42,6 +43,7 @@ import { deliverSettingsCode } from '../settingsCodeInbox.ts';
 import { CaptureBanner } from './CaptureBanner.tsx';
 import { EventDetailSheet } from './EventDetailSheet.tsx';
 import { EventEditSheet, type EditSeed } from './EventEditSheet.tsx';
+import { TaskFoldSheet } from './TaskFoldSheet.tsx';
 import {
   captureMayOpen,
   closeDeleted,
@@ -91,6 +93,8 @@ export interface EditorHost {
   readonly openNew: (request: NewItemRequest) => void;
   /** Settings — after the editor, when one is up behind the calendar's avatar, has closed. */
   readonly openSettings: () => void;
+  /** A fold chip's list of today's overdue or undated tasks. */
+  readonly openTaskFold: (fold: TaskFold, tasks: ReadonlyArray<TaskRecord>) => void;
   /** What the editor route shows: the open editor (kept while the sheet slides away). */
   readonly renderEditor: () => ReactNode;
 }
@@ -127,7 +131,7 @@ export const useEditorHost = (): EditorHost => {
 /**
  * Owns every sheet of the app — the event detail, the editor (with the
  * quick-add field and the draft thread on top of a new item), the
- * birthday detail — and the capture model behind the share sheet and deep
+ * birthday detail, a fold chip's task list — and the capture model behind the share sheet and deep
  * links, whose events open the editor as one thread of drafts, so the
  * Calendar and Tasks tabs open the same sheets without owning them.
  * Mounted once, under the providers.
@@ -154,7 +158,7 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
   }
   const presented = useRef(false);
   const previousKind = useRef<Sheet['kind']>('none');
-  // When the last page sheet (detail, birthday) has slid away.
+  // When the last page sheet (detail, birthday, a fold's list) has slid away.
   const pageSheetGone = useRef(0);
   // A route to push once the form sheet is gone (Settings, asked for from
   // behind a half-height editor); any sheet asked for meanwhile takes over.
@@ -165,7 +169,7 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
     if (sheet.kind !== 'none') {
       afterFormSheet.current = undefined;
     }
-    if (from === 'detail' || from === 'birthday') {
+    if (from === 'detail' || from === 'birthday' || from === 'fold') {
       pageSheetGone.current = Date.now() + PAGE_SHEET_DISMISS_MS;
     }
     if (sheet.kind !== 'edit') {
@@ -338,7 +342,7 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
       setSheet(NONE);
       return;
     }
-    const pageSheet = sheet.kind === 'detail' || sheet.kind === 'birthday';
+    const pageSheet = sheet.kind === 'detail' || sheet.kind === 'birthday' || sheet.kind === 'fold';
     setSheet(NONE);
     setTimeout(deliver, pageSheet ? PAGE_SHEET_DISMISS_MS : 0);
   });
@@ -478,6 +482,7 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
       }
       router.push('/settings');
     },
+    openTaskFold: (fold, tasks) => setSheet({ fold, kind: 'fold', tasks }),
     // Keyed per opening: an editor seeds its form fields (and its thread)
     // from its seed once, on mount. It closes only its own opening: a
     // write's reply can land after the sheet moved on (`closeEditor`).
@@ -549,6 +554,16 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
         />
       ) : null}
       {birthdaySheet}
+      {sheet.kind === 'fold' && formSheetGone ? (
+        <TaskFoldSheet
+          fold={sheet.fold}
+          key={`fold:${sheet.fold}`}
+          onClose={close}
+          onEdit={host.editTask}
+          tasks={sheet.tasks}
+          timeZone={timeZone}
+        />
+      ) : null}
       <CaptureBanner onDismiss={dismissCapture} state={capture.state} />
     </EditorHostContext.Provider>
   );

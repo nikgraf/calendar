@@ -11,6 +11,8 @@ import {
   calendarTaskKey,
   clampSwipeOffset,
   type EventRecord,
+  expandedAllDayRows,
+  foldTaskBacklog,
   type FreeSlot,
   groupByDate,
   groupEventsByDay,
@@ -23,11 +25,14 @@ import {
   secondaryHourLabels,
   swipeLag,
   swipeReleaseColumns,
+  type TaskBacklogEntry,
   taskChipLabel,
+  type TaskFold,
   type TaskRecord,
   Temporal,
   zoneSlug,
 } from '@calendar/core';
+import { SymbolView } from 'expo-symbols';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -45,14 +50,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { AllDayColumn } from './AllDayColumn.tsx';
 import { DayColumn } from './DayColumn.tsx';
-import {
-  actionText,
-  BOX_FONT_SCALE,
-  type ThemeColors,
-  useStyles,
-  useTheme,
-  zoneColor,
-} from './theme.ts';
+import { BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme, zoneColor } from './theme.ts';
 import { useEdgeScroll } from './useEdgeScroll.ts';
 import { useTaskDrag } from './useTaskDrag.ts';
 import { WeekStripCell } from './WeekStrip.tsx';
@@ -68,6 +66,9 @@ const setShared = (shared: SharedValue<number>, value: number) => {
   'worklet';
   shared.value = value;
 };
+
+/** How much of the first chip below a scrolling lane's edge shows: half of its 20 pt. */
+const LANE_PEEK = 10;
 
 /**
  * The timed grid for one day, two days or one week: `days` are the visible columns,
@@ -90,6 +91,7 @@ export function DayTimeline({
   onCreateSlot,
   onDraftPress,
   onEventPress,
+  onFoldPress,
   onNavigate,
   onSelectDay,
   onTaskPress,
@@ -123,6 +125,8 @@ export function DayTimeline({
   /** A draft tapped: the editor focuses it (a free slot: moves the draft there). */
   onDraftPress: (draftId: string, slot?: FreeSlot) => void;
   onEventPress: (event: EventRecord) => void;
+  /** A fold chip tapped: today's overdue or undated tasks, as a list. */
+  onFoldPress: (fold: TaskFold, tasks: ReadonlyArray<TaskRecord>) => void;
   /** A swipe committed: whole days crossed, positive forward in time. */
   onNavigate: (dayCount: number) => void;
   /** A tap on a week-view day header. */
@@ -251,15 +255,21 @@ export function DayTimeline({
     () => partitionCalendarTasks([...tasks, ...overdue], todayIso, timeZone),
     [tasks, overdue, todayIso, timeZone],
   );
-  // Overdue and undated chips lead today's column until they are done; a
-  // late or undated completion sits on the day it was completed.
+  // Overdue and undated chips lead today's column until they are done,
+  // each group of two or more folded into one chip; a late or undated
+  // completion sits on the day it was completed.
   const tasksByDay = useMemo(() => {
     const byDay = new Map(
-      groupByDate(calendarTasks.allDay, (task) => taskCalendarDate(task, todayIso, timeZone)),
+      [
+        ...groupByDate(calendarTasks.allDay, (task) => taskCalendarDate(task, todayIso, timeZone)),
+      ].map(([day, tasks]): [string, Array<TaskBacklogEntry>] => [
+        day,
+        tasks.map((task) => ({ kind: 'task', task })),
+      ]),
     );
-    const todayTasks = calendarTasks.overdue.concat(calendarTasks.undated);
-    if (todayTasks.length > 0) {
-      byDay.set(todayIso, todayTasks.concat(byDay.get(todayIso) ?? []));
+    const backlog = foldTaskBacklog(calendarTasks.overdue, calendarTasks.undated);
+    if (backlog.length > 0) {
+      byDay.set(todayIso, backlog.concat(byDay.get(todayIso) ?? []));
     }
     return byDay;
   }, [calendarTasks, todayIso, timeZone]);
@@ -297,11 +307,29 @@ export function DayTimeline({
       ),
     [strip, tasksByDay, birthdaysByDay, byDay, draftsByDay, days.length],
   );
-  const laneHeightFor = (rows: number) =>
+  // Expanded, the lane takes at most a third of the view (`expandedAllDayRows`)
+  // and scrolls inside itself past that, stopping halfway into the next
+  // chip so the cut says there is more; the timed grid keeps the rest.
+  const [viewHeight, setViewHeight] = useState(0);
+  // Measured before the first paint (layout reads are synchronous in a
+  // layout effect under the New Architecture), so a busy lane does not
+  // start at the minimum and then grow; `onLayout` follows later changes.
+  useLayoutEffect(() => {
+    containerRef.current?.measureInWindow((_x, _y, _width, height) => setViewHeight(height));
+  }, []);
+  const laneRows = expandedAllDayRows(viewHeight, ALL_DAY_ROW_HEIGHT);
+  /** Every row a page needs (collapsed: at most MAX_ALL_DAY_ROWS). */
+  const contentHeightFor = (rows: number) =>
     Math.max(collapsed ? Math.min(rows, MAX_ALL_DAY_ROWS) : rows, 1) * ALL_DAY_ROW_HEIGHT + 4;
+  const laneHeightFor = (rows: number) =>
+    !collapsed && rows > laneRows
+      ? laneRows * ALL_DAY_ROW_HEIGHT + 2 + LANE_PEEK
+      : contentHeightFor(rows);
   const pageHeights = pageRows.map(laneHeightFor);
+  const pageContentHeights = pageRows.map(contentHeightFor);
   const rowsNeeded = pageRows[buffer] ?? 0;
   const laneHeight = laneHeightFor(rowsNeeded);
+  const laneScrolls = !collapsed && rowsNeeded > laneRows;
   const maxChips = collapsed ? MAX_ALL_DAY_ROWS : Number.POSITIVE_INFINITY;
 
   useEffect(() => {
@@ -360,6 +388,7 @@ export function DayTimeline({
   });
   const measureContainer = () => {
     containerRef.current?.measureInWindow((x, y, _width, height) => {
+      setViewHeight(height);
       setShared(containerX, x);
       setShared(containerY, y);
       setShared(containerHeight, height);
@@ -372,6 +401,20 @@ export function DayTimeline({
   // move on from the new page. A swipe's own page change moved the first
   // day by exactly the columns it reported.
   const firstIso = days[0]!.toString();
+  // Another page, or the lane collapsing or growing past its cap, starts
+  // the lane at its top (a collapse left scrolled down would show blank
+  // rows it no longer scrolls back from); one that scrolls shows its
+  // indicator a moment, as a list that just appeared does.
+  const laneScrollRef = useRef<ScrollView>(null);
+  useEffect(() => {
+    laneScrollRef.current?.scrollTo({ animated: false, y: 0 });
+  }, [firstIso, laneScrolls]);
+  const measured = viewHeight > 0;
+  useEffect(() => {
+    if (laneScrolls && measured) {
+      laneScrollRef.current?.flashScrollIndicators();
+    }
+  }, [laneScrolls, firstIso, measured]);
   const rendered = useRef({ columns: swiped.columns, count: days.length, first: days[0]! });
   useLayoutEffect(() => {
     const previous = rendered.current;
@@ -484,11 +527,14 @@ export function DayTimeline({
     );
   // The lane's height for the page at the viewport's left edge: an index
   // into `pageHeights`, fractional mid-swipe.
-  const laneStyle = useAnimatedStyle(() => ({
-    height: interpolatePages(
-      pageHeights,
-      columnWidth > 0 ? (navigatedPx.value - panX.value - stripLeft) / columnWidth : buffer,
-    ),
+  const pageAt = () => {
+    'worklet';
+    return columnWidth > 0 ? (navigatedPx.value - panX.value - stripLeft) / columnWidth : buffer;
+  };
+  const laneStyle = useAnimatedStyle(() => ({ height: interpolatePages(pageHeights, pageAt()) }));
+  // The scrolled content blends the same way, uncapped.
+  const laneContentStyle = useAnimatedStyle(() => ({
+    height: interpolatePages(pageContentHeights, pageAt()),
   }));
 
   return (
@@ -530,66 +576,79 @@ export function DayTimeline({
       <Animated.View
         onLayout={(layout) => setShared(laneTop, layout.nativeEvent.layout.y)}
         style={[styles.allDayLane, laneStyle]}
+        testID="all-day-lane"
       >
         <View style={{ width: gutter }}>
-          {!collapsed && rowsNeeded > MAX_ALL_DAY_ROWS ? (
+          <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.gutterLabel}>
+            all-day
+          </Text>
+          {rowsNeeded > MAX_ALL_DAY_ROWS ? (
             <Pressable
-              accessibilityLabel="Collapse the all-day lane"
+              accessibilityLabel={collapsed ? 'Show all all-day items' : 'Show fewer all-day items'}
               accessibilityRole="button"
-              hitSlop={8}
-              onPress={() => setCollapsed(true)}
-              testID="all-day-less"
+              accessibilityState={{ expanded: !collapsed }}
+              hitSlop={11}
+              onPress={() => setCollapsed(!collapsed)}
+              style={styles.gutterToggle}
+              testID="all-day-toggle"
             >
-              <Text
-                maxFontSizeMultiplier={BOX_FONT_SCALE}
-                style={[styles.gutterLabel, styles.gutterAction]}
-              >
-                less
-              </Text>
+              <SymbolView
+                name={collapsed ? 'chevron.down' : 'chevron.up'}
+                size={11}
+                tintColor={colors['text-secondary']}
+                weight="semibold"
+              />
             </Pressable>
-          ) : (
-            <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.gutterLabel}>
-              all-day
-            </Text>
-          )}
+          ) : null}
         </View>
-        <View style={styles.stripViewport}>
-          {weekendBands('weekend-lane')}
-          <Animated.View style={[styles.strip, { left: stripLeft }, stripStyle]}>
-            <Animated.View
-              pointerEvents="none"
-              style={[styles.laneIndicator, { width: columnWidth }, taskDrag.laneIndicatorStyle]}
-            />
-            {strip.map((day) => {
-              const iso = day.toString();
-              return (
-                <AllDayColumn
-                  birthdays={birthdaysByDay.get(iso) ?? []}
-                  colorOf={colorOf}
-                  compact={compact}
-                  drafts={(draftsByDay.get(iso) ?? []).filter((draft) => draft.isAllDay)}
-                  draggingKey={taskDrag.dragging?.key ?? null}
-                  events={(byDay.get(iso) ?? []).filter((event) => event.isAllDay)}
-                  isTaskReadOnly={isTaskReadOnly}
-                  key={iso}
-                  listColorOf={listColorOf}
-                  maxChips={maxChips}
-                  onBirthdayPress={onBirthdayPress}
-                  onDraftPress={(draftId) => onDraftPress(draftId)}
-                  onEventPress={onEventPress}
-                  onShowMore={() => setCollapsed(false)}
-                  onTaskPress={onTaskPress}
-                  onToggleTask={onToggleTask}
-                  overdueKeys={overdueKeys}
-                  taskDrag={taskDrag}
-                  tasks={tasksByDay.get(iso) ?? []}
-                  today={todayIso}
-                  width={columnWidth}
-                />
-              );
-            })}
+        {/* Scrolls only while the page needs more than the lane shows; the
+            box inside clips the panning strip to the page. */}
+        <ScrollView
+          ref={laneScrollRef}
+          scrollEnabled={laneScrolls}
+          showsVerticalScrollIndicator={laneScrolls}
+          style={styles.laneScroll}
+          testID="all-day-scroller"
+        >
+          <Animated.View style={[styles.laneContent, laneContentStyle]}>
+            {weekendBands('weekend-lane')}
+            <Animated.View style={[styles.strip, { left: stripLeft }, stripStyle]}>
+              <Animated.View
+                pointerEvents="none"
+                style={[styles.laneIndicator, { width: columnWidth }, taskDrag.laneIndicatorStyle]}
+              />
+              {strip.map((day) => {
+                const iso = day.toString();
+                return (
+                  <AllDayColumn
+                    birthdays={birthdaysByDay.get(iso) ?? []}
+                    colorOf={colorOf}
+                    compact={compact}
+                    drafts={(draftsByDay.get(iso) ?? []).filter((draft) => draft.isAllDay)}
+                    draggingKey={taskDrag.dragging?.key ?? null}
+                    entries={tasksByDay.get(iso) ?? []}
+                    events={(byDay.get(iso) ?? []).filter((event) => event.isAllDay)}
+                    isTaskReadOnly={isTaskReadOnly}
+                    key={iso}
+                    listColorOf={listColorOf}
+                    maxChips={maxChips}
+                    onBirthdayPress={onBirthdayPress}
+                    onDraftPress={(draftId) => onDraftPress(draftId)}
+                    onEventPress={onEventPress}
+                    onFoldPress={onFoldPress}
+                    onShowMore={() => setCollapsed(false)}
+                    onTaskPress={onTaskPress}
+                    onToggleTask={onToggleTask}
+                    overdueKeys={overdueKeys}
+                    taskDrag={taskDrag}
+                    today={todayIso}
+                    width={columnWidth}
+                  />
+                );
+              })}
+            </Animated.View>
           </Animated.View>
-        </View>
+        </ScrollView>
       </Animated.View>
 
       <GestureDetector gesture={swipe}>
@@ -764,13 +823,25 @@ const makeStyles = (colors: ThemeColors) =>
       top: 0,
       zIndex: 20,
     },
-    gutterAction: actionText(colors),
     gutterLabel: {
       color: colors['text-secondary'],
       fontSize: 10,
       paddingRight: 12,
       paddingTop: 6,
       textAlign: 'right',
+    },
+    // A bordered square, so it reads as a control; its hit area is 44 pt.
+    gutterToggle: {
+      alignItems: 'center',
+      alignSelf: 'flex-end',
+      borderColor: colors.border,
+      borderRadius: 6,
+      borderWidth: StyleSheet.hairlineWidth,
+      height: 22,
+      justifyContent: 'center',
+      marginRight: 10,
+      marginTop: 4,
+      width: 22,
     },
     hourLabel: {
       color: colors['text-secondary'],
@@ -797,6 +868,9 @@ const makeStyles = (colors: ThemeColors) =>
       position: 'absolute',
       right: 0,
     },
+    laneContent: {
+      overflow: 'hidden',
+    },
     laneIndicator: {
       backgroundColor: colors.selection,
       borderColor: colors.primary,
@@ -806,6 +880,10 @@ const makeStyles = (colors: ThemeColors) =>
       left: 0,
       position: 'absolute',
       top: 0,
+    },
+    laneScroll: {
+      flex: 1,
+      marginRight: EDGE_INSET,
     },
     scroll: {
       flex: 1,
