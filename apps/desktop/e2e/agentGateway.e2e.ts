@@ -624,6 +624,54 @@ describe('agent gateway: other agents reach the app over the CLI and MCP', () =>
     await cdp.waitFor(`!document.querySelector('[data-testid="agent-approval"]')`);
   });
 
+  it('focus is back in the field it left once the queued requests are answered', async () => {
+    const { cdp } = app;
+    const work = await calendarRef(app, ASKER, 'Work');
+    const TITLE = `document.querySelector('input[placeholder="Title"]')`;
+    // Typing a new event's title when two requests come in.
+    await cdp.eval(
+      `void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', metaKey: true }))`,
+    );
+    await cdp.waitFor(`!!${TITLE}`);
+    await cdp.eval(`${TITLE}.focus()`);
+    await cdp.waitFor(`document.activeElement === ${TITLE}`);
+    const first = runAgentCli(app, ASKER, newEvent(work, 'Asked lunch', 12));
+    await cdp.waitFor(
+      `document.querySelector('[data-testid="agent-approval-title"]')?.textContent.includes('Asked lunch')`,
+    );
+    const second = runAgentCli(app, ASKER, newEvent(work, 'Asked dinner', 19));
+    await cdp.waitFor(
+      `window.calendarBridge.agentsState().then((state) => state.pending.length === 2)`,
+    );
+    expect(
+      await cdp.eval<boolean>(
+        `!!document.activeElement?.closest('[data-testid="agent-approval"]')`,
+      ),
+    ).toBe(true);
+
+    // Each Escape answers one later; the second request opens a dialog of
+    // its own when the first one's goes.
+    await cdp.pressEscape();
+    await cdp.waitFor(
+      `document.querySelector('[data-testid="agent-approval-title"]')?.textContent.includes('Asked dinner')`,
+    );
+    await cdp.pressEscape();
+    await cdp.waitFor(`!document.querySelector('[data-testid="agent-approval"]')`);
+    expect(await cdp.eval<boolean>(`document.activeElement === ${TITLE}`)).toBe(true);
+
+    for (const request of (
+      await cdp.eval<{ pending: ReadonlyArray<{ id: string }> }>(
+        `window.calendarBridge.agentsState()`,
+      )
+    ).pending) {
+      await cdp.eval(`window.calendarBridge.agentsDecide(${JSON.stringify(request.id)}, 'deny')`);
+    }
+    expect((await first).code).toBe(1);
+    expect((await second).code).toBe(1);
+    await cdp.pressEscape();
+    await cdp.waitFor(`!document.body.textContent.includes('New event')`);
+  });
+
   it('Settings → Agents: answering one request disarms the next one sliding up', async () => {
     const work = await calendarRef(app, ASKER, 'Work');
     const first = runAgentCli(app, ASKER, newEvent(work, 'Asked lunch', 12));

@@ -28,11 +28,33 @@ function FocusGuard({ onFocus }: { onFocus: (from: Element | null) => void }) {
   );
 }
 
+/** Each trap's panel and the opener it gives focus back to, kept after it closes. */
+const openers = new WeakMap<Element, HTMLElement | null>();
+
+/**
+ * Where a closing trap gives focus back: its opener, or — when the opener
+ * went with a panel that closed before it — that panel's own opener, and
+ * so on out. A dialog keyed by its item (the agent's next request) is
+ * replaced in one commit, so the new one saw focus on a button in the old.
+ */
+const returnTarget = (opener: HTMLElement | null): HTMLElement | null => {
+  let target = opener;
+  while (target && !target.isConnected) {
+    // A removed subtree keeps its parents: walk up to the closed panel.
+    let node: Element | null = target;
+    while (node && !openers.has(node)) {
+      node = node.parentElement;
+    }
+    target = node ? (openers.get(node) ?? null) : null;
+  }
+  return target;
+};
+
 /**
  * Keeps the keyboard inside a modal panel — a Dialog or a Popover — for
  * as long as this is mounted: focus moves in when it mounts, Tab and
  * Shift+Tab cycle the panel's controls, and focus returns to the opener
- * when it unmounts. `children` is the panel itself, with `panelRef` on it
+ * when it unmounts (`returnTarget`). `children` is the panel itself, with `panelRef` on it
  * and `tabIndex={-1}` so it can hold focus when nothing in it can.
  *
  * Tab is never intercepted. A keydown trap that wraps at the last control
@@ -68,6 +90,7 @@ export function FocusTrap({
     if (!panel) {
       return;
     }
+    openers.set(panel, opener);
     if (!panel.contains(document.activeElement)) {
       (
         panel.querySelector<HTMLElement>('[data-initial-focus]') ??
@@ -92,7 +115,7 @@ export function FocusTrap({
     return () => {
       refocus.disconnect();
       panel.removeEventListener('focusin', track);
-      opener?.focus();
+      returnTarget(opener)?.focus();
     };
   }, [opener, panelRef]);
 
