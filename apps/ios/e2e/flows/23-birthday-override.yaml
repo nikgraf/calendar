@@ -1,5 +1,5 @@
 appId: com.solunivo.app.dev
-name: Birthday reminder lead days persist and reset, per person and for everyone
+name: Birthday reminders persist and reset, per person and for everyone
 tags:
   - ci
 ---
@@ -39,16 +39,23 @@ tags:
       id: 'birthday-detail'
     timeout: 5000
 - assertVisible: 'Birthday Fixture'
-# The chips start on the general lead days ("On the day" by default); the
-# id suffix carries the state. Add two weeks for this person only. The
-# general switch is never touched (it would raise the permission alert).
+# The rows start on the general reminders ("On the day" by default), one
+# row per reminder. Add two weeks for this person only, from the action
+# sheet of lead times not taken. The general switch is never touched (it
+# would raise the permission alert).
 - assertVisible:
-    id: 'birthday-override-0-on'
+    id: 'birthday-override-0'
+- scrollUntilVisible:
+    element:
+      id: 'birthday-override-add'
+    direction: DOWN
+    timeout: 10000
 - tapOn:
-    id: 'birthday-override-14'
+    id: 'birthday-override-add'
+- tapOn: '2 weeks before'
 - extendedWaitUntil:
     visible:
-      id: 'birthday-override-14-on'
+      id: 'birthday-override-14'
     timeout: 5000
 - assertVisible:
     id: 'birthday-override-reset'
@@ -58,7 +65,7 @@ tags:
     id: 'birthday-chip'
 - extendedWaitUntil:
     visible:
-      id: 'birthday-override-14-on'
+      id: 'birthday-override-14'
     timeout: 5000
 # Settings › Notifications lists the person under "Custom per Person".
 - tapOn: 'Done'
@@ -90,28 +97,23 @@ tags:
     notVisible:
       id: 'birthday-overrides'
     timeout: 5000
-# The general lead days, for everyone without their own, persist too.
-# The row's id carries its state ("-on" when checked). "On the day" is
-# the default; add a week ahead. The enable switch is never touched: it
-# would raise the notification permission alert on the simulator.
+# The general reminders, for everyone without their own, persist too,
+# on the page itself (no page pushed over it). "On the day" is the
+# default; add a week ahead. The enable switch is never touched: it would
+# raise the notification permission alert on the simulator.
 - scrollUntilVisible:
     element:
-      id: 'birthday-lead-times'
+      id: 'birthday-reminder-add'
     direction: UP
     timeout: 10000
+- assertVisible:
+    id: 'birthday-reminder-0'
 - tapOn:
-    id: 'birthday-lead-times'
+    id: 'birthday-reminder-add'
+- tapOn: '1 week before'
 - extendedWaitUntil:
     visible:
-      id: 'birthday-lead-7'
-    timeout: 5000
-- waitForAnimationToEnd:
-    timeout: 5000
-- tapOn:
-    id: 'birthday-lead-7'
-- extendedWaitUntil:
-    visible:
-      id: 'birthday-lead-7-on'
+      id: 'birthday-reminder-7'
     timeout: 5000
 - runFlow: ../common/close-settings.yaml
 # Reopen: the choice was stored (device-local SQLite), not just React state.
@@ -122,29 +124,22 @@ tags:
       PAGE: notifications
 - scrollUntilVisible:
     element:
-      id: 'notifications-device-only'
+      id: 'birthday-reminder-7'
     direction: DOWN
     timeout: 10000
-- scrollUntilVisible:
-    element:
-      id: 'birthday-lead-times'
-    direction: UP
-    timeout: 10000
+# Leave the settings as found for the next flow: swipe the week away.
+- swipe:
+    from:
+      id: 'birthday-reminder-7'
+    direction: LEFT
 - tapOn:
-    id: 'birthday-lead-times'
+    id: 'birthday-reminder-7-delete'
 - extendedWaitUntil:
-    visible:
-      id: 'birthday-lead-7-on'
+    notVisible:
+      id: 'birthday-reminder-7'
     timeout: 5000
-- waitForAnimationToEnd:
-    timeout: 5000
-# Leave the settings as found for the next flow.
-- tapOn:
-    id: 'birthday-lead-7-on'
-- extendedWaitUntil:
-    visible:
-      id: 'birthday-lead-7'
-    timeout: 5000
+- assertVisible:
+    id: 'birthday-reminder-0'
 - runFlow: ../common/close-settings.yaml
 - runFlow:
     file: ../common/switch-view.yaml

@@ -68,7 +68,7 @@
     "@types/babel__core": "^7.20.5",
     "@types/node": "^26.6.5",
     "@types/react": "catalog:",
-    "eas-cli": "^24.13.0",
+    "eas-cli": "^24.14.0",
     "typescript": "catalog:"
   }
 }

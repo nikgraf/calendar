@@ -1061,7 +1061,9 @@ gateway carries all of it. Details, limits and the threat model:
 - **Desktop shell** (`renderer/calendar/`): a toolbar (`Toolbar.tsx`:
   sidebar toggle, title, ‹ Today ›, Day/Week/Month, Search, the Today
   panel toggle, New), a collapsible sidebar (mini month, calendars and
-  lists per account, the sync footer with the unsynced changes), the
+  lists per account — a click anywhere on a row shows or hides it, and
+  a calendar's color changes in Settings › Accounts — the sync footer
+  with the unsynced changes), the
   grid, and a side panel (`panel/`, 360 px whatever it shows) that is
   one `PanelState` in `CalendarApp.tsx`: the Today rail at rest
   (`UpNextCard` + `TaskInbox`),
@@ -1246,7 +1248,7 @@ gateway carries all of it. Details, limits and the threat model:
   (Feb 29 lands on Feb 28 in common years), and both lanes draw a neutral
   chip with a fixed pink accent (`birthdayChipLabel`). The detail view
   lists every source; the birthday itself is read-only, and the one thing
-  it edits is that person's reminder lead days.
+  it edits is that person's reminders.
 - **Locations and maps**: Google stores only location text, so
   coordinates (`EventRecord.geo`: lat, lng, name, and `source`, the text
   they came from) are derived on-device through `GeoClient` (MapKit) and
@@ -1293,7 +1295,9 @@ gateway carries all of it. Details, limits and the threat model:
 - **Device settings and the settings document**: `device_settings` is a
   key/value table for preferences that never sync to Google
   (`birthdayReminders`, `birthdayReminderOverrides` — keyed through
-  `birthdayMergeKey`, so an override survives a source coming or going —
+  `birthdayMergeKey`, so an override survives a source coming or going;
+  both read values saved before each reminder had its own time through
+  `upgradeBirthdayReminderData`, as the settings document does —
   `eventNotifications`, `timeZones`, `viewPreferences`, `onboarding`,
   `mirrors`, `mirrors.local`, `importedVisibility`,
   `localNotifications.*`), behind
@@ -1304,7 +1308,10 @@ gateway carries all of it. Details, limits and the threat model:
   `jsonc-parser` edits so comments survive). Accounts are a sign-in
   checklist, never tokens; an import never removes anything and never
   connects an Apple provider; visibility for rows not synced yet is
-  parked in `importedVisibility` and applied after each list pass.
+  parked in `importedVisibility` and applied after each list pass. Of
+  `viewPreferences` only `PortableViewPreferences` travels (the lane cap,
+  `weekendDays`, `weekendShading`), each field optional and imported
+  only when present; the opening view and the sidebar stay on the device.
 - **Settings code**: the settings document as one line a QR code carries,
   for copying a setup between the iPhone and the Mac (core
   `settingsCode.ts`): `SOLUNIVO:1:` + RFC 4648 base32 (no padding) of the
@@ -1368,8 +1375,10 @@ gateway carries all of it. Details, limits and the threat model:
   own loop — outside the sync pass — over two producers, `loadEventPlans`
   (visible calendars, a week ahead, `useDefault` resolved against the
   calendar's `defaultReminders`, Apple Calendar events only when the
-  setting includes them) and `loadBirthdayPlans` (a person's own lead
-  days replace the general ones; the general switch gates both), merged
+  setting includes them) and `loadBirthdayPlans` (one notification per
+  reminder — a lead time and its own time of day, one per lead; a
+  person's own reminders replace the general ones; the general switch
+  gates both), merged
   into one `PlannedNotification` list, each carrying a `target` the tap
   resolves (`findNotificationEvent`). A producer whose setting is off
   returns nothing; the OS schedule is cleared only when both do. The

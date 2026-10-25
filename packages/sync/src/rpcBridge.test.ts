@@ -67,7 +67,7 @@ const stubHandlers: BackendHandlers = {
   exportSettings: () => Effect.succeed({ version: 1 as const }),
   getBirthdayReminderOverrides: () => Effect.succeed([]),
   getBirthdayReminderSettings: () =>
-    Effect.succeed({ enabled: false, leadDays: [0 as const], time: '09:00' }),
+    Effect.succeed({ enabled: false, reminders: [{ leadDays: 0, time: '09:00' }] }),
   getBirthdaysInRange: () => Effect.succeed([]),
   getEvent: () => Effect.succeed(null),
   getEventNotificationSettings: () =>

@@ -2,7 +2,7 @@ import { Cause, Data, Effect, Schema } from 'effect';
 import { Rpc, RpcGroup } from 'effect/rpc';
 import type { RpcClientError } from 'effect/rpc/RpcClientError';
 import {
-  BirthdayLeadDays,
+  BirthdayReminder,
   BirthdayReminderOverrides,
   BirthdayReminderSettings,
 } from './birthdays/reminders.ts';
@@ -763,8 +763,8 @@ export class AppBackendRpcs extends RpcGroup.make(
     success: Schema.Array(PlaceSuggestion),
   }),
   /**
-   * Gives one person their own lead days (`[]`: no reminder for them), or
-   * with `leadDays: null` returns them to the general ones. Never asks for
+   * Gives one person their own reminders (`[]`: none for them), or with
+   * `reminders: null` returns them to the general ones. Never asks for
    * permission — the general switch did, and an override cannot turn the
    * reminders on.
    */
@@ -773,8 +773,8 @@ export class AppBackendRpcs extends RpcGroup.make(
     payload: {
       day: Schema.Number,
       displayName: Schema.String,
-      leadDays: Schema.NullOr(Schema.Array(BirthdayLeadDays)),
       month: Schema.Number,
+      reminders: Schema.NullOr(Schema.Array(BirthdayReminder)),
     },
   }),
   /**

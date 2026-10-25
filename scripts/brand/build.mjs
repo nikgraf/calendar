@@ -138,12 +138,15 @@ function luminance(color) {
   return r * 0.2126 + g * 0.7152 + b * 0.0722;
 }
 
+// The grounds text sits on, the weekend shade of the calendar grids among them.
+const TEXT_GROUNDS = ['canvas', 'surface', 'surface-subtle', 'surface-raised', 'fill', 'weekend'];
+
 function contrastReport(tokens) {
   const results = [];
   for (const [theme, colors] of Object.entries(tokens.themes)) {
     const pairs = [];
     for (const foreground of ['text', 'text-secondary']) {
-      for (const background of ['canvas', 'surface', 'surface-subtle', 'surface-raised', 'fill']) {
+      for (const background of TEXT_GROUNDS) {
         pairs.push([foreground, background, 4.5]);
       }
     }
@@ -162,7 +165,7 @@ function contrastReport(tokens) {
     }
     // The third zone's gutter labels: supplementary text a step under
     // text-secondary, held to the non-text bar so it stays legible.
-    for (const background of ['canvas', 'surface', 'surface-subtle', 'surface-raised', 'fill']) {
+    for (const background of TEXT_GROUNDS) {
       pairs.push(['text-tertiary', background, 3]);
     }
     for (const foreground of ['focus', 'border-strong']) {

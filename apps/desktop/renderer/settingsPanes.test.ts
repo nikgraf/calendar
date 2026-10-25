@@ -9,6 +9,7 @@ describe('filterPanes', () => {
 
   it('matches labels and keywords, case-folded, keeping the sidebar order', () => {
     expect(filterPanes('ACCOUNTS').map((pane) => pane.id)).toEqual(['accounts']);
+    expect(filterPanes('weekend').map((pane) => pane.id)).toEqual(['calendar']);
     expect(filterPanes('time zone').map((pane) => pane.id)).toEqual(['timezones']);
     expect(filterPanes('ollama').map((pane) => pane.id)).toEqual(['model']);
     expect(filterPanes('privacy').map((pane) => pane.id)).toEqual(['sharing']);
@@ -35,6 +36,7 @@ describe('filterPanes', () => {
 describe('isExperimentalPane', () => {
   it('lists mirrors and agents last, after every other pane', () => {
     expect(SETTINGS_PANES.map((pane) => isExperimentalPane(pane.id))).toEqual([
+      false,
       false,
       false,
       false,

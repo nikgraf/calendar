@@ -4,18 +4,16 @@ import {
   useInLesson,
   useLessonTried,
 } from '@calendar/app-state';
-import { DEVICE_ONLY_SETTING_COPY, leadDaysSummary } from '@calendar/core';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import { birthdayRemindersSummary, DEVICE_ONLY_SETTING_COPY } from '@calendar/core';
 import { useState } from 'react';
 import { Linking } from 'react-native';
-import { dateFromParts, toTimeString } from '../editSheetShared.ts';
+import { BirthdayReminderRows } from '../BirthdayReminderRows.tsx';
 import { useTheme } from '../theme.ts';
 import {
   ActionRow,
   Footer,
   LeadingSpace,
   LeadingSymbol,
-  NavRow,
   Row,
   Section,
   SettingsPage,
@@ -27,8 +25,8 @@ import { notificationsBlocked, useNotificationSettings } from './NotificationSet
 /**
  * Notifications on this iPhone: before events (and, if asked, Apple
  * Calendar events too — the Calendar app already notifies for those), for
- * contact birthdays at the chosen lead times, and the people with times
- * of their own. All device-local; a save that switches one on asks iOS
+ * contact birthdays at each reminder's lead and time, and the people with
+ * reminders of their own. All device-local; a save that switches one on asks iOS
  * for permission, and the page says up front when iOS has said no.
  */
 export function NotificationsPage() {
@@ -140,7 +138,10 @@ export function NotificationsSections() {
         <Section
           footer={
             <>
-              <Footer>A notification for every birthday in your contacts.</Footer>
+              <Footer>
+                A notification for every birthday in your contacts, at each reminder’s time. Swipe
+                left on a reminder to delete it.
+              </Footer>
               {birthdays.failure ? (
                 <Footer testID="birthday-notifications-failed" tone="danger">
                   {birthdays.failure}
@@ -157,28 +158,14 @@ export function NotificationsSections() {
             title="Birthday Reminders"
             value={birthdays.settings.enabled}
           />
-          <NavRow
-            href="/settings/birthday-leads"
-            testID="birthday-lead-times"
-            title="Remind Me"
-            value={leadDaysSummary(birthdays.settings.leadDays)}
-          />
-          <Row
-            accessory={
-              <DateTimePicker
-                accessibilityLabel="Reminder time"
-                display="compact"
-                mode="time"
-                onChange={(_, picked) => {
-                  if (picked) {
-                    birthdays.save({ time: toTimeString(picked) });
-                  }
-                }}
-                testID="birthday-time"
-                value={dateFromParts('2026-01-01', birthdays.settings.time)}
-              />
-            }
-            title="Time"
+          {/* On this page, not one pushed over it: the Alerts lesson shows
+              these sections in a stack of its own, and a push from there
+              opened Settings' stack, whose editor never saw the lesson's
+              changes (the row kept reading "On the day"). */}
+          <BirthdayReminderRows
+            onChange={(reminders) => birthdays.save({ reminders })}
+            reminders={birthdays.settings.reminders}
+            testIDPrefix="birthday-reminder"
           />
         </Section>
       ) : null}
@@ -189,7 +176,7 @@ export function NotificationsSections() {
             <>
               <Footer>
                 Change a person’s reminders from their birthday in the calendar. Swipe left on a
-                name to go back to the times above.
+                name to go back to the reminders above.
               </Footer>
               {overrideFailure ? (
                 <Footer testID="birthday-override-failed" tone="danger">
@@ -204,7 +191,7 @@ export function NotificationsSections() {
           {overrides.map((override, index) => (
             <SwipeRow
               action={() =>
-                void setBirthdayReminderOverride({ ...override, leadDays: null }).then(
+                void setBirthdayReminderOverride({ ...override, reminders: null }).then(
                   () => setOverrideFailure(null),
                   (error: unknown) => setOverrideFailure(String(error)),
                 )
@@ -212,9 +199,11 @@ export function NotificationsSections() {
               actionLabel="Reset"
               actionTestID={`birthday-override-reset-${String(index)}`}
               key={`${override.displayName}:${String(override.month)}-${String(override.day)}`}
+              // Below the name, where it can wrap: a list with times is
+              // longer than a row's value column.
+              subtitle={birthdayRemindersSummary(override.reminders)}
               testID={`birthday-override-row-${String(index)}`}
               title={override.displayName}
-              value={leadDaysSummary(override.leadDays)}
             />
           ))}
         </Section>

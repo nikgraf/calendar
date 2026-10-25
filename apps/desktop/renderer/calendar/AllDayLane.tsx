@@ -262,6 +262,7 @@ export function AllDayLane({
   stripStyle,
   taskById,
   today,
+  weekendColumns,
 }: {
   allDayById: ReadonlyMap<string, EventRecord>;
   birthdayById: ReadonlyMap<string, BirthdayOccurrence>;
@@ -302,6 +303,8 @@ export function AllDayLane({
   /** Every task the lane may show, by `calendarTaskKey` — a fold's list reads its rows here. */
   taskById: ReadonlyMap<string, TaskRecord>;
   today: string;
+  /** The strip columns drawn with the weekend background, under the chips. */
+  weekendColumns: ReadonlyArray<{ readonly dayIndex: number; readonly iso: string }>;
 }) {
   const tintOf = useTint();
   const [openFold, setOpenFold] = useState<OpenFold | null>(null);
@@ -359,6 +362,19 @@ export function AllDayLane({
         {/* Exactly the room inside the hairline: a lane that fits has nothing to scroll. */}
         <div className="relative overflow-hidden" style={{ height: contentHeight - BORDER_PX }}>
           <div className="relative h-full" style={stripStyle}>
+            {weekendColumns.map(({ dayIndex, iso }) => (
+              <div
+                aria-hidden
+                className="pointer-events-none absolute inset-y-0 bg-weekend"
+                data-day={iso}
+                data-weekend="true"
+                key={`weekend:${iso}`}
+                style={{
+                  left: `${(dayIndex / stripLength) * 100}%`,
+                  width: `${(1 / stripLength) * 100}%`,
+                }}
+              />
+            ))}
             <LaneDropIndicator drag={drag} stripLength={stripLength} />
             {moreByDay.map((hidden, dayIndex) =>
               hidden > 0 ? (

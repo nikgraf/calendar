@@ -10,12 +10,16 @@ import {
   printParseErrorCode,
   type ParseError,
 } from 'jsonc-parser/lib/esm/main.js';
-import { BirthdayReminderOverrides, BirthdayReminderSettings } from './birthdays/reminders.ts';
+import {
+  BirthdayReminderOverrides,
+  BirthdayReminderSettings,
+  upgradeBirthdayReminderData,
+} from './birthdays/reminders.ts';
 import { MirrorDefinition } from './mirror/definition.ts';
 import { EventNotificationSettings } from './notifications/settings.ts';
 import { canonicalZoneId, runtimeZoneId } from './time/zones.ts';
 import { isDeviceZone, TimeZoneSettings } from './timeZoneSettings.ts';
-import { ViewPreferences } from './viewPreferences.ts';
+import { PortableViewPreferences } from './viewPreferences.ts';
 
 /**
  * The portable settings document: what Export writes, Import reads and the
@@ -104,7 +108,7 @@ export type DesktopSettings = typeof DesktopSettings.Type;
 export const SettingsDocument = Schema.Struct({
   accounts: Schema.optional(Schema.Array(SettingsAccount)),
   /**
-   * People with their own birthday lead days, named by display name plus
+   * People with their own birthday reminders, named by display name plus
    * month and day so the same person matches on every device. An import
    * adds or updates, never removes.
    */
@@ -120,7 +124,7 @@ export const SettingsDocument = Schema.Struct({
   mirrors: Schema.optional(Schema.Array(MirrorDefinition)),
   timeZones: Schema.optional(TimeZoneSettings),
   version: Schema.Literal(SETTINGS_DOCUMENT_VERSION),
-  view: Schema.optional(ViewPreferences),
+  view: Schema.optional(PortableViewPreferences),
 });
 export type SettingsDocument = typeof SettingsDocument.Type;
 
@@ -208,10 +212,23 @@ export const parseSettingsDocument = (
       });
     }
     const timeZones = record['timeZones'];
-    const normalized =
+    const zoned =
       typeof timeZones === 'object' && timeZones !== null && !Array.isArray(timeZones)
         ? { ...record, timeZones: normalizeZones(timeZones, options) }
         : record;
+    // A file from before each birthday reminder had its own time still
+    // reads (the format kept its version: the old shape maps over whole).
+    const birthdays = upgradeBirthdayReminderData({
+      overrides: zoned['birthdayReminderOverrides'],
+      settings: zoned['birthdayReminders'],
+    });
+    const normalized = {
+      ...zoned,
+      ...(birthdays.overrides === undefined
+        ? {}
+        : { birthdayReminderOverrides: birthdays.overrides }),
+      ...(birthdays.settings === undefined ? {} : { birthdayReminders: birthdays.settings }),
+    };
     return yield* decodeDocument(normalized).pipe(
       Effect.mapError((error) => new SettingsParseError({ message: error.message })),
     );
@@ -252,14 +269,15 @@ export const formatSettingsDocument = (document: SettingsDocument): string =>
 
 const SETTINGS_LEAF_PATHS: ReadonlyArray<readonly [keyof SettingsDocument, string]> = [
   ['birthdayReminders', 'enabled'],
-  ['birthdayReminders', 'leadDays'],
-  ['birthdayReminders', 'time'],
+  ['birthdayReminders', 'reminders'],
   ['desktop', 'screenPrivacy'],
   ['eventNotifications', 'enabled'],
   ['eventNotifications', 'includeAppleCalendar'],
   ['timeZones', 'primary'],
   ['timeZones', 'zones'],
   ['view', 'allDayLaneCollapsed'],
+  ['view', 'weekendDays'],
+  ['view', 'weekendShading'],
 ];
 
 /**
@@ -290,6 +308,12 @@ export const mergeSettingsDocument = (text: string, document: SettingsDocument):
     if (leafValue !== undefined) {
       set([section, leaf], leafValue);
     }
+  }
+  if (encoded['birthdayReminders'] !== undefined) {
+    // The old shape's keys, gone once its reminders are written above.
+    // (Removing a key that is not there changes nothing.)
+    set(['birthdayReminders', 'leadDays'], undefined);
+    set(['birthdayReminders', 'time'], undefined);
   }
   if (encoded['accounts'] !== undefined) {
     set(['accounts'], encoded['accounts']);

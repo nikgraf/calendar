@@ -1,6 +1,7 @@
 import {
   type DraftOccurrence,
   useGuardedMutations,
+  useShadedWeekdays,
   useUpdateViewPreferences,
   useViewPreferences,
 } from '@calendar/app-state';
@@ -16,6 +17,7 @@ import {
   groupByDate,
   groupEventsByDay,
   interpolatePages,
+  isShadedDay,
   MAX_ALL_DAY_ROWS,
   pageMaxima,
   partitionCalendarTasks,
@@ -235,6 +237,14 @@ export function DayTimeline({
   };
 
   const strip = useMemo(() => bufferedDays(days[0]!, days.length, buffer), [days, buffer]);
+  const shaded = useShadedWeekdays();
+  const weekendColumns = useMemo(
+    () =>
+      strip.flatMap((day, index) =>
+        isShadedDay(shaded, day) ? [{ index, iso: day.toString() }] : [],
+      ),
+    [strip, shaded],
+  );
   // One pass over the window's events, not one filter per column.
   const byDay = useMemo(() => groupEventsByDay(events, strip, timeZone), [events, strip, timeZone]);
   const draftsByDay = useMemo(
@@ -496,6 +506,25 @@ export function DayTimeline({
   const stripStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: panX.value - navigatedPx.value }],
   }));
+  // The weekend's columns as backgrounds of their own, under the lane's
+  // chips and the grid's hour lines (a column's own background would
+  // cover the lines, which are drawn before the columns). They ride the
+  // same strip geometry, so they pan with the columns.
+  const weekendBands = (testIDPrefix: string) =>
+    weekendColumns.length === 0 ? null : (
+      <Animated.View
+        pointerEvents="none"
+        style={[styles.bands, { left: stripLeft, width: strip.length * columnWidth }, stripStyle]}
+      >
+        {weekendColumns.map(({ index, iso }) => (
+          <View
+            key={iso}
+            style={[styles.weekendBand, { left: index * columnWidth, width: columnWidth }]}
+            testID={`${testIDPrefix}-${iso}`}
+          />
+        ))}
+      </Animated.View>
+    );
   // The lane's height for the page at the viewport's left edge: an index
   // into `pageHeights`, fractional mid-swipe.
   const pageAt = () => {
@@ -582,6 +611,7 @@ export function DayTimeline({
           testID="all-day-scroller"
         >
           <Animated.View style={[styles.laneContent, laneContentStyle]}>
+            {weekendBands('weekend-lane')}
             <Animated.View style={[styles.strip, { left: stripLeft }, stripStyle]}>
               <Animated.View
                 pointerEvents="none"
@@ -634,6 +664,11 @@ export function DayTimeline({
           style={styles.scroll}
         >
           <View style={{ height: 24 * HOUR_HEIGHT }}>
+            {weekendColumns.length === 0 ? null : (
+              <View pointerEvents="none" style={[styles.eventsArea, { left: gutter }]}>
+                {weekendBands('weekend-band')}
+              </View>
+            )}
             {Array.from({ length: 24 }, (_, hour) => (
               <View key={hour} style={[styles.hourRow, { top: hour * HOUR_HEIGHT }]}>
                 {/* The primary hour sits on its line; the other zones hang
@@ -738,6 +773,11 @@ const makeStyles = (colors: ThemeColors) =>
       borderBottomColor: colors.border,
       borderBottomWidth: StyleSheet.hairlineWidth,
       flexDirection: 'row',
+    },
+    bands: {
+      bottom: 0,
+      position: 'absolute',
+      top: 0,
     },
     container: {
       flex: 1,
@@ -855,6 +895,12 @@ const makeStyles = (colors: ThemeColors) =>
       flex: 1,
       marginRight: EDGE_INSET,
       overflow: 'hidden',
+    },
+    weekendBand: {
+      backgroundColor: colors.weekend,
+      bottom: 0,
+      position: 'absolute',
+      top: 0,
     },
     weekHeader: {
       borderBottomColor: colors.border,

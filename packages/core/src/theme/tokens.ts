@@ -46,6 +46,7 @@ export const THEMES = {
     'text-secondary': '#bbb0c1',
     'text-tertiary': '#8a8290',
     warning: '#f1d38e',
+    weekend: '#1f1c23',
   },
   light: {
     border: '#eeece7',
@@ -85,6 +86,7 @@ export const THEMES = {
     'text-secondary': '#706875',
     'text-tertiary': '#8d8691',
     warning: '#76520c',
+    weekend: '#f8f7f4',
   },
 } as const;
 

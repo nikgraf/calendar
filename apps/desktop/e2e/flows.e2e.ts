@@ -1079,17 +1079,30 @@ describe('calendar desktop e2e', () => {
     expect(events.some((event) => event.title === 'Daily standup v2')).toBe(true);
   });
 
-  it('toggles calendar visibility from the sidebar', async () => {
+  it('toggles calendar visibility from anywhere on its sidebar row, the swatch included', async () => {
     const { cdp } = app;
-    // Sidebar calendar rows are buttons labelled by summary.
-    await cdp.eval(
-      `[...document.querySelectorAll('aside button')].find(b => b.textContent?.includes('Personal'))?.click()`,
+    const row = '[data-testid="sidebar-calendar-cal-personal"]';
+    const pressed = `document.querySelector('${row}')?.getAttribute('aria-pressed')`;
+    // The sidebar has no color control: the swatch is the row's checkbox.
+    expect(await cdp.eval<boolean>(`!document.querySelector('[aria-label^="Change color"]')`)).toBe(
+      true,
     );
+    const swatch = await cdp.locate(`${row} > span[aria-hidden]`);
+    await cdp.click(swatch.x, swatch.y);
+    await cdp.waitFor(`${pressed} === 'false'`);
     await cdp.waitFor(`!document.querySelector('[title^="Gym session"]')`);
-    await cdp.eval(
-      `[...document.querySelectorAll('aside button')].find(b => b.textContent?.includes('Personal'))?.click()`,
-    );
-    await cdp.waitFor(`!!document.querySelector('[title^="Gym session"]')`);
+    await expect
+      .poll(
+        async () =>
+          (await readCalendars(app.userDataDir)).find((calendar) => calendar.id === 'cal-personal')
+            ?.isVisible,
+      )
+      .toBe(false);
+
+    const name = await cdp.locate(`${row} > span:last-child`);
+    await cdp.click(name.x, name.y);
+    await cdp.waitFor(`${pressed} === 'true'`);
+    await cdp.locate('[title^="Gym session"]');
   });
 
   it('deletes an event through the editor, after asking', async () => {
@@ -1374,13 +1387,19 @@ describe('calendar desktop e2e', () => {
     expect(ops.some((op) => op.kind === 'completeTask' && op.eventId === 'task-rent')).toBe(true);
   });
 
-  it('recolors a calendar through the sidebar picker', async () => {
+  it('recolors a calendar from Settings › Accounts', async () => {
     const { cdp } = app;
-    const point = await cdp.locate('[aria-label="Change color: Personal"]');
-    await cdp.click(point.x, point.y);
-    await cdp.waitFor(`!!document.querySelector('[aria-label="Set color #16a765"]')`);
-    const swatch = await cdp.locate('[aria-label="Set color #16a765"]');
-    await cdp.click(swatch.x, swatch.y);
+    const settings = await app.openSettings('accounts');
+    try {
+      const point = await settings.locate('[aria-label="Change color: Personal"]');
+      await settings.click(point.x, point.y);
+      await settings.waitFor(`!!document.querySelector('[aria-label="Set color #16a765"]')`);
+      const swatch = await settings.locate('[aria-label="Set color #16a765"]');
+      await settings.click(swatch.x, swatch.y);
+      await settings.waitFor(`!document.querySelector('[aria-label="Close color picker"]')`);
+    } finally {
+      await app.closeSettings();
+    }
 
     const deadline = Date.now() + 10_000;
     let personal = (await readCalendars(app.userDataDir)).find(
@@ -1399,7 +1418,7 @@ describe('calendar desktop e2e', () => {
     );
     expect(colorOps).toHaveLength(1);
     expect(colorOps[0]!.colorHex).toBe('#16a765');
-    // The event chip repaints from the calendars atom.
+    // The calendar window's chip repaints from its own calendars atom.
     await cdp.waitFor(
       `(() => { const el = document.querySelector('[title^="Gym session"]'); return el && el.dataset.color === '#16a765'; })()`,
     );
@@ -1467,6 +1486,81 @@ describe('calendar desktop e2e', () => {
       `[...document.querySelectorAll('[role="radio"]')].some(b => b.textContent === 'Hidden' && b.getAttribute('aria-checked') === 'true')`,
     );
     await app.closeSettings();
+  });
+
+  it('shades the weekend days, and Settings › Calendar picks them or turns the shade off', async () => {
+    const { cdp } = app;
+    // The weekdays of the shaded columns (or month cells) in view, as
+    // weekday codes: the week strip always holds every weekday, so the
+    // answer is the same on any date.
+    const shadedIn = (root: string) =>
+      cdp.eval<Array<string>>(
+        `[...new Set([...document.querySelectorAll('[data-testid="${root}"] [data-weekend]')].map((cell) => ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'][new Date(cell.dataset.day + 'T12:00:00').getDay()]))].sort()`,
+      );
+    const stored = () => readDeviceSetting(app.userDataDir, 'viewPreferences');
+    await cdp.waitFor(`!!document.querySelector('[data-testid="week-grid"] [data-weekend]')`);
+    expect(await shadedIn('week-grid')).toEqual(['SA', 'SU']);
+    expect(await shadedIn('all-day-lane')).toEqual(['SA', 'SU']);
+
+    const settings = await app.openSettings('calendar');
+    const pressed = (day: string) =>
+      settings.eval<string | null>(
+        `document.querySelector('[data-testid="weekend-day-${day}"]')?.getAttribute('aria-pressed') ?? null`,
+      );
+    const toggleDay = async (day: string, to: boolean) => {
+      await settings.eval(`document.querySelector('[data-testid="weekend-day-${day}"]')?.click()`);
+      await settings.waitFor(
+        `document.querySelector('[data-testid="weekend-day-${day}"]')?.getAttribute('aria-pressed') === ${JSON.stringify(String(to))}`,
+      );
+    };
+    const shadeWeekends = () =>
+      settings.eval(`document.querySelector('input[aria-label="Shade weekends"]')?.click()`);
+    try {
+      // The pane draws its days once this window's own read of the preferences lands.
+      await settings.waitFor(
+        `document.querySelector('[data-testid="weekend-day-SA"]')?.getAttribute('aria-pressed') === 'true'`,
+      );
+      expect(await pressed('FR')).toBe('false');
+      await toggleDay('FR', true);
+      await toggleDay('SU', false);
+      await expect.poll(stored, { timeout: 10_000 }).toMatchObject({ weekendDays: ['FR', 'SA'] });
+      // The calendar window follows a change made in the settings window.
+      await expect.poll(() => shadedIn('week-grid'), { timeout: 10_000 }).toEqual(['FR', 'SA']);
+      await cdp.clickTestId('view-month');
+      try {
+        await expect.poll(() => shadedIn('month-grid'), { timeout: 10_000 }).toEqual(['FR', 'SA']);
+      } finally {
+        await cdp.clickTestId('view-week');
+      }
+
+      // Off: nothing is shaded, and the days stay as picked.
+      await shadeWeekends();
+      await settings.waitFor(
+        `document.querySelector('[data-testid="weekend-day-FR"]')?.disabled === true`,
+      );
+      await expect.poll(() => shadedIn('week-grid'), { timeout: 10_000 }).toEqual([]);
+      expect(await stored()).toMatchObject({ weekendDays: ['FR', 'SA'], weekendShading: false });
+    } finally {
+      // Back to the defaults for the remaining flows.
+      if (
+        await settings.eval<boolean>(
+          `document.querySelector('input[aria-label="Shade weekends"]')?.checked === false`,
+        )
+      ) {
+        await shadeWeekends();
+        await settings.waitFor(
+          `document.querySelector('[data-testid="weekend-day-FR"]')?.disabled === false`,
+        );
+      }
+      if ((await pressed('FR')) === 'true') {
+        await toggleDay('FR', false);
+      }
+      if ((await pressed('SU')) === 'false') {
+        await toggleDay('SU', true);
+      }
+      await app.closeSettings();
+    }
+    await expect.poll(() => shadedIn('week-grid'), { timeout: 10_000 }).toEqual(['SA', 'SU']);
   });
 
   it('says so while a screen capture leaves the window out, and pauses privacy from there', async () => {
@@ -1548,6 +1642,7 @@ describe('calendar desktop e2e', () => {
       ),
     ).toEqual([
       'Accounts',
+      'Calendar',
       'Notifications',
       'Time Zones',
       'AI Model',
@@ -1606,7 +1701,7 @@ describe('calendar desktop e2e', () => {
       setter.call(input, '');
       input.dispatchEvent(new Event('input', { bubbles: true }));
     })()`);
-    await settings.waitFor(`document.querySelectorAll('[role="tab"]').length === 10`);
+    await settings.waitFor(`document.querySelectorAll('[role="tab"]').length === 11`);
 
     // The main process reads the pane from the window's URL, so it must
     // have followed the tab click: asking for Accounts again moves back.
@@ -1707,22 +1802,6 @@ describe('calendar desktop e2e', () => {
       await cdp.eval<string>(`document.querySelector('textarea[placeholder="Add notes"]').value`),
     ).toBe('Bring the resistance bands');
     await cdp.clickButtonWithText('Cancel');
-    await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);
-  });
-
-  it('closes only the color picker on Escape, keeping the editor and its draft', async () => {
-    const { cdp } = app;
-    await cdp.openEditor('[title^="Gym session"]');
-    await setEditorTitle('Gym session (draft)');
-    const swatch = await cdp.locate('[aria-label="Change color: Personal"]');
-    await cdp.click(swatch.x, swatch.y);
-    await cdp.waitFor(`!!document.querySelector('[aria-label="Close color picker"]')`);
-    await cdp.pressEscape();
-    await cdp.waitFor(`!document.querySelector('[aria-label="Close color picker"]')`);
-    expect(
-      await cdp.eval<string>(`document.querySelector('input[placeholder="Title"]')?.value`),
-    ).toBe('Gym session (draft)');
-    await cdp.pressEscape();
     await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);
   });
 
@@ -1979,6 +2058,98 @@ describe('Google task chips drag along the lane but never into the grid', () => 
         ),
       )
       .toBe(true);
+  });
+});
+
+describe('the color picker in a long Settings › Accounts list', () => {
+  let listApp: App;
+
+  beforeAll(async () => {
+    listApp = await launchApp({
+      accounts: [account],
+      calendars: Array.from({ length: 14 }, (_, index) =>
+        calendar(`cal-${String(index)}`, `Calendar ${String(index).padStart(2, '0')}`, '#4986e7'),
+      ),
+      events: [],
+    });
+  }, 60_000);
+
+  afterEach(async (context) => {
+    if (context.task.result?.state === 'fail') {
+      await listApp?.dump(context.task.name);
+    }
+  });
+
+  afterAll(async () => {
+    await listApp?.stop();
+  });
+
+  it('opens above a low row inside the fixed window, recolors, and closes with its pane', async () => {
+    const settings = await listApp.openSettings('accounts');
+    try {
+      await settings.waitFor(
+        `document.querySelectorAll('[aria-label^="Change color"]').length === 14`,
+      );
+      // The lowest well that shows unscrolled: the 560 px window has no
+      // room for the picker under it.
+      const well = await settings.eval<{
+        label: string;
+        right: number;
+        top: number;
+        x: number;
+        y: number;
+      }>(`(() => {
+        const wells = [...document.querySelectorAll('[aria-label^="Change color"]')]
+          .filter((el) => el.getBoundingClientRect().bottom <= window.innerHeight);
+        const el = wells.at(-1);
+        const r = el.getBoundingClientRect();
+        return { label: el.getAttribute('aria-label'), right: r.right, top: r.top, x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      })()`);
+      expect(well.top).toBeGreaterThan(400);
+      await settings.click(well.x, well.y);
+      const panel = `document.querySelector('[role="dialog"][aria-label^="Color of"]')`;
+      await settings.waitFor(`!!${panel}`);
+      const rect = await settings.eval<{
+        bottom: number;
+        left: number;
+        right: number;
+        top: number;
+        width: number;
+      }>(
+        `(() => { const r = ${panel}.getBoundingClientRect(); return { bottom: r.bottom, left: r.left, right: r.right, top: r.top, width: r.width }; })()`,
+      );
+      expect(rect.top).toBeGreaterThanOrEqual(0);
+      expect(rect.bottom).toBeLessThanOrEqual(await settings.eval<number>('window.innerHeight'));
+      expect(rect.bottom).toBeLessThanOrEqual(well.top);
+      // Hung from the well's right edge at the palette's full width (six
+      // 20 px swatches, not squeezed to what is left of the window).
+      expect(rect.left).toBeGreaterThanOrEqual(0);
+      expect(Math.abs(rect.right - well.right)).toBeLessThanOrEqual(1);
+      expect(rect.width).toBeGreaterThan(6 * 20);
+
+      const swatch = await settings.locate('[aria-label="Set color #16a765"]');
+      await settings.click(swatch.x, swatch.y);
+      await settings.waitFor(`!${panel}`);
+      const summary = well.label.replace('Change color: ', '');
+      await expect
+        .poll(
+          async () =>
+            (await readCalendars(listApp.userDataDir)).find(
+              (calendar) => calendar.summary === summary,
+            )?.colorHex,
+        )
+        .toBe('#16a765');
+
+      // Another pane only hides Accounts: a picker left open there would
+      // take the next Escape, so the pane switch closes it.
+      await settings.click(well.x, well.y);
+      await settings.waitFor(`!!${panel}`);
+      await settings.eval(`location.replace('#settings/notifications')`);
+      await settings.waitFor(`!${panel}`);
+      await settings.waitFor(`!document.querySelector('[aria-label="Close color picker"]')`);
+    } finally {
+      await listApp.closeSettings();
+    }
   });
 });
 

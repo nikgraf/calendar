@@ -14,6 +14,7 @@ import {
   isSignInCancelled,
 } from '@calendar/core';
 import { useState } from 'react';
+import { CalendarColorButton } from './CalendarColorButton.tsx';
 import { CALLOUT_CLASS } from './ui/calloutStyles.ts';
 import { TEXT_ACTION_CLASS, TEXT_LINK_CLASS } from './ui/buttonStyles.ts';
 
@@ -167,25 +168,24 @@ export function AccountsView() {
                   className="flex items-center gap-2 text-sm"
                   key={`${calendar.accountId}:${calendar.id}`}
                 >
-                  <input
-                    checked={calendar.isVisible}
-                    onChange={(changeEvent) =>
-                      void guarded.setCalendarVisible({
-                        accountId: calendar.accountId,
-                        calendarId: calendar.id,
-                        isVisible: changeEvent.target.checked,
-                      })
-                    }
-                    type="checkbox"
-                  />
-                  <span
-                    className="inline-block size-3 rounded-full"
-                    style={{ backgroundColor: calendar.colorHex }}
-                  />
-                  <span>{calendar.summary}</span>
-                  {calendar.isPrimary ? (
-                    <span className="text-xs text-ink-secondary">primary</span>
-                  ) : null}
+                  <label className="flex min-w-0 flex-1 items-center gap-2">
+                    <input
+                      checked={calendar.isVisible}
+                      onChange={(changeEvent) =>
+                        void guarded.setCalendarVisible({
+                          accountId: calendar.accountId,
+                          calendarId: calendar.id,
+                          isVisible: changeEvent.target.checked,
+                        })
+                      }
+                      type="checkbox"
+                    />
+                    <span className="truncate">{calendar.summary}</span>
+                    {calendar.isPrimary ? (
+                      <span className="text-xs text-ink-secondary">primary</span>
+                    ) : null}
+                  </label>
+                  <CalendarColorButton calendar={calendar} />
                 </li>
               ))}
           </ul>

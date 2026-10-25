@@ -1,5 +1,6 @@
 import {
   type DraftOccurrence,
+  useShadedWeekdays,
   useUpdateViewPreferences,
   useViewPreferences,
 } from '@calendar/app-state';
@@ -13,6 +14,7 @@ import {
   expandedAllDayRows,
   foldTaskBacklog,
   formatPlainTime,
+  isShadedDay,
   layoutAllDayLane,
   layoutDayColumn,
   MAX_ALL_DAY_ROWS,
@@ -371,6 +373,11 @@ export function WeekView({
   const updateViewPreferences = useUpdateViewPreferences();
   const collapsed = preferences?.allDayLaneCollapsed ?? false;
   const capped = collapsed ? capAllDayLane(allDayPlaced, strip.length, MAX_ALL_DAY_ROWS) : null;
+  // The weekend's columns carry their own background through the lane and the grid.
+  const shaded = useShadedWeekdays();
+  const weekendColumns = strip.flatMap((day, dayIndex) =>
+    isShadedDay(shaded, day) ? [{ dayIndex, iso: day.toString() }] : [],
+  );
   // Built once per render, not once per column: this component re-renders
   // on every drag pointermove, and the strip is up to 11 columns wide.
   const eventsById = new Map(
@@ -435,6 +442,7 @@ export function WeekView({
         stripStyle={stripStyle}
         taskById={taskById}
         today={todayIso}
+        weekendColumns={weekendColumns}
       />
 
       {/* Timed grid */}
@@ -507,6 +515,7 @@ export function WeekView({
                     ),
                 );
                 const isToday = Temporal.PlainDate.compare(day, today) === 0;
+                const weekend = isShadedDay(shaded, day);
                 const drawn =
                   slot.selection && Temporal.PlainDate.compare(slot.selection.day, day) === 0
                     ? slot.selection
@@ -515,7 +524,10 @@ export function WeekView({
                 return (
                   <div
                     aria-label={`${day.toLocaleString('en-US', { day: 'numeric', month: 'long', weekday: 'long' })}: press Enter for a new event`}
-                    className="relative border-l border-hairline outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-inset"
+                    // The hour-line gradient paints over the weekend background.
+                    className={`relative border-l border-hairline outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-inset ${weekend ? 'bg-weekend' : ''}`}
+                    data-day={iso}
+                    data-weekend={weekend ? 'true' : undefined}
                     key={iso}
                     onClick={(clickEvent) => {
                       // Both flags are consumed, so neither leaks into the next click.

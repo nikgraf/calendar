@@ -33,13 +33,21 @@ const full: SettingsDocument = {
     { calendars: [{ source: 'iCloud', title: 'Home', visible: true }], kind: 'apple-calendar' },
     { kind: 'apple-reminders', taskLists: [{ title: 'Groceries', visible: false }] },
   ],
-  birthdayReminderOverrides: [{ day: 4, displayName: 'Alice', leadDays: [14], month: 3 }],
-  birthdayReminders: { enabled: true, leadDays: [0, 7], time: '08:30' },
+  birthdayReminderOverrides: [
+    { day: 4, displayName: 'Alice', month: 3, reminders: [{ leadDays: 14, time: '19:00' }] },
+  ],
+  birthdayReminders: {
+    enabled: true,
+    reminders: [
+      { leadDays: 0, time: '08:30' },
+      { leadDays: 7, time: '18:00' },
+    ],
+  },
   desktop: { screenPrivacy: 'visible' },
   eventNotifications: { enabled: false, includeAppleCalendar: true },
   timeZones: { primary: 'device', zones: ['device', 'UTC'] },
   version: 1,
-  view: { allDayLaneCollapsed: true },
+  view: { allDayLaneCollapsed: true, weekendDays: ['FR', 'SA'], weekendShading: true },
 };
 
 /** A document holding only a zone list. */
@@ -70,6 +78,27 @@ describe('parseSettingsDocument', () => {
     expect(failure('[]')).toContain('JSON object');
   });
 
+  it('reads birthday reminders from a file written before each had its own time', () => {
+    const text = JSON.stringify({
+      birthdayReminderOverrides: [{ day: 4, displayName: 'Alice', leadDays: [14], month: 3 }],
+      birthdayReminders: { enabled: true, leadDays: [0, 7], time: '08:30' },
+      version: 1,
+    });
+    expect(parse(text)).toEqual({
+      birthdayReminderOverrides: [
+        { day: 4, displayName: 'Alice', month: 3, reminders: [{ leadDays: 14, time: '08:30' }] },
+      ],
+      birthdayReminders: {
+        enabled: true,
+        reminders: [
+          { leadDays: 0, time: '08:30' },
+          { leadDays: 7, time: '08:30' },
+        ],
+      },
+      version: 1,
+    });
+  });
+
   it('rejects a zone no spelling resolves', () => {
     expect(
       failure(
@@ -94,6 +123,19 @@ describe('parseSettingsDocument', () => {
   it('rejects a zone list longer than the cap', () => {
     expect(Exit.isFailure(parseZones('UTC', ['device', 'UTC', 'Asia/Kolkata', 'Asia/Tokyo']))).toBe(
       true,
+    );
+  });
+
+  it('accepts a view section holding any of its fields', () => {
+    expect(parse('{ "version": 1, "view": { "weekendDays": ["FR", "SA"] } }').view).toEqual({
+      weekendDays: ['FR', 'SA'],
+    });
+    expect(parse('{ "version": 1, "view": {} }').view).toEqual({});
+  });
+
+  it('rejects a weekend day that is not a weekday code', () => {
+    expect(failure('{ "version": 1, "view": { "weekendDays": ["Friday"] } }')).toContain(
+      'weekendDays',
     );
   });
 
@@ -170,17 +212,47 @@ describe('mergeSettingsDocument', () => {
     expect(merged).not.toContain('old@example.com');
   });
 
+  it('writes the weekend leaves into an existing view section', () => {
+    const merged = mergeSettingsDocument(
+      '{\n  "version": 1,\n  "view": {\n    "allDayLaneCollapsed": false // mine\n  }\n}\n',
+      { version: 1, view: { weekendDays: ['FR', 'SA'], weekendShading: false } },
+    );
+    expect(merged).toContain('// mine');
+    expect(parse(merged).view).toEqual({
+      allDayLaneCollapsed: false,
+      weekendDays: ['FR', 'SA'],
+      weekendShading: false,
+    });
+  });
+
   it('replaces the per-person birthday list as a whole, keeping the comments around it', () => {
     const once = mergeSettingsDocument(text, full);
     const merged = mergeSettingsDocument(once, {
-      birthdayReminderOverrides: [{ day: 10, displayName: 'Bob', leadDays: [], month: 3 }],
+      birthdayReminderOverrides: [{ day: 10, displayName: 'Bob', month: 3, reminders: [] }],
       version: 1,
     });
     expect(parse(merged).birthdayReminderOverrides).toEqual([
-      { day: 10, displayName: 'Bob', leadDays: [], month: 3 },
+      { day: 10, displayName: 'Bob', month: 3, reminders: [] },
     ]);
     expect(merged).toContain('// keep me');
     expect(merged).toContain('// primary comment');
+  });
+
+  it('writes each birthday reminder with its time and drops the old shape’s keys', () => {
+    const old = [
+      '{',
+      '  "version": 1,',
+      '  // birthdays',
+      '  "birthdayReminders": { "enabled": false, "leadDays": [0], "time": "09:00" }',
+      '}',
+    ].join('\n');
+    const merged = mergeSettingsDocument(old, full);
+    expect(parse(merged).birthdayReminders).toEqual(full.birthdayReminders);
+    // Only inside a reminder now: no list of lead days, no shared time.
+    expect(merged).not.toMatch(/"leadDays": \[/);
+    expect(merged).not.toContain('"time": "09:00"');
+    expect(merged).toContain('// birthdays');
+    expect(mergeSettingsDocument(merged, full)).toBe(merged);
   });
 
   it('is idempotent', () => {
