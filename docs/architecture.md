@@ -1215,25 +1215,28 @@ gateway carries all of it. Details, limits and the threat model:
   detail, a birthday, Settings) but opens once that has closed and the
   editor's form sheet is gone (`captureMayOpen`). A new share drops a
   waiting thread, as does a tapped reminder whose detail opens. The quick-add
-  field does not take the focus there (the keyboard raises a half sheet
-  to full; once it hides, the sheet returns to the detent it had). The
+  field does not take the focus there (the keyboard lifts a half sheet
+  to full without changing its detent, so once it hides the sheet is
+  back at half, unless a drag meanwhile settled it at full). The
   sheet lays its content out once, as at most two subviews: a header
   that must not be flattened (`collapsable={false}`) — the Cancel ·
   title · Save row and, for a new item, the quick-add field with its
   thread — and one scroll view that stays across a kind switch — the
   kind control at its top, then the form, which renders `bare` inside it
-  (`FormScroll`). A drag up on the form, or on the thread's turns, raises
-  a half sheet to full before anything scrolls
+  (`FormScroll`). A drag up on the form, or on the thread's turns,
+  raises a half sheet to full before anything scrolls
   (`sheetExpandsWhenScrolledToEdge`), so the form never scrolls on its
   own in the strip under the header. UIKit hands the drag to the sheet
-  only while the form is at its top, so when the sheet drops to half the
-  form scrolls back there (`useEditorSheetAtHalf`). The turns take at most a third of
-  the sheet at the detent it stands at (`editorSheet.ts`; the route
-  follows `sheetDetentChange`), so at half the two newest and "+N earlier
-  queries" fit with a strip of the form under them; the keyboard lifts
-  the sheet without a detent change, and the half cap holds while it is
-  up. The forms are iOS inset grouped cards on the grouped
-  ground, drawn with the Settings pages' rows (`GroupedList.tsx`:
+  only while the form is at its top, so whenever the sheet stands at
+  half with the keyboard down (dropped there, or the keyboard just hid)
+  the form scrolls back there (`useEditorSheetAtHalf`). The turns take
+  at most a third of the sheet at the detent it stands at
+  (`editorSheet.ts`; the route follows `sheetDetentChange`), so at half
+  the two newest and "+N earlier queries" fit with a strip of the form
+  under them; the keyboard lifts the sheet without a detent change, and
+  the half cap holds while it is up. The forms are iOS inset grouped
+  cards on the grouped ground, drawn with the Settings pages' rows
+  (`GroupedList.tsx`:
   `Section`, `Row`, `SwitchRow`, `CheckRow`, `ActionRow`, and the forms'
   own `FieldRow`, `ChipsRow`, `RowSlot`, `CardCaption`; a choice is a
   `Chip`), in Calendar's order for an event (title and location; all-day,

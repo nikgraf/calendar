@@ -16,7 +16,8 @@ import { EditorSheet, editorDetentIndex, editorSheetHeight } from '../src/ui/edi
  * sheet's was. The route follows the detent the sheet stands at (a drag,
  * the grabber) and hands it down with its height (`EditorSheet`): the
  * thread under the quick-add field takes a share of the height, and the
- * form goes back to its top when the sheet drops to half. The keyboard
+ * form goes back to its top while the sheet stands at half with the
+ * keyboard down (`EventEditSheet`). The keyboard
  * lifts a half sheet without changing its detent, so the height stays the
  * half one while it is up, which is about the room left above it; a drag
  * up on the form meanwhile scrolls it and settles the sheet at full,

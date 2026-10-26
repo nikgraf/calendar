@@ -1075,15 +1075,13 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   targets and one tap), Repeat inside the dates card (its conditional
   rows made it long). Open: the chips at the accessibility text sizes.
 - **A drag raises the half-height editor** (2026-10-26, #257) — the form
-  scrolled on its own in the strip a half sheet left under the header,
-  which felt cramped and unlike iOS. A drag up on the form (or the turns)
-  now raises the sheet to full before anything scrolls, as in Maps and
-  Find My (lowered, the form goes back to its top, the only place UIKit
-  hands a drag to the sheet), and the turns take a third of the sheet as
-  it stands, not 30 % of the screen, so at half the form shows a strip.
-  Rejected: no scrolling at half (a cut-off form with a dead gesture),
-  one scroll view for field, thread and form (the field would scroll
-  away from the replies it is typed against), a taller start (#190).
+  scrolled on its own in the strip under the header. A drag up on the
+  form or the turns now raises the sheet first, as in Maps; at half with
+  the keyboard down the form sits at its top, the only place UIKit hands
+  a drag to the sheet. The turns take a third of the sheet as it stands,
+  not 30 % of the screen. Rejected: no scrolling at half (a dead gesture
+  on a cut-off form), one scroll view for field, thread and form (the
+  field would scroll away from its replies), a taller start (#190).
   Open: the chips, choices and pager under the turns are not capped.
 - **Slot proposals in the create thread** (2026-10-12, #185) — a phrase
   that asks for free time is routed by code (`isFinderPhrase`: English
