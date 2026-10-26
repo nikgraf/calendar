@@ -182,7 +182,8 @@ const NUMBER_WORDS = {
   zwolf: 12,
 } as const;
 
-const NUMBER_WORD = Object.keys(NUMBER_WORDS).join('|');
+/** The number words a clock or a length may be said in, as a pattern (shared with `extras.ts`). */
+export const NUMBER_WORD = Object.keys(NUMBER_WORDS).join('|');
 const NUMBER = `(\\d{1,2}|${NUMBER_WORD})`;
 /** A number or a named hour, where either may stand: "from 8 to noon", "at midnight". */
 const TOKEN = `(\\d{1,2}|${NUMBER_WORD}|noon|midday|midnight|mitternacht)`;
@@ -778,11 +779,11 @@ const LENGTH_WORDS = {
   vierzig: 40,
   zwanzig: 20,
 } as const;
-const LENGTH_WORD = Object.keys(LENGTH_WORDS)
+export const LENGTH_WORD = Object.keys(LENGTH_WORDS)
   .sort((left, right) => right.length - left.length)
   .join('|');
 /** "twenty-five", "twenty five", "fünfundzwanzig": tens and ones as one number. */
-const COMPOUND_NUMBER =
+export const COMPOUND_NUMBER =
   '(?:twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)[- ](?:one|two|three|four|five|six|seven|eight|nine)|(?:ein|zwei|drei|vier|funf|sechs|sieben|acht|neun)und(?:zwanzig|dreissig|vierzig|funfzig|sechzig)';
 const DURATION = new RegExp(
   `\\b(\\d+(?:[.,]\\d+)?|${COMPOUND_NUMBER}|${NUMBER_WORD}|${LENGTH_WORD}|an?|eine?r?)[\\s-]*(${LENGTH_UNITS})\\b|\\b(half an hour|halbe stunde|eineinhalb|anderthalb)\\b`,
@@ -804,7 +805,8 @@ const TENS = {
   zwanzig: 20,
 } as const;
 
-const quantityOf = (token: string): number => {
+/** A quantity as said: digits (a decimal comma allowed), a number word, a compound, or an article for one. */
+export const quantityOf = (token: string): number => {
   const compound = /^([a-z]+)[- ]([a-z]+)$/.exec(token) ?? /^([a-z]+)und([a-z]+)$/.exec(token);
   if (compound) {
     const [, first = '', second = ''] = compound;

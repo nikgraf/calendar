@@ -83,6 +83,7 @@ export function EventEditorForm({ model }: { model: ReturnType<typeof useEventEd
   const startFlash = useFieldFlash<HTMLInputElement>('time');
   const endFlash = useFieldFlash<HTMLInputElement>('time');
   const guestsFlash = useFieldFlash<HTMLDivElement>('guests');
+  const notesFlash = useFieldFlash<HTMLTextAreaElement>('notes');
   const hasGuests = (existing?.attendees ?? []).length > 0;
   // The draft's times in the other zones; null for all-day or before the times build.
   const zoneLines = draftZoneRanges(
@@ -305,6 +306,7 @@ export function EventEditorForm({ model }: { model: ReturnType<typeof useEventEd
           data-testid="editor-notes"
           onChange={(changeEvent) => setDescription(changeEvent.target.value)}
           placeholder="Add notes"
+          ref={notesFlash}
           value={description}
         />
       </FormSection>

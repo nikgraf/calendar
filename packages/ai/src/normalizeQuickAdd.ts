@@ -9,6 +9,7 @@ import {
   type Weekday,
   WEEKDAYS_MONDAY_FIRST,
 } from '@calendar/core';
+import type { NotesChange, PhraseExtras, ReminderChange } from './extras.ts';
 import {
   clearsRepeat,
   defersDate,
@@ -84,12 +85,37 @@ export type QuickAddResult =
       /** Names or addresses the words invite, as said: the thread looks them up in the contacts. */
       readonly invite?: ReadonlyArray<string> | undefined;
       readonly kind: 'parsed';
+      /** What the words do to the draft's notes (`extras.ts`); a first phrase's note is the draft's. */
+      readonly notes?: NotesChange | undefined;
       readonly prefill: QuickAddPrefill;
+      /** What the words do to the draft's notifications (`extras.ts`). */
+      readonly reminders?: ReminderChange | undefined;
       /** Names or addresses the words take off the guest list (a refinement only). */
       readonly uninvite?: ReadonlyArray<string> | undefined;
     }
   | { readonly kind: 'rejected'; readonly reason: string }
-  | { readonly kind: 'task'; readonly prefill: QuickAddTaskPrefill };
+  | {
+      readonly kind: 'task';
+      /** A to-do's notes, when the words add one; it takes no notifications. */
+      readonly notes?: NotesChange | undefined;
+      readonly prefill: QuickAddTaskPrefill;
+    };
+
+/** The result with what the phrase said beside the event: a note on either kind, notifications on an event. */
+export const withExtras = (result: QuickAddResult, extras: PhraseExtras): QuickAddResult => {
+  if (result.kind === 'rejected') {
+    return result;
+  }
+  const notes = extras.notes === undefined ? {} : { notes: extras.notes };
+  if (result.kind === 'task') {
+    return { ...result, ...notes };
+  }
+  return {
+    ...result,
+    ...notes,
+    ...(extras.reminders === undefined ? {} : { reminders: extras.reminders }),
+  };
+};
 
 const FREQUENCIES = new Set<RecurrenceFrequency>(['daily', 'monthly', 'weekly', 'yearly']);
 

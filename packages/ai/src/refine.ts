@@ -6,6 +6,7 @@ import {
   Temporal,
   validateEventDraft,
 } from '@calendar/core';
+import { readExtras } from './extras.ts';
 import {
   type ClockTime,
   defersDate,
@@ -30,6 +31,7 @@ import {
   type QuickAddPrefill,
   type QuickAddResult,
   recurrenceFromParse,
+  withExtras,
 } from './normalizeQuickAdd.ts';
 import { QUICK_ADD_JSON_SCHEMA, type QuickAddParse } from './quickAdd.ts';
 import { meaningfulText, realDate, realTime, upcomingDays } from './shared.ts';
@@ -345,7 +347,10 @@ export const normalizeRefine = (
 /**
  * One change to one draft. Only the model call is impure; the prompt and
  * the merge either side of it are pure, so this runs end to end against
- * a fake model like `parseQuickAdd`.
+ * a fake model like `parseQuickAdd`. A note or notifications the words
+ * ask for are read first and taken off them (`extras.ts`); words about
+ * nothing else ("notify me 15 minutes before") need no model at all,
+ * and the draft comes back as it is with the change beside it.
  */
 export const parseRefine = async (
   model: LanguageModel,
@@ -367,15 +372,20 @@ export const parseRefine = async (
   if (!utterance.trim()) {
     return { kind: 'rejected', reason: 'Say what to change.' };
   }
+  const extras = readExtras(utterance);
+  const change = extras.rest;
+  if (!change.trim()) {
+    return withExtras({ kind: 'parsed', prefill: draft }, extras) as RefineResult;
+  }
   if ((await model.status()) !== 'ready') {
     throw new ModelUnavailableError({ message: 'No on-device model is available.' });
   }
   let raw: unknown;
-  const people = guests ? readPeople(model, utterance, { removals: true }) : Promise.resolve([]);
+  const people = guests ? readPeople(model, change, { removals: true }) : Promise.resolve([]);
   try {
     raw = await model.generateJson({
       jsonSchema: QUICK_ADD_JSON_SCHEMA,
-      prompt: buildRefinePrompt({ draft, referenceDate, timeZone, utterance }),
+      prompt: buildRefinePrompt({ draft, referenceDate, timeZone, utterance: change }),
     });
   } catch {
     return { kind: 'rejected', reason: "That couldn't be read — try rephrasing." };
@@ -383,12 +393,15 @@ export const parseRefine = async (
   if (typeof raw !== 'object' || raw === null) {
     return { kind: 'rejected', reason: "That couldn't be read — try rephrasing." };
   }
-  return normalizeRefine(raw as QuickAddParse, {
-    draft,
-    guests,
-    people: await people,
-    referenceDate,
-    timeZone,
-    utterance,
-  });
+  return withExtras(
+    normalizeRefine(raw as QuickAddParse, {
+      draft,
+      guests,
+      people: await people,
+      referenceDate,
+      timeZone,
+      utterance: change,
+    }),
+    extras,
+  ) as RefineResult;
 };

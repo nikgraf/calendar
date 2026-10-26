@@ -79,8 +79,9 @@ the grounding's.
 - `lang` picks the recogniser's locale (`en-US`, `de-DE`; `locale`
   overrides) and `contacts` the address book in `contacts.json` (default
   `team`) names are looked up in, every match, as the thread does.
-- Notes and notifications: no turn fills them yet. The cases that name
-  them (`notes`, `notifications` tags) measure that gap.
+- Notes and notifications are what the words added (`readExtras` in
+  `@calendar/ai`), folded into the draft as the thread does it: a note
+  joins the notes on its own line, offsets join the notifications.
 
 `contacts.json` holds the fixture address books: made-up people with
 `@example.com` addresses, including two Annas (a name that is a choice)

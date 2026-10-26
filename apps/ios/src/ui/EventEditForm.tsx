@@ -310,14 +310,16 @@ export function EventEditForm({
       {/* A read-only calendar shows its notes but offers no empty field. */}
       {readOnly && !description ? null : (
         <Section header="Notes" tight>
-          <FieldRow
-            editable={!readOnly}
-            multiline
-            onChangeText={setDescription}
-            placeholder="Add notes"
-            testID="event-notes"
-            value={description}
-          />
+          <FieldFlash bleedX={0} bleedY={0} field="notes" radius={0}>
+            <FieldRow
+              editable={!readOnly}
+              multiline
+              onChangeText={setDescription}
+              placeholder="Add notes"
+              testID="event-notes"
+              value={description}
+            />
+          </FieldFlash>
         </Section>
       )}
 
