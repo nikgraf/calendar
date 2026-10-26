@@ -812,10 +812,12 @@ details, or Custom), so a calendar can be shared without the details.
     later sync upsert idempotent.
   - **series** — patch the master; time edits apply the occurrence's
     wall-clock delta (`applyWallClockDelta` in `time/dragMath.ts`,
-    DST-safe). A new rule (`changes.recurrence`, RFC 5545 lines) replaces
-    the master's and drops its exceptions — they belonged to occurrences
-    of the old rule, which is what Google does with them; `null` ("does
-    not repeat") leaves the master as a single event at its own start.
+    DST-safe, seconds included: a series at 09:00:30 retimed to 10:00
+    starts at 10:00). A new rule (`changes.recurrence`, RFC 5545 lines)
+    replaces the master's and drops its exceptions — they belonged to
+    occurrences of the old rule, which is what Google does with them;
+    `null` ("does not repeat") leaves the master as a single event at its
+    own start.
     Google keeps a rule whose key is absent from a PATCH, so the op
     carries `recurrenceCleared` and the patch sends `recurrence: []`. A
     master's changed title, description or location is mirrored onto the

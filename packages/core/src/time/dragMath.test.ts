@@ -159,6 +159,41 @@ describe('DST-aware shifts', () => {
     ).toBe(Date.parse('2026-10-25T00:30:00Z'));
   });
 
+  it('carries a series shift to the second', () => {
+    // A start at 09:00:30 Vienna retimed to 10:00 takes the series to 10:00.
+    const start = Date.parse('2026-07-01T07:00:30Z');
+    expect(
+      applyWallClockDelta(start, 'Europe/Vienna', start, Date.parse('2026-07-01T08:00:00Z')),
+    ).toBe(Date.parse('2026-07-01T08:00:00Z'));
+    // A later occurrence moved a day later and earlier in the day, to the
+    // millisecond.
+    expect(
+      applyWallClockDelta(
+        start,
+        'Europe/Vienna',
+        Date.parse('2026-07-03T07:00:30.500Z'),
+        Date.parse('2026-07-04T06:45:00Z'),
+      ),
+    ).toBe(Date.parse('2026-07-02T06:45:00Z') - 500);
+    // An occurrence that kept its seconds keeps them on the series.
+    expect(
+      applyWallClockDelta(start, 'Europe/Vienna', start, Date.parse('2026-07-01T08:00:30Z')),
+    ).toBe(Date.parse('2026-07-01T08:00:30Z'));
+  });
+
+  it('keeps the seconds of a dragged start', () => {
+    const moved = moveEventTimes(
+      {
+        endUtc: Date.parse('2026-07-03T11:00:30Z'),
+        startUtc: Date.parse('2026-07-03T10:00:30Z'),
+      },
+      'Europe/Vienna',
+      -30,
+      1,
+    );
+    expect(moved.startUtc).toBe(Date.parse('2026-07-04T09:30:30Z'));
+  });
+
   it('applies pure time-of-day deltas', () => {
     const shifted = applyWallClockDelta(
       Date.parse('2026-01-05T08:00:00Z'), // Jan 5, 09:00 Vienna (+01:00)

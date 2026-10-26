@@ -349,6 +349,12 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   events with a zone and for timed reminders. Rejected: keeping the
   event's wall clock and drawing the preview with it (the block would land
   on a row nobody picked). Open: a series shift stays in the series' zone.
+- **A series shift carries seconds** (2026-10-25, #253) — a time edit
+  with scope "All events" moves the series by the occurrence's wall-clock
+  delta, seconds included, so a series at 09:00:30 retimed to 10:00
+  starts at 10:00. Before, the fractional minute threw and the edit
+  failed. Rejected: keeping the series' seconds and shifting whole
+  minutes (it would start at 10:00:30, a time nobody picked).
 - **Recurring editing** — scopes instance / series / following; an
   instance edit materializes an exception under Google's canonical
   instance id so the later pull upserts idempotently; following truncates
