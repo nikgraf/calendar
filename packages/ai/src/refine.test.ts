@@ -248,6 +248,198 @@ describe('normalizeRefine', () => {
     });
   });
 
+  it('reads the repeat from the words, not from what the model made of them', () => {
+    // Observed (the bench): "every week" answered as one week — count 1,
+    // an end a week on — and the draft lost the repeat.
+    expect(
+      refined(
+        { recurrence: { count: 1, freq: 'weekly', interval: 1, untilDate: '2026-09-04' } },
+        'every week',
+      ).recurrence,
+    ).toEqual({ freq: 'weekly' });
+    expect(
+      refined({ recurrence: { count: 2, freq: 'weekly', interval: 14 } }, 'every two weeks')
+        .recurrence,
+    ).toEqual({ freq: 'weekly', interval: 2 });
+    // "every weekday": the days are the words', over the editor's.
+    const weekdays = [
+      { weekday: 'MO' },
+      { weekday: 'TU' },
+      { weekday: 'WE' },
+      { weekday: 'TH' },
+      { weekday: 'FR' },
+    ];
+    const days = {
+      ...DINNER,
+      recurrence: {
+        byDay: [{ weekday: 'MO' as const }, { weekday: 'WE' as const }],
+        freq: 'weekly' as const,
+      },
+    };
+    expect(
+      refined({ recurrence: { count: 5, freq: 'weekly' } }, 'every weekday', days),
+    ).toMatchObject({ date: '2026-08-28', recurrence: { byDay: weekdays, freq: 'weekly' } });
+    // Said of a Saturday draft, it starts on the Monday.
+    const saturday = { ...DINNER, date: '2026-08-29' };
+    expect(refined({ recurrence: { freq: 'weekly' } }, 'every weekday', saturday)).toMatchObject({
+      date: '2026-08-31',
+      recurrence: { byDay: weekdays, freq: 'weekly' },
+    });
+    // "stop repeating" came back as a daily rule of nothing.
+    const weekly = { ...DINNER, recurrence: { freq: 'weekly' as const } };
+    expect(
+      refined(
+        { recurrence: { count: 0, freq: 'daily', interval: 0, untilDate: '2026-08-28' } },
+        'stop repeating',
+        weekly,
+      ).recurrence,
+    ).toBeUndefined();
+  });
+
+  it("keeps what the words leave unsaid of the draft's own repeat", () => {
+    // Review: "every two weeks" on a rule that ends in December kept the
+    // end before this change (the model copied it); the count the same.
+    const ending = { ...DINNER, recurrence: { freq: 'weekly' as const, untilDate: '2026-12-31' } };
+    expect(
+      refined({ recurrence: { freq: 'weekly', interval: 2 } }, 'every two weeks', ending)
+        .recurrence,
+    ).toEqual({ freq: 'weekly', interval: 2, untilDate: '2026-12-31' });
+    const counted = { ...DINNER, recurrence: { count: 10, freq: 'weekly' as const } };
+    expect(refined({ recurrence: { freq: 'daily' } }, 'every day', counted).recurrence).toEqual({
+      count: 10,
+      freq: 'daily',
+    });
+    // The words' own count or end replaces it.
+    expect(
+      refined({ recurrence: { freq: 'weekly' } }, 'every week for 4 weeks', ending).recurrence,
+    ).toEqual({ count: 4, freq: 'weekly' });
+    // Review: one weekday the words name moves the rule off the editor's
+    // days — Thursday, not an odd first Thursday before Mondays and
+    // Wednesdays.
+    const days = {
+      ...DINNER,
+      date: '2026-08-24',
+      recurrence: {
+        byDay: [{ weekday: 'MO' as const }, { weekday: 'WE' as const }],
+        freq: 'weekly' as const,
+      },
+    };
+    expect(refined({ date: '2026-08-27' }, 'every Thursday', days)).toMatchObject({
+      date: '2026-08-27',
+      recurrence: { freq: 'weekly' },
+    });
+    expect(
+      refined({ date: '2026-08-27' }, 'every Thursday', days).recurrence?.byDay,
+    ).toBeUndefined();
+    // A turn about guests leaves a repeat with a gap and an end alone.
+    const full = {
+      ...DINNER,
+      recurrence: {
+        byDay: [{ weekday: 'MO' as const }],
+        freq: 'weekly' as const,
+        interval: 2,
+        untilDate: '2026-12-31',
+      },
+    };
+    expect(refined({}, 'invite each of the team leads', full).recurrence).toEqual(full.recurrence);
+    // Review: a span over the editor's days ends the rule, it does not
+    // count them ("every week for 6 weeks" on Mondays and Wednesdays).
+    expect(
+      refined({ recurrence: { count: 6, freq: 'weekly' } }, 'every week for 6 weeks', days)
+        .recurrence,
+    ).toEqual({
+      byDay: [{ weekday: 'MO' }, { weekday: 'WE' }],
+      freq: 'weekly',
+      untilDate: '2026-10-04',
+    });
+    // Review: a count or span said alone, and "repeat it 10 times", keep
+    // the kind, the gap and the days, whatever the model made of them.
+    const gapped = { ...days, recurrence: { ...days.recurrence, interval: 2 } };
+    expect(
+      refined({ recurrence: { count: 10, freq: 'daily' } }, 'repeat it 10 times', gapped)
+        .recurrence,
+    ).toEqual({
+      byDay: [{ weekday: 'MO' }, { weekday: 'WE' }],
+      count: 10,
+      freq: 'weekly',
+      interval: 2,
+    });
+    expect(
+      refined({ recurrence: { count: 10, freq: 'weekly' } }, '10 times', gapped).recurrence,
+    ).toEqual({
+      byDay: [{ weekday: 'MO' }, { weekday: 'WE' }],
+      count: 10,
+      freq: 'weekly',
+      interval: 2,
+    });
+    const weeklyOnly = { ...DINNER, recurrence: { freq: 'weekly' as const } };
+    expect(refined({}, 'for 6 weeks', weeklyOnly).recurrence).toEqual({
+      count: 6,
+      freq: 'weekly',
+    });
+    expect(refined({}, 'for 6 weeks', days).recurrence).toEqual({
+      byDay: [{ weekday: 'MO' }, { weekday: 'WE' }],
+      freq: 'weekly',
+      untilDate: '2026-10-04',
+    });
+    // Codex: "forever" takes the draft's end away; "from every week to
+    // every month" means monthly.
+    const until = { ...DINNER, recurrence: { freq: 'weekly' as const, untilDate: '2026-12-31' } };
+    expect(
+      refined({ recurrence: { freq: 'weekly' } }, 'repeat weekly forever', until).recurrence,
+    ).toEqual({
+      freq: 'weekly',
+    });
+    expect(
+      refined({ recurrence: { freq: 'monthly' } }, 'change from every week to every month', until)
+        .recurrence,
+    ).toEqual({ freq: 'monthly', untilDate: '2026-12-31' });
+    // Codex: a date the words move on their own stays where they put it,
+    // the rule's days kept as they were.
+    expect(refined({ date: '2026-08-27' }, 'move it to Thursday', days)).toMatchObject({
+      date: '2026-08-27',
+      recurrence: { byDay: [{ weekday: 'MO' }, { weekday: 'WE' }], freq: 'weekly' },
+    });
+    // Review: a date the words move past the rule's end keeps the rule;
+    // the editor says the end is past.
+    const september = {
+      ...DINNER,
+      recurrence: { freq: 'weekly' as const, untilDate: '2026-09-30' },
+    };
+    expect(refined({ date: '2026-10-20' }, 'move it to Oct 20', september)).toMatchObject({
+      date: '2026-10-20',
+      recurrence: { freq: 'weekly', untilDate: '2026-09-30' },
+    });
+  });
+
+  it('gives a repeat the end the words name, and only then', () => {
+    const weekly = { ...DINNER, recurrence: { freq: 'weekly' as const } };
+    expect(
+      refined({ recurrence: { freq: 'weekly', untilDate: '2026-03-31' } }, 'until March', weekly)
+        .recurrence,
+    ).toEqual({ freq: 'weekly', untilDate: '2027-03-31' });
+    // An until that is a time, and an end the model added to a change
+    // about something else, leave the repeat as it was.
+    expect(
+      refined({ recurrence: { freq: 'weekly', untilDate: '2026-09-30' } }, 'until 5pm', weekly)
+        .recurrence,
+    ).toEqual({ freq: 'weekly' });
+    expect(
+      refined({ recurrence: { freq: 'weekly', untilDate: '2026-09-30' } }, 'at 8', weekly)
+        .recurrence,
+    ).toEqual({ freq: 'weekly' });
+    // A draft that does not repeat gets no repeat from an end alone.
+    expect(
+      refined({ recurrence: { freq: 'weekly', untilDate: '2026-09-30' } }, 'until Friday')
+        .recurrence,
+    ).toBeUndefined();
+    // Review: "ends at 9" is a time, not an end.
+    expect(
+      refined({ recurrence: { freq: 'weekly', untilDate: '2026-09-04' } }, 'ends at 9', weekly)
+        .recurrence,
+    ).toEqual({ freq: 'weekly' });
+  });
+
   it('keeps a span of days the form gave the draft, moved with its start', () => {
     const trip = { ...DINNER, endDate: '2026-08-30', isAllDay: true, title: 'Trip' };
     expect(refined({ date: '2026-08-27' }, 'Thursday instead', trip)).toMatchObject({

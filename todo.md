@@ -142,11 +142,7 @@ the served model (#184) and slot proposals (#185) are in
       `ModelInfo` capability record beyond the context (modalities, guided
       JSON) once a feature reads it.
 - [ ] Model bench follow-ups (the bench, 2026-10-25, `docs/decisions.md`
-      → AI; each its own PR, the bench re-run in the PR body) — a repeat
-      the model answers with `count: 1` is dropped (`recurrenceFromParse`;
-      drop it only when the phrase names no repeat), 2/9 repeats pass;
-      "every weekday" never sets the rule's weekdays (a parsed phrase sets
-      no BYDAY);
+      → AI; each its own PR, the bench re-run in the PR body) —
       "remind me … before" / "erinnere mich … vorher" read as a to-do cue,
       and "15 minutes before" as a length; notes and notifications have
       no field in the quick-add and refine schemas (0/15); a bare "make it
