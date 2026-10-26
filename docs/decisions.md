@@ -1135,6 +1135,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   exact-JSON snapshots (wording and dates drift), prompt variants as a
   parameter (two runs on two commits do), a CI gate (no model there).
   Open: the gaps the baseline shows, listed in todo.md (Tier 3).
+- **Quick-add repeats are the phrase's** (2026-10-26, `todo/quick-add-repeat`)
+  — `statedRepeat` (`grounding.ts`) reads kind, gap, days, ordinal
+  weekday, count and span from the words; `recurrenceFromParse` builds
+  the rule from that, in quick add and over a draft's rule in a
+  refinement. No repeat word, no rule; the model's kind only behind a
+  repeat word the code does not read, its count and gap never, its end
+  only behind an until word naming a day. A rule with chosen days starts
+  on the first of them. Rejected: sparing only the `count: 1` rule (the
+  invented end a week on would have stayed). Open: negations, "twice a
+  week", "2nd and 4th Tuesday", the title's trim of the new repeat forms.
 
 ## Notifications
 

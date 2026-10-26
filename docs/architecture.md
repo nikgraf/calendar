@@ -44,9 +44,12 @@ free/busy shares. The model extracts, the code decides:
 `packages/ai/src/grounding.ts` reads the phrase itself — clock times,
 meal and part-of-day words (one table: quick-add defaults and the
 finder's bounds), weekdays, to-do cues, the finder's windows and
-durations — and the normalizers keep a model value only where the phrase
-supports it, correct one it contradicts and drop the rest (a phrase
-without a time is an all-day event, whatever the model returned). The
+durations, a repeat's frequency, gap, days, count and span — and the
+normalizers keep a model value only where the phrase supports it,
+correct one it contradicts and drop the rest (a phrase without a time is
+an all-day event, whatever the model returned; one without a repeat word
+has no repeat, and one with has the repeat the words say, the model's
+end kept only behind an until word). The
 title too is only the phrase's words — one naming anything else gives way
 to the phrase — with the words about when taken off its ends; no prompt
 shows an example title, since the model copies it. A
