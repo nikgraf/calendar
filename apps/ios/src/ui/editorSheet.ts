@@ -28,12 +28,23 @@ export const editorSheetHeight = (index: number, windowHeight: number, topInset:
  */
 export const turnListMaxHeight = (sheetHeight: number): number => Math.round(sheetHeight / 3);
 
-/** The editor sheet's height as it stands, set by its route (`app/editor.tsx`). */
-export const EditorSheetHeight = createContext<number | undefined>(undefined);
+/** The editor sheet as it stands: its detent index and height (`editorSheetHeight`). */
+export interface EditorSheetState {
+  readonly detent: number;
+  readonly height: number;
+}
+
+/** The editor sheet as it stands, set by its route (`app/editor.tsx`). */
+export const EditorSheet = createContext<EditorSheetState | undefined>(undefined);
 
 /** The editor sheet's height, or the window's outside the sheet (a page sheet's editor). */
 export function useEditorSheetHeight(): number {
-  const sheet = useContext(EditorSheetHeight);
+  const sheet = useContext(EditorSheet);
   const { height } = useWindowDimensions();
-  return sheet ?? height;
+  return sheet?.height ?? height;
+}
+
+/** Whether the editor sheet stands at half height; false outside the sheet. */
+export function useEditorSheetAtHalf(): boolean {
+  return useContext(EditorSheet)?.detent === 0;
 }

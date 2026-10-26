@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useEditorHost } from '../src/ui/EditorHost.tsx';
-import { EditorSheetHeight, editorDetentIndex, editorSheetHeight } from '../src/ui/editorSheet.ts';
+import { EditorSheet, editorDetentIndex, editorSheetHeight } from '../src/ui/editorSheet.ts';
 
 /**
  * The editor as a form sheet over the tabs (`_layout.tsx`): half height
@@ -14,10 +14,13 @@ import { EditorSheetHeight, editorDetentIndex, editorSheetHeight } from '../src/
  * the form's scroll view, the two things react-native-screens lays a
  * sheet out as. A swipe down dismisses it, which is Cancel, as the page
  * sheet's was. The route follows the detent the sheet stands at (a drag,
- * the grabber) and hands its height down (`EditorSheetHeight`): the
- * thread under the quick-add field takes a share of it. The keyboard
+ * the grabber) and hands it down with its height (`EditorSheet`): the
+ * thread under the quick-add field takes a share of the height, and the
+ * form goes back to its top when the sheet drops to half. The keyboard
  * lifts a half sheet without changing its detent, so the height stays the
- * half one while it is up, which is about the room left above it.
+ * half one while it is up, which is about the room left above it; a drag
+ * up on the form meanwhile scrolls it and settles the sheet at full,
+ * where it stays once the keyboard hides.
  */
 export default function EditorRoute() {
   const host = useEditorHost();
@@ -36,8 +39,10 @@ export default function EditorRoute() {
   const { height } = useWindowDimensions();
   const { top } = useSafeAreaInsets();
   return (
-    <EditorSheetHeight value={editorSheetHeight(detentIndex, height, top)}>
+    <EditorSheet
+      value={{ detent: detentIndex, height: editorSheetHeight(detentIndex, height, top) }}
+    >
       {host.renderEditor()}
-    </EditorSheetHeight>
+    </EditorSheet>
   );
 }

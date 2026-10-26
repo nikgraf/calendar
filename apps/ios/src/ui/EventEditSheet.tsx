@@ -21,6 +21,7 @@ import { languageModel } from '../model.ts';
 import { BirthdayDetail } from './BirthdayDetail.tsx';
 import { DraftThreadSection } from './DraftThreadSection.tsx';
 import { useSheetStyles } from './editSheetShared.ts';
+import { useEditorSheetAtHalf } from './editorSheet.ts';
 import { EventEditForm } from './EventEditForm.tsx';
 import { FieldFlashContext, FlashView } from './FlashView.tsx';
 import { LessonBanner } from './lesson/LessonBanner.tsx';
@@ -320,6 +321,17 @@ export function EventEditSheet({
       )}
     </FieldFlashContext>
   );
+  // At half height the form shows its top under the header: UIKit hands a
+  // drag on it to the sheet, which rises, only while the form is scrolled
+  // to its top. Lowered after a scroll at full height, it goes back there,
+  // as Maps' sheets do, or a drag would scroll it inside the strip.
+  const formScroll = useRef<ScrollView>(null);
+  const atHalf = useEditorSheetAtHalf();
+  useEffect(() => {
+    if (atHalf) {
+      formScroll.current?.scrollTo({ animated: true, y: 0 });
+    }
+  }, [atHalf]);
   // The form-sheet route (`app/editor.tsx`): react-native-screens lays a
   // sheet out once, as at most a header and a scroll view — the header must
   // not be flattened away (`collapsable={false}`), the scroll view follows
@@ -333,7 +345,11 @@ export function EventEditSheet({
           {headerRow}
           {headerRest}
         </View>
-        <ScrollView automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled">
+        <ScrollView
+          automaticallyAdjustKeyboardInsets
+          keyboardShouldPersistTaps="handled"
+          ref={formScroll}
+        >
           {kindControl}
           {form}
         </ScrollView>

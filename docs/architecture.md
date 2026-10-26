@@ -1183,8 +1183,8 @@ gateway carries all of it. Details, limits and the threat model:
   (`EventEditSheet`, the same add path as the desktop and the same
   thread: `useThreadEditor`, with `DraftThreadSection` under the quick-add
   field — the turns as on the desktop (`ThreadTurnList`, shared with
-  Search; the header does not scroll, so they get at most 30 % of the
-  screen and scroll inside it), the free-slot chips, the pager, "Add all"; the rows a turn
+  Search; the header does not scroll, so they get at most a third of the
+  sheet and scroll inside it), the free-slot chips, the pager, "Add all"; the rows a turn
   changed flash, `FlashView`), the birthday detail — and the capture model behind the share
   sheet and deep links, whose events open the editor as one thread of
   drafts; each opening is keyed by its own number; screens ask it
@@ -1225,7 +1225,9 @@ gateway carries all of it. Details, limits and the threat model:
   (`FormScroll`). A drag up on the form, or on the thread's turns, raises
   a half sheet to full before anything scrolls
   (`sheetExpandsWhenScrolledToEdge`), so the form never scrolls on its
-  own in the strip under the header. The turns take at most a third of
+  own in the strip under the header. UIKit hands the drag to the sheet
+  only while the form is at its top, so when the sheet drops to half the
+  form scrolls back there (`useEditorSheetAtHalf`). The turns take at most a third of
   the sheet at the detent it stands at (`editorSheet.ts`; the route
   follows `sheetDetentChange`), so at half the two newest and "+N earlier
   queries" fit with a strip of the form under them; the keyboard lifts

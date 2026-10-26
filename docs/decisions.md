@@ -1078,8 +1078,9 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   scrolled on its own in the strip a half sheet left under the header,
   which felt cramped and unlike iOS. A drag up on the form (or the turns)
   now raises the sheet to full before anything scrolls, as in Maps and
-  Find My, and the turns take a third of the sheet as it stands, not
-  30 % of the screen, so at half a strip of the form stays in view.
+  Find My (lowered, the form goes back to its top, the only place UIKit
+  hands a drag to the sheet), and the turns take a third of the sheet as
+  it stands, not 30 % of the screen, so at half the form shows a strip.
   Rejected: no scrolling at half (a cut-off form with a dead gesture),
   one scroll view for field, thread and form (the field would scroll
   away from the replies it is typed against), a taller start (#190).
