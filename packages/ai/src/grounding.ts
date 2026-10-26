@@ -1031,6 +1031,30 @@ const SPAN_UNITS: ReadonlyArray<{ readonly names: string; readonly unit: RepeatS
 const SPAN_UNIT = SPAN_UNITS.map((unit) => unit.names).join('|');
 const spanUnitOf = (token: string): RepeatSpanUnit =>
   SPAN_UNITS.find((unit) => new RegExp(`^(?:${unit.names})$`).test(token))!.unit;
+/** The unit a frequency counts in. */
+const UNIT_OF_FREQUENCY: Readonly<Record<RecurrenceFrequency, RepeatSpanUnit>> = {
+  daily: 'days',
+  monthly: 'months',
+  weekly: 'weeks',
+  yearly: 'years',
+};
+/**
+ * Whether a span is at least as long as the rule's period: "for six weeks"
+ * ends a weekly rule, "for a week" on a yearly one is the event's length.
+ */
+export const spanUnitAtLeast = (unit: RepeatSpanUnit, freq: RecurrenceFrequency): boolean =>
+  SPAN_UNITS.findIndex((entry) => entry.unit === unit) >=
+  SPAN_UNITS.findIndex((entry) => entry.unit === UNIT_OF_FREQUENCY[freq]);
+/**
+ * Whether a repeat's span is the rule's end: long enough for its period
+ * (`spanUnitAtLeast`), or days on a weekly rule with several days ("every
+ * weekday for three days").
+ */
+export const spanEndsRepeat = (repeat: StatedRepeat): boolean =>
+  repeat.runsFor !== undefined &&
+  repeat.freq !== undefined &&
+  (spanUnitAtLeast(repeat.runsFor.unit, repeat.freq) ||
+    (repeat.freq === 'weekly' && (repeat.byDay?.length ?? 0) > 1));
 /** "for six weeks", "for the next two months", "zwei Wochen lang": how long the repeat runs. */
 const RUNS_FOR = new RegExp(
   `\\b(?:for|fur)\\s+(?:the\\s+)?(?:(?:next|coming|nachsten|kommenden)\\s+)?(\\d+|${NUMBER_WORD}|${LENGTH_WORD}|an?|one|eine?[nrs]?)\\s+(${SPAN_UNIT})\\b|\\b(\\d+|${NUMBER_WORD}|${LENGTH_WORD}|eine?[nrs]?)\\s+(${SPAN_UNIT})\\s+lang\\b`,
@@ -1281,6 +1305,23 @@ export const defersDate = (phrase: string): boolean => {
  * may ("Oct 20", "17.10.", "in two weeks", "next month"); a bare digit
  * is not one, since a clock time has digits too.
  */
+/**
+ * The phrase names a fixed day in a form the code does not resolve: a
+ * month ("Oct 20", "17. Oktober"), a dotted or slashed date ("17.10.",
+ * "12/31"), an ISO date, an offset from today ("in two days", "in drei
+ * Wochen") — not "next week", and not a clock ("9.30").
+ */
+export const mentionsFixedDate = (phrase: string): boolean => {
+  const text = words(phrase);
+  return (
+    new RegExp(
+      `\\bin\\s+(?:\\d+|${NUMBER_WORD}|an?|eine[rm]?|ein)\\s+(?:days?|weeks?|months?|years?|tagen?|wochen?|monaten?|jahren?)\\b`,
+    ).test(text) ||
+    new RegExp(`\\b(?:${MONTHS})\\b`).test(text) ||
+    /\b\d{1,2}\.\d{1,2}\.(?:\d{2,4}\b|(?!\d))|\b\d{1,2}\/\d{1,2}\b|\b\d{4}-\d{2}-\d{2}\b/.test(text)
+  );
+};
+
 export const mentionsDate = (phrase: string): boolean => {
   const text = words(phrase);
   return (
@@ -1405,13 +1446,31 @@ const TRAILING = /[\s.,;:!?)\]"'”“»–—-]+$/u;
 /** What a cut leaves hanging at the end of what stays: separators, never a closing mark of its own. */
 const SEPARATORS = /[\s,;:–—-]+$/u;
 
+/** Weekdays listed or spanned ("Monday and Wednesday", "Montag, Mittwoch und Freitag", "Monday - Friday"). */
+const DAY_LIST = `(?:${DAY_NAMES})(?:(?:,?\\s*(?:and|und|&)\\s+|,\\s*|\\s*(?:to|through|thru|bis|-|–)\\s*)(?:${DAY_NAMES}))*`;
+/**
+ * A repeat as the reader knows it (`statedRepeat`): "every Monday",
+ * "every other week", "jeden ersten Freitag", "every weekday", "weekly",
+ * "fortnightly", "once a month", "Mondays and Wednesdays", "werktags".
+ */
+const MONTH_FRAME_RUN = '(?:of (?:the|every|each) month|des monats|im monat|jeden monats)';
+/** "every", with a gap or position; German "alle" only with the gap ("alle zwei Wochen" — "alle Jahre wieder" is a carol). */
+const EVERY_LEAD = `(?:(?:${EVERY})\\s+(?:(?:${GAP}|${ORDINAL})\\s+)?|alle\\s+(?:${GAP})\\s+)`;
+const REPEAT_RUN = [
+  `${EVERY_LEAD}(?:${REPEAT_UNIT}|${DAY_SET}|${DAY_LIST})${DAY_PART}(?:\\s+${MONTH_FRAME_RUN})?`,
+  `(?:${EVERY})\\s+\\d{1,2}(?:st|nd|rd|th|\\.)(?!\\d)`,
+  `(?:(?:on|am)\\s+)?(?:(?:the|den)\\s+)?(?:\\d{1,2}(?:st|nd|rd|th|\\.)|(?:${ORDINAL})\\s+(?:${DAY_NAMES}))\\s+${MONTH_FRAME_RUN}`,
+  FREQUENCY_WORDS.map((entry) => entry.words).join('|'),
+  `(?:${HABITUAL_WEEKDAYS})(?:(?:,\\s*|\\s+(?:and|und|&)\\s+)(?:${HABITUAL_WEEKDAYS}))*`,
+  String.raw`(?:(?:on|an|am)\s+)?(?:weekdays|weekends|werktags|werktagen|wochentags)`,
+].join('|');
+
 /**
  * The words that say when, as one run that ends a title: a day, a weekday
  * ("on Friday", "next Tuesday", "am Montag"), a part of the day after
- * "this" or "in the", a repeat ("every Monday", "weekly", "jeden Tag"), a
- * month date ("Sep 1", "1st of May", "17.10."), all day ("every Monday
- * morning", "jeden Morgen"). Clock times are
- * read by `scan`, as for the start.
+ * "this" or "in the", a repeat (`REPEAT_RUN`), a month date ("Sep 1",
+ * "1st of May", "17.10."), all day ("every Monday morning", "jeden
+ * Morgen"). Clock times are read by `scan`, as for the start.
  */
 const WHEN_AT_END = new RegExp(
   String.raw`(?:^|\s)${OPENS}(?:` +
@@ -1419,18 +1478,52 @@ const WHEN_AT_END = new RegExp(
       `(?:${DAY_WORDS})${DAY_PART}`,
       `(?:(?:on|this|next|coming|am|nachsten|nachste|kommenden|kommende|diesen|diese)\\s+)?(?:${DAY_NAMES})${DAY_PART}`,
       String.raw`(?:this|in the)\s+(?:morning|afternoon|evening)|at night|morgens|vormittags|mittags|nachmittags|abends|nachts`,
-      `(?:every|each|jede[nmrs]?|alle)\\s+(?:(?:other|second|\\d+|${NUMBER_WORD}|zweiten?)\\s+)?(?:days?|weeks?|months?|years?|weekdays?|weekends?|tage?|wochen?|monate?|jahre?|werktage?|mornings?|afternoons?|evenings?|nights?|morgen|vormittag|mittag|nachmittag|abend|nacht|${DAY_NAMES})${DAY_PART}`,
-      String.raw`weekly|daily|monthly|yearly|annually|wochentlich|taglich|monatlich|jahrlich`,
+      REPEAT_RUN,
       `(?:(?:on|am)\\s+)?(?:(?:the\\s+)?\\d{1,2}(?:st|nd|rd|th)?\\.?\\s+(?:of\\s+)?(?:${MONTHS})\\.?|(?:${MONTHS})\\.?\\s+\\d{1,2}(?:st|nd|rd|th)?|\\d{1,2}\\.\\d{1,2}\\.(?:\\d{2,4})?)(?:,?\\s+\\d{4})?`,
       String.raw`all[- ]day|whole day|ganztag(?:ig|s)?|(?:den\s+)?ganzen tag`,
     ].join('|') +
     String.raw`)${CLOSES}[.,;:!?–—-]*$`,
 );
 
-/** A day said first ("Tomorrow: lunch with Tom"); a weekday first names the event ("Monday standup"). */
-const DAY_AT_START = new RegExp(
-  String.raw`^${OPENS}(?:${DAY_WORDS})${DAY_PART}${CLOSES}[.,;:!?–—-]*(?=\s)`,
+/** A day an end may name, written out: a month, "the end of March", a weekday, a date, a holiday. */
+const END_RUN = [
+  `(?:the\\s+)?end\\s+of\\s+(?:the\\s+)?(?:${MONTHS}|year|month|week|\\d{4})`,
+  `ende\\s+(?:${MONTHS}|des jahres|des monats|der woche|\\d{4})`,
+  `(?:${MONTHS})\\.?(?:\\s+\\d{1,2}(?:st|nd|rd|th)?\\b)?(?:,?\\s+\\d{4})?`,
+  `(?:(?:next|this|coming|nachste[nrs]?|diese[nrs]?|kommende[nrs]?)\\s+)?(?:${DAY_NAMES}|week|month|year|woche|monat|jahr)`,
+  'tomorrow|ubermorgen',
+  HOLIDAYS,
+  DAY_IN_NUMBERS,
+].join('|');
+/** A tail of a title, as one anchored pattern. */
+const tailAtEnd = (body: string): RegExp =>
+  new RegExp(String.raw`(?:^|\s)${OPENS}(?:${body})${CLOSES}[.,;:!?–—-]*$`);
+/**
+ * What may follow a repeat and belongs to it, not to the title: its end
+ * ("until March", "bis zum 15.3.", "through Friday"), a count ("10
+ * times") or a span ("for six weeks"). Each is taken only when the rule
+ * holds it (`whenAtEnd`): "Vacation until Friday", "Push-ups 10 times",
+ * "Gym 3x weekly" and "Beach house every year for a week" keep their
+ * words.
+ */
+const UNTIL_TAIL = tailAtEnd(
+  `(?:until|till|til|up to|ending|ends|bis|through|thru)\\s+${UNTIL_LEADS}(?:${END_RUN})(?:,?\\s+\\d{4})?(?![a-z\\d])`,
 );
+const COUNT_TAIL = tailAtEnd(
+  `(?:\\d+|${COMPOUND_NUMBER}|${NUMBER_WORD}|${LENGTH_WORD})[\\s-]*(?:times|x|mal)`,
+);
+const SPAN_TAIL = tailAtEnd(RUNS_FOR.source);
+
+/**
+ * A day or a repeat said first ("Tomorrow: lunch with Tom", "Jeden
+ * Dienstag um 18 Uhr Fußball"); a weekday first names the event ("Monday
+ * standup"), and so does a frequency word ("Weekly sync").
+ */
+const DAY_AT_START = new RegExp(
+  String.raw`^${OPENS}(?:(?:${DAY_WORDS})${DAY_PART}|${EVERY_LEAD}(?:${REPEAT_UNIT}|${DAY_SET}|${DAY_LIST})${DAY_PART}(?:\s+${MONTH_FRAME_RUN})?(?:\s+(?:on|am)\s+(?:(?:the|den)\s+)?(?:${DAY_LIST}|\d{1,2}(?:st|nd|rd|th|\.)?(?!\d)(?:\s+(?:of\s+)?(?:${MONTHS})\b)?|(?:${MONTHS})\s+\d{1,2}(?:st|nd|rd|th)?\b))?)${CLOSES}[.,;:!?–—-]*(?=\s)`,
+);
+/** The start of a repeat run, where a dash before it is no span ("Rent – once a month"). */
+const REPEAT_AT_START = new RegExp(String.raw`^${OPENS}(?:${REPEAT_RUN})\b`);
 
 /**
  * The word before a when that makes it the title's own, not the event's:
@@ -1443,7 +1536,11 @@ const DAY_AT_START = new RegExp(
  * them; a dash before the run is a span too ("Monday - Friday").
  */
 const OWNS_WHEN =
-  /^(?:until|till|til|bis|through|thru|to|from|von|between|zwischen|after|before|nach|vor|ab|seit|since|with|w|mit|and|und|or|oder|&|good|black|cyber|easter|palm|ash|holy|maundy|taco|throwback|giving|bowl|guten|by|for|last|past|previous|letzten?|not|except|but|than|nicht|ausser|ohne|keine?n?|every|each|jede[nmrs]?|alle|am|on|this|next|coming|in|at|um|the|of)$/;
+  /^(?:until|till|til|bis|through|thru|to|from|von|between|zwischen|after|before|nach|vor|ab|seit|since|with|w|mit|and|und|or|oder|&|good|black|cyber|easter|palm|ash|holy|maundy|taco|throwback|giving|bowl|guten|by|for|last|past|previous|letzten?|not|except|but|than|nicht|ausser|ohne|keine?n?|every|each|jede[nmrs]?|am|on|this|next|coming|in|at|um|the|of)$/;
+
+/** A word that leads into more when ("ab 18 Uhr", "until March", "for 6 weeks", "on the 15th"), after a day or repeat said first. */
+const LEADS_WHEN =
+  /^(?:until|till|til|bis|through|thru|to|from|von|between|zwischen|after|before|nach|vor|ab|seit|since|by|for|fur|on|am|at|um|of|and|und|or|oder|&|every|each|jede[nmrs]?|alle)$/;
 
 /** A clock written as a bound ("until 5pm", "before 10", "after 5", "ab 9") is no start: the title's. */
 const BOUND = /^(?:until|till|bis|to|before|vor|after|nach|ab)\b/;
@@ -1460,8 +1557,14 @@ const HANGING = /^[,;:@&–—-]$/;
 /** A word without its marks, for a comparison. */
 const bare = (token: string): string => token.replaceAll(/[^\p{L}\p{N}&]/gu, '');
 
-/** Where the run of when-words that ends `text` starts, at a word; undefined for none. */
-const whenAtEnd = (text: string): number | undefined => {
+/**
+ * Where the run of when-words that ends `text` starts, at a word;
+ * undefined for none. A repeat's end, count or span counts only when the
+ * rule holds it, read from the phrase the title came from (the model
+ * may keep "until March" and drop "every Tuesday") or, without one, from
+ * the text itself.
+ */
+const whenAtEnd = (text: string, phrase?: string): number | undefined => {
   const tail = text.replace(TRAILING, '').length;
   const starts = scan(text)
     .filter(({ end, index }) => index < tail && end >= tail && !BOUND.test(text.slice(index)))
@@ -1474,6 +1577,19 @@ const whenAtEnd = (text: string): number | undefined => {
   const match = WHEN_AT_END.exec(text);
   if (match) {
     starts.push(match[0].startsWith(' ') ? match.index + 1 : match.index);
+  }
+  const source = phrase ?? text;
+  const repeat = statedRepeat(source);
+  const tails: ReadonlyArray<readonly [RegExp, boolean]> = [
+    [UNTIL_TAIL, repeat !== undefined && statesUntil(source)],
+    [COUNT_TAIL, repeat?.count !== undefined],
+    [SPAN_TAIL, repeat !== undefined && spanEndsRepeat(repeat)],
+  ];
+  for (const [pattern, held] of tails) {
+    const after = held ? pattern.exec(text) : null;
+    if (after) {
+      starts.push(after[0].startsWith(' ') ? after.index + 1 : after.index);
+    }
   }
   return starts.length === 0 ? undefined : Math.min(...starts);
 };
@@ -1549,6 +1665,7 @@ const placeSpan = (
 const whenless = (
   title: string,
   place?: string,
+  phrase?: string,
 ): { readonly first: number; readonly last: number; readonly onlyWhen: boolean } => {
   // Folded word by word and joined by one space, so a place in the text
   // is a count of words in the title.
@@ -1557,13 +1674,17 @@ const whenless = (
   let last = folded.length;
   for (;;) {
     const text = folded.slice(0, last).join(' ');
-    const start = whenAtEnd(text);
+    const start = whenAtEnd(text, phrase);
     if (start === undefined) {
       break;
     }
     const before = start === 0 ? 0 : text.slice(0, start).trimEnd().split(' ').length;
     const lead = before > 0 ? folded[before - 1]! : '';
-    if ((held && before < held[1]) || OWNS_WHEN.test(bare(lead)) || DASH.test(lead)) {
+    if (
+      (held && before < held[1]) ||
+      OWNS_WHEN.test(bare(lead)) ||
+      (DASH.test(lead) && !REPEAT_AT_START.test(text.slice(start)))
+    ) {
       break;
     }
     if (before === 0) {
@@ -1582,7 +1703,10 @@ const whenless = (
     while (first < last && HANGING.test(folded[first]!)) {
       first += 1;
     }
-    if (held && first > held[0]) {
+    // More when the code does not read after it ("Jeden Freitag ab 18
+    // Uhr …", "Every Monday until March: …"): the title stays whole.
+    const next = first < last ? folded[first]! : '';
+    if ((held && first > held[0]) || LEADS_WHEN.test(bare(next)) || DASH.test(next)) {
       first = 0;
     }
   }
@@ -1604,11 +1728,18 @@ export const saysOnlyWhen = (text: string): boolean => whenless(text).onlyWhen;
  * keeps its day ("until Friday", "with Thu"); words in the middle stay,
  * and a bare number is no time ("Room 9"). Given the event's place, its
  * words stay too ("Dinner at Ruby Tuesday"). A title that is nothing but
- * when stays as it is.
+ * when stays as it is. Given the phrase the title came from, an end, a
+ * count or a span at the end is the repeat's when the phrase's rule holds
+ * it, even where the title dropped the repeat's own words ("Piano lesson
+ * until March").
  */
-export const trimWhen = (title: string, place?: string): string => {
+export const trimWhen = (
+  title: string,
+  place?: string,
+  { phrase }: { readonly phrase?: string } = {},
+): string => {
   const tokens = [...title.matchAll(/\S+/g)];
-  const { first, last, onlyWhen } = whenless(title, place);
+  const { first, last, onlyWhen } = whenless(title, place, phrase);
   if (onlyWhen || (first === 0 && last === tokens.length)) {
     return title;
   }

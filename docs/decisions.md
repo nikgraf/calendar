@@ -1144,7 +1144,17 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   only behind an until word naming a day. A rule with chosen days starts
   on the first of them. Rejected: sparing only the `count: 1` rule (the
   invented end a week on would have stayed). Open: negations, "twice a
-  week", "2nd and 4th Tuesday", the title's trim of the new repeat forms.
+  week", "2nd and 4th Tuesday".
+- **The title's trim knows the repeat forms** (2026-10-26,
+  `todo/title-repeat-forms`) — `WHEN_AT_END` takes the forms `statedRepeat`
+  reads, a repeat said first ("Jeden Dienstag um 18 Uhr Fußball" is
+  "Fußball"), and a repeat's end, count or span after it — those only
+  behind a repeat in the title or the phrase, so "Vacation until Friday"
+  keeps its words. A location the model made of the phrase's only weekday
+  ("Standup Monday", "Coffee Thursday") is no place and holds nothing in
+  the title; any other holds its words ("Ruby Tuesday"). Rejected: trimming
+  a frequency word said first ("Weekly sync" is a name). Open: nouns read
+  as repeats ("Ski weekends", "McKinsey Quarterly"), an end said first.
 
 ## Notifications
 

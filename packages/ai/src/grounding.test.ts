@@ -12,10 +12,12 @@ import {
   isAllDayPhrase,
   isTodoPhrase,
   mentionsDate,
+  mentionsFixedDate,
   namedWeekdays,
   namesDays,
   periodOf,
   periodTimes,
+  saysOnlyWhen,
   statedRepeat,
   statedTimes,
   statesClockTime,
@@ -1185,6 +1187,121 @@ describe('trimWhen', () => {
   it('keeps the original spelling of what is left', () => {
     expect(trimWhen('Grüße an Jörg morgen')).toBe('Grüße an Jörg');
     expect(trimWhen('Straße fegen heute')).toBe('Straße fegen');
+  });
+
+  it('takes a repeat said first, with the time after it', () => {
+    // The bench: "Jeden Dienstag um 18 Uhr Fußball" kept all of it.
+    expect(trimWhen('Jeden Dienstag um 18 Uhr Fußball')).toBe('Fußball');
+    expect(trimWhen('Every Monday standup')).toBe('standup');
+    expect(trimWhen('Alle zwei Wochen Retro')).toBe('Retro');
+    // A frequency word first names the event, as a weekday does.
+    expect(trimWhen('Weekly sync')).toBe('Weekly sync');
+    expect(trimWhen('Daily standup every weekday at 9:30')).toBe('Daily standup');
+    // Review: the month frame goes with it; "alle" without a gap is "all"
+    // ("alle morgen" is "everyone tomorrow": the day comes off).
+    expect(trimWhen('Jeden ersten Montag im Monat Stammtisch')).toBe('Stammtisch');
+    expect(trimWhen('Jeden letzten Freitag im Monat um 19 Uhr Stammtisch')).toBe('Stammtisch');
+    expect(trimWhen('Alle Jahre wieder Konzert')).toBe('Alle Jahre wieder Konzert');
+    expect(trimWhen('Rundmail an alle morgen')).toBe('Rundmail an alle');
+    expect(trimWhen('Danke an alle heute')).toBe('Danke an alle');
+    // Review: a day or date after the repeat goes with it; more when the
+    // code does not read keeps the title whole.
+    expect(trimWhen('Every two weeks on Monday retro')).toBe('retro');
+    expect(trimWhen('Jeden Monat am 1. Miete zahlen')).toBe('Miete zahlen');
+    expect(trimWhen('Jeden Freitag ab 18 Uhr Stammtisch')).toBe(
+      'Jeden Freitag ab 18 Uhr Stammtisch',
+    );
+    expect(trimWhen('Every Monday until March: Yoga')).toBe('Every Monday until March: Yoga');
+    expect(trimWhen('Every Monday for 6 weeks: physio')).toBe('Every Monday for 6 weeks: physio');
+    // Codex: a weekday span after the repeat goes with it; a word that
+    // may begin a name does not keep the title whole.
+    expect(trimWhen('Every Monday - Friday at 9 team standup')).toBe('team standup');
+    expect(trimWhen('Standup every Monday - Friday at 9')).toBe('Standup');
+    expect(trimWhen('Tomorrow at 9 the planning meeting')).toBe('the planning meeting');
+    // Codex: a list with an Oxford comma, a month after the day, a German list.
+    expect(trimWhen('Every Monday, Wednesday, and Friday at 9 standup')).toBe('standup');
+    expect(trimWhen('Every year on the 15th of May family reunion')).toBe('family reunion');
+    expect(trimWhen('Every year on May 15th family reunion')).toBe('family reunion');
+    expect(trimWhen('Jeden Montag und Mittwoch um 9 Standup')).toBe('Standup');
+    expect(mentionsFixedDate('in two days')).toBe(true);
+    expect(mentionsFixedDate('in drei Wochen')).toBe(true);
+    expect(mentionsFixedDate('next week')).toBe(false);
+    expect(mentionsFixedDate('at 9.30')).toBe(false);
+    // A dash before a repeat is no span.
+    expect(trimWhen('Rent – once a month')).toBe('Rent');
+    expect(trimWhen('Gym - Mondays and Wednesdays')).toBe('Gym');
+    expect(trimWhen('Team sync - every Monday')).toBe('Team sync');
+    expect(trimWhen('Vacation Monday - Friday')).toBe('Vacation Monday - Friday');
+  });
+
+  it('reads the repeat forms the rule reader knows', () => {
+    expect(trimWhen('Review fortnightly')).toBe('Review');
+    expect(trimWhen('Rent once a month')).toBe('Rent');
+    expect(trimWhen('Business review quarterly')).toBe('Business review');
+    expect(trimWhen('Gym Mondays and Wednesdays')).toBe('Gym');
+    expect(trimWhen('Lunch every Monday and Wednesday at 12')).toBe('Lunch');
+    expect(trimWhen('Team lunch every first Friday at noon')).toBe('Team lunch');
+    expect(trimWhen('Hike every other weekend')).toBe('Hike');
+    expect(trimWhen('Meds every single day')).toBe('Meds');
+    expect(trimWhen('Standup wochentags um 9')).toBe('Standup');
+    expect(trimWhen('Standup an Werktagen')).toBe('Standup');
+    expect(trimWhen('Brunch on weekends')).toBe('Brunch');
+    expect(trimWhen('Retro jeden letzten Freitag im Monat')).toBe('Retro');
+    expect(trimWhen('Lunch first Friday of the month at noon')).toBe('Lunch');
+    expect(trimWhen('Pay rent on the 1st of the month')).toBe('Pay rent');
+    expect(trimWhen('Pay rent every 15th')).toBe('Pay rent');
+    expect(trimWhen('Miete jeden 15.')).toBe('Miete');
+    // Not a repeat the reader knows, or a name: left as it is.
+    expect(trimWhen('Gym Mon and Wed')).toBe('Gym Mon and Wed');
+    expect(trimWhen('Quarterly review')).toBe('Quarterly review');
+    expect(trimWhen('Employee of the month lunch Friday at 12')).toBe(
+      'Employee of the month lunch',
+    );
+    expect(trimWhen('Dinner at the end of the month')).toBe('Dinner at the end of the month');
+    expect(saysOnlyWhen('every Monday 10 times')).toBe(true);
+    expect(saysOnlyWhen('fortnightly')).toBe(true);
+  });
+
+  it("takes a repeat's end, count and span, after a repeat only", () => {
+    // The bench: "Piano lesson every Tuesday at 5pm until March" kept all of it.
+    expect(trimWhen('Piano lesson every Tuesday at 5pm until March')).toBe('Piano lesson');
+    expect(trimWhen('Standup every day until Friday')).toBe('Standup');
+    expect(trimWhen('Klavier jeden Dienstag bis zum 15. März')).toBe('Klavier');
+    expect(trimWhen('Choir every Wednesday ending Oct 20')).toBe('Choir');
+    expect(trimWhen('Standup every Monday until March 2027')).toBe('Standup');
+    expect(trimWhen('Yoga every Monday until the end of the year')).toBe('Yoga');
+    expect(trimWhen('Yoga every Monday 10 times')).toBe('Yoga');
+    expect(trimWhen('Yoga every day for two weeks')).toBe('Yoga');
+    expect(trimWhen('Standup every weekday for the next 6 weeks at 9')).toBe('Standup');
+    // Review: a German date ending in a dot.
+    expect(trimWhen('Klavier jeden Dienstag bis 15.3.')).toBe('Klavier');
+    expect(trimWhen('Miete jeden Monat bis zum 15.')).toBe('Miete');
+    // Review: given the phrase, the end is the repeat's even when the
+    // title dropped the repeat's words; a count or span the rule does not
+    // take stays ("3x weekly" is no count, "for a week" on a yearly rule
+    // is the event's length), as does a span of weekdays.
+    expect(
+      trimWhen('Piano lesson until March', undefined, {
+        phrase: 'Piano lesson every Tuesday at 5pm until March',
+      }),
+    ).toBe('Piano lesson');
+    expect(trimWhen('Piano lesson until March')).toBe('Piano lesson until March');
+    expect(trimWhen('Gym 3x weekly')).toBe('Gym 3x');
+    expect(trimWhen('Gym 3x', undefined, { phrase: 'Gym 3x weekly' })).toBe('Gym 3x');
+    expect(trimWhen('Tabletten dreimal täglich')).toBe('Tabletten dreimal');
+    expect(trimWhen('Beach house for a week every year')).toBe('Beach house for a week');
+    expect(trimWhen('Beach house every year for a week')).toBe('Beach house every year for a week');
+    expect(trimWhen('Standup every weekday for three days')).toBe('Standup');
+    expect(trimWhen('Conference Monday through Friday every year')).toBe(
+      'Conference Monday through Friday',
+    );
+    expect(trimWhen('Klavier jeden Dienstag bis zum 15. März 2027')).toBe('Klavier');
+    expect(trimWhen('Piano lesson every Tuesday until 15 March 2027')).toBe('Piano lesson');
+    // Without a repeat before them, the words are the title's own.
+    expect(trimWhen('Vacation until Friday')).toBe('Vacation until Friday');
+    expect(trimWhen('Push-ups 10 times')).toBe('Push-ups 10 times');
+    expect(trimWhen('Lunch for two')).toBe('Lunch for two');
+    expect(trimWhen('Open until 5pm')).toBe('Open until 5pm');
   });
 });
 
