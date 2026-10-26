@@ -431,6 +431,13 @@ describe('groundDate', () => {
     expect(ground(undefined, 'Zahnarzt morgen')).toBeUndefined();
     // Two weekdays: not one day.
     expect(ground(undefined, 'Gym Monday and Wednesday')).toBeUndefined();
+    // A weekday ruled out is no day to land on; one after another kind of
+    // "not" or "ohne" still is.
+    expect(ground('2026-08-24', 'Standup jeden Werktag um 9 außer Freitag')).toBeUndefined();
+    expect(ground(undefined, 'not on Tuesday')).toBeUndefined();
+    expect(ground(undefined, 'Yoga Monday but not Friday')).toBe('2026-08-24');
+    expect(ground('2026-08-27', 'Abendessen ohne Kinder am Freitag')).toBe('2026-08-28');
+    expect(ground('2026-08-27', 'Lunch with Tom but not Anna on Friday at 1')).toBe('2026-08-28');
     // "sat" and "sun" are words of their own.
     expect(ground(undefined, 'Fun in the sun')).toBeUndefined();
   });
@@ -700,8 +707,155 @@ describe('statedRepeat', () => {
       freq: 'weekly',
     });
     expect(namesDays('every Tuesday until Friday')).toBe(true);
-    // A day ruled out is not read: the rule is daily, Sundays included.
-    expect(statedRepeat('every day except Sunday')).toEqual({ freq: 'daily' });
+    // Days ruled out come off the rule's days: all seven for a daily one
+    // ("weekends included" too), the set's for a set; the one day left is
+    // listed, so the date lands on it; a gap in days keeps a daily rule
+    // daily, exception unread.
+    const butSunday = { byDay: [...WEEKDAYS, { weekday: 'SA' }], freq: 'weekly', ruledOut: ['SU'] };
+    expect(statedRepeat('Yoga every day at 7 except Sunday')).toEqual(butSunday);
+    expect(statedRepeat('Yoga every day except for Sundays')).toEqual(butSunday);
+    expect(statedRepeat('Yoga every day excluding Sundays')).toEqual(butSunday);
+    expect(statedRepeat('Standup jeden Werktag um 9 außer Freitag')).toEqual({
+      byDay: WEEKDAYS.slice(0, 4),
+      freq: 'weekly',
+      ruledOut: ['FR'],
+    });
+    expect(statedRepeat('every day except weekends')).toEqual({
+      byDay: WEEKDAYS,
+      freq: 'weekly',
+      ruledOut: ['SA', 'SU'],
+    });
+    expect(statedRepeat('Training jeden Tag außer an Wochenenden')).toEqual({
+      byDay: WEEKDAYS,
+      freq: 'weekly',
+      ruledOut: ['SA', 'SU'],
+    });
+    expect(statedRepeat('every day except Monday through Friday')).toEqual({
+      byDay: [{ weekday: 'SA' }, { weekday: 'SU' }],
+      freq: 'weekly',
+      ruledOut: ['MO', 'TU', 'WE', 'TH', 'FR'],
+    });
+    expect(statedRepeat('Meds every morning except Saturday and Sunday')).toEqual({
+      byDay: WEEKDAYS,
+      freq: 'weekly',
+      ruledOut: ['SA', 'SU'],
+    });
+    expect(statedRepeat('jeden Tag, nicht am Dienstag')).toEqual({
+      byDay: [
+        { weekday: 'MO' },
+        { weekday: 'WE' },
+        { weekday: 'TH' },
+        { weekday: 'FR' },
+        { weekday: 'SA' },
+        { weekday: 'SU' },
+      ],
+      freq: 'weekly',
+      ruledOut: ['TU'],
+    });
+    expect(statedRepeat('Brunch every weekend except Sunday at 11')).toEqual({
+      byDay: [{ weekday: 'SA' }],
+      freq: 'weekly',
+      ruledOut: ['SU'],
+    });
+    expect(statedRepeat('Walk every day, weekends included, except Monday')).toEqual({
+      byDay: [...WEEKDAYS.slice(1), { weekday: 'SA' }, { weekday: 'SU' }],
+      freq: 'weekly',
+      ruledOut: ['MO'],
+    });
+    expect(statedRepeat('every other day except Sunday')).toEqual({ freq: 'daily', interval: 2 });
+    expect(statedRepeat('every 3 days except weekends')).toEqual({ freq: 'daily', interval: 3 });
+    // An exception that is no day, leaves no day, or has no days to come
+    // off, is read but not applied; a date, a scope or a bare "but" after
+    // the day is not an exception.
+    expect(statedRepeat('Standup every weekday at 9:30 except holidays')).toEqual({
+      byDay: WEEKDAYS,
+      freq: 'weekly',
+    });
+    expect(statedRepeat('every Monday except next Monday')).toEqual({ freq: 'weekly' });
+    expect(statedRepeat('every Monday except Monday')).toEqual({
+      freq: 'weekly',
+      ruledOut: ['MO'],
+    });
+    expect(statedRepeat('Weekly sync except Friday')).toEqual({ freq: 'weekly', ruledOut: ['FR'] });
+    expect(statedRepeat('Standup every weekday except Friday the 13th')).toEqual({
+      byDay: WEEKDAYS,
+      freq: 'weekly',
+    });
+    expect(statedRepeat('Standup every weekday except Fridays in August')).toEqual({
+      byDay: WEEKDAYS,
+      freq: 'weekly',
+    });
+    expect(statedRepeat('Mondays and Fridays but not Friday the 13th')).toEqual({
+      byDay: [{ weekday: 'MO' }, { weekday: 'FR' }],
+      freq: 'weekly',
+    });
+    expect(statedRepeat('Gym every Monday and Wednesday, but Wednesday at 6pm')).toEqual({
+      byDay: [{ weekday: 'MO' }, { weekday: 'WE' }],
+      freq: 'weekly',
+    });
+    expect(namesDays('every day except Sunday')).toBe(false);
+    expect(namesDays('every weekday except Friday')).toBe(true);
+    // Review: one date after a comma or bracket, an anchor, a period, an
+    // exception with a clock of its own (when the words gave one before).
+    for (const phrase of [
+      'Standup jeden Werktag um 9 außer Montag, den 7. September',
+      'Standup every weekday except Monday, Sept 7',
+      'Standup every weekday except Monday (Sept 7)',
+      'Standup every weekday except the Friday before Christmas',
+      'Standup every weekday except Friday next week',
+      'Standup every weekday at 9 except Friday at 10',
+      'Standup jeden Werktag um 9, außer Freitag um 10',
+    ]) {
+      expect(statedRepeat(phrase), phrase).toEqual({ byDay: WEEKDAYS, freq: 'weekly' });
+    }
+    expect(statedRepeat('Yoga every day at 7 except Sunday at 9')).toEqual({ freq: 'daily' });
+    // Two lead words, and a start after the exception, are read.
+    expect(statedRepeat('every day except on the weekends')).toEqual({
+      byDay: WEEKDAYS,
+      freq: 'weekly',
+      ruledOut: ['SA', 'SU'],
+    });
+    expect(statedRepeat('jeden Werktag außer Freitag ab Montag')).toEqual({
+      byDay: WEEKDAYS.slice(0, 4),
+      freq: 'weekly',
+      ruledOut: ['FR'],
+    });
+    expect(statedRepeat('every weekday except Friday from next week')).toEqual({
+      byDay: WEEKDAYS.slice(0, 4),
+      freq: 'weekly',
+      ruledOut: ['FR'],
+    });
+    // Review: a plural after the negation is the exception's, not a habit.
+    expect(statedRepeat('not on Sundays', { ofRepeat: true })).toEqual({ ruledOut: ['SU'] });
+    expect(statedRepeat('not on Sundays')).toBeUndefined();
+    // Codex: a negation about anything else leaves the repeat alone; a
+    // scoped range does not fall back to its first day; every exclusion
+    // counts.
+    expect(statedRepeat('Abendessen ohne Kinder jeden Freitag')).toEqual({ freq: 'weekly' });
+    expect(statedRepeat('Abendessen ohne Kinder jeden Montag und Mittwoch')).toEqual({
+      byDay: [{ weekday: 'MO' }, { weekday: 'WE' }],
+      freq: 'weekly',
+    });
+    expect(statedRepeat('Yoga every day except Monday through Friday in August')).toEqual({
+      freq: 'daily',
+    });
+    expect(statedRepeat('Yoga every day except Saturday, not Sunday')).toEqual({
+      byDay: WEEKDAYS,
+      freq: 'weekly',
+      ruledOut: ['SA', 'SU'],
+    });
+    // Codex: "not every weekend" is an exception, "not every week" no
+    // kind, and a spelled-out clock after the exception is its own time.
+    expect(statedRepeat('Standup every weekday, not every weekend')).toEqual({
+      byDay: WEEKDAYS,
+      freq: 'weekly',
+      ruledOut: ['SA', 'SU'],
+    });
+    expect(statedRepeat('Yoga every month, not every week')).toEqual({ freq: 'monthly' });
+    expect(statedRepeat('Standup every weekday at nine except Friday at ten')).toEqual({
+      byDay: WEEKDAYS,
+      freq: 'weekly',
+    });
     // Review: a set named in passing leaves a daily rule daily.
     expect(statedRepeat('Take meds every morning at 8, weekends included')).toEqual({
       freq: 'daily',
@@ -747,6 +901,8 @@ describe('statedRepeat', () => {
       runsFor: { amount: 6, unit: 'weeks' },
     });
     expect(statedRepeat('10 times', { ofRepeat: true })).toEqual({ count: 10 });
+    expect(statedRepeat('nicht am Freitag', { ofRepeat: true })).toEqual({ ruledOut: ['FR'] });
+    expect(statedRepeat('nicht am Freitag')).toBeUndefined();
     expect(statedRepeat('at 8', { ofRepeat: true })).toBeUndefined();
     // "just once a week" takes nothing away.
     expect(clearsRepeat('Gym, just once a week, Mondays at 7')).toBe(false);
@@ -1158,8 +1314,25 @@ describe('trimWhen', () => {
   it("leaves a day ruled out, a dash span, and the title's own closing marks", () => {
     // Codex round 2.
     expect(trimWhen('Meeting tomorrow but not Friday')).toBe('Meeting tomorrow but not Friday');
-    expect(trimWhen('Standup every weekday except Friday')).toBe(
-      'Standup every weekday except Friday',
+    // Days ruled out go with the repeat once the rule reads them, said
+    // first or last; an exception the rule does not read stays the title's.
+    expect(trimWhen('Standup every weekday except Friday')).toBe('Standup');
+    expect(trimWhen('Yoga every day at 7 except Sunday')).toBe('Yoga');
+    expect(trimWhen('Standup jeden Werktag um 9 außer Freitag')).toBe('Standup');
+    expect(trimWhen('Jeden Tag außer Sonntag Yoga')).toBe('Yoga');
+    expect(trimWhen('Jeden Tag um 7 außer Sonntag Yoga')).toBe('Yoga');
+    expect(trimWhen('Yoga every day except Saturday, not Sunday')).toBe('Yoga');
+    expect(trimWhen('Abendessen ohne Kinder jeden Freitag')).toBe('Abendessen ohne Kinder');
+    expect(trimWhen('Every weekday except Friday – standup')).toBe('standup');
+    expect(trimWhen('Every weekday except Friday: standup')).toBe('standup');
+    expect(trimWhen('Jeden Werktag außer Freitag Standup um 9')).toBe('Standup');
+    expect(trimWhen('Standup every week except Friday')).toBe('Standup every week except Friday');
+    expect(trimWhen('Yoga every day but Sunday')).toBe('Yoga every day but Sunday');
+    expect(trimWhen('Standup every Monday except next Monday')).toBe(
+      'Standup every Monday except next Monday',
+    );
+    expect(trimWhen('Standup every weekday at 9:30 except holidays')).toBe(
+      'Standup every weekday at 9:30 except holidays',
     );
     expect(trimWhen('Urlaub außer Montag')).toBe('Urlaub außer Montag');
     expect(trimWhen('Vacation Monday - Friday')).toBe('Vacation Monday - Friday');

@@ -1143,8 +1143,8 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   repeat word the code does not read, its count and gap never, its end
   only behind an until word naming a day. A rule with chosen days starts
   on the first of them. Rejected: sparing only the `count: 1` rule (the
-  invented end a week on would have stayed). Open: negations, "twice a
-  week", "2nd and 4th Tuesday".
+  invented end a week on would have stayed). Open: "twice a week", "2nd
+  and 4th Tuesday".
 - **The title's trim knows the repeat forms** (2026-10-26,
   `todo/title-repeat-forms`) — `WHEN_AT_END` takes the forms `statedRepeat`
   reads, a repeat said first ("Jeden Dienstag um 18 Uhr Fußball" is
@@ -1155,6 +1155,17 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   the title; any other holds its words ("Ruby Tuesday"). Rejected: trimming
   a frequency word said first ("Weekly sync" is a name). Open: nouns read
   as repeats ("Ski weekends", "McKinsey Quarterly"), an end said first.
+- **Days a repeat rules out** (2026-10-26, `todo/negated-days`) — "every
+  day except Sunday", "jeden Werktag außer Freitag", "every morning except
+  Saturday and Sunday": the days named after the negation come off the
+  rule's days (all seven for a daily one) and the rule turns weekly on
+  what is left; the title drops the exception with the repeat, and the
+  date reader no longer lands on a ruled-out weekday; said of a draft,
+  "not on Fridays" takes the day off the editor's days. Not read: an
+  exception that is no day ("except holidays"), one date ("except Friday
+  the 13th"), a bare "but", one that leaves none ("every Monday except
+  Monday") or sits on a rule without days ("weekly except Friday"). The
+  finder's day reader keeps leaving a negation to the model.
 
 ## Notifications
 

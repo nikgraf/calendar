@@ -1,6 +1,7 @@
 import {
   addDaysToPlainDate,
   type ByDay,
+  daysBetweenPlainDates,
   foldSearchText,
   monthlyOrdinalOf,
   type RecurrenceFrequency,
@@ -138,20 +139,44 @@ const isNthWeekday = (date: string, ordinal: number): boolean => {
   return ordinal === -1 ? day.day > day.daysInMonth - 7 : Math.ceil(day.day / 7) === ordinal;
 };
 
+/** The number of the week (Monday first) a day falls in, counted from a fixed Monday. */
+const weekOf = (day: string): number =>
+  Math.floor(
+    daysBetweenPlainDates(
+      '2024-01-01',
+      addDaysToPlainDate(day, 1 - Temporal.PlainDate.from(day).dayOfWeek),
+    ) / 7,
+  );
+
 /**
  * The first day a rule with chosen weekdays falls on, on or after `date`:
  * a weekly rule's next listed day, a monthly rule's next "Nth weekday".
  * A start the rule skips is drawn as one more first occurrence
  * (`expand.ts`), which "every weekday" said on a Saturday never means.
  */
-export const firstDayOn = (date: string, recurrence: QuickAddPrefill['recurrence']): string => {
+export const firstDayOn = (
+  date: string,
+  recurrence: QuickAddPrefill['recurrence'],
+  { keepPhase = false }: { readonly keepPhase?: boolean } = {},
+): string => {
   const days = recurrence?.byDay ?? [];
   const [first] = days;
   if (recurrence === undefined || first === undefined) {
     return date;
   }
   if (recurrence.freq === 'weekly') {
-    return days.map((day) => nextOn(date, day.weekday)).sort()[0]!;
+    const interval = recurrence.interval ?? 1;
+    return days
+      .map((day) => {
+        const next = nextOn(date, day.weekday);
+        // A draft's start anchors its cycle: a start moved off its day stays
+        // in a week the rule falls in ("every other week" keeps its weeks).
+        const weeksOn = (weekOf(next) - weekOf(date)) % interval;
+        return keepPhase && interval > 1 && weeksOn !== 0
+          ? addDaysToPlainDate(next, 7 * (interval - weeksOn))
+          : next;
+      })
+      .sort()[0]!;
   }
   if (recurrence.freq === 'monthly' && first.ordinal !== undefined) {
     // Every month has a 1st to 4th and a last of each weekday: six weeks on at most.
@@ -270,15 +295,39 @@ export const recurrenceFromParse = (
   }
   const sameKind =
     current !== undefined && (stated.freq === undefined || stated.freq === current.freq);
-  const freq = stated.freq ?? current?.freq ?? modelFreq(parsed);
+  // An exception alone ("not on Fridays"): off the draft's days, or off
+  // all seven of a daily rule without a gap, which turns weekly.
+  const ruledOut = stated.ruledOut ?? [];
+  const exceptionOnly =
+    stated.freq === undefined && stated.byDay === undefined && ruledOut.length > 0;
+  const dailyException =
+    exceptionOnly &&
+    current?.freq === 'daily' &&
+    (current.interval ?? 1) === 1 &&
+    ruledOut.length < WEEKDAYS_MONDAY_FIRST.length;
+  const freq = dailyException ? 'weekly' : (stated.freq ?? current?.freq ?? modelFreq(parsed));
   if (freq === undefined) {
     return undefined;
   }
   const interval =
     stated.interval ?? (stated.freq === undefined && sameKind ? current!.interval : undefined);
-  const byDay =
-    byDayFor(stated.byDay, freq, firstDay) ??
-    (sameKind && stated.byDay === undefined && !namesDays(phrase) ? current!.byDay : undefined);
+  // The editor's days stay while the kind does and the words name none —
+  // less the ones the words rule out ("not on Fridays"), on a weekly rule
+  // with days left; an exception alone leaves a day said beside it to the
+  // date ("Thursday, not Friday").
+  const had =
+    current?.byDay ??
+    (dailyException ? WEEKDAYS_MONDAY_FIRST.map((weekday) => ({ weekday })) : undefined);
+  const less = had?.filter((day) => !ruledOut.includes(day.weekday));
+  const keptDays =
+    current !== undefined &&
+    stated.byDay === undefined &&
+    (exceptionOnly || (sameKind && !namesDays(phrase)))
+      ? freq === 'weekly' && less !== undefined && less.length > 0
+        ? less
+        : current.byDay
+      : undefined;
+  const byDay = byDayFor(stated.byDay, freq, firstDay) ?? keptDays;
   // "for a week" on a yearly rule is how long the event lasts, not the
   // series — but "every weekday for three days" is three standups.
   const span =
@@ -303,7 +352,14 @@ export const recurrenceFromParse = (
     count !== undefined
       ? undefined
       : span !== undefined
-        ? lastDayOf(firstDayOn(firstDay, { byDay, freq }), span)
+        ? lastDayOf(
+            firstDayOn(
+              firstDay,
+              { byDay, freq, interval },
+              { keepPhase: current !== undefined && stated.byDay === undefined },
+            ),
+            span,
+          )
         : saysUntil
           ? repeatEndFromParse(parsed, firstDay)
           : undefined;

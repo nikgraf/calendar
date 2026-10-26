@@ -697,6 +697,58 @@ describe('parseQuickAdd', () => {
     ).toBe('Ruby Tuesday');
   });
 
+  it('takes the days a phrase rules out off the rule, and starts on one it keeps', async () => {
+    // The model answers "every day" with a daily rule; said on a Sunday,
+    // the first day is the Monday.
+    expect(
+      await prefillOf(
+        { date: '2026-08-23', recurrence: { freq: 'daily' }, startTime: '07:00', title: 'Yoga' },
+        'Yoga every day at 7 except Sunday',
+      ),
+    ).toMatchObject({
+      date: '2026-08-24',
+      recurrence: { byDay: [...WEEKDAYS, { weekday: 'SA' }], freq: 'weekly' },
+      title: 'Yoga',
+    });
+    expect(
+      await prefillOf(
+        {
+          date: '2026-08-24',
+          recurrence: { freq: 'weekly' },
+          startTime: '09:00',
+          title: 'Standup',
+        },
+        'Standup jeden Werktag um 9 außer Freitag',
+      ),
+    ).toMatchObject({
+      date: '2026-08-24',
+      recurrence: { byDay: WEEKDAYS.slice(0, 4), freq: 'weekly' },
+      title: 'Standup',
+    });
+    // The one day an exception leaves is where the draft lands.
+    expect(
+      await prefillOf(
+        { date: '2026-08-23', recurrence: { freq: 'weekly' }, startTime: '11:00', title: 'Brunch' },
+        'Brunch every weekend except Sunday at 11',
+      ),
+    ).toMatchObject({
+      date: '2026-08-29',
+      recurrence: { byDay: [{ weekday: 'SA' }], freq: 'weekly' },
+    });
+    // Review: a "but not" about people leaves the day and the venue alone.
+    expect(
+      await prefillOf(
+        {
+          date: '2026-08-28',
+          location: 'Ruby Tuesday',
+          startTime: '19:00',
+          title: 'Dinner Ruby Tuesday',
+        },
+        'Dinner Ruby Tuesday but not with Anna on Friday',
+      ),
+    ).toMatchObject({ date: '2026-08-28', title: 'Dinner Ruby Tuesday' });
+  });
+
   it('drops a repeat the phrase never named', async () => {
     // Observed: "next Tuesday" came back as a weekly repeat, count 1 — and
     // "Standup Monday at 9" as a week of them.

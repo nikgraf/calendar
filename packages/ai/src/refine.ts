@@ -5,6 +5,7 @@ import {
   foldSearchText,
   Temporal,
   validateEventDraft,
+  weekdayOf,
 } from '@calendar/core';
 import {
   type ClockTime,
@@ -316,7 +317,11 @@ export const normalizeRefine = (
   // on their own ("Thursday instead") stays where they put it, whatever
   // days the rule keeps, and the editor says if the end is past.
   const merged = recurrenceFromParse(parse.recurrence, date, utterance, draft.recurrence);
-  const start = statedRepeat(utterance)?.byDay === undefined ? date : firstDayOn(date, merged);
+  const reading = statedRepeat(utterance, { ofRepeat: draft.recurrence !== undefined });
+  const start =
+    reading?.byDay !== undefined || (reading?.ruledOut ?? []).includes(weekdayOf(date))
+      ? firstDayOn(date, merged, { keepPhase: reading?.byDay === undefined })
+      : date;
   const ended = start !== date && merged?.untilDate !== undefined && merged.untilDate < start;
   const recurrence = ended ? undefined : merged;
   const placedDate = ended ? date : start;
