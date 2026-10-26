@@ -1222,7 +1222,15 @@ gateway carries all of it. Details, limits and the threat model:
   title · Save row and, for a new item, the quick-add field with its
   thread — and one scroll view that stays across a kind switch — the
   kind control at its top, then the form, which renders `bare` inside it
-  (`FormScroll`). The forms are iOS inset grouped cards on the grouped
+  (`FormScroll`). A drag up on the form, or on the thread's turns, raises
+  a half sheet to full before anything scrolls
+  (`sheetExpandsWhenScrolledToEdge`), so the form never scrolls on its
+  own in the strip under the header. The turns take at most a third of
+  the sheet at the detent it stands at (`editorSheet.ts`; the route
+  follows `sheetDetentChange`), so at half the two newest and "+N earlier
+  queries" fit with a strip of the form under them; the keyboard lifts
+  the sheet without a detent change, and the half cap holds while it is
+  up. The forms are iOS inset grouped cards on the grouped
   ground, drawn with the Settings pages' rows (`GroupedList.tsx`:
   `Section`, `Row`, `SwitchRow`, `CheckRow`, `ActionRow`, and the forms'
   own `FieldRow`, `ChipsRow`, `RowSlot`, `CardCaption`; a choice is a

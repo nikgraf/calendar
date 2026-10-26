@@ -932,9 +932,10 @@ Selector gotchas (each caused a real failure):
   alert inline and cancels only while an "Open" is still up.
 - The editor is a form sheet: at half height the calendar above it is
   live, and Maestro's scrolls swipe at the screen's centre — on the
-  calendar. A flow that fills the form expands the sheet first
-  (`expand-editor.yaml`); to look at the calendar behind it, tap the
-  grabber while its value reads "Expanded".
+  calendar. A swipe on the form itself would raise the sheet, not scroll
+  the form, and a short one snaps back. A flow that fills the form
+  expands the sheet first (`expand-editor.yaml`); to look at the
+  calendar behind it, tap the grabber while its value reads "Expanded".
 - Text selectors are **whole-string regexes**: prefix text does not
   match, regex metacharacters in titles must be escaped, and a pressable
   row reads as one element (title, subtitle and value together), so match
