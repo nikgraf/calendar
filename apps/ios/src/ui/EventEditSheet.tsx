@@ -15,12 +15,22 @@ import {
   type TaskRecord,
 } from '@calendar/core';
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
-import { Alert, Modal, Pressable, SafeAreaView, ScrollView, Text, View } from 'react-native';
+import {
+  Alert,
+  Keyboard,
+  Modal,
+  Pressable,
+  SafeAreaView,
+  ScrollView,
+  Text,
+  View,
+} from 'react-native';
 import { backendClient } from '../backend.ts';
 import { languageModel } from '../model.ts';
 import { BirthdayDetail } from './BirthdayDetail.tsx';
 import { DraftThreadSection } from './DraftThreadSection.tsx';
 import { useSheetStyles } from './editSheetShared.ts';
+import { useEditorSheetAtHalf } from './editorSheet.ts';
 import { EventEditForm } from './EventEditForm.tsx';
 import { FieldFlashContext, FlashView } from './FlashView.tsx';
 import { LessonBanner } from './lesson/LessonBanner.tsx';
@@ -320,6 +330,28 @@ export function EventEditSheet({
       )}
     </FieldFlashContext>
   );
+  // At half height the form shows its top under the header: UIKit hands a
+  // drag on it to the sheet, which rises, only while the form is scrolled
+  // to its top. So it goes back there, as Maps' sheets do, whenever the
+  // sheet stands at half with the keyboard down: lowered after a scroll at
+  // full height, and when the keyboard hides (it lifts a half sheet
+  // without a detent change, and a field focused in the form scrolls the
+  // form up to it). Never while the keyboard is up: the field being typed
+  // into would leave the view.
+  const formScroll = useRef<ScrollView>(null);
+  const atHalf = useEditorSheetAtHalf();
+  const formToTop = useEffectEvent(() => {
+    if (atHalf && !Keyboard.isVisible()) {
+      formScroll.current?.scrollTo({ animated: true, y: 0 });
+    }
+  });
+  useEffect(() => {
+    formToTop();
+  }, [atHalf]);
+  useEffect(() => {
+    const hidden = Keyboard.addListener('keyboardDidHide', () => formToTop());
+    return () => hidden.remove();
+  }, []);
   // The form-sheet route (`app/editor.tsx`): react-native-screens lays a
   // sheet out once, as at most a header and a scroll view — the header must
   // not be flattened away (`collapsable={false}`), the scroll view follows
@@ -333,7 +365,11 @@ export function EventEditSheet({
           {headerRow}
           {headerRest}
         </View>
-        <ScrollView automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled">
+        <ScrollView
+          automaticallyAdjustKeyboardInsets
+          keyboardShouldPersistTaps="handled"
+          ref={formScroll}
+        >
           {kindControl}
           {form}
         </ScrollView>
