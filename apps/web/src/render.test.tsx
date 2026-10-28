@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import { render, routes } from './entry-server.tsx';
 import { routeFor } from './routes.ts';
 

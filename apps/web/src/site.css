@@ -68,6 +68,11 @@ body {
   outline-offset: 2px;
 }
 
+/* The download band is ink: the grey ring would sit at 2.6:1 on it. */
+#download :focus-visible {
+  outline-color: var(--on-primary);
+}
+
 /* The privacy policy, rendered from PRIVACY.md. */
 .prose {
   font-size: 16px;

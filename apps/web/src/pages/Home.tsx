@@ -38,9 +38,9 @@ function Section({
 
 const features = [
   {
-    body: 'Plus an Agenda on the iPhone. Drag to move or resize; the event follows your finger or pointer one to one.',
+    body: 'Plus 2 Days and an Agenda on the iPhone. Drag to move or resize; the event follows your finger or pointer one to one.',
     icon: CalendarIcon,
-    title: 'Day, 2 Days, Week, Month',
+    title: 'Day, Week, Month',
   },
   {
     body: 'Google Tasks and Apple Reminders in the task lane and on the Tasks tab. Convert a task to an event or back; move either between accounts.',
@@ -88,7 +88,7 @@ const privacyPoints = [
     title: 'Hidden from screen shares',
   },
   {
-    body: "Quick add, find a time, dictation and capture use Apple's on-device models. Nothing is uploaded for them.",
+    body: "Quick add, find a time, dictation and capture run on Apple's on-device models. Nothing is uploaded for them unless you point the Mac at a model server you choose.",
     title: 'AI on the device',
   },
 ];
@@ -178,8 +178,9 @@ export function HomePage() {
             <p className={lead}>
               Write “Lunch with Sarah tomorrow at 1” and the form fills in. Ask for “an hour next
               week with Jonas” and get free slots. Paste an email or share a screenshot and the
-              events in it become drafts. Everything runs on Apple’s on-device models; nothing you
-              type, say or share leaves the device.
+              events in it become drafts. Everything runs on Apple’s on-device models by default, so
+              nothing you type, say or share leaves the device; on the Mac you can choose a model
+              server of your own instead.
             </p>
             <ul className="m-0 flex list-none flex-wrap gap-2 p-0 text-sm font-medium">
               {aiChips.map((chip) => (
@@ -227,7 +228,8 @@ export function HomePage() {
               Get Solunivo for Mac and iPhone
             </h2>
             <p className="m-0 text-on-primary/70">
-              The AI features need Apple Intelligence. Everything else works without it.
+              The AI features need Apple Intelligence, or a model server of your own on the Mac.
+              Everything else works without them.
             </p>
           </div>
           <div className="flex flex-wrap gap-3">

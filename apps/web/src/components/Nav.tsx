@@ -21,7 +21,7 @@ export function Nav() {
         >
           {items.map((item) => (
             <a
-              className="py-2 no-underline hover:text-primary-hover"
+              className="py-2 no-underline hover:text-ink-secondary"
               href={item.href}
               key={item.href}
             >

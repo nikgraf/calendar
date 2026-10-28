@@ -31,25 +31,30 @@ export type AllDayItem =
   | { kind: 'birthday'; title: string }
   | { done?: boolean; kind: 'task'; title: string };
 
+// Short labels: the hero's week columns are about 70 px wide.
 const allDay: ReadonlyArray<ReadonlyArray<AllDayItem>> = [
-  [{ kind: 'task', title: 'Renew passport' }],
-  [{ done: true, kind: 'task', title: 'Call the bank' }],
-  [{ kind: 'birthday', title: 'Mia · birthday' }],
+  [{ kind: 'task', title: 'Passport' }],
+  [
+    { done: true, kind: 'task', title: 'Call bank' },
+    { kind: 'birthday', title: 'Birthday' },
+  ],
+  [],
   [{ kind: 'task', title: 'Pack' }],
   [],
 ];
 
+// Titles fit two 11 px lines in a 70 px column (one line for a half hour).
 const events: ReadonlyArray<TimedEvent> = [
   { day: 0, end: 10, start: 9, tint: 'lilac', title: 'Team sync' },
-  { day: 0, end: 14, start: 13, tint: 'mint', title: 'Lunch with Sarah' },
+  { day: 0, end: 14, start: 13, tint: 'mint', title: 'Lunch' },
   { day: 1, end: 11.5, start: 10, tint: 'lilac', title: 'Design review' },
   { day: 1, end: 16, start: 15, tint: 'blush', title: 'Dentist' },
   { day: 2, end: 12, start: 9, tint: 'mint', title: 'Deep work' },
-  { day: 2, end: 14.5, start: 14, tint: 'lilac', title: '1:1 with Jonas' },
+  { day: 2, end: 14.5, start: 14, tint: 'lilac', title: '1:1 Jonas' },
   { day: 3, end: 10, start: 9, tint: 'lilac', title: 'Standup' },
   { day: 3, end: 18, start: 16, tint: 'blue', title: 'Flight to Berlin' },
   { day: 4, end: 13, start: 10, tint: 'lilac', title: 'Workshop' },
-  { day: 4, end: 17, start: 16.5, tint: 'blush', title: 'Pick up the kids' },
+  { day: 4, end: 17, start: 16.5, tint: 'blush', title: 'Pickup' },
 ];
 
 export const week = {
@@ -82,10 +87,10 @@ export const upNext = [
 ];
 
 export const tasks = [
-  { title: 'Renew passport' },
+  { title: 'Passport' },
   { title: 'Pack for Berlin' },
   { title: 'Book the hotel' },
-  { done: true, title: 'Call the bank' },
+  { done: true, title: 'Call bank' },
 ];
 
 /** `9.5` → `9:30`. */
@@ -93,4 +98,14 @@ export function clock(hour: number): string {
   const h = Math.floor(hour);
   const m = Math.round((hour - h) * 60);
   return `${h}:${m.toString().padStart(2, '0')}`;
+}
+
+/** `10` → `10`, `11.5` → `11:30`: the compact form the week's narrow blocks use. */
+function short(hour: number): string {
+  return Number.isInteger(hour) ? `${hour}` : clock(hour);
+}
+
+/** `10–11:30`. */
+export function range(start: number, end: number): string {
+  return `${short(start)}–${short(end)}`;
 }

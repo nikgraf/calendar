@@ -1314,8 +1314,8 @@ first. The decisions, one line each:
   download band) and `/privacy` rendered from the root `PRIVACY.md`, so
   the policy has one source. React + Tailwind on the brand tokens with the
   desktop renderer's utility names, prerendered to HTML with no JavaScript
-  shipped; the screens are drawn components over sample data, so a UI
-  change in the apps never leaves the site stale. Rejected: Astro (a
+  shipped; the screens are drawn components over sample data, so they
+  never need recapturing and show no real data. Rejected: Astro (a
   second framework for two pages), a client-rendered SPA (no JS is needed),
   screenshots of the real apps (would need recapturing, and show data).
   Open: hosting and DNS, real download links, a dark scheme (the site is

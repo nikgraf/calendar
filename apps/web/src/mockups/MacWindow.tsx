@@ -94,7 +94,7 @@ export function MacWindow() {
             </span>
           </div>
         </div>
-        <div className="grid grid-cols-[130px_minmax(0,1fr)_150px]">
+        <div className="grid grid-cols-[120px_minmax(0,1fr)_140px]">
           <aside className="flex flex-col gap-3.5 border-r border-hairline bg-surface-subtle p-3">
             <MiniMonth />
             <div className="flex flex-col gap-1.5">

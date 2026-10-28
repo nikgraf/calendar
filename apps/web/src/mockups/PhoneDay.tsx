@@ -4,7 +4,8 @@ import { TaskCheck } from './TaskCheck.tsx';
 
 const hourStart = 10;
 const hourEnd = 16;
-const hourHeight = 56;
+const hourHeight = 52;
+const gridHeight = (hourEnd - hourStart) * hourHeight;
 
 function top(hour: number): number {
   return (hour - hourStart) * hourHeight;
@@ -13,11 +14,12 @@ function top(hour: number): number {
 /** The iPhone app on the same Tuesday, in Day view. */
 export function PhoneDay() {
   const today = week.days[week.now.day];
+  const allDay = week.allDay[week.now.day] ?? [];
   const events = week.events.filter((event) => event.day === week.now.day);
   const hours = Array.from({ length: hourEnd - hourStart }, (_, i) => hourStart + i);
   return (
     <div
-      aria-label="The iPhone app in Day view: the date, a Day · 2 Days · Week · Month switch, a task and a birthday chip, the day's events, and a tab bar with Calendar, Tasks, Search and a plus button"
+      aria-label="The iPhone app in Day view: the date, a Day · 2 Days · Week · Month switch, a done task and a birthday chip, the day's events, and a tab bar with Calendar, Tasks, Search and a plus button"
       className="flex h-[580px] w-[280px] flex-col overflow-hidden rounded-[44px] border border-hairline-strong bg-surface text-xs shadow-[0_30px_80px_rgba(48,42,52,0.14)]"
       role="img"
     >
@@ -41,15 +43,28 @@ export function PhoneDay() {
         ))}
       </div>
       <div className="mx-4 mt-3 flex flex-wrap gap-1.5">
-        <span className="inline-flex items-center gap-1.5 rounded-[6px] bg-fill px-2 py-1 font-medium">
-          <TaskCheck size={14} />
-          Call the bank
-        </span>
-        <span className="inline-flex items-center gap-1.5 rounded-[6px] bg-event-blush px-2 py-1 font-medium text-on-event-blush">
-          Mia · birthday
-        </span>
+        {allDay.map((item) =>
+          item.kind === 'birthday' ? (
+            <span
+              className="inline-flex items-center gap-1.5 rounded-[6px] bg-event-blush px-2 py-1 font-medium text-on-event-blush"
+              key={item.title}
+            >
+              {item.title}
+            </span>
+          ) : (
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-[6px] bg-fill px-2 py-1 font-medium ${
+                item.done ? 'text-ink-secondary line-through' : ''
+              }`}
+              key={item.title}
+            >
+              <TaskCheck done={item.done} size={14} />
+              {item.title}
+            </span>
+          ),
+        )}
       </div>
-      <div className="relative mx-4 mt-3 flex-1 border-t border-hairline">
+      <div className="relative mx-4 mt-3 border-t border-hairline" style={{ height: gridHeight }}>
         {hours.map((hour) => (
           <div className="absolute inset-x-0" key={hour} style={{ top: top(hour) }}>
             {hour === hourStart ? null : <div className="border-t border-hairline" />}
@@ -77,7 +92,7 @@ export function PhoneDay() {
           <span className="absolute -top-1 -left-1 size-[7px] rounded-full bg-primary" />
         </div>
       </div>
-      <div className="mx-3 mb-3.5 flex items-center justify-between gap-2">
+      <div className="mx-3 mt-auto mb-3.5 flex items-center justify-between gap-2">
         <div className="flex flex-1 items-center justify-around rounded-full bg-fill px-2.5 py-2 text-[10px] font-medium text-ink-secondary">
           <span className="flex flex-col items-center gap-0.5 text-ink">
             <CalendarIcon size={18} strokeWidth={2} />
