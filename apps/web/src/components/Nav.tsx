@@ -1,10 +1,11 @@
-import lockup from '../../../../brand/logos/lockup-horizontal-light.svg';
+import lockupDark from '../../../../brand/logos/lockup-horizontal-dark.svg';
+import lockupLight from '../../../../brand/logos/lockup-horizontal-light.svg';
 import { links } from '../links.ts';
+import { ThemePicture } from './ThemePicture.tsx';
 
 const items = [
+  { href: '/#ai', label: 'On-device AI' },
   { href: '/#features', label: 'Features' },
-  { href: '/#iphone', label: 'iPhone' },
-  { href: '/#ai', label: 'AI' },
   { href: '/#privacy', label: 'Privacy' },
 ];
 
@@ -13,7 +14,14 @@ export function Nav() {
     <header className="border-b border-hairline">
       <div className="mx-auto flex max-w-[1200px] flex-wrap items-center justify-between gap-4 px-6 py-4 sm:px-8">
         <a aria-label="Solunivo home" className="inline-flex items-center" href="/">
-          <img alt="" className="block h-[30px] w-auto" height="30" src={lockup} />
+          <ThemePicture
+            alt=""
+            className="block h-[30px] w-auto"
+            dark={lockupDark}
+            height={30}
+            light={lockupLight}
+            width={118}
+          />
         </a>
         <nav
           aria-label="Primary"

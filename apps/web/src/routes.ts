@@ -11,8 +11,8 @@ export function routeFor(path: string): Route {
 export const pageMeta: Record<Route, { description: string; title: string }> = {
   '/': {
     description:
-      'Solunivo puts Google Calendar, Google Tasks, Apple Calendar and Apple Reminders on one grid, on your Mac and your iPhone. No server in between.',
-    title: 'Solunivo — Google and Apple calendars, tasks and reminders. One app.',
+      'Describe an event the way you’d say it and it’s on your calendar. Google and Apple calendars, tasks and reminders in one app, on Mac and iPhone, with AI that runs on your device.',
+    title: 'Solunivo — a modern calendar with AI built in',
   },
   '/privacy': {
     description:

@@ -21,24 +21,6 @@ function Icon({ children, size = 24, ...props }: IconProps) {
   );
 }
 
-export function CalendarIcon(props: IconProps) {
-  return (
-    <Icon {...props}>
-      <rect height="17" rx="2" width="18" x="3" y="4" />
-      <path d="M3 9h18M8 2v4M16 2v4" />
-    </Icon>
-  );
-}
-
-export function CheckCircleIcon(props: IconProps) {
-  return (
-    <Icon {...props}>
-      <circle cx="12" cy="12" r="9" />
-      <path d="m8 12 3 3 5-6" />
-    </Icon>
-  );
-}
-
 export function GlobeIcon(props: IconProps) {
   return (
     <Icon {...props}>
@@ -48,36 +30,39 @@ export function GlobeIcon(props: IconProps) {
   );
 }
 
-export function RepeatIcon(props: IconProps) {
+export function CloudOffIcon(props: IconProps) {
   return (
     <Icon {...props}>
-      <path d="M4 12a8 8 0 0 1 13.7-5.7L20 8M20 4v4h-4M20 12a8 8 0 0 1-13.7 5.7L4 16M4 20v-4h4" />
+      <path d="M7 18h10a4 4 0 0 0 .7-7.94A6 6 0 0 0 6.3 8.2M3 3l18 18M4.5 9.5A4 4 0 0 0 7 18" />
     </Icon>
   );
 }
 
-export function PeopleIcon(props: IconProps) {
+export function CakeIcon(props: IconProps) {
   return (
     <Icon {...props}>
-      <circle cx="9" cy="8" r="3.5" />
-      <path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M21.5 20a6.5 6.5 0 0 0-4-6" />
+      <path d="M4 20h16M4 20v-7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v7M4 15c1.5 1.3 3 1.3 4.5 0s3-1.3 4.5 0 3 1.3 4.5 0 2-1 2.5-.7M8 11V8M12 11V8M16 11V8M8 5.5c0-1 .8-2 .8-2s.7 1 .7 2a.75.75 0 0 1-1.5 0zM12 5.5c0-1 .8-2 .8-2s.7 1 .7 2a.75.75 0 0 1-1.5 0zM16 5.5c0-1 .8-2 .8-2s.7 1 .7 2a.75.75 0 0 1-1.5 0z" />
     </Icon>
   );
 }
 
-export function BellIcon(props: IconProps) {
+/** A plain apple outline, not Apple's logo. */
+export function AppleIcon(props: IconProps) {
   return (
     <Icon {...props}>
-      <path d="M6 8a6 6 0 0 1 12 0v4l2 3H4l2-3zM10 19a2 2 0 0 0 4 0" />
+      <path d="M12 8c-1.4-1.3-3.5-1.5-5 .1-2.3 2.4-1.3 7.3 1 10 1 1.2 2.3 1.7 3.5 1.1h1c1.2.6 2.5.1 3.5-1.1 2.3-2.7 3.3-7.6 1-10-1.5-1.6-3.6-1.4-5-.1zM12 8c0-2 1-3.5 3-4" />
     </Icon>
   );
 }
 
-export function SearchIcon(props: IconProps) {
+/** A four-square grid, not Google's logo. */
+export function GoogleIcon(props: IconProps) {
   return (
-    <Icon strokeWidth={2} {...props}>
-      <circle cx="11" cy="11" r="7" />
-      <path d="m20 20-3.5-3.5" />
+    <Icon {...props}>
+      <rect height="7" rx="1.5" width="7" x="3.5" y="3.5" />
+      <rect height="7" rx="1.5" width="7" x="13.5" y="3.5" />
+      <rect height="7" rx="1.5" width="7" x="3.5" y="13.5" />
+      <rect height="7" rx="1.5" width="7" x="13.5" y="13.5" />
     </Icon>
   );
 }

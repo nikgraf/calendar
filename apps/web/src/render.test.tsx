@@ -20,13 +20,17 @@ describe('routes', () => {
 describe('render', () => {
   const css = ['/assets/site-abc.css'];
 
-  it('renders every route as a complete document without scripts', () => {
+  it('renders every route as a complete document with only the inline theme script', () => {
     for (const route of routes) {
       const html = render(route, { css });
       expect(html.startsWith('<!doctype html><html lang="en">')).toBe(true);
       expect(html).toContain('<link href="/assets/site-abc.css" rel="stylesheet"/>');
       expect(html).toContain('name="viewport"');
-      expect(html).not.toContain('<script');
+      // One inline script, in the head so the first paint has the scheme;
+      // no script loads from a URL.
+      expect(html.match(/<script/g)).toHaveLength(1);
+      expect(html).not.toMatch(/<script[^>]*\ssrc=/);
+      expect(html.indexOf('solunivo-theme')).toBeLessThan(html.indexOf('<body'));
     }
   });
 
@@ -39,12 +43,44 @@ describe('render', () => {
 
   it('puts the home sections and the calls to action on the front page', () => {
     const html = render('/', { css });
-    for (const id of ['features', 'iphone', 'ai', 'privacy', 'download']) {
+    for (const id of ['ai', 'features', 'privacy', 'download']) {
       expect(html).toContain(`id="${id}"`);
     }
-    expect(html).toContain('Download for Mac');
+    expect(html).toContain('Download for macOS');
     expect(html).toContain('href="/privacy"');
     expect(html).toContain('<link href="https://solunivo.com/" rel="canonical"/>');
+  });
+
+  it('offers every platform its own download group', () => {
+    const html = render('/', { css });
+    for (const platform of ['mac', 'ios', 'windows', 'linux', 'android']) {
+      expect(html).toContain(`data-for="${platform}"`);
+    }
+    expect(html).toContain('Linux is coming later.');
+    expect(html).toContain('Try it on iPhone');
+  });
+
+  it('swaps the screenshots and lockups by color scheme', () => {
+    const html = render('/', { css });
+    const sources = html.match(/<source [^>]*data-theme-source="dark"[^>]*>/g) ?? [];
+    // The nav lockup, the two hero screenshots and the download band's lockup.
+    expect(sources).toHaveLength(4);
+    for (const source of sources) {
+      expect(source).toContain('media="(prefers-color-scheme: dark)"');
+      // React writes the attribute as `srcSet`; HTML attribute names are case-insensitive.
+      expect(source).toMatch(/srcset="[^"]+"/i);
+    }
+    expect(html).toMatch(/fetchpriority="high"/i);
+  });
+
+  it('has a scheme switch in the footer on every page', () => {
+    for (const route of routes) {
+      const html = render(route, { css });
+      for (const choice of ['auto', 'light', 'dark']) {
+        expect(html).toContain(`data-set-theme="${choice}"`);
+      }
+      expect(html).toContain('aria-pressed="true"');
+    }
   });
 
   it('says the apps are in private testing instead of linking the download section to itself', () => {

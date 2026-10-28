@@ -1,18 +1,12 @@
 import lockupDark from '../../../../brand/logos/lockup-horizontal-dark.svg';
-import { ButtonLink } from '../components/Button.tsx';
-import {
-  BellIcon,
-  CalendarIcon,
-  CheckCircleIcon,
-  GlobeIcon,
-  PeopleIcon,
-  RepeatIcon,
-} from '../components/icons.tsx';
+import lockupLight from '../../../../brand/logos/lockup-horizontal-light.svg';
+import { AiDemo } from '../components/AiDemo.tsx';
+import { DownloadActions } from '../components/DownloadActions.tsx';
+import { HeroShots } from '../components/HeroShots.tsx';
+import { AppleIcon, CakeIcon, CloudOffIcon, GlobeIcon, GoogleIcon } from '../components/icons.tsx';
 import { Sources } from '../components/Sources.tsx';
-import { links, releases } from '../links.ts';
-import { EditorPanel } from '../mockups/EditorPanel.tsx';
-import { MacWindow } from '../mockups/MacWindow.tsx';
-import { PhoneDay } from '../mockups/PhoneDay.tsx';
+import { ThemePicture } from '../components/ThemePicture.tsx';
+import { releases } from '../links.ts';
 
 const container = 'mx-auto max-w-[1200px] px-6 sm:px-8';
 const h2 = 'm-0 text-[clamp(30px,3.2vw,40px)] leading-[1.15] font-semibold tracking-[-0.02em]';
@@ -21,45 +15,46 @@ const lead = 'm-0 text-[17px] text-ink-secondary text-pretty';
 
 const features = [
   {
-    body: 'Plus 2 Days and an Agenda on the iPhone. Drag to move or resize; the event follows your finger or pointer one to one.',
-    icon: CalendarIcon,
-    title: 'Day, Week, Month',
+    body: 'Apple Calendar, Reminders and Contacts work the way they do in Apple’s own apps: your iCloud calendars beside Google’s, reminder lists in the task lane, guests and birthdays from your address book.',
+    icon: AppleIcon,
+    title: 'Apple, first class',
   },
   {
-    body: 'Google Tasks and Apple Reminders in the task lane and on the Tasks tab. Convert a task to an event or back; move either between accounts.',
-    icon: CheckCircleIcon,
-    title: 'Tasks beside events',
+    body: 'Google Calendar, Tasks and Contacts, all of it: every calendar you can see, task lists with subtasks and their order, guest suggestions from your contacts.',
+    icon: GoogleIcon,
+    title: 'Google, first class',
   },
   {
-    body: 'Stacked in the gutter with the city on top. Pick a primary zone and it stands in for the device zone while you travel.',
+    body: 'Edit on a plane. Changes queue on the device and sync when you’re back online. If something changed on the server meanwhile, you choose which version stays.',
+    icon: CloudOffIcon,
+    title: 'Works offline, syncs later',
+  },
+  {
+    body: 'Add the zones your team works in and read every event in each of them, stacked in the gutter. Finding a time across a remote team stops being arithmetic.',
     icon: GlobeIcon,
-    title: 'Up to three time zones',
+    title: 'Built for more than one time zone',
   },
   {
-    body: 'This event, this and following, or the whole series. Weekday sets and monthly ordinals, with an end date or count.',
-    icon: RepeatIcon,
-    title: 'Recurring, edited properly',
-  },
-  {
-    body: 'Invite from your address book and Google contacts. Birthdays appear as chips with a reminder you set per person.',
-    icon: PeopleIcon,
-    title: 'People and birthdays',
-  },
-  {
-    body: "Local notifications for events and birthdays. Search by date, kind and people. Changes queue offline and sync when you're back.",
-    icon: BellIcon,
-    title: 'Alerts, search, offline',
+    body: 'Several alerts per birthday, each at its own lead time and hour: a week ahead to find a gift for some people, the morning of for others. Set per person.',
+    icon: CakeIcon,
+    title: 'Birthday reminders that fit each person',
   },
 ];
 
-const iphonePoints = [
-  { body: 'Share a screenshot; the events in it become drafts.', title: 'Share sheet capture' },
-  { body: 'Alerts stay right even when the app is closed.', title: 'Background refresh' },
-  { body: 'Lists next to Google Tasks, each with its own form.', title: 'Apple Reminders' },
-  { body: 'Guests and birthdays from your address book.', title: 'Contacts on this iPhone' },
+const aiPoints = [
+  {
+    body: 'The place and the people come along: “at Nobu, invite jane@example.com” becomes a location and a guest.',
+    title: 'One sentence, the whole event',
+  },
+  {
+    body: 'Say what to change and it changes: “remind me 30 minutes before”, “make it 8”, “move it to Friday”.',
+    title: 'Follow up in plain words',
+  },
+  {
+    body: 'Paste an email on the Mac or share a screenshot on the iPhone, and the events in it become drafts you review.',
+    title: 'From an email or a screenshot',
+  },
 ];
-
-const aiChips = ['Quick add', 'Find a time', 'Dictation', 'Paste an email', 'Share a screenshot'];
 
 const privacyPoints = [
   {
@@ -79,144 +74,113 @@ const privacyPoints = [
 export function HomePage() {
   return (
     <>
-      <section className={`${container} flex flex-wrap items-center gap-12 pt-16 pb-16 sm:pt-20`}>
-        <div className="flex min-w-0 flex-[1_1_400px] flex-col gap-6">
-          <h1 className="m-0 text-[clamp(36px,3.4vw,48px)] leading-[1.05] font-semibold tracking-[-0.025em] text-pretty">
-            Google and Apple calendars, tasks and reminders. One app.
+      <section className={`${container} flex flex-col gap-12 pt-16 pb-20 sm:pt-20`}>
+        <div className="flex max-w-[760px] flex-col gap-6">
+          <h1 className="m-0 text-[clamp(40px,5vw,64px)] leading-[1.02] font-semibold tracking-[-0.03em] text-pretty">
+            A modern calendar with AI built in.
           </h1>
-          <p className="m-0 text-lg text-ink-secondary text-pretty">
-            Solunivo puts Google Calendar, Google Tasks, Apple Calendar and Apple Reminders on one
-            grid, on your Mac and your iPhone. No server in between.
+          <p className="m-0 max-w-[640px] text-lg text-ink-secondary text-pretty">
+            Describe an event the way you’d say it, place and people included, and it’s on your
+            calendar. Google and Apple calendars, tasks and reminders in one app, on Mac and iPhone.
           </p>
-          <div className="flex flex-wrap items-center gap-3">
-            <ButtonLink href={links.mac}>Download for Mac</ButtonLink>
-            <ButtonLink href={links.iphone} variant="outline">
-              Get it for iPhone
-            </ButtonLink>
-          </div>
+          <DownloadActions />
           <Sources />
         </div>
-        <div className="min-w-0 flex-[1_1_644px]">
-          <MacWindow />
-        </div>
-      </section>
-
-      <section className="border-y border-hairline bg-surface-subtle" id="features">
-        <div className={`${container} flex flex-col gap-10 py-24`}>
-          <div className="flex max-w-[640px] flex-col gap-3">
-            <h2 className={h2}>A full calendar, not a viewer.</h2>
-            <p className={lead}>
-              Everything you’d do in Google Calendar or Apple Calendar, in one place, with the parts
-              they each leave out.
-            </p>
-          </div>
-          <ul className="m-0 grid list-none grid-cols-[repeat(auto-fit,minmax(min(300px,100%),1fr))] gap-4 p-0">
-            {features.map((feature) => (
-              <li
-                className="flex flex-col gap-3 rounded-popover border border-hairline bg-surface p-6"
-                key={feature.title}
-              >
-                <feature.icon className="text-ink" />
-                <h3 className="m-0 text-lg font-semibold">{feature.title}</h3>
-                <p className="m-0 text-[15px] text-ink-secondary">{feature.body}</p>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </section>
-
-      <section
-        className={`${container} flex flex-wrap items-center gap-x-20 gap-y-12 py-24`}
-        id="iphone"
-      >
-        <div className="flex flex-[0_1_300px] justify-center">
-          <PhoneDay />
-        </div>
-        <div className="flex min-w-0 flex-[1_1_380px] flex-col gap-6">
-          <p className={eyebrow}>iPhone</p>
-          <h2 className={`${h2} text-balance`}>
-            The same calendar in your pocket, your settings copied over with one scan.
-          </h2>
-          <p className={lead}>
-            Day, 2 Days, Week, Month and Agenda. Swipe between days, drag with a long press, dictate
-            an event hands-free. Open Settings on the Mac, show the code, scan it on the iPhone:
-            your preferences come across and each account is ready for one sign-in, without a cloud
-            in between.
-          </p>
-          <ul className="m-0 grid list-none grid-cols-[repeat(auto-fit,minmax(min(200px,100%),1fr))] gap-x-6 gap-y-4 p-0 text-[15px] text-ink-secondary">
-            {iphonePoints.map((point) => (
-              <li className="flex flex-col gap-0.5" key={point.title}>
-                <strong className="font-semibold text-ink">{point.title}</strong>
-                {point.body}
-              </li>
-            ))}
-          </ul>
-        </div>
+        <HeroShots />
       </section>
 
       <section className="border-y border-hairline bg-surface-subtle" id="ai">
         <div className={`${container} flex flex-wrap items-center gap-x-20 gap-y-12 py-24`}>
           <div className="flex min-w-0 flex-[1_1_380px] flex-col gap-6">
             <p className={eyebrow}>On-device AI</p>
-            <h2 className={`${h2} text-balance`}>Describe it. Check it. Add it.</h2>
+            <h2 className={`${h2} text-balance`}>Say it once. It’s on the calendar.</h2>
             <p className={lead}>
-              Write “Lunch with Sarah tomorrow at 1” and the form fills in. Ask for “an hour next
-              week with Jonas” and get free slots. Paste an email or share a screenshot and the
-              events in it become drafts. Everything runs on Apple’s on-device models by default, so
-              nothing you type, say or share leaves the device; on the Mac you can choose a model
-              server of your own instead.
+              Type or dictate a sentence and Solunivo turns it into an event with the time, the
+              place and the guests. Every word is read by a model on your device, so nothing you
+              type leaves it.
             </p>
-            <ul className="m-0 flex list-none flex-wrap gap-2 p-0 text-sm font-medium">
-              {aiChips.map((chip) => (
-                <li className="rounded-full border border-hairline bg-surface px-3 py-2" key={chip}>
-                  {chip}
+            <ul className="m-0 flex list-none flex-col gap-4 p-0">
+              {aiPoints.map((point) => (
+                <li className="flex flex-col gap-0.5" key={point.title}>
+                  <strong className="font-semibold">{point.title}</strong>
+                  <span className="text-[15px] text-ink-secondary">{point.body}</span>
                 </li>
               ))}
             </ul>
+            <p className="m-0 text-sm text-ink-secondary">
+              On the device by default. On the Mac you can point the AI at a model server of your
+              own instead.
+            </p>
           </div>
-          <div className="flex min-w-0 flex-[0_1_360px] justify-center">
-            <EditorPanel />
+          <div className="flex min-w-0 flex-[1_1_380px] justify-center">
+            <AiDemo />
           </div>
         </div>
       </section>
 
-      <section className={`${container} flex flex-col gap-10 py-24`} id="privacy">
+      <section className={`${container} flex flex-col gap-10 py-24`} id="features">
         <div className="flex max-w-[640px] flex-col gap-3">
-          <h2 className={h2}>Your data goes to Google and Apple. Not to us.</h2>
+          <h2 className={h2}>The parts other calendars leave out.</h2>
           <p className={lead}>
-            Solunivo has no server. It signs in from your device, caches what it needs locally, and
-            writes your changes back to your own accounts.
+            Day, week and month, drag to move, repeats and alerts: all there. These are the parts
+            you don’t get elsewhere.
           </p>
         </div>
-        <ul className="m-0 grid list-none grid-cols-[repeat(auto-fit,minmax(min(260px,100%),1fr))] gap-x-10 gap-y-8 p-0">
-          {privacyPoints.map((point) => (
-            <li className="flex flex-col gap-2 border-t-2 border-primary pt-4" key={point.title}>
-              <strong className="font-semibold">{point.title}</strong>
-              <span className="text-[15px] text-ink-secondary">{point.body}</span>
+        <ul className="features m-0 grid list-none gap-4 p-0">
+          {features.map((feature) => (
+            <li
+              className="flex flex-col gap-3 rounded-popover border border-hairline bg-surface p-6"
+              key={feature.title}
+            >
+              <feature.icon className="text-ink" />
+              <h3 className="m-0 text-lg font-semibold">{feature.title}</h3>
+              <p className="m-0 text-[15px] text-ink-secondary">{feature.body}</p>
             </li>
           ))}
         </ul>
-        <a
-          className="self-start font-medium underline decoration-hairline-strong underline-offset-[3px] hover:decoration-ink"
-          href={links.privacy}
-        >
-          Read the privacy policy
-        </a>
+      </section>
+
+      <section className="border-y border-hairline bg-surface-subtle" id="privacy">
+        <div className={`${container} flex flex-col gap-10 py-24`}>
+          <div className="flex max-w-[640px] flex-col gap-3">
+            <h2 className={h2}>Your data goes to Google and Apple. Not to us.</h2>
+            <p className={lead}>
+              Solunivo has no server. It signs in from your device, caches what it needs locally,
+              and writes your changes back to your own accounts.
+            </p>
+          </div>
+          <ul className="m-0 grid list-none grid-cols-[repeat(auto-fit,minmax(min(260px,100%),1fr))] gap-x-10 gap-y-8 p-0">
+            {privacyPoints.map((point) => (
+              <li className="flex flex-col gap-2 border-t-2 border-primary pt-4" key={point.title}>
+                <strong className="font-semibold">{point.title}</strong>
+                <span className="text-[15px] text-ink-secondary">{point.body}</span>
+              </li>
+            ))}
+          </ul>
+          <a
+            className="self-start font-medium underline decoration-hairline-strong underline-offset-[3px] hover:decoration-ink"
+            href="/privacy"
+          >
+            Read the privacy policy
+          </a>
+        </div>
       </section>
 
       <section className="bg-primary text-on-primary" id="download">
         <div className={`${container} flex flex-wrap items-center justify-between gap-8 py-20`}>
           <div className="flex min-w-0 flex-col gap-2.5">
-            {/* Lazy: React preloads every eager <img>, and this one sits at the page's foot. */}
-            <img
+            {/* The band inverts with the scheme, so its lockup swaps the other way. */}
+            <ThemePicture
               alt=""
               className="block h-9 w-auto self-start"
-              height="36"
+              dark={lockupLight}
+              height={36}
+              light={lockupDark}
               loading="lazy"
-              src={lockupDark}
+              width={142}
             />
             <h2 className="m-0 text-[clamp(26px,2.8vw,34px)] leading-[1.15] font-semibold tracking-[-0.02em]">
-              Get Solunivo for Mac and iPhone
+              Get Solunivo for macOS and iPhone
             </h2>
             <p className="m-0 text-on-primary/70">
               The AI features need Apple Intelligence, or a model server of your own on the Mac.
@@ -224,21 +188,10 @@ export function HomePage() {
             </p>
           </div>
           {releases.mac || releases.iphone ? (
-            <div className="flex flex-wrap gap-3">
-              {releases.mac ? (
-                <ButtonLink href={releases.mac} variant="inverted">
-                  Download for Mac
-                </ButtonLink>
-              ) : null}
-              {releases.iphone ? (
-                <ButtonLink href={releases.iphone} variant="invertedOutline">
-                  Get it for iPhone
-                </ButtonLink>
-              ) : null}
-            </div>
+            <DownloadActions tone="inverted" />
           ) : (
             <p className="m-0 max-w-[360px] rounded-control border border-on-primary/40 px-5 py-3 text-on-primary">
-              Solunivo is in private testing on Mac and iPhone. Public downloads will be here.
+              Solunivo is in private testing on macOS and iPhone. Public downloads will be here.
             </p>
           )}
         </div>

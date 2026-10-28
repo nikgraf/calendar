@@ -41,7 +41,8 @@ export default defineConfig({
         env: {
           browser: true,
         },
-        files: ['brand/preview/*.js'],
+        // The brand preview's script and the website's inline head script.
+        files: ['brand/preview/*.js', 'apps/web/src/inline/*.js'],
       },
       {
         env: {

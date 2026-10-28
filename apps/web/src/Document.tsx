@@ -1,6 +1,7 @@
 import touchIcon from '../../ios/assets/icon.png';
 import favicon from '../../../brand/icons/solunivo.svg';
 import { App } from './App.tsx';
+import themeScript from './inline/theme.js?raw';
 import { pageMeta, routeFor } from './routes.ts';
 
 const origin = 'https://solunivo.com';
@@ -23,6 +24,8 @@ export function Document({
       <head>
         <meta charSet="utf-8" />
         <meta content="width=device-width, initial-scale=1" name="viewport" />
+        {/* Before any content: the color scheme and the visitor's platform, so the first paint is right. */}
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
         <title>{meta.title}</title>
         <meta content={meta.description} name="description" />
         <link href={url} rel="canonical" />

@@ -82,10 +82,14 @@ dictation and capture from text or photo.
   privacy policy (rendered from the root `PRIVACY.md` at build time),
   React + Tailwind on the brand tokens, prerendered by `scripts/build.ts`
   into `dist/` (`index.html`, `privacy.html`, Inter cut down to the
-  characters the pages draw) with no JavaScript shipped; the screens on
-  it are drawn components over sample data (`src/mockups/`), not
-  screenshots. It imports nothing from the packages. See
-  docs/distribution.md → Website.
+  characters the pages draw). One inline script in `<head>`
+  (`src/inline/theme.js`) picks the color scheme (the OS, or the footer's
+  choice) and the visitor's platform for the download buttons; nothing
+  else runs in the browser. The hero shows real screenshots of both apps
+  (`src/screenshots/`, light and dark, captured with
+  `apps/desktop/e2e/websiteShots.e2e.ts` and the iOS fixture: see
+  docs/distribution.md → Website); the on-device AI demo is a CSS
+  animation. It imports nothing from the packages.
 - `brand/` — SVG masters, logos, fonts and tokens; `pnpm brand:build`
   (macOS) regenerates the committed app icons, `tokens.css` (the desktop
   and the website import it; the hand-written `tokens/tailwind.css` maps

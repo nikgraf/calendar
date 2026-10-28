@@ -1310,9 +1310,9 @@ first. The decisions, one line each:
 - **solunivo.com as a static site in the monorepo** (2026-10-28, #259) —
   `apps/web`, design "B · Product" of the 2026-10-27 canvas, with
   `/privacy` rendered from the root `PRIVACY.md` so the policy has one
-  source; prerendered HTML without JavaScript on the token utilities the
-  desktop shares (`brand/tokens/tailwind.css`), its screens drawn over
-  sample data. Rejected: Astro (a second framework for two pages), a
-  client-rendered SPA, screenshots of the apps (recapturing, real data).
-  Open: hosting and DNS, public downloads (the page says "private
-  testing"), a dark scheme, an `og:image`.
+  source; prerendered HTML on the token utilities the desktop shares
+  (`brand/tokens/tailwind.css`), one inline script for the color scheme
+  and the per-platform download buttons, real screenshots of both apps on
+  a fixture week, the AI demo as a CSS animation. Rejected: Astro, a
+  client-rendered app, drawn screens (Nik: show the real thing). Open:
+  hosting and DNS, public downloads (the page says "private testing").

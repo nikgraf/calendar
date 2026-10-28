@@ -14,6 +14,15 @@ html {
   color-scheme: light;
   -webkit-font-smoothing: antialiased;
   scroll-behavior: smooth;
+  --shadow-ink: rgba(48, 42, 52, 0.14);
+  --shadow-ink-soft: rgba(48, 42, 52, 0.06);
+}
+
+/* The inline theme script sets data-theme from the OS or the footer's choice. */
+html[data-theme='dark'] {
+  color-scheme: dark;
+  --shadow-ink: rgba(0, 0, 0, 0.55);
+  --shadow-ink-soft: rgba(0, 0, 0, 0.3);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -35,6 +44,322 @@ body {
 /* The download band is ink: the grey ring would sit at 2.6:1 on it. */
 #download :focus-visible {
   outline-color: var(--on-primary);
+}
+
+/* The footer's scheme switch: the pressed choice (Auto until the script runs). */
+.theme-switch button[aria-pressed='true'] {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 2px var(--shadow-ink-soft);
+}
+
+/*
+ * Download buttons per platform: the group for `data-platform` on <html>
+ * (set by the inline script from the user agent), the macOS one without it.
+ */
+.cta-group {
+  display: none;
+}
+.cta-group[data-for='mac'] {
+  display: flex;
+}
+:root[data-platform] .cta-group[data-for='mac'] {
+  display: none;
+}
+:root[data-platform='mac'] .cta-group[data-for='mac'],
+:root[data-platform='ios'] .cta-group[data-for='ios'],
+:root[data-platform='windows'] .cta-group[data-for='windows'],
+:root[data-platform='linux'] .cta-group[data-for='linux'],
+:root[data-platform='android'] .cta-group[data-for='android'] {
+  display: flex;
+}
+
+/* The hero: the Mac's week with the iPhone's day over its lower-right corner. */
+.hero-shots {
+  position: relative;
+  padding-bottom: 6%;
+}
+.hero-mac {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow:
+    0 30px 80px var(--shadow-ink),
+    0 2px 6px var(--shadow-ink-soft);
+  animation: rise 0.7s cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+.hero-phone {
+  position: absolute;
+  right: 3%;
+  bottom: 0;
+  width: 21%;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 9.5% / 4.4%;
+  background: var(--surface);
+  box-shadow: 0 30px 80px var(--shadow-ink);
+  animation: rise 0.7s 0.25s cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+.hero-mac img,
+.hero-phone img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+@media (max-width: 640px) {
+  .hero-shots {
+    padding-bottom: 12%;
+  }
+  .hero-phone {
+    right: 0;
+    width: 30%;
+  }
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* The feature cards: the two integrations wide, the three others below. */
+.features {
+  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+}
+@media (min-width: 1000px) {
+  .features {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+  .features > li {
+    grid-column: span 2;
+  }
+  .features > li:nth-child(-n + 2) {
+    grid-column: span 3;
+  }
+}
+
+/*
+ * The on-device AI demo: one 16 s loop. 0–3.5 s the field waits, then
+ * the first sentence types line by line (to 3.4 s), Apply presses and the
+ * fields fill (4.8 s), the second sentence types (7.7–9 s) and the alert
+ * appears (10.4 s); everything holds, then clears for the next loop. The
+ * base styles are the finished form, which is what reduced motion shows.
+ */
+.ai {
+  --ai-t: 16s;
+}
+.ai [class*='ai-'] {
+  animation-duration: var(--ai-t);
+  animation-iteration-count: infinite;
+  animation-fill-mode: both;
+}
+.ai-placeholder {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  animation-name: ai-placeholder;
+}
+.ai-p1 {
+  display: block;
+}
+.ai-l1 {
+  animation-name: ai-line-1;
+}
+.ai-l2 {
+  animation-name: ai-line-2;
+}
+.ai-p2 {
+  position: absolute;
+  inset: 0;
+  animation-name: ai-line-3;
+}
+.ai-apply {
+  animation-name: ai-press;
+}
+.ai-reading {
+  opacity: 0;
+  animation-name: ai-reading;
+}
+.ai-f {
+  background: var(--fill);
+  animation-name: ai-fill;
+}
+.ai-f2 {
+  animation-delay: 0.12s;
+}
+.ai-f3 {
+  animation-delay: 0.24s;
+}
+.ai-f4 {
+  animation-delay: 0.36s;
+}
+.ai-f5 {
+  animation-delay: 0.48s;
+}
+.ai-f6 {
+  animation-name: ai-fill-later;
+}
+@keyframes ai-placeholder {
+  0%,
+  3% {
+    opacity: 1;
+  }
+  3.2%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes ai-line-1 {
+  0%,
+  3.5% {
+    clip-path: inset(0 100% 0 0);
+    animation-timing-function: steps(38, end);
+  }
+  14%,
+  46% {
+    clip-path: inset(0 0 0 0);
+  }
+  46.5%,
+  100% {
+    clip-path: inset(0 100% 0 0);
+  }
+}
+@keyframes ai-line-2 {
+  0%,
+  14% {
+    clip-path: inset(0 100% 0 0);
+    animation-timing-function: steps(23, end);
+  }
+  21%,
+  46% {
+    clip-path: inset(0 0 0 0);
+  }
+  46.5%,
+  100% {
+    clip-path: inset(0 100% 0 0);
+  }
+}
+@keyframes ai-line-3 {
+  0%,
+  48% {
+    clip-path: inset(0 100% 0 0);
+    animation-timing-function: steps(27, end);
+  }
+  56%,
+  92% {
+    clip-path: inset(0 0 0 0);
+  }
+  92.5%,
+  100% {
+    clip-path: inset(0 100% 0 0);
+  }
+}
+@keyframes ai-press {
+  0%,
+  23% {
+    transform: none;
+  }
+  24%,
+  26% {
+    transform: scale(0.95);
+    background: var(--primary-hover);
+  }
+  27%,
+  58% {
+    transform: none;
+  }
+  59%,
+  61% {
+    transform: scale(0.95);
+    background: var(--primary-hover);
+  }
+  62%,
+  100% {
+    transform: none;
+  }
+}
+@keyframes ai-reading {
+  0%,
+  24% {
+    opacity: 0;
+  }
+  25%,
+  29% {
+    opacity: 1;
+  }
+  30%,
+  59% {
+    opacity: 0;
+  }
+  60%,
+  64% {
+    opacity: 1;
+  }
+  65%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes ai-fill {
+  0%,
+  29% {
+    opacity: 0;
+    background: var(--highlight);
+  }
+  30%,
+  36% {
+    opacity: 1;
+    background: var(--highlight);
+  }
+  46%,
+  94% {
+    opacity: 1;
+    background: var(--fill);
+  }
+  95%,
+  100% {
+    opacity: 0;
+    background: var(--fill);
+  }
+}
+@keyframes ai-fill-later {
+  0%,
+  64% {
+    opacity: 0;
+    background: var(--highlight);
+  }
+  65%,
+  71% {
+    opacity: 1;
+    background: var(--highlight);
+  }
+  81%,
+  94% {
+    opacity: 1;
+    background: var(--fill);
+  }
+  95%,
+  100% {
+    opacity: 0;
+    background: var(--fill);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ai [class*='ai-'],
+  .hero-mac,
+  .hero-phone {
+    animation: none;
+  }
+  .ai-placeholder,
+  .ai-p2,
+  .ai-reading {
+    display: none;
+  }
 }
 
 /* The privacy policy, rendered from PRIVACY.md. */
