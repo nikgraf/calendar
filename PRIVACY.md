@@ -55,13 +55,15 @@ Calendar, Apple Reminders and your address book, for the same purposes.
 - **Stays on your device, too:** quick-add parsing, find-a-time
   suggestions, dictation, and reading events out of a pasted text or a
   shared screenshot use Apple's on-device models and text recognition;
-  your text, voice and images are not sent anywhere for this. On the Mac
-  you can instead choose a model server under Settings → AI Model
-  (Ollama, or any OpenAI-compatible server you name); the phrases you
-  type or dictate and the text read from a paste or screenshot then go to
-  that server, which is off your Mac only if you point it there.
-  Dictation and text recognition themselves stay on the device either
-  way.
+  your text, voice and images are not sent anywhere for this.
+- **Goes to a model server you choose (Mac only).** Under Settings → AI
+  Model you can pick Ollama or any OpenAI-compatible server instead of
+  Apple's models. That server then receives what those features work on:
+  the phrases you type or dictate, the text read from a paste or a
+  screenshot, today's date and your time zone, and, for a search, the
+  names of your calendars and lists. It is off your Mac only if you point
+  it there. Dictation and text recognition themselves stay on the device
+  either way.
 - **Goes where you send it.** Settings can be exported as a file, and the
   Mac can keep a settings file in your home folder. That file lists your
   connected accounts' email addresses and calendar names, never passwords

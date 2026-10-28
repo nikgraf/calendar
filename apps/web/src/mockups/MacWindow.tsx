@@ -60,10 +60,12 @@ function SectionLabel({ children }: { children: string }) {
 /** The Mac app: toolbar, sidebar, the week and the Up next rail. */
 export function MacWindow() {
   return (
-    <div className="overflow-x-auto">
+    // The window keeps 70 px day columns at 644 px; below that (phones) it
+    // scrolls sideways. Wider, the wrapper stays open so the shadow shows.
+    <div className="max-md:overflow-x-auto">
       <div
         aria-label="The Mac app in week view: a sidebar with the mini month, calendars and lists; the week with tasks in the all-day lane and events from four sources; an Up next rail with tasks"
-        className="min-w-[640px] overflow-hidden rounded-[14px] border border-hairline bg-surface text-xs shadow-[0_30px_80px_rgba(48,42,52,0.12),0_2px_6px_rgba(48,42,52,0.06)]"
+        className="min-w-[644px] overflow-hidden rounded-[14px] border border-hairline bg-surface text-xs shadow-[0_30px_80px_rgba(48,42,52,0.12),0_2px_6px_rgba(48,42,52,0.06)]"
         role="img"
       >
         <div className="flex items-center justify-between gap-3 border-b border-hairline bg-surface-subtle px-3.5 py-2.5">

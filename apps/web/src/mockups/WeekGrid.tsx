@@ -88,7 +88,7 @@ export function WeekGrid() {
                 return (
                   <div
                     className={`absolute inset-x-[3px] overflow-hidden rounded-[5px] px-[7px] font-medium leading-[1.3] ${
-                      oneLine ? 'truncate py-[2px]' : 'py-[3px]'
+                      oneLine ? 'truncate py-0 leading-4' : 'py-[3px]'
                     } ${tintClass[event.tint]}`}
                     key={event.title}
                     style={{ height, top: blockTop }}

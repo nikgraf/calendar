@@ -113,7 +113,7 @@ export function HomePage() {
           </div>
           <Sources />
         </div>
-        <div className="min-w-0 flex-[1_1_600px]">
+        <div className="min-w-0 flex-[1_1_644px]">
           <MacWindow />
         </div>
       </Section>
