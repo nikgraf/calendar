@@ -1,0 +1,16 @@
+{
+  "lang": "en",
+  "tags": ["basic", "repeat", "title"],
+  "turns": [
+    {
+      "input": { "text": "Team standup every monday at 9" },
+      "expect": {
+        "title": "team standup",
+        "weekday": 1,
+        "startTime": "09:00",
+        "endTime": "10:00",
+        "repeat": { "freq": "weekly" }
+      }
+    }
+  ]
+}

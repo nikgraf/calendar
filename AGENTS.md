@@ -119,6 +119,12 @@ deliberately.
   halves of the flows (and `EXPO_PUBLIC_CALENDAR_MODEL=fixture
   EXPO_PUBLIC_CALENDAR_ONBOARDING=off` to match CI's bundle). Flow
   conventions: `docs/google-sync-and-testing.md`, "iOS e2e".
+- `MODEL_BENCH=1 E2E=1 pnpm exec vp test run apps/desktop/e2e/bench/modelBench.e2e.ts`
+  — the model bench: the quick-add and refine cases under
+  `apps/desktop/e2e/bench/cases/` (text, or recordings with transcripts)
+  on Apple's model and any served one, scored by where a person would
+  put the event; a table and a report under `output/bench/`, never a
+  gate. Format and variables: `apps/desktop/e2e/bench/README.md`.
 - `GOOGLE_LIVE=1 pnpm exec vp test run` — the live Google suite
   (`packages/sync/src/live/*.live.ts`) against the dedicated test account
   over the real API; desktop

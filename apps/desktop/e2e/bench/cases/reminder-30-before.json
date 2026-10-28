@@ -1,0 +1,17 @@
+{
+  "lang": "en",
+  "tags": ["notifications"],
+  "turns": [
+    {
+      "input": { "text": "Dentist Tuesday at 10, remind me 30 minutes before" },
+      "expect": {
+        "kind": "event",
+        "title": "dentist",
+        "weekday": 2,
+        "startTime": "10:00",
+        "endTime": "11:00",
+        "reminders": [30]
+      }
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "lang": "en",
+  "tags": ["guests"],
+  "turns": [
+    {
+      "input": { "text": "Call tomorrow at 4, invite Max" },
+      "expect": {
+        "title": "call",
+        "dayOffset": 1,
+        "startTime": "16:00",
+        "endTime": "17:00",
+        "guests": { "choices": ["Max"] }
+      }
+    }
+  ]
+}

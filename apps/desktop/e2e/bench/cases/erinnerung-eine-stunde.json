@@ -1,0 +1,20 @@
+{
+  "lang": "de",
+  "tags": ["de", "notifications"],
+  "turns": [
+    {
+      "input": {
+        "audio": "erinnerung-eine-stunde-1.m4a",
+        "transcript": "Zahnarzt Dienstag um 10, erinnere mich eine Stunde vorher"
+      },
+      "expect": {
+        "kind": "event",
+        "title": "zahnarzt",
+        "weekday": 2,
+        "startTime": "10:00",
+        "endTime": "11:00",
+        "reminders": [60]
+      }
+    }
+  ]
+}

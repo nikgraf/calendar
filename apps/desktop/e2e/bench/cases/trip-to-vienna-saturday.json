@@ -1,0 +1,10 @@
+{
+  "lang": "en",
+  "tags": ["location", "title"],
+  "turns": [
+    {
+      "input": { "text": "Trip to Vienna on Saturday" },
+      "expect": { "title": "trip to vienna", "weekday": 6, "isAllDay": true, "location": null }
+    }
+  ]
+}

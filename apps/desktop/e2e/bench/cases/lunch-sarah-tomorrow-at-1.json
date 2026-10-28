@@ -1,0 +1,19 @@
+{
+  "lang": "en",
+  "tags": ["basic"],
+  "turns": [
+    {
+      "input": {
+        "audio": "lunch-sarah-tomorrow-at-1-1.m4a",
+        "transcript": "Lunch with Sarah tomorrow at 1"
+      },
+      "expect": {
+        "title": "lunch with sarah",
+        "dayOffset": 1,
+        "startTime": "13:00",
+        "endTime": "14:00",
+        "assumedTime": false
+      }
+    }
+  ]
+}

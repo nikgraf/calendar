@@ -8,7 +8,6 @@ import {
 } from '@calendar/core';
 import {
   type ClockTime,
-  clearsRepeat,
   defersDate,
   durationMinutesOf,
   groundDate,
@@ -16,16 +15,17 @@ import {
   isAllDayPhrase,
   isRenamePhrase,
   mentionsDate,
-  mentionsRepeat,
   periodOf,
   resolveEnd,
   resolveStart,
+  statedRepeat,
   statedTimes,
 } from './grounding.ts';
 import { inviteesOf, invitesAnyone, readPeople, titleWithoutInvitees } from './invitees.ts';
 import { ModelUnavailableError, type LanguageModel } from './model.ts';
 import {
   addHour,
+  firstDayOn,
   placeOf,
   type QuickAddPrefill,
   type QuickAddResult,
@@ -308,28 +308,30 @@ export const normalizeRefine = (
     return { kind: 'rejected', reason: invalid };
   }
 
-  const parsedRepeat = mentionsRepeat(utterance)
-    ? recurrenceFromParse(parse.recurrence, date)
-    : undefined;
-  // A changed repeat keeps the weekdays the editor chose while the
-  // frequency stays the same ("every two weeks" on Mondays and Wednesdays).
-  const keptDays =
-    parsedRepeat && draft.recurrence?.byDay && draft.recurrence.freq === parsedRepeat.freq
-      ? { byDay: draft.recurrence.byDay }
-      : {};
-  const recurrence = clearsRepeat(utterance)
-    ? undefined
-    : parsedRepeat
-      ? { ...parsedRepeat, ...keptDays }
-      : draft.recurrence;
+  // The repeat the words set, over the draft's: what they say changes,
+  // the rest stays, a cleared one goes (`recurrenceFromParse`). Days the
+  // words chose start the draft on the first of them, a span of days
+  // moved along ("every weekday" said of a Saturday draft); a rule whose
+  // end that move passes has nothing to repeat. A date the words moved
+  // on their own ("Thursday instead") stays where they put it, whatever
+  // days the rule keeps, and the editor says if the end is past.
+  const merged = recurrenceFromParse(parse.recurrence, date, utterance, draft.recurrence);
+  const start = statedRepeat(utterance)?.byDay === undefined ? date : firstDayOn(date, merged);
+  const ended = start !== date && merged?.untilDate !== undefined && merged.untilDate < start;
+  const recurrence = ended ? undefined : merged;
+  const placedDate = ended ? date : start;
+  const placedEnd =
+    endDate === undefined
+      ? undefined
+      : addDaysToPlainDate(endDate, daysBetweenPlainDates(date, placedDate));
 
   return {
     ...whom,
     kind: 'parsed',
     prefill: {
       ...(assumedTime ? { assumedTime } : {}),
-      date,
-      ...(endDate === undefined ? {} : { endDate }),
+      date: placedDate,
+      ...(placedEnd === undefined ? {} : { endDate: placedEnd }),
       endTime,
       isAllDay,
       ...(location ? { location } : {}),

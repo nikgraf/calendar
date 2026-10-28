@@ -1,0 +1,10 @@
+{
+  "lang": "en",
+  "tags": ["task"],
+  "turns": [
+    {
+      "input": { "text": "Don't forget to renew the passport next week" },
+      "expect": { "kind": "task", "title": ["renew the passport", "renew passport"] }
+    }
+  ]
+}

@@ -44,9 +44,12 @@ free/busy shares. The model extracts, the code decides:
 `packages/ai/src/grounding.ts` reads the phrase itself — clock times,
 meal and part-of-day words (one table: quick-add defaults and the
 finder's bounds), weekdays, to-do cues, the finder's windows and
-durations — and the normalizers keep a model value only where the phrase
-supports it, correct one it contradicts and drop the rest (a phrase
-without a time is an all-day event, whatever the model returned). The
+durations, a repeat's frequency, gap, days, count and span — and the
+normalizers keep a model value only where the phrase supports it,
+correct one it contradicts and drop the rest (a phrase without a time is
+an all-day event, whatever the model returned; one without a repeat word
+has no repeat, and one with has the repeat the words say, the model's
+end kept only behind an until word). The
 title too is only the phrase's words — one naming anything else gives way
 to the phrase — with the words about when taken off its ends; no prompt
 shows an example title, since the model copies it. A
@@ -99,9 +102,11 @@ dictation and text recognition stay with the helper. `ModelInfo`
 text by it (`captureTextBudget`). A served model's failure is worded by
 server (`modelUnavailableCopy`), and a host that is not loopback gets a
 notice in Settings: text typed into the AI fields leaves the Mac then.
-The bench (`apps/desktop/e2e/bench/modelBench.e2e.ts`, run by path with
-`MODEL_BENCH=1 E2E=1`) runs a phrase set through Apple's model and any
-Ollama models side by side. iOS reaches the same models via
+The model bench (`apps/desktop/e2e/bench/`, run by path with
+`MODEL_BENCH=1 E2E=1`) runs its cases — a phrase and the changes a
+thread would make to it, as text or recordings — through the same
+pipelines on Apple's model and any served one, side by side (its README;
+docs/google-sync-and-testing.md → Unit tests). iOS reaches the same models via
 `@react-native-ai/apple` and Vision through the `solunivo-ocr` Expo
 module; why the model cannot run comes from the `solunivo-model-availability`
 module (Foundation Models' reason, bounded to 5 s — the package answers

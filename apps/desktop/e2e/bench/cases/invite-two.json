@@ -1,0 +1,16 @@
+{
+  "lang": "en",
+  "tags": ["guests"],
+  "turns": [
+    {
+      "input": { "text": "Planning session Monday at 2pm, invite Tom Baker and Anna Lee" },
+      "expect": {
+        "title": "planning session",
+        "weekday": 1,
+        "startTime": "14:00",
+        "endTime": "15:00",
+        "guests": { "emails": ["tom.baker@example.com", "anna.lee@example.com"] }
+      }
+    }
+  ]
+}

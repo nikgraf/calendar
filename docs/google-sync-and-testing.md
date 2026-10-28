@@ -432,10 +432,18 @@ a DST change there.
   the fixture included (`packages/ai/src/grounding.ts`). A refinement is
   the same grammar with empty parts meaning "unchanged" (`| | 10:00-11:00`
   moves the times only); a sentence leaves the draft to the normalizer.
-  Real models are measured, never gated: the bench
-  (`apps/desktop/e2e/bench/modelBench.e2e.ts`, `MODEL_BENCH=1 E2E=1`,
-  run by path) prints how Apple's model and any Ollama models
-  (`MODEL_BENCH_OLLAMA=gemma3:4b,gemma3:12b`) do on its phrase set.
+  Real models are measured, never gated: the model bench
+  (`apps/desktop/e2e/bench/`, `MODEL_BENCH=1 E2E=1 pnpm exec vp test run
+  apps/desktop/e2e/bench/modelBench.e2e.ts`) runs the cases under
+  `cases/` — a phrase, then the changes a thread would make to it, as
+  text or as a recording with its transcript — through `parseQuickAdd`
+  and `parseRefine` on Apple's model (the helper binary) and any served
+  one (`MODEL_BENCH_OLLAMA`, `MODEL_BENCH_OPENAI`), resolves guests
+  against `contacts.json`, scores each field by where a person would put
+  the event (a later turn must also leave what it was not about), prints
+  a table and writes a JSON report with the raw answers under
+  `output/bench/`; `MODEL_BENCH_COMPARE` diffs two runs. Its README has
+  the case format and every variable.
   Desktop
   `launchApp(seed, { model: 'fixture' })`, iOS
   `EXPO_PUBLIC_CALENDAR_MODEL=fixture` in the bundle (CI), which also

@@ -1,0 +1,22 @@
+{
+  "lang": "en",
+  "tags": ["flow", "notes", "notifications"],
+  "turns": [
+    {
+      "input": { "text": "Dentist Thursday at 10" },
+      "expect": { "title": "dentist", "weekday": 4, "startTime": "10:00", "endTime": "11:00" }
+    },
+    {
+      "input": { "text": "all day instead" },
+      "expect": { "isAllDay": true }
+    },
+    {
+      "input": { "text": "add a note: bring the insurance card" },
+      "expect": { "notes": "bring the insurance card" }
+    },
+    {
+      "input": { "text": "remind me the day before" },
+      "expect": { "reminders": [1440] }
+    }
+  ]
+}

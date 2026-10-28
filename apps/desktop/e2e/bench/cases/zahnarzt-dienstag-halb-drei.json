@@ -1,0 +1,13 @@
+{
+  "lang": "de",
+  "tags": ["basic", "de"],
+  "turns": [
+    {
+      "input": {
+        "audio": "zahnarzt-dienstag-halb-drei-1.m4a",
+        "transcript": "Zahnarzt nächsten Dienstag um halb drei"
+      },
+      "expect": { "title": "zahnarzt", "weekday": 2, "startTime": "14:30", "endTime": "15:30" }
+    }
+  ]
+}

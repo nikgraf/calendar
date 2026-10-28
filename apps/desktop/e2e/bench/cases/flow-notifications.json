@@ -1,0 +1,18 @@
+{
+  "lang": "en",
+  "tags": ["flow", "notifications"],
+  "turns": [
+    {
+      "input": { "text": "Team sync Wednesday at 3" },
+      "expect": { "title": "team sync", "weekday": 3, "startTime": "15:00", "endTime": "16:00" }
+    },
+    {
+      "input": { "text": "notify me 15 minutes before" },
+      "expect": { "reminders": [15] }
+    },
+    {
+      "input": { "text": "and an hour before as well" },
+      "expect": { "reminders": [15, 60] }
+    }
+  ]
+}

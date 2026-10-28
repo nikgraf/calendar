@@ -1140,6 +1140,27 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   plugin. Open: the real share sheet on a device (both variants), HEIC
   from Photos, whether 6000 chars / 8 events fit the context.
 
+- **The model bench** (2026-10-25, #254) — `apps/desktop/e2e/bench/`
+  grows the #184 phrase table into cases with turns (a phrase, then the
+  changes a thread would make) through `parseQuickAdd` and `parseRefine`
+  on Apple's model and any served one; a turn is text or a recording
+  with its transcript; expectations per field, by where a person would
+  put the event, a later turn held to leave what it was not about; a
+  JSON report to diff two commits by. Measured, never gated. Rejected:
+  exact-JSON snapshots (wording and dates drift), prompt variants as a
+  parameter (two runs on two commits do), a CI gate (no model there).
+  Open: the gaps the baseline shows, listed in todo.md (Tier 3).
+- **Quick-add repeats are the phrase's** (2026-10-26, `todo/quick-add-repeat`)
+  — `statedRepeat` (`grounding.ts`) reads kind, gap, days, ordinal
+  weekday, count and span from the words; `recurrenceFromParse` builds
+  the rule from that, in quick add and over a draft's rule in a
+  refinement. No repeat word, no rule; the model's kind only behind a
+  repeat word the code does not read, its count and gap never, its end
+  only behind an until word naming a day. A rule with chosen days starts
+  on the first of them. Rejected: sparing only the `count: 1` rule (the
+  invented end a week on would have stayed). Open: negations, "twice a
+  week", "2nd and 4th Tuesday", the title's trim of the new repeat forms.
+
 ## Notifications
 
 - **Event reminders** (2026-09-22, #84) — reminders are data on the
