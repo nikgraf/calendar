@@ -251,7 +251,12 @@ const birthdaySetup = (kind: 'immediate' | 'scheduled', granted = true) => {
   const sink: NotificationSinkShape =
     kind === 'immediate'
       ? { ensurePermission, kind, show: () => Effect.void }
-      : { ensurePermission, kind, replaceSchedule: () => Effect.void };
+      : {
+          dismissDelivered: () => Effect.void,
+          ensurePermission,
+          kind,
+          replaceSchedule: () => Effect.void,
+        };
   const layer = Layer.mergeAll(
     DeviceSettingsRepo.layer.pipe(
       Layer.provideMerge(Layer.effectDiscard(runMigrations)),

@@ -209,7 +209,9 @@ const ALL_DAY_GRACE_MS = 12 * 60 * MINUTE;
  * grid it was seen on draws there. A zone this engine cannot load is read
  * under its other spelling (`runtimeZoneId`), else as the device's (a
  * primary as none); an event that cannot be planned is skipped, never the
- * whole pass.
+ * whole pass. Each plan's `dismissAt` is the event's end (an all-day one
+ * ends at local midnight after its last day), never before the grace a
+ * missed reminder keeps: a delivered one leaves Notification Center then.
  */
 export const planEventReminders = (
   events: ReadonlyArray<EventRecord>,
@@ -256,6 +258,22 @@ export const planEventReminders = (
           ? Temporal.PlainDate.from(event.startDate).toZonedDateTime({ timeZone: allDayZone })
               .epochMilliseconds
           : event.startUtc;
+      // The end the same way: `endDate` is exclusive, so it is the midnight
+      // the event ends at; without one the event ends the day after it starts.
+      const endDay = event.isAllDay
+        ? event.endDate
+          ? Temporal.PlainDate.from(event.endDate)
+          : event.startDate
+            ? Temporal.PlainDate.from(event.startDate).add({ days: 1 })
+            : undefined
+        : undefined;
+      const endRef = endDay
+        ? endDay.toZonedDateTime({ timeZone: allDayZone }).epochMilliseconds
+        : event.endUtc;
+      const expiresAt = startRef + (event.isAllDay ? ALL_DAY_GRACE_MS : TIMED_GRACE_MS);
+      // A delivered reminder goes once the event is over — but a two-minute
+      // event keeps its "Starting now" as long as a missed one would show.
+      const dismissAt = Math.max(endRef, expiresAt);
       for (const minutes of effectivePopupMinutes(event, calendar)) {
         const fireAt = startRef - minutes * MINUTE;
         if (fireAt < options.from || fireAt >= options.until) {
@@ -263,7 +281,8 @@ export const planEventReminders = (
         }
         out.push({
           body: eventReminderBody(event, minutes, fireAt, options.deviceTimeZone, primaryZone),
-          expiresAt: startRef + (event.isAllDay ? ALL_DAY_GRACE_MS : TIMED_GRACE_MS),
+          dismissAt,
+          expiresAt,
           fireAt,
           key: `event:${event.accountId}/${event.calendarId}/${event.id}:${String(event.startUtc)}:${String(minutes)}`,
           target: eventNotificationTarget(event),

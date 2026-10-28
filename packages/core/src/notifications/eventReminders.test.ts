@@ -346,6 +346,41 @@ describe('planEventReminders', () => {
     expect(plans[1]!.expiresAt).toBe(utc('2026-03-04T11:00:00Z'));
   });
 
+  it('a delivered reminder is dismissed once the event is over, never before its grace', () => {
+    expect(planEventReminders([event()], window)[0]!.dismissAt).toBe(utc('2026-03-04T10:00:00Z'));
+    // A two-minute event: "Starting now" keeps the five minutes a missed one would show.
+    const short = planEventReminders(
+      [
+        event({
+          endUtc: utc('2026-03-04T09:01:00Z'),
+          reminders: new EventReminders({ overrides: [popup(0)], useDefault: false }),
+        }),
+      ],
+      window,
+    );
+    expect(short[0]!.dismissAt).toBe(short[0]!.expiresAt);
+    expect(short[0]!.dismissAt).toBe(utc('2026-03-04T09:05:00Z'));
+
+    const allDay = (endDate: string | undefined) =>
+      planEventReminders(
+        [
+          event({
+            endDate,
+            isAllDay: true,
+            reminders: new EventReminders({ overrides: [popup(0)], useDefault: false }),
+            startDate: '2026-03-04',
+            startTimeZone: undefined,
+            startUtc: utc('2026-03-04T00:00:00Z'),
+          }),
+        ],
+        window,
+      )[0]!.dismissAt;
+    // Local midnight after the last day, in the calendar's zone (Vienna, UTC+1).
+    expect(allDay('2026-03-05')).toBe(utc('2026-03-04T23:00:00Z'));
+    expect(allDay(undefined)).toBe(utc('2026-03-04T23:00:00Z'));
+    expect(allDay('2026-03-07')).toBe(utc('2026-03-06T23:00:00Z'));
+  });
+
   it('skips cancelled and declined events and keeps delivery inside the window', () => {
     const declined = event({
       attendees: [{ email: 'me@example.com', isSelf: true, responseStatus: 'declined' }],

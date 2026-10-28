@@ -33,7 +33,10 @@ const SCHEDULED_KEY = 'localNotifications.scheduled';
 const PERMISSION_ASKED_KEY = 'localNotifications.permissionAsked';
 
 export interface LocalNotificationsShape {
-  /** One pass: deliver what is due (desktop) or refresh the OS schedule (iOS). Never fails. */
+  /**
+   * One pass: deliver what is due (desktop), or refresh the OS schedule and
+   * clear delivered reminders past their `dismissAt` (iOS). Never fails.
+   */
   readonly run: () => Effect.Effect<void>;
   /** The periodic loop plus the change-triggered reruns, detached in the scope. */
   readonly start: () => Effect.Effect<void>;
@@ -159,10 +162,14 @@ const make = (options: {
         }
         // The soonest across producers win the slots.
         const future = plans.filter((plan) => plan.fireAt > now).slice(0, MAX_SCHEDULED);
-        // Time and copy are part of the digest: a new delivery time or a
-        // renamed contact changes what the OS should show, not which key.
+        // Time, copy and the dismissal are part of the digest: a new delivery
+        // time, a renamed contact or a later end changes what the OS should
+        // show or keep, not which key.
         const digest = future
-          .map((plan) => `${plan.key}@${String(plan.fireAt)}:${plan.title}:${plan.body}`)
+          .map(
+            (plan) =>
+              `${plan.key}@${String(plan.fireAt)}:${plan.dismissAt === undefined ? '' : String(plan.dismissAt)}:${plan.title}:${plan.body}`,
+          )
           .join('|');
         if ((yield* settingsRepo.get(SCHEDULED_KEY)) === digest) {
           return;
@@ -175,6 +182,23 @@ const make = (options: {
         yield* settingsRepo.set(SCHEDULED_KEY, digest);
       });
 
+    /**
+     * Delivered reminders whose moment has passed leave Notification
+     * Center — on every pass, digest or not: the OS keeps the delivered
+     * list and each payload its `dismissAt`, so nothing is remembered
+     * here. Best-effort: a failure is logged, the next pass tries again.
+     */
+    const dismissDelivered = (now: number): Effect.Effect<void> =>
+      sink.kind !== 'scheduled'
+        ? Effect.void
+        : sink
+            .dismissDelivered(now)
+            .pipe(
+              Effect.catchCause((cause) =>
+                Effect.logWarning('local notifications: dismiss failed', { cause: String(cause) }),
+              ),
+            );
+
     const pass = Effect.gen(function* () {
       yield* askOnce;
       const now = yield* Clock.currentTimeMillis;
@@ -185,6 +209,8 @@ const make = (options: {
       );
       const next = yield* deliverImmediate(plans, now);
       yield* refreshSchedule(plans, now);
+      // After the hand-over, so a slow or refused dismissal never delays it.
+      yield* dismissDelivered(now);
       return next;
     });
 

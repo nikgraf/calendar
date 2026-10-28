@@ -187,6 +187,7 @@ describe('importSettings', () => {
       const answer = yield* Deferred.make<boolean>();
       const { layer } = makeSettingsTestLayer({
         sink: {
+          dismissDelivered: () => Effect.void,
           ensurePermission: () =>
             Effect.andThen(Deferred.succeed(asked, undefined), Deferred.await(answer)),
           kind: 'scheduled',

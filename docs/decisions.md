@@ -1191,6 +1191,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   a time zone save re-plans. Rejected: the text in the primary zone
   alone (it would contradict the lock-screen clock beside it). All-day
   and birthday text has no clock and stays as it was.
+- **Delivered reminders leave with the event** (2026-10-28, #PR) — an
+  iOS event reminder is dismissed from Notification Center once the event
+  is over (never before the five-minute grace a missed one keeps): the end
+  travels in the payload (`dismissAt`), the sink reads it back from the OS
+  on every pass, no repo lookup. Rejected: reconciling delivered
+  notifications against the DB (a lookup per notification, plus a rule for
+  a plan past the lookback or gone). Open: an end edited after delivery
+  keeps the old deadline; with the app closed the clearing waits for the
+  background task or the next foreground; birthdays stay until cleared;
+  desktop unchanged.
 
 ## Calendar mirrors
 

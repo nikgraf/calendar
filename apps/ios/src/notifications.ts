@@ -1,11 +1,13 @@
 import { type NotificationTarget, parseNotificationTarget } from '@calendar/core';
-import { NotificationSink, noopNotificationSink, type NotificationSinkShape } from '@calendar/sync';
-import { Effect, Layer } from 'effect';
+import { NotificationSink, noopNotificationSink } from '@calendar/sync';
+import { Layer } from 'effect';
+import { makeIosNotificationSink } from './notificationSink.ts';
 
 /**
- * Birthday reminders on iOS: the OS delivers pre-scheduled local
- * notifications, so they arrive with the app closed. The scheduler hands
- * over the next batch whenever it changes; this sink only translates.
+ * Event and birthday reminders on iOS: the OS delivers pre-scheduled
+ * local notifications, so they arrive with the app closed, and a
+ * delivered event reminder is dismissed once the event is over
+ * (`notificationSink.ts`).
  *
  * Loaded with `require` in a try/catch, like the speech and contacts
  * modules: expo-notifications registers its native module at import
@@ -22,61 +24,11 @@ const load = () => {
   }
 };
 
-const makeSink = (notifications: typeof import('expo-notifications')): NotificationSinkShape => {
-  // Banners in the foreground too: a reminder set for 09:00 should show
-  // even while the calendar is open.
-  notifications.setNotificationHandler({
-    handleNotification: () =>
-      Promise.resolve({
-        shouldPlaySound: false,
-        shouldSetBadge: false,
-        shouldShowBanner: true,
-        shouldShowList: true,
-      }),
-  });
-  return {
-    ensurePermission: () =>
-      Effect.tryPromise(async () => {
-        const current = await notifications.getPermissionsAsync();
-        if (current.granted) {
-          return true;
-        }
-        if (!current.canAskAgain) {
-          return false;
-        }
-        return (await notifications.requestPermissionsAsync()).granted;
-      }).pipe(Effect.orElseSucceed(() => false)),
-    kind: 'scheduled',
-    // A failure propagates: the scheduler must not remember a schedule
-    // the OS never accepted. Identifiers are stable, so a retry after a
-    // partial failure replaces rather than duplicates.
-    replaceSchedule: (planned) =>
-      Effect.tryPromise(async () => {
-        await notifications.cancelAllScheduledNotificationsAsync();
-        for (const item of planned) {
-          await notifications.scheduleNotificationAsync({
-            content: {
-              body: item.body,
-              // What a tap opens (subscribeNotificationTaps reads it back).
-              data: item.target ? { target: item.target } : {},
-              title: item.title,
-            },
-            identifier: item.key,
-            trigger: {
-              date: new Date(item.fireAt),
-              type: notifications.SchedulableTriggerInputTypes.DATE,
-            },
-          });
-        }
-      }),
-  };
-};
-
 const native = load();
 
 export const iosNotificationSink: Layer.Layer<NotificationSink> = Layer.succeed(
   NotificationSink,
-  native ? makeSink(native) : noopNotificationSink,
+  native ? makeIosNotificationSink(native) : noopNotificationSink,
 );
 
 /** Responses already acted on: the launch response can arrive twice (listener and last response). */
