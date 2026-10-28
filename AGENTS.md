@@ -89,12 +89,12 @@ dictation and capture from text or photo.
 - `brand/` — SVG masters, logos, fonts and tokens; `pnpm brand:build`
   (macOS) regenerates the committed app icons, `tokens.css` (the desktop
   and the website import it; the hand-written `tokens/tailwind.css` maps
-  the variables to Tailwind utilities for both, and `fonts/inter.css`
-  declares the face — the renderer's only colors, `themeClasses.test.ts` fails on Tailwind's own
-  palette and on a hand-made `hover:underline`; text actions take the
-  shared looks in `ui/buttonStyles.ts` — and `data-theme` on `<html>`
-  follows the OS appearance) and `packages/core/src/theme/tokens.ts`
-  (iOS reads it through `useTheme`),
+  the variables to Tailwind utilities for both — the renderer's only
+  colors, `themeClasses.test.ts` fails on Tailwind's own palette and on a
+  hand-made `hover:underline`; text actions take the shared looks in
+  `ui/buttonStyles.ts` — `fonts/inter.css` declares the face for both,
+  and `data-theme` on `<html>` follows the OS appearance) and
+  `packages/core/src/theme/tokens.ts` (iOS reads it through `useTheme`),
   and CI fails on stale exports via `pnpm brand:check`. Edit
   `tokens/tokens.json` and the masters, never the generated files.
 

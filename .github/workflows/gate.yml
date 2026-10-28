@@ -29,5 +29,7 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       # The website's static build: the tests mock its Markdown and never
-      # compile its CSS, so only a build catches a broken import or token.
+      # compile its CSS. The build fails on an import it cannot resolve, a
+      # rendered class with no CSS rule, and a CSS variable nothing defines
+      # (a token renamed in tokens.json but not in brand/tokens/tailwind.css).
       - run: pnpm --filter @calendar/web build

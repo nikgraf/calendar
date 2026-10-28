@@ -399,12 +399,16 @@ The output is static files and ships no JavaScript, so any static host
 serves it: GitHub Pages, Cloudflare Pages, Netlify and `preview` all
 serve `/privacy` from `privacy.html` without a redirect, which keeps the
 canonical URL and the links slash-free. The build cuts the brand's
-variable Inter down to printable ASCII, Latin-1 and every character the
-pages draw (about 86 KB instead of 344 KB, both axes kept), names it
-after its new bytes and preloads it; `vp dev` serves the full font.
-Anything in `apps/web/public/` (robots.txt, a host's `_headers`) is
-copied into `dist/` as it is. A plain `vp build` in `apps/web` refuses:
-it would bundle the dev-only `index.html` as a client app.
+variable Inter down to printable ASCII, Latin-1, typographic punctuation
+and every character the pages draw (about 91 KB instead of 344 KB, both
+axes kept), names it after its new bytes and preloads it; `vp dev` serves
+the full font. Anything in `apps/web/public/` (robots.txt, a host's
+`_headers`) is copied into `dist/` as it is, and the build stops if a
+page or asset would overwrite one. It also stops on a rendered class no
+CSS rule selects and on a CSS variable nothing defines, which is how a
+token renamed in `tokens.json` but not in `brand/tokens/tailwind.css`
+shows up. A plain `vp build` in `apps/web` refuses: it would bundle the
+dev-only `index.html` as a client app.
 
 Hosting and DNS for solunivo.com are not set up yet. Until a public build
 exists (`releases` in `src/links.ts`), the download buttons lead to the

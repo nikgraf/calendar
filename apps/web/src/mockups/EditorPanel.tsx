@@ -28,7 +28,8 @@ export function EditorPanel() {
           Describe it
         </span>
         <div className="flex items-center gap-2 rounded-control border border-hairline-strong px-2.5 py-2">
-          <span className="min-w-0 flex-1 truncate">Lunch with Sarah tomorrow at 1</span>
+          {/* Wraps rather than truncates: "at 1" is what the 13:00 below comes from. */}
+          <span className="min-w-0 flex-1 text-balance">Lunch with Sarah tomorrow at 1</span>
           <MicIcon className="flex-none text-ink-secondary" size={16} />
           <span className="rounded-[6px] bg-primary px-2 py-1 text-xs font-medium text-on-primary">
             Apply

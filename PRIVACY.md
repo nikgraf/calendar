@@ -27,8 +27,8 @@ Calendar, Apple Reminders and your address book, for the same purposes.
 
 - **Stays on your device.** Events, tasks and contacts are cached in a
   local database on your device so the app works offline. Sign-in tokens
-  are stored in the system keychain (macOS Keychain / iOS Keychain), never
-  in that database.
+  are never in that database: on iOS they are stored in the Keychain, and
+  on the Mac they are encrypted with a key kept in the macOS Keychain.
 - **Goes to Google** only as the changes you make: a new or edited event
   or task is written back to your own Google account. If you pick a place
   for an event's location, its coordinates are saved in that event's
@@ -55,8 +55,9 @@ Calendar, Apple Reminders and your address book, for the same purposes.
 - **Stays on your device, too:** by default, quick-add parsing,
   find-a-time suggestions, dictation, and reading events out of a pasted
   text or a shared screenshot use Apple's on-device models and text
-  recognition; your text, voice and images are not sent anywhere for this
-  unless you choose a model server on the Mac (next point).
+  recognition. Your voice and images never leave the device for this, and
+  the text is sent only to a model server you choose on the Mac (next
+  point).
 - **Goes to a model server you choose (Mac only).** Under Settings → AI
   Model you can pick Ollama or any OpenAI-compatible server instead of
   Apple's models. That server then receives what those features work on:

@@ -63,7 +63,7 @@ const aiChips = ['Quick add', 'Find a time', 'Dictation', 'Paste an email', 'Sha
 
 const privacyPoints = [
   {
-    body: 'Events, tasks and contacts are cached on the device so the app works offline. Tokens live in the system keychain.',
+    body: 'Events, tasks and contacts are cached on the device so the app works offline. Sign-in tokens are protected by the system keychain.',
     title: 'Local first',
   },
   {
@@ -135,12 +135,13 @@ export function HomePage() {
         <div className="flex min-w-0 flex-[1_1_380px] flex-col gap-6">
           <p className={eyebrow}>iPhone</p>
           <h2 className={`${h2} text-balance`}>
-            The same calendar in your pocket, set up by scanning a code.
+            The same calendar in your pocket, your settings copied over with one scan.
           </h2>
           <p className={lead}>
             Day, 2 Days, Week, Month and Agenda. Swipe between days, drag with a long press, dictate
             an event hands-free. Open Settings on the Mac, show the code, scan it on the iPhone:
-            accounts and preferences come across without a cloud in between.
+            your preferences come across and each account is ready for one sign-in, without a cloud
+            in between.
           </p>
           <ul className="m-0 grid list-none grid-cols-[repeat(auto-fit,minmax(min(200px,100%),1fr))] gap-x-6 gap-y-4 p-0 text-[15px] text-ink-secondary">
             {iphonePoints.map((point) => (
