@@ -1,0 +1,60 @@
+/*
+ * Hand-written, not generated: the brand tokens as Tailwind v4 utilities
+ * (bg-canvas, text-ink, border-hairline, …), shared by the desktop
+ * renderer (apps/desktop/renderer/App.css) and the website
+ * (apps/web/src/site.css). Import it after tokens.css. The utilities
+ * alias the CSS variables rather than copy values, so one `data-theme`
+ * flip re-themes every utility. Text colors are `ink` because Tailwind's
+ * own `--text-*` namespace is font sizes. A token renamed in tokens.json
+ * is renamed here too.
+ */
+@theme inline {
+  --font-sans: var(--font-sans);
+
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-subtle: var(--surface-subtle);
+  --color-weekend: var(--weekend);
+  --color-surface-raised: var(--surface-raised);
+  --color-fill: var(--fill);
+  --color-hairline: var(--border);
+  --color-hairline-strong: var(--border-strong);
+  --color-ink: var(--text);
+  --color-ink-secondary: var(--text-secondary);
+  --color-ink-tertiary: var(--text-tertiary);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-on-primary: var(--on-primary);
+  --color-focus: var(--focus);
+  --color-selection: var(--selection);
+  --color-on-selection: var(--on-selection);
+  --color-highlight: var(--highlight);
+  --color-success: var(--success);
+  --color-on-success: var(--on-success);
+  --color-warning: var(--warning);
+  --color-on-warning: var(--on-warning);
+  --color-danger: var(--danger);
+  --color-on-danger: var(--on-danger);
+  --color-info: var(--info);
+  --color-on-info: var(--on-info);
+  --color-event-mint: var(--event-mint);
+  --color-on-event-mint: var(--on-event-mint);
+  --color-event-mint-edge: var(--event-mint-edge);
+  --color-event-blush: var(--event-blush);
+  --color-on-event-blush: var(--on-event-blush);
+  --color-event-blush-edge: var(--event-blush-edge);
+  --color-event-lilac: var(--event-lilac);
+  --color-on-event-lilac: var(--on-event-lilac);
+  --color-event-lilac-edge: var(--event-lilac-edge);
+  --color-event-blue: var(--event-blue);
+  --color-on-event-blue: var(--on-event-blue);
+  --color-event-blue-edge: var(--event-blue-edge);
+
+  /* The identity colors, for the rare surface that draws the brand itself. */
+  --color-brand-mint: var(--brand-mint);
+
+  --radius-event: var(--radius-event);
+  --radius-control: var(--radius-control);
+  --radius-popover: var(--radius-popover);
+  --radius-window: var(--radius-window);
+}

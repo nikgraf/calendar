@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 const base =
   'inline-flex items-center justify-center rounded-control px-5 py-3 font-medium no-underline transition-colors duration-[120ms]';
 
-export const buttonClass = {
+const buttonClass = {
   // On the dark download band: a light button on the ink ground.
   inverted: `${base} bg-on-primary text-primary hover:bg-highlight`,
   invertedOutline: `${base} border border-on-primary/40 text-on-primary hover:border-on-primary`,

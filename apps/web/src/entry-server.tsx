@@ -5,7 +5,13 @@ import './site.css';
 
 export { routes };
 
-/** One route as a complete HTML document (no scripts, the given stylesheets). */
-export function render(route: string, { css }: { css: ReadonlyArray<string> }): string {
-  return `<!doctype html>${renderToStaticMarkup(<Document css={css} path={route} />)}`;
+/**
+ * One route as a complete HTML document: no scripts, the given
+ * stylesheets, and the font to preload when there is one.
+ */
+export function render(
+  route: string,
+  { css, font }: { css: ReadonlyArray<string>; font?: string | undefined },
+): string {
+  return `<!doctype html>${renderToStaticMarkup(<Document css={css} font={font} path={route} />)}`;
 }

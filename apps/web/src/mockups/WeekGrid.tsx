@@ -87,8 +87,9 @@ export function WeekGrid() {
                 const oneLine = height < 30;
                 return (
                   <div
-                    className={`absolute inset-x-[3px] overflow-hidden rounded-[5px] px-[7px] font-medium leading-[1.3] ${
-                      oneLine ? 'truncate py-0 leading-4' : 'py-[3px]'
+                    className={`absolute inset-x-[3px] overflow-hidden rounded-[5px] px-[7px] font-medium ${
+                      // One line height per branch: two leading-* classes resolve by CSS order, not class order.
+                      oneLine ? 'truncate py-0 leading-4' : 'py-[3px] leading-[1.3]'
                     } ${tintClass[event.tint]}`}
                     key={event.title}
                     style={{ height, top: blockTop }}

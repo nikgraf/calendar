@@ -6,11 +6,9 @@ const sources = [
 ];
 
 /** The four sources the app reads and writes, as a dotted list. */
-export function Sources({ className = '' }: { className?: string }) {
+export function Sources() {
   return (
-    <ul
-      className={`m-0 flex list-none flex-wrap gap-x-5 gap-y-2 p-0 text-sm text-ink-secondary ${className}`}
-    >
+    <ul className="m-0 flex list-none flex-wrap gap-x-5 gap-y-2 p-0 text-sm text-ink-secondary">
       {sources.map((source) => (
         <li className="inline-flex items-center gap-2" key={source.name}>
           <span aria-hidden="true" className={`size-2 rounded-full ${source.dot}`} />

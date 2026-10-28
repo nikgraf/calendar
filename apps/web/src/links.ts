@@ -1,11 +1,14 @@
 /**
- * Where the calls to action go. Both apps are still distributed through
- * TestFlight and CI artifacts (docs/distribution.md), so the download links
- * point at the download section until a public build exists.
+ * Public download links, empty while both apps are in private testing
+ * (TestFlight and CI artifacts, see docs/distribution.md). Until one is
+ * set, its calls to action lead to the download section, which says the
+ * apps are in private testing instead of offering a button.
  */
+export const releases: { readonly iphone?: string; readonly mac?: string } = {};
+
 export const links = {
   download: '/#download',
-  iphone: '/#download',
-  mac: '/#download',
+  iphone: releases.iphone ?? '/#download',
+  mac: releases.mac ?? '/#download',
   privacy: '/privacy',
 } as const;

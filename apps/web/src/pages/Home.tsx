@@ -1,4 +1,3 @@
-import type { ReactNode } from 'react';
 import lockupDark from '../../../../brand/logos/lockup-horizontal-dark.svg';
 import { ButtonLink } from '../components/Button.tsx';
 import {
@@ -10,7 +9,7 @@ import {
   RepeatIcon,
 } from '../components/icons.tsx';
 import { Sources } from '../components/Sources.tsx';
-import { links } from '../links.ts';
+import { links, releases } from '../links.ts';
 import { EditorPanel } from '../mockups/EditorPanel.tsx';
 import { MacWindow } from '../mockups/MacWindow.tsx';
 import { PhoneDay } from '../mockups/PhoneDay.tsx';
@@ -19,22 +18,6 @@ const container = 'mx-auto max-w-[1200px] px-6 sm:px-8';
 const h2 = 'm-0 text-[clamp(30px,3.2vw,40px)] leading-[1.15] font-semibold tracking-[-0.02em]';
 const eyebrow = 'm-0 text-[13px] font-medium tracking-[0.08em] text-ink-secondary uppercase';
 const lead = 'm-0 text-[17px] text-ink-secondary text-pretty';
-
-function Section({
-  children,
-  className = '',
-  id,
-}: {
-  children: ReactNode;
-  className?: string;
-  id?: string;
-}) {
-  return (
-    <section className={className} id={id}>
-      {children}
-    </section>
-  );
-}
 
 const features = [
   {
@@ -96,7 +79,7 @@ const privacyPoints = [
 export function HomePage() {
   return (
     <>
-      <Section className={`${container} flex flex-wrap items-center gap-12 pt-16 pb-16 sm:pt-20`}>
+      <section className={`${container} flex flex-wrap items-center gap-12 pt-16 pb-16 sm:pt-20`}>
         <div className="flex min-w-0 flex-[1_1_400px] flex-col gap-6">
           <h1 className="m-0 text-[clamp(36px,3.4vw,48px)] leading-[1.05] font-semibold tracking-[-0.025em] text-pretty">
             Google and Apple calendars, tasks and reminders. One app.
@@ -116,9 +99,9 @@ export function HomePage() {
         <div className="min-w-0 flex-[1_1_644px]">
           <MacWindow />
         </div>
-      </Section>
+      </section>
 
-      <Section className="border-y border-hairline bg-surface-subtle" id="features">
+      <section className="border-y border-hairline bg-surface-subtle" id="features">
         <div className={`${container} flex flex-col gap-10 py-24`}>
           <div className="flex max-w-[640px] flex-col gap-3">
             <h2 className={h2}>A full calendar, not a viewer.</h2>
@@ -140,9 +123,9 @@ export function HomePage() {
             ))}
           </ul>
         </div>
-      </Section>
+      </section>
 
-      <Section
+      <section
         className={`${container} flex flex-wrap items-center gap-x-20 gap-y-12 py-24`}
         id="iphone"
       >
@@ -168,9 +151,9 @@ export function HomePage() {
             ))}
           </ul>
         </div>
-      </Section>
+      </section>
 
-      <Section className="border-y border-hairline bg-surface-subtle" id="ai">
+      <section className="border-y border-hairline bg-surface-subtle" id="ai">
         <div className={`${container} flex flex-wrap items-center gap-x-20 gap-y-12 py-24`}>
           <div className="flex min-w-0 flex-[1_1_380px] flex-col gap-6">
             <p className={eyebrow}>On-device AI</p>
@@ -194,9 +177,9 @@ export function HomePage() {
             <EditorPanel />
           </div>
         </div>
-      </Section>
+      </section>
 
-      <Section className={`${container} flex flex-col gap-10 py-24`} id="privacy">
+      <section className={`${container} flex flex-col gap-10 py-24`} id="privacy">
         <div className="flex max-w-[640px] flex-col gap-3">
           <h2 className={h2}>Your data goes to Google and Apple. Not to us.</h2>
           <p className={lead}>
@@ -218,12 +201,19 @@ export function HomePage() {
         >
           Read the privacy policy
         </a>
-      </Section>
+      </section>
 
-      <Section className="bg-primary text-on-primary" id="download">
+      <section className="bg-primary text-on-primary" id="download">
         <div className={`${container} flex flex-wrap items-center justify-between gap-8 py-20`}>
           <div className="flex min-w-0 flex-col gap-2.5">
-            <img alt="" className="block h-9 w-auto self-start" height="36" src={lockupDark} />
+            {/* Lazy: React preloads every eager <img>, and this one sits at the page's foot. */}
+            <img
+              alt=""
+              className="block h-9 w-auto self-start"
+              height="36"
+              loading="lazy"
+              src={lockupDark}
+            />
             <h2 className="m-0 text-[clamp(26px,2.8vw,34px)] leading-[1.15] font-semibold tracking-[-0.02em]">
               Get Solunivo for Mac and iPhone
             </h2>
@@ -232,16 +222,26 @@ export function HomePage() {
               Everything else works without them.
             </p>
           </div>
-          <div className="flex flex-wrap gap-3">
-            <ButtonLink href={links.mac} variant="inverted">
-              Download for Mac
-            </ButtonLink>
-            <ButtonLink href={links.iphone} variant="invertedOutline">
-              Get it for iPhone
-            </ButtonLink>
-          </div>
+          {releases.mac || releases.iphone ? (
+            <div className="flex flex-wrap gap-3">
+              {releases.mac ? (
+                <ButtonLink href={releases.mac} variant="inverted">
+                  Download for Mac
+                </ButtonLink>
+              ) : null}
+              {releases.iphone ? (
+                <ButtonLink href={releases.iphone} variant="invertedOutline">
+                  Get it for iPhone
+                </ButtonLink>
+              ) : null}
+            </div>
+          ) : (
+            <p className="m-0 max-w-[360px] rounded-control border border-on-primary/40 px-5 py-3 text-on-primary">
+              Solunivo is in private testing on Mac and iPhone. Public downloads will be here.
+            </p>
+          )}
         </div>
-      </Section>
+      </section>
     </>
   );
 }

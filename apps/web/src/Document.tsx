@@ -6,7 +6,15 @@ import { pageMeta, routeFor } from './routes.ts';
 const origin = 'https://solunivo.com';
 
 /** The whole HTML document for one route, used by the static build. */
-export function Document({ css, path }: { css: ReadonlyArray<string>; path: string }) {
+export function Document({
+  css,
+  font,
+  path,
+}: {
+  css: ReadonlyArray<string>;
+  font?: string | undefined;
+  path: string;
+}) {
   const route = routeFor(path);
   const meta = pageMeta[route];
   const url = route === '/' ? `${origin}/` : `${origin}${route}`;
@@ -26,6 +34,9 @@ export function Document({ css, path }: { css: ReadonlyArray<string>; path: stri
         <meta content="summary" name="twitter:card" />
         <link href={favicon} rel="icon" type="image/svg+xml" />
         <link href={touchIcon} rel="apple-touch-icon" />
+        {font ? (
+          <link as="font" crossOrigin="" href={font} rel="preload" type="font/woff2" />
+        ) : null}
         {css.map((href) => (
           <link href={href} key={href} rel="stylesheet" />
         ))}

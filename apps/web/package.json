@@ -19,6 +19,7 @@
     "@types/react-dom": "~19.2.7",
     "@vitejs/plugin-react": "^6.1.2",
     "marked": "^18.1.0",
+    "subset-font": "^2.9.0",
     "tailwindcss": "^4.3.3",
     "typescript": "catalog:",
     "vite": "catalog:",

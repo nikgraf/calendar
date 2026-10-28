@@ -22,8 +22,9 @@ const applyScheme = () => {
 
 /**
  * Keeps `data-theme` on <html> in step with the OS appearance. tokens.css
- * switches its variables on that attribute, and App.css maps them to the
- * Tailwind utilities, so this one attribute re-themes the whole window.
+ * switches its variables on that attribute, and brand/tokens/tailwind.css
+ * (imported by App.css) maps them to the Tailwind utilities, so this one
+ * attribute re-themes the whole window.
  */
 export const applyThemeAttribute = (): void => {
   applyScheme();

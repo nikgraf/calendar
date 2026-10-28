@@ -385,22 +385,32 @@ a weird state, rerun prebuild with `--clean`.
 `apps/web` is the public site: the landing page and `/privacy`, which is
 the root `PRIVACY.md` rendered at build time (edit the Markdown, never the
 page). It is a Vite + React + Tailwind app on the brand tokens
-(`brand/tokens/tokens.css`, the same utility names as the desktop
-renderer) that `scripts/build.ts` prerenders into plain HTML:
+(`brand/tokens/tokens.css`, mapped to utilities by `brand/tokens/tailwind.css`
+like the desktop renderer) that `scripts/build.ts` prerenders into plain
+HTML:
 
 ```sh
-pnpm --filter @calendar/web build     # → apps/web/dist/ (index.html, privacy/index.html, assets/)
+pnpm --filter @calendar/web build     # → apps/web/dist/ (index.html, privacy.html, assets/)
 pnpm --filter @calendar/web preview   # serve dist/ on http://127.0.0.1:4174
 pnpm --filter @calendar/web dev       # live-reloading dev server on :5174
 ```
 
 The output is static files and ships no JavaScript, so any static host
-serves it; `/privacy` must resolve to `privacy/index.html` (every common
-host does this, and `preview` does the same). Hosting and DNS for
-solunivo.com are not set up yet. The download buttons point at the
-download section until a public build exists (`src/links.ts`). The
+serves it: GitHub Pages, Cloudflare Pages, Netlify and `preview` all
+serve `/privacy` from `privacy.html` without a redirect, which keeps the
+canonical URL and the links slash-free. The build cuts the brand's
+variable Inter down to printable ASCII, Latin-1 and every character the
+pages draw (about 86 KB instead of 344 KB, both axes kept), names it
+after its new bytes and preloads it; `vp dev` serves the full font.
+Anything in `apps/web/public/` (robots.txt, a host's `_headers`) is
+copied into `dist/` as it is. A plain `vp build` in `apps/web` refuses:
+it would bundle the dev-only `index.html` as a client app.
+
+Hosting and DNS for solunivo.com are not set up yet. Until a public build
+exists (`releases` in `src/links.ts`), the download buttons lead to the
+download section, which says the apps are in private testing. The
 screens on the page are drawn components over sample data
 (`src/mockups/`), so they never need recapturing when the apps change,
 and they carry no real names or events. CI's path classifier treats
-`apps/web/` as neither app's code: a website-only change runs the gate,
-not the macOS jobs.
+`apps/web/` as neither app's code: a website-only change runs the gate
+(which builds the site), not the macOS jobs.

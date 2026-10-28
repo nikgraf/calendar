@@ -81,10 +81,11 @@ export const calendars: ReadonlyArray<{ name: string; tint: Tint }> = [
 
 export const lists = ['Errands', 'Reminders'];
 
-export const upNext = [
-  { detail: '15:00 · in 40 min', title: 'Dentist' },
-  { detail: 'Thu 16:00 · Travel', title: 'Flight to Berlin' },
-];
+/**
+ * The rail's one Up next card, as the app picks it: the earliest timed
+ * event that has not ended (Tuesday's Dentist, 40 minutes after `now`).
+ */
+export const upNext = { startsIn: 'In 40 min', time: '15:00 – 16:00', title: 'Dentist' };
 
 export const tasks = [
   { title: 'Passport' },

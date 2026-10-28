@@ -10,7 +10,9 @@ The selected identity is **A1 soft ivory, with 24 in Inter Bold**: a near-white 
 | `logos/`                               | Outlined wordmarks and horizontal/stacked logo SVGs                      |
 | `fonts/`                               | Inter 4.1 source fonts, variable webfont and SIL Open Font License       |
 | `tokens/tokens.json`                   | Authoritative brand and semantic UI tokens                               |
-| `tokens/tokens.css`                    | Generated CSS variables (the preview and the desktop app)                |
+| `tokens/tokens.css`                    | Generated CSS variables (the preview, the desktop app and the website)   |
+| `tokens/tailwind.css`                  | Hand-written Tailwind utilities over those variables (desktop, website)  |
+| `fonts/inter.css`                      | The Inter `@font-face` both web-rendered apps import                     |
 | `../packages/core/src/theme/tokens.ts` | Generated typed tokens for both apps (iOS reads these; Metro has no CSS) |
 | `preview/`                             | Curated brand preview with a sample calendar and event editor            |
 | `../scripts/brand/build.mjs`           | Export, validation and distribution build                                |

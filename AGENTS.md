@@ -81,13 +81,16 @@ dictation and capture from text or photo.
 - `apps/web` — the website (solunivo.com): a static landing page and the
   privacy policy (rendered from the root `PRIVACY.md` at build time),
   React + Tailwind on the brand tokens, prerendered by `scripts/build.ts`
-  into `dist/` with no JavaScript shipped; the screens on it are drawn
-  components over sample data (`src/mockups/`), not screenshots. It
-  imports nothing from the packages. See docs/distribution.md → Website.
+  into `dist/` (`index.html`, `privacy.html`, Inter cut down to the
+  characters the pages draw) with no JavaScript shipped; the screens on
+  it are drawn components over sample data (`src/mockups/`), not
+  screenshots. It imports nothing from the packages. See
+  docs/distribution.md → Website.
 - `brand/` — SVG masters, logos, fonts and tokens; `pnpm brand:build`
   (macOS) regenerates the committed app icons, `tokens.css` (the desktop
-  imports it; `App.css` maps the variables to Tailwind utilities — the
-  renderer's only colors, `themeClasses.test.ts` fails on Tailwind's own
+  and the website import it; the hand-written `tokens/tailwind.css` maps
+  the variables to Tailwind utilities for both, and `fonts/inter.css`
+  declares the face — the renderer's only colors, `themeClasses.test.ts` fails on Tailwind's own
   palette and on a hand-made `hover:underline`; text actions take the
   shared looks in `ui/buttonStyles.ts` — and `data-theme` on `<html>`
   follows the OS appearance) and `packages/core/src/theme/tokens.ts`
@@ -147,7 +150,7 @@ deliberately.
   `pnpm --filter @calendar/ios prebuild` regenerates `ios/`).
 - `pnpm --filter @calendar/web build` — the website as static files in
   `apps/web/dist/` (`dev` serves it on :5174 with live reload, `preview`
-  serves the built output on :4174).
+  serves the built output on :4174; a plain `vp build` there refuses).
 - `pnpm --filter @calendar/desktop build:helper` — build the Swift helper
   (needs the macOS 26 SDK; `make` / `package:app` run it automatically).
 - `pnpm --filter @calendar/desktop package:app` — unsigned .app via Forge
