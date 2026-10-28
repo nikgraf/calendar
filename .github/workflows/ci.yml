@@ -33,6 +33,7 @@ jobs:
   # (the shared packages, root config, the lockfile, workflows, brand/)
   # runs both. apps/ios/assets/ holds brand exports that packaging smoke
   # checks (brand:check), so it counts for the desktop jobs as well.
+  # apps/web/ (the website) is neither app's code: only the gate runs.
   changes:
     name: Classify changed paths
     runs-on: ubuntu-latest
@@ -72,11 +73,11 @@ jobs:
           desktop=false
           ios=false
           if [ -n "$code" ]; then
-            if echo "$code" | grep -vE '^apps/ios/' | grep -q . ||
+            if echo "$code" | grep -vE '^apps/(ios|web)/' | grep -q . ||
               echo "$code" | grep -qE '^apps/ios/assets/'; then
               desktop=true
             fi
-            if echo "$code" | grep -vE '^(apps/desktop/|packages/agent/)' | grep -q .; then
+            if echo "$code" | grep -vE '^(apps/desktop/|apps/web/|packages/agent/)' | grep -q .; then
               ios=true
             fi
           fi

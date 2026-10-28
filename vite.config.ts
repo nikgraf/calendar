@@ -105,6 +105,7 @@ export default defineConfig({
             'apps/desktop/renderer/**/*.test.{ts,tsx}',
             'apps/ios/src/**/*.test.{ts,tsx}',
             'apps/ios/e2e/ci/**/*.test.ts',
+            'apps/web/{scripts,src}/**/*.test.{ts,tsx}',
           ],
     // One Electron app at a time: the spec files each launch their own,
     // and two starting together on a small CI runner raced each other

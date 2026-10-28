@@ -78,6 +78,12 @@ dictation and capture from text or photo.
   drop-in native controls; zero-hop direct backend; @react-native-ai/apple
   for on-device model access; the local Expo modules under `modules/`;
   `expo-maps` draws the editor map.
+- `apps/web` — the website (solunivo.com): a static landing page and the
+  privacy policy (rendered from the root `PRIVACY.md` at build time),
+  React + Tailwind on the brand tokens, prerendered by `scripts/build.ts`
+  into `dist/` with no JavaScript shipped; the screens on it are drawn
+  components over sample data (`src/mockups/`), not screenshots. It
+  imports nothing from the packages. See docs/distribution.md → Website.
 - `brand/` — SVG masters, logos, fonts and tokens; `pnpm brand:build`
   (macOS) regenerates the committed app icons, `tokens.css` (the desktop
   imports it; `App.css` maps the variables to Tailwind utilities — the
@@ -139,6 +145,9 @@ deliberately.
   CALENDAR_REMINDERS=off CALENDAR_CONTACTS=off CALENDAR_NOTIFICATIONS=off`.
 - `pnpm ios` — `expo run:ios` on the simulator (the dev variant;
   `pnpm --filter @calendar/ios prebuild` regenerates `ios/`).
+- `pnpm --filter @calendar/web build` — the website as static files in
+  `apps/web/dist/` (`dev` serves it on :5174 with live reload, `preview`
+  serves the built output on :4174).
 - `pnpm --filter @calendar/desktop build:helper` — build the Swift helper
   (needs the macOS 26 SDK; `make` / `package:app` run it automatically).
 - `pnpm --filter @calendar/desktop package:app` — unsigned .app via Forge

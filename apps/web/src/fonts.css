@@ -1,0 +1,8 @@
+/* Inter, the brand face: the variable font from the brand kit, bundled by Vite. */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('../../../brand/fonts/InterVariable.woff2') format('woff2');
+}

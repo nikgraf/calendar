@@ -1,0 +1,134 @@
+@import 'tailwindcss';
+@import '../../../brand/tokens/tokens.css';
+@import './fonts.css';
+
+/*
+ * The brand tokens as Tailwind utilities, named as the desktop renderer
+ * names them (bg-canvas, text-ink, border-hairline, …). The site is light
+ * only: nothing sets `data-theme`, so tokens.css stays on its light set.
+ */
+@theme inline {
+  --font-sans: var(--font-sans);
+
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-subtle: var(--surface-subtle);
+  --color-fill: var(--fill);
+  --color-hairline: var(--border);
+  --color-hairline-strong: var(--border-strong);
+  --color-ink: var(--text);
+  --color-ink-secondary: var(--text-secondary);
+  --color-ink-tertiary: var(--text-tertiary);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-on-primary: var(--on-primary);
+  --color-selection: var(--selection);
+  --color-highlight: var(--highlight);
+  --color-event-mint: var(--event-mint);
+  --color-on-event-mint: var(--on-event-mint);
+  --color-event-mint-edge: var(--event-mint-edge);
+  --color-event-blush: var(--event-blush);
+  --color-on-event-blush: var(--on-event-blush);
+  --color-event-blush-edge: var(--event-blush-edge);
+  --color-event-lilac: var(--event-lilac);
+  --color-on-event-lilac: var(--on-event-lilac);
+  --color-event-lilac-edge: var(--event-lilac-edge);
+  --color-event-blue: var(--event-blue);
+  --color-on-event-blue: var(--on-event-blue);
+  --color-event-blue-edge: var(--event-blue-edge);
+  --color-brand-mint: var(--brand-mint);
+
+  --radius-event: var(--radius-event);
+  --radius-control: var(--radius-control);
+  --radius-popover: var(--radius-popover);
+  --radius-window: var(--radius-window);
+}
+
+html {
+  background: var(--canvas);
+  color: var(--text);
+  color-scheme: light;
+  -webkit-font-smoothing: antialiased;
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* The privacy policy, rendered from PRIVACY.md. */
+.prose {
+  font-size: 16px;
+  line-height: 1.6;
+}
+.prose h1 {
+  margin: 0 0 8px;
+  font-size: clamp(32px, 3.4vw, 44px);
+  line-height: 1.1;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.prose h2 {
+  margin: 48px 0 12px;
+  font-size: 24px;
+  line-height: 1.25;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.prose h3 {
+  margin: 32px 0 8px;
+  font-size: 18px;
+  line-height: 1.3;
+  font-weight: 600;
+}
+.prose p,
+.prose ul,
+.prose ol {
+  margin: 0 0 16px;
+  color: var(--text-secondary);
+}
+.prose h1 + p em {
+  font-style: normal;
+  font-size: 14px;
+}
+.prose ul,
+.prose ol {
+  padding-left: 24px;
+}
+.prose li {
+  margin: 6px 0;
+}
+.prose li::marker {
+  color: var(--text-tertiary);
+}
+.prose strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.prose a {
+  color: var(--text);
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 3px;
+}
+.prose a:hover {
+  text-decoration-color: var(--text);
+}
+.prose code {
+  font-size: 0.92em;
+  background: var(--fill);
+  border-radius: 4px;
+  padding: 1px 5px;
+}

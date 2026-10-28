@@ -1304,3 +1304,19 @@ first. The decisions, one line each:
   text action (busy in rows of two or three) and `text-secondary` for all
   (reads as a caption). Fills, today markers, icons and checks keep plain
   `primary`. Open: iOS has no link inside a sentence yet.
+
+## Website
+
+- **solunivo.com as a static site in the monorepo** (2026-10-28, #259) —
+  `apps/web`: the landing page (direction "B · Product" of the 2026-10-27
+  design canvas: hero copy beside the Mac week view, feature cards, an
+  iPhone section, the editor panel for the AI, a privacy strip, an ink
+  download band) and `/privacy` rendered from the root `PRIVACY.md`, so
+  the policy has one source. React + Tailwind on the brand tokens with the
+  desktop renderer's utility names, prerendered to HTML with no JavaScript
+  shipped; the screens are drawn components over sample data, so a UI
+  change in the apps never leaves the site stale. Rejected: Astro (a
+  second framework for two pages), a client-rendered SPA (no JS is needed),
+  screenshots of the real apps (would need recapturing, and show data).
+  Open: hosting and DNS, real download links, a dark scheme (the site is
+  light only), an `og:image`.

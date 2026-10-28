@@ -379,3 +379,28 @@ pnpm --filter @calendar/ios ios        # expo run:ios — compiles locally, boot
 Useful for debugging native code or working offline. First compile takes
 ~10-20 minutes. `apps/ios/ios/` is generated and gitignored — if it gets into
 a weird state, rerun prebuild with `--clean`.
+
+# Website (solunivo.com)
+
+`apps/web` is the public site: the landing page and `/privacy`, which is
+the root `PRIVACY.md` rendered at build time (edit the Markdown, never the
+page). It is a Vite + React + Tailwind app on the brand tokens
+(`brand/tokens/tokens.css`, the same utility names as the desktop
+renderer) that `scripts/build.ts` prerenders into plain HTML:
+
+```sh
+pnpm --filter @calendar/web build     # → apps/web/dist/ (index.html, privacy/index.html, assets/)
+pnpm --filter @calendar/web preview   # serve dist/ on http://127.0.0.1:4174
+pnpm --filter @calendar/web dev       # live-reloading dev server on :5174
+```
+
+The output is static files and ships no JavaScript, so any static host
+serves it; `/privacy` must resolve to `privacy/index.html` (every common
+host does this, and `preview` does the same). Hosting and DNS for
+solunivo.com are not set up yet. The download buttons point at the
+download section until a public build exists (`src/links.ts`). The
+screens on the page are drawn components over sample data
+(`src/mockups/`), so they never need recapturing when the apps change,
+and they carry no real names or events. CI's path classifier treats
+`apps/web/` as neither app's code: a website-only change runs the gate,
+not the macOS jobs.
