@@ -829,10 +829,12 @@ details, or Custom), so a calendar can be shared without the details.
     later sync upsert idempotent.
   - **series** — patch the master; time edits apply the occurrence's
     wall-clock delta (`applyWallClockDelta` in `time/dragMath.ts`,
-    DST-safe). A new rule (`changes.recurrence`, RFC 5545 lines) replaces
-    the master's and drops its exceptions — they belonged to occurrences
-    of the old rule, which is what Google does with them; `null` ("does
-    not repeat") leaves the master as a single event at its own start.
+    DST-safe, seconds included: a series at 09:00:30 retimed to 10:00
+    starts at 10:00). A new rule (`changes.recurrence`, RFC 5545 lines)
+    replaces the master's and drops its exceptions — they belonged to
+    occurrences of the old rule, which is what Google does with them;
+    `null` ("does not repeat") leaves the master as a single event at its
+    own start.
     Google keeps a rule whose key is absent from a PATCH, so the op
     carries `recurrenceCleared` and the patch sends `recurrence: []`. A
     master's changed title, description or location is mirrored onto the
@@ -1198,8 +1200,8 @@ gateway carries all of it. Details, limits and the threat model:
   (`EventEditSheet`, the same add path as the desktop and the same
   thread: `useThreadEditor`, with `DraftThreadSection` under the quick-add
   field — the turns as on the desktop (`ThreadTurnList`, shared with
-  Search; the header does not scroll, so they get at most 30 % of the
-  screen and scroll inside it), the free-slot chips, the pager, "Add all"; the rows a turn
+  Search; the header does not scroll, so they get at most a third of the
+  sheet and scroll inside it), the free-slot chips, the pager, "Add all"; the rows a turn
   changed flash, `FlashView`), the birthday detail — and the capture model behind the share
   sheet and deep links, whose events open the editor as one thread of
   drafts; each opening is keyed by its own number; screens ask it
@@ -1230,15 +1232,28 @@ gateway carries all of it. Details, limits and the threat model:
   detail, a birthday, Settings) but opens once that has closed and the
   editor's form sheet is gone (`captureMayOpen`). A new share drops a
   waiting thread, as does a tapped reminder whose detail opens. The quick-add
-  field does not take the focus there (the keyboard raises a half sheet
-  to full; once it hides, the sheet returns to the detent it had). The
+  field does not take the focus there (the keyboard lifts a half sheet
+  to full without changing its detent, so once it hides the sheet is
+  back at half, unless a drag meanwhile settled it at full). The
   sheet lays its content out once, as at most two subviews: a header
   that must not be flattened (`collapsable={false}`) — the Cancel ·
   title · Save row and, for a new item, the quick-add field with its
   thread — and one scroll view that stays across a kind switch — the
   kind control at its top, then the form, which renders `bare` inside it
-  (`FormScroll`). The forms are iOS inset grouped cards on the grouped
-  ground, drawn with the Settings pages' rows (`GroupedList.tsx`:
+  (`FormScroll`). A drag up on the form, or on the thread's turns,
+  raises a half sheet to full before anything scrolls
+  (`sheetExpandsWhenScrolledToEdge`), so the form never scrolls on its
+  own in the strip under the header. UIKit hands the drag to the sheet
+  only while the form is at its top, so whenever the sheet stands at
+  half with the keyboard down (dropped there, or the keyboard just hid)
+  the form scrolls back there (`useEditorSheetAtHalf`). The turns take
+  at most a third of the sheet at the detent it stands at
+  (`editorSheet.ts`; the route follows `sheetDetentChange`), so at half
+  the two newest and "+N earlier queries" fit with a strip of the form
+  under them; the keyboard lifts the sheet without a detent change, and
+  the half cap holds while it is up. The forms are iOS inset grouped
+  cards on the grouped ground, drawn with the Settings pages' rows
+  (`GroupedList.tsx`:
   `Section`, `Row`, `SwitchRow`, `CheckRow`, `ActionRow`, and the forms'
   own `FieldRow`, `ChipsRow`, `RowSlot`, `CardCaption`; a choice is a
   `Chip`), in Calendar's order for an event (title and location; all-day,

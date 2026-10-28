@@ -940,9 +940,14 @@ Selector gotchas (each caused a real failure):
   alert inline and cancels only while an "Open" is still up.
 - The editor is a form sheet: at half height the calendar above it is
   live, and Maestro's scrolls swipe at the screen's centre — on the
-  calendar. A flow that fills the form expands the sheet first
-  (`expand-editor.yaml`); to look at the calendar behind it, tap the
-  grabber while its value reads "Expanded".
+  calendar. A swipe on the form itself raises the sheet rather than
+  scrolling the form (flow 06 proves it). UIKit settles the sheet by how
+  far and how fast the drag went: flow 06's 93 % → 60 % in 300 ms
+  reaches full, a short slow one snaps back, and one longer than the
+  sheet's whole rise (about 46 % of the screen) goes on to scroll the
+  form once the sheet is up. A flow that fills the form
+  expands the sheet first (`expand-editor.yaml`); to look at the
+  calendar behind it, tap the grabber while its value reads "Expanded".
 - Text selectors are **whole-string regexes**: prefix text does not
   match, regex metacharacters in titles must be escaped, and a pressable
   row reads as one element (title, subtitle and value together), so match

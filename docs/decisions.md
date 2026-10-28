@@ -349,6 +349,12 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   events with a zone and for timed reminders. Rejected: keeping the
   event's wall clock and drawing the preview with it (the block would land
   on a row nobody picked). Open: a series shift stays in the series' zone.
+- **A series shift carries seconds** (2026-10-25, #253) — a time edit
+  with scope "All events" moves the series by the occurrence's wall-clock
+  delta, seconds included, so a series at 09:00:30 retimed to 10:00
+  starts at 10:00. Before, the fractional minute threw and the edit
+  failed. Rejected: keeping the series' seconds and shifting whole
+  minutes (it would start at 10:00:30, a time nobody picked).
 - **Recurring editing** — scopes instance / series / following; an
   instance edit materializes an exception under Google's canonical
   instance id so the later pull upserts idempotently; following truncates
@@ -1068,6 +1074,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   hold), a pushed calendar picker (the inline rows stay the flows'
   targets and one tap), Repeat inside the dates card (its conditional
   rows made it long). Open: the chips at the accessibility text sizes.
+- **A drag raises the half-height editor** (2026-10-26, #257) — the form
+  scrolled on its own in the strip under the header. A drag up on the
+  form or the turns now raises the sheet first, as in Maps; at half with
+  the keyboard down the form sits at its top, the only place UIKit hands
+  a drag to the sheet. The turns take a third of the sheet as it stands,
+  not 30 % of the screen. Rejected: no scrolling at half (a dead gesture
+  on a cut-off form), one scroll view for field, thread and form (the
+  field would scroll away from its replies), a taller start (#190).
+  Open: the chips, choices and pager under the turns are not capped.
 - **Slot proposals in the create thread** (2026-10-12, #185) — a phrase
   that asks for free time is routed by code (`isFinderPhrase`: English
   and German cues, a search verb or question beside a time word) to the

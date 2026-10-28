@@ -322,6 +322,34 @@ describe('EventMutations recurring scopes', () => {
     }).pipe(Effect.provide(testLayer)),
   );
 
+  it.effect('a series that starts on a second moves to the time picked for it', () =>
+    Effect.gen(function* () {
+      yield* seedMaster;
+      const events = yield* EventRepo;
+      // 09:00:30 daily, as another client may have written it.
+      yield* events.upsertMany([
+        new EventRecord({
+          ...master,
+          endUtc: master.endUtc + 30_000,
+          startUtc: master.startUtc + 30_000,
+        }),
+      ]);
+      // "All events" from the July 4 occurrence, retimed to 10:00–11:00.
+      yield* (yield* EventMutations).updateRecurring({
+        ...target,
+        changes: {
+          endUtc: Date.parse('2026-07-04T11:00:00Z'),
+          startUtc: Date.parse('2026-07-04T10:00:00Z'),
+        },
+        originalStartUtc: occurrence + 30_000,
+        scope: 'series',
+      });
+      const updated = yield* events.getById('acc-1', 'cal-1', 'master1');
+      expect(updated!.startUtc).toBe(Date.parse('2026-07-01T10:00:00Z'));
+      expect(updated!.endUtc).toBe(Date.parse('2026-07-01T11:00:00Z'));
+    }).pipe(Effect.provide(testLayer)),
+  );
+
   it.effect('series and instance edits keep, replace or drop location coordinates', () =>
     Effect.gen(function* () {
       yield* seedMaster;
