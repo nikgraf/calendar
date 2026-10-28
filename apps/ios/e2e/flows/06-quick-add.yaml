@@ -82,6 +82,9 @@ tags:
                 text: 'Lunch with Sarah'
             - assertVisible:
                 id: 'draft-thread'
+            # Scrolled at full height, the form goes back to its top as the
+            # sheet drops to half (the drag below proves it).
+            - scroll
             - tapOn: 'Expanded'
             - waitForAnimationToEnd:
                 timeout: 3000
@@ -102,7 +105,19 @@ tags:
             - assertVisible:
                 id: 'draft-block'
                 text: 'Draft: Lunch with Sarah.*(8:00.PM|20:00).*'
-            - runFlow: ../common/expand-editor.yaml
+            # A drag up on the form raises the half sheet instead of
+            # scrolling the form in the strip under the header. UIKit hands
+            # the drag to the sheet only while the form is at its top, where
+            # the drop to half put it back. The drag is shorter than the
+            # sheet's rise (about 46 % of the screen): past it, the rest of
+            # the drag scrolls the form, and the title below leaves the view.
+            - swipe:
+                start: 50%, 93%
+                end: 50%, 60%
+                duration: 300
+            - waitForAnimationToEnd:
+                timeout: 3000
+            - assertVisible: 'Expanded'
             - tapOn:
                 id: 'draft-undo'
             - extendedWaitUntil:

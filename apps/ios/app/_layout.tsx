@@ -6,6 +6,7 @@ import { StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { backendClient } from '../src/backend.ts';
 import { EditorHostProvider } from '../src/ui/EditorHost.tsx';
+import { EDITOR_SHEET_DETENTS, editorDetentIndex } from '../src/ui/editorSheet.ts';
 import { ErrorBoundary } from '../src/ui/ErrorBoundary.tsx';
 import { groupedGround, useTheme } from '../src/ui/theme.ts';
 
@@ -42,18 +43,23 @@ export default function RootLayout() {
               <Stack.Screen name="lesson" options={{ presentation: 'modal' }} />
               {/* The editor: a form sheet at half height for a new item (the
                   calendar behind stays live and draws the drafts), full for
-                  an existing one; `detent` comes with the push. Its forms
-                  are grouped cards, so the sheet takes the grouped ground. */}
+                  an existing one; `detent` comes with the push. A drag up
+                  on the form raises a half sheet to full before the form
+                  scrolls, as Maps' and Find My's sheets do, so the form
+                  never scrolls on its own in the strip under the header.
+                  Its forms are grouped cards, so the sheet takes the
+                  grouped ground. */}
               <Stack.Screen
                 name="editor"
                 options={({ route }) => ({
                   contentStyle: { backgroundColor: groupedGround(colors) },
                   presentation: 'formSheet',
-                  sheetAllowedDetents: [0.5, 1],
-                  sheetExpandsWhenScrolledToEdge: false,
+                  sheetAllowedDetents: [...EDITOR_SHEET_DETENTS],
+                  sheetExpandsWhenScrolledToEdge: true,
                   sheetGrabberVisible: true,
-                  sheetInitialDetentIndex:
-                    (route.params as { detent?: string } | undefined)?.detent === 'half' ? 0 : 1,
+                  sheetInitialDetentIndex: editorDetentIndex(
+                    (route.params as { detent?: string } | undefined)?.detent,
+                  ),
                   sheetLargestUndimmedDetentIndex: 0,
                 })}
               />
