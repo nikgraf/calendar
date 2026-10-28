@@ -224,6 +224,17 @@ const NEGATED =
 const DENIED =
   /\b(?:don'?t|do not|does not|never|not|nicht|nie)\s+(?:(?:the|all|any|my|die|den|das|alle|meine)\s+)?$/;
 
+/**
+ * A to-do's own action, in which a note or notification word is the
+ * thing to do ("remind me to add notes to the report", "remind me to
+ * clear the notes"): the to-do cue stands earlier in the same clause,
+ * with no punctuation or "and" between.
+ */
+const WITHIN_CLAUSE = String.raw`(?:(?!\b(?:and|und)\b)[^,;.!?])*`;
+const TODO_LEAD = new RegExp(
+  String.raw`(?:^|[,;.!?]|\b(?:and|und)\b)${WITHIN_CLAUSE}\b(?:remind me|reminder|don'?t forget|dont forget|i (?:need|have) to|i must|ich muss|erinnere mich|erinnerung|nicht vergessen|aufgabe|to-?do)\b${WITHIN_CLAUSE}$`,
+);
+
 /** The notifications taken off altogether. */
 const CLEAR_REMINDERS = new RegExp(
   [
@@ -253,6 +264,15 @@ const reminderClauses = (text: string): ReadonlyArray<ReminderClause> => {
         pattern.lastIndex = start + 1;
         continue;
       }
+      // "don't change the reminder to …" asks for nothing; "remind me to
+      // change the reminder …" is a to-do's action.
+      if (
+        kind === 'replace' &&
+        (DENIED.test(text.slice(0, start)) || TODO_LEAD.test(text.slice(0, start)))
+      ) {
+        pattern.lastIndex = start + 1;
+        continue;
+      }
       const negated = NEGATED.exec(text.slice(0, start));
       const replaces = kind === 'replace' || /\b(?:instead|stattdessen)$/.test(match[0]);
       found.push({
@@ -264,7 +284,8 @@ const reminderClauses = (text: string): ReadonlyArray<ReminderClause> => {
     }
   });
   for (const match of text.matchAll(CLEAR_REMINDERS)) {
-    if (!DENIED.test(text.slice(0, match.index))) {
+    const lead = text.slice(0, match.index);
+    if (!DENIED.test(lead) && !TODO_LEAD.test(lead)) {
       found.push({
         end: match.index + match[0].length,
         kind: 'clear',
@@ -321,28 +342,28 @@ const NOTE_CUE = new RegExp(
     // "note that …", "noting that …", "note down …"
     String.raw`\bnot(?:e|es|ing)\s+(?:that|saying|down that|down)\s+`,
     // "add a note: …", "add a note that …", "make a note …"
-    String.raw`\b(?:add|adding|make|put|leave|include|attach)\s+(?:(?:a|an|the|some)\s+)?(?:${NOTE_NOUN})(?:\s+(?:that|saying))?\s*${COLON}?\s*`,
+    String.raw`\b(?:add|adding|make|put|leave|include|attach)\s+(?:(?:a|an|the|some)\s+)?(?:${NOTE_NOUN})\b(?:\s+(?:that|saying))?\s*${COLON}?\s*`,
     // "with a note that …", "with the note: …", 'with the note "…"'
     String.raw`\bwith\s+(?:(?:a|the)\s+)?(?:${NOTE_WORDS})\s*(?:(?:that|saying)\s+|${COLON}\s*|(?=["'“„«]))`,
     // "add to the notes: …", "append to the notes …", "put it in the description: …"
-    String.raw`\b(?:add|append|put|write|adding)\s+(?:(?:it|this|that)\s+)?(?:to|in|into)\s+(?:the\s+)?(?:${NOTE_WORDS})\s*${COLON}?\s*(?:that\s+)?`,
+    String.raw`\b(?:add|append|put|write|adding)\s+(?:(?:it|this|that)\s+)?(?:to|in|into)\s+(?:the\s+)?(?:${NOTE_WORDS})\b\s*${COLON}?\s*(?:that\s+)?`,
     // "in the notes: …", "to the description: …" ("Intro to notes app" is a title)
     String.raw`\b(?:to|in|into)\s+(?:the\s+)?(?:${NOTE_WORDS})\s*(?:${NOTE_COLON}\s*|that\s+)`,
     // "notier, dass …", "notiere dir: …", "notieren: …"
     String.raw`\bnotier(?:e|t|en)?(?:\s+(?:dir|mir|bitte))?\s*[,:：–—-]?\s*(?:dass\s+)?`,
     // "mit der Notiz: …", "mit Notiz, dass …", "als Anmerkung: …", "mit dem Hinweis, dass …"
-    String.raw`\b(?:mit|als)\s+(?:(?:der|dem|einer|eine|ein)\s+)?(?:${NOTE_WORDS}|hinweis)\s*${COLON}?\s*(?:,?\s*dass\s+)?`,
+    String.raw`\b(?:mit|als)\s+(?:(?:der|dem|einer|eine|ein)\s+)?(?:${NOTE_WORDS}|hinweis)\b\s*${COLON}?\s*(?:,?\s*dass\s+)?`,
     // "merk dir, dass …", "vermerke: …", "schreib dazu: …"
     String.raw`\b(?:merke?\s+dir|vermerke?|schreibe?\s+(?:dazu|rein|dran))\s*[,:：–—-]?\s*(?:dass\s+)?`,
     // "zu den Notizen: …", "in die Notizen …"
-    String.raw`\b(?:zu\s+den|in\s+die|in\s+den)\s+(?:${NOTE_WORDS})\s*${COLON}?\s*(?:dass\s+)?`,
+    String.raw`\b(?:zu\s+den|in\s+die|in\s+den)\s+(?:${NOTE_WORDS})\b\s*${COLON}?\s*(?:dass\s+)?`,
   ].join('|'),
   'g',
 );
 
 /** The notes replaced: "replace the notes with …", "set the description to …", "ersetze die Notiz durch …". */
 const REPLACE_NOTES = new RegExp(
-  String.raw`\b(?:replace|change|set|overwrite|ersetze?|andere?|setze?)\s+(?:(?:the|my|die|den|das|meine)\s+)?(?:${NOTE_WORDS})(?:\s+(?:to|with|by|durch|mit|zu|auf))?\s*${COLON}?\s*`,
+  String.raw`\b(?:replace|change|set|overwrite|ersetze?|andere?|setze?)\s+(?:(?:the|my|die|den|das|meine)\s+)?(?:${NOTE_WORDS})\b(?:\s+(?:to|with|by|durch|mit|zu|auf))?\s*${COLON}?\s*`,
   'g',
 );
 
@@ -365,16 +386,6 @@ const CLEAR_NOTES = new RegExp(
 const NOTE_END = new RegExp(
   String.raw`(?:[,;.]\s*(?:(?:and|und|also|auch|plus|sowie|then|dann)\s+)?|\s+(?:and|und|also|auch|plus|sowie|then|dann)\s+)(?=(?:please\s+|bitte\s+)?(?:invit(?:e|es|ed|ing)|uninvite|lade?\s|einladen|einlade))`,
   'g',
-);
-
-/**
- * A to-do's own action, in which a note word is the thing to do ("remind
- * me to add notes to the report"): the to-do cue stands earlier in the
- * same clause, with no punctuation or "and" between.
- */
-const WITHIN_CLAUSE = String.raw`(?:(?!\b(?:and|und)\b)[^,;.!?])*`;
-const TODO_LEAD = new RegExp(
-  String.raw`(?:^|[,;.!?]|\b(?:and|und)\b)${WITHIN_CLAUSE}\b(?:remind me|reminder|don'?t forget|dont forget|i (?:need|have) to|i must|ich muss|erinnere mich|erinnerung|nicht vergessen|aufgabe|to-?do)\b${WITHIN_CLAUSE}$`,
 );
 
 /** What a note's words are trimmed of at either end. */
@@ -414,7 +425,9 @@ const noteClauses = (
         start: match.index,
       })),
     ...[...text.matchAll(REPLACE_NOTES)]
-      .filter((match) => !DENIED.test(text.slice(0, match.index)))
+      .filter(
+        (match) => !DENIED.test(text.slice(0, match.index)) && !TODO_LEAD.test(before(match.index)),
+      )
       .map((match) => ({
         end: match.index + match[0].length,
         kind: 'replace' as const,
@@ -446,7 +459,7 @@ const noteClauses = (
     }
   });
   for (const match of text.matchAll(CLEAR_NOTES)) {
-    if (!DENIED.test(text.slice(0, match.index))) {
+    if (!DENIED.test(text.slice(0, match.index)) && !TODO_LEAD.test(before(match.index))) {
       found.push({
         end: match.index + match[0].length,
         kind: 'clear',
@@ -501,9 +514,17 @@ const without = (phrase: string, text: string, spans: ReadonlyArray<Span>): stri
  * The notifications and the note a phrase asks for, and the phrase
  * without those clauses. A phrase that asks for neither comes back whole.
  */
+/** The text with the words inside quotation marks blanked: a quoted note ("remind me later") holds no command. */
+const QUOTED = /["“„«]([^"“”„«»]*)["”“»]/gu;
+const unquoted = (text: string): string =>
+  text.replaceAll(
+    QUOTED,
+    (quote, inside: string) => `${quote[0]}${' '.repeat(inside.length)}${quote.at(-1)}`,
+  );
+
 export const readExtras = (phrase: string): PhraseExtras => {
   const text = foldInPlace(phrase);
-  const reminders = reminderClauses(text);
+  const reminders = reminderClauses(unquoted(text));
   const notes = noteClauses(phrase, text, reminders);
   const spans = distinct([...reminders, ...notes]);
   if (spans.length === 0) {

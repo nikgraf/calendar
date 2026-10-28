@@ -36,6 +36,7 @@ describe('applyReminderChange', () => {
     expect(applyReminderChange(undefined, adds(30))).toEqual({
       added: [30],
       dropped: [],
+      invalid: [],
       reminders: explicit(30),
       removed: [],
     });
@@ -45,6 +46,7 @@ describe('applyReminderChange', () => {
     expect(applyReminderChange(explicit(60), adds(15, 60))).toEqual({
       added: [15],
       dropped: [],
+      invalid: [],
       reminders: explicit(15, 60),
       removed: [],
     });
@@ -63,6 +65,7 @@ describe('applyReminderChange', () => {
     expect(applyReminderChange(explicit(15), only())).toEqual({
       added: [],
       dropped: [],
+      invalid: [],
       reminders: explicit(),
       removed: [],
     });
@@ -70,24 +73,39 @@ describe('applyReminderChange', () => {
     expect(applyReminderChange(explicit(15, 60), takesOff(15))).toEqual({
       added: [],
       dropped: [],
+      invalid: [],
       reminders: explicit(60),
       removed: [15],
     });
     // Review: a removal and an addition in one breath both take effect.
     expect(
       applyReminderChange(explicit(15, 30), { add: [60], clear: false, remove: [15] }),
-    ).toEqual({ added: [60], dropped: [], reminders: explicit(30, 60), removed: [15] });
+    ).toEqual({
+      added: [60],
+      dropped: [],
+      invalid: [],
+      reminders: explicit(30, 60),
+      removed: [15],
+    });
   });
 
   it('leaves the draft as it was when nothing takes effect', () => {
     // Nothing of its own to take off: the draft stays on the default.
     expect(applyReminderChange(undefined, takesOff(15)).reminders).toBeUndefined();
     expect(applyReminderChange(byDefault, takesOff(15)).reminders).toBe(byDefault);
-    const own = explicit(15);
-    expect(applyReminderChange(own, adds(15)).reminders).toBe(own);
+    const same = explicit(15);
+    expect(applyReminderChange(same, adds(15)).reminders).toBe(same);
     // Review: an offset beyond Google's four weeks is not added, and the
-    // calendar default stays.
-    expect(applyReminderChange(byDefault, adds(50_000)).reminders).toBe(byDefault);
+    // calendar default stays — also when it was to replace the rest.
+    expect(applyReminderChange(byDefault, adds(50_000))).toEqual({
+      added: [],
+      dropped: [],
+      invalid: [50_000],
+      reminders: byDefault,
+      removed: [],
+    });
+    const own = explicit(15);
+    expect(applyReminderChange(own, only(50_000)).reminders).toBe(own);
   });
 
   it('never lets a new offset push one of the draft’s own out', () => {
@@ -96,12 +114,14 @@ describe('applyReminderChange', () => {
     expect(applyReminderChange(full, adds(0))).toEqual({
       added: [],
       dropped: [0],
+      invalid: [],
       reminders: full,
       removed: [],
     });
     expect(applyReminderChange(explicit(5, 10, 15, 30), adds(0, 120))).toEqual({
       added: [0],
       dropped: [120],
+      invalid: [],
       reminders: explicit(0, 5, 10, 15, 30),
       removed: [],
     });
@@ -134,5 +154,7 @@ describe('the words of a change', () => {
         false,
       ),
     ).toEqual(['at most 5 notifications']);
+    // A replacement with nothing fit to stand in clears nothing and says why.
+    expect(said(only(50_000))).toEqual(['at most 4 weeks before']);
   });
 });

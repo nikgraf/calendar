@@ -331,3 +331,47 @@ describe('readExtras — second review', () => {
     });
   });
 });
+
+describe('readExtras — Codex round 2', () => {
+  it('keeps quoted words as the note, whatever they say', () => {
+    expect(readExtras('Dinner with the note "remind me 30 minutes before"')).toEqual({
+      notes: { kind: 'add', text: 'remind me 30 minutes before' },
+      rest: 'Dinner',
+    });
+  });
+
+  it('leaves a to-do whose action clears or replaces notes, or notifications, to the model', () => {
+    for (const phrase of [
+      'Remind me to clear the notes tomorrow',
+      'Remind me to replace the notes with the new ones',
+      'Remind me to remove the reminders from the shared calendar',
+    ]) {
+      expect(readExtras(phrase), phrase).toEqual({ rest: phrase });
+    }
+  });
+
+  it('reads a denied replacement as nothing, not as a removal', () => {
+    for (const phrase of [
+      "don't change the reminder to 10 minutes before",
+      'do not set the notification to an hour before',
+    ]) {
+      expect(readExtras(phrase), phrase).toEqual({ rest: phrase });
+    }
+    // A denied addition still takes the offset off: "don't remind me 10 minutes before".
+    expect(readExtras("don't remind me 10 minutes before").reminders).toEqual({
+      add: [],
+      clear: false,
+      remove: [10],
+    });
+  });
+
+  it('needs the whole note word', () => {
+    for (const phrase of [
+      'Make a notebook cover tomorrow',
+      'Add to the notebook stack Monday',
+      'Mit der Notizbuch-Lieferung Dienstag',
+    ]) {
+      expect(readExtras(phrase), phrase).toEqual({ rest: phrase });
+    }
+  });
+});

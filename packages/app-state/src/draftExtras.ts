@@ -32,6 +32,8 @@ export interface AppliedReminders {
   readonly added: ReadonlyArray<number>;
   /** Offsets said that found no room (at most `MAX_REMINDER_OVERRIDES`). */
   readonly dropped: ReadonlyArray<number>;
+  /** Offsets said beyond Google's range (`MAX_REMINDER_MINUTES`). */
+  readonly invalid: ReadonlyArray<number>;
   readonly reminders: EventReminders | undefined;
   /** The offsets taken off, in the order said. */
   readonly removed: ReadonlyArray<number>;
@@ -49,7 +51,8 @@ const popupMinutes = (overrides: ReadonlyArray<ReminderOverride>): ReadonlyArray
  * default giving the default up for them, as the form's own add does.
  * An offset already there, outside Google's range or beyond the five
  * the form allows is not added, and the change says so, rather than
- * one of the draft's own giving way. A change that takes no effect
+ * one of the draft's own giving way; a replacement whose every offset
+ * is such does not clear what was there. A change that takes no effect
  * leaves the draft as it was (the same object).
  */
 export const applyReminderChange = (
@@ -63,18 +66,19 @@ export const applyReminderChange = (
     (override) => override.method !== 'popup' || !change.remove.includes(override.minutes),
   );
   const present = new Set(popupMinutes(kept));
-  const valid = [...new Set(change.add)].filter(
-    (minutes) =>
-      Number.isInteger(minutes) &&
-      minutes >= 0 &&
-      minutes <= MAX_REMINDER_MINUTES &&
-      !present.has(minutes),
+  const said = [...new Set(change.add)].filter(
+    (minutes) => Number.isInteger(minutes) && minutes >= 0 && !present.has(minutes),
   );
+  const invalid = said.filter((minutes) => minutes > MAX_REMINDER_MINUTES);
+  const valid = said.filter((minutes) => minutes <= MAX_REMINDER_MINUTES);
   const room = Math.max(MAX_REMINDER_OVERRIDES - kept.length, 0);
   const added = valid.slice(0, room);
   const dropped = valid.slice(room);
-  if (!change.clear && added.length === 0 && removed.length === 0) {
-    return { added, dropped, reminders: current, removed };
+  // Nothing added, nothing taken off, and either nothing to clear or a
+  // replacement with nothing fit to stand in: the draft stays.
+  const replaced = change.clear && (change.add.length === 0 || added.length > 0);
+  if (!replaced && added.length === 0 && removed.length === 0) {
+    return { added, dropped, invalid, reminders: current, removed };
   }
   const reminders = canonicalReminders(
     new EventReminders({
@@ -85,7 +89,7 @@ export const applyReminderChange = (
       useDefault: false,
     }),
   );
-  return { added, dropped, reminders, removed };
+  return { added, dropped, invalid, reminders, removed };
 };
 
 /** "adds a note", "replaces the notes", "clears the notes": a turn's summary of its change. */
@@ -109,7 +113,8 @@ const offsetLabel = (minutes: number, isAllDay: boolean): string => {
  * What a change did, in words: "notifies 30 minutes before", "notifies
  * only 1 hour before" (the rest cleared), "no longer notifies 15 minutes
  * before", "no notifications", "at most 5 notifications" for an offset
- * that found no room. Nothing for a change that took no effect.
+ * that found no room, "at most 4 weeks before" for one beyond Google's
+ * range. Nothing for a change that took no effect.
  */
 export const describeReminderChange = (
   change: ReminderChange,
@@ -118,14 +123,19 @@ export const describeReminderChange = (
 ): ReadonlyArray<string> => {
   const labels = (minutes: ReadonlyArray<number>) =>
     minutes.map((offset) => offsetLabel(offset, isAllDay)).join(', ');
+  const cleared =
+    change.clear && applied.reminders !== undefined && applied.reminders.overrides.length === 0;
   return [
-    ...(change.clear && applied.added.length === 0 ? ['no notifications'] : []),
+    ...(cleared && applied.added.length === 0 ? ['no notifications'] : []),
     ...(applied.added.length > 0
       ? [`${change.clear ? 'notifies only' : 'notifies'} ${labels(applied.added)}`]
       : []),
     ...(applied.removed.length > 0 ? [`no longer notifies ${labels(applied.removed)}`] : []),
     ...(applied.dropped.length > 0
       ? [`at most ${String(MAX_REMINDER_OVERRIDES)} notifications`]
+      : []),
+    ...(applied.invalid.length > 0
+      ? [`at most ${String(MAX_REMINDER_MINUTES / (7 * 24 * 60))} weeks before`]
       : []),
   ];
 };
