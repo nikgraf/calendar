@@ -19,7 +19,10 @@ import {
 } from './importedVisibility.ts';
 import { buildSettingsDocument } from './settingsExport.ts';
 import { readMirrorLocals, readMirrors } from './mirrorSettings.ts';
-import { applyBirthdayReminderOverride } from './notificationSettings.ts';
+import {
+  applyBirthdayReminderOverride,
+  applyEventNotificationSettings,
+} from './notificationSettings.ts';
 import { importSettings, previewSettingsImport } from './settingsImport.ts';
 import {
   appleCalendarAccount,
@@ -76,6 +79,7 @@ describe('importSettings', () => {
         zones: ['device', 'UTC', 'Europe/Vienna'],
       });
       expect(yield* readEventNotificationSettings).toEqual({
+        dismissWhenOver: true,
         enabled: true,
         includeAppleCalendar: false,
       });
@@ -83,6 +87,36 @@ describe('importSettings', () => {
       // A second import of the same file is quiet.
       expect((yield* importSettings(document)).settingsChanged).toEqual([]);
       expect(applied).toHaveLength(1);
+    }).pipe(Effect.provide(layer));
+  });
+
+  it.effect('a save or a file without "Remove When Over" leaves it as this device has it', () => {
+    const { layer } = makeSettingsTestLayer({});
+    return Effect.gen(function* () {
+      yield* applyEventNotificationSettings({
+        dismissWhenOver: false,
+        enabled: true,
+        includeAppleCalendar: false,
+      });
+      // A client that does not know the field saves the other two.
+      yield* applyEventNotificationSettings({ enabled: true, includeAppleCalendar: true });
+      expect(yield* readEventNotificationSettings).toEqual({
+        dismissWhenOver: false,
+        enabled: true,
+        includeAppleCalendar: true,
+      });
+      const older: SettingsDocument = {
+        eventNotifications: { enabled: true, includeAppleCalendar: true },
+        version: 1,
+      };
+      expect((yield* importSettings(older)).settingsChanged).toEqual([]);
+      expect((yield* readEventNotificationSettings).dismissWhenOver).toBe(false);
+      const newer: SettingsDocument = {
+        eventNotifications: { dismissWhenOver: true, enabled: true, includeAppleCalendar: true },
+        version: 1,
+      };
+      expect((yield* importSettings(newer)).settingsChanged).toEqual(['eventNotifications']);
+      expect((yield* readEventNotificationSettings).dismissWhenOver).toBe(true);
     }).pipe(Effect.provide(layer));
   });
 

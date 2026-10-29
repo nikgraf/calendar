@@ -383,6 +383,37 @@ describe('LocalNotifications', () => {
     }).pipe(Effect.provide(testLayer(scheduled.sink)));
   });
 
+  it.effect(
+    'switched off, delivered reminders stay; switched back on, the next pass clears',
+    () => {
+      const scheduled = scheduledSink();
+      const noon = Date.parse('2026-03-01T12:00:00Z');
+      return Effect.gen(function* () {
+        yield* seedGoogle(standup);
+        yield* writeEventNotificationSettings({
+          dismissWhenOver: false,
+          enabled: true,
+          includeAppleCalendar: false,
+        });
+        const notifications = yield* LocalNotifications;
+        yield* setClock('2026-03-01T12:00:00Z');
+        yield* notifications.run();
+        // Still scheduled with its deadline, so switching back on works at once.
+        expect(scheduled.schedules[0]![0]!.dismissAt).toBe(standup.endUtc);
+        expect(scheduled.dismissed).toEqual([]);
+        yield* writeEventNotificationSettings({
+          dismissWhenOver: true,
+          enabled: true,
+          includeAppleCalendar: false,
+        });
+        yield* TestClock.adjust('1 minute');
+        yield* notifications.run();
+        expect(scheduled.dismissed).toEqual([noon + 60_000]);
+        expect(scheduled.schedules).toHaveLength(1);
+      }).pipe(Effect.provide(testLayer(scheduled.sink)));
+    },
+  );
+
   it.effect('a schedule the OS refuses still clears delivered reminders', () => {
     const scheduled = scheduledSink(true, () => Effect.fail(new Error('refused')));
     return Effect.gen(function* () {

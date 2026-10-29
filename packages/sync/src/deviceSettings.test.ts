@@ -15,9 +15,11 @@ import { describe } from 'vite-plus/test';
 import {
   BIRTHDAY_REMINDER_OVERRIDES_KEY,
   BIRTHDAY_REMINDERS_KEY,
+  EVENT_NOTIFICATIONS_KEY,
   ONBOARDING_KEY,
   readBirthdayReminderOverrides,
   readBirthdayReminderSettings,
+  readEventNotificationSettings,
   readOnboarding,
   readPrimaryTimeZone,
   readTimeZoneSettings,
@@ -27,6 +29,7 @@ import {
   VIEW_PREFERENCES_KEY,
   writeBirthdayReminderOverrides,
   writeBirthdayReminderSettings,
+  writeEventNotificationSettings,
   writeOnboarding,
   writeTimeZoneSettings,
   writeViewPreferences,
@@ -289,6 +292,37 @@ describe('view preferences', () => {
     Effect.gen(function* () {
       yield* (yield* DeviceSettingsRepo).set(VIEW_PREFERENCES_KEY, { allDayLaneCollapsed: 'yes' });
       expect(yield* readViewPreferences).toEqual(DEFAULT_VIEW_PREFERENCES);
+    }).pipe(Effect.provide(dbLayer())),
+  );
+});
+
+describe('event notification settings', () => {
+  it.effect('defaults to on, and a row from before "Remove When Over" reads it as on', () =>
+    Effect.gen(function* () {
+      expect(yield* readEventNotificationSettings).toEqual({
+        dismissWhenOver: true,
+        enabled: true,
+        includeAppleCalendar: false,
+      });
+      yield* (yield* DeviceSettingsRepo).set(EVENT_NOTIFICATIONS_KEY, {
+        enabled: false,
+        includeAppleCalendar: true,
+      });
+      expect(yield* readEventNotificationSettings).toEqual({
+        dismissWhenOver: true,
+        enabled: false,
+        includeAppleCalendar: true,
+      });
+      yield* writeEventNotificationSettings({
+        dismissWhenOver: false,
+        enabled: true,
+        includeAppleCalendar: false,
+      });
+      expect(yield* readEventNotificationSettings).toEqual({
+        dismissWhenOver: false,
+        enabled: true,
+        includeAppleCalendar: false,
+      });
     }).pipe(Effect.provide(dbLayer())),
   );
 });

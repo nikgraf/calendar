@@ -14,6 +14,7 @@ import {
   DEFAULT_TIME_ZONE_SETTINGS,
   DEFAULT_VIEW_PREFERENCES,
   EventNotificationSettings,
+  mergeEventNotificationSettings,
   type OnboardingChange,
   OnboardingState,
   resolveTimeZones,
@@ -178,7 +179,11 @@ export const EVENT_NOTIFICATIONS_KEY = 'eventNotifications';
 
 const decodeEventNotificationSettings = Schema.decodeUnknownEffect(EventNotificationSettings);
 
-/** The stored preferences, or the defaults (on) when nothing decodable is stored. */
+/**
+ * The stored preferences, every field filled in, or the defaults (on)
+ * when nothing decodable is stored. A row from before `dismissWhenOver`
+ * existed reads it as on, its other choices kept.
+ */
 export const readEventNotificationSettings: Effect.Effect<
   EventNotificationSettings,
   SqlError,
@@ -189,6 +194,9 @@ export const readEventNotificationSettings: Effect.Effect<
     return DEFAULT_EVENT_NOTIFICATION_SETTINGS;
   }
   return yield* decodeEventNotificationSettings(raw).pipe(
+    Effect.map((stored) =>
+      mergeEventNotificationSettings(DEFAULT_EVENT_NOTIFICATION_SETTINGS, stored),
+    ),
     Effect.orElseSucceed(() => DEFAULT_EVENT_NOTIFICATION_SETTINGS),
   );
 });
@@ -198,6 +206,9 @@ export const writeEventNotificationSettings = (
 ): Effect.Effect<void, SqlError, DeviceSettingsRepo> =>
   Effect.flatMap(DeviceSettingsRepo, (repo) =>
     repo.set(EVENT_NOTIFICATIONS_KEY, {
+      ...(settings.dismissWhenOver === undefined
+        ? {}
+        : { dismissWhenOver: settings.dismissWhenOver }),
       enabled: settings.enabled,
       includeAppleCalendar: settings.includeAppleCalendar,
     }),

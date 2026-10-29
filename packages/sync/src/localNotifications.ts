@@ -1,4 +1,4 @@
-import type { PlannedNotification } from '@calendar/core';
+import { dismissesWhenOver, type PlannedNotification } from '@calendar/core';
 import {
   type AccountRepo,
   type BirthdayRepo,
@@ -186,18 +186,23 @@ const make = (options: {
      * Delivered reminders whose moment has passed leave Notification
      * Center — on every pass, digest or not: the OS keeps the delivered
      * list and each payload its `dismissAt`, so nothing is remembered
-     * here. Best-effort: a failure is logged, the next pass tries again.
+     * here. Unless switched off (`dismissWhenOver`): the payloads keep
+     * their deadline, so switching it back on clears them on the next
+     * pass. Best-effort: a failure is logged, the next pass tries again.
      */
-    const dismissDelivered = (now: number): Effect.Effect<void> =>
+    const dismissDelivered = (now: number): Effect.Effect<void, never, DeviceSettingsRepo> =>
       sink.kind !== 'scheduled'
         ? Effect.void
-        : sink
-            .dismissDelivered(now)
-            .pipe(
-              Effect.catchCause((cause) =>
-                Effect.logWarning('local notifications: dismiss failed', { cause: String(cause) }),
-              ),
-            );
+        : Effect.gen(function* () {
+            if (!dismissesWhenOver(yield* readEventNotificationSettings)) {
+              return;
+            }
+            yield* sink.dismissDelivered(now);
+          }).pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning('local notifications: dismiss failed', { cause: String(cause) }),
+            ),
+          );
 
     const planAndHandOver = (now: number) =>
       Effect.gen(function* () {
