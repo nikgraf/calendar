@@ -1192,14 +1192,14 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   alone (it would contradict the lock-screen clock beside it). All-day
   and birthday text has no clock and stays as it was.
 - **Delivered reminders leave with the event** (2026-10-29, #261) — iOS
-  dismisses an event reminder once the event is over, all-day at midnight
-  on the device's clock (notifications follow the device, not the grid's
-  primary zone), never before `expiresAt`. The end travels in the payload
-  (`dismissAt`); every pass reads the delivered list back, no repo lookup.
-  Rejected: reconciling delivered notifications against stored events (a
-  lookup each, a rule for gone ones). Open: an end edited after delivery
-  keeps the old deadline; with the app closed it waits for the background
-  task or the next foreground; birthdays stay; desktop unchanged.
+  dismisses an event reminder once the event is over (all-day: midnight on
+  the device's clock, not the grid's primary zone), never before
+  `expiresAt`; a "Remove When Over" switch, on by default (Nik's ask). The
+  end travels in the payload (`dismissAt`); each pass reads the delivered
+  list back. Rejected: reconciling against stored events (a lookup each, a
+  rule for gone ones). Open: an end edited after delivery keeps the old
+  deadline; with the app closed it waits for the background task or the
+  next foreground; birthdays stay; the Mac never removes one.
 
 ## Calendar mirrors
 
