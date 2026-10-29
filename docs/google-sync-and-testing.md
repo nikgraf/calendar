@@ -943,16 +943,16 @@ Selector gotchas (each caused a real failure):
   calendar. A swipe on the form itself raises the sheet rather than
   scrolling the form (flow 06 proves it). Maestro's iOS swipe moves the
   whole way in its first 0.1 s and then holds still for `duration`
-  before it lifts, and UIKit settles the sheet by how much of that move
-  it saw: flow 06's 84 % → 51 % reaches full, a short one snaps back,
+  before it lifts, so the app's pan must begin while the finger still
+  moves: flow 06's 84 % → 51 % reaches full, a short one snaps back,
   and one longer than the sheet's whole rise (about 46 % of the screen)
   goes on to scroll the form once the sheet is up. Start a swipe above
-  the bottom edge's system gesture region (y ≥ 812 of 874 on the CI
-  iPhone is in it, 795 is not): there SpringBoard first asks its
-  cover-sheet edge pan whether to begin, the app's gestures wait for
-  the answer, and on CI runners it took 38–381 ms; from 175 ms on it
-  came after the move was over, so the sheet saw a finger at rest and
-  stayed at half (flow 06 from 93 %, three failures). A flow that fills
+  the bottom edge's system gesture region (on the 874-pt iPhone, y 812
+  is in it and 795 is not): there SpringBoard first asks its cover-sheet
+  edge pan whether to begin, and the app's gestures wait for the answer.
+  On CI runners it came 90 ms after touch-down in a passing run and 200,
+  402 and 562 ms in flow 06's three failures from 93 %, after the move
+  and twice after the lift, so the sheet stayed at half. A flow that fills
   the form expands the sheet first (`expand-editor.yaml`); to look at the
   calendar behind it, tap the grabber while its value reads "Expanded".
 - Text selectors are **whole-string regexes**: prefix text does not

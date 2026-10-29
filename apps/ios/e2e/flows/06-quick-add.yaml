@@ -114,7 +114,8 @@ tags:
             # to begin, the app's gestures wait, and on CI runners the
             # answer came after Maestro's swipe had moved (all of it in the
             # first 0.1 s; `duration` is a hold before the lift), so the
-            # sheet saw a finger at rest. The drag is shorter than the
+            # form's pan began with the finger at rest, or after the lift,
+            # and the sheet stayed at half. The drag is shorter than the
             # sheet's rise (about 46 % of the screen): past it, the rest of
             # the drag scrolls the form, and the title leaves the view.
             - swipe:

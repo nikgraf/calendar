@@ -153,13 +153,13 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
 - **Flow 06's sheet drag off the bottom edge** (2026-10-29,
   `todo/editor-sheet-drag-race`) — the drag that raises the half-height
   editor started at 93 %, inside SpringBoard's bottom-edge gesture region:
-  the app's pan waited on its cover-sheet edge pan's answer, which took
-  up to 0.4 s on CI, longer than Maestro's 0.1 s move, so three runs left
-  the sheet at half. It now starts on the title (84 % → 51 %). The app
-  was ruled out: every failed pan began with the form at its top, and the
-  wait was SpringBoard's. Rejected: a retry while the grabber reads "Half
-  screen" (it would pass a sheet that rises only now and then). Open: a
-  real finger near the bottom edge meets the same wait, unmeasured.
+  the app's pan waited on its cover-sheet edge pan, whose answer came up
+  to 0.56 s after touch-down on CI, after Maestro's 0.1 s move, so three
+  runs left the sheet at half. It now starts on the title (84 % → 51 %).
+  The app was ruled out: each failure shows the form at its top, and its
+  scroll-to-top last ran 2.4–5.3 s before the drag. Rejected: a retry
+  while the grabber reads "Half screen" (it would pass a sheet that rises
+  only now and then). Open: how long a real finger there waits on a phone.
 - **iOS e2e without MapKit** (2026-10-15, `todo/ios-geo-off`) — CI's bundle
   sets `EXPO_PUBLIC_CALENDAR_GEO=off`, the desktop's `CALENDAR_GEO=off`:
   flow 22's "Room 4" was geocoded live on every run (once to a place named
