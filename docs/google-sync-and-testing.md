@@ -941,12 +941,19 @@ Selector gotchas (each caused a real failure):
 - The editor is a form sheet: at half height the calendar above it is
   live, and Maestro's scrolls swipe at the screen's centre — on the
   calendar. A swipe on the form itself raises the sheet rather than
-  scrolling the form (flow 06 proves it). UIKit settles the sheet by how
-  far and how fast the drag went: flow 06's 93 % → 60 % in 300 ms
-  reaches full, a short slow one snaps back, and one longer than the
-  sheet's whole rise (about 46 % of the screen) goes on to scroll the
-  form once the sheet is up. A flow that fills the form
-  expands the sheet first (`expand-editor.yaml`); to look at the
+  scrolling the form (flow 06 proves it). Maestro's iOS swipe moves the
+  whole way in its first 0.1 s and then holds still for `duration`
+  before it lifts, and UIKit settles the sheet by how much of that move
+  it saw: flow 06's 84 % → 51 % reaches full, a short one snaps back,
+  and one longer than the sheet's whole rise (about 46 % of the screen)
+  goes on to scroll the form once the sheet is up. Start a swipe above
+  the bottom edge's system gesture region (y ≥ 812 of 874 on the CI
+  iPhone is in it, 795 is not): there SpringBoard first asks its
+  cover-sheet edge pan whether to begin, the app's gestures wait for
+  the answer, and on CI runners it took 38–381 ms; from 175 ms on it
+  came after the move was over, so the sheet saw a finger at rest and
+  stayed at half (flow 06 from 93 %, three failures). A flow that fills
+  the form expands the sheet first (`expand-editor.yaml`); to look at the
   calendar behind it, tap the grabber while its value reads "Expanded".
 - Text selectors are **whole-string regexes**: prefix text does not
   match, regex metacharacters in titles must be escaped, and a pressable
