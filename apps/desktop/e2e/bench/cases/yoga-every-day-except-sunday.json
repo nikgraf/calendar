@@ -1,0 +1,15 @@
+{
+  "lang": "en",
+  "tags": ["repeat", "title"],
+  "turns": [
+    {
+      "input": { "text": "Yoga every day at 7 except Sunday" },
+      "expect": {
+        "title": "yoga",
+        "startTime": "07:00",
+        "endTime": "08:00",
+        "repeat": { "freq": "weekly", "byDay": ["MO", "TU", "WE", "TH", "FR", "SA"] }
+      }
+    }
+  ]
+}

@@ -5,6 +5,7 @@ import {
   type MonthlyOrdinal,
   type RecurrenceFrequency,
   Temporal,
+  type Weekday,
   WEEKDAYS_MONDAY_FIRST,
 } from '@calendar/core';
 
@@ -644,8 +645,8 @@ const DAY_AS_ANCHOR = new RegExp(
  * lands on a Thursday; "next <weekday>" said on that weekday is a week
  * on. Undefined when the phrase gives no day the code can read (a month
  * and day, "last Friday", "two weeks from today", "two days after
- * Monday", or German "morgen", which is also "morning"), and the model's
- * date stands.
+ * Monday", a weekday ruled out, or German "morgen", which is also
+ * "morning"), and the model's date stands.
  */
 export const groundDate = (
   modelDate: string | undefined,
@@ -668,7 +669,8 @@ export const groundDate = (
   if (/\b(?:today|heute|tonight)\b/.test(text)) {
     return referenceDate;
   }
-  const [day, ...more] = weekdaysIn(text);
+  // A weekday ruled out ("außer Freitag", "not on Tuesday") is no day to land on.
+  const [day, ...more] = weekdaysIn(text.replaceAll(new RegExp(RULED_OUT_DAYS.source, 'g'), ' '));
   if (day === undefined || more.length > 0) {
     return undefined;
   }
@@ -729,7 +731,7 @@ export const groundDays = (
       days.add(day);
     }
   }
-  if (/\b(?:weekends?|wochenende)\b/.test(text)) {
+  if (/\b(?:weekends?|wochenenden?)\b/.test(text)) {
     days.add(6);
     days.add(7);
   }
@@ -1116,8 +1118,11 @@ export const statesNoEnd = (phrase: string): boolean =>
     words(phrase),
   );
 
-/** Days ruled out ("except holidays", "but not in August") are not the rule's: the words from the negation on are left out. */
-const NEGATED_TAIL = new RegExp(`${NEGATION.source}.*$`);
+/**
+ * The words that rule days out of a rule: never a bare "but", which
+ * corrects as often as it excludes ("but Friday at 10").
+ */
+const RULES_OUT = 'except for|except|excluding|but not|not|other than|ausser|ohne|nicht';
 /** A weekday the rule starts on, not one it falls on ("Tuesdays and Thursdays starting Monday"); "from Monday to Friday" is a range. */
 const START_DAY = new RegExp(
   `\\b(?:starting|beginning|from|ab|seit)\\s+(?:(?:the|next|this|dem|den|nachste[nmrs]?|diese[nmrs]?)\\s+)?(?:${DAY_NAMES})\\b(?!\\s*(?:to|through|thru|until|till|bis|-|–)\\b)`,
@@ -1138,10 +1143,60 @@ const END_WEEKDAY = new RegExp(
 /** The words the rule's days are read from. */
 const dayWords = (text: string): string =>
   text
-    .replace(NEGATED_TAIL, '')
+    // A day list ruled out is never the rule's, read as an exception or
+    // not ("except Friday the 13th"); what a negation says about anything
+    // else is not about the days ("ohne Kinder jeden Montag und Mittwoch").
+    .replaceAll(ANY_RULED_OUT, ' ')
+    .replaceAll(new RegExp(NEGATION.source, 'g'), ' ')
     .replace(END_WEEKDAY_AFTER_EVERY, '$1 ')
     .replace(END_WEEKDAY, ' ')
     .replace(START_DAY, ' ');
+
+/**
+ * The days a negation rules out ("except Sunday", "but not Friday",
+ * "außer Dienstag", "ohne Wochenende"): the weekdays or sets named right
+ * after the negation word. Nothing when something else follows ("except
+ * holidays", "but not in August").
+ */
+const RULED_OUT_LIST = `(?:${DAY_NAMES}|${DAY_SET})(?:(?:,?\\s*(?:and|und|&|or|oder)\\s+|,\\s*|\\s*(?:to|through|thru|bis|-|–)\\s*)(?:${DAY_NAMES}|${DAY_SET}))*`;
+/**
+ * A day of the month, a month, a period or an anchor after the day makes
+ * it one date, not a weekday ("except Friday the 13th", "except Monday,
+ * Sept 7", "except Fridays in August", "except the Friday before
+ * Christmas", "except Friday next week").
+ */
+const RULED_OUT_SCOPE = `(?!\\s*[,(]?\\s*(?:(?:the|den)\\s+)?\\d|\\s*[,(]?\\s*(?:${MONTHS}|in|im|during|before|after|vor|nach|(?:next|nachste[nmrs]?|this|diese[nmrs]?)\\s+(?:week|month|year|woche|monat|jahr))\\b|(?:,?\\s*(?:and|und|&|or|oder)\\s+|,\\s*|\\s*(?:to|through|thru|bis|-|–)\\s*)(?:${DAY_NAMES}|${DAY_SET})\\b)`;
+const RULED_OUT_DAYS = new RegExp(
+  `\\b(?:${RULES_OUT})\\s+(?:(?:on|am|an|the|den|die|every|each|jede[nmrs]?|alle)\\s+){0,2}(${RULED_OUT_LIST})\\b${RULED_OUT_SCOPE}`,
+);
+/** A clock of the exception's own ("except Friday at 10"), when the words gave one before: another time, which one rule cannot hold. */
+const OWN_CLOCK = new RegExp(
+  `^\\s*,?\\s*(?:at|um|@|gegen)\\s+(?:\\d|(?:${NUMBER_WORD}|noon|midday|midnight|mitternacht|half|halb|quarter|viertel)\\b)`,
+);
+const ruledOutDays = (text: string): ReadonlyArray<number> => {
+  const days = new Set<number>();
+  const every = new RegExp(RULED_OUT_DAYS.source, 'g');
+  for (let match = every.exec(text); match !== null; match = every.exec(text)) {
+    const before = text.slice(0, match.index);
+    const after = text.slice(match.index + match[0].length);
+    if (OWN_CLOCK.test(after) && statesClockTime(before)) {
+      continue;
+    }
+    for (const day of groundDays(undefined, match[1]!) ?? []) {
+      days.add(day);
+    }
+  }
+  return [...days].sort((left, right) => left - right);
+};
+/** The text without the exceptions it rules out, so what is left reads as it would alone. */
+const withoutRuledOut = (text: string): string =>
+  text.replaceAll(new RegExp(RULED_OUT_DAYS.source, 'g'), ' ');
+/** Any day list after a ruling-out word, read as an exception or not ("except Friday the 13th"): never the rule's days. */
+const ANY_RULED_OUT = new RegExp(
+  `\\b(?:${RULES_OUT})\\s+(?:(?:on|am|an|the|den|die|every|each|jede[nmrs]?|alle)\\s+){0,2}${RULED_OUT_LIST}\\b`,
+  'g',
+);
+const ALL_DAYS: ReadonlyArray<number> = [1, 2, 3, 4, 5, 6, 7];
 
 /** Whether the phrase names a day or a day set for the rule, even one it does not list (a single weekday is the date's). */
 export const namesDays = (phrase: string): boolean =>
@@ -1174,6 +1229,11 @@ export interface StatedRepeat {
   readonly freq?: RecurrenceFrequency | undefined;
   /** Two and up: "every other week" is 2. */
   readonly interval?: number | undefined;
+  /**
+   * The days the words rule out ("except Sunday", "außer Freitag"), as
+   * read — taken off `byDay` where the rule has days to take them off.
+   */
+  readonly ruledOut?: ReadonlyArray<Weekday> | undefined;
   /** "for six weeks": how long it runs, in the words' own unit. */
   readonly runsFor?: { readonly amount: number; readonly unit: RepeatSpanUnit } | undefined;
 }
@@ -1182,9 +1242,10 @@ export interface StatedRepeat {
  * What the phrase says about repeating, read for itself: the frequency
  * and gap ("every two weeks", "monthly", "jeden Tag"), the days ("every
  * weekday", "Tuesdays and Thursdays"), a count ("10 times") and a span
- * ("for six weeks"). Undefined when the phrase names no repeat — unless
- * it is said of something that repeats (`ofRepeat`), where a count or a
- * span alone is a reading. A repeat named in words the code does not
+ * ("for six weeks"), and the days ruled out ("except Sunday"). Undefined
+ * when the phrase names no repeat — unless it is said of something that
+ * repeats (`ofRepeat`), where a count, a span or an exception alone is a
+ * reading. A repeat named in words the code does not
  * read ("make it recurring") is an empty reading, where the model's
  * frequency stands.
  */
@@ -1203,15 +1264,34 @@ export const statedRepeat = (
       ? { runsFor: { amount, unit: spanUnitOf(span[2] ?? span[4]!) } }
       : {}),
   };
-  if (!REPEAT_CUE.test(text)) {
-    return ofRepeat && Object.keys(tail).length > 0 ? tail : undefined;
+  // A repeat word in an exception is the exception's ("not on Fridays"),
+  // one after another kind of "not" is a repeat ("ohne Kinder jeden Freitag").
+  const cueText = withoutRuledOut(text);
+  if (!REPEAT_CUE.test(cueText)) {
+    // Of a draft that repeats, a count, a span or an exception alone is a
+    // reading ("10 times", "for six weeks", "not on Fridays").
+    const alone = ofRepeat ? ruledOutDays(text) : [];
+    return ofRepeat && (Object.keys(tail).length > 0 || alone.length > 0)
+      ? {
+          ...tail,
+          ...(alone.length === 0
+            ? {}
+            : { ruledOut: alone.map((day) => WEEKDAYS_MONDAY_FIRST[day - 1]!) }),
+        }
+      : undefined;
   }
   let freq: RecurrenceFrequency | undefined;
   let interval: number | undefined;
   let byDay: ReadonlyArray<ByDay> | undefined;
   // The last frequency word is the one meant ("change from weekly to
   // monthly"); one ruled out is not ("monthly, not weekly").
-  const scope = text.replace(NEGATED_TAIL, '');
+  const scope = text.replaceAll(
+    new RegExp(
+      `\\b(?:not|nicht|but not|no|kein[e]?)\\s+(?:${FREQUENCY_WORDS.map((entry) => entry.words).join('|')}|(?:${EVERY}|alle)\\s+(?:(?:${GAP})\\s+)?(?:${REPEAT_UNIT}))\\b`,
+      'g',
+    ),
+    ' ',
+  );
   const word = FREQUENCY_PATTERNS.map((entry) => ({ at: entry.pattern.exec(scope)?.index, entry }))
     .filter(
       (found): found is { at: number; entry: (typeof FREQUENCY_PATTERNS)[number] } =>
@@ -1240,7 +1320,7 @@ export const statedRepeat = (
     if (everyDay[1] !== undefined) {
       interval ??= gapOf(everyDay[1]);
     }
-  } else if (everyDay === null && HABIT.test(text)) {
+  } else if (everyDay === null && HABIT.test(cueText)) {
     freq ??= 'weekly';
   }
   // A position before a weekday: "the first Monday of every month" is
@@ -1262,17 +1342,35 @@ export const statedRepeat = (
       byDay = [{ ordinal: position, weekday }];
     }
   }
+  let ruledOut: ReadonlyArray<number> = [];
   if (byDay === undefined) {
-    const days = groundDays(undefined, dayWords(text)) ?? [];
+    const named = groundDays(undefined, dayWords(text)) ?? [];
+    // Days ruled out ("every day except Sunday", "jeden Werktag außer
+    // Freitag") come off the days the rule would have — all seven for a
+    // daily one ("weekends included" too). Not on a daily rule with a gap
+    // (no week holds "every other day"), and not when none is left
+    // ("every Monday except Monday") or none was there ("weekly except
+    // Friday").
+    ruledOut =
+      freq === undefined || freq === 'weekly' || (freq === 'daily' && interval === undefined)
+        ? ruledOutDays(text)
+        : [];
+    const inPassing = freq === 'daily' && IN_PASSING.test(text);
+    const had = named.length > 0 && !inPassing ? named : freq === 'daily' ? ALL_DAYS : [];
+    const left = had.filter((day) => !ruledOut.includes(day));
+    const applied = ruledOut.length > 0 && left.length > 0 && left.length < had.length;
+    const days = applied ? left : named;
     const codes = days.map((day) => WEEKDAYS_MONDAY_FIRST[day - 1]!);
     if (freq === 'monthly') {
       byDay = codes.length === 1 ? [{ weekday: codes[0]! }] : undefined;
     } else if (
-      codes.length > 1 &&
-      (freq === undefined || freq === 'weekly' || (freq === 'daily' && !IN_PASSING.test(text)))
+      (codes.length > 1 || (applied && codes.length === 1)) &&
+      (freq === undefined || freq === 'weekly' || (freq === 'daily' && (applied || !inPassing)))
     ) {
       // Several days are a weekly rule's, "every day, Monday through
-      // Friday" included; a gap in days does not carry over to weeks.
+      // Friday" included; a gap in days does not carry over to weeks. The
+      // one day an exception leaves ("every weekend except Sunday") is
+      // listed too, so the date lands on it.
       if (freq === 'daily') {
         interval = undefined;
       }
@@ -1284,6 +1382,9 @@ export const statedRepeat = (
     ...(byDay === undefined ? {} : { byDay }),
     ...(freq === undefined ? {} : { freq }),
     ...(interval === undefined || interval < 2 ? {} : { interval }),
+    ...(ruledOut.length === 0
+      ? {}
+      : { ruledOut: ruledOut.map((day) => WEEKDAYS_MONDAY_FIRST[day - 1]!) }),
     ...tail,
   };
 };
@@ -1456,6 +1557,8 @@ const DAY_LIST = `(?:${DAY_NAMES})(?:(?:,?\\s*(?:and|und|&)\\s+|,\\s*|\\s*(?:to|
 const MONTH_FRAME_RUN = '(?:of (?:the|every|each) month|des monats|im monat|jeden monats)';
 /** "every", with a gap or position; German "alle" only with the gap ("alle zwei Wochen" — "alle Jahre wieder" is a carol). */
 const EVERY_LEAD = `(?:(?:${EVERY})\\s+(?:(?:${GAP}|${ORDINAL})\\s+)?|alle\\s+(?:${GAP})\\s+)`;
+/** Days a repeat rules out, as the reader takes them ("except Sunday", "außer Freitag"); the title drops them only where the rule read them. */
+const RULED_OUT_WORDS = `(?:${RULES_OUT})\\s+(?:(?:on|am|an|the|den|die)\\s+)?${RULED_OUT_LIST}\\b${RULED_OUT_SCOPE}`;
 const REPEAT_RUN = [
   `${EVERY_LEAD}(?:${REPEAT_UNIT}|${DAY_SET}|${DAY_LIST})${DAY_PART}(?:\\s+${MONTH_FRAME_RUN})?`,
   `(?:${EVERY})\\s+\\d{1,2}(?:st|nd|rd|th|\\.)(?!\\d)`,
@@ -1513,6 +1616,13 @@ const COUNT_TAIL = tailAtEnd(
   `(?:\\d+|${COMPOUND_NUMBER}|${NUMBER_WORD}|${LENGTH_WORD})[\\s-]*(?:times|x|mal)`,
 );
 const SPAN_TAIL = tailAtEnd(RUNS_FOR.source);
+/** The days a repeat rules out, after it or its time ("every day at 7 except Sunday"). */
+const RULED_OUT_TAIL = tailAtEnd(RULED_OUT_WORDS);
+/** The same, right after a repeat said first ("Jeden Tag außer Sonntag Yoga"). */
+const RULED_OUT_AT_START = new RegExp(String.raw`^${RULED_OUT_WORDS}${CLOSES}[.,;:!?–—-]*(?=\s)`);
+/** Whether the rule read days out of the words: the trim may take the exception with the repeat. */
+const rulesDaysOut = (repeat: StatedRepeat | undefined): boolean =>
+  repeat?.ruledOut !== undefined && repeat.byDay !== undefined;
 
 /**
  * A day or a repeat said first ("Tomorrow: lunch with Tom", "Jeden
@@ -1584,6 +1694,7 @@ const whenAtEnd = (text: string, phrase?: string): number | undefined => {
     [UNTIL_TAIL, repeat !== undefined && statesUntil(source)],
     [COUNT_TAIL, repeat?.count !== undefined],
     [SPAN_TAIL, repeat !== undefined && spanEndsRepeat(repeat)],
+    [RULED_OUT_TAIL, rulesDaysOut(repeat)],
   ];
   for (const [pattern, held] of tails) {
     const after = held ? pattern.exec(text) : null;
@@ -1699,7 +1810,15 @@ const whenless = (
   const leading = DAY_AT_START.exec(folded.slice(0, last).join(' '));
   let first = leading ? leading[0].split(' ').length : 0;
   if (leading) {
+    // The days a leading repeat rules out, where the rule read them —
+    // before or after its time ("Jeden Tag um 7 außer Sonntag Yoga").
+    const exception = (): number => {
+      const match = RULED_OUT_AT_START.exec(folded.slice(first, last).join(' '));
+      return match && rulesDaysOut(statedRepeat(phrase ?? title)) ? match[0].split(' ').length : 0;
+    };
+    first += exception();
     first += clockAtStart(folded.slice(first, last).join(' '));
+    first += exception();
     while (first < last && HANGING.test(folded[first]!)) {
       first += 1;
     }
