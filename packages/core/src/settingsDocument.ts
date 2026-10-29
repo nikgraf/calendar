@@ -271,6 +271,7 @@ const SETTINGS_LEAF_PATHS: ReadonlyArray<readonly [keyof SettingsDocument, strin
   ['birthdayReminders', 'enabled'],
   ['birthdayReminders', 'reminders'],
   ['desktop', 'screenPrivacy'],
+  ['eventNotifications', 'dismissWhenOver'],
   ['eventNotifications', 'enabled'],
   ['eventNotifications', 'includeAppleCalendar'],
   ['timeZones', 'primary'],

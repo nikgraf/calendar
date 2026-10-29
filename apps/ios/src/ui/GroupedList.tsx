@@ -593,7 +593,13 @@ export function SwipeRow({
           accessibilityRole="button"
           onPress={() => {
             swipeable.close();
-            action();
+            // Once this touch has reached the page: the action may remove
+            // the row, the touch's own target, and a touch whose end never
+            // arrives leaves the page's ScrollView thinking a finger is
+            // down. If the removal then scrolls the page back (a shorter
+            // page), the ScrollView takes the responder and the next tap
+            // on the page does nothing.
+            setTimeout(action, 0);
           }}
           style={styles.swipeAction}
           testID={actionTestID}

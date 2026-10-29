@@ -8,7 +8,9 @@ import {
   type EventNotificationSettings,
   isAppleCalendarAccount,
   isAppleRemindersAccount,
+  mergeEventNotificationSettings,
   portableViewPreferences,
+  sameEventNotificationSettings,
   type ScreenPrivacy,
   type SettingsDocument,
   type SettingsImportSummary,
@@ -115,10 +117,17 @@ const planSettingsImport = (
     if (timeZones) {
       settingsChanged.push('timeZones');
     }
-    const eventNotifications =
+    // A file from before a field existed leaves that field as it is here,
+    // and an "on" spelled out is no change from one left out: compared by
+    // what they do, so an import never asks for permission over nothing.
+    const currentEventNotifications = yield* readEventNotificationSettings;
+    const incomingEventNotifications =
       document.eventNotifications &&
-      !same(document.eventNotifications, yield* readEventNotificationSettings)
-        ? document.eventNotifications
+      mergeEventNotificationSettings(currentEventNotifications, document.eventNotifications);
+    const eventNotifications =
+      incomingEventNotifications &&
+      !sameEventNotificationSettings(incomingEventNotifications, currentEventNotifications)
+        ? incomingEventNotifications
         : undefined;
     if (eventNotifications) {
       settingsChanged.push('eventNotifications');

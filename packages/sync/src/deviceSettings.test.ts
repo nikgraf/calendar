@@ -1,5 +1,6 @@
 import {
   type BirthdayLeadDays,
+  dismissesWhenOver,
   DEFAULT_BIRTHDAY_REMINDER_SETTINGS,
   DEFAULT_ONBOARDING_STATE,
   DEFAULT_TIME_ZONE_SETTINGS,
@@ -15,9 +16,11 @@ import { describe } from 'vite-plus/test';
 import {
   BIRTHDAY_REMINDER_OVERRIDES_KEY,
   BIRTHDAY_REMINDERS_KEY,
+  EVENT_NOTIFICATIONS_KEY,
   ONBOARDING_KEY,
   readBirthdayReminderOverrides,
   readBirthdayReminderSettings,
+  readEventNotificationSettings,
   readOnboarding,
   readPrimaryTimeZone,
   readTimeZoneSettings,
@@ -27,6 +30,7 @@ import {
   VIEW_PREFERENCES_KEY,
   writeBirthdayReminderOverrides,
   writeBirthdayReminderSettings,
+  writeEventNotificationSettings,
   writeOnboarding,
   writeTimeZoneSettings,
   writeViewPreferences,
@@ -289,6 +293,34 @@ describe('view preferences', () => {
     Effect.gen(function* () {
       yield* (yield* DeviceSettingsRepo).set(VIEW_PREFERENCES_KEY, { allDayLaneCollapsed: 'yes' });
       expect(yield* readViewPreferences).toEqual(DEFAULT_VIEW_PREFERENCES);
+    }).pipe(Effect.provide(dbLayer())),
+  );
+});
+
+describe('event notification settings', () => {
+  it.effect('"Remove When Over" reads as on until someone sets it, and stays unset till then', () =>
+    Effect.gen(function* () {
+      const defaults = yield* readEventNotificationSettings;
+      expect(defaults).toEqual({ enabled: true, includeAppleCalendar: false });
+      expect(dismissesWhenOver(defaults)).toBe(true);
+      // A row from before the switch, or one the Mac wrote: no opinion.
+      yield* (yield* DeviceSettingsRepo).set(EVENT_NOTIFICATIONS_KEY, {
+        enabled: false,
+        includeAppleCalendar: true,
+      });
+      const older = yield* readEventNotificationSettings;
+      expect(older).toEqual({ enabled: false, includeAppleCalendar: true });
+      expect(dismissesWhenOver(older)).toBe(true);
+      yield* writeEventNotificationSettings({
+        dismissWhenOver: false,
+        enabled: true,
+        includeAppleCalendar: false,
+      });
+      expect(yield* readEventNotificationSettings).toEqual({
+        dismissWhenOver: false,
+        enabled: true,
+        includeAppleCalendar: false,
+      });
     }).pipe(Effect.provide(dbLayer())),
   );
 });

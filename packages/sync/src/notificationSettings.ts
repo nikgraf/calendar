@@ -2,6 +2,7 @@ import {
   type BirthdayReminder,
   type BirthdayReminderSettings,
   type EventNotificationSettings,
+  mergeEventNotificationSettings,
   type TimeZoneSettings,
   withBirthdayOverride,
 } from '@calendar/core';
@@ -84,7 +85,8 @@ export const applyEventNotificationSettings = (
 ): Effect.Effect<NotificationSettingsResult, SqlError, NotificationSettingsServices> =>
   Effect.gen(function* () {
     const previous = yield* readEventNotificationSettings;
-    yield* writeEventNotificationSettings(settings);
+    // A field the caller leaves out (an older file or client) keeps its value.
+    yield* writeEventNotificationSettings(mergeEventNotificationSettings(previous, settings));
     return yield* applyWithPermission(settings.enabled, previous.enabled);
   });
 
