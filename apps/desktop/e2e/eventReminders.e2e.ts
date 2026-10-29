@@ -193,15 +193,15 @@ describe('event reminders', () => {
       `document.querySelector('input[aria-label="Notify me before events"]')?.checked === true`,
     );
     await clickInput('Also for Apple Calendar events');
-    // The Mac has no "remove when over" switch (it never removes one); a
-    // save keeps the stored default, which iOS's switch reads.
+    // No "Remove When Over" in the row: the Mac has no such switch, so it
+    // stores no opinion its settings file could carry to an iPhone.
     await expect
       .poll(stored, { timeout: 10_000 })
-      .toEqual({ dismissWhenOver: true, enabled: true, includeAppleCalendar: true });
+      .toEqual({ enabled: true, includeAppleCalendar: true });
     await clickInput('Notify me before events');
     await expect
       .poll(stored, { timeout: 10_000 })
-      .toEqual({ dismissWhenOver: true, enabled: false, includeAppleCalendar: true });
+      .toEqual({ enabled: false, includeAppleCalendar: true });
     await cdp.waitFor(
       `document.querySelector('input[aria-label="Also for Apple Calendar events"]')?.disabled === true`,
     );

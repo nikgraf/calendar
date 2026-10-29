@@ -7,8 +7,10 @@ import { Schema } from 'effect';
 export const EventNotificationSettings = Schema.Struct({
   /**
    * iOS: a delivered reminder leaves Notification Center once its event
-   * is over (`dismissAt`). Absent reads as on: rows, files and clients
-   * from before it existed (`dismissesWhenOver`).
+   * is over (`dismissAt`). Absent reads as on (`dismissesWhenOver`), and
+   * absent stays absent until someone flips the switch: a device without
+   * one (the Mac) neither stores nor exports a value, so its file cannot
+   * switch an iPhone's choice back.
    */
   dismissWhenOver: Schema.optional(Schema.Boolean),
   enabled: Schema.Boolean,
@@ -21,7 +23,6 @@ export const EventNotificationSettings = Schema.Struct({
 export type EventNotificationSettings = typeof EventNotificationSettings.Type;
 
 export const DEFAULT_EVENT_NOTIFICATION_SETTINGS: EventNotificationSettings = {
-  dismissWhenOver: true,
   enabled: true,
   includeAppleCalendar: false,
 };
@@ -32,18 +33,22 @@ export const dismissesWhenOver = (
 ): boolean => settings.dismissWhenOver !== false;
 
 /**
- * `incoming` over `current`, every field filled in: a field `incoming`
- * leaves out (a file or client from before it existed) keeps the current
- * value, so a save or an import never switches it back on unasked.
+ * `incoming` over `current`, in one key order so equal settings compare
+ * equal: a field `incoming` leaves out (a Mac, an older file or client)
+ * keeps the current value, so a save or an import never switches it back
+ * on unasked.
  */
 export const mergeEventNotificationSettings = (
   current: EventNotificationSettings,
   incoming: EventNotificationSettings,
-): EventNotificationSettings => ({
-  dismissWhenOver: incoming.dismissWhenOver ?? dismissesWhenOver(current),
-  enabled: incoming.enabled,
-  includeAppleCalendar: incoming.includeAppleCalendar,
-});
+): EventNotificationSettings => {
+  const dismissWhenOver = incoming.dismissWhenOver ?? current.dismissWhenOver;
+  return {
+    ...(dismissWhenOver === undefined ? {} : { dismissWhenOver }),
+    enabled: incoming.enabled,
+    includeAppleCalendar: incoming.includeAppleCalendar,
+  };
+};
 
 /** Copy shown under every device-local setting on both platforms. */
 export const DEVICE_ONLY_SETTING_COPY =

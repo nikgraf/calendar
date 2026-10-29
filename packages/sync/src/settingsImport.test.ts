@@ -79,7 +79,6 @@ describe('importSettings', () => {
         zones: ['device', 'UTC', 'Europe/Vienna'],
       });
       expect(yield* readEventNotificationSettings).toEqual({
-        dismissWhenOver: true,
         enabled: true,
         includeAppleCalendar: false,
       });
@@ -105,11 +104,13 @@ describe('importSettings', () => {
         enabled: true,
         includeAppleCalendar: true,
       });
-      const older: SettingsDocument = {
+      // An iPhone's choice travels in its file; a Mac's file has none.
+      expect((yield* buildSettingsDocument).eventNotifications?.dismissWhenOver).toBe(false);
+      const fromMac: SettingsDocument = {
         eventNotifications: { enabled: true, includeAppleCalendar: true },
         version: 1,
       };
-      expect((yield* importSettings(older)).settingsChanged).toEqual([]);
+      expect((yield* importSettings(fromMac)).settingsChanged).toEqual([]);
       expect((yield* readEventNotificationSettings).dismissWhenOver).toBe(false);
       const newer: SettingsDocument = {
         eventNotifications: { dismissWhenOver: true, enabled: true, includeAppleCalendar: true },

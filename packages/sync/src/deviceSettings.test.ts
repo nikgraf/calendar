@@ -1,5 +1,6 @@
 import {
   type BirthdayLeadDays,
+  dismissesWhenOver,
   DEFAULT_BIRTHDAY_REMINDER_SETTINGS,
   DEFAULT_ONBOARDING_STATE,
   DEFAULT_TIME_ZONE_SETTINGS,
@@ -297,22 +298,19 @@ describe('view preferences', () => {
 });
 
 describe('event notification settings', () => {
-  it.effect('defaults to on, and a row from before "Remove When Over" reads it as on', () =>
+  it.effect('"Remove When Over" reads as on until someone sets it, and stays unset till then', () =>
     Effect.gen(function* () {
-      expect(yield* readEventNotificationSettings).toEqual({
-        dismissWhenOver: true,
-        enabled: true,
-        includeAppleCalendar: false,
-      });
+      const defaults = yield* readEventNotificationSettings;
+      expect(defaults).toEqual({ enabled: true, includeAppleCalendar: false });
+      expect(dismissesWhenOver(defaults)).toBe(true);
+      // A row from before the switch, or one the Mac wrote: no opinion.
       yield* (yield* DeviceSettingsRepo).set(EVENT_NOTIFICATIONS_KEY, {
         enabled: false,
         includeAppleCalendar: true,
       });
-      expect(yield* readEventNotificationSettings).toEqual({
-        dismissWhenOver: true,
-        enabled: false,
-        includeAppleCalendar: true,
-      });
+      const older = yield* readEventNotificationSettings;
+      expect(older).toEqual({ enabled: false, includeAppleCalendar: true });
+      expect(dismissesWhenOver(older)).toBe(true);
       yield* writeEventNotificationSettings({
         dismissWhenOver: false,
         enabled: true,

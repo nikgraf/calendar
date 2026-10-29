@@ -139,8 +139,9 @@ export function NotificationsSections() {
             title="Apple Calendar Events"
             value={events.settings.includeAppleCalendar}
           />
+          {/* Live while notifications are off: it still governs the ones
+              already delivered, which the scheduler keeps clearing. */}
           <SwitchRow
-            disabled={!events.settings.enabled}
             onValueChange={(dismissWhenOver) => events.save({ dismissWhenOver })}
             switchTestID="event-notifications-dismiss"
             title="Remove When Over"

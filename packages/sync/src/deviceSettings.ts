@@ -180,9 +180,8 @@ export const EVENT_NOTIFICATIONS_KEY = 'eventNotifications';
 const decodeEventNotificationSettings = Schema.decodeUnknownEffect(EventNotificationSettings);
 
 /**
- * The stored preferences, every field filled in, or the defaults (on)
- * when nothing decodable is stored. A row from before `dismissWhenOver`
- * existed reads it as on, its other choices kept.
+ * The stored preferences, or the defaults (on) when nothing decodable is
+ * stored. `dismissWhenOver` only once someone set it (absent reads as on).
  */
 export const readEventNotificationSettings: Effect.Effect<
   EventNotificationSettings,
