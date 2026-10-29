@@ -224,8 +224,8 @@ const ALL_DAY_GRACE_MS = 12 * 60 * MINUTE;
  * primary as none); an event that cannot be planned is skipped, never the
  * whole pass. Each plan's `dismissAt` is the event's end (an all-day one's
  * at midnight after its last day on the device's clock), never before the
- * grace a missed reminder keeps: a delivered one leaves Notification Center
- * then.
+ * grace a missed reminder keeps (five minutes timed, twelve hours all-day):
+ * a delivered one leaves Notification Center then.
  */
 export const planEventReminders = (
   events: ReadonlyArray<EventRecord>,
@@ -273,8 +273,10 @@ export const planEventReminders = (
               .epochMilliseconds
           : event.startUtc;
       // An all-day event is over at midnight after its last day on the
-      // device's clock: the grid draws it by date wherever the phone is,
-      // while its reminder keeps Google's rule (the calendar's midnight).
+      // device's clock — the lock screen's, beside the notification, like
+      // every notification time here — while its reminder keeps Google's
+      // rule (the calendar's midnight). Not the primary zone the grid
+      // draws in: a notification follows the device.
       const endRef =
         event.isAllDay && event.startDate
           ? allDayEndDay(event.startDate, event.endDate).toZonedDateTime({

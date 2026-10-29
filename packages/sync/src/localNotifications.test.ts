@@ -67,20 +67,28 @@ const scheduledSink = (
   const schedules: Array<ReadonlyArray<PlannedNotification>> = [];
   /** The `now` of every dismissal the scheduler asked for. */
   const dismissed: Array<number> = [];
+  /** Every call to the OS in order, as it was asked. */
+  const calls: Array<'dismiss' | 'replace'> = [];
   let asked = 0;
   const sink: NotificationSinkShape = {
-    dismissDelivered: (now) =>
-      Effect.andThen(onDismiss(now), () => Effect.sync(() => void dismissed.push(now))),
+    dismissDelivered: (now) => {
+      calls.push('dismiss');
+      return Effect.andThen(onDismiss(now), () => Effect.sync(() => void dismissed.push(now)));
+    },
     ensurePermission: () =>
       Effect.sync(() => {
         asked += 1;
         return granted;
       }),
     kind: 'scheduled',
-    replaceSchedule: (planned) =>
-      Effect.andThen(onReplace(planned), () => Effect.sync(() => void schedules.push(planned))),
+    replaceSchedule: (planned) => {
+      calls.push('replace');
+      return Effect.andThen(onReplace(planned), () =>
+        Effect.sync(() => void schedules.push(planned)),
+      );
+    },
   };
-  return { asked: () => asked, dismissed, schedules, sink };
+  return { asked: () => asked, calls, dismissed, schedules, sink };
 };
 
 const testLayer = (
@@ -344,6 +352,8 @@ describe('LocalNotifications', () => {
         yield* notifications.run();
         expect(scheduled.schedules).toHaveLength(1);
         expect(scheduled.dismissed).toEqual([noon, noon]);
+        // The hand-over first, so a slow dismissal never delays it.
+        expect(scheduled.calls).toEqual(['replace', 'dismiss', 'dismiss']);
         yield* TestClock.adjust('1 hour');
         yield* notifications.run();
         expect(scheduled.dismissed).toEqual([noon, noon, noon + 3_600_000]);
