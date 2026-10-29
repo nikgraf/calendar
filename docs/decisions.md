@@ -156,8 +156,8 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   the app's pan waited on its cover-sheet edge pan, whose answer came up
   to 0.56 s after touch-down on CI, after Maestro's 0.1 s move, so three
   runs left the sheet at half. It now starts on the title (84 % → 51 %).
-  The app was ruled out: each failure shows the form at its top, and its
-  scroll-to-top last ran 2.4–5.3 s before the drag. Rejected: a retry
+  The app was ruled out: each failure shows the form at its top, and the
+  keyboard last hid 2.4–5.3 s before the drag. Rejected: a retry
   while the grabber reads "Half screen" (it would pass a sheet that rises
   only now and then). Open: how long a real finger there waits on a phone.
 - **iOS e2e without MapKit** (2026-10-15, `todo/ios-geo-off`) — CI's bundle
