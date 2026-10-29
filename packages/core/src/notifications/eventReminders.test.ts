@@ -361,7 +361,7 @@ describe('planEventReminders', () => {
     expect(short[0]!.dismissAt).toBe(short[0]!.expiresAt);
     expect(short[0]!.dismissAt).toBe(utc('2026-03-04T09:05:00Z'));
 
-    const allDay = (endDate: string | undefined) =>
+    const allDay = (endDate: string | undefined, deviceTimeZone = 'UTC') =>
       planEventReminders(
         [
           event({
@@ -373,12 +373,18 @@ describe('planEventReminders', () => {
             startUtc: utc('2026-03-04T00:00:00Z'),
           }),
         ],
-        window,
-      )[0]!.dismissAt;
-    // Local midnight after the last day, in the calendar's zone (Vienna, UTC+1).
-    expect(allDay('2026-03-05')).toBe(utc('2026-03-04T23:00:00Z'));
-    expect(allDay(undefined)).toBe(utc('2026-03-04T23:00:00Z'));
-    expect(allDay('2026-03-07')).toBe(utc('2026-03-06T23:00:00Z'));
+        { ...window, deviceTimeZone },
+      )[0]!;
+    // Midnight after the last day on the device's clock, though it fires at
+    // the calendar's (Vienna) midnight: the grid draws the event by date.
+    expect(allDay('2026-03-05').fireAt).toBe(utc('2026-03-03T23:00:00Z'));
+    expect(allDay('2026-03-05').dismissAt).toBe(utc('2026-03-05T00:00:00Z'));
+    expect(allDay('2026-03-07').dismissAt).toBe(utc('2026-03-07T00:00:00Z'));
+    // A phone west of the calendar keeps it through its own March 4th.
+    expect(allDay('2026-03-05', 'America/Los_Angeles').dismissAt).toBe(utc('2026-03-05T08:00:00Z'));
+    // No end, or an end equal to the start: one day, not noon of it.
+    expect(allDay(undefined).dismissAt).toBe(utc('2026-03-05T00:00:00Z'));
+    expect(allDay('2026-03-04').dismissAt).toBe(utc('2026-03-05T00:00:00Z'));
   });
 
   it('skips cancelled and declined events and keeps delivery inside the window', () => {

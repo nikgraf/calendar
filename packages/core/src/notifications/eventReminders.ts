@@ -192,6 +192,19 @@ const eventReminderBody = (
   return parts.join(' · ');
 };
 
+/**
+ * The exclusive end day of an all-day event: `endDate`, or the day after
+ * the start when there is none or it is not after the start — single-day
+ * events can arrive with the end equal to the start (see `dayGrouping`).
+ */
+const allDayEndDay = (startDate: string, endDate: string | undefined): Temporal.PlainDate => {
+  const start = Temporal.PlainDate.from(startDate);
+  const end = endDate === undefined ? undefined : Temporal.PlainDate.from(endDate);
+  return end !== undefined && Temporal.PlainDate.compare(end, start) > 0
+    ? end
+    : start.add({ days: 1 });
+};
+
 /** A timed reminder stops being worth showing five minutes into the event. */
 const TIMED_GRACE_MS = 5 * MINUTE;
 /** An all-day one stays useful through the morning. */
@@ -209,9 +222,10 @@ const ALL_DAY_GRACE_MS = 12 * 60 * MINUTE;
  * grid it was seen on draws there. A zone this engine cannot load is read
  * under its other spelling (`runtimeZoneId`), else as the device's (a
  * primary as none); an event that cannot be planned is skipped, never the
- * whole pass. Each plan's `dismissAt` is the event's end (an all-day one
- * ends at local midnight after its last day), never before the grace a
- * missed reminder keeps: a delivered one leaves Notification Center then.
+ * whole pass. Each plan's `dismissAt` is the event's end (an all-day one's
+ * at midnight after its last day on the device's clock), never before the
+ * grace a missed reminder keeps: a delivered one leaves Notification Center
+ * then.
  */
 export const planEventReminders = (
   events: ReadonlyArray<EventRecord>,
@@ -258,18 +272,15 @@ export const planEventReminders = (
           ? Temporal.PlainDate.from(event.startDate).toZonedDateTime({ timeZone: allDayZone })
               .epochMilliseconds
           : event.startUtc;
-      // The end the same way: `endDate` is exclusive, so it is the midnight
-      // the event ends at; without one the event ends the day after it starts.
-      const endDay = event.isAllDay
-        ? event.endDate
-          ? Temporal.PlainDate.from(event.endDate)
-          : event.startDate
-            ? Temporal.PlainDate.from(event.startDate).add({ days: 1 })
-            : undefined
-        : undefined;
-      const endRef = endDay
-        ? endDay.toZonedDateTime({ timeZone: allDayZone }).epochMilliseconds
-        : event.endUtc;
+      // An all-day event is over at midnight after its last day on the
+      // device's clock: the grid draws it by date wherever the phone is,
+      // while its reminder keeps Google's rule (the calendar's midnight).
+      const endRef =
+        event.isAllDay && event.startDate
+          ? allDayEndDay(event.startDate, event.endDate).toZonedDateTime({
+              timeZone: options.deviceTimeZone,
+            }).epochMilliseconds
+          : event.endUtc;
       const expiresAt = startRef + (event.isAllDay ? ALL_DAY_GRACE_MS : TIMED_GRACE_MS);
       // A delivered reminder goes once the event is over — but a two-minute
       // event keeps its "Starting now" as long as a missed one would show.

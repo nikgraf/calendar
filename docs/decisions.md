@@ -1193,9 +1193,11 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   and birthday text has no clock and stays as it was.
 - **Delivered reminders leave with the event** (2026-10-28, #PR) — an
   iOS event reminder is dismissed from Notification Center once the event
-  is over (never before the five-minute grace a missed one keeps): the end
-  travels in the payload (`dismissAt`), the sink reads it back from the OS
-  on every pass, no repo lookup. Rejected: reconciling delivered
+  is over (never before the five-minute grace a missed one keeps; an
+  all-day one at midnight after its last day on the device's clock, where
+  the grid draws it): the end travels in the payload (`dismissAt`), the
+  sink reads it back on every pass, even one whose hand-over failed, no
+  repo lookup. Rejected: reconciling delivered
   notifications against the DB (a lookup per notification, plus a rule for
   a plan past the lookback or gone). Open: an end edited after delivery
   keeps the old deadline; with the app closed the clearing waits for the

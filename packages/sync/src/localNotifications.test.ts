@@ -351,17 +351,37 @@ describe('LocalNotifications', () => {
     },
   );
 
-  it.effect('a dismissal the OS refuses fails neither the pass nor the schedule', () => {
-    const scheduled = scheduledSink(true, undefined, () => Effect.fail(new Error('no presenter')));
+  it.effect('a dismissal the OS refuses costs neither the schedule nor the next try', () => {
+    let refusals = 1;
+    const scheduled = scheduledSink(true, undefined, () =>
+      refusals-- > 0 ? Effect.fail(new Error('no presenter')) : Effect.void,
+    );
+    const noon = Date.parse('2026-03-01T12:00:00Z');
     return Effect.gen(function* () {
       yield* seedGoogle(standup);
+      const notifications = yield* LocalNotifications;
       yield* setClock('2026-03-01T12:00:00Z');
-      yield* (yield* LocalNotifications).run();
+      yield* notifications.run();
       expect(scheduled.schedules).toHaveLength(1);
       expect(scheduled.dismissed).toEqual([]);
       expect(yield* (yield* DeviceSettingsRepo).get('localNotifications.scheduled')).toContain(
         STANDUP_KEY,
       );
+      yield* TestClock.adjust('1 minute');
+      yield* notifications.run();
+      expect(scheduled.dismissed).toEqual([noon + 60_000]);
+    }).pipe(Effect.provide(testLayer(scheduled.sink)));
+  });
+
+  it.effect('a schedule the OS refuses still clears delivered reminders', () => {
+    const scheduled = scheduledSink(true, () => Effect.fail(new Error('refused')));
+    return Effect.gen(function* () {
+      yield* seedGoogle(standup);
+      yield* setClock('2026-03-01T12:00:00Z');
+      yield* (yield* LocalNotifications).run();
+      expect(scheduled.schedules).toEqual([]);
+      expect(scheduled.dismissed).toEqual([Date.parse('2026-03-01T12:00:00Z')]);
+      expect(yield* (yield* DeviceSettingsRepo).get('localNotifications.scheduled')).toBeNull();
     }).pipe(Effect.provide(testLayer(scheduled.sink)));
   });
 

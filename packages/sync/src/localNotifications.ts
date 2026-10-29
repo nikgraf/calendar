@@ -199,19 +199,27 @@ const make = (options: {
               ),
             );
 
+    const planAndHandOver = (now: number) =>
+      Effect.gen(function* () {
+        const timeZone = options.timeZone();
+        const plans = merge(
+          yield* loadBirthdayPlans(now, timeZone),
+          yield* loadEventPlans(now, timeZone),
+        );
+        const next = yield* deliverImmediate(plans, now);
+        yield* refreshSchedule(plans, now);
+        return next;
+      });
+
     const pass = Effect.gen(function* () {
       yield* askOnce;
       const now = yield* Clock.currentTimeMillis;
-      const timeZone = options.timeZone();
-      const plans = merge(
-        yield* loadBirthdayPlans(now, timeZone),
-        yield* loadEventPlans(now, timeZone),
-      );
-      const next = yield* deliverImmediate(plans, now);
-      yield* refreshSchedule(plans, now);
-      // After the hand-over, so a slow or refused dismissal never delays it.
+      // After the hand-over, so a slow dismissal never delays it — and
+      // whatever became of it: a schedule the OS refused, or plans that
+      // could not be read, must not keep a finished event on screen.
+      const outcome = yield* Effect.exit(planAndHandOver(now));
       yield* dismissDelivered(now);
-      return next;
+      return yield* outcome;
     });
 
     const runNext = (): Effect.Effect<number | undefined> =>

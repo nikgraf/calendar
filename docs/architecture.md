@@ -1428,10 +1428,12 @@ gateway carries all of it. Details, limits and the threat model:
   `Notification` when one is due and, after sleep, only while the plan's
   `expiresAt` allows (fired keys kept in `device_settings`); iOS replaces
   the pending expo-notifications schedule with the soonest ≤ 60 whenever
-  the digest changes. An event plan also carries `dismissAt` — its end,
-  never before the five-minute grace a missed reminder keeps; a birthday
-  none — in the notification payload (part of the digest), and every pass
-  asks the scheduled sink to dismiss delivered notifications past it, so
+  the digest changes. An event plan also carries `dismissAt` — its end
+  (all-day: midnight after the last day on the device's clock), never
+  before the five-minute grace a missed reminder keeps; a birthday none —
+  in the notification payload (part of the digest), and every pass, even
+  one whose hand-over failed, asks the scheduled sink to dismiss delivered
+  notifications past it, so
   a reminder leaves Notification Center at the next pass: the foreground
   loop, a return to the foreground, or the background task (with the app
   closed, that can be hours). The loop sleeps until the next delivery (5 s..60 s)
