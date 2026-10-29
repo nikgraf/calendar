@@ -4,21 +4,21 @@ The selected identity is **A1 soft ivory, with 24 in Inter Bold**: a near-white 
 
 ## Where files live
 
-| Location                               | Contents                                                                 |
-| -------------------------------------- | ------------------------------------------------------------------------ |
-| `icons/`                               | Canonical vector icon variants; `solunivo.svg` is the selected default   |
-| `logos/`                               | Outlined wordmarks and horizontal/stacked logo SVGs                      |
-| `fonts/`                               | Inter 4.1 source fonts, variable webfont and SIL Open Font License       |
-| `tokens/tokens.json`                   | Authoritative brand and semantic UI tokens                               |
-| `tokens/tokens.css`                    | Generated CSS variables (the preview, the desktop app and the website)   |
-| `tokens/tailwind.css`                  | Hand-written Tailwind utilities over those variables (desktop, website)  |
-| `fonts/inter.css`                      | The Inter `@font-face` both web-rendered apps import                     |
-| `../packages/core/src/theme/tokens.ts` | Generated typed tokens for both apps (iOS reads these; Metro has no CSS) |
-| `preview/`                             | Curated brand preview with a sample calendar and event editor            |
-| `../scripts/brand/build.mjs`           | Export, validation and distribution build                                |
-| `../apps/desktop/assets/icon.icns`     | Generated macOS icon used by Forge                                       |
-| `../apps/ios/assets/icon.png`          | Generated opaque 1024 × 1024 icon used by Expo                           |
-| `../output/branding/`                  | Ignored studies, PNG sets, iconsets and distribution ZIPs                |
+| Location                               | Contents                                                                        |
+| -------------------------------------- | ------------------------------------------------------------------------------- |
+| `icons/`                               | Canonical vector icon variants; `solunivo.svg` is the selected default          |
+| `logos/`                               | Outlined wordmarks and horizontal/stacked logo SVGs                             |
+| `fonts/`                               | Inter 4.1 source fonts, variable webfont and SIL Open Font License              |
+| `tokens/tokens.json`                   | Authoritative brand and semantic UI tokens                                      |
+| `tokens/tokens.css`                    | Generated CSS variables; dark on `[data-theme='dark']`, or by the OS when unset |
+| `tokens/tailwind.css`                  | Hand-written Tailwind utilities over those variables (desktop, website)         |
+| `fonts/inter.css`                      | The Inter `@font-face` both web-rendered apps import                            |
+| `../packages/core/src/theme/tokens.ts` | Generated typed tokens for both apps (iOS reads these; Metro has no CSS)        |
+| `preview/`                             | Curated brand preview with a sample calendar and event editor                   |
+| `../scripts/brand/build.mjs`           | Export, validation and distribution build                                       |
+| `../apps/desktop/assets/icon.icns`     | Generated macOS icon used by Forge                                              |
+| `../apps/ios/assets/icon.png`          | Generated opaque 1024 × 1024 icon used by Expo                                  |
+| `../output/branding/`                  | Ignored studies, PNG sets, iconsets and distribution ZIPs                       |
 
 The SVGs are editable vector sources with outlined lettering, gradients and filters. They have no linked images or font dependencies. Edit these masters and regenerate their raster exports; the iOS export fills an opaque square and lets iOS apply its mask, and its adapter fails loudly if a master's named shapes change, so a new master needs an explicit look at the platform conversion. Earlier exploration galleries stay outside Git.
 

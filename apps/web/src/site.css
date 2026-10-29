@@ -2,8 +2,8 @@
 @import '../../../brand/tokens/tokens.css';
 /*
  * The tokens as Tailwind utilities, shared with the desktop renderer. The
- * site is light only: nothing sets `data-theme`, so tokens.css stays on
- * its light set.
+ * inline theme script sets `data-theme` on <html>; without it, tokens.css
+ * follows the OS.
  */
 @import '../../../brand/tokens/tailwind.css';
 @import '../../../brand/fonts/inter.css';
@@ -23,6 +23,15 @@ html[data-theme='dark'] {
   color-scheme: dark;
   --shadow-ink: rgba(0, 0, 0, 0.55);
   --shadow-ink-soft: rgba(0, 0, 0, 0.3);
+}
+
+/* Without the script, follow the OS, as tokens.css does. */
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme]) {
+    color-scheme: dark;
+    --shadow-ink: rgba(0, 0, 0, 0.55);
+    --shadow-ink-soft: rgba(0, 0, 0, 0.3);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -46,7 +55,10 @@ body {
   outline-color: var(--on-primary);
 }
 
-/* The footer's scheme switch: the pressed choice (Auto until the script runs). */
+/* The footer's scheme switch: hidden without the script, which it needs. */
+:root:not([data-theme-choice]) .theme-switch {
+  display: none;
+}
 .theme-switch button[aria-pressed='true'] {
   background: var(--surface);
   color: var(--text);
@@ -144,11 +156,12 @@ body {
 }
 
 /*
- * The on-device AI demo: one 16 s loop. 0–3.5 s the field waits, then
- * the first sentence types line by line (to 3.4 s), Apply presses and the
- * fields fill (4.8 s), the second sentence types (7.7–9 s) and the alert
- * appears (10.4 s); everything holds, then clears for the next loop. The
- * base styles are the finished form, which is what reduced motion shows.
+ * The on-device AI demo: one 16 s loop. The placeholder shows for half a
+ * second, the first phrase appears in four chunks (0.6–2.7 s), Apply
+ * presses (3.8 s) and the fields fill (4.8 s), the second phrase appears
+ * (7.7–8.4 s) and the alert fills (10.4 s); everything holds, then clears
+ * for the next loop. The base styles are the finished form, which is what
+ * reduced motion shows.
  */
 .ai {
   --ai-t: 16s;
@@ -167,16 +180,27 @@ body {
 .ai-p1 {
   display: block;
 }
-.ai-l1 {
-  animation-name: ai-line-1;
-}
-.ai-l2 {
-  animation-name: ai-line-2;
-}
 .ai-p2 {
   position: absolute;
   inset: 0;
-  animation-name: ai-line-3;
+}
+.ai-c1 {
+  animation-name: ai-c1;
+}
+.ai-c2 {
+  animation-name: ai-c2;
+}
+.ai-c3 {
+  animation-name: ai-c3;
+}
+.ai-c4 {
+  animation-name: ai-c4;
+}
+.ai-c5 {
+  animation-name: ai-c5;
+}
+.ai-c6 {
+  animation-name: ai-c6;
 }
 .ai-apply {
   animation-name: ai-press;
@@ -198,7 +222,11 @@ body {
 .ai-f4 {
   animation-delay: 0.36s;
 }
+/* The guest chip grows into its place, so "Add someone" never floats. */
 .ai-f5 {
+  overflow: hidden;
+  white-space: nowrap;
+  animation-name: ai-chip;
   animation-delay: 0.48s;
 }
 .ai-f6 {
@@ -214,49 +242,118 @@ body {
     opacity: 0;
   }
 }
-@keyframes ai-line-1 {
+@keyframes ai-c1 {
   0%,
   3.5% {
-    clip-path: inset(0 100% 0 0);
-    animation-timing-function: steps(38, end);
+    opacity: 0;
   }
-  14%,
+  4%,
   46% {
-    clip-path: inset(0 0 0 0);
+    opacity: 1;
   }
   46.5%,
   100% {
-    clip-path: inset(0 100% 0 0);
+    opacity: 0;
   }
 }
-@keyframes ai-line-2 {
+@keyframes ai-c2 {
   0%,
-  14% {
-    clip-path: inset(0 100% 0 0);
-    animation-timing-function: steps(23, end);
+  8% {
+    opacity: 0;
   }
-  21%,
+  8.5%,
   46% {
-    clip-path: inset(0 0 0 0);
+    opacity: 1;
   }
   46.5%,
   100% {
-    clip-path: inset(0 100% 0 0);
+    opacity: 0;
   }
 }
-@keyframes ai-line-3 {
+@keyframes ai-c3 {
+  0%,
+  12.5% {
+    opacity: 0;
+  }
+  13%,
+  46% {
+    opacity: 1;
+  }
+  46.5%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes ai-c4 {
+  0%,
+  16.5% {
+    opacity: 0;
+  }
+  17%,
+  46% {
+    opacity: 1;
+  }
+  46.5%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes ai-c5 {
   0%,
   48% {
-    clip-path: inset(0 100% 0 0);
-    animation-timing-function: steps(27, end);
+    opacity: 0;
   }
-  56%,
+  48.5%,
   92% {
-    clip-path: inset(0 0 0 0);
+    opacity: 1;
   }
   92.5%,
   100% {
-    clip-path: inset(0 100% 0 0);
+    opacity: 0;
+  }
+}
+@keyframes ai-c6 {
+  0%,
+  52% {
+    opacity: 0;
+  }
+  52.5%,
+  92% {
+    opacity: 1;
+  }
+  92.5%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes ai-chip {
+  0%,
+  29% {
+    opacity: 0;
+    max-width: 0;
+    padding-inline: 0;
+    background: var(--highlight);
+  }
+  30%,
+  36% {
+    opacity: 1;
+    max-width: 14rem;
+    padding-inline: 0.625rem;
+    background: var(--highlight);
+  }
+  46%,
+  94% {
+    opacity: 1;
+    max-width: 14rem;
+    padding-inline: 0.625rem;
+    background: var(--fill);
+  }
+  95%,
+  100% {
+    opacity: 0;
+    max-width: 0;
+    padding-inline: 0;
+    background: var(--fill);
   }
 }
 @keyframes ai-press {

@@ -15,7 +15,7 @@ const lead = 'm-0 text-[17px] text-ink-secondary text-pretty';
 
 const features = [
   {
-    body: 'Apple Calendar, Reminders and Contacts work the way they do in Apple’s own apps: your iCloud calendars beside Google’s, reminder lists in the task lane, guests and birthdays from your address book.',
+    body: 'Apple Calendar, Reminders and Contacts built in: your iCloud calendars beside Google’s, Reminders lists in the task lane, birthdays and guest suggestions from your address book.',
     icon: AppleIcon,
     title: 'Apple, first class',
   },
@@ -177,7 +177,7 @@ export function HomePage() {
               height={36}
               light={lockupDark}
               loading="lazy"
-              width={142}
+              width={161}
             />
             <h2 className="m-0 text-[clamp(26px,2.8vw,34px)] leading-[1.15] font-semibold tracking-[-0.02em]">
               Get Solunivo for macOS and iPhone

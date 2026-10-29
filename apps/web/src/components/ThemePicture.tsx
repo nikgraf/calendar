@@ -1,8 +1,9 @@
 /**
- * An image with a dark-scheme variant. The `<source>` follows the OS by
- * default, so the right file is picked before the first paint and without
- * JavaScript; the inline theme script rewrites its media query when the
- * visitor forces a scheme in the footer.
+ * An image with a dark-scheme variant. The `<source>` follows the OS, with
+ * or without JavaScript, as the page's colors do; when the visitor forces a
+ * scheme in the footer, the inline theme script rewrites its media query.
+ * The browser may then have fetched the OS's variant too: only the shown
+ * one is the forced scheme's.
  */
 export function ThemePicture({
   alt,

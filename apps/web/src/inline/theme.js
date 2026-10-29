@@ -1,25 +1,26 @@
 // Inlined into <head> before any content: picks the color scheme and the
-// visitor's platform, and keeps both current. Runs synchronously so the
-// first paint already has the right theme and buttons.
+// visitor's platform, and keeps both current. Runs synchronously, so the
+// page's colors and download buttons are right on the first paint.
 
 /** 'mac' | 'ios' | 'windows' | 'linux' | 'android', from the user agent; macOS when unsure. */
 const platform = () => {
   const nav = navigator;
-  const data = nav.userAgentData && nav.userAgentData.platform;
-  const ua = nav.userAgent;
-  if (/Android/i.test(data || ua)) {
+  const ua = nav.userAgent || '';
+  // UA-CH names the OS plainly ("macOS", "Windows", "Chrome OS"); the UA
+  // string is the fallback, and the only place iOS shows.
+  const os = `${(nav.userAgentData && nav.userAgentData.platform) || ''} ${ua}`;
+  if (/android/i.test(os)) {
     return 'android';
   }
-  if (/iPhone|iPad|iPod/.test(ua) || (/Mac/.test(data || ua) && nav.maxTouchPoints > 1)) {
+  // iPadOS asks for desktop sites with a Mac user agent; touch gives it away.
+  if (/iphone|ipad|ipod/i.test(ua) || (/mac/i.test(os) && nav.maxTouchPoints > 1)) {
     return 'ios';
   }
-  if (/Windows/.test(data || ua)) {
+  if (/windows/i.test(os)) {
     return 'windows';
   }
-  if (/Mac/.test(data || ua)) {
-    return 'mac';
-  }
-  if (/Linux|X11|CrOS/.test(data || ua)) {
+  // ChromeOS reads as Linux: it runs Linux apps, not macOS ones.
+  if (/linux|x11|cros|chrom(e|ium) ?os/i.test(os)) {
     return 'linux';
   }
   return 'mac';
@@ -39,8 +40,9 @@ const platform = () => {
       return 'auto';
     }
   };
-  // The choice lives here; storage only carries it to the next visit, so a
-  // browser that refuses storage still gets the scheme the visitor picks.
+  // The choice lives here; storage only carries it to the next visit (and
+  // to other tabs), so a browser that refuses storage still gets the
+  // scheme the visitor picks.
   let picked = stored();
 
   const apply = () => {
@@ -50,8 +52,9 @@ const platform = () => {
     for (const button of document.querySelectorAll('[data-set-theme]')) {
       button.setAttribute('aria-pressed', String(button.dataset.setTheme === picked));
     }
-    // Images with a dark variant: <picture><source media=…> picks before
-    // paint, so a forced theme rewrites the media query instead of src.
+    // Images with a dark variant: a forced scheme overrides each <picture>'s
+    // OS-driven dark <source>. The browser may already have fetched the
+    // OS's variant by then; this only decides which one shows.
     for (const source of document.querySelectorAll('source[data-theme-source]')) {
       source.media =
         picked === 'auto'
@@ -69,6 +72,13 @@ const platform = () => {
   // and once more on load for the dev server, where React mounts them later.
   document.addEventListener('DOMContentLoaded', apply);
   window.addEventListener('load', apply);
+  // A choice made in another tab.
+  window.addEventListener('storage', (event) => {
+    if (event.key === KEY || event.key === null) {
+      picked = stored();
+      apply();
+    }
+  });
   document.addEventListener('click', (event) => {
     const target = event.target;
     const button = target && target.closest ? target.closest('[data-set-theme]') : null;

@@ -30,7 +30,9 @@ describe('render', () => {
       // no script loads from a URL.
       expect(html.match(/<script/g)).toHaveLength(1);
       expect(html).not.toMatch(/<script[^>]*\ssrc=/);
-      expect(html.indexOf('solunivo-theme')).toBeLessThan(html.indexOf('<body'));
+      const script = html.indexOf('solunivo-theme');
+      expect(script).toBeGreaterThan(-1);
+      expect(script).toBeLessThan(html.indexOf('<body'));
     }
   });
 

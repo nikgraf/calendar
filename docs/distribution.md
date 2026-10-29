@@ -405,8 +405,9 @@ appearance or the footer's Auto / Light / Dark choice (kept in
 that choice, and sets `data-platform` from the user agent so the
 stylesheet shows the right download buttons (macOS and iPhone get their
 own; Windows, Linux and Android are told the app is coming later and
-offered the nearest one). Without JavaScript the page is light, follows
-the OS for its pictures, and shows the macOS buttons.
+offered the nearest one). Without JavaScript the page follows the OS for its colors and pictures
+(`tokens.css` carries the dark set for a page with no `data-theme`),
+hides the scheme switch and shows the macOS buttons.
 
 The build cuts the brand's variable Inter down to printable ASCII,
 Latin-1, typographic punctuation and every character the pages draw
@@ -433,9 +434,10 @@ Recapture them when the apps' look changes:
   Apple fixtures, dark through `Emulation.setEmulatedMedia`). The spec
   skips without `SHOT_OUT`, so the e2e suite never runs it.
 - **iPhone:** the dev client on the dedicated simulator with Metro
-  started as `CI=1 APP_VARIANT=development EXPO_PUBLIC_CALENDAR_GOOGLE=fixture
+  started from the repo root as `EXPO_PUBLIC_CALENDAR_GOOGLE=fixture
   EXPO_PUBLIC_CALENDAR_MODEL=fixture EXPO_PUBLIC_CALENDAR_ONBOARDING=off
-  pnpm exec expo start --clear`. Point `apps/ios/e2e/fixtures/google.ts`
+  CI=1 pnpm --filter @calendar/ios start --clear` (the `start` script sets
+  `APP_VARIANT=development`). Point `apps/ios/e2e/fixtures/google.ts`
   at the same week as the Mac spec for the capture (a local edit, restored
   with `git checkout` before committing), delete the app's `calendar.db`
   so the fixture syncs fresh, set `xcrun simctl status_bar <udid>

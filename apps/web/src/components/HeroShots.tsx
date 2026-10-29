@@ -24,7 +24,7 @@ export function HeroShots() {
       </div>
       <div className="hero-phone">
         <ThemePicture
-          alt="The iPhone app in day view: the week strip, a task in the all-day lane and the day's events"
+          alt="The iPhone app in day view: the week strip, two tasks in the all-day lane and the day's events"
           dark={iphoneDark}
           height={1957}
           light={iphoneLight}

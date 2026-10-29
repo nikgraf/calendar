@@ -1,7 +1,7 @@
 import { MicIcon, SparkleIcon } from './icons.tsx';
 
 /**
- * The Mac editor as a quick-add turn fills it, then a second sentence adds
+ * The Mac editor as a quick-add turn fills it, then a second phrase adds
  * an alert, on a 16 s loop drawn by the `ai-*` keyframes in site.css. Under
  * `prefers-reduced-motion` nothing moves and the finished form shows.
  */
@@ -26,11 +26,17 @@ export function AiDemo() {
             <span className="ai-placeholder text-ink-secondary">
               Lunch with Sarah tomorrow at 1
             </span>
+            {/* Phrases appear chunk by chunk; inline chunks wrap like the text would at any width. */}
             <span className="ai-p1 block">
-              <span className="ai-l1 block">Dinner with Jane tomorrow at 7 at Nobu,</span>
-              <span className="ai-l2 block">invite jane@example.com</span>
+              <span className="ai-c1">Dinner with Jane </span>
+              <span className="ai-c2">tomorrow at 7 </span>
+              <span className="ai-c3">at Nobu, </span>
+              <span className="ai-c4">invite jane@example.com</span>
             </span>
-            <span className="ai-p2 block">Remind me 30 minutes before</span>
+            <span className="ai-p2 block">
+              <span className="ai-c5">Remind me </span>
+              <span className="ai-c6">30 minutes before</span>
+            </span>
           </span>
           <MicIcon className="mt-0.5 flex-none text-ink-secondary" size={16} />
           <span className="ai-apply rounded-[6px] bg-primary px-2 py-1 text-xs font-medium text-on-primary">
@@ -45,7 +51,7 @@ export function AiDemo() {
         </div>
         <div className="flex flex-col gap-1">
           <span className="text-xs text-ink-secondary">Date</span>
-          <span className="ai-f ai-f2 rounded-[6px] px-2.5 py-2">Thu, Oct 29, 2026</span>
+          <span className="ai-f ai-f2 rounded-[6px] px-2.5 py-2">Fri, Oct 30, 2026</span>
         </div>
         <div className="flex gap-2">
           <div className="flex min-w-0 flex-1 flex-col gap-1">

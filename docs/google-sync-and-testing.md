@@ -677,7 +677,9 @@ agents, the built relay against the run's socket: CLI + MCP reads, a
 write, refusals, the approval dialog, Settings → Agents); `remindersReal`
 and `appleCalendarReal` (CI-only real-EventKit siblings, `describe.skipIf`
 unless `CALENDAR_E2E_REMINDERS=real` / `CALENDAR_E2E_APPLE_CALENDAR=real`);
-`googleLive` (opt-in, above).
+`googleLive` (opt-in, above); `websiteShots` (the website's Mac
+screenshots, `describe.skipIf` unless `SHOT_OUT` names a folder; see
+distribution.md → Website).
 
 Flakiness lessons (each caused a real CI failure — keep them enforced):
 

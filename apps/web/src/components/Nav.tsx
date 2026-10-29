@@ -20,7 +20,7 @@ export function Nav() {
             dark={lockupDark}
             height={30}
             light={lockupLight}
-            width={118}
+            width={134}
           />
         </a>
         <nav
