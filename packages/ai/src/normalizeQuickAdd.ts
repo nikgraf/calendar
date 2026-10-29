@@ -11,13 +11,17 @@ import {
 } from '@calendar/core';
 import {
   clearsRepeat,
+  defersDate,
   groundDate,
   groundTime,
   groundTitle,
   isTodoPhrase,
+  mentionsFixedDate,
+  namedWeekdays,
   namesDays,
   type RepeatSpanUnit,
   saysOnlyWhen,
+  spanUnitAtLeast,
   statedRepeat,
   statesNoEnd,
   statesUntil,
@@ -96,8 +100,6 @@ const UNIT_OF: Readonly<Record<RecurrenceFrequency, RepeatSpanUnit>> = {
   weekly: 'weeks',
   yearly: 'years',
 };
-/** Shortest first: a span in a smaller unit than the rule's is the event's length, not the series'. */
-const SPAN_UNITS: ReadonlyArray<RepeatSpanUnit> = ['days', 'weeks', 'months', 'years'];
 
 /**
  * A repeat end before the first day reads as next year's: "every Monday
@@ -281,8 +283,7 @@ export const recurrenceFromParse = (
   // series — but "every weekday for three days" is three standups.
   const span =
     stated.runsFor !== undefined &&
-    (SPAN_UNITS.indexOf(stated.runsFor.unit) >= SPAN_UNITS.indexOf(UNIT_OF[freq]) ||
-      (freq === 'weekly' && (byDay ?? []).length > 1))
+    (spanUnitAtLeast(stated.runsFor.unit, freq) || (freq === 'weekly' && (byDay ?? []).length > 1))
       ? stated.runsFor
       : undefined;
   // "every Monday for six weeks" is six times; "every weekday for six
@@ -389,6 +390,20 @@ const PLACE_CUE =
 /** Company, not a place: a name right after "with" ("lunch with tom", "Essen mit Anna"). */
 const COMPANY = /(?:^|[^\p{L}])(?:with|w\/|mit|and|und|&)\s+$/u;
 
+/** Where `place` stands in `words` as words of its own ("tom", not the start of "tomorrow"). */
+const occurrencesOf = (words: string, place: string): ReadonlyArray<number> => {
+  const found: Array<number> = [];
+  for (let from = words.indexOf(place); from !== -1; from = words.indexOf(place, from + 1)) {
+    if (
+      !/[\p{L}\p{N}]/u.test(words[from - 1] ?? ' ') &&
+      !/[\p{L}\p{N}]/u.test(words[from + place.length] ?? ' ')
+    ) {
+      found.push(from);
+    }
+  }
+  return found;
+};
+
 /**
  * The place the model extracted, held against the phrase: it must be in
  * the words (the real model made up "Bob's house" and "unknown"), never
@@ -414,20 +429,10 @@ export const placeOf = (
   }
   const words = fold(phrase);
   const place = fold(location);
-  const at = words.indexOf(place);
-  if (at === -1 || saysOnlyWhen(location)) {
+  if (!words.includes(place) || saysOnlyWhen(location)) {
     return undefined;
   }
-  // Where the place stands as words of its own ("tom", not the start of "tomorrow").
-  const occurrences: Array<number> = [];
-  for (let from = at; from !== -1; from = words.indexOf(place, from + 1)) {
-    if (
-      !/[\p{L}\p{N}]/u.test(words[from - 1] ?? ' ') &&
-      !/[\p{L}\p{N}]/u.test(words[from + place.length] ?? ' ')
-    ) {
-      occurrences.push(from);
-    }
-  }
+  const occurrences = occurrencesOf(words, place);
   if (occurrences.length > 0 && occurrences.every((from) => COMPANY.test(words.slice(0, from)))) {
     return undefined;
   }
@@ -436,6 +441,49 @@ export const placeOf = (
   }
   // Any occurrence after a cue will do ("at 1 at Figlmüller" has two "at"s).
   return occurrences.some((from) => PLACE_CUE.test(words.slice(0, from))) ? location : undefined;
+};
+
+/** A clock the words lead into ("at 9.30", "um 15.30 Uhr", "9:30"), no date. */
+const CLOCK_TOKEN =
+  /\b(?:at|um|gegen|around|ab|bis|von|from|to)\s+\d{1,2}[.:]\d{2}\b|\b\d{1,2}[.:]\d{2}\s*(?:uhr|am|pm)\b/g;
+/** A part of the day right after a weekday ("Montag morgen", "Thursday evening"): the day's, not another day. */
+const DAY_PART_AFTER =
+  /^\s*(?:morning|afternoon|evening|night|morgen|fruh|vormittag|mittag|nachmittag|abend|nacht)\b/;
+
+/**
+ * A location the model made of the phrase's day ("Standup Monday" for
+ * "Standup Monday at 9", "Coffee Thursday"): it holds a weekday, no place
+ * cue leads into it ("at Ruby Tuesday" is a venue), and the phrase
+ * without it names no other day ("Ruby Tuesday tomorrow" does). Such a
+ * location is no place and holds nothing in the title.
+ */
+const madeOfTheDay = (
+  place: string | undefined,
+  phrase: string | undefined,
+  modelDate: string | undefined,
+  referenceDate: string,
+): boolean => {
+  if (place === undefined || phrase === undefined || namedWeekdays(place).length === 0) {
+    return false;
+  }
+  const whole = fold(phrase);
+  const folded = fold(place);
+  const occurrences = occurrencesOf(whole, folded);
+  if (occurrences.some((from) => PLACE_CUE.test(whole.slice(0, from)))) {
+    return false;
+  }
+  const at = occurrences[0] ?? whole.indexOf(folded);
+  if (at === -1) {
+    return true;
+  }
+  const rest = (
+    whole.slice(0, at) + whole.slice(at + folded.length).replace(DAY_PART_AFTER, ' ')
+  ).replaceAll(CLOCK_TOKEN, ' ');
+  return !(
+    groundDate(modelDate, { phrase: rest, referenceDate }) !== undefined ||
+    mentionsFixedDate(rest) ||
+    defersDate(rest)
+  );
 };
 
 /**
@@ -489,24 +537,25 @@ export const normalizeQuickAdd = (
     said === undefined
       ? undefined
       : titleWithoutInvitees(phrase === undefined ? said : groundTitle(said, phrase), invite);
-  const kept =
-    named && phrase !== undefined ? trimWhen(named, meaningfulText(parse.location)) : named;
+  const modelDate = realDate(parse.date?.trim());
+  // A location made of the day holds nothing in the title and is no
+  // place; any other holds its words there ("Ruby Tuesday", "Figlmüller").
+  const place = meaningfulText(parse.location);
+  const dayAsPlace = madeOfTheDay(place, phrase, modelDate, referenceDate);
+  const held = dayAsPlace ? undefined : place;
+  const kept = named && phrase !== undefined ? trimWhen(named, held, { phrase }) : named;
   // The place leaves an event's title only when its field keeps it; a
   // to-do has no place field.
   const placeless =
     kept && phrase !== undefined && !todo
-      ? trimWhen(withoutPlace(kept, meaningfulText(parse.location)), meaningfulText(parse.location))
+      ? trimWhen(withoutPlace(kept, held), held, { phrase })
       : kept;
-  const placed =
-    placeless !== kept && placeOf(meaningfulText(parse.location), placeless ?? '', phrase)
-      ? placeless
-      : kept;
+  const placed = placeless !== kept && placeOf(place, placeless ?? '', phrase) ? placeless : kept;
   const title = placed && phrase !== undefined ? capitalized(placed) : placed;
   if (!title) {
     return { kind: 'rejected', reason: 'No event title was recognised.' };
   }
 
-  const modelDate = realDate(parse.date?.trim());
   const groundedDate =
     phrase === undefined ? undefined : groundDate(modelDate, { phrase, referenceDate });
   const resolvedDate = groundedDate ?? modelDate ?? realDate(fallbackDate) ?? referenceDate;
@@ -564,7 +613,7 @@ export const normalizeQuickAdd = (
   }
 
   // Capture passes no phrase and keeps its locations as before.
-  const location = placeOf(meaningfulText(parse.location), title, phrase);
+  const location = dayAsPlace ? undefined : placeOf(place, title, phrase);
   // The repeat the words state, and the draft on the first of its days
   // ("every weekday" typed on a Saturday starts on Monday).
   const { date, recurrence } = startOnRule(

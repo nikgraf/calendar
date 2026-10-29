@@ -148,9 +148,8 @@ the served model (#184) and slot proposals (#185) are in
       no field in the quick-add and refine schemas (0/15); a bare "make it
       8" and the dictated "eight" are not read as a time (SpeechAnalyzer
       writes small numbers as words); a German change taken as a title
-      ("lieber Mittwoch"); a weekday left in a title before a comma
-      ("Coffee Thursday, invite Anna"); the small-hours reading of a bare
-      1–6 (open since #248).
+      ("lieber Mittwoch"); the small-hours reading of a bare 1–6 (open
+      since #248).
 - [ ] Gemma 4 on iOS — opt-in download via llama.rn (JSON schema →
       grammar maps onto `generateJson`), load on demand, unload on
       background; only if the bench shows the model is the bottleneck.

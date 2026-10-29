@@ -556,6 +556,147 @@ describe('parseQuickAdd', () => {
     ).toBeUndefined();
   });
 
+  it('trims a repeat and its end off the title, and a place that is the title holds nothing', async () => {
+    // The bench: the model wrote the whole title into the location for
+    // "Standup Monday at 9", which held "Monday" in the title.
+    const standup = await prefillOf(
+      {
+        date: '2026-08-24',
+        location: 'Standup Monday',
+        startTime: '09:00',
+        title: 'Standup Monday',
+      },
+      'Standup Monday at 9',
+    );
+    expect(standup).toMatchObject({ date: '2026-08-24', title: 'Standup' });
+    // Review: the made-up place is no location either, once the title is trimmed.
+    expect(standup.location).toBeUndefined();
+    expect(
+      await prefillOf(
+        {
+          date: '2026-08-24',
+          location: 'Standup Monday',
+          startTime: '09:00',
+          title: 'Standup Monday',
+        },
+        'standup monday at 9',
+      ),
+    ).toMatchObject({ title: 'Standup' });
+    const coffee = await prefillOf(
+      { location: 'Coffee Thursday', startTime: '15:00', title: 'Coffee Thursday at 3' },
+      'Coffee Thursday at 3',
+    );
+    expect(coffee.title).toBe('Coffee');
+    expect(coffee.location).toBeUndefined();
+    // Review: the model's title dropped the repeat but kept its end.
+    expect(
+      (
+        await prefillOf(
+          {
+            date: '2026-08-25',
+            recurrence: { freq: 'weekly', untilDate: '2026-03-01' },
+            startTime: '17:00',
+            title: 'Piano lesson until March',
+          },
+          'Piano lesson every Tuesday at 5pm until March',
+        )
+      ).title,
+    ).toBe('Piano lesson');
+    expect(
+      (
+        await prefillOf(
+          { date: '2026-08-25', startTime: '18:00', title: 'Jeden Dienstag um 18 Uhr Fußball' },
+          'Jeden Dienstag um 18 Uhr Fußball',
+        )
+      ).title,
+    ).toBe('Fußball');
+    expect(
+      (
+        await prefillOf(
+          {
+            date: '2026-08-25',
+            recurrence: { freq: 'weekly', untilDate: '2026-03-01' },
+            startTime: '17:00',
+            title: 'Piano lesson every Tuesday at 5pm until March',
+          },
+          'Piano lesson every Tuesday at 5pm until March',
+        )
+      ).title,
+    ).toBe('Piano lesson');
+    // A real place keeps its field and leaves the title, as before; one
+    // the phrase names without a lead word stays in the title and has no
+    // field; a day the code does not read beside it, and a venue that is
+    // the whole title, hold their words.
+    expect(
+      await prefillOf(
+        { location: 'Ruby Tuesday', startTime: '19:00', title: 'Dinner at Ruby Tuesday' },
+        'Dinner at Ruby Tuesday tomorrow at 7pm',
+      ),
+    ).toMatchObject({ date: '2026-08-23', location: 'Ruby Tuesday', title: 'Dinner' });
+    const inTitle = await prefillOf(
+      { location: 'Ruby Tuesday', startTime: '19:00', title: 'Dinner Ruby Tuesday' },
+      'Dinner Ruby Tuesday tomorrow 7pm',
+    );
+    expect(inTitle.title).toBe('Dinner Ruby Tuesday');
+    expect(inTitle.location).toBeUndefined();
+    // Review: a venue named for a weekday after a place cue, with no other
+    // day in the phrase, is still the venue.
+    expect(
+      await prefillOf(
+        { location: 'Ruby Tuesday', startTime: '19:00', title: 'Dinner at Ruby Tuesday' },
+        'Dinner at Ruby Tuesday at 7pm',
+      ),
+    ).toMatchObject({ location: 'Ruby Tuesday', title: 'Dinner' });
+    expect(
+      await prefillOf(
+        { location: 'Café Sonntag', startTime: '15:00', title: 'Kaffee im Café Sonntag' },
+        'Kaffee im Café Sonntag um 15 Uhr',
+      ),
+    ).toMatchObject({ location: 'Café Sonntag', title: 'Kaffee' });
+    // Review: a dotted clock, a part of the day and "next week" beside the
+    // made-up place are no other day.
+    for (const [phrase, parse] of [
+      ['Standup Monday at 9.30', { location: 'Standup Monday', title: 'Standup Monday' }],
+      ['Kaffee Donnerstag um 15.30', { location: 'Kaffee Donnerstag', title: 'Kaffee Donnerstag' }],
+      ['Standup Montag morgen um 9', { location: 'Standup Montag', title: 'Standup Montag' }],
+      ['Coffee Thursday at 3 next week', { location: 'Coffee Thursday', title: 'Coffee Thursday' }],
+    ] as const) {
+      const made = await prefillOf({ ...parse, startTime: '09:00' }, phrase);
+      expect(made.title, phrase).toBe(parse.title.split(' ')[0]);
+      expect(made.location, phrase).toBeUndefined();
+    }
+    expect(
+      await prefillOf(
+        { location: 'Figlmüller', startTime: '19:00', title: 'Dinner at Figlmüller' },
+        'Dinner Figlmüller tomorrow 7pm',
+      ),
+    ).toMatchObject({ location: 'Figlmüller', title: 'Dinner' });
+    expect(
+      (
+        await prefillOf(
+          { location: 'Ruby Tuesday', startTime: '19:00', title: 'Ruby Tuesday' },
+          'Ruby Tuesday on Sep 3 at 7pm',
+        )
+      ).title,
+    ).toBe('Ruby Tuesday');
+    // Codex: an offset from today is another day too; the venue stays.
+    expect(
+      await prefillOf(
+        { location: 'Ruby Tuesday', startTime: '19:00', title: 'Dinner' },
+        'Dinner Ruby Tuesday in two days at 7pm',
+      ),
+    ).toMatchObject({ location: 'Ruby Tuesday', title: 'Dinner' });
+    // Codex: a dotted date with a year is a day too.
+    expect(
+      (
+        await prefillOf(
+          { location: 'Ruby Tuesday', startTime: '19:00', title: 'Ruby Tuesday' },
+          'Ruby Tuesday on 17.10.2026 at 7pm',
+        )
+      ).title,
+    ).toBe('Ruby Tuesday');
+  });
+
   it('drops a repeat the phrase never named', async () => {
     // Observed: "next Tuesday" came back as a weekly repeat, count 1 — and
     // "Standup Monday at 9" as a week of them.
