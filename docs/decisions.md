@@ -1191,7 +1191,7 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   a time zone save re-plans. Rejected: the text in the primary zone
   alone (it would contradict the lock-screen clock beside it). All-day
   and birthday text has no clock and stays as it was.
-- **Delivered reminders leave with the event** (2026-10-29, #PR) — iOS
+- **Delivered reminders leave with the event** (2026-10-29, #261) — iOS
   dismisses an event reminder once the event is over, all-day at midnight
   on the device's clock (notifications follow the device, not the grid's
   primary zone), never before `expiresAt`. The end travels in the payload
