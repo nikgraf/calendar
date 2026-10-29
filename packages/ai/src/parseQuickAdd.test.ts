@@ -47,9 +47,17 @@ const untilOf = async (untilDate: string) =>
   (
     await prefillOf(
       { recurrence: { freq: 'weekly', untilDate }, startTime: '09:00', title: 'Standup' },
-      'Standup weekly at 9',
+      'Standup weekly at 9 until March',
     )
   ).recurrence?.untilDate;
+
+const WEEKDAYS = [
+  { weekday: 'MO' as const },
+  { weekday: 'TU' as const },
+  { weekday: 'WE' as const },
+  { weekday: 'TH' as const },
+  { weekday: 'FR' as const },
+];
 
 describe('parseQuickAdd', () => {
   it('fills the editor from a typical English phrase', async () => {
@@ -143,14 +151,330 @@ describe('parseQuickAdd', () => {
     );
   });
 
-  it('carries a recurrence through as editor fields', async () => {
-    const prefill = await prefillOf(
-      { recurrence: { count: 5, freq: 'weekly', interval: 2 }, startTime: '10:00', title: 'Retro' },
-      'Retro every two weeks at 10',
-    );
+  it('carries a recurrence through as editor fields, as the phrase states it', async () => {
     // The editor's own fields, so the user sees and can adjust them before
-    // the existing save path builds the RRULE.
-    expect(prefill.recurrence).toEqual({ count: 5, freq: 'weekly', interval: 2 });
+    // the existing save path builds the RRULE. The gap is the phrase's;
+    // a count the phrase never said is not.
+    const retro = {
+      recurrence: { count: 5, freq: 'weekly', interval: 2 },
+      startTime: '10:00',
+      title: 'Retro',
+    } as const;
+    expect((await prefillOf(retro, 'Retro every two weeks at 10')).recurrence).toEqual({
+      freq: 'weekly',
+      interval: 2,
+    });
+    expect((await prefillOf(retro, 'Retro every two weeks at 10, 5 times')).recurrence).toEqual({
+      count: 5,
+      freq: 'weekly',
+      interval: 2,
+    });
+  });
+
+  it('keeps a repeat the phrase names, whatever the model made of it', async () => {
+    // Observed on device (the bench): a genuine repeat comes back as one
+    // week — count 1, and an end a week after the first day. The repeat
+    // is the phrase's; the count and the end are not.
+    const standup = {
+      date: '2026-08-24',
+      recurrence: { count: 1, freq: 'weekly', interval: 1, untilDate: '2026-08-31' },
+      startTime: '09:00',
+      title: 'Team standup',
+    } as const;
+    expect(await prefillOf(standup, 'Team standup every monday at 9')).toMatchObject({
+      date: '2026-08-24',
+      recurrence: { freq: 'weekly' },
+    });
+    expect(
+      await prefillOf(
+        { ...standup, date: '2026-08-25', startTime: '18:00', title: 'Fußball' },
+        'Jeden Dienstag um 18 Uhr Fußball',
+      ),
+    ).toMatchObject({ date: '2026-08-25', recurrence: { freq: 'weekly' } });
+    // A real end stays, read as the coming March.
+    expect(
+      await prefillOf(
+        {
+          date: '2026-08-25',
+          recurrence: { count: 1, freq: 'weekly', interval: 1, untilDate: '2026-03-01' },
+          startTime: '17:00',
+          title: 'Piano lesson',
+        },
+        'Piano lesson every Tuesday at 5pm until March',
+      ),
+    ).toMatchObject({ recurrence: { freq: 'weekly', untilDate: '2027-03-01' } });
+    // "every week" said of a draft: the same answer, the same reading.
+    expect(
+      (await prefillOf({ ...standup, title: 'Standup' }, 'Standup every week at 9')).recurrence,
+    ).toEqual({ freq: 'weekly' });
+  });
+
+  it('reads the frequency, the gap and the days from the phrase', async () => {
+    // Observed: "every weekday" as five times, "every two weeks" as a gap
+    // of fourteen, "every month" as weekly.
+    expect(
+      await prefillOf(
+        {
+          date: '2026-08-24',
+          recurrence: { count: 5, freq: 'weekly', interval: 1, untilDate: '2026-08-30' },
+          startTime: '09:30',
+          title: 'Standup',
+        },
+        'Standup every weekday at 9:30',
+      ),
+    ).toMatchObject({ date: '2026-08-24', recurrence: { byDay: WEEKDAYS, freq: 'weekly' } });
+    expect(
+      await prefillOf(
+        {
+          date: '2026-08-27',
+          recurrence: { count: 2, freq: 'weekly', interval: 14, untilDate: '2026-09-03' },
+          startTime: '16:00',
+          title: 'Therapy',
+        },
+        'Therapy every two weeks on Thursday at 4',
+      ),
+    ).toMatchObject({ date: '2026-08-27', recurrence: { freq: 'weekly', interval: 2 } });
+    // Monthly on a weekday: the Nth such weekday the first one is (the
+    // last Wednesday of August).
+    expect(
+      await prefillOf(
+        {
+          date: '2026-08-25',
+          recurrence: { count: 1, freq: 'weekly', interval: 1, untilDate: '2026-09-01' },
+          startTime: '19:00',
+          title: 'Book club',
+        },
+        'Book club every month on Wednesday at 7pm',
+      ),
+    ).toMatchObject({
+      date: '2026-08-26',
+      recurrence: { byDay: [{ ordinal: -1, weekday: 'WE' }], freq: 'monthly' },
+    });
+    expect(
+      (
+        await prefillOf(
+          { startTime: '12:00', title: 'Team lunch' },
+          'Team lunch every first Friday at noon',
+        )
+      ).recurrence,
+    ).toEqual({ byDay: [{ ordinal: 1, weekday: 'FR' }], freq: 'monthly' });
+    expect(
+      (
+        await prefillOf(
+          { startTime: '07:00', title: 'Yoga' },
+          'Yoga alle zwei Wochen am Montag um 7',
+        )
+      ).recurrence,
+    ).toEqual({ freq: 'weekly', interval: 2 });
+    expect(
+      await prefillOf({ startTime: '19:00', title: 'Stammtisch' }, 'Stammtisch montags um 19 Uhr'),
+    ).toMatchObject({ date: '2026-08-24', recurrence: { freq: 'weekly' } });
+  });
+
+  it('starts a rule with chosen days on the first of them', async () => {
+    // "every weekday" typed on a Saturday: Monday, not a Saturday standup
+    // plus the weekdays.
+    expect(
+      await prefillOf(
+        {
+          date: '2026-08-22',
+          recurrence: { freq: 'weekly' },
+          startTime: '09:30',
+          title: 'Standup',
+        },
+        'Standup every weekday at 9:30',
+      ),
+    ).toMatchObject({ date: '2026-08-24' });
+    // The first Friday: a week on from the Friday the phrase lands on.
+    expect(
+      await prefillOf({ startTime: '12:00', title: 'Lunch' }, 'Lunch every first Friday at noon'),
+    ).toMatchObject({ date: '2026-09-04' });
+    // Review: a rule that ends before its first day has nothing to
+    // repeat — no repeat, and the date as the phrase had it.
+    const ended = await prefillOf(
+      { recurrence: { freq: 'weekly', untilDate: '2026-08-23' }, startTime: '09:30', title: 'x' },
+      'x every weekday at 9:30 until 23 August',
+    );
+    expect(ended.date).toBe('2026-08-22');
+    expect(ended.recurrence).toBeUndefined();
+    // Review: the 4th Thursday is the 4th even when it is also the last
+    // (Aug 27, not Oct 22).
+    expect(
+      await prefillOf(
+        { date: '2026-08-27', startTime: '19:00', title: 'Book club' },
+        'Book club every fourth Thursday at 7pm',
+      ),
+    ).toMatchObject({
+      date: '2026-08-27',
+      recurrence: { byDay: [{ ordinal: 4, weekday: 'TH' }], freq: 'monthly' },
+    });
+  });
+
+  it('counts and spans the repeat as the phrase says', async () => {
+    const yoga = { startTime: '07:00', title: 'Yoga' };
+    expect((await prefillOf(yoga, 'Yoga every Monday at 7 for 6 weeks')).recurrence).toEqual({
+      count: 6,
+      freq: 'weekly',
+    });
+    // A span in another unit ends the rule on its last day.
+    expect((await prefillOf(yoga, 'Yoga every day at 7 for two weeks')).recurrence).toEqual({
+      freq: 'daily',
+      untilDate: '2026-09-04',
+    });
+    expect((await prefillOf(yoga, 'Yoga every other Tuesday at 7, 10 times')).recurrence).toEqual({
+      count: 10,
+      freq: 'weekly',
+      interval: 2,
+    });
+    // The model's end stands only behind an until word.
+    const ends = { recurrence: { freq: 'weekly', untilDate: '2026-10-31' }, ...yoga } as const;
+    expect((await prefillOf(ends, 'Yoga every Monday at 7')).recurrence).toEqual({
+      freq: 'weekly',
+    });
+    expect(
+      (await prefillOf(ends, 'Yoga every Monday at 7 until end of October')).recurrence,
+    ).toEqual({
+      freq: 'weekly',
+      untilDate: '2026-10-31',
+    });
+    expect((await prefillOf(ends, 'Yoga every Monday 7 until 8')).recurrence).toEqual({
+      freq: 'weekly',
+    });
+    // Review: a span on a rule with several days ends it on the span's
+    // last day — "every weekday for six weeks" is thirty standups, not
+    // six — counted from the Monday it starts on; a span in a smaller
+    // unit than the rule's is the event's length, not the series'.
+    expect(
+      (
+        await prefillOf(
+          { startTime: '09:00', title: 'Standup' },
+          'Standup every weekday for the next 6 weeks at 9',
+        )
+      ).recurrence,
+    ).toEqual({ byDay: WEEKDAYS, freq: 'weekly', untilDate: '2026-10-04' });
+    expect(
+      (await prefillOf({ title: 'Ski trip' }, 'Ski trip every year for a week')).recurrence,
+    ).toEqual({
+      freq: 'yearly',
+    });
+    // Codex: a monthly span ends on its last day rather than counting —
+    // from the 31st, two monthly occurrences would reach March 31.
+    expect(
+      (await prefillOf({ date: '2027-01-31', title: 'Rent' }, 'Rent monthly for two months'))
+        .recurrence,
+    ).toEqual({ freq: 'monthly', untilDate: '2027-03-30' });
+    expect((await prefillOf(yoga, 'Yoga every day at 7 for 10 days')).recurrence).toEqual({
+      count: 10,
+      freq: 'daily',
+    });
+    // Codex: a span in days on a weekday rule is its end ("for three
+    // days" from a Monday ends Wednesday), and an end weekday after
+    // "every Tuesday" is an end, not a range.
+    expect(
+      (
+        await prefillOf(
+          { date: '2026-08-24', startTime: '09:00', title: 'Standup' },
+          'Standup every weekday at 9 for three days',
+        )
+      ).recurrence,
+    ).toEqual({ byDay: WEEKDAYS, freq: 'weekly', untilDate: '2026-08-26' });
+    expect(
+      (
+        await prefillOf(
+          {
+            date: '2026-08-25',
+            recurrence: { freq: 'weekly', untilDate: '2026-08-28' },
+            startTime: '17:00',
+            title: 'Piano',
+          },
+          'Piano every Tuesday at 5pm until Friday',
+        )
+      ).recurrence,
+    ).toEqual({ freq: 'weekly', untilDate: '2026-08-28' });
+  });
+
+  it('has no repeat where the phrase names none, or takes it away', async () => {
+    // Review: "each", "jeder" and a repeat as a noun are no repeat words,
+    // and "no repeat" is heard in a phrase too.
+    for (const phrase of [
+      'Interviews with each candidate Friday at 10',
+      'Grillen am Samstag, jeder bringt was mit',
+      'Mathe Wiederholung Dienstag um 10',
+      'Dentist Friday at 3, no repeat',
+    ]) {
+      expect(
+        (
+          await prefillOf(
+            {
+              recurrence: { count: 1, freq: 'weekly', interval: 1 },
+              startTime: '10:00',
+              title: 'x',
+            },
+            phrase,
+          )
+        ).recurrence,
+        phrase,
+      ).toBeUndefined();
+    }
+    expect(
+      (
+        await prefillOf(
+          { recurrence: { freq: 'weekly' }, startTime: '15:00', title: 'Dentist' },
+          'Dentist every Friday at 3, no repeat',
+        )
+      ).recurrence,
+    ).toBeUndefined();
+    // Review: a frequency word as an adjective, and "until further
+    // notice", with the model's one-week answer.
+    const week = { count: 1, freq: 'weekly', interval: 1, untilDate: '2026-08-31' } as const;
+    expect(
+      (
+        await prefillOf(
+          { date: '2026-08-28', recurrence: week, startTime: '15:00', title: 'Budget review' },
+          'Review the monthly budget with Anna Friday at 3',
+        )
+      ).recurrence,
+    ).toBeUndefined();
+    expect(
+      (
+        await prefillOf(
+          { date: '2026-08-24', recurrence: week, startTime: '09:00', title: 'Standup' },
+          'Standup every Monday at 9 until further notice',
+        )
+      ).recurrence,
+    ).toEqual({ freq: 'weekly' });
+    // Review: "Daily standup every weekday" is the weekdays' rule, started on Monday.
+    expect(
+      await prefillOf(
+        {
+          date: '2026-08-22',
+          recurrence: { count: 5, freq: 'weekly' },
+          startTime: '09:30',
+          title: 'Daily standup',
+        },
+        'Daily standup every weekday at 9:30',
+      ),
+    ).toMatchObject({ date: '2026-08-24', recurrence: { byDay: WEEKDAYS, freq: 'weekly' } });
+  });
+
+  it("keeps the model's frequency only where the words name a repeat without saying which", async () => {
+    expect(
+      (
+        await prefillOf(
+          { recurrence: { count: 1, freq: 'monthly' }, startTime: '09:00', title: 'Standup' },
+          'Standup at 9, recurring',
+        )
+      ).recurrence,
+    ).toEqual({ freq: 'monthly' });
+    // The words say which: the model's is corrected.
+    expect(
+      (
+        await prefillOf(
+          { recurrence: { freq: 'daily' }, startTime: '09:00', title: 'Standup' },
+          'Standup every week at 9',
+        )
+      ).recurrence,
+    ).toEqual({ freq: 'weekly' });
   });
 
   it('ignores junk the model invented instead of trusting the schema', async () => {
@@ -163,7 +487,7 @@ describe('parseQuickAdd', () => {
         startTime: '25:70',
         title: 'Thing',
       },
-      'Thing',
+      'Thing daily until december',
     );
     expect(prefill.date).toBe('2026-08-22');
     expect(prefill.isAllDay).toBe(true);
@@ -232,20 +556,192 @@ describe('parseQuickAdd', () => {
     ).toBeUndefined();
   });
 
-  it('drops a repeat that only happens once', async () => {
-    // Also observed: "next Tuesday" came back as a weekly repeat, count 1.
+  it('trims a repeat and its end off the title, and a place that is the title holds nothing', async () => {
+    // The bench: the model wrote the whole title into the location for
+    // "Standup Monday at 9", which held "Monday" in the title.
+    const standup = await prefillOf(
+      {
+        date: '2026-08-24',
+        location: 'Standup Monday',
+        startTime: '09:00',
+        title: 'Standup Monday',
+      },
+      'Standup Monday at 9',
+    );
+    expect(standup).toMatchObject({ date: '2026-08-24', title: 'Standup' });
+    // Review: the made-up place is no location either, once the title is trimmed.
+    expect(standup.location).toBeUndefined();
+    expect(
+      await prefillOf(
+        {
+          date: '2026-08-24',
+          location: 'Standup Monday',
+          startTime: '09:00',
+          title: 'Standup Monday',
+        },
+        'standup monday at 9',
+      ),
+    ).toMatchObject({ title: 'Standup' });
+    const coffee = await prefillOf(
+      { location: 'Coffee Thursday', startTime: '15:00', title: 'Coffee Thursday at 3' },
+      'Coffee Thursday at 3',
+    );
+    expect(coffee.title).toBe('Coffee');
+    expect(coffee.location).toBeUndefined();
+    // Review: the model's title dropped the repeat but kept its end.
+    expect(
+      (
+        await prefillOf(
+          {
+            date: '2026-08-25',
+            recurrence: { freq: 'weekly', untilDate: '2026-03-01' },
+            startTime: '17:00',
+            title: 'Piano lesson until March',
+          },
+          'Piano lesson every Tuesday at 5pm until March',
+        )
+      ).title,
+    ).toBe('Piano lesson');
+    expect(
+      (
+        await prefillOf(
+          { date: '2026-08-25', startTime: '18:00', title: 'Jeden Dienstag um 18 Uhr Fußball' },
+          'Jeden Dienstag um 18 Uhr Fußball',
+        )
+      ).title,
+    ).toBe('Fußball');
+    expect(
+      (
+        await prefillOf(
+          {
+            date: '2026-08-25',
+            recurrence: { freq: 'weekly', untilDate: '2026-03-01' },
+            startTime: '17:00',
+            title: 'Piano lesson every Tuesday at 5pm until March',
+          },
+          'Piano lesson every Tuesday at 5pm until March',
+        )
+      ).title,
+    ).toBe('Piano lesson');
+    // A real place keeps its field and leaves the title, as before; one
+    // the phrase names without a lead word stays in the title and has no
+    // field; a day the code does not read beside it, and a venue that is
+    // the whole title, hold their words.
+    expect(
+      await prefillOf(
+        { location: 'Ruby Tuesday', startTime: '19:00', title: 'Dinner at Ruby Tuesday' },
+        'Dinner at Ruby Tuesday tomorrow at 7pm',
+      ),
+    ).toMatchObject({ date: '2026-08-23', location: 'Ruby Tuesday', title: 'Dinner' });
+    const inTitle = await prefillOf(
+      { location: 'Ruby Tuesday', startTime: '19:00', title: 'Dinner Ruby Tuesday' },
+      'Dinner Ruby Tuesday tomorrow 7pm',
+    );
+    expect(inTitle.title).toBe('Dinner Ruby Tuesday');
+    expect(inTitle.location).toBeUndefined();
+    // Review: a venue named for a weekday after a place cue, with no other
+    // day in the phrase, is still the venue.
+    expect(
+      await prefillOf(
+        { location: 'Ruby Tuesday', startTime: '19:00', title: 'Dinner at Ruby Tuesday' },
+        'Dinner at Ruby Tuesday at 7pm',
+      ),
+    ).toMatchObject({ location: 'Ruby Tuesday', title: 'Dinner' });
+    expect(
+      await prefillOf(
+        { location: 'Café Sonntag', startTime: '15:00', title: 'Kaffee im Café Sonntag' },
+        'Kaffee im Café Sonntag um 15 Uhr',
+      ),
+    ).toMatchObject({ location: 'Café Sonntag', title: 'Kaffee' });
+    // Review: a dotted clock, a part of the day and "next week" beside the
+    // made-up place are no other day.
+    for (const [phrase, parse] of [
+      ['Standup Monday at 9.30', { location: 'Standup Monday', title: 'Standup Monday' }],
+      ['Kaffee Donnerstag um 15.30', { location: 'Kaffee Donnerstag', title: 'Kaffee Donnerstag' }],
+      ['Standup Montag morgen um 9', { location: 'Standup Montag', title: 'Standup Montag' }],
+      ['Coffee Thursday at 3 next week', { location: 'Coffee Thursday', title: 'Coffee Thursday' }],
+    ] as const) {
+      const made = await prefillOf({ ...parse, startTime: '09:00' }, phrase);
+      expect(made.title, phrase).toBe(parse.title.split(' ')[0]);
+      expect(made.location, phrase).toBeUndefined();
+    }
+    expect(
+      await prefillOf(
+        { location: 'Figlmüller', startTime: '19:00', title: 'Dinner at Figlmüller' },
+        'Dinner Figlmüller tomorrow 7pm',
+      ),
+    ).toMatchObject({ location: 'Figlmüller', title: 'Dinner' });
+    expect(
+      (
+        await prefillOf(
+          { location: 'Ruby Tuesday', startTime: '19:00', title: 'Ruby Tuesday' },
+          'Ruby Tuesday on Sep 3 at 7pm',
+        )
+      ).title,
+    ).toBe('Ruby Tuesday');
+    // Codex: an offset from today is another day too; the venue stays.
+    expect(
+      await prefillOf(
+        { location: 'Ruby Tuesday', startTime: '19:00', title: 'Dinner' },
+        'Dinner Ruby Tuesday in two days at 7pm',
+      ),
+    ).toMatchObject({ location: 'Ruby Tuesday', title: 'Dinner' });
+    // Codex: a dotted date with a year is a day too.
+    expect(
+      (
+        await prefillOf(
+          { location: 'Ruby Tuesday', startTime: '19:00', title: 'Ruby Tuesday' },
+          'Ruby Tuesday on 17.10.2026 at 7pm',
+        )
+      ).title,
+    ).toBe('Ruby Tuesday');
+  });
+
+  it('drops a repeat the phrase never named', async () => {
+    // Observed: "next Tuesday" came back as a weekly repeat, count 1 — and
+    // "Standup Monday at 9" as a week of them.
     const prefill = await prefillOf(
       { recurrence: { count: 1, freq: 'weekly' }, startTime: '13:00', title: 'Lunch' },
       'Lunch next Tuesday at 1',
     );
     expect(prefill.recurrence).toBeUndefined();
     expect(prefill.date).toBe('2026-08-25');
+    const standup = { date: '2026-08-24', startTime: '09:00', title: 'Standup' };
+    expect(
+      (
+        await prefillOf(
+          {
+            ...standup,
+            recurrence: { count: 1, freq: 'weekly', interval: 1, untilDate: '2026-08-31' },
+          },
+          'Standup Monday at 9',
+        )
+      ).recurrence,
+    ).toBeUndefined();
+    expect(
+      (await prefillOf({ ...standup, recurrence: { freq: 'weekly' } }, 'Standup Monday at 9'))
+        .recurrence,
+    ).toBeUndefined();
   });
 
   it('reads a repeat end before the first day as next year', async () => {
     expect(await untilOf('2026-03-31')).toBe('2027-03-31');
     expect(await untilOf('2026-12-31')).toBe('2026-12-31');
-    expect(await untilOf('2026-08-22')).toBe('2026-08-22');
+    expect(await untilOf('2026-08-23')).toBe('2026-08-23');
+    // Codex: an end on the first day leaves nothing to repeat — no rule,
+    // not an endless one.
+    expect(
+      (
+        await prefillOf(
+          {
+            recurrence: { freq: 'daily', untilDate: '2026-08-22' },
+            startTime: '07:00',
+            title: 'Yoga',
+          },
+          'Yoga every day at 7 until 22 August',
+        )
+      ).recurrence,
+    ).toBeUndefined();
     // More than a year back is a misread, not next year's.
     expect(await untilOf('2024-03-31')).toBeUndefined();
   });
@@ -277,8 +773,8 @@ describe('parseQuickAdd', () => {
     // Apple's guided decoding enforces the enum, but the seam exists for
     // providers that will not.
     const prefill = await prefillOf(
-      { recurrence: { freq: 'fortnightly' as never }, startTime: '09:00', title: 'Standup' },
-      'Standup at 9',
+      { recurrence: { freq: 'biannual' as never }, startTime: '09:00', title: 'Standup' },
+      'Standup at 9, repeating',
     );
     expect(prefill.recurrence).toBeUndefined();
   });

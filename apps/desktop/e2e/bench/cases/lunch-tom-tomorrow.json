@@ -1,0 +1,17 @@
+{
+  "lang": "en",
+  "tags": ["basic", "title"],
+  "turns": [
+    {
+      "input": { "audio": "lunch-tom-tomorrow-1.m4a", "transcript": "lunch with tom tomorrow" },
+      "expect": {
+        "title": "lunch with tom",
+        "dayOffset": 1,
+        "startTime": "12:30",
+        "endTime": "13:30",
+        "assumedTime": true,
+        "guests": {}
+      }
+    }
+  ]
+}

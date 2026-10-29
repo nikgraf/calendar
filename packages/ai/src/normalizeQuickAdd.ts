@@ -1,16 +1,30 @@
 import {
+  addDaysToPlainDate,
   type ByDay,
   foldSearchText,
+  monthlyOrdinalOf,
   type RecurrenceFrequency,
   Temporal,
   validateEventDraft,
+  type Weekday,
+  WEEKDAYS_MONDAY_FIRST,
 } from '@calendar/core';
 import {
+  clearsRepeat,
+  defersDate,
   groundDate,
   groundTime,
   groundTitle,
   isTodoPhrase,
+  mentionsFixedDate,
+  namedWeekdays,
+  namesDays,
+  type RepeatSpanUnit,
   saysOnlyWhen,
+  spanUnitAtLeast,
+  statedRepeat,
+  statesNoEnd,
+  statesUntil,
   trimWhen,
   withoutPlace,
 } from './grounding.ts';
@@ -40,7 +54,12 @@ export interface QuickAddPrefill {
    */
   readonly recurrence?:
     | {
-        /** Weekdays the editor chose; a parsed phrase never sets them, a refinement keeps them. */
+        /**
+         * The days the phrase or the editor chose: a weekly rule's set
+         * ("every weekday", "Mondays and Wednesdays"), a monthly rule's
+         * "Nth weekday". A single weekday is the date's, never listed; a
+         * refinement keeps the editor's days.
+         */
         readonly byDay?: ReadonlyArray<ByDay> | undefined;
         readonly count?: number | undefined;
         readonly freq: RecurrenceFrequency;
@@ -74,6 +93,14 @@ export type QuickAddResult =
 
 const FREQUENCIES = new Set<RecurrenceFrequency>(['daily', 'monthly', 'weekly', 'yearly']);
 
+/** The unit a frequency counts in: "for six weeks" on a weekly rule is six times. */
+const UNIT_OF: Readonly<Record<RecurrenceFrequency, RepeatSpanUnit>> = {
+  daily: 'days',
+  monthly: 'months',
+  weekly: 'weeks',
+  yearly: 'years',
+};
+
 /**
  * A repeat end before the first day reads as next year's: "every Monday
  * until March", said in October, means the coming March, and models
@@ -86,6 +113,240 @@ const untilOnOrAfter = (until: string | undefined, start: string): string | unde
   }
   const nextYear = Temporal.PlainDate.from(until).add({ years: 1 }).toString();
   return nextYear >= start ? nextYear : undefined;
+};
+
+const positiveInt = (value: number | undefined): number | undefined =>
+  value !== undefined && Number.isInteger(value) && value >= 1 ? value : undefined;
+
+const modelFreq = (parsed: QuickAddParse['recurrence']): RecurrenceFrequency | undefined =>
+  parsed?.freq !== undefined && FREQUENCIES.has(parsed.freq) ? parsed.freq : undefined;
+
+/** The first day on or after `date` that is a `weekday`. */
+const nextOn = (date: string, weekday: Weekday): string => {
+  const from = Temporal.PlainDate.from(date);
+  const target = WEEKDAYS_MONDAY_FIRST.indexOf(weekday) + 1;
+  return from.add({ days: (target - from.dayOfWeek + 7) % 7 }).toString();
+};
+
+/**
+ * Whether a date is the Nth such weekday of its month as BYDAY counts
+ * (the 4th may also be the last; `monthlyOrdinalOf` labels it "last"
+ * for the picker, the rule means either).
+ */
+const isNthWeekday = (date: string, ordinal: number): boolean => {
+  const day = Temporal.PlainDate.from(date);
+  return ordinal === -1 ? day.day > day.daysInMonth - 7 : Math.ceil(day.day / 7) === ordinal;
+};
+
+/**
+ * The first day a rule with chosen weekdays falls on, on or after `date`:
+ * a weekly rule's next listed day, a monthly rule's next "Nth weekday".
+ * A start the rule skips is drawn as one more first occurrence
+ * (`expand.ts`), which "every weekday" said on a Saturday never means.
+ */
+export const firstDayOn = (date: string, recurrence: QuickAddPrefill['recurrence']): string => {
+  const days = recurrence?.byDay ?? [];
+  const [first] = days;
+  if (recurrence === undefined || first === undefined) {
+    return date;
+  }
+  if (recurrence.freq === 'weekly') {
+    return days.map((day) => nextOn(date, day.weekday)).sort()[0]!;
+  }
+  if (recurrence.freq === 'monthly' && first.ordinal !== undefined) {
+    // Every month has a 1st to 4th and a last of each weekday: six weeks on at most.
+    let candidate = nextOn(date, first.weekday);
+    for (let week = 0; week < 6; week += 1) {
+      if (isNthWeekday(candidate, first.ordinal)) {
+        return candidate;
+      }
+      candidate = addDaysToPlainDate(candidate, 7);
+    }
+  }
+  return date;
+};
+
+/** The days of a weekly or monthly rule, as the phrase named them; none where the rule cannot hold them. */
+const byDayFor = (
+  days: ReadonlyArray<ByDay> | undefined,
+  freq: RecurrenceFrequency,
+  firstDay: string,
+): ReadonlyArray<ByDay> | undefined => {
+  if (days === undefined || days.length === 0) {
+    return undefined;
+  }
+  if (freq === 'weekly') {
+    return days.some((each) => each.ordinal !== undefined) ? undefined : days;
+  }
+  const [day, ...more] = days;
+  if (freq !== 'monthly' || day === undefined || more.length > 0) {
+    return undefined;
+  }
+  // "every month on Wednesday": the Nth Wednesday the first one is.
+  return [
+    {
+      ordinal: day.ordinal ?? monthlyOrdinalOf(nextOn(firstDay, day.weekday)),
+      weekday: day.weekday,
+    },
+  ];
+};
+
+/** The last day of a span that starts on `firstDay` ("for two weeks" from a Monday ends the second Sunday). */
+const lastDayOf = (firstDay: string, span: { amount: number; unit: RepeatSpanUnit }): string =>
+  Temporal.PlainDate.from(firstDay)
+    .add({ [span.unit]: span.amount })
+    .subtract({ days: 1 })
+    .toString();
+
+/** The end the model read, as the coming one ("until March" said in October). */
+const repeatEndFromParse = (
+  parsed: QuickAddParse['recurrence'],
+  firstDay: string,
+): string | undefined => untilOnOrAfter(realDate(parsed?.untilDate), firstDay);
+
+type Recurrence = NonNullable<QuickAddPrefill['recurrence']>;
+
+/**
+ * The repeat for the editor, or none. Given the phrase, the words decide
+ * (`statedRepeat`): a phrase that names no repeat has none, whatever the
+ * model attached ("next Tuesday" came back weekly, once); one that does
+ * gives the frequency, the gap, the days, a count or a span, and the
+ * model's frequency stands only where the words name a repeat without
+ * saying which ("make it recurring"). The model's count and gap are never
+ * kept — it answered "every Monday" with once, "every weekday" with five
+ * times and "every two weeks" with a gap of fourteen — and its end only
+ * behind an until word, read as the coming one ("until March" in
+ * October). Without a phrase (capture) the model's rule stands as
+ * validated, "repeats once" being none.
+ *
+ * Over a `current` rule (a refinement of a draft that repeats) the words
+ * change what they say and leave the rest: the kind, gap and days stay
+ * while the words name none ("10 times", "for six weeks", "until March"
+ * on their own), the editor's days stay while the kind does and the
+ * words name no day, and the end or count stays while the words give
+ * none, and goes when they say there is none ("forever"). "No repeat"
+ * clears it, and so does an end on the first day ("until 22 August" said
+ * of the 22nd): nothing repeats.
+ */
+export const recurrenceFromParse = (
+  parsed: QuickAddParse['recurrence'],
+  firstDay: string,
+  phrase?: string,
+  current?: QuickAddPrefill['recurrence'],
+): QuickAddPrefill['recurrence'] => {
+  if (phrase === undefined) {
+    const freq = parsed?.count === 1 ? undefined : modelFreq(parsed);
+    if (freq === undefined) {
+      return undefined;
+    }
+    const count = positiveInt(parsed?.count);
+    const interval = positiveInt(parsed?.interval);
+    const untilDate = untilOnOrAfter(realDate(parsed?.untilDate), firstDay);
+    return {
+      ...(count === undefined ? {} : { count }),
+      freq,
+      ...(interval === undefined || interval < 2 ? {} : { interval }),
+      ...(untilDate === undefined ? {} : { untilDate }),
+    };
+  }
+  if (clearsRepeat(phrase)) {
+    return undefined;
+  }
+  const stated = statedRepeat(phrase, { ofRepeat: current !== undefined });
+  const saysUntil = statesUntil(phrase);
+  if (stated === undefined) {
+    // Nothing said of a repeat: none, or the draft's as it is — with an
+    // end the words alone give it ("until March").
+    const end =
+      current === undefined || !saysUntil ? undefined : repeatEndFromParse(parsed, firstDay);
+    if (end === undefined) {
+      return current;
+    }
+    if (end === firstDay) {
+      return undefined;
+    }
+    const { count: _count, ...rest } = current!;
+    return { ...rest, untilDate: end };
+  }
+  const sameKind =
+    current !== undefined && (stated.freq === undefined || stated.freq === current.freq);
+  const freq = stated.freq ?? current?.freq ?? modelFreq(parsed);
+  if (freq === undefined) {
+    return undefined;
+  }
+  const interval =
+    stated.interval ?? (stated.freq === undefined && sameKind ? current!.interval : undefined);
+  const byDay =
+    byDayFor(stated.byDay, freq, firstDay) ??
+    (sameKind && stated.byDay === undefined && !namesDays(phrase) ? current!.byDay : undefined);
+  // "for a week" on a yearly rule is how long the event lasts, not the
+  // series — but "every weekday for three days" is three standups.
+  const span =
+    stated.runsFor !== undefined &&
+    (spanUnitAtLeast(stated.runsFor.unit, freq) || (freq === 'weekly' && (byDay ?? []).length > 1))
+      ? stated.runsFor
+      : undefined;
+  // "every Monday for six weeks" is six times; "every weekday for six
+  // weeks" is thirty, so a rule on several days ends on the span's last
+  // day instead, counted from the day it starts on — as does a monthly
+  // or yearly one, whose periods a date can skip (the 31st, Feb 29).
+  const count =
+    stated.count ??
+    (span !== undefined &&
+    span.unit === UNIT_OF[freq] &&
+    (freq === 'daily' || freq === 'weekly') &&
+    interval === undefined &&
+    (byDay ?? []).length <= 1
+      ? span.amount
+      : undefined);
+  const untilDate =
+    count !== undefined
+      ? undefined
+      : span !== undefined
+        ? lastDayOf(firstDayOn(firstDay, { byDay, freq }), span)
+        : saysUntil
+          ? repeatEndFromParse(parsed, firstDay)
+          : undefined;
+  if (untilDate !== undefined && untilDate <= firstDay) {
+    return undefined;
+  }
+  // The draft's own end or count stays while the words give none, and
+  // goes when they say there is none ("forever").
+  const kept: Partial<Recurrence> =
+    current !== undefined &&
+    stated.count === undefined &&
+    span === undefined &&
+    !saysUntil &&
+    !statesNoEnd(phrase)
+      ? {
+          ...(current.count === undefined ? {} : { count: current.count }),
+          ...(current.untilDate === undefined ? {} : { untilDate: current.untilDate }),
+        }
+      : {};
+  return {
+    ...kept,
+    ...(byDay === undefined ? {} : { byDay }),
+    ...(count === undefined ? {} : { count }),
+    freq,
+    ...(interval === undefined || interval < 2 ? {} : { interval }),
+    ...(untilDate === undefined ? {} : { untilDate }),
+  };
+};
+
+/**
+ * A draft placed on its rule's first day: the date moved onto the days
+ * the words chose. A rule that ends before that day has nothing to
+ * repeat ("every weekday until tomorrow", said on a Saturday): no
+ * repeat, the date as it was.
+ */
+export const startOnRule = (
+  date: string,
+  recurrence: QuickAddPrefill['recurrence'],
+): { readonly date: string; readonly recurrence: QuickAddPrefill['recurrence'] } => {
+  const start = firstDayOn(date, recurrence);
+  return recurrence?.untilDate !== undefined && recurrence.untilDate < start
+    ? { date, recurrence: undefined }
+    : { date: start, recurrence };
 };
 
 /** One hour on, clamped to the day: the editor works on one date. */
@@ -129,6 +390,20 @@ const PLACE_CUE =
 /** Company, not a place: a name right after "with" ("lunch with tom", "Essen mit Anna"). */
 const COMPANY = /(?:^|[^\p{L}])(?:with|w\/|mit|and|und|&)\s+$/u;
 
+/** Where `place` stands in `words` as words of its own ("tom", not the start of "tomorrow"). */
+const occurrencesOf = (words: string, place: string): ReadonlyArray<number> => {
+  const found: Array<number> = [];
+  for (let from = words.indexOf(place); from !== -1; from = words.indexOf(place, from + 1)) {
+    if (
+      !/[\p{L}\p{N}]/u.test(words[from - 1] ?? ' ') &&
+      !/[\p{L}\p{N}]/u.test(words[from + place.length] ?? ' ')
+    ) {
+      found.push(from);
+    }
+  }
+  return found;
+};
+
 /**
  * The place the model extracted, held against the phrase: it must be in
  * the words (the real model made up "Bob's house" and "unknown"), never
@@ -154,20 +429,10 @@ export const placeOf = (
   }
   const words = fold(phrase);
   const place = fold(location);
-  const at = words.indexOf(place);
-  if (at === -1 || saysOnlyWhen(location)) {
+  if (!words.includes(place) || saysOnlyWhen(location)) {
     return undefined;
   }
-  // Where the place stands as words of its own ("tom", not the start of "tomorrow").
-  const occurrences: Array<number> = [];
-  for (let from = at; from !== -1; from = words.indexOf(place, from + 1)) {
-    if (
-      !/[\p{L}\p{N}]/u.test(words[from - 1] ?? ' ') &&
-      !/[\p{L}\p{N}]/u.test(words[from + place.length] ?? ' ')
-    ) {
-      occurrences.push(from);
-    }
-  }
+  const occurrences = occurrencesOf(words, place);
   if (occurrences.length > 0 && occurrences.every((from) => COMPANY.test(words.slice(0, from)))) {
     return undefined;
   }
@@ -178,29 +443,47 @@ export const placeOf = (
   return occurrences.some((from) => PLACE_CUE.test(words.slice(0, from))) ? location : undefined;
 };
 
+/** A clock the words lead into ("at 9.30", "um 15.30 Uhr", "9:30"), no date. */
+const CLOCK_TOKEN =
+  /\b(?:at|um|gegen|around|ab|bis|von|from|to)\s+\d{1,2}[.:]\d{2}\b|\b\d{1,2}[.:]\d{2}\s*(?:uhr|am|pm)\b/g;
+/** A part of the day right after a weekday ("Montag morgen", "Thursday evening"): the day's, not another day. */
+const DAY_PART_AFTER =
+  /^\s*(?:morning|afternoon|evening|night|morgen|fruh|vormittag|mittag|nachmittag|abend|nacht)\b/;
+
 /**
- * The repeat the model returned, as the editor's fields, or none.
- * "Repeats once" is not a repeat (models attach one to phrases like
- * "next Tuesday"), an unknown frequency is dropped, and an end before
- * the first day reads as next year's.
+ * A location the model made of the phrase's day ("Standup Monday" for
+ * "Standup Monday at 9", "Coffee Thursday"): it holds a weekday, no place
+ * cue leads into it ("at Ruby Tuesday" is a venue), and the phrase
+ * without it names no other day ("Ruby Tuesday tomorrow" does). Such a
+ * location is no place and holds nothing in the title.
  */
-export const recurrenceFromParse = (
-  parsed: QuickAddParse['recurrence'],
-  firstDay: string,
-): QuickAddPrefill['recurrence'] => {
-  const count = parsed?.count;
-  const parsedFreq = parsed?.freq;
-  const freq = count === 1 || !parsedFreq || !FREQUENCIES.has(parsedFreq) ? undefined : parsedFreq;
-  if (!freq) {
-    return undefined;
+const madeOfTheDay = (
+  place: string | undefined,
+  phrase: string | undefined,
+  modelDate: string | undefined,
+  referenceDate: string,
+): boolean => {
+  if (place === undefined || phrase === undefined || namedWeekdays(place).length === 0) {
+    return false;
   }
-  const untilDate = untilOnOrAfter(realDate(parsed?.untilDate), firstDay);
-  return {
-    ...(typeof count === 'number' && count > 1 ? { count } : {}),
-    freq,
-    ...(typeof parsed?.interval === 'number' ? { interval: parsed.interval } : {}),
-    ...(untilDate ? { untilDate } : {}),
-  };
+  const whole = fold(phrase);
+  const folded = fold(place);
+  const occurrences = occurrencesOf(whole, folded);
+  if (occurrences.some((from) => PLACE_CUE.test(whole.slice(0, from)))) {
+    return false;
+  }
+  const at = occurrences[0] ?? whole.indexOf(folded);
+  if (at === -1) {
+    return true;
+  }
+  const rest = (
+    whole.slice(0, at) + whole.slice(at + folded.length).replace(DAY_PART_AFTER, ' ')
+  ).replaceAll(CLOCK_TOKEN, ' ');
+  return !(
+    groundDate(modelDate, { phrase: rest, referenceDate }) !== undefined ||
+    mentionsFixedDate(rest) ||
+    defersDate(rest)
+  );
 };
 
 /**
@@ -254,24 +537,25 @@ export const normalizeQuickAdd = (
     said === undefined
       ? undefined
       : titleWithoutInvitees(phrase === undefined ? said : groundTitle(said, phrase), invite);
-  const kept =
-    named && phrase !== undefined ? trimWhen(named, meaningfulText(parse.location)) : named;
+  const modelDate = realDate(parse.date?.trim());
+  // A location made of the day holds nothing in the title and is no
+  // place; any other holds its words there ("Ruby Tuesday", "Figlmüller").
+  const place = meaningfulText(parse.location);
+  const dayAsPlace = madeOfTheDay(place, phrase, modelDate, referenceDate);
+  const held = dayAsPlace ? undefined : place;
+  const kept = named && phrase !== undefined ? trimWhen(named, held, { phrase }) : named;
   // The place leaves an event's title only when its field keeps it; a
   // to-do has no place field.
   const placeless =
     kept && phrase !== undefined && !todo
-      ? trimWhen(withoutPlace(kept, meaningfulText(parse.location)), meaningfulText(parse.location))
+      ? trimWhen(withoutPlace(kept, held), held, { phrase })
       : kept;
-  const placed =
-    placeless !== kept && placeOf(meaningfulText(parse.location), placeless ?? '', phrase)
-      ? placeless
-      : kept;
+  const placed = placeless !== kept && placeOf(place, placeless ?? '', phrase) ? placeless : kept;
   const title = placed && phrase !== undefined ? capitalized(placed) : placed;
   if (!title) {
     return { kind: 'rejected', reason: 'No event title was recognised.' };
   }
 
-  const modelDate = realDate(parse.date?.trim());
   const groundedDate =
     phrase === undefined ? undefined : groundDate(modelDate, { phrase, referenceDate });
   const resolvedDate = groundedDate ?? modelDate ?? realDate(fallbackDate) ?? referenceDate;
@@ -329,15 +613,20 @@ export const normalizeQuickAdd = (
   }
 
   // Capture passes no phrase and keeps its locations as before.
-  const location = placeOf(meaningfulText(parse.location), title, phrase);
-  const recurrence = recurrenceFromParse(parse.recurrence, resolvedDate);
+  const location = dayAsPlace ? undefined : placeOf(place, title, phrase);
+  // The repeat the words state, and the draft on the first of its days
+  // ("every weekday" typed on a Saturday starts on Monday).
+  const { date, recurrence } = startOnRule(
+    resolvedDate,
+    recurrenceFromParse(parse.recurrence, resolvedDate, phrase),
+  );
 
   return {
     ...(invite.length > 0 ? { invite } : {}),
     kind: 'parsed',
     prefill: {
       ...(times.source === 'period' ? { assumedTime: true } : {}),
-      date: resolvedDate,
+      date,
       endTime: resolvedEnd,
       isAllDay,
       ...(location ? { location } : {}),

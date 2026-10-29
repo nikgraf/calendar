@@ -140,8 +140,16 @@ the served model (#184) and slot proposals (#185) are in
       `/api/show` instead of the fixed `num_ctx`; image input for a served
       model (Gemma 4 takes images, so capture could skip OCR); the
       `ModelInfo` capability record beyond the context (modalities, guided
-      JSON) once a feature reads it; the bench's phrase set grown from real
-      misreads.
+      JSON) once a feature reads it.
+- [ ] Model bench follow-ups (the bench, 2026-10-25, `docs/decisions.md`
+      → AI; each its own PR, the bench re-run in the PR body) —
+      "remind me … before" / "erinnere mich … vorher" read as a to-do cue,
+      and "15 minutes before" as a length; notes and notifications have
+      no field in the quick-add and refine schemas (0/15); a bare "make it
+      8" and the dictated "eight" are not read as a time (SpeechAnalyzer
+      writes small numbers as words); a German change taken as a title
+      ("lieber Mittwoch"); the small-hours reading of a bare 1–6 (open
+      since #248).
 - [ ] Gemma 4 on iOS — opt-in download via llama.rn (JSON schema →
       grammar maps onto `generateJson`), load on demand, unload on
       background; only if the bench shows the model is the bottleneck.

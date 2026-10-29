@@ -150,6 +150,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   report (only session creation proves no flow ran), and the longer
   timeout alone (an XCTest that never initializes still fails). Open:
   whether the cold-runner case returns.
+- **Flow 06's sheet drag off the bottom edge** (2026-10-29,
+  `todo/editor-sheet-drag-race`) — the drag that raises the half-height
+  editor started at 93 %, inside SpringBoard's bottom-edge gesture region:
+  the app's pan waited on its cover-sheet edge pan, whose answer came up
+  to 0.56 s after touch-down on CI, after Maestro's 0.1 s move, so three
+  runs left the sheet at half. It now starts on the title (84 % → 51 %).
+  The app was ruled out: each failure shows the form at its top, and the
+  keyboard last hid 2.4–5.3 s before the drag. Rejected: a retry
+  while the grabber reads "Half screen" (it would pass a sheet that rises
+  only now and then). Open: how long a real finger there waits on a phone.
 - **iOS e2e without MapKit** (2026-10-15, `todo/ios-geo-off`) — CI's bundle
   sets `EXPO_PUBLIC_CALENDAR_GEO=off`, the desktop's `CALENDAR_GEO=off`:
   flow 22's "Room 4" was geocoded live on every run (once to a place named
@@ -1139,6 +1149,37 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   worth it); iOS uses `expo-sharing`'s receive support with a wrapped
   plugin. Open: the real share sheet on a device (both variants), HEIC
   from Photos, whether 6000 chars / 8 events fit the context.
+
+- **The model bench** (2026-10-25, #254) — `apps/desktop/e2e/bench/`
+  grows the #184 phrase table into cases with turns (a phrase, then the
+  changes a thread would make) through `parseQuickAdd` and `parseRefine`
+  on Apple's model and any served one; a turn is text or a recording
+  with its transcript; expectations per field, by where a person would
+  put the event, a later turn held to leave what it was not about; a
+  JSON report to diff two commits by. Measured, never gated. Rejected:
+  exact-JSON snapshots (wording and dates drift), prompt variants as a
+  parameter (two runs on two commits do), a CI gate (no model there).
+  Open: the gaps the baseline shows, listed in todo.md (Tier 3).
+- **Quick-add repeats are the phrase's** (2026-10-26, `todo/quick-add-repeat`)
+  — `statedRepeat` (`grounding.ts`) reads kind, gap, days, ordinal
+  weekday, count and span from the words; `recurrenceFromParse` builds
+  the rule from that, in quick add and over a draft's rule in a
+  refinement. No repeat word, no rule; the model's kind only behind a
+  repeat word the code does not read, its count and gap never, its end
+  only behind an until word naming a day. A rule with chosen days starts
+  on the first of them. Rejected: sparing only the `count: 1` rule (the
+  invented end a week on would have stayed). Open: negations, "twice a
+  week", "2nd and 4th Tuesday".
+- **The title's trim knows the repeat forms** (2026-10-26,
+  `todo/title-repeat-forms`) — `WHEN_AT_END` takes the forms `statedRepeat`
+  reads, a repeat said first ("Jeden Dienstag um 18 Uhr Fußball" is
+  "Fußball"), and a repeat's end, count or span after it — those only
+  behind a repeat in the title or the phrase, so "Vacation until Friday"
+  keeps its words. A location the model made of the phrase's only weekday
+  ("Standup Monday", "Coffee Thursday") is no place and holds nothing in
+  the title; any other holds its words ("Ruby Tuesday"). Rejected: trimming
+  a frequency word said first ("Weekly sync" is a name). Open: nouns read
+  as repeats ("Ski weekends", "McKinsey Quarterly"), an end said first.
 
 ## Notifications
 

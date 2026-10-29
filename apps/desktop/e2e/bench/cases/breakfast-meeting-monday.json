@@ -1,0 +1,16 @@
+{
+  "lang": "en",
+  "tags": ["basic"],
+  "turns": [
+    {
+      "input": { "text": "Breakfast meeting Monday" },
+      "expect": {
+        "title": "breakfast meeting",
+        "weekday": 1,
+        "startTime": "08:00",
+        "endTime": "09:00",
+        "assumedTime": true
+      }
+    }
+  ]
+}

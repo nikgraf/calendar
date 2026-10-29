@@ -12,13 +12,18 @@ import {
   isAllDayPhrase,
   isTodoPhrase,
   mentionsDate,
-  mentionsRepeat,
+  mentionsFixedDate,
   namedWeekdays,
+  namesDays,
   periodOf,
   periodTimes,
+  saysOnlyWhen,
+  statedRepeat,
   statedTimes,
   statesClockTime,
   statesDuration,
+  statesNoEnd,
+  statesUntil,
   trimWhen,
   windowOf,
   withoutPlace,
@@ -26,6 +31,9 @@ import {
 
 // 2026-08-22 is a Saturday.
 const REFERENCE = '2026-08-22';
+
+/** Whether the phrase names a repeat at all. */
+const mentionsRepeat = (phrase: string): boolean => statedRepeat(phrase) !== undefined;
 
 describe('statedTimes', () => {
   it('reads the clock times a phrase states, in either language', () => {
@@ -465,6 +473,340 @@ describe('namedWeekdays and groundDays', () => {
   });
 });
 
+describe('statedRepeat', () => {
+  const WEEKDAYS = [
+    { weekday: 'MO' },
+    { weekday: 'TU' },
+    { weekday: 'WE' },
+    { weekday: 'TH' },
+    { weekday: 'FR' },
+  ];
+
+  it('hears a repeat in a habit as well as in "every"', () => {
+    expect(mentionsRepeat('Standup Mondays at 9')).toBe(true);
+    expect(mentionsRepeat('Stammtisch montags')).toBe(true);
+    expect(mentionsRepeat('Yoga alle zwei Wochen')).toBe(true);
+    expect(mentionsRepeat('Review fortnightly')).toBe(true);
+    expect(mentionsRepeat('Brunch on weekends')).toBe(true);
+    expect(mentionsRepeat('the last Friday of the month')).toBe(true);
+    expect(mentionsRepeat('Standup Monday at 9')).toBe(false);
+    expect(mentionsRepeat('Brunch am Wochenende')).toBe(false);
+    expect(mentionsRepeat('Lunch mit allen Kollegen')).toBe(false);
+    // Review: a bare "each", "jeder" or "alle", and a repeat as a noun,
+    // made a weekly rule out of the one weekday beside them.
+    expect(mentionsRepeat('Interviews with each candidate Friday at 10')).toBe(false);
+    expect(mentionsRepeat('Grillen am Samstag, jeder bringt was mit')).toBe(false);
+    expect(mentionsRepeat('Rundmail an alle morgen um 9')).toBe(false);
+    expect(mentionsRepeat('Mathe Wiederholung Dienstag um 10')).toBe(false);
+    expect(mentionsRepeat('Repeat blood test next Friday at 8')).toBe(false);
+    expect(mentionsRepeat('make it repeat')).toBe(true);
+    expect(mentionsRepeat('soll sich wiederholen')).toBe(true);
+    expect(mentionsRepeat('Pay rent on the 1st of the month')).toBe(true);
+    // Review: the month as a plain reference, and a frequency word as an
+    // adjective, name no repeat.
+    expect(mentionsRepeat('Dinner with Anna at the end of the month at 6')).toBe(false);
+    expect(mentionsRepeat('Abrechnung Ende des Monats um 10')).toBe(false);
+    expect(mentionsRepeat('Employee of the month lunch Friday at 12')).toBe(false);
+    expect(mentionsRepeat('Review the monthly budget with Anna Friday at 3')).toBe(false);
+    expect(mentionsRepeat('Finish the weekly report Friday at 10')).toBe(false);
+    expect(mentionsRepeat('Rent monthly')).toBe(true);
+    // German weekday compounds are habits too.
+    expect(mentionsRepeat('Chor freitagabends')).toBe(true);
+    expect(mentionsRepeat('Stammtisch jeden Montagabend um 19 Uhr')).toBe(true);
+  });
+
+  it('reads the frequency and the gap', () => {
+    expect(statedRepeat('Team standup every monday at 9')).toEqual({ freq: 'weekly' });
+    expect(statedRepeat('Standup Mondays at 9')).toEqual({ freq: 'weekly' });
+    expect(statedRepeat('Jeden Dienstag um 18 Uhr Fußball')).toEqual({ freq: 'weekly' });
+    expect(statedRepeat('Standup every week at 9')).toEqual({ freq: 'weekly' });
+    expect(statedRepeat('Vitamins every morning')).toEqual({ freq: 'daily' });
+    expect(statedRepeat('Backup jeden Tag um 3')).toEqual({ freq: 'daily' });
+    expect(statedRepeat('Rent monthly')).toEqual({ freq: 'monthly' });
+    expect(statedRepeat('Checkup yearly')).toEqual({ freq: 'yearly' });
+    expect(statedRepeat('Report einmal pro Woche')).toEqual({ freq: 'weekly' });
+    expect(statedRepeat('Therapy every two weeks on Thursday at 4')).toEqual({
+      freq: 'weekly',
+      interval: 2,
+    });
+    expect(statedRepeat('Yoga alle zwei Wochen am Montag')).toEqual({
+      freq: 'weekly',
+      interval: 2,
+    });
+    expect(statedRepeat('Review every other Tuesday')).toEqual({ freq: 'weekly', interval: 2 });
+    expect(statedRepeat('Review jeden zweiten Dienstag')).toEqual({ freq: 'weekly', interval: 2 });
+    expect(statedRepeat('Sync fortnightly')).toEqual({ freq: 'weekly', interval: 2 });
+    expect(statedRepeat('Putzen alle 14 Tage')).toEqual({ freq: 'weekly', interval: 2 });
+    expect(statedRepeat('Water the plants every 3 days')).toEqual({ freq: 'daily', interval: 3 });
+    expect(statedRepeat('Quarterly review every three months')).toEqual({
+      freq: 'monthly',
+      interval: 3,
+    });
+    // Review: the word names the kind and the gap stands beside it.
+    expect(statedRepeat('Weekly 1:1 every other week on Tuesday at 10')).toEqual({
+      freq: 'weekly',
+      interval: 2,
+    });
+    expect(statedRepeat('Daily standup every other day')).toEqual({
+      freq: 'daily',
+      interval: 2,
+    });
+    // The month as the frame, when nothing else says.
+    expect(statedRepeat('Pay rent on the 1st of the month')).toEqual({ freq: 'monthly' });
+    expect(statedRepeat('Pay rent every 15th')).toEqual({ freq: 'monthly' });
+    expect(statedRepeat('Miete jeden 15.')).toEqual({ freq: 'monthly' });
+    // Codex: the last frequency word is the one meant, a ruled-out one is not.
+    expect(statedRepeat('change from weekly to monthly')).toEqual({ freq: 'monthly' });
+    expect(statedRepeat('change from every week to every month')).toEqual({ freq: 'monthly' });
+    expect(statedRepeat('change from every two weeks to every three weeks')).toEqual({
+      freq: 'weekly',
+      interval: 3,
+    });
+    expect(statedRepeat('switch from daily to weekly')).toEqual({ freq: 'weekly' });
+    expect(statedRepeat('monthly, not weekly')).toEqual({ freq: 'monthly' });
+    // Review: more gaps and kinds.
+    expect(statedRepeat('Water plants every third day')).toEqual({ freq: 'daily', interval: 3 });
+    expect(statedRepeat('Giessen jeden dritten Tag')).toEqual({ freq: 'daily', interval: 3 });
+    expect(statedRepeat('Business review quarterly')).toEqual({ freq: 'monthly', interval: 3 });
+    expect(statedRepeat('Putzen alle acht Tage')).toEqual({ freq: 'weekly' });
+    expect(statedRepeat('Meds every single day')).toEqual({ freq: 'daily' });
+    expect(statedRepeat('Stammtisch jeden Montagabend um 19 Uhr')).toEqual({ freq: 'weekly' });
+    expect(statedRepeat('Chor freitagabends')).toEqual({ freq: 'weekly' });
+    // Named in words the code does not read: an empty reading, the
+    // model's frequency to fill.
+    expect(statedRepeat('make it recurring')).toEqual({});
+    expect(statedRepeat('Standup Monday at 9')).toBeUndefined();
+    expect(statedRepeat('Dentist Friday, repeating')).toEqual({});
+  });
+
+  it('reads the days of a weekly rule and the weekday of a monthly one', () => {
+    expect(statedRepeat('Standup every weekday at 9:30')).toEqual({
+      byDay: WEEKDAYS,
+      freq: 'weekly',
+    });
+    expect(statedRepeat('Standup werktags um 9')).toEqual({ byDay: WEEKDAYS, freq: 'weekly' });
+    expect(statedRepeat('Gym Mondays and Wednesdays at 7')).toEqual({
+      byDay: [{ weekday: 'MO' }, { weekday: 'WE' }],
+      freq: 'weekly',
+    });
+    // "every day" on named days is a weekly rule on them.
+    expect(statedRepeat('Standup every day Monday through Friday')).toEqual({
+      byDay: WEEKDAYS,
+      freq: 'weekly',
+    });
+    expect(statedRepeat('Hike every weekend')).toEqual({
+      byDay: [{ weekday: 'SA' }, { weekday: 'SU' }],
+      freq: 'weekly',
+    });
+    // Monthly on a weekday: its ordinal when said, else left to the first day.
+    expect(statedRepeat('Book club every month on Wednesday at 7pm')).toEqual({
+      byDay: [{ weekday: 'WE' }],
+      freq: 'monthly',
+    });
+    expect(statedRepeat('Team lunch every first Friday')).toEqual({
+      byDay: [{ ordinal: 1, weekday: 'FR' }],
+      freq: 'monthly',
+    });
+    expect(statedRepeat('the second Tuesday of every month')).toEqual({
+      byDay: [{ ordinal: 2, weekday: 'TU' }],
+      freq: 'monthly',
+    });
+    expect(statedRepeat('Retro jeden letzten Freitag im Monat')).toEqual({
+      byDay: [{ ordinal: -1, weekday: 'FR' }],
+      freq: 'monthly',
+    });
+    expect(statedRepeat('Planning every two months on the first Monday')).toEqual({
+      byDay: [{ ordinal: 1, weekday: 'MO' }],
+      freq: 'monthly',
+      interval: 2,
+    });
+    expect(statedRepeat('Stammtisch jeden 1. Freitag im Monat um 19 Uhr')).toEqual({
+      byDay: [{ ordinal: 1, weekday: 'FR' }],
+      freq: 'monthly',
+    });
+    // Review: a kind the words name stands over a position in the month.
+    expect(statedRepeat('Weekly sync starting the first Monday of October at 10')).toEqual({
+      freq: 'weekly',
+    });
+    expect(statedRepeat('Offsite every year on the first Monday of June')).toEqual({
+      freq: 'yearly',
+    });
+    expect(
+      statedRepeat('Choir every Monday at 7pm starting the first Monday of September'),
+    ).toEqual({ freq: 'weekly' });
+    expect(statedRepeat('Yoga Mondays starting the first Monday of September')).toEqual({
+      freq: 'weekly',
+    });
+    // Review: a position needs no lead word, "last" does.
+    expect(statedRepeat('Lunch first Friday of the month at noon')).toEqual({
+      byDay: [{ ordinal: 1, weekday: 'FR' }],
+      freq: 'monthly',
+    });
+    expect(statedRepeat('Stammtisch am ersten Freitag im Monat um 19 Uhr')).toEqual({
+      byDay: [{ ordinal: 1, weekday: 'FR' }],
+      freq: 'monthly',
+    });
+    // Review: "every other weekend" keeps its gap.
+    expect(statedRepeat('Hike every other weekend')).toEqual({
+      byDay: [{ weekday: 'SA' }, { weekday: 'SU' }],
+      freq: 'weekly',
+      interval: 2,
+    });
+    expect(statedRepeat('Wandern jedes zweite Wochenende')).toEqual({
+      byDay: [{ weekday: 'SA' }, { weekday: 'SU' }],
+      freq: 'weekly',
+      interval: 2,
+    });
+    // Review: a daily word with a day set is the set's weekly rule, and a
+    // gap in days does not carry over.
+    expect(statedRepeat('Daily standup every weekday at 9:30')).toEqual({
+      byDay: WEEKDAYS,
+      freq: 'weekly',
+    });
+    expect(statedRepeat('Standup every day, weekdays only')).toEqual({
+      byDay: WEEKDAYS,
+      freq: 'weekly',
+    });
+    expect(statedRepeat('every other day Monday to Friday')).toEqual({
+      byDay: WEEKDAYS,
+      freq: 'weekly',
+    });
+    // Review: days ruled out and a start day are not the rule's.
+    expect(statedRepeat('Standup every weekday at 9:30 except holidays')).toEqual({
+      byDay: WEEKDAYS,
+      freq: 'weekly',
+    });
+    expect(statedRepeat('Gym Mondays and Thursdays, but not in August')).toEqual({
+      byDay: [{ weekday: 'MO' }, { weekday: 'TH' }],
+      freq: 'weekly',
+    });
+    expect(statedRepeat('Physio Tuesdays and Thursdays starting Monday')).toEqual({
+      byDay: [{ weekday: 'TU' }, { weekday: 'TH' }],
+      freq: 'weekly',
+    });
+    expect(statedRepeat('Standup every day from Monday to Friday')).toEqual({
+      byDay: WEEKDAYS,
+      freq: 'weekly',
+    });
+    expect(namesDays('every weekday except holidays')).toBe(true);
+    expect(namesDays('every two weeks')).toBe(false);
+    // Codex: a weekday the rule ends on is not one it falls on; a range
+    // still is, unless "every" stands right before its first day.
+    expect(statedRepeat('Piano every Tuesday at 5pm until Friday')).toEqual({ freq: 'weekly' });
+    expect(statedRepeat('Piano every Tuesday until Friday')).toEqual({ freq: 'weekly' });
+    expect(statedRepeat('Klavier jeden Dienstag bis Freitag')).toEqual({ freq: 'weekly' });
+    expect(statedRepeat('Meeting jeden Tag Montag bis Freitag um 9')).toEqual({
+      byDay: WEEKDAYS,
+      freq: 'weekly',
+    });
+    expect(namesDays('every Tuesday until Friday')).toBe(true);
+    // A day ruled out is not read: the rule is daily, Sundays included.
+    expect(statedRepeat('every day except Sunday')).toEqual({ freq: 'daily' });
+    // Review: a set named in passing leaves a daily rule daily.
+    expect(statedRepeat('Take meds every morning at 8, weekends included')).toEqual({
+      freq: 'daily',
+    });
+    // "last Friday" alone is a day gone by.
+    expect(statedRepeat('Dinner every week, like last Friday')).toEqual({ freq: 'weekly' });
+  });
+
+  it('reads a count and a span', () => {
+    expect(statedRepeat('Yoga every Monday 10 times')).toEqual({ count: 10, freq: 'weekly' });
+    expect(statedRepeat('Yoga jeden Montag zehnmal')).toEqual({ count: 10, freq: 'weekly' });
+    expect(statedRepeat('Physio every Tuesday, 6x')).toEqual({ count: 6, freq: 'weekly' });
+    // "2 times a week" is no count.
+    expect(statedRepeat('Gym every Monday and Thursday, 2 times a week')).toEqual({
+      byDay: [{ weekday: 'MO' }, { weekday: 'TH' }],
+      freq: 'weekly',
+    });
+    expect(statedRepeat('Yoga every day for two weeks')).toEqual({
+      freq: 'daily',
+      runsFor: { amount: 2, unit: 'weeks' },
+    });
+    expect(statedRepeat('Standup every weekday for the next 6 weeks')).toEqual({
+      byDay: WEEKDAYS,
+      freq: 'weekly',
+      runsFor: { amount: 6, unit: 'weeks' },
+    });
+    expect(statedRepeat('Kurs jeden Dienstag drei Monate lang')).toEqual({
+      freq: 'weekly',
+      runsFor: { amount: 3, unit: 'months' },
+    });
+    expect(statedRepeat('Standup every day for an hour')).toEqual({ freq: 'daily' });
+    // Review: "3x weekly" and "3 times every week" are no count either.
+    expect(statedRepeat('Gym 3x weekly at 7')).toEqual({ freq: 'weekly' });
+    expect(statedRepeat('Gym 3 times every week')).toEqual({ freq: 'weekly' });
+    // Review: "für einen Monat".
+    expect(statedRepeat('Kurs jeden Montag für einen Monat')).toEqual({
+      freq: 'weekly',
+      runsFor: { amount: 1, unit: 'months' },
+    });
+    // Of something that repeats, a count or span alone is a reading.
+    expect(statedRepeat('for 6 weeks')).toBeUndefined();
+    expect(statedRepeat('for 6 weeks', { ofRepeat: true })).toEqual({
+      runsFor: { amount: 6, unit: 'weeks' },
+    });
+    expect(statedRepeat('10 times', { ofRepeat: true })).toEqual({ count: 10 });
+    expect(statedRepeat('at 8', { ofRepeat: true })).toBeUndefined();
+    // "just once a week" takes nothing away.
+    expect(clearsRepeat('Gym, just once a week, Mondays at 7')).toBe(false);
+    expect(clearsRepeat('just once')).toBe(true);
+  });
+
+  it('tells an end the phrase leads into from a time or a span of days', () => {
+    expect(statesUntil('Piano every Tuesday until March')).toBe(true);
+    expect(statesUntil('every day through Friday')).toBe(true);
+    expect(statesUntil('weekly, ending Oct 20')).toBe(true);
+    expect(statesUntil('every Monday until 15 March')).toBe(true);
+    expect(statesUntil('every Monday until the 15th')).toBe(true);
+    expect(statesUntil('jeden Dienstag bis zum 15. März')).toBe(true);
+    expect(statesUntil('every Monday until 2026-12-31')).toBe(true);
+    expect(statesUntil('every Monday until 5pm')).toBe(false);
+    expect(statesUntil('jeden Montag von 9 bis 10 Uhr')).toBe(false);
+    expect(statesUntil('Standup every day Monday through Friday')).toBe(false);
+    expect(statesUntil('Team standup every monday at 9')).toBe(false);
+    // Review: "through" as a verb's particle, a hedged clock time, a
+    // numeric date, and a lead word before a clock time.
+    expect(statesUntil('Go through emails every morning at 8')).toBe(false);
+    expect(statesUntil('every day through the end of March')).toBe(true);
+    expect(statesUntil('Choir every Wednesday at 7pm, ends at 9')).toBe(false);
+    expect(statesUntil('jeden Montag 18 bis Viertel nach 7')).toBe(false);
+    expect(statesUntil('every Monday 9 till half 10')).toBe(false);
+    expect(statesUntil('Coworking every Friday 9 until about 5')).toBe(false);
+    expect(statesUntil('jeden Montag von 9 bis ca. 11')).toBe(false);
+    expect(statesUntil('bis zum 10 Uhr')).toBe(false);
+    expect(statesUntil('bis 9.30 Uhr')).toBe(false);
+    expect(statesUntil('Yoga jeden Montag bis 31.12.')).toBe(true);
+    expect(statesUntil('every Monday until 12/31')).toBe(true);
+    expect(statesUntil('every Monday until the end of the year')).toBe(true);
+    // Review: words after "until" that name no day, a bare German
+    // ordinal, a year, and a clock time written with a dot.
+    expect(statesUntil('Standup every Monday at 9 until further notice')).toBe(false);
+    expect(statesUntil('Standup jeden Montag um 9 bis auf Weiteres')).toBe(false);
+    expect(statesUntil('Market every Saturday from 8 until lunch')).toBe(false);
+    expect(statesUntil('Markt jeden Samstag von 8 bis Mittag')).toBe(false);
+    expect(statesUntil('Yoga jeden Montag, bis zu 12 Teilnehmer')).toBe(false);
+    expect(statesUntil('Running club every Sunday at 8, ending with brunch')).toBe(false);
+    expect(statesUntil('Yoga jeden Montag bis zum 15.')).toBe(true);
+    expect(statesUntil('every Monday until the end of 2026')).toBe(true);
+    expect(statesUntil('every Monday until 2027')).toBe(true);
+    expect(statesUntil('Yoga jeden Montag 17 bis 18.30.')).toBe(false);
+    expect(statesUntil('until Christmas')).toBe(true);
+    expect(statesUntil('bis Ende Mai')).toBe(true);
+    // Codex: "every Tuesday until Friday" ends on Friday (the range
+    // reading is for "Monday through Friday"), and a relative weekday is
+    // an end too.
+    expect(statesUntil('Piano every Tuesday until Friday')).toBe(true);
+    expect(statesUntil('Piano every Tuesday until next Friday')).toBe(true);
+    expect(statesUntil('until this Friday')).toBe(true);
+    expect(statesUntil('Yoga Montag bis Freitag')).toBe(false);
+    // "forever" says there is no end.
+    expect(statesNoEnd('repeat weekly forever')).toBe(true);
+    expect(statesNoEnd('jeden Montag ohne Ende')).toBe(true);
+    expect(statesNoEnd('every week')).toBe(false);
+  });
+});
+
 describe('isTodoPhrase', () => {
   it("needs one of the prompt's cues", () => {
     expect(isTodoPhrase('remind me to call the bank')).toBe(true);
@@ -845,6 +1187,121 @@ describe('trimWhen', () => {
   it('keeps the original spelling of what is left', () => {
     expect(trimWhen('Grüße an Jörg morgen')).toBe('Grüße an Jörg');
     expect(trimWhen('Straße fegen heute')).toBe('Straße fegen');
+  });
+
+  it('takes a repeat said first, with the time after it', () => {
+    // The bench: "Jeden Dienstag um 18 Uhr Fußball" kept all of it.
+    expect(trimWhen('Jeden Dienstag um 18 Uhr Fußball')).toBe('Fußball');
+    expect(trimWhen('Every Monday standup')).toBe('standup');
+    expect(trimWhen('Alle zwei Wochen Retro')).toBe('Retro');
+    // A frequency word first names the event, as a weekday does.
+    expect(trimWhen('Weekly sync')).toBe('Weekly sync');
+    expect(trimWhen('Daily standup every weekday at 9:30')).toBe('Daily standup');
+    // Review: the month frame goes with it; "alle" without a gap is "all"
+    // ("alle morgen" is "everyone tomorrow": the day comes off).
+    expect(trimWhen('Jeden ersten Montag im Monat Stammtisch')).toBe('Stammtisch');
+    expect(trimWhen('Jeden letzten Freitag im Monat um 19 Uhr Stammtisch')).toBe('Stammtisch');
+    expect(trimWhen('Alle Jahre wieder Konzert')).toBe('Alle Jahre wieder Konzert');
+    expect(trimWhen('Rundmail an alle morgen')).toBe('Rundmail an alle');
+    expect(trimWhen('Danke an alle heute')).toBe('Danke an alle');
+    // Review: a day or date after the repeat goes with it; more when the
+    // code does not read keeps the title whole.
+    expect(trimWhen('Every two weeks on Monday retro')).toBe('retro');
+    expect(trimWhen('Jeden Monat am 1. Miete zahlen')).toBe('Miete zahlen');
+    expect(trimWhen('Jeden Freitag ab 18 Uhr Stammtisch')).toBe(
+      'Jeden Freitag ab 18 Uhr Stammtisch',
+    );
+    expect(trimWhen('Every Monday until March: Yoga')).toBe('Every Monday until March: Yoga');
+    expect(trimWhen('Every Monday for 6 weeks: physio')).toBe('Every Monday for 6 weeks: physio');
+    // Codex: a weekday span after the repeat goes with it; a word that
+    // may begin a name does not keep the title whole.
+    expect(trimWhen('Every Monday - Friday at 9 team standup')).toBe('team standup');
+    expect(trimWhen('Standup every Monday - Friday at 9')).toBe('Standup');
+    expect(trimWhen('Tomorrow at 9 the planning meeting')).toBe('the planning meeting');
+    // Codex: a list with an Oxford comma, a month after the day, a German list.
+    expect(trimWhen('Every Monday, Wednesday, and Friday at 9 standup')).toBe('standup');
+    expect(trimWhen('Every year on the 15th of May family reunion')).toBe('family reunion');
+    expect(trimWhen('Every year on May 15th family reunion')).toBe('family reunion');
+    expect(trimWhen('Jeden Montag und Mittwoch um 9 Standup')).toBe('Standup');
+    expect(mentionsFixedDate('in two days')).toBe(true);
+    expect(mentionsFixedDate('in drei Wochen')).toBe(true);
+    expect(mentionsFixedDate('next week')).toBe(false);
+    expect(mentionsFixedDate('at 9.30')).toBe(false);
+    // A dash before a repeat is no span.
+    expect(trimWhen('Rent – once a month')).toBe('Rent');
+    expect(trimWhen('Gym - Mondays and Wednesdays')).toBe('Gym');
+    expect(trimWhen('Team sync - every Monday')).toBe('Team sync');
+    expect(trimWhen('Vacation Monday - Friday')).toBe('Vacation Monday - Friday');
+  });
+
+  it('reads the repeat forms the rule reader knows', () => {
+    expect(trimWhen('Review fortnightly')).toBe('Review');
+    expect(trimWhen('Rent once a month')).toBe('Rent');
+    expect(trimWhen('Business review quarterly')).toBe('Business review');
+    expect(trimWhen('Gym Mondays and Wednesdays')).toBe('Gym');
+    expect(trimWhen('Lunch every Monday and Wednesday at 12')).toBe('Lunch');
+    expect(trimWhen('Team lunch every first Friday at noon')).toBe('Team lunch');
+    expect(trimWhen('Hike every other weekend')).toBe('Hike');
+    expect(trimWhen('Meds every single day')).toBe('Meds');
+    expect(trimWhen('Standup wochentags um 9')).toBe('Standup');
+    expect(trimWhen('Standup an Werktagen')).toBe('Standup');
+    expect(trimWhen('Brunch on weekends')).toBe('Brunch');
+    expect(trimWhen('Retro jeden letzten Freitag im Monat')).toBe('Retro');
+    expect(trimWhen('Lunch first Friday of the month at noon')).toBe('Lunch');
+    expect(trimWhen('Pay rent on the 1st of the month')).toBe('Pay rent');
+    expect(trimWhen('Pay rent every 15th')).toBe('Pay rent');
+    expect(trimWhen('Miete jeden 15.')).toBe('Miete');
+    // Not a repeat the reader knows, or a name: left as it is.
+    expect(trimWhen('Gym Mon and Wed')).toBe('Gym Mon and Wed');
+    expect(trimWhen('Quarterly review')).toBe('Quarterly review');
+    expect(trimWhen('Employee of the month lunch Friday at 12')).toBe(
+      'Employee of the month lunch',
+    );
+    expect(trimWhen('Dinner at the end of the month')).toBe('Dinner at the end of the month');
+    expect(saysOnlyWhen('every Monday 10 times')).toBe(true);
+    expect(saysOnlyWhen('fortnightly')).toBe(true);
+  });
+
+  it("takes a repeat's end, count and span, after a repeat only", () => {
+    // The bench: "Piano lesson every Tuesday at 5pm until March" kept all of it.
+    expect(trimWhen('Piano lesson every Tuesday at 5pm until March')).toBe('Piano lesson');
+    expect(trimWhen('Standup every day until Friday')).toBe('Standup');
+    expect(trimWhen('Klavier jeden Dienstag bis zum 15. März')).toBe('Klavier');
+    expect(trimWhen('Choir every Wednesday ending Oct 20')).toBe('Choir');
+    expect(trimWhen('Standup every Monday until March 2027')).toBe('Standup');
+    expect(trimWhen('Yoga every Monday until the end of the year')).toBe('Yoga');
+    expect(trimWhen('Yoga every Monday 10 times')).toBe('Yoga');
+    expect(trimWhen('Yoga every day for two weeks')).toBe('Yoga');
+    expect(trimWhen('Standup every weekday for the next 6 weeks at 9')).toBe('Standup');
+    // Review: a German date ending in a dot.
+    expect(trimWhen('Klavier jeden Dienstag bis 15.3.')).toBe('Klavier');
+    expect(trimWhen('Miete jeden Monat bis zum 15.')).toBe('Miete');
+    // Review: given the phrase, the end is the repeat's even when the
+    // title dropped the repeat's words; a count or span the rule does not
+    // take stays ("3x weekly" is no count, "for a week" on a yearly rule
+    // is the event's length), as does a span of weekdays.
+    expect(
+      trimWhen('Piano lesson until March', undefined, {
+        phrase: 'Piano lesson every Tuesday at 5pm until March',
+      }),
+    ).toBe('Piano lesson');
+    expect(trimWhen('Piano lesson until March')).toBe('Piano lesson until March');
+    expect(trimWhen('Gym 3x weekly')).toBe('Gym 3x');
+    expect(trimWhen('Gym 3x', undefined, { phrase: 'Gym 3x weekly' })).toBe('Gym 3x');
+    expect(trimWhen('Tabletten dreimal täglich')).toBe('Tabletten dreimal');
+    expect(trimWhen('Beach house for a week every year')).toBe('Beach house for a week');
+    expect(trimWhen('Beach house every year for a week')).toBe('Beach house every year for a week');
+    expect(trimWhen('Standup every weekday for three days')).toBe('Standup');
+    expect(trimWhen('Conference Monday through Friday every year')).toBe(
+      'Conference Monday through Friday',
+    );
+    expect(trimWhen('Klavier jeden Dienstag bis zum 15. März 2027')).toBe('Klavier');
+    expect(trimWhen('Piano lesson every Tuesday until 15 March 2027')).toBe('Piano lesson');
+    // Without a repeat before them, the words are the title's own.
+    expect(trimWhen('Vacation until Friday')).toBe('Vacation until Friday');
+    expect(trimWhen('Push-ups 10 times')).toBe('Push-ups 10 times');
+    expect(trimWhen('Lunch for two')).toBe('Lunch for two');
+    expect(trimWhen('Open until 5pm')).toBe('Open until 5pm');
   });
 });
 

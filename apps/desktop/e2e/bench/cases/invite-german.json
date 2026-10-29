@@ -1,0 +1,19 @@
+{
+  "lang": "de",
+  "tags": ["de", "guests"],
+  "turns": [
+    {
+      "input": {
+        "audio": "invite-german-1.m4a",
+        "transcript": "Teammeeting am Mittwoch um 9, lade Tom Baker und Jörg Müller ein"
+      },
+      "expect": {
+        "title": "teammeeting",
+        "weekday": 3,
+        "startTime": "09:00",
+        "endTime": "10:00",
+        "guests": { "emails": ["tom.baker@example.com", "joerg.mueller@example.com"] }
+      }
+    }
+  ]
+}

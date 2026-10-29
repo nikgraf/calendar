@@ -1,0 +1,34 @@
+{
+  "lang": "en",
+  "tags": ["flow", "guests"],
+  "turns": [
+    {
+      "input": { "text": "Lunch with Sarah tomorrow at 1" },
+      "expect": {
+        "title": "lunch with sarah",
+        "dayOffset": 1,
+        "startTime": "13:00",
+        "endTime": "14:00",
+        "guests": {}
+      }
+    },
+    {
+      "input": { "text": "invite Anna" },
+      "expect": { "guests": { "choices": ["Anna"] } }
+    },
+    {
+      "input": { "text": "invite Tom Baker and jo@example.com" },
+      "expect": {
+        "guests": { "emails": ["tom.baker@example.com", "jo@example.com"], "choices": ["Anna"] }
+      }
+    },
+    {
+      "input": { "text": "remove Tom" },
+      "expect": { "guests": { "emails": ["jo@example.com"], "choices": ["Anna"] } }
+    },
+    {
+      "input": { "text": "invite Anna Lee" },
+      "expect": { "guests": { "emails": ["jo@example.com", "anna.lee@example.com"] } }
+    }
+  ]
+}

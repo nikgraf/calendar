@@ -1,0 +1,10 @@
+{
+  "lang": "en",
+  "tags": ["basic"],
+  "turns": [
+    {
+      "input": { "text": "Call with Anna tomorrow" },
+      "expect": { "title": "call with anna", "dayOffset": 1, "isAllDay": true, "guests": {} }
+    }
+  ]
+}

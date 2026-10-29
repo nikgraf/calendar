@@ -1,0 +1,24 @@
+{
+  "lang": "en",
+  "tags": ["flow", "location"],
+  "turns": [
+    {
+      "input": { "text": "Coffee tomorrow at 10 at Café Prückel" },
+      "expect": {
+        "title": "coffee",
+        "dayOffset": 1,
+        "startTime": "10:00",
+        "endTime": "11:00",
+        "location": "cafe pruckel"
+      }
+    },
+    {
+      "input": { "text": "remove the location" },
+      "expect": { "location": null }
+    },
+    {
+      "input": { "text": "at the office instead" },
+      "expect": { "location": "office" }
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "lang": "en",
+  "tags": ["notes"],
+  "turns": [
+    {
+      "input": { "text": "Lunch with Tom tomorrow at 1, note: bring the contract" },
+      "expect": {
+        "title": "lunch with tom",
+        "dayOffset": 1,
+        "startTime": "13:00",
+        "endTime": "14:00",
+        "notes": "bring the contract"
+      }
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "lang": "en",
+  "tags": ["flow"],
+  "turns": [
+    {
+      "input": { "text": "Yoga today at 5:30pm" },
+      "expect": { "title": "yoga", "dayOffset": 0, "startTime": "17:30", "endTime": "18:30" }
+    },
+    {
+      "input": { "text": "30 minutes later" },
+      "expect": { "startTime": "18:00", "endTime": "19:00" }
+    },
+    {
+      "input": { "text": "an hour earlier" },
+      "expect": { "startTime": "17:00", "endTime": "18:00" }
+    },
+    {
+      "input": { "text": "make it 45 minutes" },
+      "expect": { "startTime": "17:00", "endTime": "17:45" }
+    },
+    {
+      "input": { "text": "tomorrow" },
+      "expect": { "dayOffset": 1 }
+    }
+  ]
+}

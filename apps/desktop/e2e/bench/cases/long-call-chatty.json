@@ -1,0 +1,20 @@
+{
+  "lang": "en",
+  "tags": ["long"],
+  "turns": [
+    {
+      "input": {
+        "audio": "long-call-chatty-1.m4a",
+        "transcript": "I'd like to schedule a call with Sarah sometime tomorrow afternoon, let's say 3pm, it should take about half an hour"
+      },
+      "expect": {
+        "kind": "event",
+        "title": "call with sarah",
+        "dayOffset": 1,
+        "startTime": "15:00",
+        "endTime": "15:30",
+        "guests": {}
+      }
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "lang": "en",
+  "tags": ["basic"],
+  "turns": [
+    {
+      "input": { "text": "Drinks with the team from 6:30 to 8:30pm on Friday" },
+      "expect": {
+        "title": "drinks with the team",
+        "weekday": 5,
+        "startTime": "18:30",
+        "endTime": "20:30"
+      }
+    }
+  ]
+}

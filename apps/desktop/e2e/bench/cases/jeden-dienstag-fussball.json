@@ -1,0 +1,19 @@
+{
+  "lang": "de",
+  "tags": ["de", "repeat"],
+  "turns": [
+    {
+      "input": {
+        "audio": "jeden-dienstag-fussball-1.m4a",
+        "transcript": "Jeden Dienstag um 18 Uhr Fußball"
+      },
+      "expect": {
+        "title": "fußball",
+        "weekday": 2,
+        "startTime": "18:00",
+        "endTime": "19:00",
+        "repeat": { "freq": "weekly" }
+      }
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "lang": "en",
+  "tags": ["repeat"],
+  "turns": [
+    {
+      "input": { "text": "Piano lesson every Tuesday at 5pm until March" },
+      "expect": {
+        "title": "piano lesson",
+        "weekday": 2,
+        "startTime": "17:00",
+        "endTime": "18:00",
+        "repeat": { "freq": "weekly", "untilMonth": 3 }
+      }
+    }
+  ]
+}

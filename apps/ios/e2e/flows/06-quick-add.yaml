@@ -108,12 +108,19 @@ tags:
             # A drag up on the form raises the half sheet instead of
             # scrolling the form in the strip under the header. UIKit hands
             # the drag to the sheet only while the form is at its top, where
-            # the drop to half put it back. The drag is shorter than the
-            # sheet's rise (about 46 % of the screen): past it, the rest of
-            # the drag scrolls the form, and the title below leaves the view.
+            # the drop to half put it back. The drag starts on the title,
+            # above the bottom edge's system gesture region (93 % is in it):
+            # for a touch there SpringBoard first asks its edge pan whether
+            # to begin, the app's gestures wait, and on CI runners the
+            # answer came after Maestro's swipe had moved (all of it in the
+            # first 0.1 s; `duration` is a hold before the lift), so the
+            # form's pan began with the finger at rest, or not before the
+            # lift, and the sheet stayed at half. The drag is shorter than
+            # the sheet's rise (about 46 % of the screen): past it, the rest
+            # of the drag scrolls the form, and the title leaves the view.
             - swipe:
-                start: 50%, 93%
-                end: 50%, 60%
+                start: 50%, 84%
+                end: 50%, 51%
                 duration: 300
             - waitForAnimationToEnd:
                 timeout: 3000

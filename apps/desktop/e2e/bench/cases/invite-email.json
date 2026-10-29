@@ -1,0 +1,19 @@
+{
+  "lang": "en",
+  "tags": ["guests"],
+  "turns": [
+    {
+      "input": {
+        "audio": "invite-email-1.m4a",
+        "transcript": "Sync on Friday at 10, invite jo@example.com"
+      },
+      "expect": {
+        "title": "sync",
+        "weekday": 5,
+        "startTime": "10:00",
+        "endTime": "11:00",
+        "guests": { "emails": ["jo@example.com"] }
+      }
+    }
+  ]
+}

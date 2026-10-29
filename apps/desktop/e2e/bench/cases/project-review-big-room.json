@@ -1,0 +1,16 @@
+{
+  "lang": "en",
+  "tags": ["location"],
+  "turns": [
+    {
+      "input": { "text": "Project review Wednesday at 11 in the big meeting room" },
+      "expect": {
+        "title": "project review",
+        "weekday": 3,
+        "startTime": "11:00",
+        "endTime": "12:00",
+        "location": "big meeting room"
+      }
+    }
+  ]
+}

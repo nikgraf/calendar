@@ -1,0 +1,15 @@
+{
+  "lang": "en",
+  "tags": ["basic", "repeat"],
+  "turns": [
+    {
+      "input": { "text": "Standup every weekday at 9:30" },
+      "expect": {
+        "title": "standup",
+        "startTime": "09:30",
+        "endTime": "10:30",
+        "repeat": { "freq": "weekly", "byDay": ["MO", "TU", "WE", "TH", "FR"] }
+      }
+    }
+  ]
+}

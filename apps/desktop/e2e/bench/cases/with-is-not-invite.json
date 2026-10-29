@@ -1,0 +1,16 @@
+{
+  "lang": "en",
+  "tags": ["guests"],
+  "turns": [
+    {
+      "input": { "text": "Dinner with Tom Baker on Saturday" },
+      "expect": {
+        "title": "dinner with tom baker",
+        "weekday": 6,
+        "startTime": "19:00",
+        "endTime": "20:00",
+        "guests": {}
+      }
+    }
+  ]
+}

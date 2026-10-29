@@ -1,0 +1,16 @@
+{
+  "lang": "en",
+  "tags": ["guests"],
+  "turns": [
+    {
+      "input": { "text": "Coffee Thursday at 3, invite Anna" },
+      "expect": {
+        "title": "coffee",
+        "weekday": 4,
+        "startTime": "15:00",
+        "endTime": "16:00",
+        "guests": { "choices": ["Anna"] }
+      }
+    }
+  ]
+}

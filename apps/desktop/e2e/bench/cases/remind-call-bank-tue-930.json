@@ -1,0 +1,10 @@
+{
+  "lang": "en",
+  "tags": ["basic", "task"],
+  "turns": [
+    {
+      "input": { "text": "remind me to call the bank tue 9:30" },
+      "expect": { "kind": "task", "title": "call the bank", "weekday": 2, "startTime": "09:30" }
+    }
+  ]
+}

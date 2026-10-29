@@ -1,0 +1,16 @@
+{
+  "lang": "en",
+  "tags": ["repeat"],
+  "turns": [
+    {
+      "input": { "text": "Therapy every two weeks on Thursday at 4" },
+      "expect": {
+        "title": "therapy",
+        "weekday": 4,
+        "startTime": "16:00",
+        "endTime": "17:00",
+        "repeat": { "freq": "weekly", "interval": 2 }
+      }
+    }
+  ]
+}

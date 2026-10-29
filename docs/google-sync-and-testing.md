@@ -432,10 +432,18 @@ a DST change there.
   the fixture included (`packages/ai/src/grounding.ts`). A refinement is
   the same grammar with empty parts meaning "unchanged" (`| | 10:00-11:00`
   moves the times only); a sentence leaves the draft to the normalizer.
-  Real models are measured, never gated: the bench
-  (`apps/desktop/e2e/bench/modelBench.e2e.ts`, `MODEL_BENCH=1 E2E=1`,
-  run by path) prints how Apple's model and any Ollama models
-  (`MODEL_BENCH_OLLAMA=gemma3:4b,gemma3:12b`) do on its phrase set.
+  Real models are measured, never gated: the model bench
+  (`apps/desktop/e2e/bench/`, `MODEL_BENCH=1 E2E=1 pnpm exec vp test run
+  apps/desktop/e2e/bench/modelBench.e2e.ts`) runs the cases under
+  `cases/` — a phrase, then the changes a thread would make to it, as
+  text or as a recording with its transcript — through `parseQuickAdd`
+  and `parseRefine` on Apple's model (the helper binary) and any served
+  one (`MODEL_BENCH_OLLAMA`, `MODEL_BENCH_OPENAI`), resolves guests
+  against `contacts.json`, scores each field by where a person would put
+  the event (a later turn must also leave what it was not about), prints
+  a table and writes a JSON report with the raw answers under
+  `output/bench/`; `MODEL_BENCH_COMPARE` diffs two runs. Its README has
+  the case format and every variable.
   Desktop
   `launchApp(seed, { model: 'fixture' })`, iOS
   `EXPO_PUBLIC_CALENDAR_MODEL=fixture` in the bundle (CI), which also
@@ -935,12 +943,19 @@ Selector gotchas (each caused a real failure):
 - The editor is a form sheet: at half height the calendar above it is
   live, and Maestro's scrolls swipe at the screen's centre — on the
   calendar. A swipe on the form itself raises the sheet rather than
-  scrolling the form (flow 06 proves it). UIKit settles the sheet by how
-  far and how fast the drag went: flow 06's 93 % → 60 % in 300 ms
-  reaches full, a short slow one snaps back, and one longer than the
-  sheet's whole rise (about 46 % of the screen) goes on to scroll the
-  form once the sheet is up. A flow that fills the form
-  expands the sheet first (`expand-editor.yaml`); to look at the
+  scrolling the form (flow 06 proves it). Maestro's iOS swipe moves the
+  whole way in its first 0.1 s and then holds still for `duration`
+  before it lifts, so the app's pan must begin while the finger still
+  moves: flow 06's 84 % → 51 % reaches full, a short one snaps back,
+  and one longer than the sheet's whole rise (about 46 % of the screen)
+  goes on to scroll the form once the sheet is up. Start a swipe above
+  the bottom edge's system gesture region (on the 874-pt iPhone, y 812
+  is in it and 795 is not): there SpringBoard first asks its cover-sheet
+  edge pan whether to begin, and the app's gestures wait for the answer.
+  On CI runners it came 90 ms after touch-down in a passing run and 200,
+  402 and 562 ms in flow 06's three failures from 93 %, after the move
+  and twice after the lift, so the sheet stayed at half. A flow that fills
+  the form expands the sheet first (`expand-editor.yaml`); to look at the
   calendar behind it, tap the grabber while its value reads "Expanded".
 - Text selectors are **whole-string regexes**: prefix text does not
   match, regex metacharacters in titles must be escaped, and a pressable

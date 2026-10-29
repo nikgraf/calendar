@@ -1,0 +1,10 @@
+{
+  "lang": "de",
+  "tags": ["de", "task"],
+  "turns": [
+    {
+      "input": { "text": "Ich muss morgen die Miete überweisen" },
+      "expect": { "kind": "task", "titleIncludes": "miete uberweisen", "dayOffset": 1 }
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "lang": "en",
+  "tags": ["basic"],
+  "turns": [
+    {
+      "input": { "text": "Workshop Tuesday 2-4pm" },
+      "expect": { "title": "workshop", "weekday": 2, "startTime": "14:00", "endTime": "16:00" }
+    }
+  ]
+}

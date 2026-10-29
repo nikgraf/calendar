@@ -1,0 +1,19 @@
+{
+  "lang": "de",
+  "tags": ["de", "location"],
+  "turns": [
+    {
+      "input": {
+        "audio": "kaffee-cafe-prueckel-1.m4a",
+        "transcript": "Kaffee morgen um 15 Uhr im Café Prückel"
+      },
+      "expect": {
+        "title": "kaffee",
+        "dayOffset": 1,
+        "startTime": "15:00",
+        "endTime": "16:00",
+        "location": "cafe pruckel"
+      }
+    }
+  ]
+}

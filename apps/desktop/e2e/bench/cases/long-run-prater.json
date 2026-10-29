@@ -1,0 +1,21 @@
+{
+  "lang": "en",
+  "tags": ["long", "guests", "location"],
+  "turns": [
+    {
+      "input": {
+        "audio": "long-run-prater-1.m4a",
+        "transcript": "Block Saturday morning for a run in the Prater with Jo around 8 and invite jo@example.com"
+      },
+      "expect": {
+        "kind": "event",
+        "titleIncludes": "run",
+        "weekday": 6,
+        "startTime": "08:00",
+        "endTime": "09:00",
+        "location": "prater",
+        "guests": { "emails": ["jo@example.com"] }
+      }
+    }
+  ]
+}
