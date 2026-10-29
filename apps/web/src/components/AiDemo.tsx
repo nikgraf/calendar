@@ -56,11 +56,11 @@ export function AiDemo() {
         <div className="flex gap-2">
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             <span className="text-xs text-ink-secondary">Start</span>
-            <span className="ai-f ai-f3 rounded-[6px] px-2.5 py-2">19:00</span>
+            <span className="ai-f ai-f3 rounded-[6px] px-2.5 py-2">7:00 PM</span>
           </div>
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             <span className="text-xs text-ink-secondary">End</span>
-            <span className="ai-f ai-f3 rounded-[6px] px-2.5 py-2">20:00</span>
+            <span className="ai-f ai-f3 rounded-[6px] px-2.5 py-2">8:00 PM</span>
           </div>
         </div>
         <div className="flex flex-col gap-1">

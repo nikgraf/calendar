@@ -23,7 +23,7 @@ const run = ({
   ua?: string;
 } = {}) => {
   const listeners: Record<string, Listener> = {};
-  const root = { dataset: {} as Record<string, string> };
+  const root = { dataset: {} as Record<string, string>, style: { colorScheme: '' } };
   const buttons = ['auto', 'light', 'dark'].map((value) => ({
     attributes: {} as Record<string, string>,
     closest() {
@@ -116,6 +116,7 @@ describe('color scheme', () => {
     const page = run({ osDark: true });
     expect(page.root.dataset['theme']).toBe('dark');
     expect(page.root.dataset['themeChoice']).toBe('auto');
+    expect(page.root.style.colorScheme).toBe('dark');
     expect(page.source.media).toBe('(prefers-color-scheme: dark)');
     expect(page.pressed()).toEqual(['auto']);
 
@@ -128,6 +129,7 @@ describe('color scheme', () => {
     const page = run({ osDark: true });
     page.click('light');
     expect(page.root.dataset['theme']).toBe('light');
+    expect(page.root.style.colorScheme).toBe('light');
     expect(page.source.media).toBe('not all');
     expect(page.pressed()).toEqual(['light']);
     expect(page.values.get('solunivo-theme')).toBe('light');

@@ -81,6 +81,13 @@ describe('missingClasses', () => {
   it('does not take a class name that is a prefix of a rule for a match', () => {
     expect(missingClasses(['<p class="px-8"></p>'], '.px-80{padding:20rem}')).toEqual(['px-8']);
   });
+
+  it('reads class names the way React escapes them in an attribute', () => {
+    // React writes `[&>svg]:size-4 after:content-['·']` like this.
+    const page = '<p class="[&amp;&gt;svg]:size-4 after:content-[&#x27;·&#x27;]"></p>';
+    const tailwind = String.raw`.\[\&\>svg\]\:size-4>svg{width:1rem}.after\:content-\[\'·\'\]::after{content:"·"}`;
+    expect(missingClasses([page], tailwind)).toEqual([]);
+  });
 });
 
 describe('undefinedVariables', () => {

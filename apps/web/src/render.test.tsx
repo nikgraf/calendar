@@ -1,4 +1,6 @@
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vite-plus/test';
+import { DownloadActions } from './components/DownloadActions.tsx';
 import { render, routes } from './entry-server.tsx';
 import { routeFor } from './routes.ts';
 
@@ -33,6 +35,10 @@ describe('render', () => {
       const script = html.indexOf('solunivo-theme');
       expect(script).toBeGreaterThan(-1);
       expect(script).toBeLessThan(html.indexOf('<body'));
+      expect(html).toContain('<meta content="light dark" name="color-scheme"/>');
+      // The first link on the page skips the nav.
+      expect(html.match(/<a [^>]*>/)?.[0]).toContain('href="#main"');
+      expect(html).toContain('id="main"');
     }
   });
 
@@ -91,6 +97,25 @@ describe('render', () => {
     const section = band.slice(0, band.indexOf('</section>'));
     expect(section).toContain('private testing');
     expect(section).not.toContain('href="/#download"');
+  });
+
+  it('gives an app without a public link no button in the download band once the other has one', () => {
+    const mac = 'https://example.com/Solunivo.zip';
+    const band = renderToStaticMarkup(<DownloadActions releases={{ mac }} tone="inverted" />);
+    expect(band).toContain(`href="${mac}"`);
+    expect(band).not.toContain('href="/#download"');
+    expect(band).not.toContain('Get it for iPhone');
+    // Android's group falls back to the Mac as its one button, under the note.
+    const android = band.slice(band.indexOf('data-for="android"'));
+    expect(android).toContain('Android is coming later.');
+    expect(android).toContain('Download for macOS');
+    expect(band).toContain('text-on-primary/70');
+    expect(band).not.toContain('text-ink-secondary');
+
+    // Above the band, the iPhone button still leads down to it.
+    const hero = renderToStaticMarkup(<DownloadActions releases={{ mac }} />);
+    expect(hero).toContain('href="/#download"');
+    expect(hero).toContain('Get it for iPhone');
   });
 
   it('renders the privacy policy from its Markdown', () => {

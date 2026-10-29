@@ -8,6 +8,9 @@ export function App({ path }: { path: string }) {
   const route = routeFor(path);
   return (
     <div className="flex min-h-full flex-col bg-canvas text-base leading-normal text-ink">
+      <a className="skip-link" href="#main">
+        Skip to content
+      </a>
       <Nav />
       <main className="flex-1" id="main">
         {route === '/privacy' ? <PrivacyPage /> : <HomePage />}

@@ -8,7 +8,5 @@ export const releases: { readonly iphone?: string; readonly mac?: string } = {};
 
 export const links = {
   download: '/#download',
-  iphone: releases.iphone ?? '/#download',
-  mac: releases.mac ?? '/#download',
   privacy: '/privacy',
 } as const;

@@ -294,16 +294,22 @@ describe.skipIf(!OUT)('website screenshots', () => {
         features: [{ name: 'prefers-color-scheme', value: theme }],
       });
       // A background window takes emulated media only once it draws a frame.
-      for (let i = 0; i < 40; i++) {
+      let applied = false;
+      for (let i = 0; i < 40 && !applied; i++) {
         await cdp.send('Page.captureScreenshot');
-        const applied = (await cdp.send('Runtime.evaluate', {
+        const result = (await cdp.send('Runtime.evaluate', {
           expression: `document.documentElement.dataset.theme === ${JSON.stringify(theme)}`,
           returnByValue: true,
         })) as { result: { value: boolean } };
-        if (applied.result.value) {
-          break;
+        applied = result.result.value;
+        if (!applied) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
         }
-        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      if (!applied) {
+        throw new Error(
+          `The window never took the ${theme} scheme; not writing desktop-${theme}.png`,
+        );
       }
       await new Promise((resolve) => setTimeout(resolve, 600));
       const shot = (await cdp.send('Page.captureScreenshot', { format: 'png' })) as {

@@ -49,6 +49,9 @@ const platform = () => {
     const theme = picked === 'auto' ? (dark.matches ? 'dark' : 'light') : picked;
     root.dataset.theme = theme;
     root.dataset.themeChoice = picked;
+    // Now, not once the stylesheet arrives: the canvas and scrollbars of
+    // the first paint follow a forced scheme too.
+    root.style.colorScheme = theme;
     for (const button of document.querySelectorAll('[data-set-theme]')) {
       button.setAttribute('aria-pressed', String(button.dataset.setTheme === picked));
     }

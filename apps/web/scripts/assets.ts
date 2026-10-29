@@ -93,12 +93,37 @@ export function missingClasses(pages: ReadonlyArray<string>, css: string): Reado
     for (const [, value = ''] of page.matchAll(/\sclass="([^"]*)"/g)) {
       for (const name of value.split(/\s+/)) {
         if (name) {
-          used.add(name.replaceAll('&amp;', '&').replaceAll('&quot;', '"'));
+          used.add(unescapeAttribute(name));
         }
       }
     }
   }
   return [...used].filter((name) => !selects(css, `.${cssEscape(name)}`)).sort();
+}
+
+const NAMED: Readonly<Record<string, string>> = {
+  amp: '&',
+  apos: "'",
+  gt: '>',
+  lt: '<',
+  quot: '"',
+};
+
+/**
+ * An attribute value back to its characters: React escapes `& < > " '`
+ * (`'` as `&#x27;`), so `[&>svg]:size-4` reaches the page as
+ * `[&amp;&gt;svg]:size-4`. One pass, so `&amp;lt;` stays `&lt;`.
+ */
+function unescapeAttribute(value: string): string {
+  return value.replaceAll(
+    /&(?:#(x[\da-f]+|\d+)|(amp|apos|gt|lt|quot));/gi,
+    (entity, code: string | undefined, name: string | undefined) =>
+      code
+        ? String.fromCodePoint(
+            code[0]?.toLowerCase() === 'x' ? Number.parseInt(code.slice(1), 16) : Number(code),
+          )
+        : (NAMED[name?.toLowerCase() ?? ''] ?? entity),
+  );
 }
 
 /** Whether `selector` occurs whole: `.px-8` in `.px-8:hover`, not in `.px-80`. */
