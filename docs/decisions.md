@@ -1194,12 +1194,12 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
 - **Delivered reminders leave with the event** (2026-10-29, #261) — iOS
   dismisses an event reminder once the event is over (all-day: midnight on
   the device's clock, not the grid's primary zone), never before
-  `expiresAt`; a "Remove When Over" switch, on by default (Nik's ask). The
-  end travels in the payload (`dismissAt`); each pass reads the delivered
-  list back. Rejected: reconciling against stored events (a lookup each, a
-  rule for gone ones). Open: an end edited after delivery keeps the old
-  deadline; with the app closed it waits for the background task or the
-  next foreground; birthdays stay; the Mac never removes one.
+  `expiresAt`; a "Remove When Over" switch, on by default (Nik's ask),
+  stored only once set so a Mac never exports one it made up. The end
+  travels in the payload (`dismissAt`); each pass reads the delivered list
+  back. Rejected: reconciling against stored events (a lookup each, a rule
+  for gone ones). Open: an end edited after delivery keeps the old
+  deadline; with the app closed it waits for the next pass; birthdays stay.
 
 ## Calendar mirrors
 

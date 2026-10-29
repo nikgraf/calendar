@@ -121,6 +121,31 @@ describe('importSettings', () => {
     }).pipe(Effect.provide(layer));
   });
 
+  it.effect('an "on" spelled out is no change where it was left out, and stays left out', () => {
+    let asked = 0;
+    const { layer } = makeSettingsTestLayer({
+      sink: {
+        dismissDelivered: () => Effect.void,
+        ensurePermission: () => Effect.sync(() => ++asked > 0),
+        kind: 'scheduled',
+        replaceSchedule: () => Effect.void,
+      },
+    });
+    return Effect.gen(function* () {
+      const document: SettingsDocument = {
+        eventNotifications: { dismissWhenOver: true, enabled: true, includeAppleCalendar: false },
+        version: 1,
+      };
+      expect((yield* importSettings(document)).settingsChanged).toEqual([]);
+      expect(yield* readEventNotificationSettings).toEqual({
+        enabled: true,
+        includeAppleCalendar: false,
+      });
+      // Nothing changed, so iOS was not asked for permission in the middle of it.
+      expect(asked).toBe(0);
+    }).pipe(Effect.provide(layer));
+  });
+
   it.effect('imports the view fields the file holds and keeps the device-local ones', () => {
     const { layer } = makeSettingsTestLayer({});
     return Effect.gen(function* () {

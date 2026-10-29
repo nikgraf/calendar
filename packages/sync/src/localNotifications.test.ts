@@ -414,6 +414,19 @@ describe('LocalNotifications', () => {
     },
   );
 
+  it.effect('with event notifications off, the ones already delivered still leave', () => {
+    const scheduled = scheduledSink();
+    return Effect.gen(function* () {
+      yield* seedGoogle(standup);
+      yield* writeEventNotificationSettings({ enabled: false, includeAppleCalendar: false });
+      yield* setClock('2026-03-01T12:00:00Z');
+      yield* (yield* LocalNotifications).run();
+      // Nothing new is planned, yet "Remove When Over" (unset: on) still applies.
+      expect(scheduled.schedules).toEqual([[]]);
+      expect(scheduled.dismissed).toEqual([Date.parse('2026-03-01T12:00:00Z')]);
+    }).pipe(Effect.provide(testLayer(scheduled.sink)));
+  });
+
   it.effect('a schedule the OS refuses still clears delivered reminders', () => {
     const scheduled = scheduledSink(true, () => Effect.fail(new Error('refused')));
     return Effect.gen(function* () {

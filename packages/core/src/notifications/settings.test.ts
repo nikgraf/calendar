@@ -3,6 +3,7 @@ import {
   DEFAULT_EVENT_NOTIFICATION_SETTINGS,
   dismissesWhenOver,
   mergeEventNotificationSettings,
+  sameEventNotificationSettings,
 } from './settings.ts';
 
 describe('dismissesWhenOver', () => {
@@ -11,6 +12,15 @@ describe('dismissesWhenOver', () => {
     expect(dismissesWhenOver({ dismissWhenOver: true })).toBe(true);
     expect(dismissesWhenOver({ dismissWhenOver: false })).toBe(false);
     expect(dismissesWhenOver(DEFAULT_EVENT_NOTIFICATION_SETTINGS)).toBe(true);
+  });
+});
+
+describe('sameEventNotificationSettings', () => {
+  it('compares what the settings do, an "on" spelled out or left out alike', () => {
+    const base = { enabled: true, includeAppleCalendar: false };
+    expect(sameEventNotificationSettings(base, { ...base, dismissWhenOver: true })).toBe(true);
+    expect(sameEventNotificationSettings(base, { ...base, dismissWhenOver: false })).toBe(false);
+    expect(sameEventNotificationSettings(base, { ...base, enabled: false })).toBe(false);
   });
 });
 

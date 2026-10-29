@@ -1437,10 +1437,14 @@ gateway carries all of it. Details, limits and the threat model:
   notifications past it, so a reminder leaves Notification Center at the
   next pass: the foreground loop, a return to the foreground, or the
   background task (with the app closed, that can be hours). The iOS
-  switch "Remove When Over" (`EventNotificationSettings.dismissWhenOver`,
-  absent = on; a save or import that leaves it out keeps the stored value)
-  skips that step; the payloads keep their deadline either way. The Mac
-  has no switch: it never removes a notification. The loop sleeps until the next delivery (5 s..60 s)
+  switch "Remove When Over" (`EventNotificationSettings.dismissWhenOver`)
+  skips that step; the payloads keep their deadline either way. Absent
+  reads as on and stays absent until someone flips the switch; a save or
+  import that leaves it out keeps the stored value, and an import compares
+  by effect (`sameEventNotificationSettings`). The Mac has no switch (it
+  never removes a notification): it stores a value only from an import and
+  passes it on like the other fields. The loop sleeps until the next
+  delivery (5 s..60 s)
   and re-plans, debounced, on `EVENTS_KEY` / `BIRTHDAYS_KEY`; a settings
   write is not one of those, so each settings path runs a pass itself
   (a time zone save too: the event text names the primary zone).

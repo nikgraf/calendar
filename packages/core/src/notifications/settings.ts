@@ -9,8 +9,8 @@ export const EventNotificationSettings = Schema.Struct({
    * iOS: a delivered reminder leaves Notification Center once its event
    * is over (`dismissAt`). Absent reads as on (`dismissesWhenOver`), and
    * absent stays absent until someone flips the switch: a device without
-   * one (the Mac) neither stores nor exports a value, so its file cannot
-   * switch an iPhone's choice back.
+   * one (the Mac) stores a value only from an imported file or code, and
+   * passes that on like the other two fields; it never makes one up.
    */
   dismissWhenOver: Schema.optional(Schema.Boolean),
   enabled: Schema.Boolean,
@@ -31,6 +31,15 @@ export const DEFAULT_EVENT_NOTIFICATION_SETTINGS: EventNotificationSettings = {
 export const dismissesWhenOver = (
   settings: Pick<EventNotificationSettings, 'dismissWhenOver'>,
 ): boolean => settings.dismissWhenOver !== false;
+
+/** Whether two settings do the same, whether "on" is stored or left out. */
+export const sameEventNotificationSettings = (
+  a: EventNotificationSettings,
+  b: EventNotificationSettings,
+): boolean =>
+  a.enabled === b.enabled &&
+  a.includeAppleCalendar === b.includeAppleCalendar &&
+  dismissesWhenOver(a) === dismissesWhenOver(b);
 
 /**
  * `incoming` over `current`, in one key order so equal settings compare
