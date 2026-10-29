@@ -1,4 +1,4 @@
-import type { PlannedNotification } from '@calendar/core';
+import { dismissesWhenOver, type PlannedNotification } from '@calendar/core';
 import {
   type AccountRepo,
   type BirthdayRepo,
@@ -33,7 +33,10 @@ const SCHEDULED_KEY = 'localNotifications.scheduled';
 const PERMISSION_ASKED_KEY = 'localNotifications.permissionAsked';
 
 export interface LocalNotificationsShape {
-  /** One pass: deliver what is due (desktop) or refresh the OS schedule (iOS). Never fails. */
+  /**
+   * One pass: deliver what is due (desktop), or refresh the OS schedule and
+   * clear delivered reminders past their `dismissAt` (iOS). Never fails.
+   */
   readonly run: () => Effect.Effect<void>;
   /** The periodic loop plus the change-triggered reruns, detached in the scope. */
   readonly start: () => Effect.Effect<void>;
@@ -159,10 +162,14 @@ const make = (options: {
         }
         // The soonest across producers win the slots.
         const future = plans.filter((plan) => plan.fireAt > now).slice(0, MAX_SCHEDULED);
-        // Time and copy are part of the digest: a new delivery time or a
-        // renamed contact changes what the OS should show, not which key.
+        // Time, copy and the dismissal are part of the digest: a new delivery
+        // time, a renamed contact or a later end changes what the OS should
+        // show or keep, not which key.
         const digest = future
-          .map((plan) => `${plan.key}@${String(plan.fireAt)}:${plan.title}:${plan.body}`)
+          .map(
+            (plan) =>
+              `${plan.key}@${String(plan.fireAt)}:${plan.dismissAt === undefined ? '' : String(plan.dismissAt)}:${plan.title}:${plan.body}`,
+          )
           .join('|');
         if ((yield* settingsRepo.get(SCHEDULED_KEY)) === digest) {
           return;
@@ -175,17 +182,49 @@ const make = (options: {
         yield* settingsRepo.set(SCHEDULED_KEY, digest);
       });
 
+    /**
+     * Delivered reminders whose moment has passed leave Notification
+     * Center — on every pass, digest or not: the OS keeps the delivered
+     * list and each payload its `dismissAt`, so nothing is remembered
+     * here. Unless switched off (`dismissWhenOver`): the payloads keep
+     * their deadline, so switching it back on clears them on the next
+     * pass. Best-effort: a failure is logged, the next pass tries again.
+     */
+    const dismissDelivered = (now: number): Effect.Effect<void, never, DeviceSettingsRepo> =>
+      sink.kind !== 'scheduled'
+        ? Effect.void
+        : Effect.gen(function* () {
+            if (!dismissesWhenOver(yield* readEventNotificationSettings)) {
+              return;
+            }
+            yield* sink.dismissDelivered(now);
+          }).pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning('local notifications: dismiss failed', { cause: String(cause) }),
+            ),
+          );
+
+    const planAndHandOver = (now: number) =>
+      Effect.gen(function* () {
+        const timeZone = options.timeZone();
+        const plans = merge(
+          yield* loadBirthdayPlans(now, timeZone),
+          yield* loadEventPlans(now, timeZone),
+        );
+        const next = yield* deliverImmediate(plans, now);
+        yield* refreshSchedule(plans, now);
+        return next;
+      });
+
     const pass = Effect.gen(function* () {
       yield* askOnce;
       const now = yield* Clock.currentTimeMillis;
-      const timeZone = options.timeZone();
-      const plans = merge(
-        yield* loadBirthdayPlans(now, timeZone),
-        yield* loadEventPlans(now, timeZone),
-      );
-      const next = yield* deliverImmediate(plans, now);
-      yield* refreshSchedule(plans, now);
-      return next;
+      // After the hand-over, so a slow dismissal never delays it — and
+      // whatever became of it: a schedule the OS refused, or plans that
+      // could not be read, must not keep a finished event on screen.
+      const outcome = yield* Effect.exit(planAndHandOver(now));
+      yield* dismissDelivered(now);
+      return yield* outcome;
     });
 
     const runNext = (): Effect.Effect<number | undefined> =>

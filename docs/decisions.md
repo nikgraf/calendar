@@ -1168,8 +1168,8 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   repeat word the code does not read, its count and gap never, its end
   only behind an until word naming a day. A rule with chosen days starts
   on the first of them. Rejected: sparing only the `count: 1` rule (the
-  invented end a week on would have stayed). Open: negations, "twice a
-  week", "2nd and 4th Tuesday".
+  invented end a week on would have stayed). Open: "twice a week", "2nd
+  and 4th Tuesday".
 - **The title's trim knows the repeat forms** (2026-10-26,
   `todo/title-repeat-forms`) — `WHEN_AT_END` takes the forms `statedRepeat`
   reads, a repeat said first ("Jeden Dienstag um 18 Uhr Fußball" is
@@ -1180,6 +1180,17 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   the title; any other holds its words ("Ruby Tuesday"). Rejected: trimming
   a frequency word said first ("Weekly sync" is a name). Open: nouns read
   as repeats ("Ski weekends", "McKinsey Quarterly"), an end said first.
+- **Days a repeat rules out** (2026-10-26, `todo/negated-days`) — "every
+  day except Sunday", "jeden Werktag außer Freitag", "every morning except
+  Saturday and Sunday": the days named after the negation come off the
+  rule's days (all seven for a daily one) and the rule turns weekly on
+  what is left; the title drops the exception with the repeat, and the
+  date reader no longer lands on a ruled-out weekday; said of a draft,
+  "not on Fridays" takes the day off the editor's days. Not read: an
+  exception that is no day ("except holidays"), one date ("except Friday
+  the 13th"), a bare "but", one that leaves none ("every Monday except
+  Monday") or sits on a rule without days ("weekly except Friday"). The
+  finder's day reader keeps leaving a negation to the model.
 - **Notes and notifications from the words** (2026-10-26,
   `todo/quick-add-notes-notifications`) — `extras.ts` reads the offsets
   ("remind me 30 minutes before", "eine Stunde vorher", "the day before",
@@ -1221,6 +1232,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   a time zone save re-plans. Rejected: the text in the primary zone
   alone (it would contradict the lock-screen clock beside it). All-day
   and birthday text has no clock and stays as it was.
+- **Delivered reminders leave with the event** (2026-10-29, #261) — iOS
+  dismisses an event reminder once the event is over (all-day: midnight on
+  the device's clock, not the grid's primary zone), never before
+  `expiresAt`; a "Remove When Over" switch, on by default (Nik's ask),
+  stored only once set so a Mac never exports one it made up. The end
+  travels in the payload (`dismissAt`); each pass reads the delivered list
+  back. Rejected: reconciling against stored events (a lookup each, a rule
+  for gone ones). Open: an end edited after delivery keeps the old
+  deadline; with the app closed it waits for the next pass; birthdays stay.
 
 ## Calendar mirrors
 

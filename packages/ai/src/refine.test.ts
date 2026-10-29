@@ -412,6 +412,101 @@ describe('normalizeRefine', () => {
     });
   });
 
+  it("takes the days a change rules out off the draft's", () => {
+    const threeDays = {
+      ...DINNER,
+      date: '2026-08-24',
+      recurrence: {
+        byDay: [{ weekday: 'MO' as const }, { weekday: 'WE' as const }, { weekday: 'FR' as const }],
+        freq: 'weekly' as const,
+      },
+    };
+    for (const utterance of ['not on Fridays', 'weekly but not Friday', 'nicht am Freitag']) {
+      expect(refined({}, utterance, threeDays).recurrence, utterance).toEqual({
+        byDay: [{ weekday: 'MO' }, { weekday: 'WE' }],
+        freq: 'weekly',
+      });
+    }
+    // Days the words name replace the editor's, less the exception.
+    expect(refined({}, 'every weekday except Friday', threeDays).recurrence).toEqual({
+      byDay: [{ weekday: 'MO' }, { weekday: 'TU' }, { weekday: 'WE' }, { weekday: 'TH' }],
+      freq: 'weekly',
+    });
+    // Review: a day said beside the exception is the date's; the draft's
+    // own weekday ruled out moves the start; a monthly rule keeps its
+    // weekday; a daily rule turns weekly on the other days, a gap stays.
+    expect(refined({ date: '2026-08-27' }, 'Thursday, not Friday', threeDays)).toMatchObject({
+      date: '2026-08-27',
+      recurrence: { byDay: [{ weekday: 'MO' }, { weekday: 'WE' }], freq: 'weekly' },
+    });
+    const friday = { ...threeDays, date: '2026-08-28' };
+    expect(refined({}, 'not on Fridays', friday)).toMatchObject({
+      date: '2026-08-31',
+      recurrence: { byDay: [{ weekday: 'MO' }, { weekday: 'WE' }], freq: 'weekly' },
+    });
+    const secondTuesday = {
+      ...DINNER,
+      date: '2026-09-08',
+      recurrence: { byDay: [{ ordinal: 2, weekday: 'TU' as const }], freq: 'monthly' as const },
+    };
+    expect(refined({}, 'nicht am Dienstag', secondTuesday).recurrence).toEqual(
+      secondTuesday.recurrence,
+    );
+    expect(refined({ date: '2026-09-10' }, 'Thursday, not Friday', secondTuesday)).toMatchObject({
+      date: '2026-09-10',
+      recurrence: secondTuesday.recurrence,
+    });
+    const daily = { ...DINNER, date: '2026-08-23', recurrence: { freq: 'daily' as const } };
+    expect(refined({}, 'not on Sundays', daily)).toMatchObject({
+      date: '2026-08-24',
+      recurrence: {
+        byDay: [
+          { weekday: 'MO' },
+          { weekday: 'TU' },
+          { weekday: 'WE' },
+          { weekday: 'TH' },
+          { weekday: 'FR' },
+          { weekday: 'SA' },
+        ],
+        freq: 'weekly',
+      },
+    });
+    const everyOther = { ...daily, recurrence: { freq: 'daily' as const, interval: 2 } };
+    expect(refined({}, 'except Sunday', everyOther).recurrence).toEqual(everyOther.recurrence);
+    const biweekly = { ...threeDays, recurrence: { ...threeDays.recurrence, interval: 2 } };
+    expect(refined({}, 'nicht freitags', biweekly).recurrence).toEqual({
+      byDay: [{ weekday: 'MO' }, { weekday: 'WE' }],
+      freq: 'weekly',
+      interval: 2,
+    });
+    // Codex: a start moved off its day keeps its every-other-week phase:
+    // from Friday the 28th, the next kept Monday is the 7th, not the 31st.
+    const biweeklyFriday = {
+      ...DINNER,
+      date: '2026-08-28',
+      recurrence: {
+        byDay: [{ weekday: 'MO' as const }, { weekday: 'FR' as const }],
+        freq: 'weekly' as const,
+        interval: 2,
+      },
+    };
+    expect(refined({}, 'not on Fridays', biweeklyFriday)).toMatchObject({
+      date: '2026-09-07',
+      recurrence: { byDay: [{ weekday: 'MO' }], freq: 'weekly', interval: 2 },
+    });
+    // Codex: a span counts from that same start (three weeks from the 7th
+    // keep the 21st).
+    expect(refined({}, 'for three weeks, not on Fridays', biweeklyFriday)).toMatchObject({
+      date: '2026-09-07',
+      recurrence: {
+        byDay: [{ weekday: 'MO' }],
+        freq: 'weekly',
+        interval: 2,
+        untilDate: '2026-09-27',
+      },
+    });
+  });
+
   it('gives a repeat the end the words name, and only then', () => {
     const weekly = { ...DINNER, recurrence: { freq: 'weekly' as const } };
     expect(

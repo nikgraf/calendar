@@ -4,7 +4,11 @@ import {
   useInLesson,
   useLessonTried,
 } from '@calendar/app-state';
-import { birthdayRemindersSummary, DEVICE_ONLY_SETTING_COPY } from '@calendar/core';
+import {
+  birthdayRemindersSummary,
+  DEVICE_ONLY_SETTING_COPY,
+  dismissesWhenOver,
+} from '@calendar/core';
 import { useState } from 'react';
 import { Linking } from 'react-native';
 import { BirthdayReminderRows } from '../BirthdayReminderRows.tsx';
@@ -108,6 +112,10 @@ export function NotificationsSections() {
                 A notification before each event, at the times set on the event or its calendar.
                 Calendar already notifies you about Apple Calendar events; turn this on to get both.
               </Footer>
+              <Footer>
+                Remove When Over takes an event’s notification out of Notification Center once the
+                event has ended, the next time Solunivo runs.
+              </Footer>
               {events.failure ? (
                 <Footer testID="event-notifications-failed" tone="danger">
                   {events.failure}
@@ -130,6 +138,14 @@ export function NotificationsSections() {
             switchTestID="event-notifications-apple"
             title="Apple Calendar Events"
             value={events.settings.includeAppleCalendar}
+          />
+          {/* Live while notifications are off: it still governs the ones
+              already delivered, which the scheduler keeps clearing. */}
+          <SwitchRow
+            onValueChange={(dismissWhenOver) => events.save({ dismissWhenOver })}
+            switchTestID="event-notifications-dismiss"
+            title="Remove When Over"
+            value={dismissesWhenOver(events.settings)}
           />
         </Section>
       ) : null}

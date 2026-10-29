@@ -51,6 +51,14 @@ export const parseNotificationTarget = (value: unknown): NotificationTarget | un
 export interface PlannedNotification {
   readonly body: string;
   /**
+   * Epoch ms after which a delivered notification is no longer worth
+   * keeping in Notification Center: a scheduled sink reads it back from
+   * the OS and dismisses (an event reminder once the event is over).
+   * Absent, it stays until the user clears it (a birthday). Not
+   * `expiresAt`, which bounds showing a missed one.
+   */
+  readonly dismissAt?: number | undefined;
+  /**
    * Epoch ms after which a missed notification is no longer worth showing:
    * an immediate sink catching up after sleep fires only while
    * `fireAt <= now < expiresAt`. Each producer sets its own rule — a

@@ -19,7 +19,10 @@ import {
 } from './importedVisibility.ts';
 import { buildSettingsDocument } from './settingsExport.ts';
 import { readMirrorLocals, readMirrors } from './mirrorSettings.ts';
-import { applyBirthdayReminderOverride } from './notificationSettings.ts';
+import {
+  applyBirthdayReminderOverride,
+  applyEventNotificationSettings,
+} from './notificationSettings.ts';
 import { importSettings, previewSettingsImport } from './settingsImport.ts';
 import {
   appleCalendarAccount,
@@ -83,6 +86,63 @@ describe('importSettings', () => {
       // A second import of the same file is quiet.
       expect((yield* importSettings(document)).settingsChanged).toEqual([]);
       expect(applied).toHaveLength(1);
+    }).pipe(Effect.provide(layer));
+  });
+
+  it.effect('a save or a file without "Remove When Over" leaves it as this device has it', () => {
+    const { layer } = makeSettingsTestLayer({});
+    return Effect.gen(function* () {
+      yield* applyEventNotificationSettings({
+        dismissWhenOver: false,
+        enabled: true,
+        includeAppleCalendar: false,
+      });
+      // A client that does not know the field saves the other two.
+      yield* applyEventNotificationSettings({ enabled: true, includeAppleCalendar: true });
+      expect(yield* readEventNotificationSettings).toEqual({
+        dismissWhenOver: false,
+        enabled: true,
+        includeAppleCalendar: true,
+      });
+      // An iPhone's choice travels in its file; a Mac's file has none.
+      expect((yield* buildSettingsDocument).eventNotifications?.dismissWhenOver).toBe(false);
+      const fromMac: SettingsDocument = {
+        eventNotifications: { enabled: true, includeAppleCalendar: true },
+        version: 1,
+      };
+      expect((yield* importSettings(fromMac)).settingsChanged).toEqual([]);
+      expect((yield* readEventNotificationSettings).dismissWhenOver).toBe(false);
+      const newer: SettingsDocument = {
+        eventNotifications: { dismissWhenOver: true, enabled: true, includeAppleCalendar: true },
+        version: 1,
+      };
+      expect((yield* importSettings(newer)).settingsChanged).toEqual(['eventNotifications']);
+      expect((yield* readEventNotificationSettings).dismissWhenOver).toBe(true);
+    }).pipe(Effect.provide(layer));
+  });
+
+  it.effect('an "on" spelled out is no change where it was left out, and stays left out', () => {
+    let asked = 0;
+    const { layer } = makeSettingsTestLayer({
+      sink: {
+        dismissDelivered: () => Effect.void,
+        ensurePermission: () => Effect.sync(() => ++asked > 0),
+        kind: 'scheduled',
+        replaceSchedule: () => Effect.void,
+      },
+    });
+    return Effect.gen(function* () {
+      const document: SettingsDocument = {
+        eventNotifications: { dismissWhenOver: true, enabled: true, includeAppleCalendar: false },
+        version: 1,
+      };
+      expect((yield* importSettings(document)).settingsChanged).toEqual([]);
+      expect(yield* readEventNotificationSettings).toEqual({
+        enabled: true,
+        includeAppleCalendar: false,
+      });
+      // Nothing changed, so iOS was not asked for permission in the middle of it.
+      expect(asked).toBe(0);
     }).pipe(Effect.provide(layer));
   });
 
@@ -187,6 +247,7 @@ describe('importSettings', () => {
       const answer = yield* Deferred.make<boolean>();
       const { layer } = makeSettingsTestLayer({
         sink: {
+          dismissDelivered: () => Effect.void,
           ensurePermission: () =>
             Effect.andThen(Deferred.succeed(asked, undefined), Deferred.await(answer)),
           kind: 'scheduled',

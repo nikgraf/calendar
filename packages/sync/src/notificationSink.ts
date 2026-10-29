@@ -2,10 +2,11 @@ import type { PlannedNotification } from '@calendar/core';
 import { Context, Effect } from 'effect';
 
 /**
- * How a host delivers birthday reminders. Desktop shows a notification
- * the moment it is due (the app is running, or nothing fires); iOS hands
- * the OS a schedule of upcoming ones so they arrive with the app closed.
- * The BirthdayReminders service narrows on `kind` and does the rest.
+ * How a host delivers local notifications (event and birthday reminders).
+ * Desktop shows a notification the moment it is due (the app is running,
+ * or nothing fires); iOS hands the OS a schedule of upcoming ones so they
+ * arrive with the app closed, and clears delivered ones whose moment has
+ * passed. The LocalNotifications service narrows on `kind` and does the rest.
  *
  * `ensurePermission` asks the OS when undetermined; false means the user
  * declined. An immediate sink may have no way to ask but to post a
@@ -18,6 +19,12 @@ export type NotificationSinkShape =
       readonly show: (notification: PlannedNotification) => Effect.Effect<void>;
     }
   | {
+      /**
+       * Removes every delivered notification whose `dismissAt` is at or
+       * before `now`; pending ones are untouched. Best-effort: the
+       * scheduler logs a failure and the next pass tries again.
+       */
+      readonly dismissDelivered: (now: number) => Effect.Effect<void, unknown>;
       readonly ensurePermission: () => Effect.Effect<boolean>;
       readonly kind: 'scheduled';
       /**

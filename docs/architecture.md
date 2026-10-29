@@ -1440,7 +1440,23 @@ gateway carries all of it. Details, limits and the threat model:
   `Notification` when one is due and, after sleep, only while the plan's
   `expiresAt` allows (fired keys kept in `device_settings`); iOS replaces
   the pending expo-notifications schedule with the soonest ≤ 60 whenever
-  the digest changes. The loop sleeps until the next delivery (5 s..60 s)
+  the digest changes. An event plan also carries `dismissAt` — its end
+  (all-day: midnight after the last day on the device's clock), never
+  before the grace a missed reminder keeps (`expiresAt`: five minutes
+  timed, twelve hours all-day); a birthday none — in the notification
+  payload (part of the digest). After the hand-over, every pass, even one
+  whose hand-over failed, asks the scheduled sink to dismiss delivered
+  notifications past it, so a reminder leaves Notification Center at the
+  next pass: the foreground loop, a return to the foreground, or the
+  background task (with the app closed, that can be hours). The iOS
+  switch "Remove When Over" (`EventNotificationSettings.dismissWhenOver`)
+  skips that step; the payloads keep their deadline either way. Absent
+  reads as on and stays absent until someone flips the switch; a save or
+  import that leaves it out keeps the stored value, and an import compares
+  by effect (`sameEventNotificationSettings`). The Mac has no switch (it
+  never removes a notification): it stores a value only from an import and
+  passes it on like the other fields. The loop sleeps until the next
+  delivery (5 s..60 s)
   and re-plans, debounced, on `EVENTS_KEY` / `BIRTHDAYS_KEY`; a settings
   write is not one of those, so each settings path runs a pass itself
   (a time zone save too: the event text names the primary zone).

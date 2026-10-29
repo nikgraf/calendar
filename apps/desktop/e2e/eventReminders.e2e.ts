@@ -193,6 +193,8 @@ describe('event reminders', () => {
       `document.querySelector('input[aria-label="Notify me before events"]')?.checked === true`,
     );
     await clickInput('Also for Apple Calendar events');
+    // No "Remove When Over" in the row: the Mac has no such switch, so a
+    // save there never makes up a value (one comes only from an import).
     await expect
       .poll(stored, { timeout: 10_000 })
       .toEqual({ enabled: true, includeAppleCalendar: true });
