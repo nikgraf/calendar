@@ -51,7 +51,7 @@ describe('render', () => {
 
   it('puts the home sections and the calls to action on the front page', () => {
     const html = render('/', { css });
-    for (const id of ['ai', 'features', 'privacy', 'download']) {
+    for (const id of ['ai', 'features', 'privacy', 'roadmap', 'download']) {
       expect(html).toContain(`id="${id}"`);
     }
     expect(html).toContain('Download for macOS');
@@ -64,8 +64,34 @@ describe('render', () => {
     for (const platform of ['mac', 'ios', 'windows', 'linux', 'android']) {
       expect(html).toContain(`data-for="${platform}"`);
     }
-    expect(html).toContain('Linux is coming later.');
+    // Platforms the apps are not on yet point at the roadmap.
+    expect(html).toContain('Linux is <a');
+    expect(html.match(/ is <a [^>]*href="\/#roadmap"/g)).toHaveLength(3);
     expect(html).toContain('Try it on iPhone');
+  });
+
+  it('says Outlook and CalDAV work through Apple Calendar, and native support is on the roadmap', () => {
+    const html = render('/', { css });
+    expect(html).toContain('Outlook and CalDAV via Apple Calendar');
+    expect(html).toContain('Any Outlook, Exchange or CalDAV account you add to Apple Calendar');
+    expect(html).toContain('href="#roadmap"');
+    // Six feature cards: the three account sources, then three more.
+    const features = html.slice(html.indexOf('id="features"'), html.indexOf('id="privacy"'));
+    expect(features.match(/<li /g)).toHaveLength(6);
+  });
+
+  it('lists the roadmap: native Outlook and JMAP, then Android, Windows and Linux', () => {
+    const html = render('/', { css });
+    expect(html).toContain('href="/#roadmap"');
+    const roadmap = html.slice(html.indexOf('id="roadmap"'), html.indexOf('id="download"'));
+    const items = [...roadmap.matchAll(/<strong[^>]*>([^<]+)<\/strong>/g)].map((match) => match[1]);
+    expect(items).toEqual([
+      'Native Microsoft Outlook',
+      'Native JMAP',
+      'Android',
+      'Windows',
+      'Linux',
+    ]);
   });
 
   it('swaps the screenshots and lockups by color scheme', () => {
@@ -107,7 +133,7 @@ describe('render', () => {
     expect(band).not.toContain('Get it for iPhone');
     // Android's group falls back to the Mac as its one button, under the note.
     const android = band.slice(band.indexOf('data-for="android"'));
-    expect(android).toContain('Android is coming later.');
+    expect(android).toContain('Android is <a');
     expect(android).toContain('Download for macOS');
     expect(band).toContain('text-on-primary/70');
     expect(band).not.toContain('text-ink-secondary');

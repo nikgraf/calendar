@@ -3,7 +3,14 @@ import lockupLight from '../../../../brand/logos/lockup-horizontal-light.svg';
 import { AiDemo } from '../components/AiDemo.tsx';
 import { DownloadActions } from '../components/DownloadActions.tsx';
 import { HeroShots } from '../components/HeroShots.tsx';
-import { AppleIcon, CakeIcon, CloudOffIcon, GlobeIcon, GoogleIcon } from '../components/icons.tsx';
+import {
+  AppleIcon,
+  CakeIcon,
+  CloudOffIcon,
+  GlobeIcon,
+  GoogleIcon,
+  LayersIcon,
+} from '../components/icons.tsx';
 import { Sources } from '../components/Sources.tsx';
 import { ThemePicture } from '../components/ThemePicture.tsx';
 import { releases } from '../links.ts';
@@ -12,6 +19,8 @@ const container = 'mx-auto max-w-[1200px] px-6 sm:px-8';
 const h2 = 'm-0 text-[clamp(30px,3.2vw,40px)] leading-[1.15] font-semibold tracking-[-0.02em]';
 const eyebrow = 'm-0 text-[13px] font-medium tracking-[0.08em] text-ink-secondary uppercase';
 const lead = 'm-0 text-[17px] text-ink-secondary text-pretty';
+const inlineLink =
+  'text-ink underline decoration-hairline-strong underline-offset-[3px] hover:decoration-ink';
 
 const features = [
   {
@@ -23,6 +32,20 @@ const features = [
     body: 'Google Calendar, Tasks and Contacts, all of it: every calendar you can see, task lists with subtasks and their order, guest suggestions from your contacts.',
     icon: GoogleIcon,
     title: 'Google, first class',
+  },
+  {
+    body: (
+      <>
+        Any Outlook, Exchange or CalDAV account you add to Apple Calendar shows up beside the rest,
+        on the Mac and the iPhone, and you edit its events here. Native Outlook and JMAP support are{' '}
+        <a className={inlineLink} href="#roadmap">
+          on the roadmap
+        </a>
+        .
+      </>
+    ),
+    icon: LayersIcon,
+    title: 'Outlook and CalDAV, too',
   },
   {
     body: 'Edit on a plane. Changes queue on the device and sync when you’re back online. If something changed on the server meanwhile, you choose which version stays.',
@@ -38,6 +61,31 @@ const features = [
     body: 'Several alerts per birthday, each at its own lead time and hour: a week ahead to find a gift for some people, the morning of for others. Set per person.',
     icon: CakeIcon,
     title: 'Birthday reminders that fit each person',
+  },
+];
+
+/** What comes next, from the platform and account items in todo.md. */
+const roadmap = [
+  {
+    items: [
+      {
+        body: 'Outlook.com and Microsoft 365 calendars signed in directly, with no Apple Calendar in between, so they can come to every platform.',
+        title: 'Native Microsoft Outlook',
+      },
+      {
+        body: 'Calendars over JMAP, the modern open protocol, synced directly instead of through a CalDAV account.',
+        title: 'Native JMAP',
+      },
+    ],
+    title: 'More accounts, natively',
+  },
+  {
+    items: [
+      { body: 'The phone app on Android.', title: 'Android' },
+      { body: 'The desktop app on Windows.', title: 'Windows' },
+      { body: 'The desktop app on Linux.', title: 'Linux' },
+    ],
+    title: 'More platforms',
   },
 ];
 
@@ -164,6 +212,34 @@ export function HomePage() {
             Read the privacy policy
           </a>
         </div>
+      </section>
+
+      <section className={`${container} flex flex-col gap-10 py-24`} id="roadmap">
+        <div className="flex max-w-[640px] flex-col gap-3">
+          <h2 className={h2}>On the roadmap.</h2>
+          <p className={lead}>What comes next, in no fixed order and without dates yet.</p>
+        </div>
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(min(320px,100%),1fr))] gap-10">
+          {roadmap.map((group) => (
+            <div className="flex flex-col gap-4" key={group.title}>
+              <h3 className="m-0 text-lg font-semibold">{group.title}</h3>
+              <ul className="m-0 flex list-none flex-col gap-4 p-0">
+                {group.items.map((item) => (
+                  <li
+                    className="flex flex-col gap-1 border-t border-dashed border-hairline-strong pt-4"
+                    key={item.title}
+                  >
+                    <strong className="font-semibold">{item.title}</strong>
+                    <span className="text-[15px] text-ink-secondary">{item.body}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+        <p className="m-0 text-sm text-ink-secondary">
+          On a new platform, the AI features depend on the on-device models it offers.
+        </p>
       </section>
 
       <section className="bg-primary text-on-primary" id="download">

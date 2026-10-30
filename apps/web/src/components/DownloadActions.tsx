@@ -13,29 +13,35 @@ type Target = { href: string | undefined; label: string };
  */
 const groupsFor = (
   releases: Releases,
-): ReadonlyArray<{ note?: string; platform: Platform; primary: Target; secondary: Target }> => {
+): ReadonlyArray<{
+  platform: Platform;
+  primary: Target;
+  secondary: Target;
+  /** A platform on the roadmap, not served yet: named in a note above the buttons. */
+  upcoming?: string;
+}> => {
   const mac = { href: releases.mac, label: 'Download for macOS' };
   const iphone = { href: releases.iphone, label: 'Get it for iPhone' };
   return [
     { platform: 'mac', primary: mac, secondary: iphone },
     { platform: 'ios', primary: iphone, secondary: mac },
     {
-      note: 'Windows is coming later.',
       platform: 'windows',
       primary: { ...mac, label: 'Try it on macOS' },
       secondary: iphone,
+      upcoming: 'Windows',
     },
     {
-      note: 'Linux is coming later.',
       platform: 'linux',
       primary: { ...mac, label: 'Try it on macOS' },
       secondary: iphone,
+      upcoming: 'Linux',
     },
     {
-      note: 'Android is coming later.',
       platform: 'android',
       primary: { ...iphone, label: 'Try it on iPhone' },
       secondary: mac,
+      upcoming: 'Android',
     },
   ];
 };
@@ -61,11 +67,22 @@ export function DownloadActions({
           data-for={group.platform}
           key={group.platform}
         >
-          {group.note ? (
+          {group.upcoming ? (
             <p
               className={`m-0 text-[15px] ${inverted ? 'text-on-primary/70' : 'text-ink-secondary'}`}
             >
-              {group.note}
+              {`${group.upcoming} is `}
+              <a
+                className={
+                  inverted
+                    ? 'text-on-primary underline decoration-on-primary/40 underline-offset-[3px] hover:decoration-on-primary'
+                    : 'text-ink underline decoration-hairline-strong underline-offset-[3px] hover:decoration-ink'
+                }
+                href="/#roadmap"
+              >
+                on the roadmap
+              </a>
+              .
             </p>
           ) : null}
           <div className="flex flex-wrap items-center gap-3">
