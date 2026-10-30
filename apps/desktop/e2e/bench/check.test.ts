@@ -436,3 +436,52 @@ describe('wordErrorRate', () => {
     expect(wordErrorRate('invite tom.baker@example.com', 'invite tom.baker@example.com.')).toBe(0);
   });
 });
+
+/** A parsed event with what the words said beside it. */
+const parsedWith = (extras: Partial<Extract<QuickAddResult, { kind: 'parsed' }>>) => ({
+  ...(parsed({}) as Extract<QuickAddResult, { kind: 'parsed' }>),
+  ...extras,
+});
+
+describe('applyResult — notes and notifications', () => {
+  it('adds a note to the notes and offsets to the notifications, as the thread does', async () => {
+    const first = await applyResult(
+      undefined,
+      parsedWith({
+        notes: { kind: 'add', text: 'bring the contract' },
+        reminders: { add: [30], clear: false, remove: [] },
+      }),
+      BOOK,
+    );
+    expect(first.kind === 'draft' && first.draft).toMatchObject({
+      notes: 'bring the contract',
+      reminders: [30],
+    });
+    const next = await applyResult(
+      event({}, { notes: 'bring the contract', reminders: [30] }),
+      parsedWith({
+        notes: { kind: 'add', text: 'and the slides' },
+        reminders: { add: [60], clear: false, remove: [] },
+      }),
+      BOOK,
+    );
+    expect(next.kind === 'draft' && next.draft).toMatchObject({
+      notes: 'bring the contract\nand the slides',
+      reminders: [30, 60],
+    });
+    // A to-do takes the note, not the notifications.
+    const todo = await applyResult(
+      task(),
+      parsedWith({
+        notes: { kind: 'add', text: 'ask about the fee' },
+        reminders: { add: [10], clear: false, remove: [] },
+      }),
+      BOOK,
+    );
+    expect(todo.kind === 'draft' && todo.draft).toMatchObject({
+      item: { kind: 'task' },
+      notes: 'ask about the fee',
+    });
+    expect(todo.kind === 'draft' && todo.draft.reminders).toBeUndefined();
+  });
+});

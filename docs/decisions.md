@@ -1191,6 +1191,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   the 13th"), a bare "but", one that leaves none ("every Monday except
   Monday") or sits on a rule without days ("weekly except Friday"). The
   finder's day reader keeps leaving a negation to the model.
+- **Notes and notifications from the words** (2026-10-26,
+  `todo/quick-add-notes-notifications`) — `extras.ts` reads the offsets
+  ("remind me 30 minutes before", "eine Stunde vorher", "the day before",
+  "no reminder") and the note ("note: …", "notier, dass …", "add to the
+  notes: …") from the phrase and takes the clauses off the words the
+  model sees; the thread folds them into the draft (`draftExtras.ts`),
+  the bench the same way; a turn about nothing else calls no model.
+  Rejected: schema fields (a model invents notes and writes "unknown").
+  Open: a to-do's alarms, "remind me at 9", a summed offset ("an hour
+  and 15 minutes before" is two).
 
 ## Notifications
 

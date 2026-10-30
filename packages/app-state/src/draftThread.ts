@@ -2,9 +2,12 @@ import {
   isFinderPhrase,
   type LanguageModel,
   NO_SLOT_FITS,
+  type NotesChange,
   parseQuickAdd,
   parseRefine,
   proposeSlots,
+  readExtras,
+  type ReminderChange,
 } from '@calendar/ai';
 import {
   type AttendeeInput,
@@ -19,6 +22,12 @@ import {
 } from '@calendar/core';
 import { Effect } from 'effect';
 import { useRef, useState } from 'react';
+import {
+  applyNotesChange,
+  applyReminderChange,
+  describeNotesChange,
+  describeReminderChange,
+} from './draftExtras.ts';
 import {
   applyGuestChange,
   type GuestChange,
@@ -108,8 +117,12 @@ export interface DraftChange {
   readonly guests?: GuestChange | undefined;
   readonly id: string;
   readonly item: QuickAddItem;
+  /** What the words did to the notes: applied to the draft's as they are when it lands. */
+  readonly notes?: NotesChange | undefined;
   /** What the turn's location text could mean: a place taken, a choice left, or nothing. */
   readonly place?: PlaceChange | undefined;
+  /** What the words did to the notifications: applied to the draft's as they are when it lands. */
+  readonly reminders?: ReminderChange | undefined;
   readonly slots?: ReadonlyArray<FreeSlot> | undefined;
 }
 
@@ -347,6 +360,48 @@ const withPlace = (
   };
 };
 
+/**
+ * A turn's note folded into a draft: on the notes an event's form holds
+ * (`description`), or a to-do's own (`taskNotes`), blank ones for a
+ * draft the form never held. What it says: "adds a note".
+ */
+const withNotes = (
+  draft: Draft,
+  change: NotesChange | undefined,
+): { readonly draft: Draft; readonly said: ReadonlyArray<string> } => {
+  if (change === undefined) {
+    return { draft, said: [] };
+  }
+  const extras = draft.extras ?? BLANK_EXTRAS;
+  const next: DraftExtras =
+    draft.item.kind === 'task'
+      ? { ...extras, taskNotes: applyNotesChange(extras.taskNotes ?? '', change) }
+      : { ...extras, description: applyNotesChange(extras.description, change) };
+  return { draft: { ...draft, extras: next }, said: [describeNotesChange(change)] };
+};
+
+/**
+ * A turn's notifications folded into an event draft (a to-do takes
+ * none): popups at the minutes said, on the draft's own or in place of
+ * them (`applyReminderChange`). What it says: "notifies 30 minutes
+ * before".
+ */
+const withReminders = (
+  draft: Draft,
+  change: ReminderChange | undefined,
+): { readonly draft: Draft; readonly said: ReadonlyArray<string> } => {
+  if (change === undefined || draft.item.kind !== 'event') {
+    return { draft, said: [] };
+  }
+  const extras = draft.extras ?? BLANK_EXTRAS;
+  const applied = applyReminderChange(extras.reminders, change);
+  const said = describeReminderChange(change, applied, draft.item.prefill.isAllDay);
+  if (applied.reminders === extras.reminders) {
+    return { draft, said };
+  }
+  return { draft: { ...draft, extras: { ...extras, reminders: applied.reminders } }, said };
+};
+
 /** "… · 3 free slots" when a turn found alternatives beside the draft's own. */
 const withSlots = (summary: string, slots: ReadonlyArray<FreeSlot> | undefined): string =>
   slots && slots.length > 1 ? `${summary} · ${String(slots.length)} free slots` : summary;
@@ -357,22 +412,27 @@ export interface StartOptions {
   /** Whom the phrase invited: the first draft's guests. */
   readonly guests?: GuestChange | undefined;
   readonly id?: (() => string) | undefined;
+  /** The note the phrase added: the first draft's, after what the form held. */
+  readonly notes?: NotesChange | undefined;
   /** What the phrase's place could mean: the first draft's. */
   readonly place?: PlaceChange | undefined;
+  /** The notifications the phrase asked for: the first draft's. */
+  readonly reminders?: ReminderChange | undefined;
   /** A finder phrase's slots: the first draft's (it sits in the best one). */
   readonly slots?: ReadonlyArray<FreeSlot> | undefined;
 }
 
 /**
  * The first turn: the phrase (or the paste) and every draft it made. What
- * the form already held (guests typed before the phrase) goes with the
- * draft — a phrase makes one draft, so the extras are its, as are the
- * slots a finder phrase found.
+ * the form already held (guests or notes typed before the phrase) goes
+ * with the draft, the phrase's own note and notifications on top — a
+ * phrase makes one draft, so the extras are its, as are the slots a
+ * finder phrase found.
  */
 export const startThread = (
   items: ReadonlyArray<QuickAddItem>,
   utterance: string,
-  { extras, guests, id = nextDraftId, place, slots }: StartOptions = {},
+  { extras, guests, id = nextDraftId, notes, place, reminders, slots }: StartOptions = {},
 ): DraftThreadState => {
   let invited: ReadonlyArray<string> = [];
   const drafts = items.map((item, index) => {
@@ -387,8 +447,10 @@ export const startThread = (
     }
     const placed = withPlace(draft, place);
     const first = withGuests(placed.draft, guests);
-    invited = [...placed.said, ...first.said];
-    return first.draft;
+    const noted = withNotes(first.draft, notes);
+    const reminded = withReminders(noted.draft, reminders);
+    invited = [...placed.said, ...first.said, ...noted.said, ...reminded.said];
+    return reminded.draft;
   });
   const summary =
     drafts.length === 1 && drafts[0]
@@ -440,7 +502,7 @@ export const refineThread = (
   id: () => string = nextDraftId,
 ): DraftThreadState => {
   const changed = new Map(changes.map((change) => [change.id, change]));
-  // What the turn did to the focused draft's place and guests, in words.
+  // What the turn did to the focused draft's place, guests, notes and notifications, in words.
   let invited: ReadonlyArray<string> = [];
   const focused = state.drafts[state.focused];
   // The focused draft as the turn leaves it: a place taken changed its location too.
@@ -459,9 +521,11 @@ export const refineThread = (
       },
       change.place,
     );
-    const next = withGuests(placed.draft, change.guests);
+    const guested = withGuests(placed.draft, change.guests);
+    const noted = withNotes(guested.draft, change.notes);
+    const next = withReminders(noted.draft, change.reminders);
     if (draft.id === focused?.id) {
-      invited = [...placed.said, ...next.said];
+      invited = [...placed.said, ...guested.said, ...noted.said, ...next.said];
       focusedAfter = next.draft;
     }
     return next.draft;
@@ -635,12 +699,18 @@ export const landPlacement = (
   state: DraftThreadState,
   {
     fresh,
+    notes,
+    reminders,
     slots,
     targetId,
     title,
     utterance,
   }: {
     readonly fresh?: FormSnapshot | undefined;
+    /** A note the finder phrase added beside the slot. */
+    readonly notes?: NotesChange | undefined;
+    /** Notifications the finder phrase asked for beside the slot. */
+    readonly reminders?: ReminderChange | undefined;
     readonly slots: ReadonlyArray<FreeSlot>;
     readonly targetId: string;
     readonly title?: string | undefined;
@@ -660,6 +730,8 @@ export const landPlacement = (
       ...(draft.extras?.undated ? { extras: { ...draft.extras, undated: false } } : {}),
       id: draft.id,
       item: itemAtSlot(draft.item, best, title),
+      ...(notes ? { notes } : {}),
+      ...(reminders ? { reminders } : {}),
       slots,
     },
   ]);
@@ -883,7 +955,9 @@ export const useDraftThread = ({
         ? state
         : updateDraft(state, state.focused, submitted.item, submitted.extras);
     const focusedId = current.drafts[current.focused]?.id;
-    const targets = refineTargets(current, utterance);
+    // "all" or "both" in a note ("bring both contracts") or about the
+    // notifications ("remove all reminders") addresses no other draft.
+    const targets = refineTargets(current, readExtras(utterance).rest);
     if (targets.length === 0) {
       return 'Nothing to change yet.';
     }
@@ -937,7 +1011,9 @@ export const useDraftThread = ({
                       { kind: 'event', prefill: result.prefill },
                       draft.item.kind,
                     ),
+                    ...(result.notes ? { notes: result.notes } : {}),
                     ...(placeFound ? { place: placeFound } : {}),
+                    ...(result.reminders ? { reminders: result.reminders } : {}),
                   };
                 })(),
               ]
@@ -973,9 +1049,18 @@ export const useDraftThread = ({
    * said (if it said); otherwise the focused draft moves there, its title
    * kept and its own length searched for unless the phrase states one. The
    * slots go with the draft for the form to offer; the next turn drops them.
+   * A note or notifications said with it (`readExtras`) go on the draft too.
    */
-  const place = async (utterance: string, read?: ReadForm): Promise<string | undefined> => {
+  const place = async (
+    utterance: string,
+    read: ReadForm | undefined,
+    { notes, reminders, rest }: ReturnType<typeof readExtras>,
+  ): Promise<string | undefined> => {
     const mine = ++request.current;
+    const said = {
+      ...(notes ? { notes } : {}),
+      ...(reminders ? { reminders } : {}),
+    };
     const submitted = read?.();
     const current =
       submitted === undefined
@@ -991,7 +1076,7 @@ export const useDraftThread = ({
     try {
       const result = await proposeSlots(model, backend, {
         fallbackDurationMinutes: length > 0 ? length : DEFAULT_SLOT_MINUTES,
-        phrase: utterance,
+        phrase: rest,
         referenceDate: Temporal.Now.plainDateISO(timeZone).toString(),
         timeZone,
       });
@@ -1008,7 +1093,11 @@ export const useDraftThread = ({
       if (target === undefined) {
         const extras = firstDraftExtras(read?.().extras);
         setState(
-          startThread([slotItem(best, result.title)], utterance, { extras, slots: result.slots }),
+          startThread([slotItem(best, result.title)], utterance, {
+            extras,
+            ...said,
+            slots: result.slots,
+          }),
         );
         return undefined;
       }
@@ -1016,6 +1105,7 @@ export const useDraftThread = ({
       setState((latest) =>
         landPlacement(latest, {
           fresh,
+          ...said,
           slots: result.slots,
           targetId: target.id,
           title: result.title,
@@ -1051,8 +1141,11 @@ export const useDraftThread = ({
       readonly read?: ReadForm | undefined;
     },
   ): Promise<string | undefined> => {
-    if (isFinderPhrase(text)) {
-      return place(text, read);
+    // The finder's cue is read in the words about the event, not in a
+    // note or a notification said with them.
+    const extras = readExtras(text);
+    if (isFinderPhrase(extras.rest)) {
+      return place(text, read, extras);
     }
     if (state.drafts.length > 0) {
       return refine(text, read);
@@ -1085,7 +1178,13 @@ export const useDraftThread = ({
           : { kind: 'event', prefill: result.prefill },
       ],
       text,
-      { extras: firstDraftExtras(read?.().extras), guests, place: placeFound },
+      {
+        extras: firstDraftExtras(read?.().extras),
+        guests,
+        ...(result.notes ? { notes: result.notes } : {}),
+        place: placeFound,
+        ...(result.kind === 'parsed' && result.reminders ? { reminders: result.reminders } : {}),
+      },
     );
     return undefined;
   };

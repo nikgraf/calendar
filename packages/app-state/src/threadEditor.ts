@@ -4,6 +4,7 @@ import {
   type CalendarInfo,
   type Contact,
   emailKey,
+  type EventReminders,
   type FreeSlot,
   type PlaceCandidate,
   type ItemKind,
@@ -53,8 +54,8 @@ export interface ThreadSeed {
   readonly utterance: string;
 }
 
-/** A part of the form a turn can change and flash: a draft's own fields, and its guests. */
-export type FlashField = DraftField | 'guests';
+/** A part of the form a turn can change and flash: a draft's own fields, its guests, notes and notifications. */
+export type FlashField = DraftField | 'guests' | 'notes' | 'reminders';
 
 /**
  * The fields a turn just changed in the form, for it to flash once: `key`
@@ -69,6 +70,15 @@ export interface DraftFlash {
 /** A guest list by its addresses, in order: what a turn changed or not. */
 const guestKeys = (attendees: ReadonlyArray<{ readonly email: string }>): string =>
   attendees.map((attendee) => emailKey(attendee.email)).join('\n');
+
+/** The notifications by their offsets, the calendar default apart: what a turn changed or not. */
+const reminderKeys = (reminders: EventReminders | undefined): string =>
+  reminders === undefined
+    ? ''
+    : [
+        reminders.useDefault ? 'default' : '',
+        ...reminders.overrides.map((override) => `${override.method}:${String(override.minutes)}`),
+      ].join('\n');
 
 /**
  * Existing event (edit mode), a prefilled slot (create mode), or a thread
@@ -394,10 +404,17 @@ export const useThreadEditor = ({
   ) => {
     const { extras, item } = draft;
     const before = currentItem();
-    // The guests the form shows now, before the draft's take over.
+    // The guests, notes and notifications the form shows now, before the draft's take over.
     const guestsChanged =
       item.kind === 'event' &&
       guestKeys(eventModel.attendees) !== guestKeys(extras?.attendees ?? []);
+    const notesChanged =
+      item.kind === 'event'
+        ? eventModel.description !== (extras?.description ?? '')
+        : taskModel.notes !== (extras?.taskNotes ?? '');
+    const remindersChanged =
+      item.kind === 'event' &&
+      reminderKeys(eventModel.extras().reminders) !== reminderKeys(extras?.reminders);
     void apply(item)
       .then((after) => {
         if (landed) {
@@ -405,6 +422,8 @@ export const useThreadEditor = ({
             fields: new Set<FlashField>([
               ...changedDraftFields(before, after),
               ...(guestsChanged ? (['guests'] as const) : []),
+              ...(notesChanged ? (['notes'] as const) : []),
+              ...(remindersChanged ? (['reminders'] as const) : []),
             ]),
             key: landed.id,
           });

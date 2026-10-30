@@ -6,6 +6,7 @@ import {
   reminderLabel,
 } from '@calendar/core';
 import { FIELD_CLASS as field } from '../ui/fieldStyles.ts';
+import { useFieldFlash } from '../ui/useFlash.ts';
 import { FormSection } from './FormSection.tsx';
 import { TEXT_ACTION_CLASS } from '../ui/buttonStyles.ts';
 
@@ -28,6 +29,8 @@ export function RemindersFields({ model }: { model: ReturnType<typeof useEventEd
     setReminderMinutes,
     setUseDefaultReminders,
   } = model;
+  // What the last turn changed tints and fades back (the thread's flash).
+  const remindersFlash = useFieldFlash<HTMLDivElement>('reminders');
   const presets = isAllDay ? ALL_DAY_REMINDER_PRESET_MINUTES : REMINDER_PRESET_MINUTES;
   const options = (current: number) =>
     [...new Set<number>([...presets, current])].sort((a, b) => a - b);
@@ -67,7 +70,7 @@ export function RemindersFields({ model }: { model: ReturnType<typeof useEventEd
   }
 
   return (
-    <FormSection label="Notifications" testId="event-reminders">
+    <FormSection label="Notifications" ref={remindersFlash} testId="event-reminders">
       {canUseDefaultReminders ? (
         <label className="flex items-center gap-2 text-sm">
           <input

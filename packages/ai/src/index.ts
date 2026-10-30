@@ -1,3 +1,4 @@
+export * from './extras.ts';
 export * from './grounding.ts';
 export * from './invitees.ts';
 export * from './model.ts';

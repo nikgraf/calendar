@@ -671,3 +671,44 @@ describe('buildRefinePrompt', () => {
     expect(prompt.endsWith('Change: Thursday')).toBe(true);
   });
 });
+
+describe('parseRefine reads the note and the notifications beside the change', () => {
+  it('needs no model for words about nothing else, and leaves the draft as it is', async () => {
+    const model = fakeModel({ title: 'unused' }, { status: 'unavailable' });
+    for (const [utterance, expected] of [
+      ['notify me 15 minutes before', { reminders: { add: [15], clear: false, remove: [] } }],
+      ['and an hour before as well', { reminders: { add: [60], clear: false, remove: [] } }],
+      [
+        'add a note: bring the insurance card',
+        { notes: { kind: 'add', text: 'bring the insurance card' } },
+      ],
+      ['no notifications', { reminders: { add: [], clear: true, remove: [] } }],
+    ] as const) {
+      expect(await parseRefine(model, { draft: DINNER, utterance, ...CONTEXT }), utterance).toEqual(
+        {
+          kind: 'parsed',
+          prefill: DINNER,
+          ...expected,
+        },
+      );
+    }
+    expect(model.prompts).toHaveLength(0);
+  });
+
+  it('shows the model only the change, with the note and notifications beside the answer', async () => {
+    const model = fakeModel({ ...DINNER, date: '2026-08-27' });
+    const result = await parseRefine(model, {
+      draft: DINNER,
+      utterance: 'Thursday instead, remind me 10 minutes before and note that we meet at the bar',
+      ...CONTEXT,
+    });
+    expect(result).toEqual({
+      kind: 'parsed',
+      notes: { kind: 'add', text: 'we meet at the bar' },
+      prefill: { ...DINNER, date: '2026-08-27' },
+      reminders: { add: [10], clear: false, remove: [] },
+    });
+    expect(model.prompts[0]).toContain('Change: Thursday instead');
+    expect(model.prompts[0]).not.toContain('remind me');
+  });
+});

@@ -23,6 +23,7 @@ export function TaskEditorForm({
   // What the last turn changed tints and fades back (the thread's flash).
   const titleFlash = useFieldFlash<HTMLInputElement>('title');
   const dateFlash = useFieldFlash<HTMLInputElement>('date');
+  const notesFlash = useFieldFlash<HTMLTextAreaElement>('notes');
   return (
     <div className="flex flex-col gap-4">
       {taskModel.error ? (
@@ -65,6 +66,7 @@ export function TaskEditorForm({
           className={`${FIELD_CLASS} mt-1 min-h-16`}
           onChange={(input) => taskModel.setNotes(input.target.value)}
           placeholder="Add notes"
+          ref={notesFlash}
           value={taskModel.notes}
         />
       </label>

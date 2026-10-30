@@ -22,7 +22,13 @@ import {
   undoTurn,
   updateDraft,
 } from './draftThread.ts';
-import { Contact, GeoLocation, type PlaceCandidate } from '@calendar/core';
+import {
+  Contact,
+  EventReminders,
+  GeoLocation,
+  type PlaceCandidate,
+  ReminderOverride,
+} from '@calendar/core';
 import { livePlaceChoice, pickedCandidate, readsAsSaid } from './draftPlaces.ts';
 import type { QuickAddItem } from './quickAddItem.ts';
 
@@ -1043,5 +1049,118 @@ describe('places from the words', () => {
     expect(settled.version).toBe(started.version);
     expect(settled.turns).toBe(started.turns);
     expect(dropPlaceChoice(settled, 0)).toBe(settled);
+  });
+});
+
+const popup = (minutes: number) => new ReminderOverride({ method: 'popup', minutes });
+
+describe('notes and notifications from the words', () => {
+  const typed = { attendees: [], description: 'Bring wine', reminders: undefined };
+
+  it('starts a draft with the phrase’s note after what was typed, and its notifications', () => {
+    const state = startThread([dinner], 'dinner Friday at 7, note: ask about the trip', {
+      extras: typed,
+      id: ids(),
+      notes: { kind: 'add', text: 'ask about the trip' },
+      reminders: { add: [30], clear: false, remove: [] },
+    });
+    expect(state.drafts[0]?.extras).toEqual({
+      attendees: [],
+      description: 'Bring wine\nask about the trip',
+      reminders: new EventReminders({ overrides: [popup(30)], useDefault: false }),
+    });
+    expect(state.turns[0]?.summary).toBe(
+      'Dinner with Teo · Fri, Aug 28 · 19:00–20:00 · adds a note · notifies 30 minutes before',
+    );
+    // A draft the form never held gets blank extras around them.
+    const fresh = startThread([dinner], 'dinner, remind me an hour before', {
+      id: ids(),
+      reminders: { add: [60], clear: false, remove: [] },
+    });
+    expect(fresh.drafts[0]?.extras).toEqual({
+      attendees: [],
+      description: '',
+      reminders: new EventReminders({ overrides: [popup(60)], useDefault: false }),
+    });
+  });
+
+  it('gives a to-do its note as its own notes, and no notifications', () => {
+    const todo: QuickAddItem = { kind: 'task', prefill: { date: '2026-08-28', title: 'Call Tom' } };
+    const state = startThread([todo], 'call Tom, note: about the invoice', {
+      id: ids(),
+      notes: { kind: 'add', text: 'about the invoice' },
+      reminders: { add: [30], clear: false, remove: [] },
+    });
+    expect(state.drafts[0]?.extras).toEqual({
+      attendees: [],
+      description: '',
+      reminders: undefined,
+      taskNotes: 'about the invoice',
+    });
+    expect(state.turns[0]?.summary).toBe('Call Tom · Fri, Aug 28 · adds a note');
+  });
+
+  it('lands a turn’s note and notifications on the form as it is now, says so, and Undo takes them back', () => {
+    const started = startThread([dinner], 'dinner', { extras: typed, id: ids() });
+    // A notification picked while the model answered stays.
+    const form = {
+      extras: {
+        ...typed,
+        reminders: new EventReminders({ overrides: [popup(15)], useDefault: false }),
+      },
+      item: dinner,
+    };
+    const landed = landRefinement(started, {
+      changes: [
+        {
+          id: 'd1',
+          item: dinner,
+          notes: { kind: 'add', text: 'ask about the trip' },
+          reminders: { add: [60], clear: false, remove: [] },
+        },
+      ],
+      fresh: form,
+      submitted: { extras: typed, item: dinner },
+      targetId: 'd1',
+      utterance: 'note: ask about the trip, and an hour before as well',
+    });
+    expect(landed.drafts[0]?.extras).toEqual({
+      attendees: [],
+      description: 'Bring wine\nask about the trip',
+      reminders: new EventReminders({ overrides: [popup(15), popup(60)], useDefault: false }),
+    });
+    expect(landed.turns.at(-1)?.summary).toBe('→ adds a note · → notifies 1 hour before');
+    const undone = undoTurn(landed);
+    expect(undone.drafts[0]?.extras).toEqual(form.extras);
+  });
+
+  it('a finder turn carries the note and notifications said with it onto the draft it places', () => {
+    const started = startThread([dinner], 'dinner', { id: ids() });
+    const slot = { date: '2026-08-31', endTime: '10:00', startTime: '09:00' };
+    const placed = landPlacement(started, {
+      notes: { kind: 'add', text: 'bring the deck' },
+      reminders: { add: [10], clear: false, remove: [] },
+      slots: [slot],
+      targetId: 'd1',
+      utterance: 'find an hour Monday morning, remind me 10 minutes before, note: bring the deck',
+    });
+    expect(placed.drafts[0]?.extras).toEqual({
+      attendees: [],
+      description: 'bring the deck',
+      reminders: new EventReminders({ overrides: [popup(10)], useDefault: false }),
+    });
+    expect(placed.turns.at(-1)?.summary).toContain('notifies 10 minutes before');
+  });
+
+  it('says nothing for a removal that finds nothing to take off', () => {
+    const started = startThread([dinner], 'dinner', { id: ids() });
+    const moved = refineThread(
+      started,
+      'remove the 15 minute reminder',
+      [{ id: 'd1', item: dinner, reminders: { add: [], clear: false, remove: [15] } }],
+      ids(),
+    );
+    expect(moved.drafts[0]).not.toHaveProperty('extras');
+    expect(moved.turns.at(-1)?.summary).toBe('no change');
   });
 });

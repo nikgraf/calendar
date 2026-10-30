@@ -6,6 +6,7 @@ import {
   reminderLabel,
 } from '@calendar/core';
 import { Chip } from './Chip.tsx';
+import { FieldFlash } from './FlashView.tsx';
 import { ChipsRow, Row, Section, SwitchRow } from './GroupedList.tsx';
 
 /**
@@ -69,21 +70,24 @@ export function ReminderChips({ model }: { model: ReturnType<typeof useEventEdit
         />
       ) : null}
       {useDefault ? null : (
-        <ChipsRow>
-          {offsets.map((minutes) => {
-            const selected = popups.some(({ override }) => override.minutes === minutes);
-            return (
-              <Chip
-                disabled={readOnly || (full && !selected)}
-                key={minutes}
-                label={reminderLabel(minutes, isAllDay)}
-                onPress={() => toggle(minutes)}
-                selected={selected}
-                testID={`event-reminder-${String(minutes)}${selected ? '-on' : ''}`}
-              />
-            );
-          })}
-        </ChipsRow>
+        // A turn that set the notifications tints the chips, inside the card.
+        <FieldFlash bleedX={0} bleedY={0} field="reminders" radius={0}>
+          <ChipsRow>
+            {offsets.map((minutes) => {
+              const selected = popups.some(({ override }) => override.minutes === minutes);
+              return (
+                <Chip
+                  disabled={readOnly || (full && !selected)}
+                  key={minutes}
+                  label={reminderLabel(minutes, isAllDay)}
+                  onPress={() => toggle(minutes)}
+                  selected={selected}
+                  testID={`event-reminder-${String(minutes)}${selected ? '-on' : ''}`}
+                />
+              );
+            })}
+          </ChipsRow>
+        </FieldFlash>
       )}
       {emails.map((override) => (
         <Row

@@ -193,6 +193,46 @@ describe('The draft thread', () => {
     await cdp.locate('[title^="Dinner ·"]');
   });
 
+  it('reads a note and a notification from the phrase into the form; a turn about nothing else needs no model', async () => {
+    const { cdp } = app;
+    await cdp.eval(COMMAND_N);
+    await cdp.waitFor(headingIs('New event'));
+    // The clauses leave the phrase before the (fixture) model sees it: the grammar still parses.
+    await cdp.type(
+      INPUT,
+      'Dentist | +2 | 10:00-11:00, remind me 30 minutes before, note: bring the card',
+    );
+    await cdp.clickTestId('quick-add-apply');
+    await cdp.waitFor(blockAt('10:00'));
+    expect(await cdp.eval<boolean>(titleIs('Dentist'))).toBe(true);
+    await cdp.waitFor(`${valueOf('[data-testid="editor-notes"]')} === 'bring the card'`);
+    expect(await cdp.eval<string>(valueOf('[data-testid="event-reminder-0"]'))).toBe('30');
+    expect(await cdp.eval<string>(newestSummary)).toContain('notifies 30 minutes before');
+    expect(await cdp.eval<string>(newestSummary)).toContain('adds a note');
+
+    // Words about a notification alone: no model call, the row joins and flashes.
+    await cdp.type(INPUT, 'and an hour before as well');
+    await cdp.clickTestId('quick-add-apply');
+    await cdp.waitFor(`${valueOf('[data-testid="event-reminder-1"]')} === '60'`);
+    expect(await cdp.eval<string>(valueOf('[data-testid="event-reminder-0"]'))).toBe('30');
+    expect(await cdp.eval<number>(turns)).toBe(2);
+    expect(await cdp.eval<string>(newestSummary)).toBe('→ notifies 1 hour before');
+    await cdp.waitFor(
+      `document.querySelector('[data-testid="event-reminders"]')?.getAnimations().length === 1`,
+    );
+    // A note added by a turn joins the notes on a line of its own.
+    await cdp.type(INPUT, 'add a note: ask about the fee');
+    await cdp.clickTestId('quick-add-apply');
+    await cdp.waitFor(
+      `${valueOf('[data-testid="editor-notes"]')} === 'bring the card\\nask about the fee'`,
+    );
+    expect(await cdp.eval<string>(valueOf('[data-testid="event-reminder-1"]'))).toBe('60');
+    // Undo takes the note back, the notifications with it untouched.
+    await cdp.clickTestId('draft-undo');
+    await cdp.waitFor(`${valueOf('[data-testid="editor-notes"]')} === 'bring the card'`);
+    expect(await cdp.eval<string>(valueOf('[data-testid="event-reminder-1"]'))).toBe('60');
+  });
+
   it('lists the turns newest first, two until "+2 earlier queries" opens the rest, and flashes the field a turn changed', async () => {
     const { cdp } = app;
     await cdp.eval(COMMAND_N);

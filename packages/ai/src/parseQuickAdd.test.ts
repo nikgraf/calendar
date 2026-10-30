@@ -1335,3 +1335,62 @@ describe('parseQuickAdd invitees', () => {
     expect(result).not.toHaveProperty('invite');
   });
 });
+
+describe('parseQuickAdd reads the note and the notifications beside the event', () => {
+  it('returns them beside the prefill and shows the model only the event', async () => {
+    const model = fakeModel({ date: '2026-08-25', startTime: '10:00', title: 'Dentist' });
+    const result = await parseQuickAdd(model, {
+      phrase: 'Dentist Tuesday at 10, remind me 30 minutes before, note: bring the card',
+      ...CONTEXT,
+    });
+    expect(result).toEqual({
+      kind: 'parsed',
+      notes: { kind: 'add', text: 'bring the card' },
+      prefill: {
+        date: '2026-08-25',
+        endTime: '11:00',
+        isAllDay: false,
+        startTime: '10:00',
+        title: 'Dentist',
+      },
+      reminders: { add: [30], clear: false, remove: [] },
+    });
+    for (const prompt of model.prompts) {
+      expect(prompt).not.toContain('remind me');
+      expect(prompt).not.toContain('bring the card');
+    }
+    expect(model.prompts[0]).toContain('Phrase: Dentist Tuesday at 10');
+  });
+
+  it('is an event with a notification, not a to-do, and the lead is not its length', async () => {
+    const result = await parseQuickAdd(
+      fakeModel({ date: '2026-08-25', startTime: '10:00', title: 'Zahnarzt' }),
+      { phrase: 'Zahnarzt Dienstag um 10, erinnere mich 15 Minuten vorher', ...CONTEXT },
+    );
+    expect(result).toMatchObject({
+      kind: 'parsed',
+      prefill: { endTime: '11:00', startTime: '10:00', title: 'Zahnarzt' },
+      reminders: { add: [15], clear: false, remove: [] },
+    });
+    // The to-do cue stays one: a note rides on the to-do, notifications do not.
+    const todo = await parseQuickAdd(fakeModel({ title: 'call the bank' }), {
+      phrase: 'remind me to call the bank tomorrow, note: ask about the fee',
+      ...CONTEXT,
+    });
+    expect(todo).toEqual({
+      kind: 'task',
+      notes: { kind: 'add', text: 'ask about the fee' },
+      prefill: { date: '2026-08-23', title: 'Call the bank' },
+    });
+  });
+
+  it('rejects a note or notification with nothing to schedule, without the model', async () => {
+    const model = fakeModel({ title: 'unused' });
+    const result = await parseQuickAdd(model, {
+      phrase: 'remind me 30 minutes before',
+      ...CONTEXT,
+    });
+    expect(result).toEqual({ kind: 'rejected', reason: 'Say what to schedule first.' });
+    expect(model.prompts).toHaveLength(0);
+  });
+});

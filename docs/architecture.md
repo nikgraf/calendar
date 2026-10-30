@@ -69,7 +69,19 @@ one — in the words' own spelling (a misspelled name is matched back by
 its consonants), reads addresses itself (masked before the words are
 read), and cuts the invitation out of the title. A noun is no request
 unless it says for whom ("an invite to Tom", not "the invitation from
-Tom"), and a negation elsewhere in a cue's clause leaves it no opinion. The thread (app-state `draftInvitees.ts`) looks each name
+Tom"), and a negation elsewhere in a cue's clause leaves it no opinion.
+A note and notifications the words ask for (`extras.ts`, `readExtras`:
+"remind me 30 minutes before", "erinnere mich eine Stunde vorher", "the
+day before", "no reminder"; "note: …", "notier, dass …", "add to the
+notes: …") are read by the code alone — no field in the schema, since an
+offset is a small grammar and a note is the phrase's own words — and the
+clauses leave the phrase before the model and the grounding see it, so
+"remind me … before" is no to-do cue and "15 minutes before" no length;
+they come back beside the prefill (`notes`, `reminders`), and a turn
+about nothing else calls no model. The thread folds them into the
+draft's extras (`draftExtras.ts`: a note on a line of its own, popups
+beside the draft's own, a replacement or a clearing alone) and the form
+flashes the rows. The thread (app-state `draftInvitees.ts`) looks each name
 up through `contactsNamed` — every contact whose folded words the name
 begins (core `nameMatch`), never a typeahead page, so "one person" is
 decided over all of them: a name that is one contact's (the only one by

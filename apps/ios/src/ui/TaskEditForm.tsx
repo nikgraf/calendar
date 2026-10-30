@@ -44,12 +44,14 @@ export function TaskEditForm({
             value={taskModel.title}
           />
         </FieldFlash>
-        <FieldRow
-          multiline
-          onChangeText={taskModel.setNotes}
-          placeholder="Notes"
-          value={taskModel.notes}
-        />
+        <FieldFlash bleedX={0} bleedY={0} field="notes" radius={0}>
+          <FieldRow
+            multiline
+            onChangeText={taskModel.setNotes}
+            placeholder="Notes"
+            value={taskModel.notes}
+          />
+        </FieldFlash>
       </Section>
 
       <Section tight>

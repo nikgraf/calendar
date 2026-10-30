@@ -1,4 +1,5 @@
 import type { QuickAddResult, RefineResult } from '@calendar/ai';
+import { applyNotesChange, applyReminderChange } from '@calendar/app-state/draftExtras';
 import {
   applyGuestChange,
   type InviteeChoice,
@@ -10,7 +11,9 @@ import {
   type Contact,
   contactsNamed,
   emailKey,
+  EventReminders,
   foldSearchText,
+  ReminderOverride,
   Temporal,
 } from '@calendar/core';
 import type { Expectation } from './cases.ts';
@@ -19,9 +22,8 @@ import type { Expectation } from './cases.ts';
  * What the bench holds between turns and checks after each: the thread's
  * draft without the UI. The item is the editor's own prefill; guests and
  * choices are what the thread's `guestsOf` would make of the names, over
- * the fixture address book; notes and notifications are here for the
- * expectations that name them — no turn fills them yet, so a case that
- * asks for them measures that gap.
+ * the fixture address book; notes and notifications are what the words
+ * added, as the thread folds them in (`draftExtras.ts`).
  */
 export interface BenchDraft {
   readonly choices: ReadonlyArray<InviteeChoice>;
@@ -80,11 +82,30 @@ export interface TurnCheck {
 export const fold = (text: string): string =>
   foldSearchText(text).replaceAll('ß', 'ss').replaceAll(/\s+/gu, ' ').trim();
 
+/** The popup offsets of the form's notifications, the way an expectation names them. */
+const minutesOf = (reminders: EventReminders | undefined): ReadonlyArray<number> | undefined =>
+  reminders === undefined
+    ? undefined
+    : reminders.overrides
+        .filter((override) => override.method === 'popup')
+        .map((override) => override.minutes);
+
+const remindersOf = (minutes: ReadonlyArray<number> | undefined): EventReminders | undefined =>
+  minutes === undefined
+    ? undefined
+    : new EventReminders({
+        overrides: minutes.map(
+          (offset) => new ReminderOverride({ method: 'popup', minutes: offset }),
+        ),
+        useDefault: false,
+      });
+
 /**
  * The draft after a turn's result: the first turn makes it, a later one
  * changes it as the thread would — the kind kept, the guests the words
  * invite looked up in the address book (`resolveInvitees`, every match
- * of `contactsNamed`), the ones they take off removed.
+ * of `contactsNamed`), the ones they take off removed, a note added to
+ * the notes, the notifications said added to the draft's.
  */
 export const applyResult = async (
   previous: BenchDraft | undefined,
@@ -94,9 +115,19 @@ export const applyResult = async (
   if (result.kind === 'rejected') {
     return { kind: 'rejected', reason: result.reason };
   }
+  const notes =
+    result.notes === undefined
+      ? previous?.notes
+      : applyNotesChange(previous?.notes ?? '', result.notes);
   if (result.kind === 'task') {
     return {
-      draft: { choices: [], guests: [], item: { kind: 'task', prefill: result.prefill } },
+      draft: {
+        choices: [],
+        guests: [],
+        item: { kind: 'task', prefill: result.prefill },
+        notes,
+        reminders: previous?.reminders,
+      },
       kind: 'draft',
     };
   }
@@ -118,14 +149,14 @@ export const applyResult = async (
     guests = applied.attendees;
     choices = applied.choices;
   }
+  const reminders =
+    result.reminders === undefined || item.kind !== 'event'
+      ? previous?.reminders
+      : minutesOf(
+          applyReminderChange(remindersOf(previous?.reminders), result.reminders).reminders,
+        );
   return {
-    draft: {
-      choices,
-      guests,
-      item,
-      notes: previous?.notes,
-      reminders: previous?.reminders,
-    },
+    draft: { choices, guests, item, notes, reminders },
     kind: 'draft',
   };
 };
