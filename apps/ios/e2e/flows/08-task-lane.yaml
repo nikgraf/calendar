@@ -35,12 +35,13 @@ tags:
           timeout: 10000
       # Check it off and back on via the labeled checkbox — exercises the
       # toggle while leaving the account unchanged even if the delete
-      # below fails.
-      - tapOn: 'Toggle Solunivo e2e task to delete'
-      - tapOn: 'Toggle Solunivo e2e task to delete'
+      # below fails. Its label names what a tap does, so the second tap
+      # also proves the first one landed.
+      - tapOn: 'Complete Solunivo e2e task to delete'
+      - tapOn: 'Reopen Solunivo e2e task to delete'
       # The chip title sits inside the body pressable: tapping it opens
       # the shared editor in task mode. (The full-title pattern cannot
-      # match the "Toggle …"-prefixed checkbox label.)
+      # match the checkbox's "Complete …" / "Reopen …" label.)
       - tapOn: 'Solunivo e2e task to delete'
       # The first list may be a Google list or, once Reminders is
       # connected, the Apple one — either editor is the right outcome.

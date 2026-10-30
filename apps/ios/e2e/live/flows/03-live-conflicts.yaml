@@ -31,7 +31,9 @@ tags:
       TITLE: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-c-start'
 - evalScript: ${output.eventId = output.event.id}
 
-# Round 1: Take theirs — Google's title shows, the queue is empty.
+# Round 1: Take theirs — Google's title shows, the queue is empty. A
+# round's titles get a suffix when a poll defused its first attempt, so
+# what follows reads the ones it settled (output.theirs, output.mine).
 - runFlow:
     file: ../conflict-round.yaml
     env:
@@ -41,7 +43,7 @@ tags:
       MINE: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-c-mine1'
       THEIRS: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-c-google1'
 - extendedWaitUntil:
-    visible: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-c-google1.*'
+    visible: '${output.theirs}.*'
     timeout: 30000
 - assertNotVisible:
     id: 'pending-badge'
@@ -59,7 +61,7 @@ tags:
     file: ../wait-for-event-state.yaml
     env:
       EVENT_ID: ${output.eventId}
-      EXPECT: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-c-mine2'
+      EXPECT: ${output.mine}
 - extendedWaitUntil:
     notVisible:
       id: 'pending-badge'
@@ -69,7 +71,7 @@ tags:
 - runFlow:
     file: ../open-event.yaml
     env:
-      BLOCK: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-c-mine2.*'
+      BLOCK: '${output.mine}.*'
 # Delete is the form's last card: scroll it into reach.
 - scrollUntilVisible:
     element:

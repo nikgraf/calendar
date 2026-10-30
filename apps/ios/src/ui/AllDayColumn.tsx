@@ -151,9 +151,10 @@ export function AllDayColumn({
                 labels double as stable e2e handles: a created task's id
                 swaps from local- to the server id as soon as its op
                 pushes, so id-based selectors go stale mid-flow — the
-                title does not. */}
+                title does not. The verb says what a tap does, so the
+                check's state is readable (VoiceOver, flows). */}
             <Pressable
-              accessibilityLabel={`Toggle ${task.title}`}
+              accessibilityLabel={done ? `Reopen ${task.title}` : `Complete ${task.title}`}
               accessibilityRole="button"
               hitSlop={8}
               onPress={() => onToggleTask(task)}

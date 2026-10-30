@@ -663,6 +663,15 @@ const make: Effect.Effect<
       }
     });
 
+  /**
+   * One calendar's or list's pass with the drain held, then what was
+   * queued meanwhile goes out: the next pass takes the gate straight
+   * back, so a write would otherwise wait out every calendar and list of
+   * the account (a first full sync, a 503's backoff).
+   */
+  const holdingQueue = <E>(pass: Effect.Effect<void, E>): Effect.Effect<void, E> =>
+    Effect.andThen(mutations.whileQueueHeld(pass), mutations.processPendingOps());
+
   const syncAccountTasks = (account: Account): Effect.Effect<void, SyncError> =>
     Effect.gen(function* () {
       const stamps = yield* syncTaskLists(account);
@@ -670,7 +679,7 @@ const make: Effect.Effect<
       yield* Effect.forEach(
         lists,
         (list) =>
-          mutations.whileQueueHeld(syncTasks(account, list.id, stamps.get(list.id))).pipe(
+          holdingQueue(syncTasks(account, list.id, stamps.get(list.id))).pipe(
             // A 404 on one list (tasklists.list can still name a list just
             // deleted) must not fail the lists after it. Its rows stay: the
             // lists are listed in full every pass, so a gone one is removed
@@ -1011,7 +1020,10 @@ const make: Effect.Effect<
       yield* Effect.forEach(
         calendars,
         (calendar) =>
-          syncEvents(account, calendar.id, calendar.timeZone).pipe(
+          // The pass holds the drain, like a task list's: a page answered
+          // before a delete reached Google puts the row back, and only a
+          // delete that lands after the page takes that copy away again.
+          holdingQueue(syncEvents(account, calendar.id, calendar.timeZone)).pipe(
             // A 404 on one calendar must not stall the account's others,
             // tasks and contacts. It is not proof of deletion either: Google
             // says to retry 404s, and calendarList names a deleted calendar

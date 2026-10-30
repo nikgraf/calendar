@@ -1,6 +1,6 @@
 import { unavailableAppleCalendarClient } from '@calendar/apple-calendar';
 import { appleCalendarServicesLayer } from './appleCalendarEvents.ts';
-import { Account, eventsScope, plainDateToUtcMs } from '@calendar/core';
+import { Account, EventRecord, eventsScope, plainDateToUtcMs } from '@calendar/core';
 import {
   AccountRepo,
   CalendarRepo,
@@ -29,7 +29,7 @@ import {
 import { RemindersClient, unavailableRemindersClient } from '@calendar/reminders';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
-import { Effect, Fiber, Layer } from 'effect';
+import { Deferred, Effect, Fiber, Layer } from 'effect';
 import { TestClock } from 'effect/testing';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
 import { describe } from 'vite-plus/test';
@@ -158,6 +158,85 @@ const seedAccount = Effect.gen(function* () {
     }),
   );
 });
+
+/**
+ * The second pass's page waits for `release` and still names evt-1
+ * (changed elsewhere since the token). Applied after a local delete, such
+ * a page put the row back; the delete landed and left that copy showing
+ * until the next poll's delta reported the cancellation (google-live
+ * 40265233306, iOS flow 02).
+ */
+const heldPass = (deleteEvent: GoogleCalendarClientShape['deleteEvent']) => {
+  const requested = Effect.runSync(Deferred.make<void>());
+  const release = Effect.runSync(Deferred.make<void>());
+  let calls = 0;
+  const client: GoogleCalendarClientShape = {
+    ...stubClient([]),
+    deleteEvent,
+    listEvents: () => {
+      calls += 1;
+      if (calls === 1) {
+        return Effect.succeed({ items: [timedItem('evt-1', 10)], nextSyncToken: 's1' });
+      }
+      if (calls === 2) {
+        const changed = { ...timedItem('evt-1', 10), etag: '"evt-1-2"', summary: 'All day' };
+        return Deferred.succeed(requested, undefined).pipe(
+          Effect.andThen(Deferred.await(release)),
+          Effect.as({ items: [changed], nextSyncToken: 's2' }),
+        );
+      }
+      return Effect.succeed({ items: [], nextSyncToken: 's3' });
+    },
+  };
+  return { client, release, requested };
+};
+
+/** Deletes evt-1 while the second pass waits for its page, then lets the page in. */
+const deleteDuringPass = (pass: ReturnType<typeof heldPass>) =>
+  Effect.gen(function* () {
+    yield* seedAccount;
+    const engine = yield* SyncEngine;
+    const mutations = yield* EventMutations;
+    yield* engine.syncAll();
+    const syncing = yield* Effect.forkChild(engine.syncAll());
+    yield* Deferred.await(pass.requested);
+    yield* mutations.deleteEvent({ accountId: 'acc-1', calendarId: 'cal-1', eventId: 'evt-1' });
+    // The drain the delete kicked: free to land the delete ahead of the
+    // page unless the pass holds the queue.
+    const draining = yield* Effect.forkChild(mutations.processPendingOps());
+    for (let turn = 0; turn < 50; turn += 1) {
+      yield* Effect.yieldNow;
+    }
+    yield* Deferred.succeed(pass.release, undefined);
+    yield* Fiber.join(syncing);
+    yield* Fiber.join(draining);
+    return yield* (yield* EventRepo).getById('acc-1', 'cal-1', 'evt-1');
+  });
+
+/** A delete that meets a 503 first, then `then`. */
+const failingOnce = (then: Effect.Effect<void, NotFoundError>) => {
+  let attempts = 0;
+  return () =>
+    attempts++ === 0 ? Effect.fail(new ApiUnavailableError({ cause: 'offline' })) : then;
+};
+
+/**
+ * Lands the delete deleteDuringPass left in backoff, after `change`
+ * rewrote the copy the page put back; the row at evt-1 afterwards.
+ */
+const landDeleteAfter = (change: (row: EventRecord) => EventRecord) =>
+  Effect.gen(function* () {
+    const events = yield* EventRepo;
+    const copy = yield* events.getById('acc-1', 'cal-1', 'evt-1');
+    // Until it lands Google's copy shows, as for any delete still queued.
+    expect(copy?.title).toBe('All day');
+    yield* events.upsertMany([change(copy!)]);
+    const mutations = yield* EventMutations;
+    yield* mutations.retryPendingOps();
+    yield* mutations.processPendingOps();
+    expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+    return yield* events.getById('acc-1', 'cal-1', 'evt-1');
+  });
 
 describe('SyncEngine', () => {
   it.effect('a pull leaves a queued local edit alone until the op is acked or abandoned', () => {
@@ -288,6 +367,119 @@ describe('SyncEngine', () => {
       }).pipe(Effect.provide(engineLayer(client)));
     },
   );
+
+  describe('a page answered before a delete reached Google', () => {
+    it.effect('a delete that lands meanwhile stays deleted', () => {
+      const deleted: Array<string> = [];
+      const pass = heldPass(({ eventId }) => {
+        deleted.push(eventId);
+        return Effect.void;
+      });
+      return Effect.gen(function* () {
+        expect(yield* deleteDuringPass(pass)).toBeNull();
+        expect(deleted).toEqual(['evt-1']);
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+      }).pipe(Effect.provide(engineLayer(pass.client)));
+    });
+
+    it.effect('a delete that waits out a 503 takes the page’s copy with it once it lands', () => {
+      const pass = heldPass(failingOnce(Effect.void));
+      return Effect.gen(function* () {
+        yield* deleteDuringPass(pass);
+        expect(yield* landDeleteAfter((row) => row)).toBeNull();
+      }).pipe(Effect.provide(engineLayer(pass.client)));
+    });
+
+    it.effect('a delete answered 404 (an earlier attempt landed) takes it too', () => {
+      const pass = heldPass(failingOnce(Effect.fail(new NotFoundError({ resource: 'evt-1' }))));
+      return Effect.gen(function* () {
+        yield* deleteDuringPass(pass);
+        expect(yield* landDeleteAfter((row) => row)).toBeNull();
+      }).pipe(Effect.provide(engineLayer(pass.client)));
+    });
+
+    it.effect('a landing delete leaves a row an op queued since owns', () => {
+      const pass = heldPass(failingOnce(Effect.void));
+      return Effect.gen(function* () {
+        yield* deleteDuringPass(pass);
+        const row = yield* landDeleteAfter(
+          (copy) => new EventRecord({ ...copy, syncStatus: 'pending' }),
+        );
+        expect(row?.syncStatus).toBe('pending');
+      }).pipe(Effect.provide(engineLayer(pass.client)));
+    });
+
+    it.effect('a landing delete leaves a cancelled override', () => {
+      const pass = heldPass(failingOnce(Effect.void));
+      return Effect.gen(function* () {
+        yield* deleteDuringPass(pass);
+        const row = yield* landDeleteAfter(
+          (copy) => new EventRecord({ ...copy, status: 'cancelled' }),
+        );
+        expect(row?.status).toBe('cancelled');
+      }).pipe(Effect.provide(engineLayer(pass.client)));
+    });
+  });
+
+  it.effect('a write queued during one calendar’s pass goes out before the next calendar’s', () => {
+    // Each pass holds the drain, and the next one took the gate straight
+    // back: a write waited out every calendar of the account (a first full
+    // sync, a 503's backoff).
+    const calls: Array<string> = [];
+    const requested = Effect.runSync(Deferred.make<void>());
+    const release = Effect.runSync(Deferred.make<void>());
+    let seeded = false;
+    let held = false;
+    const client: GoogleCalendarClientShape = {
+      ...stubClient([]),
+      deleteEvent: ({ eventId }) => {
+        calls.push(`delete ${eventId}`);
+        return Effect.void;
+      },
+      listCalendars: () =>
+        Effect.succeed({
+          items: [
+            ...(calendarListPage.items ?? []),
+            { accessRole: 'owner', id: 'cal-2', selected: true, summary: 'Work' },
+          ],
+          nextSyncToken: 'cal-sync-1',
+        }),
+      listEvents: ({ calendarId }) => {
+        if (!seeded) {
+          return Effect.succeed({
+            items: calendarId === 'cal-1' ? [timedItem('evt-1', 10)] : [],
+            nextSyncToken: 's1',
+          });
+        }
+        calls.push(`list ${calendarId}`);
+        if (held) {
+          return Effect.succeed({ items: [], nextSyncToken: 's2' });
+        }
+        held = true;
+        return Deferred.succeed(requested, undefined).pipe(
+          Effect.andThen(Deferred.await(release)),
+          Effect.as({ items: [], nextSyncToken: 's2' }),
+        );
+      },
+    };
+    return Effect.gen(function* () {
+      yield* seedAccount;
+      const engine = yield* SyncEngine;
+      yield* engine.syncAll();
+      seeded = true;
+      const syncing = yield* Effect.forkChild(engine.syncAll());
+      yield* Deferred.await(requested);
+      yield* (yield* EventMutations).deleteEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        eventId: 'evt-1',
+      });
+      yield* Deferred.succeed(release, undefined);
+      yield* Fiber.join(syncing);
+      expect(calls).toHaveLength(3);
+      expect(calls[1]).toBe('delete evt-1');
+    }).pipe(Effect.provide(engineLayer(client)));
+  });
 
   it.effect('an event without a zone of its own is stored in its calendar zone', () => {
     // timedItem sends no start.timeZone. The page names the calendar's zone;

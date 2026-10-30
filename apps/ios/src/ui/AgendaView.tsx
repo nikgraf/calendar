@@ -164,7 +164,7 @@ function AgendaRow({
   return (
     <View style={[styles.row, styles.taskRow]} testID="agenda-task">
       <Pressable
-        accessibilityLabel={`Toggle ${task.title}`}
+        accessibilityLabel={done ? `Reopen ${task.title}` : `Complete ${task.title}`}
         accessibilityRole="button"
         hitSlop={8}
         onPress={() => onToggleTask(task)}

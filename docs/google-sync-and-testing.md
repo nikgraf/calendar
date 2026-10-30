@@ -593,7 +593,11 @@ guest-side RSVP (needs a second account).
   `wait-for-task.yaml`, paced by `scripts/pause.js` (a spin — GraalJS has
   no timers). Blocks are opened through `open-event.yaml`, calendar and
   list picked by their unique names through `pick-row.yaml`,
-  `conflict-round.yaml` retries a round whose banner a poll defused.
+  `conflict-round.yaml` retries a round whose banner a poll defused, with
+  fresh titles (the same ones again change nothing on either side, so no
+  412 can follow). A task chip's check reads "Complete <title>" or
+  "Reopen <title>", so 04 waits for the label to prove a pull or a tap:
+  a tap the app drops fails as such, not as a pull that never came.
   Maestro has no drag command, so 02 changes the event's shape through
   the all-day switch instead. Locally: `pnpm --filter @calendar/ios
   test:e2e:live` (dev client installed, Metro up with the live env;
@@ -970,7 +974,8 @@ Selector gotchas (each caused a real failure):
   `calendar-option`, or by full name where it is unique (the live suite's
   `pick-row.yaml`); a chip body is tapped by its full text
   (`[0-9]+:[0-9]+ !!! <title>` for a timed reminder), because
-  `.*<title>` also matches the checkbox's "Toggle <title>" label.
+  `.*<title>` also matches the checkbox's "Complete <title>" / "Reopen
+  <title>" label, which names what a tap does and so proves one.
 - Never select by `local-…` task ids (the op push swaps them to server
   ids mid-flow); avoid non-ASCII punctuation in typed text, and retype a
   title, an address or a quick-add phrase until the field holds all of it

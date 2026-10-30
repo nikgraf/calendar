@@ -484,7 +484,18 @@ it whenever a kind is added. Rules that keep the queue correct:
   `deleteStale` purges rows the server no longer returns (pending rows are
   protected by sync_status). Local writes mark their row `pending`; pulls
   write in `mode: 'pull'`, which skips pending rows, so a queued edit is
-  never clobbered by a page carrying the server's older copy. The push
+  never clobbered by a page carrying the server's older copy. A queued
+  delete leaves no row to skip: a page answered before it reached Google
+  puts Google's copy back (synced), and the delete removes that copy when
+  it lands or finds the item gone (a live event row, never a cancelled
+  override; a task row only while no op owns it). Each calendar's events
+  pass holds the drain (`whileQueueHeld`) like a task list's, so a delete
+  cannot land between a request and the page that would put the row
+  back after it, and lets out what was queued meanwhile before the next
+  calendar or list (`holdingQueue`), so a write never waits out a whole
+  account. Skipping such a page's rows was rejected: the token
+  never resends them, so a discarded delete would restore a stale copy
+  and a cancelled occurrence would lose its tombstone. The push
   response (ack upsert), an abandoned op (`releaseRow`: the op's snapshot
   of the row goes back, or `markSynced` when it has none) or a resolved
   conflict hands the row back. Task rows work the same way
