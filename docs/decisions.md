@@ -275,6 +275,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   test polls six minutes, then skips while Google still lists the calendar
   or serves its event. Rejected: a longer budget alone (the lag has no
   known bound), a full calendarList every pass (lagging replicas list it).
+- **A delete made during a pull stays deleted** (2026-10-30, #265)
+  — live nightly 40265233306: a poll's page, answered before the delete
+  landed, put the row back until the next poll. An events pass holds the
+  drain like a task list's, and a landed delete removes a synced copy at
+  its id (events and tasks). Rejected: a pull skipping rows whose delete
+  is queued (Codex review: the token never resends them, so a discard
+  restored a stale copy and a cancelled occurrence lost its tombstone);
+  holding the drain per page. Open: a replica lagging behind a landed
+  delete; why that night's flow 04 tap made no op (the flow now fails on
+  the check's label rather than tapping again, which would hide it).
 - **Re-auth and sync kicks** — a 401 flags the account `reauth_required`
   and keeps its ops queued for after the reconnect (same id, by email);
   wake/unlock/focus/foreground kick a sync, throttled to one per 15 s,

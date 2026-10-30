@@ -846,6 +846,23 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       return 'done' as const;
     });
 
+  /**
+   * A delete is done, but a page answered before it reached Google may
+   * have put Google's copy back while it was queued: a synced, live row
+   * at its id. That copy goes. A cancelled override (one occurrence's
+   * delete) stays, and a pending row is an op's queued since — read and
+   * delete in one transaction, so an edit of the copy cannot slip between.
+   */
+  const dropPulledCopy = (op: PendingOp) =>
+    transaction(
+      Effect.gen(function* () {
+        const row = yield* eventRepo.getById(op.accountId, op.calendarId, op.eventId);
+        if (row?.syncStatus === 'synced' && row.status !== 'cancelled') {
+          yield* eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
+        }
+      }),
+    );
+
   /** Google no longer has what the op writes to (404, or a 410 on a write). */
   const gone = (op: PendingOp) =>
     Effect.gen(function* () {
@@ -855,6 +872,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       // — deleting that row would bring the occurrence back, for good if
       // a pull already consumed Google's cancellation.
       if (op.kind === 'delete') {
+        yield* dropPulledCopy(op);
         return 'done' as const;
       }
       // 404 is the task *or the destination list*: put the rows back where
@@ -1372,6 +1390,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
             calendarId: op.calendarId,
             eventId: op.eventId,
           });
+          yield* dropPulledCopy(op);
           return 'done' as const;
         }
         case 'moveTask': {
@@ -1428,6 +1447,9 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
             taskId: op.eventId,
             taskListId: op.taskListId,
           });
+          // A listing answered before the delete reached Google may have
+          // put the task back meanwhile (synced); a queued op's row stays.
+          yield* taskRepo.removeSyncedTask(op.accountId, op.taskListId, op.eventId);
           yield* retireSubtaskDeletes(op);
           return 'done' as const;
         }

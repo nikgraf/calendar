@@ -37,29 +37,37 @@ tags:
     condition: ${output.task.status === 'needsAction'}
     label: 'a new task is open on Google'
 
-# Check it off from the chip; Google completes it.
-- tapOn: 'Toggle live-${MAESTRO_LIVE_RUN_TAG}-ios-task'
+# Check it off from the chip; Google completes it. The check's label
+# names what a tap does, so a tap is proven by the label turning. A touch
+# the app does not act on (run 40265233306's second one reached the
+# window as a poll ended, and no op followed) fails here as such, rather
+# than as a reopen the app never pulled; it is not tapped again, which
+# would hide it.
+- tapOn: 'Complete live-${MAESTRO_LIVE_RUN_TAG}-ios-task'
+- extendedWaitUntil:
+    visible: 'Reopen live-${MAESTRO_LIVE_RUN_TAG}-ios-task'
+    timeout: 10000
 - runFlow:
     file: ../wait-for-task.yaml
     env:
       STATUS: 'completed'
       TITLE: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-task'
 
-# Another device reopens it. The chip's open/done glyph is not exposed
-# to the accessibility tree (the toggle carries a fixed label), so the
-# pull is proven behaviourally: after two 30 s polls, one tap must
-# complete it again — had the app still believed it done, the tap would
-# have reopened it and Google would read needsAction.
+# Another device reopens it; a poll brings that to the chip, which offers
+# to complete it again. 30 s polls, and each re-reads the minute before
+# its predecessor started, so three polls cover a page that missed it.
 - runScript:
     file: ../scripts/patchTask.js
     env:
       STATUS: 'needsAction'
       TASK_ID: ${output.taskId}
-- runScript:
-    file: ../scripts/pause.js
-    env:
-      SECONDS: '75'
-- tapOn: 'Toggle live-${MAESTRO_LIVE_RUN_TAG}-ios-task'
+- extendedWaitUntil:
+    visible: 'Complete live-${MAESTRO_LIVE_RUN_TAG}-ios-task'
+    timeout: 100000
+- tapOn: 'Complete live-${MAESTRO_LIVE_RUN_TAG}-ios-task'
+- extendedWaitUntil:
+    visible: 'Reopen live-${MAESTRO_LIVE_RUN_TAG}-ios-task'
+    timeout: 10000
 - runFlow:
     file: ../wait-for-task.yaml
     env:

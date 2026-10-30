@@ -18,7 +18,7 @@ import {
 import { RemindersClient, unavailableRemindersClient } from '@calendar/reminders';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
-import { Effect, Fiber, Layer, Scheduler } from 'effect';
+import { Deferred, Effect, Fiber, Layer, Scheduler } from 'effect';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
 import { SqlClient } from 'effect/sql/SqlClient';
 import { describe } from 'vite-plus/test';
@@ -988,6 +988,39 @@ describe('completeTask', () => {
       }).pipe(noYield, Effect.provide(testLayer(client)));
     },
   );
+
+  it.effect('a task deleted while its list is being read stays deleted', () => {
+    // The answer still names it (changed elsewhere, or re-sent inside the
+    // watermark's minute); applied after the local delete it put the row
+    // back until a later pass.
+    const requested = Effect.runSync(Deferred.make<void>());
+    const release = Effect.runSync(Deferred.make<void>());
+    const deleted: Array<string> = [];
+    const client: GoogleTasksClientShape = tasksClient({
+      deleteTask: ({ taskId }) => {
+        deleted.push(taskId);
+        return Effect.void;
+      },
+      listTaskLists: () => Effect.succeed(lists),
+      listTasks: () =>
+        Deferred.succeed(requested, undefined).pipe(
+          Effect.andThen(Deferred.await(release)),
+          Effect.as({ items: [{ ...openTask('t1'), title: 'Pay rent (edited)' }] }),
+        ),
+    });
+    return Effect.gen(function* () {
+      yield* seedTasks;
+      const mutations = yield* EventMutations;
+      const syncing = yield* Effect.forkChild((yield* SyncEngine).syncAll());
+      yield* Deferred.await(requested);
+      yield* mutations.deleteTask({ accountId: 'acc-1', taskId: 't1', taskListId: 'list-1' });
+      yield* Deferred.succeed(release, undefined);
+      yield* Fiber.join(syncing);
+      yield* mutations.processPendingOps();
+      expect(yield* taskRow('t1')).toBeUndefined();
+      expect(deleted).toEqual(['t1']);
+    }).pipe(Effect.provide(testLayer(client)));
+  });
 
   it.effect(
     'a rename that lands while its replacement is queued becomes what that replaces',
