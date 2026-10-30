@@ -491,10 +491,14 @@ it whenever a kind is added. Rules that keep the queue correct:
   it lands or finds the item gone (a live event row, never a cancelled
   override; a task row only while no op owns it). Acting on that copy
   replaces the delete: an edit (`supersedeQueued`), an answer
-  (`respondToEvent`) or a move of it drops the queued delete. Re-queued
-  behind the move, or overtaken by an answer sent while it waited out a
-  backoff, the delete removed the event on Google and left a pending row
-  with no op behind it, which no pull or `deleteStale` ever touches. A
+  (`respondToEvent`, which an occurrence sends for its series) or a move
+  of it drops the queued delete. Re-queued behind the move, or overtaken
+  by an answer sent while it waited out a backoff, the delete removed the
+  event on Google after all, and its pending row showed until the next
+  pull reported the deletion. A dropped series delete first puts back the
+  exceptions it took locally, as Google has them, unless a row sits at
+  the id (`restoreTakenExceptions`): the pull that re-sent the master need
+  not have re-sent them, and a cancelled occurrence would show again. A
   series move still carries an exception's delete (a this-and-following
   cut) along, and moves that exception's pulled copy as synced so the
   delete takes it when it lands. Each calendar's events

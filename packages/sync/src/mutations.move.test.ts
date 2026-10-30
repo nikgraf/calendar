@@ -492,7 +492,7 @@ describe('moveEvent inside one Google account', () => {
     // "Delete this and following" cuts the series and deletes the
     // exception past the cut; that delete waits out a 503 while a pull
     // puts Google's copy back. Moved along as pending, the copy outlived
-    // its delete in the target with no op left to settle it.
+    // its delete in the target until the next pull.
     const calls: Array<Call> = [];
     const failed = new Set<string>();
     const once = <A, E>(kind: string, then: Effect.Effect<A, E>) =>

@@ -915,6 +915,107 @@ describe('discarding a change of a series', () => {
   );
 });
 
+describe('keeping a series a pull put back while its delete waits', () => {
+  // Cancelled on Google: the series delete took its tombstone along, and
+  // an incremental pull re-sent only the master, which changed. Dropped
+  // with the delete, the tombstone was gone for good and July 4 showed.
+  const cancelled = new EventRecord({
+    ...master,
+    etag: '"o-1"',
+    id: instanceId,
+    originalStartUtc: occurrence,
+    recurrence: undefined,
+    recurringEventId: 'master1',
+    startUtc: occurrence,
+    status: 'cancelled',
+  });
+  const deleteThenPull = (copy: EventRecord) =>
+    Effect.gen(function* () {
+      yield* seedMaster;
+      const events = yield* EventRepo;
+      yield* events.upsertMany([cancelled]);
+      yield* (yield* EventMutations).deleteRecurring({ ...target, scope: 'series' });
+      expect(yield* rowOf(instanceId)).toBeNull();
+      yield* events.upsertMany([copy], { mode: 'pull' });
+    });
+  const pulled = new EventRecord({ ...master, etag: '"m-2"', title: 'Daily (Google)' });
+
+  it.effect('a series edit brings back the exceptions the delete took', () =>
+    Effect.gen(function* () {
+      yield* deleteThenPull(pulled);
+      yield* (yield* EventMutations).updateRecurring({
+        ...target,
+        changes: { location: 'Room 4' },
+        scope: 'series',
+      });
+      expect((yield* listOps).map((op) => op.kind)).toEqual(['update']);
+      const row = yield* rowOf(instanceId);
+      expect(row?.status).toBe('cancelled');
+      expect(row?.syncStatus).toBe('synced');
+    }).pipe(noYield, Effect.provide(testLayer)),
+  );
+
+  it.effect('so does an answer', () =>
+    Effect.gen(function* () {
+      yield* deleteThenPull(
+        new EventRecord({
+          ...pulled,
+          attendees: [
+            new Attendee({
+              email: 'acc-1@example.com',
+              isSelf: true,
+              responseStatus: 'needsAction',
+            }),
+            new Attendee({
+              email: 'host@example.com',
+              isOrganizer: true,
+              responseStatus: 'accepted',
+            }),
+          ],
+          organizerEmail: 'host@example.com',
+        }),
+      );
+      yield* (yield* EventMutations).respondToEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        eventId: 'master1',
+        response: 'accepted',
+      });
+      expect((yield* listOps).map((op) => op.kind)).toEqual(['rsvp']);
+      expect((yield* rowOf(instanceId))?.status).toBe('cancelled');
+    }).pipe(noYield, Effect.provide(testLayer)),
+  );
+
+  it.effect('and a move takes them along', () =>
+    Effect.gen(function* () {
+      yield* deleteThenPull(pulled);
+      yield* (yield* CalendarRepo).upsertMany([
+        new CalendarInfo({
+          accessRole: 'owner',
+          accountId: 'acc-1',
+          colorHex: '#3b82f6',
+          id: 'cal-2',
+          isPrimary: false,
+          isVisible: true,
+          provider: 'google',
+          summary: 'Home',
+          timeZone: 'Europe/Vienna',
+        }),
+      ]);
+      yield* (yield* EventMutations).moveEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        eventId: 'master1',
+        target: { accountId: 'acc-1', calendarId: 'cal-2' },
+      });
+      expect((yield* listOps).map((op) => op.kind)).toEqual(['move']);
+      const events = yield* EventRepo;
+      expect(yield* events.getById('acc-1', 'cal-1', instanceId)).toBeNull();
+      expect((yield* events.getById('acc-1', 'cal-2', instanceId))?.status).toBe('cancelled');
+    }).pipe(noYield, Effect.provide(testLayer)),
+  );
+});
+
 describe('EventMutations: a series keeps its kind', () => {
   /** The July 4 occurrence as the editor sends it after the all-day switch. */
   const allDayTimes = {

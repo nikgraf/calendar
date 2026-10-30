@@ -375,6 +375,30 @@ const make: Effect.Effect<
       }
     });
 
+  /**
+   * A change that keeps the series while its delete is still queued (the
+   * user acts on the master a pull put back meanwhile) drops that delete:
+   * the exceptions it took locally come back first, as Google has them,
+   * so the change sees the series as Google does. An incremental pull that
+   * re-sent the master need not have re-sent its unchanged exceptions; a
+   * row at an exception's id (a pull's copy, an op's since) is newer.
+   */
+  const restoreTakenExceptions = (accountId: string, calendarId: string, masterId: string) =>
+    Effect.gen(function* () {
+      for (const op of yield* opsForEvent(accountId, calendarId, masterId)) {
+        if (op.kind !== 'delete') {
+          continue;
+        }
+        for (const override of op.beforeOverrides ?? []) {
+          if (!(yield* eventRepo.getById(accountId, calendarId, override.id))) {
+            yield* eventRepo.upsertMany([
+              new EventRecord({ ...override, calendarId, syncStatus: 'synced' }),
+            ]);
+          }
+        }
+      }
+    });
+
   /** Queues a this-and-following truncation of the master: a patch, or its unsent create. */
   const truncateQueued = (
     accountId: string,
@@ -1032,6 +1056,7 @@ const make: Effect.Effect<
         // Only the latest response needs to reach Google. A delete still
         // queued goes too: the user answered the copy a pull put back while
         // it waited, and the answer keeps the event, as an edit does.
+        yield* restoreTakenExceptions(accountId, calendarId, eventId);
         const queued = yield* opsForEvent(accountId, calendarId, eventId);
         const priorRsvp = queued.find((op) => op.kind === 'rsvp');
         for (const op of queued) {
@@ -1230,6 +1255,8 @@ const make: Effect.Effect<
         if (changes.isAllDay !== undefined && changes.isAllDay !== master.isAllDay) {
           return yield* Effect.fail(new RecurringAllDaySwitchError({ eventId: masterId }));
         }
+        // The series and following edits below replace a queued delete.
+        yield* restoreTakenExceptions(accountId, calendarId, masterId);
         if (master.isAllDay && changes.startDate !== undefined) {
           // The date the occurrence shows now: its exception's, else its slot's.
           const exception = yield* eventRepo.getById(
@@ -1529,6 +1556,7 @@ const make: Effect.Effect<
       const account = yield* accountRepo.get(accountId);
       yield* ensureOrganizer(master, account?.email, calendarId);
       const now = yield* Clock.currentTimeMillis;
+      yield* restoreTakenExceptions(accountId, calendarId, master.id);
       const overrides = master.recurrence
         ? yield* eventRepo.listOverrides(accountId, calendarId, eventId)
         : [];

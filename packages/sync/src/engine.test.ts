@@ -423,9 +423,9 @@ describe('SyncEngine', () => {
       }).pipe(Effect.provide(engineLayer(pass.client)));
     });
 
-    // Re-queued behind the move, the delete removed the event on Google in
-    // the target and left its row there pending with no op: on screen for
-    // good, since pulls and deleteStale skip pending rows.
+    // Re-queued behind the move, the delete removed the moved event on
+    // Google after all, and its pending row showed in the target until the
+    // next pull reported the deletion.
     it.effect('a move of the copy replaces the delete: the event lands in the target', () => {
       let deletes = 0;
       const moves: Array<string> = [];
@@ -475,7 +475,7 @@ describe('SyncEngine', () => {
     });
 
     // Sent while the delete waited out its backoff, the answer landed first
-    // and kept the row pending for the delete, which then left it so.
+    // and kept the row pending for the delete, which then deleted the event.
     it.effect('an answer to the copy replaces the delete as well', () => {
       let deletes = 0;
       const pass = heldPass(
