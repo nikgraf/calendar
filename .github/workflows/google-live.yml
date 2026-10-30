@@ -287,9 +287,8 @@ jobs:
       # Every Maestro invocation goes through run-flows.ts, as in ci.yml: a
       # driver that never started runs the invocation once more, and one
       # that died runs the flows it took down; a flow that failed on its own
-      # never runs again. Without E2E_APP nothing is reset in between: the
-      # dev client keeps its Metro project, and a live flow cut short
-      # leaves its items in the run's calendar for its rerun to meet.
+      # never runs again. Without E2E_APP nothing is reset in between, so
+      # the dev client keeps its Metro project.
       - name: Bootstrap the dev client onto Metro
         working-directory: apps/ios
         run: node e2e/ci/run-flows.ts bootstrap e2e/flows/00-devclient-bootstrap.yaml
@@ -307,6 +306,11 @@ jobs:
         # Explicit files keep this order (a directory's order is not
         # deterministic): the calendar must exist before anything is
         # written into it.
+        env:
+          # Only a driver that never started, before any flow, runs these
+          # again: a flow the driver died in left its items in the run's
+          # calendar under the same titles, which a rerun could match.
+          E2E_RETRY: never-started
         run: |
           node e2e/ci/run-flows.ts live \
             e2e/live/flows/01-live-calendar.yaml \
