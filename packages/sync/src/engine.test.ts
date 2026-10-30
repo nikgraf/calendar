@@ -1,6 +1,6 @@
 import { unavailableAppleCalendarClient } from '@calendar/apple-calendar';
 import { appleCalendarServicesLayer } from './appleCalendarEvents.ts';
-import { Account, EventRecord, eventsScope, plainDateToUtcMs } from '@calendar/core';
+import { Account, Attendee, EventRecord, eventsScope, plainDateToUtcMs } from '@calendar/core';
 import {
   AccountRepo,
   CalendarRepo,
@@ -173,7 +173,10 @@ const heldPass = (deleteEvent: GoogleCalendarClientShape['deleteEvent']) => {
   const client: GoogleCalendarClientShape = {
     ...stubClient([]),
     deleteEvent,
-    listEvents: () => {
+    listEvents: ({ calendarId }) => {
+      if (calendarId !== 'cal-1') {
+        return Effect.succeed({ items: [], nextSyncToken: 's1' });
+      }
       calls += 1;
       if (calls === 1) {
         return Effect.succeed({ items: [timedItem('evt-1', 10)], nextSyncToken: 's1' });
@@ -418,6 +421,123 @@ describe('SyncEngine', () => {
         );
         expect(row?.status).toBe('cancelled');
       }).pipe(Effect.provide(engineLayer(pass.client)));
+    });
+
+    // Re-queued behind the move, the delete removed the event on Google in
+    // the target and left its row there pending with no op: on screen for
+    // good, since pulls and deleteStale skip pending rows.
+    it.effect('a move of the copy replaces the delete: the event lands in the target', () => {
+      let deletes = 0;
+      const moves: Array<string> = [];
+      const pass = heldPass(
+        failingOnce(
+          Effect.sync(() => {
+            deletes += 1;
+          }),
+        ),
+      );
+      const client: GoogleCalendarClientShape = {
+        ...pass.client,
+        listCalendars: () =>
+          Effect.succeed({
+            items: [
+              ...(calendarListPage.items ?? []),
+              { accessRole: 'owner', id: 'cal-2', selected: true, summary: 'Work' },
+            ],
+            nextSyncToken: 'cal-sync-1',
+          }),
+        moveEvent: ({ calendarId, destination, eventId }) =>
+          Effect.sync(() => {
+            moves.push(`${calendarId} → ${destination}`);
+            return { ...timedItem(eventId, 10), etag: '"evt-1-3"', summary: 'All day' };
+          }),
+      };
+      return Effect.gen(function* () {
+        yield* deleteDuringPass(pass);
+        const mutations = yield* EventMutations;
+        yield* mutations.moveEvent({
+          accountId: 'acc-1',
+          calendarId: 'cal-1',
+          eventId: 'evt-1',
+          target: { accountId: 'acc-1', calendarId: 'cal-2' },
+        });
+        yield* mutations.processPendingOps();
+        yield* mutations.retryPendingOps();
+        yield* mutations.processPendingOps();
+
+        expect(moves).toEqual(['cal-1 → cal-2']);
+        expect(deletes).toBe(0);
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+        const events = yield* EventRepo;
+        expect(yield* events.getById('acc-1', 'cal-1', 'evt-1')).toBeNull();
+        expect((yield* events.getById('acc-1', 'cal-2', 'evt-1'))?.syncStatus).toBe('synced');
+      }).pipe(Effect.provide(engineLayer(client)));
+    });
+
+    // Sent while the delete waited out its backoff, the answer landed first
+    // and kept the row pending for the delete, which then left it so.
+    it.effect('an answer to the copy replaces the delete as well', () => {
+      let deletes = 0;
+      const pass = heldPass(
+        failingOnce(
+          Effect.sync(() => {
+            deletes += 1;
+          }),
+        ),
+      );
+      const client: GoogleCalendarClientShape = {
+        ...pass.client,
+        patchEvent: ({ eventId }) =>
+          Effect.succeed({
+            ...timedItem(eventId, 10),
+            attendees: [
+              { email: 'nik@example.com', responseStatus: 'accepted', self: true },
+              { email: 'host@example.com', organizer: true, responseStatus: 'accepted' },
+            ],
+            etag: '"evt-1-3"',
+            summary: 'All day',
+          }),
+      };
+      return Effect.gen(function* () {
+        yield* deleteDuringPass(pass);
+        const events = yield* EventRepo;
+        // The page's copy carries an invitation to answer.
+        const copy = yield* events.getById('acc-1', 'cal-1', 'evt-1');
+        yield* events.upsertMany([
+          new EventRecord({
+            ...copy!,
+            attendees: [
+              new Attendee({
+                email: 'nik@example.com',
+                isSelf: true,
+                responseStatus: 'needsAction',
+              }),
+              new Attendee({
+                email: 'host@example.com',
+                isOrganizer: true,
+                responseStatus: 'accepted',
+              }),
+            ],
+            organizerEmail: 'host@example.com',
+          }),
+        ]);
+        const mutations = yield* EventMutations;
+        yield* mutations.respondToEvent({
+          accountId: 'acc-1',
+          calendarId: 'cal-1',
+          eventId: 'evt-1',
+          response: 'accepted',
+        });
+        yield* mutations.processPendingOps();
+        yield* mutations.retryPendingOps();
+        yield* mutations.processPendingOps();
+
+        expect(deletes).toBe(0);
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+        const row = yield* events.getById('acc-1', 'cal-1', 'evt-1');
+        expect(row?.syncStatus).toBe('synced');
+        expect(row?.attendees?.find((guest) => guest.isSelf)?.responseStatus).toBe('accepted');
+      }).pipe(Effect.provide(engineLayer(client)));
     });
   });
 

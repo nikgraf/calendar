@@ -488,6 +488,64 @@ describe('moveEvent inside one Google account', () => {
     }).pipe(Effect.provide(testLayer(recordingGoogle(calls), appleFake())));
   });
 
+  it.effect('an exception copy a pull put back goes with the delete still queued for it', () => {
+    // "Delete this and following" cuts the series and deletes the
+    // exception past the cut; that delete waits out a 503 while a pull
+    // puts Google's copy back. Moved along as pending, the copy outlived
+    // its delete in the target with no op left to settle it.
+    const calls: Array<Call> = [];
+    const failed = new Set<string>();
+    const once = <A, E>(kind: string, then: Effect.Effect<A, E>) =>
+      Effect.suspend((): Effect.Effect<A, E | ApiUnavailableError> => {
+        if (failed.has(kind)) {
+          return then;
+        }
+        failed.add(kind);
+        return Effect.fail(new ApiUnavailableError({ cause: 'down', status: 503 }));
+      });
+    const plain = recordingGoogle(calls);
+    const google = recordingGoogle(calls, {
+      deleteEvent: (params) => once('delete', plain.deleteEvent(params)),
+      patchEvent: (params) => once('patch', plain.patchEvent(params)),
+    });
+    const master = googleEvent({ id: 'ser', recurrence: ['RRULE:FREQ=DAILY;COUNT=5'] });
+    const override = googleEvent({
+      endUtc: base + 2 * DAY + 2 * HOUR,
+      id: 'ser_20300102T090000Z',
+      originalStartUtc: base + 2 * DAY,
+      recurringEventId: 'ser',
+      startUtc: base + 2 * DAY + HOUR,
+      title: 'Moved standup',
+    });
+    return Effect.gen(function* () {
+      yield* seed([master, override]);
+      const mutations = yield* EventMutations;
+      yield* mutations.deleteRecurring({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        masterId: 'ser',
+        originalStartUtc: base + DAY,
+        scope: 'following',
+      });
+      yield* mutations.processPendingOps();
+      expect((yield* queued).map((op) => op.kind)).toEqual(['update', 'delete']);
+      yield* (yield* EventRepo).upsertMany([override], { mode: 'pull' });
+
+      yield* mutations.moveEvent(move(['acc-1', 'cal-1', 'ser'], ['acc-1', 'cal-2']));
+      yield* (yield* PendingOpRepo).retryNow();
+      yield* mutations.processPendingOps();
+      yield* mutations.processPendingOps();
+
+      expect(calls.map((call) => `${call.kind}:${call.calendarId}`)).toEqual([
+        'move:cal-1',
+        'patch:cal-2',
+        'delete:cal-2',
+      ]);
+      expect(yield* queued).toEqual([]);
+      expect(yield* rowAt('acc-1', 'cal-2', override.id)).toBeNull();
+    }).pipe(Effect.provide(testLayer(google, appleFake())));
+  });
+
   it.effect('refuses guests, single occurrences and read-only targets', () => {
     return Effect.gen(function* () {
       yield* seed([
@@ -799,5 +857,29 @@ describe('discarding an edit re-queued behind a move', () => {
       expect(row?.syncStatus).toBe('pending');
       expect((yield* queued).map((op) => op.kind)).toEqual(['move']);
     }).pipe(noYield, Effect.provide(testLayer(recordingGoogle(calls), appleFake())));
+  });
+});
+
+describe('discarding a move that replaced a queued delete', () => {
+  it.effect('leaves Google’s copy in the source, and the delete stays gone', () => {
+    const google = recordingGoogle([], {
+      deleteEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'down', status: 503 })),
+    });
+    return Effect.gen(function* () {
+      yield* seed([googleEvent()]);
+      const mutations = yield* EventMutations;
+      yield* mutations.deleteEvent({ accountId: 'acc-1', calendarId: 'cal-1', eventId: 'evt-a' });
+      yield* mutations.processPendingOps();
+      // A page answered before the delete reached Google put the event back.
+      yield* (yield* EventRepo).upsertMany([googleEvent()], { mode: 'pull' });
+      yield* mutations.moveEvent(move(['acc-1', 'cal-1', 'evt-a'], ['acc-1', 'cal-2']));
+      const ops = yield* queued;
+      expect(ops.map((op) => op.kind)).toEqual(['move']);
+
+      yield* mutations.discardPendingOp(ops[0]!.id);
+      expect(yield* queued).toEqual([]);
+      expect(yield* rowAt('acc-1', 'cal-2', 'evt-a')).toBeNull();
+      expect((yield* rowAt('acc-1', 'cal-1', 'evt-a'))?.syncStatus).toBe('synced');
+    }).pipe(noYield, Effect.provide(testLayer(google, appleFake())));
   });
 });

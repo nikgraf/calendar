@@ -285,6 +285,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   holding the drain per page. Open: a replica lagging behind a landed
   delete; why that night's flow 04 tap made no op (the flow now fails on
   the check's label rather than tapping again, which would hide it).
+- **Moving or answering a pulled copy replaces its delete** (2026-10-30)
+  — Opus review of #265: a move of the copy a pull put back re-queued its
+  waiting delete behind it, which deleted the event in the target and
+  left a pending row on screen for good; an answer did the same. Both now
+  drop the delete, as an edit already did. Rejected: refusing the move
+  (the event is on screen and an edit of it works); a landed delete also
+  taking a pending row no op owns (the user's later move would vanish).
+  Open: an edit or answer of one occurrence leaves the series' queued
+  delete in place, so the delete still wins there.
 - **Re-auth and sync kicks** — a 401 flags the account `reauth_required`
   and keeps its ops queued for after the reconnect (same id, by email);
   wake/unlock/focus/foreground kick a sync, throttled to one per 15 s,

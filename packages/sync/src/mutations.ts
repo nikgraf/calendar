@@ -1029,11 +1029,13 @@ const make: Effect.Effect<
           updatedAt: now,
         });
         yield* eventRepo.upsertMany([merged]);
-        // Only the latest response needs to reach Google.
+        // Only the latest response needs to reach Google. A delete still
+        // queued goes too: the user answered the copy a pull put back while
+        // it waited, and the answer keeps the event, as an edit does.
         const queued = yield* opsForEvent(accountId, calendarId, eventId);
         const priorRsvp = queued.find((op) => op.kind === 'rsvp');
         for (const op of queued) {
-          if (op.kind === 'rsvp') {
+          if (op.kind === 'rsvp' || op.kind === 'delete') {
             yield* pendingOpRepo.remove(op.id);
           }
         }
@@ -1512,6 +1514,13 @@ const make: Effect.Effect<
    * becomes a create in the target. A create already sent may have landed
    * in the source (its response lost): it stays queued there with the move
    * behind it, since re-keyed it would insert a second copy in the target.
+   *
+   * A delete of the event still queued means the user moved the copy a
+   * pull put back while it waited: the move replaces it, as an edit does
+   * (supersedeQueued). An exception's delete (a this-and-following cut)
+   * goes behind the move, and the copy of it a pull put back moves as
+   * Google's copy, still synced, for that delete to take once it lands
+   * (applyOp dropPulledCopy leaves pending rows alone).
    */
   const googleServerMove = (params: MoveEventParams) =>
     Effect.gen(function* () {
@@ -1523,17 +1532,26 @@ const make: Effect.Effect<
       const overrides = master.recurrence
         ? yield* eventRepo.listOverrides(accountId, calendarId, eventId)
         : [];
-      for (const row of [master, ...overrides]) {
-        yield* eventRepo.deleteEvent(accountId, calendarId, row.id);
-        yield* eventRepo.upsertMany([
-          new EventRecord({ ...row, calendarId: target.calendarId, syncStatus: 'pending' }),
-        ]);
-      }
       const seriesIds = new Set([master.id, ...overrides.map((row) => row.id)]);
       const inSeries = (yield* pendingOpRepo.listAll()).filter(
         (op) =>
           op.accountId === accountId && op.calendarId === calendarId && seriesIds.has(op.eventId),
       );
+      const deleting = new Set(
+        inSeries.filter((op) => op.kind === 'delete').map((op) => op.eventId),
+      );
+      for (const row of [master, ...overrides]) {
+        const pulledCopy =
+          row.id !== master.id && row.status !== 'cancelled' && deleting.has(row.id);
+        yield* eventRepo.deleteEvent(accountId, calendarId, row.id);
+        yield* eventRepo.upsertMany([
+          new EventRecord({
+            ...row,
+            calendarId: target.calendarId,
+            syncStatus: pulledCopy ? row.syncStatus : 'pending',
+          }),
+        ]);
+      }
       const pendingCreate = inSeries.find((op) => op.kind === 'create' && op.eventId === master.id);
       const sentCreate = pendingCreate?.dispatchedAt === undefined ? undefined : pendingCreate;
       const queued = inSeries.filter((op) => op !== sentCreate);
@@ -1581,7 +1599,9 @@ const make: Effect.Effect<
         );
       }
       for (const op of queued) {
-        yield* enqueue(rekey(op, now + 1));
+        if (op.kind !== 'delete' || op.eventId !== master.id) {
+          yield* enqueue(rekey(op, now + 1));
+        }
       }
     });
 
