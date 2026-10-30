@@ -1,6 +1,6 @@
 # Privacy Policy
 
-_Last updated: 2026-10-10_
+_Last updated: 2026-10-28_
 
 Solunivo is a calendar and task app for macOS and iOS. It has no server
 of its own: the app talks directly from your device to Google and Apple,
@@ -27,8 +27,8 @@ Calendar, Apple Reminders and your address book, for the same purposes.
 
 - **Stays on your device.** Events, tasks and contacts are cached in a
   local database on your device so the app works offline. Sign-in tokens
-  are stored in the system keychain (macOS Keychain / iOS Keychain), never
-  in that database.
+  are never in that database: on iOS they are stored in the Keychain, and
+  on the Mac they are encrypted with a key kept in the macOS Keychain.
 - **Goes to Google** only as the changes you make: a new or edited event
   or task is written back to your own Google account. If you pick a place
   for an event's location, its coordinates are saved in that event's
@@ -52,10 +52,21 @@ Calendar, Apple Reminders and your address book, for the same purposes.
   can end up in an Apple calendar this way, or the other way round. The
   copies carry an opaque marker so the app can find them again; it names
   nothing about the original.
-- **Stays on your device, too:** quick-add parsing, find-a-time
-  suggestions, dictation, and reading events out of a pasted text or a
-  shared screenshot use Apple's on-device models and text recognition;
-  your text, voice and images are not sent anywhere for this.
+- **Stays on your device, too:** by default, quick-add parsing,
+  find-a-time suggestions, dictation, and reading events out of a pasted
+  text or a shared screenshot use Apple's on-device models and text
+  recognition. Your voice and images never leave the device for this, and
+  the text is sent only to a model server you choose on the Mac (next
+  point).
+- **Goes to a model server you choose (Mac only).** Under Settings → AI
+  Model you can pick Ollama or any OpenAI-compatible server instead of
+  Apple's models. That server then receives what those features work on:
+  the phrases you type or dictate, the text read from a paste or a
+  screenshot, the event you are changing when you describe a change to it
+  (its title, date and times, place and repeat), today's date and your
+  time zone, and, for a search, the names of your calendars and lists. It
+  is off your Mac only if you point it there. Dictation and text
+  recognition themselves stay on the device either way.
 - **Goes where you send it.** Settings can be exported as a file, and the
   Mac can keep a settings file in your home folder. That file lists your
   connected accounts' email addresses and calendar names, never passwords

@@ -379,3 +379,75 @@ pnpm --filter @calendar/ios ios        # expo run:ios — compiles locally, boot
 Useful for debugging native code or working offline. First compile takes
 ~10-20 minutes. `apps/ios/ios/` is generated and gitignored — if it gets into
 a weird state, rerun prebuild with `--clean`.
+
+# Website (solunivo.com)
+
+`apps/web` is the public site: the landing page and `/privacy`, which is
+the root `PRIVACY.md` rendered at build time (edit the Markdown, never the
+page). It is a Vite + React + Tailwind app on the brand tokens
+(`brand/tokens/tokens.css`, mapped to utilities by `brand/tokens/tailwind.css`
+like the desktop renderer) that `scripts/build.ts` prerenders into plain
+HTML:
+
+```sh
+pnpm --filter @calendar/web build     # → apps/web/dist/ (index.html, privacy.html, assets/)
+pnpm --filter @calendar/web preview   # serve dist/ on http://127.0.0.1:4174
+pnpm --filter @calendar/web dev       # live-reloading dev server on :5174
+```
+
+The output is static files, so any static host serves it: GitHub Pages,
+Cloudflare Pages, Netlify and `preview` all serve `/privacy` from
+`privacy.html` without a redirect, which keeps the canonical URL and the
+links slash-free. The only script is inlined in `<head>`
+(`src/inline/theme.js`): it sets `data-theme` on `<html>` from the OS
+appearance or the footer's Auto / Light / Dark choice (kept in
+`localStorage`), rewrites each `<picture>`'s dark `<source>` to follow
+that choice, and sets `data-platform` from the user agent so the
+stylesheet shows the right download buttons (macOS and iPhone get their
+own; Windows, Linux and Android are told the app is coming later and
+offered the nearest one). Without JavaScript the page follows the OS for its colors and pictures
+(`tokens.css` carries the dark set for a page with no `data-theme`),
+hides the scheme switch and shows the macOS buttons.
+
+The build cuts the brand's variable Inter down to printable ASCII,
+Latin-1, typographic punctuation and every character the pages draw
+(about 91 KB instead of 344 KB, both axes kept), names it after its new
+bytes and preloads it; `vp dev` serves the full font. Anything in
+`apps/web/public/` (robots.txt, a host's `_headers`) is copied into
+`dist/` as it is, and the build stops if a page or asset would overwrite
+one. It also stops on a rendered class no CSS rule selects and on a CSS
+variable nothing defines, which is how a token renamed in `tokens.json`
+but not in `brand/tokens/tailwind.css` shows up. A plain `vp build` in
+`apps/web` refuses: it would bundle the dev-only `index.html` as a client
+app.
+
+## Screenshots on the page
+
+The hero shows the real apps on a fixture week (`src/screenshots/`, WebP,
+one file per scheme; nothing on them is a real account or person).
+Recapture them when the apps' look changes:
+
+- **Mac:** `pnpm --filter @calendar/desktop build`, then
+  `SHOT_OUT=<dir> E2E=1 pnpm exec vp test run apps/desktop/e2e/websiteShots.e2e.ts`
+  writes `desktop-light.png` and `desktop-dark.png` (a 1440 × 900 window,
+  the Google fixture, an iCloud calendar and a Reminders list from the
+  Apple fixtures, dark through `Emulation.setEmulatedMedia`). The spec
+  skips without `SHOT_OUT`, so the e2e suite never runs it.
+- **iPhone:** the dev client on the dedicated simulator with Metro
+  started from the repo root as `EXPO_PUBLIC_CALENDAR_GOOGLE=fixture
+  EXPO_PUBLIC_CALENDAR_MODEL=fixture EXPO_PUBLIC_CALENDAR_ONBOARDING=off
+  CI=1 pnpm --filter @calendar/ios start --clear` (the `start` script sets
+  `APP_VARIANT=development`). Point `apps/ios/e2e/fixtures/google.ts`
+  at the same week as the Mac spec for the capture (a local edit, restored
+  with `git checkout` before committing), delete the app's `calendar.db`
+  so the fixture syncs fresh, set `xcrun simctl status_bar <udid>
+  override --time 9:41 …`, and capture with `xcrun simctl io <udid>
+  screenshot` once per `xcrun simctl ui <udid> appearance light|dark`.
+- Convert with the root's `sharp` (`.webp({ quality: 84 })`, the Mac at
+  2400 px wide, the iPhone at 900) into `apps/web/src/screenshots/`.
+
+Hosting and DNS for solunivo.com are not set up yet. Until a public build
+exists (`releases` in `src/links.ts`), the download buttons lead to the
+download section, which says the apps are in private testing. CI's path
+classifier treats `apps/web/` as neither app's code: a website-only
+change runs the gate (which builds the site), not the macOS jobs.

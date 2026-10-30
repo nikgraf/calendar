@@ -48,9 +48,9 @@ function iosArtwork(source, idPrefix) {
   return result;
 }
 
-function declarations(values, prefix = '') {
+function declarations(values, prefix = '', indent = '  ') {
   return Object.entries(values)
-    .map(([name, value]) => `  --${prefix}${name}: ${value.toLowerCase()};`)
+    .map(([name, value]) => `${indent}--${prefix}${name}: ${value.toLowerCase()};`)
     .join('\n');
 }
 
@@ -69,6 +69,13 @@ function tokenCss(tokens) {
     '}',
     "[data-theme='dark'] {",
     declarations(tokens.themes.dark),
+    '}',
+    // A page whose script never set data-theme (the website without
+    // JavaScript, any page before its script runs) follows the OS.
+    '@media (prefers-color-scheme: dark) {',
+    '  :root:not([data-theme]) {',
+    declarations(tokens.themes.dark, '', '    '),
+    '  }',
     '}',
     '',
   ].join('\n');

@@ -78,14 +78,27 @@ dictation and capture from text or photo.
   drop-in native controls; zero-hop direct backend; @react-native-ai/apple
   for on-device model access; the local Expo modules under `modules/`;
   `expo-maps` draws the editor map.
+- `apps/web` — the website (solunivo.com): a static landing page and the
+  privacy policy (rendered from the root `PRIVACY.md` at build time),
+  React + Tailwind on the brand tokens, prerendered by `scripts/build.ts`
+  into `dist/` (`index.html`, `privacy.html`, Inter cut down to the
+  characters the pages draw). One inline script in `<head>`
+  (`src/inline/theme.js`) picks the color scheme (the OS, or the footer's
+  choice) and the visitor's platform for the download buttons; nothing
+  else runs in the browser. The hero shows real screenshots of both apps
+  (`src/screenshots/`, light and dark, captured with
+  `apps/desktop/e2e/websiteShots.e2e.ts` and the iOS fixture: see
+  docs/distribution.md → Website); the on-device AI demo is a CSS
+  animation. It imports nothing from the packages.
 - `brand/` — SVG masters, logos, fonts and tokens; `pnpm brand:build`
   (macOS) regenerates the committed app icons, `tokens.css` (the desktop
-  imports it; `App.css` maps the variables to Tailwind utilities — the
-  renderer's only colors, `themeClasses.test.ts` fails on Tailwind's own
-  palette and on a hand-made `hover:underline`; text actions take the
-  shared looks in `ui/buttonStyles.ts` — and `data-theme` on `<html>`
-  follows the OS appearance) and `packages/core/src/theme/tokens.ts`
-  (iOS reads it through `useTheme`),
+  and the website import it; the hand-written `tokens/tailwind.css` maps
+  the variables to Tailwind utilities for both — the renderer's only
+  colors, `themeClasses.test.ts` fails on Tailwind's own palette and on a
+  hand-made `hover:underline`; text actions take the shared looks in
+  `ui/buttonStyles.ts` — `fonts/inter.css` declares the face for both,
+  and `data-theme` on `<html>` follows the OS appearance) and
+  `packages/core/src/theme/tokens.ts` (iOS reads it through `useTheme`),
   and CI fails on stale exports via `pnpm brand:check`. Edit
   `tokens/tokens.json` and the masters, never the generated files.
 
@@ -145,6 +158,9 @@ deliberately.
   CALENDAR_REMINDERS=off CALENDAR_CONTACTS=off CALENDAR_NOTIFICATIONS=off`.
 - `pnpm ios` — `expo run:ios` on the simulator (the dev variant;
   `pnpm --filter @calendar/ios prebuild` regenerates `ios/`).
+- `pnpm --filter @calendar/web build` — the website as static files in
+  `apps/web/dist/` (`dev` serves it on :5174 with live reload, `preview`
+  serves the built output on :4174; a plain `vp build` there refuses).
 - `pnpm --filter @calendar/desktop build:helper` — build the Swift helper
   (needs the macOS 26 SDK; `make` / `package:app` run it automatically).
 - `pnpm --filter @calendar/desktop package:app` — unsigned .app via Forge

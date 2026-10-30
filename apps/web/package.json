@@ -1,0 +1,28 @@
+{
+  "name": "@calendar/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.ts",
+    "dev": "vp dev --host 127.0.0.1 --port 5174",
+    "preview": "vp preview --host 127.0.0.1 --port 4174"
+  },
+  "dependencies": {
+    "react": "catalog:",
+    "react-dom": "catalog:"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^26.6.5",
+    "@types/react": "catalog:",
+    "@types/react-dom": "~19.2.7",
+    "@vitejs/plugin-react": "^6.1.2",
+    "marked": "^18.1.0",
+    "subset-font": "^2.9.0",
+    "tailwindcss": "^4.3.3",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}

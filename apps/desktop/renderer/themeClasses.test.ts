@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vite-plus/test';
  * Tailwind's own palette (`bg-amber-50`, `text-red-600`, `text-white`, …)
  * looks the same in both appearances: a box drawn with it stays a bright
  * box in dark mode, and the theme's text on it all but vanishes. The
- * renderer draws with the brand tokens App.css maps (`bg-surface-raised`,
+ * renderer draws with the brand tokens brand/tokens/tailwind.css maps (`bg-surface-raised`,
  * `text-danger`, `text-on-warning`, …). Black is left alone: a scrim dims
  * in either appearance.
  */
