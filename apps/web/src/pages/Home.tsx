@@ -36,8 +36,9 @@ const features = [
   {
     body: (
       <>
-        Any Outlook, Exchange or CalDAV account you add to Apple Calendar shows up beside the rest,
-        on the Mac and the iPhone, and you edit its events here. Native Outlook and JMAP support are{' '}
+        Outlook, Exchange and CalDAV accounts that Apple Calendar syncs show up beside the rest, and
+        you edit their events here; invitations stay in Apple Calendar. Native Outlook and JMAP
+        support are{' '}
         <a className={inlineLink} href="#roadmap">
           on the roadmap
         </a>
@@ -64,7 +65,7 @@ const features = [
   },
 ];
 
-/** What comes next, from the platform and account items in todo.md. */
+/** Planned, from the platform and account items in todo.md. */
 const roadmap = [
   {
     items: [
@@ -217,7 +218,7 @@ export function HomePage() {
       <section className={`${container} flex flex-col gap-10 py-24`} id="roadmap">
         <div className="flex max-w-[640px] flex-col gap-3">
           <h2 className={h2}>On the roadmap.</h2>
-          <p className={lead}>What comes next, in no fixed order and without dates yet.</p>
+          <p className={lead}>Planned, in no particular order and without dates.</p>
         </div>
         <div className="grid grid-cols-[repeat(auto-fit,minmax(min(320px,100%),1fr))] gap-10">
           {roadmap.map((group) => (

@@ -73,7 +73,8 @@ describe('render', () => {
   it('says Outlook and CalDAV work through Apple Calendar, and native support is on the roadmap', () => {
     const html = render('/', { css });
     expect(html).toContain('Outlook and CalDAV via Apple Calendar');
-    expect(html).toContain('Any Outlook, Exchange or CalDAV account you add to Apple Calendar');
+    expect(html).toContain('Outlook, Exchange and CalDAV accounts that Apple Calendar syncs');
+    expect(html).toContain('invitations stay in Apple Calendar');
     expect(html).toContain('href="#roadmap"');
     // Six feature cards: the three account sources, then three more.
     const features = html.slice(html.indexOf('id="features"'), html.indexOf('id="privacy"'));
@@ -82,7 +83,8 @@ describe('render', () => {
 
   it('lists the roadmap: native Outlook and JMAP, then Android, Windows and Linux', () => {
     const html = render('/', { css });
-    expect(html).toContain('href="/#roadmap"');
+    const nav = html.slice(html.indexOf('<header'), html.indexOf('</header>'));
+    expect(nav).toContain('href="/#roadmap"');
     const roadmap = html.slice(html.indexOf('id="roadmap"'), html.indexOf('id="download"'));
     const items = [...roadmap.matchAll(/<strong[^>]*>([^<]+)<\/strong>/g)].map((match) => match[1]);
     expect(items).toEqual([
@@ -136,6 +138,8 @@ describe('render', () => {
     expect(android).toContain('Android is <a');
     expect(android).toContain('Download for macOS');
     expect(band).toContain('text-on-primary/70');
+    // The roadmap link in the band's note stays light on the ink.
+    expect(android).toMatch(/<a class="text-on-primary underline[^"]*" href="\/#roadmap"/);
     expect(band).not.toContain('text-ink-secondary');
 
     // Above the band, the iPhone button still leads down to it.

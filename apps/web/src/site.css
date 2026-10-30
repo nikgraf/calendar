@@ -157,17 +157,12 @@ body {
   }
 }
 
-/* The feature cards: the two integrations wide, the three others below. */
+/*
+ * The feature cards: three columns once they fit (the three account
+ * sources over the three other features), fewer on narrower screens.
+ */
 .features {
   grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
-}
-@media (min-width: 1000px) {
-  .features {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
-  }
-  .features > li {
-    grid-column: span 2;
-  }
 }
 
 /*

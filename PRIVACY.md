@@ -1,6 +1,6 @@
 # Privacy Policy
 
-_Last updated: 2026-10-28_
+_Last updated: 2026-10-30_
 
 Solunivo is a calendar and task app for macOS and iOS. It has no server
 of its own: the app talks directly from your device to Google and Apple,
@@ -37,7 +37,8 @@ Calendar, Apple Reminders and your address book, for the same purposes.
 - **Goes to Apple** only when you use a feature that needs it: place
   search and maps use Apple Maps, and changes to Apple Calendar or
   Reminders items are saved through the system's own calendar and
-  reminders stores.
+  reminders stores, which sync them with the account that holds them
+  (iCloud, or an Outlook, Exchange or CalDAV account you added there).
 - **Goes to other software on your Mac** only if you set it up: under
   Settings → Agents you can let an AI agent running on the same Mac read
   or change your calendars and tasks through Solunivo. Nothing is shared
