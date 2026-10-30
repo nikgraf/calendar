@@ -1,6 +1,15 @@
+import { Buffer } from 'node:buffer';
 import { readFileSync } from 'node:fs';
+import { crc32, deflateSync } from 'node:zlib';
 import { describe, expect, it } from 'vite-plus/test';
-import { decideRetry, latchedCommand, parseJUnit } from './maestroRetry.ts';
+import {
+  debugFolderName,
+  decideRetry,
+  isBlackPng,
+  type JUnitCase,
+  latchedCommand,
+  parseJUnit,
+} from './maestroRetry.ts';
 
 /**
  * Maestro 2.10's own output: a report and run log after its driver was
@@ -9,6 +18,53 @@ import { decideRetry, latchedCommand, parseJUnit } from './maestroRetry.ts';
  */
 const fixture = (name: string): string =>
   readFileSync(new URL(`fixtures/${name}`, import.meta.url), 'utf8');
+
+/**
+ * Screenshots, scaled to 201 px wide with `sips`: one Maestro took of flow
+ * 03 when the simulator had stopped drawing (run 40958072782), and the
+ * app's week view in dark mode (fixture data).
+ */
+const BLACK = readFileSync(new URL('fixtures/black-screen.png', import.meta.url));
+const DARK = readFileSync(new URL('fixtures/dark-mode.png', import.meta.url));
+
+/** A PNG chunk: length, type, body, CRC. */
+const chunk = (type: string, body: Buffer): Buffer => {
+  const typed = Buffer.concat([Buffer.from(type, 'latin1'), body]);
+  const length = Buffer.alloc(4);
+  length.writeUInt32BE(body.length);
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(crc32(typed));
+  return Buffer.concat([length, typed, crc]);
+};
+
+/** An 8-bit PNG of `height` rows, each pixel's samples from `pixel`, unfiltered. */
+const png = ({
+  colorType,
+  height,
+  pixel,
+  width,
+}: {
+  readonly colorType: number;
+  readonly height: number;
+  readonly pixel: (x: number, y: number) => ReadonlyArray<number>;
+  readonly width: number;
+}): Buffer => {
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0);
+  header.writeUInt32BE(height, 4);
+  header[8] = 8;
+  header[9] = colorType;
+  const rows = Array.from({ length: height }, (_, y) => [
+    0,
+    ...Array.from({ length: width }, (__, x) => pixel(x, y)).flat(),
+  ]);
+  return Buffer.concat([
+    BLACK.subarray(0, 8),
+    chunk('IHDR', header),
+    chunk('IDAT', deflateSync(Buffer.from(rows.flat()))),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+};
 
 const FLOWS = [
   'e2e/flows/03-new-event.yaml',
@@ -65,8 +121,10 @@ describe('decideRetry', () => {
         runLog: fixture('driver-died.maestro.log'),
       }),
     ).toEqual({
-      cause: 'died',
-      flows: ['e2e/flows/07-create-event.yaml', 'e2e/flows/25-search.yaml'],
+      flows: [
+        { cause: 'died', file: 'e2e/flows/07-create-event.yaml' },
+        { cause: 'died', file: 'e2e/flows/25-search.yaml' },
+      ],
       kind: 'retry',
     });
   });
@@ -102,7 +160,13 @@ describe('decideRetry', () => {
         ),
         runLog: LATCHED_LOG,
       }),
-    ).toEqual({ cause: 'died', flows: [FLOWS[1], FLOWS[2]], kind: 'retry' });
+    ).toEqual({
+      flows: [
+        { cause: 'died', file: FLOWS[1] },
+        { cause: 'died', file: FLOWS[2] },
+      ],
+      kind: 'retry',
+    });
   });
 
   it('never retries when a flow failed on its own, even beside a dead driver', () => {
@@ -184,7 +248,10 @@ describe('decideRetry', () => {
         report: undefined,
         runLog: '',
       }),
-    ).toEqual({ cause: 'never-started', flows: FLOWS, kind: 'retry' });
+    ).toEqual({
+      flows: FLOWS.map((file) => ({ cause: 'never-started', file })),
+      kind: 'retry',
+    });
   });
 
   it('fails without a report when the driver timed out anywhere but session creation', () => {
@@ -217,7 +284,10 @@ describe('decideRetry', () => {
         ),
         runLog: '',
       }),
-    ).toEqual({ kind: 'fail', reason: 'no driver failure in the run log' });
+    ).toEqual({
+      kind: 'fail',
+      reason: `no driver failure in the run log, and not a black screen: ${FLOWS[0]}`,
+    });
   });
 
   it('fails when the run log shows no driver failure', () => {
@@ -232,7 +302,181 @@ describe('decideRetry', () => {
         ),
         runLog: '21:24:27.365 [ INFO] maestro.Maestro.inputText: Inputting text\n',
       }),
-    ).toEqual({ kind: 'fail', reason: 'no driver failure in the run log' });
+    ).toEqual({
+      kind: 'fail',
+      reason: `no driver failure in the run log, and not a black screen: ${FLOWS[1]}`,
+    });
+  });
+});
+
+describe('decideRetry on a black screen', () => {
+  const NOT_VISIBLE = 'Assertion is false: &quot;New Event&quot; is visible';
+  // One flow failed, with these screenshots; the passed ones have others.
+  const run = (shots: ReadonlyArray<Uint8Array>) =>
+    decideRetry({
+      flows: FLOWS,
+      output: '',
+      report: report(
+        testCase(FLOWS[0] ?? '', 'ERROR', NOT_VISIBLE),
+        testCase(FLOWS[1] ?? '', 'SUCCESS'),
+        testCase(FLOWS[2] ?? '', 'SUCCESS'),
+      ),
+      runLog: '',
+      screenshots: (flow: JUnitCase) => (flow.name === FLOWS[0] ? shots : [DARK]),
+    });
+
+  it('retries a flow whose every failure screenshot is black', () => {
+    expect(run([BLACK, BLACK, BLACK])).toEqual({
+      flows: [{ cause: 'black-screen', file: FLOWS[0] }],
+      kind: 'retry',
+    });
+  });
+
+  it('fails when any screenshot of the flow drew something, dark mode included', () => {
+    for (const shots of [[DARK], [BLACK, DARK, BLACK]]) {
+      expect(run(shots)).toEqual({
+        kind: 'fail',
+        reason: `no driver failure in the run log, and not a black screen: ${FLOWS[0]}`,
+      });
+    }
+  });
+
+  it('fails when the flow left no screenshot', () => {
+    expect(run([]).kind).toBe('fail');
+  });
+
+  it('retries a black flow beside one the driver died under, each with its cause', () => {
+    expect(
+      decideRetry({
+        flows: FLOWS,
+        output: '',
+        report: report(
+          testCase(FLOWS[0] ?? '', 'ERROR', NOT_VISIBLE),
+          testCase(FLOWS[1] ?? '', 'ERROR', UNREACHABLE),
+          testCase(FLOWS[2] ?? '', 'SUCCESS'),
+        ),
+        runLog: LATCHED_LOG,
+        // A dead driver takes no screenshots.
+        screenshots: (flow) => (flow.name === FLOWS[0] ? [BLACK] : []),
+      }),
+    ).toEqual({
+      flows: [
+        { cause: 'black-screen', file: FLOWS[0] },
+        { cause: 'died', file: FLOWS[1] },
+      ],
+      kind: 'retry',
+    });
+  });
+
+  it('still fails a flow that failed on a drawn screen beside a black one', () => {
+    expect(
+      decideRetry({
+        flows: FLOWS,
+        output: '',
+        report: report(
+          testCase(FLOWS[0] ?? '', 'ERROR', NOT_VISIBLE),
+          testCase(FLOWS[1] ?? '', 'ERROR', 'Element not found: Id matching regex: event-save'),
+          testCase(FLOWS[2] ?? '', 'SUCCESS'),
+        ),
+        runLog: '',
+        screenshots: (flow) => (flow.name === FLOWS[0] ? [BLACK] : [DARK]),
+      }),
+    ).toEqual({
+      kind: 'fail',
+      reason: `no driver failure in the run log, and not a black screen: ${FLOWS[1]}`,
+    });
+  });
+
+  it("never reads a black screen into flows whose folders collide, as Maestro can't tell them apart", () => {
+    // The same folder up to case once `/` is `_`: on the runners' disk one
+    // is `Opens_Settings`, the other `opens_settings-2`, in whichever order
+    // the flows ran.
+    const failure = `<failure>${NOT_VISIBLE}</failure>`;
+    expect(
+      decideRetry({
+        flows: [FLOWS[0] ?? '', FLOWS[1] ?? ''],
+        output: '',
+        report: report(
+          `<testcase name="Opens/Settings" file="${FLOWS[0]}" status="ERROR">${failure}</testcase>`,
+          `<testcase name="opens_settings" file="${FLOWS[1]}" status="ERROR">${failure}</testcase>`,
+        ),
+        runLog: '',
+        screenshots: () => [BLACK],
+      }),
+    ).toEqual({
+      kind: 'fail',
+      reason: `no driver failure in the run log, and not a black screen: ${FLOWS[0]}, ${FLOWS[1]}`,
+    });
+  });
+
+  it('never reads a passed flow as black', () => {
+    // Maestro saves screenshots for commands that failed inside a retry
+    // too, so a passed flow can have them.
+    expect(
+      decideRetry({
+        flows: FLOWS,
+        output: '',
+        report: report(
+          testCase(FLOWS[0] ?? '', 'SUCCESS'),
+          testCase(FLOWS[1] ?? '', 'WARNING'),
+          testCase(FLOWS[2] ?? '', 'SUCCESS'),
+        ),
+        runLog: '',
+        screenshots: () => [BLACK],
+      }),
+    ).toEqual({ kind: 'pass' });
+  });
+});
+
+describe('isBlackPng', () => {
+  it("reads Maestro's capture of a screen that stopped drawing as black", () => {
+    expect(isBlackPng(BLACK)).toBe(true);
+  });
+
+  it('reads a dark-mode screenshot as not black', () => {
+    expect(isBlackPng(DARK)).toBe(false);
+  });
+
+  it('looks at color only, whatever the alpha', () => {
+    expect(
+      isBlackPng(png({ colorType: 6, height: 4, pixel: () => [0, 0, 0, 255], width: 3 })),
+    ).toBe(true);
+    expect(isBlackPng(png({ colorType: 0, height: 4, pixel: () => [0], width: 3 }))).toBe(true);
+  });
+
+  it('finds the one lit pixel, however dim and however far down', () => {
+    expect(
+      isBlackPng(
+        png({
+          colorType: 2,
+          height: 400,
+          pixel: (x, y) => (x === 199 && y === 399 ? [0, 0, 1] : [0, 0, 0]),
+          width: 200,
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it('reads a file it cannot decode as not black', () => {
+    const black = png({ colorType: 2, height: 4, pixel: () => [0, 0, 0], width: 3 });
+    expect(isBlackPng(black)).toBe(true);
+    expect(isBlackPng(black.subarray(0, 40))).toBe(false);
+    expect(isBlackPng(Buffer.from('not a png'))).toBe(false);
+    // A palette image: black or not depends on its palette, which is not read.
+    expect(isBlackPng(png({ colorType: 3, height: 4, pixel: () => [0], width: 3 }))).toBe(false);
+  });
+});
+
+describe('debugFolderName', () => {
+  it("is the flow's name with slashes made underscores, as Maestro names the folder", () => {
+    expect(
+      debugFolderName({
+        failure: undefined,
+        file: 'e2e/flows/20-settings-file.yaml',
+        name: 'Export/import the settings file',
+        status: 'ERROR',
+      }),
+    ).toBe('Export_import the settings file');
   });
 });
 

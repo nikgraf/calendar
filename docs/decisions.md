@@ -150,6 +150,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   report (only session creation proves no flow ran), and the longer
   timeout alone (an XCTest that never initializes still fails). Open:
   whether the cold-runner case returns.
+- **Black simulator screen retried** (2026-10-30, `todo/black-display-retry`)
+  — five shards failed in a shared sub-flow with every screenshot solid
+  black and no touch events reaching the app; each passed on a manual
+  rerun (~30 macOS minutes). `run-flows.ts` reruns such a flow once on an
+  erased simulator (~5 min); a flow failing on a drawn screen still blocks
+  it. Rejected: a relaunch-only retry (run 39159977263's black screen
+  began at a relaunch, and half-made state stays), a recovery in the
+  shared sub-flows, a near-black threshold. Open: whether the reboot
+  always brings the display back.
 - **Flow 06's sheet drag off the bottom edge** (2026-10-29,
   `todo/editor-sheet-drag-race`) — the drag that raises the half-height
   editor started at 93 %, inside SpringBoard's bottom-edge gesture region:
