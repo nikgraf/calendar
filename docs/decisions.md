@@ -152,15 +152,13 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   whether the cold-runner case returns.
 - **The live nightly's Maestro through `run-flows.ts`** (2026-10-30,
   `todo/live-driver-retry`) — `google-live.yml` called `maestro test`
-  directly, so it had neither the 240 s runner wait nor either retry; run
-  40997493433 died at the permissions step with the runner not up at
-  120 s. All three of its invocations now go through `run-flows.ts` with
-  the same wait, unreset (erasing would lose the dev client's Metro
-  project). The live flows retry only a driver that never started
-  (`E2E_RETRY=never-started`): one cut short leaves items on Google under
-  the run's titles, which its rerun could match. Open: the week's other red
-  nights (an `openurl` timeout in the bootstrap, a black display at `04a`,
-  a deleted event left on screen) are not covered.
+  directly, so run 40997493433 died at `04a` when its runner wasn't up at
+  120 s. Its three invocations now go through `run-flows.ts` with the 240 s
+  wait, unreset (erasing loses the dev client's Metro project). The live
+  flows retry only a driver that never started (`E2E_RETRY`): one cut
+  short leaves items on Google under the run's titles for a rerun to
+  match. Open: the week's other red nights (a bootstrap `openurl` timeout,
+  a black display at `04a`, a deleted event left on screen).
 - **Flow 06's sheet drag off the bottom edge** (2026-10-29,
   `todo/editor-sheet-drag-race`) — the drag that raises the half-height
   editor started at 93 %, inside SpringBoard's bottom-edge gesture region:

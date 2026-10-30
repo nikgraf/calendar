@@ -153,9 +153,10 @@ jobs:
     needs: [decide, live-node]
     if: ${{ !cancelled() && needs.decide.outputs.run == 'true' }}
     runs-on: macos-26
-    # About 28 min green (12 of them the live flows, which wait on Google);
-    # the cap leaves room for run-flows.ts to run an invocation once more.
-    timeout-minutes: 60
+    # 27–35 min green (11–14 of them the live flows, which wait on Google);
+    # the cap leaves room for run-flows.ts to run the permissions and the
+    # live invocations once more each (up to 240 s of driver wait apiece).
+    timeout-minutes: 75
     env:
       CI: 1
       EXPO_NO_TELEMETRY: 1
@@ -286,9 +287,10 @@ jobs:
           xcrun simctl terminate "$SIMULATOR_UDID" com.apple.mobilesafari || true
       # Every Maestro invocation goes through run-flows.ts, as in ci.yml: a
       # driver that never started runs the invocation once more, and one
-      # that died runs the flows it took down; a flow that failed on its own
-      # never runs again. Without E2E_APP nothing is reset in between, so
-      # the dev client keeps its Metro project.
+      # that died runs the flows it took down (not the live flows, below);
+      # a flow that failed on its own never runs again. Without E2E_APP
+      # nothing is reset in between, so the dev client keeps its Metro
+      # project.
       - name: Bootstrap the dev client onto Metro
         working-directory: apps/ios
         run: node e2e/ci/run-flows.ts bootstrap e2e/flows/00-devclient-bootstrap.yaml
