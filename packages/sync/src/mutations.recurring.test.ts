@@ -986,6 +986,33 @@ describe('keeping a series a pull put back while its delete waits', () => {
     }).pipe(noYield, Effect.provide(testLayer)),
   );
 
+  it.effect('so does deleting this and following', () =>
+    Effect.gen(function* () {
+      yield* deleteThenPull(pulled);
+      yield* (yield* EventMutations).deleteRecurring({
+        ...target,
+        originalStartUtc: Date.parse('2026-07-07T09:00:00Z'),
+        scope: 'following',
+      });
+      expect((yield* listOps).map((op) => op.kind)).toEqual(['update']);
+      expect((yield* rowOf(instanceId))?.status).toBe('cancelled');
+    }).pipe(noYield, Effect.provide(testLayer)),
+  );
+
+  it.effect('a second series delete takes them into its own snapshot', () =>
+    Effect.gen(function* () {
+      yield* deleteThenPull(pulled);
+      const mutations = yield* EventMutations;
+      yield* mutations.deleteRecurring({ ...target, scope: 'series' });
+      const [op] = yield* listOps;
+      expect(op?.beforeOverrides?.map((row) => row.id)).toEqual([instanceId]);
+
+      yield* mutations.discardPendingOp(op!.id);
+      expect(yield* rowOf('master1')).not.toBeNull();
+      expect((yield* rowOf(instanceId))?.status).toBe('cancelled');
+    }).pipe(noYield, Effect.provide(testLayer)),
+  );
+
   it.effect('and a move takes them along', () =>
     Effect.gen(function* () {
       yield* deleteThenPull(pulled);

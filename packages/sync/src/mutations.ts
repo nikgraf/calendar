@@ -376,10 +376,11 @@ const make: Effect.Effect<
     });
 
   /**
-   * A change that keeps the series while its delete is still queued (the
-   * user acts on the master a pull put back meanwhile) drops that delete:
-   * the exceptions it took locally come back first, as Google has them,
-   * so the change sees the series as Google does. An incremental pull that
+   * A change of the series made while its delete is still queued (the
+   * user acts on the master a pull put back meanwhile) replaces that
+   * delete: the exceptions it took locally come back first, as Google has
+   * them, so the change sees the series as Google does — a move, an
+   * answer, an edit, or a new delete's snapshot. An incremental pull that
    * re-sent the master need not have re-sent its unchanged exceptions; a
    * row at an exception's id (a pull's copy, an op's since) is newer.
    */
@@ -952,6 +953,9 @@ const make: Effect.Effect<
           return;
         }
 
+        // A series delete or cut below replaces one still queued: what that
+        // one took is Google's, for this one's snapshot or its cut.
+        yield* restoreTakenExceptions(accountId, calendarId, masterId);
         const unsentCreate = yield* unsentCreateOf(accountId, calendarId, masterId);
         if (scope === 'series' || originalStartUtc <= master.startUtc) {
           // Deleting the master cascades to its exceptions server-side.

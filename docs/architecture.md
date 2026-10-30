@@ -495,10 +495,12 @@ it whenever a kind is added. Rules that keep the queue correct:
   of it drops the queued delete. Re-queued behind the move, or overtaken
   by an answer sent while it waited out a backoff, the delete removed the
   event on Google after all, and its pending row showed until the next
-  pull reported the deletion. A dropped series delete first puts back the
-  exceptions it took locally, as Google has them, unless a row sits at
-  the id (`restoreTakenExceptions`): the pull that re-sent the master need
-  not have re-sent them, and a cancelled occurrence would show again. A
+  pull reported the deletion. A series delete replaced this way (by a
+  move, an answer, an edit, a cut or another series delete) first puts
+  back the exceptions it took locally, as Google has them, unless a row
+  sits at the id (`restoreTakenExceptions`): the pull that re-sent the
+  master need not have re-sent them, and a cancelled occurrence would
+  show again. A
   series move still carries an exception's delete (a this-and-following
   cut) along, and moves that exception's pulled copy as synced so the
   delete takes it when it lands. Each calendar's events
