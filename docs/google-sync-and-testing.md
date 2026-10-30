@@ -824,7 +824,11 @@ Electron binary (`electron --version`) and run spec files sequentially.
   through `MaestroSessionManager.createMaestro`), so the wrapper copies what
   Maestro prints to `console.log` while streaming it; a missing report
   for any other reason still fails. The job also gives the runner 240 s
-  instead of 120 (`MAESTRO_DRIVER_STARTUP_TIMEOUT`). Each attempt's
+  instead of 120 (`MAESTRO_DRIVER_STARTUP_TIMEOUT`). A failed flow whose
+  every screenshot (`<flow name>/screenshots/`) is solid black, all pixel
+  colors 0, gets the same single retry on an erased simulator: the
+  simulator stopped drawing while the app stayed alive (run 40958072782);
+  a dark-mode screen never counts (status bar, #19171d background). Each attempt's
   report, console output and logs are in `~/.maestro/tests/<label>-<n>`
   (`--debug-output`, flattened: otherwise the run's log lands in a hidden
   folder the artifact upload skips). A failed shard's artifact carries
