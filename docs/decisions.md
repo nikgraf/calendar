@@ -275,7 +275,7 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   test polls six minutes, then skips while Google still lists the calendar
   or serves its event. Rejected: a longer budget alone (the lag has no
   known bound), a full calendarList every pass (lagging replicas list it).
-- **A delete made during a pull stays deleted** (2026-10-30, #PR_NUMBER)
+- **A delete made during a pull stays deleted** (2026-10-30, #265)
   — live nightly 40265233306: a poll's page, answered before the delete
   landed, put the row back until the next poll. An events pass holds the
   drain like a task list's, and a landed delete removes a synced copy at
