@@ -285,7 +285,7 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   holding the drain per page. Open: a replica lagging behind a landed
   delete; why that night's flow 04 tap made no op (the flow now fails on
   the check's label rather than tapping again, which would hide it).
-- **Moving or answering a pulled copy replaces its delete** (2026-10-30)
+- **Moving or answering a pulled copy replaces its delete** (2026-10-30, #267)
   — Opus review of #265: a move of the copy a pull put back re-queued its
   waiting delete behind it, which deleted the moved event on Google; an
   answer did the same. Both now drop the delete, as an edit already did,
