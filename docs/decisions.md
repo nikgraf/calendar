@@ -150,6 +150,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   report (only session creation proves no flow ran), and the longer
   timeout alone (an XCTest that never initializes still fails). Open:
   whether the cold-runner case returns.
+- **The live nightly's Maestro through `run-flows.ts`** (2026-10-30,
+  `todo/live-driver-retry`) — `google-live.yml` called `maestro test`
+  directly, so it had neither the 240 s runner wait nor either retry; run
+  40997493433 died at the permissions step with the runner not up at
+  120 s. All three of its invocations now go through `run-flows.ts` with
+  the same wait. Nothing is reset between attempts (erasing would lose the
+  dev client's Metro project), so a live flow cut short meets its own
+  leftovers in the run's calendar. Open: the week's other red nights (an
+  `openurl` timeout in the bootstrap, a black display at `04a`, a deleted
+  event left on screen) are not covered.
 - **Flow 06's sheet drag off the bottom edge** (2026-10-29,
   `todo/editor-sheet-drag-race`) — the drag that raises the half-height
   editor started at 93 %, inside SpringBoard's bottom-edge gesture region:

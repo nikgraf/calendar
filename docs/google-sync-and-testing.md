@@ -849,7 +849,10 @@ Electron binary (`electron --version`) and run spec files sequentially.
   `live-desktop` (macos-15, the one spec) and `live-ios` (macos-26: the
   dev client with Metro — the `development-simulator` profile fetched by
   fingerprint, the bootstrap flow — plus the sidecar's setup/teardown
-  around the five flows).
+  around the five flows). Its three Maestro invocations (bootstrap,
+  permissions, live flows) go through `run-flows.ts` with the same 240 s
+  runner wait as `ios-e2e`, but without `E2E_APP`: a rerun starts on the
+  same simulator, dev client and scratch calendar.
 - Log lines may stringify effect causes containing HTTP requests; effect
   redacts auth headers, so tokens cannot leak into CI logs this way.
 
