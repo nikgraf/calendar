@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 /**
  * Runs Maestro flows on CI and runs them once more, in a fresh invocation,
- * when the XCTest driver died under them or never started — never for a
- * failure the app caused (see maestroRetry.ts for the rule). Each attempt's
+ * when the XCTest driver died under them or never started, or when the
+ * simulator drew a failed flow black — never for a failure the app caused
+ * (see maestroRetry.ts for the rule). Each attempt's
  * report, logs and console output (`console.log`) go to
  * ~/.maestro/tests/<label>-<attempt>, which the diagnostics upload already
  * collects.
@@ -34,7 +35,13 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath, URL } from 'node:url';
-import { decideRetry, latchedCommand } from './maestroRetry.ts';
+import {
+  debugFolderName,
+  decideRetry,
+  type JUnitCase,
+  latchedCommand,
+  type RetryCause,
+} from './maestroRetry.ts';
 
 /** The dev variant: e2e always drives it (prepare-simulator.sh). */
 const BUNDLE_ID = 'com.solunivo.app.dev';
@@ -118,6 +125,10 @@ const summary = (line: string): void => {
   }
 };
 
+/** Flow files as inline code, for the step summary. */
+const quoted = (files: ReadonlyArray<string>): string =>
+  files.map((file) => `\`${file}\``).join(', ');
+
 /**
  * The run, answering the exit code. The process ends on its own with it:
  * on a pipe, stdout and stderr write asynchronously, and `process.exit`
@@ -131,11 +142,18 @@ const main = async (): Promise<number> => {
 
   // The run log (and each flow's copy of it) says whether the driver died.
   const runLog = readAll(filesUnder(first.dir, (name) => name === 'maestro.log'));
+  // The screenshots Maestro took when a flow's commands failed say whether
+  // the simulator still drew it.
+  const screenshots = (testCase: JUnitCase): ReadonlyArray<Buffer> =>
+    filesUnder(join(first.dir, debugFolderName(testCase), 'screenshots'), (name) =>
+      name.endsWith('.png'),
+    ).map((path) => readFileSync(path));
   const decision = decideRetry({
     flows,
     output: readFileSync(first.output, 'utf8'),
     report: existsSync(first.report) ? readFileSync(first.report, 'utf8') : undefined,
     runLog,
+    screenshots,
   });
   if (decision.kind !== 'retry') {
     say(
@@ -145,19 +163,24 @@ const main = async (): Promise<number> => {
     );
     return first.status;
   }
-  if (decision.cause !== 'never-started' && process.env['E2E_RETRY'] === 'never-started') {
-    say('no retry: the driver died mid-run, and E2E_RETRY=never-started');
+  if (
+    process.env['E2E_RETRY'] === 'never-started' &&
+    decision.flows.some((flow) => flow.cause !== 'never-started')
+  ) {
+    say('no retry: the flows ran before they were lost, and E2E_RETRY=never-started');
     return first.status;
   }
 
-  const retried = decision.flows.join(', ');
+  const lostTo = (cause: RetryCause): ReadonlyArray<string> =>
+    decision.flows.flatMap((flow) => (flow.cause === cause ? [flow.file] : []));
   summary(`### Maestro retry (${label})`);
-  if (decision.cause === 'never-started') {
-    say(`::warning::The Maestro driver never started; running ${retried} again`);
-    summary(
-      `The XCTest driver never started. Ran again: ${decision.flows.map((flow) => `\`${flow}\``).join(', ')}.`,
-    );
-  } else {
+  const neverStarted = lostTo('never-started');
+  if (neverStarted.length > 0) {
+    say(`::warning::The Maestro driver never started; running ${neverStarted.join(', ')} again`);
+    summary(`The XCTest driver never started. Ran again: ${quoted(neverStarted)}.`);
+  }
+  const died = lostTo('died');
+  if (died.length > 0) {
     const command = latchedCommand(runLog) ?? 'unknown';
     // XCTest's own account of why it lost the app: a main thread that would
     // not answer is the app hanging (or starved), not Maestro.
@@ -167,12 +190,21 @@ const main = async (): Promise<number> => {
     say(
       `::warning::The Maestro driver died during ${command}${
         mainThreadBusy ? ' (XCTest: app main thread busy)' : ''
-      }; running ${retried} again`,
+      }; running ${died.join(', ')} again`,
     );
     summary(
       `The XCTest driver died during \`${command}\`${
         mainThreadBusy ? ', after XCTest found the app main thread busy' : ''
-      }. Ran again: ${decision.flows.map((flow) => `\`${flow}\``).join(', ')}.`,
+      }. Ran again: ${quoted(died)}.`,
+    );
+  }
+  const blackScreen = lostTo('black-screen');
+  if (blackScreen.length > 0) {
+    say(
+      `::warning::The simulator stopped drawing: every failure screenshot was black; running ${blackScreen.join(', ')} again`,
+    );
+    summary(
+      `The simulator stopped drawing the app: every failure screenshot was black. Ran again: ${quoted(blackScreen)}.`,
     );
   }
 
@@ -180,11 +212,13 @@ const main = async (): Promise<number> => {
   for (const bundle of ['dev.mobile.maestro-driver-iosUITests.xctrunner', BUNDLE_ID]) {
     spawnSync('xcrun', ['simctl', 'terminate', udid, bundle], { stdio: 'ignore' });
   }
-  // The flow the driver died in stopped halfway: what it had changed (a
-  // primary time zone in the app's data, a reminder in the device's
-  // EventKit) would break its own first check. On CI the second run starts
-  // from an erased simulator with the app installed and set up again, as
-  // the first did.
+  // The flow the driver died in (or the screen went black in) stopped
+  // halfway: what it had changed (a primary time zone in the app's data, a
+  // reminder in the device's EventKit) would break its own first check. On
+  // CI the second run starts from an erased simulator with the app
+  // installed and set up again, as the first did. The reboot also brings
+  // up a fresh SpringBoard and backboardd: a relaunch alone is where the
+  // black screen began on run 39159977263.
   const app = process.env['E2E_APP'];
   if (app) {
     const prepared = spawnSync(
@@ -198,7 +232,10 @@ const main = async (): Promise<number> => {
     }
   }
 
-  const second = await attempt(2, decision.flows);
+  const second = await attempt(
+    2,
+    decision.flows.map((flow) => flow.file),
+  );
   summary(second.status === 0 ? 'The second run passed.' : 'The second run failed too.');
   return second.status;
 };

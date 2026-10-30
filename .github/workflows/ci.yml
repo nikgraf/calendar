@@ -205,7 +205,7 @@ jobs:
     # runner was cancelled two flows short of passing (run 37336020673),
     # throwing the whole run away; the cap is for hung jobs. It leaves room
     # for run-flows.ts to run a shard's flows a second time after the
-    # driver died under the first.
+    # driver died under the first or the simulator drew a flow black.
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -335,9 +335,10 @@ jobs:
         env:
           E2E_APP: build/e2e-repacked/Solunivo.app
         run: node e2e/ci/run-flows.ts permissions e2e/flows/04a-device-permissions.yaml
-      # run-flows.ts runs the flows a dead XCTest driver took down once
-      # more, on an erased simulator with E2E_APP installed again, and never
-      # a flow that failed on its own (e2e/ci/maestroRetry.ts).
+      # run-flows.ts runs the flows a dead XCTest driver took down, or the
+      # simulator drew black, once more, on an erased simulator with E2E_APP
+      # installed again, and never a flow that failed on its own
+      # (e2e/ci/maestroRetry.ts).
       - name: Maestro flows
         working-directory: apps/ios
         env:
