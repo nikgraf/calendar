@@ -47,6 +47,7 @@ import {
   readEventNotificationSettings,
   readOnboarding,
   readPrimaryTimeZone,
+  readTaskNotificationSettings,
   readTimeZoneSettings,
   readViewPreferences,
   updateOnboarding,
@@ -57,6 +58,7 @@ import {
   applyBirthdayReminderOverride,
   applyBirthdayReminderSettings,
   applyEventNotificationSettings,
+  applyTaskNotificationSettings,
   applyTimeZoneSettings,
 } from './notificationSettings.ts';
 import { SyncEngine } from './engine.ts';
@@ -297,6 +299,12 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       return yield* taskRepo.getOverdue(before);
     }),
 
+  getTask: ({ accountId, listId, taskId }) =>
+    Effect.map(
+      Effect.flatMap(TaskRepo, (repo) => repo.get(accountId, listId, taskId)),
+      (task) => task ?? null,
+    ),
+  getTaskNotificationSettings: () => readTaskNotificationSettings,
   getTasksInRange: ({ endDate, startDate }) =>
     Effect.gen(function* () {
       const taskRepo = yield* TaskRepo;
@@ -553,6 +561,7 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       yield* taskRepo.setListVisible(accountId, taskListId, isVisible);
     }),
 
+  setTaskNotificationSettings: (settings) => applyTaskNotificationSettings(settings),
   setTimeZoneSettings: (settings) => applyTimeZoneSettings(settings),
 
   setViewPreferences: (preferences) => writeViewPreferences(preferences),

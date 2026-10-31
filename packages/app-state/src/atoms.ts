@@ -104,6 +104,7 @@ export interface BackendAtoms {
   readonly settingsDocument: ReturnType<typeof buildAtoms>['settingsDocument'];
   readonly syncStatus: ReturnType<typeof buildAtoms>['syncStatus'];
   readonly taskLists: ReturnType<typeof buildAtoms>['taskLists'];
+  readonly taskNotificationSettings: ReturnType<typeof buildAtoms>['taskNotificationSettings'];
   readonly tasksInRange: ReturnType<typeof buildAtoms>['tasksInRange'];
   readonly timeZoneSettings: ReturnType<typeof buildAtoms>['timeZoneSettings'];
   readonly viewPreferences: ReturnType<typeof buildAtoms>['viewPreferences'];
@@ -145,6 +146,7 @@ const MUTATION_REACTIVITY = {
     BIRTHDAY_OVERRIDES_KEY,
     deviceSettingsKey('birthdayReminders'),
     deviceSettingsKey('eventNotifications'),
+    deviceSettingsKey('taskNotifications'),
     deviceSettingsKey('timeZones'),
     deviceSettingsKey('viewPreferences'),
     MIRRORS_KEYS,
@@ -175,6 +177,7 @@ const MUTATION_REACTIVITY = {
   setEventNotificationSettings: [deviceSettingsKey('eventNotifications')],
   setMirrorEnabled: [MIRRORS_LOCAL_KEY],
   setTaskListVisible: [TASKLISTS_KEY, TASKS_KEY],
+  setTaskNotificationSettings: [deviceSettingsKey('taskNotifications')],
   setTimeZoneSettings: [deviceSettingsKey('timeZones')],
   setViewPreferences: [deviceSettingsKey('viewPreferences')],
   syncNow: [],
@@ -353,6 +356,15 @@ const buildAtoms = (client: BackendClient, deviceZone: Atom.Atom<string>) => {
       }),
     )
     .pipe(Atom.withReactivity([deviceSettingsKey('eventNotifications')]));
+
+  const taskNotificationSettings = runtime
+    .atom(
+      Effect.gen(function* () {
+        const backend = yield* AppBackend;
+        return yield* backend.getTaskNotificationSettings(undefined);
+      }),
+    )
+    .pipe(Atom.withReactivity([deviceSettingsKey('taskNotifications')]));
 
   // Device-local time zones as stored entries; refetched only when they
   // are written. The device entry resolves against `deviceZone` in the
@@ -603,6 +615,7 @@ const buildAtoms = (client: BackendClient, deviceZone: Atom.Atom<string>) => {
     settingsDocument,
     syncStatus,
     taskLists,
+    taskNotificationSettings,
     tasksInRange,
     timeZoneSettings,
     viewPreferences,

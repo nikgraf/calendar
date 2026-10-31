@@ -55,6 +55,11 @@ describe('buildSettingsDocument', () => {
       });
       // No "Remove When Over" until someone sets it: a Mac's file carries none.
       expect(document.eventNotifications).toEqual({ enabled: true, includeAppleCalendar: false });
+      expect(document.taskNotifications).toEqual({
+        enabled: true,
+        includeAppleReminders: true,
+        time: '09:00',
+      });
       expect(document.view).toEqual({
         allDayLaneCollapsed: false,
         weekendDays: ['SA', 'SU'],

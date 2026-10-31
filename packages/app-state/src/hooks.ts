@@ -29,6 +29,7 @@ import {
   isCalendarWritable,
   msUntilNextMidnight,
   resolveTimeZones,
+  TaskNotificationSettings,
   Temporal,
 } from '@calendar/core';
 import { RegistryContext, useAtomValue } from '@effect/atom-react';
@@ -467,6 +468,12 @@ export const useEventNotificationSettings = (): EventNotificationSettings | null
   return Option.getOrNull(AsyncResult.value(result));
 };
 
+/** The device-local task notification preferences; null until the first read resolves. */
+export const useTaskNotificationSettings = (): TaskNotificationSettings | null => {
+  const result = useAtomValue(useBackendAtoms().taskNotificationSettings);
+  return Option.getOrNull(AsyncResult.value(result));
+};
+
 /**
  * A device-local setting as its editor sees it: the stored value until
  * the first change, then the last value sent until its saves are back and
@@ -676,6 +683,7 @@ export const useBackendMutations = () => {
       setEventNotificationSettings: set('setEventNotificationSettings'),
       setMirrorEnabled: set('setMirrorEnabled'),
       setTaskListVisible: set('setTaskListVisible'),
+      setTaskNotificationSettings: set('setTaskNotificationSettings'),
       setTimeZoneSettings: set('setTimeZoneSettings'),
       setViewPreferences: set('setViewPreferences'),
       syncNow: set('syncNow'),

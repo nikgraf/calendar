@@ -48,6 +48,7 @@ export const SETTINGS_DOCUMENT_KEYS: ReadonlyArray<string> = [
   deviceSettingsKey('eventNotifications'),
   deviceSettingsKey('importedVisibility'),
   deviceSettingsKey('mirrors'),
+  deviceSettingsKey('taskNotifications'),
   deviceSettingsKey('timeZones'),
   deviceSettingsKey('viewPreferences'),
 ];

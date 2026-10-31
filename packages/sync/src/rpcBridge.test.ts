@@ -75,6 +75,9 @@ const stubHandlers: BackendHandlers = {
   getEventsInRange: () => Effect.succeed([]),
   getOnboarding: () => Effect.succeed({ card: 'expanded' as const, lessons: {} }),
   getOverdueTasks: () => Effect.succeed([]),
+  getTask: () => Effect.succeed(null),
+  getTaskNotificationSettings: () =>
+    Effect.succeed({ enabled: true, includeAppleReminders: true, time: '09:00' }),
   getTasksInRange: () => Effect.succeed([]),
   getTimeZoneSettings: () => Effect.succeed({ primary: 'device', zones: ['device'] }),
   getViewPreferences: () => Effect.succeed({ allDayLaneCollapsed: false }),
@@ -113,6 +116,7 @@ const stubHandlers: BackendHandlers = {
   setEventNotificationSettings: () => Effect.succeed({ notificationsGranted: true }),
   setMirrorEnabled: notStubbed,
   setTaskListVisible: () => Effect.void,
+  setTaskNotificationSettings: () => Effect.succeed({ notificationsGranted: true }),
   setTimeZoneSettings: () => Effect.void,
   setViewPreferences: () => Effect.void,
   syncNow: notStubbed,

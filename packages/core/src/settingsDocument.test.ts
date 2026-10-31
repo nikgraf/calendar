@@ -45,6 +45,12 @@ const full: SettingsDocument = {
   },
   desktop: { screenPrivacy: 'visible' },
   eventNotifications: { enabled: false, includeAppleCalendar: true },
+  taskNotifications: {
+    dismissTasksWhenDone: false,
+    enabled: true,
+    includeAppleReminders: false,
+    time: '08:30',
+  },
   timeZones: { primary: 'device', zones: ['device', 'UTC'] },
   version: 1,
   view: { allDayLaneCollapsed: true, weekendDays: ['FR', 'SA'], weekendShading: true },
