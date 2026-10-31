@@ -45,6 +45,8 @@ export * from './mirror/window.ts';
 export * from './notifications/eventReminders.ts';
 export * from './notifications/planned.ts';
 export * from './notifications/settings.ts';
+export * from './notifications/taskReminders.ts';
+export * from './notifications/timeOfDay.ts';
 export * from './onboarding.ts';
 export * from './recurrence/bounds.ts';
 export * from './recurrence/build.ts';

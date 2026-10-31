@@ -513,7 +513,7 @@ const buildAtoms = (client: BackendClient, deviceZone: Atom.Atom<string>) => {
         Effect.gen(function* () {
           const backend = yield* AppBackend;
           const target = parseNotificationTarget(JSON.parse(key));
-          return target === undefined ? null : yield* lookUpEvent(backend, target);
+          return target?.kind === 'event' ? yield* lookUpEvent(backend, target) : null;
         }),
       )
       .pipe(Atom.withReactivity([EVENTS_KEY])),

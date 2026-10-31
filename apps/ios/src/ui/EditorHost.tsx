@@ -421,6 +421,9 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
   // once the detail closed. An event deleted since opens nothing and leaves
   // the capture alone.
   const onNotificationTap = useEffectEvent((target: NotificationTarget) => {
+    if (target.kind !== 'event') {
+      return;
+    }
     void findNotificationEvent(backendClient, target).then((event) => {
       if (event) {
         dismissCapture();

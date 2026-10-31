@@ -1,10 +1,10 @@
 import {
   type BackendClient,
   eventNotificationTarget,
+  type EventNotificationTarget,
   type EventRecord,
   googleInstanceId,
   isAppleCalendarAccount,
-  type NotificationTarget,
   Temporal,
   toZonedDateTime,
 } from '@calendar/core';
@@ -28,7 +28,7 @@ type EventLookupClient = Pick<BackendClient, 'getEvent' | 'getEventsInRange'>;
  * is read strictly for that: a range read that could not reach EventKit
  * would otherwise lack it, and no stored row stands in.
  */
-export const lookUpEvent = (client: EventLookupClient, target: NotificationTarget) =>
+export const lookUpEvent = (client: EventLookupClient, target: EventNotificationTarget) =>
   Effect.gen(function* () {
     const events = yield* client.getEventsInRange({
       rangeEndUtc: target.startUtc + DAY_MS,
@@ -72,7 +72,7 @@ export const lookUpEvent = (client: EventLookupClient, target: NotificationTarge
 /** The occurrence a tapped notification is about, or null when it is gone (or unreadable). */
 export const findNotificationEvent = (
   client: EventLookupClient,
-  target: NotificationTarget,
+  target: EventNotificationTarget,
 ): Promise<EventRecord | null> =>
   Effect.runPromise(lookUpEvent(client, target).pipe(Effect.orElseSucceed(() => null)));
 

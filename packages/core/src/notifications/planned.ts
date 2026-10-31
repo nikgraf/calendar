@@ -1,11 +1,11 @@
 import { Option, Schema } from 'effect';
-import type { EventRecord } from '../types.ts';
+import type { EventRecord, TaskRecord } from '../types.ts';
 
 /**
- * What a tap on a notification opens: one occurrence of an event. Read
+ * What a tap on an event reminder opens: one occurrence of an event. Read
  * back from the OS or across IPC, so it is decoded, never trusted.
  */
-export const NotificationTarget = Schema.Struct({
+export const EventNotificationTarget = Schema.Struct({
   accountId: Schema.String,
   calendarId: Schema.String,
   eventId: Schema.String,
@@ -19,6 +19,19 @@ export const NotificationTarget = Schema.Struct({
   /** The occurrence's start: which instance of a series, and the day it is on. */
   startUtc: Schema.Number,
 });
+export type EventNotificationTarget = typeof EventNotificationTarget.Type;
+
+/** What a tap on a task reminder opens: the task, by its stored identity. */
+export const TaskNotificationTarget = Schema.Struct({
+  accountId: Schema.String,
+  kind: Schema.Literal('task'),
+  listId: Schema.String,
+  taskId: Schema.String,
+});
+export type TaskNotificationTarget = typeof TaskNotificationTarget.Type;
+
+/** What a tap on a notification opens; `kind` tells which. */
+export const NotificationTarget = Schema.Union([EventNotificationTarget, TaskNotificationTarget]);
 export type NotificationTarget = typeof NotificationTarget.Type;
 
 /** The target naming this occurrence of `event`: what a tap on its reminder opens. */
@@ -27,7 +40,7 @@ export const eventNotificationTarget = (
     EventRecord,
     'accountId' | 'calendarId' | 'id' | 'originalStartUtc' | 'recurringEventId' | 'startUtc'
   >,
-): NotificationTarget => ({
+): EventNotificationTarget => ({
   accountId: event.accountId,
   calendarId: event.calendarId,
   eventId: event.id,
@@ -39,6 +52,16 @@ export const eventNotificationTarget = (
         recurringEventId: event.recurringEventId,
       }),
   startUtc: event.startUtc,
+});
+
+/** The target naming `task`: what a tap on its reminder opens. */
+export const taskNotificationTarget = (
+  task: Pick<TaskRecord, 'accountId' | 'id' | 'listId'>,
+): TaskNotificationTarget => ({
+  accountId: task.accountId,
+  kind: 'task',
+  listId: task.listId,
+  taskId: task.id,
 });
 
 const decodeTarget = Schema.decodeUnknownOption(NotificationTarget);

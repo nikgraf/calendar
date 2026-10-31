@@ -294,6 +294,9 @@ function CalendarBody({
   // is dismissed, as on iOS: its dialog would cover the event, and a parse
   // still running would replace the inspector with its editor.
   const openNotificationTarget = useEffectEvent((target: NotificationTarget) => {
+    if (target.kind !== 'event') {
+      return;
+    }
     void findNotificationEvent(backend, target).then((event) => {
       if (event) {
         capture.dismiss();

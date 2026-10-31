@@ -1,6 +1,7 @@
 import { Schema } from 'effect';
 import { formatPlainTime } from '../format.ts';
 import type { PlannedNotification } from '../notifications/planned.ts';
+import { parseTimeOfDay } from '../notifications/timeOfDay.ts';
 import { Temporal } from '../time/temporal.ts';
 import type { BirthdayRecord } from '../types.ts';
 import { birthdayMergeKey, birthdaysInRange } from './model.ts';
@@ -220,7 +221,7 @@ export const birthdayRemindersSummary = (reminders: ReadonlyArray<BirthdayRemind
 
 /** "9:00 AM" for a stored 'HH:MM' (a malformed one reads as the 09:00 it fires at). */
 export const birthdayReminderTimeLabel = (time: string): string => {
-  const { hour, minute } = parseTime(time);
+  const { hour, minute } = parseTimeOfDay(time);
   return formatPlainTime(`${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`);
 };
 
@@ -242,15 +243,6 @@ export const leadDaysLabel = (leadDays: BirthdayLeadDays): string => {
 
 /** A missed birthday reminder is still worth showing for the rest of the day. */
 const BIRTHDAY_CATCH_UP_MS = 24 * 60 * 60 * 1000;
-
-const parseTime = (time: string): { readonly hour: number; readonly minute: number } => {
-  const match = /^(\d{1,2}):(\d{2})$/.exec(time);
-  const hour = match ? Number(match[1]) : Number.NaN;
-  const minute = match ? Number(match[2]) : Number.NaN;
-  return hour >= 0 && hour < 24 && minute >= 0 && minute < 60
-    ? { hour, minute }
-    : { hour: 9, minute: 0 };
-};
 
 const leadPhrase = (leadDays: number): string => {
   switch (leadDays) {
@@ -315,7 +307,7 @@ export const planBirthdayReminders = (
         leadDays === 0
           ? ''
           : ` (${date.toLocaleString('en-US', { day: 'numeric', month: 'short', weekday: 'short' })})`;
-      const { hour, minute } = parseTime(time);
+      const { hour, minute } = parseTimeOfDay(time);
       const fireAt = fireDate.toZonedDateTime({
         plainTime: new Temporal.PlainTime(hour, minute),
         timeZone: options.timeZone,
