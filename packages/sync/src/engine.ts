@@ -47,6 +47,7 @@ import {
   type RemindersError,
 } from '@calendar/reminders';
 import { Clock, Context, Duration, Effect, Layer, Schedule, Semaphore, Stream } from 'effect';
+import { SqlClient } from 'effect/sql/SqlClient';
 import type { SqlError } from 'effect/sql/SqlError';
 import { AppleCalendarEvents, deviceTimeZone } from './appleCalendarEvents.ts';
 import { applyPendingVisibility as applyImportedVisibility } from './importedVisibility.ts';
@@ -180,9 +181,11 @@ const make: Effect.Effect<
   | GoogleTasksClient
   | PendingOpRepo
   | RemindersClient
+  | SqlClient
   | SyncStateRepo
   | TaskRepo
 > = Effect.gen(function* () {
+  const sql = yield* SqlClient;
   const mutations = yield* EventMutations;
   const client = yield* GoogleCalendarClient;
   const tasksClient = yield* GoogleTasksClient;
@@ -364,22 +367,35 @@ const make: Effect.Effect<
               upserts.push(record);
             }
           }
-          // One transaction per page; a pull never overwrites a row with a
-          // local edit still queued. An empty page (every quiet poll ends
-          // in one) writes nothing and invalidates nothing: the views, the
+          // One transaction per page, the queued deletes' snapshots
+          // included (a discard between the two would put back what the
+          // page replaced); a pull never overwrites a row with a local
+          // edit still queued. An empty page (every quiet poll ends in
+          // one) writes nothing and invalidates nothing: the views, the
           // notification planner and the calendar mirrors all recompute on
           // EVENTS_KEY, and none of them has anything to recompute.
           if (upserts.length > 0 || deletions.length > 0) {
-            yield* eventRepo.applyPage(account.id, calendarId, {
-              deletions,
-              mode: 'pull',
-              upserts,
-            });
-            // A queued delete of one of these has nothing left to put back.
-            yield* pendingOpRepo.forgetDeleted(account.id, calendarId, [
-              ...deletions,
-              ...cancelled,
-            ]);
+            yield* sql.withTransaction(
+              Effect.gen(function* () {
+                yield* eventRepo.applyPage(account.id, calendarId, {
+                  deletions,
+                  mode: 'pull',
+                  upserts,
+                });
+                // A queued delete of one of these has nothing left to put back.
+                yield* pendingOpRepo.forgetDeleted(account.id, calendarId, [
+                  ...deletions,
+                  ...cancelled,
+                ]);
+                // One the pull skipped at an occurrence delete's tombstone is
+                // what that delete puts back now.
+                yield* pendingOpRepo.rememberPulled(
+                  account.id,
+                  calendarId,
+                  upserts.filter((record) => record.status !== 'cancelled'),
+                );
+              }),
+            );
           }
           // A full list of a big calendar is many pages: let rpc handlers
           // and the UI interleave between them.
@@ -1196,6 +1212,7 @@ export class SyncEngine extends Context.Service<SyncEngine, SyncEngineShape>()('
     | GoogleTasksClient
     | PendingOpRepo
     | RemindersClient
+    | SqlClient
     | SyncStateRepo
     | TaskRepo
   > = Layer.effect(SyncEngine)(make);

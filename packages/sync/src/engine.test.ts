@@ -371,6 +371,58 @@ describe('SyncEngine', () => {
     },
   );
 
+  it.effect(
+    'an exception a pull re-sends while its occurrence delete waits is what a discard puts back',
+    () => {
+      const series = { ...timedItem('evt-r', 10), recurrence: ['RRULE:FREQ=DAILY;COUNT=5'] };
+      const instanceId = 'evt-r_20260703T100000Z';
+      const exception = (summary: string, etag: string) => ({
+        end: { dateTime: '2026-07-03T13:00:00Z' },
+        etag,
+        id: instanceId,
+        originalStartTime: { dateTime: '2026-07-03T10:00:00Z' },
+        recurringEventId: 'evt-r',
+        start: { dateTime: '2026-07-03T12:00:00Z' },
+        status: 'confirmed',
+        summary,
+      });
+      const client: GoogleCalendarClientShape = {
+        ...stubClient([
+          { items: [series, exception('Moved', '"x-1"')], nextSyncToken: 's1' },
+          // Another client renamed the exception meanwhile.
+          { items: [exception('Moved again', '"x-2"')], nextSyncToken: 's2' },
+        ]),
+        deleteEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
+      };
+      return Effect.gen(function* () {
+        yield* seedAccount;
+        const engine = yield* SyncEngine;
+        const mutations = yield* EventMutations;
+        const events = yield* EventRepo;
+        yield* engine.syncAll();
+        yield* mutations.deleteRecurring({
+          accountId: 'acc-1',
+          calendarId: 'cal-1',
+          masterId: 'evt-r',
+          originalStartUtc: Date.parse('2026-07-03T10:00:00Z'),
+          scope: 'instance',
+        });
+        const ops = yield* PendingOpRepo;
+        expect((yield* ops.listAll())[0]?.beforePayload?.title).toBe('Moved');
+
+        yield* engine.syncAll();
+        // The pull leaves the tombstone, the user's own, as it is.
+        expect((yield* events.getById('acc-1', 'cal-1', instanceId))?.status).toBe('cancelled');
+        const [op] = yield* ops.listAll();
+        expect(op?.beforePayload?.title).toBe('Moved again');
+        // Still sent on the etag the user deleted: Google's change parks it.
+        expect(op?.baseEtag).toBe('"x-1"');
+        yield* mutations.discardPendingOp(op!.id);
+        expect((yield* events.getById('acc-1', 'cal-1', instanceId))?.title).toBe('Moved again');
+      }).pipe(Effect.provide(engineLayer(client)));
+    },
+  );
+
   describe('a page answered before a delete reached Google', () => {
     it.effect('a delete that lands meanwhile stays deleted', () => {
       const deleted: Array<string> = [];
