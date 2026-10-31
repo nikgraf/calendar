@@ -1432,3 +1432,10 @@ first. The decisions, one line each:
   point at it. Rejected: dates (none are set), a roadmap page of its own.
   Open: Microsoft 365 on the Mac waits on Apple moving Calendar off EWS;
   keep the section and `todo.md` in step.
+- **Hero headline beside the screenshots** (2026-10-31) — on screens wide
+  enough for both (about 1070 px), the headline, buttons and sources sit
+  left of the app screenshots, so the apps show without scrolling; the
+  headline drops from 64 to 52 px at most to stay on two lines there.
+  Narrower screens keep the text above the screenshots. Rejected: letting
+  the screenshots run past the page's 1200 px column (out of line with the
+  nav).

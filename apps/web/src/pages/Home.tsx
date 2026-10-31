@@ -123,9 +123,12 @@ const privacyPoints = [
 export function HomePage() {
   return (
     <>
-      <section className={`${container} flex flex-col gap-12 pt-16 pb-20 sm:pt-20`}>
-        <div className="flex max-w-[760px] flex-col gap-6">
-          <h1 className="m-0 text-[clamp(40px,5vw,64px)] leading-[1.02] font-semibold tracking-[-0.03em] text-pretty">
+      <section
+        className={`${container} flex flex-wrap items-center gap-x-16 gap-y-12 pt-16 pb-20 sm:pt-20`}
+      >
+        {/* Beside the screenshots once both fit (from about 1070 px wide), above them below that. */}
+        <div className="flex max-w-[760px] min-w-0 flex-[1_1_380px] flex-col gap-6">
+          <h1 className="m-0 text-[clamp(40px,4vw,52px)] leading-[1.04] font-semibold tracking-[-0.03em] text-balance">
             A modern calendar with AI built in.
           </h1>
           <p className="m-0 max-w-[640px] text-lg text-ink-secondary text-pretty">
@@ -135,7 +138,9 @@ export function HomePage() {
           <DownloadActions />
           <Sources />
         </div>
-        <HeroShots />
+        <div className="min-w-0 flex-[1.6_1_560px]">
+          <HeroShots />
+        </div>
       </section>
 
       <section className="border-y border-hairline bg-surface-subtle" id="ai">
