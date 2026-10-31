@@ -124,6 +124,19 @@ export interface PendingOpRepoShape {
     nextAttemptAt: number,
     lastError: string,
   ) => Effect.Effect<void, SqlError>;
+  /**
+   * After a pull page: these events (live, not cancelled) came in, and
+   * where one's row is still pending the pull skipped it — the tombstone
+   * an occurrence delete leaves. Google's copy becomes that delete's
+   * snapshot, the one place it lands; a discard would otherwise put back
+   * the exception as it was before Google's change. Where the pull wrote
+   * the row, the row is Google's copy (`isPulledCopy`).
+   */
+  readonly rememberPulled: (
+    accountId: string,
+    calendarId: string,
+    events: ReadonlyArray<EventRecord>,
+  ) => Effect.Effect<void, SqlError>;
   readonly remove: (opId: string) => Effect.Effect<void, SqlError>;
   /**
    * Drops the event's queued ops — one account's: a shared calendar
@@ -391,6 +404,33 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
               WHERE id = ${opId}`,
           ),
         ),
+      rememberPulled: (accountId, calendarId, events) =>
+        Effect.gen(function* () {
+          if (events.length === 0) {
+            return;
+          }
+          // Few deletes wait at a time: matched here, not against every id of the page in SQL.
+          const waiting = yield* sql<{ readonly event_id: string }>`SELECT p.event_id
+            FROM pending_ops p JOIN events e ON e.account_id = p.account_id
+              AND e.calendar_id = p.calendar_id AND e.id = p.event_id
+            WHERE p.account_id = ${accountId} AND p.calendar_id = ${calendarId}
+              AND p.kind = 'delete' AND e.sync_status = 'pending'`;
+          const ids = new Set(waiting.map((row) => row.event_id));
+          const copies = events.filter((event) => ids.has(event.id));
+          if (copies.length === 0) {
+            return;
+          }
+          yield* invalidating(
+            Effect.forEach(
+              copies,
+              (event) =>
+                sql`UPDATE pending_ops SET before_payload = ${JSON.stringify(eventPayloadJson(event))}
+                  WHERE account_id = ${accountId} AND calendar_id = ${calendarId}
+                    AND event_id = ${event.id} AND kind = 'delete'`,
+              { discard: true },
+            ),
+          );
+        }),
       remove: (opId) =>
         invalidating(Effect.asVoid(sql`DELETE FROM pending_ops WHERE id = ${opId}`)),
       // RSVP ops survive content-edit coalescing; stray ones resolve as

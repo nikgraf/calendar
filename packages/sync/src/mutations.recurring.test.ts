@@ -987,11 +987,11 @@ describe('keeping a series a pull put back while its delete waits', () => {
     startUtc: occurrence,
     status: 'cancelled',
   });
-  const deleteThenPull = (copy: EventRecord) =>
+  const deleteThenPull = (copy: EventRecord, exception: EventRecord = cancelled) =>
     Effect.gen(function* () {
       yield* seedMaster;
       const events = yield* EventRepo;
-      yield* events.upsertMany([cancelled]);
+      yield* events.upsertMany([exception]);
       yield* (yield* EventMutations).deleteRecurring({ ...target, scope: 'series' });
       expect(yield* rowOf(instanceId)).toBeNull();
       yield* events.upsertMany([copy], { mode: 'pull' });
@@ -1126,6 +1126,94 @@ describe('keeping a series a pull put back while its delete waits', () => {
       expect((yield* events.getById('acc-1', 'cal-2', instanceId))?.status).toBe('cancelled');
     }).pipe(noYield, Effect.provide(testLayer)),
   );
+
+  describe('one occurrence of it, changed meanwhile', () => {
+    // An exception on Google: two hours later, under its own title.
+    const moved = new EventRecord({
+      ...cancelled,
+      endUtc: Date.parse('2026-07-04T12:00:00Z'),
+      startUtc: Date.parse('2026-07-04T11:00:00Z'),
+      status: 'confirmed',
+      title: 'Daily (moved)',
+    });
+    // Only the occurrence delete reaches Google; the series delete stays offline.
+    const occurrenceLands = testLayerWith({
+      ...stubClient,
+      deleteEvent: ({ eventId }) =>
+        eventId === instanceId
+          ? Effect.void
+          : Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
+    });
+    const seriesDelete = Effect.map(listOps, (ops) => ops.find((op) => op.eventId === 'master1'));
+
+    it.effect('stays deleted when the series delete is discarded before it lands', () =>
+      Effect.gen(function* () {
+        yield* deleteThenPull(pulled, moved);
+        const mutations = yield* EventMutations;
+        yield* mutations.deleteRecurring({ ...target, scope: 'instance' });
+        yield* mutations.discardPendingOp((yield* seriesDelete)!.id);
+        expect((yield* listOps).map((op) => op.eventId)).toEqual([instanceId]);
+        expect((yield* rowOf(instanceId))?.status).toBe('cancelled');
+
+        yield* mutations.processPendingOps();
+        expect(yield* listOps).toEqual([]);
+        expect((yield* rowOf(instanceId))?.status).toBe('cancelled');
+      }).pipe(noYield, Effect.provide(occurrenceLands)),
+    );
+
+    it.effect('and after it landed', () =>
+      Effect.gen(function* () {
+        yield* deleteThenPull(pulled, moved);
+        const mutations = yield* EventMutations;
+        yield* mutations.deleteRecurring({ ...target, scope: 'instance' });
+        yield* mutations.processPendingOps();
+        expect((yield* listOps).map((op) => op.eventId)).toEqual(['master1']);
+
+        yield* mutations.discardPendingOp((yield* seriesDelete)!.id);
+        expect((yield* rowOf(instanceId))?.status).toBe('cancelled');
+      }).pipe(noYield, Effect.provide(occurrenceLands)),
+    );
+
+    it.effect('its delete takes the exception as Google has it: a discard shows it again', () =>
+      Effect.gen(function* () {
+        yield* deleteThenPull(pulled, moved);
+        const mutations = yield* EventMutations;
+        yield* mutations.deleteRecurring({ ...target, scope: 'instance' });
+        const remove = (yield* listOps).find((op) => op.eventId === instanceId);
+        expect(remove?.beforePayload?.title).toBe('Daily (moved)');
+        expect(remove?.baseEtag).toBe('"o-1"');
+
+        yield* mutations.discardPendingOp(remove!.id);
+        const row = yield* rowOf(instanceId);
+        expect(row?.status).toBe('confirmed');
+        expect(row?.title).toBe('Daily (moved)');
+        expect(row?.startUtc).toBe(moved.startUtc);
+      }).pipe(noYield, Effect.provide(testLayer)),
+    );
+
+    it.effect('an edit of it patches that exception, and the discard keeps the edit', () =>
+      Effect.gen(function* () {
+        yield* deleteThenPull(pulled, moved);
+        const mutations = yield* EventMutations;
+        yield* mutations.updateRecurring({
+          ...target,
+          changes: { location: 'Room 4' },
+          scope: 'instance',
+        });
+        const edit = (yield* listOps).find((op) => op.eventId === instanceId);
+        // Not the master's slot and title: the patch would move it back.
+        expect(edit?.payload?.title).toBe('Daily (moved)');
+        expect(edit?.payload?.startUtc).toBe(moved.startUtc);
+        expect(edit?.beforePayload?.title).toBe('Daily (moved)');
+        expect(edit?.baseEtag).toBe('"o-1"');
+
+        yield* mutations.discardPendingOp((yield* seriesDelete)!.id);
+        const row = yield* rowOf(instanceId);
+        expect(row?.location).toBe('Room 4');
+        expect(row?.syncStatus).toBe('pending');
+      }).pipe(noYield, Effect.provide(testLayer)),
+    );
+  });
 });
 
 describe('EventMutations: a series keeps its kind', () => {

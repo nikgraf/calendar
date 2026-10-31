@@ -380,6 +380,13 @@ const make: Effect.Effect<
               ...deletions,
               ...cancelled,
             ]);
+            // One the pull skipped at an occurrence delete's tombstone is
+            // what that delete puts back now.
+            yield* pendingOpRepo.rememberPulled(
+              account.id,
+              calendarId,
+              upserts.filter((record) => record.status !== 'cancelled'),
+            );
           }
           // A full list of a big calendar is many pages: let rpc handlers
           // and the UI interleave between them.

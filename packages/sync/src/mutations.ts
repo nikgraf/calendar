@@ -380,6 +380,18 @@ const make: Effect.Effect<
       }
     });
 
+  /** The exceptions a queued delete of the series took locally, as Google has them. */
+  const takenExceptions = (accountId: string, calendarId: string, masterId: string) =>
+    Effect.map(opsForEvent(accountId, calendarId, masterId), (queued) =>
+      queued.flatMap((op) =>
+        op.kind === 'delete'
+          ? (op.beforeOverrides ?? []).map(
+              (override) => new EventRecord({ ...override, calendarId }),
+            )
+          : [],
+      ),
+    );
+
   /**
    * A change of the series made while its delete is still queued (the
    * user acts on the master a pull put back meanwhile) replaces that
@@ -391,18 +403,35 @@ const make: Effect.Effect<
    */
   const restoreTakenExceptions = (accountId: string, calendarId: string, masterId: string) =>
     Effect.gen(function* () {
-      for (const op of yield* opsForEvent(accountId, calendarId, masterId)) {
-        if (op.kind !== 'delete') {
-          continue;
-        }
-        for (const override of op.beforeOverrides ?? []) {
-          if (!(yield* eventRepo.getById(accountId, calendarId, override.id))) {
-            yield* eventRepo.upsertMany([
-              new EventRecord({ ...override, calendarId, syncStatus: 'synced' }),
-            ]);
-          }
+      for (const override of yield* takenExceptions(accountId, calendarId, masterId)) {
+        if (!(yield* eventRepo.getById(accountId, calendarId, override.id))) {
+          yield* eventRepo.upsertMany([new EventRecord({ ...override, syncStatus: 'synced' })]);
         }
       }
+    });
+
+  /**
+   * What an occurrence edit or delete starts from: the occurrence's row,
+   * else the exception a queued series delete took there — while that
+   * delete waits behind the master a pull put back, Google still has the
+   * exception. Built on the master's slot instead, the edit would patch
+   * the exception's own changes away and the delete would remember
+   * nothing to put back. The series delete stays queued, so nothing else
+   * it took comes back.
+   */
+  const occurrenceRow = (
+    accountId: string,
+    calendarId: string,
+    masterId: string,
+    instanceId: string,
+  ) =>
+    Effect.gen(function* () {
+      const row = yield* eventRepo.getById(accountId, calendarId, instanceId);
+      if (row) {
+        return row;
+      }
+      const taken = yield* takenExceptions(accountId, calendarId, masterId);
+      return taken.find((override) => override.id === instanceId) ?? null;
     });
 
   /** Queues a this-and-following truncation of the master: a patch, or its unsent create. */
@@ -970,7 +999,7 @@ const make: Effect.Effect<
           // A cancelled override shadows the generated occurrence locally;
           // deleting the instance id cancels it server-side.
           const instanceId = googleInstanceId(masterId, originalStartUtc, master.isAllDay);
-          const existing = yield* eventRepo.getById(accountId, calendarId, instanceId);
+          const existing = yield* occurrenceRow(accountId, calendarId, masterId, instanceId);
           const tombstone = new EventRecord({
             ...(existing ?? projectInstance(master, originalStartUtc, now)),
             status: 'cancelled',
@@ -1260,7 +1289,7 @@ const make: Effect.Effect<
           // Materialize (or update) the exception under its instance id; the
           // patch on that id creates the exception server-side.
           const instanceId = googleInstanceId(masterId, originalStartUtc, master.isAllDay);
-          const existing = yield* eventRepo.getById(accountId, calendarId, instanceId);
+          const existing = yield* occurrenceRow(accountId, calendarId, masterId, instanceId);
           const base = existing ?? projectInstance(master, originalStartUtc, now);
           if (changes.isAllDay !== undefined && changes.isAllDay !== base.isAllDay) {
             return yield* Effect.fail(new RecurringAllDaySwitchError({ eventId: masterId }));

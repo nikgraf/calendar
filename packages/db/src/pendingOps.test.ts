@@ -1,4 +1,5 @@
 import {
+  Account,
   Attendee,
   CarriedText,
   EventRecord,
@@ -12,7 +13,7 @@ import { Effect, Layer } from 'effect';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
 import { describe } from 'vite-plus/test';
 import { runMigrations } from './migrate.ts';
-import { PendingOpRepo, reposLayer } from './repos.ts';
+import { AccountRepo, EventRepo, PendingOpRepo, reposLayer } from './repos.ts';
 
 const freshDbLayer = () =>
   reposLayer.pipe(
@@ -270,6 +271,46 @@ describe('PendingOpRepo', () => {
         (yield* repo.listAll()).map((entry) => [entry.id, entry.beforePayload !== undefined]),
       );
       expect(kept).toEqual({ del: false, other: true, upd: true });
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
+  it.effect('rememberPulled hands a copy the pull skipped to the queued delete there', () =>
+    Effect.gen(function* () {
+      const repo = yield* PendingOpRepo;
+      const before = eventRow('A');
+      const pulled = (id: string) => new EventRecord({ ...eventRow('B'), id });
+      yield* (yield* AccountRepo).upsert(
+        new Account({
+          contactsEnabled: false,
+          createdAt: 1,
+          email: 'acc-1@example.com',
+          id: 'acc-1',
+          provider: 'google',
+          status: 'ok',
+          tasksEnabled: false,
+        }),
+      );
+      // evt-1: a tombstone the pull skipped; evt-2: a row the pull wrote.
+      yield* (yield* EventRepo).upsertMany([
+        new EventRecord({ ...eventRow('A'), status: 'cancelled', syncStatus: 'pending' }),
+        pulled('evt-2'),
+      ]);
+      yield* repo.enqueue(op('del', { beforePayload: before, eventId: 'evt-1', kind: 'delete' }));
+      yield* repo.enqueue(op('upd', { beforePayload: before, eventId: 'evt-1', kind: 'update' }));
+      yield* repo.enqueue(op('wrote', { beforePayload: before, eventId: 'evt-2', kind: 'delete' }));
+      yield* repo.enqueue(
+        op('other', {
+          beforePayload: before,
+          calendarId: 'cal-2',
+          eventId: 'evt-1',
+          kind: 'delete',
+        }),
+      );
+      yield* repo.rememberPulled('acc-1', 'cal-1', [pulled('evt-1'), pulled('evt-2')]);
+      const stored = Object.fromEntries(
+        (yield* repo.listAll()).map((entry) => [entry.id, entry.beforePayload?.title]),
+      );
+      expect(stored).toEqual({ del: 'B', other: 'A', upd: 'A', wrote: 'A' });
     }).pipe(Effect.provide(freshDbLayer())),
   );
 

@@ -322,7 +322,17 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   any row there (a tombstone is the user's); the pull writing its copy
   into the delete's snapshot (a second copy of the row). Open: an
   exception a pull re-sends over an occurrence's tombstone never reaches
-  that delete's snapshot.
+  that delete's snapshot (closed by the next record).
+- **An occurrence deleted under a waiting series delete stays deleted** (2026-10-31, #PR)
+  — Opus review of #270: discarding the series delete wrote the exception
+  it took over the occurrence delete's tombstone, and pulls skip that
+  pending row for good. The discard puts an exception back only where no
+  row is; an occurrence edit or delete starts from the exception the
+  waiting delete took (the edit patched it with the master's slot); a
+  pull's copy at a tombstone it skips becomes that delete's snapshot.
+  Rejected: an occurrence change putting all taken exceptions back (the
+  series delete still waits, and its landing removes only the master); a
+  landed occurrence delete rewriting its tombstone (it showed until then).
 - **Re-auth and sync kicks** — a 401 flags the account `reauth_required`
   and keeps its ops queued for after the reconnect (same id, by email);
   wake/unlock/focus/foreground kick a sync, throttled to one per 15 s,

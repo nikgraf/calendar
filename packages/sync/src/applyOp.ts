@@ -418,11 +418,12 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
           }),
         ]);
       }
-      // A series delete took the exceptions with it; a pull may have
-      // brought one back since (synced), which stays.
+      // A series delete took the exceptions with it and owns no row at
+      // their ids: one there since is newer and stays — a pull's copy, or
+      // the user's own occurrence edit or delete of the series a pull put
+      // back (a landed occurrence delete leaves its tombstone pending).
       for (const override of op.beforeOverrides ?? []) {
-        const row = yield* eventRepo.getById(op.accountId, op.calendarId, override.id);
-        if (row && row.syncStatus !== 'pending') {
+        if (yield* eventRepo.getById(op.accountId, op.calendarId, override.id)) {
           continue;
         }
         // An RSVP on the occurrence survived the series delete: it owns the row.
