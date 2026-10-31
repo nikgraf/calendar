@@ -844,16 +844,27 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
    * (pending, or a pulled copy a delete waits for, synced for
    * dropPulledCopy), and all stay while a move into the source is queued
    * (it settles them); the rest go to sync.
+   *
+   * Only what was queued after the move goes, so the move is still queued
+   * here (a discard releases a move before removing it); one no longer
+   * queued was released already, by a discard while its request was out.
+   * An occurrence's id is the master's, `_` and its original start; a
+   * series split off in Google's own UI (`<id>_R<start>`) is its own.
    */
   const releaseMove = (op: PendingOp, destination: string) =>
     Effect.gen(function* () {
       const { accountId, calendarId: source, eventId: masterId } = op;
       const inSeries = (eventId: string) =>
-        eventId === masterId || eventId.startsWith(`${masterId}_`);
+        eventId === masterId ||
+        (eventId.startsWith(`${masterId}_`) && /\d/.test(eventId.charAt(masterId.length + 1)));
+      const all = yield* pendingOpRepo.listAll();
+      const at = all.findIndex((queued) => queued.id === op.id);
+      if (at === -1) {
+        return;
+      }
       let movedOn = false;
-      for (const queued of yield* pendingOpRepo.listAll()) {
+      for (const queued of all.slice(at + 1)) {
         if (
-          queued.id === op.id ||
           queued.accountId !== accountId ||
           queued.calendarId !== destination ||
           !inSeries(queued.eventId)

@@ -591,6 +591,12 @@ const make: Effect.Effect<
     sql.withTransaction(
       Effect.gen(function* () {
         let op = yield* pendingOpRepo.getById(opId);
+        // A move sends back what was queued after it, so its release reads
+        // its place in the queue: it goes once released.
+        if (op?.kind === 'move') {
+          yield* releaseRow(op);
+          return yield* pendingOpRepo.remove(opId);
+        }
         yield* pendingOpRepo.remove(opId);
         while (op) {
           yield* releaseRow(op);
