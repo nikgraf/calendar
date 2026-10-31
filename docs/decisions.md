@@ -313,6 +313,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   (a 403 is no reason to lose an edit); a discard waiting for the drain
   (it sent the move meanwhile). Open: a discarded sent move with Google
   unreachable goes back; a refused sent create takes only one move along.
+- **A pulled copy is the snapshot a replaced delete hands on** (2026-10-31, #270)
+  — Opus review of #267: an edit, delete or answer of the copy a pull put
+  back while a delete waited took the delete's (or an earlier answer's)
+  older snapshot, so a discard put back stale values as synced. A synced,
+  live row at a waiting delete's id is now the snapshot; a discarded
+  answer leaves it as it is, and an op that lands settles it. Rejected:
+  any row there (a tombstone is the user's); the pull writing its copy
+  into the delete's snapshot (a second copy of the row). Open: an
+  exception a pull re-sends over an occurrence's tombstone never reaches
+  that delete's snapshot.
 - **Re-auth and sync kicks** — a 401 flags the account `reauth_required`
   and keeps its ops queued for after the reconnect (same id, by email);
   wake/unlock/focus/foreground kick a sync, throttled to one per 15 s,
