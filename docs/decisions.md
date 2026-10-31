@@ -159,6 +159,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   began at a relaunch, and half-made state stays), a recovery in the
   shared sub-flows, a near-black threshold. Open: whether the reboot
   always brings the display back.
+- **The live nightly's Maestro through `run-flows.ts`** (2026-10-30,
+  `todo/live-driver-retry`) — `google-live.yml` called `maestro test`
+  directly, so run 40997493433 died at `04a` when its runner wasn't up at
+  120 s. Its three invocations now go through `run-flows.ts` with the 240 s
+  wait, unreset (erasing loses the dev client's Metro project). The live
+  flows retry only a driver that never started (`E2E_RETRY`): one cut
+  short leaves items on Google under the run's titles for a rerun to
+  match. Open: a bootstrap `openurl` timeout; a black display at `04a`
+  (#263's retry runs here unrebooted); a deleted event left on screen.
 - **Flow 06's sheet drag off the bottom edge** (2026-10-29,
   `todo/editor-sheet-drag-race`) — the drag that raises the half-height
   editor started at 93 %, inside SpringBoard's bottom-edge gesture region:

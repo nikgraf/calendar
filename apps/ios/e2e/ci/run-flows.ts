@@ -12,7 +12,10 @@
  *
  * With E2E_APP (the .app CI installed) the second run starts on an erased
  * simulator with a fresh install of it; without, nothing is reset (a
- * developer's simulator and dev client keep their data).
+ * developer's simulator and dev client keep their data). With
+ * E2E_RETRY=never-started only an invocation whose driver never started
+ * runs again: the live flows' items on Google outlive any reset, so a flow
+ * cut short would meet its own leftovers.
  *
  * e2e/ci/package.json marks these files as ES modules for Node: the app's
  * own package.json is part of the native fingerprint.
@@ -158,6 +161,13 @@ const main = async (): Promise<number> => {
         ? 'maestro failed, but every flow passed'
         : `no retry: ${decision.reason}`,
     );
+    return first.status;
+  }
+  if (
+    process.env['E2E_RETRY'] === 'never-started' &&
+    decision.flows.some((flow) => flow.cause !== 'never-started')
+  ) {
+    say('no retry: the flows ran before they were lost, and E2E_RETRY=never-started');
     return first.status;
   }
 

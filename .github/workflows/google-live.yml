@@ -153,8 +153,10 @@ jobs:
     needs: [decide, live-node]
     if: ${{ !cancelled() && needs.decide.outputs.run == 'true' }}
     runs-on: macos-26
-    # ci.yml's ios-e2e: 37–43 min green; the live flows are fewer but wait on Google.
-    timeout-minutes: 60
+    # 27–35 min green (11–14 of them the live flows, which wait on Google);
+    # the cap leaves room for run-flows.ts to run the permissions and the
+    # live invocations once more each (up to 240 s of driver wait apiece).
+    timeout-minutes: 75
     env:
       CI: 1
       EXPO_NO_TELEMETRY: 1
@@ -163,6 +165,10 @@ jobs:
       # Pinned + checksum-verified below; keep in step with ci.yml.
       MAESTRO_VERSION: 2.10.0
       MAESTRO_SHA256: 29b675e10cc12080e445e9bfb2e2b4e4dfb9c0f2e30d5884120d258b5e1cd991
+      # How long Maestro waits for its XCTest runner (ms; 120 s by default),
+      # as in ci.yml. The nightly's permissions step gave up at 120 s with
+      # the runner not up (run 40997493433).
+      MAESTRO_DRIVER_STARTUP_TIMEOUT: 240000
       GOOGLE_LIVE_RUN_TAG: gh-${{ github.run_id }}-${{ github.run_attempt }}
       GOOGLE_DESKTOP_CLIENT_ID: ${{ secrets.GOOGLE_DESKTOP_CLIENT_ID }}
       GOOGLE_DESKTOP_CLIENT_SECRET: ${{ secrets.GOOGLE_DESKTOP_CLIENT_SECRET }}
@@ -279,12 +285,18 @@ jobs:
           sleep 10
           xcrun simctl io "$SIMULATOR_UDID" screenshot "$RUNNER_TEMP/safari-metro-status.png"
           xcrun simctl terminate "$SIMULATOR_UDID" com.apple.mobilesafari || true
+      # Every Maestro invocation goes through run-flows.ts, as in ci.yml: a
+      # driver that never started runs the invocation once more, and the
+      # flows a dead driver took down or the simulator drew black run again
+      # (not the live flows, below); a flow that failed on its own never
+      # runs again. Without E2E_APP nothing is reset in between, so the dev
+      # client keeps its Metro project, and a black display is not rebooted.
       - name: Bootstrap the dev client onto Metro
         working-directory: apps/ios
-        run: maestro test --device "$SIMULATOR_UDID" e2e/flows/00-devclient-bootstrap.yaml
+        run: node e2e/ci/run-flows.ts bootstrap e2e/flows/00-devclient-bootstrap.yaml
       - name: First-time device permissions
         working-directory: apps/ios
-        run: maestro test --device "$SIMULATOR_UDID" e2e/flows/04a-device-permissions.yaml
+        run: node e2e/ci/run-flows.ts permissions e2e/flows/04a-device-permissions.yaml
       - name: This run's scratch calendar, list and access token
         # After the bootstrap (the slow part), so the one-hour token has
         # the flows to itself. Exports MAESTRO_LIVE_* to the job env (the
@@ -296,8 +308,14 @@ jobs:
         # Explicit files keep this order (a directory's order is not
         # deterministic): the calendar must exist before anything is
         # written into it.
+        env:
+          # Only a driver that never started, before any flow, runs these
+          # again: a flow cut short (a dead driver, a black display) left
+          # its items in the run's calendar under the same titles, which a
+          # rerun could match.
+          E2E_RETRY: never-started
         run: |
-          maestro test --device "$SIMULATOR_UDID" \
+          node e2e/ci/run-flows.ts live \
             e2e/live/flows/01-live-calendar.yaml \
             e2e/live/flows/02-live-create-edit-delete.yaml \
             e2e/live/flows/03-live-conflicts.yaml \
@@ -325,8 +343,9 @@ jobs:
           done
       - name: Redact credentials from the diagnostics
         # Maestro writes every MAESTRO_* variable, the access token
-        # included, into each flow's commands.json and maestro.log;
-        # ::add-mask:: covers the job log, not artifact files. The upload
+        # included, into each flow's commands.json and maestro.log, and
+        # run-flows.ts keeps what it printed in console.log; ::add-mask::
+        # covers the job log, not artifact files. The upload
         # only runs if this step verified the files clean.
         id: redact
         if: failure()
