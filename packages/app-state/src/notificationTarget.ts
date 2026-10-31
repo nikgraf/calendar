@@ -5,6 +5,8 @@ import {
   type EventRecord,
   googleInstanceId,
   isAppleCalendarAccount,
+  type TaskNotificationTarget,
+  type TaskRecord,
   Temporal,
   toZonedDateTime,
 } from '@calendar/core';
@@ -75,6 +77,22 @@ export const findNotificationEvent = (
   target: EventNotificationTarget,
 ): Promise<EventRecord | null> =>
   Effect.runPromise(lookUpEvent(client, target).pipe(Effect.orElseSucceed(() => null)));
+
+/**
+ * The task a tapped notification is about, by its stored identity, or
+ * null when it is gone (or unreadable): a tap then only brings the app
+ * forward. A Google task moved to another list or re-created under its
+ * server id is gone by this name too.
+ */
+export const findNotificationTask = (
+  client: Pick<BackendClient, 'getTask'>,
+  target: TaskNotificationTarget,
+): Promise<TaskRecord | null> =>
+  Effect.runPromise(
+    client
+      .getTask({ accountId: target.accountId, listId: target.listId, taskId: target.taskId })
+      .pipe(Effect.orElseSucceed(() => null)),
+  );
 
 /**
  * Where an event on screen is now: its row as stored (with any edit made

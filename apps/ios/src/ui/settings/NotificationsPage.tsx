@@ -7,11 +7,14 @@ import {
 import {
   birthdayRemindersSummary,
   DEVICE_ONLY_SETTING_COPY,
+  dismissesWhenDone,
   dismissesWhenOver,
 } from '@calendar/core';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useState } from 'react';
 import { Linking } from 'react-native';
 import { BirthdayReminderRows } from '../BirthdayReminderRows.tsx';
+import { dateFromParts, toTimeString } from '../editSheetShared.ts';
 import { useTheme } from '../theme.ts';
 import {
   ActionRow,
@@ -28,7 +31,8 @@ import { notificationsBlocked, useNotificationSettings } from './NotificationSet
 
 /**
  * Notifications on this iPhone: before events (and, if asked, Apple
- * Calendar events too — the Calendar app already notifies for those), for
+ * Calendar events too — the Calendar app already notifies for those), on
+ * the day a task is due (Apple Reminders too, unless switched off), for
  * contact birthdays at each reminder's lead and time, and the people with
  * reminders of their own. All device-local; a save that switches one on asks iOS
  * for permission, and the page says up front when iOS has said no.
@@ -63,6 +67,13 @@ export function NotificationsSections() {
       tried();
     },
   };
+  const tasks = {
+    ...notifications.tasks,
+    save: (change: Parameters<typeof notifications.tasks.save>[0]) => {
+      notifications.tasks.save(change);
+      tried();
+    },
+  };
   const birthdays = {
     ...notifications.birthdays,
     save: (change: Parameters<typeof notifications.birthdays.save>[0]) => {
@@ -71,7 +82,9 @@ export function NotificationsSections() {
     },
   };
   const blocked =
-    notificationsBlocked(events, permission) || notificationsBlocked(birthdays, permission);
+    notificationsBlocked(events, permission) ||
+    notificationsBlocked(tasks, permission) ||
+    notificationsBlocked(birthdays, permission);
   const inLesson = useInLesson();
 
   return (
@@ -146,6 +159,78 @@ export function NotificationsSections() {
             switchTestID="event-notifications-dismiss"
             title="Remove When Over"
             value={dismissesWhenOver(events.settings)}
+          />
+        </Section>
+      ) : null}
+
+      {tasks.settings ? (
+        <Section
+          footer={
+            <>
+              <Footer>
+                A notification on the day a task is due, at the time above; a reminder with a time
+                of its own notifies at that time. Reminders already notifies you about reminders
+                with an alert; turn Apple Reminders off to leave those to it.
+              </Footer>
+              <Footer>
+                Remove When Done takes a task’s notification out of Notification Center once it is
+                checked off or deleted, the next time Solunivo runs.
+              </Footer>
+              {tasks.failure ? (
+                <Footer testID="task-notifications-failed" tone="danger">
+                  {tasks.failure}
+                </Footer>
+              ) : null}
+            </>
+          }
+          header="Tasks"
+          testID="task-notifications"
+        >
+          <SwitchRow
+            onValueChange={(enabled) => tasks.save({ enabled })}
+            switchTestID="task-notifications-enabled"
+            title="Task Notifications"
+            value={tasks.settings.enabled}
+          />
+          <Row
+            accessory={
+              <DateTimePicker
+                accessibilityLabel="Notify at, time"
+                disabled={!tasks.settings.enabled}
+                display="compact"
+                mode="time"
+                onChange={(_, picked) => {
+                  if (picked) {
+                    tasks.save({ time: toTimeString(picked) });
+                  }
+                }}
+                testID="task-notifications-time"
+                value={dateFromParts('2026-01-01', tasks.settings.time)}
+              />
+            }
+            disabled={!tasks.settings.enabled}
+            title="Notify At"
+          />
+          <SwitchRow
+            disabled={!tasks.settings.enabled}
+            onValueChange={(includeAppleReminders) => tasks.save({ includeAppleReminders })}
+            switchTestID="task-notifications-reminders"
+            title="Apple Reminders"
+            value={tasks.settings.includeAppleReminders}
+          />
+          {/* Live while notifications are off: they still govern the ones
+              already delivered, which the scheduler keeps clearing. */}
+          <SwitchRow
+            onValueChange={(dismissTasksWhenDone) => tasks.save({ dismissTasksWhenDone })}
+            switchTestID="task-notifications-dismiss-tasks"
+            title="Remove Tasks When Done"
+            value={dismissesWhenDone(tasks.settings, 'google')}
+          />
+          <SwitchRow
+            onValueChange={(dismissRemindersWhenDone) => tasks.save({ dismissRemindersWhenDone })}
+            switchTestID="task-notifications-dismiss-reminders"
+            title="Remove Reminders When Done"
+            value={dismissesWhenDone(tasks.settings, 'apple')}
           />
         </Section>
       ) : null}

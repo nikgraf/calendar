@@ -217,7 +217,7 @@ export const lessonCopy = (id: LessonRowId, device: OnboardingDevice): LessonCop
     case 'alerts':
       return {
         intro: `Solunivo schedules alerts on ${here} itself. Nothing goes through a server, and the times come from each event.`,
-        subtitle: `Event and birthday reminders on ${here}`,
+        subtitle: `Event, task and birthday reminders on ${here}`,
         title: 'Alerts',
       };
     case 'contacts':

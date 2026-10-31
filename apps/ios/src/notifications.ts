@@ -24,7 +24,14 @@ const load = () => {
   }
 };
 
-const native = load();
+/**
+ * `EXPO_PUBLIC_CALENDAR_NOTIFICATIONS=off` (inlined at bundle time; CI's
+ * e2e bundle sets it) leaves expo-notifications out, like the desktop's
+ * `CALENDAR_NOTIFICATIONS=off`: the noop sink answers every permission
+ * ask itself, so no flow meets the iOS alert — a fixture task due today
+ * would otherwise schedule one on any run before its time.
+ */
+const native = process.env['EXPO_PUBLIC_CALENDAR_NOTIFICATIONS'] === 'off' ? undefined : load();
 
 export const iosNotificationSink: Layer.Layer<NotificationSink> = Layer.succeed(
   NotificationSink,

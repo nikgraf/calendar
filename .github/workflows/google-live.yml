@@ -257,6 +257,8 @@ jobs:
           EXPO_PUBLIC_CALENDAR_SYNC_INTERVAL_MS: '30000'
           # No Getting started card over the calendar the live flows read.
           EXPO_PUBLIC_CALENDAR_ONBOARDING: 'off'
+          # The live flows create real tasks: never let one raise the iOS alert.
+          EXPO_PUBLIC_CALENDAR_NOTIFICATIONS: 'off'
         run: |
           nohup pnpm exec expo start --port 8081 > "$RUNNER_TEMP/metro.log" 2>&1 &
           for _ in $(seq 1 60); do
