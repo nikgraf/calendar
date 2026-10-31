@@ -303,7 +303,7 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   landed delete also taking a pending row no op owns (the user's later
   move would vanish). Open: an edit of one occurrence leaves the series'
   queued delete in place, so the delete still wins there.
-- **A pulled copy is the snapshot a replaced delete hands on** (2026-10-31, #PR)
+- **A pulled copy is the snapshot a replaced delete hands on** (2026-10-31, #270)
   — Opus review of #267: an edit, delete or answer of the copy a pull put
   back while a delete waited took the delete's (or an earlier answer's)
   older snapshot, so a discard put back stale values as synced. A synced,
