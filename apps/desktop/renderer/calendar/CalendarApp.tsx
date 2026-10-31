@@ -20,12 +20,15 @@ import {
 } from '@calendar/core';
 import {
   defaultTodoKind,
-  type EditorSeed,
   draftOccurrences,
+  type EditorSeed,
   eventStartDay,
   findCurrentEvent,
   findNotificationEvent,
+  findNotificationTask,
+  type QuickAddItem,
   useAccounts,
+  useBirthdaysInRangeStable,
   useCalendarNavigation,
   useCalendars,
   useCaptureModel,
@@ -34,21 +37,19 @@ import {
   useEventsInRangeStable,
   useGuardedMutations,
   useListColorLookup,
-  useOverdueTasksStable,
-  useRequestDraftFocus,
   useModelAvailability,
   useOnDraftReveal,
+  useOverdueTasksStable,
+  useRequestDraftFocus,
   useSearch,
   useSearchThread,
   useTaskLists,
-  useBirthdaysInRangeStable,
   useTaskReadOnlyLookup,
   useTasksInRangeStable,
   useTimeZones,
   useToday,
   useUpdateViewPreferences,
   useViewPreferences,
-  type QuickAddItem,
 } from '@calendar/app-state';
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import { desktopLanguageModel } from '../ai/desktopModel.ts';
@@ -294,7 +295,14 @@ function CalendarBody({
   // is dismissed, as on iOS: its dialog would cover the event, and a parse
   // still running would replace the inspector with its editor.
   const openNotificationTarget = useEffectEvent((target: NotificationTarget) => {
-    if (target.kind !== 'event') {
+    if (target.kind === 'task') {
+      // A clicked task reminder opens the task's editor; one done or gone since opens nothing.
+      void findNotificationTask(backend, target).then((task) => {
+        if (task) {
+          capture.dismiss();
+          setPanel({ kind: 'editTask', opening: nextOpening(), task });
+        }
+      });
       return;
     }
     void findNotificationEvent(backend, target).then((event) => {

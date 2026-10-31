@@ -30,7 +30,7 @@ const ensurePermission = () =>
       return;
     }
     const notification = new Notification({
-      body: "You'll get reminders for events and birthdays while Solunivo is running.",
+      body: "You'll get reminders for events, tasks and birthdays while Solunivo is running.",
       title: 'Notifications are on',
     });
     notification.on('click', showMainWindow);

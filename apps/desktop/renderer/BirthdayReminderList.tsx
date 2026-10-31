@@ -18,7 +18,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
  * same notification key, so it never fires. `onCommit` applies the time
  * to the list as last drawn (see `BirthdayReminderList`).
  */
-function ReminderTimeInput({
+export function ReminderTimeInput({
   label,
   onCommit,
   value,
