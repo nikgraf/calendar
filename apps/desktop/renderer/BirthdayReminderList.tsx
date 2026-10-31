@@ -14,11 +14,11 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
  * closed), never per keystroke. Every keystroke is a whole time to the
  * field ("1" of "19" reads 01:00; a 12-hour clock reads AM until the
  * last segment), and a saved time re-plans at once: for a birthday today
- * a passed time fires straight away, and the time meant after it has the
- * same notification key, so it never fires. `onCommit` applies the time
+ * a time moved past now stays silent, and the time meant after it fires
+ * then. `onCommit` applies the time
  * to the list as last drawn (see `BirthdayReminderList`).
  */
-function ReminderTimeInput({
+export function ReminderTimeInput({
   label,
   onCommit,
   value,

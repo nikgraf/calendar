@@ -1288,6 +1288,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   back. Rejected: reconciling against stored events (a lookup each, a rule
   for gone ones). Open: an end edited after delivery keeps the old
   deadline; with the app closed it waits for the next pass; birthdays stay.
+- **Task notifications** (2026-10-31, #272) — tasks and reminders notify
+  on both apps: a reminder with a time at it, any other at a time-of-day
+  setting (09:00) on its due day; Apple Reminders included by default
+  (Nik's call: twice for one with an alert); two per-provider "Remove …
+  When Done" switches on iOS, stored once set like Remove When Over. Done
+  is state, not a payload deadline: the row gone (a minute's grace),
+  completed or on another day, read by list then id (a move keeps it). A
+  Mac shows a plan whose moment fell since its last pass or whose row
+  predates it, never one created past it. Rejected: a settings-free
+  reconcile. Open: an offline create whose id lands late stays silent.
 
 ## Calendar mirrors
 

@@ -13,7 +13,7 @@ import { PlaceCandidate } from './geo/candidates.ts';
 import { PlaceSuggestion } from './geo/location.ts';
 import { MirrorCalendarRef, MirrorDefinition } from './mirror/definition.ts';
 import { MirrorPreview, MirrorView } from './mirror/status.ts';
-import { EventNotificationSettings } from './notifications/settings.ts';
+import { EventNotificationSettings, TaskNotificationSettings } from './notifications/settings.ts';
 import { SearchQuery } from './search/query.ts';
 import { SearchResults } from './search/results.ts';
 import { SettingsDocument, SettingsImportSummary } from './settingsDocument.ts';
@@ -465,6 +465,16 @@ export class AppBackendRpcs extends RpcGroup.make(
     error: BackendError,
     success: EventNotificationSettings,
   }),
+  Rpc.make('getTaskNotificationSettings', {
+    error: BackendError,
+    success: TaskNotificationSettings,
+  }),
+  /** One task by its stored identity (what a tapped task reminder names), or null when gone. */
+  Rpc.make('getTask', {
+    error: BackendError,
+    payload: { accountId: Schema.String, listId: Schema.String, taskId: Schema.String },
+    success: Schema.NullOr(TaskRecord),
+  }),
   /** Contact birthdays (Google People + device) falling on days in the window, inclusive bounds. */
   Rpc.make('getBirthdaysInRange', {
     error: BackendError,
@@ -791,6 +801,11 @@ export class AppBackendRpcs extends RpcGroup.make(
   Rpc.make('setEventNotificationSettings', {
     error: BackendError,
     payload: EventNotificationSettings,
+    success: Schema.Struct({ notificationsGranted: Schema.Boolean }),
+  }),
+  Rpc.make('setTaskNotificationSettings', {
+    error: BackendError,
+    payload: TaskNotificationSettings,
     success: Schema.Struct({ notificationsGranted: Schema.Boolean }),
   }),
   Rpc.make('setCalendarColor', {

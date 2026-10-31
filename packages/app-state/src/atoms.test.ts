@@ -82,6 +82,9 @@ const makeStubClient = () => {
       }),
     getOnboarding: () => Effect.succeed({ card: 'expanded' as const, lessons: {} }),
     getOverdueTasks: () => Effect.succeed([]),
+    getTask: () => Effect.succeed(null),
+    getTaskNotificationSettings: () =>
+      Effect.succeed({ enabled: true, includeAppleReminders: true, time: '09:00' }),
     getTasksInRange: () => Effect.succeed([]),
     getTimeZoneSettings: () =>
       Effect.sync(() => {
@@ -147,6 +150,7 @@ const makeStubClient = () => {
     setEventNotificationSettings: () => Effect.succeed({ notificationsGranted: true }),
     setMirrorEnabled: () => fail('not stubbed'),
     setTaskListVisible: () => Effect.void,
+    setTaskNotificationSettings: () => Effect.succeed({ notificationsGranted: true }),
     setTimeZoneSettings: () => Effect.void,
     setViewPreferences: () => Effect.void,
     syncNow: () => Effect.void,

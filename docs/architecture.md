@@ -1401,7 +1401,7 @@ gateway carries all of it. Details, limits and the threat model:
   `birthdayMergeKey`, so an override survives a source coming or going;
   both read values saved before each reminder had its own time through
   `upgradeBirthdayReminderData`, as the settings document does —
-  `eventNotifications`, `timeZones`, `viewPreferences`, `onboarding`,
+  `eventNotifications`, `taskNotifications`, `timeZones`, `viewPreferences`, `onboarding`,
   `mirrors`, `mirrors.local`, `importedVisibility`,
   `localNotifications.*`), behind
   rpc because the consumer is a backend job in both hosts. The portable
@@ -1475,38 +1475,70 @@ gateway carries all of it. Details, limits and the threat model:
   an event reminder adds the start in the primary zone when that reads
   another clock ("9:00 AM (3:00 PM Vienna)", `planEventReminders`).
 - **Local notifications**: `LocalNotifications` (packages/sync) runs its
-  own loop — outside the sync pass — over two producers, `loadEventPlans`
+  own loop — outside the sync pass — over three producers, `loadEventPlans`
   (visible calendars, a week ahead, `useDefault` resolved against the
   calendar's `defaultReminders`, Apple Calendar events only when the
-  setting includes them) and `loadBirthdayPlans` (one notification per
+  setting includes them), `loadBirthdayPlans` (one notification per
   reminder — a lead time and its own time of day, one per lead; a
   person's own reminders replace the general ones; the general switch
-  gates both), merged
+  gates both) and `loadTaskPlans` (open tasks on visible lists due today
+  through a week ahead: a task with a time of its own at that time, any
+  other at `taskNotifications.time` on its due day, both on the device's
+  clock — a reminder with an instant of its own on that instant's day
+  here, since its stored day was written in the zone the device was in
+  when the row was last read; Apple Reminders unless switched off; a
+  Google task still under
+  its temporary id skipped; one per task and due day, key
+  `task:<account>/<id>:<dueDate>` (not the list: a move keeps the id; a
+  reminder with an instant of its own `…/<id>@<dueUtc>`, which no zone
+  change moves),
+  `expiresAt` midnight after the due day, no `dismissAt`), merged
   into one `PlannedNotification` list, each carrying a `target` the tap
-  resolves (`findNotificationEvent`). A producer whose setting is off
-  returns nothing; the OS schedule is cleared only when both do. The
+  resolves (`findNotificationEvent`, `findNotificationTask`). A producer
+  whose setting is off returns nothing; the OS schedule is cleared only
+  when all do. The
   platform `NotificationSink` delivers: desktop fires an Electron
-  `Notification` when one is due and, after sleep, only while the plan's
-  `expiresAt` allows (fired keys kept in `device_settings`); iOS replaces
+  `Notification` for what came due since its last pass
+  (`localNotifications.lastPass` in `device_settings`, beside the fired
+  keys) or whose subject predates its moment (`PlannedNotification.since`:
+  the row's `updatedAt`; for tasks and birthdays the later of that and
+  the settings row's stamp, with `localNotifications.tasksSince` standing
+  in until task notifications are first saved), while the plan's
+  `expiresAt` allows — a Mac asleep or closed through the moment catches
+  up, a row a pull brings after the pass still shows, a plan whose moment
+  was past when its subject came to be (a task created in the afternoon,
+  a notify time moved earlier) stays silent as on iOS, and a key fires
+  again at a later moment (a reminder postponed); iOS replaces
   the pending expo-notifications schedule with the soonest ≤ 60 whenever
   the digest changes. An event plan also carries `dismissAt` — its end
   (all-day: midnight after the last day on the device's clock), never
   before the grace a missed reminder keeps (`expiresAt`: five minutes
   timed, twelve hours all-day); a birthday none — in the notification
   payload (part of the digest). After the hand-over, every pass, even one
-  whose hand-over failed, asks the scheduled sink to dismiss delivered
-  notifications past it, so a reminder leaves Notification Center at the
-  next pass: the foreground loop, a return to the foreground, or the
-  background task (with the app closed, that can be hours). The iOS
-  switch "Remove When Over" (`EventNotificationSettings.dismissWhenOver`)
-  skips that step; the payloads keep their deadline either way. Absent
-  reads as on and stays absent until someone flips the switch; a save or
-  import that leaves it out keeps the stored value, and an import compares
-  by effect (`sameEventNotificationSettings`). The Mac has no switch (it
-  never removes a notification): it stores a value only from an import and
-  passes it on like the other fields. The loop sleeps until the next
-  delivery (5 s..60 s)
-  and re-plans, debounced, on `EVENTS_KEY` / `BIRTHDAYS_KEY`; a settings
+  whose hand-over failed, reads the delivered list back through the
+  scheduled sink (`DeliveredNotification`: key, `dismissAt`, `target`)
+  and dismisses by the scheduler's rule — an event reminder past its
+  `dismissAt`; a task's once the stored task (read by its list, then by
+  id alone, since a move keeps the id) is completed, on another day than
+  the notification's (a timed reminder: at another instant — a repeating
+  reminder checked off advances in place), or gone for a minute
+  (`ABSENT_GRACE_MS`: a move from another device lands list by list) — so
+  a notification leaves Notification Center at the next pass: the
+  foreground loop, a return to the foreground, or the background task
+  (with the app closed, that can be hours). The iOS switches "Remove When
+  Over" (`EventNotificationSettings.dismissWhenOver`) and, per provider,
+  "Remove Tasks / Reminders When Done"
+  (`TaskNotificationSettings.dismissTasksWhenDone` /
+  `dismissRemindersWhenDone`) skip that step for their kind; the payloads
+  keep their data either way. Absent reads as on and stays absent until
+  someone flips the switch; a save or import that leaves one out keeps
+  the stored value, and an import compares by effect
+  (`sameEventNotificationSettings`, `sameTaskNotificationSettings`). The
+  Mac has none of these switches (it never removes a notification): it
+  stores a value only from an import and passes it on like the other
+  fields. The loop sleeps until the next delivery (5 s..60 s) and
+  re-plans, debounced, on `EVENTS_KEY` / `BIRTHDAYS_KEY` / `TASKS_KEY` /
+  `TASKLISTS_KEY`; a settings
   write is not one of those, so each settings path runs a pass itself
   (a time zone save too: the event text names the primary zone).
   On iOS a background task (`apps/ios/src/backgroundTask.ts`,

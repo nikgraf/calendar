@@ -19,6 +19,7 @@ import {
   readBirthdayReminderOverrides,
   readBirthdayReminderSettings,
   readEventNotificationSettings,
+  readTaskNotificationSettings,
   readTimeZoneSettings,
   readViewPreferences,
 } from './deviceSettings.ts';
@@ -161,6 +162,7 @@ export const buildSettingsDocument: Effect.Effect<
       : { desktop: { screenPrivacy: desktop.screenPrivacy } }),
     eventNotifications: yield* readEventNotificationSettings,
     mirrors: yield* readMirrors,
+    taskNotifications: yield* readTaskNotificationSettings,
     timeZones: yield* readTimeZoneSettings,
     version: SETTINGS_DOCUMENT_VERSION,
     // The lane cap and the weekend travel; the opening view and the sidebar are this device's taste.

@@ -1,11 +1,11 @@
 import { Option, Schema } from 'effect';
-import type { EventRecord } from '../types.ts';
+import type { EventRecord, TaskRecord } from '../types.ts';
 
 /**
- * What a tap on a notification opens: one occurrence of an event. Read
+ * What a tap on an event reminder opens: one occurrence of an event. Read
  * back from the OS or across IPC, so it is decoded, never trusted.
  */
-export const NotificationTarget = Schema.Struct({
+export const EventNotificationTarget = Schema.Struct({
   accountId: Schema.String,
   calendarId: Schema.String,
   eventId: Schema.String,
@@ -19,6 +19,22 @@ export const NotificationTarget = Schema.Struct({
   /** The occurrence's start: which instance of a series, and the day it is on. */
   startUtc: Schema.Number,
 });
+export type EventNotificationTarget = typeof EventNotificationTarget.Type;
+
+/** What a tap on a task reminder opens: the task, by its stored identity. */
+export const TaskNotificationTarget = Schema.Struct({
+  accountId: Schema.String,
+  dueDate: Schema.String,
+  /** A reminder's own instant, when it has one: what the rule compares then, since the day moves with the zone. */
+  dueUtc: Schema.optional(Schema.Number),
+  kind: Schema.Literal('task'),
+  listId: Schema.String,
+  taskId: Schema.String,
+});
+export type TaskNotificationTarget = typeof TaskNotificationTarget.Type;
+
+/** What a tap on a notification opens; `kind` tells which. */
+export const NotificationTarget = Schema.Union([EventNotificationTarget, TaskNotificationTarget]);
 export type NotificationTarget = typeof NotificationTarget.Type;
 
 /** The target naming this occurrence of `event`: what a tap on its reminder opens. */
@@ -27,7 +43,7 @@ export const eventNotificationTarget = (
     EventRecord,
     'accountId' | 'calendarId' | 'id' | 'originalStartUtc' | 'recurringEventId' | 'startUtc'
   >,
-): NotificationTarget => ({
+): EventNotificationTarget => ({
   accountId: event.accountId,
   calendarId: event.calendarId,
   eventId: event.id,
@@ -39,6 +55,25 @@ export const eventNotificationTarget = (
         recurringEventId: event.recurringEventId,
       }),
   startUtc: event.startUtc,
+});
+
+/**
+ * The target naming `task` for the notification about its `dueDate`:
+ * what a tap on it opens, and what the dismissal rule reads the task
+ * back by — the list first, then the id alone, since a move keeps it.
+ * The due day tells a stale notification from the task's current one: a
+ * repeating reminder checked off advances in place under the same id.
+ */
+export const taskNotificationTarget = (
+  task: Pick<TaskRecord, 'accountId' | 'dueUtc' | 'id' | 'listId'>,
+  dueDate: string,
+): TaskNotificationTarget => ({
+  accountId: task.accountId,
+  dueDate,
+  ...(task.dueUtc === undefined ? {} : { dueUtc: task.dueUtc }),
+  kind: 'task',
+  listId: task.listId,
+  taskId: task.id,
 });
 
 const decodeTarget = Schema.decodeUnknownOption(NotificationTarget);
@@ -69,6 +104,16 @@ export interface PlannedNotification {
   readonly fireAt: number;
   /** Stable across runs and unique per producer, so a sink can dedupe. */
   readonly key: string;
+  /**
+   * Epoch ms from which the plan's subject is known to have existed, as
+   * its row or setting records it. An immediate sink that first meets a
+   * plan past its moment shows it when this is before the moment (the
+   * pull that brought the row landed after a pass; the Mac opened after
+   * its sleep) and stays silent when it is not (a task created after its
+   * day's notify time, a setting switched on in the afternoon). Absent,
+   * only the pass clock decides.
+   */
+  readonly since?: number | undefined;
   /** What a tap opens; none just brings the app forward (a birthday). */
   readonly target?: NotificationTarget | undefined;
   readonly title: string;

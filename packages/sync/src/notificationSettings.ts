@@ -3,6 +3,8 @@ import {
   type BirthdayReminderSettings,
   type EventNotificationSettings,
   mergeEventNotificationSettings,
+  mergeTaskNotificationSettings,
+  type TaskNotificationSettings,
   type TimeZoneSettings,
   withBirthdayOverride,
 } from '@calendar/core';
@@ -12,9 +14,11 @@ import type { SqlError } from 'effect/sql/SqlError';
 import {
   readBirthdayReminderSettings,
   readEventNotificationSettings,
+  readTaskNotificationSettings,
   updateBirthdayReminderOverrides,
   writeBirthdayReminderSettings,
   writeEventNotificationSettings,
+  writeTaskNotificationSettings,
   writeTimeZoneSettings,
 } from './deviceSettings.ts';
 import { LocalNotifications } from './localNotifications.ts';
@@ -87,6 +91,16 @@ export const applyEventNotificationSettings = (
     const previous = yield* readEventNotificationSettings;
     // A field the caller leaves out (an older file or client) keeps its value.
     yield* writeEventNotificationSettings(mergeEventNotificationSettings(previous, settings));
+    return yield* applyWithPermission(settings.enabled, previous.enabled);
+  });
+
+export const applyTaskNotificationSettings = (
+  settings: TaskNotificationSettings,
+): Effect.Effect<NotificationSettingsResult, SqlError, NotificationSettingsServices> =>
+  Effect.gen(function* () {
+    const previous = yield* readTaskNotificationSettings;
+    // A switch the caller leaves out (an older file or client) keeps its value.
+    yield* writeTaskNotificationSettings(mergeTaskNotificationSettings(previous, settings));
     return yield* applyWithPermission(settings.enabled, previous.enabled);
   });
 

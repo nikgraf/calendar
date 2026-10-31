@@ -207,4 +207,39 @@ describe('event reminders', () => {
     );
     await app.closeSettings();
   });
+  it('stores the task notification switches and time on this device only', async () => {
+    const cdp = await app.openSettings('notifications');
+    await cdp.waitFor(`document.body.textContent.includes('Task notifications')`);
+    expect(
+      await cdp.eval<boolean>(
+        `document.querySelector('[data-testid="task-notifications-device-only"]')?.textContent?.includes('Stored only on this device') ?? false`,
+      ),
+    ).toBe(true);
+    // On by default, Reminders included, nothing stored until the first change.
+    expect(await readDeviceSetting(app.userDataDir, 'taskNotifications')).toBeNull();
+    const clickInput = (label: string) =>
+      cdp.eval(`document.querySelector('input[aria-label=${JSON.stringify(label)}]')?.click()`);
+    const stored = () => readDeviceSetting(app.userDataDir, 'taskNotifications');
+    await cdp.waitFor(
+      `document.querySelector('input[aria-label="Notify me about tasks"]')?.checked === true`,
+    );
+    await cdp.waitFor(
+      `document.querySelector('input[aria-label="Also for Apple Reminders"]')?.checked === true`,
+    );
+    await clickInput('Also for Apple Reminders');
+    // No "Remove When Done" switches here: the Mac never removes a
+    // notification, so a save stores no such value (one comes only from an import).
+    await expect
+      .poll(stored, { timeout: 10_000 })
+      .toEqual({ enabled: true, includeAppleReminders: false, time: '09:00' });
+    await clickInput('Notify me about tasks');
+    await expect
+      .poll(stored, { timeout: 10_000 })
+      .toEqual({ enabled: false, includeAppleReminders: false, time: '09:00' });
+    // Disabled through its fieldset, which the `disabled` property does not show.
+    await cdp.waitFor(
+      `document.querySelector('input[aria-label="Task notification time"]')?.matches(':disabled') === true`,
+    );
+    await app.closeSettings();
+  });
 });

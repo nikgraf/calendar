@@ -1,10 +1,12 @@
 import {
   type BackendClient,
   eventNotificationTarget,
+  type EventNotificationTarget,
   type EventRecord,
   googleInstanceId,
   isAppleCalendarAccount,
-  type NotificationTarget,
+  type TaskNotificationTarget,
+  type TaskRecord,
   Temporal,
   toZonedDateTime,
 } from '@calendar/core';
@@ -28,7 +30,7 @@ type EventLookupClient = Pick<BackendClient, 'getEvent' | 'getEventsInRange'>;
  * is read strictly for that: a range read that could not reach EventKit
  * would otherwise lack it, and no stored row stands in.
  */
-export const lookUpEvent = (client: EventLookupClient, target: NotificationTarget) =>
+export const lookUpEvent = (client: EventLookupClient, target: EventNotificationTarget) =>
   Effect.gen(function* () {
     const events = yield* client.getEventsInRange({
       rangeEndUtc: target.startUtc + DAY_MS,
@@ -72,9 +74,25 @@ export const lookUpEvent = (client: EventLookupClient, target: NotificationTarge
 /** The occurrence a tapped notification is about, or null when it is gone (or unreadable). */
 export const findNotificationEvent = (
   client: EventLookupClient,
-  target: NotificationTarget,
+  target: EventNotificationTarget,
 ): Promise<EventRecord | null> =>
   Effect.runPromise(lookUpEvent(client, target).pipe(Effect.orElseSucceed(() => null)));
+
+/**
+ * The task a tapped notification is about, by its stored identity, or
+ * null when it is gone (or unreadable): a tap then only brings the app
+ * forward. A task re-created under a new id is gone by this name; one
+ * moved to another list is found by its id (`getTask` falls back to it).
+ */
+export const findNotificationTask = (
+  client: Pick<BackendClient, 'getTask'>,
+  target: TaskNotificationTarget,
+): Promise<TaskRecord | null> =>
+  Effect.runPromise(
+    client
+      .getTask({ accountId: target.accountId, listId: target.listId, taskId: target.taskId })
+      .pipe(Effect.orElseSucceed(() => null)),
+  );
 
 /**
  * Where an event on screen is now: its row as stored (with any edit made

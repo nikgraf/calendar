@@ -76,8 +76,12 @@ tags:
     file: ../common/open-settings-page.yaml
     env:
       PAGE: notifications
-- assertVisible:
-    id: 'birthday-reminders'
+# Below the Events and Tasks sections: scroll it into view first.
+- scrollUntilVisible:
+    element:
+      id: 'birthday-reminders'
+    direction: DOWN
+    timeout: 10000
 - assertVisible: 'Birthday Reminders'
 - scrollUntilVisible:
     element:

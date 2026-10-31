@@ -3,8 +3,13 @@ import {
   useBirthdayReminderSettings,
   useEventNotificationSettings,
   useSettingsEditor,
+  useTaskNotificationSettings,
 } from '@calendar/app-state';
-import type { BirthdayReminderSettings, EventNotificationSettings } from '@calendar/core';
+import type {
+  BirthdayReminderSettings,
+  EventNotificationSettings,
+  TaskNotificationSettings,
+} from '@calendar/core';
 import { createContext, type ReactNode, useContext, useEffect, useState } from 'react';
 import { AppState } from 'react-native';
 import { type NotificationPermission, notificationPermission } from '../../notifications.ts';
@@ -74,6 +79,7 @@ interface NotificationSettingsValue {
   birthdays: NotificationEditor<BirthdayReminderSettings>;
   events: NotificationEditor<EventNotificationSettings>;
   permission: NotificationPermission | null;
+  tasks: NotificationEditor<TaskNotificationSettings>;
 }
 
 const NotificationSettingsContext = createContext<NotificationSettingsValue | null>(null);
@@ -86,11 +92,17 @@ const NotificationSettingsContext = createContext<NotificationSettingsValue | nu
  * editor per setting keeps them in step.
  */
 export function NotificationSettingsProvider({ children }: { children: ReactNode }) {
-  const { setBirthdayReminderSettings, setEventNotificationSettings } = useBackendMutations();
+  const { setBirthdayReminderSettings, setEventNotificationSettings, setTaskNotificationSettings } =
+    useBackendMutations();
   const [permission, recheck] = useNotificationPermission();
   const events = useNotificationEditor(
     useEventNotificationSettings(),
     setEventNotificationSettings,
+    recheck,
+  );
+  const tasks = useNotificationEditor(
+    useTaskNotificationSettings(),
+    setTaskNotificationSettings,
     recheck,
   );
   const birthdays = useNotificationEditor(
@@ -99,7 +111,7 @@ export function NotificationSettingsProvider({ children }: { children: ReactNode
     recheck,
   );
   return (
-    <NotificationSettingsContext.Provider value={{ birthdays, events, permission }}>
+    <NotificationSettingsContext.Provider value={{ birthdays, events, permission, tasks }}>
       {children}
     </NotificationSettingsContext.Provider>
   );

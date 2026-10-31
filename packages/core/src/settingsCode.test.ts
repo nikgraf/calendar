@@ -359,4 +359,19 @@ describe('describeSettingsDocument', () => {
   it('says nothing for an empty document', () => {
     expect(describeSettingsDocument({ version: 1 })).toEqual([]);
   });
+
+  it('lists task alerts between event alerts and birthday reminders', () => {
+    const taskNotifications = { enabled: true, includeAppleReminders: true, time: '09:00' };
+    expect(describeSettingsDocument({ ...full, taskNotifications })).toContain(
+      'Event alerts, task alerts and birthday reminders',
+    );
+    expect(describeSettingsDocument({ taskNotifications, version: 1 })).toEqual(['Task alerts']);
+    expect(
+      describeSettingsDocument({
+        birthdayReminders: full.birthdayReminders,
+        taskNotifications,
+        version: 1,
+      }),
+    ).toEqual(['Task alerts and birthday reminders']);
+  });
 });

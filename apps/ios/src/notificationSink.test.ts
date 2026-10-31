@@ -1,4 +1,5 @@
 import type { PlannedNotification } from '@calendar/core';
+import type { DeliveredNotification } from '@calendar/sync';
 import { Effect, Exit } from 'effect';
 import type { NotificationRequestInput, SchedulableTriggerInputTypes } from 'expo-notifications';
 import { describe, expect, it } from 'vite-plus/test';
@@ -89,24 +90,44 @@ describe('makeIosNotificationSink', () => {
     expect(fake.scheduled[0]!.trigger).toEqual({ date: new Date(meeting.fireAt), type: 'date' });
   });
 
-  it('dismisses the delivered notifications whose moment has passed, no other', async () => {
+  it('hands each delivered notification, decoded, to the rule and dismisses the ones it approves', async () => {
+    const taskTarget = {
+      accountId: 'acc',
+      dueDate: '2026-03-04',
+      kind: 'task' as const,
+      listId: 'inbox',
+      taskId: 't1',
+    };
     const fake = fakeNotifications({
       presented: [
         presented('over', { dismissAt: 1000, target }),
-        presented('ending-now', { dismissAt: 2000 }),
         presented('ongoing', { dismissAt: 2001 }),
         presented('birthday'),
-        presented('odd-payload', { dismissAt: '1000' }),
+        presented('odd-payload', { dismissAt: '1000', target: { kind: 'task' } }),
+        presented('rent', { target: taskTarget }),
       ],
     });
-    await Effect.runPromise(scheduledSink(fake.module).dismissDelivered(2000));
-    expect(fake.dismissed).toEqual(['over', 'ending-now']);
+    const seen: Array<DeliveredNotification> = [];
+    await Effect.runPromise(
+      scheduledSink(fake.module).dismissDelivered((delivered) => {
+        seen.push(delivered);
+        return Effect.succeed(delivered.key === 'over' || delivered.key === 'rent');
+      }),
+    );
+    expect(seen).toEqual([
+      { dismissAt: 1000, key: 'over', target },
+      { dismissAt: 2001, key: 'ongoing', target: undefined },
+      { dismissAt: undefined, key: 'birthday', target: undefined },
+      { dismissAt: undefined, key: 'odd-payload', target: undefined },
+      { dismissAt: undefined, key: 'rent', target: taskTarget },
+    ]);
+    expect(fake.dismissed).toEqual(['over', 'rent']);
   });
 
   it('fails when the OS will not list delivered notifications, so the scheduler can log it', async () => {
     const fake = fakeNotifications({ presentedFails: true });
     const exit = await Effect.runPromise(
-      Effect.exit(scheduledSink(fake.module).dismissDelivered(0)),
+      Effect.exit(scheduledSink(fake.module).dismissDelivered(() => Effect.succeed(true))),
     );
     expect(Exit.isFailure(exit)).toBe(true);
     expect(fake.dismissed).toEqual([]);

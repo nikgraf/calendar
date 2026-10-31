@@ -4,6 +4,7 @@ import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import { BirthdayRemindersSection } from '../../BirthdayRemindersSection.tsx';
 import { ContactsSection } from '../../ContactsSection.tsx';
 import { EventNotificationsSection } from '../../EventNotificationsSection.tsx';
+import { TaskNotificationsSection } from '../../TaskNotificationsSection.tsx';
 import { SettingsCodeCard } from '../../settingsCode/SettingsCodeCard.tsx';
 import { exportSettingsToFile, shortPath } from '../../settingsTransfer.ts';
 import { TimeZonesSection } from '../../TimeZonesSection.tsx';
@@ -63,6 +64,7 @@ export function LessonPanel({ id, onClose }: { id: PanelLessonId; onClose: () =>
           {id === 'alerts' ? (
             <>
               <EventNotificationsSection />
+              <TaskNotificationsSection />
               <BirthdayRemindersSection />
             </>
           ) : id === 'contacts' ? (

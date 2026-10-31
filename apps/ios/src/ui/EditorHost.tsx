@@ -2,6 +2,7 @@ import type { CaptureSource } from '@calendar/ai';
 import {
   defaultTodoKind,
   findNotificationEvent,
+  findNotificationTask,
   useCalendars,
   useUpdateOnboarding,
   useCaptureModel,
@@ -420,7 +421,24 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
   // could replace the detail when its run finished, or its held thread
   // once the detail closed. An event deleted since opens nothing and leaves
   // the capture alone.
+  const editTask = (task: TaskRecord) =>
+    setSheet({
+      kind: 'edit',
+      opening: nextOpening(),
+      seed: { initialDate: Temporal.Now.plainDateISO(timeZone) },
+      task,
+    });
   const onNotificationTap = useEffectEvent((target: NotificationTarget) => {
+    if (target.kind === 'task') {
+      // A task reminder opens the task's editor, checked off or not; one deleted since opens nothing.
+      void findNotificationTask(backendClient, target).then((task) => {
+        if (task) {
+          dismissCapture();
+          editTask(task);
+        }
+      });
+      return;
+    }
     void findNotificationEvent(backendClient, target).then((event) => {
       if (event) {
         dismissCapture();
@@ -439,13 +457,7 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
         opening: nextOpening(),
         seed,
       }),
-    editTask: (task) =>
-      setSheet({
-        kind: 'edit',
-        opening: nextOpening(),
-        seed: { initialDate: Temporal.Now.plainDateISO(timeZone) },
-        task,
-      }),
+    editTask,
     lessonEditor: routeSheet?.seed.lesson === undefined ? undefined : routeSheet.opening,
     onEditorDismissed,
     onEditorShown,

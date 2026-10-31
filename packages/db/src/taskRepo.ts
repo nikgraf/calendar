@@ -20,6 +20,15 @@ export interface TaskRepoShape {
     listId: string,
     syncedAt: number,
   ) => Effect.Effect<void, SqlError>;
+  /**
+   * One task by account and id, on whichever list it is now — a move
+   * keeps the id, for both providers — or undefined; an open row first,
+   * should a move's copy and its original overlap.
+   */
+  readonly findById: (
+    accountId: string,
+    taskId: string,
+  ) => Effect.Effect<TaskRecord | undefined, SqlError>;
   /** One task by its full key, or undefined. */
   readonly get: (
     accountId: string,
@@ -308,6 +317,15 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
               AND list_id = ${listId} AND synced_at < ${syncedAt}
               AND sync_status = 'synced'`,
           ),
+        ),
+      findById: (accountId, taskId) =>
+        Effect.map(
+          sql<TaskRow>`
+            SELECT t.*, l.provider AS list_provider FROM tasks t
+            JOIN task_lists l ON l.account_id = t.account_id AND l.id = t.list_id
+            WHERE t.account_id = ${accountId} AND t.id = ${taskId}
+            ORDER BY t.status = 'needsAction' DESC`,
+          (rows) => (rows[0] ? taskFromRow(rows[0]) : undefined),
         ),
       get: (accountId, listId, taskId) =>
         Effect.map(

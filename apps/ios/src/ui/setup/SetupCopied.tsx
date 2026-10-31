@@ -3,6 +3,7 @@ import {
   useBirthdayReminderSettings,
   useEventNotificationSettings,
   useGuardedMutations,
+  useTaskNotificationSettings,
 } from '@calendar/app-state';
 import {
   describeImportSummary,
@@ -47,8 +48,10 @@ export function SetupCopied() {
   // needs is the one-time permission, asked by saving a switched-on one
   // again as it is — never by turning one on the file left off. Guarded:
   // a failed save is a toast, not an unhandled rejection.
-  const { setBirthdayReminderSettings, setEventNotificationSettings } = useGuardedMutations();
+  const { setBirthdayReminderSettings, setEventNotificationSettings, setTaskNotificationSettings } =
+    useGuardedMutations();
   const notifications = useEventNotificationSettings();
+  const taskNotifications = useTaskNotificationSettings();
   const birthdayReminders = useBirthdayReminderSettings();
   const [permission, setPermission] = useState<NotificationPermission | null>(null);
   const [asking, setAsking] = useState(false);
@@ -65,12 +68,16 @@ export function SetupCopied() {
   }, []);
   const alertsPending =
     permission === 'undetermined' &&
-    (notifications?.enabled === true || birthdayReminders?.enabled === true);
+    (notifications?.enabled === true ||
+      taskNotifications?.enabled === true ||
+      birthdayReminders?.enabled === true);
   const allowAlerts = async () => {
     setAsking(true);
     try {
       if (notifications?.enabled === true) {
         await setEventNotificationSettings(notifications);
+      } else if (taskNotifications?.enabled === true) {
+        await setTaskNotificationSettings(taskNotifications);
       } else if (birthdayReminders?.enabled === true) {
         await setBirthdayReminderSettings(birthdayReminders);
       }
@@ -149,7 +156,7 @@ export function SetupCopied() {
         }
         key="alerts"
         leading={<IconTile color={colors['event-mint-edge']} name="bell.fill" />}
-        subtitle="Event and birthday reminders, as on the Mac"
+        subtitle="Event, task and birthday reminders, as on the Mac"
         title="Alerts"
       />
     ) : null,

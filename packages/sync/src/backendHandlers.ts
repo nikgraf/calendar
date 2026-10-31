@@ -47,6 +47,7 @@ import {
   readEventNotificationSettings,
   readOnboarding,
   readPrimaryTimeZone,
+  readTaskNotificationSettings,
   readTimeZoneSettings,
   readViewPreferences,
   updateOnboarding,
@@ -57,6 +58,7 @@ import {
   applyBirthdayReminderOverride,
   applyBirthdayReminderSettings,
   applyEventNotificationSettings,
+  applyTaskNotificationSettings,
   applyTimeZoneSettings,
 } from './notificationSettings.ts';
 import { SyncEngine } from './engine.ts';
@@ -297,6 +299,18 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       return yield* taskRepo.getOverdue(before);
     }),
 
+  // By its list first, then by id alone: a tapped notification names the
+  // list the task was on, and a move keeps the id.
+  getTask: ({ accountId, listId, taskId }) =>
+    Effect.gen(function* () {
+      const repo = yield* TaskRepo;
+      return (
+        (yield* repo.get(accountId, listId, taskId)) ??
+        (yield* repo.findById(accountId, taskId)) ??
+        null
+      );
+    }),
+  getTaskNotificationSettings: () => readTaskNotificationSettings,
   getTasksInRange: ({ endDate, startDate }) =>
     Effect.gen(function* () {
       const taskRepo = yield* TaskRepo;
@@ -553,6 +567,7 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       yield* taskRepo.setListVisible(accountId, taskListId, isVisible);
     }),
 
+  setTaskNotificationSettings: (settings) => applyTaskNotificationSettings(settings),
   setTimeZoneSettings: (settings) => applyTimeZoneSettings(settings),
 
   setViewPreferences: (preferences) => writeViewPreferences(preferences),

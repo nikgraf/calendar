@@ -11,14 +11,17 @@ import {
   DEFAULT_BIRTHDAY_REMINDER_TIME,
   DEFAULT_EVENT_NOTIFICATION_SETTINGS,
   DEFAULT_ONBOARDING_STATE,
+  DEFAULT_TASK_NOTIFICATION_SETTINGS,
   DEFAULT_TIME_ZONE_SETTINGS,
   DEFAULT_VIEW_PREFERENCES,
   EventNotificationSettings,
   mergeEventNotificationSettings,
+  mergeTaskNotificationSettings,
   type OnboardingChange,
   OnboardingState,
   resolveTimeZones,
   sortWeekdays,
+  TaskNotificationSettings,
   Temporal,
   TimeZoneSettings,
   upgradeBirthdayReminderData,
@@ -210,6 +213,50 @@ export const writeEventNotificationSettings = (
         : { dismissWhenOver: settings.dismissWhenOver }),
       enabled: settings.enabled,
       includeAppleCalendar: settings.includeAppleCalendar,
+    }),
+  );
+
+/** The device_settings key for task notifications. */
+export const TASK_NOTIFICATIONS_KEY = 'taskNotifications';
+
+const decodeTaskNotificationSettings = Schema.decodeUnknownEffect(TaskNotificationSettings);
+
+/**
+ * The stored preferences, or the defaults (on, 09:00, Reminders included)
+ * when nothing decodable is stored. The Remove-When-Done switches only
+ * once someone set them (absent reads as on).
+ */
+export const readTaskNotificationSettings: Effect.Effect<
+  TaskNotificationSettings,
+  SqlError,
+  DeviceSettingsRepo
+> = Effect.gen(function* () {
+  const raw = yield* (yield* DeviceSettingsRepo).get(TASK_NOTIFICATIONS_KEY);
+  if (raw === null) {
+    return DEFAULT_TASK_NOTIFICATION_SETTINGS;
+  }
+  return yield* decodeTaskNotificationSettings(raw).pipe(
+    Effect.map((stored) =>
+      mergeTaskNotificationSettings(DEFAULT_TASK_NOTIFICATION_SETTINGS, stored),
+    ),
+    Effect.orElseSucceed(() => DEFAULT_TASK_NOTIFICATION_SETTINGS),
+  );
+});
+
+export const writeTaskNotificationSettings = (
+  settings: TaskNotificationSettings,
+): Effect.Effect<void, SqlError, DeviceSettingsRepo> =>
+  Effect.flatMap(DeviceSettingsRepo, (repo) =>
+    repo.set(TASK_NOTIFICATIONS_KEY, {
+      ...(settings.dismissRemindersWhenDone === undefined
+        ? {}
+        : { dismissRemindersWhenDone: settings.dismissRemindersWhenDone }),
+      ...(settings.dismissTasksWhenDone === undefined
+        ? {}
+        : { dismissTasksWhenDone: settings.dismissTasksWhenDone }),
+      enabled: settings.enabled,
+      includeAppleReminders: settings.includeAppleReminders,
+      time: settings.time,
     }),
   );
 

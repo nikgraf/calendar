@@ -6,6 +6,7 @@ import { AppleCalendarSection } from './AppleCalendarSection.tsx';
 import { BirthdayRemindersSection } from './BirthdayRemindersSection.tsx';
 import { ContactsSection } from './ContactsSection.tsx';
 import { EventNotificationsSection } from './EventNotificationsSection.tsx';
+import { TaskNotificationsSection } from './TaskNotificationsSection.tsx';
 import { GettingStartedSection } from './GettingStartedSection.tsx';
 import { LocationsSection } from './LocationsSection.tsx';
 import { MirrorsSection } from './MirrorsSection.tsx';
@@ -63,6 +64,7 @@ const PANE_CONTENT: Record<SettingsPaneId, ReactNode> = {
   notifications: (
     <>
       <EventNotificationsSection />
+      <TaskNotificationsSection />
       <BirthdayRemindersSection />
     </>
   ),

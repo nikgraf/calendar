@@ -16,7 +16,7 @@ import {
   upgradeBirthdayReminderData,
 } from './birthdays/reminders.ts';
 import { MirrorDefinition } from './mirror/definition.ts';
-import { EventNotificationSettings } from './notifications/settings.ts';
+import { EventNotificationSettings, TaskNotificationSettings } from './notifications/settings.ts';
 import { canonicalZoneId, runtimeZoneId } from './time/zones.ts';
 import { isDeviceZone, TimeZoneSettings } from './timeZoneSettings.ts';
 import { PortableViewPreferences } from './viewPreferences.ts';
@@ -122,6 +122,7 @@ export const SettingsDocument = Schema.Struct({
    * arrives switched off (on/off is each device's own).
    */
   mirrors: Schema.optional(Schema.Array(MirrorDefinition)),
+  taskNotifications: Schema.optional(TaskNotificationSettings),
   timeZones: Schema.optional(TimeZoneSettings),
   version: Schema.Literal(SETTINGS_DOCUMENT_VERSION),
   view: Schema.optional(PortableViewPreferences),
@@ -135,6 +136,7 @@ export const SettingsSection = Schema.Literals([
   'eventNotifications',
   'mirrors',
   'screenPrivacy',
+  'taskNotifications',
   'timeZones',
   'view',
 ]);
@@ -274,6 +276,11 @@ const SETTINGS_LEAF_PATHS: ReadonlyArray<readonly [keyof SettingsDocument, strin
   ['eventNotifications', 'dismissWhenOver'],
   ['eventNotifications', 'enabled'],
   ['eventNotifications', 'includeAppleCalendar'],
+  ['taskNotifications', 'dismissRemindersWhenDone'],
+  ['taskNotifications', 'dismissTasksWhenDone'],
+  ['taskNotifications', 'enabled'],
+  ['taskNotifications', 'includeAppleReminders'],
+  ['taskNotifications', 'time'],
   ['timeZones', 'primary'],
   ['timeZones', 'zones'],
   ['view', 'allDayLaneCollapsed'],
@@ -359,6 +366,7 @@ const SECTION_LABELS: Record<SettingsSection, string> = {
   eventNotifications: 'event notifications',
   mirrors: 'calendar mirrors',
   screenPrivacy: 'screen sharing',
+  taskNotifications: 'task notifications',
   timeZones: 'time zones',
   view: 'view preferences',
 };
