@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vite-plus/test';
 import {
   debugFolderName,
   decideRetry,
+  droppedLastTouch,
   isBlackPng,
   type JUnitCase,
   latchedCommand,
@@ -26,6 +27,16 @@ const fixture = (name: string): string =>
  */
 const BLACK = readFileSync(new URL('fixtures/black-screen.png', import.meta.url));
 const DARK = readFileSync(new URL('fixtures/dark-mode.png', import.meta.url));
+
+/**
+ * The XCTest and backboardd touch lines of flow 04's simulator log on run
+ * 40265233306 (long lines cut): a tap on the chip's check that reached the
+ * app, then the one backboardd dropped after its touch-down, the flow's
+ * last input.
+ */
+const DROPPED = fixture('dropped-touch.device-simulator.log');
+/** The same log up to the second tap: only the one that reached the app. */
+const DELIVERED = DROPPED.slice(0, DROPPED.lastIndexOf('\n', DROPPED.indexOf('04:17:06.')) + 1);
 
 /** A PNG chunk: length, type, body, CRC. */
 const chunk = (type: string, body: Buffer): Buffer => {
@@ -286,7 +297,7 @@ describe('decideRetry', () => {
       }),
     ).toEqual({
       kind: 'fail',
-      reason: `no driver failure in the run log, and not a black screen: ${FLOWS[0]}`,
+      reason: `no driver failure in the run log, no black screen and no dropped touch: ${FLOWS[0]}`,
     });
   });
 
@@ -304,7 +315,7 @@ describe('decideRetry', () => {
       }),
     ).toEqual({
       kind: 'fail',
-      reason: `no driver failure in the run log, and not a black screen: ${FLOWS[1]}`,
+      reason: `no driver failure in the run log, no black screen and no dropped touch: ${FLOWS[1]}`,
     });
   });
 });
@@ -336,7 +347,7 @@ describe('decideRetry on a black screen', () => {
     for (const shots of [[DARK], [BLACK, DARK, BLACK]]) {
       expect(run(shots)).toEqual({
         kind: 'fail',
-        reason: `no driver failure in the run log, and not a black screen: ${FLOWS[0]}`,
+        reason: `no driver failure in the run log, no black screen and no dropped touch: ${FLOWS[0]}`,
       });
     }
   });
@@ -383,7 +394,7 @@ describe('decideRetry on a black screen', () => {
       }),
     ).toEqual({
       kind: 'fail',
-      reason: `no driver failure in the run log, and not a black screen: ${FLOWS[1]}`,
+      reason: `no driver failure in the run log, no black screen and no dropped touch: ${FLOWS[1]}`,
     });
   });
 
@@ -405,7 +416,7 @@ describe('decideRetry on a black screen', () => {
       }),
     ).toEqual({
       kind: 'fail',
-      reason: `no driver failure in the run log, and not a black screen: ${FLOWS[0]}, ${FLOWS[1]}`,
+      reason: `no driver failure in the run log, no black screen and no dropped touch: ${FLOWS[0]}, ${FLOWS[1]}`,
     });
   });
 
@@ -425,6 +436,135 @@ describe('decideRetry on a black screen', () => {
         screenshots: () => [BLACK],
       }),
     ).toEqual({ kind: 'pass' });
+  });
+});
+
+describe('decideRetry on a dropped touch', () => {
+  const NOT_TURNED = 'Assertion is false: &quot;Reopen live-1-ios-task&quot; is visible';
+  // One flow failed on a drawn screen, with this simulator log; the passed
+  // ones had their taps delivered.
+  const run = (log: string, status = 'ERROR') =>
+    decideRetry({
+      flows: FLOWS,
+      output: '',
+      report: report(
+        testCase(FLOWS[0] ?? '', status, status === 'ERROR' ? NOT_TURNED : undefined),
+        testCase(FLOWS[1] ?? '', 'SUCCESS'),
+        testCase(FLOWS[2] ?? '', 'SUCCESS'),
+      ),
+      runLog: '',
+      screenshots: () => [DARK],
+      simulatorLog: (flow) => (flow.name === FLOWS[0] ? log : DELIVERED),
+    });
+  const ownFailure = {
+    kind: 'fail',
+    reason: `no driver failure in the run log, no black screen and no dropped touch: ${FLOWS[0]}`,
+  };
+
+  it('retries a flow whose last touch the simulator dropped', () => {
+    expect(run(DROPPED)).toEqual({
+      flows: [{ cause: 'dropped-touch', file: FLOWS[0] }],
+      kind: 'retry',
+    });
+  });
+
+  it('fails when the last touch reached the app', () => {
+    expect(run(DELIVERED)).toEqual(ownFailure);
+    expect(run('')).toEqual(ownFailure);
+  });
+
+  it('fails when the flow touched again after the drop', () => {
+    // Maestro tapped once more, or the flow went on: the failure may be the
+    // app's.
+    expect(run(DROPPED + DELIVERED)).toEqual(ownFailure);
+  });
+
+  it('never reads a passed flow as lost to a dropped touch', () => {
+    expect(run(DROPPED, 'SUCCESS')).toEqual({ kind: 'pass' });
+  });
+
+  it('reads only an errored flow as lost to a dropped touch', () => {
+    expect(run(DROPPED, 'CANCELED')).toEqual(ownFailure);
+  });
+
+  it('names a black screen first when the flow also lost its last touch', () => {
+    expect(
+      decideRetry({
+        flows: FLOWS,
+        output: '',
+        report: report(
+          testCase(FLOWS[0] ?? '', 'ERROR', NOT_TURNED),
+          testCase(FLOWS[1] ?? '', 'SUCCESS'),
+          testCase(FLOWS[2] ?? '', 'SUCCESS'),
+        ),
+        runLog: '',
+        screenshots: () => [BLACK],
+        simulatorLog: () => DROPPED,
+      }),
+    ).toEqual({ flows: [{ cause: 'black-screen', file: FLOWS[0] }], kind: 'retry' });
+  });
+
+  it('still fails a flow that failed on its own beside a dropped touch', () => {
+    expect(
+      decideRetry({
+        flows: FLOWS,
+        output: '',
+        report: report(
+          testCase(FLOWS[0] ?? '', 'ERROR', NOT_TURNED),
+          testCase(FLOWS[1] ?? '', 'ERROR', 'Element not found: Id matching regex: event-save'),
+          testCase(FLOWS[2] ?? '', 'SUCCESS'),
+        ),
+        runLog: '',
+        screenshots: () => [DARK],
+        simulatorLog: (flow) => (flow.name === FLOWS[0] ? DROPPED : DELIVERED),
+      }),
+    ).toEqual({
+      kind: 'fail',
+      reason: `no driver failure in the run log, no black screen and no dropped touch: ${FLOWS[1]}`,
+    });
+  });
+
+  it('never reads a dropped touch into flows whose folders collide', () => {
+    const failure = `<failure>${NOT_TURNED}</failure>`;
+    expect(
+      decideRetry({
+        flows: [FLOWS[0] ?? '', FLOWS[1] ?? ''],
+        output: '',
+        report: report(
+          `<testcase name="Opens/Settings" file="${FLOWS[0]}" status="ERROR">${failure}</testcase>`,
+          `<testcase name="opens_settings" file="${FLOWS[1]}" status="ERROR">${failure}</testcase>`,
+        ),
+        runLog: '',
+        simulatorLog: () => DROPPED,
+      }).kind,
+    ).toBe('fail');
+  });
+});
+
+describe('droppedLastTouch', () => {
+  it("reads run 40265233306's last tap as dropped and its earlier one as delivered", () => {
+    expect(droppedLastTouch(DROPPED)).toBe(true);
+    expect(DELIVERED).toContain('contact 2 presence: none');
+    expect(DELIVERED).not.toContain('skipping event');
+    expect(droppedLastTouch(DELIVERED)).toBe(false);
+  });
+
+  it('needs the lift never to have landed', () => {
+    // backboardd skipping a stray event of a touch whose lift it handled.
+    const lifted = DROPPED.replace(
+      '\n2026-10-26 04:17:06.432223',
+      '\n2026-10-26 04:17:06.431000+0000  localhost backboardd[2240]: [com.apple.BackBoard:TouchEvents] contact 2 presence: none\n2026-10-26 04:17:06.432223',
+    );
+    expect(lifted).not.toBe(DROPPED);
+    expect(droppedLastTouch(lifted)).toBe(false);
+  });
+
+  it('needs the skipped events inside the last playback, from backboardd', () => {
+    const skipped = DROPPED.split('\n').filter((line) => line.includes('skipping event'));
+    expect(skipped).toHaveLength(10);
+    expect(droppedLastTouch(skipped.join('\n'))).toBe(false);
+    expect(droppedLastTouch(DROPPED.replaceAll('backboardd[', 'SolunivoDev['))).toBe(false);
+    expect(droppedLastTouch('')).toBe(false);
   });
 });
 

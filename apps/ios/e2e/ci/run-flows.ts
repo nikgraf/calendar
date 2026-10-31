@@ -2,8 +2,8 @@
 /**
  * Runs Maestro flows on CI and runs them once more, in a fresh invocation,
  * when the XCTest driver died under them or never started, or when the
- * simulator drew a failed flow black — never for a failure the app caused
- * (see maestroRetry.ts for the rule). Each attempt's
+ * simulator drew a failed flow black or dropped its last touch — never for
+ * a failure the app caused (see maestroRetry.ts for the rule). Each attempt's
  * report, logs and console output (`console.log`) go to
  * ~/.maestro/tests/<label>-<attempt>, which the diagnostics upload already
  * collects.
@@ -15,7 +15,8 @@
  * developer's simulator and dev client keep their data). With
  * E2E_RETRY=never-started only an invocation whose driver never started
  * runs again: the live flows' items on Google outlive any reset, so a flow
- * cut short would meet its own leftovers.
+ * cut short would meet its own leftovers. When no flow failed on its own,
+ * a warning and the step summary still say what cut each one short.
  *
  * e2e/ci/package.json marks these files as ES modules for Node: the app's
  * own package.json is part of the native fingerprint.
@@ -129,6 +130,14 @@ const summary = (line: string): void => {
 const quoted = (files: ReadonlyArray<string>): string =>
   files.map((file) => `\`${file}\``).join(', ');
 
+/** What took a flow down, in words. */
+const LOST_TO: Readonly<Record<RetryCause, string>> = {
+  'black-screen': 'the simulator drew it black',
+  died: 'the XCTest driver died',
+  'dropped-touch': 'the simulator dropped its last touch',
+  'never-started': 'the XCTest driver never started',
+};
+
 /**
  * The run, answering the exit code. The process ends on its own with it:
  * on a pipe, stdout and stderr write asynchronously, and `process.exit`
@@ -148,12 +157,19 @@ const main = async (): Promise<number> => {
     filesUnder(join(first.dir, debugFolderName(testCase), 'screenshots'), (name) =>
       name.endsWith('.png'),
     ).map((path) => readFileSync(path));
+  // The simulator's log while the flow ran says whether its last touch
+  // reached the app.
+  const simulatorLog = (testCase: JUnitCase): string => {
+    const path = join(first.dir, debugFolderName(testCase), 'logs', 'device-simulator.log');
+    return existsSync(path) ? readFileSync(path, 'utf8') : '';
+  };
   const decision = decideRetry({
     flows,
     output: readFileSync(first.output, 'utf8'),
     report: existsSync(first.report) ? readFileSync(first.report, 'utf8') : undefined,
     runLog,
     screenshots,
+    simulatorLog,
   });
   if (decision.kind !== 'retry') {
     say(
@@ -167,7 +183,15 @@ const main = async (): Promise<number> => {
     process.env['E2E_RETRY'] === 'never-started' &&
     decision.flows.some((flow) => flow.cause !== 'never-started')
   ) {
-    say('no retry: the flows ran before they were lost, and E2E_RETRY=never-started');
+    // The job fails, but not on the app: say what each flow was lost to.
+    const lost = decision.flows.map(({ cause, file }) => `${file} (${LOST_TO[cause]})`);
+    say(`::warning::Not run again (E2E_RETRY=never-started): ${lost.join(', ')}`);
+    summary(`### Maestro retry (${label})`);
+    summary(
+      `Lost before they finished, not run again (E2E_RETRY=never-started): ${decision.flows
+        .map(({ cause, file }) => `\`${file}\` (${LOST_TO[cause]})`)
+        .join(', ')}.`,
+    );
     return first.status;
   }
 
@@ -207,18 +231,28 @@ const main = async (): Promise<number> => {
       `The simulator stopped drawing the app: every failure screenshot was black. Ran again: ${quoted(blackScreen)}.`,
     );
   }
+  const droppedTouch = lostTo('dropped-touch');
+  if (droppedTouch.length > 0) {
+    say(
+      `::warning::The simulator dropped a flow's last touch: backboardd skipped every event after its touch-down; running ${droppedTouch.join(', ')} again`,
+    );
+    summary(
+      `The simulator dropped a flow's last touch: backboardd skipped every event after its touch-down, so the app never saw a press. Ran again: ${quoted(droppedTouch)}.`,
+    );
+  }
 
   // A hung app or a half-dead runner must not carry into the next invocation.
   for (const bundle of ['dev.mobile.maestro-driver-iosUITests.xctrunner', BUNDLE_ID]) {
     spawnSync('xcrun', ['simctl', 'terminate', udid, bundle], { stdio: 'ignore' });
   }
-  // The flow the driver died in (or the screen went black in) stopped
-  // halfway: what it had changed (a primary time zone in the app's data, a
-  // reminder in the device's EventKit) would break its own first check. On
-  // CI the second run starts from an erased simulator with the app
-  // installed and set up again, as the first did. The reboot also brings
-  // up a fresh SpringBoard and backboardd: a relaunch alone is where the
-  // black screen began on run 39159977263.
+  // The flow the driver died in (or the screen went black in, or the
+  // simulator dropped a touch in) stopped halfway: what it had changed (a
+  // primary time zone in the app's data, a reminder in the device's
+  // EventKit) would break its own first check. On CI the second run starts
+  // from an erased simulator with the app installed and set up again, as
+  // the first did. The reboot also brings up a fresh SpringBoard and
+  // backboardd: a relaunch alone is where the black screen began on run
+  // 39159977263, and backboardd is what dropped run 40265233306's touch.
   const app = process.env['E2E_APP'];
   if (app) {
     const prepared = spawnSync(
