@@ -390,10 +390,15 @@ it whenever a kind is added. Rules that keep the queue correct:
   move, re-keyed to the destination (a never-sent create simply becomes a
   create there; a sent one stays in the source with the move behind it; a
   delete of the moved event is dropped instead, see Sync engine).
-  A move Google never makes — discarded, refused (403 non-organizer), or
-  a 404 for the event or the destination — puts the rows back in the
-  source with what was re-queued behind it, snapshots re-keyed the same
-  way (`releaseMove`): left in the destination, an edit or a
+  A move's 404 (or 410) first asks the destination for the event: an
+  earlier attempt may have landed with its answer lost, and found there
+  the move settles as landed (a lookup with no answer retries); a 2xx
+  whose body did not decode landed too. A move Google never makes —
+  discarded, refused (a 403 for a non-organizer, any other permanent
+  4xx), or not in the destination either — puts the rows back in the
+  source with what was queued after it, snapshots re-keyed the same way
+  (`releaseMove`; a discard releases the move before removing it, so its
+  place is known): left in the destination, an edit or a
   this-and-following cut's master update and exception deletes would
   404 there and be dropped, while the source row showed what Google
   never got. The series' next move out of the destination ends what goes
