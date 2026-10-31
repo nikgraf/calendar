@@ -412,12 +412,14 @@ const make: Effect.Effect<
 
   /**
    * What an occurrence edit or delete starts from: the occurrence's row,
-   * else the exception a queued series delete took there — while that
-   * delete waits behind the master a pull put back, Google still has the
-   * exception. Built on the master's slot instead, the edit would patch
-   * the exception's own changes away and the delete would remember
-   * nothing to put back. The series delete stays queued, so nothing else
-   * it took comes back.
+   * else the exception a queued delete took locally while Google still
+   * has it — the exception's own delete (a this-and-following cut, whose
+   * truncation was discarded), or a series delete waiting behind the
+   * master a pull put back. Built on the master's slot instead, the edit
+   * would patch the exception's own changes away and the delete would
+   * remember nothing to put back. The queued deletes stay, so nothing
+   * else they took comes back. A cancellation they took is no base: the
+   * slot shows, and the change starts from it as before.
    */
   const occurrenceRow = (
     accountId: string,
@@ -430,8 +432,15 @@ const make: Effect.Effect<
       if (row) {
         return row;
       }
+      const own = (yield* opsForEvent(accountId, calendarId, instanceId)).flatMap((op) =>
+        op.kind === 'delete' && op.beforePayload ? [op.beforePayload] : [],
+      );
       const taken = yield* takenExceptions(accountId, calendarId, masterId);
-      return taken.find((override) => override.id === instanceId) ?? null;
+      return (
+        [...own, ...taken].find(
+          (override) => override.id === instanceId && override.status !== 'cancelled',
+        ) ?? null
+      );
     });
 
   /** Queues a this-and-following truncation of the master: a patch, or its unsent create. */

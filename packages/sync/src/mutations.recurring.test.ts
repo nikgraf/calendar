@@ -953,6 +953,30 @@ describe('discarding a change of a series', () => {
       }).pipe(Effect.provide(testLayer)),
   );
 
+  it.effect('an occurrence edit after a discarded cut patches the exception the cut took', () =>
+    Effect.gen(function* () {
+      yield* seedMaster;
+      yield* (yield* EventRepo).upsertMany([override]);
+      const mutations = yield* EventMutations;
+      yield* mutations.deleteRecurring({ ...target, scope: 'following' });
+      const cut = (yield* listOps).find((op) => op.eventId === 'master1');
+      yield* mutations.discardPendingOp(cut!.id);
+      // The exception's own delete still waits, and its row is gone.
+      expect((yield* listOps).map((op) => op.eventId)).toEqual([instanceId]);
+      expect(yield* rowOf(instanceId)).toBeNull();
+
+      yield* mutations.updateRecurring({
+        ...target,
+        changes: { location: 'Room 4' },
+        scope: 'instance',
+      });
+      const [edit] = yield* listOps;
+      expect(edit?.kind).toBe('update');
+      expect(edit?.payload?.title).toBe('Daily (moved)');
+      expect(edit?.baseEtag).toBe('"o-1"');
+    }).pipe(Effect.provide(testLayer)),
+  );
+
   it.effect('a series delete brings the master and its exceptions back', () =>
     Effect.gen(function* () {
       yield* seedMaster;
@@ -1213,7 +1237,43 @@ describe('keeping a series a pull put back while its delete waits', () => {
         expect(row?.syncStatus).toBe('pending');
       }).pipe(noYield, Effect.provide(testLayer)),
     );
+
+    it.effect('once the series delete lands, the exception put back for it goes too', () =>
+      Effect.gen(function* () {
+        yield* deleteThenPull(pulled, moved);
+        const mutations = yield* EventMutations;
+        yield* mutations.deleteRecurring({ ...target, scope: 'instance' });
+        const remove = (yield* listOps).find((op) => op.eventId === instanceId);
+        yield* mutations.discardPendingOp(remove!.id);
+        expect((yield* rowOf(instanceId))?.syncStatus).toBe('synced');
+
+        // Without its master the exception would show as an event of its own.
+        yield* mutations.processPendingOps();
+        expect(yield* listOps).toEqual([]);
+        expect(yield* rowOf('master1')).toBeNull();
+        expect(yield* rowOf(instanceId)).toBeNull();
+      }).pipe(
+        noYield,
+        Effect.provide(testLayerWith({ ...stubClient, deleteEvent: () => Effect.void })),
+      ),
+    );
   });
+
+  it.effect('an edit of an occurrence Google cancelled still starts from the slot', () =>
+    Effect.gen(function* () {
+      // The series delete took July 4's cancellation: the slot shows.
+      yield* deleteThenPull(pulled);
+      yield* (yield* EventMutations).updateRecurring({
+        ...target,
+        changes: { location: 'Room 4' },
+        scope: 'instance',
+      });
+      const edit = (yield* listOps).find((op) => op.eventId === instanceId);
+      expect(edit?.payload?.status).toBe('confirmed');
+      expect(edit?.payload?.title).toBe('Daily (Google)');
+      expect((yield* rowOf(instanceId))?.status).toBe('confirmed');
+    }).pipe(noYield, Effect.provide(testLayer)),
+  );
 });
 
 describe('EventMutations: a series keeps its kind', () => {

@@ -1042,6 +1042,9 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
    * at its id. That copy goes. A cancelled override (one occurrence's
    * delete) stays, and a pending row is an op's queued since — read and
    * delete in one transaction, so an edit of the copy cannot slip between.
+   * A series takes its exceptions with it on Google: the synced ones a
+   * pull, an answer or a discard put back while its delete waited go too,
+   * or they would show as events of their own.
    */
   const dropPulledCopy = (op: PendingOp) =>
     transaction(
@@ -1049,6 +1052,15 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         const row = yield* eventRepo.getById(op.accountId, op.calendarId, op.eventId);
         if (row?.syncStatus === 'synced' && row.status !== 'cancelled') {
           yield* eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
+        }
+        for (const override of yield* eventRepo.listOverrides(
+          op.accountId,
+          op.calendarId,
+          op.eventId,
+        )) {
+          if (override.syncStatus === 'synced') {
+            yield* eventRepo.deleteEvent(op.accountId, op.calendarId, override.id);
+          }
         }
       }),
     );
