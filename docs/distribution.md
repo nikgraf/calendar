@@ -404,8 +404,8 @@ appearance or the footer's Auto / Light / Dark choice (kept in
 `localStorage`), rewrites each `<picture>`'s dark `<source>` to follow
 that choice, and sets `data-platform` from the user agent so the
 stylesheet shows the right download buttons (macOS and iPhone get their
-own; Windows, Linux and Android are told the app is coming later and
-offered the nearest one). Without JavaScript the page follows the OS for its colors and pictures
+own; Windows, Linux and Android are told the platform is on the roadmap,
+linked to the page's roadmap section, and offered the nearest one). Without JavaScript the page follows the OS for its colors and pictures
 (`tokens.css` carries the dark set for a page with no `data-theme`),
 hides the scheme switch and shows the macOS buttons.
 

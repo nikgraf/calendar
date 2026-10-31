@@ -3,9 +3,13 @@ const sources = [
   { dot: 'bg-event-blue-edge', name: 'Google Tasks' },
   { dot: 'bg-event-lilac-edge', name: 'Apple Calendar' },
   { dot: 'bg-event-blush-edge', name: 'Apple Reminders' },
+  { dot: 'border-[1.5px] border-event-lilac-edge', name: 'Outlook and CalDAV via Apple Calendar' },
 ];
 
-/** The four sources the app reads and writes, as a dotted list. */
+/**
+ * The sources the app reads and writes, as a dotted list; the hollow dot
+ * is the accounts that arrive through Apple Calendar.
+ */
 export function Sources() {
   return (
     <ul className="m-0 flex list-none flex-wrap gap-x-5 gap-y-2 p-0 text-sm text-ink-secondary">

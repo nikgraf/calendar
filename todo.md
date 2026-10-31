@@ -227,6 +227,9 @@ decision and platform notes live in `docs/decisions.md`.
 - Linux support (AI support?)
 - Android support (what does Android offer as local AI?)
 - Integration with Microsoft Calendar (more relevant for Windows)
+- Native JMAP calendars (CalDAV and Outlook accounts work today through
+  Apple Calendar; the website's roadmap lists this, Microsoft and the
+  three platforms here)
 - Windows support (Copilot support?)
 - Special sync
   - same event in multiple calendar (how do they get identified?)

@@ -89,7 +89,9 @@ dictation and capture from text or photo.
   (`src/screenshots/`, light and dark, captured with
   `apps/desktop/e2e/websiteShots.e2e.ts` and the iOS fixture: see
   docs/distribution.md → Website); the on-device AI demo is a CSS
-  animation. It imports nothing from the packages.
+  animation. Its roadmap section lists the native-account and platform
+  items of `todo.md`: change the two together. It imports nothing from
+  the packages.
 - `brand/` — SVG masters, logos, fonts and tokens; `pnpm brand:build`
   (macOS) regenerates the committed app icons, `tokens.css` (the desktop
   and the website import it; the hand-written `tokens/tailwind.css` maps

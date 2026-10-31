@@ -55,6 +55,17 @@ export function AppleIcon(props: IconProps) {
   );
 }
 
+/** Stacked layers: other accounts arriving through Apple Calendar. */
+export function LayersIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="m12 3.5 8.5 4.5-8.5 4.5L3.5 8z" />
+      <path d="m3.5 12 8.5 4.5 8.5-4.5" />
+      <path d="m3.5 16 8.5 4.5 8.5-4.5" />
+    </Icon>
+  );
+}
+
 /** A four-square grid, not Google's logo. */
 export function GoogleIcon(props: IconProps) {
   return (

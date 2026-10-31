@@ -1424,3 +1424,11 @@ first. The decisions, one line each:
   a fixture week, the AI demo as a CSS animation. Rejected: Astro, a
   client-rendered app, drawn screens (Nik: show the real thing). Open:
   hosting and DNS, public downloads (the page says "private testing").
+- **Outlook and CalDAV through Apple Calendar, and a roadmap** (2026-10-30,
+  #266) — the site says the Outlook, Exchange and CalDAV accounts Apple
+  Calendar syncs work today, invitations aside, and lists what is
+  planned, from `todo.md`: native Microsoft Outlook and JMAP, then
+  Android, Windows and Linux. The download notes for those platforms
+  point at it. Rejected: dates (none are set), a roadmap page of its own.
+  Open: Microsoft 365 on the Mac waits on Apple moving Calendar off EWS;
+  keep the section and `todo.md` in step.

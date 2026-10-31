@@ -7,6 +7,7 @@ const items = [
   { href: '/#ai', label: 'On-device AI' },
   { href: '/#features', label: 'Features' },
   { href: '/#privacy', label: 'Privacy' },
+  { href: '/#roadmap', label: 'Roadmap' },
 ];
 
 export function Nav() {
