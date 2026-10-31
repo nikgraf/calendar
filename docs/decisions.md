@@ -175,8 +175,8 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   `run-flows.ts` reruns a failed flow whose last touch went that way, as
   for a black screen; the live job only names it. Rejected: retapping in
   the flow (it would hide an app that drops a tap), any drop in the flow
-  (one Maestro tapped past is not the failure). Open: older lost-tap
-  flakes (their logs expired).
+  (one Maestro tapped past is not the failure). Open: nothing ties the
+  failure to the drop (Opus review); older lost-tap flakes (logs expired).
 - **Flow 06's sheet drag off the bottom edge** (2026-10-29,
   `todo/editor-sheet-drag-race`) — the drag that raises the half-height
   editor started at 93 %, inside SpringBoard's bottom-edge gesture region:

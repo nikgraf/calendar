@@ -838,11 +838,11 @@ Electron binary (`electron --version`) and run spec files sequentially.
   does a failed flow whose last touch the simulator dropped: in its
   `logs/device-simulator.log`, after the last `Recap event action
   playback initiated` (XCTest starting a tap, swipe or typing), backboardd
-  logged `didn't see a previous touch down … skipping event`. It had
-  handled the down and skipped the rest, the lift included, so the app got
-  a down and a cancel and never a press (run 40265233306, flow 04, after
-  `*** unknown digitizer`). A flow that touched or typed again after a
-  drop does not count. Each attempt's
+  logged `didn't see a previous touch down … skipping event` and no lift
+  (`contact N presence: none`). It had handled the down and skipped the
+  rest, so the app got a down and a cancel and never a press (run
+  40265233306, flow 04, after `*** unknown digitizer`). A flow that touched
+  or typed again after a drop does not count. Each attempt's
   report, console output and logs are in `~/.maestro/tests/<label>-<n>`
   (`--debug-output`, flattened: otherwise the run's log lands in a hidden
   folder the artifact upload skips). A failed shard's artifact carries
@@ -872,9 +872,9 @@ Electron binary (`electron --version`) and run spec files sequentially.
   runner wait as `ios-e2e`, but without `E2E_APP`: a rerun starts on the
   same simulator, dev client and scratch calendar. So the live flows run
   again only when the driver never started (`E2E_RETRY=never-started`); a
-  flow cut short left items on Google under the run's titles. The step
-  summary and a warning still name what cut each one short (a dead driver,
-  a black screen, a dropped touch).
+  flow cut short left items on Google under the run's titles. When no flow
+  failed on its own, a warning and the step summary still name what cut
+  each one short (a dead driver, a black screen, a dropped touch).
 - Log lines may stringify effect causes containing HTTP requests; effect
   redacts auth headers, so tokens cannot leak into CI logs this way.
 

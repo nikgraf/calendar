@@ -39,11 +39,9 @@ tags:
 
 # Check it off from the chip; Google completes it. The check's label
 # names what a tap does, so a tap is proven by the label turning. A touch
-# that never becomes a press fails here as such, rather than as a reopen
-# the app never pulled; it is not tapped again, which would hide an app
-# that drops one. Run 40265233306's was dropped by the simulator:
-# backboardd skipped every event after its touch-down, so the app got a
-# down and a cancel (run-flows.ts names that in the step summary).
+# that never becomes a press fails as such, here and after the reopen
+# below, rather than as a reopen the app never pulled; neither is tapped
+# again, which would hide an app that drops one.
 - tapOn: 'Complete live-${MAESTRO_LIVE_RUN_TAG}-ios-task'
 - extendedWaitUntil:
     visible: 'Reopen live-${MAESTRO_LIVE_RUN_TAG}-ios-task'
@@ -65,6 +63,8 @@ tags:
 - extendedWaitUntil:
     visible: 'Complete live-${MAESTRO_LIVE_RUN_TAG}-ios-task'
     timeout: 100000
+# Run 40265233306 lost this tap in the simulator: backboardd skipped every
+# event after its touch-down, so the app got a down and a cancel.
 - tapOn: 'Complete live-${MAESTRO_LIVE_RUN_TAG}-ios-task'
 - extendedWaitUntil:
     visible: 'Reopen live-${MAESTRO_LIVE_RUN_TAG}-ios-task'

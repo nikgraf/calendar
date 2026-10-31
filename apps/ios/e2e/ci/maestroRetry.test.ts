@@ -483,6 +483,27 @@ describe('decideRetry on a dropped touch', () => {
     expect(run(DROPPED, 'SUCCESS')).toEqual({ kind: 'pass' });
   });
 
+  it('reads only an errored flow as lost to a dropped touch', () => {
+    expect(run(DROPPED, 'CANCELED')).toEqual(ownFailure);
+  });
+
+  it('names a black screen first when the flow also lost its last touch', () => {
+    expect(
+      decideRetry({
+        flows: FLOWS,
+        output: '',
+        report: report(
+          testCase(FLOWS[0] ?? '', 'ERROR', NOT_TURNED),
+          testCase(FLOWS[1] ?? '', 'SUCCESS'),
+          testCase(FLOWS[2] ?? '', 'SUCCESS'),
+        ),
+        runLog: '',
+        screenshots: () => [BLACK],
+        simulatorLog: () => DROPPED,
+      }),
+    ).toEqual({ flows: [{ cause: 'black-screen', file: FLOWS[0] }], kind: 'retry' });
+  });
+
   it('still fails a flow that failed on its own beside a dropped touch', () => {
     expect(
       decideRetry({
@@ -526,6 +547,16 @@ describe('droppedLastTouch', () => {
     expect(DELIVERED).toContain('contact 2 presence: none');
     expect(DELIVERED).not.toContain('skipping event');
     expect(droppedLastTouch(DELIVERED)).toBe(false);
+  });
+
+  it('needs the lift never to have landed', () => {
+    // backboardd skipping a stray event of a touch whose lift it handled.
+    const lifted = DROPPED.replace(
+      '\n2026-10-26 04:17:06.432223',
+      '\n2026-10-26 04:17:06.431000+0000  localhost backboardd[2240]: [com.apple.BackBoard:TouchEvents] contact 2 presence: none\n2026-10-26 04:17:06.432223',
+    );
+    expect(lifted).not.toBe(DROPPED);
+    expect(droppedLastTouch(lifted)).toBe(false);
   });
 
   it('needs the skipped events inside the last playback, from backboardd', () => {

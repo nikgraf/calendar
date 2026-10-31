@@ -20,7 +20,7 @@
  *   its assertion fails. Five sightings across unrelated PRs; the next
  *   flow's fresh launch drew again each time. That flow runs once more.
  * - The simulator dropped the flow's last touch: backboardd handled its
- *   touch-down and skipped every later event of it, the lift included, so
+ *   touch-down and skipped later events of it, the lift included, so
  *   the app got a down and then a cancel, which is no press (run
  *   40265233306's flow 04: the check never turned, no op followed). Once
  *   in about 60 flow logs. A flow that touched or typed again after the
@@ -275,14 +275,21 @@ const PLAYBACK = 'Recap event action playback initiated';
 const SKIPPED_TOUCH_EVENT =
   /backboardd\[\d+\]: [^\n]*didn't see a previous touch down or range-in event for pathIndex:\d+; skipping event/;
 
+/** backboardd handling a touch's lift: its contact left the screen. */
+const TOUCH_LIFTED = /backboardd\[\d+\]: [^\n]*\bcontact \d+ presence: none\b/;
+
 /**
  * Whether the simulator dropped the last input XCTest played into a flow,
- * from the flow's simulator log (`logs/device-simulator.log`): backboardd
- * skipped events after the last playback began.
+ * from the flow's simulator log (`logs/device-simulator.log`): after the
+ * last playback began, backboardd skipped events and never saw the lift.
  */
 export const droppedLastTouch = (simulatorLog: string): boolean => {
   const last = simulatorLog.lastIndexOf(PLAYBACK);
-  return last !== -1 && SKIPPED_TOUCH_EVENT.test(simulatorLog.slice(last));
+  if (last === -1) {
+    return false;
+  }
+  const playback = simulatorLog.slice(last);
+  return SKIPPED_TOUCH_EVENT.test(playback) && !TOUCH_LIFTED.test(playback);
 };
 
 const passed = (testCase: JUnitCase): boolean =>

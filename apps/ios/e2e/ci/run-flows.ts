@@ -15,8 +15,8 @@
  * developer's simulator and dev client keep their data). With
  * E2E_RETRY=never-started only an invocation whose driver never started
  * runs again: the live flows' items on Google outlive any reset, so a flow
- * cut short would meet its own leftovers. The step summary still says what
- * cut it short.
+ * cut short would meet its own leftovers. When no flow failed on its own,
+ * a warning and the step summary still say what cut each one short.
  *
  * e2e/ci/package.json marks these files as ES modules for Node: the app's
  * own package.json is part of the native fingerprint.

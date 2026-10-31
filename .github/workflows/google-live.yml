@@ -313,8 +313,8 @@ jobs:
           # Only a driver that never started, before any flow, runs these
           # again: a flow cut short (a dead driver, a black display, a
           # dropped touch) left its items in the run's calendar under the
-          # same titles, which a rerun could match. The step summary names
-          # what cut it short.
+          # same titles, which a rerun could match. Unless a flow failed on
+          # its own, the step summary names what cut it short.
           E2E_RETRY: never-started
         run: |
           node e2e/ci/run-flows.ts live \
