@@ -250,6 +250,12 @@ export interface ApplyOp {
   readonly apply: (op: PendingOp) => Effect.Effect<ApplyOutcome>;
   /** Puts back what an abandoned op changed locally and hands its row to sync (also used by discard). */
   readonly releaseRow: (op: PendingOp, options?: ReleaseOptions) => Effect.Effect<void>;
+  /**
+   * A discarded move that was sent: Google may have made it, its answer
+   * lost. The destination decides whether it lands or goes back. Run with
+   * no request out (under the drain's gate), the move still queued.
+   */
+  readonly settleDiscardedMove: (op: PendingOp) => Effect.Effect<void>;
 }
 
 export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
@@ -852,8 +858,8 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
    * (it settles them); the rest go to sync.
    *
    * Only what was queued after the move goes, so the move is still queued
-   * here (a discard releases a move before removing it, and waits for the
-   * drain); one no longer queued was released already.
+   * here (a discard releases a move before removing it); one no longer
+   * queued was released already.
    * An occurrence's id is the master's, `_` and its original start; a
    * series split off in Google's own UI (`<id>_R<start>`) is its own.
    */
@@ -956,9 +962,14 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
    * it, and if the event is really gone the source's next pull carries
    * the tombstone (deleting the rows here would hide one that exists
    * until a full resync). A lookup with no answer decides nothing: the
-   * move stays queued and asks again.
+   * move stays queued and asks again — unless the user discarded it
+   * (`unanswered: 'release'`): then it goes back as asked, a move that
+   * never reached Google being the likely case.
    */
-  const settleOrReleaseMove = (op: PendingOp): Effect.Effect<ApplyOutcome> =>
+  const settleOrReleaseMove = (
+    op: PendingOp,
+    unanswered: 'release' | 'retry' = 'retry',
+  ): Effect.Effect<ApplyOutcome> =>
     Effect.gen(function* () {
       const destination = op.targetCalendarId;
       if (destination === undefined) {
@@ -972,6 +983,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         return 'done' as const;
       }
       if (
+        unanswered === 'retry' &&
         found._tag === 'Failure' &&
         found.failure._tag !== 'NotFoundError' &&
         found.failure._tag !== 'SyncTokenExpiredError'
@@ -1613,6 +1625,22 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
           if (!destination) {
             return yield* drop(op, 'move without a destination');
           }
+          // Stamped before the request, in one transaction with the check
+          // that it is still queued: a discard came first (nothing goes
+          // out), or it sees the stamp and asks Google before putting
+          // anything back (settleDiscardedMove).
+          const sending = yield* transaction(
+            Effect.gen(function* () {
+              const queued = yield* pendingOpRepo.getById(op.id);
+              if (queued) {
+                yield* pendingOpRepo.markDispatched(op.id, yield* Clock.currentTimeMillis);
+              }
+              return queued !== undefined;
+            }),
+          );
+          if (!sending) {
+            return 'done' as const;
+          }
           const local = yield* eventRepo.getById(op.accountId, destination, op.eventId);
           const response = yield* client.moveEvent({
             accountId: op.accountId,
@@ -1786,5 +1814,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       }),
     );
 
-  return { apply, releaseRow };
+  const settleDiscardedMove = (op: PendingOp) => Effect.asVoid(settleOrReleaseMove(op, 'release'));
+
+  return { apply, releaseRow, settleDiscardedMove };
 };

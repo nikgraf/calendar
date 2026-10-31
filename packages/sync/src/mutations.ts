@@ -534,7 +534,11 @@ const make: Effect.Effect<
       }
     });
 
-  const { apply: applyOp, releaseRow } = makeApplyOp({
+  const {
+    apply: applyOp,
+    releaseRow,
+    settleDiscardedMove,
+  } = makeApplyOp({
     accountRepo,
     calendarRepo,
     client,
@@ -588,25 +592,44 @@ const make: Effect.Effect<
       );
 
   /**
-   * A move's discard sends what was queued after it back to the source, so
-   * it waits for the drain: with the move's request out, Google may still
-   * make it, and the edits sent back would 404 in the source. The gate is
-   * taken outside the transaction — the drain writes while it holds it.
+   * A move's discard sends what was queued after it back to the source,
+   * reading its place in the queue, so the move goes only once released.
+   * One never sent goes at once (the drain stamps a move as sent in one
+   * transaction with checking it is still queued). One that was sent may
+   * have been made, its answer lost or its request still out: under the
+   * drain's gate — taken outside the transaction, since the drain writes
+   * while holding it — Google is asked first (settleDiscardedMove).
    */
   const discardPendingOp: EventMutationsShape['discardPendingOp'] = (opId) =>
-    Effect.flatMap(pendingOpRepo.getById(opId), (op) =>
-      op?.kind === 'move' ? gate.withPermits(1)(discard(opId)) : discard(opId),
-    );
+    Effect.gen(function* () {
+      const sent = yield* discard(opId);
+      if (!sent) {
+        return;
+      }
+      yield* gate.withPermits(1)(
+        Effect.gen(function* () {
+          // The drain settled it meanwhile (it landed, or was dropped).
+          const op = yield* pendingOpRepo.getById(opId);
+          if (op) {
+            yield* settleDiscardedMove(op);
+            yield* pendingOpRepo.remove(opId);
+          }
+        }),
+      );
+    });
 
+  /** Discards the op; a move that was sent is left queued and returned. */
   const discard = (opId: string) =>
     sql.withTransaction(
       Effect.gen(function* () {
         let op = yield* pendingOpRepo.getById(opId);
-        // A move's release reads its place in the queue (what was queued
-        // after it): it goes once released.
         if (op?.kind === 'move') {
+          if (op.dispatchedAt !== undefined) {
+            return op;
+          }
           yield* releaseRow(op);
-          return yield* pendingOpRepo.remove(opId);
+          yield* pendingOpRepo.remove(opId);
+          return undefined;
         }
         yield* pendingOpRepo.remove(opId);
         while (op) {
@@ -625,6 +648,7 @@ const make: Effect.Effect<
             yield* pendingOpRepo.remove(op.id);
           }
         }
+        return undefined;
       }),
     );
 

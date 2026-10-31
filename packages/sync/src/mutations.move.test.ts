@@ -1270,6 +1270,135 @@ describe('a move Google never makes', () => {
     }).pipe(noYield, Effect.provide(testLayer(google, appleFake())));
   });
 
+  it.effect('a move the drain has not sent yet is discarded at once', () => {
+    // The drain is busy with another event's edit when the user discards
+    // the move queued after it: the move must never go out.
+    const calls: Array<Call> = [];
+    const plain = recordingGoogle(calls);
+    let duringPatch: Effect.Effect<void> = Effect.void;
+    let discarding: Fiber.Fiber<void> | undefined;
+    const google = recordingGoogle(calls, {
+      patchEvent: (params) =>
+        Effect.gen(function* () {
+          if (params.eventId === 'evt-b') {
+            discarding = yield* Effect.forkChild(duringPatch);
+            yield* Effect.repeat(Effect.yieldNow, { times: 20 });
+          }
+          return yield* plain.patchEvent(params);
+        }),
+    });
+    return Effect.gen(function* () {
+      yield* seed([googleEvent(), googleEvent({ id: 'evt-b', title: 'Other' })]);
+      const mutations = yield* EventMutations;
+      yield* mutations.updateEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        changes: { title: 'Other (edited)' },
+        eventId: 'evt-b',
+      });
+      yield* mutations.moveEvent(move(['acc-1', 'cal-1', 'evt-a'], ['acc-1', 'cal-2']));
+      yield* mutations.updateEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-2',
+        changes: { title: 'Renamed' },
+        eventId: 'evt-a',
+      });
+      const moving = (yield* queued).find((op) => op.kind === 'move');
+      duringPatch = Effect.orDie(mutations.discardPendingOp(moving!.id));
+      yield* mutations.processPendingOps();
+      yield* Fiber.join(discarding!);
+      yield* mutations.processPendingOps();
+
+      expect(calls.map((call) => `${call.kind}:${call.calendarId}:${call.detail}`)).toEqual([
+        'patch:cal-1:Other (edited)',
+        'patch:cal-1:Renamed',
+      ]);
+      expect(yield* queued).toEqual([]);
+      expect(yield* rowAt('acc-1', 'cal-2', 'evt-a')).toBeNull();
+      expect((yield* rowAt('acc-1', 'cal-1', 'evt-a'))?.syncStatus).toBe('synced');
+    }).pipe(noYield, Effect.provide(testLayer(google, appleFake())));
+  });
+
+  it.effect('discarding a sent move asks Google whether it already happened', () => {
+    // The first attempt moved the event but its answer never came; the user
+    // then discards the move while it waits to retry. Google has it in cal-2,
+    // so the edit behind it stays there.
+    const calls: Array<Call> = [];
+    const plain = recordingGoogle(calls);
+    let at = 'cal-1';
+    const here = (calendarId: string) =>
+      calendarId === at ? Effect.void : Effect.fail(new NotFoundError({ resource: 'event' }));
+    const google = recordingGoogle(calls, {
+      getEvent: ({ calendarId, eventId }) =>
+        Effect.as(here(calendarId), {
+          end: { dateTime: new Date(base + HOUR).toISOString() },
+          etag: '"moved"',
+          id: eventId,
+          organizer: { email: 'nik@example.com', self: true },
+          start: { dateTime: new Date(base).toISOString() },
+          status: 'confirmed',
+          summary: 'Planning',
+        }),
+      moveEvent: (params) =>
+        Effect.suspend(() => {
+          at = params.destination;
+          return Effect.fail(new ApiUnavailableError({ cause: 'answer lost', status: 503 }));
+        }),
+      patchEvent: (params) => Effect.tap(plain.patchEvent(params), here(params.calendarId)),
+    });
+    return Effect.gen(function* () {
+      yield* seed([googleEvent()]);
+      const mutations = yield* EventMutations;
+      yield* mutations.moveEvent(move(['acc-1', 'cal-1', 'evt-a'], ['acc-1', 'cal-2']));
+      yield* mutations.updateEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-2',
+        changes: { title: 'Renamed' },
+        eventId: 'evt-a',
+      });
+      yield* mutations.processPendingOps();
+      const moving = (yield* queued).find((op) => op.kind === 'move');
+      yield* mutations.discardPendingOp(moving!.id);
+      yield* (yield* PendingOpRepo).retryNow();
+      yield* mutations.processPendingOps();
+
+      expect(calls.map((call) => `${call.kind}:${call.calendarId}:${call.detail}`)).toEqual([
+        'patch:cal-2:Renamed',
+      ]);
+      expect(yield* queued).toEqual([]);
+      expect(yield* rowAt('acc-1', 'cal-1', 'evt-a')).toBeNull();
+      expect((yield* rowAt('acc-1', 'cal-2', 'evt-a'))?.title).toBe('Renamed');
+    }).pipe(noYield, Effect.provide(testLayer(google, appleFake())));
+  });
+
+  it.effect('discarding a sent move Google cannot be asked about puts it back', () => {
+    // Offline: the attempt most likely never reached Google, and the user
+    // asked for the move to go.
+    const offline = new ApiUnavailableError({ cause: 'offline', status: 503 });
+    const google = recordingGoogle([], {
+      getEvent: () => Effect.fail(offline),
+      moveEvent: () => Effect.fail(offline),
+    });
+    return Effect.gen(function* () {
+      yield* seed([googleEvent()]);
+      const mutations = yield* EventMutations;
+      yield* mutations.moveEvent(move(['acc-1', 'cal-1', 'evt-a'], ['acc-1', 'cal-2']));
+      yield* mutations.updateEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-2',
+        changes: { title: 'Renamed' },
+        eventId: 'evt-a',
+      });
+      yield* mutations.processPendingOps();
+      const moving = (yield* queued).find((op) => op.kind === 'move');
+      yield* mutations.discardPendingOp(moving!.id);
+
+      expect((yield* queued).map((op) => `${op.kind}:${op.calendarId}`)).toEqual(['update:cal-1']);
+      expect(yield* rowAt('acc-1', 'cal-2', 'evt-a')).toBeNull();
+      expect((yield* rowAt('acc-1', 'cal-1', 'evt-a'))?.title).toBe('Renamed');
+    }).pipe(noYield, Effect.provide(testLayer(google, appleFake())));
+  });
+
   it.effect('a move onwards queued behind a move Google cannot find leaves from the source', () => {
     // cal-2 is gone on Google; the event went on to cal-2b from there.
     const calls: Array<Call> = [];

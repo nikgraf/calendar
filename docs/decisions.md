@@ -306,13 +306,13 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
 - **A move Google never makes takes its queued edits back** (2026-10-31, #PR)
   — Opus review of #267: a refused, unfound or discarded move put only
   the rows back; the edits behind it stayed addressed to the destination,
-  404'd and were dropped, and the source row showed a title Google never
-  got. They now go back to the source with their snapshots, a move
-  onwards leaves from there, a move back is dropped; a 404 first asks the
-  destination, since a lost answer makes the retry 404 too. Rejected:
-  dropping them and restoring their rows from the snapshots (a 403 or a
-  stale destination is no reason to lose the user's edit). Open: a sent
-  create Google refuses takes only the first move behind it along.
+  404'd and were dropped. They now go back in place, snapshots re-keyed; a
+  move onwards leaves from the source. A 404, or a discard of a move that
+  was sent, asks the destination first: a lost answer means it may have
+  landed. Rejected: dropping the edits and restoring rows from snapshots
+  (a 403 is no reason to lose an edit); a discard waiting for the drain
+  (it sent the move meanwhile). Open: a discarded sent move with Google
+  unreachable goes back; a refused sent create takes only one move along.
 - **Re-auth and sync kicks** — a 401 flags the account `reauth_required`
   and keeps its ops queued for after the reconnect (same id, by email);
   wake/unlock/focus/foreground kick a sync, throttled to one per 15 s,
