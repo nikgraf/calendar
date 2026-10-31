@@ -287,10 +287,11 @@ jobs:
           xcrun simctl terminate "$SIMULATOR_UDID" com.apple.mobilesafari || true
       # Every Maestro invocation goes through run-flows.ts, as in ci.yml: a
       # driver that never started runs the invocation once more, and the
-      # flows a dead driver took down or the simulator drew black run again
-      # (not the live flows, below); a flow that failed on its own never
-      # runs again. Without E2E_APP nothing is reset in between, so the dev
-      # client keeps its Metro project, and a black display is not rebooted.
+      # flows a dead driver took down, or the simulator drew black or
+      # dropped the last touch of, run again (not the live flows, below); a
+      # flow that failed on its own never runs again. Without E2E_APP
+      # nothing is reset in between, so the dev client keeps its Metro
+      # project, and a black display is not rebooted.
       - name: Bootstrap the dev client onto Metro
         working-directory: apps/ios
         run: node e2e/ci/run-flows.ts bootstrap e2e/flows/00-devclient-bootstrap.yaml
@@ -310,9 +311,10 @@ jobs:
         # written into it.
         env:
           # Only a driver that never started, before any flow, runs these
-          # again: a flow cut short (a dead driver, a black display) left
-          # its items in the run's calendar under the same titles, which a
-          # rerun could match.
+          # again: a flow cut short (a dead driver, a black display, a
+          # dropped touch) left its items in the run's calendar under the
+          # same titles, which a rerun could match. Unless a flow failed on
+          # its own, the step summary names what cut it short.
           E2E_RETRY: never-started
         run: |
           node e2e/ci/run-flows.ts live \
