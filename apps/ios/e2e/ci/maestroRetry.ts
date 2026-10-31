@@ -1,7 +1,7 @@
 /**
  * Whether a failed `maestro test` run on CI may run again, and which flows.
  *
- * Three causes only, none of them the app's:
+ * Four causes only, none of them the app's:
  * - The XCTest driver went away mid-run (an app main thread stuck in
  *   UIKit's keyboard queue starved its snapshot for 90 s on run
  *   38466668240). Maestro then latches the device as unreachable, and every
@@ -19,6 +19,13 @@
  *   40958072782), so a shared sub-flow's taps and retries lead nowhere and
  *   its assertion fails. Five sightings across unrelated PRs; the next
  *   flow's fresh launch drew again each time. That flow runs once more.
+ * - The simulator dropped the flow's last touch: backboardd handled its
+ *   touch-down and skipped every later event of it, the lift included, so
+ *   the app got a down and then a cancel, which is no press (run
+ *   40265233306's flow 04: the check never turned, no op followed). Once
+ *   in about 60 flow logs. A flow that touched or typed again after the
+ *   drop went on, so its failure may be its own; only a drop at the last
+ *   input counts. That flow runs once more.
  *
  * A failure the app caused (an assertion on a drawn screen, an element not
  * found, anything unknown) is never retried: it fails the job as before, so
@@ -42,9 +49,9 @@ export type JUnitCase = {
 
 /**
  * What took a flow down: the driver died under it or never started for
- * any, or the simulator drew it black.
+ * any, or the simulator drew it black or dropped its last touch.
  */
-export type RetryCause = 'black-screen' | 'died' | 'never-started';
+export type RetryCause = 'black-screen' | 'died' | 'dropped-touch' | 'never-started';
 
 export type RetryDecision =
   | { readonly kind: 'pass' }
@@ -253,6 +260,31 @@ export const isBlackPng = (png: Uint8Array): boolean => {
 const blackScreen = (screenshots: ReadonlyArray<Uint8Array>): boolean =>
   screenshots.length > 0 && screenshots.every(isBlackPng);
 
+/**
+ * XCTest starting to play a command's input into the simulator, in its
+ * log: once for each tap, swipe or typed text.
+ */
+const PLAYBACK = 'Recap event action playback initiated';
+
+/**
+ * backboardd skipping a touch's event: the touch state it looked up had no
+ * record of the touch-down (on run 40265233306 it had set up two for the
+ * one virtual touchscreen, logging `*** unknown digitizer`, and the down
+ * went to the other).
+ */
+const SKIPPED_TOUCH_EVENT =
+  /backboardd\[\d+\]: [^\n]*didn't see a previous touch down or range-in event for pathIndex:\d+; skipping event/;
+
+/**
+ * Whether the simulator dropped the last input XCTest played into a flow,
+ * from the flow's simulator log (`logs/device-simulator.log`): backboardd
+ * skipped events after the last playback began.
+ */
+export const droppedLastTouch = (simulatorLog: string): boolean => {
+  const last = simulatorLog.lastIndexOf(PLAYBACK);
+  return last !== -1 && SKIPPED_TOUCH_EVENT.test(simulatorLog.slice(last));
+};
+
 const passed = (testCase: JUnitCase): boolean =>
   PASSED.has(testCase.status) && testCase.failure === undefined;
 
@@ -261,8 +293,9 @@ const passed = (testCase: JUnitCase): boolean =>
  * only when the driver never started (no report, and the output shows the
  * session never opened), or when the report accounts for every flow and
  * every failed flow was lost to a dead driver (its death in the run log, its
- * exception in the flow's failure) or to a black screen (every screenshot
- * of the flow black).
+ * exception in the flow's failure), to a black screen (every screenshot
+ * of the flow black) or to a dropped touch (its last one, in the flow's
+ * simulator log).
  */
 export const decideRetry = ({
   flows,
@@ -270,6 +303,7 @@ export const decideRetry = ({
   report,
   runLog,
   screenshots = () => [],
+  simulatorLog = () => '',
 }: {
   readonly flows: ReadonlyArray<string>;
   /** What Maestro printed (stdout and stderr). */
@@ -279,6 +313,8 @@ export const decideRetry = ({
   readonly runLog: string;
   /** The PNGs Maestro saved for a flow's failed commands; none when left out. */
   readonly screenshots?: (testCase: JUnitCase) => ReadonlyArray<Uint8Array>;
+  /** The simulator's log while a flow ran; empty when left out. */
+  readonly simulatorLog?: (testCase: JUnitCase) => string;
 }): RetryDecision => {
   if (report === undefined) {
     return NEVER_STARTED.test(output)
@@ -301,7 +337,7 @@ export const decideRetry = ({
   const latched = LATCH.test(runLog);
   // Flows whose debug folders would collide (the runners' disk ignores
   // case): which one Maestro suffixed is unknown, so neither's screenshots
-  // are read as its own.
+  // or logs are read as its own.
   const folders = cases.map((testCase) => debugFolderName(testCase).toLowerCase());
   const shared = new Set(folders.filter((folder, index) => folders.indexOf(folder) !== index));
   const causeOf = (testCase: JUnitCase): RetryCause | undefined => {
@@ -311,10 +347,13 @@ export const decideRetry = ({
     if (latched && UNREACHABLE_FAILURE.test(testCase.failure ?? '')) {
       return 'died';
     }
-    return !shared.has(debugFolderName(testCase).toLowerCase()) &&
-      blackScreen(screenshots(testCase))
-      ? 'black-screen'
-      : undefined;
+    if (shared.has(debugFolderName(testCase).toLowerCase())) {
+      return undefined;
+    }
+    if (blackScreen(screenshots(testCase))) {
+      return 'black-screen';
+    }
+    return droppedLastTouch(simulatorLog(testCase)) ? 'dropped-touch' : undefined;
   };
   const lost = failed.map((testCase) => ({ cause: causeOf(testCase), file: testCase.file }));
   const ownFailures = lost.flatMap(({ cause, file }) => (cause === undefined ? [file] : []));
@@ -323,7 +362,7 @@ export const decideRetry = ({
       kind: 'fail',
       reason: latched
         ? `failed on their own: ${ownFailures.join(', ')}`
-        : `no driver failure in the run log, and not a black screen: ${ownFailures.join(', ')}`,
+        : `no driver failure in the run log, no black screen and no dropped touch: ${ownFailures.join(', ')}`,
     };
   }
   return {

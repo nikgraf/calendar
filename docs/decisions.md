@@ -168,6 +168,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   short leaves items on Google under the run's titles for a rerun to
   match. Open: a bootstrap `openurl` timeout; a black display at `04a`
   (#263's retry runs here unrebooted); a deleted event left on screen.
+- **A touch the simulator dropped** (2026-10-31, `todo/dropped-touch-retry`)
+  — live nightly 40265233306's flow 04 tap made no op: backboardd handled
+  its touch-down, then skipped every later event, so the app got a down
+  and a cancel. 120 probed taps under polls and JS stalls all pressed.
+  `run-flows.ts` reruns a failed flow whose last touch went that way, as
+  for a black screen; the live job only names it. Rejected: retapping in
+  the flow (it would hide an app that drops a tap), any drop in the flow
+  (one Maestro tapped past is not the failure). Open: older lost-tap
+  flakes (their logs expired).
 - **Flow 06's sheet drag off the bottom edge** (2026-10-29,
   `todo/editor-sheet-drag-race`) — the drag that raises the half-height
   editor started at 93 %, inside SpringBoard's bottom-edge gesture region:
@@ -292,8 +301,8 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   is queued (Codex review: the token never resends them, so a discard
   restored a stale copy and a cancelled occurrence lost its tombstone);
   holding the drain per page. Open: a replica lagging behind a landed
-  delete; why that night's flow 04 tap made no op (the flow now fails on
-  the check's label rather than tapping again, which would hide it).
+  delete. That night's flow 04 tap was the simulator's (2026-10-31, "A
+  touch the simulator dropped").
 - **Moving or answering a pulled copy replaces its delete** (2026-10-30, #267)
   — Opus review of #265: a move of the copy a pull put back re-queued its
   waiting delete behind it, which deleted the moved event on Google; an
