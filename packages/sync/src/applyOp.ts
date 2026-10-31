@@ -852,8 +852,8 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
    * (it settles them); the rest go to sync.
    *
    * Only what was queued after the move goes, so the move is still queued
-   * here (a discard releases a move before removing it); one no longer
-   * queued was released already, by a discard while its request was out.
+   * here (a discard releases a move before removing it, and waits for the
+   * drain); one no longer queued was released already.
    * An occurrence's id is the master's, `_` and its original start; a
    * series split off in Google's own UI (`<id>_R<start>`) is its own.
    */
@@ -877,10 +877,9 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         ) {
           continue;
         }
-        yield* pendingOpRepo.remove(queued.id);
-        if (queued.kind !== 'move' || queued.targetCalendarId !== source) {
-          yield* pendingOpRepo.enqueue(retargetOp(queued, source));
-        }
+        yield* queued.kind === 'move' && queued.targetCalendarId === source
+          ? pendingOpRepo.remove(queued.id)
+          : pendingOpRepo.retarget(retargetOp(queued, source));
         if (queued.kind === 'move') {
           movedOn = true;
           break;

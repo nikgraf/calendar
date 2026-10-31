@@ -587,12 +587,23 @@ const make: Effect.Effect<
         ),
       );
 
+  /**
+   * A move's discard sends what was queued after it back to the source, so
+   * it waits for the drain: with the move's request out, Google may still
+   * make it, and the edits sent back would 404 in the source. The gate is
+   * taken outside the transaction — the drain writes while it holds it.
+   */
   const discardPendingOp: EventMutationsShape['discardPendingOp'] = (opId) =>
+    Effect.flatMap(pendingOpRepo.getById(opId), (op) =>
+      op?.kind === 'move' ? gate.withPermits(1)(discard(opId)) : discard(opId),
+    );
+
+  const discard = (opId: string) =>
     sql.withTransaction(
       Effect.gen(function* () {
         let op = yield* pendingOpRepo.getById(opId);
-        // A move sends back what was queued after it, so its release reads
-        // its place in the queue: it goes once released.
+        // A move's release reads its place in the queue (what was queued
+        // after it): it goes once released.
         if (op?.kind === 'move') {
           yield* releaseRow(op);
           return yield* pendingOpRepo.remove(opId);

@@ -397,8 +397,11 @@ it whenever a kind is added. Rules that keep the queue correct:
   discarded, refused (a 403 for a non-organizer, any other permanent
   4xx), or not in the destination either — puts the rows back in the
   source with what was queued after it, snapshots re-keyed the same way
-  (`releaseMove`; a discard releases the move before removing it, so its
-  place is known): left in the destination, an edit or a
+  and rewritten in place, so each keeps its place in the queue
+  (`releaseMove`, `retarget`). A move's discard waits for the drain (its
+  request may be out, and Google may still make the move) and releases
+  the move before removing it, so its place is known. Left in the
+  destination, an edit or a
   this-and-following cut's master update and exception deletes would
   404 there and be dropped, while the source row showed what Google
   never got. The series' next move out of the destination ends what goes

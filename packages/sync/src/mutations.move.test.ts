@@ -28,8 +28,7 @@ import {
 import { RemindersClient, unavailableRemindersClient } from '@calendar/reminders';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
-import { Effect, Layer, Scheduler } from 'effect';
-import { TestClock } from 'effect/testing';
+import { Effect, Fiber, Layer, Scheduler } from 'effect';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
 import { describe } from 'vite-plus/test';
 import { appleCalendarServicesLayer } from './appleCalendarEvents.ts';
@@ -1050,16 +1049,14 @@ describe('a move Google never makes', () => {
     const offline = recordingGoogle([], {
       moveEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline', status: 503 })),
     });
-    // cal-1 → cal-2 → cal-2b → cal-2 while offline, a second apart: the
-    // first move's discard re-keys the second, and the rows belong to the
-    // third.
+    // cal-1 → cal-2 → cal-2b → cal-2 while offline, all in one millisecond
+    // (the test clock stands still): the first move's discard re-keys the
+    // second in its place, and the rows belong to the third.
     return Effect.gen(function* () {
       yield* seed([googleEvent()]);
       const mutations = yield* EventMutations;
       yield* mutations.moveEvent(move(['acc-1', 'cal-1', 'evt-a'], ['acc-1', 'cal-2']));
-      yield* TestClock.adjust('1 second');
       yield* mutations.moveEvent(move(['acc-1', 'cal-2', 'evt-a'], ['acc-1', 'cal-2b']));
-      yield* TestClock.adjust('1 second');
       yield* mutations.moveEvent(move(['acc-1', 'cal-2b', 'evt-a'], ['acc-1', 'cal-2']));
       const [first] = yield* queued;
       yield* mutations.discardPendingOp(first!.id);
@@ -1069,7 +1066,7 @@ describe('a move Google never makes', () => {
       ).toEqual(['move:cal-1:cal-2b', 'move:cal-2b:cal-2']);
       expect(yield* rowAt('acc-1', 'cal-1', 'evt-a')).toBeNull();
       expect((yield* rowAt('acc-1', 'cal-2', 'evt-a'))?.syncStatus).toBe('pending');
-    }).pipe(Effect.provide(testLayer(offline, appleFake())));
+    }).pipe(noYield, Effect.provide(testLayer(offline, appleFake())));
   });
 
   it.effect('discarding a move onwards leaves the rows pending for the move ahead', () => {
@@ -1224,6 +1221,47 @@ describe('a move Google never makes', () => {
       yield* mutations.processPendingOps();
 
       expect(calls.map((call) => `${call.kind}:${call.calendarId}:${call.detail}`)).toEqual([
+        'patch:cal-2:Renamed',
+      ]);
+      expect(yield* queued).toEqual([]);
+      expect(yield* rowAt('acc-1', 'cal-1', 'evt-a')).toBeNull();
+      expect((yield* rowAt('acc-1', 'cal-2', 'evt-a'))?.syncStatus).toBe('synced');
+    }).pipe(noYield, Effect.provide(testLayer(google, appleFake())));
+  });
+
+  it.effect('a discard of a move whose request is out waits for its answer', () => {
+    // Google makes the move while the user discards it: the edit behind it
+    // must still go to cal-2, where the event now is.
+    const calls: Array<Call> = [];
+    const plain = recordingGoogle(calls);
+    let duringMove: Effect.Effect<void> = Effect.void;
+    let discarding: Fiber.Fiber<void> | undefined;
+    const google = recordingGoogle(calls, {
+      moveEvent: (params) =>
+        Effect.gen(function* () {
+          discarding = yield* Effect.forkChild(duringMove);
+          yield* Effect.repeat(Effect.yieldNow, { times: 20 });
+          return yield* plain.moveEvent(params);
+        }),
+    });
+    return Effect.gen(function* () {
+      yield* seed([googleEvent()]);
+      const mutations = yield* EventMutations;
+      yield* mutations.moveEvent(move(['acc-1', 'cal-1', 'evt-a'], ['acc-1', 'cal-2']));
+      yield* mutations.updateEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-2',
+        changes: { title: 'Renamed' },
+        eventId: 'evt-a',
+      });
+      const moving = (yield* queued).find((op) => op.kind === 'move');
+      duringMove = Effect.orDie(mutations.discardPendingOp(moving!.id));
+      yield* mutations.processPendingOps();
+      yield* Fiber.join(discarding!);
+      yield* mutations.processPendingOps();
+
+      expect(calls.map((call) => `${call.kind}:${call.calendarId}:${call.detail}`)).toEqual([
+        'move:cal-1:cal-2',
         'patch:cal-2:Renamed',
       ]);
       expect(yield* queued).toEqual([]);

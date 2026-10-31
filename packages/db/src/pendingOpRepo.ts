@@ -136,6 +136,13 @@ export interface PendingOpRepoShape {
     eventId: string,
   ) => Effect.Effect<void, SqlError>;
   /**
+   * Writes an op re-keyed to another calendar (its calendar, the event
+   * snapshots and its retry state) in place: a released move's followers
+   * go back keeping their place in the queue, ties on `created_at`
+   * included.
+   */
+  readonly retarget: (op: PendingOp) => Effect.Effect<void, SqlError>;
+  /**
    * Makes waiting ops due now (one account's, or all): a reconnect or the
    * app coming back is a reason to try again, not to sit out a backoff of
    * up to 30 minutes. Attempts are kept, so the next failure backs off as
@@ -396,6 +403,19 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
             sql`DELETE FROM pending_ops WHERE account_id = ${accountId}
               AND calendar_id = ${calendarId} AND event_id = ${eventId}
               AND kind NOT IN ('rsvp', 'move')`,
+          ),
+        ),
+      retarget: (op) =>
+        invalidating(
+          Effect.asVoid(
+            sql`UPDATE pending_ops SET calendar_id = ${op.calendarId},
+                payload = ${op.payload ? JSON.stringify(eventPayloadJson(op.payload)) : null},
+                server_payload = ${op.serverPayload ? JSON.stringify(eventPayloadJson(op.serverPayload)) : null},
+                before_payload = ${beforePayloadColumn(op.beforePayload)},
+                before_overrides = ${op.beforeOverrides ? JSON.stringify(eventListJson(op.beforeOverrides)) : null},
+                attempts = ${op.attempts}, next_attempt_at = ${op.nextAttemptAt},
+                last_error = ${op.lastError ?? null}
+              WHERE id = ${op.id}`,
           ),
         ),
       retryNow: (accountId) =>
