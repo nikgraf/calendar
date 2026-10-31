@@ -304,6 +304,51 @@ describe('PendingOpRepo', () => {
     }).pipe(Effect.provide(freshDbLayer())),
   );
 
+  it.effect('retarget rewrites an op in place, keeping its place in the queue', () =>
+    Effect.gen(function* () {
+      const repo = yield* PendingOpRepo;
+      const before = new EventRecord({ ...eventRow('Before'), calendarId: 'cal-2' });
+      yield* repo.enqueue(
+        op('a', {
+          attempts: 3,
+          beforePayload: before,
+          calendarId: 'cal-2',
+          lastError: 'waiting for the move ahead of it',
+          nextAttemptAt: 99,
+          payload: new EventRecord({ ...eventRow('After'), calendarId: 'cal-2' }),
+        }),
+      );
+      yield* repo.enqueue(op('b', { kind: 'move', targetCalendarId: 'cal-2' }));
+      yield* repo.enqueue(op('c', { beforePayload: null, calendarId: 'cal-2' }));
+      const [a, , c] = yield* repo.listAll();
+      yield* repo.retarget(
+        new PendingOp({
+          ...a!,
+          attempts: 0,
+          beforePayload: new EventRecord({ ...before, calendarId: 'cal-1' }),
+          calendarId: 'cal-1',
+          lastError: undefined,
+          nextAttemptAt: 0,
+          payload: new EventRecord({ ...a!.payload!, calendarId: 'cal-1' }),
+        }),
+      );
+      yield* repo.retarget(new PendingOp({ ...c!, calendarId: 'cal-1' }));
+
+      const ops = yield* repo.listAll();
+      expect(ops.map((entry) => `${entry.id}:${entry.calendarId}`)).toEqual([
+        'a:cal-1',
+        'b:cal-1',
+        'c:cal-1',
+      ]);
+      expect(ops[0]).toMatchObject({ attempts: 0, nextAttemptAt: 0 });
+      expect(ops[0]?.lastError).toBeUndefined();
+      expect(ops[0]?.payload?.calendarId).toBe('cal-1');
+      expect(ops[0]?.beforePayload?.calendarId).toBe('cal-1');
+      expect(ops[0]?.beforePayload?.title).toBe('Before');
+      expect(ops[2]?.beforePayload).toBeNull();
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
   it.effect('earlierInSeries sees older ops for the series in any calendar', () =>
     Effect.gen(function* () {
       const repo = yield* PendingOpRepo;

@@ -17,6 +17,7 @@ import type {
   TaskRepoShape,
 } from '@calendar/db';
 import {
+  type GcalEvent,
   type GcalTask,
   type GoogleCalendarClientShape,
   type GoogleRequestError,
@@ -223,10 +224,38 @@ const ownedFields = (
   };
 };
 
+/**
+ * An op re-keyed with its event to another calendar of the account (a
+ * move queued, or a move Google never made): what a discard puts back,
+ * what it sends and a parked op's copy of Google's live there now too. It
+ * starts over and is due at once; a parked op stays parked, its reason
+ * with it.
+ */
+export const retargetOp = (op: PendingOp, calendarId: string): PendingOp => {
+  const retarget = (record: EventRecord) => new EventRecord({ ...record, calendarId });
+  return new PendingOp({
+    ...op,
+    attempts: 0,
+    beforeOverrides: op.beforeOverrides?.map((row) => retarget(row)),
+    beforePayload: op.beforePayload ? retarget(op.beforePayload) : op.beforePayload,
+    calendarId,
+    lastError: op.conflictAt === undefined ? undefined : op.lastError,
+    nextAttemptAt: 0,
+    payload: op.payload ? retarget(op.payload) : undefined,
+    serverPayload: op.serverPayload ? retarget(op.serverPayload) : undefined,
+  });
+};
+
 export interface ApplyOp {
   readonly apply: (op: PendingOp) => Effect.Effect<ApplyOutcome>;
   /** Puts back what an abandoned op changed locally and hands its row to sync (also used by discard). */
   readonly releaseRow: (op: PendingOp, options?: ReleaseOptions) => Effect.Effect<void>;
+  /**
+   * A discarded move that was sent: Google may have made it, its answer
+   * lost. The destination decides whether it lands or goes back. Run with
+   * no request out (under the drain's gate), the move still queued.
+   */
+  readonly settleDiscardedMove: (op: PendingOp) => Effect.Effect<void>;
 }
 
 export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
@@ -700,11 +729,12 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
     const revert = options.revert ?? true;
     switch (op.kind) {
       case 'move':
-        // The server still has the event in the source calendar: put the
-        // rows the move re-keyed back there and hand them to sync.
+        // Not reverted (a 2xx that did not decode): Google made the move.
         return op.targetCalendarId
           ? Effect.ignore(
-              rekeySeries(op.accountId, op.targetCalendarId, op.calendarId, op.eventId, 'synced'),
+              revert
+                ? transaction(releaseMove(op, op.targetCalendarId))
+                : landMove(op, op.targetCalendarId, undefined),
             )
           : Effect.void;
       case 'create':
@@ -803,25 +833,166 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
     }
   };
 
-  /** Moves a series' local rows (master + overrides) between calendars of one account. */
-  function rekeySeries(
-    accountId: string,
-    fromCalendarId: string,
-    toCalendarId: string,
-    masterId: string,
-    syncStatus: EventRecord['syncStatus'],
-  ) {
-    return Effect.gen(function* () {
-      const master = yield* eventRepo.getById(accountId, fromCalendarId, masterId);
-      const overrides = yield* eventRepo.listOverrides(accountId, fromCalendarId, masterId);
-      for (const row of master ? [master, ...overrides] : overrides) {
-        yield* eventRepo.deleteEvent(accountId, fromCalendarId, row.id);
-        yield* eventRepo.upsertMany([
-          new EventRecord({ ...row, calendarId: toCalendarId, syncStatus }),
-        ]);
+  /** A series' local rows (master + overrides) in one calendar. */
+  const seriesRows = (accountId: string, calendarId: string, masterId: string) =>
+    Effect.gen(function* () {
+      const master = yield* eventRepo.getById(accountId, calendarId, masterId);
+      const overrides = yield* eventRepo.listOverrides(accountId, calendarId, masterId);
+      return master ? [master, ...overrides] : overrides;
+    });
+
+  /**
+   * A move Google never made (discarded, refused, or a 404 for the event
+   * or the destination): the server still has the event in the source.
+   * Its rows go back there, and so does what googleServerMove re-queued
+   * behind the move — edits, a this-and-following cut's master update and
+   * exception deletes, a move onwards — snapshots and all: addressed to
+   * the destination it would 404 and be dropped, while the source row
+   * showed what Google never got. The series' next move out of the
+   * destination ends what goes back: it now leaves from the source (one
+   * back to the source has nothing left to move), and it took the rows
+   * along — any in the destination now, and what is queued there, are a
+   * later move's back into it. A row a queued op owns stays as it was
+   * (pending, or a pulled copy a delete waits for, synced for
+   * dropPulledCopy), and all stay while a move into the source is queued
+   * (it settles them); the rest go to sync.
+   *
+   * Only what was queued after the move goes, so the move is still queued
+   * here (a discard releases a move before removing it); one no longer
+   * queued was released already.
+   * An occurrence's id is the master's, `_` and its original start; a
+   * series split off in Google's own UI (`<id>_R<start>`) is its own.
+   */
+  const releaseMove = (op: PendingOp, destination: string) =>
+    Effect.gen(function* () {
+      const { accountId, calendarId: source, eventId: masterId } = op;
+      const inSeries = (eventId: string) =>
+        eventId === masterId ||
+        (eventId.startsWith(`${masterId}_`) && /\d/.test(eventId.charAt(masterId.length + 1)));
+      const all = yield* pendingOpRepo.listAll();
+      const at = all.findIndex((queued) => queued.id === op.id);
+      if (at === -1) {
+        return;
+      }
+      let movedOn = false;
+      for (const queued of all.slice(at + 1)) {
+        if (
+          queued.accountId !== accountId ||
+          queued.calendarId !== destination ||
+          !inSeries(queued.eventId)
+        ) {
+          continue;
+        }
+        yield* queued.kind === 'move' && queued.targetCalendarId === source
+          ? pendingOpRepo.remove(queued.id)
+          : pendingOpRepo.retarget(retargetOp(queued, source));
+        if (queued.kind === 'move') {
+          movedOn = true;
+          break;
+        }
+      }
+      if (!movedOn) {
+        for (const row of yield* seriesRows(accountId, destination, masterId)) {
+          yield* eventRepo.deleteEvent(accountId, destination, row.id);
+          yield* eventRepo.upsertMany([new EventRecord({ ...row, calendarId: source })]);
+        }
+      }
+      const others = (yield* pendingOpRepo.listAll()).filter(
+        (queued) => queued.id !== op.id && queued.accountId === accountId,
+      );
+      if (
+        others.some(
+          (queued) =>
+            queued.kind === 'move' &&
+            queued.eventId === masterId &&
+            queued.targetCalendarId === source,
+        )
+      ) {
+        return;
+      }
+      const owned = new Set(
+        others.filter((queued) => queued.calendarId === source).map((queued) => queued.eventId),
+      );
+      for (const row of yield* seriesRows(accountId, source, masterId)) {
+        if (row.syncStatus === 'pending' && !owned.has(row.id)) {
+          yield* eventRepo.markSynced(accountId, source, row.id);
+        }
       }
     });
-  }
+
+  /**
+   * A move Google made: its answer (`response`; none for a 2xx that did
+   * not decode, whose rows keep what they show) settles the master, and
+   * the exceptions, which moved with it, go back to sync. A row a queued
+   * edit still owns stays pending until that op lands. No row at the
+   * destination means the user moved it on again (or deleted it) while
+   * this op waited: those later ops own the rows now.
+   */
+  const landMove = (op: PendingOp, destination: string, response: GcalEvent | undefined) =>
+    Effect.gen(function* () {
+      const local = yield* eventRepo.getById(op.accountId, destination, op.eventId);
+      if (local && response) {
+        const now = yield* Clock.currentTimeMillis;
+        const synced = mapGcalEvent(response, {
+          accountId: op.accountId,
+          calendarId: destination,
+          defaultTimeZone: local.startTimeZone ?? 'UTC',
+          syncedAt: now,
+        });
+        yield* settle(op, synced, { calendarId: destination });
+      }
+      const queuedIds = new Set(
+        (yield* pendingOpRepo.listAll())
+          .filter((queued) => queued.id !== op.id && queued.accountId === op.accountId)
+          .map((queued) => queued.eventId),
+      );
+      const rows = yield* seriesRows(op.accountId, destination, op.eventId);
+      for (const row of rows) {
+        if ((row.id !== op.eventId || !response) && !queuedIds.has(row.id)) {
+          yield* eventRepo.markSynced(op.accountId, destination, row.id);
+        }
+      }
+    });
+
+  /**
+   * A move's 404 is the event or the destination — or only that an
+   * earlier attempt landed and its answer was lost, so the retry asked
+   * the source, which has nothing any more. The destination decides:
+   * there, the move landed; not there (or cancelled), Google never made
+   * it, and if the event is really gone the source's next pull carries
+   * the tombstone (deleting the rows here would hide one that exists
+   * until a full resync). A lookup with no answer decides nothing: the
+   * move stays queued and asks again — unless the user discarded it
+   * (`unanswered: 'release'`): then it goes back as asked, a move that
+   * never reached Google being the likely case.
+   */
+  const settleOrReleaseMove = (
+    op: PendingOp,
+    unanswered: 'release' | 'retry' = 'retry',
+  ): Effect.Effect<ApplyOutcome> =>
+    Effect.gen(function* () {
+      const destination = op.targetCalendarId;
+      if (destination === undefined) {
+        return 'done' as const;
+      }
+      const found = yield* Effect.result(
+        client.getEvent({ accountId: op.accountId, calendarId: destination, eventId: op.eventId }),
+      );
+      if (found._tag === 'Success' && found.success.status !== 'cancelled') {
+        yield* Effect.ignore(landMove(op, destination, found.success));
+        return 'done' as const;
+      }
+      if (
+        unanswered === 'retry' &&
+        found._tag === 'Failure' &&
+        found.failure._tag !== 'NotFoundError' &&
+        found.failure._tag !== 'SyncTokenExpiredError'
+      ) {
+        return retry('Google did not say where the event is');
+      }
+      yield* releaseRow(op);
+      return 'done' as const;
+    });
 
   /** A rejection retrying cannot fix: say so, tell the UI, drop the op. */
   const drop = (
@@ -881,6 +1052,9 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       if (op.kind === 'moveTask') {
         return yield* settleOrRevertTaskMove(op);
       }
+      if (op.kind === 'move') {
+        return yield* settleOrReleaseMove(op);
+      }
       // The task, or the parent or sibling it was placed by, is gone: the
       // row goes back to where Google last had it, and a task really
       // deleted there arrives as the list's tombstone.
@@ -896,13 +1070,6 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         if (op.kind === 'deleteTask') {
           yield* retireSubtaskDeletes(op);
         }
-      } else if (op.kind === 'move') {
-        // 404 is the event *or the destination calendar* — put the
-        // rows back where the server last had them. If the event is
-        // really gone the source's next pull carries the tombstone;
-        // deleting here would hide a still-existing event until a
-        // full resync (incremental pulls never resend it).
-        yield* releaseRow(op);
       } else {
         yield* eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
       }
@@ -1458,6 +1625,22 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
           if (!destination) {
             return yield* drop(op, 'move without a destination');
           }
+          // Stamped before the request, in one transaction with the check
+          // that it is still queued: a discard came first (nothing goes
+          // out), or it sees the stamp and asks Google before putting
+          // anything back (settleDiscardedMove).
+          const sending = yield* transaction(
+            Effect.gen(function* () {
+              const queued = yield* pendingOpRepo.getById(op.id);
+              if (queued) {
+                yield* pendingOpRepo.markDispatched(op.id, yield* Clock.currentTimeMillis);
+              }
+              return queued !== undefined;
+            }),
+          );
+          if (!sending) {
+            return 'done' as const;
+          }
           const local = yield* eventRepo.getById(op.accountId, destination, op.eventId);
           const response = yield* client.moveEvent({
             accountId: op.accountId,
@@ -1466,35 +1649,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
             eventId: op.eventId,
             sendUpdates: local && hasGuests(local) ? guestMode : undefined,
           });
-          const now = yield* Clock.currentTimeMillis;
-          const synced = mapGcalEvent(response, {
-            accountId: op.accountId,
-            calendarId: destination,
-            defaultTimeZone: local?.startTimeZone ?? 'UTC',
-            syncedAt: now,
-          });
-          // No row at the destination means the user moved it on again (or
-          // deleted it) while this op waited: those later ops own the rows
-          // now — as does an edit queued behind the move.
-          if (local) {
-            yield* settle(op, synced, { calendarId: destination });
-          }
-          // Its exceptions moved with it; hand back the ones no queued edit
-          // still owns (those stay pending until their own op lands).
-          const queuedIds = new Set(
-            (yield* pendingOpRepo.listAll())
-              .filter((queued) => queued.id !== op.id && queued.accountId === op.accountId)
-              .map((queued) => queued.eventId),
-          );
-          for (const override of yield* eventRepo.listOverrides(
-            op.accountId,
-            destination,
-            op.eventId,
-          )) {
-            if (!queuedIds.has(override.id)) {
-              yield* eventRepo.markSynced(op.accountId, destination, override.id);
-            }
-          }
+          yield* landMove(op, destination, response);
           return 'done' as const;
         }
         case 'rsvp': {
@@ -1659,5 +1814,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       }),
     );
 
-  return { apply, releaseRow };
+  const settleDiscardedMove = (op: PendingOp) => Effect.asVoid(settleOrReleaseMove(op, 'release'));
+
+  return { apply, releaseRow, settleDiscardedMove };
 };

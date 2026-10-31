@@ -303,6 +303,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   landed delete also taking a pending row no op owns (the user's later
   move would vanish). Open: an edit of one occurrence leaves the series'
   queued delete in place, so the delete still wins there.
+- **A move Google never makes takes its queued edits back** (2026-10-31, #271)
+  — Opus review of #267: a refused, unfound or discarded move put only
+  the rows back; the edits behind it stayed addressed to the destination,
+  404'd and were dropped. They now go back in place, snapshots re-keyed; a
+  move onwards leaves from the source. A 404, or a discard of a move that
+  was sent, asks the destination first: a lost answer means it may have
+  landed. Rejected: dropping the edits and restoring rows from snapshots
+  (a 403 is no reason to lose an edit); a discard waiting for the drain
+  (it sent the move meanwhile). Open: a discarded sent move with Google
+  unreachable goes back; a refused sent create takes only one move along.
 - **Re-auth and sync kicks** — a 401 flags the account `reauth_required`
   and keeps its ops queued for after the reconnect (same id, by email);
   wake/unlock/focus/foreground kick a sync, throttled to one per 15 s,
