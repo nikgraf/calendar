@@ -24,8 +24,14 @@ const isTempTaskId = (id: string): boolean => id.startsWith('local-');
  * id (the push hands back the real one within seconds; a desktop would
  * otherwise fire twice). Nothing when the setting is off. One
  * notification per task and due day — the key names those, not the
- * list, which a move changes — never again: an overdue task does not
- * repeat. A missed one stays worth showing until midnight after the
+ * list, which a move changes; for a reminder with an instant of its own
+ * the task and the instant, which no zone change moves — never again: an
+ * overdue task does not repeat. A plan's `since` is the latest of the
+ * task's last change, `options.since` and the task's queued local edit
+ * (`options.localEdits`): a Google row edited here keeps the server's
+ * stamp until the push lands, which must not vouch for a moment the
+ * edit introduced. A missed one stays worth showing until midnight after
+ * the
  * due day. No `dismissAt`: a task is done when it is checked off, which
  * the scheduler reads from the stored row. A task whose dates this
  * engine cannot read goes without a notification, never the whole pass.
@@ -37,6 +43,8 @@ export const planTaskReminders = (
     readonly fromDate: string;
     /** The visible lists; a task on another list is skipped, and with several the body names the task's. */
     readonly lists: ReadonlyArray<TaskListInfo>;
+    /** When each task's queued local edit was made, by `<accountId>/<id>`. */
+    readonly localEdits?: ReadonlyMap<string, number> | undefined;
     /**
      * When task notifications were last configured on this device (the
      * settings row's stamp): a plan's subject dates from the later of
@@ -89,8 +97,15 @@ export const planTaskReminders = (
         body: parts.join(' · '),
         expiresAt,
         fireAt,
-        key: `task:${task.accountId}/${task.id}:${dueDate}`,
-        since: Math.max(task.updatedAt, options.since ?? 0),
+        key:
+          task.dueUtc === undefined
+            ? `task:${task.accountId}/${task.id}:${dueDate}`
+            : `task:${task.accountId}/${task.id}@${String(task.dueUtc)}`,
+        since: Math.max(
+          task.updatedAt,
+          options.since ?? 0,
+          options.localEdits?.get(`${task.accountId}/${task.id}`) ?? 0,
+        ),
         // The day the row says, which the rule compares to the row again.
         target: taskNotificationTarget(task, storedDay),
         title: task.title,

@@ -131,7 +131,7 @@ describe('planTaskReminders', () => {
         body: 'Due today · 12:30 AM',
         expiresAt: utc('2026-03-04T23:00:00Z'),
         fireAt: utc('2026-03-03T23:30:00Z'),
-        key: 'task:apple-reminders/rem-1:2026-03-04',
+        key: 'task:apple-reminders/rem-1@1772580600000',
         since: 0,
         target: {
           accountId: APPLE_REMINDERS_ACCOUNT_ID,
@@ -149,9 +149,16 @@ describe('planTaskReminders', () => {
     expect(planTaskReminders([early], settings(), { ...window, lists: [errands] })).toEqual([]);
   });
 
-  it("dates a plan's subject from the later of the task's change and the settings' save", () => {
+  it("dates a plan's subject from the latest of the task's change, the settings' save and a queued edit", () => {
     const [plan] = planTaskReminders([task({ updatedAt: 5 })], settings(), { ...window, since: 9 });
     expect(plan?.since).toBe(9);
+    expect(
+      planTaskReminders([task({ updatedAt: 5 })], settings(), {
+        ...window,
+        localEdits: new Map([['acc/t1', 11]]),
+        since: 9,
+      })[0]?.since,
+    ).toBe(11);
     expect(
       planTaskReminders([task({ updatedAt: 12 })], settings(), { ...window, since: 9 })[0]?.since,
     ).toBe(12);

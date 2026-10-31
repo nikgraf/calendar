@@ -10,6 +10,7 @@ import {
   type CalendarRepo,
   DeviceSettingsRepo,
   type EventRepo,
+  PendingOpRepo,
   TaskRepo,
 } from '@calendar/db';
 import { BIRTHDAYS_KEY, EVENTS_KEY, TASKLISTS_KEY, TASKS_KEY } from '@calendar/db/keys';
@@ -123,6 +124,7 @@ const make = (options: {
   | DeviceSettingsRepo
   | EventRepo
   | NotificationSink
+  | PendingOpRepo
   | Reactivity
   | TaskRepo
 > =>
@@ -143,6 +145,7 @@ const make = (options: {
       | DeviceContacts
       | DeviceSettingsRepo
       | EventRepo
+      | PendingOpRepo
       | TaskRepo
     >();
 
@@ -401,6 +404,7 @@ export class LocalNotifications extends Context.Service<
     | DeviceSettingsRepo
     | EventRepo
     | NotificationSink
+    | PendingOpRepo
     | Reactivity
     | TaskRepo
   > => Layer.effect(LocalNotifications)(make(options));

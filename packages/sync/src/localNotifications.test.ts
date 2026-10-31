@@ -12,6 +12,7 @@ import {
   eventNotificationTarget,
   EventRecord,
   EventReminders,
+  PendingOp,
   type PlannedNotification,
   ReminderOverride,
   TaskListInfo,
@@ -23,6 +24,7 @@ import {
   CalendarRepo,
   DeviceSettingsRepo,
   EventRepo,
+  PendingOpRepo,
   reposLayer,
   runMigrations,
   TaskRepo,
@@ -245,7 +247,7 @@ const callBank = new TaskRecord({
   title: 'Call the bank',
   updatedAt: 0,
 });
-const BANK_KEY = `task:${APPLE_REMINDERS_ACCOUNT_ID}/bank:2026-03-03`;
+const BANK_KEY = `task:${APPLE_REMINDERS_ACCOUNT_ID}/bank@${String(Date.parse('2026-03-03T14:00:00Z'))}`;
 
 /** A task's reminder as the OS shows it after delivery: its key and target, no deadline. */
 const deliveredTask = (task: TaskRecord, key: string): DeliveredNotification => ({
@@ -858,6 +860,43 @@ describe('LocalNotifications', () => {
     },
   );
 
+  it.effect('a task re-dated to today after its time stays silent, pushed or not', () => {
+    const { shown, sink } = immediateSink();
+    return Effect.gen(function* () {
+      yield* seedTasks();
+      const notifications = yield* LocalNotifications;
+      yield* setClock('2026-03-02T10:00:00Z');
+      yield* notifications.run();
+      yield* TestClock.adjust('24 hours');
+      yield* notifications.run();
+      // Re-dated here at 10:00: the row keeps the server's old stamp until
+      // the push lands; the queued op dates the edit.
+      yield* (yield* TaskRepo).upsertTasks([rent], 1);
+      yield* (yield* PendingOpRepo).enqueue(
+        new PendingOp({
+          accountId: 'acc-1',
+          attempts: 0,
+          calendarId: 'inbox',
+          createdAt: Date.parse('2026-03-03T10:00:00Z'),
+          eventId: 'rent',
+          id: 'op-rent',
+          kind: 'updateTask',
+          nextAttemptAt: 0,
+          taskListId: 'inbox',
+        }),
+      );
+      yield* notifications.run();
+      expect(shown).toEqual([]);
+      yield* (yield* PendingOpRepo).remove('op-rent');
+      yield* (yield* TaskRepo).upsertTasks(
+        [new TaskRecord({ ...rent, updatedAt: Date.parse('2026-03-03T10:00:00Z') })],
+        1,
+      );
+      yield* notifications.run();
+      expect(shown).toEqual([]);
+    }).pipe(Effect.provide(testLayer(sink)));
+  });
+
   it.effect('a reminder postponed to later the same day notifies again then, as on iOS', () => {
     const { shown, sink } = immediateSink();
     return Effect.gen(function* () {
@@ -882,7 +921,10 @@ describe('LocalNotifications', () => {
       expect(shown).toEqual([BANK_KEY]);
       yield* TestClock.adjust('2 hours');
       yield* notifications.run();
-      expect(shown).toEqual([BANK_KEY, BANK_KEY]);
+      expect(shown).toEqual([
+        BANK_KEY,
+        `task:${APPLE_REMINDERS_ACCOUNT_ID}/bank@${String(Date.parse('2026-03-03T16:00:00Z'))}`,
+      ]);
     }).pipe(Effect.provide(testLayer(sink)));
   });
 

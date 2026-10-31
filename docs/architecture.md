@@ -1466,7 +1466,9 @@ gateway carries all of it. Details, limits and the threat model:
   when the row was last read; Apple Reminders unless switched off; a
   Google task still under
   its temporary id skipped; one per task and due day, key
-  `task:<account>/<id>:<dueDate>` (not the list: a move keeps the id),
+  `task:<account>/<id>:<dueDate>` (not the list: a move keeps the id; a
+  reminder with an instant of its own `…/<id>@<dueUtc>`, which no zone
+  change moves),
   `expiresAt` midnight after the due day, no `dismissAt`), merged
   into one `PlannedNotification` list, each carrying a `target` the tap
   resolves (`findNotificationEvent`, `findNotificationTask`). A producer

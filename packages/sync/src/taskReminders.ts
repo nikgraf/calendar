@@ -1,5 +1,5 @@
 import { type PlannedNotification, planTaskReminders, toZonedDateTime } from '@calendar/core';
-import { DeviceSettingsRepo, TaskRepo } from '@calendar/db';
+import { DeviceSettingsRepo, PendingOpRepo, TaskRepo } from '@calendar/db';
 import { Effect } from 'effect';
 import type { SqlError } from 'effect/sql/SqlError';
 import { readTaskNotificationSettings, TASK_NOTIFICATIONS_KEY } from './deviceSettings.ts';
@@ -23,7 +23,11 @@ const TASKS_SINCE_KEY = 'localNotifications.tasksSince';
 export const loadTaskPlans = (
   now: number,
   timeZone: string,
-): Effect.Effect<ReadonlyArray<PlannedNotification>, SqlError, DeviceSettingsRepo | TaskRepo> =>
+): Effect.Effect<
+  ReadonlyArray<PlannedNotification>,
+  SqlError,
+  DeviceSettingsRepo | PendingOpRepo | TaskRepo
+> =>
   Effect.gen(function* () {
     const settings = yield* readTaskNotificationSettings;
     if (!settings.enabled) {
@@ -49,5 +53,21 @@ export const loadTaskPlans = (
       today.add({ days: HORIZON_DAYS + 1 }).toString(),
     );
     const lists = (yield* taskRepo.listLists()).filter((list) => list.isVisible);
-    return planTaskReminders(tasks, settings, { fromDate, lists, since, timeZone, untilDate });
+    // A queued task op dates the local edit the row carries under the
+    // server's older stamp.
+    const localEdits = new Map<string, number>();
+    for (const op of yield* (yield* PendingOpRepo).listAll()) {
+      if (op.taskListId !== undefined) {
+        const key = `${op.accountId}/${op.eventId}`;
+        localEdits.set(key, Math.max(localEdits.get(key) ?? 0, op.createdAt));
+      }
+    }
+    return planTaskReminders(tasks, settings, {
+      fromDate,
+      lists,
+      localEdits,
+      since,
+      timeZone,
+      untilDate,
+    });
   });
