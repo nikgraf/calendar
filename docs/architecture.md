@@ -402,8 +402,12 @@ it whenever a kind is added. Rules that keep the queue correct:
   delete's exception rows, which queue no op of their own), `beforeTask`
   and `beforeColorHex`. When a newer edit replaces a queued op it inherits
   that op's snapshot, so the snapshot always names the last state Google
-  acknowledged, however many edits piled up offline; a move re-keys it to
-  the destination with the op. The unsynced-changes list diffs an op
+  acknowledged, however many edits piled up offline — except that a
+  replaced delete (or answer) hands on Google's copy when a pull put one
+  back while the delete waited (`isPulledCopy`: a delete takes its row or
+  leaves a pending tombstone, and pulls never write over a pending row);
+  a move re-keys it to the destination with the op. The unsynced-changes
+  list diffs an op
   against it (`pendingOpDiff`, computed in `listPendingOps` as display
   lines) and an abandoned op puts it back (`releaseRow`): a discard, a
   permanent rejection and keep-mine with nothing left all restore the row
@@ -417,14 +421,17 @@ it whenever a kind is added. Rules that keep the queue correct:
   task edit or toggle restores the fields it owns; a color goes back only
   while the calendar still shows the op's own (calendar-list pulls do not
   skip a queued color) — and the row stays `pending` while another op of
-  the item, or a queued move of it, still owns it. A row a pull deleted
-  meanwhile is not resurrected, and a pull that confirms an item deleted
+  the item, or a queued move of it, still owns it; an abandoned answer
+  leaves a pulled copy at a waiting delete's id as it is (Google's copy
+  never held the answer). A row a pull deleted meanwhile is not
+  resurrected, and a pull that confirms an item deleted
   upstream (a cancelled occurrence included) clears the queued delete's
   snapshot (`forgetDeleted`): the sync token has seen the deletion and
   will never send it again. When an op lands while others of the item are
   queued, every queued snapshot of the item moves to what Google
   acknowledged (`advanceBefore`, `advanceBeforeTask`; the ones queued
-  earlier never held the landed change either), so discarding one of
+  earlier never held the landed change either; a pulled copy at a waiting
+  delete's id takes it too), so discarding one of
   them never undoes it (a landed series edit moves its exceptions' queued
   snapshots to the carried text as well); a discarded op takes its owned
   fields out of the other queued snapshots and out of what they send (an

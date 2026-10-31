@@ -2,6 +2,7 @@ import { unavailableAppleCalendarClient } from '@calendar/apple-calendar';
 import { appleCalendarServicesLayer } from './appleCalendarEvents.ts';
 import {
   Account,
+  Attendee,
   CalendarInfo,
   EventRecord,
   EventReminders,
@@ -1443,6 +1444,12 @@ describe('EventMutations', () => {
   });
 });
 
+/** An invitation's guests: our own answer, and the organizer's. */
+const inviteGuests = (responseStatus: Attendee['responseStatus']) => [
+  new Attendee({ email: 'nik@example.com', isSelf: true, responseStatus }),
+  new Attendee({ email: 'host@example.com', isOrganizer: true, responseStatus: 'accepted' }),
+];
+
 describe('discarding a change puts the row back', () => {
   // The create lands; edits and deletes stay queued (offline).
   const landing = stubClient({
@@ -1529,6 +1536,178 @@ describe('discarding a change puts the row back', () => {
       expect(row?.syncStatus).toBe('synced');
     }).pipe(noYield, Effect.provide(mutationsLayer(landing))),
   );
+
+  describe('of the copy a pull put back while a delete waited', () => {
+    // The delete waits out a backoff; Google's newer copy comes back.
+    const deleteThenPull = Effect.gen(function* () {
+      const { mutations, record } = yield* synced;
+      const acked = yield* rowOf(record.id);
+      yield* mutations.deleteEvent({ accountId: 'acc-1', calendarId: 'cal-1', eventId: record.id });
+      yield* (yield* EventRepo).upsertMany(
+        [new EventRecord({ ...acked!, etag: '"server-2"', title: 'From Google' })],
+        { mode: 'pull' },
+      );
+      return { mutations, record };
+    });
+
+    it.effect('an edit: the row shows Google’s copy, not what the delete saw', () =>
+      Effect.gen(function* () {
+        const { mutations, record } = yield* deleteThenPull;
+        yield* mutations.updateEvent({
+          accountId: 'acc-1',
+          calendarId: 'cal-1',
+          changes: { location: 'Room 4' },
+          eventId: record.id,
+        });
+        const [op] = yield* ops;
+        expect(op?.kind).toBe('update');
+        expect(op?.beforePayload?.title).toBe('From Google');
+
+        yield* mutations.discardPendingOp(op!.id);
+        const row = yield* rowOf(record.id);
+        expect(row?.title).toBe('From Google');
+        expect(row?.location).toBeUndefined();
+        expect(row?.etag).toBe('"server-2"');
+        expect(row?.syncStatus).toBe('synced');
+      }).pipe(noYield, Effect.provide(mutationsLayer(landing))),
+    );
+
+    it.effect('a second delete: Google’s copy comes back', () =>
+      Effect.gen(function* () {
+        const { mutations, record } = yield* deleteThenPull;
+        yield* mutations.deleteEvent({
+          accountId: 'acc-1',
+          calendarId: 'cal-1',
+          eventId: record.id,
+        });
+        const [op] = yield* ops;
+        expect(op?.kind).toBe('delete');
+        expect(op?.beforePayload?.title).toBe('From Google');
+
+        yield* mutations.discardPendingOp(op!.id);
+        const row = yield* rowOf(record.id);
+        expect(row?.title).toBe('From Google');
+        expect(row?.etag).toBe('"server-2"');
+        expect(row?.syncStatus).toBe('synced');
+      }).pipe(noYield, Effect.provide(mutationsLayer(landing))),
+    );
+
+    describe('with an answer queued ahead of the delete', () => {
+      const invite = new EventRecord({
+        accountId: 'acc-1',
+        attendees: inviteGuests('needsAction'),
+        calendarId: 'cal-1',
+        endUtc: Date.parse('2026-07-03T11:00:00Z'),
+        etag: '"inv-1"',
+        id: 'invite1',
+        isAllDay: false,
+        organizerEmail: 'host@example.com',
+        startTimeZone: 'Europe/Vienna',
+        startUtc: Date.parse('2026-07-03T10:00:00Z'),
+        status: 'confirmed',
+        syncedAt: 1,
+        syncStatus: 'synced',
+        title: 'Planning',
+        updatedAt: 1,
+      });
+      const address = { accountId: 'acc-1', calendarId: 'cal-1', eventId: 'invite1' };
+      const ownAnswer = Effect.map(
+        rowOf('invite1'),
+        (row) => row?.attendees?.find((attendee) => attendee.isSelf)?.responseStatus,
+      );
+      // Accepted here, then deleted; declined on another device meanwhile.
+      const answerDeleteThenPull = Effect.gen(function* () {
+        yield* seedCalendar;
+        const mutations = yield* EventMutations;
+        const events = yield* EventRepo;
+        yield* events.upsertMany([invite]);
+        yield* mutations.respondToEvent({ ...address, response: 'accepted' });
+        // The delete keeps the answer queued ahead of it.
+        yield* mutations.deleteEvent(address);
+        yield* events.upsertMany(
+          [
+            new EventRecord({
+              ...invite,
+              attendees: inviteGuests('declined'),
+              etag: '"inv-2"',
+              title: 'From Google',
+            }),
+          ],
+          { mode: 'pull' },
+        );
+        expect((yield* ops).map((op) => op.kind)).toEqual(['rsvp', 'delete']);
+        return mutations;
+      });
+
+      it.effect('discarding the answer leaves Google’s copy as it is', () =>
+        Effect.gen(function* () {
+          const mutations = yield* answerDeleteThenPull;
+          const rsvp = (yield* ops).find((op) => op.kind === 'rsvp');
+          yield* mutations.discardPendingOp(rsvp!.id);
+          expect(yield* ownAnswer).toBe('declined');
+          expect((yield* rowOf('invite1'))?.syncStatus).toBe('synced');
+
+          // And the next edit takes it as what it replaced.
+          yield* mutations.updateEvent({ ...address, changes: { location: 'Room 4' } });
+          const [update] = yield* ops;
+          expect(update?.kind).toBe('update');
+          expect(update?.beforePayload?.title).toBe('From Google');
+        }).pipe(noYield, Effect.provide(mutationsLayer(landing))),
+      );
+
+      it.effect('an answer that lands after the pull settles Google’s copy too', () => {
+        let online = false;
+        const client = stubClient({
+          deleteEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
+          patchEvent: ({ eventId }) =>
+            online
+              ? Effect.succeed({
+                  attendees: [
+                    { email: 'nik@example.com', responseStatus: 'accepted', self: true },
+                    { email: 'host@example.com', organizer: true, responseStatus: 'accepted' },
+                  ],
+                  end: { dateTime: '2026-07-03T11:00:00Z' },
+                  etag: '"inv-3"',
+                  id: eventId,
+                  organizer: { email: 'host@example.com' },
+                  start: { dateTime: '2026-07-03T10:00:00Z' },
+                  status: 'confirmed',
+                  summary: 'From Google',
+                })
+              : Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
+        });
+        return Effect.gen(function* () {
+          const mutations = yield* answerDeleteThenPull;
+          online = true;
+          yield* mutations.processPendingOps();
+          expect((yield* ops).map((op) => op.kind)).toEqual(['delete']);
+          // What landed is newer than the pull's copy: the copy takes it.
+          expect(yield* ownAnswer).toBe('accepted');
+
+          yield* mutations.deleteEvent(address);
+          const [again] = yield* ops;
+          expect(again?.beforePayload?.etag).toBe('"inv-3"');
+          yield* mutations.discardPendingOp(again!.id);
+          expect(yield* ownAnswer).toBe('accepted');
+          expect((yield* rowOf('invite1'))?.syncStatus).toBe('synced');
+        }).pipe(noYield, Effect.provide(mutationsLayer(client)));
+      });
+
+      it.effect('a new answer takes Google’s copy as what it replaced', () =>
+        Effect.gen(function* () {
+          const mutations = yield* answerDeleteThenPull;
+          yield* mutations.respondToEvent({ ...address, response: 'tentative' });
+          const [rsvp] = yield* ops;
+          expect(rsvp?.kind).toBe('rsvp');
+          expect(rsvp?.beforePayload?.title).toBe('From Google');
+
+          yield* mutations.discardPendingOp(rsvp!.id);
+          expect(yield* ownAnswer).toBe('declined');
+          expect((yield* rowOf('invite1'))?.syncStatus).toBe('synced');
+        }).pipe(noYield, Effect.provide(mutationsLayer(landing))),
+      );
+    });
+  });
 
   it.effect('an edit of a row a pull deleted meanwhile does not bring it back', () =>
     Effect.gen(function* () {

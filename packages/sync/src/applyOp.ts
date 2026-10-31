@@ -119,6 +119,20 @@ const TASK_KINDS: ReadonlySet<PendingOp['kind']> = new Set([
  */
 const PARKABLE_KINDS: ReadonlySet<PendingOp['kind']> = new Set(['delete', 'update']);
 
+/**
+ * Whether `row` is Google's copy of an event a pull put back while a
+ * delete of it waits (`queued`: the event's ops). A delete takes its row
+ * or leaves a pending tombstone, and a pull never writes over a pending
+ * row, so a synced, live row there can only be the pull's.
+ */
+export const isPulledCopy = (
+  queued: ReadonlyArray<PendingOp>,
+  row: EventRecord | null | undefined,
+): boolean =>
+  row?.syncStatus === 'synced' &&
+  row.status !== 'cancelled' &&
+  queued.some((op) => op.kind === 'delete');
+
 /** What an update PATCHes, built the same way from the user's record and from Google's. */
 const updateBody = (op: PendingOp, record: EventRecord) => ({
   ...toGcalEventInput(record),
@@ -308,6 +322,10 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       }
       const current = yield* eventRepo.getById(op.accountId, op.calendarId, op.eventId);
       if (!current) {
+        return;
+      }
+      if (isPulledCopy(yield* pendingOpRepo.listForEvent(op), current)) {
+        // Google's copy never held this change: nothing goes back.
         return;
       }
       if (op.beforePayload === null) {
@@ -922,6 +940,25 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
     );
 
   /**
+   * What landed is what the other queued ops of the event replace now. A
+   * pull's copy at a waiting delete's id (`isPulledCopy`) is Google's and
+   * takes it too: the delete owns no row, and an edit that replaces the
+   * delete takes that copy as its snapshot.
+   */
+  const advanceOthers = (
+    op: PendingOp,
+    event: { readonly accountId: string; readonly calendarId: string; readonly eventId: string },
+    synced: EventRecord,
+  ) =>
+    Effect.gen(function* () {
+      yield* pendingOpRepo.advanceBefore(event, synced, op);
+      const row = yield* eventRepo.getById(event.accountId, event.calendarId, event.eventId);
+      if (isPulledCopy(yield* pendingOpRepo.listForEvent(event), row)) {
+        yield* eventRepo.upsertMany([synced]);
+      }
+    });
+
+  /**
    * After the op's own write landed, in one transaction: when it was sent
    * with If-Match (`sentEtag`), the edits and deletes queued after it on
    * that etag — and the row a later edit still holds — move to the etag it
@@ -955,7 +992,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         yield* advanceCarried(op, synced, calendarId);
         if (yield* othersQueued(op, calendarId)) {
           // The row is theirs; what they replace is now what just landed.
-          yield* pendingOpRepo.advanceBefore(event, synced, op);
+          yield* advanceOthers(op, event, synced);
         } else {
           yield* eventRepo.upsertMany([synced]);
         }
@@ -1050,10 +1087,10 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         Effect.gen(function* () {
           if (yield* othersQueued(op)) {
             if (landed) {
-              yield* pendingOpRepo.advanceBefore(
+              yield* advanceOthers(
+                op,
                 { accountId: op.accountId, calendarId: op.calendarId, eventId: op.eventId },
                 landed,
-                op,
               );
             }
             return;
