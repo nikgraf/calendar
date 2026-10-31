@@ -22,3 +22,4 @@ export * from './platformSettings.ts';
 export * from './settingsExport.ts';
 export * from './settingsImport.ts';
 export * from './syncKicker.ts';
+export * from './taskReminders.ts';

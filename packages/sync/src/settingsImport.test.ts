@@ -6,6 +6,7 @@ import { describe } from 'vite-plus/test';
 import {
   readBirthdayReminderOverrides,
   readEventNotificationSettings,
+  readTaskNotificationSettings,
   readTimeZoneSettings,
   readViewPreferences,
   writeBirthdayReminderOverrides,
@@ -22,6 +23,7 @@ import { readMirrorLocals, readMirrors } from './mirrorSettings.ts';
 import {
   applyBirthdayReminderOverride,
   applyEventNotificationSettings,
+  applyTaskNotificationSettings,
 } from './notificationSettings.ts';
 import { importSettings, previewSettingsImport } from './settingsImport.ts';
 import {
@@ -145,6 +147,62 @@ describe('importSettings', () => {
       expect(asked).toBe(0);
     }).pipe(Effect.provide(layer));
   });
+
+  it.effect(
+    'task notifications: a switch travels only once set; a file without one changes nothing',
+    () => {
+      const { layer } = makeSettingsTestLayer({});
+      return Effect.gen(function* () {
+        expect(yield* readTaskNotificationSettings).toEqual({
+          enabled: true,
+          includeAppleReminders: true,
+          time: '09:00',
+        });
+        yield* applyTaskNotificationSettings({
+          dismissRemindersWhenDone: false,
+          enabled: true,
+          includeAppleReminders: true,
+          time: '08:00',
+        });
+        // A client without the switches (the Mac) saves the rest and keeps them.
+        yield* applyTaskNotificationSettings({
+          enabled: true,
+          includeAppleReminders: false,
+          time: '08:00',
+        });
+        const stored = {
+          dismissRemindersWhenDone: false,
+          enabled: true,
+          includeAppleReminders: false,
+          time: '08:00',
+        };
+        expect(yield* readTaskNotificationSettings).toEqual(stored);
+        expect((yield* buildSettingsDocument).taskNotifications).toEqual(stored);
+        const fromMac: SettingsDocument = {
+          taskNotifications: { enabled: true, includeAppleReminders: false, time: '08:00' },
+          version: 1,
+        };
+        expect((yield* previewSettingsImport(fromMac)).settingsChanged).toEqual([]);
+        const newer: SettingsDocument = {
+          taskNotifications: {
+            dismissTasksWhenDone: false,
+            enabled: false,
+            includeAppleReminders: false,
+            time: '07:30',
+          },
+          version: 1,
+        };
+        expect((yield* importSettings(newer)).settingsChanged).toEqual(['taskNotifications']);
+        expect(yield* readTaskNotificationSettings).toEqual({
+          dismissRemindersWhenDone: false,
+          dismissTasksWhenDone: false,
+          enabled: false,
+          includeAppleReminders: false,
+          time: '07:30',
+        });
+      }).pipe(Effect.provide(layer));
+    },
+  );
 
   it.effect('imports the view fields the file holds and keeps the device-local ones', () => {
     const { layer } = makeSettingsTestLayer({});

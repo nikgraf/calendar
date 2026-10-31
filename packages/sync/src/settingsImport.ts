@@ -9,12 +9,15 @@ import {
   isAppleCalendarAccount,
   isAppleRemindersAccount,
   mergeEventNotificationSettings,
+  mergeTaskNotificationSettings,
   portableViewPreferences,
   sameEventNotificationSettings,
+  sameTaskNotificationSettings,
   type ScreenPrivacy,
   type SettingsDocument,
   type SettingsImportSummary,
   type SettingsSection,
+  type TaskNotificationSettings,
   type TimeZoneSettings,
   type ViewPreferences,
   withPortableViewPreferences,
@@ -26,6 +29,7 @@ import {
   readBirthdayReminderOverrides,
   readBirthdayReminderSettings,
   readEventNotificationSettings,
+  readTaskNotificationSettings,
   readTimeZoneSettings,
   readViewPreferences,
   updateBirthdayReminderOverrides,
@@ -56,6 +60,7 @@ import {
 import {
   applyBirthdayReminderSettings,
   applyEventNotificationSettings,
+  applyTaskNotificationSettings,
   applyTimeZoneSettings,
 } from './notificationSettings.ts';
 import type { NotificationSink } from './notificationSink.ts';
@@ -82,6 +87,7 @@ interface ImportPlan {
   readonly pending: PendingVisibility;
   readonly screenPrivacy?: ScreenPrivacy | undefined;
   readonly summary: SettingsImportSummary;
+  readonly taskNotifications?: TaskNotificationSettings | undefined;
   readonly timeZones?: TimeZoneSettings | undefined;
   readonly view?: ViewPreferences | undefined;
 }
@@ -131,6 +137,18 @@ const planSettingsImport = (
         : undefined;
     if (eventNotifications) {
       settingsChanged.push('eventNotifications');
+    }
+    const currentTaskNotifications = yield* readTaskNotificationSettings;
+    const incomingTaskNotifications =
+      document.taskNotifications &&
+      mergeTaskNotificationSettings(currentTaskNotifications, document.taskNotifications);
+    const taskNotifications =
+      incomingTaskNotifications &&
+      !sameTaskNotificationSettings(incomingTaskNotifications, currentTaskNotifications)
+        ? incomingTaskNotifications
+        : undefined;
+    if (taskNotifications) {
+      settingsChanged.push('taskNotifications');
     }
     const birthdayReminders =
       document.birthdayReminders &&
@@ -313,6 +331,7 @@ const planSettingsImport = (
         visibilityChanges,
         visibilityPending,
       },
+      taskNotifications,
       timeZones,
       view,
     };
@@ -351,6 +370,9 @@ export const importSettings = (
       }
       if (plan.eventNotifications) {
         yield* applyEventNotificationSettings(plan.eventNotifications);
+      }
+      if (plan.taskNotifications) {
+        yield* applyTaskNotificationSettings(plan.taskNotifications);
       }
       if (plan.birthdayReminders) {
         yield* applyBirthdayReminderSettings(plan.birthdayReminders);

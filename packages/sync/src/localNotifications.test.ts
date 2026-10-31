@@ -7,19 +7,27 @@ import { ContactsClient, makeFakeContactsClient } from '@calendar/contacts';
 import {
   Account,
   APPLE_CALENDAR_ACCOUNT_ID,
+  APPLE_REMINDERS_ACCOUNT_ID,
   CalendarInfo,
+  eventNotificationTarget,
   EventRecord,
   EventReminders,
+  PendingOp,
   type PlannedNotification,
   ReminderOverride,
+  TaskListInfo,
+  taskNotificationTarget,
+  TaskRecord,
 } from '@calendar/core';
 import {
   AccountRepo,
   CalendarRepo,
   DeviceSettingsRepo,
   EventRepo,
+  PendingOpRepo,
   reposLayer,
   runMigrations,
+  TaskRepo,
 } from '@calendar/db';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
@@ -35,11 +43,16 @@ import {
   writeBirthdayReminderOverrides,
   writeBirthdayReminderSettings,
   writeEventNotificationSettings,
+  writeTaskNotificationSettings,
   writeTimeZoneSettings,
 } from './deviceSettings.ts';
 import { LocalNotifications } from './localNotifications.ts';
 import { Mirrors } from './mirrors.ts';
-import { NotificationSink, type NotificationSinkShape } from './notificationSink.ts';
+import {
+  type DeliveredNotification,
+  NotificationSink,
+  type NotificationSinkShape,
+} from './notificationSink.ts';
 
 const alice = { contactId: 'a', day: 4, displayName: 'Alice', month: 3, year: 1994 };
 
@@ -62,18 +75,31 @@ const scheduledSink = (
   granted = true,
   onReplace: (planned: ReadonlyArray<PlannedNotification>) => Effect.Effect<void, unknown> = () =>
     Effect.void,
-  onDismiss: (now: number) => Effect.Effect<void, unknown> = () => Effect.void,
+  onDismiss: () => Effect.Effect<void, unknown> = () => Effect.void,
 ) => {
   const schedules: Array<ReadonlyArray<PlannedNotification>> = [];
-  /** The `now` of every dismissal the scheduler asked for. */
-  const dismissed: Array<number> = [];
+  /** What the OS still shows; a test seeds it as delivered. A dismissed one leaves, as there. */
+  const presented: Array<DeliveredNotification> = [];
+  /** The keys the scheduler had dismissed, in order, across passes. */
+  const dismissed: Array<string> = [];
   /** Every call to the OS in order, as it was asked. */
   const calls: Array<'dismiss' | 'replace'> = [];
   let asked = 0;
   const sink: NotificationSinkShape = {
-    dismissDelivered: (now) => {
+    dismissDelivered: (shouldDismiss) => {
       calls.push('dismiss');
-      return Effect.andThen(onDismiss(now), () => Effect.sync(() => void dismissed.push(now)));
+      return Effect.andThen(onDismiss(), () =>
+        Effect.gen(function* () {
+          const gone = new Set<string>();
+          for (const delivered of presented) {
+            if (yield* shouldDismiss(delivered)) {
+              gone.add(delivered.key);
+              dismissed.push(delivered.key);
+            }
+          }
+          presented.splice(0, presented.length, ...presented.filter((d) => !gone.has(d.key)));
+        }),
+      );
     },
     ensurePermission: () =>
       Effect.sync(() => {
@@ -88,7 +114,7 @@ const scheduledSink = (
       );
     },
   };
-  return { asked: () => asked, calls, dismissed, schedules, sink };
+  return { asked: () => asked, calls, dismissed, presented, schedules, sink };
 };
 
 const testLayer = (
@@ -140,6 +166,13 @@ const standup = new EventRecord({
 });
 const STANDUP_KEY = `event:acc-1/cal-1/standup:${String(standup.startUtc)}:10`;
 
+/** The standup's reminder as the OS shows it after delivery, with the deadline its payload carried. */
+const deliveredStandup = (dismissAt = standup.endUtc): DeliveredNotification => ({
+  dismissAt,
+  key: STANDUP_KEY,
+  target: eventNotificationTarget(standup),
+});
+
 const seedGoogle = (...events: ReadonlyArray<EventRecord>) =>
   Effect.gen(function* () {
     yield* (yield* AccountRepo).upsert(
@@ -169,6 +202,89 @@ const seedGoogle = (...events: ReadonlyArray<EventRecord>) =>
     ]);
     yield* (yield* EventRepo).upsertMany(events);
   });
+
+const inbox = new TaskListInfo({
+  accountId: 'acc-1',
+  id: 'inbox',
+  isVisible: true,
+  provider: 'google',
+  title: 'Inbox',
+});
+const errands = new TaskListInfo({
+  accountId: APPLE_REMINDERS_ACCOUNT_ID,
+  id: 'ek-errands',
+  isVisible: true,
+  provider: 'apple',
+  title: 'Errands',
+});
+const home = new TaskListInfo({
+  accountId: 'acc-1',
+  id: 'home',
+  isVisible: true,
+  provider: 'google',
+  title: 'Home',
+});
+const rent = new TaskRecord({
+  accountId: 'acc-1',
+  dueDate: '2026-03-03',
+  id: 'rent',
+  listId: 'inbox',
+  provider: 'google',
+  status: 'needsAction',
+  title: 'Pay rent',
+  updatedAt: 0,
+});
+const RENT_KEY = 'task:acc-1/rent:2026-03-03';
+const callBank = new TaskRecord({
+  accountId: APPLE_REMINDERS_ACCOUNT_ID,
+  dueDate: '2026-03-03',
+  dueTime: '14:00',
+  dueUtc: Date.parse('2026-03-03T14:00:00Z'),
+  id: 'bank',
+  listId: 'ek-errands',
+  provider: 'apple',
+  status: 'needsAction',
+  title: 'Call the bank',
+  updatedAt: 0,
+});
+const BANK_KEY = `task:${APPLE_REMINDERS_ACCOUNT_ID}/bank@${String(Date.parse('2026-03-03T14:00:00Z'))}`;
+
+/** A task's reminder as the OS shows it after delivery: its key and target, no deadline. */
+const deliveredTask = (task: TaskRecord, key: string): DeliveredNotification => ({
+  key,
+  target: taskNotificationTarget(task, task.dueDate ?? ''),
+});
+
+/** The Google account of `seedGoogle` plus the Reminders one, a visible list each, and `tasks`. */
+const seedTasks = (...tasks: ReadonlyArray<TaskRecord>) =>
+  Effect.gen(function* () {
+    yield* seedGoogle();
+    yield* (yield* AccountRepo).upsert(
+      new Account({
+        contactsEnabled: false,
+        createdAt: 1,
+        email: '',
+        id: APPLE_REMINDERS_ACCOUNT_ID,
+        provider: 'apple',
+        status: 'ok',
+        tasksEnabled: true,
+      }),
+    );
+    const taskRepo = yield* TaskRepo;
+    yield* taskRepo.upsertLists([inbox, errands], 1);
+    yield* taskRepo.upsertTasks(tasks, 1);
+  });
+
+const done = (task: TaskRecord) =>
+  Effect.flatMap(TaskRepo, (repo) =>
+    repo.setStatus({
+      accountId: task.accountId,
+      completedAt: Date.parse('2026-03-03T15:00:00Z'),
+      listId: task.listId,
+      status: 'completed',
+      taskId: task.id,
+    }),
+  );
 
 describe('LocalNotifications', () => {
   it.effect('an immediate sink fires each due birthday once, across runs', () => {
@@ -243,8 +359,22 @@ describe('LocalNotifications', () => {
     const { asked, sink } = immediateSink();
     return Effect.gen(function* () {
       yield* writeEventNotificationSettings({ enabled: false, includeAppleCalendar: false });
+      yield* writeTaskNotificationSettings({
+        enabled: false,
+        includeAppleReminders: true,
+        time: '09:00',
+      });
       yield* (yield* LocalNotifications).run();
       expect(asked()).toBe(0);
+    }).pipe(Effect.provide(testLayer(sink)));
+  });
+
+  it.effect('prompts for task notifications on their own', () => {
+    const { asked, sink } = immediateSink();
+    return Effect.gen(function* () {
+      yield* writeEventNotificationSettings({ enabled: false, includeAppleCalendar: false });
+      yield* (yield* LocalNotifications).run();
+      expect(asked()).toBe(1);
     }).pipe(Effect.provide(testLayer(sink)));
   });
 
@@ -343,7 +473,7 @@ describe('LocalNotifications', () => {
     'a scheduled sink clears delivered reminders on every pass, the schedule unchanged too',
     () => {
       const scheduled = scheduledSink();
-      const noon = Date.parse('2026-03-01T12:00:00Z');
+      scheduled.presented.push(deliveredStandup());
       return Effect.gen(function* () {
         yield* seedGoogle(standup);
         const notifications = yield* LocalNotifications;
@@ -351,12 +481,13 @@ describe('LocalNotifications', () => {
         yield* notifications.run();
         yield* notifications.run();
         expect(scheduled.schedules).toHaveLength(1);
-        expect(scheduled.dismissed).toEqual([noon, noon]);
+        // Asked both times, nothing over yet.
+        expect(scheduled.dismissed).toEqual([]);
         // The hand-over first, so a slow dismissal never delays it.
         expect(scheduled.calls).toEqual(['replace', 'dismiss', 'dismiss']);
-        yield* TestClock.adjust('1 hour');
+        yield* TestClock.adjust('3 days');
         yield* notifications.run();
-        expect(scheduled.dismissed).toEqual([noon, noon, noon + 3_600_000]);
+        expect(scheduled.dismissed).toEqual([STANDUP_KEY]);
       }).pipe(Effect.provide(testLayer(scheduled.sink)));
     },
   );
@@ -366,7 +497,7 @@ describe('LocalNotifications', () => {
     const scheduled = scheduledSink(true, undefined, () =>
       refusals-- > 0 ? Effect.fail(new Error('no presenter')) : Effect.void,
     );
-    const noon = Date.parse('2026-03-01T12:00:00Z');
+    scheduled.presented.push(deliveredStandup(Date.parse('2026-03-01T11:00:00Z')));
     return Effect.gen(function* () {
       yield* seedGoogle(standup);
       const notifications = yield* LocalNotifications;
@@ -379,7 +510,7 @@ describe('LocalNotifications', () => {
       );
       yield* TestClock.adjust('1 minute');
       yield* notifications.run();
-      expect(scheduled.dismissed).toEqual([noon + 60_000]);
+      expect(scheduled.dismissed).toEqual([STANDUP_KEY]);
     }).pipe(Effect.provide(testLayer(scheduled.sink)));
   });
 
@@ -387,7 +518,7 @@ describe('LocalNotifications', () => {
     'switched off, delivered reminders stay; switched back on, the next pass clears',
     () => {
       const scheduled = scheduledSink();
-      const noon = Date.parse('2026-03-01T12:00:00Z');
+      scheduled.presented.push(deliveredStandup(Date.parse('2026-03-01T11:00:00Z')));
       return Effect.gen(function* () {
         yield* seedGoogle(standup);
         yield* writeEventNotificationSettings({
@@ -408,7 +539,7 @@ describe('LocalNotifications', () => {
         });
         yield* TestClock.adjust('1 minute');
         yield* notifications.run();
-        expect(scheduled.dismissed).toEqual([noon + 60_000]);
+        expect(scheduled.dismissed).toEqual([STANDUP_KEY]);
         expect(scheduled.schedules).toHaveLength(1);
       }).pipe(Effect.provide(testLayer(scheduled.sink)));
     },
@@ -416,6 +547,7 @@ describe('LocalNotifications', () => {
 
   it.effect('with event notifications off, the ones already delivered still leave', () => {
     const scheduled = scheduledSink();
+    scheduled.presented.push(deliveredStandup(Date.parse('2026-03-01T11:00:00Z')));
     return Effect.gen(function* () {
       yield* seedGoogle(standup);
       yield* writeEventNotificationSettings({ enabled: false, includeAppleCalendar: false });
@@ -423,18 +555,19 @@ describe('LocalNotifications', () => {
       yield* (yield* LocalNotifications).run();
       // Nothing new is planned, yet "Remove When Over" (unset: on) still applies.
       expect(scheduled.schedules).toEqual([[]]);
-      expect(scheduled.dismissed).toEqual([Date.parse('2026-03-01T12:00:00Z')]);
+      expect(scheduled.dismissed).toEqual([STANDUP_KEY]);
     }).pipe(Effect.provide(testLayer(scheduled.sink)));
   });
 
   it.effect('a schedule the OS refuses still clears delivered reminders', () => {
     const scheduled = scheduledSink(true, () => Effect.fail(new Error('refused')));
+    scheduled.presented.push(deliveredStandup(Date.parse('2026-03-01T11:00:00Z')));
     return Effect.gen(function* () {
       yield* seedGoogle(standup);
       yield* setClock('2026-03-01T12:00:00Z');
       yield* (yield* LocalNotifications).run();
       expect(scheduled.schedules).toEqual([]);
-      expect(scheduled.dismissed).toEqual([Date.parse('2026-03-01T12:00:00Z')]);
+      expect(scheduled.dismissed).toEqual([STANDUP_KEY]);
       expect(yield* (yield* DeviceSettingsRepo).get('localNotifications.scheduled')).toBeNull();
     }).pipe(Effect.provide(testLayer(scheduled.sink)));
   });
@@ -453,6 +586,346 @@ describe('LocalNotifications', () => {
       expect(scheduled.schedules).toHaveLength(2);
       expect(scheduled.schedules[1]![0]!.dismissAt).toBe(longer.endUtc);
     }).pipe(Effect.provide(testLayer(scheduled.sink)));
+  });
+
+  it.effect(
+    'task reminders join the schedule: a day-only task at the set time, a timed reminder at its own',
+    () => {
+      const scheduled = scheduledSink();
+      return Effect.gen(function* () {
+        yield* seedGoogle(standup);
+        yield* seedTasks(rent, callBank);
+        const notifications = yield* LocalNotifications;
+        yield* setClock('2026-03-01T12:00:00Z');
+        yield* notifications.run();
+        expect(scheduled.schedules[0]!.map((plan) => [plan.key, plan.fireAt])).toEqual([
+          [STANDUP_KEY, Date.parse('2026-03-03T08:50:00Z')],
+          [RENT_KEY, Date.parse('2026-03-03T09:00:00Z')],
+          [BANK_KEY, Date.parse('2026-03-03T14:00:00Z')],
+        ]);
+        expect(scheduled.schedules[0]!.map((plan) => plan.body).slice(1)).toEqual([
+          'Due today · Inbox',
+          'Due today · 2:00 PM · Errands',
+        ]);
+        expect(scheduled.schedules[0]![1]!.target).toEqual({
+          accountId: 'acc-1',
+          dueDate: '2026-03-03',
+          kind: 'task',
+          listId: 'inbox',
+          taskId: 'rent',
+        });
+        // Apple Reminders leave once switched off; the time setting moves the day-only one.
+        yield* writeTaskNotificationSettings({
+          enabled: true,
+          includeAppleReminders: false,
+          time: '07:30',
+        });
+        yield* notifications.run();
+        expect(scheduled.schedules[1]!.map((plan) => [plan.key, plan.fireAt])).toEqual([
+          [RENT_KEY, Date.parse('2026-03-03T07:30:00Z')],
+          [STANDUP_KEY, Date.parse('2026-03-03T08:50:00Z')],
+        ]);
+      }).pipe(Effect.provide(testLayer(scheduled.sink)));
+    },
+  );
+
+  it.effect('a task checked off re-plans on its own, debounced', () => {
+    const scheduled = scheduledSink();
+    return Effect.gen(function* () {
+      yield* seedTasks(rent);
+      yield* setClock('2026-03-01T12:00:00Z');
+      const notifications = yield* LocalNotifications;
+      yield* notifications.start();
+      yield* TestClock.adjust('1 second');
+      expect(scheduled.schedules.map((plans) => plans.map((plan) => plan.key))).toEqual([
+        [RENT_KEY],
+      ]);
+      yield* done(rent);
+      yield* TestClock.adjust('3 seconds');
+      expect(scheduled.schedules.map((plans) => plans.map((plan) => plan.key))).toEqual([
+        [RENT_KEY],
+        [],
+      ]);
+    }).pipe(Effect.provide(testLayer(scheduled.sink)));
+  });
+
+  it.effect(
+    'a delivered task notification leaves once the task is done — per provider, with its switch',
+    () => {
+      const scheduled = scheduledSink();
+      scheduled.presented.push(deliveredTask(rent, RENT_KEY), deliveredTask(callBank, BANK_KEY));
+      return Effect.gen(function* () {
+        yield* seedTasks(rent, callBank);
+        const notifications = yield* LocalNotifications;
+        yield* setClock('2026-03-03T15:00:00Z');
+        yield* notifications.run();
+        // Both still open: both stay.
+        expect(scheduled.dismissed).toEqual([]);
+        yield* done(rent);
+        yield* done(callBank);
+        yield* writeTaskNotificationSettings({
+          dismissRemindersWhenDone: false,
+          enabled: true,
+          includeAppleReminders: true,
+          time: '09:00',
+        });
+        yield* notifications.run();
+        expect(scheduled.dismissed).toEqual([RENT_KEY]);
+        yield* writeTaskNotificationSettings({
+          dismissRemindersWhenDone: true,
+          enabled: true,
+          includeAppleReminders: true,
+          time: '09:00',
+        });
+        yield* notifications.run();
+        expect(scheduled.dismissed).toEqual([RENT_KEY, BANK_KEY]);
+      }).pipe(Effect.provide(testLayer(scheduled.sink)));
+    },
+  );
+
+  it.effect(
+    'a deleted task takes its notification along; "Remove Tasks When Done" off keeps it, notifications off or not',
+    () => {
+      const scheduled = scheduledSink();
+      scheduled.presented.push(deliveredTask(rent, RENT_KEY));
+      return Effect.gen(function* () {
+        yield* seedTasks(rent);
+        yield* writeTaskNotificationSettings({
+          dismissTasksWhenDone: false,
+          enabled: false,
+          includeAppleReminders: true,
+          time: '09:00',
+        });
+        const notifications = yield* LocalNotifications;
+        yield* setClock('2026-03-03T15:00:00Z');
+        yield* (yield* TaskRepo).removeTask('acc-1', 'inbox', 'rent');
+        yield* notifications.run();
+        expect(scheduled.dismissed).toEqual([]);
+        yield* writeTaskNotificationSettings({
+          enabled: false,
+          includeAppleReminders: true,
+          time: '09:00',
+        });
+        // Gone for a moment is not gone: a move from another device lands
+        // list by list. Gone for a minute is.
+        yield* notifications.run();
+        expect(scheduled.dismissed).toEqual([]);
+        yield* TestClock.adjust('1 minute');
+        yield* notifications.run();
+        expect(scheduled.dismissed).toEqual([RENT_KEY]);
+      }).pipe(Effect.provide(testLayer(scheduled.sink)));
+    },
+  );
+
+  it.effect(
+    'a timed reminder is judged by its instant: its day re-read in another zone keeps the notification, a new instant loses it',
+    () => {
+      const scheduled = scheduledSink();
+      scheduled.presented.push(deliveredTask(callBank, BANK_KEY));
+      return Effect.gen(function* () {
+        yield* seedTasks(callBank);
+        const taskRepo = yield* TaskRepo;
+        const notifications = yield* LocalNotifications;
+        yield* setClock('2026-03-03T15:00:00Z');
+        yield* taskRepo.upsertTasks([new TaskRecord({ ...callBank, dueDate: '2026-03-04' })], 1);
+        yield* notifications.run();
+        expect(scheduled.dismissed).toEqual([]);
+        yield* taskRepo.upsertTasks(
+          [new TaskRecord({ ...callBank, dueUtc: Date.parse('2026-03-04T14:00:00Z') })],
+          1,
+        );
+        yield* notifications.run();
+        expect(scheduled.dismissed).toEqual([BANK_KEY]);
+      }).pipe(Effect.provide(testLayer(scheduled.sink)));
+    },
+  );
+
+  it.effect('a task stored on two lists mid-move plans once', () => {
+    const scheduled = scheduledSink();
+    return Effect.gen(function* () {
+      yield* seedTasks(rent);
+      const taskRepo = yield* TaskRepo;
+      yield* taskRepo.upsertLists([home], 1);
+      yield* taskRepo.upsertTasks([new TaskRecord({ ...rent, listId: 'home' })], 1);
+      yield* setClock('2026-03-01T12:00:00Z');
+      yield* (yield* LocalNotifications).run();
+      expect(scheduled.schedules.map((plans) => plans.map((plan) => plan.key))).toEqual([
+        [RENT_KEY],
+      ]);
+    }).pipe(Effect.provide(testLayer(scheduled.sink)));
+  });
+
+  it.effect(
+    'a task moved to another list keeps its notification; one moved to another day loses it',
+    () => {
+      const scheduled = scheduledSink();
+      scheduled.presented.push(deliveredTask(rent, RENT_KEY));
+      return Effect.gen(function* () {
+        yield* seedTasks(rent);
+        const taskRepo = yield* TaskRepo;
+        yield* taskRepo.upsertLists([home], 1);
+        const notifications = yield* LocalNotifications;
+        yield* setClock('2026-03-03T15:00:00Z');
+        // Moved: the same id on another list, the inbox row gone.
+        yield* taskRepo.removeTask('acc-1', 'inbox', 'rent');
+        yield* taskRepo.upsertTasks([new TaskRecord({ ...rent, listId: 'home' })], 1);
+        yield* notifications.run();
+        expect(scheduled.dismissed).toEqual([]);
+        // Re-dated: the notification spoke of the 3rd.
+        yield* taskRepo.upsertTasks(
+          [new TaskRecord({ ...rent, dueDate: '2026-03-04', listId: 'home' })],
+          1,
+        );
+        yield* notifications.run();
+        expect(scheduled.dismissed).toEqual([RENT_KEY]);
+      }).pipe(Effect.provide(testLayer(scheduled.sink)));
+    },
+  );
+
+  it.effect(
+    'an immediate sink shows what came due since its last pass, not a plan already past',
+    () => {
+      const { shown, sink } = immediateSink();
+      return Effect.gen(function* () {
+        yield* seedTasks(rent);
+        const notifications = yield* LocalNotifications;
+        yield* setClock('2026-03-03T08:00:00Z');
+        yield* notifications.run();
+        expect(shown).toEqual([]);
+        // 09:00 fell between two passes: a Mac asleep through it catches up.
+        yield* TestClock.adjust('2 hours');
+        yield* notifications.run();
+        expect(shown).toEqual([RENT_KEY]);
+        // Created at 10:00 and due today: its 09:00 was never missed.
+        yield* (yield* TaskRepo).upsertTasks(
+          [
+            new TaskRecord({
+              ...rent,
+              id: 'tax',
+              title: 'File the tax',
+              updatedAt: Date.parse('2026-03-03T10:00:00Z'),
+            }),
+          ],
+          1,
+        );
+        yield* notifications.run();
+        expect(shown).toEqual([RENT_KEY]);
+        // Nor is a notify time moved to earlier than now.
+        yield* writeTaskNotificationSettings({
+          enabled: true,
+          includeAppleReminders: true,
+          time: '09:30',
+        });
+        yield* notifications.run();
+        expect(shown).toEqual([RENT_KEY]);
+      }).pipe(Effect.provide(testLayer(sink)));
+    },
+  );
+
+  it.effect(
+    'a row a pull brings after the pass still shows when it existed through its moment',
+    () => {
+      const { shown, sink } = immediateSink();
+      return Effect.gen(function* () {
+        yield* seedTasks();
+        const notifications = yield* LocalNotifications;
+        // Task notifications first planned the day before; today's pass runs before the pull.
+        yield* setClock('2026-03-02T10:00:00Z');
+        yield* notifications.run();
+        yield* TestClock.adjust('24 hours');
+        yield* notifications.run();
+        expect(shown).toEqual([]);
+        // Created on the phone last night and pulled now: its 09:00 was real.
+        yield* (yield* TaskRepo).upsertTasks(
+          [new TaskRecord({ ...rent, updatedAt: Date.parse('2026-03-02T22:00:00Z') })],
+          1,
+        );
+        yield* notifications.run();
+        expect(shown).toEqual([RENT_KEY]);
+        // Created on the phone just now and due today: nothing was missed.
+        yield* (yield* TaskRepo).upsertTasks(
+          [
+            new TaskRecord({
+              ...rent,
+              id: 'tax',
+              title: 'File the tax',
+              updatedAt: Date.parse('2026-03-03T10:00:00Z'),
+            }),
+          ],
+          1,
+        );
+        yield* notifications.run();
+        expect(shown).toEqual([RENT_KEY]);
+      }).pipe(Effect.provide(testLayer(sink)));
+    },
+  );
+
+  it.effect('a task re-dated to today after its time stays silent, pushed or not', () => {
+    const { shown, sink } = immediateSink();
+    return Effect.gen(function* () {
+      yield* seedTasks();
+      const notifications = yield* LocalNotifications;
+      yield* setClock('2026-03-02T10:00:00Z');
+      yield* notifications.run();
+      yield* TestClock.adjust('24 hours');
+      yield* notifications.run();
+      // Re-dated here at 10:00: the row keeps the server's old stamp until
+      // the push lands; the queued op dates the edit.
+      yield* (yield* TaskRepo).upsertTasks([rent], 1);
+      yield* (yield* PendingOpRepo).enqueue(
+        new PendingOp({
+          accountId: 'acc-1',
+          attempts: 0,
+          calendarId: 'inbox',
+          createdAt: Date.parse('2026-03-03T10:00:00Z'),
+          eventId: 'rent',
+          id: 'op-rent',
+          kind: 'updateTask',
+          nextAttemptAt: 0,
+          taskListId: 'inbox',
+        }),
+      );
+      yield* notifications.run();
+      expect(shown).toEqual([]);
+      yield* (yield* PendingOpRepo).remove('op-rent');
+      yield* (yield* TaskRepo).upsertTasks(
+        [new TaskRecord({ ...rent, updatedAt: Date.parse('2026-03-03T10:00:00Z') })],
+        1,
+      );
+      yield* notifications.run();
+      expect(shown).toEqual([]);
+    }).pipe(Effect.provide(testLayer(sink)));
+  });
+
+  it.effect('a reminder postponed to later the same day notifies again then, as on iOS', () => {
+    const { shown, sink } = immediateSink();
+    return Effect.gen(function* () {
+      yield* seedTasks(callBank);
+      const notifications = yield* LocalNotifications;
+      yield* setClock('2026-03-03T08:00:00Z');
+      yield* notifications.run();
+      yield* TestClock.adjust(Duration.minutes(361));
+      yield* notifications.run();
+      expect(shown).toEqual([BANK_KEY]);
+      yield* (yield* TaskRepo).upsertTasks(
+        [
+          new TaskRecord({
+            ...callBank,
+            dueUtc: Date.parse('2026-03-03T16:00:00Z'),
+            updatedAt: Date.parse('2026-03-03T14:05:00Z'),
+          }),
+        ],
+        1,
+      );
+      yield* notifications.run();
+      expect(shown).toEqual([BANK_KEY]);
+      yield* TestClock.adjust('2 hours');
+      yield* notifications.run();
+      expect(shown).toEqual([
+        BANK_KEY,
+        `task:${APPLE_REMINDERS_ACCOUNT_ID}/bank@${String(Date.parse('2026-03-03T16:00:00Z'))}`,
+      ]);
+    }).pipe(Effect.provide(testLayer(sink)));
   });
 
   it.effect('Apple Calendar events notify only when the setting includes them', () => {
@@ -514,10 +987,15 @@ describe('LocalNotifications', () => {
         }),
       ]);
       const notifications = yield* LocalNotifications;
-      yield* setClock('2026-03-03T08:45:00Z');
+      // The 15-minute reminder of a 9:00 dentist: not planned while the
+      // setting leaves Apple Calendar out, planned once it includes it, and
+      // shown when its moment comes.
+      yield* setClock('2026-03-03T08:30:00Z');
+      yield* notifications.run();
+      yield* writeEventNotificationSettings({ enabled: true, includeAppleCalendar: true });
       yield* notifications.run();
       expect(shown).toEqual([]);
-      yield* writeEventNotificationSettings({ enabled: true, includeAppleCalendar: true });
+      yield* TestClock.adjust('16 minutes');
       yield* notifications.run();
       expect(shown).toEqual([
         `event:${APPLE_CALENDAR_ACCOUNT_ID}/ek-home/ek-dentist:${String(dentist.startUtc)}:15`,
@@ -731,7 +1209,7 @@ describe('backgroundRefresh', () => {
         ]);
         expect(passes).toEqual(['20 seconds']);
         // The background task clears delivered reminders too.
-        expect(scheduled.dismissed).toHaveLength(1);
+        expect(scheduled.calls).toEqual(['replace', 'dismiss']);
       }).pipe(
         Effect.provide(stubMirrors(passes)),
         Effect.provide(stubEngine(pulled).pipe(Layer.provideMerge(testLayer(scheduled.sink)))),

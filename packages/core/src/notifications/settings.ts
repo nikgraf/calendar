@@ -1,4 +1,5 @@
 import { Schema } from 'effect';
+import type { TaskProvider } from '../types.ts';
 
 /**
  * Device-local event notification preferences, stored next to the
@@ -56,6 +57,75 @@ export const mergeEventNotificationSettings = (
     ...(dismissWhenOver === undefined ? {} : { dismissWhenOver }),
     enabled: incoming.enabled,
     includeAppleCalendar: incoming.includeAppleCalendar,
+  };
+};
+
+/**
+ * Device-local task notification preferences: Google tasks and Apple
+ * Reminders, both on by default. Stored next to the event ones.
+ */
+export const TaskNotificationSettings = Schema.Struct({
+  /**
+   * iOS: an Apple Reminder's delivered notification leaves Notification
+   * Center once the reminder is checked off or gone. Absent reads as on
+   * (`dismissesWhenDone`) and stays absent until someone flips the
+   * switch, as `dismissWhenOver` does.
+   */
+  dismissRemindersWhenDone: Schema.optional(Schema.Boolean),
+  /** The same for Google tasks. */
+  dismissTasksWhenDone: Schema.optional(Schema.Boolean),
+  enabled: Schema.Boolean,
+  /**
+   * The Reminders app already notifies for a reminder that has an alert;
+   * on means Solunivo notifies for every Apple Reminder too.
+   */
+  includeAppleReminders: Schema.Boolean,
+  /** 'HH:MM' on the device's clock: when a task without a time of its own notifies on its due day. */
+  time: Schema.String,
+});
+export type TaskNotificationSettings = typeof TaskNotificationSettings.Type;
+
+export const DEFAULT_TASK_NOTIFICATION_TIME = '09:00';
+
+export const DEFAULT_TASK_NOTIFICATION_SETTINGS: TaskNotificationSettings = {
+  enabled: true,
+  includeAppleReminders: true,
+  time: DEFAULT_TASK_NOTIFICATION_TIME,
+};
+
+/** Whether a delivered notification leaves once its task is done, per provider: on unless switched off. */
+export const dismissesWhenDone = (
+  settings: Pick<TaskNotificationSettings, 'dismissRemindersWhenDone' | 'dismissTasksWhenDone'>,
+  provider: TaskProvider,
+): boolean =>
+  (provider === 'apple' ? settings.dismissRemindersWhenDone : settings.dismissTasksWhenDone) !==
+  false;
+
+/** Whether two task settings do the same, whether an "on" is stored or left out. */
+export const sameTaskNotificationSettings = (
+  a: TaskNotificationSettings,
+  b: TaskNotificationSettings,
+): boolean =>
+  a.enabled === b.enabled &&
+  a.includeAppleReminders === b.includeAppleReminders &&
+  a.time === b.time &&
+  dismissesWhenDone(a, 'apple') === dismissesWhenDone(b, 'apple') &&
+  dismissesWhenDone(a, 'google') === dismissesWhenDone(b, 'google');
+
+/** `incoming` over `current`, as `mergeEventNotificationSettings`: a switch left out keeps its value. */
+export const mergeTaskNotificationSettings = (
+  current: TaskNotificationSettings,
+  incoming: TaskNotificationSettings,
+): TaskNotificationSettings => {
+  const dismissRemindersWhenDone =
+    incoming.dismissRemindersWhenDone ?? current.dismissRemindersWhenDone;
+  const dismissTasksWhenDone = incoming.dismissTasksWhenDone ?? current.dismissTasksWhenDone;
+  return {
+    ...(dismissRemindersWhenDone === undefined ? {} : { dismissRemindersWhenDone }),
+    ...(dismissTasksWhenDone === undefined ? {} : { dismissTasksWhenDone }),
+    enabled: incoming.enabled,
+    includeAppleReminders: incoming.includeAppleReminders,
+    time: incoming.time,
   };
 };
 

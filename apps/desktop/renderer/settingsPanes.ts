@@ -21,7 +21,7 @@ export const SETTINGS_PANES = [
   },
   {
     id: 'notifications',
-    keywords: ['alerts', 'reminders', 'birthdays', 'events'],
+    keywords: ['alerts', 'reminders', 'birthdays', 'events', 'tasks'],
     label: 'Notifications',
   },
   {

@@ -61,6 +61,18 @@ const task = (overrides: Partial<TaskRecord> = {}): TaskRecord =>
 const pos = (n: number) => String(n).padStart(20, '0');
 
 describe('TaskRepo', () => {
+  it.effect('findById reads a task on whichever list it is now, the open row first', () =>
+    Effect.gen(function* () {
+      const repo = yield* TaskRepo;
+      yield* repo.upsertLists([list(), list({ id: 'list-2', title: 'Home' })], 1);
+      yield* repo.upsertTasks([task({ listId: 'list-2' })], 1);
+      expect((yield* repo.findById('acc-1', 'task-1'))?.listId).toBe('list-2');
+      yield* repo.upsertTasks([task({ status: 'completed' })], 1);
+      expect((yield* repo.findById('acc-1', 'task-1'))?.listId).toBe('list-2');
+      expect(yield* repo.findById('acc-1', 'task-9')).toBeUndefined();
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
   it.effect('round-trips tasks through the due-window query', () =>
     Effect.gen(function* () {
       const repo = yield* TaskRepo;

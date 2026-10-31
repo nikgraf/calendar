@@ -431,8 +431,19 @@ describe('parseNotificationTarget', () => {
       startUtc: 1,
     } as const;
     expect(parseNotificationTarget(target)).toEqual(target);
-    expect(parseNotificationTarget({ ...target, kind: 'task' })).toBeUndefined();
     expect(parseNotificationTarget({ ...target, startUtc: '1' })).toBeUndefined();
+    // A task target names the task by its stored identity, nothing of an event's.
+    const task = {
+      accountId: 'acc',
+      dueDate: '2026-03-04',
+      kind: 'task',
+      listId: 'inbox',
+      taskId: 't1',
+    } as const;
+    expect(parseNotificationTarget(task)).toEqual(task);
+    expect(parseNotificationTarget({ ...target, kind: 'task' })).toBeUndefined();
+    expect(parseNotificationTarget({ ...task, listId: undefined })).toBeUndefined();
+    expect(parseNotificationTarget({ ...task, dueDate: undefined })).toBeUndefined();
     expect(parseNotificationTarget(null)).toBeUndefined();
     expect(parseNotificationTarget('event:acc/cal/ev')).toBeUndefined();
   });

@@ -386,13 +386,17 @@ export const describeSettingsDocument = (document: SettingsDocument): ReadonlyAr
     lines.push(`Time zones: ${names.join(' · ')}`);
   }
   const alerts = [
-    document.eventNotifications?.enabled ? 'Event alerts' : null,
+    document.eventNotifications?.enabled ? 'event alerts' : null,
+    document.taskNotifications?.enabled ? 'task alerts' : null,
     document.birthdayReminders?.enabled ? 'birthday reminders' : null,
   ].filter((part) => part !== null);
   if (alerts.length > 0) {
-    const [first = '', second] = alerts;
+    const [first = '', ...rest] = alerts;
     const lead = first.charAt(0).toUpperCase() + first.slice(1);
-    lines.push(second ? `${lead} and ${second}` : lead);
+    const last = rest.at(-1);
+    lines.push(
+      last === undefined ? lead : `${[lead, ...rest.slice(0, -1)].join(', ')} and ${last}`,
+    );
   }
   const overrides = document.birthdayReminderOverrides?.length ?? 0;
   if (overrides > 0) {

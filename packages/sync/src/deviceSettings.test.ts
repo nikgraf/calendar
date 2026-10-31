@@ -1,10 +1,11 @@
 import {
   type BirthdayLeadDays,
-  dismissesWhenOver,
   DEFAULT_BIRTHDAY_REMINDER_SETTINGS,
   DEFAULT_ONBOARDING_STATE,
   DEFAULT_TIME_ZONE_SETTINGS,
   DEFAULT_VIEW_PREFERENCES,
+  dismissesWhenDone,
+  dismissesWhenOver,
   Temporal,
 } from '@calendar/core';
 import { DeviceSettingsRepo, reposLayer, runMigrations } from '@calendar/db';
@@ -23,8 +24,10 @@ import {
   readEventNotificationSettings,
   readOnboarding,
   readPrimaryTimeZone,
+  readTaskNotificationSettings,
   readTimeZoneSettings,
   readViewPreferences,
+  TASK_NOTIFICATIONS_KEY,
   TIME_ZONES_KEY,
   updateOnboarding,
   VIEW_PREFERENCES_KEY,
@@ -32,6 +35,7 @@ import {
   writeBirthdayReminderSettings,
   writeEventNotificationSettings,
   writeOnboarding,
+  writeTaskNotificationSettings,
   writeTimeZoneSettings,
   writeViewPreferences,
 } from './deviceSettings.ts';
@@ -322,6 +326,48 @@ describe('event notification settings', () => {
         includeAppleCalendar: false,
       });
     }).pipe(Effect.provide(dbLayer())),
+  );
+});
+
+describe('task notification settings', () => {
+  it.effect(
+    'defaults to on at 09:00 with Reminders; the switches stay unset till someone sets them',
+    () =>
+      Effect.gen(function* () {
+        const defaults = yield* readTaskNotificationSettings;
+        expect(defaults).toEqual({ enabled: true, includeAppleReminders: true, time: '09:00' });
+        expect(dismissesWhenDone(defaults, 'google')).toBe(true);
+        expect(dismissesWhenDone(defaults, 'apple')).toBe(true);
+        yield* (yield* DeviceSettingsRepo).set(TASK_NOTIFICATIONS_KEY, {
+          enabled: false,
+          includeAppleReminders: true,
+          time: '18:00',
+        });
+        expect(yield* readTaskNotificationSettings).toEqual({
+          enabled: false,
+          includeAppleReminders: true,
+          time: '18:00',
+        });
+        yield* writeTaskNotificationSettings({
+          dismissTasksWhenDone: false,
+          enabled: true,
+          includeAppleReminders: false,
+          time: '07:15',
+        });
+        expect(yield* readTaskNotificationSettings).toEqual({
+          dismissTasksWhenDone: false,
+          enabled: true,
+          includeAppleReminders: false,
+          time: '07:15',
+        });
+        // A row that no longer decodes reads as the defaults.
+        yield* (yield* DeviceSettingsRepo).set(TASK_NOTIFICATIONS_KEY, { enabled: 'yes' });
+        expect(yield* readTaskNotificationSettings).toEqual({
+          enabled: true,
+          includeAppleReminders: true,
+          time: '09:00',
+        });
+      }).pipe(Effect.provide(dbLayer())),
   );
 });
 

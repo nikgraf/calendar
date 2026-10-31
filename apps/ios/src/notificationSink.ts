@@ -1,4 +1,5 @@
-import type { NotificationSinkShape } from '@calendar/sync';
+import { parseNotificationTarget } from '@calendar/core';
+import type { DeliveredNotification, NotificationSinkShape } from '@calendar/sync';
 import { Effect, Predicate } from 'effect';
 import type {
   NotificationHandler,
@@ -59,15 +60,24 @@ export const makeIosNotificationSink = (
       }),
   });
   return {
-    // The OS keeps the delivered list and each payload says when it is
-    // done — read back as OS data, never trusted. One without a deadline
-    // (a birthday, a reminder an older build scheduled) stays.
-    dismissDelivered: (now) =>
-      Effect.tryPromise(async () => {
-        for (const { request } of await notifications.getPresentedNotificationsAsync()) {
+    // The OS keeps the delivered list; each payload's deadline and target
+    // are read back as OS data, never trusted, and the scheduler decides.
+    dismissDelivered: (shouldDismiss) =>
+      Effect.gen(function* () {
+        const presented = yield* Effect.tryPromise(() =>
+          notifications.getPresentedNotificationsAsync(),
+        );
+        for (const { request } of presented) {
           const dismissAt = request.content.data?.['dismissAt'];
-          if (Predicate.isNumber(dismissAt) && dismissAt <= now) {
-            await notifications.dismissNotificationAsync(request.identifier);
+          const delivered: DeliveredNotification = {
+            dismissAt: Predicate.isNumber(dismissAt) ? dismissAt : undefined,
+            key: request.identifier,
+            target: parseNotificationTarget(request.content.data?.['target']),
+          };
+          if (yield* shouldDismiss(delivered)) {
+            yield* Effect.tryPromise(() =>
+              notifications.dismissNotificationAsync(request.identifier),
+            );
           }
         }
       }),

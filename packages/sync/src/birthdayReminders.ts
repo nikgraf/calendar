@@ -1,10 +1,14 @@
 import { planBirthdayReminders, type PlannedNotification, Temporal } from '@calendar/core';
-import type { AccountRepo, BirthdayRepo, DeviceSettingsRepo } from '@calendar/db';
+import { type AccountRepo, type BirthdayRepo, DeviceSettingsRepo } from '@calendar/db';
 import { Effect } from 'effect';
 import type { SqlError } from 'effect/sql/SqlError';
 import { loadMergedBirthdays } from './birthdays.ts';
 import type { DeviceContacts } from './deviceContacts.ts';
-import { readBirthdayReminderOverrides, readBirthdayReminderSettings } from './deviceSettings.ts';
+import {
+  BIRTHDAY_REMINDERS_KEY,
+  readBirthdayReminderOverrides,
+  readBirthdayReminderSettings,
+} from './deviceSettings.ts';
 
 /** How far ahead birthday reminders are planned (iOS schedules from this list). */
 const HORIZON_DAYS = 120;
@@ -39,7 +43,12 @@ export const loadBirthdayPlans = (
     return planBirthdayReminders(
       records,
       settings,
-      { fromDate, horizonDays: HORIZON_DAYS, timeZone },
+      {
+        fromDate,
+        horizonDays: HORIZON_DAYS,
+        since: (yield* (yield* DeviceSettingsRepo).updatedAt(BIRTHDAY_REMINDERS_KEY)) ?? undefined,
+        timeZone,
+      },
       overrides,
     );
   });

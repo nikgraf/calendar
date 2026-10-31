@@ -883,7 +883,10 @@ independent of what ran before. Locally the flows run against the dev
 client and Metro (`pnpm --filter @calendar/ios start`); the Google halves
 are no-ops unless Metro was started with
 `EXPO_PUBLIC_CALENDAR_GOOGLE=fixture`, and Metro needs
-`EXPO_PUBLIC_CALENDAR_ONBOARDING=off` as CI's bundle has it (else the
+`EXPO_PUBLIC_CALENDAR_NOTIFICATIONS=off` as CI's bundle has it (else the
+fixture's task due today is scheduled and iOS asks for notification
+permission over whatever flow runs next) and
+`EXPO_PUBLIC_CALENDAR_ONBOARDING=off` likewise (else the
 Getting started card sits over the calendar the flows tap; flows 26 and
 27 turn onboarding on for their own launch through the
 `onboarding-fixture` link, under the fixture model, and since the
