@@ -65,6 +65,7 @@ describe('planTaskReminders', () => {
         expiresAt: utc('2026-03-04T23:00:00Z'),
         fireAt: utc('2026-03-04T08:00:00Z'),
         key: 'task:acc/t1:2026-03-04',
+        since: 0,
         target: {
           accountId: 'acc',
           dueDate: '2026-03-04',
@@ -131,6 +132,7 @@ describe('planTaskReminders', () => {
         expiresAt: utc('2026-03-04T23:00:00Z'),
         fireAt: utc('2026-03-03T23:30:00Z'),
         key: 'task:apple-reminders/rem-1:2026-03-04',
+        since: 0,
         target: {
           accountId: APPLE_REMINDERS_ACCOUNT_ID,
           dueDate: '2026-03-03',
@@ -145,6 +147,14 @@ describe('planTaskReminders', () => {
     // The other way round, the instant's day is before the window.
     const early = reminder({ dueDate: '2026-03-04', dueUtc: utc('2026-03-03T22:00:00Z') });
     expect(planTaskReminders([early], settings(), { ...window, lists: [errands] })).toEqual([]);
+  });
+
+  it("dates a plan's subject from the later of the task's change and the settings' save", () => {
+    const [plan] = planTaskReminders([task({ updatedAt: 5 })], settings(), { ...window, since: 9 });
+    expect(plan?.since).toBe(9);
+    expect(
+      planTaskReminders([task({ updatedAt: 12 })], settings(), { ...window, since: 9 })[0]?.since,
+    ).toBe(12);
   });
 
   it('names the list only when more than one is visible', () => {

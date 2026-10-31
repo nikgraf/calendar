@@ -796,7 +796,14 @@ describe('LocalNotifications', () => {
         expect(shown).toEqual([RENT_KEY]);
         // Created at 10:00 and due today: its 09:00 was never missed.
         yield* (yield* TaskRepo).upsertTasks(
-          [new TaskRecord({ ...rent, id: 'tax', title: 'File the tax' })],
+          [
+            new TaskRecord({
+              ...rent,
+              id: 'tax',
+              title: 'File the tax',
+              updatedAt: Date.parse('2026-03-03T10:00:00Z'),
+            }),
+          ],
           1,
         );
         yield* notifications.run();
@@ -812,6 +819,72 @@ describe('LocalNotifications', () => {
       }).pipe(Effect.provide(testLayer(sink)));
     },
   );
+
+  it.effect(
+    'a row a pull brings after the pass still shows when it existed through its moment',
+    () => {
+      const { shown, sink } = immediateSink();
+      return Effect.gen(function* () {
+        yield* seedTasks();
+        const notifications = yield* LocalNotifications;
+        // Task notifications first planned the day before; today's pass runs before the pull.
+        yield* setClock('2026-03-02T10:00:00Z');
+        yield* notifications.run();
+        yield* TestClock.adjust('24 hours');
+        yield* notifications.run();
+        expect(shown).toEqual([]);
+        // Created on the phone last night and pulled now: its 09:00 was real.
+        yield* (yield* TaskRepo).upsertTasks(
+          [new TaskRecord({ ...rent, updatedAt: Date.parse('2026-03-02T22:00:00Z') })],
+          1,
+        );
+        yield* notifications.run();
+        expect(shown).toEqual([RENT_KEY]);
+        // Created on the phone just now and due today: nothing was missed.
+        yield* (yield* TaskRepo).upsertTasks(
+          [
+            new TaskRecord({
+              ...rent,
+              id: 'tax',
+              title: 'File the tax',
+              updatedAt: Date.parse('2026-03-03T10:00:00Z'),
+            }),
+          ],
+          1,
+        );
+        yield* notifications.run();
+        expect(shown).toEqual([RENT_KEY]);
+      }).pipe(Effect.provide(testLayer(sink)));
+    },
+  );
+
+  it.effect('a reminder postponed to later the same day notifies again then, as on iOS', () => {
+    const { shown, sink } = immediateSink();
+    return Effect.gen(function* () {
+      yield* seedTasks(callBank);
+      const notifications = yield* LocalNotifications;
+      yield* setClock('2026-03-03T08:00:00Z');
+      yield* notifications.run();
+      yield* TestClock.adjust(Duration.minutes(361));
+      yield* notifications.run();
+      expect(shown).toEqual([BANK_KEY]);
+      yield* (yield* TaskRepo).upsertTasks(
+        [
+          new TaskRecord({
+            ...callBank,
+            dueUtc: Date.parse('2026-03-03T16:00:00Z'),
+            updatedAt: Date.parse('2026-03-03T14:05:00Z'),
+          }),
+        ],
+        1,
+      );
+      yield* notifications.run();
+      expect(shown).toEqual([BANK_KEY]);
+      yield* TestClock.adjust('2 hours');
+      yield* notifications.run();
+      expect(shown).toEqual([BANK_KEY, BANK_KEY]);
+    }).pipe(Effect.provide(testLayer(sink)));
+  });
 
   it.effect('Apple Calendar events notify only when the setting includes them', () => {
     const { shown, sink } = immediateSink();

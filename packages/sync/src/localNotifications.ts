@@ -49,6 +49,8 @@ const FIRED_KEY = 'localNotifications.fired';
 const SCHEDULED_KEY = 'localNotifications.scheduled';
 /** When an immediate sink last ran a pass: what came due since is what it shows. */
 const LAST_PASS_KEY = 'localNotifications.lastPass';
+/** Delivered task notifications whose row is missing, and since when (see ABSENT_GRACE_MS). */
+const ABSENT_KEY = 'localNotifications.absent';
 /** Set once an immediate sink has been asked for permission (first start). */
 const PERMISSION_ASKED_KEY = 'localNotifications.permissionAsked';
 
@@ -145,8 +147,6 @@ const make = (options: {
     >();
 
     const loadFired = Effect.map(settingsRepo.get(FIRED_KEY), firedRecord);
-    /** Delivered task notifications whose row went missing, and when (see ABSENT_GRACE_MS). */
-    const absentSince = new Map<string, number>();
 
     /**
      * An immediate sink cannot ask for permission on its own (macOS
@@ -181,23 +181,29 @@ const make = (options: {
         const fired = Object.fromEntries(
           Object.entries(previous).filter(([, firedAt]) => firedAt >= now - FIRED_TTL_MS),
         );
-        // What came due since the last pass, while its producer still finds
-        // it worth showing (a birthday all day, a meeting until it starts,
-        // a task until its day ends): a Mac asleep or closed through the
-        // moment catches up, and a plan whose moment was already past when
-        // it first appeared — a task created in the afternoon, a notify
-        // time moved earlier, a list shown, a setting switched on — stays
-        // silent, as on iOS, which schedules nothing past. The first pass
-        // ever has no last one and shows what the producers' windows allow.
+        // What came due since the last pass, or whose subject its row or
+        // setting dates from before the moment (`since`: the pull that
+        // brought the row landed after a pass, the Mac opened after its
+        // sleep), while its producer still finds it worth showing (a
+        // birthday all day, a meeting until it starts, a task until its day
+        // ends). A plan whose moment was already past when its subject came
+        // to be — a task created in the afternoon, a notify time moved
+        // earlier, a setting switched on — stays silent, as on iOS, which
+        // schedules nothing past. The first pass of this record counts as
+        // the last one: a profile from before it has nothing to catch up on
+        // that the old build did not show. A key fires again at a later
+        // moment (a reminder postponed), as iOS re-delivers it.
         const lastPass = yield* settingsRepo.get(LAST_PASS_KEY);
-        const since = typeof lastPass === 'number' ? lastPass : undefined;
-        const due = plans.filter(
-          (plan) =>
-            (since === undefined || plan.fireAt > since) &&
+        const since = typeof lastPass === 'number' ? lastPass : now;
+        const due = plans.filter((plan) => {
+          const firedAt = fired[plan.key];
+          return (
+            (plan.fireAt > since || (plan.since !== undefined && plan.since < plan.fireAt)) &&
             plan.fireAt <= now &&
             now < plan.expiresAt &&
-            !(plan.key in fired),
-        );
+            (firedAt === undefined || firedAt < plan.fireAt)
+          );
+        });
         for (const plan of due) {
           yield* sink.show(plan);
           fired[plan.key] = plan.fireAt;
@@ -244,9 +250,9 @@ const make = (options: {
      * a task's once the stored task is done, re-dated or gone for a
      * minute (ABSENT_GRACE_MS), unless that
      * provider's "Remove When Done" is off. The payloads keep their data,
-     * so a switch turned back on clears them on the next pass. Nothing is
-     * remembered here. Best-effort: a failure is logged, the next pass
-     * tries again.
+     * so a switch turned back on clears them on the next pass. Remembered
+     * here: only which rows went missing, and when. Best-effort: a failure
+     * is logged, the next pass tries again.
      */
     const dismissDelivered = (
       now: number,
@@ -257,6 +263,9 @@ const make = (options: {
             const overEvents = dismissesWhenOver(yield* readEventNotificationSettings);
             const tasks = yield* readTaskNotificationSettings;
             const taskRepo = yield* TaskRepo;
+            // Stored, so a background pass counts toward the grace too.
+            const absentBefore = firedRecord(yield* settingsRepo.get(ABSENT_KEY));
+            const absent: Record<string, number> = {};
             yield* sink.dismissDelivered((delivered) =>
               Effect.gen(function* () {
                 const { target } = delivered;
@@ -277,15 +286,13 @@ const make = (options: {
                     (yield* taskRepo.get(target.accountId, target.listId, target.taskId)) ??
                     (yield* taskRepo.findById(target.accountId, target.taskId));
                   if (!task) {
-                    const since = absentSince.get(delivered.key) ?? now;
-                    if (now - since < ABSENT_GRACE_MS) {
-                      absentSince.set(delivered.key, since);
+                    const missingSince = absentBefore[delivered.key] ?? now;
+                    if (now - missingSince < ABSENT_GRACE_MS) {
+                      absent[delivered.key] = missingSince;
                       return false;
                     }
-                    absentSince.delete(delivered.key);
                     return true;
                   }
-                  absentSince.delete(delivered.key);
                   return (
                     task.status === 'completed' ||
                     (target.dueUtc === undefined
@@ -298,6 +305,9 @@ const make = (options: {
                 );
               }),
             );
+            if (JSON.stringify(absent) !== JSON.stringify(absentBefore)) {
+              yield* settingsRepo.set(ABSENT_KEY, absent);
+            }
           }).pipe(
             Effect.catchCause((cause) =>
               Effect.logWarning('local notifications: dismiss failed', { cause: String(cause) }),

@@ -174,7 +174,7 @@ export function NotificationsSections() {
               </Footer>
               <Footer>
                 Remove When Done takes a task’s notification out of Notification Center once it is
-                checked off or deleted, the next time Solunivo runs.
+                checked off, or a minute after it is deleted, the next time Solunivo runs.
               </Footer>
               {tasks.failure ? (
                 <Footer testID="task-notifications-failed" tone="danger">

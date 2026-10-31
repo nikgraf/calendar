@@ -104,6 +104,16 @@ export interface PlannedNotification {
   readonly fireAt: number;
   /** Stable across runs and unique per producer, so a sink can dedupe. */
   readonly key: string;
+  /**
+   * Epoch ms from which the plan's subject is known to have existed, as
+   * its row or setting records it. An immediate sink that first meets a
+   * plan past its moment shows it when this is before the moment (the
+   * pull that brought the row landed after a pass; the Mac opened after
+   * its sleep) and stays silent when it is not (a task created after its
+   * day's notify time, a setting switched on in the afternoon). Absent,
+   * only the pass clock decides.
+   */
+  readonly since?: number | undefined;
   /** What a tap opens; none just brings the app forward (a birthday). */
   readonly target?: NotificationTarget | undefined;
   readonly title: string;

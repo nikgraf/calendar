@@ -1,11 +1,17 @@
 import { type PlannedNotification, planTaskReminders, toZonedDateTime } from '@calendar/core';
-import { type DeviceSettingsRepo, TaskRepo } from '@calendar/db';
+import { DeviceSettingsRepo, TaskRepo } from '@calendar/db';
 import { Effect } from 'effect';
 import type { SqlError } from 'effect/sql/SqlError';
-import { readTaskNotificationSettings } from './deviceSettings.ts';
+import { readTaskNotificationSettings, TASK_NOTIFICATIONS_KEY } from './deviceSettings.ts';
 
 /** How far ahead task reminders are planned — a week, like event reminders. */
 const HORIZON_DAYS = 7;
+/**
+ * When this device first planned task notifications: stands in for the
+ * settings row's stamp while nothing has been saved, so a Mac updated to
+ * this build in the afternoon does not show every task already due today.
+ */
+const TASKS_SINCE_KEY = 'localNotifications.tasksSince';
 
 /**
  * The task-reminder producer for LocalNotifications: the open tasks on
@@ -26,6 +32,14 @@ export const loadTaskPlans = (
     const today = toZonedDateTime(now, timeZone).toPlainDate();
     const fromDate = today.toString();
     const untilDate = today.add({ days: HORIZON_DAYS }).toString();
+    const settingsRepo = yield* DeviceSettingsRepo;
+    const firstPlannedAt = yield* settingsRepo.get(TASKS_SINCE_KEY);
+    if (typeof firstPlannedAt !== 'number') {
+      yield* settingsRepo.set(TASKS_SINCE_KEY, now);
+    }
+    const since =
+      (yield* settingsRepo.updatedAt(TASK_NOTIFICATIONS_KEY)) ??
+      (typeof firstPlannedAt === 'number' ? firstPlannedAt : now);
     const taskRepo = yield* TaskRepo;
     // A day wider each side: a reminder with an instant of its own is
     // planned on that instant's day here, which the stored day — written
@@ -35,5 +49,5 @@ export const loadTaskPlans = (
       today.add({ days: HORIZON_DAYS + 1 }).toString(),
     );
     const lists = (yield* taskRepo.listLists()).filter((list) => list.isVisible);
-    return planTaskReminders(tasks, settings, { fromDate, lists, timeZone, untilDate });
+    return planTaskReminders(tasks, settings, { fromDate, lists, since, timeZone, untilDate });
   });

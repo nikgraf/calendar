@@ -81,8 +81,8 @@ export const findNotificationEvent = (
 /**
  * The task a tapped notification is about, by its stored identity, or
  * null when it is gone (or unreadable): a tap then only brings the app
- * forward. A Google task moved to another list or re-created under its
- * server id is gone by this name too.
+ * forward. A task re-created under a new id is gone by this name; one
+ * moved to another list is found by its id (`getTask` falls back to it).
  */
 export const findNotificationTask = (
   client: Pick<BackendClient, 'getTask'>,

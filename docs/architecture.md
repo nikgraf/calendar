@@ -1475,11 +1475,15 @@ gateway carries all of it. Details, limits and the threat model:
   platform `NotificationSink` delivers: desktop fires an Electron
   `Notification` for what came due since its last pass
   (`localNotifications.lastPass` in `device_settings`, beside the fired
-  keys) while the plan's `expiresAt` allows — a Mac asleep or closed
-  through the moment catches up, a plan already past when it first
-  appears (a task created in the afternoon, a notify time moved earlier)
-  stays silent as on iOS, and the first pass ever shows what the windows
-  allow; iOS replaces
+  keys) or whose subject predates its moment (`PlannedNotification.since`:
+  the row's `updatedAt`; for tasks and birthdays the later of that and
+  the settings row's stamp, with `localNotifications.tasksSince` standing
+  in until task notifications are first saved), while the plan's
+  `expiresAt` allows — a Mac asleep or closed through the moment catches
+  up, a row a pull brings after the pass still shows, a plan whose moment
+  was past when its subject came to be (a task created in the afternoon,
+  a notify time moved earlier) stays silent as on iOS, and a key fires
+  again at a later moment (a reminder postponed); iOS replaces
   the pending expo-notifications schedule with the soonest ≤ 60 whenever
   the digest changes. An event plan also carries `dismissAt` — its end
   (all-day: midnight after the last day on the device's clock), never

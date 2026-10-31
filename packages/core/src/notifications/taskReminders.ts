@@ -37,6 +37,12 @@ export const planTaskReminders = (
     readonly fromDate: string;
     /** The visible lists; a task on another list is skipped, and with several the body names the task's. */
     readonly lists: ReadonlyArray<TaskListInfo>;
+    /**
+     * When task notifications were last configured on this device (the
+     * settings row's stamp): a plan's subject dates from the later of
+     * that and the task's own last change.
+     */
+    readonly since?: number | undefined;
     readonly timeZone: string;
     readonly untilDate: string;
   },
@@ -84,6 +90,7 @@ export const planTaskReminders = (
         expiresAt,
         fireAt,
         key: `task:${task.accountId}/${task.id}:${dueDate}`,
+        since: Math.max(task.updatedAt, options.since ?? 0),
         // The day the row says, which the rule compares to the row again.
         target: taskNotificationTarget(task, storedDay),
         title: task.title,

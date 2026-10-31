@@ -298,6 +298,7 @@ export const planEventReminders = (
           expiresAt,
           fireAt,
           key: `event:${event.accountId}/${event.calendarId}/${event.id}:${String(event.startUtc)}:${String(minutes)}`,
+          since: event.updatedAt,
           target: eventNotificationTarget(event),
           title: event.title,
         });

@@ -1,4 +1,4 @@
-import { Context, Effect, Layer } from 'effect';
+import { Clock, Context, Effect, Layer } from 'effect';
 import { Reactivity } from 'effect/reactivity/Reactivity';
 import { SqlClient } from 'effect/sql/SqlClient';
 import type { SqlError } from 'effect/sql/SqlError';
@@ -14,6 +14,8 @@ import type { DeviceSettingRow } from './rows.ts';
 export interface DeviceSettingsRepoShape {
   readonly get: (key: string) => Effect.Effect<unknown, SqlError>;
   readonly set: (key: string, value: unknown) => Effect.Effect<void, SqlError>;
+  /** When `key` was last written (epoch ms), or null when it never was. */
+  readonly updatedAt: (key: string) => Effect.Effect<number | null, SqlError>;
 }
 
 const makeDeviceSettingsRepo: Effect.Effect<
@@ -42,13 +44,21 @@ const makeDeviceSettingsRepo: Effect.Effect<
     set: (key, value) =>
       reactivity.mutation(
         [deviceSettingsKey(key)],
-        Effect.asVoid(sql`
+        Effect.flatMap(Clock.currentTimeMillis, (now) =>
+          Effect.asVoid(sql`
             INSERT INTO device_settings (key, value, updated_at)
-            VALUES (${key}, ${JSON.stringify(value)}, ${Date.now()})
+            VALUES (${key}, ${JSON.stringify(value)}, ${now})
             ON CONFLICT (key) DO UPDATE SET
               value = excluded.value,
               updated_at = excluded.updated_at
           `),
+        ),
+      ),
+    updatedAt: (key) =>
+      Effect.map(
+        sql<Pick<DeviceSettingRow, 'updated_at'>>`
+          SELECT updated_at FROM device_settings WHERE key = ${key}`,
+        (rows) => rows[0]?.updated_at ?? null,
       ),
   };
 });

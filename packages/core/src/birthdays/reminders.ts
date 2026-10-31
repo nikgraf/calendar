@@ -271,7 +271,13 @@ const leadPhrase = (leadDays: number): string => {
 export const planBirthdayReminders = (
   records: ReadonlyArray<BirthdayRecord>,
   settings: BirthdayReminderSettings,
-  options: { readonly fromDate: string; readonly horizonDays: number; readonly timeZone: string },
+  options: {
+    readonly fromDate: string;
+    readonly horizonDays: number;
+    /** When birthday reminders were last configured on this device (the settings row's stamp). */
+    readonly since?: number | undefined;
+    readonly timeZone: string;
+  },
   overrides: BirthdayReminderOverrides = [],
 ): ReadonlyArray<PlannedNotification> => {
   if (!settings.enabled) {
@@ -319,6 +325,7 @@ export const planBirthdayReminders = (
         // Prefixed so the merged notification schedule keeps producers apart.
         // One reminder per lead, so the lead names it; a new time keeps the key.
         key: `birthday:${occurrence.record.id}:${occurrence.date}:${String(leadDays)}`,
+        since: options.since,
         title: `🎂 ${occurrence.record.displayName}`,
       });
     }
