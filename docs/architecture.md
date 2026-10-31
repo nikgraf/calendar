@@ -390,8 +390,19 @@ it whenever a kind is added. Rules that keep the queue correct:
   move, re-keyed to the destination (a never-sent create simply becomes a
   create there; a sent one stays in the source with the move behind it; a
   delete of the moved event is dropped instead, see Sync engine).
-  A dropped move (403 non-organizer) re-keys the rows back. Ties on
-  `created_at` break by `rowid`.
+  A move Google never makes — discarded, refused (403 non-organizer), or
+  a 404 for the event or the destination — puts the rows back in the
+  source with what was re-queued behind it, snapshots re-keyed the same
+  way (`releaseMove`): left in the destination, an edit or a
+  this-and-following cut's master update and exception deletes would
+  404 there and be dropped, while the source row showed what Google
+  never got. The series' next move out of the destination ends what goes
+  back: it now leaves from the source (a move back to the source has
+  nothing left to move and goes), and it took the rows along, so rows
+  and ops in the destination behind it belong to a later move back in. A
+  row a queued op owns stays as it was, and every row stays while a move
+  into the source is queued (it settles them); the rest are handed to
+  sync. Ties on `created_at` break by `rowid`.
 - The drain loop re-reads each op by id before dispatching: a missing row
   means the user discarded it (skip), and coalescing rewrites stay
   visible. Each failure is recorded in `last_error`; the unsynced-changes
@@ -403,7 +414,8 @@ it whenever a kind is added. Rules that keep the queue correct:
   and `beforeColorHex`. When a newer edit replaces a queued op it inherits
   that op's snapshot, so the snapshot always names the last state Google
   acknowledged, however many edits piled up offline; a move re-keys it to
-  the destination with the op. The unsynced-changes list diffs an op
+  the destination with the op, and back if Google never makes the move.
+  The unsynced-changes list diffs an op
   against it (`pendingOpDiff`, computed in `listPendingOps` as display
   lines) and an abandoned op puts it back (`releaseRow`): a discard, a
   permanent rejection and keep-mine with nothing left all restore the row

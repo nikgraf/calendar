@@ -223,6 +223,28 @@ const ownedFields = (
   };
 };
 
+/**
+ * An op re-keyed with its event to another calendar of the account (a
+ * move queued, or a move Google never made): what a discard puts back,
+ * what it sends and a parked op's copy of Google's live there now too. It
+ * starts over and is due at once; a parked op stays parked, its reason
+ * with it.
+ */
+export const retargetOp = (op: PendingOp, calendarId: string): PendingOp => {
+  const retarget = (record: EventRecord) => new EventRecord({ ...record, calendarId });
+  return new PendingOp({
+    ...op,
+    attempts: 0,
+    beforeOverrides: op.beforeOverrides?.map((row) => retarget(row)),
+    beforePayload: op.beforePayload ? retarget(op.beforePayload) : op.beforePayload,
+    calendarId,
+    lastError: op.conflictAt === undefined ? undefined : op.lastError,
+    nextAttemptAt: 0,
+    payload: op.payload ? retarget(op.payload) : undefined,
+    serverPayload: op.serverPayload ? retarget(op.serverPayload) : undefined,
+  });
+};
+
 export interface ApplyOp {
   readonly apply: (op: PendingOp) => Effect.Effect<ApplyOutcome>;
   /** Puts back what an abandoned op changed locally and hands its row to sync (also used by discard). */
@@ -700,12 +722,8 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
     const revert = options.revert ?? true;
     switch (op.kind) {
       case 'move':
-        // The server still has the event in the source calendar: put the
-        // rows the move re-keyed back there and hand them to sync.
         return op.targetCalendarId
-          ? Effect.ignore(
-              rekeySeries(op.accountId, op.targetCalendarId, op.calendarId, op.eventId, 'synced'),
-            )
+          ? Effect.ignore(transaction(releaseMove(op, op.targetCalendarId)))
           : Effect.void;
       case 'create':
         return Effect.ignore(
@@ -803,25 +821,82 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
     }
   };
 
-  /** Moves a series' local rows (master + overrides) between calendars of one account. */
-  function rekeySeries(
-    accountId: string,
-    fromCalendarId: string,
-    toCalendarId: string,
-    masterId: string,
-    syncStatus: EventRecord['syncStatus'],
-  ) {
-    return Effect.gen(function* () {
-      const master = yield* eventRepo.getById(accountId, fromCalendarId, masterId);
-      const overrides = yield* eventRepo.listOverrides(accountId, fromCalendarId, masterId);
-      for (const row of master ? [master, ...overrides] : overrides) {
-        yield* eventRepo.deleteEvent(accountId, fromCalendarId, row.id);
-        yield* eventRepo.upsertMany([
-          new EventRecord({ ...row, calendarId: toCalendarId, syncStatus }),
-        ]);
+  /** A series' local rows (master + overrides) in one calendar. */
+  const seriesRows = (accountId: string, calendarId: string, masterId: string) =>
+    Effect.gen(function* () {
+      const master = yield* eventRepo.getById(accountId, calendarId, masterId);
+      const overrides = yield* eventRepo.listOverrides(accountId, calendarId, masterId);
+      return master ? [master, ...overrides] : overrides;
+    });
+
+  /**
+   * A move Google never made (discarded, refused, or a 404 for the event
+   * or the destination): the server still has the event in the source.
+   * Its rows go back there, and so does what googleServerMove re-queued
+   * behind the move — edits, a this-and-following cut's master update and
+   * exception deletes, a move onwards — snapshots and all: addressed to
+   * the destination it would 404 and be dropped, while the source row
+   * showed what Google never got. The series' next move out of the
+   * destination ends what goes back: it now leaves from the source (one
+   * back to the source has nothing left to move), and it took the rows
+   * along — any in the destination now, and what is queued there, are a
+   * later move's back into it. A row a queued op owns stays as it was
+   * (pending, or a pulled copy a delete waits for, synced for
+   * dropPulledCopy), and all stay while a move into the source is queued
+   * (it settles them); the rest go to sync.
+   */
+  const releaseMove = (op: PendingOp, destination: string) =>
+    Effect.gen(function* () {
+      const { accountId, calendarId: source, eventId: masterId } = op;
+      const inSeries = (eventId: string) =>
+        eventId === masterId || eventId.startsWith(`${masterId}_`);
+      let movedOn = false;
+      for (const queued of yield* pendingOpRepo.listAll()) {
+        if (
+          queued.id === op.id ||
+          queued.accountId !== accountId ||
+          queued.calendarId !== destination ||
+          !inSeries(queued.eventId)
+        ) {
+          continue;
+        }
+        yield* pendingOpRepo.remove(queued.id);
+        if (queued.kind !== 'move' || queued.targetCalendarId !== source) {
+          yield* pendingOpRepo.enqueue(retargetOp(queued, source));
+        }
+        if (queued.kind === 'move') {
+          movedOn = true;
+          break;
+        }
+      }
+      if (!movedOn) {
+        for (const row of yield* seriesRows(accountId, destination, masterId)) {
+          yield* eventRepo.deleteEvent(accountId, destination, row.id);
+          yield* eventRepo.upsertMany([new EventRecord({ ...row, calendarId: source })]);
+        }
+      }
+      const others = (yield* pendingOpRepo.listAll()).filter(
+        (queued) => queued.id !== op.id && queued.accountId === accountId,
+      );
+      if (
+        others.some(
+          (queued) =>
+            queued.kind === 'move' &&
+            queued.eventId === masterId &&
+            queued.targetCalendarId === source,
+        )
+      ) {
+        return;
+      }
+      const owned = new Set(
+        others.filter((queued) => queued.calendarId === source).map((queued) => queued.eventId),
+      );
+      for (const row of yield* seriesRows(accountId, source, masterId)) {
+        if (row.syncStatus === 'pending' && !owned.has(row.id)) {
+          yield* eventRepo.markSynced(accountId, source, row.id);
+        }
       }
     });
-  }
 
   /** A rejection retrying cannot fix: say so, tell the UI, drop the op. */
   const drop = (

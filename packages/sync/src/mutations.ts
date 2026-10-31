@@ -54,7 +54,7 @@ import { Cause, Clock, Context, Effect, Layer, Semaphore } from 'effect';
 import { Reactivity } from 'effect/reactivity/Reactivity';
 import { SqlClient } from 'effect/sql/SqlClient';
 import type { SqlError } from 'effect/sql/SqlError';
-import { makeApplyOp } from './applyOp.ts';
+import { makeApplyOp, retargetOp } from './applyOp.ts';
 import { AppleCalendarEvents, deviceTimeZone } from './appleCalendarEvents.ts';
 import { makeAppleEventMutations } from './appleEventMutations.ts';
 import { planCarry, restoreCarriedText, withOwnText } from './carriedText.ts';
@@ -1541,7 +1541,8 @@ const make: Effect.Effect<
    * conference and exceptions. Rows are re-keyed to the target now; any
    * queued edit of the series is re-queued *behind* the move against the
    * target calendar (the drain holds either side back until the other
-   * lands — see applyOp), and a create that never reached Google simply
+   * lands — see applyOp; a move Google never makes takes them back to the
+   * source, applyOp releaseMove), and a create that never reached Google simply
    * becomes a create in the target. A create already sent may have landed
    * in the source (its response lost): it stays queued there with the move
    * behind it, since re-keyed it would insert a second copy in the target.
@@ -1594,26 +1595,12 @@ const make: Effect.Effect<
       // not send its pre-move If-Match: it would 412 and park. A parked op
       // stays parked (conflictAt rides along): dropping the park with the
       // etag would silently decide the conflict for the user.
-      function retarget(record: EventRecord): EventRecord;
-      function retarget(record: EventRecord | undefined): EventRecord | undefined;
-      function retarget(record: EventRecord | undefined): EventRecord | undefined {
-        return record ? new EventRecord({ ...record, calendarId: target.calendarId }) : undefined;
-      }
       const rekey = (op: PendingOp, createdAt: number) =>
         new PendingOp({
-          ...op,
-          attempts: 0,
+          ...retargetOp(op, target.calendarId),
           baseEtag: undefined,
-          // What a discard puts back lives in the target now too.
-          beforeOverrides: op.beforeOverrides?.map((row) => retarget(row)),
-          beforePayload: op.beforePayload ? retarget(op.beforePayload) : op.beforePayload,
-          calendarId: target.calendarId,
           createdAt,
           id: generateEventId(),
-          lastError: op.conflictAt === undefined ? undefined : op.lastError,
-          nextAttemptAt: 0,
-          payload: retarget(op.payload),
-          serverPayload: retarget(op.serverPayload),
         });
       if (!pendingCreate || sentCreate) {
         yield* enqueue(
