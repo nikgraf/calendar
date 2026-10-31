@@ -29,8 +29,8 @@ dictation and capture from text or photo.
 - `packages/sync` — `EventMutations` (op queue + optimistic writes, event
   and task op kinds, moves and conversions), `SyncEngine` (poll/push/pull;
   tasks watermark sync; the Apple mirrors), backend rpc handlers, duplex
-  rpc protocols, calendar mirrors, search, `LocalNotifications` (event
-  reminders + birthday reminders, one merged OS schedule) over a platform
+  rpc protocols, calendar mirrors, search, `LocalNotifications` (event,
+  task and birthday reminders, one merged OS schedule) over a platform
   `NotificationSink`.
 - `packages/ai` — the on-device AI seams (`LanguageModel`,
   `SpeechToText`, `TextRecognizer`), the quick-add, find-time and
@@ -132,7 +132,8 @@ deliberately.
   (`brew install openjdk`, then `JAVA_HOME=$(brew --prefix openjdk)`).
   Start Metro with `EXPO_PUBLIC_CALENDAR_GOOGLE=fixture` for the Google
   halves of the flows (and `EXPO_PUBLIC_CALENDAR_MODEL=fixture
-  EXPO_PUBLIC_CALENDAR_ONBOARDING=off` to match CI's bundle). Flow
+  EXPO_PUBLIC_CALENDAR_ONBOARDING=off EXPO_PUBLIC_CALENDAR_NOTIFICATIONS=off`
+  to match CI's bundle). Flow
   conventions: `docs/google-sync-and-testing.md`, "iOS e2e".
 - `MODEL_BENCH=1 E2E=1 pnpm exec vp test run apps/desktop/e2e/bench/modelBench.e2e.ts`
   — the model bench: the quick-add and refine cases under
@@ -260,7 +261,11 @@ deliberately.
   developer's screenshot mid-run must not draw the capture hint
   (`captureWatch: 'fixture'` drives it instead). The iOS bundle's
   `EXPO_PUBLIC_CALENDAR_GEO=off` (on in CI) does the same for MapKit; only
-  the local `14-location` flow uses the real one. Apple events come from a fixture
+  the local `14-location` flow uses the real one, and its
+  `EXPO_PUBLIC_CALENDAR_NOTIFICATIONS=off` (on in CI and in the live
+  bundle) leaves expo-notifications out, as `CALENDAR_NOTIFICATIONS=off`
+  does on the desktop: the fixture's task due today would otherwise be
+  scheduled and iOS's permission alert would cover the next flow. Apple events come from a fixture
   (`CALENDAR_APPLE_CALENDAR=fixture`), since nothing stores them. Google
   is real by default (a seeded account has no token, so writes stay
   queued); `CALENDAR_GOOGLE=fixture` (desktop) /

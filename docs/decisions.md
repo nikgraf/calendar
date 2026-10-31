@@ -1278,6 +1278,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   back. Rejected: reconciling against stored events (a lookup each, a rule
   for gone ones). Open: an end edited after delivery keeps the old
   deadline; with the app closed it waits for the next pass; birthdays stay.
+- **Task notifications** (2026-10-31, #PR) — tasks and reminders notify
+  on both apps: a reminder with a time at it, any other task at a
+  time-of-day setting (09:00) on its due day, once, overdue never again;
+  Apple Reminders included by default (Nik's call: twice for one with an
+  alert); two per-provider "Remove … When Done" switches on iOS, stored
+  once set like Remove When Over. The sink hands the delivered list to the
+  scheduler's rule — a task is done by state, not by a payload deadline.
+  Rejected: a settings-free reconcile (a switch per provider was asked
+  for). Open: a task created offline notifies once its id lands; alert
+  offsets stay the Reminders app's, Solunivo fires at the due moment.
 
 ## Calendar mirrors
 
