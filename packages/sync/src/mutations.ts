@@ -375,6 +375,31 @@ const make: Effect.Effect<
       }
     });
 
+  /**
+   * A change of the series made while its delete is still queued (the
+   * user acts on the master a pull put back meanwhile) replaces that
+   * delete: the exceptions it took locally come back first, as Google has
+   * them, so the change sees the series as Google does — a move, an
+   * answer, an edit, or a new delete's snapshot. An incremental pull that
+   * re-sent the master need not have re-sent its unchanged exceptions; a
+   * row at an exception's id (a pull's copy, an op's since) is newer.
+   */
+  const restoreTakenExceptions = (accountId: string, calendarId: string, masterId: string) =>
+    Effect.gen(function* () {
+      for (const op of yield* opsForEvent(accountId, calendarId, masterId)) {
+        if (op.kind !== 'delete') {
+          continue;
+        }
+        for (const override of op.beforeOverrides ?? []) {
+          if (!(yield* eventRepo.getById(accountId, calendarId, override.id))) {
+            yield* eventRepo.upsertMany([
+              new EventRecord({ ...override, calendarId, syncStatus: 'synced' }),
+            ]);
+          }
+        }
+      }
+    });
+
   /** Queues a this-and-following truncation of the master: a patch, or its unsent create. */
   const truncateQueued = (
     accountId: string,
@@ -928,6 +953,9 @@ const make: Effect.Effect<
           return;
         }
 
+        // A series delete or cut below replaces one still queued: what that
+        // one took is Google's, for this one's snapshot or its cut.
+        yield* restoreTakenExceptions(accountId, calendarId, masterId);
         const unsentCreate = yield* unsentCreateOf(accountId, calendarId, masterId);
         if (scope === 'series' || originalStartUtc <= master.startUtc) {
           // Deleting the master cascades to its exceptions server-side.
@@ -1029,11 +1057,14 @@ const make: Effect.Effect<
           updatedAt: now,
         });
         yield* eventRepo.upsertMany([merged]);
-        // Only the latest response needs to reach Google.
+        // Only the latest response needs to reach Google. A delete still
+        // queued goes too: the user answered the copy a pull put back while
+        // it waited, and the answer keeps the event, as an edit does.
+        yield* restoreTakenExceptions(accountId, calendarId, eventId);
         const queued = yield* opsForEvent(accountId, calendarId, eventId);
         const priorRsvp = queued.find((op) => op.kind === 'rsvp');
         for (const op of queued) {
-          if (op.kind === 'rsvp') {
+          if (op.kind === 'rsvp' || op.kind === 'delete') {
             yield* pendingOpRepo.remove(op.id);
           }
         }
@@ -1228,6 +1259,8 @@ const make: Effect.Effect<
         if (changes.isAllDay !== undefined && changes.isAllDay !== master.isAllDay) {
           return yield* Effect.fail(new RecurringAllDaySwitchError({ eventId: masterId }));
         }
+        // The series and following edits below replace a queued delete.
+        yield* restoreTakenExceptions(accountId, calendarId, masterId);
         if (master.isAllDay && changes.startDate !== undefined) {
           // The date the occurrence shows now: its exception's, else its slot's.
           const exception = yield* eventRepo.getById(
@@ -1512,6 +1545,13 @@ const make: Effect.Effect<
    * becomes a create in the target. A create already sent may have landed
    * in the source (its response lost): it stays queued there with the move
    * behind it, since re-keyed it would insert a second copy in the target.
+   *
+   * A delete of the event still queued means the user moved the copy a
+   * pull put back while it waited: the move replaces it, as an edit does
+   * (supersedeQueued). An exception's delete (a this-and-following cut)
+   * goes behind the move, and the copy of it a pull put back moves as
+   * Google's copy, still synced, for that delete to take once it lands
+   * (applyOp dropPulledCopy leaves pending rows alone).
    */
   const googleServerMove = (params: MoveEventParams) =>
     Effect.gen(function* () {
@@ -1520,20 +1560,30 @@ const make: Effect.Effect<
       const account = yield* accountRepo.get(accountId);
       yield* ensureOrganizer(master, account?.email, calendarId);
       const now = yield* Clock.currentTimeMillis;
+      yield* restoreTakenExceptions(accountId, calendarId, master.id);
       const overrides = master.recurrence
         ? yield* eventRepo.listOverrides(accountId, calendarId, eventId)
         : [];
-      for (const row of [master, ...overrides]) {
-        yield* eventRepo.deleteEvent(accountId, calendarId, row.id);
-        yield* eventRepo.upsertMany([
-          new EventRecord({ ...row, calendarId: target.calendarId, syncStatus: 'pending' }),
-        ]);
-      }
       const seriesIds = new Set([master.id, ...overrides.map((row) => row.id)]);
       const inSeries = (yield* pendingOpRepo.listAll()).filter(
         (op) =>
           op.accountId === accountId && op.calendarId === calendarId && seriesIds.has(op.eventId),
       );
+      const deleting = new Set(
+        inSeries.filter((op) => op.kind === 'delete').map((op) => op.eventId),
+      );
+      for (const row of [master, ...overrides]) {
+        const pulledCopy =
+          row.id !== master.id && row.status !== 'cancelled' && deleting.has(row.id);
+        yield* eventRepo.deleteEvent(accountId, calendarId, row.id);
+        yield* eventRepo.upsertMany([
+          new EventRecord({
+            ...row,
+            calendarId: target.calendarId,
+            syncStatus: pulledCopy ? row.syncStatus : 'pending',
+          }),
+        ]);
+      }
       const pendingCreate = inSeries.find((op) => op.kind === 'create' && op.eventId === master.id);
       const sentCreate = pendingCreate?.dispatchedAt === undefined ? undefined : pendingCreate;
       const queued = inSeries.filter((op) => op !== sentCreate);
@@ -1581,7 +1631,9 @@ const make: Effect.Effect<
         );
       }
       for (const op of queued) {
-        yield* enqueue(rekey(op, now + 1));
+        if (op.kind !== 'delete' || op.eventId !== master.id) {
+          yield* enqueue(rekey(op, now + 1));
+        }
       }
     });
 

@@ -388,7 +388,8 @@ it whenever a kind is added. Rules that keep the queue correct:
   and occurrence edits and RSVPs wait for a create queued ahead in their
   series. `moveEvent` re-queues pending edits of the series _behind_ the
   move, re-keyed to the destination (a never-sent create simply becomes a
-  create there; a sent one stays in the source with the move behind it).
+  create there; a sent one stays in the source with the move behind it; a
+  delete of the moved event is dropped instead, see Sync engine).
   A dropped move (403 non-organizer) re-keys the rows back. Ties on
   `created_at` break by `rowid`.
 - The drain loop re-reads each op by id before dispatching: a missing row
@@ -488,7 +489,21 @@ it whenever a kind is added. Rules that keep the queue correct:
   delete leaves no row to skip: a page answered before it reached Google
   puts Google's copy back (synced), and the delete removes that copy when
   it lands or finds the item gone (a live event row, never a cancelled
-  override; a task row only while no op owns it). Each calendar's events
+  override; a task row only while no op owns it). Acting on that copy
+  replaces the delete: an edit (`supersedeQueued`), an answer
+  (`respondToEvent`, which an occurrence sends for its series) or a move
+  of it drops the queued delete. Re-queued behind the move, or overtaken
+  by an answer sent while it waited out a backoff, the delete removed the
+  event on Google after all, and its pending row showed until the next
+  pull reported the deletion. A series delete replaced this way (by a
+  move, an answer, an edit, a cut or another series delete) first puts
+  back the exceptions it took locally, as Google has them, unless a row
+  sits at the id (`restoreTakenExceptions`): the pull that re-sent the
+  master need not have re-sent them, and a cancelled occurrence would
+  show again. A
+  series move still carries an exception's delete (a this-and-following
+  cut) along, and moves that exception's pulled copy as synced so the
+  delete takes it when it lands. Each calendar's events
   pass holds the drain (`whileQueueHeld`) like a task list's, so a delete
   cannot land between a request and the page that would put the row
   back after it, and lets out what was queued meanwhile before the next
