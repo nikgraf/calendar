@@ -390,8 +390,30 @@ it whenever a kind is added. Rules that keep the queue correct:
   move, re-keyed to the destination (a never-sent create simply becomes a
   create there; a sent one stays in the source with the move behind it; a
   delete of the moved event is dropped instead, see Sync engine).
-  A dropped move (403 non-organizer) re-keys the rows back. Ties on
-  `created_at` break by `rowid`.
+  A move's 404 (or 410) first asks the destination for the event: an
+  earlier attempt may have landed with its answer lost, and found there
+  the move settles as landed (a lookup with no answer retries); a 2xx
+  whose body did not decode landed too. A move Google never makes —
+  discarded, refused (a 403 for a non-organizer, any other permanent
+  4xx), or not in the destination either — puts the rows back in the
+  source with what was queued after it, snapshots re-keyed the same way
+  and rewritten in place, so each keeps its place in the queue
+  (`releaseMove`, `retarget`). A discard releases the move before
+  removing it, so its place is known. One never sent goes at once (the
+  drain stamps a move `dispatched_at` in one transaction with checking
+  it is still queued); one that was sent may have been made, so under
+  the drain's gate it asks the destination first, as a 404 does, and
+  with no answer goes back as the user asked. Left in the
+  destination, an edit or a
+  this-and-following cut's master update and exception deletes would
+  404 there and be dropped, while the source row showed what Google
+  never got. The series' next move out of the destination ends what goes
+  back: it now leaves from the source (a move back to the source has
+  nothing left to move and goes), and it took the rows along, so rows
+  and ops in the destination behind it belong to a later move back in. A
+  row a queued op owns stays as it was, and every row stays while a move
+  into the source is queued (it settles them); the rest are handed to
+  sync. Ties on `created_at` break by `rowid`.
 - The drain loop re-reads each op by id before dispatching: a missing row
   means the user discarded it (skip), and coalescing rewrites stay
   visible. Each failure is recorded in `last_error`; the unsynced-changes
@@ -406,8 +428,8 @@ it whenever a kind is added. Rules that keep the queue correct:
   replaced delete (or answer) hands on Google's copy when a pull put one
   back while the delete waited (`isPulledCopy`: a delete takes its row or
   leaves a pending tombstone, and pulls never write over a pending row);
-  a move re-keys it to the destination with the op. The unsynced-changes
-  list diffs an op
+  a move re-keys it to the destination with the op, and back if Google
+  never makes the move. The unsynced-changes list diffs an op
   against it (`pendingOpDiff`, computed in `listPendingOps` as display
   lines) and an abandoned op puts it back (`releaseRow`): a discard, a
   permanent rejection and keep-mine with nothing left all restore the row

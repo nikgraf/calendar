@@ -303,6 +303,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   landed delete also taking a pending row no op owns (the user's later
   move would vanish). Open: an edit of one occurrence leaves the series'
   queued delete in place, so the delete still wins there.
+- **A move Google never makes takes its queued edits back** (2026-10-31, #271)
+  — Opus review of #267: a refused, unfound or discarded move put only
+  the rows back; the edits behind it stayed addressed to the destination,
+  404'd and were dropped. They now go back in place, snapshots re-keyed; a
+  move onwards leaves from the source. A 404, or a discard of a move that
+  was sent, asks the destination first: a lost answer means it may have
+  landed. Rejected: dropping the edits and restoring rows from snapshots
+  (a 403 is no reason to lose an edit); a discard waiting for the drain
+  (it sent the move meanwhile). Open: a discarded sent move with Google
+  unreachable goes back; a refused sent create takes only one move along.
 - **A pulled copy is the snapshot a replaced delete hands on** (2026-10-31, #270)
   — Opus review of #267: an edit, delete or answer of the copy a pull put
   back while a delete waited took the delete's (or an earlier answer's)
@@ -1442,3 +1452,10 @@ first. The decisions, one line each:
   point at it. Rejected: dates (none are set), a roadmap page of its own.
   Open: Microsoft 365 on the Mac waits on Apple moving Calendar off EWS;
   keep the section and `todo.md` in step.
+- **Hero headline beside the screenshots** (2026-10-31, #269) — on screens wide
+  enough for both (about 1070 px), the headline, buttons and sources sit
+  left of the app screenshots, so the apps show without scrolling; the
+  headline tops out at 52 px instead of 64 to stay on two lines there,
+  which also makes it smaller above the screenshots on tablet widths (40
+  px up to 1000 px, where it was 50). Rejected: letting the screenshots run
+  past the page's 1200 px column (out of line with the nav).

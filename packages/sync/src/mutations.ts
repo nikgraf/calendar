@@ -54,7 +54,7 @@ import { Cause, Clock, Context, Effect, Layer, Semaphore } from 'effect';
 import { Reactivity } from 'effect/reactivity/Reactivity';
 import { SqlClient } from 'effect/sql/SqlClient';
 import type { SqlError } from 'effect/sql/SqlError';
-import { isPulledCopy, makeApplyOp } from './applyOp.ts';
+import { isPulledCopy, makeApplyOp, retargetOp } from './applyOp.ts';
 import { AppleCalendarEvents, deviceTimeZone } from './appleCalendarEvents.ts';
 import { makeAppleEventMutations } from './appleEventMutations.ts';
 import { planCarry, restoreCarriedText, withOwnText } from './carriedText.ts';
@@ -539,7 +539,11 @@ const make: Effect.Effect<
       }
     });
 
-  const { apply: applyOp, releaseRow } = makeApplyOp({
+  const {
+    apply: applyOp,
+    releaseRow,
+    settleDiscardedMove,
+  } = makeApplyOp({
     accountRepo,
     calendarRepo,
     client,
@@ -592,10 +596,46 @@ const make: Effect.Effect<
         ),
       );
 
+  /**
+   * A move's discard sends what was queued after it back to the source,
+   * reading its place in the queue, so the move goes only once released.
+   * One never sent goes at once (the drain stamps a move as sent in one
+   * transaction with checking it is still queued). One that was sent may
+   * have been made, its answer lost or its request still out: under the
+   * drain's gate — taken outside the transaction, since the drain writes
+   * while holding it — Google is asked first (settleDiscardedMove).
+   */
   const discardPendingOp: EventMutationsShape['discardPendingOp'] = (opId) =>
+    Effect.gen(function* () {
+      const sent = yield* discard(opId);
+      if (!sent) {
+        return;
+      }
+      yield* gate.withPermits(1)(
+        Effect.gen(function* () {
+          // The drain settled it meanwhile (it landed, or was dropped).
+          const op = yield* pendingOpRepo.getById(opId);
+          if (op) {
+            yield* settleDiscardedMove(op);
+            yield* pendingOpRepo.remove(opId);
+          }
+        }),
+      );
+    });
+
+  /** Discards the op; a move that was sent is left queued and returned. */
+  const discard = (opId: string) =>
     sql.withTransaction(
       Effect.gen(function* () {
         let op = yield* pendingOpRepo.getById(opId);
+        if (op?.kind === 'move') {
+          if (op.dispatchedAt !== undefined) {
+            return op;
+          }
+          yield* releaseRow(op);
+          yield* pendingOpRepo.remove(opId);
+          return undefined;
+        }
         yield* pendingOpRepo.remove(opId);
         while (op) {
           yield* releaseRow(op);
@@ -613,6 +653,7 @@ const make: Effect.Effect<
             yield* pendingOpRepo.remove(op.id);
           }
         }
+        return undefined;
       }),
     );
 
@@ -1548,7 +1589,8 @@ const make: Effect.Effect<
    * conference and exceptions. Rows are re-keyed to the target now; any
    * queued edit of the series is re-queued *behind* the move against the
    * target calendar (the drain holds either side back until the other
-   * lands — see applyOp), and a create that never reached Google simply
+   * lands — see applyOp; a move Google never makes takes them back to the
+   * source, applyOp releaseMove), and a create that never reached Google simply
    * becomes a create in the target. A create already sent may have landed
    * in the source (its response lost): it stays queued there with the move
    * behind it, since re-keyed it would insert a second copy in the target.
@@ -1601,26 +1643,12 @@ const make: Effect.Effect<
       // not send its pre-move If-Match: it would 412 and park. A parked op
       // stays parked (conflictAt rides along): dropping the park with the
       // etag would silently decide the conflict for the user.
-      function retarget(record: EventRecord): EventRecord;
-      function retarget(record: EventRecord | undefined): EventRecord | undefined;
-      function retarget(record: EventRecord | undefined): EventRecord | undefined {
-        return record ? new EventRecord({ ...record, calendarId: target.calendarId }) : undefined;
-      }
       const rekey = (op: PendingOp, createdAt: number) =>
         new PendingOp({
-          ...op,
-          attempts: 0,
+          ...retargetOp(op, target.calendarId),
           baseEtag: undefined,
-          // What a discard puts back lives in the target now too.
-          beforeOverrides: op.beforeOverrides?.map((row) => retarget(row)),
-          beforePayload: op.beforePayload ? retarget(op.beforePayload) : op.beforePayload,
-          calendarId: target.calendarId,
           createdAt,
           id: generateEventId(),
-          lastError: op.conflictAt === undefined ? undefined : op.lastError,
-          nextAttemptAt: 0,
-          payload: retarget(op.payload),
-          serverPayload: retarget(op.serverPayload),
         });
       if (!pendingCreate || sentCreate) {
         yield* enqueue(

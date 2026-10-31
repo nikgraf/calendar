@@ -28,7 +28,7 @@ import {
 import { RemindersClient, unavailableRemindersClient } from '@calendar/reminders';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
-import { Effect, Layer, Scheduler } from 'effect';
+import { Effect, Fiber, Layer, Scheduler } from 'effect';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
 import { describe } from 'vite-plus/test';
 import { appleCalendarServicesLayer } from './appleCalendarEvents.ts';
@@ -648,6 +648,7 @@ describe('moveEvent across accounts and providers', () => {
 
   it.effect('a move the server cannot find puts the rows back instead of deleting them', () => {
     const google = recordingGoogle([], {
+      getEvent: () => Effect.fail(new NotFoundError({ resource: 'event' })),
       moveEvent: () => Effect.fail(new NotFoundError({ resource: 'event' })),
     });
     return Effect.gen(function* () {
@@ -880,6 +881,548 @@ describe('discarding a move that replaced a queued delete', () => {
       expect(yield* queued).toEqual([]);
       expect(yield* rowAt('acc-1', 'cal-2', 'evt-a')).toBeNull();
       expect((yield* rowAt('acc-1', 'cal-1', 'evt-a'))?.syncStatus).toBe('synced');
+    }).pipe(noYield, Effect.provide(testLayer(google, appleFake())));
+  });
+});
+
+// Google still has the event in cal-1: anything sent elsewhere is a 404.
+const notInSource = (calendarId: string) =>
+  calendarId === 'cal-1' ? Effect.void : Effect.fail(new NotFoundError({ resource: 'event' }));
+
+const sourceOnly = (
+  calls: Array<Call>,
+  moveEvent: GoogleCalendarClientShape['moveEvent'],
+): GoogleCalendarClientShape => {
+  const plain = recordingGoogle(calls);
+  return recordingGoogle(calls, {
+    deleteEvent: (params) => Effect.tap(plain.deleteEvent(params), notInSource(params.calendarId)),
+    getEvent: ({ calendarId }) =>
+      Effect.andThen(notInSource(calendarId), Effect.die('unexpected get in the source')),
+    moveEvent,
+    patchEvent: (params) => Effect.tap(plain.patchEvent(params), notInSource(params.calendarId)),
+  });
+};
+
+const refused = () =>
+  Effect.fail(new GoogleApiError({ message: 'forbiddenForNonOrganizer', status: 403 }));
+
+describe('a move Google never makes', () => {
+  const series = googleEvent({ id: 'ser', recurrence: ['RRULE:FREQ=DAILY;COUNT=5'] });
+  const exception = googleEvent({
+    endUtc: base + 2 * DAY + 2 * HOUR,
+    id: 'ser_20300102T090000Z',
+    originalStartUtc: base + 2 * DAY,
+    recurringEventId: 'ser',
+    startUtc: base + 2 * DAY + HOUR,
+    title: 'Moved standup',
+  });
+
+  it.effect('an edit queued behind a refused move goes back to the source', () => {
+    const calls: Array<Call> = [];
+    return Effect.gen(function* () {
+      yield* seed([googleEvent()]);
+      const mutations = yield* EventMutations;
+      yield* mutations.moveEvent(move(['acc-1', 'cal-1', 'evt-a'], ['acc-1', 'cal-2']));
+      yield* mutations.updateEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-2',
+        changes: { title: 'Renamed' },
+        eventId: 'evt-a',
+      });
+      yield* mutations.processPendingOps();
+      yield* mutations.processPendingOps();
+
+      expect(calls.map((call) => `${call.kind}:${call.calendarId}:${call.detail}`)).toEqual([
+        'patch:cal-1:Renamed',
+      ]);
+      expect(yield* queued).toEqual([]);
+      expect(yield* rowAt('acc-1', 'cal-2', 'evt-a')).toBeNull();
+      const row = yield* rowAt('acc-1', 'cal-1', 'evt-a');
+      expect(row?.title).toBe('Renamed');
+      expect(row?.syncStatus).toBe('synced');
+    }).pipe(noYield, Effect.provide(testLayer(sourceOnly(calls, refused), appleFake())));
+  });
+
+  it.effect('a this-and-following cut carried behind a move Google cannot find goes back', () => {
+    // A pull put the exception past the cut back while its delete waited,
+    // so the move carries the master update and that delete along.
+    const calls: Array<Call> = [];
+    const google = sourceOnly(calls, () => Effect.fail(new NotFoundError({ resource: 'event' })));
+    const down = recordingGoogle(calls, {
+      deleteEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'down', status: 503 })),
+      patchEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'down', status: 503 })),
+    });
+    let online = false;
+    const switching: GoogleCalendarClientShape = {
+      ...google,
+      deleteEvent: (params) => (online ? google : down).deleteEvent(params),
+      patchEvent: (params) => (online ? google : down).patchEvent(params),
+    };
+    return Effect.gen(function* () {
+      yield* seed([series, exception]);
+      const mutations = yield* EventMutations;
+      yield* mutations.deleteRecurring({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        masterId: 'ser',
+        originalStartUtc: base + DAY,
+        scope: 'following',
+      });
+      yield* mutations.processPendingOps();
+      yield* (yield* EventRepo).upsertMany([exception], { mode: 'pull' });
+      yield* mutations.moveEvent(move(['acc-1', 'cal-1', 'ser'], ['acc-1', 'cal-2']));
+      expect((yield* queued).map((op) => `${op.kind}:${op.calendarId}`)).toEqual([
+        'move:cal-1',
+        'update:cal-2',
+        'delete:cal-2',
+      ]);
+      online = true;
+      yield* (yield* PendingOpRepo).retryNow();
+      yield* mutations.processPendingOps();
+      yield* mutations.processPendingOps();
+
+      expect(calls.map((call) => `${call.kind}:${call.calendarId}`)).toEqual([
+        'patch:cal-1',
+        'delete:cal-1',
+      ]);
+      expect(yield* queued).toEqual([]);
+      expect(yield* rowAt('acc-1', 'cal-2', 'ser')).toBeNull();
+      expect(yield* rowAt('acc-1', 'cal-2', exception.id)).toBeNull();
+      expect((yield* rowAt('acc-1', 'cal-1', 'ser'))?.syncStatus).toBe('synced');
+      expect(yield* rowAt('acc-1', 'cal-1', exception.id)).toBeNull();
+    }).pipe(Effect.provide(testLayer(switching, appleFake())));
+  });
+
+  it.effect('discarding a move hands the edit behind it back to the source, snapshot too', () => {
+    const original = googleEvent();
+    return Effect.gen(function* () {
+      yield* seed([original]);
+      const mutations = yield* EventMutations;
+      yield* mutations.updateEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        changes: { title: 'Renamed' },
+        eventId: 'evt-a',
+      });
+      yield* mutations.moveEvent(move(['acc-1', 'cal-1', 'evt-a'], ['acc-1', 'cal-2']));
+      const moving = (yield* queued).find((op) => op.kind === 'move');
+      yield* mutations.discardPendingOp(moving!.id);
+
+      const [edit, ...rest] = yield* queued;
+      expect(rest).toEqual([]);
+      expect(edit?.calendarId).toBe('cal-1');
+      expect(edit?.payload?.calendarId).toBe('cal-1');
+      expect(edit?.beforePayload?.calendarId).toBe('cal-1');
+      expect(yield* rowAt('acc-1', 'cal-2', 'evt-a')).toBeNull();
+      // The edit still owns the row: a pull must not put Google's title back.
+      expect((yield* rowAt('acc-1', 'cal-1', 'evt-a'))?.syncStatus).toBe('pending');
+
+      yield* mutations.discardPendingOp(edit!.id);
+      expect(yield* queued).toEqual([]);
+      const row = yield* rowAt('acc-1', 'cal-1', 'evt-a');
+      expect(row?.title).toBe(original.title);
+      expect(row?.syncStatus).toBe('synced');
+    }).pipe(noYield, Effect.provide(testLayer(recordingGoogle([]), appleFake())));
+  });
+
+  it.effect('a move back queued behind a discarded move has nothing left to move', () => {
+    // Moved to cal-2 and back while offline, then the first move discarded:
+    // the second would move the event onto its own calendar.
+    const calls: Array<Call> = [];
+    return Effect.gen(function* () {
+      yield* seed([googleEvent()]);
+      const mutations = yield* EventMutations;
+      yield* mutations.moveEvent(move(['acc-1', 'cal-1', 'evt-a'], ['acc-1', 'cal-2']));
+      yield* mutations.moveEvent(move(['acc-1', 'cal-2', 'evt-a'], ['acc-1', 'cal-1']));
+      const [first] = yield* queued;
+      yield* mutations.discardPendingOp(first!.id);
+
+      expect(yield* queued).toEqual([]);
+      expect(yield* rowAt('acc-1', 'cal-2', 'evt-a')).toBeNull();
+      expect((yield* rowAt('acc-1', 'cal-1', 'evt-a'))?.syncStatus).toBe('synced');
+      yield* mutations.processPendingOps();
+      expect(calls).toEqual([]);
+    }).pipe(noYield, Effect.provide(testLayer(sourceOnly(calls, refused), appleFake())));
+  });
+
+  it.effect('rows a later move brought back into the destination stay with it', () => {
+    const offline = recordingGoogle([], {
+      moveEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline', status: 503 })),
+    });
+    // cal-1 → cal-2 → cal-2b → cal-2 while offline, all in one millisecond
+    // (the test clock stands still): the first move's discard re-keys the
+    // second in its place, and the rows belong to the third.
+    return Effect.gen(function* () {
+      yield* seed([googleEvent()]);
+      const mutations = yield* EventMutations;
+      yield* mutations.moveEvent(move(['acc-1', 'cal-1', 'evt-a'], ['acc-1', 'cal-2']));
+      yield* mutations.moveEvent(move(['acc-1', 'cal-2', 'evt-a'], ['acc-1', 'cal-2b']));
+      yield* mutations.moveEvent(move(['acc-1', 'cal-2b', 'evt-a'], ['acc-1', 'cal-2']));
+      const [first] = yield* queued;
+      yield* mutations.discardPendingOp(first!.id);
+
+      expect(
+        (yield* queued).map((op) => `${op.kind}:${op.calendarId}:${op.targetCalendarId}`),
+      ).toEqual(['move:cal-1:cal-2b', 'move:cal-2b:cal-2']);
+      expect(yield* rowAt('acc-1', 'cal-1', 'evt-a')).toBeNull();
+      expect((yield* rowAt('acc-1', 'cal-2', 'evt-a'))?.syncStatus).toBe('pending');
+    }).pipe(noYield, Effect.provide(testLayer(offline, appleFake())));
+  });
+
+  it.effect('discarding a move onwards leaves the rows pending for the move ahead', () => {
+    return Effect.gen(function* () {
+      yield* seed([googleEvent()]);
+      const mutations = yield* EventMutations;
+      yield* mutations.moveEvent(move(['acc-1', 'cal-1', 'evt-a'], ['acc-1', 'cal-2']));
+      yield* mutations.moveEvent(move(['acc-1', 'cal-2', 'evt-a'], ['acc-1', 'cal-2b']));
+      const [, onwards] = yield* queued;
+      yield* mutations.discardPendingOp(onwards!.id);
+
+      expect((yield* queued).map((op) => `${op.kind}:${op.calendarId}`)).toEqual(['move:cal-1']);
+      expect(yield* rowAt('acc-1', 'cal-2b', 'evt-a')).toBeNull();
+      // The first move settles the row once it lands; a pull of cal-2
+      // has nothing to put there before.
+      expect((yield* rowAt('acc-1', 'cal-2', 'evt-a'))?.syncStatus).toBe('pending');
+    }).pipe(noYield, Effect.provide(testLayer(recordingGoogle([]), appleFake())));
+  });
+
+  it.effect('discarding the move back of a round trip keeps the move out', () => {
+    // cal-1 → cal-2 → cal-1 while offline, renamed after; the user takes
+    // back only the second move, so the event still goes to cal-2.
+    const offline = recordingGoogle([], {
+      moveEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline', status: 503 })),
+    });
+    return Effect.gen(function* () {
+      yield* seed([googleEvent()]);
+      const mutations = yield* EventMutations;
+      yield* mutations.moveEvent(move(['acc-1', 'cal-1', 'evt-a'], ['acc-1', 'cal-2']));
+      yield* mutations.moveEvent(move(['acc-1', 'cal-2', 'evt-a'], ['acc-1', 'cal-1']));
+      yield* mutations.updateEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        changes: { title: 'Renamed' },
+        eventId: 'evt-a',
+      });
+      const back = (yield* queued).find((op) => op.targetCalendarId === 'cal-1');
+      yield* mutations.discardPendingOp(back!.id);
+
+      expect(
+        (yield* queued).map((op) => `${op.kind}:${op.calendarId}:${op.targetCalendarId}`),
+      ).toEqual(['move:cal-1:cal-2', 'update:cal-2:undefined']);
+      expect(yield* rowAt('acc-1', 'cal-1', 'evt-a')).toBeNull();
+      const row = yield* rowAt('acc-1', 'cal-2', 'evt-a');
+      expect(row?.title).toBe('Renamed');
+      expect(row?.syncStatus).toBe('pending');
+    }).pipe(noYield, Effect.provide(testLayer(offline, appleFake())));
+  });
+
+  it.effect('a series split off in Google’s own UI keeps its queued edit', () => {
+    // Google names the tail of a "this and following" split <id>_R<time>:
+    // its own series, moved on its own, not an occurrence of the first.
+    const tail = googleEvent({ id: 'ser_R20300103T090000', recurrence: ['RRULE:FREQ=DAILY'] });
+    return Effect.gen(function* () {
+      yield* seed([series, tail]);
+      const mutations = yield* EventMutations;
+      yield* mutations.moveEvent(move(['acc-1', 'cal-1', 'ser'], ['acc-1', 'cal-2']));
+      yield* mutations.moveEvent(move(['acc-1', 'cal-1', tail.id], ['acc-1', 'cal-2']));
+      yield* mutations.updateRecurring({
+        accountId: 'acc-1',
+        calendarId: 'cal-2',
+        changes: { title: 'Tail renamed' },
+        masterId: tail.id,
+        originalStartUtc: tail.startUtc,
+        scope: 'series',
+      });
+      const first = (yield* queued).find((op) => op.eventId === 'ser');
+      yield* mutations.discardPendingOp(first!.id);
+
+      expect((yield* queued).map((op) => `${op.kind}:${op.eventId}:${op.calendarId}`)).toEqual([
+        `move:${tail.id}:cal-1`,
+        `update:${tail.id}:cal-2`,
+      ]);
+      expect((yield* rowAt('acc-1', 'cal-1', 'ser'))?.syncStatus).toBe('synced');
+      expect((yield* rowAt('acc-1', 'cal-2', tail.id))?.title).toBe('Tail renamed');
+    }).pipe(noYield, Effect.provide(testLayer(recordingGoogle([]), appleFake())));
+  });
+
+  it.effect('a move whose answer was lost settles when its retry meets a 404', () => {
+    // The first attempt moved the event, but its answer never came; the
+    // retry asks cal-1, which has nothing any more.
+    const calls: Array<Call> = [];
+    const plain = recordingGoogle(calls);
+    let at = 'cal-1';
+    let answered = false;
+    const here = (calendarId: string) =>
+      calendarId === at ? Effect.void : Effect.fail(new NotFoundError({ resource: 'event' }));
+    const google = recordingGoogle(calls, {
+      getEvent: ({ calendarId, eventId }) =>
+        Effect.as(here(calendarId), {
+          end: { dateTime: new Date(base + HOUR).toISOString() },
+          etag: '"moved"',
+          id: eventId,
+          organizer: { email: 'nik@example.com', self: true },
+          start: { dateTime: new Date(base).toISOString() },
+          status: 'confirmed',
+          summary: 'Planning',
+        }),
+      moveEvent: (params) => {
+        if (!answered) {
+          answered = true;
+          at = params.destination;
+          return Effect.fail(new ApiUnavailableError({ cause: 'answer lost', status: 503 }));
+        }
+        return Effect.andThen(here(params.calendarId), plain.moveEvent(params));
+      },
+      patchEvent: (params) => Effect.tap(plain.patchEvent(params), here(params.calendarId)),
+    });
+    return Effect.gen(function* () {
+      yield* seed([googleEvent()]);
+      const mutations = yield* EventMutations;
+      yield* mutations.moveEvent(move(['acc-1', 'cal-1', 'evt-a'], ['acc-1', 'cal-2']));
+      yield* mutations.updateEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-2',
+        changes: { title: 'Renamed' },
+        eventId: 'evt-a',
+      });
+      yield* mutations.processPendingOps();
+      yield* (yield* PendingOpRepo).retryNow();
+      yield* mutations.processPendingOps();
+      yield* mutations.processPendingOps();
+
+      expect(calls.map((call) => `${call.kind}:${call.calendarId}:${call.detail}`)).toEqual([
+        'patch:cal-2:Renamed',
+      ]);
+      expect(yield* queued).toEqual([]);
+      expect(yield* rowAt('acc-1', 'cal-1', 'evt-a')).toBeNull();
+      const row = yield* rowAt('acc-1', 'cal-2', 'evt-a');
+      expect(row?.title).toBe('Renamed');
+      expect(row?.syncStatus).toBe('synced');
+    }).pipe(noYield, Effect.provide(testLayer(google, appleFake())));
+  });
+
+  it.effect('a move whose answer did not decode keeps the edits behind it', () => {
+    // A 2xx whose body did not decode landed: the event is in cal-2.
+    const calls: Array<Call> = [];
+    const google = recordingGoogle(calls, {
+      moveEvent: () => Effect.fail(new GoogleApiError({ message: 'undecodable', status: 200 })),
+    });
+    return Effect.gen(function* () {
+      yield* seed([googleEvent()]);
+      const mutations = yield* EventMutations;
+      yield* mutations.moveEvent(move(['acc-1', 'cal-1', 'evt-a'], ['acc-1', 'cal-2']));
+      yield* mutations.updateEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-2',
+        changes: { title: 'Renamed' },
+        eventId: 'evt-a',
+      });
+      yield* mutations.processPendingOps();
+      yield* mutations.processPendingOps();
+
+      expect(calls.map((call) => `${call.kind}:${call.calendarId}:${call.detail}`)).toEqual([
+        'patch:cal-2:Renamed',
+      ]);
+      expect(yield* queued).toEqual([]);
+      expect(yield* rowAt('acc-1', 'cal-1', 'evt-a')).toBeNull();
+      expect((yield* rowAt('acc-1', 'cal-2', 'evt-a'))?.syncStatus).toBe('synced');
+    }).pipe(noYield, Effect.provide(testLayer(google, appleFake())));
+  });
+
+  it.effect('a discard of a move whose request is out waits for its answer', () => {
+    // Google makes the move while the user discards it: the edit behind it
+    // must still go to cal-2, where the event now is.
+    const calls: Array<Call> = [];
+    const plain = recordingGoogle(calls);
+    let duringMove: Effect.Effect<void> = Effect.void;
+    let discarding: Fiber.Fiber<void> | undefined;
+    const google = recordingGoogle(calls, {
+      moveEvent: (params) =>
+        Effect.gen(function* () {
+          discarding = yield* Effect.forkChild(duringMove);
+          yield* Effect.repeat(Effect.yieldNow, { times: 20 });
+          return yield* plain.moveEvent(params);
+        }),
+    });
+    return Effect.gen(function* () {
+      yield* seed([googleEvent()]);
+      const mutations = yield* EventMutations;
+      yield* mutations.moveEvent(move(['acc-1', 'cal-1', 'evt-a'], ['acc-1', 'cal-2']));
+      yield* mutations.updateEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-2',
+        changes: { title: 'Renamed' },
+        eventId: 'evt-a',
+      });
+      const moving = (yield* queued).find((op) => op.kind === 'move');
+      duringMove = Effect.orDie(mutations.discardPendingOp(moving!.id));
+      yield* mutations.processPendingOps();
+      yield* Fiber.join(discarding!);
+      yield* mutations.processPendingOps();
+
+      expect(calls.map((call) => `${call.kind}:${call.calendarId}:${call.detail}`)).toEqual([
+        'move:cal-1:cal-2',
+        'patch:cal-2:Renamed',
+      ]);
+      expect(yield* queued).toEqual([]);
+      expect(yield* rowAt('acc-1', 'cal-1', 'evt-a')).toBeNull();
+      expect((yield* rowAt('acc-1', 'cal-2', 'evt-a'))?.syncStatus).toBe('synced');
+    }).pipe(noYield, Effect.provide(testLayer(google, appleFake())));
+  });
+
+  it.effect('a move the drain has not sent yet is discarded at once', () => {
+    // The drain is busy with another event's edit when the user discards
+    // the move queued after it: the move must never go out.
+    const calls: Array<Call> = [];
+    const plain = recordingGoogle(calls);
+    let duringPatch: Effect.Effect<void> = Effect.void;
+    let discarding: Fiber.Fiber<void> | undefined;
+    const google = recordingGoogle(calls, {
+      patchEvent: (params) =>
+        Effect.gen(function* () {
+          if (params.eventId === 'evt-b') {
+            discarding = yield* Effect.forkChild(duringPatch);
+            yield* Effect.repeat(Effect.yieldNow, { times: 20 });
+          }
+          return yield* plain.patchEvent(params);
+        }),
+    });
+    return Effect.gen(function* () {
+      yield* seed([googleEvent(), googleEvent({ id: 'evt-b', title: 'Other' })]);
+      const mutations = yield* EventMutations;
+      yield* mutations.updateEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        changes: { title: 'Other (edited)' },
+        eventId: 'evt-b',
+      });
+      yield* mutations.moveEvent(move(['acc-1', 'cal-1', 'evt-a'], ['acc-1', 'cal-2']));
+      yield* mutations.updateEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-2',
+        changes: { title: 'Renamed' },
+        eventId: 'evt-a',
+      });
+      const moving = (yield* queued).find((op) => op.kind === 'move');
+      duringPatch = Effect.orDie(mutations.discardPendingOp(moving!.id));
+      yield* mutations.processPendingOps();
+      yield* Fiber.join(discarding!);
+      yield* mutations.processPendingOps();
+
+      expect(calls.map((call) => `${call.kind}:${call.calendarId}:${call.detail}`)).toEqual([
+        'patch:cal-1:Other (edited)',
+        'patch:cal-1:Renamed',
+      ]);
+      expect(yield* queued).toEqual([]);
+      expect(yield* rowAt('acc-1', 'cal-2', 'evt-a')).toBeNull();
+      expect((yield* rowAt('acc-1', 'cal-1', 'evt-a'))?.syncStatus).toBe('synced');
+    }).pipe(noYield, Effect.provide(testLayer(google, appleFake())));
+  });
+
+  it.effect('discarding a sent move asks Google whether it already happened', () => {
+    // The first attempt moved the event but its answer never came; the user
+    // then discards the move while it waits to retry. Google has it in cal-2,
+    // so the edit behind it stays there.
+    const calls: Array<Call> = [];
+    const plain = recordingGoogle(calls);
+    let at = 'cal-1';
+    const here = (calendarId: string) =>
+      calendarId === at ? Effect.void : Effect.fail(new NotFoundError({ resource: 'event' }));
+    const google = recordingGoogle(calls, {
+      getEvent: ({ calendarId, eventId }) =>
+        Effect.as(here(calendarId), {
+          end: { dateTime: new Date(base + HOUR).toISOString() },
+          etag: '"moved"',
+          id: eventId,
+          organizer: { email: 'nik@example.com', self: true },
+          start: { dateTime: new Date(base).toISOString() },
+          status: 'confirmed',
+          summary: 'Planning',
+        }),
+      moveEvent: (params) =>
+        Effect.suspend(() => {
+          at = params.destination;
+          return Effect.fail(new ApiUnavailableError({ cause: 'answer lost', status: 503 }));
+        }),
+      patchEvent: (params) => Effect.tap(plain.patchEvent(params), here(params.calendarId)),
+    });
+    return Effect.gen(function* () {
+      yield* seed([googleEvent()]);
+      const mutations = yield* EventMutations;
+      yield* mutations.moveEvent(move(['acc-1', 'cal-1', 'evt-a'], ['acc-1', 'cal-2']));
+      yield* mutations.updateEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-2',
+        changes: { title: 'Renamed' },
+        eventId: 'evt-a',
+      });
+      yield* mutations.processPendingOps();
+      const moving = (yield* queued).find((op) => op.kind === 'move');
+      yield* mutations.discardPendingOp(moving!.id);
+      yield* (yield* PendingOpRepo).retryNow();
+      yield* mutations.processPendingOps();
+
+      expect(calls.map((call) => `${call.kind}:${call.calendarId}:${call.detail}`)).toEqual([
+        'patch:cal-2:Renamed',
+      ]);
+      expect(yield* queued).toEqual([]);
+      expect(yield* rowAt('acc-1', 'cal-1', 'evt-a')).toBeNull();
+      expect((yield* rowAt('acc-1', 'cal-2', 'evt-a'))?.title).toBe('Renamed');
+    }).pipe(noYield, Effect.provide(testLayer(google, appleFake())));
+  });
+
+  it.effect('discarding a sent move Google cannot be asked about puts it back', () => {
+    // Offline: the attempt most likely never reached Google, and the user
+    // asked for the move to go.
+    const offline = new ApiUnavailableError({ cause: 'offline', status: 503 });
+    const google = recordingGoogle([], {
+      getEvent: () => Effect.fail(offline),
+      moveEvent: () => Effect.fail(offline),
+    });
+    return Effect.gen(function* () {
+      yield* seed([googleEvent()]);
+      const mutations = yield* EventMutations;
+      yield* mutations.moveEvent(move(['acc-1', 'cal-1', 'evt-a'], ['acc-1', 'cal-2']));
+      yield* mutations.updateEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-2',
+        changes: { title: 'Renamed' },
+        eventId: 'evt-a',
+      });
+      yield* mutations.processPendingOps();
+      const moving = (yield* queued).find((op) => op.kind === 'move');
+      yield* mutations.discardPendingOp(moving!.id);
+
+      expect((yield* queued).map((op) => `${op.kind}:${op.calendarId}`)).toEqual(['update:cal-1']);
+      expect(yield* rowAt('acc-1', 'cal-2', 'evt-a')).toBeNull();
+      expect((yield* rowAt('acc-1', 'cal-1', 'evt-a'))?.title).toBe('Renamed');
+    }).pipe(noYield, Effect.provide(testLayer(google, appleFake())));
+  });
+
+  it.effect('a move onwards queued behind a move Google cannot find leaves from the source', () => {
+    // cal-2 is gone on Google; the event went on to cal-2b from there.
+    const calls: Array<Call> = [];
+    const plain = recordingGoogle(calls);
+    const google = sourceOnly(calls, (params) =>
+      params.calendarId === 'cal-1' && params.destination !== 'cal-2'
+        ? plain.moveEvent(params)
+        : Effect.fail(new NotFoundError({ resource: 'calendar' })),
+    );
+    return Effect.gen(function* () {
+      yield* seed([googleEvent()]);
+      const mutations = yield* EventMutations;
+      yield* mutations.moveEvent(move(['acc-1', 'cal-1', 'evt-a'], ['acc-1', 'cal-2']));
+      yield* mutations.moveEvent(move(['acc-1', 'cal-2', 'evt-a'], ['acc-1', 'cal-2b']));
+      yield* mutations.processPendingOps();
+      yield* mutations.processPendingOps();
+
+      expect(calls.map((call) => `${call.kind}:${call.calendarId}:${call.detail}`)).toEqual([
+        'move:cal-1:cal-2b',
+      ]);
+      expect(yield* queued).toEqual([]);
+      expect(yield* rowAt('acc-1', 'cal-1', 'evt-a')).toBeNull();
+      expect(yield* rowAt('acc-1', 'cal-2', 'evt-a')).toBeNull();
+      expect((yield* rowAt('acc-1', 'cal-2b', 'evt-a'))?.syncStatus).toBe('synced');
     }).pipe(noYield, Effect.provide(testLayer(google, appleFake())));
   });
 });
