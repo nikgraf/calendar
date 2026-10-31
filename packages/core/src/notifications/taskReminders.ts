@@ -1,4 +1,5 @@
 import { formatClockTime } from '../format.ts';
+import { toZonedDateTime } from '../time/convert.ts';
 import { Temporal } from '../time/temporal.ts';
 import { isAppleRemindersAccount, type TaskListInfo, type TaskRecord } from '../types.ts';
 import { type PlannedNotification, taskNotificationTarget } from './planned.ts';
@@ -12,7 +13,11 @@ const isTempTaskId = (id: string): boolean => id.startsWith('local-');
  * Every notification due for the open tasks whose due day falls in
  * `[fromDate, untilDate]` (inclusive, 'YYYY-MM-DD'): a task with a time
  * of its own at that time, any other at `settings.time` on its due day,
- * both on the device's clock — a task's day and time already are.
+ * both on the device's clock — a task's day and time already are, except
+ * a reminder with an instant of its own (`dueUtc`), whose due day here is
+ * that instant's: its stored day was written in the zone the device was
+ * in when the row was last read, and the mirror re-reads only changed
+ * rows.
  * Skipped: completed tasks, tasks without a due day, tasks on a list not
  * in `lists` (the visible ones), Apple Reminders unless
  * `includeAppleReminders`, and a Google task still under its temporary
@@ -43,14 +48,8 @@ export const planTaskReminders = (
   const nameLists = options.lists.length > 1;
   const out: Array<PlannedNotification> = [];
   for (const task of tasks) {
-    const { dueDate } = task;
-    if (
-      task.status !== 'needsAction' ||
-      dueDate === undefined ||
-      dueDate < options.fromDate ||
-      dueDate > options.untilDate ||
-      isTempTaskId(task.id)
-    ) {
+    const { dueDate: storedDay } = task;
+    if (task.status !== 'needsAction' || storedDay === undefined || isTempTaskId(task.id)) {
       continue;
     }
     if (isAppleRemindersAccount({ id: task.accountId }) && !settings.includeAppleReminders) {
@@ -61,6 +60,13 @@ export const planTaskReminders = (
       continue;
     }
     try {
+      const dueDate =
+        task.dueUtc === undefined
+          ? storedDay
+          : toZonedDateTime(task.dueUtc, options.timeZone).toPlainDate().toString();
+      if (dueDate < options.fromDate || dueDate > options.untilDate) {
+        continue;
+      }
       const timed = task.dueUtc !== undefined || task.dueTime !== undefined;
       const fireAt =
         task.dueUtc ?? timeOfDayToUtc(dueDate, task.dueTime ?? settings.time, options.timeZone);
@@ -78,7 +84,8 @@ export const planTaskReminders = (
         expiresAt,
         fireAt,
         key: `task:${task.accountId}/${task.id}:${dueDate}`,
-        target: taskNotificationTarget(task, dueDate),
+        // The day the row says, which the rule compares to the row again.
+        target: taskNotificationTarget(task, storedDay),
         title: task.title,
       });
     } catch {

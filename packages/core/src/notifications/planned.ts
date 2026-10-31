@@ -25,6 +25,8 @@ export type EventNotificationTarget = typeof EventNotificationTarget.Type;
 export const TaskNotificationTarget = Schema.Struct({
   accountId: Schema.String,
   dueDate: Schema.String,
+  /** A reminder's own instant, when it has one: what the rule compares then, since the day moves with the zone. */
+  dueUtc: Schema.optional(Schema.Number),
   kind: Schema.Literal('task'),
   listId: Schema.String,
   taskId: Schema.String,
@@ -63,11 +65,12 @@ export const eventNotificationTarget = (
  * repeating reminder checked off advances in place under the same id.
  */
 export const taskNotificationTarget = (
-  task: Pick<TaskRecord, 'accountId' | 'id' | 'listId'>,
+  task: Pick<TaskRecord, 'accountId' | 'dueUtc' | 'id' | 'listId'>,
   dueDate: string,
 ): TaskNotificationTarget => ({
   accountId: task.accountId,
   dueDate,
+  ...(task.dueUtc === undefined ? {} : { dueUtc: task.dueUtc }),
   kind: 'task',
   listId: task.listId,
   taskId: task.id,

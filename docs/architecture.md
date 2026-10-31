@@ -1461,7 +1461,10 @@ gateway carries all of it. Details, limits and the threat model:
   gates both) and `loadTaskPlans` (open tasks on visible lists due today
   through a week ahead: a task with a time of its own at that time, any
   other at `taskNotifications.time` on its due day, both on the device's
-  clock; Apple Reminders unless switched off; a Google task still under
+  clock — a reminder with an instant of its own on that instant's day
+  here, since its stored day was written in the zone the device was in
+  when the row was last read; Apple Reminders unless switched off; a
+  Google task still under
   its temporary id skipped; one per task and due day, key
   `task:<account>/<id>:<dueDate>` (not the list: a move keeps the id),
   `expiresAt` midnight after the due day, no `dismissAt`), merged
@@ -1486,8 +1489,12 @@ gateway carries all of it. Details, limits and the threat model:
   whose hand-over failed, reads the delivered list back through the
   scheduled sink (`DeliveredNotification`: key, `dismissAt`, `target`)
   and dismisses by the scheduler's rule — an event reminder past its
-  `dismissAt`, a task's once the stored task is completed or gone — so a
-  notification leaves Notification Center at the next pass: the
+  `dismissAt`; a task's once the stored task (read by its list, then by
+  id alone, since a move keeps the id) is completed, on another day than
+  the notification's (a timed reminder: at another instant — a repeating
+  reminder checked off advances in place), or gone for a minute
+  (`ABSENT_GRACE_MS`: a move from another device lands list by list) — so
+  a notification leaves Notification Center at the next pass: the
   foreground loop, a return to the foreground, or the background task
   (with the app closed, that can be hours). The iOS switches "Remove When
   Over" (`EventNotificationSettings.dismissWhenOver`) and, per provider,

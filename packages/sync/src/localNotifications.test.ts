@@ -237,6 +237,7 @@ const callBank = new TaskRecord({
   accountId: APPLE_REMINDERS_ACCOUNT_ID,
   dueDate: '2026-03-03',
   dueTime: '14:00',
+  dueUtc: Date.parse('2026-03-03T14:00:00Z'),
   id: 'bank',
   listId: 'ek-errands',
   provider: 'apple',
@@ -703,11 +704,54 @@ describe('LocalNotifications', () => {
           includeAppleReminders: true,
           time: '09:00',
         });
+        // Gone for a moment is not gone: a move from another device lands
+        // list by list. Gone for a minute is.
+        yield* notifications.run();
+        expect(scheduled.dismissed).toEqual([]);
+        yield* TestClock.adjust('1 minute');
         yield* notifications.run();
         expect(scheduled.dismissed).toEqual([RENT_KEY]);
       }).pipe(Effect.provide(testLayer(scheduled.sink)));
     },
   );
+
+  it.effect(
+    'a timed reminder is judged by its instant: its day re-read in another zone keeps the notification, a new instant loses it',
+    () => {
+      const scheduled = scheduledSink();
+      scheduled.presented.push(deliveredTask(callBank, BANK_KEY));
+      return Effect.gen(function* () {
+        yield* seedTasks(callBank);
+        const taskRepo = yield* TaskRepo;
+        const notifications = yield* LocalNotifications;
+        yield* setClock('2026-03-03T15:00:00Z');
+        yield* taskRepo.upsertTasks([new TaskRecord({ ...callBank, dueDate: '2026-03-04' })], 1);
+        yield* notifications.run();
+        expect(scheduled.dismissed).toEqual([]);
+        yield* taskRepo.upsertTasks(
+          [new TaskRecord({ ...callBank, dueUtc: Date.parse('2026-03-04T14:00:00Z') })],
+          1,
+        );
+        yield* notifications.run();
+        expect(scheduled.dismissed).toEqual([BANK_KEY]);
+      }).pipe(Effect.provide(testLayer(scheduled.sink)));
+    },
+  );
+
+  it.effect('a task stored on two lists mid-move plans once', () => {
+    const scheduled = scheduledSink();
+    return Effect.gen(function* () {
+      yield* seedTasks(rent);
+      const taskRepo = yield* TaskRepo;
+      yield* taskRepo.upsertLists([home], 1);
+      yield* taskRepo.upsertTasks([new TaskRecord({ ...rent, listId: 'home' })], 1);
+      yield* setClock('2026-03-01T12:00:00Z');
+      yield* (yield* LocalNotifications).run();
+      expect(scheduled.schedules.map((plans) => plans.map((plan) => plan.key))).toEqual([
+        [RENT_KEY],
+      ]);
+    }).pipe(Effect.provide(testLayer(scheduled.sink)));
+  });
 
   it.effect(
     'a task moved to another list keeps its notification; one moved to another day loses it',

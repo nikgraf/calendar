@@ -118,6 +118,35 @@ describe('planTaskReminders', () => {
     ).toEqual(['task:acc/t1:2026-03-04']);
   });
 
+  it("a reminder with an instant of its own lives on that instant's day here, whatever day its row says", () => {
+    // Read in UTC, the row says the 3rd; in Vienna the instant falls on the 4th.
+    const late = reminder({
+      dueDate: '2026-03-03',
+      dueTime: '23:30',
+      dueUtc: utc('2026-03-03T23:30:00Z'),
+    });
+    expect(planTaskReminders([late], settings(), { ...window, lists: [errands] })).toEqual([
+      {
+        body: 'Due today · 12:30 AM',
+        expiresAt: utc('2026-03-04T23:00:00Z'),
+        fireAt: utc('2026-03-03T23:30:00Z'),
+        key: 'task:apple-reminders/rem-1:2026-03-04',
+        target: {
+          accountId: APPLE_REMINDERS_ACCOUNT_ID,
+          dueDate: '2026-03-03',
+          dueUtc: utc('2026-03-03T23:30:00Z'),
+          kind: 'task',
+          listId: 'ek-errands',
+          taskId: 'rem-1',
+        },
+        title: 'Call the bank',
+      },
+    ]);
+    // The other way round, the instant's day is before the window.
+    const early = reminder({ dueDate: '2026-03-04', dueUtc: utc('2026-03-03T22:00:00Z') });
+    expect(planTaskReminders([early], settings(), { ...window, lists: [errands] })).toEqual([]);
+  });
+
   it('names the list only when more than one is visible', () => {
     expect(planTaskReminders([task()], settings(), window)[0]!.body).toBe('Due today');
     expect(

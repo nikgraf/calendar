@@ -27,7 +27,13 @@ export const loadTaskPlans = (
     const fromDate = today.toString();
     const untilDate = today.add({ days: HORIZON_DAYS }).toString();
     const taskRepo = yield* TaskRepo;
-    const tasks = yield* taskRepo.getWindow(fromDate, untilDate);
+    // A day wider each side: a reminder with an instant of its own is
+    // planned on that instant's day here, which the stored day — written
+    // in the zone the device was in when the row was read — can miss by one.
+    const tasks = yield* taskRepo.getWindow(
+      today.subtract({ days: 1 }).toString(),
+      today.add({ days: HORIZON_DAYS + 1 }).toString(),
+    );
     const lists = (yield* taskRepo.listLists()).filter((list) => list.isVisible);
     return planTaskReminders(tasks, settings, { fromDate, lists, timeZone, untilDate });
   });

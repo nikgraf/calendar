@@ -36,6 +36,13 @@ const MIN_WAIT_MS = 5000;
 const MAX_WAIT_MS = 60_000;
 /** A sync pass or an edit repaints events in bursts; one pass per burst. */
 const CHANGE_DEBOUNCE = '2 seconds';
+/**
+ * A delivered task notification whose row is missing waits this long
+ * before it counts as deleted: a move made on another device reaches this
+ * one list by list, the source's row leaving one pull before the
+ * destination's arrives, and the change-triggered pass lands in between.
+ */
+const ABSENT_GRACE_MS = 60_000;
 
 /** Bookkeeping rows in device_settings, keyed apart from the user's settings. */
 const FIRED_KEY = 'localNotifications.fired';
@@ -64,11 +71,27 @@ const firedRecord = (raw: unknown): Record<string, number> =>
       )
     : {};
 
-/** One merged plan across producers, sorted by delivery; keys are unique per producer. */
+/**
+ * One merged plan across producers, sorted by delivery, one per key: the
+ * keys are unique per producer, except that a task moved between lists
+ * can be stored twice for a pull or two (the copy and its original), and
+ * a desktop would show both.
+ */
 const merge = (
   ...lists: ReadonlyArray<ReadonlyArray<PlannedNotification>>
-): ReadonlyArray<PlannedNotification> =>
-  lists.flat().sort((a, b) => a.fireAt - b.fireAt || a.key.localeCompare(b.key));
+): ReadonlyArray<PlannedNotification> => {
+  const keys = new Set<string>();
+  const out: Array<PlannedNotification> = [];
+  for (const plan of lists
+    .flat()
+    .sort((a, b) => a.fireAt - b.fireAt || a.key.localeCompare(b.key))) {
+    if (!keys.has(plan.key)) {
+      keys.add(plan.key);
+      out.push(plan);
+    }
+  }
+  return out;
+};
 
 /**
  * Turns settings + birthdays + events + tasks into local notifications.
@@ -122,6 +145,8 @@ const make = (options: {
     >();
 
     const loadFired = Effect.map(settingsRepo.get(FIRED_KEY), firedRecord);
+    /** Delivered task notifications whose row went missing, and when (see ABSENT_GRACE_MS). */
+    const absentSince = new Map<string, number>();
 
     /**
      * An immediate sink cannot ask for permission on its own (macOS
@@ -216,7 +241,8 @@ const make = (options: {
      * Center — on every pass, digest or not: the OS keeps the delivered
      * list, and the scheduler says which to drop. An event reminder once
      * its payload's `dismissAt` passed, unless "Remove When Over" is off;
-     * a task's once the stored task is done, gone or re-dated, unless that
+     * a task's once the stored task is done, re-dated or gone for a
+     * minute (ABSENT_GRACE_MS), unless that
      * provider's "Remove When Done" is off. The payloads keep their data,
      * so a switch turned back on clears them on the next pass. Nothing is
      * remembered here. Best-effort: a failure is logged, the next pass
@@ -242,14 +268,30 @@ const make = (options: {
                     return false;
                   }
                   // The list first, then the id alone: a move keeps it. A task
-                  // on another day than the notification's is done with that
-                  // day — a repeating reminder checked off advances in place
-                  // under its id — or re-dated; either way the notification
-                  // no longer holds.
+                  // on another day than the notification's — a reminder with
+                  // an instant of its own, at another instant — is done with
+                  // that day (a repeating reminder checked off advances in
+                  // place under its id) or re-dated; either way the
+                  // notification no longer holds.
                   const task =
                     (yield* taskRepo.get(target.accountId, target.listId, target.taskId)) ??
                     (yield* taskRepo.findById(target.accountId, target.taskId));
-                  return !task || task.status === 'completed' || task.dueDate !== target.dueDate;
+                  if (!task) {
+                    const since = absentSince.get(delivered.key) ?? now;
+                    if (now - since < ABSENT_GRACE_MS) {
+                      absentSince.set(delivered.key, since);
+                      return false;
+                    }
+                    absentSince.delete(delivered.key);
+                    return true;
+                  }
+                  absentSince.delete(delivered.key);
+                  return (
+                    task.status === 'completed' ||
+                    (target.dueUtc === undefined
+                      ? task.dueDate !== target.dueDate
+                      : task.dueUtc !== target.dueUtc)
+                  );
                 }
                 return (
                   overEvents && delivered.dismissAt !== undefined && delivered.dismissAt <= now
