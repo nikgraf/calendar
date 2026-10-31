@@ -23,9 +23,11 @@
  *   touch-down and skipped later events of it, the lift included, so
  *   the app got a down and then a cancel, which is no press (run
  *   40265233306's flow 04: the check never turned, no op followed). Once
- *   in about 60 flow logs. A flow that touched or typed again after the
- *   drop went on, so its failure may be its own; only a drop at the last
- *   input counts. That flow runs once more.
+ *   in about 60 flow logs. A flow that tapped, swiped or typed again after
+ *   the drop went on, so its failure may be its own; only a drop at the
+ *   last input XCTest played counts (a launch, a stop or an opened link
+ *   plays none, so a flow that only did those afterwards still counts).
+ *   That flow runs once more.
  *
  * A failure the app caused (an assertion on a drawn screen, an element not
  * found, anything unknown) is never retried: it fails the job as before, so
@@ -262,7 +264,7 @@ const blackScreen = (screenshots: ReadonlyArray<Uint8Array>): boolean =>
 
 /**
  * XCTest starting to play a command's input into the simulator, in its
- * log: once for each tap, swipe or typed text.
+ * log: at least once for each tap, swipe, key press or typed text.
  */
 const PLAYBACK = 'Recap event action playback initiated';
 

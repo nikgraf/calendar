@@ -841,8 +841,9 @@ Electron binary (`electron --version`) and run spec files sequentially.
   logged `didn't see a previous touch down … skipping event` and no lift
   (`contact N presence: none`). It had handled the down and skipped the
   rest, so the app got a down and a cancel and never a press (run
-  40265233306, flow 04, after `*** unknown digitizer`). A flow that touched
-  or typed again after a drop does not count. Each attempt's
+  40265233306, flow 04, after `*** unknown digitizer`). A flow that tapped,
+  swiped or typed again after a drop does not count (a launch or an opened
+  link plays no input, so it is not seen). Each attempt's
   report, console output and logs are in `~/.maestro/tests/<label>-<n>`
   (`--debug-output`, flattened: otherwise the run's log lands in a hidden
   folder the artifact upload skips). A failed shard's artifact carries
