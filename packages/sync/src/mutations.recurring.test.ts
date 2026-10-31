@@ -583,6 +583,64 @@ describe('discarding a change of a series', () => {
     }).pipe(Effect.provide(testLayer)),
   );
 
+  it.effect('an answer discarded under an occurrence delete keeps its tombstone pending', () =>
+    Effect.gen(function* () {
+      yield* seedMaster;
+      const events = yield* EventRepo;
+      const invited = new EventRecord({
+        ...override,
+        attendees: [
+          new Attendee({ email: 'acc-1@example.com', isSelf: true, responseStatus: 'needsAction' }),
+          new Attendee({
+            email: 'host@example.com',
+            isOrganizer: true,
+            responseStatus: 'accepted',
+          }),
+        ],
+        organizerEmail: 'host@example.com',
+      });
+      yield* events.upsertMany([invited]);
+      const mutations = yield* EventMutations;
+      yield* mutations.respondToEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        eventId: instanceId,
+        response: 'accepted',
+      });
+      yield* mutations.deleteRecurring({ ...target, scope: 'instance' });
+      const queued = yield* listOps;
+      expect(queued.map((op) => op.kind)).toEqual(['rsvp', 'delete']);
+
+      yield* mutations.discardPendingOp(queued[0]!.id);
+      const row = yield* rowOf(instanceId);
+      expect(row?.status).toBe('cancelled');
+      expect(row?.syncStatus).toBe('pending');
+      // The delete still owns it: a pull's copy of the exception stays out.
+      yield* events.upsertMany([new EventRecord({ ...invited, etag: '"o-2"' })], { mode: 'pull' });
+      expect((yield* rowOf(instanceId))?.status).toBe('cancelled');
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect(
+    'a series delete after an occurrence delete keeps the override, not its tombstone',
+    () =>
+      Effect.gen(function* () {
+        yield* seedMaster;
+        yield* (yield* EventRepo).upsertMany([override]);
+        const mutations = yield* EventMutations;
+        yield* mutations.deleteRecurring({ ...target, scope: 'instance' });
+        yield* mutations.deleteRecurring({ ...target, scope: 'series' });
+        const [op] = yield* listOps;
+        // The tombstone is the occurrence delete's own row, not a pull's copy.
+        expect(op?.beforeOverrides?.map((row) => [row.title, row.status])).toEqual([
+          ['Daily (moved)', 'confirmed'],
+        ]);
+
+        yield* mutations.discardPendingOp(op!.id);
+        expect((yield* rowOf(instanceId))?.status).toBe('confirmed');
+      }).pipe(Effect.provide(testLayer)),
+  );
+
   it.effect('a series delete puts the exceptions back as Google has them', () =>
     Effect.gen(function* () {
       yield* seedMaster;
@@ -994,8 +1052,32 @@ describe('keeping a series a pull put back while its delete waits', () => {
         originalStartUtc: Date.parse('2026-07-07T09:00:00Z'),
         scope: 'following',
       });
-      expect((yield* listOps).map((op) => op.kind)).toEqual(['update']);
+      const ops = yield* listOps;
+      expect(ops.map((op) => op.kind)).toEqual(['update']);
+      // The cut diffs against Google's master, not the one the delete saw.
+      expect(ops[0]?.beforePayload?.title).toBe('Daily (Google)');
       expect((yield* rowOf(instanceId))?.status).toBe('cancelled');
+    }).pipe(noYield, Effect.provide(testLayer)),
+  );
+
+  it.effect('a series edit diffs against Google’s master: a discard shows it again', () =>
+    Effect.gen(function* () {
+      yield* deleteThenPull(pulled);
+      const mutations = yield* EventMutations;
+      yield* mutations.updateRecurring({
+        ...target,
+        changes: { location: 'Room 4' },
+        scope: 'series',
+      });
+      const [op] = yield* listOps;
+      expect(op?.beforePayload?.title).toBe('Daily (Google)');
+
+      yield* mutations.discardPendingOp(op!.id);
+      const row = yield* rowOf('master1');
+      expect(row?.title).toBe('Daily (Google)');
+      expect(row?.location).toBeUndefined();
+      expect(row?.etag).toBe('"m-2"');
+      expect(row?.syncStatus).toBe('synced');
     }).pipe(noYield, Effect.provide(testLayer)),
   );
 
@@ -1005,10 +1087,13 @@ describe('keeping a series a pull put back while its delete waits', () => {
       const mutations = yield* EventMutations;
       yield* mutations.deleteRecurring({ ...target, scope: 'series' });
       const [op] = yield* listOps;
+      expect(op?.beforePayload?.title).toBe('Daily (Google)');
       expect(op?.beforeOverrides?.map((row) => row.id)).toEqual([instanceId]);
 
       yield* mutations.discardPendingOp(op!.id);
-      expect(yield* rowOf('master1')).not.toBeNull();
+      const row = yield* rowOf('master1');
+      expect(row?.title).toBe('Daily (Google)');
+      expect(row?.etag).toBe('"m-2"');
       expect((yield* rowOf(instanceId))?.status).toBe('cancelled');
     }).pipe(noYield, Effect.provide(testLayer)),
   );

@@ -54,7 +54,7 @@ import { Cause, Clock, Context, Effect, Layer, Semaphore } from 'effect';
 import { Reactivity } from 'effect/reactivity/Reactivity';
 import { SqlClient } from 'effect/sql/SqlClient';
 import type { SqlError } from 'effect/sql/SqlError';
-import { makeApplyOp, retargetOp } from './applyOp.ts';
+import { isPulledCopy, makeApplyOp, retargetOp } from './applyOp.ts';
 import { AppleCalendarEvents, deviceTimeZone } from './appleCalendarEvents.ts';
 import { makeAppleEventMutations } from './appleEventMutations.ts';
 import { planCarry, restoreCarriedText, withOwnText } from './carriedText.ts';
@@ -109,12 +109,17 @@ const foldIntoCreate = (create: PendingOp, payload: EventRecord) =>
  * last state Google acknowledged, also when edits pile up offline — else
  * the row as it is now (`null` when there is none: an occurrence edit
  * materializing its override). A replaced op without one leaves it
- * unknown: the row already holds that op's edit.
+ * unknown: the row already holds that op's edit. A replaced delete hands
+ * on Google's copy instead when a pull put one back while it waited
+ * (`isPulledCopy`), not the snapshot it took before.
  */
 const inheritedBefore = (
   queued: ReadonlyArray<PendingOp>,
   current: EventRecord | null | undefined,
 ): PendingOp['beforePayload'] => {
+  if (isPulledCopy(queued, current)) {
+    return current;
+  }
   const prior = queued.find((op) => op.kind === 'update' || op.kind === 'delete');
   return prior ? prior.beforePayload : (current ?? null);
 };
@@ -1116,7 +1121,9 @@ const make: Effect.Effect<
             // Sent as If-Match, retried without on a 412 (applyOp): when it
             // holds, the edits queued on this etag can follow the RSVP.
             baseEtag: existing.etag ?? undefined,
-            beforePayload: priorRsvp ? priorRsvp.beforePayload : existing,
+            // Google's copy, when a pull put one back while the delete waited.
+            beforePayload:
+              priorRsvp && !isPulledCopy(queued, existing) ? priorRsvp.beforePayload : existing,
             calendarId,
             createdAt: now,
             eventId,
