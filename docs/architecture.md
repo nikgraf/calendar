@@ -1463,15 +1463,20 @@ gateway carries all of it. Details, limits and the threat model:
   other at `taskNotifications.time` on its due day, both on the device's
   clock; Apple Reminders unless switched off; a Google task still under
   its temporary id skipped; one per task and due day, key
-  `task:<account>/<list>/<id>:<dueDate>`, `expiresAt` midnight after the
-  due day, no `dismissAt`), merged
+  `task:<account>/<id>:<dueDate>` (not the list: a move keeps the id),
+  `expiresAt` midnight after the due day, no `dismissAt`), merged
   into one `PlannedNotification` list, each carrying a `target` the tap
   resolves (`findNotificationEvent`, `findNotificationTask`). A producer
   whose setting is off returns nothing; the OS schedule is cleared only
   when all do. The
   platform `NotificationSink` delivers: desktop fires an Electron
-  `Notification` when one is due and, after sleep, only while the plan's
-  `expiresAt` allows (fired keys kept in `device_settings`); iOS replaces
+  `Notification` for what came due since its last pass
+  (`localNotifications.lastPass` in `device_settings`, beside the fired
+  keys) while the plan's `expiresAt` allows — a Mac asleep or closed
+  through the moment catches up, a plan already past when it first
+  appears (a task created in the afternoon, a notify time moved earlier)
+  stays silent as on iOS, and the first pass ever shows what the windows
+  allow; iOS replaces
   the pending expo-notifications schedule with the soonest ≤ 60 whenever
   the digest changes. An event plan also carries `dismissAt` — its end
   (all-day: midnight after the last day on the device's clock), never

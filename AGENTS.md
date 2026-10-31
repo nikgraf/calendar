@@ -206,8 +206,8 @@ deliberately.
   `appleCalendar:*` permission-status channels, `appleCalendar:open`
   (brings Calendar.app forward), `settings:open`,
   `settingsFile:*`, `auth:cancel` (stops a sign-in waiting on the
-  browser), `notifications:take` (the event reminder clicked last — a
-  ref; the event itself is read over rpc), `camera:ask` /
+  browser), `notifications:take` (the notification clicked last — a
+  ref to its event or task, read over rpc), `camera:ask` /
   `camera:read-qr` (the settings-code reader: the camera's TCC status,
   then a frame read by the helper's Vision), `onboarding:enabled`,
   `lesson:open` / `lesson:take` (a lesson Settings opened, kept in main
@@ -261,7 +261,7 @@ deliberately.
   developer's screenshot mid-run must not draw the capture hint
   (`captureWatch: 'fixture'` drives it instead). The iOS bundle's
   `EXPO_PUBLIC_CALENDAR_GEO=off` (on in CI) does the same for MapKit; only
-  the local `14-location` flow uses the real one, and its
+  the local `14-location` flow uses the real one. The iOS bundle's
   `EXPO_PUBLIC_CALENDAR_NOTIFICATIONS=off` (on in CI and in the live
   bundle) leaves expo-notifications out, as `CALENDAR_NOTIFICATIONS=off`
   does on the desktop: the fixture's task due today would otherwise be

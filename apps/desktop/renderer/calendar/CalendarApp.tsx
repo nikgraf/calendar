@@ -296,7 +296,7 @@ function CalendarBody({
   // still running would replace the inspector with its editor.
   const openNotificationTarget = useEffectEvent((target: NotificationTarget) => {
     if (target.kind === 'task') {
-      // A clicked task reminder opens the task's editor; one done or gone since opens nothing.
+      // A clicked task reminder opens the task's editor, done or not; one gone since opens nothing.
       void findNotificationTask(backend, target).then((task) => {
         if (task) {
           capture.dismiss();

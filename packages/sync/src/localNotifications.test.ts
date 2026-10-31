@@ -215,6 +215,13 @@ const errands = new TaskListInfo({
   provider: 'apple',
   title: 'Errands',
 });
+const home = new TaskListInfo({
+  accountId: 'acc-1',
+  id: 'home',
+  isVisible: true,
+  provider: 'google',
+  title: 'Home',
+});
 const rent = new TaskRecord({
   accountId: 'acc-1',
   dueDate: '2026-03-03',
@@ -225,7 +232,7 @@ const rent = new TaskRecord({
   title: 'Pay rent',
   updatedAt: 0,
 });
-const RENT_KEY = 'task:acc-1/inbox/rent:2026-03-03';
+const RENT_KEY = 'task:acc-1/rent:2026-03-03';
 const callBank = new TaskRecord({
   accountId: APPLE_REMINDERS_ACCOUNT_ID,
   dueDate: '2026-03-03',
@@ -237,12 +244,12 @@ const callBank = new TaskRecord({
   title: 'Call the bank',
   updatedAt: 0,
 });
-const BANK_KEY = `task:${APPLE_REMINDERS_ACCOUNT_ID}/ek-errands/bank:2026-03-03`;
+const BANK_KEY = `task:${APPLE_REMINDERS_ACCOUNT_ID}/bank:2026-03-03`;
 
 /** A task's reminder as the OS shows it after delivery: its key and target, no deadline. */
 const deliveredTask = (task: TaskRecord, key: string): DeliveredNotification => ({
   key,
-  target: taskNotificationTarget(task),
+  target: taskNotificationTarget(task, task.dueDate ?? ''),
 });
 
 /** The Google account of `seedGoogle` plus the Reminders one, a visible list each, and `tasks`. */
@@ -599,6 +606,7 @@ describe('LocalNotifications', () => {
         ]);
         expect(scheduled.schedules[0]![1]!.target).toEqual({
           accountId: 'acc-1',
+          dueDate: '2026-03-03',
           kind: 'task',
           listId: 'inbox',
           taskId: 'rent',
@@ -701,6 +709,66 @@ describe('LocalNotifications', () => {
     },
   );
 
+  it.effect(
+    'a task moved to another list keeps its notification; one moved to another day loses it',
+    () => {
+      const scheduled = scheduledSink();
+      scheduled.presented.push(deliveredTask(rent, RENT_KEY));
+      return Effect.gen(function* () {
+        yield* seedTasks(rent);
+        const taskRepo = yield* TaskRepo;
+        yield* taskRepo.upsertLists([home], 1);
+        const notifications = yield* LocalNotifications;
+        yield* setClock('2026-03-03T15:00:00Z');
+        // Moved: the same id on another list, the inbox row gone.
+        yield* taskRepo.removeTask('acc-1', 'inbox', 'rent');
+        yield* taskRepo.upsertTasks([new TaskRecord({ ...rent, listId: 'home' })], 1);
+        yield* notifications.run();
+        expect(scheduled.dismissed).toEqual([]);
+        // Re-dated: the notification spoke of the 3rd.
+        yield* taskRepo.upsertTasks(
+          [new TaskRecord({ ...rent, dueDate: '2026-03-04', listId: 'home' })],
+          1,
+        );
+        yield* notifications.run();
+        expect(scheduled.dismissed).toEqual([RENT_KEY]);
+      }).pipe(Effect.provide(testLayer(scheduled.sink)));
+    },
+  );
+
+  it.effect(
+    'an immediate sink shows what came due since its last pass, not a plan already past',
+    () => {
+      const { shown, sink } = immediateSink();
+      return Effect.gen(function* () {
+        yield* seedTasks(rent);
+        const notifications = yield* LocalNotifications;
+        yield* setClock('2026-03-03T08:00:00Z');
+        yield* notifications.run();
+        expect(shown).toEqual([]);
+        // 09:00 fell between two passes: a Mac asleep through it catches up.
+        yield* TestClock.adjust('2 hours');
+        yield* notifications.run();
+        expect(shown).toEqual([RENT_KEY]);
+        // Created at 10:00 and due today: its 09:00 was never missed.
+        yield* (yield* TaskRepo).upsertTasks(
+          [new TaskRecord({ ...rent, id: 'tax', title: 'File the tax' })],
+          1,
+        );
+        yield* notifications.run();
+        expect(shown).toEqual([RENT_KEY]);
+        // Nor is a notify time moved to earlier than now.
+        yield* writeTaskNotificationSettings({
+          enabled: true,
+          includeAppleReminders: true,
+          time: '09:30',
+        });
+        yield* notifications.run();
+        expect(shown).toEqual([RENT_KEY]);
+      }).pipe(Effect.provide(testLayer(sink)));
+    },
+  );
+
   it.effect('Apple Calendar events notify only when the setting includes them', () => {
     const { shown, sink } = immediateSink();
     const dentist: AppleEventJson = {
@@ -760,10 +828,15 @@ describe('LocalNotifications', () => {
         }),
       ]);
       const notifications = yield* LocalNotifications;
-      yield* setClock('2026-03-03T08:45:00Z');
+      // The 15-minute reminder of a 9:00 dentist: not planned while the
+      // setting leaves Apple Calendar out, planned once it includes it, and
+      // shown when its moment comes.
+      yield* setClock('2026-03-03T08:30:00Z');
+      yield* notifications.run();
+      yield* writeEventNotificationSettings({ enabled: true, includeAppleCalendar: true });
       yield* notifications.run();
       expect(shown).toEqual([]);
-      yield* writeEventNotificationSettings({ enabled: true, includeAppleCalendar: true });
+      yield* TestClock.adjust('16 minutes');
       yield* notifications.run();
       expect(shown).toEqual([
         `event:${APPLE_CALENDAR_ACCOUNT_ID}/ek-home/ek-dentist:${String(dentist.startUtc)}:15`,

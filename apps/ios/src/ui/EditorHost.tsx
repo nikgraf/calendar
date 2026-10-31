@@ -430,7 +430,7 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
     });
   const onNotificationTap = useEffectEvent((target: NotificationTarget) => {
     if (target.kind === 'task') {
-      // A task reminder opens the task's editor; one checked off or deleted since opens nothing.
+      // A task reminder opens the task's editor, checked off or not; one deleted since opens nothing.
       void findNotificationTask(backendClient, target).then((task) => {
         if (task) {
           dismissCapture();

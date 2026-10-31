@@ -49,8 +49,8 @@ const targets = makeNotificationTargets({
 });
 
 /**
- * `notifications:take` — the calendar window collects the clicked event
- * reminder (preload `onNotificationOpen`). Only that window's page: the
+ * `notifications:take` — the calendar window collects the clicked
+ * notification (preload `onNotificationOpen`). Only that window's page: the
  * settings window has no calendar to show it in.
  */
 export const registerNotificationIpc = (): void => {

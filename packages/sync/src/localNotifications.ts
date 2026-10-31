@@ -40,6 +40,8 @@ const CHANGE_DEBOUNCE = '2 seconds';
 /** Bookkeeping rows in device_settings, keyed apart from the user's settings. */
 const FIRED_KEY = 'localNotifications.fired';
 const SCHEDULED_KEY = 'localNotifications.scheduled';
+/** When an immediate sink last ran a pass: what came due since is what it shows. */
+const LAST_PASS_KEY = 'localNotifications.lastPass';
 /** Set once an immediate sink has been asked for permission (first start). */
 const PERMISSION_ASKED_KEY = 'localNotifications.permissionAsked';
 
@@ -144,7 +146,7 @@ const make = (options: {
       }
     });
 
-    /** Shows what is due and returns the next delivery still ahead. */
+    /** Shows what came due since the last pass and returns the next delivery still ahead. */
     const deliverImmediate = (plans: ReadonlyArray<PlannedNotification>, now: number) =>
       Effect.gen(function* () {
         if (sink.kind !== 'immediate') {
@@ -154,10 +156,22 @@ const make = (options: {
         const fired = Object.fromEntries(
           Object.entries(previous).filter(([, firedAt]) => firedAt >= now - FIRED_TTL_MS),
         );
-        // A missed notification fires only while its producer still finds
-        // it worth showing (a birthday all day, a meeting until it starts).
+        // What came due since the last pass, while its producer still finds
+        // it worth showing (a birthday all day, a meeting until it starts,
+        // a task until its day ends): a Mac asleep or closed through the
+        // moment catches up, and a plan whose moment was already past when
+        // it first appeared — a task created in the afternoon, a notify
+        // time moved earlier, a list shown, a setting switched on — stays
+        // silent, as on iOS, which schedules nothing past. The first pass
+        // ever has no last one and shows what the producers' windows allow.
+        const lastPass = yield* settingsRepo.get(LAST_PASS_KEY);
+        const since = typeof lastPass === 'number' ? lastPass : undefined;
         const due = plans.filter(
-          (plan) => plan.fireAt <= now && now < plan.expiresAt && !(plan.key in fired),
+          (plan) =>
+            (since === undefined || plan.fireAt > since) &&
+            plan.fireAt <= now &&
+            now < plan.expiresAt &&
+            !(plan.key in fired),
         );
         for (const plan of due) {
           yield* sink.show(plan);
@@ -166,6 +180,7 @@ const make = (options: {
         if (due.length > 0 || Object.keys(fired).length !== Object.keys(previous).length) {
           yield* settingsRepo.set(FIRED_KEY, fired);
         }
+        yield* settingsRepo.set(LAST_PASS_KEY, now);
         return plans.find((plan) => plan.fireAt > now)?.fireAt;
       });
 
@@ -201,7 +216,7 @@ const make = (options: {
      * Center — on every pass, digest or not: the OS keeps the delivered
      * list, and the scheduler says which to drop. An event reminder once
      * its payload's `dismissAt` passed, unless "Remove When Over" is off;
-     * a task's once the stored task is done or gone, unless that
+     * a task's once the stored task is done, gone or re-dated, unless that
      * provider's "Remove When Done" is off. The payloads keep their data,
      * so a switch turned back on clears them on the next pass. Nothing is
      * remembered here. Best-effort: a failure is logged, the next pass
@@ -226,8 +241,15 @@ const make = (options: {
                   if (!dismissesWhenDone(tasks, provider)) {
                     return false;
                   }
-                  const task = yield* taskRepo.get(target.accountId, target.listId, target.taskId);
-                  return !task || task.status === 'completed';
+                  // The list first, then the id alone: a move keeps it. A task
+                  // on another day than the notification's is done with that
+                  // day — a repeating reminder checked off advances in place
+                  // under its id — or re-dated; either way the notification
+                  // no longer holds.
+                  const task =
+                    (yield* taskRepo.get(target.accountId, target.listId, target.taskId)) ??
+                    (yield* taskRepo.findById(target.accountId, target.taskId));
+                  return !task || task.status === 'completed' || task.dueDate !== target.dueDate;
                 }
                 return (
                   overEvents && delivered.dismissAt !== undefined && delivered.dismissAt <= now

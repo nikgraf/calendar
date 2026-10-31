@@ -91,7 +91,13 @@ describe('makeIosNotificationSink', () => {
   });
 
   it('hands each delivered notification, decoded, to the rule and dismisses the ones it approves', async () => {
-    const taskTarget = { accountId: 'acc', kind: 'task' as const, listId: 'inbox', taskId: 't1' };
+    const taskTarget = {
+      accountId: 'acc',
+      dueDate: '2026-03-04',
+      kind: 'task' as const,
+      listId: 'inbox',
+      taskId: 't1',
+    };
     const fake = fakeNotifications({
       presented: [
         presented('over', { dismissAt: 1000, target }),

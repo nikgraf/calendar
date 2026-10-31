@@ -24,6 +24,7 @@ export type EventNotificationTarget = typeof EventNotificationTarget.Type;
 /** What a tap on a task reminder opens: the task, by its stored identity. */
 export const TaskNotificationTarget = Schema.Struct({
   accountId: Schema.String,
+  dueDate: Schema.String,
   kind: Schema.Literal('task'),
   listId: Schema.String,
   taskId: Schema.String,
@@ -54,11 +55,19 @@ export const eventNotificationTarget = (
   startUtc: event.startUtc,
 });
 
-/** The target naming `task`: what a tap on its reminder opens. */
+/**
+ * The target naming `task` for the notification about its `dueDate`:
+ * what a tap on it opens, and what the dismissal rule reads the task
+ * back by — the list first, then the id alone, since a move keeps it.
+ * The due day tells a stale notification from the task's current one: a
+ * repeating reminder checked off advances in place under the same id.
+ */
 export const taskNotificationTarget = (
   task: Pick<TaskRecord, 'accountId' | 'id' | 'listId'>,
+  dueDate: string,
 ): TaskNotificationTarget => ({
   accountId: task.accountId,
+  dueDate,
   kind: 'task',
   listId: task.listId,
   taskId: task.id,

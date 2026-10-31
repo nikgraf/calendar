@@ -64,8 +64,14 @@ describe('planTaskReminders', () => {
         body: 'Due today',
         expiresAt: utc('2026-03-04T23:00:00Z'),
         fireAt: utc('2026-03-04T08:00:00Z'),
-        key: 'task:acc/inbox/t1:2026-03-04',
-        target: { accountId: 'acc', kind: 'task', listId: 'inbox', taskId: 't1' },
+        key: 'task:acc/t1:2026-03-04',
+        target: {
+          accountId: 'acc',
+          dueDate: '2026-03-04',
+          kind: 'task',
+          listId: 'inbox',
+          taskId: 't1',
+        },
         title: 'Pay rent',
       },
     ]);
@@ -103,13 +109,13 @@ describe('planTaskReminders', () => {
       planTaskReminders([task(), reminder()], settings(), { ...window, lists }).map(
         (plan) => plan.key,
       ),
-    ).toEqual(['task:acc/inbox/t1:2026-03-04', 'task:apple-reminders/ek-errands/rem-1:2026-03-04']);
+    ).toEqual(['task:acc/t1:2026-03-04', 'task:apple-reminders/rem-1:2026-03-04']);
     expect(
       planTaskReminders([task(), reminder()], settings({ includeAppleReminders: false }), {
         ...window,
         lists,
       }).map((plan) => plan.key),
-    ).toEqual(['task:acc/inbox/t1:2026-03-04']);
+    ).toEqual(['task:acc/t1:2026-03-04']);
   });
 
   it('names the list only when more than one is visible', () => {
@@ -142,8 +148,8 @@ describe('planTaskReminders', () => {
       window,
     );
     expect(plans.map((plan) => plan.key)).toEqual([
-      'task:acc/inbox/first:2026-03-04',
-      'task:acc/inbox/last:2026-03-11',
+      'task:acc/first:2026-03-04',
+      'task:acc/last:2026-03-11',
     ]);
   });
 
@@ -153,6 +159,6 @@ describe('planTaskReminders', () => {
       settings(),
       { ...window, untilDate: '2026-03-99' },
     );
-    expect(plans.map((plan) => plan.key)).toEqual(['task:acc/inbox/t1:2026-03-04']);
+    expect(plans.map((plan) => plan.key)).toEqual(['task:acc/t1:2026-03-04']);
   });
 });

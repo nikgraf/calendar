@@ -18,8 +18,9 @@ const isTempTaskId = (id: string): boolean => id.startsWith('local-');
  * `includeAppleReminders`, and a Google task still under its temporary
  * id (the push hands back the real one within seconds; a desktop would
  * otherwise fire twice). Nothing when the setting is off. One
- * notification per task and due day, never again: an overdue task does
- * not repeat. A missed one stays worth showing until midnight after the
+ * notification per task and due day — the key names those, not the
+ * list, which a move changes — never again: an overdue task does not
+ * repeat. A missed one stays worth showing until midnight after the
  * due day. No `dismissAt`: a task is done when it is checked off, which
  * the scheduler reads from the stored row. A task whose dates this
  * engine cannot read goes without a notification, never the whole pass.
@@ -76,8 +77,8 @@ export const planTaskReminders = (
         body: parts.join(' · '),
         expiresAt,
         fireAt,
-        key: `task:${task.accountId}/${task.listId}/${task.id}:${dueDate}`,
-        target: taskNotificationTarget(task),
+        key: `task:${task.accountId}/${task.id}:${dueDate}`,
+        target: taskNotificationTarget(task, dueDate),
         title: task.title,
       });
     } catch {

@@ -1283,11 +1283,11 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   time-of-day setting (09:00) on its due day, once, overdue never again;
   Apple Reminders included by default (Nik's call: twice for one with an
   alert); two per-provider "Remove … When Done" switches on iOS, stored
-  once set like Remove When Over. The sink hands the delivered list to the
-  scheduler's rule — a task is done by state, not by a payload deadline.
-  Rejected: a settings-free reconcile (a switch per provider was asked
-  for). Open: a task created offline notifies once its id lands; alert
-  offsets stay the Reminders app's, Solunivo fires at the due moment.
+  once set like Remove When Over. Done is state, not a payload deadline:
+  the stored task gone, completed or on another day (a repeating
+  reminder advances in place), looked up by list then id (a move keeps
+  it). A Mac shows only what came due since its last pass. Rejected: a
+  settings-free reconcile. Open: offline creates notify once the id lands.
 
 ## Calendar mirrors
 
