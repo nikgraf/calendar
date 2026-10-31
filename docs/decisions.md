@@ -332,7 +332,7 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   into the delete's snapshot (a second copy of the row). Open: an
   exception a pull re-sends over an occurrence's tombstone never reaches
   that delete's snapshot (closed by the next record).
-- **An occurrence deleted under a waiting series delete stays deleted** (2026-10-31, #PR)
+- **An occurrence deleted under a waiting series delete stays deleted** (2026-10-31, #274)
   — Opus review of #270: discarding the series delete wrote the exception
   it took over the occurrence delete's tombstone, which pulls skip for
   good. The discard puts exceptions back only where no row is; occurrence
