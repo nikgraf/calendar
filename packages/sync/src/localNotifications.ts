@@ -1,20 +1,31 @@
-import { dismissesWhenOver, type PlannedNotification } from '@calendar/core';
+import {
+  dismissesWhenDone,
+  dismissesWhenOver,
+  isAppleRemindersAccount,
+  type PlannedNotification,
+} from '@calendar/core';
 import {
   type AccountRepo,
   type BirthdayRepo,
   type CalendarRepo,
   DeviceSettingsRepo,
   type EventRepo,
+  TaskRepo,
 } from '@calendar/db';
-import { BIRTHDAYS_KEY, EVENTS_KEY } from '@calendar/db/keys';
+import { BIRTHDAYS_KEY, EVENTS_KEY, TASKLISTS_KEY, TASKS_KEY } from '@calendar/db/keys';
 import { Clock, Context, Duration, Effect, Layer, Semaphore, Stream } from 'effect';
 import { Reactivity } from 'effect/reactivity/Reactivity';
 import type { AppleCalendarEvents } from './appleCalendarEvents.ts';
 import { loadBirthdayPlans } from './birthdayReminders.ts';
 import type { DeviceContacts } from './deviceContacts.ts';
-import { readBirthdayReminderSettings, readEventNotificationSettings } from './deviceSettings.ts';
+import {
+  readBirthdayReminderSettings,
+  readEventNotificationSettings,
+  readTaskNotificationSettings,
+} from './deviceSettings.ts';
 import { loadEventPlans } from './eventReminders.ts';
 import { NotificationSink } from './notificationSink.ts';
+import { loadTaskPlans } from './taskReminders.ts';
 
 /** Fired keys are remembered this long — past every producer's catch-up window plus slack. */
 const FIRED_TTL_MS = 48 * 60 * 60 * 1000;
@@ -58,8 +69,8 @@ const merge = (
   lists.flat().sort((a, b) => a.fireAt - b.fireAt || a.key.localeCompare(b.key));
 
 /**
- * Turns settings + birthdays + events into local notifications. Its own
- * loop, not part of the sync pass: the engine stays free of a
+ * Turns settings + birthdays + events + tasks into local notifications.
+ * Its own loop, not part of the sync pass: the engine stays free of a
  * notification dependency, and settings changes trigger a run directly.
  * "The notification is latency, the pass is correctness" applies: a
  * fired reminder is best-effort, every run recomputes from the stored
@@ -86,6 +97,7 @@ const make = (options: {
   | EventRepo
   | NotificationSink
   | Reactivity
+  | TaskRepo
 > =>
   Effect.gen(function* () {
     const settingsRepo = yield* DeviceSettingsRepo;
@@ -104,6 +116,7 @@ const make = (options: {
       | DeviceContacts
       | DeviceSettingsRepo
       | EventRepo
+      | TaskRepo
     >();
 
     const loadFired = Effect.map(settingsRepo.get(FIRED_KEY), firedRecord);
@@ -121,7 +134,8 @@ const make = (options: {
       }
       const events = yield* readEventNotificationSettings;
       const birthdays = yield* readBirthdayReminderSettings;
-      if (!events.enabled && !birthdays.enabled) {
+      const tasks = yield* readTaskNotificationSettings;
+      if (!events.enabled && !birthdays.enabled && !tasks.enabled) {
         return;
       }
       yield* settingsRepo.set(PERMISSION_ASKED_KEY, true);
@@ -183,21 +197,43 @@ const make = (options: {
       });
 
     /**
-     * Delivered reminders whose moment has passed leave Notification
+     * Delivered notifications whose moment has passed leave Notification
      * Center — on every pass, digest or not: the OS keeps the delivered
-     * list and each payload its `dismissAt`, so nothing is remembered
-     * here. Unless switched off (`dismissWhenOver`): the payloads keep
-     * their deadline, so switching it back on clears them on the next
-     * pass. Best-effort: a failure is logged, the next pass tries again.
+     * list, and the scheduler says which to drop. An event reminder once
+     * its payload's `dismissAt` passed, unless "Remove When Over" is off;
+     * a task's once the stored task is done or gone, unless that
+     * provider's "Remove When Done" is off. The payloads keep their data,
+     * so a switch turned back on clears them on the next pass. Nothing is
+     * remembered here. Best-effort: a failure is logged, the next pass
+     * tries again.
      */
-    const dismissDelivered = (now: number): Effect.Effect<void, never, DeviceSettingsRepo> =>
+    const dismissDelivered = (
+      now: number,
+    ): Effect.Effect<void, never, DeviceSettingsRepo | TaskRepo> =>
       sink.kind !== 'scheduled'
         ? Effect.void
         : Effect.gen(function* () {
-            if (!dismissesWhenOver(yield* readEventNotificationSettings)) {
-              return;
-            }
-            yield* sink.dismissDelivered(now);
+            const overEvents = dismissesWhenOver(yield* readEventNotificationSettings);
+            const tasks = yield* readTaskNotificationSettings;
+            const taskRepo = yield* TaskRepo;
+            yield* sink.dismissDelivered((delivered) =>
+              Effect.gen(function* () {
+                const { target } = delivered;
+                if (target?.kind === 'task') {
+                  const provider = isAppleRemindersAccount({ id: target.accountId })
+                    ? 'apple'
+                    : 'google';
+                  if (!dismissesWhenDone(tasks, provider)) {
+                    return false;
+                  }
+                  const task = yield* taskRepo.get(target.accountId, target.listId, target.taskId);
+                  return !task || task.status === 'completed';
+                }
+                return (
+                  overEvents && delivered.dismissAt !== undefined && delivered.dismissAt <= now
+                );
+              }),
+            );
           }).pipe(
             Effect.catchCause((cause) =>
               Effect.logWarning('local notifications: dismiss failed', { cause: String(cause) }),
@@ -210,6 +246,7 @@ const make = (options: {
         const plans = merge(
           yield* loadBirthdayPlans(now, timeZone),
           yield* loadEventPlans(now, timeZone),
+          yield* loadTaskPlans(now, timeZone),
         );
         const next = yield* deliverImmediate(plans, now);
         yield* refreshSchedule(plans, now);
@@ -256,12 +293,15 @@ const make = (options: {
       }),
     );
 
-    // An edit, a sync pass or a contact change re-plans right away (debounced).
-    const onChange = reactivity.stream([BIRTHDAYS_KEY, EVENTS_KEY], Effect.void).pipe(
-      Stream.drop(1),
-      Stream.debounce(CHANGE_DEBOUNCE),
-      Stream.runForEach(() => run()),
-    );
+    // An edit, a sync pass, a contact change or a task checked off re-plans
+    // right away (debounced); a list shown or hidden too.
+    const onChange = reactivity
+      .stream([BIRTHDAYS_KEY, EVENTS_KEY, TASKLISTS_KEY, TASKS_KEY], Effect.void)
+      .pipe(
+        Stream.drop(1),
+        Stream.debounce(CHANGE_DEBOUNCE),
+        Stream.runForEach(() => run()),
+      );
 
     const start = (): Effect.Effect<void> =>
       Effect.asVoid(Effect.all([Effect.forkDetach(loop), Effect.forkDetach(onChange)]));
@@ -288,5 +328,6 @@ export class LocalNotifications extends Context.Service<
     | EventRepo
     | NotificationSink
     | Reactivity
+    | TaskRepo
   > => Layer.effect(LocalNotifications)(make(options));
 }

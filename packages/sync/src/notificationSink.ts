@@ -1,5 +1,13 @@
-import type { PlannedNotification } from '@calendar/core';
+import type { NotificationTarget, PlannedNotification } from '@calendar/core';
 import { Context, Effect } from 'effect';
+
+/** A notification the OS has delivered and still shows, with what its payload carried. */
+export interface DeliveredNotification {
+  readonly dismissAt?: number | undefined;
+  /** The plan key it was scheduled under. */
+  readonly key: string;
+  readonly target?: NotificationTarget | undefined;
+}
 
 /**
  * How a host delivers local notifications (event and birthday reminders).
@@ -20,11 +28,15 @@ export type NotificationSinkShape =
     }
   | {
       /**
-       * Removes every delivered notification whose `dismissAt` is at or
-       * before `now`; pending ones are untouched. Best-effort: the
-       * scheduler logs a failure and the next pass tries again.
+       * Reads the delivered notifications back and removes every one
+       * `shouldDismiss` approves; pending ones are untouched. The sink
+       * only translates — the rule (an event over, a task done) is the
+       * scheduler's. Best-effort: the scheduler logs a failure and the
+       * next pass tries again.
        */
-      readonly dismissDelivered: (now: number) => Effect.Effect<void, unknown>;
+      readonly dismissDelivered: (
+        shouldDismiss: (delivered: DeliveredNotification) => Effect.Effect<boolean, unknown>,
+      ) => Effect.Effect<void, unknown>;
       readonly ensurePermission: () => Effect.Effect<boolean>;
       readonly kind: 'scheduled';
       /**
