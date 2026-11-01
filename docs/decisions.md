@@ -230,12 +230,12 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   the served model's key use `encryptStringAsync` / `decryptStringAsync`
   before Electron 46 drops the sync calls. No migration: on macOS both
   read the same "<app> Safe Storage" item and write the same `v10` blobs,
-  byte for byte (checked on 45.1 both ways). Encryption now waits, so the
-  token store's writes and first reads take turns (a cached read waits for
-  a queued write of its account) and model settings apply one at a time.
-  A `shouldReEncrypt` blob (never on macOS today) is written again. Open:
-  a denied keychain prompt still reads as signed out (Electron asks once
-  per run).
+  byte for byte (checked on 45.1 both ways). Encryption now waits: the
+  token store changes memory at once and the file follows, the last call
+  per account winning (rejected: a lock, whose queue a read could skip);
+  model settings apply one change at a time. A `shouldReEncrypt` blob
+  (never on macOS today) is written again. Open: a denied keychain prompt
+  still reads as signed out (Electron asks once per run).
 - **QR encoder** (2026-10-25, `todo/qr-library`) — the settings code's QR
   comes from paulmillr's `qr`, not `uqr`: actively maintained, no
   dependencies, and the same version at every code length (v1–v40, both

@@ -182,7 +182,7 @@ describe('encrypted token store', () => {
     expect(await reread(deps.file, 'acc-1')).toBe('new');
   });
 
-  it('a first read still decrypting does not cache tokens a write replaced meanwhile', async () => {
+  it('a first read still decrypting gives way to a write made meanwhile', async () => {
     const deps = fakeDeps();
     await run(makeEncryptedTokenStore(deps).set('acc-1', tokens('old')));
     const held = gate();
@@ -195,38 +195,62 @@ describe('encrypted token store', () => {
     });
     const store = makeEncryptedTokenStore(slow);
     const reading = Effect.runFork(store.get('acc-1'));
-    const writing = Effect.runFork(store.set('acc-1', tokens('new')));
+    await run(store.set('acc-1', tokens('new')));
     held.open();
-    expect((await run(Fiber.join(reading)))?.accessToken).toBe('old');
-    await run(Fiber.join(writing));
+    expect((await run(Fiber.join(reading)))?.accessToken).toBe('new');
     expect((await run(store.get('acc-1')))?.accessToken).toBe('new');
+    expect(await reread(slow.file, 'acc-1')).toBe('new');
   });
 
-  it('a cached read waits for a write of the same account still in line', async () => {
-    // TokenManager's invalidate reads, then writes back what it read: a
-    // read that skipped past a queued refresh would put the old tokens back.
-    const seed = fakeDeps();
-    await run(makeEncryptedTokenStore(seed).set('acc-b', tokens('b1')));
+  it('a removal made while a first read decrypts stays removed', async () => {
+    const deps = fakeDeps();
+    await run(makeEncryptedTokenStore(deps).set('acc-1', tokens('a1')));
     const held = gate();
-    const deps = fakeDeps({
+    const slow = fakeDeps({
       decrypt: async (blob) => {
-        const result = reverse(blob.toString('utf8'));
-        if (result.includes('"b1"')) {
+        await held.opened;
+        return { result: reverse(blob.toString('utf8')), shouldReEncrypt: false };
+      },
+      readFile: () => deps.file,
+    });
+    const store = makeEncryptedTokenStore(slow);
+    const reading = Effect.runFork(store.get('acc-1'));
+    await run(store.remove('acc-1'));
+    held.open();
+    expect(await run(Fiber.join(reading))).toBeNull();
+    expect(await run(store.get('acc-1'))).toBeNull();
+    expect(await reread(slow.file, 'acc-1')).toBeNull();
+  });
+
+  it('a read while a refresh still encrypts sees the refresh, so invalidating keeps it', async () => {
+    // TokenManager's invalidate reads, then writes back what it read with
+    // expiresAt 0: had the read returned the older tokens, they would win.
+    const held = gate();
+    let encryptions = 0;
+    const deps = fakeDeps({
+      encrypt: async (text) => {
+        encryptions += 1;
+        if (encryptions === 2) {
           await held.opened;
         }
-        return { result, shouldReEncrypt: false };
+        return Buffer.from(reverse(text), 'utf8');
       },
-      readFile: () => seed.file,
     });
     const store = makeEncryptedTokenStore(deps);
-    await run(store.set('acc-a', tokens('a1')));
-    const firstReadOfB = Effect.runFork(store.get('acc-b'));
-    const refreshOfA = Effect.runFork(store.set('acc-a', tokens('a2')));
-    const readOfA = Effect.runFork(store.get('acc-a'));
+    await run(store.set('acc-1', tokens('a1')));
+    const refresh = Effect.runFork(store.set('acc-1', tokens('a2')));
+    const read = await run(store.get('acc-1'));
+    if (read === null) {
+      throw new Error('no tokens');
+    }
+    expect(read.accessToken).toBe('a2');
+    await run(store.set('acc-1', new TokenSet({ ...read, expiresAt: 0 })));
     held.open();
-    await run(Fiber.join(firstReadOfB));
-    await run(Fiber.join(refreshOfA));
-    expect((await run(Fiber.join(readOfA)))?.accessToken).toBe('a2');
+    await run(Fiber.join(refresh));
+    const reopened = makeEncryptedTokenStore(fakeDeps({ readFile: () => deps.file }));
+    const persisted = await run(reopened.get('acc-1'));
+    expect(persisted?.accessToken).toBe('a2');
+    expect(persisted?.expiresAt).toBe(0);
   });
 
   it('a first read behind a write that failed to encrypt keeps the newer tokens', async () => {
@@ -248,6 +272,17 @@ describe('encrypted token store', () => {
     await run(Fiber.join(writing));
     expect((await run(Fiber.join(reading)))?.accessToken).toBe('new');
     expect((await run(store.get('acc-1')))?.accessToken).toBe('new');
+  });
+
+  it('a removal reaches the file even when nothing can be encrypted', async () => {
+    const deps = fakeDeps();
+    await run(makeEncryptedTokenStore(deps).set('acc-1', tokens('a1')));
+    const locked = fakeDeps({
+      isEncryptionAvailable: async () => false,
+      readFile: () => deps.file,
+    });
+    await run(makeEncryptedTokenStore(locked).remove('acc-1'));
+    expect(await reread(locked.file, 'acc-1')).toBeNull();
   });
 
   it('an unreadable file starts empty instead of throwing', async () => {
