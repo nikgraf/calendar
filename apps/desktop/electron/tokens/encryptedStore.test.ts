@@ -144,6 +144,34 @@ describe('encrypted token store', () => {
     expect(text).toBe(text.toUpperCase());
   });
 
+  it('a read that re-encrypts gives way to a write made while it did', async () => {
+    const deps = fakeDeps();
+    await run(makeEncryptedTokenStore(deps).set('acc-1', tokens('old')));
+    const held = gate();
+    let encryptions = 0;
+    const rotating = fakeDeps({
+      decrypt: async (blob) => ({ result: reverse(blob.toString('utf8')), shouldReEncrypt: true }),
+      encrypt: async (text) => {
+        encryptions += 1;
+        if (encryptions === 1) {
+          await held.opened;
+        }
+        return Buffer.from(reverse(text), 'utf8');
+      },
+      readFile: () => deps.file,
+    });
+    const store = makeEncryptedTokenStore(rotating);
+    const reading = Effect.runFork(store.get('acc-1'));
+    // The read holds in its re-encryption; the write lands first.
+    while (encryptions === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    }
+    await run(store.set('acc-1', tokens('new')));
+    held.open();
+    expect((await run(Fiber.join(reading)))?.accessToken).toBe('new');
+    expect(await reread(rotating.file, 'acc-1')).toBe('new');
+  });
+
   it('a removal right after a slow write leaves the account out of the file', async () => {
     const held = gate();
     const deps = fakeDeps({

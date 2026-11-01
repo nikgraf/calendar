@@ -173,6 +173,8 @@ export const makeEncryptedTokenStore = (deps: EncryptedStoreDeps): typeof TokenS
           cache.set(accountId, tokens);
           if (shouldReEncrypt) {
             yield* persist(accountId, tokens, asOf);
+            // Re-encrypting waited: a write or removal may have come in.
+            return cache.get(accountId) ?? null;
           }
           return tokens;
         });
