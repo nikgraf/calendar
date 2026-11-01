@@ -10,7 +10,9 @@ public class SolunivoContactsModule: Module {
 
     Events("contactsChanged")
 
-    OnStartObserving {
+    // The module holder owns this closure, so it may keep the module; only
+    // the observer, which the shared bridge keeps past a reload, must not.
+    OnStartObserving { [self] in
       Task {
         await ContactsBridge.shared.observeChanges { [weak self] in
           self?.sendEvent("contactsChanged")
