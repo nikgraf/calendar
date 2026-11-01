@@ -1,6 +1,6 @@
 import { Account, Attendee, CalendarInfo, EventRecord, GoogleContact } from '@calendar/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
-import { type App, launchApp, readPendingOps } from './harness.ts';
+import { type App, launchApp, localDayAt, readPendingOps } from './harness.ts';
 
 // Contact suggestions come from Google People rows seeded straight into
 // SQLite: the harness launches with CALENDAR_CONTACTS=off, so the device
@@ -8,10 +8,8 @@ import { type App, launchApp, readPendingOps } from './harness.ts';
 // combobox — typeahead, keyboard selection, free-typed addresses, chips —
 // and that saving sends the attendee list through the queue.
 const HOUR_MS = 60 * 60 * 1000;
-const todayAt = (hour: number): number => {
-  const now = new Date();
-  return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hour);
-};
+/** Today at the given local hour. */
+const todayAt = (hour: number): number => localDayAt(0, hour);
 
 const seed = {
   accounts: [

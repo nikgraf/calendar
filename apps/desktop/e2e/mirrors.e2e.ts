@@ -1,16 +1,13 @@
 import { Account } from '@calendar/core';
 import type { GoogleFixture } from '@calendar/sync/testing/googleFixture';
 import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
-import { type App, launchApp, readEvents, readMirrorCopies } from './harness.ts';
+import { type App, launchApp, localDayAt, readEvents, readMirrorCopies } from './harness.ts';
 
 // A calendar mirror against the fake Google API: the account is signed
 // in, so the mirror's writes land and its copies come back through the
 // pull — which the tokenless suite could never show.
-/** Today at the given UTC hour: inside every mirror window, whatever the day. */
-const todayAt = (hour: number): number => {
-  const now = new Date();
-  return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hour);
-};
+/** Today at the given local hour: inside every mirror window, whatever the day. */
+const todayAt = (hour: number): number => localDayAt(0, hour);
 const SHARED = 'cal-shared';
 const WORK = 'cal-work';
 const iso = (ms: number) => new Date(ms).toISOString();

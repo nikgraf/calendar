@@ -20,8 +20,9 @@ import {
 
 // Other agents reach the app through the bundled relay — the real one,
 // spawned as a child process against the launched app's socket — over the
-// CLI and over MCP. Seeded relative to today (mid-day UTC, so local and
-// UTC dates agree) and asserted on own ids only.
+// CLI and over MCP. Seeded at hours of today's UTC date — the primary
+// zone is pinned to UTC below, so the grid's days are UTC days, whatever
+// the machine's zone — and asserted on own ids only.
 const POLL = { timeout: 15_000 };
 const HOUR = 60 * 60 * 1000;
 const ACCOUNT = 'acc-e2e';

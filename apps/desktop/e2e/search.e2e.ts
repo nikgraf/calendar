@@ -12,21 +12,17 @@ import {
   type AppleCalendarFixture,
   type App,
   launchApp,
+  localDayAt,
   localIsoDaysAgo,
   readEvents,
 } from './harness.ts';
 
-// Everything is placed relative to today at UTC hours from 09:00 to
-// 18:00, so the local date agrees with the UTC one in the zones the runs
-// use. A Google account without a token (writes stay queued) and the
-// in-memory EventKit for the Apple event.
+// Everything is placed relative to today at local hours from 09:00 to
+// 18:00, on the days the app draws. A Google account without a token
+// (writes stay queued) and the in-memory EventKit for the Apple event.
 const HOUR_MS = 60 * 60 * 1000;
-const DAY_MS = 24 * HOUR_MS;
-/** Today at the given UTC hour, `days` from now. */
-const dayAt = (days: number, hour: number): number => {
-  const now = new Date();
-  return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hour) + days * DAY_MS;
-};
+/** The given local hour, `days` from today. */
+const dayAt = (days: number, hour: number): number => localDayAt(days, hour);
 
 const account = new Account({
   contactsEnabled: false,
