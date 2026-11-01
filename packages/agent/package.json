@@ -19,7 +19,7 @@
     "@calendar/reminders": "workspace:*",
     "@effect/sql-sqlite-node": "catalog:",
     "@effect/vitest": "catalog:",
-    "@types/node": "^26.6.5",
+    "@types/node": "^26.6.6",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }

@@ -66,7 +66,7 @@
     "@babel/preset-typescript": "^7.29.7",
     "@expo/repack-app": "^0.10.4",
     "@types/babel__core": "^7.20.5",
-    "@types/node": "^26.6.5",
+    "@types/node": "^26.6.6",
     "@types/react": "catalog:",
     "eas-cli": "^27.2.0",
     "typescript": "catalog:"
