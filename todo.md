@@ -16,6 +16,17 @@ The 2026-10-02 review's findings are closed in `docs/decisions.md`
 
 ## Tier 1 — CI and distribution
 
+- [ ] Async safeStorage before Electron 46 — `safeStorage`'s
+      `isEncryptionAvailable` / `encryptString` / `decryptString` are
+      deprecated in Electron 45 and removed in 46. Two users: the token
+      store (`apps/desktop/electron/tokens/safeStorageStore.ts` over
+      `encryptedStore.ts`, whose deps are synchronous) and the served
+      model's API key (`electron/modelProvider.ts`). Move both to
+      `isAsyncEncryptionAvailable` / `encryptStringAsync` /
+      `decryptStringAsync`; Electron says blobs from `encryptString`
+      decrypt with `decryptStringAsync`, so stored data needs no
+      migration — check that on a signed-in profile before shipping, since
+      a slip signs every account out.
 - [ ] PR videos (designed, not built) — every PR with a visible change
       attaches a short recording. `gh` ≥ 2.99.0 (2026-09-01; local is
       2.97.0, `brew upgrade gh`) adds `--attach` to `gh pr create/edit/
@@ -236,8 +247,10 @@ decision and platform notes live in `docs/decisions.md`.
     - special feature: automatically sync those e.g. meetup event gets synced to family calendar
     - special feature: add in one calendar as normal even, but show in others as blocked or only share certain information
 - Prefetch week±1 in the range LRU (noted when the LRU landed)
-- Next Expo SDK: takes react-native 0.87, reanimated 4.7 / worklets 0.13,
-  gesture-handler 3, react 19.3, datetimepicker 9.2, safe-area-context
-  5.10, screens 4.28 with it (all held back by the 2026-10-09 dependency
-  sweep because SDK 57 bundles the older ones), and drops the SDK 57
-  `trustPolicyExclude` list in `pnpm-workspace.yaml`
+- Next Expo SDK (58, the next PR: Xcode 27's iOS 27 SDK requires the
+  UIScene life cycle, which SDK 57 apps lack): takes react-native 0.88,
+  reanimated 4.7 / worklets 0.13, gesture-handler 3, react 19.3,
+  datetimepicker 9.2, safe-area-context 5.11, screens 4.30 and op-sqlite
+  18 with it (all held back by the 2026-11-01 dependency sweep because
+  SDK 57 bundles the older ones; op-sqlite 17 does not build on RN 0.88),
+  and drops the SDK 57 `trustPolicyExclude` list in `pnpm-workspace.yaml`
