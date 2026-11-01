@@ -38,7 +38,9 @@ const attempt = <A>(run: () => Promise<A>) =>
  * - Encryption is asynchronous, so writes, removals and first reads take
  *   turns: a write must not land after a later one or after a removal, and
  *   a first read must not cache tokens a write has replaced while it
- *   decrypted. A cached read waits for nothing.
+ *   decrypted. A cached read waits only for a write of the same account
+ *   still in line, so a read after a write never sees what it replaced
+ *   (TokenManager's invalidate reads, then writes back what it read).
  * - Writes go through `writeFile`, which must be atomic (temp + rename).
  * - No encryption available: tokens live in memory for this session only
  *   and are never written — sign-in works, nothing persists, and the log
@@ -47,13 +49,16 @@ const attempt = <A>(run: () => Promise<A>) =>
  *   pass.
  * - A blob that no longer decrypts is logged at error level (the user
  *   appears signed out and should know why); the blob is left in place.
- *   One the platform asks to re-encrypt is written again under the
- *   current key, so a retired key never strands an account.
+ *   One the platform asks to re-encrypt (written with a key it no longer
+ *   encrypts with; never on macOS today) is written again with the
+ *   current one, so dropping the old key later strands no account.
  */
 export const makeEncryptedTokenStore = (deps: EncryptedStoreDeps): typeof TokenStore.Service => {
   let blobs: EncryptedBlobs | null = null;
   const cache = new Map<string, TokenSet>();
   const turns = Semaphore.makeUnsafe(1);
+  /** Writes and removals in line or running, per account. */
+  const inLine = new Map<string, number>();
   let warnedUnavailable = false;
 
   const loadBlobs = (): EncryptedBlobs => {
@@ -114,48 +119,68 @@ export const makeEncryptedTokenStore = (deps: EncryptedStoreDeps): typeof TokenS
       yield* writeBlobs;
     });
 
-  return {
-    get: (accountId) => {
-      const cached = cache.get(accountId);
-      if (cached) {
-        return Effect.succeed(cached);
+  const leaveLine = (accountId: string) =>
+    Effect.sync(() => {
+      const left = (inLine.get(accountId) ?? 1) - 1;
+      if (left > 0) {
+        inLine.set(accountId, left);
+      } else {
+        inLine.delete(accountId);
       }
-      return turns.withPermits(1)(
-        Effect.gen(function* () {
-          // A write or another first read may have filled it meanwhile.
-          const filled = cache.get(accountId);
-          if (filled) {
-            return filled;
-          }
-          const blob = loadBlobs()[accountId];
-          if (!blob) {
-            return null;
-          }
-          const decrypted = yield* attempt(async () => {
-            const { result, shouldReEncrypt } = await deps.decrypt(Buffer.from(blob, 'base64'));
-            return {
-              shouldReEncrypt,
-              tokens: Schema.decodeUnknownSync(TokenSet)(JSON.parse(result)),
-            };
-          });
-          if (decrypted._tag === 'Failure') {
-            yield* Effect.logError('stored tokens could not be decrypted', {
-              accountId,
-              error: String(decrypted.failure),
+    });
+
+  /** A write of one account in its turn; reads of that account wait until it has landed. */
+  const write = (accountId: string, effect: Effect.Effect<void>) =>
+    Effect.suspend(() => {
+      inLine.set(accountId, (inLine.get(accountId) ?? 0) + 1);
+      return Effect.ensuring(turns.withPermits(1)(effect), leaveLine(accountId));
+    });
+
+  return {
+    get: (accountId) =>
+      Effect.suspend(() => {
+        const cached = cache.get(accountId);
+        if (cached && !inLine.has(accountId)) {
+          return Effect.succeed(cached);
+        }
+        return turns.withPermits(1)(
+          Effect.gen(function* () {
+            // A write or another first read may have filled it meanwhile;
+            // the blob may be older than what a failed write left in memory.
+            const filled = cache.get(accountId);
+            if (filled) {
+              return filled;
+            }
+            const blob = loadBlobs()[accountId];
+            if (!blob) {
+              return null;
+            }
+            const decrypted = yield* attempt(async () => {
+              const { result, shouldReEncrypt } = await deps.decrypt(Buffer.from(blob, 'base64'));
+              return {
+                shouldReEncrypt,
+                tokens: Schema.decodeUnknownSync(TokenSet)(JSON.parse(result)),
+              };
             });
-            return null;
-          }
-          const { shouldReEncrypt, tokens } = decrypted.success;
-          cache.set(accountId, tokens);
-          if (shouldReEncrypt) {
-            yield* persist(accountId, tokens);
-          }
-          return tokens;
-        }),
-      );
-    },
+            if (decrypted._tag === 'Failure') {
+              yield* Effect.logError('stored tokens could not be decrypted', {
+                accountId,
+                error: String(decrypted.failure),
+              });
+              return null;
+            }
+            const { shouldReEncrypt, tokens } = decrypted.success;
+            cache.set(accountId, tokens);
+            if (shouldReEncrypt) {
+              yield* persist(accountId, tokens);
+            }
+            return tokens;
+          }),
+        );
+      }),
     remove: (accountId) =>
-      turns.withPermits(1)(
+      write(
+        accountId,
         Effect.gen(function* () {
           cache.delete(accountId);
           const current = loadBlobs();
@@ -168,7 +193,8 @@ export const makeEncryptedTokenStore = (deps: EncryptedStoreDeps): typeof TokenS
         }),
       ),
     set: (accountId, tokens) =>
-      turns.withPermits(1)(
+      write(
+        accountId,
         Effect.gen(function* () {
           cache.set(accountId, tokens);
           yield* persist(accountId, tokens);

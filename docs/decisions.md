@@ -226,16 +226,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   plugin chain); CI's Maestro, pinned by version and sha256, moves with the
   sweep. Electron 45's sync `safeStorage` deprecation is a todo, not part of
   the sweep: it rewrites the token store (Async safeStorage, below).
-- **Async safeStorage** (2026-11-01, `todo/async-safestorage`) — the token
-  store and the served model's key moved to `encryptStringAsync` /
-  `decryptStringAsync` before Electron 46 drops the sync calls. No
-  migration: on macOS both read the same "<app> Safe Storage" item and
-  write the same `v10` blobs, byte for byte (checked on 45.1 both ways),
-  so old tokens decrypt and a downgrade reads new ones. Writes, removals
-  and first reads take turns now that encryption waits; a blob flagged
-  `shouldReEncrypt` is written again, so a retired key strands nothing.
-  Rejected: a one-time re-encryption pass. Open: a decrypt the keychain
-  calls temporary (a denied prompt) still reads as signed out.
+- **Async safeStorage** (2026-11-01, `todo/async-safestorage`) — tokens and
+  the served model's key use `encryptStringAsync` / `decryptStringAsync`
+  before Electron 46 drops the sync calls. No migration: on macOS both
+  read the same "<app> Safe Storage" item and write the same `v10` blobs,
+  byte for byte (checked on 45.1 both ways). Encryption now waits, so the
+  token store's writes and first reads take turns (a cached read waits for
+  a queued write of its account) and model settings apply one at a time.
+  A `shouldReEncrypt` blob (never on macOS today) is written again. Open:
+  a denied keychain prompt still reads as signed out (Electron asks once
+  per run).
 - **QR encoder** (2026-10-25, `todo/qr-library`) — the settings code's QR
   comes from paulmillr's `qr`, not `uqr`: actively maintained, no
   dependencies, and the same version at every code length (v1–v40, both

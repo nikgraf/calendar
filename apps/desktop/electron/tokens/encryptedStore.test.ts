@@ -202,6 +202,54 @@ describe('encrypted token store', () => {
     expect((await run(store.get('acc-1')))?.accessToken).toBe('new');
   });
 
+  it('a cached read waits for a write of the same account still in line', async () => {
+    // TokenManager's invalidate reads, then writes back what it read: a
+    // read that skipped past a queued refresh would put the old tokens back.
+    const seed = fakeDeps();
+    await run(makeEncryptedTokenStore(seed).set('acc-b', tokens('b1')));
+    const held = gate();
+    const deps = fakeDeps({
+      decrypt: async (blob) => {
+        const result = reverse(blob.toString('utf8'));
+        if (result.includes('"b1"')) {
+          await held.opened;
+        }
+        return { result, shouldReEncrypt: false };
+      },
+      readFile: () => seed.file,
+    });
+    const store = makeEncryptedTokenStore(deps);
+    await run(store.set('acc-a', tokens('a1')));
+    const firstReadOfB = Effect.runFork(store.get('acc-b'));
+    const refreshOfA = Effect.runFork(store.set('acc-a', tokens('a2')));
+    const readOfA = Effect.runFork(store.get('acc-a'));
+    held.open();
+    await run(Fiber.join(firstReadOfB));
+    await run(Fiber.join(refreshOfA));
+    expect((await run(Fiber.join(readOfA)))?.accessToken).toBe('a2');
+  });
+
+  it('a first read behind a write that failed to encrypt keeps the newer tokens', async () => {
+    const deps = fakeDeps();
+    await run(makeEncryptedTokenStore(deps).set('acc-1', tokens('old')));
+    const held = gate();
+    const store = makeEncryptedTokenStore(
+      fakeDeps({
+        encrypt: async () => {
+          await held.opened;
+          throw new Error('keychain denied');
+        },
+        readFile: () => deps.file,
+      }),
+    );
+    const writing = Effect.runFork(store.set('acc-1', tokens('new')));
+    const reading = Effect.runFork(store.get('acc-1'));
+    held.open();
+    await run(Fiber.join(writing));
+    expect((await run(Fiber.join(reading)))?.accessToken).toBe('new');
+    expect((await run(store.get('acc-1')))?.accessToken).toBe('new');
+  });
+
   it('an unreadable file starts empty instead of throwing', async () => {
     const store = makeEncryptedTokenStore(fakeDeps({ readFile: () => '{oops' }));
     expect(await run(store.get('acc-1'))).toBeNull();

@@ -174,22 +174,11 @@ const encryptKey = async (key: string): Promise<string> => {
   throw new Error('model provider: the keychain is not available to keep the key');
 };
 
-const validKey = (key: unknown): key is string =>
-  typeof key === 'string' && key !== '' && key.length <= MAX_KEY_CHARS;
-
-/**
- * Changes from the settings window, each checked: the kind from its
- * three, a bounded http(s) URL, a bounded model name, a key encrypted
- * before it is kept (null removes it). Every window hears the change.
- * The key is encrypted first, the one wait in here, so the changes apply
- * to the settings as they are then — one saved meanwhile is kept.
- */
-export const setModelProvider = async (changes: unknown): Promise<ModelProviderView> => {
+const applyChanges = async (changes: unknown): Promise<ModelProviderView> => {
   if (typeof changes !== 'object' || changes === null) {
     throw new Error('model provider: invalid changes');
   }
   const next = changes as Record<string, unknown>;
-  const ciphertext = validKey(next['apiKey']) ? await encryptKey(next['apiKey']) : undefined;
   let draft: StoredSettings = { ...stored };
   if ('kind' in next) {
     if (!isKind(next['kind'])) {
@@ -221,8 +210,8 @@ export const setModelProvider = async (changes: unknown): Promise<ModelProviderV
     const key = next['apiKey'];
     if (key === null || key === '') {
       draft = withoutKey(draft);
-    } else if (ciphertext !== undefined) {
-      draft = { ...draft, apiKey: ciphertext, apiKeyOrigin: originOf(draft.baseUrl) };
+    } else if (typeof key === 'string' && key.length <= MAX_KEY_CHARS) {
+      draft = { ...draft, apiKey: await encryptKey(key), apiKeyOrigin: originOf(draft.baseUrl) };
     } else {
       throw new Error('model provider: invalid API key');
     }
@@ -236,7 +225,24 @@ export const setModelProvider = async (changes: unknown): Promise<ModelProviderV
   return view;
 };
 
-/** Writes the key again under the keychain's current key, if it is still the stored one. */
+/** The calls of `setModelProvider` still to finish; each waits for the one before. */
+let changing: Promise<unknown> = Promise.resolve();
+
+/**
+ * Changes from the settings window, each checked: the kind from its
+ * three, a bounded http(s) URL, a bounded model name, a key encrypted
+ * before it is kept (null removes it). Every window hears the change.
+ * Encrypting waits (the first time for the keychain, maybe a prompt),
+ * so the calls take turns: a kind switch made meanwhile applies after
+ * the save before it, never under it.
+ */
+export const setModelProvider = (changes: unknown): Promise<ModelProviderView> => {
+  const applied = changing.then(() => applyChanges(changes));
+  changing = applied.catch(() => undefined);
+  return applied;
+};
+
+/** Writes the key again with the platform's current key, if it is still the stored one. */
 const reEncryptKey = async (ciphertext: string, key: string): Promise<void> => {
   try {
     const fresh = await encryptKey(key);
@@ -251,8 +257,8 @@ const reEncryptKey = async (ciphertext: string, key: string): Promise<void> => {
 
 /**
  * The key in clear, for a request to `url` — none for any other origin. A
- * key the platform asks to re-encrypt (its keychain key was replaced) is
- * written again under the current one.
+ * key the platform asks to re-encrypt (written with a key it no longer
+ * encrypts with; never on macOS today) is written again with the current one.
  */
 const apiKey = async (settings: StoredSettings, url: string): Promise<string | undefined> => {
   const ciphertext = keyFor(settings, url);
