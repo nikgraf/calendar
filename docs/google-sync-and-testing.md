@@ -396,15 +396,21 @@ inject the clock (`nowUtc` parameter) or build dates relative to today
 with wall-clock times via Temporal in an explicit zone — never pinned
 dates or UTC-offset literals. Three CI breakages came from tests that
 passed on the day they were written and decayed. The desktop e2e seeds
-place "today" by the UTC date (`todayAt`), which matches the local date
-on CI (UTC) and in Vienna except between local midnight and 02:00 CEST —
-a run in that window creates tasks on yesterday's column and fails
-`convert` and the task editor test; rerun with `TZ=UTC` rather than
-chasing a code bug. A drag moves an event by the wall clock in the
-zone the grid draws in (`moveEventTimes`; the device's in e2e, whatever
-the event's own zone), so a spec computes the expected start with
-Temporal in the device zone: a `DAY_MS` sum is an hour off on the eve of
-a DST change there.
+place "today" at local wall-clock hours (the harness's `localDayAt`;
+date-only records take `localIsoDaysAgo`, an instant's day
+`localIsoOf`): the app's days are the machine's local days. Seeds at an
+hour of the UTC date used to sit on another local day whenever that
+hour, read locally, fell on another date — in any run between local
+midnight and 01:00 CET (02:00 CEST), for most hours in UTC+12 (the
+earlier ones before local noon, the later ones after) — and failed
+`convert` there. A spec that pins the zone the grid draws in seeds in
+that zone instead: the device zone (`env: { TZ }`, `searchFilters`) or
+the primary display zone (`deviceSettings.timeZones`, `agentGateway`),
+both UTC there. A drag moves an event by the wall clock in the zone the
+grid draws in (`moveEventTimes`; the device's in e2e, whatever the
+event's own zone), so a spec computes the expected start with Temporal
+in the device zone: a `DAY_MS` sum is an hour off on the eve of a DST
+change there.
 
 ### Unit tests (`vp test`, @effect/vitest)
 

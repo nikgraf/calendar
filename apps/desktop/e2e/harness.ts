@@ -57,7 +57,26 @@ const require = createRequire(import.meta.url);
 export const localIsoDaysAgo = (days: number): string => {
   const date = new Date();
   date.setDate(date.getDate() - days);
+  return localIsoOf(date.getTime());
+};
+
+/** The *local* ISO date of an instant: the day column the app draws it in. */
+export const localIsoOf = (epochMs: number): string => {
+  const date = new Date(epochMs);
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+};
+
+/**
+ * The local wall-clock time `hour:minute` on the day `days` from today
+ * (negative = back), as epoch ms: for timed seeds the app must draw on
+ * that day, whose columns are the machine's local days. Seeds at an hour
+ * of the *UTC* date sat a day off whenever that hour, read locally, fell
+ * on another date (in the hour after local midnight in CET, two in CEST;
+ * most hours in UTC+12); CI runs in UTC, where both are the same.
+ */
+export const localDayAt = (days: number, hour: number, minute = 0): number => {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate() + days, hour, minute).getTime();
 };
 
 // ---------------------------------------------------------------------------

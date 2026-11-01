@@ -1,6 +1,6 @@
 import { Account, CalendarInfo } from '@calendar/core';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vite-plus/test';
-import { type App, launchApp, localIsoDaysAgo, readEvents } from './harness.ts';
+import { type App, launchApp, localIsoDaysAgo, localIsoOf, readEvents } from './harness.ts';
 
 // Capture: a paste on the calendar (or into the ⌘K bar) becomes drafts to
 // review — one thread in the editor, a hatched block per event on the
@@ -116,8 +116,10 @@ describe('Capture from a paste', () => {
       })
       .toMatchObject({ calendarId: 'cal-e2e', isAllDay: false, location: 'Room 4' });
     const saved = (await readEvents(app.userDataDir)).find((event) => event.title === 'Standup')!;
-    // `+0` in the fixture grammar is today in the app's zone.
-    expect(new Date(saved.startUtc).toISOString().slice(0, 10)).toBe(localIsoDaysAgo(0));
+    // `+0` in the fixture grammar is today in the app's zone: the local
+    // date of the stored instant (its UTC date is yesterday's more than
+    // nine hours ahead of UTC).
+    expect(localIsoOf(saved.startUtc)).toBe(localIsoDaysAgo(0));
     await cdp.clickButtonWithText('Cancel');
     await cdp.waitFor(`!${EDITOR}`);
     expect((await readEvents(app.userDataDir)).some((event) => event.title === 'Planning')).toBe(
