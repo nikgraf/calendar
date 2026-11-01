@@ -20,7 +20,8 @@ export const recordRenderError = (error: unknown): void => {
   const stack =
     typeof error === 'object' && error !== null && 'stack' in error ? String(error.stack) : '';
   try {
-    file().write(`${new Date().toISOString()}\n${String(error)}\n${stack}`);
+    // Synchronous: the write must land inside this try, before the crash.
+    file().writeSync(`${new Date().toISOString()}\n${String(error)}\n${stack}`);
   } catch {
     // Logging must never throw inside componentDidCatch.
   }

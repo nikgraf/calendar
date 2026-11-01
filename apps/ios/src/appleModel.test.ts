@@ -9,7 +9,7 @@ vi.mock('@react-native-ai/apple', () => {
 });
 
 // …and without the availability module, which loads through Expo's registry.
-vi.mock('expo-modules-core', () => ({
+vi.mock('expo', () => ({
   requireNativeModule: () => {
     throw new Error("Cannot find native module 'SolunivoModelAvailability'");
   },

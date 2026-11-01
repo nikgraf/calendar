@@ -34,7 +34,16 @@ import {
 } from '@calendar/core';
 import { SymbolView } from 'expo-symbols';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+  type ScrollViewInstance,
+  type ViewInstance,
+} from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   cancelAnimation,
@@ -162,7 +171,7 @@ export function DayTimeline({
   const { colors } = useTheme();
   const scrollRef = useAnimatedRef<ScrollView>();
   const { height: windowHeight } = useWindowDimensions();
-  const containerRef = useRef<View>(null);
+  const containerRef = useRef<ViewInstance>(null);
   const { updateEvent, updateRecurring } = useGuardedMutations();
   const updateViewPreferences = useUpdateViewPreferences();
   const [pageWidth, setPageWidth] = useState(0);
@@ -405,7 +414,7 @@ export function DayTimeline({
   // the lane at its top (a collapse left scrolled down would show blank
   // rows it no longer scrolls back from); one that scrolls shows its
   // indicator a moment, as a list that just appeared does.
-  const laneScrollRef = useRef<ScrollView>(null);
+  const laneScrollRef = useRef<ScrollViewInstance>(null);
   useEffect(() => {
     laneScrollRef.current?.scrollTo({ animated: false, y: 0 });
   }, [firstIso, laneScrolls]);

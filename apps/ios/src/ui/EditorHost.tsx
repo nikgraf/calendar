@@ -379,7 +379,7 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
         onIncoming(share.source, share.discard);
       }
     };
-    const onUrl = (url: string | null) => {
+    const onUrl = (url: string | null | undefined) => {
       if (!url) {
         return;
       }
