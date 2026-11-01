@@ -37,7 +37,7 @@
     "@electron-forge/maker-zip": "^8.0.1",
     "@electron-forge/publisher-github": "^8.0.1",
     "@modelcontextprotocol/client": "2.4.0",
-    "@rolldown/plugin-babel": "^0.2.4",
+    "@rolldown/plugin-babel": "^0.3.0",
     "@tailwindcss/vite": "^4.3.3",
     "@types/react": "catalog:",
     "@types/react-dom": "~19.2.7",
