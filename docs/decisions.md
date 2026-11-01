@@ -1316,11 +1316,11 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   launch of a terminated app ran no JS. A local module starts the React host
   with no view when no scene has connected 2 s after launch, once
   expo-updates picked the bundle; a later scene adds its surface to that
-  host. Rejected: the app-delegate life cycle (Xcode 27 requires scenes), an
+  host, and its link (no `getInitialURL` there) is read from expo-linking.
+  Rejected: the app-delegate life cycle (Xcode 27 requires scenes), an
   expo-task-manager app loader (consulted only with an app URL, which a bare
   app never stores), deciding on the next main-queue turn (the scene arrives
-  as its own event). Open: only a device makes the cold launch; a link
-  bringing a scene up over that host has no `getInitialURL`.
+  as its own event). Open: only a device makes the cold launch.
 - **Notification taps and zones** (#119, #142) — the text is in the
   device's zone, an all-day reminder counts from midnight in the
   calendar's; a planned notification carries a target the tap resolves

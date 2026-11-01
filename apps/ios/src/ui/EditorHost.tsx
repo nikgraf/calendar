@@ -37,6 +37,7 @@ import {
 import { AppState, Linking } from 'react-native';
 import { backendClient } from '../backend.ts';
 import { fixtureShareFromUrl, settingsCodeOf, takeIncomingShare } from '../incomingShare.ts';
+import { launchUrl } from '../launchUrl.ts';
 import { subscribeNotificationTaps } from '../notifications.ts';
 import { languageModel, modelFixture, textRecognizer } from '../model.ts';
 import { forceOnboarding } from '../onboarding.ts';
@@ -402,7 +403,7 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
       }
     };
     pickUpShare();
-    void Linking.getInitialURL().then(onUrl);
+    void launchUrl().then(onUrl);
     const urlSubscription = Linking.addEventListener('url', ({ url }) => onUrl(url));
     const stateSubscription = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
