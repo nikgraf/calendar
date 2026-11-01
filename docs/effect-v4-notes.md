@@ -1,6 +1,6 @@
 # Effect v4 notes
 
-Every `effect*` package is pinned exactly to **4.0.1** through the pnpm
+Every `effect*` package is pinned exactly to **4.1.0** through the pnpm
 catalog, and Dependabot ignores them: the modules this app leans on
 hardest (rpc, sql, http, reactivity) are still tagged `@stability
 unstable` and may break in a minor release, so every bump is a deliberate,
@@ -19,6 +19,11 @@ resolves the same `vitest` through the workspace override.
   import is invoked, then yield\*ed). Use `Effect.die(new Error('…'))`.
 - **`HttpClientRequest.del` is now `delete`** (exported keyword-style:
   `HttpClientRequest.delete`).
+- **A request's `urlParams.params` values are typed `string | Redacted`**
+  (after 4.0.1): code that reads the query as plain strings no longer
+  typechecks, and would get the wrapper if a caller passed one. Read it
+  through `UrlParams.toString(request.urlParams)`, which unwraps them as
+  the real client does (`packages/sync/src/testing/fakeGoogle.ts`).
 - **`RpcClient.FromGroup` is a module-level type**, not nested under a
   namespace.
 - **No `it.scoped` in @effect/vitest** — `it.effect` already provides a

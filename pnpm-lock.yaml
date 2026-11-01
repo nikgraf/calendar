@@ -190,17 +190,17 @@ settings:
 catalogs:
   default:
     '@effect/atom-react':
-      specifier: 4.0.1
-      version: 4.0.1
+      specifier: 4.1.0
+      version: 4.1.0
     '@effect/sql-sqlite-node':
-      specifier: 4.0.1
-      version: 4.0.1
+      specifier: 4.1.0
+      version: 4.1.0
     '@effect/sql-sqlite-react-native':
-      specifier: 4.0.1
-      version: 4.0.1
+      specifier: 4.1.0
+      version: 4.1.0
     '@effect/vitest':
-      specifier: 4.0.1
-      version: 4.0.1
+      specifier: 4.1.0
+      version: 4.1.0
     '@js-temporal/polyfill':
       specifier: ^0.5.1
       version: 0.5.1
@@ -208,8 +208,8 @@ catalogs:
       specifier: ~19.2.18
       version: 19.2.18
     effect:
-      specifier: 4.0.1
-      version: 4.0.1
+      specifier: 4.1.0
+      version: 4.1.0
     react:
       specifier: ~19.2.9
       version: 19.2.9
@@ -297,13 +297,13 @@ importers:
         version: link:../../packages/sync
       '@effect/sql-sqlite-node':
         specifier: 'catalog:'
-        version: 4.0.1(effect@4.0.1)
+        version: 4.1.0(effect@4.1.0)
       '@modelcontextprotocol/server':
         specifier: 2.3.1
         version: 2.3.1
       effect:
         specifier: 'catalog:'
-        version: 4.0.1
+        version: 4.1.0
       react:
         specifier: 'catalog:'
         version: 19.2.9
@@ -394,7 +394,7 @@ importers:
         version: link:../../packages/sync
       '@effect/sql-sqlite-react-native':
         specifier: 'catalog:'
-        version: 4.0.1(@op-engineering/op-sqlite@17.2.0(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.18)(react@19.2.9)(supports-color@8.1.1))(react@19.2.9))(effect@4.0.1)
+        version: 4.1.0(@op-engineering/op-sqlite@17.2.0(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.18)(react@19.2.9)(supports-color@8.1.1))(react@19.2.9))(effect@4.1.0)
       '@expo/ui':
         specifier: 57.0.22
         version: 57.0.22(@babel/core@7.29.7(supports-color@8.1.1))(@types/react-dom@19.2.7(@types/react@19.2.18))(@types/react@19.2.18)(expo@57.0.27)(react-dom@19.2.9(react@19.2.9))(react-native-worklets@0.10.4(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.18)(react@19.2.9)(supports-color@8.1.1))(react@19.2.9)(supports-color@8.1.1))(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.18)(react@19.2.9)(supports-color@8.1.1))(react@19.2.9)
@@ -409,7 +409,7 @@ importers:
         version: 9.1.0(expo@57.0.27)(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.18)(react@19.2.9)(supports-color@8.1.1))(react@19.2.9)
       effect:
         specifier: 'catalog:'
-        version: 4.0.1
+        version: 4.1.0
       expo:
         specifier: ~57.0.27
         version: 57.0.27(@babel/core@7.29.7(supports-color@8.1.1))(@expo/metro-runtime@57.0.16)(expo-router@57.0.25)(react-dom@19.2.9(react@19.2.9))(react-native-worklets@0.10.4(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.18)(react@19.2.9)(supports-color@8.1.1))(react@19.2.9)(supports-color@8.1.1))(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.18)(react@19.2.9)(supports-color@8.1.1))(react@19.2.9)(supports-color@8.1.1)(typescript@7.0.2)
@@ -591,7 +591,7 @@ importers:
         version: link:../sync
       effect:
         specifier: 'catalog:'
-        version: 4.0.1
+        version: 4.1.0
     devDependencies:
       '@calendar/google':
         specifier: workspace:*
@@ -601,10 +601,10 @@ importers:
         version: link:../reminders
       '@effect/sql-sqlite-node':
         specifier: 'catalog:'
-        version: 4.0.1(effect@4.0.1)
+        version: 4.1.0(effect@4.1.0)
       '@effect/vitest':
         specifier: 'catalog:'
-        version: 4.0.1(effect@4.0.1)(vitest@5.0.3)
+        version: 4.1.0(effect@4.1.0)(vitest@5.0.3)
       '@types/node':
         specifier: ^26.6.5
         version: 26.6.5
@@ -622,7 +622,7 @@ importers:
         version: link:../core
       effect:
         specifier: 'catalog:'
-        version: 4.0.1
+        version: 4.1.0
     devDependencies:
       typescript:
         specifier: 'catalog:'
@@ -641,10 +641,10 @@ importers:
         version: link:../db
       '@effect/atom-react':
         specifier: 'catalog:'
-        version: 4.0.1(effect@4.0.1)(react@19.2.9)(scheduler@0.27.0)
+        version: 4.1.0(effect@4.1.0)(react@19.2.9)(scheduler@0.27.0)
       effect:
         specifier: 'catalog:'
-        version: 4.0.1
+        version: 4.1.0
       react:
         specifier: 'catalog:'
         version: 19.2.9
@@ -663,11 +663,11 @@ importers:
         version: link:../core
       effect:
         specifier: 'catalog:'
-        version: 4.0.1
+        version: 4.1.0
     devDependencies:
       '@effect/vitest':
         specifier: 'catalog:'
-        version: 4.0.1(effect@4.0.1)(vitest@5.0.3)
+        version: 4.1.0(effect@4.1.0)(vitest@5.0.3)
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
@@ -682,11 +682,11 @@ importers:
         version: link:../core
       effect:
         specifier: 'catalog:'
-        version: 4.0.1
+        version: 4.1.0
     devDependencies:
       '@effect/vitest':
         specifier: 'catalog:'
-        version: 4.0.1(effect@4.0.1)(vitest@5.0.3)
+        version: 4.1.0(effect@4.1.0)(vitest@5.0.3)
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
@@ -704,7 +704,7 @@ importers:
         version: 2.4.0
       effect:
         specifier: 'catalog:'
-        version: 4.0.1
+        version: 4.1.0
       fflate:
         specifier: 0.8.3
         version: 0.8.3
@@ -720,7 +720,7 @@ importers:
     devDependencies:
       '@effect/vitest':
         specifier: 'catalog:'
-        version: 4.0.1(effect@4.0.1)(vitest@5.0.3)
+        version: 4.1.0(effect@4.1.0)(vitest@5.0.3)
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
@@ -735,14 +735,14 @@ importers:
         version: link:../core
       effect:
         specifier: 'catalog:'
-        version: 4.0.1
+        version: 4.1.0
     devDependencies:
       '@effect/sql-sqlite-node':
         specifier: 'catalog:'
-        version: 4.0.1(effect@4.0.1)
+        version: 4.1.0(effect@4.1.0)
       '@effect/vitest':
         specifier: 'catalog:'
-        version: 4.0.1(effect@4.0.1)(vitest@5.0.3)
+        version: 4.1.0(effect@4.1.0)(vitest@5.0.3)
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
@@ -757,11 +757,11 @@ importers:
         version: link:../core
       effect:
         specifier: 'catalog:'
-        version: 4.0.1
+        version: 4.1.0
     devDependencies:
       '@effect/vitest':
         specifier: 'catalog:'
-        version: 4.0.1(effect@4.0.1)(vitest@5.0.3)
+        version: 4.1.0(effect@4.1.0)(vitest@5.0.3)
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
@@ -776,11 +776,11 @@ importers:
         version: link:../core
       effect:
         specifier: 'catalog:'
-        version: 4.0.1
+        version: 4.1.0
     devDependencies:
       '@effect/vitest':
         specifier: 'catalog:'
-        version: 4.0.1(effect@4.0.1)(vitest@5.0.3)
+        version: 4.1.0(effect@4.1.0)(vitest@5.0.3)
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
@@ -795,11 +795,11 @@ importers:
         version: link:../core
       effect:
         specifier: 'catalog:'
-        version: 4.0.1
+        version: 4.1.0
     devDependencies:
       '@effect/vitest':
         specifier: 'catalog:'
-        version: 4.0.1(effect@4.0.1)(vitest@5.0.3)
+        version: 4.1.0(effect@4.1.0)(vitest@5.0.3)
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
@@ -832,14 +832,14 @@ importers:
         version: link:../reminders
       effect:
         specifier: 'catalog:'
-        version: 4.0.1
+        version: 4.1.0
     devDependencies:
       '@effect/sql-sqlite-node':
         specifier: 'catalog:'
-        version: 4.0.1(effect@4.0.1)
+        version: 4.1.0(effect@4.1.0)
       '@effect/vitest':
         specifier: 'catalog:'
-        version: 4.0.1(effect@4.0.1)(vitest@5.0.3)
+        version: 4.1.0(effect@4.1.0)(vitest@5.0.3)
       '@types/node':
         specifier: ^26.6.5
         version: 26.6.5
@@ -1277,28 +1277,28 @@ packages:
     resolution: {integrity: sha512-IchNf6dN4tHoMFIn/7OE8LWZ19Y6q/67Bmf6vnGREv8RSbBVb9LPJxEcnwrcwX6ixSvaiGoomAUvu4YSxXrVgw==}
     engines: {node: '>=12'}
 
-  '@effect/atom-react@4.0.1':
-    resolution: {integrity: sha512-V/vcbFCVY2AV7PvjhmOP37Cr4NofrtxBBGW6M1ckBIBxmpi3sMwdPTxj2obPNE4Ho3gkeEQzRC9zEIQ4BDNdQg==}
+  '@effect/atom-react@4.1.0':
+    resolution: {integrity: sha512-PeaBDmwqG9BPQfaPHeWCB2NF4NQaFlI6poKxjlBHMrMjKqV+LVBdryhpDNqSZOhqGgT+qnh9gV+19MYjNOQ+bg==}
     peerDependencies:
-      effect: ^4.0.1
+      effect: ^4.1.0
       react: '>=19.0.0 <20.0.0'
-      scheduler: '>=0.25.0 <0.28.0'
+      scheduler: '>=0.25.0 <0.29.0'
 
-  '@effect/sql-sqlite-node@4.0.1':
-    resolution: {integrity: sha512-VBlNvfFRxyyiu1viNygxA0ZVGZcpxBHA3+QLobaLQSXgAP0submgo98IzioWTHzdZUc9Xodi7ICci5ehhbD2fQ==}
+  '@effect/sql-sqlite-node@4.1.0':
+    resolution: {integrity: sha512-Z8PxzlVlfp5JCGYAg9CwehHkvLEwMf/NF7htdDkKy65G4vE78ARkDMUSyeIzZ1zpadMxbbCEUJ2FM9M5/0Nxgg==}
     peerDependencies:
-      effect: ^4.0.1
+      effect: ^4.1.0
 
-  '@effect/sql-sqlite-react-native@4.0.1':
-    resolution: {integrity: sha512-7097TTh1BgMyoXbDj/hEgT0bqo4mKHXK4vhQabXrIJAjANUm99WDBJjC4oR7/0FMkOrfPDsi0z5yy4437g32dA==}
+  '@effect/sql-sqlite-react-native@4.1.0':
+    resolution: {integrity: sha512-zMrj2rpmn+pPf//wioU8iqQ4kD5ZkYCjACTtVEknIhZMjerEMny4VAwGFLz957u0r325LYBqIsy0P64tMD4l+g==}
     peerDependencies:
-      '@op-engineering/op-sqlite': '>=17.1.2 <18.0.0'
-      effect: ^4.0.1
+      '@op-engineering/op-sqlite': '>=17.1.2 <19.0.0'
+      effect: ^4.1.0
 
-  '@effect/vitest@4.0.1':
-    resolution: {integrity: sha512-DbY9kf/018zBxRIX7rJwBnPVPzSarnUpcshm0vfYPFiDkSa7AFrXTh2BlDNUbrdrmqcIOBhVZ7GkEtxf8WiQrg==}
+  '@effect/vitest@4.1.0':
+    resolution: {integrity: sha512-+APF69oTYgGj5WCewowk1/udepH74xz4ONyH7d+UfcK0SrF3osiSwsWEyODUpJvWd6MIk5F5PcFJiE4evMuG2A==}
     peerDependencies:
-      effect: ^4.0.1
+      effect: ^4.1.0
       vitest: 5.0.3
 
   '@egjs/hammerjs@2.0.17':
@@ -4249,8 +4249,8 @@ packages:
   ee-first@1.1.1:
     resolution: {integrity: sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow==}
 
-  effect@4.0.1:
-    resolution: {integrity: sha512-b1VlQG9g8fwxE5QnIZuPoOP/0MsqHJSRKxUijjoM80E5q95FXrX5yWtY5XI8G+GJsBQAVSDbLS458z9a++uVvw==}
+  effect@4.1.0:
+    resolution: {integrity: sha512-lGx2MJJyrXA8RZb2UpQ/0Nkb5Utaimby7oD92+18noBxLPE85IFOvptdzau8dvcxAOwfwHo9iqapbKeFzqQM/Q==}
 
   ejs@3.1.10:
     resolution: {integrity: sha512-UeJmFfOrAQS8OJWPZ4qtgHyWExa088/MtK5UEyoJGFH67cDEXkZSviOiKRCZ4Xij0zxI3JECgYs3oKx+AizQBA==}
@@ -5024,6 +5024,7 @@ packages:
   http-call@5.3.0:
     resolution: {integrity: sha512-ahwimsC23ICE4kPl9xTBjKB4inbRaeLyZeRunC/1Jy/Z6X8tv22MEAjK+KBOMSVLaqXPTTmd8638waVIKLGx2w==}
     engines: {node: '>=8.0.0'}
+    deprecated: Renamed to @heroku/http-call — please install @heroku/http-call instead.
 
   http-errors@2.0.1:
     resolution: {integrity: sha512-4FbRdAX+bSdmo4AUFuS0WNiPz8NgFt+r8ThgNWmlrjQjt1Q7ZR9+zTlce2859x4KSXrwIsaeTqDoKQmtP8pLmQ==}
@@ -7680,24 +7681,24 @@ snapshots:
     dependencies:
       '@jridgewell/trace-mapping': 0.3.9
 
-  '@effect/atom-react@4.0.1(effect@4.0.1)(react@19.2.9)(scheduler@0.27.0)':
+  '@effect/atom-react@4.1.0(effect@4.1.0)(react@19.2.9)(scheduler@0.27.0)':
     dependencies:
-      effect: 4.0.1
+      effect: 4.1.0
       react: 19.2.9
       scheduler: 0.27.0
 
-  '@effect/sql-sqlite-node@4.0.1(effect@4.0.1)':
+  '@effect/sql-sqlite-node@4.1.0(effect@4.1.0)':
     dependencies:
-      effect: 4.0.1
+      effect: 4.1.0
 
-  '@effect/sql-sqlite-react-native@4.0.1(@op-engineering/op-sqlite@17.2.0(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.18)(react@19.2.9)(supports-color@8.1.1))(react@19.2.9))(effect@4.0.1)':
+  '@effect/sql-sqlite-react-native@4.1.0(@op-engineering/op-sqlite@17.2.0(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.18)(react@19.2.9)(supports-color@8.1.1))(react@19.2.9))(effect@4.1.0)':
     dependencies:
       '@op-engineering/op-sqlite': 17.2.0(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.18)(react@19.2.9)(supports-color@8.1.1))(react@19.2.9)
-      effect: 4.0.1
+      effect: 4.1.0
 
-  '@effect/vitest@4.0.1(effect@4.0.1)(vitest@5.0.3)':
+  '@effect/vitest@4.1.0(effect@4.1.0)(vitest@5.0.3)':
     dependencies:
-      effect: 4.0.1
+      effect: 4.1.0
       vitest: 5.0.3(@types/node@26.6.5)(@vitest/browser-preview@5.0.3)(@vitest/ui@5.0.3)(@voidzero-dev/vite-plus-core@1.1.0(@types/node@26.6.5)(jiti@2.7.0)(terser@5.48.0)(typescript@7.0.2)(yaml@2.9.0))
 
   '@egjs/hammerjs@2.0.17':
@@ -10893,7 +10894,7 @@ snapshots:
 
   ee-first@1.1.1: {}
 
-  effect@4.0.1: {}
+  effect@4.1.0: {}
 
   ejs@3.1.10:
     dependencies:

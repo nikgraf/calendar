@@ -181,7 +181,7 @@ deliberately.
 
 ## Hard rules (each learned the hard way — details in docs/)
 
-- Effect is pinned exactly to **4.0.1** (all `effect*` via catalog — the
+- Effect is pinned exactly to **4.1.0** (all `effect*` via catalog — the
   rpc/sql/http/reactivity modules are `@stability unstable` and may break
   in a minor). Use `Effect.forkChild`/`forkDetach`/`forkIn` — `Effect.fork`
   and `forkDaemon` do not exist. `Context.Service` is two-stage:
