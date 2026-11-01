@@ -78,7 +78,7 @@ export function ReminderEditForm({
               <DateTimePicker
                 display="compact"
                 mode="date"
-                onChange={(_, picked) => picked && taskModel.setDueDate(toDateString(picked))}
+                onValueChange={(_, picked) => taskModel.setDueDate(toDateString(picked))}
                 value={dateFromParts(taskModel.dueDate)}
               />
             </DueRow>
@@ -101,7 +101,7 @@ export function ReminderEditForm({
                 <DateTimePicker
                   display="compact"
                   mode="time"
-                  onChange={(_, picked) => picked && taskModel.setDueTime(toTimeString(picked))}
+                  onValueChange={(_, picked) => taskModel.setDueTime(toTimeString(picked))}
                   value={dateFromParts(taskModel.dueDate, taskModel.dueTime)}
                 />
               }
