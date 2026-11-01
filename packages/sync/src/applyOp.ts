@@ -418,11 +418,12 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
           }),
         ]);
       }
-      // A series delete took the exceptions with it; a pull may have
-      // brought one back since (synced), which stays.
+      // A series delete took the exceptions with it and owns no row at
+      // their ids: one there since is newer and stays — a pull's copy, or
+      // the user's own occurrence edit or delete of the series a pull put
+      // back (a landed occurrence delete leaves its tombstone pending).
       for (const override of op.beforeOverrides ?? []) {
-        const row = yield* eventRepo.getById(op.accountId, op.calendarId, override.id);
-        if (row && row.syncStatus !== 'pending') {
+        if (yield* eventRepo.getById(op.accountId, op.calendarId, override.id)) {
           continue;
         }
         // An RSVP on the occurrence survived the series delete: it owns the row.
@@ -1041,6 +1042,10 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
    * at its id. That copy goes. A cancelled override (one occurrence's
    * delete) stays, and a pending row is an op's queued since — read and
    * delete in one transaction, so an edit of the copy cannot slip between.
+   * A series takes its exceptions with it on Google: the synced ones a
+   * pull, an answer or a discard put back while its delete waited go too,
+   * or they would show as events of their own, and the occurrences' ops
+   * still queued have nothing left to put back (`forgetSeries`).
    */
   const dropPulledCopy = (op: PendingOp) =>
     transaction(
@@ -1049,6 +1054,16 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         if (row?.syncStatus === 'synced' && row.status !== 'cancelled') {
           yield* eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
         }
+        for (const override of yield* eventRepo.listOverrides(
+          op.accountId,
+          op.calendarId,
+          op.eventId,
+        )) {
+          if (override.syncStatus === 'synced') {
+            yield* eventRepo.deleteEvent(op.accountId, op.calendarId, override.id);
+          }
+        }
+        yield* pendingOpRepo.forgetSeries(op.accountId, op.calendarId, op.eventId);
       }),
     );
 

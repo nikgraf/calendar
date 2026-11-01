@@ -427,11 +427,14 @@ it whenever a kind is added. Rules that keep the queue correct:
   acknowledged, however many edits piled up offline — except that a
   replaced delete (or answer) hands on Google's copy when a pull put one
   back while the delete waited (`isPulledCopy`: a delete takes its row or
-  leaves a pending tombstone, and pulls never write over a pending row);
-  a move re-keys it to the destination with the op, and back if Google
-  never makes the move. The unsynced-changes list diffs an op
-  against it (`pendingOpDiff`, computed in `listPendingOps` as display
-  lines) and an abandoned op puts it back (`releaseRow`): a discard, a
+  leaves a pending tombstone, and pulls never write over a pending row),
+  and an occurrence edit or delete with no row starts from the live
+  exception a series delete waiting behind the master a pull put back
+  took there (`occurrenceRow`), not the master's slot, which would patch
+  the exception's own changes away; a move re-keys it to the
+  destination with the op, and back if Google never makes the move. The
+  unsynced-changes list diffs an op against it (`pendingOpDiff`,
+  computed in `listPendingOps` as display lines) and an abandoned op puts it back (`releaseRow`): a discard, a
   permanent rejection and keep-mine with nothing left all restore the row
   — an op puts back only the fields it owns (an RSVP the answers it
   changed; an edit the fields it changed, the guest list only when it
@@ -439,8 +442,10 @@ it whenever a kind is added. Rules that keep the queue correct:
   resurrect what another op of the event changed and was discarded
   meanwhile, keeping the row's own etag; a delete re-inserts the row
   unless a synced one sits there already (a pull put Google's copy back)
-  and the exceptions a series delete took with it (checked one by one); a
-  task edit or toggle restores the fields it owns; a color goes back only
+  and the exceptions a series delete took with it, each only where no row
+  is (the delete owns none there: a pull's copy, or an occurrence edit or
+  delete made since, is newer, and a landed occurrence delete leaves its
+  tombstone pending); a task edit or toggle restores the fields it owns; a color goes back only
   while the calendar still shows the op's own (calendar-list pulls do not
   skip a queued color) — and the row stays `pending` while another op of
   the item, or a queued move of it, still owns it; an abandoned answer
@@ -449,9 +454,14 @@ it whenever a kind is added. Rules that keep the queue correct:
   resurrected, and a pull that confirms an item deleted
   upstream (a cancelled occurrence included) clears the queued delete's
   snapshot (`forgetDeleted`): the sync token has seen the deletion and
-  will never send it again. When an op lands while others of the item are
-  queued, every queued snapshot of the item moves to what Google
-  acknowledged (`advanceBefore`, `advanceBeforeTask`; the ones queued
+  will never send it again; an exception a pull re-sends over an
+  occurrence delete's pending tombstone, which it skips, becomes that
+  delete's snapshot (`rememberPulled`; both in the page's transaction);
+  a series delete that lands or finds the series gone leaves the queued
+  ops of its occurrences nothing to put back (`forgetSeries`: `null`,
+  so a discard removes their rows instead of an exception without its
+  master). When an op lands while others of the item are queued, every
+  queued snapshot of the item moves to what Google acknowledged (`advanceBefore`, `advanceBeforeTask`; the ones queued
   earlier never held the landed change either; a pulled copy at a waiting
   delete's id takes it too), so discarding one of
   them never undoes it (a landed series edit moves its exceptions' queued
@@ -518,7 +528,10 @@ it whenever a kind is added. Rules that keep the queue correct:
   delete leaves no row to skip: a page answered before it reached Google
   puts Google's copy back (synced), and the delete removes that copy when
   it lands or finds the item gone (a live event row, never a cancelled
-  override; a task row only while no op owns it). Acting on that copy
+  override; a task row only while no op owns it), and a series delete
+  also the synced rows of its exceptions — a pull's copy, an answer's
+  ack or a discarded occurrence change put them back while it waited,
+  and without a master they would show as events. Acting on that copy
   replaces the delete: an edit (`supersedeQueued`), an answer
   (`respondToEvent`, which an occurrence sends for its series) or a move
   of it drops the queued delete. Re-queued behind the move, or overtaken
