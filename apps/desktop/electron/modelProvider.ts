@@ -161,12 +161,20 @@ export const getModelProvider = (): ModelProviderView => ({
   model: stored.model,
 });
 
-/**
- * Changes from the settings window, each checked: the kind from its
- * three, a bounded http(s) URL, a bounded model name, a key encrypted
- * before it is kept (null removes it). Every window hears the change.
- */
-export const setModelProvider = (changes: unknown): ModelProviderView => {
+/** The key as the settings file keeps it: safeStorage ciphertext, base64. */
+const encryptKey = async (key: string): Promise<string> => {
+  try {
+    if (await safeStorage.isAsyncEncryptionAvailable()) {
+      return (await safeStorage.encryptStringAsync(key)).toString('base64');
+    }
+  } catch {
+    // No key in the keychain to encrypt with (a denied prompt): the same
+    // answer as no encryption at all.
+  }
+  throw new Error('model provider: the keychain is not available to keep the key');
+};
+
+const applyChanges = async (changes: unknown): Promise<ModelProviderView> => {
   if (typeof changes !== 'object' || changes === null) {
     throw new Error('model provider: invalid changes');
   }
@@ -203,14 +211,7 @@ export const setModelProvider = (changes: unknown): ModelProviderView => {
     if (key === null || key === '') {
       draft = withoutKey(draft);
     } else if (typeof key === 'string' && key.length <= MAX_KEY_CHARS) {
-      if (!safeStorage.isEncryptionAvailable()) {
-        throw new Error('model provider: the keychain is not available to keep the key');
-      }
-      draft = {
-        ...draft,
-        apiKey: safeStorage.encryptString(key).toString('base64'),
-        apiKeyOrigin: originOf(draft.baseUrl),
-      };
+      draft = { ...draft, apiKey: await encryptKey(key), apiKeyOrigin: originOf(draft.baseUrl) };
     } else {
       throw new Error('model provider: invalid API key');
     }
@@ -224,14 +225,54 @@ export const setModelProvider = (changes: unknown): ModelProviderView => {
   return view;
 };
 
-/** The key in clear, for a request to `url` — none for any other origin. */
-const apiKey = (settings: StoredSettings, url: string): string | undefined => {
+/** The calls of `setModelProvider` still to finish; each waits for the one before. */
+let changing: Promise<unknown> = Promise.resolve();
+
+/**
+ * Changes from the settings window, each checked: the kind from its
+ * three, a bounded http(s) URL, a bounded model name, a key encrypted
+ * before it is kept (null removes it). Every window hears the change.
+ * Encrypting waits (the first time for the keychain, maybe a prompt),
+ * so the calls take turns: a kind switch made meanwhile applies after
+ * the save before it, never under it.
+ */
+export const setModelProvider = (changes: unknown): Promise<ModelProviderView> => {
+  const applied = changing.then(() => applyChanges(changes));
+  changing = applied.catch(() => undefined);
+  return applied;
+};
+
+/** Writes the key again with the platform's current key, if it is still the stored one. */
+const reEncryptKey = async (ciphertext: string, key: string): Promise<void> => {
+  try {
+    const fresh = await encryptKey(key);
+    if (stored.apiKey === ciphertext) {
+      stored = { ...stored, apiKey: fresh };
+      persist();
+    }
+  } catch {
+    // The old ciphertext still decrypts; the next use tries again.
+  }
+};
+
+/**
+ * The key in clear, for a request to `url` — none for any other origin. A
+ * key the platform asks to re-encrypt (written with a key it no longer
+ * encrypts with; never on macOS today) is written again with the current one.
+ */
+const apiKey = async (settings: StoredSettings, url: string): Promise<string | undefined> => {
   const ciphertext = keyFor(settings, url);
   if (ciphertext === undefined) {
     return undefined;
   }
   try {
-    return safeStorage.decryptString(Buffer.from(ciphertext, 'base64'));
+    const { result, shouldReEncrypt } = await safeStorage.decryptStringAsync(
+      Buffer.from(ciphertext, 'base64'),
+    );
+    if (shouldReEncrypt) {
+      await reEncryptKey(ciphertext, result);
+    }
+    return result;
   } catch {
     return undefined;
   }
@@ -323,7 +364,7 @@ export const providerStatus = async (
       status: apple.status === 'ready' ? 'ready' : 'unavailable',
     };
   }
-  const probe = await probeEndpoint(current, apiKey(current, current.baseUrl));
+  const probe = await probeEndpoint(current, await apiKey(current, current.baseUrl));
   if (stored !== current) {
     return providerStatus(appleStatus);
   }
@@ -379,15 +420,17 @@ export const providerGenerate = async (
   schema: object,
   prompt: string,
 ): Promise<{ readonly json: string }> => {
-  const base = stored.baseUrl.replace(/\/+$/, '');
-  const key = apiKey(stored, stored.baseUrl);
-  if (stored.kind === 'ollama') {
+  // One provider for the whole call, though Settings may change it while the key decrypts.
+  const current = stored;
+  const base = current.baseUrl.replace(/\/+$/, '');
+  const key = await apiKey(current, current.baseUrl);
+  if (current.kind === 'ollama') {
     const response = await fetch(`${base}/api/chat`, {
       body: JSON.stringify({
         format: schema,
         keep_alive: KEEP_ALIVE,
         messages: [{ content: prompt, role: 'user' }],
-        model: stored.model,
+        model: current.model,
         options: { num_ctx: SERVED_CONTEXT_TOKENS, temperature: 0 },
         stream: false,
       }),
@@ -407,7 +450,7 @@ export const providerGenerate = async (
   const response = await fetch(`${base}/chat/completions`, {
     body: JSON.stringify({
       messages: [{ content: prompt, role: 'user' }],
-      model: stored.model,
+      model: current.model,
       response_format: {
         json_schema: { name: 'answer', schema: strictSchema(schema), strict: true },
         type: 'json_schema',
@@ -442,6 +485,6 @@ export const testModelProvider = async (candidate: unknown): Promise<EndpointPro
   const key =
     typeof next['apiKey'] === 'string' && next['apiKey'].length <= MAX_KEY_CHARS
       ? next['apiKey']
-      : apiKey(stored, baseUrl);
+      : await apiKey(stored, baseUrl);
   return probeEndpoint({ baseUrl, kind: next['kind'], model: '' }, key);
 };

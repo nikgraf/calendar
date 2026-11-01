@@ -225,7 +225,17 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   major Metro's transform uses (the worklets closure test runs the app's
   plugin chain); CI's Maestro, pinned by version and sha256, moves with the
   sweep. Electron 45's sync `safeStorage` deprecation is a todo, not part of
-  the sweep: it rewrites the token store.
+  the sweep: it rewrites the token store (Async safeStorage, below).
+- **Async safeStorage** (2026-11-01, #276) — tokens and the served model's
+  key use `encryptStringAsync` / `decryptStringAsync` before Electron 46
+  drops the sync calls. No migration: on macOS both read the same "<app>
+  Safe Storage" item and write the same `v10` blobs, byte for byte
+  (checked on 45.1 both ways, then on a signed-in profile). Encryption
+  waits now: the token store changes memory at once, the file follows and
+  the last call per account wins (rejected: a lock, whose queue a read
+  could skip); model settings apply one change at a time. `shouldReEncrypt`
+  blobs (never on macOS today) are written again. Open: a denied keychain
+  prompt still reads as signed out (Electron asks once per run).
 - **QR encoder** (2026-10-25, `todo/qr-library`) — the settings code's QR
   comes from paulmillr's `qr`, not `uqr`: actively maintained, no
   dependencies, and the same version at every code length (v1–v40, both

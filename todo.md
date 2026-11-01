@@ -16,17 +16,6 @@ The 2026-10-02 review's findings are closed in `docs/decisions.md`
 
 ## Tier 1 — CI and distribution
 
-- [ ] Async safeStorage before Electron 46 — `safeStorage`'s
-      `isEncryptionAvailable` / `encryptString` / `decryptString` are
-      deprecated in Electron 45 and removed in 46. Two users: the token
-      store (`apps/desktop/electron/tokens/safeStorageStore.ts` over
-      `encryptedStore.ts`, whose deps are synchronous) and the served
-      model's API key (`electron/modelProvider.ts`). Move both to
-      `isAsyncEncryptionAvailable` / `encryptStringAsync` /
-      `decryptStringAsync`; Electron says blobs from `encryptString`
-      decrypt with `decryptStringAsync`, so stored data needs no
-      migration — check that on a signed-in profile before shipping, since
-      a slip signs every account out.
 - [ ] PR videos (designed, not built) — every PR with a visible change
       attaches a short recording. `gh` ≥ 2.99.0 (2026-09-01; local is
       2.97.0, `brew upgrade gh`) adds `--attach` to `gh pr create/edit/
