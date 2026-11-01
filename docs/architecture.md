@@ -1567,7 +1567,18 @@ gateway carries all of it. Details, limits and the threat model:
   while the phone is locked (`apps/ios/src/tokenStore.ts`). The OS grants the `BGProcessingTask` when it likes; to
   exercise it, call `triggerBackgroundRefreshForTesting` in a debug build
   or the debugger's `_simulateLaunchForTaskWithIdentifier:` on
-  `com.expo.modules.backgroundtask.processing`.
+  `com.expo.modules.backgroundtask.processing` — both inside a running
+  app. React Native starts with the app's scene, and the task's own
+  launch of a terminated app may connect none: when none has connected
+  2 s after launch, `apps/ios/modules/solunivo-background-launch` starts
+  the React host without a view (release builds, CI's e2e build included;
+  with expo-updates on, after its launch picked the bundle), the
+  bundle's evaluation defines the task, and expo-task-manager hands it
+  the event it queued. A scene that connects later adds the app's surface
+  to that host instead of starting a second runtime; one that connects
+  while expo-updates is still launching gets the app from expo-updates'
+  handler as usual. Only a device launches an app for the task; the
+  simulator cannot.
 - **Event reminders** are data on the record (`EventRecord.reminders`,
   Google's `useDefault`/`overrides` shape; `useDefault:false` with no
   overrides is "none", distinct from the field being absent), mirrored
