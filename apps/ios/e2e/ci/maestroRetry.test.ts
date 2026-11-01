@@ -607,7 +607,10 @@ describe('isBlackPng', () => {
   });
 });
 
+const named = (name: string) => ({ failure: undefined, file: 'f.yaml', name, status: 'ERROR' });
+
 describe('debugFolderName', () => {
+  // Expected values below are Maestro 2.12's own TestDebugReporter.flowDirBaseName.
   it("is the flow's name with slashes made underscores, as Maestro names the folder", () => {
     expect(
       debugFolderName({
@@ -617,6 +620,19 @@ describe('debugFolderName', () => {
         status: 'ERROR',
       }),
     ).toBe('Export_import the settings file');
+  });
+
+  it('keeps a name of up to 234 UTF-8 bytes whole', () => {
+    expect(debugFolderName(named('x'.repeat(234)))).toBe('x'.repeat(234));
+  });
+
+  it("cuts a longer name to 234 bytes and adds 8 hex digits of the full name's sha256", () => {
+    expect(debugFolderName(named('x'.repeat(235)))).toBe(`${'x'.repeat(234)}-7b03ee1b`);
+  });
+
+  it('never cuts inside a character', () => {
+    // 'a' + 130 'é' is 261 bytes; byte 234 is the second half of an 'é'.
+    expect(debugFolderName(named(`a${'é'.repeat(130)}`))).toBe(`a${'é'.repeat(116)}-e726a760`);
   });
 });
 

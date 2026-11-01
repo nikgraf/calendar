@@ -163,8 +163,8 @@ jobs:
       # The dev variant, as in ci.yml's ios-e2e.
       APP_VARIANT: development
       # Pinned + checksum-verified below; keep in step with ci.yml.
-      MAESTRO_VERSION: 2.10.0
-      MAESTRO_SHA256: 29b675e10cc12080e445e9bfb2e2b4e4dfb9c0f2e30d5884120d258b5e1cd991
+      MAESTRO_VERSION: 2.12.0
+      MAESTRO_SHA256: a6044a84542f522f434c5dc3d609e60c7446d423f3ed1b2ae513f5c48663ec5e
       # How long Maestro waits for its XCTest runner (ms; 120 s by default),
       # as in ci.yml. The nightly's permissions step gave up at 120 s with
       # the runner not up (run 40997493433).
