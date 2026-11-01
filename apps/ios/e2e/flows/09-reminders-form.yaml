@@ -65,12 +65,12 @@ tags:
           id: 'task-title'
       # ASCII only: unicode through XCTest typing is a known flaky spot.
       - inputText: 'Solunivo e2e reminder to delete'
-      # The title's keyboard covers the lower rows and Maestro's visibility
-      # check ignores it: a tap there would land on the keyboard. A plain
-      # label above it (the List card's header) dismisses it first.
-      - tapOn: 'LIST'
-      - waitForAnimationToEnd:
-          timeout: 5000
+      # The title's keyboard covers the lower rows: the List card's header
+      # dismisses it first.
+      - runFlow:
+          file: ../common/dismiss-keyboard.yaml
+          env:
+            LABEL: 'LIST'
       # The Reminders-only controls: the time switch in the dates card, the
       # priority chips in the card under the repeat rule.
       - scrollUntilVisible:
