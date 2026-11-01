@@ -211,17 +211,21 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   clock, 12- or 24-hour) and a launcher-row tap racing the dev client's
   own reopen. Rejected: a fixed settle delay after launch. Open: the
   slide-to-type card and the dev menu's onboarding never showed locally.
-- **Dependencies** (2026-09-14, 2026-10-09, 2026-10-03) — every sweep is
-  one commit per group, each droppable. `effect*` exact (the pin stays
-  exact on 4.x: rpc, sql, http and reactivity are `@stability unstable`),
-  Dependabot ignores them; the deep SQL imports stay deep for Metro. React
-  is held to the React Native renderer's version with tilde ranges (a
-  caret once let the lockfile resolve past it); the Expo-bound RN stack
-  moves only with the SDK. Vite+ 1.1 brought Vitest 5, `vp pack` for the
-  main bundle and tests importing from `vite-plus/test`; vitest must equal
-  what vite-plus bundles. The 2-day release-age gate is never bypassed
-  (stable Effect was waited out); Expo SDK 57 patches are trust-excluded
-  by exact version after an audit (`pnpm-workspace.yaml`).
+- **Dependencies** (2026-09-14, 2026-10-09, 2026-10-03, 2026-11-01) — every
+  sweep is one commit per group, each droppable. `effect*` exact (the pin
+  stays exact on 4.x: rpc, sql, http and reactivity are `@stability
+  unstable`), Dependabot ignores them; the deep SQL imports stay deep for
+  Metro. React is held to the React Native renderer's version with tilde
+  ranges (a caret once let the lockfile resolve past it); the Expo-bound RN
+  stack moves only with the SDK. Vite+ 1.1 brought Vitest 5, `vp pack` for
+  the main bundle and tests importing from `vite-plus/test`; vitest must
+  equal what vite-plus bundles. The 2-day release-age gate is never bypassed
+  (stable Effect was waited out); Expo SDK 57 patches are trust-excluded by
+  exact version after an audit (`pnpm-workspace.yaml`). Babel stays on the
+  major Metro's transform uses (the worklets closure test runs the app's
+  plugin chain); CI's Maestro, pinned by version and sha256, moves with the
+  sweep. Electron 45's sync `safeStorage` deprecation is a todo, not part of
+  the sweep: it rewrites the token store.
 - **QR encoder** (2026-10-25, `todo/qr-library`) — the settings code's QR
   comes from paulmillr's `qr`, not `uqr`: actively maintained, no
   dependencies, and the same version at every code length (v1–v40, both

@@ -37,6 +37,7 @@
  * this file with it) as-is, by type stripping.
  */
 import { Buffer } from 'node:buffer';
+import { createHash } from 'node:crypto';
 import { inflateSync } from 'node:zlib';
 
 export type JUnitCase = {
@@ -135,15 +136,34 @@ export const parseJUnit = (xml: string): ReadonlyArray<JUnitCase> =>
     },
   );
 
+/** The longest folder name Maestro writes, in UTF-8 bytes, before its hash suffix. */
+const MAX_FOLDER_BYTES = 234;
+
 /**
  * A flow's folder in Maestro's flattened debug output, which holds its
- * `screenshots/`: the flow's name with `/` made `_` (Maestro 2.10's
- * `TestDebugReporter.resolveFlowDir`; the `-shard-N` suffix it adds is for
- * Maestro's own sharding, which CI does not use). A second flow whose
- * folder already exists gets `-2`, in whichever order the flows ran, so
- * flows that share one are never told apart (see `decideRetry`).
+ * `screenshots/`: the flow's name with `/` made `_`, and past 234 UTF-8
+ * bytes cut there (never inside a character) with `-` and 8 hex digits of
+ * the whole name's sha256 added (Maestro 2.12's
+ * `TestDebugReporter.resolveFlowDir` and `flowDirBaseName`; the `-shard-N`
+ * suffix it adds is for Maestro's own sharding, which CI does not use). A
+ * second flow whose folder already exists gets `-2`, in whichever order the
+ * flows ran, so flows that share one are never told apart (see
+ * `decideRetry`).
  */
-export const debugFolderName = (testCase: JUnitCase): string => testCase.name.replaceAll('/', '_');
+export const debugFolderName = (testCase: JUnitCase): string => {
+  const name = testCase.name.replaceAll('/', '_');
+  const bytes = Buffer.from(name, 'utf8');
+  if (bytes.length <= MAX_FOLDER_BYTES) {
+    return name;
+  }
+  let cut = MAX_FOLDER_BYTES;
+  // A UTF-8 continuation byte is 10xxxxxx: step back to the character's start.
+  while ((bytes[cut]! & 0xc0) === 0x80) {
+    cut--;
+  }
+  const hash = createHash('sha256').update(bytes).digest('hex').slice(0, 8);
+  return `${bytes.subarray(0, cut).toString('utf8')}-${hash}`;
+};
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
