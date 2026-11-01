@@ -1,13 +1,20 @@
 import { TokenSet } from '@calendar/core';
 import type { TokenStore } from '@calendar/google';
-import { Effect, Schema } from 'effect';
+import { Effect, Schema, Semaphore } from 'effect';
 
 /** The platform pieces the store needs — Electron's in production, fakes in tests. */
 export interface EncryptedStoreDeps {
-  readonly decrypt: (blob: Buffer) => string;
-  readonly encrypt: (text: string) => Buffer;
-  /** False when the OS keychain-backed key is unavailable (e.g. a locked login keychain). */
-  readonly isEncryptionAvailable: () => boolean;
+  /**
+   * Rejects when the blob does not decrypt. `shouldReEncrypt` says the blob
+   * was written under a key the platform has since replaced.
+   */
+  readonly decrypt: (
+    blob: Buffer,
+  ) => Promise<{ readonly result: string; readonly shouldReEncrypt: boolean }>;
+  /** Rejects when there is no key to encrypt with (e.g. a denied keychain prompt). */
+  readonly encrypt: (text: string) => Promise<Buffer>;
+  /** False when nothing can be encrypted at all (e.g. before the app is ready). */
+  readonly isEncryptionAvailable: () => Promise<boolean>;
   /** The persisted blob file, or null when there is none yet. */
   readonly readFile: () => string | null;
   /** Must replace the file atomically (temp file + rename): a crash mid-write must not truncate it. */
@@ -15,6 +22,10 @@ export interface EncryptedStoreDeps {
 }
 
 type EncryptedBlobs = Record<string, string>;
+
+/** A dep's promise as an Effect that fails with the rejection itself, for the log. */
+const attempt = <A>(run: () => Promise<A>) =>
+  Effect.result(Effect.tryPromise({ catch: (error) => error, try: run }));
 
 /**
  * TokenSets encrypted with the OS keychain-backed key, persisted as base64
@@ -24,17 +35,25 @@ type EncryptedBlobs = Record<string, string>;
  *   request, and `set` was a read-modify-write over the whole map while
  *   TokenManager's refresh lock is per account — two refreshes could lose
  *   a write. Decrypted TokenSets are cached per account.
+ * - Encryption is asynchronous, so writes, removals and first reads take
+ *   turns: a write must not land after a later one or after a removal, and
+ *   a first read must not cache tokens a write has replaced while it
+ *   decrypted. A cached read waits for nothing.
  * - Writes go through `writeFile`, which must be atomic (temp + rename).
  * - No encryption available: tokens live in memory for this session only
  *   and are never written — sign-in works, nothing persists, and the log
- *   says so once. A throw out of encryptString used to be a defect from a
- *   `never`-error `set`, killing the sync pass.
+ *   says so once. A failed encryption keeps them in memory too, logged;
+ *   it used to be a defect from a `never`-error `set`, killing the sync
+ *   pass.
  * - A blob that no longer decrypts is logged at error level (the user
  *   appears signed out and should know why); the blob is left in place.
+ *   One the platform asks to re-encrypt is written again under the
+ *   current key, so a retired key never strands an account.
  */
 export const makeEncryptedTokenStore = (deps: EncryptedStoreDeps): typeof TokenStore.Service => {
   let blobs: EncryptedBlobs | null = null;
   const cache = new Map<string, TokenSet>();
+  const turns = Semaphore.makeUnsafe(1);
   let warnedUnavailable = false;
 
   const loadBlobs = (): EncryptedBlobs => {
@@ -53,76 +72,107 @@ export const makeEncryptedTokenStore = (deps: EncryptedStoreDeps): typeof TokenS
     return blobs;
   };
 
-  const persist = (): Effect.Effect<void> =>
+  /** Whether the file may be written; without encryption the log says why not, once. */
+  const writable = Effect.gen(function* () {
+    if (yield* Effect.promise(() => deps.isEncryptionAvailable().catch(() => false))) {
+      return true;
+    }
+    if (!warnedUnavailable) {
+      warnedUnavailable = true;
+      yield* Effect.logError(
+        'safeStorage encryption unavailable: tokens are kept in memory for this session only',
+      );
+    }
+    return false;
+  });
+
+  const writeBlobs = Effect.gen(function* () {
+    try {
+      deps.writeFile(JSON.stringify(loadBlobs()));
+    } catch (error) {
+      yield* Effect.logError('token store write failed', { error: String(error) });
+    }
+  });
+
+  /** Encrypts an account's tokens into the file; on failure the file keeps what it had. */
+  const persist = (accountId: string, tokens: TokenSet) =>
     Effect.gen(function* () {
-      if (!deps.isEncryptionAvailable()) {
-        if (!warnedUnavailable) {
-          warnedUnavailable = true;
-          yield* Effect.logError(
-            'safeStorage encryption unavailable: tokens are kept in memory for this session only',
-          );
-        }
+      if (!(yield* writable)) {
         return;
       }
-      try {
-        deps.writeFile(JSON.stringify(loadBlobs()));
-      } catch (error) {
-        yield* Effect.logError('token store write failed', { error: String(error) });
+      const encrypted = yield* attempt(() =>
+        deps.encrypt(JSON.stringify(Schema.encodeSync(TokenSet)(tokens))),
+      );
+      if (encrypted._tag === 'Failure') {
+        yield* Effect.logError('token encryption failed; kept in memory only', {
+          accountId,
+          error: String(encrypted.failure),
+        });
+        return;
       }
+      loadBlobs()[accountId] = encrypted.success.toString('base64');
+      yield* writeBlobs;
     });
 
   return {
-    get: (accountId) =>
-      Effect.gen(function* () {
-        const cached = cache.get(accountId);
-        if (cached) {
-          return cached;
-        }
-        const blob = loadBlobs()[accountId];
-        if (!blob) {
-          return null;
-        }
-        try {
-          const json = deps.decrypt(Buffer.from(blob, 'base64'));
-          const tokens = Schema.decodeUnknownSync(TokenSet)(JSON.parse(json));
+    get: (accountId) => {
+      const cached = cache.get(accountId);
+      if (cached) {
+        return Effect.succeed(cached);
+      }
+      return turns.withPermits(1)(
+        Effect.gen(function* () {
+          // A write or another first read may have filled it meanwhile.
+          const filled = cache.get(accountId);
+          if (filled) {
+            return filled;
+          }
+          const blob = loadBlobs()[accountId];
+          if (!blob) {
+            return null;
+          }
+          const decrypted = yield* attempt(async () => {
+            const { result, shouldReEncrypt } = await deps.decrypt(Buffer.from(blob, 'base64'));
+            return {
+              shouldReEncrypt,
+              tokens: Schema.decodeUnknownSync(TokenSet)(JSON.parse(result)),
+            };
+          });
+          if (decrypted._tag === 'Failure') {
+            yield* Effect.logError('stored tokens could not be decrypted', {
+              accountId,
+              error: String(decrypted.failure),
+            });
+            return null;
+          }
+          const { shouldReEncrypt, tokens } = decrypted.success;
           cache.set(accountId, tokens);
+          if (shouldReEncrypt) {
+            yield* persist(accountId, tokens);
+          }
           return tokens;
-        } catch (error) {
-          yield* Effect.logError('stored tokens could not be decrypted', {
-            accountId,
-            error: String(error),
-          });
-          return null;
-        }
-      }),
+        }),
+      );
+    },
     remove: (accountId) =>
-      Effect.gen(function* () {
-        cache.delete(accountId);
-        const current = loadBlobs();
-        if (accountId in current) {
-          delete current[accountId];
-          yield* persist();
-        }
-      }),
+      turns.withPermits(1)(
+        Effect.gen(function* () {
+          cache.delete(accountId);
+          const current = loadBlobs();
+          if (accountId in current) {
+            delete current[accountId];
+            if (yield* writable) {
+              yield* writeBlobs;
+            }
+          }
+        }),
+      ),
     set: (accountId, tokens) =>
-      Effect.gen(function* () {
-        cache.set(accountId, tokens);
-        if (!deps.isEncryptionAvailable()) {
-          yield* persist();
-          return;
-        }
-        try {
-          loadBlobs()[accountId] = deps
-            .encrypt(JSON.stringify(Schema.encodeSync(TokenSet)(tokens)))
-            .toString('base64');
-        } catch (error) {
-          yield* Effect.logError('token encryption failed; kept in memory only', {
-            accountId,
-            error: String(error),
-          });
-          return;
-        }
-        yield* persist();
-      }),
+      turns.withPermits(1)(
+        Effect.gen(function* () {
+          cache.set(accountId, tokens);
+          yield* persist(accountId, tokens);
+        }),
+      ),
   };
 };
