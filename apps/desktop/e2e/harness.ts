@@ -1117,48 +1117,57 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
   const electronPath = require('electron') as unknown as string;
   const appDir = join(import.meta.dirname, '..');
   const port = 9333 + Math.floor(Math.random() * 500);
-  const child: ChildProcess = spawn(electronPath, [appDir, `--remote-debugging-port=${port}`], {
-    env: {
-      ...process.env,
-      ...options.env,
-      // Seeded Apple rows must not be replaced by (or prompt for) the
-      // developer's real Reminders — see remindersClient.ts.
-      ...remindersEnv,
-      // Likewise the Calendar app's events: never a developer's, never a prompt.
-      ...appleCalendarEnv,
-      // Likewise the address book: no TCC prompt, no developer's contacts.
-      ...contactsEnv,
-      // And MapKit: no network lookups, so no run depends on Apple's servers.
-      ...geoEnv,
-      // Google, when a spec asks for it: the in-process fake API.
-      ...googleEnv,
-      // And the microphone, when a spec dictates: a file, never the room.
-      ...microphoneEnv,
-      ...(options.model === 'fixture' ? { CALENDAR_MODEL: 'fixture' } : {}),
-      CALENDAR_AGENT_SOCKET: agentSocketPath,
-      // No camera, no TCC prompt, unless a spec stands one in.
-      CALENDAR_CAMERA: options.camera ? 'fixture' : 'off',
-      ...(options.camera ? { CALENDAR_CAMERA_CODE: options.camera.code } : {}),
-      CALENDAR_CAPTURE_WATCH: options.captureWatch ?? 'off',
-      // The windows take no OS input: a developer typing or touching the
-      // trackpad during a run must not reach the test (windows.ts).
-      CALENDAR_E2E_INPUT: 'cdp',
-      // The marker the EventKit fixtures' writes wait on (holdEventKitWrites).
-      CALENDAR_EVENTKIT_HOLD: join(userDataDir, 'eventkit-hold'),
-      // A seeded birthday with reminders on must never post a real banner.
-      CALENDAR_NOTIFICATIONS: 'off',
-      // No setup dialog and no Getting started card unless a spec asks.
-      CALENDAR_ONBOARDING: options.onboarding ?? 'off',
-      CALENDAR_SETTINGS_FILE: settingsFilePath,
-      CALENDAR_USERDATA: userDataDir,
-      ...(options.window
-        ? {
-            CALENDAR_E2E_WINDOW: `${String(options.window.width)}x${String(options.window.height)}`,
-          }
-        : {}),
+  // Chromium's mock keychain keeps safeStorage off the login keychain: a
+  // run never reads a developer's "Electron Safe Storage" key, and a new
+  // Electron binary never stops a run on macOS's keychain access dialog
+  // (it did, after the Electron 45 bump: every safeStorage call blocked
+  // until the dialog was answered).
+  const child: ChildProcess = spawn(
+    electronPath,
+    [appDir, `--remote-debugging-port=${port}`, '--use-mock-keychain'],
+    {
+      env: {
+        ...process.env,
+        ...options.env,
+        // Seeded Apple rows must not be replaced by (or prompt for) the
+        // developer's real Reminders — see remindersClient.ts.
+        ...remindersEnv,
+        // Likewise the Calendar app's events: never a developer's, never a prompt.
+        ...appleCalendarEnv,
+        // Likewise the address book: no TCC prompt, no developer's contacts.
+        ...contactsEnv,
+        // And MapKit: no network lookups, so no run depends on Apple's servers.
+        ...geoEnv,
+        // Google, when a spec asks for it: the in-process fake API.
+        ...googleEnv,
+        // And the microphone, when a spec dictates: a file, never the room.
+        ...microphoneEnv,
+        ...(options.model === 'fixture' ? { CALENDAR_MODEL: 'fixture' } : {}),
+        CALENDAR_AGENT_SOCKET: agentSocketPath,
+        // No camera, no TCC prompt, unless a spec stands one in.
+        CALENDAR_CAMERA: options.camera ? 'fixture' : 'off',
+        ...(options.camera ? { CALENDAR_CAMERA_CODE: options.camera.code } : {}),
+        CALENDAR_CAPTURE_WATCH: options.captureWatch ?? 'off',
+        // The windows take no OS input: a developer typing or touching the
+        // trackpad during a run must not reach the test (windows.ts).
+        CALENDAR_E2E_INPUT: 'cdp',
+        // The marker the EventKit fixtures' writes wait on (holdEventKitWrites).
+        CALENDAR_EVENTKIT_HOLD: join(userDataDir, 'eventkit-hold'),
+        // A seeded birthday with reminders on must never post a real banner.
+        CALENDAR_NOTIFICATIONS: 'off',
+        // No setup dialog and no Getting started card unless a spec asks.
+        CALENDAR_ONBOARDING: options.onboarding ?? 'off',
+        CALENDAR_SETTINGS_FILE: settingsFilePath,
+        CALENDAR_USERDATA: userDataDir,
+        ...(options.window
+          ? {
+              CALENDAR_E2E_WINDOW: `${String(options.window.width)}x${String(options.window.height)}`,
+            }
+          : {}),
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
     },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  );
   // Keep everything the app writes: on a red run the only other signal is a
   // bare vitest timeout. Bootstrap failures are also surfaced immediately.
   const appLog: Array<string> = [];
