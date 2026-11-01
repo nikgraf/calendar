@@ -1,4 +1,4 @@
-import { requireNativeModule } from 'expo-modules-core';
+import { requireNativeModule } from 'expo';
 
 interface SolunivoOcrNative {
   readonly invoke: (method: string, params?: Record<string, unknown>) => Promise<unknown>;

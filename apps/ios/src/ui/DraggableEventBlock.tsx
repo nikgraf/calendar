@@ -4,15 +4,14 @@
 import { type EventRecord, formatClockTime, formatZoneRange } from '@calendar/core';
 import { useLayoutEffect } from 'react';
 import { Pressable, StyleSheet, Text, type DimensionValue } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
 import Animated, {
-  runOnJS,
-  runOnUI,
   useAnimatedReaction,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
+import { scheduleOnRN, scheduleOnUI } from 'react-native-worklets';
 import { BOX_FONT_SCALE, useEventTint } from './theme.ts';
 import { pxToMinutes, SNAP_PX } from './timelineLayout.ts';
 import type { EdgeScroll } from './useEdgeScroll.ts';
@@ -175,14 +174,14 @@ export function DraggableEventBlock({
   // nothing), so it goes back.
   const settle = (write: Promise<void>, drag: number) => {
     void write.then(() => {
-      setTimeout(() => runOnUI(goBack)(drag), DROP_SETTLE_MS);
+      setTimeout(() => scheduleOnUI(goBack, drag), DROP_SETTLE_MS);
     });
   };
 
   const commitMove = (translationPx: number, drag: number) => {
     const deltaMinutes = pxToMinutes(translationPx);
     if (Math.round(deltaMinutes / 15) === 0) {
-      runOnUI(goBack)(drag);
+      scheduleOnUI(goBack, drag);
       return;
     }
     settle(onCommitMove(deltaMinutes), drag);
@@ -190,7 +189,7 @@ export function DraggableEventBlock({
   const commitResize = (translationPx: number, drag: number) => {
     const deltaMinutes = pxToMinutes(translationPx);
     if (Math.round(deltaMinutes / 15) === 0) {
-      runOnUI(goBack)(drag);
+      scheduleOnUI(goBack, drag);
       return;
     }
     settle(onCommitResize(deltaMinutes), drag);
@@ -204,37 +203,38 @@ export function DraggableEventBlock({
   // move: a pan that took the bottom edge at once won the touch from the
   // ScrollView, and on a short block the edge is much of the block.
   const drawnHeight = Math.max(height - 2, SNAP_PX);
-  const pan = Gesture.Pan()
-    .enabled(draggable)
-    .activateAfterLongPress(250)
-    .onBegin((down) => {
-      onEdge.value = down.y >= drawnHeight - RESIZE_EDGE;
-    })
-    .onStart((start) => {
+  const pan = usePanGesture({
+    activateAfterLongPress: 250,
+    enabled: draggable,
+    onActivate: (start) => {
       begin(onEdge.value ? RESIZE : MOVE, start.absoluteY);
-    })
-    .onUpdate((change) => {
-      update(change.translationY, change.absoluteY);
-    })
-    .onEnd((end, success) => {
+    },
+    onBegin: (down) => {
+      onEdge.value = down.y >= drawnHeight - RESIZE_EDGE;
+    },
+    onDeactivate: (end) => {
       if (dragging.value === 0) {
         return;
       }
       // A cancelled pan (the system took the touch) changes nothing.
-      if (!success) {
+      if (end.canceled) {
         goBack(drags.value);
         return;
       }
       held.value = 1;
       if (dragging.value === MOVE) {
-        runOnJS(commitMove)(travel(end.translationY), drags.value);
+        scheduleOnRN(commitMove, travel(end.translationY), drags.value);
       } else {
-        runOnJS(commitResize)(travel(end.translationY), drags.value);
+        scheduleOnRN(commitResize, travel(end.translationY), drags.value);
       }
-    })
-    .onFinalize(() => {
+    },
+    onFinalize: () => {
       finish();
-    });
+    },
+    onUpdate: (change) => {
+      update(change.translationY, change.absoluteY);
+    },
+  });
 
   const tint = useEventTint(color);
   const animatedStyle = useAnimatedStyle(() => ({

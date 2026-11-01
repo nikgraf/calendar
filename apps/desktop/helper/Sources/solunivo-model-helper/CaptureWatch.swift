@@ -65,7 +65,8 @@ final class CaptureWatch: @unchecked Sendable {
     for pid in pids.prefix(count) where pid > 0 {
       current.insert(pid)
       if !known.contains(pid), proc_name(pid, &name, UInt32(name.count)) > 0,
-        String(cString: name) == "screencapture"
+        String(decoding: name.prefix { $0 != 0 }.map(UInt8.init(bitPattern:)), as: UTF8.self)
+          == "screencapture"
       {
         capturing.insert(pid)
       }

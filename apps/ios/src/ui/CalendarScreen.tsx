@@ -474,10 +474,12 @@ const makeStyles = (colors: ThemeColors) =>
       color: colors['text-secondary'],
       fontSize: 14,
     },
+    // No margin: SDK 57's menu sized itself to the trigger and dropped the
+    // trigger's margin, and @expo/ui 58 takes it off the trigger's own width
+    // instead, which cut "▾" short. The gap to "‹" is that button's padding.
     viewButton: {
       backgroundColor: colors.fill,
       borderRadius: 8,
-      marginRight: 4,
       paddingHorizontal: 10,
       paddingVertical: 5,
     },

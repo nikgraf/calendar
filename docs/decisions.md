@@ -215,17 +215,29 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   sweep is one commit per group, each droppable. `effect*` exact (the pin
   stays exact on 4.x: rpc, sql, http and reactivity are `@stability
   unstable`), Dependabot ignores them; the deep SQL imports stay deep for
-  Metro. React is held to the React Native renderer's version with tilde
-  ranges (a caret once let the lockfile resolve past it); the Expo-bound RN
-  stack moves only with the SDK. Vite+ 1.1 brought Vitest 5, `vp pack` for
-  the main bundle and tests importing from `vite-plus/test`; vitest must
-  equal what vite-plus bundles. The 2-day release-age gate is never bypassed
-  (stable Effect was waited out); Expo SDK 57 patches are trust-excluded by
-  exact version after an audit (`pnpm-workspace.yaml`). Babel stays on the
-  major Metro's transform uses (the worklets closure test runs the app's
-  plugin chain); CI's Maestro, pinned by version and sha256, moves with the
-  sweep. Electron 45's sync `safeStorage` deprecation is a todo, not part of
-  the sweep: it rewrites the token store.
+  Metro. React and react-dom are pinned exactly to the React Native
+  renderer's version (react-dom throws unless it equals react, a tilde let
+  the two resolve to different patches, and a caret once resolved past the
+  renderer); the Expo-bound RN stack moves only with the SDK. Vite+ 1.1
+  brought Vitest 5, `vp pack` for the main bundle and tests importing from
+  `vite-plus/test`; vitest must equal what vite-plus bundles. The 2-day
+  release-age gate is never bypassed (stable Effect was waited out); a trust
+  exclude is added only by exact version after an audit
+  (`pnpm-workspace.yaml`). Babel stays on the major Metro's transform uses
+  (the worklets closure test runs the app's plugin chain); CI's Maestro,
+  pinned by version and sha256, moves with the sweep. Electron 45's sync
+  `safeStorage` deprecation is a todo, not part of the sweep: it rewrites
+  the token store.
+- **Xcode 27 and Expo SDK 58** (2026-11-01, `todo/xcode-27`) — iOS 27 stops
+  an app linked against its SDK at launch unless it has the UIScene life
+  cycle, which SDK 57 lacks, so SDK 58 (React Native 0.88, React 19.3,
+  Gesture Handler 3, Reanimated 4.7) came now, redone on main after #241
+  closed. Pans use the hook API (rejected: the deprecated builder); the
+  fingerprint takes Expo's `balanced` preset, so a version bump alone needs
+  a manual build. @expo/ui 58's menu takes a trigger's margin off its width:
+  triggers carry none. Local simulators run iOS 27.2; CI stays on
+  `macos-26`, iOS 26.5. Open: CI on Xcode 27; a device check of the
+  scene-less launch.
 - **QR encoder** (2026-10-25, `todo/qr-library`) — the settings code's QR
   comes from paulmillr's `qr`, not `uqr`: actively maintained, no
   dependencies, and the same version at every code length (v1–v40, both
@@ -1299,6 +1311,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   a notification pass, in `packages/sync` so the ordering is unit-tested;
   defined before the root component registers. Google tokens moved to
   `AFTER_FIRST_UNLOCK` (chosen by Nik) so a pull can run while locked.
+- **Background launch without a scene** (2026-11-01, `todo/xcode-27`) —
+  under SDK 58 only a scene starts React Native, so the background task's
+  launch of a terminated app ran no JS. A local module starts the React host
+  with no view when no scene has connected 2 s after launch, once
+  expo-updates picked the bundle; a later scene adds its surface to that
+  host, and its link (no `getInitialURL` there) is read from expo-linking.
+  Rejected: the app-delegate life cycle (Xcode 27 requires scenes), an
+  expo-task-manager app loader (consulted only with an app URL, which a bare
+  app never stores), deciding on the next main-queue turn (the scene arrives
+  as its own event). Open: only a device makes the cold launch.
 - **Notification taps and zones** (#119, #142) — the text is in the
   device's zone, an all-day reminder counts from midnight in the
   calendar's; a planned notification carries a target the tap resolves

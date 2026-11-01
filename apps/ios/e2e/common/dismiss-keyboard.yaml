@@ -1,0 +1,22 @@
+appId: com.solunivo.app.dev
+name: Dismiss a form field's keyboard on the plain label LABEL (shared)
+---
+# A field's keyboard covers the rows below it, and Maestro's visibility
+# check ignores it, so a tap there lands on the keyboard. A tap on a plain
+# label above it (nothing handles it) makes the form's ScrollView, with
+# keyboardShouldPersistTaps="handled", resign the field.
+#
+# Twice, waiting in between. On the iOS 27 simulator XCTest's typing hides
+# the on-screen keyboard while the field keeps focus, so the ScrollView
+# hears the keyboard hide and lets the first tap through; that tap only
+# brings the keyboard back, and the second one resigns the field. On iOS 26
+# the first tap resigns it and the second lands on the label, which does
+# nothing. No `when: visible` on a keyboard key decides between them:
+# Maestro waits up to 7 s for such a condition to come true, every time the
+# keyboard is already gone.
+- tapOn: ${LABEL}
+- waitForAnimationToEnd:
+    timeout: 3000
+- tapOn: ${LABEL}
+- waitForAnimationToEnd:
+    timeout: 5000

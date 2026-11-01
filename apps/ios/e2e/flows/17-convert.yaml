@@ -68,9 +68,10 @@ tags:
           id: 'task-title'
       # ASCII only: unicode through XCTest typing is a known flaky spot.
       - inputText: 'Solunivo e2e convert'
-      - tapOn: 'LIST'
-      - waitForAnimationToEnd:
-          timeout: 5000
+      - runFlow:
+          file: ../common/dismiss-keyboard.yaml
+          env:
+            LABEL: 'LIST'
       - scrollUntilVisible:
           element:
             id: 'reminder-timed'
