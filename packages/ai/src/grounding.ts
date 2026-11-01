@@ -80,7 +80,7 @@ const PERIODS: ReadonlyArray<{
     times: { earliestTime: '10:00', latestTime: '13:00', startTime: '11:00' },
   },
   {
-    names: 'lunch(?:time)?|mittag\\w*',
+    names: String.raw`lunch(?:time)?|mittag\w*`,
     period: 'lunch',
     times: { earliestTime: '11:30', latestTime: '14:00', startTime: '12:30' },
   },
