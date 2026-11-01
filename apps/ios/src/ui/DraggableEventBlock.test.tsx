@@ -3,13 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 
 type Callback = (...args: Array<unknown>) => void;
 
-interface PanMock {
-  readonly handlers: Record<string, Callback>;
-  waitsFor: PanMock | null;
-}
+/** A `usePanGesture` config: its options and callbacks. */
+type PanMock = Record<string, Callback>;
 
-/** Every `Gesture.Pan()` the last render built, by the builder it returned. */
-const pans = vi.hoisted(() => new Map<unknown, PanMock>());
+/** Every `usePanGesture` config the last render passed. */
+const pans = vi.hoisted(() => [] as Array<Record<string, Callback>>);
 /** The last render's `useAnimatedReaction`s, to fire as the UI runtime would. */
 const reactions = vi.hoisted(() => [] as Array<(value: unknown, previous: unknown) => void>);
 
@@ -24,28 +22,11 @@ vi.mock('react-native', () => ({
   View: 'View',
 }));
 vi.mock('react-native-gesture-handler', () => ({
-  Gesture: {
-    Pan: () => {
-      const pan: PanMock = { handlers: {}, waitsFor: null };
-      const builder: Record<string, (value: unknown) => unknown> = {
-        activateAfterLongPress: () => builder,
-        enabled: () => builder,
-        requireExternalGestureToFail: (other) => {
-          pan.waitsFor = pans.get(other) ?? null;
-          return builder;
-        },
-      };
-      for (const name of ['onBegin', 'onEnd', 'onFinalize', 'onStart', 'onUpdate']) {
-        builder[name] = (callback) => {
-          pan.handlers[name] = callback as Callback;
-          return builder;
-        };
-      }
-      pans.set(builder, pan);
-      return builder;
-    },
-  },
   GestureDetector: 'GestureDetector',
+  usePanGesture: (config: Record<string, Callback>) => {
+    pans.push(config);
+    return config;
+  },
 }));
 vi.mock('react-native-reanimated', () => ({
   default: { View: 'Animated.View' },
@@ -76,7 +57,7 @@ const edgeScroll = () => ({
 
 /** Builds a 56-pt block once and hands back its pans and the commits it makes. */
 const block = (edge: ReturnType<typeof edgeScroll> = edgeScroll()) => {
-  pans.clear();
+  pans.length = 0;
   reactions.length = 0;
   const onCommitMove = vi.fn((_deltaMinutes: number) => Promise.resolve());
   const onCommitResize = vi.fn((_deltaMinutes: number) => Promise.resolve());
@@ -96,7 +77,7 @@ const block = (edge: ReturnType<typeof edgeScroll> = edgeScroll()) => {
     top: 0,
     width: '100%',
   });
-  return { onCommitMove, onCommitResize, pans: [...pans.values()] };
+  return { onCommitMove, onCommitResize, pans: [...pans] };
 };
 
 /**
@@ -104,13 +85,13 @@ const block = (edge: ReturnType<typeof edgeScroll> = edgeScroll()) => {
  * held finger may drift a little first), dragged half an hour down and let
  * go (or cancelled).
  */
-const drag = (pan: PanMock, y: number, options: { startY?: number; success?: boolean } = {}) => {
-  const success = options.success ?? true;
-  pan.handlers['onBegin']!({ y });
-  pan.handlers['onStart']!({ absoluteY: 300, y: options.startY ?? y });
-  pan.handlers['onUpdate']!({ absoluteY: 328, translationY: 28 });
-  pan.handlers['onEnd']!({ translationY: 28 }, success);
-  pan.handlers['onFinalize']!({}, success);
+const drag = (pan: PanMock, y: number, options: { canceled?: boolean; startY?: number } = {}) => {
+  const canceled = options.canceled ?? false;
+  pan['onBegin']!({ y });
+  pan['onActivate']!({ absoluteY: 300, y: options.startY ?? y });
+  pan['onUpdate']!({ absoluteY: 328, translationY: 28 });
+  pan['onDeactivate']!({ canceled, translationY: 28 });
+  pan['onFinalize']!({ canceled });
 };
 
 describe('DraggableEventBlock', () => {
@@ -169,7 +150,7 @@ describe('DraggableEventBlock', () => {
       onCommitResize,
       pans: [pan],
     } = block(edge);
-    drag(pan!, 50, { success: false });
+    drag(pan!, 50, { canceled: true });
     expect(onCommitResize).not.toHaveBeenCalled();
     drag(pan!, 50);
     expect(onCommitResize).toHaveBeenCalledWith(30);
@@ -184,10 +165,10 @@ describe('DraggableEventBlock', () => {
       onCommitMove,
       pans: [pan],
     } = block(edge);
-    const handlers = pan!.handlers;
+    const handlers = pan!;
 
     handlers['onBegin']!({ y: 20 });
-    handlers['onStart']!({ absoluteY: 300, y: 20 });
+    handlers['onActivate']!({ absoluteY: 300, y: 20 });
     expect(edge.begin).toHaveBeenCalledOnce();
     handlers['onUpdate']!({ absoluteY: 728, translationY: 28 });
     expect(edge.follow).toHaveBeenLastCalledWith(728);
@@ -196,8 +177,8 @@ describe('DraggableEventBlock', () => {
     for (const react of reactions) {
       react(1, 0);
     }
-    handlers['onEnd']!({ translationY: 28 }, true);
-    handlers['onFinalize']!({}, true);
+    handlers['onDeactivate']!({ canceled: false, translationY: 28 });
+    handlers['onFinalize']!({ canceled: false });
 
     expect(onCommitMove).toHaveBeenCalledWith(150);
     expect(edge.end).toHaveBeenCalledOnce();
@@ -208,8 +189,8 @@ describe('DraggableEventBlock', () => {
     const {
       pans: [pan],
     } = block(edge);
-    pan!.handlers['onBegin']!({ y: 20 });
-    pan!.handlers['onFinalize']!({}, false);
+    pan!['onBegin']!({ y: 20 });
+    pan!['onFinalize']!({ canceled: true });
     expect(edge.begin).not.toHaveBeenCalled();
     expect(edge.end).not.toHaveBeenCalled();
   });
