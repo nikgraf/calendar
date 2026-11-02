@@ -109,6 +109,15 @@ export interface PendingOpRepoShape {
   ) => Effect.Effect<void, SqlError>;
   readonly getById: (opId: string) => Effect.Effect<PendingOp | undefined, SqlError>;
   readonly listAll: () => Effect.Effect<ReadonlyArray<PendingOp>, SqlError>;
+  /**
+   * The deletes queued in one calendar of one account: few wait at a
+   * time, so a pull page is matched against them rather than asking
+   * about each of its events.
+   */
+  readonly listDeletes: (
+    accountId: string,
+    calendarId: string,
+  ) => Effect.Effect<ReadonlyArray<PendingOp>, SqlError>;
   readonly listDue: (now: number) => Effect.Effect<ReadonlyArray<PendingOp>, SqlError>;
   /**
    * The ops queued for one event of one account, in queue order. Every
@@ -190,6 +199,15 @@ export interface PendingOpRepoShape {
    * takes its change out of the snapshots the others hold.
    */
   readonly setBefore: (opId: string, before: EventRecord) => Effect.Effect<void, SqlError>;
+  /**
+   * Replaces the exceptions a series delete holds (`undefined`: none):
+   * Google's copies go into it while the master is gone locally, and out
+   * of it once a pull puts the master back.
+   */
+  readonly setBeforeOverrides: (
+    opId: string,
+    overrides: ReadonlyArray<EventRecord> | undefined,
+  ) => Effect.Effect<void, SqlError>;
   /**
    * Replaces one op's task snapshot: a reorder that will not land hands
    * the place Google still has to the reorder queued behind it.
@@ -332,6 +350,13 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
       listAll: () =>
         Effect.map(
           sql<PendingOpRow>`SELECT * FROM pending_ops ORDER BY created_at, rowid`,
+          (rows) => rows.flatMap(decodedOps),
+        ),
+      listDeletes: (accountId, calendarId) =>
+        Effect.map(
+          sql<PendingOpRow>`SELECT * FROM pending_ops
+            WHERE account_id = ${accountId} AND calendar_id = ${calendarId} AND kind = 'delete'
+            ORDER BY created_at, rowid`,
           (rows) => rows.flatMap(decodedOps),
         ),
       // Bounded: one drain handles a page; the next kick takes the rest.
@@ -506,6 +531,14 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
         invalidating(
           Effect.asVoid(
             sql`UPDATE pending_ops SET before_payload = ${JSON.stringify(eventPayloadJson(before))}
+              WHERE id = ${opId}`,
+          ),
+        ),
+      setBeforeOverrides: (opId, overrides) =>
+        invalidating(
+          Effect.asVoid(
+            sql`UPDATE pending_ops
+              SET before_overrides = ${overrides ? JSON.stringify(eventListJson(overrides)) : null}
               WHERE id = ${opId}`,
           ),
         ),
