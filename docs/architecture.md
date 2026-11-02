@@ -572,8 +572,13 @@ it whenever a kind is added. Rules that keep the queue correct:
   master update gave Google's rule back, or keep-theirs took Google's
   master — those copies go back too, synced, where no row is
   (`restoreDropped`), for each delete to take when it lands; only where
-  the master's rule draws the slot, so past the end of a cut that reached
-  Google none shows on its own. A copy taken from the row an answer made
+  the master's rule draws the slot, and only until the cut or the new rule
+  reaches Google: its landing forgets those copies (`forgetDropped`), as
+  Google dropped the exceptions with it, or a later rule drawing their
+  slots (more days, say) would show them over it. A page that reports the
+  series deleted forgets them too, as it does a series delete's
+  (`dropSeriesExceptions`), or a discard of one would write it back
+  without its master. A copy taken from the row an answer made
   pending goes back with Google's answers, which the answer's ack then
   replaces (synced at a waiting delete's id, a row is Google's). Off the
   table, a moved occurrence showed at its slot, a cancelled one came

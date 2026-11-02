@@ -173,6 +173,33 @@ export const restoreDropped = (
     }
   });
 
+/**
+ * A change of the series' rule reached Google (a cut, a new rule): the
+ * exceptions it took off the table are past the master's end or went with
+ * the old rule, so the copies their queued deletes hold are Google's no
+ * more — put back under a later master whose rule draws their slots, they
+ * showed over it. A delete with a row at its id (an occurrence's own
+ * tombstone) keeps its snapshot: that exception was no change's to drop.
+ */
+export const forgetDropped = (
+  { eventRepo, pendingOpRepo }: TakenDeps,
+  accountId: string,
+  calendarId: string,
+  masterId: string,
+): Effect.Effect<void, SqlError> =>
+  Effect.gen(function* () {
+    const dropped: Array<string> = [];
+    for (const remove of yield* pendingOpRepo.listDeletes(accountId, calendarId)) {
+      if (
+        remove.beforePayload?.recurringEventId === masterId &&
+        !(yield* eventRepo.getById(accountId, calendarId, remove.eventId))
+      ) {
+        dropped.push(remove.eventId);
+      }
+    }
+    yield* pendingOpRepo.forgetDeleted(accountId, calendarId, dropped);
+  });
+
 /** `overrides` with `copies` in place of what it held at their ids. */
 const withCopies = (
   overrides: ReadonlyArray<EventRecord> | undefined,
@@ -337,9 +364,11 @@ export const holdPulledExceptions = (
  * have re-sent its exceptions, as the sync token sends only what changed.
  * A series the page reports deleted takes the exceptions put back with
  * its master along (`dropSeriesExceptions`), as the delete's landing
- * would. A master the page wrote as Google's brings back what its
- * occurrences' own deletes took too (`restoreDropped`): a cut's deletes
- * outlive a series delete, which no longer finds their rows.
+ * would — also when only its occurrences' own deletes (a cut's) wait: a
+ * discard of one would write the exception back without its master. A
+ * master the page wrote as Google's brings back what those deletes took
+ * (`restoreDropped`): a cut's deletes outlive a series delete, which no
+ * longer finds their rows.
  */
 export const settlePulledSeries = (
   deps: TakenDeps,
@@ -351,12 +380,18 @@ export const settlePulledSeries = (
     const written = new Set(page.written.map((record) => record.id));
     const deleted = new Set(page.deletions);
     const deletes = yield* deps.pendingOpRepo.listDeletes(accountId, calendarId);
+    const goneSeries = new Set(
+      deletes.flatMap((remove) =>
+        [remove.eventId, remove.beforePayload?.recurringEventId].filter(
+          (id): id is string => id !== undefined && deleted.has(id),
+        ),
+      ),
+    );
+    for (const masterId of goneSeries) {
+      yield* dropSeriesExceptions(deps, accountId, calendarId, masterId);
+    }
     for (const remove of deletes) {
-      if (deleted.has(remove.eventId)) {
-        yield* dropSeriesExceptions(deps, accountId, calendarId, remove.eventId);
-        continue;
-      }
-      if (!remove.beforeOverrides || !written.has(remove.eventId)) {
+      if (deleted.has(remove.eventId) || !remove.beforeOverrides || !written.has(remove.eventId)) {
         continue;
       }
       const row = yield* deps.eventRepo.getById(accountId, calendarId, remove.eventId);

@@ -1561,6 +1561,90 @@ describe('SyncEngine', () => {
         }).pipe(Effect.provide(engineLayer(client)));
       });
 
+      it.effect('a rule change that reached Google keeps the exceptions it dropped away', () => {
+        // Twelve days now: the new rule still draws July 3 and July 4, whose
+        // exceptions Google dropped with the old one. Their deletes wait.
+        const extended = {
+          ...renamed,
+          etag: '"evt-r-12"',
+          recurrence: ['RRULE:FREQ=DAILY;COUNT=12'],
+        };
+        const client: GoogleCalendarClientShape = {
+          ...stubClient([firstPage, { items: [extended], nextSyncToken: 's2' }]),
+          deleteEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
+          patchEvent: ({ eventId }) =>
+            eventId === 'evt-r'
+              ? Effect.succeed(extended)
+              : Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
+        };
+        const newRule = [
+          '07-02T10:00 Daily (Google)',
+          '07-03T10:00 Daily (Google)',
+          '07-04T10:00 Daily (Google)',
+          '07-05T10:00 Daily (Google)',
+          '07-06T10:00 Daily (Google)',
+          '07-07T10:00 Daily (Google)',
+        ];
+        return Effect.gen(function* () {
+          yield* seedAccount;
+          const engine = yield* SyncEngine;
+          const mutations = yield* EventMutations;
+          yield* engine.syncAll();
+          const at = { accountId: 'acc-1', calendarId: 'cal-1', masterId: 'evt-r' } as const;
+          yield* mutations.updateRecurring({
+            ...at,
+            changes: { recurrence: ['RRULE:FREQ=DAILY;COUNT=12'], title: 'Daily (Google)' },
+            originalStartUtc: Date.parse('2026-07-02T10:00:00Z'),
+            scope: 'series',
+          });
+          yield* mutations.processPendingOps();
+          expect(yield* opOf('evt-r', 'update')).toBeUndefined();
+
+          // A pull re-sends the master: the moved July 3 came back over it.
+          yield* engine.syncAll();
+          expect(yield* shown).toEqual(newRule);
+          // So did a series edit discarded since.
+          yield* mutations.updateRecurring({
+            ...at,
+            changes: { title: 'Renamed' },
+            originalStartUtc: Date.parse('2026-07-02T10:00:00Z'),
+            scope: 'series',
+          });
+          yield* mutations.discardPendingOp((yield* opOf('evt-r', 'update'))!.id);
+          expect(yield* shown).toEqual(newRule);
+          expect(yield* strays).toEqual([]);
+        }).pipe(Effect.provide(engineLayer(client)));
+      });
+
+      it.effect('a series Google deleted takes the copies the cut’s deletes hold along', () => {
+        const client: GoogleCalendarClientShape = {
+          ...stubClient([
+            firstPage,
+            { items: [{ id: 'evt-r', status: 'cancelled' }], nextSyncToken: 's2' },
+          ]),
+          deleteEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
+          patchEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
+        };
+        return Effect.gen(function* () {
+          yield* seedAccount;
+          const engine = yield* SyncEngine;
+          const mutations = yield* EventMutations;
+          yield* engine.syncAll();
+          yield* mutations.deleteRecurring({
+            accountId: 'acc-1',
+            calendarId: 'cal-1',
+            masterId: 'evt-r',
+            originalStartUtc: Date.parse('2026-07-03T10:00:00Z'),
+            scope: 'following',
+          });
+          yield* engine.syncAll();
+          yield* mutations.discardPendingOp((yield* opOf(july3, 'delete'))!.id);
+          // Written back, July 3 showed without its series for good.
+          expect(yield* shown).toEqual([]);
+          expect(yield* strays).toEqual([]);
+        }).pipe(Effect.provide(engineLayer(client)));
+      });
+
       it.effect('one that reached Google keeps them away when a pull puts the master back', () => {
         // Google ends the series on July 2; the cut's deletes still wait.
         const truncated = {

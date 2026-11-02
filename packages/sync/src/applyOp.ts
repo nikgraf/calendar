@@ -42,6 +42,7 @@ import { restoreCarriedText } from './carriedText.ts';
 import {
   drawsSlot,
   dropSeriesExceptions,
+  forgetDropped,
   putBack,
   restoreDropped,
   reviseTaken,
@@ -1792,15 +1793,24 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
           });
           // A second drag made while this patch was in flight queued a new
           // update on the same etag: it now follows this write.
-          yield* settle(
-            op,
-            mapGcalEvent(response, {
-              accountId: op.accountId,
-              calendarId: op.calendarId,
-              defaultTimeZone: op.payload.startTimeZone ?? 'UTC',
-              syncedAt: yield* Clock.currentTimeMillis,
-            }),
-            { sentEtag: op.baseEtag },
+          const synced = mapGcalEvent(response, {
+            accountId: op.accountId,
+            calendarId: op.calendarId,
+            defaultTimeZone: op.payload.startTimeZone ?? 'UTC',
+            syncedAt: yield* Clock.currentTimeMillis,
+          });
+          const ruleChanged =
+            op.beforePayload !== undefined &&
+            op.beforePayload !== null &&
+            JSON.stringify(op.beforePayload.recurrence ?? []) !==
+              JSON.stringify(op.payload.recurrence ?? []);
+          yield* transaction(
+            Effect.andThen(
+              settle(op, synced, { sentEtag: op.baseEtag }),
+              ruleChanged
+                ? forgetDropped(taken, op.accountId, op.calendarId, op.eventId)
+                : Effect.void,
+            ),
           );
           return 'done' as const;
         }
