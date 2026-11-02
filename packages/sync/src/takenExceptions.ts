@@ -158,11 +158,35 @@ export const reviseTaken = (
   });
 
 /**
+ * Google's live copy of an exception leaves the table for a series
+ * delete's snapshot: the exception's own queued delete (a cut's), which
+ * left that copy on the table as Google's (`isPulledCopy`), puts it back
+ * too — its older snapshot would otherwise take the row's place on a
+ * discard.
+ */
+const handToOwnDeletes = (pendingOpRepo: PendingOpRepoShape, copy: EventRecord) =>
+  Effect.gen(function* () {
+    if (copy.status === 'cancelled') {
+      return;
+    }
+    const own = yield* pendingOpRepo.listForEvent({
+      accountId: copy.accountId,
+      calendarId: copy.calendarId,
+      eventId: copy.id,
+    });
+    for (const remove of own.filter((op) => op.kind === 'delete')) {
+      yield* pendingOpRepo.setBefore(remove.id, copy);
+    }
+  });
+
+/**
  * A pull page against the series deletes waiting in its calendar: an
  * exception whose master is gone locally, and not in the page either,
- * goes into its delete (`takeIntoDelete`) where no row is. A row at its
- * id takes the page as any row does: a synced one is overwritten, a
- * pending one skipped (`rememberPulled` sees it). The rows the table takes.
+ * goes into its delete (`takeIntoDelete`) where no row is, and is what
+ * the exception's own queued delete (a cut's) puts back too, as
+ * `rememberPulled` hands it at a tombstone. A row at its id takes the page
+ * as any row does: a synced one is overwritten, a pending one skipped
+ * (`rememberPulled` sees it). The rows the table takes.
  */
 export const holdPulledExceptions = (
   deps: TakenDeps,
@@ -187,7 +211,9 @@ export const holdPulledExceptions = (
         !inPage.has(masterId) &&
         !(yield* deps.eventRepo.getById(accountId, calendarId, record.id)) &&
         (yield* takeIntoDelete(deps, record));
-      if (!held) {
+      if (held) {
+        yield* handToOwnDeletes(deps.pendingOpRepo, record);
+      } else {
         kept.push(record);
       }
     }
@@ -260,6 +286,9 @@ export const takeBackPulled = (
       });
       if (override.syncStatus !== 'synced' && owners.some((owner) => owner.kind !== 'rsvp')) {
         continue;
+      }
+      if (override.syncStatus === 'synced') {
+        yield* handToOwnDeletes(pendingOpRepo, override);
       }
       taken = withCopy(taken, override);
       yield* eventRepo.deleteEvent(accountId, calendarId, override.id);

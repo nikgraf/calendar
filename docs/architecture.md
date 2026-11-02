@@ -539,15 +539,16 @@ it whenever a kind is added. Rules that keep the queue correct:
   master is gone locally — a pull's copy (where no row sits at its id) or
   an answer's ack of one goes there, not onto the table, where without its
   master it would show as an event of its own, and keep-mine on the parked
-  delete takes the pull's copies back there — and on the table once a pull
-  put the master back: that page puts back what the delete took, where no
-  row is, and the delete holds them no more (pending while an answer or an
-  edit owns one, unless a delete of it waits too — a cut's: then it is
-  Google's copy, synced, for that delete to take). An abandoned answer
-  whose row the delete took comes out of its snapshot instead. The pull
-  that re-sent the master need not have re-sent them (the token sends only
-  what changed); without them a moved occurrence showed at its slot and a
-  cancelled one came back. A page that reports the series deleted on
+  delete takes the pull's copies back there (an exception's own queued
+  delete, a cut's, then puts back that copy too) — and on the table once a
+  pull put the master back: that page puts back what the delete took,
+  where no row is, and the delete holds them no more (pending while an
+  answer or an edit owns one, unless a delete of it waits too — a cut's:
+  then it is Google's copy, synced, for that delete to take). An abandoned
+  answer whose row the delete took comes out of its snapshot instead. The
+  pull that re-sent the master need not have re-sent them (the token sends
+  only what changed); without them a moved occurrence showed at its slot
+  and a cancelled one came back. A page that reports the series deleted on
   Google takes them away again, as the delete's landing would. Acting on
   that copy replaces the delete: an edit (`supersedeQueued`), an answer
   (`respondToEvent`, which an occurrence sends for its series) or a move
