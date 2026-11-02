@@ -13,6 +13,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vite-plus/
 import {
   type App,
   launchApp,
+  localDayAt,
   localIsoDaysAgo,
   readAccounts,
   readCalendars,
@@ -28,13 +29,11 @@ const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 const HOUR_HEIGHT = 48;
 
-/** Today at the given UTC hour. */
-const todayAt = (hour: number, minute = 0): number => {
-  const now = new Date();
-  return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hour, minute);
-};
+/** Today at the given local hour. */
+const todayAt = (hour: number, minute = 0): number => localDayAt(0, hour, minute);
 /** Today's local ISO date, for date-only records. */
 const todayLocalIso = (): string => localIsoDaysAgo(0);
+const allDayToday = Date.parse(`${todayLocalIso()}T00:00:00Z`);
 /** The desktop week view's title for a window starting on `first`. */
 const weekTitle = (first: Temporal.PlainDate): string => titleFor('week', first, first, 'long');
 /** `HH:MM` as minutes since midnight. */
@@ -42,18 +41,19 @@ const minuteOfDay = (time: string): number =>
   Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5));
 
 // The daily series starts three days back so several instances are visible
-// in the current week no matter which weekday the suite runs on. All seeded
-// hours sit mid-day UTC, so local (CI: UTC, dev: CET/CEST) and UTC dates
-// agree and the Monday computed here matches the rendered week.
-const dailyStart = todayAt(7) - 3 * DAY_MS;
-const mondayAt7 = todayAt(7) - ((new Date().getUTCDay() + 6) % 7) * DAY_MS;
+// in the current week no matter which weekday the suite runs on. It repeats
+// in UTC, so its instances are whole days apart: this week's Monday one is
+// counted from the start (a DST change in between would put a rebuilt local
+// 07:00 an hour off), on the local Monday the rendered week begins with.
+const dailyStart = localDayAt(-3, 7);
+const mondayAt7 = dailyStart + (3 - ((new Date().getDay() + 6) % 7)) * DAY_MS;
 /** Start of the earliest daily-series instance inside the rendered week. */
 const firstVisibleDaily = Math.max(dailyStart, mondayAt7);
 /** Three years back, mid-month: 36 month steps land in it whatever today's day is. */
 const YEARS_BACK = 3;
 const ancientAt = (hour: number): number => {
   const now = new Date();
-  return Date.UTC(now.getUTCFullYear() - YEARS_BACK, now.getUTCMonth(), 15, hour);
+  return new Date(now.getFullYear() - YEARS_BACK, now.getMonth(), 15, hour).getTime();
 };
 
 const account = new Account({
@@ -114,10 +114,11 @@ const seed = {
     timedEvent('evt-standup', 'cal-work', 'Standup meeting', todayAt(9), todayAt(10)),
     timedEvent('evt-gym', 'cal-personal', 'Gym session', todayAt(15), todayAt(16)),
     // All-day event today: panning across it must not change the lane height.
-    timedEvent('evt-offsite', 'cal-work', 'Team offsite', todayAt(0), todayAt(0) + DAY_MS, {
-      endDate: new Date(todayAt(0) + DAY_MS).toISOString().slice(0, 10),
+    // All-day rows keep UTC midnight of their (local) date as the instant.
+    timedEvent('evt-offsite', 'cal-work', 'Team offsite', allDayToday, allDayToday + DAY_MS, {
+      endDate: localIsoDaysAgo(-1),
       isAllDay: true,
-      startDate: new Date(todayAt(0)).toISOString().slice(0, 10),
+      startDate: todayLocalIso(),
       startTimeZone: undefined,
     }),
     timedEvent('evt-daily', 'cal-work', 'Daily sync', dailyStart, dailyStart + 30 * 60 * 1000, {

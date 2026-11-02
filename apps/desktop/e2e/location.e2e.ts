@@ -1,6 +1,12 @@
 import { Account, CalendarInfo, EventRecord, GeoLocation } from '@calendar/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
-import { type App, launchApp, readLocationGeoCount, readPendingOps } from './harness.ts';
+import {
+  type App,
+  launchApp,
+  localDayAt,
+  readLocationGeoCount,
+  readPendingOps,
+} from './harness.ts';
 
 // Places come from the in-memory geo fixture (CALENDAR_GEO=fixture): the
 // typeahead, geocoding and the map image are deterministic and offline,
@@ -9,10 +15,8 @@ import { type App, launchApp, readLocationGeoCount, readPendingOps } from './har
 // stored coordinates render without a lookup, and that meeting links get
 // neither suggestions nor a map.
 const HOUR_MS = 60 * 60 * 1000;
-const todayAt = (hour: number): number => {
-  const now = new Date();
-  return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hour);
-};
+/** Today at the given local hour. */
+const todayAt = (hour: number): number => localDayAt(0, hour);
 
 const PICKED_LABEL = 'Blue Bottle Coffee, 66 Mint St, San Francisco';
 const STORED = new GeoLocation({

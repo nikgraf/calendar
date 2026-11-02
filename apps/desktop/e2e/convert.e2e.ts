@@ -10,6 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
 import {
   type App,
   launchApp,
+  localDayAt,
   localIsoDaysAgo,
   readEvents,
   readPendingOps,
@@ -22,11 +23,8 @@ import {
 // and converts an existing item on Save; it asks only when a filled
 // field has no home on the other side.
 const isoToday = localIsoDaysAgo(0);
-/** Today at the given UTC hour: mid-day, so local and UTC dates agree. */
-const todayAt = (hour: number): number => {
-  const now = new Date();
-  return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hour);
-};
+/** Today at the given local hour. */
+const todayAt = (hour: number): number => localDayAt(0, hour);
 const HOUR_MS = 60 * 60 * 1000;
 
 const seed = {

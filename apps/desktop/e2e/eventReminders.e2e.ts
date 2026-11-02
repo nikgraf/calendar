@@ -6,18 +6,22 @@ import {
   ReminderOverride,
 } from '@calendar/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
-import { type App, launchApp, readDeviceSetting, readEvents, readPendingOps } from './harness.ts';
+import {
+  type App,
+  launchApp,
+  localDayAt,
+  readDeviceSetting,
+  readEvents,
+  readPendingOps,
+} from './harness.ts';
 
 // Event reminders edited in the desktop editor and stored with the
 // pending update, plus the device-local notification switches. The
 // harness runs with CALENDAR_NOTIFICATIONS=off, so the scheduler is
 // silent; delivery itself is covered by the unit tests. Seeded relative
-// to today (UTC hours) so the blocks are always in the week in view.
+// to today (local hours) so the blocks are always in the week in view.
 const HOUR_MS = 60 * 60 * 1000;
-const todayAt = (hour: number): number => {
-  const now = new Date();
-  return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hour);
-};
+const todayAt = (hour: number): number => localDayAt(0, hour);
 
 const popup = (minutes: number) => new ReminderOverride({ method: 'popup', minutes });
 
