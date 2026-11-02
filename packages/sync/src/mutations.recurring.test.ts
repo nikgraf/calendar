@@ -1428,6 +1428,47 @@ describe('an exception of a series whose delete waits', () => {
     ),
   );
 
+  it.effect('one discarded over Google’s copy of the occurrence leaves that copy', () =>
+    Effect.gen(function* () {
+      yield* seedMaster;
+      yield* (yield* EventRepo).upsertMany([invited]);
+      const mutations = yield* EventMutations;
+      yield* mutations.respondToEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        eventId: instanceId,
+        response: 'accepted',
+      });
+      yield* mutations.deleteRecurring({ ...target, scope: 'instance' });
+      // A pull skips the tombstone: Google's copy, accepted on another
+      // device, is what the occurrence delete puts back now.
+      const google = new EventRecord({
+        ...invited,
+        attendees: invited.attendees?.map((guest) =>
+          guest.isSelf ? new Attendee({ ...guest, responseStatus: 'accepted' }) : guest,
+        ),
+        etag: '"o-2"',
+      });
+      yield* (yield* PendingOpRepo).rememberPulled('acc-1', 'cal-1', [google]);
+      yield* mutations.deleteRecurring({ ...target, scope: 'series' });
+
+      const ops = yield* listOps;
+      yield* mutations.discardPendingOp(ops.find((op) => op.kind === 'rsvp')!.id);
+      yield* mutations.discardPendingOp(ops.find((op) => op.eventId === 'master1')!.id);
+      const row = yield* rowOf(instanceId);
+      expect(row?.etag).toBe('"o-2"');
+      expect(row?.attendees?.find((guest) => guest.isSelf)?.responseStatus).toBe('accepted');
+    }).pipe(
+      noYield,
+      Effect.provide(
+        testLayerWith({
+          ...stubClient,
+          patchEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
+        }),
+      ),
+    ),
+  );
+
   it.effect('keep theirs on the parked delete brings the exceptions back with the master', () =>
     Effect.gen(function* () {
       yield* seedMaster;

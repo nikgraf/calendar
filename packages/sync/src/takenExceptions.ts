@@ -93,14 +93,14 @@ export const restoreTaken = (
     putBack(deps, accountId, calendarId, taken),
   );
 
-/** `overrides` with `copy` in place of what it held at that id. */
-const withCopy = (
+/** `overrides` with `copies` in place of what it held at their ids. */
+const withCopies = (
   overrides: ReadonlyArray<EventRecord> | undefined,
-  copy: EventRecord,
-): ReadonlyArray<EventRecord> => [
-  ...(overrides ?? []).filter((override) => override.id !== copy.id),
-  copy,
-];
+  copies: ReadonlyArray<EventRecord>,
+): ReadonlyArray<EventRecord> => {
+  const latest = new Map(copies.map((copy) => [copy.id, copy]));
+  return [...(overrides ?? []).filter((override) => !latest.has(override.id)), ...latest.values()];
+};
 
 /**
  * Google sent or acknowledged an exception of a series whose delete
@@ -125,14 +125,16 @@ export const takeIntoDelete = (
     if (!remove) {
       return false;
     }
-    yield* pendingOpRepo.setBeforeOverrides(remove.id, withCopy(remove.beforeOverrides, copy));
+    yield* pendingOpRepo.setBeforeOverrides(remove.id, withCopies(remove.beforeOverrides, [copy]));
     return true;
   });
 
 /**
  * An abandoned change of an exception a waiting series delete took (an
  * answer survives the delete) finds no row to put back: it comes out of
- * what the delete would put back instead (`revise`).
+ * what the delete would put back instead (`revise`) — where the delete
+ * took the row the change made pending. A synced entry is Google's copy,
+ * which never held it (`isPulledCopy`).
  */
 export const reviseTaken = (
   { pendingOpRepo }: TakenDeps,
@@ -148,10 +150,12 @@ export const reviseTaken = (
     const { accountId, calendarId, id, masterId } = exception;
     for (const remove of yield* seriesDeletes(pendingOpRepo, accountId, calendarId, masterId)) {
       const overrides = remove.beforeOverrides;
-      if (overrides?.some((override) => override.id === id)) {
+      const owned = (override: EventRecord) =>
+        override.id === id && override.syncStatus === 'pending';
+      if (overrides?.some(owned)) {
         yield* pendingOpRepo.setBeforeOverrides(
           remove.id,
-          overrides.map((override) => (override.id === id ? revise(override) : override)),
+          overrides.map((override) => (owned(override) ? revise(override) : override)),
         );
       }
     }
@@ -182,11 +186,12 @@ const handToOwnDeletes = (pendingOpRepo: PendingOpRepoShape, copy: EventRecord) 
 /**
  * A pull page against the series deletes waiting in its calendar: an
  * exception whose master is gone locally, and not in the page either,
- * goes into its delete (`takeIntoDelete`) where no row is, and is what
- * the exception's own queued delete (a cut's) puts back too, as
- * `rememberPulled` hands it at a tombstone. A row at its id takes the page
- * as any row does: a synced one is overwritten, a pending one skipped
- * (`rememberPulled` sees it). The rows the table takes.
+ * goes into its delete where no row is (as `takeIntoDelete`, with one
+ * snapshot write per series), and is what the exception's own queued
+ * delete (a cut's) puts back too, as `rememberPulled` hands it at a
+ * tombstone. A row at its id takes the page as any row does: a synced one
+ * is overwritten, a pending one skipped (`rememberPulled` sees it). The
+ * rows the table takes.
  */
 export const holdPulledExceptions = (
   deps: TakenDeps,
@@ -195,26 +200,50 @@ export const holdPulledExceptions = (
   upserts: ReadonlyArray<EventRecord>,
 ): Effect.Effect<ReadonlyArray<EventRecord>, SqlError> =>
   Effect.gen(function* () {
-    const waiting = new Set(
-      (yield* deps.pendingOpRepo.listDeletes(accountId, calendarId)).map((op) => op.eventId),
-    );
+    // The first queued delete of each master, as `takeIntoDelete` takes it.
+    const waiting = new Map<string, PendingOp>();
+    for (const remove of yield* deps.pendingOpRepo.listDeletes(accountId, calendarId)) {
+      if (!waiting.has(remove.eventId)) {
+        waiting.set(remove.eventId, remove);
+      }
+    }
     if (waiting.size === 0) {
       return upserts;
     }
     const inPage = new Set(upserts.map((record) => record.id));
+    const gone = new Map<string, boolean>();
+    const held = new Map<string, Array<EventRecord>>();
     const kept: Array<EventRecord> = [];
     for (const record of upserts) {
       const masterId = record.recurringEventId;
-      const held =
-        masterId !== undefined &&
-        waiting.has(masterId) &&
-        !inPage.has(masterId) &&
-        !(yield* deps.eventRepo.getById(accountId, calendarId, record.id)) &&
-        (yield* takeIntoDelete(deps, record));
-      if (held) {
-        yield* handToOwnDeletes(deps.pendingOpRepo, record);
-      } else {
+      if (masterId === undefined || !waiting.has(masterId) || inPage.has(masterId)) {
         kept.push(record);
+        continue;
+      }
+      if (!gone.has(masterId)) {
+        gone.set(masterId, !(yield* deps.eventRepo.getById(accountId, calendarId, masterId)));
+      }
+      if (
+        !gone.get(masterId) ||
+        (yield* deps.eventRepo.getById(accountId, calendarId, record.id))
+      ) {
+        kept.push(record);
+        continue;
+      }
+      const copies = held.get(masterId) ?? [];
+      copies.push(record);
+      held.set(masterId, copies);
+    }
+    // One snapshot write per series: a full pass can page many exceptions
+    // of one before its master.
+    for (const [masterId, copies] of held) {
+      const remove = waiting.get(masterId)!;
+      yield* deps.pendingOpRepo.setBeforeOverrides(
+        remove.id,
+        withCopies(remove.beforeOverrides, copies),
+      );
+      for (const copy of copies) {
+        yield* handToOwnDeletes(deps.pendingOpRepo, copy);
       }
     }
     return kept;
@@ -290,7 +319,7 @@ export const takeBackPulled = (
       if (override.syncStatus === 'synced') {
         yield* handToOwnDeletes(pendingOpRepo, override);
       }
-      taken = withCopy(taken, override);
+      taken = withCopies(taken, [override]);
       yield* eventRepo.deleteEvent(accountId, calendarId, override.id);
     }
     if (taken !== op.beforeOverrides) {

@@ -1092,11 +1092,22 @@ describe('SyncEngine', () => {
 
     it.effect('an exception a pull sends while the master is gone waits in the delete', () => {
       // Renamed on Google meanwhile; written as a row of its own, it showed
-      // as an event without its series.
+      // as an event without its series. July 5 is cancelled there too.
       const client: GoogleCalendarClientShape = {
         ...stubClient([
           firstPage,
-          { items: [movedOccurrence('Moved again', '"x-2"')], nextSyncToken: 's2' },
+          {
+            items: [
+              movedOccurrence('Moved again', '"x-2"'),
+              {
+                id: 'evt-r_20260705T100000Z',
+                originalStartTime: { dateTime: '2026-07-05T10:00:00Z' },
+                recurringEventId: 'evt-r',
+                status: 'cancelled',
+              },
+            ],
+            nextSyncToken: 's2',
+          },
         ]),
         deleteEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
       };
@@ -1110,7 +1121,6 @@ describe('SyncEngine', () => {
         expect(yield* shown).toEqual([
           '07-02T10:00 Event evt-r',
           '07-03T12:00 Moved again',
-          '07-05T10:00 Event evt-r',
           '07-06T10:00 Event evt-r',
         ]);
       }).pipe(Effect.provide(engineLayer(client)));
