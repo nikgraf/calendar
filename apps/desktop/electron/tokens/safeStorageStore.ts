@@ -9,15 +9,19 @@ const storePath = (): string => join(app.getPath('userData'), 'secure', 'tokens.
 
 /**
  * Electron safeStorage-backed TokenStore. Never store tokens in plaintext.
+ * The asynchronous API reads the same keychain item ("<app name> Safe
+ * Storage") and writes the same `v10` blobs as the synchronous one it
+ * replaced (deprecated in Electron 45, removed in 46), so a tokens.json
+ * from either decrypts with the other.
  * The file is replaced atomically: written to a sibling temp file, then
  * renamed over — a crash or power loss mid-write used to truncate
  * tokens.json and sign every account out.
  */
 export const safeStorageTokenStore: Layer.Layer<TokenStore> = Layer.sync(TokenStore, () =>
   makeEncryptedTokenStore({
-    decrypt: (blob) => safeStorage.decryptString(blob),
-    encrypt: (text) => safeStorage.encryptString(text),
-    isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
+    decrypt: (blob) => safeStorage.decryptStringAsync(blob),
+    encrypt: (text) => safeStorage.encryptStringAsync(text),
+    isEncryptionAvailable: () => safeStorage.isAsyncEncryptionAvailable(),
     readFile: () => {
       try {
         return readFileSync(storePath(), 'utf8');

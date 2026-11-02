@@ -227,7 +227,17 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   (the worklets closure test runs the app's plugin chain); CI's Maestro,
   pinned by version and sha256, moves with the sweep. Electron 45's sync
   `safeStorage` deprecation is a todo, not part of the sweep: it rewrites
-  the token store.
+  the token store (Async safeStorage, below).
+- **Async safeStorage** (2026-11-01, #276) — tokens and the served model's
+  key use `encryptStringAsync` / `decryptStringAsync` before Electron 46
+  drops the sync calls. No migration: on macOS both read the same "<app>
+  Safe Storage" item and write the same `v10` blobs, byte for byte
+  (checked on 45.1 both ways, then on a signed-in profile). Encryption
+  waits now: the token store changes memory at once, the file follows and
+  the last call per account wins (rejected: a lock, whose queue a read
+  could skip); model settings apply one change at a time. `shouldReEncrypt`
+  blobs (never on macOS today) are written again. Open: a denied keychain
+  prompt still reads as signed out (Electron asks once per run).
 - **Xcode 27 and Expo SDK 58** (2026-11-01, `todo/xcode-27`) — iOS 27 stops
   an app linked against its SDK at launch unless it has the UIScene life
   cycle, which SDK 57 lacks, so SDK 58 (React Native 0.88, React 19.3,
