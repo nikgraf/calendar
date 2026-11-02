@@ -199,10 +199,8 @@ export function NotificationsSections() {
                 disabled={!tasks.settings.enabled}
                 display="compact"
                 mode="time"
-                onChange={(_, picked) => {
-                  if (picked) {
-                    tasks.save({ time: toTimeString(picked) });
-                  }
+                onValueChange={(_, picked) => {
+                  tasks.save({ time: toTimeString(picked) });
                 }}
                 testID="task-notifications-time"
                 value={dateFromParts('2026-01-01', tasks.settings.time)}

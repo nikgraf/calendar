@@ -10,12 +10,12 @@ import {
 import type { ScrollView } from 'react-native';
 import {
   type AnimatedRef,
-  runOnJS,
   scrollTo,
   type SharedValue,
   useFrameCallback,
   useSharedValue,
 } from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
 import { HOUR_HEIGHT } from './timelineLayout.ts';
 
 /** How deep the band along the grid's top and bottom edge is that scrolls a drag: an hour row, a fingertip with room. */
@@ -84,7 +84,7 @@ export const useEdgeScroll = (layout: EdgeScrollLayout) => {
     active.value = true;
     state.value = EDGE_SCROLL_IDLE;
     velocity.value = 0;
-    runOnJS(loop)(true);
+    scheduleOnRN(loop, true);
   };
   /** The finger's window y: inside an edge's zone the loop scrolls, elsewhere it stands still. */
   const follow = (windowY: number) => {
@@ -111,7 +111,7 @@ export const useEdgeScroll = (layout: EdgeScrollLayout) => {
     'worklet';
     active.value = false;
     velocity.value = 0;
-    runOnJS(loop)(false);
+    scheduleOnRN(loop, false);
   };
 
   return { begin, end, follow, scrollY, ticks };

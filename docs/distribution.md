@@ -57,8 +57,11 @@ The apps are `0.1.0` (root, `apps/desktop`, `apps/ios` and its local
 modules; the iOS `expo.version` is its CFBundleShortVersionString); the
 testing build's CFBundleVersion is the short commit SHA, and iOS build
 numbers come from EAS (`appVersionSource: remote`, auto-increment). Bump the
-versions together when a release is worth a number — the iOS one is part
-of the native fingerprint, so its bump needs a new build. `CHANGELOG.md`
+versions together when a release is worth a number. The iOS one is not
+part of the native fingerprint (Expo's `balanced` preset leaves versions
+out), so a bump alone ships as an OTA update: for a build that carries the
+new number, run the `iOS` workflow by hand (`workflow_dispatch`) or put the
+`testflight` label on the PR. `CHANGELOG.md`
 collects what changed between bumps; the decision log in
 `docs/decisions.md` has the detail.
 
@@ -117,8 +120,12 @@ latest build.
   on next launch. No cloud build, no build number.
 - **Changed** (native deps, config plugins, SDK bumps, the app icon,
   `ios.infoPlist`, `apps/ios/package.json` scripts): a full EAS build and
-  TestFlight submit. An icon change can never ship as an OTA update, and a
-  PR preview channel does not show it either.
+  TestFlight submit. The fingerprint runs Expo's default `balanced` preset
+  (SDK 58): a native package under `node_modules` counts by name and
+  version (the local modules in `apps/ios/modules` and the Swift bridges
+  still count by their files), and `eas.json` and the app's `version` are
+  left out, so neither alone builds. An icon change can never ship as an
+  OTA update, and a PR preview channel does not show it either.
 - **Fail toward building**: if the fingerprint or the build lookup errors,
   the workflow builds and emits a warning — a wasted build is visible and
   cheap; a wrongly skipped one strands testers on a stale binary silently.
@@ -340,7 +347,10 @@ and profile — the same economics as the TestFlight gate. Running `eas
 build --profile e2e-simulator` locally after a native change means CI
 finds it ready. The jobs compute the fingerprint under
 `APP_VARIANT=development` (job-level env); without it they would look up
-production's hash and never find a build.
+production's hash and never find a build. The `balanced` preset leaves
+`eas.json` out of the fingerprint, so an edit to a build profile alone
+still finds the old build: run `eas build --profile <profile>` for it by
+hand.
 
 ## Device dev client (next to the TestFlight app)
 
@@ -378,7 +388,9 @@ pnpm --filter @calendar/ios ios        # expo run:ios — compiles locally, boot
 
 Useful for debugging native code or working offline. First compile takes
 ~10-20 minutes. `apps/ios/ios/` is generated and gitignored — if it gets into
-a weird state, rerun prebuild with `--clean`.
+a weird state, rerun prebuild with `--clean`. Xcode 27 has no Simulator.app:
+`expo run:ios` and `expo start --ios` bring the device up in Device Hub
+instead (Expo CLI 57.0.28 and later), and `simctl` works as before.
 
 # Website (solunivo.com)
 

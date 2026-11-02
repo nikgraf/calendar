@@ -130,7 +130,7 @@ export function EventEditForm({
         <DateTimePicker
           display="compact"
           mode="date"
-          onChange={(_, picked) => picked && setDay(dateStringFromPicker(picked, timeZone))}
+          onValueChange={(_, picked) => setDay(dateStringFromPicker(picked, timeZone))}
           timeZoneName={timeZone}
           value={dateForPicker(day, undefined, timeZone)}
         />
@@ -140,7 +140,7 @@ export function EventEditForm({
           <DateTimePicker
             display="compact"
             mode="time"
-            onChange={(_, picked) => picked && setTime(timeStringFromPicker(picked, timeZone))}
+            onValueChange={(_, picked) => setTime(timeStringFromPicker(picked, timeZone))}
             timeZoneName={timeZone}
             value={dateForPicker(day, time, timeZone)}
           />

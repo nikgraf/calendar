@@ -24,6 +24,7 @@ import {
   ScrollView,
   Text,
   View,
+  type ScrollViewInstance,
 } from 'react-native';
 import { backendClient } from '../backend.ts';
 import { languageModel } from '../model.ts';
@@ -338,7 +339,7 @@ export function EventEditSheet({
   // without a detent change, and a field focused in the form scrolls the
   // form up to it). Never while the keyboard is up: the field being typed
   // into would leave the view.
-  const formScroll = useRef<ScrollView>(null);
+  const formScroll = useRef<ScrollViewInstance>(null);
   const atHalf = useEditorSheetAtHalf();
   const formToTop = useEffectEvent(() => {
     if (atHalf && !Keyboard.isVisible()) {

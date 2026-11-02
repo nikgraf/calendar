@@ -55,10 +55,8 @@ export function BirthdayReminderRows({
                 accessibilityLabel={`${label}, time`}
                 display="compact"
                 mode="time"
-                onChange={(_, picked) => {
-                  if (picked) {
-                    onChange(setBirthdayReminderTime(reminders, leadDays, toTimeString(picked)));
-                  }
+                onValueChange={(_, picked) => {
+                  onChange(setBirthdayReminderTime(reminders, leadDays, toTimeString(picked)));
                 }}
                 testID={`${testIDPrefix}-${String(leadDays)}-time`}
                 value={dateFromParts('2026-01-01', time)}

@@ -1,0 +1,8 @@
+{
+  "name": "solunivo-background-launch",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Starts React Native without a window on a background launch that connects no scene (iOS background refresh) for Solunivo — local Expo module",
+  "license": "UNLICENSED",
+  "author": "Nik Graf"
+}

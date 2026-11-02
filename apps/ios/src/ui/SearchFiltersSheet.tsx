@@ -64,8 +64,8 @@ export function SearchFiltersSheet({
             <DateTimePicker
               display="compact"
               mode="date"
-              onChange={(_, picked) =>
-                picked && onChange({ ...query, [edge]: dateStringFromPicker(picked, timeZone) })
+              onValueChange={(_, picked) =>
+                onChange({ ...query, [edge]: dateStringFromPicker(picked, timeZone) })
               }
               timeZoneName={timeZone}
               value={dateForPicker(value, undefined, timeZone)}

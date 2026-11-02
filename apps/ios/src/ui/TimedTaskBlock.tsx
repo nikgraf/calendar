@@ -6,41 +6,46 @@ import {
   taskRepeats,
 } from '@calendar/core';
 import { Pressable, StyleSheet, Text, View, type DimensionValue } from 'react-native';
-import { GestureDetector, type PanGesture } from 'react-native-gesture-handler';
+import { GestureDetector } from 'react-native-gesture-handler';
 import { TaskCheck } from './TaskCheck.tsx';
 import { BOX_FONT_SCALE, type ThemeColors, useStyles } from './theme.ts';
+import { type TaskDrag, useTaskDragGesture } from './useTaskDrag.ts';
 
 /**
  * A compact Apple Reminder with no duration. Its body long-presses into the
- * timeline's task drag (`gesture`): a ghost follows the finger to another
+ * timeline's task drag (`taskDrag`): a ghost follows the finger to another
  * slot, another day, or up into the all-day lane, and the block dims until
  * the drop lands.
  */
 export function TimedTaskBlock({
   compact,
   dimmed,
-  gesture,
   left,
   listColor,
   onPress,
   onToggle,
+  readOnly,
   task,
+  taskDrag,
   top,
   width,
 }: {
   compact: boolean;
   /** This block is the one being dragged. */
   dimmed: boolean;
-  gesture: PanGesture;
   left: DimensionValue;
   listColor: string | undefined;
   onPress: () => void;
   onToggle: () => void;
+  /** In a list we cannot write: opens on tap, offers no drag. */
+  readOnly: boolean;
   task: TaskRecord;
+  taskDrag: TaskDrag;
   top: number;
   width: DimensionValue;
 }) {
   const styles = useStyles(makeStyles);
+  const gesture = useTaskDragGesture(taskDrag, task, 'grid', readOnly);
   const done = task.status === 'completed';
   const marker = priorityMarker(task.priority);
   const repeats = taskRepeats(task);

@@ -10,15 +10,15 @@ import {
   type Temporal,
 } from '@calendar/core';
 import { useState } from 'react';
-import { Gesture } from 'react-native-gesture-handler';
+import { usePanGesture } from 'react-native-gesture-handler';
 import {
-  runOnJS,
   useAnimatedReaction,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
 import { HOUR_HEIGHT } from './timelineLayout.ts';
 import type { EdgeScroll } from './useEdgeScroll.ts';
 
@@ -71,7 +71,7 @@ const TIMED_TARGET = 2;
 export const useTaskDrag = (layout: TaskDragLayout) => {
   // Not compiled: the edge scroll's reaction hands `place` to a hook, so the
   // compiler would key its memo on the geometry's `.value`s and read the
-  // shared values during every render. The gestures are rebuilt per render
+  // shared values during every render. Its worklets are rebuilt per render
   // anyway.
   'use no memo';
   const { updateTask } = useGuardedMutations();
@@ -142,42 +142,29 @@ export const useTaskDrag = (layout: TaskDragLayout) => {
     }
   };
 
-  /**
-   * The long-press pan for one chip or block. Created per render, like the
-   * event blocks' own. The record stays on the JS side: the worklets call
-   * back into closures bound here rather than capturing a class instance.
-   */
-  const gestureFor = (task: TaskRecord, from: TaskDragFrom, readOnly: boolean) => {
-    const beginThis = () => begin({ from, key: calendarTaskKey(task), task });
-    const finishThis = (target: DropTarget | null) => finish(task, target);
-    return Gesture.Pan()
-      .enabled(!readOnly)
-      .activateAfterLongPress(250)
-      .onStart((start) => {
-        active.value = true;
-        ghostOpacity.value = withTiming(1, { duration: 120 });
-        edge.begin();
-        edge.follow(start.absoluteY);
-        place(start.absoluteX, start.absoluteY);
-        runOnJS(beginThis)();
-      })
-      .onUpdate((update) => {
-        edge.follow(update.absoluteY);
-        place(update.absoluteX, update.absoluteY);
-      })
-      .onEnd((end, success) => {
-        runOnJS(finishThis)(success ? targetAt(end.absoluteX, end.absoluteY) : null);
-      })
-      .onFinalize(() => {
-        // A pan that never activated (a tap) leaves the edge scroll alone.
-        if (active.value) {
-          active.value = false;
-          edge.end();
-        }
-        targetKind.value = NO_TARGET;
-        ghostOpacity.value = withTiming(0, { duration: 120 });
-        runOnJS(clear)();
-      });
+  // The UI-thread steps of every chip's and block's pan (`useTaskDragGesture`).
+  const lift = (windowX: number, windowY: number) => {
+    'worklet';
+    active.value = true;
+    ghostOpacity.value = withTiming(1, { duration: 120 });
+    edge.begin();
+    edge.follow(windowY);
+    place(windowX, windowY);
+  };
+  const follow = (windowX: number, windowY: number) => {
+    'worklet';
+    edge.follow(windowY);
+    place(windowX, windowY);
+  };
+  const settle = () => {
+    'worklet';
+    // A pan that never activated (a tap) leaves the edge scroll alone.
+    if (active.value) {
+      active.value = false;
+      edge.end();
+    }
+    targetKind.value = NO_TARGET;
+    ghostOpacity.value = withTiming(0, { duration: 120 });
   };
 
   // The grid scrolled under a still finger: the slot under it changed.
@@ -212,7 +199,53 @@ export const useTaskDrag = (layout: TaskDragLayout) => {
     ],
   }));
 
-  return { dragging, gestureFor, ghostStyle, gridIndicatorStyle, laneIndicatorStyle };
+  return {
+    begin,
+    clear,
+    dragging,
+    finish,
+    follow,
+    ghostStyle,
+    gridIndicatorStyle,
+    laneIndicatorStyle,
+    lift,
+    settle,
+    targetAt,
+  };
 };
 
 export type TaskDrag = ReturnType<typeof useTaskDrag>;
+
+/**
+ * The long-press pan for one chip or block, so each one's component calls
+ * it. The record stays on the JS side: the worklets call back into
+ * closures bound here rather than capturing a class instance.
+ */
+export const useTaskDragGesture = (
+  drag: TaskDrag,
+  task: TaskRecord,
+  from: TaskDragFrom,
+  readOnly: boolean,
+) => {
+  const { begin, clear, finish, follow, lift, settle, targetAt } = drag;
+  const beginThis = () => begin({ from, key: calendarTaskKey(task), task });
+  const finishThis = (target: DropTarget | null) => finish(task, target);
+  return usePanGesture({
+    activateAfterLongPress: 250,
+    enabled: !readOnly,
+    onActivate: (start) => {
+      lift(start.absoluteX, start.absoluteY);
+      scheduleOnRN(beginThis);
+    },
+    onDeactivate: (end) => {
+      scheduleOnRN(finishThis, end.canceled ? null : targetAt(end.absoluteX, end.absoluteY));
+    },
+    onFinalize: () => {
+      settle();
+      scheduleOnRN(clear);
+    },
+    onUpdate: (update) => {
+      follow(update.absoluteX, update.absoluteY);
+    },
+  });
+};

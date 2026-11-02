@@ -48,9 +48,11 @@ tags:
                   text: 'Solunivo e2e event to delete'
                 timeout: 3000
       # Notes sit at the bottom of the form. Dismiss the title's keyboard
-      # first (a tap on a plain label above the keyboard, see 03), or the
-      # text lands in the title.
-      - tapOn: 'Starts'
+      # first, or the text lands in the title.
+      - runFlow:
+          file: ../common/dismiss-keyboard.yaml
+          env:
+            LABEL: 'Starts'
       - scrollUntilVisible:
           element:
             id: 'event-notes'
