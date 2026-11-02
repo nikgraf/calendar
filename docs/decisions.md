@@ -369,7 +369,7 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   unrelated edit); an exception's own queued delete as the base (a rule
   change queues those). Open: taken exceptions show as plain occurrences
   (closed by the next record).
-- **A series a pull puts back while its delete waits shows as on Google** (2026-11-02)
+- **A series a pull puts back while its delete waits shows as on Google** (2026-11-02, #279)
   — #274's open items: that pull left the exceptions in the delete (a
   moved occurrence showed at its slot, a cancelled one came back); an
   answer's ack or a pull's copy showed one without its master; keep-theirs
