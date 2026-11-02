@@ -47,10 +47,11 @@ export const takenExceptions = (
  * Writes taken exceptions back where no row is: a row there is newer (a
  * pull's copy, or the user's occurrence edit or delete since — a landed
  * occurrence delete leaves its tombstone pending). One stays pending while
- * an op of the occurrence owns it: an answer survives a series delete. A
- * queued delete of it (a this-and-following cut's) owns no row: the copy
- * is Google's, synced, and that delete takes it when it lands
- * (`isPulledCopy`) — pending, it would stay for good.
+ * an op of the occurrence owns it: an answer survives a series delete.
+ * Not while a delete of it waits too (a this-and-following cut's): a
+ * delete owns no row, so the copy is Google's, synced (`isPulledCopy`),
+ * which an answer's ack settles and that delete takes when it lands —
+ * pending, nothing would ever settle it.
  */
 export const putBack = (
   { eventRepo, pendingOpRepo }: TakenDeps,
@@ -72,7 +73,10 @@ export const putBack = (
         new EventRecord({
           ...override,
           calendarId,
-          syncStatus: owners.some((owner) => owner.kind !== 'delete') ? 'pending' : 'synced',
+          syncStatus:
+            owners.length > 0 && owners.every((owner) => owner.kind !== 'delete')
+              ? 'pending'
+              : 'synced',
         }),
       ]);
     }
@@ -156,7 +160,9 @@ export const reviseTaken = (
 /**
  * A pull page against the series deletes waiting in its calendar: an
  * exception whose master is gone locally, and not in the page either,
- * goes into its delete (`takeIntoDelete`). The rows the table takes.
+ * goes into its delete (`takeIntoDelete`) where no row is. A row at its
+ * id takes the page as any row does: a synced one is overwritten, a
+ * pending one skipped (`rememberPulled` sees it). The rows the table takes.
  */
 export const holdPulledExceptions = (
   deps: TakenDeps,
@@ -179,6 +185,7 @@ export const holdPulledExceptions = (
         masterId !== undefined &&
         waiting.has(masterId) &&
         !inPage.has(masterId) &&
+        !(yield* deps.eventRepo.getById(accountId, calendarId, record.id)) &&
         (yield* takeIntoDelete(deps, record));
       if (!held) {
         kept.push(record);

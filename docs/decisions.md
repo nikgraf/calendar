@@ -370,14 +370,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   change queues those). Open: taken exceptions show as plain occurrences
   (closed by the next record).
 - **A series a pull puts back while its delete waits shows as on Google** (2026-11-02)
-  — #274's open items: that pull left the exceptions in the delete, so a
-  moved occurrence showed at its slot and a cancelled one came back; an
-  answer's ack or a pull's copy showed an exception without its master;
-  keep-theirs dropped them. Google's copies now sit in the delete's
-  snapshot while the master is gone, on the table once a pull put it back
-  (the delete keeps none); keep-mine and keep-theirs follow. Rejected:
-  the delete keeping them too (an aging copy a discard could resurrect).
-  Open: #274's cut and rule-change gaps.
+  — #274's open items: that pull left the exceptions in the delete (a
+  moved occurrence showed at its slot, a cancelled one came back); an
+  answer's ack or a pull's copy showed one without its master; keep-theirs
+  dropped them. Google's copies now sit in the delete's snapshot while the
+  master is gone, on the table once a pull put it back (the delete keeps
+  none); keep-mine and keep-theirs follow. Rejected: the delete keeping
+  them too (an aging copy a discard could resurrect). Open: #274's cut and
+  rule-change gaps; a cut's discarded exception delete, keep-theirs on it
+  or an undone occurrence edit writes a row without its master.
 - **Re-auth and sync kicks** — a 401 flags the account `reauth_required`
   and keeps its ops queued for after the reconnect (same id, by email);
   wake/unlock/focus/foreground kick a sync, throttled to one per 15 s,
