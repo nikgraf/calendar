@@ -770,9 +770,16 @@ const make: Effect.Effect<
         return;
       }
       if (choice === 'mine') {
-        // transactional kicks the drain once the unpark committed.
+        // Read again in the transaction: a pull page may have changed the
+        // snapshot keep-mine adds to. transactional kicks the drain once the
+        // unpark committed.
         return yield* transactional(
-          Effect.flatMap(Clock.currentTimeMillis, (now) => keepMine(op, now)),
+          Effect.gen(function* () {
+            const current = yield* pendingOpRepo.getById(opId);
+            if (current?.conflictAt !== undefined) {
+              yield* keepMine(current, yield* Clock.currentTimeMillis);
+            }
+          }),
         );
       }
       // After a move the op points at the destination, where Google has

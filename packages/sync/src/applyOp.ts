@@ -39,7 +39,7 @@ import {
 import { Cause, Clock, Effect } from 'effect';
 import type { SqlError } from 'effect/sql/SqlError';
 import { restoreCarriedText } from './carriedText.ts';
-import { dropSeriesExceptions, putBack, takeIntoDelete } from './takenExceptions.ts';
+import { dropSeriesExceptions, putBack, reviseTaken, takeIntoDelete } from './takenExceptions.ts';
 import { makeApplyTaskOrder, readTaskOrder } from './taskOrder.ts';
 
 /**
@@ -353,6 +353,17 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       }
       const current = yield* eventRepo.getById(op.accountId, op.calendarId, op.eventId);
       if (!current) {
+        // A waiting series delete may hold the exception instead.
+        const masterId = op.payload?.recurringEventId;
+        if (op.beforePayload && op.payload && masterId !== undefined) {
+          const before = op.beforePayload;
+          const payload = op.payload;
+          yield* reviseTaken(
+            taken,
+            { accountId: op.accountId, calendarId: op.calendarId, id: op.eventId, masterId },
+            (entry) => new EventRecord({ ...entry, ...ownedFields(op, entry, before, payload) }),
+          );
+        }
         return;
       }
       if (isPulledCopy(yield* pendingOpRepo.listForEvent(op), current)) {
@@ -1149,7 +1160,10 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         if (yield* othersQueued(op, calendarId)) {
           // The row is theirs; what they replace is now what just landed.
           yield* advanceOthers(op, event, synced);
-        } else if (!held) {
+        } else if (held) {
+          // Google's copy is in the delete now; the op's own row goes.
+          yield* eventRepo.deleteEvent(op.accountId, calendarId, op.eventId);
+        } else {
           yield* eventRepo.upsertMany([synced]);
         }
       }),

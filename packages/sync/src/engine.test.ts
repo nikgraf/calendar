@@ -732,6 +732,146 @@ describe('SyncEngine', () => {
       }).pipe(Effect.provide(engineLayer(client)));
     });
 
+    it.effect(
+      'one put back while its own delete (a cut’s) waits goes when that delete lands',
+      () => {
+        let online = false;
+        const client: GoogleCalendarClientShape = {
+          ...stubClient([
+            firstPage,
+            { items: [movedOccurrence('Moved again', '"x-2"')], nextSyncToken: 's2' },
+            { items: [renamed], nextSyncToken: 's3' },
+          ]),
+          deleteEvent: () =>
+            online ? Effect.void : Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
+        };
+        return Effect.gen(function* () {
+          yield* seedAccount;
+          const engine = yield* SyncEngine;
+          const mutations = yield* EventMutations;
+          yield* engine.syncAll();
+          // "July 3 and following" queues July 3's own delete; the series
+          // delete after it no longer finds that row to take.
+          const cut = { accountId: 'acc-1', calendarId: 'cal-1', masterId: 'evt-r' } as const;
+          yield* mutations.deleteRecurring({
+            ...cut,
+            originalStartUtc: Date.parse('2026-07-03T10:00:00Z'),
+            scope: 'following',
+          });
+          yield* mutations.deleteRecurring({
+            ...cut,
+            originalStartUtc: Date.parse('2026-07-02T10:00:00Z'),
+            scope: 'series',
+          });
+          yield* engine.syncAll();
+          yield* engine.syncAll();
+
+          online = true;
+          yield* mutations.retryPendingOps();
+          yield* mutations.processPendingOps();
+          expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+          // Put back pending, as if that delete owned the row, it stayed for good.
+          expect(yield* shown).toEqual([]);
+        }).pipe(Effect.provide(engineLayer(client)));
+      },
+    );
+
+    it.effect('keep-mine takes back a copy whose own delete waits', () => {
+      let online = false;
+      let parked = false;
+      const client: GoogleCalendarClientShape = {
+        ...stubClient([
+          firstPage,
+          { items: [movedOccurrence('Moved again', '"x-2"')], nextSyncToken: 's2' },
+          { items: [renamed], nextSyncToken: 's3' },
+        ]),
+        deleteEvent: ({ calendarId, eventId }) => {
+          if (eventId === 'evt-r' && !parked) {
+            parked = true;
+            return Effect.fail(new ConflictError({ calendarId, eventId }));
+          }
+          return online ? Effect.void : Effect.fail(new ApiUnavailableError({ cause: 'offline' }));
+        },
+        getEvent: () => Effect.succeed(renamed),
+      };
+      return Effect.gen(function* () {
+        yield* seedAccount;
+        const engine = yield* SyncEngine;
+        const mutations = yield* EventMutations;
+        yield* engine.syncAll();
+        const cut = { accountId: 'acc-1', calendarId: 'cal-1', masterId: 'evt-r' } as const;
+        yield* mutations.deleteRecurring({
+          ...cut,
+          originalStartUtc: Date.parse('2026-07-03T10:00:00Z'),
+          scope: 'following',
+        });
+        yield* mutations.deleteRecurring({
+          ...cut,
+          originalStartUtc: Date.parse('2026-07-02T10:00:00Z'),
+          scope: 'series',
+        });
+        yield* engine.syncAll();
+        yield* engine.syncAll();
+        expect(yield* shown).toContain('07-03T12:00 Moved again');
+
+        yield* mutations.resolveConflict({ choice: 'mine', opId: (yield* seriesDelete)!.id });
+        // Left on the table, July 3 showed without its series.
+        expect(yield* shown).toEqual([]);
+        online = true;
+        yield* mutations.retryPendingOps();
+        yield* mutations.processPendingOps();
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+        expect(yield* shown).toEqual([]);
+      }).pipe(Effect.provide(engineLayer(client)));
+    });
+
+    it.effect('an occurrence edit that lands after keep-mine leaves no row behind', () => {
+      let deleteOnline = false;
+      let patchOnline = false;
+      let deletes = 0;
+      const client: GoogleCalendarClientShape = {
+        ...stubClient([firstPage, { items: [renamed], nextSyncToken: 's2' }]),
+        deleteEvent: ({ calendarId, eventId }) =>
+          deletes++ === 0
+            ? Effect.fail(new ConflictError({ calendarId, eventId }))
+            : deleteOnline
+              ? Effect.void
+              : Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
+        getEvent: () => Effect.succeed(renamed),
+        patchEvent: () =>
+          patchOnline
+            ? Effect.succeed({ ...movedOccurrence('Edited', '"x-2"') })
+            : Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
+      };
+      return Effect.gen(function* () {
+        yield* syncThenDelete;
+        yield* (yield* SyncEngine).syncAll();
+        const mutations = yield* EventMutations;
+        yield* mutations.updateRecurring({
+          accountId: 'acc-1',
+          calendarId: 'cal-1',
+          changes: { title: 'Edited' },
+          masterId: 'evt-r',
+          originalStartUtc: Date.parse('2026-07-03T10:00:00Z'),
+          scope: 'instance',
+        });
+        yield* mutations.resolveConflict({ choice: 'mine', opId: (yield* seriesDelete)!.id });
+
+        // The edit lands while the delete waits out a 503, then the delete.
+        patchOnline = true;
+        yield* mutations.retryPendingOps();
+        yield* mutations.processPendingOps();
+        expect((yield* (yield* PendingOpRepo).listAll()).map((op) => op.eventId)).toEqual([
+          'evt-r',
+        ]);
+        deleteOnline = true;
+        yield* mutations.retryPendingOps();
+        yield* mutations.processPendingOps();
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+        expect(yield* shown).toEqual([]);
+      }).pipe(Effect.provide(engineLayer(client)));
+    });
+
     it.effect('an exception a pull sends while the master is gone waits in the delete', () => {
       // Renamed on Google meanwhile; written as a row of its own, it showed
       // as an event without its series.

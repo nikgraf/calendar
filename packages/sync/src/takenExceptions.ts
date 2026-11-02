@@ -47,7 +47,10 @@ export const takenExceptions = (
  * Writes taken exceptions back where no row is: a row there is newer (a
  * pull's copy, or the user's occurrence edit or delete since — a landed
  * occurrence delete leaves its tombstone pending). One stays pending while
- * an op of the occurrence owns it: an answer survives a series delete.
+ * an op of the occurrence owns it: an answer survives a series delete. A
+ * queued delete of it (a this-and-following cut's) owns no row: the copy
+ * is Google's, synced, and that delete takes it when it lands
+ * (`isPulledCopy`) — pending, it would stay for good.
  */
 export const putBack = (
   { eventRepo, pendingOpRepo }: TakenDeps,
@@ -60,7 +63,7 @@ export const putBack = (
       if (yield* eventRepo.getById(accountId, calendarId, override.id)) {
         continue;
       }
-      const owned = yield* pendingOpRepo.listForEvent({
+      const owners = yield* pendingOpRepo.listForEvent({
         accountId,
         calendarId,
         eventId: override.id,
@@ -69,7 +72,7 @@ export const putBack = (
         new EventRecord({
           ...override,
           calendarId,
-          syncStatus: owned.length > 0 ? 'pending' : 'synced',
+          syncStatus: owners.some((owner) => owner.kind !== 'delete') ? 'pending' : 'synced',
         }),
       ]);
     }
@@ -120,6 +123,34 @@ export const takeIntoDelete = (
     }
     yield* pendingOpRepo.setBeforeOverrides(remove.id, withCopy(remove.beforeOverrides, copy));
     return true;
+  });
+
+/**
+ * An abandoned change of an exception a waiting series delete took (an
+ * answer survives the delete) finds no row to put back: it comes out of
+ * what the delete would put back instead (`revise`).
+ */
+export const reviseTaken = (
+  { pendingOpRepo }: TakenDeps,
+  exception: {
+    readonly accountId: string;
+    readonly calendarId: string;
+    readonly id: string;
+    readonly masterId: string;
+  },
+  revise: (taken: EventRecord) => EventRecord,
+): Effect.Effect<void, SqlError> =>
+  Effect.gen(function* () {
+    const { accountId, calendarId, id, masterId } = exception;
+    for (const remove of yield* seriesDeletes(pendingOpRepo, accountId, calendarId, masterId)) {
+      const overrides = remove.beforeOverrides;
+      if (overrides?.some((override) => override.id === id)) {
+        yield* pendingOpRepo.setBeforeOverrides(
+          remove.id,
+          overrides.map((override) => (override.id === id ? revise(override) : override)),
+        );
+      }
+    }
   });
 
 /**
@@ -195,9 +226,10 @@ export const settlePulledSeries = (
 /**
  * Keep-mine on a parked delete: Google's copies a pull put back go again,
  * into the delete's snapshot, for a discard to put back as Google has
- * them — the master's, and its exceptions' unless an occurrence change
- * made since owns one (an answer survives a series delete, as when the
- * delete was made). The delete takes them when it lands.
+ * them — the master's, and its exceptions' (synced, or pending for an
+ * answer only: it survives a series delete, as when the delete was made).
+ * A pending row an occurrence change made since owns is the user's own
+ * and stays. The delete takes them when it lands.
  */
 export const takeBackPulled = (
   { eventRepo, pendingOpRepo }: TakenDeps,
@@ -219,7 +251,7 @@ export const takeBackPulled = (
         calendarId,
         eventId: override.id,
       });
-      if (owners.some((owner) => owner.kind !== 'rsvp')) {
+      if (override.syncStatus !== 'synced' && owners.some((owner) => owner.kind !== 'rsvp')) {
         continue;
       }
       taken = withCopy(taken, override);

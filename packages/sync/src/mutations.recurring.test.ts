@@ -1397,6 +1397,37 @@ describe('an exception of a series whose delete waits', () => {
     ),
   );
 
+  it.effect('an answer discarded meanwhile is out of what a discard of the delete puts back', () =>
+    Effect.gen(function* () {
+      yield* seedMaster;
+      yield* (yield* EventRepo).upsertMany([invited]);
+      const mutations = yield* EventMutations;
+      yield* mutations.respondToEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        eventId: instanceId,
+        response: 'accepted',
+      });
+      yield* mutations.deleteRecurring({ ...target, scope: 'series' });
+      const ops = yield* listOps;
+      yield* mutations.discardPendingOp(ops.find((op) => op.kind === 'rsvp')!.id);
+      yield* mutations.discardPendingOp(ops.find((op) => op.kind === 'delete')!.id);
+
+      // Google never got the answer.
+      const row = yield* rowOf(instanceId);
+      expect(row?.syncStatus).toBe('synced');
+      expect(row?.attendees?.find((guest) => guest.isSelf)?.responseStatus).toBe('needsAction');
+    }).pipe(
+      noYield,
+      Effect.provide(
+        testLayerWith({
+          ...stubClient,
+          patchEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
+        }),
+      ),
+    ),
+  );
+
   it.effect('keep theirs on the parked delete brings the exceptions back with the master', () =>
     Effect.gen(function* () {
       yield* seedMaster;

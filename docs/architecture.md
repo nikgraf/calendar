@@ -541,7 +541,10 @@ it whenever a kind is added. Rules that keep the queue correct:
   an event of its own, and keep-mine on the parked delete takes the
   pull's copies back there — and on the table once a pull put the master
   back: that page puts back what the delete took, where no row is, and
-  the delete holds them no more. The pull that re-sent the master need
+  the delete holds them no more (pending while an answer or an edit owns
+  one; a copy whose own delete waits — a cut's — goes back synced, for
+  that delete to take). An abandoned answer whose row the delete took
+  comes out of its snapshot instead. The pull that re-sent the master need
   not have re-sent them (the token sends only what changed); without
   them a moved occurrence showed at its slot and a cancelled one came
   back. A page that reports the series deleted on Google takes them away
