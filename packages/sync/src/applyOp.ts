@@ -304,7 +304,8 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
   const releasedStatus = (op: PendingOp): Effect.Effect<EventRecord['syncStatus'], SqlError> =>
     Effect.map(
       Effect.all([othersQueued(op), pendingOpRepo.earlierInSeries(op)]),
-      ([others, earlier]) => (others || earlier.includes('move') ? 'pending' : 'synced'),
+      ([others, earlier]) =>
+        others || earlier.some((entry) => entry.kind === 'move') ? 'pending' : 'synced',
     );
 
   /** Today's hand-back, for an op with no snapshot: the exceptions' own text, then the flag. */
@@ -1446,14 +1447,30 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       // and the 404 would drop the edit.
       if (op.kind === 'move' || EVENT_KINDS.has(op.kind)) {
         const earlier = yield* pendingOpRepo.earlierInSeries(op);
+        const kinds = earlier.map((entry) => entry.kind);
         if (op.kind === 'move' && earlier.length > 0) {
           return retry('waiting for earlier changes to the event');
         }
-        if (op.kind !== 'move' && earlier.includes('move')) {
+        if (op.kind !== 'move' && kinds.includes('move')) {
           return retry('waiting for the move ahead of it');
         }
-        if (op.kind !== 'move' && op.kind !== 'create' && earlier.includes('create')) {
+        if (op.kind !== 'move' && op.kind !== 'create' && kinds.includes('create')) {
           return retry('waiting for the create ahead of it');
+        }
+        // A change of the series' rule ahead of an occurrence's: once it
+        // lands it forgets the exceptions it drops (`forgetDropped`), so it
+        // goes first — an exception made under the new rule and landed
+        // while it waited out a backoff (its answer lost, say) went too.
+        if (
+          op.kind !== 'move' &&
+          earlier.some(
+            (entry) =>
+              entry.kind === 'update' &&
+              entry.dropsFrom !== undefined &&
+              entry.eventId !== op.eventId,
+          )
+        ) {
+          return retry('waiting for the change of its series ahead of it');
         }
       }
       switch (op.kind) {

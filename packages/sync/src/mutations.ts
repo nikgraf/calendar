@@ -798,7 +798,7 @@ const make: Effect.Effect<
       // After a move the op points at the destination, where Google has
       // nothing until the move lands; a fetch there would 404 and delete
       // the user's row.
-      if ((yield* pendingOpRepo.earlierInSeries(op)).includes('move')) {
+      if ((yield* pendingOpRepo.earlierInSeries(op)).some((entry) => entry.kind === 'move')) {
         return yield* Effect.fail(
           new ConflictNotResolvableError({
             message: 'The event is still moving to another calendar — try again once it synced.',

@@ -389,7 +389,11 @@ it whenever a kind is added. Rules that keep the queue correct:
   instance ids, any calendar of the account) check `earlierInSeries`
   first — a move waits for older edits, an edit waits for an older move,
   and occurrence edits and RSVPs wait for a create queued ahead in their
-  series. `moveEvent` re-queues pending edits of the series _behind_ the
+  series, and an occurrence's op for a change of the series' rule ahead
+  of it (`dropsFrom`: its landing forgets the exceptions it drops, so an
+  exception made under the new rule must land after it, also when its
+  answer was lost and a backoff let the occurrence's op go first).
+  `moveEvent` re-queues pending edits of the series _behind_ the
   move, re-keyed to the destination (a never-sent create simply becomes a
   create there; a sent one stays in the source with the move behind it; a
   delete of the moved event is dropped instead, see Sync engine).

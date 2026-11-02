@@ -48,11 +48,13 @@ export interface PendingOpRepoShape {
     landed: { readonly id: string },
   ) => Effect.Effect<void, SqlError>;
   /**
-   * Kinds of the ops queued before `op` for the same series — the event
-   * itself or, for a recurring one, its Google instance ids
-   * (`<masterId>_<basetime>`) — in any of the account's calendars. Moves
-   * use it to keep order: backoff lets `listDue` skip an older op, and a
-   * move must never overtake, or be overtaken by, an edit of that series.
+   * The ops queued before `op` for the same series — the event itself or,
+   * for a recurring one, its Google instance ids (`<masterId>_<basetime>`)
+   * — in any of the account's calendars: their kind, event and
+   * `dropsFrom`. Moves use it to keep order: backoff lets `listDue` skip an
+   * older op, and a move must never overtake, or be overtaken by, an edit
+   * of that series; an occurrence's op waits for a change of the series'
+   * rule ahead of it.
    */
   /**
    * How many ops wait for the given calendars and task lists of an account.
@@ -68,7 +70,7 @@ export interface PendingOpRepoShape {
   ) => Effect.Effect<number, SqlError>;
   readonly earlierInSeries: (
     op: PendingOp,
-  ) => Effect.Effect<ReadonlyArray<PendingOp['kind']>, SqlError>;
+  ) => Effect.Effect<ReadonlyArray<Pick<PendingOp, 'dropsFrom' | 'eventId' | 'kind'>>, SqlError>;
   /**
    * The task ops of the op's account queued before it, in queue order: a
    * task move and the task ops around it keep that order even when
@@ -274,7 +276,11 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
       },
       earlierInSeries: (op) =>
         Effect.map(
-          sql<{ readonly kind: PendingOp['kind'] }>`SELECT kind FROM pending_ops
+          sql<{
+            readonly drops_from: number | null;
+            readonly event_id: string;
+            readonly kind: PendingOp['kind'];
+          }>`SELECT kind, event_id, drops_from FROM pending_ops
             WHERE account_id = ${op.accountId} AND id != ${op.id}
               AND (event_id = ${op.eventId}
                 OR substr(event_id, 1, length(${op.eventId}) + 1) = ${op.eventId} || '_'
@@ -282,7 +288,12 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
               AND (created_at < ${op.createdAt} OR (created_at = ${op.createdAt}
                 AND rowid < (SELECT rowid FROM pending_ops WHERE id = ${op.id})))
             ORDER BY created_at, rowid`,
-          (rows) => rows.map((row) => row.kind),
+          (rows) =>
+            rows.map((row) => ({
+              eventId: row.event_id,
+              kind: row.kind,
+              ...(row.drops_from === null ? {} : { dropsFrom: row.drops_from }),
+            })),
         ),
       earlierTaskOps: (op) =>
         Effect.map(

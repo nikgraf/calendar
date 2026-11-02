@@ -1803,6 +1803,51 @@ describe('SyncEngine', () => {
         }).pipe(Effect.provide(engineLayer(client)));
       });
 
+      it.effect(
+        'an occurrence edit made under it waits for it, also when its answer was lost',
+        () => {
+          // The rule change lands, its answer lost. Sent while it waited out
+          // its backoff, the edit made an exception under the new rule that
+          // the rule change's retry then took away.
+          let patches = 0;
+          const edited = {
+            end: { dateTime: '2026-07-03T11:00:00Z' },
+            etag: '"e-1"',
+            id: july3,
+            originalStartTime: { dateTime: '2026-07-03T10:00:00Z' },
+            recurringEventId: 'evt-r',
+            start: { dateTime: '2026-07-03T10:00:00Z' },
+            status: 'confirmed',
+            summary: 'Edited',
+          };
+          const client: GoogleCalendarClientShape = {
+            ...stubClient([firstPage]),
+            deleteEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
+            getEvent: () => Effect.succeed(extended),
+            patchEvent: ({ calendarId, eventId }) => {
+              if (eventId === july3) {
+                return Effect.succeed(edited);
+              }
+              return patches++ === 0
+                ? Effect.fail(new ApiUnavailableError({ cause: 'lost' }))
+                : Effect.fail(new ConflictError({ calendarId, eventId }));
+            },
+          };
+          return Effect.gen(function* () {
+            yield* seedAccount;
+            yield* (yield* SyncEngine).syncAll();
+            yield* changeRule;
+            yield* editJuly3;
+            yield* drain;
+            yield* drain;
+            expect(yield* opOf('evt-r', 'update')).toBeUndefined();
+            expect(yield* opOf(july3, 'update')).toBeUndefined();
+            expect(yield* shown).toContain('07-03T10:00 Edited');
+            expect(yield* strays).toEqual([]);
+          }).pipe(Effect.provide(engineLayer(client)));
+        },
+      );
+
       it.effect('an occurrence edit made meanwhile starts from Google’s exception', () => {
         // Discarded, the rule change leaves Google's July 3 as it was: the
         // edit's discard shows it again, not the slot.

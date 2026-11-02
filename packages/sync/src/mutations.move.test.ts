@@ -534,6 +534,8 @@ describe('moveEvent inside one Google account', () => {
       yield* mutations.moveEvent(move(['acc-1', 'cal-1', 'ser'], ['acc-1', 'cal-2']));
       yield* (yield* PendingOpRepo).retryNow();
       yield* mutations.processPendingOps();
+      // The exception's delete waited for the cut's patch: its 503 comes now.
+      yield* (yield* PendingOpRepo).retryNow();
       yield* mutations.processPendingOps();
 
       expect(calls.map((call) => `${call.kind}:${call.calendarId}`)).toEqual([

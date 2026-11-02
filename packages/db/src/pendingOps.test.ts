@@ -467,10 +467,13 @@ describe('PendingOpRepo', () => {
       yield* repo.enqueue(later);
       yield* repo.enqueue(op('other', { createdAt: 0, eventId: 'evt2' }));
 
-      expect(yield* repo.earlierInSeries(update)).toEqual([]);
-      expect(yield* repo.earlierInSeries(instance)).toEqual(['update']);
-      expect(yield* repo.earlierInSeries(move)).toEqual(['update', 'update']);
-      expect(yield* repo.earlierInSeries(later)).toEqual(['update', 'update', 'move']);
+      const kinds = (of: typeof update) =>
+        Effect.map(repo.earlierInSeries(of), (earlier) => earlier.map((entry) => entry.kind));
+      expect(yield* kinds(update)).toEqual([]);
+      expect(yield* kinds(instance)).toEqual(['update']);
+      expect(yield* kinds(move)).toEqual(['update', 'update']);
+      expect(yield* kinds(later)).toEqual(['update', 'update', 'move']);
+      expect((yield* repo.earlierInSeries(instance))[0]?.eventId).toBe('evt');
     }).pipe(Effect.provide(freshDbLayer())),
   );
 
