@@ -1848,6 +1848,66 @@ describe('SyncEngine', () => {
         },
       );
 
+      it.effect('a series edit that replaced it in flight drops nothing more once it lands', () => {
+        // The rename made while the rule change was out inherits what it
+        // drops. Once the rule change landed, the occurrence edit queued
+        // between them went first, and the rename's landing took its
+        // exception away.
+        const requested = Effect.runSync(Deferred.make<void>());
+        const release = Effect.runSync(Deferred.make<void>());
+        let ruleSent = false;
+        const edited = {
+          end: { dateTime: '2026-07-03T11:00:00Z' },
+          etag: '"e-1"',
+          id: july3,
+          originalStartTime: { dateTime: '2026-07-03T10:00:00Z' },
+          recurringEventId: 'evt-r',
+          start: { dateTime: '2026-07-03T10:00:00Z' },
+          status: 'confirmed',
+          summary: 'Edited',
+        };
+        const client: GoogleCalendarClientShape = {
+          ...stubClient([firstPage]),
+          deleteEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
+          patchEvent: ({ eventId }) => {
+            if (eventId === july3) {
+              return Effect.succeed(edited);
+            }
+            if (ruleSent) {
+              return Effect.succeed({ ...extended, summary: 'Renamed' });
+            }
+            ruleSent = true;
+            return Deferred.succeed(requested, undefined).pipe(
+              Effect.andThen(Deferred.await(release)),
+              Effect.as(extended),
+            );
+          },
+        };
+        return Effect.gen(function* () {
+          yield* seedAccount;
+          yield* (yield* SyncEngine).syncAll();
+          const mutations = yield* EventMutations;
+          yield* changeRule;
+          const sending = yield* Effect.forkChild(mutations.processPendingOps());
+          yield* Deferred.await(requested);
+          yield* editJuly3;
+          yield* mutations.updateRecurring({
+            ...at,
+            changes: { title: 'Renamed' },
+            originalStartUtc: july2,
+            scope: 'series',
+          });
+          yield* Deferred.succeed(release, undefined);
+          yield* Fiber.join(sending);
+          yield* drain;
+          yield* drain;
+          expect(yield* opOf('evt-r', 'update')).toBeUndefined();
+          expect(yield* opOf(july3, 'update')).toBeUndefined();
+          expect(yield* shown).toContain('07-03T10:00 Edited');
+          expect(yield* strays).toEqual([]);
+        }).pipe(Effect.provide(engineLayer(client)));
+      });
+
       it.effect('an occurrence edit made meanwhile starts from Google’s exception', () => {
         // Discarded, the rule change leaves Google's July 3 as it was: the
         // edit's discard shows it again, not the slot.

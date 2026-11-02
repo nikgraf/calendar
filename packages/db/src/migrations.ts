@@ -294,10 +294,25 @@ const baseline = Effect.gen(function* () {
 });
 
 // drops_from: on a series update that drops exceptions on Google, the
-// earliest original start it drops them from (PendingOp.dropsFrom).
+// earliest original start it drops them from (PendingOp.dropsFrom). An
+// update already queued that changes the rule takes the earliest exception
+// its occurrences' queued deletes took off the table (a cut's or a rule
+// change's: no row at their ids); landed, it would otherwise leave their
+// copies for a later master drawing those slots to bring back.
 const dropsFrom = Effect.gen(function* () {
   const sql = yield* SqlClient;
   yield* sql`ALTER TABLE pending_ops ADD COLUMN drops_from INTEGER`;
+  yield* sql`
+    UPDATE pending_ops SET drops_from = (
+      SELECT MIN(json_extract(d.before_payload, '$.originalStartUtc'))
+      FROM pending_ops d
+      WHERE d.kind = 'delete' AND d.account_id = pending_ops.account_id
+        AND d.calendar_id = pending_ops.calendar_id AND json_valid(d.before_payload)
+        AND json_extract(d.before_payload, '$.recurringEventId') = pending_ops.event_id
+        AND NOT EXISTS (SELECT 1 FROM events e WHERE e.account_id = d.account_id
+          AND e.calendar_id = d.calendar_id AND e.id = d.event_id))
+    WHERE kind = 'update' AND json_valid(payload) AND json_valid(before_payload)
+      AND json_extract(payload, '$.recurrence') IS NOT json_extract(before_payload, '$.recurrence')`;
 });
 
 // The third tuple element is a *loader* whose result is the migration effect.

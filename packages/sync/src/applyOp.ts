@@ -1164,11 +1164,32 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       }
     });
 
-  /** A landed series update that drops exceptions on Google forgets what holds them. */
+  /**
+   * A landed series update that drops exceptions on Google forgets what
+   * holds them. An update of the series that replaced it while it was out
+   * inherited its drop: sending the same rule, it drops nothing more —
+   * forgetting again when it lands would take the exceptions made since.
+   */
   const forgetDroppedBy = (op: PendingOp, calendarId: string = op.calendarId) =>
-    op.kind === 'update' && op.dropsFrom !== undefined
-      ? forgetDropped(taken, op.accountId, calendarId, op.eventId, op.dropsFrom)
-      : Effect.void;
+    Effect.gen(function* () {
+      const from = op.dropsFrom;
+      if (op.kind !== 'update' || from === undefined) {
+        return;
+      }
+      yield* forgetDropped(taken, op.accountId, calendarId, op.eventId, from);
+      const rule = JSON.stringify(op.payload?.recurrence ?? null);
+      const event = { accountId: op.accountId, calendarId, eventId: op.eventId };
+      for (const other of yield* pendingOpRepo.listForEvent(event)) {
+        if (
+          other.id !== op.id &&
+          other.kind === 'update' &&
+          other.dropsFrom !== undefined &&
+          JSON.stringify(other.payload?.recurrence ?? null) === rule
+        ) {
+          yield* pendingOpRepo.setDropsFrom(other.id, undefined);
+        }
+      }
+    });
 
   /**
    * After the op's own write landed, in one transaction: when it was sent

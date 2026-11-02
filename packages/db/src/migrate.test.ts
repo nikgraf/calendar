@@ -27,6 +27,13 @@ const namesOf = (type: 'index' | 'table') =>
     return rows.map((row) => row.name);
   });
 
+/** An exception of series m1, as a queued delete's snapshot stores it. */
+const exception = (id: string, originalStartUtc: number) => ({
+  id,
+  originalStartUtc,
+  recurringEventId: 'm1',
+});
+
 describe('runMigrations', () => {
   it.effect('builds the whole schema on a fresh database', () =>
     Effect.gen(function* () {
@@ -55,6 +62,47 @@ describe('runMigrations', () => {
         'idx_events_window',
         'idx_pending_ops_due',
         'idx_tasks_due',
+      ]);
+    }).pipe(Effect.provide(sqlLayer())),
+  );
+
+  it.effect('marks a queued change of a series’ rule with where its cut’s deletes start', () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient;
+      yield* runMigrationsWith(migrations.slice(0, 1));
+      const op = (id: string, kind: string, eventId: string, payload: unknown, before: unknown) =>
+        sql`INSERT INTO pending_ops (id, account_id, calendar_id, kind, event_id, payload,
+          before_payload, attempts, next_attempt_at, created_at)
+          VALUES (${id}, 'acc-1', 'cal-1', ${kind}, ${eventId}, ${JSON.stringify(payload)},
+            ${JSON.stringify(before)}, 0, 0, 1)`;
+      const daily = ['RRULE:FREQ=DAILY;COUNT=5'];
+      // A cut of m1 with its exceptions' deletes; a rename of m2 queued
+      // after a cut that landed; a cut of m3 whose exceptions were gone.
+      yield* op(
+        'cut',
+        'update',
+        'm1',
+        { recurrence: ['RRULE:FREQ=DAILY;COUNT=2'] },
+        { recurrence: daily },
+      );
+      yield* op('d5', 'delete', 'm1_5', exception('m1_5', 5000), exception('m1_5', 5000));
+      yield* op('d3', 'delete', 'm1_3', exception('m1_3', 3000), exception('m1_3', 3000));
+      yield* op('rename', 'update', 'm2', { recurrence: daily, title: 'B' }, { recurrence: daily });
+      yield* op(
+        'bare',
+        'update',
+        'm3',
+        { recurrence: ['RRULE:FREQ=DAILY;COUNT=2'] },
+        { recurrence: daily },
+      );
+      yield* runMigrations;
+
+      const rows = yield* sql<{ readonly drops_from: number | null; readonly id: string }>`
+        SELECT id, drops_from FROM pending_ops WHERE kind = 'update' ORDER BY id`;
+      expect(rows).toEqual([
+        { drops_from: null, id: 'bare' },
+        { drops_from: 3000, id: 'cut' },
+        { drops_from: null, id: 'rename' },
       ]);
     }).pipe(Effect.provide(sqlLayer())),
   );

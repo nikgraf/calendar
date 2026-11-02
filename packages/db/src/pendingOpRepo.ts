@@ -218,6 +218,15 @@ export interface PendingOpRepoShape {
    */
   readonly setBeforeTask: (opId: string, before: TaskRecord) => Effect.Effect<void, SqlError>;
   /**
+   * Replaces where a series update's drop of exceptions starts
+   * (`undefined`: it drops none): one that replaced an update in flight
+   * inherited its drop, and drops nothing more once that update landed.
+   */
+  readonly setDropsFrom: (
+    opId: string,
+    dropsFrom: number | undefined,
+  ) => Effect.Effect<void, SqlError>;
+  /**
    * Replaces what one op sends: a discarded op of the same event takes
    * its change out of what the others would send too (an RSVP rides in a
    * guest-list edit's attendees, a guest-list edit in an RSVP's).
@@ -560,6 +569,12 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
           Effect.asVoid(
             sql`UPDATE pending_ops SET before_task = ${JSON.stringify(taskPayloadJson(before))}
               WHERE id = ${opId}`,
+          ),
+        ),
+      setDropsFrom: (opId, dropsFrom) =>
+        invalidating(
+          Effect.asVoid(
+            sql`UPDATE pending_ops SET drops_from = ${dropsFrom ?? null} WHERE id = ${opId}`,
           ),
         ),
       setPayload: (opId, payload) =>

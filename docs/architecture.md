@@ -579,7 +579,10 @@ it whenever a kind is added. Rules that keep the queue correct:
   the master's rule draws the slot, and only until the cut or the new rule
   reaches Google. That series update carries where its drop starts
   (`dropsFrom`: the cut's occurrence, 0 for a new rule — Google drops the
-  exceptions with the old one; an update replacing it keeps the earlier),
+  exceptions with the old one; an update replacing it keeps the earlier,
+  and drops nothing more once one it replaced in flight landed the same
+  rule; one queued before the field existed took the earliest exception
+  its occurrences' deletes hold),
   and however it lands (a 2xx, a lost answer a 412 finds on Google)
   everything that still holds one of those exceptions forgets it
   (`forgetDropped`): the occurrence ops' snapshots go to `null` (an edit
