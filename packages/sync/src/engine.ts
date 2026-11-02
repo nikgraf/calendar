@@ -58,6 +58,7 @@ import {
   taskOrderEntry,
   type TaskOrderEntry,
 } from './taskOrder.ts';
+import { holdPulledExceptions, settlePulledSeries } from './takenExceptions.ts';
 import { cancelledOverrideTombstone } from './tombstone.ts';
 
 const CALENDAR_LIST_SCOPE = 'calendarList';
@@ -196,6 +197,7 @@ const make: Effect.Effect<
   const contactRepo = yield* ContactRepo;
   const eventRepo = yield* EventRepo;
   const pendingOpRepo = yield* PendingOpRepo;
+  const taken = { eventRepo, pendingOpRepo };
   const taskRepo = yield* TaskRepo;
   const remindersClient = yield* RemindersClient;
   const appleCalendarClient = yield* AppleCalendarClient;
@@ -377,10 +379,13 @@ const make: Effect.Effect<
           if (upserts.length > 0 || deletions.length > 0) {
             yield* sql.withTransaction(
               Effect.gen(function* () {
+                // An exception of a series whose delete waits with the
+                // master gone locally goes into that delete, not the table.
+                const rows = yield* holdPulledExceptions(taken, account.id, calendarId, upserts);
                 yield* eventRepo.applyPage(account.id, calendarId, {
                   deletions,
                   mode: 'pull',
-                  upserts,
+                  upserts: rows,
                 });
                 // A queued delete of one of these has nothing left to put back.
                 yield* pendingOpRepo.forgetDeleted(account.id, calendarId, [
@@ -392,8 +397,14 @@ const make: Effect.Effect<
                 yield* pendingOpRepo.rememberPulled(
                   account.id,
                   calendarId,
-                  upserts.filter((record) => record.status !== 'cancelled'),
+                  rows.filter((record) => record.status !== 'cancelled'),
                 );
+                // A master put back at its waiting delete brings back what
+                // the delete took; a series deleted on Google takes it away.
+                yield* settlePulledSeries(taken, account.id, calendarId, {
+                  deletions,
+                  written: rows,
+                });
               }),
             );
           }

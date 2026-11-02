@@ -76,6 +76,12 @@ import {
   type UpdateEventParams,
 } from './mutationTypes.ts';
 import { makeReminderMutations } from './reminderMutations.ts';
+import {
+  dropSeriesExceptions,
+  restoreTaken,
+  takeBackPulled,
+  takenExceptions,
+} from './takenExceptions.ts';
 import { cancelledOverrideTombstone } from './tombstone.ts';
 import { makeTaskMutations } from './taskMutations.ts';
 
@@ -380,41 +386,26 @@ const make: Effect.Effect<
       }
     });
 
-  /** The exceptions a queued delete of the series took locally, as Google has them. */
-  const takenExceptions = (accountId: string, calendarId: string, masterId: string) =>
-    Effect.map(opsForEvent(accountId, calendarId, masterId), (queued) =>
-      queued.flatMap((op) =>
-        op.kind === 'delete'
-          ? (op.beforeOverrides ?? []).map(
-              (override) => new EventRecord({ ...override, calendarId }),
-            )
-          : [],
-      ),
-    );
+  const taken = { eventRepo, pendingOpRepo };
 
   /**
    * A change of the series made while its delete is still queued (the
    * user acts on the master a pull put back meanwhile) replaces that
-   * delete: the exceptions it took locally come back first, as Google has
-   * them, so the change sees the series as Google does — a move, an
-   * answer, an edit, or a new delete's snapshot. An incremental pull that
-   * re-sent the master need not have re-sent its unchanged exceptions; a
-   * row at an exception's id (a pull's copy, an op's since) is newer.
+   * delete: what it took locally comes back first, as Google has it, so
+   * the change sees the series as Google does — a move, an answer, an
+   * edit, or a new delete's snapshot. The pull that put the master back
+   * put back the exceptions with it (takenExceptions.ts); a delete still
+   * holding some was left so by a pull made before it did.
    */
   const restoreTakenExceptions = (accountId: string, calendarId: string, masterId: string) =>
-    Effect.gen(function* () {
-      for (const override of yield* takenExceptions(accountId, calendarId, masterId)) {
-        if (!(yield* eventRepo.getById(accountId, calendarId, override.id))) {
-          yield* eventRepo.upsertMany([new EventRecord({ ...override, syncStatus: 'synced' })]);
-        }
-      }
-    });
+    restoreTaken(taken, accountId, calendarId, masterId);
 
   /**
    * What an occurrence edit or delete starts from: the occurrence's row,
-   * else the exception a queued series delete took there — while that
-   * delete waits behind the master a pull put back, Google still has the
-   * exception. Built on the master's slot instead, the edit would patch
+   * else the exception a queued series delete took there — Google still
+   * has it while that delete waits behind the master a pull put back (a
+   * pull now puts the exceptions back with it, one made before it did
+   * left them in the delete). Built on the master's slot instead, the edit would patch
    * the exception's own changes away and the delete would remember
    * nothing to put back. The series delete stays queued, so nothing else
    * it took comes back. A cancellation it took is no base: the slot
@@ -433,10 +424,11 @@ const make: Effect.Effect<
       if (row) {
         return row;
       }
-      const taken = yield* takenExceptions(accountId, calendarId, masterId);
+      const exceptions = yield* takenExceptions(pendingOpRepo, accountId, calendarId, masterId);
       return (
-        taken.find((override) => override.id === instanceId && override.status !== 'cancelled') ??
-        null
+        exceptions.find(
+          (override) => override.id === instanceId && override.status !== 'cancelled',
+        ) ?? null
       );
     });
 
@@ -693,19 +685,17 @@ const make: Effect.Effect<
     );
 
   /**
-   * Keep mine: re-send without If-Match. A parked delete also clears a
-   * copy a pull re-inserted while it waited (a pending row — an instance
-   * tombstone — is the user's own and stays). An edit of an event Google
-   * deleted is restored as a new event: patching it would 404 and the
-   * NotFound arm would drop the edit.
+   * Keep mine: re-send without If-Match. A parked delete also takes back
+   * the copies a pull put back while it waited, into its snapshot
+   * (`takeBackPulled`; a pending row — an instance tombstone — is the
+   * user's own and stays). An edit of an event Google deleted is restored
+   * as a new event: patching it would 404 and the NotFound arm would drop
+   * the edit.
    */
   const keepMine = (op: PendingOp, now: number) =>
     Effect.gen(function* () {
       if (op.kind === 'delete') {
-        const row = yield* eventRepo.getById(op.accountId, op.calendarId, op.eventId);
-        if (row && row.syncStatus !== 'pending') {
-          yield* eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
-        }
+        yield* takeBackPulled(taken, op);
         return yield* pendingOpRepo.unpark(op.id, now);
       }
       if (op.serverPayload && op.serverPayload.status !== 'cancelled') {
@@ -743,7 +733,12 @@ const make: Effect.Effect<
       );
     });
 
-  /** Take theirs: Google's current copy (undefined = gone) replaces the local row. */
+  /**
+   * Take theirs: Google's current copy (undefined = gone) replaces the
+   * local row. Google kept a series' exceptions with its master: what a
+   * series delete took comes back, where no row is. A series gone on
+   * Google took them along, and their synced rows go too.
+   */
   const takeTheirs = (op: PendingOp, item: GcalEvent | undefined, now: number) =>
     Effect.gen(function* () {
       const context = { accountId: op.accountId, calendarId: op.calendarId, syncedAt: now };
@@ -759,8 +754,10 @@ const make: Effect.Effect<
       if (record) {
         // Ack mode: overwrites the pending row the pulls skipped.
         yield* eventRepo.upsertMany([record]);
+        yield* restoreTaken(taken, op.accountId, op.calendarId, op.eventId);
       } else {
         yield* eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
+        yield* dropSeriesExceptions(taken, op.accountId, op.calendarId, op.eventId);
       }
       yield* restoreCarriedText(eventRepo, op);
       yield* pendingOpRepo.remove(op.id);
@@ -773,9 +770,16 @@ const make: Effect.Effect<
         return;
       }
       if (choice === 'mine') {
-        // transactional kicks the drain once the unpark committed.
+        // Read again in the transaction: a pull page may have changed the
+        // snapshot keep-mine adds to. transactional kicks the drain once the
+        // unpark committed.
         return yield* transactional(
-          Effect.flatMap(Clock.currentTimeMillis, (now) => keepMine(op, now)),
+          Effect.gen(function* () {
+            const current = yield* pendingOpRepo.getById(opId);
+            if (current?.conflictAt !== undefined) {
+              yield* keepMine(current, yield* Clock.currentTimeMillis);
+            }
+          }),
         );
       }
       // After a move the op points at the destination, where Google has

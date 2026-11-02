@@ -2,6 +2,7 @@ import { unavailableAppleCalendarClient } from '@calendar/apple-calendar';
 import { appleCalendarServicesLayer } from './appleCalendarEvents.ts';
 import {
   Account,
+  assembleWindow,
   Attendee,
   CalendarInfo,
   EventRecord,
@@ -18,6 +19,7 @@ import {
 } from '@calendar/db';
 import {
   ApiUnavailableError,
+  ConflictError,
   GoogleCalendarClient,
   type GoogleCalendarClientShape,
   GoogleTasksClient,
@@ -1317,6 +1319,210 @@ describe('keeping a series a pull put back while its delete waits', () => {
       expect(edit?.payload?.title).toBe('Daily (Google)');
       expect((yield* rowOf(instanceId))?.status).toBe('confirmed');
     }).pipe(noYield, Effect.provide(testLayer)),
+  );
+});
+
+describe('an exception of a series whose delete waits', () => {
+  /** What the calendar draws July 1–10: "MM-DDTHH:MM title" per event. */
+  const shown = Effect.gen(function* () {
+    const from = Date.parse('2026-07-01T00:00:00Z');
+    const to = Date.parse('2026-07-11T00:00:00Z');
+    const window = yield* (yield* EventRepo).getWindow(from, to);
+    return assembleWindow(window, from, to).map(
+      (event) => `${new Date(event.startUtc).toISOString().slice(5, 16)} ${event.title}`,
+    );
+  });
+  // July 4 moved to 11:00, and an invitation the user answers.
+  const invited = new EventRecord({
+    ...master,
+    attendees: [
+      new Attendee({ email: 'acc-1@example.com', isSelf: true, responseStatus: 'needsAction' }),
+      new Attendee({ email: 'host@example.com', isOrganizer: true, responseStatus: 'accepted' }),
+    ],
+    endUtc: Date.parse('2026-07-04T12:00:00Z'),
+    etag: '"o-1"',
+    id: instanceId,
+    organizerEmail: 'host@example.com',
+    originalStartUtc: occurrence,
+    recurrence: undefined,
+    recurringEventId: 'master1',
+    startUtc: Date.parse('2026-07-04T11:00:00Z'),
+    title: 'Daily (moved)',
+  });
+  const answered = {
+    attendees: [
+      { email: 'acc-1@example.com', responseStatus: 'accepted', self: true },
+      { email: 'host@example.com', organizer: true, responseStatus: 'accepted' },
+    ],
+    end: { dateTime: '2026-07-04T12:00:00Z' },
+    etag: '"o-2"',
+    id: instanceId,
+    organizer: { email: 'host@example.com' },
+    originalStartTime: { dateTime: '2026-07-04T09:00:00Z' },
+    recurringEventId: 'master1',
+    start: { dateTime: '2026-07-04T11:00:00Z', timeZone: 'UTC' },
+    status: 'confirmed',
+    summary: 'Daily (moved)',
+  };
+
+  it.effect('an answer that lands meanwhile keeps it out of sight, for a discard', () =>
+    Effect.gen(function* () {
+      yield* seedMaster;
+      yield* (yield* EventRepo).upsertMany([invited]);
+      const mutations = yield* EventMutations;
+      yield* mutations.respondToEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        eventId: instanceId,
+        response: 'accepted',
+      });
+      // The answer survives the series delete and lands while it waits.
+      yield* mutations.deleteRecurring({ ...target, scope: 'series' });
+      yield* mutations.processPendingOps();
+      const [remove] = yield* listOps;
+      expect(remove?.kind).toBe('delete');
+      // Written back, the exception showed as an event without its series.
+      expect(yield* shown).toEqual([]);
+      expect(remove?.beforeOverrides?.map((row) => row.etag)).toEqual(['"o-2"']);
+
+      yield* mutations.discardPendingOp(remove!.id);
+      expect(yield* shown).toContain('07-04T11:00 Daily (moved)');
+      const row = yield* rowOf(instanceId);
+      expect(row?.etag).toBe('"o-2"');
+      expect(row?.syncStatus).toBe('synced');
+      expect(row?.attendees?.find((guest) => guest.isSelf)?.responseStatus).toBe('accepted');
+    }).pipe(
+      noYield,
+      Effect.provide(testLayerWith({ ...stubClient, patchEvent: () => Effect.succeed(answered) })),
+    ),
+  );
+
+  it.effect('an answer discarded meanwhile is out of what a discard of the delete puts back', () =>
+    Effect.gen(function* () {
+      yield* seedMaster;
+      yield* (yield* EventRepo).upsertMany([invited]);
+      const mutations = yield* EventMutations;
+      yield* mutations.respondToEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        eventId: instanceId,
+        response: 'accepted',
+      });
+      yield* mutations.deleteRecurring({ ...target, scope: 'series' });
+      const ops = yield* listOps;
+      yield* mutations.discardPendingOp(ops.find((op) => op.kind === 'rsvp')!.id);
+      yield* mutations.discardPendingOp(ops.find((op) => op.kind === 'delete')!.id);
+
+      // Google never got the answer.
+      const row = yield* rowOf(instanceId);
+      expect(row?.syncStatus).toBe('synced');
+      expect(row?.attendees?.find((guest) => guest.isSelf)?.responseStatus).toBe('needsAction');
+    }).pipe(
+      noYield,
+      Effect.provide(
+        testLayerWith({
+          ...stubClient,
+          patchEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
+        }),
+      ),
+    ),
+  );
+
+  it.effect('one discarded over Google’s copy of the occurrence leaves that copy', () =>
+    Effect.gen(function* () {
+      yield* seedMaster;
+      yield* (yield* EventRepo).upsertMany([invited]);
+      const mutations = yield* EventMutations;
+      yield* mutations.respondToEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        eventId: instanceId,
+        response: 'accepted',
+      });
+      yield* mutations.deleteRecurring({ ...target, scope: 'instance' });
+      // A pull skips the tombstone: Google's copy, accepted on another
+      // device, is what the occurrence delete puts back now.
+      const google = new EventRecord({
+        ...invited,
+        attendees: invited.attendees?.map((guest) =>
+          guest.isSelf ? new Attendee({ ...guest, responseStatus: 'accepted' }) : guest,
+        ),
+        etag: '"o-2"',
+      });
+      yield* (yield* PendingOpRepo).rememberPulled('acc-1', 'cal-1', [google]);
+      yield* mutations.deleteRecurring({ ...target, scope: 'series' });
+
+      const ops = yield* listOps;
+      yield* mutations.discardPendingOp(ops.find((op) => op.kind === 'rsvp')!.id);
+      yield* mutations.discardPendingOp(ops.find((op) => op.eventId === 'master1')!.id);
+      const row = yield* rowOf(instanceId);
+      expect(row?.etag).toBe('"o-2"');
+      expect(row?.attendees?.find((guest) => guest.isSelf)?.responseStatus).toBe('accepted');
+    }).pipe(
+      noYield,
+      Effect.provide(
+        testLayerWith({
+          ...stubClient,
+          patchEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
+        }),
+      ),
+    ),
+  );
+
+  it.effect('keep theirs on the parked delete brings the exceptions back with the master', () =>
+    Effect.gen(function* () {
+      yield* seedMaster;
+      // July 6 cancelled on Google.
+      const cancelled = new EventRecord({
+        ...invited,
+        attendees: undefined,
+        id: 'master1_20260706T090000Z',
+        organizerEmail: undefined,
+        originalStartUtc: Date.parse('2026-07-06T09:00:00Z'),
+        startUtc: Date.parse('2026-07-06T09:00:00Z'),
+        status: 'cancelled',
+      });
+      yield* (yield* EventRepo).upsertMany([invited, cancelled]);
+      const mutations = yield* EventMutations;
+      yield* mutations.deleteRecurring({ ...target, scope: 'series' });
+      yield* mutations.processPendingOps();
+      const [parked] = yield* listOps;
+      expect(parked?.conflictAt).toBeDefined();
+
+      yield* mutations.resolveConflict({ choice: 'theirs', opId: parked!.id });
+      expect(yield* listOps).toEqual([]);
+      expect(yield* shown).toEqual([
+        '07-01T09:00 Daily (Google)',
+        '07-02T09:00 Daily (Google)',
+        '07-03T09:00 Daily (Google)',
+        '07-04T11:00 Daily (moved)',
+        '07-05T09:00 Daily (Google)',
+        '07-07T09:00 Daily (Google)',
+        '07-08T09:00 Daily (Google)',
+        '07-09T09:00 Daily (Google)',
+        '07-10T09:00 Daily (Google)',
+      ]);
+    }).pipe(
+      noYield,
+      Effect.provide(
+        testLayerWith({
+          ...stubClient,
+          // Renamed on Google since: the delete parks.
+          deleteEvent: ({ calendarId, eventId }) =>
+            Effect.fail(new ConflictError({ calendarId, eventId })),
+          getEvent: () =>
+            Effect.succeed({
+              end: { dateTime: '2026-07-01T10:00:00Z', timeZone: 'UTC' },
+              etag: '"m-2"',
+              id: 'master1',
+              recurrence: ['RRULE:FREQ=DAILY;COUNT=10'],
+              start: { dateTime: '2026-07-01T09:00:00Z', timeZone: 'UTC' },
+              status: 'confirmed',
+              summary: 'Daily (Google)',
+            }),
+        }),
+      ),
+    ),
   );
 });
 

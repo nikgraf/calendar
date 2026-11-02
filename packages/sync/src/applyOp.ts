@@ -39,6 +39,7 @@ import {
 import { Cause, Clock, Effect } from 'effect';
 import type { SqlError } from 'effect/sql/SqlError';
 import { restoreCarriedText } from './carriedText.ts';
+import { dropSeriesExceptions, putBack, reviseTaken, takeIntoDelete } from './takenExceptions.ts';
 import { makeApplyTaskOrder, readTaskOrder } from './taskOrder.ts';
 
 /**
@@ -284,6 +285,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
     tasksClient,
     transaction,
   } = deps;
+  const taken = { eventRepo, pendingOpRepo };
 
   /**
    * Where a put-back row stands with sync: still pending while another op
@@ -351,6 +353,17 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       }
       const current = yield* eventRepo.getById(op.accountId, op.calendarId, op.eventId);
       if (!current) {
+        // A waiting series delete may hold the exception instead.
+        const masterId = op.payload?.recurringEventId;
+        if (op.beforePayload && op.payload && masterId !== undefined) {
+          const before = op.beforePayload;
+          const payload = op.payload;
+          yield* reviseTaken(
+            taken,
+            { accountId: op.accountId, calendarId: op.calendarId, id: op.eventId, masterId },
+            (entry) => new EventRecord({ ...entry, ...ownedFields(op, entry, before, payload) }),
+          );
+        }
         return;
       }
       if (isPulledCopy(yield* pendingOpRepo.listForEvent(op), current)) {
@@ -404,9 +417,8 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         return;
       }
       // A synced row here is a pull's (Google's copy came back, or never
-      // left): it stays. The exceptions below are checked one by one —
-      // an incremental pull that re-sent the master need not have re-sent
-      // its unchanged exceptions.
+      // left): it stays, and that pull put back the exceptions with it
+      // (takenExceptions.ts).
       if (!current || current.syncStatus === 'pending') {
         const syncStatus = yield* releasedStatus(op);
         yield* eventRepo.upsertMany([
@@ -419,27 +431,8 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         ]);
       }
       // A series delete took the exceptions with it and owns no row at
-      // their ids: one there since is newer and stays — a pull's copy, or
-      // the user's own occurrence edit or delete of the series a pull put
-      // back (a landed occurrence delete leaves its tombstone pending).
-      for (const override of op.beforeOverrides ?? []) {
-        if (yield* eventRepo.getById(op.accountId, op.calendarId, override.id)) {
-          continue;
-        }
-        // An RSVP on the occurrence survived the series delete: it owns the row.
-        const owned = yield* pendingOpRepo.listForEvent({
-          accountId: op.accountId,
-          calendarId: op.calendarId,
-          eventId: override.id,
-        });
-        yield* eventRepo.upsertMany([
-          new EventRecord({
-            ...override,
-            calendarId: op.calendarId,
-            syncStatus: owned.length > 0 ? 'pending' : 'synced',
-          }),
-        ]);
-      }
+      // their ids: one there since is newer and stays.
+      yield* putBack(taken, op.accountId, op.calendarId, op.beforeOverrides ?? []);
     });
 
   /**
@@ -1042,10 +1035,8 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
    * at its id. That copy goes. A cancelled override (one occurrence's
    * delete) stays, and a pending row is an op's queued since — read and
    * delete in one transaction, so an edit of the copy cannot slip between.
-   * A series takes its exceptions with it on Google: the synced ones a
-   * pull, an answer or a discard put back while its delete waited go too,
-   * or they would show as events of their own, and the occurrences' ops
-   * still queued have nothing left to put back (`forgetSeries`).
+   * A series takes its exceptions with it on Google, and their synced
+   * rows go too (`dropSeriesExceptions`).
    */
   const dropPulledCopy = (op: PendingOp) =>
     transaction(
@@ -1054,16 +1045,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         if (row?.syncStatus === 'synced' && row.status !== 'cancelled') {
           yield* eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
         }
-        for (const override of yield* eventRepo.listOverrides(
-          op.accountId,
-          op.calendarId,
-          op.eventId,
-        )) {
-          if (override.syncStatus === 'synced') {
-            yield* eventRepo.deleteEvent(op.accountId, op.calendarId, override.id);
-          }
-        }
-        yield* pendingOpRepo.forgetSeries(op.accountId, op.calendarId, op.eventId);
+        yield* dropSeriesExceptions(taken, op.accountId, op.calendarId, op.eventId);
       }),
     );
 
@@ -1148,7 +1130,9 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
    * between, and a stale If-Match would 412 against the user's own edit.
    * One queued before it keeps its etag: it was built without this change
    * (advanceBaseEtag). Then Google's copy settles the row, unless a later
-   * op owns it.
+   * op owns it — or it is an exception whose series delete waits with the
+   * master gone locally: then the copy goes into that delete
+   * (`takeIntoDelete`; an answer survives a series delete).
    */
   const settle = (
     op: PendingOp,
@@ -1172,9 +1156,13 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
           return;
         }
         yield* advanceCarried(op, synced, calendarId);
+        const held = yield* takeIntoDelete(taken, synced);
         if (yield* othersQueued(op, calendarId)) {
           // The row is theirs; what they replace is now what just landed.
           yield* advanceOthers(op, event, synced);
+        } else if (held) {
+          // Google's copy is in the delete now; the op's own row goes.
+          yield* eventRepo.deleteEvent(op.accountId, calendarId, op.eventId);
         } else {
           yield* eventRepo.upsertMany([synced]);
         }

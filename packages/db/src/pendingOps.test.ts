@@ -341,6 +341,26 @@ describe('PendingOpRepo', () => {
     }).pipe(Effect.provide(freshDbLayer())),
   );
 
+  it.effect('listDeletes and setBeforeOverrides: the exceptions a series delete holds', () =>
+    Effect.gen(function* () {
+      const repo = yield* PendingOpRepo;
+      yield* repo.enqueue(op('series', { eventId: 'm1', kind: 'delete' }));
+      yield* repo.enqueue(op('edit', { eventId: 'm2', kind: 'update' }));
+      yield* repo.enqueue(op('elsewhere', { calendarId: 'cal-2', eventId: 'm1', kind: 'delete' }));
+      yield* repo.enqueue(op('other', { accountId: 'acc-2', eventId: 'm1', kind: 'delete' }));
+      const [remove, ...rest] = yield* repo.listDeletes('acc-1', 'cal-1');
+      expect(remove?.id).toBe('series');
+      expect(rest).toEqual([]);
+
+      yield* repo.setBeforeOverrides('series', [eventRow('Moved')]);
+      expect((yield* repo.getById('series'))?.beforeOverrides?.map((row) => row.title)).toEqual([
+        'Moved',
+      ]);
+      yield* repo.setBeforeOverrides('series', undefined);
+      expect((yield* repo.getById('series'))?.beforeOverrides).toBeUndefined();
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
   it.effect('listDue hides ops whose backoff has not elapsed', () =>
     Effect.gen(function* () {
       const repo = yield* PendingOpRepo;

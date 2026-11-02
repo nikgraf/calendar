@@ -244,11 +244,14 @@ it whenever a kind is added. Rules that keep the queue correct:
   `listPendingOps` (`PendingOpSummary.conflict`: mine, theirs) — a
   persistent banner on both apps plus the queue rows — and
   `resolveConflict` settles it: **mine** unparks with `base_etag` cleared
-  so the re-send overwrites Google (a parked delete also removes a copy a
-  pull re-inserted meanwhile; an edit of an event Google deleted is
+  so the re-send overwrites Google (a parked delete also takes the copies
+  a pull re-inserted meanwhile back into its snapshot, a series' master
+  and exceptions alike; an edit of an event Google deleted is
   re-created under a new id as a standalone event); **theirs** re-fetches
   Google's _current_ copy (the stored one is a preview) and writes it in
-  ack mode, then drops the op. Take-theirs is refused while a move of the
+  ack mode, then drops the op — a series delete's exceptions come back
+  with a live master, and a series gone on Google takes its synced
+  exceptions along. Take-theirs is refused while a move of the
   series is queued ahead. A new edit of a parked event coalesces as usual
   and parks again with the newer payload.
 - **401**: the op stays queued, the account is flagged `reauth_required`;
@@ -421,7 +424,8 @@ it whenever a kind is added. Rules that keep the queue correct:
 - **An op remembers what it replaced**: `beforePayload` (the event row
   before the local write; `null` when there was none — an occurrence edit
   or delete that materialized its override), `beforeOverrides` (a series
-  delete's exception rows, which queue no op of their own), `beforeTask`
+  delete's exception rows, which queue no op of their own, while its
+  master is gone locally — see Sync engine), `beforeTask`
   and `beforeColorHex`. When a newer edit replaces a queued op it inherits
   that op's snapshot, so the snapshot always names the last state Google
   acknowledged, however many edits piled up offline — except that a
@@ -529,20 +533,33 @@ it whenever a kind is added. Rules that keep the queue correct:
   puts Google's copy back (synced), and the delete removes that copy when
   it lands or finds the item gone (a live event row, never a cancelled
   override; a task row only while no op owns it), and a series delete
-  also the synced rows of its exceptions — a pull's copy, an answer's
-  ack or a discarded occurrence change put them back while it waited,
-  and without a master they would show as events. Acting on that copy
-  replaces the delete: an edit (`supersedeQueued`), an answer
+  also the synced rows of its exceptions (`dropSeriesExceptions`).
+  While a series delete waits, Google's copies of its exceptions live in
+  one place (`takenExceptions.ts`): in the delete's snapshot while the
+  master is gone locally — a pull's copy (where no row sits at its id) or
+  an answer's ack of one goes there, not onto the table, where without its
+  master it would show as an event of its own, and keep-mine on the parked
+  delete takes the pull's copies back there (an exception's own queued
+  delete, a cut's, then puts back that copy too) — and on the table once a
+  pull put the master back: that page puts back what the delete took,
+  where no row is, and the delete holds them no more (pending while an
+  answer or an edit owns one, unless a delete of it waits too — a cut's:
+  then it is Google's copy, synced, for that delete to take). An abandoned
+  answer whose answered row the delete took comes out of its snapshot
+  instead (Google's copy there never held it). The pull that re-sent the
+  master need not have re-sent them (the token sends only what changed);
+  without them a moved occurrence showed at its slot and a cancelled one
+  came back. A page that reports the series deleted on Google takes them
+  away again, as the delete's landing would. Acting on
+  that copy replaces the delete: an edit (`supersedeQueued`), an answer
   (`respondToEvent`, which an occurrence sends for its series) or a move
   of it drops the queued delete. Re-queued behind the move, or overtaken
   by an answer sent while it waited out a backoff, the delete removed the
   event on Google after all, and its pending row showed until the next
   pull reported the deletion. A series delete replaced this way (by a
   move, an answer, an edit, a cut or another series delete) first puts
-  back the exceptions it took locally, as Google has them, unless a row
-  sits at the id (`restoreTakenExceptions`): the pull that re-sent the
-  master need not have re-sent them, and a cancelled occurrence would
-  show again. A
+  back whatever exceptions it still holds, where no row is
+  (`restoreTakenExceptions`). A
   series move still carries an exception's delete (a this-and-following
   cut) along, and moves that exception's pulled copy as synced so the
   delete takes it when it lands. Each calendar's events
