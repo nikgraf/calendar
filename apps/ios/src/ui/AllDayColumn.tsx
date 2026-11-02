@@ -15,13 +15,14 @@ import {
   taskRepeats,
 } from '@calendar/core';
 import { SymbolView } from 'expo-symbols';
+import type { ReactElement } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { GestureDetector } from 'react-native-gesture-handler';
 import { DraftChip } from './DraftBlock.tsx';
 import { TaskCheck } from './TaskCheck.tsx';
 import { BOX_FONT_SCALE, type ThemeColors, useEventTint, useStyles, useTheme } from './theme.ts';
 import { ALL_DAY_ROW_HEIGHT } from './timelineLayout.ts';
-import type { TaskDrag } from './useTaskDrag.ts';
+import { type TaskDrag, useTaskDragGesture } from './useTaskDrag.ts';
 
 /**
  * One day's all-day chips (the open editor's drafts first — what is being
@@ -171,7 +172,7 @@ export function AllDayColumn({
                 />
               )}
             </Pressable>
-            <GestureDetector gesture={taskDrag.gestureFor(task, 'lane', isTaskReadOnly(task))}>
+            <LaneTaskDrag readOnly={isTaskReadOnly(task)} task={task} taskDrag={taskDrag}>
               <Pressable
                 accessibilityLabel={
                   facts.length > 0 ? `${task.title}, ${facts.join(', ')}` : undefined
@@ -195,7 +196,7 @@ export function AllDayColumn({
                   {taskChipLabel(task, { overdue, repeats })}
                 </Text>
               </Pressable>
-            </GestureDetector>
+            </LaneTaskDrag>
           </View>
         );
       })}
@@ -301,6 +302,22 @@ function FoldChip({
       </Text>
     </Pressable>
   );
+}
+
+/** A lane chip's body under the task drag: a component per chip, since its pan is a hook. */
+function LaneTaskDrag({
+  children,
+  readOnly,
+  task,
+  taskDrag,
+}: {
+  children: ReactElement;
+  readOnly: boolean;
+  task: TaskRecord;
+  taskDrag: TaskDrag;
+}) {
+  const gesture = useTaskDragGesture(taskDrag, task, 'lane', readOnly);
+  return <GestureDetector gesture={gesture}>{children}</GestureDetector>;
 }
 
 /** An all-day event in its calendar's tint: a Pressable like the task chip body, so it opens on the phone the way it does on desktop. */

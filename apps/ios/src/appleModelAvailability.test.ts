@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 
 // The availability module's index reaches for the native module registry,
 // which Node does not have; the check is handed its sources directly.
-vi.mock('expo-modules-core', () => ({
+vi.mock('expo', () => ({
   requireNativeModule: () => {
     throw new Error("Cannot find native module 'SolunivoModelAvailability'");
   },

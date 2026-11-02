@@ -64,6 +64,7 @@ class FakeRecorder implements Pick<
     return {
       canRecord: this.prepared,
       durationMillis: 0,
+      fileSize: 0,
       isRecording: this.isRecording,
       mediaServicesDidReset: false,
       metering: this.isRecording ? metering : -160,

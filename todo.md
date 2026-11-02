@@ -14,6 +14,21 @@ except the two below; their entries are in `docs/decisions.md` under
 The 2026-10-02 review's findings are closed in `docs/decisions.md`
 (Review fixes, #110–#142).
 
+- [ ] File an Expo issue (worked around here; not filed yet): under SDK
+      58's scene life cycle a background launch that connects no scene
+      starts no React Native, so expo-task-manager tasks
+      (expo-background-task, background fetch) never run after the app
+      was terminated. Code path: `ExpoAppSceneDelegate.swift:66`,
+      `EXTaskService.m` `_loadAppWithId` (its `react-native-experience`
+      app loader is Expo Go's, and it is consulted only with an app URL,
+      which a bare app never stores). Our workaround to point at:
+      `apps/ios/modules/solunivo-background-launch`.
+- [ ] File an Expo issue (worked around here; not filed yet): @expo/ui
+      58's community `MenuView` sizes its host by Yoga and bounds the
+      trigger by it, taking the trigger's own margin off the trigger's
+      width, so the content is clipped (the view menu's "▾"; SDK 57's
+      `matchContents` host ignored the margin instead).
+
 ## Tier 1 — CI and distribution
 
 - [ ] Async safeStorage before Electron 46 — `safeStorage`'s
@@ -247,10 +262,3 @@ decision and platform notes live in `docs/decisions.md`.
     - special feature: automatically sync those e.g. meetup event gets synced to family calendar
     - special feature: add in one calendar as normal even, but show in others as blocked or only share certain information
 - Prefetch week±1 in the range LRU (noted when the LRU landed)
-- Next Expo SDK (58, the next PR: Xcode 27's iOS 27 SDK requires the
-  UIScene life cycle, which SDK 57 apps lack): takes react-native 0.88,
-  reanimated 4.7 / worklets 0.13, gesture-handler 3, react 19.3,
-  datetimepicker 9.2, safe-area-context 5.11, screens 4.30 and op-sqlite
-  18 with it (all held back by the 2026-11-01 dependency sweep because
-  SDK 57 bundles the older ones; op-sqlite 17 does not build on RN 0.88),
-  and drops the SDK 57 `trustPolicyExclude` list in `pnpm-workspace.yaml`

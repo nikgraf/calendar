@@ -154,6 +154,13 @@ tags:
           notVisible:
             id: 'lesson-banner'
           timeout: 5000
+      # Out of the Search tab the way flow 25 leaves it: the field's
+      # "Close" ends the search and brings the tab bar back. iOS 27
+      # activates the field as the tab opens, and its keyboard covers the
+      # tab bar (which Maestro still counts as visible); iOS 26 leaves it
+      # inactive, without a "Close". A tap on the field makes both the same.
+      - tapOn: 'Events and tasks'
+      - tapOn: 'Close'
       - tapOn: 'Calendar'
       - extendedWaitUntil:
           visible: 'Search with AI, done'

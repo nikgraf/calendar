@@ -619,8 +619,11 @@ sets `CALENDAR_REMINDERS=off`, `CALENDAR_CONTACTS=off`,
 `CALENDAR_APPLE_CALENDAR=off`, `CALENDAR_GEO=off`,
 `CALENDAR_CAPTURE_WATCH=off`, `CALENDAR_NOTIFICATIONS=off` and
 `CALENDAR_ONBOARDING=off`, points `CALENDAR_SETTINGS_FILE` and
-`CALENDAR_AGENT_SOCKET` under the temp profile, and sets
-`CALENDAR_E2E_INPUT=cdp`; `launchApp(seed, options)` opts a spec into a
+`CALENDAR_AGENT_SOCKET` under the temp profile, sets
+`CALENDAR_E2E_INPUT=cdp`, and passes Chromium's `--use-mock-keychain`, so
+`safeStorage` (tokens, a served model's key) never touches the login
+keychain: a new Electron binary used to stop the run on macOS's keychain
+access dialog; `launchApp(seed, options)` opts a spec into a
 fixture or a real bridge (`appleCalendar`, `camera`, `captureWatch`,
 `contacts`, `geo`, `google`, `microphone`, `model`, `onboarding`,
 `reminders`, `agents`, `settingsFile`, `window`). Under the `google` fixture "Add

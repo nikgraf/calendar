@@ -12,7 +12,7 @@ import { MutationNoticeToast, NOTICE_GAP, NoticeStack } from '../../src/ui/Toast
  * root page. The calendar's unsynced badge opens the root itself, where
  * Unsynced Changes is the first row while there are any.
  */
-export const unstable_settings = { initialRouteName: 'index' };
+export const unstable_settings = { anchor: 'index' };
 
 /**
  * Settings: a modal over the tabs holding its own native stack — the root

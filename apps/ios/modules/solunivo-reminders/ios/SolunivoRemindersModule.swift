@@ -20,7 +20,9 @@ public class SolunivoRemindersModule: Module {
       NSTimeZone.resetSystemTimeZone()
     }
 
-    OnStartObserving {
+    // The module holder owns this closure, so it may keep the module; only
+    // the observer, which the shared bridge keeps past a reload, must not.
+    OnStartObserving { [self] in
       Task {
         await RemindersBridge.shared.observeChanges { [weak self] in
           self?.sendEvent("remindersChanged")
