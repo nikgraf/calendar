@@ -435,11 +435,11 @@ it whenever a kind is added. Rules that keep the queue correct:
   and an occurrence edit or delete with no row starts from the live
   exception a series delete waiting behind the master a pull put back
   took there (`occurrenceRow`), not the master's slot, which would patch
-  the exception's own changes away — and with no row there inherits
-  nothing from the occurrence's own delete (a cut's or a rule change's,
-  which took the row along): the master on the table no longer has that
-  exception, or its copy would be back (see Sync engine), so the
-  occurrence is the rule's slot; a move re-keys it to the
+  the exception's own changes away; one that replaces the occurrence's
+  own delete (a cut's or a rule change's, which took the row along)
+  inherits that delete's copy, which is Google's until the series update
+  that drops it lands (`dropsFrom`, see Sync engine; then it is `null`,
+  the rule's slot); a move re-keys it to the
   destination with the op, and back if Google never makes the move. The
   unsynced-changes list diffs an op against it (`pendingOpDiff`,
   computed in `listPendingOps` as display lines) and an abandoned op puts it back (`releaseRow`): a discard, a
@@ -573,9 +573,16 @@ it whenever a kind is added. Rules that keep the queue correct:
   master — those copies go back too, synced, where no row is
   (`restoreDropped`), for each delete to take when it lands; only where
   the master's rule draws the slot, and only until the cut or the new rule
-  reaches Google: its landing forgets those copies (`forgetDropped`), as
-  Google dropped the exceptions with it, or a later rule drawing their
-  slots (more days, say) would show them over it. A page that reports the
+  reaches Google. That series update carries where its drop starts
+  (`dropsFrom`: the cut's occurrence, 0 for a new rule — Google drops the
+  exceptions with the old one; an update replacing it keeps the earlier),
+  and however it lands (a 2xx, a lost answer a 412 finds on Google)
+  everything that still holds one of those exceptions forgets it
+  (`forgetDropped`): the occurrence ops' snapshots go to `null` (an edit
+  that replaced a cut's delete included), a waiting series delete lets it
+  go, and a synced row (a pull's copy, Google's copy keep-theirs put
+  back, a landed delete's tombstone) goes; otherwise a later rule drawing
+  their slots (more days, say) showed them over it. A page that reports the
   series deleted forgets them too, as it does a series delete's
   (`dropSeriesExceptions`), or a discard of one would write it back
   without its master. A copy taken from the row an answer made

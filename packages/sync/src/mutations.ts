@@ -119,11 +119,9 @@ const foldIntoCreate = (create: PendingOp, payload: EventRecord) =>
  * materializing its override). A replaced op without one leaves it
  * unknown: the row already holds that op's edit. A replaced delete hands
  * on Google's copy instead when a pull put one back while it waited
- * (`isPulledCopy`), not the snapshot it took before — and nothing where no
- * row is: an occurrence's delete that took its row along (a cut's or a
- * rule change's; its own delete leaves a tombstone) holds an exception the
- * master on the table no longer has, or its copy would be back
- * (`restoreDropped`). The occurrence is the rule's slot now.
+ * (`isPulledCopy`), not the snapshot it took before. An occurrence's
+ * delete that took its row along (a cut's or a rule change's) holds the
+ * exception as Google has it until that change lands (`dropsFrom`).
  */
 const inheritedBefore = (
   queued: ReadonlyArray<PendingOp>,
@@ -133,9 +131,6 @@ const inheritedBefore = (
     return current;
   }
   const prior = queued.find((op) => op.kind === 'update' || op.kind === 'delete');
-  if (prior?.kind === 'delete' && !current) {
-    return null;
-  }
   return prior ? prior.beforePayload : (current ?? null);
 };
 
@@ -441,7 +436,10 @@ const make: Effect.Effect<
       );
     });
 
-  /** Queues a this-and-following truncation of the master: a patch, or its unsent create. */
+  /**
+   * Queues a this-and-following truncation of the master: a patch, or its
+   * unsent create. The patch drops the exceptions from the cut on.
+   */
   const truncateQueued = (
     accountId: string,
     calendarId: string,
@@ -449,12 +447,12 @@ const make: Effect.Effect<
     truncated: EventRecord,
     unsentCreate: PendingOp | undefined,
     now: number,
+    cutAt: number,
   ) =>
     Effect.gen(function* () {
       const queued = yield* opsForEvent(accountId, calendarId, master.id);
-      const carriedText = unsentCreate
-        ? undefined
-        : queued.findLast((op) => op.kind === 'update')?.carriedText;
+      const replaced = queued.findLast((op) => op.kind === 'update');
+      const carriedText = unsentCreate ? undefined : replaced?.carriedText;
       if (unsentCreate) {
         yield* pendingOpRepo.removeForEvent(accountId, calendarId, master.id);
       } else {
@@ -471,6 +469,7 @@ const make: Effect.Effect<
               calendarId,
               carriedText,
               createdAt: now,
+              dropsFrom: Math.min(cutAt, replaced?.dropsFrom ?? cutAt),
               eventId: master.id,
               id: generateEventId(),
               kind: 'update',
@@ -1121,7 +1120,15 @@ const make: Effect.Effect<
           updatedAt: now,
         });
         yield* eventRepo.upsertMany([truncated]);
-        yield* truncateQueued(accountId, calendarId, master, truncated, unsentCreate, now);
+        yield* truncateQueued(
+          accountId,
+          calendarId,
+          master,
+          truncated,
+          unsentCreate,
+          now,
+          originalStartUtc,
+        );
         yield* dropOverridesFrom(accountId, calendarId, masterId, originalStartUtc, now, {
           remote: !unsentCreate,
         });
@@ -1449,6 +1456,12 @@ const make: Effect.Effect<
               calendarId,
               carriedText,
               createdAt: now,
+              // A new rule drops every exception; one queued before it
+              // dropped some already.
+              dropsFrom:
+                changes.recurrence === undefined
+                  ? queued.findLast((op) => op.kind === 'update')?.dropsFrom
+                  : 0,
               eventId: masterId,
               geoCleared: geoClearedFlag(master, merged, queued),
               id: generateEventId(),
@@ -1489,7 +1502,15 @@ const make: Effect.Effect<
           updatedAt: now,
         });
         yield* eventRepo.upsertMany([truncated]);
-        yield* truncateQueued(accountId, calendarId, master, truncated, unsentCreate, now);
+        yield* truncateQueued(
+          accountId,
+          calendarId,
+          master,
+          truncated,
+          unsentCreate,
+          now,
+          originalStartUtc,
+        );
         yield* dropOverridesFrom(accountId, calendarId, masterId, originalStartUtc, now, {
           remote: !unsentCreate,
         });

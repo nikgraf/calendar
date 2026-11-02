@@ -980,31 +980,6 @@ describe('discarding a change of a series', () => {
     }).pipe(Effect.provide(testLayer)),
   );
 
-  it.effect('and a discard of that edit takes the occurrence back to the slot', () =>
-    Effect.gen(function* () {
-      yield* seedMaster;
-      yield* (yield* EventRepo).upsertMany([override]);
-      const mutations = yield* EventMutations;
-      yield* mutations.updateRecurring({
-        ...target,
-        changes: { recurrence: ['RRULE:FREQ=DAILY;COUNT=12'] },
-        scope: 'series',
-      });
-      yield* mutations.updateRecurring({
-        ...target,
-        changes: { location: 'Room 4' },
-        scope: 'instance',
-      });
-      const edit = (yield* listOps).find((op) => op.eventId === instanceId && op.kind === 'update');
-      // The exception the rule dropped is no state of this occurrence.
-      expect(edit?.beforePayload).toBeNull();
-
-      yield* mutations.discardPendingOp(edit!.id);
-      // Its fields came back over the slot: the dropped exception showed again.
-      expect(yield* rowOf(instanceId)).toBeNull();
-    }).pipe(Effect.provide(testLayer)),
-  );
-
   it.effect('a series delete brings the master and its exceptions back', () =>
     Effect.gen(function* () {
       yield* seedMaster;

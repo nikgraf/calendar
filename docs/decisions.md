@@ -383,14 +383,14 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
 - **A cut's dropped occurrences follow Google's master** (2026-11-02, #280)
   — #279's open items: those rows now go into the waiting series delete.
   After a cut, a series back as Google has it showed the cut's moved and
-  cancelled occurrences at their slots, and an edit of one was built on
-  the slot. The copies a cut's (or rule change's) deletes hold now go
-  back where Google's master draws their slot, until that change lands;
-  an occurrence op with no row inherits none. Rejected: telling the two
-  deletes apart (the queue cannot, #274), or the master's rule alone (a
-  landed rule draws them too). Open: a pull's copy past a queued cut
-  shows alone until its delete lands; those deletes outlive a discarded
-  cut, and sent after a landed rule change they cancel its occurrences.
+  cancelled occurrences at their slots, and an occurrence edit was built
+  on the slot; after a rule change, a discarded edit put the dropped
+  exception back. The copies a cut's or rule change's deletes hold go back
+  where Google's master draws their slot, and the series update records
+  where its drop starts (`dropsFrom`): its landing forgets them. Rejected:
+  telling the deletes apart by the queue (#274) or the master's rule (a
+  landed rule draws them too). Open: Google's rule-change semantics are
+  unverified live; a pull's copy past a queued cut shows alone.
 - **Re-auth and sync kicks** — a 401 flags the account `reauth_required`
   and keeps its ops queued for after the reconnect (same id, by email);
   wake/unlock/focus/foreground kick a sync, throttled to one per 15 s,

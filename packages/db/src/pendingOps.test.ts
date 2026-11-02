@@ -361,6 +361,23 @@ describe('PendingOpRepo', () => {
     }).pipe(Effect.provide(freshDbLayer())),
   );
 
+  it.effect(
+    'a series update keeps where its drop starts; a snapshot can say nothing was there',
+    () =>
+      Effect.gen(function* () {
+        const repo = yield* PendingOpRepo;
+        yield* repo.enqueue(op('cut', { dropsFrom: 1234, eventId: 'm1', kind: 'update' }));
+        yield* repo.enqueue(op('rename', { eventId: 'm2', kind: 'update' }));
+        expect((yield* repo.getById('cut'))?.dropsFrom).toBe(1234);
+        expect((yield* repo.getById('rename'))?.dropsFrom).toBeUndefined();
+
+        yield* repo.setBefore('rename', eventRow('Before'));
+        expect((yield* repo.getById('rename'))?.beforePayload?.title).toBe('Before');
+        yield* repo.setBefore('rename', null);
+        expect((yield* repo.getById('rename'))?.beforePayload).toBeNull();
+      }).pipe(Effect.provide(freshDbLayer())),
+  );
+
   it.effect('listDue hides ops whose backoff has not elapsed', () =>
     Effect.gen(function* () {
       const repo = yield* PendingOpRepo;

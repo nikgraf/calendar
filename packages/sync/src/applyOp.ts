@@ -1163,6 +1163,12 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       }
     });
 
+  /** A landed series update that drops exceptions on Google forgets what holds them. */
+  const forgetDroppedBy = (op: PendingOp, calendarId: string = op.calendarId) =>
+    op.kind === 'update' && op.dropsFrom !== undefined
+      ? forgetDropped(taken, op.accountId, calendarId, op.eventId, op.dropsFrom)
+      : Effect.void;
+
   /**
    * After the op's own write landed, in one transaction: when it was sent
    * with If-Match (`sentEtag`), the edits and deletes queued after it on
@@ -1170,10 +1176,12 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
    * produced. Google checked `sentEtag`, so nothing else changed in
    * between, and a stale If-Match would 412 against the user's own edit.
    * One queued before it keeps its etag: it was built without this change
-   * (advanceBaseEtag). Then Google's copy settles the row, unless a later
-   * op owns it — or it is an exception whose series delete waits with the
-   * master gone locally: then the copy goes into that delete
-   * (`takeIntoDelete`; an answer survives a series delete).
+   * (advanceBaseEtag). A series update that drops exceptions on Google
+   * forgets what still holds them (`forgetDropped`). Then Google's copy
+   * settles the row, unless a later op owns it — or it is an exception
+   * whose series delete waits with the master gone locally: then the copy
+   * goes into that delete (`takeIntoDelete`; an answer survives a series
+   * delete).
    */
   const settle = (
     op: PendingOp,
@@ -1184,6 +1192,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       Effect.gen(function* () {
         const calendarId = options.calendarId ?? op.calendarId;
         const event = { accountId: op.accountId, calendarId, eventId: op.eventId };
+        yield* forgetDroppedBy(op, calendarId);
         const produced = synced?.etag ?? undefined;
         if (
           options.sentEtag !== undefined &&
@@ -1793,24 +1802,15 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
           });
           // A second drag made while this patch was in flight queued a new
           // update on the same etag: it now follows this write.
-          const synced = mapGcalEvent(response, {
-            accountId: op.accountId,
-            calendarId: op.calendarId,
-            defaultTimeZone: op.payload.startTimeZone ?? 'UTC',
-            syncedAt: yield* Clock.currentTimeMillis,
-          });
-          const ruleChanged =
-            op.beforePayload !== undefined &&
-            op.beforePayload !== null &&
-            JSON.stringify(op.beforePayload.recurrence ?? []) !==
-              JSON.stringify(op.payload.recurrence ?? []);
-          yield* transaction(
-            Effect.andThen(
-              settle(op, synced, { sentEtag: op.baseEtag }),
-              ruleChanged
-                ? forgetDropped(taken, op.accountId, op.calendarId, op.eventId)
-                : Effect.void,
-            ),
+          yield* settle(
+            op,
+            mapGcalEvent(response, {
+              accountId: op.accountId,
+              calendarId: op.calendarId,
+              defaultTimeZone: op.payload.startTimeZone ?? 'UTC',
+              syncedAt: yield* Clock.currentTimeMillis,
+            }),
+            { sentEtag: op.baseEtag },
           );
           return 'done' as const;
         }
@@ -1858,7 +1858,10 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
                 // side; retrying it forever at the 30-minute cap fixes
                 // nothing. The write landed, so the row keeps the change
                 // and the next pull settles it.
-                drop(op, `${error.status}: ${error.message}`, { revert: false })
+                Effect.andThen(
+                  Effect.ignore(transaction(forgetDroppedBy(op))),
+                  drop(op, `${error.status}: ${error.message}`, { revert: false }),
+                )
               : error.status >= 400 && error.status < 500 && error.status !== 429
                 ? drop(op, `${error.status}: ${error.message}`)
                 : Effect.succeed(retry(`${error.status}: ${error.message}`)),

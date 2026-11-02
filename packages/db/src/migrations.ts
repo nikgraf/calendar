@@ -293,8 +293,16 @@ const baseline = Effect.gen(function* () {
     )`;
 });
 
+// drops_from: on a series update that drops exceptions on Google, the
+// earliest original start it drops them from (PendingOp.dropsFrom).
+const dropsFrom = Effect.gen(function* () {
+  const sql = yield* SqlClient;
+  yield* sql`ALTER TABLE pending_ops ADD COLUMN drops_from INTEGER`;
+});
+
 // The third tuple element is a *loader* whose result is the migration effect.
 // A migration is never renamed: the runner matches applied rows by id and name.
 export const migrations: ReadonlyArray<ResolvedMigration> = [
   [1, 'baseline-2026-10-15', Effect.succeed(baseline)],
+  [2, 'pending-ops-drops-from', Effect.succeed(dropsFrom)],
 ];

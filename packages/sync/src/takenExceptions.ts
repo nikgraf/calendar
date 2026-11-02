@@ -174,31 +174,48 @@ export const restoreDropped = (
   });
 
 /**
- * A change of the series' rule reached Google (a cut, a new rule): the
- * exceptions it took off the table are past the master's end or went with
- * the old rule, so the copies their queued deletes hold are Google's no
- * more — put back under a later master whose rule draws their slots, they
- * showed over it. A delete with a row at its id (an occurrence's own
- * tombstone) keeps its snapshot: that exception was no change's to drop.
+ * A series update that drops exceptions on Google landed (`dropsFrom`: a
+ * cut's occurrence, 0 for a new rule): the exceptions from that original
+ * start on are past the master's end or went with the old rule. What
+ * still holds one is Google's no more — a queued op's snapshot (a cut's
+ * delete, or an edit that replaced it) becomes `null`, nothing to put
+ * back; a waiting series delete lets it go; a synced row (a pull's copy, a
+ * landed delete's tombstone) goes. Put back under a later master whose
+ * rule draws those slots, they showed over it. Until the update lands they
+ * are Google's, and its discard brings them back (`restoreDropped`). A
+ * pending row is a queued op's.
  */
 export const forgetDropped = (
   { eventRepo, pendingOpRepo }: TakenDeps,
   accountId: string,
   calendarId: string,
   masterId: string,
-): Effect.Effect<void, SqlError> =>
-  Effect.gen(function* () {
-    const dropped: Array<string> = [];
-    for (const remove of yield* pendingOpRepo.listDeletes(accountId, calendarId)) {
-      if (
-        remove.beforePayload?.recurringEventId === masterId &&
-        !(yield* eventRepo.getById(accountId, calendarId, remove.eventId))
-      ) {
-        dropped.push(remove.eventId);
+  from: number,
+): Effect.Effect<void, SqlError> => {
+  const dropped = (record: EventRecord | null | undefined) =>
+    record?.recurringEventId === masterId && (record.originalStartUtc ?? record.startUtc) >= from;
+  return Effect.gen(function* () {
+    for (const op of yield* pendingOpRepo.listAll()) {
+      if (op.accountId !== accountId || op.calendarId !== calendarId) {
+        continue;
+      }
+      if (dropped(op.beforePayload)) {
+        yield* pendingOpRepo.setBefore(op.id, null);
+      }
+      if (op.eventId === masterId && op.beforeOverrides?.some(dropped)) {
+        yield* pendingOpRepo.setBeforeOverrides(
+          op.id,
+          op.beforeOverrides.filter((override) => !dropped(override)),
+        );
       }
     }
-    yield* pendingOpRepo.forgetDeleted(accountId, calendarId, dropped);
+    for (const override of yield* eventRepo.listOverrides(accountId, calendarId, masterId)) {
+      if (override.syncStatus === 'synced' && dropped(override)) {
+        yield* eventRepo.deleteEvent(accountId, calendarId, override.id);
+      }
+    }
   });
+};
 
 /** `overrides` with `copies` in place of what it held at their ids. */
 const withCopies = (

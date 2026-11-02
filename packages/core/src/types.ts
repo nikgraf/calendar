@@ -430,6 +430,15 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
    * response.
    */
   dispatchedAt: Schema.optional(Schema.Number),
+  /**
+   * Set on a series update that drops exceptions on Google: the earliest
+   * original start it drops them from — a this-and-following cut's
+   * occurrence, 0 for a new rule (Google drops them with the old one).
+   * An update that replaces it keeps the earlier of the two. Once it
+   * lands, the copies and snapshots of those exceptions are Google's no
+   * more; until then they are.
+   */
+  dropsFrom: Schema.optional(Schema.Number),
   eventId: Schema.String,
   /**
    * Set on an update whose edit dropped the event's coordinates (its
