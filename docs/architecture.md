@@ -435,7 +435,11 @@ it whenever a kind is added. Rules that keep the queue correct:
   and an occurrence edit or delete with no row starts from the live
   exception a series delete waiting behind the master a pull put back
   took there (`occurrenceRow`), not the master's slot, which would patch
-  the exception's own changes away; a move re-keys it to the
+  the exception's own changes away — and with no row there inherits
+  nothing from the occurrence's own delete (a cut's or a rule change's,
+  which took the row along): the master on the table no longer has that
+  exception, or its copy would be back (see Sync engine), so the
+  occurrence is the rule's slot; a move re-keys it to the
   destination with the op, and back if Google never makes the move. The
   unsynced-changes list diffs an op against it (`pendingOpDiff`,
   computed in `listPendingOps` as display lines) and an abandoned op puts it back (`releaseRow`): a discard, a
@@ -449,7 +453,11 @@ it whenever a kind is added. Rules that keep the queue correct:
   and the exceptions a series delete took with it, each only where no row
   is (the delete owns none there: a pull's copy, or an occurrence edit or
   delete made since, is newer, and a landed occurrence delete leaves its
-  tombstone pending); a task edit or toggle restores the fields it owns; a color goes back only
+  tombstone pending), and with them what its occurrences' own deletes took
+  (`restoreDropped`); an exception whose series delete waits with the
+  master gone goes into that delete instead (`takeIntoDelete`) — the
+  exception's discarded delete, or its edit undone once only an answer
+  owns the row; a task edit or toggle restores the fields it owns; a color goes back only
   while the calendar still shows the op's own (calendar-list pulls do not
   skip a queued color) — and the row stays `pending` while another op of
   the item, or a queued move of it, still owns it; an abandoned answer
@@ -532,13 +540,18 @@ it whenever a kind is added. Rules that keep the queue correct:
   delete leaves no row to skip: a page answered before it reached Google
   puts Google's copy back (synced), and the delete removes that copy when
   it lands or finds the item gone (a live event row, never a cancelled
-  override; a task row only while no op owns it), and a series delete
+  override — an occurrence whose slot its master's rule still draws
+  becomes the cancelled tombstone Google now has, or the slot would show
+  until a pull; a task row only while no op owns it), and a series delete
   also the synced rows of its exceptions (`dropSeriesExceptions`).
   While a series delete waits, Google's copies of its exceptions live in
   one place (`takenExceptions.ts`): in the delete's snapshot while the
   master is gone locally — a pull's copy (where no row sits at its id) or
   an answer's ack of one goes there, not onto the table, where without its
-  master it would show as an event of its own, and keep-mine on the parked
+  master it would show as an event of its own, and so does one a discard
+  of a cut's delete of it, keep-theirs on that delete, or an occurrence
+  edit undone after keep-mine would write back (`takeIntoDelete`; such an
+  undone edit only once no op but an answer owns the row), and keep-mine on the parked
   delete takes the pull's copies back there (an exception's own queued
   delete, a cut's, then puts back that copy too) — and on the table once a
   pull put the master back: that page puts back what the delete took,
@@ -550,7 +563,21 @@ it whenever a kind is added. Rules that keep the queue correct:
   master need not have re-sent them (the token sends only what changed);
   without them a moved occurrence showed at its slot and a cancelled one
   came back. A page that reports the series deleted on Google takes them
-  away again, as the delete's landing would. Acting on
+  away again, as the delete's landing would. A this-and-following cut, or
+  a rule change, takes the exceptions it drops off the table and queues a
+  delete of each (`dropOverridesFrom`), which outlives a later series
+  delete (it finds no row to take); that delete's snapshot is Google's
+  copy. Wherever Google's master is back on the table — a pull wrote it,
+  a discard of the series delete or of the cut's (or rule change's)
+  master update gave Google's rule back, or keep-theirs took Google's
+  master — those copies go back too, synced, where no row is
+  (`restoreDropped`), for each delete to take when it lands; only where
+  the master's rule draws the slot, so past the end of a cut that reached
+  Google none shows on its own. A copy taken from the row an answer made
+  pending goes back with Google's answers, which the answer's ack then
+  replaces (synced at a waiting delete's id, a row is Google's). Off the
+  table, a moved occurrence showed at its slot, a cancelled one came
+  back, and an occurrence edit was built on the slot. Acting on
   that copy replaces the delete: an edit (`supersedeQueued`), an answer
   (`respondToEvent`, which an occurrence sends for its series) or a move
   of it drops the queued delete. Re-queued behind the move, or overtaken

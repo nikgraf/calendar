@@ -378,7 +378,19 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   none); keep-mine and keep-theirs follow. Rejected: the delete keeping
   them too (an aging copy a discard could resurrect). Open: #274's cut and
   rule-change gaps; a cut's discarded exception delete, keep-theirs on it
-  or an undone occurrence edit writes a row without its master.
+  or an undone occurrence edit writes a row without its master (closed by
+  the next record).
+- **A cut's dropped occurrences follow Google's master** (2026-11-02, #280)
+  — #279's open items: those rows now go into the waiting series delete.
+  A series back as Google has it after a cut (a pull, a discard,
+  keep-theirs) showed the cut's moved and cancelled occurrences at their
+  slots, and an edit of one was built on the slot: the copies the cut's
+  (or a rule change's) deletes hold now go back wherever Google's master
+  draws their slot, and an occurrence op with no row inherits none.
+  Rejected: telling a cut's delete from a rule change's (the queue cannot,
+  #274; the master on the table can). Open: a pull's copy past a queued
+  cut shows on its own until its delete lands; a discarded cut still
+  sends its exception deletes.
 - **Re-auth and sync kicks** — a 401 flags the account `reauth_required`
   and keeps its ops queued for after the reconnect (same id, by email);
   wake/unlock/focus/foreground kick a sync, throttled to one per 15 s,

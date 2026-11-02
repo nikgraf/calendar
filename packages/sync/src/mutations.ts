@@ -78,8 +78,10 @@ import {
 import { makeReminderMutations } from './reminderMutations.ts';
 import {
   dropSeriesExceptions,
+  restoreDropped,
   restoreTaken,
   takeBackPulled,
+  takeIntoDelete,
   takenExceptions,
 } from './takenExceptions.ts';
 import { cancelledOverrideTombstone } from './tombstone.ts';
@@ -117,7 +119,11 @@ const foldIntoCreate = (create: PendingOp, payload: EventRecord) =>
  * materializing its override). A replaced op without one leaves it
  * unknown: the row already holds that op's edit. A replaced delete hands
  * on Google's copy instead when a pull put one back while it waited
- * (`isPulledCopy`), not the snapshot it took before.
+ * (`isPulledCopy`), not the snapshot it took before — and nothing where no
+ * row is: an occurrence's delete that took its row along (a cut's or a
+ * rule change's; its own delete leaves a tombstone) holds an exception the
+ * master on the table no longer has, or its copy would be back
+ * (`restoreDropped`). The occurrence is the rule's slot now.
  */
 const inheritedBefore = (
   queued: ReadonlyArray<PendingOp>,
@@ -127,6 +133,9 @@ const inheritedBefore = (
     return current;
   }
   const prior = queued.find((op) => op.kind === 'update' || op.kind === 'delete');
+  if (prior?.kind === 'delete' && !current) {
+    return null;
+  }
   return prior ? prior.beforePayload : (current ?? null);
 };
 
@@ -735,9 +744,11 @@ const make: Effect.Effect<
 
   /**
    * Take theirs: Google's current copy (undefined = gone) replaces the
-   * local row. Google kept a series' exceptions with its master: what a
-   * series delete took comes back, where no row is. A series gone on
-   * Google took them along, and their synced rows go too.
+   * local row — an exception's goes into its series delete instead while
+   * that waits with the master gone (`takeIntoDelete`). Google kept a
+   * series' exceptions with its master: what a series delete or its
+   * occurrences' own deletes took comes back, where no row is. A series
+   * gone on Google took them along, and their synced rows go too.
    */
   const takeTheirs = (op: PendingOp, item: GcalEvent | undefined, now: number) =>
     Effect.gen(function* () {
@@ -751,10 +762,13 @@ const make: Effect.Effect<
                 ...context,
                 defaultTimeZone: op.payload?.startTimeZone ?? 'UTC',
               });
-      if (record) {
+      if (record && (yield* takeIntoDelete(taken, record))) {
+        yield* eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
+      } else if (record) {
         // Ack mode: overwrites the pending row the pulls skipped.
         yield* eventRepo.upsertMany([record]);
         yield* restoreTaken(taken, op.accountId, op.calendarId, op.eventId);
+        yield* restoreDropped(taken, op.accountId, op.calendarId, op.eventId);
       } else {
         yield* eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
         yield* dropSeriesExceptions(taken, op.accountId, op.calendarId, op.eventId);
