@@ -23,6 +23,8 @@ export interface PendingOpRepoShape {
     from: string,
     to: string,
     landed: { readonly createdAt: number; readonly id: string },
+    /** Only content edits: an update that sends no guest list. */
+    options?: { readonly editsOnly?: boolean },
   ) => Effect.Effect<void, SqlError>;
   /**
    * After an op (`landed`) landed while others of the event were queued:
@@ -387,7 +389,7 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
           (rows) => rows.flatMap(decodedOps),
         ),
       // Bounded: one drain handles a page; the next kick takes the rest.
-      advanceBaseEtag: ({ accountId, calendarId, eventId }, from, to, landed) =>
+      advanceBaseEtag: ({ accountId, calendarId, eventId }, from, to, landed, options) =>
         invalidating(
           Effect.asVoid(
             // Queue order is (created_at, rowid), as listDue drains it. A
@@ -397,6 +399,8 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
               WHERE account_id = ${accountId} AND calendar_id = ${calendarId}
                 AND event_id = ${eventId} AND base_etag = ${from}
                 AND conflict_at IS NULL
+                AND (${options?.editsOnly === true ? 1 : 0} = 0
+                  OR (kind = 'update' AND attendees_changed = 0))
                 AND (created_at > ${landed.createdAt}
                   OR (created_at = ${landed.createdAt}
                     AND rowid > COALESCE(

@@ -236,13 +236,16 @@ it whenever a kind is added. Rules that keep the queue correct:
   never dropped — unless Google's copy already yields exactly the PATCH
   body the update would send (`updateBody`: our own earlier attempt
   landed), which is done; its followers keep their etag either way. Nor
-  when only the etag moved (`onlyEtagMoved`): Google's copy equals the
-  op's snapshot of the version its If-Match named in every field we keep,
-  those no PATCH sends included (a delete takes them along). Then what was
-  built on the old etag (the event's ops queued after it, its row) moves
-  to Google's, and the op goes again at once on it; a second 412 parks. A series
-  PATCH re-etags every exception, so an occurrence edit or delete queued
-  behind a rename or a new rule met a 412 with nothing changed
+  when an update finds only the etag moved (`onlyEtagMoved`): Google's
+  copy equals the op's snapshot of the version its If-Match named in
+  every field we keep, those no PATCH sends included. Then, unless the
+  user discarded or replaced the op meanwhile, what was built on the old
+  etag (the row, and the event's content edits queued after it) moves to
+  Google's, and the op goes again at once on it; a second 412 parks. A
+  delete always parks: it takes along what we do not keep at all
+  (attachments, a color). A series PATCH re-etags every exception, so an
+  occurrence edit queued behind a rename or a new rule met a 412 with
+  nothing changed
   (`advanceCarried` folds the carried text into its snapshot, and into
   the payload of an edit queued before the series edit, which would put
   the old text back otherwise). A guest-list edit always parks: Google

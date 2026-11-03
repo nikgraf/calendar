@@ -2698,7 +2698,9 @@ describe('SyncEngine', () => {
       }).pipe(Effect.provide(engineLayer(google.client)));
     });
 
-    it.effect('so does an occurrence delete', () => {
+    it.effect('an occurrence delete still parks: a DELETE takes what we do not keep along', () => {
+      // An attachment or a color another client added is no field we keep,
+      // so no comparison can say only the etag moved.
       const google = reetagged(movedOccurrence('Renamed', '"x-2"'));
       return Effect.gen(function* () {
         yield* seedAccount;
@@ -2709,10 +2711,48 @@ describe('SyncEngine', () => {
         google.goOnline();
         yield* mutations.retryPendingOps();
         yield* mutations.processPendingOps();
-        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
-        expect(google.calls).toEqual(['series "evt-r"', 'delete "x-1"', 'delete "x-2"']);
-        expect(yield* july3Shown).toEqual([]);
+        const [parked] = yield* (yield* PendingOpRepo).listAll();
+        expect(parked?.kind).toBe('delete');
+        expect(parked?.conflictAt).toBeDefined();
+        expect(google.calls).toEqual(['series "evt-r"', 'delete "x-1"']);
       }).pipe(Effect.provide(engineLayer(google.client)));
+    });
+
+    it.effect('an edit discarded while Google is asked is not sent again', () => {
+      const asked = Effect.runSync(Deferred.make<void>());
+      const answer = Effect.runSync(Deferred.make<void>());
+      const google = reetagged(movedOccurrence('Renamed', '"x-2"'));
+      const client: GoogleCalendarClientShape = {
+        ...google.client,
+        getEvent: (params) =>
+          params.eventId === july3
+            ? Deferred.succeed(asked, undefined).pipe(
+                Effect.andThen(Deferred.await(answer)),
+                Effect.andThen(google.client.getEvent(params)),
+              )
+            : google.client.getEvent(params),
+      };
+      return Effect.gen(function* () {
+        yield* seedAccount;
+        yield* (yield* SyncEngine).syncAll();
+        const mutations = yield* EventMutations;
+        yield* rename;
+        yield* mutations.updateRecurring({
+          ...july3At,
+          changes: { location: 'Room 4' },
+          scope: 'instance',
+        });
+        google.goOnline();
+        yield* mutations.retryPendingOps();
+        const sending = yield* Effect.forkChild(mutations.processPendingOps());
+        yield* Deferred.await(asked);
+        const queued = yield* (yield* PendingOpRepo).listAll();
+        yield* mutations.discardPendingOp(queued.find((op) => op.eventId === july3)!.id);
+        yield* Deferred.succeed(answer, undefined);
+        yield* Fiber.join(sending);
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+        expect(google.calls).toEqual(['series "evt-r"', 'july3 "x-1"']);
+      }).pipe(Effect.provide(engineLayer(client)));
     });
 
     it.effect('and behind a new rule that keeps July 3', () => {
@@ -2785,7 +2825,8 @@ describe('SyncEngine', () => {
     });
 
     it.effect('a delete still parks over a Meet link or visibility added on Google', () => {
-      // Fields a PATCH of ours never sends, but a delete would take along.
+      // Fields a PATCH of ours never sends, but a delete would take along:
+      // a delete parks on any 412.
       const google = reetagged({
         ...movedOccurrence('Renamed', '"x-2"'),
         hangoutLink: 'https://meet.google.com/abc-defg-hij',

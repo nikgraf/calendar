@@ -98,10 +98,11 @@ suite). When touching sync code, treat these as invariants.
   means "gone", like a 404 (never an expired sync token there). A series
   PATCH (a rename, a new rule) gives every exception a new etag, so an
   occurrence edit queued behind it meets a 412 with nothing changed
-  (verified live, `recurring.live.ts`). Such a 412, where Google's copy
-  equals what the op was built on, is re-sent on Google's etag instead of
-  parked (`onlyEtagMoved`). An exception's own write leaves the master's
-  etag alone: a rename queued behind it lands (verified live).
+  (verified live, `recurring.live.ts`). Such a 412 on an update, where
+  Google's copy equals what it was built on, is re-sent on Google's etag
+  instead of parked (`onlyEtagMoved`); a delete or a guest-list edit
+  still parks. An exception's own write leaves the master's etag alone:
+  a rename queued behind it lands (verified live).
 - **events.move** (`POST …/events/{id}/move?destination=`): re-homes an
   event into another calendar _of the same account_, keeping its id,
   guests, conference data and exceptions, and leaves a tombstone at the

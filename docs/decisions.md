@@ -303,14 +303,14 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   exception's own (nothing could be recomputed otherwise); discard,
   take-theirs and a permanent rejection restore the exceptions.
 - **A re-etag is no conflict** (2026-11-03, #282) — a series PATCH gives
-  every exception a new etag (probed live), so an occurrence edit or
-  delete queued behind a rename or a new rule parked as "changed on
-  Google" with nothing changed. A 412 whose fetched copy equals the op's
-  snapshot in every field we keep goes again on Google's etag. Rejected:
-  dropping If-Match from occurrence ops behind a series edit (a real
-  change from another client would be overwritten). Only a snapshot of
-  the version the If-Match names counts: a lost answer's landing advances
-  followers' snapshots to Google's copy, other clients' changes included.
+  every exception a new etag (probed live), so an occurrence edit queued
+  behind a rename or a new rule parked as "changed on Google" with
+  nothing changed. An update whose 412 copy equals its snapshot (of the
+  If-Match version) in every field we keep goes again on Google's etag.
+  Rejected: dropping If-Match behind a series edit (another client's
+  change would be overwritten). A guest-list edit and a delete still park:
+  Google replaces guest fields we lack, and a delete takes along what we
+  do not keep. Open: an occurrence delete behind a rename still asks.
 - **Conflicts with a choice** (2026-09-23, #85) — a 412 parks the op
   instead of dropping it (server-wins deleted the user's version and lost
   server changes a pull had skipped). Show Google's version, not just the

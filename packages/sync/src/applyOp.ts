@@ -198,20 +198,22 @@ const changedFields = (before: EventRecord, payload: EventRecord): Partial<Event
 };
 
 /**
- * Whether Google's copy is still what the op was built on (`beforePayload`)
- * in every field we keep, those no PATCH of ours sends included (a delete
- * takes them along), and only its etag moved. A series PATCH gives every
+ * Whether Google's copy is still what an update was built on
+ * (`beforePayload`) in every field we keep, those no PATCH of ours sends
+ * included, and only its etag moved. A series PATCH gives every
  * exception a new etag (verified live), with any changed text carried on
  * (`advanceCarried` folds that into the snapshot). Nothing the op would
  * overwrite or remove changed: no conflict to ask about. Only a snapshot
  * of the version its If-Match names counts: one a lost answer's landing
  * advanced to Google's copy (`advanceBefore`) may hold another client's
  * change. A guest-list edit always asks: Google replaces the whole list,
- * guest fields we do not keep (optional, comment) included.
+ * guest fields we do not keep (optional, comment) included. So does a
+ * delete: it takes along what we do not keep at all (attachments, a color).
  */
 const onlyEtagMoved = (op: PendingOp, theirs: EventRecord): boolean => {
   const before = op.beforePayload;
   return (
+    op.kind === 'update' &&
     op.attendeesChanged !== true &&
     before !== null &&
     before !== undefined &&
@@ -1436,13 +1438,19 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
                   yield* settle(op, theirs);
                   return 'done' as const;
                 }
-                // Only the etag moved: sent again at once on Google's. What
-                // was built on the old one (the edits queued after it, the
-                // row) moves with it first, so it follows the re-send's
-                // landing. A second 412 there is a change to ask about.
+                // Only the etag moved: sent again at once on Google's —
+                // unless the user discarded or replaced it while Google was
+                // asked. What was built on the old etag moves with it first
+                // (the row, and the content edits queued after it: a guest
+                // list or a delete keeps its 412), so it follows the
+                // re-send's landing. A second 412 there is a change to ask
+                // about.
                 const stale = op.baseEtag;
                 const fresh = theirs?.etag;
                 if (theirs && stale && fresh && onlyEtagMoved(op, theirs)) {
+                  if (!(yield* pendingOpRepo.getById(op.id))) {
+                    return 'done' as const;
+                  }
                   const event = {
                     accountId: op.accountId,
                     calendarId: op.calendarId,
@@ -1450,7 +1458,9 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
                   };
                   yield* transaction(
                     Effect.gen(function* () {
-                      yield* pendingOpRepo.advanceBaseEtag(event, stale, fresh, op);
+                      yield* pendingOpRepo.advanceBaseEtag(event, stale, fresh, op, {
+                        editsOnly: true,
+                      });
                       yield* eventRepo.advanceEtag(event, stale, fresh);
                     }),
                   );
