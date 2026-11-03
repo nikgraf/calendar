@@ -2711,6 +2711,53 @@ describe('SyncEngine', () => {
       }).pipe(Effect.provide(engineLayer(google.client)));
     });
 
+    it.effect('and behind a new rule that keeps July 3', () => {
+      // Twelve days still draw July 3: Google keeps its exception and gives
+      // it a new etag (verified live). The edit waits for the rule change.
+      const calls: Array<string> = [];
+      let online = false;
+      const twelve = { ...series, etag: '"evt-r-12"', recurrence: ['RRULE:FREQ=DAILY;COUNT=12'] };
+      const july3OnGoogle = movedOccurrence('Moved', '"x-2"');
+      const client: GoogleCalendarClientShape = {
+        ...stubClient([firstPage]),
+        getEvent: ({ eventId }) => Effect.succeed(eventId === july3 ? july3OnGoogle : twelve),
+        patchEvent: ({ baseEtag, calendarId, eventId }) => {
+          if (!online) {
+            return Effect.fail(new ApiUnavailableError({ cause: 'offline' }));
+          }
+          calls.push(`${eventId === july3 ? 'july3' : 'series'} ${baseEtag}`);
+          if (eventId !== july3) {
+            return Effect.succeed(twelve);
+          }
+          return baseEtag === '"x-2"'
+            ? Effect.succeed({ ...july3OnGoogle, etag: '"x-3"', location: 'Room 4' })
+            : Effect.fail(new ConflictError({ calendarId, eventId }));
+        },
+      };
+      return Effect.gen(function* () {
+        yield* seedAccount;
+        yield* (yield* SyncEngine).syncAll();
+        const mutations = yield* EventMutations;
+        yield* mutations.updateRecurring({
+          ...at,
+          changes: { recurrence: ['RRULE:FREQ=DAILY;COUNT=12'] },
+          originalStartUtc: Date.parse('2026-07-02T10:00:00Z'),
+          scope: 'series',
+        });
+        yield* mutations.updateRecurring({
+          ...july3At,
+          changes: { location: 'Room 4' },
+          scope: 'instance',
+        });
+        online = true;
+        yield* mutations.retryPendingOps();
+        yield* mutations.processPendingOps();
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+        expect(calls).toEqual(['series "evt-r"', 'july3 "x-1"', 'july3 "x-2"']);
+        expect(yield* july3Shown).toEqual(['12:00 Moved @ Room 4']);
+      }).pipe(Effect.provide(engineLayer(client)));
+    });
+
     it.effect('a change another device made meanwhile still parks', () => {
       const google = reetagged({ ...movedOccurrence('Renamed', '"x-2"'), location: 'Room 9' });
       return Effect.gen(function* () {
