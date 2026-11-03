@@ -378,6 +378,20 @@ describe('PendingOpRepo', () => {
       }).pipe(Effect.provide(freshDbLayer())),
   );
 
+  it.effect('a split-off series’ create keeps the series and occurrence it came from', () =>
+    Effect.gen(function* () {
+      const repo = yield* PendingOpRepo;
+      yield* repo.enqueue(
+        op('split', { eventId: 'm2', kind: 'create', splitAt: 1234, splitOf: 'm1' }),
+      );
+      yield* repo.enqueue(op('plain', { eventId: 'm3', kind: 'create' }));
+      const split = yield* repo.getById('split');
+      expect([split?.splitOf, split?.splitAt]).toEqual(['m1', 1234]);
+      const plain = yield* repo.getById('plain');
+      expect([plain?.splitOf, plain?.splitAt]).toEqual([undefined, undefined]);
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
   it.effect('listDue hides ops whose backoff has not elapsed', () =>
     Effect.gen(function* () {
       const repo = yield* PendingOpRepo;

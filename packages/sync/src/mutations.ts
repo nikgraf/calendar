@@ -76,6 +76,7 @@ import {
   type UpdateEventParams,
 } from './mutationTypes.ts';
 import { makeReminderMutations } from './reminderMutations.ts';
+import { dropSplitSeries } from './splitSeries.ts';
 import {
   drawsSlot,
   dropChangeDeletes,
@@ -112,6 +113,8 @@ const foldIntoCreate = (create: PendingOp, payload: EventRecord) =>
     kind: 'create',
     nextAttemptAt: 0,
     payload,
+    splitAt: create.splitAt,
+    splitOf: create.splitOf,
   });
 
 /**
@@ -808,6 +811,7 @@ const make: Effect.Effect<
         yield* restoreDropped(taken, op.accountId, op.calendarId, op.eventId);
         if (op.kind === 'delete' || op.dropsFrom !== undefined) {
           yield* dropChangeDeletes(taken, op.accountId, op.calendarId, op.eventId, op.dropsFrom);
+          yield* dropSplitSeries(taken, op.accountId, op.calendarId, op.eventId);
         }
       } else {
         yield* eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
@@ -1644,6 +1648,8 @@ const make: Effect.Effect<
             kind: 'create',
             nextAttemptAt: 0,
             payload: newMaster,
+            splitAt: originalStartUtc,
+            splitOf: masterId,
           }),
         );
       }),

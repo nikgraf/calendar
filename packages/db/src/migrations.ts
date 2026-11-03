@@ -315,9 +315,20 @@ const dropsFrom = Effect.gen(function* () {
       AND json_extract(payload, '$.recurrence') IS NOT json_extract(before_payload, '$.recurrence')`;
 });
 
+// split_of, split_at: on the create of a series a this-and-following edit
+// split off, the series it came from and the original start of the
+// occurrence it starts at (PendingOp.splitOf, splitAt). A create queued
+// before has none: it goes as before.
+const splitOf = Effect.gen(function* () {
+  const sql = yield* SqlClient;
+  yield* sql`ALTER TABLE pending_ops ADD COLUMN split_of TEXT`;
+  yield* sql`ALTER TABLE pending_ops ADD COLUMN split_at INTEGER`;
+});
+
 // The third tuple element is a *loader* whose result is the migration effect.
 // A migration is never renamed: the runner matches applied rows by id and name.
 export const migrations: ReadonlyArray<ResolvedMigration> = [
   [1, 'baseline-2026-10-15', Effect.succeed(baseline)],
   [2, 'pending-ops-drops-from', Effect.succeed(dropsFrom)],
+  [3, 'pending-ops-split-of', Effect.succeed(splitOf)],
 ];

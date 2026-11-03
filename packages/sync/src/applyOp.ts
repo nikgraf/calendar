@@ -39,6 +39,7 @@ import {
 import { Cause, Clock, Effect } from 'effect';
 import type { SqlError } from 'effect/sql/SqlError';
 import { restoreCarriedText } from './carriedText.ts';
+import { dropSplitSeries, holdsSplit } from './splitSeries.ts';
 import {
   drawsSlot,
   dropChangeDeletes,
@@ -416,12 +417,14 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       }
       // A series edit gone: the master's rule is Google's again, and so are
       // the exceptions its occurrences' own deletes took (a cut's, a rule
-      // change's), which go with the change that queued them. One update of
-      // the series is queued at a time.
+      // change's), which go with the change that queued them, as does the
+      // series a this-and-following edit split off. One update of the series
+      // is queued at a time.
       if (op.kind === 'update') {
         yield* restoreDropped(taken, op.accountId, op.calendarId, op.eventId);
         if (op.dropsFrom !== undefined) {
           yield* dropChangeDeletes(taken, op.accountId, op.calendarId, op.eventId, op.dropsFrom);
+          yield* dropSplitSeries(taken, op.accountId, op.calendarId, op.eventId);
         }
       }
     });
@@ -469,11 +472,12 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       // A series delete took the exceptions with it and owns no row at
       // their ids: one there since is newer and stays. The series is back
       // as Google has it, with what its occurrences' own deletes took — and
-      // without those deletes: a cut or a rule change it replaced queued
-      // them.
+      // without those deletes, or the series split off it: a cut or a rule
+      // change it replaced queued them.
       yield* putBack(taken, op.accountId, op.calendarId, op.beforeOverrides ?? []);
       yield* restoreDropped(taken, op.accountId, op.calendarId, op.eventId);
       yield* dropChangeDeletes(taken, op.accountId, op.calendarId, op.eventId);
+      yield* dropSplitSeries(taken, op.accountId, op.calendarId, op.eventId);
     });
 
   /**
@@ -1493,6 +1497,19 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         }
         if (op.kind !== 'move' && op.kind !== 'create' && kinds.includes('create')) {
           return retry('waiting for the create ahead of it');
+        }
+        // The series a this-and-following edit split off waits for the cut
+        // of the one it came from, wherever that sits (splitSeries.ts): sent
+        // ahead, it stayed on Google when the cut was undone.
+        const splitOf = op.kind === 'create' ? op.splitOf : undefined;
+        if (
+          splitOf !== undefined &&
+          (yield* pendingOpRepo.listAll()).some(
+            (entry) =>
+              entry.accountId === op.accountId && entry.eventId === splitOf && holdsSplit(entry),
+          )
+        ) {
+          return retry('waiting for the series it was split from');
         }
         // A change of the series' rule ahead of an occurrence's: once it
         // lands it forgets the exceptions it drops (`forgetDropped`), so it

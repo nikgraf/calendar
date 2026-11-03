@@ -486,6 +486,15 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
    */
   serverPayload: Schema.optional(EventRecord),
   /**
+   * The create of a series a this-and-following edit split off: the
+   * original start of the occurrence it starts at (`splitAt`) in the series
+   * it came from (`splitOf`). It waits for that series' cut, and goes with
+   * it while unsent if the cut is undone and the series, back as Google has
+   * it, still draws from `splitAt` on.
+   */
+  splitAt: Schema.optional(Schema.Number),
+  splitOf: Schema.optional(Schema.String),
+  /**
    * Due day (YYYY-MM-DD) for kind 'createTask'/'updateTask'; null on an
    * update that takes the day away (the patch sends `due: null`).
    */

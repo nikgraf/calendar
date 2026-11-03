@@ -343,7 +343,7 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
                                    carried_text, recurrence_cleared, before_payload,
                                    before_overrides, before_task, before_color_hex,
                                    target_task_list_id, task_parent, task_due_cleared,
-                                   task_previous, drops_from)
+                                   task_previous, drops_from, split_of, split_at)
           VALUES (${op.id}, ${op.accountId}, ${op.calendarId}, ${op.kind},
                   ${op.eventId},
                   ${op.payload ? JSON.stringify(eventPayloadJson(op.payload)) : null},
@@ -362,7 +362,8 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
                   ${op.beforeTask ? JSON.stringify(taskPayloadJson(op.beforeTask)) : null},
                   ${op.beforeColorHex ?? null}, ${op.targetTaskListId ?? null},
                   ${op.taskParent ?? null}, ${op.taskDue === null ? 1 : 0},
-                  ${op.taskPrevious ?? null}, ${op.dropsFrom ?? null})
+                  ${op.taskPrevious ?? null}, ${op.dropsFrom ?? null},
+                  ${op.splitOf ?? null}, ${op.splitAt ?? null})
         `),
         ),
       getById: (opId) =>
