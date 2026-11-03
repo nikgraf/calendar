@@ -48,9 +48,17 @@ suite). When touching sync code, treat these as invariants.
   across coalesced edits, an empty field equals a missing one, and
   discard, take-theirs and a permanent rejection put the exceptions' text
   back except where the user has since edited the exception or a pull
-  replaced the row). Known gap: a queued instance op's payload is not
-  rewritten, so it can still push carried text of an abandoned series
-  edit; the next pull converges.
+  replaced the row). Once the series edit lands, an occurrence edit
+  queued before it takes the carried text into its payload too
+  (`advanceCarried`): the series edit came later and wins on what it
+  carried, as when the two land in order, and sent as it was, the
+  occurrence edit put the old text back. One queued after it takes the
+  carried text in the fields it did not change itself (a landing or a
+  pull may have put Google's copy over the row's carry before it was
+  made). Known gap: a queued instance
+  op's payload is not rewritten for a series edit that never lands, so it
+  can still push carried text of an abandoned series edit; the next pull
+  converges.
 - **A new rule keeps the exceptions it still draws** (verified live
   2026-11-03, `recurring.live.ts`): a PATCH of a master's `recurrence`
   leaves an exception whose original slot the new rule still draws as it
@@ -90,7 +98,14 @@ suite). When touching sync code, treat these as invariants.
   unchecked. A stale-etag PATCH of a deleted event and a stale If-Match
   DELETE are 412s too. `events.get` answers a deleted event with 404 or
   410 — the client maps both to `NotFoundError`, and a 410 on any write
-  means "gone", like a 404 (never an expired sync token there).
+  means "gone", like a 404 (never an expired sync token there). A series
+  PATCH (a rename, a new rule) gives every exception a new etag, so an
+  occurrence edit queued behind it meets a 412 with nothing changed
+  (verified live, `recurring.live.ts`). Such a 412 on an update, where
+  Google's copy equals what it was built on, is re-sent on Google's etag
+  instead of parked (`onlyEtagMoved`); a delete or a guest-list edit
+  still parks. An exception's own write leaves the master's etag alone:
+  a rename queued behind it lands (verified live).
 - **events.move** (`POST …/events/{id}/move?destination=`): re-homes an
   event into another calendar _of the same account_, keeping its id,
   guests, conference data and exceptions, and leaves a tombstone at the

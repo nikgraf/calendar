@@ -595,3 +595,86 @@ describe('live Google: a new rule and the series’ exceptions', () => {
     }).pipe(Effect.provide(liveEngineLayer(config))),
   );
 });
+
+/** A weekly series with its second occurrence moved, synced and pulled back. */
+const seriesWithMoved = (
+  engine: { readonly syncAll: () => Effect.Effect<void> },
+  mutations: Pick<EventMutationsShape, 'createEvent' | 'processPendingOps' | 'updateRecurring'>,
+  name: string,
+) =>
+  Effect.gen(function* () {
+    const master = yield* createWeekly(mutations, name);
+    yield* drain(mutations);
+    const second = master.startUtc + WEEK;
+    yield* mutations.updateRecurring({
+      ...target(master.id, second),
+      changes: { endUtc: second + 4 * HOUR, startUtc: second + 3 * HOUR },
+      scope: 'instance',
+    });
+    yield* drain(mutations);
+    yield* engine.syncAll();
+    return { master, second };
+  });
+
+/**
+ * A series PATCH gives the series' exceptions new etags (verified live
+ * 2026-11-03): an occurrence op queued behind it carries the old etag and
+ * meets a 412. Only the etag moved, so it goes again on Google's instead of
+ * asking the user. An exception's own write leaves the master's etag alone:
+ * a rename queued behind one meets no 412 at all.
+ */
+describe('live Google: an op queued behind a write that moved its etag', () => {
+  it.live('an occurrence edit queued behind a series rename lands', () =>
+    Effect.gen(function* () {
+      const { engine, mutations, scratch: google } = yield* bootstrap(config);
+      const { master, second } = yield* seriesWithMoved(engine, mutations, 'reetag-occurrence');
+      const instanceId = googleInstanceId(master.id, second, false);
+      yield* noYield(
+        Effect.gen(function* () {
+          yield* mutations.updateRecurring({
+            ...target(master.id, master.startUtc),
+            changes: { title: `${master.title} (renamed)` },
+            scope: 'series',
+          });
+          yield* mutations.updateRecurring({
+            ...target(master.id, second),
+            changes: { location: 'Room 4' },
+            scope: 'instance',
+          });
+        }),
+      );
+      yield* drain(mutations);
+      expect(yield* pendingOps).toEqual([]);
+      const exception = yield* google.getEvent(calendar(), instanceId);
+      expect(exception.summary).toBe(`${master.title} (renamed)`);
+      expect(exception.location).toBe('Room 4');
+      expect(Date.parse(exception.start?.dateTime ?? '')).toBe(second + 3 * HOUR);
+    }).pipe(Effect.provide(liveEngineLayer(config))),
+  );
+
+  it.live('a series rename queued behind an occurrence edit lands', () =>
+    Effect.gen(function* () {
+      const { engine, mutations, scratch: google } = yield* bootstrap(config);
+      const { master, second } = yield* seriesWithMoved(engine, mutations, 'reetag-master');
+      yield* noYield(
+        Effect.gen(function* () {
+          yield* mutations.updateRecurring({
+            ...target(master.id, second),
+            changes: { location: 'Room 4' },
+            scope: 'instance',
+          });
+          yield* mutations.updateRecurring({
+            ...target(master.id, master.startUtc),
+            changes: { title: `${master.title} (renamed)` },
+            scope: 'series',
+          });
+        }),
+      );
+      yield* drain(mutations);
+      expect(yield* pendingOps).toEqual([]);
+      expect((yield* google.getEvent(calendar(), master.id)).summary).toBe(
+        `${master.title} (renamed)`,
+      );
+    }).pipe(Effect.provide(liveEngineLayer(config))),
+  );
+});
