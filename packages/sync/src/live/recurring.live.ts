@@ -551,6 +551,28 @@ describe('live Google: a new rule and the series’ exceptions', () => {
     }).pipe(Effect.provide(liveEngineLayer(config))),
   );
 
+  it.live('the app’s rule that skips them leaves nothing queued: the PATCH cancels them', () =>
+    Effect.gen(function* () {
+      const { engine, mutations, scratch: google } = yield* bootstrap(config);
+      const series = yield* appSeriesWithExceptions(engine, mutations, 'app-skip');
+      yield* mutations.updateRecurring({
+        ...target(series.masterId, series.start),
+        changes: { recurrence: ['RRULE:FREQ=WEEKLY;INTERVAL=3;COUNT=3'] },
+        scope: 'series',
+      });
+      yield* drain(mutations);
+      expect(yield* pendingOps).toEqual([]);
+      const state = yield* onGoogle(google, series);
+      expect(state.moved.startsWith('cancelled')).toBe(true);
+      expect(state.cancelled.startsWith('cancelled')).toBe(true);
+      const drawn = yield* drawnOnGoogle(google, series);
+      expect(drawn).toEqual([0, 3, 6].map((week) => series.start + week * WEEK));
+      expect(yield* drawnHere(series)).toEqual(drawn);
+      yield* engine.syncAll();
+      expect(yield* drawnHere(series)).toEqual(drawn);
+    }).pipe(Effect.provide(liveEngineLayer(config))),
+  );
+
   it.live('the app’s cut leaves nothing parked: Google cancels the exceptions past it', () =>
     Effect.gen(function* () {
       const { engine, mutations, scratch: google } = yield* bootstrap(config);
