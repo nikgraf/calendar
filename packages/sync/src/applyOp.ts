@@ -162,6 +162,9 @@ const updateBody = (op: PendingOp, record: EventRecord) => ({
   ...(op.attendeesChanged ? { attendees: toGcalAttendees(record) } : {}),
 });
 
+/** The text fields a series edit carries onto its exceptions. */
+type CarriedField = 'description' | 'location' | 'title';
+
 /** `revert: false` keeps the row's content and only hands it back to sync. */
 export interface ReleaseOptions {
   readonly revert?: boolean;
@@ -196,6 +199,34 @@ const changedFields = (before: EventRecord, payload: EventRecord): Partial<Event
     }
   }
   return patch as Partial<EventRecord>;
+};
+
+/**
+ * Whether Google's copy is still what an update was built on
+ * (`beforePayload`) in every field we keep, those no PATCH of ours sends
+ * included, and only its etag moved. A series PATCH gives every
+ * exception a new etag (verified live), with any changed text carried on
+ * (`advanceCarried` folds that into the snapshot). Nothing the op would
+ * overwrite or remove changed: no conflict to ask about. Only a snapshot
+ * of the version its If-Match names counts: one a lost answer's landing
+ * advanced to Google's copy (`advanceBefore`) may hold another client's
+ * change. A guest-list edit always asks: Google replaces the whole list,
+ * guest fields we do not keep (optional, comment) included. So does a
+ * delete: it takes along what we do not keep at all (attachments, a color).
+ */
+const onlyEtagMoved = (op: PendingOp, theirs: EventRecord): boolean => {
+  const before = op.beforePayload;
+  return (
+    op.kind === 'update' &&
+    op.attendeesChanged !== true &&
+    before !== null &&
+    before !== undefined &&
+    op.baseEtag !== undefined &&
+    before.etag === op.baseEtag &&
+    theirs.etag !== null &&
+    theirs.etag !== op.baseEtag &&
+    Object.keys(changedFields(before, theirs)).length === 0
+  );
 };
 
 const responseOf = (
@@ -1260,7 +1291,14 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
   /**
    * A series edit that carried text onto its exceptions landed: Google
    * carried it there too, so the queued edits of those exceptions now
-   * replace the carried text, not the text the exceptions had before.
+   * replace the carried text, not the text the exceptions had before. One
+   * queued before the series edit was built on the old text, and the
+   * series edit, later, wins on what it carried (as when the two land in
+   * order): its payload takes the carried text too. One queued after it
+   * takes it in each field it did not change itself (its payload holds its
+   * snapshot's value there): built on a row whose carry a landing or a
+   * pull put Google's copy over, it held the old text. Sent as it was,
+   * either put the old text back on that exception.
    */
   const advanceCarried = (op: PendingOp, synced: EventRecord, calendarId: string) =>
     Effect.gen(function* () {
@@ -1269,7 +1307,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         return;
       }
       // Google keeps no empty text: an empty field and a missing one are the same value.
-      const changed = (field: 'description' | 'location' | 'title') =>
+      const changed = (field: CarriedField) =>
         (synced[field] ?? '') !== (carriedText.base[field] ?? '');
       const carried: Partial<EventRecord> = {
         ...(changed('description') ? { description: synced.description } : {}),
@@ -1279,6 +1317,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       if (Object.keys(carried).length === 0) {
         return;
       }
+      const before = new Set((yield* pendingOpRepo.earlierInSeries(op)).map((entry) => entry.id));
       for (const entry of carriedText.overrides) {
         const queued = yield* pendingOpRepo.listForEvent({
           accountId: op.accountId,
@@ -1290,6 +1329,25 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
             yield* pendingOpRepo.setBefore(
               other.id,
               withConsistentGeo(new EventRecord({ ...other.beforePayload, ...carried })),
+            );
+          }
+          if (other.kind !== 'update' || !other.payload || other.conflictAt !== undefined) {
+            continue;
+          }
+          const payload = other.payload;
+          const taken = before.has(other.id)
+            ? carried
+            : Object.fromEntries(
+                Object.entries(carried).filter(
+                  ([field]) =>
+                    (payload[field as CarriedField] ?? '') ===
+                    (other.beforePayload?.[field as CarriedField] ?? ''),
+                ),
+              );
+          if (Object.keys(taken).length > 0) {
+            yield* pendingOpRepo.setPayload(
+              other.id,
+              withConsistentGeo(new EventRecord({ ...payload, ...taken })),
             );
           }
         }
@@ -1372,7 +1430,8 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
     );
 
   /**
-   * A 412: Google's copy moved on since the edit was queued. Park the op
+   * A 412: Google's copy moved on since the edit was queued. Unless only
+   * its etag moved (`onlyEtagMoved`), park the op
    * with Google's current version so the user can compare and choose; the
    * local row stays `pending`, so pulls keep skipping it and the user's
    * version stays on screen. A failed fetch retries the whole op (it will
@@ -1408,6 +1467,34 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
                   // meets its own 412 and its own check.
                   yield* settle(op, theirs);
                   return 'done' as const;
+                }
+                // Only the etag moved: sent again at once on Google's —
+                // unless the user discarded or replaced it while Google was
+                // asked. What was built on the old etag moves with it first
+                // (the row, and the content edits queued after it: a guest
+                // list or a delete keeps its 412), so it follows the
+                // re-send's landing. A second 412 there is a change to ask
+                // about.
+                const stale = op.baseEtag;
+                const fresh = theirs?.etag;
+                if (theirs && stale && fresh && onlyEtagMoved(op, theirs)) {
+                  if (!(yield* pendingOpRepo.getById(op.id))) {
+                    return 'done' as const;
+                  }
+                  const event = {
+                    accountId: op.accountId,
+                    calendarId: op.calendarId,
+                    eventId: op.eventId,
+                  };
+                  yield* transaction(
+                    Effect.gen(function* () {
+                      yield* pendingOpRepo.advanceBaseEtag(event, stale, fresh, op, {
+                        editsOnly: true,
+                      });
+                      yield* eventRepo.advanceEtag(event, stale, fresh);
+                    }),
+                  );
+                  return yield* apply(new PendingOp({ ...op, baseEtag: fresh }));
                 }
                 return { conflict: theirs };
               }),
