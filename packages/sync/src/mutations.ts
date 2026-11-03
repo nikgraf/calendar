@@ -78,6 +78,7 @@ import {
 import { makeReminderMutations } from './reminderMutations.ts';
 import {
   drawsSlot,
+  dropChangeDeletes,
   dropSeriesExceptions,
   restoreDropped,
   restoreTaken,
@@ -558,9 +559,19 @@ const make: Effect.Effect<
         ) {
           continue;
         }
+        const queued = yield* opsForEvent(accountId, calendarId, override.id);
+        // An occurrence the user deleted keeps its own delete and tombstone:
+        // folded into the change's, it went with a discard of the change.
+        if (
+          remote &&
+          override.status === 'cancelled' &&
+          override.syncStatus === 'pending' &&
+          queued.some((op) => op.kind === 'delete')
+        ) {
+          continue;
+        }
         // What a discard puts back: the exception as Google has it, not an
         // offline edit of it whose op goes with it here.
-        const queued = yield* opsForEvent(accountId, calendarId, override.id);
         const acked = inheritedBefore(queued, override);
         yield* pendingOpRepo.removeForEvent(accountId, calendarId, override.id);
         yield* eventRepo.deleteEvent(accountId, calendarId, override.id);
@@ -758,8 +769,10 @@ const make: Effect.Effect<
    * local row — an exception's goes into its series delete instead while
    * that waits with the master gone (`takeIntoDelete`). Google kept a
    * series' exceptions with its master: what a series delete or its
-   * occurrences' own deletes took comes back, where no row is. A series
-   * gone on Google took them along, and their synced rows go too.
+   * occurrences' own deletes took comes back, where no row is, and the
+   * series change taken back (a cut, a rule change, or a series delete that
+   * replaced one) takes the deletes it queued along. A series gone on
+   * Google took them along, and their synced rows go too.
    */
   const takeTheirs = (op: PendingOp, item: GcalEvent | undefined, now: number) =>
     Effect.gen(function* () {
@@ -780,6 +793,9 @@ const make: Effect.Effect<
         yield* eventRepo.upsertMany([record]);
         yield* restoreTaken(taken, op.accountId, op.calendarId, op.eventId);
         yield* restoreDropped(taken, op.accountId, op.calendarId, op.eventId);
+        if (op.kind === 'delete' || op.dropsFrom !== undefined) {
+          yield* dropChangeDeletes(taken, op.accountId, op.calendarId, op.eventId, op.dropsFrom);
+        }
       } else {
         yield* eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
         yield* dropSeriesExceptions(taken, op.accountId, op.calendarId, op.eventId);

@@ -41,6 +41,7 @@ import type { SqlError } from 'effect/sql/SqlError';
 import { restoreCarriedText } from './carriedText.ts';
 import {
   drawsSlot,
+  dropChangeDeletes,
   dropSeriesExceptions,
   forgetDropped,
   putBack,
@@ -415,9 +416,13 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       }
       // A series edit gone: the master's rule is Google's again, and so are
       // the exceptions its occurrences' own deletes took (a cut's, a rule
-      // change's). One update of the series is queued at a time.
+      // change's), which go with the change that queued them. One update of
+      // the series is queued at a time.
       if (op.kind === 'update') {
         yield* restoreDropped(taken, op.accountId, op.calendarId, op.eventId);
+        if (op.dropsFrom !== undefined) {
+          yield* dropChangeDeletes(taken, op.accountId, op.calendarId, op.eventId, op.dropsFrom);
+        }
       }
     });
 
@@ -463,9 +468,12 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       }
       // A series delete took the exceptions with it and owns no row at
       // their ids: one there since is newer and stays. The series is back
-      // as Google has it, with what its occurrences' own deletes took.
+      // as Google has it, with what its occurrences' own deletes took — and
+      // without those deletes: a cut or a rule change it replaced queued
+      // them.
       yield* putBack(taken, op.accountId, op.calendarId, op.beforeOverrides ?? []);
       yield* restoreDropped(taken, op.accountId, op.calendarId, op.eventId);
+      yield* dropChangeDeletes(taken, op.accountId, op.calendarId, op.eventId);
     });
 
   /**
@@ -1070,7 +1078,9 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
    * delete in one transaction, so an edit of the copy cannot slip between.
    * An occurrence's copy whose slot the master's rule still draws (a cut's
    * delete under a series back as Google has it) becomes the cancelled
-   * tombstone Google has now, or the slot would show until a pull. A
+   * tombstone Google has now, or the slot would show until a pull. The
+   * delete's own tombstone (an occurrence delete's) is Google's now too,
+   * once no other op owns it: left pending, nothing ever settled it. A
    * series takes its exceptions with it on Google, and their synced rows
    * go too (`dropSeriesExceptions`).
    */
@@ -1086,6 +1096,12 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
           yield* master && drawsSlot(master, row)
             ? eventRepo.upsertMany([new EventRecord({ ...row, status: 'cancelled' })])
             : eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
+        } else if (
+          row?.status === 'cancelled' &&
+          row.syncStatus === 'pending' &&
+          (yield* releasedStatus(op)) === 'synced'
+        ) {
+          yield* eventRepo.markSynced(op.accountId, op.calendarId, op.eventId);
         }
         yield* dropSeriesExceptions(taken, op.accountId, op.calendarId, op.eventId);
       }),
@@ -1176,7 +1192,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       if (op.kind !== 'update' || from === undefined || op.payload === undefined) {
         return;
       }
-      yield* forgetDropped(taken, op.accountId, calendarId, op.eventId, op.payload, from);
+      yield* forgetDropped(taken, op.accountId, calendarId, op.eventId, op.payload, from, op.id);
       const rule = JSON.stringify(op.payload?.recurrence ?? null);
       const event = { accountId: op.accountId, calendarId, eventId: op.eventId };
       for (const other of yield* pendingOpRepo.listForEvent(event)) {

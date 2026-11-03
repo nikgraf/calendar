@@ -212,6 +212,42 @@ export const takeBackDropped = (
   });
 
 /**
+ * A series change that dropped exceptions was abandoned — a discard, a
+ * rejection for good or keep-theirs of a cut's or a rule change's update
+ * (from its `dropsFrom` on), or of a series delete that replaced one (all
+ * of them) — and the series is back as Google has it: the deletes it
+ * queued for those exceptions (`dropOverridesFrom`) go with it, or they
+ * still deleted those occurrences on Google. Such a delete owns no row
+ * (the change took its exception off the table; one there is Google's
+ * copy, synced); an occurrence delete the user made owns its pending
+ * tombstone and stays. Run after `restoreDropped`, which puts their copies
+ * back as Google's.
+ */
+export const dropChangeDeletes = (
+  { eventRepo, pendingOpRepo }: TakenDeps,
+  accountId: string,
+  calendarId: string,
+  masterId: string,
+  from = Number.NEGATIVE_INFINITY,
+): Effect.Effect<void, SqlError> =>
+  Effect.gen(function* () {
+    for (const remove of yield* pendingOpRepo.listDeletes(accountId, calendarId)) {
+      const exception = remove.payload;
+      if (
+        exception?.recurringEventId !== masterId ||
+        remove.eventId !== exception.id ||
+        (exception.originalStartUtc ?? exception.startUtc) < from
+      ) {
+        continue;
+      }
+      const row = yield* eventRepo.getById(accountId, calendarId, remove.eventId);
+      if (row?.syncStatus !== 'pending') {
+        yield* pendingOpRepo.remove(remove.id);
+      }
+    }
+  });
+
+/**
  * A series update that drops exceptions on Google landed (`dropsFrom`: a
  * cut's occurrence, 0 for a new rule; `landed`: the master it sent). From
  * that original start on, Google cancelled every exception whose slot the
@@ -222,7 +258,11 @@ export const takeBackDropped = (
  * waiting series delete lets it go; a synced row (a pull's copy, a landed
  * delete's tombstone) goes; and the delete the cut or rule change queued
  * for one goes with nothing left to do: the PATCH gave the exception a new
- * etag, so its If-Match would meet a 412 and park. Put back under a later master whose rule
+ * etag, so its If-Match would meet a 412 and park. So does one the user
+ * made (it owns its pending tombstone, which Google's copy now is) unless
+ * a later update queued (`landedId` is the one that landed) draws the
+ * slot again: then it was made under that rule and still has work to do.
+ * Put back under a later master whose rule
  * draws those slots, they showed over it. Until the update lands they are
  * Google's, and its discard brings them back (`restoreDropped`). A pending
  * row is a queued op's.
@@ -234,27 +274,40 @@ export const forgetDropped = (
   masterId: string,
   landed: EventRecord,
   from: number,
+  landedId: string,
 ): Effect.Effect<void, SqlError> => {
   const dropped = (record: EventRecord | null | undefined) =>
     record?.recurringEventId === masterId &&
     (record.originalStartUtc ?? record.startUtc) >= from &&
     !drawsSlot(landed, record);
   return Effect.gen(function* () {
+    const later = (yield* pendingOpRepo.listForEvent({
+      accountId,
+      calendarId,
+      eventId: masterId,
+    })).flatMap((op) =>
+      op.kind === 'update' && op.id !== landedId && op.payload ? [op.payload] : [],
+    );
     for (const op of yield* pendingOpRepo.listAll()) {
       if (op.accountId !== accountId || op.calendarId !== calendarId) {
         continue;
       }
       // The cut's or rule change's own delete owns no row. One with its
-      // pending tombstone is an occurrence delete made since, under a later
-      // rule that draws the slot again: that one still has work to do.
-      if (
-        op.kind === 'delete' &&
-        op.eventId !== masterId &&
-        dropped(op.payload) &&
-        (yield* eventRepo.getById(accountId, calendarId, op.eventId))?.syncStatus !== 'pending'
-      ) {
-        yield* pendingOpRepo.remove(op.id);
-        continue;
+      // pending tombstone is an occurrence delete the user made: before the
+      // change, Google's cancellation did its work; under a later rule that
+      // draws the slot again, it still has work to do.
+      if (op.kind === 'delete' && op.eventId !== masterId && dropped(op.payload)) {
+        const payload = op.payload!;
+        const row = yield* eventRepo.getById(accountId, calendarId, op.eventId);
+        if (row?.syncStatus !== 'pending') {
+          yield* pendingOpRepo.remove(op.id);
+          continue;
+        }
+        if (!later.some((master) => drawsSlot(master, payload))) {
+          yield* pendingOpRepo.remove(op.id);
+          yield* eventRepo.markSynced(accountId, calendarId, op.eventId);
+          continue;
+        }
       }
       if (dropped(op.beforePayload)) {
         yield* pendingOpRepo.setBefore(op.id, null);
@@ -365,14 +418,20 @@ const handToOwnDeletes = (pendingOpRepo: PendingOpRepoShape, copy: EventRecord) 
   });
 
 /**
- * A pull page against the series deletes waiting in its calendar: an
- * exception whose master is gone locally, and not in the page either,
- * goes into its delete where no row is (as `takeIntoDelete`, with one
- * snapshot write per series), and is what the exception's own queued
- * delete (a cut's) puts back too, as `rememberPulled` hands it at a
- * tombstone. A row at its id takes the page as any row does: a synced one
- * is overwritten, a pending one skipped (`rememberPulled` sees it). The
- * rows the table takes.
+ * A pull page against the deletes waiting in its calendar. An exception
+ * whose series delete waits with the master gone locally, and not in the
+ * page either, goes into that delete where no row is (as
+ * `takeIntoDelete`, with one snapshot write per series), and is what the
+ * exception's own queued delete (a cut's) puts back too, as
+ * `rememberPulled` hands it at a tombstone. A live exception a queued
+ * series update drops (`dropsFrom`: a cut's, a rule change's), whose own
+ * delete waits, goes into that delete where no row is: the update took it
+ * off the table, where it showed past the cut on its own, or over the new
+ * rule; a discard of the update puts it back as Google has it now
+ * (`restoreDropped`), its landing forgets it (`forgetDropped`). A row at
+ * its id takes the page as any row does: a synced one is overwritten, a
+ * pending one skipped (`rememberPulled` sees it). The rows the table
+ * takes.
  */
 export const holdPulledExceptions = (
   deps: TakenDeps,
@@ -381,7 +440,7 @@ export const holdPulledExceptions = (
   upserts: ReadonlyArray<EventRecord>,
 ): Effect.Effect<ReadonlyArray<EventRecord>, SqlError> =>
   Effect.gen(function* () {
-    // The first queued delete of each master, as `takeIntoDelete` takes it.
+    // The first queued delete of each event, as `takeIntoDelete` takes a master's.
     const waiting = new Map<string, PendingOp>();
     for (const remove of yield* deps.pendingOpRepo.listDeletes(accountId, calendarId)) {
       if (!waiting.has(remove.eventId)) {
@@ -393,27 +452,52 @@ export const holdPulledExceptions = (
     }
     const inPage = new Set(upserts.map((record) => record.id));
     const gone = new Map<string, boolean>();
+    // The earliest original start a queued update of each master drops from.
+    const dropping = new Map<string, number | undefined>();
     const held = new Map<string, Array<EventRecord>>();
     const kept: Array<EventRecord> = [];
     for (const record of upserts) {
       const masterId = record.recurringEventId;
-      if (masterId === undefined || !waiting.has(masterId) || inPage.has(masterId)) {
-        kept.push(record);
-        continue;
-      }
-      if (!gone.has(masterId)) {
-        gone.set(masterId, !(yield* deps.eventRepo.getById(accountId, calendarId, masterId)));
-      }
       if (
-        !gone.get(masterId) ||
+        masterId === undefined ||
+        !(waiting.has(masterId) || waiting.has(record.id)) ||
         (yield* deps.eventRepo.getById(accountId, calendarId, record.id))
       ) {
         kept.push(record);
         continue;
       }
-      const copies = held.get(masterId) ?? [];
-      copies.push(record);
-      held.set(masterId, copies);
+      if (waiting.has(masterId) && !inPage.has(masterId)) {
+        if (!gone.has(masterId)) {
+          gone.set(masterId, !(yield* deps.eventRepo.getById(accountId, calendarId, masterId)));
+        }
+        if (gone.get(masterId)) {
+          const copies = held.get(masterId) ?? [];
+          copies.push(record);
+          held.set(masterId, copies);
+          continue;
+        }
+      }
+      if (!dropping.has(masterId)) {
+        const updates = (yield* deps.pendingOpRepo.listForEvent({
+          accountId,
+          calendarId,
+          eventId: masterId,
+        })).flatMap((op) =>
+          op.kind === 'update' && op.dropsFrom !== undefined ? [op.dropsFrom] : [],
+        );
+        dropping.set(masterId, updates.length > 0 ? Math.min(...updates) : undefined);
+      }
+      const from = dropping.get(masterId);
+      if (
+        record.status !== 'cancelled' &&
+        waiting.has(record.id) &&
+        from !== undefined &&
+        (record.originalStartUtc ?? record.startUtc) >= from
+      ) {
+        yield* handToOwnDeletes(deps.pendingOpRepo, record);
+        continue;
+      }
+      kept.push(record);
     }
     // One snapshot write per series: a full pass can page many exceptions
     // of one before its master.
@@ -497,7 +581,11 @@ export const settlePulledSeries = (
  * them — the master's, and its exceptions' (synced, or pending for an
  * answer only: it survives a series delete, as when the delete was made).
  * A pending row an occurrence change made since owns is the user's own
- * and stays. The delete takes them when it lands.
+ * and stays. The delete takes them when it lands. An occurrence's copy
+ * whose slot the master on the table draws (a cut's delete under the
+ * series back as Google has it) leaves the delete's own tombstone, pending
+ * as an occurrence delete leaves one: gone, the slot showed until a pull;
+ * Google's own tombstone there stays as it is.
  */
 export const takeBackPulled = (
   { eventRepo, pendingOpRepo }: TakenDeps,
@@ -507,10 +595,21 @@ export const takeBackPulled = (
     const { accountId, calendarId, eventId } = op;
     const row = yield* eventRepo.getById(accountId, calendarId, eventId);
     if (row && row.syncStatus !== 'pending') {
+      const master =
+        row.recurringEventId === undefined
+          ? null
+          : yield* eventRepo.getById(accountId, calendarId, row.recurringEventId);
+      const drawn = master !== null && drawsSlot(master, row);
       if (row.status !== 'cancelled') {
         yield* pendingOpRepo.setBefore(op.id, row);
+        yield* drawn
+          ? eventRepo.upsertMany([
+              new EventRecord({ ...row, status: 'cancelled', syncStatus: 'pending' }),
+            ])
+          : eventRepo.deleteEvent(accountId, calendarId, eventId);
+      } else if (!drawn) {
+        yield* eventRepo.deleteEvent(accountId, calendarId, eventId);
       }
-      yield* eventRepo.deleteEvent(accountId, calendarId, eventId);
     }
     let taken = op.beforeOverrides;
     for (const override of yield* eventRepo.listOverrides(accountId, calendarId, eventId)) {

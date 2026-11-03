@@ -546,7 +546,9 @@ it whenever a kind is added. Rules that keep the queue correct:
   it lands or finds the item gone (a live event row, never a cancelled
   override — an occurrence whose slot its master's rule still draws
   becomes the cancelled tombstone Google now has, or the slot would show
-  until a pull; a task row only while no op owns it), and a series delete
+  until a pull, and an occurrence delete's own pending tombstone is
+  Google's too once no other op owns it — pending, nothing settled it; a
+  task row only while no op owns it), and a series delete
   also the synced rows of its exceptions (`dropSeriesExceptions`).
   While a series delete waits, Google's copies of its exceptions live in
   one place (`takenExceptions.ts`): in the delete's snapshot while the
@@ -576,11 +578,26 @@ it whenever a kind is added. Rules that keep the queue correct:
   draws again, putting their copies back as Google's: `takeBackDropped`),
   which outlives a later series
   delete (it finds no row to take); that delete's snapshot is Google's
-  copy. Wherever Google's master is back on the table — a pull wrote it,
+  copy. An occurrence the user deleted keeps its own delete and pending
+  tombstone instead. While the change waits, a pull's live copy of such an
+  exception goes into its delete's snapshot, where no row is
+  (`holdPulledExceptions`): on the table it showed past the cut on its
+  own, or over the new rule. The deletes go with the change that queued
+  them: abandoned — a discard, a rejection for good or keep-theirs of the
+  cut's or rule change's update (from its `dropsFrom` on), or of a series
+  delete that replaced it — the series is back as Google has it, and each
+  delete of one of its exceptions that owns no pending row goes
+  (`dropChangeDeletes`, after `restoreDropped` below put its copy back);
+  left, they still cancelled those occurrences on Google. Keep-mine on
+  such a delete while the master on the table draws its slot leaves the
+  delete's own tombstone there, pending (`takeBackPulled`): with the copy
+  gone, the slot showed until a pull. Wherever Google's master is back on
+  the table — a pull wrote it,
   a discard of the series delete or of the cut's (or rule change's)
   master update gave Google's rule back, or keep-theirs took Google's
   master — those copies go back too, synced, where no row is
-  (`restoreDropped`), for each delete to take when it lands; only where
+  (`restoreDropped`), for each delete still queued (a pull's case) to
+  take when it lands; only where
   the master's rule draws the slot, and only until the cut or the new rule
   reaches Google. That series update carries where its drop starts
   (`dropsFrom`: the cut's occurrence, 0 for a new rule — Google cancels
@@ -597,9 +614,10 @@ it whenever a kind is added. Rules that keep the queue correct:
   Google's copy keep-theirs put back, a landed delete's tombstone) goes,
   and the delete the cut or rule change queued for it goes unsent: Google
   cancelled it with the PATCH and gave it a new etag, so the delete's
-  If-Match would meet a 412 and park (an occurrence delete made since,
-  under a later rule that draws the slot again, keeps its pending
-  tombstone and still goes); otherwise a later rule drawing their slots (more
+  If-Match would meet a 412 and park (an occurrence delete the user made
+  owns its pending tombstone: one made before the change is done too, its
+  tombstone Google's; one under a later queued rule that draws the slot
+  again still goes); otherwise a later rule drawing their slots (more
   days, say) showed them over it, where Google draws plain occurrences. A page that reports the
   series deleted forgets them too, as it does a series delete's
   (`dropSeriesExceptions`), or a discard of one would write it back
