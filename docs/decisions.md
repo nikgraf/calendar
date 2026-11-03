@@ -411,7 +411,7 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   (status quo); a marker column (the user's delete carries its tombstone).
   Open: a discarded exception delete shows past a waiting cut; a series
   delete that replaced the cut lets its deletes out first.
-- **An undone cut takes the new series along** (2026-11-03) — #284's open
+- **An undone cut takes the new series along** (2026-11-03, #285) — #284's
   item. A this-and-following edit's new series went out in the drain that
   parked or refused its cut, and a discard left it queued: Google showed
   those days twice. Nik chose that it waits for the cut and goes with it
