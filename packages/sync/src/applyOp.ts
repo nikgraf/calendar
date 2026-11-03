@@ -1203,10 +1203,10 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
   const forgetDroppedBy = (op: PendingOp, calendarId: string = op.calendarId) =>
     Effect.gen(function* () {
       const from = op.dropsFrom;
-      if (op.kind !== 'update' || from === undefined) {
+      if (op.kind !== 'update' || from === undefined || op.payload === undefined) {
         return;
       }
-      yield* forgetDropped(taken, op.accountId, calendarId, op.eventId, from);
+      yield* forgetDropped(taken, op.accountId, calendarId, op.eventId, op.payload, from);
       const rule = JSON.stringify(op.payload?.recurrence ?? null);
       const event = { accountId: op.accountId, calendarId, eventId: op.eventId };
       for (const other of yield* pendingOpRepo.listForEvent(event)) {

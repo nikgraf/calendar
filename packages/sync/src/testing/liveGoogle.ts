@@ -37,6 +37,7 @@ import {
   insertEvent,
   insertTask,
   listInstances,
+  listSeries,
   listTasks,
   type LiveCalendarListEntry,
   type LiveEvent,
@@ -188,6 +189,11 @@ export interface LiveScratchShape {
     calendarId: string,
     eventId: string,
   ) => Effect.Effect<ReadonlyArray<LiveEvent>, ScratchError>;
+  /** A series' master and every exception Google holds for it, cancelled ones too. */
+  readonly listSeries: (
+    calendarId: string,
+    iCalUID: string,
+  ) => Effect.Effect<ReadonlyArray<LiveEvent>, ScratchError>;
   readonly listTasks: (listId: string) => Effect.Effect<ReadonlyArray<LiveTask>, ScratchError>;
   /** Another device's `tasks.move`: to another list, or inside this one. */
   readonly moveTask: (
@@ -253,6 +259,7 @@ const makeLiveScratch = (accountId: string): Effect.Effect<LiveScratchShape, nev
         call((token) => insertTask(token, listId, task, parent)),
       listInstances: (calendarId, eventId) =>
         call((token) => listInstances(token, calendarId, eventId)),
+      listSeries: (calendarId, iCalUID) => call((token) => listSeries(token, calendarId, iCalUID)),
       listTasks: (listId) => call((token) => listTasks(token, listId)),
       moveTask: (listId, taskId, place) => call((token) => moveTask(token, listId, taskId, place)),
       patchEvent: (calendarId, eventId, changes) =>
