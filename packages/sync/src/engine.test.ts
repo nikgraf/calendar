@@ -1961,6 +1961,61 @@ describe('SyncEngine', () => {
         },
       );
 
+      it.effect(
+        'an occurrence deleted under a later rule that draws it again stays deleted',
+        () => {
+          // Every third day is out (it drops July 3) when twelve days replace
+          // it, and July 3 is deleted under them. The first rule's landing
+          // took that delete along as one of its own: July 3 came back on
+          // Google with the twelve days, and stayed hidden here.
+          const requested = Effect.runSync(Deferred.make<void>());
+          const release = Effect.runSync(Deferred.make<void>());
+          let firstSent = false;
+          const deletes: Array<string> = [];
+          const client: GoogleCalendarClientShape = {
+            ...stubClient([firstPage]),
+            deleteEvent: ({ eventId }) => {
+              deletes.push(eventId);
+              return Effect.void;
+            },
+            patchEvent: () => {
+              if (firstSent) {
+                return Effect.succeed(extended);
+              }
+              firstSent = true;
+              return Deferred.succeed(requested, undefined).pipe(
+                Effect.andThen(Deferred.await(release)),
+                Effect.as(skipping),
+              );
+            },
+          };
+          return Effect.gen(function* () {
+            yield* seedAccount;
+            yield* (yield* SyncEngine).syncAll();
+            const mutations = yield* EventMutations;
+            yield* changeRuleTo(everyThird);
+            // July 3's and July 4's deletes went first; the rule is out.
+            const sending = yield* Effect.forkChild(mutations.processPendingOps());
+            yield* Deferred.await(requested);
+            deletes.length = 0;
+            yield* changeRule;
+            yield* mutations.deleteRecurring({
+              ...at,
+              originalStartUtc: Date.parse('2026-07-03T10:00:00Z'),
+              scope: 'instance',
+            });
+            yield* Deferred.succeed(release, undefined);
+            yield* Fiber.join(sending);
+            yield* drain;
+            yield* drain;
+            expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+            expect(deletes).toEqual([july3]);
+            expect(yield* shown).not.toContain('07-03T10:00 Daily (Google)');
+            expect(yield* shown).toContain('07-04T10:00 Daily (Google)');
+          }).pipe(Effect.provide(engineLayer(client)));
+        },
+      );
+
       it.effect('a series edit that replaced it in flight drops nothing more once it lands', () => {
         // The rename made while the rule change was out inherits what it
         // drops. Once the rule change landed, the occurrence edit queued

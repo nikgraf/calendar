@@ -592,9 +592,11 @@ it whenever a kind is added. Rules that keep the queue correct:
   snapshots go to `null` (an edit that replaced a cut's delete included),
   a waiting series delete lets it go, a synced row (a pull's copy,
   Google's copy keep-theirs put back, a landed delete's tombstone) goes,
-  and the exception's own queued delete goes unsent: Google cancelled it
-  with the PATCH and gave it a new etag, so the delete's If-Match would
-  meet a 412 and park; otherwise a later rule drawing their slots (more
+  and the delete the cut or rule change queued for it goes unsent: Google
+  cancelled it with the PATCH and gave it a new etag, so the delete's
+  If-Match would meet a 412 and park (an occurrence delete made since,
+  under a later rule that draws the slot again, keeps its pending
+  tombstone and still goes); otherwise a later rule drawing their slots (more
   days, say) showed them over it, where Google draws plain occurrences. A page that reports the
   series deleted forgets them too, as it does a series delete's
   (`dropSeriesExceptions`), or a discard of one would write it back

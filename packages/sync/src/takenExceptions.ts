@@ -182,9 +182,9 @@ export const restoreDropped = (
  * a cancelled one is Google's no more — a queued op's snapshot (an edit
  * that replaced a cut's delete) becomes `null`, nothing to put back; a
  * waiting series delete lets it go; a synced row (a pull's copy, a landed
- * delete's tombstone) goes; and a queued delete of one goes with nothing
- * left to do: the PATCH gave the exception a new etag, so its If-Match
- * would meet a 412 and park. Put back under a later master whose rule
+ * delete's tombstone) goes; and the delete the cut or rule change queued
+ * for one goes with nothing left to do: the PATCH gave the exception a new
+ * etag, so its If-Match would meet a 412 and park. Put back under a later master whose rule
  * draws those slots, they showed over it. Until the update lands they are
  * Google's, and its discard brings them back (`restoreDropped`). A pending
  * row is a queued op's.
@@ -206,7 +206,15 @@ export const forgetDropped = (
       if (op.accountId !== accountId || op.calendarId !== calendarId) {
         continue;
       }
-      if (op.kind === 'delete' && op.eventId !== masterId && dropped(op.payload)) {
+      // The cut's or rule change's own delete owns no row. One with its
+      // pending tombstone is an occurrence delete made since, under a later
+      // rule that draws the slot again: that one still has work to do.
+      if (
+        op.kind === 'delete' &&
+        op.eventId !== masterId &&
+        dropped(op.payload) &&
+        (yield* eventRepo.getById(accountId, calendarId, op.eventId))?.syncStatus !== 'pending'
+      ) {
         yield* pendingOpRepo.remove(op.id);
         continue;
       }
