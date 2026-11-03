@@ -391,7 +391,7 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   telling the deletes apart by the queue (#274) or the master's rule (a
   landed rule draws them too). Open: Google's rule-change semantics are
   unverified live; a pull's copy past a queued cut shows alone.
-- **A new rule keeps the exceptions it still draws** (2026-11-03) —
+- **A new rule keeps the exceptions it still draws** (2026-11-03, #281) —
   probed live: Google keeps an exception whose slot the new rule draws
   and cancels the rest, with new etags all round. Our rule change queued
   a delete for every exception ahead of the PATCH, which cancelled a
