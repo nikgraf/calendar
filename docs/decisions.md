@@ -402,15 +402,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   sending them without If-Match (a request for nothing). Open: an
   occurrence edit queued behind any series PATCH still meets a 412.
 - **An undone series change takes its exception deletes along** (2026-11-03, #PR)
-  — #280's open items. Undone, a cut or rule change left its deletes queued,
-  and they still cancelled those occurrences on Google. Nik chose that they
-  go with it: a discard, keep-theirs or a refusal of the update, or of a
-  series delete that replaced it. An occurrence the user deleted keeps its
-  own delete. While the change waits, a pull's copy goes into its delete.
-  Keep-mine leaves the delete's tombstone at the slot. Rejected: separate
-  rows (status quo); a marker column (the user's own delete carries its
-  tombstone). Open: a discarded exception delete shows its copy past a
-  waiting cut.
+  — #280's open items. Undone, a cut or rule change left its deletes, which
+  still cancelled those occurrences on Google. Nik chose that they go with
+  it (a discard, keep-theirs or refusal of it, or of a series delete that
+  replaced it), and they wait for it wherever it sits. A user's own
+  occurrence delete stays, queued behind it. A pull's copy waits in its
+  delete; keep-mine leaves the delete's tombstone. Rejected: separate rows
+  (status quo); a marker column (the user's delete carries its tombstone).
+  Open: a discarded exception delete shows past a waiting cut; a series
+  delete that replaced the cut lets its deletes out first.
 - **Re-auth and sync kicks** — a 401 flags the account `reauth_required`
   and keeps its ops queued for after the reconnect (same id, by email);
   wake/unlock/focus/foreground kick a sync, throttled to one per 15 s,
