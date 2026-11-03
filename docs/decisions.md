@@ -401,7 +401,7 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   later rule drawing a slot again takes its delete back. Rejected:
   sending them without If-Match (a request for nothing). Open: an
   occurrence edit queued behind any series PATCH still meets a 412.
-- **An undone series change takes its exception deletes along** (2026-11-03, #PR)
+- **An undone series change takes its exception deletes along** (2026-11-03, #284)
   — #280's open items. Undone, a cut or rule change left its deletes, which
   still cancelled those occurrences on Google. Nik chose that they go with
   it (a discard, keep-theirs or refusal of it, or of a series delete that
