@@ -302,7 +302,7 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   projection of the queued op, storing Google's master text and each
   exception's own (nothing could be recomputed otherwise); discard,
   take-theirs and a permanent rejection restore the exceptions.
-- **A re-etag is no conflict** (2026-11-03) — a series PATCH gives
+- **A re-etag is no conflict** (2026-11-03, #282) — a series PATCH gives
   every exception a new etag (probed live), so an occurrence edit or
   delete queued behind a rename or a new rule parked as "changed on
   Google" with nothing changed. A 412 whose fetched copy equals the op's
