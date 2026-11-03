@@ -1977,6 +1977,19 @@ describe('SyncEngine', () => {
           etag: '"evt-r-t"',
           recurrence: ['RRULE:FREQ=DAILY;UNTIL=20260703T095959Z'],
         };
+        /** What the next pull brings then: the moved July 3 went with the cut. */
+        const cutPage = {
+          items: [
+            cutOnGoogle,
+            {
+              id: july3,
+              originalStartTime: { dateTime: '2026-07-03T10:00:00Z' },
+              recurringEventId: 'evt-r',
+              status: 'cancelled',
+            },
+          ],
+          nextSyncToken: 's2',
+        };
 
         it.effect('a discard', () => {
           let online = false;
@@ -2358,20 +2371,6 @@ describe('SyncEngine', () => {
         it.effect('nor a discard of a cut that landed with its answer lost', () => {
           let landed = false;
           const insertion = inserting(() => true);
-          // What the next pull brings once Google made the cut: the series
-          // ends on July 2, and the moved July 3 went with it.
-          const cutPage = {
-            items: [
-              cutOnGoogle,
-              {
-                id: july3,
-                originalStartTime: { dateTime: '2026-07-03T10:00:00Z' },
-                recurringEventId: 'evt-r',
-                status: 'cancelled',
-              },
-            ],
-            nextSyncToken: 's2',
-          };
           const client: GoogleCalendarClientShape = {
             ...stubClient([firstPage, cutPage]),
             deleteEvent: offline,
@@ -2400,6 +2399,56 @@ describe('SyncEngine', () => {
             // Google has.
             yield* (yield* SyncEngine).syncAll();
             expect(yield* shown).toEqual(['07-02T10:00 Event evt-r', ...yoga]);
+            expect(yield* strays).toEqual([]);
+            expect(yield* straysOf(created.eventId)).toEqual([]);
+          }).pipe(Effect.provide(engineLayer(client)));
+        });
+
+        it.effect('kept after a discard, it shows as edited, a deleted day too', () => {
+          // Hidden by the discard and brought back by its create alone, a
+          // day deleted of it showed again until a pull.
+          let landed = false;
+          const removal = deleting(() => true);
+          const insertion = inserting(() => true);
+          const client: GoogleCalendarClientShape = {
+            ...stubClient([firstPage, cutPage]),
+            deleteEvent: removal.deleteEvent,
+            getEvent: () => Effect.succeed(landed ? cutOnGoogle : series),
+            insertEvent: insertion.insertEvent,
+            patchEvent: () => {
+              landed = true;
+              return offline();
+            },
+          };
+          return Effect.gen(function* () {
+            yield* seedAccount;
+            yield* (yield* SyncEngine).syncAll();
+            yield* editJuly3On;
+            const created = (yield* newSeries)!;
+            const mutations = yield* EventMutations;
+            yield* mutations.deleteRecurring({
+              accountId: 'acc-1',
+              calendarId: 'cal-1',
+              masterId: created.eventId,
+              originalStartUtc: Date.parse('2026-07-04T10:00:00Z'),
+              scope: 'instance',
+            });
+            const edited = [
+              '07-02T10:00 Event evt-r',
+              '07-03T10:00 Yoga',
+              '07-05T10:00 Yoga',
+              '07-06T10:00 Yoga',
+            ];
+            expect(yield* shown).toEqual(edited);
+            yield* mutations.processPendingOps();
+
+            yield* mutations.discardPendingOp((yield* opOf('evt-r', 'update'))!.id);
+            yield* drain;
+            expect(insertion.inserted).toEqual(['Yoga']);
+            expect(removal.deleted).toEqual([`${created.eventId}_20260704T100000Z`]);
+            expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+            yield* (yield* SyncEngine).syncAll();
+            expect(yield* shown).toEqual(edited);
             expect(yield* strays).toEqual([]);
             expect(yield* straysOf(created.eventId)).toEqual([]);
           }).pipe(Effect.provide(engineLayer(client)));

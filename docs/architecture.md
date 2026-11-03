@@ -1038,16 +1038,19 @@ details, or Custom), so a calendar can be shared without the details.
     replaced it, put back in one transaction) the create asks Google for
     the series in that calendar before it goes (`splitCheck`,
     `askSplits`), and its rows are hidden at once — the series shows those
-    days itself — for the create to bring back if Google kept the cut.
+    days itself — to come back as its queued ops wrote them if Google kept
+    the cut (a landed occurrence delete puts no tombstone back).
     Once the drain is done with the cut, a landing wrote Google's copy to
     the table, and only a master that is not that, or still draws past the
     split, has it ask (`releaseSplits`). Either way it is due at once,
     not after a backoff that grew while the cut waited, and is stamped as
     sent in one transaction with checking that nothing holds or asks
     again (`splitGate` in applyOp). Where the series still draws from
-    `splitAt` on (`drawsFrom`), the cut was undone, and the create goes
-    with it (`settleSplit`): with everything queued for that series, and
-    its rows. Keep-theirs has Google's copy and decides at once
+    `splitAt` on (`drawsFrom`: an occurrence found up to its end, or five
+    years on when that cannot be told — a series from decades ago with
+    RDATE lines is too long to enumerate), the cut was undone, and the
+    create goes with it (`settleSplit`): with everything queued for that
+    series, and its rows. No proof (a rule that cannot be read) keeps it. Keep-theirs has Google's copy and decides at once
     (`dropSplitSeries`).
     One Google ended before (another device cut it too) shows nothing
     twice, and stays. A create once sent waits for nothing. Sent ahead of

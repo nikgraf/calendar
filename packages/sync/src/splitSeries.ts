@@ -39,10 +39,17 @@ import type { TakenDeps } from './takenExceptions.ts';
 export const holdsSplit = (op: PendingOp): boolean =>
   op.kind === 'delete' || (op.kind === 'update' && op.dropsFrom !== undefined);
 
+/** How far past `from` a series whose end cannot be told is looked at. */
+const HORIZON_MS = 5 * 366 * 24 * 60 * 60 * 1000;
+
 /**
  * Whether the master's rule draws an occurrence that starts at `from` or
- * later. A master without a rule draws nothing, and neither does a deleted
- * one; a rule that cannot be read is taken to draw on.
+ * later — one found, not assumed: up to the series' end, or five years on
+ * when that cannot be told (an endless rule, or one too long to enumerate,
+ * as a series from decades ago with RDATE lines; taken as drawing on, a cut
+ * one dropped the new series Google had). A master without a rule draws
+ * nothing, and neither does a deleted one or a rule that cannot be read:
+ * no proof that a cut was undone.
  */
 export const drawsFrom = (master: EventRecord, from: number): boolean => {
   if (master.status === 'cancelled' || !master.recurrence?.length) {
@@ -50,19 +57,18 @@ export const drawsFrom = (master: EventRecord, from: number): boolean => {
   }
   const rule = recurrenceMasterOf(master);
   try {
-    const end = recurrenceEndUtc(rule);
+    const end = recurrenceEndUtc(rule) ?? from + HORIZON_MS;
     // A millisecond either side: the expansion keeps what overlaps the
     // range, and an occurrence with no duration at either end overlaps
     // nothing.
     return (
-      end === undefined ||
-      (end >= from &&
-        expandRecurringEvent(rule, from - 1, end + 1).some(
-          (instance) => instance.originalStartUtc >= from,
-        ))
+      end >= from &&
+      expandRecurringEvent(rule, from - 1, end + 1).some(
+        (instance) => instance.originalStartUtc >= from,
+      )
     );
   } catch {
-    return true;
+    return false;
   }
 };
 
@@ -96,6 +102,28 @@ const hideSeries = ({ eventRepo }: TakenDeps, create: PendingOp) =>
     yield* eventRepo.deleteEvent(accountId, calendarId, eventId);
   });
 
+/**
+ * A split-off series an undo hid that goes on after all: its rows as its
+ * queued ops wrote them — the master its create sends, an occurrence's last
+ * edit or tombstone. Brought back by the landing ops alone, a deleted
+ * occurrence showed again: a landed delete puts no tombstone back.
+ */
+const showSeries = ({ eventRepo, pendingOpRepo }: TakenDeps, create: PendingOp) =>
+  Effect.gen(function* () {
+    const rows = new Map<string, EventRecord>();
+    for (const op of yield* pendingOpRepo.listAll()) {
+      if (
+        op.payload &&
+        op.accountId === create.accountId &&
+        op.calendarId === create.calendarId &&
+        inSeries(create.eventId, op.eventId)
+      ) {
+        rows.set(op.eventId, op.payload);
+      }
+    }
+    yield* eventRepo.upsertMany([...rows.values()]);
+  });
+
 /** A split-off series that goes with its cut: everything queued for it, and its rows. */
 const dropSeries = (deps: TakenDeps, create: PendingOp) =>
   Effect.gen(function* () {
@@ -117,7 +145,7 @@ const dropSeries = (deps: TakenDeps, create: PendingOp) =>
  * ask Google before they go, in its calendar (`settleSplit`), and are due
  * at once — they waited out a backoff that grew while the cut waited.
  * Their rows go now: the series is back, and shows those days itself; if
- * Google kept the cut after all, the create brings them back.
+ * Google kept the cut after all, they come back (`settleSplit`).
  */
 export const askSplits = (deps: TakenDeps, change: PendingOp): Effect.Effect<void, SqlError> =>
   Effect.gen(function* () {
@@ -178,7 +206,7 @@ export const dropSplitSeries = (
  * Google's answer for the series a create asked about (`series`; null:
  * gone there): still drawing from where the create starts, the cut was
  * undone, and the new series goes with it; otherwise the create goes on,
- * and brings back the rows an undo hid. What happened to the create.
+ * and the rows an undo hid come back. What happened to the create.
  */
 export const settleSplit = (
   deps: TakenDeps,
@@ -195,6 +223,7 @@ export const settleSplit = (
       return 'dropped';
     }
     yield* deps.pendingOpRepo.setSplitCheck(current.id, undefined);
+    yield* showSeries(deps, current);
     return 'go';
   });
 

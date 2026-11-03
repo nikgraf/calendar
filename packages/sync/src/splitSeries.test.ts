@@ -62,6 +62,19 @@ describe('drawsFrom', () => {
     ).toBe(true);
   });
 
+  it('looks for an occurrence when the end of a long series cannot be told', () => {
+    // Daily since 1990 with an RDATE: too long to enumerate for its end.
+    const since1990 = (rule: string) =>
+      series({
+        endUtc: at('1990-01-01T11:00:00Z'),
+        recurrence: [rule, 'RDATE:20200101T150000Z'],
+        startUtc: at('1990-01-01T10:00:00Z'),
+      });
+    const from = at('2026-07-03T10:00:00Z');
+    expect(drawsFrom(since1990('RRULE:FREQ=DAILY;UNTIL=20260703T095959Z'), from)).toBe(false);
+    expect(drawsFrom(since1990('RRULE:FREQ=DAILY'), from)).toBe(true);
+  });
+
   it('draws nothing for a deleted series or a single event', () => {
     const from = at('2026-07-03T10:00:00Z');
     expect(drawsFrom(series({ status: 'cancelled' }), from)).toBe(false);
