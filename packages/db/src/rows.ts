@@ -460,6 +460,7 @@ export interface PendingOpRow {
   readonly task_notes: string | null;
   readonly task_due: string | null;
   readonly dispatched_at: number | null;
+  readonly drops_from: number | null;
   readonly attendees_changed: number;
   readonly geo_cleared: number;
   readonly target_calendar_id: string | null;
@@ -517,6 +518,7 @@ export const pendingOpFromRow = (row: PendingOpRow): PendingOp | undefined =>
         conflictAt: row.conflict_at ?? undefined,
         createdAt: row.created_at,
         dispatchedAt: row.dispatched_at ?? undefined,
+        dropsFrom: row.drops_from ?? undefined,
         eventId: row.event_id,
         geoCleared: row.geo_cleared === 1 ? true : undefined,
         id: row.id,

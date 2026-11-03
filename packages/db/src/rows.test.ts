@@ -59,6 +59,7 @@ const opRow = (overrides: Partial<PendingOpRow> = {}): PendingOpRow => ({
   conflict_at: null,
   created_at: 0,
   dispatched_at: null,
+  drops_from: null,
   event_id: 'evt',
   geo_cleared: 0,
   id: 'op',

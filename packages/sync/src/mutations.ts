@@ -78,8 +78,10 @@ import {
 import { makeReminderMutations } from './reminderMutations.ts';
 import {
   dropSeriesExceptions,
+  restoreDropped,
   restoreTaken,
   takeBackPulled,
+  takeIntoDelete,
   takenExceptions,
 } from './takenExceptions.ts';
 import { cancelledOverrideTombstone } from './tombstone.ts';
@@ -117,7 +119,9 @@ const foldIntoCreate = (create: PendingOp, payload: EventRecord) =>
  * materializing its override). A replaced op without one leaves it
  * unknown: the row already holds that op's edit. A replaced delete hands
  * on Google's copy instead when a pull put one back while it waited
- * (`isPulledCopy`), not the snapshot it took before.
+ * (`isPulledCopy`), not the snapshot it took before. An occurrence's
+ * delete that took its row along (a cut's or a rule change's) holds the
+ * exception as Google has it until that change lands (`dropsFrom`).
  */
 const inheritedBefore = (
   queued: ReadonlyArray<PendingOp>,
@@ -432,7 +436,10 @@ const make: Effect.Effect<
       );
     });
 
-  /** Queues a this-and-following truncation of the master: a patch, or its unsent create. */
+  /**
+   * Queues a this-and-following truncation of the master: a patch, or its
+   * unsent create. The patch drops the exceptions from the cut on.
+   */
   const truncateQueued = (
     accountId: string,
     calendarId: string,
@@ -440,12 +447,12 @@ const make: Effect.Effect<
     truncated: EventRecord,
     unsentCreate: PendingOp | undefined,
     now: number,
+    cutAt: number,
   ) =>
     Effect.gen(function* () {
       const queued = yield* opsForEvent(accountId, calendarId, master.id);
-      const carriedText = unsentCreate
-        ? undefined
-        : queued.findLast((op) => op.kind === 'update')?.carriedText;
+      const replaced = queued.findLast((op) => op.kind === 'update');
+      const carriedText = unsentCreate ? undefined : replaced?.carriedText;
       if (unsentCreate) {
         yield* pendingOpRepo.removeForEvent(accountId, calendarId, master.id);
       } else {
@@ -462,6 +469,7 @@ const make: Effect.Effect<
               calendarId,
               carriedText,
               createdAt: now,
+              dropsFrom: Math.min(cutAt, replaced?.dropsFrom ?? cutAt),
               eventId: master.id,
               id: generateEventId(),
               kind: 'update',
@@ -735,9 +743,11 @@ const make: Effect.Effect<
 
   /**
    * Take theirs: Google's current copy (undefined = gone) replaces the
-   * local row. Google kept a series' exceptions with its master: what a
-   * series delete took comes back, where no row is. A series gone on
-   * Google took them along, and their synced rows go too.
+   * local row — an exception's goes into its series delete instead while
+   * that waits with the master gone (`takeIntoDelete`). Google kept a
+   * series' exceptions with its master: what a series delete or its
+   * occurrences' own deletes took comes back, where no row is. A series
+   * gone on Google took them along, and their synced rows go too.
    */
   const takeTheirs = (op: PendingOp, item: GcalEvent | undefined, now: number) =>
     Effect.gen(function* () {
@@ -751,10 +761,13 @@ const make: Effect.Effect<
                 ...context,
                 defaultTimeZone: op.payload?.startTimeZone ?? 'UTC',
               });
-      if (record) {
+      if (record && (yield* takeIntoDelete(taken, record))) {
+        yield* eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
+      } else if (record) {
         // Ack mode: overwrites the pending row the pulls skipped.
         yield* eventRepo.upsertMany([record]);
         yield* restoreTaken(taken, op.accountId, op.calendarId, op.eventId);
+        yield* restoreDropped(taken, op.accountId, op.calendarId, op.eventId);
       } else {
         yield* eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
         yield* dropSeriesExceptions(taken, op.accountId, op.calendarId, op.eventId);
@@ -785,7 +798,7 @@ const make: Effect.Effect<
       // After a move the op points at the destination, where Google has
       // nothing until the move lands; a fetch there would 404 and delete
       // the user's row.
-      if ((yield* pendingOpRepo.earlierInSeries(op)).includes('move')) {
+      if ((yield* pendingOpRepo.earlierInSeries(op)).some((entry) => entry.kind === 'move')) {
         return yield* Effect.fail(
           new ConflictNotResolvableError({
             message: 'The event is still moving to another calendar — try again once it synced.',
@@ -1107,7 +1120,15 @@ const make: Effect.Effect<
           updatedAt: now,
         });
         yield* eventRepo.upsertMany([truncated]);
-        yield* truncateQueued(accountId, calendarId, master, truncated, unsentCreate, now);
+        yield* truncateQueued(
+          accountId,
+          calendarId,
+          master,
+          truncated,
+          unsentCreate,
+          now,
+          originalStartUtc,
+        );
         yield* dropOverridesFrom(accountId, calendarId, masterId, originalStartUtc, now, {
           remote: !unsentCreate,
         });
@@ -1435,6 +1456,12 @@ const make: Effect.Effect<
               calendarId,
               carriedText,
               createdAt: now,
+              // A new rule drops every exception; one queued before it
+              // dropped some already.
+              dropsFrom:
+                changes.recurrence === undefined
+                  ? queued.findLast((op) => op.kind === 'update')?.dropsFrom
+                  : 0,
               eventId: masterId,
               geoCleared: geoClearedFlag(master, merged, queued),
               id: generateEventId(),
@@ -1475,7 +1502,15 @@ const make: Effect.Effect<
           updatedAt: now,
         });
         yield* eventRepo.upsertMany([truncated]);
-        yield* truncateQueued(accountId, calendarId, master, truncated, unsentCreate, now);
+        yield* truncateQueued(
+          accountId,
+          calendarId,
+          master,
+          truncated,
+          unsentCreate,
+          now,
+          originalStartUtc,
+        );
         yield* dropOverridesFrom(accountId, calendarId, masterId, originalStartUtc, now, {
           remote: !unsentCreate,
         });

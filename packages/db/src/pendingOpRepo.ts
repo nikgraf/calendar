@@ -48,11 +48,13 @@ export interface PendingOpRepoShape {
     landed: { readonly id: string },
   ) => Effect.Effect<void, SqlError>;
   /**
-   * Kinds of the ops queued before `op` for the same series — the event
-   * itself or, for a recurring one, its Google instance ids
-   * (`<masterId>_<basetime>`) — in any of the account's calendars. Moves
-   * use it to keep order: backoff lets `listDue` skip an older op, and a
-   * move must never overtake, or be overtaken by, an edit of that series.
+   * The ops queued before `op` for the same series — the event itself or,
+   * for a recurring one, its Google instance ids (`<masterId>_<basetime>`)
+   * — in any of the account's calendars: their kind, event and
+   * `dropsFrom`. Moves use it to keep order: backoff lets `listDue` skip an
+   * older op, and a move must never overtake, or be overtaken by, an edit
+   * of that series; an occurrence's op waits for a change of the series'
+   * rule ahead of it.
    */
   /**
    * How many ops wait for the given calendars and task lists of an account.
@@ -68,7 +70,7 @@ export interface PendingOpRepoShape {
   ) => Effect.Effect<number, SqlError>;
   readonly earlierInSeries: (
     op: PendingOp,
-  ) => Effect.Effect<ReadonlyArray<PendingOp['kind']>, SqlError>;
+  ) => Effect.Effect<ReadonlyArray<Pick<PendingOp, 'dropsFrom' | 'eventId' | 'kind'>>, SqlError>;
   /**
    * The task ops of the op's account queued before it, in queue order: a
    * task move and the task ops around it keep that order even when
@@ -196,9 +198,11 @@ export interface PendingOpRepoShape {
   ) => Effect.Effect<void, SqlError>;
   /**
    * Replaces one op's event snapshot: a discarded op of the same event
-   * takes its change out of the snapshots the others hold.
+   * takes its change out of the snapshots the others hold. `null`: there
+   * is nothing to put back (a landed change of the series' rule dropped
+   * the exception it held).
    */
-  readonly setBefore: (opId: string, before: EventRecord) => Effect.Effect<void, SqlError>;
+  readonly setBefore: (opId: string, before: EventRecord | null) => Effect.Effect<void, SqlError>;
   /**
    * Replaces the exceptions a series delete holds (`undefined`: none):
    * Google's copies go into it while the master is gone locally, and out
@@ -213,6 +217,15 @@ export interface PendingOpRepoShape {
    * the place Google still has to the reorder queued behind it.
    */
   readonly setBeforeTask: (opId: string, before: TaskRecord) => Effect.Effect<void, SqlError>;
+  /**
+   * Replaces where a series update's drop of exceptions starts
+   * (`undefined`: it drops none): one that replaced an update in flight
+   * inherited its drop, and drops nothing more once that update landed.
+   */
+  readonly setDropsFrom: (
+    opId: string,
+    dropsFrom: number | undefined,
+  ) => Effect.Effect<void, SqlError>;
   /**
    * Replaces what one op sends: a discarded op of the same event takes
    * its change out of what the others would send too (an RSVP rides in a
@@ -272,7 +285,11 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
       },
       earlierInSeries: (op) =>
         Effect.map(
-          sql<{ readonly kind: PendingOp['kind'] }>`SELECT kind FROM pending_ops
+          sql<{
+            readonly drops_from: number | null;
+            readonly event_id: string;
+            readonly kind: PendingOp['kind'];
+          }>`SELECT kind, event_id, drops_from FROM pending_ops
             WHERE account_id = ${op.accountId} AND id != ${op.id}
               AND (event_id = ${op.eventId}
                 OR substr(event_id, 1, length(${op.eventId}) + 1) = ${op.eventId} || '_'
@@ -280,7 +297,12 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
               AND (created_at < ${op.createdAt} OR (created_at = ${op.createdAt}
                 AND rowid < (SELECT rowid FROM pending_ops WHERE id = ${op.id})))
             ORDER BY created_at, rowid`,
-          (rows) => rows.map((row) => row.kind),
+          (rows) =>
+            rows.map((row) => ({
+              eventId: row.event_id,
+              kind: row.kind,
+              ...(row.drops_from === null ? {} : { dropsFrom: row.drops_from }),
+            })),
         ),
       earlierTaskOps: (op) =>
         Effect.map(
@@ -321,7 +343,7 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
                                    carried_text, recurrence_cleared, before_payload,
                                    before_overrides, before_task, before_color_hex,
                                    target_task_list_id, task_parent, task_due_cleared,
-                                   task_previous)
+                                   task_previous, drops_from)
           VALUES (${op.id}, ${op.accountId}, ${op.calendarId}, ${op.kind},
                   ${op.eventId},
                   ${op.payload ? JSON.stringify(eventPayloadJson(op.payload)) : null},
@@ -340,7 +362,7 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
                   ${op.beforeTask ? JSON.stringify(taskPayloadJson(op.beforeTask)) : null},
                   ${op.beforeColorHex ?? null}, ${op.targetTaskListId ?? null},
                   ${op.taskParent ?? null}, ${op.taskDue === null ? 1 : 0},
-                  ${op.taskPrevious ?? null})
+                  ${op.taskPrevious ?? null}, ${op.dropsFrom ?? null})
         `),
         ),
       getById: (opId) =>
@@ -530,7 +552,7 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
       setBefore: (opId, before) =>
         invalidating(
           Effect.asVoid(
-            sql`UPDATE pending_ops SET before_payload = ${JSON.stringify(eventPayloadJson(before))}
+            sql`UPDATE pending_ops SET before_payload = ${beforePayloadColumn(before)}
               WHERE id = ${opId}`,
           ),
         ),
@@ -547,6 +569,12 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
           Effect.asVoid(
             sql`UPDATE pending_ops SET before_task = ${JSON.stringify(taskPayloadJson(before))}
               WHERE id = ${opId}`,
+          ),
+        ),
+      setDropsFrom: (opId, dropsFrom) =>
+        invalidating(
+          Effect.asVoid(
+            sql`UPDATE pending_ops SET drops_from = ${dropsFrom ?? null} WHERE id = ${opId}`,
           ),
         ),
       setPayload: (opId, payload) =>
