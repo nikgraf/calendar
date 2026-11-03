@@ -408,8 +408,9 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   series delete that replaced it. An occurrence the user deleted keeps its
   own delete. While the change waits, a pull's copy goes into its delete.
   Keep-mine leaves the delete's tombstone at the slot. Rejected: separate
-  rows (status quo); a marker column (a change's delete owns no row). Open:
-  a discarded exception delete shows its copy past a waiting cut.
+  rows (status quo); a marker column (the user's own delete carries its
+  tombstone). Open: a discarded exception delete shows its copy past a
+  waiting cut.
 - **Re-auth and sync kicks** — a 401 flags the account `reauth_required`
   and keeps its ops queued for after the reconnect (same id, by email);
   wake/unlock/focus/foreground kick a sync, throttled to one per 15 s,

@@ -560,14 +560,23 @@ const make: Effect.Effect<
           continue;
         }
         const queued = yield* opsForEvent(accountId, calendarId, override.id);
-        // An occurrence the user deleted keeps its own delete and tombstone:
-        // folded into the change's, it went with a discard of the change.
-        if (
-          remote &&
-          override.status === 'cancelled' &&
-          override.syncStatus === 'pending' &&
-          queued.some((op) => op.kind === 'delete')
-        ) {
+        // An occurrence the user deleted keeps its own delete and tombstone
+        // (folded into the change's, it went with a discard of the change),
+        // queued behind the change like the change's own: ahead, it went out
+        // first, and a 412's keep-theirs showed the occurrence past the cut.
+        const own = queued.find((op) => op.kind === 'delete');
+        if (remote && own && override.status === 'cancelled' && override.syncStatus === 'pending') {
+          yield* pendingOpRepo.remove(own.id);
+          deletes.push(
+            new PendingOp({
+              ...own,
+              attempts: 0,
+              createdAt: now,
+              id: generateEventId(),
+              lastError: own.conflictAt === undefined ? undefined : own.lastError,
+              nextAttemptAt: 0,
+            }),
+          );
           continue;
         }
         // What a discard puts back: the exception as Google has it, not an
@@ -1755,9 +1764,15 @@ const make: Effect.Effect<
         ? yield* eventRepo.listOverrides(accountId, calendarId, eventId)
         : [];
       const seriesIds = new Set([master.id, ...overrides.map((row) => row.id)]);
+      // A cut's or rule change's delete of an exception owns no row: it
+      // moves with the change that queued it, or that change's discard in
+      // the destination missed it.
       const inSeries = (yield* pendingOpRepo.listAll()).filter(
         (op) =>
-          op.accountId === accountId && op.calendarId === calendarId && seriesIds.has(op.eventId),
+          op.accountId === accountId &&
+          op.calendarId === calendarId &&
+          (seriesIds.has(op.eventId) ||
+            (op.kind === 'delete' && op.payload?.recurringEventId === master.id)),
       );
       const deleting = new Set(
         inSeries.filter((op) => op.kind === 'delete').map((op) => op.eventId),

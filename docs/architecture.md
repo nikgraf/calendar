@@ -457,7 +457,7 @@ it whenever a kind is added. Rules that keep the queue correct:
   and the exceptions a series delete took with it, each only where no row
   is (the delete owns none there: a pull's copy, or an occurrence edit or
   delete made since, is newer, and a landed occurrence delete leaves its
-  tombstone pending), and with them what its occurrences' own deletes took
+  tombstone, Google's then), and with them what its occurrences' own deletes took
   (`restoreDropped`); an exception whose series delete waits with the
   master gone goes into that delete instead (`takeIntoDelete`) — the
   exception's discarded delete, or its edit undone once only an answer
@@ -579,16 +579,21 @@ it whenever a kind is added. Rules that keep the queue correct:
   which outlives a later series
   delete (it finds no row to take); that delete's snapshot is Google's
   copy. An occurrence the user deleted keeps its own delete and pending
-  tombstone instead. While the change waits, a pull's live copy of such an
+  tombstone instead, queued behind the change like the change's own
+  (ahead, it went out first, and keep-theirs on its 412 showed the
+  occurrence past the cut). While the change waits, a pull's live copy of such an
   exception goes into its delete's snapshot, where no row is
   (`holdPulledExceptions`): on the table it showed past the cut on its
   own, or over the new rule. The deletes go with the change that queued
   them: abandoned — a discard, a rejection for good or keep-theirs of the
   cut's or rule change's update (from its `dropsFrom` on), or of a series
   delete that replaced it — the series is back as Google has it, and each
-  delete of one of its exceptions that owns no pending row goes
-  (`dropChangeDeletes`, after `restoreDropped` below put its copy back);
-  left, they still cancelled those occurrences on Google. Keep-mine on
+  delete of one of its exceptions goes but an occurrence delete the user
+  made, whose payload is the tombstone it wrote (`dropChangeDeletes`,
+  after `restoreDropped` below put its copy back; a tombstone keep-mine
+  left gives way to that copy, and a copy an answer waits on shows that
+  answer again, pending); left, they still cancelled those occurrences
+  on Google. Keep-mine on
   such a delete while the master on the table draws its slot leaves the
   delete's own tombstone there, pending (`takeBackPulled`): with the copy
   gone, the slot showed until a pull. Wherever Google's master is back on
@@ -636,8 +641,8 @@ it whenever a kind is added. Rules that keep the queue correct:
   back whatever exceptions it still holds, where no row is
   (`restoreTakenExceptions`). A
   series move still carries an exception's delete (a this-and-following
-  cut) along, and moves that exception's pulled copy as synced so the
-  delete takes it when it lands. Each calendar's events
+  cut) along, one that owns no row too, and moves that exception's pulled
+  copy as synced so the delete takes it when it lands. Each calendar's events
   pass holds the drain (`whileQueueHeld`) like a task list's, so a delete
   cannot land between a request and the page that would put the row
   back after it, and lets out what was queued meanwhile before the next

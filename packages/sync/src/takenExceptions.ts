@@ -51,7 +51,7 @@ export const takenExceptions = (
 /**
  * Writes taken exceptions back where no row is: a row there is newer (a
  * pull's copy, or the user's occurrence edit or delete since — a landed
- * occurrence delete leaves its tombstone pending). One stays pending while
+ * occurrence delete leaves its tombstone, Google's then). One stays pending while
  * an op of the occurrence owns it: an answer survives a series delete.
  * Not while a delete of it waits too (a this-and-following cut's): a
  * delete owns no row, so the copy is Google's, synced (`isPulledCopy`),
@@ -217,11 +217,14 @@ export const takeBackDropped = (
  * (from its `dropsFrom` on), or of a series delete that replaced one (all
  * of them) — and the series is back as Google has it: the deletes it
  * queued for those exceptions (`dropOverridesFrom`) go with it, or they
- * still deleted those occurrences on Google. Such a delete owns no row
- * (the change took its exception off the table; one there is Google's
- * copy, synced); an occurrence delete the user made owns its pending
- * tombstone and stays. Run after `restoreDropped`, which puts their copies
- * back as Google's.
+ * still deleted those occurrences on Google. An occurrence delete the user
+ * made stays: its payload is the tombstone it wrote (the change's carries
+ * the exception it took). Run after `restoreDropped`, which put their
+ * copies back as Google's where no row is. Where keep-mine left the
+ * delete's own tombstone (`takeBackPulled`), Google's copy takes its place
+ * where the master draws the slot. A copy an answer still waits on is
+ * that answer's again, pending: put back as Google's (a delete of it
+ * waited), it showed Google's answer until the answer landed.
  */
 export const dropChangeDeletes = (
   { eventRepo, pendingOpRepo }: TakenDeps,
@@ -236,13 +239,25 @@ export const dropChangeDeletes = (
       if (
         exception?.recurringEventId !== masterId ||
         remove.eventId !== exception.id ||
-        (exception.originalStartUtc ?? exception.startUtc) < from
+        (exception.originalStartUtc ?? exception.startUtc) < from ||
+        (exception.status === 'cancelled' && exception.syncStatus === 'pending')
       ) {
         continue;
       }
+      yield* pendingOpRepo.remove(remove.id);
       const row = yield* eventRepo.getById(accountId, calendarId, remove.eventId);
-      if (row?.syncStatus !== 'pending') {
-        yield* pendingOpRepo.remove(remove.id);
+      const owners = yield* pendingOpRepo.listForEvent(remove);
+      const answer = owners.find((owner) => owner.kind === 'rsvp')?.payload;
+      if (row?.syncStatus === 'pending' && row.status === 'cancelled' && owners.length === 0) {
+        const copy = remove.beforePayload;
+        const master = yield* eventRepo.getById(accountId, calendarId, masterId);
+        yield* copy?.id === remove.eventId && master && drawsSlot(master, copy)
+          ? eventRepo.upsertMany([new EventRecord({ ...copy, calendarId, syncStatus: 'synced' })])
+          : eventRepo.deleteEvent(accountId, calendarId, remove.eventId);
+      } else if (row?.syncStatus === 'synced' && answer) {
+        yield* eventRepo.upsertMany([
+          new EventRecord({ ...row, attendees: answer.attendees, syncStatus: 'pending' }),
+        ]);
       }
     }
   });
