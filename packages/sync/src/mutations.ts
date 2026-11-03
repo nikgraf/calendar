@@ -1304,6 +1304,9 @@ const make: Effect.Effect<
             beforePayload: inheritedBefore(queued, existing),
             calendarId,
             createdAt: now,
+            // A series cleared while offline drops its exceptions on Google;
+            // this edit replaces that queued op and drops them in its place.
+            dropsFrom: queued.findLast((op) => op.kind === 'update')?.dropsFrom,
             eventId,
             geoCleared: geoClearedFlag(existing, merged, queued),
             id: generateEventId(),

@@ -2088,6 +2088,53 @@ describe('SyncEngine', () => {
         },
       );
 
+      it.effect('an edit of the event a cleared rule left still takes its deletes along', () => {
+        // "Does not repeat", then the title, offline: the single event's
+        // edit replaced the rule's update and lost its drop. July 3's and
+        // July 4's deletes waited out a 503, met a 412 once the PATCH had
+        // cancelled them, and parked.
+        let online = false;
+        const tried = new Set<string>();
+        const client: GoogleCalendarClientShape = {
+          ...stubClient([firstPage]),
+          deleteEvent: ({ calendarId, eventId }) => {
+            if (!online || !tried.has(eventId)) {
+              if (online) {
+                tried.add(eventId);
+              }
+              return Effect.fail(new ApiUnavailableError({ cause: '503' }));
+            }
+            return Effect.fail(new ConflictError({ calendarId, eventId }));
+          },
+          patchEvent: () =>
+            online
+              ? Effect.succeed({ ...renamed, etag: '"evt-r-1"', recurrence: [], summary: 'Once' })
+              : Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
+        };
+        return Effect.gen(function* () {
+          yield* seedAccount;
+          yield* (yield* SyncEngine).syncAll();
+          const mutations = yield* EventMutations;
+          yield* mutations.updateRecurring({
+            ...at,
+            changes: { recurrence: null },
+            originalStartUtc: july2,
+            scope: 'series',
+          });
+          yield* mutations.updateEvent({
+            accountId: 'acc-1',
+            calendarId: 'cal-1',
+            changes: { title: 'Once' },
+            eventId: 'evt-r',
+          });
+          online = true;
+          yield* drain;
+          yield* drain;
+          expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+          expect(yield* strays).toEqual([]);
+        }).pipe(Effect.provide(engineLayer(client)));
+      });
+
       it.effect('a slot Google’s ended rule cancelled shows plain once a new rule draws it', () => {
         // Another device ended the series on July 2; a full pull brought
         // July 3 and July 4 as cancelled exceptions past its end. Kept for
