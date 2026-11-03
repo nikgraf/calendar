@@ -63,10 +63,11 @@ suite). When touching sync code, treat these as invariants.
   Every exception gets a new etag and `updated` with the PATCH (so the
   next delta sends them all), and a DELETE with the etag from before
   meets a 412; a DELETE of an exception already cancelled meets a 410.
-  `updateRecurring` drops only the exceptions the new rule skips, and the
-  landing of a cut or rule change takes the deletes it queued for its
-  dropped exceptions off the queue (`forgetDropped`): Google cancelled
-  them already, and their If-Match would park a 412.
+  `updateRecurring` drops only the exceptions the new rule skips. The
+  deletes a cut or rule change queues for what it drops wait behind its
+  PATCH, and its landing takes them off the queue (`forgetDropped`):
+  Google cancelled those exceptions already, and the deletes' If-Match
+  would park a 412.
 - **Attendee editing**: `attendees` on `EventDraft`/`UpdateEventChanges`
   is a replacement guest list (`[]` clears). Google **replaces the whole
   array** on write and our copy lacks fields we never model (`optional`,

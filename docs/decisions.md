@@ -396,9 +396,10 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   and cancels the rest, with new etags all round. Our rule change queued
   a delete for every exception ahead of the PATCH, which cancelled a
   moved occurrence on Google; a cut's deletes, sent after the truncation,
-  met a 412 and parked. Now only skipped exceptions drop, and a landed cut
-  or rule change takes their deletes off the queue. Rejected: sending
-  those deletes without If-Match (a request for nothing). Open: an
+  met a 412 and parked. Now only skipped exceptions drop, their deletes
+  wait behind the PATCH whose landing takes them off the queue, and a
+  later rule drawing a slot again takes its delete back. Rejected:
+  sending them without If-Match (a request for nothing). Open: an
   occurrence edit queued behind any series PATCH still meets a 412.
 - **Re-auth and sync kicks** — a 401 flags the account `reauth_required`
   and keeps its ops queued for after the reconnect (same id, by email);

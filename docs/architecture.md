@@ -569,9 +569,12 @@ it whenever a kind is added. Rules that keep the queue correct:
   came back. A page that reports the series deleted on Google takes them
   away again, as the delete's landing would. A this-and-following cut, or
   a rule change, takes the exceptions it drops off the table and queues a
-  delete of each (`dropOverridesFrom`; a rule change drops only those
-  whose slots the new rule no longer draws — Google keeps the others as
-  they are, verified live), which outlives a later series
+  delete of each behind its master update (`dropOverridesFrom`; a rule
+  change drops only those whose slots the new rule no longer draws —
+  Google keeps the others as they are, verified live — and first takes
+  back the deletes an earlier cut or rule change queued for slots it
+  draws again, putting their copies back as Google's: `takeBackDropped`),
+  which outlives a later series
   delete (it finds no row to take); that delete's snapshot is Google's
   copy. Wherever Google's master is back on the table — a pull wrote it,
   a discard of the series delete or of the cut's (or rule change's)

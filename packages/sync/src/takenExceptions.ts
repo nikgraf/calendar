@@ -174,6 +174,44 @@ export const restoreDropped = (
   });
 
 /**
+ * A change of the series' rule (`master`, as it will go to Google) draws
+ * slots again that a cut or rule change queued before it dropped: the
+ * deletes those queued for them, still waiting, go, and the exceptions they
+ * hold come back as Google's copies (`putBack`, synced) — Google keeps an
+ * exception whose slot the rule it gets still draws. Sent, those deletes
+ * cancelled what the new rule keeps. If the earlier change reached Google
+ * after all, its landing forgets the copies again (`forgetDropped`): Google
+ * cancelled them, and draws the slots plain once the new rule lands. A
+ * delete with its pending tombstone is an occurrence delete the user made,
+ * and stays.
+ */
+export const takeBackDropped = (
+  deps: TakenDeps,
+  master: EventRecord,
+): Effect.Effect<void, SqlError> =>
+  Effect.gen(function* () {
+    const { accountId, calendarId } = master;
+    const copies: Array<EventRecord> = [];
+    for (const remove of yield* deps.pendingOpRepo.listDeletes(accountId, calendarId)) {
+      const slot = remove.payload;
+      if (
+        remove.eventId === master.id ||
+        slot?.recurringEventId !== master.id ||
+        !drawsSlot(master, slot) ||
+        (yield* deps.eventRepo.getById(accountId, calendarId, remove.eventId))?.syncStatus ===
+          'pending'
+      ) {
+        continue;
+      }
+      yield* deps.pendingOpRepo.remove(remove.id);
+      if (remove.beforePayload?.id === remove.eventId) {
+        copies.push(remove.beforePayload);
+      }
+    }
+    yield* putBack(deps, accountId, calendarId, copies);
+  });
+
+/**
  * A series update that drops exceptions on Google landed (`dropsFrom`: a
  * cut's occurrence, 0 for a new rule; `landed`: the master it sent). From
  * that original start on, Google cancelled every exception whose slot the
