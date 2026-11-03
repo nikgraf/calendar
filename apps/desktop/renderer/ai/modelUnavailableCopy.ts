@@ -10,7 +10,7 @@ interface Copy {
 }
 
 const GENERIC: Copy = {
-  long: "The on-device model is unavailable — Solunivo's AI features need macOS 26 with Apple Intelligence enabled.",
+  long: "The on-device model is unavailable — Solunivo's AI features need Apple Intelligence enabled.",
   short: 'Model unavailable',
 };
 
@@ -26,7 +26,7 @@ const COPY: Readonly<Record<Exclude<ModelStatus, 'ready'>, Copy>> = {
   },
   unavailable: GENERIC,
   unsupported: {
-    long: "Solunivo's AI features need macOS 26 on a Mac that supports Apple Intelligence.",
+    long: "Solunivo's AI features need a Mac that supports Apple Intelligence.",
     short: 'Not available on this Mac',
   },
 };

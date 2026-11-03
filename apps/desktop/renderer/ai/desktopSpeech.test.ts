@@ -193,7 +193,7 @@ const supportedWith = async (status: {
 };
 
 describe('desktopSpeech availability', () => {
-  it('needs the helper and the OS, not Apple Intelligence', async () => {
+  it('needs the helper, not Apple Intelligence', async () => {
     expect(await supportedWith({ helper: true, status: 'ready' })).toBe(true);
     // Apple Intelligence off or its model still downloading: SpeechAnalyzer transcribes anyway.
     expect(
@@ -202,9 +202,6 @@ describe('desktopSpeech availability', () => {
     expect(
       await supportedWith({ detail: 'modelNotReady', helper: true, status: 'unavailable' }),
     ).toBe(true);
-    expect(await supportedWith({ detail: 'osTooOld', helper: true, status: 'unavailable' })).toBe(
-      false,
-    );
     expect(
       await supportedWith({ detail: 'helperUnavailable', helper: false, status: 'unavailable' }),
     ).toBe(false);

@@ -286,7 +286,7 @@ export function ModelSection() {
         </div>
       ) : (
         <p className="mt-3 text-xs text-ink-secondary">
-          Needs macOS 26 with Apple Intelligence switched on. Nothing leaves this Mac.
+          Needs Apple Intelligence switched on. Nothing leaves this Mac.
         </p>
       )}
       {error ? (

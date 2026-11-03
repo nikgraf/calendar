@@ -6,9 +6,8 @@
 // with expo-camera, which has its own reader.
 //
 // `barcode.readQr` takes `imageBase64` and answers `{ codes: [String] }`,
-// every QR payload Vision found in the frame (usually none or one). The
-// classic request runs from macOS 10.13, so nothing here needs a guard on
-// the helper's macOS 14 floor.
+// every QR payload Vision found in the frame (usually none or one), from
+// the classic request (macOS 10.13), far below the helper's macOS 27 floor.
 import Foundation
 import Vision
 

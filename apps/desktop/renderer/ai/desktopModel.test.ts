@@ -12,7 +12,6 @@ describe('modelStatusOf', () => {
     expect(modelStatusOf({ detail: 'deviceNotEligible', status: 'unavailable' })).toBe(
       'unsupported',
     );
-    expect(modelStatusOf({ detail: 'osTooOld', status: 'unavailable' })).toBe('unsupported');
   });
 
   it('keeps a reason it does not know as the generic unavailable', () => {

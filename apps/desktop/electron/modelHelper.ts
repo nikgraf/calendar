@@ -73,9 +73,9 @@ export const registerModelHelper = (): void => {
   );
   // The helper itself, whatever provider answers generation: dictation and
   // text recognition are its alone, so their support is read here.
-  // `helper` says the binary answered at all: SpeechAnalyzer needs macOS 26
-  // and the helper, not Apple Intelligence, so dictation reads that and the
-  // OS reason, never the model's availability.
+  // `helper` says the binary answered at all: SpeechAnalyzer needs the
+  // helper, not Apple Intelligence, so dictation reads that and never the
+  // model's availability.
   ipcMain.handle('model:helper-status', async () => {
     if (fixture) {
       return { helper: true, status: 'ready' };

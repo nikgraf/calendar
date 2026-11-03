@@ -799,8 +799,9 @@ Electron binary (`electron --version`) and run spec files sequentially.
 - `gate` (ubuntu, reusable `gate.yml`, also called by `ios.yml`): check +
   typecheck + unit tests. The check is "Gate / Lint, typecheck, unit tests".
 - `e2e` (macos-15): desktop build → `pnpm test:e2e`.
-- `e2e-reminders` (macos-26): the **real** EventKit path on the desktop.
-  Builds the helper, seeds the runner's per-user TCC database
+- `e2e-reminders` (xcode-27, GitHub's macOS 27 image: the helper is built
+  for macOS 27 and runs only there): the **real** EventKit path on the
+  desktop. Builds the helper, seeds the runner's per-user TCC database
   (`apps/desktop/e2e/ci/grant-reminders-tcc.sh`, Reminders and
   Calendars; named columns, every plausible client identity, each
   `sqlite3` call waiting up to 30 s on a lock tccd holds), then
@@ -880,12 +881,12 @@ Electron binary (`electron --version`) and run spec files sequentially.
   `SIMULATOR_UDID=… node e2e/ci/run-flows.ts <label>` with the shard's
   files; killing `maestro-driver-iosUITests-Runner` mid-flow exercises the
   retry (run 38561991886 proved it on a runner).
-- `package-smoke` (macos-26, PRs only): unsigned `package:app`,
+- `package-smoke` (xcode-27, PRs only): unsigned `package:app`,
   packaged-contents assertions, `pnpm brand:check`, `solunivo-cli
   --version`.
-- `testing-build` (macos-26, main only): signed + notarized arm64 zip
-  incl. the Swift helper — macos-26 is the only runner image with the
-  FoundationModels SDK. See docs/distribution.md.
+- `testing-build` (xcode-27, main only): signed + notarized arm64 zip
+  incl. the Swift helper — the helper needs the macOS 27 SDK, which only
+  the xcode-27 image (macOS 27, Xcode 27) has. See docs/distribution.md.
 - `ios.yml` (main + PRs): fingerprint-gated — TestFlight build when the
   native fingerprint changed, otherwise `eas update`; PRs get a `pr-<n>`
   preview channel.
