@@ -235,7 +235,16 @@ it whenever a kind is added. Rules that keep the queue correct:
 - **412 Conflict** (only `update` and `delete` park): the op is **parked**,
   never dropped — unless Google's copy already yields exactly the PATCH
   body the update would send (`updateBody`: our own earlier attempt
-  landed), which is done; its followers keep their etag either way. The
+  landed), which is done; its followers keep their etag either way. Nor
+  when only the etag moved (`onlyEtagMoved`): Google's copy equals the
+  op's snapshot of the version its If-Match named in every field we keep
+  (guests and reminders included) and has the same status. Then the op
+  goes again at once on Google's etag, and a second 412 parks. A series
+  PATCH re-etags every exception, so an occurrence edit or delete queued
+  behind a rename or a new rule met a 412 with nothing changed
+  (`advanceCarried` folds the carried text into its snapshot). A
+  snapshot a lost answer's landing advanced (`advanceBefore`) names a
+  newer version than the If-Match, so it parks as before. The
   drain fetches Google's copy (`events.get`; 404/410 = deleted there) and
   `markConflict` stores it in `server_payload` with `conflict_at` set; a
   failed fetch is an ordinary retry. `listDue` skips parked ops and the

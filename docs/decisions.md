@@ -281,7 +281,8 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   only while no later op of the event is queued; an update that lands
   moves its followers to the etag it produced, an RSVP only when its
   If-Match held; a 412 is done only when Google's copy yields exactly the
-  PATCH body; only a never-sent create is folded into or dropped; a sent
+  PATCH body, and re-sent on Google's etag when only the etag moved (see
+  "A re-etag is no conflict"); only a never-sent create is folded into or dropped; a sent
   create stays in its calendar on a move; a 410 on a write is "gone".
 - **Full event history** (2026-09-14) — the events pass sends no
   `timeMin`: one unbounded first pass rather than a quick window plus a
@@ -301,6 +302,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   projection of the queued op, storing Google's master text and each
   exception's own (nothing could be recomputed otherwise); discard,
   take-theirs and a permanent rejection restore the exceptions.
+- **A re-etag is no conflict** (2026-11-03) — a series PATCH gives
+  every exception a new etag (probed live), so an occurrence edit or
+  delete queued behind a rename or a new rule parked as "changed on
+  Google" with nothing changed. A 412 whose fetched copy equals the op's
+  snapshot in every field we keep goes again on Google's etag. Rejected:
+  dropping If-Match from occurrence ops behind a series edit (a real
+  change from another client would be overwritten). Only a snapshot of
+  the version the If-Match names counts: a lost answer's landing advances
+  followers' snapshots to Google's copy, other clients' changes included.
 - **Conflicts with a choice** (2026-09-23, #85) — a 412 parks the op
   instead of dropping it (server-wins deleted the user's version and lost
   server changes a pull had skipped). Show Google's version, not just the

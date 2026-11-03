@@ -161,6 +161,36 @@ const updateBody = (op: PendingOp, record: EventRecord) => ({
   ...(op.attendeesChanged ? { attendees: toGcalAttendees(record) } : {}),
 });
 
+/**
+ * Whether Google's copy is still what the op was built on (`beforePayload`)
+ * in everything we keep of it, guests and reminders included, and only its
+ * etag moved. A series PATCH gives every exception a new etag (verified
+ * live), with any changed text carried on (`advanceCarried` folds that into
+ * the snapshot); another client's write to a field we do not keep does the
+ * same. Nothing the op would overwrite changed: no conflict to ask about. Only a
+ * snapshot of the version its If-Match names counts: one a lost answer's
+ * landing advanced to Google's copy (`advanceBefore`) may hold another
+ * client's change.
+ */
+const onlyEtagMoved = (op: PendingOp, theirs: EventRecord): boolean => {
+  const before = op.beforePayload;
+  if (
+    !before ||
+    op.baseEtag === undefined ||
+    before.etag !== op.baseEtag ||
+    theirs.etag === null ||
+    theirs.etag === op.baseEtag ||
+    theirs.status !== before.status
+  ) {
+    return false;
+  }
+  const everything = new PendingOp({ ...op, attendeesChanged: true, remindersChanged: true });
+  return (
+    JSON.stringify(updateBody(everything, theirs)) ===
+    JSON.stringify(updateBody(everything, before))
+  );
+};
+
 /** `revert: false` keeps the row's content and only hands it back to sync. */
 export interface ReleaseOptions {
   readonly revert?: boolean;
@@ -1356,7 +1386,8 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
     );
 
   /**
-   * A 412: Google's copy moved on since the edit was queued. Park the op
+   * A 412: Google's copy moved on since the edit was queued. Unless only
+   * its etag moved (`onlyEtagMoved`), park the op
    * with Google's current version so the user can compare and choose; the
    * local row stays `pending`, so pulls keep skipping it and the user's
    * version stays on screen. A failed fetch retries the whole op (it will
@@ -1392,6 +1423,11 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
                   // meets its own 412 and its own check.
                   yield* settle(op, theirs);
                   return 'done' as const;
+                }
+                // Only the etag moved: sent again at once on Google's. A
+                // second 412 there is a change to ask about.
+                if (theirs && onlyEtagMoved(op, theirs)) {
+                  return yield* apply(new PendingOp({ ...op, baseEtag: theirs.etag ?? undefined }));
                 }
                 return { conflict: theirs };
               }),

@@ -2215,6 +2215,168 @@ describe('SyncEngine', () => {
     }).pipe(Effect.provide(engineLayer(client)));
   });
 
+  describe('a 412 for an etag a series PATCH moved', () => {
+    // July 2–6 at 10:00; July 3 moved to 12:00. A series PATCH gives every
+    // exception a new etag (verified live): an op of one queued behind it
+    // carries the old one.
+    const series = { ...timedItem('evt-r', 10), recurrence: ['RRULE:FREQ=DAILY;COUNT=5'] };
+    const firstPage = { items: [series, movedOccurrence('Moved', '"x-1"')], nextSyncToken: 's1' };
+    const renamed = { ...series, etag: '"evt-r-2"', summary: 'Renamed' };
+    const july3 = 'evt-r_20260703T100000Z';
+    const at = { accountId: 'acc-1', calendarId: 'cal-1', masterId: 'evt-r' } as const;
+    const rename = Effect.gen(function* () {
+      yield* (yield* EventMutations).updateRecurring({
+        ...at,
+        changes: { title: 'Renamed' },
+        originalStartUtc: Date.parse('2026-07-02T10:00:00Z'),
+        scope: 'series',
+      });
+    });
+    const july3At = { ...at, originalStartUtc: Date.parse('2026-07-03T10:00:00Z') };
+    /** What the calendar draws on July 3: "HH:MM title @ location". */
+    const july3Shown = Effect.gen(function* () {
+      const from = Date.parse('2026-07-03T00:00:00Z');
+      const to = Date.parse('2026-07-04T00:00:00Z');
+      return assembleWindow(yield* (yield* EventRepo).getWindow(from, to), from, to).map(
+        (event) =>
+          `${new Date(event.startUtc).toISOString().slice(11, 16)} ${event.title} @ ${event.location ?? '-'}`,
+      );
+    });
+
+    /** Google: the rename lands and re-etags July 3 (its title carried onto it). */
+    const reetagged = (
+      july3OnGoogle: ReturnType<typeof movedOccurrence> & { readonly location?: string },
+    ) => {
+      const calls: Array<string> = [];
+      let online = false;
+      const client: GoogleCalendarClientShape = {
+        ...stubClient([firstPage]),
+        deleteEvent: ({ baseEtag, calendarId, eventId }) => {
+          calls.push(`delete ${baseEtag}`);
+          return baseEtag === july3OnGoogle.etag
+            ? Effect.void
+            : Effect.fail(new ConflictError({ calendarId, eventId }));
+        },
+        getEvent: ({ eventId }) => Effect.succeed(eventId === july3 ? july3OnGoogle : renamed),
+        patchEvent: ({ baseEtag, calendarId, eventId }) => {
+          if (!online) {
+            return Effect.fail(new ApiUnavailableError({ cause: 'offline' }));
+          }
+          calls.push(`${eventId === july3 ? 'july3' : 'series'} ${baseEtag}`);
+          if (eventId !== july3) {
+            return Effect.succeed(renamed);
+          }
+          return baseEtag === july3OnGoogle.etag
+            ? Effect.succeed({ ...july3OnGoogle, etag: '"x-3"', location: 'Room 4' })
+            : Effect.fail(new ConflictError({ calendarId, eventId }));
+        },
+      };
+      return { calls, client, goOnline: () => (online = true) };
+    };
+
+    it.effect('an occurrence edit queued behind a rename goes on Google’s new etag', () => {
+      const google = reetagged(movedOccurrence('Renamed', '"x-2"'));
+      return Effect.gen(function* () {
+        yield* seedAccount;
+        yield* (yield* SyncEngine).syncAll();
+        const mutations = yield* EventMutations;
+        yield* rename;
+        yield* mutations.updateRecurring({
+          ...july3At,
+          changes: { location: 'Room 4' },
+          scope: 'instance',
+        });
+        google.goOnline();
+        yield* mutations.retryPendingOps();
+        yield* mutations.processPendingOps();
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+        expect(google.calls).toEqual(['series "evt-r"', 'july3 "x-1"', 'july3 "x-2"']);
+        expect(yield* july3Shown).toEqual(['12:00 Renamed @ Room 4']);
+      }).pipe(Effect.provide(engineLayer(google.client)));
+    });
+
+    it.effect('so does an occurrence delete', () => {
+      const google = reetagged(movedOccurrence('Renamed', '"x-2"'));
+      return Effect.gen(function* () {
+        yield* seedAccount;
+        yield* (yield* SyncEngine).syncAll();
+        const mutations = yield* EventMutations;
+        yield* rename;
+        yield* mutations.deleteRecurring({ ...july3At, scope: 'instance' });
+        google.goOnline();
+        yield* mutations.retryPendingOps();
+        yield* mutations.processPendingOps();
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+        expect(google.calls).toEqual(['series "evt-r"', 'delete "x-1"', 'delete "x-2"']);
+        expect(yield* july3Shown).toEqual([]);
+      }).pipe(Effect.provide(engineLayer(google.client)));
+    });
+
+    it.effect('a change another device made meanwhile still parks', () => {
+      const google = reetagged({ ...movedOccurrence('Renamed', '"x-2"'), location: 'Room 9' });
+      return Effect.gen(function* () {
+        yield* seedAccount;
+        yield* (yield* SyncEngine).syncAll();
+        const mutations = yield* EventMutations;
+        yield* rename;
+        yield* mutations.updateRecurring({
+          ...july3At,
+          changes: { title: 'Mine' },
+          scope: 'instance',
+        });
+        google.goOnline();
+        yield* mutations.retryPendingOps();
+        yield* mutations.processPendingOps();
+        const [parked] = yield* (yield* PendingOpRepo).listAll();
+        expect(parked?.eventId).toBe(july3);
+        expect(parked?.conflictAt).toBeDefined();
+        expect(google.calls).toEqual(['series "evt-r"', 'july3 "x-1"']);
+      }).pipe(Effect.provide(engineLayer(google.client)));
+    });
+
+    it.effect(
+      'a rename after a master write to a field we do not keep goes on its new etag',
+      () => {
+        // Another client wrote to the master (a field the app does not keep):
+        // a new etag, the same content as far as the rename is concerned.
+        const calls: Array<string> = [];
+        let online = false;
+        const client: GoogleCalendarClientShape = {
+          ...stubClient([firstPage]),
+          getEvent: () => Effect.succeed({ ...series, etag: '"evt-r-x"' }),
+          patchEvent: ({ baseEtag, calendarId, eventId }) => {
+            if (!online) {
+              return Effect.fail(new ApiUnavailableError({ cause: 'offline' }));
+            }
+            calls.push(`${eventId === july3 ? 'july3' : 'series'} ${baseEtag}`);
+            if (eventId === july3) {
+              return Effect.succeed({ ...movedOccurrence('Moved', '"x-2"'), location: 'Room 4' });
+            }
+            return baseEtag === '"evt-r-x"'
+              ? Effect.succeed(renamed)
+              : Effect.fail(new ConflictError({ calendarId, eventId }));
+          },
+        };
+        return Effect.gen(function* () {
+          yield* seedAccount;
+          yield* (yield* SyncEngine).syncAll();
+          const mutations = yield* EventMutations;
+          yield* mutations.updateRecurring({
+            ...july3At,
+            changes: { location: 'Room 4' },
+            scope: 'instance',
+          });
+          yield* rename;
+          online = true;
+          yield* mutations.retryPendingOps();
+          yield* mutations.processPendingOps();
+          expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+          expect(calls).toEqual(['july3 "x-1"', 'series "evt-r"', 'series "evt-r-x"']);
+        }).pipe(Effect.provide(engineLayer(client)));
+      },
+    );
+  });
+
   describe('an events.list 404', () => {
     const goneEntry = {
       accessRole: 'owner' as const,
