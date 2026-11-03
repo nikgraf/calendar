@@ -804,7 +804,11 @@ Electron binary (`electron --version`) and run spec files sequentially.
   desktop. Builds the helper, seeds the runner's per-user TCC database
   (`apps/desktop/e2e/ci/grant-reminders-tcc.sh`, Reminders and
   Calendars; named columns, every plausible client identity, each
-  `sqlite3` call waiting up to 30 s on a lock tccd holds), then
+  `sqlite3` call waiting up to 30 s on a lock tccd holds; the database
+  is `~/Library/Application Support/com.apple.TCC/TCC.db` up to macOS 26
+  and, from macOS 27, the same relative path inside tccd's protected
+  system container under `/private/var/containers/Data/ProtectedSystem`,
+  resolved by `tcc-user-db.sh`), then
   `probe-helper-access.sh` requires `reminders.status` = fullAccess
   before `remindersReal` and `appleCalendarReal` run. The seed is not an
   Apple-supported interface: when a new runner image breaks it the job
