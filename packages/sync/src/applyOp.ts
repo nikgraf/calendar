@@ -39,7 +39,7 @@ import {
 import { Cause, Clock, Effect } from 'effect';
 import type { SqlError } from 'effect/sql/SqlError';
 import { restoreCarriedText } from './carriedText.ts';
-import { dropSplitSeries, holdsSplit } from './splitSeries.ts';
+import { askSplits, holdsSplit, settleSplit } from './splitSeries.ts';
 import {
   drawsSlot,
   dropChangeDeletes,
@@ -424,7 +424,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         yield* restoreDropped(taken, op.accountId, op.calendarId, op.eventId);
         if (op.dropsFrom !== undefined) {
           yield* dropChangeDeletes(taken, op.accountId, op.calendarId, op.eventId, op.dropsFrom);
-          yield* dropSplitSeries(taken, op);
+          yield* askSplits(taken, op);
         }
       }
     });
@@ -477,7 +477,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       yield* putBack(taken, op.accountId, op.calendarId, op.beforeOverrides ?? []);
       yield* restoreDropped(taken, op.accountId, op.calendarId, op.eventId);
       yield* dropChangeDeletes(taken, op.accountId, op.calendarId, op.eventId);
-      yield* dropSplitSeries(taken, op);
+      yield* askSplits(taken, op);
     });
 
   /**
@@ -1422,6 +1422,73 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
           )
       : drop(op, 'changed on Google');
 
+  /**
+   * The create of a series a this-and-following edit split off, before it
+   * is sent (splitSeries.ts): it waits while a change of the series it was
+   * split from that carries the cut is queued, wherever that sits — sent
+   * ahead, it stayed on Google when the cut was undone. Once that left the
+   * queue Google is asked for the series (`splitCheck`): still drawing from
+   * where this one starts, the cut was undone, and it goes with it. Then it
+   * is stamped as sent in one transaction with checking that it is still
+   * queued and nothing holds it or asks again: keep-theirs or an undo of
+   * the cut committed after the checks found it unsent, and dropped it
+   * while it went. One sent already waits for nothing: it may be there.
+   */
+  const splitGate = (op: PendingOp): Effect.Effect<ApplyOutcome | undefined, SqlError> =>
+    Effect.gen(function* () {
+      const { accountId, splitOf } = op;
+      if (op.kind !== 'create' || splitOf === undefined || op.dispatchedAt !== undefined) {
+        return undefined;
+      }
+      const held = Effect.map(pendingOpRepo.listAll(), (queued) =>
+        queued.some(
+          (entry) =>
+            entry.accountId === accountId && entry.eventId === splitOf && holdsSplit(entry),
+        ),
+      );
+      if (yield* held) {
+        return retry('waiting for the series it was split from');
+      }
+      if (op.splitCheck !== undefined) {
+        const found = yield* Effect.result(
+          client.getEvent({ accountId, calendarId: op.splitCheck, eventId: splitOf }),
+        );
+        if (
+          found._tag === 'Failure' &&
+          found.failure._tag !== 'NotFoundError' &&
+          found.failure._tag !== 'SyncTokenExpiredError'
+        ) {
+          return retry('asking Google about the series it was split from');
+        }
+        const series =
+          found._tag === 'Success' && found.success.status !== 'cancelled'
+            ? mapGcalEvent(found.success, {
+                accountId,
+                calendarId: op.splitCheck,
+                defaultTimeZone: op.payload?.startTimeZone ?? 'UTC',
+                syncedAt: yield* Clock.currentTimeMillis,
+              })
+            : null;
+        if ((yield* transaction(settleSplit(taken, op, series))) !== 'go') {
+          return 'done' as const;
+        }
+      }
+      const now = yield* Clock.currentTimeMillis;
+      return yield* transaction(
+        Effect.gen(function* () {
+          const current = yield* pendingOpRepo.getById(op.id);
+          if (!current) {
+            return 'done' as const;
+          }
+          if (current.splitCheck !== undefined || (yield* held)) {
+            return retry('waiting for the series it was split from');
+          }
+          yield* pendingOpRepo.markDispatched(op.id, now);
+          return undefined;
+        }),
+      );
+    });
+
   const apply = (op: PendingOp): Effect.Effect<ApplyOutcome> =>
     Effect.gen(function* () {
       const guestMode = yield* GuestNotifications;
@@ -1500,18 +1567,9 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         if (op.kind !== 'move' && op.kind !== 'create' && kinds.includes('create')) {
           return retry('waiting for the create ahead of it');
         }
-        // The series a this-and-following edit split off waits for the cut
-        // of the one it came from, wherever that sits (splitSeries.ts): sent
-        // ahead, it stayed on Google when the cut was undone.
-        const splitOf = op.kind === 'create' ? op.splitOf : undefined;
-        if (
-          splitOf !== undefined &&
-          (yield* pendingOpRepo.listAll()).some(
-            (entry) =>
-              entry.accountId === op.accountId && entry.eventId === splitOf && holdsSplit(entry),
-          )
-        ) {
-          return retry('waiting for the series it was split from');
+        const split = yield* splitGate(op);
+        if (split !== undefined) {
+          return split;
         }
         // A change of the series' rule ahead of an occurrence's: once it
         // lands it forgets the exceptions it drops (`forgetDropped`), so it

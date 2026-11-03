@@ -386,9 +386,14 @@ describe('PendingOpRepo', () => {
       );
       yield* repo.enqueue(op('plain', { eventId: 'm3', kind: 'create' }));
       const split = yield* repo.getById('split');
-      expect([split?.splitOf, split?.splitAt]).toEqual(['m1', 1234]);
+      expect([split?.splitOf, split?.splitAt, split?.splitCheck]).toEqual(['m1', 1234, undefined]);
       const plain = yield* repo.getById('plain');
       expect([plain?.splitOf, plain?.splitAt]).toEqual([undefined, undefined]);
+
+      yield* repo.setSplitCheck('split', 'cal-1');
+      expect((yield* repo.getById('split'))?.splitCheck).toBe('cal-1');
+      yield* repo.setSplitCheck('split', undefined);
+      expect((yield* repo.getById('split'))?.splitCheck).toBeUndefined();
     }).pipe(Effect.provide(freshDbLayer())),
   );
 

@@ -600,7 +600,8 @@ it whenever a kind is added. Rules that keep the queue correct:
   left gives way to that copy, and a copy an answer waits on shows that
   answer again, pending); left, they still cancelled those occurrences
   on Google. The new series of a this-and-following edit goes the same
-  way (`dropSplitSeries`, see Recurring model). Keep-mine on
+  way where Google still has the series uncut (`splitSeries.ts`, see
+  Recurring model). Keep-mine on
   such a delete while the master on the table draws its slot leaves the
   delete's own tombstone there, pending (`takeBackPulled`): with the copy
   gone, the slot showed until a pull. Wherever Google's master is back on
@@ -1026,23 +1027,32 @@ details, or Custom), so a calendar can be shared without the details.
     starts at (`splitOf`, `splitAt`, kept when edits fold into it) and
     waits for that series' ops that carry the cut, wherever they sit
     (`holdsSplit`: an update that drops exceptions, a series delete that
-    replaced it; one of a same-id series in another calendar holds it
-    too). A split of a series whose create is unsent folds the cut into
-    that create, which nothing undoes without the series: it names the
-    series that one was split from, or nothing. Undone — a discard,
-    keep-theirs or a rejection for good of that update or delete, in one
-    transaction — the cut takes the unsent creates along, with everything
-    queued for those series and their rows (`dropSplitSeries`), as long
-    as the series, back as Google has it, still draws from `splitAt` on
-    (`drawsFrom`): one Google ended before (another device cut it too)
-    shows nothing twice, and the new series stays. A discard while a
-    split waits is settled under the drain's gate, as a sent move's is:
-    the cut's request may be out, or have landed with its answer lost,
-    so Google's copy of the series decides, as keep-theirs; with no
-    answer, or the series still moving, it goes back as asked. A split
-    the cut leaves is due at once (`releaseSplits`), not after a backoff
-    that grew while the cut waited. Sent ahead of its cut, or left
-    queued, the new series showed those occurrences twice on Google.
+    replaced it; a same-id series' in another calendar holds it too). A
+    split of a series whose create is unsent folds the cut into that
+    create, which nothing undoes without the series: it names what that
+    one was split from, at the same occurrence, or nothing. Whether the
+    cut was undone, Google says — a discard may meet its request on the
+    way or landed with the answer lost, a rejection's revert may fail,
+    another device may have ended the series. After an undo (a discard or
+    a rejection for good, of the update or of a series delete that
+    replaced it, put back in one transaction) the create asks Google for
+    the series in that calendar before it goes (`splitCheck`,
+    `askSplits`), and its rows are hidden at once — the series shows those
+    days itself — for the create to bring back if Google kept the cut.
+    Once the drain is done with the cut, a landing wrote Google's copy to
+    the table, and only a master that is not that, or still draws past the
+    split, has it ask (`releaseSplits`). Either way it is due at once,
+    not after a backoff that grew while the cut waited, and is stamped as
+    sent in one transaction with checking that nothing holds or asks
+    again (`splitGate` in applyOp). Where the series still draws from
+    `splitAt` on (`drawsFrom`), the cut was undone, and the create goes
+    with it (`settleSplit`): with everything queued for that series, and
+    its rows. Keep-theirs has Google's copy and decides at once
+    (`dropSplitSeries`).
+    One Google ended before (another device cut it too) shows nothing
+    twice, and stays. A create once sent waits for nothing. Sent ahead of
+    its cut, or left queued, the new series showed those occurrences twice
+    on Google.
   - An instance never carries a rule and a single event does not become a
     series through an update (`RecurringEditUnsupportedError`). The
     all-day switch on an existing series is refused

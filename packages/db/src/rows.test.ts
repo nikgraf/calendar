@@ -71,6 +71,7 @@ const opRow = (overrides: Partial<PendingOpRow> = {}): PendingOpRow => ({
   reminders_changed: 0,
   server_payload: null,
   split_at: null,
+  split_check: null,
   split_of: null,
   target_calendar_id: null,
   target_task_list_id: null,

@@ -416,11 +416,11 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   parked or refused its cut, and a discard left it queued: Google showed
   those days twice. Nik chose that it waits for the cut and goes with it
   while unsent (as #284's deletes do), with what is queued for it and the
-  series split off it, unless Google's series already ends before it. A
-  discard asks Google first: the cut may have landed. Rejected: keeping
-  it; asking at undo time. Open: editing the series a pull put back while
-  the delete that replaced the cut waits lets it out; kept beside another
-  device's split, it shows twice.
+  series split off it. Google's copy decides: the create asks before it
+  goes, and stays where that ends before it. Rejected: keeping it; asking
+  at undo time; deciding by the local copy (a cut can land unseen). Open:
+  editing the series a pull put back while the delete that replaced the
+  cut waits lets it out; kept beside another device's split, it shows twice.
 - **Re-auth and sync kicks** — a 401 flags the account `reauth_required`
   and keeps its ops queued for after the reconnect (same id, by email);
   wake/unlock/focus/foreground kick a sync, throttled to one per 15 s,

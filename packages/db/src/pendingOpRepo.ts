@@ -234,6 +234,11 @@ export interface PendingOpRepoShape {
    * guest-list edit's attendees, a guest-list edit in an RSVP's).
    */
   readonly setPayload: (opId: string, payload: EventRecord) => Effect.Effect<void, SqlError>;
+  /** A split-off series' create asks Google in that calendar before it goes (`splitCheck`). */
+  readonly setSplitCheck: (
+    opId: string,
+    calendarId: string | undefined,
+  ) => Effect.Effect<void, SqlError>;
   /**
    * Keep-mine: clears the park and the If-Match etag so the next drain
    * overwrites the server copy, and makes the op due immediately.
@@ -345,7 +350,8 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
                                    carried_text, recurrence_cleared, before_payload,
                                    before_overrides, before_task, before_color_hex,
                                    target_task_list_id, task_parent, task_due_cleared,
-                                   task_previous, drops_from, split_of, split_at)
+                                   task_previous, drops_from, split_of, split_at,
+                                   split_check)
           VALUES (${op.id}, ${op.accountId}, ${op.calendarId}, ${op.kind},
                   ${op.eventId},
                   ${op.payload ? JSON.stringify(eventPayloadJson(op.payload)) : null},
@@ -365,7 +371,7 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
                   ${op.beforeColorHex ?? null}, ${op.targetTaskListId ?? null},
                   ${op.taskParent ?? null}, ${op.taskDue === null ? 1 : 0},
                   ${op.taskPrevious ?? null}, ${op.dropsFrom ?? null},
-                  ${op.splitOf ?? null}, ${op.splitAt ?? null})
+                  ${op.splitOf ?? null}, ${op.splitAt ?? null}, ${op.splitCheck ?? null})
         `),
         ),
       getById: (opId) =>
@@ -592,6 +598,12 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
           Effect.asVoid(
             sql`UPDATE pending_ops SET payload = ${JSON.stringify(eventPayloadJson(payload))}
               WHERE id = ${opId}`,
+          ),
+        ),
+      setSplitCheck: (opId, calendarId) =>
+        invalidating(
+          Effect.asVoid(
+            sql`UPDATE pending_ops SET split_check = ${calendarId ?? null} WHERE id = ${opId}`,
           ),
         ),
       unpark: (opId, now) =>

@@ -315,14 +315,16 @@ const dropsFrom = Effect.gen(function* () {
       AND json_extract(payload, '$.recurrence') IS NOT json_extract(before_payload, '$.recurrence')`;
 });
 
-// split_of, split_at: on the create of a series a this-and-following edit
-// split off, the series it came from and the original start of the
-// occurrence it starts at (PendingOp.splitOf, splitAt). A create queued
-// before has none: it goes as before.
+// split_of, split_at, split_check: on the create of a series a
+// this-and-following edit split off, the series it came from, the original
+// start of the occurrence it starts at, and the calendar Google is asked in
+// for that series before it goes (PendingOp.splitOf, splitAt, splitCheck).
+// A create queued before has none: it goes as before.
 const splitOf = Effect.gen(function* () {
   const sql = yield* SqlClient;
   yield* sql`ALTER TABLE pending_ops ADD COLUMN split_of TEXT`;
   yield* sql`ALTER TABLE pending_ops ADD COLUMN split_at INTEGER`;
+  yield* sql`ALTER TABLE pending_ops ADD COLUMN split_check TEXT`;
 });
 
 // The third tuple element is a *loader* whose result is the migration effect.

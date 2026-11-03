@@ -13,12 +13,22 @@ import type { TakenDeps } from './takenExceptions.ts';
  * A this-and-following edit cuts the series it edits and queues the
  * create of a new series from the edited occurrence on, which names where
  * it came from (`splitOf`, `splitAt`). Google gets the two as one change:
- * the create waits for the cut (`holdsSplit`), and an undone cut takes it
- * along (`dropSplitSeries`). Either one alone showed those occurrences
- * twice on Google. A split of a series whose create is still unsent took
- * the cut into that create, which nothing can undo without the series: it
- * names the series that one was split from, if any (all of them wait for
- * that one's cut, and go with it), or nothing.
+ * the create waits for the cut (`holdsSplit`), and goes with it if the cut
+ * is undone. Either one alone showed those occurrences twice on Google.
+ *
+ * Whether the cut was undone, Google says: a discard may meet its request
+ * on the way or landed with the answer lost, a rejection's revert may fail,
+ * another device may have ended the series. So once an undo took the cut
+ * from the queue, the create asks Google for the series before it goes
+ * (`askSplits`, `settleSplit`), and goes with the cut where that still
+ * draws from where it starts (`drawsFrom`); once the drain is done with
+ * it, a landing wrote Google's copy to the table, and only a series that
+ * is not that asks (`releaseSplits`). Keep-theirs has Google's copy at
+ * hand and decides at once (`dropSplitSeries`).
+ *
+ * A split of a series whose create is unsent took the cut into that
+ * create, which nothing undoes without the series: it names what that one
+ * was split from, at the same occurrence, or nothing.
  */
 
 /**
@@ -61,91 +71,138 @@ const inSeries = (masterId: string, eventId: string) =>
   eventId === masterId ||
   (eventId.startsWith(`${masterId}_`) && /\d/.test(eventId.charAt(masterId.length + 1)));
 
-/**
- * The series' unsent creates split off `change`'s series once `change`
- * (a cut, or a series delete that replaced one) leaves the queue. Held by
- * another such change of a series with that id (another calendar's copy),
- * they wait for that one. Where `series` (as Google has it; null: not
- * there) still draws from where one starts, it goes, with everything
- * queued for it — edits of its occurrences, the series split off it — and
- * its rows. The others are due at once: they waited out a backoff that
- * grew while the cut waited.
- */
-const settleSplits = (
-  { eventRepo, pendingOpRepo }: TakenDeps,
+/** The unsent creates of the series split off `change`'s series. */
+const splitsOf = (
+  { pendingOpRepo }: TakenDeps,
   change: PendingOp,
-  series: EventRecord | null,
-): Effect.Effect<void, SqlError> =>
+): Effect.Effect<ReadonlyArray<PendingOp>, SqlError> =>
+  Effect.map(pendingOpRepo.listAll(), (queued) =>
+    queued.filter(
+      (op) =>
+        op.kind === 'create' &&
+        op.accountId === change.accountId &&
+        op.splitOf === change.eventId &&
+        op.dispatchedAt === undefined,
+    ),
+  );
+
+/** A split-off series' rows: the master and its overrides. */
+const hideSeries = ({ eventRepo }: TakenDeps, create: PendingOp) =>
   Effect.gen(function* () {
-    const { accountId, eventId: masterId } = change;
-    const queued = (yield* pendingOpRepo.listAll()).filter((op) => op.accountId === accountId);
-    if (queued.some((op) => op.id !== change.id && op.eventId === masterId && holdsSplit(op))) {
-      return;
+    const { accountId, calendarId, eventId } = create;
+    for (const override of yield* eventRepo.listOverrides(accountId, calendarId, eventId)) {
+      yield* eventRepo.deleteEvent(accountId, calendarId, override.id);
     }
-    for (const create of queued) {
+    yield* eventRepo.deleteEvent(accountId, calendarId, eventId);
+  });
+
+/** A split-off series that goes with its cut: everything queued for it, and its rows. */
+const dropSeries = (deps: TakenDeps, create: PendingOp) =>
+  Effect.gen(function* () {
+    for (const op of yield* deps.pendingOpRepo.listAll()) {
       if (
-        create.kind !== 'create' ||
-        create.splitOf !== masterId ||
-        create.splitAt === undefined ||
-        create.dispatchedAt !== undefined
+        op.accountId === create.accountId &&
+        op.calendarId === create.calendarId &&
+        inSeries(create.eventId, op.eventId)
       ) {
-        continue;
+        yield* deps.pendingOpRepo.remove(op.id);
       }
-      if (!series || !drawsFrom(series, create.splitAt)) {
-        yield* pendingOpRepo.makeDue(create.id);
-        continue;
-      }
-      const { calendarId, eventId } = create;
-      for (const op of queued) {
-        if (op.calendarId === calendarId && inSeries(eventId, op.eventId)) {
-          yield* pendingOpRepo.remove(op.id);
-        }
-      }
-      for (const override of yield* eventRepo.listOverrides(accountId, calendarId, eventId)) {
-        yield* eventRepo.deleteEvent(accountId, calendarId, override.id);
-      }
-      yield* eventRepo.deleteEvent(accountId, calendarId, eventId);
+    }
+    yield* hideSeries(deps, create);
+  });
+
+/**
+ * An undo took `change` (a cut, or a series delete that replaced one) from
+ * the queue: a discard or a rejection for good. The series split off it
+ * ask Google before they go, in its calendar (`settleSplit`), and are due
+ * at once — they waited out a backoff that grew while the cut waited.
+ * Their rows go now: the series is back, and shows those days itself; if
+ * Google kept the cut after all, the create brings them back.
+ */
+export const askSplits = (deps: TakenDeps, change: PendingOp): Effect.Effect<void, SqlError> =>
+  Effect.gen(function* () {
+    for (const create of yield* splitsOf(deps, change)) {
+      yield* deps.pendingOpRepo.setSplitCheck(create.id, change.calendarId);
+      yield* deps.pendingOpRepo.makeDue(create.id);
+      yield* hideSeries(deps, create);
     }
   });
 
 /**
- * The cut of a series was undone (a discard, keep-theirs or a rejection
- * for good of its update, or of a series delete that replaced it): the
- * series is back as Google has it — `series`, else its row now. The series
- * split off it whose creates are still unsent go with it where it draws
- * from where they start: what they show, it shows again. One Google ended
- * before (another device cut it too, or the cut landed and its answer was
- * lost) shows nothing twice, and stays.
+ * The drain is done with `change`: it landed, Google refused it, or the
+ * series is gone there. The series split off it are due at once. The
+ * master on the table says whether the cut is on Google when it is
+ * Google's copy (synced: a landing wrote it; none: gone) and ends before a
+ * split starts; otherwise (the user's own, pending: a rejection whose
+ * revert failed) the split asks Google first. One an undo had ask keeps
+ * that calendar: a same-id series elsewhere says nothing of it.
+ */
+export const releaseSplits = (deps: TakenDeps, change: PendingOp): Effect.Effect<void, SqlError> =>
+  Effect.gen(function* () {
+    const { accountId, calendarId, eventId } = change;
+    const master = yield* deps.eventRepo.getById(accountId, calendarId, eventId);
+    for (const create of yield* splitsOf(deps, change)) {
+      if (
+        create.splitCheck === undefined &&
+        master !== null &&
+        (master.syncStatus !== 'synced' ||
+          (create.splitAt !== undefined && drawsFrom(master, create.splitAt)))
+      ) {
+        yield* deps.pendingOpRepo.setSplitCheck(create.id, calendarId);
+      }
+      yield* deps.pendingOpRepo.makeDue(create.id);
+    }
+  });
+
+/**
+ * Keep-theirs took `change` back, with Google's copy of the series
+ * (`series`; null: gone there): a series split off it goes with it where
+ * that still draws from where it starts, and is due at once otherwise.
  */
 export const dropSplitSeries = (
   deps: TakenDeps,
   change: PendingOp,
-  series?: EventRecord | null,
+  series: EventRecord | null,
 ): Effect.Effect<void, SqlError> =>
-  Effect.flatMap(
-    series === undefined
-      ? deps.eventRepo.getById(change.accountId, change.calendarId, change.eventId)
-      : Effect.succeed(series),
-    (master) => settleSplits(deps, change, master),
-  );
+  Effect.gen(function* () {
+    for (const create of yield* splitsOf(deps, change)) {
+      if (series && create.splitAt !== undefined && drawsFrom(series, create.splitAt)) {
+        yield* dropSeries(deps, create);
+      } else {
+        yield* deps.pendingOpRepo.makeDue(create.id);
+      }
+    }
+  });
 
-/** `change` is done on Google (it landed, or found the series gone): its splits go out. */
-export const releaseSplits = (deps: TakenDeps, change: PendingOp): Effect.Effect<void, SqlError> =>
-  settleSplits(deps, change, null);
+/**
+ * Google's answer for the series a create asked about (`series`; null:
+ * gone there): still drawing from where the create starts, the cut was
+ * undone, and the new series goes with it; otherwise the create goes on,
+ * and brings back the rows an undo hid. What happened to the create.
+ */
+export const settleSplit = (
+  deps: TakenDeps,
+  create: PendingOp,
+  series: EventRecord | null,
+): Effect.Effect<'dropped' | 'go' | 'gone', SqlError> =>
+  Effect.gen(function* () {
+    const current = yield* deps.pendingOpRepo.getById(create.id);
+    if (!current) {
+      return 'gone';
+    }
+    if (series && current.splitAt !== undefined && drawsFrom(series, current.splitAt)) {
+      yield* dropSeries(deps, current);
+      return 'dropped';
+    }
+    yield* deps.pendingOpRepo.setSplitCheck(current.id, undefined);
+    return 'go';
+  });
 
-/** The unsent creates split off the series `change` holds back (`holdsSplit`). */
+/** Whether `change` holds back an unsent create split off its series. */
 export const waitingSplits = (
-  pendingOpRepo: TakenDeps['pendingOpRepo'],
+  deps: TakenDeps,
   change: PendingOp,
 ): Effect.Effect<boolean, SqlError> =>
-  Effect.map(pendingOpRepo.listAll(), (queued) =>
-    holdsSplit(change)
-      ? queued.some(
-          (op) =>
-            op.kind === 'create' &&
-            op.accountId === change.accountId &&
-            op.splitOf === change.eventId &&
-            op.dispatchedAt === undefined,
-        )
-      : false,
-  );
+  holdsSplit(change)
+    ? Effect.map(splitsOf(deps, change), (splits) => splits.length > 0)
+    : Effect.succeed(false);
