@@ -247,8 +247,9 @@ it whenever a kind is added. Rules that keep the queue correct:
   occurrence edit queued behind a rename or a new rule met a 412 with
   nothing changed
   (`advanceCarried` folds the carried text into its snapshot, and into
-  the payload of an edit queued before the series edit, which would put
-  the old text back otherwise). A guest-list edit always parks: Google
+  the payload of an edit queued before the series edit, or of one queued
+  after it in the fields it did not change itself, which would put the
+  old text back otherwise). A guest-list edit always parks: Google
   replaces the whole list, guest fields we do not keep included. A
   snapshot a lost answer's landing advanced (`advanceBefore`) names a
   newer version than the If-Match, so it parks as before. The

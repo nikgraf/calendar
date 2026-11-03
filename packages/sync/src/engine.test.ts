@@ -2974,6 +2974,78 @@ describe('SyncEngine', () => {
       },
     );
 
+    it.effect(
+      'an edit made after the rename on a row that lost its carry keeps the new title',
+      () => {
+        // July 3's first edit landed while the rename waited out a 503, and
+        // its answer put Google's July 3 (the old title) back on the row. A
+        // second edit made then was built on the old title; re-sent once the
+        // rename landed, it undid the rename on July 3.
+        const sent: Array<string> = [];
+        let online = false;
+        let seriesTries = 0;
+        let july3OnGoogle: ReturnType<typeof movedOccurrence> & { readonly location?: string } =
+          movedOccurrence('Moved', '"x-1"');
+        let tick = 1;
+        const client: GoogleCalendarClientShape = {
+          ...stubClient([firstPage]),
+          getEvent: ({ eventId }) => Effect.succeed(eventId === july3 ? july3OnGoogle : renamed),
+          patchEvent: ({ baseEtag, calendarId, event, eventId }) =>
+            Effect.suspend((): ReturnType<GoogleCalendarClientShape['patchEvent']> => {
+              if (!online) {
+                return Effect.fail(new ApiUnavailableError({ cause: 'offline' }));
+              }
+              if (eventId !== july3) {
+                if (seriesTries++ === 0) {
+                  return Effect.fail(new ApiUnavailableError({ cause: '503' }));
+                }
+                july3OnGoogle = { ...july3OnGoogle, etag: `"x-${++tick}"`, summary: 'Renamed' };
+                return Effect.succeed(renamed);
+              }
+              if (baseEtag !== july3OnGoogle.etag) {
+                return Effect.fail(new ConflictError({ calendarId, eventId }));
+              }
+              sent.push(`${event.summary} @ ${event.location}`);
+              july3OnGoogle = {
+                ...july3OnGoogle,
+                etag: `"x-${++tick}"`,
+                ...(event.location ? { location: event.location } : {}),
+                ...(event.summary ? { summary: event.summary } : {}),
+              };
+              return Effect.succeed(july3OnGoogle);
+            }),
+        };
+        return Effect.gen(function* () {
+          yield* seedAccount;
+          yield* (yield* SyncEngine).syncAll();
+          const mutations = yield* EventMutations;
+          yield* mutations.updateRecurring({
+            ...july3At,
+            changes: { location: 'Room 4' },
+            scope: 'instance',
+          });
+          yield* rename;
+          online = true;
+          yield* mutations.retryPendingOps();
+          yield* mutations.processPendingOps();
+          online = false;
+          yield* mutations.updateRecurring({
+            ...july3At,
+            changes: { location: 'Room 5' },
+            scope: 'instance',
+          });
+          online = true;
+          yield* mutations.retryPendingOps();
+          yield* mutations.processPendingOps();
+          yield* mutations.processPendingOps();
+          expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+          expect(sent.at(-1)).toBe('Renamed @ Room 5');
+          expect(july3OnGoogle.summary).toBe('Renamed');
+          expect(yield* july3Shown).toEqual(['12:00 Renamed @ Room 5']);
+        }).pipe(Effect.provide(engineLayer(client)));
+      },
+    );
+
     it.effect('a guest-list edit still parks: Google replaces guest fields we do not keep', () => {
       // Another client marked a guest optional: a new etag, nothing we keep
       // changed. Re-sent, our whole guest list made the guest required again.

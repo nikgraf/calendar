@@ -161,6 +161,9 @@ const updateBody = (op: PendingOp, record: EventRecord) => ({
   ...(op.attendeesChanged ? { attendees: toGcalAttendees(record) } : {}),
 });
 
+/** The text fields a series edit carries onto its exceptions. */
+type CarriedField = 'description' | 'location' | 'title';
+
 /** `revert: false` keeps the row's content and only hands it back to sync. */
 export interface ReleaseOptions {
   readonly revert?: boolean;
@@ -1275,8 +1278,11 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
    * replace the carried text, not the text the exceptions had before. One
    * queued before the series edit was built on the old text, and the
    * series edit, later, wins on what it carried (as when the two land in
-   * order): its payload takes the carried text too. Sent as it was, it put
-   * the old text back on that exception.
+   * order): its payload takes the carried text too. One queued after it
+   * takes it in each field it did not change itself (its payload holds its
+   * snapshot's value there): built on a row whose carry a landing or a
+   * pull put Google's copy over, it held the old text. Sent as it was,
+   * either put the old text back on that exception.
    */
   const advanceCarried = (op: PendingOp, synced: EventRecord, calendarId: string) =>
     Effect.gen(function* () {
@@ -1285,7 +1291,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         return;
       }
       // Google keeps no empty text: an empty field and a missing one are the same value.
-      const changed = (field: 'description' | 'location' | 'title') =>
+      const changed = (field: CarriedField) =>
         (synced[field] ?? '') !== (carriedText.base[field] ?? '');
       const carried: Partial<EventRecord> = {
         ...(changed('description') ? { description: synced.description } : {}),
@@ -1309,15 +1315,23 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
               withConsistentGeo(new EventRecord({ ...other.beforePayload, ...carried })),
             );
           }
-          if (
-            other.kind === 'update' &&
-            other.payload &&
-            other.conflictAt === undefined &&
-            before.has(other.id)
-          ) {
+          if (other.kind !== 'update' || !other.payload || other.conflictAt !== undefined) {
+            continue;
+          }
+          const payload = other.payload;
+          const taken = before.has(other.id)
+            ? carried
+            : Object.fromEntries(
+                Object.entries(carried).filter(
+                  ([field]) =>
+                    (payload[field as CarriedField] ?? '') ===
+                    (other.beforePayload?.[field as CarriedField] ?? ''),
+                ),
+              );
+          if (Object.keys(taken).length > 0) {
             yield* pendingOpRepo.setPayload(
               other.id,
-              withConsistentGeo(new EventRecord({ ...other.payload, ...carried })),
+              withConsistentGeo(new EventRecord({ ...payload, ...taken })),
             );
           }
         }

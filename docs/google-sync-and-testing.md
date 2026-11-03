@@ -52,7 +52,10 @@ suite). When touching sync code, treat these as invariants.
   queued before it takes the carried text into its payload too
   (`advanceCarried`): the series edit came later and wins on what it
   carried, as when the two land in order, and sent as it was, the
-  occurrence edit put the old text back. Known gap: a queued instance
+  occurrence edit put the old text back. One queued after it takes the
+  carried text in the fields it did not change itself (a landing or a
+  pull may have put Google's copy over the row's carry before it was
+  made). Known gap: a queued instance
   op's payload is not rewritten for a series edit that never lands, so it
   can still push carried text of an abandoned series edit; the next pull
   converges.
