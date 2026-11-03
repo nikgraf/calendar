@@ -3,7 +3,7 @@ import type { ModelStatusReply } from '../backend.ts';
 
 /**
  * The helper's `detail` when the model is unavailable: Foundation Models'
- * own reason (the table iOS reads too — its `osTooOld` row is an iPhone
+ * own reason (the table iOS reads too — its `osTooOld` row is for an iPhone
  * below iOS 26; the helper needs macOS 27 and never sends it); and a
  * served model's (modelProvider.ts): the server not
  * reachable, or the model not on it — the latter re-polled like a

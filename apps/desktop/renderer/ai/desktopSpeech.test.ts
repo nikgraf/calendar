@@ -182,28 +182,28 @@ describe('desktopSpeech hands-free listening', () => {
   });
 });
 
-/** `isSupported` with the helper answering this status. */
-const supportedWith = async (status: {
-  readonly detail?: string;
-  readonly helper: boolean;
-  readonly status: string;
-}) => {
+/** `isSupported` with main answering whether the helper responded. */
+const supportedWith = async (status: { readonly helper: boolean }) => {
   vi.stubGlobal('window', { calendarBridge: { modelHelperStatus: async () => status } });
   return (await loadSpeech()).isSupported();
 };
 
 describe('desktopSpeech availability', () => {
-  it('needs the helper, not Apple Intelligence', async () => {
-    expect(await supportedWith({ helper: true, status: 'ready' })).toBe(true);
-    // Apple Intelligence off or its model still downloading: SpeechAnalyzer transcribes anyway.
-    expect(
-      await supportedWith({ detail: 'deviceNotEligible', helper: true, status: 'unavailable' }),
-    ).toBe(true);
-    expect(
-      await supportedWith({ detail: 'modelNotReady', helper: true, status: 'unavailable' }),
-    ).toBe(true);
-    expect(
-      await supportedWith({ detail: 'helperUnavailable', helper: false, status: 'unavailable' }),
-    ).toBe(false);
+  it('needs the helper and nothing else', async () => {
+    // Apple Intelligence off or its model still downloading never reaches
+    // here: main's reply is only whether the binary answered.
+    expect(await supportedWith({ helper: true })).toBe(true);
+    expect(await supportedWith({ helper: false })).toBe(false);
+  });
+
+  it('is unsupported when main cannot answer at all', async () => {
+    vi.stubGlobal('window', {
+      calendarBridge: {
+        modelHelperStatus: async () => {
+          throw new Error('no main');
+        },
+      },
+    });
+    expect(await (await loadSpeech()).isSupported()).toBe(false);
   });
 });

@@ -77,11 +77,10 @@ export const desktopSpeech: SpeechToText = {
     // Mac whose helper cannot transcribe — and prepare() decides the rest
     // at use time.
     try {
-      const result = await window.calendarBridge.modelHelperStatus();
       // The helper runs, and with it SpeechAnalyzer (every macOS the app
-      // opens on has it): Apple Intelligence being off does not take
-      // dictation away.
-      return result.helper;
+      // opens on has it). Apple Intelligence being off does not take
+      // dictation away: main answers only whether the binary responded.
+      return (await window.calendarBridge.modelHelperStatus()).helper;
     } catch {
       return false;
     }
