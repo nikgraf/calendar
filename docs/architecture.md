@@ -392,7 +392,10 @@ it whenever a kind is added. Rules that keep the queue correct:
   series, and an occurrence's op for a change of the series' rule ahead
   of it (`dropsFrom`: its landing forgets the exceptions it drops, so an
   exception made under the new rule must land after it, also when its
-  answer was lost and a backoff let the occurrence's op go first).
+  answer was lost and a backoff let the occurrence's op go first), and an
+  exception's delete for one that drops its slot wherever it sits (a
+  series edit that replaced the change went to the back of the queue, and
+  the deletes went out ahead of it, past taking back).
   `moveEvent` re-queues pending edits of the series _behind_ the
   move, re-keyed to the destination (a never-sent create simply becomes a
   create there; a sent one stays in the source with the move behind it; a
@@ -579,9 +582,10 @@ it whenever a kind is added. Rules that keep the queue correct:
   which outlives a later series
   delete (it finds no row to take); that delete's snapshot is Google's
   copy. An occurrence the user deleted keeps its own delete and pending
-  tombstone instead, queued behind the change like the change's own
-  (ahead, it went out first, and keep-theirs on its 412 showed the
-  occurrence past the cut). While the change waits, a pull's live copy of such an
+  tombstone instead, queued behind the change like the change's own and
+  unparked (ahead, it went out first, and keep-theirs on its 412 showed
+  the occurrence past the cut; abandoned, the change leaves it to meet
+  that 412 again). While the change waits, a pull's live copy of such an
   exception goes into its delete's snapshot, where no row is
   (`holdPulledExceptions`): on the table it showed past the cut on its
   own, or over the new rule. The deletes go with the change that queued

@@ -564,6 +564,8 @@ const make: Effect.Effect<
         // (folded into the change's, it went with a discard of the change),
         // queued behind the change like the change's own: ahead, it went out
         // first, and a 412's keep-theirs showed the occurrence past the cut.
+        // A park goes too: the change's landing settles it, and abandoned,
+        // the delete meets that 412 again.
         const own = queued.find((op) => op.kind === 'delete');
         if (remote && own && override.status === 'cancelled' && override.syncStatus === 'pending') {
           yield* pendingOpRepo.remove(own.id);
@@ -571,10 +573,12 @@ const make: Effect.Effect<
             new PendingOp({
               ...own,
               attempts: 0,
+              conflictAt: undefined,
               createdAt: now,
               id: generateEventId(),
-              lastError: own.conflictAt === undefined ? undefined : own.lastError,
+              lastError: undefined,
               nextAttemptAt: 0,
+              serverPayload: undefined,
             }),
           );
           continue;

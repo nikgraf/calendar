@@ -1509,6 +1509,33 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         ) {
           return retry('waiting for the change of its series ahead of it');
         }
+        // An exception's delete waits for a change of its series' rule that
+        // drops it wherever that sits: a series edit that replaced it went
+        // to the back of the queue, and the deletes went out ahead of it —
+        // past taking back once it was abandoned, and into a 412 for one
+        // the user made (the PATCH gives every exception a new etag). Its
+        // landing takes them off the queue (`forgetDropped`).
+        const exception = op.kind === 'delete' ? op.payload : undefined;
+        const masterId = exception?.recurringEventId;
+        if (exception && masterId !== undefined && exception.id === op.eventId) {
+          const start = exception.originalStartUtc ?? exception.startUtc;
+          const changes = yield* pendingOpRepo.listForEvent({
+            accountId: op.accountId,
+            calendarId: op.calendarId,
+            eventId: masterId,
+          });
+          if (
+            changes.some(
+              (entry) =>
+                entry.kind === 'update' &&
+                entry.dropsFrom !== undefined &&
+                start >= entry.dropsFrom &&
+                !(entry.payload && drawsSlot(entry.payload, exception)),
+            )
+          ) {
+            return retry('waiting for the change of its series');
+          }
+        }
       }
       switch (op.kind) {
         case 'calendarColor': {
