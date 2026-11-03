@@ -2877,6 +2877,99 @@ describe('SyncEngine', () => {
     });
 
     it.effect(
+      'an edit overtaken by the rename goes with the new title, not back to the old',
+      () => {
+        // July 3's location edit waits out a 503 while the rename, queued
+        // after it, lands. Re-sent on Google's etag, its PATCH carried the
+        // old title and undid the rename on July 3.
+        const sent: Array<string> = [];
+        let online = false;
+        let july3Tries = 0;
+        const july3OnGoogle = movedOccurrence('Renamed', '"x-2"');
+        const client: GoogleCalendarClientShape = {
+          ...stubClient([firstPage]),
+          getEvent: ({ eventId }) => Effect.succeed(eventId === july3 ? july3OnGoogle : renamed),
+          patchEvent: ({ baseEtag, calendarId, event, eventId }) => {
+            if (!online) {
+              return Effect.fail(new ApiUnavailableError({ cause: 'offline' }));
+            }
+            if (eventId !== july3) {
+              return Effect.succeed(renamed);
+            }
+            if (july3Tries++ === 0) {
+              return Effect.fail(new ApiUnavailableError({ cause: '503' }));
+            }
+            if (baseEtag !== '"x-2"') {
+              return Effect.fail(new ConflictError({ calendarId, eventId }));
+            }
+            sent.push(`${event.summary} @ ${event.location}`);
+            return Effect.succeed({
+              ...july3OnGoogle,
+              etag: '"x-3"',
+              location: event.location ?? undefined,
+              summary: event.summary ?? july3OnGoogle.summary,
+            });
+          },
+        };
+        return Effect.gen(function* () {
+          yield* seedAccount;
+          yield* (yield* SyncEngine).syncAll();
+          const mutations = yield* EventMutations;
+          yield* mutations.updateRecurring({
+            ...july3At,
+            changes: { location: 'Room 4' },
+            scope: 'instance',
+          });
+          yield* rename;
+          online = true;
+          yield* mutations.retryPendingOps();
+          yield* mutations.processPendingOps();
+          yield* mutations.retryPendingOps();
+          yield* mutations.processPendingOps();
+          expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+          expect(sent).toEqual(['Renamed @ Room 4']);
+          expect(yield* july3Shown).toEqual(['12:00 Renamed @ Room 4']);
+        }).pipe(Effect.provide(engineLayer(client)));
+      },
+    );
+
+    it.effect('a guest-list edit still parks: Google replaces guest fields we do not keep', () => {
+      // Another client marked a guest optional: a new etag, nothing we keep
+      // changed. Re-sent, our whole guest list made the guest required again.
+      const calls: Array<string> = [];
+      const invite = {
+        ...timedItem('evt-g', 10),
+        attendees: [{ email: 'guest@example.com', responseStatus: 'needsAction' }],
+        organizer: { email: 'nik@example.com', self: true },
+      };
+      const client: GoogleCalendarClientShape = {
+        ...stubClient([{ items: [invite], nextSyncToken: 's1' }]),
+        getEvent: () => Effect.succeed({ ...invite, etag: '"evt-g-2"' }),
+        patchEvent: ({ baseEtag, calendarId, eventId }) => {
+          calls.push(`${eventId} ${baseEtag}`);
+          return baseEtag === '"evt-g-2"'
+            ? Effect.succeed({ ...invite, etag: '"evt-g-3"' })
+            : Effect.fail(new ConflictError({ calendarId, eventId }));
+        },
+      };
+      return Effect.gen(function* () {
+        yield* seedAccount;
+        yield* (yield* SyncEngine).syncAll();
+        const mutations = yield* EventMutations;
+        yield* mutations.updateEvent({
+          accountId: 'acc-1',
+          calendarId: 'cal-1',
+          changes: { attendees: [{ email: 'guest@example.com' }, { email: 'new@example.com' }] },
+          eventId: 'evt-g',
+        });
+        yield* mutations.processPendingOps();
+        const [parked] = yield* (yield* PendingOpRepo).listAll();
+        expect(parked?.conflictAt).toBeDefined();
+        expect(calls).toEqual(['evt-g "evt-g"']);
+      }).pipe(Effect.provide(engineLayer(client)));
+    });
+
+    it.effect(
       'a rename after a master write to a field we do not keep goes on its new etag',
       () => {
         // Another client wrote to the master (a field the app does not keep):

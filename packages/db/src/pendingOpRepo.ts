@@ -70,7 +70,10 @@ export interface PendingOpRepoShape {
   ) => Effect.Effect<number, SqlError>;
   readonly earlierInSeries: (
     op: PendingOp,
-  ) => Effect.Effect<ReadonlyArray<Pick<PendingOp, 'dropsFrom' | 'eventId' | 'kind'>>, SqlError>;
+  ) => Effect.Effect<
+    ReadonlyArray<Pick<PendingOp, 'dropsFrom' | 'eventId' | 'id' | 'kind'>>,
+    SqlError
+  >;
   /**
    * The task ops of the op's account queued before it, in queue order: a
    * task move and the task ops around it keep that order even when
@@ -288,8 +291,9 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
           sql<{
             readonly drops_from: number | null;
             readonly event_id: string;
+            readonly id: string;
             readonly kind: PendingOp['kind'];
-          }>`SELECT kind, event_id, drops_from FROM pending_ops
+          }>`SELECT id, kind, event_id, drops_from FROM pending_ops
             WHERE account_id = ${op.accountId} AND id != ${op.id}
               AND (event_id = ${op.eventId}
                 OR substr(event_id, 1, length(${op.eventId}) + 1) = ${op.eventId} || '_'
@@ -300,6 +304,7 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
           (rows) =>
             rows.map((row) => ({
               eventId: row.event_id,
+              id: row.id,
               kind: row.kind,
               ...(row.drops_from === null ? {} : { dropsFrom: row.drops_from }),
             })),

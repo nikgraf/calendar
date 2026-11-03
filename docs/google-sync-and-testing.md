@@ -48,9 +48,14 @@ suite). When touching sync code, treat these as invariants.
   across coalesced edits, an empty field equals a missing one, and
   discard, take-theirs and a permanent rejection put the exceptions' text
   back except where the user has since edited the exception or a pull
-  replaced the row). Known gap: a queued instance op's payload is not
-  rewritten, so it can still push carried text of an abandoned series
-  edit; the next pull converges.
+  replaced the row). Once the series edit lands, an occurrence edit
+  queued before it takes the carried text into its payload too
+  (`advanceCarried`): the series edit came later and wins on what it
+  carried, as when the two land in order, and sent as it was, the
+  occurrence edit put the old text back. Known gap: a queued instance
+  op's payload is not rewritten for a series edit that never lands, so it
+  can still push carried text of an abandoned series edit; the next pull
+  converges.
 - **A new rule keeps the exceptions it still draws** (verified live
   2026-11-03, `recurring.live.ts`): a PATCH of a master's `recurrence`
   leaves an exception whose original slot the new rule still draws as it

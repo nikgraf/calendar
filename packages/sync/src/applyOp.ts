@@ -206,11 +206,13 @@ const changedFields = (before: EventRecord, payload: EventRecord): Partial<Event
  * overwrite or remove changed: no conflict to ask about. Only a snapshot
  * of the version its If-Match names counts: one a lost answer's landing
  * advanced to Google's copy (`advanceBefore`) may hold another client's
- * change.
+ * change. A guest-list edit always asks: Google replaces the whole list,
+ * guest fields we do not keep (optional, comment) included.
  */
 const onlyEtagMoved = (op: PendingOp, theirs: EventRecord): boolean => {
   const before = op.beforePayload;
   return (
+    op.attendeesChanged !== true &&
     before !== null &&
     before !== undefined &&
     op.baseEtag !== undefined &&
@@ -1268,7 +1270,11 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
   /**
    * A series edit that carried text onto its exceptions landed: Google
    * carried it there too, so the queued edits of those exceptions now
-   * replace the carried text, not the text the exceptions had before.
+   * replace the carried text, not the text the exceptions had before. One
+   * queued before the series edit was built on the old text, and the
+   * series edit, later, wins on what it carried (as when the two land in
+   * order): its payload takes the carried text too. Sent as it was, it put
+   * the old text back on that exception.
    */
   const advanceCarried = (op: PendingOp, synced: EventRecord, calendarId: string) =>
     Effect.gen(function* () {
@@ -1287,6 +1293,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       if (Object.keys(carried).length === 0) {
         return;
       }
+      const before = new Set((yield* pendingOpRepo.earlierInSeries(op)).map((entry) => entry.id));
       for (const entry of carriedText.overrides) {
         const queued = yield* pendingOpRepo.listForEvent({
           accountId: op.accountId,
@@ -1298,6 +1305,17 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
             yield* pendingOpRepo.setBefore(
               other.id,
               withConsistentGeo(new EventRecord({ ...other.beforePayload, ...carried })),
+            );
+          }
+          if (
+            other.kind === 'update' &&
+            other.payload &&
+            other.conflictAt === undefined &&
+            before.has(other.id)
+          ) {
+            yield* pendingOpRepo.setPayload(
+              other.id,
+              withConsistentGeo(new EventRecord({ ...other.payload, ...carried })),
             );
           }
         }
