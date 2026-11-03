@@ -1331,6 +1331,54 @@ describe('SyncEngine', () => {
       }).pipe(Effect.provide(engineLayer(client)));
     });
 
+    // A pull puts the master back while the series delete waits, and
+    // July 3's delete meets a 412: the user keeps theirs, which leaves
+    // its tombstone at July 3.
+    const parkThenKeepMine = (answered: boolean) => {
+      let parked = false;
+      const client: GoogleCalendarClientShape = {
+        ...stubClient([
+          answered
+            ? {
+                ...firstPage,
+                items: [series, invitedOccurrence('Moved', '"x-1"', 'needsAction'), cancelled],
+              }
+            : firstPage,
+          { items: [renamed], nextSyncToken: 's2' },
+        ]),
+        deleteEvent: ({ calendarId, eventId }) => {
+          if (eventId === july3 && !parked) {
+            parked = true;
+            return Effect.fail(new ConflictError({ calendarId, eventId }));
+          }
+          return Effect.fail(new ApiUnavailableError({ cause: 'offline' }));
+        },
+        getEvent: () => Effect.succeed(movedOccurrence('Moved again', '"x-2"')),
+        patchEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
+      };
+      const setUp = Effect.gen(function* () {
+        yield* seedAccount;
+        const engine = yield* SyncEngine;
+        yield* engine.syncAll();
+        const mutations = yield* EventMutations;
+        if (answered) {
+          yield* mutations.respondToEvent({
+            accountId: 'acc-1',
+            calendarId: 'cal-1',
+            eventId: july3,
+            response: 'accepted',
+          });
+        }
+        yield* cutThenDelete;
+        yield* engine.syncAll();
+        yield* mutations.resolveConflict({
+          choice: 'mine',
+          opId: (yield* opOf(july3, 'delete'))!.id,
+        });
+      });
+      return { client, setUp };
+    };
+
     describe('after a cut', () => {
       /** The series as the first pass stored it. */
       const firstSeries = [
@@ -1910,6 +1958,49 @@ describe('SyncEngine', () => {
           }).pipe(Effect.provide(engineLayer(client)));
         },
       );
+
+      describe('keep-mine on the cut’s delete under the series back, then', () => {
+        it.effect('a new rule that draws July 3 again takes the delete back', () => {
+          // The tombstone made the delete look like one the user made: it
+          // stayed, and cancelled July 3, which Google keeps under the rule.
+          const { client, setUp } = parkThenKeepMine(false);
+          return Effect.gen(function* () {
+            yield* setUp;
+            yield* (yield* EventMutations).updateRecurring({
+              accountId: 'acc-1',
+              calendarId: 'cal-1',
+              changes: { recurrence: ['RRULE:FREQ=DAILY;COUNT=12'] },
+              masterId: 'evt-r',
+              originalStartUtc: Date.parse('2026-07-02T10:00:00Z'),
+              scope: 'series',
+            });
+            expect(yield* opOf(july3, 'delete')).toBeUndefined();
+            expect(yield* shown).toContain('07-03T12:00 Moved');
+            expect(yield* strays).toEqual([]);
+          }).pipe(Effect.provide(engineLayer(client)));
+        });
+
+        it.effect('a discarded series delete shows July 3 with the answer still queued', () => {
+          // Kept hidden by the tombstone the answer also owned; discarding
+          // the answer then left a cancelled row Google never had.
+          const { client, setUp } = parkThenKeepMine(true);
+          return Effect.gen(function* () {
+            yield* setUp;
+            const mutations = yield* EventMutations;
+            yield* mutations.discardPendingOp((yield* seriesDelete)!.id);
+            const row = Effect.map((yield* EventRepo).getById('acc-1', 'cal-1', july3), (copy) => [
+              copy?.status,
+              copy?.attendees?.find((guest) => guest.isSelf)?.responseStatus,
+            ]);
+            expect(yield* row).toEqual(['confirmed', 'accepted']);
+            expect(yield* strays).toEqual([]);
+            yield* mutations.discardPendingOp((yield* opOf(july3, 'rsvp'))!.id);
+            expect(yield* row).toEqual(['confirmed', 'needsAction']);
+            expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+            expect(yield* strays).toEqual([]);
+          }).pipe(Effect.provide(engineLayer(client)));
+        });
+      });
 
       it.effect(
         'keep-mine on the cut’s delete keeps it, too, from a discarded series delete',
