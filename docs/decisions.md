@@ -414,13 +414,13 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
 - **An undone cut takes the new series along** (2026-11-03) — #284's open
   item. A this-and-following edit's new series went out in the drain that
   parked or refused its cut, and a discard left it queued: Google showed
-  those occurrences twice. Nik chose that its create waits for the cut and
-  goes with it while unsent (as #284's deletes do), with what is queued
-  for it and the series split off it; it stays where Google's series,
-  back, already ends before it. Rejected: keeping it (status quo); asking
-  at undo time (new UI); the create's own start as the split (edits move
-  it). Open: once the cut landed, it still waits behind a later cut or
-  delete of that series.
+  those days twice. Nik chose that it waits for the cut and goes with it
+  while unsent (as #284's deletes do), with what is queued for it and the
+  series split off it, unless Google's series already ends before it. A
+  discard asks Google first: the cut may have landed. Rejected: keeping
+  it; asking at undo time. Open: editing the series a pull put back while
+  the delete that replaced the cut waits lets it out; kept beside another
+  device's split, it shows twice.
 - **Re-auth and sync kicks** — a 401 flags the account `reauth_required`
   and keeps its ops queued for after the reconnect (same id, by email);
   wake/unlock/focus/foreground kick a sync, throttled to one per 15 s,

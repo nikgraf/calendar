@@ -131,6 +131,8 @@ export interface PendingOpRepoShape {
     readonly calendarId: string;
     readonly eventId: string;
   }) => Effect.Effect<ReadonlyArray<PendingOp>, SqlError>;
+  /** Makes a waiting op due now (what it waited for left the queue); a parked one stays. */
+  readonly makeDue: (opId: string) => Effect.Effect<void, SqlError>;
   /**
    * Parks an op after a 412: the drain skips it until `unpark` or removal.
    * `serverPayload` is Google's version (undefined = deleted on Google).
@@ -453,6 +455,13 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
               AND event_id = ${eventId}
             ORDER BY created_at, rowid`,
           (rows) => rows.flatMap(decodedOps),
+        ),
+      makeDue: (opId) =>
+        invalidating(
+          Effect.asVoid(
+            sql`UPDATE pending_ops SET next_attempt_at = 0
+              WHERE id = ${opId} AND conflict_at IS NULL`,
+          ),
         ),
       markConflict: (opId, at, serverPayload) =>
         invalidating(

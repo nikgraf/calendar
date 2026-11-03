@@ -424,7 +424,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         yield* restoreDropped(taken, op.accountId, op.calendarId, op.eventId);
         if (op.dropsFrom !== undefined) {
           yield* dropChangeDeletes(taken, op.accountId, op.calendarId, op.eventId, op.dropsFrom);
-          yield* dropSplitSeries(taken, op.accountId, op.calendarId, op.eventId);
+          yield* dropSplitSeries(taken, op);
         }
       }
     });
@@ -477,7 +477,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       yield* putBack(taken, op.accountId, op.calendarId, op.beforeOverrides ?? []);
       yield* restoreDropped(taken, op.accountId, op.calendarId, op.eventId);
       yield* dropChangeDeletes(taken, op.accountId, op.calendarId, op.eventId);
-      yield* dropSplitSeries(taken, op.accountId, op.calendarId, op.eventId);
+      yield* dropSplitSeries(taken, op);
     });
 
   /**
@@ -876,11 +876,13 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       case 'moveTask':
         // Google still has the task in the source list.
         return Effect.ignore(revertTaskMove(op));
+      // In one transaction: one that failed half way left a series a cut's
+      // undo took along half there, its rows pending with no op.
       case 'rsvp':
       case 'update':
-        return Effect.ignore(revert ? revertEdit(op) : handBack(op));
+        return Effect.ignore(revert ? transaction(revertEdit(op)) : handBack(op));
       case 'delete':
-        return revert ? Effect.ignore(revertDelete(op)) : Effect.void;
+        return revert ? Effect.ignore(transaction(revertDelete(op))) : Effect.void;
       case 'calendarColor':
         return revert && op.beforeColorHex
           ? Effect.ignore(revertColor(op, op.beforeColorHex))

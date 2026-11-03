@@ -1025,16 +1025,24 @@ details, or Custom), so a calendar can be shared without the details.
     master's create names the series it split off and the occurrence it
     starts at (`splitOf`, `splitAt`, kept when edits fold into it) and
     waits for that series' ops that carry the cut, wherever they sit
-    (`holdsSplit`: its unsent create, an update that drops exceptions, a
-    series delete that replaced it). Undone — a discard, keep-theirs or a
-    rejection for good of that update or delete — the cut takes the
-    unsent create along, with everything queued for the new series, the
-    series split off it in turn, and their rows (`dropSplitSeries`), as
-    long as the series, back as Google has it, still draws from `splitAt`
-    on (`drawsFrom`): one Google ended before (another device cut it too,
-    or the cut rode in its create) shows nothing twice, and the new series
-    stays. Sent ahead of its cut, or left queued, the new series showed
-    those occurrences twice on Google.
+    (`holdsSplit`: an update that drops exceptions, a series delete that
+    replaced it; one of a same-id series in another calendar holds it
+    too). A split of a series whose create is unsent folds the cut into
+    that create, which nothing undoes without the series: it names the
+    series that one was split from, or nothing. Undone — a discard,
+    keep-theirs or a rejection for good of that update or delete, in one
+    transaction — the cut takes the unsent creates along, with everything
+    queued for those series and their rows (`dropSplitSeries`), as long
+    as the series, back as Google has it, still draws from `splitAt` on
+    (`drawsFrom`): one Google ended before (another device cut it too)
+    shows nothing twice, and the new series stays. A discard while a
+    split waits is settled under the drain's gate, as a sent move's is:
+    the cut's request may be out, or have landed with its answer lost,
+    so Google's copy of the series decides, as keep-theirs; with no
+    answer, or the series still moving, it goes back as asked. A split
+    the cut leaves is due at once (`releaseSplits`), not after a backoff
+    that grew while the cut waited. Sent ahead of its cut, or left
+    queued, the new series showed those occurrences twice on Google.
   - An instance never carries a rule and a single event does not become a
     series through an update (`RecurringEditUnsupportedError`). The
     all-day switch on an existing series is refused
