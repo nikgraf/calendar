@@ -161,36 +161,6 @@ const updateBody = (op: PendingOp, record: EventRecord) => ({
   ...(op.attendeesChanged ? { attendees: toGcalAttendees(record) } : {}),
 });
 
-/**
- * Whether Google's copy is still what the op was built on (`beforePayload`)
- * in everything we keep of it, guests and reminders included, and only its
- * etag moved. A series PATCH gives every exception a new etag (verified
- * live), with any changed text carried on (`advanceCarried` folds that into
- * the snapshot); another client's write to a field we do not keep does the
- * same. Nothing the op would overwrite changed: no conflict to ask about. Only a
- * snapshot of the version its If-Match names counts: one a lost answer's
- * landing advanced to Google's copy (`advanceBefore`) may hold another
- * client's change.
- */
-const onlyEtagMoved = (op: PendingOp, theirs: EventRecord): boolean => {
-  const before = op.beforePayload;
-  if (
-    !before ||
-    op.baseEtag === undefined ||
-    before.etag !== op.baseEtag ||
-    theirs.etag === null ||
-    theirs.etag === op.baseEtag ||
-    theirs.status !== before.status
-  ) {
-    return false;
-  }
-  const everything = new PendingOp({ ...op, attendeesChanged: true, remindersChanged: true });
-  return (
-    JSON.stringify(updateBody(everything, theirs)) ===
-    JSON.stringify(updateBody(everything, before))
-  );
-};
-
 /** `revert: false` keeps the row's content and only hands it back to sync. */
 export interface ReleaseOptions {
   readonly revert?: boolean;
@@ -225,6 +195,30 @@ const changedFields = (before: EventRecord, payload: EventRecord): Partial<Event
     }
   }
   return patch as Partial<EventRecord>;
+};
+
+/**
+ * Whether Google's copy is still what the op was built on (`beforePayload`)
+ * in every field we keep, those no PATCH of ours sends included (a delete
+ * takes them along), and only its etag moved. A series PATCH gives every
+ * exception a new etag (verified live), with any changed text carried on
+ * (`advanceCarried` folds that into the snapshot). Nothing the op would
+ * overwrite or remove changed: no conflict to ask about. Only a snapshot
+ * of the version its If-Match names counts: one a lost answer's landing
+ * advanced to Google's copy (`advanceBefore`) may hold another client's
+ * change.
+ */
+const onlyEtagMoved = (op: PendingOp, theirs: EventRecord): boolean => {
+  const before = op.beforePayload;
+  return (
+    before !== null &&
+    before !== undefined &&
+    op.baseEtag !== undefined &&
+    before.etag === op.baseEtag &&
+    theirs.etag !== null &&
+    theirs.etag !== op.baseEtag &&
+    Object.keys(changedFields(before, theirs)).length === 0
+  );
 };
 
 const responseOf = (
@@ -1424,10 +1418,25 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
                   yield* settle(op, theirs);
                   return 'done' as const;
                 }
-                // Only the etag moved: sent again at once on Google's. A
-                // second 412 there is a change to ask about.
-                if (theirs && onlyEtagMoved(op, theirs)) {
-                  return yield* apply(new PendingOp({ ...op, baseEtag: theirs.etag ?? undefined }));
+                // Only the etag moved: sent again at once on Google's. What
+                // was built on the old one (the edits queued after it, the
+                // row) moves with it first, so it follows the re-send's
+                // landing. A second 412 there is a change to ask about.
+                const stale = op.baseEtag;
+                const fresh = theirs?.etag;
+                if (theirs && stale && fresh && onlyEtagMoved(op, theirs)) {
+                  const event = {
+                    accountId: op.accountId,
+                    calendarId: op.calendarId,
+                    eventId: op.eventId,
+                  };
+                  yield* transaction(
+                    Effect.gen(function* () {
+                      yield* pendingOpRepo.advanceBaseEtag(event, stale, fresh, op);
+                      yield* eventRepo.advanceEtag(event, stale, fresh);
+                    }),
+                  );
+                  return yield* apply(new PendingOp({ ...op, baseEtag: fresh }));
                 }
                 return { conflict: theirs };
               }),

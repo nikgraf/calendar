@@ -2644,7 +2644,11 @@ describe('SyncEngine', () => {
 
     /** Google: the rename lands and re-etags July 3 (its title carried onto it). */
     const reetagged = (
-      july3OnGoogle: ReturnType<typeof movedOccurrence> & { readonly location?: string },
+      july3OnGoogle: ReturnType<typeof movedOccurrence> & {
+        readonly hangoutLink?: string;
+        readonly location?: string;
+        readonly visibility?: string;
+      },
     ) => {
       const calls: Array<string> = [];
       let online = false;
@@ -2778,6 +2782,98 @@ describe('SyncEngine', () => {
         expect(parked?.conflictAt).toBeDefined();
         expect(google.calls).toEqual(['series "evt-r"', 'july3 "x-1"']);
       }).pipe(Effect.provide(engineLayer(google.client)));
+    });
+
+    it.effect('a delete still parks over a Meet link or visibility added on Google', () => {
+      // Fields a PATCH of ours never sends, but a delete would take along.
+      const google = reetagged({
+        ...movedOccurrence('Renamed', '"x-2"'),
+        hangoutLink: 'https://meet.google.com/abc-defg-hij',
+        visibility: 'private',
+      });
+      return Effect.gen(function* () {
+        yield* seedAccount;
+        yield* (yield* SyncEngine).syncAll();
+        const mutations = yield* EventMutations;
+        yield* rename;
+        yield* mutations.deleteRecurring({ ...july3At, scope: 'instance' });
+        google.goOnline();
+        yield* mutations.retryPendingOps();
+        yield* mutations.processPendingOps();
+        const [parked] = yield* (yield* PendingOpRepo).listAll();
+        expect(parked?.kind).toBe('delete');
+        expect(parked?.conflictAt).toBeDefined();
+        expect(google.calls).toEqual(['series "evt-r"', 'delete "x-1"']);
+      }).pipe(Effect.provide(engineLayer(google.client)));
+    });
+
+    it.effect('an edit queued while the re-send is out follows it, not into a conflict', () => {
+      // A second edit of July 3 made while its re-sent PATCH is in flight
+      // kept the old etag and the row too: it met a 412 against our own
+      // write and parked.
+      const requested = Effect.runSync(Deferred.make<void>());
+      const release = Effect.runSync(Deferred.make<void>());
+      const calls: Array<string> = [];
+      let online = false;
+      const july3OnGoogle = movedOccurrence('Renamed', '"x-2"');
+      let current: typeof july3OnGoogle & { readonly location?: string } = july3OnGoogle;
+      const client: GoogleCalendarClientShape = {
+        ...stubClient([firstPage]),
+        getEvent: ({ eventId }) => Effect.succeed(eventId === july3 ? current : renamed),
+        patchEvent: ({ baseEtag, calendarId, event, eventId }) => {
+          if (!online) {
+            return Effect.fail(new ApiUnavailableError({ cause: 'offline' }));
+          }
+          calls.push(`${eventId === july3 ? 'july3' : 'series'} ${baseEtag}`);
+          if (eventId !== july3) {
+            return Effect.succeed(renamed);
+          }
+          if (baseEtag !== current.etag) {
+            return Effect.fail(new ConflictError({ calendarId, eventId }));
+          }
+          const next = {
+            ...current,
+            etag: baseEtag === '"x-2"' ? '"x-3"' : '"x-4"',
+            ...(event.location ? { location: event.location } : {}),
+          };
+          const answer = Effect.sync(() => {
+            current = next;
+            return next;
+          });
+          return baseEtag === '"x-2"'
+            ? Deferred.succeed(requested, undefined).pipe(
+                Effect.andThen(Deferred.await(release)),
+                Effect.andThen(answer),
+              )
+            : answer;
+        },
+      };
+      return Effect.gen(function* () {
+        yield* seedAccount;
+        yield* (yield* SyncEngine).syncAll();
+        const mutations = yield* EventMutations;
+        yield* rename;
+        yield* mutations.updateRecurring({
+          ...july3At,
+          changes: { location: 'Room 4' },
+          scope: 'instance',
+        });
+        online = true;
+        yield* mutations.retryPendingOps();
+        const sending = yield* Effect.forkChild(mutations.processPendingOps());
+        yield* Deferred.await(requested);
+        yield* mutations.updateRecurring({
+          ...july3At,
+          changes: { location: 'Room 5' },
+          scope: 'instance',
+        });
+        yield* Deferred.succeed(release, undefined);
+        yield* Fiber.join(sending);
+        yield* mutations.processPendingOps();
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+        expect(calls).toEqual(['series "evt-r"', 'july3 "x-1"', 'july3 "x-2"', 'july3 "x-3"']);
+        expect(yield* july3Shown).toEqual(['12:00 Renamed @ Room 5']);
+      }).pipe(Effect.provide(engineLayer(client)));
     });
 
     it.effect(
