@@ -490,9 +490,10 @@ describe('moveEvent inside one Google account', () => {
 
   it.effect('an exception copy a pull put back goes with the delete still queued for it', () => {
     // "Delete this and following" cuts the series and deletes the
-    // exception past the cut; that delete waits out a 503 while a pull
-    // puts Google's copy back. Moved along as pending, the copy outlived
-    // its delete in the target until the next pull.
+    // exception past the cut; that delete waits for the cut, which waits
+    // out a 503 while a pull puts Google's copy back. Moved along as
+    // pending, the copy outlived its delete in the target until the next
+    // pull. The cut's landing takes both: Google cancelled the exception.
     const calls: Array<Call> = [];
     const failed = new Set<string>();
     const once = <A, E>(kind: string, then: Effect.Effect<A, E>) =>
@@ -534,14 +535,13 @@ describe('moveEvent inside one Google account', () => {
       yield* mutations.moveEvent(move(['acc-1', 'cal-1', 'ser'], ['acc-1', 'cal-2']));
       yield* (yield* PendingOpRepo).retryNow();
       yield* mutations.processPendingOps();
-      // The exception's delete waited for the cut's patch: its 503 comes now.
       yield* (yield* PendingOpRepo).retryNow();
       yield* mutations.processPendingOps();
 
+      // The exception's delete waited for the cut's patch and went with it.
       expect(calls.map((call) => `${call.kind}:${call.calendarId}`)).toEqual([
         'move:cal-1',
         'patch:cal-2',
-        'delete:cal-2',
       ]);
       expect(yield* queued).toEqual([]);
       expect(yield* rowAt('acc-1', 'cal-2', override.id)).toBeNull();
@@ -983,10 +983,8 @@ describe('a move Google never makes', () => {
       yield* mutations.processPendingOps();
       yield* mutations.processPendingOps();
 
-      expect(calls.map((call) => `${call.kind}:${call.calendarId}`)).toEqual([
-        'patch:cal-1',
-        'delete:cal-1',
-      ]);
+      // Back in the source, the cut lands there and takes the exception's delete along.
+      expect(calls.map((call) => `${call.kind}:${call.calendarId}`)).toEqual(['patch:cal-1']);
       expect(yield* queued).toEqual([]);
       expect(yield* rowAt('acc-1', 'cal-2', 'ser')).toBeNull();
       expect(yield* rowAt('acc-1', 'cal-2', exception.id)).toBeNull();

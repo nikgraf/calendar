@@ -50,9 +50,11 @@ export interface LiveEvent {
   readonly end?: { readonly date?: string; readonly dateTime?: string; readonly timeZone?: string };
   readonly etag?: string;
   readonly extendedProperties?: { readonly private?: Record<string, string> };
+  readonly iCalUID?: string;
   readonly id: string;
   readonly location?: string;
   readonly organizer?: { readonly email?: string; readonly self?: boolean };
+  readonly originalStartTime?: { readonly date?: string; readonly dateTime?: string };
   readonly recurrence?: ReadonlyArray<string>;
   readonly recurringEventId?: string;
   readonly reminders?: {
@@ -66,6 +68,7 @@ export interface LiveEvent {
   };
   readonly status?: string;
   readonly summary?: string;
+  readonly updated?: string;
 }
 
 export interface LiveTask {
@@ -344,6 +347,23 @@ export const findEvents = async (
   url.searchParams.set('q', q);
   url.searchParams.set('showDeleted', 'true');
   url.searchParams.set('maxResults', '50');
+  const page = await request<{ items?: ReadonlyArray<LiveEvent> }>(token, 'GET', url.toString());
+  return page.items ?? [];
+};
+
+/**
+ * events.list by `iCalUID`, deleted ones included: a series' master and
+ * every exception Google holds for it, cancelled ones too.
+ */
+export const listSeries = async (
+  token: string,
+  calendarId: string,
+  iCalUID: string,
+): Promise<ReadonlyArray<LiveEvent>> => {
+  const url = new URL(calendarUrl(calendarId, '/events'));
+  url.searchParams.set('iCalUID', iCalUID);
+  url.searchParams.set('showDeleted', 'true');
+  url.searchParams.set('maxResults', '250');
   const page = await request<{ items?: ReadonlyArray<LiveEvent> }>(token, 'GET', url.toString());
   return page.items ?? [];
 };

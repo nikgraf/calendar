@@ -955,29 +955,33 @@ describe('discarding a change of a series', () => {
       }).pipe(Effect.provide(testLayer)),
   );
 
-  it.effect('an occurrence edit after a rule change starts from the new rule’s slot', () =>
-    Effect.gen(function* () {
-      yield* seedMaster;
-      yield* (yield* EventRepo).upsertMany([override]);
-      const mutations = yield* EventMutations;
-      // The new rule still has July 4, but Google drops the exception with the old one.
-      yield* mutations.updateRecurring({
-        ...target,
-        changes: { recurrence: ['RRULE:FREQ=DAILY;COUNT=12'] },
-        scope: 'series',
-      });
-      expect(yield* rowOf(instanceId)).toBeNull();
+  it.effect(
+    'an occurrence edit after a rule change that still draws it starts from its exception',
+    () =>
+      Effect.gen(function* () {
+        yield* seedMaster;
+        yield* (yield* EventRepo).upsertMany([override]);
+        const mutations = yield* EventMutations;
+        // The new rule still has July 4: Google keeps its exception (verified live).
+        yield* mutations.updateRecurring({
+          ...target,
+          changes: { recurrence: ['RRULE:FREQ=DAILY;COUNT=12'] },
+          scope: 'series',
+        });
+        expect((yield* rowOf(instanceId))?.title).toBe('Daily (moved)');
 
-      yield* mutations.updateRecurring({
-        ...target,
-        changes: { location: 'Room 4' },
-        scope: 'instance',
-      });
-      const edit = (yield* listOps).find((op) => op.eventId === instanceId && op.kind === 'update');
-      expect(edit?.payload?.title).toBe('Daily');
-      expect(edit?.payload?.startUtc).toBe(occurrence);
-      expect(edit?.baseEtag).toBeUndefined();
-    }).pipe(Effect.provide(testLayer)),
+        yield* mutations.updateRecurring({
+          ...target,
+          changes: { location: 'Room 4' },
+          scope: 'instance',
+        });
+        const edit = (yield* listOps).find(
+          (op) => op.eventId === instanceId && op.kind === 'update',
+        );
+        expect(edit?.payload?.title).toBe('Daily (moved)');
+        expect(edit?.payload?.location).toBe('Room 4');
+        expect(edit?.beforePayload?.title).toBe('Daily (moved)');
+      }).pipe(Effect.provide(testLayer)),
   );
 
   it.effect('a series delete brings the master and its exceptions back', () =>
@@ -1768,6 +1772,43 @@ describe('EventMutations recurrence rule edits', () => {
       const update = ops.find((op) => op.kind === 'update')!;
       expect(update.payload?.recurrence).toEqual(['RRULE:FREQ=WEEKLY;COUNT=4']);
       expect(update.recurrenceCleared).toBeUndefined();
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect('a new rule keeps the exceptions whose slots it still draws, as Google does', () =>
+    Effect.gen(function* () {
+      const cancelled = new EventRecord({
+        ...override,
+        etag: '"o-2"',
+        id: 'master1_20260705T090000Z',
+        originalStartUtc: Date.parse('2026-07-05T09:00:00Z'),
+        startUtc: Date.parse('2026-07-05T09:00:00Z'),
+        status: 'cancelled',
+      });
+      const pastTheEnd = new EventRecord({
+        ...override,
+        etag: '"o-3"',
+        id: 'master1_20260709T090000Z',
+        originalStartUtc: Date.parse('2026-07-09T09:00:00Z'),
+        startUtc: Date.parse('2026-07-09T11:00:00Z'),
+      });
+      yield* seedMaster;
+      yield* (yield* EventRepo).upsertMany([override, cancelled, pastTheEnd]);
+      yield* (yield* EventMutations).updateRecurring({
+        ...target,
+        changes: { recurrence: ['RRULE:FREQ=DAILY;COUNT=7'] },
+        scope: 'series',
+      });
+      // July 4 and July 5 are slots of the new rule: Google keeps their
+      // exceptions (verified live). July 9 is past its end: Google cancels it.
+      expect((yield* rowOf(instanceId))?.title).toBe('Daily (this one moved)');
+      expect((yield* rowOf(cancelled.id))?.status).toBe('cancelled');
+      expect(yield* rowOf(pastTheEnd.id)).toBeNull();
+      const ops = yield* listOps;
+      expect(ops.map((op) => `${op.kind} ${op.eventId}`).sort()).toEqual([
+        `delete ${pastTheEnd.id}`,
+        'update master1',
+      ]);
     }).pipe(Effect.provide(testLayer)),
   );
 

@@ -569,7 +569,9 @@ it whenever a kind is added. Rules that keep the queue correct:
   came back. A page that reports the series deleted on Google takes them
   away again, as the delete's landing would. A this-and-following cut, or
   a rule change, takes the exceptions it drops off the table and queues a
-  delete of each (`dropOverridesFrom`), which outlives a later series
+  delete of each (`dropOverridesFrom`; a rule change drops only those
+  whose slots the new rule no longer draws — Google keeps the others as
+  they are, verified live), which outlives a later series
   delete (it finds no row to take); that delete's snapshot is Google's
   copy. Wherever Google's master is back on the table — a pull wrote it,
   a discard of the series delete or of the cut's (or rule change's)
@@ -578,18 +580,22 @@ it whenever a kind is added. Rules that keep the queue correct:
   (`restoreDropped`), for each delete to take when it lands; only where
   the master's rule draws the slot, and only until the cut or the new rule
   reaches Google. That series update carries where its drop starts
-  (`dropsFrom`: the cut's occurrence, 0 for a new rule — Google drops the
-  exceptions with the old one; an update replacing it keeps the earlier,
+  (`dropsFrom`: the cut's occurrence, 0 for a new rule — Google cancels
+  the exceptions whose slots the rule it lands no longer draws; an update
+  replacing it keeps the earlier,
   and drops nothing more once one it replaced in flight landed the same
   rule; one queued before the field existed took the earliest exception
   its occurrences' deletes hold),
   and however it lands (a 2xx, a lost answer a 412 finds on Google)
-  everything that still holds one of those exceptions forgets it
-  (`forgetDropped`): the occurrence ops' snapshots go to `null` (an edit
-  that replaced a cut's delete included), a waiting series delete lets it
-  go, and a synced row (a pull's copy, Google's copy keep-theirs put
-  back, a landed delete's tombstone) goes; otherwise a later rule drawing
-  their slots (more days, say) showed them over it. A page that reports the
+  everything that still holds one of those exceptions — one the landed
+  rule does not draw — forgets it (`forgetDropped`): the occurrence ops'
+  snapshots go to `null` (an edit that replaced a cut's delete included),
+  a waiting series delete lets it go, a synced row (a pull's copy,
+  Google's copy keep-theirs put back, a landed delete's tombstone) goes,
+  and the exception's own queued delete goes unsent: Google cancelled it
+  with the PATCH and gave it a new etag, so the delete's If-Match would
+  meet a 412 and park; otherwise a later rule drawing their slots (more
+  days, say) showed them over it, where Google draws plain occurrences. A page that reports the
   series deleted forgets them too, as it does a series delete's
   (`dropSeriesExceptions`), or a discard of one would write it back
   without its master. A copy taken from the row an answer made
@@ -962,10 +968,11 @@ details, or Custom), so a calendar can be shared without the details.
     wall-clock delta (`applyWallClockDelta` in `time/dragMath.ts`,
     DST-safe, seconds included: a series at 09:00:30 retimed to 10:00
     starts at 10:00). A new rule (`changes.recurrence`, RFC 5545 lines)
-    replaces the master's and drops its exceptions — they belonged to
-    occurrences of the old rule, which is what Google does with them;
-    `null` ("does not repeat") leaves the master as a single event at its
-    own start.
+    replaces the master's and drops the exceptions whose slots it no
+    longer draws, as Google does with the PATCH; one whose slot it still
+    draws stays as it is, moved or cancelled (verified live, see
+    docs/google-sync-and-testing.md). `null` ("does not repeat") leaves
+    the master as a single event at its own start and drops them all.
     Google keeps a rule whose key is absent from a PATCH, so the op
     carries `recurrenceCleared` and the patch sends `recurrence: []`. A
     master's changed title, description or location is mirrored onto the

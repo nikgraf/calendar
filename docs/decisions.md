@@ -391,6 +391,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   telling the deletes apart by the queue (#274) or the master's rule (a
   landed rule draws them too). Open: Google's rule-change semantics are
   unverified live; a pull's copy past a queued cut shows alone.
+- **A new rule keeps the exceptions it still draws** (2026-11-03) —
+  probed live: Google keeps an exception whose slot the new rule draws
+  and cancels the rest, with new etags all round. Our rule change queued
+  a delete for every exception ahead of the PATCH, which cancelled a
+  moved occurrence on Google; a cut's deletes, sent after the truncation,
+  met a 412 and parked. Now only skipped exceptions drop, and a landed cut
+  or rule change takes their deletes off the queue. Rejected: sending
+  those deletes without If-Match (a request for nothing). Open: an
+  occurrence edit queued behind any series PATCH still meets a 412.
 - **Re-auth and sync kicks** — a 401 flags the account `reauth_required`
   and keeps its ops queued for after the reconnect (same id, by email);
   wake/unlock/focus/foreground kick a sync, throttled to one per 15 s,

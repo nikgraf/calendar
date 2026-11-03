@@ -1673,22 +1673,61 @@ describe('SyncEngine', () => {
       });
     });
 
+    it.effect('a cut’s exception deletes go with its landing: Google cancelled them', () => {
+      // Verified live: the truncation cancels July 3 and July 4 and gives
+      // them new etags, so their deletes' If-Match met a 412 and parked.
+      let deletes = 0;
+      const truncated = { ...series, etag: '"evt-r-t"', recurrence: ['RRULE:FREQ=DAILY;COUNT=1'] };
+      const client: GoogleCalendarClientShape = {
+        ...stubClient([firstPage]),
+        deleteEvent: ({ calendarId, eventId }) => {
+          deletes++;
+          return Effect.fail(new ConflictError({ calendarId, eventId }));
+        },
+        getEvent: () => Effect.succeed({ ...cancelled, etag: '"c-t"' }),
+        patchEvent: () => Effect.succeed(truncated),
+      };
+      return Effect.gen(function* () {
+        yield* seedAccount;
+        yield* (yield* SyncEngine).syncAll();
+        const mutations = yield* EventMutations;
+        yield* mutations.deleteRecurring({
+          accountId: 'acc-1',
+          calendarId: 'cal-1',
+          masterId: 'evt-r',
+          originalStartUtc: Date.parse('2026-07-03T10:00:00Z'),
+          scope: 'following',
+        });
+        yield* mutations.processPendingOps();
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+        expect(deletes).toBe(0);
+        expect(yield* shown).toEqual(['07-02T10:00 Event evt-r']);
+        expect(yield* strays).toEqual([]);
+      }).pipe(Effect.provide(engineLayer(client)));
+    });
+
     describe('after a rule change', () => {
-      // Twelve days: the new rule still draws July 3 and July 4, whose
-      // exceptions Google drops with the old one. Their deletes are queued
-      // ahead of the master's update.
+      // Twelve days: the new rule still draws July 3 and July 4, and Google
+      // keeps their exceptions (verified live).
       const twelve = ['RRULE:FREQ=DAILY;COUNT=12'];
       const extended = { ...renamed, etag: '"evt-r-12"', recurrence: twelve };
+      // Every third day: July 3 and July 4 are no slots of it, and Google
+      // cancels their exceptions with the PATCH. Their deletes are queued
+      // ahead of the master's update.
+      const everyThird = ['RRULE:FREQ=DAILY;INTERVAL=3;COUNT=4'];
+      const skipping = { ...renamed, etag: '"evt-r-3d"', recurrence: everyThird };
       const at = { accountId: 'acc-1', calendarId: 'cal-1', masterId: 'evt-r' } as const;
       const july2 = Date.parse('2026-07-02T10:00:00Z');
-      const changeRule = Effect.gen(function* () {
-        yield* (yield* EventMutations).updateRecurring({
-          ...at,
-          changes: { recurrence: twelve, title: 'Daily (Google)' },
-          originalStartUtc: july2,
-          scope: 'series',
+      const changeRuleTo = (recurrence: Array<string>) =>
+        Effect.gen(function* () {
+          yield* (yield* EventMutations).updateRecurring({
+            ...at,
+            changes: { recurrence, title: 'Daily (Google)' },
+            originalStartUtc: july2,
+            scope: 'series',
+          });
         });
-      });
+      const changeRule = changeRuleTo(twelve);
       const editJuly3 = Effect.gen(function* () {
         yield* (yield* EventMutations).updateRecurring({
           ...at,
@@ -1703,16 +1742,91 @@ describe('SyncEngine', () => {
         yield* mutations.retryPendingOps();
         yield* mutations.processPendingOps();
       });
-      const newRule = [
+      /** The twelve days as Google draws them: July 3 moved, July 4 cancelled. */
+      const kept = [
         '07-02T10:00 Daily (Google)',
-        '07-03T10:00 Daily (Google)',
-        '07-04T10:00 Daily (Google)',
+        '07-03T12:00 Daily (Google)',
         '07-05T10:00 Daily (Google)',
         '07-06T10:00 Daily (Google)',
         '07-07T10:00 Daily (Google)',
       ];
+      const skipped = ['07-02T10:00 Daily (Google)', '07-05T10:00 Daily (Google)'];
 
-      it.effect('once it reached Google, the exceptions it dropped stay away', () => {
+      it.effect('Google keeps the exceptions whose slots it still draws, and so do we', () => {
+        // Verified live: the PATCH leaves July 3 moved and July 4 cancelled
+        // (new etags, and the changed title carried onto July 3).
+        const deletes: Array<string> = [];
+        const client: GoogleCalendarClientShape = {
+          ...stubClient([
+            firstPage,
+            {
+              items: [
+                extended,
+                movedOccurrence('Daily (Google)', '"x-12"'),
+                { ...cancelled, etag: '"c-12"' },
+              ],
+              nextSyncToken: 's2',
+            },
+          ]),
+          deleteEvent: ({ eventId }) => {
+            deletes.push(eventId);
+            return Effect.void;
+          },
+          patchEvent: () => Effect.succeed(extended),
+        };
+        return Effect.gen(function* () {
+          yield* seedAccount;
+          const engine = yield* SyncEngine;
+          yield* engine.syncAll();
+          yield* changeRule;
+          expect(yield* shown).toEqual(kept);
+          yield* drain;
+          expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+          expect(deletes).toEqual([]);
+          expect(yield* shown).toEqual(kept);
+          yield* engine.syncAll();
+          expect(yield* shown).toEqual(kept);
+          expect(yield* strays).toEqual([]);
+        }).pipe(Effect.provide(engineLayer(client)));
+      });
+
+      it.effect('a delete of one it skips, still waiting when it lands, goes with it', () => {
+        // Every other day: July 3 is no slot of it any more, and Google
+        // cancels its exception with the PATCH. July 3's delete waits out a
+        // 503 meanwhile; its If-Match is stale once the rule landed (412).
+        const everyOther = ['RRULE:FREQ=DAILY;INTERVAL=2;COUNT=6'];
+        let deletes = 0;
+        const client: GoogleCalendarClientShape = {
+          ...stubClient([firstPage]),
+          deleteEvent: ({ calendarId, eventId }) =>
+            deletes++ === 0
+              ? Effect.fail(new ApiUnavailableError({ cause: '503' }))
+              : Effect.fail(new ConflictError({ calendarId, eventId })),
+          patchEvent: () =>
+            Effect.succeed({ ...renamed, etag: '"evt-r-2d"', recurrence: everyOther }),
+        };
+        return Effect.gen(function* () {
+          yield* seedAccount;
+          yield* (yield* SyncEngine).syncAll();
+          yield* (yield* EventMutations).updateRecurring({
+            ...at,
+            changes: { recurrence: everyOther, title: 'Daily (Google)' },
+            originalStartUtc: july2,
+            scope: 'series',
+          });
+          yield* drain;
+          yield* drain;
+          expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+          expect(deletes).toBe(1);
+          expect(yield* shown).toEqual([
+            '07-02T10:00 Daily (Google)',
+            '07-06T10:00 Daily (Google)',
+          ]);
+          expect(yield* strays).toEqual([]);
+        }).pipe(Effect.provide(engineLayer(client)));
+      });
+
+      it.effect('once it reached Google, the exceptions it keeps stay', () => {
         const client: GoogleCalendarClientShape = {
           ...stubClient([firstPage, { items: [extended], nextSyncToken: 's2' }]),
           deleteEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
@@ -1730,10 +1844,9 @@ describe('SyncEngine', () => {
           yield* mutations.processPendingOps();
           expect(yield* opOf('evt-r', 'update')).toBeUndefined();
 
-          // A pull re-sends the master: the moved July 3 came back over it.
+          // A pull re-sends the master, and a series edit is discarded since.
           yield* engine.syncAll();
-          expect(yield* shown).toEqual(newRule);
-          // So did a series edit discarded since.
+          expect(yield* shown).toEqual(kept);
           yield* mutations.updateRecurring({
             ...at,
             changes: { title: 'Renamed' },
@@ -1741,7 +1854,7 @@ describe('SyncEngine', () => {
             scope: 'series',
           });
           yield* mutations.discardPendingOp((yield* opOf('evt-r', 'update'))!.id);
-          expect(yield* shown).toEqual(newRule);
+          expect(yield* shown).toEqual(kept);
           expect(yield* strays).toEqual([]);
         }).pipe(Effect.provide(engineLayer(client)));
       });
@@ -1773,7 +1886,7 @@ describe('SyncEngine', () => {
           expect(yield* opOf('evt-r', 'update')).toBeUndefined();
           yield* engine.syncAll();
           expect(yield* shown).toEqual(
-            newRule.map((line) => line.replace('Daily (Google)', 'Renamed')),
+            kept.map((line) => line.replace('Daily (Google)', 'Renamed')),
           );
         }).pipe(Effect.provide(engineLayer(client)));
       });
@@ -1799,7 +1912,7 @@ describe('SyncEngine', () => {
           yield* drain;
           expect(yield* opOf('evt-r', 'update')).toBeUndefined();
           yield* engine.syncAll();
-          expect(yield* shown).toEqual(newRule);
+          expect(yield* shown).toEqual(kept);
         }).pipe(Effect.provide(engineLayer(client)));
       });
 
@@ -1934,34 +2047,37 @@ describe('SyncEngine', () => {
         }).pipe(Effect.provide(engineLayer(client)));
       });
 
-      it.effect('and once the rule change lands, its discard goes back to the slot', () => {
-        let online = false;
-        const client: GoogleCalendarClientShape = {
-          ...stubClient([firstPage]),
-          deleteEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
-          patchEvent: ({ eventId }) =>
-            online && eventId === 'evt-r'
-              ? Effect.succeed(extended)
-              : Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
-        };
-        return Effect.gen(function* () {
-          yield* seedAccount;
-          yield* (yield* SyncEngine).syncAll();
-          yield* changeRule;
-          yield* editJuly3;
-          online = true;
-          yield* drain;
-          expect(yield* opOf('evt-r', 'update')).toBeUndefined();
-          // The exception the rule dropped came back over the new rule's July 3.
-          yield* (yield* EventMutations).discardPendingOp((yield* opOf(july3, 'update'))!.id);
-          expect(yield* shown).toEqual(newRule);
-          expect(yield* strays).toEqual([]);
-        }).pipe(Effect.provide(engineLayer(client)));
-      });
+      it.effect(
+        'and once the rule change lands, its discard goes back to Google’s exception',
+        () => {
+          let online = false;
+          const client: GoogleCalendarClientShape = {
+            ...stubClient([firstPage]),
+            deleteEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
+            patchEvent: ({ eventId }) =>
+              online && eventId === 'evt-r'
+                ? Effect.succeed(extended)
+                : Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
+          };
+          return Effect.gen(function* () {
+            yield* seedAccount;
+            yield* (yield* SyncEngine).syncAll();
+            yield* changeRule;
+            yield* editJuly3;
+            online = true;
+            yield* drain;
+            expect(yield* opOf('evt-r', 'update')).toBeUndefined();
+            // Google kept July 3, with the new title carried onto it.
+            yield* (yield* EventMutations).discardPendingOp((yield* opOf(july3, 'update'))!.id);
+            expect(yield* shown).toEqual(kept);
+            expect(yield* strays).toEqual([]);
+          }).pipe(Effect.provide(engineLayer(client)));
+        },
+      );
 
       it.effect('a copy that met a landed delete meanwhile goes once the rule lands', () => {
         // A pull sends July 3, changed on Google; its delete lands under the
-        // queued rule, then the rule. Its tombstone hid the new July 3.
+        // queued rule, then the rule, which skips July 3: nothing of it stays.
         let online = false;
         const client: GoogleCalendarClientShape = {
           ...stubClient([
@@ -1972,19 +2088,20 @@ describe('SyncEngine', () => {
             online ? Effect.void : Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
           patchEvent: () =>
             online
-              ? Effect.succeed(extended)
+              ? Effect.succeed(skipping)
               : Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
         };
         return Effect.gen(function* () {
           yield* seedAccount;
           const engine = yield* SyncEngine;
           yield* engine.syncAll();
-          yield* changeRule;
+          yield* changeRuleTo(everyThird);
           yield* engine.syncAll();
           online = true;
           yield* drain;
           expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
-          expect(yield* shown).toEqual(newRule);
+          expect(yield* shown).toEqual(skipped);
+          expect(yield* strays).toEqual([]);
         }).pipe(Effect.provide(engineLayer(client)));
       });
 
@@ -2001,16 +2118,16 @@ describe('SyncEngine', () => {
             return Effect.fail(new ApiUnavailableError({ cause: 'offline' }));
           },
           getEvent: ({ eventId }) =>
-            Effect.succeed(eventId === july3 ? movedOccurrence('Moved again', '"x-2"') : extended),
+            Effect.succeed(eventId === july3 ? movedOccurrence('Moved again', '"x-2"') : skipping),
           patchEvent: () =>
             online
-              ? Effect.succeed(extended)
+              ? Effect.succeed(skipping)
               : Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
         };
         return Effect.gen(function* () {
           yield* seedAccount;
           yield* (yield* SyncEngine).syncAll();
-          yield* changeRule;
+          yield* changeRuleTo(everyThird);
           yield* (yield* EventMutations).processPendingOps();
           const own = yield* opOf(july3, 'delete');
           expect(own?.conflictAt).toBeDefined();
@@ -2018,7 +2135,8 @@ describe('SyncEngine', () => {
           online = true;
           yield* drain;
           expect(yield* opOf('evt-r', 'update')).toBeUndefined();
-          expect(yield* shown).toEqual(newRule);
+          expect(yield* shown).toEqual(skipped);
+          expect(yield* strays).toEqual([]);
         }).pipe(Effect.provide(engineLayer(client)));
       });
     });

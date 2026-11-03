@@ -77,6 +77,7 @@ import {
 } from './mutationTypes.ts';
 import { makeReminderMutations } from './reminderMutations.ts';
 import {
+  drawsSlot,
   dropSeriesExceptions,
   restoreDropped,
   restoreTaken,
@@ -524,9 +525,10 @@ const make: Effect.Effect<
     });
 
   /**
-   * Drops override rows at/after the split and cancels them remotely —
-   * unless the series never reached Google (`remote: false`): its create
-   * already carries the truncated rule, so there is nothing to cancel.
+   * Drops override rows at/after the split, except those `keeps` names,
+   * and cancels them remotely — unless the series never reached Google
+   * (`remote: false`): its create already carries the truncated rule, so
+   * there is nothing to cancel.
    */
   const dropOverridesFrom = (
     accountId: string,
@@ -534,7 +536,10 @@ const make: Effect.Effect<
     masterId: string,
     fromOriginalStartUtc: number,
     now: number,
-    { remote }: { readonly remote: boolean },
+    {
+      keeps = () => false,
+      remote,
+    }: { readonly keeps?: (override: EventRecord) => boolean; readonly remote: boolean },
   ) =>
     Effect.gen(function* () {
       const overrides = yield* eventRepo.listOverrides(accountId, calendarId, masterId);
@@ -544,7 +549,10 @@ const make: Effect.Effect<
         (op) => op.kind === 'update' && op.carriedText !== undefined,
       );
       for (const override of overrides) {
-        if ((override.originalStartUtc ?? override.startUtc) < fromOriginalStartUtc) {
+        if (
+          (override.originalStartUtc ?? override.startUtc) < fromOriginalStartUtc ||
+          keeps(override)
+        ) {
           continue;
         }
         // What a discard puts back: the exception as Google has it, not an
@@ -1401,13 +1409,6 @@ const make: Effect.Effect<
                   changes.startUtc,
                 )
               : master.startUtc;
-          // A new rule — or none — orphans the exceptions: they belong to
-          // occurrences of the old rule. Google drops them with it; so do we.
-          if (changes.recurrence !== undefined) {
-            yield* dropOverridesFrom(accountId, calendarId, masterId, 0, now, {
-              remote: !unsentCreate,
-            });
-          }
           const merged = withConsistentGeo(
             new EventRecord({
               ...master,
@@ -1427,6 +1428,15 @@ const make: Effect.Effect<
               updatedAt: now,
             }),
           );
+          // A new rule — or none — cancels the exceptions whose slots it no
+          // longer draws, and keeps the others as they are (Google does both
+          // with the PATCH, verified live); so do we.
+          if (changes.recurrence !== undefined) {
+            yield* dropOverridesFrom(accountId, calendarId, masterId, 0, now, {
+              keeps: (override) => drawsSlot(merged, override),
+              remote: !unsentCreate,
+            });
+          }
           yield* eventRepo.upsertMany([merged]);
           if (unsentCreate) {
             // Google has no exceptions to carry text onto yet: the queued
@@ -1456,8 +1466,8 @@ const make: Effect.Effect<
               calendarId,
               carriedText,
               createdAt: now,
-              // A new rule drops every exception; one queued before it
-              // dropped some already.
+              // A new rule drops the exceptions it no longer draws; one
+              // queued before it dropped some already.
               dropsFrom:
                 changes.recurrence === undefined
                   ? queued.findLast((op) => op.kind === 'update')?.dropsFrom
