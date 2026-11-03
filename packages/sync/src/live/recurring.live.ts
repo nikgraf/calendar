@@ -1,5 +1,6 @@
 import { assembleWindow, compactUtc, googleInstanceId } from '@calendar/core';
 import { EventRepo } from '@calendar/db';
+import { GoogleCalendarClient } from '@calendar/google';
 import type { EventMutationsShape } from '../mutationTypes.ts';
 import { expect, it } from '@effect/vitest';
 import { Effect } from 'effect';
@@ -8,11 +9,13 @@ import {
   LIVE_ACCOUNT_ID,
   liveEngineLayer,
   liveGoogleConfigFromEnv,
+  type LiveScratchShape,
 } from '../testing/liveGoogle.ts';
 import {
   bootstrap,
   HOUR,
   hoursFromNow,
+  noYield,
   pendingOps,
   titleFor,
   scratchFor,
@@ -24,8 +27,9 @@ import {
  * `singleEvents=false`, an instance edit becomes an exception under
  * Google's `<master>_<basetime>` id, a "this and following" split leaves
  * an UNTIL master plus a new one (also on an RDATE occurrence the rule
- * skips), a set of only RDATE lines expands like Google's, and a series
- * rename spares exceptions.
+ * skips), a set of only RDATE lines expands like Google's, a series
+ * rename spares exceptions, and a new rule keeps the exceptions whose
+ * slots it still draws and cancels the rest.
  */
 
 const config = liveGoogleConfigFromEnv();
@@ -299,6 +303,295 @@ describe('live Google: recurring series', () => {
       expect((yield* events.getById(LIVE_ACCOUNT_ID, calendar(), instanceId))?.title).toBe(
         `${master.title} (series)`,
       );
+    }).pipe(Effect.provide(liveEngineLayer(config))),
+  );
+});
+
+const iso = (utc: number) => new Date(utc).toISOString();
+
+/** The parts of a series with one moved and one cancelled occurrence the tests read. */
+interface Series {
+  /** The third occurrence's id: cancelled. */
+  readonly cancelled: string;
+  readonly masterId: string;
+  /** The second occurrence's id: three hours later than its slot. */
+  readonly moved: string;
+  readonly movedSlot: number;
+  readonly start: number;
+}
+
+/**
+ * A series another device made: weekly, five occurrences, the second
+ * moved three hours later, the third cancelled. UTC, as `createWeekly`.
+ */
+const seriesWithExceptions = (google: LiveScratchShape, name: string) =>
+  Effect.gen(function* () {
+    const start = hoursFromNow(2);
+    const master = yield* google.insertEvent(calendar(), {
+      end: { dateTime: iso(start + HOUR), timeZone: 'UTC' },
+      recurrence: ['RRULE:FREQ=WEEKLY;COUNT=5'],
+      start: { dateTime: iso(start), timeZone: 'UTC' },
+      summary: titleFor(config, name),
+    });
+    const movedSlot = start + WEEK;
+    const series: Series = {
+      cancelled: googleInstanceId(master.id, start + 2 * WEEK, false),
+      masterId: master.id,
+      moved: googleInstanceId(master.id, movedSlot, false),
+      movedSlot,
+      start,
+    };
+    yield* google.patchEvent(calendar(), series.moved, {
+      end: { dateTime: iso(movedSlot + 4 * HOUR), timeZone: 'UTC' },
+      start: { dateTime: iso(movedSlot + 3 * HOUR), timeZone: 'UTC' },
+    });
+    yield* google.deleteEvent(calendar(), series.cancelled);
+    return series;
+  });
+
+/** The same series made in the app, synced and pulled back. */
+const appSeriesWithExceptions = (
+  engine: { readonly syncAll: () => Effect.Effect<void> },
+  mutations: Pick<
+    EventMutationsShape,
+    'createEvent' | 'deleteRecurring' | 'processPendingOps' | 'updateRecurring'
+  >,
+  name: string,
+) =>
+  Effect.gen(function* () {
+    const master = yield* mutations.createEvent({
+      accountId: LIVE_ACCOUNT_ID,
+      calendarId: calendar(),
+      endUtc: hoursFromNow(3),
+      isAllDay: false,
+      recurrence: ['RRULE:FREQ=WEEKLY;COUNT=5'],
+      startTimeZone: 'UTC',
+      startUtc: hoursFromNow(2),
+      title: titleFor(config, name),
+    });
+    yield* drain(mutations);
+    const movedSlot = master.startUtc + WEEK;
+    const cancelledSlot = master.startUtc + 2 * WEEK;
+    yield* mutations.updateRecurring({
+      ...target(master.id, movedSlot),
+      changes: { endUtc: movedSlot + 4 * HOUR, startUtc: movedSlot + 3 * HOUR },
+      scope: 'instance',
+    });
+    yield* mutations.deleteRecurring({ ...target(master.id, cancelledSlot), scope: 'instance' });
+    yield* drain(mutations);
+    // The exceptions' etags, which the rule change's deletes would carry.
+    yield* engine.syncAll();
+    const series: Series = {
+      cancelled: googleInstanceId(master.id, cancelledSlot, false),
+      masterId: master.id,
+      moved: googleInstanceId(master.id, movedSlot, false),
+      movedSlot,
+      start: master.startUtc,
+    };
+    return series;
+  });
+
+/** An event as Google has it: status and start. */
+const stateOf = (google: LiveScratchShape, id: string) =>
+  Effect.map(
+    google.getEvent(calendar(), id),
+    (event) => `${event.status} ${event.start?.dateTime ?? '-'}`,
+  );
+
+/** Each exception as Google has it. */
+const onGoogle = (google: LiveScratchShape, series: Series) =>
+  Effect.all({
+    cancelled: stateOf(google, series.cancelled),
+    moved: stateOf(google, series.moved),
+  });
+
+/** Where Google draws the series (`events.instances`, cancelled ones left out). */
+const drawnOnGoogle = (google: LiveScratchShape, series: Series) =>
+  Effect.map(google.listInstances(calendar(), series.masterId), (instances) =>
+    instances.map((instance) => Date.parse(instance.start?.dateTime ?? '')).sort((a, b) => a - b),
+  );
+
+/** Where the calendar draws the series, over its first eight weeks. */
+const drawnHere = (series: Series) =>
+  Effect.gen(function* () {
+    const events = yield* EventRepo;
+    const from = series.start - HOUR;
+    const to = series.start + 8 * WEEK;
+    return assembleWindow(yield* events.getWindow(from, to), from, to)
+      .filter((event) => event.recurringEventId === series.masterId)
+      .map((event) => event.startUtc)
+      .sort((a, b) => a - b);
+  });
+
+/** What the queue's own DELETE of an exception gets with `etag` as If-Match. */
+const queueDelete = (eventId: string, baseEtag: string | undefined) =>
+  Effect.gen(function* () {
+    const client = yield* GoogleCalendarClient;
+    return yield* client
+      .deleteEvent({ accountId: LIVE_ACCOUNT_ID, baseEtag, calendarId: calendar(), eventId })
+      .pipe(
+        Effect.as('deleted'),
+        Effect.catchTag('ConflictError', () => Effect.succeed('412')),
+      );
+  });
+
+const etagOf = (google: LiveScratchShape, id: string) =>
+  Effect.map(google.getEvent(calendar(), id), (event) => event.etag);
+
+/**
+ * Verified 2026-11-03: a PATCH of the master's `recurrence` keeps an
+ * exception whose slot the new rule still draws exactly as it was (moved,
+ * or cancelled) and cancels the others — past an UNTIL, skipped by the new
+ * rule, or with no rule left. Every exception gets a new etag either way.
+ * The queue follows: a rule change drops and deletes only the exceptions
+ * the new rule skips, and the deletes a landed cut or rule change still
+ * holds go with it.
+ */
+describe('live Google: a new rule and the series’ exceptions', () => {
+  it.live('Google keeps the exceptions whose slots it still draws, with new etags', () =>
+    Effect.gen(function* () {
+      const { engine, scratch: google } = yield* bootstrap(config);
+      const series = yield* seriesWithExceptions(google, 'rule-kept');
+      const before = yield* onGoogle(google, series);
+      const staleEtag = yield* etagOf(google, series.moved);
+      yield* google.patchEvent(calendar(), series.masterId, {
+        recurrence: ['RRULE:FREQ=WEEKLY;COUNT=12'],
+      });
+      expect(yield* onGoogle(google, series)).toEqual(before);
+      expect(before.moved).toBe(
+        `confirmed ${iso(series.movedSlot + 3 * HOUR).replace('.000', '')}`,
+      );
+      expect(before.cancelled.startsWith('cancelled')).toBe(true);
+      // A queued delete from before the PATCH meets a 412, not the exception.
+      expect(yield* etagOf(google, series.moved)).not.toBe(staleEtag);
+      expect(yield* queueDelete(series.moved, staleEtag)).toBe('412');
+      // The pull draws what Google draws.
+      yield* engine.syncAll();
+      const drawn = yield* drawnOnGoogle(google, series);
+      expect(drawn).toContain(series.movedSlot + 3 * HOUR);
+      expect(drawn).toHaveLength(11);
+      expect(yield* drawnHere(series)).toEqual(drawn.filter((at) => at < series.start + 8 * WEEK));
+    }).pipe(Effect.provide(liveEngineLayer(config))),
+  );
+
+  it.live('a rule that skips them cancels them; one that draws them again brings slots back', () =>
+    Effect.gen(function* () {
+      const { engine, scratch: google } = yield* bootstrap(config);
+      const series = yield* seriesWithExceptions(google, 'rule-skips');
+      yield* engine.syncAll();
+      yield* google.patchEvent(calendar(), series.masterId, {
+        recurrence: ['RRULE:FREQ=WEEKLY;INTERVAL=3;COUNT=3'],
+      });
+      const skipped = yield* onGoogle(google, series);
+      expect(skipped.moved.startsWith('cancelled')).toBe(true);
+      expect(skipped.cancelled.startsWith('cancelled')).toBe(true);
+      yield* engine.syncAll();
+      expect(yield* drawnHere(series)).toEqual(yield* drawnOnGoogle(google, series));
+      // Drawn again, both are plain occurrences at their slots: the move
+      // and the cancellation are gone.
+      yield* google.patchEvent(calendar(), series.masterId, {
+        recurrence: ['RRULE:FREQ=WEEKLY;COUNT=5'],
+      });
+      expect((yield* onGoogle(google, series)).moved).toBe(
+        `confirmed ${iso(series.movedSlot).replace('.000', '')}`,
+      );
+      expect((yield* onGoogle(google, series)).cancelled.startsWith('confirmed')).toBe(true);
+      yield* engine.syncAll();
+      const drawn = yield* drawnOnGoogle(google, series);
+      expect(drawn).toEqual([0, 1, 2, 3, 4].map((week) => series.start + week * WEEK));
+      expect(yield* drawnHere(series)).toEqual(drawn);
+    }).pipe(Effect.provide(liveEngineLayer(config))),
+  );
+
+  it.live('an UNTIL before them, or no rule at all, cancels them too', () =>
+    Effect.gen(function* () {
+      const { scratch: google } = yield* bootstrap(config);
+      const ended = yield* seriesWithExceptions(google, 'rule-until');
+      yield* google.patchEvent(calendar(), ended.masterId, {
+        recurrence: [`RRULE:FREQ=WEEKLY;UNTIL=${compactUtc(ended.start + DAY)}`],
+      });
+      const single = yield* seriesWithExceptions(google, 'rule-none');
+      yield* google.patchEvent(calendar(), single.masterId, { recurrence: [] });
+      for (const series of [ended, single]) {
+        const state = yield* onGoogle(google, series);
+        expect(state.moved.startsWith('cancelled')).toBe(true);
+        expect(state.cancelled.startsWith('cancelled')).toBe(true);
+      }
+    }).pipe(Effect.provide(liveEngineLayer(config))),
+  );
+
+  it.live('the app’s new rule keeps a moved and a cancelled occurrence it still draws', () =>
+    Effect.gen(function* () {
+      const { engine, mutations, scratch: google } = yield* bootstrap(config);
+      const series = yield* appSeriesWithExceptions(engine, mutations, 'app-rule');
+      const before = yield* onGoogle(google, series);
+      const shownBefore = yield* drawnHere(series);
+      // Before: its deletes went first and cancelled the moved occurrence.
+      const queued = yield* noYield(
+        Effect.gen(function* () {
+          yield* mutations.updateRecurring({
+            ...target(series.masterId, series.start),
+            changes: { recurrence: ['RRULE:FREQ=WEEKLY;COUNT=12'] },
+            scope: 'series',
+          });
+          return yield* pendingOps;
+        }),
+      );
+      expect(queued.map((op) => op.kind)).toEqual(['update']);
+      yield* drain(mutations);
+      expect(yield* pendingOps).toEqual([]);
+      expect(yield* onGoogle(google, series)).toEqual(before);
+      const drawn = yield* drawnOnGoogle(google, series);
+      expect(drawn).toHaveLength(11);
+      const window = drawn.filter((at) => at < series.start + 8 * WEEK);
+      expect(window.slice(0, shownBefore.length)).toEqual(shownBefore);
+      expect(yield* drawnHere(series)).toEqual(window);
+      yield* engine.syncAll();
+      expect(yield* drawnHere(series)).toEqual(window);
+    }).pipe(Effect.provide(liveEngineLayer(config))),
+  );
+
+  it.live('the app’s rule that skips them leaves nothing queued: the PATCH cancels them', () =>
+    Effect.gen(function* () {
+      const { engine, mutations, scratch: google } = yield* bootstrap(config);
+      const series = yield* appSeriesWithExceptions(engine, mutations, 'app-skip');
+      yield* mutations.updateRecurring({
+        ...target(series.masterId, series.start),
+        changes: { recurrence: ['RRULE:FREQ=WEEKLY;INTERVAL=3;COUNT=3'] },
+        scope: 'series',
+      });
+      yield* drain(mutations);
+      expect(yield* pendingOps).toEqual([]);
+      const state = yield* onGoogle(google, series);
+      expect(state.moved.startsWith('cancelled')).toBe(true);
+      expect(state.cancelled.startsWith('cancelled')).toBe(true);
+      const drawn = yield* drawnOnGoogle(google, series);
+      expect(drawn).toEqual([0, 3, 6].map((week) => series.start + week * WEEK));
+      expect(yield* drawnHere(series)).toEqual(drawn);
+      yield* engine.syncAll();
+      expect(yield* drawnHere(series)).toEqual(drawn);
+    }).pipe(Effect.provide(liveEngineLayer(config))),
+  );
+
+  it.live('the app’s cut leaves nothing parked: Google cancels the exceptions past it', () =>
+    Effect.gen(function* () {
+      const { engine, mutations, scratch: google } = yield* bootstrap(config);
+      const series = yield* appSeriesWithExceptions(engine, mutations, 'app-cut');
+      yield* mutations.deleteRecurring({
+        ...target(series.masterId, series.movedSlot),
+        scope: 'following',
+      });
+      // Before: the moved occurrence's delete went after the truncation
+      // with its old etag, met a 412 and parked as "changed on Google".
+      yield* drain(mutations);
+      expect(yield* pendingOps).toEqual([]);
+      const state = yield* onGoogle(google, series);
+      expect(state.moved.startsWith('cancelled')).toBe(true);
+      expect(state.cancelled.startsWith('cancelled')).toBe(true);
+      expect(yield* drawnOnGoogle(google, series)).toEqual([series.start]);
+      expect(yield* drawnHere(series)).toEqual([series.start]);
+      yield* engine.syncAll();
+      expect(yield* drawnHere(series)).toEqual([series.start]);
     }).pipe(Effect.provide(liveEngineLayer(config))),
   );
 });
