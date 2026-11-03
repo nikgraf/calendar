@@ -1706,6 +1706,76 @@ describe('SyncEngine', () => {
       }).pipe(Effect.provide(engineLayer(client)));
     });
 
+    it.effect(
+      'an occurrence deleted after the series grew back past an in-flight cut stays deleted',
+      () => {
+        // The cut's PATCH is out when the series becomes twelve days and
+        // July 5 is deleted. The cut's landing took July 5's delete along:
+        // July 5 came back on Google with the twelve days, hidden here.
+        const requested = Effect.runSync(Deferred.make<void>());
+        const release = Effect.runSync(Deferred.make<void>());
+        let cutSent = false;
+        const deletes: Array<string> = [];
+        const truncated = {
+          ...series,
+          etag: '"evt-r-t"',
+          recurrence: ['RRULE:FREQ=DAILY;COUNT=1'],
+        };
+        const twelve = { ...series, etag: '"evt-r-12"', recurrence: ['RRULE:FREQ=DAILY;COUNT=12'] };
+        const client: GoogleCalendarClientShape = {
+          ...stubClient([firstPage]),
+          deleteEvent: ({ eventId }) => {
+            deletes.push(eventId);
+            return Effect.void;
+          },
+          getEvent: () => Effect.succeed({ ...cancelled, etag: '"c-t"' }),
+          patchEvent: () => {
+            if (cutSent) {
+              return Effect.succeed(twelve);
+            }
+            cutSent = true;
+            return Deferred.succeed(requested, undefined).pipe(
+              Effect.andThen(Deferred.await(release)),
+              Effect.as(truncated),
+            );
+          },
+        };
+        return Effect.gen(function* () {
+          yield* seedAccount;
+          yield* (yield* SyncEngine).syncAll();
+          const mutations = yield* EventMutations;
+          const at = { accountId: 'acc-1', calendarId: 'cal-1', masterId: 'evt-r' } as const;
+          yield* mutations.deleteRecurring({
+            ...at,
+            originalStartUtc: Date.parse('2026-07-03T10:00:00Z'),
+            scope: 'following',
+          });
+          const sending = yield* Effect.forkChild(mutations.processPendingOps());
+          yield* Deferred.await(requested);
+          yield* mutations.updateRecurring({
+            ...at,
+            changes: { recurrence: ['RRULE:FREQ=DAILY;COUNT=12'] },
+            originalStartUtc: Date.parse('2026-07-02T10:00:00Z'),
+            scope: 'series',
+          });
+          const july5 = 'evt-r_20260705T100000Z';
+          yield* mutations.deleteRecurring({
+            ...at,
+            originalStartUtc: Date.parse('2026-07-05T10:00:00Z'),
+            scope: 'instance',
+          });
+          yield* Deferred.succeed(release, undefined);
+          yield* Fiber.join(sending);
+          yield* mutations.retryPendingOps();
+          yield* mutations.processPendingOps();
+          yield* mutations.processPendingOps();
+          expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+          expect(deletes).toContain(july5);
+          expect(yield* shown).not.toContain('07-05T10:00 Event evt-r');
+        }).pipe(Effect.provide(engineLayer(client)));
+      },
+    );
+
     describe('after a rule change', () => {
       // Twelve days: the new rule still draws July 3 and July 4, and Google
       // keeps their exceptions (verified live).
