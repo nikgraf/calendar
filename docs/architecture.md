@@ -976,8 +976,11 @@ details, or Custom), so a calendar can be shared without the details.
     replaces the master's and drops the exceptions whose slots it no
     longer draws, as Google does with the PATCH; one whose slot it still
     draws stays as it is, moved or cancelled (verified live, see
-    docs/google-sync-and-testing.md). `null` ("does not repeat") leaves
-    the master as a single event at its own start and drops them all.
+    docs/google-sync-and-testing.md). One whose slot Google's own rule
+    no longer draws (an earlier cut's tombstone a full pull brought) goes
+    without a delete: Google draws that slot plain once a rule draws it
+    again. `null` ("does not repeat") leaves the master as a single
+    event at its own start and drops them all.
     Google keeps a rule whose key is absent from a PATCH, so the op
     carries `recurrenceCleared` and the patch sends `recurrence: []`. A
     master's changed title, description or location is mirrored onto the

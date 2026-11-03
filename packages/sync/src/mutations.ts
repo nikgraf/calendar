@@ -1443,6 +1443,27 @@ const make: Effect.Effect<
           let dropped: ReadonlyArray<PendingOp> = [];
           if (changes.recurrence !== undefined) {
             if (!unsentCreate) {
+              // An exception whose slot Google's own rule no longer draws is
+              // one Google cancelled with an earlier cut or rule change (a
+              // full pull brings its tombstone): drawn again, that slot is a
+              // plain occurrence on Google. It goes without a delete.
+              const onGoogle = inheritedBefore(
+                yield* opsForEvent(accountId, calendarId, masterId),
+                master,
+              );
+              for (const override of yield* eventRepo.listOverrides(
+                accountId,
+                calendarId,
+                masterId,
+              )) {
+                if (
+                  override.syncStatus === 'synced' &&
+                  onGoogle &&
+                  !drawsSlot(onGoogle, override)
+                ) {
+                  yield* eventRepo.deleteEvent(accountId, calendarId, override.id);
+                }
+              }
               yield* takeBackDropped(taken, merged);
             }
             dropped = yield* dropOverridesFrom(accountId, calendarId, masterId, 0, now, {

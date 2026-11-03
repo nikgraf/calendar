@@ -2088,6 +2088,54 @@ describe('SyncEngine', () => {
         },
       );
 
+      it.effect('a slot Google’s ended rule cancelled shows plain once a new rule draws it', () => {
+        // Another device ended the series on July 2; a full pull brought
+        // July 3 and July 4 as cancelled exceptions past its end. Kept for
+        // the twelve days, their tombstones hid July 3 and July 4, which
+        // Google draws as plain occurrences again.
+        const ended = { ...series, etag: '"evt-r-1"', recurrence: ['RRULE:FREQ=DAILY;COUNT=1'] };
+        const deletes: Array<string> = [];
+        const client: GoogleCalendarClientShape = {
+          ...stubClient([
+            firstPage,
+            {
+              items: [
+                ended,
+                { ...movedOccurrence('Moved', '"x-c"'), status: 'cancelled' },
+                { ...cancelled, etag: '"c-c"' },
+              ],
+              nextSyncToken: 's2',
+            },
+          ]),
+          deleteEvent: ({ eventId }) => {
+            deletes.push(eventId);
+            return Effect.void;
+          },
+          patchEvent: () => Effect.succeed(extended),
+        };
+        const plain = [
+          '07-02T10:00 Daily (Google)',
+          '07-03T10:00 Daily (Google)',
+          '07-04T10:00 Daily (Google)',
+          '07-05T10:00 Daily (Google)',
+          '07-06T10:00 Daily (Google)',
+          '07-07T10:00 Daily (Google)',
+        ];
+        return Effect.gen(function* () {
+          yield* seedAccount;
+          const engine = yield* SyncEngine;
+          yield* engine.syncAll();
+          yield* engine.syncAll();
+          yield* changeRule;
+          expect(yield* shown).toEqual(plain);
+          yield* drain;
+          expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+          expect(deletes).toEqual([]);
+          expect(yield* shown).toEqual(plain);
+          expect(yield* strays).toEqual([]);
+        }).pipe(Effect.provide(engineLayer(client)));
+      });
+
       it.effect(
         'a second rule that draws again what the first skipped keeps those exceptions',
         () => {
