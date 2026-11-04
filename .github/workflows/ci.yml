@@ -96,8 +96,10 @@ jobs:
     # this one burning macOS minutes on a change that cannot merge.
     needs: [gate, changes]
     if: needs.changes.outputs.desktop == 'true'
-    # macos-15: macos-14 images are deprecated; e2e needs no macOS 26 SDK
-    # (the helper is availability-guarded and e2e never invokes the model).
+    # macos-15: macos-14 images are deprecated, and e2e needs neither the
+    # macOS 27 SDK nor macOS 27 itself: it runs Electron from node_modules,
+    # never the packaged app (which carries the macOS 27 floor) or the
+    # helper, with the bridges off and the model a fixture.
     runs-on: macos-15
     timeout-minutes: 25
     steps:
@@ -134,12 +136,14 @@ jobs:
   # Apple-supported interface — see the script header), then a probe
   # requires the helper to answer fullAccess before the suite runs; if a
   # new runner image breaks the seed the job goes red rather than green
-  # while testing nothing. macos-26: build:helper needs the macOS 26 SDK.
+  # while testing nothing. xcode-27 (GitHub's macOS 27 image): build:helper
+  # needs the macOS 27 SDK, and the helper, built for macOS 27, runs only
+  # on a macOS 27 host.
   e2e-reminders:
     name: Desktop e2e (real Reminders and Calendar via helper)
     needs: [gate, changes]
     if: needs.changes.outputs.desktop == 'true'
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
@@ -157,8 +161,8 @@ jobs:
         uses: actions/cache@v6
         with:
           path: apps/desktop/helper/.build
-          key: helper-${{ runner.os }}-${{ hashFiles('apps/desktop/helper/Package.swift', 'apps/desktop/helper/Package.resolved', 'apps/desktop/helper/Sources/**', 'packages/ai/swift/**', 'packages/apple-calendar/swift/**', 'packages/contacts/swift/**', 'packages/geo/swift/**', 'packages/reminders/swift/**') }}
-          restore-keys: helper-${{ runner.os }}-
+          key: helper-xcode-27-${{ hashFiles('apps/desktop/helper/Package.swift', 'apps/desktop/helper/Package.resolved', 'apps/desktop/helper/Sources/**', 'packages/ai/swift/**', 'packages/apple-calendar/swift/**', 'packages/contacts/swift/**', 'packages/geo/swift/**', 'packages/reminders/swift/**') }}
+          restore-keys: helper-xcode-27-
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @calendar/desktop build:helper
       - run: pnpm --filter @calendar/desktop build
@@ -427,13 +431,13 @@ jobs:
   # failures only a real package run reveals (a retired native module's
   # ENOENT in #36, a dangling .bin symlink in the copy hook) — and both
   # surfaced post-merge because PRs never packaged. Signing is env-gated,
-  # so with no APPLE_* env this needs no secrets. macos-26: build:helper
-  # needs the macOS 26 SDK (same as testing-build).
+  # so with no APPLE_* env this needs no secrets. xcode-27: build:helper
+  # needs the macOS 27 SDK (same as testing-build).
   package-smoke:
     name: Packaging smoke (unsigned .app)
     needs: [gate, changes]
     if: github.event_name == 'pull_request' && needs.changes.outputs.desktop == 'true'
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
@@ -446,8 +450,8 @@ jobs:
         uses: actions/cache@v6
         with:
           path: apps/desktop/helper/.build
-          key: helper-${{ runner.os }}-${{ hashFiles('apps/desktop/helper/Package.swift', 'apps/desktop/helper/Package.resolved', 'apps/desktop/helper/Sources/**', 'packages/ai/swift/**', 'packages/apple-calendar/swift/**', 'packages/contacts/swift/**', 'packages/geo/swift/**', 'packages/reminders/swift/**') }}
-          restore-keys: helper-${{ runner.os }}-
+          key: helper-xcode-27-${{ hashFiles('apps/desktop/helper/Package.swift', 'apps/desktop/helper/Package.resolved', 'apps/desktop/helper/Sources/**', 'packages/ai/swift/**', 'packages/apple-calendar/swift/**', 'packages/contacts/swift/**', 'packages/geo/swift/**', 'packages/reminders/swift/**') }}
+          restore-keys: helper-xcode-27-
       - run: pnpm install --frozen-lockfile
       # The committed app icons and tokens.css are generated from brand/;
       # this is the only macOS job that runs whenever brand exports can
@@ -485,10 +489,10 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'push' && needs.changes.outputs.desktop == 'true')
-    # macos-26: the Swift model helper needs the macOS 26 SDK
-    # (FoundationModels/SpeechAnalyzer). Runtime stays guarded, so the
-    # packaged app still runs on older macOS with the model unavailable.
-    runs-on: macos-26
+    # xcode-27: the Swift model helper needs the macOS 27 SDK. The packaged
+    # app needs macOS 27 too (LSMinimumSystemVersion, forge.config.cjs), so
+    # nothing in it is guarded by OS version.
+    runs-on: xcode-27
     timeout-minutes: 30
     steps:
       # Forge silently degrades to an unsigned build when the APPLE_* env is
@@ -538,8 +542,8 @@ jobs:
         uses: actions/cache@v6
         with:
           path: apps/desktop/helper/.build
-          key: helper-${{ runner.os }}-${{ hashFiles('apps/desktop/helper/Package.swift', 'apps/desktop/helper/Package.resolved', 'apps/desktop/helper/Sources/**', 'packages/ai/swift/**', 'packages/apple-calendar/swift/**', 'packages/contacts/swift/**', 'packages/geo/swift/**', 'packages/reminders/swift/**') }}
-          restore-keys: helper-${{ runner.os }}-
+          key: helper-xcode-27-${{ hashFiles('apps/desktop/helper/Package.swift', 'apps/desktop/helper/Package.resolved', 'apps/desktop/helper/Sources/**', 'packages/ai/swift/**', 'packages/apple-calendar/swift/**', 'packages/contacts/swift/**', 'packages/geo/swift/**', 'packages/reminders/swift/**') }}
+          restore-keys: helper-xcode-27-
       - run: pnpm install --frozen-lockfile
       - name: Compute short SHA
         run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> "$GITHUB_ENV"

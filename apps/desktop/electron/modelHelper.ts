@@ -72,16 +72,16 @@ export const registerModelHelper = (): void => {
     fixture ? { contextTokens: 4096, name: 'Fixture model' } : providerInfo(),
   );
   // The helper itself, whatever provider answers generation: dictation and
-  // text recognition are its alone, so their support is read here.
-  // `helper` says the binary answered at all: SpeechAnalyzer needs macOS 26
-  // and the helper, not Apple Intelligence, so dictation reads that and the
-  // OS reason, never the model's availability.
+  // text recognition are its alone, so their support is read here. The
+  // reply is only whether the binary answered: SpeechAnalyzer needs the
+  // helper, not Apple Intelligence, so the model's availability never
+  // reaches dictation's support check.
   ipcMain.handle('model:helper-status', async () => {
     if (fixture) {
-      return { helper: true, status: 'ready' };
+      return { helper: true };
     }
     const apple = await appleStatus();
-    return { ...apple, helper: apple.detail !== 'helperUnavailable' };
+    return { helper: apple.detail !== 'helperUnavailable' };
   });
   ipcMain.handle('model:generate', async (_event, schema: unknown, prompt: unknown) => {
     if (!isJsonObject(schema) || JSON.stringify(schema).length > MAX_SCHEMA_CHARS) {

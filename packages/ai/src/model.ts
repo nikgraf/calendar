@@ -22,8 +22,9 @@ export type ModelStatus =
 /**
  * Foundation Models' own reasons (`SystemLanguageModel.Availability
  * .UnavailableReason`), as both native hosts stringify them, plus
- * `osTooOld` from a host below OS 26 — one table for the desktop helper's
- * `detail` and the iOS availability module's `reason`. A reason a newer OS
+ * `osTooOld` from an iPhone below iOS 26 (the desktop helper needs macOS
+ * 27 and never sends it) — one table for the desktop helper's `detail` and
+ * the iOS availability module's `reason`. A reason a newer OS
  * adds is not here and stays 'unavailable', with its name kept for display.
  */
 export const APPLE_REASON_STATUS: ReadonlyMap<string, ModelStatus> = new Map<string, ModelStatus>([

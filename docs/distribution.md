@@ -1,11 +1,12 @@
 # Desktop distribution: macOS testing builds
 
 Every push to `main` runs the `testing-build` job in `.github/workflows/ci.yml`
-(on `macos-26` — the Swift helper needs the macOS 26 SDK; the packaged app
-still runs on older macOS with the model reporting unavailable), producing
-a **signed + notarized, Apple Silicon (arm64)** zip of the desktop app as a
-GitHub Actions artifact, kept 14 days. Decisions: arm64 only (Intel Macs
-are out of the target group), artifact-only distribution — no GitHub
+(on `xcode-27`, GitHub's macOS 27 image — the Swift helper needs the macOS
+27 SDK, and the packaged app needs macOS 27 or later: `LSMinimumSystemVersion`
+in `forge.config.cjs`, which Finder enforces with the system's own alert),
+producing a **signed + notarized, Apple Silicon (arm64)** zip of the desktop
+app as a GitHub Actions artifact, kept 14 days. Decisions: arm64 only (Intel
+Macs are out of the target group), artifact-only distribution — no GitHub
 releases and no auto-update while the repo is private
 (`update-electron-app` is wired but update.electronjs.org only serves
 public repos, so it stays a no-op).
@@ -66,6 +67,9 @@ collects what changed between bumps; the decision log in
 `docs/decisions.md` has the detail.
 
 ## Installing a testing build (testers)
+
+The app needs macOS 27 or later; an older Mac refuses to open it with the
+system's own alert.
 
 1. Open the repo's **Actions** tab → latest green `CI` run on `main` (requires
    repo read access).

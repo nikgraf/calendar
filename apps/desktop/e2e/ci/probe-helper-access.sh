@@ -17,14 +17,16 @@ case "$BRIDGE" in
   calendar) SERVICE=kTCCServiceCalendar ;;
   *) echo "unknown bridge: $BRIDGE" >&2; exit 2 ;;
 esac
-DB="$HOME/Library/Application Support/com.apple.TCC/TCC.db"
+# shellcheck source=tcc-user-db.sh
+. "$(dirname "$0")/tcc-user-db.sh"
+DB=$(tcc_user_db 2>/dev/null || true)
 RESPONSE=$( (printf '{"id":1,"method":"%s.status","params":{}}\n' "$BRIDGE"; sleep 2) \
   | "$HELPER" 2>/dev/null | head -1 || true)
 echo "helper: $RESPONSE"
 STATUS=$(printf '%s' "$RESPONSE" | jq -r '.result.authorization // empty' 2>/dev/null || true)
 if [ "$STATUS" != "fullAccess" ]; then
-  echo "--- TCC rows after the check (a new row names the identity tccd used)"
-  sudo sqlite3 -cmd '.timeout 30000' "$DB" "SELECT service, client, client_type, auth_value, auth_reason FROM access
+  echo "--- TCC rows after the check (a new row names the identity tccd used): ${DB:-no database found}"
+  [ -n "$DB" ] && sudo sqlite3 -cmd '.timeout 30000' "$DB" "SELECT service, client, client_type, auth_value, auth_reason FROM access
     WHERE service = '$SERVICE' OR last_modified > strftime('%s','now') - 600" || true
   echo "--- tccd log (last 5 minutes, $SERVICE)"
   sudo log show --last 5m --predicate 'subsystem == "com.apple.TCC"' 2>/dev/null \

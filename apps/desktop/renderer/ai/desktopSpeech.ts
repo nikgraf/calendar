@@ -15,7 +15,7 @@ const LEVEL_WINDOW_MS = 50;
 /**
  * Desktop dictation: the renderer owns the microphone (getUserMedia +
  * an inline AudioWorklet collecting mono PCM), the Swift helper owns
- * transcription (SpeechAnalyzer, macOS 26). Same seam and philosophy as
+ * transcription (SpeechAnalyzer). Same seam and philosophy as
  * apps/ios/src/appleSpeech.ts: availability is decided by attempting
  * prepare, and the audio never outlives the request.
  */
@@ -77,10 +77,10 @@ export const desktopSpeech: SpeechToText = {
     // Mac whose helper cannot transcribe — and prepare() decides the rest
     // at use time.
     try {
-      const result = await window.calendarBridge.modelHelperStatus();
-      // The helper runs and the OS has SpeechAnalyzer: Apple Intelligence
-      // being off does not take dictation away.
-      return result.helper && result.detail !== 'osTooOld';
+      // The helper runs, and with it SpeechAnalyzer (every macOS the app
+      // opens on has it). Apple Intelligence being off does not take
+      // dictation away: main answers only whether the binary responded.
+      return (await window.calendarBridge.modelHelperStatus()).helper;
     } catch {
       return false;
     }

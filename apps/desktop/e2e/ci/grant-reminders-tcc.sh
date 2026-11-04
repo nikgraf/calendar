@@ -24,7 +24,11 @@ SERVICE="${2:-kTCCServiceReminders}"
 # The real path: SwiftPM's .build/release is a symlink, and tccd records
 # the resolved binary_path (.build/arm64-apple-macosx/release/…).
 HELPER=$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$HELPER")
-DB="$HOME/Library/Application Support/com.apple.TCC/TCC.db"
+# Where this macOS keeps the user's database (tcc-user-db.sh).
+# shellcheck source=tcc-user-db.sh
+. "$(dirname "$0")/tcc-user-db.sh"
+DB=$(tcc_user_db)
+echo "TCC database: $DB"
 # tccd writes this database too, so a statement can find it locked for a
 # moment; without a busy timeout sqlite3 fails at once ("database is
 # locked", exit 5) instead of waiting for the lock to clear.

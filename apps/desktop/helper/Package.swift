@@ -1,4 +1,4 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.4
 import Foundation
 import PackageDescription
 
@@ -13,17 +13,16 @@ let infoPlist = URL(fileURLWithPath: #filePath)
 
 let package = Package(
   name: "solunivo-model-helper",
-  // The executable runs on any modern macOS and reports the model
-  // unavailable below 26; only the guarded code paths need the new SDK.
-  platforms: [.macOS(.v14)],
+  // The app needs macOS 27 (LSMinimumSystemVersion in forge.config.cjs), so
+  // the helper's floor is the same: Foundation Models, SpeechAnalyzer and
+  // the rest link normally and no code path is guarded by OS version.
+  // Building needs Xcode 27 (the macOS 27 SDK; `.v27` is swift-tools 6.4).
+  platforms: [.macOS(.v27)],
   targets: [
     .executableTarget(
       name: "solunivo-model-helper",
       exclude: ["Info.plist"],
       linkerSettings: [
-        // Weak-link so launching on macOS < 26 does not dyld-abort.
-        .unsafeFlags(["-Xlinker", "-weak_framework", "-Xlinker", "FoundationModels"]),
-        .unsafeFlags(["-Xlinker", "-weak_framework", "-Xlinker", "Speech"]),
         .unsafeFlags([
           "-Xlinker", "-sectcreate", "-Xlinker", "__TEXT", "-Xlinker", "__info_plist",
           "-Xlinker", infoPlist,

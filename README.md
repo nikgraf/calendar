@@ -1,7 +1,7 @@
 # Solunivo
 
 A calendar for Google Calendar, Google Tasks, Apple Calendar and Apple
-Reminders: iOS (Expo) + macOS (Electron), client-only, built on Effect
+Reminders: iOS (Expo) + macOS (Electron, macOS 27 or later), client-only, built on Effect
 v4. `AGENTS.md` has the architecture map, the commands
 and the rules; the deep docs are listed at its end.
 
@@ -45,8 +45,8 @@ SQLite is Node's built-in `node:sqlite` on desktop and op-sqlite on iOS —
 there is no native-module rebuild step.
 
 Optional, for the desktop AI features and the Apple bridges (Reminders,
-Calendar, Contacts, Maps): build the Swift helper once (requires Xcode
-with the macOS 26 SDK; the AI needs Apple Silicon with Apple Intelligence
+Calendar, Contacts, Maps): build the Swift helper once (requires Xcode 27,
+for the macOS 27 SDK; the AI needs Apple Silicon with Apple Intelligence
 enabled at runtime):
 
 ```sh

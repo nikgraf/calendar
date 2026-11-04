@@ -64,7 +64,10 @@ dictation and capture from text or photo.
 - `apps/desktop` — Electron (Forge, vite, `vp pack` main bundle); rpc over
   an IPC frame channel; the Swift helper (`helper/`, Foundation Models +
   SpeechAnalyzer + Vision + EventKit + Contacts + MapKit + a screen-capture
-  watch over stdio; process owned by `electron/helperProcess.ts`); the agent gateway host
+  watch over stdio; process owned by `electron/helperProcess.ts`); macOS 27
+  is the floor of both (`LSMinimumSystemVersion` in `forge.config.cjs`,
+  `.macOS(.v27)` in `helper/Package.swift`), so neither guards on the OS
+  version; the agent gateway host
   (`electron/agent/`: Unix socket, MCP server, CLI runner) and its relay
   `solunivo-cli` (`electron/cli.ts`, a third `pack` entry in
   `vite.config.ts`).
@@ -165,7 +168,8 @@ deliberately.
   `apps/web/dist/` (`dev` serves it on :5174 with live reload, `preview`
   serves the built output on :4174; a plain `vp build` there refuses).
 - `pnpm --filter @calendar/desktop build:helper` — build the Swift helper
-  (needs the macOS 26 SDK; `make` / `package:app` run it automatically).
+  (needs Xcode 27 for the macOS 27 SDK; `make` / `package:app` run it
+  automatically).
 - `pnpm --filter @calendar/desktop package:app` — unsigned .app via Forge
   (signing/notarization activate via `APPLE_*` env vars);
   `pnpm --filter @calendar/desktop make` — zipped distributable.

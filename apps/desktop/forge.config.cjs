@@ -60,6 +60,11 @@ module.exports = {
     buildVersion: process.env.BUILD_VERSION,
     executableName: 'solunivo',
     extendInfo: {
+      // The app needs macOS 27 (the helper is built for it: helper/
+      // Package.swift). Finder enforces this key with the system's own
+      // "requires macOS 27.0 or later" alert; without it an older Mac would
+      // open the app and watch the helper die at start.
+      LSMinimumSystemVersion: '27.0',
       // Mandatory under the hardened runtime: without it the first camera
       // access ends the process instead of asking.
       NSCameraUsageDescription:
