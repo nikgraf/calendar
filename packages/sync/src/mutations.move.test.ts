@@ -993,6 +993,45 @@ describe('a move Google never makes', () => {
     }).pipe(Effect.provide(testLayer(switching, appleFake())));
   });
 
+  it.effect('a cut moved along takes its exception deletes when it is discarded there', () => {
+    // The cut's delete of the exception owns no row: the move left it in
+    // the source, where the cut's discard in the destination missed it,
+    // and it cancelled the exception on Google.
+    const calls: Array<Call> = [];
+    let online = false;
+    const plain = recordingGoogle(calls);
+    const down = Effect.fail(new ApiUnavailableError({ cause: 'down', status: 503 }));
+    const google = recordingGoogle(calls, {
+      deleteEvent: (params) => (online ? plain.deleteEvent(params) : down),
+      moveEvent: (params) => (online ? plain.moveEvent(params) : down),
+      patchEvent: (params) => (online ? plain.patchEvent(params) : down),
+    });
+    return Effect.gen(function* () {
+      yield* seed([series, exception]);
+      const mutations = yield* EventMutations;
+      yield* mutations.deleteRecurring({
+        accountId: 'acc-1',
+        calendarId: 'cal-1',
+        masterId: 'ser',
+        originalStartUtc: base + DAY,
+        scope: 'following',
+      });
+      yield* mutations.moveEvent(move(['acc-1', 'cal-1', 'ser'], ['acc-1', 'cal-2']));
+      expect((yield* queued).map((op) => `${op.kind}:${op.calendarId}`)).toEqual([
+        'move:cal-1',
+        'update:cal-2',
+        'delete:cal-2',
+      ]);
+      yield* mutations.discardPendingOp((yield* queued).find((op) => op.kind === 'update')!.id);
+      expect((yield* queued).map((op) => op.kind)).toEqual(['move']);
+      online = true;
+      yield* (yield* PendingOpRepo).retryNow();
+      yield* mutations.processPendingOps();
+      expect(calls.map((call) => call.kind)).toEqual(['move']);
+      expect(yield* queued).toEqual([]);
+    }).pipe(Effect.provide(testLayer(google, appleFake())));
+  });
+
   it.effect('discarding a move hands the edit behind it back to the source, snapshot too', () => {
     const original = googleEvent();
     return Effect.gen(function* () {
