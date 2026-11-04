@@ -23,6 +23,8 @@ export interface PendingOpRepoShape {
     from: string,
     to: string,
     landed: { readonly createdAt: number; readonly id: string },
+    /** Only content edits: an update that sends no guest list. */
+    options?: { readonly editsOnly?: boolean },
   ) => Effect.Effect<void, SqlError>;
   /**
    * After an op (`landed`) landed while others of the event were queued:
@@ -70,7 +72,10 @@ export interface PendingOpRepoShape {
   ) => Effect.Effect<number, SqlError>;
   readonly earlierInSeries: (
     op: PendingOp,
-  ) => Effect.Effect<ReadonlyArray<Pick<PendingOp, 'dropsFrom' | 'eventId' | 'kind'>>, SqlError>;
+  ) => Effect.Effect<
+    ReadonlyArray<Pick<PendingOp, 'dropsFrom' | 'eventId' | 'id' | 'kind'>>,
+    SqlError
+  >;
   /**
    * The task ops of the op's account queued before it, in queue order: a
    * task move and the task ops around it keep that order even when
@@ -295,8 +300,9 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
           sql<{
             readonly drops_from: number | null;
             readonly event_id: string;
+            readonly id: string;
             readonly kind: PendingOp['kind'];
-          }>`SELECT kind, event_id, drops_from FROM pending_ops
+          }>`SELECT id, kind, event_id, drops_from FROM pending_ops
             WHERE account_id = ${op.accountId} AND id != ${op.id}
               AND (event_id = ${op.eventId}
                 OR substr(event_id, 1, length(${op.eventId}) + 1) = ${op.eventId} || '_'
@@ -307,6 +313,7 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
           (rows) =>
             rows.map((row) => ({
               eventId: row.event_id,
+              id: row.id,
               kind: row.kind,
               ...(row.drops_from === null ? {} : { dropsFrom: row.drops_from }),
             })),
@@ -391,7 +398,7 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
           (rows) => rows.flatMap(decodedOps),
         ),
       // Bounded: one drain handles a page; the next kick takes the rest.
-      advanceBaseEtag: ({ accountId, calendarId, eventId }, from, to, landed) =>
+      advanceBaseEtag: ({ accountId, calendarId, eventId }, from, to, landed, options) =>
         invalidating(
           Effect.asVoid(
             // Queue order is (created_at, rowid), as listDue drains it. A
@@ -401,6 +408,8 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
               WHERE account_id = ${accountId} AND calendar_id = ${calendarId}
                 AND event_id = ${eventId} AND base_etag = ${from}
                 AND conflict_at IS NULL
+                AND (${options?.editsOnly === true ? 1 : 0} = 0
+                  OR (kind = 'update' AND attendees_changed = 0))
                 AND (created_at > ${landed.createdAt}
                   OR (created_at = ${landed.createdAt}
                     AND rowid > COALESCE(
