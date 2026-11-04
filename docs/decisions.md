@@ -20,6 +20,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   and inert — update.electronjs.org serves public repos only), crash
   reporting off (privacy posture). The testing build embeds the RFC 8252
   desktop OAuth client from a secret-fed file.
+- **macOS 27 minimum** (2026-11-03, `todo/macos-27-minimum`) — the desktop
+  app needs macOS 27: `LSMinimumSystemVersion` in the packaged Info.plist
+  (Finder's own alert below it) and a helper built for 27 (`.macOS(.v27)`,
+  swift-tools 6.4), so the helper's OS guards, weak links and `osTooOld`
+  answer are gone and the AI copy names Apple Intelligence, not an OS.
+  The helper-building jobs (e2e-reminders, package-smoke, testing-build)
+  run on GitHub's `xcode-27` image (macOS 27, Xcode 27.1, a preview).
+  Rejected: the plist key alone, which keeps a fallback no Mac can reach.
+  Open: the TCC seed on the new image; iOS keeps its floor.
 - **iOS distribution** — EAS Build + TestFlight on native changes,
   otherwise an OTA update, decided by the native fingerprint; every PR
   gets a `pr-<n>` OTA channel loadable in-app; the `testflight` label
