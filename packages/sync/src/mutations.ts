@@ -76,6 +76,7 @@ import {
   type UpdateEventParams,
 } from './mutationTypes.ts';
 import { makeReminderMutations } from './reminderMutations.ts';
+import { dropSplitSeries, holdsSplit, releaseSplits, waitingSplits } from './splitSeries.ts';
 import {
   drawsSlot,
   dropChangeDeletes,
@@ -112,6 +113,10 @@ const foldIntoCreate = (create: PendingOp, payload: EventRecord) =>
     kind: 'create',
     nextAttemptAt: 0,
     payload,
+    splitAt: create.splitAt,
+    splitCheck: create.splitCheck,
+    splitIn: create.splitIn,
+    splitOf: create.splitOf,
   });
 
 /**
@@ -644,6 +649,10 @@ const make: Effect.Effect<
             const outcome = yield* applyOp(op);
             if (outcome === 'done') {
               yield* pendingOpRepo.remove(op.id);
+              // A series split off this one waits for it no more (splitSeries.ts).
+              if (holdsSplit(op)) {
+                yield* releaseSplits(taken, op);
+              }
             } else if ('conflict' in outcome) {
               // Parked until the user chooses (resolveConflict); the local
               // row stays pending so pulls cannot overwrite their version.
@@ -674,11 +683,18 @@ const make: Effect.Effect<
    * transaction with checking it is still queued). One that was sent may
    * have been made, its answer lost or its request still out: under the
    * drain's gate — taken outside the transaction, since the drain writes
-   * while holding it — Google is asked first (settleDiscardedMove).
+   * while holding it — Google is asked first (settleDiscardedMove). A cut
+   * a split-off series waits for goes at once too: that series asks Google
+   * before it goes (splitSeries.ts), so the drain runs now.
    */
   const discardPendingOp: EventMutationsShape['discardPendingOp'] = (opId) =>
     Effect.gen(function* () {
+      const queued = yield* pendingOpRepo.getById(opId);
+      const splits = queued !== undefined && (yield* waitingSplits(taken, queued));
       const sent = yield* discard(opId);
+      if (splits) {
+        yield* kick;
+      }
       if (!sent) {
         return;
       }
@@ -812,6 +828,11 @@ const make: Effect.Effect<
       } else {
         yield* eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
         yield* dropSeriesExceptions(taken, op.accountId, op.calendarId, op.eventId);
+      }
+      // A cut taken back takes the series a this-and-following edit split
+      // off along where Google's master draws its days (splitSeries.ts).
+      if (holdsSplit(op)) {
+        yield* dropSplitSeries(taken, op, record);
       }
       yield* restoreCarriedText(eventRepo, op);
       yield* pendingOpRepo.remove(op.id);
@@ -1633,6 +1654,11 @@ const make: Effect.Effect<
           }),
         );
         yield* eventRepo.upsertMany([newMaster]);
+        // Split off a series whose create is unsent (it took the cut in), it
+        // is that one's: split off the same series at the same occurrence.
+        const splitOf = unsentCreate ? unsentCreate.splitOf : masterId;
+        const splitIn = unsentCreate ? unsentCreate.splitIn : calendarId;
+        const splitAt = unsentCreate ? unsentCreate.splitAt : originalStartUtc;
         yield* enqueue(
           new PendingOp({
             accountId,
@@ -1644,6 +1670,7 @@ const make: Effect.Effect<
             kind: 'create',
             nextAttemptAt: 0,
             payload: newMaster,
+            ...(splitOf === undefined ? {} : { splitAt, splitIn, splitOf }),
           }),
         );
       }),
@@ -1830,6 +1857,8 @@ const make: Effect.Effect<
           yield* enqueue(rekey(op, now + 1));
         }
       }
+      // The series split off it follow it there (splitSeries.ts).
+      yield* pendingOpRepo.moveSplits(accountId, master.id, calendarId, target.calendarId);
     });
 
   const createIn = (provider: 'apple' | 'google', draft: EventDraft) =>

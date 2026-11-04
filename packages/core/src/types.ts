@@ -486,6 +486,19 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
    */
   serverPayload: Schema.optional(EventRecord),
   /**
+   * The create of a series a this-and-following edit split off: the
+   * original start of the occurrence it starts at (`splitAt`) in the series
+   * it came from (`splitOf`, in calendar `splitIn`, which follows a move of
+   * that series). It waits for that series' cut. Once the cut left the
+   * queue other than by keep-theirs, `splitCheck` has it ask Google for
+   * that series before it goes: if it still draws from `splitAt` on, the
+   * cut was undone and the create goes with it.
+   */
+  splitAt: Schema.optional(Schema.Number),
+  splitCheck: Schema.optional(Schema.Boolean),
+  splitIn: Schema.optional(Schema.String),
+  splitOf: Schema.optional(Schema.String),
+  /**
    * Due day (YYYY-MM-DD) for kind 'createTask'/'updateTask'; null on an
    * update that takes the day away (the patch sends `due: null`).
    */

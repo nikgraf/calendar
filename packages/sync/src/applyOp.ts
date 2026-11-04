@@ -39,6 +39,7 @@ import {
 import { Cause, Clock, Effect } from 'effect';
 import type { SqlError } from 'effect/sql/SqlError';
 import { restoreCarriedText } from './carriedText.ts';
+import { askSplits, holdsSplit, ofSplitSeries, settleSplit } from './splitSeries.ts';
 import {
   drawsSlot,
   dropChangeDeletes,
@@ -447,12 +448,14 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       }
       // A series edit gone: the master's rule is Google's again, and so are
       // the exceptions its occurrences' own deletes took (a cut's, a rule
-      // change's), which go with the change that queued them. One update of
-      // the series is queued at a time.
+      // change's), which go with the change that queued them, as does the
+      // series a this-and-following edit split off. One update of the series
+      // is queued at a time.
       if (op.kind === 'update') {
         yield* restoreDropped(taken, op.accountId, op.calendarId, op.eventId);
         if (op.dropsFrom !== undefined) {
           yield* dropChangeDeletes(taken, op.accountId, op.calendarId, op.eventId, op.dropsFrom);
+          yield* askSplits(taken, op);
         }
       }
     });
@@ -500,11 +503,12 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       // A series delete took the exceptions with it and owns no row at
       // their ids: one there since is newer and stays. The series is back
       // as Google has it, with what its occurrences' own deletes took — and
-      // without those deletes: a cut or a rule change it replaced queued
-      // them.
+      // without those deletes, or the series split off it: a cut or a rule
+      // change it replaced queued them.
       yield* putBack(taken, op.accountId, op.calendarId, op.beforeOverrides ?? []);
       yield* restoreDropped(taken, op.accountId, op.calendarId, op.eventId);
       yield* dropChangeDeletes(taken, op.accountId, op.calendarId, op.eventId);
+      yield* askSplits(taken, op);
     });
 
   /**
@@ -903,11 +907,13 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       case 'moveTask':
         // Google still has the task in the source list.
         return Effect.ignore(revertTaskMove(op));
+      // In one transaction: one that failed half way left a series a cut's
+      // undo took along half there, its rows pending with no op.
       case 'rsvp':
       case 'update':
-        return Effect.ignore(revert ? revertEdit(op) : handBack(op));
+        return Effect.ignore(revert ? transaction(revertEdit(op)) : handBack(op));
       case 'delete':
-        return revert ? Effect.ignore(revertDelete(op)) : Effect.void;
+        return revert ? Effect.ignore(transaction(revertDelete(op))) : Effect.void;
       case 'calendarColor':
         return revert && op.beforeColorHex
           ? Effect.ignore(revertColor(op, op.beforeColorHex))
@@ -980,6 +986,8 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
           yield* eventRepo.deleteEvent(accountId, destination, row.id);
           yield* eventRepo.upsertMany([new EventRecord({ ...row, calendarId: source })]);
         }
+        // The series split off it point back at it there (splitSeries.ts).
+        yield* pendingOpRepo.moveSplits(accountId, masterId, destination, source);
       }
       const others = (yield* pendingOpRepo.listAll()).filter(
         (queued) => queued.id !== op.id && queued.accountId === accountId,
@@ -1503,6 +1511,88 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
           )
       : drop(op, 'changed on Google');
 
+  /**
+   * The create of a series a this-and-following edit split off, before it
+   * is sent (splitSeries.ts): it waits while a change of the series it was
+   * split from that carries the cut is queued, wherever that sits — sent
+   * ahead, it stayed on Google when the cut was undone. Once that left the
+   * queue Google is asked for the series (`splitCheck`): still drawing from
+   * where this one starts, the cut was undone, and it goes with it. Then it
+   * is stamped as sent in one transaction with checking that it is still
+   * queued and nothing holds it or asks again: keep-theirs or an undo of
+   * the cut committed after the checks found it unsent, and dropped it
+   * while it went. One sent already waits for nothing: it may be there.
+   * While a move of the series is queued it does not ask: Google has the
+   * series in the source until the move lands, and in the destination it
+   * found nothing.
+   */
+  const splitGate = (op: PendingOp): Effect.Effect<ApplyOutcome | undefined, SqlError> =>
+    Effect.gen(function* () {
+      const { accountId, splitIn, splitOf } = op;
+      if (
+        op.kind !== 'create' ||
+        splitOf === undefined ||
+        splitIn === undefined ||
+        op.dispatchedAt !== undefined
+      ) {
+        return undefined;
+      }
+      const held = Effect.map(pendingOpRepo.listAll(), (queued) =>
+        queued.some((entry) => ofSplitSeries(op, entry) && holdsSplit(entry)),
+      );
+      if (yield* held) {
+        return retry('waiting for the series it was split from');
+      }
+      if (op.splitCheck === true) {
+        const moving = (yield* pendingOpRepo.listAll()).some(
+          (entry) =>
+            entry.kind === 'move' &&
+            entry.accountId === accountId &&
+            entry.eventId === splitOf &&
+            entry.targetCalendarId === splitIn,
+        );
+        if (moving) {
+          return retry('waiting for the series it was split from to move');
+        }
+        const found = yield* Effect.result(
+          client.getEvent({ accountId, calendarId: splitIn, eventId: splitOf }),
+        );
+        if (
+          found._tag === 'Failure' &&
+          found.failure._tag !== 'NotFoundError' &&
+          found.failure._tag !== 'SyncTokenExpiredError'
+        ) {
+          return retry('asking Google about the series it was split from');
+        }
+        const series =
+          found._tag === 'Success' && found.success.status !== 'cancelled'
+            ? mapGcalEvent(found.success, {
+                accountId,
+                calendarId: splitIn,
+                defaultTimeZone: op.payload?.startTimeZone ?? 'UTC',
+                syncedAt: yield* Clock.currentTimeMillis,
+              })
+            : null;
+        if ((yield* transaction(settleSplit(taken, op, series))) !== 'go') {
+          return 'done' as const;
+        }
+      }
+      const now = yield* Clock.currentTimeMillis;
+      return yield* transaction(
+        Effect.gen(function* () {
+          const current = yield* pendingOpRepo.getById(op.id);
+          if (!current) {
+            return 'done' as const;
+          }
+          if (current.splitCheck === true || (yield* held)) {
+            return retry('waiting for the series it was split from');
+          }
+          yield* pendingOpRepo.markDispatched(op.id, now);
+          return undefined;
+        }),
+      );
+    });
+
   const apply = (op: PendingOp): Effect.Effect<ApplyOutcome> =>
     Effect.gen(function* () {
       const guestMode = yield* GuestNotifications;
@@ -1580,6 +1670,10 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         }
         if (op.kind !== 'move' && op.kind !== 'create' && kinds.includes('create')) {
           return retry('waiting for the create ahead of it');
+        }
+        const split = yield* splitGate(op);
+        if (split !== undefined) {
+          return split;
         }
         // A change of the series' rule ahead of an occurrence's: once it
         // lands it forgets the exceptions it drops (`forgetDropped`), so it

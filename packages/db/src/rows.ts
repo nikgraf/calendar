@@ -461,6 +461,10 @@ export interface PendingOpRow {
   readonly task_due: string | null;
   readonly dispatched_at: number | null;
   readonly drops_from: number | null;
+  readonly split_at: number | null;
+  readonly split_check: number;
+  readonly split_in: string | null;
+  readonly split_of: string | null;
   readonly attendees_changed: number;
   readonly geo_cleared: number;
   readonly target_calendar_id: string | null;
@@ -529,6 +533,10 @@ export const pendingOpFromRow = (row: PendingOpRow): PendingOp | undefined =>
         recurrenceCleared: row.recurrence_cleared === 1 ? true : undefined,
         remindersChanged: row.reminders_changed === 1 ? true : undefined,
         serverPayload: decodeOr(EventRecord, parseJson(row.server_payload)),
+        splitAt: row.split_at ?? undefined,
+        splitCheck: row.split_check === 1 ? true : undefined,
+        splitIn: row.split_in ?? undefined,
+        splitOf: row.split_of ?? undefined,
         targetCalendarId: row.target_calendar_id ?? undefined,
         targetTaskListId: row.target_task_list_id ?? undefined,
         taskDue: row.task_due_cleared === 1 ? null : (row.task_due ?? undefined),

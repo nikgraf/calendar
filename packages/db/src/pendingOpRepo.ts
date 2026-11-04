@@ -136,6 +136,8 @@ export interface PendingOpRepoShape {
     readonly calendarId: string;
     readonly eventId: string;
   }) => Effect.Effect<ReadonlyArray<PendingOp>, SqlError>;
+  /** Makes a waiting op due now (what it waited for left the queue); a parked one stays. */
+  readonly makeDue: (opId: string) => Effect.Effect<void, SqlError>;
   /**
    * Parks an op after a 412: the drain skips it until `unpark` or removal.
    * `serverPayload` is Google's version (undefined = deleted on Google).
@@ -152,6 +154,16 @@ export interface PendingOpRepoShape {
     attempts: number,
     nextAttemptAt: number,
     lastError: string,
+  ) => Effect.Effect<void, SqlError>;
+  /**
+   * The series `masterId` moved from calendar `from` to `to` (or a move of
+   * it went back): the creates split off it follow (`splitIn`).
+   */
+  readonly moveSplits: (
+    accountId: string,
+    masterId: string,
+    from: string,
+    to: string,
   ) => Effect.Effect<void, SqlError>;
   /**
    * After a pull page: these events (live, not cancelled) came in, and
@@ -237,6 +249,8 @@ export interface PendingOpRepoShape {
    * guest-list edit's attendees, a guest-list edit in an RSVP's).
    */
   readonly setPayload: (opId: string, payload: EventRecord) => Effect.Effect<void, SqlError>;
+  /** Whether a split-off series' create asks Google before it goes (`splitCheck`). */
+  readonly setSplitCheck: (opId: string, check: boolean) => Effect.Effect<void, SqlError>;
   /**
    * Keep-mine: clears the park and the If-Match etag so the next drain
    * overwrites the server copy, and makes the op due immediately.
@@ -350,7 +364,8 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
                                    carried_text, recurrence_cleared, before_payload,
                                    before_overrides, before_task, before_color_hex,
                                    target_task_list_id, task_parent, task_due_cleared,
-                                   task_previous, drops_from)
+                                   task_previous, drops_from, split_of, split_in,
+                                   split_at, split_check)
           VALUES (${op.id}, ${op.accountId}, ${op.calendarId}, ${op.kind},
                   ${op.eventId},
                   ${op.payload ? JSON.stringify(eventPayloadJson(op.payload)) : null},
@@ -369,7 +384,9 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
                   ${op.beforeTask ? JSON.stringify(taskPayloadJson(op.beforeTask)) : null},
                   ${op.beforeColorHex ?? null}, ${op.targetTaskListId ?? null},
                   ${op.taskParent ?? null}, ${op.taskDue === null ? 1 : 0},
-                  ${op.taskPrevious ?? null}, ${op.dropsFrom ?? null})
+                  ${op.taskPrevious ?? null}, ${op.dropsFrom ?? null},
+                  ${op.splitOf ?? null}, ${op.splitIn ?? null}, ${op.splitAt ?? null},
+                  ${op.splitCheck ? 1 : 0})
         `),
         ),
       getById: (opId) =>
@@ -462,6 +479,13 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
             ORDER BY created_at, rowid`,
           (rows) => rows.flatMap(decodedOps),
         ),
+      makeDue: (opId) =>
+        invalidating(
+          Effect.asVoid(
+            sql`UPDATE pending_ops SET next_attempt_at = 0
+              WHERE id = ${opId} AND conflict_at IS NULL`,
+          ),
+        ),
       markConflict: (opId, at, serverPayload) =>
         invalidating(
           Effect.asVoid(
@@ -481,6 +505,13 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
             sql`UPDATE pending_ops SET attempts = ${attempts},
               next_attempt_at = ${nextAttemptAt}, last_error = ${lastError}
               WHERE id = ${opId}`,
+          ),
+        ),
+      moveSplits: (accountId, masterId, from, to) =>
+        invalidating(
+          Effect.asVoid(
+            sql`UPDATE pending_ops SET split_in = ${to} WHERE account_id = ${accountId}
+              AND split_of = ${masterId} AND split_in = ${from}`,
           ),
         ),
       rememberPulled: (accountId, calendarId, events) =>
@@ -591,6 +622,12 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
           Effect.asVoid(
             sql`UPDATE pending_ops SET payload = ${JSON.stringify(eventPayloadJson(payload))}
               WHERE id = ${opId}`,
+          ),
+        ),
+      setSplitCheck: (opId, check) =>
+        invalidating(
+          Effect.asVoid(
+            sql`UPDATE pending_ops SET split_check = ${check ? 1 : 0} WHERE id = ${opId}`,
           ),
         ),
       unpark: (opId, now) =>

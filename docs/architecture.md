@@ -412,7 +412,9 @@ it whenever a kind is added. Rules that keep the queue correct:
   answer was lost and a backoff let the occurrence's op go first), and an
   exception's delete for one that drops its slot wherever it sits (a
   series edit that replaced the change went to the back of the queue, and
-  the deletes went out ahead of it, past taking back).
+  the deletes went out ahead of it, past taking back), and the create of
+  a series a this-and-following edit split off for the cut of the one it
+  came from (see Recurring model).
   `moveEvent` re-queues pending edits of the series _behind_ the
   move, re-keyed to the destination (a never-sent create simply becomes a
   create there; a sent one stays in the source with the move behind it; a
@@ -614,7 +616,9 @@ it whenever a kind is added. Rules that keep the queue correct:
   after `restoreDropped` below put its copy back; a tombstone keep-mine
   left gives way to that copy, and a copy an answer waits on shows that
   answer again, pending); left, they still cancelled those occurrences
-  on Google. Keep-mine on
+  on Google. The new series of a this-and-following edit goes the same
+  way where Google still has the series uncut (`splitSeries.ts`, see
+  Recurring model). Keep-mine on
   such a delete while the master on the table draws its slot leaves the
   delete's own tombstone there, pending (`takeBackPulled`): with the copy
   gone, the slot showed until a pull. Wherever Google's master is back on
@@ -1034,7 +1038,48 @@ details, or Custom), so a calendar can be shared without the details.
     (COUNT dropped, RDATE values at or after the split pruned), spawn a
     new master (COUNT recomputed from the RRULE line alone,
     `ruleOccurrencesBefore`; or the edit's own rule; `null` makes the
-    occurrence a single event), cancel later overrides.
+    occurrence a single event), cancel later overrides. Google gets the
+    cut and the new series as one change (`splitSeries.ts`): the new
+    master's create names the series it split off, in its calendar, and
+    the occurrence it starts at (`splitOf`, `splitIn`, `splitAt`, kept when
+    edits fold into it; a move of that series takes `splitIn` along, and a
+    move Google never makes takes it back: `moveSplits`) and waits for that
+    series' ops that carry the cut, wherever they sit (`holdsSplit`: an
+    update that drops exceptions, a series delete that replaced it). An
+    event id is its calendar's own: a same-id series elsewhere neither
+    holds nor takes it. A
+    split of a series whose create is unsent folds the cut into that
+    create, which nothing undoes without the series: it names what that
+    one was split from, at the same occurrence, or nothing. Whether the
+    cut was undone, Google says — a discard may meet its request on the
+    way or landed with the answer lost, a rejection's revert may fail,
+    another device may have ended the series. After an undo (a discard or
+    a rejection for good, of the update or of a series delete that
+    replaced it, put back in one transaction) the create asks Google for
+    the series in that calendar before it goes (`splitCheck`,
+    `askSplits`; not while a move of the series is queued: Google has it
+    in the source until that lands), and its rows are hidden at once — the
+    series shows those
+    days itself — to come back as its queued ops wrote them if Google kept
+    the cut (a landed occurrence delete puts no tombstone back).
+    Once the drain is done with the cut, a landing wrote Google's copy to
+    the table, and only a master that is not that, or still draws past the
+    split, has it ask (`releaseSplits`). Either way it is due at once,
+    not after a backoff that grew while the cut waited, and is stamped as
+    sent in one transaction with checking that nothing holds or asks
+    again (`splitGate` in applyOp). Where the series still draws from
+    `splitAt` on (`drawsFrom`: an occurrence found up to its end, or five
+    years on when that cannot be told — a series from decades ago with
+    RDATE lines is too long to enumerate — in widening steps, as five
+    years of an hourly rule overrun the expansion's cap), the cut was
+    undone, and the
+    create goes with it (`settleSplit`): with everything queued for that
+    series, and its rows. No proof (a rule that cannot be read) keeps it. Keep-theirs has Google's copy and decides at once
+    (`dropSplitSeries`).
+    One Google ended before (another device cut it too) shows nothing
+    twice, and stays. A create once sent waits for nothing. Sent ahead of
+    its cut, or left queued, the new series showed those occurrences twice
+    on Google.
   - An instance never carries a rule and a single event does not become a
     series through an update (`RecurringEditUnsupportedError`). The
     all-day switch on an existing series is refused
