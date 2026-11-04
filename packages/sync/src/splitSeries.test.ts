@@ -75,6 +75,14 @@ describe('drawsFrom', () => {
     expect(drawsFrom(since1990('RRULE:FREQ=DAILY'), from)).toBe(true);
   });
 
+  it('finds an hourly series one expansion of five years would overrun', () => {
+    const from = at('2026-07-03T10:00:00Z');
+    expect(drawsFrom(series({ recurrence: ['RRULE:FREQ=HOURLY'] }), from)).toBe(true);
+    expect(
+      drawsFrom(series({ recurrence: ['RRULE:FREQ=HOURLY;UNTIL=20260703T095959Z'] }), from),
+    ).toBe(false);
+  });
+
   it('draws nothing for a deleted series or a single event', () => {
     const from = at('2026-07-03T10:00:00Z');
     expect(drawsFrom(series({ status: 'cancelled' }), from)).toBe(false);

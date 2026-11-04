@@ -114,6 +114,8 @@ const foldIntoCreate = (create: PendingOp, payload: EventRecord) =>
     nextAttemptAt: 0,
     payload,
     splitAt: create.splitAt,
+    splitCheck: create.splitCheck,
+    splitIn: create.splitIn,
     splitOf: create.splitOf,
   });
 
@@ -1655,6 +1657,7 @@ const make: Effect.Effect<
         // Split off a series whose create is unsent (it took the cut in), it
         // is that one's: split off the same series at the same occurrence.
         const splitOf = unsentCreate ? unsentCreate.splitOf : masterId;
+        const splitIn = unsentCreate ? unsentCreate.splitIn : calendarId;
         const splitAt = unsentCreate ? unsentCreate.splitAt : originalStartUtc;
         yield* enqueue(
           new PendingOp({
@@ -1667,7 +1670,7 @@ const make: Effect.Effect<
             kind: 'create',
             nextAttemptAt: 0,
             payload: newMaster,
-            ...(splitOf === undefined ? {} : { splitAt, splitOf }),
+            ...(splitOf === undefined ? {} : { splitAt, splitIn, splitOf }),
           }),
         );
       }),
@@ -1854,6 +1857,8 @@ const make: Effect.Effect<
           yield* enqueue(rekey(op, now + 1));
         }
       }
+      // The series split off it follow it there (splitSeries.ts).
+      yield* pendingOpRepo.moveSplits(accountId, master.id, calendarId, target.calendarId);
     });
 
   const createIn = (provider: 'apple' | 'google', draft: EventDraft) =>

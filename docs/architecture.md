@@ -1040,11 +1040,14 @@ details, or Custom), so a calendar can be shared without the details.
     `ruleOccurrencesBefore`; or the edit's own rule; `null` makes the
     occurrence a single event), cancel later overrides. Google gets the
     cut and the new series as one change (`splitSeries.ts`): the new
-    master's create names the series it split off and the occurrence it
-    starts at (`splitOf`, `splitAt`, kept when edits fold into it) and
-    waits for that series' ops that carry the cut, wherever they sit
-    (`holdsSplit`: an update that drops exceptions, a series delete that
-    replaced it; a same-id series' in another calendar holds it too). A
+    master's create names the series it split off, in its calendar, and
+    the occurrence it starts at (`splitOf`, `splitIn`, `splitAt`, kept when
+    edits fold into it; a move of that series takes `splitIn` along, and a
+    move Google never makes takes it back: `moveSplits`) and waits for that
+    series' ops that carry the cut, wherever they sit (`holdsSplit`: an
+    update that drops exceptions, a series delete that replaced it). An
+    event id is its calendar's own: a same-id series elsewhere neither
+    holds nor takes it. A
     split of a series whose create is unsent folds the cut into that
     create, which nothing undoes without the series: it names what that
     one was split from, at the same occurrence, or nothing. Whether the
@@ -1054,7 +1057,9 @@ details, or Custom), so a calendar can be shared without the details.
     a rejection for good, of the update or of a series delete that
     replaced it, put back in one transaction) the create asks Google for
     the series in that calendar before it goes (`splitCheck`,
-    `askSplits`), and its rows are hidden at once — the series shows those
+    `askSplits`; not while a move of the series is queued: Google has it
+    in the source until that lands), and its rows are hidden at once — the
+    series shows those
     days itself — to come back as its queued ops wrote them if Google kept
     the cut (a landed occurrence delete puts no tombstone back).
     Once the drain is done with the cut, a landing wrote Google's copy to
@@ -1065,7 +1070,9 @@ details, or Custom), so a calendar can be shared without the details.
     again (`splitGate` in applyOp). Where the series still draws from
     `splitAt` on (`drawsFrom`: an occurrence found up to its end, or five
     years on when that cannot be told — a series from decades ago with
-    RDATE lines is too long to enumerate), the cut was undone, and the
+    RDATE lines is too long to enumerate — in widening steps, as five
+    years of an hourly rule overrun the expansion's cap), the cut was
+    undone, and the
     create goes with it (`settleSplit`): with everything queued for that
     series, and its rows. No proof (a rule that cannot be read) keeps it. Keep-theirs has Google's copy and decides at once
     (`dropSplitSeries`).

@@ -382,18 +382,28 @@ describe('PendingOpRepo', () => {
     Effect.gen(function* () {
       const repo = yield* PendingOpRepo;
       yield* repo.enqueue(
-        op('split', { eventId: 'm2', kind: 'create', splitAt: 1234, splitOf: 'm1' }),
+        op('split', { eventId: 'm2', kind: 'create', splitAt: 1234, splitIn: 'c1', splitOf: 'm1' }),
       );
       yield* repo.enqueue(op('plain', { eventId: 'm3', kind: 'create' }));
       const split = yield* repo.getById('split');
-      expect([split?.splitOf, split?.splitAt, split?.splitCheck]).toEqual(['m1', 1234, undefined]);
+      expect([split?.splitOf, split?.splitIn, split?.splitAt, split?.splitCheck]).toEqual([
+        'm1',
+        'c1',
+        1234,
+        undefined,
+      ]);
       const plain = yield* repo.getById('plain');
       expect([plain?.splitOf, plain?.splitAt]).toEqual([undefined, undefined]);
 
-      yield* repo.setSplitCheck('split', 'cal-1');
-      expect((yield* repo.getById('split'))?.splitCheck).toBe('cal-1');
-      yield* repo.setSplitCheck('split', undefined);
+      yield* repo.setSplitCheck('split', true);
+      expect((yield* repo.getById('split'))?.splitCheck).toBe(true);
+      yield* repo.setSplitCheck('split', false);
       expect((yield* repo.getById('split'))?.splitCheck).toBeUndefined();
+
+      yield* repo.moveSplits('acc-1', 'm1', 'c1', 'c2');
+      expect((yield* repo.getById('split'))?.splitIn).toBe('c2');
+      yield* repo.moveSplits('acc-1', 'm1', 'c1', 'c3');
+      expect((yield* repo.getById('split'))?.splitIn).toBe('c2');
     }).pipe(Effect.provide(freshDbLayer())),
   );
 

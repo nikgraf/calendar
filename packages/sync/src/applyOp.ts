@@ -39,7 +39,7 @@ import {
 import { Cause, Clock, Effect } from 'effect';
 import type { SqlError } from 'effect/sql/SqlError';
 import { restoreCarriedText } from './carriedText.ts';
-import { askSplits, holdsSplit, settleSplit } from './splitSeries.ts';
+import { askSplits, holdsSplit, ofSplitSeries, settleSplit } from './splitSeries.ts';
 import {
   drawsSlot,
   dropChangeDeletes,
@@ -986,6 +986,8 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
           yield* eventRepo.deleteEvent(accountId, destination, row.id);
           yield* eventRepo.upsertMany([new EventRecord({ ...row, calendarId: source })]);
         }
+        // The series split off it point back at it there (splitSeries.ts).
+        yield* pendingOpRepo.moveSplits(accountId, masterId, destination, source);
       }
       const others = (yield* pendingOpRepo.listAll()).filter(
         (queued) => queued.id !== op.id && queued.accountId === accountId,
@@ -1520,25 +1522,40 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
    * queued and nothing holds it or asks again: keep-theirs or an undo of
    * the cut committed after the checks found it unsent, and dropped it
    * while it went. One sent already waits for nothing: it may be there.
+   * While a move of the series is queued it does not ask: Google has the
+   * series in the source until the move lands, and in the destination it
+   * found nothing.
    */
   const splitGate = (op: PendingOp): Effect.Effect<ApplyOutcome | undefined, SqlError> =>
     Effect.gen(function* () {
-      const { accountId, splitOf } = op;
-      if (op.kind !== 'create' || splitOf === undefined || op.dispatchedAt !== undefined) {
+      const { accountId, splitIn, splitOf } = op;
+      if (
+        op.kind !== 'create' ||
+        splitOf === undefined ||
+        splitIn === undefined ||
+        op.dispatchedAt !== undefined
+      ) {
         return undefined;
       }
       const held = Effect.map(pendingOpRepo.listAll(), (queued) =>
-        queued.some(
-          (entry) =>
-            entry.accountId === accountId && entry.eventId === splitOf && holdsSplit(entry),
-        ),
+        queued.some((entry) => ofSplitSeries(op, entry) && holdsSplit(entry)),
       );
       if (yield* held) {
         return retry('waiting for the series it was split from');
       }
-      if (op.splitCheck !== undefined) {
+      if (op.splitCheck === true) {
+        const moving = (yield* pendingOpRepo.listAll()).some(
+          (entry) =>
+            entry.kind === 'move' &&
+            entry.accountId === accountId &&
+            entry.eventId === splitOf &&
+            entry.targetCalendarId === splitIn,
+        );
+        if (moving) {
+          return retry('waiting for the series it was split from to move');
+        }
         const found = yield* Effect.result(
-          client.getEvent({ accountId, calendarId: op.splitCheck, eventId: splitOf }),
+          client.getEvent({ accountId, calendarId: splitIn, eventId: splitOf }),
         );
         if (
           found._tag === 'Failure' &&
@@ -1551,7 +1568,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
           found._tag === 'Success' && found.success.status !== 'cancelled'
             ? mapGcalEvent(found.success, {
                 accountId,
-                calendarId: op.splitCheck,
+                calendarId: splitIn,
                 defaultTimeZone: op.payload?.startTimeZone ?? 'UTC',
                 syncedAt: yield* Clock.currentTimeMillis,
               })
@@ -1567,7 +1584,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
           if (!current) {
             return 'done' as const;
           }
-          if (current.splitCheck !== undefined || (yield* held)) {
+          if (current.splitCheck === true || (yield* held)) {
             return retry('waiting for the series it was split from');
           }
           yield* pendingOpRepo.markDispatched(op.id, now);
