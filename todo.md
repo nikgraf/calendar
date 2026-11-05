@@ -114,8 +114,11 @@ The 2026-10-02 review's findings are closed in `docs/decisions.md`
       icon included); an "Install `solunivo` on PATH" button (the wrapper
       already resolves symlinks); undo for an agent's write from the
       activity list; grants on calendars hidden in the app (range reads
-      filter on `is_visible`, so today hidden = `none`); an event
-      `transparency` field so "free" timed events stop counting as busy;
+      filter on `is_visible`, so today hidden = `none`); an Apple event
+      marked free still counts as busy in free/busy and slots (Google's
+      are skipped since #197; the Apple bridge does not read EventKit's
+      `availability`, one fix with the mirrors entry; the app's own
+      find-a-time counts them the same way);
       a Swift relay in place of the TS one so the RunAsNode fuse can be
       flipped (`@electron/fuses`); moves and conversions as tools;
       MCP `subscriptions/listen` fed by the invalidation bus; access from
