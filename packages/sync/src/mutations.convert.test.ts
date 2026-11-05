@@ -813,8 +813,10 @@ describe('convertEventToTask', () => {
         expect(created.title).toBe('Run');
         expect(reminders.state.reminders.size).toBe(2);
         expect(apple.state.series.get('ek-series')?.deleted.has(slot)).toBe(true);
-        // One read decides the conversion; its delete does not look again.
+        // One read decides the conversion; its delete does not look again,
+        // and is still sent (Calendar.app's, then the conversion's own).
         expect(reads).toBe(1);
+        expect(apple.state.calls.filter((call) => call === 'delete')).toHaveLength(2);
       }).pipe(noYield, Effect.provide(testLayer(raced, reminders.client)));
     },
   );
