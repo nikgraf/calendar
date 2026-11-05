@@ -24,6 +24,7 @@ import { appleCalendarServicesLayer } from '../appleCalendarEvents.ts';
 import { SyncEngine } from '../engine.ts';
 import { EventMutations } from '../mutations.ts';
 import {
+  checkedRunTag,
   createCalendar,
   createTaskList,
   deleteCalendar,
@@ -113,7 +114,7 @@ export const liveGoogleConfigFromEnv = (): LiveGoogleConfig => {
   if (!refreshToken || !email || !clientId) {
     throw new Error(SETUP_HINT);
   }
-  const runTag = process.env['GOOGLE_LIVE_RUN_TAG'] || `local-${process.pid}`;
+  const runTag = checkedRunTag(process.env['GOOGLE_LIVE_RUN_TAG'] || `local-${process.pid}`);
   return {
     clientId,
     clientSecret: clientSecret || undefined,
@@ -220,8 +221,12 @@ export interface LiveScratchShape {
     eventId: string,
     event: Record<string, unknown>,
   ) => Effect.Effect<LiveEvent, ScratchError>;
-  /** Removes scratch calendars/lists older than `maxAgeMs` (a crashed run's leftovers). */
+  /**
+   * Removes scratch calendars/lists older than `maxAgeMs` (a crashed run's
+   * leftovers), and fails unless the token signs in as `email`.
+   */
   readonly sweep: (options: {
+    readonly email: string;
     readonly maxAgeMs: number;
   }) => Effect.Effect<{ readonly calendars: number; readonly lists: number }, ScratchError>;
 }

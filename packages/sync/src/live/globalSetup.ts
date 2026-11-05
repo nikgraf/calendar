@@ -32,11 +32,12 @@ declare module 'vitest' {
 
 const SWEEP_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 
-export default async function setup(project: TestProject): Promise<() => Promise<void>> {
+const prepare = async (project: TestProject): Promise<() => Promise<void>> => {
   const config = liveGoogleConfigFromEnv();
   const token = () => mintAccessToken(config);
   const first = await token();
-  await sweep(first, { maxAgeMs: SWEEP_MAX_AGE_MS });
+  // Before anything is created: a token for another account stops the run here.
+  await sweep(first, { email: config.email, maxAgeMs: SWEEP_MAX_AGE_MS });
   const created: { calendars: Array<string>; lists: Array<string> } = { calendars: [], lists: [] };
   const cleanUp = async () => {
     // A fresh token: the run may have outlived the first one.
@@ -64,4 +65,17 @@ export default async function setup(project: TestProject): Promise<() => Promise
     lists: [created.lists[0]!, created.lists[1]!],
   });
   return cleanUp;
+};
+
+export default async function setup(project: TestProject): Promise<() => Promise<void>> {
+  try {
+    return await prepare(project);
+  } catch (error) {
+    // vitest 5.0.5 dies while printing an error thrown here ("code.charCodeAt
+    // is not a function"), so the reason (missing config, a token for
+    // another account, an odd run tag) would never be read.
+    // eslint-disable-next-line no-console -- the only place the reason is printed
+    console.error(`live setup failed: ${error instanceof Error ? error.message : String(error)}`);
+    throw error;
+  }
 }

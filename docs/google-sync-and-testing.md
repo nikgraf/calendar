@@ -571,7 +571,8 @@ guest-side RSVP (needs a second account).
   (`EXPO_PUBLIC_CALENDAR_GOOGLE_LIVE_CLIENT_ID/SECRET`).
 - **Isolation.** Every run gets its own scratch calendars and task lists,
   named `e2e-<unixSeconds>-<runTag>[-suffix]` (`GOOGLE_LIVE_RUN_TAG` —
-  `gh-<run>-<attempt>` on CI, `local-<pid>` locally), **one set per job**
+  `gh-<run>-<attempt>` on CI, `local-<pid>` locally; a run under any
+  other tag is refused before it creates anything), **one set per job**
   (Google caps calendar creation per day): the Node job's
   `live/globalSetup.ts` creates two calendars and two lists once and
   hands them to every file (`inject('liveScratch')`), the desktop spec
@@ -580,7 +581,14 @@ guest-side RSVP (needs a second account).
   it tests. Each job deletes its set at the end and first sweeps anything
   older than six hours that a crashed run left behind (`sweep`). Titles
   carry `live-<runTag>-…`; tests assert on their own ids and never touch
-  the primary calendar. Guests are `guest-<runTag>@example.com` and every
+  the primary calendar. The sweep deletes by name, so it is guarded
+  twice. It first asks Google which account the token signs in as (OpenID
+  userinfo, the claim `google-live-token.mjs` took the address from) and
+  fails unless that is `GOOGLE_LIVE_EMAIL`; every job sweeps before it
+  creates or writes, so a token for another account stops the run there.
+  And it knows a name only in a run's exact shape: a calendar someone
+  called `e2e-2024-notes` and a task called `live-stream prep` stay.
+  Guests are `guest-<runTag>@example.com` and every
   write with guests goes out with `sendUpdates=none`: `GuestNotifications`
   (`packages/google`, a `Context.Reference` defaulting to `'all'`) is
   `'none'` in the live layers only.

@@ -23,6 +23,7 @@ import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  checkedRunTag,
   createCalendar,
   createTaskList,
   deleteCalendar,
@@ -84,7 +85,7 @@ const config = () => {
     clientSecret: clientSecret || undefined,
     email,
     refreshToken,
-    runTag: process.env['GOOGLE_LIVE_RUN_TAG'] || `local-${process.pid}`,
+    runTag: checkedRunTag(process.env['GOOGLE_LIVE_RUN_TAG'] || `local-${process.pid}`),
   };
 };
 
@@ -94,7 +95,8 @@ const setup = async (): Promise<void> => {
   const live = config();
   const suffix = flags.get('suffix') ?? 'ios';
   const token = await mintAccessToken(live);
-  const swept = await sweep(token, { maxAgeMs: SWEEP_MAX_AGE_MS });
+  // Before anything is created: a token for another account stops the run here.
+  const swept = await sweep(token, { email: live.email, maxAgeMs: SWEEP_MAX_AGE_MS });
   console.error(`swept ${swept.calendars} stale calendars, ${swept.lists} stale lists`);
   const calendarName = scratchName(live.runTag, suffix);
   const listName = scratchName(live.runTag, `${suffix}-tasks`);

@@ -14,12 +14,24 @@
 const CALENDAR_BASE = 'https://www.googleapis.com/calendar/v3';
 const TASKS_BASE = 'https://tasks.googleapis.com/tasks/v1';
 const TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
+const USERINFO_ENDPOINT = 'https://openidconnect.googleapis.com/v1/userinfo';
 
 /** The full Calendar scope: `calendars.insert`/`delete` need it. */
 export const LIVE_CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar';
 
+/**
+ * A run's tag: `gh-<run>-<attempt>` on CI, `local-<pid>` on a developer's
+ * Mac. The sweep deletes by name, so a name is a run's only in this exact
+ * shape: a calendar someone called `e2e-2024-notes` or a task called
+ * `live-stream prep` is not.
+ */
+const RUN_TAG = String.raw`(?:gh-\d+-\d+|local-\d+)`;
+const RUN_TAG_ONLY = new RegExp(`^${RUN_TAG}$`);
 /** Every scratch resource is named `e2e-<unixSeconds>-<runTag>[-suffix]`. */
 const SCRATCH_PREFIX = 'e2e-';
+const SCRATCH_NAME = new RegExp(String.raw`^e2e-(\d{10})-(${RUN_TAG})(?:-[a-z0-9]+)*$`);
+/** Every title a run writes starts `live-<runTag>-`. */
+const LIVE_TITLE = new RegExp(`^live-${RUN_TAG}-`);
 
 export interface LiveOAuth {
   readonly clientId: string;
@@ -99,15 +111,43 @@ export interface LiveTaskList {
   readonly title?: string;
 }
 
-export const scratchName = (runTag: string, suffix?: string): string =>
-  `${SCRATCH_PREFIX}${Math.floor(Date.now() / 1000)}-${runTag}${suffix ? `-${suffix}` : ''}`;
+/**
+ * `tag` if it has a run tag's shape. A run under any other tag is refused
+ * before it creates anything: the sweep would never know its leftovers,
+ * and each leaked calendar counts against Google's daily creation cap.
+ */
+export const checkedRunTag = (tag: string): string => {
+  if (!RUN_TAG_ONLY.test(tag)) {
+    throw new Error(
+      `GOOGLE_LIVE_RUN_TAG must be gh-<run>-<attempt> or local-<pid>, not "${tag}": ` +
+        'the sweep knows a run by that shape',
+    );
+  }
+  return tag;
+};
 
+export const scratchName = (runTag: string, suffix?: string): string => {
+  const tag = checkedRunTag(runTag);
+  const name = `${SCRATCH_PREFIX}${Math.floor(Date.now() / 1000)}-${tag}${suffix ? `-${suffix}` : ''}`;
+  if (!SCRATCH_NAME.test(name)) {
+    throw new Error(
+      `the scratch suffix "${suffix}" must be lowercase letters and digits, in parts joined ` +
+        'by dashes: the sweep knows a scratch name by that shape',
+    );
+  }
+  return name;
+};
+
+/** A scratch name's parts, `null` for anything `scratchName` did not make. */
 export const parseScratchName = (
   name: string | undefined,
 ): { readonly createdAt: number; readonly runTag: string } | null => {
-  const match = /^e2e-(\d+)-(.+)$/.exec(name ?? '');
+  const match = SCRATCH_NAME.exec(name ?? '');
   return match ? { createdAt: Number(match[1]) * 1000, runTag: match[2]! } : null;
 };
+
+/** Whether a run wrote this title (`live-<runTag>-…`). */
+export const isLiveTitle = (title: string | undefined): boolean => LIVE_TITLE.test(title ?? '');
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -251,15 +291,46 @@ export const listTaskLists = async (token: string): Promise<ReadonlyArray<LiveTa
 };
 
 /**
+ * The address the token signs in as (OpenID userinfo: the suites' tokens
+ * carry the `email` scope, and `google-live-token.mjs` took
+ * `GOOGLE_LIVE_EMAIL` from the same claim).
+ */
+export const tokenEmail = async (token: string): Promise<string | undefined> => {
+  const info = await withRateLimitRetry(() =>
+    request<{ readonly email?: string } | undefined>(token, 'GET', USERINFO_ENDPOINT),
+  );
+  return info?.email;
+};
+
+const sameAddress = (a: string, b: string): boolean =>
+  a.trim().toLowerCase() === b.trim().toLowerCase();
+
+/**
  * Deletes every scratch calendar and task list older than `maxAgeMs` —
  * what a crashed or cancelled run left behind. Younger ones may belong to
  * a run still in flight (a local run overlapping CI), so they stay.
  * Per-item failures are swallowed: a sweep must never fail the suite.
+ *
+ * It deletes by name, which is only safe in the account the names were
+ * made in: a token that does not sign in as `email` (the live test
+ * account) is refused before anything is listed. Every job sweeps before
+ * it creates or writes, so such a run stops there.
  */
 export const sweep = async (
   token: string,
-  options: { readonly maxAgeMs: number; readonly now?: number },
+  options: { readonly email: string; readonly maxAgeMs: number; readonly now?: number },
 ): Promise<{ readonly calendars: number; readonly lists: number }> => {
+  const signedInAs = await tokenEmail(token);
+  if (signedInAs === undefined || !sameAddress(signedInAs, options.email)) {
+    // Neither address is named: this lands in CI logs.
+    throw new Error(
+      (signedInAs === undefined
+        ? 'Google names no address for the live refresh token'
+        : 'the live refresh token does not sign in as GOOGLE_LIVE_EMAIL') +
+        ': nothing was deleted. Mint both again, signed in as the live test account ' +
+        '(`node scripts/google-live-token.mjs --write`).',
+    );
+  }
   const cutoff = (options.now ?? Date.now()) - options.maxAgeMs;
   const stale = (name: string | undefined): boolean => {
     const parsed = parseScratchName(name);
@@ -289,11 +360,11 @@ export const sweep = async (
     }
     // A run's task that landed outside its scratch list (a UI flow whose
     // list pick missed) would otherwise stay forever: tasks titled
-    // `live-…` in the account's own lists go once they are stale too.
+    // `live-<runTag>-…` in the account's own lists go once they are stale too.
     try {
       for (const task of await listTasks(token, list.id)) {
         const updated = Date.parse(task.updated ?? '');
-        if (!task.deleted && task.title?.startsWith('live-') && updated < cutoff) {
+        if (!task.deleted && isLiveTitle(task.title) && updated < cutoff) {
           await deleteTask(token, list.id, task.id).catch(() => undefined);
         }
       }
