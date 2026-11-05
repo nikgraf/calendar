@@ -285,8 +285,10 @@ const ruleProduces = (master: EventRecord, originalStartUtc: number): boolean =>
  * its slot, but a write to it alone or to it and the following ones names
  * it by that slot, and the bridge looks `APPLE_WRITE_REACH_MS` around it.
  * Further off the update would fail and the delete would find nothing to
- * delete — after the user may have approved it. A series-wide write names
- * the series by its id and reaches it wherever the occurrence sits.
+ * delete — after the user may have approved it. A series-wide write does
+ * not go by this occurrence's slot (the delete names the series by its
+ * id, the update writes the series' first occurrence), so where this one
+ * sits does not matter to it.
  */
 export const resolveEvent = (
   directory: Directory,

@@ -776,6 +776,49 @@ describe('convertEventToTask', () => {
     },
   );
 
+  it.effect(
+    'an Apple occurrence deleted elsewhere while it converts leaves a finished conversion',
+    () => {
+      const apple = appleFake([appleSeries]);
+      const reminders = remindersFake();
+      const slot = base + WEEK;
+      // Calendar.app removes the occurrence right after the conversion read it.
+      let reads = 0;
+      const raced = {
+        ...apple,
+        client: {
+          ...apple.client,
+          events: (range: { readonly endUtc: number; readonly startUtc: number }) =>
+            Effect.tap(apple.client.events(range), () => {
+              reads += 1;
+              return Effect.ignore(
+                apple.client.delete({
+                  ref: { id: 'ek-series', originalStartUtc: slot },
+                  span: 'thisEvent',
+                }),
+              );
+            }),
+        },
+      };
+      return Effect.gen(function* () {
+        yield* seed;
+        // The task exists and the occurrence is gone: that is the conversion,
+        // not a failure to report after the copy was made.
+        const created = yield* toTask(
+          [APPLE_CAL, 'ek-home', 'ek-series'],
+          [APPLE_REM, 'list-a'],
+          { dueDate: day.toString(), title: 'Run' },
+          slot,
+        );
+        expect(created.title).toBe('Run');
+        expect(reminders.state.reminders.size).toBe(2);
+        expect(apple.state.series.get('ek-series')?.deleted.has(slot)).toBe(true);
+        // One read decides the conversion; its delete does not look again.
+        expect(reads).toBe(1);
+      }).pipe(noYield, Effect.provide(testLayer(raced, reminders.client)));
+    },
+  );
+
   it.effect("a series converts as a whole; an occurrence's own id names no source", () => {
     const apple = appleFake();
     const reminders = remindersFake();

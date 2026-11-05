@@ -124,10 +124,11 @@ the following ones names it by its slot, and the bridge finds it 31 days
 either side (`APPLE_WRITE_REACH_MS`). EventKit keeps an occurrence moved
 further and `list_events` still returns it, but such a write is NotFound:
 the update would fail and the delete would remove nothing. A `series`
-write names the series by its id; it looks 400 days around the slot, for
-the occurrence and the series' other exceptions. A made-up slot is
-NotFound; a write can neither invent an exception nor answer "done" for
-nothing.
+write does not go by this occurrence's slot (the delete names the series
+by its id, the update writes the series' first occurrence), so it looks
+400 days around the slot, for the occurrence and the series' other
+exceptions. A made-up slot is NotFound; a write can neither invent an
+exception nor answer "done" for nothing.
 
 A change with scope `series` or `following` starts from the occurrence's
 **slot**, not from a moved exception's own times (the series mutation
