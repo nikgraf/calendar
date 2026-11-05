@@ -114,10 +114,9 @@ The 2026-10-02 review's findings are closed in `docs/decisions.md`
       icon included); an "Install `solunivo` on PATH" button (the wrapper
       already resolves symlinks); undo for an agent's write from the
       activity list; grants on calendars hidden in the app (range reads
-      filter on `is_visible`, so today hidden = `none`); an event
-      `transparency` field so "free" timed events stop counting as busy;
-      a Swift relay in place of the TS one so the RunAsNode fuse can be
-      flipped (`@electron/fuses`); moves and conversions as tools;
+      filter on `is_visible`, so today hidden = `none`); a Swift relay in
+      place of the TS one so the RunAsNode fuse can be flipped
+      (`@electron/fuses`); moves and conversions as tools;
       MCP `subscriptions/listen` fed by the invalidation bus; access from
       another machine (needs real transport auth — out of scope so far).
       Manual checks still open: a real Hermes/OpenClaw session, the relay
