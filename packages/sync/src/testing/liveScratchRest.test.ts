@@ -28,9 +28,17 @@ interface FakeAccount {
 const json = (body: unknown): Response =>
   new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
 
-/** Google as the sweep sees it: answers its reads and records every request. */
-const fakeGoogle = (account: FakeAccount) => {
+/**
+ * Google as the sweep sees it: answers its reads and records every
+ * request. `userinfoFailures` are what the first account reads get
+ * instead: a status, or no answer at all.
+ */
+const fakeGoogle = (
+  account: FakeAccount,
+  userinfoFailures: ReadonlyArray<number | 'no answer'> = [],
+) => {
   const requests: Array<string> = [];
+  const failures = [...userinfoFailures];
   vi.stubGlobal('fetch', (input: string | URL, init?: RequestInit): Promise<Response> => {
     const url = new URL(String(input));
     const method = init?.method ?? 'GET';
@@ -39,6 +47,13 @@ const fakeGoogle = (account: FakeAccount) => {
       return Promise.resolve(new Response(null, { status: 204 }));
     }
     if (url.pathname.endsWith('/userinfo')) {
+      const failure = failures.shift();
+      if (failure === 'no answer') {
+        return Promise.reject(new TypeError('fetch failed'));
+      }
+      if (failure !== undefined) {
+        return Promise.resolve(new Response('{}', { status: failure }));
+      }
       return Promise.resolve(json(account.email === undefined ? {} : { email: account.email }));
     }
     if (url.pathname.endsWith('/users/me/calendarList')) {
@@ -112,11 +127,16 @@ describe('live scratch sweep', () => {
 
   it('the refusal names neither address', async () => {
     fakeGoogle({ ...account, email: 'someone-else@example.com' });
-    const message = await sweep('token', { email: LIVE, maxAgeMs: MAX_AGE, now: NOW }).then(
-      () => '',
-      String,
+    const refusal: unknown = await sweep('token', {
+      email: LIVE,
+      maxAgeMs: MAX_AGE,
+      now: NOW,
+    }).then(
+      () => undefined,
+      (error: unknown) => error,
     );
-    expect(message).not.toContain('@example.com');
+    expect(refusal).toBeInstanceOf(Error);
+    expect(String(refusal)).not.toContain('@example.com');
   });
 
   it('a token Google names no address for is refused too', async () => {
@@ -125,6 +145,28 @@ describe('live scratch sweep', () => {
       /names no address/,
     );
     expect(google.deleted()).toEqual([]);
+  });
+
+  it('an account read Google did not answer is tried again; one it refused is not', async () => {
+    vi.useFakeTimers();
+    try {
+      const google = fakeGoogle({ ...account, calendars: [], lists: [] }, [503, 'no answer']);
+      const swept = sweep('token', { email: LIVE, maxAgeMs: MAX_AGE, now: NOW });
+      await vi.runAllTimersAsync();
+      expect(await swept).toEqual({ calendars: 0, lists: 0 });
+      expect(google.requests.filter((line) => line.endsWith('/userinfo'))).toHaveLength(3);
+
+      const refused = fakeGoogle(account, [401]);
+      const failed = sweep('token', { email: LIVE, maxAgeMs: MAX_AGE, now: NOW }).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      await vi.runAllTimersAsync();
+      expect(String(await failed)).toContain('Google answered 401');
+      expect(refused.requests).toEqual(['GET openidconnect.googleapis.com/v1/userinfo']);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('the live account loses only what a run named and left behind', async () => {

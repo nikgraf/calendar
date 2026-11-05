@@ -201,13 +201,20 @@ const request = async <A>(
   return (text ? JSON.parse(text) : undefined) as A;
 };
 
+/** Throttled, a 5xx, or no answer at all: nothing Google decided. */
+const isTransient = (error: unknown): boolean =>
+  isRateLimited(error) || !(error instanceof LiveScratchError) || error.status >= 500;
+
 /** Google throttles secondary-calendar creation: back off a few times before giving up. */
-const withRateLimitRetry = async <A>(run: () => Promise<A>): Promise<A> => {
+const withRateLimitRetry = async <A>(
+  run: () => Promise<A>,
+  retryable: (error: unknown) => boolean = isRateLimited,
+): Promise<A> => {
   for (let attempt = 0; ; attempt++) {
     try {
       return await run();
     } catch (error) {
-      if (attempt >= 5 || !isRateLimited(error)) {
+      if (attempt >= 5 || !retryable(error)) {
         throw error;
       }
       await sleep(1000 * 2 ** attempt);
@@ -293,11 +300,14 @@ export const listTaskLists = async (token: string): Promise<ReadonlyArray<LiveTa
 /**
  * The address the token signs in as (OpenID userinfo: the suites' tokens
  * carry the `email` scope, and `google-live-token.mjs` took
- * `GOOGLE_LIVE_EMAIL` from the same claim).
+ * `GOOGLE_LIVE_EMAIL` from the same claim). Every job starts with this
+ * one read, so a 5xx or a dropped connection is tried again: a blip here
+ * would otherwise fail a whole nightly job before it began.
  */
 export const tokenEmail = async (token: string): Promise<string | undefined> => {
-  const info = await withRateLimitRetry(() =>
-    request<{ readonly email?: string } | undefined>(token, 'GET', USERINFO_ENDPOINT),
+  const info = await withRateLimitRetry(
+    () => request<{ readonly email?: string } | undefined>(token, 'GET', USERINFO_ENDPOINT),
+    isTransient,
   );
   return info?.email;
 };
@@ -309,7 +319,8 @@ const sameAddress = (a: string, b: string): boolean =>
  * Deletes every scratch calendar and task list older than `maxAgeMs` —
  * what a crashed or cancelled run left behind. Younger ones may belong to
  * a run still in flight (a local run overlapping CI), so they stay.
- * Per-item failures are swallowed: a sweep must never fail the suite.
+ * A delete that fails is left for the next sweep and never fails the
+ * suite; the account check and the listings do.
  *
  * It deletes by name, which is only safe in the account the names were
  * made in: a token that does not sign in as `email` (the address the run

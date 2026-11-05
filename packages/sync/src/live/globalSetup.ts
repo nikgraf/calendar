@@ -74,8 +74,12 @@ export default async function setup(project: TestProject): Promise<() => Promise
     // vitest 5.0.5 dies while printing an error thrown here ("code.charCodeAt
     // is not a function"), so the reason (missing config, a token for
     // another account, an odd run tag) would never be read.
+    // With the cause: a failed fetch says only "fetch failed" without it.
+    const reason = error instanceof Error ? error.message : String(error);
+    const cause =
+      error instanceof Error && error.cause !== undefined ? ` (${String(error.cause)})` : '';
     // eslint-disable-next-line no-console -- the only place the reason is printed
-    console.error(`live setup failed: ${error instanceof Error ? error.message : String(error)}`);
+    console.error(`live setup failed: ${reason}${cause}`);
     throw error;
   }
 }
