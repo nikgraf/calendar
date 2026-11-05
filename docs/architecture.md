@@ -1432,7 +1432,11 @@ gateway carries all of it. Details, limits and the threat model:
   Notices (`NoticeStack`: failed write, discarded
   change, conflict banner) stack in one column inside the grid's area.
   Every editor write runs through one slot (`useOneWrite`); deletes ask
-  first. `lastView` and `sidebarCollapsed` are device taste in the view
+  first. An async action outside the editors (a Settings save, a delete
+  dialog, an import) runs on the same slot helper through `useAction`
+  (`packages/app-state/src/action.ts`), which also holds its outcome as
+  one value: idle, running, failed with its line, or done with what the
+  task returned. `lastView` and `sidebarCollapsed` are device taste in the view
   preferences, read before the first paint.
 - **iOS shell** (`apps/ios/app/`, expo-router): `_layout.tsx` mounts the
   providers, the editor host and a native stack with the tab bar
