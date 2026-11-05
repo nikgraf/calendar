@@ -108,8 +108,9 @@ describe('runAction', () => {
       .then(() => {
         secondOver = true;
       });
-    // Not over while the first still runs: code after `await run()` waits for it.
-    await Promise.resolve();
+    // Not over while the first still runs, however long: code after
+    // `await run()` waits for it.
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(secondOver).toBe(false);
     first.resolve('first');
     await Promise.all([running, second]);
@@ -119,6 +120,29 @@ describe('runAction', () => {
       { kind: 'idle' },
       { kind: 'running' },
       { kind: 'done', value: 'first' },
+    ]);
+  });
+
+  it('a run asked for from the task’s own synchronous start is turned away too', async () => {
+    const action = harness<string>();
+    const outer = deferred<string>();
+    let inner = false;
+    const running = action.run(() => {
+      void action.run(() => {
+        inner = true;
+        return Promise.resolve('inner');
+      });
+      return outer.promise;
+    });
+    // One run, still under way: the inner call neither started nor ended it.
+    expect(inner).toBe(false);
+    expect(action.state()).toEqual({ kind: 'running' });
+    outer.resolve('outer');
+    await running;
+    expect(action.seen).toEqual([
+      { kind: 'idle' },
+      { kind: 'running' },
+      { kind: 'done', value: 'outer' },
     ]);
   });
 

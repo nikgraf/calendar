@@ -15,9 +15,10 @@ import { describe, expect, it } from 'vite-plus/test';
 const ROOT = join(import.meta.dirname, '..', '..', '..');
 const UI = ['apps/desktop/renderer', 'apps/ios/app', 'apps/ios/src', 'packages/app-state/src'];
 
-// Names that only ever mean "in flight" or "what went wrong". `creating`,
-// `deleting` and the like are left out: here they name an open dialog or
-// its target as often as a run.
+// Names that mean "in flight" and "what the last run left to say" (a
+// `notice` also carries an outcome line). `creating`, `deleting` and the
+// like are left out: here they name an open dialog or its target as often
+// as a run.
 const BUSY = /^(?:busy|connecting|loading|saving|sending|submitting|working)$/;
 const FAILURE = /^(?:error|failure|note|notice|problem)$/;
 
