@@ -16,6 +16,7 @@ import {
 } from './client.ts';
 import {
   APPLE_BATCH_MAX,
+  APPLE_WRITE_REACH_MS,
   type AppleCalendarJson,
   type AppleEventJson,
   type CalendarAuthorization,
@@ -30,7 +31,9 @@ import {
  * expands them with core's expander, so span semantics can be asserted:
  * `thisEvent` detaches one occurrence, `futureEvents` on a later
  * occurrence ends the series there and starts a new one, `futureEvents`
- * on the first occurrence rewrites the whole series.
+ * on the first occurrence rewrites the whole series. A write finds an
+ * occurrence by its slot only as far as the bridge looks
+ * (`APPLE_WRITE_REACH_MS`), while a range read returns it anywhere.
  */
 export interface FakeSeries {
   readonly deleted: Set<number>;
@@ -55,8 +58,6 @@ export interface FakeEventSeed {
   readonly event: AppleEventJson;
   readonly recurrence?: ReadonlyArray<string> | undefined;
 }
-
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 const notFound = (what: string): never => {
   throw new Error(`notFound: ${what}`);
@@ -161,22 +162,22 @@ const truncateAt = (series: FakeSeries, slot: number): void => {
   }
 };
 
-/** The occurrence a ref names, as it currently looks. */
+/**
+ * The occurrence a ref names, as it currently looks — found the way the
+ * bridge finds it: among what overlaps `APPLE_WRITE_REACH_MS` either side
+ * of the slot. One moved further on its own is not found, although a
+ * range read returns it.
+ */
 const occurrence = (series: FakeSeries, ref: OccurrenceRef): AppleEventJson => {
   if (ref.originalStartUtc === undefined || series.rules.length === 0) {
     return series.event;
   }
   const slot = ref.originalStartUtc;
-  const detached = series.detached.get(slot);
-  if (detached) {
-    return detached;
-  }
-  if (series.deleted.has(slot)) {
-    return notFound(`occurrence ${ref.id}@${slot}`);
-  }
-  const [match] = occurrencesOf(series, slot - DAY_MS, slot + DAY_MS).filter(
-    (candidate) => candidate.occurrenceStartUtc === slot,
-  );
+  const match = occurrencesOf(
+    series,
+    slot - APPLE_WRITE_REACH_MS,
+    slot + APPLE_WRITE_REACH_MS,
+  ).find((candidate) => candidate.occurrenceStartUtc === slot);
   return match ?? notFound(`occurrence ${ref.id}@${slot}`);
 };
 
@@ -319,15 +320,16 @@ export const makeFakeAppleCalendarClient = (
     delete: ({ ref, span }) =>
       guard('delete', () => {
         const series = findSeries(ref.id);
-        if (span === 'futureEvents' && isFirst(series, ref)) {
-          state.series.delete(ref.id);
-          return;
-        }
-        if (ref.originalStartUtc === undefined || series.rules.length === 0) {
-          state.series.delete(ref.id);
-          return;
-        }
+        // Like the bridge: the event is found before anything is removed.
         occurrence(series, ref);
+        if (
+          ref.originalStartUtc === undefined ||
+          series.rules.length === 0 ||
+          (span === 'futureEvents' && isFirst(series, ref))
+        ) {
+          state.series.delete(ref.id);
+          return;
+        }
         if (span === 'futureEvents') {
           truncateAt(series, ref.originalStartUtc);
         } else {

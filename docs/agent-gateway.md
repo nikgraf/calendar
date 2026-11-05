@@ -117,10 +117,17 @@ resolve. `moveToListId` is never exposed.
 An occurrence ref must name a real occurrence. Google: a stored
 exception at that slot, or a slot the rule produces (`assembleWindow`);
 a cancelled exception is a deleted occurrence. Apple: the occurrence is
-looked up in EventKit around its slot (±45 days), so one that was moved
-or renamed on its own is edited — and summarized — as it is now. A
-made-up slot is NotFound; a write can neither invent an exception nor
-answer "done" for nothing.
+looked up in EventKit around its slot, so one that was moved or renamed
+on its own is edited — and summarized — as it is now. The lookup reaches
+as far as the write does: a write to the occurrence alone or to it and
+the following ones names it by its slot, and the bridge finds it 31 days
+either side (`APPLE_WRITE_REACH_MS`). EventKit keeps an occurrence moved
+further and `list_events` still returns it, but such a write is NotFound:
+the update would fail and the delete would remove nothing. A `series`
+write names the series by its id; it looks 400 days around the slot, for
+the occurrence and the series' other exceptions. A made-up slot is
+NotFound; a write can neither invent an exception nor answer "done" for
+nothing.
 
 A change with scope `series` or `following` starts from the occurrence's
 **slot**, not from a moved exception's own times (the series mutation

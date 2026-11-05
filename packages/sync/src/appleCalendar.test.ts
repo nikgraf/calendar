@@ -389,6 +389,17 @@ const series = (fake: ReturnType<typeof makeFakeAppleCalendarClient>) =>
     (entry) => entry.title.startsWith('Standup'),
   );
 
+/** The weekly series of `fakeWith`, as a recurring write names it. */
+const standup = {
+  accountId: APPLE_CALENDAR_ACCOUNT_ID,
+  calendarId: 'ek-home',
+  masterId: 'ek-series',
+};
+
+/** How often EventKit was asked to delete. */
+const deletes = (fake: ReturnType<typeof makeFakeAppleCalendarClient>) =>
+  fake.state.calls.filter((call) => call === 'delete').length;
+
 describe('Apple Calendar mutations', () => {
   it.effect('creates in EventKit and returns the final record', () => {
     const fake = fakeWith();
@@ -591,6 +602,84 @@ describe('Apple Calendar mutations', () => {
       });
     }).pipe(Effect.provide(testLayer(fake)));
   });
+
+  it.effect(
+    'deleting an occurrence a write by its slot cannot reach is refused, never counted as done',
+    () => {
+      const fake = fakeWith();
+      return Effect.gen(function* () {
+        yield* connected;
+        const mutations = yield* EventMutations;
+        const slot = seriesStart + 7 * DAY;
+        // Forty days off its slot. The views draw it wherever it sits; the
+        // bridge looks 31 days either side of the slot and answers notFound.
+        yield* mutations.updateRecurring({
+          ...standup,
+          changes: { endUtc: slot + 40 * DAY + HOUR, startUtc: slot + 40 * DAY },
+          originalStartUtc: slot,
+          scope: 'instance',
+        });
+        const drawn = Effect.gen(function* () {
+          const events = yield* (yield* AppleCalendarEvents).eventsInRange(
+            seriesStart - DAY,
+            seriesStart + 90 * DAY,
+          );
+          return events.filter((entry) => entry.originalStartUtc === slot).length;
+        });
+        expect(yield* drawn).toBe(1);
+        for (const scope of ['instance', 'following'] as const) {
+          const refused = yield* Effect.flip(
+            mutations.deleteRecurring({ ...standup, originalStartUtc: slot, scope }),
+          );
+          expect(refused).toMatchObject({ _tag: 'EventNotFoundError', eventId: 'ek-series' });
+        }
+        // Refused before EventKit was asked to remove anything.
+        expect(deletes(fake)).toBe(0);
+        expect(yield* drawn).toBe(1);
+        // The series as a whole is named by its id alone and still goes.
+        yield* mutations.deleteRecurring({ ...standup, originalStartUtc: slot, scope: 'series' });
+        expect(fake.state.series.has('ek-series')).toBe(false);
+      }).pipe(Effect.provide(testLayer(fake)));
+    },
+  );
+
+  it.effect(
+    'an occurrence deleted elsewhere is not found; one that goes mid-delete is done',
+    () => {
+      const fake = fakeWith();
+      const slot = seriesStart + 7 * DAY;
+      const elsewhere = fake.client.delete({
+        ref: { id: 'ek-series', originalStartUtc: slot },
+        span: 'thisEvent',
+      });
+      // Calendar.app removes the occurrence right after the read that found it.
+      let racing = false;
+      const raced: AppleCalendarClientShape = {
+        ...fake.client,
+        events: (range) =>
+          Effect.tap(fake.client.events(range), () =>
+            racing ? Effect.ignore(elsewhere) : Effect.void,
+          ),
+      };
+      return Effect.gen(function* () {
+        yield* connected;
+        const mutations = yield* EventMutations;
+        racing = true;
+        yield* mutations.deleteRecurring({ ...standup, originalStartUtc: slot, scope: 'instance' });
+        racing = false;
+        // Calendar.app's delete landed; ours found nothing left and is done.
+        expect(deletes(fake)).toBe(2);
+        expect(fake.state.series.get('ek-series')?.deleted.has(slot)).toBe(true);
+        // Gone before the read: a miss cannot tell "deleted" from "out of
+        // reach", so it is never answered with success.
+        const gone = yield* Effect.flip(
+          mutations.deleteRecurring({ ...standup, originalStartUtc: slot, scope: 'instance' }),
+        );
+        expect(gone).toMatchObject({ _tag: 'EventNotFoundError', eventId: 'ek-series' });
+        expect(deletes(fake)).toBe(2);
+      }).pipe(Effect.provide(testLayer({ ...fake, client: raced })));
+    },
+  );
 });
 
 const standups = (fake: ReturnType<typeof makeFakeAppleCalendarClient>) =>
