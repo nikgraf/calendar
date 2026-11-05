@@ -268,11 +268,14 @@ export function MirrorEditSheet({
           ))}
           <Pressable
             accessibilityRole="button"
+            // Off while a calendar is made or the mirror saved: a second
+            // one asked for meanwhile would be turned away without a word.
+            disabled={work.busy}
             onPress={createCalendar}
             style={styles.addRow}
             testID="mirror-new-calendar"
           >
-            <Text style={styles.link}>New calendar…</Text>
+            <Text style={[styles.link, work.busy && styles.disabled]}>New calendar…</Text>
           </Pressable>
           {preview !== null && preview.otherEvents > 0 ? (
             <Text style={styles.warning} testID="mirror-shared-warning">

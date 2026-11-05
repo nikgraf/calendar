@@ -6,17 +6,18 @@ import {
   errorMessage,
   runAction,
 } from './action.ts';
+import type { WriteSlot } from './oneWrite.ts';
 
 /** A component's side of `useAction`, without React: the state the events fold into. */
 const harness = <A>() => {
-  const lock = { current: false };
+  const slot: WriteSlot = { current: null };
   const seen: Array<ActionState<A>> = [{ kind: 'idle' }];
   const dispatch = (event: ActionEvent<A>) => {
     seen.push(actionReducer(seen.at(-1)!, event));
   };
   return {
     run: (task: () => Promise<A>, describe?: (error: unknown) => string) =>
-      runAction(lock, dispatch, task, describe),
+      runAction(slot, dispatch, task, describe),
     seen,
     state: () => seen.at(-1)!,
   };
@@ -93,23 +94,42 @@ describe('runAction', () => {
     expect(action.state()).toEqual({ kind: 'done', value: undefined });
   });
 
-  it('a second run while the first is under way never starts its task', async () => {
+  it('a second run while the first is under way never starts its task, and waits for the first', async () => {
     const action = harness<string>();
     const first = deferred<string>();
     const running = action.run(() => first.promise);
     let started = false;
-    await action.run(() => {
-      started = true;
-      return Promise.resolve('second');
-    });
-    expect(started).toBe(false);
+    let secondOver = false;
+    const second = action
+      .run(() => {
+        started = true;
+        return Promise.resolve('second');
+      })
+      .then(() => {
+        secondOver = true;
+      });
+    // Not over while the first still runs: code after `await run()` waits for it.
+    await Promise.resolve();
+    expect(secondOver).toBe(false);
     first.resolve('first');
-    await running;
+    await Promise.all([running, second]);
+    expect(started).toBe(false);
+    expect(secondOver).toBe(true);
     expect(action.seen).toEqual([
       { kind: 'idle' },
       { kind: 'running' },
       { kind: 'done', value: 'first' },
     ]);
+  });
+
+  it('a task that throws before its first await fails the same way and frees the action', async () => {
+    const action = harness();
+    await action.run(() => {
+      throw new Error('Not allowed.');
+    });
+    expect(action.state()).toEqual({ kind: 'failed', message: 'Not allowed.' });
+    await action.run(() => Promise.resolve());
+    expect(action.state()).toEqual({ kind: 'done', value: undefined });
   });
 
   it('runs again once the last run is over, failed or done', async () => {

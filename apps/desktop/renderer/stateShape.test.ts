@@ -6,16 +6,20 @@ import { describe, expect, it } from 'vite-plus/test';
  * A `busy` flag kept by hand beside an `error` is the shape `useAction`
  * (`packages/app-state/src/action.ts`) replaces: the two are set in separate calls, so one that
  * is forgotten leaves a component running with the last run's message, or
- * failed and still busy. This keeps new ones out. It reads names, not
- * types — a state with several modes that is not an action wants a
- * tagged union instead, which no pattern can check. It covers both apps
- * and the shared models from here, where Node's types are at hand.
+ * failed and still busy. This keeps new ones out as far as names tell:
+ * it reads the state's names, not its types, so a pair under other names
+ * passes, and a state with several modes that is not an action (it wants
+ * a tagged union) is nothing a pattern can check. It covers both apps and
+ * the shared models from here, where Node's types are at hand.
  */
 const ROOT = join(import.meta.dirname, '..', '..', '..');
 const UI = ['apps/desktop/renderer', 'apps/ios/app', 'apps/ios/src', 'packages/app-state/src'];
 
-const BUSY = /^(?:busy|loading|saving|submitting|working)$/;
-const FAILURE = /^(?:error|failure|notice)$/;
+// Names that only ever mean "in flight" or "what went wrong". `creating`,
+// `deleting` and the like are left out: here they name an open dialog or
+// its target as often as a run.
+const BUSY = /^(?:busy|connecting|loading|saving|sending|submitting|working)$/;
+const FAILURE = /^(?:error|failure|note|notice|problem)$/;
 
 /** A top-level declaration: where one component or hook ends and the next begins. */
 const DECLARATION =
@@ -23,17 +27,20 @@ const DECLARATION =
 const STATE = /const \[(\w+),[^\]]*\] = useState\b/;
 
 /**
- * Components and hooks that still keep the pair by hand, as
- * `path › name`. Only ever shortened: convert one, take it off.
+ * Components and hooks found to keep the pair by hand, as `path › name`.
+ * Only ever shortened: convert one, take it off.
  */
 const KNOWN: ReadonlyArray<string> = [
   'apps/desktop/renderer/AccountsView.tsx › AccountsView',
+  'apps/desktop/renderer/AppleCalendarSection.tsx › AppleCalendarSection',
+  'apps/desktop/renderer/RemindersSection.tsx › RemindersSection',
   'apps/desktop/renderer/agents/AgentsSection.tsx › AgentsSection',
   'apps/desktop/renderer/calendar/panel/LessonPanel.tsx › ExportCard',
   'apps/desktop/renderer/onboarding/SetupDialog.tsx › GoogleStep',
   'apps/desktop/renderer/onboarding/SetupDialog.tsx › CopyStep',
   'apps/desktop/renderer/onboarding/SetupDialog.tsx › CopiedStep',
   'apps/desktop/renderer/settingsCode/ReadCodePanel.tsx › ReadCodePanel',
+  'apps/ios/src/ui/settings/SettingsContext.tsx › SettingsProvider',
   'apps/ios/src/ui/settings/useSettingsTransfer.ts › useSettingsTransfer',
   'packages/app-state/src/findTimeModel.ts › useFindTimeModel',
   'packages/app-state/src/quickAddModel.ts › useQuickAddModel',

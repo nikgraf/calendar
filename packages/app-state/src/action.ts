@@ -1,11 +1,14 @@
 import { useReducer, useRef } from 'react';
+import { runOneWrite, type WriteSlot } from './oneWrite.ts';
 
 /**
  * Where one async action of a component stands — a save, a delete, an
  * import. One value instead of a `busy` flag beside an `error`: it cannot
  * be running and failed at once, and a retry cannot show the last run's
- * message. `done` stays until the next run, so a control that closes its
- * surface on success can stay off while it leaves.
+ * message. `done` keeps what the task returned until the next run; the
+ * action can run again from it, so its controls are back on. A surface
+ * that closes on success has to be gone by then (every one here unmounts
+ * in the task), or keep its control off through `done` itself.
  */
 export type ActionState<A = void> =
   | { readonly kind: 'idle' }
@@ -41,37 +44,33 @@ export const errorMessage = (error: unknown): string =>
 
 /**
  * One run of `task`, told to `dispatch` as it goes. A run already under
- * way wins: the second call returns without starting `task`. `lock`
- * decides that, not the state — two calls in one frame both see the last
- * render's state. Never rejects: a throw becomes the `failed` event.
+ * way wins, by the editors' rule (`runOneWrite`): the second call starts
+ * nothing and gets the running one's promise, so awaiting it waits for
+ * that run. The slot decides, not the state — two calls in one frame both
+ * see the last render's state. What `task` throws becomes the `failed`
+ * event, never a rejection.
  */
-export const runAction = async <A>(
-  lock: { current: boolean },
+export const runAction = <A>(
+  slot: WriteSlot,
   dispatch: (event: ActionEvent<A>) => void,
   task: () => Promise<A>,
   describe: (error: unknown) => string = errorMessage,
-): Promise<void> => {
-  if (lock.current) {
-    return;
-  }
-  lock.current = true;
-  dispatch({ kind: 'started' });
-  try {
-    const value = await task();
-    dispatch({ kind: 'succeeded', value });
-  } catch (error) {
-    dispatch({ kind: 'failed', message: describe(error) });
-  } finally {
-    lock.current = false;
-  }
-};
+): Promise<void> =>
+  runOneWrite(slot, async () => {
+    dispatch({ kind: 'started' });
+    try {
+      dispatch({ kind: 'succeeded', value: await task() });
+    } catch (error) {
+      dispatch({ kind: 'failed', message: describe(error) });
+    }
+  });
 
 export interface ActionHandle<A = void> {
   /** The action is running: its controls are off. */
   readonly busy: boolean;
   /** Why the last run failed, until the next one starts. */
   readonly error: string | null;
-  /** Runs `task` unless a run is under way; its outcome lands in `state`. */
+  /** Runs `task` unless a run is under way (then it waits for that one); the outcome lands in `state`. */
   readonly run: (task: () => Promise<A>) => Promise<void>;
   readonly state: ActionState<A>;
 }
@@ -86,11 +85,11 @@ export const useAction = <A = void>(
   describe: (error: unknown) => string = errorMessage,
 ): ActionHandle<A> => {
   const [state, dispatch] = useReducer(actionReducer<A>, { kind: 'idle' });
-  const lock = useRef(false);
+  const slot = useRef<WriteSlot>({ current: null });
   return {
     busy: state.kind === 'running',
     error: state.kind === 'failed' ? state.message : null,
-    run: (task) => runAction(lock, dispatch, task, describe),
+    run: (task) => runAction(slot.current, dispatch, task, describe),
     state,
   };
 };
