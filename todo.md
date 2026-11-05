@@ -53,17 +53,14 @@ The 2026-10-02 review's findings are closed in `docs/decisions.md`
       possible: REST/GraphQL upload; inline playback from an Actions
       artifact or a private-repo release asset.
 - [ ] Live suite follow-ups (review of #88/#90, 2026-09-26; the findings
-      themselves shipped in `todo/review-findings`). The people test
-      passes on an empty address book and the RSVP test only exercises
-      the organizer guard — decide whether a known contact fixture and a
-      second live account for guest-side RSVPs are worth their upkeep.
-      Before the sweep deletes, check the token's identity against
-      `GOOGLE_LIVE_EMAIL` and only touch `e2e-`/`live-` resources the run
-      tag format proves ours. The this-and-following live test checks for
-      `UNTIL`/`COUNT` strings; assert the last old and first new
-      occurrence and no overlap. A carried text's queued instance ops keep
-      their payload: rewrite it on restore if the pull-converges gap ever
-      shows up.
+      themselves shipped in `todo/review-findings`, the sweep's account
+      check and the split test's occurrences in `todo/live-sweep-guard`).
+      The people test passes on an empty address book and the RSVP test
+      only exercises the organizer guard — decide whether a known contact
+      fixture and a second live account for guest-side RSVPs are worth
+      their upkeep. A carried text's queued instance ops keep their
+      payload: rewrite it on restore if the pull-converges gap ever shows
+      up.
 
 ## Tier 2 — features (near-term, well-scoped)
 
@@ -110,8 +107,11 @@ The 2026-10-02 review's findings are closed in `docs/decisions.md`
       icon included); an "Install `solunivo` on PATH" button (the wrapper
       already resolves symlinks); undo for an agent's write from the
       activity list; grants on calendars hidden in the app (range reads
-      filter on `is_visible`, so today hidden = `none`); an event
-      `transparency` field so "free" timed events stop counting as busy;
+      filter on `is_visible`, so today hidden = `none`); an Apple event
+      marked free still counts as busy in free/busy and slots (Google's
+      are skipped since #197; the Apple bridge does not read EventKit's
+      `availability`, one fix with the mirrors entry; the app's own
+      find-a-time counts them the same way);
       a Swift relay in place of the TS one so the RunAsNode fuse can be
       flipped (`@electron/fuses`); moves and conversions as tools;
       MCP `subscriptions/listen` fed by the invalidation bus; access from

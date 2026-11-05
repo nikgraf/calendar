@@ -143,7 +143,8 @@ describe.skipIf(!LIVE)('Google live (real account)', { retry: 0, timeout: 120_00
     listName = scratchName(config, 'desktop-tasks');
     await google((scratch) =>
       Effect.gen(function* () {
-        yield* scratch.sweep({ maxAgeMs: 6 * HOUR_MS });
+        // Before anything is created: a token for another account stops the run here.
+        yield* scratch.sweep({ email: config.email, maxAgeMs: 6 * HOUR_MS });
         calendarId = (yield* scratch.createCalendar(calendarName)).id;
         listId = (yield* scratch.createTaskList(listName)).id;
       }),
