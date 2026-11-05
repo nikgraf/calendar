@@ -1596,3 +1596,8 @@ first. The decisions, one line each:
   which also makes it smaller above the screenshots on tablet widths (40
   px up to 1000 px, where it was 50). Rejected: letting the screenshots run
   past the page's 1200 px column (out of line with the nav).
+- **Plain Astro for the website** (2026-11-05) — Help articles get a
+  URL and the site's article layout from a Markdown file. Astro owns
+  routing, Markdown and static rendering. The homepage keeps its React
+  components and the privacy policy still comes from the root Markdown.
+  Revisit a docs theme if the help section needs search and a sidebar.

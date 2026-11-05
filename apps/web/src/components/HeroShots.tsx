@@ -1,7 +1,7 @@
-import desktopDark from '../screenshots/desktop-dark.webp';
-import desktopLight from '../screenshots/desktop-light.webp';
-import iphoneDark from '../screenshots/iphone-dark.webp';
-import iphoneLight from '../screenshots/iphone-light.webp';
+import desktopDark from '../screenshots/desktop-dark.webp?url';
+import desktopLight from '../screenshots/desktop-light.webp?url';
+import iphoneDark from '../screenshots/iphone-dark.webp?url';
+import iphoneLight from '../screenshots/iphone-light.webp?url';
 import { ThemePicture } from './ThemePicture.tsx';
 
 /**

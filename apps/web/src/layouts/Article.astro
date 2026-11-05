@@ -1,0 +1,14 @@
+---
+import Site from './Site.astro';
+
+interface Props {
+  frontmatter: { description: string; title: string };
+}
+const { description, title } = Astro.props.frontmatter;
+---
+
+<Site description={description} title={`${title} — Solunivo`}>
+  <article class="prose mx-auto max-w-[760px] px-6 py-16 sm:px-8 sm:py-20">
+    <slot />
+  </article>
+</Site>

@@ -71,10 +71,8 @@ const platform = () => {
   root.dataset.platform = platform();
   apply();
   dark.addEventListener('change', apply);
-  // Again once the markup is there (the pictures and the footer's buttons),
-  // and once more on load for the dev server, where React mounts them later.
+  // Again once the pictures and the footer's buttons are in the document.
   document.addEventListener('DOMContentLoaded', apply);
-  window.addEventListener('load', apply);
   // A choice made in another tab.
   window.addEventListener('storage', (event) => {
     if (event.key === KEY || event.key === null) {

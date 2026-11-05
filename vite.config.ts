@@ -38,6 +38,11 @@ export default defineConfig({
     ],
     overrides: [
       {
+        env: { node: true },
+        files: ['apps/web/**/*.astro'],
+        globals: { Astro: 'readonly' },
+      },
+      {
         env: {
           browser: true,
         },
