@@ -205,6 +205,13 @@ deliberately.
   rebuilds. The whole better-sqlite3 apparatus is retired.
 - Oxlint enforces alphabetically sorted object keys/interface members —
   write literals sorted or `vp check` fails.
+- Oxlint caps a function's cyclomatic complexity at 40 (`complexity`).
+  The files that held a larger function when the cap arrived are pinned
+  at their highest value (`complexityPins` in `vite.config.ts`), and a
+  pin only goes down. When a change takes a function past its limit,
+  split it along a seam the code already names (a gate, a step, a
+  sub-component), not into numbered parts — never raise a pin and never
+  switch the rule off inline.
 - Window-level concerns (screen privacy, logging, open-external, the five
   `model:*` AI-helper channels, the `reminders:*` / `contacts:*` /
   `appleCalendar:*` permission-status channels, `appleCalendar:open`

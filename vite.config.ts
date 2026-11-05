@@ -1,6 +1,28 @@
 import nkzw from '@nkzw/oxlint-config';
 import { defineConfig } from 'vite-plus';
 
+// A function's cyclomatic complexity stops at 40 (`complexity` below).
+// These files held a larger one when the cap arrived: each is pinned at
+// its highest value, so nothing in it grows past that. A pin only goes
+// down — lower it when the function shrinks and drop the entry at 40.
+// Never raise one: split the function instead.
+const complexityPins: Record<string, number> = {
+  'apps/desktop/e2e/bench/check.ts': 77,
+  'apps/desktop/renderer/calendar/panel/EditorPanel.tsx': 52,
+  'apps/ios/src/ui/QuickAddBar.tsx': 43,
+  'apps/ios/src/ui/settings/DevicePage.tsx': 49,
+  'packages/agent/src/ops/events.ts': 52,
+  'packages/ai/src/grounding.ts': 74,
+  'packages/ai/src/normalizeQuickAdd.ts': 80,
+  'packages/ai/src/refine.ts': 62,
+  'packages/app-state/src/editorModel.ts': 73,
+  'packages/app-state/src/taskEditorModel.ts': 56,
+  'packages/core/src/recurrence/structured.ts': 42,
+  'packages/sync/src/applyOp.ts': 89,
+  'packages/sync/src/mutations.ts': 57,
+  'packages/sync/src/settingsImport.ts': 45,
+};
+
 export default defineConfig({
   fmt: {
     ignorePatterns: [
@@ -84,7 +106,14 @@ export default defineConfig({
           'no-console': 'off',
         },
       },
+      ...Object.entries(complexityPins).map(([file, max]) => ({
+        files: [file],
+        rules: { complexity: ['error', { max }] satisfies ['error', { max: number }] },
+      })),
     ],
+    rules: {
+      complexity: ['error', { max: 40 }],
+    },
   },
   staged: {
     '*': 'vp check --fix',
