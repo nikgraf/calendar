@@ -3,7 +3,7 @@ import { FieldFlash } from './FlashView.tsx';
 import { FieldRow, Row, Rows } from './GroupedList.tsx';
 
 /**
- * The location row of the title card, with MapKit's suggestions as rows
+ * The location field, with MapKit's suggestions as rows
  * under it while it is typed into (the form's ScrollView keeps taps alive
  * with keyboardShouldPersistTaps). Free text is always a valid location;
  * a tapped row writes its label and resolves coordinates for the map.

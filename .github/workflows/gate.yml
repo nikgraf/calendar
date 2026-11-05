@@ -27,9 +27,5 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
       - run: pnpm typecheck
+      # The website render tests build the production site and check its HTML and assets.
       - run: pnpm test
-      # The website's static build: the tests mock its Markdown and never
-      # compile its CSS. The build fails on an import it cannot resolve, a
-      # rendered class with no CSS rule, and a CSS variable nothing defines
-      # (a token renamed in tokens.json but not in brand/tokens/tailwind.css).
-      - run: pnpm --filter @calendar/web build

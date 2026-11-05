@@ -1041,7 +1041,7 @@ details, or Custom), so a calendar can be shared without the details.
   stand and no words (`parseSearchQuery`, `packages/ai/src/searchQuery.ts`)
   and leaves what is left of the words in the field; Undo restores the
   query before the last turn; Clear empties everything. Turns list as in
-  the create thread (newest first, two, "+N earlier queries"); a sentence
+  the create thread (newest visible, "+N earlier queries"); a sentence
   being read turns the desktop's ✦ and iOS's "Filters" into a spinner in
   place (no line under the field); on the desktop the turns, and why a
   sentence was not read, hang under the field as one card with it (iOS's
@@ -1427,7 +1427,7 @@ gateway carries all of it. Details, limits and the threat model:
   (`useDraftThread`, `packages/app-state/src/draftThread.ts`): the first
   phrase makes the draft(s), every later phrase in the same field changes
   them (`parseRefine`), the turns are listed newest first with what each
-  changed, wrapped in full, the newest with Undo — two, then "+N
+  changed, wrapped in full. Only the newest shows, with Undo; "+N
   earlier queries ⌄" (a link in the tint color with a chevron) opens the
   rest (`visibleTurns`, app-state `threadTurns.ts`; a new row eases in);
   the turns hang under the field as one card with it (a hairline
@@ -1549,17 +1549,18 @@ gateway carries all of it. Details, limits and the threat model:
   the form scrolls back there (`useEditorSheetAtHalf`). The turns take
   at most a third of the sheet at the detent it stands at
   (`editorSheet.ts`; the route follows `sheetDetentChange`), so at half
-  the two newest and "+N earlier queries" fit with a strip of the form
-  under them; the keyboard lifts the sheet without a detent change, and
+  a strip of the form stays in view even with the history expanded;
+  the keyboard lifts the sheet without a detent change, and
   the half cap holds while it is up. The forms are iOS inset grouped
   cards on the grouped ground, drawn with the Settings pages' rows
   (`GroupedList.tsx`:
   `Section`, `Row`, `SwitchRow`, `CheckRow`, `ActionRow`, and the forms'
   own `FieldRow`, `ChipsRow`, `RowSlot`, `CardCaption`; a choice is a
-  `Chip`), in Calendar's order for an event (title and location; all-day,
-  the dates, the finder; repeat; calendar; invitees; notifications;
-  notes; Delete) and Reminders' for a to-do (title and notes; list; due
-  day and time; repeat; priority, alert, URL; Delete). A card's header
+  `Chip`). The event form starts with the title, then all-day, the dates
+  and the finder, followed by the location and its map. Calendar, repeat,
+  invitees, notifications, notes and Delete follow. The to-do form
+  follows Reminders' order (title and notes, list, due day and time,
+  repeat, priority, alert, URL, Delete). A card's header
   renders uppercase, which is what the flows tap to dismiss a keyboard
   ("CALENDAR", "LIST"). The calendar draws the thread's drafts from
   `useDraftPreviews` (`DraftBlock.tsx`): dashed blocks tagged "Draft" in

@@ -400,10 +400,9 @@ instead (Expo CLI 57.0.28 and later), and `simctl` works as before.
 
 `apps/web` is the public site: the landing page and `/privacy`, which is
 the root `PRIVACY.md` rendered at build time (edit the Markdown, never the
-page). It is a Vite + React + Tailwind app on the brand tokens
-(`brand/tokens/tokens.css`, mapped to utilities by `brand/tokens/tailwind.css`
-like the desktop renderer) that `scripts/build.ts` prerenders into plain
-HTML:
+page). Astro renders file-based routes to static HTML. The landing page
+uses React components at build time and shares the desktop renderer's
+Tailwind utilities in `brand/tokens/tailwind.css`.
 
 ```sh
 pnpm --filter @calendar/web build     # → apps/web/dist/ (index.html, privacy.html, assets/)
@@ -428,14 +427,28 @@ hides the scheme switch and shows the macOS buttons.
 The build cuts the brand's variable Inter down to printable ASCII,
 Latin-1, typographic punctuation and every character the pages draw
 (about 91 KB instead of 344 KB, both axes kept), names it after its new
-bytes and preloads it; `vp dev` serves the full font. Anything in
+bytes and preloads it. Astro serves the full font in development. Anything in
 `apps/web/public/` (robots.txt, a host's `_headers`) is copied into
 `dist/` as it is, and the build stops if a page or asset would overwrite
 one. It also stops on a rendered class no CSS rule selects and on a CSS
 variable nothing defines, which is how a token renamed in `tokens.json`
-but not in `brand/tokens/tailwind.css` shows up. A plain `vp build` in
-`apps/web` refuses: it would bundle the dev-only `index.html` as a client
-app.
+but not in `brand/tokens/tailwind.css` shows up.
+
+## Adding a help article
+
+Create a Markdown file under `apps/web/src/pages/help/`. For example,
+`connect-google.md` publishes at `/help/connect-google`. Use the shared
+article layout and put the visible heading in the body.
+
+```md
+---
+layout: ../../layouts/Article.astro
+title: Connect a Google calendar
+description: Add your Google account to Solunivo.
+---
+
+# Connect a Google calendar
+```
 
 ## Screenshots on the page
 
@@ -447,18 +460,24 @@ Recapture them when the apps' look changes:
   `SHOT_OUT=<dir> E2E=1 pnpm exec vp test run apps/desktop/e2e/websiteShots.e2e.ts`
   writes `desktop-light.png` and `desktop-dark.png` (a 1440 × 900 window,
   the Google fixture, an iCloud calendar and a Reminders list from the
-  Apple fixtures, dark through `Emulation.setEmulatedMedia`). The spec
-  skips without `SHOT_OUT`, so the e2e suite never runs it.
+  Apple fixtures, dark through `Emulation.setEmulatedMedia`). It also
+  writes the week's Google events and tasks to `google.json` for the
+  iPhone capture. The spec skips without `SHOT_OUT`.
 - **iPhone:** the dev client on the dedicated simulator with Metro
   started from the repo root as `EXPO_PUBLIC_CALENDAR_GOOGLE=fixture
   EXPO_PUBLIC_CALENDAR_MODEL=fixture EXPO_PUBLIC_CALENDAR_ONBOARDING=off
-  CI=1 pnpm --filter @calendar/ios start --clear` (the `start` script sets
-  `APP_VARIANT=development`). Point `apps/ios/e2e/fixtures/google.ts`
-  at the same week as the Mac spec for the capture (a local edit, restored
-  with `git checkout` before committing), delete the app's `calendar.db`
-  so the fixture syncs fresh, set `xcrun simctl status_bar <udid>
-  override --time 9:41 …`, and capture with `xcrun simctl io <udid>
-  screenshot` once per `xcrun simctl ui <udid> appearance light|dark`.
+  EXPO_PUBLIC_CALENDAR_NOTIFICATIONS=off CI=1 pnpm --filter @calendar/ios
+  start --clear --no-dev --minify` (the `start` script sets
+  `APP_VARIANT=development`). Use a clean capture worktree for the
+  temporary fixture edit. Before starting Metro, create the ignored directory
+  with `mkdir -p apps/ios/build`, copy `google.json` there and
+  temporarily replace `apps/ios/e2e/fixtures/google.ts` with
+  `export { default as googleFixture } from '../../build/google.json';`.
+  Use a fresh simulator profile in the same time zone as the Mac fixture
+  (Europe/Vienna). Select Wednesday of the captured week so the day view
+  shows user interviews, the dentist and school pickup. Capture with `xcrun simctl
+  io <udid> screenshot` once per `xcrun simctl ui <udid> appearance
+  light|dark`, then restore the regular iOS fixture.
 - Convert with the root's `sharp` (`.webp({ quality: 84 })`, the Mac at
   2400 px wide, the iPhone at 900) into `apps/web/src/screenshots/`.
 

@@ -46,6 +46,28 @@ tags:
       # The first list may be a Google list or, once Reminders is
       # connected, the Apple one — either editor is the right outcome.
       - assertVisible: 'Edit (Task|Reminder)'
+      # A notification opens this same editor. Complete here, then verify
+      # the stored status on the chip and reopen from the editor.
+      - tapOn:
+          id: 'task-editor-completion'
+      - extendedWaitUntil:
+          visible: 'Reopen Solunivo e2e task to delete'
+          timeout: 10000
+      - tapOn: 'Solunivo e2e task to delete'
+      # Checking off an edited form must leave a way to keep typing.
+      - tapOn: 'Notes'
+      - inputText: 'Draft note'
+      - tapOn:
+          id: 'task-editor-completion'
+      - tapOn: 'Keep Editing'
+      - assertVisible: 'Draft note'
+      - tapOn:
+          id: 'task-editor-completion'
+      - tapOn: 'Mark as Incomplete'
+      - extendedWaitUntil:
+          visible: 'Complete Solunivo e2e task to delete'
+          timeout: 10000
+      - tapOn: 'Solunivo e2e task to delete'
       # The Reminders form is long, and the list picker's per-account
       # groups push Delete below the fold (run 35591082639 tapped its
       # cut-off edge and nothing happened): scroll first, like 09.

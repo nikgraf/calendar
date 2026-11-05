@@ -11,17 +11,12 @@ import {
   APPLE_REMINDERS_ACCOUNT_ID,
   CalendarInfo,
   TaskListInfo,
-  TaskRecord,
   Temporal,
 } from '@calendar/core';
+import { mapReminder } from '@calendar/reminders';
 import type { GoogleFixture } from '@calendar/sync/testing/googleFixture';
-import { afterAll, describe, it } from 'vite-plus/test';
-import {
-  type App,
-  type AppleCalendarFixture,
-  launchApp,
-  type RemindersFixture,
-} from './harness.ts';
+import { describe, expect, it } from 'vite-plus/test';
+import { type AppleCalendarFixture, launchApp, type RemindersFixture } from './harness.ts';
 
 const OUT = process.env['SHOT_OUT'];
 const ZONE = 'Europe/Vienna';
@@ -40,7 +35,7 @@ const day = (dayOffset: number): string => monday.add({ days: dayOffset }).toStr
 const account = new Account({
   contactsEnabled: false,
   createdAt: 1,
-  email: 'you@example.com',
+  email: 'alex@example.com',
   id: 'acc-e2e',
   provider: 'google',
   status: 'ok',
@@ -54,13 +49,13 @@ const gcal = (
   dayOffset: number,
   start: [number, number?],
   end: [number, number?],
-  location?: string,
+  details?: { location?: string; recurrence?: Array<string> },
 ) => ({
   calendar,
   event: {
     end: { dateTime: isoAt(dayOffset, end[0], end[1] ?? 0), timeZone: ZONE },
     id: `ev-${String(++n)}`,
-    ...(location ? { location } : {}),
+    ...details,
     start: { dateTime: isoAt(dayOffset, start[0], start[1] ?? 0), timeZone: ZONE },
     status: 'confirmed',
     summary,
@@ -68,22 +63,29 @@ const gcal = (
 });
 
 const googleEvents = [
-  gcal('cal-work', 'Team sync', 0, [9], [10]),
-  gcal('cal-personal', 'Lunch with Sarah', 0, [13], [14], 'Café Prückel'),
-  gcal('cal-work', 'Design review', 1, [10], [11, 30]),
-  gcal('cal-personal', 'Deep work', 2, [9], [12]),
-  gcal('cal-work', '1:1 with Jonas', 2, [14], [14, 30]),
+  gcal('cal-work', 'Team planning', 0, [9, 30], [10, 15]),
+  gcal('cal-work', 'Design review', 0, [13], [14]),
+  gcal('cal-family', 'School pickup', 0, [15, 15], [16], {
+    recurrence: ['RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR'],
+  }),
+  gcal('cal-work', 'Focus time', 1, [9, 30], [11], {
+    recurrence: ['RRULE:FREQ=WEEKLY;BYDAY=TU,TH'],
+  }),
+  gcal('cal-work', '1:1 with Jonas', 1, [14], [14, 30]),
+  gcal('cal-family', 'Swim lesson', 1, [16, 30], [17, 15]),
+  gcal('cal-personal', 'Groceries', 1, [17, 30], [18, 15]),
+  gcal('cal-work', 'User interviews', 2, [10], [11, 30]),
+  gcal('cal-personal', 'Dentist', 2, [13, 15], [14]),
   gcal('cal-personal', 'Yoga', 2, [18], [19]),
-  gcal('cal-work', 'Call with the Tokyo team', 2, [21, 30], [22, 15]),
-  gcal('cal-work', 'Standup', 3, [9], [10]),
-  gcal('cal-travel', 'Flight to Berlin', 3, [16], [18], 'VIE → BER'),
-  gcal('cal-work', 'Workshop', 4, [10], [13]),
-  gcal('cal-personal', 'Brunch', 5, [11], [13]),
-  gcal('cal-personal', 'Dinner with Lena and Tom', 6, [18], [20]),
+  gcal('cal-personal', 'Lunch with Sarah', 3, [12, 15], [13, 15], { location: 'Café Prückel' }),
+  gcal('cal-work', 'Budget review', 3, [14], [14, 45]),
+  gcal('cal-personal', 'Choir practice', 3, [19, 30], [21]),
+  gcal('cal-work', 'Prototype review', 4, [10], [11]),
+  gcal('cal-family', 'Lunch at Oma’s', 5, [12], [14]),
 ];
 
 const google: GoogleFixture = {
-  accounts: [{ email: 'you@example.com', id: 'acc-e2e', tasksEnabled: true }],
+  accounts: [{ email: account.email, id: account.id, tasksEnabled: true }],
   calendars: [
     {
       accessRole: 'owner',
@@ -102,14 +104,14 @@ const google: GoogleFixture = {
     },
     {
       accessRole: 'owner',
-      backgroundColor: '#7898C8',
-      id: 'cal-travel',
-      summary: 'Travel',
+      backgroundColor: '#BB7770',
+      id: 'cal-family',
+      summary: 'Family',
       timeZone: ZONE,
     },
   ],
   events: Object.fromEntries(
-    ['cal-personal', 'cal-work', 'cal-travel'].map((id) => [
+    ['cal-personal', 'cal-work', 'cal-family'].map((id) => [
       id,
       googleEvents.filter((item) => item.calendar === id).map((item) => item.event),
     ]),
@@ -117,8 +119,8 @@ const google: GoogleFixture = {
   taskLists: [{ id: 'list-errands', title: 'Errands' }],
   tasks: {
     'list-errands': [
-      { due: dueOn(4), id: 't-passport', status: 'needsAction', title: 'Renew passport' },
-      { due: dueOn(3), id: 't-hotel', status: 'needsAction', title: 'Book the hotel' },
+      { due: dueOn(3), id: 't-library', status: 'needsAction', title: 'Return library books' },
+      { due: dueOn(4), id: 't-snacks', status: 'needsAction', title: 'Pack train snacks' },
     ],
   },
 };
@@ -127,43 +129,43 @@ const appleCalendar: AppleCalendarFixture = {
   calendars: [
     {
       allowsModifications: true,
-      colorHex: '#BB7770',
-      id: 'ek-family',
+      colorHex: '#7898C8',
+      id: 'ek-travel',
       isDefault: true,
       sourceTitle: 'iCloud',
       sourceType: 'calDAV',
-      title: 'Family',
+      title: 'Travel',
       type: 'calDAV',
     },
   ],
   events: [
     {
       event: {
-        calendarId: 'ek-family',
-        endUtc: at(1, 16),
+        calendarId: 'ek-travel',
+        endUtc: at(5, 11, 15),
         hasRecurrence: false,
-        id: 'ek-dentist',
+        id: 'ek-to-linz',
         isAllDay: false,
         isDetached: false,
-        startUtc: at(1, 15),
+        startUtc: at(5, 9, 45),
         status: 'confirmed',
         timeZone: ZONE,
-        title: 'Dentist',
+        title: 'Train to Linz',
         updatedAt: 1,
       },
     },
     {
       event: {
-        calendarId: 'ek-family',
-        endUtc: at(4, 17),
+        calendarId: 'ek-travel',
+        endUtc: at(6, 17),
         hasRecurrence: false,
-        id: 'ek-kids',
+        id: 'ek-to-vienna',
         isAllDay: false,
         isDetached: false,
-        startUtc: at(4, 16, 30),
+        startUtc: at(6, 15, 30),
         status: 'confirmed',
         timeZone: ZONE,
-        title: 'Pick up the kids',
+        title: 'Train to Vienna',
         updatedAt: 1,
       },
     },
@@ -176,23 +178,44 @@ const reminders: RemindersFixture = {
   ],
   reminders: [
     {
-      alarms: [],
-      completed: true,
-      dueDate: day(2),
-      id: 'ek-bank',
+      alarms: [0],
+      completed: Date.now() >= at(1, 19),
+      dueDate: day(1),
+      dueTime: '19:00',
+      id: 'ek-bins',
       listId: 'ek-reminders',
       priority: 0,
-      title: 'Call the bank',
+      title: 'Bins out',
+      updatedAt: 1,
+    },
+    {
+      alarms: [],
+      completed: true,
+      dueDate: day(0),
+      id: 'ek-tickets',
+      listId: 'ek-reminders',
+      priority: 0,
+      title: 'Book train seats',
       updatedAt: 1,
     },
     {
       alarms: [],
       completed: false,
-      dueDate: day(3),
-      id: 'ek-pack',
+      dueDate: day(4),
+      id: 'ek-form',
       listId: 'ek-reminders',
       priority: 0,
-      title: 'Pack for Berlin',
+      title: 'Sign the trip form',
+      updatedAt: 1,
+    },
+    {
+      alarms: [],
+      completed: today.dayOfWeek > 6,
+      dueDate: day(5),
+      id: 'ek-flowers',
+      listId: 'ek-reminders',
+      priority: 0,
+      title: 'Water flowers',
       updatedAt: 1,
     },
   ],
@@ -229,7 +252,7 @@ const seed = {
       new CalendarInfo({
         accessRole: 'owner',
         accountId: APPLE_CALENDAR_ACCOUNT_ID,
-        colorHex: entry.colorHex ?? '#BB7770',
+        colorHex: entry.colorHex ?? '#7898C8',
         id: entry.id,
         isPrimary: entry.isDefault,
         isVisible: true,
@@ -250,67 +273,64 @@ const seed = {
       title: 'Reminders',
     }),
   ],
-  tasks: (reminders.reminders ?? []).map(
-    (reminder) =>
-      new TaskRecord({
-        accountId: APPLE_REMINDERS_ACCOUNT_ID,
-        dueDate: reminder.dueDate,
-        id: reminder.id,
-        listId: reminder.listId,
-        provider: 'apple',
-        status: reminder.completed ? 'completed' : 'needsAction',
-        title: reminder.title,
-        updatedAt: 1,
-      }),
+  tasks: (reminders.reminders ?? []).map((reminder) =>
+    mapReminder(reminder, APPLE_REMINDERS_ACCOUNT_ID),
   ),
 };
 
-let app: App | undefined;
-
-afterAll(async () => {
-  await app?.stop();
-});
-
 describe.skipIf(!OUT)('website screenshots', () => {
-  it('captures the week in light and dark', async () => {
+  it('captures the week in light and dark', async ({ onTestFinished }) => {
     if (!OUT) {
       return;
     }
     mkdirSync(OUT, { recursive: true });
-    app = await launchApp(seed, {
+    const app = await launchApp(seed, {
       appleCalendar: { fixture: appleCalendar },
       env: { TZ: ZONE },
       google: { fixture: google },
       reminders: { fixture: reminders },
       window: { height: 900, width: 1440 },
     });
+    onTestFinished(() => app.stop());
     const { cdp } = app;
-    for (const text of ['Design review', 'Pack for Berlin', 'Dentist', 'Renew passport']) {
+    // macOS can clamp the window to the available screen. Keep the
+    // captured viewport at the aspect ratio used by the website.
+    await cdp.send('Emulation.setDeviceMetricsOverride', {
+      deviceScaleFactor: 2,
+      height: 900,
+      mobile: false,
+      width: 1440,
+    });
+    for (const text of [
+      'Design review',
+      'Book train seats',
+      'Train to Linz',
+      'Pack train snacks',
+    ]) {
       await cdp.waitFor(`document.body.innerText.includes(${JSON.stringify(text)})`);
     }
+    // The grid mounts neighbouring days offscreen too. Check this week's
+    // seven columns so a duplicate or a pickup on the wrong day fails the capture.
+    const pickupCounts = () =>
+      cdp.eval<Array<number>>(
+        `[...document.querySelectorAll('[data-testid="week-grid"] [data-day]')]
+          .filter(column => column.dataset.day >= '${day(0)}' && column.dataset.day <= '${day(6)}')
+          .map(column => column.querySelectorAll('[aria-label^="School pickup,"]').length)`,
+      );
+    await expect.poll(pickupCounts, { timeout: 10_000 }).toEqual([1, 0, 1, 0, 1, 0, 0]);
+    await cdp.waitFor(
+      `document.querySelector('[data-day="${day(1)}"] [data-testid="timed-task-ek-bins"]')?.title === 'Bins out · 7:00 PM'`,
+    );
+    await cdp.waitFor(`!!document.querySelector('[data-testid="all-day-task-ek-flowers"]')`);
 
     const shoot = async (theme: 'dark' | 'light') => {
       await cdp.send('Emulation.setEmulatedMedia', {
         features: [{ name: 'prefers-color-scheme', value: theme }],
       });
       // A background window takes emulated media only once it draws a frame.
-      let applied = false;
-      for (let i = 0; i < 40 && !applied; i++) {
-        await cdp.send('Page.captureScreenshot');
-        const result = (await cdp.send('Runtime.evaluate', {
-          expression: `document.documentElement.dataset.theme === ${JSON.stringify(theme)}`,
-          returnByValue: true,
-        })) as { result: { value: boolean } };
-        applied = result.result.value;
-        if (!applied) {
-          await new Promise((resolve) => setTimeout(resolve, 100));
-        }
-      }
-      if (!applied) {
-        throw new Error(
-          `The window never took the ${theme} scheme; not writing desktop-${theme}.png`,
-        );
-      }
+      await cdp.waitForRendered(
+        `document.documentElement.dataset.theme === ${JSON.stringify(theme)}`,
+      );
       await new Promise((resolve) => setTimeout(resolve, 600));
       const shot = (await cdp.send('Page.captureScreenshot', { format: 'png' })) as {
         data: string;
@@ -319,5 +339,6 @@ describe.skipIf(!OUT)('website screenshots', () => {
     };
     await shoot('light');
     await shoot('dark');
+    writeFileSync(`${OUT}/google.json`, JSON.stringify(google, null, 2));
   }, 90_000);
 });

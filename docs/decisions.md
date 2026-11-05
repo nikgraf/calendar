@@ -1122,6 +1122,9 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
 
 ## AI
 
+- **Show only the latest query by default** (2026-11-05) — the create and
+  search threads keep the turn with Undo visible on both apps. Earlier
+  queries open on demand, leaving more room for the form or results.
 - **On-device models only** — no data leaves the device, no API keys, no
   per-request cost, works offline; this matches the app's posture. Apple's
   ~3B Foundation Models handle extraction and classification, not
@@ -1299,6 +1302,9 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   hold), a pushed calendar picker (the inline rows stay the flows'
   targets and one tap), Repeat inside the dates card (its conditional
   rows made it long). Open: the chips at the accessibility text sizes.
+- **Location follows the event time on iOS** (2026-11-05, #294) — the create
+  and edit sheets use the desktop order. The dates and “Find a time”
+  come before Location, with suggestions and the map under its field.
 - **A drag raises the half-height editor** (2026-10-26, #257) — the form
   scrolled on its own in the strip under the header. A drag up on the
   form or the turns now raises the sheet first, as in Maps; at half with
@@ -1477,6 +1483,12 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   predates it, never one created past it. Rejected: a settings-free
   reconcile. Open: an offline create whose id lands late stays silent.
 
+- **Complete a to-do from its iOS notification** (2026-11-05,
+  `todo/ios-reminder-editor-completion`) — the task or reminder editor
+  offers a checkbox at the top. Checking it closes the sheet once the
+  status is saved. If the user has edited the form, they can keep editing
+  or discard those edits and change the completion status.
+
 ## Calendar mirrors
 
 - **Calendar mirrors** (2026-10-02, #103) — a mirror, not a workflow: one
@@ -1637,3 +1649,13 @@ first. The decisions, one line each:
   which also makes it smaller above the screenshots on tablet widths (40
   px up to 1000 px, where it was 50). Rejected: letting the screenshots run
   past the page's 1200 px column (out of line with the nav).
+- **Plain Astro for the website** (2026-11-05) — Help articles get a
+  URL and the site's article layout from a Markdown file. Astro owns
+  routing, Markdown and static rendering. The homepage keeps its React
+  components and the privacy policy still comes from the root Markdown.
+  Revisit a docs theme if the help section needs search and a sidebar.
+- **One week across the website screenshots** (2026-11-05, #291) — the Mac
+  shows school pickup on Monday, Wednesday and Friday, two mornings of
+  focus time and a weekend train trip. The iPhone shows Wednesday from the
+  same Google fixture. The capture exports that fixture so the two
+  calendars stay in step when the screenshots are refreshed.

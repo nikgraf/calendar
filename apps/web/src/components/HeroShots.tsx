@@ -1,7 +1,7 @@
-import desktopDark from '../screenshots/desktop-dark.webp';
-import desktopLight from '../screenshots/desktop-light.webp';
-import iphoneDark from '../screenshots/iphone-dark.webp';
-import iphoneLight from '../screenshots/iphone-light.webp';
+import desktopDark from '../screenshots/desktop-dark.webp?url';
+import desktopLight from '../screenshots/desktop-light.webp?url';
+import iphoneDark from '../screenshots/iphone-dark.webp?url';
+import iphoneLight from '../screenshots/iphone-light.webp?url';
 import { ThemePicture } from './ThemePicture.tsx';
 
 /**
@@ -14,17 +14,17 @@ export function HeroShots() {
     <div className="hero-shots">
       <div className="hero-mac">
         <ThemePicture
-          alt="The Mac app in week view: a week of events in four calendar colors, tasks and reminders in the all-day lane, Google and Apple calendars side by side in the sidebar, and an Up next card"
+          alt="Mac week view with school pickup at 3:15 on Monday, Wednesday, and Friday, plus work meetings and a Saturday reminder to water the flowers"
           dark={desktopDark}
           fetchPriority="high"
-          height={1473}
+          height={1500}
           light={desktopLight}
           width={2400}
         />
       </div>
       <div className="hero-phone">
         <ThemePicture
-          alt="The iPhone app in day view: the week strip, two tasks in the all-day lane and the day's events"
+          alt="iPhone day view for Wednesday, with user interviews in the morning, a dentist appointment, and school pickup at 3:15"
           dark={iphoneDark}
           height={1957}
           light={iphoneLight}
