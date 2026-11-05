@@ -184,6 +184,44 @@ describe('fake EventKit spans', () => {
     expect(await run(client.events(window))).toHaveLength(1);
   });
 
+  it('finds an occurrence by its slot 31 days either side, as the bridge does', async () => {
+    const { client, state } = setup();
+    const near = first + 7 * DAY;
+    const far = first + 14 * DAY;
+    const moveTo = (slot: number, days: number) =>
+      client.update({
+        changes: { endUtc: slot + days * DAY + HOUR, startUtc: slot + days * DAY },
+        ref: { id: 'ek-series', originalStartUtc: slot },
+        span: 'thisEvent',
+      });
+    await run(moveTo(near, 30));
+    await run(moveTo(far, 40));
+    // A range read returns both, wherever they sit now.
+    const moved = (await run(client.events({ endUtc: first + 100 * DAY, startUtc: first - DAY })))
+      .filter((e) => e.isDetached)
+      .map((e) => e.occurrenceStartUtc);
+    expect(moved).toEqual([near, far]);
+    // A write by slot still finds the one 30 days off, not the one 40 days off.
+    await run(moveTo(near, 29));
+    const farRef = { id: 'ek-series', originalStartUtc: far };
+    const notFound = {
+      _tag: 'AppleCalendarRequestError',
+      message: `notFound: occurrence ek-series@${far}`,
+    };
+    for (const span of ['thisEvent', 'futureEvents'] as const) {
+      expect(await run(Effect.flip(client.delete({ ref: farRef, span })))).toMatchObject(notFound);
+      expect(
+        await run(Effect.flip(client.update({ changes: { title: 'x' }, ref: farRef, span }))),
+      ).toMatchObject(notFound);
+    }
+    expect(state.series.get('ek-series')?.detached.get(far)?.title).toBe('Standup');
+    expect(state.series.size).toBe(1);
+    await run(
+      client.delete({ ref: { id: 'ek-series', originalStartUtc: near }, span: 'thisEvent' }),
+    );
+    expect(state.series.get('ek-series')?.deleted.has(near)).toBe(true);
+  });
+
   it('moves a whole series to another calendar', async () => {
     const { client } = setup();
     await run(client.move({ calendarId: 'cal-work', id: 'ek-series' }));

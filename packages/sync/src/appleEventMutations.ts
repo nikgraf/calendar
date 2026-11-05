@@ -18,8 +18,10 @@ import type { AccountRepoShape, CalendarRepoShape } from '@calendar/db';
 import { Clock, Effect } from 'effect';
 import type { AppleCalendarEventsShape } from './appleCalendarEvents.ts';
 import { deviceTimeZone } from './appleCalendarEvents.ts';
+import { findAppleOccurrence } from './appleOccurrence.ts';
 import {
   type EventMutationsShape,
+  EventNotFoundError,
   InvalidColorError,
   RecurringAllDaySwitchError,
   RecurringEditUnsupportedError,
@@ -119,7 +121,12 @@ const rejectUnsupportedReminders = (reminders: EventReminders | undefined) =>
           )
         : Effect.void;
 
-/** A delete of something EventKit no longer has has nothing left to do. */
+/**
+ * A delete of something EventKit no longer has has nothing left to do.
+ * True of a delete by id. A delete by slot also answers "not found" for an
+ * occurrence that is still there but out of the bridge's reach, so it is
+ * wrapped only after a read found the occurrence (`deleteRecurring`).
+ */
 const goneIsDone = (effect: Effect.Effect<void, AppleCalendarError>) =>
   Effect.catchIf(effect, isNotFound, (error) =>
     Effect.logWarning('apple calendar delete: already gone', { message: error.message }),
@@ -181,14 +188,24 @@ export const makeAppleEventMutations = (deps: AppleEventMutationDeps): AppleEven
       ),
 
     deleteRecurring: ({ accountId, masterId, originalStartUtc, scope }) =>
-      goneIsDone(
-        scope === 'series'
-          ? // The series identifier alone resolves to its first occurrence.
-            client.delete({ ref: { id: masterId }, span: 'futureEvents' })
-          : client.delete({
-              ref: { id: masterId, originalStartUtc },
-              span: scope === 'instance' ? 'thisEvent' : 'futureEvents',
-            }),
+      (scope === 'series'
+        ? // The series identifier alone resolves to its first occurrence.
+          goneIsDone(client.delete({ ref: { id: masterId }, span: 'futureEvents' }))
+        : Effect.gen(function* () {
+            // The occurrence is named by its slot, and the bridge finds it
+            // only APPLE_WRITE_REACH_MS around that: one moved further on its
+            // own is still drawn, but the delete would answer "not found" —
+            // which must not read as "already gone". Look first, as far as
+            // the delete does; a miss is refused, whatever its reason.
+            const ref = { id: masterId, originalStartUtc };
+            if ((yield* findAppleOccurrence(client, ref)) === undefined) {
+              return yield* Effect.fail(new EventNotFoundError({ eventId: masterId }));
+            }
+            // Removed elsewhere since that read: nothing left to do.
+            yield* goneIsDone(
+              client.delete({ ref, span: scope === 'instance' ? 'thisEvent' : 'futureEvents' }),
+            );
+          })
       ).pipe(thenInvalidate, flagAccessLoss(accountId)),
 
     moveWithin: ({ accountId, calendarId, id }) =>

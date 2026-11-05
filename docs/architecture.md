@@ -837,6 +837,19 @@ it whenever a kind is added. Rules that keep the queue correct:
   following = `futureEvents` on the occurrence (EventKit splits the
   series); series = `futureEvents` on the first occurrence, a time edit
   shifting it by the edited occurrence's wall-clock delta, as for Google.
+- **A write by slot reaches 31 days.** Instance and following writes name
+  the occurrence by its slot, and the bridge finds it among what overlaps
+  31 days either side (`APPLE_WRITE_REACH_MS` in the protocol; the fake
+  looks exactly as far). EventKit keeps an occurrence moved any distance
+  on its own and a range read draws it, so beyond that reach a write
+  answers `notFound` for an occurrence still on screen. An update shows
+  that error. A delete must not take it for "already gone":
+  `deleteRecurring` reads first, as far as the delete looks
+  (`findAppleOccurrence`), and refuses a miss with `EventNotFoundError`,
+  whatever its reason. Only an occurrence that goes between that read and
+  the delete, and a delete by id alone (`deleteEvent`, scope series),
+  count as done when EventKit has nothing (`goneIsDone`). The agent
+  gateway resolves an occurrence for such a write no further either.
 - **Recurrence** crosses as structured rules (core `StructuredRule`);
   `toStructuredRules`/`toRRuleLines` convert. EXDATE/RDATE/EXRULE,
   BYHOUR/BYMINUTE/BYSECOND, WKST≠MO and COUNT+UNTIL cannot be stored:
