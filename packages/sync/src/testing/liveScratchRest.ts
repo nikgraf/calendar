@@ -312,9 +312,11 @@ const sameAddress = (a: string, b: string): boolean =>
  * Per-item failures are swallowed: a sweep must never fail the suite.
  *
  * It deletes by name, which is only safe in the account the names were
- * made in: a token that does not sign in as `email` (the live test
- * account) is refused before anything is listed. Every job sweeps before
- * it creates or writes, so such a run stops there.
+ * made in: a token that does not sign in as `email` (the address the run
+ * names as the live test account) is refused before anything is listed.
+ * Every job sweeps before it creates or writes, so a token and an address
+ * that disagree stop the run there. A pair minted together in the wrong
+ * account agrees: the check cannot tell.
  */
 export const sweep = async (
   token: string,

@@ -584,10 +584,15 @@ guest-side RSVP (needs a second account).
   the primary calendar. The sweep deletes by name, so it is guarded
   twice. It first asks Google which account the token signs in as (OpenID
   userinfo, the claim `google-live-token.mjs` took the address from) and
-  fails unless that is `GOOGLE_LIVE_EMAIL`; every job sweeps before it
-  creates or writes, so a token for another account stops the run there.
-  And it knows a name only in a run's exact shape: a calendar someone
-  called `e2e-2024-notes` and a task called `live-stream prep` stay.
+  fails unless that is the account `GOOGLE_LIVE_EMAIL` names; every job
+  sweeps before it creates or writes, so a token and an address that
+  disagree (one secret replaced, one value overridden) stop the run
+  there. What it cannot tell: a pair minted together in the wrong account
+  agrees (the script prints the address it minted for), and the iOS app
+  signs in with the bundle's own `EXPO_PUBLIC_…` values, which only CI is
+  sure to fill from the same secrets. And it knows a name only in a
+  run's exact shape: a calendar someone called `e2e-2024-notes` and a
+  task called `live-stream prep` stay.
   Guests are `guest-<runTag>@example.com` and every
   write with guests goes out with `sendUpdates=none`: `GuestNotifications`
   (`packages/google`, a `Context.Reference` defaulting to `'all'`) is

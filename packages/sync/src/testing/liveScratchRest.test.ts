@@ -167,6 +167,9 @@ describe('live scratch names', () => {
       'e2e-2024-notes',
       'e2e-1-run-ios',
       `e2e-${seconds}-nightly`,
+      // Unix seconds have ten digits: fewer or more is not a run's stamp.
+      'e2e-12345-gh-501-1-node',
+      `e2e-${seconds}0-gh-501-1-node`,
       `e2e-${seconds}-gh-501`,
       `e2e-${seconds}-local-`,
       `e2e-${seconds}-gh-501-1 Review`,

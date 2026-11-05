@@ -85,7 +85,7 @@ const config = () => {
     clientSecret: clientSecret || undefined,
     email,
     refreshToken,
-    runTag: checkedRunTag(process.env['GOOGLE_LIVE_RUN_TAG'] || `local-${process.pid}`),
+    runTag: process.env['GOOGLE_LIVE_RUN_TAG'] || `local-${process.pid}`,
   };
 };
 
@@ -93,13 +93,16 @@ const shellQuote = (value: string): string => `'${value.replaceAll("'", String.r
 
 const setup = async (): Promise<void> => {
   const live = config();
+  // Here, not in `config`: teardown names nothing, and must still delete
+  // what the state file holds under whatever tag is exported by then.
+  const runTag = checkedRunTag(live.runTag);
   const suffix = flags.get('suffix') ?? 'ios';
   const token = await mintAccessToken(live);
   // Before anything is created: a token for another account stops the run here.
   const swept = await sweep(token, { email: live.email, maxAgeMs: SWEEP_MAX_AGE_MS });
   console.error(`swept ${swept.calendars} stale calendars, ${swept.lists} stale lists`);
-  const calendarName = scratchName(live.runTag, suffix);
-  const listName = scratchName(live.runTag, `${suffix}-tasks`);
+  const calendarName = scratchName(runTag, suffix);
+  const listName = scratchName(runTag, `${suffix}-tasks`);
   // Each id lands in the state file as soon as it exists, so a setup that
   // dies halfway still leaves teardown something to delete.
   const { calendarId, listId } = await allocateScratch(api, token, statePath, {
@@ -115,7 +118,7 @@ const setup = async (): Promise<void> => {
     MAESTRO_LIVE_EMAIL: live.email,
     MAESTRO_LIVE_LIST_ID: listId,
     MAESTRO_LIVE_LIST_NAME: listName,
-    MAESTRO_LIVE_RUN_TAG: live.runTag,
+    MAESTRO_LIVE_RUN_TAG: runTag,
   };
   const githubEnv = process.env['GITHUB_ENV'];
   if (flags.has('github-env') && githubEnv) {

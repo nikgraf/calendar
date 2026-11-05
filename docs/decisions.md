@@ -179,14 +179,14 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   (#263's retry runs here unrebooted); a deleted event left on screen.
 - **The live sweep checks its account** (2026-11-05,
   `todo/live-sweep-guard`) — the sweep deleted by name with whatever
-  token it was given: with a refresh token for another account, every
-  calendar named `e2e-<digits>-…` and every task starting `live-` there
-  was gone after six hours. It now asks Google who the token signs in as
-  and fails unless that is `GOOGLE_LIVE_EMAIL`, and knows a name only in a
-  run's exact shape; a run under any other tag is refused. Rejected: the
-  primary calendar's id as the identity (userinfo is the claim the
-  address came from), naming either address in the error (CI logs). Open:
-  the run's own writes are kept from a wrong account by order alone.
+  token it was given: in another account, every calendar named
+  `e2e-<digits>-…` and every task starting `live-` was gone after six
+  hours. It now fails unless Google says the token signs in as the
+  account `GOOGLE_LIVE_EMAIL` names, and knows a name only in a run's
+  exact shape; a run under any other tag is refused. Rejected: an address
+  pinned in the repo (it may be public), naming either address in the
+  error (CI logs). Open: a token and address minted together in the wrong
+  account agree; the iOS app's own token is the bundle's, unchecked.
 - **A touch the simulator dropped** (2026-10-31, `todo/dropped-touch-retry`)
   — live nightly 40265233306's flow 04 tap made no op: backboardd handled
   its touch-down, then skipped every later event, so the app got a down
