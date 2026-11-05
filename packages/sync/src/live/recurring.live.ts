@@ -64,6 +64,12 @@ const target = (masterId: string, originalStartUtc: number) => ({
   originalStartUtc,
 });
 
+/** Where Google draws a series (`events.instances`, cancelled ones left out), in order. */
+const instanceStarts = (google: LiveScratchShape, masterId: string) =>
+  Effect.map(google.listInstances(calendar(), masterId), (instances) =>
+    instances.map((instance) => Date.parse(instance.start?.dateTime ?? '')).sort((a, b) => a - b),
+  );
+
 describe('live Google: recurring series', () => {
   it.live('a weekly master round-trips as one row', () =>
     Effect.gen(function* () {
@@ -158,6 +164,13 @@ describe('live Google: recurring series', () => {
       expect(tailRow).toBeDefined();
       const tail = yield* google.getEvent(calendar(), tailRow!.id);
       expect(tail.recurrence?.some((line) => line.includes('COUNT=3'))).toBe(true);
+      // The rule lines say how Google stores the cut; its own expansion says
+      // where the days are. The old series ends the week before the cut, the
+      // new one starts on it, and between them every day is drawn once.
+      const weeks = (...numbers: ReadonlyArray<number>) =>
+        numbers.map((week) => master.startUtc + week * WEEK);
+      expect(yield* instanceStarts(google, master.id)).toEqual(weeks(0, 1, 2));
+      expect(yield* instanceStarts(google, tailRow!.id)).toEqual(weeks(3, 4, 5));
       // Both masters come back as the editor left them.
       yield* engine.syncAll();
       expect((yield* events.getById(LIVE_ACCOUNT_ID, calendar(), master.id))?.recurrence).toEqual(
@@ -166,6 +179,17 @@ describe('live Google: recurring series', () => {
       expect((yield* events.getById(LIVE_ACCOUNT_ID, calendar(), tailRow!.id))?.title).toBe(
         `${master.title} (tail)`,
       );
+      // …and the calendar draws each half where Google does.
+      const from = master.startUtc - HOUR;
+      const to = master.startUtc + 6 * WEEK;
+      const drawn = assembleWindow(yield* events.getWindow(from, to), from, to);
+      const drawnOf = (masterId: string) =>
+        drawn
+          .filter((event) => event.recurringEventId === masterId)
+          .map((event) => event.startUtc)
+          .sort((a, b) => a - b);
+      expect(drawnOf(master.id)).toEqual(weeks(0, 1, 2));
+      expect(drawnOf(tailRow!.id)).toEqual(weeks(3, 4, 5));
     }).pipe(Effect.provide(liveEngineLayer(config))),
   );
 
@@ -405,11 +429,9 @@ const onGoogle = (google: LiveScratchShape, series: Series) =>
     moved: stateOf(google, series.moved),
   });
 
-/** Where Google draws the series (`events.instances`, cancelled ones left out). */
+/** Where Google draws the series. */
 const drawnOnGoogle = (google: LiveScratchShape, series: Series) =>
-  Effect.map(google.listInstances(calendar(), series.masterId), (instances) =>
-    instances.map((instance) => Date.parse(instance.start?.dateTime ?? '')).sort((a, b) => a - b),
-  );
+  instanceStarts(google, series.masterId);
 
 /** Where the calendar draws the series, over its first eight weeks. */
 const drawnHere = (series: Series) =>
