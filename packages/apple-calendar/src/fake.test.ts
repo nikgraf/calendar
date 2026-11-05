@@ -410,6 +410,91 @@ describe('fake EventKit spans', () => {
     });
   });
 
+  it('a series-wide time change moves the changed occurrences by the wall clock, across a DST change', async () => {
+    // Saturdays 09:00 in Vienna from 28 March 2026; summer time starts on the 29th.
+    const start = Date.UTC(2026, 2, 28, 8);
+    const second = Date.UTC(2026, 3, 4, 7);
+    const { bridge } = makeFakeAppleCalendarClient({
+      calendars: [
+        {
+          allowsModifications: true,
+          id: 'cal-home',
+          isDefault: true,
+          sourceTitle: 'iCloud',
+          sourceType: 'calDAV',
+          title: 'Home',
+          type: 'calDAV',
+        },
+      ],
+      events: [
+        {
+          event: {
+            ...weekly(),
+            endUtc: start + HOUR,
+            id: 'ek-vienna',
+            occurrenceStartUtc: start,
+            startUtc: start,
+            timeZone: 'Europe/Vienna',
+          },
+          recurrence: ['RRULE:FREQ=WEEKLY;COUNT=3'],
+        },
+      ],
+    });
+    await run(
+      bridge.update({
+        changes: { title: 'Renamed' },
+        ref: { id: 'ek-vienna', originalStartUtc: second },
+        span: 'thisEvent',
+      }),
+    );
+    // The whole series a day later: Sunday 09:00, already in summer time (23 hours on).
+    await run(
+      bridge.update({
+        changes: { endUtc: start + 24 * HOUR, startUtc: start + 23 * HOUR },
+        ref: { id: 'ek-vienna' },
+        span: 'futureEvents',
+      }),
+    );
+    // Every Sunday at 09:00 once: the renamed one sits on its new slot, a
+    // day (24 hours) after its old one, and still shadows it.
+    const range = { endUtc: start + 30 * DAY, startUtc: start - DAY };
+    expect(
+      (await run(bridge.events(range))).map((e) => [e.title, e.startUtc, e.occurrenceStartUtc]),
+    ).toEqual([
+      ['Standup', start + 23 * HOUR, start + 23 * HOUR],
+      ['Renamed', second + DAY, second + DAY],
+      ['Standup', second + 8 * DAY, second + 8 * DAY],
+    ]);
+  });
+
+  it("a changed occurrence that takes the series' new location loses the old coordinates with it", async () => {
+    const { bridge, state } = setup();
+    const slot = first + 7 * DAY;
+    const place = { geo: { lat: 48.2, lng: 16.37 }, location: 'Café Central' };
+    await run(bridge.update({ changes: place, ref: { id: 'ek-series' }, span: 'futureEvents' }));
+    await run(
+      bridge.update({
+        changes: { title: 'Renamed' },
+        ref: { id: 'ek-series', originalStartUtc: slot },
+        span: 'thisEvent',
+      }),
+    );
+    expect(state.series.get('ek-series')?.detached.get(slot)).toMatchObject(place);
+    // A new place without coordinates: the series drops the old ones, and so
+    // does the occurrence that follows the series' location.
+    await run(
+      bridge.update({
+        changes: { location: 'Room 4' },
+        ref: { id: 'ek-series' },
+        span: 'futureEvents',
+      }),
+    );
+    expect(state.series.get('ek-series')?.event.geo).toBeUndefined();
+    const renamed = state.series.get('ek-series')?.detached.get(slot);
+    expect(renamed).toMatchObject({ location: 'Room 4', title: 'Renamed' });
+    expect(renamed?.geo).toBeUndefined();
+  });
+
   it('moves a whole series to another calendar', async () => {
     const { client } = setup();
     await run(client.move({ calendarId: 'cal-work', id: 'ek-series' }));

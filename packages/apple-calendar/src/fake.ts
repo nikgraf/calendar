@@ -1,5 +1,6 @@
 import {
   addDaysToPlainDate,
+  applyWallClockDelta,
   changesFromSubscription,
   expandRecurringEvent,
   plainDateToUtcMs,
@@ -222,25 +223,33 @@ const SERIES_FIELDS = [
 ] as const;
 
 /**
- * A detached occurrence after its series' time moved by `shift`: its slot
- * follows, and so does its own time while it still sat on its slot. The
- * identifier keeps its `/RID=`.
+ * Where a slot lands when its series' start moves from `from` to `to`: by
+ * the wall clock of the series' zone, as the rule's own slots do — a fixed
+ * number of hours would miss them across a DST change.
  */
-const shiftedBy = (occurrence: AppleEventJson, slot: number, shift: number): AppleEventJson => ({
+const slotAfter = (slot: number, zone: string, from: number, to: number): number =>
+  from === to ? slot : applyWallClockDelta(slot, zone, from, to);
+
+/**
+ * A detached occurrence after its series' time moved: its slot is `to`,
+ * and its own time follows while it still sat on its slot. The identifier
+ * keeps its `/RID=`.
+ */
+const atSlot = (occurrence: AppleEventJson, slot: number, to: number): AppleEventJson => ({
   ...occurrence,
-  occurrenceStartUtc: slot + shift,
-  ...(shift !== 0 && occurrence.startUtc === slot
-    ? { endUtc: occurrence.endUtc + shift, startUtc: occurrence.startUtc + shift }
+  occurrenceStartUtc: to,
+  ...(to !== slot && occurrence.startUtc === slot
+    ? { endUtc: to + (occurrence.endUtc - occurrence.startUtc), startUtc: to }
     : {}),
 });
 
 /**
  * A write to the series as a whole (or to a single event). Detached
- * occurrences stay: each takes a changed field it had not changed
- * itself (EventKit leaves out one that was moved past the series' end;
- * the fake does not tell), and each follows a time change (`shiftedBy`).
- * A time change also brings back the occurrences deleted on their own
- * (their exclusion keeps the old time).
+ * occurrences stay: each takes a field the write changed on the series
+ * while it still had the series' value (EventKit leaves out one that was
+ * moved past the series' end; the fake does not tell), and each follows a
+ * time change (`atSlot`). A time change also brings back the occurrences
+ * deleted on their own (their exclusion keeps the old time).
  */
 const writeWhole = (series: FakeSeries, changes: EventWrite, now: number): AppleEventJson => {
   const before = series.event;
@@ -253,15 +262,18 @@ const writeWhole = (series: FakeSeries, changes: EventWrite, now: number): Apple
     series.rules.length > 0
       ? { ...written, hasRecurrence: true, occurrenceStartUtc: written.startUtc }
       : { ...single, hasRecurrence: false };
-  const shift = series.event.startUtc - before.startUtc;
+  const zone = zoneOf(series.event);
   const kept = [...series.detached];
   series.detached.clear();
   for (const [slot, occurrence] of kept) {
     const next: Record<string, unknown> = { ...occurrence };
     for (const field of SERIES_FIELDS) {
+      // What the write changed on the series, coordinates dropped with a
+      // new location included.
+      const was = JSON.stringify(before[field]);
       if (
-        changes[field] !== undefined &&
-        JSON.stringify(occurrence[field]) === JSON.stringify(before[field])
+        JSON.stringify(series.event[field]) !== was &&
+        JSON.stringify(occurrence[field]) === was
       ) {
         if (series.event[field] === undefined) {
           delete next[field];
@@ -270,9 +282,10 @@ const writeWhole = (series: FakeSeries, changes: EventWrite, now: number): Apple
         }
       }
     }
-    series.detached.set(slot + shift, shiftedBy(next as unknown as AppleEventJson, slot, shift));
+    const to = slotAfter(slot, zone, before.startUtc, series.event.startUtc);
+    series.detached.set(to, atSlot(next as unknown as AppleEventJson, slot, to));
   }
-  if (shift !== 0) {
+  if (series.event.startUtc !== before.startUtc) {
     series.deleted.clear();
   }
   return series.event;
@@ -447,12 +460,11 @@ export const makeFakeAppleCalendarClient = (
     // The new series may start elsewhere than the slot (the write moved
     // the occurrence): the later detached occurrences follow, as they do
     // through a series-wide time change.
-    const shift = event.startUtc - slot;
     const detached = new Map(
-      later.map(([key, occurrence]) => [
-        key + shift,
-        underSeries(shiftedBy(occurrence, key, shift), event),
-      ]),
+      later.map(([key, occurrence]) => {
+        const to = slotAfter(key, zoneOf(event), slot, event.startUtc);
+        return [to, underSeries(atSlot(occurrence, key, to), event)];
+      }),
     );
     const saved =
       at.kind === 'detached'
