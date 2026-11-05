@@ -43,8 +43,7 @@ const COMMAND_N = `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n',
 const TITLE = 'input[placeholder="Title"]';
 const START = 'input[aria-label="Start time"]';
 const titleValue = `document.querySelector(${JSON.stringify(TITLE)})?.value ?? ''`;
-// Two turns are listed, newest first; a third folds the oldest into "+1 earlier query".
-const turns = `document.querySelectorAll('[data-testid="draft-turn"]').length`;
+const earlierQueries = `document.querySelector('[data-testid="draft-turns-more"]')?.textContent`;
 const newestSummary = `document.querySelector('[data-testid="draft-turn-summary"]')?.textContent ?? ''`;
 const startIs = (time: string) =>
   `document.querySelector(${JSON.stringify(START)})?.value === ${JSON.stringify(time)}`;
@@ -72,10 +71,10 @@ describe('Hands-free dictation', () => {
 
     // One click: the first phrase makes the draft, the second moves it — no click between.
     await cdp.clickTestId('quick-add-mic');
-    await cdp.waitFor(`${turns} === 1`, 20_000);
+    await cdp.waitFor(`(${titleValue}) === 'Dinner'`, 20_000);
     await cdp.waitFor(startIs('19:00'));
     expect(await cdp.eval<boolean>(dictating)).toBe(true);
-    await cdp.waitFor(`${turns} === 2`, 20_000);
+    await cdp.waitFor(`${earlierQueries} === '+1 earlier query'`, 20_000);
     await cdp.waitFor(startIs('20:00'));
     expect(await cdp.eval<boolean>(dictating)).toBe(true);
 
@@ -85,7 +84,7 @@ describe('Hands-free dictation', () => {
     await cdp.waitFor(`!(${dictating})`);
     expect(await cdp.eval<string>(titleValue)).toBe('Late dinner');
     await new Promise((resolve) => setTimeout(resolve, ONE_LOOP_MS));
-    expect(await cdp.eval<number>(turns)).toBe(2);
+    expect(await cdp.eval<string>(earlierQueries)).toBe('+1 earlier query');
     expect(await cdp.eval<boolean>(startIs('20:00'))).toBe(true);
 
     // On again: the next phrase changes the time and keeps the title typed meanwhile.

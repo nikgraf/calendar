@@ -14,7 +14,7 @@ import { ThreadTurnList } from './ThreadTurnList.tsx';
 import { BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme } from './theme.ts';
 
 /**
- * The thread above a new item's form: the turns newest first, two
+ * The thread above a new item's form: only its newest turn shows
  * until "+N earlier queries" opens the rest (`ThreadTurnList`, Undo on
  * the newest), a caveat the drafts came with, the free slots a finder
  * phrase offered (the one the form sits in selected; a tap moves the

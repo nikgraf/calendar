@@ -701,7 +701,7 @@ privacy modal, the settings window, the inspector and inline editor, ⌘K);
 click of the microphone: two phrases land at their pauses, a typed title
 ends the dictation, the next phrase keeps that title); `draftThread` (a
 phrase's draft on the grid, a change, Undo, Save; four turns folding to
-two under "+2 earlier queries", the changed time flashing; a pasted mail's thread,
+one with "+3 earlier queries", the changed time flashing; a pasted mail's thread,
 the pager, Remove, Add all; drafts made an event in another calendar, a
 task and a reminder, each shown again as it was left with nothing asked,
 and Add all writing each where it was put); `slotProposals` (a finder phrase on the
