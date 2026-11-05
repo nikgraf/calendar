@@ -1,8 +1,7 @@
-import {
-  APPLE_WRITE_REACH_MS,
-  type AppleCalendarClientShape,
-  type AppleCalendarError,
-  type AppleEventJson,
+import type {
+  AppleCalendarClientShape,
+  AppleCalendarError,
+  AppleEventJson,
 } from '@calendar/apple-calendar';
 import { Effect } from 'effect';
 
@@ -21,16 +20,34 @@ export const isAppleOccurrence = (
 
 /**
  * One occurrence of an Apple series as EventKit has it now, where a write
- * by its slot can reach it; undefined when it is gone or sits further off.
+ * by its slot reaches it (`AppleCalendarClientShape.occurrence`);
+ * undefined when it is gone, cancelled, or out of that reach.
  */
 export const findAppleOccurrence = (
-  client: Pick<AppleCalendarClientShape, 'events'>,
+  client: Pick<AppleCalendarClientShape, 'occurrence'>,
   ref: { readonly id: string; readonly originalStartUtc: number },
 ): Effect.Effect<AppleEventJson | undefined, AppleCalendarError> =>
-  Effect.map(
-    client.events({
-      endUtc: ref.originalStartUtc + APPLE_WRITE_REACH_MS,
-      startUtc: ref.originalStartUtc - APPLE_WRITE_REACH_MS,
-    }),
-    (nearby) => nearby.find((event) => isAppleOccurrence(event, ref)),
+  Effect.map(client.occurrence(ref), (found) =>
+    found === undefined || found.status === 'cancelled' ? undefined : found,
   );
+
+/** EventKit matches four years per predicate; the count looks through the series' first four. */
+const MODIFIED_WINDOW_MS = 4 * 365 * 24 * 60 * 60 * 1000;
+
+/**
+ * How many occurrences of a series were changed on their own, in the four
+ * years from its first: what a copy to another account drops. One range
+ * read across every calendar, so only a move or conversion preview asks.
+ * (The bridge's own `detachedCount` compares the series id with
+ * identifiers that never equal it; it is 0 on a real store.)
+ */
+export const countAppleChangedOccurrences = (
+  client: Pick<AppleCalendarClientShape, 'events'>,
+  first: AppleEventJson,
+): Effect.Effect<number, AppleCalendarError> => {
+  const startUtc = first.occurrenceStartUtc ?? first.startUtc;
+  return Effect.map(
+    client.events({ endUtc: startUtc + MODIFIED_WINDOW_MS, startUtc }),
+    (events) => events.filter((event) => event.id === first.id && event.isDetached).length,
+  );
+};

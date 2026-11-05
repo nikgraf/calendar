@@ -829,31 +829,59 @@ it whenever a kind is added. Rules that keep the queue correct:
   all the same, so a refusal fails too), since no stored row stands in
   and an empty answer would read as "deleted".
 - **Ids**: a single event is its `eventIdentifier`; an occurrence of a
-  series is `<eventIdentifier>__<occurrenceSlot>` with
+  series is `<series id>__<occurrenceSlot>` with
   `recurringEventId`/`originalStartUtc` set — the same shape
   `assembleWindow` gives Google occurrences, stable when one occurrence
-  is moved on its own (the slot names the occurrence, not its start).
+  is moved or edited on its own (the slot names the occurrence, not its
+  start).
+- **One identity per series** (`withSeriesIdentity`,
+  `packages/apple-calendar/src/seriesIdentity.ts`). EventKit gives an
+  occurrence changed on its own an identifier of its own,
+  `<series id>/RID=<n>`, and the Swift bridge passes identifiers on
+  untouched and compares them literally. The client both apps and the
+  fake use is the bridge under this TypeScript layer; the bridge itself
+  is not touched (no native change). What is read names every
+  occurrence by its series' id and slot, so the views, search (one hit
+  per series), the agent gateway's refs and exceptions and the record id
+  all see one series. A write by slot goes to the bridge as it is, which
+  finds every occurrence the rule draws; when the bridge has nothing
+  there, the layer looks for the changed occurrence and writes it by
+  EventKit's own identifier, without a slot. That identifier cannot be
+  computed (`<n>` is the slot at the time it was detached, as an instant
+  or as a wall clock, and is never rewritten —
+  docs/google-sync-and-testing.md): the layer guesses it from the slot,
+  reads the guess back (`calendar.series` reads one event by exact id)
+  and takes it only if it answers a detached occurrence with that slot;
+  failing that it takes the changed occurrence a range read
+  `APPLE_WRITE_REACH_MS` (31 days) around the slot returns. So an
+  occurrence moved any distance is edited and deleted like any other.
+  The one it does not find: moved over 31 days from its slot, with an
+  identifier that no longer names the slot (the series' time was changed
+  after it was detached). An `id` without a slot is EventKit's and
+  passes through — a single event, a series as a whole, or the leftover
+  of a split whose id ends in `/RID=` although it is no occurrence any
+  more. `calendar.applyBatch` passes through too (mirror copies are
+  single events), and `externalId` keeps EventKit's value, so a mirror's
+  source keys do not change.
 - **Scopes → EKSpan**: instance = `thisEvent` on the occurrence;
   following = `futureEvents` on the occurrence (EventKit splits the
-  series); series = `futureEvents` on the first occurrence, a time edit
-  shifting it by the edited occurrence's wall-clock delta, as for Google.
-- **A write by slot reaches 31 days.** Instance and following writes name
-  the occurrence by its slot, and the bridge finds it among what overlaps
-  31 days either side (`APPLE_WRITE_REACH_MS` in the protocol; the fake
-  looks exactly as far). EventKit keeps an occurrence moved any distance
-  on its own and a range read draws it, so beyond that reach a write
-  answers `notFound` for an occurrence still on screen. An update shows
-  that error. A delete must not take it for "already gone":
-  `deleteRecurring` reads first, as far as the delete looks
-  (`findAppleOccurrence`), and refuses a miss with `EventNotFoundError`,
-  whatever its reason. Only an occurrence that goes between that read and
-  the delete, and a delete by id alone (`deleteEvent`, scope series),
-  count as done when EventKit has nothing (`goneIsDone`). A conversion
-  reads the occurrence itself before it copies, so its delete
-  (`deleteFoundOccurrence`) does not look again. The agent gateway
-  resolves an occurrence for a write by its slot no further either. A
-  series update writes the first occurrence by that one's slot, with the
-  same reach.
+  series at its slot, also from a changed occurrence); series =
+  `futureEvents` on the series, named by its id alone — never by the
+  first occurrence's slot, which finds nothing once that occurrence was
+  changed or deleted on its own — a time edit shifting it by the edited
+  occurrence's wall-clock delta, as for Google.
+- **A delete never takes a miss for "already gone".** A write by slot
+  answers `notFound` for an occurrence that is gone and for the one the
+  layer cannot find although a range read still draws it. An update
+  shows that error. `deleteRecurring` (instance, following) reads first
+  (`findAppleOccurrence` → the client's `occurrence`, which finds exactly
+  what the write finds) and refuses a miss with `EventNotFoundError`,
+  whatever its reason. Only an occurrence that goes between that read
+  and the delete, and a delete by id alone (`deleteEvent`, scope
+  series), count as done when EventKit has nothing (`goneIsDone`). A
+  conversion reads the occurrence itself before it copies, so its delete
+  (`deleteFoundOccurrence`) is not refused for a miss after that read.
+  The agent gateway resolves an occurrence for a write the same way.
 - **Recurrence** crosses as structured rules (core `StructuredRule`);
   `toStructuredRules`/`toRRuleLines` convert. EXDATE/RDATE/EXRULE,
   BYHOUR/BYMINUTE/BYSECOND, WKST≠MO and COUNT+UNTIL cannot be stored:
@@ -875,14 +903,17 @@ it whenever a kind is added. Rules that keep the queue correct:
   URL, an Apple URL is appended to the Google description; modified
   occurrences are dropped. The editor asks `previewMove` first and
   confirms `moveLossSummary` when anything is dropped, then saves field
-  edits at the source and moves. Converting an event into a task reuses
-  the same source loading and series delete (`loadSource`, `deleteFrom`);
-  one occurrence is read by `loadOccurrence` — on Apple through a ranged
-  EventKit read around its slot (`findAppleOccurrence`) that reaches as
-  far as the bridge's own lookup of a slot, 31 days, so the delete finds
-  what the read found — and leaves through the instance delete
-  (`deleteRecurring`; on Apple `deleteFoundOccurrence`, the same delete
-  without a second read).
+  edits at the source and moves. An Apple series' modified occurrences
+  are counted from a range read over its first four years
+  (`countAppleChangedOccurrences`; the bridge's own `detachedCount`
+  compares the series id with identifiers that never equal it and is 0
+  on a real store). Converting an event into a task reuses the same
+  source loading and series delete (`loadSource`, `deleteFrom`); one
+  occurrence is read by `loadOccurrence` — on Apple through
+  `findAppleOccurrence`, which finds what the delete finds — and leaves
+  through the instance delete (`deleteRecurring`; on Apple
+  `deleteFoundOccurrence`, the same delete without the refusal of a
+  miss).
 
 ## Calendar mirrors (packages/sync/src/mirrors.ts, core mirror/)
 

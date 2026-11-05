@@ -16,9 +16,12 @@ import { Schema } from 'effect';
  *   device is in).
  * - `occurrenceStartUtc` is EventKit's `occurrenceDate`: the slot an
  *   occurrence of a series was generated for. It survives the occurrence
- *   being moved on its own, so it is the occurrence's identity within the
- *   series (with the series' `id`). Present iff the event repeats or is a
- *   detached occurrence.
+ *   being moved on its own, so with the series it names the occurrence.
+ *   Present iff the event repeats or is a detached occurrence.
+ * - `id` is EventKit's `eventIdentifier`, untouched: the series' for an
+ *   occurrence the rule draws, `<series id>/RID=…` for one changed on its
+ *   own (identity.ts). The bridge compares it literally. The client the
+ *   app uses names every occurrence by its series (`withSeriesIdentity`).
  * - recurrence crosses as structured rules (core `StructuredRule`); RRULE
  *   text exists only on the TS side.
  * - Nothing is ever fetched without a range: EventKit expands series
@@ -90,13 +93,19 @@ export const AppleEventJson = Schema.Struct({
   endUtc: Schema.Number,
   /**
    * EKCalendarItem.calendarItemExternalIdentifier: unlike `id`, the same on
-   * every device the event syncs to, and shared by the occurrences of a
-   * series. A calendar mirror keys its sources by it.
+   * every device the event syncs to. The occurrences a series draws share
+   * it; one changed on its own has `<external id>/RID=…`, like its `id`,
+   * and keeps it here under either client. A calendar mirror keys its
+   * sources by it.
    */
   externalId: Schema.optional(Schema.String),
   geo: Schema.optional(AppleGeoJson),
   hasRecurrence: Schema.Boolean,
-  /** EKEvent.eventIdentifier — shared by every occurrence of a series. */
+  /**
+   * From the bridge: EKEvent.eventIdentifier, shared by the occurrences a
+   * series draws; an occurrence changed on its own has one of its own.
+   * From the client: the series' id for every occurrence.
+   */
   id: Schema.String,
   isAllDay: Schema.Boolean,
   isDetached: Schema.Boolean,
@@ -143,20 +152,26 @@ export interface EventWrite {
 export const Span = Schema.Literals(['futureEvents', 'thisEvent']);
 export type Span = typeof Span.Type;
 
-/** A single event (`originalStartUtc` absent) or one occurrence of a series. */
+/**
+ * A single event or a series as a whole (`originalStartUtc` absent: `id`
+ * is EventKit's and names exactly that event), or one occurrence of a
+ * series by the series' id and its slot.
+ */
 export interface OccurrenceRef {
   readonly id: string;
   readonly originalStartUtc?: number | undefined;
 }
 
 /**
- * How far either side of its slot the bridge looks for the occurrence a
- * ref names (`occurrence(id:originalStartUtc:)` in AppleCalendarBridge.swift,
- * the same overlap query `calendar.events` runs). EventKit lets one
- * occurrence be moved any distance on its own, and a range read returns it
- * wherever it sits — but an update or a delete by its slot then answers
- * `notFound`. A read that decides a write therefore reaches exactly this
- * far: what it finds, the write finds.
+ * How far either side of a slot the bridge looks for the event a ref by
+ * slot names (`occurrence(id:originalStartUtc:)` in
+ * AppleCalendarBridge.swift, the same overlap query `calendar.events`
+ * runs). An occurrence the rule draws sits on its slot, so the bridge
+ * always finds it. One changed on its own can sit any distance away, and
+ * the bridge does not find it by the series' id at all: the client reads
+ * it by its own identifier, or — where that no longer names the slot —
+ * among what a range read this far around the slot returns
+ * (`withSeriesIdentity`).
  */
 export const APPLE_WRITE_REACH_MS = 31 * 24 * 60 * 60 * 1000;
 
@@ -187,9 +202,12 @@ export const ListCalendarsResult = Schema.Struct({ calendars: Schema.Array(Apple
 export const EventsResult = Schema.Struct({ events: Schema.Array(AppleEventJson) });
 export const EventResult = Schema.Struct({ event: AppleEventJson });
 /**
- * A series as a whole: its first occurrence, its rules, and how many
- * occurrences were changed on their own (what a cross-provider move
- * drops). For a single event `rules` is empty and `detachedCount` 0.
+ * `calendar.series`: the event `id` names — for a series its first
+ * occurrence as the rule draws it, with its rules; for a single event or
+ * an occurrence's own identifier that event, without rules.
+ * `detachedCount` compares the series id with the identifiers of detached
+ * occurrences, which never equal it: it is 0 on a real store and nothing
+ * reads it (`countAppleChangedOccurrences` in packages/sync counts).
  */
 export const SeriesResult = Schema.Struct({
   detachedCount: Schema.Number,

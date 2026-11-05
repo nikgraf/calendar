@@ -283,8 +283,8 @@ const seed = Effect.gen(function* () {
   );
 });
 
-const testLayer = () =>
-  appleCalendarServicesLayer(fake().client).pipe(
+const testLayer = (apple = fake()) =>
+  appleCalendarServicesLayer(apple.client).pipe(
     Layer.provideMerge(reposLayer),
     Layer.provideMerge(Layer.effectDiscard(runMigrations)),
     Layer.provideMerge(SqliteClient.layer({ filename: ':memory:' })),
@@ -410,6 +410,31 @@ describe('search handler', () => {
       ]);
     }).pipe(Effect.provide(testLayer())),
   );
+
+  it.effect('counts an Apple occurrence changed on its own to its series: still one hit', () => {
+    const apple = fake();
+    return Effect.gen(function* () {
+      yield* TestClock.setTime(NOW);
+      yield* seed;
+      // Next week's yoga starts two hours later. EventKit gives an
+      // occurrence changed on its own an identifier of its own.
+      const slot = at('2026-11-02T07:00');
+      yield* apple.client.update({
+        changes: { endUtc: slot + 3 * HOUR, startUtc: slot + 2 * HOUR },
+        ref: { id: 'ek-yoga', originalStartUtc: slot },
+        span: 'thisEvent',
+      });
+      expect(apple.state.series.get('ek-yoga')?.detached.get(slot)?.id).not.toBe('ek-yoga');
+      const found = yield* search('yoga');
+      expect(found.upcoming.hits).toMatchObject([
+        {
+          event: { recurringEventId: 'ek-yoga', startUtc: at('2026-10-26T07:00') },
+          repeating: true,
+        },
+      ]);
+      expect(found.upcoming.total).toBe(1);
+    }).pipe(Effect.provide(testLayer(apple)));
+  });
 
   it.effect('finds by filters alone: calendars, kind, all-day, people, place', () =>
     Effect.gen(function* () {

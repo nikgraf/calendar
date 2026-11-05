@@ -1,5 +1,11 @@
 import { type BridgeTransport, bridgeMessage, changesFromSubscription } from '@calendar/core';
-import { Context, Data, Effect, Layer, Schema, Stream } from 'effect';
+import { Context, Effect, Layer, Schema, Stream } from 'effect';
+import {
+  AppleCalendarAccessError,
+  type AppleCalendarError,
+  AppleCalendarRequestError,
+  AppleCalendarUnavailableError,
+} from './errors.ts';
 import {
   APPLE_CALENDAR_METHODS,
   type AppleCalendarJson,
@@ -18,33 +24,7 @@ import {
   type Span,
   StatusResult,
 } from './protocol.ts';
-
-/** EventKit events access is missing (denied/restricted/not asked yet). */
-export class AppleCalendarAccessError extends Data.TaggedError('AppleCalendarAccessError')<{
-  readonly authorization: CalendarAuthorization;
-}> {}
-
-/** No native calendar bridge on this build/platform (helper missing, module absent, kill switch). */
-export class AppleCalendarUnavailableError extends Data.TaggedError(
-  'AppleCalendarUnavailableError',
-)<{
-  readonly message: string;
-}> {}
-
-/** The bridge answered with an error (save failure, unknown id, read-only calendar…). */
-export class AppleCalendarRequestError extends Data.TaggedError('AppleCalendarRequestError')<{
-  readonly message: string;
-  readonly method: string;
-}> {}
-
-export type AppleCalendarError =
-  | AppleCalendarAccessError
-  | AppleCalendarRequestError
-  | AppleCalendarUnavailableError;
-
-/** The event (or occurrence) is gone — a delete of it has nothing left to do. */
-export const isNotFound = (error: AppleCalendarError): boolean =>
-  error._tag === 'AppleCalendarRequestError' && error.message.startsWith('notFound:');
+import { withSeriesIdentity } from './seriesIdentity.ts';
 
 const AUTHORIZATIONS: ReadonlySet<string> = new Set([
   'denied',
@@ -57,7 +37,13 @@ const AUTHORIZATIONS: ReadonlySet<string> = new Set([
 const isAuthorization = (value: string): value is CalendarAuthorization =>
   AUTHORIZATIONS.has(value);
 
-export interface AppleCalendarClientShape {
+/**
+ * The bridge as it answers: every identifier is EventKit's own, so an
+ * occurrence changed on its own carries `<series id>/RID=…` (identity.ts)
+ * and a ref by slot finds only what carries exactly its `id`. Only
+ * `withSeriesIdentity` and the fake speak to it directly.
+ */
+export interface AppleCalendarBridgeShape {
   /**
    * Several single-event writes under one commit (at most
    * `APPLE_BATCH_MAX`). Resolves to the writes that could not be made, by
@@ -115,6 +101,34 @@ export interface AppleCalendarClientShape {
   }) => Effect.Effect<AppleEventJson, AppleCalendarError>;
 }
 
+/** A series as a whole: its first occurrence as the rule draws it, and its rules (none: a single event). */
+export type AppleSeries = Pick<SeriesResult, 'first' | 'rules'>;
+
+/**
+ * What the app talks to: the bridge under `withSeriesIdentity`. Every
+ * occurrence of a series is named by the series' id and its slot,
+ * changed on its own or not — in what is read and in a ref that carries
+ * `originalStartUtc`. An `id` without a slot is EventKit's own and names
+ * exactly one event (a single event, or a series through its first
+ * occurrence).
+ */
+export interface AppleCalendarClientShape extends Omit<AppleCalendarBridgeShape, 'series'> {
+  /**
+   * One occurrence of a series as EventKit has it now, where a write by
+   * its slot reaches it: any occurrence the rule draws, and one changed
+   * on its own wherever its identifier still names it by that slot, or
+   * within `APPLE_WRITE_REACH_MS` of the slot. Undefined when it is gone
+   * — or out of that reach, which a read cannot tell apart.
+   */
+  readonly occurrence: (ref: {
+    readonly id: string;
+    readonly originalStartUtc: number;
+  }) => Effect.Effect<AppleEventJson | undefined, AppleCalendarError>;
+  readonly series: (params: {
+    readonly id: string;
+  }) => Effect.Effect<AppleSeries, AppleCalendarError>;
+}
+
 export class AppleCalendarClient extends Context.Service<
   AppleCalendarClient,
   AppleCalendarClientShape
@@ -130,10 +144,10 @@ const refParams = (ref: OccurrenceRef): Record<string, unknown> =>
  * get JSON back": the desktop helper stdio call and the iOS Expo module
  * both fit, so each platform only supplies `invoke`.
  */
-export const makeAppleCalendarClient = (
+export const makeAppleCalendarBridge = (
   invoke: (method: string, params?: Record<string, unknown>) => Promise<unknown>,
   changes: Stream.Stream<void> = Stream.empty,
-): AppleCalendarClientShape => {
+): AppleCalendarBridgeShape => {
   // iOS records a prompt's answer a moment after the alert closes; the
   // status read right after can still say notDetermined (20 s+ on a CI
   // runner), which read as "the prompt never opened" and flagged a freshly
@@ -257,6 +271,12 @@ export const makeAppleCalendarClient = (
   };
 };
 
+/** The bridge over `invoke`, as the app talks to it (`withSeriesIdentity`). */
+export const makeAppleCalendarClient = (
+  invoke: (method: string, params?: Record<string, unknown>) => Promise<unknown>,
+  changes: Stream.Stream<void> = Stream.empty,
+): AppleCalendarClientShape => withSeriesIdentity(makeAppleCalendarBridge(invoke, changes));
+
 /**
  * Every method fails with AppleCalendarUnavailableError — the client for
  * builds without a bridge (tests, e2e, a desktop without the helper).
@@ -274,6 +294,7 @@ export const unavailableAppleCalendarClient = (reason: string): AppleCalendarCli
     events: () => fail(),
     listCalendars: () => fail(),
     move: () => fail(),
+    occurrence: () => fail(),
     requestAccess: () => fail(),
     series: () => fail(),
     setColor: () => fail(),

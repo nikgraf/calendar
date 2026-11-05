@@ -57,7 +57,7 @@ import type { SqlError } from 'effect/sql/SqlError';
 import { isPulledCopy, makeApplyOp, retargetOp } from './applyOp.ts';
 import { AppleCalendarEvents, deviceTimeZone } from './appleCalendarEvents.ts';
 import { makeAppleEventMutations } from './appleEventMutations.ts';
-import { findAppleOccurrence } from './appleOccurrence.ts';
+import { countAppleChangedOccurrences, findAppleOccurrence } from './appleOccurrence.ts';
 import { planCarry, restoreCarriedText, withOwnText } from './carriedText.ts';
 import {
   CALENDAR_COLOR_EVENT_ID,
@@ -1737,6 +1737,10 @@ const make: Effect.Effect<
         const now = yield* Clock.currentTimeMillis;
         const mapped = mapAppleEvent(series.first, { deviceTimeZone: deviceTimeZone(), now });
         const recurrence = toRRuleLines(series.rules, series.first.isAllDay);
+        const modifiedOccurrences =
+          series.rules.length === 0
+            ? 0
+            : yield* countAppleChangedOccurrences(appleClient, series.first);
         return {
           defaultReminders: undefined,
           master: new EventRecord({
@@ -1746,7 +1750,7 @@ const make: Effect.Effect<
             recurrence: recurrence.length > 0 ? recurrence : undefined,
             recurringEventId: undefined,
           }),
-          modifiedOccurrences: series.detachedCount,
+          modifiedOccurrences,
           url: series.first.url,
         } satisfies MoveSource;
       }
@@ -1774,7 +1778,7 @@ const make: Effect.Effect<
    * One occurrence of a series as a conversion's source. Google: its own
    * row where it was edited on its own, else the master's fields at its
    * slot. Apple: the occurrence as EventKit has it, edited or not, where
-   * a delete by its slot can reach it. The rule and the other occurrences
+   * a delete by its slot reaches it. The rule and the other occurrences
    * stay with the series, so the source has neither to carry or to lose.
    * A slot the series does not draw (any more) is no event.
    */

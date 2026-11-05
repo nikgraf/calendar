@@ -4,6 +4,7 @@ import {
   AppleCalendarRequestError,
   type AppleEventJson,
   makeFakeAppleCalendarClient,
+  withSeriesIdentity,
 } from '@calendar/apple-calendar';
 import {
   Account,
@@ -604,69 +605,127 @@ describe('Apple Calendar mutations', () => {
   });
 
   it.effect(
-    'deleting an occurrence a write by its slot cannot reach is refused, never counted as done',
+    'an occurrence moved further than 31 days from its slot is edited and deleted on its own',
     () => {
       const fake = fakeWith();
       return Effect.gen(function* () {
         yield* connected;
         const mutations = yield* EventMutations;
         const slot = seriesStart + 7 * DAY;
-        // Forty days off its slot. The views draw it wherever it sits; the
-        // bridge looks 31 days either side of the slot and answers notFound.
+        // Forty days off its slot: further than the bridge looks for a slot.
+        // EventKit knows it by an identifier of its own, at any distance.
         yield* mutations.updateRecurring({
           ...standup,
           changes: { endUtc: slot + 40 * DAY + HOUR, startUtc: slot + 40 * DAY },
           originalStartUtc: slot,
           scope: 'instance',
         });
-        const drawn = Effect.gen(function* () {
-          const events = yield* (yield* AppleCalendarEvents).eventsInRange(
-            seriesStart - DAY,
-            seriesStart + 90 * DAY,
-          );
-          return events.filter((entry) => entry.originalStartUtc === slot).length;
+        yield* mutations.updateRecurring({
+          ...standup,
+          changes: { title: 'Standup (far)' },
+          originalStartUtc: slot,
+          scope: 'instance',
         });
-        expect(yield* drawn).toBe(1);
-        for (const scope of ['instance', 'following'] as const) {
-          const refused = yield* Effect.flip(
-            mutations.deleteRecurring({ ...standup, originalStartUtc: slot, scope }),
-          );
-          expect(refused).toMatchObject({ _tag: 'EventNotFoundError', eventId: 'ek-series' });
-        }
-        // Refused before EventKit was asked to remove anything.
-        expect(deletes(fake)).toBe(0);
-        expect(yield* drawn).toBe(1);
-        // The series as a whole is named by its id alone and still goes.
-        yield* mutations.deleteRecurring({ ...standup, originalStartUtc: slot, scope: 'series' });
-        expect(fake.state.series.has('ek-series')).toBe(false);
+        expect(yield* occurrenceAt(slot)).toMatchObject({
+          startUtc: slot + 40 * DAY,
+          title: 'Standup (far)',
+        });
+        yield* mutations.deleteRecurring({ ...standup, originalStartUtc: slot, scope: 'instance' });
+        expect(yield* occurrenceAt(slot)).toBeUndefined();
+        expect(fake.state.series.get('ek-series')?.deleted.has(slot)).toBe(true);
+        // "This and following" from one that sits far off cuts the series at its slot.
+        const later = seriesStart + 14 * DAY;
+        yield* mutations.updateRecurring({
+          ...standup,
+          changes: { endUtc: later - 50 * DAY + HOUR, startUtc: later - 50 * DAY },
+          originalStartUtc: later,
+          scope: 'instance',
+        });
+        yield* mutations.deleteRecurring({
+          ...standup,
+          originalStartUtc: later,
+          scope: 'following',
+        });
+        expect(series(fake).map((entry) => entry.occurrenceStartUtc)).toEqual([seriesStart]);
       }).pipe(Effect.provide(testLayer(fake)));
     },
   );
+
+  it.effect('a delete that cannot find its occurrence is refused, never counted as done', () => {
+    const fake = fakeWith();
+    return Effect.gen(function* () {
+      yield* connected;
+      const mutations = yield* EventMutations;
+      const slot = seriesStart + 7 * DAY;
+      yield* mutations.updateRecurring({
+        ...standup,
+        changes: { endUtc: slot + 40 * DAY + HOUR, startUtc: slot + 40 * DAY },
+        originalStartUtc: slot,
+        scope: 'instance',
+      });
+      // EventKit never rewrites the identifier it gave the occurrence: once
+      // the series' time changed, it names a slot the series no longer has.
+      // Forty days off, no read around the slot finds the occurrence either.
+      const walk = fake.state.series.get('ek-series')!;
+      walk.detached.set(slot, { ...walk.detached.get(slot)!, id: 'ek-series/RID=1' });
+      expect(yield* occurrenceAt(slot)).toMatchObject({ startUtc: slot + 40 * DAY });
+      for (const scope of ['instance', 'following'] as const) {
+        const refused = yield* Effect.flip(
+          mutations.deleteRecurring({ ...standup, originalStartUtc: slot, scope }),
+        );
+        expect(refused).toMatchObject({ _tag: 'EventNotFoundError', eventId: 'ek-series' });
+      }
+      // Refused before EventKit was asked to remove anything.
+      expect(deletes(fake)).toBe(0);
+      expect(yield* occurrenceAt(slot)).toBeDefined();
+      const edit = yield* Effect.flip(
+        mutations.updateRecurring({
+          ...standup,
+          changes: { title: 'x' },
+          originalStartUtc: slot,
+          scope: 'instance',
+        }),
+      );
+      expect(edit).toMatchObject({ _tag: 'AppleCalendarRequestError' });
+      // Within 31 days of its slot a read finds it, whatever its identifier says.
+      walk.detached.set(slot, {
+        ...walk.detached.get(slot)!,
+        endUtc: slot + 20 * DAY + HOUR,
+        startUtc: slot + 20 * DAY,
+      });
+      yield* mutations.deleteRecurring({ ...standup, originalStartUtc: slot, scope: 'instance' });
+      expect(yield* occurrenceAt(slot)).toBeUndefined();
+      // The series as a whole is named by its id alone and still goes.
+      yield* mutations.deleteRecurring({ ...standup, originalStartUtc: slot, scope: 'series' });
+      expect(fake.state.series.has('ek-series')).toBe(false);
+    }).pipe(Effect.provide(testLayer(fake)));
+  });
 
   it.effect(
     'an occurrence deleted elsewhere is not found; one that goes mid-delete is done',
     () => {
       const fake = fakeWith();
       const slot = seriesStart + 7 * DAY;
-      const elsewhere = fake.client.delete({
+      const elsewhere = fake.bridge.delete({
         ref: { id: 'ek-series', originalStartUtc: slot },
         span: 'thisEvent',
       });
       // Calendar.app removes the occurrence right after the read that found it.
       let racing = false;
-      const raced: AppleCalendarClientShape = {
-        ...fake.client,
+      const raced: AppleCalendarClientShape = withSeriesIdentity({
+        ...fake.bridge,
         events: (range) =>
-          Effect.tap(fake.client.events(range), () =>
-            racing ? Effect.ignore(elsewhere) : Effect.void,
-          ),
-      };
+          Effect.tap(fake.bridge.events(range), () => {
+            const race = racing ? Effect.ignore(elsewhere) : Effect.void;
+            racing = false;
+            return race;
+          }),
+      });
       return Effect.gen(function* () {
         yield* connected;
         const mutations = yield* EventMutations;
         racing = true;
         yield* mutations.deleteRecurring({ ...standup, originalStartUtc: slot, scope: 'instance' });
-        racing = false;
         // Calendar.app's delete landed; ours found nothing left and is done.
         expect(deletes(fake)).toBe(2);
         expect(fake.state.series.get('ek-series')?.deleted.has(slot)).toBe(true);
@@ -680,6 +739,187 @@ describe('Apple Calendar mutations', () => {
       }).pipe(Effect.provide(testLayer({ ...fake, client: raced })));
     },
   );
+});
+
+/** The occurrence of the weekly series drawn at `slot`, as the views read it. */
+const occurrenceAt = (slot: number) =>
+  Effect.gen(function* () {
+    const events = yield* (yield* AppleCalendarEvents).eventsInRange(
+      seriesStart - 100 * DAY,
+      seriesStart + 200 * DAY,
+    );
+    return events.find(
+      (entry) => entry.recurringEventId !== undefined && entry.originalStartUtc === slot,
+    );
+  });
+
+/** Moves one occurrence of the weekly series on its own. */
+const moveBy = (slot: number, delta: number) =>
+  Effect.gen(function* () {
+    yield* (yield* EventMutations).updateRecurring({
+      ...standup,
+      changes: { endUtc: slot + delta + HOUR, startUtc: slot + delta },
+      originalStartUtc: slot,
+      scope: 'instance',
+    });
+  });
+
+// EventKit gives an occurrence changed on its own an identifier of its own
+// (`<series id>/RID=…`); the fake answers with it like the bridge does.
+describe('Apple Calendar: an occurrence changed on its own', () => {
+  it.effect('stays one occurrence of its series, under the same record id', () => {
+    const fake = fakeWith();
+    return Effect.gen(function* () {
+      yield* connected;
+      const slot = seriesStart + 7 * DAY;
+      const before = yield* occurrenceAt(slot);
+      yield* moveBy(slot, 2 * HOUR);
+      const moved = yield* occurrenceAt(slot);
+      expect(moved).toMatchObject({
+        id: `ek-series__${slot}`,
+        originalStartUtc: slot,
+        recurringEventId: 'ek-series',
+        startUtc: slot + 2 * HOUR,
+      });
+      expect(moved?.id).toBe(before?.id);
+      // What EventKit itself calls it.
+      expect(fake.state.series.get('ek-series')?.detached.get(slot)?.id).toMatch(
+        /^ek-series\/RID=\d+$/u,
+      );
+      // A second edit finds it again by its series and slot.
+      yield* (yield* EventMutations).updateRecurring({
+        ...standup,
+        changes: { title: 'Standup (late)' },
+        originalStartUtc: slot,
+        scope: 'instance',
+      });
+      expect(yield* occurrenceAt(slot)).toMatchObject({
+        startUtc: slot + 2 * HOUR,
+        title: 'Standup (late)',
+      });
+      expect(fake.state.series.size).toBe(4);
+    }).pipe(Effect.provide(testLayer(fake)));
+  });
+
+  it.effect('"All events" from it writes and deletes the whole series', () => {
+    const fake = fakeWith();
+    return Effect.gen(function* () {
+      yield* connected;
+      const mutations = yield* EventMutations;
+      const slot = seriesStart + 7 * DAY;
+      yield* moveBy(slot, 2 * HOUR);
+      // The editor names the series by what the occurrence it shows says.
+      const shown = yield* occurrenceAt(slot);
+      const fromShown = { ...standup, masterId: shown!.recurringEventId!, originalStartUtc: slot };
+      yield* mutations.updateRecurring({
+        ...fromShown,
+        changes: { title: 'Standup (all)' },
+        scope: 'series',
+      });
+      expect(series(fake).map((entry) => entry.title)).toEqual(
+        Array.from({ length: 4 }, () => 'Standup (all)'),
+      );
+      // Still one series, the moved occurrence still moved.
+      expect(fake.state.series.size).toBe(4);
+      expect(yield* occurrenceAt(slot)).toMatchObject({ startUtc: slot + 2 * HOUR });
+      yield* mutations.deleteRecurring({ ...fromShown, scope: 'series' });
+      expect(fake.state.series.has('ek-series')).toBe(false);
+      expect(series(fake)).toEqual([]);
+    }).pipe(Effect.provide(testLayer(fake)));
+  });
+
+  it.effect('"All events" writes a series whose first occurrence was changed or deleted', () => {
+    const changed = fakeWith();
+    const deleted = fakeWith();
+    const rename = Effect.gen(function* () {
+      yield* (yield* EventMutations).updateRecurring({
+        ...standup,
+        changes: { title: 'Standup (all)' },
+        originalStartUtc: seriesStart + 14 * DAY,
+        scope: 'series',
+      });
+    });
+    return Effect.gen(function* () {
+      yield* Effect.gen(function* () {
+        yield* connected;
+        yield* moveBy(seriesStart, 2 * HOUR);
+        yield* rename;
+        expect(series(changed).map((entry) => entry.title)).toEqual(
+          Array.from({ length: 4 }, () => 'Standup (all)'),
+        );
+        expect(yield* occurrenceAt(seriesStart)).toMatchObject({
+          startUtc: seriesStart + 2 * HOUR,
+        });
+      }).pipe(Effect.provide(testLayer(changed)));
+      yield* Effect.gen(function* () {
+        yield* connected;
+        yield* (yield* EventMutations).deleteRecurring({
+          ...standup,
+          originalStartUtc: seriesStart,
+          scope: 'instance',
+        });
+        yield* rename;
+        expect(series(deleted).map((entry) => entry.title)).toEqual(
+          Array.from({ length: 3 }, () => 'Standup (all)'),
+        );
+      }).pipe(Effect.provide(testLayer(deleted)));
+    });
+  });
+
+  it.effect('"This and following" from it splits the series at its slot', () => {
+    const fake = fakeWith();
+    return Effect.gen(function* () {
+      yield* connected;
+      const mutations = yield* EventMutations;
+      const slot = seriesStart + 14 * DAY;
+      yield* moveBy(slot, 2 * HOUR);
+      yield* mutations.updateRecurring({
+        ...standup,
+        changes: { title: 'Standup v2' },
+        originalStartUtc: slot,
+        scope: 'following',
+      });
+      // The earlier ones keep the series, the rest follow on their slots.
+      expect(
+        series(fake).map((entry) => [entry.title, entry.startUtc - entry.occurrenceStartUtc!]),
+      ).toEqual([
+        ['Standup', 0],
+        ['Standup', 0],
+        ['Standup v2', 2 * HOUR],
+        ['Standup v2', 0],
+      ]);
+      const continued = yield* occurrenceAt(slot);
+      expect(continued?.recurringEventId).not.toBe('ek-series');
+      // Deleting from the moved one on takes the new series whole.
+      yield* mutations.deleteRecurring({
+        ...standup,
+        masterId: continued!.recurringEventId!,
+        originalStartUtc: slot,
+        scope: 'following',
+      });
+      expect(series(fake).map((entry) => entry.occurrenceStartUtc)).toEqual([
+        seriesStart,
+        seriesStart + 7 * DAY,
+      ]);
+    }).pipe(Effect.provide(testLayer(fake)));
+  });
+
+  it.effect('counts toward what a move to another account drops', () => {
+    const fake = fakeWith();
+    return Effect.gen(function* () {
+      yield* connected;
+      const mutations = yield* EventMutations;
+      yield* moveBy(seriesStart + 7 * DAY, 2 * HOUR);
+      yield* moveBy(seriesStart + 14 * DAY, 40 * DAY);
+      const preview = yield* mutations.previewMove({
+        accountId: APPLE_CALENDAR_ACCOUNT_ID,
+        calendarId: 'ek-home',
+        eventId: 'ek-series',
+        target: { accountId: 'acc-google', calendarId: 'primary' },
+      });
+      expect(preview.modifiedOccurrences).toBe(2);
+    }).pipe(Effect.provide(testLayer(fake)));
+  });
 });
 
 const standups = (fake: ReturnType<typeof makeFakeAppleCalendarClient>) =>

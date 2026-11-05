@@ -115,18 +115,25 @@ resolve. `moveToListId` is never exposed.
 An occurrence ref must name a real occurrence. Google: a stored
 exception at that slot, or a slot the rule produces (`assembleWindow`);
 a cancelled exception is a deleted occurrence. Apple: the occurrence is
-looked up in EventKit around its slot, so one that was moved or renamed
-on its own is edited — and summarized — as it is now. The lookup reaches
-as far as the write does: a write to the occurrence alone or to it and
-the following ones names it by its slot, and the bridge finds it 31 days
-either side (`APPLE_WRITE_REACH_MS`). EventKit keeps an occurrence moved
-further and `list_events` still returns it, but such a write is NotFound:
-the update would fail and the delete would remove nothing. A `series`
-write does not go by this occurrence's slot (the delete names the series
-by its id, the update writes the series' first occurrence), so it looks
-400 days around the slot, for the occurrence and the series' other
-exceptions. A made-up slot is NotFound; a write can neither invent an
-exception nor answer "done" for nothing.
+looked up in EventKit by its series and slot, so one that was moved or
+renamed on its own is edited — and summarized — as it is now, at any
+distance from its slot. EventKit names such an occurrence by an
+identifier of its own; the client names it by its series
+(`withSeriesIdentity`, docs/architecture.md → Apple Calendar), so refs,
+the series view and its exceptions are one series', and a guest on a
+changed occurrence gates a `following` or `series` write. The lookup
+finds what the write finds (`AppleCalendarClientShape.occurrence`). The
+one occurrence it does not find — moved over 31 days from its slot,
+its EventKit identifier out of date since the series' time changed — is
+still returned by `list_events`, and a write to it alone or to it and
+the following ones is NotFound: the update would fail and the delete
+would remove nothing. A `series` write does not go by this occurrence's
+slot (it names the series by its id), so for it the occurrence also
+counts where the read for the series' other exceptions returns it, 400
+days around the slot. A ref made before occurrences were named by their
+series still resolves: its id is cut to the series'. A made-up slot is
+NotFound; a write can neither invent an exception nor answer "done" for
+nothing.
 
 A change with scope `series` or `following` starts from the occurrence's
 **slot**, not from a moved exception's own times (the series mutation

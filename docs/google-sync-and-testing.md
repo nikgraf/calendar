@@ -366,8 +366,10 @@ suite). When touching sync code, treat these as invariants.
 
 Designed from Apple's EventKit documentation; the real-EventKit CI spec
 (`appleCalendarReal.e2e.ts`) asserts connect, change push, edit and
-delete through the helper. Items marked _(verify)_ are not yet asserted
-against a real store.
+delete through the helper, and the identifiers of a changed occurrence
+on a Mac. "Probed" below means: read off a real store with a throwaway
+binary on the iOS 27.2 simulator (local source, 2026-11-05), not on an
+iCloud or Exchange source.
 
 - **Access** is its own TCC entity: `requestFullAccessToEvents` /
   `authorizationStatus(for: .event)`, independent of the Reminders
@@ -380,29 +382,62 @@ against a real store.
   and de-duplicates events spanning a chunk edge by
   (`eventIdentifier`, `occurrenceDate`). EventKit expands series itself.
 - **`eventIdentifier`** is shared by every occurrence a series' rule
-  draws; `occurrenceDate` is the occurrence's original slot, unchanged
-  when the occurrence is moved on its own. An occurrence changed on its
-  own (detached) does **not** keep the series identifier: it reads as
-  `<series id>/RID=<slot>` with `hasRecurrenceRules` false, and
-  `event(withIdentifier:)` answers it under that id (probed on the
-  iOS 27.2 simulator, local source, 2026-11-05; not on macOS or iCloud).
-  The app and the fake still treat it as carrying the series id — open,
-  see docs/decisions.md → Apple Calendar. Ids can change after an iCloud
-  sync — harmless for a read-through store (nothing to reconcile).
+  draws; `occurrenceDate` is the occurrence's slot, unchanged when the
+  occurrence is moved on its own. An occurrence changed on its own
+  (detached: moved, or only renamed) gets an identifier of its own,
+  `<series id>/RID=<n>`, with `hasRecurrenceRules` false;
+  `calendarItemExternalIdentifier` gets the same suffix (probed).
+  `event(withIdentifier:)` answers such an id only for the occurrence
+  that carries it, at any distance and from a fresh store; a made-up
+  one — a slot the rule draws, a deleted or invented slot, `RID=abc` —
+  answers nil. The series id answers the series' first occurrence as
+  the rule draws it, with its rules, also when that occurrence was moved
+  or deleted on its own. Ids can change after an iCloud sync — harmless
+  for a read-through store (nothing to reconcile).
+- **`<n>` is not the slot** (probed). It is the slot in seconds since
+  2001 at the moment the occurrence is detached — for an all-day or
+  floating event its wall clock read as UTC (UTC midnight of the day) —
+  and EventKit never rewrites it: after a series-wide time change the
+  occurrence's `occurrenceDate` follows the new slot, the identifier
+  keeps the old number. So the identifier tells the series, never
+  reliably the slot, and one built from a slot is a guess to check
+  against a read. The app names every occurrence by its series' id and
+  its slot (`withSeriesIdentity` — docs/architecture.md → Apple
+  Calendar).
 - **An occurrence can sit any distance from its slot**: saved with
   `.thisEvent` 40 and 200 days off (past the series' end, or onto
-  another occurrence's day), EventKit refused nothing (same probe). A
-  range read returns it where it sits; the bridge's lookup by slot
-  reaches 31 days either side, then answers notFound.
+  another occurrence's day), EventKit refused nothing (probed). A range
+  read returns it where it sits. The bridge's lookup by slot compares
+  the identifier literally and reaches 31 days either side: with the
+  series id it finds what the rule draws, never a changed occurrence.
+  By its own identifier a changed occurrence is edited and removed at
+  any distance; removed with `.thisEvent`, the series skips its slot.
 - **All-day events** end at the last day's end (some sources: the next
   midnight); the wire carries an exclusive `endDate`. A floating event
   has no `timeZone` and reads in the device zone.
-- **Spans**: saving an occurrence with `.thisEvent` detaches it;
-  `.futureEvents` on a later occurrence ends the series there and
-  continues it as a new event; `.futureEvents` on the first occurrence
-  rewrites the whole series. Setting `event.calendar` and saving the
-  series' first occurrence with `.futureEvents` moves the series with
-  its detached occurrences _(verify)_.
+- **Spans** (probed): saving an occurrence with `.thisEvent` detaches
+  it. `.futureEvents` on a later occurrence — one the rule draws or a
+  changed one — ends the series before its slot and continues it as a
+  new event from there: a title change leaves the following ones on
+  their slots, a time change anchors the new series at the saved
+  occurrence's new start, and the later changed occurrences come along
+  under the new series' id. Removing with `.futureEvents` cuts the
+  series at the slot (a changed first occurrence: the whole series).
+  `.futureEvents` on the series' first occurrence (the series id alone)
+  writes the whole series and keeps the changed occurrences: each takes
+  a field it had not changed itself — when it sits inside the series'
+  span — and a time change brings back an occurrence deleted on its
+  own. Setting `event.calendar` and saving the series' first occurrence
+  with `.futureEvents` moves the series with its changed occurrences,
+  identifiers unchanged; saving one changed occurrence that way with
+  `.thisEvent` moved the whole series too.
+- **A split can leave an orphan** (probed, twice): after `.futureEvents`
+  on an occurrence the rule draws, one later changed occurrence kept its
+  `/RID=` identifier but was no longer detached, and the new series drew
+  its slot again (two events). The bridge sends such an event without a
+  slot, so the app shows a single event under that identifier and
+  writes it by it — never cut down to the series id, which would name
+  the series' first occurrence.
 - **No attendee writes**: `EKEvent.attendees` is read-only; guests are
   shown, never edited. The organizer is matched by email.
 - **Structured location**: `EKStructuredLocation.geoLocation` carries
@@ -504,13 +539,19 @@ change there.
   the sheet and follows the block through a change; an all-day draft is
   a `draft-chip` in the lane, and a free slot a `slot-candidate`).
 - Apple Calendar never hits EventKit in tests: `makeFakeAppleCalendarClient`
-  (`packages/apple-calendar/src/fake.ts`) keeps series the way EventKit
-  does (master + rules, detached and deleted occurrences), expands them
-  with core's expander and implements the span semantics above, so
-  scope and move tests assert what EventKit "saw" via `fake.state`. Like
-  the bridge it finds an occurrence by its slot 31 days either side
-  (`APPLE_WRITE_REACH_MS`), while its range read returns one moved
-  further.
+  (`packages/apple-calendar/src/fake.ts`) answers like the bridge. It
+  keeps series the way EventKit does (master + rules, detached and
+  deleted occurrences), expands them with core's expander and implements
+  the identifier and span semantics above, so scope and move tests
+  assert what EventKit "saw" via `fake.state`. A changed occurrence
+  carries `<series id>/RID=…`, the series id with its slot does not find
+  it, and a lookup by slot reaches 31 days (`APPLE_WRITE_REACH_MS`).
+  `fake.client` is that bridge under `withSeriesIdentity`, the layer the
+  real bridge runs under, so every test goes through the production
+  handling of the identifiers; `fake.bridge` is the bridge itself. A
+  test that makes EventKit race (an occurrence removed between a read
+  and a write) wraps `fake.bridge` and puts the layer on top; an
+  identifier that went out of date is set on `fake.state`.
   Layer recipes that build `EventMutations` provide
   `appleCalendarServicesLayer(unavailableAppleCalendarClient('test'))`.
   The desktop e2e reuses the fake under `CALENDAR_APPLE_CALENDAR=fixture`.
