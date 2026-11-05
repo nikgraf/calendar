@@ -1507,10 +1507,11 @@ gateway carries all of it. Details, limits and the threat model:
   (`GroupedList.tsx`:
   `Section`, `Row`, `SwitchRow`, `CheckRow`, `ActionRow`, and the forms'
   own `FieldRow`, `ChipsRow`, `RowSlot`, `CardCaption`; a choice is a
-  `Chip`), in Calendar's order for an event (title and location; all-day,
-  the dates, the finder; repeat; calendar; invitees; notifications;
-  notes; Delete) and Reminders' for a to-do (title and notes; list; due
-  day and time; repeat; priority, alert, URL; Delete). A card's header
+  `Chip`). The event form starts with the title, then all-day, the dates
+  and the finder, followed by the location and its map. Calendar, repeat,
+  invitees, notifications, notes and Delete follow. The to-do form
+  follows Reminders' order (title and notes, list, due day and time,
+  repeat, priority, alert, URL, Delete). A card's header
   renders uppercase, which is what the flows tap to dismiss a keyboard
   ("CALENDAR", "LIST"). The calendar draws the thread's drafts from
   `useDraftPreviews` (`DraftBlock.tsx`): dashed blocks tagged "Draft" in

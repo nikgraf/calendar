@@ -78,7 +78,7 @@ export function LocationMap({ model }: { model: ReturnType<typeof useEventEditor
 
 const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
-    // Under the title card, in its inset.
+    // Align the map with the location card above it.
     container: {
       gap: 6,
       marginHorizontal: 16,

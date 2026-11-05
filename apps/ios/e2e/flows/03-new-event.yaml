@@ -5,8 +5,6 @@ tags:
 ---
 - runFlow: ../common/launch.yaml
 - runFlow: ../common/open-new-event.yaml
-# The card's header renders uppercase, so the text is REPEAT.
-- assertVisible: 'REPEAT'
 
 # The form is worked top to bottom, every scroll downward: Maestro counts
 # a row scrolled out above the viewport as visible (the clipping trap),
@@ -15,10 +13,12 @@ tags:
 # Find a time: the presets over the pure solver, no model involved. Next
 # week always has free mornings in the fixture calendar, whatever today
 # is; the pick closes the finder and moves the draft there. The row is
-# the dates card's last; a scroll brings it into reach on a shorter phone.
+# the dates card's last, above Location as on desktop.
 - scrollUntilVisible:
     element:
       id: 'find-time'
+      above:
+        id: 'location-input'
     direction: DOWN
     timeout: 10000
 - tapOn:
@@ -61,6 +61,7 @@ tags:
       id: 'event-repeat-daily'
     direction: DOWN
     timeout: 10000
+- assertVisible: 'REPEAT'
 - retry:
     maxRetries: 3
     commands:
