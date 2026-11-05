@@ -207,15 +207,15 @@ deliberately.
   write literals sorted or `vp check` fails.
 - Oxlint caps a function's cyclomatic complexity at 40 (`complexity`).
   The functions that were over it when the cap arrived are listed by file
-  in `complexityPins` (`vite.config.ts`), and
-  `scripts/complexityPins.test.ts` holds each to its own number and
-  everything else to 40, in those files too. A number only goes down:
-  lower it when its function shrinks. When a change takes a function
-  past its limit, split it along a seam the code already names (a gate,
-  a step, a sub-component), not into numbered parts — never raise or add
-  a pin, and never switch the rule off inline (the test fails on that
-  too). A pinned function that moves to another file takes its number
-  along.
+  in `complexityPins` (`vite.config.ts`) as their numbers, and
+  `scripts/complexityPins.test.ts` holds each file to exactly those
+  numbers and everything else to 40, in those files too. A list only
+  shrinks: lower a number when its function shrinks. When a change takes
+  a function past its limit, split it along a seam the code already
+  names (a gate, a step, a sub-component), not into numbered parts, and
+  into pieces of 40 or less — never raise or add a pin, and never switch
+  the rule off inline (the test fails on that too). A pinned function
+  that moves to another file takes its number along.
 - Window-level concerns (screen privacy, logging, open-external, the five
   `model:*` AI-helper channels, the `reminders:*` / `contacts:*` /
   `appleCalendar:*` permission-status channels, `appleCalendar:open`

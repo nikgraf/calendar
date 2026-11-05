@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vite-plus/test';
@@ -10,7 +10,8 @@ import { complexityCap, complexityPins } from '../vite.config.ts';
  * lifts the limit for every function there, not only the listed ones,
  * and a pin left behind by a function that shrank is slack to grow back
  * into. This measures the pinned files as oxlint counts them without the
- * pins and holds the result to the list, number by number.
+ * pins and holds each file to exactly the numbers listed for it — by
+ * value: it does not know which function is which.
  */
 const root = join(import.meta.dirname, '..');
 
@@ -62,6 +63,37 @@ const measured = (): Record<string, ReadonlyArray<number>> => {
   }
 };
 
+/** A disable directive: the whole comment, since a block one may list its rules over several lines. */
+const DIRECTIVE =
+  /\/\/\s*(?:eslint|oxlint)-disable[^\n]*|\/\*\s*(?:eslint|oxlint)-disable[\s\S]*?\*\//g;
+
+/** Every directive in a tracked source file that names the rule, as `path: directive`. */
+const switchedOff = (): ReadonlyArray<string> => {
+  const listed = spawnSync(
+    'git',
+    [
+      'ls-files',
+      '-z',
+      '--',
+      ...['ts', 'tsx', 'js', 'mjs', 'cjs'].map((extension) => `*.${extension}`),
+      ...['.agents', '.claude', '.pi'].map((folder) => `:!${folder}`),
+    ],
+    { cwd: root, encoding: 'utf8' },
+  );
+  if (listed.error !== undefined || listed.status !== 0) {
+    throw new Error(`git ls-files failed: ${String(listed.error ?? listed.stderr)}`);
+  }
+  return listed.stdout
+    .split('\0')
+    .filter((path) => path !== '' && existsSync(join(root, path)))
+    .flatMap((path) =>
+      [...readFileSync(join(root, path), 'utf8').matchAll(DIRECTIVE)]
+        // What follows ` -- ` is the reason, not a rule.
+        .filter(([directive]) => /\bcomplexity\b/.test(directive.split(/\s--\s/)[0] ?? ''))
+        .map(([directive]) => `${path}: ${directive}`),
+    );
+};
+
 describe('complexity pins', () => {
   it('name files that exist', () => {
     expect(Object.keys(complexityPins).filter((file) => !existsSync(join(root, file)))).toEqual([]);
@@ -76,19 +108,6 @@ describe('complexity pins', () => {
   });
 
   it('are the only way past the cap: no directive switches the rule off', () => {
-    const grep = spawnSync(
-      'git',
-      [
-        'grep',
-        '-nE',
-        '(eslint|oxlint)-disable.*complexity',
-        '--',
-        ...['ts', 'tsx', 'js', 'mjs', 'cjs'].map((extension) => `*.${extension}`),
-        ...['.agents', '.claude', '.pi'].map((folder) => `:!${folder}`),
-      ],
-      { cwd: root, encoding: 'utf8' },
-    );
-    // 1 is git's "nothing matched"; anything else is a hit or a failure.
-    expect(`${String(grep.status)} ${grep.stdout}${grep.stderr}`.trim()).toBe('1');
+    expect(switchedOff()).toEqual([]);
   });
 });

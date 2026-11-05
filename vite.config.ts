@@ -4,12 +4,13 @@ import { defineConfig } from 'vite-plus';
 // A function's cyclomatic complexity stops at 40 (`complexity` below).
 // These files held larger ones when the cap arrived. Each lists its
 // functions over 40, highest first: the file's rule allows the highest,
-// and `scripts/complexityPins.test.ts` holds every one of them to its own
-// number and the rest of the file to 40. A number only goes down: lower
-// it when its function shrinks, drop it at 40. Never raise or add one —
-// split the function instead. A function that moves to another file
-// takes its number along; an oxlint upgrade that counts differently
-// re-measures them in its own PR.
+// and `scripts/complexityPins.test.ts` holds the file to exactly these
+// numbers (by value: it does not know which function is which), so
+// nothing else in it passes 40. A list only shrinks: lower a number when
+// its function shrinks, drop it at 40. Never raise or add one — split
+// the function instead, into pieces of 40 or less. A function that moves
+// to another file takes its number along; an oxlint upgrade that counts
+// differently re-measures them in its own PR.
 export const complexityCap = 40;
 export const complexityPins: Record<string, ReadonlyArray<number>> = {
   'apps/desktop/e2e/bench/check.ts': [77],
