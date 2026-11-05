@@ -202,7 +202,7 @@ export function EventEditSheet({
     timeZone,
   });
   const { drafts, eventModel, flash, kinds, onPhrase, taskModel, write } = editor;
-  const { apply, available, kind, mode, seriesOnly, switchTo } = kinds;
+  const { apply, available, convertBlocked, kind, mode, switchTo } = kinds;
 
   const showToggle =
     !birthday &&
@@ -295,7 +295,7 @@ export function EventEditSheet({
           grow
           onChange={(next) => void switchTo(next)}
           options={available.map((option) => ({
-            disabled: option !== 'event' && seriesOnly,
+            disabled: option !== 'event' && convertBlocked,
             label: KIND_LABELS[option],
             testID: `mode-${option}`,
             value: option,

@@ -78,10 +78,6 @@ The 2026-10-02 review's findings are closed in `docs/decisions.md`
       `is_visible`; a field on `GoogleCalendarPref` in `SettingsDocument`
       (the import's visibility-specific parking in `importedVisibility.ts`
       widens with it); the "History complete" label says what is kept.
-- [ ] Conversion follow-ups — convert one occurrence of a series into a
-      task (today the whole series converts, like a move; an instance
-      would be `deleteRecurring(scope: 'instance')` plus a create from that
-      occurrence's day).
 - [ ] Calendar mirrors follow-ups — a merged "busy day" block for all-day
       availability is keyed by its dates, so a window edge sliding past
       one leaves a stale copy behind (harmless, past); a copy someone with

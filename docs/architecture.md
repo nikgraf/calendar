@@ -380,18 +380,29 @@ it whenever a kind is added. Rules that keep the queue correct:
   Tasks tab swipes a row right for Indent or Outdent, which VoiceOver
   offers too.
 - **Conversions** (`convertEventToTask`, `convertTaskToEvent`): an event
-  becomes a task (the whole series for a recurring one) or a task an event
-  by creating the other kind from the editor's draft and then deleting the
-  source — the same copy-then-delete as a cross-provider move, through the
-  shared `crossStore` ordering (Google → Google in one transaction; toward
-  Google the queued create first, then the EventKit delete; toward Apple
-  the EventKit create first, then the queued delete). The editors carry
-  the fields across (core `editor/convert.ts`) and ask only when a set
-  field has no home on the other side (`convertLoss.ts`;
+  becomes a task or a task an event by creating the other kind from the
+  editor's draft and then deleting the source — the same copy-then-delete
+  as a cross-provider move, through the shared `crossStore` ordering
+  (Google → Google in one transaction; toward Google the queued create
+  first, then the EventKit delete; toward Apple the EventKit create first,
+  then the queued delete). A recurring event converts as its whole series
+  or, when the call names an `occurrence` by its slot, as that occurrence
+  alone: the delete is then the instance delete "This event" runs, so the
+  series skips the slot and keeps its rule and its other occurrences. The
+  editors carry the fields across (core `editor/convert.ts`) and ask only
+  when a set field has no home on the other side (`convertLoss.ts`;
   `previewEventToTask` computes the event side from the stored record and
   carries the series' rule, since an occurrence row never has its
-  master's lines; `previewTaskToEvent` reads the stored task and counts
-  the subtasks its delete takes).
+  master's lines — for one occurrence it reads that occurrence instead
+  (Google: its own row where it was edited on its own, else the master at
+  its slot; Apple: EventKit's copy of it) and carries no rule;
+  `previewTaskToEvent` reads the stored task and counts the subtasks its
+  delete takes). The views offer
+  Convert on a series at "This event" and "All events", never at "This
+  and following" (`seriesConvertsAt`); the task form takes over what the
+  event form's scope stands for at each flip and keeps that scope, and
+  Save names the source by it (`convertSourceOf`), whatever the event
+  form's scope is by then.
 - **Task creates are not idempotent**: Google assigns task ids
   server-side, so a `createTask` writes a temp `local-…` row that is
   swapped for the server task on success (`rewriteEventId` renames the
@@ -848,7 +859,12 @@ it whenever a kind is added. Rules that keep the queue correct:
   occurrences are dropped. The editor asks `previewMove` first and
   confirms `moveLossSummary` when anything is dropped, then saves field
   edits at the source and moves. Converting an event into a task reuses
-  the same source loading and series delete (`loadSource`, `deleteFrom`).
+  the same source loading and series delete (`loadSource`, `deleteFrom`);
+  one occurrence is read by `loadOccurrence` — on Apple through a ranged
+  EventKit read around its slot (`findAppleOccurrence`) that reaches as
+  far as the bridge's own lookup of a slot, 31 days, so the delete finds
+  what the read found — and leaves through `deleteRecurring`'s instance
+  scope.
 
 ## Calendar mirrors (packages/sync/src/mirrors.ts, core mirror/)
 

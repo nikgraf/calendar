@@ -40,11 +40,38 @@ tags:
       id: 'event-detail-title'
       text: 'Kolkata series'
     timeout: 10000
+# A series converts one occurrence at a time ("This event", where the
+# sheet opens) or whole, never from an occurrence on: the button says so.
+- assertVisible: 'Convert to task'
+- tapOn: 'This \+ following'
+- assertVisible: 'Convert to task \(This or All events\)'
+- tapOn: 'This event'
+- assertVisible: 'Convert to task'
 - tapOn:
     id: 'event-detail-close'
 - extendedWaitUntil:
     notVisible:
       id: 'event-detail'
+    timeout: 10000
+# Convert is live at "This event" (it was off there) and opens the to-do
+# form; Cancel leaves the series as it is. What the form carries for one
+# occurrence is the desktop convert spec's and the unit tests' to check:
+# a Google task's form looks the same for one occurrence and a series.
+- tapOn: 'Kolkata series.*'
+- extendedWaitUntil:
+    visible:
+      id: 'event-convert'
+    timeout: 10000
+- tapOn:
+    id: 'event-convert'
+- extendedWaitUntil:
+    visible: 'Convert to (Task|Reminder)'
+    timeout: 10000
+- waitForAnimationToEnd:
+    timeout: 5000
+- tapOn: 'Cancel'
+- extendedWaitUntil:
+    notVisible: 'Convert to (Task|Reminder)'
     timeout: 10000
 # A task opens its editor.
 - runFlow:

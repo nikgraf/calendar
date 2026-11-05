@@ -1,5 +1,6 @@
 import type { CaptureSource } from '@calendar/ai';
 import {
+  CONVERT_SCOPE_HINT,
   type EditorSeed,
   type EditorSourceKind,
   editorTitle,
@@ -175,7 +176,7 @@ export function EditorPanel({
     timeZone,
   });
   const { joinUrl } = eventModel;
-  const { apply, available, kind, mode, seriesOnly, switchTo } = kinds;
+  const { apply, available, convertBlocked, kind, mode, switchTo } = kinds;
   // A turn that made the item the other kind: the control tints and fades back.
   const kindFlash = useFlash<HTMLDivElement>(flash?.fields.has('kind') ? flash.key : null);
 
@@ -390,13 +391,10 @@ export function EditorPanel({
             label="Kind"
             onChange={(option) => void switchTo(option)}
             options={available.map((option) => ({
-              disabled: moveConfirmation.pending !== null || (option !== 'event' && seriesOnly),
+              disabled: moveConfirmation.pending !== null || (option !== 'event' && convertBlocked),
               label: KIND_LABELS[option],
               testId: `mode-${option}`,
-              title:
-                option !== 'event' && seriesOnly
-                  ? 'Choose "All events" to convert a series'
-                  : undefined,
+              title: option !== 'event' && convertBlocked ? CONVERT_SCOPE_HINT : undefined,
               value: option,
             }))}
             ref={kindFlash}

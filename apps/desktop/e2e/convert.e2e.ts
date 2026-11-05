@@ -12,6 +12,7 @@ import {
   launchApp,
   localDayAt,
   localIsoDaysAgo,
+  localIsoOf,
   readEvents,
   readPendingOps,
   readTasks,
@@ -21,7 +22,8 @@ import {
 // A Google account (no token: writes stay queued) next to the Reminders
 // fixture. The editor's Event | Task toggle carries a new draft across
 // and converts an existing item on Save; it asks only when a filled
-// field has no home on the other side.
+// field has no home on the other side. A series converts whole or one
+// occurrence at a time.
 const isoToday = localIsoDaysAgo(0);
 /** Today at the given local hour. */
 const todayAt = (hour: number): number => localDayAt(0, hour);
@@ -76,6 +78,24 @@ const seed = {
       syncedAt: 1,
       syncStatus: 'synced',
       title: 'Plain event',
+      updatedAt: 1,
+    }),
+    // A daily series around today, in UTC so its slots are whole days
+    // apart whatever DST does in between: the week always shows several.
+    new EventRecord({
+      accountId: 'acc-e2e',
+      calendarId: 'cal-e2e',
+      endUtc: localDayAt(-3, 16) + HOUR_MS / 2,
+      etag: '"e2e-daily"',
+      id: 'evt-daily',
+      isAllDay: false,
+      recurrence: ['RRULE:FREQ=DAILY;COUNT=14'],
+      startTimeZone: 'UTC',
+      startUtc: localDayAt(-3, 16),
+      status: 'confirmed',
+      syncedAt: 1,
+      syncStatus: 'synced',
+      title: 'Daily review',
       updatedAt: 1,
     }),
   ],
@@ -271,5 +291,63 @@ describe('Converting between events and tasks', () => {
       })
       .toEqual({ created: true, reminderGone: true });
     expect(await cdp.locate('[title^="Call mom"]')).toBeTruthy();
+  });
+
+  it('converts one occurrence of a series and leaves the rest of it', async () => {
+    const { cdp } = app;
+    // The series' own blocks: the reminder one of them becomes has the same
+    // title, and a test id as every task chip does.
+    const series = '[title^="Daily review"]:not([data-testid])';
+    const blocks = `document.querySelectorAll('${series}').length`;
+    await cdp.waitFor(`${blocks} > 1`);
+    const before = await cdp.eval<number>(blocks);
+    await cdp.openInspector(series);
+    // "This event" converts as it opens; "This and following" never does.
+    const convert = `document.querySelector('[data-testid="inspector-convert"]')`;
+    expect(await cdp.eval(`${convert}.disabled`)).toBe(false);
+    await cdp.clickButtonWithText('This and following');
+    await cdp.waitFor(`${convert}.disabled`);
+    expect(await cdp.eval(`${convert}.title`)).toBe(
+      'Choose "This event" or "All events" to convert',
+    );
+    await cdp.clickButtonWithText('This event');
+    await cdp.waitFor(`!${convert}.disabled`);
+    await clickTestId('inspector-convert');
+    await cdp.waitFor(heading('Convert to reminder'));
+    expect(await cdp.eval(`document.querySelector('${TITLE}').value`)).toBe('Daily review');
+    // One occurrence becomes one reminder: the rule stays with the series.
+    expect(await cdp.eval(`document.querySelector('select[aria-label="Repeat"]').value`)).toBe(
+      'none',
+    );
+    await cdp.clickButtonWithText('Save');
+    await expect
+      .poll(async () => {
+        const tasks = await readTasks(app.userDataDir);
+        const converted = tasks.find((task) => task.title === 'Daily review');
+        const events = await readEvents(app.userDataDir);
+        const ops = await readPendingOps(app.userDataDir);
+        // The series' only queued change: the delete of the occurrence it skips now.
+        const skips = ops.filter((op) => op.eventId.startsWith('evt-daily'));
+        const slot = skips[0]?.payload?.originalStartUtc;
+        return {
+          dueOnItsDay: slot !== undefined && converted?.dueDate === localIsoOf(slot),
+          provider: converted?.provider,
+          repeats: converted?.recurrence !== undefined,
+          rule: events.find((event) => event.id === 'evt-daily')?.recurrence,
+          skips: skips.map((op) => `${op.kind} ${op.payload?.status ?? ''}`),
+        };
+      })
+      .toEqual({
+        dueOnItsDay: true,
+        provider: 'apple',
+        repeats: false,
+        rule: ['RRULE:FREQ=DAILY;COUNT=14'],
+        skips: ['delete cancelled'],
+      });
+    expect(await cdp.eval(`!!${CONFIRM}`)).toBe(false);
+    // That day's block is gone, the others stay, and the reminder shows: at
+    // its time, or in today's lane when the occurrence was a past one.
+    await cdp.waitFor(`${blocks} === ${before - 1}`);
+    expect(await cdp.locate('[data-testid*="task-"][title^="Daily review"]')).toBeTruthy();
   });
 });

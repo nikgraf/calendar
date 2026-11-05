@@ -779,13 +779,13 @@ function CalendarBody({
                 event={panel.event}
                 onBack={panel.fromSearch ? () => setPanel(RESULTS) : undefined}
                 onClose={() => setPanel(RAIL)}
-                onConvert={() =>
+                onConvert={(scope) =>
                   setPanel({
                     fromSearch: panel.fromSearch,
                     kind: 'editEvent',
                     mode: defaultTodoKind(taskLists),
                     opening: nextOpening(),
-                    seed: { event: panel.event, initialDate: focused, initialScope: 'series' },
+                    seed: { event: panel.event, initialDate: focused, initialScope: scope },
                   })
                 }
                 onDeleted={closeDeleted(panel.event)}

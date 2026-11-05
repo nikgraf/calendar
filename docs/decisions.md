@@ -1066,6 +1066,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   Rejected: relaxing the bridge's check (a store without access answers
   with no calendars, and an empty snapshot wipes the mirror). Open: lists
   wait for the next pass if the lag outlasts the first one.
+- **Convert one occurrence** (2026-11-05, #288) — Convert on a series at
+  "This event" takes that occurrence alone: the call names it by its slot
+  beside the master id and deletes it with the instance delete, so the
+  series skips the slot and keeps its rule. The task form keeps the scope
+  its fields were carried for; Save converts that. Rejected: a
+  `calendar.event` bridge method for the Apple read (a native change for
+  one lookup — a ranged read reaching as far as the bridge's own does),
+  the occurrence's own id as the source (Apple has none). Open: "This and
+  following" does not convert (the cut plus a rule of its own for the
+  rest); a delete by slot of an Apple occurrence moved over 31 days.
 
 ## Apple Calendar
 

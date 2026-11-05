@@ -543,7 +543,7 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
           // new id) leaves it up.
           key={`detail:${eventIdentity(sheet.event)}`}
           onClose={close}
-          onConvert={(event) =>
+          onConvert={(event, scope) =>
             setSheet({
               initialKind: defaultTodoKind(taskLists),
               kind: 'edit',
@@ -551,7 +551,7 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
               seed: {
                 event,
                 initialDate: Temporal.Now.plainDateISO(timeZone),
-                initialScope: 'series',
+                initialScope: scope,
               },
             })
           }

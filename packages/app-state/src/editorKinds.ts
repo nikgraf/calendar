@@ -6,6 +6,7 @@ import {
   ITEM_KINDS,
   type ItemKind,
   type PreviewEventToTaskParams,
+  seriesConvertsAt,
   type TaskListInfo,
   type TaskProvider,
   todoKindOf,
@@ -75,7 +76,8 @@ export const useEditorKinds = ({
    * The kind to open on. For a new item the task model's seed decides the
    * list (and so task vs. reminder); for an existing event a to-do kind
    * means Convert: the editor starts as the event and switches at once,
-   * which carries the fields over and asks about a loss.
+   * which carries the fields over and asks about a loss. A series converts
+   * at the scope the event model opened in (its seed's `initialScope`).
    */
   readonly initialKind?: ItemKind | undefined;
   readonly previewEventToTask: (params: PreviewEventToTaskParams) => Promise<EventToTaskPreview>;
@@ -121,18 +123,21 @@ export const useEditorKinds = ({
     [confirm, eventModel, kind, mode, previewEventToTask, sourceKind, taskModel, timeZone],
   );
 
-  // A series converts as a whole, like it moves: an occurrence-scoped
-  // edit stays an event (the detail views seed `initialScope: 'series'`,
-  // so the switch never runs on an occurrence).
-  const seriesOnly =
-    sourceKind === 'event' && eventModel.isRecurring && eventModel.scope !== 'series';
+  // A series converts as a whole or one occurrence at a time
+  // (`seriesConvertsAt`): at "This and following" an edit stays an event.
+  // The detail views seed the scope Convert was pressed at.
+  const convertBlocked =
+    sourceKind === 'event' &&
+    eventModel.isRecurring &&
+    eventModel.existing !== undefined &&
+    !seriesConvertsAt(eventModel.existing, eventModel.scope);
   const converted = useRef(false);
   useEffect(() => {
-    if (convertOnOpen && !converted.current && !seriesOnly && initialKind !== undefined) {
+    if (convertOnOpen && !converted.current && !convertBlocked && initialKind !== undefined) {
       converted.current = true;
       void switchTo(initialKind);
     }
-  }, [convertOnOpen, initialKind, seriesOnly, switchTo]);
+  }, [convertBlocked, convertOnOpen, initialKind, switchTo]);
 
   /**
    * A parsed phrase (or a picked slot) fills the form. A phrase read as
@@ -187,10 +192,10 @@ export const useEditorKinds = ({
     apply,
     /** The kinds the control offers, in its order; one entry means no control. */
     available,
+    /** Both to-do kinds are disabled: a series does not convert at "This and following". */
+    convertBlocked,
     kind,
     mode,
-    /** Both to-do kinds are disabled: an occurrence-scoped series edit cannot convert. */
-    seriesOnly,
     show,
     switchTo,
   };

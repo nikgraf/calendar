@@ -252,15 +252,25 @@ export const TaskDeletePreview = Schema.Struct({ subtasks: Schema.Number });
 export type TaskDeletePreview = Schema.Schema.Type<typeof TaskDeletePreview>;
 
 /**
+ * One occurrence of a series, by the slot its rule drew it at: with it a
+ * conversion takes that occurrence alone and the series keeps the rest.
+ */
+export const ConvertOccurrence = Schema.Struct({ originalStartUtc: Schema.Number });
+export type ConvertOccurrence = Schema.Schema.Type<typeof ConvertOccurrence>;
+
+/**
  * Source event (the master id for a series) and the list the task it
  * becomes goes to. `draft` is what the task form holds on Save: like a
  * task move, the copy is written from it, not from the event row.
+ * `occurrence` names one occurrence of the series; absent, the whole
+ * series converts.
  */
 export const ConvertEventToTaskParams = Schema.Struct({
   accountId: Schema.String,
   calendarId: Schema.String,
   draft: TaskDraft,
   eventId: Schema.String,
+  occurrence: Schema.optional(ConvertOccurrence),
   target: Schema.Struct({ accountId: Schema.String, taskListId: Schema.String }),
 });
 export type ConvertEventToTaskParams = Schema.Schema.Type<typeof ConvertEventToTaskParams>;
@@ -270,6 +280,7 @@ export const PreviewEventToTaskParams = Schema.Struct({
   accountId: Schema.String,
   calendarId: Schema.String,
   eventId: Schema.String,
+  occurrence: Schema.optional(ConvertOccurrence),
   target: Schema.Struct({ accountId: Schema.String, taskListId: Schema.String }),
 });
 export type PreviewEventToTaskParams = Schema.Schema.Type<typeof PreviewEventToTaskParams>;
@@ -369,9 +380,11 @@ export class AppBackendRpcs extends RpcGroup.make(
     success: Schema.Struct({ granted: Schema.Boolean }),
   }),
   /**
-   * Turns an event (a whole series: pass the master id) into a task in
-   * the given list: the task is created from `draft`, then the event is
-   * deleted — call `previewEventToTask` first and confirm what that drops.
+   * Turns an event into a task in the given list: the task is created
+   * from `draft`, then the event is deleted — call `previewEventToTask`
+   * first and confirm what that drops. A series converts as a whole (pass
+   * the master id), or one occurrence of it with `occurrence`, which
+   * leaves the rest of the series as it is.
    */
   Rpc.make('convertEventToTask', {
     error: BackendError,

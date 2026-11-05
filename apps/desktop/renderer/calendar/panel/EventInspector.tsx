@@ -1,4 +1,5 @@
 import {
+  CONVERT_SCOPE_HINT,
   eventReadout,
   RSVP_OPTIONS,
   SCOPE_OPTIONS,
@@ -14,6 +15,7 @@ import {
   formatPlainTime,
   type RecurringScope,
   type RsvpResponse,
+  seriesConvertsAt,
   Temporal,
   utcMsToPlainDate,
 } from '@calendar/core';
@@ -66,8 +68,11 @@ export function EventInspector({
   /** Opened from search: "Results" goes back there. */
   onBack?: (() => void) | undefined;
   onClose: () => void;
-  /** Convert to a task: opens the editor in task mode. */
-  onConvert: () => void;
+  /**
+   * Convert to a task: opens the editor in task mode. `scope` is the one
+   * the inspector holds — a series converts whole, or this occurrence.
+   */
+  onConvert: (scope: RecurringScope) => void;
   /** Delete went through, with this scope: the event is gone, and with a series' scope its siblings. */
   onDeleted: (scope: RecurringScope) => void;
   onEdit: () => void;
@@ -98,6 +103,8 @@ export function EventInspector({
     scope,
     setScope,
   } = model;
+  // A series converts whole or one occurrence at a time, never "this and following".
+  const convertBlocked = isRecurring && !seriesConvertsAt(event, scope);
   const { attendees, date, description, endTime, isAllDay, location, startTime, title } =
     eventReadout(event, timeZone);
   const calendar = calendars.find(
@@ -255,14 +262,10 @@ export function EventInspector({
         {readOnly ? null : (
           <Button
             data-testid="inspector-convert"
-            disabled={isRecurring && scope !== 'series'}
-            onClick={onConvert}
+            disabled={convertBlocked}
+            onClick={() => onConvert(scope)}
             size="sm"
-            title={
-              isRecurring && scope !== 'series'
-                ? 'Choose "All events" to convert a series'
-                : undefined
-            }
+            title={convertBlocked ? CONVERT_SCOPE_HINT : undefined}
             variant="ghost"
           >
             Convert to task

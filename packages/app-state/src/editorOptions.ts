@@ -61,6 +61,9 @@ export const ORDINAL_OPTIONS: ReadonlyArray<EditorOption<MonthlyOrdinal>> = MONT
   }),
 );
 
+/** What a view says where Convert is off for a series: the scopes that do convert. */
+export const CONVERT_SCOPE_HINT = 'Choose "This event" or "All events" to convert';
+
 export const SCOPE_OPTIONS: ReadonlyArray<EditorOption<RecurringScope>> = [
   { label: 'This event', short: 'This event', value: 'instance' },
   { label: 'This and following', short: 'This + following', value: 'following' },

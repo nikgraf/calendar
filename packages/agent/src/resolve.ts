@@ -18,7 +18,7 @@ import {
   utcMsToPlainDate,
 } from '@calendar/core';
 import { AccountRepo, CalendarRepo, DeviceSettingsRepo, EventRepo, TaskRepo } from '@calendar/db';
-import { deviceTimeZone } from '@calendar/sync';
+import { deviceTimeZone, isAppleOccurrence } from '@calendar/sync';
 import { readPrimaryTimeZone } from '@calendar/sync/deviceSettings';
 import { Clock, Effect } from 'effect';
 import type { SqlError } from 'effect/sql/SqlError';
@@ -322,10 +322,8 @@ export const resolveEvent = (
         .pipe(Effect.mapError(appleFailure));
       const found = nearby.find(
         (event) =>
-          event.id === id &&
-          event.occurrenceStartUtc === ref.originalStartUtc &&
-          event.calendarId === ref.calendarId &&
-          event.status !== 'cancelled',
+          isAppleOccurrence(event, { id, originalStartUtc: ref.originalStartUtc }) &&
+          event.calendarId === ref.calendarId,
       );
       if (!found) {
         return yield* Effect.fail(eventNotFound);

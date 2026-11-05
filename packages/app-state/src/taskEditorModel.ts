@@ -1,12 +1,14 @@
 import {
   appendLink,
   byDayError,
+  convertSourceOf,
   defaultTodoList,
   repeatUntilError,
   type EventRecord,
   eventToTaskLossSummary,
   isEventToTaskLossy,
   isTaskMoveLossy,
+  type RecurringScope,
   type TaskConvertValues,
   type TaskDraft,
   type TaskListInfo,
@@ -20,6 +22,7 @@ import {
 import { useState } from 'react';
 import { deleteTaskQuestion } from './deleteQuestion.ts';
 import type { EditorConfirmRequest } from './editorModel.ts';
+import { CONVERT_SCOPE_HINT } from './editorOptions.ts';
 import { useBackendMutations, useTaskReadOnlyLookup } from './hooks.ts';
 import { useOneWrite } from './oneWrite.ts';
 import {
@@ -33,8 +36,9 @@ import { offeredTaskLists, taskEditorChanges, type TaskEditorValues } from './ta
 export interface TaskEditorSeed {
   /**
    * The event this (otherwise new) task replaces: Save converts it — the
-   * task is created from the form, then the event (its whole series) is
-   * deleted — after confirming what the event holds that a task cannot.
+   * task is created from the form, then the event is deleted (of a series,
+   * what the carry stood for: see `setConvertScope`) — after confirming
+   * what the event holds that a task cannot.
    */
   readonly convertFromEvent?: EventRecord | undefined;
   /** Creates: start without a due day (an inbox add); default true. */
@@ -202,6 +206,10 @@ export const useTaskEditorModel = ({
       : undefined,
   );
   const [error, setError] = useState<string | null>(null);
+  // How much of a series the fields carried from `convertFromEvent` stand
+  // for: the event form's scope at the flip that carried them
+  // (`switchEditorMode`), not as it is when Save runs.
+  const [convertScope, setConvertScope] = useState<RecurringScope | undefined>(undefined);
   const write = useOneWrite();
 
   const offeredLists = offeredTaskLists(taskLists, existing);
@@ -363,12 +371,13 @@ export const useTaskEditorModel = ({
         existing?.provider === 'apple' && provider === 'apple' && existing.accountId === accountId;
       const event = seed.convertFromEvent;
       if (!existing && event) {
-        const source = {
-          accountId: event.accountId,
-          calendarId: event.calendarId,
-          // A series converts as a whole: its master.
-          eventId: event.recurringEventId ?? event.id,
-        };
+        // A series as the carried fields took it: whole, or this occurrence.
+        const source =
+          convertScope === undefined ? undefined : convertSourceOf(event, convertScope);
+        if (source === undefined) {
+          setError(`${CONVERT_SCOPE_HINT}.`);
+          return;
+        }
         const target = { accountId, taskListId };
         // The stored event decides what is lost; ask before writing anything.
         const preview = await mutations.previewEventToTask({ ...source, target });
@@ -541,6 +550,8 @@ export const useTaskEditorModel = ({
     restoreReminderFields,
     save: () => write.run(save),
     setAlarm,
+    /** The scope the fields a conversion carried in stand for (`switchEditorMode`). */
+    setConvertScope,
     setDueDate,
     setDueTime,
     setListKey,

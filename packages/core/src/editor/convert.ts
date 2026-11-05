@@ -3,13 +3,14 @@ import { canonicalReminders } from '../notifications/eventReminders.ts';
 import { taskRecurrenceFromLines } from '../recurrence/taskRecurrence.ts';
 import { slotTimes } from '../time/slotSelection.ts';
 import {
+  type EventRecord,
   EventReminders,
   ReminderOverride,
   type TaskPriority,
   type TaskProvider,
   type TaskRecurrence,
 } from '../types.ts';
-import type { AttendeeInput } from '../backend.ts';
+import type { AttendeeInput, PreviewEventToTaskParams, RecurringScope } from '../backend.ts';
 
 /**
  * The field carry between the event and the task editors. Both directions
@@ -57,6 +58,54 @@ export interface TaskConvertValues {
   readonly title: string;
   readonly url?: string | undefined;
 }
+
+/**
+ * Whether a repeating event converts into a task at the scope its view
+ * holds: as a whole ("All events"), or the one occurrence the view shows
+ * ("This event") — the series then skips it and keeps the rest. "This and
+ * following" does not: it would cut the series and need a rule of its own
+ * for what follows. A master row shown as itself names no occurrence, so
+ * it only converts whole.
+ */
+export const seriesConvertsAt = (
+  event: Pick<EventRecord, 'recurringEventId'>,
+  scope: RecurringScope,
+): boolean => scope === 'series' || (scope === 'instance' && event.recurringEventId !== undefined);
+
+/**
+ * The event as a conversion names it to the backend at `scope`
+ * (`previewEventToTask`, `convertEventToTask`): a series by its master —
+ * whole, or at "This event" with the one occurrence it takes, by its
+ * slot. Undefined where a series does not convert (`seriesConvertsAt`):
+ * nothing is named rather than more than the scope stands for. An event
+ * that does not repeat is itself at any scope.
+ */
+export const convertSourceOf = (
+  event: Pick<
+    EventRecord,
+    | 'accountId'
+    | 'calendarId'
+    | 'id'
+    | 'originalStartUtc'
+    | 'recurrence'
+    | 'recurringEventId'
+    | 'startUtc'
+  >,
+  scope: RecurringScope,
+): Omit<PreviewEventToTaskParams, 'target'> | undefined => {
+  const repeats = event.recurringEventId !== undefined || (event.recurrence?.length ?? 0) > 0;
+  if (repeats && !seriesConvertsAt(event, scope)) {
+    return undefined;
+  }
+  return {
+    accountId: event.accountId,
+    calendarId: event.calendarId,
+    eventId: event.recurringEventId ?? event.id,
+    ...(scope === 'instance' && event.recurringEventId !== undefined
+      ? { occurrence: { originalStartUtc: event.originalStartUtc ?? event.startUtc } }
+      : {}),
+  };
+};
 
 /** `link` after `description`, unless the text (or the location) already carries it. */
 export const appendLink = (

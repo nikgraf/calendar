@@ -96,8 +96,8 @@ export interface EventEditorSeed {
   readonly initialHour?: number;
   /**
    * The scope an existing series opens in ('instance' by default). The
-   * detail views pass 'series' with a conversion: a series converts as a
-   * whole, so the editor must not start on the occurrence.
+   * detail views pass the one Convert was pressed at: it decides whether
+   * the series converts or the one occurrence.
    */
   readonly initialScope?: RecurringScope | undefined;
   /** A slot drawn on the time grid (`HH:MM`); wins over `initialHour`. */
@@ -1200,6 +1200,11 @@ export const useEventEditorModel = ({
     },
     setTitle,
     setUseDefaultReminders,
+    /**
+     * Says on the event form why something outside it did not happen (a
+     * conversion the stored event refused); null takes the message away.
+     */
+    showError: (message: string | null): void => setError(message),
     startTime,
     /** The picked calendar's provider: what a create (or conversion) writes to. */
     targetProvider: calendarOf(calendarKey)?.provider ?? 'google',
