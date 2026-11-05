@@ -34,10 +34,12 @@ import { useSheetStyles } from './editSheetShared.ts';
 import { useEditorSheetAtHalf } from './editorSheet.ts';
 import { EventEditForm } from './EventEditForm.tsx';
 import { FieldFlashContext, FlashView } from './FlashView.tsx';
+import { Row, Section } from './GroupedList.tsx';
 import { LessonBanner } from './lesson/LessonBanner.tsx';
 import { QuickAddBar } from './QuickAddBar.tsx';
 import { ReminderEditForm } from './ReminderEditForm.tsx';
 import { SegmentedControl } from './SegmentedControl.tsx';
+import { TaskCheck } from './TaskCheck.tsx';
 import { TaskEditForm } from './TaskEditForm.tsx';
 import { BOX_FONT_SCALE } from './theme.ts';
 
@@ -295,7 +297,7 @@ export function EventEditSheet({
           grow
           onChange={(next) => void switchTo(next)}
           options={available.map((option) => ({
-            disabled: option !== 'event' && convertBlocked,
+            disabled: busy || (option !== 'event' && convertBlocked),
             label: KIND_LABELS[option],
             testID: `mode-${option}`,
             value: option,
@@ -306,9 +308,33 @@ export function EventEditSheet({
     </View>
   ) : null;
   const bare = presentation === 'route';
+  const done = task?.status === 'completed';
+  const completionTitle = done ? 'Mark as Incomplete' : 'Mark as Done';
+  const { toggleCompletion } = taskModel;
+  const confirmDiscard = () =>
+    new Promise<boolean>((resolve) => {
+      Alert.alert('Discard unsaved edits?', 'Changing completion closes this editor.', [
+        { onPress: () => resolve(false), style: 'cancel', text: 'Keep Editing' },
+        { onPress: () => resolve(true), style: 'destructive', text: completionTitle },
+      ]);
+    });
   // The fields the last turn changed flash (`FieldFlash` in the forms).
   const form = (
     <FieldFlashContext value={flash}>
+      {mode === 'todo' && toggleCompletion ? (
+        <Section tight>
+          <Row
+            accessibilityLabel="Completed"
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: done }}
+            disabled={busy}
+            leading={<TaskCheck checked={done} size="list" />}
+            onPress={() => void toggleCompletion(editor.userEdits > 0 ? confirmDiscard : undefined)}
+            testID="task-editor-completion"
+            title={completionTitle}
+          />
+        </Section>
+      ) : null}
       {birthday ? (
         <BirthdayDetail occurrence={birthday} timeZone={timeZone} />
       ) : mode === 'todo' ? (

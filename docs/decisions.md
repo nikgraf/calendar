@@ -1456,6 +1456,12 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   predates it, never one created past it. Rejected: a settings-free
   reconcile. Open: an offline create whose id lands late stays silent.
 
+- **Complete a to-do from its iOS notification** (2026-11-05,
+  `todo/ios-reminder-editor-completion`) — the task or reminder editor
+  offers a checkbox at the top. Checking it closes the sheet once the
+  status is saved. If the user has edited the form, they can keep editing
+  or discard those edits and change the completion status.
+
 ## Calendar mirrors
 
 - **Calendar mirrors** (2026-10-02, #103) — a mirror, not a workflow: one
