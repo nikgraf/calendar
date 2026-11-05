@@ -90,6 +90,17 @@ export type AppleEventMutations = Pick<
   | 'updateEvent'
   | 'updateRecurring'
 > & {
+  /**
+   * Deletes one occurrence the caller itself just read with
+   * `findAppleOccurrence` (a conversion, before it made its copy):
+   * `deleteRecurring`'s instance delete without a second look. Gone since
+   * that read is done.
+   */
+  readonly deleteFoundOccurrence: (params: {
+    readonly accountId: string;
+    readonly masterId: string;
+    readonly originalStartUtc: number;
+  }) => Effect.Effect<void, AppleCalendarError>;
   /** Re-homes a single event or a whole series inside the EventKit store. */
   readonly moveWithin: (params: {
     readonly accountId: string;
@@ -125,7 +136,8 @@ const rejectUnsupportedReminders = (reminders: EventReminders | undefined) =>
  * A delete of something EventKit no longer has has nothing left to do.
  * True of a delete by id. A delete by slot also answers "not found" for an
  * occurrence that is still there but out of the bridge's reach, so it is
- * wrapped only after a read found the occurrence (`deleteRecurring`).
+ * wrapped only after a read found the occurrence (`deleteRecurring`,
+ * `deleteFoundOccurrence`).
  */
 const goneIsDone = (effect: Effect.Effect<void, AppleCalendarError>) =>
   Effect.catchIf(effect, isNotFound, (error) =>
@@ -186,6 +198,11 @@ export const makeAppleEventMutations = (deps: AppleEventMutationDeps): AppleEven
         thenInvalidate,
         flagAccessLoss(accountId),
       ),
+
+    deleteFoundOccurrence: ({ accountId, masterId, originalStartUtc }) =>
+      goneIsDone(
+        client.delete({ ref: { id: masterId, originalStartUtc }, span: 'thisEvent' }),
+      ).pipe(thenInvalidate, flagAccessLoss(accountId)),
 
     deleteRecurring: ({ accountId, masterId, originalStartUtc, scope }) =>
       (scope === 'series'
