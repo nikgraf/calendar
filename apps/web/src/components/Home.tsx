@@ -1,18 +1,11 @@
-import lockupDark from '../../../../brand/logos/lockup-horizontal-dark.svg';
-import lockupLight from '../../../../brand/logos/lockup-horizontal-light.svg';
-import { AiDemo } from '../components/AiDemo.tsx';
-import { DownloadActions } from '../components/DownloadActions.tsx';
-import { HeroShots } from '../components/HeroShots.tsx';
-import {
-  AppleIcon,
-  CakeIcon,
-  CloudOffIcon,
-  GlobeIcon,
-  GoogleIcon,
-  LayersIcon,
-} from '../components/icons.tsx';
-import { Sources } from '../components/Sources.tsx';
-import { ThemePicture } from '../components/ThemePicture.tsx';
+import lockupDark from '../../../../brand/logos/lockup-horizontal-dark.svg?url';
+import lockupLight from '../../../../brand/logos/lockup-horizontal-light.svg?url';
+import { AiDemo } from './AiDemo.tsx';
+import { DownloadActions } from './DownloadActions.tsx';
+import { HeroShots } from './HeroShots.tsx';
+import { AppleIcon, CakeIcon, CloudOffIcon, GlobeIcon, GoogleIcon, LayersIcon } from './icons.tsx';
+import { Sources } from './Sources.tsx';
+import { ThemePicture } from './ThemePicture.tsx';
 import { releases } from '../links.ts';
 
 const container = 'mx-auto max-w-[1200px] px-6 sm:px-8';

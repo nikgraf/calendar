@@ -379,11 +379,21 @@ against a real store.
   matches a four-year span at most, so the bridge chunks longer ranges
   and de-duplicates events spanning a chunk edge by
   (`eventIdentifier`, `occurrenceDate`). EventKit expands series itself.
-- **`eventIdentifier`** is shared by every occurrence of a series;
-  `occurrenceDate` is the occurrence's original slot, unchanged when the
-  occurrence is moved on its own. A detached occurrence keeps the
-  series identifier _(verify)_. Ids can change after an iCloud sync —
-  harmless for a read-through store (nothing to reconcile).
+- **`eventIdentifier`** is shared by every occurrence a series' rule
+  draws; `occurrenceDate` is the occurrence's original slot, unchanged
+  when the occurrence is moved on its own. An occurrence changed on its
+  own (detached) does **not** keep the series identifier: it reads as
+  `<series id>/RID=<slot>` with `hasRecurrenceRules` false, and
+  `event(withIdentifier:)` answers it under that id (probed on the
+  iOS 27.2 simulator, local source, 2026-11-05; not on macOS or iCloud).
+  The app and the fake still treat it as carrying the series id — open,
+  see docs/decisions.md → Apple Calendar. Ids can change after an iCloud
+  sync — harmless for a read-through store (nothing to reconcile).
+- **An occurrence can sit any distance from its slot**: saved with
+  `.thisEvent` 40 and 200 days off (past the series' end, or onto
+  another occurrence's day), EventKit refused nothing (same probe). A
+  range read returns it where it sits; the bridge's lookup by slot
+  reaches 31 days either side, then answers notFound.
 - **All-day events** end at the last day's end (some sources: the next
   midnight); the wire carries an exclusive `endDate`. A floating event
   has no `timeZone` and reads in the device zone.
@@ -497,7 +507,10 @@ change there.
   (`packages/apple-calendar/src/fake.ts`) keeps series the way EventKit
   does (master + rules, detached and deleted occurrences), expands them
   with core's expander and implements the span semantics above, so
-  scope and move tests assert what EventKit "saw" via `fake.state`.
+  scope and move tests assert what EventKit "saw" via `fake.state`. Like
+  the bridge it finds an occurrence by its slot 31 days either side
+  (`APPLE_WRITE_REACH_MS`), while its range read returns one moved
+  further.
   Layer recipes that build `EventMutations` provide
   `appleCalendarServicesLayer(unavailableAppleCalendarClient('test'))`.
   The desktop e2e reuses the fake under `CALENDAR_APPLE_CALENDAR=fixture`.
@@ -701,7 +714,7 @@ privacy modal, the settings window, the inspector and inline editor, ⌘K);
 click of the microphone: two phrases land at their pauses, a typed title
 ends the dictation, the next phrase keeps that title); `draftThread` (a
 phrase's draft on the grid, a change, Undo, Save; four turns folding to
-two under "+2 earlier queries", the changed time flashing; a pasted mail's thread,
+one with "+3 earlier queries", the changed time flashing; a pasted mail's thread,
 the pager, Remove, Add all; drafts made an event in another calendar, a
 task and a reminder, each shown again as it was left with nothing asked,
 and Add all writing each where it was put); `slotProposals` (a finder phrase on the

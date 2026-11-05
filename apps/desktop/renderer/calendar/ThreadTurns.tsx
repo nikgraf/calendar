@@ -7,9 +7,9 @@ import { ChevronDownIcon } from '../ui/icons.tsx';
  * A thread's turns, hung under the field they were typed into as an
  * extension of it — the same card, a hairline between the field and each
  * row — newest first: what was said and what it changed, wrapped in full,
- * the newest with Undo. Two show until the last row, "+N earlier
+ * the newest with Undo. Only the newest shows until "+N earlier
  * queries ⌄" (the tint color and a disclosure chevron, the way "Show
- * More" reads on Apple's platforms), opens the rest. A row eases in when
+ * More" reads on Apple's platforms) opens the rest. A row eases in when
  * it comes into the list (`turn-in` in App.css) — a new turn at the top,
  * older ones as the list opens; the list itself mounts with its first
  * turn, and `resting` names turns already seen (a panel shown again) that

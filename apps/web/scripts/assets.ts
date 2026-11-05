@@ -1,16 +1,5 @@
 import { createHash } from 'node:crypto';
 
-/**
- * Where a route's page goes in `dist/`: `/` is `index.html`, `/privacy` is
- * `privacy.html`. Static hosts (GitHub Pages, Cloudflare Pages, Netlify)
- * and `vp preview` serve `/privacy` from `privacy.html` without a
- * redirect, so the canonical URL and every link stay slash-free.
- */
-export function pageFile(route: string): string {
-  const name = route.replaceAll(/^\/+|\/+$/g, '');
-  return name === '' ? 'index.html' : `${name}.html`;
-}
-
 /** `stem-<8 hex of the content's SHA-256>.ext`: a new name whenever the bytes change. */
 export function hashedName(stem: string, extension: string, content: Uint8Array | string): string {
   const hash = createHash('sha256').update(content).digest('hex').slice(0, 8);
@@ -90,7 +79,9 @@ export function cssEscape(name: string): string {
 export function missingClasses(pages: ReadonlyArray<string>, css: string): ReadonlyArray<string> {
   const used = new Set<string>();
   for (const page of pages) {
-    for (const [, value = ''] of page.matchAll(/\sclass="([^"]*)"/g)) {
+    // Shiki supplies inline styles and its own marker classes on fenced code.
+    const markup = page.replaceAll(/<pre class="astro-code\b[^"]*"[^>]*>[\s\S]*?<\/pre>/g, '');
+    for (const [, value = ''] of markup.matchAll(/\sclass="([^"]*)"/g)) {
       for (const name of value.split(/\s+/)) {
         if (name) {
           used.add(unescapeAttribute(name));

@@ -6,7 +6,8 @@
  * follows the OS.
  */
 @import '../../../brand/tokens/tailwind.css';
-@import '../../../brand/fonts/inter.css';
+/* Astro emits this utility for the accessible footnotes heading in Markdown. */
+@source inline("sr-only");
 
 html {
   background: var(--canvas);
@@ -469,7 +470,7 @@ body {
   }
 }
 
-/* The privacy policy, rendered from PRIVACY.md. */
+/* Markdown articles, including the privacy policy. */
 .prose {
   font-size: 16px;
   line-height: 1.6;
@@ -530,7 +531,22 @@ body {
 }
 .prose code {
   font-size: 0.92em;
+}
+.prose :not(pre) > code {
   background: var(--fill);
   border-radius: 4px;
   padding: 1px 5px;
+}
+.prose .contains-task-list {
+  padding-inline-start: 0;
+}
+.prose .task-list-item {
+  list-style: none;
+}
+.prose .footnotes {
+  border-top: 1px solid var(--border);
+  font-size: 0.9em;
+}
+.prose .data-footnote-backref {
+  text-decoration: none;
 }

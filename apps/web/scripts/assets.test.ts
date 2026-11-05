@@ -1,20 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import {
-  cssEscape,
-  glyphText,
-  hashedName,
-  missingClasses,
-  pageFile,
-  undefinedVariables,
-} from './assets.ts';
-
-describe('pageFile', () => {
-  it('writes the home page as index.html and every other route as <name>.html', () => {
-    expect(pageFile('/')).toBe('index.html');
-    expect(pageFile('/privacy')).toBe('privacy.html');
-    expect(pageFile('/privacy/')).toBe('privacy.html');
-  });
-});
+import { cssEscape, glyphText, hashedName, missingClasses, undefinedVariables } from './assets.ts';
 
 describe('hashedName', () => {
   it('names a file after its content', () => {
@@ -80,6 +65,12 @@ describe('missingClasses', () => {
 
   it('does not take a class name that is a prefix of a rule for a match', () => {
     expect(missingClasses(['<p class="px-8"></p>'], '.px-80{padding:20rem}')).toEqual(['px-8']);
+  });
+
+  it('checks site classes around highlighted Markdown code', () => {
+    const code =
+      '<pre class="astro-code github-dark"><code><span class="line">hi</span></code></pre>';
+    expect(missingClasses([code + '<div class="typo"></div>'], css)).toEqual(['typo']);
   });
 
   it('reads class names the way React escapes them in an attribute', () => {

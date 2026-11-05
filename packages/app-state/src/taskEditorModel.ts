@@ -480,6 +480,23 @@ export const useTaskEditorModel = ({
     }
   };
 
+  const toggleCompletion = async (task: TaskRecord, confirmDiscard?: () => Promise<boolean>) => {
+    try {
+      if (confirmDiscard && !(await confirmDiscard())) {
+        return;
+      }
+      await mutations.completeTask({
+        accountId: task.accountId,
+        status: task.status === 'completed' ? 'needsAction' : 'completed',
+        taskId: task.id,
+        taskListId: task.listId,
+      });
+      onClose();
+    } catch (error) {
+      setError(String(error));
+    }
+  };
+
   const remove = async () => {
     if (!existing || readOnly) {
       return;
@@ -514,7 +531,7 @@ export const useTaskEditorModel = ({
     adopt,
     alarm,
     applyPrefill,
-    /** A save or delete is running: Save and Delete are dimmed (a press does nothing). */
+    /** Save, Delete and the completion action share one write at a time. */
     busy: write.busy,
     canMoveList,
     /**
@@ -564,6 +581,12 @@ export const useTaskEditorModel = ({
     taskLists: offeredLists.filter((list) => list.provider === provider),
     timed,
     title,
+    // Completion acts on the saved item. A pending move shows a different destination.
+    toggleCompletion:
+      existing && !readOnly && listKey === listKeyOf(existing.accountId, existing.listId)
+        ? (confirmDiscard?: () => Promise<boolean>) =>
+            write.run(() => toggleCompletion(existing, confirmDiscard))
+        : undefined,
     url,
     values,
   };

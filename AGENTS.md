@@ -83,9 +83,10 @@ dictation and capture from text or photo.
   `expo-maps` draws the editor map.
 - `apps/web` — the website (solunivo.com): a static landing page and the
   privacy policy (rendered from the root `PRIVACY.md` at build time),
-  React + Tailwind on the brand tokens, prerendered by `scripts/build.ts`
-  into `dist/` (`index.html`, `privacy.html`, Inter cut down to the
-  characters the pages draw). One inline script in `<head>`
+  Astro file-based pages with static React components and Tailwind on the
+  brand tokens. Markdown help pages use `src/layouts/Article.astro`.
+  The build writes `dist/` (`index.html`, `privacy.html`, Inter cut down
+  to the characters the pages draw). One inline script in `<head>`
   (`src/inline/theme.js`) picks the color scheme (the OS, or the footer's
   choice) and the visitor's platform for the download buttons; nothing
   else runs in the browser. The hero shows real screenshots of both apps
@@ -166,7 +167,7 @@ deliberately.
   `pnpm --filter @calendar/ios prebuild` regenerates `ios/`).
 - `pnpm --filter @calendar/web build` — the website as static files in
   `apps/web/dist/` (`dev` serves it on :5174 with live reload, `preview`
-  serves the built output on :4174; a plain `vp build` there refuses).
+  serves the built output on :4174).
 - `pnpm --filter @calendar/desktop build:helper` — build the Swift helper
   (needs Xcode 27 for the macOS 27 SDK; `make` / `package:app` run it
   automatically).

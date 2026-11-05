@@ -59,6 +59,8 @@ tags:
       - tapOn:
           id: 'mode-reminder'
       - assertVisible: 'New Reminder'
+      - assertNotVisible:
+          id: 'task-editor-completion'
       # The form is worked top to bottom, every scroll downward (see 03):
       # the title first, then the dates card, then Priority.
       - tapOn:
@@ -168,8 +170,10 @@ tags:
             - assertVisible: 'Edit Reminder'
             - waitForAnimationToEnd:
                 timeout: 5000
-            - assertVisible:
-                id: 'reminder-time'
+            - scrollUntilVisible:
+                element:
+                  id: 'reminder-time'
+                direction: DOWN
             # Reopening/saving must retain the exact stored label. The native
             # picker value itself still needs the documented manual check.
             - tapOn:
@@ -182,7 +186,24 @@ tags:
       - assertVisible: 'Edit Reminder'
       - waitForAnimationToEnd:
           timeout: 5000
+      # Complete the reminder from the editor, then reopen it on the
+      # timeline before adding a repeat rule. EventKit backs this row.
+      - tapOn:
+          id: 'task-editor-completion'
+      - extendedWaitUntil:
+          visible: 'Reopen reminder Solunivo e2e reminder to delete'
+          timeout: 10000
+      - tapOn: 'Reopen reminder Solunivo e2e reminder to delete'
+      - extendedWaitUntil:
+          visible: 'Complete reminder Solunivo e2e reminder to delete'
+          timeout: 10000
+      - tapOn: 'Solunivo e2e reminder to delete, due .*'
+      - assertVisible: 'Edit Reminder'
       # Removing the time moves the same reminder into the all-day lane.
+      - scrollUntilVisible:
+          element:
+            id: 'reminder-timed'
+          direction: DOWN
       - tapOn:
           id: 'reminder-timed'
       - tapOn:
@@ -196,6 +217,10 @@ tags:
       - assertVisible: 'Edit Reminder'
       - waitForAnimationToEnd:
           timeout: 5000
+      - scrollUntilVisible:
+          element:
+            id: 'reminder-timed'
+          direction: DOWN
       - tapOn:
           id: 'reminder-timed'
       - tapOn:
