@@ -1281,6 +1281,9 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   hold), a pushed calendar picker (the inline rows stay the flows'
   targets and one tap), Repeat inside the dates card (its conditional
   rows made it long). Open: the chips at the accessibility text sizes.
+- **Location follows the event time on iOS** (2026-11-05, #294) — the create
+  and edit sheets use the desktop order. The dates and “Find a time”
+  come before Location, with suggestions and the map under its field.
 - **A drag raises the half-height editor** (2026-10-26, #257) — the form
   scrolled on its own in the strip under the header. A drag up on the
   form or the turns now raises the sheet first, as in Maps; at half with

@@ -12,6 +12,10 @@ name: The location field suggests places and maps a picked one
 - tapOn: 'Starts'
 - waitForAnimationToEnd:
     timeout: 5000
+- scrollUntilVisible:
+    element:
+      id: 'location-input'
+    direction: DOWN
 - tapOn:
     id: 'location-input'
 - inputText: 'Apple Park'

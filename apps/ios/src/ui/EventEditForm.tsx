@@ -42,11 +42,9 @@ const groupLabel = (calendar: CalendarInfo, emailOf: (accountId: string) => stri
     : emailOf(calendar.accountId);
 
 /**
- * The event half of EventEditSheet (mode === 'event'), as grouped cards
- * in Calendar's own order: title and location; all-day, the dates and
- * the finder; the repeat rule; the calendar; invitees; notifications;
- * notes; Delete. The flows find the rows by test id and the cards by
- * their uppercase headers ("CALENDAR", "REPEAT").
+ * The event half of EventEditSheet (mode === 'event'). Location follows
+ * the dates and the finder, as on desktop. The flows find rows by test
+ * id and cards by their uppercase headers ("CALENDAR", "REPEAT").
  */
 export function EventEditForm({
   autoFocusTitle = true,
@@ -200,9 +198,7 @@ export function EventEditForm({
             value={title}
           />
         </FieldFlash>
-        <LocationField model={model} />
       </Section>
-      <LocationMap model={model} />
 
       <Section tight>
         <FieldFlash bleedX={0} bleedY={0} field={isAllDay ? 'time' : null} radius={0}>
@@ -232,6 +228,11 @@ export function EventEditForm({
         ) : null}
         {readOnly ? null : <FindTimeFields model={model} />}
       </Section>
+
+      <Section tight>
+        <LocationField model={model} />
+      </Section>
+      <LocationMap model={model} />
 
       {readOnly ? null : (
         <Section header="Calendar" tight>
