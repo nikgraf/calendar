@@ -192,9 +192,7 @@ export const planUpdateEvent = (
 ) =>
   Effect.gen(function* () {
     const scope = input.scope ?? 'instance';
-    const resolved = yield* resolveEvent(directory, input.ref, {
-      wholeSeries: scope !== 'instance',
-    });
+    const resolved = yield* resolveEvent(directory, input.ref, { scope });
     const { granted, ref } = resolved;
     const { calendar } = granted;
     // A change to one occurrence starts from that occurrence (its own
@@ -325,9 +323,7 @@ export const planDeleteEvent = (
 ) =>
   Effect.gen(function* () {
     const scope = input.scope ?? 'instance';
-    const resolved = yield* resolveEvent(directory, input.ref, {
-      wholeSeries: scope !== 'instance',
-    });
+    const resolved = yield* resolveEvent(directory, input.ref, { scope });
     const { base, granted, ref } = resolved;
     const { calendar } = granted;
     const { guests, written } = reachOf(resolved, scope, granted.account?.email);

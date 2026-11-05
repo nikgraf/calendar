@@ -150,6 +150,17 @@ export interface OccurrenceRef {
 }
 
 /**
+ * How far either side of its slot the bridge looks for the occurrence a
+ * ref names (`occurrence(id:originalStartUtc:)` in AppleCalendarBridge.swift,
+ * the same overlap query `calendar.events` runs). EventKit lets one
+ * occurrence be moved any distance on its own, and a range read returns it
+ * wherever it sits — but an update or a delete by its slot then answers
+ * `notFound`. A read that decides a write therefore reaches exactly this
+ * far: what it finds, the write finds.
+ */
+export const APPLE_WRITE_REACH_MS = 31 * 24 * 60 * 60 * 1000;
+
+/**
  * One write of `calendar.applyBatch`: single events only (span
  * `thisEvent`). A calendar mirror writes its copies this way — the whole
  * batch is one commit, so one change notification and nothing half-written.
