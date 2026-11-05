@@ -423,8 +423,9 @@ iCloud or Exchange source.
   occurrence's new start, and the later changed occurrences come along
   under the new series' id. Removing with `.futureEvents` cuts the
   series at the slot (a changed first occurrence: the whole series).
-  `.futureEvents` on the series' first occurrence (the series id alone)
-  writes the whole series and keeps the changed occurrences: each takes
+  `.futureEvents` on the series' first occurrence — as the rule draws
+  it, changed on its own, or through the series id alone — writes the
+  whole series in place and keeps the changed occurrences: each takes
   a field it had not changed itself — when it sits inside the series'
   span — and a time change brings back an occurrence deleted on its
   own. Setting `event.calendar` and saving the series' first occurrence

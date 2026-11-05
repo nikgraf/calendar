@@ -94,7 +94,8 @@ with nothing.
   `following` write "the event" is everything the scope touches
   (`reachOf` in `ops/events.ts`): the master and every exception it
   rewrites or cancels, so a guest on one later occurrence counts. (Apple:
-  the exceptions EventKit returns within ±400 days of the slot.)
+  the exceptions EventKit returns within ±400 days of the slot, and the
+  named occurrence itself wherever it was moved.)
 - Free/busy merges blocks across calendars and skips all-day, cancelled,
   free (Google's `transparent`) and declined events — `blocksTime` in
   core, the rule the app's own find-a-time applies too. An Apple event

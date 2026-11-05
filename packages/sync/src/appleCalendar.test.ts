@@ -904,6 +904,30 @@ describe('Apple Calendar: an occurrence changed on its own', () => {
     }).pipe(Effect.provide(testLayer(fake)));
   });
 
+  it.effect('"This and following" from a changed first occurrence is the whole series', () => {
+    const fake = fakeWith();
+    return Effect.gen(function* () {
+      yield* connected;
+      yield* moveBy(seriesStart, 2 * HOUR);
+      yield* (yield* EventMutations).updateRecurring({
+        ...standup,
+        changes: { title: 'Standup v2' },
+        originalStartUtc: seriesStart,
+        scope: 'following',
+      });
+      // EventKit writes the series in place: no second series, the first still moved.
+      expect(fake.state.series.size).toBe(4);
+      expect(
+        series(fake).map((entry) => [entry.title, entry.startUtc - entry.occurrenceStartUtc!]),
+      ).toEqual([
+        ['Standup v2', 2 * HOUR],
+        ['Standup v2', 0],
+        ['Standup v2', 0],
+        ['Standup v2', 0],
+      ]);
+    }).pipe(Effect.provide(testLayer(fake)));
+  });
+
   it.effect('counts toward what a move to another account drops', () => {
     const fake = fakeWith();
     return Effect.gen(function* () {

@@ -727,6 +727,43 @@ describe('guests across a series', () => {
       expect(walk.deleted.has(day(1))).toBe(true);
     }).pipe(Effect.provide(world.layer));
   });
+
+  it.effect(
+    'Apple: the guests of the named occurrence gate a series write wherever it was moved',
+    () => {
+      const world = makeWorld({ appleEvents: [appleDailySeries] });
+      return Effect.gen(function* () {
+        const agent = writer(); // guests: off
+        const ref = refs.occurrence('ek-home', 'ek-walk', day(2), APPLE_CALENDAR_ACCOUNT_ID);
+        // Day 3 was moved 500 days on: found by its own identifier, but
+        // further off than the read that collects the series' exceptions.
+        const movedTo = day(2) + 500 * DAY;
+        yield* callTool(agent, 'update_event', {
+          end: iso(movedTo + HOUR),
+          ref,
+          start: iso(movedTo),
+        });
+        const walk = world.apple.state.series.get('ek-walk')!;
+        walk.detached.set(day(2), {
+          ...walk.detached.get(day(2))!,
+          attendees: [
+            { email: 'ben@example.com', isOrganizer: false, isSelf: false, status: 'accepted' },
+          ],
+        });
+        for (const scope of ['instance', 'following', 'series'] as const) {
+          expect(yield* failureOf(callTool(agent, 'delete_event', { ref, scope }))).toMatchObject({
+            _tag: 'PermissionDenied',
+            reason: 'guests',
+          });
+          expect(
+            yield* failureOf(callTool(agent, 'update_event', { ref, scope, title: 'Stroll' })),
+          ).toMatchObject({ _tag: 'PermissionDenied', reason: 'guests' });
+        }
+        expect(world.apple.state.series.has('ek-walk')).toBe(true);
+        expect(walk.detached.get(day(2))?.title).toBe('Evening walk');
+      }).pipe(Effect.provide(world.layer));
+    },
+  );
 });
 
 describe('grants, again', () => {

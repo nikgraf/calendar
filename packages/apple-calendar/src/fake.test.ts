@@ -294,6 +294,42 @@ describe('fake EventKit spans', () => {
     expect(await run(bridge.events(window))).toEqual([]);
   });
 
+  it('futureEvents on a changed first occurrence writes the series in place', async () => {
+    const { bridge, state } = setup();
+    await run(
+      bridge.update({
+        changes: { title: 'Kickoff' },
+        ref: { id: 'ek-series', originalStartUtc: first },
+        span: 'thisEvent',
+      }),
+    );
+    const saved = await run(
+      bridge.update({
+        changes: { endUtc: first + 2 * HOUR, startUtc: first + HOUR, title: 'Kickoff, later' },
+        ref: { id: own(first) },
+        span: 'futureEvents',
+      }),
+    );
+    // Still the one series, an hour later; the first stays changed, under
+    // the identifier it got when it was detached.
+    expect(state.series.size).toBe(1);
+    expect(saved).toMatchObject({
+      id: own(first),
+      isDetached: true,
+      occurrenceStartUtc: first + HOUR,
+      startUtc: first + HOUR,
+      title: 'Kickoff, later',
+    });
+    expect(
+      (await run(bridge.events(window))).map((e) => [e.id, e.title, e.startUtc - first]),
+    ).toEqual([
+      [own(first), 'Kickoff, later', HOUR],
+      ['ek-series', 'Kickoff, later', 7 * DAY + HOUR],
+      ['ek-series', 'Kickoff, later', 14 * DAY + HOUR],
+      ['ek-series', 'Kickoff, later', 21 * DAY + HOUR],
+    ]);
+  });
+
   it('futureEvents on a changed occurrence splits the series at its slot and keeps it changed', async () => {
     const { bridge, state } = setup();
     const slot = first + 7 * DAY;

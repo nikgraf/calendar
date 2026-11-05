@@ -43,8 +43,8 @@ import { withSeriesIdentity } from './seriesIdentity.ts';
  * - `thisEvent` detaches one occurrence. `futureEvents` on a later one
  *   (drawn or detached) ends the series before its slot and starts a new
  *   one there, taking the later detached occurrences along; on the first
- *   drawn one, or on the series id, it writes the whole series and keeps
- *   the detached occurrences.
+ *   one (drawn or detached), or on the series id, it writes the whole
+ *   series in place and keeps the detached occurrences.
  * - A lookup by slot matches the identifier exactly and reaches
  *   `APPLE_WRITE_REACH_MS` either side, while a range read returns an
  *   occurrence wherever it sits.
@@ -628,9 +628,23 @@ export const makeFakeAppleCalendarClient = (
           at.series.detached.set(at.slot, detached);
           return detached;
         }
-        return at.kind === 'drawn' && at.slot === firstSlot(at.series)
-          ? writeWhole(at.series, changes, now)
-          : split(at.series, at, changes, now);
+        if (at.slot !== firstSlot(at.series)) {
+          return split(at.series, at, changes, now);
+        }
+        // On the series' first occurrence futureEvents writes the series in
+        // place, whether the rule draws that occurrence or it was changed on
+        // its own — which then stays detached and takes the write itself.
+        const written = writeWhole(at.series, changes, now);
+        if (at.kind === 'drawn') {
+          return written;
+        }
+        const first = firstSlot(at.series);
+        const saved = {
+          ...applyWrite(at.series.detached.get(first) ?? at.event, changes, now),
+          occurrenceStartUtc: first,
+        };
+        at.series.detached.set(first, saved);
+        return saved;
       }),
   };
   return { bridge, client: withSeriesIdentity(bridge), state };

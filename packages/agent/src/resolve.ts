@@ -200,7 +200,8 @@ export interface ResolvedEvent {
    * For an occurrence: the series' live exceptions — occurrences changed
    * on their own. A series-wide or "following" write rewrites or cancels
    * them too, so their guests count. Apple: read only for such a write,
-   * those EventKit returns within the searched window around the slot.
+   * those EventKit returns within the searched window around the slot —
+   * and the occurrence itself when it was changed, wherever it sits.
    */
   readonly exceptions?: ReadonlyArray<EventRecord>;
   readonly granted: GrantedCalendar;
@@ -354,13 +355,20 @@ export const resolveEvent = (
         return yield* Effect.fail(eventNotFound);
       }
       const occurrence = mapAppleEvent(found, context);
+      const changed = nearby.filter(
+        (event) => event.id === seriesId && event.isDetached && event.status !== 'cancelled',
+      );
+      // The named occurrence is one of the series' exceptions wherever it
+      // sits: found by its own identifier, it can lie outside that read,
+      // and a series-wide write counts guests by this list.
+      const exceptions =
+        found.isDetached &&
+        !changed.some((event) => event.occurrenceStartUtc === found.occurrenceStartUtc)
+          ? [...changed, found]
+          : changed;
       return {
         base: ownTimes(occurrence),
-        exceptions: nearby
-          .filter(
-            (event) => event.id === seriesId && event.isDetached && event.status !== 'cancelled',
-          )
-          .map((event) => mapAppleEvent(event, context)),
+        exceptions: exceptions.map((event) => mapAppleEvent(event, context)),
         granted,
         record: occurrence,
         ref,
