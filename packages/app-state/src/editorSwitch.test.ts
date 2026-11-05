@@ -42,6 +42,7 @@ const taskModel = (listKey: string) => {
 const eventModel = {
   adopt: () => undefined,
   existing: undefined,
+  showError: () => undefined,
   targetProvider: 'google',
   values: () => ({
     attendees: [],
@@ -123,12 +124,24 @@ describe('switchEditorMode on an occurrence of a series', () => {
    * `whilePreviewing` runs while the preview is on its way, as a click on
    * the event form's scope control would.
    */
-  const convertAt = async (scope: RecurringScope, whilePreviewing?: (form: Form) => void) => {
+  const convertAt = async (
+    scope: RecurringScope,
+    whilePreviewing?: (form: Form) => void,
+    refusal?: Error,
+  ) => {
     const asked: Array<PreviewEventToTaskParams> = [];
     const adopted: Array<TaskConvertValues> = [];
     const scopes: Array<RecurringScope> = [];
+    const shown: Array<string | null> = [];
     const { model } = taskModel('google-a:inbox');
-    const form: Form = { ...eventModel, existing: occurrence, scope } as Form;
+    const form: Form = {
+      ...eventModel,
+      existing: occurrence,
+      scope,
+      showError: (message: string | null) => {
+        shown.push(message);
+      },
+    } as Form;
     const switched = await switchEditorMode({
       confirm: () => Promise.reject(new Error('an existing event asks on Save')),
       eventModel: form,
@@ -137,6 +150,9 @@ describe('switchEditorMode on an occurrence of a series', () => {
       previewEventToTask: (params) => {
         asked.push(params);
         whilePreviewing?.(form);
+        if (refusal) {
+          return Promise.reject(refusal);
+        }
         return Promise.resolve({
           carriedRecurrence: rule,
           loss: {
@@ -157,7 +173,7 @@ describe('switchEditorMode on an occurrence of a series', () => {
       } as typeof model,
       timeZone: 'UTC',
     });
-    return { adopted, asked, scopes, switched };
+    return { adopted, asked, scopes, shown, switched };
   };
 
   it('"This event" asks about that occurrence and tells Save so', async () => {
@@ -204,7 +220,25 @@ describe('switchEditorMode on an occurrence of a series', () => {
       adopted: [],
       asked: [],
       scopes: [],
+      shown: [],
       switched: false,
     });
+  });
+
+  it('a preview the backend refuses keeps the event form, with the reason on it', async () => {
+    const { adopted, asked, scopes, shown, switched } = await convertAt(
+      'instance',
+      undefined,
+      new Error('EventNotFoundError'),
+    );
+    expect(switched).toBe(false);
+    expect(asked).toHaveLength(1);
+    expect(adopted).toEqual([]);
+    expect(scopes).toEqual([]);
+    expect(shown).toEqual(['Error: EventNotFoundError']);
+  });
+
+  it('a switch that goes through takes an earlier refusal off the event form', async () => {
+    expect((await convertAt('instance')).shown).toEqual([null]);
   });
 });

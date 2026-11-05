@@ -1200,6 +1200,11 @@ export const useEventEditorModel = ({
     },
     setTitle,
     setUseDefaultReminders,
+    /**
+     * Says on the event form why something outside it did not happen (a
+     * conversion the stored event refused); null takes the message away.
+     */
+    showError: (message: string | null): void => setError(message),
     startTime,
     /** The picked calendar's provider: what a create (or conversion) writes to. */
     targetProvider: calendarOf(calendarKey)?.provider ?? 'google',

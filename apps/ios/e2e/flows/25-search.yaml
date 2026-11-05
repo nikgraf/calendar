@@ -53,8 +53,10 @@ tags:
     notVisible:
       id: 'event-detail'
     timeout: 10000
-# Convert at "This event" opens the to-do form on that occurrence; Cancel
-# leaves the series as it is.
+# Convert is live at "This event" (it was off there) and opens the to-do
+# form; Cancel leaves the series as it is. What the form carries for one
+# occurrence is the desktop convert spec's and the unit tests' to check:
+# a Google task's form looks the same for one occurrence and a series.
 - tapOn: 'Kolkata series.*'
 - extendedWaitUntil:
     visible:

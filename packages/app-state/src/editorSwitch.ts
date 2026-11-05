@@ -42,9 +42,10 @@ export type EditorMode = 'event' | 'todo';
  * becomes one to-do. The task model is told that scope with the fields
  * (`setConvertScope`), so Save converts what the form shows even if the
  * event form's scope changed while the preview was on its way; each flip
- * from the event form carries again. Flipping back to the kind the item
- * already is only changes the mode, so the original form is untouched.
- * Resolves whether the mode changed.
+ * from the event form carries again. A preview the backend refuses leaves
+ * the event form up with the reason on it. Flipping back to the kind the
+ * item already is only changes the mode, so the original form is
+ * untouched. Resolves whether the mode changed.
  */
 export const switchEditorMode = async ({
   confirm,
@@ -192,7 +193,16 @@ export const switchEditorMode = async ({
   // (an occurrence row has no lines) and an Apple event's plain URL. One
   // occurrence comes back without a rule: the series keeps it.
   const [accountId = '', taskListId = ''] = targetKey.split(':', 2);
-  const preview = await previewEventToTask({ ...named, target: { accountId, taskListId } });
+  let preview: EventToTaskPreview;
+  try {
+    preview = await previewEventToTask({ ...named, target: { accountId, taskListId } });
+  } catch (error) {
+    // The stored event refused (it is gone, or an occurrence nothing can
+    // address by its slot): the event form stays, and says why.
+    eventModel.showError(String(error));
+    return false;
+  }
+  eventModel.showError(null);
   taskModel.adopt({
     ...carried,
     recurrence: preview.carriedRecurrence,

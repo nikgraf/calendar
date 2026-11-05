@@ -393,10 +393,11 @@ it whenever a kind is added. Rules that keep the queue correct:
   when a set field has no home on the other side (`convertLoss.ts`;
   `previewEventToTask` computes the event side from the stored record and
   carries the series' rule, since an occurrence row never has its
-  master's lines — for one occurrence it reads that occurrence instead,
-  its own row or EventKit's copy where it was edited on its own, else the
-  master at its slot, and carries no rule; `previewTaskToEvent` reads the
-  stored task and counts the subtasks its delete takes). The views offer
+  master's lines — for one occurrence it reads that occurrence instead
+  (Google: its own row where it was edited on its own, else the master at
+  its slot; Apple: EventKit's copy of it) and carries no rule;
+  `previewTaskToEvent` reads the stored task and counts the subtasks its
+  delete takes). The views offer
   Convert on a series at "This event" and "All events", never at "This
   and following" (`seriesConvertsAt`); the task form takes over what the
   event form's scope stands for at each flip and keeps that scope, and

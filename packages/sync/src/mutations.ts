@@ -1771,11 +1771,12 @@ const make: Effect.Effect<
     });
 
   /**
-   * One occurrence of a series as a conversion's source: its own row where
-   * it was edited on its own (EventKit's copy on Apple), else the master's
-   * fields at its slot. The rule and the other occurrences stay with the
-   * series, so the source has neither to carry or to lose. A slot the
-   * series does not draw (any more) is no event.
+   * One occurrence of a series as a conversion's source. Google: its own
+   * row where it was edited on its own, else the master's fields at its
+   * slot. Apple: the occurrence as EventKit has it, edited or not, where
+   * a delete by its slot can reach it. The rule and the other occurrences
+   * stay with the series, so the source has neither to carry or to lose.
+   * A slot the series does not draw (any more) is no event.
    */
   const loadOccurrence = (
     params: EventRef,
