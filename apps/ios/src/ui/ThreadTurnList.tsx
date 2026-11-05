@@ -21,9 +21,9 @@ const ENTER_STILL = FadeIn.duration(200).reduceMotion(ReduceMotion.Never);
 /**
  * A thread's turns as one card, newest first, as on the desktop: what was
  * said and what it changed, wrapped in full, the newest with Undo, a
- * hairline between rows. Two show until the last row, "+N earlier
+ * hairline between rows. Only the newest shows until "+N earlier
  * queries ⌄" (the tint color and a disclosure chevron, the way "Show
- * More" reads in Apple's own apps), opens the rest. `attached`: the card
+ * More" reads in Apple's own apps) opens the rest. `attached`: the card
  * hangs under the field the words were typed into (the edit sheet's),
  * square on top with a hairline between — an extension of the field;
  * Search's field is the system's, so its card stands on its own. A row

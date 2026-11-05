@@ -94,6 +94,7 @@ const blocks = `document.querySelectorAll('[data-testid="draft-block"]').length`
 const blockAt = (start: string) =>
   `!!document.querySelector('[data-testid="draft-block"][data-draft-start="${start}"]')`;
 const turns = `document.querySelectorAll('[data-testid="draft-turn"]').length`;
+const more = `document.querySelector('[data-testid="draft-turns-more"]')?.textContent ?? ''`;
 // The list runs newest first: the first summary is the last turn's.
 const newestSummary = `document.querySelector('[data-testid="draft-turn-summary"]')?.textContent ?? ''`;
 const position = `(document.querySelector('[data-testid="draft-position"]')?.textContent ?? '')`;
@@ -167,7 +168,8 @@ describe('The draft thread', () => {
     await cdp.waitFor(blockAt('20:00'));
     expect(await cdp.eval<number>(blocks)).toBe(1);
     await cdp.waitFor(`document.querySelector(${JSON.stringify(START)})?.value === '20:00'`);
-    expect(await cdp.eval<number>(turns)).toBe(2);
+    expect(await cdp.eval<number>(turns)).toBe(1);
+    expect(await cdp.eval<string>(more)).toBe('+1 earlier query');
     // The newest turn on top, with the Undo.
     expect(await cdp.eval<string>(newestSummary)).toContain('20:00–21:00');
     expect(
@@ -181,6 +183,7 @@ describe('The draft thread', () => {
     await cdp.waitFor(blockAt('19:00'));
     await cdp.waitFor(`document.querySelector(${JSON.stringify(START)})?.value === '19:00'`);
     expect(await cdp.eval<number>(turns)).toBe(1);
+    expect(await cdp.eval<string>(more)).toBe('');
 
     // Save writes the draft; no draft is left on the grid, the event is.
     await cdp.clickButtonWithText('Save');
@@ -215,7 +218,6 @@ describe('The draft thread', () => {
     await cdp.clickTestId('quick-add-apply');
     await cdp.waitFor(`${valueOf('[data-testid="event-reminder-1"]')} === '60'`);
     expect(await cdp.eval<string>(valueOf('[data-testid="event-reminder-0"]'))).toBe('30');
-    expect(await cdp.eval<number>(turns)).toBe(2);
     expect(await cdp.eval<string>(newestSummary)).toBe('→ notifies 1 hour before');
     await cdp.waitFor(
       `document.querySelector('[data-testid="event-reminders"]')?.getAnimations().length === 1`,
@@ -233,7 +235,7 @@ describe('The draft thread', () => {
     expect(await cdp.eval<string>(valueOf('[data-testid="event-reminder-1"]'))).toBe('60');
   });
 
-  it('lists the turns newest first, two until "+2 earlier queries" opens the rest, and flashes the field a turn changed', async () => {
+  it('shows the newest turn, expands and collapses the earlier queries, and flashes the changed field', async () => {
     const { cdp } = app;
     await cdp.eval(COMMAND_N);
     await cdp.waitFor(
@@ -255,10 +257,9 @@ describe('The draft thread', () => {
     await cdp.waitFor(
       `document.querySelector(${JSON.stringify(START)})?.getAnimations().length === 1`,
     );
-    expect(await cdp.eval<number>(turns)).toBe(2);
+    expect(await cdp.eval<number>(turns)).toBe(1);
     expect(await cdp.eval<string>(newestSummary)).toContain('10:00–11:00');
-    const more = `document.querySelector('[data-testid="draft-turns-more"]')?.textContent ?? ''`;
-    expect(await cdp.eval<string>(more)).toBe('+2 earlier queries');
+    expect(await cdp.eval<string>(more)).toBe('+3 earlier queries');
     await cdp.clickTestId('draft-turns-more');
     await cdp.waitFor(`${turns} === 4`);
     expect(
@@ -267,7 +268,7 @@ describe('The draft thread', () => {
       ),
     ).toContain('Gym');
     await cdp.clickTestId('draft-turns-less');
-    await cdp.waitFor(`${turns} === 2`);
+    await cdp.waitFor(`${turns} === 1`);
   });
 
   it('opens a pasted mail as one thread of drafts: the pager and the blocks switch the form, Remove drops one, Add all writes the rest', async () => {

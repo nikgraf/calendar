@@ -22,9 +22,8 @@ export const editorSheetHeight = (index: number, windowHeight: number, topInset:
 
 /**
  * What the thread's turns may take of the sheet before they scroll inside
- * it: a third, so at half height the two newest turns and "+N earlier
- * queries" still fit, and a strip of the form stays in view under the
- * header to drag the sheet up by.
+ * it: a third, so even with the history expanded at half height, a strip
+ * of the form stays in view under the header to drag the sheet up by.
  */
 export const turnListMaxHeight = (sheetHeight: number): number => Math.round(sheetHeight / 3);
 

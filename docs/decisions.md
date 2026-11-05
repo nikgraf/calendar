@@ -1101,6 +1101,9 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
 
 ## AI
 
+- **Show only the latest query by default** (2026-11-05) — the create and
+  search threads keep the turn with Undo visible on both apps. Earlier
+  queries open on demand, leaving more room for the form or results.
 - **On-device models only** — no data leaves the device, no API keys, no
   per-request cost, works offline; this matches the app's posture. Apple's
   ~3B Foundation Models handle extraction and classification, not
