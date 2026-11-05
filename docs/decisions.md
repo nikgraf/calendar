@@ -274,6 +274,14 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   nothing else. About 3 KB gzipped more. Unused: its GIF
   and SVG output (the 1-bit PNG is far smaller) and its decoder (Vision
   and expo-camera read the code).
+- **Complexity ceiling** (2026-11-05, #297) — oxlint's `complexity` fails
+  a function over 40. The 16 already past it (`apply` in `applyOp.ts` at 89) are listed by file as their numbers, and a test holds each file to
+  exactly those, so none grows and a number comes down with its function.
+  Rejected: refactoring all 16 to pass (the sync and quick-add cores, for
+  a number); `cccc` (a second binary for the cognitive metric); one
+  ceiling per file (every function in it could reach the highest). Open:
+  numbers match by value, not by name; a PR that changes one of the 16
+  must touch its number; Swift is not measured.
 
 ## Architecture and sync path
 
