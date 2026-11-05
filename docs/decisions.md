@@ -1624,3 +1624,8 @@ first. The decisions, one line each:
   routing, Markdown and static rendering. The homepage keeps its React
   components and the privacy policy still comes from the root Markdown.
   Revisit a docs theme if the help section needs search and a sidebar.
+- **One week across the website screenshots** (2026-11-05, #291) — the Mac
+  shows school pickup on Monday, Wednesday and Friday, two mornings of
+  focus time and a weekend train trip. The iPhone shows Wednesday from the
+  same Google fixture. The capture exports that fixture so the two
+  calendars stay in step when the screenshots are refreshed.
