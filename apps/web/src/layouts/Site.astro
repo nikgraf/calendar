@@ -1,0 +1,51 @@
+---
+import touchIcon from '../../../ios/assets/icon.png?url';
+import fontFace from '../../../../brand/fonts/inter.css?inline';
+import font from '../../../../brand/fonts/InterVariable.woff2?url';
+import favicon from '../../../../brand/icons/solunivo.svg?url';
+import { Footer } from '../components/Footer.tsx';
+import { Nav } from '../components/Nav.tsx';
+import themeScript from '../inline/theme.js?raw';
+import '../site.css';
+
+interface Props {
+  description: string;
+  title: string;
+}
+
+const { description, title } = Astro.props;
+// With file-format output Astro.url includes the generated .html extension during prerendering.
+const pathname = Astro.url.pathname.replace(/\/index\.html$|\.html$|\/$/, '') || '/';
+const canonical = new URL(pathname, Astro.site);
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <script is:inline set:html={themeScript}></script>
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    <meta property="og:site_name" content="Solunivo" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta name="twitter:card" content="summary" />
+    <link rel="icon" type="image/svg+xml" href={favicon} />
+    <link rel="apple-touch-icon" href={touchIcon} />
+    <link rel="preload" as="font" type="font/woff2" crossorigin href={font} />
+    <style is:inline set:html={fontFace}></style>
+  </head>
+  <body>
+    <div class="flex min-h-full flex-col bg-canvas text-base leading-normal text-ink">
+      <a class="skip-link" href="#main">Skip to content</a>
+      <Nav />
+      <main class="flex-1" id="main"><slot /></main>
+      <Footer />
+    </div>
+  </body>
+</html>

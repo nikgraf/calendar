@@ -1,0 +1,11 @@
+---
+import { Content } from '../../../../PRIVACY.md';
+import Article from '../layouts/Article.astro';
+
+const frontmatter = {
+  description: 'What Solunivo accesses, where your data goes, and what stays on your device. The app has no server of its own.',
+  title: 'Privacy Policy',
+};
+---
+
+<Article {frontmatter}><Content /></Article>

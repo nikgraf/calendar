@@ -1,5 +1,5 @@
-import lockupDark from '../../../../brand/logos/lockup-horizontal-dark.svg';
-import lockupLight from '../../../../brand/logos/lockup-horizontal-light.svg';
+import lockupDark from '../../../../brand/logos/lockup-horizontal-dark.svg?url';
+import lockupLight from '../../../../brand/logos/lockup-horizontal-light.svg?url';
 import { links } from '../links.ts';
 import { ThemePicture } from './ThemePicture.tsx';
 

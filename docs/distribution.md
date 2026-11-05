@@ -400,10 +400,9 @@ instead (Expo CLI 57.0.28 and later), and `simctl` works as before.
 
 `apps/web` is the public site: the landing page and `/privacy`, which is
 the root `PRIVACY.md` rendered at build time (edit the Markdown, never the
-page). It is a Vite + React + Tailwind app on the brand tokens
-(`brand/tokens/tokens.css`, mapped to utilities by `brand/tokens/tailwind.css`
-like the desktop renderer) that `scripts/build.ts` prerenders into plain
-HTML:
+page). Astro renders file-based routes to static HTML. The landing page
+uses React components at build time and shares the desktop renderer's
+Tailwind utilities in `brand/tokens/tailwind.css`.
 
 ```sh
 pnpm --filter @calendar/web build     # → apps/web/dist/ (index.html, privacy.html, assets/)
@@ -428,14 +427,28 @@ hides the scheme switch and shows the macOS buttons.
 The build cuts the brand's variable Inter down to printable ASCII,
 Latin-1, typographic punctuation and every character the pages draw
 (about 91 KB instead of 344 KB, both axes kept), names it after its new
-bytes and preloads it; `vp dev` serves the full font. Anything in
+bytes and preloads it. Astro serves the full font in development. Anything in
 `apps/web/public/` (robots.txt, a host's `_headers`) is copied into
 `dist/` as it is, and the build stops if a page or asset would overwrite
 one. It also stops on a rendered class no CSS rule selects and on a CSS
 variable nothing defines, which is how a token renamed in `tokens.json`
-but not in `brand/tokens/tailwind.css` shows up. A plain `vp build` in
-`apps/web` refuses: it would bundle the dev-only `index.html` as a client
-app.
+but not in `brand/tokens/tailwind.css` shows up.
+
+## Adding a help article
+
+Create a Markdown file under `apps/web/src/pages/help/`. For example,
+`connect-google.md` publishes at `/help/connect-google`. Use the shared
+article layout and put the visible heading in the body.
+
+```md
+---
+layout: ../../layouts/Article.astro
+title: Connect a Google calendar
+description: Add your Google account to Solunivo.
+---
+
+# Connect a Google calendar
+```
 
 ## Screenshots on the page
 
