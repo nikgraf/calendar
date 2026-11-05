@@ -1,4 +1,9 @@
-import { TaskListInfo } from '@calendar/core';
+import {
+  type PreviewEventToTaskParams,
+  type RecurringScope,
+  type TaskConvertValues,
+  TaskListInfo,
+} from '@calendar/core';
 import { describe, expect, it } from 'vite-plus/test';
 import type { useEventEditorModel } from './editorModel.ts';
 import { switchEditorMode } from './editorSwitch.ts';
@@ -95,5 +100,83 @@ describe('switchEditorMode', () => {
       timeZone: 'UTC',
     });
     expect(switched).toBe(false);
+  });
+});
+
+describe('switchEditorMode on an occurrence of a series', () => {
+  const rule = { freq: 'weekly', interval: 1 } as const;
+  /** The third occurrence of `series`, as the grid hands it to the editor. */
+  const occurrence = {
+    accountId: 'google-a',
+    calendarId: 'cal',
+    id: 'series_20261024T090000Z',
+    originalStartUtc: 1_792_832_400_000,
+    recurringEventId: 'series',
+    startUtc: 1_792_832_400_000,
+  };
+
+  /** Flips the editor to a task at `scope`: what the backend was asked, and what the form took. */
+  const convertAt = async (scope: RecurringScope) => {
+    const asked: Array<PreviewEventToTaskParams> = [];
+    const adopted: Array<TaskConvertValues> = [];
+    const { model } = taskModel('google-a:inbox');
+    const switched = await switchEditorMode({
+      confirm: () => Promise.reject(new Error('an existing event asks on Save')),
+      eventModel: { ...eventModel, existing: occurrence, scope } as typeof eventModel,
+      from: 'event',
+      next: 'task',
+      // As the backend answers: one occurrence comes without the series' rule.
+      previewEventToTask: (params) => {
+        asked.push(params);
+        return Promise.resolve({
+          ...(params.occurrence === undefined ? { carriedRecurrence: rule } : {}),
+          loss: {
+            attendees: 0,
+            dueTime: true,
+            location: false,
+            modifiedOccurrences: 0,
+            recurrence: false,
+            reminders: 0,
+          },
+        });
+      },
+      sourceKind: 'event',
+      taskModel: {
+        ...model,
+        adopt: (next: TaskConvertValues) => adopted.push(next),
+      } as typeof model,
+      timeZone: 'UTC',
+    });
+    return { adopted, asked, switched };
+  };
+
+  it('"This event" asks about that occurrence and carries no rule', async () => {
+    const { adopted, asked, switched } = await convertAt('instance');
+    expect(switched).toBe(true);
+    expect(asked).toEqual([
+      {
+        accountId: 'google-a',
+        calendarId: 'cal',
+        eventId: 'series',
+        occurrence: { originalStartUtc: occurrence.originalStartUtc },
+        target: { accountId: 'google-a', taskListId: 'inbox' },
+      },
+    ]);
+    expect(adopted).toHaveLength(1);
+    expect(adopted[0]).toMatchObject({ dueDate: '2026-10-10', title: 'x' });
+    expect(adopted[0]?.recurrence).toBeUndefined();
+  });
+
+  it('"All events" asks about the series and carries its rule', async () => {
+    const { adopted, asked } = await convertAt('series');
+    expect(asked).toEqual([
+      {
+        accountId: 'google-a',
+        calendarId: 'cal',
+        eventId: 'series',
+        target: { accountId: 'google-a', taskListId: 'inbox' },
+      },
+    ]);
+    expect(adopted[0]?.recurrence).toEqual(rule);
   });
 });

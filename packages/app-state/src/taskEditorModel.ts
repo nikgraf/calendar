@@ -1,12 +1,14 @@
 import {
   appendLink,
   byDayError,
+  convertSourceOf,
   defaultTodoList,
   repeatUntilError,
   type EventRecord,
   eventToTaskLossSummary,
   isEventToTaskLossy,
   isTaskMoveLossy,
+  type RecurringScope,
   type TaskConvertValues,
   type TaskDraft,
   type TaskListInfo,
@@ -33,10 +35,17 @@ import { offeredTaskLists, taskEditorChanges, type TaskEditorValues } from './ta
 export interface TaskEditorSeed {
   /**
    * The event this (otherwise new) task replaces: Save converts it — the
-   * task is created from the form, then the event (its whole series) is
-   * deleted — after confirming what the event holds that a task cannot.
+   * task is created from the form, then the event is deleted (a series as
+   * `convertScope` says) — after confirming what the event holds that a
+   * task cannot.
    */
   readonly convertFromEvent?: EventRecord | undefined;
+  /**
+   * How much of a series `convertFromEvent` stands for, as the event form
+   * holds it when Save runs: 'instance' takes that one occurrence and
+   * leaves the series, anything else (and absent) the whole series.
+   */
+  readonly convertScope?: RecurringScope | undefined;
   /** Creates: start without a due day (an inbox add); default true. */
   readonly dated?: boolean | undefined;
   /** Present when editing; absent for create. */
@@ -363,12 +372,8 @@ export const useTaskEditorModel = ({
         existing?.provider === 'apple' && provider === 'apple' && existing.accountId === accountId;
       const event = seed.convertFromEvent;
       if (!existing && event) {
-        const source = {
-          accountId: event.accountId,
-          calendarId: event.calendarId,
-          // A series converts as a whole: its master.
-          eventId: event.recurringEventId ?? event.id,
-        };
+        // A series as the event form's scope takes it: whole, or this occurrence.
+        const source = convertSourceOf(event, seed.convertScope ?? 'series');
         const target = { accountId, taskListId };
         // The stored event decides what is lost; ask before writing anything.
         const preview = await mutations.previewEventToTask({ ...source, target });

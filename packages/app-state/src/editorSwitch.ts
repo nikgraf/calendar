@@ -1,4 +1,5 @@
 import {
+  convertSourceOf,
   defaultTodoList,
   type EventToTaskPreview,
   eventToTaskLoss,
@@ -36,9 +37,12 @@ export type EditorMode = 'event' | 'todo';
  * side (Save would otherwise drop it silently; both models stay mounted,
  * so flipping back finds the old state). For an existing item nothing is
  * asked here: Save previews the stored record against the list or
- * calendar picked by then. Flipping back to the kind the item already is
- * only changes the mode, so the original form is untouched. Resolves
- * whether the mode changed.
+ * calendar picked by then. A series' event carries what its scope takes:
+ * the rule with "All events", none with "This event" — one occurrence
+ * becomes one to-do — and each flip from the event form carries again,
+ * so a scope changed in between is the one that counts. Flipping back to
+ * the kind the item already is only changes the mode, so the original
+ * form is untouched. Resolves whether the mode changed.
  */
 export const switchEditorMode = async ({
   confirm,
@@ -176,12 +180,11 @@ export const switchEditorMode = async ({
     return true;
   }
   // The stored event holds what the form never shows: a series' rule
-  // (an occurrence row has no lines) and an Apple event's plain URL.
+  // (an occurrence row has no lines) and an Apple event's plain URL. One
+  // occurrence comes back without a rule: the series keeps it.
   const [accountId = '', taskListId = ''] = targetKey.split(':', 2);
   const preview = await previewEventToTask({
-    accountId: event.accountId,
-    calendarId: event.calendarId,
-    eventId: event.recurringEventId ?? event.id,
+    ...convertSourceOf(event, eventModel.scope),
     target: { accountId, taskListId },
   });
   taskModel.adopt({

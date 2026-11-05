@@ -1,4 +1,5 @@
 import {
+  CONVERT_SCOPE_HINT,
   eventReadout,
   RSVP_OPTIONS,
   SCOPE_OPTIONS,
@@ -13,6 +14,7 @@ import {
   formatPlainTime,
   type RecurringScope,
   type RsvpResponse,
+  seriesConvertsAt,
   Temporal,
   utcMsToPlainDate,
 } from '@calendar/core';
@@ -57,8 +59,12 @@ export function EventDetailSheet({
   calendars: ReadonlyArray<CalendarInfo>;
   event: EventRecord;
   onClose: () => void;
-  /** Convert to a task: opens the editor in task mode on the event as it is now. */
-  onConvert: (event: EventRecord) => void;
+  /**
+   * Convert to a task: opens the editor in task mode on the event as it
+   * is now, at the scope the sheet holds — a series converts whole, or
+   * this occurrence.
+   */
+  onConvert: (event: EventRecord, scope: RecurringScope) => void;
   /** Delete went through, with this scope: the event is gone, and with a series' scope its siblings. */
   onDeleted: (scope: RecurringScope) => void;
   /** Opens the editor on the event as it is now. */
@@ -93,6 +99,7 @@ export function EventDetailSheet({
   const { secondary: secondaryZones } = useTimeZones();
   const { canRsvp, error, isRecurring, joinUrl, readOnly, remove, respond, rsvp, scope, setScope } =
     model;
+  const convertBlocked = isRecurring && !seriesConvertsAt(event, scope);
   const { attendees, date, description, endTime, isAllDay, location, startTime, title } =
     eventReadout(event, timeZone);
   const calendar = calendars.find(
@@ -235,22 +242,18 @@ export function EventDetailSheet({
                   })}
                 </View>
               ) : null}
-              {/* A series converts as a whole, like it moves: Convert waits for "All events". */}
+              {/* A series converts whole or one occurrence at a time, never "this and following". */}
               <Pressable
+                accessibilityHint={convertBlocked ? CONVERT_SCOPE_HINT : undefined}
                 accessibilityRole="button"
-                accessibilityState={{ disabled: isRecurring && scope !== 'series' }}
-                disabled={isRecurring && scope !== 'series'}
-                onPress={() => onConvert(event)}
-                style={[
-                  styles.secondaryButton,
-                  isRecurring && scope !== 'series' && styles.disabled,
-                ]}
+                accessibilityState={{ disabled: convertBlocked }}
+                disabled={convertBlocked}
+                onPress={() => onConvert(event, scope)}
+                style={[styles.secondaryButton, convertBlocked && styles.disabled]}
                 testID="event-convert"
               >
                 <Text style={styles.secondaryLabel}>
-                  {isRecurring && scope !== 'series'
-                    ? 'Convert to task (All events)'
-                    : 'Convert to task'}
+                  {convertBlocked ? 'Convert to task (This or All events)' : 'Convert to task'}
                 </Text>
               </Pressable>
               <Pressable

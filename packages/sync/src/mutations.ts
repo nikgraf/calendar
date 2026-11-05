@@ -57,6 +57,7 @@ import type { SqlError } from 'effect/sql/SqlError';
 import { isPulledCopy, makeApplyOp, retargetOp } from './applyOp.ts';
 import { AppleCalendarEvents, deviceTimeZone } from './appleCalendarEvents.ts';
 import { makeAppleEventMutations } from './appleEventMutations.ts';
+import { findAppleOccurrence } from './appleOccurrence.ts';
 import { planCarry, restoreCarriedText, withOwnText } from './carriedText.ts';
 import {
   CALENDAR_COLOR_EVENT_ID,
@@ -241,7 +242,11 @@ type EventRef = Pick<MoveEventParams, 'accountId' | 'calendarId' | 'eventId'>;
 interface MoveSource {
   /** Google only: what the master's `useDefault` resolves to on its calendar. */
   readonly defaultReminders: ReadonlyArray<ReminderOverride> | undefined;
-  /** The event as a series master (occurrence ids and slots stripped). */
+  /**
+   * The event as a series master (occurrence ids and slots stripped) —
+   * or, for a conversion of one occurrence, that occurrence as it is
+   * drawn, without the series' rule.
+   */
   readonly master: EventRecord;
   readonly modifiedOccurrences: number;
   /** Apple only: the event's URL (non-meeting URLs are not on the record). */
@@ -1766,6 +1771,58 @@ const make: Effect.Effect<
     });
 
   /**
+   * One occurrence of a series as a conversion's source: its own row where
+   * it was edited on its own (EventKit's copy on Apple), else the master's
+   * fields at its slot. The rule and the other occurrences stay with the
+   * series, so the source has neither to carry or to lose. A slot the
+   * series does not draw (any more) is no event.
+   */
+  const loadOccurrence = (
+    params: EventRef,
+    originalStartUtc: number,
+    provider: 'apple' | 'google',
+  ) =>
+    Effect.gen(function* () {
+      const { accountId, calendarId, eventId } = params;
+      const now = yield* Clock.currentTimeMillis;
+      if (provider === 'apple') {
+        const found = yield* findAppleOccurrence(appleClient, { id: eventId, originalStartUtc });
+        if (!found) {
+          return yield* Effect.fail(new EventNotFoundError({ eventId }));
+        }
+        return {
+          defaultReminders: undefined,
+          master: mapAppleEvent(found, { deviceTimeZone: deviceTimeZone(), now }),
+          modifiedOccurrences: 0,
+          url: found.url,
+        } satisfies MoveSource;
+      }
+      const { master } = yield* loadMaster(accountId, calendarId, eventId);
+      const instanceId = googleInstanceId(eventId, originalStartUtc, master.isAllDay);
+      const own = yield* occurrenceRow(accountId, calendarId, eventId, instanceId);
+      const projected = projectInstance(master, originalStartUtc, now);
+      if (own ? own.status === 'cancelled' : !drawsSlot(master, projected)) {
+        return yield* Effect.fail(new EventNotFoundError({ eventId: instanceId }));
+      }
+      const calendar = yield* findCalendar(accountId, calendarId);
+      return {
+        defaultReminders: calendar?.defaultReminders,
+        master: new EventRecord({ ...(own ?? projected), recurrence: undefined }),
+        modifiedOccurrences: 0,
+        url: undefined,
+      } satisfies MoveSource;
+    });
+
+  /** What a conversion reads: the whole event, or the one occurrence it names. */
+  const loadConvertSource = (
+    params: EventRef & Pick<PreviewEventToTaskParams, 'occurrence'>,
+    provider: 'apple' | 'google',
+  ) =>
+    params.occurrence === undefined
+      ? loadSource(params, provider)
+      : loadOccurrence(params, params.occurrence.originalStartUtc, provider);
+
+  /**
    * Google → Google inside one account: events.move keeps the id, guests,
    * conference and exceptions. Rows are re-keyed to the target now; any
    * queued edit of the series is re-queued *behind* the move against the
@@ -1878,6 +1935,20 @@ const make: Effect.Effect<
           calendarId: params.calendarId,
           eventId: params.eventId,
         });
+
+  /** One occurrence leaves its series: the same delete "This event" runs. */
+  const deleteOccurrenceFrom = (
+    provider: 'apple' | 'google',
+    params: EventRef,
+    originalStartUtc: number,
+  ) =>
+    (provider === 'apple' ? apple : shape).deleteRecurring({
+      accountId: params.accountId,
+      calendarId: params.calendarId,
+      masterId: params.eventId,
+      originalStartUtc,
+      scope: 'instance',
+    });
 
   const routeOf = (params: MoveEventParams) =>
     Effect.gen(function* () {
@@ -2098,17 +2169,18 @@ const make: Effect.Effect<
 
   /**
    * An event becomes a task: the task is created in the target list from
-   * the draft (the task form's fields), then the event — the whole
-   * series for a recurring one — is deleted. Like a move, an invitation
-   * cannot be converted by a guest.
+   * the draft (the task form's fields), then the event is deleted — the
+   * whole series for a recurring one, or with `occurrence` that one
+   * occurrence, which the series then skips like one deleted on its own.
+   * Like a move, an invitation cannot be converted by a guest.
    */
   const convertEventToTask = (params: ConvertEventToTaskParams) =>
     Effect.gen(function* () {
-      const { accountId, calendarId, draft, target } = params;
+      const { accountId, calendarId, draft, occurrence, target } = params;
       yield* requireWritable(accountId, calendarId);
       const sourceProvider = yield* providerOf(accountId);
       const targetProvider = yield* providerOf(target.accountId);
-      const source = yield* loadSource(params, sourceProvider);
+      const source = yield* loadConvertSource(params, sourceProvider);
       const account = yield* accountRepo.get(accountId);
       yield* ensureOrganizer(source.master, account?.email, calendarId);
       return yield* crossStore(
@@ -2118,7 +2190,9 @@ const make: Effect.Effect<
           accountId: target.accountId,
           taskListId: target.taskListId,
         }),
-        deleteFrom(sourceProvider, params, source.master),
+        occurrence === undefined
+          ? deleteFrom(sourceProvider, params, source.master)
+          : deleteOccurrenceFrom(sourceProvider, params, occurrence.originalStartUtc),
       );
     });
 
@@ -2158,7 +2232,8 @@ const make: Effect.Effect<
     Effect.gen(function* () {
       const sourceProvider = yield* providerOf(params.accountId);
       const targetProvider = yield* providerOf(params.target.accountId);
-      const { master, modifiedOccurrences, url } = yield* loadSource(params, sourceProvider);
+      // One occurrence comes without the series' rule: nothing to carry, nothing lost.
+      const { master, modifiedOccurrences, url } = yield* loadConvertSource(params, sourceProvider);
       const timeZone = master.startTimeZone ?? 'UTC';
       const carriedRecurrence = taskRecurrenceFromLines(master.recurrence, {
         isAllDay: master.isAllDay,

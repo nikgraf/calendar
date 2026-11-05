@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vite-plus/test';
 import { EventReminders, ReminderOverride } from '../types.ts';
 import {
   appendLink,
+  convertSourceOf,
   type EventConvertValues,
   eventValuesToTaskValues,
+  seriesConvertsAt,
   type TaskConvertValues,
   taskValuesToEventValues,
 } from './convert.ts';
@@ -35,6 +37,46 @@ const task: TaskConvertValues = {
   title: 'Call mom',
   url: 'https://example.com/form',
 };
+
+describe('converting a series', () => {
+  const address = { accountId: 'acc', calendarId: 'cal' };
+  const generated = {
+    ...address,
+    id: 'series_20261005T093000Z',
+    originalStartUtc: 100,
+    recurringEventId: 'series',
+    startUtc: 100,
+  };
+  // Moved on its own: it is still the occurrence its rule drew at 100.
+  const moved = { ...generated, startUtc: 900 };
+  const master = { ...address, id: 'series', recurringEventId: undefined, startUtc: 100 };
+  const single = { ...address, id: 'one', recurringEventId: undefined, startUtc: 100 };
+
+  it('names one occurrence by its slot at "This event" and the whole series otherwise', () => {
+    expect(convertSourceOf(generated, 'instance')).toEqual({
+      ...address,
+      eventId: 'series',
+      occurrence: { originalStartUtc: 100 },
+    });
+    expect(convertSourceOf(moved, 'instance').occurrence).toEqual({ originalStartUtc: 100 });
+    expect(convertSourceOf(generated, 'series')).toEqual({ ...address, eventId: 'series' });
+    expect(convertSourceOf(generated, 'following')).toEqual({ ...address, eventId: 'series' });
+  });
+
+  it('names an event that is no occurrence as itself, whatever the scope', () => {
+    expect(convertSourceOf(single, 'instance')).toEqual({ ...address, eventId: 'one' });
+    expect(convertSourceOf(master, 'instance')).toEqual({ ...address, eventId: 'series' });
+  });
+
+  it('converts at "This event" and "All events", never at "This and following"', () => {
+    expect(seriesConvertsAt(generated, 'instance')).toBe(true);
+    expect(seriesConvertsAt(generated, 'series')).toBe(true);
+    expect(seriesConvertsAt(generated, 'following')).toBe(false);
+    // A master row names no occurrence: only the whole series converts.
+    expect(seriesConvertsAt(master, 'instance')).toBe(false);
+    expect(seriesConvertsAt(master, 'series')).toBe(true);
+  });
+});
 
 describe('appendLink', () => {
   it('adds the link after the text unless it is already there', () => {

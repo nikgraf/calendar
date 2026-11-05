@@ -303,12 +303,23 @@ export const useThreadEditor = ({
     onClose();
   };
 
+  const eventModel = useEventEditorModel({
+    calendars,
+    confirm,
+    onClose: close,
+    onSaved: saved,
+    seed: { ...seed, convertFromTask: task },
+    timeZone,
+  });
   const taskModel = useTaskEditorModel({
     confirm,
     onClose: close,
     onSaved: saved,
     seed: {
       convertFromEvent: seed.event,
+      // The event form's scope, as it stands when Save runs: only that
+      // form can change it, and the task form carries what it held at the flip.
+      convertScope: eventModel.scope,
       dated: taskSeed?.dated,
       existing: task,
       initialDate: seed.initialDate.toString(),
@@ -317,14 +328,6 @@ export const useThreadEditor = ({
       listKey: taskSeed?.listKey,
     },
     taskLists,
-  });
-  const eventModel = useEventEditorModel({
-    calendars,
-    confirm,
-    onClose: close,
-    onSaved: saved,
-    seed: { ...seed, convertFromTask: task },
-    timeZone,
   });
   const kinds = useEditorKinds({
     calendars,
