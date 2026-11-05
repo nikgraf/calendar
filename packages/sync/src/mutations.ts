@@ -1937,19 +1937,31 @@ const make: Effect.Effect<
           eventId: params.eventId,
         });
 
-  /** One occurrence leaves its series: the same delete "This event" runs. */
+  /**
+   * One occurrence leaves its series: the same delete "This event" runs.
+   * Apple: `loadOccurrence` found it where that delete reaches, before the
+   * copy was made, so the delete does not look again — an occurrence
+   * removed elsewhere meanwhile is a finished conversion, not a failure
+   * to report beside the copy.
+   */
   const deleteOccurrenceFrom = (
     provider: 'apple' | 'google',
     params: EventRef,
     originalStartUtc: number,
   ) =>
-    (provider === 'apple' ? apple : shape).deleteRecurring({
-      accountId: params.accountId,
-      calendarId: params.calendarId,
-      masterId: params.eventId,
-      originalStartUtc,
-      scope: 'instance',
-    });
+    provider === 'apple'
+      ? apple.deleteFoundOccurrence({
+          accountId: params.accountId,
+          masterId: params.eventId,
+          originalStartUtc,
+        })
+      : shape.deleteRecurring({
+          accountId: params.accountId,
+          calendarId: params.calendarId,
+          masterId: params.eventId,
+          originalStartUtc,
+          scope: 'instance',
+        });
 
   const routeOf = (params: MoveEventParams) =>
     Effect.gen(function* () {

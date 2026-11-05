@@ -441,6 +441,60 @@ describe('recurring events', () => {
       }).pipe(Effect.provide(world.layer));
     },
   );
+
+  it.effect(
+    'Apple: an occurrence moved further than a write by its slot reaches is not found, never "done"',
+    () => {
+      const world = makeWorld({ appleEvents: [appleDailySeries] });
+      return Effect.gen(function* () {
+        const agent = writer();
+        const day2 = appleSeriesStart + DAY;
+        const ref = refs.occurrence('ek-home', 'ek-walk', day2, APPLE_CALENDAR_ACCOUNT_ID);
+        // Forty days on: EventKit keeps one occurrence wherever it is put,
+        // but finds it by its slot only 31 days either side.
+        const movedTo = day2 + 40 * DAY;
+        yield* callTool(agent, 'update_event', {
+          end: iso(movedTo + HOUR),
+          ref,
+          start: iso(movedTo),
+        });
+        const moved = () => world.apple.state.series.get('ek-walk')?.detached.get(day2);
+        expect(moved()?.startUtc).toBe(movedTo);
+        // A read still lists it, under the ref of its slot.
+        const listed = yield* eventsBetween(agent, movedTo - HOUR, movedTo + 2 * HOUR);
+        expect(listed.map((event) => event.ref)).toEqual([ref]);
+
+        const writes = () =>
+          world.apple.state.calls.filter((call) => call === 'update' || call === 'delete').length;
+        const before = writes();
+        // On its own or with the following ones, the write names the
+        // occurrence by its slot — and would find nothing.
+        for (const scope of ['instance', 'following'] as const) {
+          expect((yield* failureOf(callTool(agent, 'delete_event', { ref, scope })))._tag).toBe(
+            'NotFound',
+          );
+          expect(
+            (yield* failureOf(callTool(agent, 'update_event', { ref, scope, title: 'Walk' })))._tag,
+          ).toBe('NotFound');
+        }
+        // Nothing is put to the user either: there is no write to approve.
+        const asker = yield* stored({
+          calendars: [grantCalendar('ek-home', 'ask', APPLE_CALENDAR_ACCOUNT_ID)],
+        });
+        const asked = yield* watchApprovals;
+        expect((yield* failureOf(callTool(asker, 'delete_event', { ref })))._tag).toBe('NotFound');
+        expect(asked).toEqual([]);
+        expect(writes()).toBe(before);
+        expect(moved()).toMatchObject({ startUtc: movedTo, title: 'Evening walk' });
+
+        // The whole series is named by its id alone: that delete reaches it.
+        expect(yield* callTool(agent, 'delete_event', { ref, scope: 'series' })).toEqual({
+          status: 'done',
+        });
+        expect(world.apple.state.series.has('ek-walk')).toBe(false);
+      }).pipe(Effect.provide(world.layer));
+    },
+  );
 });
 
 /** A stored exception of the weekly series (an occurrence changed on its own). */

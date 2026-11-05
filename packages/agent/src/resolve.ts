@@ -1,4 +1,5 @@
 import {
+  APPLE_WRITE_REACH_MS,
   AppleCalendarClient,
   type AppleCalendarError,
   isNotFound,
@@ -13,12 +14,13 @@ import {
   type EventRecord,
   isAppleCalendarAccount,
   isAppleRemindersAccount,
+  type RecurringScope,
   type TaskListInfo,
   type TaskRecord,
   utcMsToPlainDate,
 } from '@calendar/core';
 import { AccountRepo, CalendarRepo, DeviceSettingsRepo, EventRepo, TaskRepo } from '@calendar/db';
-import { deviceTimeZone, isAppleOccurrence } from '@calendar/sync';
+import { deviceTimeZone, findAppleOccurrence, isAppleOccurrence } from '@calendar/sync';
 import { readPrimaryTimeZone } from '@calendar/sync/deviceSettings';
 import { Clock, Effect } from 'effect';
 import type { SqlError } from 'effect/sql/SqlError';
@@ -213,9 +215,12 @@ export interface ResolvedEvent {
 
 const eventNotFound = new AgentNotFoundError({ what: 'Event' });
 
-/** How far from its slot a moved Apple occurrence is still looked for (EventKit only answers ranges). */
-const APPLE_OCCURRENCE_WINDOW_MS = 45 * 24 * 60 * 60 * 1000;
-/** The wider search for a series-wide or "following" write, which must see the other exceptions too. */
+/**
+ * How far from the slot a series-wide or "following" write looks for the
+ * series' other exceptions (EventKit only answers ranges). One occurrence
+ * on its own is looked for `APPLE_WRITE_REACH_MS` around its slot: as far
+ * as the write that names it by that slot finds it.
+ */
 const APPLE_SERIES_WINDOW_MS = 400 * 24 * 60 * 60 * 1000;
 
 const slotTimes = (master: EventRecord, originalStartUtc: number): ExistingTimes => {
@@ -275,14 +280,26 @@ const ruleProduces = (master: EventRecord, originalStartUtc: number): boolean =>
  * An occurrence ref must name a real occurrence: a slot the series does
  * not have (a made-up one, or one that was deleted) is not found either,
  * so a write can neither invent an exception nor answer "done" for
- * nothing.
+ * nothing. For the same reason an Apple occurrence must sit where the
+ * write finds it: EventKit keeps an occurrence moved any distance from
+ * its slot, but a write to it alone or to it and the following ones names
+ * it by that slot, and the bridge looks `APPLE_WRITE_REACH_MS` around it.
+ * Further off the update would fail and the delete would find nothing to
+ * delete — after the user may have approved it. A series-wide write does
+ * not go by this occurrence's slot (the delete names the series by its
+ * id, the update writes the series' first occurrence), so where this one
+ * sits does not matter to it.
  */
 export const resolveEvent = (
   directory: Directory,
   refText: string,
   options: {
-    /** The write reaches beyond one occurrence: look further for the series' other exceptions. */
-    readonly wholeSeries?: boolean;
+    /**
+     * The scope of the write the event is resolved for; absent, the event
+     * or occurrence alone. `following` and `series` reach beyond one
+     * occurrence, so the series' other exceptions are looked for further out.
+     */
+    readonly scope?: RecurringScope;
   } = {},
 ): Effect.Effect<ResolvedEvent, AgentError | SqlError, AppleCalendarClient | EventRepo> =>
   Effect.gen(function* () {
@@ -313,19 +330,22 @@ export const resolveEvent = (
       }
       // The occurrence as EventKit has it now — one that was moved or
       // renamed on its own differs from the series' first occurrence.
-      const reach = options.wholeSeries ? APPLE_SERIES_WINDOW_MS : APPLE_OCCURRENCE_WINDOW_MS;
+      const scope = options.scope ?? 'instance';
+      const slot = { id, originalStartUtc: ref.originalStartUtc };
+      const reach = scope === 'instance' ? APPLE_WRITE_REACH_MS : APPLE_SERIES_WINDOW_MS;
       const nearby = yield* client
         .events({
           endUtc: ref.originalStartUtc + reach,
           startUtc: ref.originalStartUtc - reach,
         })
         .pipe(Effect.mapError(appleFailure));
-      const found = nearby.find(
-        (event) =>
-          isAppleOccurrence(event, { id, originalStartUtc: ref.originalStartUtc }) &&
-          event.calendarId === ref.calendarId,
-      );
-      if (!found) {
+      // "Following" names the occurrence by its slot too: among the wider
+      // read it counts only where the write's own lookup finds it.
+      const found =
+        scope === 'following'
+          ? yield* findAppleOccurrence(client, slot).pipe(Effect.mapError(appleFailure))
+          : nearby.find((event) => isAppleOccurrence(event, slot));
+      if (!found || found.calendarId !== ref.calendarId) {
         return yield* Effect.fail(eventNotFound);
       }
       const occurrence = mapAppleEvent(found, context);

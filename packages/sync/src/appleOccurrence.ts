@@ -1,19 +1,10 @@
-import type {
-  AppleCalendarClientShape,
-  AppleCalendarError,
-  AppleEventJson,
+import {
+  APPLE_WRITE_REACH_MS,
+  type AppleCalendarClientShape,
+  type AppleCalendarError,
+  type AppleEventJson,
 } from '@calendar/apple-calendar';
 import { Effect } from 'effect';
-
-/**
- * How far from its slot the bridge looks for the occurrence a write names
- * (`occurrence(id:originalStartUtc:)` in AppleCalendarBridge.swift, the
- * same overlap query `calendar.events` runs). One moved further on its
- * own cannot be updated or deleted by its slot — and a delete that finds
- * nothing counts as done. A read that decides a write therefore reaches
- * exactly this far: what it finds, the write finds.
- */
-export const APPLE_WRITE_REACH_MS = 31 * 24 * 60 * 60 * 1000;
 
 /**
  * Whether `event` is the occurrence of series `id` its rule drew at

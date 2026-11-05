@@ -1075,7 +1075,8 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   one lookup — a ranged read reaching as far as the bridge's own does),
   the occurrence's own id as the source (Apple has none). Open: "This and
   following" does not convert (the cut plus a rule of its own for the
-  rest); a delete by slot of an Apple occurrence moved over 31 days.
+  rest). The delete by slot of an Apple occurrence moved over 31 days,
+  open here, is #289 (Apple Calendar).
 
 ## Apple Calendar
 
@@ -1098,6 +1099,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   private EventKit API (fragile, no reliable invitation) and AppleScript
   (attendees are read-only there too). The button opens Calendar.app, not
   the event: no deep link is verified. Open: the same on iOS.
+- **A delete by slot never takes a miss for "already gone"** (2026-11-05,
+  #289) — EventKit keeps an occurrence moved any distance (probed on the
+  simulator), the bridge finds it 31 days around its slot, and the delete
+  read the miss as done: success with the event still drawn, "done" from
+  the agent gateway. `deleteRecurring` reads first, as far as the delete
+  looks, and refuses a miss; the gateway resolves no further. Rejected: a
+  wider bridge lookup (a native build; a miss stays ambiguous once the
+  occurrence was detached elsewhere), a second wide read to tell gone from
+  out of reach. Open: such an occurrence cannot be edited or deleted here;
+  a detached occurrence's real id is `<series>/RID=<slot>`, not the series id.
 
 ## AI
 

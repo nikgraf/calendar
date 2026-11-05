@@ -837,6 +837,23 @@ it whenever a kind is added. Rules that keep the queue correct:
   following = `futureEvents` on the occurrence (EventKit splits the
   series); series = `futureEvents` on the first occurrence, a time edit
   shifting it by the edited occurrence's wall-clock delta, as for Google.
+- **A write by slot reaches 31 days.** Instance and following writes name
+  the occurrence by its slot, and the bridge finds it among what overlaps
+  31 days either side (`APPLE_WRITE_REACH_MS` in the protocol; the fake
+  looks exactly as far). EventKit keeps an occurrence moved any distance
+  on its own and a range read draws it, so beyond that reach a write
+  answers `notFound` for an occurrence still on screen. An update shows
+  that error. A delete must not take it for "already gone":
+  `deleteRecurring` reads first, as far as the delete looks
+  (`findAppleOccurrence`), and refuses a miss with `EventNotFoundError`,
+  whatever its reason. Only an occurrence that goes between that read and
+  the delete, and a delete by id alone (`deleteEvent`, scope series),
+  count as done when EventKit has nothing (`goneIsDone`). A conversion
+  reads the occurrence itself before it copies, so its delete
+  (`deleteFoundOccurrence`) does not look again. The agent gateway
+  resolves an occurrence for a write by its slot no further either. A
+  series update writes the first occurrence by that one's slot, with the
+  same reach.
 - **Recurrence** crosses as structured rules (core `StructuredRule`);
   `toStructuredRules`/`toRRuleLines` convert. EXDATE/RDATE/EXRULE,
   BYHOUR/BYMINUTE/BYSECOND, WKST≠MO and COUNT+UNTIL cannot be stored:
@@ -863,8 +880,9 @@ it whenever a kind is added. Rules that keep the queue correct:
   one occurrence is read by `loadOccurrence` — on Apple through a ranged
   EventKit read around its slot (`findAppleOccurrence`) that reaches as
   far as the bridge's own lookup of a slot, 31 days, so the delete finds
-  what the read found — and leaves through `deleteRecurring`'s instance
-  scope.
+  what the read found — and leaves through the instance delete
+  (`deleteRecurring`; on Apple `deleteFoundOccurrence`, the same delete
+  without a second read).
 
 ## Calendar mirrors (packages/sync/src/mirrors.ts, core mirror/)
 
