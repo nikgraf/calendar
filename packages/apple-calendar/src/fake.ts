@@ -222,11 +222,24 @@ const SERIES_FIELDS = [
 ] as const;
 
 /**
+ * A detached occurrence after its series' time moved by `shift`: its slot
+ * follows, and so does its own time while it still sat on its slot. The
+ * identifier keeps its `/RID=`.
+ */
+const shiftedBy = (occurrence: AppleEventJson, slot: number, shift: number): AppleEventJson => ({
+  ...occurrence,
+  occurrenceStartUtc: slot + shift,
+  ...(shift !== 0 && occurrence.startUtc === slot
+    ? { endUtc: occurrence.endUtc + shift, startUtc: occurrence.startUtc + shift }
+    : {}),
+});
+
+/**
  * A write to the series as a whole (or to a single event). Detached
  * occurrences stay: each takes a changed field it had not changed
- * itself, one still on its slot follows a time change, and every slot
- * moves with the series while the identifiers keep their `/RID=`. A
- * time change also brings back the occurrences deleted on their own
+ * itself (EventKit leaves out one that was moved past the series' end;
+ * the fake does not tell), and each follows a time change (`shiftedBy`).
+ * A time change also brings back the occurrences deleted on their own
  * (their exclusion keeps the old time).
  */
 const writeWhole = (series: FakeSeries, changes: EventWrite, now: number): AppleEventJson => {
@@ -257,12 +270,7 @@ const writeWhole = (series: FakeSeries, changes: EventWrite, now: number): Apple
         }
       }
     }
-    next['occurrenceStartUtc'] = slot + shift;
-    if (shift !== 0 && occurrence.startUtc === slot) {
-      next['startUtc'] = occurrence.startUtc + shift;
-      next['endUtc'] = occurrence.endUtc + shift;
-    }
-    series.detached.set(slot + shift, next as unknown as AppleEventJson);
+    series.detached.set(slot + shift, shiftedBy(next as unknown as AppleEventJson, slot, shift));
   }
   if (shift !== 0) {
     series.deleted.clear();
@@ -396,8 +404,9 @@ export const makeFakeAppleCalendarClient = (
    * The continuation keeps the rule (a COUNT rule the occurrences it had
    * left) unless the write brings one, starts at the slot — or where the
    * write puts the occurrence — and takes the later detached occurrences
-   * along. A detached occurrence it was saved from stays detached, as
-   * the new series' first.
+   * along (moved with it, when the write changed the time: not probed,
+   * modelled on a series-wide time change). A detached occurrence it was
+   * saved from stays detached, as the new series' first.
    */
   const split = (
     series: FakeSeries,
@@ -435,8 +444,15 @@ export const makeFakeAppleCalendarClient = (
       hasRecurrence: continued.length > 0,
       occurrenceStartUtc: started.startUtc,
     };
+    // The new series may start elsewhere than the slot (the write moved
+    // the occurrence): the later detached occurrences follow, as they do
+    // through a series-wide time change.
+    const shift = event.startUtc - slot;
     const detached = new Map(
-      later.map(([key, occurrence]) => [key, underSeries(occurrence, event)]),
+      later.map(([key, occurrence]) => [
+        key + shift,
+        underSeries(shiftedBy(occurrence, key, shift), event),
+      ]),
     );
     const saved =
       at.kind === 'detached'

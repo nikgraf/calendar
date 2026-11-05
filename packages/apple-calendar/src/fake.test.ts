@@ -376,6 +376,40 @@ describe('fake EventKit spans', () => {
     ]);
   });
 
+  it('a split that changes the time takes the later changed occurrences along', async () => {
+    const { bridge, state } = setup();
+    const slot = first + 7 * DAY;
+    const later = first + 21 * DAY;
+    await run(
+      bridge.update({
+        changes: { title: 'Retro' },
+        ref: { id: 'ek-series', originalStartUtc: later },
+        span: 'thisEvent',
+      }),
+    );
+    await run(
+      bridge.update({
+        changes: { endUtc: slot + 3 * HOUR, startUtc: slot + 2 * HOUR },
+        ref: { id: 'ek-series', originalStartUtc: slot },
+        span: 'futureEvents',
+      }),
+    );
+    const continued = [...state.series.keys()].find((id) => id !== 'ek-series')!;
+    // No slot is drawn twice: the renamed one moved with its series.
+    expect(
+      (await run(bridge.events(window))).map((e) => [e.title, e.startUtc - first, e.isDetached]),
+    ).toEqual([
+      ['Standup', 0, false],
+      ['Standup', 7 * DAY + 2 * HOUR, false],
+      ['Standup', 14 * DAY + 2 * HOUR, false],
+      ['Retro', 21 * DAY + 2 * HOUR, true],
+    ]);
+    expect(state.series.get(continued)?.detached.get(later + 2 * HOUR)).toMatchObject({
+      id: `${continued}/RID=${later / 1000 - 978_307_200}`,
+      occurrenceStartUtc: later + 2 * HOUR,
+    });
+  });
+
   it('moves a whole series to another calendar', async () => {
     const { client } = setup();
     await run(client.move({ calendarId: 'cal-work', id: 'ek-series' }));

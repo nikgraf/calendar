@@ -35,11 +35,14 @@ export const findAppleOccurrence = (
 const MODIFIED_WINDOW_MS = 4 * 365 * 24 * 60 * 60 * 1000;
 
 /**
- * How many occurrences of a series were changed on their own, in the four
- * years from its first: what a copy to another account drops. One range
- * read across every calendar, so only a move or conversion preview asks.
- * (The bridge's own `detachedCount` compares the series id with
- * identifiers that never equal it; it is 0 on a real store.)
+ * How many occurrences of a series were changed on their own, among what
+ * EventKit draws in the four years from its first slot: what a copy to
+ * another account drops. One changed occurrence that was moved to before
+ * that slot is not seen; a cancelled one is not drawn and not counted.
+ * One range read across every calendar, so only a move or conversion
+ * preview asks (`loadSource`). (The bridge's own `detachedCount` compares
+ * the series id with identifiers that never equal it; it is 0 on a real
+ * store.)
  */
 export const countAppleChangedOccurrences = (
   client: Pick<AppleCalendarClientShape, 'events'>,
@@ -48,6 +51,9 @@ export const countAppleChangedOccurrences = (
   const startUtc = first.occurrenceStartUtc ?? first.startUtc;
   return Effect.map(
     client.events({ endUtc: startUtc + MODIFIED_WINDOW_MS, startUtc }),
-    (events) => events.filter((event) => event.id === first.id && event.isDetached).length,
+    (events) =>
+      events.filter(
+        (event) => event.id === first.id && event.isDetached && event.status !== 'cancelled',
+      ).length,
   );
 };

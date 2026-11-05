@@ -242,6 +242,20 @@ describe.skipIf(!REAL)('Apple Calendar through the real helper', () => {
     const after = await raw();
     expect(after.map((event) => event.location)).toEqual(['Room 1', 'Room 1', 'Room 1']);
     expect(after[0]).toMatchObject({ isDetached: true, startUtc: slots[0]! + 2 * HOUR });
+    // … and once that occurrence is deleted on its own (every call here is
+    // a new helper process, so nothing answers from a store's memory).
+    await Effect.runPromise(
+      client.delete({ ref: { id: series.id, originalStartUtc: slots[0]! }, span: 'thisEvent' }),
+    );
+    expect((await Effect.runPromise(client.series({ id: series.id }))).rules).toHaveLength(1);
+    await Effect.runPromise(
+      client.update({
+        changes: { location: 'Room 2' },
+        ref: { id: series.id },
+        span: 'futureEvents',
+      }),
+    );
+    expect((await raw()).map((event) => event.location)).toEqual(['Room 2', 'Room 2']);
     await Effect.runPromise(client.delete({ ref: { id: series.id }, span: 'futureEvents' }));
     expect(await raw()).toEqual([]);
   }, 120_000);
