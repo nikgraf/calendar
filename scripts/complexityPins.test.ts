@@ -38,8 +38,9 @@ const measured = (): Record<string, ReadonlyArray<number>> => {
       ['lint', '-c', config, '-f', 'json', ...Object.keys(complexityPins)],
       { cwd: root, encoding: 'utf8' },
     );
-    if (!run.stdout.trimStart().startsWith('{')) {
-      throw new Error(`vp lint gave no report: ${run.stderr || String(run.error)}`);
+    // A run that never started has no output at all, only `error`.
+    if (run.error !== undefined || !run.stdout.trimStart().startsWith('{')) {
+      throw new Error(`vp lint gave no report: ${String(run.error ?? run.stderr)}`);
     }
     const { diagnostics } = JSON.parse(run.stdout) as {
       diagnostics: ReadonlyArray<Diagnostic>;
