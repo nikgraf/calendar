@@ -399,8 +399,9 @@ it whenever a kind is added. Rules that keep the queue correct:
   stored task and counts the subtasks its delete takes). The views offer
   Convert on a series at "This event" and "All events", never at "This
   and following" (`seriesConvertsAt`); the task form takes over what the
-  event form's scope stands for at each flip, and Save names the source
-  by that scope (`convertSourceOf`).
+  event form's scope stands for at each flip and keeps that scope, and
+  Save names the source by it (`convertSourceOf`), whatever the event
+  form's scope is by then.
 - **Task creates are not idempotent**: Google assigns task ids
   server-side, so a `createTask` writes a temp `local-…` row that is
   swapped for the server task on success (`rewriteEventId` renames the
@@ -859,8 +860,10 @@ it whenever a kind is added. Rules that keep the queue correct:
   edits at the source and moves. Converting an event into a task reuses
   the same source loading and series delete (`loadSource`, `deleteFrom`);
   one occurrence is read by `loadOccurrence` — on Apple through a ranged
-  EventKit read around its slot (`findAppleOccurrence`, shared with the
-  agent gateway) — and leaves through `deleteRecurring`'s instance scope.
+  EventKit read around its slot (`findAppleOccurrence`) that reaches as
+  far as the bridge's own lookup of a slot, 31 days, so the delete finds
+  what the read found — and leaves through `deleteRecurring`'s instance
+  scope.
 
 ## Calendar mirrors (packages/sync/src/mirrors.ts, core mirror/)
 

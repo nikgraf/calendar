@@ -75,22 +75,37 @@ export const seriesConvertsAt = (
 /**
  * The event as a conversion names it to the backend at `scope`
  * (`previewEventToTask`, `convertEventToTask`): a series by its master —
- * whole, or at "This event" with the one occurrence it takes, by its slot.
+ * whole, or at "This event" with the one occurrence it takes, by its
+ * slot. Undefined where a series does not convert (`seriesConvertsAt`):
+ * nothing is named rather than more than the scope stands for. An event
+ * that does not repeat is itself at any scope.
  */
 export const convertSourceOf = (
   event: Pick<
     EventRecord,
-    'accountId' | 'calendarId' | 'id' | 'originalStartUtc' | 'recurringEventId' | 'startUtc'
+    | 'accountId'
+    | 'calendarId'
+    | 'id'
+    | 'originalStartUtc'
+    | 'recurrence'
+    | 'recurringEventId'
+    | 'startUtc'
   >,
   scope: RecurringScope,
-): Omit<PreviewEventToTaskParams, 'target'> => ({
-  accountId: event.accountId,
-  calendarId: event.calendarId,
-  eventId: event.recurringEventId ?? event.id,
-  ...(scope === 'instance' && event.recurringEventId !== undefined
-    ? { occurrence: { originalStartUtc: event.originalStartUtc ?? event.startUtc } }
-    : {}),
-});
+): Omit<PreviewEventToTaskParams, 'target'> | undefined => {
+  const repeats = event.recurringEventId !== undefined || (event.recurrence?.length ?? 0) > 0;
+  if (repeats && !seriesConvertsAt(event, scope)) {
+    return undefined;
+  }
+  return {
+    accountId: event.accountId,
+    calendarId: event.calendarId,
+    eventId: event.recurringEventId ?? event.id,
+    ...(scope === 'instance' && event.recurringEventId !== undefined
+      ? { occurrence: { originalStartUtc: event.originalStartUtc ?? event.startUtc } }
+      : {}),
+  };
+};
 
 /** `link` after `description`, unless the text (or the location) already carries it. */
 export const appendLink = (

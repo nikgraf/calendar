@@ -49,7 +49,13 @@ describe('converting a series', () => {
   };
   // Moved on its own: it is still the occurrence its rule drew at 100.
   const moved = { ...generated, startUtc: 900 };
-  const master = { ...address, id: 'series', recurringEventId: undefined, startUtc: 100 };
+  const master = {
+    ...address,
+    id: 'series',
+    recurrence: ['RRULE:FREQ=WEEKLY'],
+    recurringEventId: undefined,
+    startUtc: 100,
+  };
   const single = { ...address, id: 'one', recurringEventId: undefined, startUtc: 100 };
 
   it('names one occurrence by its slot at "This event" and the whole series otherwise', () => {
@@ -58,14 +64,23 @@ describe('converting a series', () => {
       eventId: 'series',
       occurrence: { originalStartUtc: 100 },
     });
-    expect(convertSourceOf(moved, 'instance').occurrence).toEqual({ originalStartUtc: 100 });
+    expect(convertSourceOf(moved, 'instance')?.occurrence).toEqual({ originalStartUtc: 100 });
     expect(convertSourceOf(generated, 'series')).toEqual({ ...address, eventId: 'series' });
-    expect(convertSourceOf(generated, 'following')).toEqual({ ...address, eventId: 'series' });
   });
 
-  it('names an event that is no occurrence as itself, whatever the scope', () => {
-    expect(convertSourceOf(single, 'instance')).toEqual({ ...address, eventId: 'one' });
-    expect(convertSourceOf(master, 'instance')).toEqual({ ...address, eventId: 'series' });
+  it('names nothing where a series does not convert, never more than the scope stands for', () => {
+    expect(convertSourceOf(generated, 'following')).toBeUndefined();
+    expect(convertSourceOf(moved, 'following')).toBeUndefined();
+    // A master row names no occurrence: it is the series, at "All events" only.
+    expect(convertSourceOf(master, 'instance')).toBeUndefined();
+    expect(convertSourceOf(master, 'following')).toBeUndefined();
+    expect(convertSourceOf(master, 'series')).toEqual({ ...address, eventId: 'series' });
+  });
+
+  it('names an event that does not repeat as itself, whatever the scope', () => {
+    for (const scope of ['instance', 'following', 'series'] as const) {
+      expect(convertSourceOf(single, scope)).toEqual({ ...address, eventId: 'one' });
+    }
   });
 
   it('converts at "This event" and "All events", never at "This and following"', () => {

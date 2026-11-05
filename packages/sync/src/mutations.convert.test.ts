@@ -45,6 +45,7 @@ import { Effect, Layer, Scheduler } from 'effect';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
 import { describe } from 'vite-plus/test';
 import { appleCalendarServicesLayer } from './appleCalendarEvents.ts';
+import { findAppleOccurrence } from './appleOccurrence.ts';
 import { EventMutations } from './mutations.ts';
 
 // Queue assertions run before the detached drain gets a turn.
@@ -532,7 +533,6 @@ describe('convertEventToTask', () => {
         dueDate: day.add({ days: 14 }).toString(),
         title: 'Standup',
       });
-      expect(reminders.state.reminders.get(created.id)?.recurrence).toBeUndefined();
       expect((yield* eventAt('acc-1', 'cal-1', 'evt-series'))?.recurrence).toEqual([
         'RRULE:FREQ=WEEKLY;COUNT=4',
       ]);
@@ -732,6 +732,49 @@ describe('convertEventToTask', () => {
       expect(reminders.state.reminders.size).toBe(1);
     }).pipe(noYield, Effect.provide(testLayer(apple, reminders.client)));
   });
+
+  it.effect(
+    'an Apple occurrence moved further than a delete by its slot reaches is refused, not copied',
+    () => {
+      const apple = appleFake([appleSeries]);
+      const reminders = remindersFake();
+      return Effect.gen(function* () {
+        yield* seed;
+        const slot = base + WEEK;
+        // Forty days off its slot: the views still draw it, but the bridge
+        // looks 31 days either side of a slot, and a delete that finds
+        // nothing counts as done — the task would be a second copy.
+        yield* apple.client.update({
+          changes: { endUtc: slot + 40 * 24 * HOUR + HOUR, startUtc: slot + 40 * 24 * HOUR },
+          ref: { id: 'ek-series', originalStartUtc: slot },
+          span: 'thisEvent',
+        });
+        const asked: Array<{ readonly endUtc: number; readonly startUtc: number }> = [];
+        const found = yield* findAppleOccurrence(
+          {
+            events: (range) => {
+              asked.push(range);
+              return apple.client.events(range);
+            },
+          },
+          { id: 'ek-series', originalStartUtc: slot },
+        );
+        expect(found).toBeUndefined();
+        expect(asked).toEqual([{ endUtc: slot + 31 * 24 * HOUR, startUtc: slot - 31 * 24 * HOUR }]);
+        const refused = yield* Effect.flip(
+          toTask(
+            [APPLE_CAL, 'ek-home', 'ek-series'],
+            [APPLE_REM, 'list-a'],
+            { dueDate: day.toString(), title: 'Run' },
+            slot,
+          ),
+        );
+        expect(refused._tag).toBe('EventNotFoundError');
+        expect(reminders.state.reminders.size).toBe(1);
+        expect(apple.state.series.get('ek-series')?.detached.has(slot)).toBe(true);
+      }).pipe(noYield, Effect.provide(testLayer(apple, reminders.client)));
+    },
+  );
 
   it.effect("a series converts as a whole; an occurrence's own id names no source", () => {
     const apple = appleFake();

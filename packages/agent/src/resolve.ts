@@ -18,7 +18,7 @@ import {
   utcMsToPlainDate,
 } from '@calendar/core';
 import { AccountRepo, CalendarRepo, DeviceSettingsRepo, EventRepo, TaskRepo } from '@calendar/db';
-import { APPLE_OCCURRENCE_WINDOW_MS, deviceTimeZone, isAppleOccurrence } from '@calendar/sync';
+import { deviceTimeZone, isAppleOccurrence } from '@calendar/sync';
 import { readPrimaryTimeZone } from '@calendar/sync/deviceSettings';
 import { Clock, Effect } from 'effect';
 import type { SqlError } from 'effect/sql/SqlError';
@@ -213,6 +213,8 @@ export interface ResolvedEvent {
 
 const eventNotFound = new AgentNotFoundError({ what: 'Event' });
 
+/** How far from its slot a moved Apple occurrence is still looked for (EventKit only answers ranges). */
+const APPLE_OCCURRENCE_WINDOW_MS = 45 * 24 * 60 * 60 * 1000;
 /** The wider search for a series-wide or "following" write, which must see the other exceptions too. */
 const APPLE_SERIES_WINDOW_MS = 400 * 24 * 60 * 60 * 1000;
 

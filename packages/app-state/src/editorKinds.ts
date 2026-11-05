@@ -27,9 +27,6 @@ export const defaultTodoKind = (taskLists: ReadonlyArray<TaskListInfo>): TodoKin
     defaultTodoList(taskLists, { lastUsedKey: getLastUsedTaskListKey() })?.provider ?? 'google',
   );
 
-/** What a view says where Convert is off for a series: the scopes that do convert. */
-export const CONVERT_SCOPE_HINT = 'Choose "This event" or "All events" to convert';
-
 /** The editor's heading, as words: the shell capitalizes the noun its own way. */
 export const editorTitle = ({
   kind,

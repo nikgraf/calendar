@@ -39,10 +39,12 @@ export type EditorMode = 'event' | 'todo';
  * asked here: Save previews the stored record against the list or
  * calendar picked by then. A series' event carries what its scope takes:
  * the rule with "All events", none with "This event" — one occurrence
- * becomes one to-do — and each flip from the event form carries again,
- * so a scope changed in between is the one that counts. Flipping back to
- * the kind the item already is only changes the mode, so the original
- * form is untouched. Resolves whether the mode changed.
+ * becomes one to-do. The task model is told that scope with the fields
+ * (`setConvertScope`), so Save converts what the form shows even if the
+ * event form's scope changed while the preview was on its way; each flip
+ * from the event form carries again. Flipping back to the kind the item
+ * already is only changes the mode, so the original form is untouched.
+ * Resolves whether the mode changed.
  */
 export const switchEditorMode = async ({
   confirm,
@@ -179,19 +181,24 @@ export const switchEditorMode = async ({
     taskModel.setListKey(targetKey);
     return true;
   }
+  // The scope as this switch began: the preview, the carry and Save all
+  // stand for it. A series does not convert at "This and following".
+  const scope = eventModel.scope;
+  const named = convertSourceOf(event, scope);
+  if (named === undefined) {
+    return false;
+  }
   // The stored event holds what the form never shows: a series' rule
   // (an occurrence row has no lines) and an Apple event's plain URL. One
   // occurrence comes back without a rule: the series keeps it.
   const [accountId = '', taskListId = ''] = targetKey.split(':', 2);
-  const preview = await previewEventToTask({
-    ...convertSourceOf(event, eventModel.scope),
-    target: { accountId, taskListId },
-  });
+  const preview = await previewEventToTask({ ...named, target: { accountId, taskListId } });
   taskModel.adopt({
     ...carried,
     recurrence: preview.carriedRecurrence,
     url: carried.url ?? preview.carriedUrl,
   });
+  taskModel.setConvertScope(scope);
   taskModel.setListKey(targetKey);
   return true;
 };

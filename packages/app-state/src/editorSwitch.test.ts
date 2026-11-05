@@ -23,6 +23,8 @@ const lists = [
   list('google-a', 'errands'),
 ];
 
+type Form = ReturnType<typeof useEventEditorModel>;
+
 /** A task model in create mode, holding only what the switch reads and sets. */
 const taskModel = (listKey: string) => {
   const picked: Array<string> = [];
@@ -115,21 +117,28 @@ describe('switchEditorMode on an occurrence of a series', () => {
     startUtc: 1_792_832_400_000,
   };
 
-  /** Flips the editor to a task at `scope`: what the backend was asked, and what the form took. */
-  const convertAt = async (scope: RecurringScope) => {
+  /**
+   * Flips the editor to a task at `scope`: what the backend was asked,
+   * what the form took, and the scope Save was told the fields stand for.
+   * `whilePreviewing` runs while the preview is on its way, as a click on
+   * the event form's scope control would.
+   */
+  const convertAt = async (scope: RecurringScope, whilePreviewing?: (form: Form) => void) => {
     const asked: Array<PreviewEventToTaskParams> = [];
     const adopted: Array<TaskConvertValues> = [];
+    const scopes: Array<RecurringScope> = [];
     const { model } = taskModel('google-a:inbox');
+    const form: Form = { ...eventModel, existing: occurrence, scope } as Form;
     const switched = await switchEditorMode({
       confirm: () => Promise.reject(new Error('an existing event asks on Save')),
-      eventModel: { ...eventModel, existing: occurrence, scope } as typeof eventModel,
+      eventModel: form,
       from: 'event',
       next: 'task',
-      // As the backend answers: one occurrence comes without the series' rule.
       previewEventToTask: (params) => {
         asked.push(params);
+        whilePreviewing?.(form);
         return Promise.resolve({
-          ...(params.occurrence === undefined ? { carriedRecurrence: rule } : {}),
+          carriedRecurrence: rule,
           loss: {
             attendees: 0,
             dueTime: true,
@@ -144,14 +153,15 @@ describe('switchEditorMode on an occurrence of a series', () => {
       taskModel: {
         ...model,
         adopt: (next: TaskConvertValues) => adopted.push(next),
+        setConvertScope: (next: RecurringScope) => scopes.push(next),
       } as typeof model,
       timeZone: 'UTC',
     });
-    return { adopted, asked, switched };
+    return { adopted, asked, scopes, switched };
   };
 
-  it('"This event" asks about that occurrence and carries no rule', async () => {
-    const { adopted, asked, switched } = await convertAt('instance');
+  it('"This event" asks about that occurrence and tells Save so', async () => {
+    const { adopted, asked, scopes, switched } = await convertAt('instance');
     expect(switched).toBe(true);
     expect(asked).toEqual([
       {
@@ -164,11 +174,11 @@ describe('switchEditorMode on an occurrence of a series', () => {
     ]);
     expect(adopted).toHaveLength(1);
     expect(adopted[0]).toMatchObject({ dueDate: '2026-10-10', title: 'x' });
-    expect(adopted[0]?.recurrence).toBeUndefined();
+    expect(scopes).toEqual(['instance']);
   });
 
-  it('"All events" asks about the series and carries its rule', async () => {
-    const { adopted, asked } = await convertAt('series');
+  it('"All events" asks about the series and carries the rule the preview holds', async () => {
+    const { adopted, asked, scopes } = await convertAt('series');
     expect(asked).toEqual([
       {
         accountId: 'google-a',
@@ -178,5 +188,23 @@ describe('switchEditorMode on an occurrence of a series', () => {
       },
     ]);
     expect(adopted[0]?.recurrence).toEqual(rule);
+    expect(scopes).toEqual(['series']);
+  });
+
+  it('Save is told the scope the carry was made for, not one picked while it loaded', async () => {
+    const { asked, scopes } = await convertAt('instance', (form) => {
+      (form as { scope: RecurringScope }).scope = 'series';
+    });
+    expect(asked[0]?.occurrence).toEqual({ originalStartUtc: occurrence.originalStartUtc });
+    expect(scopes).toEqual(['instance']);
+  });
+
+  it('"This and following" does not switch: nothing is asked, carried or told', async () => {
+    expect(await convertAt('following')).toEqual({
+      adopted: [],
+      asked: [],
+      scopes: [],
+      switched: false,
+    });
   });
 });
