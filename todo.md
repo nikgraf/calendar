@@ -117,7 +117,8 @@ The 2026-10-02 review's findings are closed in `docs/decisions.md`
       filter on `is_visible`, so today hidden = `none`); an Apple event
       marked free still counts as busy in free/busy and slots (Google's
       are skipped since #197; the Apple bridge does not read EventKit's
-      `availability`, one fix with the mirrors entry and find-a-time);
+      `availability`, one fix with the mirrors entry; the app's own
+      find-a-time counts them the same way);
       a Swift relay in place of the TS one so the RunAsNode fuse can be
       flipped (`@electron/fuses`); moves and conversions as tools;
       MCP `subscriptions/listen` fed by the invalidation bus; access from

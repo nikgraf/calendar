@@ -98,8 +98,8 @@ with nothing.
 - Free/busy merges blocks across calendars and skips all-day, cancelled,
   free (Google's `transparent`) and declined events — `blocksTime` in
   core, the rule the app's own find-a-time applies too. An Apple event
-  marked free still blocks: the bridge does not read EventKit's
-  `availability` (todo.md).
+  marked free still blocks: the Apple Calendar bridge does not read
+  EventKit's `availability` (todo.md).
 - A field the provider cannot hold still fails with
   `UnsupportedForProviderError` (as `Unsupported`), never silently.
 
