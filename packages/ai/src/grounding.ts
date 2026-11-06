@@ -1240,51 +1240,55 @@ export interface StatedRepeat {
   readonly runsFor?: { readonly amount: number; readonly unit: RepeatSpanUnit } | undefined;
 }
 
-/**
- * What the phrase says about repeating, read for itself: the frequency
- * and gap ("every two weeks", "monthly", "jeden Tag"), the days ("every
- * weekday", "Tuesdays and Thursdays"), a count ("10 times") and a span
- * ("for six weeks"), and the days ruled out ("except Sunday"). Undefined
- * when the phrase names no repeat — unless it is said of something that
- * repeats (`ofRepeat`), where a count, a span or an exception alone is a
- * reading. A repeat named in words the code does not
- * read ("make it recurring") is an empty reading, where the model's
- * frequency stands.
- */
-export const statedRepeat = (
-  phrase: string,
-  { ofRepeat = false }: { readonly ofRepeat?: boolean } = {},
-): StatedRepeat | undefined => {
-  const text = words(phrase);
+/** The count and the span the phrase states ("10 times", "for six weeks"), each when whole. */
+const countAndSpan = (text: string): Pick<StatedRepeat, 'count' | 'runsFor'> => {
   const times = COUNT.exec(text);
   const count = times === null ? undefined : quantityOf(times[1]!);
   const span = RUNS_FOR.exec(text);
   const amount = span === null ? undefined : quantityOf(span[1] ?? span[3]!);
-  const tail = {
+  return {
     ...(wholeNumber(count) ? { count } : {}),
     ...(span !== null && wholeNumber(amount)
       ? { runsFor: { amount, unit: spanUnitOf(span[2] ?? span[4]!) } }
       : {}),
   };
-  // A repeat word in an exception is the exception's ("not on Fridays"),
-  // one after another kind of "not" is a repeat ("ohne Kinder jeden Freitag").
-  const cueText = withoutRuledOut(text);
-  if (!REPEAT_CUE.test(cueText)) {
-    // Of a draft that repeats, a count, a span or an exception alone is a
-    // reading ("10 times", "for six weeks", "not on Fridays").
-    const alone = ofRepeat ? ruledOutDays(text) : [];
-    return ofRepeat && (Object.keys(tail).length > 0 || alone.length > 0)
-      ? {
-          ...tail,
-          ...(alone.length === 0
-            ? {}
-            : { ruledOut: alone.map((day) => WEEKDAYS_MONDAY_FIRST[day - 1]!) }),
-        }
-      : undefined;
-  }
-  let freq: RecurrenceFrequency | undefined;
-  let interval: number | undefined;
-  let byDay: ReadonlyArray<ByDay> | undefined;
+};
+
+/** The reading of a phrase that names no repeat: one only of a draft that repeats. */
+const readingWithoutCue = (
+  text: string,
+  tail: Pick<StatedRepeat, 'count' | 'runsFor'>,
+  ofRepeat: boolean,
+): StatedRepeat | undefined => {
+  // Of a draft that repeats, a count, a span or an exception alone is a
+  // reading ("10 times", "for six weeks", "not on Fridays").
+  const alone = ofRepeat ? ruledOutDays(text) : [];
+  return ofRepeat && (Object.keys(tail).length > 0 || alone.length > 0)
+    ? {
+        ...tail,
+        ...(alone.length === 0
+          ? {}
+          : { ruledOut: alone.map((day) => WEEKDAYS_MONDAY_FIRST[day - 1]!) }),
+      }
+    : undefined;
+};
+
+/** A repeat's kind and gap as read so far. */
+interface RepeatKind {
+  readonly freq: RecurrenceFrequency | undefined;
+  readonly interval: number | undefined;
+}
+
+/** The repeat as read so far: its kind, its gap and the days it falls on. */
+interface RuleReading extends RepeatKind {
+  readonly byDay: ReadonlyArray<ByDay> | undefined;
+}
+
+/**
+ * The kind and gap the frequency words name ("weekly", "every two
+ * weeks"), or monthly when the month frames a day ("every 15th").
+ */
+const statedKind = (text: string): RepeatKind => {
   // The last frequency word is the one meant ("change from weekly to
   // monthly"); one ruled out is not ("monthly, not weekly").
   const scope = text.replaceAll(
@@ -1305,14 +1309,20 @@ export const statedRepeat = (
   const everyGap = every === null ? undefined : gapOf(every[1] ?? every[2] ?? '');
   if (word) {
     // "Weekly 1:1 every other week": the word names the kind, the gap stands.
-    freq = word.freq;
-    interval = word.interval ?? (everyFreq === word.freq ? everyGap : undefined);
-  } else if (every) {
-    freq = everyFreq;
-    interval = everyGap;
-  } else if (MONTH_FRAME.test(text)) {
-    freq = 'monthly';
+    return {
+      freq: word.freq,
+      interval: word.interval ?? (everyFreq === word.freq ? everyGap : undefined),
+    };
   }
+  if (every) {
+    return { freq: everyFreq, interval: everyGap };
+  }
+  return { freq: MONTH_FRAME.test(text) ? 'monthly' : undefined, interval: undefined };
+};
+
+/** The kind once a day the rule falls on every time is read: weekly, unless one was named. */
+const withEveryDay = (text: string, cueText: string, kind: RepeatKind): RepeatKind => {
+  let { freq, interval } = kind;
   // "every Monday", "every weekday", "Mondays": weekly, unless a kind was
   // named; "every other weekend" with its gap. A position before one
   // weekday ("every first Friday") is read below.
@@ -1325,6 +1335,16 @@ export const statedRepeat = (
   } else if (everyDay === null && HABIT.test(cueText)) {
     freq ??= 'weekly';
   }
+  return { freq, interval };
+};
+
+/**
+ * The repeat once a position before a weekday is read: monthly on that
+ * weekday, or weekly with a gap.
+ */
+const withOrdinalWeekday = (text: string, kind: RepeatKind): RuleReading => {
+  let { freq, interval } = kind;
+  let byDay: ReadonlyArray<ByDay> | undefined;
   // A position before a weekday: "the first Monday of every month" is
   // monthly on that Monday, "every other Tuesday" weekly with a gap of
   // two. A kind the words name otherwise ("weekly", "every year",
@@ -1344,42 +1364,97 @@ export const statedRepeat = (
       byDay = [{ ordinal: position, weekday }];
     }
   }
-  let ruledOut: ReadonlyArray<number> = [];
-  if (byDay === undefined) {
-    const named = groundDays(undefined, dayWords(text)) ?? [];
-    // Days ruled out ("every day except Sunday", "jeden Werktag außer
-    // Freitag") come off the days the rule would have — all seven for a
-    // daily one ("weekends included" too). Not on a daily rule with a gap
-    // (no week holds "every other day"), and not when none is left
-    // ("every Monday except Monday") or none was there ("weekly except
-    // Friday").
-    ruledOut =
-      freq === undefined || freq === 'weekly' || (freq === 'daily' && interval === undefined)
-        ? ruledOutDays(text)
-        : [];
-    const inPassing = freq === 'daily' && IN_PASSING.test(text);
-    const had = named.length > 0 && !inPassing ? named : freq === 'daily' ? ALL_DAYS : [];
-    const left = had.filter((day) => !ruledOut.includes(day));
-    const applied = ruledOut.length > 0 && left.length > 0 && left.length < had.length;
-    const days = applied ? left : named;
-    const codes = days.map((day) => WEEKDAYS_MONDAY_FIRST[day - 1]!);
-    if (freq === 'monthly') {
-      byDay = codes.length === 1 ? [{ weekday: codes[0]! }] : undefined;
-    } else if (
-      (codes.length > 1 || (applied && codes.length === 1)) &&
-      (freq === undefined || freq === 'weekly' || (freq === 'daily' && (applied || !inPassing)))
-    ) {
-      // Several days are a weekly rule's, "every day, Monday through
-      // Friday" included; a gap in days does not carry over to weeks. The
-      // one day an exception leaves ("every weekend except Sunday") is
-      // listed too, so the date lands on it.
-      if (freq === 'daily') {
-        interval = undefined;
-      }
-      freq = 'weekly';
-      byDay = codes.map((weekday) => ({ weekday }));
+  return { byDay, freq, interval };
+};
+
+/**
+ * The days the words rule out, and the days the rule keeps: what is left
+ * once they come off (`applied`), or the days named.
+ */
+const daysLeft = (
+  text: string,
+  { freq, interval }: RepeatKind,
+): {
+  readonly applied: boolean;
+  readonly days: ReadonlyArray<number>;
+  readonly inPassing: boolean;
+  readonly ruledOut: ReadonlyArray<number>;
+} => {
+  const named = groundDays(undefined, dayWords(text)) ?? [];
+  // Days ruled out ("every day except Sunday", "jeden Werktag außer
+  // Freitag") come off the days the rule would have — all seven for a
+  // daily one ("weekends included" too). Not on a daily rule with a gap
+  // (no week holds "every other day"), and not when none is left
+  // ("every Monday except Monday") or none was there ("weekly except
+  // Friday").
+  const ruledOut =
+    freq === undefined || freq === 'weekly' || (freq === 'daily' && interval === undefined)
+      ? ruledOutDays(text)
+      : [];
+  const inPassing = freq === 'daily' && IN_PASSING.test(text);
+  const had = named.length > 0 && !inPassing ? named : freq === 'daily' ? ALL_DAYS : [];
+  const left = had.filter((day) => !ruledOut.includes(day));
+  const applied = ruledOut.length > 0 && left.length > 0 && left.length < had.length;
+  return { applied, days: applied ? left : named, inPassing, ruledOut };
+};
+
+/**
+ * The repeat once its days are read: one weekday under a monthly rule,
+ * several (or the one an exception leaves) as a weekly rule's days.
+ */
+const withDays = (
+  text: string,
+  kind: RepeatKind,
+): RuleReading & { readonly ruledOut: ReadonlyArray<number> } => {
+  let { freq, interval } = kind;
+  let byDay: ReadonlyArray<ByDay> | undefined;
+  const { applied, days, inPassing, ruledOut } = daysLeft(text, kind);
+  const codes = days.map((day) => WEEKDAYS_MONDAY_FIRST[day - 1]!);
+  if (freq === 'monthly') {
+    byDay = codes.length === 1 ? [{ weekday: codes[0]! }] : undefined;
+  } else if (
+    (codes.length > 1 || (applied && codes.length === 1)) &&
+    (freq === undefined || freq === 'weekly' || (freq === 'daily' && (applied || !inPassing)))
+  ) {
+    // Several days are a weekly rule's, "every day, Monday through
+    // Friday" included; a gap in days does not carry over to weeks. The
+    // one day an exception leaves ("every weekend except Sunday") is
+    // listed too, so the date lands on it.
+    if (freq === 'daily') {
+      interval = undefined;
     }
+    freq = 'weekly';
+    byDay = codes.map((weekday) => ({ weekday }));
   }
+  return { byDay, freq, interval, ruledOut };
+};
+
+/**
+ * What the phrase says about repeating, read for itself: the frequency
+ * and gap ("every two weeks", "monthly", "jeden Tag"), the days ("every
+ * weekday", "Tuesdays and Thursdays"), a count ("10 times") and a span
+ * ("for six weeks"), and the days ruled out ("except Sunday"). Undefined
+ * when the phrase names no repeat — unless it is said of something that
+ * repeats (`ofRepeat`), where a count, a span or an exception alone is a
+ * reading. A repeat named in words the code does not
+ * read ("make it recurring") is an empty reading, where the model's
+ * frequency stands.
+ */
+export const statedRepeat = (
+  phrase: string,
+  { ofRepeat = false }: { readonly ofRepeat?: boolean } = {},
+): StatedRepeat | undefined => {
+  const text = words(phrase);
+  const tail = countAndSpan(text);
+  // A repeat word in an exception is the exception's ("not on Fridays"),
+  // one after another kind of "not" is a repeat ("ohne Kinder jeden Freitag").
+  const cueText = withoutRuledOut(text);
+  if (!REPEAT_CUE.test(cueText)) {
+    return readingWithoutCue(text, tail, ofRepeat);
+  }
+  const reading = withOrdinalWeekday(text, withEveryDay(text, cueText, statedKind(text)));
+  const { byDay, freq, interval, ruledOut } =
+    reading.byDay === undefined ? withDays(text, reading) : { ...reading, ruledOut: [] };
   return {
     ...(byDay === undefined ? {} : { byDay }),
     ...(freq === undefined ? {} : { freq }),
