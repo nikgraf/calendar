@@ -75,6 +75,7 @@ import {
   TaskNotFoundError,
   UnsupportedForProviderError,
   type UpdateEventParams,
+  type UpdateRecurringParams,
 } from './mutationTypes.ts';
 import { makeReminderMutations } from './reminderMutations.ts';
 import { dropSplitSeries, holdsSplit, releaseSplits, waitingSplits } from './splitSeries.ts';
@@ -335,6 +336,15 @@ const projectInstance = (master: EventRecord, originalStartUtc: number, now: num
     updatedAt: now,
   });
 };
+
+/** What a series or "following" edit has settled before it writes (see updateRecurring). */
+interface SettledSeriesEdit {
+  readonly defined: Partial<EventRecord>;
+  readonly duration: number;
+  readonly master: EventRecord;
+  readonly now: number;
+  readonly unsentCreate: PendingOp | undefined;
+}
 
 const make: Effect.Effect<
   EventMutationsShape,
@@ -982,6 +992,292 @@ const make: Effect.Effect<
       ),
   };
 
+  /** An instance edit: the one occurrence becomes, or stays, an exception of its own. */
+  const updateOccurrence = (
+    { accountId, calendarId, changes, masterId, originalStartUtc }: UpdateRecurringParams,
+    master: EventRecord,
+    now: number,
+  ) =>
+    Effect.gen(function* () {
+      // Materialize (or update) the exception under its instance id; the
+      // patch on that id creates the exception server-side.
+      const instanceId = googleInstanceId(masterId, originalStartUtc, master.isAllDay);
+      const existing = yield* occurrenceRow(accountId, calendarId, masterId, instanceId);
+      const base = existing ?? projectInstance(master, originalStartUtc, now);
+      if (changes.isAllDay !== undefined && changes.isAllDay !== base.isAllDay) {
+        return yield* Effect.fail(new RecurringAllDaySwitchError({ eventId: masterId }));
+      }
+      const merged = withConsistentGeo(
+        new EventRecord({
+          ...base,
+          ...definedChanges(changes, base.attendees),
+          originalStartUtc,
+          recurrence: undefined,
+          recurringEventId: masterId,
+          syncStatus: 'pending',
+          updatedAt: now,
+        }),
+      );
+      yield* eventRepo.upsertMany([merged]);
+      const queued = yield* opsForEvent(accountId, calendarId, instanceId);
+      yield* pendingOpRepo.removeForEvent(accountId, calendarId, instanceId);
+      yield* enqueue(
+        new PendingOp({
+          accountId,
+          attempts: 0,
+          attendeesChanged: attendeesFlag(changes, queued),
+          baseEtag: existing?.etag ?? undefined,
+          // Its own text, not what a queued series edit carried onto it.
+          beforePayload: ownTextOf(
+            inheritedBefore(queued, existing),
+            seriesEditOf(yield* opsForEvent(accountId, calendarId, masterId)),
+          ),
+          calendarId,
+          createdAt: now,
+          eventId: instanceId,
+          geoCleared: geoClearedFlag(base, merged, queued),
+          id: generateEventId(),
+          kind: 'update',
+          nextAttemptAt: 0,
+          payload: merged,
+          remindersChanged: remindersFlag(changes, queued),
+        }),
+      );
+    });
+
+  /**
+   * What a series edit's new rule does to the exceptions, and the deletes
+   * it queues behind the PATCH: none while the rule stays as it is.
+   */
+  const dropUndrawnExceptions = (
+    { accountId, calendarId, changes, masterId }: UpdateRecurringParams,
+    merged: EventRecord,
+    { master, now, unsentCreate }: SettledSeriesEdit,
+  ) =>
+    Effect.gen(function* () {
+      // A new rule — or none — cancels the exceptions whose slots it no
+      // longer draws, and keeps the others as they are (Google does both
+      // with the PATCH, verified live); so do we. What a cut or rule
+      // change queued before it dropped comes back where it draws again.
+      // The deletes wait behind the PATCH, whose landing takes them along.
+      if (changes.recurrence === undefined) {
+        return [];
+      }
+      if (!unsentCreate) {
+        // An exception whose slot Google's own rule no longer draws is
+        // one Google cancelled with an earlier cut or rule change (a
+        // full pull brings its tombstone): drawn again, that slot is a
+        // plain occurrence on Google. It goes without a delete.
+        const onGoogle = inheritedBefore(
+          yield* opsForEvent(accountId, calendarId, masterId),
+          master,
+        );
+        for (const override of yield* eventRepo.listOverrides(accountId, calendarId, masterId)) {
+          if (override.syncStatus === 'synced' && onGoogle && !drawsSlot(onGoogle, override)) {
+            yield* eventRepo.deleteEvent(accountId, calendarId, override.id);
+          }
+        }
+        yield* takeBackDropped(taken, merged);
+      }
+      return yield* dropOverridesFrom(accountId, calendarId, masterId, 0, now, {
+        keeps: (override) => drawsSlot(merged, override),
+        remote: !unsentCreate,
+      });
+    });
+
+  /** A series edit: the master takes the change, and every occurrence with it. */
+  const updateSeries = (params: UpdateRecurringParams, settled: SettledSeriesEdit) =>
+    Effect.gen(function* () {
+      const { accountId, calendarId, changes, masterId, originalStartUtc } = params;
+      const { defined, duration, master, now, unsentCreate } = settled;
+      // Time edits shift the master (and thus every occurrence) by the
+      // occurrence's wall-clock delta — immune to DST offset differences
+      // between the occurrence's date and the series start. All-day
+      // masters only take non-time fields.
+      const startUtc =
+        !master.isAllDay && changes.startUtc !== undefined
+          ? applyWallClockDelta(
+              master.startUtc,
+              master.startTimeZone ?? 'UTC',
+              originalStartUtc,
+              changes.startUtc,
+            )
+          : master.startUtc;
+      const merged = withConsistentGeo(
+        new EventRecord({
+          ...master,
+          attendees: defined.attendees ?? master.attendees,
+          description: changes.description ?? master.description,
+          endUtc: master.isAllDay ? master.endUtc : startUtc + duration,
+          geo: changes.geo === undefined ? master.geo : (changes.geo ?? undefined),
+          location: changes.location ?? master.location,
+          recurrence:
+            changes.recurrence === undefined
+              ? master.recurrence
+              : (changes.recurrence ?? undefined),
+          reminders: defined.reminders ?? master.reminders,
+          startUtc: master.isAllDay ? master.startUtc : startUtc,
+          syncStatus: 'pending',
+          title: changes.title ?? master.title,
+          updatedAt: now,
+        }),
+      );
+      const dropped = yield* dropUndrawnExceptions(params, merged, settled);
+      yield* eventRepo.upsertMany([merged]);
+      if (unsentCreate) {
+        // Google has no exceptions to carry text onto yet: the queued
+        // occurrence edits land after the create with their own text.
+        yield* pendingOpRepo.removeForEvent(accountId, calendarId, masterId);
+        return yield* enqueue(foldIntoCreate(unsentCreate, merged));
+      }
+      // Google carries changed text onto the exceptions; so does the
+      // local copy, undoably (carriedText.ts).
+      const queued = yield* opsForEvent(accountId, calendarId, masterId);
+      const { carriedText, rows } = planCarry({
+        master,
+        merged,
+        overrides: yield* eventRepo.listOverrides(accountId, calendarId, masterId),
+        queued: queued.findLast((op) => op.kind === 'update'),
+      });
+      yield* eventRepo.upsertMany(rows);
+      // A sent create stays ahead: this patch follows whatever it did.
+      yield* supersedeQueued(accountId, calendarId, masterId);
+      yield* enqueue(
+        new PendingOp({
+          accountId,
+          attempts: 0,
+          attendeesChanged: attendeesFlag(changes, queued),
+          baseEtag: master.etag ?? undefined,
+          beforePayload: inheritedBefore(queued, master),
+          calendarId,
+          carriedText,
+          createdAt: now,
+          // A new rule drops the exceptions it no longer draws; one
+          // queued before it dropped some already.
+          dropsFrom:
+            changes.recurrence === undefined
+              ? queued.findLast((op) => op.kind === 'update')?.dropsFrom
+              : 0,
+          eventId: masterId,
+          geoCleared: geoClearedFlag(master, merged, queued),
+          id: generateEventId(),
+          kind: 'update',
+          nextAttemptAt: 0,
+          payload: merged,
+          recurrenceCleared: recurrenceClearedFlag(changes, queued),
+          remindersChanged: remindersFlag(changes, queued),
+        }),
+      );
+      yield* Effect.forEach(dropped, enqueue);
+    });
+
+  /** A "following" edit: the series splits at the occurrence into two. */
+  const splitSeriesAt = (
+    { accountId, calendarId, changes, masterId, originalStartUtc }: UpdateRecurringParams,
+    recurrence: NonNullable<EventRecord['recurrence']>,
+    { defined, duration, master, now, unsentCreate }: SettledSeriesEdit,
+  ) =>
+    Effect.gen(function* () {
+      // this-and-following: truncate the old series before the occurrence
+      // and start a new master at the (possibly re-timed) occurrence.
+      const newRecurrence = remainingRecurrence(
+        {
+          endDate: master.endDate,
+          endUtc: master.endUtc,
+          id: master.id,
+          isAllDay: master.isAllDay,
+          recurrence,
+          startDate: master.startDate,
+          startTimeZone: master.startTimeZone ?? 'UTC',
+          startUtc: master.startUtc,
+        },
+        originalStartUtc,
+      );
+      const truncated = new EventRecord({
+        ...master,
+        recurrence: truncateRecurrence(
+          recurrence,
+          originalStartUtc,
+          master.isAllDay,
+          master.startTimeZone ?? 'UTC',
+        ),
+        syncStatus: 'pending',
+        updatedAt: now,
+      });
+      yield* eventRepo.upsertMany([truncated]);
+      yield* truncateQueued(
+        accountId,
+        calendarId,
+        master,
+        truncated,
+        unsentCreate,
+        now,
+        originalStartUtc,
+      );
+      yield* Effect.forEach(
+        yield* dropOverridesFrom(accountId, calendarId, masterId, originalStartUtc, now, {
+          remote: !unsentCreate,
+        }),
+        enqueue,
+      );
+
+      const projected = projectInstance(master, originalStartUtc, now);
+      const startUtc =
+        !master.isAllDay && changes.startUtc !== undefined ? changes.startUtc : projected.startUtc;
+      // An all-day split starts on the occurrence's slot (updateRecurring
+      // refused a date change): the edit's dates would contradict startUtc.
+      const {
+        endDate: _endDate,
+        endUtc: _endUtc,
+        startDate: _startDate,
+        startUtc: _startUtc,
+        ...untimed
+      } = defined;
+      const newMaster = withConsistentGeo(
+        new EventRecord({
+          ...projected,
+          ...(master.isAllDay ? untimed : defined),
+          endUtc: master.isAllDay ? projected.endUtc : startUtc + duration,
+          etag: null,
+          id: generateEventId(),
+          originalStartUtc: undefined,
+          // The edit's own rule wins (null: the occurrence becomes a single
+          // event). Otherwise the remainder of the old one — and splitting
+          // a set of only RDATE lines on its last value leaves nothing to
+          // repeat: the new half is a single event.
+          recurrence:
+            changes.recurrence === undefined
+              ? isRecurringSet(newRecurrence)
+                ? newRecurrence
+                : undefined
+              : (changes.recurrence ?? undefined),
+          recurringEventId: undefined,
+          startUtc,
+          syncedAt: 0,
+        }),
+      );
+      yield* eventRepo.upsertMany([newMaster]);
+      // Split off a series whose create is unsent (it took the cut in), it
+      // is that one's: split off the same series at the same occurrence.
+      const splitOf = unsentCreate ? unsentCreate.splitOf : masterId;
+      const splitIn = unsentCreate ? unsentCreate.splitIn : calendarId;
+      const splitAt = unsentCreate ? unsentCreate.splitAt : originalStartUtc;
+      yield* enqueue(
+        new PendingOp({
+          accountId,
+          attempts: 0,
+          calendarId,
+          createdAt: now,
+          eventId: newMaster.id,
+          id: generateEventId(),
+          kind: 'create',
+          nextAttemptAt: 0,
+          payload: newMaster,
+          ...(splitOf === undefined ? {} : { splitAt, splitIn, splitOf }),
+        }),
+      );
+    });
+
   const shape: Omit<
     EventMutationsShape,
     | 'convertEventToTask'
@@ -1380,13 +1676,15 @@ const make: Effect.Effect<
         );
       }),
 
-    updateRecurring: ({ accountId, calendarId, changes, masterId, originalStartUtc, scope }) =>
+    updateRecurring: (params) =>
       Effect.gen(function* () {
+        const { accountId, calendarId, changes, masterId, originalStartUtc, scope } = params;
         const { master, recurrence } = yield* loadMaster(accountId, calendarId, masterId);
         const now = yield* Clock.currentTimeMillis;
         // Series/following edits merge guests against the master; an
-        // instance edit merges against the occurrence's own list below —
-        // an override can carry responses the master does not.
+        // instance edit merges against the occurrence's own list
+        // (updateOccurrence) — an override can carry responses the master
+        // does not.
         const defined = definedChanges(changes, master.attendees);
         if (scope === 'instance' && changes.recurrence !== undefined) {
           // One occurrence cannot carry its own rule.
@@ -1394,51 +1692,7 @@ const make: Effect.Effect<
         }
 
         if (scope === 'instance') {
-          // Materialize (or update) the exception under its instance id; the
-          // patch on that id creates the exception server-side.
-          const instanceId = googleInstanceId(masterId, originalStartUtc, master.isAllDay);
-          const existing = yield* occurrenceRow(accountId, calendarId, masterId, instanceId);
-          const base = existing ?? projectInstance(master, originalStartUtc, now);
-          if (changes.isAllDay !== undefined && changes.isAllDay !== base.isAllDay) {
-            return yield* Effect.fail(new RecurringAllDaySwitchError({ eventId: masterId }));
-          }
-          const merged = withConsistentGeo(
-            new EventRecord({
-              ...base,
-              ...definedChanges(changes, base.attendees),
-              originalStartUtc,
-              recurrence: undefined,
-              recurringEventId: masterId,
-              syncStatus: 'pending',
-              updatedAt: now,
-            }),
-          );
-          yield* eventRepo.upsertMany([merged]);
-          const queued = yield* opsForEvent(accountId, calendarId, instanceId);
-          yield* pendingOpRepo.removeForEvent(accountId, calendarId, instanceId);
-          yield* enqueue(
-            new PendingOp({
-              accountId,
-              attempts: 0,
-              attendeesChanged: attendeesFlag(changes, queued),
-              baseEtag: existing?.etag ?? undefined,
-              // Its own text, not what a queued series edit carried onto it.
-              beforePayload: ownTextOf(
-                inheritedBefore(queued, existing),
-                seriesEditOf(yield* opsForEvent(accountId, calendarId, masterId)),
-              ),
-              calendarId,
-              createdAt: now,
-              eventId: instanceId,
-              geoCleared: geoClearedFlag(base, merged, queued),
-              id: generateEventId(),
-              kind: 'update',
-              nextAttemptAt: 0,
-              payload: merged,
-              remindersChanged: remindersFlag(changes, queued),
-            }),
-          );
-          return;
+          return yield* updateOccurrence(params, master, now);
         }
 
         if (changes.isAllDay !== undefined && changes.isAllDay !== master.isAllDay) {
@@ -1464,224 +1718,11 @@ const make: Effect.Effect<
             ? changes.endUtc - changes.startUtc
             : master.endUtc - master.startUtc;
 
+        const settled = { defined, duration, master, now, unsentCreate };
         if (scope === 'series' || originalStartUtc <= master.startUtc) {
-          // Time edits shift the master (and thus every occurrence) by the
-          // occurrence's wall-clock delta — immune to DST offset differences
-          // between the occurrence's date and the series start. All-day
-          // masters only take non-time fields.
-          const startUtc =
-            !master.isAllDay && changes.startUtc !== undefined
-              ? applyWallClockDelta(
-                  master.startUtc,
-                  master.startTimeZone ?? 'UTC',
-                  originalStartUtc,
-                  changes.startUtc,
-                )
-              : master.startUtc;
-          const merged = withConsistentGeo(
-            new EventRecord({
-              ...master,
-              attendees: defined.attendees ?? master.attendees,
-              description: changes.description ?? master.description,
-              endUtc: master.isAllDay ? master.endUtc : startUtc + duration,
-              geo: changes.geo === undefined ? master.geo : (changes.geo ?? undefined),
-              location: changes.location ?? master.location,
-              recurrence:
-                changes.recurrence === undefined
-                  ? master.recurrence
-                  : (changes.recurrence ?? undefined),
-              reminders: defined.reminders ?? master.reminders,
-              startUtc: master.isAllDay ? master.startUtc : startUtc,
-              syncStatus: 'pending',
-              title: changes.title ?? master.title,
-              updatedAt: now,
-            }),
-          );
-          // A new rule — or none — cancels the exceptions whose slots it no
-          // longer draws, and keeps the others as they are (Google does both
-          // with the PATCH, verified live); so do we. What a cut or rule
-          // change queued before it dropped comes back where it draws again.
-          // The deletes wait behind the PATCH, whose landing takes them along.
-          let dropped: ReadonlyArray<PendingOp> = [];
-          if (changes.recurrence !== undefined) {
-            if (!unsentCreate) {
-              // An exception whose slot Google's own rule no longer draws is
-              // one Google cancelled with an earlier cut or rule change (a
-              // full pull brings its tombstone): drawn again, that slot is a
-              // plain occurrence on Google. It goes without a delete.
-              const onGoogle = inheritedBefore(
-                yield* opsForEvent(accountId, calendarId, masterId),
-                master,
-              );
-              for (const override of yield* eventRepo.listOverrides(
-                accountId,
-                calendarId,
-                masterId,
-              )) {
-                if (
-                  override.syncStatus === 'synced' &&
-                  onGoogle &&
-                  !drawsSlot(onGoogle, override)
-                ) {
-                  yield* eventRepo.deleteEvent(accountId, calendarId, override.id);
-                }
-              }
-              yield* takeBackDropped(taken, merged);
-            }
-            dropped = yield* dropOverridesFrom(accountId, calendarId, masterId, 0, now, {
-              keeps: (override) => drawsSlot(merged, override),
-              remote: !unsentCreate,
-            });
-          }
-          yield* eventRepo.upsertMany([merged]);
-          if (unsentCreate) {
-            // Google has no exceptions to carry text onto yet: the queued
-            // occurrence edits land after the create with their own text.
-            yield* pendingOpRepo.removeForEvent(accountId, calendarId, masterId);
-            return yield* enqueue(foldIntoCreate(unsentCreate, merged));
-          }
-          // Google carries changed text onto the exceptions; so does the
-          // local copy, undoably (carriedText.ts).
-          const queued = yield* opsForEvent(accountId, calendarId, masterId);
-          const { carriedText, rows } = planCarry({
-            master,
-            merged,
-            overrides: yield* eventRepo.listOverrides(accountId, calendarId, masterId),
-            queued: queued.findLast((op) => op.kind === 'update'),
-          });
-          yield* eventRepo.upsertMany(rows);
-          // A sent create stays ahead: this patch follows whatever it did.
-          yield* supersedeQueued(accountId, calendarId, masterId);
-          yield* enqueue(
-            new PendingOp({
-              accountId,
-              attempts: 0,
-              attendeesChanged: attendeesFlag(changes, queued),
-              baseEtag: master.etag ?? undefined,
-              beforePayload: inheritedBefore(queued, master),
-              calendarId,
-              carriedText,
-              createdAt: now,
-              // A new rule drops the exceptions it no longer draws; one
-              // queued before it dropped some already.
-              dropsFrom:
-                changes.recurrence === undefined
-                  ? queued.findLast((op) => op.kind === 'update')?.dropsFrom
-                  : 0,
-              eventId: masterId,
-              geoCleared: geoClearedFlag(master, merged, queued),
-              id: generateEventId(),
-              kind: 'update',
-              nextAttemptAt: 0,
-              payload: merged,
-              recurrenceCleared: recurrenceClearedFlag(changes, queued),
-              remindersChanged: remindersFlag(changes, queued),
-            }),
-          );
-          yield* Effect.forEach(dropped, enqueue);
-          return;
+          return yield* updateSeries(params, settled);
         }
-
-        // this-and-following: truncate the old series before the occurrence
-        // and start a new master at the (possibly re-timed) occurrence.
-        const newRecurrence = remainingRecurrence(
-          {
-            endDate: master.endDate,
-            endUtc: master.endUtc,
-            id: master.id,
-            isAllDay: master.isAllDay,
-            recurrence,
-            startDate: master.startDate,
-            startTimeZone: master.startTimeZone ?? 'UTC',
-            startUtc: master.startUtc,
-          },
-          originalStartUtc,
-        );
-        const truncated = new EventRecord({
-          ...master,
-          recurrence: truncateRecurrence(
-            recurrence,
-            originalStartUtc,
-            master.isAllDay,
-            master.startTimeZone ?? 'UTC',
-          ),
-          syncStatus: 'pending',
-          updatedAt: now,
-        });
-        yield* eventRepo.upsertMany([truncated]);
-        yield* truncateQueued(
-          accountId,
-          calendarId,
-          master,
-          truncated,
-          unsentCreate,
-          now,
-          originalStartUtc,
-        );
-        yield* Effect.forEach(
-          yield* dropOverridesFrom(accountId, calendarId, masterId, originalStartUtc, now, {
-            remote: !unsentCreate,
-          }),
-          enqueue,
-        );
-
-        const projected = projectInstance(master, originalStartUtc, now);
-        const startUtc =
-          !master.isAllDay && changes.startUtc !== undefined
-            ? changes.startUtc
-            : projected.startUtc;
-        // An all-day split starts on the occurrence's slot (a date change
-        // was refused above): the edit's dates would contradict startUtc.
-        const {
-          endDate: _endDate,
-          endUtc: _endUtc,
-          startDate: _startDate,
-          startUtc: _startUtc,
-          ...untimed
-        } = defined;
-        const newMaster = withConsistentGeo(
-          new EventRecord({
-            ...projected,
-            ...(master.isAllDay ? untimed : defined),
-            endUtc: master.isAllDay ? projected.endUtc : startUtc + duration,
-            etag: null,
-            id: generateEventId(),
-            originalStartUtc: undefined,
-            // The edit's own rule wins (null: the occurrence becomes a single
-            // event). Otherwise the remainder of the old one — and splitting
-            // a set of only RDATE lines on its last value leaves nothing to
-            // repeat: the new half is a single event.
-            recurrence:
-              changes.recurrence === undefined
-                ? isRecurringSet(newRecurrence)
-                  ? newRecurrence
-                  : undefined
-                : (changes.recurrence ?? undefined),
-            recurringEventId: undefined,
-            startUtc,
-            syncedAt: 0,
-          }),
-        );
-        yield* eventRepo.upsertMany([newMaster]);
-        // Split off a series whose create is unsent (it took the cut in), it
-        // is that one's: split off the same series at the same occurrence.
-        const splitOf = unsentCreate ? unsentCreate.splitOf : masterId;
-        const splitIn = unsentCreate ? unsentCreate.splitIn : calendarId;
-        const splitAt = unsentCreate ? unsentCreate.splitAt : originalStartUtc;
-        yield* enqueue(
-          new PendingOp({
-            accountId,
-            attempts: 0,
-            calendarId,
-            createdAt: now,
-            eventId: newMaster.id,
-            id: generateEventId(),
-            kind: 'create',
-            nextAttemptAt: 0,
-            payload: newMaster,
-            ...(splitOf === undefined ? {} : { splitAt, splitIn, splitOf }),
-          }),
-        );
+        yield* splitSeriesAt(params, recurrence, settled);
       }),
 
     whileQueueHeld: (effect) => gate.withPermits(1)(effect),
