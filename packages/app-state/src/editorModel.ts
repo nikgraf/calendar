@@ -24,10 +24,13 @@ import {
   slotTimes,
   toZonedDateTime,
   validateEventDraft,
+  type Account,
   type Attendee,
   type AttendeeInput,
   type ByDay,
   type CalendarInfo,
+  type DraftEventTimes,
+  type EditorTimeFields,
   type EventConvertValues,
   type EventDraft,
   type EventRecord,
@@ -43,6 +46,7 @@ import {
   type RsvpResponse,
   type TaskListInfo,
   type TaskRecord,
+  type TaskRecurrence,
   type Temporal,
 } from '@calendar/core';
 import { useCallback, useRef, useState } from 'react';
@@ -341,6 +345,102 @@ export const updateSendsTimes = ({
 }): boolean => changed || (isRecurring && scope === 'following');
 
 /**
+ * The user's own row in an existing event's guest list: the one marked as
+ * them, or the one with their account's email.
+ */
+const ownAttendeeOf = (
+  existing: EventRecord | undefined,
+  accounts: ReadonlyArray<Account>,
+): Attendee | undefined => {
+  const ownEmail = accounts
+    .find((account) => account.id === existing?.accountId)
+    ?.email.toLowerCase();
+  return existing?.attendees?.find(
+    (attendee) => attendee.isSelf === true || attendee.email.toLowerCase() === ownEmail,
+  );
+};
+
+/**
+ * The text fields an editor opens with: an existing event's, else the
+ * title and location of a quick-add result.
+ */
+const openingTextFields = (seed: EventEditorSeed) => ({
+  description: seed.event?.description ?? '',
+  location: seed.event?.location ?? seed.prefill?.location ?? '',
+  title: seed.event?.title ?? seed.prefill?.title ?? '',
+});
+
+/**
+ * The time fields an editor opens with: an existing event's own, else a
+ * quick-add result's, else the seed's day and slot (`seedTimeFields`).
+ * `openedDate` is an existing event's first day.
+ */
+const openingTimeFields = (seed: EventEditorSeed, timeZone: string) => {
+  const existing = seed.event;
+  const prefill = seed.prefill;
+  // An existing event's span in days: a multi-day event ends on a later
+  // day, an overnight one on the next.
+  const openedDates = existing ? editorDatesOf(existing, timeZone) : undefined;
+  const openedDate = openedDates?.date;
+  return {
+    date: openedDate ?? prefill?.date ?? seed.initialDate.toString(),
+    endDate:
+      openedDates?.endDate ?? prefill?.endDate ?? prefill?.date ?? seed.initialDate.toString(),
+    endTime:
+      existing && !existing.isAllDay
+        ? timeString(existing.endUtc, timeZone)
+        : seedTimeFields(seed).endTime,
+    isAllDay: existing?.isAllDay ?? prefill?.isAllDay ?? false,
+    openedDate,
+    startTime:
+      existing && !existing.isAllDay
+        ? timeString(existing.startUtc, timeZone)
+        : seedTimeFields(seed).startTime,
+  };
+};
+
+/**
+ * The coordinates the map shows for the location text: the editor's own
+ * while they match it, else the ones the lookup found for that text.
+ */
+const mapGeoFor = (
+  geo: GeoLocation | undefined,
+  location: string,
+  lookupLocation: string,
+  lookupGeo: GeoLocation | null,
+): GeoLocation | undefined =>
+  geoMatches(geo, location)
+    ? geo
+    : lookupLocation !== '' && geoMatches(lookupGeo ?? undefined, location)
+      ? (lookupGeo ?? undefined)
+      : undefined;
+
+/** The popup reminders a calendar's "calendar default" stands for (Google only). */
+const popupDefaults = (calendar: CalendarInfo | undefined) =>
+  (calendar?.defaultReminders ?? []).filter((override) => override.method === 'popup');
+
+/**
+ * What the repeat form opens with. An existing series seeds it from its
+ * master's lines once they are here (keyed, so the form re-seeds when
+ * they land); a new event from the quick-add prefill.
+ */
+const repeatSeedOf = (
+  existing: EventRecord | undefined,
+  master: { readonly recurrence: ReadonlyArray<string> | undefined },
+  prefill: EventEditorPrefill | undefined,
+  startTime: string,
+  timeZone: string,
+) => {
+  const masterLines = existing ? master.recurrence : undefined;
+  return {
+    key: existing ? (masterLines?.join('\n') ?? '') : undefined,
+    seed: existing
+      ? taskRecurrenceFromLines(masterLines, { isAllDay: existing.isAllDay, startTime, timeZone })
+      : prefill?.recurrence,
+  };
+};
+
+/**
  * Everything the event editors do that isn't JSX: field state, validation,
  * and the create/update/delete/RSVP calls. Desktop and iOS share it so the
  * two UIs can't drift apart in behaviour.
@@ -375,19 +475,15 @@ export const useEventEditorModel = ({
   const accounts = useAccounts();
   const existing = seed.event;
   const isRecurring = Boolean(existing && (existing.recurrence || existing.recurringEventId));
-  const ownEmail = accounts
-    .find((account) => account.id === existing?.accountId)
-    ?.email.toLowerCase();
-  const ownAttendee: Attendee | undefined = existing?.attendees?.find(
-    (attendee) => attendee.isSelf === true || attendee.email.toLowerCase() === ownEmail,
-  );
+  const ownAttendee = ownAttendeeOf(existing, accounts);
   const joinUrl = existing ? meetingUrl(existing) : undefined;
   // The series' rule: a master row carries it, an occurrence's arrives by id.
   const master = useEventMaster(existing);
   const writableCalendars = calendars.filter(isCalendarWritable);
 
   const prefill = seed.prefill;
-  const [title, setTitle] = useState(existing?.title ?? prefill?.title ?? '');
+  const openingText = openingTextFields(seed);
+  const [title, setTitle] = useState(openingText.title);
   const originalCalendarKey = existing ? `${existing.accountId}:${existing.calendarId}` : undefined;
   const calendarOf = (key: string | undefined) =>
     calendars.find((calendar) => `${calendar.accountId}:${calendar.id}` === key);
@@ -403,25 +499,13 @@ export const useEventEditorModel = ({
     );
     return preferred ?? writableKeys[0] ?? '';
   });
-  const [isAllDay, setIsAllDay] = useState(existing?.isAllDay ?? prefill?.isAllDay ?? false);
-  // An existing event's span in days: a multi-day event ends on a later
-  // day, an overnight one on the next.
-  const openedDates = existing ? editorDatesOf(existing, timeZone) : undefined;
-  const openedDate = openedDates?.date;
-  const [date, setDate] = useState(openedDate ?? prefill?.date ?? seed.initialDate.toString());
-  const [endDate, setEndDate] = useState(
-    openedDates?.endDate ?? prefill?.endDate ?? prefill?.date ?? seed.initialDate.toString(),
-  );
-  const [startTime, setStartTime] = useState(
-    existing && !existing.isAllDay
-      ? timeString(existing.startUtc, timeZone)
-      : seedTimeFields(seed).startTime,
-  );
-  const [endTime, setEndTime] = useState(
-    existing && !existing.isAllDay
-      ? timeString(existing.endUtc, timeZone)
-      : seedTimeFields(seed).endTime,
-  );
+  const openingTimes = openingTimeFields(seed, timeZone);
+  const [isAllDay, setIsAllDay] = useState(openingTimes.isAllDay);
+  const openedDate = openingTimes.openedDate;
+  const [date, setDate] = useState(openingTimes.date);
+  const [endDate, setEndDate] = useState(openingTimes.endDate);
+  const [startTime, setStartTime] = useState(openingTimes.startTime);
+  const [endTime, setEndTime] = useState(openingTimes.endTime);
   // The time fields as the form opened (`timeFieldsChanged`).
   const [openedTimes] = useState(() => ({ date, endDate, endTime, isAllDay, startTime }));
   // How many days the end follows the start, as last seen whole: a start
@@ -453,7 +537,7 @@ export const useEventEditorModel = ({
   // A phrase's meal or part-of-day word set the times, not a clock time it
   // stated: the form says so until the times are set by hand or by a slot.
   const [assumedTime, setAssumedTime] = useState(prefill?.assumedTime === true);
-  const [location, setLocation] = useState(existing?.location ?? prefill?.location ?? '');
+  const [location, setLocation] = useState(openingText.location);
   // The text the editor opened with, or a parsed phrase set (see
   // `applyPrefill`): the one text that is looked up without a pick.
   const [givenLocation, setGivenLocation] = useState(location);
@@ -471,11 +555,7 @@ export const useEventEditorModel = ({
   // edit away from the given text stops the lookup.
   const lookupLocation = locationToLookUp({ asSaid, geo, given: givenLocation, location });
   const lookup = useLocationGeo(lookupLocation);
-  const mapGeo = geoMatches(geo, location)
-    ? geo
-    : lookupLocation !== '' && geoMatches(lookup.geo ?? undefined, location)
-      ? (lookup.geo ?? undefined)
-      : undefined;
+  const mapGeo = mapGeoFor(geo, location, lookupLocation, lookup.geo);
   const mapLoading = picking || (lookupLocation !== '' && lookup.loading);
   // The guest list as the editor shows it; `attendeesDirty` keeps an
   // untouched list out of the update (undefined = unchanged upstream).
@@ -516,11 +596,9 @@ export const useEventEditorModel = ({
     }
   };
   /** The popup offsets the picked calendar's default resolves to (Google only). */
-  const calendarDefaultReminders: ReadonlyArray<number> = (
-    calendarOf(calendarKey)?.defaultReminders ?? []
-  )
-    .filter((override) => override.method === 'popup')
-    .map((override) => override.minutes);
+  const calendarDefaultReminders: ReadonlyArray<number> = popupDefaults(
+    calendarOf(calendarKey),
+  ).map((override) => override.minutes);
   /**
    * What the picked calendar will actually get. An Apple calendar cannot
    * hold "calendar default", so a deferring event shows the popup
@@ -531,9 +609,7 @@ export const useEventEditorModel = ({
   const resolvedReminders: EventReminders =
     reminders.useDefault && !capabilities.canUseDefaultReminders
       ? new EventReminders({
-          overrides: (calendarOf(originalCalendarKey)?.defaultReminders ?? []).filter(
-            (override) => override.method === 'popup',
-          ),
+          overrides: popupDefaults(calendarOf(originalCalendarKey)),
           useDefault: false,
         })
       : reminders;
@@ -588,7 +664,7 @@ export const useEventEditorModel = ({
     setRsvpSeen(storedRsvp);
     setRsvp(storedRsvp);
   }
-  const [description, setDescription] = useState(existing?.description ?? '');
+  const [description, setDescription] = useState(openingText.description);
   // The text and coordinates as the form opened: an update sends only what
   // differs from them (`eventEditorChanges`) — captured once, never re-read
   // from the record, so an edit made elsewhere meanwhile survives a Save
@@ -599,16 +675,11 @@ export const useEventEditorModel = ({
     location: location.trim(),
     title: title.trim(),
   }));
-  // An existing series seeds the repeat form from its master's lines once
-  // they are here (keyed, so the form re-seeds when they land); a new
-  // event from the quick-add prefill.
-  const masterLines = existing ? master.recurrence : undefined;
+  const repeatSeed = repeatSeedOf(existing, master, prefill, startTime, timeZone);
   const { toSpec: repeatSpec, ...repeatState } = useRepeatState(
-    existing
-      ? taskRecurrenceFromLines(masterLines, { isAllDay: existing.isAllDay, startTime, timeZone })
-      : prefill?.recurrence,
+    repeatSeed.seed,
     date,
-    existing ? (masterLines?.join('\n') ?? '') : undefined,
+    repeatSeed.key,
   );
   // An untouched rule is never re-sent: only an edit puts `recurrence` on the update.
   const [repeatDirty, setRepeatDirty] = useState(false);
@@ -876,31 +947,141 @@ export const useEventEditorModel = ({
   const attendeeStatus = (email: string): Attendee | undefined =>
     existing?.attendees?.find((attendee) => emailKey(attendee.email) === emailKey(email));
 
+  /**
+   * Why Save refuses the form, or undefined: the draft's own fields, then
+   * the rule being written, then what a repeating event's times and rule
+   * may change in the picked scope.
+   */
+  const saveError = (
+    fields: EditorTimeFields & { readonly calendarKey: string; readonly title: string },
+    spec: TaskRecurrence | undefined,
+  ): string | undefined =>
+    validateEventDraft(fields, timeZone) ??
+    // The rule is checked when it is being written: a new event's, or an
+    // edited one. An untouched series rule is not re-sent, and its UNTIL
+    // must not pin an occurrence that is being moved past the series end.
+    (spec && (!existing || repeatDirty)
+      ? (byDayError(spec) ?? repeatUntilError(spec, date))
+      : undefined) ??
+    (existing && isRecurring && openedDate !== undefined
+      ? recurringTimesError({
+          date,
+          endDate,
+          isAllDay,
+          opened: { date: openedDate, endDate: openedTimes.endDate, isAllDay: existing.isAllDay },
+          scope,
+        })
+      : undefined) ??
+    repeatScopeError({
+      dirty: repeatDirty,
+      isRecurring: existing !== undefined && isRecurring,
+      scope,
+    });
+
+  /**
+   * The move a Save ends with, from `accountId`/`calendarId` (where the
+   * event lives now), or undefined: only an existing event whose calendar
+   * was changed, and only where it can move.
+   */
+  const calendarMove = (accountId: string, calendarId: string) => {
+    const moveTarget =
+      existing && calendarKey !== originalCalendarKey && capabilities.canMoveCalendar
+        ? (calendarKey.split(':', 2) as [string, string])
+        : undefined;
+    return existing && moveTarget
+      ? {
+          accountId,
+          calendarId,
+          // A series moves as a whole: its master.
+          eventId: existing.recurringEventId ?? existing.id,
+          target: { accountId: moveTarget[0], calendarId: moveTarget[1] },
+        }
+      : undefined;
+  };
+
+  /**
+   * What an update of the existing event sends: only what differs from the
+   * form as it opened (`eventEditorChanges`), the rule only on a series.
+   */
+  const updateChanges = (
+    fields: EditorTimeFields,
+    built: DraftEventTimes,
+    masterId: string | undefined,
+    spec: TaskRecurrence | undefined,
+  ) =>
+    eventEditorChanges({
+      attendees: attendeesDirty ? attendees : undefined,
+      current: {
+        description: description.trim(),
+        geo,
+        location: location.trim(),
+        title: title.trim(),
+      },
+      initial: openedText,
+      // The rule only when edited: lines for a new one, null for "does not repeat".
+      recurrence:
+        masterId && repeatDirty
+          ? spec
+            ? [buildRecurrenceRule(spec, isAllDay, timeZone)]
+            : null
+          : undefined,
+      reminders: remindersDirty ? reminders : undefined,
+      // A title-only edit must not rebuild the span: untouched times
+      // stay out of an update, and the stored ones are kept as they are.
+      times: updateSendsTimes({
+        changed: timeFieldsChanged(fields, openedTimes),
+        isRecurring,
+        scope,
+      })
+        ? { ...built, isAllDay }
+        : undefined,
+    });
+
+  /**
+   * The event a Save creates in `accountId`/`calendarId`: what the picked
+   * calendar's provider can hold of the form.
+   */
+  const createDraft = (
+    accountId: string,
+    calendarId: string,
+    built: DraftEventTimes,
+    spec: TaskRecurrence | undefined,
+  ): EventDraft => {
+    // A carried URL is the event's on Apple; on Google it rides in the description.
+    const targetProvider = calendarOf(calendarKey)?.provider ?? 'google';
+    const draftDescription =
+      targetProvider === 'google'
+        ? appendLink(description.trim() || undefined, carried.url)
+        : description.trim() || undefined;
+    return {
+      accountId,
+      // Guests typed before switching to a calendar that cannot invite are not sent.
+      ...(attendees.length > 0 && capabilities.canInvite ? { attendees } : {}),
+      calendarId,
+      ...(draftDescription ? { description: draftDescription } : {}),
+      // Only coordinates the user vouched for reach Google.
+      geo: vouchedGeo(geo, location.trim()),
+      isAllDay,
+      location: location.trim() || undefined,
+      recurrence: (() => {
+        // The draft's startTimeZone (buildEventTimes): its UNTIL ends there.
+        return spec ? [buildRecurrenceRule(spec, isAllDay, timeZone)] : undefined;
+      })(),
+      // Untouched on a Google calendar means Google's own default; an
+      // Apple calendar always gets the explicit (resolved) list.
+      ...(remindersDirty || !capabilities.canUseDefaultReminders
+        ? { reminders: resolvedReminders }
+        : {}),
+      title: title.trim(),
+      ...built,
+      ...(targetProvider === 'apple' && carried.url ? { url: carried.url } : {}),
+    };
+  };
+
   const save = async () => {
     const fields = { calendarKey, date, endDate, endTime, isAllDay, startTime, title };
     const spec = repeatSpec();
-    const invalid =
-      validateEventDraft(fields, timeZone) ??
-      // The rule is checked when it is being written: a new event's, or an
-      // edited one. An untouched series rule is not re-sent, and its UNTIL
-      // must not pin an occurrence that is being moved past the series end.
-      (spec && (!existing || repeatDirty)
-        ? (byDayError(spec) ?? repeatUntilError(spec, date))
-        : undefined) ??
-      (existing && isRecurring && openedDate !== undefined
-        ? recurringTimesError({
-            date,
-            endDate,
-            isAllDay,
-            opened: { date: openedDate, endDate: openedTimes.endDate, isAllDay: existing.isAllDay },
-            scope,
-          })
-        : undefined) ??
-      repeatScopeError({
-        dirty: repeatDirty,
-        isRecurring: existing !== undefined && isRecurring,
-        scope,
-      });
+    const invalid = saveError(fields, spec);
     if (invalid) {
       setError(invalid);
       return;
@@ -910,22 +1091,9 @@ export const useEventEditorModel = ({
       string,
       string,
     ];
-    const moveTarget =
-      existing && calendarKey !== originalCalendarKey && capabilities.canMoveCalendar
-        ? (calendarKey.split(':', 2) as [string, string])
-        : undefined;
     const built = buildEventTimes(fields, timeZone);
     try {
-      const move =
-        existing && moveTarget
-          ? {
-              accountId,
-              calendarId,
-              // A series moves as a whole: its master.
-              eventId: existing.recurringEventId ?? existing.id,
-              target: { accountId: moveTarget[0], calendarId: moveTarget[1] },
-            }
-          : undefined;
+      const move = calendarMove(accountId, calendarId);
       if (move) {
         // Ask before writing anything, so "keep it here" leaves no trace.
         const loss = await mutations.previewMove(move);
@@ -940,33 +1108,7 @@ export const useEventEditorModel = ({
       }
       if (existing) {
         const masterId = isRecurring ? existing.recurringEventId : undefined;
-        const changes = eventEditorChanges({
-          attendees: attendeesDirty ? attendees : undefined,
-          current: {
-            description: description.trim(),
-            geo,
-            location: location.trim(),
-            title: title.trim(),
-          },
-          initial: openedText,
-          // The rule only when edited: lines for a new one, null for "does not repeat".
-          recurrence:
-            masterId && repeatDirty
-              ? spec
-                ? [buildRecurrenceRule(spec, isAllDay, timeZone)]
-                : null
-              : undefined,
-          reminders: remindersDirty ? reminders : undefined,
-          // A title-only edit must not rebuild the span: untouched times
-          // stay out of an update, and the stored ones are kept as they are.
-          times: updateSendsTimes({
-            changed: timeFieldsChanged(fields, openedTimes),
-            isRecurring,
-            scope,
-          })
-            ? { ...built, isAllDay }
-            : undefined,
-        });
+        const changes = updateChanges(fields, built, masterId, spec);
         // An untouched Save writes nothing; a move (below) still runs.
         const edited = Object.keys(changes).length > 0;
         if (edited && masterId) {
@@ -982,35 +1124,7 @@ export const useEventEditorModel = ({
           await mutations.updateEvent({ accountId, calendarId, changes, eventId: existing.id });
         }
       } else {
-        // A carried URL is the event's on Apple; on Google it rides in the description.
-        const targetProvider = calendarOf(calendarKey)?.provider ?? 'google';
-        const draftDescription =
-          targetProvider === 'google'
-            ? appendLink(description.trim() || undefined, carried.url)
-            : description.trim() || undefined;
-        const draft: EventDraft = {
-          accountId,
-          // Guests typed before switching to a calendar that cannot invite are not sent.
-          ...(attendees.length > 0 && capabilities.canInvite ? { attendees } : {}),
-          calendarId,
-          ...(draftDescription ? { description: draftDescription } : {}),
-          // Only coordinates the user vouched for reach Google.
-          geo: vouchedGeo(geo, location.trim()),
-          isAllDay,
-          location: location.trim() || undefined,
-          recurrence: (() => {
-            // The draft's startTimeZone (buildEventTimes): its UNTIL ends there.
-            return spec ? [buildRecurrenceRule(spec, isAllDay, timeZone)] : undefined;
-          })(),
-          // Untouched on a Google calendar means Google's own default; an
-          // Apple calendar always gets the explicit (resolved) list.
-          ...(remindersDirty || !capabilities.canUseDefaultReminders
-            ? { reminders: resolvedReminders }
-            : {}),
-          title: title.trim(),
-          ...built,
-          ...(targetProvider === 'apple' && carried.url ? { url: carried.url } : {}),
-        };
+        const draft = createDraft(accountId, calendarId, built, spec);
         const task = seed.convertFromTask;
         if (task) {
           // The backend knows the task's subtasks, which its delete takes along.
