@@ -1,4 +1,9 @@
-import { useModelAvailability, useQuickAddModel, type QuickAddItem } from '@calendar/app-state';
+import {
+  useModelAvailability,
+  useQuickAddModel,
+  type QuickAddItem,
+  type VoiceState,
+} from '@calendar/app-state';
 import { SymbolView } from 'expo-symbols';
 import { useEffect, useRef } from 'react';
 import {
@@ -133,17 +138,7 @@ export function QuickAddBar({
   // either way, and so does what it holds when the field comes back.
   const unavailable = status !== null && status !== 'ready';
   const working = busy || voice === 'transcribing';
-  // What the field says instead of its words: dictation's hint, or why
-  // the last phrase failed (until the field is tapped or typed into —
-  // while listening, until the next phrase begins).
-  const note: { readonly text: string; readonly tone: 'error' | 'hint' } | null =
-    voice === 'preparing'
-      ? { text: 'Preparing dictation…', tone: 'hint' }
-      : !working && error
-        ? { text: error, tone: 'error' }
-        : voice === 'recording'
-          ? { text: 'Listening… pause to send, tap the mic to stop', tone: 'hint' }
-          : null;
+  const note = fieldNote({ error, voice, working });
   const failed = note?.tone === 'error';
   /** The failed words back in the field, selected, to fix or type over: dictation hands over. */
   const takeBack = () => {
@@ -242,71 +237,142 @@ export function QuickAddBar({
               value={note ? '' : phrase}
             />
             {voiceAvailable ? (
-              <Pressable
-                accessibilityLabel={handsFree ? 'Stop dictating' : 'Dictate'}
-                accessibilityRole="button"
-                accessibilityState={{ selected: handsFree }}
-                // On, it always answers (to stop); off, not while a typed phrase is read.
-                disabled={!handsFree && working}
-                onPress={() => {
-                  // The keyboard would hide the form the phrases fill.
-                  if (!handsFree) {
-                    Keyboard.dismiss();
-                  }
-                  toggleVoice();
-                }}
-                style={[
-                  styles.mic,
-                  handsFree && styles.micRecording,
-                  !handsFree && working && styles.disabled,
-                ]}
-                testID="quick-add-mic"
-              >
-                {/* The desktop's microphone: a line icon, red while dictating, filled while it hears speech. */}
-                <SymbolView
-                  name={heard ? 'mic.fill' : 'mic'}
-                  size={20}
-                  tintColor={handsFree ? colors.danger : colors.text}
-                  weight="medium"
-                />
-              </Pressable>
+              <MicButton
+                handsFree={handsFree}
+                heard={heard}
+                toggleVoice={toggleVoice}
+                working={working}
+              />
             ) : null}
             {/* Out of the way while the field says why it failed: the room is the message's. */}
             {failed ? null : (
-              <Pressable
-                accessibilityLabel={
-                  voice === 'transcribing'
-                    ? 'Transcribing'
-                    : busy
-                      ? 'Reading the phrase'
-                      : 'Fill the form from the phrase'
-                }
-                accessibilityRole="button"
-                accessibilityState={{ busy: working }}
-                disabled={working || phrase.trim() === '' || voice === 'recording'}
-                onPress={() => void submit()}
-                style={[
-                  styles.button,
-                  !working && (phrase.trim() === '' || voice === 'recording') && styles.disabled,
-                ]}
-                testID="quick-add-apply"
-              >
-                {/* The label keeps the button's size while the spinner stands in for it. */}
-                <Text
-                  maxFontSizeMultiplier={BOX_FONT_SCALE}
-                  style={[styles.buttonLabel, working && styles.hidden]}
-                >
-                  Apply
-                </Text>
-                {working ? (
-                  <ActivityIndicator color={colors['on-primary']} style={styles.spinner} />
-                ) : null}
-              </Pressable>
+              <ApplyButton
+                busy={busy}
+                phrase={phrase}
+                submit={submit}
+                voice={voice}
+                working={working}
+              />
             )}
           </View>
         </>
       )}
     </View>
+  );
+}
+
+/**
+ * What the field says instead of its words: dictation's hint, or why
+ * the last phrase failed (until the field is tapped or typed into —
+ * while listening, until the next phrase begins).
+ */
+const fieldNote = ({
+  error,
+  voice,
+  working,
+}: {
+  error: string | null;
+  voice: VoiceState;
+  working: boolean;
+}): { readonly text: string; readonly tone: 'error' | 'hint' } | null =>
+  voice === 'preparing'
+    ? { text: 'Preparing dictation…', tone: 'hint' }
+    : !working && error
+      ? { text: error, tone: 'error' }
+      : voice === 'recording'
+        ? { text: 'Listening… pause to send, tap the mic to stop', tone: 'hint' }
+        : null;
+
+/** The microphone in the box: one tap starts hands-free dictation, the next ends it. */
+function MicButton({
+  handsFree,
+  heard,
+  toggleVoice,
+  working,
+}: {
+  handsFree: boolean;
+  heard: boolean;
+  toggleVoice: () => void;
+  working: boolean;
+}) {
+  const styles = useStyles(makeStyles);
+  const { colors } = useTheme();
+  return (
+    <Pressable
+      accessibilityLabel={handsFree ? 'Stop dictating' : 'Dictate'}
+      accessibilityRole="button"
+      accessibilityState={{ selected: handsFree }}
+      // On, it always answers (to stop); off, not while a typed phrase is read.
+      disabled={!handsFree && working}
+      onPress={() => {
+        // The keyboard would hide the form the phrases fill.
+        if (!handsFree) {
+          Keyboard.dismiss();
+        }
+        toggleVoice();
+      }}
+      style={[
+        styles.mic,
+        handsFree && styles.micRecording,
+        !handsFree && working && styles.disabled,
+      ]}
+      testID="quick-add-mic"
+    >
+      {/* The desktop's microphone: a line icon, red while dictating, filled while it hears speech. */}
+      <SymbolView
+        name={heard ? 'mic.fill' : 'mic'}
+        size={20}
+        tintColor={handsFree ? colors.danger : colors.text}
+        weight="medium"
+      />
+    </Pressable>
+  );
+}
+
+/** Apply in the box: it fills the form from the phrase, a spinner over its label while that runs. */
+function ApplyButton({
+  busy,
+  phrase,
+  submit,
+  voice,
+  working,
+}: {
+  busy: boolean;
+  phrase: string;
+  submit: () => Promise<void>;
+  voice: VoiceState;
+  working: boolean;
+}) {
+  const styles = useStyles(makeStyles);
+  const { colors } = useTheme();
+  return (
+    <Pressable
+      accessibilityLabel={
+        voice === 'transcribing'
+          ? 'Transcribing'
+          : busy
+            ? 'Reading the phrase'
+            : 'Fill the form from the phrase'
+      }
+      accessibilityRole="button"
+      accessibilityState={{ busy: working }}
+      disabled={working || phrase.trim() === '' || voice === 'recording'}
+      onPress={() => void submit()}
+      style={[
+        styles.button,
+        !working && (phrase.trim() === '' || voice === 'recording') && styles.disabled,
+      ]}
+      testID="quick-add-apply"
+    >
+      {/* The label keeps the button's size while the spinner stands in for it. */}
+      <Text
+        maxFontSizeMultiplier={BOX_FONT_SCALE}
+        style={[styles.buttonLabel, working && styles.hidden]}
+      >
+        Apply
+      </Text>
+      {working ? <ActivityIndicator color={colors['on-primary']} style={styles.spinner} /> : null}
+    </Pressable>
   );
 }
 

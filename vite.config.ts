@@ -14,7 +14,6 @@ import { defineConfig } from 'vite-plus';
 export const complexityCap = 40;
 export const complexityPins: Record<string, ReadonlyArray<number>> = {
   'apps/desktop/e2e/bench/check.ts': [77],
-  'apps/ios/src/ui/QuickAddBar.tsx': [43],
   'apps/ios/src/ui/settings/DevicePage.tsx': [49],
   'packages/agent/src/ops/events.ts': [52],
   'packages/ai/src/grounding.ts': [74],
