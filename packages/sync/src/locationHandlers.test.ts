@@ -5,6 +5,9 @@ import {
   EventRecord,
   GeoLocation,
   HISTORY_REGION_RADIUS_METERS,
+  type PlaceSuggestion,
+  preselectedPlace,
+  TIME_ZONE_NEAR_METERS,
   TIME_ZONE_REGION_RADIUS_METERS,
 } from '@calendar/core';
 import {
@@ -17,14 +20,17 @@ import {
 } from '@calendar/db';
 import { makeFakeAppleCalendarClient } from '@calendar/apple-calendar';
 import {
+  FAKE_MAP_PNG_BASE64,
   GeoClient,
   type GeoClientShape,
+  type GeoPlaceJson,
+  GeoRequestError,
   makeFakeGeoClient,
   unavailableGeoClient,
 } from '@calendar/geo';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
-import { Effect, Fiber, Layer } from 'effect';
+import { Deferred, Effect, Fiber, Layer } from 'effect';
 import { TestClock } from 'effect/testing';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
 import { describe } from 'vite-plus/test';
@@ -32,11 +38,14 @@ import { appleCalendarServicesLayer } from './appleCalendarEvents.ts';
 import { writeTimeZoneSettings } from './deviceSettings.ts';
 import {
   CANDIDATE_SEARCH_TIMEOUT,
+  FILL_IN_LIMIT,
+  FILL_IN_WINDOW_MS,
   LOCATION_MISS_TTL_MS,
   LOCATION_REFRESH_AFTER_MS,
   locationHandlers,
   REGION_HINT_TTL_MS,
   regionHint,
+  TYPEAHEAD_SEARCH_TIMEOUT,
 } from './locationHandlers.ts';
 
 const places = [
@@ -49,14 +58,25 @@ const places = [
   },
 ];
 
+/**
+ * No zone the region table knows, so no test leans on where the machine
+ * is: without a region every place is nearby. The tests about near and
+ * far seed events with coordinates or write a zone of their own.
+ */
+const NO_REGION_ZONE = { primary: 'Etc/UTC', zones: [DEVICE_ZONE, 'Etc/UTC'] };
+
 const setup = (client: GeoClientShape) =>
   Layer.mergeAll(
     Layer.succeed(GeoClient, client),
-    appleCalendarServicesLayer(makeFakeAppleCalendarClient().client).pipe(
-      Layer.provideMerge(reposLayer),
-      Layer.provideMerge(Layer.effectDiscard(runMigrations)),
-      Layer.provideMerge(SqliteClient.layer({ filename: ':memory:' })),
-      Layer.provideMerge(reactivityLayer),
+    Layer.effectDiscard(writeTimeZoneSettings(NO_REGION_ZONE)).pipe(
+      Layer.provideMerge(
+        appleCalendarServicesLayer(makeFakeAppleCalendarClient().client).pipe(
+          Layer.provideMerge(reposLayer),
+          Layer.provideMerge(Layer.effectDiscard(runMigrations)),
+          Layer.provideMerge(SqliteClient.layer({ filename: ':memory:' })),
+          Layer.provideMerge(reactivityLayer),
+        ),
+      ),
     ),
   );
 
@@ -118,10 +138,16 @@ describe('searchPlaces', () => {
   it.effect('returns suggestions for place text', () => {
     const { client, state } = makeFakeGeoClient({ places });
     return Effect.gen(function* () {
+      // One row, fewer than asked for: the search is asked too, and the
+      // place both know is listed once, with the coordinates it came with.
       expect(yield* locationHandlers.searchPlaces({ query: 'blue' })).toEqual([
-        { subtitle: '66 Mint St, San Francisco', title: 'Blue Bottle Coffee' },
+        {
+          coordinates: { lat: 37.7823, lng: -122.4076 },
+          subtitle: '66 Mint St, San Francisco',
+          title: 'Blue Bottle Coffee',
+        },
       ]);
-      expect(state.calls).toEqual(['search:blue']);
+      expect(state.calls).toEqual(['search:blue', 'resolve:blue']);
     }).pipe(Effect.provide(setup(client)));
   });
 
@@ -486,10 +512,12 @@ describe('regionHint', () => {
         const region = yield* regionHint;
         expect(region?.radiusMeters).toBe(HISTORY_REGION_RADIUS_METERS);
         expect(region?.lat).toBeCloseTo((VIENNA.lat + 48.21) / 2, 4);
-        // Both lookups carry it.
+        // Every lookup carries it: the typeahead's two (the completer,
+        // then the search that fills in) and the pin's.
         yield* locationHandlers.searchPlaces({ query: 'Blue Bottle' });
         yield* locationHandlers.resolveLocation({ location: 'Blue Bottle Coffee' });
         expect(state.regions.map((hint) => hint?.radiusMeters)).toEqual([
+          HISTORY_REGION_RADIUS_METERS,
           HISTORY_REGION_RADIUS_METERS,
           HISTORY_REGION_RADIUS_METERS,
         ]);
@@ -548,12 +576,340 @@ describe('regionHint', () => {
       });
       expect(yield* regionHint).toEqual({
         ...VIENNA,
+        nearMeters: TIME_ZONE_NEAR_METERS,
         radiusMeters: TIME_ZONE_REGION_RADIUS_METERS,
       });
       yield* writeTimeZoneSettings({ primary: 'Etc/UTC', zones: [DEVICE_ZONE, 'Etc/UTC'] });
       // The hint is reused for a while: the new zone counts once it expires.
       yield* TestClock.adjust(REGION_HINT_TTL_MS + 1);
       expect(yield* regionHint).toBeUndefined();
+    }).pipe(Effect.provide(setup(client)));
+  });
+});
+
+/** MapKit as given: what its search finds for a text, and the completer's rows. */
+const mapkit = ({
+  found = {},
+  rows = {},
+}: {
+  readonly found?: Readonly<Record<string, ReadonlyArray<GeoPlaceJson>>>;
+  readonly rows?: Readonly<Record<string, ReadonlyArray<PlaceSuggestion>>>;
+}) => {
+  const calls: Array<string> = [];
+  const client: GeoClientShape = {
+    resolve: ({ query, suggestion }) =>
+      Effect.sync(() => {
+        calls.push(`resolve:${query}`);
+        return suggestion === undefined ? (found[query] ?? []) : [];
+      }),
+    search: ({ query }) =>
+      Effect.sync(() => {
+        calls.push(`search:${query}`);
+        return rows[query] ?? [];
+      }),
+    snapshot: () => Effect.succeed(FAKE_MAP_PNG_BASE64),
+  };
+  return { calls, client };
+};
+
+describe('nearby first', () => {
+  // Observed 2026-11-06, the user's events in Vienna: "Cafe Meek" (Kaffemik,
+  // as dictation heard it) took a café in South Africa, "Vienna, Austria"
+  // the latest past place in Vienna, and a typed "kaffeemik" offered only
+  // a namesake in Berlin.
+  const kaffemik = {
+    address: 'Zollergasse 5, 1070 Vienna, Austria',
+    lat: 48.2003,
+    lng: 16.3497,
+    name: 'Kaffemik',
+  };
+  const benoni = {
+    address: '9 10th Avenue, Benoni, Gauteng, 1501, South Africa',
+    lat: -26.1885,
+    lng: 28.3208,
+    name: 'Meek Café',
+  };
+  const london = {
+    address: '77 Heath Street, London, NW3 6UG, England',
+    lat: 51.5586,
+    lng: -0.1787,
+    name: 'Meekhun Thai bistro',
+  };
+  const adlon = {
+    address: 'Unter den Linden 77, 10117 Berlin, Germany',
+    lat: 52.5159,
+    lng: 13.3806,
+    name: 'Hotel Adlon Kempinski Berlin',
+  };
+  const city = { address: 'Vienna, Austria', lat: 48.2082, lng: 16.3738, name: 'Vienna' };
+  const berlinRow = {
+    subtitle: 'Erich-Baron-Weg 83, Mahlsdorf, 12623 Berlin, Germany',
+    title: 'kaffeemike',
+  };
+  const kaffemikRow = {
+    coordinates: { lat: 48.2003, lng: 16.3497 },
+    subtitle: 'Zollergasse 5, 1070 Vienna, Austria',
+    title: 'Kaffemik',
+  };
+
+  /** The user's events are in Vienna: what is nearby is known. */
+  const inVienna = seedPlaced([placedEvent('home', 1, VIENNA), placedEvent('work', 2, VIENNA)]);
+
+  it.effect('takes no namesake on another continent for a draft, and offers it', () => {
+    const { client } = mapkit({ found: { 'Cafe Meek': [benoni, london] } });
+    return Effect.gen(function* () {
+      yield* inVienna;
+      const candidates = yield* locationHandlers.placeCandidates({ location: 'Cafe Meek' });
+      expect(candidates.map((c) => [c.geo.name, c.match])).toEqual([['Meek Café', 'search']]);
+      expect(preselectedPlace(candidates)).toBeUndefined();
+    }).pipe(Effect.provide(setup(client)));
+  });
+
+  it.effect('takes the nearby place a dictated name sounds like, before a far namesake', () => {
+    const { client } = mapkit({ found: { 'Cafe Meek': [benoni, kaffemik] } });
+    return Effect.gen(function* () {
+      yield* inVienna;
+      const candidates = yield* locationHandlers.placeCandidates({ location: 'Cafe Meek' });
+      expect(candidates.map((c) => [c.geo.name, c.match])).toEqual([
+        ['Kaffemik', 'phonetic'],
+        ['Meek Café', 'search'],
+      ]);
+      expect(preselectedPlace(candidates)?.geo.source).toBe(
+        'Kaffemik, Zollergasse 5, 1070 Vienna, Austria',
+      );
+    }).pipe(Effect.provide(setup(client)));
+  });
+
+  it.effect('finds a place the user has been to by how a dictated name sounds', () => {
+    const { client } = mapkit({ found: { 'Cafe Meek': [benoni] } });
+    return Effect.gen(function* () {
+      yield* seedPlaced([
+        placedEvent('home', 1, VIENNA),
+        new EventRecord({
+          ...placedEvent('coffee', 30, kaffemik),
+          geo: new GeoLocation({
+            lat: kaffemik.lat,
+            lng: kaffemik.lng,
+            name: 'Kaffemik',
+            source: 'Kaffemik, Zollergasse 5, 1070 Vienna, Austria',
+          }),
+          location: 'Kaffemik, Zollergasse 5, 1070 Vienna, Austria',
+        }),
+      ]);
+      const candidates = yield* locationHandlers.placeCandidates({ location: 'Cafe Meek' });
+      expect(candidates.map((c) => [c.source, c.geo.name, c.match])).toEqual([
+        ['history', 'Kaffemik', 'phonetic'],
+        ['mapkit', 'Meek Café', 'search'],
+      ]);
+    }).pipe(Effect.provide(setup(client)));
+  });
+
+  it.effect('takes a far place when the text says where it is', () => {
+    const { client } = mapkit({
+      found: { 'Hotel Adlon': [adlon], 'Hotel Adlon Berlin': [adlon] },
+    });
+    return Effect.gen(function* () {
+      yield* inVienna;
+      const named = yield* locationHandlers.placeCandidates({ location: 'Hotel Adlon Berlin' });
+      expect(named.map((c) => c.match)).toEqual(['words']);
+      const bare = yield* locationHandlers.placeCandidates({ location: 'Hotel Adlon' });
+      expect(bare.map((c) => c.match)).toEqual(['search']);
+    }).pipe(Effect.provide(setup(client)));
+  });
+
+  it.effect('takes a city for the city, not for the latest past place in it', () => {
+    const { client } = mapkit({ found: { 'Vienna, Austria': [city] } });
+    return Effect.gen(function* () {
+      yield* seedPlaced([
+        new EventRecord({
+          ...placedEvent('yard', 3, { lat: 48.23, lng: 16.31 }),
+          geo: new GeoLocation({
+            lat: 48.23,
+            lng: 16.31,
+            name: 'Mistplatz Hernals',
+            source: 'Mistplatz Hernals, Richthausenstraße 2, 1170 Vienna, Austria',
+          }),
+          location: 'Mistplatz Hernals, Richthausenstraße 2, 1170 Vienna, Austria',
+        }),
+      ]);
+      const candidates = yield* locationHandlers.placeCandidates({ location: 'Vienna, Austria' });
+      expect(candidates.map((c) => [c.source, c.geo.name, c.match])).toEqual([
+        ['mapkit', 'Vienna', 'words'],
+      ]);
+    }).pipe(Effect.provide(setup(client)));
+  });
+
+  it.effect('gives free text no pin on another continent, and one where the text says', () => {
+    const { calls, client } = mapkit({
+      found: { 'Cafe Meek': [benoni], 'Hotel Adlon Berlin': [adlon] },
+    });
+    return Effect.gen(function* () {
+      yield* inVienna;
+      expect(yield* locationHandlers.resolveLocation({ location: 'Cafe Meek' })).toBeNull();
+      // The miss is remembered like any other.
+      expect(yield* locationHandlers.resolveLocation({ location: 'Cafe Meek' })).toBeNull();
+      expect(calls).toEqual(['resolve:Cafe Meek']);
+      expect(
+        yield* locationHandlers.resolveLocation({ location: 'Hotel Adlon Berlin' }),
+      ).toMatchObject({ lat: adlon.lat, name: 'Hotel Adlon Kempinski Berlin' });
+    }).pipe(Effect.provide(setup(client)));
+  });
+
+  it.effect('counts only another part of the world as far when a zone is all it knows', () => {
+    const { client } = mapkit({ found: { 'Cafe Meek': [benoni], 'Hotel Adlon': [adlon] } });
+    return Effect.gen(function* () {
+      yield* writeTimeZoneSettings({
+        primary: 'Europe/Vienna',
+        zones: [DEVICE_ZONE, 'Europe/Vienna'],
+      });
+      expect(yield* locationHandlers.resolveLocation({ location: 'Cafe Meek' })).toBeNull();
+      // The zone's city is not where the user is: Berlin may be home.
+      expect(yield* locationHandlers.resolveLocation({ location: 'Hotel Adlon' })).toMatchObject({
+        lat: adlon.lat,
+      });
+    }).pipe(Effect.provide(setup(client)));
+  });
+
+  it.effect('fills the typeahead in with the nearby place a misspelled name means', () => {
+    const { calls, client } = mapkit({
+      found: { kaffeemik: [kaffemik] },
+      rows: { kaffeemik: [berlinRow] },
+    });
+    return Effect.gen(function* () {
+      yield* inVienna;
+      expect(yield* locationHandlers.searchPlaces({ query: 'kaffeemik' })).toEqual([
+        kaffemikRow,
+        berlinRow,
+      ]);
+      expect(calls).toEqual(['search:kaffeemik', 'resolve:kaffeemik']);
+    }).pipe(Effect.provide(setup(client)));
+  });
+
+  it.effect('adds nothing the text does not name, and nothing far away', () => {
+    const street = {
+      address: 'Kaffeeweg, 1140 Vienna, Austria',
+      lat: 48.21,
+      lng: 16.26,
+      name: 'Kaffeeweg',
+    };
+    const { client } = mapkit({
+      found: { 'cafe meek': [benoni], kaffeemi: [street] },
+      rows: { 'cafe meek': [], kaffeemi: [berlinRow] },
+    });
+    return Effect.gen(function* () {
+      yield* inVienna;
+      expect(yield* locationHandlers.searchPlaces({ query: 'kaffeemi' })).toEqual([berlinRow]);
+      expect(yield* locationHandlers.searchPlaces({ query: 'cafe meek' })).toEqual([]);
+    }).pipe(Effect.provide(setup(client)));
+  });
+
+  it.effect('asks the search only where the completer runs short', () => {
+    const full = Array.from({ length: 6 }, (_, index) => ({ title: `Kaffee ${String(index)}` }));
+    const { calls, client } = mapkit({
+      found: { kaffee: [kaffemik] },
+      rows: { kaffee: full },
+    });
+    return Effect.gen(function* () {
+      expect(yield* locationHandlers.searchPlaces({ query: 'kaffee' })).toEqual(full);
+      expect(calls).toEqual(['search:kaffee']);
+      // A caller that wants fewer rows has enough sooner.
+      expect(yield* locationHandlers.searchPlaces({ limit: 3, query: 'kaffee' })).toHaveLength(6);
+    }).pipe(Effect.provide(setup(client)));
+  });
+
+  it.effect('answers with the completer’s rows when the search stalls or fails', () => {
+    const base = mapkit({ rows: { kaffeemik: [berlinRow] } }).client;
+    const stalled: GeoClientShape = { ...base, resolve: () => Effect.never };
+    const failing: GeoClientShape = {
+      ...base,
+      resolve: () =>
+        Effect.fail(new GeoRequestError({ message: 'throttled', method: 'geo.resolve' })),
+    };
+    return Effect.gen(function* () {
+      const asked = yield* Effect.forkChild(locationHandlers.searchPlaces({ query: 'kaffeemik' }));
+      yield* TestClock.adjust(TYPEAHEAD_SEARCH_TIMEOUT);
+      expect(yield* Fiber.join(asked)).toEqual([berlinRow]);
+      expect(
+        yield* locationHandlers
+          .searchPlaces({ query: 'kaffeemik' })
+          .pipe(Effect.provideService(GeoClient, failing)),
+      ).toEqual([berlinRow]);
+    }).pipe(Effect.provide(setup(stalled)));
+  });
+
+  it.effect('searches for the latest text only: an overtaken keystroke spends nothing', () => {
+    // The completer answers a query it dropped for a newer one with no rows:
+    // every overtaken keystroke would have asked the search for its old text.
+    const { calls, client } = mapkit({
+      found: { kaffeemik: [kaffemik] },
+      rows: { kaffeemik: [berlinRow] },
+    });
+    return Effect.gen(function* () {
+      yield* inVienna;
+      const asked = yield* Deferred.make<void>();
+      const dropped = yield* Deferred.make<void>();
+      const typing: GeoClientShape = {
+        ...client,
+        search: (params) =>
+          params.query === 'kaffeemi'
+            ? Deferred.succeed(asked, undefined).pipe(
+                Effect.andThen(Deferred.await(dropped)),
+                Effect.as([]),
+              )
+            : client.search(params),
+      };
+      const places = (query: string) =>
+        locationHandlers.searchPlaces({ query }).pipe(Effect.provideService(GeoClient, typing));
+      const overtaken = yield* Effect.forkChild(places('kaffeemi'));
+      yield* Deferred.await(asked);
+      expect(yield* places('kaffeemik')).toEqual([kaffemikRow, berlinRow]);
+      yield* Deferred.succeed(dropped, undefined);
+      expect(yield* Fiber.join(overtaken)).toEqual([]);
+      expect(calls).toEqual(['search:kaffeemik', 'resolve:kaffeemik']);
+    }).pipe(Effect.provide(setup(client)));
+  });
+
+  it.effect('stops filling in before MapKit would throttle, and starts again a minute on', () => {
+    const { calls, client } = mapkit({});
+    const searches = () => calls.filter((call) => call.startsWith('resolve:')).length;
+    return Effect.gen(function* () {
+      for (let typed = 0; typed <= FILL_IN_LIMIT + 2; typed += 1) {
+        yield* locationHandlers.searchPlaces({ query: `kaffee ${String(typed)}` });
+      }
+      expect(searches()).toBe(FILL_IN_LIMIT);
+      yield* TestClock.adjust(FILL_IN_WINDOW_MS);
+      yield* locationHandlers.searchPlaces({ query: 'kaffeemik' });
+      expect(searches()).toBe(FILL_IN_LIMIT + 1);
+    }).pipe(Effect.provide(setup(client)));
+  });
+
+  it.effect('asks no search when the completer itself failed', () => {
+    const { calls, client } = mapkit({ found: { kaffeemik: [kaffemik] } });
+    const broken: GeoClientShape = {
+      ...client,
+      search: ({ query }) => {
+        calls.push(`search:${query}`);
+        return Effect.fail(new GeoRequestError({ message: 'offline', method: 'geo.search' }));
+      },
+    };
+    return Effect.gen(function* () {
+      expect(yield* locationHandlers.searchPlaces({ query: 'kaffeemik' })).toEqual([]);
+      expect(calls).toEqual(['search:kaffeemik']);
+    }).pipe(Effect.provide(setup(broken)));
+  });
+
+  it.effect('takes a picked row the search found as that place, with nothing to look up', () => {
+    const { calls, client } = mapkit({});
+    const location = 'Kaffemik, Zollergasse 5, 1070 Vienna, Austria';
+    return Effect.gen(function* () {
+      const picked = yield* locationHandlers.resolveLocation({ location, suggestion: kaffemikRow });
+      expect(picked).toEqual(
+        new GeoLocation({ lat: 48.2003, lng: 16.3497, name: 'Kaffemik', source: location }),
+      );
+      expect(calls).toEqual([]);
+      // Kept like any resolved place: the editor reads it back by the text.
+      expect(yield* locationHandlers.resolveLocation({ location })).toEqual(picked);
+      expect(calls).toEqual([]);
     }).pipe(Effect.provide(setup(client)));
   });
 });

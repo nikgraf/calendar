@@ -69,7 +69,19 @@ const seed = {
   ],
   events: [
     event({ hour: 9, id: 'evt-coffee', title: 'Coffee chat' }),
+    event({ hour: 11, id: 'evt-lunch', title: 'Lunch plan' }),
     event({ geo: STORED, hour: 14, id: 'evt-mass', location: STORED.source, title: 'Mass' }),
+    // Last week's, with coordinates: where the user's places are, whatever
+    // zone the machine is in. Vienna is nearby, San Francisco is not.
+    event({
+      endUtc: localDayAt(-7, 15),
+      geo: STORED,
+      hour: 14,
+      id: 'evt-mass-past',
+      location: STORED.source,
+      startUtc: localDayAt(-7, 14),
+      title: 'Mass last week',
+    }),
   ],
 };
 
@@ -82,6 +94,23 @@ const geo = {
         name: 'Blue Bottle Coffee',
         subtitle: '66 Mint St, San Francisco',
         title: 'Blue Bottle Coffee',
+      },
+      // What MapKit answers for a typed "kaffeemik": its completer a
+      // namesake in Berlin, its search the café in Vienna.
+      {
+        lat: 52.5057,
+        lng: 13.6145,
+        name: 'kaffeemike',
+        subtitle: 'Erich-Baron-Weg 83, 12623 Berlin',
+        title: 'kaffeemike',
+      },
+      {
+        lat: 48.2003,
+        lng: 16.3497,
+        misspellings: ['kaffeemik'],
+        name: 'Kaffemik',
+        subtitle: 'Zollergasse 5, 1070 Wien',
+        title: 'Kaffemik',
       },
     ],
   },
@@ -148,6 +177,28 @@ describe('location picker and map', () => {
         geo: { lat: 37.7823, lng: -122.4076, name: 'Blue Bottle Coffee', source: PICKED_LABEL },
         location: PICKED_LABEL,
       });
+  });
+
+  it('offers the nearby place a misspelled name means first, and a pick is that place', async () => {
+    const { cdp } = app;
+    await openEvent('Lunch plan');
+    // One letter too many: the completer knows only the namesake in Berlin.
+    await typeLocation('kaffeemik');
+    await cdp.waitFor(`document.querySelectorAll('[role="option"]').length === 2`);
+    expect(
+      await cdp.eval<Array<string>>(
+        `[...document.querySelectorAll('[role="option"]')].map((option) => option.textContent)`,
+      ),
+    ).toEqual([expect.stringContaining('Zollergasse 5'), expect.stringContaining('Berlin')]);
+    await pressKey('Enter');
+    await cdp.waitFor(`${INPUT}.value === 'Kaffemik, Zollergasse 5, 1070 Wien'`);
+    // The row came with its coordinates: the map is that place.
+    await cdp.waitFor(`!!document.querySelector('img[data-map]')`);
+    expect(
+      await cdp.eval<string>(`document.querySelector('[data-open-in-maps]').getAttribute('href')`),
+    ).toBe('https://maps.apple.com/?ll=48.2003,16.3497&q=Kaffemik');
+    await cdp.clickButtonWithText('Cancel');
+    await cdp.waitFor(`!${INPUT}`);
   });
 
   it('maps stored coordinates on open and hides the map for a meeting link', async () => {

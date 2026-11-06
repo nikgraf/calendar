@@ -26,7 +26,7 @@ describe('makeGeoClient', () => {
             },
       );
     });
-    const region = { lat: 48.2, lng: 16.4, radiusMeters: 50_000 };
+    const region = { lat: 48.2, lng: 16.4, nearMeters: 150_000, radiusMeters: 50_000 };
     expect(await Effect.runPromise(client.search({ limit: 3, query: 'nasch', region }))).toEqual([
       { subtitle: 'Wien', title: 'Naschmarkt' },
     ]);

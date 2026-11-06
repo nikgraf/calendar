@@ -1622,21 +1622,37 @@ gateway carries all of it. Details, limits and the threat model:
   misses for 3 days, hits refreshed in the background after 14 days,
   pruned to 2000 rows, wiped from Settings) for the map on this device
   only; typing never geocodes — the typeahead (`searchPlaces`) and a
-  picked row do. URLs and meeting links are never looked up. A search
-  answers something for almost any text ("Room 4" found a street in
-  Weidling), so free text gets a pin only from a match that resembles it
-  (core `placesResembling`: the same name, every word beginning one of
-  the place's name or address words, or the same Kölner Phonetik key as
-  the name's first words — "Cafe Zentral" as dictated is Café Central);
-  a picked suggestion is that exact place. `placeCandidates` returns
-  the user's own past places the text names first (core
-  `rankPastPlaces`: a year of occurrences, matched by the text they were
-  written as, MapKit's name or sound, one per text, the latest use) and
-  then the search's resembling matches not among them
-  (`mergePlaceCandidates`; MapKit is asked two ways side by side, the
-  natural-language search and the completer's rows resolved, and hits
-  that do not resemble the text follow as `search`), best first and
-  uncached. The draft thread (app-state `draftPlaces.ts`) asks for them
+  picked row do. The typeahead asks MapKit's completer, which reads only
+  how a name begins; where it answers fewer rows than asked for, the
+  latest text goes to the search too, which reads a misspelling
+  ("kaffeemik"), and the nearby places it names are listed first, each
+  with its coordinates, so a pick needs no lookup (core
+  `withFoundSuggestions`) — at most `FILL_IN_LIMIT` times a minute, since
+  MapKit throttles searches, not completions, and a throttled minute
+  fails the pins and picks too. URLs and meeting links are never looked
+  up. A search answers something for almost any text ("Room 4" found a
+  street in Weidling, "Cafe Meek" a café in South Africa), so free text
+  gets a pin only from a match the text names (core `rankFoundPlaces`).
+  It resembles the text (`placeMatch`): the same name; every word
+  beginning one of the place's name or address words, one of them its
+  own — of its name or street, and not of its city, region or country
+  line too, so "Vienna, Austria" is the city and no place that stands in
+  it; or the same Kölner Phonetik key as the name's first words, word by
+  word or run together — "Cafe Zentral" as dictated is Café Central,
+  "Cafe Meek" Kaffemik. And it is nearby (`isNearby`: within the region
+  hint's `nearMeters` — 150 km around the user's events, 2,500 km around
+  a time zone's city, which says little of where the user is) or the
+  text says where it is (`saysWhere`: a word of its city, region or
+  country, "Hotel Adlon Berlin"). A picked suggestion is that exact
+  place. `placeCandidates` returns the user's own past places the text
+  names first (core `rankPastPlaces`: a year of occurrences, matched by
+  the text they were written as, MapKit's name or sound, one per text,
+  the latest use; a place the user has been to counts wherever it is)
+  and then the search's matches not among them (`mergePlaceCandidates`;
+  MapKit is asked two ways side by side, the natural-language search and
+  the completer's rows resolved; the nearby hits that do not resemble
+  the text and one far namesake follow as `search`, offered and never
+  taken, and any other far hit is left out), best first and uncached. The draft thread (app-state `draftPlaces.ts`) asks for them
   whenever a turn sets a place: the best resembling one is taken at once
   (`preselectedPlace`) — its text becomes the location and its pin counts
   as a pick (`applyPlace`) — and the candidates stay on the draft as
@@ -1646,8 +1662,9 @@ gateway carries all of it. Details, limits and the threat model:
   or one of them (`livePlaceChoice`). Both lookups and the typeahead carry a region hint
   (`regionHint`: the densest cluster of coordinates on the last 90 days'
   events, the most recent first, else the primary time zone's city from
-  a small table), which MapKit takes as a bias, never a filter — and
-  never a location permission. The bridge returns `places` beside
+  a small table), which MapKit takes as a bias, never a filter — a
+  strong match elsewhere still wins, which is why the app measures the
+  distance itself — and never a location permission. The bridge returns `places` beside
   `place`; a native side from before it answers one place. Desktop
   draws a static `MKMapSnapshotter` PNG (`mapSnapshot`); iOS a live
   `expo-maps` view (iOS 17+, else only the Open in Maps link).

@@ -8,11 +8,11 @@ import {
   normalizeLocationKey,
   type PastPlace,
   type PlaceCandidate,
-  placeMatch,
-  placesResembling,
   placeSuggestionLabel,
+  rankFoundPlaces,
   rankPastPlaces,
   regionForTimeZone,
+  withFoundSuggestions,
 } from '@calendar/core';
 import { type DeviceSettingsRepo, EventRepo, LocationGeoRepo } from '@calendar/db';
 import { GeoClient, type GeoPlaceJson } from '@calendar/geo';
@@ -57,6 +57,20 @@ const pastPlaces = new WeakMap<
  */
 export const CANDIDATE_SEARCH_TIMEOUT = '3 seconds';
 /**
+ * How long the typeahead waits for the search that fills in where the
+ * completer runs short: past it, the completer's rows are the answer.
+ */
+export const TYPEAHEAD_SEARCH_TIMEOUT = '1 second';
+/**
+ * Fill-in searches the typeahead makes per minute at most. MapKit
+ * throttles searches (about fifty a minute, then every one fails for a
+ * while — the pins and the picks too), and typing must not spend them.
+ */
+export const FILL_IN_LIMIT = 20;
+export const FILL_IN_WINDOW_MS = 60 * 1000;
+/** Per geo client: the number of the typeahead's latest call, and when its recent fill-in searches began. */
+const fillIns = new WeakMap<object, { latest: number; started: ReadonlyArray<number> }>();
+/**
  * How long a region hint is reused: the typeahead asks on every pause
  * in typing, and the hint reads a quarter's events (EventKit too).
  */
@@ -80,7 +94,8 @@ const toGeo = (place: GeoPlaceJson, location: string): GeoLocation =>
  * events read through), the most recent first, so a tie goes to where
  * they were last — else the city of the primary time zone, else
  * nowhere in particular. A hint for MapKit, never a filter, and never a
- * location permission.
+ * location permission; it also says how far from there a place still is
+ * nearby (`isNearby`), which decides what is taken unasked.
  */
 export const regionHint: Effect.Effect<
   GeoRegion | undefined,
@@ -168,9 +183,10 @@ export const locationHandlers: Pick<
       // Then MapKit, asked two ways side by side: the natural-language
       // search, which reads a misspelling, and the completer's rows,
       // which know a place's branches, each row resolved to its exact
-      // place. The hits that resemble the text come first, the others
-      // after them, to pick from. Each carries the text a pick writes:
-      // the name and address, as a picked typeahead row would.
+      // place. The hits the text names come first — resembling it, and
+      // nearby or where it says — the others after them, to pick from
+      // (`rankFoundPlaces`). Each carries the text a pick writes: the
+      // name and address, as a picked typeahead row would.
       const geo = yield* GeoClient;
       const region = yield* regionHint;
       // Each way on its own clock: what one answers is kept when the
@@ -210,29 +226,22 @@ export const locationHandlers: Pick<
       const [fromSearch, fromRows] = yield* Effect.all([searched, completed], {
         concurrency: 'unbounded',
       });
-      const hits = [...fromSearch, ...fromRows];
-      const candidate = (place: GeoPlaceJson, match: PlaceCandidate['match']): PlaceCandidate => {
-        const name = place.name ?? location;
-        return {
-          ...(place.address ? { address: place.address } : {}),
-          geo: new GeoLocation({
-            lat: place.lat,
-            lng: place.lng,
-            name: place.name,
-            source: place.address ? `${name}, ${place.address}` : name,
-          }),
-          match,
-          source: 'mapkit',
-        };
-      };
-      const found = [
-        ...placesResembling(location, hits).map((place) =>
-          candidate(place, placeMatch(location, place) ?? 'search'),
-        ),
-        ...hits
-          .filter((place) => placeMatch(location, place) === undefined)
-          .map((place) => candidate(place, 'search')),
-      ];
+      const found = rankFoundPlaces(location, [...fromSearch, ...fromRows], region).map(
+        ({ match, place }): PlaceCandidate => {
+          const name = place.name ?? location;
+          return {
+            ...(place.address ? { address: place.address } : {}),
+            geo: new GeoLocation({
+              lat: place.lat,
+              lng: place.lng,
+              name: place.name,
+              source: place.address ? `${name}, ${place.address}` : name,
+            }),
+            match,
+            source: 'mapkit',
+          };
+        },
+      );
       return mergePlaceCandidates(history, found);
     }),
 
@@ -247,9 +256,11 @@ export const locationHandlers: Pick<
       const now = yield* Clock.currentTimeMillis;
 
       // A picked suggestion is that exact place. Free text gets MapKit's
-      // best match that resembles it — a search answers something for
-      // almost any text ("Room 4" found a street in Weidling), so a hit
-      // counts only when its name or address says it is what was typed.
+      // best match that it names — a search answers something for almost
+      // any text ("Room 4" found a street in Weidling, "Cafe Meek" a
+      // café in South Africa), so a hit counts only when its name or
+      // address says it is what was typed and it is nearby or where the
+      // text says (`rankFoundPlaces`).
       const lookup = Effect.gen(function* () {
         const region = suggestion === undefined ? yield* regionHint : undefined;
         const places = yield* geo.resolve({
@@ -258,8 +269,13 @@ export const locationHandlers: Pick<
           region,
           suggestion,
         });
+        const [best] = suggestion === undefined ? rankFoundPlaces(location, places, region) : [];
         const result =
-          (suggestion === undefined ? placesResembling(location, places)[0] : places[0]) ?? null;
+          (suggestion === undefined
+            ? best !== undefined && best.match !== 'search'
+              ? best.place
+              : undefined
+            : places[0]) ?? null;
         return { result };
       }).pipe(
         // No bridge or a failed lookup (offline): nothing to show, and
@@ -284,6 +300,13 @@ export const locationHandlers: Pick<
           return resolved;
         });
 
+      // A row the search found came with its coordinates: the pick is
+      // that place, with nothing to look up.
+      if (suggestion?.coordinates !== undefined) {
+        return yield* store({
+          result: { ...suggestion.coordinates, name: suggestion.title },
+        });
+      }
       // A picked suggestion is a fresh, exact answer; free text may be cached.
       if (suggestion === undefined) {
         const cached = yield* cache.get(key);
@@ -308,9 +331,39 @@ export const locationHandlers: Pick<
         return [];
       }
       const geo = yield* GeoClient;
+      const calls = fillIns.get(geo) ?? { latest: 0, started: [] };
+      fillIns.set(geo, calls);
+      calls.latest += 1;
+      const mine = calls.latest;
       const region = yield* regionHint;
-      return yield* geo
-        .search({ limit: clamp(limit ?? DEFAULT_PLACE_LIMIT, 1, 10), query, region })
-        .pipe(Effect.catch(() => Effect.succeed([])));
+      const wanted = clamp(limit ?? DEFAULT_PLACE_LIMIT, 1, 10);
+      const rows = yield* geo
+        .search({ limit: wanted, query, region })
+        .pipe(Effect.catch(() => Effect.succeed(undefined)));
+      if (rows === undefined) {
+        return [];
+      }
+      // Rows enough, or a newer keystroke already asked: nothing to fill
+      // in (the completer answers a query it dropped for a newer one with
+      // no rows at all, and that text is no longer the one on screen).
+      if (rows.length >= wanted || calls.latest !== mine) {
+        return rows;
+      }
+      const now = yield* Clock.currentTimeMillis;
+      const recent = calls.started.filter((at) => now - at < FILL_IN_WINDOW_MS);
+      if (recent.length >= FILL_IN_LIMIT) {
+        return rows;
+      }
+      calls.started = [...recent, now];
+      // The completer runs short: the text is nearly a whole name, or one
+      // it cannot complete — it reads only how a name begins, and a letter
+      // off ("kaffeemik", "figlmuler") it answers with a namesake far away
+      // or nothing. The search reads the misspelling; the places it finds
+      // that the text names go first.
+      const found = yield* geo.resolve({ limit: CANDIDATE_LIMIT, query, region }).pipe(
+        Effect.timeout(TYPEAHEAD_SEARCH_TIMEOUT),
+        Effect.catch(() => Effect.succeed([])),
+      );
+      return withFoundSuggestions(rows, rankFoundPlaces(query, found, region), wanted);
     }),
 };

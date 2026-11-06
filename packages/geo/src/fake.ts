@@ -8,6 +8,12 @@ export interface FakePlace {
   readonly address?: string | undefined;
   readonly lat: number;
   readonly lng: number;
+  /**
+   * Texts the search finds this place for beside its title, and the
+   * completer does not: MapKit's search reads a misspelling ("kaffeemik"
+   * for Kaffemik), its completer only how a name begins.
+   */
+  readonly misspellings?: ReadonlyArray<string> | undefined;
   readonly name?: string | undefined;
   readonly subtitle?: string | undefined;
   readonly title: string;
@@ -38,8 +44,9 @@ const toPlace = (place: FakePlace): GeoPlaceJson => ({
  * In-memory GeoClient for tests and the e2e fixture: deterministic,
  * offline. `search` is a case-insensitive substring match on title or
  * subtitle; `resolve` matches the picked suggestion exactly, else every
- * place whose title appears in the query or whose title the query
- * begins, in the order given, up to the limit.
+ * place whose title appears in the query, whose title the query begins,
+ * or that lists the query among its `misspellings`, in the order given,
+ * up to the limit.
  */
 export const makeFakeGeoClient = (
   initial: { readonly places?: ReadonlyArray<FakePlace> } = {},
@@ -62,7 +69,10 @@ export const makeFakeGeoClient = (
         const needle = lower(query.trim());
         return state.places
           .filter(
-            (place) => needle.includes(lower(place.title)) || lower(place.title).startsWith(needle),
+            (place) =>
+              needle.includes(lower(place.title)) ||
+              lower(place.title).startsWith(needle) ||
+              (place.misspellings ?? []).some((text) => lower(text) === needle),
           )
           .slice(0, limit ?? 5)
           .map(toPlace);

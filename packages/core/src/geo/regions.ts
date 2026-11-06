@@ -14,6 +14,11 @@ export interface GeoPoint {
 }
 
 export interface GeoRegion extends GeoPoint {
+  /**
+   * How far from the center a place still is nearby (`isNearby`): what
+   * MapKit's hint cannot do, since a strong match elsewhere still wins.
+   */
+  readonly nearMeters: number;
   readonly radiusMeters: number;
 }
 
@@ -21,6 +26,14 @@ export interface GeoRegion extends GeoPoint {
 export const HISTORY_REGION_RADIUS_METERS = 50_000;
 /** Around a time zone's city: wide, since the zone says little more than the country. */
 export const TIME_ZONE_REGION_RADIUS_METERS = 150_000;
+/** Nearby, around the user's recent events: as far as a day trip goes. */
+export const HISTORY_NEAR_METERS = 150_000;
+/**
+ * Nearby, around a time zone's city: the zone's part of the world, since
+ * one zone holds Berlin and Munich, New York and Miami. It still tells a
+ * café in the next country from one on another continent.
+ */
+export const TIME_ZONE_NEAR_METERS = 2_500_000;
 
 const EARTH_RADIUS_METERS = 6_371_000;
 const toRadians = (degrees: number): number => (degrees * Math.PI) / 180;
@@ -67,9 +80,17 @@ export const densestRegion = (
   return {
     lat: best.reduce((sum, point) => sum + point.lat, 0) / best.length,
     lng: (Math.atan2(y, x) * 180) / Math.PI,
+    nearMeters: HISTORY_NEAR_METERS,
     radiusMeters,
   };
 };
+
+/**
+ * Whether a place is near where the user's places are. Without a region
+ * nothing is known of where that is, and every place counts as near.
+ */
+export const isNearby = (region: GeoRegion | undefined, place: GeoPoint): boolean =>
+  region === undefined || distanceMeters(region, place) <= region.nearMeters;
 
 /** The city a time zone is named for, or its biggest one. */
 const TIME_ZONE_CITIES: ReadonlyMap<string, GeoPoint> = new Map(
@@ -135,5 +156,11 @@ const TIME_ZONE_CITIES: ReadonlyMap<string, GeoPoint> = new Map(
 /** The region around the time zone's city; none for a zone the table does not know. */
 export const regionForTimeZone = (zone: string): GeoRegion | undefined => {
   const city = TIME_ZONE_CITIES.get(zone);
-  return city && { ...city, radiusMeters: TIME_ZONE_REGION_RADIUS_METERS };
+  return (
+    city && {
+      ...city,
+      nearMeters: TIME_ZONE_NEAR_METERS,
+      radiusMeters: TIME_ZONE_REGION_RADIUS_METERS,
+    }
+  );
 };

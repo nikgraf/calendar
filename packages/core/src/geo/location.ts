@@ -9,8 +9,16 @@ import { EventRecord, GeoLocation } from '../types.ts';
  * while its `source` still matches the event's location.
  */
 
-/** A typeahead row as MapKit's completer returns it. */
+/**
+ * A typeahead row: one of MapKit's completer, or a place its search
+ * found for a name the completer does not complete (`coordinates`).
+ */
 export const PlaceSuggestion = Schema.Struct({
+  /**
+   * Where the place is, on a row the search found: picking it needs no
+   * second lookup. A completer row has none and resolves on a pick.
+   */
+  coordinates: Schema.optional(Schema.Struct({ lat: Schema.Number, lng: Schema.Number })),
   subtitle: Schema.optional(Schema.String),
   title: Schema.String,
 });

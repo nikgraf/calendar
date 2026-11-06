@@ -6,9 +6,9 @@ import { koelnerKey } from './phonetic.ts';
  * answers something for almost any text — "Room 4" found "Am Rahm 4" in
  * Weidling, "the office" a bar — so a hit counts only when its name (or
  * address) resembles the words: the same name, every word of the text
- * beginning one of the place's, or the same sound (`koelnerKey`) as the
- * name's leading words, which is what a dictated "Cafe Zentral" needs to
- * be Café Central.
+ * beginning one of the place's with one of them the place's own, or the
+ * same sound (`koelnerKey`) as the name's leading words, which is what a
+ * dictated "Cafe Zentral" needs to be Café Central.
  */
 
 /** What a resolved place says of itself: MapKit's name and address. */
@@ -70,11 +70,58 @@ const wordsOf = (text: string): ReadonlyArray<string> =>
 const NUMBERED = /\p{N}/u;
 
 /**
+ * An address in two parts: its first line (the street and number — or,
+ * for a city, the city itself) and what follows the first comma (postal
+ * code and city, region, country): where the place is, which it shares
+ * with every other place there.
+ */
+const addressParts = (
+  address: string | undefined,
+): { readonly around: ReadonlyArray<string>; readonly street: ReadonlyArray<string> } => {
+  const [first = '', ...rest] = (address ?? '').split(',');
+  return { around: wordsOf(rest.join(',')), street: wordsOf(first) };
+};
+
+/** Whether `word` of a text is one of `parts`: a number as it is, a word as a beginning. */
+const among = (word: string, parts: ReadonlyArray<string>): boolean =>
+  NUMBERED.test(word) ? parts.includes(word) : parts.some((part) => part.startsWith(word));
+
+/** Sounds this short are shared by too many names to tell two apart once the words are joined. */
+const JOINED_KEY_MIN = 3;
+
+/**
+ * Whether the text sounds like the name's leading words: word by word
+ * ("Cafe Zentral" for Café Central), or with the words run together,
+ * since dictation cuts a name it does not know into words it does —
+ * "Cafe Meek" and "coffee Nick" for Kaffemik.
+ */
+const soundsLike = (said: ReadonlyArray<string>, name: ReadonlyArray<string>): boolean => {
+  const key = koelnerKey(said.join(' '));
+  if (key === '') {
+    return false;
+  }
+  if (name.length >= said.length && koelnerKey(name.slice(0, said.length).join(' ')) === key) {
+    return true;
+  }
+  const joined = koelnerKey(said.join(''));
+  return (
+    joined.length >= JOINED_KEY_MIN &&
+    name.some((_, last) => koelnerKey(name.slice(0, last + 1).join('')) === joined)
+  );
+};
+
+/**
  * How a place resembles a text, best first: `exact` — its name is the
  * text; `words` — each word of the text begins a word of its name or
- * address ("Figlmüller" for Figlmüller Bäckerstrasse, "Wollzeile 5");
- * `phonetic` — the text sounds like the name's first words; else
- * undefined, and the place is not what the text names.
+ * address ("Figlmüller" for Figlmüller Bäckerstrasse, "Wollzeile 5"),
+ * one of them a word of its own; `phonetic` — the text sounds like the
+ * name's first words; else undefined, and the place is not what the text
+ * names.
+ *
+ * A word of its own is one of its name or street that the rest of its
+ * address does not hold too: "Vienna, Austria" names the city, not a
+ * place that stands in it — every address there ends in those words, and
+ * so do names like "Hotel Sacher Vienna".
  */
 export const placeMatch = (text: string, place: PlaceLike): PlaceMatch | undefined => {
   const said = wordsOf(text);
@@ -82,7 +129,8 @@ export const placeMatch = (text: string, place: PlaceLike): PlaceMatch | undefin
     return undefined;
   }
   const name = wordsOf(place.name ?? '');
-  const own = [...name, ...wordsOf(place.address ?? '')];
+  const { around, street } = addressParts(place.address);
+  const own = [...name, ...street, ...around];
   if (name.length > 0 && said.join(' ') === name.join(' ')) {
     return 'exact';
   }
@@ -93,19 +141,37 @@ export const placeMatch = (text: string, place: PlaceLike): PlaceMatch | undefin
   if (!numbers.every((number) => own.includes(number))) {
     return undefined;
   }
-  if (said.every((word) => NUMBERED.test(word) || own.some((part) => part.startsWith(word)))) {
+  // A text that only says where the place is names the city, not the
+  // place — by its words or by its sound ("Vienna Austria Temple").
+  if (said.every((word) => among(word, around))) {
+    return undefined;
+  }
+  const itsOwn = (word: string): boolean =>
+    (among(word, name) || among(word, street)) && !among(word, around);
+  if (said.every((word) => among(word, own)) && said.some(itsOwn)) {
     return 'words';
   }
-  const key = koelnerKey(said.join(' '));
-  if (
-    key !== '' &&
-    name.length >= said.length &&
-    koelnerKey(name.slice(0, said.length).join(' ')) === key
-  ) {
-    return 'phonetic';
-  }
-  return undefined;
+  return soundsLike(said, name) ? 'phonetic' : undefined;
 };
+
+/** Shorter words are too often something else: "in" is Indiana's code, "or" Oregon's, "de" Delaware's. */
+const WHERE_WORD_MIN = 3;
+
+/**
+ * Whether the text says where the place is: one of its words is a word
+ * of the place's city, region or country ("Hotel Adlon Berlin"). Such a
+ * place is the one meant however far it is from the user's own places.
+ */
+export const saysWhere = (text: string, place: PlaceLike): boolean => {
+  const { around } = addressParts(place.address);
+  return wordsOf(text).some(
+    (word) => word.length >= WHERE_WORD_MIN && !NUMBERED.test(word) && around.includes(word),
+  );
+};
+
+/** Whether two addresses read the same, whatever MapKit abbreviated ("Philharmonikerstraße 4" and "Philharmoniker Str. 4"). */
+export const sameAddress = (a: string | undefined, b: string | undefined): boolean =>
+  wordsOf(a ?? '').join('') === wordsOf(b ?? '').join('');
 
 /** The places that resemble the text, best first, their order kept among equals. */
 export const placesResembling = <Place extends PlaceLike>(

@@ -158,6 +158,24 @@ the served model (#184) and slot proposals (#185) are in
       before" (an event's notifications are read since 2026-10-26); an
       imperative lead kept in the title ("Set up a dinner with Tom Baker",
       "Trag mir … ein").
+- [ ] Dictated quick-add follow-ups (two iPhone recordings, 2026-11-06;
+      the place lookup's share shipped, `docs/decisions.md` → Calendar,
+      "Places nearby first"; each its own PR, in this order) — a spoken
+      command stays in the title ("Add an event to have lunch with
+      Stefan": the title falls back to the phrase, and nothing takes the
+      command off it; the imperative lead above is the same gap); a turn
+      that names only a city or district replaces the place instead of
+      narrowing it ("it's in Vienna" after "Cafe Meek" sets "Vienna" or
+      changes nothing, with the right transcript too), and a bare "with
+      Stefan" lands in the location; a name dictation mishears and the
+      user has never been to finds nothing (MapKit's search reads a
+      doubled letter, not "Cafe Meek" for Kaffemik, and Apple's model
+      cannot respell it) — recognizer vocabulary from contacts and past
+      places, which needs an own speech module on iOS
+      (`@react-native-ai/apple` takes audio and a locale); bench cases
+      for all of it: 1 of 55 opens with a command, none leans on the turn
+      before, none asks MapKit, and the Mac's model titles a phrase the
+      iPhone's echoes.
 - [ ] Gemma 4 on iOS — opt-in download via llama.rn (JSON schema →
       grammar maps onto `generateJson`), load on demand, unload on
       background; only if the bench shows the model is the bottleneck.
