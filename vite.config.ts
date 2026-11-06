@@ -12,9 +12,7 @@ import { defineConfig } from 'vite-plus';
 // to another file takes its number along; an oxlint upgrade that counts
 // differently re-measures them in its own PR.
 export const complexityCap = 40;
-export const complexityPins: Record<string, ReadonlyArray<number>> = {
-  'packages/ai/src/refine.ts': [62],
-};
+export const complexityPins: Record<string, ReadonlyArray<number>> = {};
 
 export default defineConfig({
   fmt: {
