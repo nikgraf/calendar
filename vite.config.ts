@@ -19,7 +19,6 @@ export const complexityPins: Record<string, ReadonlyArray<number>> = {
   'packages/app-state/src/editorModel.ts': [73, 56],
   'packages/app-state/src/taskEditorModel.ts': [56],
   'packages/sync/src/mutations.ts': [57],
-  'packages/sync/src/settingsImport.ts': [45],
 };
 
 export default defineConfig({
