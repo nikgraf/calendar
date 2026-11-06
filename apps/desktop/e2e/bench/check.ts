@@ -262,6 +262,170 @@ const coveredViews = (expectation: Expectation): ReadonlySet<ViewKey> =>
 export const fieldsOf = (expectation: Expectation): ReadonlyArray<Field> =>
   expectation.rejected ? ['rejected'] : about(expectation).map((entry) => entry.field);
 
+/** Counts a field as failed, with its line for the table. */
+type Fail = (field: Field, note: string) => void;
+
+/** Whether the draft is the kind the expectation names. */
+const checkKind = (expectation: Expectation, item: QuickAddItem, fail: Fail): void => {
+  if (expectation.kind !== undefined && item.kind !== expectation.kind) {
+    fail('kind', `kind=${item.kind}`);
+  }
+};
+
+/** Whether the title is one the expectation accepts and holds the words it must include. */
+const checkTitle = (expectation: Expectation, item: QuickAddItem, fail: Fail): void => {
+  const title = fold(item.prefill.title);
+  if (expectation.title !== undefined) {
+    const accepted =
+      typeof expectation.title === 'string' ? [expectation.title] : expectation.title;
+    if (!accepted.map(fold).includes(title)) {
+      fail('title', `title=${item.prefill.title}`);
+    }
+  }
+  if (expectation.titleIncludes !== undefined && !title.includes(fold(expectation.titleIncludes))) {
+    fail('title', `title=${item.prefill.title}`);
+  }
+};
+
+/** Whether the date falls on the expected weekday and that many days after today. */
+const checkDate = (
+  expectation: Expectation,
+  item: QuickAddItem,
+  today: string,
+  fail: Fail,
+): void => {
+  const date = Temporal.PlainDate.from(item.prefill.date);
+  if (expectation.weekday !== undefined && date.dayOfWeek !== expectation.weekday) {
+    fail('date', `weekday=${String(date.dayOfWeek)} (${item.prefill.date})`);
+  }
+  if (
+    expectation.dayOffset !== undefined &&
+    Temporal.PlainDate.from(today).until(date).days !== expectation.dayOffset
+  ) {
+    fail('date', `day=${item.prefill.date}`);
+  }
+};
+
+/**
+ * Whether the start, the end and an assumed time are the expected ones,
+ * and the draft all-day as expected: a task's time is its start, and one
+ * without a time is all-day.
+ */
+const checkTime = (expectation: Expectation, item: QuickAddItem, fail: Fail): void => {
+  const allDay = item.kind === 'event' ? item.prefill.isAllDay : item.prefill.time === undefined;
+  const start =
+    item.kind === 'event' ? (allDay ? undefined : item.prefill.startTime) : item.prefill.time;
+  const end = item.kind === 'event' && !allDay ? item.prefill.endTime : undefined;
+  if (expectation.startTime !== undefined && start !== expectation.startTime) {
+    fail('time', `start=${start ?? '-'}`);
+  }
+  if (expectation.endTime !== undefined && end !== expectation.endTime) {
+    fail('time', `end=${end ?? '-'}`);
+  }
+  const assumed = item.kind === 'event' && item.prefill.assumedTime === true;
+  if (expectation.assumedTime !== undefined && assumed !== expectation.assumedTime) {
+    fail('time', `assumed=${String(assumed)}`);
+  }
+  if (expectation.isAllDay !== undefined && allDay !== expectation.isAllDay) {
+    fail('allDay', `allDay=${String(allDay)}`);
+  }
+};
+
+/** Whether the draft has no location when none is expected, or one holding the expected text. */
+const checkLocation = (expectation: Expectation, item: QuickAddItem, fail: Fail): void => {
+  const location = item.kind === 'event' ? item.prefill.location : undefined;
+  if (expectation.location === null && location !== undefined) {
+    fail('location', `location=${location}`);
+  }
+  if (
+    typeof expectation.location === 'string' &&
+    !fold(location ?? '').includes(fold(expectation.location))
+  ) {
+    fail('location', `location=${location ?? '-'}`);
+  }
+};
+
+/**
+ * Whether the draft has no repeat when none is expected, or the expected
+ * one: its frequency and gap, and its weekdays, count and end month where
+ * the expectation names them.
+ */
+const checkRepeat = (expectation: Expectation, item: QuickAddItem, fail: Fail): void => {
+  const repeat = item.kind === 'event' ? item.prefill.recurrence : undefined;
+  if (expectation.repeat === null && repeat !== undefined) {
+    fail('repeat', `repeat=${describeRepeat(repeat)}`);
+  }
+  if (expectation.repeat) {
+    const wanted = expectation.repeat;
+    const untilMonth =
+      repeat?.untilDate === undefined ? undefined : Temporal.PlainDate.from(repeat.untilDate).month;
+    const matches =
+      repeat !== undefined &&
+      repeat.freq === wanted.freq &&
+      (repeat.interval ?? 1) === (wanted.interval ?? 1) &&
+      (wanted.byDay === undefined ||
+        sortedText((repeat.byDay ?? []).map((day) => day.weekday)) === sortedText(wanted.byDay)) &&
+      (wanted.count === undefined || repeat.count === wanted.count) &&
+      (wanted.untilMonth === undefined || untilMonth === wanted.untilMonth);
+    if (!matches) {
+      fail('repeat', `repeat=${describeRepeat(repeat)}`);
+    }
+  }
+};
+
+/** Whether the guests and the names still to choose are exactly the expected ones. */
+const checkGuests = (expectation: Expectation, draft: BenchDraft, fail: Fail): void => {
+  if (expectation.guests !== undefined) {
+    const emails = sortedText(draft.guests.map((guest) => emailKey(guest.email)));
+    const wantedEmails = sortedText((expectation.guests.emails ?? []).map(emailKey));
+    const choices = sortedText(draft.choices.map((choice) => fold(choice.name)));
+    const wantedChoices = sortedText((expectation.guests.choices ?? []).map(fold));
+    if (emails !== wantedEmails || choices !== wantedChoices) {
+      fail('guests', describeGuests(draft));
+    }
+  }
+};
+
+/** Whether the notes hold the expected text. */
+const checkNotes = (expectation: Expectation, draft: BenchDraft, fail: Fail): void => {
+  if (
+    expectation.notes !== undefined &&
+    !fold(draft.notes ?? '').includes(fold(expectation.notes))
+  ) {
+    fail('notes', `notes=${draft.notes ?? '-'}`);
+  }
+};
+
+/** Whether the notifications are exactly the expected offsets, in any order. */
+const checkReminders = (expectation: Expectation, draft: BenchDraft, fail: Fail): void => {
+  if (
+    expectation.reminders !== undefined &&
+    sortedNumbers(draft.reminders ?? []) !== sortedNumbers(expectation.reminders)
+  ) {
+    fail('reminders', `reminders=${sortedNumbers(draft.reminders ?? []) || '-'}`);
+  }
+};
+
+/**
+ * The unchanged rule: whether each part of the draft the expectation is
+ * not about reads as it did before the turn.
+ */
+const checkUnchanged = (
+  expectation: Expectation,
+  previous: BenchDraft,
+  draft: BenchDraft,
+  fail: Fail,
+): void => {
+  const covered = coveredViews(expectation);
+  const before = viewOf(previous);
+  const after = viewOf(draft);
+  for (const key of VIEW_KEYS) {
+    if (before[key] !== after[key] && !covered.has(key)) {
+      fail('unchanged', `changed ${key}: ${after[key] || '-'}`);
+    }
+  }
+};
+
 /**
  * Which of the expectation the outcome meets. A turn after the first is
  * also held to the unchanged rule: every part of the draft the
@@ -297,116 +461,17 @@ export const check = (
     notes.push(note);
   };
 
-  if (expectation.kind !== undefined && item.kind !== expectation.kind) {
-    fail('kind', `kind=${item.kind}`);
-  }
-
-  const title = fold(item.prefill.title);
-  if (expectation.title !== undefined) {
-    const accepted =
-      typeof expectation.title === 'string' ? [expectation.title] : expectation.title;
-    if (!accepted.map(fold).includes(title)) {
-      fail('title', `title=${item.prefill.title}`);
-    }
-  }
-  if (expectation.titleIncludes !== undefined && !title.includes(fold(expectation.titleIncludes))) {
-    fail('title', `title=${item.prefill.title}`);
-  }
-
-  const date = Temporal.PlainDate.from(item.prefill.date);
-  if (expectation.weekday !== undefined && date.dayOfWeek !== expectation.weekday) {
-    fail('date', `weekday=${String(date.dayOfWeek)} (${item.prefill.date})`);
-  }
-  if (
-    expectation.dayOffset !== undefined &&
-    Temporal.PlainDate.from(today).until(date).days !== expectation.dayOffset
-  ) {
-    fail('date', `day=${item.prefill.date}`);
-  }
-
-  const allDay = item.kind === 'event' ? item.prefill.isAllDay : item.prefill.time === undefined;
-  const start =
-    item.kind === 'event' ? (allDay ? undefined : item.prefill.startTime) : item.prefill.time;
-  const end = item.kind === 'event' && !allDay ? item.prefill.endTime : undefined;
-  if (expectation.startTime !== undefined && start !== expectation.startTime) {
-    fail('time', `start=${start ?? '-'}`);
-  }
-  if (expectation.endTime !== undefined && end !== expectation.endTime) {
-    fail('time', `end=${end ?? '-'}`);
-  }
-  const assumed = item.kind === 'event' && item.prefill.assumedTime === true;
-  if (expectation.assumedTime !== undefined && assumed !== expectation.assumedTime) {
-    fail('time', `assumed=${String(assumed)}`);
-  }
-  if (expectation.isAllDay !== undefined && allDay !== expectation.isAllDay) {
-    fail('allDay', `allDay=${String(allDay)}`);
-  }
-
-  const location = item.kind === 'event' ? item.prefill.location : undefined;
-  if (expectation.location === null && location !== undefined) {
-    fail('location', `location=${location}`);
-  }
-  if (
-    typeof expectation.location === 'string' &&
-    !fold(location ?? '').includes(fold(expectation.location))
-  ) {
-    fail('location', `location=${location ?? '-'}`);
-  }
-
-  const repeat = item.kind === 'event' ? item.prefill.recurrence : undefined;
-  if (expectation.repeat === null && repeat !== undefined) {
-    fail('repeat', `repeat=${describeRepeat(repeat)}`);
-  }
-  if (expectation.repeat) {
-    const wanted = expectation.repeat;
-    const untilMonth =
-      repeat?.untilDate === undefined ? undefined : Temporal.PlainDate.from(repeat.untilDate).month;
-    const matches =
-      repeat !== undefined &&
-      repeat.freq === wanted.freq &&
-      (repeat.interval ?? 1) === (wanted.interval ?? 1) &&
-      (wanted.byDay === undefined ||
-        sortedText((repeat.byDay ?? []).map((day) => day.weekday)) === sortedText(wanted.byDay)) &&
-      (wanted.count === undefined || repeat.count === wanted.count) &&
-      (wanted.untilMonth === undefined || untilMonth === wanted.untilMonth);
-    if (!matches) {
-      fail('repeat', `repeat=${describeRepeat(repeat)}`);
-    }
-  }
-
-  if (expectation.guests !== undefined) {
-    const emails = sortedText(draft.guests.map((guest) => emailKey(guest.email)));
-    const wantedEmails = sortedText((expectation.guests.emails ?? []).map(emailKey));
-    const choices = sortedText(draft.choices.map((choice) => fold(choice.name)));
-    const wantedChoices = sortedText((expectation.guests.choices ?? []).map(fold));
-    if (emails !== wantedEmails || choices !== wantedChoices) {
-      fail('guests', describeGuests(draft));
-    }
-  }
-
-  if (
-    expectation.notes !== undefined &&
-    !fold(draft.notes ?? '').includes(fold(expectation.notes))
-  ) {
-    fail('notes', `notes=${draft.notes ?? '-'}`);
-  }
-
-  if (
-    expectation.reminders !== undefined &&
-    sortedNumbers(draft.reminders ?? []) !== sortedNumbers(expectation.reminders)
-  ) {
-    fail('reminders', `reminders=${sortedNumbers(draft.reminders ?? []) || '-'}`);
-  }
-
+  checkKind(expectation, item, fail);
+  checkTitle(expectation, item, fail);
+  checkDate(expectation, item, today, fail);
+  checkTime(expectation, item, fail);
+  checkLocation(expectation, item, fail);
+  checkRepeat(expectation, item, fail);
+  checkGuests(expectation, draft, fail);
+  checkNotes(expectation, draft, fail);
+  checkReminders(expectation, draft, fail);
   if (previous !== undefined) {
-    const covered = coveredViews(expectation);
-    const before = viewOf(previous);
-    const after = viewOf(draft);
-    for (const key of VIEW_KEYS) {
-      if (before[key] !== after[key] && !covered.has(key)) {
-        fail('unchanged', `changed ${key}: ${after[key] || '-'}`);
-      }
-    }
+    checkUnchanged(expectation, previous, draft, fail);
   }
 
   return { checked, failed: [...failed], notes };
