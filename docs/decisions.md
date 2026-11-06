@@ -1109,6 +1109,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   occurrence was detached elsewhere), a second wide read to tell gone from
   out of reach. Open: such an occurrence cannot be edited or deleted here;
   a detached occurrence's real id is `<series>/RID=<slot>`, not the series id.
+- **One identity per Apple series** (2026-11-05, #292) — EventKit names an
+  occurrence changed on its own `<series id>/RID=<n>`; the app took that
+  for a series id, so "All events" from one wrote only it, search listed
+  it twice, and its guests did not gate an agent's series write. A
+  TypeScript layer under both clients names every occurrence by series
+  and slot and writes a changed one by its own id, at any distance: #289's
+  open point. Rejected: the Swift bridge (EventKit offers it no better
+  lookup; a native build, no unit tests), computing the id from the slot
+  (`<n>` goes out of date). Open: one moved over 31 days whose id is out
+  of date stays "not found"; iCloud and Exchange sources are not probed.
 
 ## AI
 

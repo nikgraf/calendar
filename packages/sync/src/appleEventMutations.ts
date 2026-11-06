@@ -1,6 +1,7 @@
 import {
   type AppleCalendarClientShape,
   type AppleCalendarError,
+  appleSeriesId,
   draftToEventWrite,
   type EventWrite,
   isNotFound,
@@ -71,7 +72,9 @@ const ruleWrite = (
  * Recurring scopes map onto EventKit's spans: `instance` saves one
  * occurrence with `thisEvent` (EventKit detaches it), `following` saves
  * the occurrence with `futureEvents` (EventKit splits the series there),
- * `series` saves the first occurrence with `futureEvents`.
+ * `series` saves the series itself — named by its id alone — with
+ * `futureEvents`. The client finds an occurrence by its series and slot,
+ * changed on its own or not (`withSeriesIdentity`).
  */
 export interface AppleEventMutationDeps {
   readonly accountRepo: AccountRepoShape;
@@ -135,7 +138,8 @@ const rejectUnsupportedReminders = (reminders: EventReminders | undefined) =>
 /**
  * A delete of something EventKit no longer has has nothing left to do.
  * True of a delete by id. A delete by slot also answers "not found" for an
- * occurrence that is still there but out of the bridge's reach, so it is
+ * occurrence that is still there but that the client cannot find (changed
+ * on its own, its identifier out of date, far from its slot), so it is
  * wrapped only after a read found the occurrence (`deleteRecurring`,
  * `deleteFoundOccurrence`).
  */
@@ -206,14 +210,15 @@ export const makeAppleEventMutations = (deps: AppleEventMutationDeps): AppleEven
 
     deleteRecurring: ({ accountId, masterId, originalStartUtc, scope }) =>
       (scope === 'series'
-        ? // The series identifier alone resolves to its first occurrence.
-          goneIsDone(client.delete({ ref: { id: masterId }, span: 'futureEvents' }))
+        ? // The series' identifier alone names the series: EventKit answers
+          // its first occurrence as the rule draws it, and removing that with
+          // futureEvents takes every occurrence, the changed ones included.
+          goneIsDone(client.delete({ ref: { id: appleSeriesId(masterId) }, span: 'futureEvents' }))
         : Effect.gen(function* () {
-            // The occurrence is named by its slot, and the bridge finds it
-            // only APPLE_WRITE_REACH_MS around that: one moved further on its
-            // own is still drawn, but the delete would answer "not found" —
-            // which must not read as "already gone". Look first, as far as
-            // the delete does; a miss is refused, whatever its reason.
+            // A delete by slot answers "not found" for an occurrence that is
+            // gone and for one the client cannot find although it is still
+            // drawn — which must not read as "already gone". Look first, as
+            // far as the delete does; a miss is refused, whatever its reason.
             const ref = { id: masterId, originalStartUtc };
             if ((yield* findAppleOccurrence(client, ref)) === undefined) {
               return yield* Effect.fail(new EventNotFoundError({ eventId: masterId }));
@@ -272,7 +277,7 @@ export const makeAppleEventMutations = (deps: AppleEventMutationDeps): AppleEven
         // A rule edit needs the series too: its kind and zone shape the rules.
         const series =
           scope === 'series' || changes.isAllDay !== undefined || changes.recurrence !== undefined
-            ? yield* client.series({ id: masterId })
+            ? yield* client.series({ id: appleSeriesId(masterId) })
             : undefined;
         if (changes.isAllDay !== undefined && changes.isAllDay !== series?.first.isAllDay) {
           return yield* Effect.fail(new RecurringAllDaySwitchError({ eventId: masterId }));
@@ -286,7 +291,7 @@ export const makeAppleEventMutations = (deps: AppleEventMutationDeps): AppleEven
           });
           return;
         }
-        // The whole series: write the first occurrence with futureEvents.
+        // The whole series: write the series itself with futureEvents.
         // A time edit made on some occurrence shifts the series start by
         // that occurrence's wall-clock delta (DST-safe), exactly like the
         // Google series path; all-day series take non-time fields only (the
@@ -294,7 +299,6 @@ export const makeAppleEventMutations = (deps: AppleEventMutationDeps): AppleEven
         // an EventKit slot is a device-local midnight, so only they know the
         // date the occurrence showed).
         const first = series.first;
-        const firstSlot = first.occurrenceStartUtc ?? first.startUtc;
         const {
           endDate: _endDate,
           endUtc,
@@ -310,9 +314,12 @@ export const makeAppleEventMutations = (deps: AppleEventMutationDeps): AppleEven
           const duration = endUtc === undefined ? first.endUtc - first.startUtc : endUtc - startUtc;
           write = { ...write, endUtc: shifted + duration, startUtc: shifted };
         }
+        // By the series' id alone, never by the first occurrence's slot:
+        // that occurrence may have been changed or deleted on its own, and
+        // the id still answers the series.
         yield* client.update({
           changes: write,
-          ref: { id: masterId, originalStartUtc: firstSlot },
+          ref: { id: first.id },
           span: 'futureEvents' satisfies Span,
         });
       }).pipe(thenInvalidate, flagAccessLoss(accountId)),

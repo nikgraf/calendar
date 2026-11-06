@@ -1,7 +1,7 @@
 import {
-  APPLE_WRITE_REACH_MS,
   AppleCalendarClient,
   type AppleCalendarError,
+  appleSeriesId,
   isNotFound,
   mapAppleEvent,
 } from '@calendar/apple-calendar';
@@ -199,8 +199,9 @@ export interface ResolvedEvent {
   /**
    * For an occurrence: the series' live exceptions — occurrences changed
    * on their own. A series-wide or "following" write rewrites or cancels
-   * them too, so their guests count. Apple: those EventKit returns within
-   * the searched window around the slot.
+   * them too, so their guests count. Apple: read only for such a write,
+   * those EventKit returns within the searched window around the slot —
+   * and the occurrence itself when it was changed, wherever it sits.
    */
   readonly exceptions?: ReadonlyArray<EventRecord>;
   readonly granted: GrantedCalendar;
@@ -217,9 +218,7 @@ const eventNotFound = new AgentNotFoundError({ what: 'Event' });
 
 /**
  * How far from the slot a series-wide or "following" write looks for the
- * series' other exceptions (EventKit only answers ranges). One occurrence
- * on its own is looked for `APPLE_WRITE_REACH_MS` around its slot: as far
- * as the write that names it by that slot finds it.
+ * series' other exceptions (EventKit only answers ranges).
  */
 const APPLE_SERIES_WINDOW_MS = 400 * 24 * 60 * 60 * 1000;
 
@@ -280,15 +279,17 @@ const ruleProduces = (master: EventRecord, originalStartUtc: number): boolean =>
  * An occurrence ref must name a real occurrence: a slot the series does
  * not have (a made-up one, or one that was deleted) is not found either,
  * so a write can neither invent an exception nor answer "done" for
- * nothing. For the same reason an Apple occurrence must sit where the
- * write finds it: EventKit keeps an occurrence moved any distance from
- * its slot, but a write to it alone or to it and the following ones names
- * it by that slot, and the bridge looks `APPLE_WRITE_REACH_MS` around it.
- * Further off the update would fail and the delete would find nothing to
- * delete — after the user may have approved it. A series-wide write does
- * not go by this occurrence's slot (the delete names the series by its
- * id, the update writes the series' first occurrence), so where this one
- * sits does not matter to it.
+ * nothing. For the same reason an Apple occurrence must be one the write
+ * finds: a write to it alone or to it and the following ones names it by
+ * its slot, and the client finds it there whether the rule draws it or it
+ * was changed on its own (`AppleCalendarClientShape.occurrence` — any
+ * distance from its slot, except one whose EventKit identifier no longer
+ * names that slot and that sits over 31 days off). What it does not find
+ * is not found here: the update would fail and the delete would have
+ * nothing to delete — after the user may have approved it. A series-wide
+ * write does not go by this occurrence's slot (it names the series by its
+ * id), so for it the occurrence also counts where the wider read for the
+ * series' exceptions returns it.
  */
 export const resolveEvent = (
   directory: Directory,
@@ -319,7 +320,10 @@ export const resolveEvent = (
         isNotFound(error)
           ? eventNotFound
           : new AgentFailedError({ message: String(error), tag: error._tag });
-      const series = yield* client.series({ id }).pipe(Effect.mapError(appleFailure));
+      // An occurrence is named by its series: a ref made before that held
+      // the identifier EventKit gives an occurrence changed on its own.
+      const seriesId = ref.kind === 'event' ? id : appleSeriesId(id);
+      const series = yield* client.series({ id: seriesId }).pipe(Effect.mapError(appleFailure));
       if (series.first.calendarId !== ref.calendarId) {
         return yield* Effect.fail(eventNotFound);
       }
@@ -329,31 +333,42 @@ export const resolveEvent = (
         return { base: ownTimes(first), granted, record: first, ref };
       }
       // The occurrence as EventKit has it now — one that was moved or
-      // renamed on its own differs from the series' first occurrence.
+      // renamed on its own differs from the series' first occurrence —
+      // where the write that names it by its slot finds it.
       const scope = options.scope ?? 'instance';
-      const slot = { id, originalStartUtc: ref.originalStartUtc };
-      const reach = scope === 'instance' ? APPLE_WRITE_REACH_MS : APPLE_SERIES_WINDOW_MS;
-      const nearby = yield* client
-        .events({
-          endUtc: ref.originalStartUtc + reach,
-          startUtc: ref.originalStartUtc - reach,
-        })
-        .pipe(Effect.mapError(appleFailure));
-      // "Following" names the occurrence by its slot too: among the wider
-      // read it counts only where the write's own lookup finds it.
+      const slot = { id: seriesId, originalStartUtc: ref.originalStartUtc };
+      const reached = yield* findAppleOccurrence(client, slot).pipe(Effect.mapError(appleFailure));
+      // A write beyond this occurrence reaches the series' other exceptions.
+      const nearby =
+        scope === 'instance'
+          ? []
+          : yield* client
+              .events({
+                endUtc: ref.originalStartUtc + APPLE_SERIES_WINDOW_MS,
+                startUtc: ref.originalStartUtc - APPLE_SERIES_WINDOW_MS,
+              })
+              .pipe(Effect.mapError(appleFailure));
       const found =
-        scope === 'following'
-          ? yield* findAppleOccurrence(client, slot).pipe(Effect.mapError(appleFailure))
-          : nearby.find((event) => isAppleOccurrence(event, slot));
+        reached ??
+        (scope === 'series' ? nearby.find((event) => isAppleOccurrence(event, slot)) : undefined);
       if (!found || found.calendarId !== ref.calendarId) {
         return yield* Effect.fail(eventNotFound);
       }
       const occurrence = mapAppleEvent(found, context);
+      const changed = nearby.filter(
+        (event) => event.id === seriesId && event.isDetached && event.status !== 'cancelled',
+      );
+      // The named occurrence is one of the series' exceptions wherever it
+      // sits: found by its own identifier, it can lie outside that read,
+      // and a series-wide write counts guests by this list.
+      const exceptions =
+        found.isDetached &&
+        !changed.some((event) => event.occurrenceStartUtc === found.occurrenceStartUtc)
+          ? [...changed, found]
+          : changed;
       return {
         base: ownTimes(occurrence),
-        exceptions: nearby
-          .filter((event) => event.id === id && event.isDetached && event.status !== 'cancelled')
-          .map((event) => mapAppleEvent(event, context)),
+        exceptions: exceptions.map((event) => mapAppleEvent(event, context)),
         granted,
         record: occurrence,
         ref,

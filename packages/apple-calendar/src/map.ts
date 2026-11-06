@@ -43,10 +43,11 @@ export const mapAppleCalendar = (
 
 /**
  * The record id of an Apple event. A single event keeps EventKit's
- * `eventIdentifier`; an occurrence of a series is `<id>__<occurrence
+ * `eventIdentifier`; an occurrence of a series is `<series id>__<occurrence
  * slot>` — the same shape assembleWindow gives Google occurrences — so
- * each occurrence is distinct in the UI and stable when it is moved on
- * its own (the slot, not its current start, names it).
+ * each occurrence is distinct in the UI and stable when it is moved or
+ * edited on its own: the client names it by its series either way, and
+ * the slot, not its current start, tells it apart.
  */
 export const appleEventRecordId = (event: {
   readonly id: string;

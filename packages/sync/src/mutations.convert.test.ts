@@ -1,4 +1,8 @@
-import { type FakeEventSeed, makeFakeAppleCalendarClient } from '@calendar/apple-calendar';
+import {
+  type FakeEventSeed,
+  makeFakeAppleCalendarClient,
+  withSeriesIdentity,
+} from '@calendar/apple-calendar';
 import {
   Account,
   APPLE_CALENDAR_ACCOUNT_ID,
@@ -734,44 +738,53 @@ describe('convertEventToTask', () => {
   });
 
   it.effect(
-    'an Apple occurrence moved further than a delete by its slot reaches is refused, not copied',
+    'an Apple occurrence moved far from its slot converts alone; one that cannot be found is refused, not copied',
     () => {
       const apple = appleFake([appleSeries]);
       const reminders = remindersFake();
       return Effect.gen(function* () {
         yield* seed;
         const slot = base + WEEK;
-        // Forty days off its slot: the views still draw it, but the bridge
-        // looks 31 days either side of a slot, and a delete that finds
-        // nothing counts as done — the task would be a second copy.
-        yield* apple.client.update({
-          changes: { endUtc: slot + 40 * 24 * HOUR + HOUR, startUtc: slot + 40 * 24 * HOUR },
-          ref: { id: 'ek-series', originalStartUtc: slot },
-          span: 'thisEvent',
-        });
-        const asked: Array<{ readonly endUtc: number; readonly startUtc: number }> = [];
-        const found = yield* findAppleOccurrence(
-          {
-            events: (range) => {
-              asked.push(range);
-              return apple.client.events(range);
-            },
-          },
-          { id: 'ek-series', originalStartUtc: slot },
-        );
-        expect(found).toBeUndefined();
-        expect(asked).toEqual([{ endUtc: slot + 31 * 24 * HOUR, startUtc: slot - 31 * 24 * HOUR }]);
+        const other = base + 2 * WEEK;
+        // Forty days off their slots: the views draw them where they sit,
+        // and EventKit knows each by an identifier of its own.
+        for (const at of [slot, other]) {
+          yield* apple.client.update({
+            changes: { endUtc: at + 40 * 24 * HOUR + HOUR, startUtc: at + 40 * 24 * HOUR },
+            ref: { id: 'ek-series', originalStartUtc: at },
+            span: 'thisEvent',
+          });
+        }
+        // One of those identifiers went out of date (the series' time
+        // changed since): nothing names that occurrence by its slot now,
+        // and a delete that finds nothing must not count as done — the
+        // task would be a second copy.
+        const series = apple.state.series.get('ek-series')!;
+        series.detached.set(other, { ...series.detached.get(other)!, id: 'ek-series/RID=1' });
+        expect(
+          yield* findAppleOccurrence(apple.client, { id: 'ek-series', originalStartUtc: other }),
+        ).toBeUndefined();
         const refused = yield* Effect.flip(
           toTask(
             [APPLE_CAL, 'ek-home', 'ek-series'],
             [APPLE_REM, 'list-a'],
             { dueDate: day.toString(), title: 'Run' },
-            slot,
+            other,
           ),
         );
         expect(refused._tag).toBe('EventNotFoundError');
         expect(reminders.state.reminders.size).toBe(1);
-        expect(apple.state.series.get('ek-series')?.detached.has(slot)).toBe(true);
+        expect(series.detached.has(other)).toBe(true);
+        // The other one is found by its own identifier and leaves the series.
+        yield* toTask(
+          [APPLE_CAL, 'ek-home', 'ek-series'],
+          [APPLE_REM, 'list-a'],
+          { dueDate: day.toString(), title: 'Run' },
+          slot,
+        );
+        expect(reminders.state.reminders.size).toBe(2);
+        expect(series.detached.has(slot)).toBe(false);
+        expect(series.deleted.has(slot)).toBe(true);
       }).pipe(noYield, Effect.provide(testLayer(apple, reminders.client)));
     },
   );
@@ -786,19 +799,21 @@ describe('convertEventToTask', () => {
       let reads = 0;
       const raced = {
         ...apple,
-        client: {
-          ...apple.client,
+        client: withSeriesIdentity({
+          ...apple.bridge,
           events: (range: { readonly endUtc: number; readonly startUtc: number }) =>
-            Effect.tap(apple.client.events(range), () => {
+            Effect.tap(apple.bridge.events(range), () => {
               reads += 1;
-              return Effect.ignore(
-                apple.client.delete({
-                  ref: { id: 'ek-series', originalStartUtc: slot },
-                  span: 'thisEvent',
-                }),
-              );
+              return reads > 1
+                ? Effect.void
+                : Effect.ignore(
+                    apple.bridge.delete({
+                      ref: { id: 'ek-series', originalStartUtc: slot },
+                      span: 'thisEvent',
+                    }),
+                  );
             }),
-        },
+        }),
       };
       return Effect.gen(function* () {
         yield* seed;
@@ -813,9 +828,11 @@ describe('convertEventToTask', () => {
         expect(created.title).toBe('Run');
         expect(reminders.state.reminders.size).toBe(2);
         expect(apple.state.series.get('ek-series')?.deleted.has(slot)).toBe(true);
-        // One read decides the conversion; its delete does not look again,
-        // and is still sent (Calendar.app's, then the conversion's own).
-        expect(reads).toBe(1);
+        // One read decides the conversion. Its delete is still sent
+        // (Calendar.app's, then the conversion's own), finds nothing, looks
+        // once for an occurrence changed on its own meanwhile, and is done:
+        // a miss after that read is never a refusal.
+        expect(reads).toBe(2);
         expect(apple.state.calls.filter((call) => call === 'delete')).toHaveLength(2);
       }).pipe(noYield, Effect.provide(testLayer(raced, reminders.client)));
     },

@@ -443,7 +443,7 @@ describe('recurring events', () => {
   );
 
   it.effect(
-    'Apple: an occurrence moved further than a write by its slot reaches is not found, never "done"',
+    'Apple: an occurrence moved far from its slot is listed under its series and written where it sits',
     () => {
       const world = makeWorld({ appleEvents: [appleDailySeries] });
       return Effect.gen(function* () {
@@ -451,7 +451,8 @@ describe('recurring events', () => {
         const day2 = appleSeriesStart + DAY;
         const ref = refs.occurrence('ek-home', 'ek-walk', day2, APPLE_CALENDAR_ACCOUNT_ID);
         // Forty days on: EventKit keeps one occurrence wherever it is put,
-        // but finds it by its slot only 31 days either side.
+        // under an identifier of its own — further off than the bridge
+        // looks for a slot.
         const movedTo = day2 + 40 * DAY;
         yield* callTool(agent, 'update_event', {
           end: iso(movedTo + HOUR),
@@ -459,7 +460,55 @@ describe('recurring events', () => {
           start: iso(movedTo),
         });
         const moved = () => world.apple.state.series.get('ek-walk')?.detached.get(day2);
-        expect(moved()?.startUtc).toBe(movedTo);
+        expect(moved()).toMatchObject({ startUtc: movedTo });
+        expect(moved()?.id).toMatch(/^ek-walk\/RID=\d+$/u);
+        // A read lists it under the ref of its series and slot.
+        const listed = yield* eventsBetween(agent, movedTo - HOUR, movedTo + 2 * HOUR);
+        expect(listed.map((event) => event.ref)).toEqual([ref]);
+
+        // On its own it is edited as it is now …
+        yield* callTool(agent, 'update_event', { ref, title: 'Far walk' });
+        expect(moved()).toMatchObject({ startUtc: movedTo, title: 'Far walk' });
+        // … an approval names it …
+        const asker = yield* stored({
+          calendars: [grantCalendar('ek-home', 'ask', APPLE_CALENDAR_ACCOUNT_ID)],
+        });
+        const asked = yield* watchApprovals;
+        yield* Effect.forkChild(callTool(asker, 'delete_event', { ref }));
+        expect((yield* untilAsked(asked)).summary.title).toBe('Delete event “Far walk”');
+        // … a series-wide change from it reaches the series, not just it …
+        const seriesCount = world.apple.state.series.size;
+        yield* callTool(agent, 'update_event', { location: 'Park', ref, scope: 'series' });
+        expect(world.apple.state.series.get('ek-walk')?.event.location).toBe('Park');
+        expect(world.apple.state.series.size).toBe(seriesCount);
+        // … and its delete removes it.
+        expect(yield* callTool(agent, 'delete_event', { ref })).toEqual({ status: 'done' });
+        expect(moved()).toBeUndefined();
+        expect(world.apple.state.series.get('ek-walk')?.deleted.has(day2)).toBe(true);
+      }).pipe(Effect.provide(world.layer));
+    },
+  );
+
+  it.effect(
+    'Apple: an occurrence nothing names by its slot any more is not found, never "done"',
+    () => {
+      const world = makeWorld({ appleEvents: [appleDailySeries] });
+      return Effect.gen(function* () {
+        const agent = writer();
+        const day2 = appleSeriesStart + DAY;
+        const ref = refs.occurrence('ek-home', 'ek-walk', day2, APPLE_CALENDAR_ACCOUNT_ID);
+        const movedTo = day2 + 40 * DAY;
+        yield* callTool(agent, 'update_event', {
+          end: iso(movedTo + HOUR),
+          ref,
+          start: iso(movedTo),
+        });
+        // EventKit's identifier for it names a slot the series no longer
+        // has (its time was changed since), and it sits further off than a
+        // read around its slot looks: no write by its slot finds it.
+        const walk = world.apple.state.series.get('ek-walk')!;
+        walk.detached.set(day2, { ...walk.detached.get(day2)!, id: 'ek-walk/RID=1' });
+        const moved = () => walk.detached.get(day2);
         // A read still lists it, under the ref of its slot.
         const listed = yield* eventsBetween(agent, movedTo - HOUR, movedTo + 2 * HOUR);
         expect(listed.map((event) => event.ref)).toEqual([ref]);
@@ -467,8 +516,6 @@ describe('recurring events', () => {
         const writes = () =>
           world.apple.state.calls.filter((call) => call === 'update' || call === 'delete').length;
         const before = writes();
-        // On its own or with the following ones, the write names the
-        // occurrence by its slot — and would find nothing.
         for (const scope of ['instance', 'following'] as const) {
           expect((yield* failureOf(callTool(agent, 'delete_event', { ref, scope })))._tag).toBe(
             'NotFound',
@@ -680,6 +727,43 @@ describe('guests across a series', () => {
       expect(walk.deleted.has(day(1))).toBe(true);
     }).pipe(Effect.provide(world.layer));
   });
+
+  it.effect(
+    'Apple: the guests of the named occurrence gate a series write wherever it was moved',
+    () => {
+      const world = makeWorld({ appleEvents: [appleDailySeries] });
+      return Effect.gen(function* () {
+        const agent = writer(); // guests: off
+        const ref = refs.occurrence('ek-home', 'ek-walk', day(2), APPLE_CALENDAR_ACCOUNT_ID);
+        // Day 3 was moved 500 days on: found by its own identifier, but
+        // further off than the read that collects the series' exceptions.
+        const movedTo = day(2) + 500 * DAY;
+        yield* callTool(agent, 'update_event', {
+          end: iso(movedTo + HOUR),
+          ref,
+          start: iso(movedTo),
+        });
+        const walk = world.apple.state.series.get('ek-walk')!;
+        walk.detached.set(day(2), {
+          ...walk.detached.get(day(2))!,
+          attendees: [
+            { email: 'ben@example.com', isOrganizer: false, isSelf: false, status: 'accepted' },
+          ],
+        });
+        for (const scope of ['instance', 'following', 'series'] as const) {
+          expect(yield* failureOf(callTool(agent, 'delete_event', { ref, scope }))).toMatchObject({
+            _tag: 'PermissionDenied',
+            reason: 'guests',
+          });
+          expect(
+            yield* failureOf(callTool(agent, 'update_event', { ref, scope, title: 'Stroll' })),
+          ).toMatchObject({ _tag: 'PermissionDenied', reason: 'guests' });
+        }
+        expect(world.apple.state.series.has('ek-walk')).toBe(true);
+        expect(walk.detached.get(day(2))?.title).toBe('Evening walk');
+      }).pipe(Effect.provide(world.layer));
+    },
+  );
 });
 
 describe('grants, again', () => {

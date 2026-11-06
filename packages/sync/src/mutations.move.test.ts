@@ -804,6 +804,44 @@ describe('moveEvent across accounts and providers', () => {
     }).pipe(noYield, Effect.provide(testLayer(recordingGoogle([]), apple)));
   });
 
+  it.effect(
+    'an Apple series to Google: the preview counts its changed occurrences, the move does not look for them',
+    () => {
+      const apple = appleFake();
+      const WEEK = 7 * 24 * HOUR;
+      return Effect.gen(function* () {
+        yield* seed();
+        const mutations = yield* EventMutations;
+        // Two occurrences changed on their own; the organizer cancelled one of them.
+        for (const slot of [base + WEEK, base + 2 * WEEK]) {
+          yield* apple.client.update({
+            changes: { title: 'Standup (late)' },
+            ref: { id: 'ek-series', originalStartUtc: slot },
+            span: 'thisEvent',
+          });
+        }
+        const series = apple.state.series.get('ek-series')!;
+        series.detached.set(base + 2 * WEEK, {
+          ...series.detached.get(base + 2 * WEEK)!,
+          status: 'cancelled',
+        });
+        const params = move(
+          [APPLE_CALENDAR_ACCOUNT_ID, 'ek-home', 'ek-series'],
+          ['acc-1', 'cal-2'],
+        );
+        const reads = () => apple.state.calls.filter((call) => call === 'events').length;
+        const before = reads();
+        expect(yield* mutations.previewMove(params)).toMatchObject({ modifiedOccurrences: 1 });
+        // The count is one range read, and only the preview pays for it.
+        expect(reads()).toBe(before + 1);
+        yield* mutations.moveEvent(params);
+        expect(reads()).toBe(before + 1);
+        expect(apple.state.series.has('ek-series')).toBe(false);
+        expect((yield* queued).map((op) => op.payload?.title)).toEqual(['Standup']);
+      }).pipe(noYield, Effect.provide(testLayer(recordingGoogle([]), apple)));
+    },
+  );
+
   it.effect('Apple → Apple re-homes the whole series inside EventKit', () => {
     const apple = appleFake();
     return Effect.gen(function* () {

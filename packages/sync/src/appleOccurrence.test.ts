@@ -3,9 +3,9 @@ import { APPLE_WRITE_REACH_MS } from '@calendar/apple-calendar';
 import { describe, expect, it } from 'vite-plus/test';
 
 describe('APPLE_WRITE_REACH_MS', () => {
-  // A read that decides a write must not reach further than the bridge's
-  // own lookup: an occurrence it found beyond that would answer notFound
-  // to the delete, and that would count as "already gone".
+  // The fake looks for a slot as far as the bridge does, and the client
+  // reads as far around a slot for an occurrence its identifier no longer
+  // names: one number, the bridge's.
   it("is the window of the bridge's lookup by slot", () => {
     const swift = readFileSync(
       new URL('../../apple-calendar/swift/AppleCalendarBridge.swift', import.meta.url),

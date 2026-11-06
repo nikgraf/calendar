@@ -1,6 +1,7 @@
 import { Effect, Exit } from 'effect';
 import { describe, expect, it } from 'vite-plus/test';
-import { isNotFound, makeAppleCalendarClient } from './client.ts';
+import { makeAppleCalendarClient } from './client.ts';
+import { isNotFound } from './errors.ts';
 
 const failing = (message: string) =>
   makeAppleCalendarClient(() => Promise.reject(new Error(message)));

@@ -1,7 +1,9 @@
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
+import { makeAppleCalendarClient } from '@calendar/apple-calendar';
 import { APPLE_CALENDAR_ACCOUNT_ID } from '@calendar/core';
+import { Effect } from 'effect';
 import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
 import { type App, launchApp, readAccounts, readCalendars } from './harness.ts';
 
@@ -54,8 +56,31 @@ const at = (hour: number): number => {
 };
 
 interface EventsResult {
-  readonly events: ReadonlyArray<{ readonly id: string; readonly title: string }>;
+  readonly events: ReadonlyArray<{
+    readonly id: string;
+    readonly isDetached: boolean;
+    readonly location?: string;
+    readonly occurrenceStartUtc?: number;
+    readonly startUtc: number;
+    readonly title: string;
+  }>;
 }
+
+const HOUR = 3_600_000;
+const DAY = 24 * HOUR;
+
+/**
+ * The client the app uses, over one fresh helper per call. Like the app's
+ * transport it hands the bridge's own message on verbatim: the client
+ * reads "notFound:" off its start.
+ */
+const client = makeAppleCalendarClient((method, params) =>
+  callHelper(method, params ?? {}).catch((error: unknown) => {
+    throw new Error(
+      String(error instanceof Error ? error.message : error).replace(`helper ${method}: `, ''),
+    );
+  }),
+);
 const todaysEvents = async () =>
   ((await callHelper('calendar.events', { endUtc: at(24), startUtc: at(0) })) as EventsResult)
     .events;
@@ -124,4 +149,114 @@ describe.skipIf(!REAL)('Apple Calendar through the real helper', () => {
       .toBe(false);
     await cdp.waitFor(`!document.querySelector('[title^="Solunivo ci event"]')`, 15_000);
   });
+
+  // No window involved: the identifiers are EventKit's, and this is the
+  // one place they are read on a Mac (docs/google-sync-and-testing.md →
+  // Apple Calendar; the iOS side was probed on the simulator).
+  it('writes an occurrence changed on its own by its series and slot, at any distance', async () => {
+    const writable = (await readCalendars(app.userDataDir)).find(
+      (calendar) => calendar.accessRole === 'owner',
+    );
+    expect(writable, 'a writable calendar').toBeDefined();
+    // Next week, clear of the event above.
+    const start = at(9) + 7 * DAY;
+    const series = await Effect.runPromise(
+      client.create({
+        calendarId: writable!.id,
+        event: {
+          endUtc: start + HOUR,
+          isAllDay: false,
+          recurrence: [{ count: 4, freq: 'weekly', interval: 1 }],
+          startUtc: start,
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          title: 'Solunivo ci series',
+        },
+      }),
+    );
+    created.push(series.id);
+    const range = { endUtc: start + 120 * DAY, startUtc: start - DAY };
+    /** The series' occurrences as the bridge itself answers them, by slot. */
+    const raw = async () =>
+      ((await callHelper('calendar.events', range)) as EventsResult).events
+        .filter((event) => event.title.startsWith('Solunivo ci series'))
+        .sort((a, b) => (a.occurrenceStartUtc ?? 0) - (b.occurrenceStartUtc ?? 0));
+    const slots = (await raw()).map((event) => event.occurrenceStartUtc);
+    expect(slots).toHaveLength(4);
+    const slot = slots[1]!;
+    const ref = { id: series.id, originalStartUtc: slot };
+
+    // Forty days on, further than the bridge looks for a slot.
+    const moved = await Effect.runPromise(
+      client.update({
+        changes: { endUtc: slot + 40 * DAY + HOUR, startUtc: slot + 40 * DAY },
+        ref,
+        span: 'thisEvent',
+      }),
+    );
+    expect(moved).toMatchObject({ id: series.id, isDetached: true, occurrenceStartUtc: slot });
+    // EventKit names it by an identifier of its own; the series id with
+    // the slot no longer finds it.
+    const own = (await raw()).find((event) => event.occurrenceStartUtc === slot)?.id;
+    expect(own?.startsWith(`${series.id}/RID=`), `own identifier: ${String(own)}`).toBe(true);
+    await expect(
+      callHelper('calendar.update', {
+        changes: { title: 'x' },
+        id: series.id,
+        originalStartUtc: slot,
+        span: 'thisEvent',
+      }),
+    ).rejects.toThrow(/notFound/u);
+
+    // By series and slot it is read, edited and deleted where it sits.
+    await Effect.runPromise(
+      client.update({ changes: { title: 'Solunivo ci series moved' }, ref, span: 'thisEvent' }),
+    );
+    expect(await Effect.runPromise(client.occurrence(ref))).toMatchObject({
+      id: series.id,
+      startUtc: slot + 40 * DAY,
+      title: 'Solunivo ci series moved',
+    });
+    await Effect.runPromise(client.delete({ ref, span: 'thisEvent' }));
+    expect(await Effect.runPromise(client.occurrence(ref))).toBeUndefined();
+    expect((await raw()).map((event) => event.occurrenceStartUtc)).toEqual(
+      slots.filter((entry) => entry !== slot),
+    );
+
+    // The series id alone still names the series once its first occurrence
+    // was changed on its own, and a write to it reaches every occurrence.
+    await Effect.runPromise(
+      client.update({
+        changes: { endUtc: slots[0]! + 3 * HOUR, startUtc: slots[0]! + 2 * HOUR },
+        ref: { id: series.id, originalStartUtc: slots[0]! },
+        span: 'thisEvent',
+      }),
+    );
+    expect((await Effect.runPromise(client.series({ id: series.id }))).rules).toHaveLength(1);
+    await Effect.runPromise(
+      client.update({
+        changes: { location: 'Room 1' },
+        ref: { id: series.id },
+        span: 'futureEvents',
+      }),
+    );
+    const after = await raw();
+    expect(after.map((event) => event.location)).toEqual(['Room 1', 'Room 1', 'Room 1']);
+    expect(after[0]).toMatchObject({ isDetached: true, startUtc: slots[0]! + 2 * HOUR });
+    // … and once that occurrence is deleted on its own (every call here is
+    // a new helper process, so nothing answers from a store's memory).
+    await Effect.runPromise(
+      client.delete({ ref: { id: series.id, originalStartUtc: slots[0]! }, span: 'thisEvent' }),
+    );
+    expect((await Effect.runPromise(client.series({ id: series.id }))).rules).toHaveLength(1);
+    await Effect.runPromise(
+      client.update({
+        changes: { location: 'Room 2' },
+        ref: { id: series.id },
+        span: 'futureEvents',
+      }),
+    );
+    expect((await raw()).map((event) => event.location)).toEqual(['Room 2', 'Room 2']);
+    await Effect.runPromise(client.delete({ ref: { id: series.id }, span: 'futureEvents' }));
+    expect(await raw()).toEqual([]);
+  }, 120_000);
 });
