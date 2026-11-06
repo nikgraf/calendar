@@ -95,8 +95,9 @@ const parseUntil = (
 type RuleParts = Map<string, string>;
 
 /**
- * The parts of an RRULE EventKit cannot hold whatever their value: names it
- * does not know, a week start other than Monday, and COUNT beside UNTIL.
+ * The parts of an RRULE EventKit cannot hold, whatever the rest says:
+ * names it does not know, a week start other than Monday, and COUNT
+ * beside UNTIL.
  */
 const unsupportedShape = (parts: RuleParts): Array<string> => {
   const lineUnsupported: Array<string> = [];

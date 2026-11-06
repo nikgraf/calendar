@@ -150,7 +150,7 @@ const timesOf = (
 };
 
 /** The day the words name, else the model's where they mention or defer one, else the draft's. */
-const dayOf = (
+const refinedDay = (
   parse: QuickAddParse,
   utterance: string,
   referenceDate: string,
@@ -400,7 +400,7 @@ export const normalizeRefine = (
   const place = placeOf(meaningfulText(parse.location), title, utterance);
   const location = CLEAR_PLACE.test(text) ? undefined : (place ?? draft.location);
 
-  const day = dayOf(parse, utterance, referenceDate, draft);
+  const day = refinedDay(parse, utterance, referenceDate, draft);
   const times = timesOf(utterance, realTime(parse.startTime), draft);
   const length = durationMinutesOf(utterance);
   // Days the form gave a draft that ends on a later day.

@@ -92,8 +92,8 @@ export default defineConfig({
     ],
     rules: {
       // A function's cyclomatic complexity stops at 40, with no exceptions:
-      // `scripts/complexityCap.test.ts` fails on a directive that switches
-      // it off.
+      // `scripts/complexityCap.test.ts` fails on a directive that names the
+      // rule, and `unicorn/no-abusive-eslint-disable` on one that names none.
       complexity: ['error', { max: 40 }],
     },
   },

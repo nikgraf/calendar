@@ -1001,7 +1001,8 @@ export const useEventEditorModel = ({
 
   /**
    * What an update of the existing event sends: only what differs from the
-   * form as it opened (`eventEditorChanges`), the rule only on a series.
+   * form as it opened (`eventEditorChanges`), and the rule only when the
+   * event belongs to a series and its repeat was edited.
    */
   const updateChanges = (
     fields: EditorTimeFields,

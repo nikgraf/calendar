@@ -1046,8 +1046,8 @@ const make: Effect.Effect<
     });
 
   /**
-   * What a series edit's new rule does to the exceptions, and the deletes
-   * it queues behind the PATCH: none while the rule stays as it is.
+   * What a series edit's new rule does to the exceptions: the deletes to
+   * queue behind the PATCH, none while the rule stays as it is.
    */
   const dropUndrawnExceptions = (
     { accountId, calendarId, changes, masterId }: UpdateRecurringParams,
@@ -1085,7 +1085,10 @@ const make: Effect.Effect<
       });
     });
 
-  /** A series edit: the master takes the change, and every occurrence with it. */
+  /**
+   * A series edit, or a "following" one at or before the first occurrence:
+   * the master takes the change, and every occurrence with it.
+   */
   const updateSeries = (params: UpdateRecurringParams, settled: SettledSeriesEdit) =>
     Effect.gen(function* () {
       const { accountId, calendarId, changes, masterId, originalStartUtc } = params;

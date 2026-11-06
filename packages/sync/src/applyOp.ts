@@ -1670,8 +1670,9 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
   /**
    * Whether an event op or a move waits behind the ops of its series
    * queued before it: a move behind any of them, the others behind a
-   * move, the series' create, the series they were split from
-   * (`splitGate`) and a change of the series' rule.
+   * move, the series' create and a change of the series' rule — and
+   * behind the series they were split from (`splitGate`, which may also
+   * settle the op or stamp its create).
    */
   const seriesOrderGate = (op: PendingOp): Effect.Effect<ApplyOutcome | undefined, SqlError> =>
     Effect.gen(function* () {

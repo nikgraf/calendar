@@ -651,15 +651,22 @@ const madeOfTheDay = (
 
 /**
  * The title from the phrase's own words (`named`): the when trimmed off
- * its ends, the first letter upper-cased. Capture keeps the model's.
+ * its ends, the place taken out when the location field keeps it, the
+ * first letter upper-cased. Capture keeps the model's.
  */
-const titleOf = (
-  named: string | undefined,
-  held: string | undefined,
-  place: string | undefined,
-  phrase: string | undefined,
-  todo: boolean,
-): string | undefined => {
+const titleOf = ({
+  held,
+  named,
+  phrase,
+  place,
+  todo,
+}: {
+  readonly held: string | undefined;
+  readonly named: string | undefined;
+  readonly phrase: string | undefined;
+  readonly place: string | undefined;
+  readonly todo: boolean;
+}): string | undefined => {
   const kept = named && phrase !== undefined ? trimWhen(named, held, { phrase }) : named;
   // The place leaves an event's title only when its field keeps it; a
   // to-do has no place field.
@@ -758,7 +765,7 @@ export const normalizeQuickAdd = (
   const place = meaningfulText(parse.location);
   const dayAsPlace = madeOfTheDay(place, phrase, modelDate, referenceDate);
   const held = dayAsPlace ? undefined : place;
-  const title = titleOf(named, held, place, phrase, todo);
+  const title = titleOf({ held, named, phrase, place, todo });
   if (!title) {
     return { kind: 'rejected', reason: 'No event title was recognised.' };
   }
