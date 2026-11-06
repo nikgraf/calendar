@@ -92,6 +92,154 @@ const parseUntil = (
   }
 };
 
+type RuleParts = Map<string, string>;
+
+/**
+ * The parts of an RRULE EventKit cannot hold whatever their value: names it
+ * does not know, a week start other than Monday, and COUNT beside UNTIL.
+ */
+const unsupportedShape = (parts: RuleParts): Array<string> => {
+  const lineUnsupported: Array<string> = [];
+  for (const key of parts.keys()) {
+    if (!KNOWN_PARTS.has(key)) {
+      lineUnsupported.push(key);
+    }
+  }
+  const wkst = parts.get('WKST');
+  if (wkst !== undefined && wkst.toUpperCase() !== 'MO') {
+    lineUnsupported.push('WKST');
+  }
+  if (parts.has('COUNT') && parts.has('UNTIL')) {
+    lineUnsupported.push('COUNT+UNTIL');
+  }
+  return lineUnsupported;
+};
+
+/** FREQ, upper-cased; one EventKit has no frequency for is named in `lineUnsupported`. */
+const readFreq = (parts: RuleParts, lineUnsupported: Array<string>): string | undefined => {
+  const freq = parts.get('FREQ')?.toUpperCase();
+  if (!freq || !FREQS.has(freq)) {
+    lineUnsupported.push(`FREQ=${freq ?? ''}`);
+  }
+  return freq;
+};
+
+/** INTERVAL, 1 when absent; anything but a positive integer is named in `lineUnsupported`. */
+const readInterval = (parts: RuleParts, lineUnsupported: Array<string>): number => {
+  const interval = parts.has('INTERVAL') ? Number(parts.get('INTERVAL')) : 1;
+  if (!Number.isInteger(interval) || interval < 1) {
+    lineUnsupported.push('INTERVAL');
+  }
+  return interval;
+};
+
+/** COUNT, if any; anything but a positive integer is named in `lineUnsupported`. */
+const readCount = (parts: RuleParts, lineUnsupported: Array<string>): number | undefined => {
+  const count = parts.has('COUNT') ? Number(parts.get('COUNT')) : undefined;
+  if (count !== undefined && (!Number.isInteger(count) || count < 1)) {
+    lineUnsupported.push('COUNT');
+  }
+  return count;
+};
+
+/**
+ * UNTIL as the rule's bound, empty when absent; one `parseUntil` cannot
+ * read is named in `lineUnsupported`.
+ */
+const readUntil = (
+  parts: RuleParts,
+  isAllDay: boolean,
+  timeZone: string,
+  lineUnsupported: Array<string>,
+): Pick<StructuredRule, 'untilDate' | 'untilUtc'> | undefined => {
+  const until = parts.has('UNTIL') ? parseUntil(parts.get('UNTIL') ?? '', isAllDay, timeZone) : {};
+  if (until === undefined) {
+    lineUnsupported.push('UNTIL');
+  }
+  return until;
+};
+
+/**
+ * BYDAY's entries, each a weekday code after an optional week number; a
+ * piece that is not one names BYDAY in `lineUnsupported`.
+ */
+const readByDay = (
+  byDayRaw: string | undefined,
+  lineUnsupported: Array<string>,
+): Array<{ ordinal?: number; weekday: Weekday }> | undefined => {
+  if (byDayRaw === undefined) {
+    return undefined;
+  }
+  const byDay: Array<{ ordinal?: number; weekday: Weekday }> = [];
+  for (const piece of byDayRaw.split(',')) {
+    const match = /^([+-]?\d{1,2})?([A-Z]{2})$/.exec(piece.toUpperCase());
+    const weekday = match?.[2];
+    if (!match || !weekday || !WEEKDAY_CODES.has(weekday)) {
+      lineUnsupported.push('BYDAY');
+      break;
+    }
+    const ordinal = match[1] === undefined ? undefined : Number(match[1]);
+    byDay.push({
+      ...(ordinal === undefined ? {} : { ordinal }),
+      weekday: weekday as Weekday,
+    });
+  }
+  return byDay;
+};
+
+/**
+ * The number-list parts present; a list that is not all non-zero integers
+ * is named in `lineUnsupported`.
+ */
+const readLists = (
+  parts: RuleParts,
+  lineUnsupported: Array<string>,
+): Partial<Record<ListField, Array<number>>> => {
+  const lists: Partial<Record<ListField, Array<number>>> = {};
+  for (const [part, field] of LIST_PARTS) {
+    const raw = parts.get(part);
+    if (raw === undefined) {
+      continue;
+    }
+    const numbers = numberList(raw);
+    if (numbers) {
+      lists[field] = numbers;
+    } else {
+      lineUnsupported.push(part);
+    }
+  }
+  return lists;
+};
+
+/** One RRULE line as EventKit's structured rule, or every part of it EventKit cannot store. */
+const ruleFromLine = (
+  line: string,
+  isAllDay: boolean,
+  timeZone: string,
+): { readonly rule: StructuredRule } | { readonly unsupported: Array<string> } => {
+  const parts = parseRuleParts(line);
+  const lineUnsupported = unsupportedShape(parts);
+  const freq = readFreq(parts, lineUnsupported);
+  const interval = readInterval(parts, lineUnsupported);
+  const count = readCount(parts, lineUnsupported);
+  const until = readUntil(parts, isAllDay, timeZone, lineUnsupported);
+  const byDay = readByDay(parts.get('BYDAY'), lineUnsupported);
+  const lists = readLists(parts, lineUnsupported);
+  if (lineUnsupported.length > 0) {
+    return { unsupported: lineUnsupported };
+  }
+  return {
+    rule: {
+      ...(byDay ? { byDay } : {}),
+      ...lists,
+      ...(count === undefined ? {} : { count }),
+      freq: (freq ?? 'DAILY').toLowerCase() as StructuredRule['freq'],
+      interval,
+      ...until,
+    },
+  };
+};
+
 /**
  * Converts recurrence lines to EventKit's structured rules. Every line or
  * rule part EventKit cannot store is named in `unsupported` (e.g. "EXDATE",
@@ -110,83 +258,14 @@ export const toStructuredRules = (
       unsupported.add(name);
       continue;
     }
-    const parts = parseRuleParts(line);
-    const lineUnsupported: Array<string> = [];
-    for (const key of parts.keys()) {
-      if (!KNOWN_PARTS.has(key)) {
-        lineUnsupported.push(key);
-      }
-    }
-    const freq = parts.get('FREQ')?.toUpperCase();
-    if (!freq || !FREQS.has(freq)) {
-      lineUnsupported.push(`FREQ=${freq ?? ''}`);
-    }
-    const wkst = parts.get('WKST');
-    if (wkst !== undefined && wkst.toUpperCase() !== 'MO') {
-      lineUnsupported.push('WKST');
-    }
-    if (parts.has('COUNT') && parts.has('UNTIL')) {
-      lineUnsupported.push('COUNT+UNTIL');
-    }
-    const interval = parts.has('INTERVAL') ? Number(parts.get('INTERVAL')) : 1;
-    if (!Number.isInteger(interval) || interval < 1) {
-      lineUnsupported.push('INTERVAL');
-    }
-    const count = parts.has('COUNT') ? Number(parts.get('COUNT')) : undefined;
-    if (count !== undefined && (!Number.isInteger(count) || count < 1)) {
-      lineUnsupported.push('COUNT');
-    }
-    const until = parts.has('UNTIL')
-      ? parseUntil(parts.get('UNTIL') ?? '', isAllDay, timeZone)
-      : {};
-    if (until === undefined) {
-      lineUnsupported.push('UNTIL');
-    }
-    let byDay: Array<{ ordinal?: number; weekday: Weekday }> | undefined;
-    const byDayRaw = parts.get('BYDAY');
-    if (byDayRaw !== undefined) {
-      byDay = [];
-      for (const piece of byDayRaw.split(',')) {
-        const match = /^([+-]?\d{1,2})?([A-Z]{2})$/.exec(piece.toUpperCase());
-        const weekday = match?.[2];
-        if (!match || !weekday || !WEEKDAY_CODES.has(weekday)) {
-          lineUnsupported.push('BYDAY');
-          break;
-        }
-        const ordinal = match[1] === undefined ? undefined : Number(match[1]);
-        byDay.push({
-          ...(ordinal === undefined ? {} : { ordinal }),
-          weekday: weekday as Weekday,
-        });
-      }
-    }
-    const lists: Partial<Record<ListField, Array<number>>> = {};
-    for (const [part, field] of LIST_PARTS) {
-      const raw = parts.get(part);
-      if (raw === undefined) {
-        continue;
-      }
-      const numbers = numberList(raw);
-      if (numbers) {
-        lists[field] = numbers;
-      } else {
-        lineUnsupported.push(part);
-      }
-    }
-    if (lineUnsupported.length > 0) {
-      for (const part of lineUnsupported) {
+    const result = ruleFromLine(line, isAllDay, timeZone);
+    if ('unsupported' in result) {
+      for (const part of result.unsupported) {
         unsupported.add(part);
       }
       continue;
     }
-    rules.push({
-      ...(byDay ? { byDay } : {}),
-      ...lists,
-      ...(count === undefined ? {} : { count }),
-      freq: (freq ?? 'DAILY').toLowerCase() as StructuredRule['freq'],
-      interval,
-      ...until,
-    });
+    rules.push(result.rule);
   }
   return { rules, unsupported: [...unsupported].sort() };
 };
