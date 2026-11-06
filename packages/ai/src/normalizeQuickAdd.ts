@@ -24,6 +24,7 @@ import {
   type RepeatSpanUnit,
   saysOnlyWhen,
   spanUnitAtLeast,
+  type StatedRepeat,
   statedRepeat,
   statesNoEnd,
   statesUntil,
@@ -257,72 +258,71 @@ const repeatEndFromParse = (
 
 type Recurrence = NonNullable<QuickAddPrefill['recurrence']>;
 
-/**
- * The repeat for the editor, or none. Given the phrase, the words decide
- * (`statedRepeat`): a phrase that names no repeat has none, whatever the
- * model attached ("next Tuesday" came back weekly, once); one that does
- * gives the frequency, the gap, the days, a count or a span, and the
- * model's frequency stands only where the words name a repeat without
- * saying which ("make it recurring"). The model's count and gap are never
- * kept — it answered "every Monday" with once, "every weekday" with five
- * times and "every two weeks" with a gap of fourteen — and its end only
- * behind an until word, read as the coming one ("until March" in
- * October). Without a phrase (capture) the model's rule stands as
- * validated, "repeats once" being none.
- *
- * Over a `current` rule (a refinement of a draft that repeats) the words
- * change what they say and leave the rest: the kind, gap and days stay
- * while the words name none ("10 times", "for six weeks", "until March"
- * on their own), the editor's days stay while the kind does and the
- * words name no day, and the end or count stays while the words give
- * none, and goes when they say there is none ("forever"). "No repeat"
- * clears it, and so does an end on the first day ("until 22 August" said
- * of the 22nd): nothing repeats.
- */
-export const recurrenceFromParse = (
+/** Without a phrase (capture) the model's rule stands as validated, "repeats once" being none. */
+const recurrenceFromModel = (
   parsed: QuickAddParse['recurrence'],
   firstDay: string,
-  phrase?: string,
-  current?: QuickAddPrefill['recurrence'],
 ): QuickAddPrefill['recurrence'] => {
-  if (phrase === undefined) {
-    const freq = parsed?.count === 1 ? undefined : modelFreq(parsed);
-    if (freq === undefined) {
-      return undefined;
-    }
-    const count = positiveInt(parsed?.count);
-    const interval = positiveInt(parsed?.interval);
-    const untilDate = untilOnOrAfter(realDate(parsed?.untilDate), firstDay);
-    return {
-      ...(count === undefined ? {} : { count }),
-      freq,
-      ...(interval === undefined || interval < 2 ? {} : { interval }),
-      ...(untilDate === undefined ? {} : { untilDate }),
-    };
-  }
-  if (clearsRepeat(phrase)) {
+  const freq = parsed?.count === 1 ? undefined : modelFreq(parsed);
+  if (freq === undefined) {
     return undefined;
   }
-  const stated = statedRepeat(phrase, { ofRepeat: current !== undefined });
-  const saysUntil = statesUntil(phrase);
-  if (stated === undefined) {
-    // Nothing said of a repeat: none, or the draft's as it is — with an
-    // end the words alone give it ("until March").
-    const end =
-      current === undefined || !saysUntil ? undefined : repeatEndFromParse(parsed, firstDay);
-    if (end === undefined) {
-      return current;
-    }
-    if (end === firstDay) {
-      return undefined;
-    }
-    const { count: _count, ...rest } = current!;
-    return { ...rest, untilDate: end };
+  const count = positiveInt(parsed?.count);
+  const interval = positiveInt(parsed?.interval);
+  const untilDate = untilOnOrAfter(realDate(parsed?.untilDate), firstDay);
+  return {
+    ...(count === undefined ? {} : { count }),
+    freq,
+    ...(interval === undefined || interval < 2 ? {} : { interval }),
+    ...(untilDate === undefined ? {} : { untilDate }),
+  };
+};
+
+/**
+ * Nothing said of a repeat: none, or the draft's as it is — with an end
+ * the words alone give it ("until March").
+ */
+const unstatedRepeat = (
+  parsed: QuickAddParse['recurrence'],
+  firstDay: string,
+  current: QuickAddPrefill['recurrence'],
+  saysUntil: boolean,
+): QuickAddPrefill['recurrence'] => {
+  const end =
+    current === undefined || !saysUntil ? undefined : repeatEndFromParse(parsed, firstDay);
+  if (end === undefined) {
+    return current;
   }
-  const sameKind =
-    current !== undefined && (stated.freq === undefined || stated.freq === current.freq);
-  // An exception alone ("not on Fridays"): off the draft's days, or off
-  // all seven of a daily rule without a gap, which turns weekly.
+  if (end === firstDay) {
+    return undefined;
+  }
+  const { count: _count, ...rest } = current!;
+  return { ...rest, untilDate: end };
+};
+
+/** A phrase's repeat as read, with what it is read against. */
+interface RepeatReading {
+  /** The draft's rule, when a refinement is of one that repeats. */
+  readonly current: QuickAddPrefill['recurrence'];
+  readonly firstDay: string;
+  readonly parsed: QuickAddParse['recurrence'];
+  readonly phrase: string;
+  readonly saysUntil: boolean;
+  readonly stated: StatedRepeat;
+}
+
+/** What an exception alone does to the rule (`exceptionAlone`). */
+interface ExceptionReading {
+  readonly dailyException: boolean;
+  readonly exceptionOnly: boolean;
+  readonly ruledOut: ReadonlyArray<Weekday>;
+}
+
+/**
+ * An exception alone ("not on Fridays"): off the draft's days, or off
+ * all seven of a daily rule without a gap, which turns weekly.
+ */
+const exceptionAlone = ({ current, stated }: RepeatReading): ExceptionReading => {
   const ruledOut = stated.ruledOut ?? [];
   const exceptionOnly =
     stated.freq === undefined && stated.byDay === undefined && ruledOut.length > 0;
@@ -331,29 +331,47 @@ export const recurrenceFromParse = (
     current?.freq === 'daily' &&
     (current.interval ?? 1) === 1 &&
     ruledOut.length < WEEKDAYS_MONDAY_FIRST.length;
-  const freq = dailyException ? 'weekly' : (stated.freq ?? current?.freq ?? modelFreq(parsed));
-  if (freq === undefined) {
-    return undefined;
-  }
-  const interval =
-    stated.interval ?? (stated.freq === undefined && sameKind ? current!.interval : undefined);
-  // The editor's days stay while the kind does and the words name none —
-  // less the ones the words rule out ("not on Fridays"), on a weekly rule
-  // with days left; an exception alone leaves a day said beside it to the
-  // date ("Thursday, not Friday").
+  return { dailyException, exceptionOnly, ruledOut };
+};
+
+/**
+ * The editor's days stay while the kind does and the words name none —
+ * less the ones the words rule out ("not on Fridays"), on a weekly rule
+ * with days left; an exception alone leaves a day said beside it to the
+ * date ("Thursday, not Friday").
+ */
+const keptDays = (
+  { current, phrase, stated }: RepeatReading,
+  freq: RecurrenceFrequency,
+  sameKind: boolean,
+  { dailyException, exceptionOnly, ruledOut }: ExceptionReading,
+): ReadonlyArray<ByDay> | undefined => {
   const had =
     current?.byDay ??
     (dailyException ? WEEKDAYS_MONDAY_FIRST.map((weekday) => ({ weekday })) : undefined);
   const less = had?.filter((day) => !ruledOut.includes(day.weekday));
-  const keptDays =
-    current !== undefined &&
+  return current !== undefined &&
     stated.byDay === undefined &&
     (exceptionOnly || (sameKind && !namesDays(phrase)))
-      ? freq === 'weekly' && less !== undefined && less.length > 0
-        ? less
-        : current.byDay
-      : undefined;
-  const byDay = byDayFor(stated.byDay, freq, firstDay) ?? keptDays;
+    ? freq === 'weekly' && less !== undefined && less.length > 0
+      ? less
+      : current.byDay
+    : undefined;
+};
+
+/**
+ * The span the rule takes and how it ends: the count the words state or
+ * the span makes, else the span's last day or the end the model read
+ * behind an until word.
+ */
+const spanAndEnd = (
+  { current, firstDay, parsed, saysUntil, stated }: RepeatReading,
+  { byDay, freq, interval }: Pick<Recurrence, 'byDay' | 'freq' | 'interval'>,
+): {
+  readonly count: number | undefined;
+  readonly span: StatedRepeat['runsFor'];
+  readonly untilDate: string | undefined;
+} => {
   // "for a week" on a yearly rule is how long the event lasts, not the
   // series — but "every weekday for three days" is three standups.
   const span =
@@ -389,24 +407,87 @@ export const recurrenceFromParse = (
         : saysUntil
           ? repeatEndFromParse(parsed, firstDay)
           : undefined;
+  return { count, span, untilDate };
+};
+
+/**
+ * The draft's own end or count stays while the words give none, and
+ * goes when they say there is none ("forever").
+ */
+const keptEnd = (
+  { current, phrase, saysUntil, stated }: RepeatReading,
+  span: StatedRepeat['runsFor'],
+): Partial<Recurrence> =>
+  current !== undefined &&
+  stated.count === undefined &&
+  span === undefined &&
+  !saysUntil &&
+  !statesNoEnd(phrase)
+    ? {
+        ...(current.count === undefined ? {} : { count: current.count }),
+        ...(current.untilDate === undefined ? {} : { untilDate: current.untilDate }),
+      }
+    : {};
+
+/**
+ * The repeat for the editor, or none. Given the phrase, the words decide
+ * (`statedRepeat`): a phrase that names no repeat has none, whatever the
+ * model attached ("next Tuesday" came back weekly, once); one that does
+ * gives the frequency, the gap, the days, a count or a span, and the
+ * model's frequency stands only where the words name a repeat without
+ * saying which ("make it recurring"). The model's count and gap are never
+ * kept — it answered "every Monday" with once, "every weekday" with five
+ * times and "every two weeks" with a gap of fourteen — and its end only
+ * behind an until word, read as the coming one ("until March" in
+ * October). Without a phrase (capture) the model's rule stands as
+ * validated, "repeats once" being none.
+ *
+ * Over a `current` rule (a refinement of a draft that repeats) the words
+ * change what they say and leave the rest: the kind, gap and days stay
+ * while the words name none ("10 times", "for six weeks", "until March"
+ * on their own), the editor's days stay while the kind does and the
+ * words name no day, and the end or count stays while the words give
+ * none, and goes when they say there is none ("forever"). "No repeat"
+ * clears it, and so does an end on the first day ("until 22 August" said
+ * of the 22nd): nothing repeats.
+ */
+export const recurrenceFromParse = (
+  parsed: QuickAddParse['recurrence'],
+  firstDay: string,
+  phrase?: string,
+  current?: QuickAddPrefill['recurrence'],
+): QuickAddPrefill['recurrence'] => {
+  if (phrase === undefined) {
+    return recurrenceFromModel(parsed, firstDay);
+  }
+  if (clearsRepeat(phrase)) {
+    return undefined;
+  }
+  const stated = statedRepeat(phrase, { ofRepeat: current !== undefined });
+  const saysUntil = statesUntil(phrase);
+  if (stated === undefined) {
+    return unstatedRepeat(parsed, firstDay, current, saysUntil);
+  }
+  const reading: RepeatReading = { current, firstDay, parsed, phrase, saysUntil, stated };
+  const sameKind =
+    current !== undefined && (stated.freq === undefined || stated.freq === current.freq);
+  const exception = exceptionAlone(reading);
+  const freq = exception.dailyException
+    ? 'weekly'
+    : (stated.freq ?? current?.freq ?? modelFreq(parsed));
+  if (freq === undefined) {
+    return undefined;
+  }
+  const interval =
+    stated.interval ?? (stated.freq === undefined && sameKind ? current!.interval : undefined);
+  const byDay =
+    byDayFor(stated.byDay, freq, firstDay) ?? keptDays(reading, freq, sameKind, exception);
+  const { count, span, untilDate } = spanAndEnd(reading, { byDay, freq, interval });
   if (untilDate !== undefined && untilDate <= firstDay) {
     return undefined;
   }
-  // The draft's own end or count stays while the words give none, and
-  // goes when they say there is none ("forever").
-  const kept: Partial<Recurrence> =
-    current !== undefined &&
-    stated.count === undefined &&
-    span === undefined &&
-    !saysUntil &&
-    !statesNoEnd(phrase)
-      ? {
-          ...(current.count === undefined ? {} : { count: current.count }),
-          ...(current.untilDate === undefined ? {} : { untilDate: current.untilDate }),
-        }
-      : {};
   return {
-    ...kept,
+    ...keptEnd(reading, span),
     ...(byDay === undefined ? {} : { byDay }),
     ...(count === undefined ? {} : { count }),
     freq,
@@ -569,6 +650,58 @@ const madeOfTheDay = (
 };
 
 /**
+ * The title from the phrase's own words (`named`): the when trimmed off
+ * its ends, the first letter upper-cased. Capture keeps the model's.
+ */
+const titleOf = (
+  named: string | undefined,
+  held: string | undefined,
+  place: string | undefined,
+  phrase: string | undefined,
+  todo: boolean,
+): string | undefined => {
+  const kept = named && phrase !== undefined ? trimWhen(named, held, { phrase }) : named;
+  // The place leaves an event's title only when its field keeps it; a
+  // to-do has no place field.
+  const placeless =
+    kept && phrase !== undefined && !todo
+      ? trimWhen(withoutPlace(kept, held), held, { phrase })
+      : kept;
+  const placed = placeless !== kept && placeOf(place, placeless ?? '', phrase) ? placeless : kept;
+  return placed && phrase !== undefined ? capitalized(placed) : placed;
+};
+
+/** A to-do: its day, and its time when one was said. No end, no repeat. */
+const taskOf = (date: string, time: string | undefined, title: string): QuickAddResult => ({
+  kind: 'task',
+  prefill: {
+    date,
+    ...(time ? { time } : {}),
+    title: capitalized(title.replace(TODO_CUE_PREFIX, '') || title),
+  },
+});
+
+/** The event's start and end, or all day when it has no start. */
+const eventTimes = (
+  {
+    endTime,
+    startTime,
+  }: { readonly endTime?: string | undefined; readonly startTime?: string | undefined },
+  parse: QuickAddParse,
+  phrase: string | undefined,
+): { readonly isAllDay: boolean; readonly resolvedEnd: string; readonly resolvedStart: string } => {
+  // No usable time at all means the phrase described a whole day. Without
+  // a phrase the model may also say so outright.
+  const isAllDay = !startTime || (phrase === undefined && parse.isAllDay === true);
+  const resolvedStart = isAllDay ? '00:00' : startTime!;
+  // A missing or backwards end becomes a one-hour event rather than an error:
+  // "lunch at 1" is a complete thought.
+  const resolvedEnd =
+    !isAllDay && endTime && endTime > resolvedStart ? endTime : addHour(resolvedStart);
+  return { isAllDay, resolvedEnd, resolvedStart };
+};
+
+/**
  * Turns raw model output into a prefill the editor can open, or rejects it.
  *
  * The model is trusted only for extraction; every value is re-checked here,
@@ -625,15 +758,7 @@ export const normalizeQuickAdd = (
   const place = meaningfulText(parse.location);
   const dayAsPlace = madeOfTheDay(place, phrase, modelDate, referenceDate);
   const held = dayAsPlace ? undefined : place;
-  const kept = named && phrase !== undefined ? trimWhen(named, held, { phrase }) : named;
-  // The place leaves an event's title only when its field keeps it; a
-  // to-do has no place field.
-  const placeless =
-    kept && phrase !== undefined && !todo
-      ? trimWhen(withoutPlace(kept, held), held, { phrase })
-      : kept;
-  const placed = placeless !== kept && placeOf(place, placeless ?? '', phrase) ? placeless : kept;
-  const title = placed && phrase !== undefined ? capitalized(placed) : placed;
+  const title = titleOf(named, held, place, phrase, todo);
   if (!title) {
     return { kind: 'rejected', reason: 'No event title was recognised.' };
   }
@@ -650,28 +775,10 @@ export const normalizeQuickAdd = (
     phrase === undefined
       ? { endTime: realTime(parse.endTime), source: 'model' as const, startTime: modelStart }
       : groundTime(modelStart, phrase);
-  const { startTime } = times;
   if (todo) {
-    // A to-do: its day, and its time when one was said. No end, no repeat.
-    return {
-      kind: 'task',
-      prefill: {
-        date: resolvedDate,
-        ...(startTime ? { time: startTime } : {}),
-        title: capitalized(title.replace(TODO_CUE_PREFIX, '') || title),
-      },
-    };
+    return taskOf(resolvedDate, times.startTime, title);
   }
-  // No usable time at all means the phrase described a whole day. Without
-  // a phrase the model may also say so outright.
-  const isAllDay = !startTime || (phrase === undefined && parse.isAllDay === true);
-  const resolvedStart = isAllDay ? '00:00' : startTime!;
-  // A missing or backwards end becomes a one-hour event rather than an error:
-  // "lunch at 1" is a complete thought.
-  const resolvedEnd =
-    !isAllDay && times.endTime && times.endTime > resolvedStart
-      ? times.endTime
-      : addHour(resolvedStart);
+  const { isAllDay, resolvedEnd, resolvedStart } = eventTimes(times, parse, phrase);
   if (!isAllDay && resolvedEnd <= resolvedStart) {
     // Only reachable in the final minute of the day: the editor puts start
     // and end on one date, so nothing after 23:59 can be expressed.
