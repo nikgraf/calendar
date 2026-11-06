@@ -2,11 +2,15 @@ import { describe, expect, it } from 'vite-plus/test';
 import { GeoLocation } from '../types.ts';
 import {
   mergePlaceCandidates,
+  pastPlaceMatch,
   type PlaceCandidate,
   placeCandidateLabel,
   preselectedPlace,
+  rankFoundPlaces,
   rankPastPlaces,
+  withFoundSuggestions,
 } from './candidates.ts';
+import { densestRegion, regionForTimeZone } from './regions.ts';
 
 const past = (
   source: string,
@@ -63,6 +67,351 @@ describe('rankPastPlaces', () => {
     expect(ranked.map((candidate) => [candidate.geo.source, candidate.geo.lng])).toEqual([
       ['Café Sperl', 16.36],
       ['Café Central', 16.365],
+    ]);
+  });
+});
+
+/** A past place as the text it was written as, with MapKit's name for it. */
+const written = (source: string, name?: string) =>
+  new GeoLocation({ lat: 48.2, lng: 16.35, name, source });
+
+describe('pastPlaceMatch', () => {
+  // A picked place is written "name, address".
+  const yard = new GeoLocation({
+    lat: 48.23,
+    lng: 16.31,
+    name: 'Mistplatz Hernals',
+    source: 'Mistplatz Hernals, Richthausenstraße 2, 1170 Vienna, Austria',
+  });
+  const kaffemik = new GeoLocation({
+    lat: 48.2003,
+    lng: 16.3497,
+    name: 'Kaffemik',
+    source: 'Kaffemik, Zollergasse 5, 1070 Vienna, Austria',
+  });
+
+  it('takes a city for no past place that merely stands in it', () => {
+    // Observed 2026-11-06: "Vienna, Austria" took the latest past place there.
+    expect(pastPlaceMatch('Vienna, Austria', yard)).toBeUndefined();
+    expect(pastPlaceMatch('Vienna', yard)).toBeUndefined();
+    expect(pastPlaceMatch('Austria', kaffemik)).toBeUndefined();
+    // A place written as the city itself is that text.
+    const city = new GeoLocation({
+      lat: 48.2,
+      lng: 16.37,
+      name: 'Vienna',
+      source: 'Vienna, Austria',
+    });
+    expect(pastPlaceMatch('vienna,  austria', city)).toBe('exact');
+    expect(pastPlaceMatch('Vienna', city)).toBe('exact');
+  });
+
+  it('takes a city for no past place written with a short address either', () => {
+    // Review: two parts after the name read the first as the place's own street.
+    for (const place of [
+      written('Kaffemik, 1070 Vienna, Austria', 'Kaffemik'),
+      written('Kaffemik, Vienna, Austria', 'Kaffemik'),
+      // An address row picked from the typeahead: the street is its name.
+      written('Zollergasse 5, 1070 Vienna, Austria', 'Zollergasse 5'),
+      written('Kaffemik, Wien'),
+    ]) {
+      expect(pastPlaceMatch('Vienna, Austria', place)).toBeUndefined();
+      expect(pastPlaceMatch('Vienna', place)).toBeUndefined();
+      expect(pastPlaceMatch('Wien', place)).toBeUndefined();
+    }
+    // Review: US and UK past places, a ZIP or a postcode after the city.
+    const amphitheatre = written(
+      '1600 Amphitheatre Pkwy, Mountain View, CA 94043, USA',
+      'Googleplex',
+    );
+    expect(pastPlaceMatch('Mountain View', amphitheatre)).toBeUndefined();
+    expect(pastPlaceMatch('Mountain View, CA', amphitheatre)).toBeUndefined();
+    const park = written(
+      'Golden Gate Park, San Francisco, CA 94117, United States',
+      'Golden Gate Park',
+    );
+    expect(pastPlaceMatch('San Francisco', park)).toBeUndefined();
+    expect(pastPlaceMatch('Golden Gate Park', park)).toBe('exact');
+    const museum = written(
+      '221B Baker Street, London, NW1 6XE, United Kingdom',
+      '221B Baker Street',
+    );
+    expect(pastPlaceMatch('London', museum)).toBeUndefined();
+    const loop = written('1 Infinite Loop, Cupertino, CA, United States', '1 Infinite Loop');
+    expect(pastPlaceMatch('Cupertino, CA', loop)).toBeUndefined();
+    expect(pastPlaceMatch('Infinite Loop', loop)).toBe('words');
+  });
+
+  it('reads a typed address beside MapKit’s name for it', () => {
+    // Review: the text was cut at its comma, and the street left MapKit's name.
+    const cathedral = new GeoLocation({
+      lat: 48.2084,
+      lng: 16.3735,
+      name: "St. Stephen's Cathedral",
+      source: 'Stephansplatz 3, 1010 Wien',
+    });
+    expect(pastPlaceMatch('Cathedral Stephansplatz 3', cathedral)).toBe('words');
+    // As written: the text's own first part.
+    expect(pastPlaceMatch('Stephansplatz 3', cathedral)).toBe('exact');
+    expect(pastPlaceMatch("St. Stephen's Cathedral", cathedral)).toBe('exact');
+    expect(pastPlaceMatch('Wien', cathedral)).toBeUndefined();
+  });
+
+  it('reads the whole text as written whatever its accents and spaces', () => {
+    // Review: an exact text with a comma came back as words.
+    const central = new GeoLocation({
+      lat: 48.2105,
+      lng: 16.3655,
+      name: 'Café Central',
+      source: 'Café Central, Herrengasse 14',
+    });
+    expect(pastPlaceMatch('Cafe Central, Herrengasse 14', central)).toBe('exact');
+    expect(pastPlaceMatch('Café Central,Herrengasse 14', central)).toBe('exact');
+  });
+
+  it('still finds a past place by its name, its street, its whole text or its sound', () => {
+    expect(pastPlaceMatch('Mistplatz Hernals', yard)).toBe('exact');
+    expect(pastPlaceMatch('Mistplatz', yard)).toBe('words');
+    expect(pastPlaceMatch('Richthausenstraße 2', yard)).toBe('words');
+    expect(pastPlaceMatch(yard.source, yard)).toBe('exact');
+    // Dictated in English: the past place is found by how it sounds.
+    expect(pastPlaceMatch('Cafe Meek', kaffemik)).toBe('phonetic');
+    expect(pastPlaceMatch('coffee Nick', kaffemik)).toBe('phonetic');
+    // A text without a name of its own, written by hand: all of it is its name.
+    const office = new GeoLocation({ lat: 48.2, lng: 16.37, source: 'Büro Wien' });
+    expect(pastPlaceMatch('Büro', office)).toBe('words');
+  });
+});
+
+describe('rankFoundPlaces', () => {
+  const vienna = { lat: 48.2082, lng: 16.3738 };
+  const events = densestRegion([vienna]);
+  const benoni = {
+    address: '9 10th Avenue, Benoni, Gauteng, 1501, South Africa',
+    lat: -26.1885,
+    lng: 28.3208,
+    name: 'Meek Café',
+  };
+  const montreal = {
+    address: '1227A Rue Atateken, Montréal QC H2L 3K9, Canada',
+    lat: 45.5189,
+    lng: -73.5595,
+    name: 'Cafe Meekha',
+  };
+  const london = {
+    address: '77 Heath Street, London, NW3 6UG, England',
+    lat: 51.5586,
+    lng: -0.1787,
+    name: 'Meekhun Thai bistro',
+  };
+  const kaffemik = {
+    address: 'Zollergasse 5, 1070 Vienna, Austria',
+    lat: 48.2003,
+    lng: 16.3497,
+    name: 'Kaffemik',
+  };
+  const weg = {
+    address: 'Kaffeeweg, 1140 Vienna, Austria',
+    lat: 48.21,
+    lng: 16.26,
+    name: 'Kaffeeweg',
+  };
+  const read = (
+    text: string,
+    places: ReadonlyArray<typeof benoni>,
+    region: ReturnType<typeof densestRegion>,
+  ) => rankFoundPlaces(text, places, region).map(({ match, place }) => [place.name, match]);
+
+  it('takes no namesake far from the user’s places', () => {
+    // Observed 2026-11-06: "Cafe Meek", said in Vienna, took a café in South Africa.
+    // One far namesake stays on offer, the search's first; the rest is noise.
+    expect(read('Cafe Meek', [benoni, montreal, london], events)).toEqual([
+      ['Meek Café', 'search'],
+    ]);
+    expect(read('Cafe Meek', [london, montreal, benoni], events)).toEqual([
+      ['Cafe Meekha', 'search'],
+    ]);
+  });
+
+  it('puts the nearby place the text names first, then nearby hits, then far namesakes', () => {
+    expect(read('Cafe Meek', [benoni, weg, london, kaffemik], events)).toEqual([
+      ['Kaffemik', 'phonetic'],
+      ['Kaffeeweg', 'search'],
+      ['Meek Café', 'search'],
+    ]);
+  });
+
+  it('takes a far place when the text says where it is', () => {
+    const adlon = {
+      address: 'Unter den Linden 77, 10117 Berlin, Germany',
+      lat: 52.5159,
+      lng: 13.3806,
+      name: 'Hotel Adlon Kempinski Berlin',
+    };
+    expect(read('Hotel Adlon Berlin', [adlon], events)).toEqual([
+      ['Hotel Adlon Kempinski Berlin', 'words'],
+    ]);
+    expect(read('Hotel Adlon', [adlon], events)).toEqual([
+      ['Hotel Adlon Kempinski Berlin', 'search'],
+    ]);
+  });
+
+  it('takes a city said on its own wherever it is', () => {
+    // Review: "Berlin", said in Vienna, was a far namesake of itself.
+    const berlin = { address: 'Berlin, Germany', lat: 52.52, lng: 13.405, name: 'Berlin' };
+    const linz = {
+      address: 'Linz, Upper Austria, Austria',
+      lat: 48.3069,
+      lng: 14.2858,
+      name: 'Linz',
+    };
+    expect(read('Berlin', [berlin], events)).toEqual([['Berlin', 'exact']]);
+    expect(read('Linz', [linz], events)).toEqual([['Linz', 'exact']]);
+  });
+
+  it('takes the nearby one of two namesakes, the far one only where the words say', () => {
+    // Review: "Café Wien" said in Berlin took the Vienna café MapKit listed
+    // first. Its name holds its city, which says nothing beside the name.
+    const berlinUser = densestRegion([{ lat: 52.52, lng: 13.405 }]);
+    const inVienna = {
+      address: 'Hauptplatz 1, 1010 Wien, Österreich',
+      lat: 48.21,
+      lng: 16.37,
+      name: 'Café Wien',
+    };
+    const inBerlin = {
+      address: 'Kurfürstendamm 26, 10719 Berlin, Germany',
+      lat: 52.5,
+      lng: 13.33,
+      name: 'Café Wien',
+    };
+    const lats = (text: string) =>
+      rankFoundPlaces(text, [inVienna, inBerlin], berlinUser).map(({ match, place }) => [
+        place.lat,
+        match,
+      ]);
+    expect(lats('Café Wien')).toEqual([
+      [inBerlin.lat, 'exact'],
+      [inVienna.lat, 'search'],
+    ]);
+    // Said with its city, the far one is the one meant, in MapKit's order.
+    expect(lats('Café Wien, Wien')[0]).toEqual([inVienna.lat, 'words']);
+  });
+
+  it('keeps home near when a trip’s events outnumber it', () => {
+    // Review: two events in Lisbon and one at home made Vienna far.
+    const lisbon = { lat: 38.7223, lng: -9.1393 };
+    const trip = densestRegion([lisbon, lisbon, vienna]);
+    expect(read('Cafe Meek', [benoni, kaffemik], trip)).toEqual([
+      ['Kaffemik', 'phonetic'],
+      ['Meek Café', 'search'],
+    ]);
+  });
+
+  it('counts a zone’s part of the world as near, and everything without a region', () => {
+    const cafeMik = {
+      address: 'Hauptstraße 1, 10827 Berlin, Germany',
+      lat: 52.48,
+      lng: 13.35,
+      name: 'Café MIK',
+    };
+    const zone = regionForTimeZone('Europe/Vienna');
+    expect(read('Cafe Mik', [cafeMik, benoni], zone)).toEqual([['Café MIK', 'exact']]);
+    // As it was before any region was known: every hit, the resembling first.
+    expect(read('Cafe Meek', [london, benoni], undefined)).toEqual([
+      ['Meek Café', 'words'],
+      ['Meekhun Thai bistro', 'search'],
+    ]);
+  });
+});
+
+describe('withFoundSuggestions', () => {
+  const berlin = {
+    subtitle: 'Erich-Baron-Weg 83, Mahlsdorf, 12623 Berlin, Germany',
+    title: 'kaffeemike',
+  };
+  const kaffemik = {
+    address: 'Zollergasse 5, 1070 Vienna, Austria',
+    lat: 48.2003,
+    lng: 16.3497,
+    name: 'Kaffemik',
+  };
+  const row = {
+    coordinates: { lat: 48.2003, lng: 16.3497 },
+    subtitle: 'Zollergasse 5, 1070 Vienna, Austria',
+    title: 'Kaffemik',
+  };
+
+  it('lists the places the search found for the text before the completer’s rows', () => {
+    // Observed 2026-11-06: typed "kaffeemik" offered only a namesake in Berlin.
+    expect(withFoundSuggestions([berlin], [{ match: 'phonetic', place: kaffemik }], 6)).toEqual([
+      row,
+      berlin,
+    ]);
+  });
+
+  it('leaves out what the search only happened to find, and a place without a name', () => {
+    expect(
+      withFoundSuggestions(
+        [berlin],
+        [
+          { match: 'search', place: kaffemik },
+          { match: 'words', place: { lat: 1, lng: 2 } },
+        ],
+        6,
+      ),
+    ).toEqual([berlin]);
+  });
+
+  it('lists a place both know once, where the completer put it, with its coordinates', () => {
+    // MapKit's completer writes the city in the device's language.
+    const completed = { subtitle: 'Zollergasse 5, 1070 Wien, Österreich', title: 'kaffemik' };
+    const branch = { subtitle: 'Neubaugasse 1, 1070 Vienna, Austria', title: 'Kaffemik' };
+    expect(
+      withFoundSuggestions(
+        [branch, completed, berlin],
+        [
+          { match: 'exact', place: kaffemik },
+          { match: 'exact', place: kaffemik },
+        ],
+        6,
+      ),
+    ).toEqual([branch, row, berlin]);
+    expect(
+      withFoundSuggestions([branch, completed, berlin], [{ match: 'exact', place: kaffemik }], 2),
+    ).toEqual([branch, row]);
+  });
+
+  it('keeps one chain’s branches in two cities apart', () => {
+    // Review: one street and number in Boston and New York became one row.
+    const newYork = { address: '1 Main St, New York', lat: 40.7, lng: -74, name: 'Starbucks' };
+    const boston = { subtitle: '1 Main St, Boston', title: 'Starbucks' };
+    expect(withFoundSuggestions([boston], [{ match: 'exact', place: newYork }], 6)).toEqual([
+      { coordinates: { lat: 40.7, lng: -74 }, subtitle: '1 Main St, New York', title: 'Starbucks' },
+      boston,
+    ]);
+  });
+
+  it('lists one place once when the completer gave it twice', () => {
+    // Review: two completer rows for one place became two identical rows.
+    const one = { subtitle: 'Zollergasse 5, 1070 Vienna, Austria', title: 'Kaffemik' };
+    const other = { subtitle: 'Zollergasse 5, Vienna', title: 'Kaffemik' };
+    expect(withFoundSuggestions([one, other], [{ match: 'exact', place: kaffemik }], 6)).toEqual([
+      row,
+    ]);
+  });
+
+  it('keeps two buildings of one chain apart', () => {
+    // Review: numbers run together made 1-2-34 and 1-23-4 one address.
+    const shop = { address: '1-2-34 Shibuya, Tokyo', lat: 35.66, lng: 139.7, name: 'FamilyMart' };
+    const other = { subtitle: '1-23-4 Shibuya, Tokyo', title: 'FamilyMart' };
+    expect(withFoundSuggestions([other], [{ match: 'exact', place: shop }], 6)).toEqual([
+      {
+        coordinates: { lat: 35.66, lng: 139.7 },
+        subtitle: '1-2-34 Shibuya, Tokyo',
+        title: 'FamilyMart',
+      },
+      other,
     ]);
   });
 });

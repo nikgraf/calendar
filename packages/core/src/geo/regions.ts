@@ -14,6 +14,12 @@ export interface GeoPoint {
 }
 
 export interface GeoRegion extends GeoPoint {
+  /**
+   * Where the user's places are: a place within `meters` of one of the
+   * points is nearby (`isNearby`) — what MapKit's hint cannot say, since a
+   * strong match elsewhere still wins. Never sent to MapKit.
+   */
+  readonly near: { readonly meters: number; readonly points: ReadonlyArray<GeoPoint> };
   readonly radiusMeters: number;
 }
 
@@ -21,6 +27,14 @@ export interface GeoRegion extends GeoPoint {
 export const HISTORY_REGION_RADIUS_METERS = 50_000;
 /** Around a time zone's city: wide, since the zone says little more than the country. */
 export const TIME_ZONE_REGION_RADIUS_METERS = 150_000;
+/** Nearby, around the user's recent events: as far as a day trip goes. */
+export const HISTORY_NEAR_METERS = 150_000;
+/**
+ * Nearby, around a time zone's city: the zone's part of the world, since
+ * one zone holds Berlin and Munich, New York and Miami. It still tells a
+ * café in the next country from one on another continent.
+ */
+export const TIME_ZONE_NEAR_METERS = 2_500_000;
 
 const EARTH_RADIUS_METERS = 6_371_000;
 const toRadians = (degrees: number): number => (degrees * Math.PI) / 180;
@@ -42,8 +56,10 @@ export const CLUSTER_POINT_LIMIT = 400;
  * The region around the densest cluster of the points: the point with
  * the most others within `radiusMeters` (the first among equals, so
  * callers pass the most recent first), centered on the mean of it and
- * its neighbours. Only the first `CLUSTER_POINT_LIMIT` points count —
- * the work is quadratic. None for no points.
+ * its neighbours. Nearby is near any of the points, not only the
+ * cluster: a trip's few events must not make home far. Only the first
+ * `CLUSTER_POINT_LIMIT` points count — the work is quadratic. None for
+ * no points.
  */
 export const densestRegion = (
   all: ReadonlyArray<GeoPoint>,
@@ -67,9 +83,18 @@ export const densestRegion = (
   return {
     lat: best.reduce((sum, point) => sum + point.lat, 0) / best.length,
     lng: (Math.atan2(y, x) * 180) / Math.PI,
+    near: { meters: HISTORY_NEAR_METERS, points },
     radiusMeters,
   };
 };
+
+/**
+ * Whether a place is near where the user's places are. Without a region
+ * nothing is known of where that is, and every place counts as near.
+ */
+export const isNearby = (region: GeoRegion | undefined, place: GeoPoint): boolean =>
+  region === undefined ||
+  region.near.points.some((point) => distanceMeters(point, place) <= region.near.meters);
 
 /** The city a time zone is named for, or its biggest one. */
 const TIME_ZONE_CITIES: ReadonlyMap<string, GeoPoint> = new Map(
@@ -135,5 +160,11 @@ const TIME_ZONE_CITIES: ReadonlyMap<string, GeoPoint> = new Map(
 /** The region around the time zone's city; none for a zone the table does not know. */
 export const regionForTimeZone = (zone: string): GeoRegion | undefined => {
   const city = TIME_ZONE_CITIES.get(zone);
-  return city && { ...city, radiusMeters: TIME_ZONE_REGION_RADIUS_METERS };
+  return (
+    city && {
+      ...city,
+      near: { meters: TIME_ZONE_NEAR_METERS, points: [city] },
+      radiusMeters: TIME_ZONE_REGION_RADIUS_METERS,
+    }
+  );
 };

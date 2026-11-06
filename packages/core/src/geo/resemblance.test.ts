@@ -4,11 +4,14 @@ import {
   CLUSTER_POINT_LIMIT,
   densestRegion,
   distanceMeters,
+  HISTORY_NEAR_METERS,
   HISTORY_REGION_RADIUS_METERS,
+  isNearby,
   regionForTimeZone,
+  TIME_ZONE_NEAR_METERS,
   TIME_ZONE_REGION_RADIUS_METERS,
 } from './regions.ts';
-import { placeMatch, placesResembling } from './resemblance.ts';
+import { placeMatch, sameAddress, saysWhere } from './resemblance.ts';
 
 describe('koelnerKey', () => {
   it('gives words that sound alike the same key', () => {
@@ -108,19 +111,198 @@ describe('placeMatch', () => {
     expect(placeMatch('Café', { address: '', name: '' })).toBeUndefined();
   });
 
-  it('ranks the places that resemble a text, best first, the rest in their order', () => {
-    const central = { name: 'Café Central' };
-    const centralBranch = { name: 'Café Central Nord' };
-    const zentral = { name: 'Zentral Garage' };
-    const zanoni = { name: 'Zanoni & Zanoni' };
-    expect(placesResembling('Cafe Zentral', [zanoni, zentral, centralBranch, central])).toEqual([
-      centralBranch,
-      central,
-    ]);
-    expect(placesResembling('Café Central', [zanoni, centralBranch, central])).toEqual([
-      central,
-      centralBranch,
-    ]);
+  it('hears a name dictation cut into words it knows', () => {
+    // Observed 2026-11-06: Kaffemik, dictated in English, three ways.
+    const kaffemik = { address: 'Zollergasse 5, 1070 Vienna, Austria', name: 'Kaffemik' };
+    expect(placeMatch('Cafe Meek', kaffemik)).toBe('phonetic');
+    expect(placeMatch('Cafe Mick', kaffemik)).toBe('phonetic');
+    expect(placeMatch('coffee Nick', kaffemik)).toBe('phonetic');
+    expect(placeMatch('Kaffeemik', kaffemik)).toBe('phonetic');
+    // The other way round, and with more of the name after it.
+    expect(placeMatch('Figlmüller', { name: 'Figl Müller' })).toBe('phonetic');
+    expect(placeMatch('Cafe Meek', { name: 'Kaffemik Rösterei' })).toBe('phonetic');
+    // Not a name that only begins alike, and not on a sound too short to tell.
+    expect(placeMatch('Cafe Meek', { name: 'Kaffeeweg' })).toBeUndefined();
+    expect(placeMatch('Cafe Meek', { name: 'Kaffee' })).toBeUndefined();
+    expect(placeMatch('A B', { name: 'Abba' })).toBeUndefined();
+  });
+
+  it('takes a city for the city, not for a place that stands in it', () => {
+    // Observed 2026-11-06: "Vienna, Austria" took the latest past place in Vienna.
+    const yard = {
+      address: 'Richthausenstraße 2, 1170 Vienna, Austria',
+      name: 'Mistplatz Hernals',
+    };
+    const imperial = {
+      address: 'Kärntner Ring 16, 1010 Vienna, Austria',
+      name: 'Hotel Imperial (Vienna, Austria)',
+    };
+    const center = {
+      address: 'Bruno-Kreisky-Platz 1, 1220 Vienna, Austria',
+      name: 'Austria Center Vienna',
+    };
+    // Seen on the real search: a name that begins with the city's words sounded like them.
+    const temple = {
+      address: 'Silbergasse 2, 1190 Vienna, Austria',
+      name: 'Vienna Austria Temple',
+    };
+    // Review: an address without its street says only where, however short.
+    const noStreet = { address: '1070 Vienna, Austria', name: 'Kaffemik' };
+    const cityOnly = { address: 'Vienna, Austria', name: 'Kaffemik' };
+    const templeNoStreet = { address: '1190 Vienna, Austria', name: 'Vienna Austria Temple' };
+    // Seen on the real search: a business called the city's words, ranked exact.
+    const business = { address: 'Pfalzgasse 84, 1220 Vienna, Austria', name: 'Vienna Austria' };
+    for (const place of [
+      yard,
+      imperial,
+      center,
+      temple,
+      noStreet,
+      cityOnly,
+      templeNoStreet,
+      business,
+    ]) {
+      expect(placeMatch('Vienna, Austria', place)).toBeUndefined();
+      expect(placeMatch('Vienna', place)).toBeUndefined();
+    }
+    expect(
+      placeMatch('Cupertino, CA', {
+        address: 'Cupertino, CA, United States',
+        name: '1 Infinite Loop',
+      }),
+    ).toBeUndefined();
+    // Review: a state's ZIP or a UK postcode after the city made the city a street.
+    for (const [text, place] of [
+      [
+        'Mountain View',
+        { address: 'Mountain View, CA 94043, USA', name: '1600 Amphitheatre Pkwy' },
+      ],
+      ['Cupertino', { address: 'Cupertino, CA 95014', name: '1 Infinite Loop' }],
+      [
+        'San Francisco',
+        { address: 'San Francisco, CA 94117, United States', name: 'Golden Gate Park' },
+      ],
+      ['London', { address: 'London, NW1 6XE, United Kingdom', name: '221B Baker Street' }],
+      ['London', { address: '221B Baker Street, London, NW1 6XE, United Kingdom', name: 'Museum' }],
+    ] as const) {
+      expect(placeMatch(text, place)).toBeUndefined();
+    }
+    expect(placeMatch('Vienna Temple', temple)).toBe('words');
+    // The city itself: its address begins with its name.
+    const vienna = { address: 'Vienna, Austria', name: 'Vienna' };
+    expect(placeMatch('Vienna, Austria', vienna)).toBe('words');
+    expect(placeMatch('Vienna', vienna)).toBe('exact');
+    expect(
+      placeMatch('New York, NY', { address: 'New York, NY, United States', name: 'New York' }),
+    ).toBe('words');
+    // Review: a city whose first part holds its province's code too.
+    expect(placeMatch('Toronto', { address: 'Toronto ON, Canada', name: 'Toronto' })).toBe('exact');
+    // Review: a city whose address repeats its name, or begins with its postal code.
+    const city = { address: 'Vienna, Vienna, Austria', name: 'Vienna' };
+    expect(placeMatch('Vienna', city)).toBe('exact');
+    expect(placeMatch('Vienna, Austria', city)).toBe('words');
+    expect(placeMatch('Hallstatt', { address: '4830 Hallstatt, Austria', name: 'Hallstatt' })).toBe(
+      'exact',
+    );
+    expect(placeMatch('Sydney', { address: 'Sydney NSW, Australia', name: 'Sydney' })).toBe(
+      'exact',
+    );
+    // A word of the place's own beside the city still names it.
+    expect(placeMatch('Imperial Vienna', imperial)).toBe('words');
+    expect(placeMatch('Austria Center', center)).toBe('words');
+    expect(placeMatch('Mistplatz', yard)).toBe('words');
+    expect(placeMatch('Richthausenstraße 2, Vienna', yard)).toBe('words');
+    expect(placeMatch('Kaffemik Vienna', noStreet)).toBe('words');
+    // A postal code and a city are where it is, not which place.
+    expect(placeMatch('1170 Vienna', yard)).toBeUndefined();
+  });
+
+  it('reads the street of a short address as the place’s own', () => {
+    // Review: an address typed as the location ("Stephansplatz 3, 1010 Wien") lost its street.
+    const cathedral = { address: 'Stephansplatz 3, 1010 Wien', name: "St. Stephen's Cathedral" };
+    expect(placeMatch('Cathedral Stephansplatz 3', cathedral)).toBe('words');
+    expect(placeMatch('Stephansplatz 3', cathedral)).toBe('words');
+    // A street before a postal code is the place's own; the city is not.
+    expect(placeMatch('Stephansplatz', cathedral)).toBe('words');
+    expect(placeMatch('Wien', cathedral)).toBeUndefined();
+  });
+
+  it('reads whether a text says where a place is', () => {
+    const adlon = {
+      address: 'Unter den Linden 77, 10117 Berlin, Germany',
+      name: 'Hotel Adlon Kempinski Berlin',
+    };
+    expect(saysWhere('Hotel Adlon Berlin', adlon)).toBe(true);
+    expect(saysWhere('Hotel Adlon', adlon)).toBe(false);
+    // The street is which place, not where; a number says nothing.
+    expect(saysWhere('Unter den Linden', adlon)).toBe(false);
+    expect(saysWhere('Adlon 10117', adlon)).toBe(false);
+    expect(
+      saysWhere('Cafe Meek', {
+        address: '9 10th Avenue, Benoni, Gauteng, 1501, South Africa',
+        name: 'Meek Café',
+      }),
+    ).toBe(false);
+    expect(saysWhere('Cafe Meek', { name: 'Meek Café' })).toBe(false);
+    // A state's code is too short to say where, and half a city is none.
+    const gary = { address: '12 Main St, Gary, IN, United States', name: 'Cafe Mick' };
+    expect(saysWhere('Cafe Mick in town', gary)).toBe(false);
+    expect(saysWhere('Cafe Mick Gar', gary)).toBe(false);
+    expect(saysWhere('Cafe Mick, Gary', gary)).toBe(true);
+    // Review: one word of a city's name is a word of many names.
+    const royalOak = { address: '1 Main St, Royal Oak, MI, United States', name: 'Royal Cafe' };
+    const newYork = { address: '5 Mott St, New York, NY, United States', name: 'New Moon Cafe' };
+    expect(saysWhere('Royal Cafe', royalOak)).toBe(false);
+    expect(saysWhere('New Moon Cafe', newYork)).toBe(false);
+    // Review: a province's code is no word to say.
+    const montreal = {
+      address: '1227A Rue Atateken, Montréal QC H2L 3K9, Canada',
+      name: 'Cafe Meekha',
+    };
+    expect(saysWhere('Cafe Meekha Montreal', montreal)).toBe(true);
+    // Review: a city said on its own is where it is.
+    expect(saysWhere('Berlin', { address: 'Berlin, Germany', name: 'Berlin' })).toBe(true);
+    expect(saysWhere('Toronto', { address: 'Toronto ON, Canada', name: 'Toronto' })).toBe(true);
+    const portland = { address: 'Portland, OR, United States', name: 'Portland' };
+    expect(saysWhere('Portland, OR', portland)).toBe(true);
+    // A street named in its own address is where it is, like a city (a nearby one still ranks first).
+    const street = { address: 'Kaffeeweg, 1140 Vienna, Austria', name: 'Kaffeeweg' };
+    expect(saysWhere('Kaffeeweg', street)).toBe(true);
+    // Review: a region's code beside the city ("NSW") is no word to say.
+    const opera = { address: 'Bennelong Point, Sydney NSW 2000, Australia', name: 'Opera Bar' };
+    expect(saysWhere('Opera Bar Sydney', opera)).toBe(true);
+    expect(saysWhere('Opera Bar', opera)).toBe(false);
+    // Review: a name that holds its city says nothing beside the name.
+    const grill = {
+      address: '100 W Randolph St, Chicago, IL 60601, United States',
+      name: 'Chicago Grill',
+    };
+    expect(saysWhere('Chicago Grill', grill)).toBe(false);
+    expect(saysWhere('Chicago Grill, Chicago', grill)).toBe(true);
+    expect(saysWhere('Hallstatt', { address: '4830 Hallstatt, Austria', name: 'Hallstatt' })).toBe(
+      true,
+    );
+  });
+
+  it('reads two spellings of one address as the same, and two towns apart', () => {
+    expect(
+      sameAddress('Philharmonikerstraße 4, 1010 Wien', 'Philharmoniker Str. 4, 1010 Wien'),
+    ).toBe(true);
+    // The city in another language after it does not count.
+    expect(
+      sameAddress('Zollergasse 5, 1070 Vienna, Austria', 'Zollergasse 5, 1070 Wien, Österreich'),
+    ).toBe(true);
+    expect(sameAddress('Wollzeile 5, 1010 Wien', 'Wollzeile 6, 1010 Wien')).toBe(false);
+    // Review: numbers run together made two buildings one.
+    expect(sameAddress('1-2-34 Shibuya, Tokyo', '1-23-4 Shibuya, Tokyo')).toBe(false);
+    expect(sameAddress(undefined, '')).toBe(true);
+    // Review: one street and number in two cities is two places.
+    expect(sameAddress('1 Main St, Boston', '1 Main St, New York')).toBe(false);
+    expect(sameAddress('1 Main St, Boston, MA 02108', '1 Main St, Boston')).toBe(true);
+    expect(
+      sameAddress('Hauptplatz 1, 2340 Mödling, Austria', 'Hauptplatz 1, 2500 Baden, Austria'),
+    ).toBe(false);
+    expect(sameAddress('Zollergasse 5, Vienna', 'Zollergasse 5, 1070 Vienna, Austria')).toBe(true);
   });
 });
 
@@ -164,9 +346,33 @@ describe('regions', () => {
     expect(densestRegion([])).toBeUndefined();
   });
 
+  it('knows what is nearby: a day trip from any recent place, a part of the world from a zone', () => {
+    const graz = { lat: 47.0707, lng: 15.4395 };
+    const london = { lat: 51.5074, lng: -0.1278 };
+    const benoni = { lat: -26.1885, lng: 28.3208 };
+    const lisbon = { lat: 38.7223, lng: -9.1393 };
+    const events = densestRegion([vienna])!;
+    expect(events.near.meters).toBe(HISTORY_NEAR_METERS);
+    expect(isNearby(events, graz)).toBe(true);
+    expect(isNearby(events, berlin)).toBe(false);
+    // Review: a trip's events outnumbered home's and made home far.
+    const trip = densestRegion([lisbon, lisbon, vienna])!;
+    expect(trip.lat).toBeCloseTo(lisbon.lat, 3);
+    expect(isNearby(trip, graz)).toBe(true);
+    expect(isNearby(trip, berlin)).toBe(false);
+    const zone = regionForTimeZone('Europe/Vienna')!;
+    // A zone's city is not where the user is: Berlin's holds Munich too.
+    expect(isNearby(zone, berlin)).toBe(true);
+    expect(isNearby(zone, london)).toBe(true);
+    expect(isNearby(zone, benoni)).toBe(false);
+    // Nothing known of where the user is: nothing is far.
+    expect(isNearby(undefined, benoni)).toBe(true);
+  });
+
   it('knows a time zone’s city, or not', () => {
     expect(regionForTimeZone('Europe/Vienna')).toEqual({
       ...vienna,
+      near: { meters: TIME_ZONE_NEAR_METERS, points: [vienna] },
       radiusMeters: TIME_ZONE_REGION_RADIUS_METERS,
     });
     expect(regionForTimeZone('Etc/UTC')).toBeUndefined();

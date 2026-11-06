@@ -1,8 +1,14 @@
 import { Schema } from 'effect';
 import { GeoLocation } from '../types.ts';
-import { normalizeLocationKey } from './location.ts';
-import { distanceMeters } from './regions.ts';
-import { type PlaceMatch, placeMatch } from './resemblance.ts';
+import { normalizeLocationKey, type PlaceSuggestion } from './location.ts';
+import { distanceMeters, type GeoPoint, type GeoRegion, isNearby } from './regions.ts';
+import {
+  type PlaceLike,
+  type PlaceMatch,
+  placeMatch,
+  sameAddress,
+  saysWhere,
+} from './resemblance.ts';
 
 /**
  * The places a phrase's location text could mean, for a choice: the
@@ -16,7 +22,11 @@ export const PlaceCandidate = Schema.Struct({
   address: Schema.optional(Schema.String),
   /** The coordinates; `source` is the text the location field takes on a pick. */
   geo: GeoLocation,
-  /** How it resembles the text; `search`: a hit that does not, offered but never taken unasked. */
+  /**
+   * How it resembles the text; `search`: a hit that does not, or one far
+   * from the user's places that the text does not say is there — offered
+   * but never taken unasked.
+   */
   match: Schema.Literals(['exact', 'phonetic', 'search', 'words']),
   /** `history`: a place of the user's own past events; `mapkit`: a search match. */
   source: Schema.Literals(['history', 'mapkit']),
@@ -41,13 +51,26 @@ const best = (a: PlaceMatch | undefined, b: PlaceMatch | undefined): PlaceMatch 
 /**
  * How a past place resembles the text: by the text it was written as
  * (what the user said last time — an exact "Figlmüller"), or by MapKit's
- * name for it beside that text.
+ * name for it beside that text. A picked place is written "name,
+ * address": the name is what it is, the address where (`placeMatch`), so
+ * "Vienna, Austria" names no past place that merely stands there. A text
+ * that does not begin with MapKit's name (an address typed or kept as
+ * said) is all address beside that name.
  */
-export const pastPlaceMatch = (text: string, geo: GeoLocation): PlaceMatch | undefined =>
-  best(
-    placeMatch(text, { name: geo.source }),
-    geo.name === undefined ? undefined : placeMatch(text, { address: geo.source, name: geo.name }),
+export const pastPlaceMatch = (text: string, geo: GeoLocation): PlaceMatch | undefined => {
+  if (placeMatch(text, { name: geo.source }) === 'exact') {
+    return 'exact';
+  }
+  const [written = '', ...rest] = geo.source.split(',');
+  const address = rest.join(',');
+  const named = geo.name !== undefined && placeMatch(written, { name: geo.name }) === 'exact';
+  return best(
+    placeMatch(text, { address, name: written }),
+    geo.name === undefined
+      ? undefined
+      : placeMatch(text, { address: named ? address : geo.source, name: geo.name }),
   );
+};
 
 /**
  * The past places the text names, best first — exact, then by words,
@@ -121,11 +144,48 @@ export const mergePlaceCandidates = (
   return merged.slice(0, limit);
 };
 
+/** A place a search found: where it is and what MapKit calls it. */
+export interface FoundPlace extends GeoPoint, PlaceLike {}
+
+/** Far namesakes offered at most: the search's best one, for a trip the text does not name. */
+const FAR_OFFERS = 1;
+
+/**
+ * What a search found for a text, each place with how far it may be
+ * trusted, the ones to trust first. A hit is the place the text names
+ * when it resembles the words (`placeMatch`) and is nearby (`isNearby`)
+ * or the text says where it is (`saysWhere`): a search answers with a
+ * namesake on another continent as readily as with nothing — "Cafe Meek"
+ * found Meek Café in Benoni, 8,000 km from every event the user has. The
+ * rest is `search`, offered and never taken: the nearby hits that do not
+ * resemble the text, then one far namesake. Any other far hit is no
+ * one's guess and is left out.
+ */
+export const rankFoundPlaces = <Place extends FoundPlace>(
+  text: string,
+  places: ReadonlyArray<Place>,
+  region: GeoRegion | undefined,
+): ReadonlyArray<{ readonly match: PlaceCandidate['match']; readonly place: Place }> => {
+  const read = places.map((place, index) => {
+    const match = placeMatch(text, place);
+    const near = isNearby(region, place);
+    const named = match !== undefined && (near || saysWhere(text, place)) ? match : undefined;
+    // Named first, by how well; then the nearby rest; then far namesakes.
+    const order = named !== undefined ? RANK[named] : near ? 3 : match !== undefined ? 4 : 5;
+    return { index, named, order, place };
+  });
+  const offered = read.filter((entry) => entry.order === 4).slice(0, FAR_OFFERS);
+  return read
+    .filter((entry) => entry.order < 4 || offered.includes(entry))
+    .sort((a, b) => a.order - b.order || a.index - b.index)
+    .map(({ named, place }) => ({ match: named ?? ('search' as const), place }));
+};
+
 /**
  * The candidate a turn takes without asking: the best one, when it
  * resembles the text at all — a past place, or a search match by name,
- * words or sound. A hit that does not resemble the text is offered, never
- * taken: the text stays as said.
+ * words or sound that is nearby or where the text says. A hit that is
+ * neither is offered, never taken: the text stays as said.
  */
 export const preselectedPlace = (
   candidates: ReadonlyArray<PlaceCandidate>,
@@ -141,4 +201,46 @@ export const placeCandidateLabel = (candidate: PlaceCandidate): string => {
   }
   const name = candidate.geo.name ?? candidate.geo.source;
   return candidate.address ? `${name} · ${candidate.address}` : name;
+};
+
+/** Whether two typeahead rows are one place: the same name at the same address. */
+const sameRow = (a: PlaceSuggestion, b: PlaceSuggestion): boolean =>
+  placeMatch(a.title, { name: b.title }) === 'exact' && sameAddress(a.subtitle, b.subtitle);
+
+/**
+ * The typeahead's rows once the search has filled in. The completer
+ * reads only how a name begins: a letter off ("kaffeemik" for Kaffemik)
+ * and it answers with a namesake in another country or nothing, where the
+ * search reads the misspelling. The places the search found that the
+ * text names (`rankFoundPlaces`: resembling it, and nearby or where it
+ * says) come first, unless the completer lists them too: those take the
+ * completer's row's place, coordinates and all. At most `limit` rows.
+ */
+export const withFoundSuggestions = (
+  rows: ReadonlyArray<PlaceSuggestion>,
+  found: ReadonlyArray<{ readonly match: PlaceCandidate['match']; readonly place: FoundPlace }>,
+  limit: number,
+): ReadonlyArray<PlaceSuggestion> => {
+  const named: Array<PlaceSuggestion> = [];
+  for (const { match, place } of found) {
+    const title = place.name?.trim() ?? '';
+    const row: PlaceSuggestion = {
+      coordinates: { lat: place.lat, lng: place.lng },
+      ...(place.address ? { subtitle: place.address } : {}),
+      title,
+    };
+    if (match !== 'search' && title !== '' && !named.some((listed) => sameRow(listed, row))) {
+      named.push(row);
+    }
+  }
+  const completed = rows.map((row) => named.find((listed) => sameRow(listed, row)) ?? row);
+  const fresh = named.filter((listed) => !rows.some((row) => sameRow(listed, row)));
+  // One place once, however many rows the completer gave it.
+  const once: Array<PlaceSuggestion> = [];
+  for (const row of [...fresh, ...completed]) {
+    if (!once.some((listed) => sameRow(listed, row))) {
+      once.push(row);
+    }
+  }
+  return once.slice(0, limit);
 };

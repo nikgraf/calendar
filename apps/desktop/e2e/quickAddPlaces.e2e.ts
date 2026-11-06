@@ -83,6 +83,16 @@ const geo = {
         subtitle: 'Bäckerstraße 6, 1010 Wien',
         title: 'Figlmüller Bäckerstrasse',
       },
+      // A namesake on another continent: what a search answers for a
+      // dictated name it does not know nearby ("Cafe Meek" for Kaffemik).
+      {
+        lat: -26.1885,
+        lng: 28.3208,
+        misspellings: ['Cafe Meek'],
+        name: 'Meek Café',
+        subtitle: '9 10th Avenue, Benoni, South Africa',
+        title: 'Meek Café',
+      },
     ],
   },
 };
@@ -138,6 +148,19 @@ describe('Places from a quick-add phrase', () => {
         (await readEvents(app.userDataDir)).find((event) => event.title === 'Coffee'),
       )
       .toMatchObject({ geo: { lat: CENTRAL.lat, lng: CENTRAL.lng, source: 'Café Central' } });
+  });
+
+  it('leaves a namesake far from the user’s places on offer, the text as said', async () => {
+    const { cdp } = app;
+    await openNew();
+    // The past coffee says where the user's places are: Vienna, not Benoni.
+    await phrase('Lunch | +0 | 12:00-13:00 | Cafe Meek');
+    await cdp.waitFor(choices);
+    expect(await cdp.eval<string>(location)).toBe('Cafe Meek');
+    expect(await cdp.eval<string>(pressed)).toBe('draft-place-keep');
+    // Still one click away, for the trip the words did not name.
+    await cdp.clickTestId('draft-place-pick-0');
+    await cdp.waitFor(`${location} === 'Meek Café, 9 10th Avenue, Benoni, South Africa'`);
   });
 
   it('takes the first of two search hits, offers the other, gives the text back, and hides the row', async () => {

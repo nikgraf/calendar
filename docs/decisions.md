@@ -866,6 +866,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   asked instead of taking when two ranked the same, and hid the row once
   one was taken). Rejected: an "assumed" tint on the field; asking the
   model. Open: the typeahead's empty state as recent places.
+- **Places nearby first** (2026-11-06, #299) — a dictated "Cafe Meek"
+  (Kaffemik, Vienna) took a café in South Africa: a found place is taken
+  only when it resembles the text and is within 150 km of a recent placed
+  event or the zone's city, or the text says where it is; one far
+  namesake stays on offer. Addresses are read as street and where-parts
+  by commas and numbers. The typeahead fills in from MapKit's search when
+  the completer runs short (20 a minute: MapKit throttles searches).
+  Rejected: `regionPriority = .required` (nothing at all), asking the
+  model to respell. Open: MapKit's structured city/region/country fields
+  in place of the heuristics (a native change), exonyms.
 - **A save closes only its own panel** (2026-10-21, #230) — a desktop
   editor's close (Cancel, or Save and Delete once the write answers)
   applies only while the panel still holds that editor's opening; the

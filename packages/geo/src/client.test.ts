@@ -26,7 +26,12 @@ describe('makeGeoClient', () => {
             },
       );
     });
-    const region = { lat: 48.2, lng: 16.4, radiusMeters: 50_000 };
+    const region = {
+      lat: 48.2,
+      lng: 16.4,
+      near: { meters: 150_000, points: [{ lat: 48.21, lng: 16.37 }] },
+      radiusMeters: 50_000,
+    };
     expect(await Effect.runPromise(client.search({ limit: 3, query: 'nasch', region }))).toEqual([
       { subtitle: 'Wien', title: 'Naschmarkt' },
     ]);
@@ -34,7 +39,8 @@ describe('makeGeoClient', () => {
       await Effect.runPromise(
         client.resolve({
           query: 'Naschmarkt, Wien',
-          suggestion: { subtitle: 'Wien', title: 'Naschmarkt' },
+          // A row the search found carries its coordinates; MapKit is never told them.
+          suggestion: { coordinates: { lat: 1, lng: 2 }, subtitle: 'Wien', title: 'Naschmarkt' },
         }),
       ),
     ).toEqual([
@@ -46,9 +52,12 @@ describe('makeGeoClient', () => {
         name: 'Naschmarkt Deli',
       },
     ]);
-    // Only what is set goes on the wire.
+    // Only what is set goes on the wire, and where the user's places are stays here.
     expect(calls).toEqual([
-      ['geo.search', { limit: 3, query: 'nasch', region }],
+      [
+        'geo.search',
+        { limit: 3, query: 'nasch', region: { lat: 48.2, lng: 16.4, radiusMeters: 50_000 } },
+      ],
       [
         'geo.resolve',
         { query: 'Naschmarkt, Wien', suggestion: { subtitle: 'Wien', title: 'Naschmarkt' } },
