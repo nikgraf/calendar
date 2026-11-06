@@ -13,7 +13,6 @@ import { defineConfig } from 'vite-plus';
 // differently re-measures them in its own PR.
 export const complexityCap = 40;
 export const complexityPins: Record<string, ReadonlyArray<number>> = {
-  'packages/agent/src/ops/events.ts': [52],
   'packages/ai/src/normalizeQuickAdd.ts': [80, 42],
   'packages/ai/src/refine.ts': [62],
   'packages/app-state/src/editorModel.ts': [73, 56],

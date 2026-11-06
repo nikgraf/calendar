@@ -33,7 +33,7 @@ import {
   textLine,
   titled,
 } from '../summary.ts';
-import { createTimes, type EventTimes, updateTimes } from '../times.ts';
+import { createTimes, type EventTimes, type ExistingTimes, updateTimes } from '../times.ts';
 import type { WritePlan } from './plan.ts';
 
 // Printable ASCII only: a look-alike "＠" or an invisible character must
@@ -185,26 +185,26 @@ export const planCreateEvent = (
     return plan;
   });
 
-export const planUpdateEvent = (
-  policy: AgentPolicy,
-  directory: Directory,
+/** An update_event request's fields, checked: undefined leaves that field as it is. */
+interface CheckedUpdate {
+  readonly attendees: ReadonlyArray<AttendeeInput> | undefined;
+  readonly times: EventTimes | undefined;
+  readonly title: string | undefined;
+}
+
+/**
+ * An update_event request's fields, checked against the times the change
+ * starts from: fails on the first one the write cannot take.
+ */
+const checkUpdate = (
   input: ToolInput<'update_event'>,
+  ref: ResolvedEvent['ref'],
+  scope: RecurringScope,
+  base: ExistingTimes,
+  timeZone: string,
 ) =>
   Effect.gen(function* () {
-    const scope = input.scope ?? 'instance';
-    const resolved = yield* resolveEvent(directory, input.ref, { scope });
-    const { granted, ref } = resolved;
-    const { calendar } = granted;
-    // A change to one occurrence starts from that occurrence (its own
-    // times when it was moved before). A series-wide or "following" change
-    // starts from the occurrence's slot in the series: the mutation shifts
-    // the series by the distance from that slot, so a moved exception's
-    // own times would drag every other occurrence along.
-    const base =
-      ref.kind === 'occurrence' && scope !== 'instance'
-        ? (resolved.slotBase ?? resolved.base)
-        : resolved.base;
-    const times = updateTimes(input, base, directory.timeZone);
+    const times = updateTimes(input, base, timeZone);
     if (!times.ok) {
       return yield* invalid(times.message);
     }
@@ -237,25 +237,102 @@ export const planUpdateEvent = (
         'An all-day repeating event can only be moved one occurrence at a time (scope "instance"); move the whole series in Solunivo.',
       );
     }
+    return { attendees, times: times.value, title };
+  });
+
+/**
+ * What the approval of an update shows: the written event's changed
+ * fields, what new guests will read, and who is notified.
+ */
+const updateSummary = (
+  directory: Directory,
+  input: ToolInput<'update_event'>,
+  {
+    base,
+    edit,
+    reached,
+    resolved,
+    scope,
+    written,
+  }: {
+    readonly base: ExistingTimes;
+    readonly edit: CheckedUpdate;
+    readonly reached: ReadonlyArray<string>;
+    readonly resolved: ResolvedEvent;
+    readonly scope: RecurringScope;
+    readonly written: EventRecord;
+  },
+) => {
+  const { granted, ref } = resolved;
+  const { calendar } = granted;
+  const { attendees, times, title } = edit;
+  const onWritten = new Set(
+    otherGuests(written, granted.account?.email).map((guest) => guest.email.toLowerCase()),
+  );
+  const next = attendees?.map((guest) => guest.email.toLowerCase());
+  const added = (attendees ?? []).filter((guest) => !onWritten.has(guest.email.toLowerCase()));
+  const removed =
+    next === undefined ? [] : [...onWritten].filter((email) => !next.includes(email)).sort();
+  // Built from the event that is written, not the one that was clicked:
+  // for a series-wide change those differ when the occurrence was edited
+  // on its own, and the user must see the text new guests will get.
+  return summarize(titled('Update', 'event', written.title), [
+    calendarLine(calendar.summary, directory.accountLabel(calendar.accountId)),
+    ref.kind === 'occurrence' && scopeLine(scope),
+    title !== undefined && title !== written.title && changeLine('Title', written.title, title),
+    times !== undefined &&
+      `When: ${describeWhen(base, directory.timeZone)} → ${describeWhen(times, directory.timeZone)}`,
+    times === undefined && `When: ${describeWhen(base, directory.timeZone)}`,
+    input.location !== undefined && changeLine('Location', written.location, input.location.trim()),
+    input.description !== undefined && changeLine('Notes', written.description, input.description),
+    // New guests receive the whole event: show what they will read even
+    // where this request does not change it.
+    added.length > 0 &&
+      input.location === undefined &&
+      !!written.location &&
+      textLine('Location', written.location),
+    added.length > 0 &&
+      input.description === undefined &&
+      !!written.description &&
+      textLine('Notes', written.description),
+    added.length > 0 && `Adds ${guestsLine(added.map((guest) => guest.email))}`,
+    removed.length > 0 && `Removes ${guestsLine(removed)}`,
+    // By address: swapping one guest for another must change the summary.
+    reached.length > 0 && peopleLine('Guests who will be notified', reached),
+  ]);
+};
+
+export const planUpdateEvent = (
+  policy: AgentPolicy,
+  directory: Directory,
+  input: ToolInput<'update_event'>,
+) =>
+  Effect.gen(function* () {
+    const scope = input.scope ?? 'instance';
+    const resolved = yield* resolveEvent(directory, input.ref, { scope });
+    const { granted, ref } = resolved;
+    const { calendar } = granted;
+    // A change to one occurrence starts from that occurrence (its own
+    // times when it was moved before). A series-wide or "following" change
+    // starts from the occurrence's slot in the series: the mutation shifts
+    // the series by the distance from that slot, so a moved exception's
+    // own times would drag every other occurrence along.
+    const base =
+      ref.kind === 'occurrence' && scope !== 'instance'
+        ? (resolved.slotBase ?? resolved.base)
+        : resolved.base;
+    const edit = yield* checkUpdate(input, ref, scope, base, directory.timeZone);
+    const { attendees, times, title } = edit;
     const changes: UpdateEventParams['changes'] = {
       ...(attendees === undefined ? {} : { attendees }),
       ...(input.description === undefined ? {} : { description: input.description }),
       ...(input.location === undefined ? {} : { location: input.location.trim() }),
-      ...(times.value === undefined ? {} : timeFields(times.value)),
-      ...(times.value === undefined || ref.kind === 'occurrence'
-        ? {}
-        : { isAllDay: times.value.isAllDay }),
+      ...(times === undefined ? {} : timeFields(times)),
+      ...(times === undefined || ref.kind === 'occurrence' ? {} : { isAllDay: times.isAllDay }),
       ...(title === undefined ? {} : { title }),
     };
     // `written` is what the mutation merges into; `reached` is who gets mail.
     const { guests: reached, written } = reachOf(resolved, scope, granted.account?.email);
-    const onWritten = new Set(
-      otherGuests(written, granted.account?.email).map((guest) => guest.email.toLowerCase()),
-    );
-    const next = attendees?.map((guest) => guest.email.toLowerCase());
-    const added = (attendees ?? []).filter((guest) => !onWritten.has(guest.email.toLowerCase()));
-    const removed =
-      next === undefined ? [] : [...onWritten].filter((email) => !next.includes(email)).sort();
     const plan: WritePlan<EventMutations> = {
       decision: decideWrite({
         guests: policy.guests,
@@ -282,35 +359,7 @@ export const planUpdateEvent = (
             });
         return { status: 'done' as const };
       }),
-      // Built from the event that is written, not the one that was clicked:
-      // for a series-wide change those differ when the occurrence was edited
-      // on its own, and the user must see the text new guests will get.
-      summary: summarize(titled('Update', 'event', written.title), [
-        calendarLine(calendar.summary, directory.accountLabel(calendar.accountId)),
-        ref.kind === 'occurrence' && scopeLine(scope),
-        title !== undefined && title !== written.title && changeLine('Title', written.title, title),
-        times.value !== undefined &&
-          `When: ${describeWhen(base, directory.timeZone)} → ${describeWhen(times.value, directory.timeZone)}`,
-        times.value === undefined && `When: ${describeWhen(base, directory.timeZone)}`,
-        input.location !== undefined &&
-          changeLine('Location', written.location, input.location.trim()),
-        input.description !== undefined &&
-          changeLine('Notes', written.description, input.description),
-        // New guests receive the whole event: show what they will read even
-        // where this request does not change it.
-        added.length > 0 &&
-          input.location === undefined &&
-          !!written.location &&
-          textLine('Location', written.location),
-        added.length > 0 &&
-          input.description === undefined &&
-          !!written.description &&
-          textLine('Notes', written.description),
-        added.length > 0 && `Adds ${guestsLine(added.map((guest) => guest.email))}`,
-        removed.length > 0 && `Removes ${guestsLine(removed)}`,
-        // By address: swapping one guest for another must change the summary.
-        reached.length > 0 && peopleLine('Guests who will be notified', reached),
-      ]),
+      summary: updateSummary(directory, input, { base, edit, reached, resolved, scope, written }),
       what: 'Event',
     };
     return plan;
