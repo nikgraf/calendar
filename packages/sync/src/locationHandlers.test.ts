@@ -576,7 +576,7 @@ describe('regionHint', () => {
       });
       expect(yield* regionHint).toEqual({
         ...VIENNA,
-        nearMeters: TIME_ZONE_NEAR_METERS,
+        near: { meters: TIME_ZONE_NEAR_METERS, points: [VIENNA] },
         radiusMeters: TIME_ZONE_REGION_RADIUS_METERS,
       });
       yield* writeTimeZoneSettings({ primary: 'Etc/UTC', zones: [DEVICE_ZONE, 'Etc/UTC'] });
@@ -746,9 +746,10 @@ describe('nearby first', () => {
     return Effect.gen(function* () {
       yield* inVienna;
       expect(yield* locationHandlers.resolveLocation({ location: 'Cafe Meek' })).toBeNull();
-      // The miss is remembered like any other.
+      // Review: a place too far is a "no" for where the user is now, not
+      // "no such place" for three days: asked again, never cached.
       expect(yield* locationHandlers.resolveLocation({ location: 'Cafe Meek' })).toBeNull();
-      expect(calls).toEqual(['resolve:Cafe Meek']);
+      expect(calls).toEqual(['resolve:Cafe Meek', 'resolve:Cafe Meek']);
       expect(
         yield* locationHandlers.resolveLocation({ location: 'Hotel Adlon Berlin' }),
       ).toMatchObject({ lat: adlon.lat, name: 'Hotel Adlon Kempinski Berlin' });
@@ -800,6 +801,30 @@ describe('nearby first', () => {
       yield* inVienna;
       expect(yield* locationHandlers.searchPlaces({ query: 'kaffeemi' })).toEqual([berlinRow]);
       expect(yield* locationHandlers.searchPlaces({ query: 'cafe meek' })).toEqual([]);
+    }).pipe(Effect.provide(setup(client)));
+  });
+
+  it.effect('remembers a miss that nothing resembles', () => {
+    const { calls, client } = mapkit({ found: { 'Room 9': [london] } });
+    return Effect.gen(function* () {
+      yield* inVienna;
+      expect(yield* locationHandlers.resolveLocation({ location: 'Room 9' })).toBeNull();
+      expect(yield* locationHandlers.resolveLocation({ location: 'Room 9' })).toBeNull();
+      expect(calls).toEqual(['resolve:Room 9']);
+    }).pipe(Effect.provide(setup(client)));
+  });
+
+  it.effect('takes a city said on its own, however far', () => {
+    // Review: "Berlin", said in Vienna, got no pin.
+    const berlinCity = { address: 'Berlin, Germany', lat: 52.52, lng: 13.405, name: 'Berlin' };
+    const { client } = mapkit({ found: { Berlin: [berlinCity] } });
+    return Effect.gen(function* () {
+      yield* inVienna;
+      expect(yield* locationHandlers.resolveLocation({ location: 'Berlin' })).toMatchObject({
+        name: 'Berlin',
+      });
+      const candidates = yield* locationHandlers.placeCandidates({ location: 'Berlin' });
+      expect(preselectedPlace(candidates)?.geo.name).toBe('Berlin');
     }).pipe(Effect.provide(setup(client)));
   });
 
@@ -880,6 +905,17 @@ describe('nearby first', () => {
       yield* TestClock.adjust(FILL_IN_WINDOW_MS);
       yield* locationHandlers.searchPlaces({ query: 'kaffeemik' });
       expect(searches()).toBe(FILL_IN_LIMIT + 1);
+    }).pipe(Effect.provide(setup(client)));
+  });
+
+  it.effect('asks no search when the completer already has the text itself', () => {
+    const { calls, client } = mapkit({
+      found: { kaffemik: [kaffemik] },
+      rows: { kaffemik: [{ subtitle: 'Zollergasse 5, 1070 Vienna, Austria', title: 'Kaffemik' }] },
+    });
+    return Effect.gen(function* () {
+      expect(yield* locationHandlers.searchPlaces({ query: 'kaffemik' })).toHaveLength(1);
+      expect(calls).toEqual(['search:kaffemik']);
     }).pipe(Effect.provide(setup(client)));
   });
 

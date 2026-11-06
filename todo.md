@@ -159,8 +159,9 @@ the served model (#184) and slot proposals (#185) are in
       imperative lead kept in the title ("Set up a dinner with Tom Baker",
       "Trag mir … ein").
 - [ ] Dictated quick-add follow-ups (two iPhone recordings, 2026-11-06;
-      the place lookup's share shipped, `docs/decisions.md` → Calendar,
-      "Places nearby first"; each its own PR, in this order) — a spoken
+      the place lookup's share shipped, `docs/decisions.md` → "Calendar:
+      editing, gestures, views", "Places nearby first"; each its own PR,
+      in this order) — a spoken
       command stays in the title ("Add an event to have lunch with
       Stefan": the title falls back to the phrase, and nothing takes the
       command off it; the imperative lead above is the same gap); a turn

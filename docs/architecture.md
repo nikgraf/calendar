@@ -1623,11 +1623,12 @@ gateway carries all of it. Details, limits and the threat model:
   pruned to 2000 rows, wiped from Settings) for the map on this device
   only; typing never geocodes — the typeahead (`searchPlaces`) and a
   picked row do. The typeahead asks MapKit's completer, which reads only
-  how a name begins; where it answers fewer rows than asked for, the
-  latest text goes to the search too, which reads a misspelling
-  ("kaffeemik"), and the nearby places it names are listed first, each
-  with its coordinates, so a pick needs no lookup (core
-  `withFoundSuggestions`) — at most `FILL_IN_LIMIT` times a minute, since
+  how a name begins; where it answers fewer rows than asked for and none
+  is the text itself, the latest text goes to the search too, which
+  reads a misspelling ("kaffeemik"), and the places it names come first
+  — or in the completer's own row where it lists them too — each with
+  its coordinates, so a pick needs no lookup (core
+  `withFoundSuggestions`): at most `FILL_IN_LIMIT` times a minute, since
   MapKit throttles searches, not completions, and a throttled minute
   fails the pins and picks too. URLs and meeting links are never looked
   up. A search answers something for almost any text ("Room 4" found a
@@ -1635,24 +1636,30 @@ gateway carries all of it. Details, limits and the threat model:
   gets a pin only from a match the text names (core `rankFoundPlaces`).
   It resembles the text (`placeMatch`): the same name; every word
   beginning one of the place's name or address words, one of them its
-  own — of its name or street, and not of its city, region or country
-  line too, so "Vienna, Austria" is the city and no place that stands in
-  it; or the same Kölner Phonetik key as the name's first words, word by
-  word or run together — "Cafe Zentral" as dictated is Café Central,
-  "Cafe Meek" Kaffemik. And it is nearby (`isNearby`: within the region
-  hint's `nearMeters` — 150 km around the user's events, 2,500 km around
-  a time zone's city, which says little of where the user is) or the
-  text says where it is (`saysWhere`: a word of its city, region or
-  country, "Hotel Adlon Berlin"). A picked suggestion is that exact
-  place. `placeCandidates` returns the user's own past places the text
-  names first (core `rankPastPlaces`: a year of occurrences, matched by
-  the text they were written as, MapKit's name or sound, one per text,
-  the latest use; a place the user has been to counts wherever it is)
-  and then the search's matches not among them (`mergePlaceCandidates`;
-  MapKit is asked two ways side by side, the natural-language search and
-  the completer's rows resolved; the nearby hits that do not resemble
-  the text and one far namesake follow as `search`, offered and never
-  taken, and any other far hit is left out), best first and uncached. The draft thread (app-state `draftPlaces.ts`) asks for them
+  own — of its name or street, not of the address parts that say where
+  it is (`readAddress`: the first part is its street only when a postal
+  code follows it, a house number and more parts do, or it is the
+  place's name), so "Vienna, Austria" is the city and no place that
+  stands in it; or the same Kölner Phonetik key as the name's first
+  words, word by word or run together — "Cafe Zentral" as dictated is
+  Café Central, "Cafe Meek" Kaffemik. And it is nearby (`isNearby`:
+  within 150 km of any of the last 90 days' placed events, so a trip
+  does not make home far, else 2,500 km around a time zone's city, which
+  says little of where the user is) or the text says where it is
+  (`saysWhere`: every word of a part of its address that says where —
+  "Hotel Adlon Berlin"; a city named on its own, "Linz"). A far place
+  the text names is no pin for now, never a remembered miss: the region
+  may change. A picked suggestion is that exact place. `placeCandidates`
+  returns the user's own past places the text names first (core
+  `rankPastPlaces`: a year of occurrences, matched by the text they were
+  written as — a picked "name, address" read as both — MapKit's name or
+  sound, one per text, the latest use; a place the user has been to
+  counts wherever it is) and then the search's matches not among them
+  (`mergePlaceCandidates`; MapKit is asked two ways side by side, the
+  natural-language search and the completer's rows resolved; the nearby
+  hits that do not resemble the text and one far namesake follow as
+  `search`, offered and never taken, and any other far hit is left out),
+  best first and uncached. The draft thread (app-state `draftPlaces.ts`) asks for them
   whenever a turn sets a place: the best resembling one is taken at once
   (`preselectedPlace`) — its text becomes the location and its pin counts
   as a pick (`applyPlace`) — and the candidates stay on the draft as

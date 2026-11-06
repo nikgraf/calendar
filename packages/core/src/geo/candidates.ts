@@ -6,7 +6,7 @@ import {
   type PlaceLike,
   type PlaceMatch,
   placeMatch,
-  sameAddress,
+  sameStreet,
   saysWhere,
 } from './resemblance.ts';
 
@@ -52,18 +52,23 @@ const best = (a: PlaceMatch | undefined, b: PlaceMatch | undefined): PlaceMatch 
  * How a past place resembles the text: by the text it was written as
  * (what the user said last time — an exact "Figlmüller"), or by MapKit's
  * name for it beside that text. A picked place is written "name,
- * address": what follows the first comma is where it is, so "Vienna,
- * Austria" names no past place that merely stands there.
+ * address": the name is what it is, the address where (`placeMatch`), so
+ * "Vienna, Austria" names no past place that merely stands there. A text
+ * that does not begin with MapKit's name (an address typed or kept as
+ * said) is all address beside that name.
  */
 export const pastPlaceMatch = (text: string, geo: GeoLocation): PlaceMatch | undefined => {
-  if (normalizeLocationKey(text) === normalizeLocationKey(geo.source)) {
+  if (placeMatch(text, { name: geo.source }) === 'exact') {
     return 'exact';
   }
   const [written = '', ...rest] = geo.source.split(',');
   const address = rest.join(',');
+  const named = geo.name !== undefined && placeMatch(written, { name: geo.name }) === 'exact';
   return best(
     placeMatch(text, { address, name: written }),
-    geo.name === undefined ? undefined : placeMatch(text, { address, name: geo.name }),
+    geo.name === undefined
+      ? undefined
+      : placeMatch(text, { address: named ? address : geo.source, name: geo.name }),
   );
 };
 
@@ -198,42 +203,37 @@ export const placeCandidateLabel = (candidate: PlaceCandidate): string => {
   return candidate.address ? `${name} · ${candidate.address}` : name;
 };
 
-/** Whether two typeahead rows are one place: the same name at the same address. */
+/** Whether two typeahead rows are one place: the same name at the same street and number. */
 const sameRow = (a: PlaceSuggestion, b: PlaceSuggestion): boolean =>
-  normalizeLocationKey(a.title) === normalizeLocationKey(b.title) &&
-  sameAddress(a.subtitle, b.subtitle);
+  placeMatch(a.title, { name: b.title }) === 'exact' && sameStreet(a.subtitle, b.subtitle);
 
 /**
- * The typeahead's rows once the search has filled in: the places it
- * found that the text names (`rankFoundPlaces`: resembling, and nearby
- * or where the text says) first, then the completer's rows, a place both
- * know listed once, at most `limit`. The completer reads only how a name
- * begins — one letter off ("kaffeemik" for Kaffemik) and it answers with
- * a namesake in another country or nothing, where the search reads the
- * misspelling.
+ * The typeahead's rows once the search has filled in. The completer
+ * reads only how a name begins: a letter off ("kaffeemik" for Kaffemik)
+ * and it answers with a namesake in another country or nothing, where the
+ * search reads the misspelling. The places the search found that the
+ * text names (`rankFoundPlaces`: resembling it, and nearby or where it
+ * says) come first, unless the completer lists them too: those take the
+ * completer's row's place, coordinates and all. At most `limit` rows.
  */
 export const withFoundSuggestions = (
   rows: ReadonlyArray<PlaceSuggestion>,
   found: ReadonlyArray<{ readonly match: PlaceCandidate['match']; readonly place: FoundPlace }>,
   limit: number,
 ): ReadonlyArray<PlaceSuggestion> => {
-  const named = found.flatMap(({ match, place }): ReadonlyArray<PlaceSuggestion> => {
+  const named: Array<PlaceSuggestion> = [];
+  for (const { match, place } of found) {
     const title = place.name?.trim() ?? '';
-    return match === 'search' || title === ''
-      ? []
-      : [
-          {
-            coordinates: { lat: place.lat, lng: place.lng },
-            ...(place.address ? { subtitle: place.address } : {}),
-            title,
-          },
-        ];
-  });
-  const merged: Array<PlaceSuggestion> = [];
-  for (const row of [...named, ...rows]) {
-    if (!merged.some((listed) => sameRow(listed, row))) {
-      merged.push(row);
+    const row: PlaceSuggestion = {
+      coordinates: { lat: place.lat, lng: place.lng },
+      ...(place.address ? { subtitle: place.address } : {}),
+      title,
+    };
+    if (match !== 'search' && title !== '' && !named.some((listed) => sameRow(listed, row))) {
+      named.push(row);
     }
   }
-  return merged.slice(0, limit);
+  const completed = rows.map((row) => named.find((listed) => sameRow(listed, row)) ?? row);
+  const fresh = named.filter((listed) => !rows.some((row) => sameRow(listed, row)));
+  return [...fresh, ...completed].slice(0, limit);
 };

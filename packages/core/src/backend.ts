@@ -716,11 +716,12 @@ export class AppBackendRpcs extends RpcGroup.make(
   /**
    * The places free location text could name, best first: the user's
    * own past places that resemble it (`rankPastPlaces`, by text, name or
-   * sound), then MapKit's matches that do (`placesResembling`), looked
-   * up around the user's recent events. Not cached — for offering a
-   * choice, where `resolveLocation` gives the one best guess. Empty when
-   * the text is not a place or nothing resembles it; without a bridge
-   * the past places alone.
+   * sound), then MapKit's matches it names — resembling it, and near the
+   * user's places or where the text says (`rankFoundPlaces`) — then the
+   * nearby hits that do not and one far namesake, offered as `search`.
+   * Not cached — for offering a choice, where `resolveLocation` gives the
+   * one best guess. Empty when the text is not a place or nothing
+   * resembles it; without a bridge the past places alone.
    */
   Rpc.make('placeCandidates', {
     error: BackendError,
@@ -779,7 +780,11 @@ export class AppBackendRpcs extends RpcGroup.make(
     payload: { limit: Schema.optional(Schema.Number), query: Schema.String },
     success: Schema.Array(Contact),
   }),
-  /** Location typeahead (MapKit completer); empty where there is no bridge. */
+  /**
+   * Location typeahead: MapKit's completer, and where it runs short its
+   * search, whose rows for the places the text names carry coordinates
+   * (`withFoundSuggestions`); empty where there is no bridge.
+   */
   Rpc.make('searchPlaces', {
     error: BackendError,
     payload: { limit: Schema.optional(Schema.Number), query: Schema.String },

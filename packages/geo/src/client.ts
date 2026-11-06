@@ -1,4 +1,9 @@
-import { type BridgeTransport, bridgeMessage, type PlaceSuggestion } from '@calendar/core';
+import {
+  type BridgeTransport,
+  bridgeMessage,
+  type GeoRegion,
+  type PlaceSuggestion,
+} from '@calendar/core';
 import { Context, Data, Effect, Layer, Schema } from 'effect';
 import {
   GEO_METHODS,
@@ -45,6 +50,10 @@ export class GeoClient extends Context.Service<GeoClient, GeoClientShape>()('geo
 const defined = (params: Record<string, unknown>): Record<string, unknown> =>
   Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined));
 
+/** The region as MapKit takes it: where to look first. Where the user's places are stays here. */
+const hint = (region: GeoRegion | undefined) =>
+  region && { lat: region.lat, lng: region.lng, radiusMeters: region.radiusMeters };
+
 /**
  * A transport-agnostic implementation over "send a method + JSON params,
  * get JSON back" — the desktop helper stdio call and the iOS Expo module
@@ -84,8 +93,11 @@ export const makeGeoClient = (
           defined({
             limit: params.limit,
             query: params.query,
-            region: params.region && { ...params.region },
-            suggestion: params.suggestion && { ...params.suggestion },
+            region: hint(params.region),
+            // The row as MapKit's completer gave it: its title and subtitle find it again.
+            suggestion:
+              params.suggestion &&
+              defined({ subtitle: params.suggestion.subtitle, title: params.suggestion.title }),
           }),
           ResolveResult,
         ),
@@ -99,7 +111,7 @@ export const makeGeoClient = (
           defined({
             limit: params.limit,
             query: params.query,
-            region: params.region && { ...params.region },
+            region: hint(params.region),
           }),
           SearchResult,
         ),

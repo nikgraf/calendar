@@ -8,6 +8,7 @@ import {
   normalizeLocationKey,
   type PastPlace,
   type PlaceCandidate,
+  placeMatch,
   placeSuggestionLabel,
   rankFoundPlaces,
   rankPastPlaces,
@@ -269,14 +270,16 @@ export const locationHandlers: Pick<
           region,
           suggestion,
         });
-        const [best] = suggestion === undefined ? rankFoundPlaces(location, places, region) : [];
-        const result =
-          (suggestion === undefined
-            ? best !== undefined && best.match !== 'search'
-              ? best.place
-              : undefined
-            : places[0]) ?? null;
-        return { result };
+        if (suggestion !== undefined) {
+          return { remember: true, result: places[0] ?? null };
+        }
+        const [best] = rankFoundPlaces(location, places, region);
+        const result = best !== undefined && best.match !== 'search' ? best.place : null;
+        // A place the text names that is only too far is a "no" for where
+        // the user is now, not "no such place": a later region may take it.
+        const farOnly =
+          result === null && places.some((place) => placeMatch(location, place) !== undefined);
+        return { remember: !farOnly, result };
       }).pipe(
         // No bridge or a failed lookup (offline): nothing to show, and
         // nothing cached — a transient failure must not read as "no such place".
@@ -289,12 +292,17 @@ export const locationHandlers: Pick<
           ),
         ),
       );
-      const store = (place: { readonly result: GeoPlaceJson | null } | undefined) =>
+      const store = (
+        place: { readonly remember: boolean; readonly result: GeoPlaceJson | null } | undefined,
+      ) =>
         Effect.gen(function* () {
           if (place === undefined) {
             return null;
           }
           const resolved = place.result && toGeo(place.result, location);
+          if (!place.remember) {
+            return resolved;
+          }
           yield* cache.set(key, resolved, now);
           yield* cache.prune(now - LOCATION_MISS_TTL_MS, LOCATION_CACHE_ROWS);
           return resolved;
@@ -304,6 +312,7 @@ export const locationHandlers: Pick<
       // that place, with nothing to look up.
       if (suggestion?.coordinates !== undefined) {
         return yield* store({
+          remember: true,
           result: { ...suggestion.coordinates, name: suggestion.title },
         });
       }
@@ -343,10 +352,15 @@ export const locationHandlers: Pick<
       if (rows === undefined) {
         return [];
       }
-      // Rows enough, or a newer keystroke already asked: nothing to fill
-      // in (the completer answers a query it dropped for a newer one with
-      // no rows at all, and that text is no longer the one on screen).
-      if (rows.length >= wanted || calls.latest !== mine) {
+      // Rows enough, one that is the text itself ("kaffemik" completes to
+      // Kaffemik), or a newer keystroke already asked: nothing to fill in
+      // (the completer answers a query it dropped for a newer one with no
+      // rows at all, and that text is no longer the one on screen).
+      if (
+        rows.length >= wanted ||
+        rows.some((row) => placeMatch(query, { name: row.title }) === 'exact') ||
+        calls.latest !== mine
+      ) {
         return rows;
       }
       const now = yield* Clock.currentTimeMillis;

@@ -15,10 +15,11 @@ export interface GeoPoint {
 
 export interface GeoRegion extends GeoPoint {
   /**
-   * How far from the center a place still is nearby (`isNearby`): what
-   * MapKit's hint cannot do, since a strong match elsewhere still wins.
+   * Where the user's places are: a place within `meters` of one of the
+   * points is nearby (`isNearby`) — what MapKit's hint cannot say, since a
+   * strong match elsewhere still wins. Never sent to MapKit.
    */
-  readonly nearMeters: number;
+  readonly near: { readonly meters: number; readonly points: ReadonlyArray<GeoPoint> };
   readonly radiusMeters: number;
 }
 
@@ -55,8 +56,10 @@ export const CLUSTER_POINT_LIMIT = 400;
  * The region around the densest cluster of the points: the point with
  * the most others within `radiusMeters` (the first among equals, so
  * callers pass the most recent first), centered on the mean of it and
- * its neighbours. Only the first `CLUSTER_POINT_LIMIT` points count —
- * the work is quadratic. None for no points.
+ * its neighbours. Nearby is near any of the points, not only the
+ * cluster: a trip's few events must not make home far. Only the first
+ * `CLUSTER_POINT_LIMIT` points count — the work is quadratic. None for
+ * no points.
  */
 export const densestRegion = (
   all: ReadonlyArray<GeoPoint>,
@@ -80,7 +83,7 @@ export const densestRegion = (
   return {
     lat: best.reduce((sum, point) => sum + point.lat, 0) / best.length,
     lng: (Math.atan2(y, x) * 180) / Math.PI,
-    nearMeters: HISTORY_NEAR_METERS,
+    near: { meters: HISTORY_NEAR_METERS, points },
     radiusMeters,
   };
 };
@@ -90,7 +93,8 @@ export const densestRegion = (
  * nothing is known of where that is, and every place counts as near.
  */
 export const isNearby = (region: GeoRegion | undefined, place: GeoPoint): boolean =>
-  region === undefined || distanceMeters(region, place) <= region.nearMeters;
+  region === undefined ||
+  region.near.points.some((point) => distanceMeters(point, place) <= region.near.meters);
 
 /** The city a time zone is named for, or its biggest one. */
 const TIME_ZONE_CITIES: ReadonlyMap<string, GeoPoint> = new Map(
@@ -159,7 +163,7 @@ export const regionForTimeZone = (zone: string): GeoRegion | undefined => {
   return (
     city && {
       ...city,
-      nearMeters: TIME_ZONE_NEAR_METERS,
+      near: { meters: TIME_ZONE_NEAR_METERS, points: [city] },
       radiusMeters: TIME_ZONE_REGION_RADIUS_METERS,
     }
   );
