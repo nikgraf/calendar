@@ -15,7 +15,6 @@ export const complexityCap = 40;
 export const complexityPins: Record<string, ReadonlyArray<number>> = {
   'packages/ai/src/normalizeQuickAdd.ts': [80, 42],
   'packages/ai/src/refine.ts': [62],
-  'packages/app-state/src/taskEditorModel.ts': [56],
 };
 
 export default defineConfig({
