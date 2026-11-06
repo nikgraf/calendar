@@ -284,6 +284,14 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   reach the highest). Open: numbers match by value, not by name; a PR
   that changes one of the 16 must touch its number; Swift is not
   measured.
+- **No exceptions to the cap** (2026-11-06, #298) — the 16 are split after
+  all, one commit per file along the seams their code names, no piece
+  over 26, and the pins and their test go; a test still fails on a
+  directive naming the rule. What made the rejected refactor safe enough:
+  each split was checked old against new on generated inputs, not by
+  review alone, and behaviour fixes stayed out. Open: the three
+  components are checked only by the e2e suites (the iOS mic button by
+  none); what the splitting turned up is listed in #298.
 
 ## Architecture and sync path
 

@@ -329,6 +329,80 @@ export const useTaskEditorModel = ({
     setError(null);
   };
 
+  /** Why Save refuses the due day, a reminder's due time or its link as typed, or undefined. */
+  const fieldError = (): string | undefined => {
+    if (dated && !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) {
+      return 'A due date is required.';
+    }
+    if (provider === 'apple' && dated && timed && !TIME_RE.test(dueTime)) {
+      return 'The due time must be HH:MM.';
+    }
+    if (provider === 'apple' && url.trim() && !URL.canParse(url.trim())) {
+      return 'The URL is not valid.';
+    }
+    return undefined;
+  };
+
+  /** Why Save refuses a reminder's repeat rule as typed, or undefined. */
+  const repeatError = (): string | undefined => {
+    // An undated reminder does not repeat: its hidden rule is not saved.
+    if (provider === 'apple' && dated && repeatState.repeat !== 'none') {
+      return (
+        repeatNumberError(repeatState.repeatInterval, 'The repeat interval') ??
+        (repeatState.repeatEnds === 'after'
+          ? repeatNumberError(repeatState.repeatCount, 'The occurrence count')
+          : undefined) ??
+        byDayError(repeatSpec() ?? { freq: repeatState.repeat }) ??
+        repeatUntilError(repeatSpec() ?? {}, dueDate)
+      );
+    }
+    return undefined;
+  };
+
+  /**
+   * Whether Save moves the existing task to `accountId`/`taskListId` (a
+   * copy into it and a delete of the source): not within its own list,
+   * and not between two Reminders lists, where it re-homes in place.
+   */
+  const movesTo = (accountId: string, taskListId: string): boolean => {
+    const sameList = existing?.accountId === accountId && existing?.listId === taskListId;
+    const reHomesInPlace =
+      existing?.provider === 'apple' && provider === 'apple' && existing.accountId === accountId;
+    return !sameList && !reHomesInPlace;
+  };
+
+  /** The form as an update compares it with what it opened with (`taskEditorChanges`). */
+  const currentValues = (taskListId: string): TaskEditorValues => ({
+    alarm,
+    dueDate: dated ? dueDate : undefined,
+    dueTime: dated && timed ? dueTime : undefined,
+    listId: taskListId,
+    notes: notes.trim(),
+    priority,
+    recurrence: repeatSpec(),
+    title: title.trim(),
+    url: url.trim(),
+  });
+
+  /** What a create sends: the new draft, into `accountId`/`taskListId`. */
+  const createInput = (accountId: string, taskListId: string) => {
+    // An undated create sends no due day at all (the draft's is the
+    // form's default), and so no time or repeat rule either.
+    const { dueDate: draftDue, dueTime: draftTime, recurrence: draftRule, ...rest } = newDraft();
+    return {
+      ...rest,
+      accountId,
+      ...(dated
+        ? {
+            dueDate: draftDue,
+            ...(draftTime === undefined ? {} : { dueTime: draftTime }),
+            ...(draftRule === undefined ? {} : { recurrence: draftRule }),
+          }
+        : {}),
+      taskListId,
+    };
+  };
+
   const save = async () => {
     if (readOnly) {
       setError('This list is read-only in Reminders.');
@@ -339,36 +413,12 @@ export const useTaskEditorModel = ({
       setError('A title and task list are required.');
       return;
     }
-    if (dated && !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) {
-      setError('A due date is required.');
+    const invalid = fieldError() ?? repeatError();
+    if (invalid) {
+      setError(invalid);
       return;
-    }
-    if (provider === 'apple' && dated && timed && !TIME_RE.test(dueTime)) {
-      setError('The due time must be HH:MM.');
-      return;
-    }
-    if (provider === 'apple' && url.trim() && !URL.canParse(url.trim())) {
-      setError('The URL is not valid.');
-      return;
-    }
-    // An undated reminder does not repeat: its hidden rule is not saved.
-    if (provider === 'apple' && dated && repeatState.repeat !== 'none') {
-      const invalid =
-        repeatNumberError(repeatState.repeatInterval, 'The repeat interval') ??
-        (repeatState.repeatEnds === 'after'
-          ? repeatNumberError(repeatState.repeatCount, 'The occurrence count')
-          : undefined) ??
-        byDayError(repeatSpec() ?? { freq: repeatState.repeat }) ??
-        repeatUntilError(repeatSpec() ?? {}, dueDate);
-      if (invalid) {
-        setError(invalid);
-        return;
-      }
     }
     try {
-      const sameList = existing?.accountId === accountId && existing?.listId === taskListId;
-      const reHomesInPlace =
-        existing?.provider === 'apple' && provider === 'apple' && existing.accountId === accountId;
       const event = seed.convertFromEvent;
       if (!existing && event) {
         // A series as the carried fields took it: whole, or this occurrence.
@@ -395,7 +445,7 @@ export const useTaskEditorModel = ({
           return;
         }
         await mutations.convertEventToTask({ ...source, draft: newDraft(), target });
-      } else if (existing && !sameList && !reHomesInPlace) {
+      } else if (existing && movesTo(accountId, taskListId)) {
         // A move is a copy made from the form, and a copy needs a due day.
         if (!dated) {
           setError('Add a due date before moving this task to another list.');
@@ -426,17 +476,7 @@ export const useTaskEditorModel = ({
         });
       } else if (existing && initial) {
         const changes = taskEditorChanges({
-          current: {
-            alarm,
-            dueDate: dated ? dueDate : undefined,
-            dueTime: dated && timed ? dueTime : undefined,
-            listId: taskListId,
-            notes: notes.trim(),
-            priority,
-            recurrence: repeatSpec(),
-            title: title.trim(),
-            url: url.trim(),
-          },
+          current: currentValues(taskListId),
           initial,
           initialAlarms,
           provider,
@@ -451,26 +491,7 @@ export const useTaskEditorModel = ({
           });
         }
       } else {
-        // An undated create sends no due day at all (the draft's is the
-        // form's default), and so no time or repeat rule either.
-        const {
-          dueDate: draftDue,
-          dueTime: draftTime,
-          recurrence: draftRule,
-          ...rest
-        } = newDraft();
-        await mutations.createTask({
-          ...rest,
-          accountId,
-          ...(dated
-            ? {
-                dueDate: draftDue,
-                ...(draftTime === undefined ? {} : { dueTime: draftTime }),
-                ...(draftRule === undefined ? {} : { recurrence: draftRule }),
-              }
-            : {}),
-          taskListId,
-        });
+        await mutations.createTask(createInput(accountId, taskListId));
         rememberTaskList(listKey);
       }
       onSaved?.();

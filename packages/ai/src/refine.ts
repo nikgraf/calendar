@@ -149,6 +149,197 @@ const timesOf = (
     : undefined;
 };
 
+/** The day the words name, else the model's where they mention or defer one, else the draft's. */
+const refinedDay = (
+  parse: QuickAddParse,
+  utterance: string,
+  referenceDate: string,
+  draft: RefineDraft,
+): string => {
+  const modelDate = realDate(parse.date?.trim());
+  return (
+    groundDate(modelDate, { phrase: utterance, referenceDate }) ??
+    (modelDate !== undefined && (mentionsDate(utterance) || defersDate(utterance))
+      ? modelDate
+      : draft.date)
+  );
+};
+
+/** What one turn's words say of the draft's times, read once. */
+interface TimeWords {
+  readonly draft: RefineDraft;
+  readonly length: number | undefined;
+  readonly spanDays: number;
+  /** The words folded (`words`). */
+  readonly text: string;
+  readonly times: ReturnType<typeof timesOf>;
+  readonly utterance: string;
+}
+
+/** The draft's day and times as the turn leaves them. */
+interface Timing {
+  readonly assumedTime: boolean;
+  readonly date: string;
+  readonly endTime: string;
+  readonly isAllDay: boolean;
+  /** The end day the times move a spanning draft's end to. */
+  readonly spanEnd: string | undefined;
+  readonly startTime: string;
+}
+
+/** The times the words set, or all day; the draft's while they say neither. */
+const timingOf = ({ draft, spanDays, times, utterance }: TimeWords, date: string): Timing => {
+  if (times !== undefined) {
+    const { startTime } = times;
+    if (times.endTime === undefined && spanDays > 0 && !draft.isAllDay) {
+      // A moved start keeps a draft over several days its whole length.
+      const end = Temporal.PlainDateTime.from(`${date}T${startTime}`).add({
+        minutes: Math.max(draftMinutes(draft, 'UTC'), 15),
+      });
+      return {
+        assumedTime: times.assumed,
+        date,
+        endTime: end.toPlainTime().toString({ smallestUnit: 'minute' }),
+        isAllDay: false,
+        spanEnd: end.toPlainDate().toString(),
+        startTime,
+      };
+    }
+    return {
+      assumedTime: times.assumed,
+      date,
+      // A stated range sets both ends; a moved start keeps the length it had.
+      endTime:
+        times.endTime ??
+        plusMinutes(
+          startTime,
+          draft.isAllDay ? 60 : Math.max(minuteOf(draft.endTime) - minuteOf(draft.startTime), 15),
+        ),
+      isAllDay: false,
+      spanEnd: undefined,
+      startTime,
+    };
+  }
+  if (isAllDayPhrase(utterance)) {
+    const startTime = '00:00';
+    return {
+      assumedTime: false,
+      date,
+      endTime: addHour(startTime),
+      isAllDay: true,
+      spanEnd: undefined,
+      startTime,
+    };
+  }
+  return {
+    assumedTime: draft.assumedTime === true,
+    date,
+    endTime: draft.endTime,
+    isAllDay: draft.isAllDay,
+    spanEnd: undefined,
+    startTime: draft.startTime,
+  };
+};
+
+/**
+ * A length the words state, on a timed event whose end they did not set:
+ * it moves the event ("30 minutes later") or sizes it.
+ */
+const withLength = (
+  { draft, length, spanDays, text, times }: TimeWords,
+  timing: Timing,
+): Timing => {
+  if (length === undefined || timing.isAllDay || times?.endTime !== undefined) {
+    return timing;
+  }
+  const { date, endTime, startTime } = timing;
+  const by = /\b(?:earlier|fruher)\b/.test(text) ? -length : length;
+  if (SHIFT.test(text) && spanDays > 0 && times === undefined && !draft.isAllDay) {
+    // A draft over several days moves both ends, whole days included.
+    const start = Temporal.PlainDateTime.from(`${date}T${startTime}`).add({ minutes: by });
+    const end = Temporal.PlainDateTime.from(`${addDaysToPlainDate(date, spanDays)}T${endTime}`).add(
+      { minutes: by },
+    );
+    return {
+      ...timing,
+      date: start.toPlainDate().toString(),
+      endTime: end.toPlainTime().toString({ smallestUnit: 'minute' }),
+      spanEnd: end.toPlainDate().toString(),
+      startTime: start.toPlainTime().toString({ smallestUnit: 'minute' }),
+    };
+  }
+  if (SHIFT.test(text)) {
+    // "30 minutes later": the whole event moves, its length kept.
+    const shiftedStart = Math.min(Math.max(minuteOf(startTime) + by, 0), MINUTES_IN_DAY - 1);
+    return {
+      ...timing,
+      endTime: plusMinutes(format(shiftedStart), minuteOf(endTime) - minuteOf(startTime)),
+      startTime: format(shiftedStart),
+    };
+  }
+  // A stated length sizes the event on its start's day.
+  return { ...timing, endTime: plusMinutes(startTime, length), spanEnd: undefined };
+};
+
+/**
+ * A span of days the form gave the draft moves with its start, while
+ * the turn leaves its times and kind alone; restated times or a new
+ * length read as one day.
+ */
+const endDateOf = (
+  { draft, length, spanDays, times }: TimeWords,
+  { date, isAllDay, spanEnd }: Timing,
+): string | undefined => {
+  const kept =
+    times === undefined && length === undefined && isAllDay === draft.isAllDay ? spanDays : 0;
+  return spanEnd !== undefined
+    ? spanEnd === date
+      ? undefined
+      : spanEnd
+    : kept > 0
+      ? addDaysToPlainDate(date, kept)
+      : undefined;
+};
+
+/**
+ * The repeat the words set, over the draft's: what they say changes,
+ * the rest stays, a cleared one goes (`recurrenceFromParse`). Days the
+ * words chose start the draft on the first of them, a span of days
+ * moved along ("every weekday" said of a Saturday draft); a rule whose
+ * end that move passes has nothing to repeat. A date the words moved
+ * on their own ("Thursday instead") stays where they put it, whatever
+ * days the rule keeps, and the editor says if the end is past.
+ */
+const placedRepeat = (
+  parse: QuickAddParse,
+  utterance: string,
+  draft: RefineDraft,
+  { date, endDate }: { readonly date: string; readonly endDate: string | undefined },
+): {
+  readonly placedDate: string;
+  readonly placedEnd: string | undefined;
+  readonly recurrence: QuickAddPrefill['recurrence'];
+} => {
+  const merged = recurrenceFromParse(parse.recurrence, date, utterance, draft.recurrence);
+  const reading = statedRepeat(utterance, { ofRepeat: draft.recurrence !== undefined });
+  const start =
+    reading?.byDay !== undefined || (reading?.ruledOut ?? []).includes(weekdayOf(date))
+      ? firstDayOn(date, merged, { keepPhase: reading?.byDay === undefined })
+      : date;
+  const ended = start !== date && merged?.untilDate !== undefined && merged.untilDate < start;
+  const recurrence = ended ? undefined : merged;
+  const placedDate = ended ? date : start;
+  const placedEnd =
+    endDate === undefined
+      ? undefined
+      : addDaysToPlainDate(endDate, daysBetweenPlainDates(date, placedDate));
+  return { placedDate, placedEnd, recurrence };
+};
+
+/** The place taken away ("remove the location", "ohne Ort"). */
+const CLEAR_PLACE =
+  /\b(?:remove|drop|clear|delete|without|no|ohne|keine?n?|entferne?|losche?)\s+(?:the\s+|den\s+|das\s+|die\s+)?(?:location|place|venue|address|ort|adresse)\b/;
+
 /**
  * The refined draft. The model is trusted for the text it extracts (a new
  * title, a new place); the day, the times, the length and the repeat come
@@ -159,10 +350,6 @@ const timesOf = (
  * beside the draft (`invitees.ts`): its guests are the thread's, not
  * the prefill's.
  */
-/** The place taken away ("remove the location", "ohne Ort"). */
-const CLEAR_PLACE =
-  /\b(?:remove|drop|clear|delete|without|no|ohne|keine?n?|entferne?|losche?)\s+(?:the\s+|den\s+|das\s+|die\s+)?(?:location|place|venue|address|ort|adresse)\b/;
-
 export const normalizeRefine = (
   parse: QuickAddParse,
   {
@@ -213,86 +400,16 @@ export const normalizeRefine = (
   const place = placeOf(meaningfulText(parse.location), title, utterance);
   const location = CLEAR_PLACE.test(text) ? undefined : (place ?? draft.location);
 
-  const modelDate = realDate(parse.date?.trim());
-  let date =
-    groundDate(modelDate, { phrase: utterance, referenceDate }) ??
-    (modelDate !== undefined && (mentionsDate(utterance) || defersDate(utterance))
-      ? modelDate
-      : draft.date);
-
+  const day = refinedDay(parse, utterance, referenceDate, draft);
   const times = timesOf(utterance, realTime(parse.startTime), draft);
   const length = durationMinutesOf(utterance);
-  let isAllDay = draft.isAllDay;
-  let startTime = draft.startTime;
-  let endTime = draft.endTime;
-  let assumedTime = draft.assumedTime === true;
   // Days the form gave a draft that ends on a later day.
   const spanDays =
     draft.endDate === undefined ? 0 : daysBetweenPlainDates(draft.date, draft.endDate);
-  // The end day the times below move a spanning draft's end to.
-  let spanEnd: string | undefined;
-  if (times !== undefined) {
-    isAllDay = false;
-    startTime = times.startTime;
-    if (times.endTime === undefined && spanDays > 0 && !draft.isAllDay) {
-      // A moved start keeps a draft over several days its whole length.
-      const end = Temporal.PlainDateTime.from(`${date}T${startTime}`).add({
-        minutes: Math.max(draftMinutes(draft, 'UTC'), 15),
-      });
-      endTime = end.toPlainTime().toString({ smallestUnit: 'minute' });
-      spanEnd = end.toPlainDate().toString();
-    } else {
-      // A stated range sets both ends; a moved start keeps the length it had.
-      endTime =
-        times.endTime ??
-        plusMinutes(
-          startTime,
-          draft.isAllDay ? 60 : Math.max(minuteOf(draft.endTime) - minuteOf(draft.startTime), 15),
-        );
-    }
-    assumedTime = times.assumed;
-  } else if (isAllDayPhrase(utterance)) {
-    isAllDay = true;
-    startTime = '00:00';
-    endTime = addHour(startTime);
-    assumedTime = false;
-  }
-  if (length !== undefined && !isAllDay && times?.endTime === undefined) {
-    const by = /\b(?:earlier|fruher)\b/.test(text) ? -length : length;
-    if (SHIFT.test(text) && spanDays > 0 && times === undefined && !draft.isAllDay) {
-      // A draft over several days moves both ends, whole days included.
-      const start = Temporal.PlainDateTime.from(`${date}T${startTime}`).add({ minutes: by });
-      const end = Temporal.PlainDateTime.from(
-        `${addDaysToPlainDate(date, spanDays)}T${endTime}`,
-      ).add({ minutes: by });
-      date = start.toPlainDate().toString();
-      startTime = start.toPlainTime().toString({ smallestUnit: 'minute' });
-      endTime = end.toPlainTime().toString({ smallestUnit: 'minute' });
-      spanEnd = end.toPlainDate().toString();
-    } else if (SHIFT.test(text)) {
-      // "30 minutes later": the whole event moves, its length kept.
-      const shiftedStart = Math.min(Math.max(minuteOf(startTime) + by, 0), MINUTES_IN_DAY - 1);
-      endTime = plusMinutes(format(shiftedStart), minuteOf(endTime) - minuteOf(startTime));
-      startTime = format(shiftedStart);
-    } else {
-      // A stated length sizes the event on its start's day.
-      endTime = plusMinutes(startTime, length);
-      spanEnd = undefined;
-    }
-  }
-  // A span of days the form gave the draft moves with its start, while
-  // the turn leaves its times and kind alone; restated times or a new
-  // length read as one day.
-  const kept =
-    times === undefined && length === undefined && isAllDay === draft.isAllDay ? spanDays : 0;
-  const endDate =
-    spanEnd !== undefined
-      ? spanEnd === date
-        ? undefined
-        : spanEnd
-      : kept > 0
-        ? addDaysToPlainDate(date, kept)
-        : undefined;
+  const said: TimeWords = { draft, length, spanDays, text, times, utterance };
+  const timing = withLength(said, timingOf(said, day));
+  const { assumedTime, date, endTime, isAllDay, startTime } = timing;
+  const endDate = endDateOf(said, timing);
   if (!isAllDay && endDate === undefined && endTime <= startTime) {
     return { kind: 'rejected', reason: 'That would end after midnight — pick an earlier time.' };
   }
@@ -311,26 +428,10 @@ export const normalizeRefine = (
     return { kind: 'rejected', reason: invalid };
   }
 
-  // The repeat the words set, over the draft's: what they say changes,
-  // the rest stays, a cleared one goes (`recurrenceFromParse`). Days the
-  // words chose start the draft on the first of them, a span of days
-  // moved along ("every weekday" said of a Saturday draft); a rule whose
-  // end that move passes has nothing to repeat. A date the words moved
-  // on their own ("Thursday instead") stays where they put it, whatever
-  // days the rule keeps, and the editor says if the end is past.
-  const merged = recurrenceFromParse(parse.recurrence, date, utterance, draft.recurrence);
-  const reading = statedRepeat(utterance, { ofRepeat: draft.recurrence !== undefined });
-  const start =
-    reading?.byDay !== undefined || (reading?.ruledOut ?? []).includes(weekdayOf(date))
-      ? firstDayOn(date, merged, { keepPhase: reading?.byDay === undefined })
-      : date;
-  const ended = start !== date && merged?.untilDate !== undefined && merged.untilDate < start;
-  const recurrence = ended ? undefined : merged;
-  const placedDate = ended ? date : start;
-  const placedEnd =
-    endDate === undefined
-      ? undefined
-      : addDaysToPlainDate(endDate, daysBetweenPlainDates(date, placedDate));
+  const { placedDate, placedEnd, recurrence } = placedRepeat(parse, utterance, draft, {
+    date,
+    endDate,
+  });
 
   return {
     ...whom,

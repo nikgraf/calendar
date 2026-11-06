@@ -102,13 +102,39 @@ const joinOverrides = (
 
 const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? '' : 's'}`;
 
-const planSettingsImport = (
-  document: SettingsDocument,
-): Effect.Effect<ImportPlan, SqlError, PlanServices> =>
+/** The notification sections a file changes here, each merged over what is stored. */
+const changedNotificationSettings = (document: SettingsDocument) =>
   Effect.gen(function* () {
-    const accountRepo = yield* AccountRepo;
-    const calendarRepo = yield* CalendarRepo;
-    const taskRepo = yield* TaskRepo;
+    // A file from before a field existed leaves that field as it is here,
+    // and an "on" spelled out is no change from one left out: compared by
+    // what they do, so an import never asks for permission over nothing.
+    const currentEventNotifications = yield* readEventNotificationSettings;
+    const incomingEventNotifications =
+      document.eventNotifications &&
+      mergeEventNotificationSettings(currentEventNotifications, document.eventNotifications);
+    const eventNotifications =
+      incomingEventNotifications &&
+      !sameEventNotificationSettings(incomingEventNotifications, currentEventNotifications)
+        ? incomingEventNotifications
+        : undefined;
+    const currentTaskNotifications = yield* readTaskNotificationSettings;
+    const incomingTaskNotifications =
+      document.taskNotifications &&
+      mergeTaskNotificationSettings(currentTaskNotifications, document.taskNotifications);
+    const taskNotifications =
+      incomingTaskNotifications &&
+      !sameTaskNotificationSettings(incomingTaskNotifications, currentTaskNotifications)
+        ? incomingTaskNotifications
+        : undefined;
+    return { eventNotifications, taskNotifications };
+  });
+
+/**
+ * The settings sections a file changes here, in the order the summary
+ * lists them, and a note for each part of them this device cannot take.
+ */
+const planSettingsSections = (document: SettingsDocument) =>
+  Effect.gen(function* () {
     const platform = yield* PlatformSettings;
 
     const settingsChanged: Array<SettingsSection> = [];
@@ -123,30 +149,10 @@ const planSettingsImport = (
     if (timeZones) {
       settingsChanged.push('timeZones');
     }
-    // A file from before a field existed leaves that field as it is here,
-    // and an "on" spelled out is no change from one left out: compared by
-    // what they do, so an import never asks for permission over nothing.
-    const currentEventNotifications = yield* readEventNotificationSettings;
-    const incomingEventNotifications =
-      document.eventNotifications &&
-      mergeEventNotificationSettings(currentEventNotifications, document.eventNotifications);
-    const eventNotifications =
-      incomingEventNotifications &&
-      !sameEventNotificationSettings(incomingEventNotifications, currentEventNotifications)
-        ? incomingEventNotifications
-        : undefined;
+    const { eventNotifications, taskNotifications } = yield* changedNotificationSettings(document);
     if (eventNotifications) {
       settingsChanged.push('eventNotifications');
     }
-    const currentTaskNotifications = yield* readTaskNotificationSettings;
-    const incomingTaskNotifications =
-      document.taskNotifications &&
-      mergeTaskNotificationSettings(currentTaskNotifications, document.taskNotifications);
-    const taskNotifications =
-      incomingTaskNotifications &&
-      !sameTaskNotificationSettings(incomingTaskNotifications, currentTaskNotifications)
-        ? incomingTaskNotifications
-        : undefined;
     if (taskNotifications) {
       settingsChanged.push('taskNotifications');
     }
@@ -211,6 +217,32 @@ const planSettingsImport = (
         settingsChanged.push('screenPrivacy');
       }
     }
+    return {
+      birthdayReminderOverrides,
+      birthdayReminders,
+      eventNotifications,
+      mirrors,
+      notes,
+      screenPrivacy,
+      settingsChanged,
+      taskNotifications,
+      timeZones,
+      view,
+    };
+  });
+
+/**
+ * What a file's accounts ask for: the visibility flips of the calendars
+ * and lists found here, the rest parked until they sync, the Google
+ * accounts to add, and a note for each account with entries left waiting.
+ */
+const planAccountVisibility = (document: SettingsDocument) =>
+  Effect.gen(function* () {
+    const accountRepo = yield* AccountRepo;
+    const calendarRepo = yield* CalendarRepo;
+    const taskRepo = yield* TaskRepo;
+
+    const notes: Array<string> = [];
 
     // Accounts: the file's per-account section replaces what an earlier
     // import parked for that account; accounts the file does not mention
@@ -315,25 +347,39 @@ const planSettingsImport = (
 
     const pending: PendingVisibility = { appleCalendar, appleReminders, google };
     return {
-      birthdayReminderOverrides,
-      birthdayReminders,
-      eventNotifications,
+      appleAccountsPending,
       flips,
       googleAccountsToAdd,
-      mirrors,
+      notes,
       pending,
-      screenPrivacy,
+      visibilityChanges,
+      visibilityPending,
+    };
+  });
+
+const planSettingsImport = (
+  document: SettingsDocument,
+): Effect.Effect<ImportPlan, SqlError, PlanServices> =>
+  Effect.gen(function* () {
+    const {
+      notes: sectionNotes,
+      settingsChanged,
+      ...sections
+    } = yield* planSettingsSections(document);
+    const visibility = yield* planAccountVisibility(document);
+    return {
+      ...sections,
+      flips: visibility.flips,
+      googleAccountsToAdd: visibility.googleAccountsToAdd,
+      pending: visibility.pending,
       summary: {
-        appleAccountsPending,
-        googleAccountsToAdd,
-        notes,
+        appleAccountsPending: visibility.appleAccountsPending,
+        googleAccountsToAdd: visibility.googleAccountsToAdd,
+        notes: [...sectionNotes, ...visibility.notes],
         settingsChanged,
-        visibilityChanges,
-        visibilityPending,
+        visibilityChanges: visibility.visibilityChanges,
+        visibilityPending: visibility.visibilityPending,
       },
-      taskNotifications,
-      timeZones,
-      view,
     };
   });
 

@@ -7,8 +7,9 @@ import {
   useGuardedMutations,
   useTaskLists,
 } from '@calendar/app-state';
-import { isAppleCalendarAccount, isAppleRemindersAccount } from '@calendar/core';
+import { type Account, isAppleCalendarAccount, isAppleRemindersAccount } from '@calendar/core';
 import { useRouter } from 'expo-router';
+import type { ReactNode } from 'react';
 import { useTheme } from '../theme.ts';
 import {
   ActionRow,
@@ -28,6 +29,96 @@ const BLOCKED = ['denied', 'restricted', 'unavailable', 'writeOnly'];
 
 const plural = (count: number, noun: string): string =>
   `${String(count)} ${noun}${count === 1 ? '' : 's'}`;
+
+/**
+ * The Access footer's lines: for each connection iOS keeps from working,
+ * or whose access was switched off since it connected, why and where to
+ * fix it.
+ */
+const accessNotes = ({
+  calendar,
+  calendarAccount,
+  contacts,
+  reminders,
+  remindersAccount,
+}: {
+  calendar: string;
+  calendarAccount: Account | undefined;
+  contacts: string;
+  reminders: string;
+  remindersAccount: Account | undefined;
+}) =>
+  [
+    BLOCKED.includes(calendar)
+      ? `Calendar: ${appleCalendarStatusCopy(calendar, IOS_SETTINGS_PATH)}`
+      : calendarAccount?.status === 'reauth_required'
+        ? 'Calendar access is off — allow it in Settings › Privacy & Security › Calendars; it reconnects on its own.'
+        : null,
+    BLOCKED.includes(reminders)
+      ? `Reminders: ${remindersStatusCopy(reminders, IOS_SETTINGS_PATH)}`
+      : remindersAccount?.status === 'reauth_required'
+        ? 'Reminders access is off — allow it in Settings › Privacy & Security › Reminders; it reconnects on its own.'
+        : null,
+    ['denied', 'restricted', 'unavailable'].includes(contacts)
+      ? `Contacts: ${contactsStatusCopy(contacts, IOS_SETTINGS_PATH)}`
+      : null,
+  ].filter((note) => note !== null);
+
+/**
+ * The Calendar or Reminders row under Access: Connect while there is no
+ * account, Reconnect while iOS has not been asked or allows writing only,
+ * else Off or Connected; under the title, what the account shows or that
+ * its access is off.
+ */
+function AppleAccessRow({
+  account,
+  busy,
+  connecting,
+  connectTestID,
+  count,
+  leading,
+  onConnect,
+  status,
+  subtitleTestID,
+  title,
+}: {
+  account: Account | undefined;
+  busy: boolean;
+  /** This row's connect is the one running. */
+  connecting: boolean;
+  connectTestID: string;
+  /** What the account shows ("3 calendars"). */
+  count: string;
+  leading: ReactNode;
+  onConnect: () => void;
+  /** iOS's access status for it. */
+  status: string;
+  subtitleTestID: string;
+  title: string;
+}) {
+  const offer = !account || status === 'notDetermined' || status === 'writeOnly';
+  return (
+    <Row
+      accessory={
+        offer ? (
+          <CapsuleButton
+            disabled={busy}
+            label={connecting ? 'Connecting…' : account ? 'Reconnect' : 'Connect'}
+            onPress={onConnect}
+            testID={connectTestID}
+          />
+        ) : undefined
+      }
+      leading={leading}
+      subtitle={
+        account ? (account.status === 'reauth_required' ? 'Access off' : count) : 'Not connected'
+      }
+      subtitleTestID={account ? subtitleTestID : undefined}
+      title={title}
+      value={offer ? undefined : BLOCKED.includes(status) ? 'Off' : 'Connected'}
+    />
+  );
+}
 
 /**
  * What Solunivo reads on this iPhone: Calendar, Reminders and Contacts
@@ -65,10 +156,6 @@ export function DevicePage() {
     : [];
   const contactsConnected =
     (contacts === 'authorized' || contacts === 'limited') && !contactsConnectionFailed;
-  const offerCalendar =
-    !calendarAccount || calendar === 'notDetermined' || calendar === 'writeOnly';
-  const offerReminders =
-    !remindersAccount || reminders === 'notDetermined' || reminders === 'writeOnly';
   const needsSettings =
     contacts === 'denied' ||
     reminders === 'denied' ||
@@ -76,21 +163,7 @@ export function DevicePage() {
     calendar === 'denied' ||
     calendar === 'writeOnly';
 
-  const notes = [
-    BLOCKED.includes(calendar)
-      ? `Calendar: ${appleCalendarStatusCopy(calendar, IOS_SETTINGS_PATH)}`
-      : calendarAccount?.status === 'reauth_required'
-        ? 'Calendar access is off — allow it in Settings › Privacy & Security › Calendars; it reconnects on its own.'
-        : null,
-    BLOCKED.includes(reminders)
-      ? `Reminders: ${remindersStatusCopy(reminders, IOS_SETTINGS_PATH)}`
-      : remindersAccount?.status === 'reauth_required'
-        ? 'Reminders access is off — allow it in Settings › Privacy & Security › Reminders; it reconnects on its own.'
-        : null,
-    ['denied', 'restricted', 'unavailable'].includes(contacts)
-      ? `Contacts: ${contactsStatusCopy(contacts, IOS_SETTINGS_PATH)}`
-      : null,
-  ].filter((note) => note !== null);
+  const notes = accessNotes({ calendar, calendarAccount, contacts, reminders, remindersAccount });
 
   return (
     <SettingsPage testID="settings-page-device">
@@ -106,63 +179,29 @@ export function DevicePage() {
         }
         header="Access"
       >
-        <Row
-          accessory={
-            offerCalendar ? (
-              <CapsuleButton
-                disabled={busy}
-                label={
-                  connecting === 'calendar'
-                    ? 'Connecting…'
-                    : calendarAccount
-                      ? 'Reconnect'
-                      : 'Connect'
-                }
-                onPress={() => void connectDevice('calendar')}
-                testID="connect-apple-calendar"
-              />
-            ) : undefined
-          }
+        <AppleAccessRow
+          account={calendarAccount}
+          busy={busy}
+          connecting={connecting === 'calendar'}
+          connectTestID="connect-apple-calendar"
+          count={plural(appleCalendars.length, 'calendar')}
           leading={<IconTile color={colors['event-blush-edge']} name="calendar" />}
-          subtitle={
-            calendarAccount
-              ? calendarAccount.status === 'reauth_required'
-                ? 'Access off'
-                : plural(appleCalendars.length, 'calendar')
-              : 'Not connected'
-          }
-          subtitleTestID={calendarAccount ? 'apple-calendar-account' : undefined}
+          onConnect={() => void connectDevice('calendar')}
+          status={calendar}
+          subtitleTestID="apple-calendar-account"
           title="Calendar"
-          value={offerCalendar ? undefined : BLOCKED.includes(calendar) ? 'Off' : 'Connected'}
         />
-        <Row
-          accessory={
-            offerReminders ? (
-              <CapsuleButton
-                disabled={busy}
-                label={
-                  connecting === 'reminders'
-                    ? 'Connecting…'
-                    : remindersAccount
-                      ? 'Reconnect'
-                      : 'Connect'
-                }
-                onPress={() => void connectDevice('reminders')}
-                testID="connect-reminders"
-              />
-            ) : undefined
-          }
+        <AppleAccessRow
+          account={remindersAccount}
+          busy={busy}
+          connecting={connecting === 'reminders'}
+          connectTestID="connect-reminders"
+          count={plural(reminderLists.length, 'list')}
           leading={<IconTile color={colors['event-blue-edge']} name="checklist" />}
-          subtitle={
-            remindersAccount
-              ? remindersAccount.status === 'reauth_required'
-                ? 'Access off'
-                : plural(reminderLists.length, 'list')
-              : 'Not connected'
-          }
-          subtitleTestID={remindersAccount ? 'apple-reminders-account' : undefined}
+          onConnect={() => void connectDevice('reminders')}
+          status={reminders}
+          subtitleTestID="apple-reminders-account"
           title="Reminders"
-          value={offerReminders ? undefined : BLOCKED.includes(reminders) ? 'Off' : 'Connected'}
         />
         <Row
           accessory={

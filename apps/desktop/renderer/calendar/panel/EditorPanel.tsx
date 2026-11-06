@@ -128,36 +128,7 @@ export function EditorPanel({
     }
   });
   useEffect(() => () => leaveLesson(), []);
-  const {
-    addAll,
-    applying,
-    batchError,
-    canAddAll,
-    dismissInvitee,
-    dismissPlace,
-    drafts,
-    eventModel,
-    flash,
-    focused,
-    focusedDraft,
-    inviteeChoices,
-    keepPlace,
-    kinds,
-    liveItem,
-    moveToSlot,
-    onPhrase,
-    pickInvitee,
-    pickPlaceChoice,
-    placeChoice,
-    placeGeo,
-    settled,
-    switchFocus,
-    taskModel,
-    thread,
-    turns,
-    userEdits,
-    write,
-  } = useThreadEditor({
+  const editor = useThreadEditor({
     backend,
     calendars,
     confirm: moveConfirmation.request,
@@ -175,6 +146,19 @@ export function EditorPanel({
     taskSeed,
     timeZone,
   });
+  const {
+    applying,
+    drafts,
+    eventModel,
+    flash,
+    kinds,
+    onPhrase,
+    settled,
+    taskModel,
+    thread,
+    turns,
+    userEdits,
+  } = editor;
   const { joinUrl } = eventModel;
   const { apply, available, convertBlocked, kind, mode, switchTo } = kinds;
   // A turn that made the item the other kind: the control tints and fades back.
@@ -186,30 +170,6 @@ export function EditorPanel({
     !(sourceKind === 'task' && taskModel.readOnly);
   const { noun, verb } = editorTitle({ kind, sourceKind, sourceProvider: task?.provider });
   const title = `${verb} ${noun}`;
-  // What the thread shows under the field's card: a caveat, the free slots,
-  // the names to pick a contact for, the pager.
-  const threadNote = seed.thread?.note && drafts.length > 0 ? seed.thread.note : undefined;
-  const threadSlots =
-    focusedDraft?.slots && focusedDraft.slots.length > 1 && liveItem.kind === 'event'
-      ? focusedDraft.slots
-      : undefined;
-  // The footer's actions act on the form that is showing.
-  const current =
-    mode === 'todo'
-      ? {
-          busy: taskModel.busy,
-          canDelete: Boolean(task) && !taskModel.readOnly,
-          readOnly: taskModel.readOnly,
-          remove: taskModel.remove,
-          save: taskModel.save,
-        }
-      : {
-          busy: eventModel.busy,
-          canDelete: Boolean(eventModel.existing) && !eventModel.readOnly,
-          readOnly: eventModel.readOnly,
-          remove: eventModel.remove,
-          save: eventModel.save,
-        };
 
   return (
     <div
@@ -267,122 +227,11 @@ export function EditorPanel({
           </QuickAddBar>
         ) : null}
 
-        {threadNote ||
-        threadSlots ||
-        inviteeChoices.length > 0 ||
-        placeChoice ||
-        drafts.length > 1 ||
-        batchError ? (
-          <div className="mb-3 flex flex-col gap-2" data-testid="draft-thread">
-            {threadNote ? (
-              <p className="text-xs text-ink-secondary" data-testid="draft-thread-note">
-                {threadNote}
-              </p>
-            ) : null}
-            {threadSlots ? (
-              // The free slots a finder phrase found: the draft sits in the
-              // pressed one; another moves it there, like its block on the grid.
-              <div className="flex flex-col gap-1" data-testid="draft-slots">
-                <span className="text-xs text-ink-secondary">Free slots</span>
-                <div className="flex flex-wrap gap-1.5">
-                  {threadSlots.map((slot, index) => {
-                    const chosen = isAtSlot(liveItem, slot);
-                    return (
-                      <Button
-                        aria-pressed={chosen}
-                        className={chosen ? 'ring-2 ring-focus' : ''}
-                        data-testid={`draft-slot-${String(index)}`}
-                        disabled={!settled}
-                        key={`${slot.date}T${slot.startTime}`}
-                        onClick={() => moveToSlot(slot)}
-                        size="sm"
-                      >
-                        {formatSlotLabel(slot)}
-                      </Button>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : null}
-            {placeChoice ? (
-              <PlaceChoices
-                choice={placeChoice}
-                disabled={!settled}
-                geo={placeGeo}
-                location={eventModel.location}
-                onDismiss={dismissPlace}
-                onKeep={keepPlace}
-                onPick={pickPlaceChoice}
-              />
-            ) : null}
-            {inviteeChoices.length > 0 ? (
-              <InviteeChoices
-                choices={inviteeChoices}
-                disabled={!settled}
-                onDismiss={dismissInvitee}
-                onPick={pickInvitee}
-              />
-            ) : null}
-            {drafts.length > 1 ? (
-              <div className="flex items-center justify-between" data-testid="draft-pager">
-                <div className="flex items-center gap-1">
-                  <IconButton
-                    data-testid="draft-prev"
-                    disabled={focused === 0 || !settled}
-                    label="Previous draft"
-                    onClick={() => switchFocus(focused - 1)}
-                    size="sm"
-                  >
-                    <ChevronLeftIcon size={14} />
-                  </IconButton>
-                  <span className="text-xs text-ink-secondary" data-testid="draft-position">
-                    {focused + 1} of {drafts.length}
-                  </span>
-                  <IconButton
-                    data-testid="draft-next"
-                    disabled={focused >= drafts.length - 1 || !settled}
-                    label="Next draft"
-                    onClick={() => switchFocus(focused + 1)}
-                    size="sm"
-                  >
-                    <ChevronRightIcon size={14} />
-                  </IconButton>
-                </div>
-                <div className="flex items-center gap-1">
-                  <Button
-                    data-testid="draft-remove"
-                    disabled={!settled}
-                    onClick={() => thread.remove(focused)}
-                    size="sm"
-                    variant="ghost"
-                  >
-                    Remove
-                  </Button>
-                  {canAddAll ? (
-                    <Button
-                      aria-busy={write.busy}
-                      data-testid="draft-add-all"
-                      disabled={moveConfirmation.pending !== null || !settled}
-                      onClick={() => void addAll()}
-                      size="sm"
-                      variant="primary"
-                    >
-                      Add all {drafts.length}
-                    </Button>
-                  ) : null}
-                </div>
-              </div>
-            ) : null}
-            {batchError ? (
-              <p
-                className="select-text rounded-control bg-fill p-2 text-sm text-danger"
-                data-testid="draft-batch-error"
-              >
-                {batchError}
-              </p>
-            ) : null}
-          </div>
-        ) : null}
+        <DraftThread
+          confirming={moveConfirmation.pending !== null}
+          editor={editor}
+          note={seed.thread?.note}
+        />
 
         {showToggle ? (
           <SegmentedControl
@@ -421,6 +270,231 @@ export function EditorPanel({
         </FieldFlashContext>
       </div>
 
+      <EditorFooter
+        editor={editor}
+        moveConfirmation={moveConfirmation}
+        onClose={onClose}
+        task={task}
+      />
+    </div>
+  );
+}
+
+/**
+ * The draft thread's box under the quick-add field, left out while it
+ * would be empty; under the rest, why "Add all" stopped.
+ */
+function DraftThread({
+  confirming,
+  editor,
+  note,
+}: {
+  /** A question above the footer waits for its answer: "Add all" waits too. */
+  confirming: boolean;
+  editor: ReturnType<typeof useThreadEditor>;
+  /** A caveat about the drafts (the shared text was cut short). */
+  note: string | undefined;
+}) {
+  const {
+    batchError,
+    dismissInvitee,
+    dismissPlace,
+    drafts,
+    eventModel,
+    focusedDraft,
+    inviteeChoices,
+    keepPlace,
+    liveItem,
+    moveToSlot,
+    pickInvitee,
+    pickPlaceChoice,
+    placeChoice,
+    placeGeo,
+    settled,
+  } = editor;
+  // What the thread shows under the field's card: a caveat, the free slots,
+  // the names to pick a contact for, the pager.
+  const threadNote = note && drafts.length > 0 ? note : undefined;
+  const threadSlots =
+    focusedDraft?.slots && focusedDraft.slots.length > 1 && liveItem.kind === 'event'
+      ? focusedDraft.slots
+      : undefined;
+  if (
+    !(
+      threadNote ||
+      threadSlots ||
+      inviteeChoices.length > 0 ||
+      placeChoice ||
+      drafts.length > 1 ||
+      batchError
+    )
+  ) {
+    return null;
+  }
+  return (
+    <div className="mb-3 flex flex-col gap-2" data-testid="draft-thread">
+      {threadNote ? (
+        <p className="text-xs text-ink-secondary" data-testid="draft-thread-note">
+          {threadNote}
+        </p>
+      ) : null}
+      {threadSlots ? (
+        // The free slots a finder phrase found: the draft sits in the
+        // pressed one; another moves it there, like its block on the grid.
+        <div className="flex flex-col gap-1" data-testid="draft-slots">
+          <span className="text-xs text-ink-secondary">Free slots</span>
+          <div className="flex flex-wrap gap-1.5">
+            {threadSlots.map((slot, index) => {
+              const chosen = isAtSlot(liveItem, slot);
+              return (
+                <Button
+                  aria-pressed={chosen}
+                  className={chosen ? 'ring-2 ring-focus' : ''}
+                  data-testid={`draft-slot-${String(index)}`}
+                  disabled={!settled}
+                  key={`${slot.date}T${slot.startTime}`}
+                  onClick={() => moveToSlot(slot)}
+                  size="sm"
+                >
+                  {formatSlotLabel(slot)}
+                </Button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+      {placeChoice ? (
+        <PlaceChoices
+          choice={placeChoice}
+          disabled={!settled}
+          geo={placeGeo}
+          location={eventModel.location}
+          onDismiss={dismissPlace}
+          onKeep={keepPlace}
+          onPick={pickPlaceChoice}
+        />
+      ) : null}
+      {inviteeChoices.length > 0 ? (
+        <InviteeChoices
+          choices={inviteeChoices}
+          disabled={!settled}
+          onDismiss={dismissInvitee}
+          onPick={pickInvitee}
+        />
+      ) : null}
+      {drafts.length > 1 ? <DraftPager confirming={confirming} editor={editor} /> : null}
+      {batchError ? (
+        <p
+          className="select-text rounded-control bg-fill p-2 text-sm text-danger"
+          data-testid="draft-batch-error"
+        >
+          {batchError}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * The pager over several drafts: the previous and next draft around the
+ * focused one's place among them, then Remove and "Add all".
+ */
+function DraftPager({
+  confirming,
+  editor,
+}: {
+  /** A question above the footer waits for its answer: "Add all" waits too. */
+  confirming: boolean;
+  editor: ReturnType<typeof useThreadEditor>;
+}) {
+  const { addAll, canAddAll, drafts, focused, settled, switchFocus, thread, write } = editor;
+  return (
+    <div className="flex items-center justify-between" data-testid="draft-pager">
+      <div className="flex items-center gap-1">
+        <IconButton
+          data-testid="draft-prev"
+          disabled={focused === 0 || !settled}
+          label="Previous draft"
+          onClick={() => switchFocus(focused - 1)}
+          size="sm"
+        >
+          <ChevronLeftIcon size={14} />
+        </IconButton>
+        <span className="text-xs text-ink-secondary" data-testid="draft-position">
+          {focused + 1} of {drafts.length}
+        </span>
+        <IconButton
+          data-testid="draft-next"
+          disabled={focused >= drafts.length - 1 || !settled}
+          label="Next draft"
+          onClick={() => switchFocus(focused + 1)}
+          size="sm"
+        >
+          <ChevronRightIcon size={14} />
+        </IconButton>
+      </div>
+      <div className="flex items-center gap-1">
+        <Button
+          data-testid="draft-remove"
+          disabled={!settled}
+          onClick={() => thread.remove(focused)}
+          size="sm"
+          variant="ghost"
+        >
+          Remove
+        </Button>
+        {canAddAll ? (
+          <Button
+            aria-busy={write.busy}
+            data-testid="draft-add-all"
+            disabled={confirming || !settled}
+            onClick={() => void addAll()}
+            size="sm"
+            variant="primary"
+          >
+            Add all {drafts.length}
+          </Button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * What stays put under the body: the question a lossy switch, move,
+ * conversion or delete waits on, then Delete, Cancel and Save.
+ */
+function EditorFooter({
+  editor,
+  moveConfirmation,
+  onClose,
+  task,
+}: {
+  editor: ReturnType<typeof useThreadEditor>;
+  moveConfirmation: ReturnType<typeof useMoveConfirmation>;
+  onClose: () => void;
+  task: TaskRecord | undefined;
+}) {
+  const { eventModel, kinds, taskModel, write } = editor;
+  // The footer's actions act on the form that is showing.
+  const current =
+    kinds.mode === 'todo'
+      ? {
+          busy: taskModel.busy,
+          canDelete: Boolean(task) && !taskModel.readOnly,
+          readOnly: taskModel.readOnly,
+          remove: taskModel.remove,
+          save: taskModel.save,
+        }
+      : {
+          busy: eventModel.busy,
+          canDelete: Boolean(eventModel.existing) && !eventModel.readOnly,
+          readOnly: eventModel.readOnly,
+          remove: eventModel.remove,
+          save: eventModel.save,
+        };
+  return (
+    <>
       {moveConfirmation.pending ? (
         <div className="shrink-0 px-4 pt-2">
           <MoveConfirm moveConfirmation={moveConfirmation} />
@@ -453,6 +527,6 @@ export function EditorPanel({
           </Button>
         )}
       </div>
-    </div>
+    </>
   );
 }

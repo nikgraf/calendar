@@ -314,6 +314,27 @@ export interface ApplyOp {
   readonly settleDiscardedMove: (op: PendingOp) => Effect.Effect<void>;
 }
 
+/**
+ * Whether an op waits for the create ahead of it to land: it names a
+ * temp id (`local-`), its own or its parent task's, which that create
+ * swaps for Google's.
+ */
+const tempIdGate = (op: PendingOp): ApplyOutcome | undefined => {
+  // A task op queued behind its create while that create is still in
+  // backoff: the create's id swap rewrites this op's eventId once it
+  // lands. Patching the temp id now would 404 and the NotFound arm
+  // would drop the local row — wait instead.
+  if (op.kind !== 'createTask' && op.eventId.startsWith('local-')) {
+    return retry('waiting for the create ahead of it to land');
+  }
+  // A subtask carried along by a move nests under its parent's server
+  // id, which the parent's create swaps in once it lands.
+  if (op.kind === 'createTask' && op.taskParent?.startsWith('local-') === true) {
+    return retry('waiting for its parent task to land');
+  }
+  return undefined;
+};
+
 export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
   const {
     accountRepo,
@@ -1593,20 +1614,15 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       );
     });
 
-  const apply = (op: PendingOp): Effect.Effect<ApplyOutcome> =>
+  /**
+   * Whether a task op waits behind the task ops queued before it: a move
+   * into its list, earlier changes in the list it moves or reorders in, a
+   * reorder in the list it deletes from, the subtask created before it.
+   */
+  const taskOrderGate = (op: PendingOp): Effect.Effect<ApplyOutcome | undefined, SqlError> =>
     Effect.gen(function* () {
-      const guestMode = yield* GuestNotifications;
-      // A task op queued behind its create while that create is still in
-      // backoff: the create's id swap rewrites this op's eventId once it
-      // lands. Patching the temp id now would 404 and the NotFound arm
-      // would drop the local row — wait instead.
-      if (op.kind !== 'createTask' && op.eventId.startsWith('local-')) {
-        return retry('waiting for the create ahead of it to land');
-      }
-      // A subtask carried along by a move nests under its parent's server
-      // id, which the parent's create swaps in once it lands.
-      if (op.kind === 'createTask' && op.taskParent?.startsWith('local-') === true) {
-        return retry('waiting for its parent task to land');
+      if (!TASK_KINDS.has(op.kind)) {
+        return undefined;
       }
       // Task ops keep their order around a move even when backoff lets the
       // drain skip one: an op addressing a list a queued move goes into
@@ -1614,43 +1630,54 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       // for that move — Google has nothing there yet, and the 404 would
       // drop the op and its row — and a move waits for what was queued
       // before it in its source list (a subtask's delete, say).
-      if (TASK_KINDS.has(op.kind)) {
-        const earlier = yield* pendingOpRepo.earlierTaskOps(op);
-        if (
-          earlier.some(
-            (other) => other.kind === 'moveTask' && other.targetTaskListId === op.calendarId,
-          )
-        ) {
-          return retry('waiting for the move ahead of it');
-        }
-        // A reorder names the parent and the sibling it goes after as the
-        // list stands once everything queued before it landed, so it waits
-        // for those; and a delete queued behind it must not take a sibling
-        // it names away first.
-        if (
-          (op.kind === 'moveTask' || op.kind === 'reorderTask') &&
-          earlier.some((other) => other.calendarId === op.calendarId)
-        ) {
-          return retry('waiting for earlier changes in its list');
-        }
-        if (
-          op.kind === 'deleteTask' &&
-          earlier.some(
-            (other) => other.kind === 'reorderTask' && other.calendarId === op.calendarId,
-          )
-        ) {
-          return retry('waiting for the reorder ahead of it');
-        }
-        // Google inserts a subtask first among its siblings: they are
-        // queued last to first, and each waits for the one before it so a
-        // retry cannot swap them.
-        if (
-          op.kind === 'createTask' &&
-          op.taskParent !== undefined &&
-          earlier.some((other) => other.kind === 'createTask' && other.taskParent === op.taskParent)
-        ) {
-          return retry('waiting for the subtask before it');
-        }
+      const earlier = yield* pendingOpRepo.earlierTaskOps(op);
+      if (
+        earlier.some(
+          (other) => other.kind === 'moveTask' && other.targetTaskListId === op.calendarId,
+        )
+      ) {
+        return retry('waiting for the move ahead of it');
+      }
+      // A reorder names the parent and the sibling it goes after as the
+      // list stands once everything queued before it landed, so it waits
+      // for those; and a delete queued behind it must not take a sibling
+      // it names away first.
+      if (
+        (op.kind === 'moveTask' || op.kind === 'reorderTask') &&
+        earlier.some((other) => other.calendarId === op.calendarId)
+      ) {
+        return retry('waiting for earlier changes in its list');
+      }
+      if (
+        op.kind === 'deleteTask' &&
+        earlier.some((other) => other.kind === 'reorderTask' && other.calendarId === op.calendarId)
+      ) {
+        return retry('waiting for the reorder ahead of it');
+      }
+      // Google inserts a subtask first among its siblings: they are
+      // queued last to first, and each waits for the one before it so a
+      // retry cannot swap them.
+      if (
+        op.kind === 'createTask' &&
+        op.taskParent !== undefined &&
+        earlier.some((other) => other.kind === 'createTask' && other.taskParent === op.taskParent)
+      ) {
+        return retry('waiting for the subtask before it');
+      }
+      return undefined;
+    });
+
+  /**
+   * Whether an event op or a move waits behind the ops of its series
+   * queued before it: a move behind any of them, the others behind a
+   * move, the series' create and a change of the series' rule — and
+   * behind the series they were split from (`splitGate`, which may also
+   * settle the op or stamp its create).
+   */
+  const seriesOrderGate = (op: PendingOp): Effect.Effect<ApplyOutcome | undefined, SqlError> =>
+    Effect.gen(function* () {
+      if (op.kind !== 'move' && !EVENT_KINDS.has(op.kind)) {
+        return undefined;
       }
       // A move and the edits of the same series keep their queue order even
       // when backoff lets listDue skip the older one: an edit queued before
@@ -1659,449 +1686,534 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       // occurrence edit (or RSVP) queued behind its series' create waits
       // for it the same way: Google has no instance to patch until then,
       // and the 404 would drop the edit.
-      if (op.kind === 'move' || EVENT_KINDS.has(op.kind)) {
-        const earlier = yield* pendingOpRepo.earlierInSeries(op);
-        const kinds = earlier.map((entry) => entry.kind);
-        if (op.kind === 'move' && earlier.length > 0) {
-          return retry('waiting for earlier changes to the event');
-        }
-        if (op.kind !== 'move' && kinds.includes('move')) {
-          return retry('waiting for the move ahead of it');
-        }
-        if (op.kind !== 'move' && op.kind !== 'create' && kinds.includes('create')) {
-          return retry('waiting for the create ahead of it');
-        }
-        const split = yield* splitGate(op);
-        if (split !== undefined) {
-          return split;
-        }
-        // A change of the series' rule ahead of an occurrence's: once it
-        // lands it forgets the exceptions it drops (`forgetDropped`), so it
-        // goes first — an exception made under the new rule and landed
-        // while it waited out a backoff (its answer lost, say) went too.
+      const earlier = yield* pendingOpRepo.earlierInSeries(op);
+      const kinds = earlier.map((entry) => entry.kind);
+      if (op.kind === 'move' && earlier.length > 0) {
+        return retry('waiting for earlier changes to the event');
+      }
+      if (op.kind !== 'move' && kinds.includes('move')) {
+        return retry('waiting for the move ahead of it');
+      }
+      if (op.kind !== 'move' && op.kind !== 'create' && kinds.includes('create')) {
+        return retry('waiting for the create ahead of it');
+      }
+      const split = yield* splitGate(op);
+      if (split !== undefined) {
+        return split;
+      }
+      // A change of the series' rule ahead of an occurrence's: once it
+      // lands it forgets the exceptions it drops (`forgetDropped`), so it
+      // goes first — an exception made under the new rule and landed
+      // while it waited out a backoff (its answer lost, say) went too.
+      if (
+        op.kind !== 'move' &&
+        earlier.some(
+          (entry) =>
+            entry.kind === 'update' &&
+            entry.dropsFrom !== undefined &&
+            entry.eventId !== op.eventId,
+        )
+      ) {
+        return retry('waiting for the change of its series ahead of it');
+      }
+      return undefined;
+    });
+
+  /**
+   * Whether an exception's delete waits for a queued change of its series'
+   * rule that drops it (`dropsFrom`).
+   */
+  const exceptionDeleteGate = (op: PendingOp): Effect.Effect<ApplyOutcome | undefined, SqlError> =>
+    Effect.gen(function* () {
+      // An exception's delete waits for a change of its series' rule that
+      // drops it wherever that sits: a series edit that replaced it went
+      // to the back of the queue, and the deletes went out ahead of it —
+      // past taking back once it was abandoned, and into a 412 for one
+      // the user made (the PATCH gives every exception a new etag). Its
+      // landing takes them off the queue (`forgetDropped`).
+      const exception = op.kind === 'delete' ? op.payload : undefined;
+      const masterId = exception?.recurringEventId;
+      if (exception && masterId !== undefined && exception.id === op.eventId) {
+        const start = exception.originalStartUtc ?? exception.startUtc;
+        const changes = yield* pendingOpRepo.listForEvent({
+          accountId: op.accountId,
+          calendarId: op.calendarId,
+          eventId: masterId,
+        });
         if (
-          op.kind !== 'move' &&
-          earlier.some(
+          changes.some(
             (entry) =>
               entry.kind === 'update' &&
               entry.dropsFrom !== undefined &&
-              entry.eventId !== op.eventId,
+              start >= entry.dropsFrom &&
+              !(entry.payload && drawsSlot(entry.payload, exception)),
           )
         ) {
-          return retry('waiting for the change of its series ahead of it');
-        }
-        // An exception's delete waits for a change of its series' rule that
-        // drops it wherever that sits: a series edit that replaced it went
-        // to the back of the queue, and the deletes went out ahead of it —
-        // past taking back once it was abandoned, and into a 412 for one
-        // the user made (the PATCH gives every exception a new etag). Its
-        // landing takes them off the queue (`forgetDropped`).
-        const exception = op.kind === 'delete' ? op.payload : undefined;
-        const masterId = exception?.recurringEventId;
-        if (exception && masterId !== undefined && exception.id === op.eventId) {
-          const start = exception.originalStartUtc ?? exception.startUtc;
-          const changes = yield* pendingOpRepo.listForEvent({
-            accountId: op.accountId,
-            calendarId: op.calendarId,
-            eventId: masterId,
-          });
-          if (
-            changes.some(
-              (entry) =>
-                entry.kind === 'update' &&
-                entry.dropsFrom !== undefined &&
-                start >= entry.dropsFrom &&
-                !(entry.payload && drawsSlot(entry.payload, exception)),
-            )
-          ) {
-            return retry('waiting for the change of its series');
-          }
+          return retry('waiting for the change of its series');
         }
       }
-      switch (op.kind) {
-        case 'calendarColor': {
-          if (!op.colorHex) {
-            return 'done' as const;
-          }
-          // The response echoes the final colors; upserting it self-heals
-          // the case where a pull overwrote the optimistic value while
-          // this op sat in backoff. upsertMany never touches is_visible.
-          const entry = yield* client.patchCalendarListEntry({
-            accountId: op.accountId,
-            backgroundColor: op.colorHex,
-            calendarId: op.calendarId,
-            foregroundColor: contrastingTextColor(op.colorHex),
-          });
-          yield* calendarRepo.upsertMany([
-            mapGcalCalendar(entry, {
-              accountId: op.accountId,
-              colorFromId: () => undefined,
-              previousVisibility: undefined,
-            }),
-          ]);
-          return 'done' as const;
-        }
-        case 'completeTask': {
-          if (!op.taskListId || !op.taskStatus) {
-            return 'done' as const;
-          }
-          // The response echoes the final task; upserting it self-heals a
-          // backoff-window pull overwrite, and for repeating tasks Google
-          // materializes the next occurrence server-side on completion —
-          // the following poll picks that up.
-          const response = yield* tasksClient.patchTask({
-            accountId: op.accountId,
-            changes: { status: op.taskStatus },
-            taskId: op.eventId,
-            taskListId: op.taskListId,
-          });
-          const synced = mapGcalTask(response, {
-            accountId: op.accountId,
-            taskListId: op.taskListId,
-          });
-          if (synced) {
-            yield* settleTask(op, op.taskListId, synced);
-          }
-          return 'done' as const;
-        }
-        case 'createTask': {
-          if (!op.taskListId || !op.taskTitle) {
-            return 'done' as const;
-          }
-          // A set dispatch stamp means an earlier attempt's insert may
-          // have landed without us seeing the response (crash, dropped
-          // connection). tasks.insert is not idempotent — ids are
-          // server-assigned — so verify before inserting again: adopt an
-          // exact field match updated since the stamp instead of creating
-          // a duplicate. A false adopt needs an identical task created in
-          // the same window elsewhere (and is benign); a miss is merely
-          // the old behavior.
-          if (op.dispatchedAt !== undefined) {
-            const page = yield* tasksClient.listTasks({
-              accountId: op.accountId,
-              params: { updatedMin: new Date(op.dispatchedAt - 60_000).toISOString() },
-              taskListId: op.taskListId,
-            });
-            const match = (page.items ?? []).filter(
-              (candidate) =>
-                !candidate.deleted &&
-                candidate.title === op.taskTitle &&
-                (candidate.due?.slice(0, 10) ?? undefined) === (op.taskDue ?? undefined) &&
-                (candidate.notes ?? undefined) === op.taskNotes &&
-                (candidate.parent ?? undefined) === op.taskParent,
-            );
-            const adopted = match.length === 1 ? match[0] : undefined;
-            if (adopted) {
-              yield* pendingOpRepo.rewriteEventId(
-                op.accountId,
-                op.taskListId,
-                op.eventId,
-                adopted.id,
-              );
-              yield* taskRepo.replaceParent(op.accountId, op.eventId, adopted.id);
-              const adoptedRecord = mapGcalTask(adopted, {
-                accountId: op.accountId,
-                taskListId: op.taskListId,
-              });
-              if (adoptedRecord) {
-                yield* taskRepo.removeTask(op.accountId, op.taskListId, op.eventId);
-                yield* taskRepo.upsertTasks([adoptedRecord], yield* Clock.currentTimeMillis);
-              }
-              return 'done' as const;
-            }
-          }
-          yield* pendingOpRepo.markDispatched(op.id, yield* Clock.currentTimeMillis);
-          const inserted = yield* tasksClient.insertTask({
-            accountId: op.accountId,
-            parent: op.taskParent,
-            task: {
-              title: op.taskTitle,
-              ...(op.taskDue ? { due: `${op.taskDue}T00:00:00.000Z` } : {}),
-              ...(op.taskNotes ? { notes: op.taskNotes } : {}),
-            },
-            taskListId: op.taskListId,
-          });
-          // Swap the temp id for the server one everywhere it can appear:
-          // the row itself and any ops queued behind this create
-          // (processPendingOps drains oldest-first, so they run after).
-          // Remove-then-upsert rather than UPDATE ... SET id: a concurrent
-          // poll may already have upserted the server row, and a PK
-          // conflict here would retry the op — re-running an insert the
-          // Tasks API cannot deduplicate (ids are server-assigned, unlike
-          // events). The same non-idempotency means a crash between the
-          // insert response and op removal can duplicate a task; that
-          // window is accepted, this one is not.
-          yield* pendingOpRepo.rewriteEventId(op.accountId, op.taskListId, op.eventId, inserted.id);
-          yield* taskRepo.replaceParent(op.accountId, op.eventId, inserted.id);
-          const insertedRecord = mapGcalTask(inserted, {
+      return undefined;
+    });
+
+  /** A color change: patches the calendar-list entry and keeps Google's colors. */
+  const sendCalendarColor = (op: PendingOp) =>
+    Effect.gen(function* () {
+      if (!op.colorHex) {
+        return 'done' as const;
+      }
+      // The response echoes the final colors; upserting it self-heals
+      // the case where a pull overwrote the optimistic value while
+      // this op sat in backoff. upsertMany never touches is_visible.
+      const entry = yield* client.patchCalendarListEntry({
+        accountId: op.accountId,
+        backgroundColor: op.colorHex,
+        calendarId: op.calendarId,
+        foregroundColor: contrastingTextColor(op.colorHex),
+      });
+      yield* calendarRepo.upsertMany([
+        mapGcalCalendar(entry, {
+          accountId: op.accountId,
+          colorFromId: () => undefined,
+          previousVisibility: undefined,
+        }),
+      ]);
+      return 'done' as const;
+    });
+
+  /** A task done or not done: patches its status and settles the row with Google's copy. */
+  const sendCompleteTask = (op: PendingOp) =>
+    Effect.gen(function* () {
+      if (!op.taskListId || !op.taskStatus) {
+        return 'done' as const;
+      }
+      // The response echoes the final task; upserting it self-heals a
+      // backoff-window pull overwrite, and for repeating tasks Google
+      // materializes the next occurrence server-side on completion —
+      // the following poll picks that up.
+      const response = yield* tasksClient.patchTask({
+        accountId: op.accountId,
+        changes: { status: op.taskStatus },
+        taskId: op.eventId,
+        taskListId: op.taskListId,
+      });
+      const synced = mapGcalTask(response, {
+        accountId: op.accountId,
+        taskListId: op.taskListId,
+      });
+      if (synced) {
+        yield* settleTask(op, op.taskListId, synced);
+      }
+      return 'done' as const;
+    });
+
+  /**
+   * A new task: adopts the one an earlier attempt landed, or inserts it,
+   * then swaps the temp id for Google's.
+   */
+  const sendCreateTask = (op: PendingOp) =>
+    Effect.gen(function* () {
+      if (!op.taskListId || !op.taskTitle) {
+        return 'done' as const;
+      }
+      // A set dispatch stamp means an earlier attempt's insert may
+      // have landed without us seeing the response (crash, dropped
+      // connection). tasks.insert is not idempotent — ids are
+      // server-assigned — so verify before inserting again: adopt an
+      // exact field match updated since the stamp instead of creating
+      // a duplicate. A false adopt needs an identical task created in
+      // the same window elsewhere (and is benign); a miss is merely
+      // the old behavior.
+      if (op.dispatchedAt !== undefined) {
+        const page = yield* tasksClient.listTasks({
+          accountId: op.accountId,
+          params: { updatedMin: new Date(op.dispatchedAt - 60_000).toISOString() },
+          taskListId: op.taskListId,
+        });
+        const match = (page.items ?? []).filter(
+          (candidate) =>
+            !candidate.deleted &&
+            candidate.title === op.taskTitle &&
+            (candidate.due?.slice(0, 10) ?? undefined) === (op.taskDue ?? undefined) &&
+            (candidate.notes ?? undefined) === op.taskNotes &&
+            (candidate.parent ?? undefined) === op.taskParent,
+        );
+        const adopted = match.length === 1 ? match[0] : undefined;
+        if (adopted) {
+          yield* pendingOpRepo.rewriteEventId(op.accountId, op.taskListId, op.eventId, adopted.id);
+          yield* taskRepo.replaceParent(op.accountId, op.eventId, adopted.id);
+          const adoptedRecord = mapGcalTask(adopted, {
             accountId: op.accountId,
             taskListId: op.taskListId,
           });
-          if (insertedRecord) {
+          if (adoptedRecord) {
             yield* taskRepo.removeTask(op.accountId, op.taskListId, op.eventId);
-            // Google put it first among its siblings and renumbered them
-            // without bumping their `updated`: here they still hold their
-            // old places, and its "…00" would tie with the first one's.
-            // It goes first here too until the next pass, which sees the
-            // list's `updated` move and reads the order back.
-            const siblings = (yield* taskRepo.listSiblings(
-              op.accountId,
-              op.taskListId,
-              insertedRecord.parentId,
-            )).filter((sibling) => sibling.id !== insertedRecord.id);
-            yield* taskRepo.upsertTasks(
-              [
-                placedTask(insertedRecord, {
-                  ...(insertedRecord.parentId === undefined
-                    ? {}
-                    : { parentId: insertedRecord.parentId }),
-                  position: provisionalPosition(siblings, undefined),
-                }),
-              ],
-              yield* Clock.currentTimeMillis,
-            );
-          } else {
-            // Unreachable in practice (a just-inserted task is never a
-            // tombstone) — keep the row addressable under the server id.
-            yield* taskRepo.replaceId(op.accountId, op.taskListId, op.eventId, inserted.id);
+            yield* taskRepo.upsertTasks([adoptedRecord], yield* Clock.currentTimeMillis);
           }
           return 'done' as const;
         }
-        case 'create': {
-          if (!op.payload) {
-            // Stored payload no longer decodes (a schema moved on): nothing
-            // to send, and the user should know the edit is gone.
-            return yield* drop(op, 'stored payload unreadable');
-          }
-          // From here on Google may have the event even if the response
-          // never arrives (its retry then answers 409, which counts as
-          // done): a later edit must not fold into this create, nor a
-          // delete simply drop it (mutations.ts unsentCreateOf).
-          if (op.dispatchedAt === undefined) {
+      }
+      yield* pendingOpRepo.markDispatched(op.id, yield* Clock.currentTimeMillis);
+      const inserted = yield* tasksClient.insertTask({
+        accountId: op.accountId,
+        parent: op.taskParent,
+        task: {
+          title: op.taskTitle,
+          ...(op.taskDue ? { due: `${op.taskDue}T00:00:00.000Z` } : {}),
+          ...(op.taskNotes ? { notes: op.taskNotes } : {}),
+        },
+        taskListId: op.taskListId,
+      });
+      // Swap the temp id for the server one everywhere it can appear:
+      // the row itself and any ops queued behind this create
+      // (processPendingOps drains oldest-first, so they run after).
+      // Remove-then-upsert rather than UPDATE ... SET id: a concurrent
+      // poll may already have upserted the server row, and a PK
+      // conflict here would retry the op — re-running an insert the
+      // Tasks API cannot deduplicate (ids are server-assigned, unlike
+      // events). The same non-idempotency means a crash between the
+      // insert response and op removal can duplicate a task; that
+      // window is accepted, this one is not.
+      yield* pendingOpRepo.rewriteEventId(op.accountId, op.taskListId, op.eventId, inserted.id);
+      yield* taskRepo.replaceParent(op.accountId, op.eventId, inserted.id);
+      const insertedRecord = mapGcalTask(inserted, {
+        accountId: op.accountId,
+        taskListId: op.taskListId,
+      });
+      if (insertedRecord) {
+        yield* taskRepo.removeTask(op.accountId, op.taskListId, op.eventId);
+        // Google put it first among its siblings and renumbered them
+        // without bumping their `updated`: here they still hold their
+        // old places, and its "…00" would tie with the first one's.
+        // It goes first here too until the next pass, which sees the
+        // list's `updated` move and reads the order back.
+        const siblings = (yield* taskRepo.listSiblings(
+          op.accountId,
+          op.taskListId,
+          insertedRecord.parentId,
+        )).filter((sibling) => sibling.id !== insertedRecord.id);
+        yield* taskRepo.upsertTasks(
+          [
+            placedTask(insertedRecord, {
+              ...(insertedRecord.parentId === undefined
+                ? {}
+                : { parentId: insertedRecord.parentId }),
+              position: provisionalPosition(siblings, undefined),
+            }),
+          ],
+          yield* Clock.currentTimeMillis,
+        );
+      } else {
+        // Unreachable in practice (a just-inserted task is never a
+        // tombstone) — keep the row addressable under the server id.
+        yield* taskRepo.replaceId(op.accountId, op.taskListId, op.eventId, inserted.id);
+      }
+      return 'done' as const;
+    });
+
+  /** A new event: stamped as sent, inserted, and settled with Google's copy. */
+  const sendCreate = (op: PendingOp, guestMode: GuestNotificationMode) =>
+    Effect.gen(function* () {
+      if (!op.payload) {
+        // Stored payload no longer decodes (a schema moved on): nothing
+        // to send, and the user should know the edit is gone.
+        return yield* drop(op, 'stored payload unreadable');
+      }
+      // From here on Google may have the event even if the response
+      // never arrives (its retry then answers 409, which counts as
+      // done): a later edit must not fold into this create, nor a
+      // delete simply drop it (mutations.ts unsentCreateOf).
+      if (op.dispatchedAt === undefined) {
+        yield* pendingOpRepo.markDispatched(op.id, yield* Clock.currentTimeMillis);
+      }
+      const response = yield* client.insertEvent({
+        accountId: op.accountId,
+        calendarId: op.calendarId,
+        event: {
+          ...toGcalEventInput(op.payload),
+          ...toGcalGeoInsert(op.payload),
+          ...toGcalRemindersInsert(op.payload),
+          attendees: toGcalAttendees(op.payload),
+        },
+        sendUpdates: sendUpdatesFor(op.payload, false, guestMode),
+      });
+      yield* settle(
+        op,
+        mapGcalEvent(response, {
+          accountId: op.accountId,
+          calendarId: op.calendarId,
+          defaultTimeZone: op.payload.startTimeZone ?? 'UTC',
+          syncedAt: yield* Clock.currentTimeMillis,
+        }),
+      );
+      return 'done' as const;
+    });
+
+  /** An event delete: sent on its etag, then a copy a pull put back meanwhile goes. */
+  const sendDelete = (op: PendingOp) =>
+    Effect.gen(function* () {
+      yield* client.deleteEvent({
+        accountId: op.accountId,
+        baseEtag: op.baseEtag,
+        calendarId: op.calendarId,
+        eventId: op.eventId,
+      });
+      yield* dropPulledCopy(op);
+      return 'done' as const;
+    });
+
+  /** A task move to another list: sent, then settled in the destination. */
+  const sendMoveTask = (op: PendingOp) =>
+    Effect.gen(function* () {
+      const destination = op.targetTaskListId;
+      if (!destination || !op.taskListId) {
+        return yield* drop(op, 'task move without a destination');
+      }
+      const response = yield* tasksClient.moveTask({
+        accountId: op.accountId,
+        destinationTaskListId: destination,
+        taskId: op.eventId,
+        taskListId: op.taskListId,
+      });
+      yield* settleTaskMove(op, destination, response);
+      return 'done' as const;
+    });
+
+  /**
+   * A task reorder: dropped when it would nest the task two levels deep,
+   * otherwise sent, and the list's order read back.
+   */
+  const sendReorderTask = (op: PendingOp) =>
+    Effect.gen(function* () {
+      if (!op.taskListId) {
+        return 'done' as const;
+      }
+      // Checked again as sent: a change undone since it was queued (a
+      // subtask put back under the task, the new parent nested itself)
+      // would make Google nest it two levels deep, which it accepts.
+      if (op.taskParent !== undefined) {
+        const parent = yield* taskRepo.get(op.accountId, op.taskListId, op.taskParent);
+        const subtasks = yield* taskRepo.listSubtasks(op.accountId, op.taskListId, op.eventId);
+        if (parent?.parentId !== undefined || subtasks.length > 0) {
+          return yield* drop(op, 'it would nest the task more than one level deep');
+        }
+      }
+      const response = yield* tasksClient.moveTask({
+        accountId: op.accountId,
+        parent: op.taskParent,
+        previous: op.taskPrevious,
+        taskId: op.eventId,
+        taskListId: op.taskListId,
+      });
+      const synced = mapGcalTask(response, {
+        accountId: op.accountId,
+        taskListId: op.taskListId,
+      });
+      if (synced) {
+        yield* settleTask(op, op.taskListId, synced);
+      }
+      yield* refreshTaskOrder(op, op.taskListId);
+      return 'done' as const;
+    });
+
+  /** A task delete: sent, then its synced row and its subtasks' queued deletes go. */
+  const sendDeleteTask = (op: PendingOp) =>
+    Effect.gen(function* () {
+      if (!op.taskListId) {
+        return 'done' as const;
+      }
+      yield* tasksClient.deleteTask({
+        accountId: op.accountId,
+        taskId: op.eventId,
+        taskListId: op.taskListId,
+      });
+      // A listing answered before the delete reached Google may have
+      // put the task back meanwhile (synced); a queued op's row stays.
+      yield* taskRepo.removeSyncedTask(op.accountId, op.taskListId, op.eventId);
+      yield* retireSubtaskDeletes(op);
+      return 'done' as const;
+    });
+
+  /**
+   * An event move: stamped as sent while it is still queued, sent, and
+   * landed in the destination.
+   */
+  const sendMove = (op: PendingOp, guestMode: GuestNotificationMode) =>
+    Effect.gen(function* () {
+      const destination = op.targetCalendarId;
+      if (!destination) {
+        return yield* drop(op, 'move without a destination');
+      }
+      // Stamped before the request, in one transaction with the check
+      // that it is still queued: a discard came first (nothing goes
+      // out), or it sees the stamp and asks Google before putting
+      // anything back (settleDiscardedMove).
+      const sending = yield* transaction(
+        Effect.gen(function* () {
+          const queued = yield* pendingOpRepo.getById(op.id);
+          if (queued) {
             yield* pendingOpRepo.markDispatched(op.id, yield* Clock.currentTimeMillis);
           }
-          const response = yield* client.insertEvent({
-            accountId: op.accountId,
-            calendarId: op.calendarId,
-            event: {
-              ...toGcalEventInput(op.payload),
-              ...toGcalGeoInsert(op.payload),
-              ...toGcalRemindersInsert(op.payload),
-              attendees: toGcalAttendees(op.payload),
-            },
-            sendUpdates: sendUpdatesFor(op.payload, false, guestMode),
-          });
-          yield* settle(
-            op,
-            mapGcalEvent(response, {
-              accountId: op.accountId,
-              calendarId: op.calendarId,
-              defaultTimeZone: op.payload.startTimeZone ?? 'UTC',
-              syncedAt: yield* Clock.currentTimeMillis,
-            }),
-          );
-          return 'done' as const;
-        }
-        case 'delete': {
-          yield* client.deleteEvent({
-            accountId: op.accountId,
-            baseEtag: op.baseEtag,
-            calendarId: op.calendarId,
-            eventId: op.eventId,
-          });
-          yield* dropPulledCopy(op);
-          return 'done' as const;
-        }
-        case 'moveTask': {
-          const destination = op.targetTaskListId;
-          if (!destination || !op.taskListId) {
-            return yield* drop(op, 'task move without a destination');
-          }
-          const response = yield* tasksClient.moveTask({
-            accountId: op.accountId,
-            destinationTaskListId: destination,
-            taskId: op.eventId,
-            taskListId: op.taskListId,
-          });
-          yield* settleTaskMove(op, destination, response);
-          return 'done' as const;
-        }
-        case 'reorderTask': {
-          if (!op.taskListId) {
-            return 'done' as const;
-          }
-          // Checked again as sent: a change undone since it was queued (a
-          // subtask put back under the task, the new parent nested itself)
-          // would make Google nest it two levels deep, which it accepts.
-          if (op.taskParent !== undefined) {
-            const parent = yield* taskRepo.get(op.accountId, op.taskListId, op.taskParent);
-            const subtasks = yield* taskRepo.listSubtasks(op.accountId, op.taskListId, op.eventId);
-            if (parent?.parentId !== undefined || subtasks.length > 0) {
-              return yield* drop(op, 'it would nest the task more than one level deep');
-            }
-          }
-          const response = yield* tasksClient.moveTask({
-            accountId: op.accountId,
-            parent: op.taskParent,
-            previous: op.taskPrevious,
-            taskId: op.eventId,
-            taskListId: op.taskListId,
-          });
-          const synced = mapGcalTask(response, {
-            accountId: op.accountId,
-            taskListId: op.taskListId,
-          });
-          if (synced) {
-            yield* settleTask(op, op.taskListId, synced);
-          }
-          yield* refreshTaskOrder(op, op.taskListId);
-          return 'done' as const;
-        }
-        case 'deleteTask': {
-          if (!op.taskListId) {
-            return 'done' as const;
-          }
-          yield* tasksClient.deleteTask({
-            accountId: op.accountId,
-            taskId: op.eventId,
-            taskListId: op.taskListId,
-          });
-          // A listing answered before the delete reached Google may have
-          // put the task back meanwhile (synced); a queued op's row stays.
-          yield* taskRepo.removeSyncedTask(op.accountId, op.taskListId, op.eventId);
-          yield* retireSubtaskDeletes(op);
-          return 'done' as const;
-        }
-        case 'move': {
-          const destination = op.targetCalendarId;
-          if (!destination) {
-            return yield* drop(op, 'move without a destination');
-          }
-          // Stamped before the request, in one transaction with the check
-          // that it is still queued: a discard came first (nothing goes
-          // out), or it sees the stamp and asks Google before putting
-          // anything back (settleDiscardedMove).
-          const sending = yield* transaction(
-            Effect.gen(function* () {
-              const queued = yield* pendingOpRepo.getById(op.id);
-              if (queued) {
-                yield* pendingOpRepo.markDispatched(op.id, yield* Clock.currentTimeMillis);
-              }
-              return queued !== undefined;
-            }),
-          );
-          if (!sending) {
-            return 'done' as const;
-          }
-          const local = yield* eventRepo.getById(op.accountId, destination, op.eventId);
-          const response = yield* client.moveEvent({
-            accountId: op.accountId,
-            calendarId: op.calendarId,
-            destination,
-            eventId: op.eventId,
-            sendUpdates: local && hasGuests(local) ? guestMode : undefined,
-          });
-          yield* landMove(op, destination, response);
-          return 'done' as const;
-        }
-        case 'rsvp': {
-          if (!op.payload?.attendees) {
-            return 'done' as const;
-          }
-          const attendees = op.payload.attendees.map((attendee) => ({
-            email: attendee.email,
-            responseStatus: attendee.responseStatus,
-          }));
-          const send = (baseEtag: string | undefined) =>
-            client.patchEvent({
-              accountId: op.accountId,
-              baseEtag,
-              calendarId: op.calendarId,
-              event: { attendees },
-              eventId: op.eventId,
-            });
-          // Attendees-only patch, first with If-Match on the etag the RSVP
-          // was queued against. When that holds, Google had exactly the
-          // version the queued edits were built on, so they move to the
-          // etag this produced (an edit right behind an RSVP used to park
-          // against it). A 412 sends it again unchecked — an RSVP should
-          // not lose to unrelated content edits — and then nothing says
-          // what Google had before: queued edits keep their etag, and a
-          // 412 there asks the user.
-          const sent = yield* send(op.baseEtag).pipe(
-            Effect.map((response) => ({ response, sentEtag: op.baseEtag })),
-            Effect.catchTag('ConflictError', () =>
-              Effect.map(send(undefined), (response) => ({ response, sentEtag: undefined })),
-            ),
-          );
-          yield* settle(
-            op,
-            mapGcalEvent(sent.response, {
-              accountId: op.accountId,
-              calendarId: op.calendarId,
-              defaultTimeZone: op.payload.startTimeZone ?? 'UTC',
-              syncedAt: yield* Clock.currentTimeMillis,
-            }),
-            { sentEtag: sent.sentEtag },
-          );
-          return 'done' as const;
-        }
-        case 'update': {
-          if (!op.payload) {
-            // Stored payload no longer decodes (a schema moved on): nothing
-            // to send, and the user should know the edit is gone.
-            return yield* drop(op, 'stored payload unreadable');
-          }
-          const response = yield* client.patchEvent({
-            accountId: op.accountId,
-            baseEtag: op.baseEtag,
-            calendarId: op.calendarId,
-            event: updateBody(op, op.payload),
-            eventId: op.eventId,
-            // Removed guests get their cancellation too: flagged edits
-            // always notify, even when nobody is left.
-            sendUpdates: sendUpdatesFor(op.payload, op.attendeesChanged === true, guestMode),
-          });
-          // A second drag made while this patch was in flight queued a new
-          // update on the same etag: it now follows this write.
-          yield* settle(
-            op,
-            mapGcalEvent(response, {
-              accountId: op.accountId,
-              calendarId: op.calendarId,
-              defaultTimeZone: op.payload.startTimeZone ?? 'UTC',
-              syncedAt: yield* Clock.currentTimeMillis,
-            }),
-            { sentEtag: op.baseEtag },
-          );
-          return 'done' as const;
-        }
-        case 'updateTask': {
-          if (!op.taskListId) {
-            return 'done' as const;
-          }
-          const patched = yield* tasksClient.patchTask({
-            accountId: op.accountId,
-            changes: {
-              // null takes the day away (JSON null clears a field on PATCH).
-              ...(op.taskDue === undefined
-                ? {}
-                : { due: op.taskDue === null ? null : `${op.taskDue}T00:00:00.000Z` }),
-              ...(op.taskNotes === undefined ? {} : { notes: op.taskNotes }),
-              ...(op.taskTitle === undefined ? {} : { title: op.taskTitle }),
-            },
-            taskId: op.eventId,
-            taskListId: op.taskListId,
-          });
-          const patchedRecord = mapGcalTask(patched, {
-            accountId: op.accountId,
-            taskListId: op.taskListId,
-          });
-          if (patchedRecord) {
-            yield* settleTask(op, op.taskListId, patchedRecord);
-          }
-          return 'done' as const;
-        }
+          return queued !== undefined;
+        }),
+      );
+      if (!sending) {
+        return 'done' as const;
+      }
+      const local = yield* eventRepo.getById(op.accountId, destination, op.eventId);
+      const response = yield* client.moveEvent({
+        accountId: op.accountId,
+        calendarId: op.calendarId,
+        destination,
+        eventId: op.eventId,
+        sendUpdates: local && hasGuests(local) ? guestMode : undefined,
+      });
+      yield* landMove(op, destination, response);
+      return 'done' as const;
+    });
+
+  /** An RSVP: sends the guests' answers alone and settles the row with Google's copy. */
+  const sendRsvp = (op: PendingOp) =>
+    Effect.gen(function* () {
+      if (!op.payload?.attendees) {
+        return 'done' as const;
+      }
+      const attendees = op.payload.attendees.map((attendee) => ({
+        email: attendee.email,
+        responseStatus: attendee.responseStatus,
+      }));
+      const send = (baseEtag: string | undefined) =>
+        client.patchEvent({
+          accountId: op.accountId,
+          baseEtag,
+          calendarId: op.calendarId,
+          event: { attendees },
+          eventId: op.eventId,
+        });
+      // Attendees-only patch, first with If-Match on the etag the RSVP
+      // was queued against. When that holds, Google had exactly the
+      // version the queued edits were built on, so they move to the
+      // etag this produced (an edit right behind an RSVP used to park
+      // against it). A 412 sends it again unchecked — an RSVP should
+      // not lose to unrelated content edits — and then nothing says
+      // what Google had before: queued edits keep their etag, and a
+      // 412 there asks the user.
+      const sent = yield* send(op.baseEtag).pipe(
+        Effect.map((response) => ({ response, sentEtag: op.baseEtag })),
+        Effect.catchTag('ConflictError', () =>
+          Effect.map(send(undefined), (response) => ({ response, sentEtag: undefined })),
+        ),
+      );
+      yield* settle(
+        op,
+        mapGcalEvent(sent.response, {
+          accountId: op.accountId,
+          calendarId: op.calendarId,
+          defaultTimeZone: op.payload.startTimeZone ?? 'UTC',
+          syncedAt: yield* Clock.currentTimeMillis,
+        }),
+        { sentEtag: sent.sentEtag },
+      );
+      return 'done' as const;
+    });
+
+  /** An event edit: patches what it changed and settles the row with Google's copy. */
+  const sendUpdate = (op: PendingOp, guestMode: GuestNotificationMode) =>
+    Effect.gen(function* () {
+      if (!op.payload) {
+        // Stored payload no longer decodes (a schema moved on): nothing
+        // to send, and the user should know the edit is gone.
+        return yield* drop(op, 'stored payload unreadable');
+      }
+      const response = yield* client.patchEvent({
+        accountId: op.accountId,
+        baseEtag: op.baseEtag,
+        calendarId: op.calendarId,
+        event: updateBody(op, op.payload),
+        eventId: op.eventId,
+        // Removed guests get their cancellation too: flagged edits
+        // always notify, even when nobody is left.
+        sendUpdates: sendUpdatesFor(op.payload, op.attendeesChanged === true, guestMode),
+      });
+      // A second drag made while this patch was in flight queued a new
+      // update on the same etag: it now follows this write.
+      yield* settle(
+        op,
+        mapGcalEvent(response, {
+          accountId: op.accountId,
+          calendarId: op.calendarId,
+          defaultTimeZone: op.payload.startTimeZone ?? 'UTC',
+          syncedAt: yield* Clock.currentTimeMillis,
+        }),
+        { sentEtag: op.baseEtag },
+      );
+      return 'done' as const;
+    });
+
+  /** A task edit: patches its title, notes or day and settles the row with Google's copy. */
+  const sendUpdateTask = (op: PendingOp) =>
+    Effect.gen(function* () {
+      if (!op.taskListId) {
+        return 'done' as const;
+      }
+      const patched = yield* tasksClient.patchTask({
+        accountId: op.accountId,
+        changes: {
+          // null takes the day away (JSON null clears a field on PATCH).
+          ...(op.taskDue === undefined
+            ? {}
+            : { due: op.taskDue === null ? null : `${op.taskDue}T00:00:00.000Z` }),
+          ...(op.taskNotes === undefined ? {} : { notes: op.taskNotes }),
+          ...(op.taskTitle === undefined ? {} : { title: op.taskTitle }),
+        },
+        taskId: op.eventId,
+        taskListId: op.taskListId,
+      });
+      const patchedRecord = mapGcalTask(patched, {
+        accountId: op.accountId,
+        taskListId: op.taskListId,
+      });
+      if (patchedRecord) {
+        yield* settleTask(op, op.taskListId, patchedRecord);
+      }
+      return 'done' as const;
+    });
+
+  const apply = (op: PendingOp): Effect.Effect<ApplyOutcome> =>
+    Effect.gen(function* () {
+      const guestMode = yield* GuestNotifications;
+      const waiting =
+        tempIdGate(op) ??
+        (yield* taskOrderGate(op)) ??
+        (yield* seriesOrderGate(op)) ??
+        (yield* exceptionDeleteGate(op));
+      if (waiting !== undefined) {
+        return waiting;
+      }
+      switch (op.kind) {
+        case 'calendarColor':
+          return yield* sendCalendarColor(op);
+        case 'completeTask':
+          return yield* sendCompleteTask(op);
+        case 'createTask':
+          return yield* sendCreateTask(op);
+        case 'create':
+          return yield* sendCreate(op, guestMode);
+        case 'delete':
+          return yield* sendDelete(op);
+        case 'moveTask':
+          return yield* sendMoveTask(op);
+        case 'reorderTask':
+          return yield* sendReorderTask(op);
+        case 'deleteTask':
+          return yield* sendDeleteTask(op);
+        case 'move':
+          return yield* sendMove(op, guestMode);
+        case 'rsvp':
+          return yield* sendRsvp(op);
+        case 'update':
+          return yield* sendUpdate(op, guestMode);
+        case 'updateTask':
+          return yield* sendUpdateTask(op);
       }
     }).pipe(
       Effect.catchTags({
