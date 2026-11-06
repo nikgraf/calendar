@@ -154,11 +154,6 @@ const ownTextOf = (
   seriesEdit: PendingOp | undefined,
 ): PendingOp['beforePayload'] => (before && seriesEdit ? withOwnText(before, seriesEdit) : before);
 
-/**
- * The defined fields of an update, ready to spread over an EventRecord.
- * `attendees` is the editor's replacement list and is merged against the
- * current guests so server facts (responses, organizer) survive.
- */
 /** Whether this edit — or a still-queued update it replaces — touched the guest list. */
 const attendeesFlag = (
   changes: UpdateEventParams['changes'],
@@ -168,10 +163,6 @@ const attendeesFlag = (
     ? true
     : undefined;
 
-/**
- * Whether this edit — or a still-queued update it replaces — dropped the
- * event's coordinates, so the patch must delete the server's geo keys.
- */
 /** The patch must send an empty rule list: this edit (or a queued one it replaces) cleared it. */
 const recurrenceClearedFlag = (
   changes: UpdateEventParams['changes'],
@@ -181,6 +172,10 @@ const recurrenceClearedFlag = (
     ? true
     : undefined;
 
+/**
+ * Whether this edit — or a still-queued update it replaces — dropped the
+ * event's coordinates, so the patch must delete the server's geo keys.
+ */
 const geoClearedFlag = (
   before: EventRecord,
   after: EventRecord,
@@ -200,6 +195,11 @@ const remindersFlag = (
     ? true
     : undefined;
 
+/**
+ * The defined fields of an update, ready to spread over an EventRecord.
+ * `attendees` is the editor's replacement list and is merged against the
+ * current guests so server facts (responses, organizer) survive.
+ */
 const definedChanges = (
   changes: UpdateEventParams['changes'],
   currentAttendees: EventRecord['attendees'],
@@ -380,10 +380,6 @@ const make: Effect.Effect<
   const opsForEvent = (accountId: string, calendarId: string, eventId: string) =>
     pendingOpRepo.listForEvent({ accountId, calendarId, eventId });
 
-  /**
-   * The carried text of the series edit a truncation replaces: its payload
-   * still shows that edit's text, so abandoning it must still undo the carry.
-   */
   const enqueue = (op: PendingOp) => pendingOpRepo.enqueue(op);
 
   /**
@@ -479,6 +475,9 @@ const make: Effect.Effect<
     Effect.gen(function* () {
       const queued = yield* opsForEvent(accountId, calendarId, master.id);
       const replaced = queued.findLast((op) => op.kind === 'update');
+      // The carried text of the series edit the truncation replaces: its
+      // payload still shows that edit's text, so abandoning it must still
+      // undo the carry.
       const carriedText = unsentCreate ? undefined : replaced?.carriedText;
       if (unsentCreate) {
         yield* pendingOpRepo.removeForEvent(accountId, calendarId, master.id);

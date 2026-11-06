@@ -336,6 +336,10 @@ const placedRepeat = (
   return { placedDate, placedEnd, recurrence };
 };
 
+/** The place taken away ("remove the location", "ohne Ort"). */
+const CLEAR_PLACE =
+  /\b(?:remove|drop|clear|delete|without|no|ohne|keine?n?|entferne?|losche?)\s+(?:the\s+|den\s+|das\s+|die\s+)?(?:location|place|venue|address|ort|adresse)\b/;
+
 /**
  * The refined draft. The model is trusted for the text it extracts (a new
  * title, a new place); the day, the times, the length and the repeat come
@@ -346,10 +350,6 @@ const placedRepeat = (
  * beside the draft (`invitees.ts`): its guests are the thread's, not
  * the prefill's.
  */
-/** The place taken away ("remove the location", "ohne Ort"). */
-const CLEAR_PLACE =
-  /\b(?:remove|drop|clear|delete|without|no|ohne|keine?n?|entferne?|losche?)\s+(?:the\s+|den\s+|das\s+|die\s+)?(?:location|place|venue|address|ort|adresse)\b/;
-
 export const normalizeRefine = (
   parse: QuickAddParse,
   {
