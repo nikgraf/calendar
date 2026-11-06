@@ -1,6 +1,34 @@
 import nkzw from '@nkzw/oxlint-config';
 import { defineConfig } from 'vite-plus';
 
+// A function's cyclomatic complexity stops at 40 (`complexity` below).
+// These files held larger ones when the cap arrived. Each lists its
+// functions over 40, highest first: the file's rule allows the highest,
+// and `scripts/complexityPins.test.ts` holds the file to exactly these
+// numbers (by value: it does not know which function is which), so
+// nothing else in it passes 40. A list only shrinks: lower a number when
+// its function shrinks, drop it at 40. Never raise or add one — split
+// the function instead, into pieces of 40 or less. A function that moves
+// to another file takes its number along; an oxlint upgrade that counts
+// differently re-measures them in its own PR.
+export const complexityCap = 40;
+export const complexityPins: Record<string, ReadonlyArray<number>> = {
+  'apps/desktop/e2e/bench/check.ts': [77],
+  'apps/desktop/renderer/calendar/panel/EditorPanel.tsx': [52],
+  'apps/ios/src/ui/QuickAddBar.tsx': [43],
+  'apps/ios/src/ui/settings/DevicePage.tsx': [49],
+  'packages/agent/src/ops/events.ts': [52],
+  'packages/ai/src/grounding.ts': [74],
+  'packages/ai/src/normalizeQuickAdd.ts': [80, 42],
+  'packages/ai/src/refine.ts': [62],
+  'packages/app-state/src/editorModel.ts': [73, 56],
+  'packages/app-state/src/taskEditorModel.ts': [56],
+  'packages/core/src/recurrence/structured.ts': [42],
+  'packages/sync/src/applyOp.ts': [89],
+  'packages/sync/src/mutations.ts': [57],
+  'packages/sync/src/settingsImport.ts': [45],
+};
+
 export default defineConfig({
   fmt: {
     ignorePatterns: [
@@ -89,7 +117,19 @@ export default defineConfig({
           'no-console': 'off',
         },
       },
+      ...Object.entries(complexityPins).map(([file, pins]) => ({
+        files: [file],
+        rules: {
+          complexity: ['error', { max: Math.max(complexityCap, ...pins) }] satisfies [
+            'error',
+            { max: number },
+          ],
+        },
+      })),
     ],
+    rules: {
+      complexity: ['error', { max: complexityCap }],
+    },
   },
   staged: {
     '*': 'vp check --fix',
@@ -113,6 +153,7 @@ export default defineConfig({
             'apps/ios/src/**/*.test.{ts,tsx}',
             'apps/ios/e2e/ci/**/*.test.ts',
             'apps/web/{scripts,src}/**/*.test.{ts,tsx}',
+            'scripts/**/*.test.ts',
           ],
     // One Electron app at a time: the spec files each launch their own,
     // and two starting together on a small CI runner raced each other
