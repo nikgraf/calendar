@@ -1,19 +1,6 @@
 import nkzw from '@nkzw/oxlint-config';
 import { defineConfig } from 'vite-plus';
 
-// A function's cyclomatic complexity stops at 40 (`complexity` below).
-// These files held larger ones when the cap arrived. Each lists its
-// functions over 40, highest first: the file's rule allows the highest,
-// and `scripts/complexityPins.test.ts` holds the file to exactly these
-// numbers (by value: it does not know which function is which), so
-// nothing else in it passes 40. A list only shrinks: lower a number when
-// its function shrinks, drop it at 40. Never raise or add one — split
-// the function instead, into pieces of 40 or less. A function that moves
-// to another file takes its number along; an oxlint upgrade that counts
-// differently re-measures them in its own PR.
-export const complexityCap = 40;
-export const complexityPins: Record<string, ReadonlyArray<number>> = {};
-
 export default defineConfig({
   fmt: {
     ignorePatterns: [
@@ -102,18 +89,12 @@ export default defineConfig({
           'no-console': 'off',
         },
       },
-      ...Object.entries(complexityPins).map(([file, pins]) => ({
-        files: [file],
-        rules: {
-          complexity: ['error', { max: Math.max(complexityCap, ...pins) }] satisfies [
-            'error',
-            { max: number },
-          ],
-        },
-      })),
     ],
     rules: {
-      complexity: ['error', { max: complexityCap }],
+      // A function's cyclomatic complexity stops at 40, with no exceptions:
+      // `scripts/complexityCap.test.ts` fails on a directive that switches
+      // it off.
+      complexity: ['error', { max: 40 }],
     },
   },
   staged: {
