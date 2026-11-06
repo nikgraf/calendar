@@ -256,6 +256,18 @@ tags:
           timeout: 10000
       - tapOn:
           id: 'reminder-repeat-monthly-weekday'
+      # The ordinal row lands on screen, so wait for it before scrolling: on
+      # a loaded runner it reached the tree seconds after the tap, and a
+      # scroll that starts without its row swipes blind. In run 42170053631
+      # that carried the row past the top edge, where scrolling down never
+      # brings it back. Optional, should it ever land below the fold (not
+      # in the tree until scrolled to, like the monthly row above, which
+      # is why that one is not waited for).
+      - extendedWaitUntil:
+          visible:
+            id: 'reminder-repeat-ordinal-2'
+          timeout: 10000
+          optional: true
       - scrollUntilVisible:
           element:
             id: 'reminder-repeat-ordinal-2'

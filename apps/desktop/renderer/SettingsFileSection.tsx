@@ -1,4 +1,4 @@
-import { useBackendMutations } from '@calendar/app-state';
+import { type ActionState, useAction, useBackendMutations } from '@calendar/app-state';
 import { describeImportSummary } from '@calendar/core';
 import { useEffect, useState } from 'react';
 import type { SettingsFileStatus } from './backend.ts';
@@ -16,23 +16,9 @@ import { SETTINGS_BUTTON_CLASS as BUTTON } from './ui/buttonStyles.ts';
 const timeLabel = (epochMs: number): string =>
   new Date(epochMs).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 
-/** Runs one action at a time and keeps its outcome (or failure) as a line of text. */
-const useAction = () => {
-  const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
-  const run = async (task: () => Promise<string | null>) => {
-    setBusy(true);
-    setNotice(null);
-    try {
-      setNotice(await task());
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : String(error));
-    } finally {
-      setBusy(false);
-    }
-  };
-  return { busy, notice, run };
-};
+/** What the last run left to say, as one line: its outcome, or why it failed. */
+const noticeOf = (state: ActionState<string | null>): string | null =>
+  state.kind === 'done' ? state.value : state.kind === 'failed' ? state.message : null;
 
 /**
  * One-off Export/Import of the settings document: a copy to carry to
@@ -43,7 +29,8 @@ const useAction = () => {
  */
 export function SettingsTransferSection() {
   const mutations = useBackendMutations();
-  const { busy, notice, run } = useAction();
+  const { busy, run, state } = useAction<string | null>();
+  const notice = noticeOf(state);
   const [pending, setPending] = useState<PendingImport | null>(null);
 
   const exportToFile = () =>
@@ -132,7 +119,8 @@ export function SettingsTransferSection() {
  */
 export function SettingsFileSection() {
   const [status, setStatus] = useState<SettingsFileStatus | null>(null);
-  const { busy, notice, run } = useAction();
+  const { busy, run, state } = useAction<string | null>();
+  const notice = noticeOf(state);
 
   useEffect(() => {
     let mounted = true;

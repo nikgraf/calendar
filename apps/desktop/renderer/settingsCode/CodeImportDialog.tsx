@@ -1,4 +1,4 @@
-import { useBackendMutations } from '@calendar/app-state';
+import { errorMessage, useBackendMutations } from '@calendar/app-state';
 import { describeImportSummary } from '@calendar/core';
 import { useEffect, useEffectEvent, useState } from 'react';
 import { Dialog } from '../Dialog.tsx';
@@ -9,6 +9,24 @@ import { ReadCodePanel } from './ReadCodePanel.tsx';
 
 /** A code read before the dialog opened (a paste): its preview, or why it would not read. */
 export type ReadOutcome = { readonly error: string } | { readonly pending: PendingImport };
+
+/**
+ * Where the dialog stands, as one value: a preview exists only while
+ * there is something to confirm, a notice only beside the reader, and the
+ * applied lines only once the import went through.
+ */
+type ImportStep =
+  | { readonly kind: 'reading'; readonly notice: string | null }
+  | { readonly kind: 'preview'; readonly pending: PendingImport }
+  | { readonly kind: 'importing'; readonly pending: PendingImport }
+  | { readonly applied: ReadonlyArray<string>; readonly kind: 'done' };
+
+const firstStep = (initial: ReadOutcome | undefined): ImportStep =>
+  initial === undefined
+    ? { kind: 'reading', notice: null }
+    : 'pending' in initial
+      ? { kind: 'preview', pending: initial.pending }
+      : { kind: 'reading', notice: initial.error };
 
 /**
  * A settings code read and imported in one dialog: the reader (camera and
@@ -26,29 +44,16 @@ export function CodeImportDialog({
   onClose: () => void;
 }) {
   const mutations = useBackendMutations();
-  const [pending, setPending] = useState<PendingImport | null>(
-    initial && 'pending' in initial ? initial.pending : null,
-  );
-  const [applied, setApplied] = useState<ReadonlyArray<string> | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<string | null>(
-    initial && 'error' in initial ? initial.error : null,
-  );
+  const [step, setStep] = useState(() => firstStep(initial));
 
-  const confirm = async () => {
-    const current = pending;
-    if (!current) {
-      return;
-    }
-    setBusy(true);
+  const confirm = async (pending: PendingImport) => {
+    setStep({ kind: 'importing', pending });
     try {
-      const summary = await mutations.importSettings({ document: current.document });
-      setApplied(describeImportSummary(summary));
+      const summary = await mutations.importSettings({ document: pending.document });
+      setStep({ applied: describeImportSummary(summary), kind: 'done' });
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : String(error));
-    } finally {
-      setBusy(false);
-      setPending(null);
+      // Back to the reader, with why: the code can be read again.
+      setStep({ kind: 'reading', notice: errorMessage(error) });
     }
   };
 
@@ -59,11 +64,11 @@ export function CodeImportDialog({
       panelClassName="w-[30rem] rounded-2xl bg-surface p-5 shadow-xl"
       zIndex={40}
     >
-      {applied ? (
+      {step.kind === 'done' ? (
         <div data-testid="code-import-done">
           <h3 className="font-medium">Settings copied</h3>
           <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-ink-secondary">
-            {applied.map((line) => (
+            {step.applied.map((line) => (
               <li key={line}>{line}</li>
             ))}
           </ul>
@@ -80,26 +85,21 @@ export function CodeImportDialog({
             </button>
           </div>
         </div>
-      ) : pending ? (
-        <ImportPreview
-          busy={busy}
-          onCancel={onClose}
-          onConfirm={() => void confirm()}
-          pending={pending}
-          testId="code-import-preview"
-        />
-      ) : (
+      ) : step.kind === 'reading' ? (
         <div>
           <h3 className="font-medium">Copy from a code</h3>
           <p className="mt-1 text-sm text-ink-secondary">
             On the iPhone, open Solunivo › Settings › Settings File › Show Code for Your Mac.
           </p>
           <div className="mt-3">
-            <ReadCodePanel camera={camera} onRead={setPending} />
+            <ReadCodePanel
+              camera={camera}
+              onRead={(pending) => setStep({ kind: 'preview', pending })}
+            />
           </div>
-          {notice ? (
+          {step.notice ? (
             <p className="mt-2 text-sm text-danger" data-testid="code-import-notice">
-              {notice}
+              {step.notice}
             </p>
           ) : null}
           <div className="mt-4 flex justify-end">
@@ -112,6 +112,18 @@ export function CodeImportDialog({
             </button>
           </div>
         </div>
+      ) : (
+        <ImportPreview
+          busy={step.kind === 'importing'}
+          onCancel={onClose}
+          onConfirm={() => {
+            if (step.kind === 'preview') {
+              void confirm(step.pending);
+            }
+          }}
+          pending={step.pending}
+          testId="code-import-preview"
+        />
       )}
     </Dialog>
   );
@@ -132,7 +144,7 @@ export function CodeImportHost() {
     try {
       outcome = { pending: await readSettingsCode(mutations, code) };
     } catch (error) {
-      outcome = { error: error instanceof Error ? error.message : String(error) };
+      outcome = { error: errorMessage(error) };
     }
     setRequest((last) => ({ id: (last?.id ?? 0) + 1, outcome }));
   });

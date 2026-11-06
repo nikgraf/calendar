@@ -113,6 +113,18 @@ Layers, no thrown exceptions in shared code); pure math (layout,
 recurrence) and React components are plain TS. Shared packages ship raw TS
 source via `exports: ./src/index.ts` — no build step.
 
+UI state: a value with more than one mode is one tagged union on `kind`
+(`Probe` in `ModelSection.tsx`, `ImportStep` in `CodeImportDialog.tsx`),
+never flags and nullables that have to agree; a run that is one step of
+such a flow is a `kind` of it. An async action on its own — running,
+failed, done — is `useAction` (`packages/app-state/src/action.ts`), never
+a `busy` kept by hand beside an `error`: `stateShape.test.ts` fails on a
+new pair it can tell by its names and lists the ones found so far.
+Transitions with three or more events, or worth a test, are a pure
+function beside the hook (`actionReducer`, `voiceLoop.ts`), since nothing
+here renders hooks in a test. One independent value stays a plain
+`useState`.
+
 ## Commands
 
 The gate — `pnpm check`, `pnpm typecheck`, `pnpm test` — must be green

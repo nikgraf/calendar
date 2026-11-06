@@ -1,14 +1,17 @@
 import { useRef, useState } from 'react';
 
-/** The write an editor has in flight, if any. */
+/** The write in flight, if any: an editor's, or an action's (`action.ts`). */
 export interface WriteSlot {
   current: Promise<void> | null;
 }
 
 /**
  * Runs `write` unless one is already in flight in `slot`; a call meanwhile
- * gets the running write's promise and starts nothing. The slot frees
- * however the write ends. Exported for tests: `useOneWrite` is the hook.
+ * gets the running write's promise and starts nothing. The slot is taken
+ * before `write` starts, so a call from the write's own first,
+ * synchronous part is turned away like any other, and frees however the
+ * write ends — a throw before its first await included. `useOneWrite` is
+ * the editors' hook over it, `runAction` (`action.ts`) the actions'.
  */
 export const runOneWrite = (
   slot: WriteSlot,
@@ -18,12 +21,23 @@ export const runOneWrite = (
   if (slot.current) {
     return slot.current;
   }
-  onBusy?.(true);
-  const running = write().finally(() => {
+  // The promise exists, and holds the slot, before the write is started.
+  let begin: (() => void) | undefined;
+  const running = new Promise<void>((resolve, reject) => {
+    begin = () => {
+      try {
+        resolve(write());
+      } catch (error) {
+        reject(error);
+      }
+    };
+  }).finally(() => {
     slot.current = null;
     onBusy?.(false);
   });
   slot.current = running;
+  onBusy?.(true);
+  begin?.();
   return running;
 };
 

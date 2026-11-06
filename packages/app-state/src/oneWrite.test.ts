@@ -41,6 +41,43 @@ describe('runOneWrite', () => {
     expect(slot.current).toBeNull();
   });
 
+  it('turns away a call made from the write’s own synchronous start', async () => {
+    const slot: WriteSlot = { current: null };
+    const pending = deferred();
+    let inner = 0;
+    let nested: Promise<void> | undefined;
+    const outer = runOneWrite(slot, () => {
+      // Before the first await: the slot is already this write's.
+      nested = runOneWrite(slot, async () => {
+        inner += 1;
+      });
+      return pending.promise;
+    });
+    expect(inner).toBe(0);
+    expect(nested).toBe(outer);
+    // Still held: nothing the turned-away call did freed it.
+    expect(slot.current).toBe(outer);
+    pending.settle.resolve();
+    await outer;
+    expect(slot.current).toBeNull();
+  });
+
+  it('frees the slot when the write throws before its first await', async () => {
+    const slot: WriteSlot = { current: null };
+    const busy: Array<boolean> = [];
+    await expect(
+      runOneWrite(
+        slot,
+        () => {
+          throw new Error('not allowed');
+        },
+        (value) => busy.push(value),
+      ),
+    ).rejects.toThrow('not allowed');
+    expect(slot.current).toBeNull();
+    expect(busy).toEqual([true, false]);
+  });
+
   it('reports busy while the write runs', async () => {
     const slot: WriteSlot = { current: null };
     const pending = deferred();

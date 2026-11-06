@@ -501,6 +501,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   deletion a full re-list confirms only by absence clears no snapshot; a per-item
   acknowledged copy would replace the per-op snapshots if more
   interleavings turn up.
+- **UI action state** (2026-11-05, #296) — an async action of a
+  component is one value (`useAction`: idle, running, failed with its
+  line, done with the result) on the editors' one-write slot; a value
+  with several modes is a tagged union; a source check keeps new
+  hand-kept `busy`/`error` pairs out. Rejected: banning `useState` (many
+  calls hold one independent value; a reducer over flags has the same
+  impossible states), XState v6 with `@xstate/effect` (both alpha, on an
+  Effect we pin exactly), `AsyncResult` as the state (failed and waiting
+  at once is a value there). Open: the 13 components the check lists,
+  and dictation's hand-rolled machine in `quickAddModel.ts`.
 
 ## Calendar: editing, gestures, views
 

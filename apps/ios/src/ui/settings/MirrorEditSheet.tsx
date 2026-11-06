@@ -8,6 +8,7 @@ import {
   mirrorSourceOptions,
   refSlug,
   useAccounts,
+  useAction,
   useBackendMutations,
   useCalendars,
   useTaskLists,
@@ -111,8 +112,10 @@ export function MirrorEditSheet({
   const [draft, setDraft] = useState(initial);
   const [advanced, setAdvanced] = useState(mirrorPresetOf(initial) === 'custom');
   const [previewed, setPreviewed] = useState<{ key: string; result: MirrorPreview } | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  // Saving and making a calendar for the copies are one action: Save is
+  // off until the new calendar is the destination, and a failure's line
+  // goes when either is tried again.
+  const work = useAction(String);
 
   const sources = mirrorSourceOptions({ accounts, calendars, taskLists });
   const destinations = mirrorDestinationOptions({ accounts, calendars, draft, mirrors });
@@ -147,23 +150,19 @@ export function MirrorEditSheet({
     if (definition === undefined) {
       return;
     }
-    setBusy(true);
-    try {
+    await work.run(async () => {
       await mutations.saveMirror({ definition });
       onClose();
-    } catch (error) {
-      setError(String(error));
-      setBusy(false);
-    }
+    });
   };
 
   const createMirrorCalendar = (
     target: Parameters<typeof mutations.createMirrorCalendar>[0]['target'],
   ) =>
-    void mutations.createMirrorCalendar({ target }).then(
-      (ref) => setDraft((current) => ({ ...current, destination: ref })),
-      (error: unknown) => setError(String(error)),
-    );
+    void work.run(async () => {
+      const ref = await mutations.createMirrorCalendar({ target });
+      setDraft((current) => ({ ...current, destination: ref }));
+    });
 
   const createCalendar = () => {
     const googleAccounts = googleAccountsForNewCalendar(accounts);
@@ -205,14 +204,14 @@ export function MirrorEditSheet({
           </Text>
           <Pressable
             accessibilityRole="button"
-            disabled={issue !== undefined || busy}
+            disabled={issue !== undefined || work.busy}
             hitSlop={8}
             onPress={() => void save()}
             testID="mirror-save"
           >
             <Text
               maxFontSizeMultiplier={BOX_FONT_SCALE}
-              style={[styles.link, (issue !== undefined || busy) && styles.disabled]}
+              style={[styles.link, (issue !== undefined || work.busy) && styles.disabled]}
             >
               Save
             </Text>
@@ -269,11 +268,14 @@ export function MirrorEditSheet({
           ))}
           <Pressable
             accessibilityRole="button"
+            // Off while a calendar is made or the mirror saved: a second
+            // one asked for meanwhile would be turned away without a word.
+            disabled={work.busy}
             onPress={createCalendar}
             style={styles.addRow}
             testID="mirror-new-calendar"
           >
-            <Text style={styles.link}>New calendar…</Text>
+            <Text style={[styles.link, work.busy && styles.disabled]}>New calendar…</Text>
           </Pressable>
           {preview !== null && preview.otherEvents > 0 ? (
             <Text style={styles.warning} testID="mirror-shared-warning">
@@ -419,7 +421,7 @@ export function MirrorEditSheet({
             </View>
           ) : null}
           {issue ? <Text style={styles.meta}>{issue}</Text> : null}
-          {error ? <Text style={styles.error}>{error}</Text> : null}
+          {work.error ? <Text style={styles.error}>{work.error}</Text> : null}
           <Text style={styles.footer}>{MIRROR_COPY.sharing}</Text>
           <Text style={styles.footer}>{MIRROR_COPY.appleMarker}</Text>
         </ScrollView>

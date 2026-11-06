@@ -11,6 +11,7 @@ import {
   refLabel,
   refSlug,
   useAccounts,
+  useAction,
   useBackendMutations,
   useCalendars,
   useMirrors,
@@ -164,12 +165,9 @@ function NewCalendarDialog({
   const accounts = googleAccountsForNewCalendar(useAccounts());
   const [title, setTitle] = useState('');
   const [where, setWhere] = useState<string>(accounts[0]?.id ?? 'apple');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const create = async () => {
-    setBusy(true);
-    setError(null);
-    try {
+  const creating = useAction();
+  const create = () =>
+    creating.run(async () => {
       const ref = await mutations.createMirrorCalendar({
         target:
           where === 'apple'
@@ -177,11 +175,7 @@ function NewCalendarDialog({
             : { accountId: where, kind: 'google', title: title.trim() },
       });
       onCreated(ref);
-    } catch (error) {
-      setError(error instanceof Error ? error.message : String(error));
-      setBusy(false);
-    }
-  };
+    });
   return (
     <Dialog label="New calendar" onClose={onClose} panelClassName="w-96 rounded-xl bg-surface p-4">
       <h3 className="font-medium">New calendar</h3>
@@ -214,7 +208,7 @@ function NewCalendarDialog({
           <option value="apple">iCloud (Apple Calendar)</option>
         </select>
       </label>
-      {error ? <p className="mt-2 text-sm text-danger">{error}</p> : null}
+      {creating.error ? <p className="mt-2 text-sm text-danger">{creating.error}</p> : null}
       <div className="mt-4 flex justify-end gap-2">
         <button className={BUTTON} onClick={onClose} type="button">
           Cancel
@@ -222,7 +216,7 @@ function NewCalendarDialog({
         <button
           className={PRIMARY}
           data-testid="mirror-new-calendar-create"
-          disabled={busy || title.trim() === ''}
+          disabled={creating.busy || title.trim() === ''}
           onClick={() => void create()}
           type="button"
         >
@@ -250,8 +244,7 @@ function MirrorEditor({
   const [advanced, setAdvanced] = useState(mirrorPresetOf(initial) === 'custom');
   const [previewed, setPreviewed] = useState<{ key: string; result: MirrorPreview } | null>(null);
   const [creating, setCreating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  const saving = useAction();
 
   const sources = mirrorSourceOptions({ accounts, calendars, taskLists });
   const destinations = mirrorDestinationOptions({ accounts, calendars, draft, mirrors });
@@ -288,14 +281,10 @@ function MirrorEditor({
     if (definition === undefined) {
       return;
     }
-    setSaving(true);
-    try {
+    await saving.run(async () => {
       await mutations.saveMirror({ definition });
       onClose();
-    } catch (error) {
-      setError(error instanceof Error ? error.message : String(error));
-      setSaving(false);
-    }
+    });
   };
 
   const groups = [...new Set(sources.map((option) => option.group))];
@@ -559,7 +548,7 @@ function MirrorEditor({
         </div>
       ) : null}
 
-      {error ? <p className="mt-2 text-sm text-danger">{error}</p> : null}
+      {saving.error ? <p className="mt-2 text-sm text-danger">{saving.error}</p> : null}
       <div className="mt-3 flex items-center justify-end gap-2">
         {issue ? <span className="flex-1 text-xs text-ink-secondary">{issue}</span> : null}
         <button className={BUTTON} onClick={onClose} type="button">
@@ -568,7 +557,7 @@ function MirrorEditor({
         <button
           className={PRIMARY}
           data-testid="mirror-save"
-          disabled={issue !== undefined || saving}
+          disabled={issue !== undefined || saving.busy}
           onClick={() => void save()}
           type="button"
         >
@@ -591,18 +580,12 @@ function MirrorEditor({
 function DeleteDialog({ onClose, view }: { onClose: () => void; view: MirrorView }) {
   const mutations = useBackendMutations();
   const [removeCopies, setRemoveCopies] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const remove = async () => {
-    setBusy(true);
-    try {
+  const removing = useAction();
+  const remove = () =>
+    removing.run(async () => {
       await mutations.deleteMirror({ id: view.definition.id, removeCopies });
       onClose();
-    } catch (error) {
-      setError(error instanceof Error ? error.message : String(error));
-      setBusy(false);
-    }
-  };
+    });
   return (
     <Dialog label="Delete mirror" onClose={onClose} panelClassName="w-96 rounded-xl bg-surface p-4">
       <h3 className="font-medium">Delete “{view.definition.name}”?</h3>
@@ -622,7 +605,7 @@ function DeleteDialog({ onClose, view }: { onClose: () => void; view: MirrorView
           </span>
         </span>
       </label>
-      {error ? <p className="mt-2 text-sm text-danger">{error}</p> : null}
+      {removing.error ? <p className="mt-2 text-sm text-danger">{removing.error}</p> : null}
       <div className="mt-4 flex justify-end gap-2">
         <button className={BUTTON} onClick={onClose} type="button">
           Cancel
@@ -630,7 +613,7 @@ function DeleteDialog({ onClose, view }: { onClose: () => void; view: MirrorView
         <button
           className={PRIMARY}
           data-testid="mirror-delete-confirm"
-          disabled={busy}
+          disabled={removing.busy}
           onClick={() => void remove()}
           type="button"
         >
