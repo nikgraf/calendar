@@ -1637,19 +1637,24 @@ gateway carries all of it. Details, limits and the threat model:
   It resembles the text (`placeMatch`): the same name; every word
   beginning one of the place's name or address words, one of them its
   own — of its name or street, not of the address parts that say where
-  it is (`readAddress`: the first part is its street only when a postal
-  code follows it, a house number and more parts do, or it is the
-  place's name), so "Vienna, Austria" is the city and no place that
-  stands in it; or the same Kölner Phonetik key as the name's first
-  words, word by word or run together — "Cafe Zentral" as dictated is
-  Café Central, "Cafe Meek" Kaffemik. And it is nearby (`isNearby`:
-  within 150 km of any of the last 90 days' placed events, so a trip
-  does not make home far, else 2,500 km around a time zone's city, which
-  says little of where the user is) or the text says where it is
-  (`saysWhere`: every word of a part of its address that says where —
-  "Hotel Adlon Berlin"; a city named on its own, "Linz"). A far place
-  the text names is no pin for now, never a remembered miss: the region
-  may change. A picked suggestion is that exact place. `placeCandidates`
+  it is (`readAddress`: the first part is its street when it begins with
+  the place's name — a city or a street, whose name is its own wherever
+  the address repeats it — or holds a house number with a postal code or
+  more parts after it), so "Vienna, Austria" is the city and no place
+  that stands in it, nor "Mountain View" a past place on Amphitheatre
+  Pkwy; or the same Kölner Phonetik key as the name's first words, word
+  by word or run together — "Cafe Zentral" as dictated is Café Central,
+  "Cafe Meek" Kaffemik. And it is nearby (`isNearby`: within 150 km of
+  any of the last 90 days' placed events or of the time zone's city, so
+  a trip does not make home far; without such events 2,500 km around the
+  zone's city, which says little of where the user is) or the text says
+  where it is (`saysWhere`: every word of a part of its address that
+  says where, codes such as "NSW" aside — "Hotel Adlon Berlin"; a city
+  or street named on its own, "Linz"; never a name that holds its city
+  and no more, "Chicago Grill"). A far place the text names is no pin
+  for now, never a remembered miss: the region may change; a cached pin
+  the rule now refuses gives way to a miss when it is refreshed. A
+  picked suggestion is that exact place. `placeCandidates`
   returns the user's own past places the text names first (core
   `rankPastPlaces`: a year of occurrences, matched by the text they were
   written as — a picked "name, address" read as both — MapKit's name or

@@ -84,8 +84,13 @@ const numbered = (part: ReadonlyArray<string>): boolean => part.some((word) => N
 
 /** A place's address, read as which place it is and where it is. */
 interface ReadAddress {
-  /** A city, a region or a country: the first part is its name, and no part holds a number. */
-  readonly locality: boolean;
+  /**
+   * The address begins with the place's name: a city ("Vienna, Austria",
+   * "4830 Hallstatt, Austria", "Toronto ON, Canada") or a street. Its
+   * name is its own wherever else the address repeats it ("Vienna,
+   * Vienna, Austria"), and naming it says where it is.
+   */
+  readonly named: boolean;
   /** The part that says which place it is: its street, or its own name. Empty when none does. */
   readonly street: ReadonlyArray<string>;
   /** The parts that say where it is: postal code and city, region, country. */
@@ -94,27 +99,27 @@ interface ReadAddress {
 
 /**
  * The first part of an address says which place it is — its street
- * ("Zollergasse 5"), or for a city or a street its own name ("Vienna,
- * Austria", "Kaffeeweg, 1140 Vienna") — when it reads as the place's
- * name, when the text says a number it holds, when a postal code follows
- * it ("Wollzeile 5, 1010 Wien", "Corner Herrengasse / Strauchgasse, 1010
- * Vienna"), or when it holds a house number and more than one part
- * follows ("66 Mint St, San Francisco, CA"). Else every part says where:
+ * ("Zollergasse 5"), or for a city or a street its own name — when it
+ * begins with the place's name (a postal code before it aside), when the
+ * text says a number it holds ("Wollzeile 5"), or when it holds a house
+ * number and a postal code or more parts follow ("Wollzeile 5, 1010
+ * Wien", "66 Mint St, San Francisco, CA"). Else every part says where:
  * "1070 Vienna, Austria" after a café's name is its district and city,
- * "Cupertino, CA, United States" after "1 Infinite Loop" its city, state
- * and country.
+ * "Mountain View, CA 94043, USA" after "1600 Amphitheatre Pkwy" its city,
+ * state and country.
  */
 const readAddress = (place: PlaceLike, said: ReadonlyArray<string>): ReadAddress => {
   const parts = partsOf(place.address);
-  const [first = [], second = [], ...rest] = parts;
-  const named = first.length > 0 && sameWords(first, wordsOf(place.name ?? ''));
+  const [first = [], second = []] = parts;
+  const name = wordsOf(place.name ?? '');
+  const lettered = first.filter((word) => !NUMBERED.test(word));
+  const named = name.length > 0 && sameWords(lettered.slice(0, name.length), name);
   const isStreet =
     named ||
     first.some((word) => NUMBERED.test(word) && said.includes(word)) ||
-    numbered(second) ||
-    (rest.length > 0 && numbered(first));
+    (numbered(first) && (numbered(second) || parts.length >= 3));
   return {
-    locality: named && !parts.some(numbered),
+    named,
     street: isStreet ? first : [],
     where: isStreet ? parts.slice(1) : parts,
   };
@@ -167,8 +172,10 @@ export const placeMatch = (text: string, place: PlaceLike): PlaceMatch | undefin
     return undefined;
   }
   const name = wordsOf(place.name ?? '');
-  const { street, where } = readAddress(place, said);
-  const around = where.flat();
+  const { named, street, where } = readAddress(place, said);
+  // A place named in its own address (a city, a street) holds its name
+  // wherever the address repeats it ("Vienna, Vienna, Austria").
+  const around = where.flat().filter((word) => !(named && name.includes(word)));
   const own = [...name, ...street, ...around];
   // A text that only says where the place is names the city, not the
   // place — by its words, its sound ("Vienna Austria Temple"), or a name
@@ -194,23 +201,34 @@ export const placeMatch = (text: string, place: PlaceLike): PlaceMatch | undefin
   return soundsLike(said, name) ? 'phonetic' : undefined;
 };
 
-/** Letters a part needs to say where: a state's code ("IN", "OR", "CA") is a word of a name as often. */
+/** Words shorter than this say nothing of where: "IN", "de", "le" are words of names as often. */
 const WHERE_MIN = 3;
+
+/** A state's, province's or country's code as an address writes it: capitals, two or three ("CA", "NSW", "QC"). */
+const CODE = /\b[A-Z]{2,3}\b/g;
 
 /**
  * Whether the text says where the place is: it holds every word of a
- * part of the address that says where ("Hotel Adlon Berlin" for "…, 10117
- * Berlin, Germany"), or for a city its name ("Linz"). Such a place is the
- * one meant however far it is from the user's own places. One word of a
- * part is not enough: "Royal Cafe" is not in Royal Oak, nor "New Moon
- * Cafe" in New York.
+ * part of the address that says where, codes aside ("Hotel Adlon Berlin"
+ * for "…, 10117 Berlin, Germany", "Opera Bar Sydney" for "Sydney NSW
+ * 2000"), or names a city on its own ("Linz"). Such a place is the one
+ * meant however far it is from the user's own places. One word of a part
+ * is not enough ("Royal Cafe" is not in Royal Oak, nor "New Moon Cafe"
+ * in New York), and a name that holds its city says nothing beside the
+ * name ("Chicago Grill", said in Vienna).
  */
 export const saysWhere = (text: string, place: PlaceLike): boolean => {
   const said = wordsOf(text);
-  const { locality, street, where } = readAddress(place, said);
-  return [...(locality ? [street] : []), ...where].some((part) => {
-    const letters = part.filter((word) => !NUMBERED.test(word));
-    return letters.join('').length >= WHERE_MIN && letters.every((word) => said.includes(word));
+  const { named, street, where } = readAddress(place, said);
+  if (!named && sameWords(said, wordsOf(place.name ?? ''))) {
+    return false;
+  }
+  const codes = new Set(wordsOf((place.address ?? '').match(CODE)?.join(' ') ?? ''));
+  return [...(named ? [street] : []), ...where].some((part) => {
+    const words = part.filter(
+      (word) => !NUMBERED.test(word) && word.length >= WHERE_MIN && !codes.has(word),
+    );
+    return words.length > 0 && words.every((word) => said.includes(word));
   });
 };
 
@@ -219,11 +237,27 @@ const streetKey = (address: string | undefined): string =>
   (partsOf(address)[0] ?? []).map((word) => (NUMBERED.test(word) ? `|${word}|` : word)).join('');
 
 /**
- * Whether two addresses begin with the same street and number, whatever
+ * Whether two addresses are one: the same street and number, whatever
  * MapKit abbreviated ("Philharmonikerstraße 4" and "Philharmoniker Str.
- * 4") or wrote in another language after it ("1070 Wien, Österreich"):
- * the words run together, the numbers kept apart ("1-2-34" is not
- * "1-23-4").
+ * 4"), the numbers kept apart ("1-2-34" is not "1-23-4"), and where both
+ * say more, the same town — a postal code in common where both have one,
+ * else a word of the town's part ("1070 Vienna, Austria" and "1070 Wien,
+ * Österreich" are one town; "2340 Mödling, Austria" and "2500 Baden,
+ * Austria" two, "Boston" and "New York" two).
  */
-export const sameStreet = (a: string | undefined, b: string | undefined): boolean =>
-  streetKey(a) === streetKey(b);
+export const sameAddress = (a: string | undefined, b: string | undefined): boolean => {
+  if (streetKey(a) !== streetKey(b)) {
+    return false;
+  }
+  const restA = partsOf(a).slice(1);
+  const restB = partsOf(b).slice(1);
+  if (restA.length === 0 || restB.length === 0) {
+    return true;
+  }
+  const codesA = restA.flat().filter((word) => NUMBERED.test(word));
+  const codesB = restB.flat().filter((word) => NUMBERED.test(word));
+  if (codesA.length > 0 && codesB.length > 0) {
+    return codesA.some((code) => codesB.includes(code));
+  }
+  return (restA[0] ?? []).some((word) => (restB[0] ?? []).includes(word));
+};

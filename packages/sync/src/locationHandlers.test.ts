@@ -756,6 +756,56 @@ describe('nearby first', () => {
     }).pipe(Effect.provide(setup(client)));
   });
 
+  it.effect('keeps home near when only a trip’s events have a place', () => {
+    // Review: three placed events in Lisbon and none at home made Vienna far.
+    const figlmueller = {
+      address: 'Wollzeile 5, 1010 Vienna, Austria',
+      lat: 48.209,
+      lng: 16.375,
+      name: 'Figlmüller',
+    };
+    const { client } = mapkit({ found: { Figlmüller: [figlmueller] } });
+    const lisbon = { lat: 38.7223, lng: -9.1393 };
+    return Effect.gen(function* () {
+      yield* writeTimeZoneSettings({
+        primary: 'Europe/Vienna',
+        zones: [DEVICE_ZONE, 'Europe/Vienna'],
+      });
+      yield* seedPlaced([
+        placedEvent('trip-1', 1, lisbon),
+        placedEvent('trip-2', 2, lisbon),
+        placedEvent('trip-3', 3, lisbon),
+      ]);
+      expect(yield* locationHandlers.resolveLocation({ location: 'Figlmüller' })).toMatchObject({
+        name: 'Figlmüller',
+      });
+    }).pipe(Effect.provide(setup(client)));
+  });
+
+  it.effect('lets a stale pin the rule now refuses give way to a miss', () => {
+    // Review: a cached far hit was served on, and every read searched again.
+    const { calls, client } = mapkit({ found: { 'Cafe Meek': [benoni] } });
+    return Effect.gen(function* () {
+      yield* inVienna;
+      const cache = yield* LocationGeoRepo;
+      const old = new GeoLocation({
+        lat: benoni.lat,
+        lng: benoni.lng,
+        name: benoni.name,
+        source: 'Cafe Meek',
+      });
+      yield* cache.set('cafe meek', old, 0);
+      yield* TestClock.adjust(LOCATION_REFRESH_AFTER_MS + 1);
+      // Served once more while the refresh runs.
+      expect(yield* locationHandlers.resolveLocation({ location: 'Cafe Meek' })).toMatchObject({
+        name: 'Meek Café',
+      });
+      yield* Effect.forEach(Array.from({ length: 20 }), () => Effect.yieldNow, { discard: true });
+      expect(yield* locationHandlers.resolveLocation({ location: 'Cafe Meek' })).toBeNull();
+      expect(calls).toEqual(['resolve:Cafe Meek']);
+    }).pipe(Effect.provide(setup(client)));
+  });
+
   it.effect('counts only another part of the world as far when a zone is all it knows', () => {
     const { client } = mapkit({ found: { 'Cafe Meek': [benoni], 'Hotel Adlon': [adlon] } });
     return Effect.gen(function* () {

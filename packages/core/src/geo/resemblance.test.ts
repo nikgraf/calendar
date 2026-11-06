@@ -11,7 +11,7 @@ import {
   TIME_ZONE_NEAR_METERS,
   TIME_ZONE_REGION_RADIUS_METERS,
 } from './regions.ts';
-import { placeMatch, sameStreet, saysWhere } from './resemblance.ts';
+import { placeMatch, sameAddress, saysWhere } from './resemblance.ts';
 
 describe('koelnerKey', () => {
   it('gives words that sound alike the same key', () => {
@@ -171,6 +171,22 @@ describe('placeMatch', () => {
         name: '1 Infinite Loop',
       }),
     ).toBeUndefined();
+    // Review: a state's ZIP or a UK postcode after the city made the city a street.
+    for (const [text, place] of [
+      [
+        'Mountain View',
+        { address: 'Mountain View, CA 94043, USA', name: '1600 Amphitheatre Pkwy' },
+      ],
+      ['Cupertino', { address: 'Cupertino, CA 95014', name: '1 Infinite Loop' }],
+      [
+        'San Francisco',
+        { address: 'San Francisco, CA 94117, United States', name: 'Golden Gate Park' },
+      ],
+      ['London', { address: 'London, NW1 6XE, United Kingdom', name: '221B Baker Street' }],
+      ['London', { address: '221B Baker Street, London, NW1 6XE, United Kingdom', name: 'Museum' }],
+    ] as const) {
+      expect(placeMatch(text, place)).toBeUndefined();
+    }
     expect(placeMatch('Vienna Temple', temple)).toBe('words');
     // The city itself: its address begins with its name.
     const vienna = { address: 'Vienna, Austria', name: 'Vienna' };
@@ -179,6 +195,18 @@ describe('placeMatch', () => {
     expect(
       placeMatch('New York, NY', { address: 'New York, NY, United States', name: 'New York' }),
     ).toBe('words');
+    // Review: a city whose first part holds its province's code too.
+    expect(placeMatch('Toronto', { address: 'Toronto ON, Canada', name: 'Toronto' })).toBe('exact');
+    // Review: a city whose address repeats its name, or begins with its postal code.
+    const city = { address: 'Vienna, Vienna, Austria', name: 'Vienna' };
+    expect(placeMatch('Vienna', city)).toBe('exact');
+    expect(placeMatch('Vienna, Austria', city)).toBe('words');
+    expect(placeMatch('Hallstatt', { address: '4830 Hallstatt, Austria', name: 'Hallstatt' })).toBe(
+      'exact',
+    );
+    expect(placeMatch('Sydney', { address: 'Sydney NSW, Australia', name: 'Sydney' })).toBe(
+      'exact',
+    );
     // A word of the place's own beside the city still names it.
     expect(placeMatch('Imperial Vienna', imperial)).toBe('words');
     expect(placeMatch('Austria Center', center)).toBe('words');
@@ -226,27 +254,55 @@ describe('placeMatch', () => {
     const newYork = { address: '5 Mott St, New York, NY, United States', name: 'New Moon Cafe' };
     expect(saysWhere('Royal Cafe', royalOak)).toBe(false);
     expect(saysWhere('New Moon Cafe', newYork)).toBe(false);
+    // Review: a province's code is no word to say.
+    const montreal = {
+      address: '1227A Rue Atateken, Montréal QC H2L 3K9, Canada',
+      name: 'Cafe Meekha',
+    };
+    expect(saysWhere('Cafe Meekha Montreal', montreal)).toBe(true);
     // Review: a city said on its own is where it is.
     expect(saysWhere('Berlin', { address: 'Berlin, Germany', name: 'Berlin' })).toBe(true);
+    expect(saysWhere('Toronto', { address: 'Toronto ON, Canada', name: 'Toronto' })).toBe(true);
     const portland = { address: 'Portland, OR, United States', name: 'Portland' };
     expect(saysWhere('Portland, OR', portland)).toBe(true);
-    // A street is no city, though its first part is its name: its address holds a postal code.
+    // A street named in its own address is where it is, like a city (a nearby one still ranks first).
     const street = { address: 'Kaffeeweg, 1140 Vienna, Austria', name: 'Kaffeeweg' };
-    expect(saysWhere('Kaffeeweg', street)).toBe(false);
+    expect(saysWhere('Kaffeeweg', street)).toBe(true);
+    // Review: a region's code beside the city ("NSW") is no word to say.
+    const opera = { address: 'Bennelong Point, Sydney NSW 2000, Australia', name: 'Opera Bar' };
+    expect(saysWhere('Opera Bar Sydney', opera)).toBe(true);
+    expect(saysWhere('Opera Bar', opera)).toBe(false);
+    // Review: a name that holds its city says nothing beside the name.
+    const grill = {
+      address: '100 W Randolph St, Chicago, IL 60601, United States',
+      name: 'Chicago Grill',
+    };
+    expect(saysWhere('Chicago Grill', grill)).toBe(false);
+    expect(saysWhere('Chicago Grill, Chicago', grill)).toBe(true);
+    expect(saysWhere('Hallstatt', { address: '4830 Hallstatt, Austria', name: 'Hallstatt' })).toBe(
+      true,
+    );
   });
 
-  it('reads two spellings of one street and number as the same', () => {
+  it('reads two spellings of one address as the same, and two towns apart', () => {
     expect(
-      sameStreet('Philharmonikerstraße 4, 1010 Wien', 'Philharmoniker Str. 4, 1010 Wien'),
+      sameAddress('Philharmonikerstraße 4, 1010 Wien', 'Philharmoniker Str. 4, 1010 Wien'),
     ).toBe(true);
     // The city in another language after it does not count.
     expect(
-      sameStreet('Zollergasse 5, 1070 Vienna, Austria', 'Zollergasse 5, 1070 Wien, Österreich'),
+      sameAddress('Zollergasse 5, 1070 Vienna, Austria', 'Zollergasse 5, 1070 Wien, Österreich'),
     ).toBe(true);
-    expect(sameStreet('Wollzeile 5, 1010 Wien', 'Wollzeile 6, 1010 Wien')).toBe(false);
+    expect(sameAddress('Wollzeile 5, 1010 Wien', 'Wollzeile 6, 1010 Wien')).toBe(false);
     // Review: numbers run together made two buildings one.
-    expect(sameStreet('1-2-34 Shibuya, Tokyo', '1-23-4 Shibuya, Tokyo')).toBe(false);
-    expect(sameStreet(undefined, '')).toBe(true);
+    expect(sameAddress('1-2-34 Shibuya, Tokyo', '1-23-4 Shibuya, Tokyo')).toBe(false);
+    expect(sameAddress(undefined, '')).toBe(true);
+    // Review: one street and number in two cities is two places.
+    expect(sameAddress('1 Main St, Boston', '1 Main St, New York')).toBe(false);
+    expect(sameAddress('1 Main St, Boston, MA 02108', '1 Main St, Boston')).toBe(true);
+    expect(
+      sameAddress('Hauptplatz 1, 2340 Mödling, Austria', 'Hauptplatz 1, 2500 Baden, Austria'),
+    ).toBe(false);
+    expect(sameAddress('Zollergasse 5, Vienna', 'Zollergasse 5, 1070 Vienna, Austria')).toBe(true);
   });
 });
 

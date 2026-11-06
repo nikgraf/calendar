@@ -6,7 +6,7 @@ import {
   type PlaceLike,
   type PlaceMatch,
   placeMatch,
-  sameStreet,
+  sameAddress,
   saysWhere,
 } from './resemblance.ts';
 
@@ -174,9 +174,9 @@ export const rankFoundPlaces = <Place extends FoundPlace>(
     const order = named !== undefined ? RANK[named] : near ? 3 : match !== undefined ? 4 : 5;
     return { index, named, order, place };
   });
-  const far = read.filter((entry) => entry.order === 4).slice(0, FAR_OFFERS);
+  const offered = read.filter((entry) => entry.order === 4).slice(0, FAR_OFFERS);
   return read
-    .filter((entry) => entry.order < 4 || far.includes(entry))
+    .filter((entry) => entry.order < 4 || offered.includes(entry))
     .sort((a, b) => a.order - b.order || a.index - b.index)
     .map(({ named, place }) => ({ match: named ?? ('search' as const), place }));
 };
@@ -203,9 +203,9 @@ export const placeCandidateLabel = (candidate: PlaceCandidate): string => {
   return candidate.address ? `${name} · ${candidate.address}` : name;
 };
 
-/** Whether two typeahead rows are one place: the same name at the same street and number. */
+/** Whether two typeahead rows are one place: the same name at the same address. */
 const sameRow = (a: PlaceSuggestion, b: PlaceSuggestion): boolean =>
-  placeMatch(a.title, { name: b.title }) === 'exact' && sameStreet(a.subtitle, b.subtitle);
+  placeMatch(a.title, { name: b.title }) === 'exact' && sameAddress(a.subtitle, b.subtitle);
 
 /**
  * The typeahead's rows once the search has filled in. The completer
@@ -235,5 +235,12 @@ export const withFoundSuggestions = (
   }
   const completed = rows.map((row) => named.find((listed) => sameRow(listed, row)) ?? row);
   const fresh = named.filter((listed) => !rows.some((row) => sameRow(listed, row)));
-  return [...fresh, ...completed].slice(0, limit);
+  // One place once, however many rows the completer gave it.
+  const once: Array<PlaceSuggestion> = [];
+  for (const row of [...fresh, ...completed]) {
+    if (!once.some((listed) => sameRow(listed, row))) {
+      once.push(row);
+    }
+  }
+  return once.slice(0, limit);
 };

@@ -94,7 +94,8 @@ const toGeo = (place: GeoPlaceJson, location: string): GeoLocation =>
  * (`loadEventsInRange`: series expanded, cancellations out, Apple
  * events read through), the most recent first, so a tie goes to where
  * they were last — else the city of the primary time zone, else
- * nowhere in particular. A hint for MapKit, never a filter, and never a
+ * nowhere in particular. Nearby is near any of those events or the
+ * zone's city. A hint for MapKit, never a filter, and never a
  * location permission; it also says how far from there a place still is
  * nearby (`isNearby`), which decides what is taken unasked.
  */
@@ -114,7 +115,25 @@ export const regionHint: Effect.Effect<
     .filter((event) => event.geo !== undefined && event.status !== 'cancelled')
     .sort((a, b) => b.startUtc - a.startUtc)
     .map((event) => ({ lat: event.geo!.lat, lng: event.geo!.lng }));
-  const region = densestRegion(points) ?? regionForTimeZone(yield* readPrimaryTimeZone);
+  const zone = yield* readPrimaryTimeZone.pipe(
+    Effect.map(regionForTimeZone),
+    Effect.orElseSucceed(() => undefined),
+  );
+  const history = densestRegion(points);
+  // The zone's city is near too: a trip's events must not make home far
+  // when home has no event with a place.
+  const region =
+    history === undefined
+      ? zone
+      : zone === undefined
+        ? history
+        : {
+            ...history,
+            near: {
+              ...history.near,
+              points: [...history.near.points, { lat: zone.lat, lng: zone.lng }],
+            },
+          };
   regionHints.set(store, { at: now, region });
   return region;
 }).pipe(Effect.orElseSucceed(() => undefined));
@@ -323,7 +342,11 @@ export const locationHandlers: Pick<
           if (now - cached.resolvedAt > LOCATION_REFRESH_AFTER_MS) {
             // Stale-while-revalidate: the cache write invalidates
             // LOCATION_GEO_KEY, so an open editor re-reads the fresh answer.
-            yield* Effect.forkDetach(Effect.flatMap(lookup, store));
+            // A hit the current rule refuses gives way to a miss: kept, it
+            // would be served on and asked about on every read.
+            yield* Effect.forkDetach(
+              Effect.flatMap(lookup, (place) => store(place && { ...place, remember: true })),
+            );
           }
           return new GeoLocation({ ...cached.geo, source: location });
         }
