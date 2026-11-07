@@ -14,13 +14,13 @@
   },
   "devDependencies": {
     "@astrojs/react": "^7.1.0",
-    "@tailwindcss/vite": "^4.3.3",
+    "@tailwindcss/vite": "^4.3.4",
     "@types/node": "^26.6.6",
     "@types/react": "catalog:",
     "@types/react-dom": "~19.3.0",
     "astro": "^7.4.0",
     "subset-font": "^2.9.0",
-    "tailwindcss": "^4.3.3",
+    "tailwindcss": "^4.3.4",
     "typescript": "catalog:",
     "vite-plus": "catalog:"
   }
