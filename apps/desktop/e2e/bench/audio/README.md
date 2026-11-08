@@ -41,6 +41,8 @@ something; the punctuation is not spoken.
 | `flow-zahnarzt-3.m4a`               | um 16 Uhr                                                                                                                                                                              |
 | `flow-zahnarzt-4.m4a`               | in der Praxis Dr. Huber                                                                                                                                                                |
 | `flow-zahnarzt-5.m4a`               | nenn es Kontrolle                                                                                                                                                                      |
+| `add-event-lunch-stefan-1.m4a`      | Add an event to have lunch with Stefan tomorrow at 1                                                                                                                                   |
+| `trag-mir-zahnarzt-ein-1.m4a`       | Trag mir morgen um 10 einen Zahnarzttermin ein                                                                                                                                         |
 
 The first turns of `flow-dinner` and `flow-zahnarzt` reuse the clips of
 `dinner-teo-next-friday` and `zahnarzt-dienstag-halb-drei`.

@@ -196,6 +196,20 @@ describe('The draft thread', () => {
     await cdp.locate('[title^="Dinner ·"]');
   });
 
+  it("takes the spoken command off a dictated phrase's title", async () => {
+    const { cdp } = app;
+    await cdp.eval(COMMAND_N);
+    await cdp.waitFor(headingIs('New event'));
+    // A sentence, not the fixture's grammar: the fixture answers it whole
+    // as the title, as the iPhone's model did (2026-11-06), and the
+    // normalizer reads the when off it and the command around it.
+    await cdp.type(INPUT, 'Add an event to have lunch with Stefan tomorrow at 1');
+    await cdp.clickTestId('quick-add-apply');
+    await cdp.waitFor(blockAt('13:00'));
+    await cdp.waitFor(titleIs('Lunch with Stefan'));
+    expect(await cdp.eval<string>(newestSummary)).toContain('Lunch with Stefan');
+  });
+
   it('reads a note and a notification from the phrase into the form; a turn about nothing else needs no model', async () => {
     const { cdp } = app;
     await cdp.eval(COMMAND_N);
