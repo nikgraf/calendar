@@ -2004,8 +2004,15 @@ const sequenceAt = (
   sequences: ReadonlyArray<ReadonlyArray<string>>,
 ): number => sequences.find((sequence) => matches(tokens, at, sequence))?.length ?? 0;
 
-/** What opens a request and says nothing ("please add …", "hey, add …"): never a title's first word. */
-const OPENERS = new Set(['bitte', 'hey', 'hi', 'ok', 'okay', 'please']);
+/** What opens a request and says nothing ("please add …"): never a title's first word. */
+const POLITE = new Set(['bitte', 'please']);
+/**
+ * A greeting that opens a request ("hey, add …", "ok add lunch"): one
+ * only before a mark, a wish, a request or a verb — "Hey Jude rehearsal"
+ * and "OK Computer listening party" are titles.
+ */
+const GREETINGS = new Set(['hey', 'hi', 'ok', 'okay']);
+const MARKED = /[,.!:;–—-]$/u;
 /** What closes one ("… please", "… bitte"): "ok" and "hi" at the end are the title's ("Say hi"). */
 const CLOSERS = new Set(['bitte', 'please']);
 
@@ -2274,7 +2281,6 @@ const INFINITIVES = new Set([
   'aufschreiben',
   'einplanen',
   'einspeichern',
-  'einstellen',
   'eintragen',
   'hinzufugen',
   'notieren',
@@ -2305,12 +2311,12 @@ const whenRunAtStart = (tokens: ReadonlyArray<Token>): number => {
 };
 
 /**
- * What follows "on my calendar" lets it close the command: nothing, only
- * beside a command's verb or frame (`commanded`) or the verb said last
- * ("… in meinen Kalender eintragen") — "Give Anna access to my calendar"
- * is a title; or the command's when, a "for" before it and the
- * politeness or the verb's particle after it aside ("… in den Kalender
- * für morgen ein").
+ * What follows "on my calendar" lets it close the command — nothing, or
+ * the command's when, a "for" before it and the politeness or the
+ * verb's particle after it aside ("… in den Kalender für morgen ein") —
+ * and only beside a command's verb or frame (`commanded`) or the verb
+ * said last ("… in meinen Kalender eintragen"): "Give Anna access to my
+ * calendar tomorrow" is a title.
  */
 const closesWith = (
   tokens: ReadonlyArray<Token>,
@@ -2331,7 +2337,9 @@ const closesWith = (
     end -= 1;
   }
   const from = FOR.has(tokens[0]?.plain ?? '') ? 1 : 0;
-  return end <= from ? commanded || infinitive : saysOnlyWhen(textOf(tokens.slice(from, end)));
+  return (
+    (commanded || infinitive) && (end <= from || saysOnlyWhen(textOf(tokens.slice(from, end))))
+  );
 };
 
 interface Tail {
@@ -2356,10 +2364,13 @@ const withoutTail = (
   {
     commanded,
     framed,
+    infinitives,
     particles,
   }: {
     readonly commanded: boolean;
     readonly framed: boolean;
+    /** The verb said last may come off (never a to-do's). */
+    readonly infinitives: boolean;
     readonly particles: ReadonlyArray<string>;
   },
 ): Tail => {
@@ -2384,6 +2395,7 @@ const withoutTail = (
     if (last !== undefined && CLOSERS.has(last) && kept.length > 1) {
       kept.pop();
     } else if (
+      infinitives &&
       last !== undefined &&
       INFINITIVES.has(last) &&
       !infinitive &&
@@ -2407,10 +2419,21 @@ interface Frame {
   readonly wish: boolean;
 }
 
+/** A wish, a request or a calendar verb starts at `at`: what a greeting leads into. */
+const requestAt = (tokens: ReadonlyArray<Token>, at: number): boolean =>
+  sequenceAt(tokens, at, WISHES) > 0 ||
+  sequenceAt(tokens, at, ASKS) > 0 ||
+  VERBS.some(({ words: said }) => matches(tokens, at, said));
+
 /** The politeness, the wish or the request that opens the command, and the fillers after them. */
 const frameAt = (tokens: ReadonlyArray<Token>): Frame => {
   let at = 0;
-  while (at < tokens.length && OPENERS.has(tokens[at]!.plain)) {
+  while (
+    at < tokens.length &&
+    (POLITE.has(tokens[at]!.plain) ||
+      (GREETINGS.has(tokens[at]!.plain) &&
+        (MARKED.test(tokens[at]!.text) || requestAt(tokens, at + 1))))
+  ) {
     at += 1;
   }
   const polite = at > 0;
@@ -2665,13 +2688,15 @@ interface Spoken {
   readonly verb: Verb | undefined;
 }
 
-const spokenOf = (tokens: ReadonlyArray<Token>): Spoken => {
+/** A to-do's verb said last is what to do ("Mitarbeiter einstellen"): it never comes off (`todo`). */
+const spokenOf = (tokens: ReadonlyArray<Token>, { todo }: { readonly todo: boolean }): Spoken => {
   const frame = frameAt(tokens);
   const verb = VERBS.find(({ words: said }) => matches(tokens, frame.at, said));
-  const framed = frame.ask || frame.wish;
+  const framed = !todo && (frame.ask || frame.wish);
   const tail = withoutTail(tokens, {
-    commanded: framed || frame.polite || verb !== undefined,
+    commanded: frame.ask || frame.wish || frame.polite || verb !== undefined,
     framed,
+    infinitives: !todo,
     particles: verb?.particles ?? [],
   });
   return { afterVerb: frame.at + (verb?.words.length ?? 0), frame, tail, verb };
@@ -2688,6 +2713,20 @@ const endsWithParticle = (
 /** What `spoken` says closed its command: the calendar, the verb said last, the verb's particle. */
 const closedBy = ({ afterVerb, tail, verb }: Spoken): boolean =>
   tail.calendar || tail.infinitive || endsWithParticle(tail.tokens, verb, afterVerb);
+
+/**
+ * The phrase named the event as it is ("Add an event called Schedule
+ * review tomorrow") and `tokens` are words of that name: a title the
+ * model took from it is the name, whatever it opens with.
+ */
+const namedBy = (spoken: Spoken, tokens: ReadonlyArray<Token>): boolean => {
+  const object = objectAt(spoken.tail.tokens, spoken.afterVerb, { afterWish: false });
+  if (!object.verbatim) {
+    return false;
+  }
+  const named = new Set(object.tokens.map(({ plain }) => plain));
+  return tokens.every(({ plain }) => named.has(plain));
+};
 
 /**
  * The title without the command spoken around it: "Add an event to have
@@ -2719,8 +2758,8 @@ export const withoutCommand = (
   { todo = false }: { readonly todo?: boolean } = {},
 ): string => {
   const tokens = tokensOf(title);
-  const own = spokenOf(tokens);
-  const spoken = phrase === title ? own : spokenOf(tokensOf(phrase));
+  const own = spokenOf(tokens, { todo });
+  const spoken = phrase === title ? own : spokenOf(tokensOf(phrase), { todo });
   const { afterVerb, frame, tail, verb } = own;
   // The phrase's command is the title's only around the same verb.
   const same = verb !== undefined && spoken.verb === verb;
@@ -2728,6 +2767,11 @@ export const withoutCommand = (
   const closed = closedBy(own) || (same && closedBy(spoken));
   const body = particle ? tail.tokens.slice(0, -1) : tail.tokens;
   const object = objectAt(body, afterVerb, { afterWish: frame.wish && verb === undefined });
+  // A title the phrase named as it is ("Add an event called Schedule
+  // review") is the name, whatever it opens with.
+  if (spoken !== own && !object.verbatim && namedBy(spoken, tokens)) {
+    return title;
+  }
   const evidence = verb !== undefined && (verb.alone || object.held || closed);
   const commands = todo
     ? object.linked && object.todo
@@ -2738,7 +2782,9 @@ export const withoutCommand = (
   // is "plan my week"), and the particle was a word of the title's.
   const opened = (frame.polite || frame.wish) && frame.at < tail.tokens.length;
   const lead = commands ? object.tokens : opened ? tail.tokens.slice(frame.at) : tail.tokens;
-  const event = commands && lead.length > 0 ? withoutLeadingWhen(lead) : lead;
+  // A name said as is keeps its when ("called On Friday we wear pink").
+  const trims = commands && !object.verbatim;
+  const event = trims && lead.length > 0 ? withoutLeadingWhen(lead) : lead;
   // The article the command put before the event, once its when is gone
   // ("am Dienstag um 10 einen Zahnarzttermin"); a name said as is keeps its own.
   const article =
@@ -2753,7 +2799,7 @@ export const withoutCommand = (
   if (kept.length === tokens.length) {
     return title;
   }
-  const rest = textOf(commands ? withoutFor(kept) : kept)
+  const rest = textOf(trims ? withoutFor(kept) : kept)
     .replace(EDGE_START, '')
     .replace(EDGE_END, '');
   return rest === '' ? title : rest;

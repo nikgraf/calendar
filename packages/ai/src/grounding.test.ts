@@ -1552,6 +1552,37 @@ describe('withoutCommand', () => {
     ).toBe('Add a meeting called standup');
   });
 
+  it("keeps a name as said, a greeting of a name, and a to-do's verb said last", () => {
+    // Codex round 1.
+    expect(withoutCommand('Add an event called "On Friday we wear pink"')).toBe(
+      '"On Friday we wear pink"',
+    );
+    expect(withoutCommand('Schedule review', 'Add an event called Schedule review tomorrow')).toBe(
+      'Schedule review',
+    );
+    expect(withoutCommand('Hey Jude rehearsal tomorrow')).toBe('Hey Jude rehearsal tomorrow');
+    expect(withoutCommand('OK Computer listening party tomorrow')).toBe(
+      'OK Computer listening party tomorrow',
+    );
+    expect(withoutCommand('Ok add lunch with Tom tomorrow')).toBe('lunch with Tom tomorrow');
+    expect(withoutCommand('Give Anna access to my calendar tomorrow')).toBe(
+      'Give Anna access to my calendar tomorrow',
+    );
+    expect(withoutCommand('Work on my calendar tomorrow')).toBe('Work on my calendar tomorrow');
+    expect(
+      withoutCommand(
+        'Ich muss neue Mitarbeiter einstellen',
+        'Ich muss neue Mitarbeiter einstellen',
+        {
+          todo: true,
+        },
+      ),
+    ).toBe('neue Mitarbeiter einstellen');
+    expect(
+      withoutCommand('Ich muss Stunden eintragen', 'Ich muss Stunden eintragen', { todo: true }),
+    ).toBe('Stunden eintragen');
+  });
+
   it('leaves a title that only looks like a command', () => {
     for (const title of [
       'Setup call with Tom tomorrow',
