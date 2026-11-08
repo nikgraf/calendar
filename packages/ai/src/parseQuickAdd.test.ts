@@ -1104,6 +1104,24 @@ describe('parseQuickAdd titles', () => {
         'Put lunch with Stefan on my calendar for tomorrow at 1',
       ),
     ).toMatchObject({ date: '2026-08-23', startTime: '13:00', title: 'Lunch with Stefan' });
+    // Bench (Apple's model): the verb kept, the tail dropped — the phrase shows the command.
+    expect(
+      (
+        await prefillOf(
+          { startTime: '13:00', title: 'Put lunch with Stefan' },
+          'Put lunch with Stefan on my calendar for tomorrow at 1',
+        )
+      ).title,
+    ).toBe('Lunch with Stefan');
+    // German puts the when between the verb and the event.
+    expect(
+      (
+        await prefillOf(
+          { startTime: '10:00', title: 'Trag mir am Dienstag um 10 einen Zahnarzttermin ein' },
+          'Trag mir am Dienstag um 10 einen Zahnarzttermin ein',
+        )
+      ).title,
+    ).toBe('Zahnarzttermin');
     // The noun stays where nothing but when follows.
     expect(
       (await prefillOf({ startTime: '09:00', title: 'Add an event' }, 'Add an event tomorrow at 9'))

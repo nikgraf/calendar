@@ -1279,9 +1279,32 @@ describe('withoutCommand', () => {
       'lunch with Stefan tomorrow',
     );
     expect(withoutCommand('Lunch with Stefan please')).toBe('Lunch with Stefan');
+    // Bench: the model kept the verb and dropped the tail; the phrase shows the command.
+    expect(
+      withoutCommand(
+        'Put lunch with Stefan',
+        'Put lunch with Stefan on my calendar for tomorrow at 1',
+      ),
+    ).toBe('lunch with Stefan');
+    expect(withoutCommand('Put lunch with Stefan', 'Please put lunch with Stefan tomorrow')).toBe(
+      'lunch with Stefan',
+    );
+    expect(withoutCommand('Trage Zahnarzt', 'Trage Zahnarzt am Dienstag um 10 ein')).toBe(
+      'Zahnarzt',
+    );
+    expect(withoutCommand('Put lunch with Stefan')).toBe('Put lunch with Stefan');
     expect(withoutCommand('Trag mir Zahnarzt am Dienstag um 10 ein')).toBe(
       'Zahnarzt am Dienstag um 10',
     );
+    // German puts the when between the verb and the event; a weekday
+    // that opens a title names the event (trimWhen keeps "Monday standup").
+    expect(withoutCommand('Trag mir am Dienstag um 10 einen Zahnarzttermin ein')).toBe(
+      'einen Zahnarzttermin',
+    );
+    expect(withoutCommand('Trag mir morgen um 10 einen Zahnarzttermin ein')).toBe(
+      'einen Zahnarzttermin',
+    );
+    expect(withoutCommand('Add Monday standup to my calendar')).toBe('Monday standup');
     expect(withoutCommand('Trage Mittagessen mit Stefan für morgen um 13 Uhr ein')).toBe(
       'Mittagessen mit Stefan morgen um 13 Uhr',
     );

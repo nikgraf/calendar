@@ -5,12 +5,12 @@
     {
       "input": {
         "audio": "trag-mir-zahnarzt-ein-1.m4a",
-        "transcript": "Trag mir morgen um 10 einen Zahnarzttermin ein"
+        "transcript": "Trag mir am Dienstag um 10 einen Zahnarzttermin ein"
       },
       "expect": {
         "kind": "event",
         "title": "zahnarzttermin",
-        "dayOffset": 1,
+        "weekday": 2,
         "startTime": "10:00",
         "endTime": "11:00",
         "location": null

@@ -671,7 +671,7 @@ const titleOf = ({
   readonly place: string | undefined;
   readonly todo: boolean;
 }): string | undefined => {
-  const said = named && phrase !== undefined ? withoutCommand(named) : named;
+  const said = named && phrase !== undefined ? withoutCommand(named, phrase) : named;
   const kept = said && phrase !== undefined ? trimWhen(said, held, { phrase }) : said;
   // The place leaves an event's title only when its field keeps it; a
   // to-do has no place field.

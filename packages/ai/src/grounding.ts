@@ -2359,21 +2359,34 @@ const objectAt = (
 
 /**
  * The command that opens the title, as far as the event's own words.
- * `closed` says a tail closed the command (where it puts the event, its
- * verb said last, a separable verb's particle): then its verb counts
- * with the event's words right after it ("Put lunch with Tom on my
- * calendar", "Trage Mittagessen ein"), and a request needs no verb
- * ("Kannst du Mittagessen eintragen").
+ * `spoken` is the phrase the title came from, its tail off: where that
+ * phrase was framed as a command — it had a tail (where it puts the
+ * event, its verb said last), opened with a frame, or ends with the
+ * verb's particle — the verb counts with the event's words right after
+ * it ("Put lunch with Tom on my calendar", "Trage Mittagessen ein", and
+ * a model's "Put lunch with Tom" for either), and a request needs no
+ * verb ("Kannst du Mittagessen eintragen").
  */
-const leadOf = (tokens: ReadonlyArray<Token>, { closed }: { readonly closed: boolean }): Lead => {
+const leadOf = (tokens: ReadonlyArray<Token>, { spoken }: { readonly spoken: Tail }): Lead => {
   const frame = frameAt(tokens);
   const verb = VERBS.find(({ words: said }) => matches(tokens, frame.at, said));
   const afterVerb = frame.at + (verb?.words.length ?? 0);
   const { at, held } = objectAt(tokens, afterVerb, { afterWish: frame.wish && verb === undefined });
+  const last = spoken.tokens.at(-1)?.plain;
+  const closed =
+    spoken.trimmed ||
+    spoken.infinitive ||
+    (verb !== undefined &&
+      last !== undefined &&
+      spoken.tokens.length > verb.words.length + 1 &&
+      verb.particles.includes(last));
+  // A frame before the verb ("please put …") makes it the command's; a
+  // request on its own asks nothing ("Can you lunch with Stefan").
+  const framed = frameAt(spoken.tokens).at > 0;
   const commands =
     frame.wish ||
     (frame.ask && (verb !== undefined || closed)) ||
-    (verb !== undefined && (verb.alone || held || closed));
+    (verb !== undefined && (verb.alone || held || closed || framed));
   return { end: commands && at < tokens.length ? at : 0, verb };
 };
 
@@ -2389,37 +2402,55 @@ const whenRunAtEnd = (tokens: ReadonlyArray<Token>): number => {
     : tokens.length - text.slice(0, start).trimEnd().split(' ').length;
 };
 
+/** A word the command's when opens with, before the day or the clock ("am Dienstag", "for Friday", "um 10"). */
+const WHEN_LEADS = new Set(['am', 'an', 'at', 'for', 'fur', 'on', 'um']);
+
 /**
- * The tokens without the "for" a command puts before its when: at the
- * end ("put lunch on my calendar for tomorrow at 1", "einen Termin für
- * Freitag um 12") the word alone, so the when can come off the end as
- * any other (`trimWhen`); at the start, with the when it leads into
- * ("Trag mir für nächsten Mittwoch um 10 einen Zahnarzttermin ein"),
- * which a title never opens with. On its own, "for" owns its day ("Prep
- * for Friday"): only a command's is taken.
+ * The event's words without the when the command put before them
+ * ("Trag mir am Dienstag um 10 einen Zahnarzttermin ein", "Trag mir für
+ * nächsten Mittwoch um 10 Uhr einen Zahnarzttermin ein"): a title never
+ * opens with its when, but `trimWhen` keeps a weekday that opens one
+ * ("Monday standup"), so after a command the when goes here — one a
+ * preposition or a day word opens, never a bare weekday, which names the
+ * event ("Add Monday standup to my calendar").
  */
-const withoutFor = (tokens: ReadonlyArray<Token>): ReadonlyArray<Token> => {
-  let kept = tokens;
-  if (kept.length > 2 && FOR.has(kept[0]!.plain)) {
-    for (let end = kept.length - 1; end >= 2; end -= 1) {
-      if (saysOnlyWhen(textOf(kept.slice(1, end)))) {
-        kept = kept.slice(end);
-        break;
-      }
+const withoutLeadingWhen = (tokens: ReadonlyArray<Token>): ReadonlyArray<Token> => {
+  const first = tokens[0];
+  if (first === undefined) {
+    return tokens;
+  }
+  const from = WHEN_LEADS.has(first.plain) ? 1 : 0;
+  if (from === 0 && namedWeekdays(first.text).length > 0) {
+    return tokens;
+  }
+  for (let end = tokens.length - 1; end > from; end -= 1) {
+    if (saysOnlyWhen(textOf(tokens.slice(from, end)))) {
+      return tokens.slice(end);
     }
   }
+  return tokens;
+};
+
+/**
+ * The tokens without the "for" a command puts before its when at the
+ * end ("put lunch on my calendar for tomorrow at 1", "einen Termin für
+ * Freitag um 12"): the word alone, so the when can come off the end as
+ * any other (`trimWhen`). On its own, "for" owns its day ("Prep for
+ * Friday"): only a command's is taken.
+ */
+const withoutFor = (tokens: ReadonlyArray<Token>): ReadonlyArray<Token> => {
   // Run by run from the end ("at 1", then "tomorrow"), as `whenless` reads them.
-  for (let last = kept.length; last > 2;) {
-    const run = whenRunAtEnd(kept.slice(0, last));
+  for (let last = tokens.length; last > 2;) {
+    const run = whenRunAtEnd(tokens.slice(0, last));
     if (run === 0 || run >= last) {
       break;
     }
     last -= run;
-    if (FOR.has(kept[last - 1]!.plain)) {
-      return [...kept.slice(0, last - 1), ...kept.slice(last)];
+    if (FOR.has(tokens[last - 1]!.plain)) {
+      return [...tokens.slice(0, last - 1), ...tokens.slice(last)];
     }
   }
-  return kept;
+  return tokens;
 };
 
 /** The start and the end of the title without the marks a cut left ("Stefan," before a dropped tail). */
@@ -2428,28 +2459,30 @@ const EDGES = /^[\s,;:–—-]+|[\s,;:–—-]+$/gu;
 /**
  * The title without the command spoken around it: "Add an event to have
  * lunch with Stefan tomorrow" is "lunch with Stefan tomorrow", "Set up a
- * dinner with Tom Baker" is "dinner with Tom Baker", "Trag mir für
- * Mittwoch um 10 einen Zahnarzttermin ein" is "Mittwoch um 10 einen
- * Zahnarzttermin" (the when and the article come off afterwards,
- * `trimWhen` and `withoutArticle`), "Put lunch with Stefan on my calendar
- * for tomorrow" is "lunch with Stefan tomorrow". A dictated phrase
- * carries such a frame as often as not, and the model echoes it or the
- * phrase stands in for the title (`groundTitle`); the frame is not what
- * the event is.
+ * dinner with Tom Baker" is "dinner with Tom Baker", "Trag mir am
+ * Dienstag um 10 einen Zahnarzttermin ein" is "einen Zahnarzttermin"
+ * (the article comes off afterwards, `withoutArticle`), "Put lunch with
+ * Stefan on my calendar for tomorrow" is "lunch with Stefan tomorrow".
+ * A dictated phrase carries such a frame as often as not, and the model
+ * echoes it or the phrase stands in for the title (`groundTitle`); the
+ * frame is not what the event is.
  *
  * A command is a wish ("I'd like to"), a request with a verb ("can you
  * add"), or a verb that puts something on the calendar — on its own for
  * "add" and "schedule", else with an article, a noun or a tail beside
  * it, so "Book club", "Planning session", "Setup call" and "Plan review"
- * stay titles. The noun the command calls the event stays where nothing
- * but when follows ("Add an event tomorrow at 9" is "event tomorrow at
- * 9"). A title that is nothing but command stays as it is.
+ * stay titles. Given the phrase the title came from, its tail and frame
+ * count too: a model keeps the verb and drops the rest ("Put lunch with
+ * Stefan" for "Put lunch with Stefan on my calendar for tomorrow"). The
+ * noun the command calls the event stays where nothing but when follows
+ * ("Add an event tomorrow at 9" is "event tomorrow at 9"). A title that
+ * is nothing but command stays as it is.
  */
-export const withoutCommand = (title: string): string => {
+export const withoutCommand = (title: string, phrase: string = title): string => {
   const tokens = tokensOf(title);
   const tail = withoutTail(tokens);
-  const closed = tail.trimmed || tail.infinitive;
-  const first = leadOf(tail.tokens, { closed });
+  const spoken = phrase === title ? tail : withoutTail(tokensOf(phrase));
+  const first = leadOf(tail.tokens, { spoken });
   // A separable verb's particle closes the command ("trag … ein"): off
   // first, so the lead reads the event's words without it.
   const particle =
@@ -2457,9 +2490,9 @@ export const withoutCommand = (title: string): string => {
     tail.tokens.length > first.verb.words.length + 1 &&
     first.verb.particles.includes(tail.tokens.at(-1)!.plain);
   const body = particle ? tail.tokens.slice(0, -1) : tail.tokens;
-  const lead = particle ? leadOf(body, { closed: true }) : first;
+  const lead = particle ? leadOf(body, { spoken }) : first;
   // No command in the lead: the particle was a word of the title's.
-  const kept = lead.end > 0 ? body.slice(lead.end) : tail.tokens;
+  const kept = lead.end > 0 ? withoutLeadingWhen(body.slice(lead.end)) : tail.tokens;
   if (kept.length === tokens.length) {
     return title;
   }
