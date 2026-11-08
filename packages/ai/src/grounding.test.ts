@@ -1312,8 +1312,9 @@ describe('withoutCommand', () => {
         'Put lunch with Stefan on my calendar for tomorrow at 1',
       ),
     ).toBe('lunch with Stefan');
+    // An opener is no evidence for the verb after it.
     expect(withoutCommand('Put lunch with Stefan', 'Please put lunch with Stefan tomorrow')).toBe(
-      'lunch with Stefan',
+      'Put lunch with Stefan',
     );
     expect(withoutCommand('Trage Zahnarzt', 'Trage Zahnarzt am Dienstag um 10 ein')).toBe(
       'Zahnarzt',
@@ -1438,6 +1439,117 @@ describe('withoutCommand', () => {
         todo,
       ),
     ).toBe('call the bank tomorrow');
+  });
+
+  it('needs a command near a tail, and the same verb in the phrase', () => {
+    // Review round 2: "on my calendar" mid-title, an opener or a wish as
+    // evidence for any verb, and the phrase's tail for a different verb.
+    for (const title of [
+      'Work on my calendar app',
+      'Look into my calendar export',
+      'Give Anna access to my calendar',
+      'Bug in meinem Kalender beheben',
+      'Will you marry me',
+      'Organize event for charity',
+      'Plan meeting agenda',
+      'Set up meeting room',
+    ]) {
+      expect(withoutCommand(title), title).toBe(title);
+    }
+    expect(withoutCommand('Plan my week', 'Please plan my week on Sunday')).toBe('Plan my week');
+    expect(withoutCommand('Ok plan my week')).toBe('plan my week');
+    expect(withoutCommand("I'd like to organize the garage Saturday")).toBe(
+      'organize the garage Saturday',
+    );
+    expect(withoutCommand('I want to set up the new laptop tomorrow')).toBe(
+      'set up the new laptop tomorrow',
+    );
+    expect(withoutCommand("Let's make pasta")).toBe('make pasta');
+    expect(withoutCommand('Please put the bins out tonight')).toBe('put the bins out tonight');
+    expect(
+      withoutCommand('Setup call with Tom', 'Put the setup call with Tom on my calendar tomorrow'),
+    ).toBe('Setup call with Tom');
+    expect(withoutCommand('Plan review', 'Add Plan review to my calendar for Friday')).toBe(
+      'Plan review',
+    );
+    expect(withoutCommand('Create Camp', 'Please create Camp tomorrow')).toBe('Create Camp');
+    // The calendar with "the": only beside a command.
+    expect(withoutCommand('Trag Mittagessen mit Stefan in den Kalender ein')).toBe(
+      'Mittagessen mit Stefan',
+    );
+    expect(withoutCommand('Kannst du Mittagessen mit Stefan in den Kalender eintragen')).toBe(
+      'Mittagessen mit Stefan',
+    );
+    expect(withoutCommand('Add lunch with Tom to the calendar tomorrow at 1')).toBe(
+      'lunch with Tom tomorrow at 1',
+    );
+    expect(withoutCommand('Put lunch with Stefan in the calendar for tomorrow')).toBe(
+      'lunch with Stefan tomorrow',
+    );
+    // An opener comes off by itself, and a verb said last beside a when.
+    expect(withoutCommand('Bitte Stunden eintragen')).toBe('Stunden eintragen');
+    expect(withoutCommand('Bitte Mittagessen mit Stefan morgen eintragen')).toBe(
+      'Mittagessen mit Stefan morgen',
+    );
+    expect(withoutCommand('Hey, lunch with Tom tomorrow on my calendar')).toBe(
+      'lunch with Tom tomorrow',
+    );
+  });
+
+  it('reads what follows the command\'s "for <when>", and a clock\'s lead word', () => {
+    // Review round 2.
+    expect(withoutCommand('Add an event for Saturday brunch')).toBe('brunch');
+    expect(withoutCommand('Add an event for tomorrow: lunch with Stefan')).toBe(
+      'lunch with Stefan',
+    );
+    expect(withoutCommand('Add an event for tomorrow to have lunch with Stefan')).toBe(
+      'lunch with Stefan',
+    );
+    expect(withoutCommand('Erstelle einen Termin für Freitag Abendessen mit Anna')).toBe(
+      'Abendessen mit Anna',
+    );
+    expect(
+      withoutCommand(
+        'Add a reminder for tomorrow to call the bank',
+        'Add a reminder for tomorrow to call the bank',
+        { todo: true },
+      ),
+    ).toBe('call the bank');
+    expect(withoutCommand('Trag mir um 10 einen Zahnarzttermin ein')).toBe('Zahnarzttermin');
+    expect(withoutCommand('Add at 9 a call with Sarah')).toBe('call with Sarah');
+    expect(withoutCommand('Trag mir Dienstag um 10 einen Zahnarzttermin ein')).toBe(
+      'Zahnarzttermin',
+    );
+    expect(withoutCommand('Set a reminder to call the bank')).toBe('call the bank');
+    expect(withoutCommand('Set a meeting with Tom for Friday')).toBe('meeting with Tom Friday');
+    // A name's capital "The", a mark the title owns, a dash after a meeting.
+    expect(withoutCommand('Add The Killers concert Friday')).toBe('The Killers concert Friday');
+    expect(withoutCommand('Add an event for The Who concert')).toBe('The Who concert');
+    expect(withoutCommand('Add -20% sale')).toBe('-20% sale');
+    expect(withoutCommand('Add a meeting - Tom')).toBe('meeting - Tom');
+    // A to-do loses only a to-do's noun.
+    const todo = { todo: true };
+    expect(
+      withoutCommand(
+        'Create an event for the team offsite',
+        'remind me to create an event for the team offsite',
+        todo,
+      ),
+    ).toBe('Create an event for the team offsite');
+    expect(
+      withoutCommand(
+        'Termin für den Zahnarzt vereinbaren',
+        'Ich muss einen Termin für den Zahnarzt vereinbaren',
+        todo,
+      ),
+    ).toBe('Termin für den Zahnarzt vereinbaren');
+    expect(
+      withoutCommand(
+        'Add a meeting called standup',
+        'remind me to add a meeting called standup',
+        todo,
+      ),
+    ).toBe('Add a meeting called standup');
   });
 
   it('leaves a title that only looks like a command', () => {

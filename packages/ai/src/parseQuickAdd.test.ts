@@ -1165,6 +1165,26 @@ describe('parseQuickAdd titles', () => {
         )
       ).title,
     ).toBe('Meeting with Tom');
+    // Review round 2: "the calendar" beside a command, before the when.
+    expect(
+      (
+        await prefillOf(
+          { startTime: '13:00', title: 'Add lunch with Tom to the calendar tomorrow at 1' },
+          'Add lunch with Tom to the calendar tomorrow at 1',
+        )
+      ).title,
+    ).toBe('Lunch with Tom');
+    expect(
+      (
+        await prefillOf(
+          {
+            startTime: '13:00',
+            title: 'Trag Mittagessen mit Stefan morgen um 13 Uhr in den Kalender ein',
+          },
+          'Trag Mittagessen mit Stefan morgen um 13 Uhr in den Kalender ein',
+        )
+      ).title,
+    ).toBe('Mittagessen mit Stefan');
   });
 
   it('keeps an invitation out of a title made of the phrase', async () => {
