@@ -26,7 +26,6 @@ import {
   statesUntil,
   trimWhen,
   windowOf,
-  withoutArticle,
   withoutCommand,
   withoutPlace,
 } from './grounding.ts';
@@ -1209,6 +1208,7 @@ describe('withoutCommand', () => {
     );
     expect(withoutCommand('Add an event for lunch with Stefan')).toBe('lunch with Stefan');
     expect(withoutCommand('Add an event: lunch with Stefan')).toBe('lunch with Stefan');
+    expect(withoutCommand('Add an event – lunch with Stefan')).toBe('lunch with Stefan');
     expect(withoutCommand('Add an event called standup tomorrow at 9')).toBe(
       'standup tomorrow at 9',
     );
@@ -1220,8 +1220,8 @@ describe('withoutCommand', () => {
     expect(withoutCommand('Schedule lunch with Stefan tomorrow')).toBe(
       'lunch with Stefan tomorrow',
     );
-    // The article after the link stays for `withoutArticle`, once the when is gone.
-    expect(withoutCommand('Create an event for the team offsite')).toBe('the team offsite');
+    expect(withoutCommand('Create an event for the team offsite')).toBe('team offsite');
+    expect(withoutCommand('Add a new calendar entry for the team offsite')).toBe('team offsite');
     expect(withoutCommand('Please add a dentist appointment tomorrow at 9')).toBe(
       'dentist appointment tomorrow at 9',
     );
@@ -1229,6 +1229,9 @@ describe('withoutCommand', () => {
       'dentist appointment tomorrow',
     );
     expect(withoutCommand('Plan a trip to Vienna')).toBe('trip to Vienna');
+    expect(withoutCommand('Just add lunch with Stefan tomorrow')).toBe(
+      'lunch with Stefan tomorrow',
+    );
   });
 
   it("takes the lead the model kept in its title (the bench's long phrases)", () => {
@@ -1240,7 +1243,7 @@ describe('withoutCommand', () => {
       withoutCommand(
         'Trag mir für nächsten Mittwoch um 10 Uhr einen Zahnarzttermin in der Praxis Dr. Huber ein',
       ),
-    ).toBe('einen Zahnarzttermin in der Praxis Dr. Huber');
+    ).toBe('Zahnarzttermin in der Praxis Dr. Huber');
     expect(
       withoutCommand("I'd like to schedule a call with Sarah sometime tomorrow afternoon"),
     ).toBe('call with Sarah sometime tomorrow afternoon');
@@ -1267,8 +1270,9 @@ describe('withoutCommand', () => {
     expect(withoutCommand('Kannst du Mittagessen mit Stefan eintragen')).toBe(
       'Mittagessen mit Stefan',
     );
-    // A request without a verb asks nothing.
+    // A request without a verb asks nothing; "let's" leads only into a verb one does.
     expect(withoutCommand('Can you lunch with Stefan')).toBe('Can you lunch with Stefan');
+    expect(withoutCommand("Let's Encrypt renewal")).toBe("Let's Encrypt renewal");
   });
 
   it('takes the tail: where the event goes, the particle, the verb said last', () => {
@@ -1279,32 +1283,9 @@ describe('withoutCommand', () => {
       'lunch with Stefan tomorrow',
     );
     expect(withoutCommand('Lunch with Stefan please')).toBe('Lunch with Stefan');
-    // Bench: the model kept the verb and dropped the tail; the phrase shows the command.
-    expect(
-      withoutCommand(
-        'Put lunch with Stefan',
-        'Put lunch with Stefan on my calendar for tomorrow at 1',
-      ),
-    ).toBe('lunch with Stefan');
-    expect(withoutCommand('Put lunch with Stefan', 'Please put lunch with Stefan tomorrow')).toBe(
-      'lunch with Stefan',
-    );
-    expect(withoutCommand('Trage Zahnarzt', 'Trage Zahnarzt am Dienstag um 10 ein')).toBe(
-      'Zahnarzt',
-    );
-    expect(withoutCommand('Put lunch with Stefan')).toBe('Put lunch with Stefan');
     expect(withoutCommand('Trag mir Zahnarzt am Dienstag um 10 ein')).toBe(
       'Zahnarzt am Dienstag um 10',
     );
-    // German puts the when between the verb and the event; a weekday
-    // that opens a title names the event (trimWhen keeps "Monday standup").
-    expect(withoutCommand('Trag mir am Dienstag um 10 einen Zahnarzttermin ein')).toBe(
-      'einen Zahnarzttermin',
-    );
-    expect(withoutCommand('Trag mir morgen um 10 einen Zahnarzttermin ein')).toBe(
-      'einen Zahnarzttermin',
-    );
-    expect(withoutCommand('Add Monday standup to my calendar')).toBe('Monday standup');
     expect(withoutCommand('Trage Mittagessen mit Stefan für morgen um 13 Uhr ein')).toBe(
       'Mittagessen mit Stefan morgen um 13 Uhr',
     );
@@ -1321,26 +1302,99 @@ describe('withoutCommand', () => {
     expect(withoutCommand('Mach mir einen Termin für Zahnarzt am Dienstag rein')).toBe(
       'Zahnarzt am Dienstag',
     );
+    expect(withoutCommand('Mach mir einen Termin beim Zahnarzt aus')).toBe('Termin beim Zahnarzt');
+    expect(withoutCommand('Leg einen Termin mit Tom fest')).toBe('Termin mit Tom');
     expect(withoutCommand('Plane einen Termin für Yoga am Montag ein')).toBe('Yoga am Montag');
+    // Review: the model kept the verb and dropped the tail; the phrase shows the command.
+    expect(
+      withoutCommand(
+        'Put lunch with Stefan',
+        'Put lunch with Stefan on my calendar for tomorrow at 1',
+      ),
+    ).toBe('lunch with Stefan');
+    expect(withoutCommand('Put lunch with Stefan', 'Please put lunch with Stefan tomorrow')).toBe(
+      'lunch with Stefan',
+    );
+    expect(withoutCommand('Trage Zahnarzt', 'Trage Zahnarzt am Dienstag um 10 ein')).toBe(
+      'Zahnarzt',
+    );
+    expect(withoutCommand('Put lunch with Stefan')).toBe('Put lunch with Stefan');
   });
 
-  it("keeps the command's noun where nothing but when follows, and with the event's own words", () => {
+  it('takes a tail only where something says a command', () => {
+    // Review: "the calendar", "the schedule", "for me", "ok" and a German
+    // infinitive are a title's own words as often as a command's.
+    for (const title of [
+      'Work on the calendar app',
+      'Discuss changes to the schedule',
+      'Lunch on the calendar team',
+      'Time for me',
+      'Zeit für mich',
+      'Tom covers for me',
+      'Say hi',
+      'Stunden eintragen',
+      'Geld anlegen',
+      'Mitarbeiter einstellen',
+      'A Night at the Opera Saturday please',
+    ]) {
+      expect(withoutCommand(title), title).toBe(title.replace(/ please$/, ''));
+    }
+    expect(withoutCommand('Setup call with Tom', 'Setup call with Tom tomorrow please')).toBe(
+      'Setup call with Tom',
+    );
+    expect(withoutCommand('Create Camp', 'Create Camp tomorrow ok')).toBe('Create Camp');
+    expect(withoutCommand('Plan review', 'Also plan review tomorrow')).toBe('Plan review');
+  });
+
+  it("keeps the command's noun unless it stands for the event", () => {
     expect(withoutCommand('Add an event tomorrow at 9')).toBe('event tomorrow at 9');
-    expect(withoutCommand('Add an event for tomorrow at 9')).toBe('event tomorrow at 9');
+    expect(withoutCommand('Add an event for tomorrow at 9')).toBe('event');
     expect(withoutCommand('Add a meeting with Tom tomorrow at 3')).toBe(
       'meeting with Tom tomorrow at 3',
     );
     expect(withoutCommand('Erstelle einen Termin mit Stefan am Freitag')).toBe(
       'Termin mit Stefan am Freitag',
     );
-    expect(withoutCommand('Erstelle einen Termin für morgen um 10')).toBe('Termin morgen um 10');
-    expect(withoutCommand('Leg einen Termin für Freitag um 12 Uhr an')).toBe(
-      'Termin Freitag um 12 Uhr',
-    );
+    expect(withoutCommand('Erstelle einen Termin für morgen um 10')).toBe('Termin');
+    expect(withoutCommand('Leg einen Termin für Freitag um 12 Uhr an')).toBe('Termin');
     expect(
       withoutCommand('Erstelle einen Termin für Mittagessen mit Stefan am Freitag um 12'),
     ).toBe('Mittagessen mit Stefan am Freitag um 12');
     expect(withoutCommand('Add an event')).toBe('event');
+    // Review: a meeting or an appointment is the event; what follows "for" qualifies it.
+    expect(withoutCommand('Schedule a meeting for the team')).toBe('meeting for the team');
+    expect(withoutCommand('Set up a meeting for Tom')).toBe('meeting for Tom');
+    expect(withoutCommand('Add an appointment for the dentist')).toBe(
+      'appointment for the dentist',
+    );
+    expect(withoutCommand('Add a meeting for 2 hours tomorrow')).toBe(
+      'meeting for 2 hours tomorrow',
+    );
+    expect(withoutCommand('Add a meeting called standup')).toBe('standup');
+    // Review: "for" before a when is the command's, whatever the noun.
+    expect(withoutCommand('Add a meeting for tomorrow with Tom')).toBe('meeting with Tom');
+    expect(withoutCommand('Erstelle einen Termin für morgen mit Stefan')).toBe('Termin mit Stefan');
+    expect(withoutCommand('Add an appointment for next Tuesday with the dentist')).toBe(
+      'appointment with the dentist',
+    );
+    expect(withoutCommand('Add an event for Friday with Anna at 3')).toBe('event with Anna at 3');
+  });
+
+  it("takes the command's when off the front, never a word that names the event", () => {
+    // German puts the when between the verb and the event; a weekday that
+    // opens a title names the event (trimWhen keeps "Monday standup").
+    expect(withoutCommand('Trag mir am Dienstag um 10 einen Zahnarzttermin ein')).toBe(
+      'Zahnarzttermin',
+    );
+    expect(withoutCommand('Trag mir morgen um 10 einen Zahnarzttermin ein')).toBe('Zahnarzttermin');
+    expect(withoutCommand('Add for tomorrow at 9 a call with Sarah')).toBe('call with Sarah');
+    expect(withoutCommand('Add Monday standup to my calendar')).toBe('Monday standup');
+    // Review: a repeat or a clock that opens the event's words is its name.
+    expect(withoutCommand('Schedule weekly sync')).toBe('weekly sync');
+    expect(withoutCommand('Add daily standup')).toBe('daily standup');
+    expect(withoutCommand('Add noon yoga')).toBe('noon yoga');
+    expect(withoutCommand('Add midnight mass')).toBe('midnight mass');
+    expect(withoutCommand('Add next steps review')).toBe('next steps review');
   });
 
   it('takes only a command\'s "for" before the when', () => {
@@ -1350,6 +1404,40 @@ describe('withoutCommand', () => {
     // On its own, "for" owns its day (trimWhen keeps "Prep for Friday").
     expect(withoutCommand('Lunch with Stefan for tomorrow')).toBe('Lunch with Stefan for tomorrow');
     expect(withoutCommand('Prep for Friday')).toBe('Prep for Friday');
+    expect(withoutCommand('Prep for Friday please')).toBe('Prep for Friday');
+  });
+
+  it('keeps a name said as it is, and words that only look like articles', () => {
+    // Review: "new" and "one" are a command's only before its noun.
+    expect(withoutCommand('Schedule New York trip')).toBe('New York trip');
+    expect(withoutCommand("Add New Year's Eve party")).toBe("New Year's Eve party");
+    expect(withoutCommand('Add one on one with Tom tomorrow')).toBe('one on one with Tom tomorrow');
+    expect(withoutCommand('Add an event called The Big Lebowski screening')).toBe(
+      'The Big Lebowski screening',
+    );
+    expect(withoutCommand('Add a meeting @ Café Central')).toBe('meeting @ Café Central');
+  });
+
+  it("takes only the noun's form off a to-do, whose words are what to do", () => {
+    const todo = { todo: true };
+    expect(withoutCommand('add milk', 'remind me to add milk', todo)).toBe('add milk');
+    expect(
+      withoutCommand(
+        'Schedule a dentist appointment',
+        'remind me to schedule a dentist appointment tomorrow',
+        todo,
+      ),
+    ).toBe('Schedule a dentist appointment');
+    expect(
+      withoutCommand('Set up the printer', 'I need to set up the printer tomorrow', todo),
+    ).toBe('Set up the printer');
+    expect(
+      withoutCommand(
+        'Add a reminder to call the bank tomorrow',
+        'Add a reminder to call the bank tomorrow',
+        todo,
+      ),
+    ).toBe('call the bank tomorrow');
   });
 
   it('leaves a title that only looks like a command', () => {
@@ -1357,6 +1445,10 @@ describe('withoutCommand', () => {
       'Setup call with Tom tomorrow',
       'Make dinner reservations',
       'Plan review tomorrow',
+      'Plan my week',
+      'Set up the new laptop',
+      'Organize the garage Saturday',
+      'Put the bins out tonight',
       'Planning session Monday at 2pm',
       'Book club every month on Wednesday at 7pm',
       'Block party Saturday',
@@ -1370,20 +1462,6 @@ describe('withoutCommand', () => {
     ]) {
       expect(withoutCommand(title), title).toBe(title);
     }
-  });
-});
-
-describe('withoutArticle', () => {
-  it("drops the command's article once the when before it is gone", () => {
-    expect(withoutArticle('einen Zahnarzttermin')).toBe('Zahnarzttermin');
-    expect(withoutArticle('a dinner with Tom Baker')).toBe('dinner with Tom Baker');
-    expect(withoutArticle('my dentist appointment')).toBe('dentist appointment');
-  });
-
-  it('keeps a title that is one word, or opens with no article', () => {
-    expect(withoutArticle('Zahnarzttermin')).toBe('Zahnarzttermin');
-    expect(withoutArticle('the')).toBe('the');
-    expect(withoutArticle('Lunch with Tom')).toBe('Lunch with Tom');
   });
 });
 

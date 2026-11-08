@@ -29,7 +29,6 @@ import {
   statesNoEnd,
   statesUntil,
   trimWhen,
-  withoutArticle,
   withoutCommand,
   withoutPlace,
 } from './grounding.ts';
@@ -671,7 +670,8 @@ const titleOf = ({
   readonly place: string | undefined;
   readonly todo: boolean;
 }): string | undefined => {
-  const said = named && phrase !== undefined ? withoutCommand(named, phrase) : named;
+  // A to-do's words are what to do: only "add a reminder to …" comes off them.
+  const said = named && phrase !== undefined ? withoutCommand(named, phrase, { todo }) : named;
   const kept = said && phrase !== undefined ? trimWhen(said, held, { phrase }) : said;
   // The place leaves an event's title only when its field keeps it; a
   // to-do has no place field.
@@ -680,10 +680,7 @@ const titleOf = ({
       ? trimWhen(withoutPlace(kept, held), held, { phrase })
       : kept;
   const placed = placeless !== kept && placeOf(place, placeless ?? '', phrase) ? placeless : kept;
-  // The command's article, left once the when before it is gone ("Trag
-  // mir morgen um 10 einen Zahnarzttermin ein").
-  const owned = placed && said !== named ? withoutArticle(placed) : placed;
-  return owned && phrase !== undefined ? capitalized(owned) : owned;
+  return placed && phrase !== undefined ? capitalized(placed) : placed;
 };
 
 /** A to-do: its day, and its time when one was said. No end, no repeat. */

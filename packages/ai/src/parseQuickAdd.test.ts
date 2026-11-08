@@ -1134,6 +1134,37 @@ describe('parseQuickAdd titles', () => {
         ...CONTEXT,
       }),
     ).toMatchObject({ kind: 'task', prefill: { date: '2026-08-23', title: 'Call the bank' } });
+    // Review: a to-do's words are what to do, whether the model kept the
+    // cue or the whole phrase stands in.
+    expect(
+      await parseQuickAdd(fakeModel({ title: 'add milk' }), {
+        phrase: 'remind me to add milk tomorrow',
+        ...CONTEXT,
+      }),
+    ).toMatchObject({ kind: 'task', prefill: { title: 'Add milk' } });
+    for (const title of ['Schedule the car service', 'remind me to schedule the car service']) {
+      expect(
+        await parseQuickAdd(fakeModel({ title }), {
+          phrase: 'remind me to schedule the car service',
+          ...CONTEXT,
+        }),
+      ).toMatchObject({ kind: 'task', prefill: { title: 'Schedule the car service' } });
+    }
+    // Review: a meeting is the event; the place stays in its field.
+    expect(
+      await prefillOf(
+        { location: 'Café Central', startTime: '15:00', title: 'Add a meeting at Café Central' },
+        'Add a meeting at Café Central tomorrow at 3',
+      ),
+    ).toMatchObject({ location: 'Café Central', title: 'Meeting' });
+    expect(
+      (
+        await prefillOf(
+          { title: 'Add a meeting for tomorrow with Tom' },
+          'Add a meeting for tomorrow with Tom',
+        )
+      ).title,
+    ).toBe('Meeting with Tom');
   });
 
   it('keeps an invitation out of a title made of the phrase', async () => {
