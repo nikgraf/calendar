@@ -2550,10 +2550,11 @@ const objectAt = (
     at += 1;
     held = true;
   }
+  // In lower case only: "a Just Dance session", "The Killers concert" are names.
   while (
     at < tokens.length &&
-    (FILLERS.has(tokens[at]!.plain) ||
-      (DETERMINERS.has(tokens[at]!.plain) && LOWER.test(tokens[at]!.text)))
+    (FILLERS.has(tokens[at]!.plain) || DETERMINERS.has(tokens[at]!.plain)) &&
+    LOWER.test(tokens[at]!.text)
   ) {
     held ||= INDEFINITE.has(tokens[at]!.plain);
     at += 1;
@@ -2657,8 +2658,9 @@ const withoutLeadingWhen = (tokens: ReadonlyArray<Token>): ReadonlyArray<Token> 
  * The tokens without the "for" a command puts before its when at the
  * end ("put lunch on my calendar for tomorrow at 1", "einen Termin für
  * Freitag um 12"): the word alone, so the when can come off the end as
- * any other (`trimWhen`). On its own, "for" owns its day ("Prep for
- * Friday"): only a command's is taken.
+ * any other (`trimWhen`). Only the day that ends the title, after its
+ * clock, is the command's: on its own, "for" owns its day ("Prep for
+ * Friday", and "prepare for Friday tomorrow at 9" keeps its Friday).
  */
 const withoutFor = (tokens: ReadonlyArray<Token>): ReadonlyArray<Token> => {
   // Run by run from the end ("at 1", then "tomorrow"), as `whenless` reads them.
@@ -2668,12 +2670,18 @@ const withoutFor = (tokens: ReadonlyArray<Token>): ReadonlyArray<Token> => {
       break;
     }
     last -= run;
-    if (FOR.has(tokens[last - 1]!.plain)) {
-      return [...tokens.slice(0, last - 1), ...tokens.slice(last)];
+    if (!clockOnly(tokens.slice(last, last + run))) {
+      return FOR.has(tokens[last - 1]!.plain)
+        ? [...tokens.slice(0, last - 1), ...tokens.slice(last)]
+        : tokens;
     }
   }
   return tokens;
 };
+
+/** The run of when-words is a clock alone ("at 1", "um 13 Uhr"), not a day. */
+const clockOnly = (run: ReadonlyArray<Token>): boolean =>
+  clockAtStart(run.map(({ text }) => words(text)).join(' ')) === run.length;
 
 /** A mark a cut left standing at the start ("– lunch") or hanging at the end ("Stefan,"); "-20% sale" keeps its own. */
 const EDGE_START = /^(?:[,;:–—-]+\s+)+/u;
@@ -2715,12 +2723,17 @@ const closedBy = ({ afterVerb, tail, verb }: Spoken): boolean =>
   tail.calendar || tail.infinitive || endsWithParticle(tail.tokens, verb, afterVerb);
 
 /**
- * The phrase named the event as it is ("Add an event called Schedule
+ * The phrase (`said`, with its tail still on: the name may end in
+ * "please") named the event as it is ("Add an event called Schedule
  * review tomorrow") and `tokens` are words of that name: a title the
- * model took from it is the name, whatever it opens with.
+ * model took from it is the name, whatever it opens or closes with.
  */
-const namedBy = (spoken: Spoken, tokens: ReadonlyArray<Token>): boolean => {
-  const object = objectAt(spoken.tail.tokens, spoken.afterVerb, { afterWish: false });
+const namedBy = (
+  said: ReadonlyArray<Token>,
+  spoken: Spoken,
+  tokens: ReadonlyArray<Token>,
+): boolean => {
+  const object = objectAt(said, spoken.afterVerb, { afterWish: false });
   if (!object.verbatim) {
     return false;
   }
@@ -2759,7 +2772,14 @@ export const withoutCommand = (
 ): string => {
   const tokens = tokensOf(title);
   const own = spokenOf(tokens, { todo });
-  const spoken = phrase === title ? own : spokenOf(tokensOf(phrase), { todo });
+  const said = phrase === title ? tokens : tokensOf(phrase);
+  const spoken = phrase === title ? own : spokenOf(said, { todo });
+  // A title the phrase named as it is ("Add an event called Schedule
+  // review", "… called 'Say please'") is the name, whatever it opens or
+  // closes with.
+  if (spoken !== own && namedBy(said, spoken, tokens)) {
+    return title;
+  }
   const { afterVerb, frame, tail, verb } = own;
   // The phrase's command is the title's only around the same verb.
   const same = verb !== undefined && spoken.verb === verb;
@@ -2767,14 +2787,11 @@ export const withoutCommand = (
   const closed = closedBy(own) || (same && closedBy(spoken));
   const body = particle ? tail.tokens.slice(0, -1) : tail.tokens;
   const object = objectAt(body, afterVerb, { afterWish: frame.wish && verb === undefined });
-  // A title the phrase named as it is ("Add an event called Schedule
-  // review") is the name, whatever it opens with.
-  if (spoken !== own && !object.verbatim && namedBy(spoken, tokens)) {
-    return title;
-  }
   const evidence = verb !== undefined && (verb.alone || object.held || closed);
+  // A to-do loses its noun only after a verb ("add a reminder to …"): "Ich
+  // muss eine Aufgabe für das Team erstellen" is the task.
   const commands = todo
-    ? object.linked && object.todo
+    ? verb !== undefined && object.linked && object.todo
     : evidence ||
       (frame.ask && (verb !== undefined || closed)) ||
       (frame.wish && verb === undefined);

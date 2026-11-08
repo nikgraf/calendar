@@ -1581,6 +1581,27 @@ describe('withoutCommand', () => {
     expect(
       withoutCommand('Ich muss Stunden eintragen', 'Ich muss Stunden eintragen', { todo: true }),
     ).toBe('Stunden eintragen');
+    // Codex round 2: a to-do's noun goes only after a verb; a name's tail
+    // and its filler stay; only the day that ends the title is the command's.
+    expect(
+      withoutCommand(
+        'Ich muss eine Aufgabe für das Team erstellen',
+        'Ich muss eine Aufgabe für das Team erstellen',
+        { todo: true },
+      ),
+    ).toBe('eine Aufgabe für das Team erstellen');
+    expect(withoutCommand('Say please', 'Add an event called "Say please"')).toBe('Say please');
+    expect(withoutCommand('Add a Just Dance session tomorrow')).toBe('Just Dance session tomorrow');
+    expect(
+      withoutCommand(
+        'Add a reminder to prepare for Friday tomorrow at 9',
+        'Add a reminder to prepare for Friday tomorrow at 9',
+        { todo: true },
+      ),
+    ).toBe('prepare for Friday tomorrow at 9');
+    expect(withoutCommand('Schedule a call with Sarah for Thursday at 3')).toBe(
+      'call with Sarah Thursday at 3',
+    );
   });
 
   it('leaves a title that only looks like a command', () => {
