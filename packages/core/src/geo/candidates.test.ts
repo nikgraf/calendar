@@ -43,6 +43,15 @@ describe('rankPastPlaces', () => {
       'Figlmüller Lugeck',
     ]);
     expect(rankPastPlaces('Room 4', [figlmueller, central])).toEqual([]);
+    // Said by its kind alone, the user's own place of that name is the one meant.
+    const office = past('Office', 30, undefined, { lat: 48.19, lng: 16.35 });
+    expect(rankPastPlaces('office', [central, office]).map((c) => c.geo.source)).toEqual([
+      'Office',
+    ]);
+    // Written with the lead a model copied: the same past place.
+    expect(rankPastPlaces('im Figlmüller', [central, figlmueller]).map((c) => c.match)).toEqual([
+      'words',
+    ]);
   });
 
   it('lists one place written two ways once, under its better-ranked text', () => {
@@ -183,6 +192,9 @@ describe('pastPlaceMatch', () => {
   });
 });
 
+/** A search hit in the middle of Vienna. */
+const hit = (name: string, address: string) => ({ address, lat: 48.2, lng: 16.37, name });
+
 describe('rankFoundPlaces', () => {
   const vienna = { lat: 48.2082, lng: 16.3738 };
   const events = densestRegion([vienna]);
@@ -239,6 +251,64 @@ describe('rankFoundPlaces', () => {
       ['Kaffeeweg', 'search'],
       ['Meek Café', 'search'],
     ]);
+  });
+
+  it('takes the place a text names past the lead it was written with', () => {
+    const figlmueller = {
+      address: 'Bäckerstraße 6, 1010 Vienna, Austria',
+      lat: 48.2087,
+      lng: 16.3745,
+      name: 'Figlmüller',
+    };
+    expect(read('im Figlmüller', [weg, figlmueller], events)).toEqual([
+      ['Figlmüller', 'words'],
+      ['Kaffeeweg', 'search'],
+    ]);
+    // A venue whose name begins with a lead stays ahead of a town called the rest.
+    const square = {
+      address: 'Am Hof, 1010 Vienna, Austria',
+      lat: 48.2107,
+      lng: 16.3677,
+      name: 'Am Hof',
+    };
+    const town = { address: 'Hof, Bavaria, Germany', lat: 50.3135, lng: 11.9128, name: 'Hof' };
+    expect(read('Am Hof', [town, square], events)).toEqual([
+      ['Am Hof', 'exact'],
+      ['Hof', 'words'],
+    ]);
+  });
+
+  it('takes no search hit for a text that says only a kind of place', () => {
+    // MapKit's answers in Vienna (probe, 2026-11-09): each resembles the
+    // word and is nearby, and none is the place the user means.
+    const zara = hit('Zara Home', 'Kärntner Straße 11, 1010 Vienna, Austria');
+    const offices = hit(
+      'The Vienna Philharmonic - Administrative Offices',
+      'Bösendorferstraße 12, 1010 Vienna, Austria',
+    );
+    const bar = hit('The Office', 'Werdertorgasse 4, 1010 Vienna, Austria');
+    const sacher = hit('Hotel Sacher Vienna', 'Philharmonikerstraße 4, 1010 Vienna, Austria');
+    const buero = hit('Büro Konzept', 'Porzellangasse 36, 1090 Vienna, Austria');
+    expect(read('home', [zara], events)).toEqual([['Zara Home', 'search']]);
+    expect(read('office', [offices], events)).toEqual([
+      ['The Vienna Philharmonic - Administrative Offices', 'search'],
+    ]);
+    expect(read('the office', [bar], events)).toEqual([['The Office', 'search']]);
+    expect(read('at the office', [bar], events)).toEqual([['The Office', 'search']]);
+    expect(read('Hotel', [sacher], events)).toEqual([['Hotel Sacher Vienna', 'search']]);
+    expect(read('im Büro', [buero], events)).toEqual([['Büro Konzept', 'search']]);
+    // A name beside the kind is a place to find, and a compound may be one.
+    expect(read('Hotel Sacher', [sacher], events)).toEqual([['Hotel Sacher Vienna', 'words']]);
+    expect(
+      read(
+        'Konzerthaus',
+        [hit('Wiener Konzerthaus', 'Lothringerstraße 20, 1030 Vienna, Austria')],
+        events,
+      ),
+    ).toEqual([['Wiener Konzerthaus', 'words']]);
+    expect(
+      read('Schweizerhaus', [hit('Schweizerhaus', 'Prater 116, 1020 Vienna, Austria')], events),
+    ).toEqual([['Schweizerhaus', 'exact']]);
   });
 
   it('takes a far place when the text says where it is', () => {

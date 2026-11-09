@@ -22,6 +22,7 @@ import {
   resolveStart,
   statedRepeat,
   statedTimes,
+  withoutPlaceLead,
 } from './grounding.ts';
 import { inviteesOf, invitesAnyone, readPeople, titleWithoutInvitees } from './invitees.ts';
 import { ModelUnavailableError, type LanguageModel } from './model.ts';
@@ -396,8 +397,14 @@ export const normalizeRefine = (
   const text = words(utterance);
   // A place only as the words say it (`placeOf`): the model made up
   // "Bob's house" for "make it 8pm and invite Bob", and echoes the
-  // draft's own place, which then stays as it is.
-  const place = placeOf(meaningfulText(parse.location), title, utterance);
+  // draft's own place, which then stays as it is. Without the lead it
+  // copied, where the words prove it one ("at the office" is "office").
+  const written = meaningfulText(parse.location);
+  const place = placeOf(
+    written === undefined ? undefined : withoutPlaceLead(written),
+    title,
+    utterance,
+  );
   const location = CLEAR_PLACE.test(text) ? undefined : (place ?? draft.location);
 
   const day = refinedDay(parse, utterance, referenceDate, draft);

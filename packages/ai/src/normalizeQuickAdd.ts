@@ -21,6 +21,7 @@ import {
   mentionsFixedDate,
   namedWeekdays,
   namesDays,
+  placeSaid,
   type RepeatSpanUnit,
   saysOnlyWhen,
   spanUnitAtLeast,
@@ -31,6 +32,7 @@ import {
   trimWhen,
   withoutCommand,
   withoutPlace,
+  withoutPlaceLead,
 } from './grounding.ts';
 import { inviteesOf, titleWithoutInvitees } from './invitees.ts';
 import type { QuickAddParse } from './quickAdd.ts';
@@ -683,6 +685,50 @@ const titleOf = ({
   return placed && phrase !== undefined ? capitalized(placed) : placed;
 };
 
+/**
+ * The title and the place together, since each is read with the other:
+ * the place's words stay out of the title, and a place that is also the
+ * title counts only after a cue (`placeOf`). The model's place first,
+ * without the lead it copied (`withoutPlaceLead`); a location made of
+ * the day holds nothing in the title and is no place, any other holds
+ * its words there ("Ruby Tuesday", "Figlmüller"). Where the model's
+ * comes to none, an event's is read from the phrase's own words
+ * (`placeSaid`) and the title made again around it. Capture passes no
+ * phrase and keeps its locations as they are.
+ */
+const placedTitle = ({
+  invite,
+  modelDate,
+  named,
+  parse,
+  phrase,
+  referenceDate,
+  todo,
+}: {
+  readonly invite: ReadonlyArray<string>;
+  readonly modelDate: string | undefined;
+  readonly named: string | undefined;
+  readonly parse: QuickAddParse;
+  readonly phrase: string | undefined;
+  readonly referenceDate: string;
+  readonly todo: boolean;
+}): { readonly location: string | undefined; readonly title: string | undefined } => {
+  const written = meaningfulText(parse.location);
+  const place = written === undefined || phrase === undefined ? written : withoutPlaceLead(written);
+  const dayAsPlace = madeOfTheDay(place, phrase, modelDate, referenceDate);
+  const held = dayAsPlace ? undefined : place;
+  const title = titleOf({ held, named, phrase, place, todo });
+  const location = dayAsPlace || !title ? undefined : placeOf(place, title, phrase);
+  if (location !== undefined || phrase === undefined || todo || !title) {
+    return { location, title };
+  }
+  const said = placeSaid(titleWithoutInvitees(phrase, invite), { phrase });
+  const around =
+    said === undefined ? undefined : titleOf({ held: said, named, phrase, place: said, todo });
+  const read = said === undefined || !around ? undefined : placeOf(said, around, phrase);
+  return read === undefined ? { location, title } : { location: read, title: around };
+};
+
 /** A to-do: its day, and its time when one was said. No end, no repeat. */
 const taskOf = (date: string, time: string | undefined, title: string): QuickAddResult => ({
   kind: 'task',
@@ -765,12 +811,15 @@ export const normalizeQuickAdd = (
       ? undefined
       : titleWithoutInvitees(phrase === undefined ? said : groundTitle(said, phrase), invite);
   const modelDate = realDate(parse.date?.trim());
-  // A location made of the day holds nothing in the title and is no
-  // place; any other holds its words there ("Ruby Tuesday", "Figlmüller").
-  const place = meaningfulText(parse.location);
-  const dayAsPlace = madeOfTheDay(place, phrase, modelDate, referenceDate);
-  const held = dayAsPlace ? undefined : place;
-  const title = titleOf({ held, named, phrase, place, todo });
+  const { location, title } = placedTitle({
+    invite,
+    modelDate,
+    named,
+    parse,
+    phrase,
+    referenceDate,
+    todo,
+  });
   if (!title) {
     return { kind: 'rejected', reason: 'No event title was recognised.' };
   }
@@ -813,8 +862,6 @@ export const normalizeQuickAdd = (
     return { kind: 'rejected', reason: invalid };
   }
 
-  // Capture passes no phrase and keeps its locations as before.
-  const location = dayAsPlace ? undefined : placeOf(place, title, phrase);
   // The repeat the words state, and the draft on the first of its days
   // ("every weekday" typed on a Saturday starts on Monday).
   const { date, recurrence } = startOnRule(

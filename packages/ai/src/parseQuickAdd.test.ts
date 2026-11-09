@@ -1555,3 +1555,342 @@ describe('parseQuickAdd reads the note and the notifications beside the event', 
     expect(model.prompts).toHaveLength(0);
   });
 });
+
+/** What a phrase comes to; `title` is the model's, the phrase itself where a model echoes it. */
+const placed = async (phrase: string, title: string = phrase, people?: ReadonlyArray<string>) => {
+  const { location, title: titled } = await prefillOf(
+    { ...(people === undefined ? {} : { people }), title },
+    phrase,
+  );
+  return { location, title: titled };
+};
+
+/** The place of a phrase the reader must leave as it was: none. */
+const unplaced = async (phrase: string, title: string = phrase) =>
+  (await placed(phrase, title)).location;
+
+describe('parseQuickAdd reads the place from the phrase when the model names none', () => {
+  it('takes a name after "at", whether the model dropped it or kept it in the title', async () => {
+    // The bench, Apple's model on the Mac: a title and nothing else.
+    expect(await placed('Coffee tomorrow at 10 at Café Prückel', 'Coffee')).toEqual({
+      location: 'Café Prückel',
+      title: 'Coffee',
+    });
+    expect(await placed('drinks with jo at Loos Bar friday 7pm', 'drinks with jo')).toEqual({
+      location: 'Loos Bar',
+      title: 'Drinks with jo',
+    });
+    expect(
+      await placed('Dinner at Hard Rock Cafe on Friday at 7', 'Dinner at Hard Rock Cafe'),
+    ).toEqual({ location: 'Hard Rock Cafe', title: 'Dinner' });
+    // A model that echoes the phrase (the iPhone's).
+    expect(await placed('Coffee tomorrow at 10 at Café Prückel')).toEqual({
+      location: 'Café Prückel',
+      title: 'Coffee',
+    });
+    expect(await placed('Lunch @ Loos Bar')).toEqual({ location: 'Loos Bar', title: 'Lunch' });
+    expect(await placed("Dinner at Tom's Friday")).toEqual({ location: "Tom's", title: 'Dinner' });
+  });
+
+  it('keeps a name whole: its joints, and a first word that is a lead or an article elsewhere', async () => {
+    expect(await placed('Dinner at Café am Heumarkt Friday')).toEqual({
+      location: 'Café am Heumarkt',
+      title: 'Dinner',
+    });
+    expect(await placed('Meet at Am Hof at 10')).toEqual({ location: 'Am Hof', title: 'Meet' });
+    expect(await placed('Dinner at The Standard on Friday')).toEqual({
+      location: 'The Standard',
+      title: 'Dinner',
+    });
+    expect(await placed('Drinks at In Vino Veritas tomorrow')).toEqual({
+      location: 'In Vino Veritas',
+      title: 'Drinks',
+    });
+  });
+
+  it('takes a place said by what it is, after "at", "in" and "im"', async () => {
+    expect(
+      await placed('Project review Wednesday at 11 in the big meeting room', 'Project review'),
+    ).toEqual({ location: 'big meeting room', title: 'Project review' });
+    expect(await placed('Project review Wednesday at 11 in the big meeting room')).toEqual({
+      location: 'big meeting room',
+      title: 'Project review',
+    });
+    expect(await placed('Meeting at the office tomorrow')).toEqual({
+      location: 'office',
+      title: 'Meeting',
+    });
+    expect(await placed('Yoga at home tomorrow')).toEqual({ location: 'home', title: 'Yoga' });
+    expect(await placed('Meeting in the Vienna office Monday')).toEqual({
+      location: 'Vienna office',
+      title: 'Meeting',
+    });
+    // Typed in lower case: the kind says it, not the capitals.
+    expect(await placed('drinks with jo at loos bar friday 7pm')).toEqual({
+      location: 'loos bar',
+      title: 'Drinks with jo',
+    });
+    // German names the kind first, or builds it into one word.
+    expect(await placed('Kaffee morgen um 15 Uhr im Café Prückel', 'Kaffee')).toEqual({
+      location: 'Café Prückel',
+      title: 'Kaffee',
+    });
+    expect(await placed('Meeting im Büro morgen um 9')).toEqual({
+      location: 'Büro',
+      title: 'Meeting',
+    });
+    expect(await placed('Besprechung im großen Besprechungsraum um 14 Uhr')).toEqual({
+      location: 'großen Besprechungsraum',
+      title: 'Besprechung',
+    });
+    expect(await placed('Konzert im Konzerthaus am Freitag um 19:30')).toEqual({
+      location: 'Konzerthaus',
+      title: 'Konzert',
+    });
+    expect(await placed('Termin in der Zahnarztpraxis am Montag')).toEqual({
+      location: 'Zahnarztpraxis',
+      title: 'Termin',
+    });
+  });
+
+  it('reads past the command and the invitation around the event', async () => {
+    expect(
+      await placed(
+        'Trag mir für nächsten Mittwoch um 10 Uhr einen Zahnarzttermin in der Praxis Dr. Huber ein',
+        'Zahnarzttermin',
+      ),
+    ).toEqual({ location: 'Praxis Dr. Huber', title: 'Zahnarzttermin' });
+    expect(
+      await placed(
+        'Set up a dinner with Tom Baker next Friday at seven at Loos Bar, invite Anna Lee too',
+        'dinner with Tom Baker',
+        ['Anna Lee'],
+      ),
+    ).toEqual({ location: 'Loos Bar', title: 'Dinner with Tom Baker' });
+    // No one read as invited: the clause after the comma is not understood.
+    expect(
+      await unplaced(
+        'Set up a dinner with Tom Baker next Friday at seven at Loos Bar, invite Anna Lee too',
+        'dinner with Tom Baker',
+      ),
+    ).toBeUndefined();
+    // "check in" is not where; the hotel is.
+    expect(await placed('Check in at the hotel tomorrow')).toEqual({
+      location: 'hotel',
+      title: 'Check in',
+    });
+    expect(await placed('Check in with Tom at Loos Bar')).toEqual({
+      location: 'Loos Bar',
+      title: 'Check in with Tom',
+    });
+  });
+
+  it('reads no bare name after "im" or "in": the words do not tell it from a manner or a topic', async () => {
+    // Measured on Apple's model on the Mac: it cuts the title at the when
+    // whatever follows, so these lose their end alike, and asked for the
+    // place alone it names "Regen" and "Bett" too.
+    expect(await placed('Kaffee mit Max um 10 Uhr im Figlmüller', 'Kaffee mit Max')).toEqual({
+      location: undefined,
+      title: 'Kaffee mit Max',
+    });
+    expect(await placed('Laufen morgen um 7 im Regen', 'Laufen')).toEqual({
+      location: undefined,
+      title: 'Laufen',
+    });
+    for (const [phrase, title] of [
+      ['Essen morgen um 19 Uhr im Schwarzen Kameel', 'Essen'],
+      ['Lesen heute um 21 Uhr im Bett', 'Lesen'],
+      ['Wandern am Samstag um 9 im Schnee', 'Wandern'],
+      ['Besprechung morgen um 10 im Team', 'Besprechung'],
+      ['Abendessen am Sonntag um 18 Uhr im Kreis der Familie', 'Abendessen'],
+      ['Dinner Friday at 7 in Vienna', 'Dinner'],
+      ['Presentation Friday at 2 in English', 'Presentation'],
+    ] as const) {
+      expect(await unplaced(phrase, title), phrase).toBeUndefined();
+      expect(await unplaced(phrase), phrase).toBeUndefined();
+    }
+    // The kind says what the name cannot.
+    expect(await placed('Bier morgen um 18 Uhr im Schweizerhaus', 'Bier')).toEqual({
+      location: 'Schweizerhaus',
+      title: 'Bier',
+    });
+    expect(await placed('Termin im Rathaus am Montag um 9')).toEqual({
+      location: 'Rathaus',
+      title: 'Termin',
+    });
+  });
+
+  it('never takes a clock, a when or company for a place', async () => {
+    for (const phrase of [
+      'Lunch at 7',
+      'Lunch at noon',
+      'Call at half past three',
+      'Dinner with Tom at seven',
+      'Standup at 9:30',
+      'Party at night',
+      'Talk to Tom at lunch',
+      'Party at Christmas',
+      'Brunch at Easter',
+      'Sync at the weekend',
+      'Call in the morning',
+      'Call in two weeks',
+      'Lunch in an hour',
+      'Review in 10 minutes',
+      'New York trip in May',
+      'Planning in the next sprint',
+      'Urlaub im Mai',
+      'Skifahren im Winter',
+      'Termin im Jänner',
+      'Lunch with Tom',
+      'Essen mit Anna',
+    ]) {
+      expect(await unplaced(phrase), phrase).toBeUndefined();
+    }
+    // The same when the model's title dropped the words.
+    expect(await unplaced('Urlaub im Mai', 'Urlaub')).toBeUndefined();
+    expect(await unplaced('Brunch at Easter', 'Brunch')).toBeUndefined();
+    expect(await unplaced('Submit report Friday at the latest', 'Submit report')).toBeUndefined();
+  });
+
+  it('leaves what "at" does not lead into as a place', async () => {
+    for (const phrase of [
+      // What is looked at.
+      "Look at Anna's slides tomorrow",
+      'Look at Tesla Model 3 Saturday',
+      'Take a look at the new office',
+      // Words that go on after it, a second clause, an address.
+      'Dinner at Loos Bar with Jo tomorrow',
+      'Coffee at Starbucks before work',
+      'Dinner at Marks and Spencer',
+      "Lunch at Luigi's, bring wine",
+      'Email Tom at tom@example.com',
+      // Lower-case words that name no kind of place.
+      'coffee at starbucks tomorrow',
+      'Call mom at least once',
+      // Nothing but a when before it, and the lead as the first word.
+      'Tomorrow at Loos Bar',
+      'At Loos Bar',
+      // A name that begins with a when: no telling.
+      'Breakfast at Morning Glory',
+      'Dinner at Friday Harbor',
+    ]) {
+      expect(await unplaced(phrase), phrase).toBeUndefined();
+    }
+    expect(await unplaced('coffee at starbucks tomorrow', 'coffee')).toBeUndefined();
+    // "At an event …" is "Add an event …" as dictation hears it.
+    expect(await placed('At an event for lunch tomorrow with Stefan')).toEqual({
+      location: undefined,
+      title: 'Lunch with Stefan',
+    });
+  });
+
+  it('leaves what "in" does not lead into as a place', async () => {
+    for (const phrase of [
+      // A name after "in" is as often a language, a tool, a topic.
+      'Dinner in Vienna Friday',
+      'Meeting in German on Friday',
+      'Review designs in Figma',
+      'Set up rules in Office 365',
+      'Review automations in Home Assistant',
+      'Standup in room 4',
+      // No kind of place, or one that is not what the words end in.
+      'Fix typo in the report tomorrow',
+      'Meet Tom in person',
+      'Hand in the office keys',
+      'Fix bug in the office app',
+      'Book club: The Catcher in the Rye',
+      'Sign in sheet at the office',
+      'Interview at the office for the PM role',
+    ]) {
+      expect(await unplaced(phrase), phrase).toBeUndefined();
+    }
+    expect(await unplaced('Dinner in Vienna Friday', 'Dinner')).toBeUndefined();
+    expect(await unplaced('Fix typo in the report tomorrow', 'Fix typo')).toBeUndefined();
+  });
+
+  it('reads no other lead: where to go, with whom, "am"', async () => {
+    for (const [phrase, title] of [
+      ['Mit Anna ins Kino', 'Mit Anna'],
+      ['Fahrt zum Flughafen', 'Fahrt'],
+      ['Essen bei Anna', 'Essen'],
+      ['Termin beim Zahnarzt', 'Termin'],
+      ['Treffen am Hof um 10', 'Treffen'],
+      ['Trip to Vienna on Saturday', 'Trip'],
+    ] as const) {
+      expect(await unplaced(phrase, title), phrase).toBeUndefined();
+      expect(await unplaced(phrase), phrase).toBeUndefined();
+    }
+  });
+
+  it('leaves a weekday that may be the name’s as it was', async () => {
+    // "Ruby Tuesday" needs the model to say so; "Ruby" alone is no place to claim.
+    expect(await placed('Dinner at Ruby Tuesday tomorrow', 'Dinner at Ruby Tuesday')).toEqual({
+      location: undefined,
+      title: 'Dinner at Ruby',
+    });
+    // One day after the place is the event's.
+    expect(await placed("Dinner at Luigi's Tuesday")).toEqual({
+      location: "Luigi's",
+      title: 'Dinner',
+    });
+  });
+
+  it('keeps the model’s place where it names one, and reads the words where its place is none', async () => {
+    expect(
+      await prefillOf({ location: 'Figlmüller', title: 'Lunch' }, 'Lunch at Figlmüller'),
+    ).toMatchObject({ location: 'Figlmüller', title: 'Lunch' });
+    // Made up, not in the words.
+    expect(
+      await prefillOf(
+        { location: 'Vienna', title: 'Coffee' },
+        'Coffee tomorrow at 10 at Café Prückel',
+      ),
+    ).toMatchObject({ location: 'Café Prückel', title: 'Coffee' });
+    expect(
+      await prefillOf({ location: 'unknown', title: 'Coffee' }, 'Coffee at Café Prückel'),
+    ).toMatchObject({ location: 'Café Prückel', title: 'Coffee' });
+  });
+
+  it('gives a to-do no place, and capture the model’s as it is', async () => {
+    expect(
+      await parseQuickAdd(fakeModel({ title: 'pick up the keys at the office' }), {
+        phrase: 'remind me to pick up the keys at the office tomorrow',
+        ...CONTEXT,
+      }),
+    ).toEqual({
+      kind: 'task',
+      prefill: { date: '2026-08-23', title: 'Pick up the keys at the office' },
+    });
+    expect(
+      normalizeQuickAdd(
+        { date: '2026-08-25', location: 'at the office', title: 'Meeting' },
+        CONTEXT,
+      ),
+    ).toMatchObject({ kind: 'parsed', prefill: { location: 'at the office', title: 'Meeting' } });
+  });
+
+  it('takes the lead a model copied off its place where the words prove it one', async () => {
+    expect(
+      await prefillOf(
+        { location: 'at the office', title: 'Meeting at the office' },
+        'Meeting at the office tomorrow',
+      ),
+    ).toMatchObject({ location: 'office', title: 'Meeting' });
+    expect(
+      await prefillOf(
+        { location: 'in der Praxis Dr. Huber', title: 'Zahnarzt' },
+        'Zahnarzt morgen um 10 in der Praxis Dr. Huber',
+      ),
+    ).toMatchObject({ location: 'Praxis Dr. Huber', title: 'Zahnarzt' });
+    expect(
+      await prefillOf({ location: 'im Büro', title: 'Meeting' }, 'Meeting im Büro'),
+    ).toMatchObject({ location: 'Büro', title: 'Meeting' });
+    // A name may begin with the same word: only the lookup can tell.
+    expect(
+      await prefillOf({ location: 'im Figlmüller', title: 'Kaffee' }, 'Kaffee im Figlmüller'),
+    ).toMatchObject({ location: 'im Figlmüller', title: 'Kaffee' });
+    expect(
+      await prefillOf({ location: 'Am Hof', title: 'Kaffee' }, 'Kaffee Am Hof um 10'),
+    ).toMatchObject({ location: 'Am Hof', title: 'Kaffee' });
+  });
+});

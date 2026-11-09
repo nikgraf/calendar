@@ -17,6 +17,7 @@ import {
   namesDays,
   periodOf,
   periodTimes,
+  placeSaid,
   saysOnlyWhen,
   statedRepeat,
   statedTimes,
@@ -28,6 +29,7 @@ import {
   windowOf,
   withoutCommand,
   withoutPlace,
+  withoutPlaceLead,
 } from './grounding.ts';
 
 // 2026-08-22 is a Saturday.
@@ -2038,6 +2040,10 @@ describe('withoutPlace', () => {
     expect(withoutPlace('Kaffee im Café Central', 'Café Central')).toBe('Kaffee');
   });
 
+  it('takes "@" for the lead it is', () => {
+    expect(withoutPlace('Lunch @ Loos Bar', 'Loos Bar')).toBe('Lunch');
+  });
+
   it('leaves a title that is only the place, or does not end with it', () => {
     expect(withoutPlace('Figlmüller', 'Figlmüller')).toBe('Figlmüller');
     expect(withoutPlace('Figlmüller dinner', 'Figlmüller')).toBe('Figlmüller dinner');
@@ -2046,5 +2052,104 @@ describe('withoutPlace', () => {
     expect(withoutPlace('Fahrt nach Wien', 'Wien')).toBe('Fahrt nach Wien');
     expect(withoutPlace('Mittagessen Figlmüller', 'Figlmüller')).toBe('Mittagessen Figlmüller');
     expect(withoutPlace('Dinner', undefined)).toBe('Dinner');
+  });
+});
+
+describe('placeSaid', () => {
+  it('reads the place the words lead into at their end', () => {
+    expect(placeSaid('Coffee tomorrow at 10 at Café Prückel')).toBe('Café Prückel');
+    expect(placeSaid('drinks with jo at Loos Bar friday 7pm')).toBe('Loos Bar');
+    expect(placeSaid('Project review Wednesday at 11 in the big meeting room')).toBe(
+      'big meeting room',
+    );
+    expect(placeSaid('Kaffee morgen um 15 Uhr im Café Prückel')).toBe('Café Prückel');
+    expect(placeSaid('Termin in der Praxis Dr. Huber')).toBe('Praxis Dr. Huber');
+    expect(placeSaid('Abend im Haus der Musik')).toBe('Haus der Musik');
+    expect(placeSaid('Flight at Terminal 3')).toBe('Terminal 3');
+    // Marks around it are not its own.
+    expect(placeSaid('Dinner at "Loos Bar".')).toBe('Loos Bar');
+  });
+
+  it('knows a kind of place by its last word, a German one by how it ends', () => {
+    for (const [phrase, place] of [
+      ['Lunch in the canteen', 'canteen'],
+      ['Demo in the main hall', 'main hall'],
+      ['Workout at the gym', 'gym'],
+      ["Party at Anna's house", "Anna's house"],
+      ['Sitzung im Sitzungszimmer', 'Sitzungszimmer'],
+      ['Treffen im Hauptbahnhof', 'Hauptbahnhof'],
+      ['Training im Fitnessstudio', 'Fitnessstudio'],
+      ['Kaffee im Kaffeehaus', 'Kaffeehaus'],
+      ['Schwimmen im Hallenbad', 'Hallenbad'],
+    ] as const) {
+      expect(placeSaid(phrase), phrase).toBe(place);
+    }
+    // A word that only ends like one, and a square that begins with a lead.
+    for (const phrase of [
+      'Urlaub im Zeitraum Juli',
+      'Fliegen im Traum',
+      'Treffen im Hof',
+      'Apfelstrudel im Kuchen',
+      'Abend im Nachbar',
+    ]) {
+      expect(placeSaid(phrase), phrase).toBeUndefined();
+    }
+  });
+
+  it('reads a place said by its kind only where nothing goes on from it', () => {
+    for (const phrase of [
+      'Talk at the office for the review',
+      'Lunch at the bar and then the cinema',
+      'Party at the top of the hotel',
+      'Fix the light in the kitchen before the party',
+      'Meeting in the office of the director',
+      'Work in the garden with Tom',
+    ]) {
+      expect(placeSaid(phrase), phrase).toBeUndefined();
+    }
+  });
+
+  it('holds a period that closes a short form, and stops at one that ends a sentence', () => {
+    expect(placeSaid('Mass at St. Stephen')).toBe('St. Stephen');
+    expect(placeSaid('Dinner at Loos Bar. Bring Wine')).toBeUndefined();
+    expect(placeSaid('Dinner at Loos Bar, Vienna')).toBeUndefined();
+  });
+
+  it('takes no place longer than a name is', () => {
+    expect(placeSaid('Dinner at The Grand Old Royal Imperial Garden Palace Hotel')).toBeUndefined();
+  });
+});
+
+describe('withoutPlaceLead', () => {
+  it('takes the lead off a place said by what it is', () => {
+    expect(withoutPlaceLead('at the office')).toBe('office');
+    expect(withoutPlaceLead('in the big meeting room')).toBe('big meeting room');
+    expect(withoutPlaceLead('in der Praxis Dr. Huber')).toBe('Praxis Dr. Huber');
+    expect(withoutPlaceLead('im Büro')).toBe('Büro');
+    expect(withoutPlaceLead('im Café Prückel')).toBe('Café Prückel');
+    expect(withoutPlaceLead('at the Loos Bar')).toBe('Loos Bar');
+  });
+
+  it('leaves a name, with whatever it begins with', () => {
+    for (const place of [
+      'Am Hof',
+      'Zum Schwarzen Kameel',
+      'Beim Czaak',
+      'Chez Panisse',
+      'In der Burg',
+      'At Home',
+      'At The Chapel',
+      'At The Office',
+      'In Vino Veritas',
+      'im Figlmüller',
+      'at Loos Bar',
+      'in Wien',
+      'the office',
+      'Loos Bar',
+      'at',
+      'im',
+    ]) {
+      expect(withoutPlaceLead(place), place).toBe(place);
+    }
   });
 });

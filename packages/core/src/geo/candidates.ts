@@ -7,6 +7,7 @@ import {
   type PlaceMatch,
   placeMatch,
   sameAddress,
+  saysOnlyKind,
   saysWhere,
 } from './resemblance.ts';
 
@@ -159,17 +160,21 @@ const FAR_OFFERS = 1;
  * found Meek Café in Benoni, 8,000 km from every event the user has. The
  * rest is `search`, offered and never taken: the nearby hits that do not
  * resemble the text, then one far namesake. Any other far hit is no
- * one's guess and is left out.
+ * one's guess and is left out. A text that says only a kind of place
+ * ("home", "the office": `saysOnlyKind`) names none of them, whatever
+ * resembles it: all are offered.
  */
 export const rankFoundPlaces = <Place extends FoundPlace>(
   text: string,
   places: ReadonlyArray<Place>,
   region: GeoRegion | undefined,
 ): ReadonlyArray<{ readonly match: PlaceCandidate['match']; readonly place: Place }> => {
+  const kindOnly = saysOnlyKind(text);
   const read = places.map((place, index) => {
     const match = placeMatch(text, place);
     const near = isNearby(region, place);
-    const named = match !== undefined && (near || saysWhere(text, place)) ? match : undefined;
+    const named =
+      !kindOnly && match !== undefined && (near || saysWhere(text, place)) ? match : undefined;
     // Named first, by how well; then the nearby rest; then far namesakes.
     const order = named !== undefined ? RANK[named] : near ? 3 : match !== undefined ? 4 : 5;
     return { index, named, order, place };

@@ -157,10 +157,11 @@ the served model (#184) and slot proposals (#185) are in
       bare 1–6 (open since #248); a to-do's alarms from "remind me …
       before" (an event's notifications are read since 2026-10-26).
 - [ ] Dictated quick-add follow-ups (two iPhone recordings, 2026-11-06;
-      the place lookup's share and the spoken command shipped,
-      `docs/decisions.md` → "Calendar: editing, gestures, views", "Places
-      nearby first", and → AI, "A spoken command is not the title"; each
-      its own PR, in this order) — a turn
+      the place lookup's share, the spoken command and the place a first
+      phrase leads into shipped, `docs/decisions.md` → "Calendar: editing,
+      gestures, views", "Places nearby first", and → AI, "A spoken command
+      is not the title", "The place a phrase leads into"; each its own PR,
+      in this order) — a turn
       that names only a city or district replaces the place instead of
       narrowing it ("it's in Vienna" after "Cafe Meek" sets "Vienna" or
       changes nothing, with the right transcript too), and a bare "with
@@ -171,7 +172,17 @@ the served model (#184) and slot proposals (#185) are in
       places, which needs an own speech module on iOS
       (`@react-native-ai/apple` takes audio and a locale); bench cases
       for all of it: none leans on the turn before, none asks MapKit, and
-      the Mac's model titles a phrase the iPhone's echoes.
+      the Mac's model titles a phrase the iPhone's echoes; a first
+      phrase's bare name after "im" or "in" is not read ("… um 10 im
+      Figlmüller", "Dinner in Vienna": written like "im Regen" and "in
+      German", and Apple's model drops and names all four alike) — a
+      possible place the lookup confirms (a past place, or a nearby hit
+      called exactly that) could; nor a place before the company ("at
+      Loos Bar with Jo") or a name with a weekday in it without the
+      model ("Ruby Tuesday"), and the Mac's model cuts a title at its
+      when, so what follows and is no place is lost ("Laufen morgen um 7
+      im Regen" is "Laufen"); a room said without a kind word last
+      ("in room 4") waits on telling it from "in Office 365".
 - [ ] Gemma 4 on iOS — opt-in download via llama.rn (JSON schema →
       grammar maps onto `generateJson`), load on demand, unload on
       background; only if the bench shows the model is the bottleneck.

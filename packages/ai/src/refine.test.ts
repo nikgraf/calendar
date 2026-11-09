@@ -129,6 +129,42 @@ describe('normalizeRefine', () => {
     expect(refined({ location: 'Figlmüller' }, 'ohne Ort', placed).location).toBeUndefined();
   });
 
+  it('takes the lead the model copied off a place said by what it is', () => {
+    // The bench, Apple's model on the Mac: the place came back with the
+    // words that led into it.
+    expect(refined({ location: 'at the office' }, 'at the office instead').location).toBe('office');
+    expect(
+      refined({ location: 'in der Praxis Dr. Huber' }, 'in der Praxis Dr. Huber').location,
+    ).toBe('Praxis Dr. Huber');
+    expect(
+      refined({ location: 'in the big meeting room' }, 'in the big meeting room').location,
+    ).toBe('big meeting room');
+    expect(refined({ location: 'im Büro' }, 'im Büro').location).toBe('Büro');
+    expect(refined({ location: 'im Café Prückel' }, 'lieber im Café Prückel').location).toBe(
+      'Café Prückel',
+    );
+  });
+
+  it('leaves a lead that may be the name’s own to the lookup', () => {
+    // Real venues that begin with a lead, and a name the words cannot
+    // tell from one: the place's own name decides (`placeMatch`).
+    for (const name of [
+      'Am Hof',
+      'Zum Schwarzen Kameel',
+      'Beim Czaak',
+      'Chez Panisse',
+      'In der Burg',
+      'At Home',
+      'At The Chapel',
+      'In Vino Veritas',
+      'im Figlmüller',
+      'at Loos Bar',
+      'in Wien',
+    ]) {
+      expect(refined({ location: name }, name).location, name).toBe(name);
+    }
+  });
+
   it('changes nothing but the title on a rename', () => {
     // Review: "call it team dinner" moved a 21:00 dinner to the meal's default.
     const late = { ...DINNER, endTime: '22:00', startTime: '21:00' };

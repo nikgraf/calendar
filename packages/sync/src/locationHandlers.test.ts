@@ -864,6 +864,32 @@ describe('nearby first', () => {
     }).pipe(Effect.provide(setup(client)));
   });
 
+  it.effect('gives a place said only by its kind the user’s own, never a namesake', () => {
+    // MapKit's answer to "office" in Vienna (probe, 2026-11-09), and to "gym".
+    const offices = {
+      address: 'Bösendorferstraße 12, 1010 Vienna, Austria',
+      lat: 48.2005,
+      lng: 16.3722,
+      name: 'The Vienna Philharmonic - Administrative Offices',
+    };
+    const { calls, client } = mapkit({ found: { home: [offices], office: [offices] } });
+    return Effect.gen(function* () {
+      yield* inVienna;
+      // No pin, and a miss to remember: no later region makes it one.
+      expect(yield* locationHandlers.resolveLocation({ location: 'office' })).toBeNull();
+      expect(yield* locationHandlers.resolveLocation({ location: 'office' })).toBeNull();
+      expect(calls).toEqual(['resolve:office']);
+      const candidates = yield* locationHandlers.placeCandidates({ location: 'office' });
+      expect(candidates.map((c) => [c.geo.name, c.match])).toEqual([
+        ['The Vienna Philharmonic - Administrative Offices', 'search'],
+      ]);
+      expect(preselectedPlace(candidates)).toBeUndefined();
+      // A past event written "home" is the user's home.
+      const own = yield* locationHandlers.placeCandidates({ location: 'home' });
+      expect(preselectedPlace(own)).toMatchObject({ geo: { source: 'home' }, source: 'history' });
+    }).pipe(Effect.provide(setup(client)));
+  });
+
   it.effect('takes a city said on its own, however far', () => {
     // Review: "Berlin", said in Vienna, got no pin.
     const berlinCity = { address: 'Berlin, Germany', lat: 52.52, lng: 13.405, name: 'Berlin' };

@@ -11,7 +11,7 @@ import {
   TIME_ZONE_NEAR_METERS,
   TIME_ZONE_REGION_RADIUS_METERS,
 } from './regions.ts';
-import { placeMatch, sameAddress, saysWhere } from './resemblance.ts';
+import { placeMatch, sameAddress, saysOnlyKind, saysWhere } from './resemblance.ts';
 
 describe('koelnerKey', () => {
   it('gives words that sound alike the same key', () => {
@@ -109,6 +109,77 @@ describe('placeMatch', () => {
     expect(placeMatch('Blachutta', { name: 'Blachutova' })).toBeUndefined();
     expect(placeMatch('  ', { name: 'Anything' })).toBeUndefined();
     expect(placeMatch('Café', { address: '', name: '' })).toBeUndefined();
+  });
+
+  it('reads past the lead a place was written with', () => {
+    // The bench: a model asked for the place copies the words that led
+    // into it, and no place is called "im Figlmüller".
+    const figlmueller = { address: 'Bäckerstraße 6, 1010 Vienna, Austria', name: 'Figlmüller' };
+    expect(placeMatch('im Figlmüller', figlmueller)).toBe('words');
+    expect(placeMatch('beim Figlmüller', figlmueller)).toBe('words');
+    expect(placeMatch('at Figlmüller', figlmueller)).toBe('words');
+    // The name is the text's place words, not the text: never exact.
+    expect(placeMatch('Figlmüller', figlmueller)).toBe('exact');
+    // Its article too, the dative ones as well.
+    expect(placeMatch('at the office', { name: 'Office Depot' })).toBe('words');
+    expect(placeMatch('in der Praxis Dr. Huber', { name: 'Praxis Dr. Huber' })).toBe('words');
+    expect(placeMatch('in dem Café Central', { name: 'Café Central' })).toBe('words');
+    // By sound past it, as without it.
+    expect(placeMatch('im Cafe Zentral', { name: 'Café Central' })).toBe('phonetic');
+    expect(
+      placeMatch('at Cafe Meek', {
+        address: 'Zollergasse 5, 1070 Vienna, Austria',
+        name: 'Kaffemik',
+      }),
+    ).toBe('phonetic');
+    // A street takes a lead as a venue does.
+    expect(
+      placeMatch('am Graben 12', { address: 'Graben 12, 1010 Vienna, Austria', name: 'Graben 12' }),
+    ).toBe('words');
+  });
+
+  it('keeps a lead that the place’s own name begins with', () => {
+    // Real venues: the name is the whole text.
+    for (const name of [
+      'Am Hof',
+      'Zum Schwarzen Kameel',
+      'Beim Czaak',
+      'Chez Panisse',
+      'In der Burg',
+      'At Home',
+      'Auf der Schmelz',
+      'Zur Eisernen Zeit',
+    ]) {
+      expect(placeMatch(name, { name }), name).toBe('exact');
+      expect(placeMatch(name.toLowerCase(), { name }), name).toBe('exact');
+    }
+    expect(placeMatch('in vino', { name: 'In Vino Veritas' })).toBe('words');
+    // An article that is the name's stays with it ("The Office", a bar).
+    expect(placeMatch('at the office', { name: 'The Office' })).toBe('words');
+    expect(placeMatch('the office', { name: 'The Office' })).toBe('exact');
+    // A place called the rest resembles the text, behind one called the whole.
+    expect(placeMatch('Am Hof', { address: 'Hof, Bavaria, Germany', name: 'Hof' })).toBe('words');
+  });
+
+  it('reads past a lead only into what the text then names', () => {
+    const figlmueller = { address: 'Bäckerstraße 6, 1010 Vienna, Austria', name: 'Figlmüller' };
+    // Nothing after the lead, or nothing of this place.
+    expect(placeMatch('im', figlmueller)).toBeUndefined();
+    expect(placeMatch('in der', figlmueller)).toBeUndefined();
+    expect(placeMatch('im Kino', figlmueller)).toBeUndefined();
+    expect(placeMatch('at the office', figlmueller)).toBeUndefined();
+    // Only where it is: the city, not a place that stands in it.
+    expect(placeMatch('in Vienna', figlmueller)).toBeUndefined();
+    expect(placeMatch('in Wien', { address: 'Wien, Österreich', name: 'Wien' })).toBe('words');
+    // A number past the lead is still the building's own.
+    expect(
+      placeMatch('in der Wollzeile 6', {
+        address: 'Wollzeile 5, 1010 Vienna',
+        name: 'Wollzeile 5',
+      }),
+    ).toBeUndefined();
+    // No lead in the middle of a text is read past.
+    expect(placeMatch('Café im Figlmüller', figlmueller)).toBeUndefined();
   });
 
   it('hears a name dictation cut into words it knows', () => {
@@ -279,9 +350,57 @@ describe('placeMatch', () => {
     };
     expect(saysWhere('Chicago Grill', grill)).toBe(false);
     expect(saysWhere('Chicago Grill, Chicago', grill)).toBe(true);
+    // Past the lead it was written with, the same: the name and nothing beside it.
+    expect(saysWhere('at Chicago Grill', grill)).toBe(false);
+    expect(saysWhere('at the Chicago Grill', grill)).toBe(false);
+    expect(saysWhere('at Chicago Grill, Chicago', grill)).toBe(true);
+    expect(saysWhere('im Hotel Adlon Berlin', adlon)).toBe(true);
+    expect(saysWhere('im Hotel Adlon', adlon)).toBe(false);
+    expect(saysWhere('in Berlin', { address: 'Berlin, Germany', name: 'Berlin' })).toBe(true);
     expect(saysWhere('Hallstatt', { address: '4830 Hallstatt, Austria', name: 'Hallstatt' })).toBe(
       true,
     );
+  });
+
+  it('knows a text that says only a kind of place', () => {
+    for (const text of [
+      'home',
+      'Office',
+      'the office',
+      'my office',
+      'at the office',
+      'im Büro',
+      'in der Küche',
+      'Hotel',
+      'ein Café',
+      // Read as the short form an address writes ("Ctr").
+      'the centre',
+      'Zahnarztpraxis',
+      // A store is called this too; the words are "at home", and it is offered.
+      'At Home',
+    ]) {
+      expect(saysOnlyKind(text), text).toBe(true);
+    }
+    for (const text of [
+      // A name beside the kind, or instead of it.
+      'Hotel Sacher',
+      'Loos Bar',
+      'Café Prückel',
+      'big meeting room',
+      'room 4',
+      'Vienna office',
+      "Anna's house",
+      'Figlmüller',
+      // A compound is as often a name: the search may know the one meant.
+      'Konzerthaus',
+      'Schweizerhaus',
+      'Hauptbahnhof',
+      '',
+      'the',
+      'im',
+    ]) {
+      expect(saysOnlyKind(text), text).toBe(false);
+    }
   });
 
   it('reads two spellings of one address as the same, and two towns apart', () => {

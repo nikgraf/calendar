@@ -2,6 +2,7 @@ import {
   type ByDay,
   finderWindowDates,
   foldSearchText,
+  isPlaceKind,
   type MonthlyOrdinal,
   type RecurrenceFrequency,
   Temporal,
@@ -2010,7 +2011,8 @@ export const withoutPlace = (title: string, place: string | undefined): string =
   const named =
     place === undefined ? [] : [...place.matchAll(/\S+/g)].map(([token]) => bare(words(token)));
   const tokens = [...title.matchAll(/\S+/g)];
-  const folded = tokens.map(([token]) => bare(words(token)));
+  // "@" is a lead too, and has no letters to fold to.
+  const folded = tokens.map(([token]) => (token === '@' ? token : bare(words(token))));
   let kept = folded.length - named.length;
   if (named.length === 0 || kept <= 0 || named.some((word, at) => folded[kept + at] !== word)) {
     return title;
@@ -2029,8 +2031,6 @@ export const withoutPlace = (title: string, place: string | undefined): string =
   return title.slice(0, end.index + end[0].length).replace(SEPARATORS, '');
 };
 
-// --- The spoken command around the title ----------------------------------
-
 /** A word of the title as typed, and folded without its marks for a comparison. */
 interface Token {
   readonly plain: string;
@@ -2042,6 +2042,350 @@ const tokensOf = (title: string): ReadonlyArray<Token> =>
 
 /** The tokens as the title wrote them, one space apart. */
 const textOf = (tokens: ReadonlyArray<Token>): string => tokens.map(({ text }) => text).join(' ');
+
+// --- A place the words lead into -------------------------------------------
+
+/**
+ * The words a place is read after when the model named none. "at" and
+ * "@" lead into little but a place or a clock; "in" and "im" lead into
+ * a when, a manner or a topic as often ("in two weeks", "in person", "im
+ * Mai", "im Regen"), so only a place said by what it is follows them
+ * (`placeSaid`; the kinds are core's `isPlaceKind`, which the lookup
+ * shares). Where to go is the title's ("ins Kino", "zum Arzt"), and "am",
+ * "bei" and "beim" say when or with whom as often as where.
+ */
+const READ_LEADS = new Set(['@', 'at', 'im', 'in']);
+/** After these a name is a place ("at Loos Bar"). */
+const NAME_LEADS = new Set(['@', 'at']);
+
+/**
+ * A kind that is a place only with its name after it: "in der Praxis"
+ * is "in practice" as often as at the doctor's, "in der Praxis Dr.
+ * Huber" never.
+ */
+const KINDS_BY_NAME = new Set(['praxis']);
+
+/** A word as a name writes it: a capital or a digit first ("Prückel", "Dr.", "4", "B12"). */
+const NAMED = /^[("'“„«]*[\p{Lu}\p{N}]/u;
+/** Words a name holds in lower case ("Café am Heumarkt", "House of Blues"). */
+const NAME_JOINTS = new Set([
+  'am',
+  'an',
+  'de',
+  'del',
+  'der',
+  'di',
+  'du',
+  'im',
+  'la',
+  'le',
+  'of',
+  'the',
+  'zum',
+  'zur',
+]);
+
+/**
+ * Words that go on to something else — who with, what for, what next,
+ * another when or where: a place said by what it is holds none ("the
+ * office for the review" is not a place called that).
+ */
+const GOES_ON = new Set([
+  '&',
+  'a',
+  'ab',
+  'aber',
+  'about',
+  'after',
+  'als',
+  'am',
+  'an',
+  'and',
+  'as',
+  'at',
+  'auf',
+  'because',
+  'before',
+  'bei',
+  'beim',
+  'bis',
+  'but',
+  'by',
+  'dann',
+  'das',
+  'dass',
+  'dem',
+  'den',
+  'der',
+  'des',
+  'die',
+  'ein',
+  'eine',
+  'einem',
+  'einen',
+  'einer',
+  'for',
+  'from',
+  'fur',
+  'gegen',
+  'if',
+  'im',
+  'in',
+  'ins',
+  'instead',
+  'mit',
+  'nach',
+  'oder',
+  'of',
+  'ohne',
+  'on',
+  'or',
+  're',
+  'so',
+  'statt',
+  'that',
+  'the',
+  'then',
+  'this',
+  'till',
+  'to',
+  'uber',
+  'um',
+  'und',
+  'until',
+  'von',
+  'vor',
+  'w',
+  'wegen',
+  'weil',
+  'wenn',
+  'when',
+  'while',
+  'with',
+  'without',
+  'zu',
+  'zum',
+  'zur',
+]);
+
+/**
+ * What "at", "in" or "im" leads into that says when, not where, at the
+ * start of what follows: a day, a month, a meal or part of the day, a
+ * holiday or season, a number ("in two weeks", "in 10 minutes"), a word
+ * that counts time from now ("in the next sprint"). The clock is
+ * `scan`'s. A name that begins with one is not read ("at Morning Glory",
+ * "at Friday Harbor"): no telling.
+ */
+const WHEN_AFTER_LEAD = new RegExp(
+  `^(?:\\d|(?:${[
+    NUMBER_WORD,
+    DAY_NAMES,
+    DAY_WORDS,
+    MONTHS,
+    PERIOD_NAMES,
+    HOLIDAYS,
+    'noon|midday|midnight|mitternacht|dawn|dusk|sunrise|sunset',
+    'holidays?|ferien|feiertage?n?|weekends?|wochenenden?|fruh',
+    'next|this|last|coming|same|nachste[nmrs]?|diese[nmrs]?|kommende[nmrs]?|letzte[nmrs]?',
+  ].join('|')})(?![\\p{L}\\p{N}]))`,
+  'u',
+);
+
+/**
+ * A weekday and another day right after it, at the start of the when
+ * taken off the end ("Dinner at Ruby Tuesday tomorrow", "… Tuesday on
+ * Friday"): an event has one day, so the first may be the name's.
+ */
+const TWO_DAYS = new RegExp(
+  `^[\\s,;:–—-]*(?:${DAY_NAMES})\\s+(?:(?:on|am|next|this|coming)\\s+)?(?:${DAY_NAMES}|${DAY_WORDS})(?![\\p{L}\\p{N}])`,
+  'u',
+);
+
+/** "Look at Anna's slides": what follows is looked at, not where. */
+const LOOKS = new Set(['glance', 'look', 'looked', 'looking', 'looks', 'peek', 'stare']);
+
+/** A place holds this many words at most; more is a sentence. */
+const PLACE_WORDS_MAX = 6;
+
+/** A mark that ends a clause inside a run: what follows it is something else. */
+const CLAUSE_MARK = /[,;:!?.]$/u;
+/** Short forms a name holds with their period ("Praxis Dr. Huber", "St. Marx"). */
+const ABBREVIATIONS = new Set(['dr', 'ing', 'mag', 'mt', 'prof', 'st']);
+/** Whether a word of a run ends a clause: the reader does not read past one. */
+const endsClause = ({ plain, text }: Token): boolean =>
+  CLAUSE_MARK.test(text) && !(text.endsWith('.') && ABBREVIATIONS.has(plain));
+
+/** Every word as a name writes it, a joint allowed between two of them ("Café am Heumarkt"). */
+const readsAsName = (run: ReadonlyArray<Token>): boolean =>
+  run.every(
+    ({ plain, text }, at) =>
+      NAMED.test(text) || (at > 0 && at < run.length - 1 && NAME_JOINTS.has(plain)),
+  );
+
+/**
+ * A place said by what it is, its kind last and nothing before it that
+ * goes on to something else ("big meeting room", "Vienna office", "großen
+ * Besprechungsraum").
+ */
+const endsInKind = (run: ReadonlyArray<Token>): boolean => {
+  const last = run.at(-1);
+  return (
+    last !== undefined && isPlaceKind(last.plain) && run.every(({ plain }) => !GOES_ON.has(plain))
+  );
+};
+
+/**
+ * A place said by what it is, its kind first and a name or a number
+ * after it ("Café Prückel", "Praxis Dr. Huber", "room 4", "Hotel am
+ * Stephansplatz").
+ */
+const beginsWithKind = (run: ReadonlyArray<Token>): boolean => {
+  const [first, ...rest] = run;
+  return (
+    first !== undefined &&
+    (isPlaceKind(first.plain) || KINDS_BY_NAME.has(first.plain)) &&
+    rest.length > 0 &&
+    (readsAsName(rest) || readsAsName(run))
+  );
+};
+
+/** An article that is the lead's, not a name's own ("at the office", not "at The Standard"). */
+const isArticle = (token: Token | undefined): boolean =>
+  token !== undefined && ARTICLES.has(token.plain) && !NAMED.test(token.text);
+
+/** The tokens folded as the when-readers match them (`words`), one space apart. */
+const foldedText = (tokens: ReadonlyArray<Token>): string =>
+  tokens.map(({ text }) => words(text)).join(' ');
+
+/** The run as the words wrote it, without the marks around it. */
+const placeText = (run: ReadonlyArray<Token>): string =>
+  textOf(run)
+    .replace(/^[("'“„«]+/u, '')
+    .replace(TRAILING, '');
+
+/** A lead and what it leads into, as the words said them. */
+interface Led {
+  /** Whether an article stood between the two ("in the …", "in der …"). */
+  readonly article: boolean;
+  readonly lead: string;
+  readonly run: ReadonlyArray<Token>;
+}
+
+/**
+ * Whether the words after a lead are unmistakably a place: one said by
+ * what it is, or a name after "at" or "@" (`placeSaid`). After a bare
+ * "in" a kind and a name is as often a product ("in Office 365", "in
+ * Home Assistant").
+ */
+const isPlace = ({ article, lead, run }: Led): boolean =>
+  endsInKind(run) ||
+  ((lead !== 'in' || article) && beginsWithKind(run)) ||
+  (NAME_LEADS.has(lead) && readsAsName(run));
+
+/**
+ * The place a first phrase leads into, read from its own words: a model
+ * that names none (Apple's on the Mac answers a first phrase with the
+ * title only) lost it, and one that kept it in the title left it there.
+ * `text` is the phrase without its invitation; the command and the when
+ * at its end come off here, as they do off the title.
+ *
+ * The place is everything after the first "at", "@", "in" or "im" that
+ * does not lead into a when (`WHEN_AFTER_LEAD`, a clock) or into words
+ * that go on ("check in with …"), to the end of the words, an article
+ * after the lead aside — and only where the words are unmistakable:
+ *
+ * - a place said by what it is, after any of them ("in the big meeting
+ *   room", "at the office", "im Café Prückel", "im Schweizerhaus":
+ *   `endsInKind`, `beginsWithKind`);
+ * - a name after "at" or "@" — every word written as a name ("at Loos
+ *   Bar", "at Café am Heumarkt").
+ *
+ * Anything else stays as it was. A name after "in" or "im" ("in
+ * Vienna", "im Figlmüller"): "in German" and "im Regen" are written the
+ * same, German gives every noun its capital, and the model is no help —
+ * Apple's on the Mac cuts the title at the when whatever follows
+ * ("Laufen morgen um 7 im Regen" and "Kaffee um 10 im Figlmüller" both
+ * lose their end), and asked for the place alone it names "Regen" and
+ * "Bett" too. Lower-case words that name no kind of place ("at
+ * starbucks", "in the report"), words that go on after the place ("at
+ * Loos Bar with Jo"), a second clause, what is looked at ("look at …"),
+ * a weekday that may be the name's ("at Ruby Tuesday tomorrow"), and a
+ * phrase that is nothing but its when before the lead.
+ */
+export const placeSaid = (
+  text: string,
+  { phrase = text }: { readonly phrase?: string } = {},
+): string | undefined => {
+  const whole = withoutCommand(text, phrase);
+  const kept = trimWhen(whole, undefined, { phrase });
+  const cut = whole.lastIndexOf(kept);
+  if (cut !== -1 && TWO_DAYS.test(words(whole.slice(cut + kept.length)))) {
+    return undefined;
+  }
+  const said = tokensOf(kept);
+  for (let at = 1; at < said.length - 1; at += 1) {
+    const lead = said[at]!.plain === '' ? said[at]!.text : said[at]!.plain;
+    if (!READ_LEADS.has(lead)) {
+      continue;
+    }
+    const article = isArticle(said[at + 1]);
+    const run = said.slice(article ? at + 2 : at + 1);
+    const [first] = run;
+    if (first === undefined) {
+      return undefined;
+    }
+    // A lead into a when, or into words that go on ("at 10 at …", "check
+    // in at …", "check in with …"), is not the place's: the next may be.
+    if (
+      clockAtStart(foldedText(said.slice(at))) > 0 ||
+      WHEN_AFTER_LEAD.test(foldedText(run)) ||
+      (GOES_ON.has(first.plain) && !NAMED.test(first.text))
+    ) {
+      continue;
+    }
+    if (
+      run.length > PLACE_WORDS_MAX ||
+      run.slice(0, -1).some(endsClause) ||
+      run.some(({ text: word }) => word.includes('@')) ||
+      (lead === 'at' && LOOKS.has(said[at - 1]!.plain)) ||
+      saysOnlyWhen(textOf(said.slice(0, at)))
+    ) {
+      return undefined;
+    }
+    const place = isPlace({ article, lead, run }) ? placeText(run) : '';
+    return place === '' ? undefined : place;
+  }
+  return undefined;
+};
+
+/**
+ * A place without the lead the model copied in front of it ("at the
+ * office" for "at the office instead", "in der Praxis Dr. Huber"): the
+ * field reads "office" and "Praxis Dr. Huber". Only where the words
+ * prove the lead is one: an article after it (or "im", which holds its
+ * own) and a place said by what it is (`endsInKind`, `beginsWithKind`).
+ * A name may begin with the same word — "Am Hof", "In der Burg", "At
+ * Home", "Chez Panisse" — and nothing in the words tells "im Figlmüller"
+ * from one, so that text stays as it is and the lookup reads past the
+ * lead instead (`placeMatch` in `@calendar/core`), where the place's own
+ * name decides.
+ */
+export const withoutPlaceLead = (place: string): string => {
+  const tokens = tokensOf(place);
+  const [lead, next] = tokens;
+  const from =
+    lead?.plain === 'im'
+      ? 1
+      : (lead?.plain === 'at' || lead?.plain === 'in') && isArticle(next)
+        ? 2
+        : 0;
+  const run = tokens.slice(from);
+  return from > 0 && run.length <= PLACE_WORDS_MAX && (endsInKind(run) || beginsWithKind(run))
+    ? placeText(run)
+    : place;
+};
+
+// --- The spoken command around the title ----------------------------------
 
 /** The tokens from `at` are `sequence`, word for word. */
 const matches = (
