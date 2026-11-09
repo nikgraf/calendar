@@ -287,6 +287,17 @@ describe('placeMatch', () => {
     };
     expect(saysWhere('Chicago Grill', grill)).toBe(false);
     expect(saysWhere('Chicago Grill, Chicago', grill)).toBe(true);
+    // The where set apart after a comma counts though the words are the name's own
+    // ("the one in Berlin" makes "Hard Rock Cafe, Berlin").
+    const hardRock = {
+      address: 'Kurfürstendamm 224, 10719 Berlin, Germany',
+      name: 'Hard Rock Cafe Berlin',
+    };
+    expect(saysWhere('Hard Rock Cafe, Berlin', hardRock)).toBe(true);
+    expect(saysWhere('Hard Rock Cafe Berlin', hardRock)).toBe(false);
+    expect(
+      saysWhere('Hard Rock, Cafe Berlin', { ...hardRock, address: 'Cafestraße 1, 20095 Hamburg' }),
+    ).toBe(false);
     expect(saysWhere('Hallstatt', { address: '4830 Hallstatt, Austria', name: 'Hallstatt' })).toBe(
       true,
     );

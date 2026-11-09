@@ -222,20 +222,27 @@ const CODE = /\b[A-Z]{2,3}\b/g;
  * meant however far it is from the user's own places. One word of a part
  * is not enough ("Royal Cafe" is not in Royal Oak, nor "New Moon Cafe"
  * in New York), and a name that holds its city says nothing beside the
- * name ("Chicago Grill", said in Vienna).
+ * name ("Chicago Grill", said in Vienna) — until a comma sets the where
+ * apart ("Chicago Grill, Chicago", "Hard Rock Cafe, Berlin").
  */
 export const saysWhere = (text: string, place: PlaceLike): boolean => {
   const said = wordsOf(text);
   const { named, street, where } = readAddress(place, said);
-  if (!named && sameWords(said, wordsOf(place.name ?? ''))) {
+  // A name that holds its city is all name — unless the text sets the
+  // where apart after a comma ("Hard Rock Cafe, Berlin" for Hard Rock
+  // Cafe Berlin): then only those words are held to the address.
+  const nameOnly = !named && sameWords(said, wordsOf(place.name ?? ''));
+  const comma = text.indexOf(',');
+  if (nameOnly && comma === -1) {
     return false;
   }
+  const heard = nameOnly ? wordsOf(text.slice(comma + 1)) : said;
   const codes = new Set(wordsOf((place.address ?? '').match(CODE)?.join(' ') ?? ''));
   return [...(named ? [street] : []), ...where].some((part) => {
     const words = part.filter(
       (word) => !NUMBERED.test(word) && word.length >= WHERE_MIN && !codes.has(word),
     );
-    return words.length > 0 && words.every((word) => said.includes(word));
+    return words.length > 0 && words.every((word) => heard.includes(word));
   });
 };
 

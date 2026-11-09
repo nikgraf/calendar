@@ -242,8 +242,9 @@ const runCase = async (
     });
     if (outcome.kind === 'draft') {
       draft = outcome.draft;
+      // A turn that was refused left no words in the thread.
+      earlier.push(heard.text);
     }
-    earlier.push(heard.text);
   }
   return {
     id: benchCase.id,

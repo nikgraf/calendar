@@ -714,11 +714,25 @@ describe('parseRefine reads a bare turn without the model', () => {
     expect(
       await parseRefine(model, {
         draft: { ...lunch, location: 'Berlin' },
-        said: ['Conference in Berlin on Friday'],
+        said: ['Conference on Friday', 'in Berlin'],
         utterance: "it's in Vienna",
         ...CONTEXT,
       }),
     ).toMatchObject({ prefill: { location: 'Vienna' } });
+  });
+
+  it('asks the model for a bare phrase with a second thing after it', async () => {
+    // Review: "with Stefan, invite Anna" became the title, and nobody was asked whom to invite.
+    const model = fakeModel(lunch);
+    await parseRefine(model, { draft: lunch, utterance: 'with Stefan, invite Anna', ...CONTEXT });
+    // The refinement and the people question.
+    expect(model.prompts).toHaveLength(2);
+    await parseRefine(model, {
+      draft: lunch,
+      utterance: "it's in Vienna, remove the location",
+      ...CONTEXT,
+    });
+    expect(model.prompts.length).toBeGreaterThan(2);
   });
 
   it('keeps a note or notifications said with it beside the draft', async () => {
