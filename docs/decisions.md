@@ -1237,18 +1237,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   leaves for its field, and a when or company is no place. Rejected: the
   example behind the check, a rule-only prompt, a code-only title. Open:
   mid-title when-words, "tomorrow lunch with tom" → "Lunch".
-- **A spoken command is not the title** (2026-11-08, #302) — "Add an event
-  to have lunch with Stefan" was the title on the iPhone: its model echoes
-  a dictated phrase, and the phrase stands in when a title fails
-  `groundTitle`. `withoutCommand` takes the frame off first: a wish, a
-  request with a verb, or a calendar verb — "add"/"schedule" alone, the
-  rest only beside an indefinite article, a pronoun or a tail ("on my
-  calendar", "… ein"), so "Book club" and "Plan my week" stay; "an event
-  for lunch" goes, "a meeting" stays; a to-do loses only "add a reminder
-  to". Rejected: a prompt rule (the Mac's model drops the frame, the
-  iPhone's does not), an opener as evidence ("Please plan my week"), any
-  trailing "… eintragen" ("Stunden eintragen"). Open: "block <when> for
-  <event>", a place said before the object.
+- **A spoken command is not the title** (2026-11-08, #302) — the iPhone's
+  model echoes a dictated phrase ("Add an event to have lunch with
+  Stefan"), and the phrase stands in when a title fails `groundTitle`.
+  `withoutCommand` takes the frame off first: a wish, a request with a
+  verb, or a calendar verb — "add"/"schedule" alone, a misheard "at an",
+  the rest beside an indefinite article, a pronoun or a tail — so "Book
+  club" and "Plan my week" stay; "an event for" goes, "a meeting" stays.
+  `trimWhen` takes the when before the company too ("lunch tomorrow with
+  Stefan"). Rejected: a prompt rule, an opener as evidence, any "…
+  eintragen". Open: "block <when> for <event>", a place before the object.
 - **A served model beside Apple's** (2026-10-12, #184)
   — the desktop can answer `generateJson` from a model served over HTTP
   on this Mac: Ollama through its own API (the schema as `format`,

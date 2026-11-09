@@ -1070,6 +1070,31 @@ describe('parseQuickAdd titles', () => {
         'Add an event to have lunch with Stefan tomorrow at 1',
       ),
     ).toMatchObject({ date: '2026-08-23', startTime: '13:00', title: 'Lunch with Stefan' });
+    // The same PR on the iPhone (2026-11-09): the recognizer wrote "Add"
+    // as "At", and the day came before the company.
+    expect(
+      await prefillOf(
+        { title: 'At an event for lunch tomorrow with Stefan' },
+        'At an event for lunch tomorrow with Stefan',
+      ),
+    ).toMatchObject({ date: '2026-08-23', title: 'Lunch with Stefan' });
+    // The Mac's model on the same words: the verb gone, the placeholder kept.
+    expect(
+      (
+        await prefillOf(
+          { title: 'Event for lunch with Stefan' },
+          'At an event for lunch tomorrow with Stefan',
+        )
+      ).title,
+    ).toBe('Lunch with Stefan');
+    expect(
+      (
+        await prefillOf(
+          { startTime: '13:00', title: 'Add lunch tomorrow at 1 with Stefan' },
+          'Add lunch tomorrow at 1 with Stefan',
+        )
+      ).title,
+    ).toBe('Lunch with Stefan');
     // A title the model kept the lead in (the bench's long phrases).
     expect(
       await prefillOf(

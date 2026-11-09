@@ -1627,6 +1627,69 @@ describe('withoutCommand', () => {
       expect(withoutCommand(title), title).toBe(title);
     }
   });
+
+  it('reads "add" as the recognizer heard it, before an article', () => {
+    // An iPhone recording (2026-11-09): "Add an event …" came back "At an event …".
+    expect(withoutCommand('At an event for lunch tomorrow with Stefan')).toBe(
+      'lunch tomorrow with Stefan',
+    );
+    expect(withoutCommand('Ad an event for lunch')).toBe('lunch');
+    expect(withoutCommand('At a meeting with Tom tomorrow at 1')).toBe(
+      'meeting with Tom tomorrow at 1',
+    );
+    expect(withoutCommand('Hey at a dinner with Tom')).toBe('dinner with Tom');
+    expect(withoutCommand('At an event', 'At an event tomorrow at 9')).toBe('event');
+    const todo = 'At a reminder to call the bank';
+    expect(withoutCommand(todo, todo, { todo: true })).toBe('call the bank');
+    // Without the article, in a name, or before a clock, "at" is the title's.
+    for (const title of [
+      'At the dentist',
+      'At home with Anna',
+      'At my parents place',
+      'At A Glance review',
+      'At a quarter past ten dentist',
+      'At 9 an event',
+      'Ad hoc sync',
+      'Ad review with marketing',
+    ]) {
+      expect(withoutCommand(title), title).toBe(title);
+    }
+  });
+
+  it('takes the placeholder a model kept without the verb', () => {
+    // The Mac's model on that recording's text: the verb gone, "Event for" kept.
+    const heard = 'At an event for lunch tomorrow with Stefan';
+    expect(withoutCommand('Event for lunch with Stefan', heard)).toBe('lunch with Stefan');
+    expect(withoutCommand('an event for lunch with Stefan', heard)).toBe('lunch with Stefan');
+    expect(withoutCommand('Event for lunch tomorrow', 'Add an event for lunch tomorrow at 1')).toBe(
+      'lunch tomorrow',
+    );
+    expect(
+      withoutCommand(
+        'Termin für Mittagessen mit Stefan',
+        'Trag mir einen Termin für Mittagessen mit Stefan ein',
+      ),
+    ).toBe('Mittagessen mit Stefan');
+    expect(
+      withoutCommand('Reminder to call the bank', 'Add a reminder to call the bank tomorrow', {
+        todo: true,
+      }),
+    ).toBe('call the bank');
+    // Only what the phrase's command called the event by: no command, a
+    // noun that names the event, a name said as it is.
+    expect(withoutCommand('Event for the team', 'Event for the team tomorrow')).toBe(
+      'Event for the team',
+    );
+    expect(withoutCommand('Meeting with Tom', 'Add a meeting with Tom tomorrow')).toBe(
+      'Meeting with Tom',
+    );
+    expect(withoutCommand('Event for lunch', 'Add an event called Event for lunch')).toBe(
+      'Event for lunch',
+    );
+    expect(withoutCommand('Plan event for lunch', 'Plan event for lunch tomorrow')).toBe(
+      'Plan event for lunch',
+    );
+  });
 });
 
 describe('trimWhen', () => {
@@ -1668,8 +1731,40 @@ describe('trimWhen', () => {
     expect(trimWhen('Sunday brunch tomorrow')).toBe('Sunday brunch');
   });
 
+  it('takes the when said right before the company', () => {
+    // The same recording: "… for lunch tomorrow with Stefan".
+    expect(trimWhen('lunch tomorrow with tom')).toBe('lunch with tom');
+    expect(trimWhen('Lunch tomorrow at 1 with Stefan')).toBe('Lunch with Stefan');
+    expect(trimWhen('Lunch tomorrow with Stefan at 1')).toBe('Lunch with Stefan');
+    expect(trimWhen('Dinner next Friday at seven with Tom Baker')).toBe('Dinner with Tom Baker');
+    expect(trimWhen('Mittagessen am Dienstag um 12 mit Stefan')).toBe('Mittagessen mit Stefan');
+    expect(trimWhen('Lunch every Friday with the team')).toBe('Lunch with the team');
+    expect(trimWhen('Lunch, tomorrow with Stefan')).toBe('Lunch with Stefan');
+    expect(trimWhen('Lunch tomorrow, with Stefan')).toBe('Lunch with Stefan');
+    // What a title keeps at its end, it keeps before the company.
+    for (const title of [
+      'Black Friday with family',
+      'Taco Tuesday with the team',
+      'Guten Morgen mit Anna',
+      'Vacation until Friday with Anna',
+      'Prep for Friday with Tom',
+      'Submit report by Friday with Tom',
+      'Room 9 with Tom',
+      'Team 1:1 with Tom',
+      'Planning 2027 with Tom',
+      'Date night with Sam',
+      'Friday night with Anna',
+      'Lunch tomorrow with',
+    ]) {
+      expect(trimWhen(title), title).toBe(title);
+    }
+    expect(trimWhen('Dinner at Ruby Tuesday with Tom', 'Ruby Tuesday')).toBe(
+      'Dinner at Ruby Tuesday with Tom',
+    );
+  });
+
   it('leaves the middle, bare numbers and a title that is only when', () => {
-    expect(trimWhen('lunch tomorrow with tom')).toBe('lunch tomorrow with tom');
+    expect(trimWhen('Lunch tomorrow at Mercato')).toBe('Lunch tomorrow at Mercato');
     expect(trimWhen('Room 9')).toBe('Room 9');
     expect(trimWhen('Room 9 at 10')).toBe('Room 9');
     expect(trimWhen('Lunch with Sam tomorrow at 12:30 at Mercato')).toBe(
