@@ -53,20 +53,21 @@ end kept only behind an until word). The
 title too is only the phrase's words — one naming anything else gives way
 to the phrase — with the words about when taken off its ends; no prompt
 shows an example title, since the model copies it. The place is the
-model's where the phrase says it (`placeOf`), without the lead it copied
-where the words prove it one — an article and a kind of place ("at the
-office" is "office", `withoutPlaceLead`; "im Figlmüller" stays, a name
-may begin so). Where the model names none (Apple's on the Mac answers a
-first phrase with a title), an event's is read from the end of the
-phrase's own words (`placeSaid`), after "at", "in" or "im" and only
-where a word says it is a place: its kind (core's `isPlaceKind`), last
-("in the big meeting room", "at Loos Bar", "im Schweizerhaus") or first
-with a venue's name or a room's number ("im Café Prückel", "at room 4")
-— never a clock, a when, a place ruled out or what goes on to something
-else — and it leaves the title. A name no kind goes with is not read
-("at Luigi's", "im Figlmüller"): "at Thanksgiving" and "im Regen" are
-written the same, and the model drops them alike and calls them all
-places. A
+model's where the phrase says it (`placeOf`). Where the model names none
+(Apple's on the Mac answers a first phrase with a title), or names it
+with the lead it copied ("at the office"), an event's is read from the
+end of the phrase's own words (`placeSaid`), after "at", "in" or "im"
+and only where a word says it is a place: its kind (core's
+`isPlaceKind`), last ("in the big meeting room", "at Loos Bar", "im
+Schweizerhaus") or first with a venue's name or a room's number ("im
+Café Prückel", "at room 4") — never a clock, a when, a place ruled out,
+a call's, a quoted or watched title's, or what goes on to something else
+— and it leaves the title. A name no kind goes with is not read ("at
+Luigi's", "im Figlmüller"): "at Thanksgiving" and "im Regen" are written
+the same, and the model drops them alike and calls them all places. A
+turn's place loses a copied lead by the same rule ("at the office" is
+"office", `withoutPlaceLead`; "im Figlmüller" stays, a name may begin
+so). A
 refinement (`refine.ts`) is one more bounded prompt — the draft as a
 line of JSON and the change — merged by the same rules with the draft as
 the anchor (an open "at 8" reads next to the draft's own start); the
@@ -1669,11 +1670,11 @@ gateway carries all of it. Details, limits and the threat model:
   for now, never a remembered miss: the region may change; a cached pin
   the rule now refuses gives way to a miss when it is refreshed. A text
   no hit resembles whole may be a venue written with the lead a model
-  copied ("im Figlmüller"): a nearby hit called exactly what follows the
-  lead and its article is taken, after every hit the whole text names
-  (`namedPastLead`; never a town or street, so "am See" is not See in
-  Tyrol, and a name that begins with the lead — "Am Hof" — is read
-  whole). A text that says only a kind of place ("home", "the office",
+  copied ("im Figlmüller"): a nearby hit called exactly what follows
+  "at", "in" or "im" and its article is taken, after every hit the whole
+  text names (`namedPastLead`; never a town or street named in its own
+  address, never a past place, and a name that begins with the lead —
+  "In der Burg" — is read whole). A text that says only a kind of place ("home", "the office",
   "im Büro": `saysOnlyKind`) names a search hit only by its exact name —
   MapKit answers "home" with Zara Home — so the hits are offered and the
   user's own past place of that text is the one taken; the kinds a town

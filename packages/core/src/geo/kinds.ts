@@ -4,9 +4,9 @@
  * Büro"), and what a name holds beside its own words ("Hotel Sacher",
  * "Loos Bar"). English says the kind last ("the big meeting room"),
  * German first when a name follows ("Café Prückel"). Only built places:
- * "club", "market", "store" and "library" are as often no place at all
- * ("book club", "app store"), "Praxis" is "in practice" too, and "Hof" is
- * a square ("Am Hof").
+ * "club", "market", "store", "library" and "center" are as often no
+ * place at all ("book club", "app store", "control center"), "Praxis" is
+ * "in practice" too, and "Hof" is a square ("Am Hof").
  */
 export const PLACE_KINDS: ReadonlySet<string> = new Set([
   'airport',
@@ -21,8 +21,6 @@ export const PLACE_KINDS: ReadonlySet<string> = new Set([
   'cafeteria',
   'campus',
   'canteen',
-  'center',
-  'centre',
   'church',
   'cinema',
   'classroom',

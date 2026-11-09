@@ -17,6 +17,7 @@ import {
   groundDate,
   groundTime,
   groundTitle,
+  isPlaceWithLead,
   isTodoPhrase,
   mentionsFixedDate,
   namedWeekdays,
@@ -32,7 +33,6 @@ import {
   trimWhen,
   withoutCommand,
   withoutPlace,
-  withoutPlaceLead,
 } from './grounding.ts';
 import { inviteesOf, titleWithoutInvitees } from './invitees.ts';
 import type { QuickAddParse } from './quickAdd.ts';
@@ -694,13 +694,13 @@ interface PlacedTitle {
 /**
  * The title and the place together, since each is read with the other:
  * the place's words stay out of the title, and a place that is also the
- * title counts only after a cue (`placeOf`). The model's place first,
- * without the lead it copied (`withoutPlaceLead`); a location made of
- * the day holds nothing in the title and is no place, any other holds
- * its words there ("Ruby Tuesday", "Figlmüller"). Where the model's
- * comes to none, an event's is read from the phrase's own words
- * (`placeSaid`) and the title made again around it. Capture passes no
- * phrase and keeps its locations as they are.
+ * title counts only after a cue (`placeOf`). The model's place first: a
+ * location made of the day holds nothing in the title and is no place,
+ * any other holds its words there ("Ruby Tuesday", "Figlmüller"). Then
+ * an event's place as its phrase's own words say it (`placeSaid`),
+ * where the model named none or named that one with the lead it copied
+ * ("at the office" for "office"), and the title made again around it.
+ * Capture passes no phrase and keeps its locations as they are.
  */
 const placedTitle = ({
   invite,
@@ -719,8 +719,6 @@ const placedTitle = ({
   readonly referenceDate: string;
   readonly todo: boolean;
 }): PlacedTitle => {
-  const written = meaningfulText(parse.location);
-  const unled = written === undefined || phrase === undefined ? written : withoutPlaceLead(written);
   /** The title around a place, and the place where it stands (`placeOf`). */
   const around = (place: string | undefined): PlacedTitle => {
     const dayAsPlace = madeOfTheDay(place, phrase, modelDate, referenceDate);
@@ -730,17 +728,18 @@ const placedTitle = ({
       title,
     };
   };
-  const first = around(unled);
-  // Without its lead a place may be the title over again ("at the gym"
-  // for "Gym at the gym"): the model's own text stands then.
-  const { location, title } =
-    first.location === undefined && unled !== written ? around(written) : first;
-  if (location !== undefined || phrase === undefined || todo || !title) {
-    return { location, title };
+  const written = meaningfulText(parse.location);
+  const first = around(written);
+  if (phrase === undefined || todo || !first.title) {
+    return first;
   }
   const said = placeSaid(titleWithoutInvitees(phrase, invite), { phrase });
-  const read = said === undefined ? undefined : around(said);
-  return read?.location === undefined ? { location, title } : read;
+  const copied = written !== undefined && said !== undefined && isPlaceWithLead(written, said);
+  if (said === undefined || (first.location !== undefined && !copied)) {
+    return first;
+  }
+  const read = around(said);
+  return read.location === undefined ? first : read;
 };
 
 /** A to-do: its day, and its time when one was said. No end, no repeat. */

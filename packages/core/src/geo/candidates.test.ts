@@ -48,21 +48,20 @@ describe('rankPastPlaces', () => {
     expect(rankPastPlaces('office', [central, office]).map((c) => c.geo.source)).toEqual([
       'Office',
     ]);
-    // Review (Codex): a past place read past a lead ranks after one the
-    // whole text names, however recent — "An der Wien" is the theatre.
+    // Review (Codex, Opus): a past place is read whole only. Written by
+    // hand, it often has no address to tell a town from a venue, and it
+    // comes before every search hit — "An der Wien" is the theatre, not a
+    // more recent "Wien"; "Am Hof" no town the user has been to.
     const theatre = past('Theater an der Wien', 5, 'Theater an der Wien');
     const wien = past('Wien', 50, undefined, { lat: 48.19, lng: 16.36 });
     expect(rankPastPlaces('An der Wien', [wien, theatre]).map((c) => c.geo.source)).toEqual([
       'Theater an der Wien',
-      'Wien',
     ]);
-    // Nor is a town the user has been to the square called after it.
-    const hof = past('Hof, Hof, Bavaria, Germany', 60, 'Hof', { lat: 50.31, lng: 11.91 });
-    expect(rankPastPlaces('Am Hof', [hof])).toEqual([]);
-    // Written with the lead a model copied: the same past place.
-    expect(rankPastPlaces('im Figlmüller', [central, figlmueller]).map((c) => c.match)).toEqual([
-      'words',
-    ]);
+    const hof = past('Hof', 60, undefined, { lat: 50.31, lng: 11.91 });
+    const hofTown = past('Hof, Hof, Bavaria, Germany', 61, 'Hof', { lat: 50.31, lng: 11.91 });
+    expect(rankPastPlaces('Am Hof', [hof, hofTown])).toEqual([]);
+    expect(rankPastPlaces('im Wald', [past('Wald', 62)])).toEqual([]);
+    expect(rankPastPlaces('im Figlmüller', [central, figlmueller])).toEqual([]);
   });
 
   it('lists one place written two ways once, under its better-ranked text', () => {
@@ -285,10 +284,19 @@ describe('rankFoundPlaces', () => {
       ['Theater an der Wien', 'words'],
       ['Wien', 'search'],
     ]);
+    // "an" leads into a street or a river as often: not read past, even
+    // into a venue called just that.
     const bar = hit('Wien', 'Kettenbrückengasse 1, 1050 Vienna, Austria');
     expect(read('An der Wien', [bar, theatre], events)).toEqual([
       ['Theater an der Wien', 'words'],
-      ['Wien', 'words'],
+      ['Wien', 'search'],
+    ]);
+    // A venue named past the lead comes after one the whole text names.
+    const prater = hit('Prater', 'Hauptallee 1, 1020 Vienna, Austria');
+    const garden = hit('Schweizerhaus im Prater', 'Prater 116, 1020 Vienna, Austria');
+    expect(read('im Prater', [prater, garden], events)).toEqual([
+      ['Schweizerhaus im Prater', 'words'],
+      ['Prater', 'words'],
     ]);
   });
 
@@ -300,6 +308,12 @@ describe('rankFoundPlaces', () => {
     ).toEqual([['Zahnarzt Dr. Müller', 'search']]);
     expect(read('bei Anna', [hit('Café Anna', 'Neubaugasse 2, 1070 Vienna')], events)).toEqual([
       ['Café Anna', 'search'],
+    ]);
+    expect(read('bei Anna', [hit('Anna', 'Neubaugasse 2, 1070 Vienna')], events)).toEqual([
+      ['Anna', 'search'],
+    ]);
+    expect(read('am Abend', [hit('Abend', 'Neubaugasse 3, 1070 Vienna')], events)).toEqual([
+      ['Abend', 'search'],
     ]);
     const see = { address: 'See, Tyrol, Austria', lat: 47.0855, lng: 10.4667, name: 'See' };
     expect(read('am See', [see], events)).toEqual([]);

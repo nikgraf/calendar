@@ -137,7 +137,7 @@ describe('placeMatch', () => {
     // The bench: a model asked for the place copies the words that led
     // into it.
     const figlmueller = { address: 'Bäckerstraße 6, 1010 Vienna, Austria', name: 'Figlmüller' };
-    for (const text of ['im Figlmüller', 'beim Figlmüller', 'at Figlmüller', 'in dem Figlmüller']) {
+    for (const text of ['im Figlmüller', 'at Figlmüller', 'in dem Figlmüller', 'Im Figlmüller']) {
       expect(namedPastLead(text, figlmueller), text).toBe(true);
     }
     expect(namedPastLead('at the Loos Bar', { name: 'Loos Bar' })).toBe(true);
@@ -159,6 +159,13 @@ describe('placeMatch', () => {
     expect(namedPastLead('zum Arzt', { name: 'Arzt Dr. Huber' })).toBe(false);
     expect(namedPastLead('beim Friseur', { name: 'Friseur Klier' })).toBe(false);
     expect(namedPastLead('bei Anna', { name: 'Café Anna' })).toBe(false);
+    // Nor a venue called just that, after a lead that says with whom or
+    // when as often as where.
+    expect(namedPastLead('bei Anna', { name: 'Anna' })).toBe(false);
+    expect(namedPastLead('beim Bäcker', { name: 'Bäcker' })).toBe(false);
+    expect(namedPastLead('beim Arzt', { name: 'Arzt' })).toBe(false);
+    expect(namedPastLead('am Abend', { name: 'Abend' })).toBe(false);
+    expect(namedPastLead('zum Wirt', { name: 'Wirt' })).toBe(false);
     expect(
       namedPastLead('im Figlmüller', {
         address: 'Bäckerstraße 6, 1010 Vienna, Austria',
@@ -167,16 +174,14 @@ describe('placeMatch', () => {
     ).toBe(false);
     // A town or a street named in its own address is no venue.
     expect(namedPastLead('am See', { address: 'See, Tyrol, Austria', name: 'See' })).toBe(false);
-    expect(namedPastLead('am Berg', { address: 'Berg, Bavaria, Germany', name: 'Berg' })).toBe(
-      false,
-    );
     expect(namedPastLead('im Wald', { address: '8636 Wald, Switzerland', name: 'Wald' })).toBe(
       false,
     );
+    expect(namedPastLead('in der Wien', { address: 'Wien, Österreich', name: 'Wien' })).toBe(false);
     expect(namedPastLead('An der Wien', { address: 'Wien, Österreich', name: 'Wien' })).toBe(false);
     expect(namedPastLead('Am Hof', { address: 'Hof, Bavaria, Germany', name: 'Hof' })).toBe(false);
     expect(
-      namedPastLead('am Graben', { address: 'Graben, 1010 Vienna, Austria', name: 'Graben' }),
+      namedPastLead('im Graben', { address: 'Graben, 1010 Vienna, Austria', name: 'Graben' }),
     ).toBe(false);
   });
 
@@ -366,8 +371,6 @@ describe('placeMatch', () => {
       'the hotel',
       'Kino',
       'ein Café',
-      // Read as the short form an address writes ("Ctr").
-      'the centre',
       'Zahnarztpraxis',
       // A store is called this too; the words are "at home", and it is offered.
       'At Home',

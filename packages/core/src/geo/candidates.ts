@@ -59,45 +59,27 @@ const best = (a: PlaceMatch | undefined, b: PlaceMatch | undefined): PlaceMatch 
  * address": the name is what it is, the address where (`placeMatch`), so
  * "Vienna, Austria" names no past place that merely stands there. A text
  * that does not begin with MapKit's name (an address typed or kept as
- * said) is all address beside that name. A text none of that reads may
- * still be the place written with the lead a model copied ("im
- * Figlmüller" for a past "Figlmüller": `namedPastLead`, read beside the
- * same address, so a town stays a town) — `pastLead`, and behind every
- * reading of the whole text.
+ * said) is all address beside that name.
  */
-const readPastPlace = (
-  text: string,
-  geo: GeoLocation,
-): { readonly match: PlaceMatch; readonly pastLead: boolean } | undefined => {
+export const pastPlaceMatch = (text: string, geo: GeoLocation): PlaceMatch | undefined => {
   if (placeMatch(text, { name: geo.source }) === 'exact') {
-    return { match: 'exact', pastLead: false };
+    return 'exact';
   }
   const [written = '', ...rest] = geo.source.split(',');
   const address = rest.join(',');
   const named = geo.name !== undefined && placeMatch(written, { name: geo.name }) === 'exact';
-  const asWritten = { address, name: written };
-  const asNamed =
-    geo.name === undefined ? undefined : { address: named ? address : geo.source, name: geo.name };
-  const whole = best(
-    placeMatch(text, asWritten),
-    asNamed === undefined ? undefined : placeMatch(text, asNamed),
+  return best(
+    placeMatch(text, { address, name: written }),
+    geo.name === undefined
+      ? undefined
+      : placeMatch(text, { address: named ? address : geo.source, name: geo.name }),
   );
-  if (whole !== undefined) {
-    return { match: whole, pastLead: false };
-  }
-  return namedPastLead(text, asWritten) || (asNamed !== undefined && namedPastLead(text, asNamed))
-    ? { match: 'words', pastLead: true }
-    : undefined;
 };
-
-/** How a past place resembles the text (`readPastPlace`). */
-export const pastPlaceMatch = (text: string, geo: GeoLocation): PlaceMatch | undefined =>
-  readPastPlace(text, geo)?.match;
 
 /**
  * The past places the text names, best first — exact, then by words,
- * then by sound, then read past a lead — the most recently used first
- * among equals. One per place text (the latest use of it).
+ * then by sound — the most recently used first among equals. One per
+ * place text (the latest use of it).
  */
 export const rankPastPlaces = (
   text: string,
@@ -113,12 +95,10 @@ export const rankPastPlaces = (
   }
   const ranked = [...latest.values()]
     .flatMap((place) => {
-      const read = readPastPlace(text, place.geo);
-      return read === undefined
-        ? []
-        : [{ match: read.match, place, rank: read.pastLead ? PAST_LEAD_RANK : RANK[read.match] }];
+      const match = pastPlaceMatch(text, place.geo);
+      return match === undefined ? [] : [{ match, place }];
     })
-    .sort((a, b) => a.rank - b.rank || b.place.lastUsedUtc - a.place.lastUsedUtc)
+    .sort((a, b) => RANK[a.match] - RANK[b.match] || b.place.lastUsedUtc - a.place.lastUsedUtc)
     .map(({ match, place }) => ({ geo: place.geo, match, source: 'history' as const }));
   // One place written two ways is one place: the better-ranked text stays.
   const once: Array<PlaceCandidate> = [];
@@ -198,7 +178,9 @@ const FAR_OFFERS = 1;
  * ("home", "the office": `saysOnlyKind`) names one only by its exact
  * name, whatever else resembles it. A text no hit resembles whole may
  * be a venue written with its lead ("im Figlmüller": `namedPastLead`):
- * it is named when nearby, after the hits the whole text names.
+ * it is named when nearby, after the hits the whole text names. Only a
+ * search hit: a past place is written by hand, often without the
+ * address that tells a town from a venue, and comes before every hit.
  */
 export const rankFoundPlaces = <Place extends FoundPlace>(
   text: string,

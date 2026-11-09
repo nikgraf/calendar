@@ -2059,31 +2059,28 @@ const READ_LEADS = new Set(['@', 'at', 'im', 'in']);
 
 /**
  * The kinds a venue's name begins with ("Café Prückel", "Hotel Sacher",
- * "Haus der Musik", "Praxis Dr. Huber"). English puts a kind first to
- * name an occasion as often ("Office Party", "House Party", "Bar
- * Mitzvah", "Office Hours"), so only the ones that title a venue count;
- * "Praxis" counts nowhere else ("in der Praxis" is "in practice" too).
+ * "Haus der Musik", "Praxis Dr. Huber"). A kind first names an occasion
+ * or what is on as often ("Office Party", "Bar Mitzvah", "Pub Quiz",
+ * "im Theater Hamlet", "im Kino Avatar"), so only the ones that title a
+ * venue count; "Praxis" counts nowhere else ("in der Praxis" is "in
+ * practice" too).
  */
 const KINDS_BEFORE_A_NAME = new Set([
   'cafe',
-  'cinema',
   'gasthaus',
   'haus',
   'hotel',
   'kaffeehaus',
   'kanzlei',
-  'kino',
   'klinik',
   'lokal',
-  'museum',
   'ordination',
   'praxis',
-  'pub',
   'restaurant',
-  'theater',
-  'theatre',
   'wirtshaus',
 ]);
+/** The kinds a number tells apart: "room 4", "Saal 2", "Hall B", "Besprechungszimmer 3" — not "the bar 12" or "school 3". */
+const NUMBERED_KIND = /(?:hall|halle|raum|room|saal|studio|zimmer)$/;
 
 /** A word as a name writes it: a capital first ("Prückel", "Dr."). */
 const NAMED = /^[("'“„«]*\p{Lu}/u;
@@ -2276,7 +2273,12 @@ const beginsWithKind = (run: ReadonlyArray<Token>): boolean => {
   if (first === undefined || only === undefined) {
     return false;
   }
-  if (rest.length === 1 && isPlaceKind(first.plain) && ROOM_ID.test(placeText([only]))) {
+  if (
+    rest.length === 1 &&
+    isPlaceKind(first.plain) &&
+    NUMBERED_KIND.test(first.plain) &&
+    ROOM_ID.test(placeText([only]))
+  ) {
     return true;
   }
   return KINDS_BEFORE_A_NAME.has(first.plain) && (readsAsName(rest) || readsAsName(run));
@@ -2336,8 +2338,89 @@ const isPlace = ({ article, capitals, lead, run }: Led): boolean => {
 const RULES_OUT_PLACE =
   /\b(?:not|never|no|except|but|other than|nicht|nie|ausser|ohne|kein\w*)\b|n't(?![\p{L}\p{N}])/u;
 
-/** What is watched or read has a title of its own ("Watch Breakfast at Tiffany's"). */
-const WORKS = new Set(['binge', 'read', 'reread', 'rewatch', 'stream', 'watch']);
+/**
+ * What is watched, read or heard has a title of its own ("Watch
+ * Breakfast at Tiffany's", "Film schauen: Nachts im Museum"): after one
+ * of these words a lead may be the title's.
+ */
+const WORKS = new Set([
+  'anschauen',
+  'ansehen',
+  'binge',
+  'film',
+  'filmabend',
+  'gucken',
+  'horen',
+  'lesen',
+  'listen',
+  'movie',
+  'read',
+  'reread',
+  'rewatch',
+  'schauen',
+  'stream',
+  'streamen',
+  'watch',
+]);
+/**
+ * A call or a message has no place of its own: "Call Tom at the office"
+ * says where Tom is.
+ */
+const CONTACTS = new Set([
+  'anruf',
+  'anrufen',
+  'call',
+  'dm',
+  'email',
+  'mail',
+  'mailen',
+  'message',
+  'phone',
+  'ping',
+  'ring',
+  'telefonat',
+  'telefonieren',
+  'text',
+]);
+/** A clause of its own before the lead: "whoever's in the office", "for those in the office". */
+const WHOEVER = new Set([
+  'anybody',
+  'anyone',
+  'everybody',
+  'everyone',
+  'those',
+  'wer',
+  'who',
+  'whoever',
+  'whoevers',
+  'whom',
+  'whos',
+]);
+/** What the words before a lead say of it: nothing to read where they name a work, a call or a clause. */
+const leadIsNotTheEvents = (head: ReadonlyArray<Token>, lead: string): boolean => {
+  const before = head.at(-1);
+  return (
+    head.some(
+      ({ plain, text }) =>
+        WORKS.has(plain) || CONTACTS.has(plain) || WHOEVER.has(plain) || text.endsWith(':'),
+    ) ||
+    (before !== undefined &&
+      (IS.has(before.plain) || (lead === 'at' && LOOKS.has(before.plain)))) ||
+    saysOnlyWhen(textOf(head))
+  );
+};
+
+/**
+ * Whether what follows a lead is a place by the words alone: short, one
+ * clause, no address, no when inside it, and said by its kind
+ * (`isPlace`). What the reader and the turn's copied lead share.
+ */
+const isPlaceRun = (led: Led): boolean =>
+  led.run.length <= PLACE_WORDS_MAX &&
+  !led.run.slice(0, -1).some(endsClause) &&
+  !led.run.some(({ text }) => text.includes('@')) &&
+  !saysWhenInside(led.run) &&
+  isPlace(led);
 
 /**
  * Whether a word past the run's first says when ("Café Prückel am
@@ -2435,50 +2518,57 @@ export const placeSaid = (
     ) {
       continue;
     }
-    if (
-      run.length > PLACE_WORDS_MAX ||
-      run.slice(0, -1).some(endsClause) ||
-      run.some(({ text: word }) => word.includes('@')) ||
-      saysWhenInside(run) ||
-      (lead === 'at' && LOOKS.has(said[at - 1]!.plain)) ||
-      IS.has(said[at - 1]!.plain) ||
-      said.slice(0, at).some(({ plain }) => WORKS.has(plain)) ||
-      saysOnlyWhen(textOf(said.slice(0, at)))
-    ) {
+    if (leadIsNotTheEvents(said.slice(0, at), lead)) {
       return undefined;
     }
     const capitals = !NAMED.test(said[at]!.text);
-    const place = isPlace({ article, capitals, lead, run }) ? placeText(run) : '';
+    const place = isPlaceRun({ article, capitals, lead, run }) ? placeText(run) : '';
     return place === '' ? undefined : place;
   }
   return undefined;
 };
 
 /**
- * A place without the lead the model copied in front of it ("at the
- * office" for "at the office instead", "in der Praxis Dr. Huber"): the
- * field reads "office" and "Praxis Dr. Huber". Only where the words
- * prove the lead is one: an article after it (or "im", which holds its
- * own) and a place said by what it is (`endsInKind`, `beginsWithKind`).
- * A name may begin with the same word — "Am Hof", "In der Burg", "At
- * Home", "Chez Panisse" — and nothing in the words tells "im Figlmüller"
- * from one, so that text stays as it is and the lookup reads past the
- * lead instead (`namedPastLead` in `@calendar/core`), where the place's
- * own name decides.
+ * A turn's place without the lead the model copied in front of it ("at
+ * the office" for "at the office instead", "in der Praxis Dr. Huber"):
+ * the field reads "office" and "Praxis Dr. Huber". Only where the words
+ * after the lead are a place by the reader's own rule (`isPlaceRun`: an
+ * article or "im", and a kind). A name may begin with the same word —
+ * "Am Hof", "In der Burg", "At Home", "Chez Panisse" — and nothing in
+ * the words tells "im Figlmüller" from one, so that text stays as it is
+ * and the lookup reads past the lead instead (`namedPastLead` in
+ * `@calendar/core`), where the place's own name decides. A turn's first
+ * word has its capital from the sentence, so capitals count here.
  */
 export const withoutPlaceLead = (place: string): string => {
   const tokens = tokensOf(place);
-  const [lead, next] = tokens;
-  const from =
-    lead?.plain === 'im'
-      ? 1
-      : (lead?.plain === 'at' || lead?.plain === 'in') && isArticle(next)
-        ? 2
-        : 0;
-  const run = tokens.slice(from);
-  return from > 0 && run.length <= PLACE_WORDS_MAX && (endsInKind(run) || beginsWithKind(run))
-    ? placeText(run)
-    : place;
+  const [first, next] = tokens;
+  const lead = first?.plain ?? '';
+  const article = isArticle(next) ? next : undefined;
+  if (!READ_LEADS.has(lead) || (lead !== 'im' && article === undefined)) {
+    return place;
+  }
+  const run = tokens.slice(article === undefined ? 1 : 2);
+  return isPlaceRun({ article, capitals: true, lead, run }) ? placeText(run) : place;
+};
+
+/**
+ * Whether `written` is `place` with a lead, and its article, in front:
+ * what a model writes when it copies the words that led into the place
+ * ("at the office" for the reader's "office").
+ */
+export const isPlaceWithLead = (written: string, place: string): boolean => {
+  const all = tokensOf(written);
+  const named = tokensOf(place);
+  const before = all.slice(0, all.length - named.length);
+  const [lead, article, ...more] = before;
+  return (
+    lead !== undefined &&
+    READ_LEADS.has(lead.plain) &&
+    more.length === 0 &&
+    (article === undefined || ARTICLES.has(article.plain)) &&
+    named.every((token, at) => all[before.length + at]?.plain === token.plain)
+  );
 };
 
 // --- The spoken command around the title ----------------------------------

@@ -203,37 +203,24 @@ export const placeMatch = (text: string, place: PlaceLike): PlaceMatch | undefin
 };
 
 /**
- * The words that lead into a place and get written down with it: a
+ * The words that lead into a venue and get written down with it: a
  * model asked for the place copies them ("im Figlmüller", "at Loos
- * Bar"), and so does a person typing.
+ * Bar"). Not "bei", "beim" or "am": after those comes a person, a trade
+ * or a when as often ("bei Anna", "beim Bäcker", "am Abend"), and a
+ * venue called "Anna" or "Abend" is not what they mean.
  */
-const LEAD_INS = new Set([
-  'am',
-  'an',
-  'at',
-  'auf',
-  'bei',
-  'beim',
-  'chez',
-  'im',
-  'in',
-  'ins',
-  'vor',
-  'zum',
-  'zur',
-]);
+const LEAD_INS = new Set(['at', 'im', 'in']);
 /** The article a lead takes with it: "the", and the German dative. */
-const LEAD_ARTICLES = new Set(['dem', 'den', 'der', 'einem', 'einer', 'the']);
+const LEAD_ARTICLES = new Set(['dem', 'der', 'einem', 'einer', 'the']);
 
 /**
  * Whether a place is called exactly what a text says past the lead it
  * begins with, and its article: "im Figlmüller" is Figlmüller, which no
  * reading of the whole text finds (`placeMatch`: no place is called "im
- * Figlmüller"). Only the whole name — "beim Zahnarzt" names no "Zahnarzt
- * Dr. Müller", nor "bei Anna" a Café Anna — and never a town or a street
- * named in its own address: "am See" is not See in Tyrol, nor "An der
- * Wien" the city. A name that begins with the lead is read whole instead
- * ("Am Hof", "In der Burg", "At Home", "Zum Schwarzen Kameel").
+ * Figlmüller"). Only the whole name — "at the dentist" names no "Dentist
+ * Dr. Smith" — and never a town or a street named in its own address:
+ * "in der Wien" is not the city. A name that begins with the lead is
+ * read whole instead ("In der Burg", "At Home", "Im Hof").
  */
 export const namedPastLead = (text: string, place: PlaceLike): boolean => {
   const said = wordsOf(text);

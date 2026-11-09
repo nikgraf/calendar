@@ -1643,9 +1643,23 @@ describe('parseQuickAdd reads the place from the phrase when the model names non
       'Dance at House Party Saturday',
       'Party at the Bar Mitzvah Saturday',
       'Shop at Home Depot',
+      // Review (Opus, round 2): what is on, after the kind it is on at.
+      'Drinks at Pub Quiz Thursday',
+      'Mit Oma im Theater Hamlet',
+      'Abend im Kino Avatar',
+      'Führung im Museum Moderne Kunst',
     ]) {
       expect(await unplaced(phrase), phrase).toBeUndefined();
     }
+    // The kinds that do: a café, a hotel, a practice.
+    expect(await placed('Frühstück im Hotel Sacher')).toEqual({
+      location: 'Hotel Sacher',
+      title: 'Frühstück',
+    });
+    expect(await placed('Essen im Gasthaus Pöschl')).toEqual({
+      location: 'Gasthaus Pöschl',
+      title: 'Essen',
+    });
   });
 
   it('reads no place that goes on into a when the trim left', async () => {
@@ -1687,10 +1701,69 @@ describe('parseQuickAdd reads the place from the phrase when the model names non
   });
 
   it('reads past a clock said in words to the place after it', async () => {
-    expect(await placed('Call at half past three at the office')).toEqual({
+    expect(await placed('Meet at half past three at the office')).toEqual({
       location: 'office',
-      title: 'Call',
+      title: 'Meet',
     });
+  });
+
+  it('gives a call or a message no place: "at the office" is where the other is', async () => {
+    // Review (Opus, round 2).
+    for (const [phrase, title] of [
+      ['Call Tom at the office tomorrow', 'Call Tom'],
+      ['Call mom at home tonight', 'Call mom'],
+      ['Text Anna at the hotel', 'Text Anna'],
+      ['Phone Grandma at the hospital', 'Phone Grandma'],
+      ['Telefonat mit Anna im Büro', 'Telefonat mit Anna'],
+    ] as const) {
+      expect(await unplaced(phrase, title), phrase).toBeUndefined();
+      expect(await unplaced(phrase), phrase).toBeUndefined();
+    }
+  });
+
+  it('takes a number after a kind only where it tells one room from the next', async () => {
+    // Review (Opus, round 2): "school 3" is school at three.
+    for (const phrase of [
+      'Pick up kids at school 3',
+      'Lunch at the bar 12',
+      'Treffen im Büro 9',
+      'Gym at the gym 7',
+      'Meet at home 2',
+      'Lunch at the office A',
+    ]) {
+      expect(await unplaced(phrase), phrase).toBeUndefined();
+    }
+    expect(await placed('Keynote at hall B')).toEqual({ location: 'hall B', title: 'Keynote' });
+    expect(await placed('Workshop im Seminarraum 2')).toEqual({
+      location: 'Seminarraum 2',
+      title: 'Workshop',
+    });
+  });
+
+  it('reads no clause of its own for the event’s place', async () => {
+    // Review (Opus, round 2).
+    for (const phrase of [
+      'Lunch with whoever’s in the office',
+      "Cake for everyone who's in the office",
+      'Pizza for whoever is still in the office',
+      'Breakfast for those in the office',
+    ]) {
+      expect(await unplaced(phrase), phrase).toBeUndefined();
+    }
+  });
+
+  it('reads nothing after a colon, or after a word for what is watched', async () => {
+    // Review (Opus, round 2): a film's title has a lead in it as a book's does.
+    for (const phrase of [
+      'Movie night: Night at the Museum',
+      'Filmabend: Nachts im Museum',
+      'Kino: Nachts im Museum',
+      'Film schauen Nachts im Museum',
+      'Listen to Live at the Royal Albert Hall',
+      'Team lunch: tacos at the office',
+    ]) {
+      expect(await unplaced(phrase), phrase).toBeUndefined();
+    }
   });
 
   it('tells no name by its capital in a phrase written in title case or capitals', async () => {
@@ -1954,16 +2027,23 @@ describe('parseQuickAdd reads the place from the phrase when the model names non
     }
   });
 
-  it('takes a kind after "in" only as a common noun: a capital makes it a name', async () => {
+  it('takes a kind after "in" only as a common noun after its article', async () => {
     // Review (Codex): "Debug code in Visual Studio tomorrow" was "Debug
     // code" at "Visual Studio".
     for (const phrase of [
+      // No article: how, a name, a product.
       'Debug code in Visual Studio tomorrow',
       'Bugfix in Android Studio',
       'Set up lights in Google Home',
-      'Change the setting in the Control Center',
-      'Check alerts in the Security Center',
       'Walk in Central Park',
+      // A capital on the kind after "the": a name's, as often a product's.
+      'Record the demo in the Visual Studio',
+      'Party in the Blue Room',
+      'Drinks in the Sky Bar',
+      // "center" is no kind: software has one for everything.
+      'Change the setting in the Control Center',
+      'Change the setting in the control center',
+      'Find the answer in the help center',
     ]) {
       expect(await unplaced(phrase), phrase).toBeUndefined();
     }
@@ -2042,6 +2122,23 @@ describe('parseQuickAdd reads the place from the phrase when the model names non
         CONTEXT,
       ),
     ).toMatchObject({ kind: 'parsed', prefill: { location: 'at the office', title: 'Meeting' } });
+  });
+
+  it('reads the phrase, not the model, where the model wrote the place with its lead', async () => {
+    // Review (Opus, round 2): the reader's refusals hold for a place the
+    // model named too — on main each of these had no place.
+    for (const [location, phrase] of [
+      ['in die Oper', 'Mit Anna in die Oper'],
+      ['in the office', 'Lunch with whoever is in the office'],
+      ['in the Visual Studio', 'Debug in the Visual Studio'],
+      ['im Café Prückel am Abend', 'Treffen im Café Prückel am Abend'],
+      ['at the office', 'Call Tom at the office'],
+    ] as const) {
+      expect(
+        (await prefillOf({ location, title: phrase }, phrase)).location,
+        phrase,
+      ).toBeUndefined();
+    }
   });
 
   it('takes the lead a model copied off its place where the words prove it one', async () => {
