@@ -2263,10 +2263,23 @@ const placeText = (run: ReadonlyArray<Token>): string =>
     .replace(/^[("'“„«]+/u, '')
     .replace(TRAILING, '');
 
+/** The German articles a lead takes: after them every kind has its capital ("in der Tanzschule"). */
+const GERMAN_ARTICLES = new Set([
+  'das',
+  'dem',
+  'den',
+  'der',
+  'die',
+  'ein',
+  'eine',
+  'einem',
+  'einer',
+]);
+
 /** A lead and what it leads into, as the words said them. */
 interface Led {
-  /** Whether an article stood between the two ("in the …", "in der …"). */
-  readonly article: boolean;
+  /** The article between the two, if any ("in the …", "in der …"). */
+  readonly article: Token | undefined;
   /**
    * Whether a capital tells a name here. Not where the lead has one
    * itself ("Dinner At Luigi's With The Team", "DINNER AT …"): the
@@ -2279,16 +2292,47 @@ interface Led {
 
 /**
  * Whether the words after a lead are unmistakably a place: one said by
- * what it is, or a name after "at" or "@" (`placeSaid`). After a bare
- * "in" a kind and a name is as often a product ("in Office 365", "in
- * Home Assistant"), and a name is told by its capitals only where they
- * tell anything.
+ * what it is, or a name after "at" or "@" (`placeSaid`). A name is told
+ * by its capitals only where they tell anything. After "in" no name is
+ * read, and in English a kind written with a capital is a name's — as
+ * often a product ("in Visual Studio", "in the Control Center", "in
+ * Office 365") — so only a common noun counts ("in the Vienna office");
+ * German gives every kind its capital, and is known by its article ("in
+ * der Praxis Dr. Huber").
  */
-const isPlace = ({ article, capitals, lead, run }: Led): boolean =>
-  endsInKind(run) ||
-  (capitals &&
-    (((lead !== 'in' || article) && beginsWithKind(run)) ||
-      (NAME_LEADS.has(lead) && readsAsName(run))));
+const isPlace = ({ article, capitals, lead, run }: Led): boolean => {
+  if (lead === 'in' && !GERMAN_ARTICLES.has(article?.plain ?? '')) {
+    return endsInKind(run) && !NAMED.test(run.at(-1)!.text);
+  }
+  return (
+    endsInKind(run) ||
+    (capitals && (beginsWithKind(run) || (NAME_LEADS.has(lead) && readsAsName(run))))
+  );
+};
+
+/**
+ * Something ruled out or set against the rest ("not at the office",
+ * "never", "can't meet at …", "nicht im Büro", "keinesfalls"): the place
+ * after it is named without being meant, which the reader does not read.
+ */
+const RULES_OUT_PLACE =
+  /\b(?:not|never|no|except|but|other than|nicht|nie|ausser|ohne|kein\w*)\b|n't(?![\p{L}\p{N}])/u;
+
+/** What is watched or read has a title of its own ("Watch Breakfast at Tiffany's"). */
+const WORKS = new Set(['binge', 'read', 'reread', 'rewatch', 'stream', 'watch']);
+
+/** Whether the token at `at` stands inside a quoted name ('Read "The House at Pooh Corner"'). */
+const insideQuote = (tokens: ReadonlyArray<Token>, at: number): boolean => {
+  let open = false;
+  for (const { text } of tokens.slice(0, at)) {
+    if (open) {
+      open = !QUOTE_CLOSES.test(text);
+    } else {
+      open = QUOTE_OPENS.test(text) && !(text.length > 1 && QUOTE_CLOSES.test(text));
+    }
+  }
+  return open;
+};
 
 /**
  * The place a first phrase leads into, read from its own words: a model
@@ -2309,7 +2353,7 @@ const isPlace = ({ article, capitals, lead, run }: Led): boolean =>
  *   Bar", "at Café am Heumarkt").
  *
  * Anything else stays as it was. A name after "in" or "im" ("in
- * Vienna", "im Figlmüller"): "in German" and "im Regen" are written the
+ * Vienna", "in Visual Studio", "im Figlmüller"): "in German" and "im Regen" are written the
  * same, German gives every noun its capital, and the model is no help —
  * Apple's on the Mac cuts the title at the when whatever follows
  * ("Laufen morgen um 7 im Regen" and "Kaffee um 10 im Figlmüller" both
@@ -2319,7 +2363,10 @@ const isPlace = ({ article, capitals, lead, run }: Led): boolean =>
  * Loos Bar with Jo"), a second clause, what is looked at ("look at …"),
  * a weekday that may be the name's ("at Ruby Tuesday tomorrow"), a name
  * in a phrase written in title case ("Dinner At Luigi's With The Team"),
- * and a phrase that is nothing but its when before the lead.
+ * a place ruled out ("not at the office"), a lead inside a quoted name
+ * or in what is watched or read ('"The House at Pooh Corner"', "Watch
+ * Breakfast at Tiffany's"), and a phrase that is nothing but its when
+ * before the lead.
  */
 export const placeSaid = (
   text: string,
@@ -2332,13 +2379,16 @@ export const placeSaid = (
     return undefined;
   }
   const said = tokensOf(kept);
+  if (RULES_OUT_PLACE.test(foldedText(said))) {
+    return undefined;
+  }
   for (let at = 1; at < said.length - 1; at += 1) {
     const lead = said[at]!.plain === '' ? said[at]!.text : said[at]!.plain;
-    if (!READ_LEADS.has(lead)) {
+    if (!READ_LEADS.has(lead) || insideQuote(said, at)) {
       continue;
     }
-    const article = isArticle(said[at + 1]);
-    const run = said.slice(article ? at + 2 : at + 1);
+    const article = isArticle(said[at + 1]) ? said[at + 1] : undefined;
+    const run = said.slice(article === undefined ? at + 1 : at + 2);
     const [first] = run;
     if (first === undefined) {
       return undefined;
@@ -2357,6 +2407,7 @@ export const placeSaid = (
       run.slice(0, -1).some(endsClause) ||
       run.some(({ text: word }) => word.includes('@')) ||
       (lead === 'at' && LOOKS.has(said[at - 1]!.plain)) ||
+      said.slice(0, at).some(({ plain }) => WORKS.has(plain)) ||
       saysOnlyWhen(textOf(said.slice(0, at)))
     ) {
       return undefined;

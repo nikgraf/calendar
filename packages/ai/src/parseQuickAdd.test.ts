@@ -1822,6 +1822,87 @@ describe('parseQuickAdd reads the place from the phrase when the model names non
     expect(await unplaced('Fix typo in the report tomorrow', 'Fix typo')).toBeUndefined();
   });
 
+  it('reads no place the words rule out', async () => {
+    // Review (Codex): "Meeting tomorrow not at the office" was "Meeting
+    // tomorrow not" at "office".
+    expect(await placed('Meeting tomorrow not at the office')).toEqual({
+      location: undefined,
+      title: 'Meeting tomorrow not at the office',
+    });
+    for (const phrase of [
+      'Lunch but not at Loos Bar',
+      'Dinner, never at the office',
+      "Team sync, we can't meet at the office",
+      'Standup anywhere except at the office',
+      'Treffen nicht im Büro',
+      'Besprechung, aber keinesfalls im Café Prückel',
+    ]) {
+      expect(await unplaced(phrase), phrase).toBeUndefined();
+    }
+  });
+
+  it('reads no lead inside a quoted title, nor in a work that is watched or read', async () => {
+    // Review (Codex): the book lost its end to the place field.
+    expect(await placed('Read "The House at Pooh Corner" tomorrow')).toEqual({
+      location: undefined,
+      title: 'Read "The House at Pooh Corner"',
+    });
+    expect(await unplaced('Book club: “A Night at the Office” on Friday')).toBeUndefined();
+    expect(await unplaced('Lesekreis: „Frühstück im Hotel“ am Freitag')).toBeUndefined();
+    // A venue in quotes after a lead outside them, and a lead after the quote.
+    expect(await placed('Dinner at "Loos Bar" tomorrow')).toEqual({
+      location: 'Loos Bar',
+      title: 'Dinner',
+    });
+    expect(await placed('Discuss "The House at Pooh Corner" at the office tomorrow')).toEqual({
+      location: 'office',
+      title: 'Discuss "The House at Pooh Corner"',
+    });
+    // Without quotes the opening verb says it is a work.
+    for (const phrase of [
+      "Watch Breakfast at Tiffany's tonight",
+      'Watch Night at the Museum tomorrow',
+      'Read Fast Times at Ridgemont High',
+      'Rewatch Live at Wembley',
+    ]) {
+      expect(await unplaced(phrase), phrase).toBeUndefined();
+    }
+  });
+
+  it('takes a kind after "in" only as a common noun: a capital makes it a name', async () => {
+    // Review (Codex): "Debug code in Visual Studio tomorrow" was "Debug
+    // code" at "Visual Studio".
+    for (const phrase of [
+      'Debug code in Visual Studio tomorrow',
+      'Bugfix in Android Studio',
+      'Set up lights in Google Home',
+      'Change the setting in the Control Center',
+      'Check alerts in the Security Center',
+      'Walk in Central Park',
+    ]) {
+      expect(await unplaced(phrase), phrase).toBeUndefined();
+    }
+    expect(await placed('Meeting in the Vienna office Monday')).toEqual({
+      location: 'Vienna office',
+      title: 'Meeting',
+    });
+    expect(await placed('Lunch in the canteen')).toEqual({ location: 'canteen', title: 'Lunch' });
+    expect(await placed('Mass in church on Sunday')).toEqual({ location: 'church', title: 'Mass' });
+    // German writes every kind with a capital, and "at" leads into a name anyway.
+    expect(await placed('Termin in der Praxis Dr. Huber')).toEqual({
+      location: 'Praxis Dr. Huber',
+      title: 'Termin',
+    });
+    expect(await placed('Probe in der Tanzschule am Montag')).toEqual({
+      location: 'Tanzschule',
+      title: 'Probe',
+    });
+    expect(await placed('Demo at Visual Studio Live')).toEqual({
+      location: 'Visual Studio Live',
+      title: 'Demo',
+    });
+  });
+
   it('reads no other lead: where to go, with whom, "am"', async () => {
     for (const [phrase, title] of [
       ['Mit Anna ins Kino', 'Mit Anna'],
