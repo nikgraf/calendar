@@ -44,6 +44,8 @@ export const Expectation = Schema.Struct({
   kind: Schema.optional(Schema.Literals(['event', 'task'])),
   /** Folded text the location must contain; `null` for no location at all. */
   location: Schema.optional(Schema.NullOr(Schema.String)),
+  /** The whole location, compared folded: for a turn that must not keep what was there. */
+  locationIs: Schema.optional(Schema.String),
   /** Folded text the notes must contain. */
   notes: Schema.optional(Schema.String),
   /** The turn must be refused (an empty phrase, an end before its start). */

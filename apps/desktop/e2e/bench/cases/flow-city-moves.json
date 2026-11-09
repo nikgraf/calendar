@@ -1,0 +1,18 @@
+{
+  "lang": "en",
+  "tags": ["flow", "location", "follow-up"],
+  "turns": [
+    {
+      "input": { "text": "Conference on Friday" },
+      "expect": { "title": "conference", "weekday": 5, "isAllDay": true, "location": null }
+    },
+    {
+      "input": { "text": "in Berlin" },
+      "expect": { "location": "berlin" }
+    },
+    {
+      "input": { "text": "it's in Vienna" },
+      "expect": { "locationIs": "vienna" }
+    }
+  ]
+}

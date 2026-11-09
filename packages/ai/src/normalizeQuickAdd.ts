@@ -554,6 +554,9 @@ const PLACE_CUE =
 /** Company, not a place: a name right after "with" ("lunch with tom", "Essen mit Anna"). */
 const COMPANY = /(?:^|[^\p{L}])(?:with|w\/|mit|and|und|&)\s+$/u;
 
+/** A location that is the company with its "with" ("with Stefan" for a turn that said only that). */
+const LEADS_WITH_COMPANY = /^(?:with|w\/|mit)\s+\S/u;
+
 /** Where `place` stands in `words` as words of its own ("tom", not the start of "tomorrow"). */
 const occurrencesOf = (words: string, place: string): ReadonlyArray<number> => {
   const found: Array<number> = [];
@@ -575,7 +578,8 @@ const occurrencesOf = (words: string, place: string): ReadonlyArray<number> => {
  * "tomorrow lunch with tom"), and where it is also part of the title ("Dentist" for "Dentist tomorrow
  * at 9", "Board review" for "Board review Thursday 2pm") it counts only
  * after a place cue in the phrase ("Meeting at the office"). The title
- * over again is never a place. Without a phrase (capture) the model's
+ * over again is never a place, nor is the company with its "with"
+ * ("with Stefan"). Without a phrase (capture) the model's
  * place stands as it is, as it always did — a reservation titled and
  * placed "Figlmüller" keeps its place.
  */
@@ -598,6 +602,14 @@ export const placeOf = (
   }
   const occurrences = occurrencesOf(words, place);
   if (occurrences.length > 0 && occurrences.every((from) => COMPANY.test(words.slice(0, from)))) {
+    return undefined;
+  }
+  // "With Stefan" written into the location is company too, unless the
+  // words lead into it as a place ("at With Love Café").
+  if (
+    LEADS_WITH_COMPANY.test(place) &&
+    !occurrences.some((from) => PLACE_CUE.test(words.slice(0, from)))
+  ) {
     return undefined;
   }
   if (!fold(title).includes(place)) {

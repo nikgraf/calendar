@@ -35,7 +35,7 @@ import {
   type InviteeChoice,
   resolveInvitees,
 } from './draftInvitees.ts';
-import { type PlaceChange, type PlaceChoice, settlePlace } from './draftPlaces.ts';
+import { placeAsSaid, type PlaceChange, type PlaceChoice, settlePlace } from './draftPlaces.ts';
 import { convertQuickAddItem, type QuickAddItem } from './quickAddItem.ts';
 import type { ReminderFields } from './taskEditorModel.ts';
 
@@ -964,6 +964,7 @@ export const useDraftThread = ({
     setBusy(true);
     try {
       const referenceDate = Temporal.Now.plainDateISO(timeZone).toString();
+      const said = current.turns.map((turn) => turn.utterance);
       const results = await Promise.all(
         targets.map(async (draft) => {
           // A to-do is refined as the event it would be, and read back as a to-do.
@@ -974,7 +975,14 @@ export const useDraftThread = ({
                   draft: asEvent.prefill,
                   // A to-do's words about people are its title's.
                   guests: draft.item.kind === 'event',
+                  // What a turn that only says where the place is adds to.
+                  placeSaid: placeAsSaid(
+                    draft.placeChoice,
+                    asEvent.prefill.location,
+                    draft.extras?.geo,
+                  ),
                   referenceDate,
+                  said,
                   timeZone,
                   utterance,
                 })

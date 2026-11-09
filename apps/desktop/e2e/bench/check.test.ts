@@ -148,6 +148,21 @@ describe('check', () => {
     ]);
   });
 
+  it('a location held whole must be the words and nothing else', () => {
+    const placed = drafted(event({ location: 'Berlin, Vienna' }));
+    expect(check({ location: 'vienna' }, placed, undefined, TODAY).failed).toEqual([]);
+    expect(check({ locationIs: 'vienna' }, placed, undefined, TODAY).notes).toEqual([
+      'location=Berlin, Vienna',
+    ]);
+    const moved = drafted(event({ location: 'Vienna' }));
+    expect(check({ locationIs: 'vienna' }, moved, undefined, TODAY).failed).toEqual([]);
+    expect(check({ locationIs: 'vienna' }, drafted(event()), undefined, TODAY).notes).toEqual([
+      'location=-',
+    ]);
+    // It is about the location: the unchanged rule leaves that part alone.
+    expect(check({ locationIs: 'vienna' }, moved, placed.draft, TODAY).failed).toEqual([]);
+  });
+
   it('a repeat matches by frequency, interval, count and the month it ends in', () => {
     const fortnightly = drafted(
       event({ recurrence: { freq: 'weekly', interval: 2, untilDate: '2027-03-01' } }),

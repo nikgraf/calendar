@@ -7,6 +7,7 @@ import {
   validateEventDraft,
   weekdayOf,
 } from '@calendar/core';
+import { bareTurn, type TurnContext } from './bareTurns.ts';
 import { readExtras } from './extras.ts';
 import {
   type ClockTime,
@@ -456,17 +457,21 @@ export const normalizeRefine = (
  * a fake model like `parseQuickAdd`. A note or notifications the words
  * ask for are read first and taken off them (`extras.ts`); words about
  * nothing else ("notify me 15 minutes before") need no model at all,
- * and the draft comes back as it is with the change beside it.
+ * and the draft comes back as it is with the change beside it. Nor does
+ * a turn that only says where the draft's place is or who it is with
+ * ("it's in Vienna", "with Stefan": `bareTurns.ts`).
  */
 export const parseRefine = async (
   model: LanguageModel,
   {
     draft,
     guests = true,
+    placeSaid,
     referenceDate,
+    said,
     timeZone,
     utterance,
-  }: {
+  }: TurnContext & {
     draft: RefineDraft;
     /** Whether the draft takes guests (not a to-do): only then is the people question asked. */
     guests?: boolean | undefined;
@@ -482,6 +487,11 @@ export const parseRefine = async (
   const change = extras.rest;
   if (!change.trim()) {
     return withExtras({ kind: 'parsed', prefill: draft }, extras) as RefineResult;
+  }
+  // A to-do is refined as the event it would be, and has no place.
+  const bare = bareTurn(change, draft, { places: guests, placeSaid, said });
+  if (bare !== undefined) {
+    return withExtras({ kind: 'parsed', prefill: bare }, extras) as RefineResult;
   }
   if ((await model.status()) !== 'ready') {
     throw new ModelUnavailableError({ message: 'No on-device model is available.' });

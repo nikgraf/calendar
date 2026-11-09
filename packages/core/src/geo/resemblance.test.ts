@@ -118,6 +118,14 @@ describe('placeMatch', () => {
     expect(placeMatch('Cafe Mick', kaffemik)).toBe('phonetic');
     expect(placeMatch('coffee Nick', kaffemik)).toBe('phonetic');
     expect(placeMatch('Kaffeemik', kaffemik)).toBe('phonetic');
+    // With where it is said after it ("it's in Vienna"): the name still sounds the same.
+    expect(placeMatch('Cafe Meek, Vienna', kaffemik)).toBe('phonetic');
+    expect(placeMatch('Cafe Meek, 1070 Vienna', kaffemik)).toBe('phonetic');
+    expect(placeMatch('Cafe Meek Vienna Austria', kaffemik)).toBe('phonetic');
+    // Another city's is another place, and where alone names none.
+    expect(placeMatch('Cafe Meek, Graz', kaffemik)).toBeUndefined();
+    expect(placeMatch('Cafe Meek, 1010 Vienna', kaffemik)).toBeUndefined();
+    expect(placeMatch('Vienna, Austria', kaffemik)).toBeUndefined();
     // The other way round, and with more of the name after it.
     expect(placeMatch('Figlmüller', { name: 'Figl Müller' })).toBe('phonetic');
     expect(placeMatch('Cafe Meek', { name: 'Kaffemik Rösterei' })).toBe('phonetic');

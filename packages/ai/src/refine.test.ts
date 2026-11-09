@@ -129,6 +129,21 @@ describe('normalizeRefine', () => {
     expect(refined({ location: 'Figlmüller' }, 'ohne Ort', placed).location).toBeUndefined();
   });
 
+  it('takes no company for the place, with its "with" or without', () => {
+    // Observed 2026-11-06: "with Stefan" came back as the location.
+    const placed = { ...DINNER, location: 'Figlmüller' };
+    expect(refined({ location: 'with Stefan' }, 'with Stefan at 8').location).toBeUndefined();
+    expect(refined({ location: 'with Stefan' }, 'with Stefan at 8', placed).location).toBe(
+      'Figlmüller',
+    );
+    expect(refined({ location: 'mit Stefan' }, 'mit Stefan um 8').location).toBeUndefined();
+    expect(refined({ location: 'Stefan' }, 'with Stefan at 8').location).toBeUndefined();
+    // A place of that name, said as one, is a place.
+    expect(refined({ location: 'With Love Café' }, 'at With Love Café').location).toBe(
+      'With Love Café',
+    );
+  });
+
   it('changes nothing but the title on a rename', () => {
     // Review: "call it team dinner" moved a 21:00 dinner to the meal's default.
     const late = { ...DINNER, endTime: '22:00', startTime: '21:00' };
@@ -661,6 +676,89 @@ describe('parseRefine', () => {
         ...CONTEXT,
       }),
     ).rejects.toThrow(ModelUnavailableError);
+  });
+});
+
+describe('parseRefine reads a bare turn without the model', () => {
+  const lunch: RefineDraft = { ...DINNER, location: 'Cafe Meek', title: 'Lunch' };
+
+  it('adds where to the place, or the company to the title, whatever the model would say', async () => {
+    // Observed 2026-11-06: "Vienna" over "Cafe Meek", and "with Stefan" as the location.
+    const model = fakeModel({ ...lunch, location: 'with Stefan' }, { status: 'unavailable' });
+    expect(
+      await parseRefine(model, { draft: lunch, utterance: "It's in Vienna.", ...CONTEXT }),
+    ).toEqual({ kind: 'parsed', prefill: { ...lunch, location: 'Cafe Meek, Vienna' } });
+    expect(
+      await parseRefine(model, { draft: lunch, utterance: 'with Stefan', ...CONTEXT }),
+    ).toEqual({
+      kind: 'parsed',
+      prefill: { ...lunch, title: 'Lunch with Stefan' },
+    });
+    expect(model.prompts).toHaveLength(0);
+  });
+
+  it('leans on what the thread knows of the place', async () => {
+    const model = fakeModel(lunch, { status: 'unavailable' });
+    const taken = {
+      ...lunch,
+      location: 'Hard Rock Cafe, Rotenturmstraße 25, 1010 Vienna, Austria',
+    };
+    expect(
+      await parseRefine(model, {
+        draft: taken,
+        placeSaid: 'Hard Rock Cafe',
+        utterance: 'the one in Berlin',
+        ...CONTEXT,
+      }),
+    ).toMatchObject({ prefill: { location: 'Hard Rock Cafe, Berlin' } });
+    expect(
+      await parseRefine(model, {
+        draft: { ...lunch, location: 'Berlin' },
+        said: ['Conference in Berlin on Friday'],
+        utterance: "it's in Vienna",
+        ...CONTEXT,
+      }),
+    ).toMatchObject({ prefill: { location: 'Vienna' } });
+  });
+
+  it('keeps a note or notifications said with it beside the draft', async () => {
+    const model = fakeModel(lunch, { status: 'unavailable' });
+    expect(
+      await parseRefine(model, {
+        draft: lunch,
+        utterance: "it's in Vienna, remind me 10 minutes before",
+        ...CONTEXT,
+      }),
+    ).toEqual({
+      kind: 'parsed',
+      prefill: { ...lunch, location: 'Cafe Meek, Vienna' },
+      reminders: { add: [10], clear: false, remove: [] },
+    });
+  });
+
+  it('asks the model for a to-do’s place and for any turn that says more', async () => {
+    const model = fakeModel(lunch);
+    // A to-do has no place: the words are its title's, as before.
+    await parseRefine(model, {
+      draft: lunch,
+      guests: false,
+      utterance: "it's in Vienna",
+      ...CONTEXT,
+    });
+    expect(model.prompts).toHaveLength(1);
+    await parseRefine(model, { draft: lunch, utterance: 'in Vienna at 8', ...CONTEXT });
+    await parseRefine(model, { draft: lunch, utterance: 'at the office instead', ...CONTEXT });
+    expect(model.prompts).toHaveLength(3);
+    // Its company is its title's with no model.
+    expect(
+      await parseRefine(model, {
+        draft: lunch,
+        guests: false,
+        utterance: 'with Stefan',
+        ...CONTEXT,
+      }),
+    ).toMatchObject({ prefill: { title: 'Lunch with Stefan' } });
+    expect(model.prompts).toHaveLength(3);
   });
 });
 

@@ -78,7 +78,19 @@ offset is a small grammar and a note is the phrase's own words — and the
 clauses leave the phrase before the model and the grounding see it, so
 "remind me … before" is no to-do cue and "15 minutes before" no length;
 they come back beside the prefill (`notes`, `reminders`), and a turn
-about nothing else calls no model. The thread folds them into the
+about nothing else calls no model. Nor does a turn that is one bare
+phrase leaning on the draft (`bareTurns.ts`): only where its place is
+("it's in Vienna", "the one in Berlin", "es ist in Wien" — "the one" and
+what leads to where, or "in" and a bare name, never a when, a venue with
+its article or a replacement) or only who it is with ("with Stefan",
+"mit Anna"). Where is added to the place as the words said it — the
+thread passes that text (`placeAsSaid`: the words a taken place was
+found for, not its address) and its earlier words — so "Cafe Meek"
+becomes "Cafe Meek, Vienna" and is looked up again, a name and where it
+is; a place that was itself said as a where ("Conference in Berlin")
+gives way to the new one, and a second where takes the first one's
+place. Company joins the title as in a first phrase and invites no one.
+The thread folds them into the
 draft's extras (`draftExtras.ts`: a note on a line of its own, popups
 beside the draft's own, a replacement or a clearing alone) and the form
 flashes the rows. The thread (app-state `draftInvitees.ts`) looks each name

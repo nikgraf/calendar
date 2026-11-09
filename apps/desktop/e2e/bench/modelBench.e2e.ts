@@ -136,6 +136,7 @@ const runTurn = async (
   draft: BenchDraft | undefined,
   text: string,
   today: string,
+  said: ReadonlyArray<string>,
 ): Promise<QuickAddResult | RefineResult> => {
   if (draft === undefined) {
     return parseQuickAdd(model, { phrase: text, referenceDate: today, timeZone: TIME_ZONE });
@@ -149,6 +150,7 @@ const runTurn = async (
     draft: asEvent.prefill,
     guests: draft.item.kind === 'event',
     referenceDate: today,
+    said,
     timeZone: TIME_ZONE,
     utterance: text,
   });
@@ -170,6 +172,8 @@ const runCase = async (
 ): Promise<CaseReport> => {
   const locale = localeOf(benchCase);
   const turns: Array<TurnReport> = [];
+  // The thread's words so far, as heard: what a later turn leans on.
+  const earlier: Array<string> = [];
   let draft: BenchDraft | undefined;
   for (const [index, turn] of benchCase.turns.entries()) {
     const heard = await hear(turn.input, { locale, speech });
@@ -200,7 +204,7 @@ const runCase = async (
     const calls = model.begin();
     const outcome: Outcome = await applyResult(
       draft,
-      await runTurn(model.model, draft, heard.text, today),
+      await runTurn(model.model, draft, heard.text, today, earlier),
       book,
     );
     const ms = Date.now() - started;
@@ -218,7 +222,7 @@ const runCase = async (
       model.begin();
       const transcriptOutcome = await applyResult(
         draft,
-        await runTurn(model.model, draft, turn.input.transcript, today),
+        await runTurn(model.model, draft, turn.input.transcript, today, earlier),
         book,
       );
       const transcriptCheck = check(turn.expect, transcriptOutcome, draft, today);
@@ -239,6 +243,7 @@ const runCase = async (
     if (outcome.kind === 'draft') {
       draft = outcome.draft;
     }
+    earlier.push(heard.text);
   }
   return {
     id: benchCase.id,

@@ -76,9 +76,11 @@ const geo = {
         subtitle: 'Wollzeile 5, 1010 Wien',
         title: 'Figlmüller',
       },
+      // The second one is what a search answers when the words say its street.
       {
         lat: 48.212,
         lng: 16.379,
+        misspellings: ['Figlmüller, Bäckerstraße'],
         name: 'Figlmüller',
         subtitle: 'Bäckerstraße 6, 1010 Wien',
         title: 'Figlmüller Bäckerstrasse',
@@ -98,6 +100,7 @@ const geo = {
 };
 
 const INPUT = '[data-testid="quick-add-input"]';
+const title = `(document.querySelector('input[placeholder="Title"]')?.value ?? '')`;
 const COMMAND_N = `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', metaKey: true }))`;
 const location = `(document.querySelector('input[aria-label="Location"]')?.value ?? '')`;
 const choices = `!!document.querySelector('[data-testid="draft-place-choices"]')`;
@@ -197,5 +200,22 @@ describe('Places from a quick-add phrase', () => {
       input.dispatchEvent(new Event('input', { bubbles: true }));
     })()`);
     await cdp.waitFor(`!${choices}`);
+  });
+
+  it('adds where a later turn says the place is to the place as said, and the company to the title', async () => {
+    const { cdp } = app;
+    await openNew();
+    await phrase('Lunch | +0 | 12:00-13:00 | Figlmüller');
+    await cdp.waitFor(`${location} === 'Figlmüller, Wollzeile 5, 1010 Wien'`);
+    // Said of the place as the words named it, not of the address taken
+    // for it — and read without the model: the fixture's grammar has no
+    // such sentence.
+    await phrase('the one in Bäckerstraße');
+    await cdp.waitFor(`${location} === 'Figlmüller, Bäckerstraße 6, 1010 Wien'`);
+    expect(await cdp.eval<string>(pressed)).toBe('draft-place-pick-0');
+    // Who it is with joins the title; the place stays where it is.
+    await phrase('with Stefan');
+    await cdp.waitFor(`${title} === 'Lunch with Stefan'`);
+    expect(await cdp.eval<string>(location)).toBe('Figlmüller, Bäckerstraße 6, 1010 Wien');
   });
 });

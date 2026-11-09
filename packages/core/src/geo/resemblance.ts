@@ -158,8 +158,9 @@ const soundsLike = (said: ReadonlyArray<string>, name: ReadonlyArray<string>): b
  * text; `words` — each word of the text begins a word of its name or
  * address ("Figlmüller" for Figlmüller Bäckerstrasse, "Wollzeile 5"),
  * one of them a word of its own; `phonetic` — the text sounds like the
- * name's first words; else undefined, and the place is not what the text
- * names.
+ * name's first words, with or without the words that say where the place
+ * is ("Cafe Meek, Vienna"); else undefined, and the place is not what
+ * the text names.
  *
  * A word of its own is one of its name or street (`readAddress`) that
  * the parts saying where it is do not hold too: "Vienna, Austria" names
@@ -198,7 +199,13 @@ export const placeMatch = (text: string, place: PlaceLike): PlaceMatch | undefin
   if (said.every((word) => among(word, own)) && said.some(itsOwn)) {
     return 'words';
   }
-  return soundsLike(said, name) ? 'phonetic' : undefined;
+  // The words that say where it is are not the name's to sound like:
+  // "Cafe Meek, Vienna" is Kaffemik in Vienna as "Cafe Meek" is.
+  const called = said.filter((word) => !around.includes(word));
+  return soundsLike(said, name) ||
+    (called.length > 0 && called.length < said.length && soundsLike(called, name))
+    ? 'phonetic'
+    : undefined;
 };
 
 /** Words shorter than this say nothing of where: "IN", "de", "le" are words of names as often. */
