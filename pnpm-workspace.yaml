@@ -28,8 +28,8 @@ catalog:
   # Expo SDK 58 expects it (`npx expo install --check`). react-dom throws
   # unless it equals react, and a tilde could resolve the two to different
   # patches; a caret once let the lockfile resolve past the renderer (#144).
-  react: 19.3.0
-  react-dom: 19.3.0
+  react: 19.3.1
+  react-dom: 19.3.1
   '@types/react': ~19.3.0
   rrule-temporal: ^2.2.8
   typescript: ^7.0.2
