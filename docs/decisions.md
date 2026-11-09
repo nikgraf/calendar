@@ -1247,6 +1247,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   `trimWhen` takes the when before the company too ("lunch tomorrow with
   Stefan"). Rejected: a prompt rule, an opener as evidence, any "…
   eintragen". Open: "block <when> for <event>", a place before the object.
+- **The place a phrase leads into** (2026-11-09, #304) — Apple's model on
+  the Mac answers a first phrase with a title, so its place was lost or
+  stayed in the title. `placeSaid` reads it from the phrase's end: a kind
+  of place after "at", "in" or "im" ("in the big meeting room", "im Café
+  Prückel"), a name after "at". A copied lead comes off a kind ("at the
+  office"); `placeMatch` reads past one the name does not begin with; a
+  kind alone takes no search hit ("home" was Zara Home). Rejected: a
+  name after "im"/"in" — the model drops "im Regen" like "im Figlmüller"
+  and calls both places — and stripping every lead ("Am Hof"). Open:
+  those names, a place before the company, words cut after the when.
 - **A served model beside Apple's** (2026-10-12, #184)
   — the desktop can answer `generateJson` from a model served over HTTP
   on this Mac: Ollama through its own API (the schema as `format`,
