@@ -58,13 +58,15 @@ where the words prove it one — an article and a kind of place ("at the
 office" is "office", `withoutPlaceLead`; "im Figlmüller" stays, a name
 may begin so). Where the model names none (Apple's on the Mac answers a
 first phrase with a title), an event's is read from the end of the
-phrase's own words (`placeSaid`): a place said by what it is after "at",
-"in" or "im" ("in the big meeting room", "im Café Prückel", "im
-Schweizerhaus"; the kinds are core's `isPlaceKind`) or a name after "at"
-("at Loos Bar"), never a clock, a when or what goes on to something else
-— and it leaves the title. A
-bare name after "in" or "im" is not read: "im Regen" is written like "im
-Figlmüller", and the model drops both and calls both places. A
+phrase's own words (`placeSaid`), after "at", "in" or "im" and only
+where a word says it is a place: its kind (core's `isPlaceKind`), last
+("in the big meeting room", "at Loos Bar", "im Schweizerhaus") or first
+with a venue's name or a room's number ("im Café Prückel", "at room 4")
+— never a clock, a when, a place ruled out or what goes on to something
+else — and it leaves the title. A name no kind goes with is not read
+("at Luigi's", "im Figlmüller"): "at Thanksgiving" and "im Regen" are
+written the same, and the model drops them alike and calls them all
+places. A
 refinement (`refine.ts`) is one more bounded prompt — the draft as a
 line of JSON and the change — merged by the same rules with the draft as
 the anchor (an open "at 8" reads next to the draft's own start); the
@@ -1656,10 +1658,7 @@ gateway carries all of it. Details, limits and the threat model:
   that stands in it, nor "Mountain View" a past place on Amphitheatre
   Pkwy; or the same Kölner Phonetik key as the name's first words, word
   by word or run together — "Cafe Zentral" as dictated is Café Central,
-  "Cafe Meek" Kaffemik. A lead the text begins with and the place's name
-  does not ("im Figlmüller", "at the office", "in der Praxis …") is read
-  past, its article too, and such a match is never `exact`: "Am Hof" the
-  square stays ahead of Hof the town (`pastLead`). And it is nearby (`isNearby`: within 150 km of
+  "Cafe Meek" Kaffemik. And it is nearby (`isNearby`: within 150 km of
   any of the last 90 days' placed events or of the time zone's city, so
   a trip does not make home far; without such events 2,500 km around the
   zone's city, which says little of where the user is) or the text says
@@ -1669,10 +1668,16 @@ gateway carries all of it. Details, limits and the threat model:
   and no more, "Chicago Grill"). A far place the text names is no pin
   for now, never a remembered miss: the region may change; a cached pin
   the rule now refuses gives way to a miss when it is refreshed. A text
-  that says only a kind of place ("home", "the office", "im Büro":
-  `saysOnlyKind`) names no search hit at all — MapKit answers "home" with
-  Zara Home — so the hits are offered and only the user's own past place
-  of that text is taken. A
+  no hit resembles whole may be a venue written with the lead a model
+  copied ("im Figlmüller"): a nearby hit called exactly what follows the
+  lead and its article is taken, after every hit the whole text names
+  (`namedPastLead`; never a town or street, so "am See" is not See in
+  Tyrol, and a name that begins with the lead — "Am Hof" — is read
+  whole). A text that says only a kind of place ("home", "the office",
+  "im Büro": `saysOnlyKind`) names a search hit only by its exact name —
+  MapKit answers "home" with Zara Home — so the hits are offered and the
+  user's own past place of that text is the one taken; the kinds a town
+  has one of ("airport", "Uni") are found as before. A
   picked suggestion is that exact place. `placeCandidates`
   returns the user's own past places the text names first (core
   `rankPastPlaces`: a year of occurrences, matched by the text they were

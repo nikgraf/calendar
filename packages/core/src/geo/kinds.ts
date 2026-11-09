@@ -105,6 +105,25 @@ export const PLACE_KINDS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * The kinds a town has one of, or one that everybody means: said alone
+ * they still name a place a search knows ("airport" is the airport,
+ * "Uni" the university), where "hotel", "office" or "Kino" names the
+ * one the speaker has in mind.
+ */
+export const ONE_IN_TOWN: ReadonlySet<string> = new Set([
+  'airport',
+  'arena',
+  'bahnhof',
+  'flughafen',
+  'oper',
+  'stadion',
+  'stadium',
+  'uni',
+  'universitat',
+  'university',
+]);
+
+/**
  * German builds a place as one word, its kind last ("Konzerthaus",
  * "Hauptbahnhof", "Tanzschule", "Yogastudio"). Never "-raum" ("Zeitraum",
  * "Albtraum"), "-praxis" ("Berufspraxis") or "-hof".

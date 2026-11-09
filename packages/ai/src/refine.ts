@@ -399,12 +399,12 @@ export const normalizeRefine = (
   // "Bob's house" for "make it 8pm and invite Bob", and echoes the
   // draft's own place, which then stays as it is. Without the lead it
   // copied, where the words prove it one ("at the office" is "office").
+  // Where that makes it the title over again ("at the gym" on a draft
+  // titled "Gym"), the model's own text stands.
   const written = meaningfulText(parse.location);
-  const place = placeOf(
-    written === undefined ? undefined : withoutPlaceLead(written),
-    title,
-    utterance,
-  );
+  const place =
+    placeOf(written === undefined ? undefined : withoutPlaceLead(written), title, utterance) ??
+    placeOf(written, title, utterance);
   const location = CLEAR_PLACE.test(text) ? undefined : (place ?? draft.location);
 
   const day = refinedDay(parse, utterance, referenceDate, draft);

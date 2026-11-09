@@ -1570,7 +1570,7 @@ const unplaced = async (phrase: string, title: string = phrase) =>
   (await placed(phrase, title)).location;
 
 describe('parseQuickAdd reads the place from the phrase when the model names none', () => {
-  it('takes a name after "at", whether the model dropped it or kept it in the title', async () => {
+  it('takes a venue said with its kind, whether the model dropped it or kept it in the title', async () => {
     // The bench, Apple's model on the Mac: a title and nothing else.
     expect(await placed('Coffee tomorrow at 10 at Café Prückel', 'Coffee')).toEqual({
       location: 'Café Prückel',
@@ -1589,22 +1589,107 @@ describe('parseQuickAdd reads the place from the phrase when the model names non
       title: 'Coffee',
     });
     expect(await placed('Lunch @ Loos Bar')).toEqual({ location: 'Loos Bar', title: 'Lunch' });
-    expect(await placed("Dinner at Tom's Friday")).toEqual({ location: "Tom's", title: 'Dinner' });
   });
 
-  it('keeps a name whole: its joints, and a first word that is a lead or an article elsewhere', async () => {
+  it("keeps a venue's name whole after its kind, joints and all", async () => {
     expect(await placed('Dinner at Café am Heumarkt Friday')).toEqual({
       location: 'Café am Heumarkt',
       title: 'Dinner',
     });
-    expect(await placed('Meet at Am Hof at 10')).toEqual({ location: 'Am Hof', title: 'Meet' });
-    expect(await placed('Dinner at The Standard on Friday')).toEqual({
-      location: 'The Standard',
-      title: 'Dinner',
+    expect(await placed('Abend im Haus der Musik')).toEqual({
+      location: 'Haus der Musik',
+      title: 'Abend',
     });
-    expect(await placed('Drinks at In Vino Veritas tomorrow')).toEqual({
-      location: 'In Vino Veritas',
-      title: 'Drinks',
+    expect(await placed('Standup at room 4 tomorrow')).toEqual({
+      location: 'room 4',
+      title: 'Standup',
+    });
+  });
+
+  it('reads no name that no kind of place says is one', async () => {
+    // Review (Opus): after "at" a capital is a holiday, a deadline, an
+    // occasion, a person or their employer as often as a venue.
+    for (const [phrase, title] of [
+      ['Visit family at Thanksgiving', 'Visit family'],
+      ['Costume party at Halloween', 'Costume party'],
+      ['Send report at EOD', 'Send report'],
+      ['Call back at COB Friday', 'Call back'],
+      ['Deploy @ EOD', 'Deploy'],
+      ['Lunch at TBD', 'Lunch'],
+      ['Deadline at Month End', 'Deadline'],
+      ['Present roadmap at All Hands Friday', 'Present roadmap'],
+      ['Bring up budget at Standup', 'Bring up budget'],
+      ['Demo at Sprint Review', 'Demo'],
+      ['Call Tom at Microsoft tomorrow', 'Call Tom'],
+      ['Email Anna at Acme', 'Email Anna'],
+      ['Party at Anna', 'Party'],
+      ['Aim at Target', 'Aim'],
+      // A venue all the same: only the model or the lookup can say so.
+      ["Dinner at Luigi's Friday", 'Dinner'],
+      ['Lunch with Sam tomorrow at 12:30 at Mercato', 'Lunch with Sam'],
+      ['Meet at Am Hof at 10', 'Meet'],
+      ['Dinner at The Standard on Friday', 'Dinner'],
+      ['Demo at Visual Studio Live', 'Demo'],
+    ] as const) {
+      expect(await unplaced(phrase, title), phrase).toBeUndefined();
+      expect(await unplaced(phrase), phrase).toBeUndefined();
+    }
+  });
+
+  it('takes a kind first only where it titles a venue: an occasion begins with one too', async () => {
+    for (const phrase of [
+      'Drinks at Office Party',
+      'Ask about grades at Office Hours Tuesday',
+      'Dance at House Party Saturday',
+      'Party at the Bar Mitzvah Saturday',
+      'Shop at Home Depot',
+    ]) {
+      expect(await unplaced(phrase), phrase).toBeUndefined();
+    }
+  });
+
+  it('reads no place that goes on into a when the trim left', async () => {
+    // Review (Opus): German writes "Abend" and "Juni" with a name's capital.
+    for (const [phrase, title] of [
+      ['Treffen im Café Prückel am Abend', 'Treffen'],
+      ['Meeting im Büro am Vormittag', 'Meeting'],
+      ['Mittagessen in der Kantine am Mittag', 'Mittagessen'],
+      ['Kaffee im Café Central im Juni', 'Kaffee'],
+      ['Konzert im Konzerthaus im Mai', 'Konzert'],
+      ['Besprechung im Büro im Sommer', 'Besprechung'],
+      ['Essen im Restaurant Plachutta am Wochenende', 'Essen'],
+      ['Sport im Fitnessstudio am Morgen', 'Sport'],
+      ['Kaffee im Café Central Anfang Juni', 'Kaffee'],
+      ['Meeting im Büro Mittagessen', 'Meeting'],
+      ['Drinks @ Loos Bar am Abend', 'Drinks'],
+      // A count is no part of a name.
+      ['Coffee at Café Prückel 3x weekly', 'Coffee'],
+      ['Run at the Park 5K Saturday', 'Run'],
+    ] as const) {
+      expect(await unplaced(phrase, title), phrase).toBeUndefined();
+      expect(await unplaced(phrase), phrase).toBeUndefined();
+    }
+  });
+
+  it('takes "in die Oper" for where to go, and "is in the office" for a clause', async () => {
+    for (const phrase of [
+      'Mit Anna in die Oper',
+      'Mit den Kindern in das Museum',
+      'Ausflug in den Park',
+      'Mit Lisa in ein Café',
+      'Lunch with whoever is in the office',
+      'Security training in house on Friday',
+      'Mass in church on Sunday',
+    ]) {
+      expect(await unplaced(phrase), phrase).toBeUndefined();
+    }
+    expect(await placed('Mit Anna in der Oper')).toEqual({ location: 'Oper', title: 'Mit Anna' });
+  });
+
+  it('reads past a clock said in words to the place after it', async () => {
+    expect(await placed('Call at half past three at the office')).toEqual({
+      location: 'office',
+      title: 'Call',
     });
   });
 
@@ -1887,8 +1972,7 @@ describe('parseQuickAdd reads the place from the phrase when the model names non
       title: 'Meeting',
     });
     expect(await placed('Lunch in the canteen')).toEqual({ location: 'canteen', title: 'Lunch' });
-    expect(await placed('Mass in church on Sunday')).toEqual({ location: 'church', title: 'Mass' });
-    // German writes every kind with a capital, and "at" leads into a name anyway.
+    // German writes every kind with a capital, and is known by its article.
     expect(await placed('Termin in der Praxis Dr. Huber')).toEqual({
       location: 'Praxis Dr. Huber',
       title: 'Termin',
@@ -1896,10 +1980,6 @@ describe('parseQuickAdd reads the place from the phrase when the model names non
     expect(await placed('Probe in der Tanzschule am Montag')).toEqual({
       location: 'Tanzschule',
       title: 'Probe',
-    });
-    expect(await placed('Demo at Visual Studio Live')).toEqual({
-      location: 'Visual Studio Live',
-      title: 'Demo',
     });
   });
 
@@ -1924,8 +2004,8 @@ describe('parseQuickAdd reads the place from the phrase when the model names non
       title: 'Dinner at Ruby',
     });
     // One day after the place is the event's.
-    expect(await placed("Dinner at Luigi's Tuesday")).toEqual({
-      location: "Luigi's",
+    expect(await placed('Dinner at Loos Bar Tuesday')).toEqual({
+      location: 'Loos Bar',
       title: 'Dinner',
     });
   });
@@ -1987,5 +2067,10 @@ describe('parseQuickAdd reads the place from the phrase when the model names non
     expect(
       await prefillOf({ location: 'Am Hof', title: 'Kaffee' }, 'Kaffee Am Hof um 10'),
     ).toMatchObject({ location: 'Am Hof', title: 'Kaffee' });
+    // Review (Opus): without its lead the place was the title over again,
+    // and went. The model's own text stands, as it did.
+    expect(
+      await prefillOf({ location: 'at the gym', title: 'Gym' }, 'Gym at the gym tomorrow'),
+    ).toMatchObject({ location: 'at the gym', title: 'Gym' });
   });
 });

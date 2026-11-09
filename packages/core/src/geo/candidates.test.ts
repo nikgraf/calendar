@@ -253,29 +253,49 @@ describe('rankFoundPlaces', () => {
     ]);
   });
 
-  it('takes the place a text names past the lead it was written with', () => {
-    const figlmueller = {
-      address: 'Bäckerstraße 6, 1010 Vienna, Austria',
-      lat: 48.2087,
-      lng: 16.3745,
-      name: 'Figlmüller',
-    };
+  it('takes the nearby venue a text names past the lead it was written with', () => {
+    const figlmueller = hit('Figlmüller', 'Bäckerstraße 6, 1010 Vienna, Austria');
     expect(read('im Figlmüller', [weg, figlmueller], events)).toEqual([
       ['Figlmüller', 'words'],
       ['Kaffeeweg', 'search'],
     ]);
-    // A venue whose name begins with a lead stays ahead of a town called the rest.
-    const square = {
-      address: 'Am Hof, 1010 Vienna, Austria',
-      lat: 48.2107,
-      lng: 16.3677,
-      name: 'Am Hof',
+    // Only nearby: the text says nothing of where a far one is.
+    const farGrill = {
+      address: '100 W Randolph St, Chicago, IL 60601, United States',
+      lat: 41.8843,
+      lng: -87.6324,
+      name: 'Chicago Grill',
     };
-    const town = { address: 'Hof, Bavaria, Germany', lat: 50.3135, lng: 11.9128, name: 'Hof' };
-    expect(read('Am Hof', [town, square], events)).toEqual([
-      ['Am Hof', 'exact'],
-      ['Hof', 'words'],
+    expect(read('at Chicago Grill', [farGrill], events)).toEqual([['Chicago Grill', 'search']]);
+    // After every hit the whole text names: "An der Wien" is the theatre.
+    const city = { address: 'Wien, Österreich', lat: 48.2082, lng: 16.3738, name: 'Wien' };
+    const theatre = hit('Theater an der Wien', 'Linke Wienzeile 6, 1060 Vienna, Austria');
+    expect(read('An der Wien', [city, theatre], events)).toEqual([
+      ['Theater an der Wien', 'words'],
+      ['Wien', 'search'],
     ]);
+    const bar = hit('Wien', 'Kettenbrückengasse 1, 1050 Vienna, Austria');
+    expect(read('An der Wien', [bar, theatre], events)).toEqual([
+      ['Theater an der Wien', 'words'],
+      ['Wien', 'words'],
+    ]);
+  });
+
+  it('takes no hit past a lead that main only offered', () => {
+    // Review (Opus): a trade or a person after the lead, and a far town
+    // called what follows it.
+    expect(
+      read('beim Zahnarzt', [hit('Zahnarzt Dr. Müller', 'Neubaugasse 1, 1070 Vienna')], events),
+    ).toEqual([['Zahnarzt Dr. Müller', 'search']]);
+    expect(read('bei Anna', [hit('Café Anna', 'Neubaugasse 2, 1070 Vienna')], events)).toEqual([
+      ['Café Anna', 'search'],
+    ]);
+    const see = { address: 'See, Tyrol, Austria', lat: 47.0855, lng: 10.4667, name: 'See' };
+    expect(read('am See', [see], events)).toEqual([]);
+    const square = hit('Am Hof', 'Am Hof, 1010 Vienna, Austria');
+    const town = { address: 'Hof, Bavaria, Germany', lat: 50.3135, lng: 11.9128, name: 'Hof' };
+    expect(read('Am Hof', [town, square], events)).toEqual([['Am Hof', 'exact']]);
+    expect(read('Am Hof', [town], events)).toEqual([]);
   });
 
   it('takes no search hit for a text that says only a kind of place', () => {
@@ -293,10 +313,24 @@ describe('rankFoundPlaces', () => {
     expect(read('office', [offices], events)).toEqual([
       ['The Vienna Philharmonic - Administrative Offices', 'search'],
     ]);
-    expect(read('the office', [bar], events)).toEqual([['The Office', 'search']]);
     expect(read('at the office', [bar], events)).toEqual([['The Office', 'search']]);
     expect(read('Hotel', [sacher], events)).toEqual([['Hotel Sacher Vienna', 'search']]);
     expect(read('im Büro', [buero], events)).toEqual([['Büro Konzept', 'search']]);
+    // One called exactly that is still the one, as it was: a bar "The
+    // Office", the city of Halle.
+    expect(read('the office', [bar], events)).toEqual([['The Office', 'exact']]);
+    const halle = { address: 'Halle, Germany', lat: 51.4828, lng: 11.9697, name: 'Halle' };
+    expect(read('Halle', [halle], events)).toEqual([['Halle', 'exact']]);
+    // A kind a town has one of names it, as it did (review, Opus).
+    expect(
+      read('airport', [hit('Vienna International Airport', '1300 Schwechat, Austria')], events),
+    ).toEqual([['Vienna International Airport', 'words']]);
+    expect(read('Flughafen', [hit('Flughafen Wien', '1300 Schwechat, Austria')], events)).toEqual([
+      ['Flughafen Wien', 'words'],
+    ]);
+    expect(
+      read('Uni', [hit('Universität Wien', 'Universitätsring 1, 1010 Vienna')], events),
+    ).toEqual([['Universität Wien', 'words']]);
     // A name beside the kind is a place to find, and a compound may be one.
     expect(read('Hotel Sacher', [sacher], events)).toEqual([['Hotel Sacher Vienna', 'words']]);
     expect(

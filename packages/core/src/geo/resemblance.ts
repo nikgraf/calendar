@@ -1,5 +1,5 @@
 import { foldSearchText } from '../search/match.ts';
-import { PLACE_KINDS } from './kinds.ts';
+import { ONE_IN_TOWN, PLACE_KINDS } from './kinds.ts';
 import { koelnerKey } from './phonetic.ts';
 
 /**
@@ -167,7 +167,8 @@ const soundsLike = (said: ReadonlyArray<string>, name: ReadonlyArray<string>): b
  * the city, not a place that stands in it — every address there ends in
  * those words, and so do names like "Hotel Sacher Vienna".
  */
-const wordsMatch = (said: ReadonlyArray<string>, place: PlaceLike): PlaceMatch | undefined => {
+export const placeMatch = (text: string, place: PlaceLike): PlaceMatch | undefined => {
+  const said = wordsOf(text);
   if (said.length === 0) {
     return undefined;
   }
@@ -203,8 +204,8 @@ const wordsMatch = (said: ReadonlyArray<string>, place: PlaceLike): PlaceMatch |
 
 /**
  * The words that lead into a place and get written down with it: a
- * model asked for the place copies them ("im Figlmüller", "at the
- * office", "in der Praxis Dr. Huber"), and so does a person typing.
+ * model asked for the place copies them ("im Figlmüller", "at Loos
+ * Bar"), and so does a person typing.
  */
 const LEAD_INS = new Set([
   'am',
@@ -225,46 +226,35 @@ const LEAD_INS = new Set([
 const LEAD_ARTICLES = new Set(['dem', 'den', 'der', 'einem', 'einer', 'the']);
 
 /**
- * The text's words past the lead they begin with, and its article — but
- * never a word the place's own name begins with: "Am Hof", "In der
- * Burg", "At Home", "Zum Schwarzen Kameel" and "Chez Panisse" are names,
- * and only the place can tell them from "am Graben" and "im Figlmüller".
- * Undefined where there is no lead to read past, or nothing after it.
+ * Whether a place is called exactly what a text says past the lead it
+ * begins with, and its article: "im Figlmüller" is Figlmüller, which no
+ * reading of the whole text finds (`placeMatch`: no place is called "im
+ * Figlmüller"). Only the whole name — "beim Zahnarzt" names no "Zahnarzt
+ * Dr. Müller", nor "bei Anna" a Café Anna — and never a town or a street
+ * named in its own address: "am See" is not See in Tyrol, nor "An der
+ * Wien" the city. A name that begins with the lead is read whole instead
+ * ("Am Hof", "In der Burg", "At Home", "Zum Schwarzen Kameel").
  */
-const pastLead = (
-  said: ReadonlyArray<string>,
-  place: PlaceLike,
-): ReadonlyArray<string> | undefined => {
-  const [first] = wordsOf(place.name ?? '');
+export const namedPastLead = (text: string, place: PlaceLike): boolean => {
+  const said = wordsOf(text);
+  const name = wordsOf(place.name ?? '');
   const [lead, next] = said;
-  if (lead === undefined || !LEAD_INS.has(lead) || lead === first) {
-    return undefined;
+  if (lead === undefined || !LEAD_INS.has(lead) || lead === name[0]) {
+    return false;
   }
-  const rest = said.slice(next !== undefined && LEAD_ARTICLES.has(next) && next !== first ? 2 : 1);
-  return rest.length === 0 ? undefined : rest;
+  const rest = said.slice(
+    next !== undefined && LEAD_ARTICLES.has(next) && next !== name[0] ? 2 : 1,
+  );
+  return rest.length > 0 && sameWords(rest, name) && !readAddress(place, rest).named;
 };
 
 /**
- * How a place resembles a text (`wordsMatch`), the whole text first and
- * then its words past a lead the place's name does not begin with
- * (`pastLead`): "im Figlmüller" is Figlmüller. Read that way the name is
- * the text's place words, not the text, so the match is never `exact`: a
- * place called what the text says whole ("Am Hof", the square) stays
- * ahead of one called the rest (Hof, the town).
+ * The kinds of place said of one's own, as `wordsOf` reads them (short
+ * forms and all): every kind but the ones a town has one of.
  */
-export const placeMatch = (text: string, place: PlaceLike): PlaceMatch | undefined => {
-  const said = wordsOf(text);
-  const whole = wordsMatch(said, place);
-  if (whole === 'exact' || whole === 'words') {
-    return whole;
-  }
-  const past = pastLead(said, place);
-  const match = past === undefined ? undefined : wordsMatch(past, place);
-  return match === 'exact' ? 'words' : (match ?? whole);
-};
-
-/** The kinds of place as `wordsOf` reads them, short forms and all. */
-const KINDS = new Set([...PLACE_KINDS].flatMap((kind) => wordsOf(kind)));
+const KINDS = new Set(
+  [...PLACE_KINDS].filter((kind) => !ONE_IN_TOWN.has(kind)).flatMap((kind) => wordsOf(kind)),
+);
 /** Words said before a kind that name nothing: "the office", "my office", "ein Café". */
 const DETERMINERS = new Set([
   'a',
@@ -285,10 +275,13 @@ const DETERMINERS = new Set([
 
 /**
  * Whether a text says only a kind of place — "home", "the office", "im
- * Büro", "Hotel" — and so names no one place a search could find: MapKit
- * answers "home" with Zara Home and "office" with the Philharmonic's
- * administrative offices, each resembling the word. Such a place is the
- * user's own, a past place written that way, or none.
+ * Büro", "the hotel" — and so names no one place a search could find:
+ * the speaker means one they know, and MapKit answers "home" with Zara
+ * Home and "office" with the Philharmonic's administrative offices, each
+ * resembling the word. Such a place is the user's own past place written
+ * that way, one called exactly that, or none. Not the kinds a town has
+ * one of ("airport", "Flughafen", "Uni": `ONE_IN_TOWN`), which the
+ * search knows.
  */
 export const saysOnlyKind = (text: string): boolean => {
   const whole = wordsOf(text);
@@ -315,10 +308,7 @@ const CODE = /\b[A-Z]{2,3}\b/g;
  * name ("Chicago Grill", said in Vienna).
  */
 export const saysWhere = (text: string, place: PlaceLike): boolean => {
-  // Past a lead the name does not begin with, as the match reads it: "at
-  // Chicago Grill" says the name and nothing beside it.
-  const whole = wordsOf(text);
-  const said = pastLead(whole, place) ?? whole;
+  const said = wordsOf(text);
   const { named, street, where } = readAddress(place, said);
   if (!named && sameWords(said, wordsOf(place.name ?? ''))) {
     return false;

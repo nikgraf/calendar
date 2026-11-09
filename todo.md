@@ -173,16 +173,17 @@ the served model (#184) and slot proposals (#185) are in
       (`@react-native-ai/apple` takes audio and a locale); bench cases
       for all of it: none leans on the turn before, none asks MapKit, and
       the Mac's model titles a phrase the iPhone's echoes; a first
-      phrase's bare name after "im" or "in" is not read ("… um 10 im
-      Figlmüller", "Dinner in Vienna": written like "im Regen" and "in
-      German", and Apple's model drops and names all four alike) — a
-      possible place the lookup confirms (a past place, or a nearby hit
-      called exactly that) could; nor a place before the company ("at
-      Loos Bar with Jo") or a name with a weekday in it without the
-      model ("Ruby Tuesday"), and the Mac's model cuts a title at its
-      when, so what follows and is no place is lost ("Laufen morgen um 7
-      im Regen" is "Laufen"); a room said without a kind word last
-      ("in room 4") waits on telling it from "in Office 365".
+      phrase's name that no kind of place goes with is not read ("at
+      Luigi's", "… um 10 im Figlmüller", "Dinner in Vienna": written
+      like "at Thanksgiving", "im Regen" and "in German", and Apple's
+      model drops and names them all alike) — a possible place the
+      lookup confirms (a past place, or a nearby hit called exactly
+      that) could; nor a place before the company ("at Loos Bar with
+      Jo"), one with its when after it in German ("im Café Prückel am
+      Abend": the trim leaves "am Abend") or a name with a weekday in it
+      without the model ("Ruby Tuesday"), and the Mac's model cuts a
+      title at its when, so what follows and is no place is lost
+      ("Laufen morgen um 7 im Regen" is "Laufen").
 - [ ] Gemma 4 on iOS — opt-in download via llama.rn (JSON schema →
       grammar maps onto `generateJson`), load on demand, unload on
       background; only if the bench shows the model is the bottleneck.

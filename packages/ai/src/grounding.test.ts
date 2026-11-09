@@ -2065,7 +2065,11 @@ describe('placeSaid', () => {
     expect(placeSaid('Kaffee morgen um 15 Uhr im Café Prückel')).toBe('Café Prückel');
     expect(placeSaid('Termin in der Praxis Dr. Huber')).toBe('Praxis Dr. Huber');
     expect(placeSaid('Abend im Haus der Musik')).toBe('Haus der Musik');
-    expect(placeSaid('Flight at Terminal 3')).toBe('Terminal 3');
+    // What tells a room from the next, after its kind.
+    expect(placeSaid('Standup at room 4')).toBe('room 4');
+    expect(placeSaid('Sitzung im Saal 2')).toBe('Saal 2');
+    expect(placeSaid('Keynote at Hall B')).toBe('Hall B');
+    expect(placeSaid('Termin im Zimmer 12a')).toBe('Zimmer 12a');
     // Marks around it are not its own.
     expect(placeSaid('Dinner at "Loos Bar".')).toBe('Loos Bar');
   });
@@ -2110,7 +2114,8 @@ describe('placeSaid', () => {
   });
 
   it('holds a period that closes a short form, and stops at one that ends a sentence', () => {
-    expect(placeSaid('Mass at St. Stephen')).toBe('St. Stephen');
+    expect(placeSaid('Kontrolle in der Praxis Dr. Huber')).toBe('Praxis Dr. Huber');
+    expect(placeSaid('Mass at Café St. Marx')).toBe('Café St. Marx');
     expect(placeSaid('Dinner at Loos Bar. Bring Wine')).toBeUndefined();
     expect(placeSaid('Dinner at Loos Bar, Vienna')).toBeUndefined();
   });

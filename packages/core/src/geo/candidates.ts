@@ -3,6 +3,7 @@ import { GeoLocation } from '../types.ts';
 import { normalizeLocationKey, type PlaceSuggestion } from './location.ts';
 import { distanceMeters, type GeoPoint, type GeoRegion, isNearby } from './regions.ts';
 import {
+  namedPastLead,
   type PlaceLike,
   type PlaceMatch,
   placeMatch,
@@ -44,6 +45,8 @@ export interface PastPlace {
 export const PLACE_CANDIDATE_LIMIT = 5;
 
 const RANK: Record<PlaceMatch, number> = { exact: 0, phonetic: 2, words: 1 };
+/** A name read past the lead it was written with: after every reading of the whole text. */
+const PAST_LEAD_RANK = 2.5;
 
 /** The better of two matches, if any. */
 const best = (a: PlaceMatch | undefined, b: PlaceMatch | undefined): PlaceMatch | undefined =>
@@ -56,7 +59,9 @@ const best = (a: PlaceMatch | undefined, b: PlaceMatch | undefined): PlaceMatch 
  * address": the name is what it is, the address where (`placeMatch`), so
  * "Vienna, Austria" names no past place that merely stands there. A text
  * that does not begin with MapKit's name (an address typed or kept as
- * said) is all address beside that name.
+ * said) is all address beside that name. A text none of that reads may
+ * still be the place written with the lead a model copied ("im
+ * Figlmüller" for a past "Figlmüller": `namedPastLead`).
  */
 export const pastPlaceMatch = (text: string, geo: GeoLocation): PlaceMatch | undefined => {
   if (placeMatch(text, { name: geo.source }) === 'exact') {
@@ -65,12 +70,20 @@ export const pastPlaceMatch = (text: string, geo: GeoLocation): PlaceMatch | und
   const [written = '', ...rest] = geo.source.split(',');
   const address = rest.join(',');
   const named = geo.name !== undefined && placeMatch(written, { name: geo.name }) === 'exact';
-  return best(
+  const whole = best(
     placeMatch(text, { address, name: written }),
     geo.name === undefined
       ? undefined
       : placeMatch(text, { address: named ? address : geo.source, name: geo.name }),
   );
+  if (whole !== undefined) {
+    return whole;
+  }
+  return [geo.source, written, geo.name].some(
+    (name) => name !== undefined && namedPastLead(text, { name }),
+  )
+    ? 'words'
+    : undefined;
 };
 
 /**
@@ -161,8 +174,10 @@ const FAR_OFFERS = 1;
  * rest is `search`, offered and never taken: the nearby hits that do not
  * resemble the text, then one far namesake. Any other far hit is no
  * one's guess and is left out. A text that says only a kind of place
- * ("home", "the office": `saysOnlyKind`) names none of them, whatever
- * resembles it: all are offered.
+ * ("home", "the office": `saysOnlyKind`) names one only by its exact
+ * name, whatever else resembles it. A text no hit resembles whole may
+ * be a venue written with its lead ("im Figlmüller": `namedPastLead`):
+ * it is named when nearby, after the hits the whole text names.
  */
 export const rankFoundPlaces = <Place extends FoundPlace>(
   text: string,
@@ -173,10 +188,24 @@ export const rankFoundPlaces = <Place extends FoundPlace>(
   const read = places.map((place, index) => {
     const match = placeMatch(text, place);
     const near = isNearby(region, place);
-    const named =
-      !kindOnly && match !== undefined && (near || saysWhere(text, place)) ? match : undefined;
-    // Named first, by how well; then the nearby rest; then far namesakes.
-    const order = named !== undefined ? RANK[named] : near ? 3 : match !== undefined ? 4 : 5;
+    const whole =
+      match !== undefined && (!kindOnly || match === 'exact') && (near || saysWhere(text, place))
+        ? match
+        : undefined;
+    const pastLead = whole === undefined && !kindOnly && near && namedPastLead(text, place);
+    const named: PlaceMatch | undefined = whole ?? (pastLead ? 'words' : undefined);
+    // Named first, by how well, a name read past its lead last among
+    // them; then the nearby rest; then far namesakes.
+    const order =
+      whole !== undefined
+        ? RANK[whole]
+        : pastLead
+          ? PAST_LEAD_RANK
+          : near
+            ? 3
+            : match !== undefined || namedPastLead(text, place)
+              ? 4
+              : 5;
     return { index, named, order, place };
   });
   const offered = read.filter((entry) => entry.order === 4).slice(0, FAR_OFFERS);

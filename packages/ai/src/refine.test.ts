@@ -145,6 +145,18 @@ describe('normalizeRefine', () => {
     );
   });
 
+  it('keeps the model’s text where the place without its lead is the title over again', () => {
+    // Review (Opus): "at the gym instead" on a draft titled "Gym" lost its place.
+    const gym = { ...DINNER, title: 'Gym' };
+    expect(refined({ location: 'at the gym' }, 'at the gym instead', gym).location).toBe(
+      'at the gym',
+    );
+    const office = { ...DINNER, title: 'Office' };
+    expect(refined({ location: 'in the office' }, 'in the office', office).location).toBe(
+      'in the office',
+    );
+  });
+
   it('leaves a lead that may be the name’s own to the lookup', () => {
     // Real venues that begin with a lead, and a name the words cannot
     // tell from one: the place's own name decides (`placeMatch`).

@@ -685,6 +685,12 @@ const titleOf = ({
   return placed && phrase !== undefined ? capitalized(placed) : placed;
 };
 
+/** A title and the place it was made around. */
+interface PlacedTitle {
+  readonly location: string | undefined;
+  readonly title: string | undefined;
+}
+
 /**
  * The title and the place together, since each is read with the other:
  * the place's words stay out of the title, and a place that is also the
@@ -712,21 +718,29 @@ const placedTitle = ({
   readonly phrase: string | undefined;
   readonly referenceDate: string;
   readonly todo: boolean;
-}): { readonly location: string | undefined; readonly title: string | undefined } => {
+}): PlacedTitle => {
   const written = meaningfulText(parse.location);
-  const place = written === undefined || phrase === undefined ? written : withoutPlaceLead(written);
-  const dayAsPlace = madeOfTheDay(place, phrase, modelDate, referenceDate);
-  const held = dayAsPlace ? undefined : place;
-  const title = titleOf({ held, named, phrase, place, todo });
-  const location = dayAsPlace || !title ? undefined : placeOf(place, title, phrase);
+  const unled = written === undefined || phrase === undefined ? written : withoutPlaceLead(written);
+  /** The title around a place, and the place where it stands (`placeOf`). */
+  const around = (place: string | undefined): PlacedTitle => {
+    const dayAsPlace = madeOfTheDay(place, phrase, modelDate, referenceDate);
+    const title = titleOf({ held: dayAsPlace ? undefined : place, named, phrase, place, todo });
+    return {
+      location: dayAsPlace || !title ? undefined : placeOf(place, title, phrase),
+      title,
+    };
+  };
+  const first = around(unled);
+  // Without its lead a place may be the title over again ("at the gym"
+  // for "Gym at the gym"): the model's own text stands then.
+  const { location, title } =
+    first.location === undefined && unled !== written ? around(written) : first;
   if (location !== undefined || phrase === undefined || todo || !title) {
     return { location, title };
   }
   const said = placeSaid(titleWithoutInvitees(phrase, invite), { phrase });
-  const around =
-    said === undefined ? undefined : titleOf({ held: said, named, phrase, place: said, todo });
-  const read = said === undefined || !around ? undefined : placeOf(said, around, phrase);
-  return read === undefined ? { location, title } : { location: read, title: around };
+  const read = said === undefined ? undefined : around(said);
+  return read?.location === undefined ? { location, title } : read;
 };
 
 /** A to-do: its day, and its time when one was said. No end, no repeat. */

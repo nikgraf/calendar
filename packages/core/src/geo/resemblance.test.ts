@@ -11,7 +11,7 @@ import {
   TIME_ZONE_NEAR_METERS,
   TIME_ZONE_REGION_RADIUS_METERS,
 } from './regions.ts';
-import { placeMatch, sameAddress, saysOnlyKind, saysWhere } from './resemblance.ts';
+import { namedPastLead, placeMatch, sameAddress, saysOnlyKind, saysWhere } from './resemblance.ts';
 
 describe('koelnerKey', () => {
   it('gives words that sound alike the same key', () => {
@@ -111,34 +111,7 @@ describe('placeMatch', () => {
     expect(placeMatch('Café', { address: '', name: '' })).toBeUndefined();
   });
 
-  it('reads past the lead a place was written with', () => {
-    // The bench: a model asked for the place copies the words that led
-    // into it, and no place is called "im Figlmüller".
-    const figlmueller = { address: 'Bäckerstraße 6, 1010 Vienna, Austria', name: 'Figlmüller' };
-    expect(placeMatch('im Figlmüller', figlmueller)).toBe('words');
-    expect(placeMatch('beim Figlmüller', figlmueller)).toBe('words');
-    expect(placeMatch('at Figlmüller', figlmueller)).toBe('words');
-    // The name is the text's place words, not the text: never exact.
-    expect(placeMatch('Figlmüller', figlmueller)).toBe('exact');
-    // Its article too, the dative ones as well.
-    expect(placeMatch('at the office', { name: 'Office Depot' })).toBe('words');
-    expect(placeMatch('in der Praxis Dr. Huber', { name: 'Praxis Dr. Huber' })).toBe('words');
-    expect(placeMatch('in dem Café Central', { name: 'Café Central' })).toBe('words');
-    // By sound past it, as without it.
-    expect(placeMatch('im Cafe Zentral', { name: 'Café Central' })).toBe('phonetic');
-    expect(
-      placeMatch('at Cafe Meek', {
-        address: 'Zollergasse 5, 1070 Vienna, Austria',
-        name: 'Kaffemik',
-      }),
-    ).toBe('phonetic');
-    // A street takes a lead as a venue does.
-    expect(
-      placeMatch('am Graben 12', { address: 'Graben 12, 1010 Vienna, Austria', name: 'Graben 12' }),
-    ).toBe('words');
-  });
-
-  it('keeps a lead that the place’s own name begins with', () => {
+  it('reads the whole text, lead and all: a name may begin with one', () => {
     // Real venues: the name is the whole text.
     for (const name of [
       'Am Hof',
@@ -154,32 +127,57 @@ describe('placeMatch', () => {
       expect(placeMatch(name.toLowerCase(), { name }), name).toBe('exact');
     }
     expect(placeMatch('in vino', { name: 'In Vino Veritas' })).toBe('words');
-    // An article that is the name's stays with it ("The Office", a bar).
-    expect(placeMatch('at the office', { name: 'The Office' })).toBe('words');
-    expect(placeMatch('the office', { name: 'The Office' })).toBe('exact');
-    // A place called the rest resembles the text, behind one called the whole.
-    expect(placeMatch('Am Hof', { address: 'Hof, Bavaria, Germany', name: 'Hof' })).toBe('words');
+    // No place is called "im Figlmüller": the whole text names none.
+    const figlmueller = { address: 'Bäckerstraße 6, 1010 Vienna, Austria', name: 'Figlmüller' };
+    expect(placeMatch('im Figlmüller', figlmueller)).toBeUndefined();
+    expect(placeMatch('Am Hof', { address: 'Hof, Bavaria, Germany', name: 'Hof' })).toBeUndefined();
   });
 
-  it('reads past a lead only into what the text then names', () => {
+  it('knows a venue called what the text says past its lead', () => {
+    // The bench: a model asked for the place copies the words that led
+    // into it.
     const figlmueller = { address: 'Bäckerstraße 6, 1010 Vienna, Austria', name: 'Figlmüller' };
-    // Nothing after the lead, or nothing of this place.
-    expect(placeMatch('im', figlmueller)).toBeUndefined();
-    expect(placeMatch('in der', figlmueller)).toBeUndefined();
-    expect(placeMatch('im Kino', figlmueller)).toBeUndefined();
-    expect(placeMatch('at the office', figlmueller)).toBeUndefined();
-    // Only where it is: the city, not a place that stands in it.
-    expect(placeMatch('in Vienna', figlmueller)).toBeUndefined();
-    expect(placeMatch('in Wien', { address: 'Wien, Österreich', name: 'Wien' })).toBe('words');
-    // A number past the lead is still the building's own.
+    for (const text of ['im Figlmüller', 'beim Figlmüller', 'at Figlmüller', 'in dem Figlmüller']) {
+      expect(namedPastLead(text, figlmueller), text).toBe(true);
+    }
+    expect(namedPastLead('at the Loos Bar', { name: 'Loos Bar' })).toBe(true);
+    expect(namedPastLead('in der Praxis Dr. Huber', { name: 'Praxis Dr. Huber' })).toBe(true);
+    // An article that is the name's stays with it.
+    expect(namedPastLead('at the Standard', { name: 'The Standard' })).toBe(true);
+    // No lead, nothing after it, or a name that begins with it (read whole).
+    expect(namedPastLead('Figlmüller', figlmueller)).toBe(false);
+    expect(namedPastLead('im', figlmueller)).toBe(false);
+    expect(namedPastLead('in der', figlmueller)).toBe(false);
+    expect(namedPastLead('Am Hof', { name: 'Am Hof' })).toBe(false);
+    expect(namedPastLead('Café im Figlmüller', figlmueller)).toBe(false);
+  });
+
+  it('reads past a lead only into the whole name of a venue', () => {
+    // Review (Opus): each of these took a hit that main only offered.
+    expect(namedPastLead('beim Zahnarzt', { name: 'Zahnarzt Dr. Müller' })).toBe(false);
+    expect(namedPastLead('at the dentist', { name: 'Dentist Dr. Smith' })).toBe(false);
+    expect(namedPastLead('zum Arzt', { name: 'Arzt Dr. Huber' })).toBe(false);
+    expect(namedPastLead('beim Friseur', { name: 'Friseur Klier' })).toBe(false);
+    expect(namedPastLead('bei Anna', { name: 'Café Anna' })).toBe(false);
     expect(
-      placeMatch('in der Wollzeile 6', {
-        address: 'Wollzeile 5, 1010 Vienna',
-        name: 'Wollzeile 5',
+      namedPastLead('im Figlmüller', {
+        address: 'Bäckerstraße 6, 1010 Vienna, Austria',
+        name: 'Figlmüller Bäckerstrasse',
       }),
-    ).toBeUndefined();
-    // No lead in the middle of a text is read past.
-    expect(placeMatch('Café im Figlmüller', figlmueller)).toBeUndefined();
+    ).toBe(false);
+    // A town or a street named in its own address is no venue.
+    expect(namedPastLead('am See', { address: 'See, Tyrol, Austria', name: 'See' })).toBe(false);
+    expect(namedPastLead('am Berg', { address: 'Berg, Bavaria, Germany', name: 'Berg' })).toBe(
+      false,
+    );
+    expect(namedPastLead('im Wald', { address: '8636 Wald, Switzerland', name: 'Wald' })).toBe(
+      false,
+    );
+    expect(namedPastLead('An der Wien', { address: 'Wien, Österreich', name: 'Wien' })).toBe(false);
+    expect(namedPastLead('Am Hof', { address: 'Hof, Bavaria, Germany', name: 'Hof' })).toBe(false);
+    expect(
+      namedPastLead('am Graben', { address: 'Graben, 1010 Vienna, Austria', name: 'Graben' }),
+    ).toBe(false);
   });
 
   it('hears a name dictation cut into words it knows', () => {
@@ -350,13 +348,6 @@ describe('placeMatch', () => {
     };
     expect(saysWhere('Chicago Grill', grill)).toBe(false);
     expect(saysWhere('Chicago Grill, Chicago', grill)).toBe(true);
-    // Past the lead it was written with, the same: the name and nothing beside it.
-    expect(saysWhere('at Chicago Grill', grill)).toBe(false);
-    expect(saysWhere('at the Chicago Grill', grill)).toBe(false);
-    expect(saysWhere('at Chicago Grill, Chicago', grill)).toBe(true);
-    expect(saysWhere('im Hotel Adlon Berlin', adlon)).toBe(true);
-    expect(saysWhere('im Hotel Adlon', adlon)).toBe(false);
-    expect(saysWhere('in Berlin', { address: 'Berlin, Germany', name: 'Berlin' })).toBe(true);
     expect(saysWhere('Hallstatt', { address: '4830 Hallstatt, Austria', name: 'Hallstatt' })).toBe(
       true,
     );
@@ -372,6 +363,8 @@ describe('placeMatch', () => {
       'im Büro',
       'in der Küche',
       'Hotel',
+      'the hotel',
+      'Kino',
       'ein Café',
       // Read as the short form an address writes ("Ctr").
       'the centre',
@@ -395,6 +388,13 @@ describe('placeMatch', () => {
       'Konzerthaus',
       'Schweizerhaus',
       'Hauptbahnhof',
+      // A town has one, and the search knows it.
+      'airport',
+      'the airport',
+      'Flughafen',
+      'am Bahnhof',
+      'Uni',
+      'the stadium',
       '',
       'the',
       'im',
