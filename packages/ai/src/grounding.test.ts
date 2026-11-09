@@ -1689,6 +1689,22 @@ describe('withoutCommand', () => {
     expect(withoutCommand('Plan event for lunch', 'Plan event for lunch tomorrow')).toBe(
       'Plan event for lunch',
     );
+    // Codex: the title's own tail goes as the command's does, so the when can come off after it.
+    expect(
+      withoutCommand('Event for lunch tomorrow please', 'Add an event for lunch tomorrow please'),
+    ).toBe('lunch tomorrow');
+    expect(
+      withoutCommand(
+        'Event for lunch on the calendar',
+        'Add an event for lunch on the calendar tomorrow',
+      ),
+    ).toBe('lunch');
+    expect(
+      withoutCommand(
+        'Termin für Mittagessen mit Stefan ein',
+        'Trag mir einen Termin für Mittagessen mit Stefan ein',
+      ),
+    ).toBe('Mittagessen mit Stefan');
   });
 });
 
@@ -1760,6 +1776,18 @@ describe('trimWhen', () => {
     }
     expect(trimWhen('Dinner at Ruby Tuesday with Tom', 'Ruby Tuesday')).toBe(
       'Dinner at Ruby Tuesday with Tom',
+    );
+    // Codex: a "with" inside a quoted name is the name's, not the company.
+    for (const title of [
+      'Read "Tuesdays with Morrie"',
+      'Read “Tuesdays with Morrie”',
+      "Watch 'Friday with Fran'",
+      'Lies „Dienstags mit Morrie“',
+    ]) {
+      expect(trimWhen(title), title).toBe(title);
+    }
+    expect(trimWhen('Watch "Friday Night Lights" tomorrow with Tom')).toBe(
+      'Watch "Friday Night Lights" with Tom',
     );
   });
 

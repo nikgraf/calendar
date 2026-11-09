@@ -1087,6 +1087,15 @@ describe('parseQuickAdd titles', () => {
         )
       ).title,
     ).toBe('Lunch with Stefan');
+    // Codex: the closing "please" such a title kept goes too, and the when after it.
+    expect(
+      (
+        await prefillOf(
+          { title: 'Event for lunch tomorrow please' },
+          'Add an event for lunch tomorrow please',
+        )
+      ).title,
+    ).toBe('Lunch');
     expect(
       (
         await prefillOf(

@@ -1914,6 +1914,25 @@ export const saysOnlyWhen = (text: string): boolean => whenless(text).onlyWhen;
 
 /** Who the event is with: the one word in the middle a when is read before. */
 const COMPANY = new Set(['mit', 'with']);
+/** A quote around a name said as it is, English or German ("Tuesdays with Morrie", „Dienstags mit Morrie“). */
+const QUOTE_OPENS = /^["'“‘„‚«]/u;
+const QUOTE_CLOSES = /["'”’“‘»][,.;:!?]*$/u;
+
+/** Where the company starts: its word after the title's first two, outside a quoted name; -1 for none. */
+const companyAt = (tokens: ReadonlyArray<RegExpExecArray>): number => {
+  let quoted = false;
+  for (const [at, [token]] of tokens.entries()) {
+    if (!quoted && at > 1 && COMPANY.has(bare(words(token)))) {
+      return at;
+    }
+    if (!quoted) {
+      quoted = QUOTE_OPENS.test(token) && !(token.length > 1 && QUOTE_CLOSES.test(token));
+    } else if (QUOTE_CLOSES.test(token)) {
+      quoted = false;
+    }
+  }
+  return -1;
+};
 
 /**
  * The title without the when said right before its company ("lunch
@@ -1921,11 +1940,13 @@ const COMPANY = new Set(['mit', 'with']);
  * Huber" is "Termin mit Dr. Huber"): speech puts the day there as often
  * as last. The words before the company end as a title does, so the same
  * when comes off them and the same one stays ("Black Friday with
- * family", "Vacation until Friday with Anna", "Room 9 with Tom").
+ * family", "Vacation until Friday with Anna", "Room 9 with Tom"). A
+ * "with" inside a quoted name is the name's ('Read "Tuesdays with
+ * Morrie"').
  */
 const withoutWhenBeforeCompany = (title: string, place?: string, phrase?: string): string => {
   const tokens = [...title.matchAll(/\S+/g)];
-  const at = tokens.findIndex(([token], index) => index > 1 && COMPANY.has(bare(words(token))));
+  const at = companyAt(tokens);
   if (at === -1 || at === tokens.length - 1) {
     return title;
   }
@@ -2817,34 +2838,45 @@ const namedBy = (
  * with Stefan" for "At an event for lunch tomorrow with Stefan", the
  * Mac's answer to the iPhone recording). The phrase is a command by its
  * own evidence, and the title opens with the noun and its link as the
- * phrase said them.
+ * phrase said them. The title's tail goes as the command's does ("…
+ * please", "… on the calendar", the particle the phrase ended with), so
+ * the when can come off after it.
  */
 const pastPlaceholder = (
   tokens: ReadonlyArray<Token>,
   spoken: Spoken,
   todo: boolean,
 ): ReadonlyArray<Token> | undefined => {
-  const { afterVerb, tail, verb } = spoken;
+  const { afterVerb, frame, tail, verb } = spoken;
   if (verb === undefined) {
     return undefined;
   }
-  const body = endsWithParticle(tail.tokens, verb, afterVerb)
-    ? tail.tokens.slice(0, -1)
-    : tail.tokens;
+  const particle = endsWithParticle(tail.tokens, verb, afterVerb);
+  const body = particle ? tail.tokens.slice(0, -1) : tail.tokens;
   const object = objectAt(body, afterVerb, { afterWish: false });
   const commands = todo ? object.todo : verb.alone || object.held || closedBy(spoken);
   if (!commands || !object.linked || object.verbatim) {
     return undefined;
   }
+  const closed = withoutTail(tokens, {
+    commanded: true,
+    framed: !todo && (frame.ask || frame.wish),
+    infinitives: !todo,
+    particles: verb.particles,
+  }).tokens;
+  const mine =
+    particle && closed.length > 1 && verb.particles.includes(closed.at(-1)!.plain)
+      ? closed.slice(0, -1)
+      : closed;
   // Whom it is for, the article, the noun, the link: the last two at least.
   const called = body.slice(afterVerb, body.length - object.tokens.length);
   for (let from = 0; from < called.length - 1; from += 1) {
     const opening = called.slice(from);
     if (
-      tokens.length > opening.length &&
-      opening.every(({ plain }, at) => tokens[at]!.plain === plain)
+      mine.length > opening.length &&
+      opening.every(({ plain }, at) => mine[at]!.plain === plain)
     ) {
-      return tokens.slice(opening.length);
+      return mine.slice(opening.length);
     }
   }
   return undefined;
