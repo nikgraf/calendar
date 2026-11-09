@@ -2267,6 +2267,12 @@ const placeText = (run: ReadonlyArray<Token>): string =>
 interface Led {
   /** Whether an article stood between the two ("in the …", "in der …"). */
   readonly article: boolean;
+  /**
+   * Whether a capital tells a name here. Not where the lead has one
+   * itself ("Dinner At Luigi's With The Team", "DINNER AT …"): the
+   * phrase is in title case or capitals, and every word reads as a name.
+   */
+  readonly capitals: boolean;
   readonly lead: string;
   readonly run: ReadonlyArray<Token>;
 }
@@ -2275,12 +2281,14 @@ interface Led {
  * Whether the words after a lead are unmistakably a place: one said by
  * what it is, or a name after "at" or "@" (`placeSaid`). After a bare
  * "in" a kind and a name is as often a product ("in Office 365", "in
- * Home Assistant").
+ * Home Assistant"), and a name is told by its capitals only where they
+ * tell anything.
  */
-const isPlace = ({ article, lead, run }: Led): boolean =>
+const isPlace = ({ article, capitals, lead, run }: Led): boolean =>
   endsInKind(run) ||
-  ((lead !== 'in' || article) && beginsWithKind(run)) ||
-  (NAME_LEADS.has(lead) && readsAsName(run));
+  (capitals &&
+    (((lead !== 'in' || article) && beginsWithKind(run)) ||
+      (NAME_LEADS.has(lead) && readsAsName(run))));
 
 /**
  * The place a first phrase leads into, read from its own words: a model
@@ -2309,8 +2317,9 @@ const isPlace = ({ article, lead, run }: Led): boolean =>
  * "Bett" too. Lower-case words that name no kind of place ("at
  * starbucks", "in the report"), words that go on after the place ("at
  * Loos Bar with Jo"), a second clause, what is looked at ("look at …"),
- * a weekday that may be the name's ("at Ruby Tuesday tomorrow"), and a
- * phrase that is nothing but its when before the lead.
+ * a weekday that may be the name's ("at Ruby Tuesday tomorrow"), a name
+ * in a phrase written in title case ("Dinner At Luigi's With The Team"),
+ * and a phrase that is nothing but its when before the lead.
  */
 export const placeSaid = (
   text: string,
@@ -2352,7 +2361,8 @@ export const placeSaid = (
     ) {
       return undefined;
     }
-    const place = isPlace({ article, lead, run }) ? placeText(run) : '';
+    const capitals = !NAMED.test(said[at]!.text);
+    const place = isPlace({ article, capitals, lead, run }) ? placeText(run) : '';
     return place === '' ? undefined : place;
   }
   return undefined;

@@ -1608,6 +1608,20 @@ describe('parseQuickAdd reads the place from the phrase when the model names non
     });
   });
 
+  it('tells no name by its capital in a phrase written in title case or capitals', async () => {
+    for (const phrase of [
+      "Team Lunch At Luigi's With The Whole Crew",
+      "Dinner At Luigi's Bring Wine",
+      'Coffee At Café Prückel With Jo',
+      'DINNER AT LUIGIS WITH JO',
+      'Call Mom At Once',
+    ]) {
+      expect(await unplaced(phrase), phrase).toBeUndefined();
+    }
+    // The kind still says it.
+    expect(await placed('Dinner At Loos Bar')).toEqual({ location: 'Loos Bar', title: 'Dinner' });
+  });
+
   it('takes a place said by what it is, after "at", "in" and "im"', async () => {
     expect(
       await placed('Project review Wednesday at 11 in the big meeting room', 'Project review'),
