@@ -122,6 +122,19 @@ describe('placeMatch', () => {
     expect(placeMatch('Cafe Meek, Vienna', kaffemik)).toBe('phonetic');
     expect(placeMatch('Cafe Meek, 1070 Vienna', kaffemik)).toBe('phonetic');
     expect(placeMatch('Cafe Meek Vienna Austria', kaffemik)).toBe('phonetic');
+    // Review: with a where beside it, the rest is the whole name or none — a
+    // generic word sounded like every café's first word.
+    const central = { address: 'Herrengasse 14, 1010 Vienna, Austria', name: 'Café Central' };
+    expect(placeMatch('Cafe Zentral, Vienna', central)).toBe('phonetic');
+    expect(placeMatch('Coffee, Vienna', central)).toBeUndefined();
+    expect(placeMatch('Kaffee Vienna', central)).toBeUndefined();
+    // A name that holds its city is heard without it.
+    expect(
+      placeMatch('Hart Rock Cafe, Berlin', {
+        address: 'Kurfürstendamm 224, 10719 Berlin, Germany',
+        name: 'Hard Rock Cafe Berlin',
+      }),
+    ).toBe('phonetic');
     // Another city's is another place, and where alone names none.
     expect(placeMatch('Cafe Meek, Graz', kaffemik)).toBeUndefined();
     expect(placeMatch('Cafe Meek, 1010 Vienna', kaffemik)).toBeUndefined();

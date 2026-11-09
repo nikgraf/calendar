@@ -92,6 +92,49 @@ describe('whereOf', () => {
     }
   });
 
+  it('ends the bare phrase at a sentence break, a hedge or a sign', () => {
+    // Review: dictation writes full stops, and "Vienna. Anna" became the place.
+    for (const turn of [
+      "It's in Vienna. Anna too.",
+      "It's in Vienna. Stefan as well.",
+      'in Vienna; Stefan too',
+      'in Vienna actually',
+      'in Vienna I think',
+      'in Vienna maybe',
+      'in Vienna now',
+      'in Vienna though',
+      'the one in Berlin I mean',
+      'es ist in Wien eigentlich',
+      'in Wien glaube ich',
+      'in Wien vielleicht',
+      'in Wien natürlich',
+      'the one in Wien + Graz',
+      'in Wien / Graz',
+    ]) {
+      expect(whereOf(turn), turn).toBeUndefined();
+    }
+    // A short form's period ends nothing.
+    expect(whereOf('in St. Pölten')).toBe('St. Pölten');
+    expect(whereOf('the one on St. Marks Place')).toBe('St. Marks Place');
+  });
+
+  it('takes a name that only begins with a word that is no place', () => {
+    // Review: the lists refused real places by their first word.
+    expect(whereOf('the one in Orange County')).toBe('Orange County');
+    expect(whereOf('the one in Yellow Springs')).toBe('Yellow Springs');
+    expect(whereOf('the one near Home Depot')).toBe('Home Depot');
+    expect(whereOf('the one at the Holiday Inn')).toBe('Holiday Inn');
+    expect(whereOf('the one on Easter Road')).toBe('Easter Road');
+    expect(whereOf('in Christmas Island')).toBe('Christmas Island');
+    expect(whereOf('the one on Langer Weg')).toBe('Langer Weg');
+    expect(whereOf('the one in the US')).toBe('US');
+    expect(whereOf('in Short Hills')).toBe('Short Hills');
+    // All of the name such words: no place.
+    expect(whereOf('the one in orange')).toBeUndefined();
+    expect(whereOf('the one near us')).toBeUndefined();
+    expect(whereOf('in black tie')).toBeUndefined();
+  });
+
   it('hears a when after "in" and after "the one" as a when', () => {
     for (const turn of [
       'in March',
@@ -181,6 +224,27 @@ describe('companyOf', () => {
     expect(companyOf('mit dem Team')).toEqual(company(['dem Team'], 'mit'));
     expect(companyOf('mit Anna und Tom')).toEqual(company(['Anna', 'Tom'], 'mit'));
     expect(companyOf('auch mit Tom')).toEqual(company(['Tom'], 'mit'));
+    // A list as one writes it: commas, then "and".
+    expect(companyOf('with Stefan, Anna and Tom')).toEqual(company(['Stefan', 'Anna', 'Tom']));
+    expect(companyOf('mit Tom, Anna und Jo')).toEqual(company(['Tom', 'Anna', 'Jo'], 'mit'));
+  });
+
+  it('takes people the lists of round one refused', () => {
+    // Review: possessives, surnames that are also adverbs, a firm named like an app's maker.
+    expect(companyOf('with Anna and her husband')).toEqual(company(['Anna', 'her husband']));
+    expect(companyOf('with Tom and his wife')).toEqual(company(['Tom', 'his wife']));
+    expect(companyOf('with my parents and their kids')).toEqual(
+      company(['my parents', 'their kids']),
+    );
+    expect(companyOf('mit Frau Langer')).toEqual(company(['Frau Langer'], 'mit'));
+    expect(companyOf('with Bernhard Langer')).toEqual(company(['Bernhard Langer']));
+    expect(companyOf('mit Herrn Lieber')).toEqual(company(['Herrn Lieber'], 'mit'));
+    expect(companyOf('with Google')).toEqual(company(['Google']));
+    expect(companyOf('with the Google team')).toEqual(company(['the Google team']));
+    expect(companyOf('with Dr. Huber')).toEqual(company(['Dr. Huber']));
+    // The adverbs as written still say more.
+    expect(companyOf('mit Stefan länger')).toBeUndefined();
+    expect(companyOf('mit Anna lieber')).toBeUndefined();
   });
 
   it('hears through what a turn ends in, and a correction in what it opens with', () => {
@@ -192,6 +256,9 @@ describe('companyOf', () => {
     expect(companyOf('no, with Anna')).toEqual({ corrects: true, link: 'with', people: ['Anna'] });
     expect(companyOf('nein, mit Anna')).toEqual({ corrects: true, link: 'mit', people: ['Anna'] });
     expect(companyOf('actually with Anna')?.corrects).toBe(true);
+    // Review: "too" says it comes on top, whatever the turn opened with.
+    expect(companyOf('actually, with Anna too')).toEqual(company(['Anna']));
+    expect(companyOf('eigentlich mit Anna auch')).toEqual(company(['Anna'], 'mit'));
   });
 
   it('leaves a turn that says more, or names no company, to the model', () => {
@@ -237,9 +304,20 @@ describe('companyOf', () => {
       'with Stefan earlier',
       'with Stefan, no location',
       'with Stefan, tentative',
-      'with Stefan, Anna and Tom',
+      'with Stefan, Anna',
+      'with Stefan and Anna, Tom',
       'with Stefan and call it team lunch',
       'with both',
+      'with her',
+      // Review: a sentence break, a hedge, a sign between names.
+      'With Stefan. Anna too.',
+      'with Anna actually',
+      'with Stefan maybe',
+      'with Stefan probably',
+      'mit Anna natürlich',
+      'with Tom + Anna',
+      'with Tom / Anna',
+      'with Tom - Anna',
     ]) {
       expect(companyOf(turn), turn).toBeUndefined();
     }
@@ -332,11 +410,33 @@ describe('bareTurn', () => {
         said: ['Lunch at Cafe Meek, Vienna tomorrow'],
       }),
     ).toEqual(at('Cafe Meek, Vienna, Austria'));
-    // A place said alone is narrowed, corrected or not; an address keeps its parts.
+    // A place said alone is narrowed, corrected or not.
     expect(bareTurn('no, in Vienna', at('Cafe Meek'))).toEqual(at('Cafe Meek, Vienna'));
-    expect(bareTurn('no, in Wien', at('Hauptstraße 1, 8010 Graz, Austria'))).toEqual(
-      at('Hauptstraße 1, 8010 Graz, Austria, Wien'),
+    // Review: with more parts the old where stayed ("…, Vienna, Austria, Graz").
+    expect(bareTurn('no, in Graz', at('Cafe Meek, Vienna, Austria'))).toEqual(
+      at('Cafe Meek, Graz'),
     );
+    expect(bareTurn('no, in Wien', at('Hauptstraße 1, 8010 Graz, Austria'))).toEqual(
+      at('Hauptstraße 1, Wien'),
+    );
+    expect(
+      bareTurn('no, in Berlin', at('Hard Rock Cafe, Rotenturmstraße 25, 1010 Vienna, Austria'), {
+        placeSaid: 'Hard Rock Cafe',
+      }),
+    ).toEqual(at('Hard Rock Cafe, Berlin'));
+  });
+
+  it('adds no where the place as said, or the place itself, says already', () => {
+    // Review: "Cafe Meek, Vienna" taken at an address that says "Wien" read "…, Vienna, Vienna".
+    const taken = at('Kaffemik, Zollergasse 5, 1070 Wien, Austria');
+    expect(bareTurn("it's in Vienna", taken, { placeSaid: 'Cafe Meek, Vienna' })).toBe(taken);
+    const neubau = at('Starbucks, Neubaugasse 1, 1070 Vienna, Austria');
+    expect(bareTurn('the one in Neubau', neubau, { placeSaid: 'Starbucks, Neubau' })).toBe(neubau);
+    // A city is where it is.
+    const vienna = at('Vienna');
+    expect(bareTurn("it's in Vienna", vienna)).toBe(vienna);
+    const country = at('Vienna, Austria');
+    expect(bareTurn("it's in Vienna", country, { placeSaid: 'Vienna' })).toBe(country);
   });
 
   it('narrows a place whatever word it was said after', () => {
@@ -396,8 +496,45 @@ describe('bareTurn', () => {
     expect(bareTurn('nein, mit Anna', titled('Essen mit Tom'))).toEqual(titled('Essen mit Anna'));
     // No company to correct: it joins the title.
     expect(bareTurn('no, with Anna', LUNCH)).toEqual(titled('Lunch with Anna'));
-    // More than company after the title's "with": the model's to read.
+    // Review: a correction that names nobody new still takes the others out.
+    expect(bareTurn('no, with Anna', titled('Lunch with Stefan and Anna'))).toEqual(
+      titled('Lunch with Anna'),
+    );
+    expect(bareTurn('nein, mit Anna', titled('Essen mit Anna und Tom'))).toEqual(
+      titled('Essen mit Anna'),
+    );
+    // Review: "too" after the opener adds.
+    expect(bareTurn('actually, with Anna too', titled('Lunch with Stefan'))).toEqual(
+      titled('Lunch with Stefan and Anna'),
+    );
+    // More than company after the title's "with": the model's to read, corrected or not.
     expect(bareTurn('no, with Anna', titled('Lunch with Stefan at the park'))).toBeUndefined();
+    expect(bareTurn('with Anna', titled('Call with Stefan about the budget'))).toBeUndefined();
+    expect(bareTurn('with Anna', titled('Sync with design team (weekly)'))).toBeUndefined();
+  });
+
+  it('takes a fuller name in place of the shorter, and joins in the title’s language', () => {
+    // Review: "with Stefan Huber" on "Lunch with Stefan" read "… Stefan and Stefan Huber".
+    expect(bareTurn('with Stefan Huber', titled('Lunch with Stefan'))).toEqual(
+      titled('Lunch with Stefan Huber'),
+    );
+    const full = titled('Lunch with Stefan Huber');
+    expect(bareTurn('with Stefan', full)).toBe(full);
+    // Review: the turn's "und" in an English title.
+    expect(bareTurn('mit Anna', titled('Lunch with Stefan'))).toEqual(
+      titled('Lunch with Stefan and Anna'),
+    );
+    expect(bareTurn('with Anna', titled('Mittagessen mit Stefan'))).toEqual(
+      titled('Mittagessen mit Stefan und Anna'),
+    );
+    expect(bareTurn('nein, mit Anna und Tom', titled('Lunch with Stefan'))).toEqual(
+      titled('Lunch with Anna and Tom'),
+    );
+    // Review: "w/" is company too.
+    expect(bareTurn('with Anna', titled('Lunch w/ Stefan'))).toEqual(
+      titled('Lunch w/ Stefan and Anna'),
+    );
+    expect(bareTurn('no, with Anna', titled('Lunch w/ Stefan'))).toEqual(titled('Lunch w/ Anna'));
   });
 
   it('leaves a draft without a title to the model', () => {

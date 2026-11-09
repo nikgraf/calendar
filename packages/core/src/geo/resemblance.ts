@@ -154,13 +154,29 @@ const soundsLike = (said: ReadonlyArray<string>, name: ReadonlyArray<string>): b
 };
 
 /**
+ * Whether the text sounds like the whole name, not only its leading
+ * words: word by word, or with the words run together.
+ */
+const soundsWhole = (said: ReadonlyArray<string>, name: ReadonlyArray<string>): boolean => {
+  const key = koelnerKey(said.join(' '));
+  if (key === '') {
+    return false;
+  }
+  if (key === koelnerKey(name.join(' '))) {
+    return true;
+  }
+  const joined = koelnerKey(said.join(''));
+  return joined.length >= JOINED_KEY_MIN && joined === koelnerKey(name.join(''));
+};
+
+/**
  * How a place resembles a text, best first: `exact` — its name is the
  * text; `words` — each word of the text begins a word of its name or
  * address ("Figlmüller" for Figlmüller Bäckerstrasse, "Wollzeile 5"),
  * one of them a word of its own; `phonetic` — the text sounds like the
- * name's first words, with or without the words that say where the place
- * is ("Cafe Meek, Vienna"); else undefined, and the place is not what
- * the text names.
+ * name's first words, or, the words that say where the place is set
+ * aside, like the whole name ("Cafe Meek, Vienna"); else undefined, and
+ * the place is not what the text names.
  *
  * A word of its own is one of its name or street (`readAddress`) that
  * the parts saying where it is do not hold too: "Vienna, Austria" names
@@ -200,10 +216,15 @@ export const placeMatch = (text: string, place: PlaceLike): PlaceMatch | undefin
     return 'words';
   }
   // The words that say where it is are not the name's to sound like:
-  // "Cafe Meek, Vienna" is Kaffemik in Vienna as "Cafe Meek" is.
+  // "Cafe Meek, Vienna" is Kaffemik in Vienna as "Cafe Meek" is. With a
+  // where beside it the rest must be the whole name, though: "Kaffee,
+  // Wien" is no Café Central.
   const called = said.filter((word) => !around.includes(word));
+  const calledName = name.filter((word) => !around.includes(word));
   return soundsLike(said, name) ||
-    (called.length > 0 && called.length < said.length && soundsLike(called, name))
+    (called.length > 0 &&
+      called.length < said.length &&
+      soundsWhole(called, calledName.length > 0 ? calledName : name))
     ? 'phonetic'
     : undefined;
 };

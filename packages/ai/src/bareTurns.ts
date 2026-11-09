@@ -27,7 +27,7 @@ import type { QuickAddPrefill } from './normalizeQuickAdd.ts';
  * Meek, Vienna", which the place lookup reads as a name and where it
  * is); company joins the title, as in a first phrase, and invites no one.
  *
- * Bare means bare: a turn with a second clause, a comma, a when, a verb
+ * Bare means bare: a turn with a second clause, a when, a verb, a hedge
  * or a word of the lists below says more than the phrase, and is the
  * model's to read, as before.
  */
@@ -40,7 +40,7 @@ export interface TurnContext {
    * Rotenturmstraße 25, 1010 Vienna, Austria").
    */
   readonly placeSaid?: string | undefined;
-  /** The thread's words before this turn, oldest first. */
+  /** The words that made or changed this draft before this turn, oldest first. */
   readonly said?: ReadonlyArray<string> | undefined;
 }
 
@@ -57,13 +57,21 @@ interface Word {
 }
 
 const EDGES = /^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu;
+const HAS_LETTER = /[\p{L}\p{N}]/u;
 
+/** The words of a turn. A sign on its own ("&", "+", "/") stays one: it joins or parts what is around it. */
 const wordsOf = (utterance: string): ReadonlyArray<Word> =>
   utterance
     .trim()
     .split(/\s+/u)
-    .map((text) => ({ plain: text === '&' ? '&' : fold(text).replaceAll(EDGES, ''), text }))
-    .filter(({ plain }) => plain !== '');
+    .filter((text) => text !== '')
+    .map((text) => {
+      const plain = fold(text).replaceAll(EDGES, '');
+      return { plain: plain === '' ? text : plain, text };
+    });
+
+/** A word as written, capitals and umlauts kept, without the punctuation around it. */
+const written = ({ text }: Word): string => text.replaceAll(EDGES, '');
 
 /** The words as said, without the quotes and the punctuation a sentence puts around them. */
 const textOf = (words: ReadonlyArray<Word>): string =>
@@ -87,38 +95,46 @@ const lengthAt = (
   among.find((sequence) => sequence.every((word, index) => words[at + index]?.plain === word))
     ?.length ?? 0;
 
+/** How many words the longest of `among` that ends the words takes, a word before it left; 0 for none. */
+const lengthAtEnd = (
+  words: ReadonlyArray<Word>,
+  among: ReadonlyArray<ReadonlyArray<string>>,
+): number =>
+  among.find(
+    (sequence) =>
+      sequence.length < words.length &&
+      sequence.every(
+        (word, index) => words[words.length - sequence.length + index]?.plain === word,
+      ),
+  )?.length ?? 0;
+
 /** A word a correction opens with ("no, in Vienna", "sorry, the one in Berlin"). */
 const OPENERS = sequences('no', 'nope', 'nein', 'actually', 'sorry', 'eigentlich');
 
-/** Said in passing at the end, nothing of the change ("in Vienna please", "mit Tom auch"). */
-const FILLERS = sequences(
-  'please',
-  'bitte',
-  'thanks',
-  'thank you',
-  'danke',
-  'too',
-  'also',
-  'auch',
-  'as well',
-);
+/** Said at the end to be polite, nothing of the change ("in Vienna please"). */
+const POLITE = sequences('please', 'bitte', 'thanks', 'thank you', 'danke');
 
-/** The words without what a turn ends in to be polite or in passing. */
-const withoutFillers = (words: ReadonlyArray<Word>): ReadonlyArray<Word> => {
-  let kept = words;
+/** Said at the end of what comes on top of what is there ("with Anna too", "mit Tom auch"). */
+const ALSO = sequences('too', 'also', 'auch', 'as well');
+
+/**
+ * The words without what a turn ends in to be polite or in passing, and
+ * whether that said "too": then the turn adds, whatever it opened with
+ * ("actually, with Anna too" corrects nothing).
+ */
+const withoutFillers = (
+  said: ReadonlyArray<Word>,
+): { readonly adds: boolean; readonly words: ReadonlyArray<Word> } => {
+  let words = said;
+  let adds = false;
   for (;;) {
-    const ending = kept;
-    const filler = FILLERS.find(
-      (sequence) =>
-        sequence.length < ending.length &&
-        sequence.every(
-          (word, index) => ending[ending.length - sequence.length + index]?.plain === word,
-        ),
-    );
-    if (filler === undefined) {
-      return kept;
+    const also = lengthAtEnd(words, ALSO);
+    const drop = also > 0 ? also : lengthAtEnd(words, POLITE);
+    if (drop === 0) {
+      return { adds, words };
     }
-    kept = kept.slice(0, kept.length - filler.length);
+    adds ||= also > 0;
+    words = words.slice(0, words.length - drop);
   }
 };
 
@@ -176,28 +192,41 @@ const FRAMES = sequences(
   'ist',
 );
 
+/** What stands before a place or a person and is not its name ("the airport", "my parents", "her husband"). */
 const DETERMINERS = listed(
-  'a an das dem den der die einem einer meinem meiner my our the unserem unserer',
+  `a an her his my our the their your
+   das dem den der die einem einer deinem deiner ihrem ihrer meinem meiner seinem seiner
+   unserem unserer`,
 );
 
 /**
  * Words with which a turn says more than a bare phrase, wherever they
- * stand: a verb that asks for another change ("… and make it 8"), an
- * adverb that moves or sizes the event, a word that turns the phrase
+ * stand after its "in" or "with": a verb that asks for another change
+ * ("… and make it 8"), an adverb that moves or sizes the event, a hedge
+ * ("in Vienna I think", "vielleicht"), a word that turns the phrase
  * around or addresses other drafts ("both"), a place taken away.
  */
 const SAYS_MORE = listed(
   `add call cancel change delete make move name put rename set
-   andere entferne lade losche mach mache nenn nenne setze verschiebe
-   again earlier later longer shorter only fruher spater langer kurzer nochmal lieber doch
+   andere entferne lade losche nenn nenne setze verschiebe
+   again earlier later longer shorter only nochmal
+   actually i maybe mean now obviously perhaps probably think though
+   denke eigentlich glaube ich naturlich vielleicht wahrscheinlich wohl
    busy free tentative all both alle beide
    but instead not no without aber statt stattdessen nicht kein keine keinen ohne`,
 );
 
 /**
- * Words no city's or district's name is made of here: with one of them
- * the words say more than where ("in front of the opera", "in honor of
- * Anna", "in the office").
+ * German words that say more only as written here: "länger" sizes the
+ * event and Frau Langer is company, "lieber" turns the phrase around and
+ * Herr Lieber does not.
+ */
+const SAYS_MORE_AS_WRITTEN = listed('doch früher kürzer lieber länger mach mache später');
+
+/**
+ * Words no city's, district's or person's name is made of here: with one
+ * of them the words say more than where or who ("in front of the opera",
+ * "in honor of Anna", "with Anna from accounting").
  */
 const NOT_OF_A_NAME = listed(
   `a an and as at by for from her his is it my of or our that the their these this those to
@@ -205,26 +234,28 @@ const NOT_OF_A_NAME = listed(
    und von zu`,
 );
 
-/** An app an event is held in, not a place it is at and nobody it is with — wherever its name stands ("in Google Meet"). */
-const APP_NAMES = 'discord facetime google hangouts meet microsoft skype slack teams webex zoom';
+/** An app an event is held in — no place it is at, wherever the name stands ("in Google Meet"), and no company. */
+const APP_NAMES = 'discord facetime hangouts meet skype slack teams webex zoom';
 const APPS = listed(APP_NAMES);
 
 /**
- * What follows "in", or "the one" and its link, and is no place: how it
- * is held ("in person", "in Präsenz", "in English", "in groups"), a
- * state or a saying ("in Ordnung", "in progress", "in Urlaub"), a
- * colour, a season or another when the when-readers do not know ("the
- * one on the weekend", "in Easter week"), and where the speaker is ("the
- * one near me", "das in der Nähe"). German writes every noun with a
- * capital and a typed turn often none, so the letters do not tell a
- * name: this list does, by the word the name begins with.
+ * What follows "in", or "the one" and its link, and is no place when it
+ * is all there is: how it is held ("in person", "in Präsenz", "in
+ * English", "in groups"), a state or a saying ("in Ordnung", "in
+ * progress", "in Urlaub"), a colour, a season or another when the
+ * when-readers do not know ("the one on the weekend", "in Easter week"),
+ * and where the speaker is ("the one near me", "das in der Nähe"). German
+ * writes every noun with a capital and a typed turn often none, so the
+ * letters do not tell a name: this list does. A name that only begins
+ * with such a word is a name ("Orange County", "Home Depot", "Easter
+ * Road").
  */
 const NOT_A_PLACE = listed(
   `addition advance bed between brief bulk case cash character charge church class common
    conclusion costume court detail doubt effect essence fact full general groups half hand
    house ink kind line love mind order pairs parallel particular pencil person place play
    practice principle private progress public question reverse school secret session shifts
-   short silence stereo stock store sum sync theory time total touch town transit trouble
+   short silence stereo stock store sum sync theory tie time total touch town transit trouble
    turn uniform use vain view writing
    arabic chinese croatian czech danish dutch english finnish french german greek hebrew
    hindi hungarian italian japanese korean norwegian polish portuguese russian serbian
@@ -246,11 +277,19 @@ const WHERE_WORDS = 4;
 
 const DIGIT = /\p{N}/u;
 
-/** A comma inside the words (one that ends them is the sentence's). */
-const hasComma = (words: ReadonlyArray<Word>): boolean =>
-  words.some(({ text }, index) =>
-    index === words.length - 1 ? /,.*[\p{L}\p{N}]/u.test(text) : text.includes(','),
-  );
+/** Letters all in capitals name something ("the US"), whatever the word is in small ones. */
+const ACRONYM = /^\p{Lu}{2,}$/u;
+
+/** Short forms whose period ends no sentence ("St. Pölten", "Dr. Huber"). */
+const ABBREVIATIONS = listed('dr fr hr jr mr mrs ms prof sr st');
+
+/** Whether a word ends a clause: a period, a semicolon, a colon after it ("Vienna. Anna too"). */
+const endsClause = (word: Word): boolean =>
+  /[.;:!?]["'”’)]*$/u.test(word.text) && !ABBREVIATIONS.has(word.plain);
+
+/** Whether a clause ends, or a comma stands, before the words are over. */
+const hasBreak = (words: ReadonlyArray<Word>, { commas }: { readonly commas: boolean }): boolean =>
+  words.slice(0, -1).some((word) => endsClause(word) || (commas && word.text.includes(',')));
 
 /** Whether a word, or a part of a hyphenated one ("E-Mail-Erinnerung"), is on the list. */
 const among = ({ plain }: Word, list: ReadonlySet<string>): boolean =>
@@ -276,26 +315,35 @@ const saysWhen = (utterance: string, rest: string): boolean =>
 
 /**
  * Whether the turn says more than the bare phrase: guests invited or
- * taken off, a rename, a when, or a word of `SAYS_MORE` after the
- * opener. Such a turn is the model's to read whole, with the people
- * question beside it.
+ * taken off, a rename, a when, or a word of `SAYS_MORE` among the words
+ * the phrase leads into. Such a turn is the model's to read whole, with
+ * the people question beside it.
  */
 const saysMore = (utterance: string, words: ReadonlyArray<Word>, phrase: string): boolean =>
   mentionsInvitees(utterance) ||
   isRenamePhrase(utterance) ||
-  words.some((word) => among(word, SAYS_MORE)) ||
+  words.some((word) => among(word, SAYS_MORE) || SAYS_MORE_AS_WRITTEN.has(written(word))) ||
   saysWhen(utterance, phrase);
 
-/** Whether the words name a place and nothing else: a few words, no comma, none of the lists, the first no number. */
+/** Whether a word is one that is no place, small letters or not; "US" is one. */
+const isNoPlace = (word: Word): boolean => among(word, NOT_A_PLACE) && !ACRONYM.test(written(word));
+
+/**
+ * Whether the words name a place and nothing else: a few words in one
+ * clause, none of them a function word, a sign or an app, the first no
+ * number, and not all of them words that are no place.
+ */
 const namesWhere = (name: ReadonlyArray<Word>): boolean => {
   const [first] = name;
   return (
     first !== undefined &&
     name.length <= WHERE_WORDS &&
     !DIGIT.test(first.plain) &&
-    !among(first, NOT_A_PLACE) &&
-    !hasComma(name) &&
-    name.every((word) => !NOT_OF_A_NAME.has(word.plain) && !among(word, APPS))
+    !hasBreak(name, { commas: true }) &&
+    name.every(
+      (word) => HAS_LETTER.test(word.plain) && !NOT_OF_A_NAME.has(word.plain) && !among(word, APPS),
+    ) &&
+    !name.every(isNoPlace)
   );
 };
 
@@ -306,7 +354,7 @@ interface Where {
 }
 
 const readWhere = (utterance: string): Where | undefined => {
-  const words = withoutFillers(wordsOf(utterance));
+  const { adds, words } = withoutFillers(wordsOf(utterance));
   const from = lengthAt(words, 0, OPENERS);
   const selector = lengthAt(words, from, SELECTORS);
   const link = selector === 0 ? 0 : lengthAt(words, from + selector, SELECTOR_LINKS);
@@ -326,8 +374,8 @@ const readWhere = (utterance: string): Where | undefined => {
     }
   }
   const where = textOf(name);
-  return namesWhere(name) && where !== '' && !saysMore(utterance, words.slice(from), where)
-    ? { corrects: from > 0, where }
+  return namesWhere(name) && where !== '' && !saysMore(utterance, name, where)
+    ? { corrects: from > 0 && !adds, where }
     : undefined;
 };
 
@@ -338,8 +386,8 @@ const readWhere = (utterance: string): Where | undefined => {
  * or without "it's" before it ("it's in Vienna", "in Neubau", "es ist in
  * Wien"). "In the office" and "im Büro" name a venue of their own, "at
  * Café Central" another place, "in Vienna instead" a replacement, "in
- * Vienna, invite Anna" two things: those are the model's to read, as
- * before.
+ * Vienna, invite Anna" and "In Vienna. Anna too." two things: those are
+ * the model's to read, as before.
  */
 export const whereOf = (utterance: string): string | undefined => readWhere(utterance)?.where;
 
@@ -375,32 +423,49 @@ export interface Company {
   readonly people: ReadonlyArray<string>;
 }
 
-/** The people a company names, each a determiner at most and a word or two; undefined for anything else. */
+/** Whether the words are one person: a determiner at most and a word or two, none of the lists. */
+const isPerson = (person: ReadonlyArray<Word>): boolean => {
+  const name =
+    person[0] !== undefined && DETERMINERS.has(person[0].plain) ? person.slice(1) : person;
+  return (
+    name.length > 0 &&
+    name.length <= PERSON_WORDS &&
+    name.every(
+      (word) =>
+        HAS_LETTER.test(word.plain) &&
+        !DIGIT.test(word.plain) &&
+        !NOT_OF_A_NAME.has(word.plain) &&
+        !ENDS_COMPANY.has(word.plain) &&
+        !among(word, NOT_COMPANY),
+    )
+  );
+};
+
+/**
+ * The people a company names, one by one, or undefined for anything
+ * else. "And" joins them, and a comma where an "and" follows it ("Tom,
+ * Anna and Stefan"): a comma alone parts two clauses ("with Stefan,
+ * tentative").
+ */
 const peopleOf = (rest: ReadonlyArray<Word>): ReadonlyArray<string> | undefined => {
+  if (hasBreak(rest, { commas: false })) {
+    return undefined;
+  }
   const people: Array<Array<Word>> = [[]];
-  for (const word of rest) {
+  let closed = true;
+  for (const [index, word] of rest.entries()) {
     if (JOINS.has(word.plain)) {
       people.push([]);
-    } else {
-      people.at(-1)!.push(word);
+      closed = true;
+      continue;
+    }
+    people.at(-1)!.push(word);
+    if (index < rest.length - 1 && word.text.includes(',')) {
+      people.push([]);
+      closed = false;
     }
   }
-  const named = people.every((person) => {
-    const name =
-      person[0] !== undefined && DETERMINERS.has(person[0].plain) ? person.slice(1) : person;
-    return (
-      name.length > 0 &&
-      name.length <= PERSON_WORDS &&
-      name.every(
-        (word) =>
-          !DIGIT.test(word.plain) &&
-          !NOT_OF_A_NAME.has(word.plain) &&
-          !ENDS_COMPANY.has(word.plain) &&
-          !among(word, NOT_COMPANY),
-      )
-    );
-  });
-  return named && people.length <= COMPANY_PEOPLE && !hasComma(rest)
+  return closed && people.length <= COMPANY_PEOPLE && people.every(isPerson)
     ? people.map(textOf)
     : undefined;
 };
@@ -411,7 +476,7 @@ const peopleOf = (rest: ReadonlyArray<Word>): ReadonlyArray<string> | undefined 
  * people joined by "and", each a word or two.
  */
 export const companyOf = (utterance: string): Company | undefined => {
-  const words = withoutFillers(wordsOf(utterance));
+  const { adds, words } = withoutFillers(wordsOf(utterance));
   const from = lengthAt(words, 0, OPENERS);
   const at = from + lengthAt(words, from, COMPANY_FRAMES);
   const link = words[at]?.plain;
@@ -420,8 +485,8 @@ export const companyOf = (utterance: string): Company | undefined => {
   }
   const rest = words.slice(at + 1);
   const people = peopleOf(rest);
-  return people !== undefined && !saysMore(utterance, words.slice(from), textOf(rest))
-    ? { corrects: from > 0, link, people }
+  return people !== undefined && !saysMore(utterance, rest, textOf(rest))
+    ? { corrects: from > 0 && !adds, link, people }
     : undefined;
 };
 
@@ -438,24 +503,20 @@ const holdsWords = (text: string, words: string): boolean => {
 };
 
 /**
- * Whether the location says that where already: one of its parts after
- * the first comma, where an address says where a place is, is that
- * where, a postal code aside ("Cafe Meek, Vienna", "…, 1010 Vienna,
- * Austria"). A name that holds its city says nothing ("Vienna Cafe" may
- * stand in Graz), and a word of a part is not the part ("York" of "New
- * York").
+ * Whether the place says that where already: one of its parts between
+ * commas is that where, a postal code aside ("Cafe Meek, Vienna", "…,
+ * 1010 Vienna, Austria", "Vienna" itself). A name that holds its city
+ * says nothing ("Vienna Cafe" may stand in Graz), and a word of a part is
+ * not the part ("York" of "New York").
  */
-const saysAlready = (location: string, where: string): boolean => {
+const saysAlready = (place: string, where: string): boolean => {
   const wanted = lettersOf(where).join(' ');
-  return location
-    .split(',')
-    .slice(1)
-    .some(
-      (part) =>
-        lettersOf(part)
-          .filter((word) => !DIGIT.test(word))
-          .join(' ') === wanted,
-    );
+  return place.split(',').some(
+    (part) =>
+      lettersOf(part)
+        .filter((word) => !DIGIT.test(word))
+        .join(' ') === wanted,
+  );
 };
 
 /**
@@ -490,18 +551,19 @@ const withoutEarlierWhere = (place: string, said: ReadonlyArray<string>): string
   return place;
 };
 
-/** A place said with where it is, the one comma between them ("Cafe Meek, Vienna"): the place alone. */
+/** A place said with where it is after a comma ("Cafe Meek, Vienna, Austria"): the place alone. */
 const withoutSaidWhere = (place: string): string => {
-  const parts = place.split(',');
-  return parts.length === 2 && parts[0]!.trim() !== '' ? parts[0]!.trim() : place;
+  const [first = '', ...rest] = place.split(',');
+  return rest.length > 0 && first.trim() !== '' ? first.trim() : place;
 };
 
 /**
  * The draft's location once a turn said where its place is: the where
- * alone for a draft without a place; nothing new where the location says
- * so already (`saysAlready`); else the place as said and the where after
- * it — in place of the where an earlier bare turn gave it, or, said as a
- * correction, of the one the place was said with.
+ * alone for a draft without a place; nothing new where the location or
+ * the place as said says so already (`saysAlready`); else the place as
+ * said and the where after it — in place of the where an earlier bare
+ * turn gave it, or, said as a correction, of the one the place was said
+ * with.
  */
 const narrowed = (
   { corrects, where }: Where,
@@ -512,44 +574,66 @@ const narrowed = (
   if (whole === '') {
     return where;
   }
-  if (saysAlready(whole, where)) {
+  const asSaid = placeSaid?.trim() || whole;
+  if (saysAlready(whole, where) || saysAlready(asSaid, where)) {
     return whole;
   }
-  const asSaid = placeSaid?.trim() || whole;
   const earlier = withoutEarlierWhere(asSaid, said);
   const base = corrects && earlier === asSaid ? withoutSaidWhere(asSaid) : earlier;
   return base === '' ? where : `${base}, ${where}`;
 };
 
 /** A title that ends in its company: what comes before, the linking word, the company. */
-const COMPANY_IN_TITLE = /^(.*\S)\s+(with|mit)\s+(\S.*)$/iu;
+const COMPANY_IN_TITLE = /^(.*\S)\s+(with|mit|w\/)\s+(\S.*)$/iu;
+
+/** The word that joins people after a linking word: the title's language, not the turn's. */
+const andAfter = (link: string): string => (fold(link) === 'mit' ? ' und ' : ' and ');
+
+/** Where the person stands among the people: by the words the two names begin with ("Stefan", "Stefan Huber"). */
+const indexOfPerson = (people: ReadonlyArray<string>, person: string): number => {
+  const words = lettersOf(person);
+  return people.findIndex((each) => {
+    const held = lettersOf(each);
+    const shared = Math.min(held.length, words.length);
+    return shared > 0 && held.slice(0, shared).join(' ') === words.slice(0, shared).join(' ');
+  });
+};
 
 /**
- * The title with the company a turn named: the people it does not hold
- * yet, after "with" or joined to the company it has — or, said as a
- * correction, in that company's place. Undefined for a draft without a
- * title, and where a correction finds more than company after the
- * title's "with" ("Lunch with Stefan at the park"): the model reads
+ * The title with the company a turn named. A title without company
+ * takes the people it does not hold, after the turn's "with". One that
+ * ends in its company takes them into it — a fuller name in place of the
+ * shorter ("Stefan Huber" for "Stefan"), joined in the title's language —
+ * or, said as a correction, gives the old company up for them. Undefined
+ * for a draft without a title, and where more than company follows the
+ * title's "with" ("Call with Stefan about the budget"): the model reads
  * those turns.
  */
 const withCompany = (title: string, { corrects, link, people }: Company): string | undefined => {
   if (title.trim() === '') {
     return undefined;
   }
-  const and = link === 'mit' ? ' und ' : ' and ';
-  const fresh = people.filter((person) => !holdsWords(title, person));
-  if (fresh.length === 0) {
-    return title;
-  }
   const had = COMPANY_IN_TITLE.exec(title);
   if (had === null) {
-    return `${title} ${link} ${fresh.join(and)}`;
-  }
-  if (!corrects) {
-    return `${title}${and}${fresh.join(and)}`;
+    const fresh = people.filter((person) => !holdsWords(title, person));
+    return fresh.length === 0 ? title : `${title} ${link} ${fresh.join(andAfter(link))}`;
   }
   const [, lead = '', word = link, tail = ''] = had;
-  return peopleOf(wordsOf(tail)) === undefined ? undefined : `${lead} ${word} ${people.join(and)}`;
+  const known = peopleOf(wordsOf(tail));
+  if (known === undefined) {
+    return undefined;
+  }
+  const next = corrects ? [] : [...known];
+  for (const person of people) {
+    const at = indexOfPerson(next, person);
+    if (at === -1) {
+      next.push(person);
+    } else if (lettersOf(person).length > lettersOf(next[at]!).length) {
+      next[at] = person;
+    }
+  }
+  const same = next.length === known.length && next.every((person, at) => person === known[at]);
+  return same ? title : `${lead} ${word} ${next.join(andAfter(word))}`;
 };
 
 /**

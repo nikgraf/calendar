@@ -19,6 +19,7 @@ import {
   slotItem,
   startThread,
   summarizeChange,
+  turnsOf,
   undoTurn,
   updateDraft,
 } from './draftThread.ts';
@@ -78,7 +79,12 @@ describe('startThread', () => {
     expect(state.drafts.map((draft) => draft.id)).toEqual(['d1', 'd2']);
     expect(state.focused).toBe(0);
     expect(state.turns).toEqual([
-      { id: 'd3', summary: '2 drafts', utterance: 'Dinner with Teo Friday, planning Saturday' },
+      {
+        drafts: ['d1', 'd2'],
+        id: 'd3',
+        summary: '2 drafts',
+        utterance: 'Dinner with Teo Friday, planning Saturday',
+      },
     ]);
     // Undo of the first turn leads to nothing.
     expect(state.history).toEqual([{ drafts: [], focused: 0 }]);
@@ -241,7 +247,12 @@ describe('refineThread and undoTurn', () => {
     const started = startThread([dinner, planning], 'x', { id });
     const refined = refineThread(started, 'at 8', [{ id: 'd1', item: later }], id);
     expect(refined.drafts.map((draft) => draft.item)).toEqual([later, planning]);
-    expect(refined.turns.at(-1)).toEqual({ id: 'd4', summary: '→ 20:00–21:00', utterance: 'at 8' });
+    expect(refined.turns.at(-1)).toEqual({
+      drafts: ['d1'],
+      id: 'd4',
+      summary: '→ 20:00–21:00',
+      utterance: 'at 8',
+    });
     expect(refined.history).toHaveLength(2);
 
     const undone = undoTurn(refined);
@@ -276,6 +287,35 @@ describe('refineThread and undoTurn', () => {
     const focused = focusDraft(startThread([dinner, planning], 'x', { id }), 1);
     const refined = refineThread(focused, 'at 8', [{ id: 'd2', item: later }], id);
     expect(undoTurn(focusDraft(refined, 0)).focused).toBe(1);
+  });
+});
+
+describe('turnsOf', () => {
+  it('gives a draft the words that made or changed it, and no other draft’s', () => {
+    // Review: "in Vienna" said to one draft took the city off another's place.
+    const id = ids();
+    const started = startThread([dinner, planning], 'two things', { id });
+    const first = refineThread(started, 'at 8', [{ id: 'd1', item: later }], id);
+    const second = refineThread(
+      first,
+      'in Vienna',
+      [{ id: 'd2', item: { kind: 'event', prefill: { ...planning.prefill, location: 'Vienna' } } }],
+      id,
+    );
+    expect(turnsOf(second, 'd1')).toEqual(['two things', 'at 8']);
+    expect(turnsOf(second, 'd2')).toEqual(['two things', 'in Vienna']);
+    // A turn that changed nothing is nobody's: its words added nothing to lean on.
+    const idle = refineThread(
+      second,
+      'in Vienna',
+      [{ id: 'd2', item: second.drafts[1]!.item }],
+      id,
+    );
+    expect(idle.turns.at(-1)?.drafts).toEqual([]);
+    expect(turnsOf(idle, 'd2')).toEqual(['two things', 'in Vienna']);
+    // Undo takes the words back.
+    expect(turnsOf(undoTurn(undoTurn(idle)), 'd2')).toEqual(['two things']);
+    expect(turnsOf(idle, 'gone')).toEqual([]);
   });
 });
 

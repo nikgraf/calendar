@@ -83,21 +83,22 @@ phrase leaning on the draft (`bareTurns.ts`): only where its place is
 ("it's in Vienna", "the one in Berlin", "es ist in Wien" — "the one" and
 what leads to where, or "in" and a bare name) or only who it is with
 ("with Stefan", "mit Anna und Tom": people joined by "and", a word or
-two each). Bare means bare — a comma, a second clause, a when, a verb, a
-venue with its article ("in the office"), a replacement ("in Vienna
-instead") or a word of the module's lists ("in person", "with a
-reminder") leaves the turn to the model, as before; only a polite last
-word ("please", "auch") is heard through. Where is added to the place
-as the words said it — the thread passes that text (`placeAsSaid`: the
-words a taken place was found for, not its address) and its earlier
-words — so "Cafe Meek" becomes "Cafe Meek, Vienna" and is looked up
-again, a name and where it is (`saysWhere` takes what follows a comma
-for the where, `placeMatch` hears the name without it). A second where
-takes the place of the one an earlier bare turn gave, and a correction
-("no, in Graz") of the one the place was said with. Company joins the
-title as in a first phrase — only who it does not name yet, in the old
-company's place after "no" — and invites no one. The thread folds them
-into the
+two each). Bare means bare — a second clause, a sentence break, a when,
+a verb, a hedge ("I think"), a venue with its article ("in the office"),
+a replacement ("in Vienna instead") or a word of the module's lists
+("in person", "with a reminder") leaves the turn to the model, as
+before; only a polite last word ("please", "auch") is heard through.
+Where is added to the place as the words said it — the thread passes
+that text (`placeAsSaid`: the words a taken place was found for, not its
+address) and the words that made or changed this draft (`turnsOf`: a
+turn records the drafts it changed) — so "Cafe Meek" becomes "Cafe Meek,
+Vienna" and is looked up again, a name and where it is (`saysWhere`
+takes what follows a comma for the where, `placeMatch` hears the whole
+name without it). A second where takes the place of the one an earlier
+bare turn gave, and a correction ("no, in Graz") of the one the place
+was said with. Company joins the title as in a first phrase — into the
+company it ends in, a fuller name for the shorter, the old company given
+up after "no" — and invites no one. The thread folds them into the
 draft's extras (`draftExtras.ts`: a note on a line of its own, popups
 beside the draft's own, a replacement or a clearing alone) and the form
 flashes the rows. The thread (app-state `draftInvitees.ts`) looks each name
