@@ -5,6 +5,7 @@ import {
   type GeoRegion,
   isMappableLocation,
   mergePlaceCandidates,
+  namesFound,
   normalizeLocationKey,
   type PastPlace,
   type PlaceCandidate,
@@ -13,7 +14,6 @@ import {
   rankFoundPlaces,
   rankPastPlaces,
   regionForTimeZone,
-  saysOnlyKind,
   withFoundSuggestions,
 } from '@calendar/core';
 import { type DeviceSettingsRepo, EventRepo, LocationGeoRepo } from '@calendar/db';
@@ -297,11 +297,9 @@ export const locationHandlers: Pick<
         const result = best !== undefined && best.match !== 'search' ? best.place : null;
         // A place the text names that is only too far is a "no" for where
         // the user is now, not "no such place": a later region may take it.
-        // A kind of place alone ("home") names none of them for good.
-        const farOnly =
-          result === null &&
-          !saysOnlyKind(location) &&
-          places.some((place) => placeMatch(location, place) !== undefined);
+        // A kind of place alone ("home") names none of them for good,
+        // unless one is called exactly that.
+        const farOnly = result === null && places.some((place) => namesFound(location, place));
         return { remember: !farOnly, result };
       }).pipe(
         // No bridge or a failed lookup (offline): nothing to show, and

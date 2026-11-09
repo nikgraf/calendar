@@ -48,6 +48,17 @@ describe('rankPastPlaces', () => {
     expect(rankPastPlaces('office', [central, office]).map((c) => c.geo.source)).toEqual([
       'Office',
     ]);
+    // Review (Codex): a past place read past a lead ranks after one the
+    // whole text names, however recent — "An der Wien" is the theatre.
+    const theatre = past('Theater an der Wien', 5, 'Theater an der Wien');
+    const wien = past('Wien', 50, undefined, { lat: 48.19, lng: 16.36 });
+    expect(rankPastPlaces('An der Wien', [wien, theatre]).map((c) => c.geo.source)).toEqual([
+      'Theater an der Wien',
+      'Wien',
+    ]);
+    // Nor is a town the user has been to the square called after it.
+    const hof = past('Hof, Hof, Bavaria, Germany', 60, 'Hof', { lat: 50.31, lng: 11.91 });
+    expect(rankPastPlaces('Am Hof', [hof])).toEqual([]);
     // Written with the lead a model copied: the same past place.
     expect(rankPastPlaces('im Figlmüller', [central, figlmueller]).map((c) => c.match)).toEqual([
       'words',

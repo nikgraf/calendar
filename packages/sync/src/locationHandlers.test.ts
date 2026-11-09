@@ -890,6 +890,39 @@ describe('nearby first', () => {
     }).pipe(Effect.provide(setup(client)));
   });
 
+  it.effect('remembers no miss for a place that is only too far, whatever names it', () => {
+    // Review (Codex): a far bar called exactly "The Office", and a far
+    // venue named past its lead, were cached as "no such place".
+    const bar = {
+      address: '12 Main St, Portland, OR, United States',
+      lat: 45.52,
+      lng: -122.68,
+      name: 'The Office',
+    };
+    const figlmueller = {
+      address: 'Hauptstraße 1, 10115 Berlin, Germany',
+      lat: 52.53,
+      lng: 13.38,
+      name: 'Figlmüller',
+    };
+    const { calls, client } = mapkit({
+      found: { 'im Figlmüller': [figlmueller], 'The Office': [bar] },
+    });
+    return Effect.gen(function* () {
+      yield* inVienna;
+      expect(yield* locationHandlers.resolveLocation({ location: 'The Office' })).toBeNull();
+      expect(yield* locationHandlers.resolveLocation({ location: 'The Office' })).toBeNull();
+      expect(yield* locationHandlers.resolveLocation({ location: 'im Figlmüller' })).toBeNull();
+      expect(yield* locationHandlers.resolveLocation({ location: 'im Figlmüller' })).toBeNull();
+      expect(calls).toEqual([
+        'resolve:The Office',
+        'resolve:The Office',
+        'resolve:im Figlmüller',
+        'resolve:im Figlmüller',
+      ]);
+    }).pipe(Effect.provide(setup(client)));
+  });
+
   it.effect('takes a city said on its own, however far', () => {
     // Review: "Berlin", said in Vienna, got no pin.
     const berlinCity = { address: 'Berlin, Germany', lat: 52.52, lng: 13.405, name: 'Berlin' };

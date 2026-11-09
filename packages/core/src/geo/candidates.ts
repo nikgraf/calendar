@@ -61,35 +61,43 @@ const best = (a: PlaceMatch | undefined, b: PlaceMatch | undefined): PlaceMatch 
  * that does not begin with MapKit's name (an address typed or kept as
  * said) is all address beside that name. A text none of that reads may
  * still be the place written with the lead a model copied ("im
- * Figlmüller" for a past "Figlmüller": `namedPastLead`).
+ * Figlmüller" for a past "Figlmüller": `namedPastLead`, read beside the
+ * same address, so a town stays a town) — `pastLead`, and behind every
+ * reading of the whole text.
  */
-export const pastPlaceMatch = (text: string, geo: GeoLocation): PlaceMatch | undefined => {
+const readPastPlace = (
+  text: string,
+  geo: GeoLocation,
+): { readonly match: PlaceMatch; readonly pastLead: boolean } | undefined => {
   if (placeMatch(text, { name: geo.source }) === 'exact') {
-    return 'exact';
+    return { match: 'exact', pastLead: false };
   }
   const [written = '', ...rest] = geo.source.split(',');
   const address = rest.join(',');
   const named = geo.name !== undefined && placeMatch(written, { name: geo.name }) === 'exact';
+  const asWritten = { address, name: written };
+  const asNamed =
+    geo.name === undefined ? undefined : { address: named ? address : geo.source, name: geo.name };
   const whole = best(
-    placeMatch(text, { address, name: written }),
-    geo.name === undefined
-      ? undefined
-      : placeMatch(text, { address: named ? address : geo.source, name: geo.name }),
+    placeMatch(text, asWritten),
+    asNamed === undefined ? undefined : placeMatch(text, asNamed),
   );
   if (whole !== undefined) {
-    return whole;
+    return { match: whole, pastLead: false };
   }
-  return [geo.source, written, geo.name].some(
-    (name) => name !== undefined && namedPastLead(text, { name }),
-  )
-    ? 'words'
+  return namedPastLead(text, asWritten) || (asNamed !== undefined && namedPastLead(text, asNamed))
+    ? { match: 'words', pastLead: true }
     : undefined;
 };
 
+/** How a past place resembles the text (`readPastPlace`). */
+export const pastPlaceMatch = (text: string, geo: GeoLocation): PlaceMatch | undefined =>
+  readPastPlace(text, geo)?.match;
+
 /**
  * The past places the text names, best first — exact, then by words,
- * then by sound — the most recently used first among equals. One per
- * place text (the latest use of it).
+ * then by sound, then read past a lead — the most recently used first
+ * among equals. One per place text (the latest use of it).
  */
 export const rankPastPlaces = (
   text: string,
@@ -105,10 +113,12 @@ export const rankPastPlaces = (
   }
   const ranked = [...latest.values()]
     .flatMap((place) => {
-      const match = pastPlaceMatch(text, place.geo);
-      return match === undefined ? [] : [{ match, place }];
+      const read = readPastPlace(text, place.geo);
+      return read === undefined
+        ? []
+        : [{ match: read.match, place, rank: read.pastLead ? PAST_LEAD_RANK : RANK[read.match] }];
     })
-    .sort((a, b) => RANK[a.match] - RANK[b.match] || b.place.lastUsedUtc - a.place.lastUsedUtc)
+    .sort((a, b) => a.rank - b.rank || b.place.lastUsedUtc - a.place.lastUsedUtc)
     .map(({ match, place }) => ({ geo: place.geo, match, source: 'history' as const }));
   // One place written two ways is one place: the better-ranked text stays.
   const once: Array<PlaceCandidate> = [];
@@ -158,6 +168,17 @@ export const mergePlaceCandidates = (
   return merged.slice(0, limit);
 };
 
+/**
+ * Whether a search hit is one the text names, where it is aside: it
+ * resembles the whole text (`placeMatch`) — a text that says only a
+ * kind of place by its exact name alone (`saysOnlyKind`) — or is the
+ * venue called what follows the text's lead (`namedPastLead`).
+ */
+export const namesFound = (text: string, place: PlaceLike): boolean => {
+  const match = placeMatch(text, place);
+  return saysOnlyKind(text) ? match === 'exact' : match !== undefined || namedPastLead(text, place);
+};
+
 /** A place a search found: where it is and what MapKit calls it. */
 export interface FoundPlace extends GeoPoint, PlaceLike {}
 
@@ -203,7 +224,7 @@ export const rankFoundPlaces = <Place extends FoundPlace>(
           ? PAST_LEAD_RANK
           : near
             ? 3
-            : match !== undefined || namedPastLead(text, place)
+            : match !== undefined || namesFound(text, place)
               ? 4
               : 5;
     return { index, named, order, place };
