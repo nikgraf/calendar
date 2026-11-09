@@ -29,6 +29,7 @@ import {
   statesNoEnd,
   statesUntil,
   trimWhen,
+  withoutCommand,
   withoutPlace,
 } from './grounding.ts';
 import { inviteesOf, titleWithoutInvitees } from './invitees.ts';
@@ -650,9 +651,11 @@ const madeOfTheDay = (
 };
 
 /**
- * The title from the phrase's own words (`named`): the when trimmed off
- * its ends, the place taken out when the location field keeps it, the
- * first letter upper-cased. Capture keeps the model's.
+ * The title from the phrase's own words (`named`): the command spoken
+ * around them taken off ("Add an event to have …", "Trag mir … ein"),
+ * the when trimmed off its ends, the place taken out when the location
+ * field keeps it, the first letter upper-cased. Capture keeps the
+ * model's.
  */
 const titleOf = ({
   held,
@@ -667,7 +670,9 @@ const titleOf = ({
   readonly place: string | undefined;
   readonly todo: boolean;
 }): string | undefined => {
-  const kept = named && phrase !== undefined ? trimWhen(named, held, { phrase }) : named;
+  // A to-do's words are what to do: only "add a reminder to …" comes off them.
+  const said = named && phrase !== undefined ? withoutCommand(named, phrase, { todo }) : named;
+  const kept = said && phrase !== undefined ? trimWhen(said, held, { phrase }) : said;
   // The place leaves an event's title only when its field keeps it; a
   // to-do has no place field.
   const placeless =

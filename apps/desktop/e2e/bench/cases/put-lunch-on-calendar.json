@@ -1,0 +1,18 @@
+{
+  "lang": "en",
+  "tags": ["command"],
+  "turns": [
+    {
+      "input": { "text": "Put lunch with Stefan on my calendar for tomorrow at 1" },
+      "expect": {
+        "kind": "event",
+        "title": "lunch with stefan",
+        "dayOffset": 1,
+        "startTime": "13:00",
+        "endTime": "14:00",
+        "location": null,
+        "guests": {}
+      }
+    }
+  ]
+}

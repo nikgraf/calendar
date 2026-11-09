@@ -1,0 +1,19 @@
+{
+  "lang": "en",
+  "tags": ["command"],
+  "turns": [
+    {
+      "input": { "text": "At an event for lunch tomorrow with Stefan" },
+      "expect": {
+        "kind": "event",
+        "title": "lunch with stefan",
+        "dayOffset": 1,
+        "startTime": "12:30",
+        "endTime": "13:30",
+        "assumedTime": true,
+        "location": null,
+        "guests": {}
+      }
+    }
+  ]
+}

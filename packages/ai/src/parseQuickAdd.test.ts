@@ -1060,6 +1060,167 @@ describe('parseQuickAdd titles', () => {
     expect((await prefillOf({ title: 'Zahnarzt' }, 'Zahnarzt morgen')).title).toBe('Zahnarzt');
   });
 
+  it('takes the spoken command off the title', async () => {
+    // Observed on the iPhone (2026-11-06): the model echoed the dictated
+    // sentence, command and all; the Mac's model drops the command, so
+    // the bench never saw it.
+    expect(
+      await prefillOf(
+        { startTime: '13:00', title: 'Add an event to have lunch with Stefan tomorrow at 1' },
+        'Add an event to have lunch with Stefan tomorrow at 1',
+      ),
+    ).toMatchObject({ date: '2026-08-23', startTime: '13:00', title: 'Lunch with Stefan' });
+    // The same PR on the iPhone (2026-11-09): the recognizer wrote "Add"
+    // as "At", and the day came before the company.
+    expect(
+      await prefillOf(
+        { title: 'At an event for lunch tomorrow with Stefan' },
+        'At an event for lunch tomorrow with Stefan',
+      ),
+    ).toMatchObject({ date: '2026-08-23', title: 'Lunch with Stefan' });
+    // The Mac's model on the same words: the verb gone, the placeholder kept.
+    expect(
+      (
+        await prefillOf(
+          { title: 'Event for lunch with Stefan' },
+          'At an event for lunch tomorrow with Stefan',
+        )
+      ).title,
+    ).toBe('Lunch with Stefan');
+    // Codex: the closing "please" such a title kept goes too, and the when after it.
+    expect(
+      (
+        await prefillOf(
+          { title: 'Event for lunch tomorrow please' },
+          'Add an event for lunch tomorrow please',
+        )
+      ).title,
+    ).toBe('Lunch');
+    expect(
+      (
+        await prefillOf(
+          { startTime: '13:00', title: 'Add lunch tomorrow at 1 with Stefan' },
+          'Add lunch tomorrow at 1 with Stefan',
+        )
+      ).title,
+    ).toBe('Lunch with Stefan');
+    // A title the model kept the lead in (the bench's long phrases).
+    expect(
+      await prefillOf(
+        { location: 'Loos Bar', startTime: '19:00', title: 'Set up a dinner with Tom Baker' },
+        'Set up a dinner with Tom Baker next Friday at seven at Loos Bar',
+      ),
+    ).toMatchObject({ location: 'Loos Bar', title: 'Dinner with Tom Baker' });
+    // German: the when and the article between the verb and the event.
+    expect(
+      await prefillOf(
+        {
+          location: 'Praxis Dr. Huber',
+          startTime: '10:00',
+          title:
+            'Trag mir für nächsten Mittwoch um 10 Uhr einen Zahnarzttermin in der Praxis Dr. Huber ein',
+        },
+        'Trag mir für nächsten Mittwoch um 10 Uhr einen Zahnarzttermin in der Praxis Dr. Huber ein',
+      ),
+    ).toMatchObject({ location: 'Praxis Dr. Huber', title: 'Zahnarzttermin' });
+    expect(
+      (
+        await prefillOf(
+          { startTime: '10:00', title: 'Trag mir morgen um 10 einen Zahnarzttermin ein' },
+          'Trag mir morgen um 10 einen Zahnarzttermin ein',
+        )
+      ).title,
+    ).toBe('Zahnarzttermin');
+    // The command's "for" before the when, and the tail that says where the event goes.
+    expect(
+      await prefillOf(
+        { startTime: '13:00', title: 'Put lunch with Stefan on my calendar for tomorrow at 1' },
+        'Put lunch with Stefan on my calendar for tomorrow at 1',
+      ),
+    ).toMatchObject({ date: '2026-08-23', startTime: '13:00', title: 'Lunch with Stefan' });
+    // Bench (Apple's model): the verb kept, the tail dropped — the phrase shows the command.
+    expect(
+      (
+        await prefillOf(
+          { startTime: '13:00', title: 'Put lunch with Stefan' },
+          'Put lunch with Stefan on my calendar for tomorrow at 1',
+        )
+      ).title,
+    ).toBe('Lunch with Stefan');
+    // German puts the when between the verb and the event.
+    expect(
+      (
+        await prefillOf(
+          { startTime: '10:00', title: 'Trag mir am Dienstag um 10 einen Zahnarzttermin ein' },
+          'Trag mir am Dienstag um 10 einen Zahnarzttermin ein',
+        )
+      ).title,
+    ).toBe('Zahnarzttermin');
+    // The noun stays where nothing but when follows.
+    expect(
+      (await prefillOf({ startTime: '09:00', title: 'Add an event' }, 'Add an event tomorrow at 9'))
+        .title,
+    ).toBe('Event');
+    // A to-do's command, with its cue.
+    expect(
+      await parseQuickAdd(fakeModel({ title: 'Add a reminder to call the bank tomorrow' }), {
+        phrase: 'Add a reminder to call the bank tomorrow',
+        ...CONTEXT,
+      }),
+    ).toMatchObject({ kind: 'task', prefill: { date: '2026-08-23', title: 'Call the bank' } });
+    // Review: a to-do's words are what to do, whether the model kept the
+    // cue or the whole phrase stands in.
+    expect(
+      await parseQuickAdd(fakeModel({ title: 'add milk' }), {
+        phrase: 'remind me to add milk tomorrow',
+        ...CONTEXT,
+      }),
+    ).toMatchObject({ kind: 'task', prefill: { title: 'Add milk' } });
+    for (const title of ['Schedule the car service', 'remind me to schedule the car service']) {
+      expect(
+        await parseQuickAdd(fakeModel({ title }), {
+          phrase: 'remind me to schedule the car service',
+          ...CONTEXT,
+        }),
+      ).toMatchObject({ kind: 'task', prefill: { title: 'Schedule the car service' } });
+    }
+    // Review: a meeting is the event; the place stays in its field.
+    expect(
+      await prefillOf(
+        { location: 'Café Central', startTime: '15:00', title: 'Add a meeting at Café Central' },
+        'Add a meeting at Café Central tomorrow at 3',
+      ),
+    ).toMatchObject({ location: 'Café Central', title: 'Meeting' });
+    expect(
+      (
+        await prefillOf(
+          { title: 'Add a meeting for tomorrow with Tom' },
+          'Add a meeting for tomorrow with Tom',
+        )
+      ).title,
+    ).toBe('Meeting with Tom');
+    // Review round 2: "the calendar" beside a command, before the when.
+    expect(
+      (
+        await prefillOf(
+          { startTime: '13:00', title: 'Add lunch with Tom to the calendar tomorrow at 1' },
+          'Add lunch with Tom to the calendar tomorrow at 1',
+        )
+      ).title,
+    ).toBe('Lunch with Tom');
+    expect(
+      (
+        await prefillOf(
+          {
+            startTime: '13:00',
+            title: 'Trag Mittagessen mit Stefan morgen um 13 Uhr in den Kalender ein',
+          },
+          'Trag Mittagessen mit Stefan morgen um 13 Uhr in den Kalender ein',
+        )
+      ).title,
+    ).toBe('Mittagessen mit Stefan');
+  });
+
   it('keeps an invitation out of a title made of the phrase', async () => {
     const result = await parseQuickAdd(
       fakeModel({ people: ['Tom'], startTime: '13:00', title: 'Lunch with Sarah and Tom' }),

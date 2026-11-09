@@ -1912,6 +1912,54 @@ const whenless = (
 /** The text says nothing but when ("tomorrow", "next Tuesday at 1pm"). */
 export const saysOnlyWhen = (text: string): boolean => whenless(text).onlyWhen;
 
+/** Who the event is with: the one word in the middle a when is read before. */
+const COMPANY = new Set(['mit', 'with']);
+/** A quote around a name said as it is, English or German ("Tuesdays with Morrie", „Dienstags mit Morrie“). */
+const QUOTE_OPENS = /^["'“‘„‚«]/u;
+const QUOTE_CLOSES = /["'”’“‘»][,.;:!?]*$/u;
+
+/** Where the company starts: its word after the title's first two, outside a quoted name; -1 for none. */
+const companyAt = (tokens: ReadonlyArray<RegExpExecArray>): number => {
+  let quoted = false;
+  for (const [at, [token]] of tokens.entries()) {
+    if (!quoted && at > 1 && COMPANY.has(bare(words(token)))) {
+      return at;
+    }
+    if (!quoted) {
+      quoted = QUOTE_OPENS.test(token) && !(token.length > 1 && QUOTE_CLOSES.test(token));
+    } else if (QUOTE_CLOSES.test(token)) {
+      quoted = false;
+    }
+  }
+  return -1;
+};
+
+/**
+ * The title without the when said right before its company ("lunch
+ * tomorrow with Stefan" is "lunch with Stefan", "Termin um 10 mit Dr.
+ * Huber" is "Termin mit Dr. Huber"): speech puts the day there as often
+ * as last. The words before the company end as a title does, so the same
+ * when comes off them and the same one stays ("Black Friday with
+ * family", "Vacation until Friday with Anna", "Room 9 with Tom"). A
+ * "with" inside a quoted name is the name's ('Read "Tuesdays with
+ * Morrie"').
+ */
+const withoutWhenBeforeCompany = (title: string, place?: string, phrase?: string): string => {
+  const tokens = [...title.matchAll(/\S+/g)];
+  const at = companyAt(tokens);
+  if (at === -1 || at === tokens.length - 1) {
+    return title;
+  }
+  const head = title.slice(0, tokens[at]!.index).trimEnd();
+  const { last, onlyWhen } = whenless(head, place, phrase);
+  if (onlyWhen || last === at) {
+    return title;
+  }
+  const end = tokens[last - 1]!;
+  const kept = title.slice(0, end.index + end[0].length).replace(SEPARATORS, '');
+  return kept === '' ? title : `${kept} ${title.slice(tokens[at]!.index)}`;
+};
+
 /**
  * The title without the words about when at its ends: "lunch with tom
  * tomorrow" is "lunch with tom", "Team standup every Monday at 9" is
@@ -1922,25 +1970,30 @@ export const saysOnlyWhen = (text: string): boolean => whenless(text).onlyWhen;
  * has: a weekday that opens a title names the event ("Monday standup"),
  * as does a day after its own name ("Black Friday"); a span or company
  * keeps its day ("until Friday", "with Thu"); words in the middle stay,
- * and a bare number is no time ("Room 9"). Given the event's place, its
- * words stay too ("Dinner at Ruby Tuesday"). A title that is nothing but
- * when stays as it is. Given the phrase the title came from, an end, a
- * count or a span at the end is the repeat's when the phrase's rule holds
- * it, even where the title dropped the repeat's own words ("Piano lesson
- * until March").
+ * but for the when right before the company ("lunch tomorrow with tom",
+ * `withoutWhenBeforeCompany`), and a bare number is no time ("Room 9").
+ * Given the event's place, its words stay too ("Dinner at Ruby Tuesday").
+ * A title that is nothing but when stays as it is. Given the phrase the
+ * title came from, an end, a count or a span at the end is the repeat's
+ * when the phrase's rule holds it, even where the title dropped the
+ * repeat's own words ("Piano lesson until March").
  */
 export const trimWhen = (
   title: string,
   place?: string,
   { phrase }: { readonly phrase?: string } = {},
 ): string => {
-  const tokens = [...title.matchAll(/\S+/g)];
-  const { first, last, onlyWhen } = whenless(title, place, phrase);
-  if (onlyWhen || (first === 0 && last === tokens.length)) {
+  const led = withoutWhenBeforeCompany(title, place, phrase);
+  const tokens = [...led.matchAll(/\S+/g)];
+  const { first, last, onlyWhen } = whenless(led, place, phrase);
+  if (onlyWhen) {
     return title;
   }
+  if (first === 0 && last === tokens.length) {
+    return led;
+  }
   const end = tokens[last - 1]!;
-  const trimmed = title
+  const trimmed = led
     .slice(tokens[first]!.index, end.index + end[0].length)
     .replace(SEPARATORS, '');
   return trimmed === '' ? title : trimmed;
@@ -1974,6 +2027,932 @@ export const withoutPlace = (title: string, place: string | undefined): string =
   }
   const end = tokens[kept - 1]!;
   return title.slice(0, end.index + end[0].length).replace(SEPARATORS, '');
+};
+
+// --- The spoken command around the title ----------------------------------
+
+/** A word of the title as typed, and folded without its marks for a comparison. */
+interface Token {
+  readonly plain: string;
+  readonly text: string;
+}
+
+const tokensOf = (title: string): ReadonlyArray<Token> =>
+  [...title.matchAll(/\S+/g)].map(([text]) => ({ plain: bare(words(text)), text }));
+
+/** The tokens as the title wrote them, one space apart. */
+const textOf = (tokens: ReadonlyArray<Token>): string => tokens.map(({ text }) => text).join(' ');
+
+/** The tokens from `at` are `sequence`, word for word. */
+const matches = (
+  tokens: ReadonlyArray<Token>,
+  at: number,
+  sequence: ReadonlyArray<string>,
+): boolean => sequence.every((word, offset) => tokens[at + offset]?.plain === word);
+
+/** How many tokens the first of `sequences` found at `at` takes; 0 for none. */
+const sequenceAt = (
+  tokens: ReadonlyArray<Token>,
+  at: number,
+  sequences: ReadonlyArray<ReadonlyArray<string>>,
+): number => sequences.find((sequence) => matches(tokens, at, sequence))?.length ?? 0;
+
+/** What opens a request and says nothing ("please add …"): never a title's first word. */
+const POLITE = new Set(['bitte', 'please']);
+/**
+ * A greeting that opens a request ("hey, add …", "ok add lunch"): one
+ * only before a mark, a wish, a request or a verb — "Hey Jude rehearsal"
+ * and "OK Computer listening party" are titles.
+ */
+const GREETINGS = new Set(['hey', 'hi', 'ok', 'okay']);
+const MARKED = /[,.!:;–—-]$/u;
+/** What closes one ("… please", "… bitte"): "ok" and "hi" at the end are the title's ("Say hi"). */
+const CLOSERS = new Set(['bitte', 'please']);
+
+/** A word said between the parts of a command and meaning nothing ("just", "mal", "kurz"). */
+const FILLERS = new Set([
+  'also',
+  'auch',
+  'bitte',
+  'doch',
+  'eben',
+  'gleich',
+  'just',
+  'kurz',
+  'mal',
+  'noch',
+  'please',
+  'quickly',
+  'schnell',
+]);
+
+/**
+ * A wish that leads into the event ("I'd like to", "let's", "ich
+ * möchte"): what follows is the event, with or without a verb that puts
+ * it on the calendar. Folded, the apostrophes gone ("I'd" is "id").
+ */
+const WISHES: ReadonlyArray<ReadonlyArray<string>> = [
+  ['id', 'like', 'to'],
+  ['i', 'would', 'like', 'to'],
+  ['i', 'want', 'to'],
+  ['i', 'need', 'to'],
+  ['i', 'have', 'to'],
+  ['lets'],
+  ['ich', 'mochte'],
+  ['ich', 'will'],
+  ['ich', 'muss'],
+  ['ich', 'wurde', 'gern'],
+  ['ich', 'wurde', 'gerne'],
+];
+/** "Let's" is a wish only before a verb one does ("let's have lunch"): "Let's Encrypt renewal" is a title. */
+const LETS = 'lets';
+const LIGHT_VERBS = new Set([
+  'book',
+  'call',
+  'catch',
+  'discuss',
+  'do',
+  'drink',
+  'eat',
+  'finish',
+  'get',
+  'go',
+  'grab',
+  'hang',
+  'have',
+  'make',
+  'meet',
+  'plan',
+  'play',
+  'review',
+  'schedule',
+  'see',
+  'start',
+  'take',
+  'talk',
+  'try',
+  'visit',
+  'watch',
+  'work',
+]);
+
+/** A request that is one only with a verb ("can you add …", "kannst du … eintragen"): "Will you marry me" is a title. */
+const ASKS: ReadonlyArray<ReadonlyArray<string>> = [
+  ['can', 'you'],
+  ['could', 'you'],
+  ['would', 'you'],
+  ['will', 'you'],
+  ['kannst', 'du'],
+  ['konntest', 'du'],
+  ['konnen', 'sie'],
+  ['konnten', 'sie'],
+  ['wurdest', 'du'],
+];
+
+/** A verb that puts something on the calendar. */
+interface Verb {
+  /**
+   * The verb is a command with the event's words right after it ("Add
+   * lunch with Tom"). The others need evidence beside them — an
+   * indefinite article, a pronoun, a noun, a tail: "Setup call", "Plan
+   * review", "Plan my week" and "Make dinner reservations" are titles.
+   */
+  readonly alone: boolean;
+  /** The particle a separable German verb ends the command with ("trag … ein", "leg … an"). */
+  readonly particles: ReadonlyArray<string>;
+  readonly words: ReadonlyArray<string>;
+}
+
+const verb = (words: string, alone = false, ...particles: ReadonlyArray<string>): Verb => ({
+  alone,
+  particles,
+  words: words.split(' '),
+});
+
+const VERBS: ReadonlyArray<Verb> = [
+  verb('add', true),
+  verb('schedule', true),
+  verb('set up'),
+  verb('setup'),
+  verb('set'),
+  verb('put'),
+  verb('create'),
+  verb('make'),
+  verb('plan'),
+  verb('arrange'),
+  verb('organize'),
+  verb('organise'),
+  verb('trag', false, 'ein'),
+  verb('trage', false, 'ein'),
+  verb('erstell'),
+  verb('erstelle'),
+  verb('leg', false, 'an', 'fest'),
+  verb('lege', false, 'an', 'fest'),
+  verb('fug', false, 'hinzu'),
+  verb('fuge', false, 'hinzu'),
+  verb('setz', false, 'an'),
+  verb('setze', false, 'an'),
+  verb('stell', false, 'ein'),
+  verb('stelle', false, 'ein'),
+  verb('schreib', false, 'auf', 'ein', 'rein'),
+  verb('schreibe', false, 'auf', 'ein', 'rein'),
+  verb('plane', false, 'ein'),
+  verb('mach', false, 'aus', 'rein'),
+  verb('mache', false, 'aus', 'rein'),
+  verb('notier'),
+  verb('notiere'),
+  verb('merk', false, 'vor'),
+  verb('merke', false, 'vor'),
+];
+
+/** Whom the command is for ("trag mir … ein", "set me up a …"). */
+const PRONOUNS = new Set(['me', 'mir', 'uns', 'us']);
+
+/** An indefinite article after the verb says a command ("Set up a dinner", "Erstelle einen Termin"). */
+const INDEFINITE = new Set(['a', 'an', 'ein', 'eine', 'einem', 'einen', 'einer']);
+/**
+ * An article or possessive the command puts before the event; a definite
+ * one says nothing of a command ("Plan my week", "Set up the new laptop"
+ * are titles), but comes off once a command is found. Only in lower
+ * case: "The Killers concert" keeps its name.
+ */
+const DETERMINERS = new Set([
+  ...INDEFINITE,
+  'das',
+  'dem',
+  'den',
+  'der',
+  'die',
+  'mein',
+  'meine',
+  'meinem',
+  'meinen',
+  'my',
+  'our',
+  'the',
+  'unser',
+  'unsere',
+  'unseren',
+]);
+/** "New" before the command's noun ("a new event"), and nowhere else ("New York trip"). */
+const NEW = new Set(['another', 'neue', 'neuen', 'neuer', 'neues', 'new']);
+const LOWER = /^\p{Ll}/u;
+
+/** The modifier before the command's noun ("a calendar entry", "ein Kalendereintrag"). */
+const CALENDAR = new Set(['calendar', 'kalender']);
+
+/**
+ * What the command calls the event. A placeholder ("an event for lunch",
+ * "einen Termin für Mittagessen", "a reminder to call") goes with the
+ * link into the event; a noun that names the event ("a meeting with
+ * Tom", "an appointment for the dentist") stays the title's.
+ */
+const PLACEHOLDERS = new Set([
+  'aufgabe',
+  'eintrag',
+  'entry',
+  'ereignis',
+  'erinnerung',
+  'event',
+  'kalendereintrag',
+  'kalendertermin',
+  'reminder',
+  'task',
+  'termin',
+  'todo',
+  'veranstaltung',
+]);
+/** The nouns a to-do's command calls it ("add a reminder to …"): the one form that comes off a to-do. */
+const TODO_NOUNS = new Set(['aufgabe', 'erinnerung', 'reminder', 'task', 'todo']);
+const NOUNS = new Set([...PLACEHOLDERS, 'appointment', 'besprechung', 'meeting']);
+
+/** A link that names the event, whatever the noun ("a meeting called standup", "ein Termin namens Yoga"). */
+const NAME_LINKS = new Set(['called', 'named', 'namens', 'titled']);
+const LONG_NAME_LINKS: ReadonlyArray<ReadonlyArray<string>> = [
+  ['with', 'the', 'title'],
+  ['mit', 'dem', 'titel'],
+];
+/** A mark that names what a placeholder stands for ("Add an event – lunch", "Add: lunch"); "@" and "+" are the title's. */
+const NAME_MARK = /^[:–—-]+$/u;
+/** A link that leads into what a placeholder stands for ("an event for lunch", "a reminder to call"). */
+const EVENT_LINKS = new Set(['about', 'for', 'fur', 're', 'regarding', 'to', 'uber', 'zum', 'zur']);
+/** The command's "for" before its when ("put lunch on my calendar for tomorrow", "Termin für morgen"). */
+const FOR = new Set(['for', 'fur']);
+/** The light verb a link leads into ("an event to have lunch", "let's have lunch"): the meal is the event. */
+const HAVE = 'have';
+/** A word that qualifies the noun before it rather than naming the event ("an event for Friday with Anna"). */
+const CONNECTORS = new Set([
+  '&',
+  'about',
+  'am',
+  'an',
+  'and',
+  'at',
+  'auf',
+  'bei',
+  'beim',
+  'bis',
+  'for',
+  'from',
+  'fur',
+  'im',
+  'in',
+  'mit',
+  'nach',
+  'ohne',
+  'on',
+  'to',
+  'uber',
+  'und',
+  'until',
+  'von',
+  'vor',
+  'with',
+  'without',
+  'zum',
+  'zur',
+]);
+
+/**
+ * "on my calendar", "in den Kalender": where the command puts the event.
+ * One's own calendar says a command by itself; "the calendar" only
+ * beside one ("Work on the calendar app", "Give Anna access to my
+ * calendar" are titles, so the run must end the title or lead into its
+ * when).
+ */
+const INTO = new Set(['auf', 'in', 'into', 'on', 'onto', 'to']);
+const OWN = new Set(['meinem', 'meinen', 'my', 'our', 'unseren']);
+const THE = new Set(['dem', 'den', 'the']);
+const BOOKS = new Set(['calendar', 'kalender', 'terminkalender']);
+/**
+ * The command's verb said last, as German puts it ("Zahnarzt am Dienstag
+ * eintragen"); a title's own where nothing says a command ("Stunden
+ * eintragen", "Geld anlegen").
+ */
+const INFINITIVES = new Set([
+  'anlegen',
+  'aufschreiben',
+  'einplanen',
+  'einspeichern',
+  'eintragen',
+  'hinzufugen',
+  'notieren',
+  'reinschreiben',
+  'vormerken',
+]);
+
+/** How many of `tokens` the run of when-words at their end takes; 0 for none. */
+const whenRunAtEnd = (tokens: ReadonlyArray<Token>): number => {
+  const text = tokens.map(({ text: token }) => words(token)).join(' ');
+  const start = whenAtEnd(text);
+  if (start === undefined) {
+    return 0;
+  }
+  return start === 0
+    ? tokens.length
+    : tokens.length - text.slice(0, start).trimEnd().split(' ').length;
+};
+
+/** Where the run of when-words that opens `tokens` ends; 0 for none ("tomorrow at 9 a call" is 3). */
+const whenRunAtStart = (tokens: ReadonlyArray<Token>): number => {
+  for (let end = tokens.length; end > 0; end -= 1) {
+    if (saysOnlyWhen(textOf(tokens.slice(0, end)))) {
+      return end;
+    }
+  }
+  return 0;
+};
+
+/**
+ * What follows "on my calendar" lets it close the command — nothing, or
+ * the command's when, a "for" before it and the politeness or the
+ * verb's particle after it aside ("… in den Kalender für morgen ein") —
+ * and only beside a command's verb or frame (`commanded`) or the verb
+ * said last ("… in meinen Kalender eintragen"): "Give Anna access to my
+ * calendar tomorrow" is a title.
+ */
+const closesWith = (
+  tokens: ReadonlyArray<Token>,
+  {
+    commanded,
+    particles,
+  }: { readonly commanded: boolean; readonly particles: ReadonlyArray<string> },
+): boolean => {
+  let end = tokens.length;
+  while (end > 0 && CLOSERS.has(tokens[end - 1]!.plain)) {
+    end -= 1;
+  }
+  if (end > 0 && particles.includes(tokens[end - 1]!.plain)) {
+    end -= 1;
+  }
+  const infinitive = end > 0 && INFINITIVES.has(tokens[end - 1]!.plain);
+  if (infinitive) {
+    end -= 1;
+  }
+  const from = FOR.has(tokens[0]?.plain ?? '') ? 1 : 0;
+  return (
+    (commanded || infinitive) && (end <= from || saysOnlyWhen(textOf(tokens.slice(from, end))))
+  );
+};
+
+interface Tail {
+  /** "on my calendar" came off: the title carried a command's tail. */
+  readonly calendar: boolean;
+  /** The command's verb closed the title ("… eintragen"). */
+  readonly infinitive: boolean;
+  readonly tokens: ReadonlyArray<Token>;
+}
+
+/**
+ * The tokens without the command's tail: where it puts the event ("on
+ * my calendar", at the end or before its when), the politeness closing
+ * it, and the verb said last as German puts it — that one only where
+ * something else says a command: the calendar, a request or a wish that
+ * opened the title (`framed`) or a when right before it ("Zahnarzt am
+ * Dienstag um 10 eintragen"). "The calendar" counts only beside a
+ * command's verb or frame (`commanded`).
+ */
+const withoutTail = (
+  tokens: ReadonlyArray<Token>,
+  {
+    commanded,
+    framed,
+    infinitives,
+    particles,
+  }: {
+    readonly commanded: boolean;
+    readonly framed: boolean;
+    /** The verb said last may come off (never a to-do's). */
+    readonly infinitives: boolean;
+    readonly particles: ReadonlyArray<string>;
+  },
+): Tail => {
+  const kept = [...tokens];
+  let calendar = false;
+  for (let at = 0; at + 2 < kept.length; at += 1) {
+    const owner = kept[at + 1]!.plain;
+    if (
+      INTO.has(kept[at]!.plain) &&
+      (OWN.has(owner) || (commanded && THE.has(owner))) &&
+      BOOKS.has(kept[at + 2]!.plain) &&
+      closesWith(kept.slice(at + 3), { commanded, particles })
+    ) {
+      kept.splice(at, 3);
+      calendar = true;
+      break;
+    }
+  }
+  let infinitive = false;
+  for (;;) {
+    const last = kept.at(-1)?.plain;
+    if (last !== undefined && CLOSERS.has(last) && kept.length > 1) {
+      kept.pop();
+    } else if (
+      infinitives &&
+      last !== undefined &&
+      INFINITIVES.has(last) &&
+      !infinitive &&
+      (calendar || framed || whenRunAtEnd(kept.slice(0, -1)) > 0)
+    ) {
+      infinitive = true;
+      kept.pop();
+    } else {
+      return { calendar, infinitive, tokens: kept };
+    }
+  }
+};
+
+interface Frame {
+  /** The request needs a verb ("can you"). */
+  readonly ask: boolean;
+  readonly at: number;
+  /** The title opened with politeness ("please", "hey"), which is never its own. */
+  readonly polite: boolean;
+  /** A wish leads into the event ("I'd like to"): the verb may be missing. */
+  readonly wish: boolean;
+}
+
+/**
+ * "Add" as the recognizer writes it for a speaker who unvoices its end
+ * ("At an event for lunch tomorrow with Stefan", an iPhone recording,
+ * 2026-11-09): only before the command's "a" or "an" in lower case,
+ * where no title has "at" or "ad", and never where the words read as a
+ * clock ("At a quarter past ten"). The article is its evidence, as for
+ * any verb but "add" and "schedule".
+ */
+const HEARD_AS_ADD = new Set(['ad', 'at']);
+const ADD_AS_HEARD = verb('add');
+
+/** The calendar verb at `at`, "add" as the recognizer mishears it included. */
+const verbAt = (tokens: ReadonlyArray<Token>, at: number): Verb | undefined => {
+  const said = VERBS.find(({ words: sequence }) => matches(tokens, at, sequence));
+  if (said !== undefined || !HEARD_AS_ADD.has(tokens[at]?.plain ?? '')) {
+    return said;
+  }
+  const article = tokens[at + 1];
+  return article !== undefined &&
+    (article.plain === 'a' || article.plain === 'an') &&
+    LOWER.test(article.text) &&
+    whenRunAtStart(tokens.slice(at)) === 0
+    ? ADD_AS_HEARD
+    : undefined;
+};
+
+/** A wish, a request or a calendar verb starts at `at`: what a greeting leads into. */
+const requestAt = (tokens: ReadonlyArray<Token>, at: number): boolean =>
+  sequenceAt(tokens, at, WISHES) > 0 ||
+  sequenceAt(tokens, at, ASKS) > 0 ||
+  verbAt(tokens, at) !== undefined;
+
+/** The politeness, the wish or the request that opens the command, and the fillers after them. */
+const frameAt = (tokens: ReadonlyArray<Token>): Frame => {
+  let at = 0;
+  while (
+    at < tokens.length &&
+    (POLITE.has(tokens[at]!.plain) ||
+      (GREETINGS.has(tokens[at]!.plain) &&
+        (MARKED.test(tokens[at]!.text) || requestAt(tokens, at + 1))))
+  ) {
+    at += 1;
+  }
+  const polite = at > 0;
+  let wish = sequenceAt(tokens, at, WISHES);
+  if (wish > 0 && tokens[at]!.plain === LETS && !LIGHT_VERBS.has(tokens[at + 1]?.plain ?? '')) {
+    wish = 0;
+  }
+  const ask = wish > 0 ? 0 : sequenceAt(tokens, at, ASKS);
+  at += wish + ask;
+  while (at < tokens.length && FILLERS.has(tokens[at]!.plain)) {
+    at += 1;
+  }
+  return { ask: ask > 0, at, polite, wish: wish > 0 };
+};
+
+interface Noun {
+  readonly end: number;
+  readonly placeholder: boolean;
+  /** A to-do's noun ("reminder", "Aufgabe"). */
+  readonly todo: boolean;
+}
+
+/** The command's noun at `at`, with "new" and "calendar" before it ("a new calendar entry"). */
+const nounAt = (tokens: ReadonlyArray<Token>, at: number): Noun | undefined => {
+  const from = NEW.has(tokens[at]?.plain ?? '') ? at + 1 : at;
+  const word = tokens[from]?.plain ?? '';
+  if (CALENDAR.has(word) && NOUNS.has(tokens[from + 1]?.plain ?? '')) {
+    return { end: from + 2, placeholder: true, todo: false };
+  }
+  return NOUNS.has(word)
+    ? { end: from + 1, placeholder: PLACEHOLDERS.has(word), todo: TODO_NOUNS.has(word) }
+    : undefined;
+};
+
+interface Link {
+  readonly count: number;
+  readonly kind: 'event' | 'name' | undefined;
+}
+
+/** The link after the command's noun at `at`: one that names the event, one that leads into it, or none. */
+const linkAt = (tokens: ReadonlyArray<Token>, at: number, noun: Noun): Link => {
+  if (/:$/.test(tokens[at - 1]?.text ?? '')) {
+    return { count: 0, kind: 'name' };
+  }
+  const token = tokens[at];
+  if (token === undefined) {
+    return { count: 0, kind: undefined };
+  }
+  if ((noun.placeholder && NAME_MARK.test(token.text)) || NAME_LINKS.has(token.plain)) {
+    return { count: 1, kind: 'name' };
+  }
+  const long = sequenceAt(tokens, at, LONG_NAME_LINKS);
+  if (long > 0) {
+    return { count: long, kind: 'name' };
+  }
+  return EVENT_LINKS.has(token.plain) ? { count: 1, kind: 'event' } : { count: 0, kind: undefined };
+};
+
+interface Object_ {
+  /** Something stood after the verb that says a command: a pronoun or an indefinite article (and the noun after it). */
+  readonly held: boolean;
+  /** The noun and its link came off ("a reminder to …"). */
+  readonly linked: boolean;
+  /** The noun was a to-do's ("reminder", "Aufgabe"): the one form that comes off a to-do. */
+  readonly todo: boolean;
+  /** The event's words. */
+  readonly tokens: ReadonlyArray<Token>;
+  /** The words are the event's name as said ("called standup"): no article comes off them. */
+  readonly verbatim: boolean;
+}
+
+/** What a placeholder stands for: the words after its link, a light "have" after "to" aside. */
+const standsFor = (
+  tokens: ReadonlyArray<Token>,
+  noun: Noun,
+  rest: ReadonlyArray<Token>,
+): Pick<Object_, 'linked' | 'tokens' | 'verbatim'> | undefined => {
+  const link = linkAt([...tokens.slice(0, noun.end), ...rest], noun.end, noun);
+  const after = rest.slice(link.count);
+  if (link.kind === 'name' && after.length > 0) {
+    return { linked: true, tokens: after, verbatim: true };
+  }
+  if (
+    link.kind === 'event' &&
+    noun.placeholder &&
+    after.length > 0 &&
+    !saysOnlyWhen(textOf(after))
+  ) {
+    const have = rest[0]!.plain === 'to' && after[0]!.plain === HAVE && after.length > 1 ? 1 : 0;
+    return { linked: true, tokens: after.slice(have), verbatim: false };
+  }
+  return undefined;
+};
+
+/**
+ * The command's object after its verb or frame — whom it is for, the
+ * article, the noun it calls the event, the link into the event — and
+ * the event's words after it. A placeholder noun goes with its link
+ * ("an event for lunch", "a reminder to call"); a noun that names the
+ * event stays ("a meeting with Tom"), as does any noun where nothing
+ * but when follows ("an event tomorrow at 9"). A "for" before a when
+ * is the command's, whatever the noun ("a meeting for tomorrow with
+ * Tom" is "meeting with Tom", "an event for Saturday brunch" is
+ * "brunch").
+ */
+const objectAt = (
+  tokens: ReadonlyArray<Token>,
+  from: number,
+  { afterWish }: { readonly afterWish: boolean },
+): Object_ => {
+  let at = from;
+  let held = false;
+  if (PRONOUNS.has(tokens[at]?.plain ?? '')) {
+    at += 1;
+    held = true;
+  }
+  // In lower case only: "a Just Dance session", "The Killers concert" are names.
+  while (
+    at < tokens.length &&
+    (FILLERS.has(tokens[at]!.plain) || DETERMINERS.has(tokens[at]!.plain)) &&
+    LOWER.test(tokens[at]!.text)
+  ) {
+    held ||= INDEFINITE.has(tokens[at]!.plain);
+    at += 1;
+  }
+  const noun = nounAt(tokens, at);
+  if (noun === undefined) {
+    // A light "have" after a wish ("let's have lunch").
+    const have = afterWish && at === from && tokens[at]?.plain === HAVE && at + 1 < tokens.length;
+    return {
+      held,
+      linked: false,
+      todo: false,
+      tokens: tokens.slice(have ? at + 1 : at),
+      verbatim: false,
+    };
+  }
+  const base = { held, todo: noun.todo };
+  const rest = tokens.slice(noun.end);
+  // "for" before a when: the when is the command's, and what follows it
+  // is the event ("an event for Saturday brunch", "a reminder for
+  // tomorrow to call the bank") — unless it only qualifies the noun ("an
+  // event for Friday with Anna"), or nothing follows: then the noun is.
+  const when = FOR.has(rest[0]?.plain ?? '') ? whenRunAtStart(rest.slice(1)) : 0;
+  if (when > 0) {
+    const after = rest.slice(1 + when);
+    const stood = standsFor(tokens, noun, after);
+    if (stood !== undefined) {
+      return { ...base, ...stood };
+    }
+    const named = noun.placeholder && after.length > 0 && !CONNECTORS.has(after[0]!.plain);
+    return {
+      ...base,
+      linked: false,
+      tokens: named ? after : [...tokens.slice(at, noun.end), ...after],
+      verbatim: false,
+    };
+  }
+  const stood = standsFor(tokens, noun, rest);
+  return stood === undefined
+    ? { ...base, linked: false, tokens: tokens.slice(at), verbatim: false }
+    : { ...base, ...stood };
+};
+
+/** A word the command's when opens with: a preposition before a day or a clock ("am Dienstag", "for Friday", "um 10"). */
+const WHEN_LEADS = new Set(['am', 'an', 'at', 'for', 'fur', 'gegen', 'on', 'um']);
+/** A day word that opens a command's when ("tomorrow at 9", "nächsten Mittwoch"). */
+const DAY_OPENERS = new Set([
+  ...WHEN_LEADS,
+  'diese',
+  'diesen',
+  'dieser',
+  'dieses',
+  'heute',
+  'kommende',
+  'kommenden',
+  'kommendes',
+  'morgen',
+  'nachste',
+  'nachsten',
+  'nachstes',
+  'next',
+  'this',
+  'today',
+  'tomorrow',
+  'tonight',
+  'ubermorgen',
+]);
+
+/**
+ * The event's words without the when the command put before them
+ * ("Trag mir am Dienstag um 10 einen Zahnarzttermin ein", "Trag mir für
+ * nächsten Mittwoch um 10 Uhr einen Zahnarzttermin ein"): a title never
+ * opens with its when, but `trimWhen` keeps a weekday that opens one
+ * ("Monday standup"), so after a command the when goes here — one a
+ * preposition or a day word opens, or a weekday with the command's
+ * article after it ("Dienstag um 10 einen Zahnarzttermin"); never a bare
+ * weekday, a repeat or a clock, which name the event ("Add Monday
+ * standup", "Schedule weekly sync", "Add noon yoga").
+ */
+const withoutLeadingWhen = (tokens: ReadonlyArray<Token>): ReadonlyArray<Token> => {
+  const first = tokens[0];
+  if (first === undefined) {
+    return tokens;
+  }
+  const weekday = namedWeekdays(first.text).length > 0;
+  if (!weekday && !DAY_OPENERS.has(first.plain)) {
+    return tokens;
+  }
+  // With the lead word ("um 10", "at 9"), then without it ("for tomorrow at 9").
+  for (const from of WHEN_LEADS.has(first.plain) ? [0, 1] : [0]) {
+    for (let end = tokens.length - 1; end > from; end -= 1) {
+      if (saysOnlyWhen(textOf(tokens.slice(from, end)))) {
+        return weekday && !INDEFINITE.has(tokens[end]!.plain) ? tokens : tokens.slice(end);
+      }
+    }
+  }
+  return tokens;
+};
+
+/**
+ * The tokens without the "for" a command puts before its when at the
+ * end ("put lunch on my calendar for tomorrow at 1", "einen Termin für
+ * Freitag um 12"): the word alone, so the when can come off the end as
+ * any other (`trimWhen`). Only the day that ends the title, after its
+ * clock, is the command's: on its own, "for" owns its day ("Prep for
+ * Friday", and "prepare for Friday tomorrow at 9" keeps its Friday).
+ */
+const withoutFor = (tokens: ReadonlyArray<Token>): ReadonlyArray<Token> => {
+  // Run by run from the end ("at 1", then "tomorrow"), as `whenless` reads them.
+  for (let last = tokens.length; last > 2;) {
+    const run = whenRunAtEnd(tokens.slice(0, last));
+    if (run === 0 || run >= last) {
+      break;
+    }
+    last -= run;
+    if (!clockOnly(tokens.slice(last, last + run))) {
+      return FOR.has(tokens[last - 1]!.plain)
+        ? [...tokens.slice(0, last - 1), ...tokens.slice(last)]
+        : tokens;
+    }
+  }
+  return tokens;
+};
+
+/** The run of when-words is a clock alone ("at 1", "um 13 Uhr"), not a day. */
+const clockOnly = (run: ReadonlyArray<Token>): boolean =>
+  clockAtStart(run.map(({ text }) => words(text)).join(' ')) === run.length;
+
+/**
+ * The event's words without what the command put around them: the when
+ * said first, the article after it ("am Dienstag um 10 einen
+ * Zahnarzttermin"), the "for" before the when at the end.
+ */
+const withoutCommandWhen = (lead: ReadonlyArray<Token>): ReadonlyArray<Token> => {
+  const event = lead.length > 0 ? withoutLeadingWhen(lead) : lead;
+  const article =
+    event.length > 1 && DETERMINERS.has(event[0]!.plain) && LOWER.test(event[0]!.text) ? 1 : 0;
+  return withoutFor(event.slice(article));
+};
+
+/** A mark a cut left standing at the start ("– lunch") or hanging at the end ("Stefan,"); "-20% sale" keeps its own. */
+const EDGE_START = /^(?:[,;:–—-]+\s+)+/u;
+const EDGE_END = /[\s,;:–—-]+$/u;
+
+/** What a title, or the phrase it came from, says of a command around it. */
+interface Spoken {
+  /** Where the event's words would start after the verb. */
+  readonly afterVerb: number;
+  readonly frame: Frame;
+  readonly tail: Tail;
+  readonly verb: Verb | undefined;
+}
+
+/** A to-do's verb said last is what to do ("Mitarbeiter einstellen"): it never comes off (`todo`). */
+const spokenOf = (tokens: ReadonlyArray<Token>, { todo }: { readonly todo: boolean }): Spoken => {
+  const frame = frameAt(tokens);
+  const verb = verbAt(tokens, frame.at);
+  const framed = !todo && (frame.ask || frame.wish);
+  const tail = withoutTail(tokens, {
+    commanded: frame.ask || frame.wish || frame.polite || verb !== undefined,
+    framed,
+    infinitives: !todo,
+    particles: verb?.particles ?? [],
+  });
+  return { afterVerb: frame.at + (verb?.words.length ?? 0), frame, tail, verb };
+};
+
+/** The separable verb's particle closes `tokens` ("trag … ein"), with the event's words between. */
+const endsWithParticle = (
+  tokens: ReadonlyArray<Token>,
+  verb: Verb | undefined,
+  from: number,
+): boolean =>
+  verb !== undefined && tokens.length > from + 1 && verb.particles.includes(tokens.at(-1)!.plain);
+
+/** What `spoken` says closed its command: the calendar, the verb said last, the verb's particle. */
+const closedBy = ({ afterVerb, tail, verb }: Spoken): boolean =>
+  tail.calendar || tail.infinitive || endsWithParticle(tail.tokens, verb, afterVerb);
+
+/**
+ * The phrase (`said`, with its tail still on: the name may end in
+ * "please") named the event as it is ("Add an event called Schedule
+ * review tomorrow") and `tokens` are words of that name: a title the
+ * model took from it is the name, whatever it opens or closes with.
+ */
+const namedBy = (
+  said: ReadonlyArray<Token>,
+  spoken: Spoken,
+  tokens: ReadonlyArray<Token>,
+): boolean => {
+  const object = objectAt(said, spoken.afterVerb, { afterWish: false });
+  if (!object.verbatim) {
+    return false;
+  }
+  const named = new Set(object.tokens.map(({ plain }) => plain));
+  return tokens.every(({ plain }) => named.has(plain));
+};
+
+/**
+ * The title's words past the placeholder the phrase's command called the
+ * event by: a model drops the verb and keeps the rest ("Event for lunch
+ * with Stefan" for "At an event for lunch tomorrow with Stefan", the
+ * Mac's answer to the iPhone recording). The phrase is a command by its
+ * own evidence, and the title opens with the noun and its link as the
+ * phrase said them. The title's tail goes as the command's does ("…
+ * please", "… on the calendar", the particle the phrase ended with), so
+ * the when can come off after it.
+ */
+const pastPlaceholder = (
+  tokens: ReadonlyArray<Token>,
+  spoken: Spoken,
+  todo: boolean,
+): ReadonlyArray<Token> | undefined => {
+  const { afterVerb, frame, tail, verb } = spoken;
+  if (verb === undefined) {
+    return undefined;
+  }
+  const particle = endsWithParticle(tail.tokens, verb, afterVerb);
+  const body = particle ? tail.tokens.slice(0, -1) : tail.tokens;
+  const object = objectAt(body, afterVerb, { afterWish: false });
+  const commands = todo ? object.todo : verb.alone || object.held || closedBy(spoken);
+  if (!commands || !object.linked || object.verbatim) {
+    return undefined;
+  }
+  const closed = withoutTail(tokens, {
+    commanded: true,
+    framed: !todo && (frame.ask || frame.wish),
+    infinitives: !todo,
+    particles: verb.particles,
+  }).tokens;
+  const mine =
+    particle && closed.length > 1 && verb.particles.includes(closed.at(-1)!.plain)
+      ? closed.slice(0, -1)
+      : closed;
+  // Whom it is for, the article, the noun, the link: the last two at least.
+  const called = body.slice(afterVerb, body.length - object.tokens.length);
+  for (let from = 0; from < called.length - 1; from += 1) {
+    const opening = called.slice(from);
+    if (
+      mine.length > opening.length &&
+      opening.every(({ plain }, at) => mine[at]!.plain === plain)
+    ) {
+      return mine.slice(opening.length);
+    }
+  }
+  return undefined;
+};
+
+/**
+ * The title without the command spoken around it: "Add an event to have
+ * lunch with Stefan tomorrow" is "lunch with Stefan tomorrow", "Set up a
+ * dinner with Tom Baker" is "dinner with Tom Baker", "Trag mir am
+ * Dienstag um 10 einen Zahnarzttermin ein" is "Zahnarzttermin", "Put
+ * lunch with Stefan on my calendar for tomorrow" is "lunch with Stefan
+ * tomorrow". A dictated phrase carries such a frame as often as not, and
+ * the model echoes it or the phrase stands in for the title
+ * (`groundTitle`); the frame is not what the event is.
+ *
+ * A command is a request with a verb ("can you add"), or a verb that
+ * puts something on the calendar with evidence beside it — none for
+ * "add" and "schedule", else an indefinite article, a pronoun or a tail
+ * — so "Book club", "Planning session", "Setup call", "Plan review" and
+ * "Plan my week" stay titles. An opener or a wish ("I'd like
+ * to") is never the title's and comes off by itself, but is no evidence
+ * for the verb after it ("I'd like to organize the garage" is "organize
+ * the garage"). Given the phrase the title came from, its tail counts
+ * too when its verb is the title's: a model keeps the verb and drops the
+ * rest ("Put lunch with Stefan" for "Put lunch with Stefan on my
+ * calendar for tomorrow"), or drops the verb and keeps the placeholder
+ * (`pastPlaceholder`). A to-do's words are what to do ("add
+ * milk", "set up the printer"): only "add a reminder to …" and the tail
+ * come off (`todo`). A title that is nothing but command stays as it is.
+ */
+export const withoutCommand = (
+  title: string,
+  phrase: string = title,
+  { todo = false }: { readonly todo?: boolean } = {},
+): string => {
+  const tokens = tokensOf(title);
+  const own = spokenOf(tokens, { todo });
+  const said = phrase === title ? tokens : tokensOf(phrase);
+  const spoken = phrase === title ? own : spokenOf(said, { todo });
+  // A title the phrase named as it is ("Add an event called Schedule
+  // review", "… called 'Say please'") is the name, whatever it opens or
+  // closes with.
+  if (spoken !== own && namedBy(said, spoken, tokens)) {
+    return title;
+  }
+  const { afterVerb, frame, tail, verb } = own;
+  // The phrase's command is the title's only around the same verb.
+  const same = verb !== undefined && spoken.verb === verb;
+  const particle = endsWithParticle(tail.tokens, verb, afterVerb);
+  const closed = closedBy(own) || (same && closedBy(spoken));
+  const body = particle ? tail.tokens.slice(0, -1) : tail.tokens;
+  const object = objectAt(body, afterVerb, { afterWish: frame.wish && verb === undefined });
+  const evidence = verb !== undefined && (verb.alone || object.held || closed);
+  // A to-do loses its noun only after a verb ("add a reminder to …"): "Ich
+  // muss eine Aufgabe für das Team erstellen" is the task.
+  const commands = todo
+    ? verb !== undefined && object.linked && object.todo
+    : evidence ||
+      (frame.ask && (verb !== undefined || closed)) ||
+      (frame.wish && verb === undefined);
+  // No command: the opener or the wish still goes ("Please plan my week"
+  // is "plan my week"), and the particle was a word of the title's.
+  const opened = (frame.polite || frame.wish) && frame.at < tail.tokens.length;
+  // The verb gone and the placeholder kept ("Event for lunch with Stefan").
+  const past =
+    verb === undefined && spoken !== own ? pastPlaceholder(tokens, spoken, todo) : undefined;
+  const lead =
+    past ?? (commands ? object.tokens : opened ? tail.tokens.slice(frame.at) : tail.tokens);
+  // A name said as is keeps its when ("called On Friday we wear pink").
+  const trims = past !== undefined || (commands && !object.verbatim);
+  const kept = trims ? withoutCommandWhen(lead) : lead;
+  if (kept.length === tokens.length) {
+    return title;
+  }
+  const rest = textOf(kept).replace(EDGE_START, '').replace(EDGE_END, '');
+  return rest === '' ? title : rest;
 };
 
 /** The words of a text, folded: its runs of letters and digits ("Tom's" is "tom" and "s"). */

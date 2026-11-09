@@ -1,0 +1,10 @@
+{
+  "lang": "en",
+  "tags": ["command", "task"],
+  "turns": [
+    {
+      "input": { "text": "Add a reminder to call the bank tomorrow" },
+      "expect": { "kind": "task", "title": "call the bank", "dayOffset": 1 }
+    }
+  ]
+}
