@@ -1252,8 +1252,8 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   "with Stefan" landed in the location: a model asked for the whole event
   back answers such a turn its own way. `bareTurns.ts` reads the two
   without it: where joins the place as said ("Cafe Meek, Vienna", looked
-  up again), company the title, inviting no one. Anything more — a comma,
-  a when, a verb, a listed word — stays the model's. Rejected: a prompt
+  up again), company the title, inviting no one. Anything more — a second
+  clause, a when, a verb, a listed word — stays the model's. Rejected: a prompt
   rule, telling a city by the "in" it was said after, adding to the
   address a lookup wrote. Open: "Conference in Berlin", then "it's in
   Vienna" reads "Berlin, Vienna"; exonyms and districts ("in Wien").
