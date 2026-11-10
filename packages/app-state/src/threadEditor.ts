@@ -37,7 +37,7 @@ import {
 } from './editorModel.ts';
 import { useEditorKinds } from './editorKinds.ts';
 import type { EditorSourceKind } from './editorSwitch.ts';
-import { livePlaceChoice } from './draftPlaces.ts';
+import { keptAsSaid, livePlaceChoice } from './draftPlaces.ts';
 import { useBackendMutations } from './hooks.ts';
 import { useOneWrite } from './oneWrite.ts';
 import type { QuickAddItem } from './quickAddItem.ts';
@@ -592,7 +592,8 @@ export const useThreadEditor = ({
    * the field reads marked — while it reads that text or one of them
    * (`livePlaceChoice`). A pick makes a place the form's, pin and all,
    * as a hand edit; "as said" gives the text back as it was said, pin
-   * gone; the row stays until dismissed.
+   * gone — to the title, where the lookup took a name out of it
+   * (`keptAsSaid`); the row stays until dismissed.
    */
   const placeChoice =
     mode === 'event' ? livePlaceChoice(focusedDraft?.placeChoice, eventModel.location) : undefined;
@@ -608,7 +609,11 @@ export const useThreadEditor = ({
       return;
     }
     edited();
-    eventModel.keepLocationText(placeChoice.text);
+    const said = keptAsSaid(placeChoice, eventModel.title);
+    if (said.title !== undefined) {
+      eventModel.setTitle(said.title);
+    }
+    eventModel.keepLocationText(said.location);
   };
   /** The coordinates the form vouches for now, for the chips to tell a held place from its text. */
   const placeGeo = eventModel.extras().geo;

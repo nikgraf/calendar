@@ -263,9 +263,12 @@ const foundCandidate = (
  * calls a place — "im Figlmüller" and "im Regen", "at Luigi's" and "at
  * Thanksgiving" are written alike. Such a name gets candidates only with
  * proof that it is a place: a past place written exactly that, else a
- * search hit that proves it (`provesName`). The proof comes first, so it
- * is the one taken (`preselectedPlace`); without one there is nothing,
- * and the draft keeps the words in its title.
+ * search hit that proves it (`provesName`), either one within a day
+ * trip of the user's places — a bar called "Anna" picked on last year's
+ * trip is not where "Party at Anna" is. A place used in the last three
+ * months is one of those places itself. The proof comes first, so it is
+ * the one taken (`preselectedPlace`); without one there is nothing, and
+ * the draft keeps the words in its title.
  */
 export const placeCandidatesFor = (
   text: string,
@@ -288,7 +291,7 @@ export const placeCandidatesFor = (
     return mergePlaceCandidates(history, hits);
   }
   const proof =
-    history.find(({ match }) => match === 'exact') ??
+    history.find(({ geo, match }) => match === 'exact' && isDayTrip(region, geo)) ??
     hits.find(
       (_, at) => ranked[at]!.match === 'exact' && provesName(text, ranked[at]!.place, region),
     );

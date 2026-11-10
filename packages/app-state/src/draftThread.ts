@@ -38,6 +38,7 @@ import {
 import {
   type PlaceChange,
   type PlaceChoice,
+  placeToLookUp,
   settlePlace,
   settlePossiblePlace,
 } from './draftPlaces.ts';
@@ -1177,13 +1178,13 @@ export const useDraftThread = ({
     // A name the words may mean as the place ("… im Figlmüller") is
     // looked up in the location's stead, and is the place only with proof.
     const possible = result.kind === 'parsed' ? result.possiblePlace : undefined;
+    const asked =
+      result.kind === 'parsed' ? placeToLookUp(result.prefill.location, possible) : undefined;
     const [guests, placeFound] =
       result.kind === 'parsed'
         ? await Promise.all([
             guestsOf(result.invite, undefined),
-            possible === undefined
-              ? placesOf(result.prefill.location)
-              : placesOf(possible.place, { possible: true }),
+            placesOf(asked?.text, { possible: asked?.possible ?? false }),
           ])
         : [undefined, undefined];
     if (mine !== request.current) {

@@ -1112,9 +1112,42 @@ describe('a possible place', () => {
       expect((yield* asked('Mercato')).map((c) => [c.source, c.geo.source, c.match])).toEqual([
         ['history', 'Mercato', 'exact'],
       ]);
-      // No bridge at all: the past place is proof on its own.
     }).pipe(Effect.provide(setup(client)));
   });
+
+  it.effect(
+    'is the past place on its own without a bridge, and none picked far from the user’s places',
+    () =>
+      Effect.gen(function* () {
+        yield* seedPlaced([
+          placedEvent('home', 1, VIENNA),
+          new EventRecord({
+            ...placedEvent('lunch', 30, VIENNA),
+            geo: new GeoLocation({ lat: 48.21, lng: 16.36, source: 'Mercato' }),
+            location: 'Mercato',
+          }),
+          // Review (Opus): a bar picked on a trip four months back.
+          new EventRecord({
+            ...placedEvent('trip', 120, { lat: 48.8566, lng: 2.3522 }),
+            geo: new GeoLocation({
+              lat: 48.8566,
+              lng: 2.3522,
+              name: 'Anna',
+              source: 'Anna, 12 Rue de Rivoli, 75004 Paris, France',
+            }),
+            location: 'Anna, 12 Rue de Rivoli, 75004 Paris, France',
+          }),
+        ]);
+        expect((yield* asked('Mercato')).map((c) => [c.source, c.geo.source])).toEqual([
+          ['history', 'Mercato'],
+        ]);
+        expect(yield* asked('Anna')).toEqual([]);
+        // Said outright, the trip's place is the one, as it was.
+        expect(
+          (yield* locationHandlers.placeCandidates({ location: 'Anna' })).map((c) => c.geo.source),
+        ).toContain('Anna, 12 Rue de Rivoli, 75004 Paris, France');
+      }).pipe(Effect.provide(setup(unavailableGeoClient('off')))),
+  );
 
   it.effect('is nothing where the hits only resemble the name', () => {
     // What MapKit answered around Vienna (probe, 2026-11-10), and a venue

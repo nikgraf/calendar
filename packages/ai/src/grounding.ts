@@ -2221,31 +2221,43 @@ const TWO_DAYS = new RegExp(
   'u',
 );
 
+/** "Look at Anna's slides": what follows is looked at, not where. */
+const LOOKS = new Set(['glance', 'look', 'looked', 'looking', 'looks', 'peek', 'stare']);
 /**
- * "Look at Anna's slides", "Aim at Target", "Get better at Chess": what
- * follows is looked at, aimed at or what one is good at, not where.
+ * "Aim at Target", "Get better at Chess", "Mad at Tom": before a name,
+ * "at" after one of these says what is aimed at, or what one is good
+ * at or cross with. A place said by its kind is still where ("Feel
+ * better at home").
  */
-const LOOKS = new Set([
+const AIMS = new Set([
   'aim',
   'aimed',
   'aiming',
   'angry',
   'bad',
   'better',
-  'glance',
   'good',
   'great',
-  'laugh',
-  'look',
-  'looked',
-  'looking',
-  'looks',
   'mad',
-  'peek',
   'shout',
-  'stare',
-  'wave',
   'yell',
+]);
+/**
+ * What a call runs on, said as what the event is ("Zoom with Tom at
+ * Google", "FaceTime with Anna at Deloitte"): the name after "at" is
+ * where the other works, as after "call" (`CONTACTS`). For a name only:
+ * a place said by its kind stays where the event is, as it was ("Zoom
+ * call at the office").
+ */
+const CALLS_ON = new Set([
+  'facetime',
+  'skype',
+  'slack',
+  'videoanruf',
+  'videocall',
+  'webex',
+  'whatsapp',
+  'zoom',
 ]);
 /** "Lunch with whoever is in the office": the lead is a clause's, not the event's. */
 const IS = new Set(['are', 'be', 'been', 'is', 'ist', 'sind', 'war', 'waren', 'was', 'were']);
@@ -2491,18 +2503,21 @@ const NAME_WORDS_MAX = 4;
 /**
  * What a run written like a name says that is no venue, as its folded
  * words: a day or a deadline the when-readers do not know, an occasion,
- * a place still to be said, what a call runs on ("Sync @ Zoom"), and
- * after "im" how, in what or with whom ("im Regen", "im Stehen", "im
- * Auto", "im Team"). A venue may be called any of these, and the lookup
- * would prove it: MapKit knows a club called "Bett" in Frankfurt, a
- * "Plenum" in Gdańsk and a bar "Office Hours" in New York. So the
- * commonest are refused here, whole — "Daily Provisions" and
- * "Regenbogen" are names — and every other word is left to the lookup,
- * which finds no venue for most.
+ * a place still to be said, whose home it is ("Dinner at Mom's"), what
+ * a call runs on ("Sync @ Zoom"), and after "im" how, in what or with
+ * whom ("im Regen", "im Stehen", "im Auto", "im Team"). A venue may be
+ * called any of these, and the lookup would prove it: MapKit knows a
+ * club called "Bett" in Frankfurt, a "Plenum" in Gdańsk and a bar
+ * "Office Hours" in New York. So the commonest are refused here, whole —
+ * "Daily Provisions" and "Regenbogen" are names — and every other word
+ * is left to the lookup, which finds no venue for most. Held against a
+ * name with its words run together (`venueKey`): "All-Hands" and "Stand
+ * Up" are the entries "all hands" and "standup".
  */
 export const NOT_A_VENUE: ReadonlySet<string> = new Set([
   // A day or a deadline.
   'advent',
+  'chanukah',
   'cob',
   'diwali',
   'eid',
@@ -2512,14 +2527,27 @@ export const NOT_A_VENUE: ReadonlySet<string> = new Set([
   'eoy',
   'fasching',
   'halloween',
+  'hanukah',
   'hanukkah',
   'karneval',
+  'labor day',
+  'mardi gras',
+  'memorial day',
   'month end',
+  'muttertag',
+  'new years',
+  'new years eve',
+  'nye',
   'passover',
   'pfingsten',
+  'pride',
   'quarter end',
   'ramadan',
+  'super bowl',
   'thanksgiving',
+  'valentines',
+  'valentines day',
+  'vatertag',
   'year end',
   // An occasion, or a place still to be said.
   'all hands',
@@ -2537,7 +2565,29 @@ export const NOT_A_VENUE: ReadonlySet<string> = new Set([
   'tba',
   'tbc',
   'tbd',
+  'townhall',
   'work',
+  // Whose home it is.
+  'dad',
+  'dads',
+  'grandma',
+  'grandmas',
+  'grandpa',
+  'grandpas',
+  'mama',
+  'mamas',
+  'mom',
+  'moms',
+  'mum',
+  'mums',
+  'nana',
+  'nanas',
+  'oma',
+  'omas',
+  'opa',
+  'opas',
+  'papa',
+  'papas',
   // What a call runs on.
   'discord',
   'facetime',
@@ -2558,30 +2608,42 @@ export const NOT_A_VENUE: ReadonlySet<string> = new Set([
   'bus',
   'call',
   'chat',
+  'club',
   'detail',
   'dialog',
   'dienst',
   'dunkeln',
   'einsatz',
+  'erdgeschoss',
   'ernst',
+  'ersten stock',
   'fernsehen',
   'flieger',
   'flugzeug',
   'fokus',
+  'foyer',
   'freien',
   'gehen',
   'gesprach',
   'grunen',
+  'hellen',
+  'hof',
   'homeoffice',
+  'innenhof',
   'internet',
   'job',
   'kalender',
+  'kalten',
   'kopf',
   'kreis',
   'kurs',
+  'laden',
+  'lager',
   'liegen',
+  'meer',
   'meeting',
   'moment',
+  'mondschein',
   'nachhinein',
   'nebel',
   'netz',
@@ -2597,6 +2659,7 @@ export const NOT_A_VENUE: ReadonlySet<string> = new Set([
   'schnee',
   'seminar',
   'sitzen',
+  'sonnenschein',
   'sprint',
   'stau',
   'stehen',
@@ -2616,22 +2679,29 @@ export const NOT_A_VENUE: ReadonlySet<string> = new Set([
   'voraus',
   'vorfeld',
   'wald',
+  'warmen',
   'wasser',
+  'wind',
   'workshop',
   'zug',
   'zweifel',
 ]);
+
+/** A name's words run together, as the list is held against it: hyphens and spaces tell nothing ("All-Hands", "Stand Up"). */
+const venueKey = (name: string): string => name.replaceAll(' ', '');
+const NOT_A_VENUE_KEYS: ReadonlySet<string> = new Set([...NOT_A_VENUE].map(venueKey));
 
 /**
  * Whether what follows a lead is written as a name and nothing else: no
  * article, every word with a name's capital (a joint between two of
  * them aside), short, one clause, no address, no when inside it, and
  * none of the common words a name's capital is also written on
- * (`NOT_A_VENUE`). Not in a phrase written in title case, where a
- * capital tells no name. That is how a venue is written — and a holiday,
- * an occasion, a person and their employer ("at Thanksgiving", "at All
- * Hands", "at Anna", "at Microsoft"), so it makes a possible place, never
- * a place.
+ * (`NOT_A_VENUE`). Not where the lead has a capital itself: the phrase
+ * is in title case or capitals, and a capital tells no name (a headline
+ * that keeps its "at" small is not told apart: "Book Club at Library").
+ * That is how a venue is written — and a holiday, an occasion, a person
+ * and their employer ("at Thanksgiving", "at All Hands", "at Anna", "at
+ * Microsoft"), so it makes a possible place, never a place.
  */
 const isNameRun = ({ article, capitals, lead, run }: Led): boolean =>
   capitals &&
@@ -2642,7 +2712,7 @@ const isNameRun = ({ article, capitals, lead, run }: Led): boolean =>
   !run.some(({ text }) => text.includes('@')) &&
   !saysWhenInside(run) &&
   readsAsName(run) &&
-  !NOT_A_VENUE.has(run.map(({ plain }) => plain).join(' '));
+  !NOT_A_VENUE_KEYS.has(venueKey(run.map(({ plain }) => plain).join(' ')));
 
 /**
  * What a first phrase's words lead into at their end: a `place`, said
@@ -2732,7 +2802,11 @@ export const readPlace = (
       return undefined;
     }
     const led: Led = { article, capitals: !NAMED.test(said[at]!.text), lead, run };
-    const kind = isPlaceRun(led) ? 'place' : isNameRun(led) ? 'name' : undefined;
+    const head = said.slice(0, at);
+    // Before a name, "at" may say what is aimed at, or where the other
+    // end of a call works: neither is where the event is.
+    const elsewhere = AIMS.has(head.at(-1)!.plain) || head.some(({ plain }) => CALLS_ON.has(plain));
+    const kind = isPlaceRun(led) ? 'place' : isNameRun(led) && !elsewhere ? 'name' : undefined;
     const read = placeText(run);
     return kind === undefined || read === '' ? undefined : { kind, text: read };
   }

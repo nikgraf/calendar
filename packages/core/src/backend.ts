@@ -727,8 +727,8 @@ export class AppBackendRpcs extends RpcGroup.make(
    * calls a place ("… im Figlmüller", "at Luigi's" — written like "im
    * Regen" and "at Thanksgiving"). Answered only with proof that it is
    * one, the proof first: a past place written exactly that, or a search
-   * hit called exactly that within a day trip (`placeCandidatesFor`).
-   * Empty without proof.
+   * hit called exactly that, within a day trip of the user's places
+   * (`placeCandidatesFor`). Empty without proof.
    */
   Rpc.make('placeCandidates', {
     error: BackendError,

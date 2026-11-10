@@ -30,8 +30,10 @@ import {
   ReminderOverride,
 } from '@calendar/core';
 import {
+  keptAsSaid,
   livePlaceChoice,
   pickedCandidate,
+  placeToLookUp,
   readsAsSaid,
   settlePossiblePlace,
 } from './draftPlaces.ts';
@@ -1080,8 +1082,9 @@ describe('a possible place from the words', () => {
       candidates: [luigis, other],
       text: "Luigi's",
     });
+    const titles = { asSaid: "Dinner at Luigi's", placed: 'Dinner' };
     expect(settled).toEqual({
-      place: { candidates: [luigis, other], text: "Luigi's" },
+      place: { candidates: [luigis, other], text: "Luigi's", titles },
       prefill: { ...prefill, location: "Luigi's", title: 'Dinner' },
     });
     // And on as any place a phrase names: the proof taken, pin and all,
@@ -1093,10 +1096,57 @@ describe('a possible place from the words', () => {
     expect(state.drafts[0]).toMatchObject({
       extras: { geo: luigis.geo },
       item: { prefill: { location: 'Luigi’s, Mint Street 5, 1010 Vienna', title: 'Dinner' } },
-      placeChoice: { candidates: [luigis, other], text: "Luigi's" },
+      placeChoice: { candidates: [luigis, other], text: "Luigi's", titles },
     });
     expect(state.turns[0]?.summary).toBe('Dinner · Fri, Aug 28 · 19:00–20:00 · 2 places');
     expect(readsAsSaid(state.drafts[0]!.placeChoice!, "Luigi's", undefined)).toBe(true);
+  });
+
+  it('gives the title its words back on "As said", the one way back from a place that was none', () => {
+    // Review (Opus): "As said" left the title cut and the name in the
+    // location; Undo deleted the draft. Nothing led back to the words.
+    const walk = { ...dinner.prefill, title: 'Spaziergang im Mondschein' };
+    const { place } = settlePossiblePlace(
+      walk,
+      { place: 'Mondschein', title: 'Spaziergang' },
+      { candidates: [luigis], text: 'Mondschein' },
+    );
+    const state = startThread([{ kind: 'event', prefill: walk }], 'Spaziergang im Mondschein', {
+      id: ids(),
+      place,
+    });
+    const choice = state.drafts[0]!.placeChoice!;
+    expect(keptAsSaid(choice, 'Spaziergang')).toEqual({
+      location: '',
+      title: 'Spaziergang im Mondschein',
+    });
+    // With no location the row is gone: the draft is the one the words made.
+    expect(livePlaceChoice(choice, '')).toBeUndefined();
+    // Edited by hand since: the title stays, the name goes to the location as text.
+    expect(keptAsSaid(choice, 'Abendspaziergang')).toEqual({ location: 'Mondschein' });
+    // The model cut the title before the name (Apple's on the Mac): nothing to give back.
+    const cut = settlePossiblePlace(
+      { ...dinner.prefill, title: 'Kaffee mit Max' },
+      { place: 'Figlmüller', title: 'Kaffee mit Max' },
+      { candidates: [luigis], text: 'Figlmüller' },
+    );
+    expect(cut.place).toEqual({ candidates: [luigis], text: 'Figlmüller' });
+    expect(keptAsSaid(cut.place!, 'Kaffee mit Max')).toEqual({ location: 'Figlmüller' });
+    // A place a phrase named outright: the text as said, as it was.
+    expect(keptAsSaid({ candidates: [luigis], text: 'Cafe Zentral' }, 'Dinner')).toEqual({
+      location: 'Cafe Zentral',
+    });
+  });
+
+  it('looks the name up as a possible place, and a place the phrase names as it did', () => {
+    expect(placeToLookUp(undefined, possible)).toEqual({ possible: true, text: "Luigi's" });
+    expect(placeToLookUp('Loos Bar', undefined)).toEqual({ possible: false, text: 'Loos Bar' });
+    expect(placeToLookUp(undefined, undefined)).toEqual({ possible: false, text: undefined });
+    // A place of its own comes first, whatever else the result holds.
+    expect(placeToLookUp('Loos Bar', possible)).toEqual({ possible: false, text: 'Loos Bar' });
+    const placed = { ...prefill, location: 'Loos Bar' };
+    const found = { candidates: [luigis], text: 'Loos Bar' };
+    expect(settlePossiblePlace(placed, possible, found)).toEqual({ place: found, prefill: placed });
   });
 
   it('leaves the draft as the words made it without proof: no place, no choice, the title whole', () => {

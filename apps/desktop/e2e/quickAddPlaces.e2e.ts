@@ -220,10 +220,11 @@ describe('Places from a quick-add phrase', () => {
     expect(await cdp.eval<string>(title)).toBe('Lunch');
     await cdp.waitFor(choices);
     expect(await cdp.eval<string>(pressed)).toBe('draft-place-pick-0');
-    // The name as said is a chip away.
+    // As said is a chip away: the words back in the title, no place.
     await cdp.clickTestId('draft-place-keep');
-    await cdp.waitFor(`${location} === 'Figlmüller'`);
-    expect(await cdp.eval<string>(title)).toBe('Lunch');
+    await cdp.waitFor(`${location} === ''`);
+    expect(await cdp.eval<string>(title)).toBe('Lunch tomorrow at 1 at Figlmüller');
+    await cdp.waitFor(`!${choices}`);
   });
 
   it('leaves a name nothing nearby proves in the title, with no place and nothing to choose', async () => {

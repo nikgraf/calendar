@@ -16,6 +16,19 @@ import {
 export interface PlaceChoice {
   readonly candidates: ReadonlyArray<PlaceCandidate>;
   readonly text: string;
+  /** Where the text was a name taken out of the title (`PlaceTitles`). */
+  readonly titles?: PlaceTitles | undefined;
+}
+
+/**
+ * The two titles of a draft whose place was a name in its phrase's
+ * title ("Dinner at Luigi's"): as the words made it, and as it reads
+ * with the name in the location field ("Dinner"). "As said" gives the
+ * first back (`keptAsSaid`).
+ */
+export interface PlaceTitles {
+  readonly asSaid: string;
+  readonly placed: string;
 }
 
 /** What a turn found for the location text it set. */
@@ -23,6 +36,8 @@ export interface PlaceChange {
   readonly candidates: ReadonlyArray<PlaceCandidate>;
   /** The text the turn put in the location. */
   readonly text: string;
+  /** Set where the text left the title for the location (a possible place the lookup proved). */
+  readonly titles?: PlaceTitles | undefined;
 }
 
 const same = (a: string, b: string): boolean => normalizeLocationKey(a) === normalizeLocationKey(b);
@@ -80,9 +95,46 @@ export const settlePlace = (
 ): { readonly choice?: PlaceChoice; readonly taken?: PlaceCandidate } => {
   const taken = preselectedPlace(change.candidates);
   const choice =
-    change.candidates.length > 0 ? { candidates: change.candidates, text: change.text } : undefined;
+    change.candidates.length > 0
+      ? {
+          candidates: change.candidates,
+          text: change.text,
+          ...(change.titles ? { titles: change.titles } : {}),
+        }
+      : undefined;
   return { ...(choice ? { choice } : {}), ...(taken ? { taken } : {}) };
 };
+
+/**
+ * What "As said" puts in the form: the location text as the words said
+ * it, with no place for it. Where the text was a name the lookup took
+ * out of the title ("Dinner at Luigi's" became "Dinner" at Luigi's), as
+ * said is the title with the name in it and no location — the one way
+ * back from a place that was none ("Spaziergang im Mondschein") — as
+ * long as the title still reads what the lookup left; edited by hand
+ * since, it stays, and the name goes to the location as text, so no
+ * word is lost either way.
+ */
+export const keptAsSaid = (
+  choice: PlaceChoice,
+  title: string,
+): { readonly location: string; readonly title?: string } =>
+  choice.titles !== undefined && title === choice.titles.placed
+    ? { location: '', title: choice.titles.asSaid }
+    : { location: choice.text };
+
+/**
+ * What the thread looks up for a first phrase: the place it names, or
+ * the name it may mean as one — asked as `possible`, so it is answered
+ * only with proof.
+ */
+export const placeToLookUp = (
+  location: string | undefined,
+  possible: PossiblePlace | undefined,
+): { readonly possible: boolean; readonly text: string | undefined } =>
+  location === undefined && possible !== undefined
+    ? { possible: true, text: possible.place }
+    : { possible: false, text: location };
 
 /**
  * A first phrase's draft once the lookup has answered for its possible
@@ -92,24 +144,32 @@ export const settlePlace = (
  * that, or a nearby venue called exactly that, the proof first). With
  * proof the name becomes the draft's place and leaves its title, and
  * the candidates go on as any place's do: the first is taken, the rest
- * stay to pick from (`settlePlace`). With none — no such place, a
- * lookup that failed or ran out of time — the draft is the phrase's as
- * it was: the words in the title, no place, nothing to choose. Without a
- * possible place, the prefill and what was found for its own location.
+ * stay to pick from (`settlePlace`), and "As said" gives the title its
+ * words back (`keptAsSaid`). With none — no such place, a lookup that
+ * failed or ran out of time — the draft is the phrase's as it was: the
+ * words in the title, no place, nothing to choose. Without a possible
+ * place, or where the prefill has a place of its own, the prefill and
+ * what was found for its location.
  */
 export const settlePossiblePlace = (
   prefill: QuickAddPrefill,
   possible: PossiblePlace | undefined,
   found: PlaceChange | undefined,
 ): { readonly place: PlaceChange | undefined; readonly prefill: QuickAddPrefill } => {
-  if (possible === undefined) {
+  if (possible === undefined || prefill.location !== undefined) {
     return { place: found, prefill };
   }
   if (found === undefined || preselectedPlace(found.candidates) === undefined) {
     return { place: undefined, prefill };
   }
+  // The title held the name only where the model kept it there: one
+  // that cut it off (Apple's on the Mac) left nothing to give back.
+  const titles =
+    prefill.title === possible.title
+      ? {}
+      : { titles: { asSaid: prefill.title, placed: possible.title } };
   return {
-    place: { candidates: found.candidates, text: possible.place },
+    place: { candidates: found.candidates, text: possible.place, ...titles },
     prefill: { ...prefill, location: possible.place, title: possible.title },
   };
 };

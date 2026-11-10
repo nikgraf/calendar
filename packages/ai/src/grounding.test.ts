@@ -2258,7 +2258,34 @@ describe('readPlace', () => {
         expect(readPlace(phrase), phrase).toBeUndefined();
       }
     }
-    // As the words are written, folded: accents, hyphens, a possessive's mark.
+    // However an entry's words are joined or split: a hyphen and a space tell nothing.
+    for (const phrase of [
+      'Present roadmap at All-Hands',
+      'Drinks at Happy-Hour',
+      'Ask at Office-Hours',
+      'Deadline at Month-End',
+      'Bring up budget at Stand Up',
+      'Slides at Kick-Off',
+      'Planning at Off Site',
+      'Treffen im Home-Office',
+    ]) {
+      expect(readPlace(phrase), phrase).toBeUndefined();
+    }
+    // Whose home it is, with the possessive's mark or without.
+    for (const phrase of [
+      "Dinner at Mom's",
+      'Dinner at Mom’s on Sunday',
+      "Dinner at Mum's",
+      "Lunch at Grandma's",
+      "Christmas at Grandma's",
+      "Sleepover at Grandpa's",
+      "Sunday lunch at Oma's",
+      'Essen at Oma',
+      "Dinner at Dad's Friday",
+    ]) {
+      expect(readPlace(phrase), phrase).toBeUndefined();
+    }
+    // As the words are written, folded: accents, capitals.
     for (const phrase of [
       'Visit family at Thanksgiving',
       'Costume party at Halloween',
@@ -2291,6 +2318,18 @@ describe('readPlace', () => {
       'Podcast im Stau',
       'Thema im Fokus',
       'Lernen im Kurs',
+      // Review (Opus): the weather's kin, parts of a building, occasions.
+      'Spaziergang im Mondschein',
+      'Frühstück im Sonnenschein',
+      'Empfang im Foyer',
+      'Grillen im Innenhof',
+      'Treffen im Ersten Stock',
+      'Party at Super Bowl',
+      'Party at Pride',
+      "Dinner at Valentine's",
+      'Present at Townhall',
+      'Party at NYE',
+      'Candles at Chanukah',
     ]) {
       expect(readPlace(phrase), phrase).toBeUndefined();
     }
@@ -2306,6 +2345,10 @@ describe('readPlace', () => {
       ['Drinks at Team Rocket', 'Team Rocket'],
       ['Essen im Wasserturm', 'Wasserturm'],
       ['Treffen im Zugvogel', 'Zugvogel'],
+      ["Dinner at Mom's Kitchen Table", "Mom's Kitchen Table"],
+      ['Wein im Weinberg', 'Weinberg'],
+      // A person's possessive is a venue's name as often: the lookup's to say.
+      ["Lunch at Tony's", "Tony's"],
     ] as const) {
       expect(readPlace(phrase), phrase).toEqual(name(text));
     }
@@ -2339,16 +2382,41 @@ describe('readPlace', () => {
       'Email Anna at Acme',
       'Telefonat mit Anna im Figlmüller',
       'Lunch with whoever is at Mercato',
-      // What is looked or aimed at, or what one is good at.
+      // What is looked or aimed at, or what one is good at or cross with.
       'Look at Tesla Saturday',
       'Aim at Target',
       'Get better at Chess',
+      'Mad at Tom',
+      // What a call runs on, said as the event: the name is where the other works.
+      'Zoom with Tom at Google',
+      'FaceTime with Anna at Deloitte',
+      'Slack Anna at Deloitte',
+      'Videocall with Anna at Deloitte',
+      'Skype mit Max at Siemens',
       // Nothing but a when before it, and the lead first.
       'Tomorrow at Mercato',
       'At Mercato',
     ]) {
       expect(readPlace(phrase), phrase).toBeUndefined();
     }
+  });
+
+  it('keeps a place said by its kind where a name would be aimed at, or a call’s other end', () => {
+    // "at" after "better" or "great" says no venue; a kind still says where.
+    expect(readPlace('Feel better at home tomorrow')).toEqual(place('home'));
+    expect(readPlace('Have a great time at Loos Bar')).toEqual(place('Loos Bar'));
+    expect(readPlace('Have a great time at Luigi’s')).toEqual(name('Luigi’s'));
+    expect(readPlace('Great at Luigi’s')).toBeUndefined();
+    // Review (Opus): the words that refuse a name refused a place said
+    // by its kind too — "Have a laugh at the pub" lost its pub.
+    expect(readPlace('Have a laugh at the pub')).toEqual(place('pub'));
+    expect(readPlace('Get good at the gym')).toEqual(place('gym'));
+    expect(readPlace('Have a laugh at Luigi’s')).toEqual(name('Luigi’s'));
+    expect(readPlace('Zoom call at the office')).toBeUndefined();
+    expect(readPlace('Zoom session at the office')).toEqual(place('office'));
+    // Meeting a person at a venue is not a call: the lookup decides the name.
+    expect(readPlace('Catch up with Tom at Luigi’s')).toEqual(name('Luigi’s'));
+    expect(readPlace('Coffee chat with Anna at Mercato')).toEqual(name('Mercato'));
   });
 
   it('reads past the command around the event, and past a clock to the name', () => {

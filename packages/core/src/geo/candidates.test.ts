@@ -611,9 +611,42 @@ describe('placeCandidatesFor', () => {
       ['history', 'Mercato', 'exact'],
       ['mapkit', 'Pizzeria il Mercato, Vorgartenmarkt 4, 1020 Vienna, Austria', 'words'],
     ]);
-    // Wherever it is: the user's own place needs no day trip.
+    // With no search at all (MapKit off), the past place is proof alone.
+    expect(read('Mercato', [], { history: [picked] })).toHaveLength(1);
+  });
+
+  it('takes no past place far from the user’s places: a name picked on a trip is not where the event is', () => {
+    // Review (Opus): "Party at Anna" took a bar picked in Paris last
+    // year, before a venue of that name around the corner, and with
+    // MapKit off too.
+    const paris = past('Anna, 12 Rue de Rivoli, 75004 Paris, France', 50, 'Anna', {
+      lat: 48.8566,
+      lng: 2.3522,
+    });
     const rome = past('Mercato', 50, undefined, { lat: 41.9, lng: 12.5 });
-    expect(read('Mercato', [], { history: [rome] })).toEqual([['history', 'Mercato', 'exact']]);
+    expect(read('Anna', [], { history: [paris] })).toEqual([]);
+    expect(read('Mercato', [], { history: [rome] })).toEqual([]);
+    // The venue nearby is the proof; the trip's place stays to pick from.
+    expect(
+      read('Anna', [hit('Anna', 'Neubaugasse 2, 1070 Vienna, Austria')], { history: [paris] }),
+    ).toEqual([
+      ['mapkit', 'Anna, Neubaugasse 2, 1070 Vienna, Austria', 'exact'],
+      ['history', 'Anna, 12 Rue de Rivoli, 75004 Paris, France', 'exact'],
+    ]);
+    // Around the zone's city alone, and where nothing says where the user is.
+    expect(
+      read('Mercato', [], { history: [rome], region: regionForTimeZone('Europe/Vienna') }),
+    ).toEqual([]);
+    expect(read('Mercato', [], { history: [rome], region: undefined })).toEqual([]);
+    // A place used lately is one of the user's places itself: on the trip, it is proof.
+    const onTheTrip = densestRegion([{ lat: 41.9, lng: 12.5 }, vienna]);
+    expect(read('Mercato', [], { history: [rome], region: onTheTrip })).toEqual([
+      ['history', 'Mercato', 'exact'],
+    ]);
+    // Said outright as the place, a past place counts wherever it is, as it did.
+    expect(read('Mercato', [], { history: [rome], possible: false })).toEqual([
+      ['history', 'Mercato', 'exact'],
+    ]);
   });
 
   it('puts the proof before a past place that only resembles the name', () => {
