@@ -1,0 +1,18 @@
+{
+  "lang": "en",
+  "tags": ["basic", "location", "title"],
+  "turns": [
+    {
+      "input": {
+        "text": "Lunch with Sam tomorrow at 12:30 at Mercato"
+      },
+      "expect": {
+        "title": "lunch with sam",
+        "dayOffset": 1,
+        "startTime": "12:30",
+        "endTime": "13:30",
+        "location": "mercato"
+      }
+    }
+  ]
+}

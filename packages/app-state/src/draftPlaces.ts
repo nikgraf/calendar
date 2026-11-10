@@ -1,3 +1,4 @@
+import type { PossiblePlace, QuickAddPrefill } from '@calendar/ai';
 import {
   type GeoLocation,
   normalizeLocationKey,
@@ -81,4 +82,34 @@ export const settlePlace = (
   const choice =
     change.candidates.length > 0 ? { candidates: change.candidates, text: change.text } : undefined;
   return { ...(choice ? { choice } : {}), ...(taken ? { taken } : {}) };
+};
+
+/**
+ * A first phrase's draft once the lookup has answered for its possible
+ * place — a name the words end in that nothing calls a place ("… im
+ * Figlmüller", "at Luigi's"). The lookup answers such a name only with
+ * proof (`placeCandidates` with `possible`: a past place written exactly
+ * that, or a nearby venue called exactly that, the proof first). With
+ * proof the name becomes the draft's place and leaves its title, and
+ * the candidates go on as any place's do: the first is taken, the rest
+ * stay to pick from (`settlePlace`). With none — no such place, a
+ * lookup that failed or ran out of time — the draft is the phrase's as
+ * it was: the words in the title, no place, nothing to choose. Without a
+ * possible place, the prefill and what was found for its own location.
+ */
+export const settlePossiblePlace = (
+  prefill: QuickAddPrefill,
+  possible: PossiblePlace | undefined,
+  found: PlaceChange | undefined,
+): { readonly place: PlaceChange | undefined; readonly prefill: QuickAddPrefill } => {
+  if (possible === undefined) {
+    return { place: found, prefill };
+  }
+  if (found === undefined || preselectedPlace(found.candidates) === undefined) {
+    return { place: undefined, prefill };
+  }
+  return {
+    place: { candidates: found.candidates, text: possible.place },
+    prefill: { ...prefill, location: possible.place, title: possible.title },
+  };
 };

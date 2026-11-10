@@ -157,11 +157,12 @@ the served model (#184) and slot proposals (#185) are in
       bare 1–6 (open since #248); a to-do's alarms from "remind me …
       before" (an event's notifications are read since 2026-10-26).
 - [ ] Dictated quick-add follow-ups (two iPhone recordings, 2026-11-06;
-      the place lookup's share, the spoken command and the place a first
-      phrase leads into shipped, `docs/decisions.md` → "Calendar: editing,
-      gestures, views", "Places nearby first", and → AI, "A spoken command
-      is not the title", "The place a phrase leads into"; each its own PR,
-      in this order) — a turn
+      the place lookup's share, the spoken command, the place a first
+      phrase leads into and a name the lookup proves shipped,
+      `docs/decisions.md` → "Calendar: editing, gestures, views", "Places
+      nearby first", and → AI, "A spoken command is not the title", "The
+      place a phrase leads into", "A name the lookup proves"; each its
+      own PR, in this order) — a turn
       that names only a city or district replaces the place instead of
       narrowing it ("it's in Vienna" after "Cafe Meek" sets "Vienna" or
       changes nothing, with the right transcript too), and a bare "with
@@ -171,19 +172,24 @@ the served model (#184) and slot proposals (#185) are in
       cannot respell it) — recognizer vocabulary from contacts and past
       places, which needs an own speech module on iOS
       (`@react-native-ai/apple` takes audio and a locale); bench cases
-      for all of it: none leans on the turn before, none asks MapKit, and
+      for all of it: none leans on the turn before, none asks MapKit
+      (`places.json` stands in for it), and
       the Mac's model titles a phrase the iPhone's echoes; a first
-      phrase's name that no kind of place goes with is not read ("at
-      Luigi's", "… um 10 im Figlmüller", "Dinner in Vienna": written
-      like "at Thanksgiving", "im Regen" and "in German", and Apple's
-      model drops and names them all alike) — a possible place the
-      lookup confirms (a past place, or a nearby hit called exactly
-      that) could; nor a place before the company ("at Loos Bar with
-      Jo"), one with its when after it in German ("im Café Prückel am
-      Abend": the trim leaves "am Abend") or a name with a weekday in it
-      without the model ("Ruby Tuesday"), and the Mac's model cuts a
-      title at its when, so what follows and is no place is lost
-      ("Laufen morgen um 7 im Regen" is "Laufen").
+      phrase's name is read only after "at", "@" or "im" and only where
+      it is written as the venue is called: not after "in" ("Dinner in
+      Vienna", "in der Albertina": a town proves nothing, and "in der
+      Arbeit" is a venue's exact name in Vienna), not by a name the
+      venue holds otherwise ("im Schwarzen Kameel" for Zum Schwarzen
+      Kameel, "at Luigi's" for Da Luigi, "at the Wolseley"), not typed in
+      lower case, and the Getting started phrase's "Mercato" only where
+      a venue is called that; a venue called exactly a person's name
+      nearby is taken ("Party at Anna"), since no word tells the two
+      apart — the contacts could; nor is a place read before the company
+      ("at Loos Bar with Jo"), one with its when after it in German ("im
+      Café Prückel am Abend": the trim leaves "am Abend") or a name with
+      a weekday in it without the model ("Ruby Tuesday"), and the Mac's
+      model cuts a title at its when, so what follows and is no place is
+      lost ("Laufen morgen um 7 im Regen" is "Laufen").
 - [ ] Gemma 4 on iOS — opt-in download via llama.rn (JSON schema →
       grammar maps onto `generateJson`), load on demand, unload on
       background; only if the bench shows the model is the bottleneck.

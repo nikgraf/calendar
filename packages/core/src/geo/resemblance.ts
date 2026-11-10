@@ -236,6 +236,19 @@ export const namedPastLead = (text: string, place: PlaceLike): boolean => {
 };
 
 /**
+ * Whether a place is a venue called exactly what a text says: its name
+ * is the text, word for word (`placeMatch`'s `exact` — not a name that
+ * holds the words, "Da Luigi" for "Luigi's", "die Pause" for "Pause",
+ * nor one that sounds like them), and its address does not begin with
+ * that name. An address that does is a town's, a district's or a
+ * street's ("Regen, Bavaria, Germany", "Am Hof, 1010 Vienna"): "im
+ * Regen" is no trip to Bavaria. The one reading strict enough to say a
+ * name is a place when the words around it do not.
+ */
+export const calledExactly = (text: string, place: PlaceLike): boolean =>
+  placeMatch(text, place) === 'exact' && !readAddress(place, wordsOf(text)).named;
+
+/**
  * The kinds of place said of one's own, as `wordsOf` reads them (short
  * forms and all): every kind but the ones a town has one of.
  */

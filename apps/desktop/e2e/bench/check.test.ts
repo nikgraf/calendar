@@ -1,6 +1,7 @@
 import type { QuickAddResult } from '@calendar/ai';
-import { Contact } from '@calendar/core';
+import { Contact, GeoLocation, regionForTimeZone } from '@calendar/core';
 import { describe, expect, it } from 'vite-plus/test';
+import type { BenchTown } from './cases.ts';
 import { applyResult, type BenchDraft, check, fieldsOf, fold, wordErrorRate } from './check.ts';
 
 // 2026-08-22 is a Saturday; 2026-08-28 the Friday after.
@@ -483,5 +484,102 @@ describe('applyResult — notes and notifications', () => {
       notes: 'ask about the fee',
     });
     expect(todo.kind === 'draft' && todo.draft.reminders).toBeUndefined();
+  });
+});
+
+/** A first phrase's result with a name it may hold as its place, and the title without it. */
+const possible = (title: string, place: string, without: string): QuickAddResult => ({
+  kind: 'parsed',
+  possiblePlace: { place, title: without },
+  prefill: {
+    date: FRIDAY,
+    endTime: '20:00',
+    isAllDay: false,
+    startTime: '19:00',
+    title,
+  },
+});
+
+describe('applyResult — a possible place', () => {
+  // The fixture town: what a search answers per name, and where the user has been.
+  const TOWN: BenchTown = {
+    found: {
+      anna: [
+        { address: 'Annagasse, 1010 Vienna, Austria', lat: 48.204, lng: 16.372, name: 'Annagasse' },
+        {
+          address: '12 Rue de Rivoli, 75004 Paris, France',
+          lat: 48.8566,
+          lng: 2.3522,
+          name: 'Anna',
+        },
+      ],
+      figlmuller: [
+        {
+          address: 'Bäckerstraße 6, 1010 Vienna, Austria',
+          lat: 48.209,
+          lng: 16.376,
+          name: 'Figlmüller Bäckerstrasse',
+        },
+        {
+          address: 'Bäckerstraße 6, 1010 Vienna, Austria',
+          lat: 48.2091,
+          lng: 16.3762,
+          name: 'Figlmüller',
+        },
+      ],
+    },
+    past: [
+      { geo: new GeoLocation({ lat: 48.2105, lng: 16.3605, source: 'Mercato' }), lastUsedUtc: 1 },
+    ],
+    region: regionForTimeZone('Europe/Vienna'),
+  };
+  const read = async (result: QuickAddResult, { town = true }: { town?: boolean } = {}) => {
+    const outcome = await applyResult(undefined, result, BOOK, town ? TOWN : undefined);
+    if (outcome.kind !== 'draft' || outcome.draft.item.kind !== 'event') {
+      throw new Error('expected an event draft');
+    }
+    const { location, title } = outcome.draft.item.prefill;
+    return { location, title };
+  };
+
+  it('takes the name as the place where the town proves it, as the thread does', async () => {
+    // A venue called exactly that: the location reads the place taken.
+    expect(await read(possible('Kaffee mit Max', 'Figlmüller', 'Kaffee mit Max'))).toEqual({
+      location: 'Figlmüller, Bäckerstraße 6, 1010 Vienna, Austria',
+      title: 'Kaffee mit Max',
+    });
+    // A place the user has been to, written exactly that.
+    expect(await read(possible('Lunch at Mercato', 'Mercato', 'Lunch'))).toEqual({
+      location: 'Mercato',
+      title: 'Lunch',
+    });
+  });
+
+  it('leaves the draft as the words made it without proof, or without a town', async () => {
+    const asSaid = { location: undefined, title: 'Party at Anna' };
+    // A street and a namesake in another country.
+    expect(await read(possible('Party at Anna', 'Anna', 'Party'))).toEqual(asSaid);
+    // A name the town has no answer for.
+    expect(await read(possible('Party at Anna', 'Annabelle', 'Party'))).toEqual(asSaid);
+    expect(await read(possible('Party at Anna', 'Figlmüller', 'Party'), { town: false })).toEqual(
+      asSaid,
+    );
+  });
+
+  it('settles a first phrase only: a later turn’s result is taken as it is', async () => {
+    const outcome = await applyResult(
+      event({ title: 'Kaffee' }),
+      possible('Kaffee im Figlmüller', 'Figlmüller', 'Kaffee'),
+      BOOK,
+      TOWN,
+    );
+    expect(outcome.kind === 'draft' && outcome.draft.item.prefill).toMatchObject({
+      title: 'Kaffee im Figlmüller',
+    });
+    expect(
+      outcome.kind === 'draft' &&
+        outcome.draft.item.kind === 'event' &&
+        outcome.draft.item.prefill.location,
+    ).toBeUndefined();
   });
 });

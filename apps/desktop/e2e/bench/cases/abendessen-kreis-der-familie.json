@@ -1,0 +1,18 @@
+{
+  "lang": "de",
+  "tags": ["basic", "de", "location", "title"],
+  "turns": [
+    {
+      "input": {
+        "text": "Abendessen am Sonntag um 18 Uhr im Kreis der Familie"
+      },
+      "expect": {
+        "title": ["abendessen im kreis der familie", "abendessen"],
+        "weekday": 7,
+        "startTime": "18:00",
+        "endTime": "19:00",
+        "location": null
+      }
+    }
+  ]
+}

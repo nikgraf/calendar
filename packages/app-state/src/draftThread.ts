@@ -35,7 +35,12 @@ import {
   type InviteeChoice,
   resolveInvitees,
 } from './draftInvitees.ts';
-import { type PlaceChange, type PlaceChoice, settlePlace } from './draftPlaces.ts';
+import {
+  type PlaceChange,
+  type PlaceChoice,
+  settlePlace,
+  settlePossiblePlace,
+} from './draftPlaces.ts';
 import { convertQuickAddItem, type QuickAddItem } from './quickAddItem.ts';
 import type { ReminderFields } from './taskEditorModel.ts';
 
@@ -920,14 +925,19 @@ export const useDraftThread = ({
    * first (`placeCandidates`). None for no text; a failed or overlong
    * lookup is none found — the text stays as said, and the draft's
    * title and times never wait on a search (the handler bounds MapKit
-   * itself; this bounds the call as a whole).
+   * itself; this bounds the call as a whole). `possible`: the text is a
+   * name the words did not call a place, answered only with proof that
+   * it is one.
    */
-  const placesOf = async (location: string | undefined): Promise<PlaceChange | undefined> => {
+  const placesOf = async (
+    location: string | undefined,
+    { possible = false }: { readonly possible?: boolean } = {},
+  ): Promise<PlaceChange | undefined> => {
     if (location === undefined || location.trim() === '') {
       return undefined;
     }
     const candidates = await Effect.runPromise(
-      backend.placeCandidates({ location }).pipe(
+      backend.placeCandidates({ location, ...(possible ? { possible } : {}) }).pipe(
         Effect.timeout(PLACE_LOOKUP_TIMEOUT),
         Effect.orElseSucceed((): ReadonlyArray<PlaceCandidate> => []),
       ),
@@ -1164,25 +1174,37 @@ export const useDraftThread = ({
     if (result.kind === 'rejected') {
       return result.reason;
     }
+    // A name the words may mean as the place ("… im Figlmüller") is
+    // looked up in the location's stead, and is the place only with proof.
+    const possible = result.kind === 'parsed' ? result.possiblePlace : undefined;
     const [guests, placeFound] =
       result.kind === 'parsed'
-        ? await Promise.all([guestsOf(result.invite, undefined), placesOf(result.prefill.location)])
+        ? await Promise.all([
+            guestsOf(result.invite, undefined),
+            possible === undefined
+              ? placesOf(result.prefill.location)
+              : placesOf(possible.place, { possible: true }),
+          ])
         : [undefined, undefined];
     if (mine !== request.current) {
       return undefined;
     }
+    const placed =
+      result.kind === 'parsed'
+        ? settlePossiblePlace(result.prefill, possible, placeFound)
+        : undefined;
     start(
       [
         result.kind === 'task'
           ? { kind: 'task', prefill: result.prefill }
-          : { kind: 'event', prefill: result.prefill },
+          : { kind: 'event', prefill: placed?.prefill ?? result.prefill },
       ],
       text,
       {
         extras: firstDraftExtras(read?.().extras),
         guests,
         ...(result.notes ? { notes: result.notes } : {}),
-        place: placeFound,
+        place: placed?.place,
         ...(result.kind === 'parsed' && result.reminders ? { reminders: result.reminders } : {}),
       },
     );

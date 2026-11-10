@@ -22,7 +22,7 @@ import {
   mentionsFixedDate,
   namedWeekdays,
   namesDays,
-  placeSaid,
+  readPlace,
   type RepeatSpanUnit,
   saysOnlyWhen,
   spanUnitAtLeast,
@@ -85,6 +85,19 @@ export interface QuickAddTaskPrefill {
   readonly title: string;
 }
 
+/**
+ * A name a first phrase ends in that may be its place ("… im
+ * Figlmüller", "at Luigi's"): written as a venue is, and as a holiday,
+ * an occasion or a person is, with no word that says which
+ * (`readPlace`). The prefill holds it in its title, as the words did;
+ * `title` is what the title reads once a lookup has proved the name a
+ * place and the location field takes it.
+ */
+export interface PossiblePlace {
+  readonly place: string;
+  readonly title: string;
+}
+
 export type QuickAddResult =
   | {
       /** Names or addresses the words invite, as said: the thread looks them up in the contacts. */
@@ -92,6 +105,8 @@ export type QuickAddResult =
       readonly kind: 'parsed';
       /** What the words do to the draft's notes (`extras.ts`); a first phrase's note is the draft's. */
       readonly notes?: NotesChange | undefined;
+      /** A name the phrase may mean as its place, for the thread's lookup to decide; the prefill has no location then. */
+      readonly possiblePlace?: PossiblePlace | undefined;
       readonly prefill: QuickAddPrefill;
       /** What the words do to the draft's notifications (`extras.ts`). */
       readonly reminders?: ReminderChange | undefined;
@@ -688,6 +703,8 @@ const titleOf = ({
 /** A title and the place it was made around. */
 interface PlacedTitle {
   readonly location: string | undefined;
+  /** A name the words may mean as the place, where no place stands. */
+  readonly possible?: PossiblePlace | undefined;
   readonly title: string | undefined;
 }
 
@@ -697,10 +714,13 @@ interface PlacedTitle {
  * title counts only after a cue (`placeOf`). The model's place first: a
  * location made of the day holds nothing in the title and is no place,
  * any other holds its words there ("Ruby Tuesday", "Figlmüller"). Then
- * an event's place as its phrase's own words say it (`placeSaid`),
+ * an event's place as its phrase's own words say it (`readPlace`),
  * where the model named none or named that one with the lead it copied
  * ("at the office" for "office"), and the title made again around it.
- * Capture passes no phrase and keeps its locations as they are.
+ * A name the words do not call a place ("im Figlmüller") changes
+ * nothing here: it goes beside the title and the place as they are, with
+ * the title it would leave, for the lookup to decide. Capture passes no
+ * phrase and keeps its locations as they are.
  */
 const placedTitle = ({
   invite,
@@ -733,7 +753,14 @@ const placedTitle = ({
   if (phrase === undefined || todo || !first.title) {
     return first;
   }
-  const said = placeSaid(titleWithoutInvitees(phrase, invite), { phrase });
+  const led = readPlace(titleWithoutInvitees(phrase, invite), { phrase });
+  if (led?.kind === 'name') {
+    const named = around(led.text);
+    return first.location !== undefined || named.location === undefined || !named.title
+      ? first
+      : { ...first, possible: { place: named.location, title: named.title } };
+  }
+  const said = led?.text;
   const copied = written !== undefined && said !== undefined && isPlaceWithLead(written, said);
   if (said === undefined || (first.location !== undefined && !copied)) {
     return first;
@@ -824,7 +851,7 @@ export const normalizeQuickAdd = (
       ? undefined
       : titleWithoutInvitees(phrase === undefined ? said : groundTitle(said, phrase), invite);
   const modelDate = realDate(parse.date?.trim());
-  const { location, title } = placedTitle({
+  const { location, possible, title } = placedTitle({
     invite,
     modelDate,
     named,
@@ -885,6 +912,7 @@ export const normalizeQuickAdd = (
   return {
     ...(invite.length > 0 ? { invite } : {}),
     kind: 'parsed',
+    ...(possible ? { possiblePlace: possible } : {}),
     prefill: {
       ...(times.source === 'period' ? { assumedTime: true } : {}),
       date,

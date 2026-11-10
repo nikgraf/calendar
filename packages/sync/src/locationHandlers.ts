@@ -4,15 +4,13 @@ import {
   GeoLocation,
   type GeoRegion,
   isMappableLocation,
-  mergePlaceCandidates,
   namesFound,
   normalizeLocationKey,
   type PastPlace,
-  type PlaceCandidate,
+  placeCandidatesFor,
   placeMatch,
   placeSuggestionLabel,
   rankFoundPlaces,
-  rankPastPlaces,
   regionForTimeZone,
   withFoundSuggestions,
 } from '@calendar/core';
@@ -175,7 +173,7 @@ export const locationHandlers: Pick<
       return { pngBase64 };
     }),
 
-  placeCandidates: ({ location }) =>
+  placeCandidates: ({ location, possible }) =>
     Effect.gen(function* () {
       if (!isMappableLocation(location)) {
         return [];
@@ -200,14 +198,13 @@ export const locationHandlers: Pick<
         );
         pastPlaces.set(store, { at: now, places });
       }
-      const history = rankPastPlaces(location, places);
       // Then MapKit, asked two ways side by side: the natural-language
       // search, which reads a misspelling, and the completer's rows,
       // which know a place's branches, each row resolved to its exact
       // place. The hits the text names come first — resembling it, and
-      // nearby or where it says — the others after them, to pick from
-      // (`rankFoundPlaces`). Each carries the text a pick writes: the
-      // name and address, as a picked typeahead row would.
+      // nearby or where it says — the others after them, to pick from;
+      // a name that may be no place at all (`possible`) gets candidates
+      // only with proof that it is one (`placeCandidatesFor`).
       const geo = yield* GeoClient;
       const region = yield* regionHint;
       // Each way on its own clock: what one answers is kept when the
@@ -247,23 +244,12 @@ export const locationHandlers: Pick<
       const [fromSearch, fromRows] = yield* Effect.all([searched, completed], {
         concurrency: 'unbounded',
       });
-      const found = rankFoundPlaces(location, [...fromSearch, ...fromRows], region).map(
-        ({ match, place }): PlaceCandidate => {
-          const name = place.name ?? location;
-          return {
-            ...(place.address ? { address: place.address } : {}),
-            geo: new GeoLocation({
-              lat: place.lat,
-              lng: place.lng,
-              name: place.name,
-              source: place.address ? `${name}, ${place.address}` : name,
-            }),
-            match,
-            source: 'mapkit',
-          };
-        },
-      );
-      return mergePlaceCandidates(history, found);
+      return placeCandidatesFor(location, {
+        found: [...fromSearch, ...fromRows],
+        past: places,
+        possible,
+        region,
+      });
     }),
 
   resolveLocation: ({ location, suggestion }) =>

@@ -5,7 +5,9 @@ import {
   pastPlaceMatch,
   type PlaceCandidate,
   placeCandidateLabel,
+  placeCandidatesFor,
   preselectedPlace,
+  provesName,
   rankFoundPlaces,
   rankPastPlaces,
   withFoundSuggestions,
@@ -450,6 +452,370 @@ describe('rankFoundPlaces', () => {
     expect(read('Cafe Meek', [london, benoni], undefined)).toEqual([
       ['Meek Café', 'words'],
       ['Meekhun Thai bistro', 'search'],
+    ]);
+  });
+});
+
+describe('provesName', () => {
+  const events = densestRegion([{ lat: 48.2082, lng: 16.3738 }]);
+  const zone = regionForTimeZone('Europe/Vienna');
+
+  it('takes a venue called exactly that, within a day trip', () => {
+    const figlmueller = hit('Figlmüller', 'Bäckerstraße 6, 1010 Vienna, Austria');
+    expect(provesName('Figlmüller', figlmueller, events)).toBe(true);
+    // Around a time zone's city too, where no event says where the user is.
+    expect(provesName('Figlmüller', figlmueller, zone)).toBe(true);
+    const graz = {
+      address: 'Hauptplatz 1, 8010 Graz, Austria',
+      lat: 47.07,
+      lng: 15.44,
+      name: 'Mohr',
+    };
+    expect(provesName('Mohr', graz, events)).toBe(true);
+  });
+
+  it('takes no venue further than that, however the zone reads "nearby"', () => {
+    // MapKit, 2026-11-10: both are venues called exactly that.
+    const bett = {
+      address: 'Schmidtstraße 12, 60326 Frankfurt, Germany',
+      lat: 50.103,
+      lng: 8.619,
+      name: 'Bett',
+    };
+    const plenum = {
+      address: 'Elektryków, 80-980 Gdańsk, Poland',
+      lat: 54.365,
+      lng: 18.649,
+      name: 'Plenum',
+    };
+    const hours = {
+      address: '1 Pennsylvania Plaza, New York, NY 10119, United States',
+      lat: 40.7506,
+      lng: -73.9935,
+      name: 'Office Hours',
+    };
+    for (const region of [events, zone]) {
+      expect(provesName('Bett', bett, region)).toBe(false);
+      expect(provesName('Plenum', plenum, region)).toBe(false);
+      expect(provesName('Office Hours', hours, region)).toBe(false);
+    }
+    // Nothing known of where the user is: no hit is proof.
+    expect(
+      provesName('Figlmüller', hit('Figlmüller', 'Bäckerstraße 6, 1010 Vienna'), undefined),
+    ).toBe(false);
+  });
+
+  it('takes no town, no street and no name that only holds the words, however near', () => {
+    const regen = { address: 'Regen, Lower Austria, Austria', lat: 48.3, lng: 16.2, name: 'Regen' };
+    expect(provesName('Regen', regen, events)).toBe(false);
+    expect(provesName('Am Hof', hit('Am Hof', 'Am Hof, 1010 Vienna, Austria'), events)).toBe(false);
+    expect(provesName('Anna', hit('Annagasse', 'Annagasse, 1010 Vienna, Austria'), events)).toBe(
+      false,
+    );
+    expect(
+      provesName('Anna', hit('Anna Sacher', 'Philharmonikerstraße 4, 1010 Vienna'), events),
+    ).toBe(false);
+    expect(provesName('Pause', hit('die Pause', 'Sigmundsgasse 8, 1070 Vienna'), events)).toBe(
+      false,
+    );
+  });
+});
+
+describe('placeCandidatesFor', () => {
+  const vienna = { lat: 48.2082, lng: 16.3738 };
+  const events = densestRegion([vienna]);
+  const figlmueller = hit('Figlmüller', 'Bäckerstraße 6, 1010 Vienna, Austria');
+  const branch = {
+    address: 'Bäckerstraße 6, 1010 Vienna, Austria',
+    lat: 48.209,
+    lng: 16.376,
+    name: 'Figlmüller Bäckerstrasse',
+  };
+  const read = (
+    text: string,
+    found: ReadonlyArray<ReturnType<typeof hit>>,
+    {
+      history = [],
+      possible = true,
+      region = events,
+    }: {
+      history?: ReadonlyArray<ReturnType<typeof past>>;
+      possible?: boolean;
+      region?: ReturnType<typeof densestRegion>;
+    } = {},
+  ) =>
+    placeCandidatesFor(text, { found, past: history, possible, region }).map((candidate) => [
+      candidate.source,
+      candidate.geo.source,
+      candidate.match,
+    ]);
+
+  it('lists the past places first and the hits after them, as it did', () => {
+    const candidates = placeCandidatesFor('Figlmüller', {
+      found: [branch, figlmueller],
+      past: [past('Figlmüller Lugeck', 20, 'Lugeck Figlmüller', { lat: 48.21, lng: 16.375 })],
+      region: events,
+    });
+    expect(candidates.map((candidate) => [candidate.source, candidate.match])).toEqual([
+      ['history', 'words'],
+      ['mapkit', 'exact'],
+      ['mapkit', 'words'],
+    ]);
+    // A hit carries the text a pick writes, and its address apart.
+    expect(candidates[1]).toEqual({
+      address: 'Bäckerstraße 6, 1010 Vienna, Austria',
+      geo: new GeoLocation({
+        lat: 48.2,
+        lng: 16.37,
+        name: 'Figlmüller',
+        source: 'Figlmüller, Bäckerstraße 6, 1010 Vienna, Austria',
+      }),
+      match: 'exact',
+      source: 'mapkit',
+    });
+    // Without a name, the text is its name.
+    expect(
+      placeCandidatesFor('Wollzeile 5', {
+        found: [{ address: 'Wollzeile 5, 1010 Vienna, Austria', lat: 48.2, lng: 16.37 }],
+        past: [],
+        region: events,
+      })[0]?.geo.source,
+    ).toBe('Wollzeile 5, Wollzeile 5, 1010 Vienna, Austria');
+  });
+
+  it('answers a possible place with the venue called exactly that, first', () => {
+    // MapKit's answer for "Figlmüller" in Vienna: the branch's row may come first.
+    expect(read('Figlmüller', [branch, figlmueller])).toEqual([
+      ['mapkit', 'Figlmüller, Bäckerstraße 6, 1010 Vienna, Austria', 'exact'],
+      ['mapkit', 'Figlmüller Bäckerstrasse, Bäckerstraße 6, 1010 Vienna, Austria', 'words'],
+    ]);
+    expect(
+      read("Luigi's", [hit('Luigi’s', 'Mint Street 5, 1010 Vienna')]).map(([, , match]) => match),
+    ).toEqual(['exact']);
+  });
+
+  it('answers a possible place with the past place written exactly that, before any hit', () => {
+    const been = past('Mercato', 30, undefined, { lat: 48.19, lng: 16.35 });
+    const picked = past('Mercato, Mint Street 5, 1010 Vienna', 40, 'Mercato', {
+      lat: 48.21,
+      lng: 16.36,
+    });
+    expect(read('Mercato', [], { history: [been] })).toEqual([['history', 'Mercato', 'exact']]);
+    // Picked from the typeahead last time: written with its address.
+    expect(read('Mercato', [], { history: [picked] })).toEqual([
+      ['history', 'Mercato, Mint Street 5, 1010 Vienna', 'exact'],
+    ]);
+    // The past place is the proof, and the one taken; the hits stay to pick from.
+    const pizzeria = hit('Pizzeria il Mercato', 'Vorgartenmarkt 4, 1020 Vienna, Austria');
+    expect(read('Mercato', [pizzeria], { history: [been] })).toEqual([
+      ['history', 'Mercato', 'exact'],
+      ['mapkit', 'Pizzeria il Mercato, Vorgartenmarkt 4, 1020 Vienna, Austria', 'words'],
+    ]);
+    // Wherever it is: the user's own place needs no day trip.
+    const rome = past('Mercato', 50, undefined, { lat: 41.9, lng: 12.5 });
+    expect(read('Mercato', [], { history: [rome] })).toEqual([['history', 'Mercato', 'exact']]);
+  });
+
+  it('puts the proof before a past place that only resembles the name', () => {
+    // The proof is the one taken: a past place by its words alone is none.
+    const lugeck = past('Figlmüller Lugeck', 20, 'Lugeck Figlmüller', { lat: 48.21, lng: 16.375 });
+    expect(read('Figlmüller', [figlmueller], { history: [lugeck] })).toEqual([
+      ['mapkit', 'Figlmüller, Bäckerstraße 6, 1010 Vienna, Austria', 'exact'],
+      ['history', 'Figlmüller Lugeck', 'words'],
+    ]);
+    expect(
+      preselectedPlace(
+        placeCandidatesFor('Figlmüller', {
+          found: [figlmueller],
+          past: [lugeck],
+          possible: true,
+          region: events,
+        }),
+      )?.source,
+    ).toBe('mapkit');
+  });
+
+  it('answers nothing for a name no place proves: every class a capital is written on', () => {
+    // What MapKit answered around Vienna (probe, 2026-11-10), and fake
+    // hits for what it did not: each resembles the name, none proves it.
+    const cases: ReadonlyArray<readonly [string, ReadonlyArray<ReturnType<typeof hit>>]> = [
+      // A manner or the weather after "im".
+      [
+        'Regen',
+        [
+          {
+            address: 'Rügen, Mecklenburg-Vorpommern, Germany',
+            lat: 54.413,
+            lng: 13.427,
+            name: 'Rügen',
+          },
+        ],
+      ],
+      ['Regen', [{ address: 'Regen, Bavaria, Germany', lat: 48.97, lng: 13.13, name: 'Regen' }]],
+      [
+        'Regen',
+        [{ address: 'Regen, Lower Austria, Austria', lat: 48.3, lng: 16.2, name: 'Regen' }],
+      ],
+      [
+        'Bett',
+        [
+          {
+            address: 'Schmidtstraße 12, 60326 Frankfurt, Germany',
+            lat: 50.103,
+            lng: 8.619,
+            name: 'Bett',
+          },
+        ],
+      ],
+      ['Schnee', [hit('Schneegasse', 'Schneegasse, 4551 Ried im Traunkreis, Austria')]],
+      ['Auto', [hit('Pappas Auto GmbH', 'Mommsengasse 26, 1040 Vienna, Austria')]],
+      [
+        'Wald',
+        [
+          {
+            address: 'Wald, Pyhra, Lower Austria, Austria',
+            lat: 48.129,
+            lng: 15.699,
+            name: 'Wald',
+          },
+        ],
+      ],
+      [
+        'Kreis der Familie',
+        [{ address: 'Familie, Herálec, Czechia', lat: 49.694, lng: 15.982, name: 'Familie' }],
+      ],
+      // A holiday, a deadline, an occasion after "at".
+      [
+        'Thanksgiving',
+        [
+          {
+            address: '3003 N Thanksgiving Way, Lehi, UT 84043, United States',
+            lat: 40.426,
+            lng: -111.888,
+            name: 'Thanksgiving Point',
+          },
+        ],
+      ],
+      [
+        'Diwali',
+        [
+          {
+            address: 'Diwali, Jalandhar 1, Jalandhar, 144020, Punjab, India',
+            lat: 31.3,
+            lng: 75.6,
+            name: 'Diwali',
+          },
+        ],
+      ],
+      ['EOD', [hit('EOD Munitionsbergung Wien', 'Hirschstettner Straße 48, 1220 Vienna, Austria')]],
+      ['All Hands', [hit('Allhang', 'Allhang, Gablitz, Lower Austria, Austria')]],
+      [
+        'Office Hours',
+        [
+          {
+            address: '1 Pennsylvania Plaza, New York, NY 10119, United States',
+            lat: 40.7506,
+            lng: -73.9935,
+            name: 'Office Hours',
+          },
+        ],
+      ],
+      ['Sprint Review', [hit('Review Agent', 'Friedlgasse 35, 1190 Vienna, Austria')]],
+      // A person, and their employer.
+      ['Anna', [hit('Annagasse', 'Annagasse, 1010 Vienna, Austria')]],
+      ['Anna', [hit('Anna Sacher', 'Philharmonikerstraße 4, 1010 Vienna, Austria')]],
+      ['Anna', [hit('Café Anna', 'Neubaugasse 2, 1070 Vienna, Austria')]],
+      [
+        'Anna',
+        [
+          {
+            address: '12 Rue de Rivoli, 75004 Paris, France',
+            lat: 48.8566,
+            lng: 2.3522,
+            name: 'Anna',
+          },
+        ],
+      ],
+      ['Microsoft', [hit('Microsoft Österreich', 'Am Europlatz 3, 1120 Vienna, Austria')]],
+      ['Google', [hit('Google Austria', 'Graben 19/9, 1010 Vienna, Austria')]],
+      ['Target', [hit('TARGET Austria', 'Glasergasse 4, 1090 Vienna, Austria')]],
+      // A venue, by a name MapKit holds otherwise.
+      ["Luigi's", [hit('Da Luigi', 'Liechtensteinstraße 8, 1090 Vienna, Austria')]],
+      ['Mercato', [hit('Pizzeria il Mercato', 'Vorgartenmarkt 4, 1020 Vienna, Austria')]],
+      ['Schwarzen Kameel', [hit('Zum Schwarzen Kameel', 'Bognergasse 5, 1010 Vienna, Austria')]],
+      ['Am Hof', [hit('Am Hof', 'Am Hof, 1010 Vienna, Austria')]],
+      ['Figlmüller', []],
+    ];
+    for (const [text, found] of cases) {
+      expect(read(text, found), `${text}: ${found[0]?.name ?? 'nothing'}`).toEqual([]);
+    }
+    // Said outright as the place, the same hits are candidates as they were.
+    expect(
+      read('Anna', [hit('Anna Sacher', 'Philharmonikerstraße 4, 1010 Vienna, Austria')], {
+        possible: false,
+      }),
+    ).toEqual([['mapkit', 'Anna Sacher, Philharmonikerstraße 4, 1010 Vienna, Austria', 'words']]);
+    expect(
+      read('Am Hof', [hit('Am Hof', 'Am Hof, 1010 Vienna, Austria')], { possible: false }),
+    ).toEqual([['mapkit', 'Am Hof, Am Hof, 1010 Vienna, Austria', 'exact']]);
+  });
+
+  it('takes a venue called exactly a person’s name when it stands nearby: the one proof there is', () => {
+    // "Party at Anna" with a bar called Anna around the corner reads as
+    // the bar; no word tells the two apart.
+    expect(read('Anna', [hit('Anna', 'Neubaugasse 2, 1070 Vienna, Austria')])).toEqual([
+      ['mapkit', 'Anna, Neubaugasse 2, 1070 Vienna, Austria', 'exact'],
+    ]);
+  });
+
+  it('takes no past place that only resembles the name, or sounds like it', () => {
+    const regensburg = past('Regensburg', 10, undefined, { lat: 49.0134, lng: 12.1016 });
+    const annas = past('Annas Wohnung', 11);
+    const central = past('Café Central', 12, 'Café Central');
+    expect(read('Regen', [], { history: [regensburg] })).toEqual([]);
+    expect(read('Anna', [], { history: [annas] })).toEqual([]);
+    expect(read('Zentral', [], { history: [central] })).toEqual([]);
+    // Outright, each is still a candidate.
+    expect(read('Regen', [], { history: [regensburg], possible: false })).toEqual([
+      ['history', 'Regensburg', 'words'],
+    ]);
+  });
+
+  it('takes no hit where only the zone says where the user is, beyond a day trip of its city', () => {
+    const zone = regionForTimeZone('Europe/Berlin');
+    const munich = {
+      address: 'Tal 1, 80331 München, Germany',
+      lat: 48.1351,
+      lng: 11.582,
+      name: 'Mercato',
+    };
+    const berlin = {
+      address: 'Torstraße 1, 10119 Berlin, Germany',
+      lat: 52.5296,
+      lng: 13.4094,
+      name: 'Mercato',
+    };
+    expect(read('Mercato', [munich], { region: zone })).toEqual([]);
+    expect(read('Mercato', [berlin], { region: zone }).map(([, , match]) => match)).toEqual([
+      'exact',
+    ]);
+    // Outright, the zone's part of the world is nearby, as it was.
+    expect(
+      read('Mercato', [munich], { possible: false, region: zone }).map(([, , match]) => match),
+    ).toEqual(['exact']);
+    expect(read('Mercato', [berlin], { region: undefined })).toEqual([]);
+  });
+
+  it('keeps the proof within the limit, whatever stands before it', () => {
+    const others = ['Eins', 'Zwei', 'Drei', 'Vier', 'Fünf'].map((word, index) =>
+      past(`Figlmüller ${word}`, index, undefined, { lat: 48.1 + index * 0.01, lng: 16.3 }),
+    );
+    const listed = read('Figlmüller', [figlmueller], { history: others });
+    expect(listed).toHaveLength(5);
+    expect(listed[0]).toEqual([
+      'mapkit',
+      'Figlmüller, Bäckerstraße 6, 1010 Vienna, Austria',
+      'exact',
     ]);
   });
 });

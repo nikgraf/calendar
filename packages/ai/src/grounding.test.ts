@@ -17,7 +17,9 @@ import {
   namesDays,
   periodOf,
   periodTimes,
+  NOT_A_VENUE,
   placeSaid,
+  readPlace,
   saysOnlyWhen,
   statedRepeat,
   statedTimes,
@@ -2156,5 +2158,204 @@ describe('withoutPlaceLead', () => {
     ]) {
       expect(withoutPlaceLead(place), place).toBe(place);
     }
+  });
+});
+
+/** What `readPlace` answers: a name for a lookup to decide, or a place said outright. */
+const name = (text: string) => ({ kind: 'name', text });
+const place = (text: string) => ({ kind: 'place', text });
+/** Words as a name writes them: a capital each, a short one in capitals ("EOD"). */
+const capitals = (words: string) =>
+  words
+    .split(' ')
+    .map((word) => (word.length <= 3 ? word.toUpperCase() : word[0]!.toUpperCase() + word.slice(1)))
+    .join(' ');
+
+describe('readPlace', () => {
+  it('reads a name with no kind after "at", "@" and "im" as a name, not a place', () => {
+    for (const [phrase, text] of [
+      ['Kaffee mit Max um 10 Uhr im Figlmüller', 'Figlmüller'],
+      ["Dinner at Luigi's Friday", "Luigi's"],
+      ['Lunch with Sam tomorrow at 12:30 at Mercato', 'Mercato'],
+      ['Lunch @ Mercato', 'Mercato'],
+      ['Essen morgen um 19 Uhr im Schwarzen Kameel', 'Schwarzen Kameel'],
+      ['Laufen am Samstag um 7 im Prater', 'Prater'],
+      ['Drinks at Flex Friday at 9', 'Flex'],
+      // A name's own article has the name's capital.
+      ['Dinner at The Standard on Friday', 'The Standard'],
+      // A joint between two of its words.
+      ['Dinner at Museum of Modern Art', 'Museum of Modern Art'],
+      ['Treffen im Kreis der Familie', 'Kreis der Familie'],
+      // Marks around it, an apostrophe and an ampersand in it.
+      ['Dinner at "Luigi\'s" tomorrow', "Luigi's"],
+      ['Lunch at McDonald’s.', 'McDonald’s'],
+      ['Lunch at H&M', 'H&M'],
+      ['Lunch at IKEA', 'IKEA'],
+    ] as const) {
+      expect(readPlace(phrase), phrase).toEqual(name(text));
+      // A name alone is no place said.
+      expect(placeSaid(phrase), phrase).toBeUndefined();
+    }
+    // A kind says it outright, as it did.
+    expect(readPlace('Coffee tomorrow at 10 at Café Prückel')).toEqual(place('Café Prückel'));
+    expect(readPlace('Drinks at Loos Bar')).toEqual(place('Loos Bar'));
+    expect(readPlace('Bier im Schweizerhaus')).toEqual(place('Schweizerhaus'));
+  });
+
+  it('reads no name after "in", with its article or without', () => {
+    for (const phrase of [
+      // A town, a language, an app, a state.
+      'Dinner in Vienna Friday',
+      'Drinks in Soho',
+      'Meeting in German on Friday',
+      'Review designs in Figma',
+      'Ticket in Review',
+      // MapKit knows a venue in Vienna called exactly "Arbeit", and one
+      // called "Mittagspause" (probe, 2026-11-10).
+      'Mittagessen in der Arbeit',
+      'Besprechung in der Mittagspause',
+      'Frühstück in der Sonne',
+      // A venue all the same: the one construction the rule gives up.
+      'Treffen um 15 Uhr in der Albertina',
+      'Party in the Blue Room',
+    ]) {
+      expect(readPlace(phrase), phrase).toBeUndefined();
+    }
+    // The other leads stay unread, as they were.
+    for (const phrase of ['Essen bei Anna', 'Essen beim Figlmüller', 'Treffen am Naschmarkt']) {
+      expect(readPlace(phrase), phrase).toBeUndefined();
+    }
+  });
+
+  it('reads no name after an article, and none written without its capitals', () => {
+    for (const phrase of [
+      // After an article a capital is as often an occasion's.
+      'Dinner at the Wolseley on Friday',
+      'Present at the All Hands',
+      'Coffee at a Starbucks',
+      'At an Event for lunch tomorrow',
+      // Typed in lower case: nothing says it is a name.
+      'coffee at starbucks tomorrow',
+      "dinner at luigi's friday",
+      'Lunch at mercato',
+      'Kaffee im figlmüller',
+      // One word of it in lower case that is no joint.
+      'Dinner at Marks and Spencer',
+      'Lunch at Joe & The Juice',
+      'Party at Pier 39',
+      // Title case and capitals: every word reads as a name.
+      "Team Lunch At Luigi's With The Whole Crew",
+      'DINNER AT LUIGIS',
+      'Kaffee Im Figlmüller',
+    ]) {
+      expect(readPlace(phrase), phrase).toBeUndefined();
+    }
+  });
+
+  it('reads no common word a name’s capital is written on, each one whole', () => {
+    for (const words of NOT_A_VENUE) {
+      for (const phrase of [`Treffen at ${capitals(words)}`, `Treffen im ${capitals(words)}`]) {
+        expect(readPlace(phrase), phrase).toBeUndefined();
+      }
+    }
+    // As the words are written, folded: accents, hyphens, a possessive's mark.
+    for (const phrase of [
+      'Visit family at Thanksgiving',
+      'Costume party at Halloween',
+      'Send report at EOD',
+      'Deploy @ EOD',
+      'Lunch at TBD',
+      'Deadline at Month End',
+      'Present roadmap at All Hands Friday',
+      'Bring up budget at Stand-up',
+      'Drinks at Happy Hour',
+      'Ask about grades at Office Hours Tuesday',
+      'Lunch at Work',
+      'Board meeting at HQ',
+      // What a call runs on, not where it is.
+      'Sync @ Zoom',
+      'Standup at Teams',
+      'Weekly @ Meet',
+      'Laufen morgen um 7 im Regen',
+      'Wandern am Samstag um 9 im Schnee',
+      'Lesen heute um 21 Uhr im Bett',
+      'Kaffee morgen um 8 im Stehen',
+      'Besprechung morgen um 10 im Team',
+      'Review um 15 Uhr im Anschluss',
+      'Essen im Auto',
+      'Picknick im Grünen',
+      'Feier im Freien',
+      'Arbeiten im Homeoffice',
+      'Präsentation im Plenum',
+      'Schwimmen im Wasser',
+      'Podcast im Stau',
+      'Thema im Fokus',
+      'Lernen im Kurs',
+    ]) {
+      expect(readPlace(phrase), phrase).toBeUndefined();
+    }
+  });
+
+  it('reads a name that only begins with such a word, or holds one', () => {
+    for (const [phrase, text] of [
+      ['Brunch at Daily Provisions Sunday', 'Daily Provisions'],
+      ['Kaffee im Regenbogen', 'Regenbogen'],
+      ['Lunch at Thanksgiving Point', 'Thanksgiving Point'],
+      ['Demo at Sprint Review', 'Sprint Review'],
+      ['Abendessen im Kreis der Familie', 'Kreis der Familie'],
+      ['Drinks at Team Rocket', 'Team Rocket'],
+      ['Essen im Wasserturm', 'Wasserturm'],
+      ['Treffen im Zugvogel', 'Zugvogel'],
+    ] as const) {
+      expect(readPlace(phrase), phrase).toEqual(name(text));
+    }
+  });
+
+  it('reads no name where the words go on, say when, or are not the event’s own', () => {
+    for (const phrase of [
+      // Words that go on after it, a second clause, an address.
+      "Lunch at Luigi's with Sam tomorrow",
+      'Coffee at Starbucks before work',
+      "Lunch at Luigi's, bring wine",
+      "Dinner at Luigi's. Bring Wine",
+      'Email Tom at tom@example.com',
+      // A when the trim left, or one the name begins with.
+      'Treffen im Figlmüller am Abend',
+      'Kaffee im Figlmüller im Juni',
+      'Coffee at Mercato 3x weekly',
+      'Dinner at Friday Harbor',
+      'Breakfast at Morning Glory',
+      'Dinner at Ruby Tuesday tomorrow',
+      // Longer than a name is.
+      'Dinner at Trattoria Da Luigi Sul Mare',
+      // Ruled out, quoted, watched or read.
+      'Lunch but not at Mercato',
+      'Treffen nicht im Figlmüller',
+      'Read "Breakfast at Tiffany\'s" tomorrow',
+      "Watch Breakfast at Tiffany's tonight",
+      'Movie night: Night at Tiffany’s',
+      // A call says where the other is, a clause is not the event's.
+      'Call Tom at Microsoft tomorrow',
+      'Email Anna at Acme',
+      'Telefonat mit Anna im Figlmüller',
+      'Lunch with whoever is at Mercato',
+      // What is looked or aimed at, or what one is good at.
+      'Look at Tesla Saturday',
+      'Aim at Target',
+      'Get better at Chess',
+      // Nothing but a when before it, and the lead first.
+      'Tomorrow at Mercato',
+      'At Mercato',
+    ]) {
+      expect(readPlace(phrase), phrase).toBeUndefined();
+    }
+  });
+
+  it('reads past the command around the event, and past a clock to the name', () => {
+    expect(readPlace('Add an event for dinner at Mercato tomorrow')).toEqual(name('Mercato'));
+    expect(readPlace('Trag mir für Freitag um 19 Uhr ein Abendessen im Figlmüller ein')).toEqual(
+      name('Figlmüller'),
+    );
+    expect(readPlace('Meet at half past three at Mercato')).toEqual(name('Mercato'));
   });
 });

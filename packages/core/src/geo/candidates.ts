@@ -1,8 +1,9 @@
 import { Schema } from 'effect';
 import { GeoLocation } from '../types.ts';
 import { normalizeLocationKey, type PlaceSuggestion } from './location.ts';
-import { distanceMeters, type GeoPoint, type GeoRegion, isNearby } from './regions.ts';
+import { distanceMeters, type GeoPoint, type GeoRegion, isDayTrip, isNearby } from './regions.ts';
 import {
+  calledExactly,
   namedPastLead,
   type PlaceLike,
   type PlaceMatch,
@@ -216,6 +217,82 @@ export const rankFoundPlaces = <Place extends FoundPlace>(
     .filter((entry) => entry.order < 4 || offered.includes(entry))
     .sort((a, b) => a.order - b.order || a.index - b.index)
     .map(({ named, place }) => ({ match: named ?? ('search' as const), place }));
+};
+
+/**
+ * Whether a search hit proves that a name is a place, where the words
+ * around it did not say so ("… im Figlmüller", "at Luigi's"): a venue
+ * called exactly that (`calledExactly`: no name that only holds the
+ * words or sounds like them, no town, no street) within a day trip of
+ * the user's places (`isDayTrip`). Everything a search answers a common
+ * word with fails one of the three: "Regen" a town, "Anna" a street
+ * ("Annagasse"), "Pause" a café called "die Pause", "Bett" a club 600 km
+ * away.
+ */
+export const provesName = (
+  name: string,
+  place: FoundPlace,
+  region: GeoRegion | undefined,
+): boolean => calledExactly(name, place) && isDayTrip(region, place);
+
+/** A search hit as a candidate: the text a pick writes is its name and address, as a picked typeahead row's. */
+const foundCandidate = (
+  text: string,
+  { match, place }: { readonly match: PlaceCandidate['match']; readonly place: FoundPlace },
+): PlaceCandidate => {
+  const name = place.name ?? text;
+  return {
+    ...(place.address ? { address: place.address } : {}),
+    geo: new GeoLocation({
+      lat: place.lat,
+      lng: place.lng,
+      name: place.name,
+      source: place.address ? `${name}, ${place.address}` : name,
+    }),
+    match,
+    source: 'mapkit',
+  };
+};
+
+/**
+ * The candidates for a text, from the user's past places and what a
+ * search found: the past places first (`rankPastPlaces`), then the hits
+ * as far as each may be trusted (`rankFoundPlaces`), each place once.
+ *
+ * `possible`: the text is a name a first phrase ends in that no word
+ * calls a place — "im Figlmüller" and "im Regen", "at Luigi's" and "at
+ * Thanksgiving" are written alike. Such a name gets candidates only with
+ * proof that it is a place: a past place written exactly that, else a
+ * search hit that proves it (`provesName`). The proof comes first, so it
+ * is the one taken (`preselectedPlace`); without one there is nothing,
+ * and the draft keeps the words in its title.
+ */
+export const placeCandidatesFor = (
+  text: string,
+  {
+    found,
+    past,
+    possible = false,
+    region,
+  }: {
+    readonly found: ReadonlyArray<FoundPlace>;
+    readonly past: ReadonlyArray<PastPlace>;
+    readonly possible?: boolean | undefined;
+    readonly region: GeoRegion | undefined;
+  },
+): ReadonlyArray<PlaceCandidate> => {
+  const history = rankPastPlaces(text, past);
+  const ranked = rankFoundPlaces(text, found, region);
+  const hits = ranked.map((hit) => foundCandidate(text, hit));
+  if (!possible) {
+    return mergePlaceCandidates(history, hits);
+  }
+  const proof =
+    history.find(({ match }) => match === 'exact') ??
+    hits.find(
+      (_, at) => ranked[at]!.match === 'exact' && provesName(text, ranked[at]!.place, region),
+    );
+  return proof === undefined ? [] : mergePlaceCandidates([proof], [...history, ...hits]);
 };
 
 /**

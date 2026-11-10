@@ -2049,11 +2049,12 @@ const textOf = (tokens: ReadonlyArray<Token>): string => tokens.map(({ text }) =
  * The words a place is read after when the model named none. Each leads
  * into a when, a manner, a topic or a person as often as into a place
  * ("at Thanksgiving", "at EOD", "call Tom at Microsoft", "in two weeks",
- * "in person", "im Mai", "im Regen"), so only a place said by what it is
- * follows them (`placeSaid`; the kinds are core's `isPlaceKind`, which
- * the lookup shares). Where to go is the title's ("ins Kino", "zum
- * Arzt", "in die Oper"), and "am", "bei" and "beim" say when or with
- * whom as often as where.
+ * "in person", "im Mai", "im Regen"), so the words alone say "place"
+ * only where it is said by what it is (`isPlace`; the kinds are core's
+ * `isPlaceKind`, which the lookup shares). A name with no kind is at
+ * most a possible place, for a lookup to decide (`isNameRun`). Where to
+ * go is the title's ("ins Kino", "zum Arzt", "in die Oper"), and "am",
+ * "bei" and "beim" say when or with whom as often as where.
  */
 const READ_LEADS = new Set(['@', 'at', 'im', 'in']);
 
@@ -2220,8 +2221,32 @@ const TWO_DAYS = new RegExp(
   'u',
 );
 
-/** "Look at Anna's slides": what follows is looked at, not where. */
-const LOOKS = new Set(['glance', 'look', 'looked', 'looking', 'looks', 'peek', 'stare']);
+/**
+ * "Look at Anna's slides", "Aim at Target", "Get better at Chess": what
+ * follows is looked at, aimed at or what one is good at, not where.
+ */
+const LOOKS = new Set([
+  'aim',
+  'aimed',
+  'aiming',
+  'angry',
+  'bad',
+  'better',
+  'glance',
+  'good',
+  'great',
+  'laugh',
+  'look',
+  'looked',
+  'looking',
+  'looks',
+  'mad',
+  'peek',
+  'shout',
+  'stare',
+  'wave',
+  'yell',
+]);
 /** "Lunch with whoever is in the office": the lead is a clause's, not the event's. */
 const IS = new Set(['are', 'be', 'been', 'is', 'ist', 'sind', 'war', 'waren', 'was', 'were']);
 
@@ -2450,42 +2475,227 @@ const insideQuote = (tokens: ReadonlyArray<Token>, at: number): boolean => {
 };
 
 /**
+ * The words a name is read after: "at", "@" and "im", with no article
+ * ("at Luigi's", "im Figlmüller"; "at The Standard" has its own). Not
+ * "in": bare, it leads into a town, a language, an app or a state ("in
+ * Vienna", "in German", "in Figma", "in Review"), and no town proves a
+ * name (`provesName` in `@calendar/core`); with its article, into "in
+ * der Arbeit" and "in der Mittagspause", and MapKit knows a venue in
+ * Vienna called exactly each.
+ */
+const NAME_LEADS = new Set(['@', 'at', 'im']);
+
+/** A name holds this many words at most ("Museum of Modern Art"). */
+const NAME_WORDS_MAX = 4;
+
+/**
+ * What a run written like a name says that is no venue, as its folded
+ * words: a day or a deadline the when-readers do not know, an occasion,
+ * a place still to be said, what a call runs on ("Sync @ Zoom"), and
+ * after "im" how, in what or with whom ("im Regen", "im Stehen", "im
+ * Auto", "im Team"). A venue may be called any of these, and the lookup
+ * would prove it: MapKit knows a club called "Bett" in Frankfurt, a
+ * "Plenum" in Gdańsk and a bar "Office Hours" in New York. So the
+ * commonest are refused here, whole — "Daily Provisions" and
+ * "Regenbogen" are names — and every other word is left to the lookup,
+ * which finds no venue for most.
+ */
+export const NOT_A_VENUE: ReadonlySet<string> = new Set([
+  // A day or a deadline.
+  'advent',
+  'cob',
+  'diwali',
+  'eid',
+  'eod',
+  'eom',
+  'eow',
+  'eoy',
+  'fasching',
+  'halloween',
+  'hanukkah',
+  'karneval',
+  'month end',
+  'passover',
+  'pfingsten',
+  'quarter end',
+  'ramadan',
+  'thanksgiving',
+  'year end',
+  // An occasion, or a place still to be said.
+  'all hands',
+  'asap',
+  'happy hour',
+  'hq',
+  'kickoff',
+  'office hours',
+  'offsite',
+  'onsite',
+  'practice',
+  'rehearsal',
+  'retro',
+  'standup',
+  'tba',
+  'tbc',
+  'tbd',
+  'work',
+  // What a call runs on.
+  'discord',
+  'facetime',
+  'meet',
+  'skype',
+  'slack',
+  'teams',
+  'webex',
+  'whatsapp',
+  'zoom',
+  // After "im": how, in what or with whom.
+  'alltag',
+  'anschluss',
+  'auftrag',
+  'ausland',
+  'auto',
+  'bett',
+  'bus',
+  'call',
+  'chat',
+  'detail',
+  'dialog',
+  'dienst',
+  'dunkeln',
+  'einsatz',
+  'ernst',
+  'fernsehen',
+  'flieger',
+  'flugzeug',
+  'fokus',
+  'freien',
+  'gehen',
+  'gesprach',
+  'grunen',
+  'homeoffice',
+  'internet',
+  'job',
+  'kalender',
+  'kopf',
+  'kreis',
+  'kurs',
+  'liegen',
+  'meeting',
+  'moment',
+  'nachhinein',
+  'nebel',
+  'netz',
+  'notfall',
+  'plenum',
+  'praktikum',
+  'prinzip',
+  'radio',
+  'rahmen',
+  'regen',
+  'ruckblick',
+  'schatten',
+  'schnee',
+  'seminar',
+  'sitzen',
+  'sprint',
+  'stau',
+  'stehen',
+  'stress',
+  'studium',
+  'sturm',
+  'taxi',
+  'team',
+  'test',
+  'training',
+  'tv',
+  'uberblick',
+  'unterricht',
+  'urlaub',
+  'verein',
+  'vergleich',
+  'voraus',
+  'vorfeld',
+  'wald',
+  'wasser',
+  'workshop',
+  'zug',
+  'zweifel',
+]);
+
+/**
+ * Whether what follows a lead is written as a name and nothing else: no
+ * article, every word with a name's capital (a joint between two of
+ * them aside), short, one clause, no address, no when inside it, and
+ * none of the common words a name's capital is also written on
+ * (`NOT_A_VENUE`). Not in a phrase written in title case, where a
+ * capital tells no name. That is how a venue is written — and a holiday,
+ * an occasion, a person and their employer ("at Thanksgiving", "at All
+ * Hands", "at Anna", "at Microsoft"), so it makes a possible place, never
+ * a place.
+ */
+const isNameRun = ({ article, capitals, lead, run }: Led): boolean =>
+  capitals &&
+  article === undefined &&
+  NAME_LEADS.has(lead) &&
+  run.length <= NAME_WORDS_MAX &&
+  !run.slice(0, -1).some(endsClause) &&
+  !run.some(({ text }) => text.includes('@')) &&
+  !saysWhenInside(run) &&
+  readsAsName(run) &&
+  !NOT_A_VENUE.has(run.map(({ plain }) => plain).join(' '));
+
+/**
+ * What a first phrase's words lead into at their end: a `place`, said
+ * by what it is, or a `name` — written as a venue is, and as much else,
+ * which only a lookup can tell apart.
+ */
+export interface PlaceRead {
+  readonly kind: 'name' | 'place';
+  readonly text: string;
+}
+
+/**
  * The place a first phrase leads into, read from its own words: a model
  * that names none (Apple's on the Mac answers a first phrase with the
  * title only) lost it, and one that kept it in the title left it there.
  * `text` is the phrase without its invitation; the command and the when
  * at its end come off here, as they do off the title.
  *
- * The place is everything after the first "at", "@", "in" or "im" that
- * does not lead into a when (`WHEN_AFTER_LEAD`, a clock) or into words
- * that go on ("check in with …"), to the end of the words, an article
- * after the lead aside — and only where a word says it is a place: its
- * kind, last ("in the big meeting room", "at the office", "at Loos
- * Bar", "im Schweizerhaus") or first with a venue's name or a room's
- * number after it ("im Café Prückel", "in der Praxis Dr. Huber", "at
- * room 4"): `isPlace`.
+ * It is everything after the first "at", "@", "in" or "im" that does not
+ * lead into a when (`WHEN_AFTER_LEAD`, a clock) or into words that go on
+ * ("check in with …"), to the end of the words, an article after the
+ * lead aside. A `place` where a word says it is one: its kind, last ("in
+ * the big meeting room", "at the office", "at Loos Bar", "im
+ * Schweizerhaus") or first with a venue's name or a room's number after
+ * it ("im Café Prückel", "in der Praxis Dr. Huber", "at room 4"):
+ * `isPlace`.
  *
- * Anything else stays as it was. A name no kind goes with ("at
- * Luigi's", "in Vienna", "im Figlmüller"): "at Thanksgiving", "at EOD",
- * "call Tom at Microsoft", "in German" and "im Regen" are written the
- * same, German gives every noun its capital, and the model is no help —
- * Apple's on the Mac cuts the title at the when whatever follows
- * ("Laufen morgen um 7 im Regen" and "Kaffee um 10 im Figlmüller" both
- * lose their end), and asked for the place alone it names "Regen" and
- * "Bett" too. Words that go on after the place ("at Loos Bar with Jo")
- * or say when ("im Café Prückel am Abend"), a second clause, what is
- * looked at ("look at …"), a weekday that may be the name's ("at Ruby
- * Tuesday tomorrow"), a venue's name in a phrase written in title case
- * ("Dinner At Café Prückel With The Team"), a place ruled out ("not at
- * the office"), a lead inside a quoted name or in what is watched or
+ * A `name` where no kind goes with it and it is written as one, after
+ * "at", "@" or "im" ("at Luigi's", "im Figlmüller": `isNameRun`). The
+ * words do not say what it is — "at Thanksgiving", "at Anna" and "im
+ * Regen" are written the same, German gives every noun its capital — and
+ * the model is no help: Apple's on the Mac cuts the title at the when
+ * whatever follows ("Laufen morgen um 7 im Regen" and "Kaffee um 10 im
+ * Figlmüller" both lose their end), and asked for the place alone it
+ * names "Regen" and "Bett" too. So a name is only a possible place: the
+ * draft takes it when the lookup proves it (`placeCandidatesFor` in
+ * `@calendar/core`), and stays as it was otherwise.
+ *
+ * Nothing is read of words that go on after the place ("at Loos Bar
+ * with Jo") or say when ("im Café Prückel am Abend"), a second clause,
+ * what is looked at ("look at …"), a weekday that may be the name's ("at
+ * Ruby Tuesday tomorrow"), a venue's name in a phrase written in title
+ * case ("Dinner At Café Prückel With The Team"), a place ruled out ("not
+ * at the office"), a lead inside a quoted name or in what is watched or
  * read ('"The House at Pooh Corner"', "Watch Night at the Museum"), a
- * clause of its own ("whoever is in the office"), and a phrase that is
- * nothing but its when before the lead.
+ * call ("Call Tom at Microsoft"), a clause of its own ("whoever is in
+ * the office"), and a phrase that is nothing but its when before the
+ * lead.
  */
-export const placeSaid = (
+export const readPlace = (
   text: string,
   { phrase = text }: { readonly phrase?: string } = {},
-): string | undefined => {
+): PlaceRead | undefined => {
   const whole = withoutCommand(text, phrase);
   const kept = trimWhen(whole, undefined, { phrase });
   const cut = whole.lastIndexOf(kept);
@@ -2510,9 +2720,9 @@ export const placeSaid = (
     // A lead into a when, or into words that go on ("at 10 at …", "at
     // half past three at …", "check in at …", "check in with …"), is
     // not the place's: the next may be.
-    const led = foldedText(said.slice(at));
+    const after = foldedText(said.slice(at));
     if (
-      scan(led).some(({ index }) => index <= lead.length + 1) ||
+      scan(after).some(({ index }) => index <= lead.length + 1) ||
       WHEN_AFTER_LEAD.test(foldedText(run)) ||
       (GOES_ON.has(first.plain) && !NAMED.test(first.text))
     ) {
@@ -2521,11 +2731,21 @@ export const placeSaid = (
     if (leadIsNotTheEvents(said.slice(0, at), lead)) {
       return undefined;
     }
-    const capitals = !NAMED.test(said[at]!.text);
-    const place = isPlaceRun({ article, capitals, lead, run }) ? placeText(run) : '';
-    return place === '' ? undefined : place;
+    const led: Led = { article, capitals: !NAMED.test(said[at]!.text), lead, run };
+    const kind = isPlaceRun(led) ? 'place' : isNameRun(led) ? 'name' : undefined;
+    const read = placeText(run);
+    return kind === undefined || read === '' ? undefined : { kind, text: read };
   }
   return undefined;
+};
+
+/** The place a first phrase's words say by what it is (`readPlace`); a name alone is none. */
+export const placeSaid = (
+  text: string,
+  options?: { readonly phrase?: string },
+): string | undefined => {
+  const read = readPlace(text, options);
+  return read?.kind === 'place' ? read.text : undefined;
 };
 
 /**

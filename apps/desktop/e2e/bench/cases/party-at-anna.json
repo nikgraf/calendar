@@ -1,0 +1,17 @@
+{
+  "lang": "en",
+  "tags": ["basic", "location", "title"],
+  "turns": [
+    {
+      "input": {
+        "text": "Party at Anna on Saturday"
+      },
+      "expect": {
+        "title": "party at anna",
+        "weekday": 6,
+        "isAllDay": true,
+        "location": null
+      }
+    }
+  ]
+}

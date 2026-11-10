@@ -1,0 +1,18 @@
+{
+  "lang": "de",
+  "tags": ["basic", "de", "location", "title"],
+  "turns": [
+    {
+      "input": {
+        "text": "Laufen am Samstag um 7 im Regen"
+      },
+      "expect": {
+        "title": ["laufen im regen", "laufen"],
+        "weekday": 6,
+        "startTime": "07:00",
+        "endTime": "08:00",
+        "location": null
+      }
+    }
+  ]
+}

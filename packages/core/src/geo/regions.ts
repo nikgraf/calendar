@@ -96,6 +96,21 @@ export const isNearby = (region: GeoRegion | undefined, place: GeoPoint): boolea
   region === undefined ||
   region.near.points.some((point) => distanceMeters(point, place) <= region.near.meters);
 
+/**
+ * Whether a place stands within a day trip of one of the user's places:
+ * what proves a name the words did not call a place (`provesName`).
+ * Stricter than `isNearby` on both ends. Around a time zone's city it is
+ * the same day trip, not the zone's part of the world — MapKit knows a
+ * club called "Bett" in Frankfurt and a "Plenum" in Gdańsk, both nearby
+ * by the zone for someone in Vienna. And where nothing is known of where
+ * the user is, nothing is close.
+ */
+export const isDayTrip = (region: GeoRegion | undefined, place: GeoPoint): boolean =>
+  region !== undefined &&
+  region.near.points.some(
+    (point) => distanceMeters(point, place) <= Math.min(region.near.meters, HISTORY_NEAR_METERS),
+  );
+
 /** The city a time zone is named for, or its biggest one. */
 const TIME_ZONE_CITIES: ReadonlyMap<string, GeoPoint> = new Map(
   Object.entries({

@@ -1,10 +1,11 @@
-import type { QuickAddResult, RefineResult } from '@calendar/ai';
+import type { QuickAddPrefill, QuickAddResult, RefineResult } from '@calendar/ai';
 import { applyNotesChange, applyReminderChange } from '@calendar/app-state/draftExtras';
 import {
   applyGuestChange,
   type InviteeChoice,
   resolveInvitees,
 } from '@calendar/app-state/draftInvitees';
+import { settlePlace, settlePossiblePlace } from '@calendar/app-state/draftPlaces';
 import { convertQuickAddItem, type QuickAddItem } from '@calendar/app-state/quickAddItem';
 import {
   type AttendeeInput,
@@ -13,10 +14,11 @@ import {
   emailKey,
   EventReminders,
   foldSearchText,
+  placeCandidatesFor,
   ReminderOverride,
   Temporal,
 } from '@calendar/core';
-import type { Expectation } from './cases.ts';
+import { type BenchTown, type Expectation, placeKey } from './cases.ts';
 
 /**
  * What the bench holds between turns and checks after each: the thread's
@@ -101,16 +103,50 @@ const remindersOf = (minutes: ReadonlyArray<number> | undefined): EventReminders
       });
 
 /**
+ * A first phrase's prefill once its possible place is settled, as the
+ * thread settles it (`settlePossiblePlace`): a name the words did not
+ * call a place ("… im Figlmüller") is looked up in the fixture town —
+ * the candidates the app's lookup would answer with for those past
+ * places and search hits (`placeCandidatesFor`) — and taken only with
+ * proof, the location reading the place taken. No town, no possible
+ * place or no proof: the prefill as the words made it.
+ */
+const settledPrefill = (
+  result: Extract<QuickAddResult, { readonly kind: 'parsed' }>,
+  town: BenchTown | undefined,
+): QuickAddPrefill => {
+  const possible = result.possiblePlace;
+  if (possible === undefined || town === undefined) {
+    return result.prefill;
+  }
+  const candidates = placeCandidatesFor(possible.place, {
+    found: town.found[placeKey(possible.place)] ?? [],
+    past: town.past,
+    possible: true,
+    region: town.region,
+  });
+  const { place, prefill } = settlePossiblePlace(result.prefill, possible, {
+    candidates,
+    text: possible.place,
+  });
+  const taken = place === undefined ? undefined : settlePlace(place).taken;
+  return taken === undefined ? prefill : { ...prefill, location: taken.geo.source };
+};
+
+/**
  * The draft after a turn's result: the first turn makes it, a later one
  * changes it as the thread would — the kind kept, the guests the words
  * invite looked up in the address book (`resolveInvitees`, every match
  * of `contactsNamed`), the ones they take off removed, a note added to
- * the notes, the notifications said added to the draft's.
+ * the notes, the notifications said added to the draft's. A first
+ * phrase's possible place is settled over the fixture town
+ * (`settledPrefill`).
  */
 export const applyResult = async (
   previous: BenchDraft | undefined,
   result: QuickAddResult | RefineResult,
   book: ReadonlyArray<Contact>,
+  town?: BenchTown,
 ): Promise<Outcome> => {
   if (result.kind === 'rejected') {
     return { kind: 'rejected', reason: result.reason };
@@ -131,7 +167,10 @@ export const applyResult = async (
       kind: 'draft',
     };
   }
-  const parsed: QuickAddItem = { kind: 'event', prefill: result.prefill };
+  const parsed: QuickAddItem = {
+    kind: 'event',
+    prefill: previous === undefined ? settledPrefill(result, town) : result.prefill,
+  };
   const item = previous === undefined ? parsed : convertQuickAddItem(parsed, previous.item.kind);
   const invite = result.invite ?? [];
   const uninvite = result.uninvite ?? [];

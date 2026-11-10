@@ -1,6 +1,14 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
-import { Contact } from '@calendar/core';
+import {
+  Contact,
+  foldSearchText,
+  type FoundPlace,
+  GeoLocation,
+  type GeoRegion,
+  type PastPlace,
+  regionForTimeZone,
+} from '@calendar/core';
 import { Schema } from 'effect';
 
 /**
@@ -188,4 +196,60 @@ export const loadContacts = (path: string): Readonly<Record<string, ReadonlyArra
       ),
     ]),
   );
+};
+
+const PlacesFile = Schema.Struct({
+  /** What a place search answers for a name, by the name: its hits in the search's order. */
+  found: Schema.Record(
+    Schema.String,
+    Schema.Array(
+      Schema.Struct({
+        address: Schema.optional(Schema.String),
+        lat: Schema.Number,
+        lng: Schema.Number,
+        name: Schema.String,
+      }),
+    ),
+  ),
+  /** The places of the user's own past events, as each was written, the latest last. */
+  past: Schema.Array(
+    Schema.Struct({
+      lat: Schema.Number,
+      lng: Schema.Number,
+      name: Schema.optional(Schema.String),
+      source: Schema.String,
+    }),
+  ),
+});
+
+/**
+ * The fixture town a name is looked up in, where the app would ask the
+ * user's past events and MapKit: no case asks MapKit. Around the city of
+ * the bench's time zone, as for a user with no placed event yet.
+ */
+export interface BenchTown {
+  readonly found: Readonly<Record<string, ReadonlyArray<FoundPlace>>>;
+  readonly past: ReadonlyArray<PastPlace>;
+  readonly region: GeoRegion | undefined;
+}
+
+/** A name as the town's searches are keyed: case, accents and the apostrophe's shape folded. */
+export const placeKey = (name: string): string =>
+  foldSearchText(name)
+    .replaceAll(/[‘’`]/g, "'")
+    .trim();
+
+/** The fixture places (`places.json`): past places, and a search's hits per name. */
+export const loadPlaces = (path: string, timeZone: string): BenchTown => {
+  const file = Schema.decodeUnknownSync(PlacesFile)(JSON.parse(readFileSync(path, 'utf8')));
+  return {
+    found: Object.fromEntries(
+      Object.entries(file.found).map(([name, hits]) => [placeKey(name), hits]),
+    ),
+    past: file.past.map((place, index) => ({
+      geo: new GeoLocation(place),
+      lastUsedUtc: index,
+    })),
+    region: regionForTimeZone(timeZone),
+  };
 };

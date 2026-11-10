@@ -1,0 +1,81 @@
+{
+  "found": {
+    "Figlmüller": [
+      {
+        "address": "Bäckerstraße 6, 1010 Vienna, Austria",
+        "lat": 48.209,
+        "lng": 16.376,
+        "name": "Figlmüller Bäckerstrasse"
+      },
+      {
+        "address": "Bäckerstraße 6, 1010 Vienna, Austria",
+        "lat": 48.2091,
+        "lng": 16.3762,
+        "name": "Figlmüller"
+      }
+    ],
+    "Luigi's": [
+      {
+        "address": "Liechtensteinstraße 8, 1090 Vienna, Austria",
+        "lat": 48.217,
+        "lng": 16.363,
+        "name": "Da Luigi"
+      },
+      {
+        "address": "Musterplatz 1, 1010 Vienna, Austria",
+        "lat": 48.2075,
+        "lng": 16.3705,
+        "name": "Luigi's"
+      }
+    ],
+    "Mercato": [
+      {
+        "address": "Vorgartenmarkt 4, 1020 Vienna, Austria",
+        "lat": 48.222,
+        "lng": 16.401,
+        "name": "Pizzeria il Mercato"
+      }
+    ],
+    "Anna": [
+      {
+        "address": "Annagasse, 1010 Vienna, Austria",
+        "lat": 48.204,
+        "lng": 16.372,
+        "name": "Annagasse"
+      },
+      {
+        "address": "Philharmonikerstraße 4, 1010 Vienna, Austria",
+        "lat": 48.2038,
+        "lng": 16.3695,
+        "name": "Anna Sacher"
+      },
+      {
+        "address": "12 Rue de Rivoli, 75004 Paris, France",
+        "lat": 48.8566,
+        "lng": 2.3522,
+        "name": "Anna"
+      }
+    ],
+    "Kreis der Familie": [
+      {
+        "address": "Familie, Herálec, Žďár nad Sázavou District, Czechia",
+        "lat": 49.694,
+        "lng": 15.982,
+        "name": "Familie"
+      }
+    ]
+  },
+  "past": [
+    {
+      "lat": 48.2105,
+      "lng": 16.3605,
+      "source": "Mercato"
+    },
+    {
+      "lat": 48.2003,
+      "lng": 16.3497,
+      "name": "Kaffemik",
+      "source": "Kaffemik, Zollergasse 5, 1070 Vienna, Austria"
+    }
+  ]
+}

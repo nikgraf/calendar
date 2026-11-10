@@ -722,10 +722,17 @@ export class AppBackendRpcs extends RpcGroup.make(
    * Not cached — for offering a choice, where `resolveLocation` gives the
    * one best guess. Empty when the text is not a place or nothing
    * resembles it; without a bridge the past places alone.
+   *
+   * `possible`: the text is a name a first phrase ends in that no word
+   * calls a place ("… im Figlmüller", "at Luigi's" — written like "im
+   * Regen" and "at Thanksgiving"). Answered only with proof that it is
+   * one, the proof first: a past place written exactly that, or a search
+   * hit called exactly that within a day trip (`placeCandidatesFor`).
+   * Empty without proof.
    */
   Rpc.make('placeCandidates', {
     error: BackendError,
-    payload: { location: Schema.String },
+    payload: { location: Schema.String, possible: Schema.optional(Schema.Boolean) },
     success: Schema.Array(PlaceCandidate),
   }),
   /**

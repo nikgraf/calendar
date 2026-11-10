@@ -87,6 +87,20 @@ the grounding's.
 `@example.com` addresses, including two Annas (a name that is a choice)
 and a Max with two addresses (a choice too).
 
+`places.json` holds the fixture town: the places of the user's past
+events (`past`, the latest last) and what a place search answers for a
+name (`found`, by the name, in the search's order — MapKit's own answers
+around Vienna where it had one, a made-up venue where it had none). No
+case asks MapKit. The town is read where the app would ask it: for a
+first phrase that ends in a name no word calls a place ("… im
+Figlmüller", "at Luigi's"). The thread takes such a name as the place
+only when the lookup proves it (a past place written exactly that, or a
+venue called exactly that within a day trip of the time zone's city);
+the bench settles it the same way over the town, so a case states the
+`location` it expects, or `null` where the town holds only look-alikes
+("Party at Anna": a street, and a namesake in Paris). A place the words
+say outright is not looked up: its location is the text as said.
+
 ## Report
 
 `output/bench/<yyyymmdd-hhmm>-<sha>-<provider>.json`: every turn's

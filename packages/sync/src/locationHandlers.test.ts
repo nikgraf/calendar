@@ -1058,3 +1058,227 @@ describe('nearby first', () => {
     }).pipe(Effect.provide(setup(client)));
   });
 });
+
+/** The lookup asked about a name the words did not call a place. */
+const asked = (location: string) => locationHandlers.placeCandidates({ location, possible: true });
+
+describe('a possible place', () => {
+  // A name a first phrase ends in that no word calls a place ("… im
+  // Figlmüller", "im Regen"): the lookup answers only with proof.
+  const figlmueller = {
+    address: 'Bäckerstraße 6, 1010 Vienna, Austria',
+    lat: 48.209,
+    lng: 16.376,
+    name: 'Figlmüller',
+  };
+  const branch = { ...figlmueller, name: 'Figlmüller Bäckerstrasse' };
+  const inVienna = seedPlaced([placedEvent('home', 1, VIENNA), placedEvent('work', 2, VIENNA)]);
+
+  it.effect('is the nearby venue called exactly that, the proof first', () => {
+    // MapKit's own order for "Figlmüller": the search's branch, the completer's venue.
+    const { client } = mapkit({
+      found: { Figlmüller: [branch] },
+      rows: { Figlmüller: [{ subtitle: figlmueller.address, title: 'Figlmüller' }] },
+    });
+    const withRows: GeoClientShape = {
+      ...client,
+      resolve: (request) =>
+        request.suggestion === undefined ? client.resolve(request) : Effect.succeed([figlmueller]),
+    };
+    return Effect.gen(function* () {
+      yield* inVienna;
+      const candidates = yield* asked('Figlmüller');
+      expect(candidates.map((c) => [c.geo.name, c.match])).toEqual([
+        ['Figlmüller', 'exact'],
+        ['Figlmüller Bäckerstrasse', 'words'],
+      ]);
+      expect(preselectedPlace(candidates)?.geo.source).toBe(
+        'Figlmüller, Bäckerstraße 6, 1010 Vienna, Austria',
+      );
+    }).pipe(Effect.provide(setup(withRows)));
+  });
+
+  it.effect('is the place the user has been to, written exactly that', () => {
+    const { client } = mapkit({});
+    return Effect.gen(function* () {
+      yield* seedPlaced([
+        placedEvent('home', 1, VIENNA),
+        new EventRecord({
+          ...placedEvent('lunch', 30, VIENNA),
+          geo: new GeoLocation({ lat: 48.21, lng: 16.36, source: 'Mercato' }),
+          location: 'Mercato',
+        }),
+      ]);
+      expect((yield* asked('Mercato')).map((c) => [c.source, c.geo.source, c.match])).toEqual([
+        ['history', 'Mercato', 'exact'],
+      ]);
+      // No bridge at all: the past place is proof on its own.
+    }).pipe(Effect.provide(setup(client)));
+  });
+
+  it.effect('is nothing where the hits only resemble the name', () => {
+    // What MapKit answered around Vienna (probe, 2026-11-10), and a venue
+    // and an office made up for what it did not have.
+    const { client } = mapkit({
+      found: {
+        Anna: [
+          {
+            address: 'Annagasse, 1010 Vienna, Austria',
+            lat: 48.204,
+            lng: 16.372,
+            name: 'Annagasse',
+          },
+          {
+            address: 'Philharmonikerstraße 4, 1010 Vienna',
+            lat: 48.2038,
+            lng: 16.3695,
+            name: 'Anna Sacher',
+          },
+          {
+            address: '12 Rue de Rivoli, 75004 Paris, France',
+            lat: 48.8566,
+            lng: 2.3522,
+            name: 'Anna',
+          },
+        ],
+        Bett: [
+          {
+            address: 'Schmidtstraße 12, 60326 Frankfurt, Germany',
+            lat: 50.103,
+            lng: 8.619,
+            name: 'Bett',
+          },
+        ],
+        "Luigi's": [
+          {
+            address: 'Liechtensteinstraße 8, 1090 Vienna, Austria',
+            lat: 48.217,
+            lng: 16.363,
+            name: 'Da Luigi',
+          },
+        ],
+        Microsoft: [
+          {
+            address: 'Am Europlatz 3, 1120 Vienna, Austria',
+            lat: 48.171,
+            lng: 16.334,
+            name: 'Microsoft Österreich',
+          },
+        ],
+        Regen: [
+          { address: 'Regen, Bavaria, Germany', lat: 48.97, lng: 13.13, name: 'Regen' },
+          { address: 'Regen, Lower Austria, Austria', lat: 48.3, lng: 16.2, name: 'Regen' },
+        ],
+        Thanksgiving: [
+          {
+            address: '3003 N Thanksgiving Way, Lehi, UT 84043, United States',
+            lat: 40.426,
+            lng: -111.888,
+            name: 'Thanksgiving Point',
+          },
+        ],
+      },
+    });
+    return Effect.gen(function* () {
+      yield* inVienna;
+      for (const name of ['Anna', 'Bett', "Luigi's", 'Microsoft', 'Regen', 'Thanksgiving', 'EOD']) {
+        expect(yield* asked(name), name).toEqual([]);
+      }
+      // Said outright as the place, the same hits are there to choose from.
+      expect(
+        (yield* locationHandlers.placeCandidates({ location: 'Anna' }))
+          .filter((c) => c.source === 'mapkit')
+          .map((c) => c.geo.name),
+      ).toEqual(['Annagasse', 'Anna Sacher', 'Anna']);
+    }).pipe(Effect.provide(setup(client)));
+  });
+
+  it.effect(
+    'is the venue called exactly a name that is a person’s too, when it stands nearby',
+    () => {
+      const { client } = mapkit({
+        found: {
+          Anna: [
+            { address: 'Neubaugasse 2, 1070 Vienna, Austria', lat: 48.2, lng: 16.35, name: 'Anna' },
+          ],
+        },
+      });
+      return Effect.gen(function* () {
+        yield* inVienna;
+        const [first] = yield* asked('Anna');
+        expect([first?.source, first?.geo.name, first?.match]).toEqual(['mapkit', 'Anna', 'exact']);
+      }).pipe(Effect.provide(setup(client)));
+    },
+  );
+
+  it.effect(
+    'takes a hit a day trip from the zone’s city, and none where nothing says where the user is',
+    () => {
+      const munich = {
+        address: 'Tal 1, 80331 München, Germany',
+        lat: 48.1351,
+        lng: 11.582,
+        name: 'Mercato',
+      };
+      const berlin = {
+        address: 'Torstraße 1, 10119 Berlin, Germany',
+        lat: 52.5296,
+        lng: 13.4094,
+        name: 'Mercato',
+      };
+      const { client } = mapkit({ found: { Mercato: [munich, berlin] } });
+      return Effect.gen(function* () {
+        // No zone the table knows and no event with a place: nothing is close.
+        expect(yield* asked('Mercato')).toEqual([]);
+        yield* writeTimeZoneSettings({
+          primary: 'Europe/Berlin',
+          zones: [DEVICE_ZONE, 'Europe/Berlin'],
+        });
+        yield* TestClock.adjust(REGION_HINT_TTL_MS + 1);
+        // The zone holds Munich too, but a name needs its city's day trip.
+        expect((yield* asked('Mercato')).map((c) => [c.address, c.match])).toEqual([
+          ['Torstraße 1, 10119 Berlin, Germany', 'exact'],
+          ['Tal 1, 80331 München, Germany', 'exact'],
+        ]);
+        expect(
+          (yield* locationHandlers.placeCandidates({ location: 'Mercato' })).map((c) => c.address),
+        ).toEqual(['Tal 1, 80331 München, Germany', 'Torstraße 1, 10119 Berlin, Germany']);
+      }).pipe(Effect.provide(setup(client)));
+    },
+  );
+
+  it.effect('is nothing when MapKit fails, stalls or is not there', () => {
+    const failing: GeoClientShape = {
+      resolve: () =>
+        Effect.fail(new GeoRequestError({ message: 'offline', method: 'geo.resolve' })),
+      search: () => Effect.fail(new GeoRequestError({ message: 'offline', method: 'geo.search' })),
+      snapshot: () => Effect.succeed(FAKE_MAP_PNG_BASE64),
+    };
+    return Effect.gen(function* () {
+      yield* inVienna;
+      expect(yield* asked('Figlmüller')).toEqual([]);
+    }).pipe(Effect.provide(setup(failing)));
+  });
+
+  it.effect('is nothing when the search answers past its budget', () => {
+    const slow: GeoClientShape = {
+      resolve: () => Effect.succeed([figlmueller]).pipe(Effect.delay('10 seconds')),
+      search: () => Effect.succeed([]).pipe(Effect.delay('10 seconds')),
+      snapshot: () => Effect.succeed(FAKE_MAP_PNG_BASE64),
+    };
+    return Effect.gen(function* () {
+      yield* inVienna;
+      const pending = yield* Effect.forkChild(asked('Figlmüller'));
+      yield* TestClock.adjust(CANDIDATE_SEARCH_TIMEOUT);
+      expect(yield* Fiber.join(pending)).toEqual([]);
+    }).pipe(Effect.provide(setup(slow)));
+  });
+
+  it.effect('is nothing without a bridge, and nothing for a link', () => {
+    return Effect.gen(function* () {
+      yield* inVienna;
+      expect(yield* asked('Figlmüller')).toEqual([]);
+      expect(yield* asked('https://zoom.us/j/123')).toEqual([]);
+    }).pipe(Effect.provide(setup(unavailableGeoClient('off'))));
+  });
+});

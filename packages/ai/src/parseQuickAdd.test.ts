@@ -2171,3 +2171,190 @@ describe('parseQuickAdd reads the place from the phrase when the model names non
     ).toMatchObject({ location: 'at the gym', title: 'Gym' });
   });
 });
+
+/** A phrase's whole reading: the draft as it stands, and the name it may hold as its place. */
+const named = async (phrase: string, parse: QuickAddParse & PeopleParse = { title: phrase }) => {
+  const result = await parseQuickAdd(fakeModel(parse), { phrase, ...CONTEXT });
+  if (result.kind !== 'parsed') {
+    throw new Error(`expected a parse, got: ${JSON.stringify(result)}`);
+  }
+  return {
+    location: result.prefill.location,
+    possible: result.possiblePlace,
+    title: result.prefill.title,
+  };
+};
+
+describe('parseQuickAdd hands a name on as a possible place', () => {
+  it('leaves the draft as it was and names the place it may hold, with the title it would leave', async () => {
+    // Apple's model on the Mac: the title cut at the when, nothing else.
+    expect(
+      await named('Kaffee mit Max um 10 Uhr im Figlmüller', { title: 'Kaffee mit Max' }),
+    ).toEqual({
+      location: undefined,
+      possible: { place: 'Figlmüller', title: 'Kaffee mit Max' },
+      title: 'Kaffee mit Max',
+    });
+    expect(
+      await named('Lunch with Sam tomorrow at 12:30 at Mercato', { title: 'Lunch with Sam' }),
+    ).toEqual({
+      location: undefined,
+      possible: { place: 'Mercato', title: 'Lunch with Sam' },
+      title: 'Lunch with Sam',
+    });
+    // The title kept the name: the draft still reads it there.
+    expect(await named("Dinner at Luigi's Friday", { title: "Dinner at Luigi's" })).toEqual({
+      location: undefined,
+      possible: { place: "Luigi's", title: 'Dinner' },
+      title: "Dinner at Luigi's",
+    });
+    // A model that echoes the phrase (the iPhone's).
+    expect(await named('Kaffee mit Max um 10 Uhr im Figlmüller')).toEqual({
+      location: undefined,
+      possible: { place: 'Figlmüller', title: 'Kaffee mit Max' },
+      title: 'Kaffee mit Max um 10 Uhr im Figlmüller',
+    });
+    expect(await named('Lunch with Sam tomorrow at 12:30 at Mercato')).toEqual({
+      location: undefined,
+      possible: { place: 'Mercato', title: 'Lunch with Sam' },
+      title: 'Lunch with Sam tomorrow at 12:30 at Mercato',
+    });
+    expect(await named('Lunch @ Mercato')).toEqual({
+      location: undefined,
+      possible: { place: 'Mercato', title: 'Lunch' },
+      title: 'Lunch @ Mercato',
+    });
+  });
+
+  it('reads the name past the command and the invitation around the event', async () => {
+    expect(
+      await named('Add an event for dinner at Mercato tomorrow', { title: 'dinner at Mercato' }),
+    ).toMatchObject({
+      possible: { place: 'Mercato', title: 'Dinner' },
+      title: 'Dinner at Mercato',
+    });
+    expect(
+      await named('Trag mir für Freitag um 19 Uhr ein Abendessen im Figlmüller ein', {
+        title: 'Abendessen',
+      }),
+    ).toMatchObject({
+      possible: { place: 'Figlmüller', title: 'Abendessen' },
+      title: 'Abendessen',
+    });
+    expect(
+      await named("Dinner with Tom at Luigi's on Friday, invite Anna Lee", {
+        people: ['Anna Lee'],
+        title: "Dinner with Tom at Luigi's",
+      }),
+    ).toMatchObject({ possible: { place: "Luigi's", title: 'Dinner with Tom' } });
+    // No one read as invited: the clause after the comma is not understood.
+    expect(
+      (
+        await named("Dinner with Tom at Luigi's on Friday, invite Anna Lee", {
+          title: "Dinner with Tom at Luigi's",
+        })
+      ).possible,
+    ).toBeUndefined();
+  });
+
+  it('hands on what only a lookup can tell from a venue, and nothing the words rule out', async () => {
+    // Written as a venue is: the lookup has to say no.
+    for (const [phrase, place] of [
+      ['Party at Anna', 'Anna'],
+      ['Demo at Sprint Review', 'Sprint Review'],
+      ['Meet at Am Hof at 10', 'Am Hof'],
+      ['Dinner at The Standard on Friday', 'The Standard'],
+      ['Demo at Visual Studio Live', 'Visual Studio Live'],
+      ['Shop at Home Depot', 'Home Depot'],
+      ['Abendessen am Sonntag um 18 Uhr im Kreis der Familie', 'Kreis der Familie'],
+      ['Essen morgen um 19 Uhr im Schwarzen Kameel', 'Schwarzen Kameel'],
+    ] as const) {
+      const read = await named(phrase);
+      expect(read.possible?.place, phrase).toBe(place);
+      expect(read.location, phrase).toBeUndefined();
+    }
+    // A holiday, a deadline, an occasion, a call, a manner: nothing to look up.
+    for (const phrase of [
+      'Visit family at Thanksgiving',
+      'Costume party at Halloween',
+      'Send report at EOD',
+      'Deploy @ EOD',
+      'Lunch at TBD',
+      'Deadline at Month End',
+      'Present roadmap at All Hands Friday',
+      'Bring up budget at Standup',
+      'Call Tom at Microsoft tomorrow',
+      'Email Anna at Acme',
+      'Aim at Target',
+      'Laufen morgen um 7 im Regen',
+      'Lesen heute um 21 Uhr im Bett',
+      'Wandern am Samstag um 9 im Schnee',
+      'Besprechung morgen um 10 im Team',
+      'Dinner Friday at 7 in Vienna',
+      'Presentation Friday at 2 in English',
+      'Mittagessen in der Arbeit',
+      'Urlaub im Mai',
+      'Lunch at 7',
+      "Lunch at Luigi's with Sam tomorrow",
+      'coffee at starbucks tomorrow',
+      "Team Lunch At Luigi's With The Whole Crew",
+      'Dinner at Ruby Tuesday tomorrow',
+      'Lunch but not at Mercato',
+      "Watch Breakfast at Tiffany's tonight",
+    ]) {
+      const read = await named(phrase);
+      expect(read.possible, phrase).toBeUndefined();
+      expect(read.location, phrase).toBeUndefined();
+    }
+  });
+
+  it('names no possible place where a place stands: the kind said it, or the model did', async () => {
+    expect(await named('Coffee tomorrow at 10 at Café Prückel', { title: 'Coffee' })).toEqual({
+      location: 'Café Prückel',
+      possible: undefined,
+      title: 'Coffee',
+    });
+    // The model's place stands as it did, checked or not by any lookup.
+    expect(await named('Lunch at Figlmüller', { location: 'Figlmüller', title: 'Lunch' })).toEqual({
+      location: 'Figlmüller',
+      possible: undefined,
+      title: 'Lunch',
+    });
+    expect(
+      await named('Kaffee im Figlmüller', { location: 'im Figlmüller', title: 'Kaffee' }),
+    ).toEqual({ location: 'im Figlmüller', possible: undefined, title: 'Kaffee' });
+    // A place the model made up is none: the name is handed on.
+    expect(await named('Kaffee im Figlmüller', { location: 'unknown', title: 'Kaffee' })).toEqual({
+      location: undefined,
+      possible: { place: 'Figlmüller', title: 'Kaffee' },
+      title: 'Kaffee',
+    });
+  });
+
+  it('gives a to-do and a capture none', async () => {
+    expect(
+      await parseQuickAdd(fakeModel({ title: 'pick up the keys at Mercato' }), {
+        phrase: 'remind me to pick up the keys at Mercato tomorrow',
+        ...CONTEXT,
+      }),
+    ).toEqual({
+      kind: 'task',
+      prefill: { date: '2026-08-23', title: 'Pick up the keys at Mercato' },
+    });
+    const captured = normalizeQuickAdd({ date: '2026-08-25', title: 'Dinner at Mercato' }, CONTEXT);
+    expect(captured).toMatchObject({ kind: 'parsed', prefill: { title: 'Dinner at Mercato' } });
+    expect(captured.kind === 'parsed' ? captured.possiblePlace : 'none').toBeUndefined();
+  });
+
+  it('keeps the note and the notifications said beside it', async () => {
+    const result = await parseQuickAdd(fakeModel({ title: 'Dinner' }), {
+      phrase: "Dinner at Luigi's Friday, remind me 30 minutes before",
+      ...CONTEXT,
+    });
+    expect(result).toMatchObject({
+      kind: 'parsed',
+      possiblePlace: { place: "Luigi's", title: 'Dinner' },
+    });
+    expect(result.kind === 'parsed' ? result.reminders : undefined).toBeDefined();
+  });
+});

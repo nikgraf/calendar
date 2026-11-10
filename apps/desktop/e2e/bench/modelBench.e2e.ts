@@ -14,9 +14,11 @@ import { type Contact, Temporal } from '@calendar/core';
 import { describe, expect, it } from 'vite-plus/test';
 import {
   type BenchCase,
+  type BenchTown,
   filterCases,
   loadCases,
   loadContacts,
+  loadPlaces,
   localeOf,
   type TurnInput,
 } from './cases.ts';
@@ -161,11 +163,13 @@ const runCase = async (
     model,
     speech,
     today,
+    town,
   }: {
     readonly book: ReadonlyArray<Contact>;
     readonly model: ReturnType<typeof recording>;
     readonly speech: Speech | undefined;
     readonly today: string;
+    readonly town: BenchTown;
   },
 ): Promise<CaseReport> => {
   const locale = localeOf(benchCase);
@@ -202,6 +206,7 @@ const runCase = async (
       draft,
       await runTurn(model.model, draft, heard.text, today),
       book,
+      town,
     );
     const ms = Date.now() - started;
     const result = check(turn.expect, outcome, draft, today);
@@ -220,6 +225,7 @@ const runCase = async (
         draft,
         await runTurn(model.model, draft, turn.input.transcript, today),
         book,
+        town,
       );
       const transcriptCheck = check(turn.expect, transcriptOutcome, draft, today);
       said = { notes: transcriptCheck.notes, ok: transcriptCheck.failed.length === 0 };
@@ -313,6 +319,7 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('model bench', () => {
       process.env['MODEL_BENCH_CASES'],
     );
     const books = loadContacts(join(BENCH_DIR, 'contacts.json'));
+    const town = loadPlaces(join(BENCH_DIR, 'places.json'), TIME_ZONE);
     const helperBinary = findHelper();
     const helper = helperBinary === undefined ? undefined : connectHelper(helperBinary);
     const speech =
@@ -342,7 +349,7 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('model bench', () => {
               `${benchCase.id}: no address book "${benchCase.contacts}" in contacts.json`,
             );
           }
-          reports.push(await runCase(benchCase, { book, model, speech, today }));
+          reports.push(await runCase(benchCase, { book, model, speech, today, town }));
         }
         const report: BenchReport = {
           cases: reports,

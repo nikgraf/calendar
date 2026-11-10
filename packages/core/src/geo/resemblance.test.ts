@@ -6,12 +6,20 @@ import {
   distanceMeters,
   HISTORY_NEAR_METERS,
   HISTORY_REGION_RADIUS_METERS,
+  isDayTrip,
   isNearby,
   regionForTimeZone,
   TIME_ZONE_NEAR_METERS,
   TIME_ZONE_REGION_RADIUS_METERS,
 } from './regions.ts';
-import { namedPastLead, placeMatch, sameAddress, saysOnlyKind, saysWhere } from './resemblance.ts';
+import {
+  calledExactly,
+  namedPastLead,
+  placeMatch,
+  sameAddress,
+  saysOnlyKind,
+  saysWhere,
+} from './resemblance.ts';
 
 describe('koelnerKey', () => {
   it('gives words that sound alike the same key', () => {
@@ -428,6 +436,70 @@ describe('placeMatch', () => {
   });
 });
 
+describe('calledExactly', () => {
+  it('holds for a venue whose name is the text, word for word', () => {
+    // MapKit's own answers around Vienna (probe, 2026-11-10).
+    for (const [text, name, address] of [
+      ['Figlmüller', 'Figlmüller', 'Bäckerstraße 6, 1010 Vienna, Austria'],
+      ['figlmuller', 'Figlmüller', 'Bäckerstraße 6, 1010 Vienna, Austria'],
+      ['Albertina', 'Albertina', 'Albertinaplatz 1, 1010 Vienna, Austria'],
+      ['Museumsquartier', 'MuseumsQuartier', 'Museums-Platz 1, 1070 Vienna, Austria'],
+      ['Naschmarkt', 'Naschmarkt', 'Rechte Wienzeile 35, 1040 Vienna, Austria'],
+      // A park's address begins with its district, not with its name.
+      ['Prater', 'Prater', '1020 Vienna, Austria'],
+      ["Luigi's", 'Luigi’s', 'Mint Street 5, 1010 Vienna, Austria'],
+      ['Schwarzen Kameel', 'Schwarzen Kameel', 'Bognergasse 5, 1010 Vienna, Austria'],
+      ['The Standard', 'The Standard', '848 Washington St, New York, NY 10014, United States'],
+    ] as const) {
+      expect(calledExactly(text, { address, name }), text).toBe(true);
+    }
+  });
+
+  it('holds for no name that only holds the words, or sounds like them', () => {
+    for (const [text, name, address] of [
+      ["Luigi's", 'Da Luigi', 'Liechtensteinstraße 8, 1090 Vienna, Austria'],
+      ['Luigi', 'Luigi’s', 'Mint Street 5, 1010 Vienna, Austria'],
+      ['Mercato', 'Pizzeria il Mercato', 'Vorgartenmarkt 4, 1020 Vienna, Austria'],
+      ['Schwarzen Kameel', 'Zum Schwarzen Kameel', 'Bognergasse 5, 1010 Vienna, Austria'],
+      ['Pause', 'die Pause', 'Sigmundsgasse 8, 1070 Vienna, Austria'],
+      ['Microsoft', 'Microsoft Österreich', 'Am Europlatz 3, 1120 Vienna, Austria'],
+      ['Google', 'Google Austria', 'Graben 19/9, 1010 Vienna, Austria'],
+      ['Target', 'TARGET Austria', 'Glasergasse 4, 1090 Vienna, Austria'],
+      ['EOD', 'EOD Munitionsbergung Wien', 'Hirschstettner Straße 48, 1220 Vienna, Austria'],
+      ['Thanksgiving', 'Thanksgiving Point', '3003 N Thanksgiving Way, Lehi, UT 84043'],
+      ['Hofburg', 'Hofburg Vienna', 'Heldenplatz, 1010 Vienna, Austria'],
+      ['Standard', 'The Standard', '848 Washington St, New York, NY 10014, United States'],
+      ['Anna', 'Annagasse', 'Annagasse, 1010 Vienna, Austria'],
+      ['Regen', 'Rügen', 'Rügen, Mecklenburg-Vorpommern, Germany'],
+      ['Cafe Meek', 'Kaffemik', 'Zollergasse 5, 1070 Vienna, Austria'],
+      ['Figlmüller', undefined, 'Bäckerstraße 6, 1010 Vienna, Austria'],
+    ] as const) {
+      expect(calledExactly(text, { address, name }), text).toBe(false);
+    }
+  });
+
+  it('holds for no town, district or street: its address begins with its own name', () => {
+    for (const [text, name, address] of [
+      ['Regen', 'Regen', 'Regen, Bavaria, Germany'],
+      ['Regen', 'Regen', '94209 Regen, Germany'],
+      ['Wald', 'Wald', 'Wald, Pyhra, Lower Austria, Austria'],
+      ['Luft', 'Luft', 'Luft, 3231 St. Margarethen an der Sierning, Lower Austria, Austria'],
+      ['Zug', 'Zug', 'Zug, Switzerland'],
+      ['See', 'See', 'See, Tyrol, Austria'],
+      ['Am Hof', 'Am Hof', 'Am Hof, 1010 Vienna, Austria'],
+      ['Diwali', 'Diwali', 'Diwali, Jalandhar 1, Jalandhar, 144020, Punjab, India'],
+      ['Acme', 'Acme', 'Acme AB, Canada'],
+      ['Vienna', 'Vienna', 'Vienna, Austria'],
+    ] as const) {
+      expect(calledExactly(text, { address, name }), text).toBe(false);
+    }
+    // A venue that is called what its town is: the town's words name no place in it.
+    expect(
+      calledExactly('Wien', { address: 'Kettenbrückengasse 1, 1050 Wien', name: 'Wien' }),
+    ).toBe(false);
+  });
+});
+
 describe('regions', () => {
   const vienna = { lat: 48.2082, lng: 16.3738 };
   const berlin = { lat: 52.52, lng: 13.405 };
@@ -489,6 +561,30 @@ describe('regions', () => {
     expect(isNearby(zone, benoni)).toBe(false);
     // Nothing known of where the user is: nothing is far.
     expect(isNearby(undefined, benoni)).toBe(true);
+  });
+
+  it('knows a day trip: the same distance from a zone’s city as from an event, and none from nowhere', () => {
+    const graz = { lat: 47.0707, lng: 15.4395 };
+    const frankfurt = { lat: 50.103, lng: 8.619 };
+    const gdansk = { lat: 54.365, lng: 18.649 };
+    const lisbon = { lat: 38.7223, lng: -9.1393 };
+    const events = densestRegion([vienna])!;
+    expect(isDayTrip(events, graz)).toBe(true);
+    expect(isDayTrip(events, berlin)).toBe(false);
+    // A trip's events do not make home far, here either.
+    expect(isDayTrip(densestRegion([lisbon, lisbon, vienna])!, graz)).toBe(true);
+    // MapKit, 2026-11-10: a club called "Bett" in Frankfurt and a
+    // "Plenum" in Gdańsk, both nearby by the zone for someone in Vienna.
+    const zone = regionForTimeZone('Europe/Vienna')!;
+    expect(isNearby(zone, frankfurt)).toBe(true);
+    expect(isNearby(zone, gdansk)).toBe(true);
+    expect(isDayTrip(zone, frankfurt)).toBe(false);
+    expect(isDayTrip(zone, gdansk)).toBe(false);
+    expect(isDayTrip(zone, berlin)).toBe(false);
+    expect(isDayTrip(zone, graz)).toBe(true);
+    expect(isDayTrip(zone, vienna)).toBe(true);
+    // Nothing known of where the user is: nothing is close.
+    expect(isDayTrip(undefined, vienna)).toBe(false);
   });
 
   it('knows a time zone’s city, or not', () => {

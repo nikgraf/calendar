@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vite-plus/test';
-import { filterCases, loadCases, loadContacts, localeOf } from './cases.ts';
+import { filterCases, loadCases, loadContacts, loadPlaces, localeOf, placeKey } from './cases.ts';
 
 const BENCH_DIR = import.meta.dirname;
 
@@ -127,5 +127,36 @@ describe('loadContacts', () => {
     const books = loadContacts(join(BENCH_DIR, 'contacts.json'));
     expect(books['team']?.length).toBeGreaterThan(5);
     expect(books['team']?.every((contact) => contact.email.endsWith('@example.com'))).toBe(true);
+  });
+});
+
+describe('loadPlaces', () => {
+  it('reads the town: past places the latest last, a search’s hits by the name folded', () => {
+    const dir = caseDir({
+      'places.json': {
+        found: { 'Luigi’s': [{ lat: 48.2, lng: 16.37, name: "Luigi's" }] },
+        past: [
+          { lat: 48.21, lng: 16.36, source: 'Mercato' },
+          { lat: 48.2, lng: 16.35, name: 'Kaffemik', source: 'Kaffemik, Zollergasse 5' },
+        ],
+      },
+    });
+    const town = loadPlaces(join(dir, 'places.json'), 'Europe/Vienna');
+    expect(town.found[placeKey("LUIGI'S")]).toEqual([{ lat: 48.2, lng: 16.37, name: "Luigi's" }]);
+    expect(town.past.map((place) => [place.geo.source, place.geo.name, place.lastUsedUtc])).toEqual(
+      [
+        ['Mercato', undefined, 0],
+        ['Kaffemik, Zollergasse 5', 'Kaffemik', 1],
+      ],
+    );
+    expect(town.region).toMatchObject({ lat: 48.2082, lng: 16.3738 });
+    // A zone the table does not know: nothing is close, so no hit is proof.
+    expect(loadPlaces(join(dir, 'places.json'), 'Etc/UTC').region).toBeUndefined();
+  });
+
+  it('reads the repository town, and every search a case could ask it', () => {
+    const town = loadPlaces(join(BENCH_DIR, 'places.json'), 'Europe/Vienna');
+    expect(town.found[placeKey('Figlmüller')]?.map((hit) => hit.name)).toContain('Figlmüller');
+    expect(town.past.map((place) => place.geo.source)).toContain('Mercato');
   });
 });

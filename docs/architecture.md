@@ -62,12 +62,18 @@ and only where a word says it is a place: its kind (core's
 Schweizerhaus") or first with a venue's name or a room's number ("im
 Café Prückel", "at room 4") — never a clock, a when, a place ruled out,
 a call's, a quoted or watched title's, or what goes on to something else
-— and it leaves the title. A name no kind goes with is not read ("at
-Luigi's", "im Figlmüller"): "at Thanksgiving" and "im Regen" are written
-the same, and the model drops them alike and calls them all places. A
-turn's place loses a copied lead by the same rule ("at the office" is
-"office", `withoutPlaceLead`; "im Figlmüller" stays, a name may begin
-so). A
+— and it leaves the title. A name no kind goes with ("at Luigi's", "im
+Figlmüller") is no place by the words: "at Thanksgiving" and "im Regen"
+are written the same, and the model drops them alike and calls them all
+places. Written as a name after "at", "@" or "im" — no article, every
+word with its capital, none of the common words a capital is also
+written on (`NOT_A_VENUE`: "im Regen", "im Team", "at EOD", "at All
+Hands") — it goes beside the prefill as a possible place
+(`QuickAddResult.possiblePlace`, with the title it would leave), for the
+lookup to decide (Platform seams → Locations and maps); never after
+"in", which leads into towns, languages and "in der Arbeit". A turn's
+place loses a copied lead by the same rule ("at the office" is "office",
+`withoutPlaceLead`; "im Figlmüller" stays, a name may begin so). A
 refinement (`refine.ts`) is one more bounded prompt — the draft as a
 line of JSON and the change — merged by the same rules with the draft as
 the anchor (an open "at 8" reads next to the draft's own start); the
@@ -1689,14 +1695,26 @@ gateway carries all of it. Details, limits and the threat model:
   natural-language search and the completer's rows resolved; the nearby
   hits that do not resemble the text and one far namesake follow as
   `search`, offered and never taken, and any other far hit is left out),
-  best first and uncached. The draft thread (app-state `draftPlaces.ts`) asks for them
+  best first and uncached (core `placeCandidatesFor`). The draft thread (app-state `draftPlaces.ts`) asks for them
   whenever a turn sets a place: the best resembling one is taken at once
   (`preselectedPlace`) — its text becomes the location and its pin counts
   as a pick (`applyPlace`) — and the candidates stay on the draft as
   `placeChoice`, chips under the quick-add field with the one the field
   reads pressed and "As said" beside them, until dismissed, or a turn
   sets another place; the row shows only while the field reads the text
-  or one of them (`livePlaceChoice`). Both lookups and the typeahead carry a region hint
+  or one of them (`livePlaceChoice`). A first phrase's possible place (a
+  name no word calls a place, "… im Figlmüller") is asked with
+  `possible` and answered only with proof, the proof first: a past place
+  written exactly that, else a search hit called exactly that
+  (`calledExactly`: its name the text word for word, its address not
+  beginning with that name, so no town, district or street) within a day
+  trip of the user's places (`isDayTrip`: 150 km of a recent event or of
+  the time zone's city, never the zone's 2,500 km, and of nothing where
+  no region is known). With proof the thread makes the name the draft's
+  location, takes it out of the title and goes on as for any place
+  (`settlePossiblePlace`); without — no such place, MapKit off, failing
+  or past its budget — the draft is the phrase's as it was, with nothing
+  to choose. Both lookups and the typeahead carry a region hint
   (`regionHint`: the densest cluster of coordinates on the last 90 days'
   events, the most recent first, else the primary time zone's city from
   a small table), which MapKit takes as a bias, never a filter — a

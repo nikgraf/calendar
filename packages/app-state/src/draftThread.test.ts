@@ -29,7 +29,12 @@ import {
   type PlaceCandidate,
   ReminderOverride,
 } from '@calendar/core';
-import { livePlaceChoice, pickedCandidate, readsAsSaid } from './draftPlaces.ts';
+import {
+  livePlaceChoice,
+  pickedCandidate,
+  readsAsSaid,
+  settlePossiblePlace,
+} from './draftPlaces.ts';
 import type { QuickAddItem } from './quickAddItem.ts';
 
 const dinner: QuickAddItem = {
@@ -1049,6 +1054,86 @@ describe('places from the words', () => {
     expect(settled.version).toBe(started.version);
     expect(settled.turns).toBe(started.turns);
     expect(dropPlaceChoice(settled, 0)).toBe(settled);
+  });
+});
+
+describe('a possible place from the words', () => {
+  // "Kaffee mit Max um 10 Uhr im Figlmüller": the name is in no field
+  // of the prefill; the lookup answers it only with proof, the proof first.
+  const prefill = { ...dinner.prefill, title: "Dinner at Luigi's" };
+  const possible = { place: "Luigi's", title: 'Dinner' };
+  const luigis: PlaceCandidate = {
+    address: 'Mint Street 5, 1010 Vienna',
+    geo: new GeoLocation({
+      lat: 48.2,
+      lng: 16.37,
+      name: 'Luigi’s',
+      source: 'Luigi’s, Mint Street 5, 1010 Vienna',
+    }),
+    match: 'exact',
+    source: 'mapkit',
+  };
+  const other: PlaceCandidate = { ...figl('Da Luigi, Liechtensteinstraße 8'), match: 'words' };
+
+  it('takes the name as the place once the lookup proved it: out of the title, into the field', () => {
+    const settled = settlePossiblePlace(prefill, possible, {
+      candidates: [luigis, other],
+      text: "Luigi's",
+    });
+    expect(settled).toEqual({
+      place: { candidates: [luigis, other], text: "Luigi's" },
+      prefill: { ...prefill, location: "Luigi's", title: 'Dinner' },
+    });
+    // And on as any place a phrase names: the proof taken, pin and all,
+    // the rest and the name as said a chip away.
+    const state = startThread([{ kind: 'event', prefill: settled.prefill }], "dinner at Luigi's", {
+      id: ids(),
+      place: settled.place,
+    });
+    expect(state.drafts[0]).toMatchObject({
+      extras: { geo: luigis.geo },
+      item: { prefill: { location: 'Luigi’s, Mint Street 5, 1010 Vienna', title: 'Dinner' } },
+      placeChoice: { candidates: [luigis, other], text: "Luigi's" },
+    });
+    expect(state.turns[0]?.summary).toBe('Dinner · Fri, Aug 28 · 19:00–20:00 · 2 places');
+    expect(readsAsSaid(state.drafts[0]!.placeChoice!, "Luigi's", undefined)).toBe(true);
+  });
+
+  it('leaves the draft as the words made it without proof: no place, no choice, the title whole', () => {
+    const asItWas = { place: undefined, prefill };
+    // Nothing proved it, the lookup failed or ran out of time, or there was none.
+    expect(settlePossiblePlace(prefill, possible, { candidates: [], text: "Luigi's" })).toEqual(
+      asItWas,
+    );
+    expect(settlePossiblePlace(prefill, possible, undefined)).toEqual(asItWas);
+    // A lookup that answers with a hit to offer and none to take is no proof.
+    expect(
+      settlePossiblePlace(prefill, possible, {
+        candidates: [{ ...other, match: 'search' }],
+        text: "Luigi's",
+      }),
+    ).toEqual(asItWas);
+    const state = startThread([{ kind: 'event', prefill }], "dinner at Luigi's", {
+      id: ids(),
+      place: asItWas.place,
+    });
+    expect(state.drafts[0]?.item.prefill).toEqual(prefill);
+    expect(state.drafts[0]).not.toHaveProperty('placeChoice');
+    expect(state.drafts[0]).not.toHaveProperty('extras');
+    expect(state.turns[0]?.summary).toBe("Dinner at Luigi's · Fri, Aug 28 · 19:00–20:00");
+  });
+
+  it('passes a phrase without one through: its own place and what was found for it', () => {
+    const placed = { ...dinner.prefill, location: 'Figlmüller' };
+    const found = { candidates: [figl('A')], text: 'Figlmüller' };
+    expect(settlePossiblePlace(placed, undefined, found)).toEqual({
+      place: found,
+      prefill: placed,
+    });
+    expect(settlePossiblePlace(dinner.prefill, undefined, undefined)).toEqual({
+      place: undefined,
+      prefill: dinner.prefill,
+    });
   });
 });
 
