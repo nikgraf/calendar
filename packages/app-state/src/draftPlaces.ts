@@ -1,4 +1,5 @@
 import {
+  geoMatches,
   type GeoLocation,
   normalizeLocationKey,
   type PlaceCandidate,
@@ -67,6 +68,34 @@ export const readsAsSaid = (
   location: string,
   geo: GeoLocation | undefined,
 ): boolean => same(choice.text, location) && pickedCandidate(choice, location, geo) === undefined;
+
+/**
+ * The place as the words said it, for a turn that says more of it ("it's
+ * in Berlin"): the text its choice was found for, while the form still
+ * reads that text or one of its candidates; else the name of a place
+ * picked by hand, when the location begins with it ("Kaffemik" of
+ * "Kaffemik, Zollergasse 5, 1070 Vienna"). Undefined where the location
+ * is as said, or is none.
+ */
+export const placeAsSaid = (
+  choice: PlaceChoice | undefined,
+  location: string | undefined,
+  geo: GeoLocation | undefined,
+): string | undefined => {
+  if (location === undefined) {
+    return undefined;
+  }
+  const live = livePlaceChoice(choice, location);
+  if (live !== undefined) {
+    return same(live.text, location) ? undefined : live.text;
+  }
+  const name = geoMatches(geo, location) ? geo.name?.trim() : undefined;
+  return name !== undefined &&
+    name !== '' &&
+    normalizeLocationKey(location).startsWith(`${normalizeLocationKey(name)},`)
+    ? name
+    : undefined;
+};
 
 /**
  * What a turn's candidates come to: the best one that resembles the

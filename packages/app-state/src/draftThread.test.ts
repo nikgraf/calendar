@@ -19,6 +19,7 @@ import {
   slotItem,
   startThread,
   summarizeChange,
+  turnsOf,
   undoTurn,
   updateDraft,
 } from './draftThread.ts';
@@ -29,7 +30,7 @@ import {
   type PlaceCandidate,
   ReminderOverride,
 } from '@calendar/core';
-import { livePlaceChoice, pickedCandidate, readsAsSaid } from './draftPlaces.ts';
+import { livePlaceChoice, pickedCandidate, placeAsSaid, readsAsSaid } from './draftPlaces.ts';
 import type { QuickAddItem } from './quickAddItem.ts';
 
 const dinner: QuickAddItem = {
@@ -78,7 +79,12 @@ describe('startThread', () => {
     expect(state.drafts.map((draft) => draft.id)).toEqual(['d1', 'd2']);
     expect(state.focused).toBe(0);
     expect(state.turns).toEqual([
-      { id: 'd3', summary: '2 drafts', utterance: 'Dinner with Teo Friday, planning Saturday' },
+      {
+        drafts: ['d1', 'd2'],
+        id: 'd3',
+        summary: '2 drafts',
+        utterance: 'Dinner with Teo Friday, planning Saturday',
+      },
     ]);
     // Undo of the first turn leads to nothing.
     expect(state.history).toEqual([{ drafts: [], focused: 0 }]);
@@ -241,7 +247,12 @@ describe('refineThread and undoTurn', () => {
     const started = startThread([dinner, planning], 'x', { id });
     const refined = refineThread(started, 'at 8', [{ id: 'd1', item: later }], id);
     expect(refined.drafts.map((draft) => draft.item)).toEqual([later, planning]);
-    expect(refined.turns.at(-1)).toEqual({ id: 'd4', summary: '→ 20:00–21:00', utterance: 'at 8' });
+    expect(refined.turns.at(-1)).toEqual({
+      drafts: ['d1'],
+      id: 'd4',
+      summary: '→ 20:00–21:00',
+      utterance: 'at 8',
+    });
     expect(refined.history).toHaveLength(2);
 
     const undone = undoTurn(refined);
@@ -276,6 +287,35 @@ describe('refineThread and undoTurn', () => {
     const focused = focusDraft(startThread([dinner, planning], 'x', { id }), 1);
     const refined = refineThread(focused, 'at 8', [{ id: 'd2', item: later }], id);
     expect(undoTurn(focusDraft(refined, 0)).focused).toBe(1);
+  });
+});
+
+describe('turnsOf', () => {
+  it('gives a draft the words that made or changed it, and no other draft’s', () => {
+    // Review: "in Vienna" said to one draft took the city off another's place.
+    const id = ids();
+    const started = startThread([dinner, planning], 'two things', { id });
+    const first = refineThread(started, 'at 8', [{ id: 'd1', item: later }], id);
+    const second = refineThread(
+      first,
+      'in Vienna',
+      [{ id: 'd2', item: { kind: 'event', prefill: { ...planning.prefill, location: 'Vienna' } } }],
+      id,
+    );
+    expect(turnsOf(second, 'd1')).toEqual(['two things', 'at 8']);
+    expect(turnsOf(second, 'd2')).toEqual(['two things', 'in Vienna']);
+    // A turn that changed nothing is nobody's: its words added nothing to lean on.
+    const idle = refineThread(
+      second,
+      'in Vienna',
+      [{ id: 'd2', item: second.drafts[1]!.item }],
+      id,
+    );
+    expect(idle.turns.at(-1)?.drafts).toEqual([]);
+    expect(turnsOf(idle, 'd2')).toEqual(['two things', 'in Vienna']);
+    // Undo takes the words back.
+    expect(turnsOf(undoTurn(undoTurn(idle)), 'd2')).toEqual(['two things']);
+    expect(turnsOf(idle, 'gone')).toEqual([]);
   });
 });
 
@@ -836,6 +876,34 @@ describe('guests from the words', () => {
     );
     expect(found.drafts[0]?.extras?.attendees).toEqual([sarah]);
     expect(found.drafts[0]).not.toHaveProperty('inviteeChoices');
+  });
+
+  it('knows the place as the words said it, for a turn that says more of it', () => {
+    const choice = {
+      candidates: [figl('Figlmüller, Wollzeile 5, 1010 Vienna, Austria')],
+      text: 'Figlmüller',
+    };
+    const [taken] = choice.candidates;
+    // A place taken for the words: the words, not its address.
+    expect(placeAsSaid(choice, taken!.geo.source, taken!.geo)).toBe('Figlmüller');
+    // The text as said needs no other.
+    expect(placeAsSaid(choice, 'Figlmüller', undefined)).toBeUndefined();
+    expect(placeAsSaid(undefined, 'Figlmüller', undefined)).toBeUndefined();
+    expect(placeAsSaid(choice, undefined, undefined)).toBeUndefined();
+    // A place picked by hand, its choice gone: the name it is written with.
+    const picked = new GeoLocation({
+      lat: 48.2,
+      lng: 16.35,
+      name: 'Kaffemik',
+      source: 'Kaffemik, Zollergasse 5, 1070 Vienna, Austria',
+    });
+    expect(placeAsSaid(undefined, picked.source, picked)).toBe('Kaffemik');
+    // A pin whose text is not written with its name, or is no longer the form's: the text.
+    const renamed = new GeoLocation({ ...picked, source: 'Praxis Dr. Huber' });
+    expect(placeAsSaid(undefined, renamed.source, renamed)).toBeUndefined();
+    expect(placeAsSaid(undefined, 'Zollergasse 5', picked)).toBeUndefined();
+    // A choice the form moved away from says nothing of the new text.
+    expect(placeAsSaid(choice, 'Plachutta', undefined)).toBeUndefined();
   });
 
   it('drops a choice settled by hand, without a turn or a version', () => {

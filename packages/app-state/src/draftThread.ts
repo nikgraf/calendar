@@ -35,7 +35,7 @@ import {
   type InviteeChoice,
   resolveInvitees,
 } from './draftInvitees.ts';
-import { type PlaceChange, type PlaceChoice, settlePlace } from './draftPlaces.ts';
+import { placeAsSaid, type PlaceChange, type PlaceChoice, settlePlace } from './draftPlaces.ts';
 import { convertQuickAddItem, type QuickAddItem } from './quickAddItem.ts';
 import type { ReminderFields } from './taskEditorModel.ts';
 
@@ -127,6 +127,11 @@ export interface DraftChange {
 }
 
 export interface DraftTurn {
+  /**
+   * The drafts the turn made or changed, by id: whose words these are
+   * (`turnsOf`). A turn that changed nothing is nobody's.
+   */
+  readonly drafts: ReadonlyArray<string>;
   readonly id: string;
   /** What the turn did to the drafts, in words — the thread's visible history. */
   readonly summary: string;
@@ -466,7 +471,7 @@ export const startThread = (
     drafts,
     focused: 0,
     history: [{ drafts: [], focused: 0 }],
-    turns: [{ id: id(), summary, utterance }],
+    turns: [{ drafts: drafts.map((draft) => draft.id), id: id(), summary, utterance }],
     version: 1,
   };
 };
@@ -484,6 +489,15 @@ export const refineTargets = (state: DraftThreadState, utterance: string): Reado
   const focused = state.drafts[state.focused];
   return focused ? [focused] : [];
 };
+
+/**
+ * The words said to one draft, oldest first: the turns that made it or
+ * changed its item. A bare turn leans on them ("it's in Graz" takes the
+ * place of an earlier "it's in Vienna"), and what was said to another
+ * draft, or changed nothing, is not this one's.
+ */
+export const turnsOf = (state: DraftThreadState, draftId: string): ReadonlyArray<string> =>
+  state.turns.flatMap((turn) => (turn.drafts.includes(draftId) ? [turn.utterance] : []));
 
 /** The draft without the slots a turn found for it. */
 const withoutSlots = ({ slots: _slots, ...draft }: Draft): Draft => draft;
@@ -530,6 +544,10 @@ export const refineThread = (
     }
     return next.draft;
   });
+  // The drafts whose item the turn left another: the ones its words are said to.
+  const moved = drafts.flatMap((draft, index) =>
+    changedDraftFields(state.drafts[index]!.item, draft.item).length > 0 ? [draft.id] : [],
+  );
   const focusedChange = focused ? changed.get(focused.id) : undefined;
   const fieldsSaid =
     focused && focusedAfter ? summarizeChange(focused.item, focusedAfter.item) : '';
@@ -551,7 +569,7 @@ export const refineThread = (
     drafts,
     focused: state.focused,
     history: [...state.history, { drafts: state.drafts, focused: state.focused }],
-    turns: [...state.turns, { id: id(), summary, utterance }],
+    turns: [...state.turns, { drafts: moved, id: id(), summary, utterance }],
     version: state.version + 1,
   };
 };
@@ -974,7 +992,14 @@ export const useDraftThread = ({
                   draft: asEvent.prefill,
                   // A to-do's words about people are its title's.
                   guests: draft.item.kind === 'event',
+                  // What a turn that only says where the place is adds to.
+                  placeSaid: placeAsSaid(
+                    draft.placeChoice,
+                    asEvent.prefill.location,
+                    draft.extras?.geo,
+                  ),
                   referenceDate,
+                  said: turnsOf(current, draft.id),
                   timeZone,
                   utterance,
                 })

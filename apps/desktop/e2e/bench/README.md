@@ -65,7 +65,8 @@ the grounding's.
   says `task`); `title` (whole, compared folded: case,
   accents, ß; a list names several a person would accept) or
   `titleIncludes`; `location` (folded part, or `null` for
-  none); `repeat` (`freq`, `interval`, `count`, `untilMonth`, `byDay` as
+  none) or `locationIs` (whole, folded: a turn that must not keep what
+  was there); `repeat` (`freq`, `interval`, `count`, `untilMonth`, `byDay` as
   weekday codes for a weekly rule, or `null`);
   `guests` (`emails` after the turn and `choices` still to pick from,
   both as sets, absent meaning none); `notes` (folded part); `reminders`

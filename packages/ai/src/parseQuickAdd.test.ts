@@ -1044,6 +1044,15 @@ describe('parseQuickAdd titles', () => {
       (await prefillOf({ location: 'tom', title: 'tomorrow lunch' }, 'tomorrow lunch with tom'))
         .location,
     ).toBeUndefined();
+    // The company with its "with" is no place either.
+    expect(
+      (
+        await prefillOf(
+          { location: 'with Stefan', title: 'Lunch with Stefan' },
+          'Lunch with Stefan tomorrow',
+        )
+      ).location,
+    ).toBeUndefined();
     // A name said with "with" can still be the place where a cue says so.
     expect(
       (await prefillOf({ location: 'Anna', title: 'Coffee' }, 'coffee with Anna at Anna')).location,

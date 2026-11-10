@@ -118,6 +118,27 @@ describe('placeMatch', () => {
     expect(placeMatch('Cafe Mick', kaffemik)).toBe('phonetic');
     expect(placeMatch('coffee Nick', kaffemik)).toBe('phonetic');
     expect(placeMatch('Kaffeemik', kaffemik)).toBe('phonetic');
+    // With where it is said after it ("it's in Vienna"): the name still sounds the same.
+    expect(placeMatch('Cafe Meek, Vienna', kaffemik)).toBe('phonetic');
+    expect(placeMatch('Cafe Meek, 1070 Vienna', kaffemik)).toBe('phonetic');
+    expect(placeMatch('Cafe Meek Vienna Austria', kaffemik)).toBe('phonetic');
+    // Review: with a where beside it, the rest is the whole name or none — a
+    // generic word sounded like every café's first word.
+    const central = { address: 'Herrengasse 14, 1010 Vienna, Austria', name: 'Café Central' };
+    expect(placeMatch('Cafe Zentral, Vienna', central)).toBe('phonetic');
+    expect(placeMatch('Coffee, Vienna', central)).toBeUndefined();
+    expect(placeMatch('Kaffee Vienna', central)).toBeUndefined();
+    // A name that holds its city is heard without it.
+    expect(
+      placeMatch('Hart Rock Cafe, Berlin', {
+        address: 'Kurfürstendamm 224, 10719 Berlin, Germany',
+        name: 'Hard Rock Cafe Berlin',
+      }),
+    ).toBe('phonetic');
+    // Another city's is another place, and where alone names none.
+    expect(placeMatch('Cafe Meek, Graz', kaffemik)).toBeUndefined();
+    expect(placeMatch('Cafe Meek, 1010 Vienna', kaffemik)).toBeUndefined();
+    expect(placeMatch('Vienna, Austria', kaffemik)).toBeUndefined();
     // The other way round, and with more of the name after it.
     expect(placeMatch('Figlmüller', { name: 'Figl Müller' })).toBe('phonetic');
     expect(placeMatch('Cafe Meek', { name: 'Kaffemik Rösterei' })).toBe('phonetic');
@@ -279,6 +300,17 @@ describe('placeMatch', () => {
     };
     expect(saysWhere('Chicago Grill', grill)).toBe(false);
     expect(saysWhere('Chicago Grill, Chicago', grill)).toBe(true);
+    // The where set apart after a comma counts though the words are the name's own
+    // ("the one in Berlin" makes "Hard Rock Cafe, Berlin").
+    const hardRock = {
+      address: 'Kurfürstendamm 224, 10719 Berlin, Germany',
+      name: 'Hard Rock Cafe Berlin',
+    };
+    expect(saysWhere('Hard Rock Cafe, Berlin', hardRock)).toBe(true);
+    expect(saysWhere('Hard Rock Cafe Berlin', hardRock)).toBe(false);
+    expect(
+      saysWhere('Hard Rock, Cafe Berlin', { ...hardRock, address: 'Cafestraße 1, 20095 Hamburg' }),
+    ).toBe(false);
     expect(saysWhere('Hallstatt', { address: '4830 Hallstatt, Austria', name: 'Hallstatt' })).toBe(
       true,
     );

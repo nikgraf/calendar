@@ -154,12 +154,29 @@ const soundsLike = (said: ReadonlyArray<string>, name: ReadonlyArray<string>): b
 };
 
 /**
+ * Whether the text sounds like the whole name, not only its leading
+ * words: word by word, or with the words run together.
+ */
+const soundsWhole = (said: ReadonlyArray<string>, name: ReadonlyArray<string>): boolean => {
+  const key = koelnerKey(said.join(' '));
+  if (key === '') {
+    return false;
+  }
+  if (key === koelnerKey(name.join(' '))) {
+    return true;
+  }
+  const joined = koelnerKey(said.join(''));
+  return joined.length >= JOINED_KEY_MIN && joined === koelnerKey(name.join(''));
+};
+
+/**
  * How a place resembles a text, best first: `exact` — its name is the
  * text; `words` — each word of the text begins a word of its name or
  * address ("Figlmüller" for Figlmüller Bäckerstrasse, "Wollzeile 5"),
  * one of them a word of its own; `phonetic` — the text sounds like the
- * name's first words; else undefined, and the place is not what the text
- * names.
+ * name's first words, or, the words that say where the place is set
+ * aside, like the whole name ("Cafe Meek, Vienna"); else undefined, and
+ * the place is not what the text names.
  *
  * A word of its own is one of its name or street (`readAddress`) that
  * the parts saying where it is do not hold too: "Vienna, Austria" names
@@ -198,7 +215,18 @@ export const placeMatch = (text: string, place: PlaceLike): PlaceMatch | undefin
   if (said.every((word) => among(word, own)) && said.some(itsOwn)) {
     return 'words';
   }
-  return soundsLike(said, name) ? 'phonetic' : undefined;
+  // The words that say where it is are not the name's to sound like:
+  // "Cafe Meek, Vienna" is Kaffemik in Vienna as "Cafe Meek" is. With a
+  // where beside it the rest must be the whole name, though: "Kaffee,
+  // Wien" is no Café Central.
+  const called = said.filter((word) => !around.includes(word));
+  const calledName = name.filter((word) => !around.includes(word));
+  return soundsLike(said, name) ||
+    (called.length > 0 &&
+      called.length < said.length &&
+      soundsWhole(called, calledName.length > 0 ? calledName : name))
+    ? 'phonetic'
+    : undefined;
 };
 
 /** Words shorter than this say nothing of where: "IN", "de", "le" are words of names as often. */
@@ -215,20 +243,27 @@ const CODE = /\b[A-Z]{2,3}\b/g;
  * meant however far it is from the user's own places. One word of a part
  * is not enough ("Royal Cafe" is not in Royal Oak, nor "New Moon Cafe"
  * in New York), and a name that holds its city says nothing beside the
- * name ("Chicago Grill", said in Vienna).
+ * name ("Chicago Grill", said in Vienna) — until a comma sets the where
+ * apart ("Chicago Grill, Chicago", "Hard Rock Cafe, Berlin").
  */
 export const saysWhere = (text: string, place: PlaceLike): boolean => {
   const said = wordsOf(text);
   const { named, street, where } = readAddress(place, said);
-  if (!named && sameWords(said, wordsOf(place.name ?? ''))) {
+  // A name that holds its city is all name — unless the text sets the
+  // where apart after a comma ("Hard Rock Cafe, Berlin" for Hard Rock
+  // Cafe Berlin): then only those words are held to the address.
+  const nameOnly = !named && sameWords(said, wordsOf(place.name ?? ''));
+  const comma = text.indexOf(',');
+  if (nameOnly && comma === -1) {
     return false;
   }
+  const heard = nameOnly ? wordsOf(text.slice(comma + 1)) : said;
   const codes = new Set(wordsOf((place.address ?? '').match(CODE)?.join(' ') ?? ''));
   return [...(named ? [street] : []), ...where].some((part) => {
     const words = part.filter(
       (word) => !NUMBERED.test(word) && word.length >= WHERE_MIN && !codes.has(word),
     );
-    return words.length > 0 && words.every((word) => said.includes(word));
+    return words.length > 0 && words.every((word) => heard.includes(word));
   });
 };
 

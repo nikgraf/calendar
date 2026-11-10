@@ -1247,6 +1247,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   `trimWhen` takes the when before the company too ("lunch tomorrow with
   Stefan"). Rejected: a prompt rule, an opener as evidence, any "…
   eintragen". Open: "block <when> for <event>", a place before the object.
+- **A bare turn leans on the draft** (2026-11-09, #303) — "it's in Vienna"
+  after "Cafe Meek" put "Vienna" over the place or changed nothing, and
+  "with Stefan" landed in the location: a model asked for the whole event
+  back answers such a turn its own way. `bareTurns.ts` reads the two
+  without it: where joins the place as said ("Cafe Meek, Vienna", looked
+  up again), company the title, inviting no one. Anything more — a second
+  clause, a when, a verb, a listed word — stays the model's. Rejected: a prompt
+  rule, telling a city by the "in" it was said after, adding to the
+  address a lookup wrote. Open: "Conference in Berlin", then "it's in
+  Vienna" reads "Berlin, Vienna"; exonyms and districts ("in Wien").
 - **A served model beside Apple's** (2026-10-12, #184)
   — the desktop can answer `generateJson` from a model served over HTTP
   on this Mac: Ollama through its own API (the schema as `format`,

@@ -43,9 +43,18 @@ something; the punctuation is not spoken.
 | `flow-zahnarzt-5.m4a`               | nenn es Kontrolle                                                                                                                                                                      |
 | `add-event-lunch-stefan-1.m4a`      | Add an event to have lunch with Stefan tomorrow at 1                                                                                                                                   |
 | `trag-mir-zahnarzt-ein-1.m4a`       | Trag mir am Dienstag um 10 einen Zahnarzttermin ein                                                                                                                                    |
+| `flow-place-in-city-1.m4a`          | Lunch tomorrow at 1                                                                                                                                                                    |
+| `flow-place-in-city-2.m4a`          | at Kaffemik                                                                                                                                                                            |
+| `flow-place-in-city-3.m4a`          | it's in Vienna                                                                                                                                                                         |
+| `flow-place-in-city-4.m4a`          | with Stefan                                                                                                                                                                            |
 
 The first turns of `flow-dinner` and `flow-zahnarzt` reuse the clips of
 `dinner-teo-next-friday` and `zahnarzt-dienstag-halb-drei`.
+
+`flow-place-in-city` is the flow of the 2026-11-06 recordings: a name
+the recogniser does not know, then where it is ("in Vienna" was heard as
+"Indiana"), then who it is with. `flow-place-as-heard` runs the same
+flow on the words as the recogniser wrote them.
 
 The address in `invite-email` and `long-run-prater` is spoken as "jo at
 example dot com"; whatever the recogniser writes is the point of those

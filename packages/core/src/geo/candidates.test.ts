@@ -95,6 +95,9 @@ describe('pastPlaceMatch', () => {
     expect(pastPlaceMatch('Vienna, Austria', yard)).toBeUndefined();
     expect(pastPlaceMatch('Vienna', yard)).toBeUndefined();
     expect(pastPlaceMatch('Austria', kaffemik)).toBeUndefined();
+    // A misheard name with where it is after it is still that place.
+    expect(pastPlaceMatch('Cafe Meek, Vienna', kaffemik)).toBe('phonetic');
+    expect(pastPlaceMatch('Cafe Meek, Graz', kaffemik)).toBeUndefined();
     // A place written as the city itself is that text.
     const city = new GeoLocation({
       lat: 48.2,

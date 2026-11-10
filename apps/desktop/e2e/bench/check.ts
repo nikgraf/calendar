@@ -244,7 +244,7 @@ const ABOUT: ReadonlyArray<{
   { field: 'date', keys: ['weekday', 'dayOffset'], view: 'date' },
   { field: 'time', keys: ['startTime', 'endTime', 'assumedTime'], view: 'time' },
   { field: 'allDay', keys: ['isAllDay'], view: 'time' },
-  { field: 'location', keys: ['location'], view: 'location' },
+  { field: 'location', keys: ['location', 'locationIs'], view: 'location' },
   { field: 'repeat', keys: ['repeat'], view: 'repeat' },
   { field: 'guests', keys: ['guests'], view: 'guests' },
   { field: 'notes', keys: ['notes'], view: 'notes' },
@@ -331,7 +331,7 @@ const checkTime = (expectation: Expectation, item: QuickAddItem, fail: Fail): vo
   }
 };
 
-/** Whether the draft has no location when none is expected, or one holding the expected text. */
+/** Whether the draft has no location when none is expected, or one holding (or being) the expected text. */
 const checkLocation = (expectation: Expectation, item: QuickAddItem, fail: Fail): void => {
   const location = item.kind === 'event' ? item.prefill.location : undefined;
   if (expectation.location === null && location !== undefined) {
@@ -340,6 +340,12 @@ const checkLocation = (expectation: Expectation, item: QuickAddItem, fail: Fail)
   if (
     typeof expectation.location === 'string' &&
     !fold(location ?? '').includes(fold(expectation.location))
+  ) {
+    fail('location', `location=${location ?? '-'}`);
+  }
+  if (
+    expectation.locationIs !== undefined &&
+    fold(location ?? '') !== fold(expectation.locationIs)
   ) {
     fail('location', `location=${location ?? '-'}`);
   }
