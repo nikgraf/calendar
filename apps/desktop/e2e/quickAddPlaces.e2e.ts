@@ -8,6 +8,9 @@ import { type App, launchApp, readEvents } from './harness.ts';
 // fixture's places in MapKit's stead. The best one that resembles the
 // text is taken at once, text and pin, and the rest wait as chips under
 // the field, the taken one pressed; a text nobody knows stays as said.
+// A phrase in plain words comes back as its own title (the fixture model
+// echoes it, as the iPhone's does): a name it ends in is the place only
+// when the lookup proves it.
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 const CENTRAL = new GeoLocation({
@@ -93,6 +96,14 @@ const geo = {
         subtitle: '9 10th Avenue, Benoni, South Africa',
         title: 'Meek Café',
       },
+      // A venue called exactly a name a phrase ends in, a country away.
+      {
+        lat: 41.9028,
+        lng: 12.4964,
+        name: 'Mercato',
+        subtitle: 'Via del Corso 1, 00186 Roma, Italy',
+        title: 'Mercato',
+      },
     ],
   },
 };
@@ -100,6 +111,7 @@ const geo = {
 const INPUT = '[data-testid="quick-add-input"]';
 const COMMAND_N = `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', metaKey: true }))`;
 const location = `(document.querySelector('input[aria-label="Location"]')?.value ?? '')`;
+const title = `(document.querySelector('input[placeholder="Title"]')?.value ?? '')`;
 const choices = `!!document.querySelector('[data-testid="draft-place-choices"]')`;
 const pressed = `(document.querySelector('[data-testid="draft-place-choices"] [aria-pressed="true"]')?.dataset.testid ?? '')`;
 const newestSummary = `document.querySelector('[data-testid="draft-turn-summary"]')?.textContent ?? ''`;
@@ -197,5 +209,38 @@ describe('Places from a quick-add phrase', () => {
       input.dispatchEvent(new Event('input', { bubbles: true }));
     })()`);
     await cdp.waitFor(`!${choices}`);
+  });
+
+  it('takes a name the phrase ends in as its place when a venue nearby is called exactly that', async () => {
+    const { cdp } = app;
+    await openNew();
+    await phrase('Lunch tomorrow at 1 at Figlmüller');
+    // Out of the title, into the field, pin and chips as for any place.
+    await cdp.waitFor(`${location} === 'Figlmüller, Wollzeile 5, 1010 Wien'`);
+    expect(await cdp.eval<string>(title)).toBe('Lunch');
+    await cdp.waitFor(choices);
+    expect(await cdp.eval<string>(pressed)).toBe('draft-place-pick-0');
+    // The name as said is a chip away.
+    await cdp.clickTestId('draft-place-keep');
+    await cdp.waitFor(`${location} === 'Figlmüller'`);
+    expect(await cdp.eval<string>(title)).toBe('Lunch');
+  });
+
+  it('leaves a name nothing nearby proves in the title, with no place and nothing to choose', async () => {
+    const { cdp } = app;
+    await openNew();
+    // No venue is called that: a person's, as likely.
+    await phrase('Party at Anna tomorrow');
+    await cdp.waitFor(`${title} === 'Party at Anna'`);
+    expect(await cdp.eval<string>(location)).toBe('');
+    expect(await cdp.eval<boolean>(choices)).toBe(false);
+    await cdp.pressEscape();
+    await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);
+    // A venue called exactly that, but a country away from the user's places.
+    await openNew();
+    await phrase('Lunch at Mercato tomorrow');
+    await cdp.waitFor(`${title} === 'Lunch at Mercato'`);
+    expect(await cdp.eval<string>(location)).toBe('');
+    expect(await cdp.eval<boolean>(choices)).toBe(false);
   });
 });
