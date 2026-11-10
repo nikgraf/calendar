@@ -372,6 +372,7 @@ function DraftThread({
           onDismiss={dismissPlace}
           onKeep={keepPlace}
           onPick={pickPlaceChoice}
+          title={eventModel.title}
         />
       ) : null}
       {inviteeChoices.length > 0 ? (

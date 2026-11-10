@@ -30,9 +30,10 @@ import {
   ReminderOverride,
 } from '@calendar/core';
 import {
-  keptAsSaid,
+  asSaidLabel,
   livePlaceChoice,
   pickedCandidate,
+  placeAsSaid,
   placeToLookUp,
   readsAsSaid,
   settlePossiblePlace,
@@ -1116,14 +1117,17 @@ describe('a possible place from the words', () => {
       place,
     });
     const choice = state.drafts[0]!.placeChoice!;
-    expect(keptAsSaid(choice, 'Spaziergang')).toEqual({
+    expect(placeAsSaid(choice, 'Spaziergang')).toEqual({
       location: '',
       title: 'Spaziergang im Mondschein',
     });
+    // The chip names what comes back: the title, not the name alone.
+    expect(asSaidLabel(choice, 'Spaziergang')).toBe('Spaziergang im Mondschein');
     // With no location the row is gone: the draft is the one the words made.
     expect(livePlaceChoice(choice, '')).toBeUndefined();
     // Edited by hand since: the title stays, the name goes to the location as text.
-    expect(keptAsSaid(choice, 'Abendspaziergang')).toEqual({ location: 'Mondschein' });
+    expect(placeAsSaid(choice, 'Abendspaziergang')).toEqual({ location: 'Mondschein' });
+    expect(asSaidLabel(choice, 'Abendspaziergang')).toBe('Mondschein');
     // The model cut the title before the name (Apple's on the Mac): nothing to give back.
     const cut = settlePossiblePlace(
       { ...dinner.prefill, title: 'Kaffee mit Max' },
@@ -1131,11 +1135,14 @@ describe('a possible place from the words', () => {
       { candidates: [luigis], text: 'Figlmüller' },
     );
     expect(cut.place).toEqual({ candidates: [luigis], text: 'Figlmüller' });
-    expect(keptAsSaid(cut.place!, 'Kaffee mit Max')).toEqual({ location: 'Figlmüller' });
+    expect(placeAsSaid(cut.place!, 'Kaffee mit Max')).toEqual({ location: 'Figlmüller' });
     // A place a phrase named outright: the text as said, as it was.
-    expect(keptAsSaid({ candidates: [luigis], text: 'Cafe Zentral' }, 'Dinner')).toEqual({
+    expect(placeAsSaid({ candidates: [luigis], text: 'Cafe Zentral' }, 'Dinner')).toEqual({
       location: 'Cafe Zentral',
     });
+    expect(asSaidLabel({ candidates: [luigis], text: 'Cafe Zentral' }, 'Dinner')).toBe(
+      'Cafe Zentral',
+    );
   });
 
   it('looks the name up as a possible place, and a place the phrase names as it did', () => {

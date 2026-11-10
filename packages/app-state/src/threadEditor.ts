@@ -37,7 +37,7 @@ import {
 } from './editorModel.ts';
 import { useEditorKinds } from './editorKinds.ts';
 import type { EditorSourceKind } from './editorSwitch.ts';
-import { keptAsSaid, livePlaceChoice } from './draftPlaces.ts';
+import { livePlaceChoice, placeAsSaid } from './draftPlaces.ts';
 import { useBackendMutations } from './hooks.ts';
 import { useOneWrite } from './oneWrite.ts';
 import type { QuickAddItem } from './quickAddItem.ts';
@@ -592,8 +592,10 @@ export const useThreadEditor = ({
    * the field reads marked — while it reads that text or one of them
    * (`livePlaceChoice`). A pick makes a place the form's, pin and all,
    * as a hand edit; "as said" gives the text back as it was said, pin
-   * gone — to the title, where the lookup took a name out of it
-   * (`keptAsSaid`); the row stays until dismissed.
+   * gone, and the row stays until dismissed. Where the lookup took a
+   * name out of the title, as said is the title with its words back
+   * and no location (`placeAsSaid`): the row goes with the place, since
+   * the field reads none of it any more.
    */
   const placeChoice =
     mode === 'event' ? livePlaceChoice(focusedDraft?.placeChoice, eventModel.location) : undefined;
@@ -609,7 +611,7 @@ export const useThreadEditor = ({
       return;
     }
     edited();
-    const said = keptAsSaid(placeChoice, eventModel.title);
+    const said = placeAsSaid(placeChoice, eventModel.title);
     if (said.title !== undefined) {
       eventModel.setTitle(said.title);
     }

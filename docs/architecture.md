@@ -68,7 +68,9 @@ are written the same, and the model drops them alike and calls them all
 places. Written as a name after "at", "@" or "im" — no article, every
 word with its capital, none of the common words a capital is also
 written on (`NOT_A_VENUE`: "im Regen", "im Team", "at EOD", "at All
-Hands") — it goes beside the prefill as a possible place
+Hands", "at Mom's"), not what is aimed at or where a call's other end
+works ("Zoom with Tom at Google") — it goes beside the prefill as a
+possible place
 (`QuickAddResult.possiblePlace`, with the title it would leave), for the
 lookup to decide (Platform seams → Locations and maps); never after
 "in", which leads into towns, languages and "in der Arbeit". A turn's
@@ -1707,14 +1709,18 @@ gateway carries all of it. Details, limits and the threat model:
   `possible` and answered only with proof, the proof first: a past place
   written exactly that, else a search hit called exactly that
   (`calledExactly`: its name the text word for word, its address not
-  beginning with that name, so no town, district or street) within a day
-  trip of the user's places (`isDayTrip`: 150 km of a recent event or of
-  the time zone's city, never the zone's 2,500 km, and of nothing where
-  no region is known). With proof the thread makes the name the draft's
-  location, takes it out of the title and goes on as for any place
-  (`settlePossiblePlace`); without — no such place, MapKit off, failing
-  or past its budget — the draft is the phrase's as it was, with nothing
-  to choose. Both lookups and the typeahead carry a region hint
+  beginning with that name, so no town, district or street), either one
+  within a day trip of the user's places (`isDayTrip`: 150 km of a
+  recent event or of the time zone's city, never the zone's 2,500 km,
+  and of nothing where no region is known; a place used in the last 90
+  days is one of those places itself). With proof the thread makes the
+  name the draft's location, takes it out of the title and goes on as
+  for any place (`settlePossiblePlace`), except that "As said" — the
+  chip names the title's own words then — puts them back in the title
+  and clears the place, the row going with it, while the title still
+  reads what the lookup left (`placeAsSaid`, `PlaceChoice.titles`);
+  without proof — no such place, MapKit off, failing or past its budget — the
+  draft is the phrase's as it was, with nothing to choose. Both lookups and the typeahead carry a region hint
   (`regionHint`: the densest cluster of coordinates on the last 90 days'
   events, the most recent first, else the primary time zone's city from
   a small table), which MapKit takes as a bias, never a filter — a

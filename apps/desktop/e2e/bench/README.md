@@ -95,7 +95,7 @@ case asks MapKit. The town is read where the app would ask it: for a
 first phrase that ends in a name no word calls a place ("… im
 Figlmüller", "at Luigi's"). The thread takes such a name as the place
 only when the lookup proves it (a past place written exactly that, or a
-venue called exactly that within a day trip of the time zone's city);
+venue called exactly that, within a day trip of the time zone's city);
 the bench settles it the same way over the town, so a case states the
 `location` it expects, or `null` where the town holds only look-alikes
 ("Party at Anna": a street, and a namesake in Paris). A place the words

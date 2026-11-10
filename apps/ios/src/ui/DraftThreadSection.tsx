@@ -1,4 +1,5 @@
 import {
+  asSaidLabel,
   choiceLabel,
   choiceQuestion,
   isAtSlot,
@@ -174,7 +175,7 @@ export function DraftThreadSection({
               testID="draft-place-keep"
             >
               <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.secondary}>
-                As said: “{placeChoice.text}”
+                As said: “{asSaidLabel(placeChoice, eventModel.title)}”
               </Text>
             </Pressable>
           </View>

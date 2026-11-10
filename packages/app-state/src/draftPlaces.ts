@@ -24,7 +24,7 @@ export interface PlaceChoice {
  * The two titles of a draft whose place was a name in its phrase's
  * title ("Dinner at Luigi's"): as the words made it, and as it reads
  * with the name in the location field ("Dinner"). "As said" gives the
- * first back (`keptAsSaid`).
+ * first back (`placeAsSaid`).
  */
 export interface PlaceTitles {
   readonly asSaid: string;
@@ -115,13 +115,21 @@ export const settlePlace = (
  * since, it stays, and the name goes to the location as text, so no
  * word is lost either way.
  */
-export const keptAsSaid = (
+export const placeAsSaid = (
   choice: PlaceChoice,
   title: string,
 ): { readonly location: string; readonly title?: string } =>
   choice.titles !== undefined && title === choice.titles.placed
     ? { location: '', title: choice.titles.asSaid }
     : { location: choice.text };
+
+/**
+ * The words "As said" would give back, for its chip to name: the title
+ * with the name in it where that is what comes back ("Dinner at
+ * Luigi's"), else the location text ("Luigi's").
+ */
+export const asSaidLabel = (choice: PlaceChoice, title: string): string =>
+  placeAsSaid(choice, title).title ?? choice.text;
 
 /**
  * What the thread looks up for a first phrase: the place it names, or
@@ -145,7 +153,7 @@ export const placeToLookUp = (
  * proof the name becomes the draft's place and leaves its title, and
  * the candidates go on as any place's do: the first is taken, the rest
  * stay to pick from (`settlePlace`), and "As said" gives the title its
- * words back (`keptAsSaid`). With none — no such place, a lookup that
+ * words back (`placeAsSaid`). With none — no such place, a lookup that
  * failed or ran out of time — the draft is the phrase's as it was: the
  * words in the title, no place, nothing to choose. Without a possible
  * place, or where the prefill has a place of its own, the prefill and

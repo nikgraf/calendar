@@ -2251,13 +2251,16 @@ const AIMS = new Set([
  */
 const CALLS_ON = new Set([
   'facetime',
+  'facetiming',
   'skype',
+  'skyping',
   'slack',
   'videoanruf',
   'videocall',
   'webex',
   'whatsapp',
   'zoom',
+  'zooming',
 ]);
 /** "Lunch with whoever is in the office": the lead is a clause's, not the event's. */
 const IS = new Set(['are', 'be', 'been', 'is', 'ist', 'sind', 'war', 'waren', 'was', 'were']);
@@ -2568,26 +2571,55 @@ export const NOT_A_VENUE: ReadonlySet<string> = new Set([
   'townhall',
   'work',
   // Whose home it is.
+  'abuela',
+  'abuelas',
+  'auntie',
+  'aunties',
   'dad',
+  'daddy',
+  'daddys',
   'dads',
+  'father',
+  'fathers',
+  'folks',
+  'gran',
   'grandma',
   'grandmas',
   'grandpa',
   'grandpas',
+  'granny',
+  'grannys',
+  'grans',
+  'inlaws',
   'mama',
   'mamas',
+  'mamma',
+  'mammas',
   'mom',
+  'mommy',
+  'mommys',
   'moms',
+  'mother',
+  'mothers',
   'mum',
   'mums',
+  'mutti',
+  'muttis',
+  'nan',
   'nana',
   'nanas',
+  'nans',
+  'nonna',
+  'nonnas',
   'oma',
   'omas',
+  'omi',
+  'omis',
   'opa',
   'opas',
   'papa',
   'papas',
+  'parents',
   // What a call runs on.
   'discord',
   'facetime',
@@ -2609,9 +2641,12 @@ export const NOT_A_VENUE: ReadonlySet<string> = new Set([
   'call',
   'chat',
   'club',
+  'dachgeschoss',
   'detail',
   'dialog',
   'dienst',
+  'dorf',
+  'dritten stock',
   'dunkeln',
   'einsatz',
   'erdgeschoss',
@@ -2620,12 +2655,15 @@ export const NOT_A_VENUE: ReadonlySet<string> = new Set([
   'fernsehen',
   'flieger',
   'flugzeug',
+  'flur',
   'fokus',
   'foyer',
   'freien',
   'gehen',
   'gesprach',
+  'gewitter',
   'grunen',
+  'hagel',
   'hellen',
   'hof',
   'homeoffice',
@@ -2647,7 +2685,10 @@ export const NOT_A_VENUE: ReadonlySet<string> = new Set([
   'nachhinein',
   'nebel',
   'netz',
+  'nieselregen',
   'notfall',
+  'obergeschoss',
+  'parterre',
   'plenum',
   'praktikum',
   'prinzip',
@@ -2657,6 +2698,7 @@ export const NOT_A_VENUE: ReadonlySet<string> = new Set([
   'ruckblick',
   'schatten',
   'schnee',
+  'see',
   'seminar',
   'sitzen',
   'sonnenschein',
@@ -2672,6 +2714,7 @@ export const NOT_A_VENUE: ReadonlySet<string> = new Set([
   'training',
   'tv',
   'uberblick',
+  'untergeschoss',
   'unterricht',
   'urlaub',
   'verein',
@@ -2685,11 +2728,23 @@ export const NOT_A_VENUE: ReadonlySet<string> = new Set([
   'workshop',
   'zug',
   'zweifel',
+  'zweiten stock',
 ]);
 
 /** A name's words run together, as the list is held against it: hyphens and spaces tell nothing ("All-Hands", "Stand Up"). */
 const venueKey = (name: string): string => name.replaceAll(' ', '');
 const NOT_A_VENUE_KEYS: ReadonlySet<string> = new Set([...NOT_A_VENUE].map(venueKey));
+
+/**
+ * Whether a word before a name says a call: one of `CALLS_ON` or
+ * `CONTACTS`, whole or as a part of a compound ("Zoom-Call",
+ * "Teams-Call", "Video-Anruf").
+ */
+const saysCall = ({ text }: Token): boolean =>
+  text.split('-').some((part) => {
+    const plain = bare(words(part));
+    return CALLS_ON.has(plain) || CONTACTS.has(plain);
+  });
 
 /**
  * Whether what follows a lead is written as a name and nothing else: no
@@ -2805,7 +2860,7 @@ export const readPlace = (
     const head = said.slice(0, at);
     // Before a name, "at" may say what is aimed at, or where the other
     // end of a call works: neither is where the event is.
-    const elsewhere = AIMS.has(head.at(-1)!.plain) || head.some(({ plain }) => CALLS_ON.has(plain));
+    const elsewhere = AIMS.has(head.at(-1)!.plain) || head.some(saysCall);
     const kind = isPlaceRun(led) ? 'place' : isNameRun(led) && !elsewhere ? 'name' : undefined;
     const read = placeText(run);
     return kind === undefined || read === '' ? undefined : { kind, text: read };

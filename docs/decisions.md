@@ -1260,12 +1260,12 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
 - **A name the lookup proves** (2026-11-10, #305) — a first phrase's name
   with no kind ("… im Figlmüller", "at Luigi's") goes beside the prefill
   as a possible place after "at", "@" or "im"; the lookup takes it only
-  with proof: a past place written exactly that, or a hit called exactly
-  that within a day trip, never a town. Unproven, or MapKit away, the
-  draft is as before. Rejected: "in" (MapKit knows venues called "Arbeit"
-  and "Mittagspause" in Vienna), the zone-wide "nearby" (a club "Bett"
-  in Frankfurt), the model's word, chips for an unproven name. Open: a
-  venue called a person's name, a venue's longer name, lower case.
+  with proof: a past place or a hit called exactly that, within a day
+  trip, never a town. Unproven, or MapKit away, the draft is as before;
+  "As said" gives the title its words back. Rejected: "in" (MapKit knows
+  venues called "Arbeit" and "Mittagspause" in Vienna), the zone-wide
+  "nearby" (a club "Bett" in Frankfurt), the model's word, chips for an
+  unproven name. Open: a venue called a person's name or by a longer one.
 - **A served model beside Apple's** (2026-10-12, #184)
   — the desktop can answer `generateJson` from a model served over HTTP
   on this Mac: Ollama through its own API (the schema as `format`,

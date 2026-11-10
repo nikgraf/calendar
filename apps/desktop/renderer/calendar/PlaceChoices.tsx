@@ -1,4 +1,4 @@
-import { type PlaceChoice, pickedCandidate, readsAsSaid } from '@calendar/app-state';
+import { asSaidLabel, type PlaceChoice, pickedCandidate, readsAsSaid } from '@calendar/app-state';
 import { type GeoLocation, type PlaceCandidate, placeCandidateLabel } from '@calendar/core';
 import { Button } from '../ui/Button.tsx';
 import { IconButton } from '../ui/IconButton.tsx';
@@ -8,7 +8,8 @@ import { XIcon } from '../ui/icons.tsx';
  * The places a turn's location text could mean, the one the field reads
  * pressed: each as a button (a click makes it the place, pin and all — a
  * past place by its text, a search hit by name and address), the text
- * as said as one more, and × to let the row go.
+ * as said as one more — the title's own words where the place was a name
+ * taken out of it — and × to let the row go.
  */
 export function PlaceChoices({
   choice,
@@ -18,6 +19,7 @@ export function PlaceChoices({
   onDismiss,
   onKeep,
   onPick,
+  title,
 }: {
   readonly choice: PlaceChoice;
   readonly disabled: boolean;
@@ -28,6 +30,8 @@ export function PlaceChoices({
   readonly onDismiss: () => void;
   readonly onKeep: () => void;
   readonly onPick: (candidate: PlaceCandidate) => void;
+  /** The title field as it reads now. */
+  readonly title: string;
 }) {
   const picked = pickedCandidate(choice, location, geo);
   const asSaid = readsAsSaid(choice, location, geo);
@@ -72,7 +76,7 @@ export function PlaceChoices({
           size="sm"
           variant="ghost"
         >
-          As said: “{choice.text}”
+          As said: “{asSaidLabel(choice, title)}”
         </Button>
       </div>
     </div>

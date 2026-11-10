@@ -2282,6 +2282,14 @@ describe('readPlace', () => {
       "Sunday lunch at Oma's",
       'Essen at Oma',
       "Dinner at Dad's Friday",
+      // Review (Opus, round 2).
+      "Lunch at Nonna's on Sunday",
+      "Dinner at Mother's",
+      "Lunch at Granny's",
+      "Tea at Nan's",
+      "Kaffee at Omi's",
+      "Brunch at Mommy's",
+      "Christmas at In-Laws'",
     ]) {
       expect(readPlace(phrase), phrase).toBeUndefined();
     }
@@ -2330,6 +2338,9 @@ describe('readPlace', () => {
       'Present at Townhall',
       'Party at NYE',
       'Candles at Chanukah',
+      'Grillen im Gewitter',
+      'Treffen im Zweiten Stock',
+      'Besprechung im Obergeschoss',
     ]) {
       expect(readPlace(phrase), phrase).toBeUndefined();
     }
@@ -2393,6 +2404,11 @@ describe('readPlace', () => {
       'Slack Anna at Deloitte',
       'Videocall with Anna at Deloitte',
       'Skype mit Max at Siemens',
+      // A compound of one, as German writes it (review, Opus, round 2).
+      'Zoom-Call with Tom at Google',
+      'Teams-Call with Anna at Deloitte',
+      'Video-Call with Anna at Deloitte',
+      'Zooming with Tom at Google',
       // Nothing but a when before it, and the lead first.
       'Tomorrow at Mercato',
       'At Mercato',
