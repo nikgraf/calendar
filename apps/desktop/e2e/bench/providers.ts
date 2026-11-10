@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import Anthropic from '@anthropic-ai/sdk';
 import { type LanguageModel, transcriptFromSegments } from '@calendar/ai';
 import { strictSchema, withoutNulls } from '../../electron/strictSchema.ts';
 
@@ -8,7 +9,8 @@ import { strictSchema, withoutNulls } from '../../electron/strictSchema.ts';
  * The models the bench runs on, behind the app's own `LanguageModel`
  * seam: Apple's through the desktop helper binary, a served one over
  * Ollama's API or an OpenAI-compatible endpoint (the shapes the app's
- * model provider sends). The helper also transcribes, for the recorded
+ * model provider sends), or Claude through Anthropic's API — a ceiling to
+ * measure against, never a model the app ships. The helper also transcribes, for the recorded
  * turns — SpeechAnalyzer is the framework iOS dictates with, so the Mac
  * stands in for both platforms.
  */
@@ -181,6 +183,79 @@ export const helperModel = (helper: HelperClient): LanguageModel => ({
   status: async () => 'ready',
 });
 
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/** What a required property holds when the words give nothing for it. */
+const NONE = 'none';
+
+/**
+ * The schema with every property required. Apple's guided generation
+ * leaves out every optional property of a first phrase (the title alone
+ * comes back, 70 times of 70), and fills the same properties when they
+ * are required and may be empty: "" for a text, 0 for a number, "none"
+ * for a choice, an empty list.
+ */
+export const requiredSchema = (schema: unknown, optional = false): unknown => {
+  if (!isObject(schema)) {
+    return schema;
+  }
+  if (Array.isArray(schema['enum'])) {
+    return optional ? { ...schema, enum: [...schema['enum'], NONE] } : schema;
+  }
+  if (schema['type'] === 'array') {
+    return { ...schema, items: requiredSchema(schema['items']) };
+  }
+  if (schema['type'] !== 'object' || !isObject(schema['properties'])) {
+    return schema;
+  }
+  const required = new Set(
+    Array.isArray(schema['required']) ? (schema['required'] as Array<string>) : [],
+  );
+  const properties = Object.fromEntries(
+    Object.entries(schema['properties']).map(([key, property]) => [
+      key,
+      requiredSchema(property, optional || !required.has(key)),
+    ]),
+  );
+  return { ...schema, properties, required: Object.keys(properties).sort() };
+};
+
+/** The answer without its empty values: what a required property held for "nothing". */
+export const withoutEmpties = (value: unknown): unknown => {
+  if (Array.isArray(value)) {
+    return value.map(withoutEmpties);
+  }
+  if (!isObject(value)) {
+    return value;
+  }
+  return Object.fromEntries(
+    Object.entries(value)
+      .map(([key, item]) => [key, withoutEmpties(item)] as const)
+      .filter(
+        ([, item]) =>
+          !(typeof item === 'string' && (item.trim() === '' || item === NONE)) &&
+          item !== 0 &&
+          !(isObject(item) && Object.keys(item).length === 0),
+      ),
+  );
+};
+
+const FILL_EVERY_FIELD =
+  'Every field must be in the answer. When the words give nothing for one, write "" for a text, 0 for a number, "none" for a choice and an empty list; where the lines below say to omit a field or leave it out, write that empty value.';
+
+/** A model asked for every field, empty where the words give nothing, and read back without the empties. */
+export const requiringEveryField = (model: LanguageModel): LanguageModel => ({
+  ...model,
+  generateJson: async ({ jsonSchema, prompt }) =>
+    withoutEmpties(
+      await model.generateJson({
+        jsonSchema: requiredSchema(jsonSchema),
+        prompt: `${FILL_EVERY_FIELD}\n${prompt}`,
+      }),
+    ),
+});
+
 /** What the helper says of the model: 'ready', or why not. */
 export const helperStatus = async (helper: HelperClient): Promise<string> => {
   const result = (await helper.request('status', {})) as { detail?: string; status: string };
@@ -288,3 +363,85 @@ export const openAiModel = (
   info: async () => ({ contextTokens: SERVED_CONTEXT_TOKENS, name: model }),
   status: async () => 'ready',
 });
+
+/** How hard Claude thinks before it answers (`output_config.effort`). */
+export type ClaudeEffort = 'high' | 'low' | 'max' | 'medium' | 'xhigh';
+
+const EFFORTS: ReadonlyArray<ClaudeEffort> = ['low', 'medium', 'high', 'xhigh', 'max'];
+
+/** `claude-haiku-5-5@low`: the model and, after an `@`, its effort (medium when left out). */
+export const claudeSpec = (
+  spec: string,
+): { readonly effort: ClaudeEffort; readonly model: string } => {
+  const [model = '', said] = spec.trim().split('@');
+  return { effort: EFFORTS.find((effort) => effort === said) ?? 'medium', model };
+};
+
+/**
+ * The strict schema as Claude takes it: a nullable choice written as
+ * "one of these, or null". The list form the OpenAI endpoint takes
+ * (`type: ['string', 'null']` beside the enum) is refused here.
+ */
+export const claudeSchema = (schema: unknown): unknown => {
+  if (Array.isArray(schema)) {
+    return schema.map(claudeSchema);
+  }
+  if (!isObject(schema)) {
+    return schema;
+  }
+  const { enum: choices, type } = schema;
+  if (Array.isArray(choices) && Array.isArray(type)) {
+    return {
+      anyOf: [
+        {
+          ...schema,
+          enum: choices.filter((choice) => choice !== null),
+          type: type.find((name) => name !== 'null'),
+        },
+        { type: 'null' },
+      ],
+    };
+  }
+  return Object.fromEntries(
+    Object.entries(schema).map(([key, value]) => [key, claudeSchema(value)]),
+  );
+};
+
+const CLAUDE_MAX_TOKENS = 16_000;
+
+/**
+ * Claude over the Messages API, the answer held to the schema by
+ * structured outputs. The schema is the strict one the OpenAI endpoint
+ * gets (every property required, an optional one nullable): asked with
+ * optional properties, Claude leaves most of them out, a dinner's time
+ * and a said place among them. The credential is the SDK's own to find
+ * (`ANTHROPIC_API_KEY`, or the profile `ant auth login` stores). No
+ * fallback model: a declined request is this model's failure, and the
+ * report says so.
+ */
+export const claudeModel = (model: string, effort: ClaudeEffort): LanguageModel => {
+  const client = new Anthropic();
+  return {
+    generateJson: async ({ jsonSchema, prompt }) => {
+      const response = await client.messages.create({
+        max_tokens: CLAUDE_MAX_TOKENS,
+        messages: [{ content: prompt, role: 'user' }],
+        model,
+        output_config: {
+          effort,
+          format: {
+            schema: claudeSchema(strictSchema(jsonSchema)) as Record<string, unknown>,
+            type: 'json_schema',
+          },
+        },
+      });
+      if (response.stop_reason !== 'end_turn') {
+        throw new Error(`Claude stopped with ${String(response.stop_reason)}`);
+      }
+      const text = response.content.find((block) => block.type === 'text');
+      return withoutNulls(JSON.parse(text?.text ?? ''));
+    },
+    info: async () => ({ contextTokens: 1_000_000, name: model }),
+    status: async () => 'ready',
+  };
+};

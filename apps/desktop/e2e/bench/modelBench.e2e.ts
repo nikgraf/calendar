@@ -21,7 +21,10 @@ import {
   type TurnInput,
 } from './cases.ts';
 import { applyResult, type BenchDraft, check, type Outcome, wordErrorRate } from './check.ts';
+import { plainTurn } from './plain.ts';
 import {
+  claudeModel,
+  claudeSpec,
   connectHelper,
   findHelper,
   type HelperClient,
@@ -31,8 +34,10 @@ import {
   ollamaModel,
   openAiModel,
   recording,
+  requiringEveryField,
   type Speech,
 } from './providers.ts';
+import { rawTurn } from './raw.ts';
 import {
   type BenchReport,
   type CaseReport,
@@ -56,10 +61,18 @@ import {
  *   MODEL_BENCH=1 E2E=1 pnpm exec vp test run apps/desktop/e2e/bench/modelBench.e2e.ts
  *
  * Apple: the desktop helper binary (MODEL_BENCH_HELPER, or the package's
- * own build; MODEL_BENCH_APPLE=0 leaves it out). Ollama: MODEL_BENCH_OLLAMA
+ * own build; MODEL_BENCH_APPLE=0 leaves it out, MODEL_BENCH_APPLE_REQUIRED=1
+ * adds it a second time, asked for every field). Ollama: MODEL_BENCH_OLLAMA
  * names the model (several, comma-separated), MODEL_BENCH_OLLAMA_URL the
  * server. An OpenAI-compatible endpoint: MODEL_BENCH_OPENAI (model),
  * MODEL_BENCH_OPENAI_URL (base, up to `/v1`), MODEL_BENCH_OPENAI_KEY.
+ * Claude: MODEL_BENCH_CLAUDE names the models, each with its effort after
+ * an `@` (`claude-haiku-5-5@low,claude-opus-5-5`), ANTHROPIC_API_KEY the key.
+ * MODEL_BENCH_PIPELINE lists what runs around the model, comma-separated:
+ * `app` (the default: the app's pipeline with its grounding), `raw` (the
+ * app's prompts, the answer never held against the words: `raw.ts`) and
+ * `plain` (one prompt that states the conventions, no code that reads the
+ * words: `plain.ts`).
  * MODEL_BENCH_CASES picks cases by id part or tag ("flow,de");
  * MODEL_BENCH_STT=off parses every recording's transcript instead of
  * transcribing; MODEL_BENCH_COMPARE names an earlier report to diff
@@ -130,14 +143,29 @@ const hear = async (
   };
 };
 
+const PIPELINES = ['app', 'raw', 'plain'] as const;
+type Pipeline = (typeof PIPELINES)[number];
+
 /** One turn through the pipeline the thread would use: the first phrase, or a change to the draft. */
 const runTurn = async (
-  model: LanguageModel,
+  { model, pipeline }: { readonly model: LanguageModel; readonly pipeline: Pipeline },
   draft: BenchDraft | undefined,
   text: string,
   today: string,
   said: ReadonlyArray<string>,
 ): Promise<QuickAddResult | RefineResult> => {
+  if (pipeline === 'plain') {
+    return plainTurn(model, {
+      draft,
+      earlier: said,
+      referenceDate: today,
+      text,
+      timeZone: TIME_ZONE,
+    });
+  }
+  if (pipeline === 'raw') {
+    return rawTurn(model, { draft, referenceDate: today, text, timeZone: TIME_ZONE });
+  }
   if (draft === undefined) {
     return parseQuickAdd(model, { phrase: text, referenceDate: today, timeZone: TIME_ZONE });
   }
@@ -161,11 +189,13 @@ const runCase = async (
   {
     book,
     model,
+    pipeline,
     speech,
     today,
   }: {
     readonly book: ReadonlyArray<Contact>;
     readonly model: ReturnType<typeof recording>;
+    readonly pipeline: Pipeline;
     readonly speech: Speech | undefined;
     readonly today: string;
   },
@@ -204,7 +234,7 @@ const runCase = async (
     const calls = model.begin();
     const outcome: Outcome = await applyResult(
       draft,
-      await runTurn(model.model, draft, heard.text, today, earlier),
+      await runTurn({ model: model.model, pipeline }, draft, heard.text, today, earlier),
       book,
     );
     const ms = Date.now() - started;
@@ -222,7 +252,13 @@ const runCase = async (
       model.begin();
       const transcriptOutcome = await applyResult(
         draft,
-        await runTurn(model.model, draft, turn.input.transcript, today, earlier),
+        await runTurn(
+          { model: model.model, pipeline },
+          draft,
+          turn.input.transcript,
+          today,
+          earlier,
+        ),
         book,
       );
       const transcriptCheck = check(turn.expect, transcriptOutcome, draft, today);
@@ -284,6 +320,9 @@ const providers = async (
     }
     if (status === 'ready') {
       list.push({ model: helperModel(helper), name: 'apple' });
+      if (process.env['MODEL_BENCH_APPLE_REQUIRED'] === '1') {
+        list.push({ model: requiringEveryField(helperModel(helper)), name: 'apple-required' });
+      }
     } else {
       log(`Apple's model is ${status}; left out.`);
     }
@@ -303,7 +342,18 @@ const providers = async (
       name: `openai:${openAi}`,
     });
   }
+  for (const spec of (process.env['MODEL_BENCH_CLAUDE'] ?? '').split(',').filter(Boolean)) {
+    const { effort, model } = claudeSpec(spec);
+    list.push({ model: claudeModel(model, effort), name: `claude:${model}@${effort}` });
+  }
   return list;
+};
+
+/** What runs around the model, per MODEL_BENCH_PIPELINE: the app's pipeline unless it names others. */
+const pipelines = (): ReadonlyArray<Pipeline> => {
+  const asked = (process.env['MODEL_BENCH_PIPELINE'] ?? '').split(',').map((name) => name.trim());
+  const known = PIPELINES.filter((pipeline) => asked.includes(pipeline));
+  return known.length === 0 ? ['app'] : known;
 };
 
 describe.skipIf(process.env['MODEL_BENCH'] !== '1')('model bench', () => {
@@ -335,10 +385,18 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('model bench', () => {
       const available = await providers(helper, log);
       if (available.length === 0) {
         log(
-          'No model to bench: build the desktop helper (pnpm --filter @calendar/desktop build:helper), point MODEL_BENCH_HELPER at one, or name a served model (MODEL_BENCH_OLLAMA, MODEL_BENCH_OPENAI).',
+          'No model to bench: build the desktop helper (pnpm --filter @calendar/desktop build:helper), point MODEL_BENCH_HELPER at one, or name a served model (MODEL_BENCH_OLLAMA, MODEL_BENCH_OPENAI, MODEL_BENCH_CLAUDE).',
         );
       }
-      for (const provider of available) {
+      const arms = available.flatMap((provider) =>
+        pipelines().map((pipeline) => ({
+          model: provider.model,
+          // The app's pipeline keeps the provider's bare name: earlier reports compare with it.
+          name: pipeline === 'app' ? provider.name : `${provider.name}+${pipeline}`,
+          pipeline,
+        })),
+      );
+      for (const provider of arms) {
         const model = recording(provider.model);
         const reports: Array<CaseReport> = [];
         for (const benchCase of cases) {
@@ -348,7 +406,15 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('model bench', () => {
               `${benchCase.id}: no address book "${benchCase.contacts}" in contacts.json`,
             );
           }
-          reports.push(await runCase(benchCase, { book, model, speech, today }));
+          reports.push(
+            await runCase(benchCase, {
+              book,
+              model,
+              pipeline: provider.pipeline,
+              speech,
+              today,
+            }),
+          );
         }
         const report: BenchReport = {
           cases: reports,

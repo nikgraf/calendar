@@ -9,15 +9,38 @@ e2e suite — it skips itself unless `MODEL_BENCH=1`.
 MODEL_BENCH=1 E2E=1 pnpm exec vp test run apps/desktop/e2e/bench/modelBench.e2e.ts
 ```
 
-| Variable              | What it does                                                                                                                                                                         |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `MODEL_BENCH_HELPER`  | The desktop helper binary; default the package's own `helper/.build/release` build (`pnpm --filter @calendar/desktop build:helper`). `MODEL_BENCH_APPLE=0` leaves Apple's model out. |
-| `MODEL_BENCH_OLLAMA`  | Ollama models, comma-separated (`gemma3:4b,gemma3:12b`); `MODEL_BENCH_OLLAMA_URL` the server (`http://localhost:11434`).                                                             |
-| `MODEL_BENCH_OPENAI`  | A model behind an OpenAI-compatible endpoint; `MODEL_BENCH_OPENAI_URL` the base up to `/v1` (`http://localhost:1234/v1`), `MODEL_BENCH_OPENAI_KEY` its key.                          |
-| `MODEL_BENCH_CASES`   | Only the cases whose id contains a term or whose tags hold it (`flow,de`).                                                                                                           |
-| `MODEL_BENCH_STT`     | `off`: every recording's transcript is parsed, nothing is transcribed.                                                                                                               |
-| `MODEL_BENCH_COMPARE` | An earlier report (JSON) to print the difference to.                                                                                                                                 |
-| `MODEL_BENCH_OUT`     | Where reports go; default `output/bench/` (gitignored).                                                                                                                              |
+| Variable               | What it does                                                                                                                                                                                                                                                                                                                                                                                          |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MODEL_BENCH_HELPER`   | The desktop helper binary; default the package's own `helper/.build/release` build (`pnpm --filter @calendar/desktop build:helper`). `MODEL_BENCH_APPLE=0` leaves Apple's model out; `MODEL_BENCH_APPLE_REQUIRED=1` adds it a second time as `apple-required`, asked for every field (empty where the words give nothing): asked with optional fields it answers a first phrase with the title alone. |
+| `MODEL_BENCH_OLLAMA`   | Ollama models, comma-separated (`gemma3:4b,gemma3:12b`); `MODEL_BENCH_OLLAMA_URL` the server (`http://localhost:11434`).                                                                                                                                                                                                                                                                              |
+| `MODEL_BENCH_OPENAI`   | A model behind an OpenAI-compatible endpoint; `MODEL_BENCH_OPENAI_URL` the base up to `/v1` (`http://localhost:1234/v1`), `MODEL_BENCH_OPENAI_KEY` its key.                                                                                                                                                                                                                                           |
+| `MODEL_BENCH_CLAUDE`   | Claude models over Anthropic's API, comma-separated, each with its effort after an `@` (`claude-haiku-5-5@low,claude-opus-5-5`; medium when left out). The key is `ANTHROPIC_API_KEY`. A ceiling to measure against, never a model the app ships: the phrases leave the Mac.                                                                                                                          |
+| `MODEL_BENCH_PIPELINE` | What runs around the model, comma-separated: `app` (the default), `raw`, `plain`. See Arms.                                                                                                                                                                                                                                                                                                           |
+| `MODEL_BENCH_CASES`    | Only the cases whose id contains a term or whose tags hold it (`flow,de`).                                                                                                                                                                                                                                                                                                                            |
+| `MODEL_BENCH_STT`      | `off`: every recording's transcript is parsed, nothing is transcribed.                                                                                                                                                                                                                                                                                                                                |
+| `MODEL_BENCH_COMPARE`  | An earlier report (JSON) to print the difference to.                                                                                                                                                                                                                                                                                                                                                  |
+| `MODEL_BENCH_OUT`      | Where reports go; default `output/bench/` (gitignored).                                                                                                                                                                                                                                                                                                                                               |
+
+## Arms
+
+A model is one half of a result; what runs around it is the other.
+`MODEL_BENCH_PIPELINE` lists the arms to run, each a report of its own
+(`apple`, `apple+raw`, `apple+plain`):
+
+- `app`: the app's pipeline, as the thread runs it. The grounding holds
+  every answer against the words.
+- `raw`: the app's prompts, and the model's answer as it came: validated,
+  never held against the words (`raw.ts`). No to-do cue, no people
+  question, no notes or notifications from the phrase. Beside `app` it
+  says what the grounding buys on a model.
+- `plain`: one prompt per turn that states the product's conventions in
+  prose and asks for the whole draft; the code after it checks shapes and
+  fills a form's defaults, and never reads the phrase (`plain.ts`). It is
+  what a capable model does on its own. Apple's model cannot follow it.
+
+The cases were written beside the grounding they test, so `app` is
+flattered by them: a tie between `app` and another arm is a result for
+the other arm.
 
 ## Cases
 
