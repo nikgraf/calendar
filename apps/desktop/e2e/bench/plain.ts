@@ -71,7 +71,7 @@ export const PLAIN_JSON_SCHEMA = {
 const HINT_DAYS = 14;
 
 /** The coming days by name: context for "next Tuesday", the same on every model. */
-const comingDays = (referenceDate: string): string =>
+export const comingDays = (referenceDate: string): string =>
   Array.from({ length: HINT_DAYS }, (_, index) => {
     const date = Temporal.PlainDate.from(referenceDate).add({ days: index });
     const weekday = date.toLocaleString('en-US', { weekday: 'short' });
@@ -117,7 +117,7 @@ export const buildPlainPrompt = ({
   ].join('\n');
 
 /** The draft as the model reads it and writes it back. */
-interface PlainState {
+export interface PlainState {
   readonly date: string;
   readonly endTime?: string;
   readonly guests?: ReadonlyArray<string>;

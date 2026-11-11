@@ -1,0 +1,32 @@
+# LoRA settings for the tuned arm's models: `mlx_lm.lora -c lora.yaml`,
+# with the model, the data folder, the adapter folder and the number of
+# iterations given on the command line (see README.md here).
+#
+# Qwen3.5 has recurrent layers that MLX trains with a per-token loop, which
+# needs gradient checkpointing to fit in memory at all and makes a step
+# slow. Batches of 4 with two steps accumulated act as batches of 8.
+fine_tune_type: lora
+optimizer: adamw
+num_layers: -1
+batch_size: 4
+grad_accumulation_steps: 2
+grad_checkpoint: true
+learning_rate: 2.0e-5
+lora_parameters:
+  rank: 16
+  scale: 20.0
+  dropout: 0.0
+mask_prompt: true
+max_seq_length: 1024
+steps_per_report: 20
+steps_per_eval: 200
+val_batches: 20
+save_every: 200
+seed: 7
+# Cosine decay over the optimizer's steps: half the iterations of a
+# three-pass run over 5,235 examples (3,927 iterations).
+lr_schedule:
+  name: cosine_decay
+  warmup: 50
+  warmup_init: 1.0e-6
+  arguments: [2.0e-5, 1964, 2.0e-6]

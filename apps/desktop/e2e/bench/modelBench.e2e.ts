@@ -56,6 +56,7 @@ import {
   writeReport,
 } from './report.ts';
 import { rescore } from './rescore.ts';
+import { tunedTurn } from './tuned.ts';
 
 /**
  * The model bench: the cases under `cases/` through the quick-add and
@@ -81,9 +82,10 @@ import { rescore } from './rescore.ts';
  * an `@` (`claude-haiku-5-5@low,claude-opus-5-5`), ANTHROPIC_API_KEY the key.
  * MODEL_BENCH_PIPELINE lists what runs around the model, comma-separated:
  * `app` (the default: the app's pipeline with its grounding), `raw` (the
- * app's prompts, the answer never held against the words: `raw.ts`) and
+ * app's prompts, the answer never held against the words: `raw.ts`),
  * `plain` (one prompt that states the conventions, no code that reads the
- * words: `plain.ts`). MODEL_BENCH_RESCORE names earlier reports (files or
+ * words: `plain.ts`) and `tuned` (the plain arm without the conventions,
+ * for a model trained on its answers: `tuned.ts`). MODEL_BENCH_RESCORE names earlier reports (files or
  * a folder of them) to score again by the checks as they are now, without
  * asking any model (`rescore.ts`).
  * MODEL_BENCH_CASES picks cases by id part or tag ("flow,de");
@@ -156,7 +158,7 @@ const hear = async (
   };
 };
 
-const PIPELINES = ['app', 'raw', 'plain'] as const;
+const PIPELINES = ['app', 'raw', 'plain', 'tuned'] as const;
 type Pipeline = (typeof PIPELINES)[number];
 
 /** One turn through the pipeline the thread would use: the first phrase, or a change to the draft. */
@@ -175,6 +177,9 @@ const runTurn = async (
       text,
       timeZone: TIME_ZONE,
     });
+  }
+  if (pipeline === 'tuned') {
+    return tunedTurn(model, { draft, earlier: said, referenceDate: today, text });
   }
   if (pipeline === 'raw') {
     return rawTurn(model, { draft, referenceDate: today, text, timeZone: TIME_ZONE });
