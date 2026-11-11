@@ -2,7 +2,14 @@ import { Temporal } from '@calendar/core';
 import { useEffect, useSyncExternalStore } from 'react';
 import { AppState, Platform, StyleSheet, Text, View } from 'react-native';
 import { loadProcessMemoryModule } from '../../../modules/solunivo-process-memory/index.ts';
-import { describeAnswer, SPIKE_MODELS, SPIKE_TIME_ZONE, summarize } from '../../modelSpike.ts';
+import { appleLanguageModel } from '../../appleModel.ts';
+import {
+  APPLE_MODEL,
+  describeAnswer,
+  SPIKE_MODELS,
+  SPIKE_TIME_ZONE,
+  summarize,
+} from '../../modelSpike.ts';
 import { SPIKE_CASES } from '../../modelSpikeCases.ts';
 import { createSpikeStore, type SpikeFiles, type SpikeStore } from '../../modelSpikeStore.ts';
 import { loadOpenModelRuntime } from '../../openModel.ts';
@@ -97,6 +104,8 @@ const makeStore = (): SpikeStore => {
     platform: `${Platform.OS} ${String(Platform.Version)}`,
     runtime: loadOpenModelRuntime(),
     simulator: probe?.isSimulator() ?? false,
+    // The real one, whatever the bundle's fixture switch says: this page measures it.
+    system: appleLanguageModel,
     today: () => Temporal.Now.plainDateISO(SPIKE_TIME_ZONE).toString(),
   });
   AppState.addEventListener('change', (state) => {
@@ -146,6 +155,8 @@ export function ModelSpikePage() {
   // Whose phrases these are: the run under way, or the last one that ended (its model may be unloaded since).
   const measured = step.kind === 'running' ? step.loaded.model.name : report?.model.name;
   const hasRuntime = loadOpenModelRuntime() !== undefined;
+  // Apple's model counts none: its rows have times alone.
+  const countsTokens = summary.answerTokensPerSecond > 0 || summary.promptTokensPerSecond > 0;
 
   return (
     <SettingsPage testID="settings-page-model-spike">
@@ -180,6 +191,20 @@ export function ModelSpikePage() {
             />
           </>
         ) : null}
+      </Section>
+
+      <Section
+        footer="The model the app uses today, asked as the app asks it: the baseline on this device. It runs in iOS, so it has no file, counts no tokens, and its memory is not the app’s."
+        header={APPLE_MODEL.name}
+      >
+        <ActionRow
+          disabled={step.kind !== 'idle'}
+          onPress={() => void store.loadSystem()}
+          testID="model-spike-use-apple"
+          title={
+            step.kind === 'loading' && step.model.file === APPLE_MODEL.file ? 'Asking…' : 'Use'
+          }
+        />
       </Section>
 
       {SPIKE_MODELS.map((model) => {
@@ -242,11 +267,17 @@ export function ModelSpikePage() {
           footer="Keep the app open during a run: when the app leaves the screen the run stops and the model is unloaded."
           header={`Loaded: ${loaded.model.name}`}
         >
-          <Row title="Model" value={loaded.context.model.desc} />
+          <Row title="Model" value={loaded.engine.description} />
           <Row
             testID="model-spike-gpu"
             title="GPU"
-            value={loaded.context.gpu ? 'Yes' : `No (${loaded.context.reasonNoGPU || 'unknown'})`}
+            value={
+              loaded.engine.gpu === undefined
+                ? 'Not the app’s to know'
+                : loaded.engine.gpu
+                  ? 'Yes'
+                  : `No (${loaded.engine.reasonNoGpu || 'unknown'})`
+            }
           />
           <Row testID="model-spike-load-time" title="Time to Load" value={seconds(loaded.loadMs)} />
           {loaded.memory ? (
@@ -300,14 +331,18 @@ export function ModelSpikePage() {
             title="Per Phrase"
             value={`${seconds(summary.medianMs)} median · ${seconds(summary.worstMs)} worst`}
           />
-          <Row
-            title="Tokens per Second"
-            value={`${summary.promptTokensPerSecond.toFixed(0)} read · ${summary.answerTokensPerSecond.toFixed(0)} written`}
-          />
-          <Row
-            title="Prompt Not Read Again"
-            value={`${String(Math.round(summary.cachedShare * 100))}%`}
-          />
+          {countsTokens ? (
+            <>
+              <Row
+                title="Tokens per Second"
+                value={`${summary.promptTokensPerSecond.toFixed(0)} read · ${summary.answerTokensPerSecond.toFixed(0)} written`}
+              />
+              <Row
+                title="Prompt Not Read Again"
+                value={`${String(Math.round(summary.cachedShare * 100))}%`}
+              />
+            </>
+          ) : null}
           {summary.failedCalls > 0 ? (
             <Row title="Calls Without an Answer" value={String(summary.failedCalls)} />
           ) : null}

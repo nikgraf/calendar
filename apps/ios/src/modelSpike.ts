@@ -52,6 +52,20 @@ export const SPIKE_MODELS: ReadonlyArray<SpikeModel> = [
   },
 ];
 
+/**
+ * Apple's own model, as the app asks it today: nothing to fetch, no file.
+ * The page runs it beside the open models, so one phone gives its score
+ * and its speed too.
+ */
+export const APPLE_MODEL: SpikeModel = {
+  bytes: 0,
+  file: 'apple-foundation-models',
+  licence: 'Part of iOS (Apple Intelligence)',
+  name: 'Apple’s model',
+  quantizedBy: 'Apple',
+  url: '',
+};
+
 /** What a phrase came to: the pipeline's result, or why the run could not ask. */
 export type SpikeAnswer = QuickAddResult | { readonly kind: 'failed'; readonly message: string };
 
@@ -129,7 +143,7 @@ const median = (values: ReadonlyArray<number>): number => {
 const perSecond = (tokens: number, ms: number): number => (ms > 0 ? (tokens * 1000) / ms : 0);
 
 export interface SpikeSummary {
-  /** Tokens written per second, over every call. */
+  /** Tokens written per second, over every call; 0 for a model that counts no tokens (Apple's). */
   readonly answerTokensPerSecond: number;
   /** The share of all prompt tokens the runtime did not have to read: a prefix kept from the call before. */
   readonly cachedShare: number;
@@ -219,7 +233,8 @@ export interface SpikeMemory {
 export interface SpikeReport {
   /** How many phrases the run was asked for; `rows` has fewer when it was stopped. */
   readonly asked: number;
-  readonly gpu: boolean;
+  /** Undefined for Apple's model: it runs in iOS, not in the app. */
+  readonly gpu: boolean | undefined;
   readonly loadMs: number;
   readonly memory: SpikeMemory | undefined;
   readonly model: SpikeModel;

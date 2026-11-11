@@ -1,4 +1,6 @@
+import { buildQuickAddPrompt, type LanguageModel, QUICK_ADD_JSON_SCHEMA } from '@calendar/ai';
 import {
+  APPLE_MODEL,
   runSpike,
   SPIKE_MODELS,
   SPIKE_TIME_ZONE,
@@ -8,12 +10,8 @@ import {
   summarize,
 } from './modelSpike.ts';
 import type { SpikeCase } from './modelSpikeCases.ts';
-import {
-  loadOpenModel,
-  type OpenModelContext,
-  type OpenModelRuntime,
-  openLanguageModel,
-} from './openModel.ts';
+import { loadOpenModel, type OpenModelRuntime } from './openModel.ts';
+import { fileEngine, type SpikeEngine, systemEngine } from './spikeEngine.ts';
 
 /**
  * The Model Spike page's state and what its buttons do, kept apart from
@@ -70,13 +68,15 @@ export interface SpikeDeps {
   readonly runtime: OpenModelRuntime | undefined;
   /** A simulator runs the app: its timings are not a phone's. */
   readonly simulator: boolean;
+  /** Apple's own model as the app has it; undefined where the page has none to offer. */
+  readonly system: LanguageModel | undefined;
   /** Today in `SPIKE_TIME_ZONE`, `YYYY-MM-DD`. */
   readonly today: () => string;
 }
 
 /** A model in memory, and what it took to get it there. */
 export interface LoadedModel {
-  readonly context: OpenModelContext;
+  readonly engine: SpikeEngine;
   readonly footprintBefore: number;
   readonly loadMs: number;
   readonly memory: DeviceMemory | undefined;
@@ -115,10 +115,20 @@ export interface SpikeState {
 const messageOf = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
-/** Takes a context out of memory; what went wrong, if anything. */
-const release = async (context: OpenModelContext): Promise<string | undefined> => {
+/**
+ * The phrase Apple's model is asked once before a run, with the app's own
+ * quick-add prompt and schema: a request the app is known to make. The
+ * first call after a while pays for iOS bringing the model up; taken here,
+ * as a file's load is, the first measured phrase does not carry it. Asked
+ * directly, not through the pipeline, which would turn a failure into
+ * "couldn't be read" and lose why.
+ */
+const WARM_UP_PHRASE = 'Lunch tomorrow at 1';
+
+/** Takes a model out of memory; what went wrong, if anything. */
+const release = async (engine: SpikeEngine): Promise<string | undefined> => {
   try {
-    await context.release();
+    await engine.release();
     return undefined;
   } catch (error) {
     return `Unloading failed: ${messageOf(error)}`;
@@ -209,7 +219,7 @@ export const createSpikeStore = (deps: SpikeDeps) => {
           // A load computes on the GPU too (its warm-up). Whether iOS refused that cannot be told
           // from here, and a refused command leaves the context unable to compute: it is not kept.
           set({ step: { kind: 'unloading', model } });
-          const failure = await release(context);
+          const failure = await release(fileEngine(context));
           set({
             memory: deps.memory(),
             notice:
@@ -224,11 +234,78 @@ export const createSpikeStore = (deps: SpikeDeps) => {
           memory,
           step: {
             kind: 'loaded',
-            loaded: { context, footprintBefore, loadMs: deps.now() - started, memory, model },
+            loaded: {
+              engine: fileEngine(context),
+              footprintBefore,
+              loadMs: deps.now() - started,
+              memory,
+              model,
+            },
           },
         });
       } catch (error) {
         set({ notice: `Loading failed: ${messageOf(error)}`, step: { kind: 'idle' } });
+      }
+    },
+
+    /**
+     * Makes Apple's own model the one to run: checked, asked once to bring
+     * it up (timed, as a load is), then ready like a loaded file.
+     */
+    loadSystem: async (): Promise<void> => {
+      const { system } = deps;
+      if (!system || state.step.kind !== 'idle') {
+        return;
+      }
+      leftWhileLoading = false;
+      set({ notice: undefined, step: { kind: 'loading', model: APPLE_MODEL, percent: 0 } });
+      const footprintBefore = deps.memory()?.footprint ?? 0;
+      try {
+        const status = await system.status();
+        if (status !== 'ready') {
+          set({
+            notice: `Apple’s model cannot run here: ${status}.`,
+            step: { kind: 'idle' },
+          });
+          return;
+        }
+        const started = deps.now();
+        await system.generateJson({
+          jsonSchema: QUICK_ADD_JSON_SCHEMA,
+          prompt: buildQuickAddPrompt({
+            phrase: WARM_UP_PHRASE,
+            referenceDate: deps.today(),
+            timeZone: SPIKE_TIME_ZONE,
+          }),
+        });
+        const loadMs = deps.now() - started;
+        if (leftWhileLoading) {
+          set({
+            notice:
+              'The app left the screen while Apple’s model was being brought up. Use it once more and stay on the page.',
+            step: { kind: 'idle' },
+          });
+          return;
+        }
+        const memory = deps.memory();
+        set({
+          memory,
+          step: {
+            kind: 'loaded',
+            loaded: {
+              engine: systemEngine(system, deps.now),
+              footprintBefore,
+              loadMs,
+              memory,
+              model: APPLE_MODEL,
+            },
+          },
+        });
+      } catch (error) {
+        set({
+          notice: `Apple’s model did not answer: ${messageOf(error)}`,
+          step: { kind: 'idle' },
+        });
       }
     },
 
@@ -256,10 +333,10 @@ export const createSpikeStore = (deps: SpikeDeps) => {
       }
       interrupted = true;
       stopRun = true;
-      const { context } = state.step.loaded;
+      const { engine } = state.step.loaded;
       // Whatever the stop answers or throws, the run winds down: a phrase that is not cut short runs out.
       const stop = async () => {
-        await context.stopCompletion();
+        await engine.stop();
       };
       const stopNow = () => {
         void stop().catch(() => undefined);
@@ -307,7 +384,7 @@ export const createSpikeStore = (deps: SpikeDeps) => {
         rows = await runSpike({
           cases,
           discarded: () => interrupted,
-          modelFor: (onCall) => openLanguageModel(loaded.context, onCall, () => interrupted),
+          modelFor: (onCall) => loaded.engine.modelFor(onCall, () => interrupted),
           now: deps.now,
           onRow: (_row, all) => {
             sample();
@@ -326,7 +403,7 @@ export const createSpikeStore = (deps: SpikeDeps) => {
       }
       const report: SpikeReport = {
         asked: cases.length,
-        gpu: loaded.context.gpu,
+        gpu: loaded.engine.gpu,
         loadMs: loaded.loadMs,
         memory: loaded.memory && {
           availableLoaded: loaded.memory.available,
@@ -336,9 +413,9 @@ export const createSpikeStore = (deps: SpikeDeps) => {
           physical: loaded.memory.physical,
         },
         model: loaded.model,
-        modelDescription: loaded.context.model.desc,
+        modelDescription: loaded.engine.description,
         platform: deps.platform,
-        reasonNoGpu: loaded.context.reasonNoGPU,
+        reasonNoGpu: loaded.engine.reasonNoGpu,
         rows,
         simulator: deps.simulator,
         summary: summarize(rows),
@@ -352,7 +429,7 @@ export const createSpikeStore = (deps: SpikeDeps) => {
       }
       // Nothing may compute on this context again: out it goes. The report of the phrases before the cut stays.
       set({ report, step: { kind: 'unloading', model: loaded.model } });
-      const unloadFailure = await release(loaded.context);
+      const unloadFailure = await release(loaded.engine);
       set({
         memory: deps.memory(),
         notice:
@@ -402,7 +479,7 @@ export const createSpikeStore = (deps: SpikeDeps) => {
       }
       const { loaded } = state.step;
       set({ step: { kind: 'unloading', model: loaded.model } });
-      const notice = await release(loaded.context);
+      const notice = await release(loaded.engine);
       set({ memory: deps.memory(), notice, step: { kind: 'idle' } });
     },
   };

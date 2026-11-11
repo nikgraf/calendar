@@ -88,7 +88,11 @@ export const loadOpenModelRuntime = (): OpenModelRuntime | undefined => {
   }
 };
 
-/** One model call in numbers: how long the prompt was, how much of it had to be read, how fast. */
+/**
+ * One model call in numbers: how long the prompt was, how much of it had
+ * to be read, how fast. A model that counts no tokens (Apple's) gives the
+ * call's whole time as `answerMs` and 0 for every count.
+ */
 export interface OpenModelCall {
   readonly answerMs: number;
   readonly answerTokens: number;
