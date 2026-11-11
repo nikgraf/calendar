@@ -31,6 +31,15 @@ public class SolunivoProcessMemoryModule: Module {
       ]
     }
 
+    // A simulator's timings are the Mac's: a report has to say which it was.
+    Function("isSimulator") { () -> Bool in
+      #if targetEnvironment(simulator)
+        return true
+      #else
+        return false
+      #endif
+    }
+
     // The idle timer is the main thread's to set.
     Function("keepAwake") { (on: Bool) in
       DispatchQueue.main.async {

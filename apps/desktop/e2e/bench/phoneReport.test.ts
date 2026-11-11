@@ -1,7 +1,7 @@
 import { Contact } from '@calendar/core';
 import { describe, expect, it } from 'vite-plus/test';
 import type { BenchCase } from './cases.ts';
-import { comparePhone, firstTurns, type PhoneReport, scorePhoneReport } from './phoneReport.ts';
+import { comparePhone, type PhoneReport, scorePhoneReport } from './phoneReport.ts';
 import type { BenchReport } from './report.ts';
 
 // A Wednesday; the phone's report says which day it read the phrases on.
@@ -124,65 +124,82 @@ describe('scorePhoneReport', () => {
   });
 });
 
-const turn = (failed: ReadonlyArray<'time' | 'title'>) => ({
+const turn = (input: string, failed: ReadonlyArray<'time' | 'title'>) => ({
   calls: [],
   checked: ['title' as const, 'time' as const],
   failed,
-  input: 'x',
+  input,
   ms: 600,
   notes: [],
   outcome: undefined,
 });
 
-describe('firstTurns and comparePhone', () => {
-  const mac: BenchReport = {
-    cases: [
-      // The first turn passes; the case fails on its second.
-      { id: 'dinner', ok: false, tags: [], turns: [turn([]), turn(['time'])] },
-      { id: 'lunch', ok: false, tags: [], turns: [turn(['title']), turn([])] },
-      { id: 'other', ok: true, tags: [], turns: [turn([])] },
-    ],
-    provider: 'openai:lfm3:1.7b-q4_K_M',
-    score: { cases: { ok: 1, total: 3 }, fields: {}, medianMs: 600, turns: { ok: 3, total: 5 } },
-    sha: 'd42f52f6',
-    timeZone: 'Europe/Vienna',
-    today: '2026-11-10',
-    when: '2026-11-10T22:00:00.000Z',
-  };
+const macReport = (cases: BenchReport['cases']): BenchReport => ({
+  cases,
+  provider: 'openai:lfm3:1.7b-q4_K_M',
+  score: { cases: { ok: 0, total: 0 }, fields: {}, medianMs: 600, turns: { ok: 0, total: 0 } },
+  sha: 'd42f52f6',
+  timeZone: 'Europe/Vienna',
+  today: '2026-11-10',
+  when: '2026-11-10T22:00:00.000Z',
+});
 
-  it('counts a Mac report by its first turns, over the cases the phone answered', () => {
-    expect(firstTurns(mac, new Set(['dinner', 'lunch']))).toEqual({
-      failed: ['lunch'],
-      ok: 1,
-      total: 2,
-    });
-  });
-
-  it('names the phrases only one of the two got right', async () => {
-    const { report } = await scorePhoneReport(
+/** The phone's two answers, scored: a dinner and a lunch at the times given. */
+const scored = async (dinnerStart: string, lunchStart: string) =>
+  (
+    await scorePhoneReport(
       phone([
         {
           id: 'dinner',
           input: 'Dinner on Friday at 7pm',
           ms: 2500,
-          result: parsed('Dinner', '18:00', '19:00'),
+          result: parsed('Dinner', dinnerStart, '20:00'),
         },
         {
           id: 'lunch',
           input: 'Lunch on Friday at 1pm',
           ms: 2500,
-          result: parsed('Lunch', '13:00', '14:00'),
+          result: parsed('Lunch', lunchStart, '14:00'),
         },
       ]),
       CASES,
       BOOKS,
       'abc12345',
-    );
-    expect(comparePhone(report, mac)).toBe(
+    )
+  ).report;
+
+describe('comparePhone', () => {
+  it('counts first turns and names the phrases only one of the two got right', async () => {
+    const mac = macReport([
+      // The first turn passes; the case fails on its second, which is no part of this.
+      {
+        id: 'dinner',
+        ok: false,
+        tags: [],
+        turns: [turn('Dinner on Friday at 7pm', []), turn('make it 8', ['time'])],
+      },
+      { id: 'lunch', ok: false, tags: [], turns: [turn('Lunch on Friday at 1pm', ['title'])] },
+      { id: 'other', ok: true, tags: [], turns: [turn('Another case', [])] },
+    ]);
+    expect(comparePhone(await scored('18:00', '13:00'), mac)).toBe(
       [
-        '   first phrases: phone 1/2, openai:lfm3:1.7b-q4_K_M on the Mac 1/2 (d42f52f6)',
+        '   first phrases both answered: phone 1/2, openai:lfm3:1.7b-q4_K_M on the Mac 1/2 (d42f52f6)',
         '   right on the Mac only: dinner',
         '   right on the phone only: lunch',
+      ].join('\n'),
+    );
+  });
+
+  it('compares only what both answered, in the same words', async () => {
+    const mac = macReport([
+      // The Mac's recogniser heard other words than the phone was given.
+      { id: 'dinner', ok: true, tags: [], turns: [turn('Dinner on Friday at seven', [])] },
+      // No lunch: the Mac ran a selection of the cases.
+    ]);
+    expect(comparePhone(await scored('18:00', '12:00'), mac)).toBe(
+      [
+        '   first phrases both answered: phone 0/0, openai:lfm3:1.7b-q4_K_M on the Mac 0/0 (d42f52f6)',
+        "   not compared (the Mac's report lacks the case, or read other words): dinner, lunch",
       ].join('\n'),
     );
   });

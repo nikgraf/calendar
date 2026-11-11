@@ -23,10 +23,11 @@ const contextWith = (completion: Completion): OpenModelContext => ({
   model: { desc: 'test', nParams: 0, size: 0 },
   reasonNoGPU: '',
   release: async () => undefined,
+  stopCompletion: async () => undefined,
 });
 
 describe('openLanguageModel', () => {
-  it('asks as the bench did: the strict schema, thinking off, temperature 0, a capped answer', async () => {
+  it('sends the strict schema, thinking off, temperature 0 and a cap on the answer', async () => {
     const asked: Array<Record<string, unknown>> = [];
     const model = openLanguageModel(
       contextWith(async (params) => {
@@ -75,7 +76,9 @@ describe('openLanguageModel', () => {
     const answers = [
       {
         text: '{"title":"Dinner"}',
-        timings: { cache_n: 400, predicted_ms: 500, predicted_n: 20, prompt_ms: 100, prompt_n: 30 },
+        // 430 prompt tokens, 30 of them read: the other 400 were kept from the call before.
+        timings: { predicted_ms: 500, predicted_n: 20, prompt_ms: 100, prompt_n: 30 },
+        tokens_evaluated: 430,
       },
       { text: '{"title":"Din' },
       { content: '  ' },
@@ -92,9 +95,9 @@ describe('openLanguageModel', () => {
     expect(calls[0]).toEqual({
       answerMs: 500,
       answerTokens: 20,
-      cachedTokens: 400,
       promptMs: 100,
-      promptTokens: 30,
+      promptTokens: 430,
+      readTokens: 30,
     });
     expect(calls[1]?.error).toBe('The answer is not JSON (13 characters): {"title":"Din');
     expect(calls[2]).toMatchObject({

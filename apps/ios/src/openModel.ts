@@ -4,10 +4,12 @@ import { type LanguageModel, strictSchema, withoutNulls } from '@calendar/ai';
  * An open model run inside the app (llama.cpp through llama.rn) as the
  * app's LanguageModel. Not a model the app ships: it is here to measure
  * whether one could answer quick-add on an iPhone (Settings › Advanced ›
- * Model Spike, the development variant only). The request is the one the
- * model bench got its numbers with: the strict schema (every field
- * required, an optional one nullable, the nulls dropped on the way back),
- * thinking off, temperature 0.
+ * Model Spike, the development variant only). The request follows the
+ * model bench's runs of these models: the strict schema (every field
+ * required, an optional one nullable, the nulls dropped on the way back)
+ * and temperature 0, with thinking off (the bench switched it off at the
+ * server, `reasoning_effort: "none"`). The cap on the answer is this
+ * file's own; the bench had none.
  */
 
 /**
@@ -20,26 +22,41 @@ export const MAX_ANSWER_TOKENS = 512;
 /** Room for the app's longest prompt and its answer. */
 const CONTEXT_TOKENS = 4096;
 
-/** What llama.rn reports about one completion. */
+/**
+ * What llama.rn reports about one completion. Its `cache_n` is not here on
+ * purpose: it is every token in the context after the answer (prompt and
+ * answer), not what was reused of the prompt.
+ */
 export interface RuntimeTimings {
-  readonly cache_n?: number | undefined;
   readonly predicted_ms?: number | undefined;
   readonly predicted_n?: number | undefined;
   readonly prompt_ms?: number | undefined;
+  /** Prompt tokens read in this call; at least 1, the runtime's floor. */
   readonly prompt_n?: number | undefined;
+}
+
+/** One completion as llama.rn answers it. */
+export interface RuntimeCompletion {
+  readonly content?: string | undefined;
+  readonly text?: string | undefined;
+  readonly timings?: RuntimeTimings | undefined;
+  /** The whole prompt in tokens, read or reused. */
+  readonly tokens_evaluated?: number | undefined;
 }
 
 /** The part of a llama.rn context this file uses. */
 export interface OpenModelContext {
-  readonly completion: (params: Record<string, unknown>) => Promise<{
-    readonly content?: string | undefined;
-    readonly text?: string | undefined;
-    readonly timings?: RuntimeTimings | undefined;
-  }>;
+  readonly completion: (params: Record<string, unknown>) => Promise<RuntimeCompletion>;
   readonly gpu: boolean;
   readonly model: { readonly desc: string; readonly nParams: number; readonly size: number };
   readonly reasonNoGPU: string;
   readonly release: () => Promise<void>;
+  /**
+   * Ends the completion under way; its call then fails or comes back
+   * short. Typed as a promise by llama.rn, though on the simulator it
+   * answered with nothing at all.
+   */
+  readonly stopCompletion: () => Promise<void> | undefined;
 }
 
 /** The part of llama.rn this file uses. */
@@ -71,26 +88,36 @@ export const loadOpenModelRuntime = (): OpenModelRuntime | undefined => {
   }
 };
 
-/** One model call in numbers: how much of the prompt was read, how much was already cached, how fast. */
+/** One model call in numbers: how long the prompt was, how much of it had to be read, how fast. */
 export interface OpenModelCall {
   readonly answerMs: number;
   readonly answerTokens: number;
-  /** Prompt tokens the runtime did not have to read again: the prefix it kept from the call before. */
-  readonly cachedTokens: number;
   /** Why the call gave no answer: the pipeline turns it into "couldn't be read", which says nothing. */
   readonly error?: string | undefined;
+  /** The time spent reading `readTokens`. */
   readonly promptMs: number;
-  /** Prompt tokens read in this call (the rest was cached). */
+  /** The whole prompt in tokens. */
   readonly promptTokens: number;
+  /**
+   * Prompt tokens read in this call. The rest of the prompt was a prefix
+   * the runtime kept from the call before; a model whose state cannot be
+   * rolled back to a shared prefix (a hybrid one, LFM3) reads all of it
+   * every time.
+   */
+  readonly readTokens: number;
 }
 
-export const callOf = (timings: RuntimeTimings | undefined): OpenModelCall => ({
-  answerMs: timings?.predicted_ms ?? 0,
-  answerTokens: timings?.predicted_n ?? 0,
-  cachedTokens: timings?.cache_n ?? 0,
-  promptMs: timings?.prompt_ms ?? 0,
-  promptTokens: timings?.prompt_n ?? 0,
-});
+export const callOf = (result: RuntimeCompletion | undefined): OpenModelCall => {
+  const readTokens = result?.timings?.prompt_n ?? 0;
+  return {
+    answerMs: result?.timings?.predicted_ms ?? 0,
+    answerTokens: result?.timings?.predicted_n ?? 0,
+    promptMs: result?.timings?.prompt_ms ?? 0,
+    // A runtime that does not say how long the prompt was read at least what it read.
+    promptTokens: Math.max(result?.tokens_evaluated ?? 0, readTokens),
+    readTokens,
+  };
+};
 
 /** The model file loaded with every layer on the GPU where the device has one (the simulator has none). */
 export const loadOpenModel = (
@@ -147,7 +174,7 @@ export const openLanguageModel = (
 ): LanguageModel => {
   let last: Promise<unknown> = Promise.resolve();
   const generate = async (jsonSchema: unknown, prompt: string): Promise<unknown> => {
-    let timings: RuntimeTimings | undefined;
+    let answered: RuntimeCompletion | undefined;
     try {
       const result = await context.completion({
         enable_thinking: false,
@@ -159,17 +186,17 @@ export const openLanguageModel = (
         },
         temperature: 0,
       });
-      ({ timings } = result);
+      answered = result;
       const text = answerText(result);
       if (!text) {
         throw new Error('The model returned an empty response.');
       }
       const answer = withoutNulls(parseAnswer(text));
-      onCall?.(callOf(timings));
+      onCall?.(callOf(result));
       return answer;
     } catch (error) {
       onCall?.({
-        ...callOf(timings),
+        ...callOf(answered),
         error: error instanceof Error ? error.message : String(error),
       });
       throw error;

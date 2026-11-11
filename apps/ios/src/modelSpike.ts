@@ -68,10 +68,13 @@ export interface SpikeRow {
  * Each case through `parseQuickAdd`, one after the other, as the thread
  * would send a first phrase. `modelFor` gives the model for one phrase
  * and takes where its calls are counted. A stop is honoured between
- * phrases: the rows so far are the run.
+ * phrases: the rows so far are the run. A phrase that was cut short from
+ * outside (`discarded`) leaves no row: its time and its answer are the
+ * interruption's, not the model's.
  */
 export const runSpike = async ({
   cases,
+  discarded,
   modelFor,
   now,
   onRow,
@@ -79,6 +82,7 @@ export const runSpike = async ({
   stopped,
 }: {
   readonly cases: ReadonlyArray<SpikeCase>;
+  readonly discarded?: () => boolean;
   readonly modelFor: (onCall: (call: OpenModelCall) => void) => LanguageModel;
   readonly now: () => number;
   readonly onRow?: (row: SpikeRow, rows: ReadonlyArray<SpikeRow>) => void;
@@ -102,6 +106,9 @@ export const runSpike = async ({
     } catch (error) {
       result = { kind: 'failed', message: error instanceof Error ? error.message : String(error) };
     }
+    if (discarded?.() === true) {
+      break;
+    }
     const row = { calls, id: spikeCase.id, input: spikeCase.text, ms: now() - started, result };
     rows.push(row);
     onRow?.(row, rows);
@@ -124,7 +131,7 @@ const perSecond = (tokens: number, ms: number): number => (ms > 0 ? (tokens * 10
 export interface SpikeSummary {
   /** Tokens written per second, over every call. */
   readonly answerTokensPerSecond: number;
-  /** The share of prompt tokens the runtime had kept from the call before. */
+  /** The share of all prompt tokens the runtime did not have to read: a prefix kept from the call before. */
   readonly cachedShare: number;
   /** Model calls that gave no answer, with the first one's reason. */
   readonly failedCalls: number;
@@ -142,15 +149,15 @@ export const summarize = (rows: ReadonlyArray<SpikeRow>): SpikeSummary => {
   const calls = rows.flatMap((row) => row.calls);
   const sum = (pick: (call: OpenModelCall) => number): number =>
     calls.reduce((total, call) => total + pick(call), 0);
-  const read = sum((call) => call.promptTokens);
-  const cached = sum((call) => call.cachedTokens);
+  const prompt = sum((call) => call.promptTokens);
+  const read = sum((call) => call.readTokens);
   const failed = calls.filter((call) => call.error !== undefined);
   return {
     answerTokensPerSecond: perSecond(
       sum((call) => call.answerTokens),
       sum((call) => call.answerMs),
     ),
-    cachedShare: read + cached > 0 ? cached / (read + cached) : 0,
+    cachedShare: prompt > 0 ? Math.max(0, prompt - read) / prompt : 0,
     failedCalls: failed.length,
     firstError: failed[0]?.error,
     medianMs: median(rows.map((row) => row.ms)),
@@ -198,7 +205,7 @@ export interface SpikeMemory {
   readonly availableLoaded: number;
   readonly footprintBefore: number;
   readonly footprintLoaded: number;
-  /** The highest footprint seen while the phrases ran. */
+  /** The highest footprint seen while the phrases ran, read twice a second and after each phrase. */
   readonly footprintPeak: number;
   readonly physical: number;
 }
@@ -206,19 +213,24 @@ export interface SpikeMemory {
 /**
  * One run, as the file the page shares. `rows` hold the pipeline's results
  * untouched, so the Mac can put them through the bench's checks; `today`
- * and `timeZone` are what the phrases were read against.
+ * and `timeZone` are what the phrases were read against. It names no
+ * commit: the page cannot tell which JavaScript it runs.
  */
 export interface SpikeReport {
+  /** How many phrases the run was asked for; `rows` has fewer when it was stopped. */
+  readonly asked: number;
   readonly gpu: boolean;
   readonly loadMs: number;
   readonly memory: SpikeMemory | undefined;
   readonly model: SpikeModel;
   /** The model as the runtime describes it. */
   readonly modelDescription: string;
-  /** `ios 27.1`, and whether a simulator ran it: its timings are the Mac's CPU, not a phone's. */
+  /** `ios 27.1`. */
   readonly platform: string;
   readonly reasonNoGpu: string;
   readonly rows: ReadonlyArray<SpikeRow>;
+  /** A simulator ran it: its timings are the Mac's, through the simulator, and say nothing of a phone. */
+  readonly simulator: boolean;
   readonly summary: SpikeSummary;
   readonly timeZone: string;
   readonly today: string;

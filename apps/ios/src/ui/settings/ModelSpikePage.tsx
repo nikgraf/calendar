@@ -27,7 +27,11 @@ const loadNative = () => {
   }
 };
 
-/** The model files under the app's documents, and the report through the share sheet. */
+/**
+ * The model files under the app's caches, and the report through the
+ * share sheet. Caches, not documents: a gigabyte of model would go into
+ * every device backup, and a file iOS clears is fetched again.
+ */
 const deviceFiles = (): SpikeFiles | undefined => {
   const native = loadNative();
   if (!native) {
@@ -35,7 +39,7 @@ const deviceFiles = (): SpikeFiles | undefined => {
   }
   const { Directory, File, Paths } = native.files;
   const fileOf = (name: string) => {
-    const folder = new Directory(Paths.document, 'model-spike');
+    const folder = new Directory(Paths.cache, 'model-spike');
     if (!folder.exists) {
       folder.create();
     }
@@ -84,7 +88,16 @@ const store = createSpikeStore({
   now: Date.now,
   platform: `${Platform.OS} ${String(Platform.Version)}`,
   runtime: loadOpenModelRuntime(),
+  simulator: probe?.isSimulator() ?? false,
   today: () => Temporal.Now.plainDateISO(SPIKE_TIME_ZONE).toString(),
+});
+
+// For as long as the app lives, like the store and a run in it: a listener
+// kept by the page would be gone once the page is left, and the run not.
+AppState.addEventListener('change', (state) => {
+  if (state !== 'active') {
+    store.interrupt();
+  }
 });
 
 const SHORT_RUN = 20;
@@ -111,21 +124,13 @@ export function ModelSpikePage() {
     store.refresh();
   }, []);
 
-  // A run must not go on in the background: iOS ends an app that asks the GPU for work there.
-  useEffect(() => {
-    const subscription = AppState.addEventListener('change', (state) => {
-      if (state !== 'active') {
-        store.stopRun();
-      }
-    });
-    return () => subscription.remove();
-  }, []);
-
-  const busy = step.kind === 'downloading' || step.kind === 'loading' || step.kind === 'running';
+  const busy = step.kind !== 'idle' && step.kind !== 'loaded';
   const loaded = step.kind === 'loaded' || step.kind === 'running' ? step.loaded : undefined;
   const rows =
     step.kind === 'running' ? step.rows : step.kind === 'loaded' ? (step.report?.rows ?? []) : [];
   const summary = summarize(rows);
+  const asked =
+    step.kind === 'running' ? step.total : step.kind === 'loaded' ? (step.report?.asked ?? 0) : 0;
   const hasRuntime = loadOpenModelRuntime() !== undefined;
 
   return (
@@ -188,7 +193,7 @@ export function ModelSpikePage() {
               <ActionRow onPress={store.stopDownload} title="Stop Download" />
             ) : size === undefined ? (
               <ActionRow
-                disabled={busy}
+                disabled={step.kind !== 'idle' || !hasRuntime}
                 onPress={() => void store.fetchModel(model)}
                 title="Download"
               />
@@ -198,7 +203,13 @@ export function ModelSpikePage() {
                   disabled={busy || !hasRuntime || loaded !== undefined}
                   onPress={() => void store.load(model)}
                   testID={`model-spike-load-${model.file}`}
-                  title={loading ? `Loading… ${String(Math.round(step.percent))}%` : 'Load'}
+                  title={
+                    loading
+                      ? `Loading… ${String(Math.round(step.percent))}%`
+                      : step.kind === 'unloading' && step.model.file === model.file
+                        ? 'Unloading…'
+                        : 'Load'
+                  }
                 />
                 <ActionRow
                   disabled={busy || loaded?.model.file === model.file}
@@ -214,7 +225,7 @@ export function ModelSpikePage() {
 
       {loaded ? (
         <Section
-          footer="Keep the app open during a run: it stops when the app leaves the screen."
+          footer="Keep the app open during a run: when the app leaves the screen the run stops and the model is unloaded."
           header={`Loaded: ${loaded.model.name}`}
         >
           <Row title="Model" value={loaded.context.model.desc} />
@@ -268,7 +279,7 @@ export function ModelSpikePage() {
           <Row
             testID="model-spike-turns"
             title="Phrases"
-            value={`${String(summary.turns)} · ${String(summary.parsed)} drafts`}
+            value={`${String(summary.turns)}${asked > summary.turns ? ` of ${String(asked)}` : ''} · ${String(summary.parsed)} drafts`}
           />
           <Row
             testID="model-spike-median"
@@ -280,7 +291,7 @@ export function ModelSpikePage() {
             value={`${summary.promptTokensPerSecond.toFixed(0)} read · ${summary.answerTokensPerSecond.toFixed(0)} written`}
           />
           <Row
-            title="Prompt Already Cached"
+            title="Prompt Not Read Again"
             value={`${String(Math.round(summary.cachedShare * 100))}%`}
           />
           {summary.failedCalls > 0 ? (

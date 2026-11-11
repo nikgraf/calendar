@@ -13,6 +13,8 @@ export interface ProcessMemory {
 }
 
 interface SolunivoProcessMemoryNative {
+  /** Whether a simulator runs the app: what it measures is the Mac's. */
+  readonly isSimulator: () => boolean;
   /**
    * Keeps the screen from locking while a measurement runs, and lets it
    * lock again: a locked iPhone suspends the app, and the time it was

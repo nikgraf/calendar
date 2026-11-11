@@ -22,6 +22,9 @@ import {
  * what `getState` says.
  */
 
+/** How often the footprint is read while phrases run: a peak inside a completion is seen, not only after it. */
+const MEMORY_SAMPLE_MS = 500;
+
 /** The process's memory in bytes (`solunivo-process-memory`). */
 export interface DeviceMemory {
   readonly available: number;
@@ -58,6 +61,8 @@ export interface SpikeDeps {
   readonly platform: string;
   /** Undefined on a binary built without llama.rn. */
   readonly runtime: OpenModelRuntime | undefined;
+  /** A simulator runs the app: its timings are not a phone's. */
+  readonly simulator: boolean;
   /** Today in `SPIKE_TIME_ZONE`, `YYYY-MM-DD`. */
   readonly today: () => string;
 }
@@ -86,7 +91,8 @@ export type SpikeStep =
       readonly loaded: LoadedModel;
       readonly rows: ReadonlyArray<SpikeRow>;
       readonly total: number;
-    };
+    }
+  | { readonly kind: 'unloading'; readonly model: SpikeModel };
 
 export interface SpikeState {
   readonly memory: DeviceMemory | undefined;
@@ -100,9 +106,21 @@ export interface SpikeState {
 const messageOf = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
+/** Takes a context out of memory; what went wrong, if anything. */
+const release = async (loaded: LoadedModel): Promise<string | undefined> => {
+  try {
+    await loaded.context.release();
+    return undefined;
+  } catch (error) {
+    return `Unloading failed: ${messageOf(error)}`;
+  }
+};
+
 export const createSpikeStore = (deps: SpikeDeps) => {
   const listeners = new Set<() => void>();
   let stopRun = false;
+  // The app left the screen mid-run: the phrase under way is cut short and the model unloaded.
+  let interrupted = false;
   let download: AbortController | undefined;
 
   const storedNow = (): Readonly<Record<string, number>> =>
@@ -127,16 +145,15 @@ export const createSpikeStore = (deps: SpikeDeps) => {
     }
   };
 
-  const isBusy = () =>
-    state.step.kind === 'downloading' ||
-    state.step.kind === 'loading' ||
-    state.step.kind === 'running';
-
   return {
-    /** Fetches a model file into the app's documents. */
+    /**
+     * Fetches a model file into the app's caches. Only with nothing loaded
+     * and nothing under way: the step is one value, and a download that
+     * took it over would lose a loaded model without releasing it.
+     */
     fetchModel: async (model: SpikeModel): Promise<void> => {
       const { files } = deps;
-      if (!files || isBusy()) {
+      if (!files || !deps.runtime || state.step.kind !== 'idle') {
         return;
       }
       download = new AbortController();
@@ -192,8 +209,33 @@ export const createSpikeStore = (deps: SpikeDeps) => {
       set({ memory: deps.memory(), stored: storedNow() });
     },
 
+    /**
+     * The app left the screen. iOS ends an app that asks the GPU for work
+     * in the background, and a refused command leaves the context unable
+     * to compute again, so a run does not go on: the phrase under way is
+     * cut short and left out, and the model is unloaded once the run has
+     * wound down. A model that is loaded and idle stays.
+     */
+    interrupt: (): void => {
+      if (state.step.kind !== 'running') {
+        return;
+      }
+      interrupted = true;
+      stopRun = true;
+      const { context } = state.step.loaded;
+      // Whatever the stop answers or throws, the run winds down: a phrase that is not cut short runs out.
+      const stop = async () => {
+        await context.stopCompletion();
+      };
+      void stop().catch(() => undefined);
+    },
+
     removeModel: (model: SpikeModel): void => {
-      if (isBusy()) {
+      const { step } = state;
+      const inUse =
+        (step.kind === 'loaded' || step.kind === 'running') &&
+        step.loaded.model.file === model.file;
+      if (inUse || (step.kind !== 'idle' && step.kind !== 'loaded')) {
         return;
       }
       deps.files?.remove(model);
@@ -209,22 +251,37 @@ export const createSpikeStore = (deps: SpikeDeps) => {
       const cases = deps.cases.slice(0, count);
       const today = deps.today();
       stopRun = false;
+      interrupted = false;
       set({ notice: undefined, step: { kind: 'running', loaded, rows: [], total: cases.length } });
       deps.keepAwake(true);
       let footprintPeak = loaded.memory?.footprint ?? 0;
-      const rows = await runSpike({
-        cases,
-        modelFor: (onCall) => openLanguageModel(loaded.context, onCall),
-        now: deps.now,
-        onRow: (_row, all) => {
-          footprintPeak = Math.max(footprintPeak, deps.memory()?.footprint ?? 0);
-          set({ step: { kind: 'running', loaded, rows: [...all], total: cases.length } });
-        },
-        referenceDate: today,
-        stopped: () => stopRun,
-      });
-      deps.keepAwake(false);
+      const sample = () => {
+        footprintPeak = Math.max(footprintPeak, deps.memory()?.footprint ?? 0);
+      };
+      const sampling = setInterval(sample, MEMORY_SAMPLE_MS);
+      let rows: ReadonlyArray<SpikeRow> = [];
+      let failure: string | undefined;
+      try {
+        rows = await runSpike({
+          cases,
+          discarded: () => interrupted,
+          modelFor: (onCall) => openLanguageModel(loaded.context, onCall),
+          now: deps.now,
+          onRow: (_row, all) => {
+            sample();
+            set({ step: { kind: 'running', loaded, rows: [...all], total: cases.length } });
+          },
+          referenceDate: today,
+          stopped: () => stopRun,
+        });
+      } catch (error) {
+        failure = `The run failed: ${messageOf(error)}`;
+      } finally {
+        clearInterval(sampling);
+        deps.keepAwake(false);
+      }
       const report: SpikeReport = {
+        asked: cases.length,
         gpu: loaded.context.gpu,
         loadMs: loaded.loadMs,
         memory: loaded.memory && {
@@ -239,12 +296,26 @@ export const createSpikeStore = (deps: SpikeDeps) => {
         platform: deps.platform,
         reasonNoGpu: loaded.context.reasonNoGPU,
         rows,
+        simulator: deps.simulator,
         summary: summarize(rows),
         timeZone: SPIKE_TIME_ZONE,
         today,
         when: new Date(deps.now()).toISOString(),
       };
-      set({ memory: deps.memory(), step: { kind: 'loaded', loaded, report } });
+      if (!interrupted) {
+        set({ memory: deps.memory(), notice: failure, step: { kind: 'loaded', loaded, report } });
+        return;
+      }
+      // Nothing may compute on this context again: out it goes. The rows before the cut are kept to read.
+      set({ step: { kind: 'unloading', model: loaded.model } });
+      const unloadFailure = await release(loaded);
+      set({
+        memory: deps.memory(),
+        notice:
+          unloadFailure ??
+          `The run stopped after ${String(rows.length)} of ${String(cases.length)} phrases because the app left the screen, and the model was unloaded. Load it again to run.`,
+        step: { kind: 'idle' },
+      });
     },
 
     /** The last run's report as a file, to the share sheet. */
@@ -280,17 +351,14 @@ export const createSpikeStore = (deps: SpikeDeps) => {
       };
     },
 
-    /** Takes the model out of memory. */
+    /** Takes the model out of memory. The step says so while it does: nothing runs on a context on its way out. */
     unload: async (): Promise<void> => {
       if (state.step.kind !== 'loaded') {
         return;
       }
-      let notice: string | undefined;
-      try {
-        await state.step.loaded.context.release();
-      } catch (error) {
-        notice = `Unloading failed: ${messageOf(error)}`;
-      }
+      const { loaded } = state.step;
+      set({ step: { kind: 'unloading', model: loaded.model } });
+      const notice = await release(loaded);
       set({ memory: deps.memory(), notice, step: { kind: 'idle' } });
     },
   };

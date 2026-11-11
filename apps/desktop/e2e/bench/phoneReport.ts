@@ -12,7 +12,8 @@ import { type BenchReport, type CaseReport, scoreOf } from './report.ts';
  * file makes each result a draft the way a bench run does and holds it to
  * the case's first expectation. The phone answers first phrases only, so
  * the number to hold it against is a Mac report's first turns
- * (`firstTurns`), not its cases.
+ * (`comparePhone`), not its cases. The scored report's `sha` is the
+ * commit that scored it; the phone's report names none.
  */
 
 /** What this file reads of the phone's report (`SpikeReport` on the iOS side). */
@@ -90,34 +91,31 @@ export const scorePhoneReport = async (
   };
 };
 
-/**
- * A Mac report's first turns, for the cases the phone answered: what the
- * same model did with the same phrases through the same pipeline.
- */
-export const firstTurns = (
-  report: BenchReport,
-  ids: ReadonlySet<string>,
-): { readonly failed: ReadonlyArray<string>; readonly ok: number; readonly total: number } => {
-  const firsts = report.cases.filter((benchCase) => ids.has(benchCase.id));
-  const failed = firsts
-    .filter((benchCase) => (benchCase.turns[0]?.failed.length ?? 1) > 0)
-    .map((benchCase) => benchCase.id);
-  return { failed, ok: firsts.length - failed.length, total: firsts.length };
-};
+const ids = (list: ReadonlyArray<CaseReport>): string =>
+  list.map((benchCase) => benchCase.id).join(', ');
 
-/** The phone beside the Mac: the counts, and the phrases only one of them got right. */
+/**
+ * The phone beside the Mac, over the first phrases both answered: the same
+ * case and the same words. A case the Mac's report lacks (a run of a
+ * selection), or read differently (a recording through the recogniser, a
+ * case changed since), is no comparison and is named instead.
+ */
 export const comparePhone = (phone: BenchReport, mac: BenchReport): string => {
-  const ids = new Set(phone.cases.map((benchCase) => benchCase.id));
-  const onMac = firstTurns(mac, ids);
-  const macFailed = new Set(onMac.failed);
-  const phoneFailed = new Set(
-    phone.cases.filter((benchCase) => !benchCase.ok).map((benchCase) => benchCase.id),
+  const onMac = new Map(mac.cases.map((benchCase) => [benchCase.id, benchCase.turns[0]]));
+  const both = phone.cases.filter(
+    (benchCase) => onMac.get(benchCase.id)?.input === benchCase.turns[0]?.input,
   );
-  const onlyPhone = [...ids].filter((id) => macFailed.has(id) && !phoneFailed.has(id));
-  const onlyMac = [...ids].filter((id) => phoneFailed.has(id) && !macFailed.has(id));
+  const apart = phone.cases.filter((benchCase) => !both.includes(benchCase));
+  const rightOnMac = (id: string): boolean => onMac.get(id)?.failed.length === 0;
+  const count = (ok: number): string => `${String(ok)}/${String(both.length)}`;
+  const onlyMac = both.filter((benchCase) => !benchCase.ok && rightOnMac(benchCase.id));
+  const onlyPhone = both.filter((benchCase) => benchCase.ok && !rightOnMac(benchCase.id));
   return [
-    `   first phrases: phone ${String(phone.score.cases.ok)}/${String(phone.score.cases.total)}, ${mac.provider} on the Mac ${String(onMac.ok)}/${String(onMac.total)} (${mac.sha})`,
-    ...(onlyMac.length === 0 ? [] : [`   right on the Mac only: ${onlyMac.join(', ')}`]),
-    ...(onlyPhone.length === 0 ? [] : [`   right on the phone only: ${onlyPhone.join(', ')}`]),
+    `   first phrases both answered: phone ${count(both.filter((benchCase) => benchCase.ok).length)}, ${mac.provider} on the Mac ${count(both.filter((benchCase) => rightOnMac(benchCase.id)).length)} (${mac.sha})`,
+    ...(onlyMac.length === 0 ? [] : [`   right on the Mac only: ${ids(onlyMac)}`]),
+    ...(onlyPhone.length === 0 ? [] : [`   right on the phone only: ${ids(onlyPhone)}`]),
+    ...(apart.length === 0
+      ? []
+      : [`   not compared (the Mac's report lacks the case, or read other words): ${ids(apart)}`]),
   ].join('\n');
 };

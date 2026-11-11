@@ -9,12 +9,13 @@ const CASES = [
   { id: 'lunch', lang: 'en' as const, text: 'Lunch on Friday at 1pm' },
 ];
 
+/** A call that read 100 of its 400 prompt tokens: the other 300 were kept from the call before. */
 const call = (over: Partial<OpenModelCall> = {}): OpenModelCall => ({
   answerMs: 500,
   answerTokens: 20,
-  cachedTokens: 300,
   promptMs: 100,
-  promptTokens: 100,
+  promptTokens: 400,
+  readTokens: 100,
   ...over,
 });
 
@@ -54,6 +55,30 @@ describe('runSpike', () => {
     });
     expect(rows[0]?.calls.length).toBeGreaterThan(0);
     expect(seen).toEqual([1, 2]);
+  });
+
+  it('leaves out the phrase that was under way when the run was cut short', async () => {
+    let cut = false;
+    let rowsSeen = 0;
+    const rows = await runSpike({
+      cases: CASES,
+      discarded: () => cut,
+      modelFor: (onCall) => ({
+        generateJson: async () => {
+          onCall(call());
+          // The second phrase is interrupted while the model answers.
+          cut = cut || rowsSeen === 1;
+          return { date: '2026-11-13', startTime: '19:00', title: 'Dinner with Teo' };
+        },
+        status: async () => 'ready',
+      }),
+      now: clock(),
+      onRow: () => {
+        rowsSeen += 1;
+      },
+      referenceDate: '2026-11-11',
+    });
+    expect(rows.map((row) => row.id)).toEqual(['dinner']);
   });
 
   it('stops between phrases, and a phrase the run could not ask is a failed row', async () => {
@@ -101,12 +126,13 @@ describe('summarize', () => {
     const summary = summarize([
       row(1000, [call()], 'parsed'),
       row(4000, [call(), call({ error: 'context is busy' })], 'rejected'),
-      row(2000, [call({ cachedTokens: 0, promptTokens: 400 })], 'parsed'),
+      // Nothing kept: the whole prompt was read again.
+      row(2000, [call({ readTokens: 400 })], 'parsed'),
     ]);
     expect(summary).toEqual({
       // 80 tokens in 2 s.
       answerTokensPerSecond: 40,
-      // 900 of 1,600 prompt tokens were there already.
+      // 700 of 1,600 prompt tokens were read; the other 900 were there already.
       cachedShare: 900 / 1600,
       failedCalls: 1,
       firstError: 'context is busy',
