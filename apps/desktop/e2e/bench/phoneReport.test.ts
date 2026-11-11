@@ -83,6 +83,25 @@ describe('scorePhoneReport', () => {
     });
   });
 
+  it('says when a simulator made the report: its times are the Mac’s, not a phone’s', async () => {
+    const rows: PhoneReport['rows'] = [
+      {
+        id: 'dinner',
+        input: 'Dinner on Friday at 7pm',
+        ms: 2500,
+        result: parsed('Dinner', '19:00', '20:00'),
+      },
+    ];
+    const providerOf = async (over: Partial<PhoneReport>) =>
+      (await scorePhoneReport({ ...phone(rows), ...over }, CASES, BOOKS, 'abc12345')).report
+        .provider;
+    expect(await providerOf({ gpu: true, simulator: true })).toBe('simulator:LFM3 1.7B');
+    expect(await providerOf({ gpu: true, simulator: false })).toBe('phone:LFM3 1.7B');
+    // A report from before the page said which it was is taken as a phone's.
+    expect(await providerOf({ gpu: true })).toBe('phone:LFM3 1.7B');
+    expect(await providerOf({ gpu: false, simulator: true })).toBe('simulator:LFM3 1.7B (no GPU)');
+  });
+
   it('fails a phrase the phone refused or could not ask, and leaves out a case that changed', async () => {
     const { left, report } = await scorePhoneReport(
       phone([

@@ -45,7 +45,7 @@ describe.skipIf(phonePath === undefined || phonePath === '')('phone report', () 
       gitSha(),
     );
     const lines = [
-      `\nPHONE REPORT — run ${phone.when}, today ${phone.today}\n`,
+      `\n${phone.simulator === true ? 'SIMULATOR REPORT (its times are the Mac’s, not a phone’s)' : 'PHONE REPORT'} — run ${phone.when}, today ${phone.today}\n`,
       formatReport(report),
     ];
     if (left.length > 0) {

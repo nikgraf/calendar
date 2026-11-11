@@ -26,6 +26,8 @@ export interface PhoneReport {
     readonly ms: number;
     readonly result: QuickAddResult | { readonly kind: 'failed'; readonly message: string };
   }>;
+  /** A simulator made the report: every time in it is the Mac's, through the simulator. */
+  readonly simulator?: boolean | undefined;
   readonly timeZone: string;
   readonly today: string;
   readonly when: string;
@@ -81,7 +83,8 @@ export const scorePhoneReport = async (
     left,
     report: {
       cases: scored,
-      provider: `phone:${phone.model.name}${phone.gpu === false ? ' (no GPU)' : ''}`,
+      // The label says where the times are from: a simulator's must never read as a phone's.
+      provider: `${phone.simulator === true ? 'simulator' : 'phone'}:${phone.model.name}${phone.gpu === false ? ' (no GPU)' : ''}`,
       score: scoreOf(scored),
       sha,
       timeZone: phone.timeZone,
