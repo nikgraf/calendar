@@ -1273,6 +1273,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   by side — the evidence a Gemma download on iOS would need. Open: a
   per-model context from `/api/show`, image input for a served model,
   the `ModelInfo` capability record beyond the context.
+- **A page that measures an open model on the iPhone** (2026-11-11, #307)
+  — the development variant can load a GGUF model into the app (llama.rn,
+  compiled from the sources its npm package ships, linked into that variant
+  alone) and run the bench's first phrases through quick-add: Settings ›
+  Advanced › Model Spike shows load time, memory, seconds per phrase and
+  tokens per second, and its report is scored on the Mac
+  (`phoneReport.ts`). On the simulator LFM3 scores 62 of 70 first phrases
+  (61 on the Mac) and reads its whole prompt on every call. Rejected: the
+  package's prebuilt binary, a memory entitlement, scoring on the phone.
+  Open: the numbers from a device; `todo.md`, "Gemma 4 on iOS".
 - **The draft thread** (2026-10-12, #183) — a new item is
   a thread of drafts, not a one-shot prefill: the first phrase makes the
   draft(s), every later phrase in the same field changes them, Undo takes

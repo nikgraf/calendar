@@ -25,6 +25,13 @@ import {
 /** How often the footprint is read while phrases run: a peak inside a completion is seen, not only after it. */
 const MEMORY_SAMPLE_MS = 500;
 
+/**
+ * How often a run that is being cut short is told to stop again. One stop
+ * is not enough: llama.rn clears it when the next completion begins, and
+ * a completion can be about to begin when the stop arrives.
+ */
+const STOP_AGAIN_MS = 50;
+
 /** The process's memory in bytes (`solunivo-process-memory`). */
 export interface DeviceMemory {
   readonly available: number;
@@ -81,11 +88,7 @@ export type SpikeStep =
   | { readonly kind: 'idle' }
   | { readonly kind: 'downloading'; readonly model: SpikeModel; readonly received: number }
   | { readonly kind: 'loading'; readonly model: SpikeModel; readonly percent: number }
-  | {
-      readonly kind: 'loaded';
-      readonly loaded: LoadedModel;
-      readonly report?: SpikeReport | undefined;
-    }
+  | { readonly kind: 'loaded'; readonly loaded: LoadedModel }
   | {
       readonly kind: 'running';
       readonly loaded: LoadedModel;
@@ -98,6 +101,12 @@ export interface SpikeState {
   readonly memory: DeviceMemory | undefined;
   /** Why the last action did not do what was asked. */
   readonly notice: string | undefined;
+  /**
+   * The last run that ended, until the next one starts. Kept apart from
+   * the model: a run that was cut short unloads it, and what was measured
+   * before the cut is still there to read and to share.
+   */
+  readonly report: SpikeReport | undefined;
   readonly step: SpikeStep;
   /** The size of each model file that is here, by file name. */
   readonly stored: Readonly<Record<string, number>>;
@@ -107,9 +116,9 @@ const messageOf = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
 /** Takes a context out of memory; what went wrong, if anything. */
-const release = async (loaded: LoadedModel): Promise<string | undefined> => {
+const release = async (context: OpenModelContext): Promise<string | undefined> => {
   try {
-    await loaded.context.release();
+    await context.release();
     return undefined;
   } catch (error) {
     return `Unloading failed: ${messageOf(error)}`;
@@ -121,6 +130,9 @@ export const createSpikeStore = (deps: SpikeDeps) => {
   let stopRun = false;
   // The app left the screen mid-run: the phrase under way is cut short and the model unloaded.
   let interrupted = false;
+  let stopping: ReturnType<typeof setInterval> | undefined;
+  // The app left the screen while a model was loading: it is unloaded as soon as it is there.
+  let leftWhileLoading = false;
   let download: AbortController | undefined;
 
   const storedNow = (): Readonly<Record<string, number>> =>
@@ -134,6 +146,7 @@ export const createSpikeStore = (deps: SpikeDeps) => {
   let state: SpikeState = {
     memory: undefined,
     notice: undefined,
+    report: undefined,
     step: { kind: 'idle' },
     stored: {},
   };
@@ -183,6 +196,7 @@ export const createSpikeStore = (deps: SpikeDeps) => {
       if (!files || !runtime || state.step.kind !== 'idle') {
         return;
       }
+      leftWhileLoading = false;
       set({ notice: undefined, step: { kind: 'loading', model, percent: 0 } });
       const footprintBefore = deps.memory()?.footprint ?? 0;
       const started = deps.now();
@@ -191,6 +205,20 @@ export const createSpikeStore = (deps: SpikeDeps) => {
           onProgress: (percent) => set({ step: { kind: 'loading', model, percent } }),
           path: files.pathOf(model),
         });
+        if (leftWhileLoading) {
+          // A load computes on the GPU too (its warm-up). Whether iOS refused that cannot be told
+          // from here, and a refused command leaves the context unable to compute: it is not kept.
+          set({ step: { kind: 'unloading', model } });
+          const failure = await release(context);
+          set({
+            memory: deps.memory(),
+            notice:
+              failure ??
+              'The app left the screen while the model was loading, so it was unloaded again. Load it once more and stay on the page.',
+            step: { kind: 'idle' },
+          });
+          return;
+        }
         const memory = deps.memory();
         set({
           memory,
@@ -214,10 +242,16 @@ export const createSpikeStore = (deps: SpikeDeps) => {
      * in the background, and a refused command leaves the context unable
      * to compute again, so a run does not go on: the phrase under way is
      * cut short and left out, and the model is unloaded once the run has
-     * wound down. A model that is loaded and idle stays.
+     * wound down. A model that is still loading is unloaded once it is
+     * there. A model that is loaded and idle stays. iOS tells of leaving
+     * twice (inactive, then background): the second time changes nothing.
      */
     interrupt: (): void => {
-      if (state.step.kind !== 'running') {
+      if (state.step.kind === 'loading') {
+        leftWhileLoading = true;
+        return;
+      }
+      if (state.step.kind !== 'running' || interrupted) {
         return;
       }
       interrupted = true;
@@ -227,7 +261,11 @@ export const createSpikeStore = (deps: SpikeDeps) => {
       const stop = async () => {
         await context.stopCompletion();
       };
-      void stop().catch(() => undefined);
+      const stopNow = () => {
+        void stop().catch(() => undefined);
+      };
+      stopNow();
+      stopping = setInterval(stopNow, STOP_AGAIN_MS);
     },
 
     removeModel: (model: SpikeModel): void => {
@@ -252,7 +290,11 @@ export const createSpikeStore = (deps: SpikeDeps) => {
       const today = deps.today();
       stopRun = false;
       interrupted = false;
-      set({ notice: undefined, step: { kind: 'running', loaded, rows: [], total: cases.length } });
+      set({
+        notice: undefined,
+        report: undefined,
+        step: { kind: 'running', loaded, rows: [], total: cases.length },
+      });
       deps.keepAwake(true);
       let footprintPeak = loaded.memory?.footprint ?? 0;
       const sample = () => {
@@ -265,7 +307,7 @@ export const createSpikeStore = (deps: SpikeDeps) => {
         rows = await runSpike({
           cases,
           discarded: () => interrupted,
-          modelFor: (onCall) => openLanguageModel(loaded.context, onCall),
+          modelFor: (onCall) => openLanguageModel(loaded.context, onCall, () => interrupted),
           now: deps.now,
           onRow: (_row, all) => {
             sample();
@@ -278,6 +320,8 @@ export const createSpikeStore = (deps: SpikeDeps) => {
         failure = `The run failed: ${messageOf(error)}`;
       } finally {
         clearInterval(sampling);
+        clearInterval(stopping);
+        stopping = undefined;
         deps.keepAwake(false);
       }
       const report: SpikeReport = {
@@ -303,12 +347,12 @@ export const createSpikeStore = (deps: SpikeDeps) => {
         when: new Date(deps.now()).toISOString(),
       };
       if (!interrupted) {
-        set({ memory: deps.memory(), notice: failure, step: { kind: 'loaded', loaded, report } });
+        set({ memory: deps.memory(), notice: failure, report, step: { kind: 'loaded', loaded } });
         return;
       }
-      // Nothing may compute on this context again: out it goes. The rows before the cut are kept to read.
-      set({ step: { kind: 'unloading', model: loaded.model } });
-      const unloadFailure = await release(loaded);
+      // Nothing may compute on this context again: out it goes. The report of the phrases before the cut stays.
+      set({ report, step: { kind: 'unloading', model: loaded.model } });
+      const unloadFailure = await release(loaded.context);
       set({
         memory: deps.memory(),
         notice:
@@ -320,10 +364,10 @@ export const createSpikeStore = (deps: SpikeDeps) => {
 
     /** The last run's report as a file, to the share sheet. */
     share: async (): Promise<void> => {
-      if (state.step.kind !== 'loaded' || !state.step.report || !deps.files) {
+      const { report } = state;
+      if (!report || !deps.files) {
         return;
       }
-      const { report } = state.step;
       const stamp = report.when.slice(0, 19).replaceAll(/[-:]/gu, '');
       try {
         await deps.files.share(
@@ -358,7 +402,7 @@ export const createSpikeStore = (deps: SpikeDeps) => {
       }
       const { loaded } = state.step;
       set({ step: { kind: 'unloading', model: loaded.model } });
-      const notice = await release(loaded);
+      const notice = await release(loaded.context);
       set({ memory: deps.memory(), notice, step: { kind: 'idle' } });
     },
   };

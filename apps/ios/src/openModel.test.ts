@@ -106,6 +106,45 @@ describe('openLanguageModel', () => {
     });
   });
 
+  it('starts no call once it is cancelled, the queued ones included', async () => {
+    const started: Array<string> = [];
+    const calls: Array<OpenModelCall> = [];
+    let cancelled = false;
+    let release: () => void = noop;
+    const first = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const model = openLanguageModel(
+      contextWith(async (params) => {
+        const [{ content }] = params['messages'] as [{ content: string }];
+        started.push(content);
+        await first;
+        return { text: '{"title":"x"}' };
+      }),
+      (call) => calls.push(call),
+      () => cancelled,
+    );
+    // As the pipeline asks: who is invited, and beside it the extraction.
+    const people = model.generateJson({ jsonSchema: SCHEMA, prompt: 'people' });
+    const extraction = model.generateJson({ jsonSchema: SCHEMA, prompt: 'extraction' });
+    await Promise.resolve();
+    // The app leaves the screen while the first is answered.
+    cancelled = true;
+    release();
+    await people;
+    await expect(extraction).rejects.toThrow('The run was cut short.');
+    await expect(model.generateJson({ jsonSchema: SCHEMA, prompt: 'later' })).rejects.toThrow(
+      'The run was cut short.',
+    );
+    // The runtime was asked once: nothing new goes to the GPU after the cut.
+    expect(started).toEqual(['people']);
+    expect(calls.map((call) => call.error)).toEqual([
+      undefined,
+      'The run was cut short.',
+      'The run was cut short.',
+    ]);
+  });
+
   it('answers one call at a time, though the pipeline asks side by side', async () => {
     const order: Array<string> = [];
     let release: () => void = noop;

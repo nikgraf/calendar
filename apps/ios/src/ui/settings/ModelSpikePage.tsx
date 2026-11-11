@@ -4,7 +4,7 @@ import { AppState, Platform, StyleSheet, Text, View } from 'react-native';
 import { loadProcessMemoryModule } from '../../../modules/solunivo-process-memory/index.ts';
 import { describeAnswer, SPIKE_MODELS, SPIKE_TIME_ZONE, summarize } from '../../modelSpike.ts';
 import { SPIKE_CASES } from '../../modelSpikeCases.ts';
-import { createSpikeStore, type SpikeFiles } from '../../modelSpikeStore.ts';
+import { createSpikeStore, type SpikeFiles, type SpikeStore } from '../../modelSpikeStore.ts';
 import { loadOpenModelRuntime } from '../../openModel.ts';
 import { ActionRow, Footer, Row, Section, SettingsPage } from '../GroupedList.tsx';
 import { type ThemeColors, useStyles } from '../theme.ts';
@@ -78,27 +78,38 @@ const deviceFiles = (): SpikeFiles | undefined => {
   };
 };
 
-const probe = loadProcessMemoryModule();
+/**
+ * The store, made once for as long as the JavaScript lives, with the
+ * listener that tells it the app left the screen. Both outlive the page:
+ * a run goes on when the page is left. And both outlive this module: with
+ * Metro attached, a Fast Refresh evaluates it again, and a fresh store
+ * would know nothing of the gigabytes the old one loaded, so the next
+ * Load would hold two models.
+ */
+const makeStore = (): SpikeStore => {
+  const probe = loadProcessMemoryModule();
+  const made = createSpikeStore({
+    cases: SPIKE_CASES,
+    files: deviceFiles(),
+    keepAwake: (on) => probe?.keepAwake(on),
+    memory: () => probe?.read(),
+    now: Date.now,
+    platform: `${Platform.OS} ${String(Platform.Version)}`,
+    runtime: loadOpenModelRuntime(),
+    simulator: probe?.isSimulator() ?? false,
+    today: () => Temporal.Now.plainDateISO(SPIKE_TIME_ZONE).toString(),
+  });
+  AppState.addEventListener('change', (state) => {
+    if (state !== 'active') {
+      made.interrupt();
+    }
+  });
+  return made;
+};
 
-const store = createSpikeStore({
-  cases: SPIKE_CASES,
-  files: deviceFiles(),
-  keepAwake: (on) => probe?.keepAwake(on),
-  memory: () => probe?.read(),
-  now: Date.now,
-  platform: `${Platform.OS} ${String(Platform.Version)}`,
-  runtime: loadOpenModelRuntime(),
-  simulator: probe?.isSimulator() ?? false,
-  today: () => Temporal.Now.plainDateISO(SPIKE_TIME_ZONE).toString(),
-});
-
-// For as long as the app lives, like the store and a run in it: a listener
-// kept by the page would be gone once the page is left, and the run not.
-AppState.addEventListener('change', (state) => {
-  if (state !== 'active') {
-    store.interrupt();
-  }
-});
+const kept = globalThis as typeof globalThis & { solunivoModelSpike?: SpikeStore };
+kept.solunivoModelSpike ??= makeStore();
+const store = kept.solunivoModelSpike;
 
 const SHORT_RUN = 20;
 
@@ -117,7 +128,10 @@ const seconds = (ms: number): string => `${(ms / 1000).toFixed(1)} s`;
  */
 export function ModelSpikePage() {
   const styles = useStyles(makeStyles);
-  const { memory, notice, step, stored } = useSyncExternalStore(store.subscribe, store.getState);
+  const { memory, notice, report, step, stored } = useSyncExternalStore(
+    store.subscribe,
+    store.getState,
+  );
 
   // What is here before any button: the stored files, the memory now.
   useEffect(() => {
@@ -126,11 +140,11 @@ export function ModelSpikePage() {
 
   const busy = step.kind !== 'idle' && step.kind !== 'loaded';
   const loaded = step.kind === 'loaded' || step.kind === 'running' ? step.loaded : undefined;
-  const rows =
-    step.kind === 'running' ? step.rows : step.kind === 'loaded' ? (step.report?.rows ?? []) : [];
+  const rows = step.kind === 'running' ? step.rows : (report?.rows ?? []);
   const summary = summarize(rows);
-  const asked =
-    step.kind === 'running' ? step.total : step.kind === 'loaded' ? (step.report?.asked ?? 0) : 0;
+  const asked = step.kind === 'running' ? step.total : (report?.asked ?? 0);
+  // Whose phrases these are: the run under way, or the last one that ended (its model may be unloaded since).
+  const measured = step.kind === 'running' ? step.loaded.model.name : report?.model.name;
   const hasRuntime = loadOpenModelRuntime() !== undefined;
 
   return (
@@ -273,7 +287,7 @@ export function ModelSpikePage() {
               </Footer>
             )
           }
-          header="Result"
+          header={measured === undefined ? 'Result' : `Result: ${measured}`}
           testID="model-spike-result"
         >
           <Row
@@ -297,7 +311,7 @@ export function ModelSpikePage() {
           {summary.failedCalls > 0 ? (
             <Row title="Calls Without an Answer" value={String(summary.failedCalls)} />
           ) : null}
-          {step.kind === 'loaded' && step.report ? (
+          {step.kind !== 'running' && report ? (
             <ActionRow
               onPress={() => void store.share()}
               testID="model-spike-share"

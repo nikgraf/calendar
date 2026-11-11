@@ -166,16 +166,23 @@ const parseAnswer = (text: string): unknown => {
  * or why it failed: a quick-add turn can ask the model more than once.
  * One context answers one call at a time, and the pipeline asks its
  * questions side by side (who is invited, beside the extraction), so the
- * calls wait for each other here.
+ * calls wait for each other here. Once `cancelled` says so no call
+ * reaches the runtime any more, the ones already waiting included: after
+ * a run is cut short because the app left the screen, the question
+ * queued behind the one that was stopped would be new work for the GPU.
  */
 export const openLanguageModel = (
   context: OpenModelContext,
   onCall?: (call: OpenModelCall) => void,
+  cancelled?: () => boolean,
 ): LanguageModel => {
   let last: Promise<unknown> = Promise.resolve();
   const generate = async (jsonSchema: unknown, prompt: string): Promise<unknown> => {
     let answered: RuntimeCompletion | undefined;
     try {
+      if (cancelled?.() === true) {
+        throw new Error('The run was cut short.');
+      }
       const result = await context.completion({
         enable_thinking: false,
         messages: [{ content: prompt, role: 'user' }],
