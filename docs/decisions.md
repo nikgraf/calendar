@@ -1278,11 +1278,11 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   compiled from the sources its npm package ships, linked into that variant
   alone) and run the bench's first phrases through quick-add (Settings ›
   Advanced › Model Spike); the Mac scores its report (`phoneReport.ts`).
-  On an iPhone 16 LFM3 gets 61 of 70 first phrases, as on the Mac, at
-  3.6 s a phrase (0.6 s there); an app may hold 3.5 GB, so Gemma 4 E2B
-  (4 GB) does not load. Rejected: the package's prebuilt binary, a memory
-  entitlement, scoring on the phone. Open: Apple's model on the same
-  phone, the prompt read again on every call.
+  On an iPhone 16 LFM3 gets 61 of 70 first phrases at 3.6 s a phrase,
+  Apple's own 55 at 1.6 s with six that never answer (60 s limit); an app
+  may hold 3.5 GB, so Gemma 4 E2B (4 GB) does not load. Rejected: the
+  package's prebuilt binary, a memory entitlement, scoring on the phone.
+  Open: Apple's six hung calls, the prompt read again on every call.
 - **The draft thread** (2026-10-12, #183) — a new item is
   a thread of drafts, not a one-shot prefill: the first phrase makes the
   draft(s), every later phrase in the same field changes them, Undo takes
