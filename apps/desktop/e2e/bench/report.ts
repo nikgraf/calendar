@@ -26,8 +26,18 @@ export interface TurnReport {
   readonly notes: ReadonlyArray<string>;
   /** The draft after the turn, or the rejection. */
   readonly outcome: unknown;
-  /** The transcript's own parse, run when the recogniser erred and the turn failed: whose fault it was. */
-  readonly said?: { readonly notes: ReadonlyArray<string>; readonly ok: boolean } | undefined;
+  /**
+   * The transcript's own parse, run when the recogniser erred and the turn
+   * failed: whose fault it was. Its outcome is kept, so the verdict can be
+   * scored again with the turn's (`rescore.ts`).
+   */
+  readonly said?:
+    | {
+        readonly notes: ReadonlyArray<string>;
+        readonly ok: boolean;
+        readonly outcome?: unknown;
+      }
+    | undefined;
   readonly wordErrorRate?: number | undefined;
 }
 
@@ -227,14 +237,27 @@ export const compareReports = (before: BenchReport, after: BenchReport): string 
 const slug = (text: string): string =>
   text.replaceAll(/[^a-z0-9]+/gi, '-').replaceAll(/^-|-$/g, '');
 
-/** Writes the report under `dir` and returns its path. */
-export const writeReport = (dir: string, report: BenchReport): string => {
-  mkdirSync(dir, { recursive: true });
-  const stamp = report.when
+const stampOf = (when: string): string =>
+  when
     .slice(0, 19)
     .replaceAll(/[-:T]/g, '')
     .replace(/(\d{8})(\d{6})/, '$1-$2');
-  const path = join(dir, `${stamp}-${report.sha}-${slug(report.provider)}.json`);
+
+/**
+ * Writes the report under `dir` and returns its path. A report scored
+ * again names the run it came from too: a folder of them is scored within
+ * one second, and two of one provider would land on one name.
+ */
+export const writeReport = (dir: string, report: BenchReport): string => {
+  mkdirSync(dir, { recursive: true });
+  const source =
+    report.rescored === undefined
+      ? ''
+      : `-of-${stampOf(report.rescored.when)}-${report.rescored.sha}`;
+  const path = join(
+    dir,
+    `${stampOf(report.when)}-${report.sha}-${slug(report.provider)}${source}.json`,
+  );
   writeFileSync(path, `${JSON.stringify(report, null, 2)}\n`);
   return path;
 };

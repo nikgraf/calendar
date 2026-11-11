@@ -55,6 +55,10 @@ const benchCase = (
 
 const NOW = { sha: 'bbbbbbbb', when: '2026-11-11T08:00:00.000Z' };
 
+/** The last turn's transcript verdict after the report is scored again. */
+const saidOf = (before: BenchReport, expectations: Parameters<typeof benchCase>[0]) =>
+  rescore(before, [benchCase(expectations)], NOW).cases[0]?.turns.at(-1)?.said;
+
 describe('rescore', () => {
   it('checks each stored outcome again, the draft before it being the report’s own', () => {
     const before = report([
@@ -117,6 +121,43 @@ describe('rescore', () => {
         notes: ['no draft to change', 'recording not read: no speech'],
       },
     ]);
+  });
+
+  it('scores the transcript’s own parse again, and says nothing where it cannot', () => {
+    const misheard = { draft: draft({ title: 'Diner' }), kind: 'draft' };
+    const transcript = { draft: draft({ location: 'nichts' }), kind: 'draft' };
+    // The transcript passed when a first phrase could invent a place.
+    const kept = report([
+      turn(misheard, { failed: ['title'], said: { notes: [], ok: true, outcome: transcript } }),
+    ]);
+    expect(saidOf(kept, [{ title: 'dinner' }])).toEqual({
+      notes: ['unsaid location: nichts'],
+      ok: false,
+      outcome: transcript,
+    });
+    // An earlier report kept the verdict alone: it is not this scoring's to repeat.
+    const verdictOnly = report([
+      turn(misheard, { failed: ['title'], said: { notes: [], ok: true } }),
+    ]);
+    expect(saidOf(verdictOnly, [{ title: 'dinner' }])).toBeUndefined();
+    // A turn that passes now has no fault to place.
+    expect(saidOf(kept, [{ title: 'diner' }])).toBeUndefined();
+    // A later turn's transcript is held to the draft before the turn, not the one the turn made.
+    const moved = draft({ endTime: '22:00', startTime: '21:00', title: 'Team dinner' });
+    const asSaid = draft({ endTime: '21:00', startTime: '20:00', title: 'Team dinner' });
+    const later = report([
+      turn({ draft: draft(), kind: 'draft' }),
+      turn(
+        { draft: moved, kind: 'draft' },
+        {
+          failed: ['time'],
+          said: { notes: [], ok: true, outcome: { draft: asSaid, kind: 'draft' } },
+        },
+      ),
+    ]);
+    expect(
+      saidOf(later, [{ title: 'dinner' }, { endTime: '21:00', startTime: '20:00' }]),
+    ).toMatchObject({ notes: ['changed title: team dinner'], ok: false });
   });
 
   it('leaves a case alone that is gone or has other turns than the report', () => {

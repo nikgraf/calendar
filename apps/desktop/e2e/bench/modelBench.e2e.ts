@@ -269,7 +269,11 @@ const runCase = async (
         book,
       );
       const transcriptCheck = check(turn.expect, transcriptOutcome, draft, today);
-      said = { notes: transcriptCheck.notes, ok: transcriptCheck.failed.length === 0 };
+      said = {
+        notes: transcriptCheck.notes,
+        ok: transcriptCheck.failed.length === 0,
+        outcome: transcriptOutcome,
+      };
     }
     const { error, ...spoken } = heard;
     turns.push({

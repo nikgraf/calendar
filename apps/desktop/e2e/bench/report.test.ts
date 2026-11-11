@@ -192,4 +192,22 @@ describe('writeReport', () => {
       total: 2,
     });
   });
+
+  it('names a report scored again by its run too: a folder of them is scored in one second', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'bench-'));
+    const again = (rescored: BenchReport['rescored']): string =>
+      writeReport(
+        dir,
+        report(CASES, { rescored, sha: 'def5678-dirty', when: '2026-08-23T08:00:00.100Z' }),
+      );
+    const first = again({ sha: 'abc1234', when: '2026-08-22T10:20:30.000Z' });
+    const second = again({ sha: 'abc1234', when: '2026-08-21T09:00:00.000Z' });
+    expect(basename(first)).toBe(
+      '20260823-080000-def5678-dirty-apple-of-20260822-102030-abc1234.json',
+    );
+    expect(basename(second)).toBe(
+      '20260823-080000-def5678-dirty-apple-of-20260821-090000-abc1234.json',
+    );
+    expect(existsSync(first) && existsSync(second)).toBe(true);
+  });
 });
