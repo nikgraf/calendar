@@ -76,7 +76,7 @@ export interface Score {
 export interface BenchReport {
   readonly cases: ReadonlyArray<CaseReport>;
   readonly provider: string;
-  /** The run this report was scored again from (`rescore.ts`): its commit and its time. */
+  /** The run this report was scored again from (`rescore.ts`), however often: its commit and its time. */
   readonly rescored?: { readonly sha: string; readonly when: string } | undefined;
   readonly score: Score;
   readonly sha: string;
@@ -161,7 +161,8 @@ export const formatReport = (report: BenchReport): string => {
       ) {
         details.push(
           `${label}heard "${turn.heard ?? ''}" (WER ${percent(turn.wordErrorRate)}${
-            turn.said === undefined
+            // Whose fault it was is a failing turn's question.
+            turn.said === undefined || turn.failed.length === 0
               ? ''
               : turn.said.ok
                 ? ', the transcript passes'

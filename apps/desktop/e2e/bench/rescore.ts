@@ -8,8 +8,10 @@ const KEPT_NOTE = /^(?:recording not read: |no draft to change$)/u;
 /**
  * Whose fault a failing recorded turn was, scored again: the transcript's
  * stored outcome held to the same expectation and the same draft before
- * the turn. A report that kept the verdict alone gets none, since a
- * verdict by the earlier checks is not this scoring's to repeat.
+ * the turn. It is kept for a turn that passes now too (the table places
+ * no fault there), so a stricter scoring after this one can judge it
+ * again. A report that kept the verdict alone gets none, since a verdict
+ * by the earlier checks is not this scoring's to repeat.
  */
 const saidAgain = (
   turn: TurnReport,
@@ -55,9 +57,7 @@ export const rescore = (
       const result = ran
         ? check(expectation, stored, draft, report.today)
         : checkWithoutDraft(expectation, report.today);
-      // A turn that passes now has no fault to place.
-      const said =
-        result.failed.length === 0 ? undefined : saidAgain(turn, expectation, draft, report.today);
+      const said = saidAgain(turn, expectation, draft, report.today);
       if (ran && stored.kind === 'draft') {
         ({ draft } = stored);
       }
@@ -74,7 +74,9 @@ export const rescore = (
   return {
     ...report,
     cases: rescored,
-    rescored: { sha: report.sha, when: report.when },
+    // The run stays the source through a second scoring: two reports scored
+    // in one second share that scoring's sha and time, never their runs'.
+    rescored: report.rescored ?? { sha: report.sha, when: report.when },
     score: scoreOf(rescored),
     sha,
     when,

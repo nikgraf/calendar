@@ -153,6 +153,18 @@ describe('formatReport', () => {
       ),
     ).toContain('recordings: 2 missing (ran as the transcript)');
   });
+
+  it('places no fault on a turn that passes, whatever a rescored report kept of the transcript', () => {
+    const passing = turn({
+      audio: 'transcribed',
+      heard: 'make it late',
+      said: { notes: ['start=19:00'], ok: false, outcome: { kind: 'rejected', reason: 'none' } },
+      wordErrorRate: 1 / 3,
+    });
+    expect(formatReport(report([{ id: 'a', ok: true, tags: [], turns: [passing] }]))).toContain(
+      '  ok    1.0s  a  →  heard "make it late" (WER 33%)',
+    );
+  });
 });
 
 describe('compareReports', () => {

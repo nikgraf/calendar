@@ -140,8 +140,14 @@ describe('rescore', () => {
       turn(misheard, { failed: ['title'], said: { notes: [], ok: true } }),
     ]);
     expect(saidOf(verdictOnly, [{ title: 'dinner' }])).toBeUndefined();
-    // A turn that passes now has no fault to place.
-    expect(saidOf(kept, [{ title: 'diner' }])).toBeUndefined();
+    // A turn that passes now keeps the transcript's outcome: a stricter scoring after this one judges it again.
+    const passing = rescore(kept, [benchCase([{ title: 'diner' }])], NOW);
+    expect(passing.cases[0]?.ok).toBe(true);
+    expect(saidOf(passing, [{ title: 'dinner' }])).toEqual({
+      notes: ['unsaid location: nichts'],
+      ok: false,
+      outcome: transcript,
+    });
     // A later turn's transcript is held to the draft before the turn, not the one the turn made.
     const moved = draft({ endTime: '22:00', startTime: '21:00', title: 'Team dinner' });
     const asSaid = draft({ endTime: '21:00', startTime: '20:00', title: 'Team dinner' });
@@ -158,6 +164,18 @@ describe('rescore', () => {
     expect(
       saidOf(later, [{ title: 'dinner' }, { endTime: '21:00', startTime: '20:00' }]),
     ).toMatchObject({ notes: ['changed title: team dinner'], ok: false });
+  });
+
+  it('names the run, not the scoring before, when a rescored report is scored again', () => {
+    const cases = [benchCase([{ title: 'dinner' }])];
+    const once = rescore(report([turn({ draft: draft(), kind: 'draft' })]), cases, NOW);
+    const twice = rescore(once, cases, { sha: 'cccccccc', when: '2026-11-12T08:00:00.000Z' });
+    // Two reports scored in one second share that scoring's sha and time; their runs differ.
+    expect(twice).toMatchObject({
+      rescored: { sha: 'aaaaaaaa', when: '2026-11-10T12:00:00.000Z' },
+      sha: 'cccccccc',
+      when: '2026-11-12T08:00:00.000Z',
+    });
   });
 
   it('leaves a case alone that is gone or has other turns than the report', () => {
