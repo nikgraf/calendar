@@ -19,6 +19,7 @@ MODEL_BENCH=1 E2E=1 pnpm exec vp test run apps/desktop/e2e/bench/modelBench.e2e.
 | `MODEL_BENCH_CASES`    | Only the cases whose id contains a term or whose tags hold it (`flow,de`).                                                                                                                                                                                                                                                                                                                                                                             |
 | `MODEL_BENCH_STT`      | `off`: every recording's transcript is parsed, nothing is transcribed.                                                                                                                                                                                                                                                                                                                                                                                 |
 | `MODEL_BENCH_COMPARE`  | An earlier report (JSON) to print the difference to.                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `MODEL_BENCH_RESCORE`  | Earlier reports (files, or a folder of them, comma-separated) scored again by the checks as they are now, without asking any model; each is written as a new report that names the run it came from. For a change to the checks or to an expectation alone.                                                                                                                                                                                            |
 | `MODEL_BENCH_OUT`      | Where reports go; default `output/bench/` (gitignored).                                                                                                                                                                                                                                                                                                                                                                                                |
 
 ## Arms
@@ -112,6 +113,11 @@ the grounding's.
   both as sets, absent meaning none); `notes` (folded part); `reminders`
   (minutes before, any order); `rejected: true` when the turn must be
   refused.
+- The first turn is also held to the **unsaid rule**: a place, a repeat,
+  guests, a note or a notification is in the draft only where the
+  expectation names one. The app's pipeline cannot invent these; a model
+  taken at its word (`raw`, `plain`) can, and "at nichts, every year" is
+  not the event that was said.
 - Every turn after the first is also held to the **unchanged rule**: each
   part of the draft the expectation is not about must read as it did
   before the turn. A change that moves the time and leaves the title

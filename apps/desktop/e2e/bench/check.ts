@@ -52,7 +52,9 @@ export type Field =
   | 'time'
   | 'title'
   /** A later turn left every field it was not about as it was. */
-  | 'unchanged';
+  | 'unchanged'
+  /** A first phrase put nothing in the draft that the expectation does not name. */
+  | 'unsaid';
 
 /** In the order the score prints them. */
 export const FIELDS: ReadonlyArray<Field> = [
@@ -66,6 +68,7 @@ export const FIELDS: ReadonlyArray<Field> = [
   'guests',
   'notes',
   'reminders',
+  'unsaid',
   'unchanged',
   'rejected',
 ];
@@ -432,13 +435,41 @@ const checkUnchanged = (
   }
 };
 
+/** What each part a phrase may leave out reads as when the draft has none. */
+const EMPTY_VIEW: Readonly<Partial<Record<ViewKey, string>>> = {
+  guests: '|',
+  location: '',
+  notes: '',
+  reminders: '',
+  repeat: '-',
+};
+
+/**
+ * The unsaid rule: a first phrase makes a place, a repeat, guests, a note
+ * or a notification only where the expectation names one. The app's
+ * pipeline cannot invent these (the grounding holds them against the
+ * words); a model taken at its word can, and a draft at "nichts", every
+ * year, with an hour's notice is not the event that was said.
+ */
+const checkUnsaid = (expectation: Expectation, draft: BenchDraft, fail: Fail): void => {
+  const covered = coveredViews(expectation);
+  const view = viewOf(draft);
+  for (const key of VIEW_KEYS) {
+    const empty = EMPTY_VIEW[key];
+    if (empty !== undefined && view[key] !== empty && !covered.has(key)) {
+      fail('unsaid', `unsaid ${key}: ${view[key]}`);
+    }
+  }
+};
+
 /**
  * Which of the expectation the outcome meets. A turn after the first is
  * also held to the unchanged rule: every part of the draft the
  * expectation is not about must read as it did before the turn — the
  * failure a refinement is most prone to is changing what it was not
- * asked to. A rejection fails every field the expectation named, unless
- * it was the expectation.
+ * asked to. A first phrase is held to the unsaid rule instead: nothing
+ * in the draft that the expectation does not name. A rejection fails
+ * every field the expectation named, unless it was the expectation.
  */
 export const check = (
   expectation: Expectation,
@@ -447,8 +478,8 @@ export const check = (
   today: string,
 ): TurnCheck => {
   const checked: Array<Field> = [...fieldsOf(expectation)];
-  if (previous !== undefined && !expectation.rejected) {
-    checked.push('unchanged');
+  if (!expectation.rejected) {
+    checked.push(previous === undefined ? 'unsaid' : 'unchanged');
   }
   if (expectation.rejected) {
     return outcome.kind === 'rejected'
@@ -476,7 +507,9 @@ export const check = (
   checkGuests(expectation, draft, fail);
   checkNotes(expectation, draft, fail);
   checkReminders(expectation, draft, fail);
-  if (previous !== undefined) {
+  if (previous === undefined) {
+    checkUnsaid(expectation, draft, fail);
+  } else {
     checkUnchanged(expectation, previous, draft, fail);
   }
 

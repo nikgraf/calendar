@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -47,6 +47,7 @@ import {
   type TurnReport,
   writeReport,
 } from './report.ts';
+import { rescore } from './rescore.ts';
 
 /**
  * The model bench: the cases under `cases/` through the quick-add and
@@ -54,9 +55,9 @@ import {
  * would put the event. Not a gate — it prints a table, writes a report
  * and passes — and never part of `pnpm test` or the e2e suite: it skips
  * itself unless MODEL_BENCH=1, and runs against whatever is on this
- * machine. The grounding runs on every answer, as in the app, so the
- * table measures the whole pipeline; the report keeps the raw answers
- * for telling the model's errors from the grounding's.
+ * machine. On the `app` arm the grounding runs on every answer, as in
+ * the app, so its table measures the whole pipeline; the report keeps
+ * the raw answers for telling the model's errors from the grounding's.
  *
  *   MODEL_BENCH=1 E2E=1 pnpm exec vp test run apps/desktop/e2e/bench/modelBench.e2e.ts
  *
@@ -74,7 +75,9 @@ import {
  * `app` (the default: the app's pipeline with its grounding), `raw` (the
  * app's prompts, the answer never held against the words: `raw.ts`) and
  * `plain` (one prompt that states the conventions, no code that reads the
- * words: `plain.ts`).
+ * words: `plain.ts`). MODEL_BENCH_RESCORE names earlier reports (files or
+ * a folder of them) to score again by the checks as they are now, without
+ * asking any model (`rescore.ts`).
  * MODEL_BENCH_CASES picks cases by id part or tag ("flow,de");
  * MODEL_BENCH_STT=off parses every recording's transcript instead of
  * transcribing; MODEL_BENCH_COMPARE names an earlier report to diff
@@ -294,7 +297,8 @@ const runCase = async (
 
 const gitSha = (): string => {
   try {
-    return execFileSync('git', ['rev-parse', '--short', 'HEAD'], {
+    // `-dirty` when the tree is not the commit: a report must not name code that did not make it.
+    return execFileSync('git', ['describe', '--always', '--dirty', '--abbrev=8'], {
       cwd: ROOT,
       encoding: 'utf8',
     }).trim();
@@ -304,9 +308,28 @@ const gitSha = (): string => {
 };
 
 interface Provider {
+  /** What the provider puts around the recorded model, so the report keeps what was sent and what came. */
+  readonly around?: ((model: LanguageModel) => LanguageModel) | undefined;
   readonly model: LanguageModel;
   readonly name: string;
 }
+
+/** MODEL_BENCH_OPENAI_EXTRA as the object it must be; anything else stops the run with its name. */
+const openAiExtra = (value: string | undefined): Readonly<Record<string, unknown>> => {
+  if (value === undefined || value.trim() === '') {
+    return {};
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    throw new Error(`MODEL_BENCH_OPENAI_EXTRA is not JSON: ${value}`);
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error(`MODEL_BENCH_OPENAI_EXTRA must be a JSON object: ${value}`);
+  }
+  return parsed as Record<string, unknown>;
+};
 
 const providers = async (
   helper: HelperClient | undefined,
@@ -323,7 +346,11 @@ const providers = async (
     if (status === 'ready') {
       list.push({ model: helperModel(helper), name: 'apple' });
       if (process.env['MODEL_BENCH_APPLE_REQUIRED'] === '1') {
-        list.push({ model: requiringEveryField(helperModel(helper)), name: 'apple-required' });
+        list.push({
+          around: requiringEveryField,
+          model: helperModel(helper),
+          name: 'apple-required',
+        });
       }
     } else {
       log(`Apple's model is ${status}; left out.`);
@@ -333,21 +360,16 @@ const providers = async (
   for (const name of (process.env['MODEL_BENCH_OLLAMA'] ?? '').split(',').filter(Boolean)) {
     list.push({ model: ollamaModel(ollamaUrl, name.trim()), name: `ollama:${name.trim()}` });
   }
-  const openAiUrl = process.env['MODEL_BENCH_OPENAI_URL'] ?? 'http://localhost:1234/v1';
-  const openAiExtra = JSON.parse(process.env['MODEL_BENCH_OPENAI_EXTRA'] ?? '{}') as Record<
-    string,
-    unknown
-  >;
-  for (const name of (process.env['MODEL_BENCH_OPENAI'] ?? '').split(',').filter(Boolean)) {
-    list.push({
-      model: openAiModel(
-        openAiUrl,
-        name.trim(),
-        process.env['MODEL_BENCH_OPENAI_KEY'],
-        openAiExtra,
-      ),
-      name: `openai:${name.trim()}`,
-    });
+  const openAi = (process.env['MODEL_BENCH_OPENAI'] ?? '').split(',').filter(Boolean);
+  if (openAi.length > 0) {
+    const openAiUrl = process.env['MODEL_BENCH_OPENAI_URL'] ?? 'http://localhost:1234/v1';
+    const extra = openAiExtra(process.env['MODEL_BENCH_OPENAI_EXTRA']);
+    for (const name of openAi) {
+      list.push({
+        model: openAiModel(openAiUrl, name.trim(), process.env['MODEL_BENCH_OPENAI_KEY'], extra),
+        name: `openai:${name.trim()}`,
+      });
+    }
   }
   for (const spec of (process.env['MODEL_BENCH_CLAUDE'] ?? '').split(',').filter(Boolean)) {
     const { effort, model } = claudeSpec(spec);
@@ -358,10 +380,35 @@ const providers = async (
 
 /** What runs around the model, per MODEL_BENCH_PIPELINE: the app's pipeline unless it names others. */
 const pipelines = (): ReadonlyArray<Pipeline> => {
-  const asked = (process.env['MODEL_BENCH_PIPELINE'] ?? '').split(',').map((name) => name.trim());
+  const asked = (process.env['MODEL_BENCH_PIPELINE'] ?? '')
+    .split(',')
+    .map((name) => name.trim())
+    .filter(Boolean);
+  const unknown = asked.filter((name) => !(PIPELINES as ReadonlyArray<string>).includes(name));
+  if (unknown.length > 0) {
+    // A misspelt arm must not run as another one.
+    throw new Error(
+      `MODEL_BENCH_PIPELINE names no arm "${unknown.join('", "')}": ${PIPELINES.join(', ')}`,
+    );
+  }
   const known = PIPELINES.filter((pipeline) => asked.includes(pipeline));
   return known.length === 0 ? ['app'] : known;
 };
+
+/** The reports MODEL_BENCH_RESCORE names: files, or every report in a folder. */
+const reportsToRescore = (value: string): ReadonlyArray<string> =>
+  value
+    .split(',')
+    .map((path) => path.trim())
+    .filter(Boolean)
+    .flatMap((path) =>
+      statSync(path).isDirectory()
+        ? readdirSync(path)
+            .filter((name) => name.endsWith('.json'))
+            .sort()
+            .map((name) => join(path, name))
+        : [path],
+    );
 
 describe.skipIf(process.env['MODEL_BENCH'] !== '1')('model bench', () => {
   it('runs the cases on each model and writes a report', { timeout: 120 * 60_000 }, async () => {
@@ -388,7 +435,20 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('model bench', () => {
         ? undefined
         : (JSON.parse(readFileSync(compareWith, 'utf8')) as BenchReport);
     const outDir = process.env['MODEL_BENCH_OUT'] ?? join(ROOT, 'output', 'bench');
+    const toRescore = process.env['MODEL_BENCH_RESCORE'];
     try {
+      if (toRescore) {
+        // Every case, whatever MODEL_BENCH_CASES says: a report is scored whole.
+        const all = loadCases(join(BENCH_DIR, 'cases'));
+        for (const path of reportsToRescore(toRescore)) {
+          const before = JSON.parse(readFileSync(path, 'utf8')) as BenchReport;
+          const after = rescore(before, all, { sha, when: new Date().toISOString() });
+          log(formatReport(after));
+          log(compareReports(before, after));
+          log(`   report: ${writeReport(outDir, after)}\n`);
+        }
+        return;
+      }
       const available = await providers(helper, log);
       if (available.length === 0) {
         log(
@@ -397,6 +457,7 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('model bench', () => {
       }
       const arms = available.flatMap((provider) =>
         pipelines().map((pipeline) => ({
+          around: provider.around,
           model: provider.model,
           // The app's pipeline keeps the provider's bare name: earlier reports compare with it.
           name: pipeline === 'app' ? provider.name : `${provider.name}+${pipeline}`,
@@ -404,7 +465,11 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('model bench', () => {
         })),
       );
       for (const provider of arms) {
-        const model = recording(provider.model);
+        const recorded = recording(provider.model);
+        const model = {
+          begin: recorded.begin,
+          model: provider.around === undefined ? recorded.model : provider.around(recorded.model),
+        };
         const reports: Array<CaseReport> = [];
         for (const benchCase of cases) {
           const book = books[benchCase.contacts];

@@ -66,6 +66,8 @@ export interface Score {
 export interface BenchReport {
   readonly cases: ReadonlyArray<CaseReport>;
   readonly provider: string;
+  /** The run this report was scored again from (`rescore.ts`): its commit and its time. */
+  readonly rescored?: { readonly sha: string; readonly when: string } | undefined;
   readonly score: Score;
   readonly sha: string;
   readonly timeZone: string;

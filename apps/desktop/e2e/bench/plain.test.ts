@@ -128,6 +128,30 @@ describe('plainResult, a first phrase', () => {
     );
   });
 
+  it('keeps no rule that repeats once, and no days the editor would refuse', () => {
+    const answer = { kind: 'event', nothingToSchedule: false, title: 'Book club' };
+    expect(first({ ...answer, repeat: { count: 1, freq: 'weekly' } })).not.toHaveProperty(
+      'prefill.recurrence',
+    );
+    // "Every month on Wednesday" names no week: the rule stays, on the day of the month.
+    expect(first({ ...answer, repeat: { byDay: ['WE'], freq: 'monthly' } })).toMatchObject({
+      prefill: { date: TODAY, recurrence: { freq: 'monthly' } },
+    });
+    expect(first({ ...answer, repeat: { byDay: ['WE'], freq: 'monthly' } })).not.toHaveProperty(
+      'prefill.recurrence.byDay',
+    );
+    expect(
+      first({ ...answer, repeat: { byDay: ['2TU', 'TH'], freq: 'weekly' } }),
+    ).not.toHaveProperty('prefill.recurrence.byDay');
+    expect(first({ ...answer, repeat: { byDay: ['MO'], freq: 'daily' } })).toMatchObject({
+      prefill: { date: TODAY, recurrence: { freq: 'daily' } },
+    });
+    // An end that has passed is next year's, as the app reads a model's.
+    expect(first({ ...answer, repeat: { freq: 'weekly', untilDate: '2026-01-01' } })).toMatchObject(
+      { prefill: { recurrence: { freq: 'weekly', untilDate: '2027-01-01' } } },
+    );
+  });
+
   it('passes on who is invited, the notifications and the note', () => {
     expect(
       first({
@@ -209,6 +233,9 @@ describe('the plain prompts', () => {
     expect(prompt).toContain('Phrase: Dinner Friday');
     expect(prompt).toContain(`Tue ${TODAY} (today)`);
     expect(prompt).toContain('Fri 2026-11-13');
+    // A notification asked for in German is no to-do cue.
+    expect(prompt).toContain('"erinnere mich eine Stunde vorher" are 60');
+    expect(prompt).not.toContain('"erinnere mich …"');
   });
 
   it('give a change the draft in the terms of the answer, and what was said before', () => {

@@ -4,12 +4,13 @@ import {
   type NotesChange,
   type QuickAddPrefill,
   type QuickAddResult,
+  recurrenceFromParse,
   type RefineResult,
   type ReminderChange,
   startOnRule,
 } from '@calendar/ai';
 import { convertQuickAddItem } from '@calendar/app-state/quickAddItem';
-import { type ByDay, Temporal, type Weekday } from '@calendar/core';
+import { type ByDay, byDayError, Temporal, type Weekday } from '@calendar/core';
 import type { BenchDraft } from './check.ts';
 
 /**
@@ -83,13 +84,13 @@ const conventions = (referenceDate: string, timeZone: string): ReadonlyArray<str
   '- A meal or a part of the day said without a clock time takes its usual start, and timeAssumed is true: breakfast 08:00, brunch 11:00, lunch 12:30, dinner 19:00, morning 09:00, afternoon 14:00, evening or tonight 18:00, night 20:00.',
   '- No clock time and no meal or part of the day: leave startTime and endTime out. The event is all day.',
   '- endTime only when the words give an end or a length. Otherwise leave it out; it becomes one hour.',
-  '- kind: "task" for something to do rather than attend, said as a to-do or a reminder to oneself ("remind me to …", "I need to …", "to-do: …", "don\'t forget to …", "ich muss …", "erinnere mich …"). Otherwise "event". A task\'s title is the thing to do, without those words.',
+  '- kind: "task" for something to do rather than attend, said as a to-do or a reminder to oneself ("remind me to …", "I need to …", "to-do: …", "don\'t forget to …", "ich muss …", "erinnere mich daran, … zu …"). Otherwise "event". A task\'s title is the thing to do, without those words.',
   '- title: what it is, in the words and the language of the speaker, without the day, the time, the place, the repeat, a note or a notification, and without command words around it ("add", "schedule", "create an event for"). Company stays in the title: "with Maria" is part of it.',
   '- location: the place, when one is said, without the word that leads to it ("at", "in", "im"). A person is never a place.',
   '- invite and uninvite: names or addresses exactly as said, only when the words ask to invite someone or to take someone off the guest list ("invite Ben", "add Ben as a guest", "lade Ben ein", "don\'t invite Ben", "remove Ben"). Someone the event is merely with ("lunch with Maria") is not invited.',
   '- repeat: only when the words say it repeats. freq is daily, weekly, monthly or yearly; interval for "every 2 weeks"; count for "5 times"; untilDate as YYYY-MM-DD; byDay lists the weekdays of a weekly rule as MO TU WE TH FR SA SU ("every weekday" is MO to FR), with a number in front for a monthly "second Tuesday" (2TU; -1FR is the last Friday).',
   '- notes: text the words ask to note down ("note: bring the contract"), as said.',
-  '- reminders: the notifications the words ask for, each as minutes before the start ("remind me an hour before" is 60).',
+  '- reminders: the notifications the words ask for, each as minutes before the start ("remind me an hour before" and "erinnere mich eine Stunde vorher" are 60). Asking for one does not make a to-do.',
   '- nothingToSchedule: true only when the words give nothing to put in a calendar, or ask for something impossible (an end before its start). Otherwise false.',
   '- Never invent a value the words do not give.',
 ];
@@ -237,9 +238,6 @@ const timeOf = (value: unknown): string | undefined => {
     : undefined;
 };
 
-const wholeOf = (value: unknown): number | undefined =>
-  typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : undefined;
-
 const namesOf = (value: unknown): ReadonlyArray<string> =>
   Array.isArray(value) ? value.flatMap((name) => textOf(name) ?? []) : [];
 
@@ -255,30 +253,39 @@ const byDayOf = (value: unknown): ReadonlyArray<ByDay> => {
   return [match[1] === undefined ? { weekday } : { ordinal: Number(match[1]), weekday }];
 };
 
-/** The repeat as the editor holds it, and the day it starts on. */
+/**
+ * The repeat as the editor holds it, and the day it starts on. The rule
+ * is validated as the app validates a model's (`recurrenceFromParse`
+ * without a phrase): a real frequency, "repeats once" being none, an end
+ * on or after the day. Days the editor would refuse on Save are not kept
+ * ("monthly on Wednesday" without saying which).
+ */
 const repeatOf = (
   raw: unknown,
   date: string,
 ): { readonly date: string; readonly recurrence: QuickAddPrefill['recurrence'] } => {
-  const freq = isRecord(raw) ? FREQS.find((known) => known === raw['freq']) : undefined;
-  if (!isRecord(raw) || freq === undefined) {
+  if (!isRecord(raw)) {
     return { date, recurrence: undefined };
   }
-  const byDay = Array.isArray(raw['byDay']) ? raw['byDay'].flatMap(byDayOf) : [];
-  const count = wholeOf(raw['count']);
-  const interval = wholeOf(raw['interval']);
-  const untilDate = dateOf(raw['untilDate']);
-  const placed = startOnRule(date, {
-    ...(byDay.length > 0 ? { byDay } : {}),
-    ...(count === undefined ? {} : { count }),
-    freq,
-    ...(interval === undefined || interval === 1 ? {} : { interval }),
-    ...(untilDate === undefined ? {} : { untilDate }),
-  });
-  const rule = placed.recurrence;
+  const rule = recurrenceFromParse(
+    {
+      count: typeof raw['count'] === 'number' ? raw['count'] : undefined,
+      freq: FREQS.find((known) => known === raw['freq']),
+      interval: typeof raw['interval'] === 'number' ? raw['interval'] : undefined,
+      untilDate: dateOf(raw['untilDate']),
+    },
+    date,
+  );
+  if (rule === undefined) {
+    return { date, recurrence: undefined };
+  }
+  const said = Array.isArray(raw['byDay']) ? raw['byDay'].flatMap(byDayOf) : [];
+  const byDay = byDayError({ byDay: said, freq: rule.freq }) === undefined ? said : [];
+  const placed = startOnRule(date, { ...rule, ...(byDay.length > 0 ? { byDay } : {}) });
+  const kept = placed.recurrence;
   // One weekday of a weekly rule is the date's own: the editor lists none.
-  if (rule?.freq === 'weekly' && rule.byDay?.length === 1 && rule.byDay[0]?.ordinal === undefined) {
-    const { byDay: _single, ...rest } = rule;
+  if (kept?.freq === 'weekly' && kept.byDay?.length === 1) {
+    const { byDay: _single, ...rest } = kept;
     return { date: placed.date, recurrence: rest };
   }
   return placed;

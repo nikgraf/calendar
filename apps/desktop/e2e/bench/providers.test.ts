@@ -1,3 +1,4 @@
+import { QUICK_ADD_JSON_SCHEMA } from '@calendar/ai';
 import { describe, expect, it } from 'vite-plus/test';
 import { strictSchema } from '../../electron/strictSchema.ts';
 import {
@@ -54,6 +55,7 @@ describe('recording', () => {
 const SCHEMA = {
   additionalProperties: false,
   properties: {
+    allDay: { type: 'boolean' },
     date: { type: 'string' },
     kind: { enum: ['event', 'task'], type: 'string' },
     people: { items: { type: 'string' }, type: 'array' },
@@ -63,7 +65,6 @@ const SCHEMA = {
         count: { type: 'number' },
         freq: { enum: ['daily', 'weekly'], type: 'string' },
       },
-      required: ['freq'],
       type: 'object',
     },
     title: { type: 'string' },
@@ -73,14 +74,13 @@ const SCHEMA = {
 } as const;
 
 describe('requiredSchema', () => {
-  it('requires every property, and gives a choice that was optional a "none"', () => {
+  it('requires every property but a yes-or-no one, and gives an optional choice a "none"', () => {
     expect(requiredSchema(SCHEMA)).toEqual({
       ...SCHEMA,
       properties: {
         ...SCHEMA.properties,
         repeat: {
           ...SCHEMA.properties.repeat,
-          // Required inside an optional object: still a choice the words may not make.
           properties: {
             count: { type: 'number' },
             freq: { enum: ['daily', 'weekly', 'none'], type: 'string' },
@@ -88,21 +88,40 @@ describe('requiredSchema', () => {
           required: ['count', 'freq'],
         },
       },
+      // `allDay` has no empty value to write: it stays optional.
       required: ['date', 'kind', 'people', 'repeat', 'title'],
     });
+    // A yes-or-no the schema itself requires stays required.
+    expect(
+      requiredSchema({
+        properties: { done: { type: 'boolean' }, note: { type: 'string' } },
+        required: ['done'],
+        type: 'object',
+      }),
+    ).toMatchObject({ required: ['done', 'note'] });
   });
 
-  it('reads the empty values back as nothing said', async () => {
+  it('reads the empty values back as nothing said, inside a list of texts too', async () => {
     expect(
       withoutEmpties({
+        allDay: false,
         date: ' ',
         kind: 'event',
-        people: [],
+        people: ['', 'none', 'Ben', ' None '],
         reminders: [0, 10],
         repeat: { count: 0, freq: 'none' },
         title: 'Dinner',
+        uninvite: ['none'],
       }),
-    ).toEqual({ kind: 'event', people: [], reminders: [0, 10], title: 'Dinner' });
+    ).toEqual({
+      allDay: false,
+      kind: 'event',
+      people: ['Ben'],
+      // A notification at the start is a real 0.
+      reminders: [0, 10],
+      title: 'Dinner',
+      uninvite: [],
+    });
     const asked: Array<{ jsonSchema: unknown; prompt: string }> = [];
     const model = requiringEveryField({
       generateJson: async (request) => {
@@ -117,21 +136,56 @@ describe('requiredSchema', () => {
     });
     expect(asked[0]?.jsonSchema).toEqual(requiredSchema(SCHEMA));
     expect(asked[0]?.prompt).toMatch(/^Every field must be in the answer\..*\nPhrase: Dinner$/su);
+    // A draft handed over to be returned is not to be blanked.
+    expect(asked[0]?.prompt).toContain('no value to copy from a draft');
+  });
+
+  it('is recorded as sent and as answered when it sits around the recorder', async () => {
+    const recorded = recording({
+      generateJson: async () => ({ date: '', kind: 'event', people: ['none'], title: 'Dinner' }),
+      status: async () => 'ready',
+    });
+    const calls = recorded.begin();
+    const model = requiringEveryField(recorded.model);
+    expect(await model.generateJson({ jsonSchema: SCHEMA, prompt: 'Phrase: Dinner' })).toEqual({
+      kind: 'event',
+      people: [],
+      title: 'Dinner',
+    });
+    expect(calls[0]?.prompt).toMatch(/^Every field must be in the answer/u);
+    expect(calls[0]?.answer).toEqual({
+      date: '',
+      kind: 'event',
+      people: ['none'],
+      title: 'Dinner',
+    });
   });
 });
 
 describe('claudeSchema', () => {
   it('writes a nullable choice as the choice or null, and leaves the rest', () => {
+    const nullableChoice = { enum: ['daily', 'weekly', null], type: ['string', 'null'] };
+    // The strict schema writes the optional `freq` the way Claude refuses.
+    expect(JSON.stringify(strictSchema(SCHEMA))).toContain(JSON.stringify(nullableChoice));
     const strict = claudeSchema(strictSchema(SCHEMA)) as {
       readonly properties: Record<string, unknown>;
       readonly required: ReadonlyArray<string>;
     };
-    expect(strict.required).toEqual(['date', 'kind', 'people', 'repeat', 'title']);
+    expect(JSON.stringify(strict)).not.toContain(JSON.stringify(nullableChoice));
+    expect(JSON.stringify(strict)).toContain(
+      JSON.stringify({ anyOf: [{ enum: ['daily', 'weekly'], type: 'string' }, { type: 'null' }] }),
+    );
+    expect(strict.required).toEqual(['allDay', 'date', 'kind', 'people', 'repeat', 'title']);
     expect(strict.properties['kind']).toEqual({ enum: ['event', 'task'], type: 'string' });
     expect(strict.properties['date']).toEqual({ type: ['string', 'null'] });
-    expect(JSON.stringify(strict)).not.toContain('"enum":["daily","weekly",null]');
-    expect(claudeSchema({ enum: ['daily', 'weekly', null], type: ['string', 'null'] })).toEqual({
-      anyOf: [{ enum: ['daily', 'weekly'], type: 'string' }, { type: 'null' }],
-    });
+  });
+
+  it('leaves no nullable choice in the schema the app asks with', () => {
+    const asked = JSON.stringify(claudeSchema(strictSchema(QUICK_ADD_JSON_SCHEMA)));
+    expect(JSON.stringify(strictSchema(QUICK_ADD_JSON_SCHEMA))).toContain('"yearly",null]');
+    expect(asked).not.toContain('"yearly",null]');
+    expect(asked).toContain(
+      JSON.stringify({ enum: ['daily', 'weekly', 'monthly', 'yearly'], type: 'string' }),
+    );
   });
 });

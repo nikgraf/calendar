@@ -190,11 +190,13 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
 const NONE = 'none';
 
 /**
- * The schema with every property required. Apple's guided generation
- * leaves out every optional property of a first phrase (the title alone
- * comes back, 70 times of 70), and fills the same properties when they
- * are required and may be empty: "" for a text, 0 for a number, "none"
- * for a choice, an empty list.
+ * The schema with every property required but a yes-or-no one. Apple's
+ * guided generation leaves out every optional property of a first phrase
+ * (the title alone comes back, 70 times of 70), and fills the same
+ * properties when they are required and may be empty: "" for a text, 0
+ * for a number, "none" for a choice, an empty list. A yes-or-no has no
+ * empty value, so it stays as it was: forced, an unsaid "all day" would
+ * be an answer.
  */
 export const requiredSchema = (schema: unknown, optional = false): unknown => {
   if (!isObject(schema)) {
@@ -212,19 +214,34 @@ export const requiredSchema = (schema: unknown, optional = false): unknown => {
   const required = new Set(
     Array.isArray(schema['required']) ? (schema['required'] as Array<string>) : [],
   );
+  const entries = Object.entries(schema['properties']);
   const properties = Object.fromEntries(
-    Object.entries(schema['properties']).map(([key, property]) => [
+    entries.map(([key, property]) => [
       key,
       requiredSchema(property, optional || !required.has(key)),
     ]),
   );
-  return { ...schema, properties, required: Object.keys(properties).sort() };
+  const forced = entries
+    .filter(
+      ([key, property]) =>
+        required.has(key) || !isObject(property) || property['type'] !== 'boolean',
+    )
+    .map(([key]) => key);
+  return { ...schema, properties, required: forced.sort() };
 };
 
-/** The answer without its empty values: what a required property held for "nothing". */
+const isEmptyText = (value: unknown): boolean =>
+  typeof value === 'string' && (value.trim() === '' || value.trim().toLowerCase() === NONE);
+
+/**
+ * The answer without its empty values: what a required property held for
+ * "nothing". A list loses its empty texts too (a model asked for "none"
+ * writes `["none"]` as readily as `[]`); a number in a list stays, since
+ * a notification at the start is a real 0.
+ */
 export const withoutEmpties = (value: unknown): unknown => {
   if (Array.isArray(value)) {
-    return value.map(withoutEmpties);
+    return value.filter((item) => !isEmptyText(item)).map(withoutEmpties);
   }
   if (!isObject(value)) {
     return value;
@@ -234,17 +251,24 @@ export const withoutEmpties = (value: unknown): unknown => {
       .map(([key, item]) => [key, withoutEmpties(item)] as const)
       .filter(
         ([, item]) =>
-          !(typeof item === 'string' && (item.trim() === '' || item === NONE)) &&
-          item !== 0 &&
-          !(isObject(item) && Object.keys(item).length === 0),
+          !isEmptyText(item) && item !== 0 && !(isObject(item) && Object.keys(item).length === 0),
       ),
   );
 };
 
+/**
+ * Said before the prompt. "Nothing for a field" is nothing in the words
+ * and nothing to copy: a prompt that hands over a draft to return must
+ * not read this as "blank what the change does not mention".
+ */
 const FILL_EVERY_FIELD =
-  'Every field must be in the answer. When the words give nothing for one, write "" for a text, 0 for a number, "none" for a choice and an empty list; where the lines below say to omit a field or leave it out, write that empty value.';
+  'Every field must be in the answer. Where a field has nothing (the words give nothing for it, and there is no value to copy from a draft), write "" for a text, 0 for a number, "none" for a choice and an empty list, never a list of empty values. Where the lines below say to omit a field or leave it out, write that empty value.';
 
-/** A model asked for every field, empty where the words give nothing, and read back without the empties. */
+/**
+ * A model asked for every field, empty where the words give nothing, and
+ * read back without the empties. Put it around the recorded model, so a
+ * report keeps the prompt as sent and the answer as it came.
+ */
 export const requiringEveryField = (model: LanguageModel): LanguageModel => ({
   ...model,
   generateJson: async ({ jsonSchema, prompt }) =>
