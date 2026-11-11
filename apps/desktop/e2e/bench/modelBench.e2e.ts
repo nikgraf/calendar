@@ -39,6 +39,7 @@ import {
   helperSpeech,
   helperStatus,
   ollamaModel,
+  openAiExtra,
   openAiModel,
   recording,
   requiringEveryField,
@@ -318,24 +319,9 @@ interface Provider {
   readonly around?: ((model: LanguageModel) => LanguageModel) | undefined;
   readonly model: LanguageModel;
   readonly name: string;
+  /** What the run set that the name does not say; the report keeps it. */
+  readonly settings?: string | undefined;
 }
-
-/** MODEL_BENCH_OPENAI_EXTRA as the object it must be; anything else stops the run with its name. */
-const openAiExtra = (value: string | undefined): Readonly<Record<string, unknown>> => {
-  if (value === undefined || value.trim() === '') {
-    return {};
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(value);
-  } catch {
-    throw new Error(`MODEL_BENCH_OPENAI_EXTRA is not JSON: ${value}`);
-  }
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    throw new Error(`MODEL_BENCH_OPENAI_EXTRA must be a JSON object: ${value}`);
-  }
-  return parsed as Record<string, unknown>;
-};
 
 const providers = async (
   helper: HelperClient | undefined,
@@ -374,6 +360,11 @@ const providers = async (
       list.push({
         model: openAiModel(openAiUrl, name.trim(), process.env['MODEL_BENCH_OPENAI_KEY'], extra),
         name: `openai:${name.trim()}`,
+        // The endpoint and what joined each request: thinking on and thinking off are two results.
+        settings: [
+          openAiUrl,
+          ...(Object.keys(extra).length === 0 ? [] : [JSON.stringify(extra)]),
+        ].join(' '),
       });
     }
   }
@@ -468,6 +459,7 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('model bench', () => {
           // The app's pipeline keeps the provider's bare name: earlier reports compare with it.
           name: pipeline === 'app' ? provider.name : `${provider.name}+${pipeline}`,
           pipeline,
+          settings: provider.settings,
         })),
       );
       for (const provider of arms) {
@@ -498,6 +490,7 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('model bench', () => {
           cases: reports,
           provider: provider.name,
           score: scoreOf(reports),
+          settings: provider.settings,
           sha,
           timeZone: TIME_ZONE,
           today,

@@ -16,10 +16,12 @@ import type { BenchDraft } from './check.ts';
 /**
  * The plain arm of the bench: what a model does when no code reads the
  * words. One prompt per turn states the product's conventions in prose
- * and asks for the whole draft; the code after it only checks shapes (a
- * real date, a real time), fills the defaults a form would (an hour's
- * length, all day without a start) and tells what changed from the draft
- * before. It never looks at the phrase. Run beside the app's pipeline
+ * and asks for the whole draft; the code after it checks shapes (a real
+ * date, a real time), fills the defaults a form would (an hour's length,
+ * all day without a start), holds a repeat to the editor's own rules (it
+ * starts on a day of its rule, an end that has passed is next year's)
+ * and tells what changed from the draft before. It never looks at the
+ * phrase. Run beside the app's pipeline
  * (`MODEL_BENCH_PIPELINE`), the two say what the grounding buys on a
  * model, and what a model does without it.
  */
@@ -327,8 +329,9 @@ const REFUSED = "That couldn't be read — try rephrasing.";
 
 /**
  * The model's answer as a turn's result: shapes checked, a form's
- * defaults filled, and the notes, notifications and guests as changes to
- * the draft before. Nothing here reads the words.
+ * defaults filled, a repeat held to the editor's rules, and the notes,
+ * notifications and guests as changes to the draft before. Nothing here
+ * reads the words.
  */
 export const plainResult = (
   answer: unknown,

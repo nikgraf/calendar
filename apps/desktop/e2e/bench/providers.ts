@@ -360,12 +360,44 @@ export const ollamaModel = (baseUrl: string, model: string): LanguageModel => ({
   status: async () => 'ready',
 });
 
+/** What a chat request is to the bench: the extra may add to it, never replace these. */
+const OWN_KEYS = ['messages', 'model', 'response_format'];
+
+/**
+ * MODEL_BENCH_OPENAI_EXTRA as the object it must be; anything else stops
+ * the run with its name. It may not name the model, the messages or the
+ * response format: a report would say the strict schema was sent to the
+ * named model when it was not.
+ */
+export const openAiExtra = (value: string | undefined): Readonly<Record<string, unknown>> => {
+  if (value === undefined || value.trim() === '') {
+    return {};
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    throw new Error(`MODEL_BENCH_OPENAI_EXTRA is not JSON: ${value}`);
+  }
+  if (!isObject(parsed)) {
+    throw new Error(`MODEL_BENCH_OPENAI_EXTRA must be a JSON object: ${value}`);
+  }
+  const taken = OWN_KEYS.filter((key) => key in parsed);
+  if (taken.length > 0) {
+    throw new Error(
+      `MODEL_BENCH_OPENAI_EXTRA may not set ${taken.join(', ')}: the bench's own, which a report takes as sent`,
+    );
+  }
+  return parsed;
+};
+
 /**
  * A model behind an OpenAI-compatible endpoint (LM Studio, llama-server,
  * vLLM, Ollama's `/v1`), strict structured outputs. `extra` joins the
  * request body: what a server takes beyond the standard, such as the
  * switch that stops a reasoning model thinking aloud (`{"think": false}`,
- * `{"reasoning_effort": "none"}`, `{"chat_template_kwargs": …}`).
+ * `{"reasoning_effort": "none"}`, `{"chat_template_kwargs": …}`), or
+ * another temperature. The run's report names it (`settings`).
  */
 export const openAiModel = (
   baseUrl: string,

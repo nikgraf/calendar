@@ -179,11 +179,14 @@ the served model (#184) and slot proposals (#185) are in
       rules' or nobody's ("Dinner at Hard Rock Cafe on Friday at 7"
       keeps the place in the title). Asked for every field, empty where
       the words give nothing, the model fills them ("Figlmüller" from
-      "im Figlmüller"): 52 cases instead of 48, places 36 of 40 instead
-      of 30, but a title loses "with Teo", a person lands in the place,
-      a repeat gets `count: 1`, and a turn takes 1.9 s instead of 0.6 s.
-      Find the fields worth requiring (day, time and place first) with
-      `MODEL_BENCH_PIPELINE=app,raw`, before any more rules that read a
+      "im Figlmüller"): places 35 of 40 instead of 30, and 51 cases
+      instead of 47. One sentence decides that gain: a clearer wording
+      of the same instruction scored 46, with titles shrunk to a name
+      ("Sarah" for a call with Sarah); either way a title can lose
+      "with Teo", a person can land in the place, and a turn takes
+      1.7 s instead of 0.6 s. Find the fields worth requiring (the place
+      first, then day and time) with `MODEL_BENCH_PIPELINE=app,raw`,
+      and measure every wording, before any more rules that read a
       first phrase's place.
 - [ ] Served models: the strict schema and no thinking on the Ollama
       path — asked as the app asks Ollama today (the schema as `format`,
@@ -192,20 +195,21 @@ the served model (#184) and slot proposals (#185) are in
       path (every field required, `reasoning_effort: "none"`) 59 at
       0.7 s and 57 at 0.6 s.
 - [ ] A model that needs no phrase rules — on one prompt that states
-      the conventions, with code that only checks shapes (`plain.ts` in
-      the bench), Claude Haiku 5.5 scores 66 of 70, Gemma 4 31B 50–61 at
-      7 s a turn, and no phone-size model more than 25; through the
-      rules every model lands at 53–62. An opt-in tier for a model that
-      can (served on the Mac, or a cloud model the phrase would leave
-      the device for) is a product decision first; the rules stay while
-      Apple's model is the default.
+      the conventions, with no code that reads the words (`plain.ts` in
+      the bench), Claude Haiku 5.5 scores 65–66 of 70, Gemma 4 31B 49–61
+      at 7 s a turn, and no phone-size model more than 26; through the
+      rules the six open models and Claude land at 53–62, Apple's model
+      below them (47–48). An opt-in tier for a model that can (served on
+      the Mac, or a cloud model the phrase would leave the device for)
+      is a product decision first; the rules stay while Apple's model is
+      the default.
 - [ ] Gemma 4 on iOS — opt-in download via llama.rn (JSON schema →
       grammar maps onto `generateJson`), load on demand, unload on
       background; only if the bench shows the model is the bottleneck.
       It shows this much (2026-11-11, on the Mac, through the rules,
       strict schema, no thinking): Gemma 4 E2B 59 of 70 at 0.7 s a turn,
-      Qwen3.5 2B 59, LFM3 1.7B 57, against Apple's 48 as asked today
-      and 52 asked for every field. Fix Apple's schema first; the
+      Qwen3.5 2B 59, LFM3 1.7B 57, against Apple's 47 as asked today
+      and 51 asked for every field. Fix Apple's schema first; the
       iPhone's own model is not measured.
 
 - [ ] Find-a-time follow-ups — the finder keeps a whole Apple series

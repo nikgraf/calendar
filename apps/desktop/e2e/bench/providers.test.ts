@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vite-plus/test';
 import { strictSchema } from '../../electron/strictSchema.ts';
 import {
   claudeSchema,
+  openAiExtra,
   recording,
   requiredSchema,
   requiringEveryField,
@@ -157,6 +158,26 @@ describe('requiredSchema', () => {
       people: ['none'],
       title: 'Dinner',
     });
+  });
+});
+
+describe('openAiExtra', () => {
+  it('is the object the variable holds, and nothing when it is unset', () => {
+    expect(openAiExtra(undefined)).toEqual({});
+    expect(openAiExtra('  ')).toEqual({});
+    expect(openAiExtra('{"reasoning_effort":"none","temperature":0.2}')).toEqual({
+      reasoning_effort: 'none',
+      temperature: 0.2,
+    });
+  });
+
+  it('refuses what is no JSON object, and what would replace the request the bench makes', () => {
+    expect(() => openAiExtra('think')).toThrow('MODEL_BENCH_OPENAI_EXTRA is not JSON');
+    expect(() => openAiExtra('[1]')).toThrow('MODEL_BENCH_OPENAI_EXTRA must be a JSON object');
+    // The strict schema gone, under a report that says it was sent.
+    expect(() =>
+      openAiExtra('{"response_format":{"type":"json_object"},"model":"another"}'),
+    ).toThrow('MODEL_BENCH_OPENAI_EXTRA may not set model, response_format');
   });
 });
 

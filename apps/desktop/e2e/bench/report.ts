@@ -76,9 +76,26 @@ export interface Score {
 export interface BenchReport {
   readonly cases: ReadonlyArray<CaseReport>;
   readonly provider: string;
-  /** The run this report was scored again from (`rescore.ts`), however often: its commit and its time. */
-  readonly rescored?: { readonly sha: string; readonly when: string } | undefined;
+  /**
+   * The run this report was scored again from (`rescore.ts`), however
+   * often: its commit and its time. `stale` names the cases the scoring
+   * left as the report had them, because the case is gone or has other
+   * turns or words than the model answered.
+   */
+  readonly rescored?:
+    | {
+        readonly sha: string;
+        readonly stale?: ReadonlyArray<string> | undefined;
+        readonly when: string;
+      }
+    | undefined;
   readonly score: Score;
+  /**
+   * What the run set that the provider's name does not say: a served
+   * model's endpoint and MODEL_BENCH_OPENAI_EXTRA. Two reports of one name
+   * with other settings are two results.
+   */
+  readonly settings?: string | undefined;
   readonly sha: string;
   readonly timeZone: string;
   readonly today: string;
@@ -145,7 +162,9 @@ const ratio = (counter: Counter): string => `${String(counter.ok)}/${String(coun
 
 /** The run as a table: one line per case with its failing turns, then the score. */
 export const formatReport = (report: BenchReport): string => {
-  const lines: Array<string> = [`== ${report.provider}`];
+  const lines: Array<string> = [
+    `== ${report.provider}${report.settings === undefined ? '' : ` (${report.settings})`}`,
+  ];
   for (const benchCase of report.cases) {
     const total = benchCase.turns.reduce((sum, turn) => sum + (turn.ms ?? 0), 0);
     const details: Array<string> = [];
@@ -186,6 +205,12 @@ export const formatReport = (report: BenchReport): string => {
     `   cases ${ratio(score.cases)} · turns ${ratio(score.turns)} · median ${seconds(score.medianMs)} per turn`,
     `   ${fieldSummary}`,
   );
+  const stale = report.rescored?.stale ?? [];
+  if (stale.length > 0) {
+    lines.push(
+      `   not scored again (gone, or other turns or words than the report): ${stale.join(', ')}`,
+    );
+  }
   if (score.recordings !== undefined) {
     const { failed, missing, skipped, transcribed, wordErrorRate } = score.recordings;
     lines.push(
@@ -227,6 +252,11 @@ export const compareReports = (before: BenchReport, after: BenchReport): string 
     `   vs ${before.sha} (${before.when.slice(0, 16)}): cases ${ratio(before.score.cases)} → ${ratio(
       after.score.cases,
     )}, turns ${ratio(before.score.turns)} → ${ratio(after.score.turns)}`,
+    ...(before.settings === after.settings
+      ? []
+      : [
+          `   settings: ${before.settings ?? 'not recorded'} → ${after.settings ?? 'not recorded'}`,
+        ]),
     ...(fixed.length === 0 ? [] : [`   fixed: ${fixed.join(', ')}`]),
     ...(broke.length === 0 ? [] : [`   broke: ${broke.join(', ')}`]),
     ...FIELDS.map(moved)

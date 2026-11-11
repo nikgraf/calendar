@@ -178,11 +178,44 @@ describe('rescore', () => {
     });
   });
 
-  it('leaves a case alone that is gone or has other turns than the report', () => {
+  it('leaves a case alone that is gone or has other turns than the report, and names it', () => {
     const before = report([turn({ draft: draft({ location: 'nichts' }), kind: 'draft' })]);
-    expect(rescore(before, [], NOW).cases).toEqual(before.cases);
+    expect(rescore(before, [], NOW)).toMatchObject({
+      cases: before.cases,
+      rescored: { stale: ['dinner'] },
+    });
     expect(
-      rescore(before, [benchCase([{ title: 'dinner' }, { title: 'team dinner' }])], NOW).cases,
-    ).toEqual(before.cases);
+      rescore(before, [benchCase([{ title: 'dinner' }, { title: 'team dinner' }])], NOW),
+    ).toMatchObject({ cases: before.cases, rescored: { stale: ['dinner'] } });
+    // Scored again, no case is named.
+    expect(rescore(before, [benchCase([{ title: 'dinner' }])], NOW).rescored).toEqual({
+      sha: 'aaaaaaaa',
+      when: '2026-11-10T12:00:00.000Z',
+    });
+  });
+
+  it('leaves a case alone whose words are no longer the ones the model answered', () => {
+    const answered = { draft: draft({ startTime: '20:00' }), kind: 'draft' };
+    // The report's turn heard "Dinner at 8"; the case says "words" now, and expects 19:00.
+    const before = report([turn(answered, { input: 'Dinner at 8' })]);
+    expect(rescore(before, [benchCase([{ startTime: '19:00' }])], NOW)).toMatchObject({
+      cases: before.cases,
+      rescored: { stale: ['dinner'] },
+    });
+    const recorded = (transcript: string): BenchCase => ({
+      ...benchCase([]),
+      turns: [{ expect: { startTime: '19:00' }, input: { audio: 'dinner.m4a', transcript } }],
+    });
+    // A recording that ran as its transcript is held to the transcript.
+    const skipped = report([turn(answered, { audio: 'skipped', input: 'Dinner at 8' })]);
+    expect(rescore(skipped, [recorded('Dinner at 7')], NOW).rescored?.stale).toEqual(['dinner']);
+    expect(rescore(skipped, [recorded('Dinner at 8')], NOW)).toMatchObject({
+      cases: [{ ok: false, turns: [{ failed: ['time'] }] }],
+    });
+    // What the recogniser heard is never the transcript's to match: scored again.
+    const transcribed = report([
+      turn(answered, { audio: 'transcribed', heard: 'dinner at ate', input: 'dinner at ate' }),
+    ]);
+    expect(rescore(transcribed, [recorded('Dinner at 7')], NOW).rescored?.stale).toBeUndefined();
   });
 });

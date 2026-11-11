@@ -154,6 +154,23 @@ describe('formatReport', () => {
     ).toContain('recordings: 2 missing (ran as the transcript)');
   });
 
+  it('says what the run set beyond the provider, and which cases a rescore left alone', () => {
+    const text = formatReport(
+      report(CASES, {
+        provider: 'openai:lfm3',
+        rescored: { sha: 'old0000', stale: ['dinner'], when: '2026-08-21T09:00:00.000Z' },
+        settings: 'http://127.0.0.1:11434/v1 {"reasoning_effort":"none"}',
+      }),
+    );
+    expect(text).toContain(
+      '== openai:lfm3 (http://127.0.0.1:11434/v1 {"reasoning_effort":"none"})',
+    );
+    expect(text).toContain(
+      '   not scored again (gone, or other turns or words than the report): dinner',
+    );
+    expect(formatReport(report(CASES))).not.toContain('not scored again');
+  });
+
   it('places no fault on a turn that passes, whatever a rescored report kept of the transcript', () => {
     const passing = turn({
       audio: 'transcribed',
@@ -190,6 +207,19 @@ describe('compareReports', () => {
       { ...CASES[0]!, id: 'dinner-2', ok: false, turns: [turn({ failed: ['title'] })] },
     ]);
     expect(compareReports(before, after)).toContain('title 1/1 → 1/2');
+  });
+
+  it('says when the two runs were not set up alike', () => {
+    const thinking = report(CASES, { provider: 'openai:lfm3', settings: 'http://localhost/v1' });
+    const quiet = report(CASES, {
+      provider: 'openai:lfm3',
+      settings: 'http://localhost/v1 {"reasoning_effort":"none"}',
+    });
+    expect(compareReports(thinking, quiet)).toContain(
+      '   settings: http://localhost/v1 → http://localhost/v1 {"reasoning_effort":"none"}',
+    );
+    expect(compareReports(report(CASES), quiet)).toContain('   settings: not recorded → ');
+    expect(compareReports(quiet, quiet)).not.toContain('settings');
   });
 });
 

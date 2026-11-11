@@ -1,4 +1,4 @@
-import type { BenchCase, Expectation } from './cases.ts';
+import type { BenchCase, Expectation, TurnInput } from './cases.ts';
 import { type BenchDraft, check, checkWithoutDraft, type Outcome } from './check.ts';
 import { type BenchReport, type CaseReport, scoreOf, type TurnReport } from './report.ts';
 
@@ -28,13 +28,24 @@ const saidAgain = (
 };
 
 /**
+ * Whether a turn's stored words are still its case's. What a recogniser
+ * heard is never the transcript's to match, so a transcribed recording is
+ * taken as the case's.
+ */
+const sameWords = (turn: TurnReport, input: TurnInput): boolean =>
+  turn.audio === 'transcribed' || turn.input === ('text' in input ? input.text : input.transcript);
+
+/**
  * An earlier report scored again by the checks as they are now, without
  * asking the model: each turn's stored outcome is checked against its
  * case, the draft before it being the last one the report holds, and so
  * is the transcript's own outcome where a recorded turn fails. For a
  * change to the checks or to an expectation alone; a changed prompt,
  * pipeline or provider needs a run. A case that is gone, or has other
- * turns than the report, stays as the report had it.
+ * turns or other words than the model answered, stays as the report had
+ * it and is named (`rescored.stale`): an answer to "at 8" held to an
+ * expectation for "at 7" would fail the model for a changed case. An
+ * address book or a recording that changed is not seen; that needs a run.
  */
 export const rescore = (
   report: BenchReport,
@@ -42,9 +53,15 @@ export const rescore = (
   { sha, when }: { readonly sha: string; readonly when: string },
 ): BenchReport => {
   const byId = new Map(cases.map((benchCase) => [benchCase.id, benchCase]));
+  const stale: Array<string> = [];
   const rescored = report.cases.map((caseReport): CaseReport => {
     const benchCase = byId.get(caseReport.id);
-    if (benchCase === undefined || benchCase.turns.length !== caseReport.turns.length) {
+    if (
+      benchCase === undefined ||
+      benchCase.turns.length !== caseReport.turns.length ||
+      !caseReport.turns.every((turn, index) => sameWords(turn, benchCase.turns[index]!.input))
+    ) {
+      stale.push(caseReport.id);
       return caseReport;
     }
     let draft: BenchDraft | undefined;
@@ -76,7 +93,11 @@ export const rescore = (
     cases: rescored,
     // The run stays the source through a second scoring: two reports scored
     // in one second share that scoring's sha and time, never their runs'.
-    rescored: report.rescored ?? { sha: report.sha, when: report.when },
+    rescored: {
+      sha: report.rescored?.sha ?? report.sha,
+      ...(stale.length === 0 ? {} : { stale }),
+      when: report.rescored?.when ?? report.when,
+    },
     score: scoreOf(rescored),
     sha,
     when,

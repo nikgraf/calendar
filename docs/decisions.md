@@ -1260,12 +1260,12 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
 - **The bench runs a model without the rules** (2026-11-11, #306) — whether
   rules that read a phrase are the wrong road was argued, then measured: the
   bench runs `app`, `raw` (the app's prompts, the answer not held against the
-  words) and `plain` (one prompt that states the conventions, code that only
-  checks shapes) on Apple's model, six open models over Ollama and Claude.
+  words) and `plain` (one prompt that states the conventions, no code that
+  reads the words) on Apple's model, six open models over Ollama and Claude.
   Through the rules a 1.7B model and Opus alike score 53–62 of 70, Apple's
-  as asked today 48; without them Claude scores 66, Gemma 4 31B 50–61, a
-  phone-size model 25 at most. Apple's title-only first phrase is the
-  schema's doing: optional properties are skipped, required ones filled.
+  as asked today 47–48; without them Claude scores 65–66, Gemma 4 31B
+  49–61, a phone-size model 26 at most. Apple's title-only first phrase is
+  the schema's doing: optional properties are skipped, required ones filled.
   Rejected: a plain prompt tuned per model. Open: `todo.md`, Tier 3.
 - **A served model beside Apple's** (2026-10-12, #184)
   — the desktop can answer `generateJson` from a model served over HTTP
