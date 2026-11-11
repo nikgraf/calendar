@@ -1,5 +1,5 @@
 import type { BenchCase } from './cases.ts';
-import { type BenchDraft, check, type Outcome } from './check.ts';
+import { type BenchDraft, check, checkWithoutDraft, type Outcome } from './check.ts';
 import { type BenchReport, type CaseReport, scoreOf, type TurnReport } from './report.ts';
 
 /** The notes of a turn that are about its recording or its missing draft, not about a check. */
@@ -31,12 +31,9 @@ export const rescore = (
       // phrase had made no draft for this turn to change.
       const stored = turn.outcome as Outcome | null | undefined;
       const ran = stored !== undefined && stored !== null;
-      const result = check(
-        expectation,
-        ran ? stored : { kind: 'rejected', reason: 'no draft' },
-        ran ? draft : undefined,
-        report.today,
-      );
+      const result = ran
+        ? check(expectation, stored, draft, report.today)
+        : checkWithoutDraft(expectation, report.today);
       if (ran && stored.kind === 'draft') {
         ({ draft } = stored);
       }

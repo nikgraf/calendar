@@ -257,12 +257,17 @@ export const withoutEmpties = (value: unknown): unknown => {
 };
 
 /**
- * Said before the prompt. "Nothing for a field" is nothing in the words
- * and nothing to copy: a prompt that hands over a draft to return must
- * not read this as "blank what the change does not mention".
+ * Said before the prompt, in the wording the table was measured with. A
+ * longer one that also spoke of a draft ("no value to copy from a draft",
+ * "never a list of empty values") scored 46 of 70 through the rules on
+ * Apple's model, against 52 and 51 for this one: titles shrank to a name
+ * ("Sarah" for a call with Sarah). A list of empty values is undone in
+ * `withoutEmpties` instead. A turn that returns a draft may still read
+ * this as "blank what the change does not mention": the unchanged rule
+ * shows it where it happens.
  */
 const FILL_EVERY_FIELD =
-  'Every field must be in the answer. Where a field has nothing (the words give nothing for it, and there is no value to copy from a draft), write "" for a text, 0 for a number, "none" for a choice and an empty list, never a list of empty values. Where the lines below say to omit a field or leave it out, write that empty value.';
+  'Every field must be in the answer. When the words give nothing for one, write "" for a text, 0 for a number, "none" for a choice and an empty list; where the lines below say to omit a field or leave it out, write that empty value.';
 
 /**
  * A model asked for every field, empty where the words give nothing, and

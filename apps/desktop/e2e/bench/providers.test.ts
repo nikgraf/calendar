@@ -136,8 +136,6 @@ describe('requiredSchema', () => {
     });
     expect(asked[0]?.jsonSchema).toEqual(requiredSchema(SCHEMA));
     expect(asked[0]?.prompt).toMatch(/^Every field must be in the answer\..*\nPhrase: Dinner$/su);
-    // A draft handed over to be returned is not to be blanked.
-    expect(asked[0]?.prompt).toContain('no value to copy from a draft');
   });
 
   it('is recorded as sent and as answered when it sits around the recorder', async () => {

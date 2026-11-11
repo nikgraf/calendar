@@ -20,7 +20,14 @@ import {
   localeOf,
   type TurnInput,
 } from './cases.ts';
-import { applyResult, type BenchDraft, check, type Outcome, wordErrorRate } from './check.ts';
+import {
+  applyResult,
+  type BenchDraft,
+  check,
+  checkWithoutDraft,
+  type Outcome,
+  wordErrorRate,
+} from './check.ts';
 import { plainTurn } from './plain.ts';
 import {
   claudeModel,
@@ -214,12 +221,7 @@ const runCase = async (
     const heard = await hear(turn.input, { locale, speech });
     if (index > 0 && draft === undefined) {
       // The first phrase made nothing to change.
-      const checked = check(
-        turn.expect,
-        { kind: 'rejected', reason: 'no draft' },
-        undefined,
-        today,
-      );
+      const checked = checkWithoutDraft(turn.expect, today);
       const { error, ...spoken } = heard;
       turns.push({
         ...spoken,

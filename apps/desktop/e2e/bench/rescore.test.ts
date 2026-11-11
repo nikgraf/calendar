@@ -111,9 +111,9 @@ describe('rescore', () => {
         notes: ['rejected: Nothing to schedule was understood.'],
       },
       {
-        // As the run scored it: every named field, with no draft to hold it to.
-        checked: ['title', 'unsaid'],
-        failed: ['title', 'unsaid'],
+        // As the run scored it: every named field, and neither rule, with no draft to hold it to.
+        checked: ['title'],
+        failed: ['title'],
         notes: ['no draft to change', 'recording not read: no speech'],
       },
     ]);

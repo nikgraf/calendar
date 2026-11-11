@@ -1,7 +1,15 @@
 import type { QuickAddResult } from '@calendar/ai';
 import { Contact } from '@calendar/core';
 import { describe, expect, it } from 'vite-plus/test';
-import { applyResult, type BenchDraft, check, fieldsOf, fold, wordErrorRate } from './check.ts';
+import {
+  applyResult,
+  type BenchDraft,
+  check,
+  checkWithoutDraft,
+  fieldsOf,
+  fold,
+  wordErrorRate,
+} from './check.ts';
 
 // 2026-08-22 is a Saturday; 2026-08-28 the Friday after.
 const TODAY = '2026-08-22';
@@ -278,6 +286,15 @@ describe('check', () => {
       failed: ['rejected'],
       notes: ['accepted, a rejection was expected'],
     });
+  });
+
+  it('a later turn without a draft fails what it named, and neither rule', () => {
+    expect(checkWithoutDraft({ startTime: '20:00', title: 'dinner' }, TODAY)).toEqual({
+      checked: ['title', 'time'],
+      failed: ['title', 'time'],
+      notes: ['rejected: no draft'],
+    });
+    expect(checkWithoutDraft({ rejected: true }, TODAY).failed).toEqual([]);
   });
 
   it('a later turn must leave every part it was not about as it was', () => {

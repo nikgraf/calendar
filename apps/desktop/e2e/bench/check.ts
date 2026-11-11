@@ -516,6 +516,23 @@ export const check = (
   return { checked, failed: [...failed], notes };
 };
 
+const withoutUnsaid = (fields: ReadonlyArray<Field>): ReadonlyArray<Field> =>
+  fields.filter((field) => field !== 'unsaid');
+
+/**
+ * A later turn the first phrase left no draft for: it fails what its
+ * expectation named. Neither rule is counted, since it is no first phrase
+ * and there is no draft it could have changed.
+ */
+export const checkWithoutDraft = (expectation: Expectation, today: string): TurnCheck => {
+  const result = check(expectation, { kind: 'rejected', reason: 'no draft' }, undefined, today);
+  return {
+    checked: withoutUnsaid(result.checked),
+    failed: withoutUnsaid(result.failed),
+    notes: result.notes,
+  };
+};
+
 /** Words as the recogniser is held to them: folded, without the punctuation around them. */
 const tokens = (text: string): ReadonlyArray<string> =>
   fold(text)
