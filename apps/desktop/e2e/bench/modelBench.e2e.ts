@@ -64,8 +64,10 @@ import {
  * own build; MODEL_BENCH_APPLE=0 leaves it out, MODEL_BENCH_APPLE_REQUIRED=1
  * adds it a second time, asked for every field). Ollama: MODEL_BENCH_OLLAMA
  * names the model (several, comma-separated), MODEL_BENCH_OLLAMA_URL the
- * server. An OpenAI-compatible endpoint: MODEL_BENCH_OPENAI (model),
- * MODEL_BENCH_OPENAI_URL (base, up to `/v1`), MODEL_BENCH_OPENAI_KEY.
+ * server. An OpenAI-compatible endpoint: MODEL_BENCH_OPENAI (models,
+ * comma-separated), MODEL_BENCH_OPENAI_URL (base, up to `/v1`),
+ * MODEL_BENCH_OPENAI_KEY, MODEL_BENCH_OPENAI_EXTRA (JSON joined to the
+ * request body).
  * Claude: MODEL_BENCH_CLAUDE names the models, each with its effort after
  * an `@` (`claude-haiku-5-5@low,claude-opus-5-5`), ANTHROPIC_API_KEY the key.
  * MODEL_BENCH_PIPELINE lists what runs around the model, comma-separated:
@@ -331,15 +333,20 @@ const providers = async (
   for (const name of (process.env['MODEL_BENCH_OLLAMA'] ?? '').split(',').filter(Boolean)) {
     list.push({ model: ollamaModel(ollamaUrl, name.trim()), name: `ollama:${name.trim()}` });
   }
-  const openAi = process.env['MODEL_BENCH_OPENAI'];
-  if (openAi) {
+  const openAiUrl = process.env['MODEL_BENCH_OPENAI_URL'] ?? 'http://localhost:1234/v1';
+  const openAiExtra = JSON.parse(process.env['MODEL_BENCH_OPENAI_EXTRA'] ?? '{}') as Record<
+    string,
+    unknown
+  >;
+  for (const name of (process.env['MODEL_BENCH_OPENAI'] ?? '').split(',').filter(Boolean)) {
     list.push({
       model: openAiModel(
-        process.env['MODEL_BENCH_OPENAI_URL'] ?? 'http://localhost:1234/v1',
-        openAi,
+        openAiUrl,
+        name.trim(),
         process.env['MODEL_BENCH_OPENAI_KEY'],
+        openAiExtra,
       ),
-      name: `openai:${openAi}`,
+      name: `openai:${name.trim()}`,
     });
   }
   for (const spec of (process.env['MODEL_BENCH_CLAUDE'] ?? '').split(',').filter(Boolean)) {

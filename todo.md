@@ -168,15 +168,45 @@ the served model (#184) and slot proposals (#185) are in
       contacts and past places, which needs an own speech module on iOS
       (`@react-native-ai/apple` takes audio and a locale), with MapKit's
       structured city/region/country fields in the same native build;
-      the place of a first phrase is the model's alone, and Apple's on
-      the Mac names none ("Dinner at Hard Rock Cafe on Friday at 7"
-      keeps it in the title: every first-phrase location case of the
-      bench fails there), and a place turn keeps the cue the model
-      copied ("im Figlmüller", "at the office"), which no lookup
-      resembles; bench cases that ask MapKit.
+      a place turn keeps the cue the model copied ("im Figlmüller", "at
+      the office"), which no lookup resembles; bench cases that ask
+      MapKit. The place of a first phrase is the next item's.
+- [ ] Quick-add schema on Apple's model (the bench arms, 2026-11-11,
+      `docs/decisions.md` → AI, "The bench runs a model without the
+      rules") — every field but the title is optional, and guided
+      generation skips optional fields: a first phrase comes back as its
+      title alone, 70 times of 70, so its day, time and place are the
+      rules' or nobody's ("Dinner at Hard Rock Cafe on Friday at 7"
+      keeps the place in the title). Asked for every field, empty where
+      the words give nothing, the model fills them ("Figlmüller" from
+      "im Figlmüller"): 52 cases instead of 48, places 36 of 40 instead
+      of 30, but a title loses "with Teo", a person lands in the place,
+      a repeat gets `count: 1`, and a turn takes 1.9 s instead of 0.6 s.
+      Find the fields worth requiring (day, time and place first) with
+      `MODEL_BENCH_PIPELINE=app,raw`, before any more rules that read a
+      first phrase's place.
+- [ ] Served models: the strict schema and no thinking on the Ollama
+      path — asked as the app asks Ollama today (the schema as `format`,
+      thinking as the model defaults), Gemma 4 E2B scores 40 of 70 at
+      4.1 s a turn and LFM3 1.7B 46 at 19 s; over the OpenAI-compatible
+      path (every field required, `reasoning_effort: "none"`) 59 at
+      0.7 s and 57 at 0.6 s.
+- [ ] A model that needs no phrase rules — on one prompt that states
+      the conventions, with code that only checks shapes (`plain.ts` in
+      the bench), Claude Haiku 5.5 scores 66 of 70, Gemma 4 31B 50–61 at
+      7 s a turn, and no phone-size model more than 25; through the
+      rules every model lands at 53–62. An opt-in tier for a model that
+      can (served on the Mac, or a cloud model the phrase would leave
+      the device for) is a product decision first; the rules stay while
+      Apple's model is the default.
 - [ ] Gemma 4 on iOS — opt-in download via llama.rn (JSON schema →
       grammar maps onto `generateJson`), load on demand, unload on
       background; only if the bench shows the model is the bottleneck.
+      It shows this much (2026-11-11, on the Mac, through the rules,
+      strict schema, no thinking): Gemma 4 E2B 59 of 70 at 0.7 s a turn,
+      Qwen3.5 2B 59, LFM3 1.7B 57, against Apple's 48 as asked today
+      and 52 asked for every field. Fix Apple's schema first; the
+      iPhone's own model is not measured.
 
 - [ ] Find-a-time follow-ups — the finder keeps a whole Apple series
       busy through a series edit (its rows are read through EventKit, no

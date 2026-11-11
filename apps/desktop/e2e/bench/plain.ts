@@ -23,7 +23,12 @@ import type { BenchDraft } from './check.ts';
  * model, and what a model does without it.
  */
 
-/** What the model is asked for: the draft after the turn, every part optional but the title. */
+/**
+ * What the model is asked for: the draft after the turn, every part
+ * optional but the title. The refusal is a flag that is false for an
+ * ordinary phrase: asked the other way round ("understood"), the small
+ * models answered false to phrases they had read correctly.
+ */
 export const PLAIN_JSON_SCHEMA = {
   additionalProperties: false,
   properties: {
@@ -33,6 +38,7 @@ export const PLAIN_JSON_SCHEMA = {
     kind: { enum: ['event', 'task'], type: 'string' },
     location: { type: 'string' },
     notes: { type: 'string' },
+    nothingToSchedule: { type: 'boolean' },
     reminders: {
       description: 'minutes before the start',
       items: { type: 'number' },
@@ -53,10 +59,9 @@ export const PLAIN_JSON_SCHEMA = {
     startTime: { description: 'HH:MM, 24-hour', type: 'string' },
     timeAssumed: { type: 'boolean' },
     title: { type: 'string' },
-    understood: { type: 'boolean' },
     uninvite: { items: { type: 'string' }, type: 'array' },
   },
-  required: ['kind', 'title', 'understood'],
+  required: ['kind', 'nothingToSchedule', 'title'],
   type: 'object',
 } as const;
 
@@ -85,7 +90,7 @@ const conventions = (referenceDate: string, timeZone: string): ReadonlyArray<str
   '- repeat: only when the words say it repeats. freq is daily, weekly, monthly or yearly; interval for "every 2 weeks"; count for "5 times"; untilDate as YYYY-MM-DD; byDay lists the weekdays of a weekly rule as MO TU WE TH FR SA SU ("every weekday" is MO to FR), with a number in front for a monthly "second Tuesday" (2TU; -1FR is the last Friday).',
   '- notes: text the words ask to note down ("note: bring the contract"), as said.',
   '- reminders: the notifications the words ask for, each as minutes before the start ("remind me an hour before" is 60).',
-  '- understood: false when the words give nothing to put in a calendar, or ask for something impossible (an end before its start).',
+  '- nothingToSchedule: true only when the words give nothing to put in a calendar, or ask for something impossible (an end before its start). Otherwise false.',
   '- Never invent a value the words do not give.',
 ];
 
@@ -329,7 +334,7 @@ export const plainResult = (
     return { kind: 'rejected', reason: REFUSED };
   }
   const title = textOf(answer['title']);
-  if (answer['understood'] === false || title === undefined) {
+  if (answer['nothingToSchedule'] === true || title === undefined) {
     return { kind: 'rejected', reason: 'Nothing to schedule was understood.' };
   }
   const before = draft === undefined ? undefined : eventOf(draft);

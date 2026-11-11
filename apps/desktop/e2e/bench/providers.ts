@@ -331,11 +331,18 @@ export const ollamaModel = (baseUrl: string, model: string): LanguageModel => ({
   status: async () => 'ready',
 });
 
-/** A model behind an OpenAI-compatible endpoint (LM Studio, llama-server, vLLM), strict structured outputs. */
+/**
+ * A model behind an OpenAI-compatible endpoint (LM Studio, llama-server,
+ * vLLM, Ollama's `/v1`), strict structured outputs. `extra` joins the
+ * request body: what a server takes beyond the standard, such as the
+ * switch that stops a reasoning model thinking aloud (`{"think": false}`,
+ * `{"reasoning_effort": "none"}`, `{"chat_template_kwargs": …}`).
+ */
 export const openAiModel = (
   baseUrl: string,
   model: string,
   apiKey: string | undefined,
+  extra: Readonly<Record<string, unknown>> = {},
 ): LanguageModel => ({
   generateJson: async ({ jsonSchema, prompt }) => {
     const response = await fetch(`${baseUrl.replace(/\/+$/, '')}/chat/completions`, {
@@ -347,6 +354,7 @@ export const openAiModel = (
           type: 'json_schema',
         },
         temperature: 0,
+        ...extra,
       }),
       headers: headers(apiKey),
       method: 'POST',

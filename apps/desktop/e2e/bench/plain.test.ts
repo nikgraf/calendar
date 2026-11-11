@@ -30,7 +30,7 @@ const draftOf = (
 
 describe('plainResult, a first phrase', () => {
   it('fills what a form would: today, all day without a start, an hour without an end', () => {
-    expect(first({ kind: 'event', title: 'Offsite', understood: true })).toEqual({
+    expect(first({ kind: 'event', nothingToSchedule: false, title: 'Offsite' })).toEqual({
       kind: 'parsed',
       prefill: {
         date: TODAY,
@@ -45,10 +45,10 @@ describe('plainResult, a first phrase', () => {
         date: '2026-11-13',
         kind: 'event',
         location: ' Blue Door ',
+        nothingToSchedule: false,
         startTime: '9:30',
         timeAssumed: true,
         title: 'Breakfast',
-        understood: true,
       }),
     ).toEqual({
       kind: 'parsed',
@@ -65,14 +65,14 @@ describe('plainResult, a first phrase', () => {
   });
 
   it('keeps a stated end, and drops one that is not after the start or not a time', () => {
-    const answer = { kind: 'event', startTime: '14:00', title: 'Review', understood: true };
+    const answer = { kind: 'event', nothingToSchedule: false, startTime: '14:00', title: 'Review' };
     expect(first({ ...answer, endTime: '15:30' })).toMatchObject({ prefill: { endTime: '15:30' } });
     expect(first({ ...answer, endTime: '13:00' })).toMatchObject({ prefill: { endTime: '15:00' } });
     expect(first({ ...answer, endTime: '25:00' })).toMatchObject({ prefill: { endTime: '15:00' } });
   });
 
   it('takes a date that is none as today', () => {
-    const answer = { kind: 'event', title: 'Review', understood: true };
+    const answer = { kind: 'event', nothingToSchedule: false, title: 'Review' };
     expect(first({ ...answer, date: '2026-02-30' })).toMatchObject({ prefill: { date: TODAY } });
     expect(first({ ...answer, date: 'Friday' })).toMatchObject({ prefill: { date: TODAY } });
   });
@@ -82,9 +82,9 @@ describe('plainResult, a first phrase', () => {
       first({
         kind: 'task',
         notes: 'the blue folder',
+        nothingToSchedule: false,
         startTime: '17:00',
         title: 'Call the bank',
-        understood: true,
       }),
     ).toEqual({
       kind: 'task',
@@ -94,13 +94,13 @@ describe('plainResult, a first phrase', () => {
   });
 
   it('refuses what was not understood, and an answer without a title', () => {
-    expect(first({ kind: 'event', title: 'x', understood: false }).kind).toBe('rejected');
-    expect(first({ kind: 'event', title: '  ', understood: true }).kind).toBe('rejected');
+    expect(first({ kind: 'event', nothingToSchedule: true, title: 'x' }).kind).toBe('rejected');
+    expect(first({ kind: 'event', nothingToSchedule: false, title: '  ' }).kind).toBe('rejected');
     expect(first('nonsense').kind).toBe('rejected');
   });
 
   it('reads a repeat: one weekday of a weekly rule is the date, several are listed', () => {
-    const answer = { kind: 'event', title: 'Standup', understood: true };
+    const answer = { kind: 'event', nothingToSchedule: false, title: 'Standup' };
     expect(first({ ...answer, repeat: { byDay: ['TH'], freq: 'weekly' } })).toMatchObject({
       prefill: { date: '2026-11-12', recurrence: { freq: 'weekly' } },
     });
@@ -134,9 +134,9 @@ describe('plainResult, a first phrase', () => {
         invite: ['Ben', ' '],
         kind: 'event',
         notes: 'bring the contract',
+        nothingToSchedule: false,
         reminders: [60, 10, -5, 2.5],
         title: 'Review',
-        understood: true,
         uninvite: [],
       }),
     ).toMatchObject({
@@ -155,10 +155,10 @@ describe('plainResult, a change to the draft', () => {
     kind: 'event',
     location: 'Blue Door',
     notes: 'window table',
+    nothingToSchedule: false,
     reminders: [30],
     startTime: '19:00',
     title: 'Dinner',
-    understood: true,
   };
   const change = (answer: unknown) => plainResult(answer, { draft, referenceDate: '2026-11-01' });
 
