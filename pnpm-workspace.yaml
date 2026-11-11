@@ -56,6 +56,10 @@ allowBuilds:
   msgpackr-extract: false
   # Pulled in by eas-cli; its postinstall only prints a notice.
   protobufjs: false
+  # Its postinstall downloads prebuilt llama.cpp binaries from a GitHub
+  # release. The iOS pod compiles the sources the package ships instead
+  # (apps/ios/plugins/withLlamaFromSource.cjs).
+  llama.rn: false
 peerDependencyRules:
   allowAny:
     - vite

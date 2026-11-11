@@ -82,6 +82,10 @@ module.exports = ({ config }) => {
       icon: './assets/icon-dev.png',
     },
     name: 'Solunivo Dev',
+    // The dev variant alone links llama.rn (react-native.config.js); its
+    // pod compiles from source. Listed first: the local notifications
+    // plugin has to stay last.
+    plugins: ['./plugins/withLlamaFromSource.cjs', ...(config.plugins ?? [])],
     scheme: ['solunivo-dev', reversedClientId(DEV_GOOGLE_IOS_CLIENT_ID)],
   };
 };

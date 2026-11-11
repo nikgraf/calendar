@@ -18,3 +18,4 @@ export * from './capture.ts';
 export * from './parseCapture.ts';
 export * from './fixtureModel.ts';
 export * from './endpointer.ts';
+export * from './strictSchema.ts';
