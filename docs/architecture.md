@@ -36,7 +36,22 @@ SQLite (node:sqlite / op-sqlite)
 
 **AI** (all on-device, no cloud): prompts, JSON schemas, normalization and
 parsing live in `packages/ai` behind the `LanguageModel`, `SpeechToText`
-and `TextRecognizer` seams; the pure `findFreeSlots` solver
+and `TextRecognizer` seams. The Assistant reads a phrase through a
+`PhraseReader` (`phraseReader.ts`): on the Mac (and under the fixture
+model) the app's pipeline with its grounding over Apple's model or a
+served one (`rulesReader`, below); on the iPhone the tuned path
+(`tunedReader`, `tuned.ts`), a Qwen3.5 0.8B trained for these prompts
+(`apps/desktop/e2e/bench/train/`) and run in the app by llama.rn. The
+tuned prompt is the days, the draft and the words; the answer is the
+whole draft, a far day and a ruled-out weekday written as said and
+worked out by code (`said.ts`), and `answerResult` (`tunedResult.ts`)
+checks shapes and fills a form's defaults without reading the words. The
+iPhone downloads the model once, after asking, over Wi-Fi unless mobile
+data is allowed (`apps/ios/src/assistantDownload.ts`, a background
+`URLSession` in the `solunivo-model-download` module), checks its size
+and SHA-256, loads it on the first question and lets it go when the app
+leaves the screen (`assistantModel.ts`). Find a time, search sentences
+and capture keep Apple's model; the pure `findFreeSlots` solver
 (`packages/core/src/scheduling/`) computes free slots from the
 already-synced local events — busy is what `blocksTime` says (timed, not
 cancelled, not marked free, not declined), the rule the agent gateway's

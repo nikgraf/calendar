@@ -1160,6 +1160,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
 
 ## AI
 
+- **The Assistant's own model on the iPhone** (2026-11-13, #307) — a
+  Qwen3.5 0.8B trained on the tuned prompt reads the Assistant's
+  phrases on the iPhone, run in the app by llama.rn (both variants),
+  downloaded once from GitHub after asking: Wi-Fi only unless mobile data
+  is allowed (App Review 4.2.3, Low Data Mode). Its data is DeepSeek V4's
+  (MIT; its API terms allow distillation): Anthropic's Usage Policy
+  forbids training on Claude's outputs, so the Claude-made rounds were
+  set aside. Rejected: Apple's model with the rules, Gemma 4 E2B (does not
+  fit). Open: todo.md (the Mac, the other AI features, 6 GB iPhones).
 - **The editor's two views: Assistant and Form** (2026-11-12, #308) —
   the assistant is its own view, a conversation whose answers are the
   item as a card with what changed marked, and the form a second view of

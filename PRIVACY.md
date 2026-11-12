@@ -1,6 +1,6 @@
 # Privacy Policy
 
-_Last updated: 2026-10-30_
+_Last updated: 2026-11-13_
 
 Solunivo is a calendar and task app for macOS and iOS. It has no server
 of its own: the app talks directly from your device to Google and Apple,
@@ -53,12 +53,17 @@ Calendar, Apple Reminders and your address book, for the same purposes.
   can end up in an Apple calendar this way, or the other way round. The
   copies carry an opaque marker so the app can find them again; it names
   nothing about the original.
-- **Stays on your device, too:** by default, quick-add parsing,
-  find-a-time suggestions, dictation, and reading events out of a pasted
-  text or a shared screenshot use Apple's on-device models and text
-  recognition. Your voice and images never leave the device for this, and
-  the text is sent only to a model server you choose on the Mac (next
-  point).
+- **Stays on your device, too:** on the iPhone, the Assistant reads what
+  you type or say with a model of its own that runs on the device; on the
+  Mac, and for find-a-time suggestions, dictation, and reading events out
+  of a pasted text or a shared screenshot, the app uses Apple's on-device
+  models and text recognition by default. Your voice and images never
+  leave the device for this, and the text is sent only to a model server
+  you choose on the Mac (next point).
+- **The Assistant's model is downloaded once (iPhone).** The app asks
+  before it downloads it (about 800 MB, over Wi-Fi unless you allow mobile
+  data) from GitHub, which sees the request for the file, not your data.
+  Nothing you say is sent anywhere to use it.
 - **Goes to a model server you choose (Mac only).** Under Settings → AI
   Model you can pick Ollama or any OpenAI-compatible server instead of
   Apple's models. That server then receives what those features work on:
@@ -76,7 +81,8 @@ Calendar, Apple Reminders and your address book, for the same purposes.
 We do not run analytics, crash reporting or advertising, and we do not
 sell, share or transfer your data to anyone. We have no servers that
 could receive it. App updates for iOS are downloaded from Expo's update
-service, which sees only the request for the update, not your data.
+service, and the Assistant's model from GitHub; each sees only the
+request for the file, not your data.
 
 ## Google API data
 

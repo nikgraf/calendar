@@ -211,14 +211,13 @@ the served model (#184) and slot proposals (#185) are in
       the Mac, or a cloud model the phrase would leave the device for)
       is a product decision first; the rules stay while Apple's model is
       the default.
-- [ ] Gemma 4 on iOS — opt-in download via llama.rn (JSON schema →
-      grammar maps onto `generateJson`), load on demand, unload on
-      background; only if the bench shows the model is the bottleneck.
-      It shows this much (2026-11-11, on the Mac, through the rules,
-      strict schema, no thinking): Gemma 4 E2B 59 of 70 at 0.7 s a turn,
-      Qwen3.5 2B 59, LFM3 1.7B 57, against Apple's 47 as asked today
-      and 51 asked for every field. Fix Apple's schema first; the
-      iPhone's own model is not measured.
+- [ ] The Assistant's own model, follow-ups (#307): the Mac still reads
+      the Assistant with Apple's model and the rules (a GGUF runtime
+      there, or the same file served by llama-server); find a time,
+      search sentences and capture still need Apple's model (data and a
+      tuned prompt each); a model for 6 GB iPhones (Q4_K_M, 1.2 GB
+      loaded, or a smaller base); "next Friday" and deadlines ("before
+      Friday") are read as the teacher read them, which wavers.
 
 - [ ] Find-a-time follow-ups — the finder keeps a whole Apple series
       busy through a series edit (its rows are read through EventKit, no

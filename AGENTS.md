@@ -7,7 +7,9 @@ No backend: data syncs directly against the Google Calendar/Tasks REST
 APIs with syncToken (events) and updatedMin-watermark (tasks) polling
 plus an offline-tolerant pending-op queue. On-device AI (Apple Foundation
 Models + SpeechAnalyzer + Vision) powers quick-add parsing, find-a-time,
-dictation and capture from text or photo.
+dictation and capture from text or photo; on the iPhone the Assistant's
+phrases run on a model of the app's own (a fine-tuned Qwen3.5 0.8B,
+downloaded once, run by llama.rn).
 
 ## Monorepo map
 
@@ -79,7 +81,10 @@ dictation and capture from text or photo.
   `src/settingsCodeInbox.ts` hands a code that arrives from outside to a
   reader); `@expo/ui` for
   drop-in native controls; zero-hop direct backend; @react-native-ai/apple
-  for on-device model access; the local Expo modules under `modules/`;
+  for on-device model access; llama.rn for the Assistant's own model
+  (`src/assistantRuntime.ts`: the download, asked for at launch, Wi-Fi
+  only unless mobile data is allowed; the Model Spike page measures with
+  the same runtime, in both variants); the local Expo modules under `modules/`;
   `expo-maps` draws the editor map.
 - `apps/web` — the website (solunivo.com): a static landing page and the
   privacy policy (rendered from the root `PRIVACY.md` at build time),
