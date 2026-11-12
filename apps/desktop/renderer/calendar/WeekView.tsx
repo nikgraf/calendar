@@ -14,6 +14,7 @@ import {
   expandedAllDayRows,
   foldTaskBacklog,
   formatPlainTime,
+  type FreeSlot,
   isShadedDay,
   layoutAllDayLane,
   layoutDayColumn,
@@ -39,7 +40,7 @@ import { type RefObject, useEffect, useLayoutEffect, useMemo, useRef, useState }
 import { AllDayLane, type FoldEntry, LANE_ROW_PX } from './AllDayLane.tsx';
 import { type ColorLookup } from './colors.ts';
 import { DayHeaders } from './DayHeaders.tsx';
-import { DraftBlock } from './DraftBlock.tsx';
+import { DraftBlock, DraftTrace } from './DraftBlock.tsx';
 import { NowIndicator } from './NowIndicator.tsx';
 import { TimedEventBlock } from './TimedEventBlock.tsx';
 import { TimedTaskBlock } from './TimedTaskBlock.tsx';
@@ -163,7 +164,7 @@ export function WeekView({
   listColorOf: (task: TaskRecord) => string | undefined;
   onBirthdayClick: (birthday: BirthdayOccurrence) => void;
   /** A draft block was clicked: the editor focuses that draft — and moves it into the slot, for a candidate. */
-  onDraftClick: (draftId: string, slot?: DraftOccurrence['candidate']) => void;
+  onDraftClick: (draftId: string, slot?: FreeSlot) => void;
   onEventClick: (event: EventRecord) => void;
   onNavigate: (dayCount: number) => void;
   /** A slide to a picked first day is over: drop the days it travelled across. */
@@ -285,9 +286,18 @@ export function WeekView({
   // Drafts share the lane and the day-column layout with events, keyed
   // apart so a draft can never be mistaken for a stored row.
   const draftByKey = new Map(drafts.map((draft) => [draftKey(draft), draft]));
-  const timedDrafts = drafts.filter((draft) => !draft.isAllDay);
+  // Where a draft was is an outline over its column, never part of the
+  // layout: it would narrow the blocks beside it. All-day, it is not
+  // drawn — the lane has no room for a row that is nothing.
+  const timedDrafts = drafts.filter((draft) => !draft.isAllDay && draft.kind !== 'was');
+  const traces = drafts.filter((draft) => !draft.isAllDay && draft.kind === 'was');
   const draftSpans = drafts.flatMap((draft) => {
-    if (!draft.isAllDay || draft.startDate === undefined || draft.endDate === undefined) {
+    if (
+      draft.kind === 'was' ||
+      !draft.isAllDay ||
+      draft.startDate === undefined ||
+      draft.endDate === undefined
+    ) {
       return [];
     }
     const first = strip[0]!;
@@ -603,6 +613,24 @@ export function WeekView({
                         />
                       );
                     })}
+
+                    {traces
+                      .filter(
+                        (trace) => trace.startUtc < range.endUtc && trace.endUtc > range.startUtc,
+                      )
+                      .map((trace) => {
+                        const box = timedEventBox(trace, trace.key, day, timeZone);
+                        return (
+                          <DraftTrace
+                            endMinute={Math.min(box.endMinute, 24 * 60)}
+                            hourHeight={HOUR_HEIGHT}
+                            key={trace.key}
+                            occurrence={trace}
+                            startMinute={Math.max(box.startMinute, 0)}
+                            timeZone={timeZone}
+                          />
+                        );
+                      })}
 
                     {isToday ? <NowIndicator date={day} timeZone={timeZone} /> : null}
 

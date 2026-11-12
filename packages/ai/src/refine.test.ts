@@ -49,6 +49,33 @@ describe('normalizeRefine', () => {
     });
   });
 
+  it('says whether the words gave the day, even the day the draft is on', () => {
+    const said = (parse: Partial<QuickAddParse>, utterance: string, draft: RefineDraft = DINNER) =>
+      normalizeRefine({ ...draft, ...parse }, { draft, utterance, ...CONTEXT });
+    // A draft on today (a to-do kept without a due day has today as its
+    // placeholder): "today" leaves the day as it is, and is still said.
+    const onToday = { ...DINNER, date: CONTEXT.referenceDate };
+    expect(said({}, 'due today', onToday)).toMatchObject({
+      prefill: { date: CONTEXT.referenceDate },
+      saidDay: true,
+    });
+    expect(said({}, 'Friday instead')).toMatchObject({ saidDay: true });
+    // A date the model gives for words that only look like one may be the
+    // draft's own, echoed: it moves the day where it differs, and is never
+    // "said" where it does not.
+    expect(said({ date: CONTEXT.referenceDate }, 'Pay 12/24 invoice', onToday)).not.toHaveProperty(
+      'saidDay',
+    );
+    expect(said({ date: '2026-08-24' }, 'on August 24', onToday)).toMatchObject({
+      prefill: { date: '2026-08-24' },
+    });
+    // Words about the time, the title or the place say no day — and a date
+    // the model volunteers for them is not the words'.
+    expect(said({ startTime: '20:00' }, 'make it 8pm')).not.toHaveProperty('saidDay');
+    expect(said({ date: '2026-09-01' }, 'make it 8pm')).not.toHaveProperty('saidDay');
+    expect(said({ title: 'Supper' }, 'call it Supper')).not.toHaveProperty('saidDay');
+  });
+
   it('takes both ends from a stated range', () => {
     expect(refined({}, 'from 6 to 7pm')).toMatchObject({ endTime: '19:00', startTime: '18:00' });
   });
@@ -819,6 +846,7 @@ describe('parseRefine reads the note and the notifications beside the change', (
       notes: { kind: 'add', text: 'we meet at the bar' },
       prefill: { ...DINNER, date: '2026-08-27' },
       reminders: { add: [10], clear: false, remove: [] },
+      saidDay: true,
     });
     expect(model.prompts[0]).toContain('Change: Thursday instead');
     expect(model.prompts[0]).not.toContain('remind me');

@@ -1,6 +1,9 @@
+import { taskRecurrenceFromLines } from '@calendar/core';
 import { describe, expect, it } from 'vite-plus/test';
 import {
   parseRepeatNumber,
+  recurrenceKey,
+  repeatChangedSince,
   repeatDisplaySpec,
   repeatNumberError,
   repeatSpecFrom,
@@ -180,5 +183,82 @@ describe('repeatSpecFrom', () => {
       freq: 'weekly',
       interval: 1,
     });
+  });
+});
+
+describe('recurrenceKey', () => {
+  it('reads a rule by its values, whatever order or default its parts were written with', () => {
+    expect(recurrenceKey({ freq: 'weekly' })).toBe(recurrenceKey({ freq: 'weekly', interval: 1 }));
+    expect(recurrenceKey({ byDay: [{ weekday: 'WE' }, { weekday: 'MO' }], freq: 'weekly' })).toBe(
+      recurrenceKey({ byDay: [{ weekday: 'MO' }, { weekday: 'WE' }], freq: 'weekly' }),
+    );
+    expect(recurrenceKey({ freq: 'weekly' })).not.toBe(recurrenceKey({ freq: 'daily' }));
+    expect(recurrenceKey({ freq: 'weekly' })).not.toBe(
+      recurrenceKey({ freq: 'weekly', interval: 2 }),
+    );
+    expect(recurrenceKey({ count: 5, freq: 'daily' })).not.toBe(recurrenceKey({ freq: 'daily' }));
+  });
+
+  it('reads no rule as none', () => {
+    expect(recurrenceKey(undefined)).toBe('none');
+    expect(recurrenceKey({})).toBe('none');
+  });
+
+  // Save tells an unchanged rule from a changed one by reading both through
+  // the form's fields: a rule the form gave out and took back in must read
+  // as the same rule, or an untouched series would be re-sent (and lose its
+  // exceptions).
+  it.each([
+    { freq: 'daily' as const },
+    { freq: 'weekly' as const, interval: 2 },
+    { byDay: [{ weekday: 'MO' as const }, { weekday: 'TH' as const }], freq: 'weekly' as const },
+    { byDay: [{ ordinal: 2, weekday: 'TU' as const }], freq: 'monthly' as const },
+    { freq: 'monthly' as const },
+    { count: 5, freq: 'weekly' as const },
+    { freq: 'yearly' as const, untilDate: '2027-03-01' },
+  ])('a rule keeps its key through the form and back: %o', (rule) => {
+    const anchor = '2026-08-28';
+    const once = repeatSpecFrom(seedRepeatFields(rule), anchor);
+    const twice = repeatSpecFrom(seedRepeatFields(once), anchor);
+    expect(recurrenceKey(once)).toBe(recurrenceKey(rule));
+    expect(recurrenceKey(twice)).toBe(recurrenceKey(once));
+  });
+
+  it('a rule the form cannot hold in full still reads the same on both sides of it', () => {
+    // Weekdays on a daily rule have no control: both the opened rule and the
+    // one read back go through the fields, so they agree.
+    const rule = { byDay: [{ weekday: 'MO' as const }], freq: 'daily' as const };
+    const anchor = '2026-08-28';
+    const once = repeatSpecFrom(seedRepeatFields(rule), anchor);
+    expect(recurrenceKey(repeatSpecFrom(seedRepeatFields(once), anchor))).toBe(recurrenceKey(once));
+  });
+});
+
+describe('repeatChangedSince', () => {
+  const weekly = seedRepeatFields({ freq: 'weekly' });
+
+  it('is false while the fields make the rule they were seeded with', () => {
+    expect(repeatChangedSince(weekly, weekly, '2026-11-12')).toBe(false);
+    // Changed and changed back is the same rule.
+    expect(repeatChangedSince(weekly, { ...weekly, interval: '2' }, '2026-11-12')).toBe(true);
+    expect(repeatChangedSince(weekly, { ...weekly, interval: '1' }, '2026-11-12')).toBe(false);
+    // Another day, the same untouched rule.
+    expect(repeatChangedSince(weekly, weekly, '2026-11-17')).toBe(false);
+  });
+
+  it('measures against the fields as seeded, not the lines read again at another hour', () => {
+    // An end written as a UTC instant falls on another day once the start
+    // moves past it: read again with the edited hour, the baseline itself
+    // would change under a rule nobody touched (Codex on #308).
+    const lines = ['RRULE:FREQ=DAILY;UNTIL=20261130T090000Z'];
+    const read = (startTime: string) =>
+      seedRepeatFields(
+        taskRecurrenceFromLines(lines, { isAllDay: false, startTime, timeZone: 'UTC' }),
+      );
+    const seeded = read('09:00');
+    expect(read('10:00').until).not.toBe(seeded.until);
+    // The form's fields are still the seeded ones after the hour moved.
+    expect(repeatChangedSince(seeded, seeded, '2026-11-12')).toBe(false);
+    expect(repeatChangedSince(read('10:00'), seeded, '2026-11-12')).toBe(true);
   });
 });

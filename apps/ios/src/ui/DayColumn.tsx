@@ -1,8 +1,6 @@
-import type { DraftOccurrence } from '@calendar/app-state';
 import {
   calendarTaskKey,
   type EventRecord,
-  type FreeSlot,
   formatPlainTime,
   layoutDayColumn,
   minuteOfDay,
@@ -21,7 +19,6 @@ import { StyleSheet, Text, View, type DimensionValue } from 'react-native';
 import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
 import { useSharedValue, type SharedValue } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
-import { DraftBlock } from './DraftBlock.tsx';
 import { DraggableEventBlock } from './DraggableEventBlock.tsx';
 import { NowIndicator } from './NowIndicator.tsx';
 import { TimedTaskBlock } from './TimedTaskBlock.tsx';
@@ -48,7 +45,6 @@ export function DayColumn({
   compact,
   date,
   divided,
-  drafts,
   draggingKey,
   edgeScroll,
   events,
@@ -58,7 +54,6 @@ export function DayColumn({
   listColorOf,
   onCommit,
   onCreateSlot,
-  onDraftPress,
   onEventPress,
   onTaskPress,
   onToggleTask,
@@ -74,8 +69,6 @@ export function DayColumn({
   date: Temporal.PlainDate;
   /** One of several columns: draws the left divider. */
   divided: boolean;
-  /** The open editor's timed drafts (and free slots beside one) touching this day. */
-  drafts: ReadonlyArray<DraftOccurrence>;
   /** The task being dragged, if any: its source block dims. */
   draggingKey: string | null;
   /** Scrolls the grid while an event's drag is held near its top or bottom edge. */
@@ -93,7 +86,6 @@ export function DayColumn({
     times: { readonly endTime: string; readonly startTime: string },
   ) => void;
   /** A draft block tapped: the editor focuses it (a free slot: moves the draft there). */
-  onDraftPress: (draftId: string, slot?: FreeSlot) => void;
   onEventPress: (event: EventRecord) => void;
   onTaskPress: (task: TaskRecord) => void;
   onToggleTask: (task: TaskRecord) => void;
@@ -113,12 +105,9 @@ export function DayColumn({
           const slot = timedTaskSlot(task);
           return slot === undefined ? [] : [{ ...slot, id: calendarTaskKey(task) }];
         }),
-      )
-      // Drafts share the overlap layout, keyed apart from every stored row.
-      .concat(drafts.map((draft) => timedEventBox(draft, `draft:${draft.key}`, date, timeZone))),
+      ),
   );
   const byId = new Map(events.map((event) => [`${event.calendarId}:${event.id}`, event]));
-  const draftsById = new Map(drafts.map((draft) => [`draft:${draft.key}`, draft]));
   const tasksById = new Map(timedTasks.map((task) => [calendarTaskKey(task), task]));
 
   // The slot being drawn. React state only changes when the snapped slot
@@ -182,22 +171,6 @@ export function DayColumn({
       </GestureDetector>
 
       {boxes.map((box) => {
-        const draft = draftsById.get(box.id);
-        if (draft) {
-          return (
-            <DraftBlock
-              compact={compact}
-              height={Math.max(box.height * 24 * HOUR_HEIGHT, 22)}
-              key={box.id}
-              left={`${box.left * 100}%` as DimensionValue}
-              occurrence={draft}
-              onPress={onDraftPress}
-              timeZone={timeZone}
-              top={box.top * 24 * HOUR_HEIGHT}
-              width={`${box.width * 100}%` as DimensionValue}
-            />
-          );
-        }
         const task = tasksById.get(box.id);
         if (task) {
           return (

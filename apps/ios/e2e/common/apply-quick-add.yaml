@@ -1,5 +1,5 @@
 appId: com.solunivo.app.dev
-name: Type PHRASE into the quick-add field until it holds all of it, then Apply (shared)
+name: Type PHRASE into the Assistant's field until it holds all of it, then send it (shared)
 ---
 # XCTest typing can drop or move letters (flow 07): run 38734567429 typed
 # "| | 20:00-21:00" as "|0-21:00", the app read it as 00:00-21:00 and the
@@ -13,6 +13,10 @@ name: Type PHRASE into the quick-add field until it holds all of it, then Apply 
 # one flow applies several phrases. A `while: notVisible:` loop would wait
 # up to 7 s for its condition on every exit with the phrase right.
 - evalScript: ${output.quickAddTyped = false}
+# The Assistant's bar is the microphone's; the field is behind "Type". A
+# phrase taken puts the bar back, so the tap is there for every phrase.
+- tapOn:
+    id: 'quick-add-type'
 - tapOn:
     id: 'quick-add-input'
 - inputText: ${PHRASE}

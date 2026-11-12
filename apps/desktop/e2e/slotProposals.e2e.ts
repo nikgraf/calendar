@@ -67,7 +67,6 @@ const seed = {
   ],
 };
 
-const INPUT = '[data-testid="quick-add-input"]';
 const TITLE = 'input[placeholder="Title"]';
 const START = 'input[aria-label="Start time"]';
 const COMMAND_N = `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', metaKey: true }))`;
@@ -79,8 +78,9 @@ const candidateAt = (start: string) =>
   `!!document.querySelector('[data-testid="slot-candidate"][data-draft-start="${start}"]')`;
 const chips = `document.querySelectorAll('[data-testid^="draft-slot-"]').length`;
 const pressedChip = `[...document.querySelectorAll('[data-testid^="draft-slot-"]')].findIndex((chip) => chip.getAttribute('aria-pressed') === 'true')`;
-// The list runs newest first: the first summary is the last turn's.
-const lastSummary = `document.querySelector('[data-testid="draft-turn-summary"]')?.textContent ?? ''`;
+// The hours on the Assistant's newest card, and where the footer's steps stand.
+const cardTime = `(document.querySelector('[data-testid="assistant-card-time"]')?.textContent ?? '')`;
+const stepPosition = `(document.querySelector('[data-testid="step-position"]')?.textContent ?? '')`;
 const titleIs = (title: string) =>
   `document.querySelector(${JSON.stringify(TITLE)})?.value === ${JSON.stringify(title)}`;
 
@@ -108,8 +108,7 @@ describe('Slot proposals in the create thread', () => {
     await cdp.waitFor(
       `document.querySelector('[data-testid="editor-title"]')?.textContent === 'New event'`,
     );
-    await cdp.type(INPUT, 'find 30 min tomorrow morning | Focus');
-    await cdp.clickTestId('quick-add-apply');
+    await cdp.say('find 30 min tomorrow morning | Focus');
     // 09:15–10:15 holds a slot centred on 10:00; the other gaps rank after it.
     await cdp.waitFor(blockAt('09:45'));
     expect(await cdp.eval<number>(blocks)).toBe(1);
@@ -119,7 +118,7 @@ describe('Slot proposals in the create thread', () => {
     expect(await cdp.eval<number>(candidates)).toBe(2);
     expect(await cdp.eval<boolean>(candidateAt('10:45'))).toBe(true);
     expect(await cdp.eval<boolean>(candidateAt('08:15'))).toBe(true);
-    expect(await cdp.eval<string>(lastSummary)).toContain('3 free slots');
+    expect(await cdp.eval<string>(cardTime)).toBe('09:45–10:15');
 
     // A chip moves the draft and shows its day: with the view weeks back
     // (past the pan buffer), the draft leaves the grid until the chip
@@ -134,6 +133,9 @@ describe('Slot proposals in the create thread', () => {
     expect(await cdp.eval<number>(pressedChip)).toBe(1);
     await cdp.waitFor(candidateAt('09:45'));
     expect(await cdp.eval<number>(candidates)).toBe(2);
+    // A slot picked is a step: the card marks the hours, the ones before struck through.
+    await cdp.waitFor(`${cardTime} === '10:45–11:1509:45–10:15'`);
+    expect(await cdp.eval<string>(stepPosition)).toBe('2 of 2');
 
     // A candidate block moves it too.
     const early = await cdp.locate('[data-testid="slot-candidate"][data-draft-start="08:15"]');
@@ -142,15 +144,18 @@ describe('Slot proposals in the create thread', () => {
     expect(await cdp.eval<number>(pressedChip)).toBe(2);
     expect(await cdp.eval<number>(blocks)).toBe(1);
 
-    // A change in words: the proposals were for the finder phrase, so they go; Undo brings them back.
-    await cdp.type(INPUT, '| | 13:00-13:30');
-    await cdp.clickTestId('quick-add-apply');
+    // A change in words: the proposals were for the finder phrase, so
+    // they go; the step before, shown again and kept, brings them back.
+    await cdp.say('| | 13:00-13:30');
     await cdp.waitFor(blockAt('13:00'));
     await cdp.waitFor(`!document.querySelector('[data-testid="draft-slots"]')`);
     expect(await cdp.eval<number>(candidates)).toBe(0);
-    await cdp.clickTestId('draft-undo');
+    await cdp.clickTestId('assistant-undo');
     await cdp.waitFor(blockAt('08:15'));
+    expect(await cdp.eval<string>(stepPosition)).toBe('3 of 4');
+    await cdp.clickTestId('step-use');
     await cdp.waitFor(`${chips} === 3`);
+    expect(await cdp.eval<string>(stepPosition)).toBe('3 of 3');
     expect(await cdp.eval<number>(candidates)).toBe(2);
 
     // Save writes the draft where it sits; no candidate is left behind.
@@ -174,20 +179,18 @@ describe('Slot proposals in the create thread', () => {
     await cdp.waitFor(
       `document.querySelector('[data-testid="editor-title"]')?.textContent === 'New event'`,
     );
-    await cdp.type(INPUT, 'Review | +1 | 14:00-15:00');
-    await cdp.clickTestId('quick-add-apply');
+    await cdp.say('Review | +1 | 14:00-15:00');
     await cdp.waitFor(blockAt('14:00'));
     expect(await cdp.eval<number>(chips)).toBe(0);
 
     // The draft's own length (an hour) is searched for: two morning gaps
     // hold it, 09:15–10:15 nearer the morning's middle than 10:45–11:45.
-    await cdp.type(INPUT, 'find a slot tomorrow morning');
-    await cdp.clickTestId('quick-add-apply');
+    await cdp.say('find a slot tomorrow morning');
     await cdp.waitFor(blockAt('09:15'));
     await cdp.waitFor(`document.querySelector(${JSON.stringify(START)})?.value === '09:15'`);
     expect(await cdp.eval<boolean>(titleIs('Review'))).toBe(true);
     await cdp.waitFor(`${chips} === 2`);
     expect(await cdp.eval<boolean>(candidateAt('10:45'))).toBe(true);
-    expect(await cdp.eval<string>(lastSummary)).toBe('→ 09:15–10:15 · 2 free slots');
+    expect(await cdp.eval<string>(cardTime)).toBe('09:15–10:1514:00–15:00');
   });
 });

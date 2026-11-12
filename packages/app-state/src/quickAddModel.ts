@@ -32,6 +32,12 @@ export interface QuickAddModelOptions {
   readonly initialText?: string | undefined;
   readonly model: LanguageModel;
   /**
+   * There is nothing to say a phrase to (the editor shows an older step):
+   * hands-free dictation ends as this turns true — a microphone must not
+   * stay open behind a control that is off.
+   */
+  readonly off?: boolean | undefined;
+  /**
    * Receives what the phrase was understood as: the editor below the
    * field fills its form from it. The phrase stays in the field, so what
    * was read can be compared with what the form shows.
@@ -68,6 +74,7 @@ export const useQuickAddModel = ({
   hold = false,
   initialText,
   model,
+  off = false,
   onApply,
   onPhrase,
   speech,
@@ -343,6 +350,14 @@ export const useQuickAddModel = ({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- an edit is handled once, when it arrives
   }, [editKey]);
+
+  // Nothing to say a phrase to any more: the listening ends with it.
+  useEffect(() => {
+    if (off && handsFreeRef.current) {
+      endVoice();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- handled once, as it turns off
+  }, [off]);
 
   // Send a phrase that never pauses, and never leave one running when the
   // field goes away (unmount cancels below).

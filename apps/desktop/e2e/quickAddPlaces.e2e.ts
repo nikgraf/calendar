@@ -99,13 +99,14 @@ const geo = {
   },
 };
 
-const INPUT = '[data-testid="quick-add-input"]';
 const title = `(document.querySelector('input[placeholder="Title"]')?.value ?? '')`;
 const COMMAND_N = `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', metaKey: true }))`;
 const location = `(document.querySelector('input[aria-label="Location"]')?.value ?? '')`;
 const choices = `!!document.querySelector('[data-testid="draft-place-choices"]')`;
 const pressed = `(document.querySelector('[data-testid="draft-place-choices"] [aria-pressed="true"]')?.dataset.testid ?? '')`;
-const newestSummary = `document.querySelector('[data-testid="draft-turn-summary"]')?.textContent ?? ''`;
+const picks = `document.querySelectorAll('[data-testid^="draft-place-pick-"]').length`;
+// The place on the Assistant's newest card.
+const cardPlace = `(document.querySelector('[data-testid="assistant-card-location"]')?.textContent ?? '')`;
 
 describe('Places from a quick-add phrase', () => {
   let app: App;
@@ -131,10 +132,7 @@ describe('Places from a quick-add phrase', () => {
       `document.querySelector('[data-testid="editor-title"]')?.textContent === 'New event'`,
     );
   };
-  const phrase = async (text: string) => {
-    await app.cdp.type(INPUT, text);
-    await app.cdp.clickTestId('quick-add-apply');
-  };
+  const phrase = (text: string) => app.cdp.say(text);
 
   it('takes a past place said by sound, text and pin, and saves the coordinates', async () => {
     const { cdp } = app;
@@ -173,11 +171,16 @@ describe('Places from a quick-add phrase', () => {
     // The first is taken at once; both are chips, the taken one pressed.
     await cdp.waitFor(`${location} === 'Figlmüller, Wollzeile 5, 1010 Wien'`);
     await cdp.waitFor(choices);
-    expect(await cdp.eval<string>(newestSummary)).toContain('2 places');
+    expect(await cdp.eval<number>(picks)).toBe(2);
     expect(await cdp.eval<string>(pressed)).toBe('draft-place-pick-0');
+    expect(await cdp.eval<string>(cardPlace)).toBe('Figlmüller, Wollzeile 5, 1010 Wien');
     await cdp.clickTestId('draft-place-pick-1');
     await cdp.waitFor(`${location} === 'Figlmüller, Bäckerstraße 6, 1010 Wien'`);
     expect(await cdp.eval<string>(pressed)).toBe('draft-place-pick-1');
+    // The pick is a step: the card marks the place, the one before struck through after it.
+    await cdp.waitFor(
+      `${cardPlace} === 'Figlmüller, Bäckerstraße 6, 1010 WienFiglmüller, Wollzeile 5, 1010 Wien'`,
+    );
     // The text back as said: no place, the row stays.
     await cdp.clickTestId('draft-place-keep');
     await cdp.waitFor(`${location} === 'Figlmüller'`);

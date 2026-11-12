@@ -139,10 +139,18 @@ grounding PR that opened it, #182, the desktop draft thread (#183),
 the served model (#184) and slot proposals (#185) are in
 `docs/decisions.md` → AI, with the iOS thread in the sheet (#187) and on the calendar (#188); search filters (#186) under Search):
 
-- [ ] Draft thread leftovers on the desktop (both platforms draw the
-      thread now, `docs/decisions.md` → AI): drafts in the month view, a
-      slot or ⌘N editor without a phrase drawing its form as a draft too,
-      to-do drafts on the grid (a to-do draft draws nothing yet).
+- [ ] Draft thread leftovers on the desktop (the Mac's grid draws the
+      thread; the iPhone's sheet covers its calendar, `docs/decisions.md`
+      → AI): drafts in the month view, a slot or ⌘N editor without a
+      phrase drawing its form as a draft too, to-do drafts on the grid (a
+      to-do draft draws nothing yet), the "was" outline for an all-day
+      draft.
+- [ ] Assistant view follow-ups (the editor's two views shipped,
+      `docs/decisions.md` → AI): the Search thread on steps too (it keeps
+      its turns and Undo); ⌘Z / ⇧⌘Z through the steps on the Mac; a live
+      transcript or a level meter while dictating; haptics on the iPhone's
+      bar (a native build); a question before a swipe down discards a
+      thread with steps in it.
 - [ ] Served-model follow-ups (shipped in #184,
       `docs/decisions.md` → AI) — the model's own context from Ollama's
       `/api/show` instead of the fixed `num_ctx`; image input for a served

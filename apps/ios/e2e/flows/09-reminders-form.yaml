@@ -246,6 +246,15 @@ tags:
           element:
             id: 'reminder-repeat-monthly'
           direction: DOWN
+      # On the 874-pt iPhone the row is on screen as the editor opens, at
+      # its bottom edge, the Monthly chip under the form's Assistant pill:
+      # nothing above scrolled, and Maestro counts what a pill covers as
+      # visible, so the tap flipped the editor to the Assistant. One
+      # scroll down brings the row to the middle and tucks the pills away
+      # (they leave while the form is scrolled down, `pillTuck.ts`).
+      - scroll
+      - waitForAnimationToEnd:
+          timeout: 3000
       - tapOn:
           id: 'reminder-repeat-monthly'
       # Each choice brings a row under the one before; scroll to each.

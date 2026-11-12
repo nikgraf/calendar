@@ -36,7 +36,7 @@ import type { SearchBarCommands } from 'react-native-screens';
 import { languageModel } from '../model.ts';
 import { useEditorHost } from './EditorHost.tsx';
 import { LessonBanner } from './lesson/LessonBanner.tsx';
-import { onAppActive } from './QuickAddBar.tsx';
+import { onAppActive } from '../appActive.ts';
 import { SearchFilterChips } from './SearchFilterChips.tsx';
 import { SearchFiltersSheet } from './SearchFiltersSheet.tsx';
 import { TaskCheck } from './TaskCheck.tsx';

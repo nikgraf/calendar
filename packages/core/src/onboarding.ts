@@ -204,8 +204,8 @@ export const lessonCopy = (id: LessonRowId, device: OnboardingDevice): LessonCop
       };
     case 'create':
       return {
-        intro: `Describe an event the way you would say it. Solunivo reads the words on ${here} and drafts it — dashed until you save. Change it in the same field: “at 1 instead”, “make it Thursday”.`,
-        subtitle: 'Describe an event; a draft lands on the calendar',
+        intro: `Describe an event the way you would say it. Solunivo reads the words on ${here} and answers with the event, ready to save. Change it the same way: “at 1 instead”, “make it Thursday”.`,
+        subtitle: 'Describe an event; get it back ready to save',
         title: 'Create with AI',
       };
     case 'search':

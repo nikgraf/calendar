@@ -227,7 +227,7 @@ export function EventEditorForm({ model }: { model: ReturnType<typeof useEventEd
       {model.repeatLoaded ? <RepeatRuleFields anchorDate={date} state={model} /> : null}
 
       {canInvite ? (
-        <FormSection label="Invitees" ref={guestsFlash}>
+        <FormSection label="Invitees" ref={guestsFlash} testId="event-invitees">
           {canRsvp ? (
             <SegmentedControl
               className="w-full"

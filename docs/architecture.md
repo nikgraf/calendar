@@ -149,9 +149,9 @@ check's error beside the status. Every AI entry point checks through
 `useModelAvailability` (app-state): one check at a time (a request while
 one is out runs once more after it), a re-check on returning to the app,
 a 30 s poll while 'not-ready', and every Check Again answered even when
-nothing changed. On iOS the quick-add field gives way to
+nothing changed. On iOS the Assistant's conversation shows
 `ModelAvailabilityNotice` (the reason, Check Again, collapsed technical
-details), worded by `modelAvailabilityCopy.ts` like Settings ›
+details) and its bar leaves only Form, worded by `modelAvailabilityCopy.ts` like Settings ›
 Diagnostics, which always asks the device's model, never the e2e
 fixture. Dictation audio is captured by the UI layer (renderer
 `getUserMedia` → 16 kHz WAV) and only transcribed natively. Dictation
@@ -1309,9 +1309,9 @@ gateway carries all of it. Details, limits and the threat model:
 - **Card and lessons.** `lessonRows` gives the card its rows ("Add your
   accounts" first while nothing is connected); the card leaves once every
   lesson is ticked. A lesson is an existing surface plus a frame: Create
-  with AI is the editor seeded with `quickAddText` + `lesson`
-  (`EditorSeed`; `initialText` on both QuickAddBars) under a
-  `LessonBanner`; Search with AI is search with its sentence read (the
+  with AI is the editor's Assistant seeded with `quickAddText` + `lesson`
+  (`EditorSeed`; the phrase waits in the Assistant's field, which the
+  iPhone opens on) under a `LessonBanner`; Search with AI is search with its sentence read (the
   desktop panel's thread, iOS route params on the Search tab); Alerts,
   Contacts, Time zones and "Set up your Mac/iPhone" frame the Settings
   sections (iOS `app/lesson/` modal, desktop `PanelState` `lesson`; "Set
@@ -1321,10 +1321,7 @@ gateway carries all of it. Details, limits and the threat model:
   revealed or copied — through `useLessonTried`
   (`LessonTriedContext`; nothing outside a lesson), which ticks the
   lesson done; leaving a frame without one ticks it skipped. Once tried,
-  a banner keeps its hint and loses Skip. On iOS the card shows folded
-  while the Create lesson's editor is up (`EditorHost.lessonEditor`, per
-  opening; a tap unfolds it), the stored fold untouched: open, the card
-  and the half-height sheet left no hour of the day for the draft. Settings › Getting Started (iOS page,
+  a banner keeps its hint and loses Skip. Settings › Getting Started (iOS page,
   desktop pane `gettingstarted`) reopens lessons — the desktop's through
   `lesson:open` IPC, which keeps the lesson in main, shows the calendar
   window and nudges it; the calendar collects it with `lesson:take` when
@@ -1431,45 +1428,80 @@ gateway carries all of it. Details, limits and the threat model:
   search (⌘F), an event's read-first inspector after a grid click or a
   search result (`EventInspector.tsx`), or the inline editor
   (`EditorPanel.tsx`) from Edit, a slot, New (⌘N; ⌘K goes
-  straight into its quick-add field), a task chip or a result. The editor
-  is a header that stays (the title, Join meeting, Close), a body that
-  scrolls (the quick-add field, the kind control, the form as captioned
-  sections — When, Where, Invitees, Notifications, Notes;
-  `FormSection.tsx`) and a footer that stays (Delete · Cancel · Save,
-  the question before a lossy change above them), so the save and the
-  way out are in reach wherever the form is scrolled to. Single
-  keys: T = today, ←/→ step the view; ⌘, opens Settings from the menu. A new
-  item's editor is the one add path: the quick-add field on top
-  (`QuickAddBar`, a phrase typed or dictated hands-free fills the form), the Event |
-  Task | Reminder control (`useEditorKinds`, only
-  the kinds something can hold), then the form; on an existing item the
-  control converts. A new item is a thread of drafts
-  (`useDraftThread`, `packages/app-state/src/draftThread.ts`): the first
-  phrase makes the draft(s), every later phrase in the same field changes
-  them (`parseRefine`), the turns are listed newest first with what each
-  changed, wrapped in full. Only the newest shows, with Undo; "+N
-  earlier queries ⌄" (a link in the tint color with a chevron) opens the
-  rest (`visibleTurns`, app-state `threadTurns.ts`; a new row eases in);
-  the turns hang under the field as one card with it (a hairline
-  between, "+N earlier queries" its last row); nothing under the card
-  moves while it works — reading turns Apply into a spinner of its own
-  size, and dictation's hints and a failure show in the field itself
-  (its placeholder, red for a failure; a click or tap brings the failed
-  words back, selected) — and the form fields a turn changed tint,
-  hold for a second and fade back (`changedDraftFields`, the comparison
-  the summary is built on; `useThreadEditor().flash`, spent once it
-  played);
+  to the Assistant's field, an open editor's too), a task chip or a result. The editor
+  is a header that stays (the title, the Assistant | Form tabs, Join
+  meeting, Close), one of two views of the same draft, and a footer that
+  stays (the steps, Delete · Cancel · Save; above them an older step's
+  "Use this" row, why a save was refused while the Assistant covers the
+  form that says so, and the question before a lossy change), so the save
+  and the way out are in reach from either view. Single
+  keys: T = today, ←/→ step the view; ⌘, opens Settings from the menu.
+  The editor is a thread of drafts (`useDraftThread`,
+  `packages/app-state/src/draftThread.ts`) with two views, both mounted
+  (`EditorPanel`): "+ New", ⌘N, ⌘K and a capture open on the Assistant —
+  falling back to the Form once when the model turns out not to be ready
+  before anything was said — a slot, a to-do and a saved item on the
+  Form; a read-only item and a conversion have the Form alone.
+  **Assistant** (`assistant/AssistantView.tsx`) is a conversation: a
+  phrase, typed and sent with Return or dictated hands-free, makes the
+  draft(s) or changes them (`parseRefine`); each answer is the item as a
+  card (`AssistantCard`, its lines from `cardLines`) with what the step
+  changed marked and the old value struck through; a step not on show
+  is a row with Restore; what the assistant has to ask sits under the
+  newest card (`DraftQuestions`: the places a text could mean, the names
+  that need a contact picked, free slots, for a saved series what a
+  change applies to); what it is doing, and why a phrase failed, is a
+  line under the field, the failed words kept in it. **Form** is the
+  fields as captioned sections — the Event | Task | Reminder control
+  (`useEditorKinds`, only the kinds something can hold; on an existing
+  item it converts), When, Where, Invitees, Notifications, Notes
+  (`FormSection.tsx`) — and needs no model. Under both is one history of
+  **steps**: a phrase, an edit by hand (further edits to the same field
+  join it, `foldForm`) and a picked choice. The footer steps back and
+  forward through them (`stepTo`); an older step on show is looked at,
+  not edited — the form is locked, Save is off, dictation ends
+  (`useQuickAddModel`'s `off`) — until "Use this" keeps
+  it and lets the later ones go (`keepShown`) or the newest is shown
+  again. The fields the step on show changed stay marked, in the form
+  (`data-marked`) and on the card (`shownMarks`, over `draftChanges`:
+  what differs between two states of a draft, field by field, as
+  values; `threadSteps.ts` names and summarizes a step for both apps).
+  A saved item's thread starts as the item itself (`openThread`, "As
+  saved"): a phrase changes it at the scope the form is at, what it
+  cannot hold is refused in the conversation with Save's own sentence
+  (`turnRefusal`), and Save sends only what differs from the saved item
+  (`eventEditorChanges` compares values; there are no dirty flags).
+  What a draft's calendar or list does not keep is neither taken from a
+  turn nor shown (the editor's `keeps(draft)`): a to-do, new or saved,
+  takes no time of day on a list that keeps a due day only (a Google
+  task: `todoTimeRefusal`), an event no change of guests on a calendar
+  that takes no guest list (`guestsRefusal`), and the card and rows
+  leave out a time or guests a draft carries from a first phrase
+  (`DraftKeeps`). A to-do kept without a due day is dated by a turn that
+  gives a day or a time — also the day it already reads, where the
+  words state it (a refinement's `saidDay`). A place is its text and
+  its pin: another point picked under the same text, or the pin let go
+  of, is a step too (`draftChanges`). While the form is between two
+  states of a draft (`applying`: a phrase being taken in, a kind switch
+  asking its question, by phrase or by hand) the steps are locked and
+  the pager, Remove and "Add all" wait (`draftsSettled`); a reading of
+  the form names the draft it is of (`FormSnapshot.shown`), so it never
+  lands on the one focused meanwhile.
   a phrase that asks for free time (`proposeSlots`)
   puts the draft in the best free slot and keeps the others on it — a
-  "Free slots" chip row under the turns, the chosen one pressed, and
+  "Free slots" chip row under the card, the chosen one pressed, and
   fainter dotted candidate blocks tagged "Option" on the grid, either of
-  which moves the draft; the next turn drops them, Undo brings them
-  back; the grid draws every event draft hatched and dashed
+  which moves the draft; the next phrase drops them, the step before
+  brings them back; the grid draws every event draft hatched and dashed
   in its calendar's hue with a "Draft" tag (`DraftBlock`, `DraftChip` in
-  the lane; `draftPreview.ts` derives them from the thread, the focused
-  one from the live form, every occurrence of a repeating one), the
-  focused draft outlined and its day shown; a click on a block or the
-  pager swaps the form. Each draft keeps what the form held for it — its
+  the lane; `draftPreview.ts` derives them from the thread — one union
+  on `kind`: a draft, a candidate, or `was` — the focused one from the
+  live form, every occurrence of a repeating one), the focused draft
+  outlined and its day shown, and a dashed outline where the step on
+  show moved it from (`DraftTrace`: over the column, outside the day
+  layout, so it never narrows a block; not where a saved event's own
+  block still stands); a click on a block or the pager — under the
+  header in either view (`panel/DraftPager.tsx`) — swaps the form. Each draft keeps what the form held for it — its
   kind, the calendar or list picked, guests, notes, a reminder's own
   fields (`DraftExtras`) — and another draft taking the form shows as it
   was left, not as a kind switch: nothing carries over, nothing is asked
@@ -1521,12 +1553,8 @@ gateway carries all of it. Details, limits and the threat model:
   and the "+" (`AddButton`, shared with the Tasks tab: the calendar's
   opens a new event, the Tasks tab's an undated to-do in the filtered
   list). `EditorHost.tsx` owns every sheet — event detail, the editor
-  (`EventEditSheet`, the same add path as the desktop and the same
-  thread: `useThreadEditor`, with `DraftThreadSection` under the quick-add
-  field — the turns as on the desktop (`ThreadTurnList`, shared with
-  Search; the header does not scroll, so they get at most a third of the
-  sheet and scroll inside it), the free-slot chips, the pager, "Add all"; the rows a turn
-  changed flash, `FlashView`), the birthday detail — and the capture model behind the share
+  (`EventEditSheet`, the same thread as the desktop, `useThreadEditor`,
+  in the same two views), the birthday detail — and the capture model behind the share
   sheet and deep links, whose events open the editor as one thread of
   drafts; each opening is keyed by its own number; screens ask it
   through `useEditorHost()`. The detail follows its event as the
@@ -1536,46 +1564,52 @@ gateway carries all of it. Details, limits and the threat model:
   (`currentEvent`), read again whenever events change — shows that
   record (`eventReadout`), seeds Edit and Convert from it and closes once
   the event is gone; a failed read keeps it up. The editor is the `editor` route
-  (`app/editor.tsx`), a react-native-screens form sheet with a half and
-  a full detent: a new item opens at half height over the live calendar,
-  an existing one at full; the host pushes the route and pops it on
-  Cancel or Save, and a swipe that dismisses it is Cancel. The editor's
-  own close (Cancel, or Save and Delete once the write answers) applies
-  only while the sheet still holds its opening, and the detail's Delete
-  only while the sheet shows an event that delete took (`sheets.ts`,
-  over `deleteTakes`), so a reply landing after a tap behind a
-  half-height editor leaves what that tap opened. UIKit
-  presents one sheet at a time, so the push waits for a page sheet
-  (detail, birthday) to slide away, and a page sheet opened from the
-  calendar behind a half-height editor waits for the form sheet (the
-  route unmounts as its sheet starts to leave, not after). Nothing
-  stacks on the editor: the avatar closes it before Settings opens, as
-  a tap on an event behind it does, so the host's pop is always the
-  editor's. A capture runs under a banner that blocks nothing; its
-  thread never replaces what the user opened meanwhile (an editor, a
-  detail, a birthday, Settings) but opens once that has closed and the
-  editor's form sheet is gone (`captureMayOpen`). A new share drops a
-  waiting thread, as does a tapped reminder whose detail opens. The quick-add
-  field does not take the focus there (the keyboard lifts a half sheet
-  to full without changing its detent, so once it hides the sheet is
-  back at half, unless a drag meanwhile settled it at full). The
-  sheet lays its content out once, as at most two subviews: a header
-  that must not be flattened (`collapsable={false}`) — the Cancel ·
-  title · Save row and, for a new item, the quick-add field with its
-  thread — and one scroll view that stays across a kind switch — the
-  kind control at its top, then the form, which renders `bare` inside it
-  (`FormScroll`). A drag up on the form, or on the thread's turns,
-  raises a half sheet to full before anything scrolls
-  (`sheetExpandsWhenScrolledToEdge`), so the form never scrolls on its
-  own in the strip under the header. UIKit hands the drag to the sheet
-  only while the form is at its top, so whenever the sheet stands at
-  half with the keyboard down (dropped there, or the keyboard just hid)
-  the form scrolls back there (`useEditorSheetAtHalf`). The turns take
-  at most a third of the sheet at the detent it stands at
-  (`editorSheet.ts`; the route follows `sheetDetentChange`), so at half
-  a strip of the form stays in view even with the history expanded;
-  the keyboard lifts the sheet without a detent change, and
-  the half cap holds while it is up. The forms are iOS inset grouped
+  (`app/editor.tsx`), a page sheet at full height like Settings — a form
+  sheet lays out a header and one scroll view and nothing else, so it
+  could hold neither a bar at its bottom nor two views; the host pushes
+  the route and pops it on Cancel or Save, and a swipe that dismisses it
+  is Cancel. The editor's own close (Cancel, or Save and Delete once the
+  write answers) applies only while the sheet still holds its opening,
+  and the detail's Delete only while the sheet shows an event that
+  delete took (`sheets.ts`, over `deleteTakes`), so a reply landing
+  after the user moved on leaves what was opened since. UIKit presents
+  one sheet at a time, so the push waits for a page sheet (detail,
+  birthday) to slide away, and a page sheet asked for as the editor
+  closes waits for its sheet (the route unmounts as its sheet starts to
+  leave, not after). Nothing stacks on the editor: it closes before
+  Settings opens, so the host's pop is always the editor's. A capture
+  runs under a banner that blocks nothing; its thread never replaces
+  what the user opened meanwhile (an editor, a detail, a birthday,
+  Settings) but opens once that has closed and the editor's sheet is
+  gone (`captureMayOpen`). A new share drops a waiting thread, as does a
+  tapped reminder whose detail opens. The sheet is a header (Cancel ·
+  title · Save, the two as 44 pt capsules), the pager when there are
+  several drafts (`assistant/DraftPager`), then one of two views, one
+  mounted at a time. The **Assistant** is the desktop's conversation
+  (`assistant/AssistantView`, `AssistantCard`, `DraftQuestions`) over a
+  bar at the bottom by the thumb (`AssistantBar`: Type · the microphone ·
+  Form). Speaking is the way in; Type swaps the bar for a field with a
+  send button that pads itself above the keyboard (`useKeyboardInset`,
+  over `keyboardOverlap`), and the field giving up the focus brings the
+  bar back, its words kept. The **Form** is the kind control and the
+  form rendering `bare` in one scroll view (`FormScroll`); over its
+  bottom edge float the steps (`StepPill`), the way back (`ViewPill`)
+  and an older step's "Use this" (`UseStepCard`) — not while the
+  keyboard is up, and out of the way while the form is scrolled down,
+  back on a scroll up (`pillTuck.ts`, `TuckAway`; never under
+  VoiceOver) — and an older step on show takes no touches. The phrase and the
+  dictation state (`useQuickAddModel`) live in the sheet, above both
+  views: a flip keeps the words and the listening, an edit by hand or
+  an older step put on show ends it. Why a save was refused is a line
+  over the bar: the form that says so is not mounted then. The
+  calendar's "+", a share and the Create lesson open on the
+  Assistant (`EditSheet.opensOn`), falling back to the Form once when
+  the model is not ready; a slot drawn on the grid, a to-do's "+" and a
+  saved item open on the Form. The rows the step on show changed stay
+  marked (`FlashView`, `lasting`). The sheet covers the calendar, which
+  draws no drafts on the phone; it still goes to the focused draft's
+  day and hour (`useOnDraftReveal`, `revealMinute`), so a saved item is
+  in view once the sheet has gone. The forms are iOS inset grouped
   cards on the grouped ground, drawn with the Settings pages' rows
   (`GroupedList.tsx`:
   `Section`, `Row`, `SwitchRow`, `CheckRow`, `ActionRow`, and the forms'
@@ -1688,7 +1722,7 @@ gateway carries all of it. Details, limits and the threat model:
   whenever a turn sets a place: the best resembling one is taken at once
   (`preselectedPlace`) — its text becomes the location and its pin counts
   as a pick (`applyPlace`) — and the candidates stay on the draft as
-  `placeChoice`, chips under the quick-add field with the one the field
+  `placeChoice`, chips under the Assistant's newest card with the one the field
   reads pressed and "As said" beside them, until dismissed, or a turn
   sets another place; the row shows only while the field reads the text
   or one of them (`livePlaceChoice`). Both lookups and the typeahead carry a region hint

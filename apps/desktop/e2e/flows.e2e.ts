@@ -1176,6 +1176,8 @@ describe('calendar desktop e2e', () => {
     const add = await cdp.locate('button[aria-label="New event"]');
     await cdp.click(add.x, add.y);
     await cdp.waitFor(`document.body.textContent.includes('New event')`);
+    // "+ New" opens on the Assistant where a model answers; the fields are the form's.
+    await cdp.showEditorView('form');
     await setEditorTitle('Board game night');
     await cdp.eval(`(() => {
       const select = document.querySelector('select[aria-label="Repeat"]');
@@ -1826,6 +1828,7 @@ describe('calendar desktop e2e', () => {
     const add = await cdp.locate('button[aria-label="New event"]');
     await cdp.click(add.x, add.y);
     await cdp.waitFor(`document.body.textContent.includes('New event')`);
+    await cdp.showEditorView('form');
     await cdp.clickTestId('find-time');
     await cdp.waitFor(`!!document.querySelector('[data-testid="find-time-fields"]')`);
     // Next week, mornings: a window with free time whatever today is.
@@ -1917,6 +1920,7 @@ describe('calendar desktop e2e', () => {
     const add = await cdp.locate('button[aria-label="New event"]');
     await cdp.click(add.x, add.y);
     await cdp.waitFor(`document.body.textContent.includes('New event')`);
+    await cdp.showEditorView('form');
     await cdp.clickButtonWithText('Task');
     await cdp.waitFor(`document.body.textContent.includes('New task')`);
     await cdp.clickTestId('task-remove-due-date');

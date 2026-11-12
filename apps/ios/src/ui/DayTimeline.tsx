@@ -1,5 +1,4 @@
 import {
-  type DraftOccurrence,
   useGuardedMutations,
   useShadedWeekdays,
   useUpdateViewPreferences,
@@ -13,7 +12,6 @@ import {
   type EventRecord,
   expandedAllDayRows,
   foldTaskBacklog,
-  type FreeSlot,
   groupByDate,
   groupEventsByDay,
   interpolatePages,
@@ -39,7 +37,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  useWindowDimensions,
   View,
   type ScrollViewInstance,
   type ViewInstance,
@@ -184,14 +181,12 @@ export function DayTimeline({
   buffer,
   colorOf,
   days,
-  drafts,
   events,
   isEventReadOnly,
   isTaskReadOnly,
   listColorOf,
   onBirthdayPress,
   onCreateSlot,
-  onDraftPress,
   onEventPress,
   onFoldPress,
   onNavigate,
@@ -211,8 +206,6 @@ export function DayTimeline({
   buffer: number;
   colorOf: (event: EventRecord) => string;
   days: ReadonlyArray<Temporal.PlainDate>;
-  /** The open editor's drafts (and free slots beside one), one per occurrence: drawn dashed, never stored. */
-  drafts: ReadonlyArray<DraftOccurrence>;
   events: ReadonlyArray<EventRecord>;
   /** An event in a calendar we cannot write opens on tap but never drags. */
   isEventReadOnly: (event: EventRecord) => boolean;
@@ -225,7 +218,6 @@ export function DayTimeline({
     times: { readonly endTime: string; readonly startTime: string },
   ) => void;
   /** A draft tapped: the editor focuses it (a free slot: moves the draft there). */
-  onDraftPress: (draftId: string, slot?: FreeSlot) => void;
   onEventPress: (event: EventRecord) => void;
   /** A fold chip tapped: today's overdue or undated tasks, as a list. */
   onFoldPress: (fold: TaskFold, tasks: ReadonlyArray<TaskRecord>) => void;
@@ -246,9 +238,8 @@ export function DayTimeline({
   revealKey?: string | undefined;
   /**
    * The open editor's focused draft starts at this minute of its day: the
-   * grid scrolls it near the top, where a half-height editor leaves the
-   * calendar in view — with room below midnight while drafts are shown,
-   * so an evening draft can come up that far.
+   * grid scrolls it near the top behind the editor's sheet, so the item
+   * is in view once it is saved and the sheet has gone.
    */
   revealMinute?: number | undefined;
   /** The non-primary zones: a line each under every hour label, one joined line on tall event blocks. */
@@ -263,7 +254,6 @@ export function DayTimeline({
   const styles = useStyles(makeStyles);
   const { colors } = useTheme();
   const scrollRef = useAnimatedRef<ScrollView>();
-  const { height: windowHeight } = useWindowDimensions();
   const containerRef = useRef<ViewInstance>(null);
   const { updateEvent, updateRecurring } = useGuardedMutations();
   const updateViewPreferences = useUpdateViewPreferences();
@@ -349,10 +339,6 @@ export function DayTimeline({
   );
   // One pass over the window's events, not one filter per column.
   const byDay = useMemo(() => groupEventsByDay(events, strip, timeZone), [events, strip, timeZone]);
-  const draftsByDay = useMemo(
-    () => groupEventsByDay(drafts, strip, timeZone),
-    [drafts, strip, timeZone],
-  );
   const calendarTasks = useMemo(
     () => partitionCalendarTasks([...tasks, ...overdue], todayIso, timeZone),
     [tasks, overdue, todayIso, timeZone],
@@ -401,13 +387,12 @@ export function DayTimeline({
           return (
             (tasksByDay.get(iso)?.length ?? 0) +
             (birthdaysByDay.get(iso)?.length ?? 0) +
-            (byDay.get(iso) ?? []).filter((event) => event.isAllDay).length +
-            (draftsByDay.get(iso) ?? []).filter((draft) => draft.isAllDay).length
+            (byDay.get(iso) ?? []).filter((event) => event.isAllDay).length
           );
         }),
         days.length,
       ),
-    [strip, tasksByDay, birthdaysByDay, byDay, draftsByDay, days.length],
+    [strip, tasksByDay, birthdaysByDay, byDay, days.length],
   );
   // Expanded, the lane takes at most a third of the view (`expandedAllDayRows`)
   // and scrolls inside itself past that, stopping halfway into the next
@@ -671,7 +656,6 @@ export function DayTimeline({
                     birthdays={birthdaysByDay.get(iso) ?? []}
                     colorOf={colorOf}
                     compact={compact}
-                    drafts={(draftsByDay.get(iso) ?? []).filter((draft) => draft.isAllDay)}
                     draggingKey={taskDrag.dragging?.key ?? null}
                     entries={tasksByDay.get(iso) ?? []}
                     events={(byDay.get(iso) ?? []).filter((event) => event.isAllDay)}
@@ -680,7 +664,6 @@ export function DayTimeline({
                     listColorOf={listColorOf}
                     maxChips={maxChips}
                     onBirthdayPress={onBirthdayPress}
-                    onDraftPress={(draftId) => onDraftPress(draftId)}
                     onEventPress={onEventPress}
                     onFoldPress={onFoldPress}
                     onShowMore={() => setCollapsed(false)}
@@ -700,9 +683,6 @@ export function DayTimeline({
 
       <GestureDetector gesture={swipe}>
         <Animated.ScrollView
-          contentContainerStyle={
-            drafts.length > 0 ? { paddingBottom: windowHeight / 2 } : undefined
-          }
           onContentSizeChange={(_width, height) => setShared(contentHeight, height)}
           onLayout={(layout) => setShared(viewportHeight, layout.nativeEvent.layout.height)}
           onScroll={onScroll}
@@ -775,7 +755,6 @@ export function DayTimeline({
                       compact={compact}
                       date={day}
                       divided={divided}
-                      drafts={(draftsByDay.get(iso) ?? []).filter((draft) => !draft.isAllDay)}
                       draggingKey={taskDrag.dragging?.key ?? null}
                       edgeScroll={edgeScroll}
                       events={(byDay.get(iso) ?? []).filter((event) => !event.isAllDay)}
@@ -786,7 +765,6 @@ export function DayTimeline({
                       listColorOf={listColorOf}
                       onCommit={commitChange}
                       onCreateSlot={onCreateSlot}
-                      onDraftPress={onDraftPress}
                       onEventPress={onEventPress}
                       onTaskPress={onTaskPress}
                       onToggleTask={onToggleTask}

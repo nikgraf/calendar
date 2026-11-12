@@ -119,7 +119,9 @@ describe('first run: the setup dialog, the Getting started card and its lessons'
     expect(
       await cdp.eval<string>(`document.querySelector('[data-testid="quick-add-input"]').value`),
     ).toBe(LESSON_CREATE_PHRASE);
-    await cdp.clickTestId('quick-add-apply');
+    // The phrase is in the Assistant's field, selected: Return sends it.
+    await cdp.eval(`document.querySelector('[data-testid="quick-add-input"]').focus()`);
+    await cdp.pressEnter();
     await expect
       .poll(async () => (await onboarding(app))?.lessons.create, { timeout: 10_000 })
       .toBe('done');
@@ -209,6 +211,7 @@ describe('first run: the setup dialog, the Getting started card and its lessons'
     const add = await cdp.locate('button[aria-label="New event"]');
     await cdp.click(add.x, add.y);
     await cdp.waitFor(`!!document.querySelector('input[placeholder="Title"]')`);
+    await cdp.showEditorView('form');
     await cdp.eval(`(() => {
       const input = document.querySelector('input[placeholder="Title"]');
       const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;

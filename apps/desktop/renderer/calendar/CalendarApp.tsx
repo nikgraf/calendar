@@ -71,7 +71,7 @@ import { EditorPanel } from './panel/EditorPanel.tsx';
 import { EventInspector } from './panel/EventInspector.tsx';
 import { LessonPanel, type PanelLessonId } from './panel/LessonPanel.tsx';
 import { SearchPanel } from './panel/SearchPanel.tsx';
-import { onWindowFocus } from './QuickAddBar.tsx';
+import { onWindowFocus } from '../ai/modelFocus.ts';
 import { TodayRail } from './panel/TodayRail.tsx';
 import { Sidebar } from './sidebar/Sidebar.tsx';
 import { Toolbar } from './Toolbar.tsx';
@@ -115,6 +115,12 @@ type PanelState =
       readonly mode?: ItemKind | undefined;
       /** Distinct per opening: a second slot click must not reuse the first draft. */
       readonly opening: number;
+      /**
+       * The view the editor starts on: the Assistant for "+ New", ⌘N, ⌘K,
+       * a capture and the Create lesson; the form (unset) for a slot
+       * picked on the grid and for a saved event.
+       */
+      readonly opensOn?: 'assistant' | undefined;
       readonly seed: EditorSeed;
     }
   | {
@@ -237,12 +243,13 @@ function CalendarBody({
   const editing = panel.kind === 'editEvent' || panel.kind === 'editTask';
   const openEditor = (seed: EditorSeed) =>
     setPanel({ kind: 'editEvent', opening: nextOpening(), seed });
-  /** A new item on the focused day: "+ New", ⌘N, and ⌘K into its quick-add field. */
+  /** A new item on the focused day, on the Assistant: "+ New", ⌘N, and ⌘K into its field. */
   const openNew = useCallback(
     () =>
       setPanel({
         kind: 'editEvent',
         opening: nextOpening(),
+        opensOn: 'assistant',
         seed: { initialDate: focused, initialHour: 9 },
       }),
     [focused],
@@ -267,6 +274,7 @@ function CalendarBody({
     setPanel({
       kind: 'editEvent',
       opening: nextOpening(),
+      opensOn: 'assistant',
       seed: {
         initialDate: Temporal.PlainDate.from(first.prefill.date),
         thread: { items, ...(note ? { note } : {}), utterance },
@@ -470,18 +478,16 @@ function CalendarBody({
       }
       if (command && key.key.toLowerCase() === 'k') {
         key.preventDefault();
-        // ⌘K goes to a new item's quick-add field: the open new-item
-        // editor's, else a fresh one — not from under a dialog, whose
-        // Escape and Enter the field would otherwise take, and not over
-        // another editor, whose draft it would drop.
+        // ⌘K goes to the Assistant's field: the open editor's (which
+        // brings that view forward, where it has one), else a new item's —
+        // not from under a dialog, whose Escape and Enter the field would
+        // otherwise take.
         if (anyDialog) {
           return;
         }
-        const newItem =
-          panel.kind === 'editEvent' && panel.seed.event === undefined && panel.mode === undefined;
-        if (newItem) {
+        if (editing) {
           setQuickAddFocus((count) => count + 1);
-        } else if (!editing) {
+        } else {
           openNew();
         }
         return;
@@ -575,6 +581,7 @@ function CalendarBody({
         setPanel({
           kind: 'editEvent',
           opening: nextOpening(),
+          opensOn: 'assistant',
           seed: {
             initialDate: day,
             initialHour: 12,
@@ -807,6 +814,7 @@ function CalendarBody({
                 initialKind={panel.mode}
                 onCapture={capture.start}
                 onClose={closeEditor(panel.opening)}
+                opensOn={panel.opensOn}
                 quickAddFocus={quickAddFocus}
                 seed={panel.seed}
                 taskLists={taskLists}
@@ -817,6 +825,7 @@ function CalendarBody({
                 calendars={calendars}
                 onCapture={capture.start}
                 onClose={closeEditor(panel.opening)}
+                quickAddFocus={quickAddFocus}
                 seed={{ initialDate: focused }}
                 task={panel.task}
                 taskLists={taskLists}

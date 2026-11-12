@@ -7,6 +7,7 @@ import {
   eventDraftFromPrefill,
   prefillError,
   prefillRecurrence,
+  wasPreview,
 } from './draftPreview.ts';
 
 const TZ = 'Europe/Vienna';
@@ -46,6 +47,7 @@ describe('draftPreview and draftOccurrences', () => {
         focused: true,
         isAllDay: false,
         key: 'd1',
+        kind: 'draft',
         startTime: '19:00',
         startUtc: wallClock('2026-08-28', '19:00'),
         title: 'Dinner with Teo',
@@ -200,6 +202,31 @@ describe('eventDraftFromPrefill', () => {
   });
 });
 
+describe('wasPreview', () => {
+  it('is the draft as it stood, once, keyed apart from the draft itself', () => {
+    const weekly = { ...dinner, recurrence: { freq: 'weekly' as const } };
+    const was = wasPreview(
+      { id: 'd1', item: { kind: 'event', prefill: weekly } },
+      { color: '#3b82f6', timeZone: TZ },
+    );
+    expect(was).toMatchObject({ focused: false, id: 'd1', kind: 'was', startTime: '19:00' });
+    // Not at every occurrence of the repeat it had.
+    expect(was).not.toHaveProperty('recurrence');
+    expect(draftOccurrences([was!], range.start, range.end, TZ)).toMatchObject([
+      { draftId: 'd1', key: 'd1:was', kind: 'was', startUtc: wallClock('2026-08-28', '19:00') },
+    ]);
+  });
+
+  it('is nothing for a to-do', () => {
+    expect(
+      wasPreview(
+        { id: 'd2', item: { kind: 'task', prefill: { date: '2026-08-28', title: 'Bank' } } },
+        { color: '#000', timeZone: TZ },
+      ),
+    ).toBeUndefined();
+  });
+});
+
 describe('candidatePreviews', () => {
   const slots = [
     { date: '2026-08-28', endTime: '10:30', startTime: '10:00' },
@@ -220,12 +247,13 @@ describe('candidatePreviews', () => {
     );
     expect(previews.map((preview) => preview.startTime)).toEqual(['11:00', '09:00']);
     expect(previews[0]).toMatchObject({
-      candidate: slots[1],
       color: '#123456',
       date: '2026-08-28',
       focused: false,
       id: 'd1',
       isAllDay: false,
+      kind: 'candidate',
+      slot: slots[1],
       title: 'Focus',
     });
   });
@@ -252,7 +280,12 @@ describe('candidatePreviews', () => {
       'd1:slot:2026-08-28T11:00',
       'd1:slot:2026-08-29T09:00',
     ]);
-    expect(occurrences[0]).toMatchObject({ candidate: slots[1], draftId: 'd1', focused: false });
+    expect(occurrences[0]).toMatchObject({
+      draftId: 'd1',
+      focused: false,
+      kind: 'candidate',
+      slot: slots[1],
+    });
     expect(occurrences[0]?.startUtc).toBe(wallClock('2026-08-28', '11:00'));
   });
 });

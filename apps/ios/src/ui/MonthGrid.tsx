@@ -1,4 +1,4 @@
-import { type DraftOccurrence, useShadedWeekdays } from '@calendar/app-state';
+import { useShadedWeekdays } from '@calendar/app-state';
 import {
   BIRTHDAY_ACCENT,
   type BirthdayOccurrence,
@@ -19,19 +19,17 @@ import { BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme } from './theme.t
 
 const MAX_DOTS = 4;
 
-// A cell's dots: the open editor's drafts first (a dashed ring in the
-// calendar's color — what is being made), then the day's events, then
-// birthdays, then tasks. Events lead the rest
+// A cell's dots: the day's events, then birthdays, then tasks. Events
+// lead the rest
 // because they carry the calendar's color and are what the grid showed
 // before; there is no "+N more" here, so a day full of tasks must not
 // push them out. Dots are read-only summaries — the cell opens the day,
 // where the full chips with toggle and editor live.
-type Dot = { readonly key: string; readonly style: ViewStyle; readonly testID?: string };
+type Dot = { readonly key: string; readonly style: ViewStyle };
 
 export function MonthGrid({
   birthdays,
   colorOf,
-  drafts,
   events,
   listColorOf,
   onSelectDay,
@@ -43,8 +41,6 @@ export function MonthGrid({
 }: {
   birthdays: ReadonlyArray<BirthdayOccurrence>;
   colorOf: (event: EventRecord) => string;
-  /** The open editor's drafts (candidates are left out here). */
-  drafts: ReadonlyArray<DraftOccurrence>;
   events: ReadonlyArray<EventRecord>;
   listColorOf: (task: TaskRecord) => string | undefined;
   onSelectDay: (date: Temporal.PlainDate) => void;
@@ -64,11 +60,6 @@ export function MonthGrid({
   // One pass over each kind, not one filter + sort per cell.
   const eventsByDay = groupEventsByDay(
     events,
-    weeks.flat().map((cell) => cell.date),
-    timeZone,
-  );
-  const draftsByDay = groupEventsByDay(
-    drafts.filter((draft) => draft.candidate === undefined),
     weeks.flat().map((cell) => cell.date),
     timeZone,
   );
@@ -112,19 +103,8 @@ export function MonthGrid({
             const dayEvents = eventsByDay.get(iso) ?? [];
             const dayBirthdays = birthdaysByDay.get(iso) ?? [];
             const dayTasks = (isToday ? todayTasks : []).concat(tasksByDay.get(iso) ?? []);
-            const dayDrafts = draftsByDay.get(iso) ?? [];
             const weekend = isShadedDay(shaded, date);
             const dots: Array<Dot> = [
-              ...dayDrafts.map((draft) => ({
-                key: `draft:${draft.key}`,
-                style: {
-                  backgroundColor: 'transparent',
-                  borderColor: draft.color,
-                  borderStyle: 'dashed' as const,
-                  borderWidth: 1,
-                },
-                testID: 'draft-dot',
-              })),
               ...dayEvents.map((event) => ({
                 key: `${event.calendarId}:${event.id}`,
                 style: { backgroundColor: colorOf(event) },
@@ -165,7 +145,7 @@ export function MonthGrid({
                 </View>
                 <View style={styles.dotsRow}>
                   {dots.slice(0, MAX_DOTS).map((dot) => (
-                    <View key={dot.key} style={[styles.dot, dot.style]} testID={dot.testID} />
+                    <View key={dot.key} style={[styles.dot, dot.style]} />
                   ))}
                 </View>
               </Pressable>

@@ -1,4 +1,3 @@
-import type { DraftOccurrence } from '@calendar/app-state';
 import {
   type BirthdayOccurrence,
   birthdayChipLabel,
@@ -18,16 +17,14 @@ import { SymbolView } from 'expo-symbols';
 import type { ReactElement } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { GestureDetector } from 'react-native-gesture-handler';
-import { DraftChip } from './DraftBlock.tsx';
 import { TaskCheck } from './TaskCheck.tsx';
 import { BOX_FONT_SCALE, type ThemeColors, useEventTint, useStyles, useTheme } from './theme.ts';
 import { ALL_DAY_ROW_HEIGHT } from './timelineLayout.ts';
 import { type TaskDrag, useTaskDragGesture } from './useTaskDrag.ts';
 
 /**
- * One day's all-day chips (the open editor's drafts first — what is being
- * made — then date-only tasks, today's folded backlog among them,
- * birthdays and events), one chip per row. Past `maxChips` the column shows the first rows and a
+ * One day's all-day chips (date-only tasks, today's folded backlog among
+ * them, then birthdays and events), one chip per row. Past `maxChips` the column shows the first rows and a
  * "+N more" chip that expands the lane. A task chip's body long-presses
  * into a drag (another day, or a time in the grid); the chip dims while
  * its ghost travels.
@@ -36,7 +33,6 @@ export function AllDayColumn({
   birthdays,
   colorOf,
   compact,
-  drafts,
   draggingKey,
   entries,
   events,
@@ -44,7 +40,6 @@ export function AllDayColumn({
   listColorOf,
   maxChips,
   onBirthdayPress,
-  onDraftPress,
   onEventPress,
   onFoldPress,
   onShowMore,
@@ -59,8 +54,6 @@ export function AllDayColumn({
   birthdays: ReadonlyArray<BirthdayOccurrence>;
   colorOf: (event: EventRecord) => string;
   compact: boolean;
-  /** The open editor's all-day drafts on this day. */
-  drafts: ReadonlyArray<DraftOccurrence>;
   /** The task being dragged, if any: its source chip dims. */
   draggingKey: string | null;
   /** Date-only tasks on this day, as the lane draws them: today's backlog folds (`foldTaskBacklog`). */
@@ -72,7 +65,6 @@ export function AllDayColumn({
   maxChips: number;
   onBirthdayPress: (birthday: BirthdayOccurrence) => void;
   /** A draft chip tapped: the editor focuses that draft. */
-  onDraftPress: (draftId: string) => void;
   onEventPress: (event: EventRecord) => void;
   /** A fold chip tapped: its list, with the tasks it holds. */
   onFoldPress: (fold: TaskFold, tasks: ReadonlyArray<TaskRecord>) => void;
@@ -86,36 +78,19 @@ export function AllDayColumn({
   width: number;
 }) {
   const styles = useStyles(makeStyles);
-  const total = drafts.length + entries.length + birthdays.length + events.length;
+  const total = entries.length + birthdays.length + events.length;
   // A column that fits shows everything; one that overflows gives its
   // last row to the "+N more" chip.
   const limit = total > maxChips ? maxChips - 1 : total;
-  const visibleDrafts = drafts.slice(0, limit);
-  const visibleTasks = entries.slice(0, Math.max(limit - visibleDrafts.length, 0));
-  const visibleBirthdays = birthdays.slice(
-    0,
-    Math.max(limit - visibleDrafts.length - visibleTasks.length, 0),
-  );
+  const visibleTasks = entries.slice(0, limit);
+  const visibleBirthdays = birthdays.slice(0, Math.max(limit - visibleTasks.length, 0));
   const visibleEvents = events.slice(
     0,
-    Math.max(limit - visibleDrafts.length - visibleTasks.length - visibleBirthdays.length, 0),
+    Math.max(limit - visibleTasks.length - visibleBirthdays.length, 0),
   );
-  const hidden =
-    total -
-    visibleDrafts.length -
-    visibleTasks.length -
-    visibleBirthdays.length -
-    visibleEvents.length;
+  const hidden = total - visibleTasks.length - visibleBirthdays.length - visibleEvents.length;
   return (
     <View style={[styles.allDayColumn, { width }]}>
-      {visibleDrafts.map((draft) => (
-        <DraftChip
-          height={ALL_DAY_ROW_HEIGHT - 4}
-          key={draft.key}
-          occurrence={draft}
-          onPress={onDraftPress}
-        />
-      ))}
       {visibleTasks.map((entry) => {
         if (entry.kind === 'fold') {
           return (

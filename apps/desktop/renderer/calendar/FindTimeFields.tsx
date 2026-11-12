@@ -16,7 +16,7 @@ import { backend } from '../backend.ts';
 import { Button } from '../ui/Button.tsx';
 import { FIELD_CLASS, LABEL_CLASS } from '../ui/fieldStyles.ts';
 import { SegmentedControl } from '../ui/SegmentedControl.tsx';
-import { onWindowFocus } from './QuickAddBar.tsx';
+import { onWindowFocus } from '../ai/modelFocus.ts';
 
 /**
  * "Find a time" beside the event's date and times: a few presets over

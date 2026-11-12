@@ -1,24 +1,31 @@
 import { describe, expect, it } from 'vite-plus/test';
+import { changedDraftFields, describeDraftItem, summarizeChange } from './draftChanges.ts';
 import {
-  changedDraftFields,
-  describeDraftItem,
   dropInviteeChoice,
   dropPlaceChoice,
+  dropSlots,
   EMPTY_THREAD,
   firstDraftExtras,
   focusDraft,
+  foldForm,
   isAtSlot,
   itemAtSlot,
+  keepShown,
   landPlacement,
   landRefinement,
   mergeRefinement,
+  openThread,
+  phraseSteps,
   refineTargets,
   refineThread,
   removeDraft,
+  reseedRule,
+  stepRule,
   removeDrafts,
   slotItem,
   startThread,
-  summarizeChange,
+  stepTo,
+  threadLine,
   turnsOf,
   undoTurn,
   updateDraft,
@@ -62,6 +69,17 @@ const later: QuickAddItem = {
 const rule = (recurrence: Record<string, unknown>): QuickAddItem =>
   ({ kind: 'event', prefill: { ...dinner.prefill, recurrence } }) as QuickAddItem;
 
+/** What the form holds of a draft at "Figlmüller": a pin at that latitude, or none. */
+const pinnedAt = (lat: number | undefined) => ({
+  attendees: [],
+  description: '',
+  geo:
+    lat === undefined
+      ? undefined
+      : new GeoLocation({ lat, lng: 16.375, name: 'Figlmüller', source: 'Figlmüller' }),
+  reminders: undefined,
+});
+
 /** Stable ids: d1, d2, … in the order they are asked for. */
 const ids = () => {
   let count = 0;
@@ -78,10 +96,11 @@ describe('startThread', () => {
     });
     expect(state.drafts.map((draft) => draft.id)).toEqual(['d1', 'd2']);
     expect(state.focused).toBe(0);
-    expect(state.turns).toEqual([
+    expect(state.steps).toEqual([
       {
         drafts: ['d1', 'd2'],
         id: 'd3',
+        kind: 'phrase',
         summary: '2 drafts',
         utterance: 'Dinner with Teo Friday, planning Saturday',
       },
@@ -92,7 +111,7 @@ describe('startThread', () => {
 
   it('describes a single draft in its first turn', () => {
     const state = startThread([dinner], 'Dinner with Teo next Friday', { id: ids() });
-    expect(state.turns[0]?.summary).toBe('Dinner with Teo · Fri, Aug 28 · 19:00–20:00');
+    expect(phraseSteps(state)[0]?.summary).toBe('Dinner with Teo · Fri, Aug 28 · 19:00–20:00');
   });
 });
 
@@ -247,9 +266,10 @@ describe('refineThread and undoTurn', () => {
     const started = startThread([dinner, planning], 'x', { id });
     const refined = refineThread(started, 'at 8', [{ id: 'd1', item: later }], id);
     expect(refined.drafts.map((draft) => draft.item)).toEqual([later, planning]);
-    expect(refined.turns.at(-1)).toEqual({
+    expect(refined.steps.at(-1)).toEqual({
       drafts: ['d1'],
       id: 'd4',
+      kind: 'phrase',
       summary: '→ 20:00–21:00',
       utterance: 'at 8',
     });
@@ -257,11 +277,11 @@ describe('refineThread and undoTurn', () => {
 
     const undone = undoTurn(refined);
     expect(undone.drafts.map((draft) => draft.item)).toEqual([dinner, planning]);
-    expect(undone.turns).toHaveLength(1);
+    expect(undone.steps).toHaveLength(1);
     // The first turn taken back: an empty thread.
     const empty = undoTurn(undone);
     expect(empty.drafts).toEqual([]);
-    expect(empty.turns).toEqual([]);
+    expect(empty.steps).toEqual([]);
     expect(undoTurn(empty)).toBe(empty);
     // Every step the form must take over moved the version.
     expect([started.version, refined.version, undone.version, empty.version]).toEqual([1, 2, 3, 4]);
@@ -279,7 +299,7 @@ describe('refineThread and undoTurn', () => {
       ],
       id,
     );
-    expect(refined.turns.at(-1)?.summary).toBe('→ 20:00–21:00 (2 drafts)');
+    expect(phraseSteps(refined).at(-1)?.summary).toBe('→ 20:00–21:00 (2 drafts)');
   });
 
   it('restores the focus the turn started with', () => {
@@ -311,7 +331,7 @@ describe('turnsOf', () => {
       [{ id: 'd2', item: second.drafts[1]!.item }],
       id,
     );
-    expect(idle.turns.at(-1)?.drafts).toEqual([]);
+    expect(idle.steps.at(-1)?.drafts).toEqual([]);
     expect(turnsOf(idle, 'd2')).toEqual(['two things', 'in Vienna']);
     // Undo takes the words back.
     expect(turnsOf(undoTurn(undoTurn(idle)), 'd2')).toEqual(['two things']);
@@ -331,7 +351,7 @@ describe('focus, update and remove', () => {
   it('keeps the form edits on the draft without a turn, and without moving the version', () => {
     const edited = updateDraft(state, 0, later);
     expect(edited.drafts[0]?.item).toEqual(later);
-    expect(edited.turns).toEqual(state.turns);
+    expect(edited.steps).toEqual(state.steps);
     expect(edited.version).toBe(state.version);
     expect(updateDraft(state, 5, later)).toBe(state);
     expect(focusDraft(state, 1).version).toBe(state.version + 1);
@@ -372,7 +392,302 @@ describe('focus, update and remove', () => {
     expect(saved.drafts.map((draft) => draft.id)).toEqual(['d2']);
     const undone = undoTurn(saved);
     expect(undone.drafts.map((draft) => draft.id)).toEqual(['d2']);
-    expect(undone.turns).toHaveLength(1);
+    expect(undone.steps).toHaveLength(1);
+  });
+
+  it('makes a step of what the form changed by hand, and none of what it did not', () => {
+    const id = ids();
+    const started = startThread([dinner, planning], 'x', { id });
+    // Read back as it is: nothing to go back over.
+    const same = foldForm(started, { item: dinner }, { kind: 'edit' }, id);
+    expect(same.steps).toEqual(started.steps);
+    expect(same.history).toEqual(started.history);
+
+    const moved = foldForm(started, { item: later }, { kind: 'edit' }, id);
+    expect(moved.drafts[0]?.item).toEqual(later);
+    expect(moved.steps.at(-1)).toEqual({
+      drafts: ['d1'],
+      fields: ['time'],
+      id: 'd4',
+      kind: 'edit',
+    });
+    expect(moved.history.at(-1)?.drafts[0]?.item).toEqual(dinner);
+    // The form already shows it: nothing for it to take over.
+    expect(moved.version).toBe(started.version);
+    // No draft to fold into: the thread stays.
+    expect(foldForm(EMPTY_THREAD, { item: later })).toBe(EMPTY_THREAD);
+  });
+
+  it('joins further edits of the same field to the step, and starts another for another field', () => {
+    const id = ids();
+    const typed = (title: string): QuickAddItem => ({
+      kind: 'event',
+      prefill: { ...dinner.prefill, title },
+    });
+    const started = startThread([dinner], 'x', { id });
+    const one = foldForm(started, { item: typed('Dinner with T') }, { kind: 'edit' }, id);
+    const two = foldForm(one, { item: typed('Dinner with Tom') }, { kind: 'edit' }, id);
+    // A title typed letter by letter is one step, from where it began.
+    expect(two.steps).toHaveLength(2);
+    expect(two.history.at(-1)?.drafts[0]?.item).toEqual(dinner);
+    expect(two.drafts[0]?.item.prefill.title).toBe('Dinner with Tom');
+
+    const timed = foldForm(
+      two,
+      { item: { kind: 'event', prefill: { ...later.prefill, title: 'Dinner with Tom' } } },
+      { kind: 'edit' },
+      id,
+    );
+    expect(timed.steps.map((step) => (step.kind === 'edit' ? step.fields : step.kind))).toEqual([
+      'phrase',
+      ['title'],
+      ['time'],
+    ]);
+  });
+
+  it('drops a step whose edits end where they began', () => {
+    const id = ids();
+    const started = startThread([dinner], 'x', { id });
+    const away = foldForm(started, { item: later }, { kind: 'edit' }, id);
+    const back = foldForm(away, { item: dinner }, { kind: 'edit' }, id);
+    expect(back.steps).toEqual(started.steps);
+    expect(back.history).toEqual(started.history);
+    expect(back.drafts[0]?.item).toEqual(dinner);
+  });
+
+  it('makes a step of a place picked under the text the field already reads, and of its pin let go', () => {
+    const id = ids();
+    const there: QuickAddItem = {
+      kind: 'event',
+      prefill: { ...dinner.prefill, location: 'Figlmüller' },
+    };
+    const pinned = startThread([there], 'dinner at Figlmüller', {
+      extras: pinnedAt(48.209),
+      id,
+    });
+    // The other Figlmüller: the same words in the field, another point on the map.
+    const other = foldForm(
+      pinned,
+      { extras: pinnedAt(48.212), item: there },
+      { kind: 'pick', pick: 'place' },
+      id,
+    );
+    expect(other.steps).toHaveLength(pinned.steps.length + 1);
+    expect(other.steps.at(-1)).toMatchObject({ kind: 'pick', pick: 'place' });
+    // Going back over it gives the first one back.
+    expect(stepTo(other, 1).drafts[0]?.extras?.geo?.lat).toBe(48.209);
+    // "As said": the text stays, the pin goes — a step as well.
+    const said = foldForm(
+      other,
+      { extras: { ...pinnedAt(undefined), locationAsSaid: 'Figlmüller' }, item: there },
+      { kind: 'pick', pick: 'place' },
+      id,
+    );
+    expect(said.steps).toHaveLength(other.steps.length + 1);
+    // The same pin read back is none.
+    const again = foldForm(
+      pinned,
+      { extras: pinnedAt(48.209), item: there },
+      { kind: 'pick', pick: 'place' },
+      id,
+    );
+    expect(again.steps).toEqual(pinned.steps);
+  });
+
+  it('keeps a pick as its own step, and settles the choice it answered with it', () => {
+    const id = ids();
+    const asked = startThread([dinner], 'dinner, invite Mia', {
+      guests: {
+        add: [],
+        choices: [{ contacts: [], name: 'Mia' }],
+        invited: ['Mia'],
+        remove: [],
+      },
+      id,
+    });
+    const mia = { displayName: 'Mia Ko', email: 'mia@example.com' };
+    const extras = { attendees: [mia], description: '', reminders: undefined };
+    const picked = foldForm(
+      asked,
+      { extras, item: dinner },
+      { kind: 'pick', name: 'Mia', pick: 'guest' },
+      id,
+    );
+    expect(picked.steps.at(-1)).toEqual({ drafts: ['d1'], id: 'd3', kind: 'pick', pick: 'guest' });
+    expect(picked.drafts[0]).not.toHaveProperty('inviteeChoices');
+    // Before the pick the name was still open: going back asks again.
+    expect(picked.history.at(-1)?.drafts[0]?.inviteeChoices).toEqual([
+      { contacts: [], name: 'Mia' },
+    ]);
+    // An edit right after it is not the pick's: guests again, but another step.
+    const more = foldForm(
+      picked,
+      { extras: { ...extras, attendees: [] }, item: dinner },
+      { kind: 'edit' },
+      id,
+    );
+    expect(more.steps).toHaveLength(3);
+    // A pick that put nothing new in the form still answers its question.
+    const again = foldForm(
+      asked,
+      { item: dinner },
+      { kind: 'pick', name: 'Mia', pick: 'guest' },
+      id,
+    );
+    expect(again.steps).toEqual(asked.steps);
+    expect(again.drafts[0]).not.toHaveProperty('inviteeChoices');
+  });
+
+  it('takes a turn back with what was done by hand since it landed', () => {
+    const id = ids();
+    const started = startThread([dinner], 'x', { id });
+    const refined = refineThread(started, 'at 8', [{ id: 'd1', item: later }], id);
+    const retitled = foldForm(
+      refined,
+      { item: { kind: 'event', prefill: { ...later.prefill, title: 'Late dinner' } } },
+      { kind: 'edit' },
+      id,
+    );
+    expect(retitled.steps.map((step) => step.kind)).toEqual(['phrase', 'phrase', 'edit']);
+    const undone = undoTurn(retitled);
+    expect(undone.drafts[0]?.item).toEqual(dinner);
+    expect(undone.steps).toEqual(started.steps);
+    expect(undone.history).toEqual(started.history);
+  });
+
+  it('lets the steps made by hand on a written draft go with it', () => {
+    const id = ids();
+    const started = startThread([dinner, planning], 'x', { id });
+    const edited = foldForm(started, { item: later }, { kind: 'edit' }, id);
+    expect(edited.steps).toHaveLength(2);
+    const saved = removeDraft(edited, 0);
+    expect(saved.steps).toEqual(started.steps);
+    expect(saved.history).toEqual([{ drafts: [], focused: 0 }]);
+    // The other draft's step stays when it is the other one that is written.
+    expect(removeDraft(edited, 1).steps).toHaveLength(2);
+  });
+
+  it('shows an older step without letting the later ones go, and goes forward to them again', () => {
+    const id = ids();
+    const started = startThread([dinner], 'x', { id });
+    const refined = refineThread(started, 'at 8', [{ id: 'd1', item: later }], id);
+    const retitled = foldForm(
+      refined,
+      { item: { kind: 'event', prefill: { ...later.prefill, title: 'Late dinner' } } },
+      { kind: 'edit' },
+      id,
+    );
+    expect(
+      threadLine(retitled).map((line) => [line.position, line.step.kind, line.dimmed]),
+    ).toEqual([
+      [1, 'phrase', false],
+      [2, 'phrase', false],
+      [3, 'edit', false],
+    ]);
+
+    const first = stepTo(retitled, 1);
+    expect(first.drafts[0]?.item).toEqual(dinner);
+    expect(first.steps).toHaveLength(1);
+    expect(first.ahead.map((gone) => gone.step.kind)).toEqual(['phrase', 'edit']);
+    // The form must take the drafts over.
+    expect(first.version).toBe(retitled.version + 1);
+    // Every step is still listed, the ones stepped back over dimmed, each between its own drafts.
+    const line = threadLine(first);
+    expect(line.map((each) => each.dimmed)).toEqual([false, true, true]);
+    expect(line[1]?.before.drafts[0]?.item).toEqual(dinner);
+    expect(line[1]?.after.drafts[0]?.item).toEqual(later);
+    expect(line[2]?.after.drafts[0]?.item.prefill.title).toBe('Late dinner');
+
+    // Forward again, one step and then to the newest: nothing was lost.
+    const second = stepTo(first, 2);
+    expect(second.drafts[0]?.item).toEqual(later);
+    expect(second.ahead).toHaveLength(1);
+    const newest = stepTo(second, 3);
+    expect(newest.drafts).toEqual(retitled.drafts);
+    expect(newest.steps).toEqual(retitled.steps);
+    expect(newest.history).toEqual(retitled.history);
+    expect(newest.ahead).toEqual([]);
+  });
+
+  it('shows the start before the first step, and nothing beyond the steps there are', () => {
+    const id = ids();
+    const started = startThread([dinner], 'x', { id });
+    const refined = refineThread(started, 'at 8', [{ id: 'd1', item: later }], id);
+    const start = stepTo(refined, 0);
+    expect(start.drafts).toEqual([]);
+    expect(start.steps).toEqual([]);
+    expect(start.ahead).toHaveLength(2);
+    expect(stepTo(start, 2).drafts).toEqual(refined.drafts);
+    // The step on show, or none there is: the thread stays as it is.
+    expect(stepTo(refined, 2)).toBe(refined);
+    expect(stepTo(refined, 3)).toBe(refined);
+    expect(stepTo(refined, -1)).toBe(refined);
+  });
+
+  it('keeps the step on show and lets the later ones go', () => {
+    const id = ids();
+    const started = startThread([dinner], 'x', { id });
+    const refined = refineThread(started, 'at 8', [{ id: 'd1', item: later }], id);
+    const kept = keepShown(stepTo(refined, 1));
+    expect(kept.drafts[0]?.item).toEqual(dinner);
+    expect(kept.steps).toEqual(started.steps);
+    expect(kept.ahead).toEqual([]);
+    expect(threadLine(kept)).toHaveLength(1);
+    // Kept, the form already shows it: nothing to take over.
+    expect(kept.version).toBe(stepTo(refined, 1).version);
+    // Nothing on show to keep: the same thread.
+    expect(keepShown(refined)).toBe(refined);
+  });
+
+  it('reads nothing by hand into an older step on show, and a turn from one leaves the later ones behind', () => {
+    const id = ids();
+    const started = startThread([dinner], 'x', { id });
+    const refined = refineThread(started, 'at 8', [{ id: 'd1', item: later }], id);
+    const first = stepTo(refined, 1);
+    expect(foldForm(first, { item: planning })).toBe(first);
+    const again = refineThread(first, 'at 9', [{ id: 'd1', item: planning }], id);
+    expect(again.ahead).toEqual([]);
+    expect(again.steps).toHaveLength(2);
+  });
+
+  it('keeps a written draft out of the steps stepped back over too', () => {
+    const id = ids();
+    const started = startThread([dinner, planning], 'x', { id });
+    const refined = refineThread(started, 'at 8', [{ id: 'd1', item: later }], id);
+    const edited = foldForm(refined, { item: dinner }, { kind: 'edit' }, id);
+    const back = stepTo(edited, 1);
+    const saved = removeDrafts(back, ['d1']);
+    // The edit by hand on the written draft is gone; the phrase stays, without that draft.
+    expect(saved.ahead.map((gone) => gone.step.kind)).toEqual(['phrase']);
+    expect(saved.ahead[0]?.after.drafts.map((draft) => draft.id)).toEqual(['d2']);
+  });
+
+  it('opens a saved item as the first state of its thread: no step, and never nothing to go back to', () => {
+    const id = ids();
+    const extras = {
+      attendees: [],
+      calendarKey: 'acc:cal',
+      description: 'Bring wine',
+      reminders: undefined,
+    };
+    const opened = openThread({ extras, item: dinner }, id);
+    expect(opened.drafts).toEqual([{ extras, id: 'd1', item: dinner }]);
+    expect(opened.steps).toEqual([]);
+    expect(opened.history).toEqual([]);
+    // Nothing for the form to take over: it is what the form holds.
+    expect(opened.version).toBe(0);
+
+    // A phrase changes it; an edit by hand is a step from the start.
+    const refined = refineThread(opened, 'at 8', [{ id: 'd1', item: later }], id);
+    expect(refined.drafts[0]?.item).toEqual(later);
+    expect(refined.drafts[0]?.extras).toEqual(extras);
+    const edited = foldForm(opened, { extras, item: later }, { kind: 'edit' }, id);
+    expect(edited.steps.map((step) => step.kind)).toEqual(['edit']);
+
+    // Before the first step is the item as saved.
+    const start = stepTo(refined, 0);
+    expect(start.drafts).toEqual(opened.drafts);
+    expect(undoTurn(refined).drafts).toEqual(opened.drafts);
   });
 
   it('starts a phrase draft with what the form already held', () => {
@@ -446,7 +761,7 @@ describe('slots on a draft', () => {
         title: 'Focus',
       },
     });
-    expect(state.turns[0]?.summary).toBe('Focus · Fri, Aug 28 · 10:00–10:30 · 3 free slots');
+    expect(phraseSteps(state)[0]?.summary).toBe('Focus · Fri, Aug 28 · 10:00–10:30 · 3 free slots');
   });
 
   it('a finder turn moves the focused draft into the best slot, title kept, slots along; the next turn drops them, Undo brings them back', () => {
@@ -465,11 +780,35 @@ describe('slots on a draft', () => {
       title: 'Dinner with Teo',
     });
     expect(placed.drafts[0]?.slots).toEqual(slots);
-    expect(placed.turns.at(-1)?.summary).toBe('→ 10:00–10:30 · 3 free slots');
+    expect(phraseSteps(placed).at(-1)?.summary).toBe('→ 10:00–10:30 · 3 free slots');
 
     const moved = refineThread(placed, 'at 8', [{ id: 'd1', item: later }], id);
     expect(moved.drafts[0]).not.toHaveProperty('slots');
     expect(undoTurn(moved).drafts[0]?.slots).toEqual(slots);
+  });
+
+  it('lets go of every slot once they no longer hold, on the steps to go back and forward to as well', () => {
+    const id = ids();
+    const started = startThread([dinner], 'x', { id });
+    const placed = refineThread(
+      started,
+      'find a slot tomorrow morning',
+      [{ id: 'd1', item: itemAtSlot(dinner, slots[0]!, 'Focus'), slots }],
+      id,
+    );
+    const moved = refineThread(placed, 'at 8', [{ id: 'd1', item: later }], id);
+    // The finder's step is behind the newest one, and ahead of the first once stepped back.
+    const dropped = dropSlots(moved);
+    expect(undoTurn(dropped).drafts[0]).not.toHaveProperty('slots');
+    const back = dropSlots(stepTo(moved, 1));
+    expect(stepTo(back, 2).drafts[0]).not.toHaveProperty('slots');
+    // The drafts themselves, where they are, and nothing else about them.
+    const bare = dropSlots(placed);
+    expect(bare.drafts[0]).not.toHaveProperty('slots');
+    expect(bare.drafts[0]?.item).toEqual(placed.drafts[0]?.item);
+    expect(bare.steps).toBe(placed.steps);
+    // Nothing offered anywhere: the same thread.
+    expect(dropSlots(started)).toBe(started);
   });
 
   it('a form edit keeps the slots', () => {
@@ -479,7 +818,7 @@ describe('slots on a draft', () => {
 
   it('a single slot is no row: the summary stays plain', () => {
     const state = startThread([dinner], 'x', { id: ids(), slots: slots.slice(0, 1) });
-    expect(state.turns[0]?.summary).toBe('Dinner with Teo · Fri, Aug 28 · 19:00–20:00');
+    expect(phraseSteps(state)[0]?.summary).toBe('Dinner with Teo · Fri, Aug 28 · 19:00–20:00');
   });
 });
 
@@ -767,7 +1106,7 @@ describe('guests from the words', () => {
       extras: { attendees: [anna, tom], description: 'Bring wine' },
       inviteeChoices: [{ contacts: [mia, miaToo], name: 'Mia' }],
     });
-    expect(state.turns[0]?.summary).toBe(
+    expect(phraseSteps(state)[0]?.summary).toBe(
       'Dinner with Teo · Fri, Aug 28 · 19:00–20:00 · invites Tom Baker · which Mia?',
     );
     // A draft the form never held gets blank extras around its guests.
@@ -794,7 +1133,7 @@ describe('guests from the words', () => {
       id: ids(),
     });
     expect(state.drafts[0]).not.toHaveProperty('extras');
-    expect(state.turns[0]?.summary).toBe('Call Tom · Fri, Aug 28');
+    expect(phraseSteps(state)[0]?.summary).toBe('Call Tom · Fri, Aug 28');
   });
 
   it('lands a turn’s guests on the form as it is now, says so, and Undo takes them back', () => {
@@ -825,7 +1164,7 @@ describe('guests from the words', () => {
     ]);
     expect(landed.drafts[0]?.inviteeChoices).toEqual([{ contacts: [], name: 'Sarah' }]);
     // Only guests changed: no "no change".
-    expect(landed.turns.at(-1)?.summary).toBe(
+    expect(phraseSteps(landed).at(-1)?.summary).toBe(
       '→ invites Mia Ko · → uninvites Anna Lee · → no contact “Sarah”',
     );
     expect(landed.version).toBe(started.version + 1);
@@ -847,7 +1186,7 @@ describe('guests from the words', () => {
     });
     const moved = refineThread(started, 'at 8', [{ id: 'd1', item: later }], ids());
     expect(moved.drafts[0]?.inviteeChoices).toEqual([{ contacts: [mia, miaToo], name: 'Mia' }]);
-    expect(moved.turns.at(-1)?.summary).toBe('→ 20:00–21:00');
+    expect(phraseSteps(moved).at(-1)?.summary).toBe('→ 20:00–21:00');
   });
 
   it('settles an open choice when a later turn finds the name (contacts synced meanwhile)', () => {
@@ -922,7 +1261,7 @@ describe('guests from the words', () => {
     const settled = dropInviteeChoice(started, 0, 'Mia');
     expect(settled.drafts[0]?.inviteeChoices).toEqual([{ contacts: [], name: 'Sarah' }]);
     expect(settled.version).toBe(started.version);
-    expect(settled.turns).toBe(started.turns);
+    expect(settled.steps).toBe(started.steps);
     expect(dropInviteeChoice(settled, 0, 'Sarah').drafts[0]).not.toHaveProperty('inviteeChoices');
     expect(dropInviteeChoice(settled, 3, 'Sarah')).toBe(settled);
   });
@@ -958,7 +1297,7 @@ describe('places from the words', () => {
       placeChoice: { candidates: [central], text: 'Cafe Zentral' },
     });
     // One place is no count worth saying.
-    expect(state.turns[0]?.summary).toBe('Dinner with Teo · Fri, Aug 28 · 19:00–20:00');
+    expect(phraseSteps(state)[0]?.summary).toBe('Dinner with Teo · Fri, Aug 28 · 19:00–20:00');
   });
 
   it('a place taken anew lets go of a text kept as said', () => {
@@ -1016,7 +1355,7 @@ describe('places from the words', () => {
       item: { prefill: { location: 'Figlmüller, Wollzeile 5' } },
       placeChoice: { candidates: two, text: 'Figlmüller' },
     });
-    expect(state.turns[0]?.summary).toContain('2 places');
+    expect(phraseSteps(state)[0]?.summary).toContain('2 places');
     // A hit that does not resemble the text is offered, not taken.
     const other: PlaceCandidate = { ...figl('Kaffeeweg'), match: 'search' };
     const offered = startThread([said('Kaffee Sperl')], 'at Kaffee Sperl', {
@@ -1028,13 +1367,13 @@ describe('places from the words', () => {
       placeChoice: { candidates: [other] },
     });
     expect(offered.drafts[0]?.extras).toBeUndefined();
-    expect(offered.turns[0]?.summary).toContain('which “Kaffee Sperl”?');
+    expect(phraseSteps(offered)[0]?.summary).toContain('which “Kaffee Sperl”?');
     const none = startThread([said('Room 4')], 'dinner in Room 4', {
       id: ids(),
       place: { candidates: [], text: 'Room 4' },
     });
     expect(none.drafts[0]).not.toHaveProperty('placeChoice');
-    expect(none.turns[0]?.summary).not.toContain('which');
+    expect(phraseSteps(none)[0]?.summary).not.toContain('which');
   });
 
   it('a turn that sets a place replaces the choice and says the place it took; Undo brings the choice back', () => {
@@ -1060,7 +1399,7 @@ describe('places from the words', () => {
       placeChoice: { candidates: [central], text: 'Cafe Zentral' },
     });
     // The summary names the place taken, not the text said.
-    expect(moved.turns.at(-1)?.summary).toBe('→ Café Central');
+    expect(phraseSteps(moved).at(-1)?.summary).toBe('→ Café Central');
     expect(undoTurn(moved).drafts[0]?.placeChoice?.text).toBe('Figlmüller');
     // A turn about something else keeps the choice.
     const kept = refineThread(
@@ -1115,7 +1454,7 @@ describe('places from the words', () => {
     const settled = dropPlaceChoice(started, 0);
     expect(settled.drafts[0]).not.toHaveProperty('placeChoice');
     expect(settled.version).toBe(started.version);
-    expect(settled.turns).toBe(started.turns);
+    expect(settled.steps).toBe(started.steps);
     expect(dropPlaceChoice(settled, 0)).toBe(settled);
   });
 });
@@ -1137,7 +1476,7 @@ describe('notes and notifications from the words', () => {
       description: 'Bring wine\nask about the trip',
       reminders: new EventReminders({ overrides: [popup(30)], useDefault: false }),
     });
-    expect(state.turns[0]?.summary).toBe(
+    expect(phraseSteps(state)[0]?.summary).toBe(
       'Dinner with Teo · Fri, Aug 28 · 19:00–20:00 · adds a note · notifies 30 minutes before',
     );
     // A draft the form never held gets blank extras around them.
@@ -1165,7 +1504,7 @@ describe('notes and notifications from the words', () => {
       reminders: undefined,
       taskNotes: 'about the invoice',
     });
-    expect(state.turns[0]?.summary).toBe('Call Tom · Fri, Aug 28 · adds a note');
+    expect(phraseSteps(state)[0]?.summary).toBe('Call Tom · Fri, Aug 28 · adds a note');
   });
 
   it('lands a turn’s note and notifications on the form as it is now, says so, and Undo takes them back', () => {
@@ -1197,7 +1536,7 @@ describe('notes and notifications from the words', () => {
       description: 'Bring wine\nask about the trip',
       reminders: new EventReminders({ overrides: [popup(15), popup(60)], useDefault: false }),
     });
-    expect(landed.turns.at(-1)?.summary).toBe('→ adds a note · → notifies 1 hour before');
+    expect(phraseSteps(landed).at(-1)?.summary).toBe('→ adds a note · → notifies 1 hour before');
     const undone = undoTurn(landed);
     expect(undone.drafts[0]?.extras).toEqual(form.extras);
   });
@@ -1217,7 +1556,7 @@ describe('notes and notifications from the words', () => {
       description: 'bring the deck',
       reminders: new EventReminders({ overrides: [popup(10)], useDefault: false }),
     });
-    expect(placed.turns.at(-1)?.summary).toContain('notifies 10 minutes before');
+    expect(phraseSteps(placed).at(-1)?.summary).toContain('notifies 10 minutes before');
   });
 
   it('says nothing for a removal that finds nothing to take off', () => {
@@ -1229,6 +1568,214 @@ describe('notes and notifications from the words', () => {
       ids(),
     );
     expect(moved.drafts[0]).not.toHaveProperty('extras');
-    expect(moved.turns.at(-1)?.summary).toBe('no change');
+    expect(phraseSteps(moved).at(-1)?.summary).toBe('no change');
+  });
+});
+
+describe('a turn on a to-do the form holds undated', () => {
+  const todo: QuickAddItem = {
+    kind: 'task',
+    prefill: { date: '2026-08-28', title: 'Call the bank' },
+  };
+  const extras = { attendees: [], description: '', reminders: undefined, undated: true };
+  // A saved to-do without a due day: its thread opens holding that.
+  const open = () => openThread({ extras, item: todo }, ids());
+  const said = (prefill: Record<string, unknown>) =>
+    refineThread(open(), 'x', [
+      {
+        id: 'd1',
+        item: { kind: 'task', prefill: { ...todo.prefill, ...prefill } } as QuickAddItem,
+      },
+    ]);
+
+  it('dates it when the words gave another day, and undates it again with Undo', () => {
+    const landed = said({ date: '2026-08-29' });
+    expect(landed.drafts[0]?.item.prefill.date).toBe('2026-08-29');
+    expect(landed.drafts[0]?.extras?.undated).toBe(false);
+    expect(undoTurn(landed).drafts[0]?.extras?.undated).toBe(true);
+  });
+
+  it('dates it when the words said the day it already reads: "today" on today', () => {
+    const today = refineThread(open(), 'due today', [{ id: 'd1', item: todo, saidDay: true }]);
+    expect(today.drafts[0]?.item).toEqual(todo);
+    expect(today.drafts[0]?.extras?.undated).toBe(false);
+    // No field of the item moved, and yet the step is this draft's and says what it did.
+    expect(phraseSteps(today).at(-1)).toMatchObject({
+      drafts: ['d1'],
+      summary: '→ due Fri, Aug 28',
+    });
+    expect(turnsOf(today, 'd1')).toEqual(['due today']);
+    expect(undoTurn(today).drafts[0]?.extras?.undated).toBe(true);
+    // Through the form's reading too: the flag stays on the change.
+    const merged = landRefinement(open(), {
+      changes: [{ id: 'd1', item: todo, saidDay: true }],
+      fresh: { extras, item: todo },
+      submitted: { extras, item: todo },
+      targetId: 'd1',
+      utterance: 'due today',
+    });
+    expect(merged.drafts[0]?.extras?.undated).toBe(false);
+  });
+
+  it('dates it when the words gave a time: that is due on the day it holds', () => {
+    expect(said({ time: '17:00' }).drafts[0]?.extras?.undated).toBe(false);
+  });
+
+  it('leaves it undated when the words left the day and the time alone', () => {
+    const landed = said({ title: 'Call the bank about the card' });
+    expect(landed.drafts[0]?.extras?.undated).toBe(true);
+    // The same through the form's reading, as a refinement lands.
+    const merged = landRefinement(open(), {
+      changes: [
+        { id: 'd1', item: { kind: 'task', prefill: { ...todo.prefill, date: '2026-08-30' } } },
+      ],
+      fresh: { extras, item: todo },
+      submitted: { extras, item: todo },
+      targetId: 'd1',
+      utterance: 'on Sunday',
+    });
+    expect(merged.drafts[0]?.extras?.undated).toBe(false);
+  });
+});
+
+describe('a turn for a draft that is gone', () => {
+  it('is no step: removed or saved while the model answered, nothing landed', () => {
+    const state = startThread([dinner, planning], 'x', { id: ids() });
+    const without = removeDraft(state, 0);
+    const change = { id: 'd1', item: later };
+    expect(refineThread(without, 'an hour later', [change])).toBe(without);
+    expect(
+      landRefinement(without, {
+        changes: [change],
+        fresh: { item: planning },
+        submitted: { item: dinner },
+        targetId: 'd1',
+        utterance: 'an hour later',
+      }),
+    ).toBe(without);
+    // A change for a draft still there lands, and only that one is counted.
+    const both = refineThread(without, 'both an hour later', [
+      change,
+      { id: 'd2', item: { kind: 'event', prefill: { ...planning.prefill, startTime: '15:00' } } },
+    ]);
+    expect(both.steps).toHaveLength(without.steps.length + 1);
+    expect(both.steps.at(-1)).toMatchObject({ drafts: ['d2'], kind: 'phrase' });
+    expect(phraseSteps(both).at(-1)?.summary).not.toContain('2 drafts');
+  });
+});
+
+/** An item's repeat rule; a to-do's item has none. */
+const ruleOf = (item: QuickAddItem | undefined) =>
+  item?.kind === 'event' ? item.prefill.recurrence : undefined;
+/** A saved occurrence's thread, opened before its master was read: no rule yet. */
+const opened = () => openThread({ item: dinner }, ids());
+
+describe('reseedRule', () => {
+  const weekly = { freq: 'weekly' } as const;
+
+  it('gives a thread without steps the rule: "As saved" is the series', () => {
+    const seeded = reseedRule(opened(), weekly);
+    expect(ruleOf(seeded.drafts[0]?.item)).toEqual(weekly);
+    expect(seeded.steps).toHaveLength(0);
+  });
+
+  it('gives it to every state that held the opened rule, back and ahead', () => {
+    const moved = refineThread(opened(), 'an hour later', [{ id: 'd1', item: later }]);
+    const titled = refineThread(moved, 'call it Supper', [
+      { id: 'd1', item: { kind: 'event', prefill: { ...later.prefill, title: 'Supper' } } },
+    ]);
+    // One step back: a state behind, the one on show, one ahead.
+    const seeded = reseedRule(stepTo(titled, 1), weekly);
+    expect(ruleOf(seeded.history[0]?.drafts[0]?.item)).toEqual(weekly);
+    expect(ruleOf(seeded.drafts[0]?.item)).toEqual(weekly);
+    expect(ruleOf(seeded.ahead[0]?.after.drafts[0]?.item)).toEqual(weekly);
+    // "As saved" kept is the series, rule and all.
+    expect(ruleOf(keepShown(stepTo(seeded, 0)).drafts[0]?.item)).toEqual(weekly);
+    // Nothing else moved: the steps, and what each state held.
+    expect(seeded.steps).toEqual(stepTo(titled, 1).steps);
+    expect(seeded.drafts[0]?.item.prefill).toMatchObject({ startTime: '20:00' });
+  });
+
+  it('leaves a state a step gave another rule', () => {
+    const daily = rule({ freq: 'daily' });
+    const ruled = refineThread(opened(), 'every day', [{ id: 'd1', item: daily }]);
+    const seeded = reseedRule(ruled, weekly);
+    expect(ruleOf(seeded.history[0]?.drafts[0]?.item)).toEqual(weekly);
+    expect(ruleOf(seeded.drafts[0]?.item)).toEqual({ freq: 'daily' });
+  });
+
+  it('is the same state for the rule it opened with, a to-do or an empty thread', () => {
+    const state = openThread({ item: rule({ freq: 'weekly' }) }, ids());
+    expect(reseedRule(state, weekly)).toBe(state);
+    expect(reseedRule(opened(), undefined)).toEqual(opened());
+    const todo = openThread({
+      item: { kind: 'task', prefill: { date: '2026-08-28', title: 'x' } },
+    });
+    expect(reseedRule(todo, weekly)).toBe(todo);
+    expect(reseedRule(EMPTY_THREAD, weekly)).toBe(EMPTY_THREAD);
+  });
+});
+
+describe('a reading of the form while another draft has the focus', () => {
+  // The focus moved to the second draft; the form still shows the first.
+  const moved = () => focusDraft(startThread([dinner, planning], 'x', { id: ids() }), 1);
+  const typed: QuickAddItem = {
+    kind: 'event',
+    prefill: { ...dinner.prefill, title: 'Dinner with Teo and Mia' },
+  };
+
+  it('goes into the draft the form shows, never into the one focused meanwhile', () => {
+    const landed = landRefinement(moved(), {
+      changes: [{ id: 'd1', item: later }],
+      fresh: { item: typed, shown: 'd1' },
+      submitted: { item: dinner, shown: 'd1' },
+      targetId: 'd1',
+      utterance: 'an hour later',
+    });
+    // The first draft: what was typed meanwhile, and the turn's hours.
+    expect(landed.drafts[0]?.item.prefill).toMatchObject({
+      startTime: '20:00',
+      title: 'Dinner with Teo and Mia',
+    });
+    // The second, focused by now, is as it was.
+    expect(landed.drafts[1]?.item).toEqual(planning);
+
+    const placed = landPlacement(moved(), {
+      fresh: { item: typed, shown: 'd1' },
+      slots: [{ date: '2026-08-30', endTime: '11:00', startTime: '10:00' }],
+      targetId: 'd1',
+      utterance: 'find a slot',
+    });
+    expect(placed.drafts[1]?.item).toEqual(planning);
+    expect(placed.drafts[0]?.item.prefill).toMatchObject({ date: '2026-08-30' });
+  });
+
+  it('is nobody’s once that draft is gone, and no edit by hand of the focused one', () => {
+    const state = moved();
+    const gone = landRefinement(removeDraft(state, 0), {
+      changes: [{ id: 'd2', item: planning }],
+      fresh: { item: typed, shown: 'd1' },
+      submitted: { item: planning, shown: 'd2' },
+      targetId: 'd2',
+      utterance: 'x',
+    });
+    expect(gone.drafts.map((draft) => draft.item)).toEqual([planning]);
+    expect(foldForm(state, { item: typed, shown: 'd1' })).toBe(state);
+  });
+});
+
+describe('stepRule', () => {
+  it('is the rule a step gave the item, where it is another than it opened with', () => {
+    const state = opened();
+    expect(stepRule(state)).toBeUndefined();
+    const daily = refineThread(state, 'every day', [{ id: 'd1', item: rule({ freq: 'daily' }) }]);
+    expect(stepRule(daily)).toEqual({ recurrence: { freq: 'daily' } });
+    // A rule taken away is a rule given too.
+    const series = openThread({ item: rule({ freq: 'weekly' }) }, ids());
+    const single = refineThread(series, 'only once', [{ id: 'd1', item: dinner }]);
+    expect(stepRule(single)).toEqual({ recurrence: undefined });
+    // A step about something else left the rule alone.
+    expect(stepRule(refineThread(state, 'later', [{ id: 'd1', item: later }]))).toBeUndefined();
+    expect(stepRule(EMPTY_THREAD)).toBeUndefined();
   });
 });

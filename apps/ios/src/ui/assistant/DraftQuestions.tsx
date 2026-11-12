@@ -4,51 +4,45 @@ import {
   isAtSlot,
   pickedCandidate,
   readsAsSaid,
+  SCOPE_OPTIONS,
   type useThreadEditor,
 } from '@calendar/app-state';
 import { formatSlotLabel, placeCandidateLabel } from '@calendar/core';
 import { SymbolView } from 'expo-symbols';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { turnListMaxHeight, useEditorSheetHeight } from './editorSheet.ts';
-import { ThreadTurnList } from './ThreadTurnList.tsx';
-import { BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme } from './theme.ts';
+import { SegmentedControl } from '../SegmentedControl.tsx';
+import { BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme } from '../theme.ts';
 
 /**
- * The thread above a new item's form: only its newest turn shows
- * until "+N earlier queries" opens the rest (`ThreadTurnList`, Undo on
- * the newest), a caveat the drafts came with, the free slots a finder
- * phrase offered (the one the form sits in selected; a tap moves the
- * draft), the names the words invited that need a contact picked (a tap
- * on one makes it a guest, ✕ lets the name go), and with several drafts
- * the pager, Remove and "Add all". The same test ids as the desktop's
- * panel.
+ * What the assistant asks under its newest card, left out while there is
+ * nothing to ask: a caveat the drafts came with, for a saved series what
+ * a change applies to, the free slots a finder phrase offered (the one
+ * the form sits in selected; a tap moves the draft), the places a text
+ * could mean, and the names the words invited that need a contact picked
+ * (a tap on one makes it a guest, ✕ lets the name go). An answer is a
+ * step: going back over it asks again. The same test ids as the
+ * desktop's panel.
  */
-export function DraftThreadSection({
+export function DraftQuestions({
   editor,
   note,
 }: {
-  editor: ReturnType<typeof useThreadEditor>;
+  readonly editor: ReturnType<typeof useThreadEditor>;
   /** A caveat about the drafts (the shared text was cut short). */
-  note?: string | undefined;
+  readonly note?: string | undefined;
 }) {
   const styles = useStyles(makeStyles);
   const { colors } = useTheme();
-  // The sheet's header does not scroll: the turns get at most a third of
-  // the sheet as it stands, half or full, and scroll inside it, so the
-  // form under them stays in reach (`turnListMaxHeight`).
-  const turnsMaxHeight = turnListMaxHeight(useEditorSheetHeight());
   const {
-    addAll,
-    batchError,
-    canAddAll,
+    assistant,
     dismissInvitee,
     dismissPlace,
     drafts,
     eventModel,
-    focused,
     focusedDraft,
     inviteeChoices,
     keepPlace,
+    kinds,
     liveItem,
     moveToSlot,
     pickInvitee,
@@ -56,32 +50,43 @@ export function DraftThreadSection({
     placeChoice,
     placeGeo,
     settled,
-    switchFocus,
-    thread,
-    turns,
-    write,
   } = editor;
-  if (turns.length === 0) {
+  const threadNote = note && drafts.length > 0 ? note : undefined;
+  const slots =
+    focusedDraft?.slots && focusedDraft.slots.length > 1 && liveItem.kind === 'event'
+      ? focusedDraft.slots
+      : undefined;
+  // A saved series: a phrase changes it at the scope the form is at.
+  const scoped = assistant === 'saved' && kinds.mode === 'event' && eventModel.isRecurring;
+  if (!(threadNote || slots || scoped || inviteeChoices.length > 0 || placeChoice)) {
     return null;
   }
-  const slots = focusedDraft?.slots;
   return (
     <View style={styles.section} testID="draft-thread">
-      {/* Hung under the quick-add field, as part of it (its `attached`). */}
-      <ThreadTurnList
-        attached
-        maxHeight={turnsMaxHeight}
-        onUndo={thread.undo}
-        testIDPrefix="draft"
-        turns={turns}
-        undoDisabled={thread.busy || !settled}
-      />
-      {note && drafts.length > 0 ? (
+      {threadNote ? (
         <Text style={styles.note} testID="draft-thread-note">
-          {note}
+          {threadNote}
         </Text>
       ) : null}
-      {slots && slots.length > 1 && liveItem.kind === 'event' ? (
+      {scoped ? (
+        <View style={styles.choice} testID="draft-scope">
+          <Text style={styles.note}>Apply to</Text>
+          <SegmentedControl
+            accessibilityLabel="Apply changes to"
+            ground
+            grow
+            onChange={eventModel.setScope}
+            options={SCOPE_OPTIONS.map((option) => ({
+              disabled: !settled,
+              label: option.short,
+              testID: `draft-scope-${option.value}`,
+              value: option.value,
+            }))}
+            value={eventModel.scope}
+          />
+        </View>
+      ) : null}
+      {slots ? (
         <ScrollView
           contentContainerStyle={styles.chips}
           horizontal
@@ -237,92 +242,12 @@ export function DraftThreadSection({
           ))}
         </View>
       ) : null}
-      {drafts.length > 1 ? (
-        <View style={styles.pager} testID="draft-pager">
-          <View style={styles.pagerSide}>
-            <Pressable
-              accessibilityLabel="Previous draft"
-              accessibilityRole="button"
-              disabled={focused === 0 || !settled}
-              hitSlop={8}
-              onPress={() => switchFocus(focused - 1)}
-              style={(focused === 0 || !settled) && styles.disabled}
-              testID="draft-prev"
-            >
-              <Text style={styles.arrow}>‹</Text>
-            </Pressable>
-            <Text style={styles.position} testID="draft-position">
-              {focused + 1} of {drafts.length}
-            </Text>
-            <Pressable
-              accessibilityLabel="Next draft"
-              accessibilityRole="button"
-              disabled={focused >= drafts.length - 1 || !settled}
-              hitSlop={8}
-              onPress={() => switchFocus(focused + 1)}
-              style={(focused >= drafts.length - 1 || !settled) && styles.disabled}
-              testID="draft-next"
-            >
-              <Text style={styles.arrow}>›</Text>
-            </Pressable>
-          </View>
-          <View style={styles.pagerSide}>
-            <Pressable
-              accessibilityRole="button"
-              disabled={!settled}
-              hitSlop={8}
-              onPress={() => thread.remove(focused)}
-              testID="draft-remove"
-            >
-              <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.secondary}>
-                Remove
-              </Text>
-            </Pressable>
-            {canAddAll ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityState={{ busy: write.busy, disabled: !settled }}
-                disabled={!settled}
-                onPress={() => void addAll()}
-                style={[styles.addAll, !settled && styles.disabled]}
-                testID="draft-add-all"
-              >
-                <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.addAllLabel}>
-                  Add all {drafts.length}
-                </Text>
-              </Pressable>
-            ) : null}
-          </View>
-        </View>
-      ) : null}
-      {batchError ? (
-        <Text selectable style={styles.error} testID="draft-batch-error">
-          {batchError}
-        </Text>
-      ) : null}
     </View>
   );
 }
 
 const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
-    addAll: {
-      backgroundColor: colors.primary,
-      borderRadius: 8,
-      paddingHorizontal: 12,
-      paddingVertical: 4,
-    },
-    addAllLabel: {
-      color: colors['on-primary'],
-      fontSize: 14,
-      fontWeight: '600',
-    },
-    arrow: {
-      color: colors.primary,
-      fontSize: 22,
-      lineHeight: 24,
-      paddingHorizontal: 6,
-    },
     // A card on the form's ground, like the field above it.
     chip: {
       backgroundColor: colors.surface,
@@ -367,10 +292,6 @@ const makeStyles = (colors: ThemeColors) =>
     disabled: {
       opacity: 0.35,
     },
-    error: {
-      color: colors.danger,
-      fontSize: 13,
-    },
     keep: {
       justifyContent: 'center',
       paddingHorizontal: 6,
@@ -381,16 +302,6 @@ const makeStyles = (colors: ThemeColors) =>
       fontSize: 13,
     },
     // A pill no wider than the row: a label past it wraps inside its own pill.
-    pager: {
-      alignItems: 'center',
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-    },
-    pagerSide: {
-      alignItems: 'center',
-      flexDirection: 'row',
-      gap: 10,
-    },
     placeChip: {
       flexShrink: 1,
     },
@@ -400,17 +311,12 @@ const makeStyles = (colors: ThemeColors) =>
       flexWrap: 'wrap',
       gap: 6,
     },
-    position: {
-      color: colors['text-secondary'],
-      fontSize: 13,
-    },
     secondary: {
       color: colors['text-secondary'],
       fontSize: 15,
     },
+    // In the conversation, which has the insets.
     section: {
       gap: 8,
-      paddingBottom: 12,
-      paddingHorizontal: 16,
     },
   });
