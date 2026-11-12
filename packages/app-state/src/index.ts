@@ -6,6 +6,7 @@ export * from './calendarNavigation.ts';
 export * from './captureModel.ts';
 export * from './draftPreview.ts';
 export * from './draftAtoms.ts';
+export * from './draftChanges.ts';
 export * from './draftExtras.ts';
 export * from './draftInvitees.ts';
 export * from './draftPlaces.ts';

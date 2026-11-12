@@ -23,6 +23,12 @@ import {
 import { Effect } from 'effect';
 import { useRef, useState } from 'react';
 import {
+  changedDraftFields,
+  describeDraftItem,
+  lastDayOf,
+  summarizeChange,
+} from './draftChanges.ts';
+import {
   applyNotesChange,
   applyReminderChange,
   describeNotesChange,
@@ -182,118 +188,6 @@ let counter = 0;
 export const nextDraftId = (): string => {
   counter += 1;
   return `draft-${counter}`;
-};
-
-const dayLabel = (date: string): string =>
-  Temporal.PlainDate.from(date).toLocaleString('en-US', {
-    day: 'numeric',
-    month: 'short',
-    weekday: 'short',
-  });
-
-/** The day an event draft ends on, when it is not the day it starts. */
-const lastDayOf = (item: QuickAddItem): string | undefined =>
-  item.kind === 'event' &&
-  item.prefill.endDate !== undefined &&
-  item.prefill.endDate !== item.prefill.date
-    ? item.prefill.endDate
-    : undefined;
-
-/**
- * "Fri, Aug 28 · 19:00–20:00", "Fri, Aug 28" for an all-day event, "Tue,
- * Aug 25 · 09:30" for a to-do; a draft over several days names both
- * ("Fri, Aug 28 – Sun, Aug 30", "Fri, Aug 28 · 23:00 – Sat, Aug 29 · 01:00").
- */
-export const describeDraftItem = (item: QuickAddItem): string => {
-  const day = dayLabel(item.prefill.date);
-  if (item.kind === 'task') {
-    return item.prefill.time === undefined ? day : `${day} · ${item.prefill.time}`;
-  }
-  const last = lastDayOf(item);
-  if (last !== undefined) {
-    return item.prefill.isAllDay
-      ? `${day} – ${dayLabel(last)}`
-      : `${day} · ${item.prefill.startTime} – ${dayLabel(last)} · ${item.prefill.endTime}`;
-  }
-  return item.prefill.isAllDay ? day : `${day} · ${item.prefill.startTime}–${item.prefill.endTime}`;
-};
-
-const timesOf = (item: QuickAddItem): string =>
-  item.kind === 'task'
-    ? (item.prefill.time ?? 'no time')
-    : item.prefill.isAllDay
-      ? 'all day'
-      : `${item.prefill.startTime}–${item.prefill.endTime}`;
-
-const dayOf = (item: QuickAddItem): string => {
-  const last = lastDayOf(item);
-  return last === undefined
-    ? dayLabel(item.prefill.date)
-    : `${dayLabel(item.prefill.date)} – ${dayLabel(last)}`;
-};
-
-const repeatOf = (item: QuickAddItem): string | undefined =>
-  item.kind === 'event' && item.prefill.recurrence
-    ? `repeats ${item.prefill.recurrence.freq}`
-    : undefined;
-
-const placeOf = (item: QuickAddItem): string | undefined =>
-  item.kind === 'event' ? item.prefill.location : undefined;
-
-/**
- * A repeat rule by its values, whatever order its parts were written in
- * (the form and the model's answer list them differently): an interval of
- * one is the default, the weekdays a set.
- */
-const ruleOf = (item: QuickAddItem): string => {
-  const rule = item.kind === 'event' ? item.prefill.recurrence : undefined;
-  return rule === undefined
-    ? 'none'
-    : JSON.stringify([
-        rule.freq,
-        rule.interval ?? 1,
-        rule.count ?? null,
-        rule.untilDate ?? null,
-        (rule.byDay ?? []).map((day) => `${String(day.ordinal ?? '')}${day.weekday}`).sort(),
-      ]);
-};
-
-/** A part of the form a turn can change: what the summary names and the form flashes. */
-export type DraftField = 'date' | 'kind' | 'location' | 'repeat' | 'time' | 'title';
-
-/** The fields that differ between two items, in the order the summary names them. */
-export const changedDraftFields = (
-  before: QuickAddItem,
-  after: QuickAddItem,
-): ReadonlyArray<DraftField> => [
-  ...(before.kind === after.kind ? [] : ['kind' as const]),
-  ...(before.prefill.title === after.prefill.title ? [] : ['title' as const]),
-  ...(before.prefill.date === after.prefill.date && lastDayOf(before) === lastDayOf(after)
-    ? []
-    : ['date' as const]),
-  ...(timesOf(before) === timesOf(after) ? [] : ['time' as const]),
-  ...(placeOf(before) === placeOf(after) ? [] : ['location' as const]),
-  ...(ruleOf(before) === ruleOf(after) ? [] : ['repeat' as const]),
-];
-
-/**
- * What a refinement changed, field by field ("→ 20:00–21:00 · → Thu, Aug
- * 27"), or "no change" when the words changed nothing the form holds.
- */
-export const summarizeChange = (before: QuickAddItem, after: QuickAddItem): string => {
-  const said: Record<DraftField, () => string> = {
-    date: () => `→ ${dayOf(after)}`,
-    kind: () => `→ ${after.kind === 'task' ? 'a to-do' : 'an event'}`,
-    location: () => {
-      const place = placeOf(after);
-      return place === undefined ? '→ no place' : `→ ${place}`;
-    },
-    repeat: () => `→ ${repeatOf(after) ?? 'does not repeat'}`,
-    time: () => `→ ${timesOf(after)}`,
-    title: () => `→ “${after.prefill.title}”`,
-  };
-  const parts = changedDraftFields(before, after).map((field) => said[field]());
-  return parts.length === 0 ? 'no change' : parts.join(' · ');
 };
 
 /** What a draft holds beyond its item before the form ever showed it: nothing. */

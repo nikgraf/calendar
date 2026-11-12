@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
+import { changedDraftFields, describeDraftItem, summarizeChange } from './draftChanges.ts';
 import {
-  changedDraftFields,
-  describeDraftItem,
   dropInviteeChoice,
   dropPlaceChoice,
   EMPTY_THREAD,
@@ -18,7 +17,6 @@ import {
   removeDrafts,
   slotItem,
   startThread,
-  summarizeChange,
   turnsOf,
   undoTurn,
   updateDraft,

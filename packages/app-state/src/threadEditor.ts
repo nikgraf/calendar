@@ -21,11 +21,10 @@ import {
   draftPreview,
   previewOfPrefill,
 } from './draftPreview.ts';
+import { changedDraftFields, type DraftField } from './draftChanges.ts';
 import {
-  changedDraftFields,
   type Draft,
   type DraftExtras,
-  type DraftField,
   phraseSteps,
   updateDraft,
   useDraftThread,
