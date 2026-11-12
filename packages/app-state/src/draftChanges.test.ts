@@ -1,6 +1,6 @@
 import { EventReminders, ReminderOverride } from '@calendar/core';
 import { describe, expect, it } from 'vite-plus/test';
-import { cardLines, changedFields, draftChanges } from './draftChanges.ts';
+import { cardLines, changedFields, describeDraft, draftChanges } from './draftChanges.ts';
 import type { Draft, DraftExtras } from './draftThread.ts';
 import type { QuickAddItem } from './quickAddItem.ts';
 import { seedRepeatFields } from './repeatState.ts';
@@ -205,6 +205,9 @@ describe('draftChanges', () => {
     expect(draftChanges(draft(call), draft(call, { undated: true }))).toEqual([
       { field: 'date', from: 'Tue, Aug 25', to: 'No due date' },
     ]);
+    // A row that only names the draft says the same: its day is a placeholder.
+    expect(describeDraft(draft(call, { undated: true }))).toBe('No due date');
+    expect(describeDraft(draft(call))).toContain('Tue, Aug 25');
     const fields = { alarms: [], repeat: seedRepeatFields(undefined), url: '' };
     expect(
       draftChanges(

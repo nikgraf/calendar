@@ -192,6 +192,14 @@ const isUndated = (draft: Draft): boolean =>
 
 const dayText = (draft: Draft): string => (isUndated(draft) ? 'No due date' : dayOf(draft.item));
 
+/**
+ * A draft in one line, for a row that only names it (`describeDraftItem`).
+ * A to-do the form holds without a due day says so: its item's day is a
+ * placeholder, not a day to name.
+ */
+export const describeDraft = (draft: Draft): string =>
+  isUndated(draft) ? 'No due date' : describeDraftItem(draft.item);
+
 const dayKey = (draft: Draft): string =>
   isUndated(draft) ? 'undated' : `${draft.item.prefill.date}|${lastDayOf(draft.item) ?? ''}`;
 

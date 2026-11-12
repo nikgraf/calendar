@@ -99,9 +99,12 @@ describe('turnRefusal', () => {
     ).toBeUndefined();
   });
 
-  it('refuses guests where the calendar holds none, and only a turn that invites', () => {
+  it('refuses a change of guests where the calendar takes none, and only such a turn', () => {
     const apple: TurnLimits = { canInvite: false, repeatEditable: false };
-    expect(turnRefusal(standup, standup, true, apple)).toBe('This calendar can’t add guests here.');
+    // Invited or taken off: the write refuses either guest list.
+    expect(turnRefusal(standup, standup, true, apple)).toBe(
+      'This calendar’s guests can’t be changed here.',
+    );
     expect(turnRefusal(standup, with_({ title: 'Daily' }), false, apple)).toBeUndefined();
   });
 

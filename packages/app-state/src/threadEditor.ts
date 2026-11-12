@@ -257,21 +257,20 @@ export const threadPreviews = (
 };
 
 /**
- * A saved series' free slots were searched at the scope the form was at
- * ("All events" leaves the series' own occurrences out of the way, "This
- * event" only the one): at another scope they no longer hold, so they
- * are let go of, with a search still out. A new item has no scope to
- * change.
+ * Runs `then` once each time `value` has become another one — never for
+ * the value the editor opened with. For what the thread holds that was
+ * right only under a value of the form's: the scope its free slots were
+ * searched at, the rule its states were seeded with.
  */
-const useSlotsOfScope = (scope: RecurringScope, drop: () => void): void => {
-  const seen = useRef(scope);
+const useOnChange = (value: RecurringScope | string | undefined, then: () => void): void => {
+  const seen = useRef(value);
   useEffect(() => {
-    if (seen.current !== scope) {
-      seen.current = scope;
-      drop();
+    if (seen.current !== value) {
+      seen.current = value;
+      then();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- a change of scope is handled once, when it happens
-  }, [scope]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- a change is handled once, when it happens
+  }, [value]);
 };
 
 /**
@@ -744,9 +743,14 @@ export const useThreadEditor = ({
     }
   };
 
-  /** Another draft takes the form; the form's edits stay on the one leaving it. Not mid-write. */
+  /**
+   * Another draft takes the form; the form's edits stay on the one leaving
+   * it. Not mid-write, and not while the form is still taking a draft in
+   * (a kind switch's question is open): its fields are between two drafts
+   * then, and the answer would land on the draft focused meanwhile.
+   */
   const switchFocus = (index: number) => {
-    if (index === focused || drafts[index] === undefined || !settled) {
+    if (index === focused || drafts[index] === undefined || !settled || applying) {
       return;
     }
     thread.update(focused, currentItem(), currentExtras());
@@ -783,7 +787,20 @@ export const useThreadEditor = ({
             : undefined,
         }
       : undefined;
-  useSlotsOfScope(eventModel.scope, thread.dropSlots);
+  // A saved series' free slots were searched at the scope the form was at
+  // ("All events" leaves the series' own occurrences out of the way, "This
+  // event" only the one): at another scope they no longer hold, so they
+  // are let go of, with a search still out. A new item has no scope.
+  useOnChange(eventModel.scope, thread.dropSlots);
+  // A saved series' rule that arrives after its thread opened (the master
+  // was read late, or the rule changed elsewhere): the form has seeded
+  // itself with it again by now, and the thread's states follow.
+  useOnChange(eventModel.ruleKey, () => {
+    const { item } = readForm();
+    if (assistant === 'saved' && item.kind === 'event') {
+      thread.reseedRule(item.prefill.recurrence);
+    }
+  });
   const onPhrase = async (text: string): Promise<string | undefined> => {
     if (previewing) {
       return 'An earlier step is on show — use it or go forward first.';
@@ -810,7 +827,7 @@ export const useThreadEditor = ({
         fallbackDate: seed.initialDate.toString(),
         read: readForm,
         refuse: limits
-          ? (before, after, invites) => turnRefusal(before, after, invites, limits)
+          ? (before, after, guests) => turnRefusal(before, after, guests, limits)
           : undefined,
       });
     } catch (error) {

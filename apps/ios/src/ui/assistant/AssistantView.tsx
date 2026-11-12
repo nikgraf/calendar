@@ -1,6 +1,6 @@
 import {
   changedLine,
-  describeDraftItem,
+  describeDraft,
   type Draft,
   draftCalendarKey,
   draftListKey,
@@ -176,7 +176,7 @@ function StepAnswer({
                 {draft.item.prefill.title || 'Untitled'}
               </Text>
               <Text numberOfLines={1} style={styles.otherWhen}>
-                {describeDraftItem(draft.item)}
+                {describeDraft(draft)}
               </Text>
             </Pressable>
           );
@@ -306,7 +306,7 @@ export function AssistantView({
           disabled={steps.locked}
           label="As saved"
           onRestore={() => steps.show(0)}
-          summary={saved ? describeDraftItem(saved.item) : ''}
+          summary={saved ? describeDraft(saved) : ''}
         />
       ) : null}
       {steps.at === 0 && (assistant === 'saved' || !started) ? answer : null}

@@ -294,19 +294,27 @@ export interface EditorConfirmRequest {
 /**
  * A promise-shaped yes/no for the move and conversion confirmations, for
  * UIs that render them inline (desktop). `request` resolves once `answer`
- * is called.
+ * is called. A question asked over one still open answers that one "no":
+ * left unanswered, whoever asked it would wait for good (the editor's
+ * thread counts an apply as open until its question is answered).
  */
 export const useMoveConfirmation = () => {
   const [pending, setPending] = useState<{
     readonly request: EditorConfirmRequest;
     readonly resolve: (ok: boolean) => void;
   } | null>(null);
+  const open = useRef<((ok: boolean) => void) | null>(null);
   const request = useCallback(
     (question: EditorConfirmRequest) =>
-      new Promise<boolean>((resolve) => setPending({ request: question, resolve })),
+      new Promise<boolean>((resolve) => {
+        open.current?.(false);
+        open.current = resolve;
+        setPending({ request: question, resolve });
+      }),
     [],
   );
   const answer = (ok: boolean) => {
+    open.current = null;
     pending?.resolve(ok);
     setPending(null);
   };
@@ -1298,6 +1306,8 @@ export const useEventEditorModel = ({
     restoreExtras,
     rsvp,
     ruleAnswered: existing === undefined || !isRecurring || master.answered,
+    /** Names the rule a stored event's repeat fields were seeded with: another one once its master's lines arrive or change. */
+    ruleKey: repeatSeed.key,
     save: () => write.run(save),
     scope,
     setCalendarKey,

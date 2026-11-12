@@ -11,7 +11,7 @@ import { recurrenceKey } from './repeatState.ts';
  * if it were done.
  */
 export interface TurnLimits {
-  /** The event's calendar can hold guests (an Apple calendar's form cannot add them). */
+  /** The event's calendar takes a guest list (an Apple calendar's does not: none added, none taken off). */
   readonly canInvite: boolean;
   /**
    * How the event repeats can be changed here: a stored series whose rule
@@ -39,12 +39,13 @@ const ruleOf = (item: QuickAddItem): string =>
  * Why a turn on a stored event cannot be taken, in the sentence Save
  * would refuse it with, or undefined: a changed rule where none can be
  * written or at "This event"; what a series' times may not change to;
- * guests where the calendar holds none.
+ * guests where the calendar holds none — invited or taken off, since
+ * either is a guest list such a calendar's write refuses.
  */
 export const turnRefusal = (
   before: QuickAddItem,
   after: QuickAddItem,
-  invites: boolean,
+  guests: boolean,
   limits: TurnLimits,
 ): string | undefined => {
   const ruleChanged = ruleOf(before) !== ruleOf(after);
@@ -67,6 +68,6 @@ export const turnRefusal = (
           : undefined));
   return (
     seriesError ??
-    (invites && !limits.canInvite ? 'This calendar can’t add guests here.' : undefined)
+    (guests && !limits.canInvite ? 'This calendar’s guests can’t be changed here.' : undefined)
   );
 };

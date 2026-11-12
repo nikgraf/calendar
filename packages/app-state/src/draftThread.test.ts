@@ -19,6 +19,7 @@ import {
   refineTargets,
   refineThread,
   removeDraft,
+  reseedRule,
   removeDrafts,
   slotItem,
   startThread,
@@ -1517,5 +1518,127 @@ describe('notes and notifications from the words', () => {
     );
     expect(moved.drafts[0]).not.toHaveProperty('extras');
     expect(phraseSteps(moved).at(-1)?.summary).toBe('no change');
+  });
+});
+
+describe('a turn on a to-do the form holds undated', () => {
+  const todo: QuickAddItem = {
+    kind: 'task',
+    prefill: { date: '2026-08-28', title: 'Call the bank' },
+  };
+  const extras = { attendees: [], description: '', reminders: undefined, undated: true };
+  // A saved to-do without a due day: its thread opens holding that.
+  const open = () => openThread({ extras, item: todo }, ids());
+  const said = (prefill: Record<string, unknown>) =>
+    refineThread(open(), 'x', [
+      {
+        id: 'd1',
+        item: { kind: 'task', prefill: { ...todo.prefill, ...prefill } } as QuickAddItem,
+      },
+    ]);
+
+  it('dates it when the words gave another day, and undates it again with Undo', () => {
+    const landed = said({ date: '2026-08-29' });
+    expect(landed.drafts[0]?.item.prefill.date).toBe('2026-08-29');
+    expect(landed.drafts[0]?.extras?.undated).toBe(false);
+    expect(undoTurn(landed).drafts[0]?.extras?.undated).toBe(true);
+  });
+
+  it('dates it when the words gave a time: that is due on the day it holds', () => {
+    expect(said({ time: '17:00' }).drafts[0]?.extras?.undated).toBe(false);
+  });
+
+  it('leaves it undated when the words left the day and the time alone', () => {
+    const landed = said({ title: 'Call the bank about the card' });
+    expect(landed.drafts[0]?.extras?.undated).toBe(true);
+    // The same through the form's reading, as a refinement lands.
+    const merged = landRefinement(open(), {
+      changes: [
+        { id: 'd1', item: { kind: 'task', prefill: { ...todo.prefill, date: '2026-08-30' } } },
+      ],
+      fresh: { extras, item: todo },
+      submitted: { extras, item: todo },
+      targetId: 'd1',
+      utterance: 'on Sunday',
+    });
+    expect(merged.drafts[0]?.extras?.undated).toBe(false);
+  });
+});
+
+describe('a turn for a draft that is gone', () => {
+  it('is no step: removed or saved while the model answered, nothing landed', () => {
+    const state = startThread([dinner, planning], 'x', { id: ids() });
+    const without = removeDraft(state, 0);
+    const change = { id: 'd1', item: later };
+    expect(refineThread(without, 'an hour later', [change])).toBe(without);
+    expect(
+      landRefinement(without, {
+        changes: [change],
+        fresh: { item: planning },
+        submitted: { item: dinner },
+        targetId: 'd1',
+        utterance: 'an hour later',
+      }),
+    ).toBe(without);
+    // A change for a draft still there lands, and only that one is counted.
+    const both = refineThread(without, 'both an hour later', [
+      change,
+      { id: 'd2', item: { kind: 'event', prefill: { ...planning.prefill, startTime: '15:00' } } },
+    ]);
+    expect(both.steps).toHaveLength(without.steps.length + 1);
+    expect(both.steps.at(-1)).toMatchObject({ drafts: ['d2'], kind: 'phrase' });
+    expect(phraseSteps(both).at(-1)?.summary).not.toContain('2 drafts');
+  });
+});
+
+/** An item's repeat rule; a to-do's item has none. */
+const ruleOf = (item: QuickAddItem | undefined) =>
+  item?.kind === 'event' ? item.prefill.recurrence : undefined;
+/** A saved occurrence's thread, opened before its master was read: no rule yet. */
+const opened = () => openThread({ item: dinner }, ids());
+
+describe('reseedRule', () => {
+  const weekly = { freq: 'weekly' } as const;
+
+  it('gives a thread without steps the rule: "As saved" is the series', () => {
+    const seeded = reseedRule(opened(), weekly);
+    expect(ruleOf(seeded.drafts[0]?.item)).toEqual(weekly);
+    expect(seeded.steps).toHaveLength(0);
+  });
+
+  it('gives it to every state that held the opened rule, back and ahead', () => {
+    const moved = refineThread(opened(), 'an hour later', [{ id: 'd1', item: later }]);
+    const titled = refineThread(moved, 'call it Supper', [
+      { id: 'd1', item: { kind: 'event', prefill: { ...later.prefill, title: 'Supper' } } },
+    ]);
+    // One step back: a state behind, the one on show, one ahead.
+    const seeded = reseedRule(stepTo(titled, 1), weekly);
+    expect(ruleOf(seeded.history[0]?.drafts[0]?.item)).toEqual(weekly);
+    expect(ruleOf(seeded.drafts[0]?.item)).toEqual(weekly);
+    expect(ruleOf(seeded.ahead[0]?.after.drafts[0]?.item)).toEqual(weekly);
+    // "As saved" kept is the series, rule and all.
+    expect(ruleOf(keepShown(stepTo(seeded, 0)).drafts[0]?.item)).toEqual(weekly);
+    // Nothing else moved: the steps, and what each state held.
+    expect(seeded.steps).toEqual(stepTo(titled, 1).steps);
+    expect(seeded.drafts[0]?.item.prefill).toMatchObject({ startTime: '20:00' });
+  });
+
+  it('leaves a state a step gave another rule', () => {
+    const daily = rule({ freq: 'daily' });
+    const ruled = refineThread(opened(), 'every day', [{ id: 'd1', item: daily }]);
+    const seeded = reseedRule(ruled, weekly);
+    expect(ruleOf(seeded.history[0]?.drafts[0]?.item)).toEqual(weekly);
+    expect(ruleOf(seeded.drafts[0]?.item)).toEqual({ freq: 'daily' });
+  });
+
+  it('is the same state for the rule it opened with, a to-do or an empty thread', () => {
+    const state = openThread({ item: rule({ freq: 'weekly' }) }, ids());
+    expect(reseedRule(state, weekly)).toBe(state);
+    expect(reseedRule(opened(), undefined)).toEqual(opened());
+    const todo = openThread({
+      item: { kind: 'task', prefill: { date: '2026-08-28', title: 'x' } },
+    });
+    expect(reseedRule(todo, weekly)).toBe(todo);
+    expect(reseedRule(EMPTY_THREAD, weekly)).toBe(EMPTY_THREAD);
   });
 });

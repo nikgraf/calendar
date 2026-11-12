@@ -1,7 +1,7 @@
 import type { CaptureSource, ModelStatus } from '@calendar/ai';
 import {
   changedLine,
-  describeDraftItem,
+  describeDraft,
   type Draft,
   draftCalendarKey,
   draftListKey,
@@ -236,7 +236,7 @@ export function AssistantView({
             position={0}
             summary={(() => {
               const saved = steps.line[0]?.before.drafts[0];
-              return saved ? describeDraftItem(saved.item) : '';
+              return saved ? describeDraft(saved) : '';
             })()}
           />
         ) : null}
@@ -344,9 +344,7 @@ function StepAnswer({
               <span className="min-w-0 flex-1 truncate font-medium">
                 {draft.item.prefill.title || 'Untitled'}
               </span>
-              <span className="shrink-0 text-xs text-ink-secondary">
-                {describeDraftItem(draft.item)}
-              </span>
+              <span className="shrink-0 text-xs text-ink-secondary">{describeDraft(draft)}</span>
             </button>
           );
         }

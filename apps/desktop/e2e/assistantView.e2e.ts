@@ -6,10 +6,12 @@ import {
   EventReminders,
   GoogleContact,
   ReminderOverride,
+  TaskListInfo,
+  TaskRecord,
   Temporal,
 } from '@calendar/core';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vite-plus/test';
-import { type App, launchApp, readEvents, readPendingOps } from './harness.ts';
+import { type App, launchApp, readEvents, readPendingOps, readTasks } from './harness.ts';
 
 // The editor's two views of one draft. Assistant is a conversation: what
 // was said, and the item as a card with what the step changed marked;
@@ -61,7 +63,7 @@ const seed = {
       id: 'acc-e2e',
       provider: 'google',
       status: 'ok',
-      tasksEnabled: false,
+      tasksEnabled: true,
     }),
   ],
   calendars: [
@@ -125,6 +127,27 @@ const seed = {
         recurrence: ['RRULE:FREQ=DAILY;COUNT=14'],
       },
     ),
+  ],
+  taskLists: [
+    new TaskListInfo({
+      accountId: 'acc-e2e',
+      id: 'list-e2e',
+      isVisible: true,
+      provider: 'google',
+      title: 'My Tasks',
+    }),
+  ],
+  tasks: [
+    // No due day (an inbox to-do): drawn on today until it is done.
+    new TaskRecord({
+      accountId: 'acc-e2e',
+      id: 'task-loose',
+      listId: 'list-e2e',
+      provider: 'google',
+      status: 'needsAction',
+      title: 'Loose end',
+      updatedAt: 1,
+    }),
   ],
 };
 const geo = {
@@ -458,6 +481,30 @@ describe('The editor’s Assistant and Form views', () => {
     const again = await updatesOf('evt-review');
     expect(again).toHaveLength(1);
     expect(again[0]?.payload).toEqual(after);
+  });
+
+  it('gives a saved to-do without a due day the day the words say', async () => {
+    const { cdp } = app;
+    await cdp.clickTaskChip('[data-testid="all-day-task-task-loose"]');
+    await cdp.waitFor(exists('task-no-due-date'));
+    await cdp.showEditorView('assistant');
+    await cdp.waitFor(`${card('title')} === 'Loose end'`);
+    // Tomorrow, in the fixture's grammar. The form held the to-do undated,
+    // its stored day a placeholder: the day the words gave is none, and
+    // the form must not let go of it again as it takes the step in.
+    await cdp.say('| +1');
+    await cdp.waitFor(`${stepPosition} === '1 of 1'`);
+    await cdp.waitFor(`!${exists('task-no-due-date')}`);
+    // The row to go back to names the to-do as it was saved: without a day.
+    expect(await cdp.eval<string>(textOf('assistant-version'))).toContain('No due date');
+    await cdp.clickButtonWithText('Save');
+    await cdp.waitFor(`!${exists('editor')}`);
+    await expect
+      .poll(
+        async () =>
+          (await readTasks(app.userDataDir)).find((task) => task.id === 'task-loose')?.dueDate,
+      )
+      .toBe(today.add({ days: 1 }).toString());
   });
 
   it('refuses in the conversation what a saved event cannot hold, and lands nothing', async () => {

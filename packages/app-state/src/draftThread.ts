@@ -45,7 +45,9 @@ import {
   resolveInvitees,
 } from './draftInvitees.ts';
 import { placeAsSaid, type PlaceChange, type PlaceChoice, settlePlace } from './draftPlaces.ts';
+import type { EventEditorPrefill } from './editorModel.ts';
 import { convertQuickAddItem, type QuickAddItem } from './quickAddItem.ts';
+import { recurrenceKey } from './repeatState.ts';
 import type { ReminderFields } from './taskEditorModel.ts';
 
 /**
@@ -241,6 +243,10 @@ export const openThread = (
   ...EMPTY_THREAD,
   drafts: [{ ...(base.extras ? { extras: base.extras } : {}), id: id(), item: base.item }],
 });
+
+/** A turn's words name someone to invite or to take off. */
+const changesGuests = (change: GuestChange | undefined): boolean =>
+  change !== undefined && change.invited.length + change.remove.length > 0;
 
 /** The steps that are phrases, oldest first: what was said to the thread. */
 export const phraseSteps = (state: DraftThreadState): ReadonlyArray<PhraseStep> =>
@@ -477,18 +483,40 @@ export const turnsOf = (state: DraftThreadState, draftId: string): ReadonlyArray
 const withoutSlots = ({ slots: _slots, ...draft }: Draft): Draft => draft;
 
 /**
+ * A to-do the form held undated, as a turn that gave it another day or
+ * time leaves it: dated — the day is the words' now, no placeholder the
+ * form may clear again (and undated once more with Undo). A turn that
+ * left both alone leaves the state alone.
+ */
+const datedBy = (draft: Draft, after: QuickAddItem): Pick<Draft, 'extras'> | undefined => {
+  const before = draft.item;
+  return draft.extras?.undated &&
+    before.kind === 'task' &&
+    after.kind === 'task' &&
+    (before.prefill.date !== after.prefill.date || before.prefill.time !== after.prefill.time)
+    ? { extras: { ...draft.extras, undated: false } }
+    : undefined;
+};
+
+/**
  * A turn's results folded in: the changed drafts replace their old
  * selves, the rest stay, and the state before goes to the history. A
  * changed draft keeps slots only when the turn brings its own — the old
  * ones were found for other words. The summary lists what changed on
- * the focused draft, or how many changed.
+ * the focused draft, or how many changed. A change for a draft that is
+ * gone (removed or saved while the model answered) is nobody's; with
+ * none left the turn is no step.
  */
 export const refineThread = (
   state: DraftThreadState,
   utterance: string,
-  changes: ReadonlyArray<DraftChange>,
+  all: ReadonlyArray<DraftChange>,
   id: () => string = nextDraftId,
 ): DraftThreadState => {
+  const changes = all.filter((change) => state.drafts.some((draft) => draft.id === change.id));
+  if (changes.length === 0) {
+    return state;
+  }
   const changed = new Map(changes.map((change) => [change.id, change]));
   // What the turn did to the focused draft's place, guests, notes and notifications, in words.
   let invited: ReadonlyArray<string> = [];
@@ -503,7 +531,7 @@ export const refineThread = (
     const placed = withPlace(
       {
         ...withoutSlots(draft),
-        ...(change.extras ? { extras: change.extras } : {}),
+        ...(change.extras ? { extras: change.extras } : datedBy(draft, change.item)),
         item: change.item,
         ...(change.slots ? { slots: change.slots } : {}),
       },
@@ -969,6 +997,53 @@ export const dropSlots = (state: DraftThreadState): DraftThreadState => {
   };
 };
 
+/**
+ * A saved series' rule that became known after its thread opened (its
+ * master was read late, or the rule changed elsewhere): the form seeds
+ * itself with it again, and every state of the item that still holds the
+ * rule the thread opened with takes it too — it is the item's own, no
+ * step. A state a step gave another rule keeps that one. Left out, "As
+ * saved" would be the series without its rule, and keeping that state
+ * would save it so.
+ */
+export const reseedRule = (
+  state: DraftThreadState,
+  recurrence: EventEditorPrefill['recurrence'],
+): DraftThreadState => {
+  const base = (state.history[0] ?? state).drafts[0];
+  if (base === undefined || base.item.kind !== 'event') {
+    return state;
+  }
+  const opened = recurrenceKey(base.item.prefill.recurrence);
+  if (opened === recurrenceKey(recurrence)) {
+    return state;
+  }
+  const seeded = (draft: Draft): Draft => {
+    if (
+      draft.id !== base.id ||
+      draft.item.kind !== 'event' ||
+      recurrenceKey(draft.item.prefill.recurrence) !== opened
+    ) {
+      return draft;
+    }
+    const { recurrence: _opened, ...rest } = draft.item.prefill;
+    return {
+      ...draft,
+      item: { kind: 'event', prefill: recurrence ? { ...rest, recurrence } : rest },
+    };
+  };
+  const through = (snapshot: Snapshot): Snapshot => ({
+    drafts: snapshot.drafts.map(seeded),
+    focused: snapshot.focused,
+  });
+  return {
+    ...state,
+    ahead: state.ahead.map((step) => ({ ...step, after: through(step.after) })),
+    drafts: state.drafts.map(seeded),
+    history: state.history.map(through),
+  };
+};
+
 /** A snapshot without the drafts named, its focus clamped. */
 const without = (snapshot: Snapshot, gone: ReadonlySet<string>): Snapshot => {
   const drafts = snapshot.drafts.filter((draft) => !gone.has(draft.id));
@@ -1044,12 +1119,13 @@ export const firstDraftExtras = (extras: DraftExtras | undefined): DraftExtras |
 /**
  * Why a turn cannot be taken, or undefined: what the item being changed
  * cannot hold (a stored event's limits — `turnRefusal`), given the item
- * before and after the turn and whether the turn invites anyone.
+ * before and after the turn and whether the turn changes its guests
+ * (invites someone or takes someone off).
  */
 export type Refuse = (
   before: QuickAddItem,
   after: QuickAddItem,
-  invites: boolean,
+  guests: boolean,
 ) => string | undefined;
 
 /** What a phrase is said with. */
@@ -1254,7 +1330,7 @@ export const useDraftThread = ({
           const draft = current.drafts.find((each) => each.id === change.id);
           return draft === undefined
             ? undefined
-            : refuse?.(draft.item, change.item, (change.guests?.invited.length ?? 0) > 0);
+            : refuse?.(draft.item, change.item, changesGuests(change.guests));
         })
         .find((message) => message !== undefined);
       if (refused !== undefined) {
@@ -1454,7 +1530,10 @@ export const useDraftThread = ({
     phrase,
     refine,
     remove: (index: number) => setState((latest) => removeDraft(latest, index)),
+    /** A saved series' rule known only now, taken into every state that held the old one (`reseedRule`). */
     removeMany: (ids: ReadonlyArray<string>) => setState((latest) => removeDrafts(latest, ids)),
+    reseedRule: (recurrence: EventEditorPrefill['recurrence']) =>
+      setState((latest) => reseedRule(latest, recurrence)),
     start,
     state,
     undo: () => {

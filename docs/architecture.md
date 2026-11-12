@@ -1432,7 +1432,8 @@ gateway carries all of it. Details, limits and the threat model:
   is a header that stays (the title, the Assistant | Form tabs, Join
   meeting, Close), one of two views of the same draft, and a footer that
   stays (the steps, Delete · Cancel · Save; above them an older step's
-  "Use this" row and the question before a lossy change), so the save
+  "Use this" row, why a save was refused while the Assistant covers the
+  form that says so, and the question before a lossy change), so the save
   and the way out are in reach from either view. Single
   keys: T = today, ←/→ step the view; ⌘, opens Settings from the menu.
   The editor is a thread of drafts (`useDraftThread`,
@@ -1458,7 +1459,8 @@ gateway carries all of it. Details, limits and the threat model:
   **steps**: a phrase, an edit by hand (further edits to the same field
   join it, `foldForm`) and a picked choice. The footer steps back and
   forward through them (`stepTo`); an older step on show is looked at,
-  not edited — the form is locked, Save is off — until "Use this" keeps
+  not edited — the form is locked, Save is off, dictation ends
+  (`useQuickAddModel`'s `off`) — until "Use this" keeps
   it and lets the later ones go (`keepShown`) or the newest is shown
   again. The fields the step on show changed stay marked, in the form
   (`data-marked`) and on the card (`shownMarks`, over `draftChanges`:
@@ -1581,8 +1583,10 @@ gateway carries all of it. Details, limits and the threat model:
   back on a scroll up (`pillTuck.ts`, `TuckAway`; never under
   VoiceOver) — and an older step on show takes no touches. The phrase and the
   dictation state (`useQuickAddModel`) live in the sheet, above both
-  views: a flip keeps the words and the listening, an edit by hand ends
-  it. The calendar's "+", a share and the Create lesson open on the
+  views: a flip keeps the words and the listening, an edit by hand or
+  an older step put on show ends it. Why a save was refused is a line
+  over the bar: the form that says so is not mounted then. The
+  calendar's "+", a share and the Create lesson open on the
   Assistant (`EditSheet.opensOn`), falling back to the Form once when
   the model is not ready; a slot drawn on the grid, a to-do's "+" and a
   saved item open on the Form. The rows the step on show changed stay

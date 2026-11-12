@@ -752,7 +752,8 @@ privacy modal, the settings window, the inspector and inline editor, ⌘K);
 `capture` (paste-to-drafts on the fixture model); `handsFree` (one
 click of the microphone: two phrases land at their pauses, the form
 brought forward does not end the dictation, a typed title does, the
-next phrase keeps that title); `assistantView` (the editor's two views:
+next phrase keeps that title, an older step put on show ends it too);
+`assistantView` (the editor's two views:
 a phrase answered with the item as a card, a change marked with the old
 value struck through, a question answered as a step of its own, the
 same draft and marks in the form, the grid's outline where a step moved
@@ -761,7 +762,8 @@ on an older step, "Use this"; one phrase is one step, typing in one
 field one step; a saved event changed by phrase queues only what
 differs — read off the op's `payload` against its `beforePayload` — and
 nothing once back at "As saved"; what a saved event cannot hold refused
-in the conversation); `draftThread` (a phrase's draft on the grid, a
+in the conversation; a save refused with the Assistant on show says why
+in the footer); `draftThread` (a phrase's draft on the grid, a
 change, the step before shown and kept, Save; four phrases as four
 steps, the changed time marked in the form, an edit by hand a step too;
 a pasted mail's thread, the pager, Remove, Add all; drafts made an event
