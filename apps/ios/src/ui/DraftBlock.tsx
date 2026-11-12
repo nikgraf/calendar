@@ -33,7 +33,7 @@ export function DraftBlock({
 }) {
   const styles = useStyles(makeStyles);
   const tint = useEventTint(occurrence.color);
-  const { candidate } = occurrence;
+  const candidate = occurrence.kind === 'candidate' ? occurrence.slot : undefined;
   const times = `${formatClockTime(occurrence.startUtc, timeZone)} – ${formatClockTime(occurrence.endUtc, timeZone)}`;
   return (
     <View

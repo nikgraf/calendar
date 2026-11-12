@@ -20,6 +20,7 @@ import {
   type DraftPreview,
   draftPreview,
   previewOfPrefill,
+  wasPreview,
 } from './draftPreview.ts';
 import { changedDraftFields, type DraftField } from './draftChanges.ts';
 import {
@@ -47,7 +48,7 @@ import { useOneWrite } from './oneWrite.ts';
 import type { QuickAddItem } from './quickAddItem.ts';
 import { type TaskEditorSeed, useTaskEditorModel } from './taskEditorModel.ts';
 import { type TurnLimits, turnRefusal } from './threadRefusal.ts';
-import { shownMarks } from './threadSteps.ts';
+import { movedFrom, shownMarks } from './threadSteps.ts';
 import { useFleetingFlash } from './threadTurns.ts';
 
 export type { DraftFocusRequest } from './draftAtoms.ts';
@@ -208,9 +209,11 @@ const sameWhen = (one: EventEditorPrefill, other: EventEditorPrefill): boolean =
 /**
  * Every draft as the calendar draws it: the focused one from the live
  * form (`live`, an event — a to-do draws nothing) in the calendar the
- * form has picked, with the free slots offered beside it as candidates;
- * the others as the thread holds them, each in the color of the calendar
- * it would be written to (its own, else the form's — `draftCalendarKey`).
+ * form has picked, with the free slots offered beside it as candidates
+ * and, when the step on show moved it, an outline where it stood before
+ * (`movedFrom`); the others as the thread holds them, each in the color
+ * of the calendar it would be written to (its own, else the form's —
+ * `draftCalendarKey`).
  */
 export const threadPreviews = (
   drafts: ReadonlyArray<Draft>,
@@ -219,12 +222,20 @@ export const threadPreviews = (
   {
     calendarKey,
     calendars,
+    movedFrom,
     saved,
     timeZone,
   }: {
     /** The form's calendar. */
     readonly calendarKey: string;
     readonly calendars: ReadonlyArray<CalendarInfo>;
+    /**
+     * The focused draft as it was before the step on show, when that step
+     * changed its day or hours: where it stood is outlined. Not where a
+     * saved event still stands — its own block is the trace there — and
+     * not when the form is back at that place.
+     */
+    readonly movedFrom?: Draft | undefined;
     /**
      * A saved event's thread: the event as it opened, and whether the form
      * is at one occurrence of a series. The calendar draws the event
@@ -253,7 +264,13 @@ export const threadPreviews = (
       }
       const preview = previewOfPrefill(draft.id, live.prefill, { color, focused: true, timeZone });
       const { recurrence: _rule, ...once } = preview;
-      return [saved?.instance ? once : preview, ...candidates];
+      const was =
+        movedFrom?.item.kind === 'event' &&
+        !sameWhen(movedFrom.item.prefill, live.prefill) &&
+        !(saved?.opened?.kind === 'event' && sameWhen(saved.opened.prefill, movedFrom.item.prefill))
+          ? wasPreview(movedFrom, { color, timeZone })
+          : undefined;
+      return [saved?.instance ? once : preview, ...candidates, ...(was ? [was] : [])];
     }
     const color = colorOf(draftCalendarKey(draft, calendars, calendarKey));
     const preview = draftPreview(draft, { color, focused: false, timeZone });
@@ -845,12 +862,22 @@ export const useThreadEditor = ({
     }
   };
 
+  // What the step on show changed, for the form and the cards to mark.
+  const labels = {
+    calendar: (key: string) =>
+      calendars.find((calendar) => `${calendar.accountId}:${calendar.id}` === key)?.summary ?? key,
+    list: (key: string) =>
+      taskLists.find((list) => `${list.accountId}:${list.id}` === key)?.title ?? key,
+  };
+  const marks = shownMarks(thread.state, labels);
+
   // The drafts as the calendar draws them, sent when something changed;
   // none once the editor goes.
   const liveItem = currentItem();
   const previews = threadPreviews(drafts, focused, liveItem, {
     calendarKey: eventModel.calendarKey,
     calendars,
+    movedFrom: movedFrom(thread.state, marks),
     saved:
       assistant === 'saved'
         ? {
@@ -927,14 +954,6 @@ export const useThreadEditor = ({
     });
 
   const playing = useFleetingFlash(flash);
-  // What the step on show changed, for the form and the cards to mark.
-  const labels = {
-    calendar: (key: string) =>
-      calendars.find((calendar) => `${calendar.accountId}:${calendar.id}` === key)?.summary ?? key,
-    list: (key: string) =>
-      taskLists.find((list) => `${list.accountId}:${list.id}` === key)?.title ?? key,
-  };
-  const marks = shownMarks(thread.state, labels);
 
   return {
     addAll,

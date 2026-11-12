@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { foldForm, refineThread, startThread, stepTo, threadLine } from './draftThread.ts';
 import type { QuickAddItem } from './quickAddItem.ts';
-import { lineChanges, shownMarks, stepName, stepSource } from './threadSteps.ts';
+import { lineChanges, movedFrom, shownMarks, stepName, stepSource } from './threadSteps.ts';
 
 const lunch: QuickAddItem = {
   kind: 'event',
@@ -124,5 +124,32 @@ describe('stepName and stepSource', () => {
       id,
     );
     expect(stepName(threadLine(picked)[1]!)).toBe('Place picked');
+  });
+});
+
+describe('movedFrom', () => {
+  it('is the focused draft before the step on show, when that step moved it', () => {
+    // At the tip the hand typed a place: no mark, no trace.
+    const tip = story();
+    expect(movedFrom(tip, shownMarks(tip))).toBeUndefined();
+    // One back, the phrase that moved the lunch is on show: it stood at one.
+    const back = stepTo(tip, 2);
+    expect(movedFrom(back, shownMarks(back))?.item).toEqual(lunch);
+    // The step that made the draft moved nothing: there was no draft.
+    const first = stepTo(tip, 1);
+    expect(movedFrom(first, shownMarks(first))).toBeUndefined();
+  });
+
+  it('is nothing for a step that changed other fields only', () => {
+    const id = ids();
+    const started = startThread([lunch], 'Lunch with Sarah tomorrow at one', { id });
+    const renamed = refineThread(
+      started,
+      'call it team lunch',
+      [{ id: 'd1', item: { kind: 'event', prefill: { ...lunch.prefill, title: 'Team lunch' } } }],
+      id,
+    );
+    expect(shownMarks(renamed)?.fields.has('title')).toBe(true);
+    expect(movedFrom(renamed, shownMarks(renamed))).toBeUndefined();
   });
 });

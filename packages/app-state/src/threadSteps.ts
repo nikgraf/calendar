@@ -5,7 +5,13 @@ import {
   fieldName,
   type StepField,
 } from './draftChanges.ts';
-import { type DraftThreadState, type PickKind, type StepLine, threadLine } from './draftThread.ts';
+import {
+  type Draft,
+  type DraftThreadState,
+  type PickKind,
+  type StepLine,
+  threadLine,
+} from './draftThread.ts';
 
 /**
  * A thread's steps as the editors draw them: what a step did to a draft
@@ -62,6 +68,22 @@ export const shownMarks = (state: DraftThreadState, labels?: ChangeLabels): Step
     fields: new Set(changes.map((change) => change.field)),
     key: shown.step.id,
   };
+};
+
+/**
+ * The focused draft as it was before the step on show, when that step
+ * changed its day or hours — where the calendar outlines that it stood
+ * (`threadPreviews`). Under the same rule as the marks: not for an edit
+ * by hand at the tip.
+ */
+export const movedFrom = (state: DraftThreadState, marks: StepMarks | null): Draft | undefined => {
+  if (marks === null || !(marks.fields.has('date') || marks.fields.has('time'))) {
+    return undefined;
+  }
+  const focused = state.drafts[state.focused]?.id;
+  return threadLine(state)[state.steps.length - 1]?.before.drafts.find(
+    (draft) => draft.id === focused,
+  );
 };
 
 const PICKED: Record<PickKind, string> = {

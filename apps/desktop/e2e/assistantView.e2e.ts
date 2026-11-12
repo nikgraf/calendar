@@ -170,6 +170,12 @@ const marked = (selector: string) =>
 const locked = `document.querySelector(${JSON.stringify(TITLE)})?.matches(':disabled') === true`;
 const saveIsOff = `[...document.querySelectorAll('button')].find((button) => button.textContent?.trim() === 'Save')?.disabled === true`;
 const guests = `[...document.querySelectorAll('[data-invitee]')].map((chip) => chip.getAttribute('data-invitee'))`;
+// On the grid: the draft's hatched block, and the outline where a step moved it from.
+const blockAt = (start: string) =>
+  `!!document.querySelector('[data-testid="draft-block"][data-draft-start="${start}"]')`;
+const wasAt = (start: string) =>
+  `!!document.querySelector('[data-testid="draft-was"][data-draft-start="${start}"]')`;
+const traces = `document.querySelectorAll('[data-testid="draft-was"]').length`;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 describe('The editor’s Assistant and Form views', () => {
@@ -212,8 +218,11 @@ describe('The editor’s Assistant and Form views', () => {
     expect(await cdp.eval<string>(card('time'))).toBe('13:00–14:00');
     expect(await cdp.eval<string>(card('location'))).toBe('Figlmüller, Wollzeile 5, 1010 Wien');
     expect(await cdp.eval<string>(card('guests'))).toBe('Sarah Keller');
-    // The step made the item: all of it is new, nothing "changed".
+    // The step made the item: all of it is new, nothing "changed" — and
+    // on the grid a block, with nowhere it was before.
     expect(await cdp.eval<string>(changed)).toBe('');
+    await cdp.waitFor(blockAt('13:00'));
+    expect(await cdp.eval<number>(traces)).toBe(0);
 
     // A change: the hours marked, the ones before struck through after
     // them — and a question, since two contacts are called Tom.
@@ -221,6 +230,9 @@ describe('The editor’s Assistant and Form views', () => {
     await cdp.waitFor(`${stepPosition} === '2 of 2'`);
     expect(await cdp.eval<string>(card('time'))).toBe('12:30–13:3013:00–14:00');
     expect(await cdp.eval<string>(changed)).toBe('Changed: time');
+    // The grid: the block where it is now, a dashed outline where it was.
+    await cdp.waitFor(blockAt('12:30'));
+    await cdp.waitFor(wasAt('13:00'));
     await cdp.waitFor(exists('draft-invitee-choices'));
     expect(await cdp.eval<string>(textOf('draft-invitee-choice-0'))).toContain('Which Tom?');
     // One phrase is one step: the form taking the draft in adds none.
@@ -235,6 +247,8 @@ describe('The editor’s Assistant and Form views', () => {
     await cdp.waitFor(`${card('guests')} === 'Sarah Keller, Tom Brandt'`);
     expect(await cdp.eval<string>(changed)).toBe('Changed: guests');
     expect(await cdp.eval<boolean>(exists('draft-invitee-choices'))).toBe(false);
+    // This step moved nothing: the outline is the step's, and goes with it.
+    await cdp.waitFor(`${traces} === 0`);
 
     // The form: the same draft, the same step's mark.
     await cdp.clickTestId('assistant-edit');
@@ -260,7 +274,8 @@ describe('The editor’s Assistant and Form views', () => {
     expect(await cdp.eval<Array<string>>(guests)).toEqual(['sarah@example.com']);
     expect(await cdp.eval<boolean>(locked)).toBe(true);
     expect(await cdp.eval<boolean>(saveIsOff)).toBe(true);
-    // What that step changed is what is marked now.
+    // What that step changed is what is marked now, on the grid too.
+    await cdp.waitFor(wasAt('13:00'));
     expect(await cdp.eval<boolean>(marked(START))).toBe(true);
     expect(await cdp.eval<boolean>(marked('[data-testid="event-invitees"]'))).toBe(false);
 
@@ -374,6 +389,10 @@ describe('The editor’s Assistant and Form views', () => {
     expect(await cdp.eval<string>(changed)).toBe('Changed: time');
     // "As saved" is the row to go back to.
     expect(await cdp.eval<string>(textOf('assistant-version'))).toContain('As saved');
+    // On the grid the draft is where it would go; the event's own block
+    // shows where it was, so no outline is drawn over it.
+    await cdp.waitFor(blockAt('16:00'));
+    expect(await cdp.eval<number>(traces)).toBe(0);
 
     await cdp.clickButtonWithText('Save');
     await cdp.waitFor(`!${exists('editor')}`);

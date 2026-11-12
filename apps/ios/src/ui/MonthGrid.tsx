@@ -68,7 +68,7 @@ export function MonthGrid({
     timeZone,
   );
   const draftsByDay = groupEventsByDay(
-    drafts.filter((draft) => draft.candidate === undefined),
+    drafts.filter((draft) => draft.kind === 'draft'),
     weeks.flat().map((cell) => cell.date),
     timeZone,
   );

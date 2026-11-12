@@ -205,7 +205,11 @@ function CalendarBody({
   // focuses it there (the draft atoms, shared with the desktop).
   const draftPreviews = useDraftPreviews();
   const drafts = useMemo(
-    () => draftOccurrences(draftPreviews, range.startUtc, range.endUtc, timeZone),
+    () =>
+      // Where a draft was before a step is the desktop's to outline: the sheet covers this calendar.
+      draftOccurrences(draftPreviews, range.startUtc, range.endUtc, timeZone).filter(
+        (draft) => draft.kind !== 'was',
+      ),
     [draftPreviews, range.startUtc, range.endUtc, timeZone],
   );
   const requestDraftFocus = useRequestDraftFocus();
@@ -214,7 +218,7 @@ function CalendarBody({
   // the draft itself, not an occurrence in the loaded range: a repeating
   // draft's first loaded occurrence moves as the calendar pages.
   const focusedDraft = draftPreviews.find(
-    (draft) => draft.focused && !draft.isAllDay && draft.candidate === undefined,
+    (draft) => draft.focused && !draft.isAllDay && draft.kind === 'draft',
   );
   const revealMinute =
     focusedDraft === undefined

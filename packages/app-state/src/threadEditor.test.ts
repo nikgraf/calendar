@@ -36,6 +36,10 @@ const ids = () => {
   };
 };
 
+/** What is drawn, in short: its kind, where and whether it is the focused one. */
+const kinds = (previews: ReturnType<typeof threadPreviews>) =>
+  previews.map((preview) => [preview.kind, preview.date, preview.startTime, preview.focused]);
+
 describe('threadPreviews', () => {
   const dinner = event('Dinner', '2026-08-28', '19:00', '20:00');
   const lunch = event('Lunch', '2026-08-29', '12:00', '13:00');
@@ -60,7 +64,11 @@ describe('threadPreviews', () => {
     ];
     const state = startThread([dinner], 'x', { id: ids(), slots });
     const previews = threadPreviews(state.drafts, 0, dinner, context);
-    expect(previews.map((preview) => preview.candidate?.startTime)).toEqual([undefined, '09:00']);
+    expect(
+      previews.map((preview) =>
+        preview.kind === 'candidate' ? preview.slot.startTime : preview.kind,
+      ),
+    ).toEqual(['draft', '09:00']);
     expect(threadPreviews(state.drafts, 0, todo, context)).toEqual([]);
   });
 
@@ -84,6 +92,61 @@ describe('threadPreviews', () => {
         preview.focused,
       ]),
     ).toEqual([['20:00', true]]);
+  });
+
+  it('outlines where the step on show moved the focused draft from', () => {
+    const state = startThread([dinner], 'x', { id: ids() });
+    const before = state.drafts[0]!;
+    const moved = event('Dinner', '2026-08-29', '20:00', '21:00');
+    expect(
+      kinds(threadPreviews(state.drafts, 0, moved, { ...context, movedFrom: before })),
+    ).toEqual([
+      ['draft', '2026-08-29', '20:00', true],
+      ['was', '2026-08-28', '19:00', false],
+    ]);
+    // The form back where it stood: nothing to outline.
+    expect(
+      kinds(threadPreviews(state.drafts, 0, dinner, { ...context, movedFrom: before })),
+    ).toEqual([['draft', '2026-08-28', '19:00', true]]);
+    // A to-do drew no block, so it leaves no trace.
+    expect(
+      kinds(
+        threadPreviews(state.drafts, 0, moved, {
+          ...context,
+          movedFrom: { id: before.id, item: todo },
+        }),
+      ),
+    ).toEqual([['draft', '2026-08-29', '20:00', true]]);
+  });
+
+  it('leaves a saved event’s own block to be its trace, and outlines a later step’s', () => {
+    const state = openThread({ item: dinner }, ids());
+    const saved = { instance: false, opened: dinner };
+    const first = event('Dinner', '2026-08-28', '20:00', '21:00');
+    const second = event('Dinner', '2026-08-28', '21:00', '22:00');
+    // Moved off where it is saved: the event's block shows where it was.
+    expect(
+      kinds(
+        threadPreviews(state.drafts, 0, first, {
+          ...context,
+          movedFrom: state.drafts[0],
+          saved,
+        }),
+      ),
+    ).toEqual([['draft', '2026-08-28', '20:00', true]]);
+    // Moved again: the place between is neither's, so it is outlined.
+    expect(
+      kinds(
+        threadPreviews(state.drafts, 0, second, {
+          ...context,
+          movedFrom: { id: state.drafts[0]!.id, item: first },
+          saved,
+        }),
+      ),
+    ).toEqual([
+      ['draft', '2026-08-28', '21:00', true],
+      ['was', '2026-08-28', '20:00', false],
+    ]);
   });
 
   it('draws one occurrence of a saved series without the series’ rule', () => {
