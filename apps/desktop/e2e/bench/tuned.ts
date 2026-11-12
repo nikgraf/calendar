@@ -1,12 +1,6 @@
 import type { LanguageModel, QuickAddResult, RefineResult } from '@calendar/ai';
 import type { BenchDraft } from './check.ts';
-import {
-  comingDays,
-  PLAIN_JSON_SCHEMA,
-  plainResult,
-  type PlainState,
-  plainState,
-} from './plain.ts';
+import { comingDays, plainResult, type PlainState, plainState } from './plain.ts';
 
 /**
  * The tuned arm of the bench: a model trained for this one job, asked
@@ -195,8 +189,8 @@ export const tunedTurn = async (
   }
   let answer: unknown;
   try {
-    // The plain arm's schema: a server that holds answers to one gets the same parts.
-    answer = await model.generateJson({ jsonSchema: PLAIN_JSON_SCHEMA, prompt });
+    // No schema: one held over the answer would have every field written, and the model learnt the short form.
+    answer = await model.generateJson({ jsonSchema: undefined, prompt });
   } catch {
     return { kind: 'rejected', reason: REFUSED };
   }
