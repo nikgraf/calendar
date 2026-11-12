@@ -54,7 +54,7 @@ import { ReminderEditForm } from './ReminderEditForm.tsx';
 import { SegmentedControl } from './SegmentedControl.tsx';
 import { TaskCheck } from './TaskCheck.tsx';
 import { TaskEditForm } from './TaskEditForm.tsx';
-import { BOX_FONT_SCALE } from './theme.ts';
+import { BOX_FONT_SCALE, groupedGround, useTheme } from './theme.ts';
 
 /** An existing item, a prefilled slot, or a thread of drafts (a capture's events). */
 export type EditSeed = EditorSeed;
@@ -394,11 +394,13 @@ function FormView({
   readonly onAssistant: () => void;
 }) {
   const styles = useSheetStyles();
+  const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const keyboard = useKeyboardInset();
   const screenReader = useScreenReader();
   const { previewing, steps } = editor;
   const pillBottom = insets.bottom + PILL_GAP;
+  const ground = groupedGround(colors);
   const floating = keyboard === 0 && (assists || steps.of > 0);
   // Where the scroll stands against its last turn is a ref: only a flip renders.
   const tuck = useRef(PILLS_SHOWN);
@@ -427,6 +429,17 @@ function FormView({
       </ScrollView>
       {floating ? (
         <TuckAway tucked={tucked && !previewing && !screenReader}>
+          {/* The rows under the pills recede into the ground, so the pills read. */}
+          <View
+            pointerEvents="none"
+            style={[
+              styles.pillFade,
+              {
+                backgroundImage: `linear-gradient(to bottom, ${ground}00, ${ground} 62%)`,
+                height: pillBottom + PILL_HEIGHT + (previewing ? 124 : 44),
+              },
+            ]}
+          />
           {previewing ? (
             <UseStepCard bottom={pillBottom + PILL_HEIGHT + 12} editor={editor} />
           ) : null}

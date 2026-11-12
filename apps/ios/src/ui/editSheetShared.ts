@@ -169,6 +169,13 @@ const makeSheetStyles = (colors: ThemeColors) =>
       flex: 1,
       flexDirection: 'row',
     },
+    /** Behind the form's floating pills, across its bottom edge: a fade into the ground. */
+    pillFade: {
+      bottom: 0,
+      left: 0,
+      position: 'absolute',
+      right: 0,
+    },
     /** A date picker and its time picker, side by side at a row's end. */
     pickerPair: {
       alignItems: 'center',

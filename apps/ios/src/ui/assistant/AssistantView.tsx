@@ -242,6 +242,16 @@ export function AssistantView({
   const { colors } = useTheme();
   const { assistant, labels, steps } = editor;
   const scroller = useRef<ScrollViewInstance>(null);
+  // The newest row is the one to read: the conversation sits at its end,
+  // whichever of the two changed — what it holds, or the room it has (the
+  // keyboard and the field coming and going). `scrollToEnd` does nothing
+  // once the rows fit again, which left them scrolled half out of view
+  // above an empty stretch, so the offset is set outright.
+  const sizes = useRef({ content: 0, view: 0 });
+  const toEnd = (animated: boolean) => {
+    const { content, view } = sizes.current;
+    scroller.current?.scrollTo({ animated, y: Math.max(content - view, 0) });
+  };
   const unavailable = availability.status !== null && availability.status !== 'ready';
   const started = steps.of > 0;
   const answer = (
@@ -258,8 +268,14 @@ export function AssistantView({
     <ScrollView
       contentContainerStyle={styles.content}
       keyboardShouldPersistTaps="handled"
-      // The newest row is the one to read: the conversation follows it.
-      onContentSizeChange={() => scroller.current?.scrollToEnd({ animated: true })}
+      onContentSizeChange={(_width, height) => {
+        sizes.current.content = height;
+        toEnd(true);
+      }}
+      onLayout={(event) => {
+        sizes.current.view = event.nativeEvent.layout.height;
+        toEnd(false);
+      }}
       ref={scroller}
       style={styles.thread}
       testID="assistant-thread"
