@@ -48,6 +48,23 @@ export interface RepeatSeed {
 }
 
 /**
+ * A rule by its values, whatever order its parts were written in (the
+ * form, a stored series and the model's answer list them differently): an
+ * interval of one is the default, the weekdays a set. Two rules that
+ * repeat alike have the same key; no rule is 'none'.
+ */
+export const recurrenceKey = (rule: RepeatSeed | undefined): string =>
+  rule?.freq === undefined
+    ? 'none'
+    : JSON.stringify([
+        rule.freq,
+        rule.interval ?? 1,
+        rule.count ?? null,
+        rule.untilDate ?? null,
+        (rule.byDay ?? []).map((day) => `${String(day.ordinal ?? '')}${day.weekday}`).sort(),
+      ]);
+
+/**
  * The repeat form's state, one object so the pure functions below can be
  * tested without React. Weekdays and the monthly ordinal follow the anchor
  * date until the user (or the seed) names them: only then are the stored

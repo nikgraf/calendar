@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vite-plus/test';
 import {
   parseRepeatNumber,
+  recurrenceKey,
   repeatDisplaySpec,
   repeatNumberError,
   repeatSpecFrom,
@@ -180,5 +181,53 @@ describe('repeatSpecFrom', () => {
       freq: 'weekly',
       interval: 1,
     });
+  });
+});
+
+describe('recurrenceKey', () => {
+  it('reads a rule by its values, whatever order or default its parts were written with', () => {
+    expect(recurrenceKey({ freq: 'weekly' })).toBe(recurrenceKey({ freq: 'weekly', interval: 1 }));
+    expect(recurrenceKey({ byDay: [{ weekday: 'WE' }, { weekday: 'MO' }], freq: 'weekly' })).toBe(
+      recurrenceKey({ byDay: [{ weekday: 'MO' }, { weekday: 'WE' }], freq: 'weekly' }),
+    );
+    expect(recurrenceKey({ freq: 'weekly' })).not.toBe(recurrenceKey({ freq: 'daily' }));
+    expect(recurrenceKey({ freq: 'weekly' })).not.toBe(
+      recurrenceKey({ freq: 'weekly', interval: 2 }),
+    );
+    expect(recurrenceKey({ count: 5, freq: 'daily' })).not.toBe(recurrenceKey({ freq: 'daily' }));
+  });
+
+  it('reads no rule as none', () => {
+    expect(recurrenceKey(undefined)).toBe('none');
+    expect(recurrenceKey({})).toBe('none');
+  });
+
+  // Save tells an unchanged rule from a changed one by reading both through
+  // the form's fields: a rule the form gave out and took back in must read
+  // as the same rule, or an untouched series would be re-sent (and lose its
+  // exceptions).
+  it.each([
+    { freq: 'daily' as const },
+    { freq: 'weekly' as const, interval: 2 },
+    { byDay: [{ weekday: 'MO' as const }, { weekday: 'TH' as const }], freq: 'weekly' as const },
+    { byDay: [{ ordinal: 2, weekday: 'TU' as const }], freq: 'monthly' as const },
+    { freq: 'monthly' as const },
+    { count: 5, freq: 'weekly' as const },
+    { freq: 'yearly' as const, untilDate: '2027-03-01' },
+  ])('a rule keeps its key through the form and back: %o', (rule) => {
+    const anchor = '2026-08-28';
+    const once = repeatSpecFrom(seedRepeatFields(rule), anchor);
+    const twice = repeatSpecFrom(seedRepeatFields(once), anchor);
+    expect(recurrenceKey(once)).toBe(recurrenceKey(rule));
+    expect(recurrenceKey(twice)).toBe(recurrenceKey(once));
+  });
+
+  it('a rule the form cannot hold in full still reads the same on both sides of it', () => {
+    // Weekdays on a daily rule have no control: both the opened rule and the
+    // one read back go through the fields, so they agree.
+    const rule = { byDay: [{ weekday: 'MO' as const }], freq: 'daily' as const };
+    const anchor = '2026-08-28';
+    const once = repeatSpecFrom(seedRepeatFields(rule), anchor);
+    expect(recurrenceKey(repeatSpecFrom(seedRepeatFields(once), anchor))).toBe(recurrenceKey(once));
   });
 });

@@ -7,9 +7,10 @@ import {
   Temporal,
 } from '@calendar/core';
 import { guestLabel } from './draftInvitees.ts';
+import { remindersKey } from './eventEditorChanges.ts';
 import type { Draft } from './draftThread.ts';
 import type { QuickAddItem } from './quickAddItem.ts';
-import type { RepeatFields } from './repeatState.ts';
+import { recurrenceKey, type RepeatFields } from './repeatState.ts';
 
 /**
  * What differs between two states of a draft, field by field and in
@@ -87,23 +88,9 @@ const repeatOf = (item: QuickAddItem): string | undefined =>
 const placeOf = (item: QuickAddItem): string | undefined =>
   item.kind === 'event' ? item.prefill.location : undefined;
 
-/**
- * A repeat rule by its values, whatever order its parts were written in
- * (the form and the model's answer list them differently): an interval of
- * one is the default, the weekdays a set.
- */
-const ruleOf = (item: QuickAddItem): string => {
-  const rule = item.kind === 'event' ? item.prefill.recurrence : undefined;
-  return rule === undefined
-    ? 'none'
-    : JSON.stringify([
-        rule.freq,
-        rule.interval ?? 1,
-        rule.count ?? null,
-        rule.untilDate ?? null,
-        (rule.byDay ?? []).map((day) => `${String(day.ordinal ?? '')}${day.weekday}`).sort(),
-      ]);
-};
+/** An event's repeat rule by its values (`recurrenceKey`); a to-do's item carries none. */
+const ruleOf = (item: QuickAddItem): string =>
+  recurrenceKey(item.kind === 'event' ? item.prefill.recurrence : undefined);
 
 /** A part of the form a turn can change: what the summary names and the form flashes. */
 export type DraftField = 'date' | 'kind' | 'location' | 'repeat' | 'time' | 'title';
@@ -213,14 +200,6 @@ const notesOf = (draft: Draft | undefined): string =>
     ? (draft.extras?.taskNotes ?? '')
     : (draft?.extras?.description ?? '')
   ).trim();
-
-/** Untouched notifications are the calendar's default, as an explicit default is. */
-const remindersKey = (reminders: EventReminders | undefined): string =>
-  reminders === undefined || reminders.useDefault
-    ? 'default'
-    : canonicalReminders(reminders)
-        .overrides.map((override) => `${override.method}:${String(override.minutes)}`)
-        .join(',');
 
 const remindersText = (reminders: EventReminders | undefined, isAllDay: boolean): string => {
   if (reminders === undefined || reminders.useDefault) {
