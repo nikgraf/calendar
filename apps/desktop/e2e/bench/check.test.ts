@@ -1,7 +1,15 @@
 import type { QuickAddResult } from '@calendar/ai';
 import { Contact } from '@calendar/core';
 import { describe, expect, it } from 'vite-plus/test';
-import { applyResult, type BenchDraft, check, fieldsOf, fold, wordErrorRate } from './check.ts';
+import {
+  applyResult,
+  type BenchDraft,
+  check,
+  checkWithoutDraft,
+  fieldsOf,
+  fold,
+  wordErrorRate,
+} from './check.ts';
 
 // 2026-08-22 is a Saturday; 2026-08-28 the Friday after.
 const TODAY = '2026-08-22';
@@ -79,6 +87,7 @@ describe('check', () => {
       'location',
       'repeat',
       'guests',
+      'unsaid',
     ]);
   });
 
@@ -268,8 +277,8 @@ describe('check', () => {
   it('a rejection fails every field the expectation named, unless it was expected', () => {
     const rejected = { kind: 'rejected' as const, reason: 'No event title was recognised.' };
     expect(check({ title: 'dinner', weekday: 5 }, rejected, undefined, TODAY)).toEqual({
-      checked: ['title', 'date'],
-      failed: ['title', 'date'],
+      checked: ['title', 'date', 'unsaid'],
+      failed: ['title', 'date', 'unsaid'],
       notes: ['rejected: No event title was recognised.'],
     });
     expect(check({ rejected: true }, rejected, undefined, TODAY).failed).toEqual([]);
@@ -277,6 +286,15 @@ describe('check', () => {
       failed: ['rejected'],
       notes: ['accepted, a rejection was expected'],
     });
+  });
+
+  it('a later turn without a draft fails what it named, and neither rule', () => {
+    expect(checkWithoutDraft({ startTime: '20:00', title: 'dinner' }, TODAY)).toEqual({
+      checked: ['title', 'time'],
+      failed: ['title', 'time'],
+      notes: ['rejected: no draft'],
+    });
+    expect(checkWithoutDraft({ rejected: true }, TODAY).failed).toEqual([]);
   });
 
   it('a later turn must leave every part it was not about as it was', () => {
@@ -292,8 +310,51 @@ describe('check', () => {
     // Times and all-day-ness are one part: an all-day expectation covers the times.
     const wholeDay = drafted(event({ endTime: '01:00', isAllDay: true, startTime: '00:00' }));
     expect(check({ isAllDay: true }, wholeDay, before, TODAY).failed).toEqual([]);
-    // The first turn has nothing to be held to.
-    expect(check({ title: 'team dinner' }, moved, undefined, TODAY).checked).toEqual(['title']);
+    // The first turn has no draft before it: it is held to the unsaid rule instead.
+    expect(check({ title: 'team dinner' }, moved, undefined, TODAY).checked).toEqual([
+      'title',
+      'unsaid',
+    ]);
+  });
+
+  it('a first phrase must put nothing in the draft that was not said', () => {
+    const invented: BenchDraft = {
+      ...event({ location: 'nichts', recurrence: { freq: 'yearly' } }),
+      choices: [{ contacts: [], name: 'Teo' }],
+      notes: 'Dinner with Teo',
+      reminders: [60],
+    };
+    expect(check({ title: 'dinner with teo' }, drafted(invented), undefined, TODAY)).toEqual({
+      checked: ['title', 'unsaid'],
+      failed: ['unsaid'],
+      notes: [
+        'unsaid guests: |teo',
+        'unsaid location: nichts',
+        'unsaid notes: dinner with teo',
+        'unsaid reminders: 60',
+        'unsaid repeat: yearly',
+      ],
+    });
+    // A part the expectation names is its own to judge, right or wrong.
+    expect(
+      check(
+        {
+          guests: { choices: ['Teo'] },
+          location: 'nichts',
+          notes: 'teo',
+          reminders: [60],
+          repeat: { freq: 'yearly' },
+        },
+        drafted(invented),
+        undefined,
+        TODAY,
+      ).failed,
+    ).toEqual([]);
+    // A to-do has no place, repeat or guests to invent, and a plain draft none either.
+    expect(check({ kind: 'task' }, drafted(task()), undefined, TODAY).failed).toEqual([]);
+    expect(check({ title: 'dinner with teo' }, drafted(event()), undefined, TODAY).failed).toEqual(
+      [],
+    );
   });
 
   it('a rejected later turn fails the unchanged rule too', () => {

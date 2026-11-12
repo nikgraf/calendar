@@ -26,8 +26,18 @@ export interface TurnReport {
   readonly notes: ReadonlyArray<string>;
   /** The draft after the turn, or the rejection. */
   readonly outcome: unknown;
-  /** The transcript's own parse, run when the recogniser erred and the turn failed: whose fault it was. */
-  readonly said?: { readonly notes: ReadonlyArray<string>; readonly ok: boolean } | undefined;
+  /**
+   * The transcript's own parse, run when the recogniser erred and the turn
+   * failed: whose fault it was. Its outcome is kept, so the verdict can be
+   * scored again with the turn's (`rescore.ts`).
+   */
+  readonly said?:
+    | {
+        readonly notes: ReadonlyArray<string>;
+        readonly ok: boolean;
+        readonly outcome?: unknown;
+      }
+    | undefined;
   readonly wordErrorRate?: number | undefined;
 }
 
@@ -66,7 +76,26 @@ export interface Score {
 export interface BenchReport {
   readonly cases: ReadonlyArray<CaseReport>;
   readonly provider: string;
+  /**
+   * The run this report was scored again from (`rescore.ts`), however
+   * often: its commit and its time. `stale` names the cases the scoring
+   * left as the report had them, because the case is gone or has other
+   * turns or words than the model answered.
+   */
+  readonly rescored?:
+    | {
+        readonly sha: string;
+        readonly stale?: ReadonlyArray<string> | undefined;
+        readonly when: string;
+      }
+    | undefined;
   readonly score: Score;
+  /**
+   * What the run set that the provider's name does not say: a served
+   * model's endpoint and MODEL_BENCH_OPENAI_EXTRA. Two reports of one name
+   * with other settings are two results.
+   */
+  readonly settings?: string | undefined;
   readonly sha: string;
   readonly timeZone: string;
   readonly today: string;
@@ -133,7 +162,9 @@ const ratio = (counter: Counter): string => `${String(counter.ok)}/${String(coun
 
 /** The run as a table: one line per case with its failing turns, then the score. */
 export const formatReport = (report: BenchReport): string => {
-  const lines: Array<string> = [`== ${report.provider}`];
+  const lines: Array<string> = [
+    `== ${report.provider}${report.settings === undefined ? '' : ` (${report.settings})`}`,
+  ];
   for (const benchCase of report.cases) {
     const total = benchCase.turns.reduce((sum, turn) => sum + (turn.ms ?? 0), 0);
     const details: Array<string> = [];
@@ -149,7 +180,8 @@ export const formatReport = (report: BenchReport): string => {
       ) {
         details.push(
           `${label}heard "${turn.heard ?? ''}" (WER ${percent(turn.wordErrorRate)}${
-            turn.said === undefined
+            // Whose fault it was is a failing turn's question.
+            turn.said === undefined || turn.failed.length === 0
               ? ''
               : turn.said.ok
                 ? ', the transcript passes'
@@ -173,6 +205,12 @@ export const formatReport = (report: BenchReport): string => {
     `   cases ${ratio(score.cases)} · turns ${ratio(score.turns)} · median ${seconds(score.medianMs)} per turn`,
     `   ${fieldSummary}`,
   );
+  const stale = report.rescored?.stale ?? [];
+  if (stale.length > 0) {
+    lines.push(
+      `   not scored again (gone, or other turns or words than the report): ${stale.join(', ')}`,
+    );
+  }
   if (score.recordings !== undefined) {
     const { failed, missing, skipped, transcribed, wordErrorRate } = score.recordings;
     lines.push(
@@ -214,6 +252,11 @@ export const compareReports = (before: BenchReport, after: BenchReport): string 
     `   vs ${before.sha} (${before.when.slice(0, 16)}): cases ${ratio(before.score.cases)} → ${ratio(
       after.score.cases,
     )}, turns ${ratio(before.score.turns)} → ${ratio(after.score.turns)}`,
+    ...(before.settings === after.settings
+      ? []
+      : [
+          `   settings: ${before.settings ?? 'not recorded'} → ${after.settings ?? 'not recorded'}`,
+        ]),
     ...(fixed.length === 0 ? [] : [`   fixed: ${fixed.join(', ')}`]),
     ...(broke.length === 0 ? [] : [`   broke: ${broke.join(', ')}`]),
     ...FIELDS.map(moved)
@@ -225,14 +268,27 @@ export const compareReports = (before: BenchReport, after: BenchReport): string 
 const slug = (text: string): string =>
   text.replaceAll(/[^a-z0-9]+/gi, '-').replaceAll(/^-|-$/g, '');
 
-/** Writes the report under `dir` and returns its path. */
-export const writeReport = (dir: string, report: BenchReport): string => {
-  mkdirSync(dir, { recursive: true });
-  const stamp = report.when
+const stampOf = (when: string): string =>
+  when
     .slice(0, 19)
     .replaceAll(/[-:T]/g, '')
     .replace(/(\d{8})(\d{6})/, '$1-$2');
-  const path = join(dir, `${stamp}-${report.sha}-${slug(report.provider)}.json`);
+
+/**
+ * Writes the report under `dir` and returns its path. A report scored
+ * again names the run it came from too: a folder of them is scored within
+ * one second, and two of one provider would land on one name.
+ */
+export const writeReport = (dir: string, report: BenchReport): string => {
+  mkdirSync(dir, { recursive: true });
+  const source =
+    report.rescored === undefined
+      ? ''
+      : `-of-${stampOf(report.rescored.when)}-${report.rescored.sha}`;
+  const path = join(
+    dir,
+    `${stampOf(report.when)}-${report.sha}-${slug(report.provider)}${source}.json`,
+  );
   writeFileSync(path, `${JSON.stringify(report, null, 2)}\n`);
   return path;
 };

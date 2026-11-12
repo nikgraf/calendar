@@ -153,6 +153,35 @@ describe('formatReport', () => {
       ),
     ).toContain('recordings: 2 missing (ran as the transcript)');
   });
+
+  it('says what the run set beyond the provider, and which cases a rescore left alone', () => {
+    const text = formatReport(
+      report(CASES, {
+        provider: 'openai:lfm3',
+        rescored: { sha: 'old0000', stale: ['dinner'], when: '2026-08-21T09:00:00.000Z' },
+        settings: 'http://127.0.0.1:11434/v1 {"reasoning_effort":"none"}',
+      }),
+    );
+    expect(text).toContain(
+      '== openai:lfm3 (http://127.0.0.1:11434/v1 {"reasoning_effort":"none"})',
+    );
+    expect(text).toContain(
+      '   not scored again (gone, or other turns or words than the report): dinner',
+    );
+    expect(formatReport(report(CASES))).not.toContain('not scored again');
+  });
+
+  it('places no fault on a turn that passes, whatever a rescored report kept of the transcript', () => {
+    const passing = turn({
+      audio: 'transcribed',
+      heard: 'make it late',
+      said: { notes: ['start=19:00'], ok: false, outcome: { kind: 'rejected', reason: 'none' } },
+      wordErrorRate: 1 / 3,
+    });
+    expect(formatReport(report([{ id: 'a', ok: true, tags: [], turns: [passing] }]))).toContain(
+      '  ok    1.0s  a  →  heard "make it late" (WER 33%)',
+    );
+  });
 });
 
 describe('compareReports', () => {
@@ -179,6 +208,19 @@ describe('compareReports', () => {
     ]);
     expect(compareReports(before, after)).toContain('title 1/1 → 1/2');
   });
+
+  it('says when the two runs were not set up alike', () => {
+    const thinking = report(CASES, { provider: 'openai:lfm3', settings: 'http://localhost/v1' });
+    const quiet = report(CASES, {
+      provider: 'openai:lfm3',
+      settings: 'http://localhost/v1 {"reasoning_effort":"none"}',
+    });
+    expect(compareReports(thinking, quiet)).toContain(
+      '   settings: http://localhost/v1 → http://localhost/v1 {"reasoning_effort":"none"}',
+    );
+    expect(compareReports(report(CASES), quiet)).toContain('   settings: not recorded → ');
+    expect(compareReports(quiet, quiet)).not.toContain('settings');
+  });
 });
 
 describe('writeReport', () => {
@@ -191,5 +233,23 @@ describe('writeReport', () => {
       ok: 1,
       total: 2,
     });
+  });
+
+  it('names a report scored again by its run too: a folder of them is scored in one second', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'bench-'));
+    const again = (rescored: BenchReport['rescored']): string =>
+      writeReport(
+        dir,
+        report(CASES, { rescored, sha: 'def5678-dirty', when: '2026-08-23T08:00:00.100Z' }),
+      );
+    const first = again({ sha: 'abc1234', when: '2026-08-22T10:20:30.000Z' });
+    const second = again({ sha: 'abc1234', when: '2026-08-21T09:00:00.000Z' });
+    expect(basename(first)).toBe(
+      '20260823-080000-def5678-dirty-apple-of-20260822-102030-abc1234.json',
+    );
+    expect(basename(second)).toBe(
+      '20260823-080000-def5678-dirty-apple-of-20260821-090000-abc1234.json',
+    );
+    expect(existsSync(first) && existsSync(second)).toBe(true);
   });
 });

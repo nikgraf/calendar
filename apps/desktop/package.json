@@ -33,6 +33,7 @@
     "update-electron-app": "^3.3.0"
   },
   "devDependencies": {
+    "@anthropic-ai/sdk": "^1.6.0",
     "@electron-forge/cli": "^8.0.1",
     "@electron-forge/maker-zip": "^8.0.1",
     "@electron-forge/publisher-github": "^8.0.1",
