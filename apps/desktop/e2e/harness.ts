@@ -724,6 +724,34 @@ export class Cdp {
     await this.send('Input.insertText', { text });
   }
 
+  /** Return, as the key itself, to whatever has the focus. */
+  async pressEnter(): Promise<void> {
+    await this.send('Input.dispatchKeyEvent', {
+      code: 'Enter',
+      key: 'Enter',
+      type: 'rawKeyDown',
+      windowsVirtualKeyCode: 13,
+    });
+  }
+
+  /**
+   * Says a phrase to the editor's Assistant: typed into its field and sent
+   * with Return. The field is in the view the editor opens a new item on;
+   * `showEditorView('assistant')` brings it forward from the form.
+   */
+  async say(phrase: string): Promise<void> {
+    await this.type('[data-testid="quick-add-input"]', phrase);
+    await this.pressEnter();
+  }
+
+  /** Brings one of the editor's two views forward, by its tab, and waits until it is the one on show. */
+  async showEditorView(view: 'assistant' | 'form'): Promise<void> {
+    await this.clickTestId(`editor-view-${view}`);
+    await this.waitFor<boolean>(
+      `document.querySelector('[data-testid="editor"]')?.dataset.view === ${JSON.stringify(view)}`,
+    );
+  }
+
   /** Answers an editor's delete confirmation (MoveConfirm) with Delete. */
   async confirmDelete(): Promise<void> {
     const yes = `document.querySelector('[data-testid="move-confirm-yes"]')`;

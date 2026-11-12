@@ -149,6 +149,12 @@ export const PlusIcon = (props: IconProps) => (
     <path d="M12 5v14M5 12h14" />
   </Icon>
 );
+export const RedoIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="m15 14 5-5-5-5" />
+    <path d="M20 9H10a6 6 0 0 0 0 12h3" />
+  </Icon>
+);
 export const RepeatIcon = (props: IconProps) => (
   <Icon {...props}>
     <path d="M17 2l4 4-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4M21 13v2a3 3 0 0 1-3 3H3" />
@@ -193,6 +199,12 @@ export const SpinnerIcon = ({ className = '', ...props }: IconProps) => (
 export const TrashIcon = (props: IconProps) => (
   <Icon {...props}>
     <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5M14 11v5" />
+  </Icon>
+);
+export const UndoIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M9 14 4 9l5-5" />
+    <path d="M4 9h10a6 6 0 0 1 0 12h-3" />
   </Icon>
 );
 export const UsersIcon = (props: IconProps) => (

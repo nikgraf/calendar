@@ -989,7 +989,7 @@ export const useThreadEditor = ({
     taskModel: reportingEdits(taskModel, TASK_EDITS, edited),
     thread,
     turns: phraseSteps(thread.state),
-    /** Moves at each edit made by hand in the form (`QuickAddBar`'s `editKey`). */
+    /** Moves at each edit made by hand in the form (the phrase field's `editKey`: dictation ends). */
     userEdits,
     write,
   };

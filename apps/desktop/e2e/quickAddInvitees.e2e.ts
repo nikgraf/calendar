@@ -59,11 +59,12 @@ const seed = {
   events: [],
 };
 
-const INPUT = '[data-testid="quick-add-input"]';
 // CDP key events don't carry macOS meta reliably: dispatch ⌘N to the app's own window listener.
 const COMMAND_N = `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', metaKey: true }))`;
 const chips = `[...document.querySelectorAll('[data-invitee]')].map((el) => el.getAttribute('data-invitee'))`;
-const newestSummary = `document.querySelector('[data-testid="draft-turn-summary"]')?.textContent ?? ''`;
+// The Assistant's newest card: its guests, and what its step changed.
+const cardGuests = `(document.querySelector('[data-testid="assistant-card-guests"]')?.textContent ?? '')`;
+const changed = `(document.querySelector('[data-testid="assistant-changed"]')?.textContent ?? '')`;
 const choiceText = (index: number) =>
   `document.querySelector('[data-testid="draft-invitee-choice-${String(index)}"]')?.textContent ?? ''`;
 const hasChoices = `!!document.querySelector('[data-testid="draft-invitee-choices"]')`;
@@ -87,10 +88,7 @@ describe('Invitees from a quick-add phrase', () => {
     }
   });
 
-  const phrase = async (text: string) => {
-    await app.cdp.type(INPUT, text);
-    await app.cdp.clickTestId('quick-add-apply');
-  };
+  const phrase = (text: string) => app.cdp.say(text);
 
   it('invites the one contact a name means, asks which for two, takes a guest off, and saves them', async () => {
     const { cdp } = app;
@@ -106,19 +104,21 @@ describe('Invitees from a quick-add phrase', () => {
     expect(await cdp.eval<string>(choiceText(0))).toContain('Which Tom?');
     expect(await cdp.eval<string>(choiceText(0))).toContain('Tom Baker');
     expect(await cdp.eval<string>(choiceText(0))).toContain('Tom Lee');
-    expect(await cdp.eval<string>(newestSummary)).toContain('invites Anna Lee');
-    expect(await cdp.eval<string>(newestSummary)).toContain('which Tom?');
+    expect(await cdp.eval<string>(cardGuests)).toBe('Anna Lee');
 
-    // A pick makes that contact a guest; the question goes.
+    // A pick makes that contact a guest; the question goes, and the card marks who joined.
     await cdp.clickTestId('draft-invitee-pick-0-0');
     await cdp.waitFor(`${chips}.includes('tom.baker@example.com')`);
     await cdp.waitFor(`!${hasChoices}`);
+    await cdp.waitFor(`${changed} === 'Changed: guests'`);
+    expect(await cdp.eval<string>(cardGuests)).toBe('Anna Lee, Tom Baker');
 
     // A later phrase takes a guest off by name.
     await phrase('remove Anna');
     await cdp.waitFor(`!${chips}.includes('anna@example.com')`);
     expect(await cdp.eval<Array<string>>(chips)).toEqual(['tom.baker@example.com']);
-    expect(await cdp.eval<string>(newestSummary)).toContain('uninvites Anna Lee');
+    // The card: who is left, and the list as it was struck through after it.
+    await cdp.waitFor(`${cardGuests} === 'Tom BakerAnna Lee, Tom Baker'`);
 
     await cdp.clickButtonWithText('Save');
     await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);

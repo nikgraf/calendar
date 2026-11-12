@@ -4,35 +4,35 @@ import {
   type EditorSeed,
   type EditorSourceKind,
   editorTitle,
-  isAtSlot,
+  stepName,
+  stepSource,
   useMarkLesson,
+  useModelAvailability,
   useMoveConfirmation,
   useThreadEditor,
   type TaskEditorSeed,
 } from '@calendar/app-state';
 import {
   type CalendarInfo,
-  formatSlotLabel,
   type ItemKind,
   type TaskListInfo,
   type TaskRecord,
 } from '@calendar/core';
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import { desktopLanguageModel } from '../../ai/desktopModel.ts';
+import { onWindowFocus } from '../../ai/modelFocus.ts';
 import { backend } from '../../backend.ts';
 import { LessonBanner } from '../../onboarding/LessonBanner.tsx';
 import { Button } from '../../ui/Button.tsx';
 import { IconButton } from '../../ui/IconButton.tsx';
-import { ChevronLeftIcon, ChevronRightIcon, VideoIcon, XIcon } from '../../ui/icons.tsx';
+import { RedoIcon, UndoIcon, VideoIcon, XIcon } from '../../ui/icons.tsx';
 import { SegmentedControl } from '../../ui/SegmentedControl.tsx';
+import { AssistantView } from '../assistant/AssistantView.tsx';
 import { EventEditorForm } from '../EventEditorForm.tsx';
-import { InviteeChoices } from '../InviteeChoices.tsx';
-import { PlaceChoices } from '../PlaceChoices.tsx';
 import { MoveConfirm } from '../MoveConfirm.tsx';
-import { QuickAddBar } from '../QuickAddBar.tsx';
+import { DraftPager } from './DraftPager.tsx';
 import { ReminderEditorForm } from '../ReminderEditorForm.tsx';
 import { TaskEditorForm } from '../TaskEditorForm.tsx';
-import { ThreadTurns } from '../ThreadTurns.tsx';
 import { FieldFlashContext, useFlash } from '../../ui/useFlash.ts';
 
 const KIND_LABELS: Record<ItemKind, string> = {
@@ -41,37 +41,48 @@ const KIND_LABELS: Record<ItemKind, string> = {
   task: 'Task',
 };
 
-const CHANGE_PLACEHOLDER = 'Change it: "at 8", "Thursday instead", "call it…"';
+/** The editor's two views of one draft: the conversation, and the fields. */
+export type EditorView = 'assistant' | 'form';
 
 /**
- * The side panel's editor: a header that stays put (the title, Join
- * meeting, Close), a body that scrolls — for a new item the quick-add
- * field on top, then the Event | Task | Reminder control (only the kinds
- * something can hold), then the form — and a footer that stays put with
- * Delete, Cancel and Save, so the way out and the save are in reach
- * wherever the form is scrolled to. In create mode the control picks the
- * kind; on an existing item it converts (Save writes the other kind and
- * deletes the source) or moves a to-do to the other provider. Both
- * models stay mounted so a flip keeps state. A question before a lossy
- * switch, move, conversion or delete sits above the footer's buttons, on
- * screen whatever the scroll position.
+ * The side panel's editor: a header that stays put (the title, the two
+ * views' tabs, Join meeting, Close), one of two views of the same draft,
+ * and a footer that stays put with the steps, Delete, Cancel and Save,
+ * so the way out and the save are in reach from either view. A question
+ * before a lossy switch, move, conversion or delete sits above the
+ * footer's buttons, on screen whatever is scrolled.
  *
- * A new item is a thread (`useThreadEditor`, shared with the iOS edit
- * sheet): the first phrase makes the draft(s), every later phrase in the
- * same field changes them, Undo takes a turn back, and the calendar
- * draws every draft hatched, the focused one outlined and scrolled to
- * (the draft atoms). A phrase that asks for free time puts the draft in
- * the best free slot and offers the others as a chip row here and as
- * fainter candidate blocks on the grid; a chip or a candidate moves the
- * draft there. People the words invite join the form's invitees when a
- * contact is theirs alone, else they wait here for a contact to be
- * picked. The form is the focused draft's view: its edits go back
- * into the thread, and a focus change (the pager, or a click on a block)
- * swaps the form. Save writes the focused draft; with several, "Add all"
- * writes the rest as they are and the focused one through the form. The
- * e2e suite relies on the title text ("New event", "Edit reminder", …),
- * the Delete/Cancel/Save labels, the mode test ids and the `draft-*`
- * test ids.
+ * Assistant is a conversation (`AssistantView`): a phrase, typed or
+ * dictated, makes the draft(s) or changes them, each answer is the item
+ * as a card with what changed marked, and what the assistant has to ask
+ * (a place, a contact, a free slot) sits under the newest card. With
+ * several drafts (a paste) the pager, Remove and "Add all" sit under the
+ * header in either view (`DraftPager`). Form is
+ * the fields, and needs no model: the Event | Task | Reminder control
+ * (only the kinds something can hold), then the form — in create mode
+ * the control picks the kind; on an existing item it converts (Save
+ * writes the other kind and deletes the source) or moves a to-do to the
+ * other provider. Both stay mounted, so a flip keeps state and the form
+ * always holds the draft. A new item opened by "+ New", ⌘N or ⌘K starts
+ * on the Assistant — unless the model turns out not to be ready before
+ * anything was said, when it falls back to the Form once; one opened
+ * from a slot picked on the grid, and a saved item, start on the Form.
+ * A read-only item, a birthday and an editor opened to convert have no
+ * Assistant and no tabs.
+ *
+ * Both views are one thread (`useThreadEditor`, shared with the iOS edit
+ * sheet): a phrase, an edit made by hand and a picked choice are its
+ * steps, and the calendar draws every draft hatched, the focused one
+ * outlined and scrolled to (the draft atoms). The footer steps back and
+ * forward through them; an older step on show is looked at, not edited —
+ * the form is locked, Save is off — until "Use this" keeps it (and lets
+ * the later steps go) or the newest is shown again. The fields the step
+ * on show changed stay marked in the form. Save writes the focused
+ * draft; with several, "Add all" writes the rest as they are and the
+ * focused one through the form. The e2e suite relies on the title text
+ * ("New event", "Edit reminder", …), the Delete/Cancel/Save labels, the
+ * mode and view test ids and the `draft-*`, `assistant-*`, `step-*` and
+ * `quick-add-*` test ids.
  */
 export function EditorPanel({
   calendars,
@@ -79,6 +90,7 @@ export function EditorPanel({
   onCapture,
   onClose,
   onSaved,
+  opensOn = 'form',
   quickAddFocus = 0,
   seed,
   task,
@@ -89,12 +101,14 @@ export function EditorPanel({
   calendars: ReadonlyArray<CalendarInfo>;
   /** The kind to open on: a to-do for a "+" that wants one, or Convert from the inspector. */
   initialKind?: ItemKind | undefined;
-  /** A paste into the quick-add field that is an email or an image goes to capture. */
+  /** A paste into the assistant's field that is an email or an image goes to capture. */
   onCapture: (source: CaptureSource) => void;
   onClose: () => void;
   /** Save went through, as an event or a task. */
   onSaved?: (() => void) | undefined;
-  /** ⌘K: bumped to focus the quick-add field of an open new-item editor. */
+  /** The view to start on, where there are two: the Assistant for "+ New", ⌘N, ⌘K and a capture. */
+  opensOn?: EditorView | undefined;
+  /** ⌘K: bumped to bring the Assistant forward and focus its field. */
   quickAddFocus?: number | undefined;
   seed: EditorSeed;
   /** Present when the editor was opened from a task chip (task edit mode). */
@@ -146,23 +160,41 @@ export function EditorPanel({
     taskSeed,
     timeZone,
   });
-  const {
-    applying,
-    drafts,
-    eventModel,
-    flash,
-    kinds,
-    onPhrase,
-    settled,
-    taskModel,
-    thread,
-    turns,
-    userEdits,
-  } = editor;
+  const { eventModel, kinds, marks, onPhrase, previewing, steps, taskModel, userEdits } = editor;
   const { joinUrl } = eventModel;
   const { apply, available, convertBlocked, kind, mode, switchTo } = kinds;
-  // A turn that made the item the other kind: the control tints and fades back.
-  const kindFlash = useFlash<HTMLDivElement>(flash?.fields.has('kind') ? flash.key : null);
+  // A step that made the item the other kind: the control stays marked.
+  const kindMark = useFlash<HTMLDivElement>(marks?.fields.has('kind') ? marks.key : null, true);
+
+  // The two views. Without an Assistant (a read-only item, a conversion)
+  // there is the form alone, and no tabs.
+  const assists = editor.assistant !== 'none';
+  const [view, setView] = useState<EditorView>(assists ? opensOn : 'form');
+  const shown: EditorView = assists ? view : 'form';
+  // The model answers a moment after the editor opened. Not ready, and
+  // nothing said or typed yet: the form is what there is to work with,
+  // once — the Assistant says why and is a tab away.
+  const availability = useModelAvailability(desktopLanguageModel, onWindowFocus);
+  const answered = useRef(false);
+  useEffect(() => {
+    if (availability.status === null || answered.current) {
+      return;
+    }
+    answered.current = true;
+    if (availability.status !== 'ready' && steps.of === 0) {
+      setView('form');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the first answer only
+  }, [availability.status]);
+  // ⌘K is for the Assistant's field: a press since this editor opened
+  // brings the view forward (the count is the window's, and outlives an
+  // editor).
+  const focusAtOpen = useRef(quickAddFocus);
+  useEffect(() => {
+    if (quickAddFocus !== focusAtOpen.current) {
+      setView('assistant');
+    }
+  }, [quickAddFocus]);
 
   const showToggle =
     available.length > 1 &&
@@ -176,11 +208,24 @@ export function EditorPanel({
       aria-label={mode === 'todo' ? 'Task editor' : 'Event editor'}
       className="flex min-h-0 flex-1 flex-col"
       data-testid="editor"
+      data-view={shown}
     >
       <div className="flex items-center gap-2 px-4 pt-3 pb-2">
         <h2 className="min-w-0 flex-1 truncate text-lg font-semibold" data-testid="editor-title">
           {title}
         </h2>
+        {assists ? (
+          <SegmentedControl
+            label="View"
+            onChange={setView}
+            options={[
+              { label: 'Assistant', testId: 'editor-view-assistant', value: 'assistant' },
+              { label: 'Form', testId: 'editor-view-form', value: 'form' },
+            ]}
+            size="sm"
+            value={shown}
+          />
+        ) : null}
         {joinUrl ? (
           <Button onClick={() => window.open(joinUrl, '_blank', 'noopener')} size="sm">
             <VideoIcon size={14} />
@@ -192,20 +237,32 @@ export function EditorPanel({
         </IconButton>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pt-1 pb-4">
-        {lesson ? <LessonBanner id={lesson} onSkip={lessonOpen ? onClose : undefined} /> : null}
-        {sourceKind === 'new' ? (
-          <QuickAddBar
+      <DraftPager confirming={moveConfirmation.pending !== null} editor={editor} />
+
+      {assists ? (
+        <div
+          className={shown === 'assistant' ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}
+          data-testid="editor-assistant"
+        >
+          <AssistantView
+            active={shown === 'assistant'}
+            availability={availability}
+            banner={
+              lesson ? <LessonBanner id={lesson} onSkip={lessonOpen ? onClose : undefined} /> : null
+            }
+            calendars={calendars}
             editKey={userEdits}
+            editor={editor}
             fallbackDate={seed.initialDate.toString()}
             focusSignal={quickAddFocus}
-            hold={applying}
             initialText={seed.quickAddText}
+            note={seed.thread?.note}
             onApply={(item) => {
               lessonDone();
               void apply(item);
             }}
             onCapture={onCapture}
+            onEdit={() => setView('form')}
             onPhrase={async (text) => {
               const message = await onPhrase(text);
               if (message === undefined) {
@@ -213,61 +270,64 @@ export function EditorPanel({
               }
               return message;
             }}
-            placeholder={drafts.length > 0 ? CHANGE_PLACEHOLDER : undefined}
+            taskLists={taskLists}
             timeZone={timeZone}
-          >
-            {/* The turns hang under the field, as part of it. */}
-            {turns.length > 0 ? (
-              <ThreadTurns
-                onUndo={thread.undo}
-                turns={turns}
-                undoDisabled={thread.busy || !settled}
-              />
-            ) : null}
-          </QuickAddBar>
-        ) : null}
-
-        <DraftThread
-          confirming={moveConfirmation.pending !== null}
-          editor={editor}
-          note={seed.thread?.note}
-        />
-
-        {showToggle ? (
-          <SegmentedControl
-            className="mb-4 w-full"
-            grow
-            label="Kind"
-            onChange={(option) => void switchTo(option)}
-            options={available.map((option) => ({
-              disabled: moveConfirmation.pending !== null || (option !== 'event' && convertBlocked),
-              label: KIND_LABELS[option],
-              testId: `mode-${option}`,
-              title: option !== 'event' && convertBlocked ? CONVERT_SCOPE_HINT : undefined,
-              value: option,
-            }))}
-            ref={kindFlash}
-            size="sm"
-            value={kind}
           />
-        ) : null}
+        </div>
+      ) : null}
 
-        {/* The fields the last turn changed flash (`useFieldFlash`). */}
-        <FieldFlashContext value={flash}>
-          {mode === 'todo' ? (
-            // The selected list's provider picks the form: a Reminders list
-            // exposes time/priority/alert/repeat/URL; a Google list gets the
-            // plain title/date/notes form. The kind control moves between the
-            // providers; the list picker stays within one.
-            taskModel.provider === 'apple' ? (
-              <ReminderEditorForm task={task} taskModel={taskModel} />
+      <div
+        className={
+          shown === 'form'
+            ? 'flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pt-1 pb-4'
+            : 'hidden'
+        }
+        data-testid="editor-form"
+      >
+        {lesson && !assists ? (
+          <LessonBanner id={lesson} onSkip={lessonOpen ? onClose : undefined} />
+        ) : null}
+        {/* An older step on show is looked at, not edited. */}
+        <fieldset className="contents" disabled={previewing}>
+          {showToggle ? (
+            <SegmentedControl
+              className="mb-4 w-full"
+              grow
+              label="Kind"
+              onChange={(option) => void switchTo(option)}
+              options={available.map((option) => ({
+                disabled:
+                  previewing ||
+                  moveConfirmation.pending !== null ||
+                  (option !== 'event' && convertBlocked),
+                label: KIND_LABELS[option],
+                testId: `mode-${option}`,
+                title: option !== 'event' && convertBlocked ? CONVERT_SCOPE_HINT : undefined,
+                value: option,
+              }))}
+              ref={kindMark}
+              size="sm"
+              value={kind}
+            />
+          ) : null}
+
+          {/* The fields the step on show changed stay marked (`useFieldFlash`). */}
+          <FieldFlashContext value={marks}>
+            {mode === 'todo' ? (
+              // The selected list's provider picks the form: a Reminders list
+              // exposes time/priority/alert/repeat/URL; a Google list gets the
+              // plain title/date/notes form. The kind control moves between the
+              // providers; the list picker stays within one.
+              taskModel.provider === 'apple' ? (
+                <ReminderEditorForm task={task} taskModel={taskModel} />
+              ) : (
+                <TaskEditorForm task={task} taskModel={taskModel} />
+              )
             ) : (
-              <TaskEditorForm task={task} taskModel={taskModel} />
-            )
-          ) : (
-            <EventEditorForm model={eventModel} />
-          )}
-        </FieldFlashContext>
+              <EventEditorForm model={eventModel} />
+            )}
+          </FieldFlashContext>
+        </fieldset>
       </div>
 
       <EditorFooter
@@ -281,188 +341,80 @@ export function EditorPanel({
 }
 
 /**
- * The draft thread's box under the quick-add field, left out while it
- * would be empty; under the rest, why "Add all" stopped.
+ * The way through the thread's steps, at the footer's start: one back,
+ * where it stands, one forward. Not there before the first step.
  */
-function DraftThread({
-  confirming,
-  editor,
-  note,
-}: {
-  /** A question above the footer waits for its answer: "Add all" waits too. */
-  confirming: boolean;
-  editor: ReturnType<typeof useThreadEditor>;
-  /** A caveat about the drafts (the shared text was cut short). */
-  note: string | undefined;
-}) {
-  const {
-    batchError,
-    dismissInvitee,
-    dismissPlace,
-    drafts,
-    eventModel,
-    focusedDraft,
-    inviteeChoices,
-    keepPlace,
-    liveItem,
-    moveToSlot,
-    pickInvitee,
-    pickPlaceChoice,
-    placeChoice,
-    placeGeo,
-    settled,
-  } = editor;
-  // What the thread shows under the field's card: a caveat, the free slots,
-  // the names to pick a contact for, the pager.
-  const threadNote = note && drafts.length > 0 ? note : undefined;
-  const threadSlots =
-    focusedDraft?.slots && focusedDraft.slots.length > 1 && liveItem.kind === 'event'
-      ? focusedDraft.slots
-      : undefined;
-  if (
-    !(
-      threadNote ||
-      threadSlots ||
-      inviteeChoices.length > 0 ||
-      placeChoice ||
-      drafts.length > 1 ||
-      batchError
-    )
-  ) {
+function StepControl({ steps }: { steps: ReturnType<typeof useThreadEditor>['steps'] }) {
+  if (steps.of === 0) {
     return null;
   }
   return (
-    <div className="mb-3 flex flex-col gap-2" data-testid="draft-thread">
-      {threadNote ? (
-        <p className="text-xs text-ink-secondary" data-testid="draft-thread-note">
-          {threadNote}
-        </p>
-      ) : null}
-      {threadSlots ? (
-        // The free slots a finder phrase found: the draft sits in the
-        // pressed one; another moves it there, like its block on the grid.
-        <div className="flex flex-col gap-1" data-testid="draft-slots">
-          <span className="text-xs text-ink-secondary">Free slots</span>
-          <div className="flex flex-wrap gap-1.5">
-            {threadSlots.map((slot, index) => {
-              const chosen = isAtSlot(liveItem, slot);
-              return (
-                <Button
-                  aria-pressed={chosen}
-                  className={chosen ? 'ring-2 ring-focus' : ''}
-                  data-testid={`draft-slot-${String(index)}`}
-                  disabled={!settled}
-                  key={`${slot.date}T${slot.startTime}`}
-                  onClick={() => moveToSlot(slot)}
-                  size="sm"
-                >
-                  {formatSlotLabel(slot)}
-                </Button>
-              );
-            })}
-          </div>
-        </div>
-      ) : null}
-      {placeChoice ? (
-        <PlaceChoices
-          choice={placeChoice}
-          disabled={!settled}
-          geo={placeGeo}
-          location={eventModel.location}
-          onDismiss={dismissPlace}
-          onKeep={keepPlace}
-          onPick={pickPlaceChoice}
-        />
-      ) : null}
-      {inviteeChoices.length > 0 ? (
-        <InviteeChoices
-          choices={inviteeChoices}
-          disabled={!settled}
-          onDismiss={dismissInvitee}
-          onPick={pickInvitee}
-        />
-      ) : null}
-      {drafts.length > 1 ? <DraftPager confirming={confirming} editor={editor} /> : null}
-      {batchError ? (
-        <p
-          className="select-text rounded-control bg-fill p-2 text-sm text-danger"
-          data-testid="draft-batch-error"
-        >
-          {batchError}
-        </p>
-      ) : null}
+    <div className="flex items-center" data-testid="step-control">
+      <IconButton
+        data-testid="step-back"
+        disabled={steps.locked || steps.at === 0}
+        label="Step back"
+        onClick={steps.back}
+        size="sm"
+      >
+        <UndoIcon size={14} />
+      </IconButton>
+      <span
+        className="min-w-11 text-center text-xs text-ink-secondary tabular-nums"
+        data-testid="step-position"
+      >
+        {steps.at === 0 ? 'Start' : `${String(steps.at)} of ${String(steps.of)}`}
+      </span>
+      <IconButton
+        data-testid="step-forward"
+        disabled={steps.locked || steps.at === steps.of}
+        label="Step forward"
+        onClick={steps.forward}
+        size="sm"
+      >
+        <RedoIcon size={14} />
+      </IconButton>
     </div>
   );
 }
 
 /**
- * The pager over several drafts: the previous and next draft around the
- * focused one's place among them, then Remove and "Add all".
+ * An older step on show: which one it is, in a line, and "Use this" —
+ * which keeps it and lets the steps after it go. Stepping forward leaves
+ * it instead.
  */
-function DraftPager({
-  confirming,
-  editor,
-}: {
-  /** A question above the footer waits for its answer: "Add all" waits too. */
-  confirming: boolean;
-  editor: ReturnType<typeof useThreadEditor>;
-}) {
-  const { addAll, canAddAll, drafts, focused, settled, switchFocus, thread, write } = editor;
+function StepPreview({ editor }: { editor: ReturnType<typeof useThreadEditor> }) {
+  const { assistant, steps } = editor;
+  const shown = steps.line[steps.at - 1];
   return (
-    <div className="flex items-center justify-between" data-testid="draft-pager">
-      <div className="flex items-center gap-1">
-        <IconButton
-          data-testid="draft-prev"
-          disabled={focused === 0 || !settled}
-          label="Previous draft"
-          onClick={() => switchFocus(focused - 1)}
-          size="sm"
-        >
-          <ChevronLeftIcon size={14} />
-        </IconButton>
-        <span className="text-xs text-ink-secondary" data-testid="draft-position">
-          {focused + 1} of {drafts.length}
-        </span>
-        <IconButton
-          data-testid="draft-next"
-          disabled={focused >= drafts.length - 1 || !settled}
-          label="Next draft"
-          onClick={() => switchFocus(focused + 1)}
-          size="sm"
-        >
-          <ChevronRightIcon size={14} />
-        </IconButton>
+    <div className="flex shrink-0 items-center gap-2 px-4 pt-2" data-testid="step-preview">
+      <div className="min-w-0 flex-1 rounded-control bg-fill px-3 py-1.5">
+        <p className="text-[11px] font-semibold tracking-wide text-ink-secondary uppercase">
+          {shown
+            ? `Step ${String(steps.at)} of ${String(steps.of)} · ${stepSource(shown)}`
+            : 'The start'}
+        </p>
+        <p className="truncate text-sm" data-testid="step-name">
+          {shown ? stepName(shown) : assistant === 'saved' ? 'As saved' : 'Nothing yet'}
+        </p>
       </div>
-      <div className="flex items-center gap-1">
-        <Button
-          data-testid="draft-remove"
-          disabled={!settled}
-          onClick={() => thread.remove(focused)}
-          size="sm"
-          variant="ghost"
-        >
-          Remove
-        </Button>
-        {canAddAll ? (
-          <Button
-            aria-busy={write.busy}
-            data-testid="draft-add-all"
-            disabled={confirming || !settled}
-            onClick={() => void addAll()}
-            size="sm"
-            variant="primary"
-          >
-            Add all {drafts.length}
-          </Button>
-        ) : null}
-      </div>
+      <Button
+        data-testid="step-use"
+        disabled={steps.locked}
+        onClick={steps.use}
+        size="sm"
+        variant="primary"
+      >
+        Use this
+      </Button>
     </div>
   );
 }
 
 /**
- * What stays put under the body: the question a lossy switch, move,
- * conversion or delete waits on, then Delete, Cancel and Save.
+ * What stays put under the views: an older step on show with "Use this",
+ * the question a lossy switch, move, conversion or delete waits on, then
+ * the steps, Delete, Cancel and Save.
  */
 function EditorFooter({
   editor,
@@ -475,7 +427,7 @@ function EditorFooter({
   onClose: () => void;
   task: TaskRecord | undefined;
 }) {
-  const { eventModel, kinds, taskModel, write } = editor;
+  const { eventModel, kinds, previewing, steps, taskModel, write } = editor;
   // The footer's actions act on the form that is showing.
   const current =
     kinds.mode === 'todo'
@@ -495,6 +447,7 @@ function EditorFooter({
         };
   return (
     <>
+      {previewing ? <StepPreview editor={editor} /> : null}
       {moveConfirmation.pending ? (
         <div className="shrink-0 px-4 pt-2">
           <MoveConfirm moveConfirmation={moveConfirmation} />
@@ -511,6 +464,7 @@ function EditorFooter({
             Delete
           </Button>
         ) : null}
+        <StepControl steps={steps} />
         <div className="flex-1" />
         <Button onClick={onClose} size="sm" variant="ghost">
           Cancel
@@ -518,7 +472,8 @@ function EditorFooter({
         {current.readOnly ? null : (
           <Button
             aria-busy={current.busy}
-            disabled={moveConfirmation.pending !== null || write.busy}
+            // An older step on show is kept or left before anything is written.
+            disabled={moveConfirmation.pending !== null || write.busy || previewing}
             onClick={() => void current.save()}
             size="sm"
             variant="primary"

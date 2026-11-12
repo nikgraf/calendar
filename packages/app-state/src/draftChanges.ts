@@ -404,3 +404,87 @@ export const draftChanges = (
 /** The fields among the changes: what the form marks. */
 export const changedFields = (changes: ReadonlyArray<FieldChange>): ReadonlySet<StepField> =>
   new Set(changes.map((change) => change.field));
+
+/** One line of a draft's card: a field as it reads, and what a step did to it. */
+export interface CardLine {
+  /** The guests the step invited, among `names`: the ones to mark. */
+  readonly added?: ReadonlyArray<string> | undefined;
+  /** The step the card is of changed this field. */
+  readonly changed: boolean;
+  readonly field: StepField;
+  /** The guests one by one, for a line that lists them. */
+  readonly names?: ReadonlyArray<string> | undefined;
+  readonly text: string;
+  /** What the field read before the step, where it read something. */
+  readonly was?: string | undefined;
+}
+
+const sentence = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);
+
+/**
+ * A draft as its card lists it, below the title: the day and the hours,
+ * then what it holds beyond them — a place, guests, a repeat, notes,
+ * notifications that are not the calendar's default, a reminder's own
+ * fields — each only when there is something to say, or when the step the
+ * card is of (`changes`) took it away, which is said too ("No place").
+ */
+export const cardLines = (
+  draft: Draft,
+  changes: ReadonlyArray<FieldChange> = [],
+): ReadonlyArray<CardLine> => {
+  const { extras, item } = draft;
+  const line = (
+    field: StepField,
+    text: string,
+    held: boolean,
+    names?: ReadonlyArray<string>,
+  ): ReadonlyArray<CardLine> => {
+    const change = changes.find((each) => each.field === field);
+    return held || change !== undefined
+      ? [
+          {
+            ...(change?.added && change.added.length > 0 ? { added: change.added } : {}),
+            changed: change !== undefined,
+            field,
+            ...(names ? { names } : {}),
+            text,
+            ...(change?.from === undefined ? {} : { was: change.from }),
+          },
+        ]
+      : [];
+  };
+  const place = placeOf(item);
+  const guests = guestsOf(draft).map(guestLabel);
+  const repeat = repeatText(draft);
+  const notes = notesOf(draft);
+  const isAllDay = item.kind === 'event' && item.prefill.isAllDay;
+  const reminders = item.kind === 'event' ? extras?.reminders : undefined;
+  const reminder = item.kind === 'task' ? extras?.reminder : undefined;
+  return [
+    ...line('date', dayText(draft), true),
+    ...line(
+      'time',
+      sentence(timesOf(item)),
+      item.kind === 'event' || item.prefill.time !== undefined,
+    ),
+    ...line('location', place ?? 'No place', place !== undefined),
+    ...line(
+      'guests',
+      guests.length > 0 ? guests.join(', ') : 'No guests',
+      guests.length > 0,
+      guests,
+    ),
+    ...line(
+      'repeat',
+      repeat === undefined ? 'Does not repeat' : sentence(repeat),
+      repeat !== undefined,
+    ),
+    ...(item.kind === 'event'
+      ? line('reminders', remindersText(reminders, isAllDay), remindersKey(reminders) !== 'default')
+      : []),
+    ...line('priority', priorityText(reminder?.priority), reminder?.priority !== undefined),
+    ...line('alert', alertText(reminder?.alarms[0]), reminder?.alarms[0] !== undefined),
+    ...line('url', reminder?.url.trim() || 'No link', (reminder?.url.trim() ?? '') !== ''),
+    ...line('notes', notes || 'No notes', notes !== ''),
+  ];
+};

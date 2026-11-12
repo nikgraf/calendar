@@ -1,6 +1,6 @@
 import { EventReminders, ReminderOverride } from '@calendar/core';
 import { describe, expect, it } from 'vite-plus/test';
-import { changedFields, draftChanges } from './draftChanges.ts';
+import { cardLines, changedFields, draftChanges } from './draftChanges.ts';
 import type { Draft, DraftExtras } from './draftThread.ts';
 import type { QuickAddItem } from './quickAddItem.ts';
 import { seedRepeatFields } from './repeatState.ts';
@@ -234,5 +234,79 @@ describe('draftChanges', () => {
       { field: 'date', from: 'Fri, Aug 28', to: '' },
     ]);
     expect(draftChanges(draft(halfTyped), draft(halfTyped))).toEqual([]);
+  });
+});
+
+describe('cardLines', () => {
+  it('lists the day and the hours, and beyond them only what there is', () => {
+    expect(cardLines(draft(lunch))).toEqual([
+      { changed: false, field: 'date', text: 'Fri, Aug 28' },
+      { changed: false, field: 'time', text: '13:00–14:00' },
+    ]);
+    expect(cardLines(draft(call)).map((line) => line.text)).toEqual(['Tue, Aug 25', '09:30']);
+    // A to-do without a time has no line for one.
+    expect(
+      cardLines(draft({ kind: 'task', prefill: { date: '2026-08-25', title: 'Call' } })).map(
+        (line) => line.field,
+      ),
+    ).toEqual(['date']);
+  });
+
+  it('marks what the step changed, with what it read before', () => {
+    const before = draft(lunch, { attendees: [sarah] });
+    const after = draft(
+      { kind: 'event', prefill: { ...earlier.prefill, location: 'Figlmüller' } },
+      { attendees: [sarah, tom], description: 'Bring the menu', reminders: popups(60) },
+    );
+    expect(cardLines(after, draftChanges(before, after))).toEqual([
+      { changed: false, field: 'date', text: 'Fri, Aug 28' },
+      { changed: true, field: 'time', text: '12:30–13:30', was: '13:00–14:00' },
+      { changed: true, field: 'location', text: 'Figlmüller' },
+      {
+        added: ['Tom Brandt'],
+        changed: true,
+        field: 'guests',
+        names: ['Sarah Keller', 'Tom Brandt'],
+        text: 'Sarah Keller, Tom Brandt',
+        was: 'Sarah Keller',
+      },
+      { changed: true, field: 'reminders', text: '1 hour before', was: 'Calendar default' },
+      { changed: true, field: 'notes', text: 'Bring the menu' },
+    ]);
+  });
+
+  it('says what a step took away, which an unchanged card leaves out', () => {
+    const placed = draft(
+      { kind: 'event', prefill: { ...lunch.prefill, location: 'Figlmüller' } },
+      { attendees: [sarah] },
+    );
+    const bare = draft(lunch, { attendees: [] });
+    expect(
+      cardLines(bare, draftChanges(placed, bare))
+        .filter((line) => line.changed)
+        .map((line) => [line.field, line.text, line.was]),
+    ).toEqual([
+      ['location', 'No place', 'Figlmüller'],
+      ['guests', 'No guests', 'Sarah Keller'],
+    ]);
+    expect(cardLines(bare).map((line) => line.field)).toEqual(['date', 'time']);
+  });
+
+  it('lists a reminder’s own fields once it has them', () => {
+    const fields = {
+      alarms: [15],
+      priority: 'high' as const,
+      repeat: seedRepeatFields({ freq: 'weekly' }),
+      url: '',
+    };
+    expect(
+      cardLines(draft(call, { reminder: fields })).map((line) => [line.field, line.text]),
+    ).toEqual([
+      ['date', 'Tue, Aug 25'],
+      ['time', '09:30'],
+      ['repeat', 'Repeats weekly'],
+      ['priority', 'High'],
+      ['alert', '15 minutes before'],
+    ]);
   });
 });
