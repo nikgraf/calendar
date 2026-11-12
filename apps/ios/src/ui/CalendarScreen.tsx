@@ -1,5 +1,4 @@
 import {
-  draftOccurrences,
   useGuardedMutations,
   useBackendInvalidations,
   useCalendarNavigation,
@@ -9,7 +8,6 @@ import {
   useListColorLookup,
   useOnDraftReveal,
   useOverdueTasksStable,
-  useRequestDraftFocus,
   useSetupNeeded,
   useBirthdaysInRangeStable,
   useEventReadOnlyLookup,
@@ -199,24 +197,16 @@ function CalendarBody({
 
   const colorOf = useMemo(() => makeColorLookup(calendars), [calendars]);
 
-  // The open editor's drafts, drawn dashed in the timeline, the lane and
-  // the month grid (the free slots beside the focused one fainter); the
-  // editor asks for its focused draft's day, and a tap on a draft
-  // focuses it there (the draft atoms, shared with the desktop).
+  // The editor's sheet covers the calendar, so its drafts are not drawn
+  // here (the desktop's grid draws them). The calendar still follows the
+  // editor — to its focused draft's day (the draft atoms, shared with the
+  // desktop) and, below, to its hour — so what was saved is in view once
+  // the sheet has gone.
   const draftPreviews = useDraftPreviews();
-  const drafts = useMemo(
-    () =>
-      // Where a draft was before a step is the desktop's to outline: the sheet covers this calendar.
-      draftOccurrences(draftPreviews, range.startUtc, range.endUtc, timeZone).filter(
-        (draft) => draft.kind !== 'was',
-      ),
-    [draftPreviews, range.startUtc, range.endUtc, timeZone],
-  );
-  const requestDraftFocus = useRequestDraftFocus();
   useOnDraftReveal(goToDay);
   // The focused timed draft's start, for the grid to scroll to — read off
-  // the draft itself, not an occurrence in the loaded range: a repeating
-  // draft's first loaded occurrence moves as the calendar pages.
+  // the draft itself: a repeating draft's first occurrence in the loaded
+  // range moves as the calendar pages.
   const focusedDraft = draftPreviews.find(
     (draft) => draft.focused && !draft.isAllDay && draft.kind === 'draft',
   );
@@ -342,7 +332,6 @@ function CalendarBody({
         <MonthGrid
           birthdays={birthdays}
           colorOf={colorOf}
-          drafts={drafts}
           events={events}
           listColorOf={listColorOf}
           onSelectDay={(date) => {
@@ -392,7 +381,6 @@ function CalendarBody({
             buffer={buffer}
             colorOf={colorOf}
             days={days}
-            drafts={drafts}
             events={events}
             isEventReadOnly={isEventReadOnly}
             isTaskReadOnly={isTaskReadOnly}
@@ -401,7 +389,6 @@ function CalendarBody({
             onCreateSlot={(date, times) =>
               host.editEvent({ initialDate: date, initialTimes: times })
             }
-            onDraftPress={requestDraftFocus}
             onEventPress={host.openEvent}
             onFoldPress={host.openTaskFold}
             onNavigate={panByDays}

@@ -3,8 +3,6 @@ import {
   type BackendClient,
   type CalendarInfo,
   type Contact,
-  emailKey,
-  type EventReminders,
   type FreeSlot,
   type PlaceCandidate,
   type ItemKind,
@@ -22,12 +20,11 @@ import {
   previewOfPrefill,
   wasPreview,
 } from './draftPreview.ts';
-import { changedDraftFields, type DraftField } from './draftChanges.ts';
+import type { DraftField } from './draftChanges.ts';
 import {
   type Draft,
   type DraftExtras,
   type HandStep,
-  phraseSteps,
   threadLine,
   updateDraft,
   useDraftThread,
@@ -49,7 +46,6 @@ import type { QuickAddItem } from './quickAddItem.ts';
 import { type TaskEditorSeed, useTaskEditorModel } from './taskEditorModel.ts';
 import { type TurnLimits, turnRefusal } from './threadRefusal.ts';
 import { movedFrom, shownMarks } from './threadSteps.ts';
-import { useFleetingFlash } from './threadTurns.ts';
 
 export type { DraftFocusRequest } from './draftAtoms.ts';
 
@@ -61,31 +57,12 @@ export interface ThreadSeed {
   readonly utterance: string;
 }
 
-/** A part of the form a turn can change and flash: a draft's own fields, its guests, notes and notifications. */
-export type FlashField = DraftField | 'guests' | 'notes' | 'reminders';
-
 /**
- * The fields a turn just changed in the form, for it to flash once: `key`
- * is the turn's id, so the same turn never flashes twice and the next one
- * always does.
+ * A part of the form a step can change, which the form then marks (the
+ * editor's `marks`): a draft's own fields, its guests, notes and
+ * notifications.
  */
-export interface DraftFlash {
-  readonly fields: ReadonlySet<FlashField>;
-  readonly key: string;
-}
-
-/** A guest list by its addresses, in order: what a turn changed or not. */
-const guestKeys = (attendees: ReadonlyArray<{ readonly email: string }>): string =>
-  attendees.map((attendee) => emailKey(attendee.email)).join('\n');
-
-/** The notifications by their offsets, the calendar default apart: what a turn changed or not. */
-const reminderKeys = (reminders: EventReminders | undefined): string =>
-  reminders === undefined
-    ? ''
-    : [
-        reminders.useDefault ? 'default' : '',
-        ...reminders.overrides.map((override) => `${override.method}:${String(override.minutes)}`),
-      ].join('\n');
+export type FlashField = DraftField | 'guests' | 'notes' | 'reminders';
 
 /**
  * Existing event (edit mode), a prefilled slot (create mode), or a thread
@@ -479,43 +456,16 @@ export const useThreadEditor = ({
   const undated = useRef<{ readonly date: string } | null>(null);
 
   /**
-   * The draft the form shows, changed by a turn or an Undo, or the first
-   * one: the form takes its item through the kind control's `apply` (a
-   * phrase read as the other kind switches, with the switch's question),
-   * the fields that changed flash, and what the form holds beyond the
-   * item follows the draft — for an Undo, as the turn found it.
+   * The draft the form shows, changed by a phrase, or the first one: the
+   * form takes its item through the kind control's `apply` (a phrase read
+   * as the other kind switches, with the switch's question), and what the
+   * form holds beyond the item follows the draft. What the step changed
+   * is marked from the thread itself (`shownMarks`), not from here.
    */
-  const applyDraft = (
-    draft: Draft,
-    landed: { readonly id: string } | undefined,
-    done: () => void,
-  ) => {
+  const applyDraft = (draft: Draft, done: () => void) => {
     const { extras, item } = draft;
-    const before = currentItem();
-    // The guests, notes and notifications the form shows now, before the draft's take over.
-    const guestsChanged =
-      item.kind === 'event' &&
-      guestKeys(eventModel.attendees) !== guestKeys(extras?.attendees ?? []);
-    const notesChanged =
-      item.kind === 'event'
-        ? eventModel.description !== (extras?.description ?? '')
-        : taskModel.notes !== (extras?.taskNotes ?? '');
-    const remindersChanged =
-      item.kind === 'event' &&
-      reminderKeys(eventModel.extras().reminders) !== reminderKeys(extras?.reminders);
     void apply(item)
-      .then((after) => {
-        if (landed) {
-          setFlash({
-            fields: new Set<FlashField>([
-              ...changedDraftFields(before, after),
-              ...(guestsChanged ? (['guests'] as const) : []),
-              ...(notesChanged ? (['notes'] as const) : []),
-              ...(remindersChanged ? (['reminders'] as const) : []),
-            ]),
-            key: landed.id,
-          });
-        }
+      .then(() => {
         if (item.kind === 'task') {
           // A to-do's own: its list and Reminders-only fields where the form
           // had held it as one, its notes, and a day the form had let go of —
@@ -570,17 +520,11 @@ export const useThreadEditor = ({
   // replaces what the form held before the phrase — is applied, which may
   // switch the kind and ask about a loss. The thread emptied (the first
   // turn undone): the form goes back to the blank it opened as, so
-  // nothing undone can still be saved. A turn that landed (the list grew
-  // — an Undo shrinks it, a focus or a removal leaves it) flashes the
-  // fields it changed in the form as it stood.
+  // nothing undone can still be saved.
   const applied = useRef(0);
   const wasPreviewing = useRef(false);
   // The draft the form shows, by id; none before the first and after the last.
   const shown = useRef<string | undefined>(undefined);
-  // A thread the editor opens with (a capture) fills a form that is only
-  // appearing: its first turn counts as seen, nothing flashes.
-  const turnsSeen = useRef(seed.thread ? 1 : 0);
-  const [flash, setFlash] = useState<DraftFlash | null>(null);
   // The form is still taking the thread in while a version is unseen here
   // or an apply is open — a kind switch's question holds one open for as
   // long as it is asked. Counted, not compared: a new thread restarts the
@@ -595,15 +539,9 @@ export const useThreadEditor = ({
     setSeenVersion(version);
     // A step put on show (`stepTo`: an older one, or forward again out of
     // a preview) is taken over exactly as it was — its kind, what the form
-    // held for it — like another draft: nothing is carried over, asked or
-    // flashed.
+    // held for it — like another draft: nothing is carried over or asked.
     const restored = previewing || wasPreviewing.current;
     wasPreviewing.current = previewing;
-    // A phrase landed when there is one more of them: a step made by hand
-    // grows the list without the form having anything to take over.
-    const phrases = phraseSteps(thread.state);
-    const landed = phrases.length > turnsSeen.current ? phrases.at(-1) : undefined;
-    turnsSeen.current = phrases.length;
     if (focusedDraft) {
       const another = shown.current !== undefined && shown.current !== focusedDraft.id;
       shown.current = focusedDraft.id;
@@ -611,7 +549,7 @@ export const useThreadEditor = ({
         showDraft(focusedDraft);
       } else {
         setOpenApplies((open) => open + 1);
-        applyDraft(focusedDraft, landed, () => setOpenApplies((open) => open - 1));
+        applyDraft(focusedDraft, () => setOpenApplies((open) => open - 1));
       }
       // A day the form cleared is stored as '' until repaired: nothing to show.
       try {
@@ -953,8 +891,6 @@ export const useThreadEditor = ({
       }
     });
 
-  const playing = useFleetingFlash(flash);
-
   return {
     addAll,
     /** The form is still taking the thread's last change in: the next phrase waits. */
@@ -974,8 +910,6 @@ export const useThreadEditor = ({
     drafts,
     /** For the forms: the setters a person moves count as `userEdits`. */
     eventModel: reportingEdits(eventModel, EVENT_EDITS, edited),
-    /** The fields the last turn changed, for the form to flash — while the flash plays. */
-    flash: playing,
     focused,
     focusedDraft,
     /** Names the focused event's turns invited that need a contact picked. */
@@ -1007,7 +941,6 @@ export const useThreadEditor = ({
     switchFocus,
     taskModel: reportingEdits(taskModel, TASK_EDITS, edited),
     thread,
-    turns: phraseSteps(thread.state),
     /** Moves at each edit made by hand in the form (the phrase field's `editKey`: dictation ends). */
     userEdits,
     write,

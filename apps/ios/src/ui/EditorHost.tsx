@@ -78,12 +78,6 @@ export interface EditorHost {
   readonly editEvent: (seed: EditSeed, options?: { readonly initialKind?: ItemKind }) => void;
   /** The task editor for an existing task. */
   readonly editTask: (task: TaskRecord) => void;
-  /**
-   * The Create lesson's editor, while it is up: its opening's number
-   * (each opening its own). The Getting started card shows folded for it,
-   * so the draft is in view between the card and the half-height sheet.
-   */
-  readonly lessonEditor: number | undefined;
   /** The editor's route went away (Cancel, Save, or a swipe down). */
   readonly onEditorDismissed: () => void;
   /** The editor's route mounted. */
@@ -460,7 +454,6 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
         seed,
       }),
     editTask,
-    lessonEditor: routeSheet?.seed.lesson === undefined ? undefined : routeSheet.opening,
     onEditorDismissed,
     onEditorShown,
     openBirthday: (birthday) => setSheet({ birthday, kind: 'birthday' }),
