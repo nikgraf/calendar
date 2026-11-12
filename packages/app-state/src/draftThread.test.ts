@@ -9,6 +9,7 @@ import {
   foldForm,
   isAtSlot,
   itemAtSlot,
+  keepShown,
   landPlacement,
   landRefinement,
   mergeRefinement,
@@ -19,6 +20,8 @@ import {
   removeDrafts,
   slotItem,
   startThread,
+  stepTo,
+  threadLine,
   turnsOf,
   undoTurn,
   updateDraft,
@@ -508,6 +511,101 @@ describe('focus, update and remove', () => {
     expect(saved.history).toEqual([{ drafts: [], focused: 0 }]);
     // The other draft's step stays when it is the other one that is written.
     expect(removeDraft(edited, 1).steps).toHaveLength(2);
+  });
+
+  it('shows an older step without letting the later ones go, and goes forward to them again', () => {
+    const id = ids();
+    const started = startThread([dinner], 'x', { id });
+    const refined = refineThread(started, 'at 8', [{ id: 'd1', item: later }], id);
+    const retitled = foldForm(
+      refined,
+      { item: { kind: 'event', prefill: { ...later.prefill, title: 'Late dinner' } } },
+      { kind: 'edit' },
+      id,
+    );
+    expect(
+      threadLine(retitled).map((line) => [line.position, line.step.kind, line.dimmed]),
+    ).toEqual([
+      [1, 'phrase', false],
+      [2, 'phrase', false],
+      [3, 'edit', false],
+    ]);
+
+    const first = stepTo(retitled, 1);
+    expect(first.drafts[0]?.item).toEqual(dinner);
+    expect(first.steps).toHaveLength(1);
+    expect(first.ahead.map((gone) => gone.step.kind)).toEqual(['phrase', 'edit']);
+    // The form must take the drafts over.
+    expect(first.version).toBe(retitled.version + 1);
+    // Every step is still listed, the ones stepped back over dimmed, each between its own drafts.
+    const line = threadLine(first);
+    expect(line.map((each) => each.dimmed)).toEqual([false, true, true]);
+    expect(line[1]?.before.drafts[0]?.item).toEqual(dinner);
+    expect(line[1]?.after.drafts[0]?.item).toEqual(later);
+    expect(line[2]?.after.drafts[0]?.item.prefill.title).toBe('Late dinner');
+
+    // Forward again, one step and then to the newest: nothing was lost.
+    const second = stepTo(first, 2);
+    expect(second.drafts[0]?.item).toEqual(later);
+    expect(second.ahead).toHaveLength(1);
+    const newest = stepTo(second, 3);
+    expect(newest.drafts).toEqual(retitled.drafts);
+    expect(newest.steps).toEqual(retitled.steps);
+    expect(newest.history).toEqual(retitled.history);
+    expect(newest.ahead).toEqual([]);
+  });
+
+  it('shows the start before the first step, and nothing beyond the steps there are', () => {
+    const id = ids();
+    const started = startThread([dinner], 'x', { id });
+    const refined = refineThread(started, 'at 8', [{ id: 'd1', item: later }], id);
+    const start = stepTo(refined, 0);
+    expect(start.drafts).toEqual([]);
+    expect(start.steps).toEqual([]);
+    expect(start.ahead).toHaveLength(2);
+    expect(stepTo(start, 2).drafts).toEqual(refined.drafts);
+    // The step on show, or none there is: the thread stays as it is.
+    expect(stepTo(refined, 2)).toBe(refined);
+    expect(stepTo(refined, 3)).toBe(refined);
+    expect(stepTo(refined, -1)).toBe(refined);
+  });
+
+  it('keeps the step on show and lets the later ones go', () => {
+    const id = ids();
+    const started = startThread([dinner], 'x', { id });
+    const refined = refineThread(started, 'at 8', [{ id: 'd1', item: later }], id);
+    const kept = keepShown(stepTo(refined, 1));
+    expect(kept.drafts[0]?.item).toEqual(dinner);
+    expect(kept.steps).toEqual(started.steps);
+    expect(kept.ahead).toEqual([]);
+    expect(threadLine(kept)).toHaveLength(1);
+    // Kept, the form already shows it: nothing to take over.
+    expect(kept.version).toBe(stepTo(refined, 1).version);
+    // Nothing on show to keep: the same thread.
+    expect(keepShown(refined)).toBe(refined);
+  });
+
+  it('reads nothing by hand into an older step on show, and a turn from one leaves the later ones behind', () => {
+    const id = ids();
+    const started = startThread([dinner], 'x', { id });
+    const refined = refineThread(started, 'at 8', [{ id: 'd1', item: later }], id);
+    const first = stepTo(refined, 1);
+    expect(foldForm(first, { item: planning })).toBe(first);
+    const again = refineThread(first, 'at 9', [{ id: 'd1', item: planning }], id);
+    expect(again.ahead).toEqual([]);
+    expect(again.steps).toHaveLength(2);
+  });
+
+  it('keeps a written draft out of the steps stepped back over too', () => {
+    const id = ids();
+    const started = startThread([dinner, planning], 'x', { id });
+    const refined = refineThread(started, 'at 8', [{ id: 'd1', item: later }], id);
+    const edited = foldForm(refined, { item: dinner }, { kind: 'edit' }, id);
+    const back = stepTo(edited, 1);
+    const saved = removeDrafts(back, ['d1']);
+    // The edit by hand on the written draft is gone; the phrase stays, without that draft.
+    expect(saved.ahead.map((gone) => gone.step.kind)).toEqual(['phrase']);
+    expect(saved.ahead[0]?.after.drafts.map((draft) => draft.id)).toEqual(['d2']);
   });
 
   it('starts a phrase draft with what the form already held', () => {

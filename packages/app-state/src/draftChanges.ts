@@ -145,6 +145,26 @@ export type StepField =
   | 'reminders'
   | 'url';
 
+const FIELD_NAMES: Record<StepField, string> = {
+  alert: 'Alert',
+  calendar: 'Calendar',
+  date: 'Day',
+  guests: 'Guests',
+  kind: 'Kind',
+  list: 'List',
+  location: 'Place',
+  notes: 'Notes',
+  priority: 'Priority',
+  reminders: 'Notifications',
+  repeat: 'Repeat',
+  time: 'Time',
+  title: 'Title',
+  url: 'URL',
+};
+
+/** A field as a step names it: "Time", "Place", "Guests". */
+export const fieldName = (field: StepField): string => FIELD_NAMES[field];
+
 /** One field a step changed, in words: what it read before and what it reads now. */
 export interface FieldChange {
   /** The guests the step invited, by label. */

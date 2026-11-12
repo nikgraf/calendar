@@ -39,6 +39,7 @@ export * from './searchThread.ts';
 export * from './settingsCode.ts';
 export * from './taskDrop.ts';
 export * from './threadEditor.ts';
+export * from './threadSteps.ts';
 export * from './threadTurns.ts';
 export * from './today.ts';
 export * from './viewPreferences.ts';

@@ -187,13 +187,26 @@ export type HandStep =
   | { readonly kind: 'edit' }
   | { readonly kind: 'pick'; readonly name?: string | undefined; readonly pick: Pick };
 
-interface Snapshot {
+/** The drafts at one moment of the thread, and the one the form shows. */
+export interface Snapshot {
   readonly drafts: ReadonlyArray<Draft>;
   readonly focused: number;
 }
 
+/** A step the thread stepped back over, with the drafts as it left them: what going forward restores. */
+export interface StepAhead {
+  readonly after: Snapshot;
+  readonly step: DraftStep;
+}
+
 export interface DraftThreadState extends Snapshot {
-  /** The drafts as they were before each step, oldest first: what Undo restores. */
+  /**
+   * The steps stepped back over, nearest first. Empty unless an older step
+   * is shown (`stepTo`): the thread is then a preview until that step is
+   * kept (`keepShown`, which lets these go) or the newest is shown again.
+   */
+  readonly ahead: ReadonlyArray<StepAhead>;
+  /** The drafts as they were before each step, oldest first: what going back restores. */
   readonly history: ReadonlyArray<Snapshot>;
   /** What happened, oldest first: one entry per `history` snapshot. */
   readonly steps: ReadonlyArray<DraftStep>;
@@ -206,6 +219,7 @@ export interface DraftThreadState extends Snapshot {
 }
 
 export const EMPTY_THREAD: DraftThreadState = {
+  ahead: [],
   drafts: [],
   focused: 0,
   history: [],
@@ -410,6 +424,7 @@ export const startThread = (
         ].join(' · ')
       : `${String(drafts.length)} drafts`;
   return {
+    ahead: [],
     drafts,
     focused: 0,
     history: [{ drafts: [], focused: 0 }],
@@ -510,6 +525,8 @@ export const refineThread = (
         )
       : `${String(changes.length)} drafts changed`;
   return {
+    // A turn from an older step leaves what came after it behind.
+    ahead: [],
     drafts,
     focused: state.focused,
     history: [...state.history, { drafts: state.drafts, focused: state.focused }],
@@ -638,7 +655,7 @@ export const landRefinement = (
   if (submitted === undefined || fresh === undefined || index === -1) {
     return refineThread(state, utterance, changes);
   }
-  const base = foldForm(state, fresh);
+  const base = updateDraft(state, state.focused, fresh.item, fresh.extras);
   const current = base.drafts[index]!.item;
   return refineThread(
     base,
@@ -684,7 +701,8 @@ export const landPlacement = (
   if (index === -1 || best === undefined) {
     return state;
   }
-  const based = fresh === undefined ? state : foldForm(state, fresh);
+  const based =
+    fresh === undefined ? state : updateDraft(state, state.focused, fresh.item, fresh.extras);
   const draft = based.drafts[index]!;
   return refineThread(based, utterance, [
     {
@@ -710,6 +728,7 @@ export const undoTurn = (state: DraftThreadState): DraftThreadState => {
     return state;
   }
   return {
+    ahead: [],
     drafts: previous.drafts,
     focused: Math.min(previous.focused, Math.max(previous.drafts.length - 1, 0)),
     history: state.history.slice(0, at),
@@ -718,15 +737,76 @@ export const undoTurn = (state: DraftThreadState): DraftThreadState => {
   };
 };
 
+/** One step as the thread's history lists it: the drafts around it, and whether it was stepped back over. */
+export interface StepLine {
+  readonly after: Snapshot;
+  readonly before: Snapshot;
+  /** Stepped back over: it is still there to go forward to until the shown step is kept. */
+  readonly dimmed: boolean;
+  /** How many steps are applied once this one is: what `stepTo` takes to show it. */
+  readonly position: number;
+  readonly step: DraftStep;
+}
+
+/**
+ * Every step of the thread, oldest first, with the drafts before and after
+ * it — the ones stepped back over included, dimmed. Before and after are
+ * read off the history, never stored twice: a step's after is the next
+ * one's before.
+ */
+export const threadLine = (state: DraftThreadState): ReadonlyArray<StepLine> => {
+  const moments: ReadonlyArray<Snapshot> = [
+    ...state.history,
+    { drafts: state.drafts, focused: state.focused },
+    ...state.ahead.map((gone) => gone.after),
+  ];
+  return [...state.steps, ...state.ahead.map((gone) => gone.step)].map((step, at) => ({
+    after: moments[at + 1]!,
+    before: moments[at]!,
+    dimmed: at >= state.steps.length,
+    position: at + 1,
+    step,
+  }));
+};
+
+/**
+ * The thread as it stood after `position` steps (0: before the first; the
+ * count of all of them: the newest), shown without letting anything go:
+ * the steps after it wait in `ahead`. The form must take the drafts over,
+ * so the version moves. A position that is already shown, or none there
+ * is, leaves the thread as it is.
+ */
+export const stepTo = (state: DraftThreadState, position: number): DraftThreadState => {
+  const line = threadLine(state);
+  if (position === state.steps.length || position < 0 || position > line.length) {
+    return state;
+  }
+  const shown = position === 0 ? line[0]!.before : line[position - 1]!.after;
+  return {
+    ahead: line.slice(position).map(({ after, step }) => ({ after, step })),
+    drafts: shown.drafts,
+    focused: Math.min(shown.focused, Math.max(shown.drafts.length - 1, 0)),
+    history: line.slice(0, position).map(({ before }) => before),
+    steps: line.slice(0, position).map(({ step }) => step),
+    version: state.version + 1,
+  };
+};
+
+/** "Use this": the step shown is the newest from here on, and what came after it is let go. */
+export const keepShown = (state: DraftThreadState): DraftThreadState =>
+  state.ahead.length === 0 ? state : { ...state, ahead: [] };
+
 export const focusDraft = (state: DraftThreadState, index: number): DraftThreadState =>
   index >= 0 && index < state.drafts.length && index !== state.focused
     ? { ...state, focused: index, version: state.version + 1 }
     : state;
 
 /**
- * The form's edits to the focused draft — its fields and what the form
- * holds beyond them — kept so a later turn starts from them and another
- * draft's turn in the form never shows them. Not a turn.
+ * What the form holds of a draft — its fields and what the form holds
+ * beyond them — kept without a step: the form's own reading of a draft it
+ * just took in (so an edit made by hand later is told from it exactly),
+ * and what a draft leaves the form with when another takes it. An edit
+ * made by hand goes through `foldForm`, which makes a step of it.
  */
 export const updateDraft = (
   state: DraftThreadState,
@@ -754,15 +834,15 @@ const withoutChoice = (draft: Draft, name: string | undefined): Draft => {
 };
 
 /**
- * The form read into the draft it shows: the one door from the form into
- * the thread. What it holds becomes the focused draft's; when that
- * changes a field, it is a step one can go back over — the drafts before
- * go to the history — and the version stays, since the form already
- * shows it. An edit joins the newest step when that is an edit of the
+ * An edit made by hand, read from the form into the draft it shows. What
+ * the form holds becomes the focused draft's; when that changes a field,
+ * it is a step one can go back over — the drafts before go to the
+ * history — and the version stays, since the form already shows it. An edit joins the newest step when that is an edit of the
  * same draft whose fields cover it, so typing is one step and not one
  * per letter; a step whose edits end where they began is no step. A
  * pick is always its own step, and settles the choice it answered.
- * Nothing to fold into (no draft yet) leaves the thread as it is.
+ * Nothing to fold into (no draft yet, or an older step on show) leaves
+ * the thread as it is.
  */
 export const foldForm = (
   state: DraftThreadState,
@@ -771,7 +851,8 @@ export const foldForm = (
   id: () => string = nextDraftId,
 ): DraftThreadState => {
   const draft = state.drafts[state.focused];
-  if (draft === undefined) {
+  // An older step on show is locked: there is nothing by hand to read.
+  if (draft === undefined || state.ahead.length > 0) {
     return state;
   }
   const next = withoutChoice(
@@ -881,6 +962,9 @@ export const removeDrafts = (
   return {
     ...state,
     ...next,
+    ahead: state.ahead
+      .filter(({ step }) => step.kind === 'phrase' || !step.drafts.every((id) => gone.has(id)))
+      .map(({ after, step }) => ({ after: without(after, gone), step })),
     history: state.history.filter((_, at) => kept[at]).map((snapshot) => without(snapshot, gone)),
     steps: state.steps.filter((_, at) => kept[at]),
     version: formChanges ? state.version + 1 : state.version,
@@ -940,6 +1024,15 @@ export const useDraftThread = ({
   const [state, setState] = useState<DraftThreadState>(EMPTY_THREAD);
   const [busy, setBusy] = useState(false);
   const request = useRef(0);
+  /**
+   * An answer still on its way is dropped (it would land on drafts that
+   * are no longer the ones it was asked about), and with it the wait: a
+   * turn clears `busy` only while it is still the latest request.
+   */
+  const abandon = () => {
+    request.current += 1;
+    setBusy(false);
+  };
 
   /** Whom a turn invited or took off, as guests: each invited name looked up in the contacts. */
   const guestsOf = async (
@@ -1239,7 +1332,7 @@ export const useDraftThread = ({
   return {
     busy,
     clear: () => {
-      request.current += 1;
+      abandon();
       setState(EMPTY_THREAD);
     },
     /** A choice settled by hand: a contact picked (the form took the guest) or the name let go. */
@@ -1255,14 +1348,32 @@ export const useDraftThread = ({
     start,
     state,
     undo: () => {
-      request.current += 1;
+      abandon();
       setState((latest) => undoTurn(latest));
     },
+    /** "Use this": the step shown stays, what came after it goes (`keepShown`). */
+    keep: () => setState((latest) => keepShown(latest)),
     /**
-     * The form read into the draft it shows; a field it changed by hand is
-     * a step (`foldForm`).
+     * Another step is shown (`stepTo`); an answer still on its way would
+     * land on drafts that are no longer the shown ones, so it is dropped.
+     */
+    show: (position: number) => {
+      abandon();
+      setState((latest) => stepTo(latest, position));
+    },
+    /** One step back from the one shown, or forward again (`stepTo`). */
+    stepBy: (by: -1 | 1) => {
+      abandon();
+      setState((latest) => stepTo(latest, latest.steps.length + by));
+    },
+    /**
+     * The form read into the draft it shows after an edit by hand: a field
+     * it changed is a step (`foldForm`).
      */
     record: (form: FormSnapshot, how?: HandStep) =>
       setState((latest) => foldForm(latest, form, how)),
+    /** What the form holds of a draft, kept without a step (`updateDraft`). */
+    update: (index: number, item: QuickAddItem, extras?: DraftExtras) =>
+      setState((latest) => updateDraft(latest, index, item, extras)),
   };
 };

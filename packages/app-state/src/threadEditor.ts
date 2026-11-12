@@ -25,9 +25,10 @@ import { changedDraftFields, type DraftField } from './draftChanges.ts';
 import {
   type Draft,
   type DraftExtras,
-  foldForm,
   type HandStep,
   phraseSteps,
+  threadLine,
+  updateDraft,
   useDraftThread,
 } from './draftThread.ts';
 import {
@@ -43,6 +44,7 @@ import { useBackendMutations } from './hooks.ts';
 import { useOneWrite } from './oneWrite.ts';
 import type { QuickAddItem } from './quickAddItem.ts';
 import { type TaskEditorSeed, useTaskEditorModel } from './taskEditorModel.ts';
+import { shownMarks } from './threadSteps.ts';
 import { useFleetingFlash } from './threadTurns.ts';
 
 export type { DraftFocusRequest } from './draftAtoms.ts';
@@ -290,6 +292,9 @@ export const useThreadEditor = ({
   const thread = useDraftThread({ backend, model, timeZone });
   const { drafts, focused, version } = thread.state;
   const focusedDraft = drafts[focused];
+  // An older step is on show (`stepTo`): the thread is a preview until
+  // that step is kept or the newest is shown again.
+  const previewing = thread.state.ahead.length > 0;
   const threadRef = useRef(thread.state);
   threadRef.current = thread.state;
   const reveal = useRevealDraftDay();
@@ -356,7 +361,10 @@ export const useThreadEditor = ({
   // "Add all" and a Save never overlap, and the focus stays put while
   // either runs: a draft written is the one that was shown.
   const write = useOneWrite();
-  const settled = !eventModel.busy && !taskModel.busy && !write.busy;
+  const writing = eventModel.busy || taskModel.busy || write.busy;
+  // Nothing moves by hand while a write runs, nor while an older step is
+  // on show: that one is looked at, and kept or left.
+  const settled = !writing && !previewing;
   const [batchError, setBatchError] = useState<string | null>(null);
 
   /** The form as the thread's item: what a turn starts from and what the preview draws. */
@@ -501,6 +509,7 @@ export const useThreadEditor = ({
   // — an Undo shrinks it, a focus or a removal leaves it) flashes the
   // fields it changed in the form as it stood.
   const applied = useRef(0);
+  const wasPreviewing = useRef(false);
   // The draft the form shows, by id; none before the first and after the last.
   const shown = useRef<string | undefined>(undefined);
   // A thread the editor opens with (a capture) fills a form that is only
@@ -519,6 +528,12 @@ export const useThreadEditor = ({
     }
     applied.current = version;
     setSeenVersion(version);
+    // A step put on show (`stepTo`: an older one, or forward again out of
+    // a preview) is taken over exactly as it was — its kind, what the form
+    // held for it — like another draft: nothing is carried over, asked or
+    // flashed.
+    const restored = previewing || wasPreviewing.current;
+    wasPreviewing.current = previewing;
     // A phrase landed when there is one more of them: a step made by hand
     // grows the list without the form having anything to take over.
     const phrases = phraseSteps(thread.state);
@@ -527,7 +542,7 @@ export const useThreadEditor = ({
     if (focusedDraft) {
       const another = shown.current !== undefined && shown.current !== focusedDraft.id;
       shown.current = focusedDraft.id;
-      if (another) {
+      if (another || restored) {
         showDraft(focusedDraft);
       } else {
         setOpenApplies((open) => open + 1);
@@ -569,7 +584,10 @@ export const useThreadEditor = ({
   // stops listening at the first one, and the thread reads the form once
   // the edit has rendered — what it changed is a step one can go back
   // over (`foldForm`). Not while the form is still taking a change of the
-  // thread's in: its fields are then between two drafts.
+  // thread's in: its fields are then between two drafts. Once it has
+  // taken one in, the form's own reading of that draft is kept as the
+  // draft (no step): the next edit by hand is told from it exactly, and
+  // not from how the thread happened to write the same values.
   const [userEdits, setUserEdits] = useState(0);
   const unread = useRef<HandStep | undefined>(undefined);
   const edited = (how: HandStep = { kind: 'edit' }) => {
@@ -578,16 +596,66 @@ export const useThreadEditor = ({
     setUserEdits((count) => count + 1);
   };
   const applying = seenVersion !== version || openApplies > 0;
-  const { record } = thread;
+  const { record, update } = thread;
+  const wasApplying = useRef(false);
+  const endedPreview = useRef(false);
   useEffect(() => {
-    const how = unread.current;
-    if (how === undefined || applying) {
+    const tookIn = (wasApplying.current && !applying) || (endedPreview.current && !previewing);
+    wasApplying.current = applying;
+    endedPreview.current = previewing;
+    if (applying) {
       return;
     }
+    const how = unread.current;
     unread.current = undefined;
-    record(readForm(), how);
+    // An older step on show is locked: there is nothing by hand to read,
+    // and what it holds stays as the thread kept it.
+    if (previewing || threadRef.current.drafts.length === 0) {
+      return;
+    }
+    const form = readForm();
+    if (how !== undefined) {
+      record(form, how);
+    } else if (tookIn) {
+      update(threadRef.current.focused, form.item, form.extras);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the count names the edits; the readers are the latest render's
-  }, [userEdits, applying]);
+  }, [userEdits, applying, previewing]);
+
+  // The steps: one back or forward, or to one by its position; "Use this"
+  // keeps the one on show and lets the later ones go. Not while a write
+  // runs, a phrase is being read or the form is still taking a step in.
+  const stepsLocked = thread.busy || writing || applying;
+  const steps = {
+    /** How many steps are applied: the one on show, counted from 1 (0: before the first). */
+    at: thread.state.steps.length,
+    back: () => {
+      if (!stepsLocked) {
+        thread.stepBy(-1);
+      }
+    },
+    forward: () => {
+      if (!stepsLocked) {
+        thread.stepBy(1);
+      }
+    },
+    /** Every step, oldest first, the ones stepped back over dimmed. */
+    line: threadLine(thread.state),
+    locked: stepsLocked,
+    of: thread.state.steps.length + thread.state.ahead.length,
+    show: (position: number) => {
+      if (!stepsLocked) {
+        thread.show(position);
+      }
+    },
+    use: () => {
+      if (!stepsLocked) {
+        thread.keep();
+        // Kept, the step on show is the newest: what lands next is a turn's, not a step put on show.
+        wasPreviewing.current = false;
+      }
+    },
+  };
 
   /**
    * The form moves into a free slot the thread offered (a chip, a
@@ -659,7 +727,7 @@ export const useThreadEditor = ({
     if (index === focused || drafts[index] === undefined || !settled) {
       return;
     }
-    thread.record({ extras: currentExtras(), item: currentItem() });
+    thread.update(focused, currentItem(), currentExtras());
     thread.focus(index);
   };
   useEffect(() => {
@@ -682,6 +750,9 @@ export const useThreadEditor = ({
   // change them, one that asks for free time proposes slots. The model's
   // own failure modes become the field's message.
   const onPhrase = async (text: string): Promise<string | undefined> => {
+    if (previewing) {
+      return 'An earlier step is on show — use it or go forward first.';
+    }
     try {
       const item = currentItem();
       // An undated to-do: its stored day is a placeholder the form had let go of.
@@ -734,8 +805,13 @@ export const useThreadEditor = ({
       // The form's edits go into the thread first: should the batch stop
       // short, the focused draft is still what the user last saw.
       const form = readForm();
-      const current = foldForm(threadRef.current, form);
-      thread.record(form);
+      const current = updateDraft(
+        threadRef.current,
+        threadRef.current.focused,
+        form.item,
+        form.extras,
+      );
+      thread.update(current.focused, form.item, form.extras);
       const plan = planAddAll(current, {
         calendars,
         // A draft the form never showed goes where the form points now.
@@ -769,6 +845,14 @@ export const useThreadEditor = ({
     });
 
   const playing = useFleetingFlash(flash);
+  // What the step on show changed, for the form and the cards to mark.
+  const labels = {
+    calendar: (key: string) =>
+      calendars.find((calendar) => `${calendar.accountId}:${calendar.id}` === key)?.summary ?? key,
+    list: (key: string) =>
+      taskLists.find((list) => `${list.accountId}:${list.id}` === key)?.title ?? key,
+  };
+  const marks = shownMarks(thread.state, labels);
 
   return {
     addAll,
@@ -793,7 +877,11 @@ export const useThreadEditor = ({
     keepPlace,
     /** The kind control's switch counts as an edit too. */
     kinds: reportingEdits(kinds, ['switchTo'], edited),
+    /** How a calendar or a list is named in a step's changes (`lineChanges`). */
+    labels,
     liveItem,
+    /** The fields the step on show changed, marked until another step is shown. */
+    marks,
     moveToSlot,
     onPhrase,
     /** A contact picked for a name a turn invited: the guest joins the form. */
@@ -804,7 +892,11 @@ export const useThreadEditor = ({
     placeChoice,
     /** The coordinates the form vouches for now: which chip is held, if any. */
     placeGeo,
+    /** An older step is on show: the form is locked and Save is off until it is kept or left. */
+    previewing,
     settled,
+    /** The thread's steps and the way through them. */
+    steps,
     switchFocus,
     taskModel: reportingEdits(taskModel, TASK_EDITS, edited),
     thread,
