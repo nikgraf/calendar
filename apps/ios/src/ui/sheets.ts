@@ -14,7 +14,7 @@ import type { EditSeed } from './EventEditSheet.tsx';
  * One sheet at a time, in a small set of states (`EditorHost`). The detail,
  * the birthday and a fold's task list are page sheets (React Native
  * Modals); the editor is a
- * form sheet route (`app/editor.tsx`) the host pushes and pops as the
+ * route of its own (`app/editor.tsx`) the host pushes and pops as the
  * state says. The detail hands over to the editor by replacing itself. An
  * editor carries its opening's number: each opening mounts a fresh editor
  * (its forms and thread seed once).
@@ -23,6 +23,8 @@ export interface EditSheet {
   readonly initialKind?: ItemKind | undefined;
   readonly kind: 'edit';
   readonly opening: number;
+  /** The view to start on, where the editor has two: the Assistant for the calendar's "+", a share and the Create lesson. */
+  readonly opensOn?: 'assistant' | undefined;
   readonly seed: EditSeed;
   readonly task?: TaskRecord | undefined;
   readonly taskSeed?: Pick<TaskEditorSeed, 'dated' | 'listKey'> | undefined;

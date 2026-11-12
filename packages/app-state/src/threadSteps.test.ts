@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { foldForm, refineThread, startThread, stepTo, threadLine } from './draftThread.ts';
 import type { QuickAddItem } from './quickAddItem.ts';
-import { lineChanges, movedFrom, shownMarks, stepName, stepSource } from './threadSteps.ts';
+import {
+  changedLine,
+  lineChanges,
+  movedFrom,
+  shownMarks,
+  stepName,
+  stepSource,
+  stepSummary,
+  versionLabel,
+} from './threadSteps.ts';
 
 const lunch: QuickAddItem = {
   kind: 'event',
@@ -151,5 +160,28 @@ describe('movedFrom', () => {
     );
     expect(shownMarks(renamed)?.fields.has('title')).toBe(true);
     expect(movedFrom(renamed, shownMarks(renamed))).toBeUndefined();
+  });
+});
+
+describe('versionLabel, stepSummary and changedLine', () => {
+  it('names a row by the version its step left, and says when a hand made it', () => {
+    const [made, moved, typed] = threadLine(story());
+    expect([versionLabel(made!), versionLabel(moved!), versionLabel(typed!)]).toEqual([
+      'Version 1',
+      'Version 2',
+      'Version 3 · by hand',
+    ]);
+  });
+
+  it('gives a phrase its own summary and an edit by hand its fields as they read now', () => {
+    const [made, , typed] = threadLine(story());
+    expect(stepSummary(made!)).toContain('Lunch with Sarah');
+    expect(stepSummary(typed!)).toBe('Place: Figlmüller, Wollzeile 5');
+  });
+
+  it('lists what a step changed in a line, and says nothing for none', () => {
+    const [, moved] = threadLine(story());
+    expect(changedLine(lineChanges(moved!))).toBe('Changed: time');
+    expect(changedLine([])).toBe('');
   });
 });

@@ -91,7 +91,7 @@ export interface EditorHost {
   readonly openBirthday: (birthday: BirthdayOccurrence) => void;
   /** The read-first event view; its Edit button opens the editor. */
   readonly openEvent: (event: EventRecord) => void;
-  /** The editor on a new item: the quick-add field on top, the kind control, the form. */
+  /** The editor on a new item: an event on the Assistant, a to-do on its form. */
   readonly openNew: (request: NewItemRequest) => void;
   /** Settings — after the editor, when one is up behind the calendar's avatar, has closed. */
   readonly openSettings: () => void;
@@ -131,8 +131,8 @@ export const useEditorHost = (): EditorHost => {
 };
 
 /**
- * Owns every sheet of the app — the event detail, the editor (with the
- * quick-add field and the draft thread on top of a new item), the
+ * Owns every sheet of the app — the event detail, the editor (its
+ * Assistant and its form), the
  * birthday detail, a fold chip's task list — and the capture model behind the share sheet and deep
  * links, whose events open the editor as one thread of drafts, so the
  * Calendar and Tasks tabs open the same sheets without owning them.
@@ -283,6 +283,7 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
     setCaptured({
       kind: 'edit',
       opening: nextOpening(),
+      opensOn: 'assistant',
       seed: {
         initialDate: Temporal.PlainDate.from(first.date),
         thread: {
@@ -454,6 +455,8 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
         initialKind: options?.initialKind,
         kind: 'edit',
         opening: nextOpening(),
+        // The Create lesson is the Assistant's; a slot drawn by hand, or an event, opens on its form.
+        opensOn: seed.lesson === undefined ? undefined : 'assistant',
         seed,
       }),
     editTask,
@@ -470,6 +473,8 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
         initialKind: resolved,
         kind: 'edit',
         opening: nextOpening(),
+        // The calendar's "+" opens on the Assistant; a to-do's, on its form: a title is all it needs.
+        opensOn: resolved === 'event' ? 'assistant' : undefined,
         seed: { initialDate: focused },
         taskSeed: resolved === 'event' ? undefined : { dated, listKey },
       });
@@ -504,6 +509,7 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
           initialKind={routeSheet.initialKind}
           key={`edit:${String(routeSheet.opening)}`}
           onClose={() => setSheet(closeEditor(routeSheet.opening))}
+          opensOn={routeSheet.opensOn}
           presentation="route"
           seed={routeSheet.seed}
           task={routeSheet.task}

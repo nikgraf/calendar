@@ -108,3 +108,27 @@ export const stepName = (line: StepLine): string => {
       return PICKED[step.pick];
   }
 };
+
+/** A step's row among the versions: which one it left, and that a hand made it. */
+export const versionLabel = (line: StepLine): string =>
+  `Version ${String(line.position)}${line.step.kind === 'phrase' ? '' : ' · by hand'}`;
+
+/**
+ * What a step did, in the one line of its row: a phrase's own summary,
+ * else the fields changed by hand with what they read now.
+ */
+export const stepSummary = (line: StepLine, labels?: ChangeLabels): string => {
+  if (line.step.kind === 'phrase') {
+    return line.step.summary;
+  }
+  const changes = lineChanges(line, undefined, labels);
+  return changes.length === 0
+    ? stepName(line)
+    : changes.map((change) => `${fieldName(change.field)}: ${change.to ?? 'none'}`).join(' · ');
+};
+
+/** What a card says its step changed, under the fields: "Changed: time, guests", or nothing. */
+export const changedLine = (changes: ReadonlyArray<FieldChange>): string =>
+  changes.length === 0
+    ? ''
+    : `Changed: ${changes.map((change) => fieldName(change.field).toLowerCase()).join(', ')}`;

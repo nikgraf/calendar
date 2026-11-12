@@ -64,23 +64,25 @@ tags:
       - assertVisible: 'New Event'
       - waitForAnimationToEnd:
           timeout: 5000
-      # The thread opens the editor on its first draft, the pager above the
-      # form.
+      # The thread opens the editor's Assistant on its first draft: a card,
+      # the other draft a line under it, the pager under the header.
       - assertVisible:
           id: 'draft-position'
           text: '1 of 2'
       - assertVisible:
-          id: 'event-title'
+          id: 'assistant-card-title'
           text: 'Standup'
       - assertVisible:
-          id: 'draft-turn-summary'
-          text: '2 drafts'
-      # The pager steps through the drafts; the form follows.
+          id: 'assistant-said'
+          text: 'From your share'
+      - assertVisible:
+          id: 'assistant-draft'
+      # The pager steps through the drafts; the card follows.
       - tapOn:
           id: 'draft-next'
       - extendedWaitUntil:
           visible:
-            id: 'event-title'
+            id: 'assistant-card-title'
             text: 'Planning'
           timeout: 10000
       - assertVisible:
@@ -90,9 +92,20 @@ tags:
           id: 'draft-prev'
       - extendedWaitUntil:
           visible:
+            id: 'assistant-card-title'
+            text: 'Standup'
+          timeout: 10000
+      # The form shows the same draft, the pager still above it.
+      - tapOn:
+          id: 'editor-view-form'
+      - extendedWaitUntil:
+          visible:
             id: 'event-title'
             text: 'Standup'
           timeout: 10000
+      - assertVisible:
+          id: 'draft-position'
+          text: '1 of 2'
       # Writing needs a writable calendar: the fixture Google account (CI).
       - runFlow:
           when:

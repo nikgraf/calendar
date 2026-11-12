@@ -1,27 +1,28 @@
 appId: com.solunivo.app.dev
-name: Quick add fills the new-event form from a phrase
+name: The Assistant makes a new event from a phrase and changes it by the next
 tags:
   - ci
 ---
 - runFlow: ../common/launch.yaml
-- runFlow: ../common/open-new-event.yaml
-# The quick-add field sits on top of the editor and renders only after an
-# async availability check resolves, so wait for the marker the app emits
-# either way before deciding to skip — checking `quick-add-input` directly
-# would race the mount and report a silent pass on hardware that does have
-# a model. Under the fixture model (CI's bundle) the marker's id ends in
-# `-fixture`.
+- runFlow: ../common/open-new-item.yaml
+# The Assistant's bar renders only after an async availability check
+# resolves, so wait for the marker the app emits either way before
+# deciding to skip — checking `quick-add-type` directly would race the
+# mount and report a silent pass on hardware that does have a model. Under
+# the fixture model (CI's bundle) the marker's id ends in `-fixture`.
+# Without a model the editor has fallen back to its form by then, and
+# there is nothing to say a phrase to.
 - extendedWaitUntil:
     visible:
-      id: 'quick-add-state(-fixture)?'
+      id: 'editor-view-(form|assistant)'
     timeout: 30000
 - runFlow:
     when:
       visible:
-        id: 'quick-add-input'
+        id: 'quick-add-type'
     commands:
       # Each phrase is typed until the field holds all of it (XCTest
-      # garbles input), then applied.
+      # garbles input), then sent.
       - runFlow:
           file: ../common/apply-quick-add.yaml
           env:
@@ -29,23 +30,22 @@ tags:
       # Generation runs locally and takes a few seconds. A simulator whose
       # host has no usable model (CI runners: Apple Intelligence is not
       # enabled) passes the availability check and then fails to
-      # generate — the field shows its "couldn't be read" copy. Either
-      # outcome proves the field, Apply and the error path; the filled
-      # form is asserted wherever a model actually answers. The title is
-      # checked by id — the quick-add field above it holds the same words.
+      # generate — the bar's line shows its "couldn't be read" copy. Either
+      # outcome proves the field, the send and the error path; the answer
+      # is asserted wherever a model actually answers: the event as a card.
       - extendedWaitUntil:
           visible:
-            id: 'event-title'
+            id: 'assistant-card-title'
             text: 'Lunch with Sarah.*'
           timeout: 60000
           optional: true
       # The read outcome sets a flag the other one is keyed on: Maestro
       # gives a `when` condition up to 7 s to come true, so `notVisible:`
-      # on the title that is there cost that on every read.
+      # on the card that is there cost that on every read.
       - runFlow:
           when:
             visible:
-              id: 'event-title'
+              id: 'assistant-card-title'
               text: 'Lunch with Sarah.*'
           commands:
             - evalScript: ${output.read = true}
@@ -57,40 +57,78 @@ tags:
       # The thread, under the fixture model (CI's bundle; a real model skips
       # the steps below). The fixture makes the whole phrase the title, and
       # the normalizer takes "next Tuesday at 1pm" off its end, as off any
-      # model's. A change in the fixture's grammar
-      # (empty parts unchanged) moves the times and lists a turn; Undo takes
-      # it back; a finder phrase as a later turn puts the draft in the best
-      # free slot of next week's mornings and offers the others as chips;
-      # a turn that invites makes guests of the contacts it names; a turn
-      # that sets a place takes a past place said by sound.
+      # model's. A change in the fixture's grammar (empty parts unchanged)
+      # moves the times: the card marks them, the hours before struck
+      # through after them, and the first answer becomes a row above. The
+      # form shows the same draft; its pill steps back to the first answer,
+      # which is looked at until "Use this" keeps it. A finder phrase puts
+      # the draft in the best free slot of next week's mornings and offers
+      # the others as chips; a phrase that invites makes guests of the
+      # contacts it names; one that sets a place takes a past place said
+      # by sound.
       - runFlow:
           when:
             visible:
               id: 'quick-add-state-fixture'
           commands:
             - assertVisible:
-                id: 'event-title'
+                id: 'assistant-card-title'
                 text: 'Lunch with Sarah'
             - assertVisible:
-                id: 'draft-thread'
+                id: 'assistant-said'
+                text: 'Lunch with Sarah next Tuesday at 1pm'
             - runFlow:
                 file: ../common/apply-quick-add.yaml
                 env:
                   PHRASE: '| | 20:00-21:00'
             - extendedWaitUntil:
                 visible:
-                  id: 'draft-turn-summary'
-                  text: '.*20:00.21:00.*'
+                  id: 'assistant-card-time'
+                  text: '.*20:00.21:00.*13:00.14:00.*'
                 timeout: 20000
             - assertVisible:
-                id: 'draft-turns-more'
+                id: 'assistant-changed'
+                text: 'Changed: time'
+            - assertVisible:
+                id: 'assistant-version'
+            # The form: the same draft, two steps under it.
             - tapOn:
-                id: 'draft-undo'
+                id: 'assistant-edit'
             - extendedWaitUntil:
-                notVisible:
-                  id: 'draft-turn-summary'
-                  text: '.*20:00.21:00.*'
-                timeout: 10000
+                visible:
+                  id: 'event-title'
+                  text: 'Lunch with Sarah'
+                timeout: 5000
+            - assertVisible:
+                id: 'step-position'
+                text: '2 of 2'
+            # One back: the first answer on show, to keep or to leave.
+            - tapOn:
+                id: 'step-back'
+            - extendedWaitUntil:
+                visible:
+                  id: 'step-preview'
+                timeout: 5000
+            - assertVisible:
+                id: 'step-position'
+                text: '1 of 2'
+            - tapOn:
+                id: 'step-use'
+            - extendedWaitUntil:
+                visible:
+                  id: 'step-position'
+                  text: '1 of 1'
+                timeout: 5000
+            - assertNotVisible:
+                id: 'step-preview'
+            # Back in the conversation the change is gone with its step.
+            - tapOn:
+                id: 'editor-view-assistant'
+            - extendedWaitUntil:
+                visible:
+                  id: 'assistant-card-time'
+                  text: '.*13:00.14:00.*'
+                timeout: 5000
             - runFlow:
                 file: ../common/apply-quick-add.yaml
                 env:
@@ -104,18 +142,18 @@ tags:
                 selected: true
             # The draft keeps its title; only its time moved.
             - assertVisible:
-                id: 'event-title'
+                id: 'assistant-card-title'
                 text: 'Lunch with Sarah'
             - tapOn:
                 id: 'draft-slot-1'
             - assertVisible:
                 id: 'draft-slot-1'
                 selected: true
-            # A turn that invites: the fixture names whoever follows
+            # A phrase that invites: the fixture names whoever follows
             # "invite", and each name is looked up in the account's
-            # contacts. "Anna Lee" is one contact: a guest chip. "Tom" is
-            # two (Tom Lee, Tom Wright): a question with both, nothing
-            # picked until a tap — the first is Tom Lee.
+            # contacts. "Anna Lee" is one contact: a guest on the card.
+            # "Tom" is two (Tom Lee, Tom Wright): a question with both,
+            # nothing picked until a tap — the first is Tom Lee.
             - runFlow:
                 file: ../common/apply-quick-add.yaml
                 env:
@@ -131,29 +169,23 @@ tags:
                 notVisible:
                   id: 'draft-invitee-choices'
                 timeout: 5000
-            - scrollUntilVisible:
-                element: 'Tom Lee'
-                direction: DOWN
-                timeout: 10000
-            - assertVisible: 'Anna Lee'
-            # A turn that sets a place: the fixture takes the location
+            - extendedWaitUntil:
+                visible:
+                  id: 'assistant-card-guests'
+                  text: '.*Anna Lee.*Tom Lee.*'
+                timeout: 5000
+            # A phrase that sets a place: the fixture takes the location
             # part as written, and the thread finds it among the past
             # places by sound — the fixture coffee at Café Central — so the
-            # field reads the place's own text, pin and all.
+            # card reads the place's own text.
             - runFlow:
                 file: ../common/apply-quick-add.yaml
                 env:
                   PHRASE: '| | | Cafe Zentral'
-            # The invitee steps scrolled the form down; the field is above.
-            - scrollUntilVisible:
-                element:
-                  id: 'location-input'
-                direction: UP
-                timeout: 10000
             - extendedWaitUntil:
                 visible:
-                  id: 'location-input'
-                  text: 'Café Central'
+                  id: 'assistant-card-location'
+                  text: '.*Café Central.*'
                 timeout: 20000
       # Dictation is deliberately not asserted here: Maestro cannot inject
       # audio and simulators carry no speech assets, so the mic disables

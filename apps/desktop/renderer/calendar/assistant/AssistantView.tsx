@@ -1,17 +1,16 @@
 import type { CaptureSource, ModelStatus } from '@calendar/ai';
 import {
+  changedLine,
   describeDraftItem,
   type Draft,
   draftCalendarKey,
   draftListKey,
   type FieldChange,
-  fieldName,
-  lineChanges,
   type QuickAddItem,
-  type StepLine,
-  stepName,
+  stepSummary,
   useQuickAddModel,
   type useThreadEditor,
+  versionLabel,
 } from '@calendar/app-state';
 import type { CalendarInfo, TaskListInfo } from '@calendar/core';
 import { type ReactNode, type RefObject, useEffect, useRef } from 'react';
@@ -87,14 +86,6 @@ function VersionRow({
     </div>
   );
 }
-
-/** What a step did, in the one line of its row: a phrase's own summary, else the fields by hand. */
-const rowSummary = (line: StepLine, changes: ReadonlyArray<FieldChange>): string =>
-  line.step.kind === 'phrase'
-    ? line.step.summary
-    : changes.length === 0
-      ? stepName(line)
-      : changes.map((change) => `${fieldName(change.field)}: ${change.to ?? 'none'}`).join(' · ');
 
 /**
  * The assistant's view of the editor: a conversation. What was said or
@@ -270,10 +261,10 @@ export function AssistantView({
               <VersionRow
                 dimmed={line.dimmed}
                 disabled={steps.locked}
-                label={`Version ${String(line.position)}${line.step.kind === 'phrase' ? '' : ' · by hand'}`}
+                label={versionLabel(line)}
                 onRestore={() => steps.show(line.position)}
                 position={line.position}
-                summary={rowSummary(line, lineChanges(line, undefined, labels))}
+                summary={stepSummary(line, labels)}
               />
             )}
           </div>
@@ -393,9 +384,7 @@ function CardFooter({
   return (
     <div className="flex items-center justify-between gap-2 border-t border-hairline pt-1.5">
       <span className="min-w-0 truncate text-xs text-ink-secondary" data-testid="assistant-changed">
-        {changes.length > 0
-          ? `Changed: ${changes.map((change) => fieldName(change.field).toLowerCase()).join(', ')}`
-          : ''}
+        {changedLine(changes)}
       </span>
       <div className="flex shrink-0 gap-1">
         {steps.at > 0 ? (

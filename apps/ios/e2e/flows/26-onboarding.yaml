@@ -110,10 +110,9 @@ tags:
       - assertNotVisible:
           id: 'getting-started-row-accounts'
       - assertVisible: '0 of 6'
-      # Create with AI: the editor with the phrase in its quick-add field
-      # and the lesson's banner over it, the card folded to one line above
-      # it (the draft lands between the two). Cancel without trying ticks
-      # it as skipped, and the card comes back open.
+      # Create with AI: the editor's Assistant with the lesson's banner on
+      # top and the phrase in its field, ready to send. Cancel without
+      # trying ticks it as skipped, and the card comes back.
       - tapOn:
           id: 'getting-started-row-create'
       - extendedWaitUntil:
@@ -121,11 +120,9 @@ tags:
             id: 'lesson-banner'
           timeout: 10000
       - extendedWaitUntil:
-          notVisible:
-            id: 'getting-started-row-search'
-          timeout: 5000
-      - assertVisible:
-          id: 'getting-started'
+          visible:
+            id: 'quick-add-input'
+          timeout: 10000
       - waitForAnimationToEnd:
           timeout: 5000
       - copyTextFrom:
