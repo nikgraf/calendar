@@ -210,15 +210,16 @@ describe('plainResult, a change to the draft', () => {
     const result = change(rest);
     expect(result).toMatchObject({
       notes: { kind: 'clear' },
-      reminders: { add: [], clear: true, remove: [] },
+      // Taken off one by one: a notification the model was never shown stays.
+      reminders: { add: [], clear: false, remove: [30] },
     });
     expect(result).not.toHaveProperty('prefill.location');
   });
 
-  it('replaces the note and the notifications with the ones in the answer', () => {
+  it('replaces the note, and adds the notifications the answer has anew', () => {
     expect(change({ ...kept, notes: 'by the door', reminders: [30, 60] })).toMatchObject({
       notes: { kind: 'replace', text: 'by the door' },
-      reminders: { add: [30, 60], clear: true, remove: [] },
+      reminders: { add: [60], clear: false, remove: [] },
     });
   });
 });

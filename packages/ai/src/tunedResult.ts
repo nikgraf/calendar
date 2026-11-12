@@ -175,7 +175,12 @@ const notesChange = (answer: unknown, before: string | undefined): NotesChange |
   return before === undefined ? { kind: 'add', text: now } : { kind: 'replace', text: now };
 };
 
-/** What the answer's notifications do to the draft's: the answer is the list after the turn. */
+/**
+ * What the answer's notifications do to the draft's: the answer is the
+ * list after the turn, so what it lacks is taken off and what is new is
+ * added. Nothing is cleared wholesale: a notification the model was never
+ * shown (an email one, a calendar's default) stays.
+ */
 const remindersChange = (
   answer: unknown,
   before: ReadonlyArray<number> | undefined,
@@ -186,10 +191,41 @@ const remindersChange = (
           typeof minutes === 'number' && Number.isInteger(minutes) && minutes >= 0,
       )
     : [];
-  if (sameNumbers(now, before ?? [])) {
+  const had = before ?? [];
+  if (sameNumbers(now, had)) {
     return undefined;
   }
-  return { add: now, clear: before !== undefined && before.length > 0, remove: [] };
+  return {
+    add: now.filter((minutes) => !had.includes(minutes)),
+    clear: false,
+    remove: had.filter((minutes) => !now.includes(minutes)),
+  };
+};
+
+/**
+ * A span of days the form gave the draft (an end day of its own) moves
+ * with its start while the turn leaves its times and its all-day alone;
+ * new times read as one day.
+ */
+const endDateOf = (
+  before: QuickAddPrefill | undefined,
+  after: {
+    readonly date: string;
+    readonly endTime: string;
+    readonly isAllDay: boolean;
+    readonly startTime: string;
+  },
+): string | undefined => {
+  if (before?.endDate === undefined) {
+    return undefined;
+  }
+  const span = Temporal.PlainDate.from(before.date).until(before.endDate).days;
+  const sameTimes =
+    after.isAllDay === before.isAllDay &&
+    (after.isAllDay || (after.startTime === before.startTime && after.endTime === before.endTime));
+  return span > 0 && sameTimes
+    ? Temporal.PlainDate.from(after.date).add({ days: span }).toString()
+    : undefined;
 };
 
 const REFUSED = "That couldn't be read — try rephrasing.";
@@ -227,7 +263,9 @@ export const answerResult = (
   }
   const end = timeOf(answer['endTime']);
   const startTime = start ?? '00:00';
+  const endTime = end !== undefined && end > startTime ? end : addHour(startTime);
   const { date, recurrence } = repeatOf(answer['repeat'], said);
+  const endDate = endDateOf(before, { date, endTime, isAllDay: start === undefined, startTime });
   const location = textOf(answer['location']);
   const reminders = remindersChange(answer['reminders'], draft?.reminders);
   const invite = namesOf(answer['invite']);
@@ -239,8 +277,8 @@ export const answerResult = (
     prefill: {
       ...(start !== undefined && answer['timeAssumed'] === true ? { assumedTime: true } : {}),
       date,
-      ...(before?.endDate === undefined ? {} : { endDate: before.endDate }),
-      endTime: end !== undefined && end > startTime ? end : addHour(startTime),
+      ...(endDate === undefined ? {} : { endDate }),
+      endTime,
       isAllDay: start === undefined,
       ...(location === undefined ? {} : { location }),
       ...(recurrence === undefined ? {} : { recurrence }),
