@@ -126,17 +126,26 @@ export interface DraftChange {
   readonly slots?: ReadonlyArray<FreeSlot> | undefined;
 }
 
-export interface DraftTurn {
+/** A phrase said or typed to the thread: one step of its history. */
+export interface PhraseStep {
   /**
    * The drafts the turn made or changed, by id: whose words these are
    * (`turnsOf`). A turn that changed nothing is nobody's.
    */
   readonly drafts: ReadonlyArray<string>;
   readonly id: string;
+  readonly kind: 'phrase';
   /** What the turn did to the drafts, in words — the thread's visible history. */
   readonly summary: string;
   readonly utterance: string;
 }
+
+/**
+ * One step of a thread, oldest first in `steps`: what happened to the
+ * drafts between two of the states the thread can go back to. A union on
+ * `kind`, so what is not a phrase can join it.
+ */
+export type DraftStep = PhraseStep;
 
 interface Snapshot {
   readonly drafts: ReadonlyArray<Draft>;
@@ -144,9 +153,10 @@ interface Snapshot {
 }
 
 export interface DraftThreadState extends Snapshot {
-  /** The drafts as they were before each turn, oldest first: what Undo restores. */
+  /** The drafts as they were before each step, oldest first: what Undo restores. */
   readonly history: ReadonlyArray<Snapshot>;
-  readonly turns: ReadonlyArray<DraftTurn>;
+  /** What happened, oldest first: one entry per `history` snapshot. */
+  readonly steps: ReadonlyArray<DraftStep>;
   /**
    * Moves on every change the form must take over (a turn, an undo, a
    * focus, a removal) and stays on the form's own edits (`updateDraft`),
@@ -159,9 +169,13 @@ export const EMPTY_THREAD: DraftThreadState = {
   drafts: [],
   focused: 0,
   history: [],
-  turns: [],
+  steps: [],
   version: 0,
 };
+
+/** The steps that are phrases, oldest first: what was said to the thread. */
+export const phraseSteps = (state: DraftThreadState): ReadonlyArray<PhraseStep> =>
+  state.steps.filter((step) => step.kind === 'phrase');
 
 let counter = 0;
 /** A fresh id for a draft or a turn; injectable so tests read stable ids. */
@@ -471,7 +485,9 @@ export const startThread = (
     drafts,
     focused: 0,
     history: [{ drafts: [], focused: 0 }],
-    turns: [{ drafts: drafts.map((draft) => draft.id), id: id(), summary, utterance }],
+    steps: [
+      { drafts: drafts.map((draft) => draft.id), id: id(), kind: 'phrase', summary, utterance },
+    ],
     version: 1,
   };
 };
@@ -497,7 +513,7 @@ export const refineTargets = (state: DraftThreadState, utterance: string): Reado
  * draft, or changed nothing, is not this one's.
  */
 export const turnsOf = (state: DraftThreadState, draftId: string): ReadonlyArray<string> =>
-  state.turns.flatMap((turn) => (turn.drafts.includes(draftId) ? [turn.utterance] : []));
+  phraseSteps(state).flatMap((turn) => (turn.drafts.includes(draftId) ? [turn.utterance] : []));
 
 /** The draft without the slots a turn found for it. */
 const withoutSlots = ({ slots: _slots, ...draft }: Draft): Draft => draft;
@@ -569,7 +585,7 @@ export const refineThread = (
     drafts,
     focused: state.focused,
     history: [...state.history, { drafts: state.drafts, focused: state.focused }],
-    turns: [...state.turns, { drafts: moved, id: id(), summary, utterance }],
+    steps: [...state.steps, { drafts: moved, id: id(), kind: 'phrase', summary, utterance }],
     version: state.version + 1,
   };
 };
@@ -765,7 +781,7 @@ export const undoTurn = (state: DraftThreadState): DraftThreadState => {
     drafts: previous.drafts,
     focused: Math.min(previous.focused, Math.max(previous.drafts.length - 1, 0)),
     history: state.history.slice(0, -1),
-    turns: state.turns.slice(0, -1),
+    steps: state.steps.slice(0, -1),
     version: state.version + 1,
   };
 };

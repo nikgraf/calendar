@@ -26,6 +26,7 @@ import {
   type Draft,
   type DraftExtras,
   type DraftField,
+  phraseSteps,
   updateDraft,
   useDraftThread,
 } from './draftThread.ts';
@@ -504,9 +505,9 @@ export const useThreadEditor = ({
     }
     applied.current = version;
     setSeenVersion(version);
-    const { turns } = thread.state;
-    const landed = turns.length > turnsSeen.current ? turns.at(-1) : undefined;
-    turnsSeen.current = turns.length;
+    const { steps } = thread.state;
+    const landed = steps.length > turnsSeen.current ? steps.at(-1) : undefined;
+    turnsSeen.current = steps.length;
     if (focusedDraft) {
       const another = shown.current !== undefined && shown.current !== focusedDraft.id;
       shown.current = focusedDraft.id;
@@ -777,7 +778,7 @@ export const useThreadEditor = ({
     switchFocus,
     taskModel: reportingEdits(taskModel, TASK_EDITS, edited),
     thread,
-    turns: thread.state.turns,
+    turns: phraseSteps(thread.state),
     /** Moves at each edit made by hand in the form (`QuickAddBar`'s `editKey`). */
     userEdits,
     write,
