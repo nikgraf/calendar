@@ -21,6 +21,16 @@ tags:
       visible:
         id: 'quick-add-type'
     commands:
+      # Save with nothing said: the form that says why nothing was saved is
+      # behind the Assistant, so the Assistant says it over its bar. The
+      # first phrase to land takes the line away again.
+      - tapOn:
+          id: 'event-save'
+      - extendedWaitUntil:
+          visible:
+            id: 'editor-error'
+            text: 'A title and calendar are required.'
+          timeout: 5000
       # Each phrase is typed until the field holds all of it (XCTest
       # garbles input), then sent.
       - runFlow:

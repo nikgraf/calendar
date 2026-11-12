@@ -346,6 +346,7 @@ export function EditorPanel({
         moveConfirmation={moveConfirmation}
         onClose={onClose}
         task={task}
+        view={shown}
       />
     </div>
   );
@@ -424,19 +425,23 @@ function StepPreview({ editor }: { editor: ReturnType<typeof useThreadEditor> })
 
 /**
  * What stays put under the views: an older step on show with "Use this",
- * the question a lossy switch, move, conversion or delete waits on, then
- * the steps, Delete, Cancel and Save.
+ * why a save failed while the Assistant is on show (the form says so
+ * itself), the question a lossy switch, move, conversion or delete waits
+ * on, then the steps, Delete, Cancel and Save.
  */
 function EditorFooter({
   editor,
   moveConfirmation,
   onClose,
   task,
+  view,
 }: {
   editor: ReturnType<typeof useThreadEditor>;
   moveConfirmation: ReturnType<typeof useMoveConfirmation>;
   onClose: () => void;
   task: TaskRecord | undefined;
+  /** The view on show: the form says why a save failed itself, the Assistant has the footer say it. */
+  view: EditorView;
 }) {
   const { eventModel, kinds, previewing, steps, taskModel, write } = editor;
   // The footer's actions act on the form that is showing.
@@ -445,6 +450,7 @@ function EditorFooter({
       ? {
           busy: taskModel.busy,
           canDelete: Boolean(task) && !taskModel.readOnly,
+          error: taskModel.error,
           readOnly: taskModel.readOnly,
           remove: taskModel.remove,
           save: taskModel.save,
@@ -452,6 +458,7 @@ function EditorFooter({
       : {
           busy: eventModel.busy,
           canDelete: Boolean(eventModel.existing) && !eventModel.readOnly,
+          error: eventModel.error,
           readOnly: eventModel.readOnly,
           remove: eventModel.remove,
           save: eventModel.save,
@@ -459,6 +466,16 @@ function EditorFooter({
   return (
     <>
       {previewing ? <StepPreview editor={editor} /> : null}
+      {/* Why Save did nothing: the form shows it among its fields, which the Assistant covers. */}
+      {view === 'assistant' && current.error ? (
+        <p
+          className="mx-4 mt-2 shrink-0 select-text rounded-control bg-fill p-2 text-sm text-danger"
+          data-testid="editor-error"
+          role="alert"
+        >
+          {current.error}
+        </p>
+      ) : null}
       {moveConfirmation.pending ? (
         <div className="shrink-0 px-4 pt-2">
           <MoveConfirm moveConfirmation={moveConfirmation} />

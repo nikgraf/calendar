@@ -6,6 +6,7 @@ import {
   type FreeSlot,
   type PlaceCandidate,
   type ItemKind,
+  type RecurringScope,
   type TaskListInfo,
   type TaskRecord,
   Temporal,
@@ -253,6 +254,24 @@ export const threadPreviews = (
     const preview = draftPreview(draft, { color, focused: false, timeZone });
     return preview ? [preview] : [];
   });
+};
+
+/**
+ * A saved series' free slots were searched at the scope the form was at
+ * ("All events" leaves the series' own occurrences out of the way, "This
+ * event" only the one): at another scope they no longer hold, so they
+ * are let go of, with a search still out. A new item has no scope to
+ * change.
+ */
+const useSlotsOfScope = (scope: RecurringScope, drop: () => void): void => {
+  const seen = useRef(scope);
+  useEffect(() => {
+    if (seen.current !== scope) {
+      seen.current = scope;
+      drop();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- a change of scope is handled once, when it happens
+  }, [scope]);
 };
 
 /**
@@ -764,6 +783,7 @@ export const useThreadEditor = ({
             : undefined,
         }
       : undefined;
+  useSlotsOfScope(eventModel.scope, thread.dropSlots);
   const onPhrase = async (text: string): Promise<string | undefined> => {
     if (previewing) {
       return 'An earlier step is on show — use it or go forward first.';

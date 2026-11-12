@@ -1,7 +1,9 @@
+import { taskRecurrenceFromLines } from '@calendar/core';
 import { describe, expect, it } from 'vite-plus/test';
 import {
   parseRepeatNumber,
   recurrenceKey,
+  repeatChangedSince,
   repeatDisplaySpec,
   repeatNumberError,
   repeatSpecFrom,
@@ -229,5 +231,34 @@ describe('recurrenceKey', () => {
     const anchor = '2026-08-28';
     const once = repeatSpecFrom(seedRepeatFields(rule), anchor);
     expect(recurrenceKey(repeatSpecFrom(seedRepeatFields(once), anchor))).toBe(recurrenceKey(once));
+  });
+});
+
+describe('repeatChangedSince', () => {
+  const weekly = seedRepeatFields({ freq: 'weekly' });
+
+  it('is false while the fields make the rule they were seeded with', () => {
+    expect(repeatChangedSince(weekly, weekly, '2026-11-12')).toBe(false);
+    // Changed and changed back is the same rule.
+    expect(repeatChangedSince(weekly, { ...weekly, interval: '2' }, '2026-11-12')).toBe(true);
+    expect(repeatChangedSince(weekly, { ...weekly, interval: '1' }, '2026-11-12')).toBe(false);
+    // Another day, the same untouched rule.
+    expect(repeatChangedSince(weekly, weekly, '2026-11-17')).toBe(false);
+  });
+
+  it('measures against the fields as seeded, not the lines read again at another hour', () => {
+    // An end written as a UTC instant falls on another day once the start
+    // moves past it: read again with the edited hour, the baseline itself
+    // would change under a rule nobody touched (Codex on #308).
+    const lines = ['RRULE:FREQ=DAILY;UNTIL=20261130T090000Z'];
+    const read = (startTime: string) =>
+      seedRepeatFields(
+        taskRecurrenceFromLines(lines, { isAllDay: false, startTime, timeZone: 'UTC' }),
+      );
+    const seeded = read('09:00');
+    expect(read('10:00').until).not.toBe(seeded.until);
+    // The form's fields are still the seeded ones after the hour moved.
+    expect(repeatChangedSince(seeded, seeded, '2026-11-12')).toBe(false);
+    expect(repeatChangedSince(read('10:00'), seeded, '2026-11-12')).toBe(true);
   });
 });

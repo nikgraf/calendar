@@ -3,6 +3,7 @@ import { changedDraftFields, describeDraftItem, summarizeChange } from './draftC
 import {
   dropInviteeChoice,
   dropPlaceChoice,
+  dropSlots,
   EMPTY_THREAD,
   firstDraftExtras,
   focusDraft,
@@ -732,6 +733,30 @@ describe('slots on a draft', () => {
     const moved = refineThread(placed, 'at 8', [{ id: 'd1', item: later }], id);
     expect(moved.drafts[0]).not.toHaveProperty('slots');
     expect(undoTurn(moved).drafts[0]?.slots).toEqual(slots);
+  });
+
+  it('lets go of every slot once they no longer hold, on the steps to go back and forward to as well', () => {
+    const id = ids();
+    const started = startThread([dinner], 'x', { id });
+    const placed = refineThread(
+      started,
+      'find a slot tomorrow morning',
+      [{ id: 'd1', item: itemAtSlot(dinner, slots[0]!, 'Focus'), slots }],
+      id,
+    );
+    const moved = refineThread(placed, 'at 8', [{ id: 'd1', item: later }], id);
+    // The finder's step is behind the newest one, and ahead of the first once stepped back.
+    const dropped = dropSlots(moved);
+    expect(undoTurn(dropped).drafts[0]).not.toHaveProperty('slots');
+    const back = dropSlots(stepTo(moved, 1));
+    expect(stepTo(back, 2).drafts[0]).not.toHaveProperty('slots');
+    // The drafts themselves, where they are, and nothing else about them.
+    const bare = dropSlots(placed);
+    expect(bare.drafts[0]).not.toHaveProperty('slots');
+    expect(bare.drafts[0]?.item).toEqual(placed.drafts[0]?.item);
+    expect(bare.steps).toBe(placed.steps);
+    // Nothing offered anywhere: the same thread.
+    expect(dropSlots(started)).toBe(started);
   });
 
   it('a form edit keeps the slots', () => {

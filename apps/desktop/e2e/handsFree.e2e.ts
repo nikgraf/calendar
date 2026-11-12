@@ -98,7 +98,17 @@ describe('Hands-free dictation', () => {
     await cdp.waitFor(startIs('21:00'));
     expect(await cdp.eval<string>(titleValue)).toBe('Late dinner');
 
+    // An older step put on show ends it too: there is nothing to say a
+    // phrase to, and the microphone must not stay open behind a control
+    // that is off.
+    await cdp.waitFor(dictating);
+    await cdp.clickTestId('assistant-undo');
+    await cdp.waitFor(`!(${dictating})`);
+    await cdp.clickTestId('step-forward');
+    await cdp.waitFor(`!document.querySelector('[data-testid="step-preview"]')`);
+
     // The microphone ends it.
+    await cdp.clickTestId('quick-add-mic');
     await cdp.waitFor(dictating);
     await cdp.clickTestId('quick-add-mic');
     await cdp.waitFor(`!(${dictating})`);

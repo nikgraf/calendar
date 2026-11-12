@@ -938,6 +938,37 @@ export const dropPlaceChoice = (state: DraftThreadState, index: number): DraftTh
   return { ...state, drafts: state.drafts.map((each, at) => (at === index ? rest : each)) };
 };
 
+/** Some draft of the snapshot still offers free slots. */
+const offered = (snapshot: Snapshot): boolean =>
+  snapshot.drafts.some((draft) => draft.slots !== undefined);
+
+/**
+ * Every free slot a finder phrase found, let go of — on the drafts, and
+ * on the drafts of the steps kept to go back or forward to. They were
+ * searched under what no longer holds (a saved series' scope changed:
+ * "All events" leaves its own occurrences out of the way, "This event"
+ * does not), so none of them may be offered again. Not a step.
+ */
+export const dropSlots = (state: DraftThreadState): DraftThreadState => {
+  if (
+    !offered(state) &&
+    !state.history.some(offered) &&
+    !state.ahead.some((step) => offered(step.after))
+  ) {
+    return state;
+  }
+  const bare = (snapshot: Snapshot): Snapshot => ({
+    drafts: snapshot.drafts.map(withoutSlots),
+    focused: snapshot.focused,
+  });
+  return {
+    ...state,
+    ahead: state.ahead.map((step) => ({ ...step, after: bare(step.after) })),
+    drafts: state.drafts.map(withoutSlots),
+    history: state.history.map(bare),
+  };
+};
+
 /** A snapshot without the drafts named, its focus clamped. */
 const without = (snapshot: Snapshot, gone: ReadonlySet<string>): Snapshot => {
   const drafts = snapshot.drafts.filter((draft) => !gone.has(draft.id));
@@ -1407,6 +1438,11 @@ export const useDraftThread = ({
       setState((latest) => dropInviteeChoice(latest, index, name)),
     /** A place choice settled by hand: a candidate picked (the form took it) or the text kept. */
     dropPlace: (index: number) => setState((latest) => dropPlaceChoice(latest, index)),
+    /** The free slots found so far no longer hold (`dropSlots`); a search still out is dropped with them. */
+    dropSlots: () => {
+      abandon();
+      setState((latest) => dropSlots(latest));
+    },
     focus: (index: number) => setState((latest) => focusDraft(latest, index)),
     /** A saved item's thread starts as that item (`openThread`); a thread under way stays. */
     open: (base: FormSnapshot) =>

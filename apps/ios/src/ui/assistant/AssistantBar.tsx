@@ -212,8 +212,9 @@ export function AssistantBar({
               accessibilityLabel={handsFree ? 'Stop dictating' : 'Dictate'}
               accessibilityRole="button"
               accessibilityState={{ selected: handsFree }}
-              // On, it always answers (to stop); off, not while a typed phrase is read.
-              disabled={off || (!handsFree && working)}
+              // On, it always answers (to stop); off, not while a typed phrase
+              // is read, without the model or with an older step on show.
+              disabled={!handsFree && (off || working)}
               onPress={() => {
                 if (!handsFree) {
                   Keyboard.dismiss();
@@ -223,7 +224,7 @@ export function AssistantBar({
               style={[
                 styles.mic,
                 handsFree && styles.micOn,
-                (off || (!handsFree && working)) && styles.disabled,
+                !handsFree && (off || working) && styles.disabled,
               ]}
               testID="quick-add-mic"
             >

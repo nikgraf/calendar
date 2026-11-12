@@ -331,7 +331,14 @@ function EditorForm({
             accessibilityState={{ checked: done }}
             disabled={busy}
             leading={<TaskCheck checked={done} size="list" />}
-            onPress={() => void toggleCompletion(editor.userEdits > 0 ? confirmDiscard : undefined)}
+            // Anything not saved yet is asked about: an edit by hand, and a
+            // step of the thread (a phrase to the Assistant changes the
+            // to-do without touching a field).
+            onPress={() =>
+              void toggleCompletion(
+                editor.userEdits > 0 || editor.steps.of > 0 ? confirmDiscard : undefined,
+              )
+            }
             testID="task-editor-completion"
             title={completionTitle}
           />
@@ -591,10 +598,11 @@ export function EventEditSheet({
   const quick = useQuickAddModel({
     editKey: editor.userEdits,
     fallbackDate: seed.initialDate.toString(),
-    // Nothing is listened for while an older step is on show.
-    hold: editor.applying || previewing,
+    hold: editor.applying,
     initialText: seed.quickAddText,
     model: languageModel,
+    // An older step on show: nothing is listened for, and listening ends.
+    off: previewing,
     onApply: (item) => {
       lesson.done();
       void kinds.apply(item);
@@ -628,6 +636,7 @@ export function EventEditSheet({
   const kindControl = (
     <KindControl birthday={birthday !== undefined} editor={editor} sourceKind={sourceKind} />
   );
+  const saveError = kinds.mode === 'todo' ? editor.taskModel.error : editor.eventModel.error;
   const form = (
     <EditorForm
       bare={presentation === 'route'}
@@ -658,6 +667,18 @@ export function EventEditSheet({
               taskLists={taskLists}
             />
             {previewing ? <UseStepCard editor={editor} /> : null}
+            {/* Why Save did nothing: the form shows it among its rows, and is not on screen here. */}
+            {saveError ? (
+              <Text
+                accessibilityLiveRegion="assertive"
+                accessibilityRole="alert"
+                selectable
+                style={styles.formError}
+                testID="editor-error"
+              >
+                {saveError}
+              </Text>
+            ) : null}
             <AssistantBar
               hasDrafts={drafts.length > 0}
               onForm={() => setView('form')}

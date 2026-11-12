@@ -156,10 +156,11 @@ export function AssistantView({
   const quick = useQuickAddModel({
     editKey,
     fallbackDate,
-    // Nothing is listened for while an older step is on show.
-    hold: editor.applying || previewing,
+    hold: editor.applying,
     initialText,
     model: desktopLanguageModel,
+    // An older step on show: nothing is listened for, and listening ends.
+    off: previewing,
     onApply,
     onPhrase,
     speech: desktopSpeech,
@@ -554,8 +555,9 @@ function AssistantInput({
             }`}
             data-listening={voice === 'recording' ? (heard ? 'speech' : 'quiet') : undefined}
             data-testid="quick-add-mic"
-            // On, it always answers (to stop); off, not while a typed phrase is read.
-            disabled={(!handsFree && working) || previewing}
+            // On, it always answers (to stop); off, not while a typed phrase
+            // is read or an older step is on show.
+            disabled={!handsFree && (working || previewing)}
             onClick={toggleVoice}
             title={handsFree ? 'Stop dictating' : 'Dictate'}
             type="button"

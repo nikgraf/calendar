@@ -193,6 +193,20 @@ export const repeatDisplaySpec = (
 };
 
 /**
+ * Whether the fields make another rule than the ones the form was seeded
+ * with — by value (`recurrenceKey`), so a rule changed and changed back,
+ * or one that left for a thread and came back, is the same rule. Both are
+ * read on the same day: an untouched weekly rule follows the date.
+ */
+export const repeatChangedSince = (
+  seeded: RepeatFields,
+  fields: RepeatFields,
+  anchorIso: string,
+): boolean =>
+  recurrenceKey(repeatSpecFrom(fields, anchorIso)) !==
+  recurrenceKey(repeatSpecFrom(seeded, anchorIso));
+
+/**
  * The repeat-rule form state shared by the event editor (RRULE for
  * Google, the structured rule for Apple Calendar) and the Reminders form
  * (EKRecurrenceRule) — same chips, same validation, one seed shape.
@@ -211,12 +225,19 @@ export const useRepeatState = (
   seedKey?: string,
 ) => {
   const [fields, setFields] = useState<RepeatFields>(() => seedRepeatFields(seed));
+  // The fields as seeded, kept: what "changed" is measured against. Not
+  // `seed` read again — a caller may derive it from what the form holds
+  // now (an event's lines are read with its start time, and a UTC end
+  // falls on another day once that moves).
+  const [seeded, setSeeded] = useState(fields);
   // Adjusting state on a prop change, during render (the React-sanctioned
   // form): the master's lines land once, after the editor opened.
   const [appliedSeedKey, setAppliedSeedKey] = useState(seedKey);
   if (seedKey !== appliedSeedKey) {
+    const next = seedRepeatFields(seed);
     setAppliedSeedKey(seedKey);
-    setFields(seedRepeatFields(seed));
+    setFields(next);
+    setSeeded(next);
   }
   // Functional updates: a handler may call two setters in one tick (Ends
   // "on date" then seeding "until"), and the second must see the first.
@@ -231,6 +252,8 @@ export const useRepeatState = (
   const ordinal = shownOrdinal(fields, anchorIso);
   return {
     repeat: fields.repeat,
+    /** The rule is another one than the form was seeded with (`repeatChangedSince`). */
+    repeatChanged: repeatChangedSince(seeded, fields, anchorIso),
     repeatCount: fields.count,
     repeatEnds: fields.ends,
     /** The fields as they stand, numbers as typed: what a thread keeps per draft. */

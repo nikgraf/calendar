@@ -335,6 +335,27 @@ describe('The editor’s Assistant and Form views', () => {
       });
   });
 
+  it('says in the Assistant why a save did nothing; in the form the form says it', async () => {
+    const { cdp } = app;
+    await cdp.eval(COMMAND_N);
+    await cdp.waitFor(headingIs('New event'));
+    expect(await cdp.eval<string>(view)).toBe('assistant');
+    // Nothing said yet: there is no title to save. The form that would say
+    // so is behind the Assistant, so the footer does.
+    await cdp.clickButtonWithText('Save');
+    await cdp.waitFor(`${textOf('editor-error')} === 'A title and calendar are required.'`);
+    expect(await cdp.eval<boolean>(exists('editor'))).toBe(true);
+    await cdp.showEditorView('form');
+    expect(await cdp.eval<boolean>(exists('editor-error'))).toBe(false);
+    expect(
+      await cdp.eval<boolean>(
+        `document.querySelector('[data-testid="editor-form"]').textContent.includes('A title and calendar are required.')`,
+      ),
+    ).toBe(true);
+    await cdp.pressEscape();
+    await cdp.waitFor(`!${exists('editor')}`);
+  });
+
   it('counts an edit by hand as a step, further typing in the same field as the same one', async () => {
     const { cdp } = app;
     await cdp.eval(COMMAND_N);

@@ -60,7 +60,7 @@ import {
 } from './eventEditorChanges.ts';
 import { useAccounts, useBackendMutations, useEventMaster, useLocationGeo } from './hooks.ts';
 import { useOneWrite } from './oneWrite.ts';
-import { recurrenceKey, repeatSpecFrom, seedRepeatFields, useRepeatState } from './repeatState.ts';
+import { useRepeatState } from './repeatState.ts';
 
 /**
  * Fields a parsed phrase can prefill. Structural on purpose so app-state
@@ -688,12 +688,10 @@ export const useEventEditorModel = ({
   );
   // A rule that is still the one the form was seeded with is never re-sent
   // (resending a series' rule drops its exceptions): only another rule
-  // puts `recurrence` on the update. Both sides are read through the
-  // form's own fields, so a rule that left for a thread and came back, or
-  // was changed and changed back, is the same rule.
-  const ruleChanged =
-    recurrenceKey(repeatSpec()) !==
-    recurrenceKey(repeatSpecFrom(seedRepeatFields(repeatSeed.seed), date));
+  // puts `recurrence` on the update. Measured against the fields as they
+  // were seeded (`repeatChanged`), never against `repeatSeed` read again:
+  // that one follows the start time being edited.
+  const ruleChanged = repeatState.repeatChanged;
   // The URL a task carried in: the form has no control for it, so it goes
   // out with the create draft as it came.
   const [carried, setCarried] = useState<{ readonly url?: string | undefined }>({});
