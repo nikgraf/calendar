@@ -1,9 +1,11 @@
 import type { ModelAvailability } from '@calendar/ai';
 
 /**
- * What the quick-add notice and Diagnostics say about Apple's on-device
- * model — one wording for both, so a screenshot of either names the same
- * cause. Each answer says what the user can do, or that there is nothing
+ * What Diagnostics (and, under the fixture model, the Assistant's notice)
+ * say about Apple's on-device model, which find a time, search sentences
+ * and capture use; the Assistant runs on a model of its own
+ * (`assistantRuntime.ts`). One wording for both, so a screenshot of
+ * either names the same cause. Each answer says what the user can do, or that there is nothing
  * to do, and never more than iOS reported: 'not-ready' may be a download,
  * but iOS does not say so.
  */
@@ -16,25 +18,25 @@ export const availabilityGuidance = (
   }
   switch (availability.status) {
     case 'ready':
-      return 'Apple Intelligence is ready: quick add can read phrases.';
+      return 'Apple Intelligence is ready: find a time, search sentences and capture can read text.';
     case 'disabled':
       return (
-        'Quick add needs Apple Intelligence. Turn it on in Settings → Apple Intelligence & Siri. ' +
+        'Find a time, search sentences and capture need Apple Intelligence. Turn it on in Settings → Apple Intelligence & Siri. ' +
         "If it is already on, Siri's language has to match the iPhone's."
       );
     case 'not-ready':
       return (
         "Apple Intelligence is on, but its model isn't ready yet — it may still be downloading or " +
-        'preparing, or be briefly unavailable. Quick add appears here once iOS reports it ready.'
+        'preparing, or be briefly unavailable. They work once iOS reports it ready.'
       );
     case 'unsupported':
       return availability.nativeReason === 'osTooOld'
-        ? `Quick add needs Apple Intelligence, which needs iOS 26 or later. This iPhone runs iOS ${iosVersion}.`
+        ? `Find a time, search sentences and capture need Apple Intelligence, which needs iOS 26 or later. This iPhone runs iOS ${iosVersion}.`
         : availability.nativeReason === 'deviceNotEligible'
-          ? "Quick add needs Apple Intelligence, which this iPhone doesn't support."
-          : "iOS reports that this iPhone can't run Apple Intelligence, which quick add needs.";
+          ? "Find a time, search sentences and capture need Apple Intelligence, which this iPhone doesn't support."
+          : "iOS reports that this iPhone can't run Apple Intelligence, which find a time, search sentences and capture need.";
     case 'missing-module':
-      return "This build of Solunivo doesn't include Apple Intelligence support, so quick add can't run in it.";
+      return "This build of Solunivo doesn't include Apple Intelligence support, so find a time, search sentences and capture can't read text in it.";
     case 'unavailable':
       return availability.reasonsUnavailable
         ? "iOS reports Apple Intelligence as unavailable, but this build of Solunivo can't read why. A newer build shows the reason."

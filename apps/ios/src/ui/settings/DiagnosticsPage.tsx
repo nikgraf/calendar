@@ -9,6 +9,8 @@ import { useEffect, useState } from 'react';
 import { AccessibilityInfo, Platform } from 'react-native';
 import { appleLanguageModel } from '../../appleModel.ts';
 import { appleSpeech } from '../../appleSpeech.ts';
+import { assistantDownload, useAssistantModelState } from '../../assistantRuntime.ts';
+import { noticeCopy } from '../../assistantModelCopy.ts';
 import { clearLastRenderError, readLastRenderError } from '../../crashLog.ts';
 import {
   availabilityDetails,
@@ -33,6 +35,12 @@ export function DiagnosticsPage() {
   // the real answer must still show. Same checks and words as the notice.
   const { availability, checkedAt, lastManualCheck, manualChecking, retry, status } =
     useModelAvailability(appleLanguageModel, onAppActive);
+  const assistant = useAssistantModelState();
+  const download = assistantDownload();
+  const assistantCopy = noticeCopy(assistant, {
+    network: download.network(),
+    size: download.size(),
+  });
   const [dictation, setDictation] = useState('checking…');
   const [reminderListCount, setReminderListCount] = useState<number | undefined>();
   const [lastError, setLastError] = useState(readLastRenderError);
@@ -94,6 +102,32 @@ export function DiagnosticsPage() {
           title="Web Crypto"
           value={typeof globalThis.crypto?.getRandomValues === 'function' ? 'ok' : 'missing'}
         />
+      </Section>
+      <Section header="Assistant Model">
+        <Row
+          subtitle={assistantCopy.lines.join(' ') || undefined}
+          title="Download"
+          value={
+            assistant.kind === 'unsupported' ? `unsupported (${assistant.reason})` : assistant.kind
+          }
+          valueTestID="diagnostics-assistant-model"
+        />
+        {assistantCopy.action ? (
+          <ActionRow
+            onPress={() => {
+              const kind = assistantCopy.action?.kind;
+              if (kind === 'download') {
+                void download.agree('wifi');
+              } else if (kind === 'mobile') {
+                void download.allowMobileData();
+              } else {
+                void download.retry();
+              }
+            }}
+            testID="diagnostics-assistant-model-action"
+            title={assistantCopy.action.label}
+          />
+        ) : null}
       </Section>
       <Section
         footer={

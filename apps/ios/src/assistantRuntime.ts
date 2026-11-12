@@ -1,3 +1,4 @@
+import { type PhraseReader, tunedReader } from '@calendar/ai';
 import { useSyncExternalStore } from 'react';
 import { loadModelDownloadModule } from '../modules/solunivo-model-download/index.ts';
 import { loadProcessMemoryModule } from '../modules/solunivo-process-memory/index.ts';
@@ -163,14 +164,19 @@ const depsOf = (): AssistantDownloadDeps => {
 interface AssistantRuntime {
   readonly download: AssistantDownload;
   readonly model: AssistantModel;
+  /** The Assistant's reader: the tuned path over the app's own model; none under the fixture model. */
+  readonly reader: PhraseReader | undefined;
   started: boolean;
 }
 
 const makeRuntime = (): AssistantRuntime => {
   const download = createAssistantDownload(depsOf());
+  const model = createAssistantModel({ runtime: loadOpenModelRuntime(), state: download.getState });
   return {
     download,
-    model: createAssistantModel({ runtime: loadOpenModelRuntime(), state: download.getState }),
+    model,
+    // The fixture model keeps the app's pipeline: the e2e flows feed it its own grammar.
+    reader: modelFixture ? undefined : tunedReader(model),
     started: false,
   };
 };
@@ -180,6 +186,8 @@ const runtime = (): AssistantRuntime => (holder.solunivoAssistantModel ??= makeR
 
 export const assistantDownload = (): AssistantDownload => runtime().download;
 export const assistantModel = (): AssistantModel => runtime().model;
+/** How the Assistant reads what is said: the tuned path, or (none) the app's pipeline over the fixture model. */
+export const assistantReader = (): PhraseReader | undefined => runtime().reader;
 
 /** The download's state, for a screen that shows it. */
 export const useAssistantModelState = (): AssistantModelState => {

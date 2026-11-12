@@ -34,8 +34,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { onAppActive } from '../appActive.ts';
 import { appleSpeech } from '../appleSpeech.ts';
 import { backendClient } from '../backend.ts';
+import type { LanguageModel, ModelStatus } from '@calendar/ai';
+import { type AssistantModelState, statusOf } from '../assistantDownload.ts';
+import { assistantDownload, assistantReader, useAssistantModelState } from '../assistantRuntime.ts';
 import { languageModel } from '../model.ts';
 import { AssistantBar } from './assistant/AssistantBar.tsx';
+import { AssistantModelNotice } from './assistant/AssistantModelNotice.tsx';
 import { AssistantView } from './assistant/AssistantView.tsx';
 import { DraftPager } from './assistant/DraftPager.tsx';
 import { PILLS_SHOWN, pillTuckAfter } from './assistant/pillTuck.ts';
@@ -50,6 +54,7 @@ import { EventEditForm } from './EventEditForm.tsx';
 import { FieldFlashContext, FlashView } from './FlashView.tsx';
 import { Row, Section } from './GroupedList.tsx';
 import { LessonBanner } from './lesson/LessonBanner.tsx';
+import { ModelAvailabilityNotice } from './ModelAvailabilityNotice.tsx';
 import { ReminderEditForm } from './ReminderEditForm.tsx';
 import { SegmentedControl } from './SegmentedControl.tsx';
 import { TaskCheck } from './TaskCheck.tsx';
@@ -490,6 +495,23 @@ function FormView({
  * header in either view; Save on one of several writes it and moves to
  * the next.
  */
+
+/** A model that is never asked: the Assistant's own runs, and Apple's is not checked for it. */
+const NO_CHECK: LanguageModel = {
+  generateJson: async () => {
+    throw new Error('Not asked: the Assistant runs on its own model.');
+  },
+  status: async () => 'ready',
+};
+
+/** The Create lesson's note while the Assistant's model is not on this iPhone yet. */
+const lessonNoteOf = (state: AssistantModelState): string =>
+  state.kind === 'unsupported'
+    ? 'This iPhone cannot run the Assistant’s model — the form still makes an event.'
+    : state.kind === 'unasked' || state.kind === 'declined'
+      ? 'Describing an event needs the Assistant’s model, a one-time download — the form still makes one.'
+      : 'The Assistant’s model is still downloading — the form still makes an event.';
+
 export function EventEditSheet({
   birthday,
   calendars,
@@ -547,6 +569,7 @@ export function EventEditSheet({
       lesson.done();
       onSaved?.();
     },
+    reader: assistantReader(),
     seed,
     sourceKind,
     task,
@@ -564,18 +587,49 @@ export function EventEditSheet({
   // The model answers a moment after the editor opened. Not ready, and
   // nothing said or typed yet: the form is what there is to work with,
   // once — the Assistant says why and is a tap away.
-  const availability = useModelAvailability(languageModel, onAppActive);
+  // The Assistant runs on its own model (`assistantRuntime.ts`), whose state
+  // is known at once; Apple's is asked only under the fixture model (e2e).
+  const ownModel = assistantReader() !== undefined;
+  const appleAvailability = useModelAvailability(ownModel ? NO_CHECK : languageModel, onAppActive);
+  const own = useAssistantModelState();
+  const status: ModelStatus | null = ownModel ? statusOf(own) : appleAvailability.status;
   const answered = useRef(false);
   useEffect(() => {
-    if (availability.status === null || answered.current) {
+    if (status === null || answered.current) {
       return;
     }
     answered.current = true;
-    if (availability.status !== 'ready' && steps.of === 0) {
+    if (status !== 'ready' && steps.of === 0) {
       setView('form');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the first answer only
-  }, [availability.status]);
+  }, [status]);
+  const download = assistantDownload();
+  const notice =
+    status === null || status === 'ready' ? undefined : ownModel ? (
+      <AssistantModelNotice
+        network={download.network()}
+        onAction={(action) => {
+          if (action === 'download') {
+            void download.agree('wifi');
+          } else if (action === 'mobile') {
+            void download.allowMobileData();
+          } else {
+            void download.retry();
+          }
+        }}
+        size={download.size()}
+        state={own}
+      />
+    ) : appleAvailability.availability ? (
+      <ModelAvailabilityNotice
+        availability={appleAvailability.availability}
+        checkedAt={appleAvailability.checkedAt}
+        lastManualCheck={appleAvailability.lastManualCheck}
+        manualChecking={appleAvailability.manualChecking}
+        onCheckAgain={appleAvailability.retry}
+      />
+    ) : undefined;
 
   // The Create lesson's frame, over either view. Where the model is not
   // ready the editor has fallen back to its form: the banner says why the
@@ -584,9 +638,11 @@ export function EventEditSheet({
     <LessonBanner
       id={seed.lesson}
       note={
-        availability.status !== null && availability.status !== 'ready'
-          ? 'Describing an event needs Apple Intelligence, which is not ready on this iPhone — the form still makes one.'
-          : undefined
+        status === null || status === 'ready'
+          ? undefined
+          : ownModel
+            ? lessonNoteOf(own)
+            : 'Describing an event needs Apple Intelligence, which is not ready on this iPhone — the form still makes one.'
       }
       onSkip={lesson.open ? onClose : undefined}
     />
@@ -657,11 +713,11 @@ export function EventEditSheet({
         {shown === 'assistant' ? (
           <>
             <AssistantView
-              availability={availability}
               banner={lessonBanner}
               calendars={calendars}
               editor={editor}
               note={seed.thread?.note}
+              notice={notice}
               onEdit={() => setView('form')}
               pending={quick.busy && quick.phrase.trim() !== '' ? quick.phrase : undefined}
               taskLists={taskLists}
@@ -685,7 +741,7 @@ export function EventEditSheet({
               previewing={previewing}
               quick={quick}
               startTyping={seed.quickAddText !== undefined}
-              status={availability.status}
+              status={status}
             />
           </>
         ) : (
