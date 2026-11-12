@@ -10,6 +10,7 @@ import {
   summarize,
 } from './modelSpike.ts';
 import type { SpikeCase } from './modelSpikeCases.ts';
+import { letGoLlama, takeLlama } from './llamaOwner.ts';
 import { loadOpenModel, type OpenModelRuntime } from './openModel.ts';
 import { fileEngine, type SpikeEngine, systemEngine } from './spikeEngine.ts';
 
@@ -211,6 +212,8 @@ export const createSpikeStore = (deps: SpikeDeps) => {
       const footprintBefore = deps.memory()?.footprint ?? 0;
       const started = deps.now();
       try {
+        // The Assistant's model goes first: two loaded models would not fit.
+        await takeLlama('spike', async () => undefined);
         const context = await loadOpenModel(runtime, {
           onProgress: (percent) => set({ step: { kind: 'loading', model, percent } }),
           path: files.pathOf(model),
@@ -220,6 +223,7 @@ export const createSpikeStore = (deps: SpikeDeps) => {
           // from here, and a refused command leaves the context unable to compute: it is not kept.
           set({ step: { kind: 'unloading', model } });
           const failure = await release(fileEngine(context));
+          letGoLlama('spike');
           set({
             memory: deps.memory(),
             notice:
@@ -244,6 +248,7 @@ export const createSpikeStore = (deps: SpikeDeps) => {
           },
         });
       } catch (error) {
+        letGoLlama('spike');
         set({ notice: `Loading failed: ${messageOf(error)}`, step: { kind: 'idle' } });
       }
     },
@@ -431,6 +436,7 @@ export const createSpikeStore = (deps: SpikeDeps) => {
       // Nothing may compute on this context again: out it goes. The report of the phrases before the cut stays.
       set({ report, step: { kind: 'unloading', model: loaded.model } });
       const unloadFailure = await release(loaded.engine);
+      letGoLlama('spike');
       set({
         memory: deps.memory(),
         notice:
@@ -481,6 +487,7 @@ export const createSpikeStore = (deps: SpikeDeps) => {
       const { loaded } = state.step;
       set({ step: { kind: 'unloading', model: loaded.model } });
       const notice = await release(loaded.engine);
+      letGoLlama('spike');
       set({ memory: deps.memory(), notice, step: { kind: 'idle' } });
     },
   };
