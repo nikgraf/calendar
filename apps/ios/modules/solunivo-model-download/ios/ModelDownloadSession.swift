@@ -199,24 +199,41 @@ final class ModelDownloadSession: NSObject, URLSessionDownloadDelegate, @uncheck
     let task: URLSessionTask
   }
 
+  /// What both sessions' `getAllTasks` found, gathered from their callbacks under a lock.
+  private final class Found: @unchecked Sendable {
+    private let lock = NSLock()
+    private var items: [Running] = []
+
+    func add(_ more: [Running]) {
+      lock.lock()
+      items += more
+      lock.unlock()
+    }
+
+    func all() -> [Running] {
+      lock.lock()
+      defer { lock.unlock() }
+      return items
+    }
+  }
+
   private func allTasks(_ then: @escaping @Sendable ([Running]) -> Void) {
     run {
       let group = DispatchGroup()
-      var found: [Running] = []
-      let lock = NSLock()
+      let found = Found()
       for network in [Route.wifi, .any] {
         group.enter()
         self.session(network).getAllTasks { tasks in
-          lock.lock()
-          found += tasks
-            .filter { $0.state == .running || $0.state == .suspended }
-            .map { Running(job: Self.job(of: $0), network: network, task: $0) }
-          lock.unlock()
+          found.add(
+            tasks
+              .filter { $0.state == .running || $0.state == .suspended }
+              .map { Running(job: Self.job(of: $0), network: network, task: $0) })
           group.leave()
         }
       }
       group.notify(queue: .global()) {
-        self.run { then(found) }
+        let tasks = found.all()
+        self.run { then(tasks) }
       }
     }
   }
@@ -334,14 +351,17 @@ final class ModelDownloadSession: NSObject, URLSessionDownloadDelegate, @uncheck
     }
     let monitor = NWPathMonitor()
     monitor.pathUpdateHandler = { [weak self] path in
+      guard let self else {
+        return
+      }
       let reading = [
         "constrained": path.isConstrained,
         "expensive": path.isExpensive,
         "satisfied": path.status == .satisfied,
       ]
-      self?.run {
-        self?.latestPath = reading
-        self?.emit?("onPath", reading)
+      self.run {
+        self.latestPath = reading
+        self.emit?("onPath", reading)
       }
     }
     monitor.start(queue: DispatchQueue(label: "com.solunivo.model-download.path"))

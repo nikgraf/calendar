@@ -11,9 +11,10 @@ public class SolunivoModelDownloadModule: Module {
 
     Events("onProgress", "onFinish", "onFail", "onPath")
 
-    OnCreate {
-      ModelDownloadSession.shared.attach { [weak self] name, body in
-        self?.sendEvent(name, body)
+    OnCreate { [weak self] in
+      let module = WeakModule(self)
+      ModelDownloadSession.shared.attach { name, body in
+        module.value?.sendEvent(name, body)
       }
     }
 
@@ -55,5 +56,15 @@ public class SolunivoModelDownloadModule: Module {
 
   private static func route(_ network: String) -> ModelDownloadSession.Route {
     network == "any" ? .any : .wifi
+  }
+}
+
+/// The module as the session's events reach it, from the session's queue:
+/// held weakly, so the session does not keep a module JS let go.
+private final class WeakModule: @unchecked Sendable {
+  weak var value: SolunivoModelDownloadModule?
+
+  init(_ value: SolunivoModelDownloadModule?) {
+    self.value = value
   }
 }
