@@ -25,8 +25,9 @@ import { changedDraftFields, type DraftField } from './draftChanges.ts';
 import {
   type Draft,
   type DraftExtras,
+  foldForm,
+  type HandStep,
   phraseSteps,
-  updateDraft,
   useDraftThread,
 } from './draftThread.ts';
 import {
@@ -155,10 +156,19 @@ const TASK_EDITS = [
   'toggleWeekday',
 ] as const satisfies ReadonlyArray<keyof ReturnType<typeof useTaskEditorModel>>;
 
+/** A call's result that answers later. */
+const isThenable = (value: unknown): value is PromiseLike<unknown> =>
+  typeof value === 'object' &&
+  value !== null &&
+  'then' in value &&
+  typeof value.then === 'function';
+
 /**
  * The model with each of `edits` reporting its call first — the form's
  * hand edits, as the forms receive the model; the editor's own calls go
- * to the model itself and report nothing.
+ * to the model itself and report nothing. A call that answers later (a
+ * picked place's coordinates, a kind switch that asks first) reports
+ * again once it has: what it changed is in the form only then.
  */
 export const reportingEdits = <Model extends object>(
   model: Model,
@@ -171,7 +181,12 @@ export const reportingEdits = <Model extends object>(
     if (typeof call === 'function') {
       reporting[key] = ((...args: Array<unknown>) => {
         onEdit();
-        return (call as (...args: Array<unknown>) => unknown)(...args);
+        const result = (call as (...args: Array<unknown>) => unknown)(...args);
+        if (isThenable(result)) {
+          // Either way it settles: a refusal changed nothing, which reads as nothing.
+          void Promise.resolve(result).then(onEdit, onEdit);
+        }
+        return result;
       }) as Model[typeof key];
     }
   }
@@ -504,9 +519,11 @@ export const useThreadEditor = ({
     }
     applied.current = version;
     setSeenVersion(version);
-    const { steps } = thread.state;
-    const landed = steps.length > turnsSeen.current ? steps.at(-1) : undefined;
-    turnsSeen.current = steps.length;
+    // A phrase landed when there is one more of them: a step made by hand
+    // grows the list without the form having anything to take over.
+    const phrases = phraseSteps(thread.state);
+    const landed = phrases.length > turnsSeen.current ? phrases.at(-1) : undefined;
+    turnsSeen.current = phrases.length;
     if (focusedDraft) {
       const another = shown.current !== undefined && shown.current !== focusedDraft.id;
       shown.current = focusedDraft.id;
@@ -549,9 +566,28 @@ export const useThreadEditor = ({
   }, [version]);
 
   // Each edit made by hand in the form, counted: hands-free dictation
-  // stops listening at the first one.
+  // stops listening at the first one, and the thread reads the form once
+  // the edit has rendered — what it changed is a step one can go back
+  // over (`foldForm`). Not while the form is still taking a change of the
+  // thread's in: its fields are then between two drafts.
   const [userEdits, setUserEdits] = useState(0);
-  const edited = () => setUserEdits((count) => count + 1);
+  const unread = useRef<HandStep | undefined>(undefined);
+  const edited = (how: HandStep = { kind: 'edit' }) => {
+    // A pick and the edits it makes are one step: the pick's.
+    unread.current = unread.current?.kind === 'pick' ? unread.current : how;
+    setUserEdits((count) => count + 1);
+  };
+  const applying = seenVersion !== version || openApplies > 0;
+  const { record } = thread;
+  useEffect(() => {
+    const how = unread.current;
+    if (how === undefined || applying) {
+      return;
+    }
+    unread.current = undefined;
+    record(readForm(), how);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the count names the edits; the readers are the latest render's
+  }, [userEdits, applying]);
 
   /**
    * The form moves into a free slot the thread offered (a chip, a
@@ -560,7 +596,7 @@ export const useThreadEditor = ({
    * by hand: it changes the date and times as the fields would.
    */
   const moveToSlot = (slot: FreeSlot) => {
-    edited();
+    edited({ kind: 'pick', pick: 'slot' });
     eventModel.applySlot(slot);
     reveal(Temporal.PlainDate.from(slot.date));
   };
@@ -568,8 +604,9 @@ export const useThreadEditor = ({
   /**
    * The names a turn invited that found no one contact, for the focused
    * event — only while its calendar can invite (an Apple calendar's form
-   * cannot hold guests). Picking a contact puts the guest in the form, as
-   * a hand edit; either way the name leaves the list.
+   * cannot hold guests). Picking a contact puts the guest in the form;
+   * the step that records it takes the name off the list, so going back
+   * over the pick asks again. A name let go of just leaves the list.
    */
   const inviteeChoices =
     mode === 'event' && eventModel.canInvite ? (focusedDraft?.inviteeChoices ?? []) : [];
@@ -577,9 +614,8 @@ export const useThreadEditor = ({
     if (!settled) {
       return;
     }
-    edited();
+    edited({ kind: 'pick', name, pick: 'guest' });
     eventModel.addAttendee({ displayName: contact.displayName, email: contact.email });
-    thread.dropChoice(focused, name);
   };
   const dismissInvitee = (name: string) => {
     if (settled) {
@@ -600,14 +636,14 @@ export const useThreadEditor = ({
     if (!settled) {
       return;
     }
-    edited();
+    edited({ kind: 'pick', pick: 'place' });
     eventModel.applyPlace(candidate.geo);
   };
   const keepPlace = () => {
     if (!settled || placeChoice === undefined) {
       return;
     }
-    edited();
+    edited({ kind: 'pick', pick: 'place' });
     eventModel.keepLocationText(placeChoice.text);
   };
   /** The coordinates the form vouches for now, for the chips to tell a held place from its text. */
@@ -623,7 +659,7 @@ export const useThreadEditor = ({
     if (index === focused || drafts[index] === undefined || !settled) {
       return;
     }
-    thread.update(focused, currentItem(), currentExtras());
+    thread.record({ extras: currentExtras(), item: currentItem() });
     thread.focus(index);
   };
   useEffect(() => {
@@ -698,13 +734,8 @@ export const useThreadEditor = ({
       // The form's edits go into the thread first: should the batch stop
       // short, the focused draft is still what the user last saw.
       const form = readForm();
-      const current = updateDraft(
-        threadRef.current,
-        threadRef.current.focused,
-        form.item,
-        form.extras,
-      );
-      thread.update(current.focused, form.item, form.extras);
+      const current = foldForm(threadRef.current, form);
+      thread.record(form);
       const plan = planAddAll(current, {
         calendars,
         // A draft the form never showed goes where the form points now.
@@ -742,7 +773,7 @@ export const useThreadEditor = ({
   return {
     addAll,
     /** The form is still taking the thread's last change in: the next phrase waits. */
-    applying: seenVersion !== version || openApplies > 0,
+    applying,
     batchError,
     canAddAll,
     /** A name let go of: no contact is picked for it. */

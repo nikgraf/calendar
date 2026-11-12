@@ -112,4 +112,30 @@ describe('reportingEdits', () => {
     // A setter the model does not offer here stays absent.
     expect(reporting.clearDueDate).toBeUndefined();
   });
+
+  it('reports a call that answers later a second time, once it has, refused or not', async () => {
+    const calls: Array<string> = [];
+    const model = {
+      pickPlace: async (name: string) => {
+        calls.push(`pick ${name}`);
+        await Promise.resolve();
+        calls.push('coordinates');
+      },
+      switchTo: async () => {
+        await Promise.resolve();
+        throw new Error('declined');
+      },
+    };
+    const reporting = reportingEdits(model, ['pickPlace', 'switchTo'], () => calls.push('edit'));
+
+    await reporting.pickPlace('Café');
+    // The second report follows the answer: the form holds the coordinates by then.
+    await Promise.resolve();
+    expect(calls).toEqual(['edit', 'pick Café', 'coordinates', 'edit']);
+
+    calls.length = 0;
+    await expect(reporting.switchTo()).rejects.toThrow('declined');
+    await Promise.resolve();
+    expect(calls).toEqual(['edit', 'edit']);
+  });
 });

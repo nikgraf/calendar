@@ -25,7 +25,9 @@ import { useRef, useState } from 'react';
 import {
   changedDraftFields,
   describeDraftItem,
+  draftChanges,
   lastDayOf,
+  type StepField,
   summarizeChange,
 } from './draftChanges.ts';
 import {
@@ -147,11 +149,43 @@ export interface PhraseStep {
 }
 
 /**
- * One step of a thread, oldest first in `steps`: what happened to the
- * drafts between two of the states the thread can go back to. A union on
- * `kind`, so what is not a phrase can join it.
+ * An edit made by hand in the form: the fields it changed on one draft.
+ * Further edits to the same fields join the step (a title typed letter by
+ * letter is one step); an edit to another field starts the next.
  */
-export type DraftStep = PhraseStep;
+export interface EditStep {
+  readonly drafts: ReadonlyArray<string>;
+  readonly fields: ReadonlyArray<StepField>;
+  readonly id: string;
+  readonly kind: 'edit';
+}
+
+/** What a pick settles: a contact for a name, a place for a text, a free slot. */
+export type Pick = 'guest' | 'place' | 'slot';
+
+/** A choice the thread offered, taken by hand: a contact, a place or a free slot. */
+export interface PickStep {
+  readonly drafts: ReadonlyArray<string>;
+  readonly id: string;
+  readonly kind: 'pick';
+  readonly pick: Pick;
+}
+
+/**
+ * One step of a thread, oldest first in `steps`: what happened to the
+ * drafts between two of the states the thread can go back to — a phrase,
+ * an edit by hand, a choice picked.
+ */
+export type DraftStep = EditStep | PhraseStep | PickStep;
+
+/**
+ * How the form came to hold what a fold reads from it: an edit, or a pick
+ * among what the thread offered — a contact picked for a `name` settles
+ * that open choice in the same step, so going back over it reopens it.
+ */
+export type HandStep =
+  | { readonly kind: 'edit' }
+  | { readonly kind: 'pick'; readonly name?: string | undefined; readonly pick: Pick };
 
 interface Snapshot {
   readonly drafts: ReadonlyArray<Draft>;
@@ -165,7 +199,7 @@ export interface DraftThreadState extends Snapshot {
   readonly steps: ReadonlyArray<DraftStep>;
   /**
    * Moves on every change the form must take over (a turn, an undo, a
-   * focus, a removal) and stays on the form's own edits (`updateDraft`),
+   * focus, a removal) and stays on the form's own edits (`foldForm`),
    * so a panel re-applies the focused draft exactly when it should.
    */
   readonly version: number;
@@ -604,7 +638,7 @@ export const landRefinement = (
   if (submitted === undefined || fresh === undefined || index === -1) {
     return refineThread(state, utterance, changes);
   }
-  const base = updateDraft(state, state.focused, fresh.item, fresh.extras);
+  const base = foldForm(state, fresh);
   const current = base.drafts[index]!.item;
   return refineThread(
     base,
@@ -650,8 +684,7 @@ export const landPlacement = (
   if (index === -1 || best === undefined) {
     return state;
   }
-  const based =
-    fresh === undefined ? state : updateDraft(state, state.focused, fresh.item, fresh.extras);
+  const based = fresh === undefined ? state : foldForm(state, fresh);
   const draft = based.drafts[index]!;
   return refineThread(based, utterance, [
     {
@@ -665,17 +698,22 @@ export const landPlacement = (
   ]);
 };
 
-/** The last turn taken back; taking back the first one leaves no drafts. */
+/**
+ * The last turn taken back, with whatever was done by hand since it
+ * landed: the drafts as that phrase found them. Taking back the first
+ * one leaves no drafts.
+ */
 export const undoTurn = (state: DraftThreadState): DraftThreadState => {
-  const previous = state.history.at(-1);
+  const at = state.steps.findLastIndex((step) => step.kind === 'phrase');
+  const previous = state.history[at];
   if (previous === undefined) {
     return state;
   }
   return {
     drafts: previous.drafts,
     focused: Math.min(previous.focused, Math.max(previous.drafts.length - 1, 0)),
-    history: state.history.slice(0, -1),
-    steps: state.steps.slice(0, -1),
+    history: state.history.slice(0, at),
+    steps: state.steps.slice(0, at),
     version: state.version + 1,
   };
 };
@@ -704,6 +742,72 @@ export const updateDraft = (
           at === index ? { ...draft, ...(extras ? { extras } : {}), item } : draft,
         ),
       };
+
+/** The draft without the open choice for `name`, if it has one. */
+const withoutChoice = (draft: Draft, name: string | undefined): Draft => {
+  if (name === undefined || draft.inviteeChoices === undefined) {
+    return draft;
+  }
+  const { inviteeChoices, ...rest } = draft;
+  const left = inviteeChoices.filter((choice) => choice.name !== name);
+  return left.length > 0 ? { ...rest, inviteeChoices: left } : rest;
+};
+
+/**
+ * The form read into the draft it shows: the one door from the form into
+ * the thread. What it holds becomes the focused draft's; when that
+ * changes a field, it is a step one can go back over — the drafts before
+ * go to the history — and the version stays, since the form already
+ * shows it. An edit joins the newest step when that is an edit of the
+ * same draft whose fields cover it, so typing is one step and not one
+ * per letter; a step whose edits end where they began is no step. A
+ * pick is always its own step, and settles the choice it answered.
+ * Nothing to fold into (no draft yet) leaves the thread as it is.
+ */
+export const foldForm = (
+  state: DraftThreadState,
+  form: FormSnapshot,
+  how: HandStep = { kind: 'edit' },
+  id: () => string = nextDraftId,
+): DraftThreadState => {
+  const draft = state.drafts[state.focused];
+  if (draft === undefined) {
+    return state;
+  }
+  const next = withoutChoice(
+    { ...draft, ...(form.extras ? { extras: form.extras } : {}), item: form.item },
+    how.kind === 'pick' ? how.name : undefined,
+  );
+  const drafts = state.drafts.map((each, at) => (at === state.focused ? next : each));
+  const fields = draftChanges(draft, next).map((change) => change.field);
+  if (fields.length === 0) {
+    return { ...state, drafts };
+  }
+  const newest = state.steps.at(-1);
+  const joins =
+    how.kind === 'edit' &&
+    newest?.kind === 'edit' &&
+    newest.drafts[0] === draft.id &&
+    fields.every((field) => newest.fields.includes(field));
+  if (!joins) {
+    const step: DraftStep =
+      how.kind === 'pick'
+        ? { drafts: [draft.id], id: id(), kind: 'pick', pick: how.pick }
+        : { drafts: [draft.id], fields, id: id(), kind: 'edit' };
+    return {
+      ...state,
+      drafts,
+      history: [...state.history, { drafts: state.drafts, focused: state.focused }],
+      steps: [...state.steps, step],
+    };
+  }
+  // The step as it stands now, against the drafts it started from.
+  const began = state.history.at(-1)?.drafts.find((each) => each.id === draft.id);
+  const net = draftChanges(began, next).map((change) => change.field);
+  return net.length === 0
+    ? { ...state, drafts, history: state.history.slice(0, -1), steps: state.steps.slice(0, -1) }
+    : { ...state, drafts, steps: [...state.steps.slice(0, -1), { ...newest, fields: net }] };
+};
 
 /**
  * A choice settled by hand — a contact picked (the form took the guest)
@@ -753,8 +857,9 @@ const without = (snapshot: Snapshot, gone: ReadonlySet<string>): Snapshot => {
  * Drafts dropped by id, all at once (the ones "Add all" has written, or
  * one Save wrote). The focus follows its draft. The history loses them
  * too: a written draft must not come back through Undo, to be written
- * twice. The version moves only when the form must change — the focused
- * draft left, or none is left — never for another draft going.
+ * twice — and with them the steps made by hand on them alone. The
+ * version moves only when the form must change — the focused draft left,
+ * or none is left — never for another draft going.
  */
 export const removeDrafts = (
   state: DraftThreadState,
@@ -767,10 +872,17 @@ export const removeDrafts = (
   const focusedId = state.drafts[state.focused]?.id;
   const next = without(state, gone);
   const formChanges = focusedId === undefined || gone.has(focusedId) || next.drafts.length === 0;
+  // What was done by hand to a draft that left goes with it: there is no
+  // step to go back over once its draft is written. A phrase stays, as
+  // what was said.
+  const kept = state.steps.map(
+    (step) => step.kind === 'phrase' || !step.drafts.every((id) => gone.has(id)),
+  );
   return {
     ...state,
     ...next,
-    history: state.history.map((snapshot) => without(snapshot, gone)),
+    history: state.history.filter((_, at) => kept[at]).map((snapshot) => without(snapshot, gone)),
+    steps: state.steps.filter((_, at) => kept[at]),
     version: formChanges ? state.version + 1 : state.version,
   };
 };
@@ -1146,7 +1258,11 @@ export const useDraftThread = ({
       request.current += 1;
       setState((latest) => undoTurn(latest));
     },
-    update: (index: number, item: QuickAddItem, extras?: DraftExtras) =>
-      setState((latest) => updateDraft(latest, index, item, extras)),
+    /**
+     * The form read into the draft it shows; a field it changed by hand is
+     * a step (`foldForm`).
+     */
+    record: (form: FormSnapshot, how?: HandStep) =>
+      setState((latest) => foldForm(latest, form, how)),
   };
 };
