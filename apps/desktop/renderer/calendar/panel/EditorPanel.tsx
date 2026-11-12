@@ -186,6 +186,20 @@ export function EditorPanel({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the first answer only
   }, [availability.status]);
+  // The Create lesson's frame, over either view. Where the model is not
+  // ready the editor has fallen back to its form: the banner says why the
+  // lesson is not as drawn.
+  const lessonBanner = lesson ? (
+    <LessonBanner
+      id={lesson}
+      note={
+        availability.status !== null && availability.status !== 'ready'
+          ? 'Describing an event needs the on-device model, which is not ready on this Mac — the form still makes one. Settings › AI Model says why.'
+          : undefined
+      }
+      onSkip={lessonOpen ? onClose : undefined}
+    />
+  ) : null;
   // ⌘K is for the Assistant's field: a press since this editor opened
   // brings the view forward (the count is the window's, and outlives an
   // editor).
@@ -247,9 +261,7 @@ export function EditorPanel({
           <AssistantView
             active={shown === 'assistant'}
             availability={availability}
-            banner={
-              lesson ? <LessonBanner id={lesson} onSkip={lessonOpen ? onClose : undefined} /> : null
-            }
+            banner={lessonBanner}
             calendars={calendars}
             editKey={userEdits}
             editor={editor}
@@ -284,9 +296,8 @@ export function EditorPanel({
         }
         data-testid="editor-form"
       >
-        {lesson && !assists ? (
-          <LessonBanner id={lesson} onSkip={lessonOpen ? onClose : undefined} />
-        ) : null}
+        {/* The lesson's frame is over the form too: without the model, the form is where it opens. */}
+        {lessonBanner}
         {/* An older step on show is looked at, not edited. */}
         <fieldset className="contents" disabled={previewing}>
           {showToggle ? (

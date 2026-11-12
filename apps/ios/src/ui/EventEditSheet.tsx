@@ -139,7 +139,7 @@ const isBusy = ({ eventModel, kinds, taskModel, write }: Editor): boolean =>
  * its hint over the draft but loses Skip, which closes the editor — with
  * the draft in it.
  */
-const useLessonTry = (lesson: EditSeed['lesson'], onClose: () => void) => {
+const useLessonTry = (lesson: EditSeed['lesson']) => {
   const markLesson = useMarkLesson();
   const tried = useRef(false);
   const [open, setOpen] = useState(lesson !== undefined);
@@ -156,10 +156,7 @@ const useLessonTry = (lesson: EditSeed['lesson'], onClose: () => void) => {
     }
   });
   useEffect(() => () => leave(), []);
-  return {
-    banner: lesson ? <LessonBanner id={lesson} onSkip={open ? onClose : undefined} /> : null,
-    done,
-  };
+  return { done, open };
 };
 
 /** The header that stays put: Cancel · title · Save, the two as capsules a thumb finds. */
@@ -385,7 +382,7 @@ function FormView({
   onAssistant,
 }: {
   readonly assists: boolean;
-  /** Above the fields: the lesson's frame, where there is no Assistant to hold it. */
+  /** Above the fields: the lesson's frame (without the model, the form is where the lesson opens). */
   readonly banner: ReactNode;
   readonly children: ReactNode;
   readonly editor: Editor;
@@ -531,7 +528,7 @@ export function EventEditSheet({
       : seed.event
         ? 'event'
         : 'new';
-  const lesson = useLessonTry(seed.lesson, onClose);
+  const lesson = useLessonTry(seed.lesson);
   const editor = useThreadEditor({
     backend: backendClient,
     calendars,
@@ -572,6 +569,21 @@ export function EventEditSheet({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the first answer only
   }, [availability.status]);
+
+  // The Create lesson's frame, over either view. Where the model is not
+  // ready the editor has fallen back to its form: the banner says why the
+  // lesson is not as drawn.
+  const lessonBanner = seed.lesson ? (
+    <LessonBanner
+      id={seed.lesson}
+      note={
+        availability.status !== null && availability.status !== 'ready'
+          ? 'Describing an event needs Apple Intelligence, which is not ready on this iPhone — the form still makes one.'
+          : undefined
+      }
+      onSkip={lesson.open ? onClose : undefined}
+    />
+  ) : null;
 
   // What is said or typed to the Assistant. Here, above both views, so a
   // flip to the form neither drops the words nor ends the listening: an
@@ -637,7 +649,7 @@ export function EventEditSheet({
           <>
             <AssistantView
               availability={availability}
-              banner={lesson.banner}
+              banner={lessonBanner}
               calendars={calendars}
               editor={editor}
               note={seed.thread?.note}
@@ -658,7 +670,7 @@ export function EventEditSheet({
         ) : (
           <FormView
             assists={assists}
-            banner={assists ? null : lesson.banner}
+            banner={lessonBanner}
             editor={editor}
             listening={quick.handsFree}
             onAssistant={() => setView('assistant')}
