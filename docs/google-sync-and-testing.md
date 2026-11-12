@@ -765,7 +765,8 @@ nothing once back at "As saved"; what a saved event cannot hold refused
 in the conversation; a save refused with the Assistant on show says why
 in the footer; a saved to-do without a due day dated by "today" and by
 "tomorrow", a time refused on its Google list); `draftThread` (a phrase's draft on the grid, a
-change, the step before shown and kept, Save; four phrases as four
+change, the step before shown and kept, Save; the pager and Remove
+waiting while a kind switch asks its question; four phrases as four
 steps, the changed time marked in the form, an edit by hand a step too;
 a pasted mail's thread, the pager, Remove, Add all; drafts made an event
 in another calendar, a task and a reminder, each shown again as it was

@@ -165,8 +165,8 @@ function StepAnswer({
           return (
             <Pressable
               accessibilityRole="button"
-              accessibilityState={{ disabled: !editor.settled }}
-              disabled={!editor.settled}
+              accessibilityState={{ disabled: !editor.draftsSettled }}
+              disabled={!editor.draftsSettled}
               key={draft.id}
               onPress={() => editor.switchFocus(index)}
               style={styles.otherDraft}
@@ -176,7 +176,7 @@ function StepAnswer({
                 {draft.item.prefill.title || 'Untitled'}
               </Text>
               <Text numberOfLines={1} style={styles.otherWhen}>
-                {describeDraft(draft, editor.keepsTime(draft))}
+                {describeDraft(draft, editor.keeps(draft))}
               </Text>
             </Pressable>
           );
@@ -193,9 +193,9 @@ function StepAnswer({
             footer={
               previewing ? null : <CardFooter changes={changes} onEdit={onEdit} steps={steps} />
             }
+            keeps={editor.keeps(draft)}
             key={draft.id}
             label={label}
-            timeKept={editor.keepsTime(draft)}
           />
         );
       })}
@@ -307,7 +307,7 @@ export function AssistantView({
           disabled={steps.locked}
           label="As saved"
           onRestore={() => steps.show(0)}
-          summary={saved ? describeDraft(saved, editor.keepsTime(saved)) : ''}
+          summary={saved ? describeDraft(saved, editor.keeps(saved)) : ''}
         />
       ) : null}
       {steps.at === 0 && (assistant === 'saved' || !started) ? answer : null}

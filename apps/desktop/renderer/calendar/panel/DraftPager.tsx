@@ -17,8 +17,17 @@ export function DraftPager({
   readonly confirming: boolean;
   readonly editor: ReturnType<typeof useThreadEditor>;
 }) {
-  const { addAll, batchError, canAddAll, drafts, focused, settled, switchFocus, thread, write } =
-    editor;
+  const {
+    addAll,
+    batchError,
+    canAddAll,
+    drafts,
+    draftsSettled,
+    focused,
+    switchFocus,
+    thread,
+    write,
+  } = editor;
   if (drafts.length < 2 && !batchError) {
     return null;
   }
@@ -29,7 +38,7 @@ export function DraftPager({
           <div className="flex items-center gap-1">
             <IconButton
               data-testid="draft-prev"
-              disabled={focused === 0 || !settled}
+              disabled={focused === 0 || !draftsSettled}
               label="Previous draft"
               onClick={() => switchFocus(focused - 1)}
               size="sm"
@@ -41,7 +50,7 @@ export function DraftPager({
             </span>
             <IconButton
               data-testid="draft-next"
-              disabled={focused >= drafts.length - 1 || !settled}
+              disabled={focused >= drafts.length - 1 || !draftsSettled}
               label="Next draft"
               onClick={() => switchFocus(focused + 1)}
               size="sm"
@@ -52,7 +61,7 @@ export function DraftPager({
           <div className="flex items-center gap-1">
             <Button
               data-testid="draft-remove"
-              disabled={!settled}
+              disabled={!draftsSettled}
               onClick={() => thread.remove(focused)}
               size="sm"
               variant="ghost"
@@ -63,7 +72,7 @@ export function DraftPager({
               <Button
                 aria-busy={write.busy}
                 data-testid="draft-add-all"
-                disabled={confirming || !settled}
+                disabled={confirming || !draftsSettled}
                 onClick={() => void addAll()}
                 size="sm"
                 variant="primary"

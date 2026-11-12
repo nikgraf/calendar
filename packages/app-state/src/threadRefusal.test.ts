@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
 import type { QuickAddItem } from './quickAddItem.ts';
-import { todoTimeRefusal, type TurnLimits, turnRefusal } from './threadRefusal.ts';
+import { guestsRefusal, todoTimeRefusal, type TurnLimits, turnRefusal } from './threadRefusal.ts';
 
 const standup: QuickAddItem = {
   kind: 'event',
@@ -151,5 +151,13 @@ describe('todoTimeRefusal', () => {
     expect(todoTimeRefusal(at('09:00'), call, false)).toBeUndefined();
     // An event's times are its own.
     expect(todoTimeRefusal(standup, with_({ startTime: '10:00' }), false)).toBeUndefined();
+  });
+});
+
+describe('guestsRefusal', () => {
+  it('refuses a change of guests where the calendar takes none — a new item’s too', () => {
+    expect(guestsRefusal(true, false)).toBe('This calendar’s guests can’t be changed here.');
+    expect(guestsRefusal(true, true)).toBeUndefined();
+    expect(guestsRefusal(false, false)).toBeUndefined();
   });
 });

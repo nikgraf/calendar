@@ -1,4 +1,10 @@
-import { type CardLine, cardLines, type Draft, type FieldChange } from '@calendar/app-state';
+import {
+  type CardLine,
+  cardLines,
+  type Draft,
+  type DraftKeeps,
+  type FieldChange,
+} from '@calendar/app-state';
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 import type { ReactNode } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
@@ -68,8 +74,8 @@ export function AssistantCard({
   container,
   draft,
   footer,
+  keeps,
   label,
-  timeKept = true,
 }: {
   /** What the step the card is of did to the draft; empty marks nothing. */
   readonly changes: ReadonlyArray<FieldChange>;
@@ -79,13 +85,13 @@ export function AssistantCard({
   readonly container?: string | undefined;
   readonly draft: Draft;
   readonly footer?: ReactNode;
+  /** What is saved where the draft goes (`DraftKeeps`): the card shows no time or guests that are not. */
+  readonly keeps?: DraftKeeps | undefined;
   readonly label: string;
-  /** False for a to-do on a list that keeps a due day only: the card shows no time, since none is saved. */
-  readonly timeKept?: boolean;
 }) {
   const styles = useStyles(makeStyles);
   const { colors } = useTheme();
-  const lines = cardLines(draft, changes, timeKept);
+  const lines = cardLines(draft, changes, keeps);
   const when = lines.filter((line) => line.field === 'date' || line.field === 'time');
   const rest = lines.filter((line) => line.field !== 'date' && line.field !== 'time');
   const retitled = changes.some((change) => change.field === 'title');

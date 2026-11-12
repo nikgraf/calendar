@@ -272,9 +272,20 @@ describe('cardLines', () => {
     expect(cardLines(draft(call)).map((line) => line.text)).toEqual(['Tue, Aug 25', '09:30']);
     // On a list that keeps a due day only, the time it carries is not
     // shown: it is not saved.
-    expect(cardLines(draft(call), [], false).map((line) => line.text)).toEqual(['Tue, Aug 25']);
-    expect(describeDraft(draft(call), false)).toBe('Tue, Aug 25');
-    expect(cardLines(draft(lunch), [], false).map((line) => line.field)).toEqual(['date', 'time']);
+    const dayOnly = { guests: true, time: false };
+    expect(cardLines(draft(call), [], dayOnly).map((line) => line.text)).toEqual(['Tue, Aug 25']);
+    expect(describeDraft(draft(call), dayOnly)).toBe('Tue, Aug 25');
+    expect(cardLines(draft(lunch), [], dayOnly).map((line) => line.field)).toEqual([
+      'date',
+      'time',
+    ]);
+    // On a calendar that takes no guest list, the guests a first phrase
+    // invited are not listed: they are not written.
+    const invited = draft(lunch, { attendees: [sarah] });
+    expect(cardLines(invited).map((line) => line.field)).toEqual(['date', 'time', 'guests']);
+    expect(cardLines(invited, [], { guests: false, time: true }).map((line) => line.field)).toEqual(
+      ['date', 'time'],
+    );
     // A to-do without a time has no line for one.
     expect(
       cardLines(draft({ kind: 'task', prefill: { date: '2026-08-25', title: 'Call' } })).map(

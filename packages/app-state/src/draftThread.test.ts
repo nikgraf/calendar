@@ -20,6 +20,7 @@ import {
   refineThread,
   removeDraft,
   reseedRule,
+  stepRule,
   removeDrafts,
   slotItem,
   startThread,
@@ -1598,6 +1599,12 @@ describe('a turn on a to-do the form holds undated', () => {
     const today = refineThread(open(), 'due today', [{ id: 'd1', item: todo, saidDay: true }]);
     expect(today.drafts[0]?.item).toEqual(todo);
     expect(today.drafts[0]?.extras?.undated).toBe(false);
+    // No field of the item moved, and yet the step is this draft's and says what it did.
+    expect(phraseSteps(today).at(-1)).toMatchObject({
+      drafts: ['d1'],
+      summary: '→ due Fri, Aug 28',
+    });
+    expect(turnsOf(today, 'd1')).toEqual(['due today']);
     expect(undoTurn(today).drafts[0]?.extras?.undated).toBe(true);
     // Through the form's reading too: the flag stays on the change.
     const merged = landRefinement(open(), {
@@ -1706,5 +1713,69 @@ describe('reseedRule', () => {
     });
     expect(reseedRule(todo, weekly)).toBe(todo);
     expect(reseedRule(EMPTY_THREAD, weekly)).toBe(EMPTY_THREAD);
+  });
+});
+
+describe('a reading of the form while another draft has the focus', () => {
+  // The focus moved to the second draft; the form still shows the first.
+  const moved = () => focusDraft(startThread([dinner, planning], 'x', { id: ids() }), 1);
+  const typed: QuickAddItem = {
+    kind: 'event',
+    prefill: { ...dinner.prefill, title: 'Dinner with Teo and Mia' },
+  };
+
+  it('goes into the draft the form shows, never into the one focused meanwhile', () => {
+    const landed = landRefinement(moved(), {
+      changes: [{ id: 'd1', item: later }],
+      fresh: { item: typed, shown: 'd1' },
+      submitted: { item: dinner, shown: 'd1' },
+      targetId: 'd1',
+      utterance: 'an hour later',
+    });
+    // The first draft: what was typed meanwhile, and the turn's hours.
+    expect(landed.drafts[0]?.item.prefill).toMatchObject({
+      startTime: '20:00',
+      title: 'Dinner with Teo and Mia',
+    });
+    // The second, focused by now, is as it was.
+    expect(landed.drafts[1]?.item).toEqual(planning);
+
+    const placed = landPlacement(moved(), {
+      fresh: { item: typed, shown: 'd1' },
+      slots: [{ date: '2026-08-30', endTime: '11:00', startTime: '10:00' }],
+      targetId: 'd1',
+      utterance: 'find a slot',
+    });
+    expect(placed.drafts[1]?.item).toEqual(planning);
+    expect(placed.drafts[0]?.item.prefill).toMatchObject({ date: '2026-08-30' });
+  });
+
+  it('is nobody’s once that draft is gone, and no edit by hand of the focused one', () => {
+    const state = moved();
+    const gone = landRefinement(removeDraft(state, 0), {
+      changes: [{ id: 'd2', item: planning }],
+      fresh: { item: typed, shown: 'd1' },
+      submitted: { item: planning, shown: 'd2' },
+      targetId: 'd2',
+      utterance: 'x',
+    });
+    expect(gone.drafts.map((draft) => draft.item)).toEqual([planning]);
+    expect(foldForm(state, { item: typed, shown: 'd1' })).toBe(state);
+  });
+});
+
+describe('stepRule', () => {
+  it('is the rule a step gave the item, where it is another than it opened with', () => {
+    const state = opened();
+    expect(stepRule(state)).toBeUndefined();
+    const daily = refineThread(state, 'every day', [{ id: 'd1', item: rule({ freq: 'daily' }) }]);
+    expect(stepRule(daily)).toEqual({ recurrence: { freq: 'daily' } });
+    // A rule taken away is a rule given too.
+    const series = openThread({ item: rule({ freq: 'weekly' }) }, ids());
+    const single = refineThread(series, 'only once', [{ id: 'd1', item: dinner }]);
+    expect(stepRule(single)).toEqual({ recurrence: undefined });
+    // A step about something else left the rule alone.
+    expect(stepRule(refineThread(state, 'later', [{ id: 'd1', item: later }]))).toBeUndefined();
+    expect(stepRule(EMPTY_THREAD)).toBeUndefined();
   });
 });

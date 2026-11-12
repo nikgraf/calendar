@@ -1471,13 +1471,22 @@ gateway carries all of it. Details, limits and the threat model:
   cannot hold is refused in the conversation with Save's own sentence
   (`turnRefusal`), and Save sends only what differs from the saved item
   (`eventEditorChanges` compares values; there are no dirty flags).
-  A to-do, new or saved, takes no time of day on a list that keeps a due
-  day only (a Google task: `todoTimeRefusal`, asked through the editor's
-  `keepsTime`), and its card shows none it carries from a first phrase.
-  A to-do kept without a due day is dated by a turn that gives a day or
-  a time — also the day it already reads, which a refinement reports as
-  `saidDay`. A place is its text and its pin: another point picked under
-  the same text, or the pin let go of, is a step too (`draftChanges`).
+  What a draft's calendar or list does not keep is neither taken from a
+  turn nor shown (the editor's `keeps(draft)`): a to-do, new or saved,
+  takes no time of day on a list that keeps a due day only (a Google
+  task: `todoTimeRefusal`), an event no change of guests on a calendar
+  that takes no guest list (`guestsRefusal`), and the card and rows
+  leave out a time or guests a draft carries from a first phrase
+  (`DraftKeeps`). A to-do kept without a due day is dated by a turn that
+  gives a day or a time — also the day it already reads, where the
+  words state it (a refinement's `saidDay`). A place is its text and
+  its pin: another point picked under the same text, or the pin let go
+  of, is a step too (`draftChanges`). While the form is between two
+  states of a draft (`applying`: a phrase being taken in, a kind switch
+  asking its question, by phrase or by hand) the steps are locked and
+  the pager, Remove and "Add all" wait (`draftsSettled`); a reading of
+  the form names the draft it is of (`FormSnapshot.shown`), so it never
+  lands on the one focused meanwhile.
   a phrase that asks for free time (`proposeSlots`)
   puts the draft in the best free slot and keeps the others on it — a
   "Free slots" chip row under the card, the chosen one pressed, and

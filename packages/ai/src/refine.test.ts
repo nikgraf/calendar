@@ -59,11 +59,16 @@ describe('normalizeRefine', () => {
       prefill: { date: CONTEXT.referenceDate },
       saidDay: true,
     });
-    // A date the model read from words that mention one.
-    expect(said({ date: CONTEXT.referenceDate }, 'on August 22', onToday)).toMatchObject({
-      saidDay: true,
-    });
     expect(said({}, 'Friday instead')).toMatchObject({ saidDay: true });
+    // A date the model gives for words that only look like one may be the
+    // draft's own, echoed: it moves the day where it differs, and is never
+    // "said" where it does not.
+    expect(said({ date: CONTEXT.referenceDate }, 'Pay 12/24 invoice', onToday)).not.toHaveProperty(
+      'saidDay',
+    );
+    expect(said({ date: '2026-08-24' }, 'on August 24', onToday)).toMatchObject({
+      prefill: { date: '2026-08-24' },
+    });
     // Words about the time, the title or the place say no day — and a date
     // the model volunteers for them is not the words'.
     expect(said({ startTime: '20:00' }, 'make it 8pm')).not.toHaveProperty('saidDay');

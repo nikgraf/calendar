@@ -21,11 +21,13 @@ import {
   previewOfPrefill,
   wasPreview,
 } from './draftPreview.ts';
-import type { DraftField } from './draftChanges.ts';
+import type { DraftField, DraftKeeps } from './draftChanges.ts';
 import {
   type Draft,
   type DraftExtras,
+  type FormSnapshot,
   type HandStep,
+  stepRule,
   threadLine,
   updateDraft,
   useDraftThread,
@@ -45,7 +47,7 @@ import { useBackendMutations } from './hooks.ts';
 import { useOneWrite } from './oneWrite.ts';
 import type { QuickAddItem } from './quickAddItem.ts';
 import { type TaskEditorSeed, useTaskEditorModel } from './taskEditorModel.ts';
-import { todoTimeRefusal, type TurnLimits, turnRefusal } from './threadRefusal.ts';
+import { guestsRefusal, todoTimeRefusal, type TurnLimits, turnRefusal } from './threadRefusal.ts';
 import { movedFrom, shownMarks } from './threadSteps.ts';
 
 export type { DraftFocusRequest } from './draftAtoms.ts';
@@ -433,9 +435,18 @@ export const useThreadEditor = ({
         }),
   });
   // The latest render's readers, for a turn that reads the form after an await.
-  const latest = useRef({ extras: currentExtras, item: currentItem });
-  latest.current = { extras: currentExtras, item: currentItem };
-  const readForm = () => ({ extras: latest.current.extras(), item: latest.current.item() });
+  // The draft whose fields the form holds as rendered: set with the fields
+  // themselves, so a reading names the draft it is of — after the focus
+  // moved, the form shows the draft that left until it has taken the
+  // other in.
+  const [formOf, setFormOf] = useState<string | undefined>(undefined);
+  const latest = useRef({ extras: currentExtras, item: currentItem, shown: formOf });
+  latest.current = { extras: currentExtras, item: currentItem, shown: formOf };
+  const readForm = (): FormSnapshot => ({
+    extras: latest.current.extras(),
+    item: latest.current.item(),
+    ...(latest.current.shown === undefined ? {} : { shown: latest.current.shown }),
+  });
 
   // Drafts the editor opened with (a capture) start the thread once.
   const { start } = thread;
@@ -563,6 +574,7 @@ export const useThreadEditor = ({
     if (focusedDraft) {
       const another = shown.current !== undefined && shown.current !== focusedDraft.id;
       shown.current = focusedDraft.id;
+      setFormOf(focusedDraft.id);
       if (another || restored) {
         showDraft(focusedDraft);
       } else {
@@ -577,6 +589,7 @@ export const useThreadEditor = ({
       }
     } else if (version > 0 && sourceKind === 'new') {
       shown.current = undefined;
+      setFormOf(undefined);
       const times = seedTimeFields({
         initialDate: seed.initialDate,
         ...(seed.initialHour === undefined ? {} : { initialHour: seed.initialHour }),
@@ -647,6 +660,23 @@ export const useThreadEditor = ({
   // keeps the one on show and lets the later ones go. Not while a write
   // runs, a phrase is being read or the form is still taking a step in.
   const stepsLocked = thread.busy || writing || applying;
+  // Which draft the form shows, and how many there are, stays as it is
+  // while the form is between two states of one: the pager, Remove and
+  // "Add all" wait for a write, an older step on show and an apply —
+  // a kind switch's question holds one open for as long as it is asked.
+  const draftsSettled = settled && !applying;
+  // A kind switch by hand that asks first ("Switch to task?") leaves the
+  // form between two kinds until it is answered: counted as an apply like
+  // a phrase's own switch, so the focus, the steps and dictation wait.
+  // Uncounted, the answer landed on whichever draft was focused by then.
+  const switchKind: typeof kinds.switchTo = async (next) => {
+    setOpenApplies((open) => open + 1);
+    try {
+      return await kinds.switchTo(next);
+    } finally {
+      setOpenApplies((open) => open - 1);
+    }
+  };
   const steps = {
     /** How many steps are applied: the one on show, counted from 1 (0: before the first). */
     at: thread.state.steps.length,
@@ -805,6 +835,25 @@ export const useThreadEditor = ({
     const key = draftListKey(draft, taskLists, taskModel.listKey);
     return taskLists.find((list) => `${list.accountId}:${list.id}` === key)?.provider === 'apple';
   };
+  /**
+   * Whether a draft's guests are kept: an event's on a calendar that takes
+   * a guest list. An Apple calendar's form holds none and its write
+   * refuses one, so a turn that changes the guests there is refused
+   * (`guestsRefusal`) and the card lists none a first phrase invited.
+   */
+  const keepsGuests = (draft: Draft): boolean => {
+    if (draft.item.kind !== 'event' || draft.id === focusedDraft?.id) {
+      return draft.item.kind !== 'event' || eventModel.canInvite;
+    }
+    const key = draftCalendarKey(draft, calendars, eventModel.calendarKey);
+    const calendar = calendars.find((each) => `${each.accountId}:${each.id}` === key);
+    return (calendar?.provider ?? 'google') === 'google';
+  };
+  /** What of a draft is saved where it goes: what its card and row show (`cardLines`, `describeDraft`). */
+  const keeps = (draft: Draft): DraftKeeps => ({
+    guests: keepsGuests(draft),
+    time: keepsTime(draft),
+  });
   // A saved series' free slots were searched at the scope the form was at
   // ("All events" leaves the series' own occurrences out of the way, "This
   // event" only the one): at another scope they no longer hold, so they
@@ -815,8 +864,17 @@ export const useThreadEditor = ({
   // itself with it again by now, and the thread's states follow.
   useOnChange(eventModel.ruleKey, () => {
     const { item } = readForm();
-    if (assistant === 'saved' && item.kind === 'event') {
-      thread.reseedRule(item.prefill.recurrence);
+    if (assistant !== 'saved' || item.kind !== 'event') {
+      return;
+    }
+    // A step had given the item another rule than it opened with: that
+    // one is the draft's still (`reseedRule` leaves it), so the form shows
+    // it again — it seeded itself with the arrived rule, and Save would
+    // send none.
+    const kept = stepRule(threadRef.current);
+    thread.reseedRule(item.prefill.recurrence);
+    if (kept !== undefined) {
+      eventModel.resetRepeat(kept.recurrence);
     }
   });
   const onPhrase = async (text: string): Promise<string | undefined> => {
@@ -846,7 +904,9 @@ export const useThreadEditor = ({
         read: readForm,
         refuse: (draft, after, guests) =>
           todoTimeRefusal(draft.item, after, keepsTime(draft)) ??
-          (limits ? turnRefusal(draft.item, after, guests, limits) : undefined),
+          (limits
+            ? turnRefusal(draft.item, after, guests, limits)
+            : guestsRefusal(guests, keepsGuests(draft))),
       });
     } catch (error) {
       return error instanceof ModelUnavailableError
@@ -963,6 +1023,8 @@ export const useThreadEditor = ({
     /** The place row let go of; the field keeps what it reads. */
     dismissPlace,
     drafts,
+    /** The pager, Remove and "Add all" may act: no write, no older step on show, no apply open. */
+    draftsSettled,
     /** For the forms: the setters a person moves count as `userEdits`. */
     eventModel: reportingEdits(eventModel, EVENT_EDITS, edited),
     focused,
@@ -971,9 +1033,9 @@ export const useThreadEditor = ({
     inviteeChoices,
     /** The location text back as said, pin gone; the row stays. */
     keepPlace,
-    keepsTime,
+    keeps,
     /** The kind control's switch counts as an edit too. */
-    kinds: reportingEdits(kinds, ['switchTo'], edited),
+    kinds: reportingEdits({ ...kinds, switchTo: switchKind }, ['switchTo'], edited),
     /** How a calendar or a list is named in a step's changes (`lineChanges`). */
     labels,
     liveItem,

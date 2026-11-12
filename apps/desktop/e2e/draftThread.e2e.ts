@@ -124,6 +124,8 @@ const PRIORITY = `document.querySelector('[aria-label="Priority"] [role="radio"]
 const pickPriority = (label: string) =>
   `[...document.querySelectorAll('[aria-label="Priority"] [role="radio"]')].find((option) => option.textContent === ${JSON.stringify(label)}).click()`;
 const asked = `!!document.querySelector('[data-testid="move-confirm"]')`;
+const disabled = (testId: string) =>
+  `document.querySelector('[data-testid="${testId}"]')?.disabled === true`;
 const colorAt = (start: string) =>
   `document.querySelector('[data-testid="draft-block"][data-draft-start="${start}"]')?.dataset.color ?? ''`;
 
@@ -458,5 +460,32 @@ describe('The draft thread', () => {
         milk: ['apple', 'ek-groceries', 'high', '07:00'],
         post: ['google', 'list-errands'],
       });
+  });
+
+  it('keeps the drafts where they are while a kind switch asks its question', async () => {
+    const { cdp } = app;
+    await cdp.eval(
+      paste(['Dinner | +0 | 19:00-20:00 | Room 4', 'Retro | +1 | 16:00-17:00'].join('\n')),
+    );
+    await cdp.waitFor(`${position} === '1 of 2'`);
+    await cdp.waitFor(titleIs('Dinner'));
+    await cdp.showEditorView('form');
+    // A to-do has no place: the switch asks before it lets go of one.
+    await cdp.clickTestId('mode-task');
+    await cdp.waitFor(asked);
+    // The answer is this draft's. Until it is given the form is between
+    // two kinds, and the pager and Remove wait: moved on, the answer would
+    // land on the draft focused by then.
+    expect(await cdp.eval<boolean>(disabled('draft-next'))).toBe(true);
+    expect(await cdp.eval<boolean>(disabled('draft-remove'))).toBe(true);
+    await cdp.clickTestId('move-confirm-yes');
+    await cdp.waitFor(headingIs('New task'));
+    expect(await cdp.eval<boolean>(titleIs('Dinner'))).toBe(true);
+    expect(await cdp.eval<string>(position)).toBe('1 of 2');
+    // The other draft is as it came.
+    await cdp.waitFor(`!(${disabled('draft-next')})`);
+    await cdp.clickTestId('draft-next');
+    await cdp.waitFor(titleIs('Retro'));
+    await cdp.waitFor(headingIs('New event'));
   });
 });

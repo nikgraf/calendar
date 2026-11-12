@@ -530,6 +530,7 @@ export const refineThread = (
   const focused = state.drafts[state.focused];
   // The focused draft as the turn leaves it: a place taken changed its location too.
   let focusedAfter: Draft | undefined;
+  const dated = new Set<string>();
   const drafts = state.drafts.map((draft) => {
     const change = changed.get(draft.id);
     if (change === undefined) {
@@ -547,15 +548,32 @@ export const refineThread = (
     const guested = withGuests(placed.draft, change.guests);
     const noted = withNotes(guested.draft, change.notes);
     const next = withReminders(noted.draft, change.reminders);
+    // A to-do dated on the day it already read ("today" said of one shown
+    // on today): no field of the item moved, and yet it is due now.
+    const due =
+      draft.extras?.undated === true &&
+      next.draft.extras?.undated !== true &&
+      draft.item.prefill.date === next.draft.item.prefill.date;
+    if (due) {
+      dated.add(draft.id);
+    }
     if (draft.id === focused?.id) {
-      invited = [...placed.said, ...guested.said, ...noted.said, ...next.said];
+      invited = [
+        ...(due ? [`due ${describeDraftItem(next.draft.item)}`] : []),
+        ...placed.said,
+        ...guested.said,
+        ...noted.said,
+        ...next.said,
+      ];
       focusedAfter = next.draft;
     }
     return next.draft;
   });
-  // The drafts whose item the turn left another: the ones its words are said to.
+  // The drafts whose item the turn left another, or dated: the ones its words are said to.
   const moved = drafts.flatMap((draft, index) =>
-    changedDraftFields(state.drafts[index]!.item, draft.item).length > 0 ? [draft.id] : [],
+    dated.has(draft.id) || changedDraftFields(state.drafts[index]!.item, draft.item).length > 0
+      ? [draft.id]
+      : [],
   );
   const focusedChange = focused ? changed.get(focused.id) : undefined;
   const fieldsSaid =
@@ -667,11 +685,33 @@ export const mergeRefinement = (
   return { kind: after.kind, prefill: merged } as unknown as QuickAddItem;
 };
 
-/** What the form holds of the focused draft at one moment: its item and extras. */
+/** What the form holds of the draft it shows at one moment: its item and extras. */
 export interface FormSnapshot {
   readonly extras?: DraftExtras | undefined;
   readonly item: QuickAddItem;
+  /**
+   * The draft the form shows, by id, where the reader knows it. It is the
+   * focused one but for a moment after the focus moved, while the form is
+   * still taking the newly focused draft in: what it reads then is the
+   * draft that left.
+   */
+  readonly shown?: string | undefined;
 }
+
+/**
+ * A form reading folded into the draft the form shows (`shown`; the
+ * focused one where it names none). One that is gone takes nothing — and
+ * the reading never lands on another draft.
+ */
+const foldShown = (state: DraftThreadState, form: FormSnapshot): DraftThreadState =>
+  updateDraft(
+    state,
+    form.shown === undefined
+      ? state.focused
+      : state.drafts.findIndex((draft) => draft.id === form.shown),
+    form.item,
+    form.extras,
+  );
 
 /**
  * A refinement's changes folded in once the model answered. The form as
@@ -705,7 +745,7 @@ export const landRefinement = (
   if (submitted === undefined || fresh === undefined || index === -1) {
     return refineThread(state, utterance, changes);
   }
-  const base = updateDraft(state, state.focused, fresh.item, fresh.extras);
+  const base = foldShown(state, fresh);
   const current = base.drafts[index]!.item;
   return refineThread(
     base,
@@ -751,8 +791,7 @@ export const landPlacement = (
   if (index === -1 || best === undefined) {
     return state;
   }
-  const based =
-    fresh === undefined ? state : updateDraft(state, state.focused, fresh.item, fresh.extras);
+  const based = fresh === undefined ? state : foldShown(state, fresh);
   const draft = based.drafts[index]!;
   return refineThread(based, utterance, [
     {
@@ -902,7 +941,12 @@ export const foldForm = (
 ): DraftThreadState => {
   const draft = state.drafts[state.focused];
   // An older step on show is locked: there is nothing by hand to read.
-  if (draft === undefined || state.ahead.length > 0) {
+  // Nor is a reading of another draft than the focused one this one's.
+  if (
+    draft === undefined ||
+    state.ahead.length > 0 ||
+    (form.shown !== undefined && form.shown !== draft.id)
+  ) {
     return state;
   }
   const next = withoutChoice(
@@ -1051,6 +1095,24 @@ export const reseedRule = (
   };
 };
 
+/**
+ * The rule a step gave a saved item, where it is another than the item
+ * opened with — wrapped, since "no rule" is one a step can give too.
+ * Undefined where no step changed it.
+ */
+export const stepRule = (
+  state: DraftThreadState,
+): { readonly recurrence: EventEditorPrefill['recurrence'] } | undefined => {
+  const base = (state.history[0] ?? state).drafts[0];
+  const now = state.drafts.find((draft) => draft.id === base?.id);
+  if (base?.item.kind !== 'event' || now?.item.kind !== 'event') {
+    return undefined;
+  }
+  return recurrenceKey(base.item.prefill.recurrence) === recurrenceKey(now.item.prefill.recurrence)
+    ? undefined
+    : { recurrence: now.item.prefill.recurrence };
+};
+
 /** A snapshot without the drafts named, its focus clamped. */
 const without = (snapshot: Snapshot, gone: ReadonlySet<string>): Snapshot => {
   const drafts = snapshot.drafts.filter((draft) => !gone.has(draft.id));
@@ -1150,6 +1212,9 @@ export interface PhraseOptions {
 /** A phrase said to a saved item before its thread has opened. */
 const NOT_OPEN_YET = 'Still opening — try again in a moment.';
 
+/** A finder phrase whose search was let go of: what it applies to changed under it. */
+const SCOPE_MOVED = '“Apply to” changed while searching — send it again.';
+
 /** A finder phrase on an all-day draft, or none: the length searched for. */
 const DEFAULT_SLOT_MINUTES = 60;
 /** How long a turn waits for a place's candidates at most; past it the text stays as said. */
@@ -1179,6 +1244,10 @@ export const useDraftThread = ({
   const [state, setState] = useState<DraftThreadState>(EMPTY_THREAD);
   const [busy, setBusy] = useState(false);
   const request = useRef(0);
+  // The request that is searching for free slots, and the one such search
+  // a change of scope let go of (`dropSlots`).
+  const searching = useRef<number | undefined>(undefined);
+  const unscoped = useRef<number | undefined>(undefined);
   /**
    * An answer still on its way is dropped (it would land on drafts that
    * are no longer the ones it was asked about), and with it the wait: a
@@ -1242,10 +1311,7 @@ export const useDraftThread = ({
     // A draft focused meanwhile is not where the answer lands (`landRefinement`).
     const mine = ++request.current;
     const submitted = read?.();
-    const current =
-      submitted === undefined
-        ? state
-        : updateDraft(state, state.focused, submitted.item, submitted.extras);
+    const current = submitted === undefined ? state : foldShown(state, submitted);
     const focusedId = current.drafts[current.focused]?.id;
     // "all" or "both" in a note ("bring both contracts") or about the
     // notifications ("remove all reminders") addresses no other draft.
@@ -1375,10 +1441,7 @@ export const useDraftThread = ({
       ...(reminders ? { reminders } : {}),
     };
     const submitted = read?.();
-    const current =
-      submitted === undefined
-        ? state
-        : updateDraft(state, state.focused, submitted.item, submitted.extras);
+    const current = submitted === undefined ? state : foldShown(state, submitted);
     const target = current.drafts[current.focused];
     // The draft's whole length: an overnight one ends on the next day.
     const length =
@@ -1386,6 +1449,7 @@ export const useDraftThread = ({
         ? draftMinutes(target.item.prefill, timeZone)
         : 0;
     setBusy(true);
+    searching.current = mine;
     try {
       const result = await proposeSlots(model, backend, {
         ...(exclude ? { exclude } : {}),
@@ -1395,7 +1459,10 @@ export const useDraftThread = ({
         timeZone,
       });
       if (mine !== request.current) {
-        return undefined;
+        // Let go of because what it applies to changed: said, and the
+        // words stay in the field to send again. Anything else that
+        // overtook it (a step shown, an Undo) was the user's next move.
+        return unscoped.current === mine ? SCOPE_MOVED : undefined;
       }
       if (result.kind === 'rejected') {
         return result.reason;
@@ -1437,6 +1504,9 @@ export const useDraftThread = ({
     } catch {
       return 'On-device model unavailable.';
     } finally {
+      if (searching.current === mine) {
+        searching.current = undefined;
+      }
       if (mine === request.current) {
         setBusy(false);
       }
@@ -1519,9 +1589,16 @@ export const useDraftThread = ({
       setState((latest) => dropInviteeChoice(latest, index, name)),
     /** A place choice settled by hand: a candidate picked (the form took it) or the text kept. */
     dropPlace: (index: number) => setState((latest) => dropPlaceChoice(latest, index)),
-    /** The free slots found so far no longer hold (`dropSlots`); a search still out is dropped with them. */
+    /**
+     * The free slots found so far no longer hold (`dropSlots`); a search
+     * for them still out is dropped with them, and says so. A phrase
+     * being read that searches for nothing lands as it would have.
+     */
     dropSlots: () => {
-      abandon();
+      if (searching.current !== undefined) {
+        unscoped.current = searching.current;
+        abandon();
+      }
       setState((latest) => dropSlots(latest));
     },
     focus: (index: number) => setState((latest) => focusDraft(latest, index)),

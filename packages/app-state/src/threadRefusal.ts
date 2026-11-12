@@ -52,6 +52,15 @@ export const todoTimeRefusal = (
     ? 'This list keeps a due day only — a time can’t be saved here.'
     : undefined;
 
+/**
+ * Why a turn that changes the guests cannot be taken where the calendar
+ * takes no guest list, or undefined: invited or taken off, either is a
+ * list such a calendar's write refuses — and its form shows none, so a
+ * card that listed them would promise what is never written.
+ */
+export const guestsRefusal = (guests: boolean, canInvite: boolean): string | undefined =>
+  guests && !canInvite ? 'This calendar’s guests can’t be changed here.' : undefined;
+
 const ruleOf = (item: QuickAddItem): string =>
   recurrenceKey(item.kind === 'event' ? item.prefill.recurrence : undefined);
 
@@ -86,8 +95,5 @@ export const turnRefusal = (
               scope: series.scope,
             })
           : undefined));
-  return (
-    seriesError ??
-    (guests && !limits.canInvite ? 'This calendar’s guests can’t be changed here.' : undefined)
-  );
+  return seriesError ?? guestsRefusal(guests, limits.canInvite);
 };

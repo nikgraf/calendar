@@ -202,15 +202,27 @@ const timeless = (item: QuickAddItem): QuickAddItem => {
 };
 
 /**
+ * What of a draft is saved where it goes — its calendar or list. A card
+ * or a row shows only that: guests on a calendar that takes no guest
+ * list, or a to-do's time on a list that keeps a due day only, would be
+ * shown and then not written.
+ */
+export interface DraftKeeps {
+  readonly guests: boolean;
+  readonly time: boolean;
+}
+
+const KEEPS_ALL: DraftKeeps = { guests: true, time: true };
+
+/**
  * A draft in one line, for a row that only names it (`describeDraftItem`).
  * A to-do the form holds without a due day says so: its item's day is a
- * placeholder, not a day to name. `timeKept` false leaves a to-do's time
- * out: its list keeps a due day only.
+ * placeholder, not a day to name. A time that is not kept is left out.
  */
-export const describeDraft = (draft: Draft, timeKept = true): string =>
+export const describeDraft = (draft: Draft, keeps: DraftKeeps = KEEPS_ALL): string =>
   isUndated(draft)
     ? 'No due date'
-    : describeDraftItem(timeKept ? draft.item : timeless(draft.item));
+    : describeDraftItem(keeps.time ? draft.item : timeless(draft.item));
 
 const dayKey = (draft: Draft): string =>
   isUndated(draft) ? 'undated' : `${draft.item.prefill.date}|${lastDayOf(draft.item) ?? ''}`;
@@ -475,11 +487,11 @@ const sentence = (text: string): string => text.charAt(0).toUpperCase() + text.s
 export const cardLines = (
   draft: Draft,
   changes: ReadonlyArray<FieldChange> = [],
-  /** False for a to-do on a list that keeps a due day only: the time it carries is not shown, since it is not saved. */
-  timeKept = true,
+  /** What is saved where the draft goes: a time or guests that are not are not shown. */
+  keeps: DraftKeeps = KEEPS_ALL,
 ): ReadonlyArray<CardLine> => {
   const { extras } = draft;
-  const item = timeKept ? draft.item : timeless(draft.item);
+  const item = keeps.time ? draft.item : timeless(draft.item);
   const line = (
     field: StepField,
     text: string,
@@ -501,7 +513,7 @@ export const cardLines = (
       : [];
   };
   const place = placeOf(item);
-  const guests = guestsOf(draft).map(guestLabel);
+  const guests = keeps.guests ? guestsOf(draft).map(guestLabel) : [];
   const repeat = repeatText(draft);
   const notes = notesOf(draft);
   const isAllDay = item.kind === 'event' && item.prefill.isAllDay;

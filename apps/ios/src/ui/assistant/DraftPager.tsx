@@ -11,8 +11,17 @@ import { BOX_FONT_SCALE, type ThemeColors, useStyles } from '../theme.ts';
  */
 export function DraftPager({ editor }: { readonly editor: ReturnType<typeof useThreadEditor> }) {
   const styles = useStyles(makeStyles);
-  const { addAll, batchError, canAddAll, drafts, focused, settled, switchFocus, thread, write } =
-    editor;
+  const {
+    addAll,
+    batchError,
+    canAddAll,
+    drafts,
+    draftsSettled,
+    focused,
+    switchFocus,
+    thread,
+    write,
+  } = editor;
   if (drafts.length < 2 && !batchError) {
     return null;
   }
@@ -24,10 +33,10 @@ export function DraftPager({ editor }: { readonly editor: ReturnType<typeof useT
             <Pressable
               accessibilityLabel="Previous draft"
               accessibilityRole="button"
-              disabled={focused === 0 || !settled}
+              disabled={focused === 0 || !draftsSettled}
               hitSlop={8}
               onPress={() => switchFocus(focused - 1)}
-              style={(focused === 0 || !settled) && styles.disabled}
+              style={(focused === 0 || !draftsSettled) && styles.disabled}
               testID="draft-prev"
             >
               <Text style={styles.arrow}>‹</Text>
@@ -38,10 +47,10 @@ export function DraftPager({ editor }: { readonly editor: ReturnType<typeof useT
             <Pressable
               accessibilityLabel="Next draft"
               accessibilityRole="button"
-              disabled={focused >= drafts.length - 1 || !settled}
+              disabled={focused >= drafts.length - 1 || !draftsSettled}
               hitSlop={8}
               onPress={() => switchFocus(focused + 1)}
-              style={(focused >= drafts.length - 1 || !settled) && styles.disabled}
+              style={(focused >= drafts.length - 1 || !draftsSettled) && styles.disabled}
               testID="draft-next"
             >
               <Text style={styles.arrow}>›</Text>
@@ -50,7 +59,7 @@ export function DraftPager({ editor }: { readonly editor: ReturnType<typeof useT
           <View style={styles.pagerSide}>
             <Pressable
               accessibilityRole="button"
-              disabled={!settled}
+              disabled={!draftsSettled}
               hitSlop={8}
               onPress={() => thread.remove(focused)}
               testID="draft-remove"
@@ -62,10 +71,10 @@ export function DraftPager({ editor }: { readonly editor: ReturnType<typeof useT
             {canAddAll ? (
               <Pressable
                 accessibilityRole="button"
-                accessibilityState={{ busy: write.busy, disabled: !settled }}
-                disabled={!settled}
+                accessibilityState={{ busy: write.busy, disabled: !draftsSettled }}
+                disabled={!draftsSettled}
                 onPress={() => void addAll()}
-                style={[styles.addAll, !settled && styles.disabled]}
+                style={[styles.addAll, !draftsSettled && styles.disabled]}
                 testID="draft-add-all"
               >
                 <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.addAllLabel}>

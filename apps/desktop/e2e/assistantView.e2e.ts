@@ -478,9 +478,12 @@ describe('The editor’s Assistant and Form views', () => {
     await cdp.clickButtonWithText('Save');
     await cdp.waitFor(`!${exists('editor')}`);
     await sleep(300);
+    // The queued change is the one from before, untouched: a Save that
+    // re-sent what the event already had would have folded into it, the
+    // same payload under other flags.
     const again = await updatesOf('evt-review');
     expect(again).toHaveLength(1);
-    expect(again[0]?.payload).toEqual(after);
+    expect(again[0]).toEqual(update);
   });
 
   it('gives a saved to-do without a due day the day the words say, and refuses a time its list cannot keep', async () => {
@@ -504,11 +507,12 @@ describe('The editor’s Assistant and Form views', () => {
     );
     expect(await cdp.eval<boolean>(exists('step-control'))).toBe(false);
 
-    // Today, in the fixture's grammar: the day the to-do is shown on, and
-    // the placeholder its form holds. The words said it, so it is dated —
+    // Today: the day the to-do is shown on, and the placeholder its form
+    // holds. The words state it (the normalizer reads "today" for every
+    // model; the fixture leaves the draft as it is), so it is dated —
     // though the day reads as it did.
     await cdp.eval(`${INPUT}.select()`);
-    await cdp.say('| +0');
+    await cdp.say('due today');
     await cdp.waitFor(`${stepPosition} === '1 of 1'`);
     // The row to go back to names the to-do as it was saved: without a day.
     expect(await cdp.eval<string>(textOf('assistant-version'))).toContain('No due date');

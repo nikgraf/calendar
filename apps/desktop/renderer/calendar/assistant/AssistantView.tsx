@@ -236,7 +236,7 @@ export function AssistantView({
             position={0}
             summary={(() => {
               const saved = steps.line[0]?.before.drafts[0];
-              return saved ? describeDraft(saved, editor.keepsTime(saved)) : '';
+              return saved ? describeDraft(saved, editor.keeps(saved)) : '';
             })()}
           />
         ) : null}
@@ -336,7 +336,7 @@ function StepAnswer({
               className="flex items-center gap-2 rounded-control bg-fill px-3 py-1.5 text-left text-sm hover:bg-hairline disabled:cursor-default"
               data-draft={draft.id}
               data-testid="assistant-draft"
-              disabled={!editor.settled}
+              disabled={!editor.draftsSettled}
               key={draft.id}
               onClick={() => editor.switchFocus(index)}
               type="button"
@@ -345,7 +345,7 @@ function StepAnswer({
                 {draft.item.prefill.title || 'Untitled'}
               </span>
               <span className="shrink-0 text-xs text-ink-secondary">
-                {describeDraft(draft, editor.keepsTime(draft))}
+                {describeDraft(draft, editor.keeps(draft))}
               </span>
             </button>
           );
@@ -362,9 +362,9 @@ function StepAnswer({
             footer={
               previewing ? null : <CardFooter changes={changes} onEdit={onEdit} steps={steps} />
             }
+            keeps={editor.keeps(draft)}
             key={draft.id}
             label={versionLabel}
-            timeKept={editor.keepsTime(draft)}
           />
         );
       })}
