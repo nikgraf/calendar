@@ -202,27 +202,36 @@ const remindersChange = (
   };
 };
 
-/**
- * The draft's times after the turn, and its end day where it has one of
- * its own. A span of days the form gave the draft (a weekend trip, an
- * overnight event) moves with its start while the answer leaves its times
- * and its all-day as they were; the end time then stands as it is, before
- * the start on a later day. Otherwise an end before the start reads as one
- * past midnight (a party "10pm to 2am"): the next day, the end as said,
- * for a night of up to twelve hours. Without an end, or one that reads as
- * no night, an hour.
- */
 const minutesOf = (time: string): number => {
   const [hour = 0, minute = 0] = time.split(':').map(Number);
   return hour * 60 + minute;
 };
 
+const DAY_MINUTES = 24 * 60;
+
 /** At most this long past midnight reads as one night: "2 to 1" is no 23-hour event. */
 const NIGHT_MINUTES = 12 * 60;
 
 const pastMidnight = (start: string, end: string): boolean =>
-  minutesOf(end) + 24 * 60 - minutesOf(start) <= NIGHT_MINUTES;
+  minutesOf(end) + DAY_MINUTES - minutesOf(start) <= NIGHT_MINUTES;
 
+const clockOf = (minutes: number): string =>
+  `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+
+/**
+ * The draft's times after the turn, and its end day where it has one of
+ * its own.
+ *
+ * - A span of days the form gave the draft (a weekend trip, an overnight
+ *   event) moves with its start while the answer leaves its times and its
+ *   all-day as they were; the end time then stands as it is.
+ * - A start that moved while the end stayed as the draft had it (or was
+ *   left out) keeps the draft's length, across midnight too.
+ * - An end before the start reads as past midnight: on a draft that
+ *   already crossed it, by its own span; otherwise for a night of up to
+ *   twelve hours (a party "10pm to 2am"), the next day.
+ * - Without an end, or one that reads as no night, an hour.
+ */
 const timesOf = (
   before: QuickAddPrefill | undefined,
   {
@@ -240,6 +249,7 @@ const timesOf = (
     before?.endDate === undefined
       ? 0
       : Temporal.PlainDate.from(before.date).until(before.endDate).days;
+  const day = (days: number) => Temporal.PlainDate.from(date).add({ days }).toString();
   const sameTimes =
     before !== undefined &&
     (start === undefined) === before.isAllDay &&
@@ -247,12 +257,29 @@ const timesOf = (
       (start === before.startTime && (end ?? before.endTime) === before.endTime));
   if (span > 0 && sameTimes) {
     return {
-      endDate: Temporal.PlainDate.from(date).add({ days: span }).toString(),
+      endDate: day(span),
       endTime: start === undefined ? before.endTime : (end ?? before.endTime),
     };
   }
-  if (start !== undefined && end !== undefined && end < startTime && pastMidnight(startTime, end)) {
-    return { endDate: Temporal.PlainDate.from(date).add({ days: 1 }).toString(), endTime: end };
+  if (
+    before !== undefined &&
+    !before.isAllDay &&
+    start !== undefined &&
+    start !== before.startTime &&
+    (end === undefined || end === before.endTime)
+  ) {
+    const length = minutesOf(before.endTime) + span * DAY_MINUTES - minutesOf(before.startTime);
+    const ends = minutesOf(start) + Math.max(length, 0);
+    const days = Math.floor(ends / DAY_MINUTES);
+    return { ...(days > 0 ? { endDate: day(days) } : {}), endTime: clockOf(ends % DAY_MINUTES) };
+  }
+  if (start !== undefined && end !== undefined && end < startTime) {
+    if (span > 0) {
+      return { endDate: day(span), endTime: end };
+    }
+    if (pastMidnight(startTime, end)) {
+      return { endDate: day(1), endTime: end };
+    }
   }
   return { endTime: end !== undefined && end > startTime ? end : addHour(startTime) };
 };

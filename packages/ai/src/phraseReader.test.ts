@@ -78,6 +78,38 @@ describe('tunedReader, a first phrase', () => {
       }),
     ).resolves.toMatchObject({ prefill: { date: '2026-11-13' } });
   });
+  it('starts a repeat and ends a night from the day on show', async () => {
+    const gym = modelOf({
+      date: TODAY,
+      kind: 'event',
+      repeat: { byDay: ['TU', 'TH'], freq: 'weekly' },
+      startTime: '19:00',
+      title: 'Gym',
+    });
+    const repeat = await tunedReader(gym.model).first({
+      fallbackDate: '2026-11-15',
+      phrase: 'Gym every Tuesday and Thursday at 7',
+      referenceDate: TODAY,
+      timeZone: ZONE,
+    });
+    // The Sunday on show is no day of the rule: it starts on the Tuesday after.
+    expect(repeat).toMatchObject({ prefill: { date: '2026-11-17' } });
+    const party = modelOf({
+      date: TODAY,
+      endTime: '02:00',
+      kind: 'event',
+      startTime: '22:00',
+      title: 'Party',
+    });
+    await expect(
+      tunedReader(party.model).first({
+        fallbackDate: '2026-11-15',
+        phrase: 'Party 10pm to 2am',
+        referenceDate: TODAY,
+        timeZone: ZONE,
+      }),
+    ).resolves.toMatchObject({ prefill: { date: '2026-11-15', endDate: '2026-11-16' } });
+  });
 });
 
 describe('tunedReader, a later turn', () => {
@@ -193,5 +225,25 @@ describe('answerResult', () => {
     );
     expect(same).toMatchObject({ prefill: { endTime: '10:00' } });
     expect(same).not.toHaveProperty('prefill.endDate');
+  });
+
+  it('keeps a draft’s length when only its start moves, across midnight too', () => {
+    const moved = answerResult(
+      { date: '2026-11-13', endTime: '20:00', kind: 'event', startTime: '23:30', title: 'Dinner' },
+      { draft: dinner, referenceDate: TODAY },
+    );
+    expect(moved).toMatchObject({
+      prefill: { endDate: '2026-11-14', endTime: '00:30', startTime: '23:30' },
+    });
+    const night: TurnDraft = {
+      ...dinner,
+      prefill: { ...dinner.prefill, endDate: '2026-11-14', endTime: '08:00', startTime: '18:00' },
+    };
+    const later = answerResult(
+      { date: '2026-11-13', endTime: '09:00', kind: 'event', startTime: '19:00', title: 'Shift' },
+      { draft: night, referenceDate: TODAY },
+    );
+    // A draft that crossed midnight keeps crossing it, past the twelve hours.
+    expect(later).toMatchObject({ prefill: { endDate: '2026-11-14', endTime: '09:00' } });
   });
 });

@@ -149,6 +149,12 @@ const REFUSED = "That couldn't be read — try rephrasing.";
 export const tunedTurn = async (
   model: LanguageModel,
   turn: TunedTurn,
+  {
+    adjust,
+  }: {
+    /** Changes the worked-out answer before its result is made (the day on show, for words that name none). */
+    readonly adjust?: ((answer: unknown) => unknown) | undefined;
+  } = {},
 ): Promise<QuickAddResult | RefineResult> => {
   if (!turn.text.trim()) {
     return { kind: 'rejected', reason: 'Type what you want to schedule.' };
@@ -160,8 +166,12 @@ export const tunedTurn = async (
   } catch {
     return { kind: 'rejected', reason: REFUSED };
   }
-  return answerResult(
-    worked(answer, { draftDate: turn.draft?.prefill.date, referenceDate: turn.referenceDate }),
-    { draft: turn.draft, referenceDate: turn.referenceDate },
-  );
+  const day = worked(answer, {
+    draftDate: turn.draft?.prefill.date,
+    referenceDate: turn.referenceDate,
+  });
+  return answerResult(adjust === undefined ? day : adjust(day), {
+    draft: turn.draft,
+    referenceDate: turn.referenceDate,
+  });
 };

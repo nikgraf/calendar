@@ -51,17 +51,23 @@ export const createAssistantModel = ({ runtime, state }: AssistantModelDeps): As
   const letGo = async (): Promise<boolean> => {
     away = true;
     generation += 1;
+    // Everything is taken before the first await: a question waiting behind
+    // the stopped one must find nothing to reuse and nothing loading.
     const held = context;
+    const pending = loading;
     context = undefined;
     asking = undefined;
+    loading = undefined;
     letGoLlama('assistant');
     if (held !== undefined) {
-      await held.stopCompletion();
+      try {
+        await held.stopCompletion();
+      } catch {
+        // A context the runtime no longer knows has nothing to stop.
+      }
       await held.release().catch(() => undefined);
     }
     // A load under way lets its context go once it lands.
-    const pending = loading;
-    loading = undefined;
     if (pending !== undefined) {
       const late = await pending.catch(() => undefined);
       await late?.release().catch(() => undefined);
@@ -69,8 +75,16 @@ export const createAssistantModel = ({ runtime, state }: AssistantModelDeps): As
     return true;
   };
 
+  /** Throws where the context was let go after the question was asked (`asked`). */
+  const stillAsked = (asked: number) => {
+    if (asked !== generation) {
+      throw new Error('The app left the screen.');
+    }
+  };
+
   const contextFor = async (
     path: string,
+    asked: number,
   ): Promise<{ readonly answer: LanguageModel; readonly loaded: OpenModelContext }> => {
     if (context !== undefined && asking !== undefined) {
       return { answer: asking, loaded: context };
@@ -81,8 +95,8 @@ export const createAssistantModel = ({ runtime, state }: AssistantModelDeps): As
     if (!(await takeLlama('assistant', letGo))) {
       throw new Error('The Model Spike page is measuring with the model runtime.');
     }
+    stillAsked(asked);
     away = false;
-    const mine = generation;
     if (loading === undefined) {
       const attempt = loadOpenModel(runtime, { path });
       loading = attempt;
@@ -96,9 +110,7 @@ export const createAssistantModel = ({ runtime, state }: AssistantModelDeps): As
     }
     const loaded = await loading;
     // Let go while it loaded: `letGo` releases what the load brings.
-    if (mine !== generation) {
-      throw new Error('The app left the screen.');
-    }
+    stillAsked(asked);
     if (context === undefined || asking === undefined) {
       loading = undefined;
       context = loaded;
@@ -110,29 +122,31 @@ export const createAssistantModel = ({ runtime, state }: AssistantModelDeps): As
   return {
     generateJson: (request) => {
       // One question at a time, each timed from when it reaches the model:
-      // a turn about several drafts asks once a draft.
+      // a turn about several drafts asks once a draft. A question asked
+      // before the app left the screen is not answered after it.
+      const asked = generation;
+      busy += 1;
       const ask = async (): Promise<unknown> => {
+        stillAsked(asked);
         const now = state();
         if (now.kind !== 'ready') {
           throw new Error('The Assistant’s model is not ready.');
         }
-        away = false;
-        busy += 1;
+        const { answer, loaded } = await contextFor(now.path, asked);
+        const timer = setTimeout(() => {
+          void Promise.resolve()
+            .then(() => loaded.stopCompletion())
+            .catch(() => undefined);
+        }, ANSWER_LIMIT_MS);
         try {
-          const { answer, loaded } = await contextFor(now.path);
-          const timer = setTimeout(() => {
-            void loaded.stopCompletion();
-          }, ANSWER_LIMIT_MS);
-          try {
-            return await answer.generateJson(request);
-          } finally {
-            clearTimeout(timer);
-          }
+          return await answer.generateJson(request);
         } finally {
-          busy -= 1;
+          clearTimeout(timer);
         }
       };
-      const next = queue.then(ask, ask);
+      const next = queue.then(ask, ask).finally(() => {
+        busy -= 1;
+      });
       queue = next.catch(() => undefined);
       return next;
     },
@@ -141,6 +155,7 @@ export const createAssistantModel = ({ runtime, state }: AssistantModelDeps): As
       await letGo();
     },
     relieve: async () => {
+      // A question asked or waiting keeps the context: it is loaded for it.
       if (busy === 0) {
         await letGo();
       }

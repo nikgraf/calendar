@@ -505,12 +505,19 @@ const NO_CHECK: LanguageModel = {
 };
 
 /** The Create lesson's note while the Assistant's model is not on this iPhone yet. */
-const lessonNoteOf = (state: AssistantModelState): string =>
-  state.kind === 'unsupported'
-    ? 'This iPhone cannot run the Assistant’s model — the form still makes an event.'
-    : state.kind === 'unasked' || state.kind === 'declined'
-      ? 'Describing an event needs the Assistant’s model, a one-time download — the form still makes one.'
-      : 'The Assistant’s model is still downloading — the form still makes an event.';
+const lessonNoteOf = (state: AssistantModelState): string => {
+  switch (state.kind) {
+    case 'unsupported':
+      return 'This iPhone cannot run the Assistant’s model — the form still makes an event.';
+    case 'unasked':
+    case 'declined':
+      return 'Describing an event needs the Assistant’s model, a one-time download — the form still makes one.';
+    case 'failed':
+      return 'The Assistant’s model did not download — Try Again in the Assistant; the form still makes an event.';
+    default:
+      return 'The Assistant’s model is still downloading — the form still makes an event.';
+  }
+};
 
 export function EventEditSheet({
   birthday,

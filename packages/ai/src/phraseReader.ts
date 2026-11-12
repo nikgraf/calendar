@@ -133,24 +133,26 @@ export const tunedReader = (model: LanguageModel): PhraseReader => ({
   },
   first: async ({ fallbackDate, phrase, referenceDate, timeZone }) => {
     await unavailable(model);
-    const result = await tunedTurn(model, {
-      draft: undefined,
-      earlier: [],
-      referenceDate,
-      text: phrase,
-    });
+    // No day in the words: the day on show, not today. Set before the
+    // result is made, so a repeat starts and a night ends from that day.
+    const onShow = (answer: unknown): unknown => {
+      if (fallbackDate === undefined || typeof answer !== 'object' || answer === null) {
+        return answer;
+      }
+      const { date } = answer as { readonly date?: unknown };
+      return (date === undefined || date === referenceDate) && !statesDay(phrase, referenceDate)
+        ? { ...answer, date: fallbackDate }
+        : answer;
+    };
+    const result = await tunedTurn(
+      model,
+      { draft: undefined, earlier: [], referenceDate, text: phrase },
+      { adjust: onShow },
+    );
     if (result.kind === 'rejected') {
       return result;
     }
-    // No day in the words: the day on show, not today.
-    const onShow =
-      fallbackDate !== undefined &&
-      result.prefill.date === referenceDate &&
-      !statesDay(phrase, referenceDate);
-    const placed = onShow
-      ? ({ ...result, prefill: { ...result.prefill, date: fallbackDate } } as QuickAddResult)
-      : result;
-    const invalid = invalidIn(placed, timeZone);
-    return invalid === undefined ? placed : { kind: 'rejected', reason: invalid };
+    const invalid = invalidIn(result, timeZone);
+    return invalid === undefined ? result : { kind: 'rejected', reason: invalid };
   },
 });

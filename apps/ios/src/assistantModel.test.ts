@@ -156,4 +156,22 @@ describe('the Assistant’s model', () => {
     await expect(answering).resolves.toEqual({ kind: 'event', title: 'Lunch' });
     expect(log).not.toContain('release');
   });
+
+  it('answers no question asked before the app left the screen, and loads nothing for it', async () => {
+    const { log, runtime } = fakeRuntime();
+    const model = createAssistantModel({ runtime, state: () => READY });
+    const first = model.generateJson({ jsonSchema: undefined, prompt: 'a' });
+    const second = model.generateJson({ jsonSchema: undefined, prompt: 'b' });
+    await new Promise((resolve) => setTimeout(resolve, 1));
+    await model.leave();
+    await Promise.allSettled([first, second]);
+    await expect(second).rejects.toThrow('left the screen');
+    expect(log.filter((line) => line.startsWith('load'))).toHaveLength(1);
+    // The next question in front loads afresh and is answered.
+    await expect(model.generateJson({ jsonSchema: undefined, prompt: 'c' })).resolves.toEqual({
+      kind: 'event',
+      title: 'Lunch',
+    });
+    expect(log.filter((line) => line.startsWith('load'))).toHaveLength(2);
+  });
 });
