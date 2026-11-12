@@ -7,7 +7,7 @@ import {
   Temporal,
 } from '@calendar/core';
 import { guestLabel } from './draftInvitees.ts';
-import { remindersKey } from './eventEditorChanges.ts';
+import { remindersKey, vouchedGeo } from './eventEditorChanges.ts';
 import type { Draft } from './draftThread.ts';
 import type { QuickAddItem } from './quickAddItem.ts';
 import { recurrenceKey, type RepeatFields } from './repeatState.ts';
@@ -192,13 +192,25 @@ const isUndated = (draft: Draft): boolean =>
 
 const dayText = (draft: Draft): string => (isUndated(draft) ? 'No due date' : dayOf(draft.item));
 
+/** A to-do without the time it carries: what a list that keeps a due day only will hold of it. */
+const timeless = (item: QuickAddItem): QuickAddItem => {
+  if (item.kind !== 'task') {
+    return item;
+  }
+  const { time: _time, ...prefill } = item.prefill;
+  return { kind: 'task', prefill };
+};
+
 /**
  * A draft in one line, for a row that only names it (`describeDraftItem`).
  * A to-do the form holds without a due day says so: its item's day is a
- * placeholder, not a day to name.
+ * placeholder, not a day to name. `timeKept` false leaves a to-do's time
+ * out: its list keeps a due day only.
  */
-export const describeDraft = (draft: Draft): string =>
-  isUndated(draft) ? 'No due date' : describeDraftItem(draft.item);
+export const describeDraft = (draft: Draft, timeKept = true): string =>
+  isUndated(draft)
+    ? 'No due date'
+    : describeDraftItem(timeKept ? draft.item : timeless(draft.item));
 
 const dayKey = (draft: Draft): string =>
   isUndated(draft) ? 'undated' : `${draft.item.prefill.date}|${lastDayOf(draft.item) ?? ''}`;
@@ -253,6 +265,35 @@ const differs = (
   to: string | undefined,
 ): ReadonlyArray<FieldChange> => (keys[0] === keys[1] ? [] : [{ field, from, to }]);
 
+/**
+ * The pin a draft's place text has: the coordinates Save would write for
+ * it (`vouchedGeo`), as a key; '' for a text without one.
+ */
+const pinOf = (draft: Draft | undefined): string => {
+  const geo =
+    draft?.item.kind === 'event'
+      ? vouchedGeo(draft.extras?.geo, draft.item.prefill.location ?? '')
+      : undefined;
+  return geo === undefined ? '' : `${String(geo.lat)},${String(geo.lng)}`;
+};
+
+/**
+ * A place is its text and its pin: another place picked under the same
+ * text, or the pin let go of ("as said"), is a change of place too — Save
+ * writes or clears the coordinates. With the text as it was there is no
+ * old reading to show beside it.
+ */
+const placeChange = (before: Draft | undefined, after: Draft): ReadonlyArray<FieldChange> => {
+  const was = before ? placeOf(before.item) : undefined;
+  const now = placeOf(after.item);
+  if ((was ?? '') !== (now ?? '')) {
+    return [{ field: 'location', from: was, to: now }];
+  }
+  return before !== undefined && pinOf(before) !== pinOf(after)
+    ? [{ field: 'location', from: undefined, to: now }]
+    : [];
+};
+
 /** The item's own fields: what a phrase can say. */
 const itemChanges = (before: Draft | undefined, after: Draft): ReadonlyArray<FieldChange> => {
   const was = before?.item;
@@ -279,12 +320,7 @@ const itemChanges = (before: Draft | undefined, after: Draft): ReadonlyArray<Fie
       was ? timesOf(was) : undefined,
       timesOf(now),
     ),
-    ...differs(
-      'location',
-      [(was ? placeOf(was) : undefined) ?? '', placeOf(now) ?? ''],
-      was ? placeOf(was) : undefined,
-      placeOf(now),
-    ),
+    ...placeChange(before, after),
     ...differs(
       'repeat',
       [before ? repeatKey(before) : 'none', repeatKey(after)],
@@ -439,8 +475,11 @@ const sentence = (text: string): string => text.charAt(0).toUpperCase() + text.s
 export const cardLines = (
   draft: Draft,
   changes: ReadonlyArray<FieldChange> = [],
+  /** False for a to-do on a list that keeps a due day only: the time it carries is not shown, since it is not saved. */
+  timeKept = true,
 ): ReadonlyArray<CardLine> => {
-  const { extras, item } = draft;
+  const { extras } = draft;
+  const item = timeKept ? draft.item : timeless(draft.item);
   const line = (
     field: StepField,
     text: string,

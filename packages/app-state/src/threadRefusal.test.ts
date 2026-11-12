@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
 import type { QuickAddItem } from './quickAddItem.ts';
-import { type TurnLimits, turnRefusal } from './threadRefusal.ts';
+import { todoTimeRefusal, type TurnLimits, turnRefusal } from './threadRefusal.ts';
 
 const standup: QuickAddItem = {
   kind: 'event',
@@ -113,5 +113,43 @@ describe('turnRefusal', () => {
     expect(
       turnRefusal(call, { ...call, prefill: { ...call.prefill, time: '09:00' } }, false, single),
     ).toBeUndefined();
+  });
+});
+
+/** A to-do due at a time of day. */
+const at = (time: string): QuickAddItem => ({
+  kind: 'task',
+  prefill: { date: '2026-08-28', time, title: 'Call' },
+});
+
+describe('todoTimeRefusal', () => {
+  const call: QuickAddItem = { kind: 'task', prefill: { date: '2026-08-28', title: 'Call' } };
+  const sentence = 'This list keeps a due day only — a time can’t be saved here.';
+
+  it('refuses a time given to a to-do whose list keeps a due day only', () => {
+    expect(todoTimeRefusal(call, at('15:00'), false)).toBe(sentence);
+    // Another time than the one it carries is given by this turn too.
+    expect(todoTimeRefusal(at('09:00'), at('15:00'), false)).toBe(sentence);
+  });
+
+  it('takes it where the list keeps a time', () => {
+    expect(todoTimeRefusal(call, at('15:00'), true)).toBeUndefined();
+  });
+
+  it('takes a turn that gives no time: the day, the title, a time taken away', () => {
+    const tomorrow: QuickAddItem = {
+      kind: 'task',
+      prefill: { date: '2026-08-29', title: 'Call' },
+    };
+    expect(todoTimeRefusal(call, tomorrow, false)).toBeUndefined();
+    // A time the draft already carries (a first phrase's) is not this turn's.
+    const renamed: QuickAddItem = {
+      kind: 'task',
+      prefill: { date: '2026-08-28', time: '09:00', title: 'Call the bank' },
+    };
+    expect(todoTimeRefusal(at('09:00'), renamed, false)).toBeUndefined();
+    expect(todoTimeRefusal(at('09:00'), call, false)).toBeUndefined();
+    // An event's times are its own.
+    expect(todoTimeRefusal(standup, with_({ startTime: '10:00' }), false)).toBeUndefined();
   });
 });

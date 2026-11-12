@@ -32,6 +32,26 @@ export interface TurnLimits {
     | undefined;
 }
 
+/**
+ * Why a turn that gives a to-do a time cannot be taken where its list
+ * keeps none, or undefined. A Google task has a due day only: Save sends
+ * no time, so a card that showed one would promise what is never
+ * written. Only a turn that changes the time — one the draft already
+ * carries (a first phrase's, kept for a list that holds it) is not this
+ * turn's.
+ */
+export const todoTimeRefusal = (
+  before: QuickAddItem,
+  after: QuickAddItem,
+  keepsTime: boolean,
+): string | undefined =>
+  !keepsTime &&
+  after.kind === 'task' &&
+  after.prefill.time !== undefined &&
+  (before.kind !== 'task' || before.prefill.time !== after.prefill.time)
+    ? 'This list keeps a due day only — a time can’t be saved here.'
+    : undefined;
+
 const ruleOf = (item: QuickAddItem): string =>
   recurrenceKey(item.kind === 'event' ? item.prefill.recurrence : undefined);
 

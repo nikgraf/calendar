@@ -1,4 +1,4 @@
-import { EventReminders, ReminderOverride } from '@calendar/core';
+import { EventReminders, GeoLocation, ReminderOverride } from '@calendar/core';
 import { describe, expect, it } from 'vite-plus/test';
 import { cardLines, changedFields, describeDraft, draftChanges } from './draftChanges.ts';
 import type { Draft, DraftExtras } from './draftThread.ts';
@@ -37,6 +37,10 @@ const popups = (...minutes: ReadonlyArray<number>) =>
     overrides: minutes.map((offset) => new ReminderOverride({ method: 'popup', minutes: offset })),
     useDefault: false,
   });
+
+/** A point for the text "Figlmüller": one of the two branches, by latitude. */
+const pin = (lat: number) =>
+  new GeoLocation({ lat, lng: 16.375, name: 'Figlmüller', source: 'Figlmüller' });
 
 describe('draftChanges', () => {
   it('finds nothing between a draft and itself', () => {
@@ -201,6 +205,25 @@ describe('draftChanges', () => {
     ).toEqual([{ field: 'list', from: 'a:errands', to: 'a:home' }]);
   });
 
+  it('counts a pin as part of a place: another point under the same text, or none', () => {
+    const there: QuickAddItem = {
+      kind: 'event',
+      prefill: { ...lunch.prefill, location: 'Figlmüller' },
+    };
+    const wollzeile = draft(there, { geo: pin(48.209) });
+    // The text reads the same, so there is no old reading to show beside it.
+    expect(draftChanges(wollzeile, draft(there, { geo: pin(48.212) }))).toEqual([
+      { field: 'location', from: undefined, to: 'Figlmüller' },
+    ]);
+    expect(draftChanges(wollzeile, draft(there, {}))).toEqual([
+      { field: 'location', from: undefined, to: 'Figlmüller' },
+    ]);
+    expect(draftChanges(wollzeile, draft(there, { geo: pin(48.209) }))).toEqual([]);
+    // Coordinates that no longer match the text are no pin of it.
+    const stale = new GeoLocation({ lat: 1, lng: 2, source: 'Somewhere else' });
+    expect(draftChanges(draft(there, {}), draft(there, { geo: stale }))).toEqual([]);
+  });
+
   it('says a to-do lost its day, and what a reminder holds beyond one', () => {
     expect(draftChanges(draft(call), draft(call, { undated: true }))).toEqual([
       { field: 'date', from: 'Tue, Aug 25', to: 'No due date' },
@@ -247,6 +270,11 @@ describe('cardLines', () => {
       { changed: false, field: 'time', text: '13:00–14:00' },
     ]);
     expect(cardLines(draft(call)).map((line) => line.text)).toEqual(['Tue, Aug 25', '09:30']);
+    // On a list that keeps a due day only, the time it carries is not
+    // shown: it is not saved.
+    expect(cardLines(draft(call), [], false).map((line) => line.text)).toEqual(['Tue, Aug 25']);
+    expect(describeDraft(draft(call), false)).toBe('Tue, Aug 25');
+    expect(cardLines(draft(lunch), [], false).map((line) => line.field)).toEqual(['date', 'time']);
     // A to-do without a time has no line for one.
     expect(
       cardLines(draft({ kind: 'task', prefill: { date: '2026-08-25', title: 'Call' } })).map(

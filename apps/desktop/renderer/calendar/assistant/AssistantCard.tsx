@@ -70,6 +70,7 @@ export function AssistantCard({
   draft,
   footer,
   label,
+  timeKept = true,
 }: {
   /** What the step the card is of did to the draft; empty marks nothing. */
   readonly changes: ReadonlyArray<FieldChange>;
@@ -80,8 +81,10 @@ export function AssistantCard({
   readonly draft: Draft;
   readonly footer?: ReactNode;
   readonly label: string;
+  /** False for a to-do on a list that keeps a due day only: the card shows no time, since none is saved. */
+  readonly timeKept?: boolean;
 }) {
-  const lines = cardLines(draft, changes);
+  const lines = cardLines(draft, changes, timeKept);
   const when = lines.filter((line) => line.field === 'date' || line.field === 'time');
   const rest = lines.filter((line) => line.field !== 'date' && line.field !== 'time');
   const retitled = changes.some((change) => change.field === 'title');

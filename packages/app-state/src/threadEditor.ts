@@ -45,7 +45,7 @@ import { useBackendMutations } from './hooks.ts';
 import { useOneWrite } from './oneWrite.ts';
 import type { QuickAddItem } from './quickAddItem.ts';
 import { type TaskEditorSeed, useTaskEditorModel } from './taskEditorModel.ts';
-import { type TurnLimits, turnRefusal } from './threadRefusal.ts';
+import { todoTimeRefusal, type TurnLimits, turnRefusal } from './threadRefusal.ts';
 import { movedFrom, shownMarks } from './threadSteps.ts';
 
 export type { DraftFocusRequest } from './draftAtoms.ts';
@@ -775,8 +775,9 @@ export const useThreadEditor = ({
   // The phrase goes to the thread: the first makes the draft(s), the rest
   // change them, one that asks for free time proposes slots. The model's
   // own failure modes become the field's message.
-  // What a stored event can take from a turn (`turnRefusal`): a new item,
-  // and a to-do, take whatever the words say.
+  // What a stored event can take from a turn (`turnRefusal`): a new item
+  // takes whatever the words say — but for a time on a to-do whose list
+  // keeps none (`keepsTime`), which goes for a saved to-do too.
   const limits: TurnLimits | undefined =
     sourceKind === 'event' && eventModel.existing
       ? {
@@ -787,6 +788,23 @@ export const useThreadEditor = ({
             : undefined,
         }
       : undefined;
+  /**
+   * Whether a draft keeps a time of day: an event does, a to-do only on a
+   * list that holds one — a Reminders list. A Google task has a due day
+   * only, and Save sends no time: a turn that gives one is refused
+   * (`todoTimeRefusal`), and the card shows none a draft carries from
+   * elsewhere (a first phrase, a list switched since).
+   */
+  const keepsTime = (draft: Draft): boolean => {
+    if (draft.item.kind !== 'task') {
+      return true;
+    }
+    if (draft.id === focusedDraft?.id) {
+      return taskModel.provider === 'apple';
+    }
+    const key = draftListKey(draft, taskLists, taskModel.listKey);
+    return taskLists.find((list) => `${list.accountId}:${list.id}` === key)?.provider === 'apple';
+  };
   // A saved series' free slots were searched at the scope the form was at
   // ("All events" leaves the series' own occurrences out of the way, "This
   // event" only the one): at another scope they no longer hold, so they
@@ -826,9 +844,9 @@ export const useThreadEditor = ({
             : undefined,
         fallbackDate: seed.initialDate.toString(),
         read: readForm,
-        refuse: limits
-          ? (before, after, guests) => turnRefusal(before, after, guests, limits)
-          : undefined,
+        refuse: (draft, after, guests) =>
+          todoTimeRefusal(draft.item, after, keepsTime(draft)) ??
+          (limits ? turnRefusal(draft.item, after, guests, limits) : undefined),
       });
     } catch (error) {
       return error instanceof ModelUnavailableError
@@ -953,6 +971,7 @@ export const useThreadEditor = ({
     inviteeChoices,
     /** The location text back as said, pin gone; the row stays. */
     keepPlace,
+    keepsTime,
     /** The kind control's switch counts as an edit too. */
     kinds: reportingEdits(kinds, ['switchTo'], edited),
     /** How a calendar or a list is named in a step's changes (`lineChanges`). */

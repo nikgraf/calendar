@@ -483,28 +483,60 @@ describe('The editor’s Assistant and Form views', () => {
     expect(again[0]?.payload).toEqual(after);
   });
 
-  it('gives a saved to-do without a due day the day the words say', async () => {
+  it('gives a saved to-do without a due day the day the words say, and refuses a time its list cannot keep', async () => {
     const { cdp } = app;
-    await cdp.clickTaskChip('[data-testid="all-day-task-task-loose"]');
+    const dueDate = async () =>
+      (await readTasks(app.userDataDir)).find((task) => task.id === 'task-loose')?.dueDate;
+    const openLoose = async () => {
+      await cdp.clickTaskChip('[data-testid="all-day-task-task-loose"]');
+      await cdp.waitFor(headingIs('Edit task'));
+    };
+    await openLoose();
     await cdp.waitFor(exists('task-no-due-date'));
     await cdp.showEditorView('assistant');
     await cdp.waitFor(`${card('title')} === 'Loose end'`);
-    // Tomorrow, in the fixture's grammar. The form held the to-do undated,
-    // its stored day a placeholder: the day the words gave is none, and
-    // the form must not let go of it again as it takes the step in.
-    await cdp.say('| +1');
+
+    // A time: a Google task has a due day only, and Save would send none.
+    // Said so, and nothing lands.
+    await cdp.say('| | 15:00-16:00');
+    await cdp.waitFor(
+      `${textOf('quick-add-status')} === 'This list keeps a due day only — a time can’t be saved here.'`,
+    );
+    expect(await cdp.eval<boolean>(exists('step-control'))).toBe(false);
+
+    // Today, in the fixture's grammar: the day the to-do is shown on, and
+    // the placeholder its form holds. The words said it, so it is dated —
+    // though the day reads as it did.
+    await cdp.eval(`${INPUT}.select()`);
+    await cdp.say('| +0');
     await cdp.waitFor(`${stepPosition} === '1 of 1'`);
-    await cdp.waitFor(`!${exists('task-no-due-date')}`);
     // The row to go back to names the to-do as it was saved: without a day.
     expect(await cdp.eval<string>(textOf('assistant-version'))).toContain('No due date');
     await cdp.clickButtonWithText('Save');
     await cdp.waitFor(`!${exists('editor')}`);
-    await expect
-      .poll(
-        async () =>
-          (await readTasks(app.userDataDir)).find((task) => task.id === 'task-loose')?.dueDate,
-      )
-      .toBe(today.add({ days: 1 }).toString());
+    await expect.poll(dueDate).toBe(today.toString());
+
+    // Without a day again, by hand.
+    await openLoose();
+    await cdp.clickTestId('task-remove-due-date');
+    await cdp.waitFor(exists('task-no-due-date'));
+    await cdp.clickButtonWithText('Save');
+    await cdp.waitFor(`!${exists('editor')}`);
+    await expect.poll(dueDate).toBeUndefined();
+
+    // Tomorrow. The form held the to-do undated, its stored day a
+    // placeholder: the day the words gave is none, and the form must not
+    // let go of it again as it takes the step in.
+    await openLoose();
+    await cdp.waitFor(exists('task-no-due-date'));
+    await cdp.showEditorView('assistant');
+    await cdp.waitFor(`${card('title')} === 'Loose end'`);
+    await cdp.say('| +1');
+    await cdp.waitFor(`${stepPosition} === '1 of 1'`);
+    await cdp.waitFor(`!${exists('task-no-due-date')}`);
+    await cdp.clickButtonWithText('Save');
+    await cdp.waitFor(`!${exists('editor')}`);
+    await expect.poll(dueDate).toBe(today.add({ days: 1 }).toString());
   });
 
   it('refuses in the conversation what a saved event cannot hold, and lands nothing', async () => {

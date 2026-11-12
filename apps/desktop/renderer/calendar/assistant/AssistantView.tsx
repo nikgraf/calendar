@@ -236,7 +236,7 @@ export function AssistantView({
             position={0}
             summary={(() => {
               const saved = steps.line[0]?.before.drafts[0];
-              return saved ? describeDraft(saved) : '';
+              return saved ? describeDraft(saved, editor.keepsTime(saved)) : '';
             })()}
           />
         ) : null}
@@ -344,7 +344,9 @@ function StepAnswer({
               <span className="min-w-0 flex-1 truncate font-medium">
                 {draft.item.prefill.title || 'Untitled'}
               </span>
-              <span className="shrink-0 text-xs text-ink-secondary">{describeDraft(draft)}</span>
+              <span className="shrink-0 text-xs text-ink-secondary">
+                {describeDraft(draft, editor.keepsTime(draft))}
+              </span>
             </button>
           );
         }
@@ -362,6 +364,7 @@ function StepAnswer({
             }
             key={draft.id}
             label={versionLabel}
+            timeKept={editor.keepsTime(draft)}
           />
         );
       })}

@@ -176,7 +176,7 @@ function StepAnswer({
                 {draft.item.prefill.title || 'Untitled'}
               </Text>
               <Text numberOfLines={1} style={styles.otherWhen}>
-                {describeDraft(draft)}
+                {describeDraft(draft, editor.keepsTime(draft))}
               </Text>
             </Pressable>
           );
@@ -195,6 +195,7 @@ function StepAnswer({
             }
             key={draft.id}
             label={label}
+            timeKept={editor.keepsTime(draft)}
           />
         );
       })}
@@ -306,7 +307,7 @@ export function AssistantView({
           disabled={steps.locked}
           label="As saved"
           onRestore={() => steps.show(0)}
-          summary={saved ? describeDraft(saved) : ''}
+          summary={saved ? describeDraft(saved, editor.keepsTime(saved)) : ''}
         />
       ) : null}
       {steps.at === 0 && (assistant === 'saved' || !started) ? answer : null}

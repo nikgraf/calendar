@@ -68,6 +68,17 @@ const later: QuickAddItem = {
 const rule = (recurrence: Record<string, unknown>): QuickAddItem =>
   ({ kind: 'event', prefill: { ...dinner.prefill, recurrence } }) as QuickAddItem;
 
+/** What the form holds of a draft at "Figlmüller": a pin at that latitude, or none. */
+const pinnedAt = (lat: number | undefined) => ({
+  attendees: [],
+  description: '',
+  geo:
+    lat === undefined
+      ? undefined
+      : new GeoLocation({ lat, lng: 16.375, name: 'Figlmüller', source: 'Figlmüller' }),
+  reminders: undefined,
+});
+
 /** Stable ids: d1, d2, … in the order they are asked for. */
 const ids = () => {
   let count = 0;
@@ -441,6 +452,45 @@ describe('focus, update and remove', () => {
     expect(back.steps).toEqual(started.steps);
     expect(back.history).toEqual(started.history);
     expect(back.drafts[0]?.item).toEqual(dinner);
+  });
+
+  it('makes a step of a place picked under the text the field already reads, and of its pin let go', () => {
+    const id = ids();
+    const there: QuickAddItem = {
+      kind: 'event',
+      prefill: { ...dinner.prefill, location: 'Figlmüller' },
+    };
+    const pinned = startThread([there], 'dinner at Figlmüller', {
+      extras: pinnedAt(48.209),
+      id,
+    });
+    // The other Figlmüller: the same words in the field, another point on the map.
+    const other = foldForm(
+      pinned,
+      { extras: pinnedAt(48.212), item: there },
+      { kind: 'pick', pick: 'place' },
+      id,
+    );
+    expect(other.steps).toHaveLength(pinned.steps.length + 1);
+    expect(other.steps.at(-1)).toMatchObject({ kind: 'pick', pick: 'place' });
+    // Going back over it gives the first one back.
+    expect(stepTo(other, 1).drafts[0]?.extras?.geo?.lat).toBe(48.209);
+    // "As said": the text stays, the pin goes — a step as well.
+    const said = foldForm(
+      other,
+      { extras: { ...pinnedAt(undefined), locationAsSaid: 'Figlmüller' }, item: there },
+      { kind: 'pick', pick: 'place' },
+      id,
+    );
+    expect(said.steps).toHaveLength(other.steps.length + 1);
+    // The same pin read back is none.
+    const again = foldForm(
+      pinned,
+      { extras: pinnedAt(48.209), item: there },
+      { kind: 'pick', pick: 'place' },
+      id,
+    );
+    expect(again.steps).toEqual(pinned.steps);
   });
 
   it('keeps a pick as its own step, and settles the choice it answered with it', () => {
@@ -1542,6 +1592,22 @@ describe('a turn on a to-do the form holds undated', () => {
     expect(landed.drafts[0]?.item.prefill.date).toBe('2026-08-29');
     expect(landed.drafts[0]?.extras?.undated).toBe(false);
     expect(undoTurn(landed).drafts[0]?.extras?.undated).toBe(true);
+  });
+
+  it('dates it when the words said the day it already reads: "today" on today', () => {
+    const today = refineThread(open(), 'due today', [{ id: 'd1', item: todo, saidDay: true }]);
+    expect(today.drafts[0]?.item).toEqual(todo);
+    expect(today.drafts[0]?.extras?.undated).toBe(false);
+    expect(undoTurn(today).drafts[0]?.extras?.undated).toBe(true);
+    // Through the form's reading too: the flag stays on the change.
+    const merged = landRefinement(open(), {
+      changes: [{ id: 'd1', item: todo, saidDay: true }],
+      fresh: { extras, item: todo },
+      submitted: { extras, item: todo },
+      targetId: 'd1',
+      utterance: 'due today',
+    });
+    expect(merged.drafts[0]?.extras?.undated).toBe(false);
   });
 
   it('dates it when the words gave a time: that is due on the day it holds', () => {

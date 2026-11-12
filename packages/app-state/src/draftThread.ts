@@ -134,6 +134,8 @@ export interface DraftChange {
   readonly place?: PlaceChange | undefined;
   /** What the words did to the notifications: applied to the draft's as they are when it lands. */
   readonly reminders?: ReminderChange | undefined;
+  /** The words gave the day, even where it is the day the draft held (a refinement's `saidDay`). */
+  readonly saidDay?: boolean | undefined;
   readonly slots?: ReadonlyArray<FreeSlot> | undefined;
 }
 
@@ -483,17 +485,22 @@ export const turnsOf = (state: DraftThreadState, draftId: string): ReadonlyArray
 const withoutSlots = ({ slots: _slots, ...draft }: Draft): Draft => draft;
 
 /**
- * A to-do the form held undated, as a turn that gave it another day or
- * time leaves it: dated — the day is the words' now, no placeholder the
- * form may clear again (and undated once more with Undo). A turn that
- * left both alone leaves the state alone.
+ * A to-do the form held undated, as a turn that gave it a day or a time
+ * leaves it: dated — the day is the words' now, no placeholder the form
+ * may clear again (and undated once more with Undo). The day counts as
+ * given when it is another one, and when the words said it (`saidDay`):
+ * the placeholder is today, and "today" leaves it as it reads. A turn
+ * about neither leaves the state alone.
  */
-const datedBy = (draft: Draft, after: QuickAddItem): Pick<Draft, 'extras'> | undefined => {
+const datedBy = (draft: Draft, change: DraftChange): Pick<Draft, 'extras'> | undefined => {
   const before = draft.item;
+  const after = change.item;
   return draft.extras?.undated &&
     before.kind === 'task' &&
     after.kind === 'task' &&
-    (before.prefill.date !== after.prefill.date || before.prefill.time !== after.prefill.time)
+    (change.saidDay === true ||
+      before.prefill.date !== after.prefill.date ||
+      before.prefill.time !== after.prefill.time)
     ? { extras: { ...draft.extras, undated: false } }
     : undefined;
 };
@@ -531,7 +538,7 @@ export const refineThread = (
     const placed = withPlace(
       {
         ...withoutSlots(draft),
-        ...(change.extras ? { extras: change.extras } : datedBy(draft, change.item)),
+        ...(change.extras ? { extras: change.extras } : datedBy(draft, change)),
         item: change.item,
         ...(change.slots ? { slots: change.slots } : {}),
       },
@@ -1118,15 +1125,12 @@ export const firstDraftExtras = (extras: DraftExtras | undefined): DraftExtras |
 
 /**
  * Why a turn cannot be taken, or undefined: what the item being changed
- * cannot hold (a stored event's limits — `turnRefusal`), given the item
- * before and after the turn and whether the turn changes its guests
- * (invites someone or takes someone off).
+ * cannot hold (a stored event's limits — `turnRefusal`; a time on a list
+ * that keeps none — `todoTimeRefusal`), given the draft before the turn,
+ * its item after it, and whether the turn changes its guests (invites
+ * someone or takes someone off).
  */
-export type Refuse = (
-  before: QuickAddItem,
-  after: QuickAddItem,
-  guests: boolean,
-) => string | undefined;
+export type Refuse = (draft: Draft, after: QuickAddItem, guests: boolean) => string | undefined;
 
 /** What a phrase is said with. */
 export interface PhraseOptions {
@@ -1309,6 +1313,7 @@ export const useDraftThread = ({
                     ...(result.notes ? { notes: result.notes } : {}),
                     ...(placeFound ? { place: placeFound } : {}),
                     ...(result.reminders ? { reminders: result.reminders } : {}),
+                    ...(result.saidDay ? { saidDay: true } : {}),
                   };
                 })(),
               ]
@@ -1330,7 +1335,7 @@ export const useDraftThread = ({
           const draft = current.drafts.find((each) => each.id === change.id);
           return draft === undefined
             ? undefined
-            : refuse?.(draft.item, change.item, changesGuests(change.guests));
+            : refuse?.(draft, change.item, changesGuests(change.guests));
         })
         .find((message) => message !== undefined);
       if (refused !== undefined) {
@@ -1413,7 +1418,7 @@ export const useDraftThread = ({
         );
         return undefined;
       }
-      const refused = refuse?.(target.item, itemAtSlot(target.item, best, result.title), false);
+      const refused = refuse?.(target, itemAtSlot(target.item, best, result.title), false);
       if (refused !== undefined) {
         return refused;
       }

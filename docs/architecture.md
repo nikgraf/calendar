@@ -1471,6 +1471,13 @@ gateway carries all of it. Details, limits and the threat model:
   cannot hold is refused in the conversation with Save's own sentence
   (`turnRefusal`), and Save sends only what differs from the saved item
   (`eventEditorChanges` compares values; there are no dirty flags).
+  A to-do, new or saved, takes no time of day on a list that keeps a due
+  day only (a Google task: `todoTimeRefusal`, asked through the editor's
+  `keepsTime`), and its card shows none it carries from a first phrase.
+  A to-do kept without a due day is dated by a turn that gives a day or
+  a time — also the day it already reads, which a refinement reports as
+  `saidDay`. A place is its text and its pin: another point picked under
+  the same text, or the pin let go of, is a step too (`draftChanges`).
   a phrase that asks for free time (`proposeSlots`)
   puts the draft in the best free slot and keeps the others on it — a
   "Free slots" chip row under the card, the chosen one pressed, and

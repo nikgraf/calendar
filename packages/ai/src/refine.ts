@@ -150,20 +150,25 @@ const timesOf = (
     : undefined;
 };
 
-/** The day the words name, else the model's where they mention or defer one, else the draft's. */
+/**
+ * The day the words name, else the model's where they mention or defer
+ * one, else the draft's — and whether the words gave it (`said`), which
+ * the day alone cannot tell: "today" said of a draft that is on today
+ * leaves the day as it was.
+ */
 const refinedDay = (
   parse: QuickAddParse,
   utterance: string,
   referenceDate: string,
   draft: RefineDraft,
-): string => {
+): { readonly date: string; readonly said: boolean } => {
   const modelDate = realDate(parse.date?.trim());
-  return (
+  const stated =
     groundDate(modelDate, { phrase: utterance, referenceDate }) ??
     (modelDate !== undefined && (mentionsDate(utterance) || defersDate(utterance))
       ? modelDate
-      : draft.date)
-  );
+      : undefined);
+  return { date: stated ?? draft.date, said: stated !== undefined };
 };
 
 /** What one turn's words say of the draft's times, read once. */
@@ -401,7 +406,7 @@ export const normalizeRefine = (
   const place = placeOf(meaningfulText(parse.location), title, utterance);
   const location = CLEAR_PLACE.test(text) ? undefined : (place ?? draft.location);
 
-  const day = refinedDay(parse, utterance, referenceDate, draft);
+  const { date: day, said: saidDay } = refinedDay(parse, utterance, referenceDate, draft);
   const times = timesOf(utterance, realTime(parse.startTime), draft);
   const length = durationMinutesOf(utterance);
   // Days the form gave a draft that ends on a later day.
@@ -448,6 +453,7 @@ export const normalizeRefine = (
       startTime,
       title,
     },
+    ...(saidDay ? { saidDay: true } : {}),
   };
 };
 
