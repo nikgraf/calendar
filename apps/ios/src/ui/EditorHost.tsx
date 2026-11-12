@@ -84,9 +84,9 @@ export interface EditorHost {
    * so the draft is in view between the card and the half-height sheet.
    */
   readonly lessonEditor: number | undefined;
-  /** The editor's form-sheet route went away (Cancel, Save, or a swipe down). */
+  /** The editor's route went away (Cancel, Save, or a swipe down). */
   readonly onEditorDismissed: () => void;
-  /** The editor's form-sheet route mounted. */
+  /** The editor's route mounted. */
   readonly onEditorShown: () => void;
   readonly openBirthday: (birthday: BirthdayOccurrence) => void;
   /** The read-first event view; its Edit button opens the editor. */
@@ -146,12 +146,11 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
   const taskLists = useTaskLists();
   const updateOnboarding = useUpdateOnboarding();
 
-  // The editor route follows the state: pushed when an editor opens (half
-  // height for a new item, full for an existing one), popped when the
-  // state leaves the editor. The route renders `routeSheet`, which stays
-  // until the route is gone, so the sheet slides away with its content. A
-  // new editor while the route is up (a slot drawn behind a half sheet)
-  // only swaps the content.
+  // The editor route follows the state: pushed when an editor opens,
+  // popped when the state leaves the editor. The route renders
+  // `routeSheet`, which stays until the route is gone, so the sheet slides
+  // away with its content. A new editor while the route is up only swaps
+  // the content.
   const [routeSheet, setRouteSheet] = useState<EditSheet | null>(null);
   // Render-phase state adjustment (React's "derive from props" pattern):
   // the route shows the editor the state names, and keeps it after.
@@ -162,8 +161,8 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
   const previousKind = useRef<Sheet['kind']>('none');
   // When the last page sheet (detail, birthday, a fold's list) has slid away.
   const pageSheetGone = useRef(0);
-  // A route to push once the form sheet is gone (Settings, asked for from
-  // behind a half-height editor); any sheet asked for meanwhile takes over.
+  // A route to push once the editor's sheet is gone (Settings, asked for
+  // while it is up); any sheet asked for meanwhile takes over.
   const afterFormSheet = useRef<(() => void) | undefined>(undefined);
   useEffect(() => {
     const from = previousKind.current;
@@ -186,8 +185,7 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
     }
     presented.current = true;
     const opened = sheet;
-    const detent = opened.seed.event || opened.task ? 'full' : 'half';
-    const push = () => router.push({ params: { detent }, pathname: '/editor' });
+    const push = () => router.push('/editor');
     const wait = pageSheetGone.current - Date.now();
     if (wait <= 0) {
       push();
@@ -210,8 +208,8 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
     };
   }, [sheet]);
   // The route unmounts as its sheet starts to slide away; a page sheet
-  // opened meanwhile (a tap on an event behind a half-height editor) waits
-  // until it is gone.
+  // opened meanwhile (a notification's event, one tapped right after
+  // Cancel) waits until it is gone.
   const [formSheetLeaving, setFormSheetLeaving] = useState(false);
   const formSheetTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(formSheetTimer.current), []);
@@ -235,10 +233,10 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
     }, FORM_SHEET_DISMISS_MS);
   }, []);
 
-  // A page sheet waits until the editor's form sheet is gone: a tap on the
-  // calendar behind a half-height editor opens the detail while the route
-  // is still sliding away, and UIKit presents one sheet at a time. A
-  // finished capture's thread waits for it too.
+  // A page sheet waits until the editor's sheet is gone: a detail asked
+  // for as the editor closes would be presented while the route is still
+  // sliding away, and UIKit presents one sheet at a time. A finished
+  // capture's thread waits for it too.
   const formSheetGone = routeSheet === null && !formSheetLeaving;
 
   // What a capture found opens the editor as one thread of drafts on the
@@ -323,8 +321,8 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
   // A settings code from outside a reader: a share, or the Camera app's
   // "Open in Solunivo" (the code parses as a `solunivo:` URL). The inbox
   // brings up the right reader (settingsCodeInbox.ts) once the sheet that
-  // was open has gone: Settings › Read Code pushed over a half-height
-  // editor would be what the editor's own dismissal pops (as for
+  // was open has gone: Settings › Read Code pushed over the editor would
+  // be what the editor's own dismissal pops (as for
   // `openSettings`), and UIKit presents one sheet at a time. With nothing
   // open it still waits a task: a share's URL also sends the router to `/`
   // (`+native-intent.tsx`) from expo-router's own URL listener, and that
@@ -476,10 +474,10 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
         taskSeed: resolved === 'event' ? undefined : { dated, listKey },
       });
     },
-    // Settings is a route of its own: pushed over a half-height editor it
-    // would stack on the sheet, and the editor's pop would take Settings
-    // instead. The avatar closes the editor first — Cancel, as a tap on an
-    // event behind it is — and Settings opens once the sheet has gone.
+    // Settings is a route of its own: pushed over the editor it would
+    // stack on the sheet, and the editor's pop would take Settings
+    // instead. So the editor closes first — Cancel — and Settings opens
+    // once the sheet has gone.
     openSettings: () => {
       if (afterFormSheet.current) {
         return;

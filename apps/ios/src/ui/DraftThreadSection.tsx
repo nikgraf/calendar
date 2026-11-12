@@ -8,8 +8,7 @@ import {
 } from '@calendar/app-state';
 import { formatSlotLabel, placeCandidateLabel } from '@calendar/core';
 import { SymbolView } from 'expo-symbols';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { turnListMaxHeight, useEditorSheetHeight } from './editorSheet.ts';
+import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { ThreadTurnList } from './ThreadTurnList.tsx';
 import { BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme } from './theme.ts';
 
@@ -34,9 +33,8 @@ export function DraftThreadSection({
   const styles = useStyles(makeStyles);
   const { colors } = useTheme();
   // The sheet's header does not scroll: the turns get at most a third of
-  // the sheet as it stands, half or full, and scroll inside it, so the
-  // form under them stays in reach (`turnListMaxHeight`).
-  const turnsMaxHeight = turnListMaxHeight(useEditorSheetHeight());
+  // the screen and scroll inside it, so the form under them stays in reach.
+  const turnsMaxHeight = Math.round(useWindowDimensions().height / 3);
   const {
     addAll,
     batchError,

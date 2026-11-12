@@ -42,9 +42,8 @@ export const NONE: Sheet = { kind: 'none' };
 /**
  * An editor's own close — Cancel, or Save and Delete once the write's
  * reply is back — applies only while the sheet still holds its opening:
- * a reply landing after the user moved on (an event or a slot tapped
- * behind a half-height editor, another sheet opened after a swipe down)
- * leaves that sheet up.
+ * a reply landing after the user moved on (another sheet opened after a
+ * swipe down, a notification's event) leaves that sheet up.
  */
 export const closeEditor =
   (opening: number) =>

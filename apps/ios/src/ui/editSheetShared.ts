@@ -136,6 +136,10 @@ const makeSheetStyles = (colors: ThemeColors) =>
       fontSize: 17,
     },
     // The form-sheet editor's header: on the form's ground, as a Settings page's bar is.
+    /** The editor's route: the header, then the form's scroll view taking the rest. */
+    route: {
+      flex: 1,
+    },
     sheetHeader: {
       backgroundColor: groupedGround(colors),
     },

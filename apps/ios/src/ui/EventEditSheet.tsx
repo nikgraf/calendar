@@ -15,23 +15,12 @@ import {
   type TaskRecord,
 } from '@calendar/core';
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
-import {
-  Alert,
-  Keyboard,
-  Modal,
-  Pressable,
-  SafeAreaView,
-  ScrollView,
-  Text,
-  View,
-  type ScrollViewInstance,
-} from 'react-native';
+import { Alert, Modal, Pressable, SafeAreaView, ScrollView, Text, View } from 'react-native';
 import { backendClient } from '../backend.ts';
 import { languageModel } from '../model.ts';
 import { BirthdayDetail } from './BirthdayDetail.tsx';
 import { DraftThreadSection } from './DraftThreadSection.tsx';
 import { useSheetStyles } from './editSheetShared.ts';
-import { useEditorSheetAtHalf } from './editorSheet.ts';
 import { EventEditForm } from './EventEditForm.tsx';
 import { FieldFlashContext, FlashView } from './FlashView.tsx';
 import { Row, Section } from './GroupedList.tsx';
@@ -144,7 +133,7 @@ export function EventEditSheet({
   onSaved?: (() => void) | undefined;
   /**
    * 'modal': its own page sheet (the birthday detail). 'route': the body
-   * of the editor's form-sheet route (`app/editor.tsx`), which presents it.
+   * of the editor's route (`app/editor.tsx`), which presents it.
    */
   presentation?: 'modal' | 'route' | undefined;
   seed: EditSeed;
@@ -281,7 +270,7 @@ export function EventEditSheet({
       </>
     ) : null;
   // The kind control scrolls with the form, at its top: a choice made
-  // once, so it need not take room from the half-height sheet.
+  // once, so it need not stay on screen.
   const kindControl = showToggle ? (
     <View style={styles.topControl}>
       {/* A turn that made the item the other kind: the control tints and fades back. */}
@@ -357,50 +346,22 @@ export function EventEditSheet({
       )}
     </FieldFlashContext>
   );
-  // At half height the form shows its top under the header: UIKit hands a
-  // drag on it to the sheet, which rises, only while the form is scrolled
-  // to its top. So it goes back there, as Maps' sheets do, whenever the
-  // sheet stands at half with the keyboard down: lowered after a scroll at
-  // full height, and when the keyboard hides (it lifts a half sheet
-  // without a detent change, and a field focused in the form scrolls the
-  // form up to it). Never while the keyboard is up: the field being typed
-  // into would leave the view.
-  const formScroll = useRef<ScrollViewInstance>(null);
-  const atHalf = useEditorSheetAtHalf();
-  const formToTop = useEffectEvent(() => {
-    if (atHalf && !Keyboard.isVisible()) {
-      formScroll.current?.scrollTo({ animated: true, y: 0 });
-    }
-  });
-  useEffect(() => {
-    formToTop();
-  }, [atHalf]);
-  useEffect(() => {
-    const hidden = Keyboard.addListener('keyboardDidHide', () => formToTop());
-    return () => hidden.remove();
-  }, []);
-  // The form-sheet route (`app/editor.tsx`): react-native-screens lays a
-  // sheet out once, as at most a header and a scroll view — the header must
-  // not be flattened away (`collapsable={false}`), the scroll view follows
-  // it directly, and it stays the same view across a kind switch (the
-  // forms render bare inside it): anything wrapped around them, or a
-  // scroll view swapped in later, it places over the header.
+  // The editor's route (`app/editor.tsx`), a page sheet at full height:
+  // the header stays put, the form scrolls under it (the forms render
+  // bare inside the one scroll view, which stays the same view across a
+  // kind switch).
   if (presentation === 'route') {
     return (
-      <>
-        <View collapsable={false} style={styles.sheetHeader}>
+      <View style={styles.route}>
+        <View style={styles.sheetHeader}>
           {headerRow}
           {headerRest}
         </View>
-        <ScrollView
-          automaticallyAdjustKeyboardInsets
-          keyboardShouldPersistTaps="handled"
-          ref={formScroll}
-        >
+        <ScrollView automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled">
           {kindControl}
           {form}
         </ScrollView>
-      </>
+      </View>
     );
   }
   return (
