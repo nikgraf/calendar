@@ -38,6 +38,26 @@ export interface AssistantModel extends LanguageModel {
   readonly relieve: () => Promise<void>;
 }
 
+/** Stops what a context answers and hands its memory back, and that of a load under way once it lands. */
+const release = async (
+  held: OpenModelContext | undefined,
+  pending: Promise<OpenModelContext> | undefined,
+): Promise<void> => {
+  if (held !== undefined) {
+    try {
+      await held.stopCompletion();
+    } catch {
+      // A context the runtime no longer knows has nothing to stop.
+    }
+    await held.release().catch(() => undefined);
+  }
+  // A load under way lets its context go once it lands.
+  if (pending !== undefined) {
+    const late = await pending.catch(() => undefined);
+    await late?.release().catch(() => undefined);
+  }
+};
+
 export const createAssistantModel = ({
   foreground = () => true,
   runtime,
@@ -53,6 +73,8 @@ export const createAssistantModel = ({
   /** Counts the times the context was let go, so a load that lands after one is not kept. */
   let generation = 0;
   let queue: Promise<unknown> = Promise.resolve();
+  /** Every let-go under way: the next load waits for them, so two contexts are never in memory at once. */
+  let releasing: Promise<void> = Promise.resolve();
 
   const letGo = async (): Promise<boolean> => {
     away = true;
@@ -64,19 +86,12 @@ export const createAssistantModel = ({
     context = undefined;
     asking = undefined;
     loading = undefined;
-    letGoLlama('assistant');
-    if (held !== undefined) {
-      try {
-        await held.stopCompletion();
-      } catch {
-        // A context the runtime no longer knows has nothing to stop.
-      }
-      await held.release().catch(() => undefined);
-    }
-    // A load under way lets its context go once it lands.
-    if (pending !== undefined) {
-      const late = await pending.catch(() => undefined);
-      await late?.release().catch(() => undefined);
+    const all = Promise.all([releasing, release(held, pending)]).then(() => undefined);
+    releasing = all;
+    await all;
+    // The runtime is free once the memory is, unless a question took it again since.
+    if (context === undefined && loading === undefined) {
+      letGoLlama('assistant');
     }
     return true;
   };
@@ -99,6 +114,9 @@ export const createAssistantModel = ({
     if (runtime === undefined) {
       throw new Error('This build has no model runtime.');
     }
+    // A context being let go is still in memory: the next one loads after it is gone.
+    await releasing;
+    stillAsked(asked);
     if (!(await takeLlama('assistant', letGo))) {
       throw new Error('The Model Spike page is measuring with the model runtime.');
     }

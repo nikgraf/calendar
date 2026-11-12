@@ -210,8 +210,8 @@ describe('plainResult, a change to the draft', () => {
     const result = change(rest);
     expect(result).toMatchObject({
       notes: { kind: 'clear' },
-      // Taken off one by one: a notification the model was never shown stays.
-      reminders: { add: [], clear: false, remove: [30] },
+      // An answer with none takes them all off, one the model was never shown too.
+      reminders: { add: [], clear: true, remove: [] },
     });
     expect(result).not.toHaveProperty('prefill.location');
   });

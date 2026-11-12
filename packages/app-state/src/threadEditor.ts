@@ -293,6 +293,16 @@ const useOnChange = (value: RecurringScope | string | undefined, then: () => voi
  *
  * The platforms render it: the form, the turns, the pager, the chips.
  */
+/** A calendar's default popup notifications, minutes before; undefined where it has none on record (Apple). */
+const defaultMinutesOf = (
+  calendars: ReadonlyArray<CalendarInfo>,
+  key: string,
+): ReadonlyArray<number> | undefined =>
+  calendars
+    .find((calendar) => `${calendar.accountId}:${calendar.id}` === key)
+    ?.defaultReminders?.filter((override) => override.method === 'popup')
+    .map((override) => override.minutes);
+
 export const useThreadEditor = ({
   backend,
   calendars,
@@ -331,7 +341,16 @@ export const useThreadEditor = ({
   readonly timeZone: string;
 }) => {
   const mutations = useBackendMutations();
-  const thread = useDraftThread({ backend, model, reader, timeZone });
+  // The form's calendar, where a draft that has none of its own would go (set below, once the form is made).
+  const formCalendar = useRef('');
+  const thread = useDraftThread({
+    backend,
+    defaultRemindersOf: (draft) =>
+      defaultMinutesOf(calendars, draftCalendarKey(draft, calendars, formCalendar.current)),
+    model,
+    reader,
+    timeZone,
+  });
   const { drafts, focused, version } = thread.state;
   const focusedDraft = drafts[focused];
   // An older step is on show (`stepTo`): the thread is a preview until
@@ -388,6 +407,7 @@ export const useThreadEditor = ({
     seed: { ...seed, convertFromTask: task },
     timeZone,
   });
+  formCalendar.current = eventModel.calendarKey;
   const kinds = useEditorKinds({
     calendars,
     confirm,

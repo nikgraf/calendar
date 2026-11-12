@@ -147,6 +147,17 @@ describe('tunedReader, a later turn', () => {
     });
     expect(prompts[0]).not.toContain('xxxx');
     expect(result).not.toHaveProperty('notes');
+    // Notes it was not shown can only be added to: replacing or clearing a long description is the Form's.
+    const added = modelOf({ ...dinner.prefill, kind: 'event', notes: 'parking at the back' });
+    await expect(
+      tunedReader(added.model).change({
+        draft: long,
+        referenceDate: TODAY,
+        said: [],
+        timeZone: ZONE,
+        utterance: 'add a note: parking at the back',
+      }),
+    ).resolves.toMatchObject({ notes: { kind: 'add', text: 'parking at the back' } });
   });
 
   it('shows the newest earlier turns only', async () => {
@@ -169,6 +180,42 @@ describe('answerResult', () => {
       { draft: dinner, referenceDate: TODAY },
     );
     expect(result).toMatchObject({ reminders: { add: [60], clear: false, remove: [30] } });
+  });
+
+  it('takes every notification off for an answer that has none, an unseen email one too', () => {
+    expect(
+      answerResult({ ...dinner.prefill, kind: 'event' }, { draft: dinner, referenceDate: TODAY }),
+    ).toMatchObject({ reminders: { add: [], clear: true, remove: [] } });
+  });
+
+  it('shows a calendar’s default notifications as the draft’s, and puts the answer’s in their place', async () => {
+    const byDefault: TurnDraft = { ...dinner, defaultReminders: [10], reminders: undefined };
+    const unchanged = answerResult(
+      { ...dinner.prefill, kind: 'event', reminders: [10] },
+      { draft: byDefault, referenceDate: TODAY },
+    );
+    expect(unchanged).not.toHaveProperty('reminders');
+    expect(
+      answerResult(
+        { ...dinner.prefill, kind: 'event' },
+        { draft: byDefault, referenceDate: TODAY },
+      ),
+    ).toMatchObject({ reminders: { add: [], clear: true, remove: [] } });
+    expect(
+      answerResult(
+        { ...dinner.prefill, kind: 'event', reminders: [10, 60] },
+        { draft: byDefault, referenceDate: TODAY },
+      ),
+    ).toMatchObject({ reminders: { add: [10, 60], clear: true, remove: [] } });
+    const { model, prompts } = modelOf({ ...dinner.prefill, kind: 'event', reminders: [10] });
+    await tunedReader(model).change({
+      draft: byDefault,
+      referenceDate: TODAY,
+      said: [],
+      timeZone: ZONE,
+      utterance: 'at 8',
+    });
+    expect(prompts[0]).toContain('"reminders":[10]');
   });
 
   it('moves a span of days with its start, and lets it go for new times', () => {

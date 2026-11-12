@@ -16,6 +16,12 @@ import type { RefineResult } from './refine.ts';
  * the addresses already on it.
  */
 export interface TurnDraft {
+  /**
+   * The calendar's default notifications (minutes before the start), where
+   * the draft keeps to them instead of its own (`reminders` then absent).
+   * Shown as the draft's, so a turn can change them or take them off.
+   */
+  readonly defaultReminders?: ReadonlyArray<number> | undefined;
   readonly guests: ReadonlyArray<string>;
   readonly kind: 'event' | 'task';
   readonly notes?: string | undefined;
@@ -23,6 +29,10 @@ export interface TurnDraft {
   /** Minutes before the start, as the draft's notifications are said. */
   readonly reminders?: ReadonlyArray<number> | undefined;
 }
+
+/** The notifications the draft will have: its own, or the calendar's default it keeps to. */
+const remindersOf = (draft: TurnDraft | undefined): ReadonlyArray<number> | undefined =>
+  draft?.reminders ?? draft?.defaultReminders;
 
 /**
  * The draft as a model reads it and writes it back: every part optional
@@ -51,6 +61,7 @@ export interface DraftState {
 /** A turn's draft in the model's terms. */
 export const draftState = (draft: TurnDraft): DraftState => {
   const { prefill } = draft;
+  const reminders = remindersOf(draft) ?? [];
   const repeat = prefill.recurrence;
   const byDay = (repeat?.byDay ?? []).map((day) => `${String(day.ordinal ?? '')}${day.weekday}`);
   return {
@@ -60,7 +71,7 @@ export const draftState = (draft: TurnDraft): DraftState => {
     kind: draft.kind,
     ...(prefill.location ? { location: prefill.location } : {}),
     ...(draft.notes ? { notes: draft.notes } : {}),
-    ...(draft.reminders && draft.reminders.length > 0 ? { reminders: draft.reminders } : {}),
+    ...(reminders.length > 0 ? { reminders } : {}),
     ...(repeat === undefined
       ? {}
       : {
@@ -177,14 +188,16 @@ const notesChange = (answer: unknown, before: string | undefined): NotesChange |
 
 /**
  * What the answer's notifications do to the draft's: the answer is the
- * list after the turn, so what it lacks is taken off and what is new is
- * added. Nothing is cleared wholesale: a notification the model was never
- * shown (an email one, a calendar's default) stays.
+ * list after the turn (the model writes back the ones it was shown), so
+ * what it lacks is taken off and what is new is added. An answer with
+ * none takes them all off, an email one too; a draft that kept to the
+ * calendar's default gets the answer's list in its place.
  */
 const remindersChange = (
   answer: unknown,
-  before: ReadonlyArray<number> | undefined,
+  draft: TurnDraft | undefined,
 ): ReminderChange | undefined => {
+  const before = remindersOf(draft);
   const now = Array.isArray(answer)
     ? answer.filter(
         (minutes): minutes is number =>
@@ -194,6 +207,12 @@ const remindersChange = (
   const had = before ?? [];
   if (sameNumbers(now, had)) {
     return undefined;
+  }
+  if (now.length === 0) {
+    return { add: [], clear: true, remove: [] };
+  }
+  if (draft?.reminders === undefined && draft?.defaultReminders !== undefined) {
+    return { add: now, clear: true, remove: [] };
   }
   return {
     add: now.filter((minutes) => !had.includes(minutes)),
@@ -322,7 +341,7 @@ export const answerResult = (
   const { date, recurrence } = repeatOf(answer['repeat'], said);
   const { endDate, endTime } = timesOf(before, { date, end, start });
   const location = textOf(answer['location']);
-  const reminders = remindersChange(answer['reminders'], draft?.reminders);
+  const reminders = remindersChange(answer['reminders'], draft);
   const invite = namesOf(answer['invite']);
   const uninvite = namesOf(answer['uninvite']);
   return {

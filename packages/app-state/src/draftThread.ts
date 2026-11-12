@@ -1245,27 +1245,37 @@ const popupMinutesOf = (
 
 /**
  * A draft as a reader's turn sees it (`TurnDraft`): the item as the event
- * it would be, the addresses already invited, its notes and notifications.
+ * it would be, the addresses already invited, its notes and notifications
+ * — the calendar's default ones (`defaults`) where the draft keeps to them.
  */
-export const turnDraftOf = (draft: Draft, prefill: QuickAddPrefill): TurnDraft => {
+export const turnDraftOf = (
+  draft: Draft,
+  prefill: QuickAddPrefill,
+  defaults?: ReadonlyArray<number> | undefined,
+): TurnDraft => {
   const notes = draft.item.kind === 'task' ? draft.extras?.taskNotes : draft.extras?.description;
+  const reminders = popupMinutesOf(draft.extras?.reminders);
   return {
+    ...(reminders === undefined && defaults !== undefined ? { defaultReminders: defaults } : {}),
     guests: (draft.extras?.attendees ?? []).map((attendee) => attendee.email),
     kind: draft.item.kind,
     notes: notes?.trim() ? notes : undefined,
     prefill,
-    reminders: popupMinutesOf(draft.extras?.reminders),
+    reminders,
   };
 };
 
 export const useDraftThread = ({
   backend,
+  defaultRemindersOf,
   model,
   reader = rulesReader(model),
   timeZone,
 }: {
   /** The events a finder phrase searches between. */
   backend: BackendClient;
+  /** The default notifications of the calendar a draft would go to (minutes before), where known. */
+  defaultRemindersOf?: ((draft: Draft) => ReadonlyArray<number> | undefined) | undefined;
   /** The model a finder phrase is read with, and the reader's where none is given. */
   model: LanguageModel;
   /** How a phrase and a change are read: the app's pipeline over `model` unless another is given. */
@@ -1360,7 +1370,7 @@ export const useDraftThread = ({
           const result =
             asEvent.kind === 'event'
               ? await reader.change({
-                  draft: turnDraftOf(draft, asEvent.prefill),
+                  draft: turnDraftOf(draft, asEvent.prefill, defaultRemindersOf?.(draft)),
                   // A to-do's words about people are its title's.
                   guests: draft.item.kind === 'event',
                   // What a turn that only says where the place is adds to.

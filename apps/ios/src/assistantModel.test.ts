@@ -157,6 +157,45 @@ describe('the Assistant’s model', () => {
     expect(log).not.toContain('release');
   });
 
+  it('loads the next context only once the one let go of is gone, and holds the runtime till then', async () => {
+    const { log, runtime } = fakeRuntime();
+    let open = 0;
+    let most = 0;
+    let finish: (() => void) | undefined;
+    const slow: OpenModelRuntime = {
+      initLlama: async (params) => {
+        const context = await runtime.initLlama(params);
+        open += 1;
+        most = Math.max(most, open);
+        return {
+          ...context,
+          release: async () => {
+            // iOS takes its time to hand the memory back.
+            await new Promise<void>((resolve) => {
+              finish = resolve;
+            });
+            open -= 1;
+            await context.release();
+          },
+        };
+      },
+    };
+    const model = createAssistantModel({ runtime: slow, state: () => READY });
+    await model.generateJson({ jsonSchema: undefined, prompt: 'a' });
+    const leaving = model.relieve();
+    await new Promise((resolve) => setTimeout(resolve, 1));
+    // The runtime is not free for the Model Spike page while the memory is not.
+    expect(llamaHolder()).toBe('assistant');
+    const next = model.generateJson({ jsonSchema: undefined, prompt: 'b' });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(log.filter((line) => line.startsWith('load'))).toHaveLength(1);
+    finish?.();
+    await leaving;
+    await expect(next).resolves.toEqual({ kind: 'event', title: 'Lunch' });
+    expect(most).toBe(1);
+    expect(log.filter((line) => line.startsWith('load'))).toHaveLength(2);
+  });
+
   it('answers no question that arrives behind the screen, and loads nothing for it', async () => {
     const { log, runtime } = fakeRuntime();
     let front = true;

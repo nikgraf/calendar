@@ -1839,4 +1839,26 @@ describe('turnDraftOf', () => {
       notes: undefined,
     });
   });
+
+  it('gives the calendar’s default notifications where the draft keeps to them, and only there', () => {
+    const own = {
+      extras: {
+        attendees: [],
+        description: '',
+        reminders: new EventReminders({
+          overrides: [new ReminderOverride({ method: 'popup', minutes: 30 })],
+          useDefault: false,
+        }),
+      },
+      id: 'd4',
+      item: { kind: 'event' as const, prefill },
+    };
+    expect(turnDraftOf(own, prefill, [10])).not.toHaveProperty('defaultReminders');
+    expect(
+      turnDraftOf({ id: 'd5', item: { kind: 'event', prefill } }, prefill, [10]),
+    ).toMatchObject({ defaultReminders: [10], reminders: undefined });
+    expect(turnDraftOf({ id: 'd6', item: { kind: 'event', prefill } }, prefill)).not.toHaveProperty(
+      'defaultReminders',
+    );
+  });
 });
