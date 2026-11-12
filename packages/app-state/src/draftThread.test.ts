@@ -13,6 +13,7 @@ import {
   landPlacement,
   landRefinement,
   mergeRefinement,
+  openThread,
   phraseSteps,
   refineTargets,
   refineThread,
@@ -606,6 +607,34 @@ describe('focus, update and remove', () => {
     // The edit by hand on the written draft is gone; the phrase stays, without that draft.
     expect(saved.ahead.map((gone) => gone.step.kind)).toEqual(['phrase']);
     expect(saved.ahead[0]?.after.drafts.map((draft) => draft.id)).toEqual(['d2']);
+  });
+
+  it('opens a saved item as the first state of its thread: no step, and never nothing to go back to', () => {
+    const id = ids();
+    const extras = {
+      attendees: [],
+      calendarKey: 'acc:cal',
+      description: 'Bring wine',
+      reminders: undefined,
+    };
+    const opened = openThread({ extras, item: dinner }, id);
+    expect(opened.drafts).toEqual([{ extras, id: 'd1', item: dinner }]);
+    expect(opened.steps).toEqual([]);
+    expect(opened.history).toEqual([]);
+    // Nothing for the form to take over: it is what the form holds.
+    expect(opened.version).toBe(0);
+
+    // A phrase changes it; an edit by hand is a step from the start.
+    const refined = refineThread(opened, 'at 8', [{ id: 'd1', item: later }], id);
+    expect(refined.drafts[0]?.item).toEqual(later);
+    expect(refined.drafts[0]?.extras).toEqual(extras);
+    const edited = foldForm(opened, { extras, item: later }, { kind: 'edit' }, id);
+    expect(edited.steps.map((step) => step.kind)).toEqual(['edit']);
+
+    // Before the first step is the item as saved.
+    const start = stepTo(refined, 0);
+    expect(start.drafts).toEqual(opened.drafts);
+    expect(undoTurn(refined).drafts).toEqual(opened.drafts);
   });
 
   it('starts a phrase draft with what the form already held', () => {

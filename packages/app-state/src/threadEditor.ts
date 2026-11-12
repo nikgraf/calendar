@@ -33,6 +33,7 @@ import {
 } from './draftThread.ts';
 import {
   type EditorConfirmRequest,
+  type EventEditorPrefill,
   type EventEditorSeed,
   seedTimeFields,
   useEventEditorModel,
@@ -40,10 +41,12 @@ import {
 import { useEditorKinds } from './editorKinds.ts';
 import type { EditorSourceKind } from './editorSwitch.ts';
 import { livePlaceChoice } from './draftPlaces.ts';
+import { rescheduledEventExclusion } from './findTimeModel.ts';
 import { useBackendMutations } from './hooks.ts';
 import { useOneWrite } from './oneWrite.ts';
 import type { QuickAddItem } from './quickAddItem.ts';
 import { type TaskEditorSeed, useTaskEditorModel } from './taskEditorModel.ts';
+import { type TurnLimits, turnRefusal } from './threadRefusal.ts';
 import { shownMarks } from './threadSteps.ts';
 import { useFleetingFlash } from './threadTurns.ts';
 
@@ -195,6 +198,13 @@ export const reportingEdits = <Model extends object>(
   return reporting;
 };
 
+/** The same day and hours: where the calendar would draw the two is the same place. */
+const sameWhen = (one: EventEditorPrefill, other: EventEditorPrefill): boolean =>
+  one.date === other.date &&
+  (one.endDate ?? one.date) === (other.endDate ?? other.date) &&
+  one.isAllDay === other.isAllDay &&
+  (one.isAllDay || (one.startTime === other.startTime && one.endTime === other.endTime));
+
 /**
  * Every draft as the calendar draws it: the focused one from the live
  * form (`live`, an event — a to-do draws nothing) in the calendar the
@@ -209,11 +219,22 @@ export const threadPreviews = (
   {
     calendarKey,
     calendars,
+    saved,
     timeZone,
   }: {
     /** The form's calendar. */
     readonly calendarKey: string;
     readonly calendars: ReadonlyArray<CalendarInfo>;
+    /**
+     * A saved event's thread: the event as it opened, and whether the form
+     * is at one occurrence of a series. The calendar draws the event
+     * itself, so its draft is drawn only once it is somewhere else — the
+     * event's own block then shows where it was — and, at one occurrence,
+     * without the series' rule.
+     */
+    readonly saved?:
+      | { readonly instance: boolean; readonly opened: QuickAddItem | undefined }
+      | undefined;
     readonly timeZone: string;
   },
 ): ReadonlyArray<DraftPreview> => {
@@ -222,13 +243,17 @@ export const threadPreviews = (
     NO_CALENDAR_COLOR;
   return drafts.flatMap((draft, index) => {
     if (index === focused) {
+      if (live.kind !== 'event') {
+        return [];
+      }
       const color = colorOf(calendarKey);
-      return live.kind === 'event'
-        ? [
-            previewOfPrefill(draft.id, live.prefill, { color, focused: true, timeZone }),
-            ...candidatePreviews(draft, live.prefill, { color }),
-          ]
-        : [];
+      const candidates = candidatePreviews(draft, live.prefill, { color });
+      if (saved?.opened?.kind === 'event' && sameWhen(saved.opened.prefill, live.prefill)) {
+        return candidates;
+      }
+      const preview = previewOfPrefill(draft.id, live.prefill, { color, focused: true, timeZone });
+      const { recurrence: _rule, ...once } = preview;
+      return [saved?.instance ? once : preview, ...candidates];
     }
     const color = colorOf(draftCalendarKey(draft, calendars, calendarKey));
     const preview = draftPreview(draft, { color, focused: false, timeZone });
@@ -409,6 +434,29 @@ export const useThreadEditor = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the editor is keyed per opening; the seed is read once
   }, []);
 
+  // A saved item is the first state of its own thread (`openThread`): a
+  // phrase changes it, an edit by hand is a step from the start, and the
+  // state before the first step is the item as saved. It opens once the
+  // form holds all the item opened with — a series waits for its master's
+  // answer, since the rule that brings is the form's own and no edit. Not
+  // for an item that cannot be written, nor an editor opened to convert
+  // (its form switches kind as it opens).
+  const opensConverting =
+    sourceKind === 'event' && initialKind !== undefined && initialKind !== 'event';
+  const savedOpen =
+    (sourceKind === 'event' && !eventModel.readOnly && !opensConverting) ||
+    (sourceKind === 'task' && !taskModel.readOnly);
+  const assistant: 'new' | 'none' | 'saved' =
+    sourceKind === 'new' ? 'new' : savedOpen ? 'saved' : 'none';
+  const seedReady = assistant === 'saved' && (sourceKind === 'task' || eventModel.ruleAnswered);
+  const { open } = thread;
+  useEffect(() => {
+    if (seedReady) {
+      open(readForm());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, when the form has settled; the readers are the latest render's
+  }, [seedReady]);
+
   // A to-do whose due date the form had cleared: a turn that leaves its
   // day alone must not put the day back (applying a prefill dates it).
   const undated = useRef<{ readonly date: string } | null>(null);
@@ -554,7 +602,7 @@ export const useThreadEditor = ({
       } catch {
         // The form shows the field; the calendar stays where it is.
       }
-    } else if (version > 0) {
+    } else if (version > 0 && sourceKind === 'new') {
       shown.current = undefined;
       const times = seedTimeFields({
         initialDate: seed.initialDate,
@@ -749,6 +797,18 @@ export const useThreadEditor = ({
   // The phrase goes to the thread: the first makes the draft(s), the rest
   // change them, one that asks for free time proposes slots. The model's
   // own failure modes become the field's message.
+  // What a stored event can take from a turn (`turnRefusal`): a new item,
+  // and a to-do, take whatever the words say.
+  const limits: TurnLimits | undefined =
+    sourceKind === 'event' && eventModel.existing
+      ? {
+          canInvite: eventModel.canInvite,
+          repeatEditable: eventModel.repeatLoaded,
+          series: eventModel.openedOccurrence
+            ? { opened: eventModel.openedOccurrence, scope: eventModel.scope }
+            : undefined,
+        }
+      : undefined;
   const onPhrase = async (text: string): Promise<string | undefined> => {
     if (previewing) {
       return 'An earlier step is on show — use it or go forward first.';
@@ -761,8 +821,22 @@ export const useThreadEditor = ({
           ? { date: item.prefill.date }
           : null;
       return await thread.phrase(text, {
+        // A saved item's thread starts as that item: its words only change it.
+        canStart: sourceKind === 'new',
+        // The event being moved is not in its own way.
+        exclude:
+          sourceKind === 'event'
+            ? rescheduledEventExclusion(
+                eventModel.existing,
+                eventModel.scope,
+                eventModel.masterSeries,
+              )
+            : undefined,
         fallbackDate: seed.initialDate.toString(),
         read: readForm,
+        refuse: limits
+          ? (before, after, invites) => turnRefusal(before, after, invites, limits)
+          : undefined,
       });
     } catch (error) {
       return error instanceof ModelUnavailableError
@@ -777,6 +851,14 @@ export const useThreadEditor = ({
   const previews = threadPreviews(drafts, focused, liveItem, {
     calendarKey: eventModel.calendarKey,
     calendars,
+    saved:
+      assistant === 'saved'
+        ? {
+            instance: eventModel.isRecurring && eventModel.scope === 'instance',
+            // The item as saved: the drafts before the first step, else the one there is.
+            opened: (steps.line[0]?.before.drafts[0] ?? drafts[0])?.item,
+          }
+        : undefined,
     timeZone,
   });
   const previewKey = JSON.stringify(previews);
@@ -858,6 +940,12 @@ export const useThreadEditor = ({
     addAll,
     /** The form is still taking the thread's last change in: the next phrase waits. */
     applying,
+    /**
+     * Whether the assistant can work on what is open: a new item, a saved
+     * one that can be written (its thread starts as that item), or not at
+     * all (a read-only item, a birthday, an editor opened to convert).
+     */
+    assistant,
     batchError,
     canAddAll,
     /** A name let go of: no contact is picked for it. */

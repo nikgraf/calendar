@@ -1269,6 +1269,14 @@ export const useEventEditorModel = ({
         : undefined,
     /** Apple Maps link for the mapped place (https: routes to Maps on macOS and iOS). */
     mapsUrl: mapGeo ? openInMapsUrl(mapGeo) : undefined,
+    /**
+     * A stored series' occurrence as the form opened it: what its times
+     * may change to depends on it (`recurringTimesError`).
+     */
+    openedOccurrence:
+      existing && isRecurring && openedDate !== undefined
+        ? { date: openedDate, endDate: openedTimes.endDate, isAllDay: existing.isAllDay }
+        : undefined,
     ownAttendee,
     pickPlace,
     reminders: resolvedReminders,
@@ -1284,9 +1292,14 @@ export const useEventEditorModel = ({
      * Apple series, whose rule the app does not hold).
      */
     repeatLoaded: existing === undefined || (isRecurring && master.loaded),
+    /**
+     * The form holds all it will of a stored event's rule: a series'
+     * master has answered, with its lines or without any to give.
+     */
     respond,
     restoreExtras,
     rsvp,
+    ruleAnswered: existing === undefined || !isRecurring || master.answered,
     save: () => write.run(save),
     scope,
     setCalendarKey,

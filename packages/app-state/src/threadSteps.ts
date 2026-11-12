@@ -5,7 +5,7 @@ import {
   fieldName,
   type StepField,
 } from './draftChanges.ts';
-import { type DraftThreadState, type Pick, type StepLine, threadLine } from './draftThread.ts';
+import { type DraftThreadState, type PickKind, type StepLine, threadLine } from './draftThread.ts';
 
 /**
  * A thread's steps as the editors draw them: what a step did to a draft
@@ -64,7 +64,7 @@ export const shownMarks = (state: DraftThreadState, labels?: ChangeLabels): Step
   };
 };
 
-const PICKED: Record<Pick, string> = {
+const PICKED: Record<PickKind, string> = {
   guest: 'Guest picked',
   place: 'Place picked',
   slot: 'Free slot picked',

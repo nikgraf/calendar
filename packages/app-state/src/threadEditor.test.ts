@@ -1,6 +1,6 @@
 import { CalendarInfo } from '@calendar/core';
 import { describe, expect, it } from 'vite-plus/test';
-import { startThread } from './draftThread.ts';
+import { openThread, startThread } from './draftThread.ts';
 import type { QuickAddItem } from './quickAddItem.ts';
 import { reportingEdits, threadPreviews } from './threadEditor.ts';
 
@@ -62,6 +62,51 @@ describe('threadPreviews', () => {
     const previews = threadPreviews(state.drafts, 0, dinner, context);
     expect(previews.map((preview) => preview.candidate?.startTime)).toEqual([undefined, '09:00']);
     expect(threadPreviews(state.drafts, 0, todo, context)).toEqual([]);
+  });
+
+  it('leaves a saved event to its own block until its draft is somewhere else', () => {
+    const state = openThread({ item: dinner }, ids());
+    const saved = { instance: false, opened: dinner };
+    // Where it was saved: the calendar already draws it.
+    expect(threadPreviews(state.drafts, 0, dinner, { ...context, saved })).toEqual([]);
+    // A title edit moves nothing on the calendar.
+    expect(
+      threadPreviews(state.drafts, 0, event('Late dinner', '2026-08-28', '19:00', '20:00'), {
+        ...context,
+        saved,
+      }),
+    ).toEqual([]);
+    // Moved: the draft is drawn where it would go, the event's block showing where it was.
+    const moved = event('Dinner', '2026-08-28', '20:00', '21:00');
+    expect(
+      threadPreviews(state.drafts, 0, moved, { ...context, saved }).map((preview) => [
+        preview.startTime,
+        preview.focused,
+      ]),
+    ).toEqual([['20:00', true]]);
+  });
+
+  it('draws one occurrence of a saved series without the series’ rule', () => {
+    const weekly: QuickAddItem = {
+      kind: 'event',
+      prefill: { ...dinner.prefill, recurrence: { freq: 'weekly' } },
+    } as QuickAddItem;
+    const moved: QuickAddItem = {
+      kind: 'event',
+      prefill: { ...weekly.prefill, endTime: '21:00', startTime: '20:00' },
+    } as QuickAddItem;
+    const state = openThread({ item: weekly }, ids());
+    const once = threadPreviews(state.drafts, 0, moved, {
+      ...context,
+      saved: { instance: true, opened: weekly },
+    });
+    expect(once).toHaveLength(1);
+    expect(once[0]).not.toHaveProperty('recurrence');
+    const all = threadPreviews(state.drafts, 0, moved, {
+      ...context,
+      saved: { instance: false, opened: weekly },
+    });
+    expect(all[0]?.recurrence).toBeDefined();
   });
 
   it('draws each draft in the color of the calendar it goes to: its own, else the form’s', () => {

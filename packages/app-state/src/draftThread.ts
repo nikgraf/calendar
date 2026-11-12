@@ -12,6 +12,7 @@ import {
 import {
   type AttendeeInput,
   type BackendClient,
+  type EventRecord,
   type EventReminders,
   type FreeSlot,
   type GeoLocation,
@@ -161,14 +162,14 @@ export interface EditStep {
 }
 
 /** What a pick settles: a contact for a name, a place for a text, a free slot. */
-export type Pick = 'guest' | 'place' | 'slot';
+export type PickKind = 'guest' | 'place' | 'slot';
 
 /** A choice the thread offered, taken by hand: a contact, a place or a free slot. */
 export interface PickStep {
   readonly drafts: ReadonlyArray<string>;
   readonly id: string;
   readonly kind: 'pick';
-  readonly pick: Pick;
+  readonly pick: PickKind;
 }
 
 /**
@@ -185,7 +186,7 @@ export type DraftStep = EditStep | PhraseStep | PickStep;
  */
 export type HandStep =
   | { readonly kind: 'edit' }
-  | { readonly kind: 'pick'; readonly name?: string | undefined; readonly pick: Pick };
+  | { readonly kind: 'pick'; readonly name?: string | undefined; readonly pick: PickKind };
 
 /** The drafts at one moment of the thread, and the one the form shows. */
 export interface Snapshot {
@@ -226,6 +227,20 @@ export const EMPTY_THREAD: DraftThreadState = {
   steps: [],
   version: 0,
 };
+
+/**
+ * A saved item as the first state of its own thread: one draft, read from
+ * the form the item opened in, and no step yet. A phrase then changes it
+ * as it changes any draft, an edit by hand is a step from the start, and
+ * the state before the first step is the item as saved, never nothing.
+ */
+export const openThread = (
+  base: FormSnapshot,
+  id: () => string = nextDraftId,
+): DraftThreadState => ({
+  ...EMPTY_THREAD,
+  drafts: [{ ...(base.extras ? { extras: base.extras } : {}), id: id(), item: base.item }],
+});
 
 /** The steps that are phrases, oldest first: what was said to the thread. */
 export const phraseSteps = (state: DraftThreadState): ReadonlyArray<PhraseStep> =>
@@ -995,6 +1010,35 @@ export const firstDraftExtras = (extras: DraftExtras | undefined): DraftExtras |
   return kept;
 };
 
+/**
+ * Why a turn cannot be taken, or undefined: what the item being changed
+ * cannot hold (a stored event's limits — `turnRefusal`), given the item
+ * before and after the turn and whether the turn invites anyone.
+ */
+export type Refuse = (
+  before: QuickAddItem,
+  after: QuickAddItem,
+  invites: boolean,
+) => string | undefined;
+
+/** What a phrase is said with. */
+export interface PhraseOptions {
+  /**
+   * A first phrase may make the draft(s) (a new item). False for a saved
+   * item, whose thread starts as that item: a phrase only ever changes it.
+   */
+  readonly canStart?: boolean | undefined;
+  /** Rows a finder phrase does not count as busy: the event being moved itself. */
+  readonly exclude?: ((event: EventRecord) => boolean) | undefined;
+  /** Where an undated first phrase lands (the day being viewed). */
+  readonly fallbackDate: string;
+  readonly read?: ReadForm | undefined;
+  readonly refuse?: Refuse | undefined;
+}
+
+/** A phrase said to a saved item before its thread has opened. */
+const NOT_OPEN_YET = 'Still opening — try again in a moment.';
+
 /** A finder phrase on an all-day draft, or none: the length searched for. */
 const DEFAULT_SLOT_MINUTES = 60;
 /** How long a turn waits for a place's candidates at most; past it the text stays as said. */
@@ -1079,7 +1123,11 @@ export const useDraftThread = ({
    * form holds by then), so an edit made meanwhile is kept and only what
    * the turn changed is taken over (`mergeRefinement`).
    */
-  const refine = async (utterance: string, read?: ReadForm): Promise<string | undefined> => {
+  const refine = async (
+    utterance: string,
+    read?: ReadForm,
+    refuse?: Refuse,
+  ): Promise<string | undefined> => {
     // A draft focused meanwhile is not where the answer lands (`landRefinement`).
     const mine = ++request.current;
     const submitted = read?.();
@@ -1169,6 +1217,18 @@ export const useDraftThread = ({
           ? rejected.reason
           : "That couldn't be read — try rephrasing.";
       }
+      // What the item cannot hold is said, and nothing of the turn lands.
+      const refused = changes
+        .map((change) => {
+          const draft = current.drafts.find((each) => each.id === change.id);
+          return draft === undefined
+            ? undefined
+            : refuse?.(draft.item, change.item, (change.guests?.invited.length ?? 0) > 0);
+        })
+        .find((message) => message !== undefined);
+      if (refused !== undefined) {
+        return refused;
+      }
       const fresh = read?.();
       setState((latest) =>
         landRefinement(latest, { changes, fresh, submitted, targetId: focusedId, utterance }),
@@ -1195,6 +1255,7 @@ export const useDraftThread = ({
     utterance: string,
     read: ReadForm | undefined,
     { notes, reminders, rest }: ReturnType<typeof readExtras>,
+    { canStart, exclude, refuse }: Pick<PhraseOptions, 'canStart' | 'exclude' | 'refuse'>,
   ): Promise<string | undefined> => {
     const mine = ++request.current;
     const said = {
@@ -1215,6 +1276,7 @@ export const useDraftThread = ({
     setBusy(true);
     try {
       const result = await proposeSlots(model, backend, {
+        ...(exclude ? { exclude } : {}),
         fallbackDurationMinutes: length > 0 ? length : DEFAULT_SLOT_MINUTES,
         phrase: rest,
         referenceDate: Temporal.Now.plainDateISO(timeZone).toString(),
@@ -1231,6 +1293,9 @@ export const useDraftThread = ({
         return NO_SLOT_FITS;
       }
       if (target === undefined) {
+        if (canStart === false) {
+          return NOT_OPEN_YET;
+        }
         const extras = firstDraftExtras(read?.().extras);
         setState(
           startThread([slotItem(best, result.title)], utterance, {
@@ -1240,6 +1305,10 @@ export const useDraftThread = ({
           }),
         );
         return undefined;
+      }
+      const refused = refuse?.(target.item, itemAtSlot(target.item, best, result.title), false);
+      if (refused !== undefined) {
+        return refused;
       }
       const fresh = read?.();
       setState((latest) =>
@@ -1272,23 +1341,21 @@ export const useDraftThread = ({
    */
   const phrase = async (
     text: string,
-    {
-      fallbackDate,
-      read,
-    }: {
-      /** Where an undated first phrase lands (the day being viewed). */
-      readonly fallbackDate: string;
-      readonly read?: ReadForm | undefined;
-    },
+    { canStart, exclude, fallbackDate, read, refuse }: PhraseOptions,
   ): Promise<string | undefined> => {
     // The finder's cue is read in the words about the event, not in a
     // note or a notification said with them.
     const extras = readExtras(text);
     if (isFinderPhrase(extras.rest)) {
-      return place(text, read, extras);
+      return place(text, read, extras, { canStart, exclude, refuse });
     }
     if (state.drafts.length > 0) {
-      return refine(text, read);
+      return refine(text, read, refuse);
+    }
+    // A saved item's thread has its draft from the start (`openThread`):
+    // words that arrive before it has are not a new item's.
+    if (canStart === false) {
+      return NOT_OPEN_YET;
     }
     const mine = request.current;
     const result = await parseQuickAdd(model, {
@@ -1341,6 +1408,13 @@ export const useDraftThread = ({
     /** A place choice settled by hand: a candidate picked (the form took it) or the text kept. */
     dropPlace: (index: number) => setState((latest) => dropPlaceChoice(latest, index)),
     focus: (index: number) => setState((latest) => focusDraft(latest, index)),
+    /** A saved item's thread starts as that item (`openThread`); a thread under way stays. */
+    open: (base: FormSnapshot) =>
+      setState((latest) =>
+        latest.drafts.length === 0 && latest.steps.length === 0 && latest.ahead.length === 0
+          ? openThread(base)
+          : latest,
+      ),
     phrase,
     refine,
     remove: (index: number) => setState((latest) => removeDraft(latest, index)),
