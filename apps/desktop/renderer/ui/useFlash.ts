@@ -6,19 +6,18 @@ import {
 } from '@calendar/app-state';
 import { createContext, type RefObject, useContext, useEffect, useRef } from 'react';
 
-/** How long a lasting mark takes to come up. */
-const MARK_IN_MS = 160;
-
 /**
- * A tint behind an element something just changed: its background takes
- * the `highlight` token once per `key`, nothing while it is null.
- * Fleeting (a search turn's chip), it holds for `TURN_FLASH_HOLD_MS` and
- * eases back to its own over `TURN_FLASH_FADE_MS`; `lasting` (the fields
- * the editor's step on show changed), it comes up and stays until the key
- * changes, and the element carries `data-marked` meanwhile. A color
- * change, not movement, so reduced motion keeps it. The next key (or the
- * element leaving) cancels one that is up, so its own color is read
- * clean.
+ * A tint behind an element something just changed, in the `highlight`
+ * token, once per `key`, nothing while it is null. Fleeting (a search
+ * turn's chip), it holds for `TURN_FLASH_HOLD_MS` and eases back to the
+ * element's own color over `TURN_FLASH_FADE_MS`: an animation, its color
+ * read as it starts. `lasting` (the fields the editor's step on show
+ * changed), it stays until the key changes: the element carries
+ * `data-marked` and the stylesheet tints it (App.css), so the mark
+ * follows the appearance when that changes under it — a color baked into
+ * an animation stayed the light theme's on a dark form. A color change,
+ * not movement, so reduced motion keeps it. The next key (or the element
+ * leaving) ends one that is up.
  */
 export const useFlash = <T extends HTMLElement>(
   key: string | null,
@@ -30,38 +29,31 @@ export const useFlash = <T extends HTMLElement>(
     if (key === null || element === null) {
       return undefined;
     }
+    if (lasting) {
+      element.dataset['marked'] = '';
+      return () => {
+        delete element.dataset['marked'];
+      };
+    }
     const highlight = getComputedStyle(document.documentElement)
       .getPropertyValue('--highlight')
       .trim();
     const own = getComputedStyle(element).backgroundColor;
     const duration = TURN_FLASH_HOLD_MS + TURN_FLASH_FADE_MS;
-    const animation = lasting
-      ? element.animate([{ backgroundColor: own }, { backgroundColor: highlight }], {
-          duration: MARK_IN_MS,
-          easing: 'ease-out',
-          fill: 'forwards',
-        })
-      : element.animate(
-          [
-            { backgroundColor: highlight },
-            // Held, then the fade: the easing names the segment that follows.
-            {
-              backgroundColor: highlight,
-              easing: 'ease-in-out',
-              offset: TURN_FLASH_HOLD_MS / duration,
-            },
-            { backgroundColor: own },
-          ],
-          { duration },
-        );
-    // A lasting mark is a state, not a moment: the element says so.
-    if (lasting) {
-      element.dataset['marked'] = '';
-    }
-    return () => {
-      animation.cancel();
-      delete element.dataset['marked'];
-    };
+    const animation = element.animate(
+      [
+        { backgroundColor: highlight },
+        // Held, then the fade: the easing names the segment that follows.
+        {
+          backgroundColor: highlight,
+          easing: 'ease-in-out',
+          offset: TURN_FLASH_HOLD_MS / duration,
+        },
+        { backgroundColor: own },
+      ],
+      { duration },
+    );
+    return () => animation.cancel();
   }, [key, lasting]);
   return ref;
 };
