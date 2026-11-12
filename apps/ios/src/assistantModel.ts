@@ -25,6 +25,8 @@ import {
 export const ANSWER_LIMIT_MS = 30_000;
 
 export interface AssistantModelDeps {
+  /** Whether the app is in front: iOS refuses GPU work behind it (`AppState.currentState === 'active'`). */
+  readonly foreground?: (() => boolean) | undefined;
   readonly runtime: OpenModelRuntime | undefined;
   readonly state: () => AssistantModelState;
 }
@@ -36,7 +38,11 @@ export interface AssistantModel extends LanguageModel {
   readonly relieve: () => Promise<void>;
 }
 
-export const createAssistantModel = ({ runtime, state }: AssistantModelDeps): AssistantModel => {
+export const createAssistantModel = ({
+  foreground = () => true,
+  runtime,
+  state,
+}: AssistantModelDeps): AssistantModel => {
   let context: OpenModelContext | undefined;
   /** The context's questions, one at a time (`openLanguageModel` queues them). */
   let asking: LanguageModel | undefined;
@@ -77,7 +83,8 @@ export const createAssistantModel = ({ runtime, state }: AssistantModelDeps): As
 
   /** Throws where the context was let go after the question was asked (`asked`). */
   const stillAsked = (asked: number) => {
-    if (asked !== generation) {
+    // A question that arrives behind the screen (a dictation that ended there) is not answered either.
+    if (asked !== generation || !foreground()) {
       throw new Error('The app left the screen.');
     }
   };

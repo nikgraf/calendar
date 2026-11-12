@@ -227,9 +227,10 @@ const clockOf = (minutes: number): string =>
  *   all-day as they were; the end time then stands as it is.
  * - A start that moved while the end stayed as the draft had it (or was
  *   left out) keeps the draft's length, across midnight too.
- * - An end before the start reads as past midnight: on a draft that
- *   already crossed it, by its own span; otherwise for a night of up to
- *   twelve hours (a party "10pm to 2am"), the next day.
+ * - A draft that spans days keeps its span when the turn gives both times
+ *   anew (an hour later on Friday 09:00 – Saturday 10:00).
+ * - An end before the start reads as past midnight for a night of up to
+ *   twelve hours (a party "10pm to 2am"): the next day.
  * - Without an end, or one that reads as no night, an hour.
  */
 const timesOf = (
@@ -273,13 +274,12 @@ const timesOf = (
     const days = Math.floor(ends / DAY_MINUTES);
     return { ...(days > 0 ? { endDate: day(days) } : {}), endTime: clockOf(ends % DAY_MINUTES) };
   }
-  if (start !== undefined && end !== undefined && end < startTime) {
-    if (span > 0) {
-      return { endDate: day(span), endTime: end };
-    }
-    if (pastMidnight(startTime, end)) {
-      return { endDate: day(1), endTime: end };
-    }
+  // A timed draft that spans days keeps its span when the turn gives both times anew.
+  if (span > 0 && before?.isAllDay === false && start !== undefined && end !== undefined) {
+    return { endDate: day(span), endTime: end };
+  }
+  if (start !== undefined && end !== undefined && end < startTime && pastMidnight(startTime, end)) {
+    return { endDate: day(1), endTime: end };
   }
   return { endTime: end !== undefined && end > startTime ? end : addHour(startTime) };
 };

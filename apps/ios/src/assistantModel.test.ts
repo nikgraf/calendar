@@ -157,6 +157,26 @@ describe('the Assistant’s model', () => {
     expect(log).not.toContain('release');
   });
 
+  it('answers no question that arrives behind the screen, and loads nothing for it', async () => {
+    const { log, runtime } = fakeRuntime();
+    let front = true;
+    const model = createAssistantModel({ foreground: () => front, runtime, state: () => READY });
+    await model.generateJson({ jsonSchema: undefined, prompt: 'a' });
+    front = false;
+    await model.leave();
+    // A dictation that ended after the app left hands its words over then.
+    await expect(model.generateJson({ jsonSchema: undefined, prompt: 'b' })).rejects.toThrow(
+      'left the screen',
+    );
+    expect(log.filter((line) => line.startsWith('load'))).toHaveLength(1);
+    front = true;
+    await expect(model.generateJson({ jsonSchema: undefined, prompt: 'c' })).resolves.toEqual({
+      kind: 'event',
+      title: 'Lunch',
+    });
+    expect(log.filter((line) => line.startsWith('load'))).toHaveLength(2);
+  });
+
   it('answers no question asked before the app left the screen, and loads nothing for it', async () => {
     const { log, runtime } = fakeRuntime();
     const model = createAssistantModel({ runtime, state: () => READY });

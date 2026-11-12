@@ -180,6 +180,25 @@ describe('the Assistant model’s download', () => {
     expect(next.getState().kind).toBe('ready');
   });
 
+  it('checks a transfer that finishes while the launch reads its state', async () => {
+    const files = fakeFiles({ answer: { answer: 'wifi', version: 'v1' } });
+    const { emit, starts, transfer } = fakeTransfer({ running: 'wifi' });
+    const store = storeOf(files.files, {
+      ...transfer,
+      current: async () => {
+        const running = await transfer.current();
+        // iOS hands over the file between the question and its answer.
+        files.land();
+        emit().onFinish({ path: files.files.destination });
+        return running;
+      },
+    });
+    await store.boot();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(store.getState()).toEqual({ kind: 'ready', path: 'file:///caches/assistant.gguf' });
+    expect(starts).toEqual([]);
+  });
+
   it('checks a file that finished while the app was not running', async () => {
     const files = fakeFiles({ answer: { answer: 'wifi', version: 'v1' } });
     files.land();

@@ -131,6 +131,8 @@ export const createAssistantDownload = (deps: AssistantDownloadDeps): AssistantD
     ? { kind: 'unasked' }
     : { kind: 'unsupported', reason: deps.reason };
   let booted = false;
+  /** While `boot` waits for the transfer's state: a finish that arrives then is this model's. */
+  let booting = false;
   const set = (next: AssistantModelState) => {
     state = next;
     for (const listener of listeners) {
@@ -229,7 +231,7 @@ export const createAssistantDownload = (deps: AssistantDownloadDeps): AssistantD
     },
     onFinish: ({ path }: { readonly path: string }) => {
       // Another version's transfer, or one nobody waits for, is not this model.
-      if (path !== files.destination || !isMoving(state)) {
+      if (path !== files.destination || !(isMoving(state) || booting)) {
         return;
       }
       void verify();
@@ -286,7 +288,14 @@ export const createAssistantDownload = (deps: AssistantDownloadDeps): AssistantD
         set({ kind: said === undefined ? 'unasked' : 'declined' });
         return;
       }
-      const running = await transfer.current();
+      booting = true;
+      const running = await transfer.current().finally(() => {
+        booting = false;
+      });
+      // Finished while the state was read: the check is already under way.
+      if (state.kind === 'verifying' || state.kind === 'ready' || state.kind === 'failed') {
+        return;
+      }
       if (running.state !== 'none') {
         progress = {
           received: running.received,

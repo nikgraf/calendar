@@ -246,4 +246,28 @@ describe('answerResult', () => {
     // A draft that crossed midnight keeps crossing it, past the twelve hours.
     expect(later).toMatchObject({ prefill: { endDate: '2026-11-14', endTime: '09:00' } });
   });
+
+  it('keeps a timed span of days when both of its times move', () => {
+    const trip: TurnDraft = {
+      ...dinner,
+      prefill: { ...dinner.prefill, endDate: '2026-11-14', endTime: '10:00', startTime: '09:00' },
+    };
+    const later = answerResult(
+      { date: '2026-11-13', endTime: '11:00', kind: 'event', startTime: '10:00', title: 'Trip' },
+      { draft: trip, referenceDate: TODAY },
+    );
+    expect(later).toMatchObject({
+      prefill: { date: '2026-11-13', endDate: '2026-11-14', endTime: '11:00', startTime: '10:00' },
+    });
+    // Times given to a span of whole days make it a timed day of its own.
+    const days: TurnDraft = {
+      ...dinner,
+      prefill: { ...dinner.prefill, endDate: '2026-11-15', isAllDay: true, startTime: '00:00' },
+    };
+    const timed = answerResult(
+      { date: '2026-11-13', endTime: '11:00', kind: 'event', startTime: '10:00', title: 'Trip' },
+      { draft: days, referenceDate: TODAY },
+    );
+    expect(timed).not.toHaveProperty('prefill.endDate');
+  });
 });

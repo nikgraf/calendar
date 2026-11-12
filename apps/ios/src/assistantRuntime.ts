@@ -171,7 +171,13 @@ interface AssistantRuntime {
 
 const makeRuntime = (): AssistantRuntime => {
   const download = createAssistantDownload(depsOf());
-  const model = createAssistantModel({ runtime: loadOpenModelRuntime(), state: download.getState });
+  const appState = loadAppState();
+  const model = createAssistantModel({
+    // Inactive (Control Center pulled down, a call's banner) is still in front: only the background refuses the GPU.
+    foreground: () => appState?.currentState !== 'background',
+    runtime: loadOpenModelRuntime(),
+    state: download.getState,
+  });
   return {
     download,
     model,
