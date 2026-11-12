@@ -3,11 +3,13 @@ import {
   type LanguageModel,
   NO_SLOT_FITS,
   type NotesChange,
-  parseQuickAdd,
-  parseRefine,
+  type PhraseReader,
   proposeSlots,
+  type QuickAddPrefill,
   readExtras,
   type ReminderChange,
+  rulesReader,
+  type TurnDraft,
 } from '@calendar/ai';
 import {
   type AttendeeInput,
@@ -1231,14 +1233,43 @@ const NO_PLACE: PlaceChange = { candidates: [], text: '' };
  * folded in first, so a turn starts from what the user sees and its
  * summary lists only what the words changed.
  */
+/** The popup notifications a draft holds, in minutes before; none while it keeps the calendar's default. */
+const popupMinutesOf = (
+  reminders: EventReminders | undefined,
+): ReadonlyArray<number> | undefined =>
+  reminders === undefined || reminders.useDefault
+    ? undefined
+    : reminders.overrides
+        .filter((override) => override.method === 'popup')
+        .map((override) => override.minutes);
+
+/**
+ * A draft as a reader's turn sees it (`TurnDraft`): the item as the event
+ * it would be, the addresses already invited, its notes and notifications.
+ */
+export const turnDraftOf = (draft: Draft, prefill: QuickAddPrefill): TurnDraft => {
+  const notes = draft.item.kind === 'task' ? draft.extras?.taskNotes : draft.extras?.description;
+  return {
+    guests: (draft.extras?.attendees ?? []).map((attendee) => attendee.email),
+    kind: draft.item.kind,
+    notes: notes?.trim() ? notes : undefined,
+    prefill,
+    reminders: popupMinutesOf(draft.extras?.reminders),
+  };
+};
+
 export const useDraftThread = ({
   backend,
   model,
+  reader = rulesReader(model),
   timeZone,
 }: {
   /** The events a finder phrase searches between. */
   backend: BackendClient;
+  /** The model a finder phrase is read with, and the reader's where none is given. */
   model: LanguageModel;
+  /** How a phrase and a change are read: the app's pipeline over `model` unless another is given. */
+  reader?: PhraseReader | undefined;
   timeZone: string;
 }) => {
   const [state, setState] = useState<DraftThreadState>(EMPTY_THREAD);
@@ -1328,8 +1359,8 @@ export const useDraftThread = ({
           const asEvent = convertQuickAddItem(draft.item, 'event');
           const result =
             asEvent.kind === 'event'
-              ? await parseRefine(model, {
-                  draft: asEvent.prefill,
+              ? await reader.change({
+                  draft: turnDraftOf(draft, asEvent.prefill),
                   // A to-do's words about people are its title's.
                   guests: draft.item.kind === 'event',
                   // What a turn that only says where the place is adds to.
@@ -1540,7 +1571,7 @@ export const useDraftThread = ({
       return NOT_OPEN_YET;
     }
     const mine = request.current;
-    const result = await parseQuickAdd(model, {
+    const result = await reader.first({
       fallbackDate,
       phrase: text,
       referenceDate: Temporal.Now.plainDateISO(timeZone).toString(),

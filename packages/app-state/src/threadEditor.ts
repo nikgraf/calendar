@@ -1,4 +1,4 @@
-import { type LanguageModel, ModelUnavailableError } from '@calendar/ai';
+import { type LanguageModel, ModelUnavailableError, type PhraseReader } from '@calendar/ai';
 import {
   type BackendClient,
   type CalendarInfo,
@@ -301,6 +301,7 @@ export const useThreadEditor = ({
   model,
   onClose,
   onSaved,
+  reader,
   seed,
   sourceKind,
   task,
@@ -318,6 +319,8 @@ export const useThreadEditor = ({
   readonly onClose: () => void;
   /** Save went through, as an event or a task. */
   readonly onSaved?: (() => void) | undefined;
+  /** How the Assistant reads a phrase (`PhraseReader`): the app's pipeline over `model` unless given. */
+  readonly reader?: PhraseReader | undefined;
   readonly seed: EditorSeed;
   readonly sourceKind: EditorSourceKind;
   /** Present when the editor was opened from a task (task edit mode). */
@@ -328,7 +331,7 @@ export const useThreadEditor = ({
   readonly timeZone: string;
 }) => {
   const mutations = useBackendMutations();
-  const thread = useDraftThread({ backend, model, timeZone });
+  const thread = useDraftThread({ backend, model, reader, timeZone });
   const { drafts, focused, version } = thread.state;
   const focusedDraft = drafts[focused];
   // An older step is on show (`stepTo`): the thread is a preview until

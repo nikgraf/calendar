@@ -26,6 +26,7 @@ import {
   startThread,
   stepTo,
   threadLine,
+  turnDraftOf,
   turnsOf,
   undoTurn,
   updateDraft,
@@ -1777,5 +1778,65 @@ describe('stepRule', () => {
     // A step about something else left the rule alone.
     expect(stepRule(refineThread(state, 'later', [{ id: 'd1', item: later }]))).toBeUndefined();
     expect(stepRule(EMPTY_THREAD)).toBeUndefined();
+  });
+});
+
+describe('turnDraftOf', () => {
+  const prefill = {
+    date: '2026-11-13',
+    endTime: '20:00',
+    isAllDay: false,
+    startTime: '19:00',
+    title: 'Dinner',
+  };
+
+  it('gives a reader the guests, the notes and the popup notifications a draft holds', () => {
+    const turn = turnDraftOf(
+      {
+        extras: {
+          attendees: [{ email: 'ben@example.com' }],
+          description: 'window table',
+          reminders: new EventReminders({
+            overrides: [
+              new ReminderOverride({ method: 'popup', minutes: 10 }),
+              new ReminderOverride({ method: 'email', minutes: 60 }),
+            ],
+            useDefault: false,
+          }),
+        },
+        id: 'd1',
+        item: { kind: 'event', prefill },
+      },
+      prefill,
+    );
+    expect(turn).toEqual({
+      guests: ['ben@example.com'],
+      kind: 'event',
+      notes: 'window table',
+      prefill,
+      reminders: [10],
+    });
+  });
+
+  it('gives no notifications while the draft keeps the calendar’s default, and a to-do’s own notes', () => {
+    const turn = turnDraftOf(
+      {
+        extras: {
+          attendees: [],
+          description: '',
+          reminders: new EventReminders({ overrides: [], useDefault: true }),
+          taskNotes: 'the blue folder',
+        },
+        id: 'd2',
+        item: { kind: 'task', prefill: { date: '2026-11-13', title: 'Pay rent' } },
+      },
+      prefill,
+    );
+    expect(turn).toMatchObject({ guests: [], kind: 'task', notes: 'the blue folder' });
+    expect(turn.reminders).toBeUndefined();
+    expect(turnDraftOf({ id: 'd3', item: { kind: 'event', prefill } }, prefill)).toMatchObject({
+      guests: [],
+      notes: undefined,
+    });
   });
 });
