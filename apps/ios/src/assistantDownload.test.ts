@@ -199,6 +199,7 @@ describe('the Assistant model’s download', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(store.getState()).toEqual({ kind: 'failed', message: 'The download was incomplete.' });
     expect(files.files.exists()).toBe(false);
+    await store.retry();
     files.land('other');
     emit().onFinish({ path: files.files.destination });
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -220,5 +221,48 @@ describe('the Assistant model’s download', () => {
     await store.agree('wifi');
     expect(store.getState()).toEqual({ kind: 'unsupported', reason: 'fixture' });
     expect(statusOf(store.getState())).toBe('unsupported');
+  });
+
+  it('does not fetch a wrong file again by itself at the next launch', async () => {
+    const files = fakeFiles();
+    const { emit, starts, transfer } = fakeTransfer();
+    const store = storeOf(files.files, transfer);
+    await store.boot();
+    await store.agree('wifi');
+    files.land('other');
+    emit().onFinish({ path: files.files.destination });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const next = fakeTransfer();
+    const relaunched = storeOf(files.files, next.transfer);
+    await relaunched.boot();
+    expect(relaunched.getState()).toEqual({
+      kind: 'failed',
+      message: 'The downloaded file was not the model.',
+    });
+    expect(next.starts).toEqual([]);
+    await relaunched.retry();
+    expect(next.starts).toEqual(['wifi']);
+    expect(starts).toEqual(['wifi']);
+  });
+
+  it('ignores another file’s finish, and cancels a transfer when the person declines', async () => {
+    const files = fakeFiles();
+    const cancelled: Array<string> = [];
+    const { emit, transfer } = fakeTransfer();
+    const store = storeOf(files.files, {
+      ...transfer,
+      cancel: async (destination) => {
+        cancelled.push(destination);
+      },
+    });
+    await store.boot();
+    await store.agree('wifi');
+    files.land();
+    emit().onFinish({ path: 'file:///caches/older.gguf' });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(store.getState().kind).toBe('downloading');
+    store.decline();
+    expect(store.getState()).toEqual({ kind: 'declined' });
+    expect(cancelled.at(-1)).toBe('file:///caches/assistant.gguf');
   });
 });

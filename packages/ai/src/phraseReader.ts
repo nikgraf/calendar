@@ -93,6 +93,7 @@ const invalidIn = (result: QuickAddResult, timeZone: string): string | undefined
         {
           calendarKey: 'placeholder:placeholder',
           date: result.prefill.date,
+          ...(result.prefill.endDate === undefined ? {} : { endDate: result.prefill.endDate }),
           endTime: result.prefill.endTime,
           isAllDay: result.prefill.isAllDay,
           startTime: result.prefill.startTime,

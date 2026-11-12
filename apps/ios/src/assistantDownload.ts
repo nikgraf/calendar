@@ -120,6 +120,8 @@ export interface AssistantDownload {
   readonly subscribe: (listener: () => void) => () => void;
 }
 
+const MISMATCH = 'The downloaded file was not the model.';
+
 const isMoving = (state: AssistantModelState): boolean =>
   state.kind === 'downloading' || state.kind === 'waiting';
 
@@ -198,7 +200,9 @@ export const createAssistantDownload = (deps: AssistantDownloadDeps): AssistantD
     }
     if (sha256.toLowerCase() !== manifest.sha256.toLowerCase()) {
       files.remove();
-      set({ kind: 'failed', message: 'The downloaded file was not the model.' });
+      // Kept, so the next launch does not fetch the same wrong file by itself.
+      files.writeVerified({ sha256, version: manifest.version });
+      set({ kind: 'failed', message: MISMATCH });
       return;
     }
     files.writeVerified({ sha256: manifest.sha256, version: manifest.version });
@@ -223,7 +227,11 @@ export const createAssistantDownload = (deps: AssistantDownloadDeps): AssistantD
     onFail: ({ message }: { readonly message: string }) => {
       set({ kind: 'failed', message });
     },
-    onFinish: () => {
+    onFinish: ({ path }: { readonly path: string }) => {
+      // Another version's transfer, or one nobody waits for, is not this model.
+      if (path !== files.destination || !isMoving(state)) {
+        return;
+      }
       void verify();
     },
     onPath: (reading: NetworkReading) => {
@@ -272,12 +280,10 @@ export const createAssistantDownload = (deps: AssistantDownloadDeps): AssistantD
         return;
       }
       const said = answer();
-      if (said === undefined) {
-        set({ kind: 'unasked' });
-        return;
-      }
-      if (said === 'declined') {
-        set({ kind: 'declined' });
+      if (said === undefined || said === 'declined') {
+        // A transfer of another version, or one declined since, goes.
+        await transfer.cancel(files.destination).catch(() => undefined);
+        set({ kind: said === undefined ? 'unasked' : 'declined' });
         return;
       }
       const running = await transfer.current();
@@ -297,10 +303,17 @@ export const createAssistantDownload = (deps: AssistantDownloadDeps): AssistantD
         await verify();
         return;
       }
+      // The last file was the wrong one: Try Again fetches it once more, not every launch.
+      const note = files.readVerified();
+      if (note?.version === manifest.version && note.sha256 !== manifest.sha256) {
+        set({ kind: 'failed', message: MISMATCH });
+        return;
+      }
       await begin();
     },
     decline: () => {
       files.writeAnswer({ answer: 'declined', version: manifest.version });
+      void transfer.cancel(files.destination).catch(() => undefined);
       set({ kind: 'declined' });
     },
     getState: () => state,

@@ -1,26 +1,28 @@
 /**
  * One llama.cpp context at a time in the app: a loaded model holds
  * gigabytes, and two would not fit an iPhone's per-app limit. The holder
- * says how to let it go. The Model Spike page takes the runtime over and
- * lets the Assistant's model go; the Assistant takes it only when no
- * measurement holds it.
+ * says how to let it go, and whether it did: the Assistant's model always
+ * lets go; the Model Spike page lets go of a model that sits loaded, not
+ * of one that is loading or being measured.
  */
 export type LlamaHolder = 'assistant' | 'spike';
 
-let holder: { readonly name: LlamaHolder; readonly release: () => Promise<void> } | undefined;
+let holder: { readonly name: LlamaHolder; readonly release: () => Promise<boolean> } | undefined;
 
-/** Takes the runtime for `name`, letting another holder go first; false where the Assistant would evict a measurement. */
+/** Takes the runtime for `name`, asking another holder to let go first; false where it would not. */
 export const takeLlama = async (
   name: LlamaHolder,
-  release: () => Promise<void>,
+  release: () => Promise<boolean>,
 ): Promise<boolean> => {
   if (holder !== undefined && holder.name !== name) {
-    if (name === 'assistant') {
+    const previous = holder;
+    const freed = await previous.release().catch(() => false);
+    if (!freed) {
       return false;
     }
-    const previous = holder;
-    holder = undefined;
-    await previous.release().catch(() => undefined);
+    if (holder === previous) {
+      holder = undefined;
+    }
   }
   holder = { name, release };
   return true;

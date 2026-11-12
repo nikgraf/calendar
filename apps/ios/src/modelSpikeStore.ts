@@ -169,6 +169,26 @@ export const createSpikeStore = (deps: SpikeDeps) => {
     }
   };
 
+  /** The Assistant asks for the runtime: a model that sits loaded is unloaded; one being loaded or measured stays. */
+  const letGoOfIdle = async (): Promise<boolean> => {
+    if (state.step.kind === 'idle') {
+      return true;
+    }
+    if (state.step.kind !== 'loaded') {
+      return false;
+    }
+    const { loaded } = state.step;
+    set({ step: { kind: 'unloading', model: loaded.model } });
+    const failure = await release(loaded.engine);
+    letGoLlama('spike');
+    set({
+      memory: deps.memory(),
+      notice: failure ?? 'The Assistant needed the model runtime, so this model was unloaded.',
+      step: { kind: 'idle' },
+    });
+    return true;
+  };
+
   return {
     /**
      * Fetches a model file into the app's caches. Only with nothing loaded
@@ -213,7 +233,8 @@ export const createSpikeStore = (deps: SpikeDeps) => {
       const started = deps.now();
       try {
         // The Assistant's model goes first: two loaded models would not fit.
-        await takeLlama('spike', async () => undefined);
+        // The Assistant takes the runtime back from a model that sits loaded here.
+        await takeLlama('spike', letGoOfIdle);
         const context = await loadOpenModel(runtime, {
           onProgress: (percent) => set({ step: { kind: 'loading', model, percent } }),
           path: files.pathOf(model),

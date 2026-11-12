@@ -1,3 +1,4 @@
+import ExpoModulesCore
 import Foundation
 import Network
 import os
@@ -117,7 +118,19 @@ final class ModelDownloadSession: NSObject, URLSessionDownloadDelegate, @uncheck
     else {
       return
     }
-    DispatchQueue.main.async(execute: completion)
+    DispatchQueue.main.async {
+      completion()
+      // Expo answers iOS once every app delegate subscriber has answered,
+      // and expo-file-system's waits for its own sessions' final event:
+      // told here that ours had it, so iOS gets its answer.
+      MainActor.assumeIsolated {
+        let selector = NSSelectorFromString("invokeCompletionHandlerForSessionIdentifier:")
+        for subscriber in ExpoAppDelegateSubscriberRepository.subscribers
+        where subscriber.responds(to: selector) && !(subscriber is ModelDownloadAppDelegateSubscriber) {
+          _ = subscriber.perform(selector, with: identifier)
+        }
+      }
+    }
   }
 
   // MARK: - Commands
@@ -125,7 +138,12 @@ final class ModelDownloadSession: NSObject, URLSessionDownloadDelegate, @uncheck
   /// Starts the job unless a transfer is running already; from its resume data where there is some.
   func start(url: String, destination: String, network: Route, done: @escaping @Sendable ([String: Any]) -> Void) {
     allTasks { tasks in
-      if let running = tasks.first {
+      // Another version's transfer (another URL or file) is not this one: it goes.
+      let mine = tasks.first { $0.job?.url == url && $0.job?.destination == destination }
+      for other in tasks where other.task !== mine?.task {
+        other.task.cancel()
+      }
+      if let running = mine {
         done(["started": false, "network": running.network.rawValue])
         return
       }
@@ -148,7 +166,7 @@ final class ModelDownloadSession: NSObject, URLSessionDownloadDelegate, @uncheck
       download.cancel(byProducingResumeData: { data in
         self.run {
           if let data {
-            self.writeResume(data, for: job.destination)
+            self.writeResume(data, for: job)
           }
           self.begin(url: job.url, destination: job.destination, network: network, allowResume: true)
           done(true)
@@ -163,6 +181,7 @@ final class ModelDownloadSession: NSObject, URLSessionDownloadDelegate, @uncheck
         running.task.cancel()
       }
       try? FileManager.default.removeItem(at: Self.resumeURL(for: destination))
+      try? FileManager.default.removeItem(at: Self.resumeSourceURL(for: destination))
       done()
     }
   }
@@ -247,13 +266,16 @@ final class ModelDownloadSession: NSObject, URLSessionDownloadDelegate, @uncheck
     let session = session(network)
     let task: URLSessionDownloadTask
     var resumed = false
-    if allowResume, let data = try? Data(contentsOf: resumeURL) {
+    // Resume data is used only for the URL it was made for: a new version starts afresh.
+    let resumeFor = try? String(contentsOf: Self.resumeSourceURL(for: destination), encoding: .utf8)
+    if allowResume, resumeFor == url, let data = try? Data(contentsOf: resumeURL) {
       task = session.downloadTask(withResumeData: data)
       resumed = true
     } else {
       task = session.downloadTask(with: URLRequest(url: remote))
     }
     try? FileManager.default.removeItem(at: resumeURL)
+    try? FileManager.default.removeItem(at: Self.resumeSourceURL(for: destination))
     let job = Job(destination: destination, network: network, resumed: resumed, url: url)
     task.taskDescription = (try? JSONEncoder().encode(job)).flatMap { String(data: $0, encoding: .utf8) }
     task.resume()
@@ -275,8 +297,14 @@ final class ModelDownloadSession: NSObject, URLSessionDownloadDelegate, @uncheck
     fileURL(destination).appendingPathExtension("resume")
   }
 
-  private func writeResume(_ data: Data, for destination: String) {
-    try? data.write(to: Self.resumeURL(for: destination), options: .atomic)
+  /// The URL the resume data beside it was made for.
+  private static func resumeSourceURL(for destination: String) -> URL {
+    fileURL(destination).appendingPathExtension("resume-url")
+  }
+
+  private func writeResume(_ data: Data, for job: Job) {
+    try? data.write(to: Self.resumeURL(for: job.destination), options: .atomic)
+    try? job.url.write(to: Self.resumeSourceURL(for: job.destination), atomically: true, encoding: .utf8)
   }
 
   // MARK: - URLSessionDownloadDelegate (on `queue`)
@@ -320,7 +348,7 @@ final class ModelDownloadSession: NSObject, URLSessionDownloadDelegate, @uncheck
     let job = Self.job(of: task)
     if let error = error as NSError? {
       if let data = error.userInfo[NSURLSessionDownloadTaskResumeData] as? Data, let job {
-        writeResume(data, for: job.destination)
+        writeResume(data, for: job)
       }
       // A transfer cancelled to move it, or by the app, is no failure.
       if error.code == NSURLErrorCancelled {

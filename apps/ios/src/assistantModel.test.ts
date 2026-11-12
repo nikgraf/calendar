@@ -94,16 +94,66 @@ describe('the Assistant’s model', () => {
     await expect(waiting.status()).resolves.toBe('not-ready');
     await expect(waiting.generateJson({ jsonSchema: undefined, prompt: 'a' })).rejects.toThrow();
     const model = createAssistantModel({ runtime, state: () => READY });
-    await takeLlama('spike', async () => undefined);
-    await expect(model.status()).resolves.toBe('not-ready');
+    // A measurement under way keeps the runtime.
+    await takeLlama('spike', async () => false);
     await expect(model.generateJson({ jsonSchema: undefined, prompt: 'a' })).rejects.toThrow(
       'Model Spike',
     );
+    // A model that only sits loaded there is let go of.
+    letGoLlama('spike');
+    let unloaded = false;
+    await takeLlama('spike', async () => {
+      unloaded = true;
+      return true;
+    });
+    await expect(model.generateJson({ jsonSchema: undefined, prompt: 'a' })).resolves.toEqual({
+      kind: 'event',
+      title: 'Lunch',
+    });
+    expect(unloaded).toBe(true);
+    expect(llamaHolder()).toBe('assistant');
     const unsupported = createAssistantModel({
       runtime,
       state: () => ({ kind: 'unsupported', reason: 'memory' }),
     });
     letGoLlama('spike');
     await expect(unsupported.status()).resolves.toBe('unsupported');
+  });
+
+  it('tries a load that failed again with the next question', async () => {
+    const { runtime } = fakeRuntime();
+    let fail = true;
+    const flaky = {
+      initLlama: async (params: Record<string, unknown>) => {
+        if (fail) {
+          fail = false;
+          throw new Error('load failed');
+        }
+        return runtime.initLlama(params);
+      },
+    };
+    const model = createAssistantModel({ runtime: flaky, state: () => READY });
+    await expect(model.generateJson({ jsonSchema: undefined, prompt: 'a' })).rejects.toThrow(
+      'load failed',
+    );
+    await expect(model.generateJson({ jsonSchema: undefined, prompt: 'b' })).resolves.toEqual({
+      kind: 'event',
+      title: 'Lunch',
+    });
+  });
+
+  it('keeps a load under way through a memory warning', async () => {
+    const { log, runtime } = fakeRuntime();
+    const slow = {
+      initLlama: async (params: Record<string, unknown>) => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        return runtime.initLlama(params);
+      },
+    };
+    const model = createAssistantModel({ runtime: slow, state: () => READY });
+    const answering = model.generateJson({ jsonSchema: undefined, prompt: 'a' });
+    await model.relieve();
+    await expect(answering).resolves.toEqual({ kind: 'event', title: 'Lunch' });
+    expect(log).not.toContain('release');
   });
 });

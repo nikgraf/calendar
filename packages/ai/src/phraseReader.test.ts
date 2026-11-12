@@ -161,4 +161,37 @@ describe('answerResult', () => {
     );
     expect(timed).not.toHaveProperty('prefill.endDate');
   });
+  it('keeps an overnight draft’s span through a turn that leaves its times alone', () => {
+    const overnight: TurnDraft = {
+      ...dinner,
+      prefill: { ...dinner.prefill, endDate: '2026-11-14', endTime: '02:00', startTime: '22:00' },
+    };
+    const renamed = answerResult(
+      { date: '2026-11-13', endTime: '02:00', kind: 'event', startTime: '22:00', title: 'Party' },
+      { draft: overnight, referenceDate: TODAY },
+    );
+    expect(renamed).toMatchObject({
+      prefill: { date: '2026-11-13', endDate: '2026-11-14', endTime: '02:00', startTime: '22:00' },
+    });
+    const moved = answerResult(
+      { date: '2026-11-20', endTime: '02:00', kind: 'event', startTime: '22:00', title: 'Party' },
+      { draft: overnight, referenceDate: TODAY },
+    );
+    expect(moved).toMatchObject({ prefill: { date: '2026-11-20', endDate: '2026-11-21' } });
+  });
+
+  it('reads an end before the start as past midnight, and one at the start as no end', () => {
+    expect(
+      answerResult(
+        { date: '2026-11-13', endTime: '02:00', kind: 'event', startTime: '22:00', title: 'Party' },
+        { draft: undefined, referenceDate: TODAY },
+      ),
+    ).toMatchObject({ prefill: { endDate: '2026-11-14', endTime: '02:00' } });
+    const same = answerResult(
+      { date: '2026-11-13', endTime: '09:00', kind: 'event', startTime: '09:00', title: 'Call' },
+      { draft: undefined, referenceDate: TODAY },
+    );
+    expect(same).toMatchObject({ prefill: { endTime: '10:00' } });
+    expect(same).not.toHaveProperty('prefill.endDate');
+  });
 });

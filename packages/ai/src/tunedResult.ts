@@ -203,29 +203,58 @@ const remindersChange = (
 };
 
 /**
- * A span of days the form gave the draft (an end day of its own) moves
- * with its start while the turn leaves its times and its all-day alone;
- * new times read as one day.
+ * The draft's times after the turn, and its end day where it has one of
+ * its own. A span of days the form gave the draft (a weekend trip, an
+ * overnight event) moves with its start while the answer leaves its times
+ * and its all-day as they were; the end time then stands as it is, before
+ * the start on a later day. Otherwise an end before the start reads as one
+ * past midnight (a party "10pm to 2am"): the next day, the end as said,
+ * for a night of up to twelve hours. Without an end, or one that reads as
+ * no night, an hour.
  */
-const endDateOf = (
+const minutesOf = (time: string): number => {
+  const [hour = 0, minute = 0] = time.split(':').map(Number);
+  return hour * 60 + minute;
+};
+
+/** At most this long past midnight reads as one night: "2 to 1" is no 23-hour event. */
+const NIGHT_MINUTES = 12 * 60;
+
+const pastMidnight = (start: string, end: string): boolean =>
+  minutesOf(end) + 24 * 60 - minutesOf(start) <= NIGHT_MINUTES;
+
+const timesOf = (
   before: QuickAddPrefill | undefined,
-  after: {
+  {
+    date,
+    end,
+    start,
+  }: {
     readonly date: string;
-    readonly endTime: string;
-    readonly isAllDay: boolean;
-    readonly startTime: string;
+    readonly end: string | undefined;
+    readonly start: string | undefined;
   },
-): string | undefined => {
-  if (before?.endDate === undefined) {
-    return undefined;
-  }
-  const span = Temporal.PlainDate.from(before.date).until(before.endDate).days;
+): { readonly endDate?: string; readonly endTime: string } => {
+  const startTime = start ?? '00:00';
+  const span =
+    before?.endDate === undefined
+      ? 0
+      : Temporal.PlainDate.from(before.date).until(before.endDate).days;
   const sameTimes =
-    after.isAllDay === before.isAllDay &&
-    (after.isAllDay || (after.startTime === before.startTime && after.endTime === before.endTime));
-  return span > 0 && sameTimes
-    ? Temporal.PlainDate.from(after.date).add({ days: span }).toString()
-    : undefined;
+    before !== undefined &&
+    (start === undefined) === before.isAllDay &&
+    (start === undefined ||
+      (start === before.startTime && (end ?? before.endTime) === before.endTime));
+  if (span > 0 && sameTimes) {
+    return {
+      endDate: Temporal.PlainDate.from(date).add({ days: span }).toString(),
+      endTime: start === undefined ? before.endTime : (end ?? before.endTime),
+    };
+  }
+  if (start !== undefined && end !== undefined && end < startTime && pastMidnight(startTime, end)) {
+    return { endDate: Temporal.PlainDate.from(date).add({ days: 1 }).toString(), endTime: end };
+  }
+  return { endTime: end !== undefined && end > startTime ? end : addHour(startTime) };
 };
 
 const REFUSED = "That couldn't be read — try rephrasing.";
@@ -263,9 +292,8 @@ export const answerResult = (
   }
   const end = timeOf(answer['endTime']);
   const startTime = start ?? '00:00';
-  const endTime = end !== undefined && end > startTime ? end : addHour(startTime);
   const { date, recurrence } = repeatOf(answer['repeat'], said);
-  const endDate = endDateOf(before, { date, endTime, isAllDay: start === undefined, startTime });
+  const { endDate, endTime } = timesOf(before, { date, end, start });
   const location = textOf(answer['location']);
   const reminders = remindersChange(answer['reminders'], draft?.reminders);
   const invite = namesOf(answer['invite']);

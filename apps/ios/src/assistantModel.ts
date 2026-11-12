@@ -1,6 +1,6 @@
 import type { LanguageModel, ModelStatus } from '@calendar/ai';
 import { type AssistantModelState, statusOf } from './assistantDownload.ts';
-import { letGoLlama, llamaHolder, takeLlama } from './llamaOwner.ts';
+import { letGoLlama, takeLlama } from './llamaOwner.ts';
 import {
   loadOpenModel,
   type OpenModelContext,
@@ -46,8 +46,9 @@ export const createAssistantModel = ({ runtime, state }: AssistantModelDeps): As
   let busy = 0;
   /** Counts the times the context was let go, so a load that lands after one is not kept. */
   let generation = 0;
+  let queue: Promise<unknown> = Promise.resolve();
 
-  const letGo = async () => {
+  const letGo = async (): Promise<boolean> => {
     away = true;
     generation += 1;
     const held = context;
@@ -65,6 +66,7 @@ export const createAssistantModel = ({ runtime, state }: AssistantModelDeps): As
       const late = await pending.catch(() => undefined);
       await late?.release().catch(() => undefined);
     }
+    return true;
   };
 
   const contextFor = async (
@@ -77,11 +79,21 @@ export const createAssistantModel = ({ runtime, state }: AssistantModelDeps): As
       throw new Error('This build has no model runtime.');
     }
     if (!(await takeLlama('assistant', letGo))) {
-      throw new Error('The Model Spike page holds the model runtime.');
+      throw new Error('The Model Spike page is measuring with the model runtime.');
     }
     away = false;
     const mine = generation;
-    loading ??= loadOpenModel(runtime, { path });
+    if (loading === undefined) {
+      const attempt = loadOpenModel(runtime, { path });
+      loading = attempt;
+      // A load that fails is tried again by the next question, not awaited again.
+      attempt.catch(() => {
+        if (loading === attempt) {
+          loading = undefined;
+          letGoLlama('assistant');
+        }
+      });
+    }
     const loaded = await loading;
     // Let go while it loaded: `letGo` releases what the load brings.
     if (mine !== generation) {
@@ -96,32 +108,43 @@ export const createAssistantModel = ({ runtime, state }: AssistantModelDeps): As
   };
 
   return {
-    generateJson: async (request) => {
-      const now = state();
-      if (now.kind !== 'ready') {
-        throw new Error('The Assistant’s model is not ready.');
-      }
-      away = false;
-      const { answer, loaded } = await contextFor(now.path);
-      busy += 1;
-      const timer = setTimeout(() => {
-        void loaded.stopCompletion();
-      }, ANSWER_LIMIT_MS);
-      try {
-        return await answer.generateJson(request);
-      } finally {
-        clearTimeout(timer);
-        busy -= 1;
-      }
+    generateJson: (request) => {
+      // One question at a time, each timed from when it reaches the model:
+      // a turn about several drafts asks once a draft.
+      const ask = async (): Promise<unknown> => {
+        const now = state();
+        if (now.kind !== 'ready') {
+          throw new Error('The Assistant’s model is not ready.');
+        }
+        away = false;
+        busy += 1;
+        try {
+          const { answer, loaded } = await contextFor(now.path);
+          const timer = setTimeout(() => {
+            void loaded.stopCompletion();
+          }, ANSWER_LIMIT_MS);
+          try {
+            return await answer.generateJson(request);
+          } finally {
+            clearTimeout(timer);
+          }
+        } finally {
+          busy -= 1;
+        }
+      };
+      const next = queue.then(ask, ask);
+      queue = next.catch(() => undefined);
+      return next;
     },
     info: async () => ({ name: 'Solunivo quick add' }),
-    leave: letGo,
+    leave: async () => {
+      await letGo();
+    },
     relieve: async () => {
       if (busy === 0) {
         await letGo();
       }
     },
-    status: async (): Promise<ModelStatus> =>
-      llamaHolder() === 'spike' ? 'not-ready' : statusOf(state()),
+    status: async (): Promise<ModelStatus> => statusOf(state()),
   };
 };
