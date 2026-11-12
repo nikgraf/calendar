@@ -7,7 +7,8 @@ import { ActionRow, Footer, NavRow, Section, SettingsPage } from '../GroupedList
  * Advanced: the location cache, as on the Mac, then troubleshooting a
  * build — Diagnostics and PR Preview. The settings file has its own page
  * (SettingsFilePage). Model Spike is listed where the binary can run a
- * model of its own: the development variant.
+ * model of its own: both variants since llama.rn is linked in both, so a
+ * TestFlight build measures too, as PR Preview loads a pull request there.
  */
 export function AdvancedPage() {
   const { clearLocationCache } = useBackendMutations();

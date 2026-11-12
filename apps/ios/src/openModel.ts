@@ -2,9 +2,9 @@ import { type LanguageModel, strictSchema, withoutNulls } from '@calendar/ai';
 
 /**
  * An open model run inside the app (llama.cpp through llama.rn) as the
- * app's LanguageModel. Not a model the app ships: it is here to measure
- * whether one could answer quick-add on an iPhone (Settings › Advanced ›
- * Model Spike, the development variant only). The request follows the
+ * app's LanguageModel: the Assistant's own model (`assistantModel.ts`),
+ * and any model the measuring page loads (Settings › Advanced › Model
+ * Spike). The request follows the
  * model bench's runs of these models: the strict schema (every field
  * required, an optional one nullable, the nulls dropped on the way back)
  * and temperature 0, with thinking off (the bench switched it off at the
@@ -68,11 +68,11 @@ export interface OpenModelRuntime {
 }
 
 /**
- * llama.rn, where this binary has it. The production variant is built
- * without the pod (`react-native.config.js`), and so is every binary from
- * before the dependency: there the native module is absent and installing
- * its bindings would fail on the first call, so the answer is "no
- * runtime". Loaded lazily inside a try, as every native package here is.
+ * llama.rn, where this binary has it. Every binary from before the
+ * dependency lacks the native module (an OTA update on an older
+ * TestFlight build), and installing its bindings would fail on the first
+ * call there, so the answer is "no runtime". Loaded lazily inside a try,
+ * as every native package here is.
  */
 export const loadOpenModelRuntime = (): OpenModelRuntime | undefined => {
   try {

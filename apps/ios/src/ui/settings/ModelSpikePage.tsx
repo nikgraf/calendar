@@ -132,8 +132,8 @@ const seconds = (ms: number): string => `${(ms / 1000).toFixed(1)} s`;
  * own quick-add pipeline, and read the time, the tokens per second and the
  * memory. The report it shares is scored on the Mac with the bench's
  * checks (`apps/desktop/e2e/bench/phoneReport.ts`). For internal
- * measuring only: the page is listed where the binary has the runtime,
- * which is the development variant. Nothing it does touches the calendar.
+ * measuring only: the page is listed where the binary has the runtime
+ * (both variants). Nothing it does touches the calendar.
  */
 export function ModelSpikePage() {
   const styles = useStyles(makeStyles);
