@@ -5,33 +5,80 @@ stating the product's conventions: the model has to have learned them.
 This folder makes the training data and holds what a training run on a
 Mac needs. Nothing here is part of the app, of `pnpm test` or of CI.
 
-The idea: Claude answers the plain arm's prompt nearly without error, so
-it can label practice phrases, and a small open model is trained to give
-the same answers to a prompt a tenth as long.
+The idea: a large open model answers the plain arm's prompt nearly
+without error, so it can label practice phrases, and a small open model
+is trained to give the same answers to a prompt a tenth as long.
+
+**Whose outputs may be trained on.** Only a model whose licence and
+whose API's terms both allow training other models on its output.
+Claude's may not: Anthropic's Usage Policy forbids using its outputs "to
+train an AI model (e.g., 'model scraping' or 'model distillation')"
+without Anthropic's prior authorization, and `dataset.e2e.ts` refuses a
+Claude model. The data is made with DeepSeek V4 over DeepSeek's own API:
+MIT weights, and its Open Platform terms (effective 2026-04-29, section
+4.2(3)) name "training other models (such as model distillation)" as a
+permitted use. The first rounds of 2026-11-11 and 2026-11-12 were made
+with Claude and are set aside in `output/bench/finetune/claude-made/`;
+nothing in there is trained on or shipped.
 
 ## 1. The data
 
 ```bash
-TRAIN_DATA=generate,label,export E2E=1 pnpm exec vp test run apps/desktop/e2e/bench/train/dataset.e2e.ts
+TRAIN_OPENAI_KEY=… TRAIN_DATA=names,generate,label,said,export E2E=1 \
+  pnpm exec vp test run apps/desktop/e2e/bench/train/dataset.e2e.ts
 ```
 
-- `generate`: Claude Opus writes practice threads, 30 for each of 140
-  briefs (two languages, five ways of writing, fourteen things to
-  exercise: `phrases.ts`). It is shown no case of the bench.
-- `label`: Claude Haiku answers every turn through the plain arm, the
-  draft carried from turn to turn as the bench carries it. Phrases said
-  twice and phrases that read like a bench case are left out first
-  (`nearBench`).
+- `names`: DeepSeek V4-Pro writes the people and places the phrases may
+  name (60 and 40); anyone the bench's books hold is left out.
+- `generate`: V4-Pro writes practice threads, 30 for each of 160 briefs
+  (two languages, five ways of writing, sixteen things to exercise:
+  `phrases.ts`). It is shown no case of the bench.
+- `label`: V4-Flash answers every turn through the plain arm, the draft
+  carried from turn to turn as the bench carries it. Phrases said twice,
+  phrases that read like a bench case and phrases that repeat an example
+  the briefs quote are left out first (`nearBench`,
+  `repeatsBriefExample`).
+- `said`: V4-Flash is asked a second, short question about each turn
+  that set a day or a repeat: how the words gave the day (a date by its
+  number, an amount of time from today, or another way) and which
+  weekdays a repeat rules out (`asSaid.ts`).
 - `export`: every labelled turn as a chat (`train.jsonl`, `valid.jsonl`),
   the prompt and the answer built by `tunedExample`, the function the arm
   itself asks with.
 
-The files land in `output/bench/finetune/data/` (ignored by git). Each
-step picks up where an earlier run stopped. The run of 2026-11-11 kept
-4,045 of 4,200 threads (135 said twice, 20 like a bench case) and made
-5,504 examples, half English and half German, 1,459 of them follow-ups.
-It costs a few US dollars of API use; the variables are in the head of
-`dataset.e2e.ts`.
+Both run with brief thinking (`{"thinking":{"type":"enabled"},
+"reasoning_effort":"low"}` in `TRAIN_*_EXTRA`). On the bench's plain arm
+(2026-11-12, `MODEL_BENCH_OPENAI_JSON=object`): Flash thinking 65 of 70,
+Pro 64 with or without, Flash without thinking 61; Claude Haiku, the
+teacher of the set-aside rounds, scored 65. DeepSeek's API takes no JSON
+schema, so the schema goes into the prompt and the answer comes in JSON
+mode (`TRAIN_OPENAI_JSON=object`). The files land in
+`output/bench/finetune/data/` (ignored by git), every answer's token
+counts in `usage.jsonl`. Each step picks up where an earlier run stopped.
+A run costs a few US dollars.
+
+### Why the day is written as said
+
+The first round (2026-11-11) trained on the teacher's whole dates. A
+tenth of its turns set a day outside the two weeks the prompt lists,
+nearly all a date said by its number ("the 23rd", "12.3.", "March 14"),
+and there the teacher was no guide: 80 of its dates lay in the past, and
+the year it chose varied. The trained model agreed with it on 24 of 32
+such held-back turns, against 210 of 225 inside the two weeks. So the
+answer to learn now holds what was said ("23", "03-14", "+3w") and
+`said.ts` finds the next such day. The second question decides only what
+was said; it is used where it fits the first answer (the same day of the
+month, the same month where one was said, the same sum for an amount)
+and dropped where it does not, so a date the teacher worked out ("two
+days before the 22nd") stays a whole date.
+
+A repeat with a weekday ruled out ("every day except Sunday") is the
+same kind of thing: the rule and the days ruled out are what was said,
+the days left are arithmetic. The first round's briefs asked for no such
+phrase, and its model listed Monday to Friday whatever was ruled out.
+The second round adds two focuses, days far off and ruled-out weekdays,
+as briefs of their own after the first round's, so that no brief changes
+its number and no thread its "today".
 
 ## 2. Training (Apple silicon, MLX)
 
@@ -39,7 +86,7 @@ It costs a few US dollars of API use; the variables are in the head of
 python3 -m venv .venv && .venv/bin/pip install mlx-lm
 .venv/bin/mlx_lm.lora -c apps/desktop/e2e/bench/train/lora.yaml \
   --model <model dir> --train --data output/bench/finetune/data \
-  --iters 3927 --adapter-path <adapter dir>
+  --iters 4491 --adapter-path <adapter dir>
 ```
 
 `<model dir>` is a model in Hugging Face format (`Qwen/Qwen3.5-0.8B`,
@@ -69,6 +116,20 @@ MODEL_BENCH=1 E2E=1 MODEL_BENCH_APPLE=0 MODEL_BENCH_PIPELINE=tuned \
 
 `serve.py` answers greedily and holds no schema over the answer, so an
 answer that is not JSON counts against the model.
+
+The held-back turns say how well a model learned its teacher, part by
+part, and the date by where the day lies (inside the two listed weeks,
+beyond them, in the past):
+
+```bash
+TRAIN_AGREE=1 E2E=1 TRAIN_AGREE_URL=http://127.0.0.1:8089/v1 TRAIN_AGREE_OUT=<answers.jsonl> \
+  pnpm exec vp test run apps/desktop/e2e/bench/train/agreement.e2e.ts
+```
+
+Both answers are worked out before they are compared, so a model trained
+on whole dates and one trained on days as said can be held against the
+same turns (`TRAIN_AGREE_ANSWERS`, `TRAIN_AGREE_ROWS`: see the file's
+head).
 
 ## 4. A file for llama.cpp (the iPhone's runtime)
 

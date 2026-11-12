@@ -1,13 +1,16 @@
 import type { LanguageModel, QuickAddResult, RefineResult } from '@calendar/ai';
 import type { BenchDraft } from './check.ts';
 import { comingDays, plainResult, type PlainState, plainState } from './plain.ts';
+import { worked } from './said.ts';
 
 /**
  * The tuned arm of the bench: a model trained for this one job, asked
  * without the conventions. The prompt is the days, the draft where there
  * is one, and the words; the answer is the draft as the plain arm asks
  * for it, written short (a part that is not there is left out, in one
- * fixed order). The code after it is the plain arm's: shapes, a form's
+ * fixed order), with a day the model cannot look up and a repeat's
+ * ruled-out weekdays written as they were said (`said.ts` works them
+ * out). The code after that is the plain arm's: shapes, a form's
  * defaults, never the phrase. A model that was not trained on these
  * prompts has nothing to go by, so this arm measures a training run and
  * nothing else. The training examples are made here too (`tunedExample`),
@@ -35,7 +38,7 @@ const ORDER = [
   'reminders',
 ] as const;
 
-const REPEAT_ORDER = ['freq', 'interval', 'byDay', 'count', 'untilDate'] as const;
+const REPEAT_ORDER = ['freq', 'interval', 'byDay', 'except', 'count', 'untilDate'] as const;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -194,5 +197,9 @@ export const tunedTurn = async (
   } catch {
     return { kind: 'rejected', reason: REFUSED };
   }
-  return plainResult(answer, { draft: turn.draft, referenceDate: turn.referenceDate });
+  const draftDate = turn.draft === undefined ? undefined : plainState(turn.draft)?.date;
+  return plainResult(worked(answer, { draftDate, referenceDate: turn.referenceDate }), {
+    draft: turn.draft,
+    referenceDate: turn.referenceDate,
+  });
 };

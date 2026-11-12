@@ -399,28 +399,61 @@ export const openAiExtra = (value: string | undefined): Readonly<Record<string, 
  */
 export const openAiRequest = ({
   extra,
+  jsonMode = 'schema',
   jsonSchema,
   model,
   prompt,
 }: {
   readonly extra: Readonly<Record<string, unknown>>;
+  readonly jsonMode?: OpenAiJsonMode | undefined;
   readonly jsonSchema: unknown;
   readonly model: string;
   readonly prompt: string;
-}): Record<string, unknown> => ({
-  messages: [{ content: prompt, role: 'user' }],
-  model,
-  ...(jsonSchema === undefined
-    ? {}
-    : {
-        response_format: {
-          json_schema: { name: 'answer', schema: strictSchema(jsonSchema as object), strict: true },
-          type: 'json_schema',
-        },
-      }),
-  temperature: 0,
-  ...extra,
-});
+}): Record<string, unknown> => {
+  if (jsonSchema === undefined) {
+    return { messages: [{ content: prompt, role: 'user' }], model, temperature: 0, ...extra };
+  }
+  if (jsonMode === 'object') {
+    return {
+      messages: [{ content: withSchemaInPrompt(prompt, jsonSchema), role: 'user' }],
+      model,
+      response_format: { type: 'json_object' },
+      temperature: 0,
+      ...extra,
+    };
+  }
+  return {
+    messages: [{ content: prompt, role: 'user' }],
+    model,
+    response_format: {
+      json_schema: { name: 'answer', schema: strictSchema(jsonSchema as object), strict: true },
+      type: 'json_schema',
+    },
+    temperature: 0,
+    ...extra,
+  };
+};
+
+/**
+ * How a server holds an answer to the schema: `schema`, strict structured
+ * outputs (llama-server, LM Studio, vLLM); `object`, JSON mode only, the
+ * schema written into the prompt (DeepSeek's API takes no schema).
+ */
+export type OpenAiJsonMode = 'object' | 'schema';
+
+/** The question with the schema it is to be answered in, for a server that holds only to JSON. */
+export const withSchemaInPrompt = (prompt: string, jsonSchema: unknown): string =>
+  `${prompt}\n\nAnswer with one JSON object that follows this JSON Schema:\n${JSON.stringify(jsonSchema)}`;
+
+/** MODEL_BENCH_OPENAI_JSON (or TRAIN_OPENAI_JSON) as a mode: `object`, or the strict default. */
+export const openAiJsonMode = (value: string | undefined): OpenAiJsonMode =>
+  value?.trim() === 'object' ? 'object' : 'schema';
+
+/** A server that is busy (429) or failing (5xx) is asked again; any other status is the answer. */
+const isRetryable = (status: number): boolean => status === 429 || status >= 500;
+
+const RETRIES = 4;
+const RETRY_BASE_MS = 2000;
 
 /**
  * A model behind an OpenAI-compatible endpoint (LM Studio, llama-server,
@@ -435,25 +468,63 @@ export const openAiModel = (
   model: string,
   apiKey: string | undefined,
   extra: Readonly<Record<string, unknown>> = {},
+  {
+    jsonMode = 'schema',
+    onUsage,
+  }: {
+    readonly jsonMode?: OpenAiJsonMode | undefined;
+    /** Each answer's token counts, as the server reports them. */
+    readonly onUsage?: ((usage: OpenAiUsage) => void) | undefined;
+  } = {},
 ): LanguageModel => ({
   generateJson: async ({ jsonSchema, prompt }) => {
-    const response = await fetch(`${baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-      body: JSON.stringify(openAiRequest({ extra, jsonSchema, model, prompt })),
-      headers: headers(apiKey),
-      method: 'POST',
-      signal: AbortSignal.timeout(GENERATE_TIMEOUT_MS),
-    });
-    if (!response.ok) {
-      throw new Error(`the server answered HTTP ${String(response.status)}`);
+    const body = JSON.stringify(openAiRequest({ extra, jsonMode, jsonSchema, model, prompt }));
+    let failure = 'no answer';
+    for (let attempt = 0; attempt < RETRIES; attempt += 1) {
+      if (attempt > 0) {
+        await new Promise((resolve) => setTimeout(resolve, RETRY_BASE_MS * 2 ** (attempt - 1)));
+      }
+      const response = await fetch(`${baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+        body,
+        headers: headers(apiKey),
+        method: 'POST',
+        signal: AbortSignal.timeout(GENERATE_TIMEOUT_MS),
+      });
+      if (!response.ok) {
+        failure = `the server answered HTTP ${String(response.status)}`;
+        if (isRetryable(response.status)) {
+          continue;
+        }
+        throw new Error(failure);
+      }
+      const answer = (await response.json()) as {
+        choices?: Array<{ message?: { content?: unknown } }>;
+        usage?: OpenAiUsage;
+      };
+      if (answer.usage !== undefined) {
+        onUsage?.(answer.usage);
+      }
+      const content = answer.choices?.[0]?.message?.content;
+      // JSON mode answers blank where the model wrote no JSON: asked again.
+      if (typeof content === 'string' && content.trim() === '') {
+        failure = 'the server answered with no text';
+        continue;
+      }
+      return withoutNulls(JSON.parse(contentOf(content)));
     }
-    const body = (await response.json()) as {
-      choices?: Array<{ message?: { content?: unknown } }>;
-    };
-    return withoutNulls(JSON.parse(contentOf(body.choices?.[0]?.message?.content)));
+    throw new Error(failure);
   },
   info: async () => ({ contextTokens: SERVED_CONTEXT_TOKENS, name: model }),
   status: async () => 'ready',
 });
+
+/** The token counts an OpenAI-compatible server reports for one answer. */
+export interface OpenAiUsage {
+  readonly completion_tokens?: number;
+  readonly prompt_cache_hit_tokens?: number;
+  readonly prompt_cache_miss_tokens?: number;
+  readonly prompt_tokens?: number;
+}
 
 /** How hard Claude thinks before it answers (`output_config.effort`). */
 export type ClaudeEffort = 'high' | 'low' | 'max' | 'medium' | 'xhigh';
