@@ -40,6 +40,7 @@ import {
   helperStatus,
   ollamaModel,
   openAiExtra,
+  openAiJsonMode,
   openAiModel,
   recording,
   requiringEveryField,
@@ -77,7 +78,8 @@ import { tunedTurn } from './tuned.ts';
  * server. An OpenAI-compatible endpoint: MODEL_BENCH_OPENAI (models,
  * comma-separated), MODEL_BENCH_OPENAI_URL (base, up to `/v1`),
  * MODEL_BENCH_OPENAI_KEY, MODEL_BENCH_OPENAI_EXTRA (JSON joined to the
- * request body).
+ * request body), MODEL_BENCH_OPENAI_JSON=object for a server with JSON mode
+ * only (the schema then goes into the prompt: DeepSeek's API).
  * Claude: MODEL_BENCH_CLAUDE names the models, each with its effort after
  * an `@` (`claude-haiku-5-5@low,claude-opus-5-5`), ANTHROPIC_API_KEY the key.
  * MODEL_BENCH_PIPELINE lists what runs around the model, comma-separated:
@@ -361,14 +363,18 @@ const providers = async (
   if (openAi.length > 0) {
     const openAiUrl = process.env['MODEL_BENCH_OPENAI_URL'] ?? 'http://localhost:1234/v1';
     const extra = openAiExtra(process.env['MODEL_BENCH_OPENAI_EXTRA']);
+    const jsonMode = openAiJsonMode(process.env['MODEL_BENCH_OPENAI_JSON']);
     for (const name of openAi) {
       list.push({
-        model: openAiModel(openAiUrl, name.trim(), process.env['MODEL_BENCH_OPENAI_KEY'], extra),
+        model: openAiModel(openAiUrl, name.trim(), process.env['MODEL_BENCH_OPENAI_KEY'], extra, {
+          jsonMode,
+        }),
         name: `openai:${name.trim()}`,
         // The endpoint and what joined each request: thinking on and thinking off are two results.
         settings: [
           openAiUrl,
           ...(Object.keys(extra).length === 0 ? [] : [JSON.stringify(extra)]),
+          ...(jsonMode === 'object' ? ['json-object'] : []),
         ].join(' '),
       });
     }

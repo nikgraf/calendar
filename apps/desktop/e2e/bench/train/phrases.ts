@@ -11,92 +11,106 @@ import { fold } from '../check.ts';
  * filter keeps those, and a result has to say so.
  */
 
-/** People for the phrases and the address book they are looked up in. None is in the bench's book. */
-const PEOPLE: ReadonlyArray<readonly [string, string]> = [
-  ['Carla', 'Reyes'],
-  ['Ben', 'Okafor'],
-  ['Mira', 'Solberg'],
-  ['Jonas', 'Keller'],
-  ['Priya', 'Nair'],
-  ['Lukas', 'Brandt'],
-  ['Elena', 'Costa'],
-  ['Felix', 'Aigner'],
-  ['Nora', 'Lindqvist'],
-  ['Omar', 'Haddad'],
-  ['Hannah', 'Vogel'],
-  ['Dmitri', 'Volkov'],
-  ['Sophie', 'Lang'],
-  ['Kenji', 'Mori'],
-  ['Laura', 'Pichler'],
-  ['Samir', 'Rahman'],
-  ['Greta', 'Hofer'],
-  ['Pablo', 'Ortega'],
-  ['Ines', 'Wagner'],
-  ['Callum', 'Reid'],
-  ['Zofia', 'Kowalska'],
-  ['Moritz', 'Steiner'],
-  ['Aylin', 'Demir'],
-  ['Viktor', 'Horvat'],
-  ['Lena', 'Schuster'],
-  ['Rafael', 'Mendes'],
-  ['Katrin', 'Bauer'],
-  ['Niklas', 'Frey'],
-  ['Amara', 'Diallo'],
-  ['Paul', 'Gruber'],
-  ['Yuki', 'Tanaka'],
-  ['Marlene', 'Koch'],
-  ['Tobias', 'Winkler'],
-  ['Leila', 'Farouk'],
-  ['Simon', 'Egger'],
-  ['Clara', 'Jensen'],
-  ['Emil', 'Hartmann'],
-  ['Renate', 'Schwarz'],
-  ['Hugo', 'Lefevre'],
-  ['Maja', 'Petrovic'],
-];
+/**
+ * The people and places a batch of phrases may name, and the address book
+ * the people are looked up in. The generator writes them itself (`names`
+ * step, `NAMES_SCHEMA`), so no name in the data comes from a model whose
+ * outputs may not be trained on; a person the bench's books hold is left
+ * out (`namesOf`).
+ */
+export interface Names {
+  readonly people: ReadonlyArray<readonly [string, string]>;
+  readonly places: ReadonlyArray<string>;
+}
 
-const PLACES: ReadonlyArray<string> = [
-  'Café Lindner',
-  'the Riverside Gym',
-  'Studio 4',
-  'Gasthaus zum Hirschen',
-  'the Maple Room',
-  'Hauptbahnhof',
-  'Kino am Markt',
-  'Dr. Albrecht’s office',
-  'the Harbour Kitchen',
-  'Stadtbibliothek',
-  'room 2.14',
-  'Trattoria Nonna',
-  'the climbing hall',
-  'Volksgarten',
-  'the north office',
-  'Praxis Dr. Sommer',
-  'Pier 7',
-  'the school gym',
-  'Besprechungsraum Donau',
-  'Yoga Loft',
-  'Flughafen Wien',
-  'the old town hall',
-  'Weinbar Rebe',
-  '12 Mill Lane',
-  'Lindengasse 8',
-  'the community pool',
-  'Porto',
-  'Innsbruck',
-  'Leipzig',
-  'Bar Tabac',
-];
+export const NAMES_SCHEMA = {
+  additionalProperties: false,
+  properties: {
+    people: {
+      items: {
+        additionalProperties: false,
+        properties: { first: { type: 'string' }, last: { type: 'string' } },
+        required: ['first', 'last'],
+        type: 'object',
+      },
+      type: 'array',
+    },
+    places: { items: { type: 'string' }, type: 'array' },
+  },
+  required: ['people', 'places'],
+  type: 'object',
+} as const;
 
-export const trainingBook: ReadonlyArray<Contact> = PEOPLE.map(
-  ([first, last], index) =>
-    new Contact({
-      displayName: `${first} ${last}`,
-      email: `${first}.${last}@example.com`.toLowerCase(),
-      id: `device:${String(index)}:${first}.${last}`.toLowerCase(),
-      source: 'device',
-    }),
-);
+/** What the generator is asked for the names: people and places of ordinary lives. */
+export const buildNamesPrompt = (people: number, places: number): string =>
+  [
+    `Invent ${String(people)} people and ${String(places)} places for practice phrases in a`,
+    "calendar app's quick-add box, used by people in Austria, Germany and English-speaking",
+    'countries.',
+    '- People: a first and a last name each, of many backgrounds (German, Austrian, English,',
+    '  Spanish, Turkish, Polish, Japanese, Nigerian, Indian and others), no two alike, none',
+    '  famous.',
+    '- Places: what people put in a calendar entry: cafés, restaurants, bars, gyms, doctors’',
+    '  practices, offices and meeting rooms, schools, stations, parks, a few street addresses',
+    '  and cities; in German and in English.',
+  ].join('\n');
+
+const textOf = (value: unknown): string =>
+  typeof value === 'string' ? value.trim().replaceAll(/\s+/gu, ' ') : '';
+
+/**
+ * The generator's names, held to what a phrase can use: no one twice, no
+ * one the bench's books hold (by name or by address), no place twice.
+ */
+export const namesOf = (answer: unknown, benchBook: ReadonlyArray<Contact>): Names => {
+  const record = typeof answer === 'object' && answer !== null ? answer : {};
+  const people = 'people' in record && Array.isArray(record.people) ? record.people : [];
+  const places = 'places' in record && Array.isArray(record.places) ? record.places : [];
+  const taken = new Set(
+    benchBook.flatMap((contact) => [fold(contact.displayName ?? ''), contact.email.toLowerCase()]),
+  );
+  const seen = new Set<string>();
+  const kept = people.flatMap((person: unknown): Array<readonly [string, string]> => {
+    const first = textOf(
+      typeof person === 'object' && person !== null && 'first' in person ? person.first : '',
+    );
+    const last = textOf(
+      typeof person === 'object' && person !== null && 'last' in person ? person.last : '',
+    );
+    const name = fold(`${first} ${last}`);
+    const email = emailOf(first, last);
+    if (!first || !last || seen.has(name) || taken.has(name) || taken.has(email)) {
+      return [];
+    }
+    seen.add(name);
+    return [[first, last]];
+  });
+  const placeSeen = new Set<string>();
+  const keptPlaces = places.flatMap((place: unknown) => {
+    const text = textOf(place);
+    if (!text || placeSeen.has(fold(text))) {
+      return [];
+    }
+    placeSeen.add(fold(text));
+    return [text];
+  });
+  return { people: kept, places: keptPlaces };
+};
+
+const emailOf = (first: string, last: string): string =>
+  `${first}.${last}@example.com`.toLowerCase().replaceAll(/[^a-z0-9.@-]/gu, '');
+
+/** The people as an address book, each at a made-up `first.last@example.com`. */
+export const bookOf = (people: Names['people']): ReadonlyArray<Contact> =>
+  people.map(
+    ([first, last], index) =>
+      new Contact({
+        displayName: `${first} ${last}`,
+        email: emailOf(first, last),
+        id: `device:${String(index)}:${emailOf(first, last)}`,
+        source: 'device',
+      }),
+  );
 
 export type Language = 'de' | 'en';
 
@@ -220,10 +234,15 @@ export const GENERATOR_SCHEMA = {
 } as const;
 
 /** What the generator is asked for one brief. It is shown no case of the bench. */
-export const buildGeneratorPrompt = (brief: Brief, index: number, count: number): string => {
+export const buildGeneratorPrompt = (
+  brief: Brief,
+  index: number,
+  count: number,
+  names: Names,
+): string => {
   const random = seeded(index);
-  const people = drawn(PEOPLE, 8, random).map(([first, last]) => `${first} ${last}`);
-  const places = drawn(PLACES, 6, random);
+  const people = drawn(names.people, 8, random).map(([first, last]) => `${first} ${last}`);
+  const places = drawn(names.places, 6, random);
   return [
     "You are writing practice phrases for a calendar app's quick-add box. A person types or",
     'dictates one short phrase and the app turns it into an event or a to-do. Afterwards they',
@@ -248,6 +267,27 @@ export const buildGeneratorPrompt = (brief: Brief, index: number, count: number)
     '',
     'Do not number the phrases and do not explain them.',
   ].join('\n');
+};
+
+/**
+ * The example phrases the briefs quote: a phrase that repeats one word
+ * for word is the brief's text, not the generator's, and is left out.
+ * Only examples of two words or more without an ellipsis count.
+ */
+export const BRIEF_EXAMPLES: ReadonlyArray<string> = [
+  ...Object.values(REGISTERS),
+  ...Object.values(FOCUS_TEXT),
+].flatMap((text) =>
+  [...text.matchAll(/"([^"]+)"/gu)].flatMap(([, quoted]) => {
+    const example = fold(quoted ?? '');
+    return example.includes('…') || example.split(' ').length < 2 ? [] : [example];
+  }),
+);
+
+/** Whether a phrase holds one of the briefs' examples word for word. */
+export const repeatsBriefExample = (text: string): boolean => {
+  const folded = ` ${fold(text)} `;
+  return BRIEF_EXAMPLES.some((example) => folded.includes(` ${example} `));
 };
 
 /** The threads in a generator's answer: one to three phrases each, none empty. */

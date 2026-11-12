@@ -5,43 +5,57 @@ stating the product's conventions: the model has to have learned them.
 This folder makes the training data and holds what a training run on a
 Mac needs. Nothing here is part of the app, of `pnpm test` or of CI.
 
-The idea: Claude answers the plain arm's prompt nearly without error, so
-it can label practice phrases, and a small open model is trained to give
-the same answers to a prompt a tenth as long.
+The idea: a large open model answers the plain arm's prompt nearly
+without error, so it can label practice phrases, and a small open model
+is trained to give the same answers to a prompt a tenth as long.
+
+**Whose outputs may be trained on.** Only a model whose licence and
+whose API's terms both allow training other models on its output.
+Claude's may not: Anthropic's Usage Policy forbids using its outputs "to
+train an AI model (e.g., 'model scraping' or 'model distillation')"
+without Anthropic's prior authorization, and `dataset.e2e.ts` refuses a
+Claude model. The data is made with DeepSeek V4 over DeepSeek's own API:
+MIT weights, and its Open Platform terms (effective 2026-04-29, section
+4.2(3)) name "training other models (such as model distillation)" as a
+permitted use. The first rounds of 2026-11-11 and 2026-11-12 were made
+with Claude and are set aside in `output/bench/finetune/claude-made/`;
+nothing in there is trained on or shipped.
 
 ## 1. The data
 
 ```bash
-TRAIN_DATA=generate,label,said,export E2E=1 pnpm exec vp test run apps/desktop/e2e/bench/train/dataset.e2e.ts
+TRAIN_OPENAI_KEY=… TRAIN_DATA=names,generate,label,said,export E2E=1 \
+  pnpm exec vp test run apps/desktop/e2e/bench/train/dataset.e2e.ts
 ```
 
-- `generate`: Claude Opus writes practice threads, 30 for each of 160
-  briefs (two languages, five ways of writing, sixteen things to
-  exercise: `phrases.ts`). It is shown no case of the bench.
-- `label`: Claude Haiku answers every turn through the plain arm, the
-  draft carried from turn to turn as the bench carries it. Phrases said
-  twice and phrases that read like a bench case are left out first
-  (`nearBench`).
-- `said`: Haiku is asked a second, short question about each turn that
-  set a day or a repeat: how the words gave the day (a date by its
+- `names`: DeepSeek V4-Pro writes the people and places the phrases may
+  name (60 and 40); anyone the bench's books hold is left out.
+- `generate`: V4-Pro writes practice threads, 30 for each of 160 briefs
+  (two languages, five ways of writing, sixteen things to exercise:
+  `phrases.ts`). It is shown no case of the bench.
+- `label`: V4-Flash answers every turn through the plain arm, the draft
+  carried from turn to turn as the bench carries it. Phrases said twice,
+  phrases that read like a bench case and phrases that repeat an example
+  the briefs quote are left out first (`nearBench`,
+  `repeatsBriefExample`).
+- `said`: V4-Flash is asked a second, short question about each turn
+  that set a day or a repeat: how the words gave the day (a date by its
   number, an amount of time from today, or another way) and which
   weekdays a repeat rules out (`asSaid.ts`).
 - `export`: every labelled turn as a chat (`train.jsonl`, `valid.jsonl`),
   the prompt and the answer built by `tunedExample`, the function the arm
   itself asks with.
 
-The files land in `output/bench/finetune/data/` (ignored by git). Each
-step picks up where an earlier run stopped. It costs a few US dollars of
-API use; the variables are in the head of `dataset.e2e.ts`.
-
-The data of 2026-11-12 keeps 4,631 of 4,800 threads (146 said twice, 23
-like a bench case) and makes 6,293 examples (5,988 to train on, 305 held
-back), half English and half German, 1,662 of them follow-ups. 900 hold
-a day as said (344 a day of the month, 431 a month and day, 125 an
-amount from today) and 204 a repeat with weekdays ruled out. On 45 turns
-the second answer did not fit the first ("tues 7" is seven o'clock) and
-the whole date stayed; 103 whole dates still lie outside the two weeks,
-most of them an end of a month or a "last Friday of the month".
+Both run with brief thinking (`{"thinking":{"type":"enabled"},
+"reasoning_effort":"low"}` in `TRAIN_*_EXTRA`). On the bench's plain arm
+(2026-11-12, `MODEL_BENCH_OPENAI_JSON=object`): Flash thinking 65 of 70,
+Pro 64 with or without, Flash without thinking 61; Claude Haiku, the
+teacher of the set-aside rounds, scored 65. DeepSeek's API takes no JSON
+schema, so the schema goes into the prompt and the answer comes in JSON
+mode (`TRAIN_OPENAI_JSON=object`). The files land in
+`output/bench/finetune/data/` (ignored by git), every answer's token
+counts in `usage.jsonl`. Each step picks up where an earlier run stopped.
+A run costs a few US dollars.
 
 ### Why the day is written as said
 

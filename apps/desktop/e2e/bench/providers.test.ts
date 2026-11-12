@@ -4,6 +4,7 @@ import { strictSchema } from '../../electron/strictSchema.ts';
 import {
   claudeSchema,
   openAiExtra,
+  openAiJsonMode,
   openAiRequest,
   recording,
   requiredSchema,
@@ -207,6 +208,25 @@ describe('openAiRequest', () => {
       'reasoning_effort',
       'temperature',
     ]);
+  });
+
+  it('asks a JSON-mode server for JSON, with the schema in the question', () => {
+    const request = openAiRequest({
+      ...asked,
+      jsonMode: 'object',
+      jsonSchema: QUICK_ADD_JSON_SCHEMA,
+    });
+    expect(request['response_format']).toEqual({ type: 'json_object' });
+    const [message] = request['messages'] as ReadonlyArray<{ readonly content: string }>;
+    expect(message?.content.startsWith('Lunch at 1\n\nAnswer with one JSON object')).toBe(true);
+    expect(message?.content.endsWith(JSON.stringify(QUICK_ADD_JSON_SCHEMA))).toBe(true);
+  });
+
+  it('reads the mode from its variable: object, or the strict default', () => {
+    expect(openAiJsonMode('object')).toBe('object');
+    expect(openAiJsonMode(' object ')).toBe('object');
+    expect(openAiJsonMode(undefined)).toBe('schema');
+    expect(openAiJsonMode('json_schema')).toBe('schema');
   });
 });
 
