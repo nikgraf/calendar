@@ -52,7 +52,12 @@ import {
 import { useCallback, useRef, useState } from 'react';
 import { deleteQuestion } from './deleteQuestion.ts';
 import { keptAsSaid, latestWord, locationToLookUp } from './editorLocation.ts';
-import { eventEditorChanges, type EventEditorText, vouchedGeo } from './eventEditorChanges.ts';
+import {
+  eventEditorChanges,
+  type EventEditorValues,
+  remindersKey,
+  vouchedGeo,
+} from './eventEditorChanges.ts';
 import { useAccounts, useBackendMutations, useEventMaster, useLocationGeo } from './hooks.ts';
 import { useOneWrite } from './oneWrite.ts';
 import { useRepeatState } from './repeatState.ts';
@@ -289,19 +294,27 @@ export interface EditorConfirmRequest {
 /**
  * A promise-shaped yes/no for the move and conversion confirmations, for
  * UIs that render them inline (desktop). `request` resolves once `answer`
- * is called.
+ * is called. A question asked over one still open answers that one "no":
+ * left unanswered, whoever asked it would wait for good (the editor's
+ * thread counts an apply as open until its question is answered).
  */
 export const useMoveConfirmation = () => {
   const [pending, setPending] = useState<{
     readonly request: EditorConfirmRequest;
     readonly resolve: (ok: boolean) => void;
   } | null>(null);
+  const open = useRef<((ok: boolean) => void) | null>(null);
   const request = useCallback(
     (question: EditorConfirmRequest) =>
-      new Promise<boolean>((resolve) => setPending({ request: question, resolve })),
+      new Promise<boolean>((resolve) => {
+        open.current?.(false);
+        open.current = resolve;
+        setPending({ request: question, resolve });
+      }),
     [],
   );
   const answer = (ok: boolean) => {
+    open.current = null;
     pending?.resolve(ok);
     setPending(null);
   };
@@ -557,19 +570,18 @@ export const useEventEditorModel = ({
   const lookup = useLocationGeo(lookupLocation);
   const mapGeo = mapGeoFor(geo, location, lookupLocation, lookup.geo);
   const mapLoading = picking || (lookupLocation !== '' && lookup.loading);
-  // The guest list as the editor shows it; `attendeesDirty` keeps an
-  // untouched list out of the update (undefined = unchanged upstream).
+  // The guest list as the editor shows it. An update sends it only when
+  // it is not the list the form opened with (`eventEditorChanges`).
   const [attendees, setAttendees] = useState<ReadonlyArray<AttendeeInput>>(() =>
     (existing?.attendees ?? [])
       // Rooms are not guests: hidden here, carried over by mergeAttendees.
       .filter((attendee) => !attendee.isResource)
       .map((attendee) => ({ displayName: attendee.displayName, email: attendee.email })),
   );
-  const [attendeesDirty, setAttendeesDirty] = useState(false);
   // Reminders as the editor shows them. A Google event without the field
   // (synced before reminders were modelled) defers to its calendar; an
-  // Apple one never can. `remindersDirty` keeps an untouched value out of
-  // the update, like the guest list.
+  // Apple one never can. Like the guest list, they go out only when they
+  // are not what the form opened with.
   const [reminders, setReminders] = useState<EventReminders>(
     () =>
       existing?.reminders ??
@@ -578,7 +590,6 @@ export const useEventEditorModel = ({
         useDefault: calendarOf(originalCalendarKey ?? calendarKey)?.provider !== 'apple',
       }),
   );
-  const [remindersDirty, setRemindersDirty] = useState(false);
   const [scope, setScopeState] = useState<RecurringScope>(seed.initialScope ?? 'instance');
   const capabilities = editorCapabilities({
     hasOwnAttendee: ownAttendee !== undefined,
@@ -613,10 +624,7 @@ export const useEventEditorModel = ({
           useDefault: false,
         })
       : reminders;
-  const updateReminders = (next: EventReminders) => {
-    setReminders(canonicalReminders(next));
-    setRemindersDirty(true);
-  };
+  const updateReminders = (next: EventReminders) => setReminders(canonicalReminders(next));
   const setUseDefaultReminders = (useDefault: boolean) =>
     updateReminders(new EventReminders({ ...reminders, useDefault }));
   /** Adds a popup reminder; false (and no change) when it is already there or at Google's maximum. */
@@ -665,30 +673,33 @@ export const useEventEditorModel = ({
     setRsvp(storedRsvp);
   }
   const [description, setDescription] = useState(openingText.description);
-  // The text and coordinates as the form opened: an update sends only what
-  // differs from them (`eventEditorChanges`) — captured once, never re-read
-  // from the record, so an edit made elsewhere meanwhile survives a Save
-  // that did not touch it.
-  const [openedText] = useState<EventEditorText>(() => ({
+  // The text, coordinates, guests and notifications as the form opened: an
+  // update sends only what differs from them (`eventEditorChanges`) —
+  // captured once, never re-read from the record, so an edit made
+  // elsewhere meanwhile survives a Save that did not touch it.
+  const [opened] = useState<EventEditorValues>(() => ({
+    attendees,
     description: description.trim(),
     geo,
     location: location.trim(),
+    reminders,
     title: title.trim(),
   }));
+  // The notifications are not the ones the form opened with: a new event
+  // sends them instead of leaving them to its calendar's default.
+  const remindersTouched = remindersKey(reminders) !== remindersKey(opened.reminders);
   const repeatSeed = repeatSeedOf(existing, master, prefill, startTime, timeZone);
   const { toSpec: repeatSpec, ...repeatState } = useRepeatState(
     repeatSeed.seed,
     date,
     repeatSeed.key,
   );
-  // An untouched rule is never re-sent: only an edit puts `recurrence` on the update.
-  const [repeatDirty, setRepeatDirty] = useState(false);
-  const marking =
-    <A extends ReadonlyArray<unknown>>(set: (...args: A) => void) =>
-    (...args: A) => {
-      setRepeatDirty(true);
-      set(...args);
-    };
+  // A rule that is still the one the form was seeded with is never re-sent
+  // (resending a series' rule drops its exceptions): only another rule
+  // puts `recurrence` on the update. Measured against the fields as they
+  // were seeded (`repeatChanged`), never against `repeatSeed` read again:
+  // that one follows the start time being edited.
+  const ruleChanged = repeatState.repeatChanged;
   // The URL a task carried in: the form has no control for it, so it goes
   // out with the create draft as it came.
   const [carried, setCarried] = useState<{ readonly url?: string | undefined }>({});
@@ -779,7 +790,9 @@ export const useEventEditorModel = ({
     // The picked coordinates, while they still match the text (`geoMatches`).
     geo: geoMatches(geo, location.trim()) ? geo : undefined,
     locationAsSaid: keptAsSaid(asSaid, location) ? location : undefined,
-    reminders: remindersDirty ? reminders : undefined,
+    // A stored event's notifications are its own whether edited or not; a
+    // new one's are undefined until they leave the calendar's default.
+    reminders: existing !== undefined || remindersTouched ? reminders : undefined,
   });
 
   /**
@@ -802,8 +815,9 @@ export const useEventEditorModel = ({
   ) => {
     const restored = writableCalendarKey(calendars, next?.calendarKey, calendarKey);
     setCalendarKey(restored);
-    setAttendees(next?.attendees ?? []);
-    setAttendeesDirty((next?.attendees.length ?? 0) > 0);
+    // A stored event starts from what it holds, never from nothing: an
+    // empty list there would be read as its guests taken off.
+    setAttendees(next?.attendees ?? (existing ? opened.attendees : []));
     setDescription(next?.description ?? '');
     setGeo(next?.geo);
     setAsSaid(next?.locationAsSaid ?? '');
@@ -811,12 +825,13 @@ export const useEventEditorModel = ({
       updateReminders(next.reminders);
     } else {
       setReminders(
-        new EventReminders({
-          overrides: [],
-          useDefault: calendarOf(restored)?.provider !== 'apple',
-        }),
+        existing
+          ? opened.reminders
+          : new EventReminders({
+              overrides: [],
+              useDefault: calendarOf(restored)?.provider !== 'apple',
+            }),
       );
-      setRemindersDirty(false);
     }
   };
 
@@ -869,7 +884,6 @@ export const useEventEditorModel = ({
     setAssumedTime(next.assumedTime === true);
     setLocation(next.location ?? '');
     setGivenLocation(next.location ?? '');
-    setRepeatDirty(true);
     repeatState.resetRepeat(next.recurrence);
     setError(null);
   };
@@ -880,14 +894,12 @@ export const useEventEditorModel = ({
       return false;
     }
     setAttendees([...attendees, { displayName: input.displayName, email: input.email.trim() }]);
-    setAttendeesDirty(true);
     return true;
   };
 
   const removeAttendee = (email: string) => {
     const key = emailKey(email);
     setAttendees(attendees.filter((attendee) => emailKey(attendee.email) !== key));
-    setAttendeesDirty(true);
   };
 
   // The last word on the place: a pick's late answer counts only while
@@ -957,10 +969,10 @@ export const useEventEditorModel = ({
     spec: TaskRecurrence | undefined,
   ): string | undefined =>
     validateEventDraft(fields, timeZone) ??
-    // The rule is checked when it is being written: a new event's, or an
-    // edited one. An untouched series rule is not re-sent, and its UNTIL
+    // The rule is checked when it is being written: a new event's, or a
+    // changed one. An unchanged series rule is not re-sent, and its UNTIL
     // must not pin an occurrence that is being moved past the series end.
-    (spec && (!existing || repeatDirty)
+    (spec && (!existing || ruleChanged)
       ? (byDayError(spec) ?? repeatUntilError(spec, date))
       : undefined) ??
     (existing && isRecurring && openedDate !== undefined
@@ -973,7 +985,7 @@ export const useEventEditorModel = ({
         })
       : undefined) ??
     repeatScopeError({
-      dirty: repeatDirty,
+      dirty: ruleChanged,
       isRecurring: existing !== undefined && isRecurring,
       scope,
     });
@@ -1002,7 +1014,7 @@ export const useEventEditorModel = ({
   /**
    * What an update of the existing event sends: only what differs from the
    * form as it opened (`eventEditorChanges`), and the rule only when the
-   * event belongs to a series and its repeat was edited.
+   * event belongs to a series and its rule is another one.
    */
   const updateChanges = (
     fields: EditorTimeFields,
@@ -1011,22 +1023,22 @@ export const useEventEditorModel = ({
     spec: TaskRecurrence | undefined,
   ) =>
     eventEditorChanges({
-      attendees: attendeesDirty ? attendees : undefined,
       current: {
+        attendees,
         description: description.trim(),
         geo,
         location: location.trim(),
+        reminders,
         title: title.trim(),
       },
-      initial: openedText,
-      // The rule only when edited: lines for a new one, null for "does not repeat".
+      initial: opened,
+      // The rule only when changed: lines for a new one, null for "does not repeat".
       recurrence:
-        masterId && repeatDirty
+        masterId && ruleChanged
           ? spec
             ? [buildRecurrenceRule(spec, isAllDay, timeZone)]
             : null
           : undefined,
-      reminders: remindersDirty ? reminders : undefined,
       // A title-only edit must not rebuild the span: untouched times
       // stay out of an update, and the stored ones are kept as they are.
       times: updateSendsTimes({
@@ -1070,7 +1082,7 @@ export const useEventEditorModel = ({
       })(),
       // Untouched on a Google calendar means Google's own default; an
       // Apple calendar always gets the explicit (resolved) list.
-      ...(remindersDirty || !capabilities.canUseDefaultReminders
+      ...(remindersTouched || !capabilities.canUseDefaultReminders
         ? { reminders: resolvedReminders }
         : {}),
       title: title.trim(),
@@ -1263,6 +1275,14 @@ export const useEventEditorModel = ({
         : undefined,
     /** Apple Maps link for the mapped place (https: routes to Maps on macOS and iOS). */
     mapsUrl: mapGeo ? openInMapsUrl(mapGeo) : undefined,
+    /**
+     * A stored series' occurrence as the form opened it: what its times
+     * may change to depends on it (`recurringTimesError`).
+     */
+    openedOccurrence:
+      existing && isRecurring && openedDate !== undefined
+        ? { date: openedDate, endDate: openedTimes.endDate, isAllDay: existing.isAllDay }
+        : undefined,
     ownAttendee,
     pickPlace,
     reminders: resolvedReminders,
@@ -1270,17 +1290,24 @@ export const useEventEditorModel = ({
     removeAttendee,
     removeReminder,
     ...repeatState,
-    /** The repeat form was edited since it opened: Save sends the rule. */
-    repeatDirty,
+    /** The rule is not the one the form was seeded with: Save sends it. */
+    repeatDirty: ruleChanged,
     /**
      * The repeat fields can show: a new event right away, an existing
      * series once its master's lines are here (never for a read-through
      * Apple series, whose rule the app does not hold).
      */
     repeatLoaded: existing === undefined || (isRecurring && master.loaded),
+    /**
+     * The form holds all it will of a stored event's rule: a series'
+     * master has answered, with its lines or without any to give.
+     */
     respond,
     restoreExtras,
     rsvp,
+    ruleAnswered: existing === undefined || !isRecurring || master.answered,
+    /** Names the rule a stored event's repeat fields were seeded with: another one once its master's lines arrive or change. */
+    ruleKey: repeatSeed.key,
     save: () => write.run(save),
     scope,
     setCalendarKey,
@@ -1299,14 +1326,6 @@ export const useEventEditorModel = ({
     },
     setLocation,
     setReminderMinutes,
-    setRepeat: marking(repeatState.setRepeat),
-    setRepeatCount: marking(repeatState.setRepeatCount),
-    setRepeatEnds: marking(repeatState.setRepeatEnds),
-    setRepeatInterval: marking(repeatState.setRepeatInterval),
-    setRepeatMonthly: marking(repeatState.setRepeatMonthly),
-    setRepeatOrdinal: marking(repeatState.setRepeatOrdinal),
-    setRepeatOrdinalWeekday: marking(repeatState.setRepeatOrdinalWeekday),
-    setRepeatUntil: marking(repeatState.setRepeatUntil),
     setScope,
     setStartTime: (time: string) => {
       setStartTime(time);
@@ -1326,7 +1345,6 @@ export const useEventEditorModel = ({
     /** The primary zone the date/time fields are wall clock in. */
     timeZone,
     title,
-    toggleWeekday: marking(repeatState.toggleWeekday),
     toPrefill,
     values,
     writableCalendars,

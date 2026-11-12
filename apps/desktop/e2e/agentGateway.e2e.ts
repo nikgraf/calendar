@@ -589,6 +589,7 @@ describe('agent gateway: other agents reach the app over the CLI and MCP', () =>
     // A half-written event (⌘N), then a request on top of it.
     await key(`{ key: 'n', metaKey: true }`);
     await cdp.waitFor(`document.body.textContent.includes('New event')`);
+    await cdp.showEditorView('form');
     await cdp.eval(`(() => {
       const input = document.querySelector('input[placeholder="Title"]');
       const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
@@ -635,6 +636,7 @@ describe('agent gateway: other agents reach the app over the CLI and MCP', () =>
       `void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', metaKey: true }))`,
     );
     await cdp.waitFor(`!!${TITLE}`);
+    await cdp.showEditorView('form');
     await cdp.eval(`${TITLE}.focus()`);
     await cdp.waitFor(`document.activeElement === ${TITLE}`);
     const asks = [12, 14, 16, 18].map((hour) =>

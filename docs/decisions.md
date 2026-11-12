@@ -1160,6 +1160,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
 
 ## AI
 
+- **The editor's two views: Assistant and Form** (2026-11-12, #308) —
+  the assistant is its own view, a conversation whose answers are the
+  item as a card with what changed marked, and the form a second view of
+  the same draft that needs no model. One history of steps under both (a
+  phrase, an edit by hand, a pick): an older step is looked at, "Use
+  this" keeps it. Saved items too; Save sends what differs by value. The
+  iPhone sheet is full height, mic first. Reverses the header thread
+  (#190, #191), the fleeting flash for a lasting mark, #188's half sheet
+  and drafts behind it. Rejected: read-back, tracked changes, editing on
+  the calendar. Open: the follow-ups in todo.md (Tier 3).
 - **Show only the latest query by default** (2026-11-05) — the create and
   search threads keep the turn with Undo visible on both apps. Earlier
   queries open on demand, leaving more room for the form or results.

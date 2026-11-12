@@ -220,6 +220,12 @@ export const useMapSnapshot = (
 export const useEventMaster = (
   event: EventRecord | undefined,
 ): {
+  /**
+   * The read has answered, with the master or without one (an Apple
+   * series never has one here): what the form shows of the rule is all
+   * there will be.
+   */
+  readonly answered: boolean;
   readonly loaded: boolean;
   readonly recurrence: ReadonlyArray<string> | undefined;
   /** The series' first start: a "following" edit from there is a series edit. */
@@ -229,15 +235,21 @@ export const useEventMaster = (
   const key = event && masterId ? `${event.accountId}|${event.calendarId}|${masterId}` : '';
   const result = useAtomValue(useBackendAtoms().eventById(key));
   if (key === '') {
-    return { loaded: true, recurrence: event?.recurrence, startUtc: event?.startUtc };
+    return {
+      answered: true,
+      loaded: true,
+      recurrence: event?.recurrence,
+      startUtc: event?.startUtc,
+    };
   }
   return AsyncResult.isSuccess(result)
     ? {
+        answered: true,
         loaded: result.value !== null,
         recurrence: result.value?.recurrence,
         startUtc: result.value?.startUtc,
       }
-    : { loaded: false, recurrence: undefined, startUtc: undefined };
+    : { answered: false, loaded: false, recurrence: undefined, startUtc: undefined };
 };
 
 /**

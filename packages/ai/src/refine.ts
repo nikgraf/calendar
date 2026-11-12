@@ -150,20 +150,32 @@ const timesOf = (
     : undefined;
 };
 
-/** The day the words name, else the model's where they mention or defer one, else the draft's. */
+/**
+ * The day the words name, else the model's where they mention or defer
+ * one, else the draft's — and whether the words state it (`said`), which
+ * the day alone cannot tell: "today" said of a draft that is on today
+ * leaves the day as it was. Only a day read from the words themselves
+ * counts: a date the model gives for words that merely look like one
+ * ("Pay 12/24 invoice") may be the draft's own, echoed.
+ */
 const refinedDay = (
   parse: QuickAddParse,
   utterance: string,
   referenceDate: string,
   draft: RefineDraft,
-): string => {
+): { readonly date: string; readonly said: boolean } => {
   const modelDate = realDate(parse.date?.trim());
-  return (
-    groundDate(modelDate, { phrase: utterance, referenceDate }) ??
-    (modelDate !== undefined && (mentionsDate(utterance) || defersDate(utterance))
-      ? modelDate
-      : draft.date)
-  );
+  const stated = groundDate(modelDate, { phrase: utterance, referenceDate });
+  if (stated !== undefined) {
+    return { date: stated, said: true };
+  }
+  return {
+    date:
+      modelDate !== undefined && (mentionsDate(utterance) || defersDate(utterance))
+        ? modelDate
+        : draft.date,
+    said: false,
+  };
 };
 
 /** What one turn's words say of the draft's times, read once. */
@@ -401,7 +413,7 @@ export const normalizeRefine = (
   const place = placeOf(meaningfulText(parse.location), title, utterance);
   const location = CLEAR_PLACE.test(text) ? undefined : (place ?? draft.location);
 
-  const day = refinedDay(parse, utterance, referenceDate, draft);
+  const { date: day, said: saidDay } = refinedDay(parse, utterance, referenceDate, draft);
   const times = timesOf(utterance, realTime(parse.startTime), draft);
   const length = durationMinutesOf(utterance);
   // Days the form gave a draft that ends on a later day.
@@ -448,6 +460,7 @@ export const normalizeRefine = (
       startTime,
       title,
     },
+    ...(saidDay ? { saidDay: true } : {}),
   };
 };
 

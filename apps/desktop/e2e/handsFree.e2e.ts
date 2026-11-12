@@ -43,8 +43,9 @@ const COMMAND_N = `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n',
 const TITLE = 'input[placeholder="Title"]';
 const START = 'input[aria-label="Start time"]';
 const titleValue = `document.querySelector(${JSON.stringify(TITLE)})?.value ?? ''`;
-const earlierQueries = `document.querySelector('[data-testid="draft-turns-more"]')?.textContent`;
-const newestSummary = `document.querySelector('[data-testid="draft-turn-summary"]')?.textContent ?? ''`;
+// What the Assistant's conversation holds: a line per phrase taken, and the newest card's hours.
+const said = `document.querySelectorAll('[data-testid="assistant-said"]').length`;
+const cardTime = `(document.querySelector('[data-testid="assistant-card-time"]')?.textContent ?? '')`;
 const startIs = (time: string) =>
   `document.querySelector(${JSON.stringify(START)})?.value === ${JSON.stringify(time)}`;
 const MIC = `document.querySelector('[data-testid="quick-add-mic"]')`;
@@ -74,26 +75,40 @@ describe('Hands-free dictation', () => {
     await cdp.waitFor(`(${titleValue}) === 'Dinner'`, 20_000);
     await cdp.waitFor(startIs('19:00'));
     expect(await cdp.eval<boolean>(dictating)).toBe(true);
-    await cdp.waitFor(`${earlierQueries} === '+1 earlier query'`, 20_000);
+    await cdp.waitFor(`${said} === 2`, 20_000);
     await cdp.waitFor(startIs('20:00'));
     expect(await cdp.eval<boolean>(dictating)).toBe(true);
 
-    // A hand edit — the title typed over: dictation hands over, and nothing more is sent.
+    // The form brought forward does not end it; a hand edit there — the
+    // title typed over — does: dictation hands over, and nothing more is sent.
+    await cdp.showEditorView('form');
+    expect(await cdp.eval<boolean>(dictating)).toBe(true);
     await cdp.eval(`document.querySelector(${JSON.stringify(TITLE)}).select()`);
     await cdp.type(TITLE, 'Late dinner');
     await cdp.waitFor(`!(${dictating})`);
     expect(await cdp.eval<string>(titleValue)).toBe('Late dinner');
     await new Promise((resolve) => setTimeout(resolve, ONE_LOOP_MS));
-    expect(await cdp.eval<string>(earlierQueries)).toBe('+1 earlier query');
+    expect(await cdp.eval<number>(said)).toBe(2);
     expect(await cdp.eval<boolean>(startIs('20:00'))).toBe(true);
 
-    // On again: the next phrase changes the time and keeps the title typed meanwhile.
+    // On again, in the Assistant: the next phrase changes the time and keeps the title typed meanwhile.
+    await cdp.showEditorView('assistant');
     await cdp.clickTestId('quick-add-mic');
-    await cdp.waitFor(`(${newestSummary}).includes('21:00')`, 20_000);
+    await cdp.waitFor(`${cardTime}.includes('21:00')`, 20_000);
     await cdp.waitFor(startIs('21:00'));
     expect(await cdp.eval<string>(titleValue)).toBe('Late dinner');
 
+    // An older step put on show ends it too: there is nothing to say a
+    // phrase to, and the microphone must not stay open behind a control
+    // that is off.
+    await cdp.waitFor(dictating);
+    await cdp.clickTestId('assistant-undo');
+    await cdp.waitFor(`!(${dictating})`);
+    await cdp.clickTestId('step-forward');
+    await cdp.waitFor(`!document.querySelector('[data-testid="step-preview"]')`);
+
     // The microphone ends it.
+    await cdp.clickTestId('quick-add-mic');
     await cdp.waitFor(dictating);
     await cdp.clickTestId('quick-add-mic');
     await cdp.waitFor(`!(${dictating})`);

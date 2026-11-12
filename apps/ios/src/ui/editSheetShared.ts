@@ -54,6 +54,39 @@ const makeSheetStyles = (colors: ThemeColors) =>
       color: colors['text-secondary'],
       fontSize: 17,
     },
+    /**
+     * The editor's Cancel and Save: capsules a thumb finds, 44 pt high,
+     * not words in a bar. Cancel is a surface with a hairline, so it reads
+     * on the grouped ground and on a plain one alike.
+     */
+    capsule: {
+      alignItems: 'center',
+      backgroundColor: colors.surface,
+      borderColor: colors.border,
+      borderRadius: 22,
+      borderWidth: StyleSheet.hairlineWidth,
+      justifyContent: 'center',
+      minHeight: 44,
+      minWidth: 86,
+      paddingHorizontal: 16,
+    },
+    capsuleLabel: {
+      color: colors.text,
+      fontSize: 16,
+      fontWeight: '500',
+    },
+    capsulePrimary: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    capsulePrimaryLabel: {
+      color: colors['on-primary'],
+      fontWeight: '600',
+    },
+    /** The header's sides are as wide as each other, so the title sits centred. */
+    capsuleSide: {
+      minWidth: 86,
+    },
     container: {
       backgroundColor: colors.canvas,
       flex: 1,
@@ -67,6 +100,20 @@ const makeSheetStyles = (colors: ThemeColors) =>
     content: {
       paddingBottom: 48,
       paddingTop: 4,
+    },
+    /** The editor's header row: Cancel · title · Save, the capsules a little apart from the title. */
+    editorHeader: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: 8,
+      justifyContent: 'space-between',
+      paddingBottom: 8,
+      paddingHorizontal: 16,
+      paddingTop: 12,
+    },
+    /** What floats over the form's bottom edge (the step pill, the Assistant pill) needs room under the last row. */
+    floatingRoom: {
+      paddingBottom: 112,
     },
     /** A failure above the form, in the cards' text inset. */
     formError: {
@@ -122,6 +169,13 @@ const makeSheetStyles = (colors: ThemeColors) =>
       flex: 1,
       flexDirection: 'row',
     },
+    /** Behind the form's floating pills, across its bottom edge: a fade into the ground. */
+    pillFade: {
+      bottom: 0,
+      left: 0,
+      position: 'absolute',
+      right: 0,
+    },
     /** A date picker and its time picker, side by side at a row's end. */
     pickerPair: {
       alignItems: 'center',
@@ -135,7 +189,10 @@ const makeSheetStyles = (colors: ThemeColors) =>
       ...actionText(colors),
       fontSize: 17,
     },
-    // The form-sheet editor's header: on the form's ground, as a Settings page's bar is.
+    /** The editor's route, and each of its two views: what stays put, then what takes the rest. */
+    route: {
+      flex: 1,
+    },
     sheetHeader: {
       backgroundColor: groupedGround(colors),
     },

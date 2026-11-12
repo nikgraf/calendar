@@ -5,13 +5,13 @@ import { type ThemeColors, useStyles, useTheme } from '../theme.ts';
 
 /** What the banner says to do, per lesson that runs inside an existing surface. */
 const HINTS: Partial<Record<LessonId, string>> = {
-  create: 'Type or say it, then Apply — the draft lands on the calendar, dashed until you save.',
+  create: 'Send it, or say your own — the answer is the event as a card. Save keeps it.',
   search: 'The sentence became the chips: remove one, or say more — “only tasks”, “in Vienna”.',
 };
 
 /**
  * The lesson's frame when the lesson is an existing surface: a line
- * above the editor's quick-add field or the search chips saying which
+ * above the editor's conversation or the search chips saying which
  * lesson this is and what to try, with Skip until it was tried. The
  * surface itself is the real thing; nothing else changes.
  */

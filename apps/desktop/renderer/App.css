@@ -33,6 +33,17 @@ textarea,
 }
 
 /*
+ * A form field the editor's step on show changed (ui/useFlash.ts, a
+ * lasting mark): tinted for as long as the attribute is there. A rule,
+ * not an animation, so the tint is the current appearance's; `!important`
+ * because the field's own fill is a utility class of the same weight.
+ */
+[data-marked] {
+  background-color: var(--highlight) !important;
+  transition: background-color 160ms ease-out;
+}
+
+/*
  * The task checkbox (calendar/TaskCheck.tsx). Its colors are custom
  * properties so a Reminders list color or the overdue red can replace the
  * neutral ring; `data-done` fills it and draws the tick. A press scales it

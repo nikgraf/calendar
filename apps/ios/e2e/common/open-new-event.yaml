@@ -1,34 +1,26 @@
 appId: com.solunivo.app.dev
-name: Open the editor on a new event from the "+" button (shared)
+name: Open the editor's form on a new event from the "+" button (shared)
 ---
-# The "+" opens the editor on a new event: the quick-add field on top (no
-# model involved until it is used), the kind control, the form. One tap
-# normally does it. Run 34852090635 tapped the button at the right
-# coordinates and no sheet followed (the screen stayed on the day view,
-# nothing crashed); re-tap while the sheet is missing, the way a person
-# would.
-#
-# The sheet's title proves the tap, and a failed wait retries it. A
-# `while: notVisible: 'New Event'` loop did this before, but Maestro waits
-# up to 7 s (from the last tap) for a condition to come true, so its exit
-# check, with the sheet up, cost that on every call. The guard here is
-# true while no sheet is up, so it answers at once (~0.5 s), and it keeps
-# a sheet that came up late from taking a second tap.
-- retry:
-    maxRetries: 2
+- runFlow: open-new-item.yaml
+# A new event opens on the Assistant where a model answers, and on the
+# form where none does (the editor falls back once the availability check
+# has answered). Each view shows the way to the other only then, so
+# either one proves the check is back; the flows work the form, so take
+# the way to it when it is the Assistant that is up. Where the form is up
+# already this guard waits out its 7 s — a local run without the fixture
+# model only; CI's bundle answers with it.
+- extendedWaitUntil:
+    visible:
+      id: 'editor-view-(form|assistant)'
+    timeout: 30000
+- runFlow:
+    when:
+      visible:
+        id: 'editor-view-form'
     commands:
-      - runFlow:
-          when:
-            notVisible: 'New Event'
-          commands:
-            - tapOn:
-                id: 'add'
+      - tapOn:
+          id: 'editor-view-form'
       - extendedWaitUntil:
-          visible: 'New Event'
+          visible:
+            id: 'editor-view-assistant'
           timeout: 5000
-# The sheet slides in; on a slow runner a tap taken mid-animation misses.
-- waitForAnimationToEnd:
-    timeout: 5000
-# A new item opens at half height over the calendar; the flows work the
-# form, so raise it.
-- runFlow: expand-editor.yaml

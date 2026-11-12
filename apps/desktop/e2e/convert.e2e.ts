@@ -187,6 +187,8 @@ describe('Converting between events and tasks', () => {
     const button = await cdp.locate('[aria-label="New event"]');
     await cdp.click(button.x, button.y);
     await cdp.waitFor(heading('New event'));
+    // "+ New" opens on the Assistant where a model answers; the fields are the form's.
+    await cdp.showEditorView('form');
     await cdp.eval(setField(TITLE, 'Water plants', 'input'));
     // A chosen time (the untouched 09:00 default is not one) follows the draft.
     await cdp.eval(setField('input[type="time"]', '10:30', 'input'));

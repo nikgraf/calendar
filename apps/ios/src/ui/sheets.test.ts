@@ -36,7 +36,7 @@ const occurrence = (week: number, overrides: Partial<EventRecord> = {}) =>
     ...overrides,
   });
 
-/** The editor on a new item ("+", a slot drawn on the grid, a capture's thread): half height. */
+/** The editor on a new item ("+", a slot drawn on the grid, a capture's thread). */
 const newItem = (opening: number): Sheet => ({ kind: 'edit', opening, seed: { initialDate: day } });
 /** The editor on an existing event: the detail's Edit, or its Convert. */
 const editing = (opening: number, edited: EventRecord): Sheet => ({
@@ -61,12 +61,12 @@ describe('closeEditor', () => {
     expect(closeEditor(2)(editing(2, event()))).toBe(NONE);
   });
 
-  it('leaves the detail of an event tapped behind a half-height editor while it saved', () => {
+  it('leaves the detail of an event opened while it saved', () => {
     const tapped = detail(event({ id: 'lunch', title: 'Lunch' }));
     expect(closeEditor(1)(tapped)).toBe(tapped);
   });
 
-  it('leaves the editor a slot drawn behind it opened while it saved', () => {
+  it('leaves an editor opened meanwhile while it saved', () => {
     const drawn = newItem(2);
     expect(closeEditor(1)(drawn)).toBe(drawn);
   });

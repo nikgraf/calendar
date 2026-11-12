@@ -93,6 +93,13 @@ export type QuickAddResult =
       readonly prefill: QuickAddPrefill;
       /** What the words do to the draft's notifications (`extras.ts`). */
       readonly reminders?: ReminderChange | undefined;
+      /**
+       * A refinement only: the words state the day ("today", "tomorrow",
+       * a weekday), even where it is the day the draft held. A to-do kept
+       * without a due day has a placeholder there, and "today" said of it
+       * must date it.
+       */
+      readonly saidDay?: true | undefined;
       /** Names or addresses the words take off the guest list (a refinement only). */
       readonly uninvite?: ReadonlyArray<string> | undefined;
     }

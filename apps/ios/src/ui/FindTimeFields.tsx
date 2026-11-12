@@ -16,7 +16,7 @@ import { backendClient } from '../backend.ts';
 import { languageModel } from '../model.ts';
 import { Chip } from './Chip.tsx';
 import { ActionRow, RowSlot } from './GroupedList.tsx';
-import { onAppActive } from './QuickAddBar.tsx';
+import { onAppActive } from '../appActive.ts';
 import { BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme } from './theme.ts';
 
 /**

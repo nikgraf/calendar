@@ -197,8 +197,7 @@ describe('A served model', () => {
     );
     // Ready: the field asks for a phrase, not for Apple Intelligence.
     await cdp.waitFor(`${placeholder}.startsWith('Lunch')`);
-    await cdp.type(INPUT, 'Dinner | +2 | 19:00-20:00');
-    await cdp.clickTestId('quick-add-apply');
+    await cdp.say('Dinner | +2 | 19:00-20:00');
     await cdp.waitFor(blockAt('19:00'));
     const chat = ollama.chats.at(-1)!;
     expect(chat.model).toBe(MODEL);
@@ -335,8 +334,7 @@ describe('A served model', () => {
     const { cdp } = app;
     await cdp.eval(COMMAND_N);
     await cdp.waitFor(`${placeholder}.startsWith('Lunch')`);
-    await cdp.type(INPUT, 'Review | +1 | 10:00-11:00');
-    await cdp.clickTestId('quick-add-apply');
+    await cdp.say('Review | +1 | 10:00-11:00');
     await cdp.waitFor(blockAt('10:00'));
     const completion = ollama.completions.at(-1)!;
     expect(completion.response_format.json_schema.strict).toBe(true);

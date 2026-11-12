@@ -16,7 +16,7 @@ import {
   checkResultLine,
 } from '../../modelAvailabilityCopy.ts';
 import { iosRemindersClient } from '../../remindersClient.ts';
-import { onAppActive } from '../QuickAddBar.tsx';
+import { onAppActive } from '../../appActive.ts';
 import { ActionRow, Footer, Row, Section, SettingsPage } from '../GroupedList.tsx';
 import { IOS_SETTINGS_PATH, useSettingsConnections } from './SettingsContext.tsx';
 
