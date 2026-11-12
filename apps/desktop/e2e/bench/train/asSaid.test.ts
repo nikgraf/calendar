@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { worked } from '../said.ts';
+import { worked } from '@calendar/ai';
 import { asSaid, buildSaidPrompt, type Said, saidOf } from './asSaid.ts';
 
 const other: Said = { day: { how: 'other' }, except: [] };

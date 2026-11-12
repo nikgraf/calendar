@@ -1,5 +1,5 @@
 import { Temporal } from '@calendar/core';
-import { worked } from '../said.ts';
+import { worked } from '@calendar/ai';
 import { TUNED_DRAFT_MARKER } from '../tuned.ts';
 
 /**

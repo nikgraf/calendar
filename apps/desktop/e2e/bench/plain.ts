@@ -1,16 +1,15 @@
 import {
-  addHour,
+  answerResult,
+  type DraftState,
+  draftState,
   type LanguageModel,
-  type NotesChange,
   type QuickAddPrefill,
   type QuickAddResult,
-  recurrenceFromParse,
   type RefineResult,
-  type ReminderChange,
-  startOnRule,
+  type TurnDraft,
 } from '@calendar/ai';
+import { upcomingDays } from '@calendar/ai/shared';
 import { convertQuickAddItem } from '@calendar/app-state/quickAddItem';
-import { type ByDay, byDayError, Temporal, type Weekday } from '@calendar/core';
 import type { BenchDraft } from './check.ts';
 
 /**
@@ -68,15 +67,8 @@ export const PLAIN_JSON_SCHEMA = {
   type: 'object',
 } as const;
 
-const HINT_DAYS = 14;
-
-/** The coming days by name: context for "next Tuesday", the same on every model. */
-export const comingDays = (referenceDate: string): string =>
-  Array.from({ length: HINT_DAYS }, (_, index) => {
-    const date = Temporal.PlainDate.from(referenceDate).add({ days: index });
-    const weekday = date.toLocaleString('en-US', { weekday: 'short' });
-    return `${weekday} ${date.toString()}${index === 0 ? ' (today)' : ''}`;
-  }).join(', ');
+/** The coming days by name: context for "next Tuesday", the same on every model (the app's own list). */
+export const comingDays = upcomingDays;
 
 /** The product's conventions, as a person would be told them. */
 const conventions = (referenceDate: string, timeZone: string): ReadonlyArray<string> => [
@@ -116,64 +108,32 @@ export const buildPlainPrompt = ({
     `${PLAIN_PHRASE_MARKER}${phrase}`,
   ].join('\n');
 
-/** The draft as the model reads it and writes it back. */
-export interface PlainState {
-  readonly date: string;
-  readonly endTime?: string;
-  readonly guests?: ReadonlyArray<string>;
-  readonly kind: 'event' | 'task';
-  readonly location?: string;
-  readonly notes?: string;
-  readonly reminders?: ReadonlyArray<number>;
-  readonly repeat?: {
-    readonly byDay?: ReadonlyArray<string>;
-    readonly count?: number;
-    readonly freq: string;
-    readonly interval?: number;
-    readonly untilDate?: string;
-  };
-  readonly startTime?: string;
-  readonly timeAssumed?: boolean;
-  readonly title: string;
-}
+/** The draft as the model reads it and writes it back (`DraftState` in `@calendar/ai`). */
+export type PlainState = DraftState;
 
 const eventOf = (draft: BenchDraft): QuickAddPrefill | undefined => {
   const asEvent = convertQuickAddItem(draft.item, 'event');
   return asEvent.kind === 'event' ? asEvent.prefill : undefined;
 };
 
+/** The bench's draft as a turn sees it: an event, a to-do seen as one. */
+export const turnDraftOf = (draft: BenchDraft): TurnDraft | undefined => {
+  const prefill = eventOf(draft);
+  return prefill === undefined
+    ? undefined
+    : {
+        guests: draft.guests.map((guest) => guest.email),
+        kind: draft.item.kind,
+        notes: draft.notes,
+        prefill,
+        reminders: draft.reminders,
+      };
+};
+
 /** The bench's draft in the model's terms. */
 export const plainState = (draft: BenchDraft): PlainState | undefined => {
-  const prefill = eventOf(draft);
-  if (prefill === undefined) {
-    return undefined;
-  }
-  const repeat = prefill.recurrence;
-  const byDay = (repeat?.byDay ?? []).map((day) => `${String(day.ordinal ?? '')}${day.weekday}`);
-  const guests = draft.guests.map((guest) => guest.email);
-  return {
-    date: prefill.date,
-    ...(prefill.isAllDay ? {} : { endTime: prefill.endTime }),
-    ...(guests.length > 0 ? { guests } : {}),
-    kind: draft.item.kind,
-    ...(prefill.location ? { location: prefill.location } : {}),
-    ...(draft.notes ? { notes: draft.notes } : {}),
-    ...(draft.reminders && draft.reminders.length > 0 ? { reminders: draft.reminders } : {}),
-    ...(repeat === undefined
-      ? {}
-      : {
-          repeat: {
-            ...(byDay.length > 0 ? { byDay } : {}),
-            ...(repeat.count === undefined ? {} : { count: repeat.count }),
-            freq: repeat.freq,
-            ...(repeat.interval === undefined ? {} : { interval: repeat.interval }),
-            ...(repeat.untilDate === undefined ? {} : { untilDate: repeat.untilDate }),
-          },
-        }),
-    ...(prefill.isAllDay ? {} : { startTime: prefill.startTime }),
-    ...(prefill.assumedTime ? { timeAssumed: true } : {}),
-    title: prefill.title,
-  };
+  const turn = turnDraftOf(draft);
+  return turn === undefined ? undefined : draftState(turn);
 };
 
 export const PLAIN_DRAFT_MARKER = 'Draft: ';
@@ -211,127 +171,9 @@ export const buildPlainRefinePrompt = ({
     `${PLAIN_CHANGE_MARKER}${utterance}`,
   ].join('\n');
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
-const textOf = (value: unknown): string | undefined =>
-  typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined;
-
-const dateOf = (value: unknown): string | undefined => {
-  const text = textOf(value);
-  if (text === undefined || !/^\d{4}-\d{2}-\d{2}$/u.test(text)) {
-    return undefined;
-  }
-  try {
-    return Temporal.PlainDate.from(text, { overflow: 'reject' }).toString();
-  } catch {
-    return undefined;
-  }
-};
-
-const timeOf = (value: unknown): string | undefined => {
-  const match = /^(\d{1,2}):(\d{2})$/u.exec(textOf(value) ?? '');
-  if (match === null) {
-    return undefined;
-  }
-  const [hour, minute] = [Number(match[1]), Number(match[2])];
-  return hour < 24 && minute < 60
-    ? `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
-    : undefined;
-};
-
-const namesOf = (value: unknown): ReadonlyArray<string> =>
-  Array.isArray(value) ? value.flatMap((name) => textOf(name) ?? []) : [];
-
-const FREQS = ['daily', 'weekly', 'monthly', 'yearly'] as const;
-const BY_DAY = /^(-?\d)?(MO|TU|WE|TH|FR|SA|SU)$/u;
-
-const byDayOf = (value: unknown): ReadonlyArray<ByDay> => {
-  const match = BY_DAY.exec((textOf(value) ?? '').toUpperCase());
-  if (match === null) {
-    return [];
-  }
-  const weekday = match[2] as Weekday;
-  return [match[1] === undefined ? { weekday } : { ordinal: Number(match[1]), weekday }];
-};
-
 /**
- * The repeat as the editor holds it, and the day it starts on. The rule
- * is validated as the app validates a model's (`recurrenceFromParse`
- * without a phrase): a real frequency, "repeats once" being none, an end
- * on or after the day. Days the editor would refuse on Save are not kept
- * ("monthly on Wednesday" without saying which).
- */
-const repeatOf = (
-  raw: unknown,
-  date: string,
-): { readonly date: string; readonly recurrence: QuickAddPrefill['recurrence'] } => {
-  if (!isRecord(raw)) {
-    return { date, recurrence: undefined };
-  }
-  const rule = recurrenceFromParse(
-    {
-      count: typeof raw['count'] === 'number' ? raw['count'] : undefined,
-      freq: FREQS.find((known) => known === raw['freq']),
-      interval: typeof raw['interval'] === 'number' ? raw['interval'] : undefined,
-      untilDate: dateOf(raw['untilDate']),
-    },
-    date,
-  );
-  if (rule === undefined) {
-    return { date, recurrence: undefined };
-  }
-  const said = Array.isArray(raw['byDay']) ? raw['byDay'].flatMap(byDayOf) : [];
-  const byDay = byDayError({ byDay: said, freq: rule.freq }) === undefined ? said : [];
-  const placed = startOnRule(date, { ...rule, ...(byDay.length > 0 ? { byDay } : {}) });
-  const kept = placed.recurrence;
-  // One weekday of a weekly rule is the date's own: the editor lists none.
-  if (kept?.freq === 'weekly' && kept.byDay?.length === 1) {
-    const { byDay: _single, ...rest } = kept;
-    return { date: placed.date, recurrence: rest };
-  }
-  return placed;
-};
-
-const sameNumbers = (a: ReadonlyArray<number>, b: ReadonlyArray<number>): boolean =>
-  [...a].sort((x, y) => x - y).join(',') === [...b].sort((x, y) => x - y).join(',');
-
-/** What the answer's notes do to the draft's: nothing when they read the same. */
-const notesChange = (answer: unknown, before: string | undefined): NotesChange | undefined => {
-  const now = textOf(answer);
-  if (now === (before?.trim() || undefined)) {
-    return undefined;
-  }
-  if (now === undefined) {
-    return { kind: 'clear' };
-  }
-  return before === undefined ? { kind: 'add', text: now } : { kind: 'replace', text: now };
-};
-
-/** What the answer's notifications do to the draft's: the answer is the list after the turn. */
-const remindersChange = (
-  answer: unknown,
-  before: ReadonlyArray<number> | undefined,
-): ReminderChange | undefined => {
-  const now = Array.isArray(answer)
-    ? answer.filter(
-        (minutes): minutes is number =>
-          typeof minutes === 'number' && Number.isInteger(minutes) && minutes >= 0,
-      )
-    : [];
-  if (sameNumbers(now, before ?? [])) {
-    return undefined;
-  }
-  return { add: now, clear: before !== undefined && before.length > 0, remove: [] };
-};
-
-const REFUSED = "That couldn't be read — try rephrasing.";
-
-/**
- * The model's answer as a turn's result: shapes checked, a form's
- * defaults filled, a repeat held to the editor's rules, and the notes,
- * notifications and guests as changes to the draft before. Nothing here
- * reads the words.
+ * The model's answer as a turn's result: the app's own code for it
+ * (`answerResult` in `@calendar/ai`), which never reads the words.
  */
 export const plainResult = (
   answer: unknown,
@@ -339,51 +181,13 @@ export const plainResult = (
     draft,
     referenceDate,
   }: { readonly draft: BenchDraft | undefined; readonly referenceDate: string },
-): QuickAddResult | RefineResult => {
-  if (!isRecord(answer)) {
-    return { kind: 'rejected', reason: REFUSED };
-  }
-  const title = textOf(answer['title']);
-  if (answer['nothingToSchedule'] === true || title === undefined) {
-    return { kind: 'rejected', reason: 'Nothing to schedule was understood.' };
-  }
-  const before = draft === undefined ? undefined : eventOf(draft);
-  const said = dateOf(answer['date']) ?? before?.date ?? referenceDate;
-  const start = timeOf(answer['startTime']);
-  const notes = notesChange(answer['notes'], draft?.notes);
-  if (draft === undefined && answer['kind'] === 'task') {
-    return {
-      kind: 'task',
-      ...(notes === undefined ? {} : { notes }),
-      prefill: { date: said, ...(start === undefined ? {} : { time: start }), title },
-    };
-  }
-  const end = timeOf(answer['endTime']);
-  const startTime = start ?? '00:00';
-  const { date, recurrence } = repeatOf(answer['repeat'], said);
-  const location = textOf(answer['location']);
-  const reminders = remindersChange(answer['reminders'], draft?.reminders);
-  const invite = namesOf(answer['invite']);
-  const uninvite = namesOf(answer['uninvite']);
-  return {
-    ...(invite.length > 0 ? { invite } : {}),
-    kind: 'parsed',
-    ...(notes === undefined ? {} : { notes }),
-    prefill: {
-      ...(start !== undefined && answer['timeAssumed'] === true ? { assumedTime: true } : {}),
-      date,
-      ...(before?.endDate === undefined ? {} : { endDate: before.endDate }),
-      endTime: end !== undefined && end > startTime ? end : addHour(startTime),
-      isAllDay: start === undefined,
-      ...(location === undefined ? {} : { location }),
-      ...(recurrence === undefined ? {} : { recurrence }),
-      startTime,
-      title,
-    },
-    ...(reminders === undefined ? {} : { reminders }),
-    ...(uninvite.length > 0 ? { uninvite } : {}),
-  };
-};
+): QuickAddResult | RefineResult =>
+  answerResult(answer, {
+    draft: draft === undefined ? undefined : turnDraftOf(draft),
+    referenceDate,
+  });
+
+const REFUSED = "That couldn't be read — try rephrasing.";
 
 /** One turn through the plain arm: the first phrase, or a change to the draft. */
 export const plainTurn = async (

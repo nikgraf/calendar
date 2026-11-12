@@ -1,11 +1,28 @@
-import type { LanguageModel, QuickAddResult, RefineResult } from '@calendar/ai';
+import {
+  type LanguageModel,
+  type QuickAddResult,
+  type RefineResult,
+  tunedAnswer,
+  tunedPrompt as turnPrompt,
+  tunedTurn as turnOf,
+} from '@calendar/ai';
 import type { BenchDraft } from './check.ts';
-import { comingDays, plainResult, type PlainState, plainState } from './plain.ts';
-import { worked } from './said.ts';
+import { turnDraftOf } from './plain.ts';
+
+export {
+  buildTunedPrompt,
+  buildTunedRefinePrompt,
+  shortDraft,
+  TUNED_CHANGE_MARKER,
+  TUNED_DRAFT_MARKER,
+  TUNED_PHRASE_MARKER,
+  tunedAnswer,
+} from '@calendar/ai';
 
 /**
- * The tuned arm of the bench: a model trained for this one job, asked
- * without the conventions. The prompt is the days, the draft where there
+ * The tuned arm of the bench: the app's tuned path (`tuned.ts` in
+ * `@calendar/ai`) over the bench's drafts. A model trained for this one
+ * job, asked without the conventions. The prompt is the days, the draft where there
  * is one, and the words; the answer is the draft as the plain arm asks
  * for it, written short (a part that is not there is left out, in one
  * fixed order), with a day the model cannot look up and a repeat's
@@ -17,116 +34,6 @@ import { worked } from './said.ts';
  * so what a model is trained on and what it is asked cannot drift apart.
  */
 
-export const TUNED_PHRASE_MARKER = 'Phrase: ';
-export const TUNED_DRAFT_MARKER = 'Draft: ';
-export const TUNED_CHANGE_MARKER = 'Now: ';
-
-/** The order a draft is written in, the model's answer and the draft it is shown alike. */
-const ORDER = [
-  'kind',
-  'title',
-  'date',
-  'startTime',
-  'endTime',
-  'timeAssumed',
-  'location',
-  'repeat',
-  'guests',
-  'invite',
-  'uninvite',
-  'notes',
-  'reminders',
-] as const;
-
-const REPEAT_ORDER = ['freq', 'interval', 'byDay', 'except', 'count', 'untilDate'] as const;
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
-/** Nothing to write: a part that is absent, empty, or a flag that is off. */
-const isBlank = (value: unknown): boolean =>
-  value === undefined ||
-  value === null ||
-  value === false ||
-  (typeof value === 'string' && value.trim() === '') ||
-  (Array.isArray(value) && value.length === 0);
-
-const inOrder = (
-  source: Readonly<Record<string, unknown>>,
-  order: ReadonlyArray<string>,
-): Record<string, unknown> =>
-  Object.fromEntries(
-    order.flatMap((key) => {
-      const value = source[key];
-      return isBlank(value) ? [] : [[key, value]];
-    }),
-  );
-
-/**
- * A draft written short: the parts it has, in the one order, a repeat's
- * parts likewise. Used for the answer a model is trained to give and for
- * the draft a later turn shows it.
- */
-export const shortDraft = (draft: Readonly<Record<string, unknown>>): Record<string, unknown> => {
-  const written = inOrder(draft, ORDER);
-  const { repeat } = written;
-  if (!isRecord(repeat)) {
-    const { repeat: _none, ...rest } = written;
-    return rest;
-  }
-  return { ...written, repeat: inOrder(repeat, REPEAT_ORDER) };
-};
-
-/**
- * A plain-arm answer as the tuned model is trained to write it: the
- * draft written short, or the one flag when there is nothing to put in a
- * calendar. Undefined for an answer that is no draft at all.
- */
-export const tunedAnswer = (answer: unknown): Record<string, unknown> | undefined => {
-  if (!isRecord(answer)) {
-    return undefined;
-  }
-  if (answer['nothingToSchedule'] === true) {
-    return { nothingToSchedule: true };
-  }
-  const written = shortDraft(answer);
-  return typeof written['title'] === 'string' ? written : undefined;
-};
-
-/** The first phrase: the days to look a weekday up in, and the words. */
-export const buildTunedPrompt = ({
-  phrase,
-  referenceDate,
-}: {
-  readonly phrase: string;
-  readonly referenceDate: string;
-}): string =>
-  [
-    'Calendar entry as JSON.',
-    `Days: ${comingDays(referenceDate)}`,
-    `${TUNED_PHRASE_MARKER}${phrase}`,
-  ].join('\n');
-
-/** A later turn: the days, the draft so far, what was said before, and what is said now. */
-export const buildTunedRefinePrompt = ({
-  earlier,
-  referenceDate,
-  state,
-  utterance,
-}: {
-  readonly earlier: ReadonlyArray<string>;
-  readonly referenceDate: string;
-  readonly state: PlainState;
-  readonly utterance: string;
-}): string =>
-  [
-    'Calendar entry as JSON, after the change.',
-    `Days: ${comingDays(referenceDate)}`,
-    `${TUNED_DRAFT_MARKER}${JSON.stringify(shortDraft({ ...state }))}`,
-    `Said before: ${JSON.stringify(earlier)}`,
-    `${TUNED_CHANGE_MARKER}${utterance}`,
-  ].join('\n');
-
 interface TunedTurn {
   readonly draft: BenchDraft | undefined;
   readonly earlier: ReadonlyArray<string>;
@@ -135,19 +42,12 @@ interface TunedTurn {
 }
 
 /** The prompt of a turn, or undefined where the draft is nothing a turn can change. */
-export const tunedPrompt = ({
-  draft,
-  earlier,
-  referenceDate,
-  text,
-}: TunedTurn): string | undefined => {
-  if (draft === undefined) {
-    return buildTunedPrompt({ phrase: text, referenceDate });
+export const tunedPrompt = (turn: TunedTurn): string | undefined => {
+  if (turn.draft === undefined) {
+    return turnPrompt({ ...turn, draft: undefined });
   }
-  const state = plainState(draft);
-  return state === undefined
-    ? undefined
-    : buildTunedRefinePrompt({ earlier, referenceDate, state, utterance: text });
+  const draft = turnDraftOf(turn.draft);
+  return draft === undefined ? undefined : turnPrompt({ ...turn, draft });
 };
 
 /** One line of training data: a turn's prompt and the answer to learn, as a chat. */
@@ -176,30 +76,14 @@ export const tunedExample = (turn: TunedTurn, teacherAnswer: unknown): TunedExam
       };
 };
 
-const REFUSED = "That couldn't be read — try rephrasing.";
-
 /** One turn through the tuned arm: the first phrase, or a change to the draft. */
 export const tunedTurn = async (
   model: LanguageModel,
   turn: TunedTurn,
 ): Promise<QuickAddResult | RefineResult> => {
-  if (!turn.text.trim()) {
-    return { kind: 'rejected', reason: 'Type what you want to schedule.' };
-  }
-  const prompt = tunedPrompt(turn);
-  if (prompt === undefined) {
+  const draft = turn.draft === undefined ? undefined : turnDraftOf(turn.draft);
+  if (turn.draft !== undefined && draft === undefined && turn.text.trim()) {
     return { kind: 'rejected', reason: 'not an event' };
   }
-  let answer: unknown;
-  try {
-    // No schema: one held over the answer would have every field written, and the model learnt the short form.
-    answer = await model.generateJson({ jsonSchema: undefined, prompt });
-  } catch {
-    return { kind: 'rejected', reason: REFUSED };
-  }
-  const draftDate = turn.draft === undefined ? undefined : plainState(turn.draft)?.date;
-  return plainResult(worked(answer, { draftDate, referenceDate: turn.referenceDate }), {
-    draft: turn.draft,
-    referenceDate: turn.referenceDate,
-  });
+  return turnOf(model, { ...turn, draft });
 };

@@ -1,5 +1,5 @@
 import { Temporal } from '@calendar/core';
-import { saidDate, WEEKDAY_CODES, type WeekdayCode } from '../said.ts';
+import { saidDate, WEEKDAY_CODES, type WeekdayCode } from '@calendar/ai';
 
 /**
  * How a practice phrase gave its day, asked of the teacher a second

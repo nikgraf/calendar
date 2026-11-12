@@ -1,6 +1,6 @@
 import { type LanguageModel, parseQuickAdd, type QuickAddResult } from '@calendar/ai';
 // The bench's tuned arm, run here as the Mac runs it: one prompt and one after-code for both.
-import { tunedTurn } from '../../desktop/e2e/bench/tuned.ts';
+import { tunedTurn } from '@calendar/ai';
 import type { SpikeCase } from './modelSpikeCases.ts';
 import type { OpenModelCall } from './openModel.ts';
 
