@@ -532,13 +532,10 @@ change there.
   `launchApp(seed, { model: 'fixture' })`, iOS
   `EXPO_PUBLIC_CALENDAR_MODEL=fixture` in the bundle (CI), which also
   accepts `solunivo-dev://capture-fixture?text=…` as a stand-in for a
-  share (flow 22: the events open the editor as one thread, `draft-*`
-  ids as on the desktop; the calendar behind the half-height sheet draws
-  them as `draft-block`, labelled "Draft: <title>, <times>", and
-  `draft-dot` in the month grid; a tap on a draft behind the sheet
-  focuses it, a tap on an event there opens its detail; flow 06 lowers
-  the sheet and follows the block through a change; an all-day draft is
-  a `draft-chip` in the lane, and a free slot a `slot-candidate`).
+  share (flow 22: the events open the editor's Assistant as one thread,
+  `draft-*`, `assistant-*` and `step-*` ids as on the desktop; the
+  full-height sheet covers the calendar, which draws no drafts on the
+  phone).
 - Apple Calendar never hits EventKit in tests: `makeFakeAppleCalendarClient`
   (`packages/apple-calendar/src/fake.ts`) answers like the bridge. It
   keeps series the way EventKit does (master + rules, detached and
@@ -753,23 +750,34 @@ move/resize/cancel, slot drag, recurring scopes, RSVP, visibility,
 calendar color, month view, task lane and editor, the sync footer, the
 privacy modal, the settings window, the inspector and inline editor, ⌘K);
 `capture` (paste-to-drafts on the fixture model); `handsFree` (one
-click of the microphone: two phrases land at their pauses, a typed title
-ends the dictation, the next phrase keeps that title); `draftThread` (a
-phrase's draft on the grid, a change, Undo, Save; four turns folding to
-one with "+3 earlier queries", the changed time flashing; a pasted mail's thread,
-the pager, Remove, Add all; drafts made an event in another calendar, a
-task and a reminder, each shown again as it was left with nothing asked,
-and Add all writing each where it was put); `slotProposals` (a finder phrase on the
-fixture model against seeded busy blocks, TZ pinned: the draft in the
-best slot, the chip row and candidate blocks, a chip and a candidate
-moving it, a change dropping the proposals and Undo restoring them, a
-finder phrase as a later turn); `searchFilters` (the fixture model: a
+click of the microphone: two phrases land at their pauses, the form
+brought forward does not end the dictation, a typed title does, the
+next phrase keeps that title); `assistantView` (the editor's two views:
+a phrase answered with the item as a card, a change marked with the old
+value struck through, a question answered as a step of its own, the
+same draft and marks in the form, the grid's outline where a step moved
+the draft from; stepping back and forward, the form locked and Save off
+on an older step, "Use this"; one phrase is one step, typing in one
+field one step; a saved event changed by phrase queues only what
+differs — read off the op's `payload` against its `beforePayload` — and
+nothing once back at "As saved"; what a saved event cannot hold refused
+in the conversation); `draftThread` (a phrase's draft on the grid, a
+change, the step before shown and kept, Save; four phrases as four
+steps, the changed time marked in the form, an edit by hand a step too;
+a pasted mail's thread, the pager, Remove, Add all; drafts made an event
+in another calendar, a task and a reminder, each shown again as it was
+left with nothing asked, and Add all writing each where it was put);
+`slotProposals` (a finder phrase on the fixture model against seeded
+busy blocks, TZ pinned: the draft in the best slot, the chip row and
+candidate blocks, a chip and a candidate moving it, a change dropping
+the proposals and the step before bringing them back, a finder phrase
+as a later step); `searchFilters` (the fixture model: a
 sentence to a date chip with its words left in the field, Undo; Enter
 routed by the words, a place and a person read, plain words opening the
 top result; Clear; kind and a calendar added by hand with no turn; the
 dates popover); `modelProvider` (a served model: a fake
 Ollama in the spec's own process with the fixture model behind it, the
-quick-add field over HTTP, Settings › AI Model's kind, Test and Save, the
+Assistant's field over HTTP, Settings › AI Model's kind, Test and Save, the
 wording when the server is down); `reminders` and
 `contacts` (seeded Apple/Google rows); `appleCalendar` (the in-memory
 EventKit, read-only viewer, moves both ways); `location` (the picker and
@@ -844,9 +852,24 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
 - **Open items through the harness, locate by testid.** A grid click
   opens the inspector, not the editor: `cdp.openInspector(selector)` and
   `cdp.openEditor(selector)` (… → `inspector-edit` → `editor-title` reads
-  "Edit event"); tasks and slots open the editor directly. Stable hooks:
+  "Edit event"); tasks and slots open the editor directly. The editor
+  has two views, both mounted: a new item from "+ New", ⌘N or ⌘K opens
+  on the Assistant where a model answers (the form where none does), so
+  a spec that works the form says so first — `cdp.showEditorView('form')`
+  — and one that talks to the Assistant uses `cdp.say(phrase)` (typed
+  into `quick-add-input`, sent with Return; `model: 'fixture'`). A
+  form field can be read wherever the draft is; `locate` and
+  `clickTestId` only find what is on show. Stable hooks:
   `toolbar-title`, `view-day/week/month`, `nav-prev/next`, `today`,
-  `quick-add-input` / `quick-add-apply`, `find-time` and its
+  `editor-view-assistant/form` (the root's `data-view`),
+  `quick-add-input` / `quick-add-mic` / `quick-add-status`,
+  `assistant-said`, `assistant-version` + `assistant-restore`,
+  `assistant-card` with `assistant-card-title` and
+  `assistant-card-<field>`, `assistant-changed`, `assistant-undo`,
+  `assistant-edit`, `step-back` / `step-position` / `step-forward`,
+  `step-preview` with `step-name` and `step-use`, `[data-marked]` on a
+  form field the step on show changed, `draft-block` / `slot-candidate` /
+  `draft-was` on the grid, `find-time` and its
   `find-time-window/bounds/days/duration-*`, `find-time-search`,
   `find-time-slot-<n>` (the event form's finder), `mode-event/task/reminder` (a
   kind with nowhere to go is not rendered), `task-remove-due-date`,
@@ -1028,7 +1051,7 @@ accounts — Back to such a root once froze iOS 26 (flow 21; see
 decisions.md, "No large title in iOS Settings"). Maestro needs a JDK on PATH
 (Apple's `/usr/bin/java` stub is not one; see AGENTS.md).
 
-Those halves and the quick-add outcome branch on a script flag: the
+Those halves and the Assistant's read outcome branch on a script flag: the
 branch that ran sets `output.…`, and the other one is keyed on it
 (`when: true: ${…}` answers at once). A condition gets up to 7 s to come
 true (see the selector gotchas), so a "sheet still open?" check after a
@@ -1040,17 +1063,20 @@ action sits behind a guard that is true at once on the first pass (20:
 the sheet is still up) or a flag that skips it there (07 retypes and 22
 taps Cancel only on a retry). Typed text with regex metacharacters in it
 is proven by `copyTextFrom` and an `assertTrue` string compare instead
-(`apply-quick-add.yaml`: the quick-add phrases' `|`).
+(`apply-quick-add.yaml`: the phrases' `|`).
 
 Shared subflows (`common/`): `launch.yaml` (every flow starts with it:
 launch, recover the dev client if it fell back to the launcher, wait for
 the header's `today` to sit below the status bar's clock — SafeAreaView
 applies the top inset a beat, seconds after a fresh bundle load, after
 the first paint, so an earlier tap lands in the status bar),
-`open-new-event.yaml` (the "+" → the editor on a new event, re-tapping
-while the sheet is missing, then `expand-editor.yaml`: a new item's
-editor opens at half height, and the subflow taps the sheet's grabber,
-whose value reads "Half screen", up to full), `open-event-editor.yaml`
+`open-new-item.yaml` (the "+" → the editor on a new item, re-tapping
+while the sheet is missing), `open-new-event.yaml` (that, then on to the
+form: a new event opens on the Assistant where a model answers and on
+the form where none does, each view shows the way to the other only
+once the availability check is back — `editor-view-form` in the
+Assistant's bar, `editor-view-assistant` over the form — so the subflow
+waits for either and taps the one to the form), `open-event-editor.yaml`
 (Edit on the detail sheet a tap opens), `switch-view.yaml` (the header's menu, `VIEW`;
 done once the button reads "View: `VIEW`"),
 `switch-to-task.yaml`, `open-settings.yaml` (waits for `settings-root`),
@@ -1062,8 +1088,10 @@ root shows, then Done), `search-for.yaml` (`QUERY` typed into the Search
 tab's system field until `RESULT` shows; a sentence for the search
 thread is typed the same way and sent with `pressKey: Enter`, the
 keyboard's Search key; the chips' × is "Remove <label>"),
-`apply-quick-add.yaml` (`PHRASE` typed into the quick-add field until
-the field holds exactly that, then Apply), `confirm-open.yaml` and
+`apply-quick-add.yaml` (`PHRASE` to the Assistant: "Type"
+(`quick-add-type`) swaps its bar for the field, the phrase is typed
+until the field holds exactly that, then sent, `quick-add-apply`; a
+phrase taken puts the bar back), `confirm-open.yaml` and
 `await-shell.yaml` (the bootstrap flow's URL alert and shell wait).
 
 The subflows keep conditions off their common path the same way (the
@@ -1081,23 +1109,23 @@ Selector gotchas (each caused a real failure):
   URL alerts; a flow whose link opens something with its own Cancel (the
   editor, flow 22; the import preview's alert, flow 27) confirms the
   alert inline and cancels only while an "Open" is still up.
-- The editor is a form sheet: at half height the calendar above it is
-  live, and Maestro's scrolls swipe at the screen's centre — on the
-  calendar. A swipe on the form itself raises the sheet rather than
-  scrolling the form (flow 06 proves it). Maestro's iOS swipe moves the
-  whole way in its first 0.1 s and then holds still for `duration`
-  before it lifts, so the app's pan must begin while the finger still
-  moves: flow 06's 84 % → 51 % reaches full, a short one snaps back,
-  and one longer than the sheet's whole rise (about 46 % of the screen)
-  goes on to scroll the form once the sheet is up. Start a swipe above
-  the bottom edge's system gesture region (on the 874-pt iPhone, y 812
-  is in it and 795 is not): there SpringBoard first asks its cover-sheet
-  edge pan whether to begin, and the app's gestures wait for the answer.
-  On CI runners it came 90 ms after touch-down in a passing run and 200,
-  402 and 562 ms in flow 06's three failures from 93 %, after the move
-  and twice after the lift, so the sheet stayed at half. A flow that fills
-  the form expands the sheet first (`expand-editor.yaml`); to look at the
-  calendar behind it, tap the grabber while its value reads "Expanded".
+- The editor is a page sheet at full height; nothing behind it is in
+  reach. Its form scrolls like any other, with the steps and the
+  Assistant pill floating over its bottom corners. Maestro counts a
+  control under a pill as visible and would tap the pill, which flips
+  the editor to the Assistant. The pills leave while the form is
+  scrolled down (`pillTuck.ts`), so whatever `scrollUntilVisible` brings
+  up is in reach; a control that is on screen as the editor opens, under
+  a pill, needs one `scroll` first (flow 09's Monthly chip on the 874-pt
+  iPhone). `centerElement: true` is no way around it: on a form that
+  grows as chips are picked it scrolled the control past the top, where
+  the tap lands on the header. The Assistant's field leaves
+  the screen with its focus, not with the keyboard: on the iOS 27
+  simulator XCTest's typing hides the keyboard under a field that still
+  has the focus. Ids on the Assistant's card sit on the texts themselves
+  (`assistant-card-title`, `assistant-card-time`, …), so `text:` reads
+  what a line says; a marked value has a space either side and the old
+  one after it, so match with `.*` between.
 - Text selectors are **whole-string regexes**: prefix text does not
   match, regex metacharacters in titles must be escaped, and a pressable
   row reads as one element (title, subtitle and value together), so match
@@ -1137,10 +1165,10 @@ Selector gotchas (each caused a real failure):
   tasks"); `hideKeyboard` cannot dismiss it — the field's "Close" ends
   the search. The detail sheet's own "Delete" stays in the tree behind
   the confirmation alert's, so the alert's is tapped `below:` its title.
-- The quick-add flow accepts the field's "couldn't be read" outcome: a
+- The Assistant flow (06) accepts the bar's "couldn't be read" outcome: a
   CI simulator passes the model availability check yet cannot generate
-  without the fixture model, so the filled title is asserted only where
-  a model answers.
+  without the fixture model, so the card is asserted only where a model
+  answers.
 - The bootstrap flow (live job only) `launchApp`s the dev client and only
   then opens `solunivo-dev://expo-development-client/?url=…`; it
   confirms exactly one "Open in Solunivo?" alert — every further "Open"
