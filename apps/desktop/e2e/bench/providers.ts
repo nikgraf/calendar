@@ -392,6 +392,37 @@ export const openAiExtra = (value: string | undefined): Readonly<Record<string, 
 };
 
 /**
+ * The chat request for one question. A caller that asks with no schema
+ * (the tuned arm, whose model learnt to write a draft short) gets no
+ * response format: the strict one would make the server write every
+ * field, a form the model was never trained on.
+ */
+export const openAiRequest = ({
+  extra,
+  jsonSchema,
+  model,
+  prompt,
+}: {
+  readonly extra: Readonly<Record<string, unknown>>;
+  readonly jsonSchema: unknown;
+  readonly model: string;
+  readonly prompt: string;
+}): Record<string, unknown> => ({
+  messages: [{ content: prompt, role: 'user' }],
+  model,
+  ...(jsonSchema === undefined
+    ? {}
+    : {
+        response_format: {
+          json_schema: { name: 'answer', schema: strictSchema(jsonSchema as object), strict: true },
+          type: 'json_schema',
+        },
+      }),
+  temperature: 0,
+  ...extra,
+});
+
+/**
  * A model behind an OpenAI-compatible endpoint (LM Studio, llama-server,
  * vLLM, Ollama's `/v1`), strict structured outputs. `extra` joins the
  * request body: what a server takes beyond the standard, such as the
@@ -407,16 +438,7 @@ export const openAiModel = (
 ): LanguageModel => ({
   generateJson: async ({ jsonSchema, prompt }) => {
     const response = await fetch(`${baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-      body: JSON.stringify({
-        messages: [{ content: prompt, role: 'user' }],
-        model,
-        response_format: {
-          json_schema: { name: 'answer', schema: strictSchema(jsonSchema as object), strict: true },
-          type: 'json_schema',
-        },
-        temperature: 0,
-        ...extra,
-      }),
+      body: JSON.stringify(openAiRequest({ extra, jsonSchema, model, prompt })),
       headers: headers(apiKey),
       method: 'POST',
       signal: AbortSignal.timeout(GENERATE_TIMEOUT_MS),

@@ -4,6 +4,7 @@ import { strictSchema } from '../../electron/strictSchema.ts';
 import {
   claudeSchema,
   openAiExtra,
+  openAiRequest,
   recording,
   requiredSchema,
   requiringEveryField,
@@ -178,6 +179,34 @@ describe('openAiExtra', () => {
     expect(() =>
       openAiExtra('{"response_format":{"type":"json_object"},"model":"another"}'),
     ).toThrow('MODEL_BENCH_OPENAI_EXTRA may not set model, response_format');
+  });
+});
+
+describe('openAiRequest', () => {
+  const asked = { extra: { reasoning_effort: 'none' }, model: 'served', prompt: 'Lunch at 1' };
+
+  it('holds the strict schema over the answer, and joins the extra', () => {
+    const request = openAiRequest({ ...asked, jsonSchema: QUICK_ADD_JSON_SCHEMA });
+    expect(request).toMatchObject({
+      messages: [{ content: 'Lunch at 1', role: 'user' }],
+      model: 'served',
+      reasoning_effort: 'none',
+      response_format: {
+        json_schema: { schema: strictSchema(QUICK_ADD_JSON_SCHEMA), strict: true },
+        type: 'json_schema',
+      },
+      temperature: 0,
+    });
+  });
+
+  it('holds nothing over the answer of a caller that asks with no schema', () => {
+    const request = openAiRequest({ ...asked, jsonSchema: undefined });
+    expect(Object.keys(request).toSorted()).toEqual([
+      'messages',
+      'model',
+      'reasoning_effort',
+      'temperature',
+    ]);
   });
 });
 

@@ -45,9 +45,10 @@ A model is one half of a result; what runs around it is the other.
   does on its own. Apple's model cannot follow it.
 - `tuned`: the plain arm for a model trained on its answers. The prompt
   is the days, the draft and the words, without the conventions; the
-  code after it is the plain arm's (`tuned.ts`). A model that was not
-  trained for it has nothing to go by. Data, training and serving:
-  `train/README.md`.
+  code after it is the plain arm's (`tuned.ts`). It asks with no schema:
+  the model learnt to write a draft short, and the strict schema would
+  have a server write every field. A model that was not trained for it
+  has nothing to go by. Data, training and serving: `train/README.md`.
 
 The cases were written beside the grounding they test, so `app` is
 flattered by them: a tie between `app` and another arm is a result for

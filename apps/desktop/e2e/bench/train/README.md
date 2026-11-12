@@ -70,6 +70,28 @@ MODEL_BENCH=1 E2E=1 MODEL_BENCH_APPLE=0 MODEL_BENCH_PIPELINE=tuned \
 `serve.py` answers greedily and holds no schema over the answer, so an
 answer that is not JSON counts against the model.
 
+## 4. A file for llama.cpp (the iPhone's runtime)
+
+`mlx_lm.fuse` saves the model as MLX names its tensors, which llama.cpp's
+converter does not read. `fuse_hf.py` writes the adapter into the
+original files instead, checked against MLX's own sum. The converter and
+the tools come from llama.cpp's source at the version `llama.rn` vendors
+(`node_modules/llama.rn/vendor/VERSIONS`); the converter needs PyTorch.
+Build `llama-quantize` and `llama-server` with `-DLLAMA_USE_PREBUILT_UI=OFF`,
+or the build fetches a web UI.
+
+```bash
+.venv/bin/python apps/desktop/e2e/bench/train/fuse_hf.py --model <model dir> \
+  --adapter-path <adapter dir> --save-path <fused dir> [--check <mlx_lm.fuse's dir>]
+.venv/bin/python llama.cpp/convert_hf_to_gguf.py <fused dir> --outfile tuned-bf16.gguf --outtype bf16
+llama.cpp/build/bin/llama-quantize tuned-bf16.gguf tuned-Q4_K_M.gguf Q4_K_M
+llama.cpp/build/bin/llama-server -m tuned-Q4_K_M.gguf -c 4096 -np 1 --port 8090 --offline --reasoning off
+```
+
+The bench scores the served file like any OpenAI-compatible model
+(`MODEL_BENCH_OPENAI_URL=http://127.0.0.1:8090/v1`): the same file, on the
+same llama.cpp, as the phone loads.
+
 ## What a result can and cannot say
 
 The 70 cases of the bench are the test: no training phrase is one of
