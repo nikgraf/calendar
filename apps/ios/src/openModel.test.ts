@@ -60,6 +60,38 @@ describe('openLanguageModel', () => {
     expect(await model.status()).toBe('ready');
   });
 
+  it('holds nothing over the answer when it is asked with no schema', async () => {
+    const asked: Array<Record<string, unknown>> = [];
+    const model = openLanguageModel(
+      contextWith(async (params) => {
+        asked.push(params);
+        return { content: '{"kind":"event","title":"Dinner"}' };
+      }),
+    );
+    expect(await model.generateJson({ jsonSchema: undefined, prompt: 'Phrase: Dinner' })).toEqual({
+      kind: 'event',
+      title: 'Dinner',
+    });
+    expect(asked[0]).toEqual({
+      enable_thinking: false,
+      messages: [{ content: 'Phrase: Dinner', role: 'user' }],
+      n_predict: MAX_ANSWER_TOKENS,
+      temperature: 0,
+    });
+  });
+
+  it('reads the object behind the empty thinking block the runtime leaves in the content', async () => {
+    const model = openLanguageModel(
+      contextWith(async () => ({
+        content: '<think>\n\n</think>\n\n{"kind":"event","title":"Lunch"}',
+      })),
+    );
+    expect(await model.generateJson({ jsonSchema: undefined, prompt: 'Phrase: Lunch' })).toEqual({
+      kind: 'event',
+      title: 'Lunch',
+    });
+  });
+
   it('reads the object out of a text that opens with the template’s assistant turn', async () => {
     const answers = [
       { content: '', text: '<|im_start|>assistant\n\n{"location":null,"title":"Dinner"}' },

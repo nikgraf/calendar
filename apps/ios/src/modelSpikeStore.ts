@@ -382,6 +382,7 @@ export const createSpikeStore = (deps: SpikeDeps) => {
       let failure: string | undefined;
       try {
         rows = await runSpike({
+          arm: loaded.model.arm,
           cases,
           discarded: () => interrupted,
           modelFor: (onCall) => loaded.engine.modelFor(onCall, () => interrupted),

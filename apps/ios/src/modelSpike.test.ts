@@ -1,6 +1,13 @@
 import type { LanguageModel } from '@calendar/ai';
 import { describe, expect, it } from 'vite-plus/test';
-import { describeAnswer, runSpike, SPIKE_MODELS, type SpikeRow, summarize } from './modelSpike.ts';
+import {
+  describeAnswer,
+  runSpike,
+  SPIKE_MODELS,
+  type SpikeRow,
+  summarize,
+  tunedModels,
+} from './modelSpike.ts';
 import type { OpenModelCall } from './openModel.ts';
 
 const CASES = [
@@ -55,6 +62,44 @@ describe('runSpike', () => {
     });
     expect(rows[0]?.calls.length).toBeGreaterThan(0);
     expect(seen).toEqual([1, 2]);
+  });
+
+  it('asks a tuned model with the tuned arm: the short prompt, no schema, no rules after it', async () => {
+    const asked: Array<{ readonly jsonSchema: unknown; readonly prompt: string }> = [];
+    const rows = await runSpike({
+      arm: 'tuned',
+      cases: CASES.slice(0, 1),
+      modelFor: () => ({
+        generateJson: async (request) => {
+          asked.push(request);
+          return {
+            date: '2026-11-13',
+            kind: 'event',
+            startTime: '19:00',
+            title: 'Dinner with Teo',
+          };
+        },
+        status: async () => 'ready',
+      }),
+      now: clock(),
+      referenceDate: '2026-11-11',
+    });
+    expect(asked).toHaveLength(1);
+    expect(asked[0]?.jsonSchema).toBeUndefined();
+    expect(asked[0]?.prompt.split('\n')).toEqual([
+      'Calendar entry as JSON.',
+      expect.stringContaining('Wed 2026-11-11 (today), Thu 2026-11-12'),
+      'Phrase: Dinner with Teo on Friday at 7pm',
+    ]);
+    expect(rows[0]?.result).toMatchObject({
+      kind: 'parsed',
+      prefill: {
+        date: '2026-11-13',
+        endTime: '20:00',
+        startTime: '19:00',
+        title: 'Dinner with Teo',
+      },
+    });
   });
 
   it('leaves out the phrase that was under way when the run was cut short', async () => {
@@ -170,6 +215,36 @@ describe('describeAnswer', () => {
       'refused: Nothing to schedule.',
     );
     expect(describeAnswer({ kind: 'failed', message: 'no model' })).toBe('failed: no model');
+  });
+});
+
+describe('tunedModels', () => {
+  it('lists the models the variable names, each asked with the tuned arm', () => {
+    expect(
+      tunedModels(
+        '[{"name":"Tuned Q4","url":"http://mac.local:8091/tuned-Q4_K_M.gguf","bytes":541903840}]',
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        arm: 'tuned',
+        bytes: 541_903_840,
+        file: 'tuned-Q4_K_M.gguf',
+        name: 'Tuned Q4',
+        url: 'http://mac.local:8091/tuned-Q4_K_M.gguf',
+      }),
+    ]);
+  });
+
+  it('lists nothing for a variable that is unset, no list, or names no model file', () => {
+    expect(tunedModels(undefined)).toEqual([]);
+    expect(tunedModels(' ')).toEqual([]);
+    expect(tunedModels('tuned.gguf')).toEqual([]);
+    expect(tunedModels('{"name":"one"}')).toEqual([]);
+    expect(
+      tunedModels(
+        '[7, {"name":"No size","url":"http://mac.local/a.gguf"}, {"name":"No file","url":"http://mac.local/","bytes":1}]',
+      ),
+    ).toEqual([]);
   });
 });
 

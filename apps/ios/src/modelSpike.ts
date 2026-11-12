@@ -1,4 +1,6 @@
 import { type LanguageModel, parseQuickAdd, type QuickAddResult } from '@calendar/ai';
+// The bench's tuned arm, run here as the Mac runs it: one prompt and one after-code for both.
+import { tunedTurn } from '../../desktop/e2e/bench/tuned.ts';
 import type { SpikeCase } from './modelSpikeCases.ts';
 import type { OpenModelCall } from './openModel.ts';
 
@@ -15,6 +17,13 @@ export const SPIKE_TIME_ZONE = 'Europe/Vienna';
 
 /** A model file the page can fetch. Sizes are the files' own, read from the host on 2026-11-11. */
 export interface SpikeModel {
+  /**
+   * How the page asks it. Left out: through the app's quick-add pipeline,
+   * prompts and rules. `tuned`: with the bench's tuned arm, for a model
+   * trained on that arm's short prompt (no conventions, no schema, no
+   * rules after it).
+   */
+  readonly arm?: 'tuned' | undefined;
   readonly bytes: number;
   /** The name it is stored under in the app's documents. */
   readonly file: string;
@@ -24,6 +33,49 @@ export interface SpikeModel {
   readonly quantizedBy: string;
   readonly url: string;
 }
+
+/**
+ * Models trained on the Mac and served from it to the phone: the value of
+ * `EXPO_PUBLIC_SPIKE_TUNED` where Metro starts, a JSON list of
+ * `{ "name", "url", "bytes" }` with the address of a GGUF file the phone
+ * can reach. Each is asked with the tuned arm. A value that is no such
+ * list, and an entry that is not whole, give no model.
+ */
+export const tunedModels = (value: string | undefined): ReadonlyArray<SpikeModel> => {
+  let listed: unknown;
+  try {
+    listed = JSON.parse(value?.trim() || '[]');
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(listed)) {
+    return [];
+  }
+  return listed.flatMap((entry: unknown): Array<SpikeModel> => {
+    if (typeof entry !== 'object' || entry === null) {
+      return [];
+    }
+    const { bytes, name, url } = entry as Record<string, unknown>;
+    if (typeof bytes !== 'number' || typeof name !== 'string' || typeof url !== 'string') {
+      return [];
+    }
+    const file = url.split('/').pop() ?? '';
+    if (!file.endsWith('.gguf')) {
+      return [];
+    }
+    return [
+      {
+        arm: 'tuned',
+        bytes,
+        file,
+        licence: 'The base model’s licence',
+        name,
+        quantizedBy: 'this project, on the Mac that serves it',
+        url,
+      },
+    ];
+  });
+};
 
 export const SPIKE_MODELS: ReadonlyArray<SpikeModel> = [
   {
@@ -50,6 +102,8 @@ export const SPIKE_MODELS: ReadonlyArray<SpikeModel> = [
     quantizedBy: 'unsloth (not the file the Mac bench ran)',
     url: 'https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_K_M.gguf',
   },
+  // Metro inlines EXPO_PUBLIC_* at bundle time: unset, the page lists the open models alone.
+  ...tunedModels(process.env['EXPO_PUBLIC_SPIKE_TUNED']),
 ];
 
 /**
@@ -79,14 +133,16 @@ export interface SpikeRow {
 }
 
 /**
- * Each case through `parseQuickAdd`, one after the other, as the thread
- * would send a first phrase. `modelFor` gives the model for one phrase
+ * Each case through `parseQuickAdd` (or, for a tuned model, the bench's
+ * tuned arm), one after the other, as the thread would send a first
+ * phrase. `modelFor` gives the model for one phrase
  * and takes where its calls are counted. A stop is honoured between
  * phrases: the rows so far are the run. A phrase that was cut short from
  * outside (`discarded`) leaves no row: its time and its answer are the
  * interruption's, not the model's.
  */
 export const runSpike = async ({
+  arm,
   cases,
   discarded,
   modelFor,
@@ -95,6 +151,8 @@ export const runSpike = async ({
   referenceDate,
   stopped,
 }: {
+  /** How the loaded model is asked (`SpikeModel.arm`). */
+  readonly arm?: 'tuned' | undefined;
   readonly cases: ReadonlyArray<SpikeCase>;
   readonly discarded?: () => boolean;
   readonly modelFor: (onCall: (call: OpenModelCall) => void) => LanguageModel;
@@ -113,10 +171,20 @@ export const runSpike = async ({
     const started = now();
     let result: SpikeAnswer;
     try {
-      result = await parseQuickAdd(
-        modelFor((call) => calls.push(call)),
-        { phrase: spikeCase.text, referenceDate, timeZone: SPIKE_TIME_ZONE },
-      );
+      const model = modelFor((call) => calls.push(call));
+      result =
+        arm === 'tuned'
+          ? await tunedTurn(model, {
+              draft: undefined,
+              earlier: [],
+              referenceDate,
+              text: spikeCase.text,
+            })
+          : await parseQuickAdd(model, {
+              phrase: spikeCase.text,
+              referenceDate,
+              timeZone: SPIKE_TIME_ZONE,
+            });
     } catch (error) {
       result = { kind: 'failed', message: error instanceof Error ? error.message : String(error) };
     }

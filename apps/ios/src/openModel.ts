@@ -131,24 +131,22 @@ export const loadOpenModel = (
   runtime.initLlama({ model: path, n_ctx: CONTEXT_TOKENS, n_gpu_layers: 99 }, onProgress);
 
 /**
- * What the model wrote. The runtime's `content` is the answer alone, when
- * its chat parser gives one; `text` is everything, and on the simulator
- * began with the chat template's own opening of the assistant's turn
- * (`<|im_start|>assistant`) before the object. The grammar allows one
- * object and nothing else, so in `text` the answer starts at the first
- * brace.
+ * What the model wrote. The runtime's `content` is the answer, when its
+ * chat parser gives one; `text` is everything. Neither is the object
+ * alone: on the simulator `text` began with the chat template's own
+ * opening of the assistant's turn (`<|im_start|>assistant`), and with
+ * thinking off `content` begins with the empty thinking block the
+ * template closes it with (`<think></think>`), which a grammar hid and
+ * an answer without one shows. The answer is one object, so it starts at
+ * the first brace.
  */
 const answerText = (result: {
   readonly content?: string | undefined;
   readonly text?: string | undefined;
 }): string => {
-  const content = (result.content ?? '').trim();
-  if (content) {
-    return content;
-  }
-  const text = (result.text ?? '').trim();
-  const start = text.indexOf('{');
-  return start > 0 ? text.slice(start) : text;
+  const written = (result.content ?? '').trim() || (result.text ?? '').trim();
+  const start = written.indexOf('{');
+  return start > 0 ? written.slice(start) : written;
 };
 
 /** How much of an answer that is no JSON the error keeps: enough to see what the model wrote instead. */
@@ -191,10 +189,15 @@ export const openLanguageModel = (
         enable_thinking: false,
         messages: [{ content: prompt, role: 'user' }],
         n_predict: MAX_ANSWER_TOKENS,
-        response_format: {
-          json_schema: { schema: strictSchema(jsonSchema), strict: true },
-          type: 'json_schema',
-        },
+        // No schema asked for (the tuned arm: its model learnt a short form of its own): nothing is held over the answer.
+        ...(jsonSchema === undefined
+          ? {}
+          : {
+              response_format: {
+                json_schema: { schema: strictSchema(jsonSchema), strict: true },
+                type: 'json_schema',
+              },
+            }),
         temperature: 0,
       });
       answered = result;
