@@ -4,9 +4,10 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vite-plus/test';
 import { loadCases } from '../cases.ts';
 import { applyResult, type BenchDraft, fold } from '../check.ts';
-import { plainTurn } from '../plain.ts';
+import { plainState, plainTurn } from '../plain.ts';
 import { claudeModel, claudeSpec, recording } from '../providers.ts';
-import { tunedExample } from '../tuned.ts';
+import { shortDraft, tunedExample } from '../tuned.ts';
+import { asSaid, buildSaidPrompt, SAID_SCHEMA, type SaidForm, saidOf } from './asSaid.ts';
 import {
   type Brief,
   BRIEFS,
@@ -19,7 +20,7 @@ import {
 } from './phrases.ts';
 
 /**
- * The training data for the tuned arm, in three steps that each leave a
+ * The training data for the tuned arm, in four steps that each leave a
  * file behind and pick up where a run before them stopped:
  *
  *   generate  a model writes practice threads, one batch per brief
@@ -27,11 +28,14 @@ import {
  *   label     a teacher answers every turn through the plain arm, the
  *             draft carried from turn to turn as the bench carries it
  *                                                         → labelled.jsonl
- *   export    each labelled turn as a chat a model is trained on, the
- *             threads split into training and validation
+ *   said      the teacher is asked how each turn gave its day and which
+ *             weekdays a repeat rules out (`asSaid.ts`)   → said.jsonl
+ *   export    each labelled turn as a chat a model is trained on, its
+ *             day and repeat written as said where the two answers
+ *             agree, the threads split into training and validation
  *                                             → train.jsonl, valid.jsonl
  *
- *   TRAIN_DATA=generate,label,export E2E=1 pnpm exec vp test run apps/desktop/e2e/bench/train/dataset.e2e.ts
+ *   TRAIN_DATA=generate,label,said,export E2E=1 pnpm exec vp test run apps/desktop/e2e/bench/train/dataset.e2e.ts
  *
  * Both models are Claude over the API and cost money: TRAIN_GENERATOR
  * (claude-opus-5-5@low) writes, TRAIN_TEACHER (claude-haiku-5-5@low, the
@@ -245,17 +249,101 @@ const label = async (dir: string, log: (line: string) => void): Promise<void> =>
   );
 };
 
+interface SaidThread {
+  readonly id: number;
+  /** The teacher's second answer to each turn as it came; null for a turn that was not asked. */
+  readonly turns: ReadonlyArray<unknown>;
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const repeatText = (repeat: unknown): string =>
+  JSON.stringify(shortDraft({ repeat: isRecord(repeat) ? repeat : undefined }));
+
+/**
+ * A turn whose words may have given a day or ruled a weekday out: a
+ * first phrase with either, or a later turn that changed either. A turn
+ * that left both as the draft had them is not asked.
+ */
+const mayHaveSaid = (turn: LabelledTurn): boolean => {
+  const { answer } = turn;
+  if (turn.error !== undefined || !isRecord(answer)) {
+    return false;
+  }
+  const state = turn.draft === undefined ? undefined : plainState(turn.draft);
+  return state === undefined
+    ? typeof answer['date'] === 'string' || isRecord(answer['repeat'])
+    : answer['date'] !== state.date || repeatText(answer['repeat']) !== repeatText(state.repeat);
+};
+
+const said = async (dir: string, log: (line: string) => void): Promise<void> => {
+  const path = join(dir, 'said.jsonl');
+  const done = new Set(readLines<SaidThread>(path).map((thread) => thread.id));
+  const { effort, model } = claudeSpec(process.env['TRAIN_TEACHER'] ?? 'claude-haiku-5-5@low');
+  const teacher = claudeModel(model, effort);
+  const todo = readLines<LabelledThread>(join(dir, 'labelled.jsonl'))
+    .filter((thread) => !done.has(thread.id))
+    .slice(0, numberOf('TRAIN_LIMIT', Number.MAX_SAFE_INTEGER));
+  let asked = 0;
+  let failed = 0;
+  await pooled(todo, numberOf('TRAIN_CONCURRENCY', 8), async (thread) => {
+    const turns: Array<unknown> = [];
+    for (const turn of thread.turns) {
+      if (!mayHaveSaid(turn)) {
+        turns.push(null);
+        continue;
+      }
+      try {
+        turns.push(
+          await teacher.generateJson({
+            jsonSchema: SAID_SCHEMA,
+            prompt: buildSaidPrompt({ earlier: turn.earlier, text: turn.text }),
+          }),
+        );
+        asked += 1;
+      } catch {
+        // Not written: the thread is asked again by the next run.
+        failed += 1;
+        return;
+      }
+    }
+    appendFileSync(path, `${JSON.stringify({ id: thread.id, turns } satisfies SaidThread)}\n`);
+  });
+  log(
+    `said: ${String(todo.length - failed)} of ${String(todo.length)} threads with ${model}@${effort}, ${String(asked)} turns asked, ${String(done.size)} threads were there already`,
+  );
+};
+
 /** One thread in twenty is held back to watch the training by. */
 const isValidation = (id: number): boolean => id % 20 === 7;
 
 const exportData = (dir: string, log: (line: string) => void): void => {
   const threads = readLines<LabelledThread>(join(dir, 'labelled.jsonl'));
+  const second = new Map(
+    readLines<SaidThread>(join(dir, 'said.jsonl')).map((thread) => [thread.id, thread.turns]),
+  );
   const train: Array<string> = [];
   const valid: Array<string> = [];
   const count = { first: 0, later: 0, nothing: 0, skipped: 0 };
+  // How many answers are written as said, and how many a second answer did not fit.
+  const asSaidCount: Record<SaidForm | 'unfit', number> = {
+    day: 0,
+    except: 0,
+    monthDay: 0,
+    offset: 0,
+    unfit: 0,
+  };
   const byLanguage: Record<string, number> = {};
   for (const thread of threads) {
     for (const [index, turn] of thread.turns.entries()) {
+      const what = saidOf(second.get(thread.id)?.[index]);
+      const written = isRecord(turn.answer)
+        ? asSaid(turn.answer, what, {
+            draftDate: turn.draft === undefined ? undefined : plainState(turn.draft)?.date,
+            referenceDate: thread.referenceDate,
+          })
+        : undefined;
       const example =
         turn.error === undefined
           ? tunedExample(
@@ -265,7 +353,7 @@ const exportData = (dir: string, log: (line: string) => void): void => {
                 referenceDate: thread.referenceDate,
                 text: turn.text,
               },
-              turn.answer,
+              written?.answer ?? turn.answer,
             )
           : undefined;
       if (example === undefined) {
@@ -273,6 +361,11 @@ const exportData = (dir: string, log: (line: string) => void): void => {
         continue;
       }
       (isValidation(thread.id) ? valid : train).push(JSON.stringify(example));
+      for (const form of written?.forms ?? []) {
+        asSaidCount[form] += 1;
+      }
+      const dayForms = (written?.forms ?? []).filter((form) => form !== 'except').length;
+      asSaidCount.unfit += what !== undefined && what.day.how !== 'other' && dayForms === 0 ? 1 : 0;
       count[index === 0 ? 'first' : 'later'] += 1;
       count.nothing += example.messages[1].content === '{"nothingToSchedule":true}' ? 1 : 0;
       byLanguage[thread.language] = (byLanguage[thread.language] ?? 0) + 1;
@@ -281,6 +374,7 @@ const exportData = (dir: string, log: (line: string) => void): void => {
   writeFileSync(join(dir, 'train.jsonl'), `${train.join('\n')}\n`);
   writeFileSync(join(dir, 'valid.jsonl'), `${valid.join('\n')}\n`);
   const stats = {
+    asSaid: asSaidCount,
     byLanguage,
     ...count,
     threads: threads.length,
@@ -292,32 +386,31 @@ const exportData = (dir: string, log: (line: string) => void): void => {
 };
 
 describe.skipIf(!process.env['TRAIN_DATA'])('training data for the tuned arm', () => {
-  it(
-    'generates, labels and exports the steps TRAIN_DATA names',
-    { timeout: 240 * 60_000 },
-    async () => {
-      const steps = (process.env['TRAIN_DATA'] ?? '').split(',').map((step) => step.trim());
-      const unknown = steps.filter((step) => !['generate', 'label', 'export'].includes(step));
-      expect(unknown).toEqual([]);
-      const dir = process.env['TRAIN_DIR'] ?? join(ROOT, 'output', 'bench', 'finetune', 'data');
-      mkdirSync(dir, { recursive: true });
-      const lines: Array<string> = [`\nTRAINING DATA — ${dir}`];
-      const log = (line: string) => {
-        lines.push(line);
-      };
-      try {
-        if (steps.includes('generate')) {
-          await generate(dir, log);
-        }
-        if (steps.includes('label')) {
-          await label(dir, log);
-        }
-        if (steps.includes('export')) {
-          exportData(dir, log);
-        }
-      } finally {
-        process.stdout.write(`${lines.join('\n')}\n`);
+  it('runs the steps TRAIN_DATA names', { timeout: 240 * 60_000 }, async () => {
+    const steps = (process.env['TRAIN_DATA'] ?? '').split(',').map((step) => step.trim());
+    const unknown = steps.filter((step) => !['generate', 'label', 'said', 'export'].includes(step));
+    expect(unknown).toEqual([]);
+    const dir = process.env['TRAIN_DIR'] ?? join(ROOT, 'output', 'bench', 'finetune', 'data');
+    mkdirSync(dir, { recursive: true });
+    const lines: Array<string> = [`\nTRAINING DATA — ${dir}`];
+    const log = (line: string) => {
+      lines.push(line);
+    };
+    try {
+      if (steps.includes('generate')) {
+        await generate(dir, log);
       }
-    },
-  );
+      if (steps.includes('label')) {
+        await label(dir, log);
+      }
+      if (steps.includes('said')) {
+        await said(dir, log);
+      }
+      if (steps.includes('export')) {
+        exportData(dir, log);
+      }
+    } finally {
+      process.stdout.write(`${lines.join('\n')}\n`);
+    }
+  });
 });

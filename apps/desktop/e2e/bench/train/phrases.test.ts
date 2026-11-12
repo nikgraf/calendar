@@ -6,6 +6,7 @@ import { fold } from '../check.ts';
 import {
   BRIEFS,
   buildGeneratorPrompt,
+  FIRST_ROUND_BRIEFS,
   nearBench,
   referenceDateOf,
   threadsOf,
@@ -19,8 +20,20 @@ const benchPhrases = loadCases(fileURLToPath(new URL('../cases', import.meta.url
 
 describe('the generator briefs', () => {
   it('cover every language, way of writing and focus once', () => {
-    expect(BRIEFS).toHaveLength(2 * 5 * 14);
+    expect(BRIEFS).toHaveLength(2 * 5 * 16);
     expect(new Set(BRIEFS.map((brief) => JSON.stringify(brief))).size).toBe(BRIEFS.length);
+  });
+
+  it('keep the first round’s briefs where they were, the later focuses after them', () => {
+    // A brief's place is its seed and the place of its threads: it must not move.
+    expect(FIRST_ROUND_BRIEFS).toBe(140);
+    expect(BRIEFS[0]).toEqual({ focus: 'allDay', language: 'en', register: 'command' });
+    expect(BRIEFS[139]).toEqual({ focus: 'short', language: 'de', register: 'todo' });
+    const later = new Set(BRIEFS.slice(FIRST_ROUND_BRIEFS).map((brief) => brief.focus));
+    expect([...later].sort()).toEqual(['farDays', 'ruledOut']);
+    expect(BRIEFS.slice(0, FIRST_ROUND_BRIEFS).filter((brief) => later.has(brief.focus))).toEqual(
+      [],
+    );
   });
 
   it('show the generator no phrase of the bench', () => {

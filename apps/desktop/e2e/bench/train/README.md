@@ -12,26 +12,59 @@ the same answers to a prompt a tenth as long.
 ## 1. The data
 
 ```bash
-TRAIN_DATA=generate,label,export E2E=1 pnpm exec vp test run apps/desktop/e2e/bench/train/dataset.e2e.ts
+TRAIN_DATA=generate,label,said,export E2E=1 pnpm exec vp test run apps/desktop/e2e/bench/train/dataset.e2e.ts
 ```
 
-- `generate`: Claude Opus writes practice threads, 30 for each of 140
-  briefs (two languages, five ways of writing, fourteen things to
+- `generate`: Claude Opus writes practice threads, 30 for each of 160
+  briefs (two languages, five ways of writing, sixteen things to
   exercise: `phrases.ts`). It is shown no case of the bench.
 - `label`: Claude Haiku answers every turn through the plain arm, the
   draft carried from turn to turn as the bench carries it. Phrases said
   twice and phrases that read like a bench case are left out first
   (`nearBench`).
+- `said`: Haiku is asked a second, short question about each turn that
+  set a day or a repeat: how the words gave the day (a date by its
+  number, an amount of time from today, or another way) and which
+  weekdays a repeat rules out (`asSaid.ts`).
 - `export`: every labelled turn as a chat (`train.jsonl`, `valid.jsonl`),
   the prompt and the answer built by `tunedExample`, the function the arm
   itself asks with.
 
 The files land in `output/bench/finetune/data/` (ignored by git). Each
-step picks up where an earlier run stopped. The run of 2026-11-11 kept
-4,045 of 4,200 threads (135 said twice, 20 like a bench case) and made
-5,504 examples, half English and half German, 1,459 of them follow-ups.
-It costs a few US dollars of API use; the variables are in the head of
-`dataset.e2e.ts`.
+step picks up where an earlier run stopped. It costs a few US dollars of
+API use; the variables are in the head of `dataset.e2e.ts`.
+
+The data of 2026-11-12 keeps 4,631 of 4,800 threads (146 said twice, 23
+like a bench case) and makes 6,293 examples (5,988 to train on, 305 held
+back), half English and half German, 1,662 of them follow-ups. 900 hold
+a day as said (344 a day of the month, 431 a month and day, 125 an
+amount from today) and 204 a repeat with weekdays ruled out. On 45 turns
+the second answer did not fit the first ("tues 7" is seven o'clock) and
+the whole date stayed; 103 whole dates still lie outside the two weeks,
+most of them an end of a month or a "last Friday of the month".
+
+### Why the day is written as said
+
+The first round (2026-11-11) trained on the teacher's whole dates. A
+tenth of its turns set a day outside the two weeks the prompt lists,
+nearly all a date said by its number ("the 23rd", "12.3.", "March 14"),
+and there the teacher was no guide: 80 of its dates lay in the past, and
+the year it chose varied. The trained model agreed with it on 24 of 32
+such held-back turns, against 210 of 225 inside the two weeks. So the
+answer to learn now holds what was said ("23", "03-14", "+3w") and
+`said.ts` finds the next such day. The second question decides only what
+was said; it is used where it fits the first answer (the same day of the
+month, the same month where one was said, the same sum for an amount)
+and dropped where it does not, so a date the teacher worked out ("two
+days before the 22nd") stays a whole date.
+
+A repeat with a weekday ruled out ("every day except Sunday") is the
+same kind of thing: the rule and the days ruled out are what was said,
+the days left are arithmetic. The first round's briefs asked for no such
+phrase, and its model listed Monday to Friday whatever was ruled out.
+The second round adds two focuses, days far off and ruled-out weekdays,
+as briefs of their own after the first round's, so that no brief changes
+its number and no thread its "today".
 
 ## 2. Training (Apple silicon, MLX)
 
@@ -39,7 +72,7 @@ It costs a few US dollars of API use; the variables are in the head of
 python3 -m venv .venv && .venv/bin/pip install mlx-lm
 .venv/bin/mlx_lm.lora -c apps/desktop/e2e/bench/train/lora.yaml \
   --model <model dir> --train --data output/bench/finetune/data \
-  --iters 3927 --adapter-path <adapter dir>
+  --iters 4491 --adapter-path <adapter dir>
 ```
 
 `<model dir>` is a model in Hugging Face format (`Qwen/Qwen3.5-0.8B`,
@@ -69,6 +102,20 @@ MODEL_BENCH=1 E2E=1 MODEL_BENCH_APPLE=0 MODEL_BENCH_PIPELINE=tuned \
 
 `serve.py` answers greedily and holds no schema over the answer, so an
 answer that is not JSON counts against the model.
+
+The held-back turns say how well a model learned its teacher, part by
+part, and the date by where the day lies (inside the two listed weeks,
+beyond them, in the past):
+
+```bash
+TRAIN_AGREE=1 E2E=1 TRAIN_AGREE_URL=http://127.0.0.1:8089/v1 TRAIN_AGREE_OUT=<answers.jsonl> \
+  pnpm exec vp test run apps/desktop/e2e/bench/train/agreement.e2e.ts
+```
+
+Both answers are worked out before they are compared, so a model trained
+on whole dates and one trained on days as said can be held against the
+same turns (`TRAIN_AGREE_ANSWERS`, `TRAIN_AGREE_ROWS`: see the file's
+head).
 
 ## 4. A file for llama.cpp (the iPhone's runtime)
 

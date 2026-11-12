@@ -74,6 +74,21 @@ describe('tunedAnswer', () => {
     );
   });
 
+  it('writes a day and a repeat as said the way they came, the ruled-out days after the rule’s', () => {
+    expect(
+      JSON.stringify(
+        tunedAnswer({
+          date: '03-14',
+          kind: 'event',
+          repeat: { byDay: ['MO', 'TU', 'WE', 'TH', 'FR'], except: ['FR'], freq: 'weekly' },
+          title: 'Standup',
+        }),
+      ),
+    ).toBe(
+      '{"kind":"event","title":"Standup","date":"03-14","repeat":{"freq":"weekly","byDay":["MO","TU","WE","TH","FR"],"except":["FR"]}}',
+    );
+  });
+
   it('leaves a flag that is off and a repeat that is none out', () => {
     expect(
       JSON.stringify(
@@ -213,6 +228,64 @@ describe('tunedTurn', () => {
     expect(result).toEqual(plainResult(answer, { draft: dinner, referenceDate: TODAY }));
     expect(result.kind === 'parsed' && result.prefill.startTime).toBe('20:00');
     expect(prompts[0]).toContain('Now: make it 8');
+  });
+
+  it('works out a day and a repeat written as said before the plain arm’s code', async () => {
+    const { model } = modelAnswering({
+      date: '14',
+      kind: 'event',
+      repeat: { except: ['SU'], freq: 'daily' },
+      startTime: '07:00',
+      title: 'Yoga',
+    });
+    const result = await tunedTurn(model, {
+      draft: undefined,
+      earlier: [],
+      referenceDate: TODAY,
+      text: 'Yoga from the 14th every day at 7 but not on Sundays',
+    });
+    // The 14th is a Saturday: a day of the rule, so the repeat starts on it.
+    expect(result).toMatchObject({
+      kind: 'parsed',
+      prefill: {
+        date: '2026-11-14',
+        recurrence: {
+          byDay: ['MO', 'TU', 'WE', 'TH', 'FR', 'SA'].map((weekday) => ({ weekday })),
+          freq: 'weekly',
+        },
+        startTime: '07:00',
+      },
+    });
+  });
+
+  it('keeps a later turn’s bare day in the month of the draft', async () => {
+    const { model } = modelAnswering({
+      date: '20',
+      kind: 'event',
+      startTime: '19:00',
+      title: 'Dinner with Teo',
+    });
+    const far: BenchDraft = {
+      choices: [],
+      guests: [],
+      item: {
+        kind: 'event',
+        prefill: {
+          date: '2027-03-14',
+          endTime: '20:00',
+          isAllDay: false,
+          startTime: '19:00',
+          title: 'Dinner with Teo',
+        },
+      },
+    };
+    const result = await tunedTurn(model, {
+      draft: far,
+      earlier: ['Dinner with Teo March 14'],
+      referenceDate: TODAY,
+      text: 'actually the 20th',
+    });
+    expect(result.kind === 'parsed' && result.prefill.date).toBe('2027-03-20');
   });
 
   it('turns down empty words, and a model that fails', async () => {

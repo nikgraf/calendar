@@ -47,8 +47,13 @@ A model is one half of a result; what runs around it is the other.
   is the days, the draft and the words, without the conventions; the
   code after it is the plain arm's (`tuned.ts`). It asks with no schema:
   the model learnt to write a draft short, and the strict schema would
-  have a server write every field. A model that was not trained for it
-  has nothing to go by. Data, training and serving: `train/README.md`.
+  have a server write every field. A day it cannot look up in the days
+  it is shown, and a repeat with a weekday ruled out, it writes as they
+  were said ("14", "03-14", "+2w"; `except` beside the rule), and code
+  that reads no phrase works them out (`said.ts`): which year a date
+  falls in is arithmetic, and a small model is poor at it. A model that
+  was not trained for it has nothing to go by. Data, training and
+  serving: `train/README.md`.
 
 The cases were written beside the grounding they test, so `app` is
 flattered by them: a tie between `app` and another arm is a result for

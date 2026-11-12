@@ -138,8 +138,23 @@ const FOCUSES = {
   short: 'very short phrases: one to three words',
 } as const;
 
+/**
+ * What a second round exercises: the two things the first round's model
+ * could not do, and the first round's phrases hardly asked for. Their
+ * briefs come after the first round's, so a brief keeps its number and a
+ * thread its "today".
+ */
+const LATER_FOCUSES = {
+  farDays:
+    'days more than two weeks away: a date by its number, with and without the month ("on the 23rd", "March 14", "am 7.9.", "the third of May", "Thursday the 6th"), and an amount of time from today ("in three weeks", "in two months", "in einem halben Jahr", "heute in vier Wochen")',
+  ruledOut:
+    'things that repeat on all days or on all working days but one or two ("weekdays but not Wednesday", "each day except on weekends", "daily, just not Mondays", "täglich, nur sonntags nicht", "werktags außer mittwochs", "Montag bis Samstag ohne Donnerstag"); among the follow-ups, some that rule a day out of a repeat the draft has ("but not on Tuesdays", "nur dienstags nicht")',
+} as const;
+
+const FOCUS_TEXT: Readonly<Record<Brief['focus'], string>> = { ...FOCUSES, ...LATER_FOCUSES };
+
 export interface Brief {
-  readonly focus: keyof typeof FOCUSES;
+  readonly focus: keyof typeof FOCUSES | keyof typeof LATER_FOCUSES;
   readonly language: Language;
   readonly register: keyof typeof REGISTERS;
 }
@@ -147,12 +162,21 @@ export interface Brief {
 const sortedKeys = <Key extends string>(record: Readonly<Record<Key, unknown>>): Array<Key> =>
   (Object.keys(record) as Array<Key>).sort();
 
-/** Every language, way of writing and focus once: what one round of generating covers. */
-export const BRIEFS: ReadonlyArray<Brief> = (['en', 'de'] as const).flatMap((language) =>
-  sortedKeys(REGISTERS).flatMap((register) =>
-    sortedKeys(FOCUSES).map((focus) => ({ focus, language, register })),
-  ),
-);
+const briefsOf = (focuses: ReadonlyArray<Brief['focus']>): ReadonlyArray<Brief> =>
+  (['en', 'de'] as const).flatMap((language) =>
+    sortedKeys(REGISTERS).flatMap((register) =>
+      focuses.map((focus) => ({ focus, language, register })),
+    ),
+  );
+
+/** How many briefs the first round has: every language, way of writing and first focus once. */
+export const FIRST_ROUND_BRIEFS = 2 * 5 * 14;
+
+/** Every language, way of writing and focus once, the first round's briefs first. */
+export const BRIEFS: ReadonlyArray<Brief> = [
+  ...briefsOf(sortedKeys(FOCUSES)),
+  ...briefsOf(sortedKeys(LATER_FOCUSES)),
+];
 
 /** A small seeded generator: the same brief draws the same names on every run. */
 const seeded = (seed: number): (() => number) => {
@@ -211,7 +235,7 @@ export const buildGeneratorPrompt = (brief: Brief, index: number, count: number)
     '',
     `Language: ${brief.language === 'de' ? 'German, as people in Austria and Germany write and speak it' : 'English'}.`,
     `How the phrases are written: ${REGISTERS[brief.register]}.`,
-    `What most of these threads should exercise: ${FOCUSES[brief.focus]}. The rest can be`,
+    `What most of these threads should exercise: ${FOCUS_TEXT[brief.focus]}. The rest can be`,
     'anything a person might put in a calendar.',
     '',
     'Make them sound like real people, not like test data: different lengths, different lives',
