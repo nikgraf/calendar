@@ -181,6 +181,108 @@ export const helperModel = (helper: HelperClient): LanguageModel => ({
   status: async () => 'ready',
 });
 
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/** What a required property holds when the words give nothing for it. */
+const NONE = 'none';
+
+/**
+ * The schema with every property required but a yes-or-no one. Apple's
+ * guided generation leaves out every optional property of a first phrase
+ * (the title alone comes back, 70 times of 70), and fills the same
+ * properties when they are required and may be empty: "" for a text, 0
+ * for a number, "none" for a choice, an empty list. A yes-or-no has no
+ * empty value, so it stays as it was: forced, an unsaid "all day" would
+ * be an answer.
+ */
+export const requiredSchema = (schema: unknown, optional = false): unknown => {
+  if (!isObject(schema)) {
+    return schema;
+  }
+  if (Array.isArray(schema['enum'])) {
+    return optional ? { ...schema, enum: [...schema['enum'], NONE] } : schema;
+  }
+  if (schema['type'] === 'array') {
+    return { ...schema, items: requiredSchema(schema['items']) };
+  }
+  if (schema['type'] !== 'object' || !isObject(schema['properties'])) {
+    return schema;
+  }
+  const required = new Set(
+    Array.isArray(schema['required']) ? (schema['required'] as Array<string>) : [],
+  );
+  const entries = Object.entries(schema['properties']);
+  const properties = Object.fromEntries(
+    entries.map(([key, property]) => [
+      key,
+      requiredSchema(property, optional || !required.has(key)),
+    ]),
+  );
+  const forced = entries
+    .filter(
+      ([key, property]) =>
+        required.has(key) || !isObject(property) || property['type'] !== 'boolean',
+    )
+    .map(([key]) => key);
+  return { ...schema, properties, required: forced.sort() };
+};
+
+const isEmptyText = (value: unknown): boolean =>
+  typeof value === 'string' && (value.trim() === '' || value.trim().toLowerCase() === NONE);
+
+/**
+ * The answer without its empty values: what a required property held for
+ * "nothing". A list loses its empty texts too (a model asked for "none"
+ * writes `["none"]` as readily as `[]`); a number in a list stays, since
+ * a notification at the start is a real 0.
+ */
+export const withoutEmpties = (value: unknown): unknown => {
+  if (Array.isArray(value)) {
+    return value.filter((item) => !isEmptyText(item)).map(withoutEmpties);
+  }
+  if (!isObject(value)) {
+    return value;
+  }
+  return Object.fromEntries(
+    Object.entries(value)
+      .map(([key, item]) => [key, withoutEmpties(item)] as const)
+      .filter(
+        ([, item]) =>
+          !isEmptyText(item) && item !== 0 && !(isObject(item) && Object.keys(item).length === 0),
+      ),
+  );
+};
+
+/**
+ * Said before the prompt, in the wording the table was measured with. A
+ * longer one that also spoke of a draft ("no value to copy from a draft",
+ * "never a list of empty values") scored 46 of 70 through the rules on
+ * Apple's model, against 52 and 51 for this one: titles shrank to a name
+ * ("Sarah" for a call with Sarah). A list of empty values is undone in
+ * `withoutEmpties` instead. A turn that returns a draft may still read
+ * this as "blank what the change does not mention": the unchanged rule
+ * shows it where it happens.
+ */
+const FILL_EVERY_FIELD =
+  'Every field must be in the answer. When the words give nothing for one, write "" for a text, 0 for a number, "none" for a choice and an empty list; where the lines below say to omit a field or leave it out, write that empty value.';
+
+/**
+ * A model asked for every field, empty where the words give nothing, and
+ * read back without the empties. Put it around the recorded model, so a
+ * report keeps the prompt as sent and the answer as it came.
+ */
+export const requiringEveryField = (model: LanguageModel): LanguageModel => ({
+  ...model,
+  generateJson: async ({ jsonSchema, prompt }) =>
+    withoutEmpties(
+      await model.generateJson({
+        jsonSchema: requiredSchema(jsonSchema),
+        prompt: `${FILL_EVERY_FIELD}\n${prompt}`,
+      }),
+    ),
+});
+
 /** What the helper says of the model: 'ready', or why not. */
 export const helperStatus = async (helper: HelperClient): Promise<string> => {
   const result = (await helper.request('status', {})) as { detail?: string; status: string };
@@ -256,35 +358,168 @@ export const ollamaModel = (baseUrl: string, model: string): LanguageModel => ({
   status: async () => 'ready',
 });
 
-/** A model behind an OpenAI-compatible endpoint (LM Studio, llama-server, vLLM), strict structured outputs. */
+/** What a chat request is to the bench: the extra may add to it, never replace these. */
+const OWN_KEYS = ['messages', 'model', 'response_format'];
+
+/**
+ * MODEL_BENCH_OPENAI_EXTRA as the object it must be; anything else stops
+ * the run with its name. It may not name the model, the messages or the
+ * response format: a report would say the strict schema was sent to the
+ * named model when it was not.
+ */
+export const openAiExtra = (value: string | undefined): Readonly<Record<string, unknown>> => {
+  if (value === undefined || value.trim() === '') {
+    return {};
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    throw new Error(`MODEL_BENCH_OPENAI_EXTRA is not JSON: ${value}`);
+  }
+  if (!isObject(parsed)) {
+    throw new Error(`MODEL_BENCH_OPENAI_EXTRA must be a JSON object: ${value}`);
+  }
+  const taken = OWN_KEYS.filter((key) => key in parsed);
+  if (taken.length > 0) {
+    throw new Error(
+      `MODEL_BENCH_OPENAI_EXTRA may not set ${taken.join(', ')}: the bench's own, which a report takes as sent`,
+    );
+  }
+  return parsed;
+};
+
+/**
+ * The chat request for one question. A caller that asks with no schema
+ * (the tuned arm, whose model learnt to write a draft short) gets no
+ * response format: the strict one would make the server write every
+ * field, a form the model was never trained on.
+ */
+export const openAiRequest = ({
+  extra,
+  jsonMode = 'schema',
+  jsonSchema,
+  model,
+  prompt,
+}: {
+  readonly extra: Readonly<Record<string, unknown>>;
+  readonly jsonMode?: OpenAiJsonMode | undefined;
+  readonly jsonSchema: unknown;
+  readonly model: string;
+  readonly prompt: string;
+}): Record<string, unknown> => {
+  if (jsonSchema === undefined) {
+    return { messages: [{ content: prompt, role: 'user' }], model, temperature: 0, ...extra };
+  }
+  if (jsonMode === 'object') {
+    return {
+      messages: [{ content: withSchemaInPrompt(prompt, jsonSchema), role: 'user' }],
+      model,
+      response_format: { type: 'json_object' },
+      temperature: 0,
+      ...extra,
+    };
+  }
+  return {
+    messages: [{ content: prompt, role: 'user' }],
+    model,
+    response_format: {
+      json_schema: { name: 'answer', schema: strictSchema(jsonSchema as object), strict: true },
+      type: 'json_schema',
+    },
+    temperature: 0,
+    ...extra,
+  };
+};
+
+/**
+ * How a server holds an answer to the schema: `schema`, strict structured
+ * outputs (llama-server, LM Studio, vLLM); `object`, JSON mode only, the
+ * schema written into the prompt (DeepSeek's API takes no schema).
+ */
+export type OpenAiJsonMode = 'object' | 'schema';
+
+/** The question with the schema it is to be answered in, for a server that holds only to JSON. */
+export const withSchemaInPrompt = (prompt: string, jsonSchema: unknown): string =>
+  `${prompt}\n\nAnswer with one JSON object that follows this JSON Schema:\n${JSON.stringify(jsonSchema)}`;
+
+/** MODEL_BENCH_OPENAI_JSON (or TRAIN_OPENAI_JSON) as a mode: `object`, or the strict default. */
+export const openAiJsonMode = (value: string | undefined): OpenAiJsonMode =>
+  value?.trim() === 'object' ? 'object' : 'schema';
+
+/** A server that is busy (429) or failing (5xx) is asked again; any other status is the answer. */
+const isRetryable = (status: number): boolean => status === 429 || status >= 500;
+
+const RETRIES = 4;
+const RETRY_BASE_MS = 2000;
+
+/**
+ * A model behind an OpenAI-compatible endpoint (LM Studio, llama-server,
+ * vLLM, Ollama's `/v1`), strict structured outputs. `extra` joins the
+ * request body: what a server takes beyond the standard, such as the
+ * switch that stops a reasoning model thinking aloud (`{"think": false}`,
+ * `{"reasoning_effort": "none"}`, `{"chat_template_kwargs": …}`), or
+ * another temperature. The run's report names it (`settings`).
+ */
 export const openAiModel = (
   baseUrl: string,
   model: string,
   apiKey: string | undefined,
+  extra: Readonly<Record<string, unknown>> = {},
+  {
+    jsonMode = 'schema',
+    onUsage,
+  }: {
+    readonly jsonMode?: OpenAiJsonMode | undefined;
+    /** Each answer's token counts, as the server reports them. */
+    readonly onUsage?: ((usage: OpenAiUsage) => void) | undefined;
+  } = {},
 ): LanguageModel => ({
   generateJson: async ({ jsonSchema, prompt }) => {
-    const response = await fetch(`${baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-      body: JSON.stringify({
-        messages: [{ content: prompt, role: 'user' }],
-        model,
-        response_format: {
-          json_schema: { name: 'answer', schema: strictSchema(jsonSchema as object), strict: true },
-          type: 'json_schema',
-        },
-        temperature: 0,
-      }),
-      headers: headers(apiKey),
-      method: 'POST',
-      signal: AbortSignal.timeout(GENERATE_TIMEOUT_MS),
-    });
-    if (!response.ok) {
-      throw new Error(`the server answered HTTP ${String(response.status)}`);
+    const body = JSON.stringify(openAiRequest({ extra, jsonMode, jsonSchema, model, prompt }));
+    let failure = 'no answer';
+    for (let attempt = 0; attempt < RETRIES; attempt += 1) {
+      if (attempt > 0) {
+        await new Promise((resolve) => setTimeout(resolve, RETRY_BASE_MS * 2 ** (attempt - 1)));
+      }
+      const response = await fetch(`${baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+        body,
+        headers: headers(apiKey),
+        method: 'POST',
+        signal: AbortSignal.timeout(GENERATE_TIMEOUT_MS),
+      });
+      if (!response.ok) {
+        failure = `the server answered HTTP ${String(response.status)}`;
+        if (isRetryable(response.status)) {
+          continue;
+        }
+        throw new Error(failure);
+      }
+      const answer = (await response.json()) as {
+        choices?: Array<{ message?: { content?: unknown } }>;
+        usage?: OpenAiUsage;
+      };
+      if (answer.usage !== undefined) {
+        onUsage?.(answer.usage);
+      }
+      const content = answer.choices?.[0]?.message?.content;
+      // JSON mode answers blank where the model wrote no JSON: asked again.
+      if (typeof content === 'string' && content.trim() === '') {
+        failure = 'the server answered with no text';
+        continue;
+      }
+      return withoutNulls(JSON.parse(contentOf(content)));
     }
-    const body = (await response.json()) as {
-      choices?: Array<{ message?: { content?: unknown } }>;
-    };
-    return withoutNulls(JSON.parse(contentOf(body.choices?.[0]?.message?.content)));
+    throw new Error(failure);
   },
   info: async () => ({ contextTokens: SERVED_CONTEXT_TOKENS, name: model }),
   status: async () => 'ready',
 });
+
+/** The token counts an OpenAI-compatible server reports for one answer. */
+export interface OpenAiUsage {
+  readonly completion_tokens?: number;
+  readonly prompt_cache_hit_tokens?: number;
+  readonly prompt_cache_miss_tokens?: number;
+  readonly prompt_tokens?: number;
+}

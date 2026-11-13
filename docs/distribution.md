@@ -103,6 +103,19 @@ useful after adding/rotating secrets.
   EventKit and camera permission prompts, even without App Sandbox; usage
   descriptions in Info.plist alone (`NSCameraUsageDescription` sits in
   `forge.config.cjs`) are insufficient.
+- `llama-server` rides in Resources beside the helper. It runs the
+  Assistant's own model (`apps/desktop/electron/assistantModel/`), and it
+  is llama.cpp at the commit llama.rn vendors (`vendor/VERSIONS`), so the Mac
+  and the iPhone run the same llama.cpp. `pnpm --filter @calendar/desktop
+  build:llama` (`scripts/build-llama-server.sh`, run by `make` and
+  `package:app`) fetches that commit and builds one static arm64 binary
+  with Metal embedded. It fails if the binary links anything outside the
+  system, and keeps a build whose commit and script are unchanged.
+  `LLAMA_CPP_SRC=<checkout>` builds from a local clone. CI caches only the
+  binary, keyed on the script and `apps/ios/package.json`. osx-sign signs it
+  under the hardened runtime with an empty entitlements list
+  (`optionsForFile`), not osx-sign's default plist. Both packaging jobs run
+  `llama-server --version` from the app.
 - The Developer ID cert lives only in a temporary keychain created from the
   secret for the duration of the job and is deleted in an `always()` step.
 - Notarization adds ~2–10 minutes; the job timeout is 30.
@@ -170,6 +183,18 @@ search is `MKLocalSearch`, a call to Apple's servers. It is declared
 directly rather than through expo-maps' `requestLocationPermission`
 option, which would also claim Android location permissions. `ios.infoPlist`
 feeds the fingerprint, so a change there forces a TestFlight build.
+
+llama.rn (the Assistant's model, and the Model Spike page) is linked in
+both variants and compiles llama.cpp from the sources the npm package
+ships (`plugins/withLlamaFromSource.cjs`); its postinstall, which would
+download a prebuilt framework, never runs (`allowBuilds`). The pod brings
+no privacy manifest of its own, and needs none from the app: llama.cpp
+touches two kinds of API Apple asks a reason for, file timestamps
+(`fstat` in `llama-mmap.cpp`) and boot time (`mach_absolute_time` in its
+vendored `miniaudio.h`), and the manifest Expo generates from the other
+pods already declares both. A processing mail citing ITMS-91053 after an
+upload would mean that changed. The model itself is data the app
+downloads (`solunivo-model-download`, a background `URLSession`), not code.
 
 Two comparison caveats, both fail-safe. The baseline is the latest
 _finished_ build, not "what testers run": installs still on an older

@@ -24,7 +24,7 @@ describe('availabilityGuidance', () => {
 
   it('names the limit an unsupported iPhone reported', () => {
     expect(availabilityGuidance({ nativeReason: 'osTooOld', status: 'unsupported' }, '18.5')).toBe(
-      'Quick add needs Apple Intelligence, which needs iOS 26 or later. This iPhone runs iOS 18.5.',
+      'Find a time, search sentences and capture need Apple Intelligence, which needs iOS 26 or later. This iPhone runs iOS 18.5.',
     );
     expect(
       availabilityGuidance({ nativeReason: 'deviceNotEligible', status: 'unsupported' }, '26.0'),

@@ -1,0 +1,9 @@
+{
+  "name": "solunivo-process-memory",
+  "version": "0.1.0",
+  "private": true,
+  "description": "What a measurement run needs of the process: its memory, and a screen that stays on — local Expo module",
+  "license": "UNLICENSED",
+  "author": "Nik Graf",
+  "main": "index.ts"
+}

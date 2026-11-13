@@ -509,20 +509,23 @@ change there.
   (`packages/ai/*.test.ts`). The e2e suites use the shared fixture model
   (`makeFixtureLanguageModel`, `fixtureTextRecognizer`): one event per
   line, `Title | +N or YYYY-MM-DD | HH:MM-HH:MM | Location`, with `+N`
-  counted from the prompt's own "Today is" line so no spec computes a
-  date. A phrase outside the grammar is a title on the fallback day, all
-  day — unless its own words say otherwise: the normalizer reads
-  "tomorrow", "at 1", a weekday or a meal off the phrase for every model,
-  the fixture included (`packages/ai/src/grounding.ts`). A refinement is
-  the same grammar with empty parts meaning "unchanged" (`| | 10:00-11:00`
-  moves the times only); a sentence leaves the draft to the normalizer.
-  Real models are measured, never gated: the model bench
-  (`apps/desktop/e2e/bench/`, `MODEL_BENCH=1 E2E=1 pnpm exec vp test run
-  apps/desktop/e2e/bench/modelBench.e2e.ts`) runs the cases under
-  `cases/` — a phrase, then the changes a thread would make to it, as
-  text or as a recording with its transcript — through `parseQuickAdd`
-  and `parseRefine` on Apple's model (the helper binary) and any served
-  one (`MODEL_BENCH_OLLAMA`, `MODEL_BENCH_OPENAI`), resolves guests
+  counted from today so no spec computes a date. It answers the
+  Assistant's tuned prompt as the trained model does, the whole draft
+  after the turn: a first phrase in the grammar, extras after a fifth
+  bar (`invite Anna Lee and Tom`, `remind 30`, `note: bring the card`),
+  `todo:` in front for a to-do, any other phrase a title on today; a
+  later turn is the draft it was shown, changed only by what the turn
+  names — the grammar with empty parts unchanged (`| | 10:00-11:00`
+  moves the times only) or one extra (`invite Tom`, `remove Anna`,
+  `remind 60`, `note: …`, `due +0`, `repeat weekly`, `repeat none`); any
+  other sentence changes nothing. Real models are measured, never gated:
+  the model bench (`apps/desktop/e2e/bench/`, `MODEL_BENCH=1 E2E=1 pnpm
+  exec vp test run apps/desktop/e2e/bench/modelBench.e2e.ts`) runs the
+  cases under `cases/` — a phrase, then the changes a thread would make
+  to it, as text or as a recording with its transcript — through the
+  tuned path (the plain arm for a general model) on any served model
+  (`MODEL_BENCH_OLLAMA`, `MODEL_BENCH_OPENAI`: the app's file on
+  `llama-server`, a teacher over its API), resolves guests
   against `contacts.json`, scores each field by where a person would put
   the event (a later turn must also leave what it was not about), prints
   a table and writes a JSON report with the raw answers under
@@ -780,9 +783,9 @@ sentence to a date chip with its words left in the field, Undo; Enter
 routed by the words, a place and a person read, plain words opening the
 top result; Clear; kind and a calendar added by hand with no turn; the
 dates popover); `modelProvider` (a served model: a fake
-Ollama in the spec's own process with the fixture model behind it, the
-Assistant's field over HTTP, Settings › AI Model's kind, Test and Save, the
-wording when the server is down); `reminders` and
+Ollama in the spec's own process with the fixture model behind it, a
+paste read by capture over HTTP, Settings › AI Model's kind, Test and
+Save, the wording when the server is down); `reminders` and
 `contacts` (seeded Apple/Google rows); `appleCalendar` (the in-memory
 EventKit, read-only viewer, moves both ways); `location` (the picker and
 map over the geo fixture); `birthdays` (device-contacts fixture, chip,
@@ -1169,10 +1172,9 @@ Selector gotchas (each caused a real failure):
   tasks"); `hideKeyboard` cannot dismiss it — the field's "Close" ends
   the search. The detail sheet's own "Delete" stays in the tree behind
   the confirmation alert's, so the alert's is tapped `below:` its title.
-- The Assistant flow (06) accepts the bar's "couldn't be read" outcome: a
-  CI simulator passes the model availability check yet cannot generate
-  without the fixture model, so the card is asserted only where a model
-  answers.
+- The Assistant flow (06) accepts the bar's "couldn't be read" outcome:
+  without the fixture model a simulator has no Assistant model to answer,
+  so the card is asserted only where one answers.
 - The bootstrap flow (live job only) `launchApp`s the dev client and only
   then opens `solunivo-dev://expo-development-client/?url=…`; it
   confirms exactly one "Open in Solunivo?" alert — every further "Open"

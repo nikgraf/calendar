@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { buildFindTimePrompt, FIND_TIME_JSON_SCHEMA } from './findTime.ts';
 import { fixtureTextRecognizer, makeFixtureLanguageModel } from './fixtureModel.ts';
-import { parseQuickAdd } from './parseQuickAdd.ts';
-import { buildQuickAddPrompt, QUICK_ADD_JSON_SCHEMA } from './quickAdd.ts';
-import { parseRefine } from './refine.ts';
 import { buildSearchQueryPrompt, SEARCH_QUERY_JSON_SCHEMA } from './searchQuery.ts';
 
 const CONTEXT = { referenceDate: '2026-09-20', timeZone: 'Europe/Vienna' };
@@ -13,47 +10,6 @@ describe('makeFixtureLanguageModel', () => {
 
   it('is always ready', async () => {
     await expect(model.status()).resolves.toBe('ready');
-  });
-
-  it('answers quick-add with the phrase as the title', async () => {
-    const result = await parseQuickAdd(model, {
-      fallbackDate: '2026-09-25',
-      phrase: 'Conference call',
-      ...CONTEXT,
-    });
-    expect(result).toMatchObject({
-      kind: 'parsed',
-      prefill: { date: '2026-09-25', isAllDay: true, title: 'Conference call' },
-    });
-  });
-
-  it('leaves the phrase words to the normalizer, like any model', async () => {
-    // The fixture says nothing about the day or time; the normalizer reads
-    // "tomorrow" and "at 1" off the phrase itself, and takes them off the
-    // title the fixture made of the whole phrase.
-    const result = await parseQuickAdd(model, {
-      fallbackDate: '2026-09-25',
-      phrase: 'Lunch with Sarah tomorrow at 1',
-      ...CONTEXT,
-    });
-    expect(result).toMatchObject({
-      kind: 'parsed',
-      prefill: {
-        date: '2026-09-21',
-        endTime: '14:00',
-        isAllDay: false,
-        startTime: '13:00',
-        title: 'Lunch with Sarah',
-      },
-    });
-  });
-
-  it('reads the grammar in a quick-add phrase', async () => {
-    const result = await parseQuickAdd(model, { phrase: 'Dentist | +3 | 14:30', ...CONTEXT });
-    expect(result).toMatchObject({
-      kind: 'parsed',
-      prefill: { date: '2026-09-23', endTime: '15:30', startTime: '14:30', title: 'Dentist' },
-    });
   });
 
   it('answers a finder sentence with the title after the bar and an hour', async () => {
@@ -104,19 +60,6 @@ describe('makeFixtureLanguageModel', () => {
       terms: ['lunch', 'salad'],
     });
   });
-
-  it('refuses a schema it does not know', async () => {
-    const prompt = buildQuickAddPrompt({ phrase: 'x', ...CONTEXT });
-    await expect(
-      model.generateJson({
-        jsonSchema: { properties: { mood: { type: 'string' } }, type: 'object' },
-        prompt,
-      }),
-    ).rejects.toThrow('unsupported schema');
-    await expect(
-      model.generateJson({ jsonSchema: QUICK_ADD_JSON_SCHEMA, prompt: 'no date here' }),
-    ).rejects.toThrow('reference date');
-  });
 });
 
 describe('fixtureTextRecognizer', () => {
@@ -131,88 +74,5 @@ describe('fixtureTextRecognizer', () => {
     await expect(
       fixtureTextRecognizer.recognizeText({ kind: 'uri', uri: 'file:///x' }),
     ).rejects.toMatchObject({ _tag: 'TextRecognitionError' });
-  });
-});
-
-describe('makeFixtureLanguageModel refinements', () => {
-  const model = makeFixtureLanguageModel();
-  const draft = {
-    date: '2026-09-23',
-    endTime: '15:30',
-    isAllDay: false,
-    startTime: '14:30',
-    title: 'Dentist',
-  };
-
-  it('applies the non-empty parts of the grammar to the draft in the prompt', async () => {
-    expect(
-      await parseRefine(model, { draft, utterance: '| | 10:00-11:00', ...CONTEXT }),
-    ).toMatchObject({
-      kind: 'parsed',
-      prefill: { date: '2026-09-23', endTime: '11:00', startTime: '10:00', title: 'Dentist' },
-    });
-    expect(
-      await parseRefine(model, { draft, utterance: 'Checkup | +5 | | Room 2', ...CONTEXT }),
-    ).toMatchObject({
-      prefill: {
-        date: '2026-09-25',
-        endTime: '15:30',
-        location: 'Room 2',
-        startTime: '14:30',
-        title: 'Checkup',
-      },
-    });
-  });
-
-  it('leaves a sentence to the normalizer', async () => {
-    // The fixture returns the draft as it is; the normalizer reads "at 4pm".
-    expect(await parseRefine(model, { draft, utterance: 'at 4pm', ...CONTEXT })).toMatchObject({
-      prefill: { endTime: '17:00', startTime: '16:00', title: 'Dentist' },
-    });
-  });
-
-  it('names the people after "invite" or "remove"', async () => {
-    expect(
-      await parseRefine(model, { draft, utterance: 'also invite Anna Lee and Bo', ...CONTEXT }),
-    ).toMatchObject({ invite: ['Anna Lee', 'Bo'], prefill: { title: 'Dentist' } });
-    expect(await parseRefine(model, { draft, utterance: 'remove Bo', ...CONTEXT })).toMatchObject({
-      uninvite: ['Bo'],
-    });
-  });
-});
-
-describe('makeFixtureLanguageModel invitees', () => {
-  it('names the people a quick-add phrase invites', async () => {
-    const result = await parseQuickAdd(makeFixtureLanguageModel(), {
-      phrase: 'Lunch tomorrow at 1, invite Tom Baker, Anna and Bo',
-      ...CONTEXT,
-    });
-    expect(result).toMatchObject({
-      invite: ['Tom Baker', 'Anna', 'Bo'],
-      kind: 'parsed',
-      prefill: { startTime: '13:00', title: 'Lunch' },
-    });
-  });
-});
-
-describe('makeFixtureLanguageModel tasks', () => {
-  it('reads "todo:" as a task, with the grammar after it', async () => {
-    // The marker is a to-do cue for the normalizer; the fixture only keeps
-    // it out of the title.
-    const model = makeFixtureLanguageModel();
-    const plain = await parseQuickAdd(model, {
-      fallbackDate: '2026-09-25',
-      phrase: 'todo: Buy milk',
-      ...CONTEXT,
-    });
-    expect(plain).toEqual({ kind: 'task', prefill: { date: '2026-09-25', title: 'Buy milk' } });
-    const timed = await parseQuickAdd(model, {
-      phrase: 'todo: Call bank | +1 | 09:30',
-      ...CONTEXT,
-    });
-    expect(timed).toEqual({
-      kind: 'task',
-      prefill: { date: '2026-09-21', time: '09:30', title: 'Call bank' },
-    });
   });
 });

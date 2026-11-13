@@ -51,6 +51,7 @@
     "expo-task-manager": "~58.0.13",
     "expo-updates": "~58.0.21",
     "expo-web-browser": "~58.0.7",
+    "llama.rn": "0.13.0-rc.9",
     "react": "catalog:",
     "react-native": "0.88.1",
     "react-native-gesture-handler": "~3.3.0",

@@ -1,4 +1,4 @@
-import type { CaptureSource } from '@calendar/ai';
+import { type CaptureSource, tunedReader } from '@calendar/ai';
 import {
   CONVERT_SCOPE_HINT,
   type EditorSeed,
@@ -7,7 +7,6 @@ import {
   stepName,
   stepSource,
   useMarkLesson,
-  useModelAvailability,
   useMoveConfirmation,
   useThreadEditor,
   type TaskEditorSeed,
@@ -19,8 +18,12 @@ import {
   type TaskRecord,
 } from '@calendar/core';
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
+import {
+  assistantStatusOf,
+  desktopAssistantModel,
+  useAssistantModelState,
+} from '../../ai/assistantModel.ts';
 import { desktopLanguageModel } from '../../ai/desktopModel.ts';
-import { onWindowFocus } from '../../ai/modelFocus.ts';
 import { backend } from '../../backend.ts';
 import { LessonBanner } from '../../onboarding/LessonBanner.tsx';
 import { Button } from '../../ui/Button.tsx';
@@ -34,6 +37,9 @@ import { DraftPager } from './DraftPager.tsx';
 import { ReminderEditorForm } from '../ReminderEditorForm.tsx';
 import { TaskEditorForm } from '../TaskEditorForm.tsx';
 import { FieldFlashContext, useFlash } from '../../ui/useFlash.ts';
+
+/** The Assistant reads phrases with its own model (electron/assistantModel/), as on the iPhone. */
+const assistantReader = tunedReader(desktopAssistantModel);
 
 const KIND_LABELS: Record<ItemKind, string> = {
   event: 'Event',
@@ -153,6 +159,7 @@ export function EditorPanel({
       lessonDone();
       onSaved?.();
     },
+    reader: assistantReader,
     seed,
     sourceKind,
     task,
@@ -162,7 +169,7 @@ export function EditorPanel({
   });
   const { eventModel, kinds, marks, onPhrase, previewing, steps, taskModel, userEdits } = editor;
   const { joinUrl } = eventModel;
-  const { apply, available, convertBlocked, kind, mode, switchTo } = kinds;
+  const { available, convertBlocked, kind, mode, switchTo } = kinds;
   // A step that made the item the other kind: the control stays marked.
   const kindMark = useFlash<HTMLDivElement>(marks?.fields.has('kind') ? marks.key : null, true);
 
@@ -174,7 +181,8 @@ export function EditorPanel({
   // The model answers a moment after the editor opened. Not ready, and
   // nothing said or typed yet: the form is what there is to work with,
   // once — the Assistant says why and is a tab away.
-  const availability = useModelAvailability(desktopLanguageModel, onWindowFocus);
+  const modelState = useAssistantModelState();
+  const availability = { state: modelState, status: assistantStatusOf(modelState) };
   const answered = useRef(false);
   useEffect(() => {
     if (availability.status === null || answered.current) {
@@ -194,7 +202,7 @@ export function EditorPanel({
       id={lesson}
       note={
         availability.status !== null && availability.status !== 'ready'
-          ? 'Describing an event needs the on-device model, which is not ready on this Mac — the form still makes one. Settings › AI Model says why.'
+          ? 'Describing an event needs the Assistant’s model, which is not on this Mac yet — the form still makes one.'
           : undefined
       }
       onSkip={lessonOpen ? onClose : undefined}
@@ -265,14 +273,9 @@ export function EditorPanel({
             calendars={calendars}
             editKey={userEdits}
             editor={editor}
-            fallbackDate={seed.initialDate.toString()}
             focusSignal={quickAddFocus}
             initialText={seed.quickAddText}
             note={seed.thread?.note}
-            onApply={(item) => {
-              lessonDone();
-              void apply(item);
-            }}
             onCapture={onCapture}
             onEdit={() => setView('form')}
             onPhrase={async (text) => {

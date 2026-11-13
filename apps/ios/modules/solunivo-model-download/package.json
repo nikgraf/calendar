@@ -1,0 +1,9 @@
+{
+  "name": "solunivo-model-download",
+  "version": "0.1.0",
+  "private": true,
+  "description": "One large file fetched by iOS in the background, on Wi-Fi unless mobile data is allowed — local Expo module",
+  "license": "UNLICENSED",
+  "author": "Nik Graf",
+  "main": "index.ts"
+}

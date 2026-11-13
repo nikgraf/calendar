@@ -10,7 +10,8 @@ import { type App, launchApp } from './harness.ts';
 // on this machine. The server here is a fake that answers like Ollama
 // (`/api/tags`, `/api/chat` with `format`) with the deterministic fixture
 // model from @calendar/ai behind it, so the whole path — Settings,
-// main-process HTTP, the quick-add field — runs without Ollama or Apple
+// main-process HTTP, a paste read into events (capture: the Assistant runs
+// the app's own model, never a served one) — runs without Ollama or Apple
 // Intelligence, and nothing depends on the date.
 const seed = {
   accounts: [
@@ -43,11 +44,16 @@ const seed = {
 const MODEL = 'fixture-model';
 /** The key the fake's /v1 routes want. */
 const SECRET = 'e2e-secret';
-const INPUT = '[data-testid="quick-add-input"]';
-const COMMAND_N = `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', metaKey: true }))`;
 const blockAt = (start: string) =>
   `!!document.querySelector('[data-testid="draft-block"][data-draft-start="${start}"]')`;
-const placeholder = `(document.querySelector(${JSON.stringify(INPUT)})?.placeholder ?? '')`;
+/** A paste of `text` on the calendar, as the OS delivers it: capture reads it with the served model. */
+const paste = (text: string) => `(() => {
+  const data = new DataTransfer();
+  data.setData('text/plain', ${JSON.stringify(text)});
+  window.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: data }));
+})()`;
+const captureSays = (words: string) =>
+  `(document.querySelector('[data-capture-state]')?.textContent ?? '').includes(${JSON.stringify(words)})`;
 
 interface ChatRequest {
   readonly format: unknown;
@@ -189,22 +195,16 @@ describe('A served model', () => {
     }
   });
 
-  it('answers the quick-add field over HTTP with a guided generation', async () => {
+  it('reads a paste over HTTP with a guided generation', async () => {
     const { cdp } = app;
-    await cdp.eval(COMMAND_N);
-    await cdp.waitFor(
-      `document.querySelector('[data-testid="editor-title"]')?.textContent === 'New event'`,
-    );
-    // Ready: the field asks for a phrase, not for Apple Intelligence.
-    await cdp.waitFor(`${placeholder}.startsWith('Lunch')`);
-    await cdp.say('Dinner | +2 | 19:00-20:00');
+    await cdp.eval(paste('Dinner | +2 | 19:00-20:00\nReview | +2 | 21:00-22:00'));
     await cdp.waitFor(blockAt('19:00'));
     const chat = ollama.chats.at(-1)!;
     expect(chat.model).toBe(MODEL);
     expect(chat.options.temperature).toBe(0);
     expect(chat.options.num_ctx).toBe(16_384);
     // The schema travels as Ollama's `format`: grammar-constrained, like the helper.
-    expect(chat.format).toMatchObject({ properties: { startTime: {} }, type: 'object' });
+    expect(chat.format).toMatchObject({ properties: { events: {} }, type: 'object' });
     expect(chat.messages[0]?.content).toContain('Dinner | +2 | 19:00-20:00');
   });
 
@@ -330,17 +330,15 @@ describe('A served model', () => {
     );
     await app.closeSettings();
 
-    // A phrase over the OpenAI shape: strict schema out, nulls stripped on the way back.
+    // A paste over the OpenAI shape: strict schema out, nulls stripped on the way back.
     const { cdp } = app;
-    await cdp.eval(COMMAND_N);
-    await cdp.waitFor(`${placeholder}.startsWith('Lunch')`);
-    await cdp.say('Review | +1 | 10:00-11:00');
+    await cdp.eval(paste('Review | +1 | 10:00-11:00\nLunch | +1 | 12:00-13:00'));
     await cdp.waitFor(blockAt('10:00'));
     const completion = ollama.completions.at(-1)!;
     expect(completion.response_format.json_schema.strict).toBe(true);
-    expect(completion.response_format.json_schema.schema).toMatchObject({
-      properties: { location: { type: ['string', 'null'] }, title: { type: 'string' } },
-    });
+    expect(JSON.stringify(completion.response_format.json_schema.schema)).toContain(
+      '"location":{"type":["string","null"]}',
+    );
     await cdp.pressEscape();
 
     // Back to Ollama for the tests below.
@@ -364,8 +362,8 @@ describe('A served model', () => {
     // Review: a fresh Ollama lists no models at all, which used to read as ready.
     ollama.tags = [];
     const { cdp } = app;
-    await cdp.eval(COMMAND_N);
-    await cdp.waitFor(`${placeholder} === 'Model not on the server'`);
+    await cdp.eval(paste('Dinner | +2 | 19:00-20:00\nReview | +2 | 21:00-22:00'));
+    await cdp.waitFor(captureSays(`does not have "${MODEL}"`));
     await cdp.pressEscape();
     ollama.tags = [`${MODEL}:latest`];
   });
@@ -382,10 +380,7 @@ describe('A served model', () => {
     await app.closeSettings();
 
     const { cdp } = app;
-    await cdp.eval(COMMAND_N);
-    await cdp.waitFor(`${placeholder} === 'Ollama unreachable'`);
-    expect(
-      await cdp.eval<string>(`document.querySelector('[data-testid="quick-add-input"]').disabled`),
-    ).toBe(true);
+    await cdp.eval(paste('Dinner | +2 | 19:00-20:00\nReview | +2 | 21:00-22:00'));
+    await cdp.waitFor(captureSays('Ollama at http://127.0.0.1:9 is not reachable'));
   });
 });

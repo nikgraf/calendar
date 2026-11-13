@@ -452,6 +452,16 @@ jobs:
           path: apps/desktop/helper/.build
           key: helper-xcode-27-${{ hashFiles('apps/desktop/helper/Package.swift', 'apps/desktop/helper/Package.resolved', 'apps/desktop/helper/Sources/**', 'packages/ai/swift/**', 'packages/apple-calendar/swift/**', 'packages/contacts/swift/**', 'packages/geo/swift/**', 'packages/reminders/swift/**') }}
           restore-keys: helper-xcode-27-
+      # llama-server for the Assistant's model (scripts/build-llama-server.sh):
+      # the binary and its stamp only. The llama.cpp commit comes from the
+      # llama.rn version pinned in apps/ios/package.json.
+      - name: Cache the llama-server build
+        uses: actions/cache@v6
+        with:
+          path: |
+            apps/desktop/llama/.build/llama-server
+            apps/desktop/llama/.build/STAMP
+          key: llama-server-xcode-27-${{ hashFiles('apps/desktop/scripts/build-llama-server.sh', 'apps/ios/package.json') }}
       - run: pnpm install --frozen-lockfile
       # The committed app icons and tokens.css are generated from brand/;
       # this is the only macOS job that runs whenever brand exports can
@@ -466,13 +476,15 @@ jobs:
           test -d "$APP" || { echo "::error::packaged app missing"; exit 1; }
           test -x "$APP/Contents/Resources/solunivo-model-helper" \
             || { echo "::error::model helper missing from Resources"; exit 1; }
+          "$APP/Contents/Resources/llama-server" --version \
+            || { echo "::error::llama-server missing from Resources or does not run"; exit 1; }
           # The agent relay: the wrapper must run the bundled script with
           # the app's own binary (ELECTRON_RUN_AS_NODE) and answer.
           "$APP/Contents/Resources/solunivo-cli" --version \
             || { echo "::error::solunivo-cli does not run from the packaged app"; exit 1; }
           # Regression check for the ignore-list fix: never ship Swift build
           # objects, e2e source, or local e2e screenshots inside the app.
-          for banned in helper e2e e2e-artifacts resources; do
+          for banned in helper llama e2e e2e-artifacts resources; do
             if [ -e "$APP/Contents/Resources/app/$banned" ]; then
               echo "::error::packaged app contains $banned/ — forge ignore list regressed"
               exit 1
@@ -544,6 +556,16 @@ jobs:
           path: apps/desktop/helper/.build
           key: helper-xcode-27-${{ hashFiles('apps/desktop/helper/Package.swift', 'apps/desktop/helper/Package.resolved', 'apps/desktop/helper/Sources/**', 'packages/ai/swift/**', 'packages/apple-calendar/swift/**', 'packages/contacts/swift/**', 'packages/geo/swift/**', 'packages/reminders/swift/**') }}
           restore-keys: helper-xcode-27-
+      # llama-server for the Assistant's model (scripts/build-llama-server.sh):
+      # the binary and its stamp only. The llama.cpp commit comes from the
+      # llama.rn version pinned in apps/ios/package.json.
+      - name: Cache the llama-server build
+        uses: actions/cache@v6
+        with:
+          path: |
+            apps/desktop/llama/.build/llama-server
+            apps/desktop/llama/.build/STAMP
+          key: llama-server-xcode-27-${{ hashFiles('apps/desktop/scripts/build-llama-server.sh', 'apps/ios/package.json') }}
       - run: pnpm install --frozen-lockfile
       - name: Compute short SHA
         run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
@@ -592,6 +614,9 @@ jobs:
             || { echo "::error::extracted app executable missing or not executable"; exit 1; }
           test -x "$APP/Contents/Resources/solunivo-model-helper" \
             || { echo "::error::extracted model helper missing or not executable"; exit 1; }
+          # Signed under the hardened runtime, llama.cpp still has to start.
+          "$APP/Contents/Resources/llama-server" --version \
+            || { echo "::error::llama-server does not run from the signed app"; exit 1; }
           # Signed and under the hardened runtime: the relay still has to
           # start (it runs the app binary as Node; the RunAsNode fuse stays on).
           "$APP/Contents/Resources/solunivo-cli" --version \

@@ -10,6 +10,7 @@ import { TaskNotificationsSection } from './TaskNotificationsSection.tsx';
 import { GettingStartedSection } from './GettingStartedSection.tsx';
 import { LocationsSection } from './LocationsSection.tsx';
 import { MirrorsSection } from './MirrorsSection.tsx';
+import { AssistantModelSection } from './AssistantModelSection.tsx';
 import { ModelSection } from './ModelSection.tsx';
 import { PrivacySection } from './PrivacySection.tsx';
 import { RemindersSection } from './RemindersSection.tsx';
@@ -60,7 +61,12 @@ const PANE_CONTENT: Record<SettingsPaneId, ReactNode> = {
   ),
   gettingstarted: <GettingStartedSection />,
   mirrors: <MirrorsSection />,
-  model: <ModelSection />,
+  model: (
+    <>
+      <AssistantModelSection />
+      <ModelSection />
+    </>
+  ),
   notifications: (
     <>
       <EventNotificationsSection />

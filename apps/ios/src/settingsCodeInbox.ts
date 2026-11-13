@@ -83,6 +83,29 @@ export const setSetupPhase = (phase: SetupPhase, router?: Router): void => {
   if (phase === 'closed' && router) {
     route(router);
   }
+  if (phase === 'closed') {
+    const waiting = [...closedWaiters];
+    closedWaiters.clear();
+    for (const run of waiting) {
+      run();
+    }
+  }
+};
+
+const closedWaiters = new Set<() => void>();
+
+/**
+ * Runs `run` once the first run's setup is out of the way (decided as not
+ * due, or closed): now if it is, else when it closes. What asks the
+ * person something at launch (the Assistant's download) waits for it, so
+ * no alert covers the setup.
+ */
+export const whenSetupClosed = (run: () => void): void => {
+  if (setup === 'closed') {
+    run();
+    return;
+  }
+  closedWaiters.add(run);
 };
 
 /**

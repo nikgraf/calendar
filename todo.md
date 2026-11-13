@@ -176,15 +176,38 @@ the served model (#184) and slot proposals (#185) are in
       contacts and past places, which needs an own speech module on iOS
       (`@react-native-ai/apple` takes audio and a locale), with MapKit's
       structured city/region/country fields in the same native build;
-      the place of a first phrase is the model's alone, and Apple's on
-      the Mac names none ("Dinner at Hard Rock Cafe on Friday at 7"
-      keeps it in the title: every first-phrase location case of the
-      bench fails there), and a place turn keeps the cue the model
-      copied ("im Figlmüller", "at the office"), which no lookup
-      resembles; bench cases that ask MapKit.
-- [ ] Gemma 4 on iOS — opt-in download via llama.rn (JSON schema →
-      grammar maps onto `generateJson`), load on demand, unload on
-      background; only if the bench shows the model is the bottleneck.
+      a place turn keeps the cue the model copied ("im Figlmüller", "at
+      the office"), which no lookup resembles; bench cases that ask
+      MapKit.
+- [ ] Served models: no thinking, and the strict schema on Ollama — the
+      app sends Ollama the schema as `format` (only the title required)
+      and turns thinking off on neither route. On Assistant phrases (the
+      bench, 2026-11-11) Gemma 4 E2B scored 40 of 70 at 4.1 s a turn
+      asked as the app asks Ollama, and 59 at 0.7 s over the
+      OpenAI-compatible route with every field required and
+      `reasoning_effort: "none"`. A served model now answers only find a
+      time, search sentences and capture, which no bench measures:
+      measure those first.
+- [ ] The Assistant's own model, follow-ups (#307): find a time, search
+      sentences and capture still need Apple's model (data and a tuned
+      prompt each; capture's schema leaves the time and place optional,
+      and Apple's model filled no optional field on any quick-add phrase
+      in the bench, 2026-11-11, unmeasured for capture); a model for
+      6 GB iPhones (Q4_K_M, 1.2 GB loaded, or a smaller base); "next
+      Friday" and deadlines ("before Friday") are
+      read as the teacher read them, which wavers; the data has no turn
+      that turns notifications off ("no reminder", a first phrase or a
+      later turn) and the export drops an empty list, so a first phrase
+      cannot say none (briefs for it, and `reminders: []` kept in the
+      answer); notes over 200 characters or on several lines are not
+      shown to the model, so the Assistant only adds to them. v1 scores
+      57 of 70 and misses mostly follow-ups (time arithmetic such as "30
+      minutes later" as `17:60`, "stop repeating", "remove Tom", "all day
+      instead"): a v2 with more follow-up turns in the data (a third of
+      v1's) that also leaves `date` out where no day was said, so the
+      tuned reader's one word check (`statesDay`) can go, and a new
+      release with its own version. Not checked on a device: the
+      iPhone's transfer across a quit and a network change.
 
 - [ ] Find-a-time follow-ups — the finder keeps a whole Apple series
       busy through a series edit (its rows are read through EventKit, no

@@ -173,7 +173,7 @@ export const normalizeFindTime = (
 /**
  * One constraint sentence in, solver constraints out. Only the model call
  * is impure — prompt building and normalization are testable around a
- * fake, exactly like parseQuickAdd.
+ * fake, like capture's `parseCapture`.
  */
 export const parseFindTime = async (
   model: LanguageModel,

@@ -214,25 +214,12 @@ describe('The draft thread', () => {
     await cdp.locate('[title^="Dinner ·"]');
   });
 
-  it("takes the spoken command off a dictated phrase's title", async () => {
+  it('reads a note and a notification from the phrase into the form, and adds to them turn by turn', async () => {
     const { cdp } = app;
     await cdp.eval(COMMAND_N);
     await cdp.waitFor(headingIs('New event'));
-    // A sentence, not the fixture's grammar: the fixture answers it whole
-    // as the title, as the iPhone's model did (2026-11-06), and the
-    // normalizer reads the when off it and the command around it.
-    await cdp.say('Add an event to have lunch with Stefan tomorrow at 1');
-    await cdp.waitFor(blockAt('13:00'));
-    await cdp.waitFor(titleIs('Lunch with Stefan'));
-    expect(await cdp.eval<string>(card('title'))).toBe('Lunch with Stefan');
-  });
-
-  it('reads a note and a notification from the phrase into the form; a turn about nothing else needs no model', async () => {
-    const { cdp } = app;
-    await cdp.eval(COMMAND_N);
-    await cdp.waitFor(headingIs('New event'));
-    // The clauses leave the phrase before the (fixture) model sees it: the grammar still parses.
-    await cdp.say('Dentist | +2 | 10:00-11:00, remind me 30 minutes before, note: bring the card');
+    // The fixture's extras: the model answers the note and the notification with the event.
+    await cdp.say('Dentist | +2 | 10:00-11:00 | | remind 30, note: bring the card');
     await cdp.waitFor(blockAt('10:00'));
     expect(await cdp.eval<boolean>(titleIs('Dentist'))).toBe(true);
     await cdp.waitFor(`${valueOf('[data-testid="editor-notes"]')} === 'bring the card'`);
@@ -241,15 +228,15 @@ describe('The draft thread', () => {
     expect(await cdp.eval<string>(card('reminders'))).toBe('30 minutes before');
     expect(await cdp.eval<string>(card('notes'))).toBe('bring the card');
 
-    // Words about a notification alone: no model call, the row joins and is the one marked.
-    await cdp.say('and an hour before as well');
+    // A notification alone: the row joins and is the one marked.
+    await cdp.say('remind 60');
     await cdp.waitFor(`${valueOf('[data-testid="event-reminder-1"]')} === '60'`);
     expect(await cdp.eval<string>(valueOf('[data-testid="event-reminder-0"]'))).toBe('30');
     await cdp.waitFor(`${changed} === 'Changed: notifications'`);
     await cdp.waitFor(marked('[data-testid="event-reminders"]'));
     expect(await cdp.eval<boolean>(marked('[data-testid="editor-notes"]'))).toBe(false);
     // A note added by a step joins the notes on a line of its own.
-    await cdp.say('add a note: ask about the fee');
+    await cdp.say('note: ask about the fee');
     await cdp.waitFor(
       `${valueOf('[data-testid="editor-notes"]')} === 'bring the card\\nask about the fee'`,
     );

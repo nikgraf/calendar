@@ -3,11 +3,12 @@ import {
   type LanguageModel,
   NO_SLOT_FITS,
   type NotesChange,
-  parseQuickAdd,
-  parseRefine,
+  type PhraseReader,
   proposeSlots,
+  type QuickAddPrefill,
   readExtras,
   type ReminderChange,
+  type TurnDraft,
 } from '@calendar/ai';
 import {
   type AttendeeInput,
@@ -44,7 +45,7 @@ import {
   type InviteeChoice,
   resolveInvitees,
 } from './draftInvitees.ts';
-import { placeAsSaid, type PlaceChange, type PlaceChoice, settlePlace } from './draftPlaces.ts';
+import { type PlaceChange, type PlaceChoice, settlePlace } from './draftPlaces.ts';
 import type { EventEditorPrefill } from './editorModel.ts';
 import { convertQuickAddItem, type QuickAddItem } from './quickAddItem.ts';
 import { recurrenceKey } from './repeatState.ts';
@@ -1231,14 +1232,53 @@ const NO_PLACE: PlaceChange = { candidates: [], text: '' };
  * folded in first, so a turn starts from what the user sees and its
  * summary lists only what the words changed.
  */
+/** The popup notifications a draft holds, in minutes before; none while it keeps the calendar's default. */
+const popupMinutesOf = (
+  reminders: EventReminders | undefined,
+): ReadonlyArray<number> | undefined =>
+  reminders === undefined || reminders.useDefault
+    ? undefined
+    : reminders.overrides
+        .filter((override) => override.method === 'popup')
+        .map((override) => override.minutes);
+
+/**
+ * A draft as a reader's turn sees it (`TurnDraft`): the item as the event
+ * it would be, the addresses already invited, its notes and notifications
+ * — the calendar's default ones (`defaults`) where the draft keeps to them.
+ */
+export const turnDraftOf = (
+  draft: Draft,
+  prefill: QuickAddPrefill,
+  defaults?: ReadonlyArray<number> | undefined,
+): TurnDraft => {
+  const notes = draft.item.kind === 'task' ? draft.extras?.taskNotes : draft.extras?.description;
+  const reminders = popupMinutesOf(draft.extras?.reminders);
+  return {
+    ...(reminders === undefined && defaults !== undefined ? { defaultReminders: defaults } : {}),
+    guests: (draft.extras?.attendees ?? []).map((attendee) => attendee.email),
+    kind: draft.item.kind,
+    notes: notes?.trim() ? notes : undefined,
+    prefill,
+    reminders,
+  };
+};
+
 export const useDraftThread = ({
   backend,
+  defaultRemindersOf,
   model,
+  reader,
   timeZone,
 }: {
   /** The events a finder phrase searches between. */
   backend: BackendClient;
+  /** The default notifications of the calendar a draft would go to (minutes before), where known. */
+  defaultRemindersOf?: ((draft: Draft) => ReadonlyArray<number> | undefined) | undefined;
+  /** The model a finder phrase is read with (find a time keeps Apple's, or a served one). */
   model: LanguageModel;
+  /** How a phrase and a change are read: the Assistant's own model, through `tunedReader`. */
+  reader: PhraseReader;
   timeZone: string;
 }) => {
   const [state, setState] = useState<DraftThreadState>(EMPTY_THREAD);
@@ -1328,16 +1368,8 @@ export const useDraftThread = ({
           const asEvent = convertQuickAddItem(draft.item, 'event');
           const result =
             asEvent.kind === 'event'
-              ? await parseRefine(model, {
-                  draft: asEvent.prefill,
-                  // A to-do's words about people are its title's.
-                  guests: draft.item.kind === 'event',
-                  // What a turn that only says where the place is adds to.
-                  placeSaid: placeAsSaid(
-                    draft.placeChoice,
-                    asEvent.prefill.location,
-                    draft.extras?.geo,
-                  ),
+              ? await reader.change({
+                  draft: turnDraftOf(draft, asEvent.prefill, defaultRemindersOf?.(draft)),
                   referenceDate,
                   said: turnsOf(current, draft.id),
                   timeZone,
@@ -1540,7 +1572,7 @@ export const useDraftThread = ({
       return NOT_OPEN_YET;
     }
     const mine = request.current;
-    const result = await parseQuickAdd(model, {
+    const result = await reader.first({
       fallbackDate,
       phrase: text,
       referenceDate: Temporal.Now.plainDateISO(timeZone).toString(),

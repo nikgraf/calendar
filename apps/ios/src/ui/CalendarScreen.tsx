@@ -32,7 +32,8 @@ import { useEffect, useMemo, useRef } from 'react';
 import { MenuView } from '@expo/ui/community/menu';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { AppState, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { Alert, AppState, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { startAssistantModel } from '../assistantRuntime.ts';
 import { kickSync, runLocalNotifications, startSync, subscribeInvalidations } from '../backend.ts';
 import { registerBackgroundRefresh } from '../backgroundTask.ts';
 import { useOnboardingEnabled } from '../onboarding.ts';
@@ -78,6 +79,20 @@ export function CalendarScreen() {
   useEffect(() => {
     startSync();
     registerBackgroundRefresh();
+    // The Assistant's model: picked up where the last launch left it, and
+    // asked for once the setup is out of the way (`assistantModelOffer.ts`).
+    startAssistantModel((question, answer) => {
+      Alert.alert(
+        question.title,
+        question.message,
+        question.buttons.map((button) => ({
+          onPress: () => answer(button.choice),
+          style: button.style ?? 'default',
+          text: button.text,
+        })),
+        { cancelable: false },
+      );
+    });
     const subscription = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
         kickSync();

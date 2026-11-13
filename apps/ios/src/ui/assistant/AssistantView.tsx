@@ -6,7 +6,6 @@ import {
   draftListKey,
   type FieldChange,
   stepSummary,
-  type useModelAvailability,
   type useThreadEditor,
   versionLabel,
 } from '@calendar/app-state';
@@ -21,7 +20,6 @@ import {
   Text,
   View,
 } from 'react-native';
-import { ModelAvailabilityNotice } from '../ModelAvailabilityNotice.tsx';
 import { BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme } from '../theme.ts';
 import { AssistantCard } from './AssistantCard.tsx';
 import { DraftQuestions } from './DraftQuestions.tsx';
@@ -217,22 +215,23 @@ function StepAnswer({
  * under it (`AssistantBar`).
  */
 export function AssistantView({
-  availability,
   banner,
   calendars,
   editor,
   note,
+  notice,
   onEdit,
   pending,
   taskLists,
 }: {
-  readonly availability: ReturnType<typeof useModelAvailability>;
   /** Above the conversation: the lesson's frame. */
   readonly banner?: ReactNode;
   readonly calendars: ReadonlyArray<CalendarInfo>;
   readonly editor: ReturnType<typeof useThreadEditor>;
   /** A caveat about the drafts (the shared text was cut short). */
   readonly note?: string | undefined;
+  /** Why the Assistant cannot answer yet (its model downloading, Apple's not ready), in the conversation's place. */
+  readonly notice?: ReactNode;
   /** To the form, on the same draft. */
   readonly onEdit: () => void;
   /** The words being read, until their answer lands. */
@@ -253,7 +252,7 @@ export function AssistantView({
     const { content, view } = sizes.current;
     scroller.current?.scrollTo({ animated, y: Math.max(content - view, 0) });
   };
-  const unavailable = availability.status !== null && availability.status !== 'ready';
+  const unavailable = notice !== undefined && notice !== null;
   const started = steps.of > 0;
   const answer = (
     <StepAnswer
@@ -282,17 +281,7 @@ export function AssistantView({
       testID="assistant-thread"
     >
       {banner}
-      {unavailable && availability.availability ? (
-        <View testID="assistant-unavailable">
-          <ModelAvailabilityNotice
-            availability={availability.availability}
-            checkedAt={availability.checkedAt}
-            lastManualCheck={availability.lastManualCheck}
-            manualChecking={availability.manualChecking}
-            onCheckAgain={availability.retry}
-          />
-        </View>
-      ) : null}
+      {unavailable ? <View testID="assistant-unavailable">{notice}</View> : null}
       {!started && assistant === 'new' && !pending && !unavailable ? (
         <View style={styles.empty}>
           <SymbolView name="sparkles" size={22} tintColor={colors['text-secondary']} />

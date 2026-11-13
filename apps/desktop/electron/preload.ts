@@ -13,6 +13,14 @@ contextBridge.exposeInMainWorld('calendarBridge', {
   /** Brings Calendar.app forward (false under the e2e fixture, which opens nothing). */
   appleCalendarOpen: () => ipcRenderer.invoke('appleCalendar:open'),
   appleCalendarStatus: () => ipcRenderer.invoke('appleCalendar:status'),
+  /** The question at launch (once, while the Assistant's model was never answered for its version). */
+  assistantAsk: () => ipcRenderer.invoke('assistant:ask'),
+  /** The Assistant's Download button: the person agrees, the download starts. */
+  assistantDownload: () => ipcRenderer.invoke('assistant:download'),
+  /** One prompt to the Assistant's own model (assistantModel/), its JSON answer back. */
+  assistantGenerate: (prompt: string) => ipcRenderer.invoke('assistant:generate', prompt),
+  assistantRetry: () => ipcRenderer.invoke('assistant:retry'),
+  assistantState: () => ipcRenderer.invoke('assistant:state'),
   /** Stops a Google sign-in waiting on the browser (Accounts › Cancel). */
   authCancel: () => ipcRenderer.invoke('auth:cancel'),
   /** Camera access for reading a settings code: asks macOS once (CALENDAR_CAMERA=off: unavailable). */
@@ -59,6 +67,25 @@ contextBridge.exposeInMainWorld('calendarBridge', {
     ipcRenderer.on('lesson:open', take);
     take();
     return () => ipcRenderer.off('lesson:open', take);
+  },
+  /** Where the Assistant's model stands: the state now, then every change. */
+  onAssistantModel: (listener: (state: unknown) => void) => {
+    let changed = false;
+    const wrapped = (_event: unknown, state: unknown) => {
+      changed = true;
+      listener(state);
+    };
+    ipcRenderer.on('assistant:changed', wrapped);
+    void ipcRenderer.invoke('assistant:state').then(
+      (state: unknown) => {
+        // A change that arrived meanwhile is newer than this reply.
+        if (!changed) {
+          listener(state);
+        }
+      },
+      () => undefined,
+    );
+    return () => ipcRenderer.off('assistant:changed', wrapped);
   },
   onModelProviderChanged: (listener: (view: unknown) => void) => {
     const wrapped = (_event: unknown, view: unknown) => listener(view);

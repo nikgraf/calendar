@@ -4,7 +4,6 @@ import {
   type EditorSourceKind,
   editorTitle,
   useMarkLesson,
-  useModelAvailability,
   useQuickAddModel,
   useThreadEditor,
   type TaskEditorSeed,
@@ -31,11 +30,13 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { onAppActive } from '../appActive.ts';
 import { appleSpeech } from '../appleSpeech.ts';
 import { backendClient } from '../backend.ts';
-import { languageModel } from '../model.ts';
+import { type AssistantModelState, type ModelStatus, statusOf } from '@calendar/ai';
+import { assistantDownload, assistantReader, useAssistantModelState } from '../assistantRuntime.ts';
+import { languageModel, modelFixture } from '../model.ts';
 import { AssistantBar } from './assistant/AssistantBar.tsx';
+import { AssistantModelNotice } from './assistant/AssistantModelNotice.tsx';
 import { AssistantView } from './assistant/AssistantView.tsx';
 import { DraftPager } from './assistant/DraftPager.tsx';
 import { PILLS_SHOWN, pillTuckAfter } from './assistant/pillTuck.ts';
@@ -490,6 +491,22 @@ function FormView({
  * header in either view; Save on one of several writes it and moves to
  * the next.
  */
+
+/** The Create lesson's note while the Assistant's model is not on this iPhone yet. */
+const lessonNoteOf = (state: AssistantModelState): string => {
+  switch (state.kind) {
+    case 'unsupported':
+      return 'This iPhone cannot run the Assistant’s model — the form still makes an event.';
+    case 'unasked':
+    case 'declined':
+      return 'Describing an event needs the Assistant’s model, a one-time download — the form still makes one.';
+    case 'failed':
+      return 'The Assistant’s model did not download — Try Again in the Assistant; the form still makes an event.';
+    default:
+      return 'The Assistant’s model is still downloading — the form still makes an event.';
+  }
+};
+
 export function EventEditSheet({
   birthday,
   calendars,
@@ -547,6 +564,7 @@ export function EventEditSheet({
       lesson.done();
       onSaved?.();
     },
+    reader: assistantReader(),
     seed,
     sourceKind,
     task,
@@ -564,18 +582,39 @@ export function EventEditSheet({
   // The model answers a moment after the editor opened. Not ready, and
   // nothing said or typed yet: the form is what there is to work with,
   // once — the Assistant says why and is a tap away.
-  const availability = useModelAvailability(languageModel, onAppActive);
+  // The Assistant runs on its own model (`assistantRuntime.ts`), whose state
+  // is known at once; the fixture model (e2e) is always ready.
+  const own = useAssistantModelState();
+  const status: ModelStatus | null = modelFixture ? 'ready' : statusOf(own);
   const answered = useRef(false);
   useEffect(() => {
-    if (availability.status === null || answered.current) {
+    if (status === null || answered.current) {
       return;
     }
     answered.current = true;
-    if (availability.status !== 'ready' && steps.of === 0) {
+    if (status !== 'ready' && steps.of === 0) {
       setView('form');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the first answer only
-  }, [availability.status]);
+  }, [status]);
+  const download = assistantDownload();
+  const notice =
+    status === null || status === 'ready' ? undefined : (
+      <AssistantModelNotice
+        network={download.network()}
+        onAction={(action) => {
+          if (action === 'download') {
+            void download.agree('wifi');
+          } else if (action === 'mobile') {
+            void download.allowMobileData();
+          } else {
+            void download.retry();
+          }
+        }}
+        size={download.size()}
+        state={own}
+      />
+    );
 
   // The Create lesson's frame, over either view. Where the model is not
   // ready the editor has fallen back to its form: the banner says why the
@@ -583,11 +622,7 @@ export function EventEditSheet({
   const lessonBanner = seed.lesson ? (
     <LessonBanner
       id={seed.lesson}
-      note={
-        availability.status !== null && availability.status !== 'ready'
-          ? 'Describing an event needs Apple Intelligence, which is not ready on this iPhone — the form still makes one.'
-          : undefined
-      }
+      note={status === null || status === 'ready' ? undefined : lessonNoteOf(own)}
       onSkip={lesson.open ? onClose : undefined}
     />
   ) : null;
@@ -597,16 +632,10 @@ export function EventEditSheet({
   // edit by hand there does (`editKey`).
   const quick = useQuickAddModel({
     editKey: editor.userEdits,
-    fallbackDate: seed.initialDate.toString(),
     hold: editor.applying,
     initialText: seed.quickAddText,
-    model: languageModel,
     // An older step on show: nothing is listened for, and listening ends.
     off: previewing,
-    onApply: (item) => {
-      lesson.done();
-      void kinds.apply(item);
-    },
     onPhrase: async (text) => {
       const message = await onPhrase(text);
       if (message === undefined) {
@@ -617,7 +646,6 @@ export function EventEditSheet({
       return message;
     },
     speech: appleSpeech,
-    timeZone,
   });
 
   const { noun, verb } = editorTitle({
@@ -657,11 +685,11 @@ export function EventEditSheet({
         {shown === 'assistant' ? (
           <>
             <AssistantView
-              availability={availability}
               banner={lessonBanner}
               calendars={calendars}
               editor={editor}
               note={seed.thread?.note}
+              notice={notice}
               onEdit={() => setView('form')}
               pending={quick.busy && quick.phrase.trim() !== '' ? quick.phrase : undefined}
               taskLists={taskLists}
@@ -685,7 +713,7 @@ export function EventEditSheet({
               previewing={previewing}
               quick={quick}
               startTyping={seed.quickAddText !== undefined}
-              status={availability.status}
+              status={status}
             />
           </>
         ) : (

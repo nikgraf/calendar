@@ -26,6 +26,7 @@ import {
   startThread,
   stepTo,
   threadLine,
+  turnDraftOf,
   turnsOf,
   undoTurn,
   updateDraft,
@@ -37,7 +38,7 @@ import {
   type PlaceCandidate,
   ReminderOverride,
 } from '@calendar/core';
-import { livePlaceChoice, pickedCandidate, placeAsSaid, readsAsSaid } from './draftPlaces.ts';
+import { livePlaceChoice, pickedCandidate, readsAsSaid } from './draftPlaces.ts';
 import type { QuickAddItem } from './quickAddItem.ts';
 
 const dinner: QuickAddItem = {
@@ -1217,34 +1218,6 @@ describe('guests from the words', () => {
     expect(found.drafts[0]).not.toHaveProperty('inviteeChoices');
   });
 
-  it('knows the place as the words said it, for a turn that says more of it', () => {
-    const choice = {
-      candidates: [figl('Figlmüller, Wollzeile 5, 1010 Vienna, Austria')],
-      text: 'Figlmüller',
-    };
-    const [taken] = choice.candidates;
-    // A place taken for the words: the words, not its address.
-    expect(placeAsSaid(choice, taken!.geo.source, taken!.geo)).toBe('Figlmüller');
-    // The text as said needs no other.
-    expect(placeAsSaid(choice, 'Figlmüller', undefined)).toBeUndefined();
-    expect(placeAsSaid(undefined, 'Figlmüller', undefined)).toBeUndefined();
-    expect(placeAsSaid(choice, undefined, undefined)).toBeUndefined();
-    // A place picked by hand, its choice gone: the name it is written with.
-    const picked = new GeoLocation({
-      lat: 48.2,
-      lng: 16.35,
-      name: 'Kaffemik',
-      source: 'Kaffemik, Zollergasse 5, 1070 Vienna, Austria',
-    });
-    expect(placeAsSaid(undefined, picked.source, picked)).toBe('Kaffemik');
-    // A pin whose text is not written with its name, or is no longer the form's: the text.
-    const renamed = new GeoLocation({ ...picked, source: 'Praxis Dr. Huber' });
-    expect(placeAsSaid(undefined, renamed.source, renamed)).toBeUndefined();
-    expect(placeAsSaid(undefined, 'Zollergasse 5', picked)).toBeUndefined();
-    // A choice the form moved away from says nothing of the new text.
-    expect(placeAsSaid(choice, 'Plachutta', undefined)).toBeUndefined();
-  });
-
   it('drops a choice settled by hand, without a turn or a version', () => {
     const started = startThread([dinner], 'dinner, invite Mia and Sarah', {
       guests: {
@@ -1777,5 +1750,87 @@ describe('stepRule', () => {
     // A step about something else left the rule alone.
     expect(stepRule(refineThread(state, 'later', [{ id: 'd1', item: later }]))).toBeUndefined();
     expect(stepRule(EMPTY_THREAD)).toBeUndefined();
+  });
+});
+
+describe('turnDraftOf', () => {
+  const prefill = {
+    date: '2026-11-13',
+    endTime: '20:00',
+    isAllDay: false,
+    startTime: '19:00',
+    title: 'Dinner',
+  };
+
+  it('gives a reader the guests, the notes and the popup notifications a draft holds', () => {
+    const turn = turnDraftOf(
+      {
+        extras: {
+          attendees: [{ email: 'ben@example.com' }],
+          description: 'window table',
+          reminders: new EventReminders({
+            overrides: [
+              new ReminderOverride({ method: 'popup', minutes: 10 }),
+              new ReminderOverride({ method: 'email', minutes: 60 }),
+            ],
+            useDefault: false,
+          }),
+        },
+        id: 'd1',
+        item: { kind: 'event', prefill },
+      },
+      prefill,
+    );
+    expect(turn).toEqual({
+      guests: ['ben@example.com'],
+      kind: 'event',
+      notes: 'window table',
+      prefill,
+      reminders: [10],
+    });
+  });
+
+  it('gives no notifications while the draft keeps the calendar’s default, and a to-do’s own notes', () => {
+    const turn = turnDraftOf(
+      {
+        extras: {
+          attendees: [],
+          description: '',
+          reminders: new EventReminders({ overrides: [], useDefault: true }),
+          taskNotes: 'the blue folder',
+        },
+        id: 'd2',
+        item: { kind: 'task', prefill: { date: '2026-11-13', title: 'Pay rent' } },
+      },
+      prefill,
+    );
+    expect(turn).toMatchObject({ guests: [], kind: 'task', notes: 'the blue folder' });
+    expect(turn.reminders).toBeUndefined();
+    expect(turnDraftOf({ id: 'd3', item: { kind: 'event', prefill } }, prefill)).toMatchObject({
+      guests: [],
+      notes: undefined,
+    });
+  });
+
+  it('gives the calendar’s default notifications where the draft keeps to them, and only there', () => {
+    const own = {
+      extras: {
+        attendees: [],
+        description: '',
+        reminders: new EventReminders({
+          overrides: [new ReminderOverride({ method: 'popup', minutes: 30 })],
+          useDefault: false,
+        }),
+      },
+      id: 'd4',
+      item: { kind: 'event' as const, prefill },
+    };
+    expect(turnDraftOf(own, prefill, [10])).not.toHaveProperty('defaultReminders');
+    expect(
+      turnDraftOf({ id: 'd5', item: { kind: 'event', prefill } }, prefill, [10]),
+    ).toMatchObject({ defaultReminders: [10], reminders: undefined });
+    expect(turnDraftOf({ id: 'd6', item: { kind: 'event', prefill } }, prefill)).not.toHaveProperty(
+      'defaultReminders',
+    );
   });
 });

@@ -861,6 +861,16 @@ export interface RemindersFixture {
   readonly reminders?: ReadonlyArray<ReminderJson>;
 }
 
+/** The environment for `LaunchOptions.assistantModel`. */
+const assistantModelEnv = (
+  choice: LaunchOptions['assistantModel'],
+): Readonly<Record<string, string>> =>
+  choice === undefined || choice === 'off'
+    ? { CALENDAR_ASSISTANT_MODEL: 'off' }
+    : 'file' in choice
+      ? { CALENDAR_ASSISTANT_MODEL_FILE: choice.file }
+      : { CALENDAR_ASSISTANT_MANIFEST: choice.manifest };
+
 export interface LaunchOptions {
   /**
    * Agents present at launch (the gateway only listens while one exists).
@@ -874,6 +884,15 @@ export interface LaunchOptions {
    * sees them without reading a developer's calendars.
    */
   readonly appleCalendar?: 'off' | 'real' | { readonly fixture: AppleCalendarFixture };
+  /**
+   * 'off' (default): the Assistant's own model is left out — no question
+   * at launch, nothing downloaded (`CALENDAR_ASSISTANT_MODEL=off`); under
+   * `model: 'fixture'` the fixture answers it anyway. `{ file }`: that
+   * GGUF in place of the download, run by the built llama-server.
+   * `{ manifest }`: the download from that manifest (a file served from
+   * this Mac).
+   */
+  readonly assistantModel?: 'off' | { readonly file: string } | { readonly manifest: string };
   /**
    * Absent (default): no camera (CALENDAR_CAMERA=off) — the settings-code
    * reader offers its paste field only and nothing asks TCC. Present: the
@@ -1191,6 +1210,8 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
         ...microphoneEnv,
         ...(options.model === 'fixture' ? { CALENDAR_MODEL: 'fixture' } : {}),
         CALENDAR_AGENT_SOCKET: agentSocketPath,
+        // The Assistant's own model: off unless a spec points it at a file.
+        ...assistantModelEnv(options.assistantModel),
         // No camera, no TCC prompt, unless a spec stands one in.
         CALENDAR_CAMERA: options.camera ? 'fixture' : 'off',
         ...(options.camera ? { CALENDAR_CAMERA_CODE: options.camera.code } : {}),

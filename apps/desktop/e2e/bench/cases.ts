@@ -5,8 +5,8 @@ import { Schema } from 'effect';
 
 /**
  * A bench case: one file under `cases/`, a list of turns. The first turn
- * is a phrase (`parseQuickAdd`), every later one a change to the draft it
- * left (`parseRefine`), as the thread does. A turn's input is text, or a
+ * is a phrase, every later one a change to the draft it left, as the
+ * Assistant's thread does. A turn's input is text, or a
  * recording with the transcript of what was said; the recording goes
  * through the helper's SpeechAnalyzer and the transcript tells the
  * recogniser's errors from the parser's. Expectations say where a person

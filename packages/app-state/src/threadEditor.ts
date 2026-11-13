@@ -1,4 +1,4 @@
-import { type LanguageModel, ModelUnavailableError } from '@calendar/ai';
+import { type LanguageModel, ModelUnavailableError, type PhraseReader } from '@calendar/ai';
 import {
   type BackendClient,
   type CalendarInfo,
@@ -293,6 +293,16 @@ const useOnChange = (value: RecurringScope | string | undefined, then: () => voi
  *
  * The platforms render it: the form, the turns, the pager, the chips.
  */
+/** A calendar's default popup notifications, minutes before; undefined where it has none on record (Apple). */
+const defaultMinutesOf = (
+  calendars: ReadonlyArray<CalendarInfo>,
+  key: string,
+): ReadonlyArray<number> | undefined =>
+  calendars
+    .find((calendar) => `${calendar.accountId}:${calendar.id}` === key)
+    ?.defaultReminders?.filter((override) => override.method === 'popup')
+    .map((override) => override.minutes);
+
 export const useThreadEditor = ({
   backend,
   calendars,
@@ -301,6 +311,7 @@ export const useThreadEditor = ({
   model,
   onClose,
   onSaved,
+  reader,
   seed,
   sourceKind,
   task,
@@ -318,6 +329,8 @@ export const useThreadEditor = ({
   readonly onClose: () => void;
   /** Save went through, as an event or a task. */
   readonly onSaved?: (() => void) | undefined;
+  /** How the Assistant reads a phrase: its own model, through `tunedReader`. */
+  readonly reader: PhraseReader;
   readonly seed: EditorSeed;
   readonly sourceKind: EditorSourceKind;
   /** Present when the editor was opened from a task (task edit mode). */
@@ -328,7 +341,16 @@ export const useThreadEditor = ({
   readonly timeZone: string;
 }) => {
   const mutations = useBackendMutations();
-  const thread = useDraftThread({ backend, model, timeZone });
+  // The form's calendar, where a draft that has none of its own would go (set below, once the form is made).
+  const formCalendar = useRef('');
+  const thread = useDraftThread({
+    backend,
+    defaultRemindersOf: (draft) =>
+      defaultMinutesOf(calendars, draftCalendarKey(draft, calendars, formCalendar.current)),
+    model,
+    reader,
+    timeZone,
+  });
   const { drafts, focused, version } = thread.state;
   const focusedDraft = drafts[focused];
   // An older step is on show (`stepTo`): the thread is a preview until
@@ -385,6 +407,7 @@ export const useThreadEditor = ({
     seed: { ...seed, convertFromTask: task },
     timeZone,
   });
+  formCalendar.current = eventModel.calendarKey;
   const kinds = useEditorKinds({
     calendars,
     confirm,
