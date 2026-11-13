@@ -178,43 +178,23 @@ the served model (#184) and slot proposals (#185) are in
       structured city/region/country fields in the same native build;
       a place turn keeps the cue the model copied ("im Figlmüller", "at
       the office"), which no lookup resembles; bench cases that ask
-      MapKit. The place of a first phrase is the next item's.
-- [ ] Quick-add schema on Apple's model (the bench arms, 2026-11-11,
-      `docs/decisions.md` → AI, "The bench runs a model without the
-      rules") — every field but the title is optional, and guided
-      generation skips optional fields: a first phrase comes back as its
-      title alone, 70 times of 70, so its day, time and place are the
-      rules' or nobody's ("Dinner at Hard Rock Cafe on Friday at 7"
-      keeps the place in the title). Asked for every field, empty where
-      the words give nothing, the model fills them ("Figlmüller" from
-      "im Figlmüller"): places 35 of 40 instead of 30, and 51 cases
-      instead of 47. One sentence decides that gain: a clearer wording
-      of the same instruction scored 46, with titles shrunk to a name
-      ("Sarah" for a call with Sarah); either way a title can lose
-      "with Teo", a person can land in the place, and a turn takes
-      1.7 s instead of 0.6 s. Find the fields worth requiring (the place
-      first, then day and time) with `MODEL_BENCH_PIPELINE=app,raw`,
-      and measure every wording, before any more rules that read a
-      first phrase's place.
-- [ ] Served models: the strict schema and no thinking on the Ollama
-      path — asked as the app asks Ollama today (the schema as `format`,
-      thinking as the model defaults), Gemma 4 E2B scores 40 of 70 at
-      4.1 s a turn and LFM3 1.7B 46 at 19 s; over the OpenAI-compatible
-      path (every field required, `reasoning_effort: "none"`) 59 at
-      0.7 s and 57 at 0.6 s.
-- [ ] A model that needs no phrase rules — on one prompt that states
-      the conventions, with no code that reads the words (`plain.ts` in
-      the bench), Claude Haiku 5.5 scores 65–66 of 70, Gemma 4 31B 49–61
-      at 7 s a turn, and no phone-size model more than 26; through the
-      rules the six open models and Claude land at 53–62, Apple's model
-      below them (47–48). An opt-in tier for a model that can (served on
-      the Mac, or a cloud model the phrase would leave the device for)
-      is a product decision first; the rules stay while Apple's model is
-      the default.
+      MapKit.
+- [ ] Served models: no thinking, and the strict schema on Ollama — the
+      app sends Ollama the schema as `format` (only the title required)
+      and turns thinking off on neither route. On Assistant phrases (the
+      bench, 2026-11-11) Gemma 4 E2B scored 40 of 70 at 4.1 s a turn
+      asked as the app asks Ollama, and 59 at 0.7 s over the
+      OpenAI-compatible route with every field required and
+      `reasoning_effort: "none"`. A served model now answers only find a
+      time, search sentences and capture, which no bench measures:
+      measure those first.
 - [ ] The Assistant's own model, follow-ups (#307): find a time, search
       sentences and capture still need Apple's model (data and a tuned
-      prompt each); a model for 6 GB iPhones (Q4_K_M, 1.2 GB loaded, or a
-      smaller base); "next Friday" and deadlines ("before Friday") are
+      prompt each; capture's schema leaves the time and place optional,
+      and Apple's model filled no optional field on any quick-add phrase
+      in the bench, 2026-11-11, unmeasured for capture); a model for
+      6 GB iPhones (Q4_K_M, 1.2 GB loaded, or a smaller base); "next
+      Friday" and deadlines ("before Friday") are
       read as the teacher read them, which wavers; the data has no turn
       that turns notifications off ("no reminder", a first phrase or a
       later turn) and the export drops an empty list, so a first phrase
@@ -226,11 +206,8 @@ the served model (#184) and slot proposals (#185) are in
       instead"): a v2 with more follow-up turns in the data (a third of
       v1's) that also leaves `date` out where no day was said, so the
       tuned reader's one word check (`statesDay`) can go, and a new
-      release with its own version. On the iPhone a version whose file
-      has another name leaves the old file in the caches folder until
-      iOS clears it (the Mac removes it): remove the files the manifest
-      no longer names. Not checked on a device: the iPhone's transfer
-      across a quit and a network change.
+      release with its own version. Not checked on a device: the
+      iPhone's transfer across a quit and a network change.
 
 - [ ] Find-a-time follow-ups — the finder keeps a whole Apple series
       busy through a series edit (its rows are read through EventKit, no
