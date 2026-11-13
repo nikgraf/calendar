@@ -1,4 +1,3 @@
-import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { app, BrowserWindow, ipcMain, nativeTheme, type WebContents } from 'electron';
@@ -147,27 +146,7 @@ export const createMainWindow = (): BrowserWindow => {
   }
 
   window.once('ready-to-show', () => showWindow(window, false));
-
-  // Hidden from screen shares by default; the CALENDAR_CAPTURE debug hook
-  // needs an unprotected window or its screenshot comes out black.
-  if (!process.env.CALENDAR_CAPTURE) {
-    registerPrivacyWindow(window);
-  }
-
-  // Debug/e2e hook: CALENDAR_CAPTURE=/path.png captures the window shortly
-  // after load and quits.
-  const capturePath = process.env.CALENDAR_CAPTURE;
-  if (capturePath) {
-    window.webContents.once('did-finish-load', () => {
-      setTimeout(() => {
-        void window.webContents.capturePage().then((image) => {
-          writeFileSync(capturePath, image.toPNG());
-          app.quit();
-        });
-      }, 1500);
-    });
-  }
-
+  registerPrivacyWindow(window);
   loadRenderer(window, '');
   return window;
 };

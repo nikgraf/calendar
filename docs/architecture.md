@@ -1314,7 +1314,7 @@ gateway carries all of it. Details, limits and the threat model:
   included). Window-level concerns use plain preload IPC
   (`apps/desktop/electron/preload.ts`): `renderer-error` (→
   `userData/logs/main.log`, 1 MB rotation), `privacy:*` (screen-capture
-  protection, default hidden, stored in `userData/settings.json`;
+  protection, off by default, stored in `userData/settings.json`;
   `privacy:capture` says a screenshot or recording is leaving the windows
   out — macOS gives no such signal, so while privacy is on and a window is
   on screen the helper's `capture.watch` polls the process table for the

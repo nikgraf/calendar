@@ -104,8 +104,8 @@ const privacyPoints = [
     title: 'Local first',
   },
   {
-    body: 'The Mac window stays out of screen sharing and recordings unless you turn that off in Settings.',
-    title: 'Hidden from screen shares',
+    body: 'One setting keeps the Mac window out of screen sharing and recordings while it stays on your own display.',
+    title: 'Hide it from screen shares',
   },
   {
     body: "Quick add runs on a model of its own, on the iPhone and the Mac; find a time, dictation and capture run on Apple's on-device models. Nothing is uploaded for them unless you point the Mac at a model server you choose.",

@@ -5,8 +5,9 @@ import { BrowserWindow, ipcMain } from 'electron';
 /**
  * Screen-sharing privacy: content protection (macOS NSWindowSharingNone)
  * keeps the window out of screen shares and recordings while it stays
- * visible locally. Hidden by default; a 10-minute pause is runtime-only
- * state so a restart fails closed back to the persisted mode.
+ * visible locally. Off (visible) until the user turns it on in Settings;
+ * a 10-minute pause is runtime-only state so a restart fails closed back
+ * to the persisted mode.
  */
 
 export type PrivacyMode = 'hidden' | 'visible';
@@ -21,7 +22,7 @@ export interface PrivacyState {
 const PAUSE_MS = 10 * 60 * 1000;
 
 let settingsPath: string | null = null;
-let mode: PrivacyMode = 'hidden';
+let mode: PrivacyMode = 'visible';
 let visibleUntil: number | null = null;
 let pauseTimer: NodeJS.Timeout | null = null;
 
@@ -60,7 +61,7 @@ const persist = () => {
   }
   try {
     // Temp file + rename: a crash mid-write must not leave a truncated
-    // settings.json (which would read as "hidden" — safe, but lossy).
+    // settings.json, which would read as the default and drop "hidden".
     const temp = `${settingsPath}.${process.pid}.tmp`;
     writeFileSync(temp, `${JSON.stringify({ screenPrivacy: mode }, null, 2)}\n`);
     renameSync(temp, settingsPath);
@@ -101,11 +102,11 @@ export const initPrivacy = (userDataDir: string): void => {
     const parsed = JSON.parse(readFileSync(settingsPath, 'utf8')) as {
       screenPrivacy?: unknown;
     };
-    if (parsed.screenPrivacy === 'visible') {
-      mode = 'visible';
+    if (parsed.screenPrivacy === 'hidden') {
+      mode = 'hidden';
     }
   } catch {
-    // Missing or invalid file → default 'hidden'.
+    // Missing or invalid file → default 'visible'.
   }
 
   ipcMain.handle('privacy:get', () => getPrivacyState());
