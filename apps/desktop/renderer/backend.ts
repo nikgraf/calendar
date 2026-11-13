@@ -6,6 +6,7 @@ import { Context, Effect, Fiber, Layer, ManagedRuntime, Stream } from 'effect';
 import { RpcClient, RpcSerialization } from 'effect/rpc';
 import type { RpcClientError } from 'effect/rpc/RpcClientError';
 import type { SettingsPaneId } from './settingsPanes.ts';
+import type { AssistantModelState } from '@calendar/ai';
 
 export interface PrivacyState {
   readonly mode: 'hidden' | 'visible';
@@ -67,6 +68,12 @@ declare global {
       /** Brings Calendar.app forward; false when nothing opened (the e2e fixture). */
       appleCalendarOpen: () => Promise<boolean>;
       appleCalendarStatus: () => Promise<string>;
+      /** The question at launch about the Assistant's model, once, while it was never answered. */
+      assistantAsk: () => Promise<void>;
+      assistantDownload: () => Promise<void>;
+      assistantGenerate: (prompt: string) => Promise<{ json: string }>;
+      assistantRetry: () => Promise<void>;
+      assistantState: () => Promise<AssistantModelState>;
       /** Stops a Google sign-in waiting on the browser: it fails as cancelled. */
       authCancel: () => Promise<void>;
       /** 'unavailable' under CALENDAR_CAMERA=off (the e2e default): the reader offers paste only. */
@@ -100,6 +107,8 @@ declare global {
         locale: string,
       ) => Promise<{ segments: ReadonlyArray<{ text: string }> }>;
       onAgentsChanged: (listener: () => void) => () => void;
+      /** Where the Assistant's own model stands: the state now, then every change. */
+      onAssistantModel: (listener: (state: AssistantModelState) => void) => () => void;
       /** False under CALENDAR_ONBOARDING=off (the e2e default): no first run, no card. */
       onboardingEnabled: () => Promise<boolean>;
       /** A lesson the settings window asked the calendar to open; decode with `parseLessonId`. */

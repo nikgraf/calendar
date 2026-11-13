@@ -1,4 +1,4 @@
-import type { CaptureSource, ModelStatus } from '@calendar/ai';
+import type { AssistantModelState, CaptureSource, ModelStatus } from '@calendar/ai';
 import {
   changedLine,
   describeDraft,
@@ -14,9 +14,9 @@ import {
 } from '@calendar/app-state';
 import type { CalendarInfo, TaskListInfo } from '@calendar/core';
 import { type ReactNode, type RefObject, useEffect, useRef } from 'react';
+import { assistantFieldCopy } from '../../ai/assistantModel.ts';
 import { desktopLanguageModel } from '../../ai/desktopModel.ts';
 import { desktopSpeech } from '../../ai/desktopSpeech.ts';
-import { modelUnavailableCopy } from '../../ai/modelUnavailableCopy.ts';
 import { requestCodeImport } from '../../settingsCode/codeImportRequests.ts';
 import { Button } from '../../ui/Button.tsx';
 import { MicIcon, SparkleIcon, SpinnerIcon } from '../../ui/icons.tsx';
@@ -27,6 +27,7 @@ import {
   settingsCodeOf,
 } from '../captureClipboard.ts';
 import { AssistantCard } from './AssistantCard.tsx';
+import { AssistantModelNotice } from './AssistantModelNotice.tsx';
 import { DraftQuestions } from './DraftQuestions.tsx';
 
 /** The empty field of a new item; the e2e specs find the field by it. */
@@ -122,9 +123,9 @@ export function AssistantView({
 }: {
   /** The view is the one on show: it takes the focus and follows its newest row only then. */
   readonly active: boolean;
+  /** The Assistant's own model: where it stands, and the status that says whether it answers. */
   readonly availability: {
-    readonly checking: boolean;
-    readonly retry: () => void;
+    readonly state: AssistantModelState | undefined;
     readonly status: ModelStatus | null;
   };
   /** Above the conversation: the lesson's frame. */
@@ -167,7 +168,6 @@ export function AssistantView({
     timeZone,
   });
   const unavailable = availability.status !== null && availability.status !== 'ready';
-  const unavailableCopy = modelUnavailableCopy(availability.status);
   const { busy, phrase } = quick;
 
   // Focused on open and on ⌘K — not while the model is missing, when the
@@ -207,16 +207,8 @@ export function AssistantView({
         ref={threadRef}
       >
         {banner}
-        {unavailable ? (
-          <div
-            className="flex flex-col items-start gap-2 rounded-control bg-fill p-3"
-            data-testid="assistant-unavailable"
-          >
-            <p className="text-sm text-ink-secondary">{unavailableCopy.long}</p>
-            <Button disabled={availability.checking} onClick={availability.retry} size="sm">
-              Retry
-            </Button>
-          </div>
+        {unavailable && availability.state ? (
+          <AssistantModelNotice state={availability.state} />
         ) : null}
         {!started && assistant === 'new' && !busy && !unavailable ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-1 px-4 text-center">
@@ -278,6 +270,7 @@ export function AssistantView({
       </div>
 
       <AssistantInput
+        fieldCopy={assistantFieldCopy(availability.state)}
         hasDrafts={drafts.length > 0}
         inputRef={inputRef}
         onCapture={onCapture}
@@ -443,6 +436,7 @@ const inputStatus = ({
  * email or an image goes to capture, a settings code to its import.
  */
 function AssistantInput({
+  fieldCopy,
   hasDrafts,
   inputRef,
   onCapture,
@@ -450,6 +444,8 @@ function AssistantInput({
   quick,
   status: modelStatus,
 }: {
+  /** The field's words while the Assistant's model cannot answer. */
+  readonly fieldCopy: string;
   readonly hasDrafts: boolean;
   readonly inputRef: RefObject<HTMLInputElement | null>;
   readonly onCapture: (source: CaptureSource) => void;
@@ -471,11 +467,10 @@ function AssistantInput({
     voiceAvailable,
   } = quick;
   const unavailable = modelStatus !== null && modelStatus !== 'ready';
-  const unavailableCopy = modelUnavailableCopy(modelStatus);
   const working = busy || voice === 'transcribing';
   const status = inputStatus(quick);
   const placeholder = unavailable
-    ? unavailableCopy.short
+    ? fieldCopy
     : previewing
       ? 'An earlier step is on show'
       : hasDrafts
@@ -488,7 +483,7 @@ function AssistantInput({
           className={`flex h-10 min-w-0 flex-1 items-center gap-2 rounded-control bg-fill pr-2 pl-3 text-sm has-[input:focus]:ring-2 has-[input:focus]:ring-focus ${
             unavailable ? 'opacity-70' : ''
           }`}
-          title={unavailable ? unavailableCopy.long : undefined}
+          title={unavailable ? fieldCopy : undefined}
         >
           <input
             aria-label="Quick add"

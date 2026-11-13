@@ -7,6 +7,7 @@ import { initFileLogging, logRendererError } from './log.ts';
 import { installApplicationMenu } from './menu.ts';
 import { initPrivacy } from './privacy.ts';
 import { startCaptureHint } from './captureHint.ts';
+import { registerAssistantModel } from './assistantModel/index.ts';
 import { registerModelHelper } from './modelHelper.ts';
 import { initModelProvider } from './modelProvider.ts';
 import { registerNotificationIpc } from './notifications.ts';
@@ -151,6 +152,7 @@ void app.whenReady().then(() => {
   startSettingsFile(host);
   startAgentHost(host);
   registerModelHelper();
+  registerAssistantModel(app.getPath('userData'));
   registerRemindersIpc();
   registerContactsIpc();
   registerAppleCalendarIpc();
