@@ -165,10 +165,35 @@ const LATER_FOCUSES = {
     'things that repeat on all days or on all working days but one or two ("weekdays but not Wednesday", "each day except on weekends", "daily, just not Mondays", "täglich, nur sonntags nicht", "werktags außer mittwochs", "Montag bis Samstag ohne Donnerstag"); among the follow-ups, some that rule a day out of a repeat the draft has ("but not on Tuesdays", "nur dienstags nicht")',
 } as const;
 
-const FOCUS_TEXT: Readonly<Record<Brief['focus'], string>> = { ...FOCUSES, ...LATER_FOCUSES };
+/**
+ * What the third round (model v2) exercises: what v1 got wrong, mostly
+ * follow-ups, and turning notifications off, which no phrase before
+ * asked for. Their briefs come after the second round's, so no brief
+ * changes its number and no thread its "today".
+ */
+const V2_FOCUSES = {
+  alertEdits:
+    'notifications. In this batch two thirds of the threads have one or two follow-ups: a notification added beside the one the draft has, one of two dropped, one moved to another time, all of them turned off. A third of the first phrases ask for no notification at all, in every English and German wording',
+  guestEdits:
+    'the guest list. In this batch every thread has one or two follow-ups to a draft that invites people: someone taken off the list again, someone swapped for someone else, one more invited. Some first phrases invite several people at once',
+  kindSwitch:
+    'the whole day against a time of day. In this batch every thread has one or two follow-ups: an event with a time made one that lasts the whole day, or one that lasts the whole day given a time, in every wording',
+  renames:
+    'new titles. In this batch every thread has one or two follow-ups, and most of them rename the draft: the new name replaces the old one entirely, said as a command or in passing ("Titel: Elternsprechtag", "let\'s call this the budget sync"); some rename and change something else at once',
+  repeatEdits:
+    'a repeat changed. In this batch every thread starts with something that repeats and has one or two follow-ups: the repeat ended so it happens just once, made more or less frequent, given an end date or a number of times, moved to other weekdays',
+  shifts:
+    'times moved or resized by an amount instead of a clock time. In this batch every thread has one or two follow-ups to a first phrase with a start time: the whole thing moved later or earlier by an amount, made longer or shorter by an amount while the start stays, or given a new length; amounts in every form (minutes, a quarter of an hour, an hour and a half, "zwanzig Minuten", "anderthalb Stunden"). Some first phrases give a start and a length',
+} as const;
+
+const FOCUS_TEXT: Readonly<Record<Brief['focus'], string>> = {
+  ...FOCUSES,
+  ...LATER_FOCUSES,
+  ...V2_FOCUSES,
+};
 
 export interface Brief {
-  readonly focus: keyof typeof FOCUSES | keyof typeof LATER_FOCUSES;
+  readonly focus: keyof typeof FOCUSES | keyof typeof LATER_FOCUSES | keyof typeof V2_FOCUSES;
   readonly language: Language;
   readonly register: keyof typeof REGISTERS;
 }
@@ -186,11 +211,59 @@ const briefsOf = (focuses: ReadonlyArray<Brief['focus']>): ReadonlyArray<Brief> 
 /** How many briefs the first round has: every language, way of writing and first focus once. */
 export const FIRST_ROUND_BRIEFS = 2 * 5 * 14;
 
-/** Every language, way of writing and focus once, the first round's briefs first. */
+/** How many briefs the first two rounds have: model v1's data. */
+export const V1_BRIEFS = FIRST_ROUND_BRIEFS + 2 * 5 * 2;
+
+/** Every language, way of writing and focus once, each round's briefs after the one before. */
 export const BRIEFS: ReadonlyArray<Brief> = [
   ...briefsOf(sortedKeys(FOCUSES)),
   ...briefsOf(sortedKeys(LATER_FOCUSES)),
+  ...briefsOf(sortedKeys(V2_FOCUSES)),
 ];
+
+/**
+ * Find a time's sentences (model v2): one sentence each, the free time a
+ * person looks for, never an event to add.
+ */
+const FINDER_REGISTERS = {
+  command: 'said as a command to the finder ("find me …", "look for …", "such mir …", "finde …")',
+  dictated: REGISTERS.dictated,
+  question: 'asked as a question ("when am I free …?", "wann hätte ich …?", "is there … ?")',
+  sentence: 'typed as a short, ordinary sentence or note about the time needed',
+  terse: REGISTERS.terse,
+} as const;
+
+const FINDER_FOCUSES = {
+  clockBounds:
+    'clock times that bound the search: after a time, before a time, between two times, not before or no later than a time, in 12- and 24-hour forms',
+  combined:
+    'sentences that give four or more at once: a length, when to look, weekdays, a part of the day or clock bounds, what the time is for',
+  dayParts:
+    'parts of the day and meals instead of clock times: mornings, afternoons, evenings, over lunch, at breakfast, at dinner, "vormittags", "abends"',
+  length:
+    'how long the free time is: minutes and hours in every form, half and quarter hours, "anderthalb Stunden"; a few say no length at all',
+  purpose:
+    'what the time is for: a meeting, a call with someone, sport, an errand, focus work, a meal with someone, in the words of the sentence; and some that do not say',
+  short: 'very short sentences: two to five words',
+  weekdays:
+    'which weekdays: one or two named days, working days, weekends, and days ruled out ("any day but Monday", "außer freitags")',
+  window:
+    'when to look: today, tomorrow, the day after tomorrow, this week, next week, the weekend, a weekday, the coming two weeks; a few say nothing about when',
+} as const;
+
+export interface FinderBrief {
+  readonly focus: keyof typeof FINDER_FOCUSES;
+  readonly language: Language;
+  readonly register: keyof typeof FINDER_REGISTERS;
+}
+
+/** Every language, way of writing and finder focus once. */
+export const FINDER_BRIEFS: ReadonlyArray<FinderBrief> = (['en', 'de'] as const).flatMap(
+  (language) =>
+    sortedKeys(FINDER_REGISTERS).flatMap((register) =>
+      sortedKeys(FINDER_FOCUSES).map((focus) => ({ focus, language, register })),
+    ),
+);
 
 /** A small seeded generator: the same brief draws the same names on every run. */
 const seeded = (seed: number): (() => number) => {
@@ -269,6 +342,59 @@ export const buildGeneratorPrompt = (
   ].join('\n');
 };
 
+export const FINDER_GENERATOR_SCHEMA = {
+  additionalProperties: false,
+  properties: { sentences: { items: { type: 'string' }, type: 'array' } },
+  required: ['sentences'],
+  type: 'object',
+} as const;
+
+/** What the generator is asked for one finder brief. It is shown no case of either bench. */
+export const buildFinderGeneratorPrompt = (
+  brief: FinderBrief,
+  index: number,
+  count: number,
+  names: Names,
+): string => {
+  // Drawn apart from the threads' briefs, so the same index does not draw the same names.
+  const random = seeded(10_000 + index);
+  const people = drawn(names.people, 8, random).map(([first, last]) => `${first} ${last}`);
+  const places = drawn(names.places, 4, random);
+  return [
+    'You are writing practice sentences for a calendar app\'s "find a time" box. A person types',
+    'or dictates one sentence saying what free time they need, and the app searches their',
+    'calendar for slots that fit. It is never an event to add: it is time to look for.',
+    '',
+    `Write ${String(count)} sentences.`,
+    '',
+    `Language: ${brief.language === 'de' ? 'German, as people in Austria and Germany write and speak it' : 'English'}.`,
+    `How the sentences are written: ${FINDER_REGISTERS[brief.register]}.`,
+    `What most of them should exercise: ${FINDER_FOCUSES[brief.focus]}. The rest can be any`,
+    'free time a person might look for.',
+    '',
+    'Make them sound like real people, not like test data: different lengths, different lives',
+    '(work, family, health, sport, errands, school, hobbies), different ways of saying the same',
+    'thing. No two sentences may be about the same thing.',
+    '',
+    `When a sentence needs a person, use these (a first name alone or the full name): ${people.join(', ')}.`,
+    `When it needs a place, use these or make up others: ${places.join(', ')}.`,
+    '',
+    'Do not number the sentences and do not explain them.',
+  ].join('\n');
+};
+
+/** The sentences in a generator's answer, none empty. */
+export const sentencesOf = (answer: unknown): ReadonlyArray<string> => {
+  const sentences =
+    typeof answer === 'object' && answer !== null && 'sentences' in answer ? answer.sentences : [];
+  return Array.isArray(sentences)
+    ? sentences
+        .filter((sentence): sentence is string => typeof sentence === 'string')
+        .map((sentence) => sentence.trim().replaceAll(/\s+/gu, ' '))
+        .filter(Boolean)
+    : [];
+};
+
 /**
  * The example phrases the briefs quote: a phrase that repeats one word
  * for word is the brief's text, not the generator's, and is left out.
@@ -277,6 +403,8 @@ export const buildGeneratorPrompt = (
 export const BRIEF_EXAMPLES: ReadonlyArray<string> = [
   ...Object.values(REGISTERS),
   ...Object.values(FOCUS_TEXT),
+  ...Object.values(FINDER_REGISTERS),
+  ...Object.values(FINDER_FOCUSES),
 ].flatMap((text) =>
   [...text.matchAll(/"([^"]+)"/gu)].flatMap(([, quoted]) => {
     const example = fold(quoted ?? '');

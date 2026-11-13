@@ -1,9 +1,11 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { buildTunedFinderPrompt, tunedFinderAnswer } from '@calendar/ai';
 import { describe, expect, it } from 'vite-plus/test';
 import { loadCases, loadContacts } from '../cases.ts';
 import { applyResult, type BenchDraft, fold } from '../check.ts';
+import { loadFinderCases } from '../finder.ts';
 import { plainState, plainTurn } from '../plain.ts';
 import {
   openAiExtra,
@@ -12,14 +14,19 @@ import {
   type OpenAiUsage,
   recording,
 } from '../providers.ts';
-import { shortDraft, tunedExample } from '../tuned.ts';
+import { tunedExample, type TunedExample } from '../tuned.ts';
 import { asSaid, buildSaidPrompt, SAID_SCHEMA, type SaidForm, saidOf } from './asSaid.ts';
+import { buildFinderLabelPrompt, FINDER_LABEL_SCHEMA } from './finderLabel.ts';
 import {
   bookOf,
   type Brief,
   BRIEFS,
+  buildFinderGeneratorPrompt,
   buildGeneratorPrompt,
   buildNamesPrompt,
+  type FinderBrief,
+  FINDER_BRIEFS,
+  FINDER_GENERATOR_SCHEMA,
   GENERATOR_SCHEMA,
   type Names,
   NAMES_SCHEMA,
@@ -27,12 +34,13 @@ import {
   nearBench,
   referenceDateOf,
   repeatsBriefExample,
+  sentencesOf,
   threadsOf,
 } from './phrases.ts';
 
 /**
- * The training data for the tuned arm, in five steps that each leave a
- * file behind and pick up where a run before them stopped:
+ * The training data for the tuned arm and the finder, in steps that each
+ * leave a file behind and pick up where a run before them stopped:
  *
  *   names     the generator writes the people and places the phrases
  *             may name                                    → names.json
@@ -41,14 +49,21 @@ import {
  *   label     a teacher answers every turn through the plain arm, the
  *             draft carried from turn to turn as the bench carries it
  *                                                         → labelled.jsonl
- *   said      the teacher is asked how each turn gave its day and which
- *             weekdays a repeat rules out (`asSaid.ts`)   → said.jsonl
+ *   said      the teacher is asked how each turn gave its day and its
+ *             times, and which weekdays a repeat rules out
+ *             (`asSaid.ts`)                               → said.jsonl
+ *   finderGenerate  the generator writes find a time's sentences, one
+ *             batch per finder brief                      → finder.jsonl
+ *   finderLabel  the teacher answers each through the app's finder
+ *             prompt, a length only where one is said
+ *                                                   → finderLabelled.jsonl
  *   export    each labelled turn as a chat a model is trained on, its
- *             day and repeat written as said where the two answers
- *             agree, the threads split into training and validation
- *                                             → train.jsonl, valid.jsonl
+ *             day, times and repeat written as said where the two
+ *             answers agree, and each finder sentence on the finder's own
+ *             prompt; the threads and sentences split into training and
+ *             validation                      → train.jsonl, valid.jsonl
  *
- *   TRAIN_DATA=names,generate,label,said,export E2E=1 pnpm exec vp test run apps/desktop/e2e/bench/train/dataset.e2e.ts
+ *   TRAIN_DATA=names,generate,label,said,finderGenerate,finderLabel,export E2E=1 pnpm exec vp test run apps/desktop/e2e/bench/train/dataset.e2e.ts
  *
  * Both models are served behind an OpenAI-compatible endpoint and only
  * models whose licence and whose API's terms allow training other models
@@ -63,7 +78,8 @@ import {
  * in the prompt) say how to reach them. Every answer's token counts land
  * in usage.jsonl. TRAIN_DIR is where the files go
  * (output/bench/finetune/data), TRAIN_PER_BRIEF how many threads a batch
- * asks for (30), TRAIN_LIMIT how many briefs or threads a step takes
+ * asks for (30), TRAIN_FINDER_PER_BRIEF how many finder sentences (20),
+ * TRAIN_LIMIT how many briefs or threads a step takes
  * (all), TRAIN_CONCURRENCY how many requests run at once (8). Never part
  * of `pnpm test`: it skips itself unless TRAIN_DATA is set.
  */
@@ -138,6 +154,7 @@ const readNames = (dir: string): Names => {
 };
 
 const BENCH_CONTACTS = fileURLToPath(new URL('../contacts.json', import.meta.url));
+const FINDER_CASES = fileURLToPath(new URL('../finder.json', import.meta.url));
 
 const names = async (dir: string, log: (line: string) => void): Promise<void> => {
   const path = join(dir, 'names.json');
@@ -382,24 +399,13 @@ interface SaidThread {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-const repeatText = (repeat: unknown): string =>
-  JSON.stringify(shortDraft({ repeat: isRecord(repeat) ? repeat : undefined }));
-
 /**
- * A turn whose words may have given a day or ruled a weekday out: a
- * first phrase with either, or a later turn that changed either. A turn
- * that left both as the draft had them is not asked.
+ * A turn the second question is asked of: every one with a draft for an
+ * answer. Whether a turn that kept the draft's day said no day at all,
+ * or said the same one again, only the wording tells.
  */
-const mayHaveSaid = (turn: LabelledTurn): boolean => {
-  const { answer } = turn;
-  if (turn.error !== undefined || !isRecord(answer)) {
-    return false;
-  }
-  const state = turn.draft === undefined ? undefined : plainState(turn.draft);
-  return state === undefined
-    ? typeof answer['date'] === 'string' || isRecord(answer['repeat'])
-    : answer['date'] !== state.date || repeatText(answer['repeat']) !== repeatText(state.repeat);
-};
+const mayHaveSaid = (turn: LabelledTurn): boolean =>
+  turn.error === undefined && isRecord(turn.answer) && turn.answer['nothingToSchedule'] !== true;
 
 const said = async (dir: string, log: (line: string) => void): Promise<void> => {
   const path = join(dir, 'said.jsonl');
@@ -440,7 +446,158 @@ const said = async (dir: string, log: (line: string) => void): Promise<void> => 
   );
 };
 
-/** One thread in twenty is held back to watch the training by. */
+interface FinderSentence extends FinderBrief {
+  readonly briefIndex: number;
+  readonly text: string;
+}
+
+interface LabelledSentence {
+  readonly answer?: unknown;
+  readonly error?: string | undefined;
+  readonly id: number;
+  readonly language: FinderBrief['language'];
+  readonly referenceDate: string;
+  readonly text: string;
+}
+
+const finderGenerate = async (dir: string, log: (line: string) => void): Promise<void> => {
+  const path = join(dir, 'finder.jsonl');
+  const done = new Set(readLines<FinderSentence>(path).map((sentence) => sentence.briefIndex));
+  const writer = trainingModel('generator', dir, 'finderGenerate');
+  const listed = readNames(dir);
+  const perBrief = numberOf('TRAIN_FINDER_PER_BRIEF', 20);
+  const todo = FINDER_BRIEFS.map((brief, briefIndex) => ({ brief, briefIndex }))
+    .filter(({ briefIndex }) => !done.has(briefIndex))
+    .slice(0, numberOf('TRAIN_LIMIT', FINDER_BRIEFS.length));
+  let written = 0;
+  let failed = 0;
+  await pooled(todo, numberOf('TRAIN_CONCURRENCY', 8), async ({ brief, briefIndex }) => {
+    let answer: unknown;
+    try {
+      answer = await writer.model.generateJson({
+        jsonSchema: FINDER_GENERATOR_SCHEMA,
+        prompt: buildFinderGeneratorPrompt(brief, briefIndex, perBrief, listed),
+      });
+    } catch (error) {
+      failed += 1;
+      log(
+        `finderGenerate: brief ${String(briefIndex)} failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return;
+    }
+    const sentences = sentencesOf(answer);
+    appendFileSync(
+      path,
+      sentences
+        .map(
+          (text) => `${JSON.stringify({ ...brief, briefIndex, text } satisfies FinderSentence)}\n`,
+        )
+        .join(''),
+    );
+    written += sentences.length;
+  });
+  log(
+    `finderGenerate: ${String(todo.length - failed)} of ${String(todo.length)} briefs with ${writer.name}, ${String(written)} sentences written, ${String(done.size)} briefs were there already; ${usageLine(writer.settle())}`,
+  );
+};
+
+/** A finder sentence's "today": apart from the threads', spread over the same two years. */
+const finderDateOf = (id: number): string => referenceDateOf(50_000 + id);
+
+const finderLabel = async (dir: string, log: (line: string) => void): Promise<void> => {
+  const path = join(dir, 'finderLabelled.jsonl');
+  const benchPhrases = [
+    ...loadFinderCases(FINDER_CASES).map((finderCase) => finderCase.text),
+    ...loadCases(CASES_DIR).flatMap((benchCase) =>
+      benchCase.turns.map((turn) =>
+        'text' in turn.input ? turn.input.text : turn.input.transcript,
+      ),
+    ),
+  ];
+  const done = new Set(readLines<LabelledSentence>(path).map((sentence) => sentence.id));
+  const labeller = trainingModel('teacher', dir, 'finderLabel');
+  const seen = new Set<string>();
+  let twice = 0;
+  let near = 0;
+  let echo = 0;
+  const kept = readLines<FinderSentence>(join(dir, 'finder.jsonl')).flatMap((sentence, id) => {
+    const folded = fold(sentence.text);
+    if (seen.has(folded)) {
+      twice += 1;
+      return [];
+    }
+    seen.add(folded);
+    if (nearBench(sentence.text, benchPhrases)) {
+      near += 1;
+      return [];
+    }
+    if (repeatsBriefExample(sentence.text)) {
+      echo += 1;
+      return [];
+    }
+    return [{ ...sentence, id }];
+  });
+  log(
+    `finderLabel: ${String(kept.length)} sentences kept (${String(twice)} said twice, ${String(near)} read like a bench case, ${String(echo)} repeat a brief's example)`,
+  );
+  const todo = kept
+    .filter((sentence) => !done.has(sentence.id))
+    .slice(0, numberOf('TRAIN_LIMIT', Number.MAX_SAFE_INTEGER));
+  let failed = 0;
+  await pooled(todo, numberOf('TRAIN_CONCURRENCY', 8), async (sentence) => {
+    const referenceDate = finderDateOf(sentence.id);
+    let answer: unknown;
+    let error: string | undefined;
+    try {
+      answer = await labeller.model.generateJson({
+        jsonSchema: FINDER_LABEL_SCHEMA,
+        prompt: buildFinderLabelPrompt({
+          phrase: sentence.text,
+          referenceDate,
+          timeZone: TIME_ZONE,
+        }),
+      });
+    } catch (error_) {
+      failed += 1;
+      error = error_ instanceof Error ? error_.message : String(error_);
+    }
+    appendFileSync(
+      path,
+      `${JSON.stringify({
+        ...(answer === undefined ? {} : { answer }),
+        ...(error === undefined ? {} : { error }),
+        id: sentence.id,
+        language: sentence.language,
+        referenceDate,
+        text: sentence.text,
+      } satisfies LabelledSentence)}\n`,
+    );
+  });
+  log(
+    `finderLabel: ${String(todo.length)} sentences with ${labeller.name}, ${String(failed)} failed, ${String(done.size)} were there already; ${usageLine(labeller.settle())}`,
+  );
+};
+
+/** A finder sentence and its answer as a training example, on the finder's own prompt. */
+const finderExample = (sentence: LabelledSentence): TunedExample | undefined => {
+  const answer = sentence.error === undefined ? tunedFinderAnswer(sentence.answer) : undefined;
+  return answer === undefined
+    ? undefined
+    : {
+        messages: [
+          {
+            content: buildTunedFinderPrompt({
+              phrase: sentence.text,
+              referenceDate: sentence.referenceDate,
+            }),
+            role: 'user',
+          },
+          { content: JSON.stringify(answer), role: 'assistant' },
+        ],
+      };
+};
+
+/** One thread (or finder sentence) in twenty is held back to watch the training by. */
 const isValidation = (id: number): boolean => id % 20 === 7;
 
 const exportData = (dir: string, log: (line: string) => void): void => {
@@ -452,20 +609,30 @@ const exportData = (dir: string, log: (line: string) => void): void => {
   const valid: Array<string> = [];
   const count = { first: 0, later: 0, nothing: 0, skipped: 0 };
   // How many answers are written as said, and how many a second answer did not fit.
-  const asSaidCount: Record<SaidForm | 'unfit', number> = {
+  const asSaidCount: Record<SaidForm | 'timeUnfit' | 'unfit', number> = {
     day: 0,
     except: 0,
+    length: 0,
     monthDay: 0,
+    noAlert: 0,
+    noDay: 0,
     offset: 0,
+    shift: 0,
+    timeUnfit: 0,
     unfit: 0,
   };
   const byLanguage: Record<string, number> = {};
   for (const thread of threads) {
     for (const [index, turn] of thread.turns.entries()) {
       const what = saidOf(second.get(thread.id)?.[index]);
+      const state = turn.draft === undefined ? undefined : plainState(turn.draft);
       const written = isRecord(turn.answer)
         ? asSaid(turn.answer, what, {
-            draftDate: turn.draft === undefined ? undefined : plainState(turn.draft)?.date,
+            draftDate: state?.date,
+            draftTimes:
+              state?.startTime === undefined || state.endTime === undefined
+                ? undefined
+                : { endTime: state.endTime, startTime: state.startTime },
             referenceDate: thread.referenceDate,
           })
         : undefined;
@@ -489,12 +656,32 @@ const exportData = (dir: string, log: (line: string) => void): void => {
       for (const form of written?.forms ?? []) {
         asSaidCount[form] += 1;
       }
-      const dayForms = (written?.forms ?? []).filter((form) => form !== 'except').length;
+      const forms = written?.forms ?? [];
+      const dayForms = forms.filter((form) =>
+        ['day', 'monthDay', 'noDay', 'offset'].includes(form),
+      ).length;
       asSaidCount.unfit += what !== undefined && what.day.how !== 'other' && dayForms === 0 ? 1 : 0;
+      const timeSaid =
+        what !== undefined &&
+        (what.start?.how === 'shift' || (what.end?.how ?? 'other') !== 'other');
+      const timeForms = forms.filter((form) => form === 'shift' || form === 'length').length;
+      asSaidCount.timeUnfit += timeSaid && timeForms === 0 ? 1 : 0;
       count[index === 0 ? 'first' : 'later'] += 1;
       count.nothing += example.messages[1].content === '{"nothingToSchedule":true}' ? 1 : 0;
       byLanguage[thread.language] = (byLanguage[thread.language] ?? 0) + 1;
     }
+  }
+  const finder = { lengthLeftOut: 0, sentences: 0, skipped: 0 };
+  for (const sentence of readLines<LabelledSentence>(join(dir, 'finderLabelled.jsonl'))) {
+    const example = finderExample(sentence);
+    if (example === undefined) {
+      finder.skipped += 1;
+      continue;
+    }
+    (isValidation(sentence.id) ? valid : train).push(JSON.stringify(example));
+    finder.sentences += 1;
+    finder.lengthLeftOut += example.messages[1].content.includes('"durationMinutes"') ? 0 : 1;
+    byLanguage[sentence.language] = (byLanguage[sentence.language] ?? 0) + 1;
   }
   writeFileSync(join(dir, 'train.jsonl'), `${train.join('\n')}\n`);
   writeFileSync(join(dir, 'valid.jsonl'), `${valid.join('\n')}\n`);
@@ -502,6 +689,7 @@ const exportData = (dir: string, log: (line: string) => void): void => {
     asSaid: asSaidCount,
     byLanguage,
     ...count,
+    finder,
     threads: threads.length,
     train: train.length,
     valid: valid.length,
@@ -514,7 +702,10 @@ describe.skipIf(!process.env['TRAIN_DATA'])('training data for the tuned arm', (
   it('runs the steps TRAIN_DATA names', { timeout: 240 * 60_000 }, async () => {
     const steps = (process.env['TRAIN_DATA'] ?? '').split(',').map((step) => step.trim());
     const unknown = steps.filter(
-      (step) => !['names', 'generate', 'label', 'said', 'export'].includes(step),
+      (step) =>
+        !['names', 'generate', 'label', 'said', 'finderGenerate', 'finderLabel', 'export'].includes(
+          step,
+        ),
     );
     expect(unknown).toEqual([]);
     const dir = process.env['TRAIN_DIR'] ?? join(ROOT, 'output', 'bench', 'finetune', 'data');
@@ -535,6 +726,12 @@ describe.skipIf(!process.env['TRAIN_DATA'])('training data for the tuned arm', (
       }
       if (steps.includes('said')) {
         await said(dir, log);
+      }
+      if (steps.includes('finderGenerate')) {
+        await finderGenerate(dir, log);
+      }
+      if (steps.includes('finderLabel')) {
+        await finderLabel(dir, log);
       }
       if (steps.includes('export')) {
         exportData(dir, log);

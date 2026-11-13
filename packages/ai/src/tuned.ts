@@ -81,9 +81,14 @@ export const shortDraft = (draft: Readonly<Record<string, unknown>>): Record<str
 /**
  * A plain-arm answer as the tuned model is trained to write it: the
  * draft written short, or the one flag when there is nothing to put in a
- * calendar. Undefined for an answer that is no draft at all.
+ * calendar. Undefined for an answer that is no draft at all. A first
+ * phrase keeps an empty list of notifications ("no reminder"): it gives
+ * up the calendar's default, where no list keeps to it (`answerResult`).
  */
-export const tunedAnswer = (answer: unknown): Record<string, unknown> | undefined => {
+export const tunedAnswer = (
+  answer: unknown,
+  { first = false }: { readonly first?: boolean } = {},
+): Record<string, unknown> | undefined => {
   if (!isRecord(answer)) {
     return undefined;
   }
@@ -91,7 +96,12 @@ export const tunedAnswer = (answer: unknown): Record<string, unknown> | undefine
     return { nothingToSchedule: true };
   }
   const written = shortDraft(answer);
-  return typeof written['title'] === 'string' ? written : undefined;
+  if (typeof written['title'] !== 'string') {
+    return undefined;
+  }
+  const none = Array.isArray(answer['reminders']) && answer['reminders'].length === 0;
+  // `reminders` comes last in the order, so the empty list goes at the end.
+  return first && none ? { ...written, reminders: [] } : written;
 };
 
 /** The first phrase: the days to look a weekday up in, and the words. */
