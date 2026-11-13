@@ -384,7 +384,9 @@ describe('The editor’s Assistant and Form views', () => {
           .querySelector('[data-testid="editor-form"]')
           .getAnimations()
           .map((animation) => animation.effect.getKeyframes()[0]);
+        const frame = document.querySelector('[data-testid="editor-form"]').parentElement;
         window.__switches.push({
+          clipped: getComputedStyle(frame).overflowY === 'hidden',
           leaving: [...document.querySelectorAll('[inert]')].map((pane) => pane.dataset.testid),
           start: first?.transform ?? null,
           switching: editor.hasAttribute('data-switching'),
@@ -411,16 +413,21 @@ describe('The editor’s Assistant and Form views', () => {
 
     // To the form: its title starts on the card's, well below its own
     // place, and the conversation stays drawn under it, out of reach,
-    // until the motion ends.
+    // until the motion ends; the form rides inside the panes' frame, never
+    // over the footer.
     await cdp.clickTestId('editor-view-form');
     await cdp.waitFor(settled);
-    const [start, end] =
-      await cdp.eval<Array<{ leaving: Array<string>; start: string | null; switching: boolean }>>(
-        switches,
-      );
-    expect(start).toMatchObject({ leaving: ['editor-assistant'], switching: true });
+    const [start, end] = await cdp.eval<
+      Array<{
+        clipped: boolean;
+        leaving: Array<string>;
+        start: string | null;
+        switching: boolean;
+      }>
+    >(switches);
+    expect(start).toMatchObject({ clipped: true, leaving: ['editor-assistant'], switching: true });
     const offset = Number(/translateY\((-?[\d.]+)px\)/.exec(start?.start ?? '')?.[1]);
-    expect(end).toMatchObject({ leaving: [], switching: false });
+    expect(end).toMatchObject({ clipped: false, leaving: [], switching: false });
     // Its first frame put the form's title on the card's.
     const formTop = await cdp.eval<number>(topOf('editor-form'));
     expect(cardTop).toBeGreaterThan(formTop);

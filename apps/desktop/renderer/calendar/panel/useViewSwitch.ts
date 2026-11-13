@@ -1,5 +1,12 @@
-import { anchorOffset, type EditorView, leftAfterTurn } from '@calendar/app-state';
-import { useLayoutEffect, useRef, useState } from 'react';
+import {
+  anchorOffset,
+  type EditorView,
+  leftAfterTurn,
+  type ViewSwitch,
+  viewShown,
+  viewSwitchAfter,
+} from '@calendar/app-state';
+import { useLayoutEffect, useReducer, useRef } from 'react';
 
 /** How long a switch takes, and under Reduce Motion (a crossfade only). */
 const SWITCH_MS = 280;
@@ -10,10 +17,7 @@ const MOVE = 'cubic-bezier(0.77, 0, 0.175, 1)';
 const GRACE_MS = 120;
 
 /** A switch under way: both panes are shown, the one leaving under the other, out of reach. */
-export interface Flight {
-  readonly from: EditorView;
-  readonly to: EditorView;
-}
+export type Flight = Extract<ViewSwitch, { readonly kind: 'flight' }>;
 
 /** The title inside a pane the form rises between (`data-switch-anchor`): its top in the window. */
 const topOf = (pane: HTMLElement | null): number | undefined => {
@@ -29,15 +33,17 @@ const topOf = (pane: HTMLElement | null): number | undefined => {
  * way back. A click on the other tab mid-way turns it round from where it
  * is. Under Reduce Motion it is a short crossfade.
  *
- * Both panes stay mounted, as before; `flight` keeps the one leaving shown
- * (absolute, inert) until the motion ends. The end comes from the
- * animations or, should the window draw no frames (a window at the back),
- * from a timer just past their length. `data-view` changes at the click;
- * `flight` says the motion is still under way (`data-switching`).
+ * Both panes stay mounted, as before; a flight (`viewSwitch.ts`, the
+ * iPhone's state too) keeps the one leaving shown (absolute, inert) until
+ * the motion ends. The end comes from the animations or, should the
+ * window draw no frames (a window at the back), from a timer just past
+ * their length. `data-view` changes at the click; `flight` says the
+ * motion is still under way (`data-switching`).
  */
 export const useViewSwitch = (initial: EditorView) => {
-  const [view, setView] = useState<EditorView>(initial);
-  const [flight, setFlight] = useState<Flight | null>(null);
+  const [state, dispatch] = useReducer(viewSwitchAfter, { kind: 'rest', view: initial });
+  const view = viewShown(state);
+  const flight: Flight | null = state.kind === 'flight' ? state : null;
   const assistantPane = useRef<HTMLDivElement>(null);
   const formPane = useRef<HTMLDivElement>(null);
   const frame = useRef<HTMLDivElement>(null);
@@ -48,6 +54,8 @@ export const useViewSwitch = (initial: EditorView) => {
     /** Turned round an odd number of times: running back to where it started. */
     backwards: boolean;
     timer: ReturnType<typeof setTimeout>;
+    /** Where it is headed now: where its end settles. */
+    to: EditorView;
   } | null>(null);
   // The animations of a switch that ended, let go of once the pane that
   // left is hidden (`fill: 'forwards'` holds it at its end until then).
@@ -61,7 +69,7 @@ export const useViewSwitch = (initial: EditorView) => {
     clearTimeout(run.timer);
     running.current = null;
     ended.current = run.animations;
-    setFlight(null);
+    dispatch({ type: 'settled', view: run.to });
   };
 
   const flip = (to: EditorView) => {
@@ -80,16 +88,15 @@ export const useViewSwitch = (initial: EditorView) => {
         animation.reverse();
       }
       run.backwards = !run.backwards;
+      run.to = to;
       const left = leftAfterTurn(current, run.backwards, duration);
       clearTimeout(run.timer);
       run.timer = setTimeout(settle, left + GRACE_MS);
-      setFlight({ from: flight.to, to: flight.from });
-      setView(to);
+      dispatch({ to, type: 'flip' });
       return;
     }
     leavingTop.current = topOf(view === 'assistant' ? assistantPane.current : formPane.current);
-    setFlight({ from: view, to });
-    setView(to);
+    dispatch({ to, type: 'flip' });
   };
 
   /** Straight to a view, no motion. */
@@ -101,8 +108,7 @@ export const useViewSwitch = (initial: EditorView) => {
       clearTimeout(running.current.timer);
     }
     running.current = null;
-    setFlight(null);
-    setView(to);
+    dispatch({ to, type: 'snap' });
   };
 
   useLayoutEffect(() => {
@@ -120,7 +126,7 @@ export const useViewSwitch = (initial: EditorView) => {
     const form = formPane.current;
     const assistant = assistantPane.current;
     if (form === null || assistant === null) {
-      setFlight(null);
+      dispatch({ type: 'settled', view: flight.to });
       return;
     }
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -149,6 +155,7 @@ export const useViewSwitch = (initial: EditorView) => {
       animations,
       backwards: false,
       timer: setTimeout(settle, Number(options.duration) + GRACE_MS),
+      to: flight.to,
     };
     // A reversed run finishes too, back at its start: either end settles.
     void Promise.all(animations.map((animation) => animation.finished)).then(settle, () => {});

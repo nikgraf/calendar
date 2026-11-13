@@ -269,7 +269,11 @@ export function EditorPanel({
 
       <DraftPager confirming={moveConfirmation.pending !== null} editor={editor} />
 
-      <div className="relative flex min-h-0 flex-1 flex-col" ref={switcher.frame}>
+      {/* While the switch runs, the form rides inside this frame: never over the footer. */}
+      <div
+        className={`relative flex min-h-0 flex-1 flex-col ${switcher.flight ? 'overflow-hidden' : ''}`}
+        ref={switcher.frame}
+      >
         {assists ? (
           <div
             className={
