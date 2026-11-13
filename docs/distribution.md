@@ -103,6 +103,18 @@ useful after adding/rotating secrets.
   EventKit and camera permission prompts, even without App Sandbox; usage
   descriptions in Info.plist alone (`NSCameraUsageDescription` sits in
   `forge.config.cjs`) are insufficient.
+- `llama-server` rides in Resources beside the helper. It runs the
+  Assistant's own model (`apps/desktop/electron/assistantModel/`), and it
+  is llama.cpp at the commit llama.rn vendors (`vendor/VERSIONS`), so the Mac
+  and the iPhone run the same llama.cpp. `pnpm --filter @calendar/desktop
+  build:llama` (`scripts/build-llama-server.sh`, run by `make` and
+  `package:app`) fetches that commit and builds one static arm64 binary
+  with Metal embedded. It fails if the binary links anything outside the
+  system, and keeps a build whose commit and script are unchanged.
+  `LLAMA_CPP_SRC=<checkout>` builds from a local clone. CI caches only the
+  binary, keyed on the script and `apps/ios/package.json`. osx-sign signs it
+  under the hardened runtime with no entitlements. Both packaging jobs run
+  `llama-server --version` from the app.
 - The Developer ID cert lives only in a temporary keychain created from the
   secret for the duration of the job and is deleted in an `always()` step.
 - Notarization adds ~2–10 minutes; the job timeout is 30.

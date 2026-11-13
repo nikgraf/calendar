@@ -7,10 +7,11 @@
   "scripts": {
     "build": "vp build && vp pack",
     "build:helper": "swift build -c release --package-path helper",
+    "build:llama": "bash scripts/build-llama-server.sh",
     "dev": "vp dev --host 127.0.0.1",
     "dev:app": "vp pack && ELECTRON_RENDERER_URL=http://127.0.0.1:5173 electron .",
-    "make": "pnpm build:helper && vp build && vp pack && electron-forge make",
-    "package:app": "pnpm build:helper && vp build && vp pack && electron-forge package",
+    "make": "pnpm build:helper && pnpm build:llama && vp build && vp pack && electron-forge make",
+    "package:app": "pnpm build:helper && pnpm build:llama && vp build && vp pack && electron-forge package",
     "start": "vp build && vp pack && electron ."
   },
   "dependencies": {
