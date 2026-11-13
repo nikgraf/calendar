@@ -55,7 +55,12 @@ schema, so the schema goes into the prompt and the answer comes in JSON
 mode (`TRAIN_OPENAI_JSON=object`). The files land in
 `output/bench/finetune/data/` (ignored by git), every answer's token
 counts in `usage.jsonl`. Each step picks up where an earlier run stopped.
-A run costs a few US dollars.
+A run costs a few US dollars. A published model's files are kept with it
+in [nikgraf/calendar-models](https://github.com/nikgraf/calendar-models):
+v1's data in `data/v1/`, its bench report and held-back answers in
+`reports/v1/`, and the adapter it was made from on its release.
+`fuse_hf.py` (section 4) writes the adapter into `Qwen/Qwen3.5-0.8B` at
+revision `2fc0636`, giving the weights v1's Q8_0 file was converted from.
 
 ### Why the day is written as said
 
