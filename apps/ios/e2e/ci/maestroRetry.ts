@@ -403,3 +403,26 @@ export const decideRetry = ({
 /** The command the driver died on, from the run log (`… while processing inputText …`). */
 export const latchedCommand = (runLog: string): string | undefined =>
   /(?:Transport|Device) unreachable while processing (\w+)/.exec(runLog)?.[1];
+
+/**
+ * The variable every live flow builds its titles from
+ * (`scripts/google-live-scratch.ts` sets it from the job's run tag).
+ */
+export const LIVE_RUN_TAG = 'MAESTRO_LIVE_RUN_TAG';
+
+/**
+ * The environment of `maestro test`'s run `number` (1 for the first). A
+ * live flow names what it makes on Google after `MAESTRO_LIVE_RUN_TAG`,
+ * and one cut short leaves those items in the run's calendar or list:
+ * under the same titles, its rerun could find them and pass on them. So a
+ * later run tags its titles with the run (`<tag>-r2`); the calendar and
+ * list keep their names, and teardown deletes both with whatever is left
+ * in them. Without the variable (every other flow) nothing changes.
+ */
+export const runEnvironment = <Env extends Readonly<Record<string, string | undefined>>>(
+  env: Env,
+  number: number,
+): Env => {
+  const tag = env[LIVE_RUN_TAG];
+  return number > 1 && tag ? { ...env, [LIVE_RUN_TAG]: `${tag}-r${number}` } : { ...env };
+};
