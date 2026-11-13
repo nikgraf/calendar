@@ -87,6 +87,36 @@ export const tunedFinderAnswer = (answer: unknown): Record<string, unknown> | un
 
 const REFUSED = "That couldn't be read — try rephrasing.";
 
+const isText = (value: unknown): value is string => typeof value === 'string';
+
+/**
+ * The tuned model's finder answer as the finder reads it: without a
+ * schema over it, each field only where it has its type (a time as text,
+ * the weekdays as numbers), and a length of nothing as none, so the
+ * finder searches its own. Undefined for an answer that is no object.
+ */
+export const tunedFinderParse = (answer: unknown): FindTimeParse | undefined => {
+  if (typeof answer !== 'object' || answer === null || Array.isArray(answer)) {
+    return undefined;
+  }
+  const record = answer as Record<string, unknown>;
+  const days = record['daysOfWeek'];
+  const daysOfWeek = Array.isArray(days)
+    ? days.filter((day): day is number => typeof day === 'number')
+    : undefined;
+  return {
+    ...(daysOfWeek === undefined ? {} : { daysOfWeek }),
+    ...(noLength(record['durationMinutes'])
+      ? {}
+      : { durationMinutes: record['durationMinutes'] as number }),
+    ...(isText(record['earliestTime']) ? { earliestTime: record['earliestTime'] } : {}),
+    ...(isText(record['latestTime']) ? { latestTime: record['latestTime'] } : {}),
+    ...(isText(record['title']) ? { title: record['title'] } : {}),
+    ...(isText(record['windowEndDate']) ? { windowEndDate: record['windowEndDate'] } : {}),
+    ...(isText(record['windowStartDate']) ? { windowStartDate: record['windowStartDate'] } : {}),
+  };
+};
+
 /** One sentence through the Assistant's model, its answer read without the word rules. */
 export const tunedFindTime = async (
   model: LanguageModel,
@@ -108,13 +138,10 @@ export const tunedFindTime = async (
   } catch {
     return { kind: 'rejected', reason: REFUSED };
   }
-  if (typeof answer !== 'object' || answer === null || Array.isArray(answer)) {
-    return { kind: 'rejected', reason: REFUSED };
-  }
-  // A length of nothing is none said: the finder searches its own.
-  const { durationMinutes, ...rest } = answer as FindTimeParse;
-  const parse = noLength(durationMinutes) ? rest : (answer as FindTimeParse);
-  return normalizeFindTime(parse, { fallbackDurationMinutes, referenceDate });
+  const parse = tunedFinderParse(answer);
+  return parse === undefined
+    ? { kind: 'rejected', reason: REFUSED }
+    : normalizeFindTime(parse, { fallbackDurationMinutes, referenceDate });
 };
 
 /** Find a time on the Assistant's own model. */

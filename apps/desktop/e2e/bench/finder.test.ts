@@ -256,6 +256,10 @@ describe('readAnswer and rescoreFinder', () => {
       'duration',
     ]);
     expect(readAnswer({}, unsaid, FRIDAY, { pipeline: 'tuned' }).raw.failed).toEqual([]);
+    // Read as the app reads it: a length of nothing is none.
+    expect(
+      readAnswer({ durationMinutes: 0 }, unsaid, FRIDAY, { pipeline: 'tuned' }).raw.failed,
+    ).toEqual([]);
   });
 
   it('names the run it came from however often it is scored again, and the cases left out', () => {

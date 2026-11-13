@@ -176,8 +176,11 @@ export const worked = (
 
 const DAY_MINUTES = 24 * 60;
 const CLOCK = /^(\d{1,2}):(\d{2})$/u;
-/** Hours, minutes or both ("1h", "45m", "1h30m"); a sign in front makes it a shift. */
-const AMOUNT = /^([+-])?(?=\d)(?:(\d{1,2})h)?(?:(\d{1,4})m)?$/u;
+/** Hours, minutes or both ("1h", "45m", "1h30m", "45min"); a sign in front makes it a shift. */
+const AMOUNT = /^([+-])?(?=\d)(?:(\d{1,2})h)?(?:(\d{1,4})m(?:in)?)?$/u;
+
+/** A time written with a sign: meant as a shift, whether or not it reads as one. */
+const signed = (value: unknown): boolean => typeof value === 'string' && /^\s*[+-]/u.test(value);
 
 /** A time an amount says: a shift of the draft's time, or a length from the start. */
 interface Amount {
@@ -237,8 +240,8 @@ export interface DraftTimes {
  * that long after the start. A start moved past midnight moves the day
  * with it. Clock times and anything else are left as written. Undefined,
  * an answer to turn down, where an amount cannot be worked out: a shift
- * without a timed draft, a length without a start, a start as a length,
- * or a day or more.
+ * without a timed draft or that reads as none, a length without a start,
+ * a start as a length, or a day or more.
  */
 export const workedTimes = (
   answer: unknown,
@@ -249,6 +252,13 @@ export const workedTimes = (
   }
   const start = amountOf(answer['startTime']);
   const end = amountOf(answer['endTime']);
+  // A shift that reads as none ("+1.5h") is turned down, not read as no time (all day).
+  if (
+    (start === undefined && signed(answer['startTime'])) ||
+    (end === undefined && signed(answer['endTime']))
+  ) {
+    return undefined;
+  }
   if (start === undefined && end === undefined) {
     return answer;
   }

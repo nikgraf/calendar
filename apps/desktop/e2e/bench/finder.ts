@@ -5,6 +5,7 @@ import {
   normalizeFindTime,
   type Period,
   periodTimes,
+  tunedFinderParse,
 } from '@calendar/ai';
 import { finderWindowDates, Temporal } from '@calendar/core';
 import { Schema } from 'effect';
@@ -413,8 +414,13 @@ export const readAnswer = (
   today: string,
   { pipeline = 'app' }: { readonly pipeline?: FinderPipeline | undefined } = {},
 ): Record<Arm, ArmResult> => {
+  // The Assistant's model's answer as the app reads it (`tunedFindTime`).
   const parse =
-    typeof answer === 'object' && answer !== null ? (answer as FindTimeParse) : undefined;
+    pipeline === 'tuned'
+      ? tunedFinderParse(answer)
+      : typeof answer === 'object' && answer !== null
+        ? (answer as FindTimeParse)
+        : undefined;
   const read = (arm: Arm): FindTimeResult =>
     parse === undefined
       ? NO_ANSWER

@@ -413,7 +413,9 @@ const said = async (dir: string, log: (line: string) => void): Promise<void> => 
   const onFile = new Map(readLines<SaidThread>(path).map((thread) => [thread.id, thread.turns]));
   /**
    * Answered by this question, every turn it is asked of: an answer to an
-   * older one (model v1's had two parts, no `noAlert`) is asked again.
+   * older one (model v1's had two parts: none of `start`, `end`,
+   * `noAlert`) is asked again. Any one of them will do, as JSON mode
+   * holds the teacher to no list of required keys.
    */
   const answered = (thread: LabelledThread): boolean => {
     const turns = onFile.get(thread.id);
@@ -421,7 +423,10 @@ const said = async (dir: string, log: (line: string) => void): Promise<void> => 
       turns !== undefined &&
       thread.turns.every((turn, index) => {
         const answer = turns[index];
-        return !mayHaveSaid(turn) || (isRecord(answer) && 'noAlert' in answer);
+        return (
+          !mayHaveSaid(turn) ||
+          (isRecord(answer) && ['start', 'end', 'noAlert'].some((key) => key in answer))
+        );
       })
     );
   };

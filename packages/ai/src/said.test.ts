@@ -177,6 +177,13 @@ describe('workedTimes', () => {
     });
   });
 
+  it('reads minutes written as "min" too', () => {
+    expect(workedTimes({ endTime: '+30min', startTime: '+30min' }, { draft })).toEqual({
+      endTime: '18:30',
+      startTime: '17:30',
+    });
+  });
+
   it('ends a length after the start: the draft’s, one written or one moved', () => {
     expect(workedTimes({ endTime: '45m', startTime: '17:00' }, { draft })).toEqual({
       endTime: '17:45',
@@ -199,10 +206,8 @@ describe('workedTimes', () => {
       endTime: '00:59',
       startTime: '00:30',
     });
-    expect(workedTimes({ date: '2026-11-20', startTime: '-1d' }, { draft: late })).toEqual({
-      date: '2026-11-20',
-      startTime: '-1d',
-    });
+    // A day as a shift is no time this reads: turned down.
+    expect(workedTimes({ date: '2026-11-20', startTime: '-1d' }, { draft: late })).toBeUndefined();
     const early = { ...late, endTime: '01:00', startTime: '00:30' };
     expect(workedTimes({ startTime: '-1h' }, { draft: early })).toEqual({
       date: '2026-11-11',
@@ -220,6 +225,9 @@ describe('workedTimes', () => {
     expect(workedTimes({ startTime: '30m' }, { draft })).toBeUndefined();
     expect(workedTimes({ endTime: '+24h', startTime: '17:00' }, { draft })).toBeUndefined();
     expect(workedTimes({ endTime: '0m', startTime: '17:00' }, { draft })).toBeUndefined();
+    // A shift that reads as none is no time: turned down, not all day.
+    expect(workedTimes({ endTime: '+1.5h', startTime: '+1.5h' }, { draft })).toBeUndefined();
+    expect(workedTimes({ startTime: '+1h 30m' }, { draft })).toBeUndefined();
   });
 
   it('leaves clock times, other words and an answer that is no draft alone', () => {

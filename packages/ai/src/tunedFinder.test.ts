@@ -104,6 +104,14 @@ describe('tunedFindTime', () => {
     });
   });
 
+  it('reads only what has its type, as an answer without a schema may not', async () => {
+    const { model } = modelOf({ daysOfWeek: 2, earliestTime: 9, title: 5 });
+    await expect(tunedFindTime(model, input)).resolves.toEqual({
+      constraints: { durationMinutes: 45, windowEndDate: '2026-11-19', windowStartDate: TODAY },
+      kind: 'parsed',
+    });
+  });
+
   it('searches the finder’s own length for an answer of none', async () => {
     const { model } = modelOf({ durationMinutes: 0 });
     await expect(tunedFindTime(model, input)).resolves.toMatchObject({

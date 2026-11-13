@@ -330,9 +330,9 @@ export const useThreadEditor = ({
   readonly backend: BackendClient;
   readonly calendars: ReadonlyArray<CalendarInfo>;
   readonly confirm: (request: EditorConfirmRequest) => Promise<boolean>;
-  /** The kind to open on: a to-do for a "+" that wants one, or Convert. */
   /** How a finder phrase is read (`tunedFinder` or `rulesFinder`). */
   readonly finder: FinderReader;
+  /** The kind to open on: a to-do for a "+" that wants one, or Convert. */
   readonly initialKind?: ItemKind | undefined;
   readonly onClose: () => void;
   /** Save went through, as an event or a task. */
