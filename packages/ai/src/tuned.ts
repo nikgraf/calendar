@@ -1,6 +1,6 @@
 import type { LanguageModel } from './model.ts';
 import type { QuickAddResult, RefineResult } from './normalizeQuickAdd.ts';
-import { worked } from './said.ts';
+import { worked, workedTimes } from './said.ts';
 import { upcomingDays } from './shared.ts';
 import { answerResult, type DraftState, draftState, type TurnDraft } from './tunedResult.ts';
 
@@ -165,10 +165,10 @@ export const tunedTurn = async (
   } catch {
     return { kind: 'rejected', reason: REFUSED };
   }
-  const day = worked(answer, {
-    draftDate: turn.draft?.prefill.date,
-    referenceDate: turn.referenceDate,
-  });
+  const day = workedTimes(
+    worked(answer, { draftDate: turn.draft?.prefill.date, referenceDate: turn.referenceDate }),
+    { draft: turn.draft?.prefill },
+  );
   return answerResult(adjust === undefined ? day : adjust(day), {
     draft: turn.draft,
     referenceDate: turn.referenceDate,

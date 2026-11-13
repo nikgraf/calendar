@@ -92,10 +92,10 @@ describe('the fixture model on the tuned prompt', () => {
     await expect(change('Dentist (moved) | | 18:00-19:00')).resolves.toMatchObject({
       prefill: { location: 'Room 4', startTime: '18:00', title: 'Dentist (moved)' },
     });
-    await expect(change('something else')).resolves.toEqual({
-      kind: 'parsed',
-      prefill: dentist.prefill,
-    });
+    // Nothing named: the draft as it was, its day not said.
+    const unchanged = await change('something else');
+    expect(unchanged).toEqual({ kind: 'parsed', prefill: dentist.prefill });
+    expect(unchanged).not.toHaveProperty('saidDay');
   });
 
   it('adds a notification and a note, and takes people on and off', async () => {

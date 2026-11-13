@@ -10,8 +10,7 @@ import { finderWindowDates, foldSearchText, Temporal } from '@calendar/core';
  * English and German; where the code can see that it cannot read a
  * construction (a negation, "two days after Monday") it has no opinion and
  * the model's answer stands. The Assistant reads with its own model
- * (`phraseReader.ts`) and keeps only `groundDate`, `mentionsDate` and
- * `defersDate`: whether a phrase named a day at all.
+ * (`phraseReader.ts`) and none of this.
  */
 
 /** Lower-case, accent-free text with straight apostrophes and "ss" for ß: what every pattern here is matched against. */
@@ -474,67 +473,6 @@ const weekdaysIn = (text: string): ReadonlyArray<number> =>
 /** The ISO weekdays (1 = Monday … 7 = Sunday) the phrase names, in week order. */
 export const namedWeekdays = (phrase: string): ReadonlyArray<number> => weekdaysIn(words(phrase));
 
-const NEXT = /\b(?:next|nachsten?|kommenden?)\b/;
-/** A weekday that already happened: not a day to snap forward to. */
-const PAST_WEEKDAY = new RegExp(
-  `\\b(?:last|past|previous|letzten?|vergangenen?|vorigen?)\\s+(?:${DAY_NAMES})\\b`,
-);
-/**
- * A day as the anchor of an offset or a boundary ("two weeks from today",
- * "a week from tomorrow", "two days after Monday", "before Friday"): not
- * the date itself, so the model's stands.
- */
-const DAY_AS_ANCHOR = new RegExp(
-  `\\b(?:from|(?<!day )after|nach)\\s+(?:today|tomorrow|tonight|heute)\\b|\\b(?:after|before|from|nach|vor|ab)\\s+(?:the\\s+|dem\\s+)?(?:${DAY_NAMES})\\b`,
-);
-
-/**
- * The day the phrase states, if it states one: "yesterday", "today" and
- * "tomorrow" from the reference date, or a weekday — snapped forward from
- * the model's date when that date is not on it, so "next Friday" never
- * lands on a Thursday; "next <weekday>" said on that weekday is a week
- * on. Undefined when the phrase gives no day the code can read (a month
- * and day, "last Friday", "two weeks from today", "two days after
- * Monday", a weekday ruled out, or German "morgen", which is also
- * "morning"), and the model's date stands.
- */
-export const groundDate = (
-  modelDate: string | undefined,
-  { phrase, referenceDate }: { readonly phrase: string; readonly referenceDate: string },
-): string | undefined => {
-  const text = words(phrase);
-  const today = Temporal.PlainDate.from(referenceDate);
-  if (DAY_AS_ANCHOR.test(text) || PAST_WEEKDAY.test(text)) {
-    return undefined;
-  }
-  if (/\b(?:day after tomorrow|ubermorgen)\b/.test(text)) {
-    return today.add({ days: 2 }).toString();
-  }
-  if (/\btomorrow\b/.test(text)) {
-    return today.add({ days: 1 }).toString();
-  }
-  if (/\b(?:yesterday|gestern)\b/.test(text)) {
-    return today.subtract({ days: 1 }).toString();
-  }
-  if (/\b(?:today|heute|tonight)\b/.test(text)) {
-    return referenceDate;
-  }
-  // A weekday ruled out ("außer Freitag", "not on Tuesday") is no day to land on.
-  const [day, ...more] = weekdaysIn(text.replaceAll(new RegExp(RULED_OUT_DAYS.source, 'g'), ' '));
-  if (day === undefined || more.length > 0) {
-    return undefined;
-  }
-  const anchor =
-    modelDate !== undefined && Temporal.PlainDate.compare(modelDate, referenceDate) >= 0
-      ? Temporal.PlainDate.from(modelDate)
-      : today;
-  let candidate = anchor.add({ days: (day - anchor.dayOfWeek + 7) % 7 });
-  if (candidate.equals(today) && NEXT.test(text)) {
-    candidate = candidate.add({ days: 7 });
-  }
-  return candidate.toString();
-};
-
 /**
  * A rename ("call it team dinner", "nenn es Teamessen"): the new title is
  * all there is — a meal word, a weekday or a finder cue in the name must
@@ -713,41 +651,6 @@ export const durationMinutesOf = (phrase: string): number | undefined => {
 /** The phrase makes the event last the whole day ("all day", "ganztägig"). */
 export const isAllDayPhrase = (phrase: string): boolean =>
   /\b(?:all[- ]day|whole day|ganztag(?:ig|s)?|ganzen tag)\b/.test(words(phrase));
-
-const DAY_SET = 'weekdays?|weekends?|werktags?|werktage?n?|wochentags|wochenende[ns]?';
-/**
- * The words that rule days out of a rule: never a bare "but", which
- * corrects as often as it excludes ("but Friday at 10").
- */
-const RULES_OUT = 'except for|except|excluding|but not|not|other than|ausser|ohne|nicht';
-/**
- * The days a negation rules out ("except Sunday", "but not Friday",
- * "außer Dienstag", "ohne Wochenende"): the weekdays or sets named right
- * after the negation word. Nothing when something else follows ("except
- * holidays", "but not in August").
- */
-const RULED_OUT_LIST = `(?:${DAY_NAMES}|${DAY_SET})(?:(?:,?\\s*(?:and|und|&|or|oder)\\s+|,\\s*|\\s*(?:to|through|thru|bis|-|–)\\s*)(?:${DAY_NAMES}|${DAY_SET}))*`;
-/**
- * A day of the month, a month, a period or an anchor after the day makes
- * it one date, not a weekday ("except Friday the 13th", "except Monday,
- * Sept 7", "except Fridays in August", "except the Friday before
- * Christmas", "except Friday next week").
- */
-const RULED_OUT_SCOPE = `(?!\\s*[,(]?\\s*(?:(?:the|den)\\s+)?\\d|\\s*[,(]?\\s*(?:${MONTHS}|in|im|during|before|after|vor|nach|(?:next|nachste[nmrs]?|this|diese[nmrs]?)\\s+(?:week|month|year|woche|monat|jahr))\\b|(?:,?\\s*(?:and|und|&|or|oder)\\s+|,\\s*|\\s*(?:to|through|thru|bis|-|–)\\s*)(?:${DAY_NAMES}|${DAY_SET})\\b)`;
-const RULED_OUT_DAYS = new RegExp(
-  `\\b(?:${RULES_OUT})\\s+(?:(?:on|am|an|the|den|die|every|each|jede[nmrs]?|alle)\\s+){0,2}(${RULED_OUT_LIST})\\b${RULED_OUT_SCOPE}`,
-);
-/**
- * The phrase names a day the code reads but leaves to the model on
- * purpose: German "morgen" (also "morning"), a day as the anchor of an
- * offset ("two weeks from today", "two days after Monday"), a weekday
- * that has passed ("last Friday"). With one of these, a date the model
- * changed is the answer to the words, not an invention.
- */
-export const defersDate = (phrase: string): boolean => {
-  const text = words(phrase);
-  return /\bmorgen\b/.test(text) || DAY_AS_ANCHOR.test(text) || PAST_WEEKDAY.test(text);
-};
 
 export const mentionsDate = (phrase: string): boolean => {
   const text = words(phrase);

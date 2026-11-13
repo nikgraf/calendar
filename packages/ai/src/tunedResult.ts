@@ -195,7 +195,9 @@ const notesChange = (answer: unknown, before: string | undefined): NotesChange |
  * list after the turn (the model writes back the ones it was shown), so
  * what it lacks is taken off and what is new is added. An answer with
  * none takes them all off, an email one too; a draft that kept to the
- * calendar's default gets the answer's list in its place.
+ * calendar's default gets the answer's list in its place. A first
+ * phrase's empty list ("no reminder") gives up the calendar's default,
+ * where no list at all keeps to it.
  */
 const remindersChange = (
   answer: unknown,
@@ -209,6 +211,9 @@ const remindersChange = (
       )
     : [];
   const had = before ?? [];
+  if (draft === undefined && Array.isArray(answer) && now.length === 0) {
+    return { add: [], clear: true, remove: [] };
+  }
   if (sameNumbers(now, had)) {
     return undefined;
   }

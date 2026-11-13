@@ -41,14 +41,14 @@ and `TextRecognizer` seams. The Assistant reads a phrase through a
 (`tunedReader`, `tuned.ts`): a Qwen3.5 0.8B trained for these prompts
 (`apps/desktop/e2e/bench/train/`), the release both apps fetch named in
 `assistantModel.ts` (calendar-models v1). The tuned prompt is the days,
-the draft and the words; the answer is the whole draft, a far day and a
-ruled-out weekday written as said and worked out by code (`said.ts`),
-and `answerResult` (`tunedResult.ts`) checks shapes and fills a form's
-defaults without reading the words. One word check is left: whether a
-phrase named a day at all (`statesDay`: `groundDate`, `mentionsDate`,
-`defersDate`), since the model writes today's date for "Lunch at 1" and
-only the words tell it from "Lunch today at 1"; it goes once a model
-leaves the date out. Each device downloads the model once, after asking,
+the draft and the words; the answer is the whole draft, a far day, a
+ruled-out weekday and a time said as an amount ("+30m" for "half an
+hour later", "45m" for "for 45 minutes") written as said and worked out
+by code (`said.ts`), and `answerResult` (`tunedResult.ts`) checks shapes
+and fills a form's defaults without reading the words. The answer has a
+day only where the words gave one: a first phrase without one lands on
+the day on show, a later turn keeps the draft's. Each device downloads
+the model once, after asking,
 checks its size and SHA-256, and loads it on the first question. The
 iPhone fetches over Wi-Fi unless mobile data is allowed
 (`apps/ios/src/assistantDownload.ts`, a background `URLSession` in the

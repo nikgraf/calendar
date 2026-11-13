@@ -5,9 +5,11 @@ import { Temporal } from '@calendar/core';
  * them out. A model trained for the tuned arm writes a date it cannot
  * look up in the days it is shown the way it was said ("14" for "on the
  * 14th", "03-14" for "March 14", "+2w" for "in two weeks") and a repeat
- * with the weekdays the words ruled out beside it; which year a date
- * falls in and which weekdays are left is arithmetic, done here. Nothing
- * in this file reads a phrase.
+ * with the weekdays the words ruled out beside it, and a time as an
+ * amount where the words gave one ("+30m" for "half an hour later",
+ * "45m" for "for 45 minutes"); which year a date falls in, which weekdays
+ * are left and which clock time an amount comes to is arithmetic, done
+ * here. Nothing in this file reads a phrase.
  */
 
 export const WEEKDAY_CODES = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'] as const;
@@ -169,5 +171,124 @@ export const worked = (
     ...answer,
     ...(date === undefined ? {} : { date }),
     repeat: until === undefined ? rule : { ...rule, untilDate: until },
+  };
+};
+
+const DAY_MINUTES = 24 * 60;
+const CLOCK = /^(\d{1,2}):(\d{2})$/u;
+/** Hours, minutes or both ("1h", "45m", "1h30m"); a sign in front makes it a shift. */
+const AMOUNT = /^([+-])?(?=\d)(?:(\d{1,2})h)?(?:(\d{1,4})m)?$/u;
+
+/** A time an amount says: a shift of the draft's time, or a length from the start. */
+interface Amount {
+  readonly minutes: number;
+  readonly shift: boolean;
+}
+
+const amountOf = (value: unknown): Amount | undefined => {
+  const match = typeof value === 'string' ? AMOUNT.exec(value.trim()) : null;
+  if (match === null) {
+    return undefined;
+  }
+  const minutes = Number(match[2] ?? 0) * 60 + Number(match[3] ?? 0);
+  return { minutes: match[1] === '-' ? -minutes : minutes, shift: match[1] !== undefined };
+};
+
+/** An amount within a day; a length is more than nothing. */
+const fits = (amount: Amount | undefined): boolean =>
+  amount === undefined ||
+  (Math.abs(amount.minutes) < DAY_MINUTES && (amount.shift || amount.minutes > 0));
+
+const clockMinutes = (value: unknown): number | undefined => {
+  const match = typeof value === 'string' ? CLOCK.exec(value.trim()) : null;
+  if (match === null) {
+    return undefined;
+  }
+  const [hour, minute] = [Number(match[1]), Number(match[2])];
+  return hour < 24 && minute < 60 ? hour * 60 + minute : undefined;
+};
+
+const two = (value: number): string => String(value).padStart(2, '0');
+
+const clockOf = (minutes: number): string => {
+  const within = ((minutes % DAY_MINUTES) + DAY_MINUTES) % DAY_MINUTES;
+  return `${two(Math.floor(within / 60))}:${two(within % 60)}`;
+};
+
+/** An amount as a tuned model is trained to write it: whole hours in hours, else minutes. */
+export const writtenAmount = (minutes: number, { shift }: { readonly shift: boolean }): string => {
+  const sign = shift ? (minutes < 0 ? '-' : '+') : '';
+  const size = Math.abs(minutes);
+  return `${sign}${size > 0 && size % 60 === 0 ? `${String(size / 60)}h` : `${String(size)}m`}`;
+};
+
+/** The times of the draft a later turn changes. */
+export interface DraftTimes {
+  readonly date: string;
+  readonly endTime: string;
+  readonly isAllDay: boolean;
+  readonly startTime: string;
+}
+
+/**
+ * A tuned model's answer with its times worked out: a start written as a
+ * shift ("+30m", "-1h") is the draft's start moved by it, an end written
+ * as a shift the draft's end moved, an end written as a length ("45m")
+ * that long after the start. A start moved past midnight moves the day
+ * with it. Clock times and anything else are left as written. Undefined,
+ * an answer to turn down, where an amount cannot be worked out: a shift
+ * without a timed draft, a length without a start, a start as a length,
+ * or a day or more.
+ */
+export const workedTimes = (
+  answer: unknown,
+  { draft }: { readonly draft?: DraftTimes | undefined },
+): unknown => {
+  if (!isRecord(answer)) {
+    return answer;
+  }
+  const start = amountOf(answer['startTime']);
+  const end = amountOf(answer['endTime']);
+  if (start === undefined && end === undefined) {
+    return answer;
+  }
+  const timed = draft !== undefined && !draft.isAllDay ? draft : undefined;
+  if (!fits(start) || !fits(end) || (start !== undefined && !start.shift)) {
+    return undefined;
+  }
+  let startMinutes = clockMinutes(answer['startTime']);
+  let days = 0;
+  if (start !== undefined) {
+    const from = clockMinutes(timed?.startTime);
+    if (from === undefined) {
+      return undefined;
+    }
+    days = Math.floor((from + start.minutes) / DAY_MINUTES);
+    startMinutes = from + start.minutes - days * DAY_MINUTES;
+  }
+  let endMinutes: number | undefined;
+  if (end !== undefined) {
+    const from = end.shift ? clockMinutes(timed?.endTime) : startMinutes;
+    if (from === undefined) {
+      return undefined;
+    }
+    endMinutes = from + end.minutes;
+  }
+  let date: string | undefined;
+  if (days !== 0) {
+    const on = answer['date'] === undefined ? timed?.date : answer['date'];
+    const day = typeof on === 'string' && FULL.test(on) ? fullDate(on) : undefined;
+    if (day === undefined) {
+      return undefined;
+    }
+    date = Temporal.PlainDate.from(day).add({ days }).toString();
+  }
+  return {
+    ...answer,
+    ...(date === undefined ? {} : { date }),
+    ...(endMinutes === undefined ? {} : { endTime: clockOf(endMinutes) }),
+    ...(start === undefined || startMinutes === undefined
+      ? {}
+      : { startTime: clockOf(startMinutes) }),
   };
 };

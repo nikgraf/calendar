@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { saidDate, withoutRuledOut, worked } from './said.ts';
+import { saidDate, withoutRuledOut, worked, workedTimes, writtenAmount } from './said.ts';
 
 // A Thursday; every date below is worked out from the day a test passes in.
 const TODAY = '2026-11-12';
@@ -156,5 +156,88 @@ describe('worked', () => {
       title: 'Call',
     });
     expect(worked('no', { referenceDate: TODAY })).toBe('no');
+  });
+});
+
+describe('workedTimes', () => {
+  const draft = { date: TODAY, endTime: '18:00', isAllDay: false, startTime: '17:00' };
+
+  it('moves a start or an end written as a shift from the draft’s', () => {
+    expect(workedTimes({ endTime: '+30m', startTime: '+30m' }, { draft })).toEqual({
+      endTime: '18:30',
+      startTime: '17:30',
+    });
+    expect(workedTimes({ endTime: '-1h', startTime: '-1h' }, { draft })).toEqual({
+      endTime: '17:00',
+      startTime: '16:00',
+    });
+    expect(workedTimes({ endTime: '+1h30m', startTime: '17:00' }, { draft })).toEqual({
+      endTime: '19:30',
+      startTime: '17:00',
+    });
+  });
+
+  it('ends a length after the start: the draft’s, one written or one moved', () => {
+    expect(workedTimes({ endTime: '45m', startTime: '17:00' }, { draft })).toEqual({
+      endTime: '17:45',
+      startTime: '17:00',
+    });
+    expect(workedTimes({ endTime: '2h', startTime: '09:30' }, {})).toEqual({
+      endTime: '11:30',
+      startTime: '09:30',
+    });
+    expect(workedTimes({ endTime: '90m', startTime: '+1h' }, { draft })).toEqual({
+      endTime: '19:30',
+      startTime: '18:00',
+    });
+  });
+
+  it('moves the day with a start moved past midnight', () => {
+    const late = { date: TODAY, endTime: '23:59', isAllDay: false, startTime: '23:30' };
+    expect(workedTimes({ endTime: '+1h', startTime: '+1h' }, { draft: late })).toEqual({
+      date: '2026-11-13',
+      endTime: '00:59',
+      startTime: '00:30',
+    });
+    expect(workedTimes({ date: '2026-11-20', startTime: '-1d' }, { draft: late })).toEqual({
+      date: '2026-11-20',
+      startTime: '-1d',
+    });
+    const early = { ...late, endTime: '01:00', startTime: '00:30' };
+    expect(workedTimes({ startTime: '-1h' }, { draft: early })).toEqual({
+      date: '2026-11-11',
+      startTime: '23:30',
+    });
+  });
+
+  it('turns down an amount it cannot work out', () => {
+    // A shift without a timed draft, a length without a start, a start as a length, a day or more.
+    expect(workedTimes({ startTime: '+30m' }, {})).toBeUndefined();
+    expect(
+      workedTimes({ startTime: '+30m' }, { draft: { ...draft, isAllDay: true } }),
+    ).toBeUndefined();
+    expect(workedTimes({ endTime: '45m' }, { draft })).toBeUndefined();
+    expect(workedTimes({ startTime: '30m' }, { draft })).toBeUndefined();
+    expect(workedTimes({ endTime: '+24h', startTime: '17:00' }, { draft })).toBeUndefined();
+    expect(workedTimes({ endTime: '0m', startTime: '17:00' }, { draft })).toBeUndefined();
+  });
+
+  it('leaves clock times, other words and an answer that is no draft alone', () => {
+    expect(workedTimes({ endTime: '18:00', startTime: '17:00' }, { draft })).toEqual({
+      endTime: '18:00',
+      startTime: '17:00',
+    });
+    expect(workedTimes({ startTime: 'noon' }, { draft })).toEqual({ startTime: 'noon' });
+    expect(workedTimes(['+30m'], { draft })).toEqual(['+30m']);
+  });
+});
+
+describe('writtenAmount', () => {
+  it('writes whole hours in hours and anything else in minutes, a shift with its sign', () => {
+    expect(writtenAmount(60, { shift: true })).toBe('+1h');
+    expect(writtenAmount(-120, { shift: true })).toBe('-2h');
+    expect(writtenAmount(30, { shift: true })).toBe('+30m');
+    expect(writtenAmount(90, { shift: false })).toBe('90m');
+    expect(writtenAmount(45, { shift: false })).toBe('45m');
   });
 });

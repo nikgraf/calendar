@@ -1,10 +1,8 @@
 import { FINDER_BOUNDS } from '@calendar/core';
 import { describe, expect, it } from 'vite-plus/test';
 import {
-  defersDate,
   durationMinutesOf,
   groundBounds,
-  groundDate,
   groundDays,
   mentionsDate,
   namedWeekdays,
@@ -45,61 +43,6 @@ describe('periodOf', () => {
         latestTime,
       });
     }
-  });
-});
-
-const ground = (modelDate: string | undefined, phrase: string) =>
-  groundDate(modelDate, { phrase, referenceDate: REFERENCE });
-
-describe('groundDate', () => {
-  it('reads today and tomorrow itself', () => {
-    expect(ground('2026-08-30', 'Call tomorrow')).toBe('2026-08-23');
-    expect(ground(undefined, 'Call today')).toBe('2026-08-22');
-    expect(ground(undefined, 'Kino heute abend')).toBe('2026-08-22');
-    expect(ground(undefined, 'dinner tonight')).toBe('2026-08-22');
-    expect(ground(undefined, 'the day after tomorrow')).toBe('2026-08-24');
-  });
-
-  it('lands a named weekday on that weekday, forward from the model date', () => {
-    // Observed: "next Friday" came back as a Thursday, "Thursday" as a Tuesday.
-    expect(ground('2026-08-27', 'Dinner with Teo next Friday')).toBe('2026-08-28');
-    expect(ground('2026-08-25', 'Dentist Thursday')).toBe('2026-08-27');
-    // Already right: kept, even a week later than the nearest one.
-    expect(ground('2026-09-04', 'Dinner next Friday')).toBe('2026-09-04');
-    // No model date: the next such day from today.
-    expect(ground(undefined, 'Dentist Thursday')).toBe('2026-08-27');
-    expect(ground(undefined, 'lunch tue 1pm')).toBe('2026-08-25');
-    expect(ground(undefined, 'Zahnarzt Dienstag')).toBe('2026-08-25');
-    // Today is that weekday: "next" means a week on, a bare name means today.
-    expect(ground('2026-08-22', 'Dentist next Saturday')).toBe('2026-08-29');
-    expect(ground(undefined, 'Dentist Saturday')).toBe('2026-08-22');
-    // A model date in the past is not an anchor.
-    expect(ground('2026-08-14', 'Dentist Friday')).toBe('2026-08-28');
-  });
-
-  it('has no opinion on dates it cannot read', () => {
-    expect(ground('2026-10-20', 'Offsite Oct 20')).toBeUndefined();
-    // Review: a day word as the anchor of an offset, a weekday that has passed.
-    expect(ground('2026-09-05', 'Call two weeks from today')).toBeUndefined();
-    expect(ground('2026-08-30', 'Call a week from tomorrow')).toBeUndefined();
-    expect(ground('2026-08-21', 'Dentist last Friday at 9am')).toBeUndefined();
-    expect(ground('2026-08-21', 'Zahnarzt letzten Freitag')).toBeUndefined();
-    expect(ground(undefined, 'Call yesterday')).toBe('2026-08-21');
-    // Review: a weekday as the anchor of an offset or a boundary.
-    expect(ground('2026-08-26', 'Call two days after Monday')).toBeUndefined();
-    expect(ground('2026-08-27', 'Call before Friday')).toBeUndefined();
-    expect(ground(undefined, 'Zahnarzt morgen')).toBeUndefined();
-    // Two weekdays: not one day.
-    expect(ground(undefined, 'Gym Monday and Wednesday')).toBeUndefined();
-    // A weekday ruled out is no day to land on; one after another kind of
-    // "not" or "ohne" still is.
-    expect(ground('2026-08-24', 'Standup jeden Werktag um 9 außer Freitag')).toBeUndefined();
-    expect(ground(undefined, 'not on Tuesday')).toBeUndefined();
-    expect(ground(undefined, 'Yoga Monday but not Friday')).toBe('2026-08-24');
-    expect(ground('2026-08-27', 'Abendessen ohne Kinder am Freitag')).toBe('2026-08-28');
-    expect(ground('2026-08-27', 'Lunch with Tom but not Anna on Friday at 1')).toBe('2026-08-28');
-    // "sat" and "sun" are words of their own.
-    expect(ground(undefined, 'Fun in the sun')).toBeUndefined();
   });
 });
 
@@ -170,15 +113,6 @@ describe('durationMinutesOf', () => {
 });
 
 describe('the words of a change', () => {
-  it('knows a day it leaves to the model on purpose', () => {
-    expect(defersDate('Zahnarzt morgen')).toBe(true);
-    expect(defersDate('two weeks from today')).toBe(true);
-    expect(defersDate('two days after Monday')).toBe(true);
-    expect(defersDate('last Friday')).toBe(true);
-    expect(defersDate('at 8')).toBe(false);
-    expect(defersDate('tomorrow')).toBe(false);
-  });
-
   it('knows a date the model has to resolve from a bare clock digit', () => {
     expect(mentionsDate('on Oct 20')).toBe(true);
     expect(mentionsDate('am 17.10.')).toBe(true);

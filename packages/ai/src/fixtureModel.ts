@@ -21,11 +21,13 @@ import { TextRecognitionError, type ImageInput, type TextRecognizer } from './te
  * - The Assistant's tuned prompt (`tuned.ts`, asked without a schema): a
  *   first phrase in the grammar, with extras after a fifth bar
  *   (`invite A and B`, `remind N`, `note: …`), makes an event; `todo:` in
- *   front makes a to-do; any other phrase is a title on today. A later
- *   turn answers the draft it was shown, changed only by what the turn
- *   names: the grammar with empty parts unchanged (`| | 10:00-11:00`), or
- *   one extra (`invite Tom`, `remove Anna`, `remind 60`, `note: …`,
- *   `due +0`, `repeat weekly`, `repeat none`).
+ *   front makes a to-do; any other phrase is a title. A later turn
+ *   answers the draft it was shown, changed only by what the turn names:
+ *   the grammar with empty parts unchanged (`| | 10:00-11:00`), or one
+ *   extra (`invite Tom`, `remove Anna`, `remind 60`, `note: …`, `due +0`,
+ *   `repeat weekly`, `repeat none`). As the trained model does, it writes
+ *   a day only where the words give one (`+N`, `due +N`): the app puts
+ *   the rest on the day on show, or keeps the draft's.
  * - Capture: one event per line of the grammar.
  * - A finder sentence (`find 30 min tomorrow morning | Focus`): the title
  *   after the bar and an hour; the finder reads the rest from the words.
@@ -228,12 +230,12 @@ const withGrammar = (
 
 /**
  * The tuned prompt (`tuned.ts`), answered the way the trained model
- * answers: the whole draft after the turn, written short. A first phrase
- * in the grammar makes an event (`todo:` in front makes a to-do); any
- * other phrase is a title on today. A later turn starts from the draft it
- * was shown, unchanged where the turn says nothing — the grammar line, or
- * one extra (`invite Tom`, `remind 60`, `note: …`, `due +0`,
- * `repeat weekly`).
+ * answers: the whole draft after the turn, written short, its day only
+ * where the words give one. A first phrase in the grammar makes an event
+ * (`todo:` in front makes a to-do); any other phrase is a title. A later
+ * turn starts from the draft it was shown, unchanged where the turn says
+ * nothing — the grammar line, or one extra (`invite Tom`, `remind 60`,
+ * `note: …`, `due +0`, `repeat weekly`).
  */
 const tunedFixtureAnswer = (prompt: string): Record<string, unknown> => {
   const today = TUNED_TODAY.exec(prompt)?.[1];
@@ -245,10 +247,11 @@ const tunedFixtureAnswer = (prompt: string): Record<string, unknown> => {
     const phrase = textAfter(prompt, 'Phrase: ').trim();
     const task = /^todo:\s*/i.test(phrase);
     const words = phrase.replace(/^todo:\s*/i, '');
-    const base = { date: today, kind: task ? 'task' : 'event', title: words };
+    const base = { kind: task ? 'task' : 'event', title: words };
     return words.includes('|') ? withGrammar(base, words, today) : base;
   }
-  const draft = JSON.parse(draftLine) as Record<string, unknown>;
+  // The draft's day stays unwritten unless the turn gives one.
+  const { date: _shown, ...draft } = JSON.parse(draftLine) as Record<string, unknown>;
   const change = textAfter(prompt, 'Now: ').trim();
   return change.includes('|')
     ? withGrammar(draft, change, today)
