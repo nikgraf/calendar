@@ -625,8 +625,9 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   while the edge scrolls). Open: slot drawing, paging days at the side
   edges, the speed (8 h/s at the edge) felt on a device.
 - **Screen-sharing privacy** — the desktop window is excluded from
-  captures by default; "Visible for 10 min" is runtime-only and fails
-  closed on restart; "Always visible" persists. **The capture hint**
+  captures while Hidden is on (the default until #314); the 10-minute
+  pause is runtime-only and fails closed on restart; Visible persists
+  (it was "Always visible" until #317). **The capture hint**
   (2026-10-11): a window left out of a screenshot or recording says so
   on screen, with the 10-minute pause one click away. The signal is the
   `screencapture` process every ⌘⇧3/4/5 runs (probed: the screenshot UI
@@ -634,6 +635,22 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   toolbar indicator (always-on noise, #178), a stand-in window behind
   the main one, a Spotlight toast after the file lands. Third-party
   capture tools stay unannounced (#179).
+- **Screen-sharing privacy starts off** (2026-11-13, #314) — a profile
+  with no stored choice shows its windows in captures; Hidden in
+  Settings › Screen Sharing turns protection on, and a stored choice is
+  kept. A settings file's `"hidden"` imported while hidden was the
+  default was never stored, so it reads as unchosen and the write-back
+  turns it to `"visible"`. Rejected: a migration (a file the app wrote
+  itself says `"hidden"` too, so it would pin every file user to Hidden).
+  The `CALENDAR_CAPTURE` screenshot hook, the one exception to
+  protection, had no callers and went with it.
+- **The pause is a button under Hidden** (2026-11-13, #317) — Settings ›
+  Screen Sharing is Hidden | Visible, the two values the setting stores;
+  while Hidden, "Show for 10 min" (and, paused, "Hide now") sits below,
+  as on the capture hint, and a pause while visible changes nothing.
+  Rejected: a checkbox for the setting (option A of the two drawn), and
+  the pause as a third segment (beside the default Visible it only
+  counted down). Open: the pause timer runs late after the Mac sleeps.
 - **Per-calendar colors** — optimistic local update, write-back through
   `calendarList.patch?colorRgbFormat=true` as a `calendarColor` op kind
   coalescing per account; invalid hex rejected, 4xx dropped.
@@ -1179,6 +1196,25 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   #302, #303 and the repeat, title and words entries below) bar one
   day check. Rejected: the rules over Apple's model, llama.cpp in the
   Swift helper, node-llama-cpp. Open: todo.md.
+- **A to-do's alerts from the Assistant** (2026-11-13, #315) — "remind me
+  to call the bank tomorrow at 9, 10 minutes before" gives the to-do an
+  alert: the model wrote it, the thread dropped it. A to-do's
+  notifications are its Reminders alerts, shown to the model as minutes
+  before the due time (never a calendar's default); the picker names one
+  its presets lack. Like the time, kept only on a Reminders list: a turn
+  adding one on a Google list is refused, the card shows none. Rejected:
+  the nearest preset (not what was said), moving the to-do to Reminders.
+  Open: a to-do's repeat from the Assistant (todo.md).
+- **A finder bench** (2026-11-13, #316) — find a time had no measure. 40
+  cases state what a person means (length, window by name, weekdays,
+  bounds, what for); the app's finder prompt on each model, read with the
+  word rules (`grounding.ts`) and without, window and weekdays scored as
+  the dates searched. Baseline: Apple's model as the app asks it 12/40
+  with the rules (an empty answer scores 8), 0/40 without, 13 unanswered
+  (10 ran out of context, about 170 s each); every field required 20/40;
+  DeepSeek V4 Flash 39/40 either way. Rejected: scoring the slots found
+  (they depend on a calendar), window and weekdays apart. Open: search
+  and capture have no bench.
 - **The editor's two views: Assistant and Form** (2026-11-12, #308) —
   the assistant is its own view, a conversation whose answers are the
   item as a card with what changed marked, and the form a second view of

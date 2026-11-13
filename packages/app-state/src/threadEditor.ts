@@ -48,7 +48,13 @@ import { useBackendMutations } from './hooks.ts';
 import { useOneWrite } from './oneWrite.ts';
 import type { QuickAddItem } from './quickAddItem.ts';
 import { type TaskEditorSeed, useTaskEditorModel } from './taskEditorModel.ts';
-import { guestsRefusal, todoTimeRefusal, type TurnLimits, turnRefusal } from './threadRefusal.ts';
+import {
+  guestsRefusal,
+  todoAlertRefusal,
+  todoTimeRefusal,
+  type TurnLimits,
+  turnRefusal,
+} from './threadRefusal.ts';
 import { movedFrom, shownMarks } from './threadSteps.ts';
 
 export type { DraftFocusRequest } from './draftAtoms.ts';
@@ -529,7 +535,10 @@ export const useThreadEditor = ({
           if (listKey !== '') {
             taskModel.setListKey(listKey);
           }
-          if (extras?.reminder) {
+          if (extras?.reminder?.alarmsOnly) {
+            // Only a turn's alert: what the switch of kind carried stays.
+            taskModel.restoreAlarms(extras.reminder.alarms);
+          } else if (extras?.reminder) {
             taskModel.restoreReminderFields(extras.reminder);
           }
           taskModel.setNotes(extras?.taskNotes ?? '');
@@ -898,8 +907,13 @@ export const useThreadEditor = ({
     const calendar = calendars.find((each) => `${each.accountId}:${each.id}` === key);
     return (calendar?.provider ?? 'google') === 'google';
   };
-  /** What of a draft is saved where it goes: what its card and row show (`cardLines`, `describeDraft`). */
+  /**
+   * What of a draft is saved where it goes: what its card and row show
+   * (`cardLines`, `describeDraft`). A to-do's alerts go where its time
+   * does: only a Reminders list holds either.
+   */
   const keeps = (draft: Draft): DraftKeeps => ({
+    alerts: keepsTime(draft),
     guests: keepsGuests(draft),
     time: keepsTime(draft),
   });
@@ -951,8 +965,9 @@ export const useThreadEditor = ({
             : undefined,
         fallbackDate: seed.initialDate.toString(),
         read: readForm,
-        refuse: (draft, after, guests) =>
+        refuse: (draft, after, guests, alerts) =>
           todoTimeRefusal(draft.item, after, keepsTime(draft)) ??
+          todoAlertRefusal(after, alerts, keepsTime(draft)) ??
           (limits
             ? turnRefusal(draft.item, after, guests, limits)
             : guestsRefusal(guests, keepsGuests(draft))),

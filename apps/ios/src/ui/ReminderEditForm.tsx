@@ -1,7 +1,7 @@
 import { use } from 'react';
 import {
-  REMINDER_ALARM_OPTIONS,
   REMINDER_PRIORITY_OPTIONS,
+  reminderAlarmOptions,
   type useTaskEditorModel,
 } from '@calendar/app-state';
 import type { TaskRecord } from '@calendar/core';
@@ -144,7 +144,7 @@ export function ReminderEditForm({
           ))}
         </ChipsRow>
         <ChipsRow label="Alert">
-          {REMINDER_ALARM_OPTIONS.map((option) => (
+          {reminderAlarmOptions(taskModel.alarm).map((option) => (
             <Chip
               key={option.label}
               label={option.label}

@@ -82,9 +82,14 @@ export type QuickAddResult =
   | { readonly kind: 'rejected'; readonly reason: string }
   | {
       readonly kind: 'task';
-      /** A to-do's notes, when the words add one; it takes no notifications. */
+      /** A to-do's notes, when the words add one. */
       readonly notes?: NotesChange | undefined;
       readonly prefill: QuickAddTaskPrefill;
+      /**
+       * The alerts the words set, as minutes before the due time ("remind
+       * me 10 minutes before"): only a Reminders list keeps them.
+       */
+      readonly reminders?: ReminderChange | undefined;
     };
 
 /** A turn's result: a change never makes the draft a to-do. */

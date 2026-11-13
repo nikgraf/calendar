@@ -9,9 +9,9 @@ import {
 } from '@calendar/core';
 
 /**
- * What a turn's words do to a draft's notes and notifications (read by
- * `@calendar/ai`'s `readExtras`), applied to the draft as the thread holds
- * it: the same rules for the thread, "Add all" and the bench.
+ * What a turn's words do to a draft's notes, notifications and a to-do's
+ * alerts, applied to the draft as the thread holds it: the same rules for
+ * the thread, "Add all" and the bench.
  */
 
 /** The notes after a change: a note added on a line of its own, the notes replaced, or none. */
@@ -137,5 +137,90 @@ export const describeReminderChange = (
     ...(applied.invalid.length > 0
       ? [`at most ${String(MAX_REMINDER_MINUTES / (7 * 24 * 60))} weeks before`]
       : []),
+  ];
+};
+
+/** A change applied to a to-do's alerts: the alerts now, and what of the change took effect. */
+export interface AppliedAlarms {
+  /** Minutes before the due time added, in the order said. */
+  readonly added: ReadonlyArray<number>;
+  /** Reminders alarms: minutes relative to the due time, negative before it, the form's first first. */
+  readonly alarms: ReadonlyArray<number>;
+  /** Whether the change took every alert there was off. */
+  readonly cleared: boolean;
+  /** Minutes before the due time taken off. */
+  readonly removed: ReadonlyArray<number>;
+}
+
+/** A Reminders alarm at `minutes` before the due time (no `-0`). */
+const before = (minutes: number): number => (minutes === 0 ? 0 : -minutes);
+
+/**
+ * The minutes before the due time a to-do's alerts are said at, as a turn
+ * shows them to the model: an alert after the due time has no such words
+ * and is left out (a change keeps it, unless it clears them all).
+ * Undefined for none.
+ */
+export const alertMinutesOf = (
+  alarms: ReadonlyArray<number> | undefined,
+): ReadonlyArray<number> | undefined => {
+  const minutes = (alarms ?? []).filter((offset) => offset <= 0).map(before);
+  return minutes.length > 0 ? minutes : undefined;
+};
+
+/**
+ * A to-do's alerts after a change. The change speaks of minutes before
+ * the due time, as the model is shown a to-do's alerts (`alertMinutesOf`):
+ * a removal takes those alerts off, an addition joins the ones there, a
+ * clearing takes every alert off, one after the due time too. A change
+ * that takes no effect leaves the alerts as they were (the same array).
+ */
+export const applyAlarmChange = (
+  current: ReadonlyArray<number>,
+  change: ReminderChange,
+): AppliedAlarms => {
+  const base = change.clear ? [] : current;
+  const takenOff = (offset: number) => offset <= 0 && change.remove.includes(before(offset));
+  const removed = base.filter(takenOff).map(before);
+  const kept = base.filter((offset) => !takenOff(offset));
+  const added = [...new Set(change.add)].filter(
+    (minutes) => Number.isInteger(minutes) && minutes >= 0 && !kept.includes(before(minutes)),
+  );
+  const cleared = change.clear && current.length > 0;
+  if (!cleared && added.length === 0 && removed.length === 0) {
+    return { added: [], alarms: current, cleared: false, removed: [] };
+  }
+  return { added, alarms: [...kept, ...added.map(before)], cleared, removed };
+};
+
+/**
+ * A Reminders alarm as the form names it: "At time", "10 minutes before",
+ * "2 hours after" (Reminders.app can set one after the due time).
+ */
+export const reminderAlarmLabel = (offset: number): string =>
+  offset === 0
+    ? 'At time'
+    : offset < 0
+      ? reminderLabel(-offset, false)
+      : reminderLabel(offset, false).replace(/ before$/u, ' after');
+
+const alertLabel = (minutes: number): string =>
+  minutes === 0 ? 'at the due time' : offsetLabel(minutes, false);
+
+const alertLabels = (minutes: ReadonlyArray<number>): string => minutes.map(alertLabel).join(', ');
+
+/**
+ * What a change did to a to-do's alerts, in words: "alerts 10 minutes
+ * before", "alerts only 1 hour before" (the rest cleared), "no longer
+ * alerts 15 minutes before", "no alerts". Nothing for a change that took
+ * no effect.
+ */
+export const describeAlarmChange = (applied: AppliedAlarms): ReadonlyArray<string> => {
+  return [
+    ...(applied.cleared && applied.added.length === 0 ? ['no alerts'] : []),
+    ...(applied.added.length > 0
+      ? [`${applied.cleared ? 'alerts only' : 'alerts'} ${alertLabels(applied.added)}`]
+      : []),
+    ...(applied.removed.length > 0 ? [`no longer alerts ${alertLabels(applied.removed)}`] : []),
   ];
 };

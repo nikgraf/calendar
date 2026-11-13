@@ -59,7 +59,7 @@ describe('settings file: applied at launch and while running, written back on ed
         '  "version": 1,',
         '  "timeZones": { "primary": "UTC", "zones": ["device", "UTC", "Asia/Kolkata"] },',
         '  "view": { "allDayLaneCollapsed": true },',
-        '  "desktop": { "screenPrivacy": "visible" },',
+        '  "desktop": { "screenPrivacy": "hidden" },',
         '  "accounts": [',
         '    { "kind": "google", "email": "file@example.com", "calendars": [] }',
         '  ]',
@@ -83,7 +83,7 @@ describe('settings file: applied at launch and while running, written back on ed
     });
     await expect
       .poll(() => readSettings(app.userDataDir)['screenPrivacy'], { timeout: 10_000 })
-      .toBe('visible');
+      .toBe('hidden');
     // The grid draws the secondary zone under each hour.
     await cdp.waitFor(`!!document.querySelector('[data-testid="hour-secondary-12"]')`);
 
@@ -224,12 +224,13 @@ describe('settings file: created on request', () => {
     expect(parsed.accounts).toEqual([
       expect.objectContaining({ email: 'e2e@example.com', kind: 'google' }),
     ]);
+    expect(created).toContain('"screenPrivacy": "visible"');
 
     // A later change lands in the file.
     await app.openSettings('sharing');
-    await cdp.clickButtonWithText('Always visible');
+    await cdp.clickButtonWithText('Hidden');
     await expect
       .poll(() => fileText(app), { timeout: 10_000 })
-      .toContain('"screenPrivacy": "visible"');
+      .toContain('"screenPrivacy": "hidden"');
   });
 });

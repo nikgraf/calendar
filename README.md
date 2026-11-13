@@ -27,9 +27,9 @@ and the rules; the deep docs are listed at its end.
 
 **Brand:** [Brand assets and usage](brand/README.md) covers the logo, app icons,
 Inter fonts, color tokens, and `pnpm brand:build` exports. **Privacy:**
-[PRIVACY.md](PRIVACY.md); the desktop window is hidden from screen shares
-and recordings by default (Settings → Screen Sharing), and says so on screen when a
-screenshot leaves it out. **Website:** `apps/web` is solunivo.com, a static
+[PRIVACY.md](PRIVACY.md); the desktop window can be hidden from screen shares
+and recordings (Settings → Screen Sharing, off by default), and then says so on screen
+when a screenshot leaves it out. **Website:** `apps/web` is solunivo.com, a static
 page plus the privacy policy, built with `pnpm --filter @calendar/web build`
 (see `docs/distribution.md` → Website).
 

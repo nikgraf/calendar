@@ -1,5 +1,10 @@
-import type { QuickAddResult, RefineResult } from '@calendar/ai';
-import { applyNotesChange, applyReminderChange } from '@calendar/app-state/draftExtras';
+import type { QuickAddResult, RefineResult, ReminderChange } from '@calendar/ai';
+import {
+  alertMinutesOf,
+  applyAlarmChange,
+  applyNotesChange,
+  applyReminderChange,
+} from '@calendar/app-state/draftExtras';
 import {
   applyGuestChange,
   type InviteeChoice,
@@ -104,11 +109,29 @@ const remindersOf = (minutes: ReadonlyArray<number> | undefined): EventReminders
       });
 
 /**
+ * A to-do's alerts after a turn, as minutes before its due time: the
+ * thread's own rule (`applyAlarmChange`) on its Reminders alarms.
+ */
+const alertsAfter = (
+  minutes: ReadonlyArray<number> | undefined,
+  change: ReminderChange | undefined,
+): ReadonlyArray<number> | undefined =>
+  change === undefined
+    ? minutes
+    : alertMinutesOf(
+        applyAlarmChange(
+          (minutes ?? []).map((offset) => (offset === 0 ? 0 : -offset)),
+          change,
+        ).alarms,
+      );
+
+/**
  * The draft after a turn's result: the first turn makes it, a later one
  * changes it as the thread would — the kind kept, the guests the words
  * invite looked up in the address book (`resolveInvitees`, every match
  * of `contactsNamed`), the ones they take off removed, a note added to
- * the notes, the notifications said added to the draft's.
+ * the notes, the notifications said added to the draft's (a to-do's as
+ * its alerts, `applyAlarmChange`).
  */
 export const applyResult = async (
   previous: BenchDraft | undefined,
@@ -129,7 +152,7 @@ export const applyResult = async (
         guests: [],
         item: { kind: 'task', prefill: result.prefill },
         notes,
-        reminders: previous?.reminders,
+        reminders: alertsAfter(previous?.reminders, result.reminders),
       },
       kind: 'draft',
     };
@@ -153,11 +176,13 @@ export const applyResult = async (
     choices = applied.choices;
   }
   const reminders =
-    result.reminders === undefined || item.kind !== 'event'
-      ? previous?.reminders
-      : minutesOf(
-          applyReminderChange(remindersOf(previous?.reminders), result.reminders).reminders,
-        );
+    item.kind === 'task'
+      ? alertsAfter(previous?.reminders, result.reminders)
+      : result.reminders === undefined
+        ? previous?.reminders
+        : minutesOf(
+            applyReminderChange(remindersOf(previous?.reminders), result.reminders).reminders,
+          );
   return {
     draft: { choices, guests, item, notes, reminders },
     kind: 'draft',

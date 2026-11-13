@@ -171,7 +171,9 @@ deliberately.
   through the tuned path on any served model (the app's file on
   `llama-server`, a teacher on the plain arm), scored by where a person
   would put the event; a table and a report under `output/bench/`, never a
-  gate. Format and variables: `apps/desktop/e2e/bench/README.md`.
+  gate. `finderBench.e2e.ts` beside it scores find a time's sentences
+  (`finder.json`) on the same models, with the word rules and without.
+  Format and variables: `apps/desktop/e2e/bench/README.md`.
 - `GOOGLE_LIVE=1 pnpm exec vp test run` — the live Google suite
   (`packages/sync/src/live/*.live.ts`) against the dedicated test account
   over the real API; desktop

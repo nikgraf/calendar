@@ -54,7 +54,7 @@ describe('offeredTaskLists', () => {
 });
 
 const initial: TaskEditorValues = {
-  alarm: -15,
+  alarms: [-15, -1440],
   dueDate: '2030-03-10',
   dueTime: '09:00',
   listId: 'list-a',
@@ -72,7 +72,6 @@ const diff = (
   taskEditorChanges({
     current: { ...initial, ...current },
     initial,
-    initialAlarms: [-15, -1440],
     provider: options.provider ?? 'apple',
     recurrenceUnsupported: options.recurrenceUnsupported ?? false,
   });
@@ -90,7 +89,7 @@ describe('taskEditorChanges', () => {
   it('clears reminder fields with null and keeps trailing alarms on an alert change', () => {
     expect(
       diff({
-        alarm: undefined,
+        alarms: [-1440],
         dueTime: undefined,
         priority: undefined,
         recurrence: undefined,
@@ -103,15 +102,23 @@ describe('taskEditorChanges', () => {
       recurrence: null,
       url: null,
     });
-    expect(diff({ alarm: 0 })).toEqual({ alarms: [0, -1440] });
+    expect(diff({ alarms: [0, -1440] })).toEqual({ alarms: [0, -1440] });
+  });
+
+  it('sends the whole list when a turn adds an alert or takes them all off', () => {
+    // A turn of the Assistant can change the alerts beyond the form's first.
+    expect(diff({ alarms: [-15, -1440, -60] })).toEqual({ alarms: [-15, -1440, -60] });
+    expect(diff({ alarms: [] })).toEqual({ alarms: null });
+    expect(diff({ alarms: [-15] })).toEqual({ alarms: [-15] });
+    // The same alerts in another order are no change.
+    expect(diff({ alarms: [-1440, -15] })).toEqual({});
   });
 
   it('clearing the only alarm sends null', () => {
     expect(
       taskEditorChanges({
-        current: { ...initial, alarm: undefined },
-        initial,
-        initialAlarms: [-15],
+        current: { ...initial, alarms: [] },
+        initial: { ...initial, alarms: [-15] },
         provider: 'apple',
         recurrenceUnsupported: false,
       }),
@@ -133,7 +140,6 @@ describe('taskEditorChanges', () => {
       taskEditorChanges({
         current: { ...seeded, recurrence },
         initial: seeded,
-        initialAlarms: [-15],
         provider: 'apple',
         recurrenceUnsupported: false,
       });
@@ -155,7 +161,6 @@ describe('taskEditorChanges', () => {
       taskEditorChanges({
         current: { ...undated, ...current },
         initial: undated,
-        initialAlarms: [-15, -1440],
         provider: 'apple',
         recurrenceUnsupported: false,
       });
@@ -167,7 +172,6 @@ describe('taskEditorChanges', () => {
       taskEditorChanges({
         current: { ...undated, recurrence: { freq: 'daily', interval: 1 } },
         initial: { ...undated, recurrence: undefined },
-        initialAlarms: [],
         provider: 'apple',
         recurrenceUnsupported: false,
       }),

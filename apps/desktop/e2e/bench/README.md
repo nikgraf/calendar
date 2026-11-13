@@ -158,6 +158,45 @@ that flipped and the fields that moved, and says when the two runs were
 not set up alike (a served model's endpoint and extra request body, the
 report's `settings`).
 
+## Finder bench
+
+Find a time reads a sentence ("find 90 min for focus next week,
+mornings", "wann habe ich morgen Nachmittag eine Stunde Zeit?") into
+the constraints the solver searches with. `finderBench.e2e.ts` runs the
+cases in `finder.json` through the app's finder prompt and schema on the
+same models (the MODEL_BENCH_* variables above), and reads each answer
+two ways:
+
+- `rules`: as the app does today, held to the words by the code
+  (`normalizeFindTime` given the phrase, `grounding.ts`), the finder's
+  own length where the words say none;
+- `raw`: the model's answer without the word rules (`normalizeFindTime`
+  without the phrase), what a model has to get right once the rules go.
+  The code's defaults still fill what the model leaves out (the coming
+  week for a window, as the prompt asks), and a case whose words give no
+  length passes any: the schema has the model write one.
+
+```bash
+MODEL_BENCH=1 E2E=1 pnpm exec vp test run apps/desktop/e2e/bench/finderBench.e2e.ts
+```
+
+A case states every part a person means (`finder.ts` says how):
+the length (`"default"`: the finder's own, 60), the window by its name
+(`"nextWeek"`, `{ "weekday": 4 }`, …, so a case holds on any day), the
+weekdays, the daily bounds (a meal's or a part of the day's window by
+name, or clock times) and what the time is for. The window and the
+weekdays are scored together, as the dates searched: the coming
+Wednesday and the coming week on Wednesdays are the same search. The
+bounds are scored as the solver searches them, its own 08:00–20:00 where
+one end is not set, and only the dates from today on (the solver offers
+no slot in the past). Each report says what an empty answer scores: the
+floor the code's defaults give, 8 of 40 with the rules on most days.
+`MODEL_BENCH_CASES` picks cases by language ("de", "en") or id part. The
+report, `output/bench/finder/finder-<yyyymmdd-hhmm>-<sha>-<provider>.json`,
+keeps each prompt and answer as the model got and gave them, and each
+arm's parts with what they read. `MODEL_BENCH_RESCORE=<report or folder>`
+scores stored answers again by the cases and code as they are now.
+
 ## Recordings
 
 `audio/README.md` lists the clips the cases ask for and how to record

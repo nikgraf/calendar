@@ -18,15 +18,19 @@ import {
 export interface TurnDraft {
   /**
    * The calendar's default notifications (minutes before the start), where
-   * the draft keeps to them instead of its own (`reminders` then absent).
-   * Shown as the draft's, so a turn can change them or take them off.
+   * an event draft keeps to them instead of its own (`reminders` then
+   * absent). Shown as the draft's, so a turn can change them or take them
+   * off. A to-do has none: a list has no default alerts.
    */
   readonly defaultReminders?: ReadonlyArray<number> | undefined;
   readonly guests: ReadonlyArray<string>;
   readonly kind: 'event' | 'task';
   readonly notes?: string | undefined;
   readonly prefill: QuickAddPrefill;
-  /** Minutes before the start, as the draft's notifications are said. */
+  /**
+   * Minutes before the start, as the draft's notifications are said: an
+   * event's popups, a to-do's alerts before its due time.
+   */
   readonly reminders?: ReadonlyArray<number> | undefined;
 }
 
@@ -329,11 +333,13 @@ export const answerResult = (
   const said = dateOf(answer['date']) ?? before?.date ?? referenceDate;
   const start = timeOf(answer['startTime']);
   const notes = notesChange(answer['notes'], draft?.notes);
+  const reminders = remindersChange(answer['reminders'], draft);
   if (draft === undefined && answer['kind'] === 'task') {
     return {
       kind: 'task',
       ...(notes === undefined ? {} : { notes }),
       prefill: { date: said, ...(start === undefined ? {} : { time: start }), title },
+      ...(reminders === undefined ? {} : { reminders }),
     };
   }
   const end = timeOf(answer['endTime']);
@@ -341,7 +347,6 @@ export const answerResult = (
   const { date, recurrence } = repeatOf(answer['repeat'], said);
   const { endDate, endTime } = timesOf(before, { date, end, start });
   const location = textOf(answer['location']);
-  const reminders = remindersChange(answer['reminders'], draft);
   const invite = namesOf(answer['invite']);
   const uninvite = namesOf(answer['uninvite']);
   return {

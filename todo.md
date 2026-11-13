@@ -41,9 +41,10 @@ The 2026-10-02 review's findings are closed in `docs/decisions.md`
       (`kill -INT` finalizes the file); `pnpm record desktop "<it name>"`
       runs one spec by name with CDP `Page.startScreencast` in
       `apps/desktop/e2e/harness.ts` — OS-level capture is blanked by
-      `setContentProtection`, so the compositor path is the only one that
-      works; `ws.onmessage` (`harness.ts:181`) currently drops id-less
-      events, so add an event map + `Page.screencastFrameAck` — frames →
+      `setContentProtection` whenever screen privacy is on, so the
+      compositor path is the one that works on any profile;
+      `ws.onmessage` (`harness.ts:181`) currently drops id-less events,
+      so add an event map + `Page.screencastFrameAck` — frames →
       `ffmpeg -framerate 15 … libx264`. CI: a `record` PR label (same
       trigger shape as the `testflight` label, `ios.yml:227-234`) records
       flows tagged `record` inside the existing `e2e`/`ios-e2e` jobs and
@@ -85,9 +86,14 @@ The 2026-10-02 review's findings are closed in `docs/decisions.md`
       Apple bridge does not read availability, so "marked free" is Google
       only; definitions could sync through iCloud key-value storage
       instead of the settings file (a new entitlement in every build).
-- [ ] Reminders follow-ups — subtasks/flags/tags; location alarms;
-      multiple editable alarms (`alarms` is already `number[]` end to
-      end); yearly positional rules, several rules, day-of-month lists and
+- [ ] Reminders follow-ups — subtasks/flags/tags; location alarms (the
+      bridge reads one as offset 0, "At time", and any alert write keeps
+      only absolute alarms, so it is replaced: `RemindersBridge.swift`'s
+      DTO and `apply`); multiple editable alarms in the form (`alarms` is
+      `number[]` end to end, and the Assistant changes every one since
+      #315, but the picker only the first); an alert said for an undated
+      reminder (a relative alarm with no due date never fires); yearly
+      positional rules, several rules, day-of-month lists and
       a monthly rule on a plain weekday without an ordinal still
       round-trip as `{unsupported:true}` (weekly by-day and monthly
       ordinals ship since 2026-09-20); creating/deleting Reminders lists
@@ -161,18 +167,12 @@ the served model (#184) and slot proposals (#185) are in
       model (Gemma 4 takes images, so capture could skip OCR); the
       `ModelInfo` capability record beyond the context (modalities, guided
       JSON) once a feature reads it.
-- [ ] A to-do's alarms from the Assistant — "remind me to call the bank
-      tomorrow at 9, 10 minutes before", or a later "remind me 10
-      minutes before": the model writes `reminders: [10]` (probed
-      2026-11-13), and the app drops it: a first phrase's to-do result
-      has no field for it (`answerResult`), and the thread takes no
-      notifications on a to-do (`withReminders`). A turn also shows the
-      model the form calendar's default notifications as a to-do's
-      (`turnDraftOf`), never its own alarms (`ReminderFields.alarms`,
-      minutes from the due time, negative before it): show and write
-      those. Only a Reminders list holds alarms; a Google list refuses
-      them like its other Reminders-only fields (`REMINDER_ONLY_FIELDS`
-      in `packages/sync`).
+- [ ] A to-do's repeat from the Assistant — "water the plants every
+      Monday" as a to-do: its result keeps only the day, time and title
+      (`answerResult`, `convertQuickAddItem`), so a repeat said for it is
+      lost. A to-do's repeat is a Reminders field (`ReminderFields.repeat`,
+      kept only on a Reminders list), as its alerts are since #315. Probe
+      first whether v1 writes one for a to-do.
 - [ ] Dictated place names (two iPhone recordings, 2026-11-06,
       `docs/decisions.md` → "Calendar: editing, gestures, views",
       "Places nearby first"; each its own PR, in this order) — a name
@@ -194,7 +194,12 @@ the served model (#184) and slot proposals (#185) are in
       measure those first.
 - [ ] The Assistant's own model, follow-ups (#307): find a time, search
       sentences and capture still need Apple's model (data and a tuned
-      prompt each; capture's schema leaves the time and place optional,
+      prompt each). The finder bench (#316) measures find a time: Apple's
+      model 12/40 with the word rules and 0/40 without, 13 phrases
+      unanswered (10 written until its context ran out, 2 past 180 s, 1
+      guardrail); DeepSeek V4
+      Flash 39/40 without the rules. Search and capture have no bench yet
+      (capture's schema leaves the time and place optional,
       and Apple's model filled no optional field on any quick-add phrase
       in the bench, 2026-11-11, unmeasured for capture); a model for
       6 GB iPhones (Q4_K_M, 1.2 GB loaded, or a smaller base); "next

@@ -70,7 +70,10 @@ draft as a choice until the user picks one, lets it go, or a later turn
 says it again; a place the answer changes is looked up among past
 places and MapKit (`draftPlaces.ts`, `settlePlace`); a note and
 notifications fold into the draft's extras (`draftExtras.ts`) and the
-form flashes the rows.
+form flashes the rows. A to-do's notifications are its Reminders alerts
+(`applyAlarmChange`: minutes before the due time, stored as the form's
+negative offsets): a turn is shown the to-do's own, never a calendar's
+default, and the alert picker names one the presets lack.
 
 Find a time, search sentences and capture keep Apple's model (or a
 served one on the Mac): the model extracts, the code decides.
@@ -1328,7 +1331,7 @@ gateway carries all of it. Details, limits and the threat model:
   included). Window-level concerns use plain preload IPC
   (`apps/desktop/electron/preload.ts`): `renderer-error` (→
   `userData/logs/main.log`, 1 MB rotation), `privacy:*` (screen-capture
-  protection, default hidden, stored in `userData/settings.json`;
+  protection, off by default, stored in `userData/settings.json`;
   `privacy:capture` says a screenshot or recording is leaving the windows
   out — macOS gives no such signal, so while privacy is on and a window is
   on screen the helper's `capture.watch` polls the process table for the
@@ -1472,11 +1475,11 @@ gateway carries all of it. Details, limits and the threat model:
   (`eventEditorChanges` compares values; there are no dirty flags).
   What a draft's calendar or list does not keep is neither taken from a
   turn nor shown (the editor's `keeps(draft)`): a to-do, new or saved,
-  takes no time of day on a list that keeps a due day only (a Google
-  task: `todoTimeRefusal`), an event no change of guests on a calendar
-  that takes no guest list (`guestsRefusal`), and the card and rows
-  leave out a time or guests a draft carries from a first phrase
-  (`DraftKeeps`). A to-do kept without a due day is dated by a turn that
+  takes no time of day and no alert on a list that keeps a due day only
+  (a Google task: `todoTimeRefusal`, `todoAlertRefusal`), an event no
+  change of guests on a calendar that takes no guest list
+  (`guestsRefusal`), and the card and rows leave out a time, alerts or
+  guests a draft carries from a first phrase (`DraftKeeps`). A to-do kept without a due day is dated by a turn that
   gives a day or a time — also the day it already reads, where the
   words state it (a refinement's `saidDay`). A place is its text and
   its pin: another point picked under the same text, or the pin let go
