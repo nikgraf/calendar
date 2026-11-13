@@ -404,53 +404,60 @@ describe('The editor’s Assistant and Form views', () => {
       await cdp.waitFor(`matchMedia('(prefers-reduced-motion: ${value})').matches`);
     };
 
-    await cdp.eval(COMMAND_N);
-    await cdp.waitFor(headingIs('New event'));
-    await cdp.say('Coffee | +1 | 10:00-11:00');
-    await cdp.waitFor(`${card('title')} === 'Coffee'`);
-    await cdp.eval(watch);
-    const cardTop = await cdp.eval<number>(topOf('editor-assistant'));
-
-    // To the form: its title starts on the card's, well below its own
-    // place, and the conversation stays drawn under it, out of reach,
-    // until the motion ends; the form rides inside the panes' frame, never
-    // over the footer.
-    await cdp.clickTestId('editor-view-form');
-    await cdp.waitFor(settled);
-    const [start, end] = await cdp.eval<
-      Array<{
-        clipped: boolean;
-        leaving: Array<string>;
-        start: string | null;
-        switching: boolean;
-      }>
-    >(switches);
-    expect(start).toMatchObject({ clipped: true, leaving: ['editor-assistant'], switching: true });
-    const offset = Number(/translateY\((-?[\d.]+)px\)/.exec(start?.start ?? '')?.[1]);
-    expect(end).toMatchObject({ clipped: false, leaving: [], switching: false });
-    // Its first frame put the form's title on the card's.
-    const formTop = await cdp.eval<number>(topOf('editor-form'));
-    expect(cardTop).toBeGreaterThan(formTop);
-    expect(Math.abs(offset - (cardTop - formTop))).toBeLessThan(1);
-    expect(await cdp.eval<string>(view)).toBe('form');
-    expect(
-      await cdp.eval<boolean>(
-        exists('editor-assistant') +
-          ` && document.querySelector('[data-testid="editor-assistant"]').classList.contains('hidden')`,
-      ),
-    ).toBe(true);
-
-    // Back: the form leaves, out of reach, folding down.
-    await cdp.eval(`window.__switches = []`);
-    await cdp.clickTestId('editor-view-assistant');
-    await cdp.waitFor(settled);
-    expect((await cdp.eval<Array<{ leaving: Array<string> }>>(switches))[0]?.leaving).toEqual([
-      'editor-form',
-    ]);
-    expect(await cdp.eval<string>(view)).toBe('assistant');
-
-    // Under Reduce Motion nothing moves: a crossfade.
     try {
+      // The machine's own setting may ask for reduced motion (CI's macOS
+      // runner does): the motion is asked for here, as in flows.e2e.ts.
+      await reducedMotion('no-preference');
+      await cdp.eval(COMMAND_N);
+      await cdp.waitFor(headingIs('New event'));
+      await cdp.say('Coffee | +1 | 10:00-11:00');
+      await cdp.waitFor(`${card('title')} === 'Coffee'`);
+      await cdp.eval(watch);
+      const cardTop = await cdp.eval<number>(topOf('editor-assistant'));
+
+      // To the form: its title starts on the card's, well below its own
+      // place, and the conversation stays drawn under it, out of reach,
+      // until the motion ends; the form rides inside the panes' frame,
+      // never over the footer.
+      await cdp.clickTestId('editor-view-form');
+      await cdp.waitFor(settled);
+      const [start, end] = await cdp.eval<
+        Array<{
+          clipped: boolean;
+          leaving: Array<string>;
+          start: string | null;
+          switching: boolean;
+        }>
+      >(switches);
+      expect(start).toMatchObject({
+        clipped: true,
+        leaving: ['editor-assistant'],
+        switching: true,
+      });
+      const offset = Number(/translateY\((-?[\d.]+)px\)/.exec(start?.start ?? '')?.[1]);
+      expect(end).toMatchObject({ clipped: false, leaving: [], switching: false });
+      // Its first frame put the form's title on the card's.
+      const formTop = await cdp.eval<number>(topOf('editor-form'));
+      expect(cardTop).toBeGreaterThan(formTop);
+      expect(Math.abs(offset - (cardTop - formTop))).toBeLessThan(1);
+      expect(await cdp.eval<string>(view)).toBe('form');
+      expect(
+        await cdp.eval<boolean>(
+          exists('editor-assistant') +
+            ` && document.querySelector('[data-testid="editor-assistant"]').classList.contains('hidden')`,
+        ),
+      ).toBe(true);
+
+      // Back: the form leaves, out of reach, folding down.
+      await cdp.eval(`window.__switches = []`);
+      await cdp.clickTestId('editor-view-assistant');
+      await cdp.waitFor(settled);
+      expect((await cdp.eval<Array<{ leaving: Array<string> }>>(switches))[0]?.leaving).toEqual([
+        'editor-form',
+      ]);
+      expect(await cdp.eval<string>(view)).toBe('assistant');
+
+      // Under Reduce Motion nothing moves: a crossfade.
       await reducedMotion('reduce');
       await cdp.eval(`window.__switches = []`);
       await cdp.clickTestId('editor-view-form');
@@ -459,7 +466,8 @@ describe('The editor’s Assistant and Form views', () => {
         'translateY(0px)',
       );
     } finally {
-      await reducedMotion('no-preference');
+      // Back to the machine's own setting for the specs after this one.
+      await cdp.send('Emulation.setEmulatedMedia', { features: [] });
     }
   });
 
