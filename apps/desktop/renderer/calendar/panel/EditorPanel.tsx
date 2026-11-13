@@ -23,8 +23,8 @@ import {
   assistantStatusOf,
   desktopAssistantModel,
   useAssistantModelState,
+  useFinder,
 } from '../../ai/assistantModel.ts';
-import { desktopLanguageModel } from '../../ai/desktopModel.ts';
 import { backend } from '../../backend.ts';
 import { LessonBanner } from '../../onboarding/LessonBanner.tsx';
 import { Button } from '../../ui/Button.tsx';
@@ -149,12 +149,13 @@ export function EditorPanel({
     }
   });
   useEffect(() => () => leaveLesson(), []);
+  const { finder } = useFinder();
   const editor = useThreadEditor({
     backend,
     calendars,
     confirm: moveConfirmation.request,
+    finder,
     initialKind,
-    model: desktopLanguageModel,
     onClose,
     onSaved: () => {
       lessonDone();

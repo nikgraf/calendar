@@ -5,10 +5,9 @@ import {
   type FreeSlot,
   rankSlotsAround,
 } from '@calendar/core';
-import { parseFindTime } from './findTime.ts';
 import { findSlotsFor } from './findTimePipeline.ts';
 import { isRenamePhrase, periodOf } from './grounding.ts';
-import type { LanguageModel } from './model.ts';
+import type { FinderReader } from './tunedFinder.ts';
 
 /**
  * Slot proposals in the create thread: a phrase that asks for free time
@@ -127,14 +126,14 @@ export type SlotProposalResult =
 export const NO_SLOT_FITS = 'No free slot fits — try another window or a shorter one.';
 
 /**
- * A finder phrase, start to finish: the finder prompt reads it into
- * constraints (the normalizer holding them to the phrase), the solver
+ * A finder phrase, start to finish: the finder reads it into constraints
+ * (the Assistant's model, or another held to the phrase), the solver
  * lists the free slots with each gap's slot placed at the named time of
  * day, and the ranking puts the slot nearest that time first. Only the
  * model call and the event read are impure.
  */
 export const proposeSlots = async (
-  model: LanguageModel,
+  finder: FinderReader,
   backend: BackendClient,
   {
     exclude,
@@ -152,12 +151,7 @@ export const proposeSlots = async (
     readonly timeZone: string;
   },
 ): Promise<SlotProposalResult> => {
-  const parsed = await parseFindTime(model, {
-    fallbackDurationMinutes,
-    phrase,
-    referenceDate,
-    timeZone,
-  });
+  const parsed = await finder({ fallbackDurationMinutes, phrase, referenceDate, timeZone });
   if (parsed.kind === 'rejected') {
     return parsed;
   }

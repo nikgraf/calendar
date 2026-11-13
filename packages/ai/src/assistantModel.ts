@@ -88,11 +88,12 @@ export type UnsupportedReason = 'fixture' | 'memory' | 'module' | 'off' | 'runti
  * (Wi-Fi without Low Data Mode, unless mobile data was allowed).
  */
 export type AssistantModelState =
-  | { readonly kind: 'declined' }
+  /** `update`: an earlier version was downloaded, so the question and the notice say the model is new. */
+  | { readonly kind: 'declined'; readonly update?: true }
   | { readonly kind: 'downloading'; readonly received: number; readonly total: number }
   | { readonly kind: 'failed'; readonly message: string }
   | { readonly kind: 'ready'; readonly path: string }
-  | { readonly kind: 'unasked' }
+  | { readonly kind: 'unasked'; readonly update?: true }
   | { readonly kind: 'unsupported'; readonly reason: UnsupportedReason }
   | { readonly kind: 'verifying' }
   | {
@@ -165,12 +166,19 @@ export const noticeCopy = (
   switch (state.kind) {
     case 'unasked':
     case 'declined':
-      return {
-        action: { kind: 'download', label: `Download${sized}` },
-        lines: [
-          `The Assistant reads what you say with a model that runs on this ${device}. It needs a one-time download${size === undefined ? '' : ` of ${sizeLabel(size)}`}${device === 'iPhone' ? ', over Wi-Fi' : ''}.`,
-        ],
-      };
+      return state.update === true
+        ? {
+            action: { kind: 'download', label: `Update${sized}` },
+            lines: [
+              `A new version of the Assistant’s model is ready. It runs on this ${device} and is a download${size === undefined ? '' : ` of ${sizeLabel(size)}`}${device === 'iPhone' ? ', over Wi-Fi' : ''}.`,
+            ],
+          }
+        : {
+            action: { kind: 'download', label: `Download${sized}` },
+            lines: [
+              `The Assistant reads what you say with a model that runs on this ${device}. It needs a one-time download${size === undefined ? '' : ` of ${sizeLabel(size)}`}${device === 'iPhone' ? ', over Wi-Fi' : ''}.`,
+            ],
+          };
     case 'waiting':
       if (state.for === 'network') {
         return { lines: ['Waiting for a connection to download the Assistant’s model.', soon] };

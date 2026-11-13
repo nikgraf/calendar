@@ -2,8 +2,13 @@ import {
   type AssistantModelManifest,
   type AssistantModelState,
   assistantModelManifest,
+  type FinderReader,
+  type LanguageModel,
   type PhraseReader,
+  rulesFinder,
+  statusOf,
   storedFileName,
+  tunedFinder,
   tunedReader,
 } from '@calendar/ai';
 import { useSyncExternalStore } from 'react';
@@ -194,8 +199,16 @@ const depsOf = (): AssistantDownloadDeps => {
   };
 };
 
+/** Find a time on a model: how a sentence is read, and the model whose status says whether it can be now. */
+export interface FinderChoice {
+  readonly finder: FinderReader;
+  readonly model: LanguageModel;
+}
+
 interface AssistantRuntime {
   readonly download: AssistantDownload;
+  /** Find a time on the Assistant's model (or the fixture model, e2e), and with the word rules on Apple's. */
+  readonly finders: { readonly own: FinderChoice; readonly rules: FinderChoice };
   readonly model: AssistantModel;
   /** The Assistant's reader: the tuned path over the app's own model, or over the fixture model (e2e). */
   readonly reader: PhraseReader;
@@ -211,11 +224,16 @@ const makeRuntime = (): AssistantRuntime => {
     runtime: loadOpenModelRuntime(),
     state: download.getState,
   });
+  // The fixture model answers the tuned prompts in its own grammar (e2e).
+  const own = modelFixture ? languageModel : model;
   return {
     download,
+    finders: {
+      own: { finder: tunedFinder(own), model: own },
+      rules: { finder: rulesFinder(languageModel), model: languageModel },
+    },
     model,
-    // The fixture model answers the tuned prompt in its own grammar (e2e).
-    reader: tunedReader(modelFixture ? languageModel : model),
+    reader: tunedReader(own),
     started: false,
   };
 };
@@ -232,6 +250,18 @@ export const assistantReader = (): PhraseReader => runtime().reader;
 export const useAssistantModelState = (): AssistantModelState => {
   const { download } = runtime();
   return useSyncExternalStore(download.subscribe, download.getState);
+};
+
+/**
+ * How find a time reads a sentence on this iPhone: with the Assistant's
+ * model once it is here (the fixture model always, e2e), so the words
+ * stay on the phone; until then with Apple's, held to the words by the
+ * rules.
+ */
+export const useFinder = (): FinderChoice => {
+  const state = useAssistantModelState();
+  const { finders } = runtime();
+  return modelFixture || statusOf(state) === 'ready' ? finders.own : finders.rules;
 };
 
 /**

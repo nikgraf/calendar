@@ -122,17 +122,25 @@ export const registerAssistantModel = (userDataDir: string): void => {
 
   ipcMain.handle('assistant:state', () => stateNow());
   ipcMain.handle('assistant:ask', async (event) => {
-    if (source.kind !== 'store' || asked || source.store.getState().kind !== 'unasked') {
+    const now = source.kind === 'store' ? source.store.getState() : undefined;
+    if (source.kind !== 'store' || asked || now?.kind !== 'unasked') {
       return;
     }
     asked = true;
     const window = BrowserWindow.fromWebContents(event.sender);
+    const size = sizeLabel(
+      assistantModelManifest(process.env['CALENDAR_ASSISTANT_MANIFEST']).bytes,
+    );
+    // An earlier version was downloaded: the question says this one is new.
     const options = {
-      buttons: ['Download', 'Not Now'],
+      buttons: [now.update === true ? 'Update' : 'Download', 'Not Now'],
       cancelId: 1,
       defaultId: 0,
-      detail: `The Assistant reads what you say with a model that runs on this Mac, so your words stay on it. It is a one-time download of ${sizeLabel(assistantModelManifest(process.env['CALENDAR_ASSISTANT_MANIFEST']).bytes)}.`,
-      message: 'Download the Assistant?',
+      detail:
+        now.update === true
+          ? `A new version of the Assistant’s model is ready: a download of ${size}. It runs on this Mac, so your words stay on it.`
+          : `The Assistant reads what you say with a model that runs on this Mac, so your words stay on it. It is a one-time download of ${size}.`,
+      message: now.update === true ? 'Update the Assistant?' : 'Download the Assistant?',
       type: 'question' as const,
     };
     const { response } = await (window

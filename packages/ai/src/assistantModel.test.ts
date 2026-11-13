@@ -53,6 +53,20 @@ describe('noticeCopy', () => {
     }
   });
 
+  it('offers a new version as an update where an earlier one was downloaded', () => {
+    expect(
+      noticeCopy(
+        { kind: 'unasked', update: true },
+        { device: 'Mac', network: undefined, size: SIZE },
+      ),
+    ).toMatchObject({
+      action: { kind: 'download', label: 'Update (834 MB)' },
+      lines: [
+        'A new version of the Assistant’s model is ready. It runs on this Mac and is a download of 834 MB.',
+      ],
+    });
+  });
+
   it('shows the progress and that the Assistant will be available soon', () => {
     const copy = noticeCopy(
       { kind: 'downloading', received: 361_000_000, total: SIZE },

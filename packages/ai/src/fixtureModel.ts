@@ -1,6 +1,7 @@
 import { Temporal } from '@calendar/core';
 import { CAPTURE_TEXT_MARKER, type CaptureItemParse, type CaptureParse } from './capture.ts';
 import { FIND_TIME_PHRASE_MARKER, type FindTimeParse } from './findTime.ts';
+import { durationMinutesOf, groundBounds, groundDays, windowOf } from './grounding.ts';
 import type { LanguageModel } from './model.ts';
 import {
   SEARCH_QUERY_CURRENT_MARKER,
@@ -31,6 +32,9 @@ import { TextRecognitionError, type ImageInput, type TextRecognizer } from './te
  * - Capture: one event per line of the grammar.
  * - A finder sentence (`find 30 min tomorrow morning | Focus`): the title
  *   after the bar and an hour; the finder reads the rest from the words.
+ *   Asked as the Assistant's model is (`Free time as JSON.`, no schema),
+ *   it answers what the finder's word rules read in the sentence, its
+ *   length only where one is said: the same search either way.
  * - A search turn: `terms | from..to | location | people | calendar |
  *   kind` — days as `+N`, `-N` or ISO, a single day alone, people and
  *   calendars comma-separated, kind `tasks` or `events` — applied to the
@@ -258,11 +262,36 @@ const tunedFixtureAnswer = (prompt: string): Record<string, unknown> => {
     : withExtras(draft, change, today);
 };
 
+/** The Assistant's model's finder prompt (`tunedFinder.ts`), answered with what the word rules read. */
+const tunedFinderAnswer = (prompt: string): FindTimeParse => {
+  const today = TUNED_TODAY.exec(prompt)?.[1];
+  if (today === undefined) {
+    throw new Error('fixture model: the finder prompt names no day as today');
+  }
+  const phrase = textAfter(prompt, FIND_TIME_PHRASE_MARKER).trim();
+  const title = phrase.split('|')[1]?.trim();
+  const durationMinutes = durationMinutesOf(phrase);
+  const window = windowOf(phrase, today);
+  const { earliestTime, latestTime } = groundBounds({}, phrase);
+  const daysOfWeek = groundDays(undefined, phrase);
+  return {
+    ...(daysOfWeek === undefined ? {} : { daysOfWeek }),
+    ...(durationMinutes === undefined ? {} : { durationMinutes }),
+    ...(earliestTime === undefined ? {} : { earliestTime }),
+    ...(latestTime === undefined ? {} : { latestTime }),
+    ...(title ? { title } : {}),
+    ...window,
+  };
+};
+
 export const makeFixtureLanguageModel = (): LanguageModel => ({
   generateJson: async ({ jsonSchema, prompt }) => {
     // The tuned path asks without a schema.
     if (jsonSchema === undefined && prompt.startsWith('Calendar entry as JSON')) {
       return tunedFixtureAnswer(prompt);
+    }
+    if (jsonSchema === undefined && prompt.startsWith('Free time as JSON.')) {
+      return tunedFinderAnswer(prompt);
     }
     const properties = isRecord(jsonSchema) ? jsonSchema.properties : undefined;
     const referenceDate = referenceDateOf(prompt);

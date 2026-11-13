@@ -13,6 +13,14 @@ describe('offerQuestion', () => {
     expect(question.buttons[0]).toMatchObject({ choice: 'decline', style: 'cancel' });
   });
 
+  it('says a new version is an update where an earlier one was downloaded', () => {
+    const question = offerQuestion(833_592_288, WIFI, { update: true });
+    expect(question.title).toBe('Update the Assistant?');
+    expect(question.message).toContain('new version of the Assistant’s model');
+    expect(question.message).toContain('834 MB, over Wi-Fi');
+    expect(question.buttons.map((button) => button.text)).toEqual(['Not Now', 'Update']);
+  });
+
   it('offers mobile data on mobile data, saying it comes out of the plan', () => {
     const question = offerQuestion(833_592_288, { ...WIFI, expensive: true });
     expect(question.message).toContain('downloads the 834 MB from your data plan');

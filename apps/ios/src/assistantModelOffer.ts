@@ -24,14 +24,21 @@ export interface OfferQuestion {
 
 const NOT_NOW = { choice: 'decline', style: 'cancel', text: 'Not Now' } as const;
 
-/** The question's words for a model of `bytes`, and a third button where the network now would hold the transfer. */
+/**
+ * The question's words for a model of `bytes`, and a third button where
+ * the network now would hold the transfer. Where an earlier version was
+ * downloaded (`update`), it says this one is new.
+ */
 export const offerQuestion = (
   bytes: number,
   network: NetworkReading | undefined,
+  { update = false }: { readonly update?: boolean } = {},
 ): OfferQuestion => {
   const size = sizeLabel(bytes);
-  const title = 'Download the Assistant?';
-  const base = `The Assistant reads what you say with a model that runs on this iPhone, so your words stay on it. It is a one-time download of ${size}, over Wi-Fi.`;
+  const title = update ? 'Update the Assistant?' : 'Download the Assistant?';
+  const base = update
+    ? `A new version of the Assistant’s model is ready: a download of ${size}, over Wi-Fi. It runs on this iPhone, so your words stay on it.`
+    : `The Assistant reads what you say with a model that runs on this iPhone, so your words stay on it. It is a one-time download of ${size}, over Wi-Fi.`;
   if (network?.expensive === true) {
     return {
       buttons: [
@@ -54,7 +61,11 @@ export const offerQuestion = (
       title,
     };
   }
-  return { buttons: [NOT_NOW, { choice: 'wifi', text: 'Download' }], message: base, title };
+  return {
+    buttons: [NOT_NOW, { choice: 'wifi', text: update ? 'Update' : 'Download' }],
+    message: base,
+    title,
+  };
 };
 
 let asked = false;
@@ -65,11 +76,12 @@ export const offerOnce = (
   ask: (question: OfferQuestion, answer: (choice: OfferChoice) => void) => void,
 ): void => {
   const bytes = store.size();
-  if (asked || bytes === undefined || store.getState().kind !== 'unasked') {
+  const state = store.getState();
+  if (asked || bytes === undefined || state.kind !== 'unasked') {
     return;
   }
   asked = true;
-  ask(offerQuestion(bytes, store.network()), (choice) => {
+  ask(offerQuestion(bytes, store.network(), { update: state.update === true }), (choice) => {
     if (choice === 'decline') {
       store.decline();
       return;

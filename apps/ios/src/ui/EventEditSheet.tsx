@@ -40,8 +40,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { appleSpeech } from '../appleSpeech.ts';
 import { backendClient } from '../backend.ts';
 import { type AssistantModelState, type ModelStatus, statusOf } from '@calendar/ai';
-import { assistantDownload, assistantReader, useAssistantModelState } from '../assistantRuntime.ts';
-import { languageModel, modelFixture } from '../model.ts';
+import {
+  assistantDownload,
+  assistantReader,
+  useAssistantModelState,
+  useFinder,
+} from '../assistantRuntime.ts';
+import { modelFixture } from '../model.ts';
 import { AssistantBar } from './assistant/AssistantBar.tsx';
 import { AssistantModelNotice } from './assistant/AssistantModelNotice.tsx';
 import { AssistantView } from './assistant/AssistantView.tsx';
@@ -625,12 +630,13 @@ export function EventEditSheet({
         ? 'event'
         : 'new';
   const lesson = useLessonTry(seed.lesson);
+  const { finder } = useFinder();
   const editor = useThreadEditor({
     backend: backendClient,
     calendars,
     confirm: confirmEditorRequest,
+    finder,
     initialKind,
-    model: languageModel,
     onClose,
     onSaved: () => {
       lesson.done();
