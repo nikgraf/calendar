@@ -758,7 +758,8 @@ brought forward does not end the dictation, a typed title does, the
 next phrase keeps that title, an older step put on show ends it too);
 `assistantView` (the editor's two views:
 a phrase answered with the item as a card, a change marked with the old
-value struck through, a question answered as a step of its own, the
+value struck through, two questions asked one at a time and numbered,
+one skipped, one answered as a step of its own, the
 same draft and marks in the form, the grid's outline where a step moved
 the draft from; stepping back and forward, the form locked and Save off
 on an older step, "Use this"; one phrase is one step, typing in one
@@ -767,7 +768,10 @@ differs — read off the op's `payload` against its `beforePayload` — and
 nothing once back at "As saved"; what a saved event cannot hold refused
 in the conversation; a save refused with the Assistant on show says why
 in the footer; a saved to-do without a due day dated by "today" and by
-"tomorrow", a time refused on its Google list); `draftThread` (a phrase's draft on the grid, a
+"tomorrow", a time refused on its Google list; the switch between the
+views: the form's first frame on the card's title, the pane leaving
+`inert` while `data-switching` holds, no movement under emulated Reduce
+Motion — `showEditorView` waits for the switch to end); `draftThread` (a phrase's draft on the grid, a
 change, the step before shown and kept, Save; the pager and Remove
 waiting while a kind switch asks its question; four phrases as four
 steps, the changed time marked in the form, an edit by hand a step too;
@@ -1083,7 +1087,10 @@ form: a new event opens on the Assistant where a model answers and on
 the form where none does, each view shows the way to the other only
 once the availability check is back — `editor-view-form` in the
 Assistant's bar, `editor-view-assistant` over the form — so the subflow
-waits for either and taps the one to the form), `open-event-editor.yaml`
+waits for either and taps the one to the form, then waits for the
+switch's motion to end: a tap taken while the form rises lands where a
+field was; flows 06 and 22 wait the same way after their flips),
+`open-event-editor.yaml`
 (Edit on the detail sheet a tap opens), `switch-view.yaml` (the header's menu, `VIEW`;
 done once the button reads "View: `VIEW`"),
 `switch-to-task.yaml`, `open-settings.yaml` (waits for `settings-root`),
