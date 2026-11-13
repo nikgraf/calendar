@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
 import type { BenchDraft } from './check.ts';
 import { buildPlainPrompt, buildPlainRefinePrompt, plainResult, plainState } from './plain.ts';
-import { claudeSpec } from './providers.ts';
 
 // A Tuesday; the tests only ever compare against it.
 const TODAY = '2026-11-10';
@@ -282,20 +281,6 @@ describe('the plain prompts', () => {
       kind: 'task',
       startTime: '17:00',
       title: 'Call the bank',
-    });
-  });
-});
-
-describe('claudeSpec', () => {
-  it('reads the model and its effort', () => {
-    expect(claudeSpec('claude-haiku-5-5@low')).toEqual({
-      effort: 'low',
-      model: 'claude-haiku-5-5',
-    });
-    expect(claudeSpec(' claude-opus-5-5 ')).toEqual({ effort: 'medium', model: 'claude-opus-5-5' });
-    expect(claudeSpec('claude-opus-5-5@loud')).toEqual({
-      effort: 'medium',
-      model: 'claude-opus-5-5',
     });
   });
 });

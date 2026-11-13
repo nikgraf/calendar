@@ -30,8 +30,6 @@ import {
 } from './check.ts';
 import { plainTurn } from './plain.ts';
 import {
-  claudeModel,
-  claudeSpec,
   connectHelper,
   findHelper,
   type HelperClient,
@@ -80,8 +78,6 @@ import { tunedTurn } from './tuned.ts';
  * MODEL_BENCH_OPENAI_KEY, MODEL_BENCH_OPENAI_EXTRA (JSON joined to the
  * request body), MODEL_BENCH_OPENAI_JSON=object for a server with JSON mode
  * only (the schema then goes into the prompt: DeepSeek's API).
- * Claude: MODEL_BENCH_CLAUDE names the models, each with its effort after
- * an `@` (`claude-haiku-5-5@low,claude-opus-5-5`), ANTHROPIC_API_KEY the key.
  * MODEL_BENCH_PIPELINE lists what runs around the model, comma-separated:
  * `app` (the default: the app's pipeline with its grounding), `raw` (the
  * app's prompts, the answer never held against the words: `raw.ts`),
@@ -379,10 +375,6 @@ const providers = async (
       });
     }
   }
-  for (const spec of (process.env['MODEL_BENCH_CLAUDE'] ?? '').split(',').filter(Boolean)) {
-    const { effort, model } = claudeSpec(spec);
-    list.push({ model: claudeModel(model, effort), name: `claude:${model}@${effort}` });
-  }
   return list;
 };
 
@@ -460,7 +452,7 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('model bench', () => {
       const available = await providers(helper, log);
       if (available.length === 0) {
         log(
-          'No model to bench: build the desktop helper (pnpm --filter @calendar/desktop build:helper), point MODEL_BENCH_HELPER at one, or name a served model (MODEL_BENCH_OLLAMA, MODEL_BENCH_OPENAI, MODEL_BENCH_CLAUDE).',
+          'No model to bench: build the desktop helper (pnpm --filter @calendar/desktop build:helper), point MODEL_BENCH_HELPER at one, or name a served model (MODEL_BENCH_OLLAMA, MODEL_BENCH_OPENAI).',
         );
       }
       const arms = available.flatMap((provider) =>

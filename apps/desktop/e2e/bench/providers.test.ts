@@ -2,7 +2,6 @@ import { QUICK_ADD_JSON_SCHEMA } from '@calendar/ai';
 import { describe, expect, it } from 'vite-plus/test';
 import { strictSchema } from '../../electron/strictSchema.ts';
 import {
-  claudeSchema,
   openAiExtra,
   openAiJsonMode,
   openAiRequest,
@@ -227,33 +226,5 @@ describe('openAiRequest', () => {
     expect(openAiJsonMode(' object ')).toBe('object');
     expect(openAiJsonMode(undefined)).toBe('schema');
     expect(openAiJsonMode('json_schema')).toBe('schema');
-  });
-});
-
-describe('claudeSchema', () => {
-  it('writes a nullable choice as the choice or null, and leaves the rest', () => {
-    const nullableChoice = { enum: ['daily', 'weekly', null], type: ['string', 'null'] };
-    // The strict schema writes the optional `freq` the way Claude refuses.
-    expect(JSON.stringify(strictSchema(SCHEMA))).toContain(JSON.stringify(nullableChoice));
-    const strict = claudeSchema(strictSchema(SCHEMA)) as {
-      readonly properties: Record<string, unknown>;
-      readonly required: ReadonlyArray<string>;
-    };
-    expect(JSON.stringify(strict)).not.toContain(JSON.stringify(nullableChoice));
-    expect(JSON.stringify(strict)).toContain(
-      JSON.stringify({ anyOf: [{ enum: ['daily', 'weekly'], type: 'string' }, { type: 'null' }] }),
-    );
-    expect(strict.required).toEqual(['allDay', 'date', 'kind', 'people', 'repeat', 'title']);
-    expect(strict.properties['kind']).toEqual({ enum: ['event', 'task'], type: 'string' });
-    expect(strict.properties['date']).toEqual({ type: ['string', 'null'] });
-  });
-
-  it('leaves no nullable choice in the schema the app asks with', () => {
-    const asked = JSON.stringify(claudeSchema(strictSchema(QUICK_ADD_JSON_SCHEMA)));
-    expect(JSON.stringify(strictSchema(QUICK_ADD_JSON_SCHEMA))).toContain('"yearly",null]');
-    expect(asked).not.toContain('"yearly",null]');
-    expect(asked).toContain(
-      JSON.stringify({ enum: ['daily', 'weekly', 'monthly', 'yearly'], type: 'string' }),
-    );
   });
 });

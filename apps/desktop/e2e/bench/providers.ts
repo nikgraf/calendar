@@ -1,7 +1,6 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import Anthropic from '@anthropic-ai/sdk';
 import { type LanguageModel, transcriptFromSegments } from '@calendar/ai';
 import { strictSchema, withoutNulls } from '../../electron/strictSchema.ts';
 
@@ -9,8 +8,7 @@ import { strictSchema, withoutNulls } from '../../electron/strictSchema.ts';
  * The models the bench runs on, behind the app's own `LanguageModel`
  * seam: Apple's through the desktop helper binary, a served one over
  * Ollama's API or an OpenAI-compatible endpoint (the shapes the app's
- * model provider sends), or Claude through Anthropic's API — a ceiling to
- * measure against, never a model the app ships. The helper also transcribes, for the recorded
+ * model provider sends). The helper also transcribes, for the recorded
  * turns — SpeechAnalyzer is the framework iOS dictates with, so the Mac
  * stands in for both platforms.
  */
@@ -525,85 +523,3 @@ export interface OpenAiUsage {
   readonly prompt_cache_miss_tokens?: number;
   readonly prompt_tokens?: number;
 }
-
-/** How hard Claude thinks before it answers (`output_config.effort`). */
-export type ClaudeEffort = 'high' | 'low' | 'max' | 'medium' | 'xhigh';
-
-const EFFORTS: ReadonlyArray<ClaudeEffort> = ['low', 'medium', 'high', 'xhigh', 'max'];
-
-/** `claude-haiku-5-5@low`: the model and, after an `@`, its effort (medium when left out). */
-export const claudeSpec = (
-  spec: string,
-): { readonly effort: ClaudeEffort; readonly model: string } => {
-  const [model = '', said] = spec.trim().split('@');
-  return { effort: EFFORTS.find((effort) => effort === said) ?? 'medium', model };
-};
-
-/**
- * The strict schema as Claude takes it: a nullable choice written as
- * "one of these, or null". The list form the OpenAI endpoint takes
- * (`type: ['string', 'null']` beside the enum) is refused here.
- */
-export const claudeSchema = (schema: unknown): unknown => {
-  if (Array.isArray(schema)) {
-    return schema.map(claudeSchema);
-  }
-  if (!isObject(schema)) {
-    return schema;
-  }
-  const { enum: choices, type } = schema;
-  if (Array.isArray(choices) && Array.isArray(type)) {
-    return {
-      anyOf: [
-        {
-          ...schema,
-          enum: choices.filter((choice) => choice !== null),
-          type: type.find((name) => name !== 'null'),
-        },
-        { type: 'null' },
-      ],
-    };
-  }
-  return Object.fromEntries(
-    Object.entries(schema).map(([key, value]) => [key, claudeSchema(value)]),
-  );
-};
-
-const CLAUDE_MAX_TOKENS = 16_000;
-
-/**
- * Claude over the Messages API, the answer held to the schema by
- * structured outputs. The schema is the strict one the OpenAI endpoint
- * gets (every property required, an optional one nullable): asked with
- * optional properties, Claude leaves most of them out, a dinner's time
- * and a said place among them. The credential is the SDK's own to find
- * (`ANTHROPIC_API_KEY`, or the profile `ant auth login` stores). No
- * fallback model: a declined request is this model's failure, and the
- * report says so.
- */
-export const claudeModel = (model: string, effort: ClaudeEffort): LanguageModel => {
-  const client = new Anthropic();
-  return {
-    generateJson: async ({ jsonSchema, prompt }) => {
-      const response = await client.messages.create({
-        max_tokens: CLAUDE_MAX_TOKENS,
-        messages: [{ content: prompt, role: 'user' }],
-        model,
-        output_config: {
-          effort,
-          format: {
-            schema: claudeSchema(strictSchema(jsonSchema)) as Record<string, unknown>,
-            type: 'json_schema',
-          },
-        },
-      });
-      if (response.stop_reason !== 'end_turn') {
-        throw new Error(`Claude stopped with ${String(response.stop_reason)}`);
-      }
-      const text = response.content.find((block) => block.type === 'text');
-      return withoutNulls(JSON.parse(text?.text ?? ''));
-    },
-    info: async () => ({ contextTokens: 1_000_000, name: model }),
-    status: async () => 'ready',
-  };
-};
