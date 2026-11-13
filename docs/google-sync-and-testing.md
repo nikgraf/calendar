@@ -1012,11 +1012,11 @@ Electron binary (`electron --version`) and run spec files sequentially.
   around the five flows). Its three Maestro invocations (bootstrap,
   permissions, live flows) go through `run-flows.ts` with the same 240 s
   runner wait as `ios-e2e`, but without `E2E_APP`: a rerun starts on the
-  same simulator, dev client and scratch calendar. So the live flows run
-  again only when the driver never started (`E2E_RETRY=never-started`); a
-  flow cut short left items on Google under the run's titles. When no flow
-  failed on its own, a warning and the step summary still name what cut
-  each one short (a dead driver, a black screen, a dropped touch).
+  same simulator, dev client and scratch calendar, from each flow's own
+  launch. A live flow cut short left items on Google under the run's
+  titles, so the second run gives them titles of their own:
+  `MAESTRO_LIVE_RUN_TAG` gains `-r2` (`runEnvironment` in
+  `maestroRetry.ts`), and the step summary names the tag.
 - Log lines may stringify effect causes containing HTTP requests; effect
   redacts auth headers, so tokens cannot leak into CI logs this way.
 

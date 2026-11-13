@@ -196,6 +196,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   the flow (it would hide an app that drops a tap), any drop in the flow
   (one Maestro tapped past is not the failure). Open: nothing ties the
   failure to the drop (Opus review); older lost-tap flakes (logs expired).
+- **Live flows rerun under titles of their own** (2026-11-13,
+  `todo/live-retry-fresh-titles`) — nightly 43358802870 went red on a black
+  display in live flow 02 (no touch reached the app; flow 03's launch drew
+  again), which the live job never reran: one cut short leaves its items
+  on Google for a rerun to match. A second run now tags the live titles
+  `<tag>-r2`, so they rerun for every cause `ios-e2e`'s flows do,
+  unrebooted. Rejected: a reboot in between (a relaunch drew again here and
+  in the five earlier sightings). Open: a leftover a rerun trips on (a
+  parked conflict's badge) fails it, never passes it.
 - **Flow 06's sheet drag off the bottom edge** (2026-10-29,
   `todo/editor-sheet-drag-race`) — the drag that raises the half-height
   editor started at 93 %, inside SpringBoard's bottom-edge gesture region:

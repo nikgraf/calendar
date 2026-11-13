@@ -12,11 +12,10 @@
  *
  * With E2E_APP (the .app CI installed) the second run starts on an erased
  * simulator with a fresh install of it; without, nothing is reset (a
- * developer's simulator and dev client keep their data). With
- * E2E_RETRY=never-started only an invocation whose driver never started
- * runs again: the live flows' items on Google outlive any reset, so a flow
- * cut short would meet its own leftovers. When no flow failed on its own,
- * a warning and the step summary still say what cut each one short.
+ * developer's simulator and dev client keep their data) and each flow
+ * starts from its own fresh launch. The live flows' items on Google
+ * outlive any reset, so the second run gives them titles of their own
+ * (`runEnvironment`): a flow cut short never meets its own leftovers.
  *
  * e2e/ci/package.json marks these files as ES modules for Node: the app's
  * own package.json is part of the native fingerprint.
@@ -40,8 +39,10 @@ import {
   debugFolderName,
   decideRetry,
   type JUnitCase,
+  LIVE_RUN_TAG,
   latchedCommand,
   type RetryCause,
+  runEnvironment,
 } from './maestroRetry.ts';
 
 /** The dev variant: e2e always drives it (prepare-simulator.sh). */
@@ -103,7 +104,7 @@ const attempt = async (number: number, attemptFlows: ReadonlyArray<string>) => {
       '--flatten-debug-output',
       ...attemptFlows,
     ],
-    { stdio: ['inherit', 'pipe', 'pipe'] },
+    { env: runEnvironment(process.env, number), stdio: ['inherit', 'pipe', 'pipe'] },
   );
   child.stdout.on('data', (chunk: Buffer) => {
     process.stdout.write(chunk);
@@ -129,14 +130,6 @@ const summary = (line: string): void => {
 /** Flow files as inline code, for the step summary. */
 const quoted = (files: ReadonlyArray<string>): string =>
   files.map((file) => `\`${file}\``).join(', ');
-
-/** What took a flow down, in words. */
-const LOST_TO: Readonly<Record<RetryCause, string>> = {
-  'black-screen': 'the simulator drew it black',
-  died: 'the XCTest driver died',
-  'dropped-touch': 'the simulator dropped its last touch',
-  'never-started': 'the XCTest driver never started',
-};
 
 /**
  * The run, answering the exit code. The process ends on its own with it:
@@ -176,21 +169,6 @@ const main = async (): Promise<number> => {
       decision.kind === 'pass'
         ? 'maestro failed, but every flow passed'
         : `no retry: ${decision.reason}`,
-    );
-    return first.status;
-  }
-  if (
-    process.env['E2E_RETRY'] === 'never-started' &&
-    decision.flows.some((flow) => flow.cause !== 'never-started')
-  ) {
-    // The job fails, but not on the app: say what each flow was lost to.
-    const lost = decision.flows.map(({ cause, file }) => `${file} (${LOST_TO[cause]})`);
-    say(`::warning::Not run again (E2E_RETRY=never-started): ${lost.join(', ')}`);
-    summary(`### Maestro retry (${label})`);
-    summary(
-      `Lost before they finished, not run again (E2E_RETRY=never-started): ${decision.flows
-        .map(({ cause, file }) => `\`${file}\` (${LOST_TO[cause]})`)
-        .join(', ')}.`,
     );
     return first.status;
   }
@@ -266,6 +244,11 @@ const main = async (): Promise<number> => {
     }
   }
 
+  const tag = runEnvironment(process.env, 2)[LIVE_RUN_TAG];
+  if (tag !== undefined) {
+    say(`The second run's live titles carry ${tag}`);
+    summary(`Its live titles carry \`${tag}\`, so what the first run left is not theirs.`);
+  }
   const second = await attempt(
     2,
     decision.flows.map((flow) => flow.file),

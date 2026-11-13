@@ -9,7 +9,9 @@ import {
   isBlackPng,
   type JUnitCase,
   latchedCommand,
+  LIVE_RUN_TAG,
   parseJUnit,
+  runEnvironment,
 } from './maestroRetry.ts';
 
 /**
@@ -640,5 +642,37 @@ describe('latchedCommand', () => {
   it('names the command the driver died on', () => {
     expect(latchedCommand(LATCHED_LOG)).toBe('inputText');
     expect(latchedCommand('')).toBeUndefined();
+  });
+});
+
+describe('runEnvironment', () => {
+  const live = { HOME: '/Users/runner', [LIVE_RUN_TAG]: 'gh-43358802870-1' };
+
+  it('keeps the first run as the job set it', () => {
+    expect(runEnvironment(live, 1)).toEqual(live);
+  });
+
+  it("tags a later run's live titles with the run, and nothing else", () => {
+    expect(runEnvironment(live, 2)).toEqual({
+      HOME: '/Users/runner',
+      [LIVE_RUN_TAG]: 'gh-43358802870-1-r2',
+    });
+    // The rerun's titles and the first run's never match each other's
+    // patterns: the flows match `live-<tag>-ios-…` from the start.
+    const first = 'live-gh-43358802870-1-ios-c-.*';
+    const second = 'live-gh-43358802870-1-r2-ios-c-.*';
+    expect(new RegExp(`^${first}$`).test('live-gh-43358802870-1-r2-ios-c-start')).toBe(false);
+    expect(new RegExp(`^${second}$`).test('live-gh-43358802870-1-ios-c-start')).toBe(false);
+  });
+
+  it('leaves flows without a run tag alone', () => {
+    expect(runEnvironment({ HOME: '/Users/runner' }, 2)).toEqual({ HOME: '/Users/runner' });
+    expect(runEnvironment({ [LIVE_RUN_TAG]: '' }, 2)).toEqual({ [LIVE_RUN_TAG]: '' });
+  });
+
+  it('never changes the environment it was given', () => {
+    const env = { ...live };
+    runEnvironment(env, 2);
+    expect(env).toEqual(live);
   });
 });
