@@ -1,13 +1,13 @@
 import { readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, powerMonitor } from 'electron';
 
 /**
  * Screen-sharing privacy: content protection (macOS NSWindowSharingNone)
  * keeps the window out of screen shares and recordings while it stays
  * visible locally. Off (visible) until the user turns it on in Settings;
  * a 10-minute pause is runtime-only state so a restart fails closed back
- * to the persisted mode.
+ * to the persisted mode, and it ends on time across sleep (`settlePause`).
  */
 
 export type PrivacyMode = 'hidden' | 'visible';
@@ -21,19 +21,47 @@ export interface PrivacyState {
 
 const PAUSE_MS = 10 * 60 * 1000;
 
+/**
+ * A running pause. It is over once either clock says ten minutes have
+ * passed. The monotonic clock counts sleep (libuv reads
+ * `mach_continuous_time`) and ignores the clock being set back. The wall
+ * clock is the one Settings counts down on.
+ */
+interface Pause {
+  /** `performance.now()` ms. */
+  readonly endsAt: number;
+  /** Epoch ms, what Settings counts down to. */
+  readonly visibleUntil: number;
+}
+
 let settingsPath: string | null = null;
 let mode: PrivacyMode = 'visible';
-let visibleUntil: number | null = null;
+let pause: Pause | null = null;
 let pauseTimer: NodeJS.Timeout | null = null;
 
-/** Whether the windows are kept out of captures right now (hidden, not paused). */
-export const isProtected = (): boolean =>
-  mode === 'hidden' && (visibleUntil === null || Date.now() >= visibleUntil);
+/** Ms until the pause is over, by whichever clock gets there first. */
+const pauseLeft = (running: Pause): number =>
+  Math.min(running.visibleUntil - Date.now(), running.endsAt - performance.now());
 
-export const getPrivacyState = (): PrivacyState => ({
-  mode,
-  ...(visibleUntil !== null && Date.now() < visibleUntil ? { visibleUntil } : {}),
-});
+/**
+ * The running pause, or null. A pause found over ends here for every
+ * window, so no read (a new window, the capture hint, Settings) says hidden
+ * while a window still shows in captures.
+ */
+const activePause = (): Pause | null => {
+  if (pause !== null && pauseLeft(pause) <= 0) {
+    settlePause();
+  }
+  return pause;
+};
+
+/** Whether the windows are kept out of captures right now (hidden, not paused). */
+export const isProtected = (): boolean => mode === 'hidden' && activePause() === null;
+
+export const getPrivacyState = (): PrivacyState => {
+  const active = activePause();
+  return { mode, ...(active ? { visibleUntil: active.visibleUntil } : {}) };
+};
 
 const listeners = new Set<(state: PrivacyState) => void>();
 
@@ -70,27 +98,46 @@ const persist = () => {
   }
 };
 
+/**
+ * Ends the pause once it is over, or waits for the time it has left. Runs
+ * from its timer, when the Mac wakes or the screen unlocks, and from any
+ * read that finds the pause over (`activePause`). A timer that
+ * came due during sleep fires only when Electron's main loop next polls,
+ * and macOS does not count sleep against that poll's timeout. So after a
+ * wake the timer waits for whatever else wakes the loop, and the windows
+ * would stay capturable until then.
+ */
+const settlePause = () => {
+  if (pauseTimer) {
+    clearTimeout(pauseTimer);
+    pauseTimer = null;
+  }
+  if (pause === null) {
+    return;
+  }
+  const left = pauseLeft(pause);
+  if (left > 0) {
+    pauseTimer = setTimeout(settlePause, left);
+    return;
+  }
+  pause = null;
+  applyAndBroadcast();
+};
+
 export const setPrivacyChoice = (choice: PrivacyChoice): PrivacyState => {
   if (choice === 'pause10m' && mode === 'visible') {
     // Nothing is hidden to show: a pause would only start a countdown.
     return getPrivacyState();
   }
-  if (pauseTimer) {
-    clearTimeout(pauseTimer);
-    pauseTimer = null;
-  }
   if (choice === 'pause10m') {
-    visibleUntil = Date.now() + PAUSE_MS;
-    pauseTimer = setTimeout(() => {
-      pauseTimer = null;
-      visibleUntil = null;
-      applyAndBroadcast();
-    }, PAUSE_MS);
+    pause = { endsAt: performance.now() + PAUSE_MS, visibleUntil: Date.now() + PAUSE_MS };
   } else {
-    visibleUntil = null;
+    pause = null;
     mode = choice;
     persist();
   }
+  // Arms the new pause's timer, or clears the one a choice just ended.
+  settlePause();
   applyAndBroadcast();
   return getPrivacyState();
 };
@@ -112,6 +159,12 @@ export const initPrivacy = (userDataDir: string): void => {
   } catch {
     // Missing or invalid file → default 'visible'.
   }
+
+  // powerMonitor is for a ready app, and initPrivacy runs before 'ready'.
+  void app.whenReady().then(() => {
+    powerMonitor.on('resume', settlePause);
+    powerMonitor.on('unlock-screen', settlePause);
+  });
 
   ipcMain.handle('privacy:get', () => getPrivacyState());
   ipcMain.handle('privacy:set', (_event, choice: unknown) =>

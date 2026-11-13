@@ -1,7 +1,8 @@
+import { EventEmitter } from 'node:events';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 // One window, recording what content protection it was told last.
 const window = {
@@ -11,10 +12,16 @@ const window = {
   },
   webContents: { send: () => {} },
 };
+// The Mac waking from sleep ('resume') or the screen unlocking.
+const powerMonitor = new EventEmitter();
 vi.mock('electron', () => ({
+  app: { whenReady: () => Promise.resolve() },
   BrowserWindow: { getAllWindows: () => [window] },
   ipcMain: { handle: () => {} },
+  powerMonitor,
 }));
+
+const MINUTE = 60 * 1000;
 
 const profiles: Array<string> = [];
 const newProfile = () => {
@@ -33,13 +40,36 @@ afterEach(() => {
 const launch = async (dir = newProfile()) => {
   vi.resetModules();
   window.protected = null;
+  // The last launch's module stops hearing wake and unlock.
+  powerMonitor.removeAllListeners();
   const privacy = await import('./privacy.ts');
   privacy.initPrivacy(dir);
+  // It listens for wake and unlock once the app is ready.
+  await Promise.resolve();
   const stored = () =>
     (JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8')) as Record<string, unknown>)[
       'screenPrivacy'
     ];
   return { dir, privacy, stored };
+};
+
+/** A launch with privacy on and the 10-minute pause just started. */
+const paused = async () => {
+  const { privacy } = await launch();
+  privacy.setPrivacyChoice('hidden');
+  privacy.setPrivacyChoice('pause10m');
+  expect(window.protected).toBe(false);
+  return privacy;
+};
+
+// Asleep, both clocks run on (Electron's performance.now() reads libuv's
+// mach_continuous_time) while the main loop's timers hold. The fake
+// clock's setSystemTime moves Date only, so the sleep tests add the slept
+// time to performance.now() themselves.
+let slept = 0;
+const sleep = (ms: number) => {
+  vi.setSystemTime(Date.now() + ms);
+  slept += ms;
 };
 
 describe('screen-sharing privacy', () => {
@@ -115,5 +145,74 @@ describe('screen-sharing privacy', () => {
     writeFileSync(join(dir, 'settings.json'), '{ "screenPrivacy": "hid');
     const { privacy } = await launch(dir);
     expect(privacy.getPrivacyState()).toEqual({ mode: 'visible' });
+  });
+});
+
+describe('a pause the Mac sleeps through', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    slept = 0;
+    const fakeNow = performance.now.bind(performance);
+    vi.spyOn(performance, 'now').mockImplementation(() => fakeNow() + slept);
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  it.each(['resume', 'unlock-screen'])(
+    'slept past its end, the windows hide again on %s',
+    async (event) => {
+      const privacy = await paused();
+      vi.advanceTimersByTime(2 * MINUTE);
+      sleep(30 * MINUTE);
+      powerMonitor.emit(event);
+      expect(window.protected).toBe(true);
+      expect(privacy.getPrivacyState()).toEqual({ mode: 'hidden' });
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+
+  it('woken before its end, the windows hide when its ten minutes are up', async () => {
+    await paused();
+    vi.advanceTimersByTime(2 * MINUTE);
+    sleep(5 * MINUTE);
+    powerMonitor.emit('resume');
+    expect(window.protected).toBe(false);
+    vi.advanceTimersByTime(3 * MINUTE - 1);
+    expect(window.protected).toBe(false);
+    vi.advanceTimersByTime(1);
+    expect(window.protected).toBe(true);
+  });
+
+  it('should the monotonic clock stop during sleep, the wall clock still ends it', async () => {
+    await paused();
+    vi.advanceTimersByTime(2 * MINUTE);
+    vi.setSystemTime(Date.now() + 30 * MINUTE);
+    powerMonitor.emit('resume');
+    expect(window.protected).toBe(true);
+  });
+
+  it('a clock set back does not stretch it: a wake re-arms for the monotonic remainder', async () => {
+    const privacy = await paused();
+    vi.advanceTimersByTime(MINUTE);
+    vi.setSystemTime(Date.now() - 60 * MINUTE);
+    sleep(2 * MINUTE);
+    powerMonitor.emit('resume');
+    vi.advanceTimersByTime(7 * MINUTE - 1);
+    expect(window.protected).toBe(false);
+    vi.advanceTimersByTime(1);
+    expect(window.protected).toBe(true);
+    expect(privacy.getPrivacyState()).toEqual({ mode: 'hidden' });
+  });
+
+  it('a clock stepped forward while awake ends it at the next read, for every window', async () => {
+    const privacy = await paused();
+    vi.advanceTimersByTime(2 * MINUTE);
+    vi.setSystemTime(Date.now() + 30 * MINUTE);
+    expect(window.protected).toBe(false);
+    expect(privacy.isProtected()).toBe(true);
+    expect(window.protected).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
