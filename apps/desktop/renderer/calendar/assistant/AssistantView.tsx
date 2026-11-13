@@ -482,15 +482,18 @@ const demoStatus = (
 /**
  * The field's words when it is empty: why it is locked (an older step on
  * show; the model not here — the demo's wait for it, unless this Mac cannot
- * run it), or what to type.
+ * run it), or what to type. None while the demo reads its phrase: the
+ * phrase is above, being answered.
  */
 const fieldPlaceholder = ({
+  busy,
   demo,
   fieldCopy,
   hasDrafts,
   previewing,
   status,
 }: {
+  readonly busy: boolean;
   readonly demo: boolean;
   readonly fieldCopy: string;
   readonly hasDrafts: boolean;
@@ -501,6 +504,9 @@ const fieldPlaceholder = ({
     return 'An earlier step is on show';
   }
   if (status !== null && status !== 'ready') {
+    if (demo && busy) {
+      return '';
+    }
     return demo && status !== 'unsupported' ? DEMO_WAIT : fieldCopy;
   }
   return hasDrafts ? CHANGE_PLACEHOLDER : QUICK_ADD_PLACEHOLDER;
@@ -553,6 +559,7 @@ function AssistantInput({
   const locked = unavailable && demoPhrase === undefined;
   const status = inputStatus(quick) ?? demoStatus(demoPhrase);
   const placeholder = fieldPlaceholder({
+    busy,
     demo: demo !== undefined,
     fieldCopy,
     hasDrafts,

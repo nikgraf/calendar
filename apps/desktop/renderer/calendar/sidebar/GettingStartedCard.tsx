@@ -18,15 +18,18 @@ import { Popover } from '../../ui/Popover.tsx';
 
 /**
  * What a row says under its title: the lesson's line until it is ticked,
- * and the Create row's download while it runs, ticked or not.
+ * and the Create row's download once it is asked for (running or failed),
+ * ticked or not.
  */
 const rowLine = (
   ticked: boolean,
   subtitle: string,
   note: ReturnType<typeof createRowNote>,
 ): { readonly progress?: number; readonly text: string } | undefined => {
-  if (note?.progress !== undefined) {
-    return { progress: note.progress, text: note.subtitle };
+  if (note?.asked === true) {
+    return note.progress === undefined
+      ? { text: note.subtitle }
+      : { progress: note.progress, text: note.subtitle };
   }
   return ticked ? undefined : { text: note?.subtitle ?? subtitle };
 };

@@ -277,28 +277,40 @@ export const lessonModelCopy = (
 export const createRowNote = (
   state: AssistantModelState,
   { device }: { readonly device: AssistantDevice },
-): { readonly progress?: number; readonly subtitle: string } | undefined => {
+):
+  | {
+      /** The download was asked for (running, waiting or failed): the row says so even once ticked. */
+      readonly asked: boolean;
+      readonly progress?: number;
+      readonly subtitle: string;
+    }
+  | undefined => {
   switch (state.kind) {
     case 'unasked':
     case 'declined':
-      return { subtitle: 'Try the demo · the Assistant downloads once' };
+      return { asked: false, subtitle: 'Try the demo · the Assistant downloads once' };
     case 'downloading': {
       const percent = percentOf(state.received, state.total);
-      return { progress: percent, subtitle: `Downloading the Assistant · ${String(percent)} %` };
+      return {
+        asked: true,
+        progress: percent,
+        subtitle: `Downloading the Assistant · ${String(percent)} %`,
+      };
     }
     case 'verifying':
-      return { progress: 100, subtitle: 'Checking the Assistant’s model' };
+      return { asked: true, progress: 100, subtitle: 'Checking the Assistant’s model' };
     case 'waiting':
       return {
+        asked: true,
         subtitle:
           state.for === 'network'
             ? 'The Assistant downloads once online · try the demo'
             : 'The Assistant downloads on Wi-Fi · try the demo',
       };
     case 'failed':
-      return { subtitle: 'The download did not finish · try the demo' };
+      return { asked: true, subtitle: 'The download did not finish · try the demo' };
     case 'unsupported':
-      return { subtitle: `See it in a demo · this ${device} uses the Form` };
+      return { asked: false, subtitle: `See it in a demo · this ${device} uses the Form` };
     case 'ready':
       return undefined;
   }

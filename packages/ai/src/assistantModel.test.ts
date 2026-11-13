@@ -193,10 +193,24 @@ describe('createRowNote', () => {
     );
     expect(
       createRowNote({ kind: 'downloading', received: SIZE / 2, total: SIZE }, { device: 'Mac' }),
-    ).toEqual({ progress: 50, subtitle: 'Downloading the Assistant · 50 %' });
+    ).toEqual({ asked: true, progress: 50, subtitle: 'Downloading the Assistant · 50 %' });
     expect(
       createRowNote({ kind: 'unsupported', reason: 'memory' }, { device: 'iPhone' })?.subtitle,
     ).toBe('See it in a demo · this iPhone uses the Form');
     expect(createRowNote({ kind: 'ready', path: '/m' }, { device: 'iPhone' })).toBeUndefined();
+  });
+
+  it('keeps a download that was asked for on the row, though it waits or failed', () => {
+    expect(
+      createRowNote(
+        { for: 'wifi', kind: 'waiting', received: 0, total: SIZE },
+        { device: 'iPhone' },
+      ),
+    ).toEqual({ asked: true, subtitle: 'The Assistant downloads on Wi-Fi · try the demo' });
+    expect(createRowNote({ kind: 'failed', message: 'Offline' }, { device: 'Mac' })).toEqual({
+      asked: true,
+      subtitle: 'The download did not finish · try the demo',
+    });
+    expect(createRowNote({ kind: 'declined' }, { device: 'iPhone' })?.asked).toBe(false);
   });
 });
