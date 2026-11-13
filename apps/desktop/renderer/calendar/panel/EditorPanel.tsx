@@ -3,6 +3,7 @@ import {
   CONVERT_SCOPE_HINT,
   type EditorSeed,
   type EditorSourceKind,
+  type EditorView,
   editorTitle,
   stepName,
   stepSource,
@@ -34,6 +35,7 @@ import { AssistantView } from '../assistant/AssistantView.tsx';
 import { EventEditorForm } from '../EventEditorForm.tsx';
 import { MoveConfirm } from '../MoveConfirm.tsx';
 import { DraftPager } from './DraftPager.tsx';
+import { useViewSwitch } from './useViewSwitch.ts';
 import { ReminderEditorForm } from '../ReminderEditorForm.tsx';
 import { TaskEditorForm } from '../TaskEditorForm.tsx';
 import { FieldFlashContext, useFlash } from '../../ui/useFlash.ts';
@@ -47,8 +49,7 @@ const KIND_LABELS: Record<ItemKind, string> = {
   task: 'Task',
 };
 
-/** The editor's two views of one draft: the conversation, and the fields. */
-export type EditorView = 'assistant' | 'form';
+export type { EditorView } from '@calendar/app-state';
 
 /**
  * The side panel's editor: a header that stays put (the title, the two
@@ -176,8 +177,13 @@ export function EditorPanel({
   // The two views. Without an Assistant (a read-only item, a conversion)
   // there is the form alone, and no tabs.
   const assists = editor.assistant !== 'none';
-  const [view, setView] = useState<EditorView>(assists ? opensOn : 'form');
-  const shown: EditorView = assists ? view : 'form';
+  // The form rises out of the newest card and folds back into it (`useViewSwitch`).
+  const switcher = useViewSwitch(assists ? opensOn : 'form');
+  const shown: EditorView = assists ? switcher.view : 'form';
+  // The pane leaving while the switch runs: still drawn, under the one
+  // coming in, out of reach.
+  const leaving = switcher.flight?.from;
+  const arriving = leaving ? 'relative z-10' : '';
   // The model answers a moment after the editor opened. Not ready, and
   // nothing said or typed yet: the form is what there is to work with,
   // once — the Assistant says why and is a tab away.
@@ -190,7 +196,7 @@ export function EditorPanel({
     }
     answered.current = true;
     if (availability.status !== 'ready' && steps.of === 0) {
-      setView('form');
+      switcher.snap('form');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the first answer only
   }, [availability.status]);
@@ -212,9 +218,10 @@ export function EditorPanel({
   // brings the view forward (the count is the window's, and outlives an
   // editor).
   const focusAtOpen = useRef(quickAddFocus);
+  const toAssistant = useEffectEvent(() => switcher.flip('assistant'));
   useEffect(() => {
     if (quickAddFocus !== focusAtOpen.current) {
-      setView('assistant');
+      toAssistant();
     }
   }, [quickAddFocus]);
 
@@ -229,6 +236,7 @@ export function EditorPanel({
     <div
       aria-label={mode === 'todo' ? 'Task editor' : 'Event editor'}
       className="flex min-h-0 flex-1 flex-col"
+      data-switching={switcher.flight ? '' : undefined}
       data-testid="editor"
       data-view={shown}
     >
@@ -239,7 +247,7 @@ export function EditorPanel({
         {assists ? (
           <SegmentedControl
             label="View"
-            onChange={setView}
+            onChange={switcher.flip}
             options={[
               { label: 'Assistant', testId: 'editor-view-assistant', value: 'assistant' },
               { label: 'Form', testId: 'editor-view-form', value: 'form' },
@@ -261,87 +269,101 @@ export function EditorPanel({
 
       <DraftPager confirming={moveConfirmation.pending !== null} editor={editor} />
 
-      {assists ? (
-        <div
-          className={shown === 'assistant' ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}
-          data-testid="editor-assistant"
-        >
-          <AssistantView
-            active={shown === 'assistant'}
-            availability={availability}
-            banner={lessonBanner}
-            calendars={calendars}
-            editKey={userEdits}
-            editor={editor}
-            focusSignal={quickAddFocus}
-            initialText={seed.quickAddText}
-            note={seed.thread?.note}
-            onCapture={onCapture}
-            onEdit={() => setView('form')}
-            onPhrase={async (text) => {
-              const message = await onPhrase(text);
-              if (message === undefined) {
-                lessonDone();
-              }
-              return message;
-            }}
-            taskLists={taskLists}
-            timeZone={timeZone}
-          />
-        </div>
-      ) : null}
-
-      <div
-        className={
-          shown === 'form'
-            ? 'flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pt-1 pb-4'
-            : 'hidden'
-        }
-        data-testid="editor-form"
-      >
-        {/* The lesson's frame is over the form too: without the model, the form is where it opens. */}
-        {lessonBanner}
-        {/* An older step on show is looked at, not edited. */}
-        <fieldset className="contents" disabled={previewing}>
-          {showToggle ? (
-            <SegmentedControl
-              className="mb-4 w-full"
-              grow
-              label="Kind"
-              onChange={(option) => void switchTo(option)}
-              options={available.map((option) => ({
-                disabled:
-                  previewing ||
-                  moveConfirmation.pending !== null ||
-                  (option !== 'event' && convertBlocked),
-                label: KIND_LABELS[option],
-                testId: `mode-${option}`,
-                title: option !== 'event' && convertBlocked ? CONVERT_SCOPE_HINT : undefined,
-                value: option,
-              }))}
-              ref={kindMark}
-              size="sm"
-              value={kind}
+      <div className="relative flex min-h-0 flex-1 flex-col" ref={switcher.frame}>
+        {assists ? (
+          <div
+            className={
+              leaving === 'assistant'
+                ? 'absolute inset-0 flex flex-col'
+                : shown === 'assistant'
+                  ? `${arriving} flex min-h-0 flex-1 flex-col`
+                  : 'hidden'
+            }
+            data-testid="editor-assistant"
+            inert={leaving === 'assistant'}
+            ref={switcher.assistantPane}
+          >
+            <AssistantView
+              active={shown === 'assistant'}
+              availability={availability}
+              banner={lessonBanner}
+              calendars={calendars}
+              editKey={userEdits}
+              editor={editor}
+              focusSignal={quickAddFocus}
+              initialText={seed.quickAddText}
+              note={seed.thread?.note}
+              onCapture={onCapture}
+              onEdit={() => switcher.flip('form')}
+              onPhrase={async (text) => {
+                const message = await onPhrase(text);
+                if (message === undefined) {
+                  lessonDone();
+                }
+                return message;
+              }}
+              taskLists={taskLists}
+              timeZone={timeZone}
             />
-          ) : null}
+          </div>
+        ) : null}
 
-          {/* The fields the step on show changed stay marked (`useFieldFlash`). */}
-          <FieldFlashContext value={marks}>
-            {mode === 'todo' ? (
-              // The selected list's provider picks the form: a Reminders list
-              // exposes time/priority/alert/repeat/URL; a Google list gets the
-              // plain title/date/notes form. The kind control moves between the
-              // providers; the list picker stays within one.
-              taskModel.provider === 'apple' ? (
-                <ReminderEditorForm task={task} taskModel={taskModel} />
+        <div
+          className={
+            leaving === 'form'
+              ? 'absolute inset-0 flex flex-col overflow-y-auto px-4 pt-1 pb-4'
+              : shown === 'form'
+                ? `${arriving} flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pt-1 pb-4`
+                : 'hidden'
+          }
+          data-testid="editor-form"
+          inert={leaving === 'form'}
+          ref={switcher.formPane}
+        >
+          {/* The lesson's frame is over the form too: without the model, the form is where it opens. */}
+          {lessonBanner}
+          {/* An older step on show is looked at, not edited. */}
+          <fieldset className="contents" disabled={previewing}>
+            {showToggle ? (
+              <SegmentedControl
+                className="mb-4 w-full"
+                grow
+                label="Kind"
+                onChange={(option) => void switchTo(option)}
+                options={available.map((option) => ({
+                  disabled:
+                    previewing ||
+                    moveConfirmation.pending !== null ||
+                    (option !== 'event' && convertBlocked),
+                  label: KIND_LABELS[option],
+                  testId: `mode-${option}`,
+                  title: option !== 'event' && convertBlocked ? CONVERT_SCOPE_HINT : undefined,
+                  value: option,
+                }))}
+                ref={kindMark}
+                size="sm"
+                value={kind}
+              />
+            ) : null}
+
+            {/* The fields the step on show changed stay marked (`useFieldFlash`). */}
+            <FieldFlashContext value={marks}>
+              {mode === 'todo' ? (
+                // The selected list's provider picks the form: a Reminders list
+                // exposes time/priority/alert/repeat/URL; a Google list gets the
+                // plain title/date/notes form. The kind control moves between the
+                // providers; the list picker stays within one.
+                taskModel.provider === 'apple' ? (
+                  <ReminderEditorForm task={task} taskModel={taskModel} />
+                ) : (
+                  <TaskEditorForm task={task} taskModel={taskModel} />
+                )
               ) : (
-                <TaskEditorForm task={task} taskModel={taskModel} />
-              )
-            ) : (
-              <EventEditorForm model={eventModel} />
-            )}
-          </FieldFlashContext>
-        </fieldset>
+                <EventEditorForm model={eventModel} />
+              )}
+            </FieldFlashContext>
+          </fieldset>
+        </div>
       </div>
 
       <EditorFooter

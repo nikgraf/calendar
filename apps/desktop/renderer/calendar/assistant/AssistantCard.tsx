@@ -111,7 +111,11 @@ export function AssistantCard({
         </span>
         <span className="shrink-0 font-semibold tracking-wide uppercase">{label}</span>
       </div>
-      <p className="text-base leading-snug font-semibold" data-testid="assistant-card-title">
+      <p
+        className="text-base leading-snug font-semibold"
+        data-switch-anchor
+        data-testid="assistant-card-title"
+      >
         <span className={retitled ? MARK : ''} data-changed={retitled ? '' : undefined}>
           {draft.item.prefill.title || 'Untitled'}
         </span>

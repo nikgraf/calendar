@@ -200,6 +200,9 @@ const wasAt = (start: string) =>
   `!!document.querySelector('[data-testid="draft-was"][data-draft-start="${start}"]')`;
 const traces = `document.querySelectorAll('[data-testid="draft-was"]').length`;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+/** The top of the title a pane's switch is anchored on (`data-switch-anchor`). */
+const topOf = (pane: string) =>
+  `document.querySelector('[data-testid="${pane}"] [data-switch-anchor]').getBoundingClientRect().top`;
 
 describe('The editor’s Assistant and Form views', () => {
   let app: App;
@@ -368,6 +371,89 @@ describe('The editor’s Assistant and Form views', () => {
         location: 'Figlmüller, Wollzeile 5, 1010 Wien',
         startUtc: at(12, 30, tomorrow),
       });
+  });
+
+  it('raises the form out of the card and folds it back, the pane leaving out of reach until it ends', async () => {
+    const { cdp } = app;
+    // What each switch did, read as it starts: the form pane's first frame.
+    const watch = `(() => {
+      window.__switches = [];
+      const editor = document.querySelector('[data-testid="editor"]');
+      new MutationObserver(() => {
+        const [first] = document
+          .querySelector('[data-testid="editor-form"]')
+          .getAnimations()
+          .map((animation) => animation.effect.getKeyframes()[0]);
+        window.__switches.push({
+          leaving: [...document.querySelectorAll('[inert]')].map((pane) => pane.dataset.testid),
+          start: first?.transform ?? null,
+          switching: editor.hasAttribute('data-switching'),
+        });
+      }).observe(editor, { attributeFilter: ['data-switching'], attributes: true });
+    })()`;
+    const switches = `window.__switches`;
+    const settled = `!document.querySelector('[data-testid="editor"]').hasAttribute('data-switching')`;
+    const reducedMotion = async (value: 'no-preference' | 'reduce') => {
+      await cdp.send('Emulation.setEmulatedMedia', {
+        features: [{ name: 'prefers-reduced-motion', value }],
+      });
+      // A background window takes emulated media only once it draws a frame.
+      await cdp.send('Page.captureScreenshot');
+      await cdp.waitFor(`matchMedia('(prefers-reduced-motion: ${value})').matches`);
+    };
+
+    await cdp.eval(COMMAND_N);
+    await cdp.waitFor(headingIs('New event'));
+    await cdp.say('Coffee | +1 | 10:00-11:00');
+    await cdp.waitFor(`${card('title')} === 'Coffee'`);
+    await cdp.eval(watch);
+    const cardTop = await cdp.eval<number>(topOf('editor-assistant'));
+
+    // To the form: its title starts on the card's, well below its own
+    // place, and the conversation is drawn over it, out of reach, until
+    // the motion ends.
+    await cdp.clickTestId('editor-view-form');
+    await cdp.waitFor(settled);
+    const [start, end] =
+      await cdp.eval<Array<{ leaving: Array<string>; start: string | null; switching: boolean }>>(
+        switches,
+      );
+    expect(start).toMatchObject({ leaving: ['editor-assistant'], switching: true });
+    const offset = Number(/translateY\((-?[\d.]+)px\)/.exec(start?.start ?? '')?.[1]);
+    expect(end).toMatchObject({ leaving: [], switching: false });
+    // Its first frame put the form's title on the card's.
+    const formTop = await cdp.eval<number>(topOf('editor-form'));
+    expect(cardTop).toBeGreaterThan(formTop);
+    expect(Math.abs(offset - (cardTop - formTop))).toBeLessThan(1);
+    expect(await cdp.eval<string>(view)).toBe('form');
+    expect(
+      await cdp.eval<boolean>(
+        exists('editor-assistant') +
+          ` && document.querySelector('[data-testid="editor-assistant"]').classList.contains('hidden')`,
+      ),
+    ).toBe(true);
+
+    // Back: the form leaves, out of reach, folding down.
+    await cdp.eval(`window.__switches = []`);
+    await cdp.clickTestId('editor-view-assistant');
+    await cdp.waitFor(settled);
+    expect((await cdp.eval<Array<{ leaving: Array<string> }>>(switches))[0]?.leaving).toEqual([
+      'editor-form',
+    ]);
+    expect(await cdp.eval<string>(view)).toBe('assistant');
+
+    // Under Reduce Motion nothing moves: a crossfade.
+    try {
+      await reducedMotion('reduce');
+      await cdp.eval(`window.__switches = []`);
+      await cdp.clickTestId('editor-view-form');
+      await cdp.waitFor(settled);
+      expect((await cdp.eval<Array<{ start: string | null }>>(switches))[0]?.start).toBe(
+        'translateY(0px)',
+      );
+    } finally {
+      await reducedMotion('no-preference');
+    }
   });
 
   it('says in the Assistant why a save did nothing; in the form the form says it', async () => {

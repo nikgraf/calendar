@@ -744,11 +744,18 @@ export class Cdp {
     await this.pressEnter();
   }
 
-  /** Brings one of the editor's two views forward, by its tab, and waits until it is the one on show. */
+  /**
+   * Brings one of the editor's two views forward, by its tab, and waits
+   * until it is the one on show and the switch's motion has ended
+   * (`data-switching`): the pane leaving is still drawn until then.
+   */
   async showEditorView(view: 'assistant' | 'form'): Promise<void> {
     await this.clickTestId(`editor-view-${view}`);
     await this.waitFor<boolean>(
-      `document.querySelector('[data-testid="editor"]')?.dataset.view === ${JSON.stringify(view)}`,
+      `(() => {
+        const editor = document.querySelector('[data-testid="editor"]');
+        return editor?.dataset.view === ${JSON.stringify(view)} && !editor.hasAttribute('data-switching');
+      })()`,
     );
   }
 

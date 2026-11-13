@@ -120,6 +120,7 @@ export function EventEditorForm({ model }: { model: ReturnType<typeof useEventEd
         <input
           autoFocus
           className={`${field} py-2 text-base`}
+          data-switch-anchor
           onChange={(changeEvent) => setTitle(changeEvent.target.value)}
           placeholder="Title"
           ref={titleFlash}
