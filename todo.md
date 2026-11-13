@@ -191,7 +191,8 @@ the served model (#184) and slot proposals (#185) are in
       sentences and capture still need Apple's model (data and a tuned
       prompt each). The finder bench (#316) measures find a time: Apple's
       model 12/40 with the word rules and 0/40 without, 13 phrases
-      unanswered (it writes until its context runs out); DeepSeek V4
+      unanswered (10 written until its context ran out, 2 past 180 s, 1
+      guardrail); DeepSeek V4
       Flash 39/40 without the rules. Search and capture have no bench yet
       (capture's schema leaves the time and place optional,
       and Apple's model filled no optional field on any quick-add phrase

@@ -89,9 +89,15 @@
       "duration": 45,
       "window": "default",
       "days": [1, 2, 3, 4, 5],
-      "bounds": {
-        "earliest": "17:00"
-      },
+      "bounds": [
+        {
+          "earliest": "17:00"
+        },
+        {
+          "earliest": "17:00",
+          "latest": "21:00"
+        }
+      ],
       "title": ["run", "a run"]
     }
   },
@@ -415,9 +421,15 @@
       "duration": 45,
       "window": "default",
       "days": [1, 2, 3, 4, 5],
-      "bounds": {
-        "earliest": "18:00"
-      },
+      "bounds": [
+        {
+          "earliest": "18:00"
+        },
+        {
+          "earliest": "18:00",
+          "latest": "21:00"
+        }
+      ],
       "title": null
     }
   },

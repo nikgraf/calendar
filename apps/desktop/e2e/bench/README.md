@@ -188,8 +188,9 @@ name, or clock times) and what the time is for. The window and the
 weekdays are scored together, as the dates searched: the coming
 Wednesday and the coming week on Wednesdays are the same search. The
 bounds are scored as the solver searches them, its own 08:00–20:00 where
-one end is not set. Each report says what an empty answer scores (the
-floor the code's defaults give: 8 of 40 with the rules).
+one end is not set, and only the dates from today on (the solver offers
+no slot in the past). Each report says what an empty answer scores: the
+floor the code's defaults give, 8 of 40 with the rules on most days.
 `MODEL_BENCH_CASES` picks cases by language ("de", "en") or id part. The
 report, `output/bench/finder/finder-<yyyymmdd-hhmm>-<sha>-<provider>.json`,
 keeps each prompt and answer as the model got and gave them, and each

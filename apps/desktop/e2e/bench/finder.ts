@@ -1,5 +1,11 @@
 import { readFileSync } from 'node:fs';
-import { type FindTimeResult, type Period, periodTimes } from '@calendar/ai';
+import {
+  type FindTimeParse,
+  type FindTimeResult,
+  normalizeFindTime,
+  type Period,
+  periodTimes,
+} from '@calendar/ai';
 import { finderWindowDates, Temporal } from '@calendar/core';
 import { Schema } from 'effect';
 import { fold } from './check.ts';
@@ -98,7 +104,16 @@ export type FinderCase = typeof FinderCase.Type;
 
 const decodeCases = Schema.decodeUnknownSync(Schema.Array(FinderCase));
 
-/** The cases in `finder.json`: one array, ids unique. */
+/**
+ * A clock bound with one end open beyond the solver's daytime ("after
+ * 9pm" alone) would be scored as an empty search: such a case names both ends.
+ */
+const openBeyondDaytime = (bound: Bound): boolean =>
+  !('period' in bound) &&
+  ((bound.latest === undefined && bound.earliest !== undefined && bound.earliest >= '20:00') ||
+    (bound.earliest === undefined && bound.latest !== undefined && bound.latest <= '08:00'));
+
+/** The cases in `finder.json`: one array, ids unique, every bound one the solver can search. */
 export const loadFinderCases = (path: string): ReadonlyArray<FinderCase> => {
   const cases = decodeCases(JSON.parse(readFileSync(path, 'utf8')));
   const seen = new Set<string>();
@@ -107,6 +122,14 @@ export const loadFinderCases = (path: string): ReadonlyArray<FinderCase> => {
       throw new Error(`finder.json: the id "${finderCase.id}" is there twice`);
     }
     seen.add(finderCase.id);
+    const { bounds } = finderCase.expect;
+    const each: ReadonlyArray<Bound> =
+      bounds === null ? [] : Array.isArray(bounds) ? bounds : [bounds as Bound];
+    if (each.some(openBeyondDaytime)) {
+      throw new Error(
+        `finder.json: "${finderCase.id}" leaves a bound open beyond 08:00–20:00; name both ends`,
+      );
+    }
   }
   return cases;
 };
@@ -208,6 +231,12 @@ export interface FinderCheck {
 
 const NONE = '-';
 
+/** A window without the days before today. */
+const fromToday = (window: Window, today: string): Window =>
+  Temporal.PlainDate.compare(window.windowStartDate, today) < 0
+    ? { ...window, windowStartDate: today }
+    : window;
+
 /** The dates a window and its weekdays search (no weekdays: every day of the window). */
 export const datesSearched = (window: Window, days: ReadonlyArray<number> | undefined): string => {
   const end = Temporal.PlainDate.from(window.windowEndDate);
@@ -270,9 +299,11 @@ export const checkFinder = (
     expect.duration === 'default'
       ? anyLengthUnsaid || constraints.durationMinutes === FALLBACK_MINUTES
       : constraints.durationMinutes === expect.duration;
-  const dates = datesSearched(constraints, constraints.daysOfWeek);
+  // From today on: the solver offers no slot in the past, so "this week" as
+  // Monday to Sunday on a Wednesday searches what Wednesday to Sunday does.
+  const dates = datesSearched(fromToday(constraints, today), constraints.daysOfWeek);
   const expectedDates = expectedWindows(expect.window, today).map((window) =>
-    datesSearched(window, expect.days ?? undefined),
+    datesSearched(fromToday(window, today), expect.days ?? undefined),
   );
   const said = title === undefined ? '' : fold(title);
   const right: Readonly<Record<FinderField, boolean>> = {
@@ -288,6 +319,169 @@ export const checkFinder = (
       dates: whenText(constraints, constraints.daysOfWeek),
       duration: String(constraints.durationMinutes),
       title: title ?? NONE,
+    },
+  };
+};
+
+/** How a model's answer is read: as the app does, word rules and all, or without them. */
+export const ARMS = ['rules', 'raw'] as const;
+export type Arm = (typeof ARMS)[number];
+
+export interface ArmResult {
+  readonly failed: ReadonlyArray<FinderField>;
+  readonly got: FinderGot;
+}
+
+export interface FinderCaseReport {
+  /** The model's answer as it came. */
+  readonly answer: unknown;
+  readonly arms: Readonly<Record<Arm, ArmResult>>;
+  readonly error?: string | undefined;
+  readonly id: string;
+  readonly lang: string;
+  readonly ms: number;
+  readonly prompt: string;
+  /** What the arms read, where a provider's wrapper changed the answer (every field required). */
+  readonly read?: unknown;
+  readonly text: string;
+}
+
+export interface ArmScore {
+  readonly cases: number;
+  readonly fields: Readonly<Record<FinderField, number>>;
+}
+
+export interface FinderReport {
+  readonly cases: ReadonlyArray<FinderCaseReport>;
+  /** What an empty answer scores in each arm on these cases: the floor the code's defaults give. */
+  readonly floor?: Readonly<Record<Arm, number>> | undefined;
+  readonly provider: string;
+  /**
+   * A report scored again (`MODEL_BENCH_RESCORE`): the run whose answers it
+   * holds, and the cases it had that are gone or say other words now.
+   */
+  readonly rescored?:
+    | {
+        readonly left?: ReadonlyArray<string> | undefined;
+        readonly sha: string;
+        readonly when: string;
+      }
+    | undefined;
+  readonly score: Readonly<Record<Arm, ArmScore>> & { readonly total: number };
+  readonly settings?: string | undefined;
+  readonly sha: string;
+  readonly timeZone: string;
+  readonly today: string;
+  readonly when: string;
+}
+
+const NO_ANSWER: FindTimeResult = { kind: 'rejected', reason: 'the model gave no answer' };
+
+/** An answer the code cannot read (a list where a number goes) is a refusal, not the end of the run. */
+const normalized = (parse: FindTimeParse, options: Parameters<typeof normalizeFindTime>[1]) => {
+  try {
+    return normalizeFindTime(parse, options);
+  } catch (error) {
+    return {
+      kind: 'rejected' as const,
+      reason: `the answer could not be read (${error instanceof Error ? error.message : String(error)})`,
+    };
+  }
+};
+
+/**
+ * One answer, read by each arm. Without the rules the code's defaults
+ * still fill what the model leaves out: the coming week for a window, the
+ * finder's own length for a length; and a case whose words give no length
+ * passes any, since the schema has the model write one.
+ */
+export const readAnswer = (
+  answer: unknown,
+  finderCase: FinderCase,
+  today: string,
+): Record<Arm, ArmResult> => {
+  const parse =
+    typeof answer === 'object' && answer !== null ? (answer as FindTimeParse) : undefined;
+  const read = (arm: Arm): FindTimeResult =>
+    parse === undefined
+      ? NO_ANSWER
+      : normalized(
+          arm === 'rules'
+            ? parse
+            : { ...parse, durationMinutes: parse.durationMinutes ?? FALLBACK_MINUTES },
+          arm === 'rules'
+            ? {
+                fallbackDurationMinutes: FALLBACK_MINUTES,
+                phrase: finderCase.text,
+                referenceDate: today,
+              }
+            : { referenceDate: today },
+        );
+  return {
+    raw: checkFinder(finderCase.expect, read('raw'), today, { anyLengthUnsaid: true }),
+    rules: checkFinder(finderCase.expect, read('rules'), today),
+  };
+};
+
+/** What an empty answer scores in each arm: how much the code's defaults give for nothing. */
+export const floorOf = (cases: ReadonlyArray<FinderCase>, today: string): Record<Arm, number> => {
+  const empty = cases.map((each) => readAnswer({}, each, today));
+  return {
+    raw: empty.filter((each) => each.raw.failed.length === 0).length,
+    rules: empty.filter((each) => each.rules.failed.length === 0).length,
+  };
+};
+
+export const scoreOf = (cases: ReadonlyArray<FinderCaseReport>): FinderReport['score'] => {
+  const arm = (name: Arm): ArmScore => ({
+    cases: cases.filter((each) => each.arms[name].failed.length === 0).length,
+    fields: Object.fromEntries(
+      FINDER_FIELDS.map((field) => [
+        field,
+        cases.filter((each) => !each.arms[name].failed.includes(field)).length,
+      ]),
+    ) as Record<FinderField, number>,
+  });
+  return { raw: arm('raw'), rules: arm('rules'), total: cases.length };
+};
+
+/**
+ * A report scored again by the cases and the code as they are now: the
+ * answers it holds, read on the day they were given. A case that is gone
+ * or says other words now has no answer to score and is left out.
+ */
+export const rescoreFinder = (
+  before: FinderReport,
+  cases: ReadonlyArray<FinderCase>,
+  stamp: { readonly sha: string; readonly when: string },
+): { readonly left: ReadonlyArray<string>; readonly report: FinderReport } => {
+  const byId = new Map(cases.map((each) => [each.id, each]));
+  const left: Array<string> = [];
+  const kept: Array<FinderCaseReport> = [];
+  for (const old of before.cases) {
+    const now = byId.get(old.id);
+    if (now === undefined || now.text !== old.text) {
+      left.push(old.id);
+      continue;
+    }
+    kept.push({ ...old, arms: readAnswer(old.read ?? old.answer, now, before.today) });
+  }
+  const scored = cases.filter((each) => kept.some((report) => report.id === each.id));
+  return {
+    left,
+    report: {
+      ...before,
+      cases: kept,
+      floor: floorOf(scored, before.today),
+      // A rescored report names the run it came from, however often it is scored again.
+      rescored: {
+        ...(left.length > 0 ? { left } : {}),
+        sha: before.rescored?.sha ?? before.sha,
+        when: before.rescored?.when ?? before.when,
+      },
+      score: scoreOf(kept),
+      sha: stamp.sha,
+      when: stamp.when,
     },
   };
 };

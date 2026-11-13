@@ -1195,8 +1195,9 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   the dates searched. Baseline: Apple's model as the app asks it 12/40
   with the rules (an empty answer scores 8), 0/40 without, 13 unanswered
   (10 ran out of context, about 170 s each); every field required 20/40;
-  DeepSeek V4 Flash 39/40 either way. Rejected: scoring the slots found (they depend on a calendar),
-  window and weekdays apart. Open: search and capture have no bench.
+  DeepSeek V4 Flash 39/40 either way. Rejected: scoring the slots found
+  (they depend on a calendar), window and weekdays apart. Open: search
+  and capture have no bench.
 - **The editor's two views: Assistant and Form** (2026-11-12, #308) —
   the assistant is its own view, a conversation whose answers are the
   item as a card with what changed marked, and the form a second view of
