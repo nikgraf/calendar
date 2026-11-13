@@ -17,6 +17,10 @@ const step = (cdp: App['cdp']) =>
   );
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const textOf = (testId: string) =>
+  `(document.querySelector('[data-testid="${testId}"]')?.textContent ?? '')`;
+const card = (part: string) => textOf(`assistant-card-${part}`);
+const input = `document.querySelector('[data-testid="quick-add-input"]')`;
 
 /** The fake Google API with no account yet: the setup's sign-in adds this one. */
 const googleFixture = {
@@ -378,5 +382,115 @@ describe('onboarding stays away where it does not belong', () => {
       ),
     ).toBe(false);
     expect(await onboarding(off)).toBeNull();
+  });
+});
+
+describe('Create with AI before the Assistant’s model is here: the demo, and the download offered', () => {
+  let app: App;
+  // The model not asked for yet: a manifest nothing fetches before
+  // Download, and whose host then refuses (the download fails).
+  const manifest = JSON.stringify({
+    bytes: 10,
+    file: 'e2e.gguf',
+    sha256: '0'.repeat(64),
+    url: 'http://127.0.0.1:9/e2e.gguf',
+    version: 'e2e-1',
+  });
+
+  beforeAll(async () => {
+    // An account already there: no setup, the card at once.
+    app = await launchApp(
+      {
+        accounts: [
+          new Account({
+            contactsEnabled: false,
+            createdAt: 1,
+            email: 'demo@example.com',
+            id: 'acc-demo',
+            provider: 'google',
+            status: 'ok',
+            tasksEnabled: false,
+          }),
+        ],
+        calendars: [
+          new CalendarInfo({
+            accessRole: 'owner',
+            accountId: 'acc-demo',
+            colorHex: '#16a34a',
+            id: 'cal-demo',
+            isPrimary: true,
+            isVisible: true,
+            provider: 'google',
+            summary: 'Personal',
+            timeZone: 'Europe/Vienna',
+          }),
+        ],
+        events: [],
+      },
+      { assistantModel: { manifest }, onboarding: 'on' },
+    );
+  });
+
+  afterAll(async () => {
+    await app?.stop();
+  });
+
+  it('runs the lesson’s two phrases on the real editor, then offers the model and says when its download failed', async () => {
+    const { cdp } = app;
+    await cdp.waitFor(
+      `${textOf('getting-started-subtitle-create')} === 'Try the demo · the Assistant downloads once'`,
+    );
+    await cdp.clickTestId('getting-started-row-create');
+    await cdp.waitFor(
+      `document.querySelector('[data-testid="lesson-banner"]')?.dataset.lesson === 'create'`,
+    );
+    // The banner says what the Assistant is and offers its download; the
+    // editor stays on the Assistant, its field holding the lesson's phrase.
+    expect(await cdp.eval<string>(textOf('lesson-banner-note'))).toContain(
+      'a small model trained on calendar phrases, running on this Mac',
+    );
+    expect(await cdp.eval<string>(textOf('lesson-model-action'))).toBe('Download (834 MB)');
+    expect(
+      await cdp.eval<string>(`document.querySelector('[data-testid="editor"]').dataset.view`),
+    ).toBe('assistant');
+    expect(
+      await cdp.eval<boolean>(`!!document.querySelector('[data-testid="assistant-demo-empty"]')`),
+    ).toBe(true);
+    expect(await cdp.eval<string>(`${input}.value`)).toBe(LESSON_CREATE_PHRASE);
+    expect(await cdp.eval<boolean>(`${input}.readOnly`)).toBe(true);
+    expect(await cdp.eval<string>(textOf('quick-add-status'))).toBe('Demo · this phrase');
+
+    // The phrase: the real card, from the demo's answer — and the lesson tried.
+    await cdp.clickTestId('quick-add-demo-send');
+    await cdp.waitFor(`${card('title')} === 'Lunch with Sam'`, 10_000);
+    expect(await cdp.eval<string>(card('time'))).toBe('12:30–13:30');
+    expect(await cdp.eval<string>(card('location'))).toBe('Mercato');
+    expect(
+      await cdp.eval<boolean>(`!!document.querySelector('[data-testid="assistant-demo-note"]')`),
+    ).toBe(true);
+    await expect
+      .poll(async () => (await onboarding(app))?.lessons.create, { timeout: 10_000 })
+      .toBe('done');
+
+    // Then its change, as a step of its own.
+    await cdp.waitFor(`${input}.value === 'at 1 instead'`);
+    expect(await cdp.eval<string>(textOf('quick-add-status'))).toBe('Demo · now a change to it');
+    await cdp.clickTestId('quick-add-demo-send');
+    await cdp.waitFor(`${card('time')} === '13:00–14:0012:30–13:30'`, 10_000);
+    expect(await cdp.eval<string>(textOf('assistant-changed'))).toBe('Changed: time');
+
+    // Through: the field waits for the model.
+    await cdp.waitFor(`${input}.disabled`);
+    expect(await cdp.eval<string>(`${input}.placeholder`)).toBe(
+      'The Assistant answers anything once its model is here',
+    );
+
+    // The download, asked for from the banner: this host refuses, and the
+    // banner says so and offers it again (the card's row is ticked by now).
+    await cdp.clickTestId('lesson-model-action');
+    await cdp.waitFor(`${textOf('lesson-model-action')} === 'Try Again'`, 10_000);
+    expect(await cdp.eval<string>(textOf('lesson-banner-note'))).toContain(
+      'The download of the Assistant’s model did not finish',
+    );
   });
 });

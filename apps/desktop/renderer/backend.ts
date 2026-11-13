@@ -69,7 +69,6 @@ declare global {
       appleCalendarOpen: () => Promise<boolean>;
       appleCalendarStatus: () => Promise<string>;
       /** The question at launch about the Assistant's model, once, while it was never answered. */
-      assistantAsk: () => Promise<void>;
       assistantDownload: () => Promise<void>;
       assistantGenerate: (prompt: string) => Promise<{ json: string }>;
       assistantRetry: () => Promise<void>;

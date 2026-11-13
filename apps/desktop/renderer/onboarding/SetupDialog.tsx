@@ -15,7 +15,6 @@ import {
   type SetupOutcome,
 } from '@calendar/core';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
-import { askForAssistantModel } from '../ai/assistantModel.ts';
 import { Dialog } from '../Dialog.tsx';
 import { ReadCodePanel } from '../settingsCode/ReadCodePanel.tsx';
 import { type PendingImport, pickSettingsFile } from '../settingsTransfer.ts';
@@ -114,14 +113,6 @@ export function SetupDialog() {
     setUntouched(false);
     setOpen(null);
   }
-  // The question about the Assistant's model comes once the setup is out
-  // of the way: off, or decided and closed.
-  const settled = enabled === false || (enabled === true && decided && open === null);
-  useEffect(() => {
-    if (settled) {
-      askForAssistantModel();
-    }
-  }, [settled]);
   useEffect(
     () =>
       onSetupRequested(() => {

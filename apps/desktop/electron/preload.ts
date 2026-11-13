@@ -14,7 +14,6 @@ contextBridge.exposeInMainWorld('calendarBridge', {
   appleCalendarOpen: () => ipcRenderer.invoke('appleCalendar:open'),
   appleCalendarStatus: () => ipcRenderer.invoke('appleCalendar:status'),
   /** The question at launch (once, while the Assistant's model was never answered for its version). */
-  assistantAsk: () => ipcRenderer.invoke('assistant:ask'),
   /** The Assistant's Download button: the person agrees, the download starts. */
   assistantDownload: () => ipcRenderer.invoke('assistant:download'),
   /** One prompt to the Assistant's own model (assistantModel/), its JSON answer back. */

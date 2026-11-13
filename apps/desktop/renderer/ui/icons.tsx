@@ -28,6 +28,11 @@ function Icon({ children, size = 16, ...rest }: IconProps & { readonly children:
   );
 }
 
+export const ArrowUpIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M12 19V5M6 11l6-6 6 6" />
+  </Icon>
+);
 export const AlertIcon = (props: IconProps) => (
   <Icon {...props}>
     <circle cx="12" cy="12" r="9" />

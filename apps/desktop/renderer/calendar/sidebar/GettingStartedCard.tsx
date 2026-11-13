@@ -1,3 +1,4 @@
+import { createRowNote } from '@calendar/ai';
 import { useAccountCount, useOnboarding, useUpdateOnboarding } from '@calendar/app-state';
 import {
   cardVisible,
@@ -8,6 +9,7 @@ import {
   lessonRows,
 } from '@calendar/core';
 import { useState } from 'react';
+import { assistantStatusOf, useAssistantModelState } from '../../ai/assistantModel.ts';
 import { useOnboardingEnabled } from '../../onboarding/enabled.ts';
 import { Button } from '../../ui/Button.tsx';
 import { IconButton } from '../../ui/IconButton.tsx';
@@ -37,6 +39,13 @@ export function GettingStartedCard({
   // Null until read: the empty fallback would draw "Add your accounts" for a beat.
   const accountCount = useAccountCount();
   const [menu, setMenu] = useState<{ readonly x: number; readonly y: number } | null>(null);
+  // The Create row says where the Assistant's model stands until it is
+  // ready: the download shows here, not in a dialog.
+  const model = useAssistantModelState();
+  const createNote =
+    model === undefined || assistantStatusOf(model) === 'ready'
+      ? undefined
+      : createRowNote(model, { device: 'Mac' });
   if (!enabled || state === null || !cardVisible(state) || accountCount === null) {
     return null;
   }
@@ -107,6 +116,7 @@ export function GettingStartedCard({
         {rows.map((row) => {
           const copy = lessonCopy(row.id, 'mac');
           const ticked = row.mark !== undefined;
+          const note = row.id === 'create' ? createNote : undefined;
           return (
             <li key={row.id}>
               <button
@@ -130,8 +140,22 @@ export function GettingStartedCard({
                     {copy.title}
                   </span>
                   {ticked ? null : (
-                    <span className="block truncate text-[11px] text-ink-secondary">
-                      {copy.subtitle}
+                    <span
+                      className="block truncate text-[11px] text-ink-secondary"
+                      data-testid={`getting-started-subtitle-${row.id}`}
+                    >
+                      {note?.subtitle ?? copy.subtitle}
+                    </span>
+                  )}
+                  {ticked || note?.progress === undefined ? null : (
+                    <span
+                      className="mt-1 block h-[3px] overflow-hidden rounded-full bg-fill"
+                      data-testid="getting-started-create-progress"
+                    >
+                      <span
+                        className="block h-full rounded-full bg-primary"
+                        style={{ width: `${String(note.progress)}%` }}
+                      />
                     </span>
                   )}
                 </span>

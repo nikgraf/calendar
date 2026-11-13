@@ -11,13 +11,13 @@ import {
   type useThreadEditor,
   versionLabel,
 } from '@calendar/app-state';
-import type { CalendarInfo, TaskListInfo } from '@calendar/core';
+import { type CalendarInfo, LESSON_DEMO_PHRASES, type TaskListInfo } from '@calendar/core';
 import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef } from 'react';
 import { assistantFieldCopy } from '../../ai/assistantModel.ts';
 import { desktopSpeech } from '../../ai/desktopSpeech.ts';
 import { requestCodeImport } from '../../settingsCode/codeImportRequests.ts';
 import { Button } from '../../ui/Button.tsx';
-import { MicIcon, SparkleIcon, SpinnerIcon } from '../../ui/icons.tsx';
+import { ArrowUpIcon, MicIcon, SparkleIcon, SpinnerIcon } from '../../ui/icons.tsx';
 import {
   captureSourceOf,
   isCapturableInPhrase,
@@ -32,6 +32,17 @@ import { DraftQuestions } from './DraftQuestions.tsx';
 export const QUICK_ADD_PLACEHOLDER = 'Lunch with Sarah tomorrow at 1';
 /** The field once there is something to change. */
 const CHANGE_PLACEHOLDER = 'Type a change';
+/** The field once the Create lesson's demo is through, the model still on its way. */
+const DEMO_WAIT = 'The Assistant answers anything once its model is here';
+
+/**
+ * The Create lesson's demo, while the Assistant's model is not on this
+ * Mac: the phrase it answers next (the field holds it, to send as typed
+ * words are), none once it said both.
+ */
+export interface AssistantDemo {
+  readonly next: string | undefined;
+}
 
 /** What was said or typed, as the conversation shows it: on the right, in the ink of an action. */
 const SAID =
@@ -106,6 +117,7 @@ export function AssistantView({
   availability,
   banner,
   calendars,
+  demo,
   editKey,
   editor,
   focusSignal,
@@ -127,6 +139,8 @@ export function AssistantView({
   /** Above the conversation: the lesson's frame. */
   readonly banner?: ReactNode;
   readonly calendars: ReadonlyArray<CalendarInfo>;
+  /** The Create lesson's demo, while the model is not here (`AssistantDemo`). */
+  readonly demo?: AssistantDemo | undefined;
   /** Moves at each edit made by hand in the form: hands-free dictation ends. */
   readonly editKey: number;
   readonly editor: ReturnType<typeof useThreadEditor>;
@@ -157,16 +171,26 @@ export function AssistantView({
     speech: desktopSpeech,
   });
   const unavailable = availability.status !== null && availability.status !== 'ready';
-  const { busy, phrase } = quick;
+  const { busy, phrase, setPhrase } = quick;
+  // The demo's next phrase in the field once the last one is taken (the
+  // first comes with the lesson's seed).
+  const demoNext = demo?.next;
+  useEffect(() => {
+    if (demoNext !== undefined) {
+      setPhrase(demoNext);
+    }
+  }, [demoNext, setPhrase]);
+  const answers = !unavailable || demoNext !== undefined;
 
   // Focused on open and on ⌘K — not while the model is missing, when the
-  // form's title is the first thing to type into.
+  // form's title is the first thing to type into (the demo's phrase is,
+  // Return sends it).
   useEffect(() => {
-    if (active && !unavailable) {
+    if (active && answers) {
       inputRef.current?.focus();
       inputRef.current?.select();
     }
-  }, [active, focusSignal, unavailable]);
+  }, [active, answers, focusSignal]);
 
   // The newest row is the one to read: the conversation follows it.
   // Before the panel's own layout effects: the switch back to the
@@ -199,8 +223,22 @@ export function AssistantView({
         ref={threadRef}
       >
         {banner}
-        {unavailable && availability.state ? (
+        {/* The lesson's banner offers the model in the demo; the notice would say it twice. */}
+        {unavailable && availability.state && demo === undefined ? (
           <AssistantModelNotice state={availability.state} />
+        ) : null}
+        {!started && demo !== undefined && !busy ? (
+          <div
+            className="flex flex-1 flex-col items-center justify-center gap-1 px-4 text-center"
+            data-testid="assistant-demo-empty"
+          >
+            <SparkleIcon className="text-ink-secondary" size={18} />
+            <p className="text-sm font-medium">Try the demo</p>
+            <p className="text-xs text-ink-secondary">
+              Send the phrase below. The answer is the event as a card, the same the Assistant gives
+              once its model is here.
+            </p>
+          </div>
         ) : null}
         {!started && assistant === 'new' && !busy && !unavailable ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-1 px-4 text-center">
@@ -254,6 +292,12 @@ export function AssistantView({
             )}
           </div>
         ))}
+        {demo !== undefined && started && !busy ? (
+          <p className="text-xs text-ink-secondary" data-testid="assistant-demo-note">
+            A demo answer, kept in the app: it answers the lesson’s phrases only. Save keeps the
+            event, as with the real thing.
+          </p>
+        ) : null}
         {busy && phrase.trim() !== '' ? (
           <p className={`${SAID} opacity-60`} data-testid="assistant-pending">
             {phrase}
@@ -262,6 +306,7 @@ export function AssistantView({
       </div>
 
       <AssistantInput
+        demo={demo}
         fieldCopy={assistantFieldCopy(availability.state)}
         hasDrafts={drafts.length > 0}
         inputRef={inputRef}
@@ -428,6 +473,7 @@ const inputStatus = ({
  * email or an image goes to capture, a settings code to its import.
  */
 function AssistantInput({
+  demo,
   fieldCopy,
   hasDrafts,
   inputRef,
@@ -436,6 +482,8 @@ function AssistantInput({
   quick,
   status: modelStatus,
 }: {
+  /** The Create lesson's demo: the field holds its phrase, Send sends it. */
+  readonly demo: AssistantDemo | undefined;
   /** The field's words while the Assistant's model cannot answer. */
   readonly fieldCopy: string;
   readonly hasDrafts: boolean;
@@ -460,9 +508,24 @@ function AssistantInput({
   } = quick;
   const unavailable = modelStatus !== null && modelStatus !== 'ready';
   const working = busy || voice === 'transcribing';
-  const status = inputStatus(quick);
+  // The demo's phrase: read-only, sent by Return or Send though the model is not here.
+  const demoPhrase = demo?.next;
+  const locked = unavailable && demoPhrase === undefined;
+  const status =
+    inputStatus(quick) ??
+    (demoPhrase === undefined
+      ? null
+      : {
+          text:
+            demoPhrase === LESSON_DEMO_PHRASES[0]
+              ? 'Demo · this phrase'
+              : 'Demo · now a change to it',
+          tone: 'hint' as const,
+        });
   const placeholder = unavailable
-    ? fieldCopy
+    ? demo === undefined
+      ? fieldCopy
+      : DEMO_WAIT
     : previewing
       ? 'An earlier step is on show'
       : hasDrafts
@@ -473,15 +536,15 @@ function AssistantInput({
       <div className="flex items-center gap-2">
         <label
           className={`flex h-10 min-w-0 flex-1 items-center gap-2 rounded-control bg-fill pr-2 pl-3 text-sm has-[input:focus]:ring-2 has-[input:focus]:ring-focus ${
-            unavailable ? 'opacity-70' : ''
+            locked ? 'opacity-70' : ''
           }`}
-          title={unavailable ? fieldCopy : undefined}
+          title={locked ? fieldCopy : undefined}
         >
           <input
             aria-label="Quick add"
             className="min-w-0 flex-1 truncate bg-transparent text-ink outline-none placeholder:text-ink-secondary disabled:cursor-default"
             data-testid="quick-add-input"
-            disabled={unavailable || previewing}
+            disabled={locked || previewing}
             onChange={(input) => {
               // Typed into while dictating: the user took over.
               if (handsFree) {
@@ -524,14 +587,28 @@ function AssistantInput({
             }}
             placeholder={placeholder}
             // Read-only while a phrase is read, not disabled: the field keeps
-            // the focus, so the next phrase is typed without a click.
-            readOnly={busy}
+            // the focus, so the next phrase is typed without a click. The
+            // demo's phrase is the lesson's, not to be typed over.
+            readOnly={busy || demoPhrase !== undefined}
             ref={inputRef}
             // Being read, the words are in the conversation above.
             value={busy ? '' : phrase}
           />
           {working ? <SpinnerIcon className="shrink-0" size={14} strokeWidth={2.25} /> : null}
         </label>
+        {demoPhrase === undefined ? null : (
+          <button
+            aria-label="Send"
+            className="inline-flex size-10 shrink-0 items-center justify-center rounded-full bg-primary text-on-primary transition-colors hover:bg-primary-hover disabled:cursor-default disabled:opacity-40"
+            data-testid="quick-add-demo-send"
+            disabled={working}
+            onClick={() => void submit(demoPhrase)}
+            title="Send"
+            type="button"
+          >
+            <ArrowUpIcon size={18} />
+          </button>
+        )}
         {voiceAvailable && !unavailable ? (
           <button
             aria-label={handsFree ? 'Stop dictating' : 'Dictate'}
