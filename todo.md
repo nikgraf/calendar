@@ -162,9 +162,13 @@ the served model (#184) and slot proposals (#185) are in
       minutes before": the model writes `reminders: [10]` (probed
       2026-11-13), and the app drops it: a first phrase's to-do result
       has no field for it (`answerResult`), and the thread takes no
-      notifications on a to-do (`withReminders`). Only a Reminders list
-      holds alarms; a Google list refuses them like its other
-      Reminders-only fields (`REMINDER_ONLY_FIELDS` in `packages/sync`).
+      notifications on a to-do (`withReminders`). A turn also shows the
+      model the form calendar's default notifications as a to-do's
+      (`turnDraftOf`), never its own alarms (`ReminderFields.alarms`,
+      minutes from the due time, negative before it): show and write
+      those. Only a Reminders list holds alarms; a Google list refuses
+      them like its other Reminders-only fields (`REMINDER_ONLY_FIELDS`
+      in `packages/sync`).
 - [ ] Dictated place names (two iPhone recordings, 2026-11-06,
       `docs/decisions.md` → "Calendar: editing, gestures, views",
       "Places nearby first"; each its own PR, in this order) — a name
