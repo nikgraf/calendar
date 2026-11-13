@@ -157,28 +157,23 @@ the served model (#184) and slot proposals (#185) are in
       model (Gemma 4 takes images, so capture could skip OCR); the
       `ModelInfo` capability record beyond the context (modalities, guided
       JSON) once a feature reads it.
-- [ ] Model bench follow-ups (the bench, 2026-10-25, `docs/decisions.md`
-      → AI; each its own PR, the bench re-run in the PR body) — a bare
-      "make it 8" and the dictated "eight" are not read as a time
-      (SpeechAnalyzer writes small numbers as words); a German change
-      taken as a title ("lieber Mittwoch"); the small-hours reading of a
-      bare 1–6 (open since #248); a to-do's alarms from "remind me …
-      before" (an event's notifications are read since 2026-10-26).
-- [ ] Dictated quick-add follow-ups (two iPhone recordings, 2026-11-06;
-      the place lookup's share, the spoken command and the turns that
-      lean on the draft shipped, `docs/decisions.md` → "Calendar:
-      editing, gestures, views", "Places nearby first", and → AI, "A
-      spoken command is not the title", "A bare turn leans on the
-      draft"; each its own PR, in this order) — a name dictation
-      mishears and the user has never been to finds nothing (MapKit's
-      search reads a doubled letter, not "Cafe Meek" for Kaffemik, and
-      Apple's model cannot respell it) — recognizer vocabulary from
-      contacts and past places, which needs an own speech module on iOS
-      (`@react-native-ai/apple` takes audio and a locale), with MapKit's
-      structured city/region/country fields in the same native build;
-      a place turn keeps the cue the model copied ("im Figlmüller", "at
-      the office"), which no lookup resembles; bench cases that ask
-      MapKit.
+- [ ] A to-do's alarms from the Assistant — "remind me to call the bank
+      tomorrow at 9, 10 minutes before", or a later "remind me 10
+      minutes before": the model writes `reminders: [10]` (probed
+      2026-11-13), and `tunedResult` drops it, since a to-do's result
+      takes no notifications. Only a Reminders list holds alarms
+      (`TaskDraft.alarms`); a Google list refuses them like any
+      Reminders-only field.
+- [ ] Dictated place names (two iPhone recordings, 2026-11-06,
+      `docs/decisions.md` → "Calendar: editing, gestures, views",
+      "Places nearby first"; each its own PR, in this order) — a name
+      dictation mishears and the user has never been to finds nothing
+      (MapKit's search reads a doubled letter, not "Cafe Meek" for
+      Kaffemik, and the Assistant's model keeps the name as heard) —
+      recognizer vocabulary from contacts and past places, which needs
+      an own speech module on iOS (`@react-native-ai/apple` takes audio
+      and a locale), with MapKit's structured city/region/country
+      fields in the same native build; bench cases that ask MapKit.
 - [ ] Served models: no thinking, and the strict schema on Ollama — the
       app sends Ollama the schema as `format` (only the title required)
       and turns thinking off on neither route. On Assistant phrases (the
