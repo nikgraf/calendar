@@ -162,22 +162,26 @@ tags:
             # A phrase that invites: the fixture names whoever follows
             # "invite", and each name is looked up in the account's
             # contacts. "Anna Lee" is one contact: a guest on the card.
-            # "Tom" is two (Tom Lee, Tom Wright): a question with both,
-            # nothing picked until a tap — the first is Tom Lee.
+            # "Tom" is two (Tom Lee, Tom Wright): a question, numbered
+            # among those the phrase brought, nothing picked until a tap —
+            # the first is Tom Lee.
             - runFlow:
                 file: ../common/apply-quick-add.yaml
                 env:
                   PHRASE: 'invite Anna Lee and Tom'
             - extendedWaitUntil:
                 visible:
-                  id: 'draft-invitee-choices'
+                  id: 'draft-question'
                 timeout: 20000
+            - assertVisible:
+                id: 'draft-question-count'
+                text: 'QUESTION 1 OF 1'
             - assertVisible: 'Which Tom\?'
             - tapOn:
                 id: 'draft-invitee-pick-0-0'
             - extendedWaitUntil:
                 notVisible:
-                  id: 'draft-invitee-choices'
+                  id: 'draft-question'
                 timeout: 5000
             - extendedWaitUntil:
                 visible:

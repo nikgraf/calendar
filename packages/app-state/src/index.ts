@@ -10,6 +10,7 @@ export * from './draftChanges.ts';
 export * from './draftExtras.ts';
 export * from './draftInvitees.ts';
 export * from './draftPlaces.ts';
+export * from './draftQuestions.ts';
 export * from './draftThread.ts';
 export * from './editorKinds.ts';
 export * from './editorOptions.ts';

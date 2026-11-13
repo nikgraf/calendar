@@ -256,20 +256,30 @@ describe('The editor’s Assistant and Form views', () => {
     // The grid: the block where it is now, a dashed outline where it was.
     await cdp.waitFor(blockAt('12:30'));
     await cdp.waitFor(wasAt('13:00'));
-    await cdp.waitFor(exists('draft-invitee-choices'));
-    expect(await cdp.eval<string>(textOf('draft-invitee-choice-0'))).toContain('Which Tom?');
+    // Two questions, asked one at a time: the place the first phrase left
+    // open (two Figlmüllers), then which Tom.
+    await cdp.waitFor(`${textOf('draft-question-count')} === 'Question 1 of 2'`);
+    expect(await cdp.eval<string>(textOf('draft-question'))).toContain(
+      'Which place for “Figlmüller”?',
+    );
     // One phrase is one step: the form taking the draft in adds none.
     await sleep(500);
     expect(await cdp.eval<string>(stepPosition)).toBe('2 of 2');
     expect(await cdp.eval<number>(said)).toBe(2);
     expect(await cdp.eval<number>(versions)).toBe(1);
+    // Skipped, the place stays as taken, and the next question is up.
+    await cdp.clickTestId('draft-question-skip');
+    await cdp.waitFor(`${textOf('draft-question-count')} === 'Question 2 of 2'`);
+    expect(await cdp.eval<string>(textOf('draft-invitee-choice-0'))).toContain('Which Tom?');
+    expect(await cdp.eval<string>(stepPosition)).toBe('2 of 2');
 
     // The answer is a step of its own: the guest who joined is the one marked.
     await cdp.clickTestId('draft-invitee-pick-0-0');
     await cdp.waitFor(`${stepPosition} === '3 of 3'`);
     await cdp.waitFor(`${card('guests')} === 'Sarah Keller, Tom Brandt'`);
     expect(await cdp.eval<string>(changed)).toBe('Changed: guests');
-    expect(await cdp.eval<boolean>(exists('draft-invitee-choices'))).toBe(false);
+    // Nothing left to ask.
+    expect(await cdp.eval<boolean>(exists('draft-question'))).toBe(false);
     // This step moved nothing: the outline is the step's, and goes with it.
     await cdp.waitFor(`${traces} === 0`);
 
@@ -327,10 +337,12 @@ describe('The editor’s Assistant and Form views', () => {
     await cdp.clickTestId('step-forward');
     await cdp.waitFor(`${stepPosition} === '2 of 3'`);
 
-    // "Use this": the step is kept, the pick after it gone — and asked again.
+    // "Use this": the step is kept, the pick after it gone — and asked
+    // again, still the second of the two.
     await cdp.clickTestId('step-use');
     await cdp.waitFor(`${stepPosition} === '2 of 2'`);
-    await cdp.waitFor(exists('draft-invitee-choices'));
+    await cdp.waitFor(`${textOf('draft-question-count')} === 'Question 2 of 2'`);
+    expect(await cdp.eval<string>(textOf('draft-invitee-choice-0'))).toContain('Which Tom?');
     expect(await cdp.eval<boolean>(exists('step-preview'))).toBe(false);
     expect(await cdp.eval<string>(card('guests'))).toBe('Sarah Keller');
 

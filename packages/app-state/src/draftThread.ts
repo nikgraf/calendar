@@ -46,6 +46,7 @@ import {
   resolveInvitees,
 } from './draftInvitees.ts';
 import { type PlaceChange, type PlaceChoice, settlePlace } from './draftPlaces.ts';
+import { askedAfterTurn } from './draftQuestions.ts';
 import type { EventEditorPrefill } from './editorModel.ts';
 import { convertQuickAddItem, type QuickAddItem } from './quickAddItem.ts';
 import { recurrenceKey } from './repeatState.ts';
@@ -92,6 +93,12 @@ export interface DraftExtras {
 
 export interface Draft {
   /** Set once the form held the draft (or a turn gave it guests); absent for a draft the form never showed. */
+  /**
+   * How many questions the turn that brought the open ones asked together
+   * (`askedAfterTurn`): what "Question 2 of 2" counts against once the
+   * first was answered. Absent with nothing to ask.
+   */
+  readonly asked?: number | undefined;
   readonly extras?: DraftExtras | undefined;
   readonly id: string;
   /**
@@ -104,8 +111,8 @@ export interface Draft {
   /**
    * The places the last turn's location text could mean, for the user to
    * pick from (`draftPlaces.ts`) — the one taken marked. It stays until
-   * dismissed, or a turn sets another place; Undo brings back the one a
-   * turn settled.
+   * one is picked, the text kept as said, the choice dismissed, or a turn
+   * sets another place; going back brings back the one a step settled.
    */
   readonly placeChoice?: PlaceChoice | undefined;
   /**
@@ -311,6 +318,13 @@ const withGuests = (
  * places" beside the place taken, "which “Kaffee Sperl”?" for a choice
  * alone.
  */
+/** The draft with its count of questions as a turn leaves it (`askedAfterTurn`). */
+const withAsked = (before: Draft | undefined, after: Draft): Draft => {
+  const { asked: _asked, ...rest } = after;
+  const asked = askedAfterTurn(before, after);
+  return asked === undefined ? rest : { ...rest, asked };
+};
+
 const withPlace = (
   draft: Draft,
   change: PlaceChange | undefined,
@@ -435,7 +449,7 @@ export const startThread = (
     const noted = withNotes(first.draft, notes);
     const reminded = withReminders(noted.draft, reminders);
     invited = [...placed.said, ...first.said, ...noted.said, ...reminded.said];
-    return reminded.draft;
+    return withAsked(undefined, reminded.draft);
   });
   const summary =
     drafts.length === 1 && drafts[0]
@@ -548,7 +562,8 @@ export const refineThread = (
     );
     const guested = withGuests(placed.draft, change.guests);
     const noted = withNotes(guested.draft, change.notes);
-    const next = withReminders(noted.draft, change.reminders);
+    const reminded = withReminders(noted.draft, change.reminders);
+    const next = { ...reminded, draft: withAsked(draft, reminded.draft) };
     // A to-do dated on the day it already read ("today" said of one shown
     // on today): no field of the item moved, and yet it is due now.
     const due =
@@ -913,13 +928,24 @@ export const updateDraft = (
         ),
       };
 
-/** The draft without the open choice for `name`, if it has one. */
-const withoutChoice = (draft: Draft, name: string | undefined): Draft => {
-  if (name === undefined || draft.inviteeChoices === undefined) {
+/**
+ * The draft without the open choice a pick answered: a contact picked
+ * for a name settles that name, a place picked (or the text kept as said)
+ * settles the place. An edit, or a free slot picked, settles nothing.
+ */
+const withoutChoice = (draft: Draft, how: HandStep): Draft => {
+  if (how.kind !== 'pick') {
+    return draft;
+  }
+  if (how.pick === 'place') {
+    const { placeChoice: _choice, ...rest } = draft;
+    return rest;
+  }
+  if (how.pick !== 'guest' || how.name === undefined || draft.inviteeChoices === undefined) {
     return draft;
   }
   const { inviteeChoices, ...rest } = draft;
-  const left = inviteeChoices.filter((choice) => choice.name !== name);
+  const left = inviteeChoices.filter((choice) => choice.name !== how.name);
   return left.length > 0 ? { ...rest, inviteeChoices: left } : rest;
 };
 
@@ -952,7 +978,7 @@ export const foldForm = (
   }
   const next = withoutChoice(
     { ...draft, ...(form.extras ? { extras: form.extras } : {}), item: form.item },
-    how.kind === 'pick' ? how.name : undefined,
+    how,
   );
   const drafts = state.drafts.map((each, at) => (at === state.focused ? next : each));
   const fields = draftChanges(draft, next).map((change) => change.field);

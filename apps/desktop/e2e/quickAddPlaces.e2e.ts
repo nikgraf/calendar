@@ -105,6 +105,8 @@ const location = `(document.querySelector('input[aria-label="Location"]')?.value
 const choices = `!!document.querySelector('[data-testid="draft-place-choices"]')`;
 const pressed = `(document.querySelector('[data-testid="draft-place-choices"] [aria-pressed="true"]')?.dataset.testid ?? '')`;
 const picks = `document.querySelectorAll('[data-testid^="draft-place-pick-"]').length`;
+const count = `(document.querySelector('[data-testid="draft-question-count"]')?.textContent ?? '')`;
+const preview = `!!document.querySelector('[data-testid="step-preview"]')`;
 // The place on the Assistant's newest card.
 const cardPlace = `(document.querySelector('[data-testid="assistant-card-location"]')?.textContent ?? '')`;
 
@@ -164,29 +166,35 @@ describe('Places from a quick-add phrase', () => {
     await cdp.waitFor(`${location} === 'Meek Café, 9 10th Avenue, Benoni, South Africa'`);
   });
 
-  it('takes the first of two search hits, offers the other, gives the text back, and hides the row', async () => {
+  it('asks which of two search hits, the first taken, and settles it by a pick, the text as said or Skip', async () => {
     const { cdp } = app;
     await openNew();
     await phrase('Lunch | +0 | 12:00-13:00 | Figlmüller');
-    // The first is taken at once; both are chips, the taken one pressed.
+    // The first is taken at once; the question offers both, the taken one pressed.
     await cdp.waitFor(`${location} === 'Figlmüller, Wollzeile 5, 1010 Wien'`);
     await cdp.waitFor(choices);
+    expect(await cdp.eval<string>(count)).toBe('Question 1 of 1');
     expect(await cdp.eval<number>(picks)).toBe(2);
     expect(await cdp.eval<string>(pressed)).toBe('draft-place-pick-0');
     expect(await cdp.eval<string>(cardPlace)).toBe('Figlmüller, Wollzeile 5, 1010 Wien');
+    // The other one: taken, and the question answered.
     await cdp.clickTestId('draft-place-pick-1');
     await cdp.waitFor(`${location} === 'Figlmüller, Bäckerstraße 6, 1010 Wien'`);
-    expect(await cdp.eval<string>(pressed)).toBe('draft-place-pick-1');
+    await cdp.waitFor(`!${choices}`);
     // The pick is a step: the card marks the place, the one before struck through after it.
     await cdp.waitFor(
       `${cardPlace} === 'Figlmüller, Bäckerstraße 6, 1010 WienFiglmüller, Wollzeile 5, 1010 Wien'`,
     );
-    // The text back as said: no place, the row stays.
+    // Going back over the pick asks again.
+    await cdp.clickTestId('assistant-undo');
+    await cdp.waitFor(preview);
+    await cdp.clickTestId('step-use');
+    await cdp.waitFor(`!${preview}`);
+    await cdp.waitFor(choices);
+    expect(await cdp.eval<string>(pressed)).toBe('draft-place-pick-0');
+    // The text back as said: no place, and the question answered.
     await cdp.clickTestId('draft-place-keep');
     await cdp.waitFor(`${location} === 'Figlmüller'`);
-    expect(await cdp.eval<string>(pressed)).toBe('draft-place-keep');
-    expect(await cdp.eval<boolean>(choices)).toBe(true);
-    await cdp.clickTestId('draft-place-dismiss');
     await cdp.waitFor(`!${choices}`);
 
     // A later turn: a place nobody knows stays as said, nothing to pick.
@@ -194,7 +202,17 @@ describe('Places from a quick-add phrase', () => {
     await cdp.waitFor(`${location} === 'Room 9'`);
     expect(await cdp.eval<boolean>(choices)).toBe(false);
 
-    // Edited by hand to something else, the row goes by itself.
+    // Asked again, and skipped: the place stays as taken.
+    await phrase('| | | Figlmüller');
+    await cdp.waitFor(choices);
+    await cdp.waitFor(`${location} === 'Figlmüller, Wollzeile 5, 1010 Wien'`);
+    await cdp.clickTestId('draft-question-skip');
+    await cdp.waitFor(`!${choices}`);
+    expect(await cdp.eval<string>(location)).toBe('Figlmüller, Wollzeile 5, 1010 Wien');
+
+    // Edited by hand to something else, the question goes by itself.
+    await phrase('| | | Room 9');
+    await cdp.waitFor(`${location} === 'Room 9'`);
     await phrase('| | | Figlmüller');
     await cdp.waitFor(choices);
     await cdp.eval(`(() => {

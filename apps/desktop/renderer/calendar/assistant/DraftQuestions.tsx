@@ -1,17 +1,26 @@
-import { isAtSlot, SCOPE_OPTIONS, type useThreadEditor } from '@calendar/app-state';
+import {
+  isAtSlot,
+  isGuestQuestion,
+  isPlaceQuestion,
+  SCOPE_OPTIONS,
+  type useThreadEditor,
+} from '@calendar/app-state';
 import { formatSlotLabel } from '@calendar/core';
 import { Button } from '../../ui/Button.tsx';
 import { SegmentedControl } from '../../ui/SegmentedControl.tsx';
 import { InviteeChoices } from '../InviteeChoices.tsx';
 import { PlaceChoices } from '../PlaceChoices.tsx';
+import { QuestionCard } from './QuestionCard.tsx';
 
 /**
  * What the assistant asks under its newest card, left out while there is
  * nothing to ask: a caveat the drafts came with, for a series what a
  * change applies to, the free slots a finder phrase found (the draft
- * sits in the pressed one), the places a text could mean, the names that
- * need a contact picked. An answer is a step: going back over it asks
- * again.
+ * sits in the pressed one), then its questions one at a time
+ * (`QuestionCard`: which place a text means, which contact a name). Not
+ * asked, a row each: a lone place that was taken (the text as said a
+ * click away), a name no contact has. An answer is a step: going back
+ * over it asks again.
  */
 export function DraftQuestions({
   editor,
@@ -33,7 +42,6 @@ export function DraftQuestions({
     kinds,
     liveItem,
     moveToSlot,
-    pickInvitee,
     pickPlaceChoice,
     placeChoice,
     placeGeo,
@@ -46,7 +54,12 @@ export function DraftQuestions({
       : undefined;
   // A saved series: a phrase changes it at the scope the form is at.
   const scoped = assistant === 'saved' && kinds.mode === 'event' && eventModel.isRecurring;
-  if (!(threadNote || threadSlots || scoped || inviteeChoices.length > 0 || placeChoice)) {
+  // A lone place taken, and names nobody has: told, not asked.
+  const lonePlace = placeChoice && !isPlaceQuestion(placeChoice) ? placeChoice : undefined;
+  const notes = inviteeChoices.filter((choice) => !isGuestQuestion(choice));
+  if (
+    !(threadNote || threadSlots || scoped || editor.questions.current || lonePlace || notes.length)
+  ) {
     return null;
   }
   return (
@@ -100,9 +113,10 @@ export function DraftQuestions({
           </div>
         </div>
       ) : null}
-      {placeChoice ? (
+      <QuestionCard editor={editor} />
+      {lonePlace ? (
         <PlaceChoices
-          choice={placeChoice}
+          choice={lonePlace}
           disabled={!settled}
           geo={placeGeo}
           location={eventModel.location}
@@ -111,12 +125,12 @@ export function DraftQuestions({
           onPick={pickPlaceChoice}
         />
       ) : null}
-      {inviteeChoices.length > 0 ? (
+      {notes.length > 0 ? (
         <InviteeChoices
-          choices={inviteeChoices}
+          choices={notes}
           disabled={!settled}
+          indexOf={(choice) => inviteeChoices.indexOf(choice)}
           onDismiss={dismissInvitee}
-          onPick={pickInvitee}
         />
       ) : null}
     </div>
