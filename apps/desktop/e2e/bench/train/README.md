@@ -17,9 +17,10 @@ without Anthropic's prior authorization, and `dataset.e2e.ts` refuses a
 Claude model. The data is made with DeepSeek V4 over DeepSeek's own API:
 MIT weights, and its Open Platform terms (effective 2026-04-29, section
 4.2(3)) name "training other models (such as model distillation)" as a
-permitted use. The first rounds of 2026-11-11 and 2026-11-12 were made
-with Claude; nothing of them was trained on for a published model or
-shipped, and their data and runs left the training folder on 2026-11-13.
+permitted use. The first rounds (2026-11-11 and 2026-11-12) were made
+with Claude, before this rule: the models trained on them were never
+published or shipped, and their data and runs were removed from
+`output/bench/finetune/` on 2026-11-13.
 
 ## 1. The data
 
@@ -50,7 +51,7 @@ Both run with brief thinking (`{"thinking":{"type":"enabled"},
 "reasoning_effort":"low"}` in `TRAIN_*_EXTRA`). On the bench's plain arm
 (2026-11-12, `MODEL_BENCH_OPENAI_JSON=object`): Flash thinking 65 of 70,
 Pro 64 with or without, Flash without thinking 61; Claude Haiku, the
-teacher of the set-aside rounds, scored 65. DeepSeek's API takes no JSON
+teacher of the first rounds, scored 65. DeepSeek's API takes no JSON
 schema, so the schema goes into the prompt and the answer comes in JSON
 mode (`TRAIN_OPENAI_JSON=object`). The files land in
 `output/bench/finetune/data/` (ignored by git), every answer's token
