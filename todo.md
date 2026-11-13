@@ -160,10 +160,11 @@ the served model (#184) and slot proposals (#185) are in
 - [ ] A to-do's alarms from the Assistant — "remind me to call the bank
       tomorrow at 9, 10 minutes before", or a later "remind me 10
       minutes before": the model writes `reminders: [10]` (probed
-      2026-11-13), and `tunedResult` drops it, since a to-do's result
-      takes no notifications. Only a Reminders list holds alarms
-      (`TaskDraft.alarms`); a Google list refuses them like any
-      Reminders-only field.
+      2026-11-13), and the app drops it: a first phrase's to-do result
+      has no field for it (`answerResult`), and the thread takes no
+      notifications on a to-do (`withReminders`). Only a Reminders list
+      holds alarms; a Google list refuses them like its other
+      Reminders-only fields (`REMINDER_ONLY_FIELDS` in `packages/sync`).
 - [ ] Dictated place names (two iPhone recordings, 2026-11-06,
       `docs/decisions.md` → "Calendar: editing, gestures, views",
       "Places nearby first"; each its own PR, in this order) — a name
