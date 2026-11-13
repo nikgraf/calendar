@@ -1,7 +1,7 @@
 import type { ModelStatus } from '@calendar/ai';
 import type { useQuickAddModel } from '@calendar/app-state';
 import { SymbolView } from 'expo-symbols';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import {
   AccessibilityInfo,
   ActivityIndicator,
@@ -12,10 +12,13 @@ import {
   TextInput,
   type TextInputInstance,
   View,
+  type ViewStyle,
 } from 'react-native';
+import Animated, { type AnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { modelFixture } from '../../model.ts';
 import { BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme } from '../theme.ts';
+import { BAR_CAPSULE_WIDTH } from './SwitchCapsule.tsx';
 import { useKeyboardInset } from './useKeyboardInset.ts';
 
 type Quick = ReturnType<typeof useQuickAddModel>;
@@ -67,21 +70,27 @@ const barStatus = ({
  */
 export function AssistantBar({
   hasDrafts,
-  onForm,
+  micStyle,
+  onTyping,
   previewing,
   quick,
   startTyping = false,
   status: modelStatus,
+  typing: typingAsked,
 }: {
   readonly hasDrafts: boolean;
-  /** To the form, on the same draft. */
-  readonly onForm: () => void;
+  /** The switch's motion for the microphone: it shrinks into the capsule's on the way to the form. */
+  readonly micStyle: AnimatedStyle<ViewStyle>;
+  /** The field opened, or given up (the sheet keeps it: the capsule leaves while it is open). */
+  readonly onTyping: (typing: boolean) => void;
   /** An older step is on show: nothing is said to it. */
   readonly previewing: boolean;
   readonly quick: Quick;
   /** Open on the field, its words ready to send (the Create lesson's phrase). */
   readonly startTyping?: boolean | undefined;
   readonly status: ModelStatus | null;
+  /** The field is open in place of the bar. */
+  readonly typing: boolean;
 }) {
   const styles = useStyles(makeStyles);
   const { colors } = useTheme();
@@ -100,7 +109,6 @@ export function AssistantBar({
     voice,
     voiceAvailable,
   } = quick;
-  const [typing, setTyping] = useState(startTyping);
   const input = useRef<TextInputInstance>(null);
   // Opened on the field: `autoFocus` is not reliable while the sheet is
   // still sliding in, so the focus is asked for once it has settled.
@@ -125,9 +133,7 @@ export function AssistantBar({
     }
   }, [statusText]);
   // An older step put on show while typing: the field has nothing to send to.
-  if (typing && off) {
-    setTyping(false);
-  }
+  const typing = typingAsked && !off;
 
   if (modelStatus === null) {
     return null;
@@ -152,7 +158,7 @@ export function AssistantBar({
             autoFocus
             editable={!busy}
             // The keyboard dismissed, or the phrase taken: back to the bar.
-            onBlur={() => setTyping(false)}
+            onBlur={() => onTyping(false)}
             onChangeText={(text) => {
               // Typed into while dictating: the user took over.
               if (handsFree) {
@@ -199,7 +205,7 @@ export function AssistantBar({
             accessibilityRole="button"
             accessibilityState={{ disabled: off }}
             disabled={off}
-            onPress={() => setTyping(true)}
+            onPress={() => onTyping(true)}
             style={[styles.capsule, off && styles.disabled]}
             testID="quick-add-type"
           >
@@ -209,58 +215,45 @@ export function AssistantBar({
             </Text>
           </Pressable>
           {voiceAvailable ? (
-            <Pressable
-              accessibilityLabel={handsFree ? 'Stop dictating' : 'Dictate'}
-              accessibilityRole="button"
-              accessibilityState={{ selected: handsFree }}
-              // On, it always answers (to stop); off, not while a typed phrase
-              // is read, without the model or with an older step on show.
-              disabled={!handsFree && (off || working)}
-              onPress={() => {
-                if (!handsFree) {
-                  Keyboard.dismiss();
-                }
-                toggleVoice();
-              }}
-              style={[
-                styles.mic,
-                handsFree && styles.micOn,
-                !handsFree && (off || working) && styles.disabled,
-              ]}
-              testID="quick-add-mic"
-            >
-              {working && !handsFree ? (
-                <ActivityIndicator color={colors['on-primary']} />
-              ) : (
-                <SymbolView
-                  name={heard ? 'mic.fill' : 'mic'}
-                  size={30}
-                  tintColor={handsFree ? colors['on-danger'] : colors['on-primary']}
-                  weight="medium"
-                />
-              )}
-            </Pressable>
+            <Animated.View style={micStyle}>
+              <Pressable
+                accessibilityLabel={handsFree ? 'Stop dictating' : 'Dictate'}
+                accessibilityRole="button"
+                accessibilityState={{ selected: handsFree }}
+                // On, it always answers (to stop); off, not while a typed phrase
+                // is read, without the model or with an older step on show.
+                disabled={!handsFree && (off || working)}
+                onPress={() => {
+                  if (!handsFree) {
+                    Keyboard.dismiss();
+                  }
+                  toggleVoice();
+                }}
+                style={[
+                  styles.mic,
+                  handsFree && styles.micOn,
+                  !handsFree && (off || working) && styles.disabled,
+                ]}
+                testID="quick-add-mic"
+              >
+                {working && !handsFree ? (
+                  <ActivityIndicator color={colors['on-primary']} />
+                ) : (
+                  <SymbolView
+                    name={heard ? 'mic.fill' : 'mic'}
+                    size={30}
+                    tintColor={handsFree ? colors['on-danger'] : colors['on-primary']}
+                    weight="medium"
+                  />
+                )}
+              </Pressable>
+            </Animated.View>
           ) : (
             // No dictation on this device: typing is the way in.
             <View style={styles.micGap} />
           )}
-          <Pressable
-            accessibilityLabel="Form"
-            accessibilityRole="button"
-            onPress={onForm}
-            style={styles.capsule}
-            testID="editor-view-form"
-          >
-            <SymbolView
-              name="rectangle.grid.1x2"
-              size={17}
-              tintColor={colors.text}
-              weight="medium"
-            />
-            <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.capsuleLabel}>
-              Form
-            </Text>
-          </Pressable>
+          {/* Form's place: the sheet's one capsule sits here (`SwitchCapsule`), and stays while the views switch. */}
+          <View style={styles.capsuleGap} />
         </View>
       )}
     </View>
@@ -301,6 +294,10 @@ const makeStyles = (colors: ThemeColors) =>
       shadowOpacity: 0.1,
       shadowRadius: 8,
       width: 104,
+    },
+    capsuleGap: {
+      height: 44,
+      width: BAR_CAPSULE_WIDTH,
     },
     capsuleLabel: {
       color: colors.text,

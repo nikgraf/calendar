@@ -1,5 +1,5 @@
 import { createContext, useLayoutEffect, useReducer, useRef, useState } from 'react';
-import { type HostInstance, Keyboard } from 'react-native';
+import { type HostInstance, useWindowDimensions } from 'react-native';
 import {
   Easing,
   Extrapolation,
@@ -10,6 +10,7 @@ import {
   withTiming,
 } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
+import { BAR_LIFT } from './SwitchCapsule.tsx';
 import { anchorOffset, type EditorView, viewSwitchAfter } from '@calendar/app-state';
 
 /** How long a switch takes, and under Reduce Motion (a crossfade only). */
@@ -17,6 +18,17 @@ const SWITCH_MS = 280;
 const FADE_MS = 150;
 /** On-screen movement: in and out, strongly (the shared curve for moving UI). */
 const MOVE = Easing.bezier(0.77, 0, 0.175, 1);
+/**
+ * Where the capsule's microphone glyph sits, from the window's right
+ * edge: the capsule's inset (28), less the pill's width (about 132), plus
+ * its glyph's inset and half width (14 + 8.5). Near enough for a disc
+ * that shrinks and fades on its way there.
+ */
+const GLYPH_FROM_RIGHT = 28 + 132 - 22.5;
+/** The microphone at the capsule's glyph: a quarter of its size. */
+const MIC_LANDS = 0.25;
+/** Where the conversation has faded out, and the microphone has reached the capsule. */
+const MIC_ARRIVES = 0.6;
 
 /**
  * The two titles the form rises between: the newest card's, in the
@@ -54,6 +66,7 @@ const topOf = (element: HostInstance | null): number | undefined => {
 export const useViewSwitch = (initial: EditorView) => {
   const [state, dispatch] = useReducer(viewSwitchAfter, { kind: 'rest', view: initial });
   const reduced = useReducedMotion();
+  const { width } = useWindowDimensions();
   const progress = useSharedValue(initial === 'form' ? 1 : 0);
   // How far below its place the form's content sits at the Assistant's end.
   const offset = useSharedValue(0);
@@ -79,11 +92,16 @@ export const useViewSwitch = (initial: EditorView) => {
   // rise under the motion.
   const [flipped, setFlipped] = useState(false);
 
-  const flip = (to: EditorView) => {
+  /**
+   * To a view. `keyboardUp`: the views change size as the keyboard goes,
+   * so no anchor holds — a crossfade, as under Reduce Motion. (The
+   * sheet's own measure: `Keyboard.isVisible()` stays true after XCTest's
+   * typing hides the keyboard.)
+   */
+  const flip = (to: EditorView, keyboardUp = false) => {
     if (state.kind === 'rest' && state.view !== to) {
       leaving.current = {
-        // With the keyboard up the views change size as it goes: no anchor holds.
-        plain: reduced || Keyboard.isVisible(),
+        plain: reduced || keyboardUp,
         top: topOf(to === 'form' ? card.current : form.current),
       };
       setFlipped(true);
@@ -151,7 +169,7 @@ export const useViewSwitch = (initial: EditorView) => {
 
   // The conversation goes first, the form comes in behind it.
   const assistantStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(progress.get(), [0, 0.6], [1, 0], Extrapolation.CLAMP),
+    opacity: interpolate(progress.get(), [0, MIC_ARRIVES], [1, 0], Extrapolation.CLAMP),
   }));
   const formStyle = useAnimatedStyle(() => ({
     opacity: interpolate(progress.get(), [0.2, 0.9], [0, 1], Extrapolation.CLAMP),
@@ -160,6 +178,22 @@ export const useViewSwitch = (initial: EditorView) => {
   const formContentStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: offset.get() * (1 - progress.get()) }],
   }));
+  // The bar's microphone shrinks into the capsule's on the way to the
+  // form, and grows out of it on the way back. It gets there by the time
+  // its layer has faded (0.6), so the travel is seen.
+  const toGlyph = width - GLYPH_FROM_RIGHT - width / 2;
+  const micStyle = useAnimatedStyle(() => {
+    const moved = reduced
+      ? 0
+      : interpolate(progress.get(), [0, MIC_ARRIVES], [0, 1], Extrapolation.CLAMP);
+    return {
+      transform: [
+        { translateX: toGlyph * moved },
+        { translateY: BAR_LIFT * moved },
+        { scale: interpolate(moved, [0, 1], [1, MIC_LANDS]) },
+      ],
+    };
+  });
 
   return {
     anchors,
@@ -169,6 +203,9 @@ export const useViewSwitch = (initial: EditorView) => {
     flipped,
     formContentStyle,
     formStyle,
+    micStyle,
+    /** Where the switch stands: 0 the Assistant, 1 the Form (the capsule reads it). */
+    progress,
     /** The frame both views fill: the card's title counts only while it is inside it. */
     frame,
     snap,
