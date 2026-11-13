@@ -137,7 +137,11 @@ describe('createAssistantStore', () => {
     expect(next.getState()).toEqual({ kind: 'unasked', update: true });
     expect(starts).toEqual([]);
     next.decline();
-    expect(next.getState()).toEqual({ kind: 'declined' });
+    expect(next.getState()).toEqual({ kind: 'declined', update: true });
+    // The next launch still offers it as an update.
+    const again = createAssistantStore({ fetch, files, manifest: { ...MANIFEST, version: 'v2' } });
+    await again.boot();
+    expect(again.getState()).toEqual({ kind: 'declined', update: true });
   });
 
   it('throws a wrong file away, and does not fetch it again by itself at the next launch', async () => {

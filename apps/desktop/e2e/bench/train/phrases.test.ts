@@ -145,8 +145,9 @@ describe('the names', () => {
 });
 
 describe('the briefs’ examples', () => {
-  it('are the quoted phrases of two words or more', () => {
+  it('are the quoted phrases of three words or more', () => {
     expect(BRIEF_EXAMPLES).toContain('haircut wed 4pm');
+    expect(BRIEF_EXAMPLES).not.toContain('all day');
     expect(BRIEF_EXAMPLES.some((example) => example.includes('…'))).toBe(false);
   });
 
@@ -154,6 +155,12 @@ describe('the briefs’ examples', () => {
     expect(repeatsBriefExample('Haircut Wed 4pm')).toBe(true);
     expect(repeatsBriefExample('haircut wed 4pm at the salon')).toBe(true);
     expect(repeatsBriefExample('haircut thursday 4pm')).toBe(false);
+    // A short way of saying something is what a brief asks for, and a long phrase only holds one.
+    expect(repeatsBriefExample('make it all day')).toBe(false);
+    expect(repeatsBriefExample('Verschieb es um anderthalb Stunden nach hinten')).toBe(false);
+    expect(repeatsBriefExample('can we find an hour in the morning sometime next week')).toBe(
+      false,
+    );
   });
 });
 

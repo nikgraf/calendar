@@ -145,6 +145,26 @@ describe('tunedReader, a later turn', () => {
     await expect(
       tunedReader(shorter.model).change({ ...input, utterance: 'make it 45 minutes' }),
     ).resolves.toMatchObject({ prefill: { endTime: '19:45', startTime: '19:00' } });
+    // A draft that only runs past midnight is no span of days: moved or shortened, it gains no day.
+    const late = {
+      ...dinner,
+      prefill: { ...dinner.prefill, endDate: '2026-11-14', endTime: '00:30', startTime: '23:30' },
+    };
+    const { date: _late, endDate: _end, ...lateTimes } = late.prefill;
+    const pushed = modelOf({ ...lateTimes, endTime: '+1h', kind: 'event', startTime: '+1h' });
+    await expect(
+      tunedReader(pushed.model).change({ ...input, draft: late, utterance: 'an hour later' }),
+    ).resolves.toMatchObject({
+      prefill: { date: '2026-11-14', endTime: '01:30', startTime: '00:30' },
+    });
+    const short = modelOf({ ...lateTimes, endTime: '45m', kind: 'event', startTime: '23:30' });
+    const shortened = await tunedReader(short.model).change({
+      ...input,
+      draft: late,
+      utterance: 'make it 45 minutes',
+    });
+    expect(shortened).toMatchObject({ prefill: { date: '2026-11-13', endTime: '00:15' } });
+    expect(shortened).toMatchObject({ prefill: { endDate: '2026-11-14' } });
     // A shift of a draft with no times is turned down, not made a day long.
     const allDay = { ...dinner, prefill: { ...dinner.prefill, isAllDay: true } };
     await expect(
@@ -218,6 +238,10 @@ describe('answerResult', () => {
     expect(answerResult(lunch, { draft: undefined, referenceDate: TODAY })).not.toHaveProperty(
       'reminders',
     );
+    // A list of nothing readable says nothing: the default stays.
+    expect(
+      answerResult({ ...lunch, reminders: ['10', -5] }, { draft: undefined, referenceDate: TODAY }),
+    ).not.toHaveProperty('reminders');
   });
 
   it('takes off and adds notifications one by one, never clearing what it was not shown', () => {

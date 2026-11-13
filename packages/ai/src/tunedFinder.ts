@@ -63,6 +63,9 @@ const isBlank = (value: unknown): boolean =>
   (typeof value === 'string' && value.trim() === '') ||
   (Array.isArray(value) && value.length === 0);
 
+/** A length that is none: not a number above zero. */
+const noLength = (value: unknown): boolean => typeof value !== 'number' || !(value > 0);
+
 /**
  * A finder answer as the tuned model is trained to write it: the fields
  * it has, in one order, empty ones left out. Undefined for an answer that
@@ -74,7 +77,11 @@ export const tunedFinderAnswer = (answer: unknown): Record<string, unknown> | un
   }
   const record = answer as Record<string, unknown>;
   return Object.fromEntries(
-    FINDER_ORDER.flatMap((key) => (isBlank(record[key]) ? [] : [[key, record[key]]])),
+    FINDER_ORDER.flatMap((key) =>
+      isBlank(record[key]) || (key === 'durationMinutes' && noLength(record[key]))
+        ? []
+        : [[key, record[key]]],
+    ),
   );
 };
 
@@ -104,7 +111,10 @@ export const tunedFindTime = async (
   if (typeof answer !== 'object' || answer === null || Array.isArray(answer)) {
     return { kind: 'rejected', reason: REFUSED };
   }
-  return normalizeFindTime(answer as FindTimeParse, { fallbackDurationMinutes, referenceDate });
+  // A length of nothing is none said: the finder searches its own.
+  const { durationMinutes, ...rest } = answer as FindTimeParse;
+  const parse = noLength(durationMinutes) ? rest : (answer as FindTimeParse);
+  return normalizeFindTime(parse, { fallbackDurationMinutes, referenceDate });
 };
 
 /** Find a time on the Assistant's own model. */

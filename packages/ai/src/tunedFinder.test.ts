@@ -64,6 +64,8 @@ describe('tunedFinderAnswer', () => {
       '{"durationMinutes":90,"windowStartDate":"2026-11-14","windowEndDate":"2026-11-14","title":"Focus"}',
     );
     expect(tunedFinderAnswer('90')).toBeUndefined();
+    // A length of nothing is none.
+    expect(tunedFinderAnswer({ durationMinutes: 0, title: 'Focus' })).toEqual({ title: 'Focus' });
   });
 });
 
@@ -99,6 +101,13 @@ describe('tunedFindTime', () => {
       constraints: { durationMinutes: 45, windowEndDate: '2026-11-19', windowStartDate: TODAY },
       kind: 'parsed',
       title: 'Focus',
+    });
+  });
+
+  it('searches the finder’s own length for an answer of none', async () => {
+    const { model } = modelOf({ durationMinutes: 0 });
+    await expect(tunedFindTime(model, input)).resolves.toMatchObject({
+      constraints: { durationMinutes: 45 },
     });
   });
 

@@ -21,7 +21,10 @@ export interface ModelFiles {
   readonly finish: () => Promise<void>;
   /** Bytes already fetched into the partial file, 0 without one. */
   readonly partSize: () => number;
-  readonly readAnswer: () => { readonly answer: MacAnswer; readonly version: string } | undefined;
+  /** `update`: "Not Now" said to a version that followed one downloaded before. */
+  readonly readAnswer: () =>
+    | { readonly answer: MacAnswer; readonly update?: true; readonly version: string }
+    | undefined;
   readonly readVerified: () => { readonly sha256: string; readonly version: string } | undefined;
   /** The model and its partial file go (a wrong file, or another version's). */
   readonly remove: () => Promise<void>;
@@ -29,7 +32,11 @@ export interface ModelFiles {
   readonly removeOthers: () => Promise<void>;
   readonly sha256: () => Promise<string>;
   readonly size: () => number | undefined;
-  readonly writeAnswer: (answer: { readonly answer: MacAnswer; readonly version: string }) => void;
+  readonly writeAnswer: (answer: {
+    readonly answer: MacAnswer;
+    readonly update?: true;
+    readonly version: string;
+  }) => void;
   readonly writeVerified: (verified: { readonly sha256: string; readonly version: string }) => void;
 }
 
@@ -83,12 +90,17 @@ export const createAssistantStore = ({
     return said?.version === manifest.version ? said.answer : undefined;
   };
   /** Not answered for this version, or declined: an update where an earlier version was downloaded. */
-  const unanswered = (kind: 'declined' | 'unasked'): AssistantModelState => {
+  const isUpdate = (): boolean => {
     const said = files.readAnswer();
-    return said !== undefined && said.version !== manifest.version && said.answer !== 'declined'
-      ? { kind, update: true }
-      : { kind };
+    return (
+      said !== undefined &&
+      (said.version === manifest.version
+        ? said.update === true
+        : said.answer !== 'declined' || said.update === true)
+    );
   };
+  const unanswered = (kind: 'declined' | 'unasked'): AssistantModelState =>
+    isUpdate() ? { kind, update: true } : { kind };
 
   const verified = (): boolean => {
     const note = files.readVerified();
@@ -193,10 +205,16 @@ export const createAssistantStore = ({
       await download();
     },
     decline: () => {
-      files.writeAnswer({ answer: 'declined', version: manifest.version });
+      // "Not Now" to an update is still one: the notice keeps saying so.
+      const update = isUpdate();
+      files.writeAnswer({
+        answer: 'declined',
+        ...(update ? { update: true as const } : {}),
+        version: manifest.version,
+      });
       transfer?.abort();
       transfer = undefined;
-      set({ kind: 'declined' });
+      set(unanswered('declined'));
     },
     getState: () => state,
     retry: async () => {

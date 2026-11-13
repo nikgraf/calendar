@@ -50,8 +50,9 @@ export interface ModelFiles {
   /** The file's URI under the app's caches. */
   readonly destination: string;
   readonly exists: () => boolean;
+  /** `update`: "Not Now" said to a version that followed one downloaded before. */
   readonly readAnswer: () =>
-    | { readonly answer: DownloadAnswer; readonly version: string }
+    | { readonly answer: DownloadAnswer; readonly update?: true; readonly version: string }
     | undefined;
   readonly readVerified: () => { readonly sha256: string; readonly version: string } | undefined;
   readonly remove: () => void;
@@ -59,6 +60,7 @@ export interface ModelFiles {
   readonly size: () => number | undefined;
   readonly writeAnswer: (answer: {
     readonly answer: DownloadAnswer;
+    readonly update?: true;
     readonly version: string;
   }) => void;
   readonly writeVerified: (verified: { readonly sha256: string; readonly version: string }) => void;
@@ -134,12 +136,17 @@ export const createAssistantDownload = (deps: AssistantDownloadDeps): AssistantD
     return said?.version === manifest.version ? said.answer : undefined;
   };
   /** Not answered for this version, or declined: an update where an earlier version was downloaded. */
-  const unanswered = (kind: 'declined' | 'unasked'): AssistantModelState => {
+  const isUpdate = (): boolean => {
     const said = files.readAnswer();
-    return said !== undefined && said.version !== manifest.version && said.answer !== 'declined'
-      ? { kind, update: true }
-      : { kind };
+    return (
+      said !== undefined &&
+      (said.version === manifest.version
+        ? said.update === true
+        : said.answer !== 'declined' || said.update === true)
+    );
   };
+  const unanswered = (kind: 'declined' | 'unasked'): AssistantModelState =>
+    isUpdate() ? { kind, update: true } : { kind };
   const networkOf = (): TransferNetwork => (answer() === 'mobile' ? 'any' : 'wifi');
 
   /** Downloading, or waiting for what the transfer may use. */
@@ -333,9 +340,15 @@ export const createAssistantDownload = (deps: AssistantDownloadDeps): AssistantD
       await begin();
     },
     decline: () => {
-      files.writeAnswer({ answer: 'declined', version: manifest.version });
+      // "Not Now" to an update is still one: the notice keeps saying so.
+      const update = isUpdate();
+      files.writeAnswer({
+        answer: 'declined',
+        ...(update ? { update: true as const } : {}),
+        version: manifest.version,
+      });
       void transfer.cancel(files.destination).catch(() => undefined);
-      set({ kind: 'declined' });
+      set(unanswered('declined'));
     },
     getState: () => state,
     network: () => path,

@@ -409,11 +409,28 @@ const mayHaveSaid = (turn: LabelledTurn): boolean =>
 
 const said = async (dir: string, log: (line: string) => void): Promise<void> => {
   const path = join(dir, 'said.jsonl');
-  const done = new Set(readLines<SaidThread>(path).map((thread) => thread.id));
+  // The newest answers of each thread (a thread asked again has a later line).
+  const onFile = new Map(readLines<SaidThread>(path).map((thread) => [thread.id, thread.turns]));
+  /**
+   * Answered by this question, every turn it is asked of: an answer to an
+   * older one (model v1's had two parts, no `noAlert`) is asked again.
+   */
+  const answered = (thread: LabelledThread): boolean => {
+    const turns = onFile.get(thread.id);
+    return (
+      turns !== undefined &&
+      thread.turns.every((turn, index) => {
+        const answer = turns[index];
+        return !mayHaveSaid(turn) || (isRecord(answer) && 'noAlert' in answer);
+      })
+    );
+  };
   const asker = trainingModel('teacher', dir, 'said');
   const teacher = asker.model;
   const model = asker.name;
-  const todo = readLines<LabelledThread>(join(dir, 'labelled.jsonl'))
+  const labelled = readLines<LabelledThread>(join(dir, 'labelled.jsonl'));
+  const done = new Set(labelled.filter(answered).map((thread) => thread.id));
+  const todo = labelled
     .filter((thread) => !done.has(thread.id))
     .slice(0, numberOf('TRAIN_LIMIT', Number.MAX_SAFE_INTEGER));
   let asked = 0;

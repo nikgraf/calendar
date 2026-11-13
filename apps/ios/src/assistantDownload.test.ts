@@ -145,6 +145,16 @@ describe('the Assistant model’s download', () => {
     await newer.boot();
     expect(newer.getState()).toEqual({ kind: 'unasked', update: true });
     expect(starts).toHaveLength(before);
+    newer.decline();
+    expect(newer.getState()).toEqual({ kind: 'declined', update: true });
+    const again = createAssistantDownload({
+      files: files.files,
+      manifest: { ...MANIFEST, version: 'v2' },
+      supported: true,
+      transfer,
+    });
+    await again.boot();
+    expect(again.getState()).toEqual({ kind: 'declined', update: true });
   });
 
   it('goes over Wi-Fi only when agreed so, and waits on mobile data', async () => {

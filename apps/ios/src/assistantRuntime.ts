@@ -116,11 +116,17 @@ const deviceFiles = (
     destination: model.uri,
     exists: () => model.exists,
     readAnswer: () => {
-      const note = readJson(answerNote) as { answer?: unknown; version?: unknown } | undefined;
+      const note = readJson(answerNote) as
+        | { answer?: unknown; update?: unknown; version?: unknown }
+        | undefined;
       const answer = note?.answer;
       return (answer === 'declined' || answer === 'mobile' || answer === 'wifi') &&
         typeof note?.version === 'string'
-        ? { answer: answer satisfies DownloadAnswer, version: note.version }
+        ? {
+            answer: answer satisfies DownloadAnswer,
+            ...(note.update === true ? { update: true as const } : {}),
+            version: note.version,
+          }
         : undefined;
     },
     readVerified: () => {

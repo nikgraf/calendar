@@ -396,9 +396,12 @@ export const sentencesOf = (answer: unknown): ReadonlyArray<string> => {
 };
 
 /**
- * The example phrases the briefs quote: a phrase that repeats one word
- * for word is the brief's text, not the generator's, and is left out.
- * Only examples of two words or more without an ellipsis count.
+ * The example phrases the briefs quote: a phrase that is mostly one of
+ * them, word for word, is the brief's text, not the generator's, and is
+ * left out. Only examples of three words or more without an ellipsis
+ * count: a shorter one ("all day", "anderthalb Stunden") is a way of
+ * saying something the brief asks for, and a phrase that uses it is what
+ * the data is for (model v1's data counted those of two words).
  */
 export const BRIEF_EXAMPLES: ReadonlyArray<string> = [
   ...Object.values(REGISTERS),
@@ -408,14 +411,21 @@ export const BRIEF_EXAMPLES: ReadonlyArray<string> = [
 ].flatMap((text) =>
   [...text.matchAll(/"([^"]+)"/gu)].flatMap(([, quoted]) => {
     const example = fold(quoted ?? '');
-    return example.includes('…') || example.split(' ').length < 2 ? [] : [example];
+    return example.includes('…') || example.split(' ').length < 3 ? [] : [example];
   }),
 );
 
-/** Whether a phrase holds one of the briefs' examples word for word. */
+/**
+ * Whether a phrase is mostly one of the briefs' examples: holds it word
+ * for word, and it is at least half of its words ("haircut wed 4pm at
+ * the salon", not "can we find time in the morning next week").
+ */
 export const repeatsBriefExample = (text: string): boolean => {
-  const folded = ` ${fold(text)} `;
-  return BRIEF_EXAMPLES.some((example) => folded.includes(` ${example} `));
+  const folded = fold(text);
+  const words = folded.split(' ').filter(Boolean).length;
+  return BRIEF_EXAMPLES.some(
+    (example) => ` ${folded} `.includes(` ${example} `) && example.split(' ').length * 2 >= words,
+  );
 };
 
 /** The threads in a generator's answer: one to three phrases each, none empty. */

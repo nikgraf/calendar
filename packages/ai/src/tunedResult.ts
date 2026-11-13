@@ -211,7 +211,8 @@ const remindersChange = (
       )
     : [];
   const had = before ?? [];
-  if (draft === undefined && Array.isArray(answer) && now.length === 0) {
+  // Only a list written empty says "none": one whose every entry was unreadable says nothing.
+  if (draft === undefined && Array.isArray(answer) && answer.length === 0) {
     return { add: [], clear: true, remove: [] };
   }
   if (sameNumbers(now, had)) {
@@ -256,7 +257,10 @@ const clockOf = (minutes: number): string =>
  * - A start that moved while the end stayed as the draft had it (or was
  *   left out) keeps the draft's length, across midnight too.
  * - A draft that spans days keeps its span when the turn gives both times
- *   anew (an hour later on Friday 09:00 – Saturday 10:00).
+ *   anew (an hour later on Friday 09:00 – Saturday 10:00); one that only
+ *   runs past midnight (Friday 23:30 – Saturday 00:30) is no span of days:
+ *   it runs past midnight again where its new end is before its new start
+ *   (a night shift an hour later), and ends on its day where it is not.
  * - An end before the start reads as past midnight for a night of up to
  *   twelve hours (a party "10pm to 2am"): the next day.
  * - Without an end, or one that reads as no night, an hour.
@@ -303,8 +307,18 @@ const timesOf = (
     return { ...(days > 0 ? { endDate: day(days) } : {}), endTime: clockOf(ends % DAY_MINUTES) };
   }
   // A timed draft that spans days keeps its span when the turn gives both times anew.
+  const draftLength =
+    before === undefined
+      ? 0
+      : minutesOf(before.endTime) + span * DAY_MINUTES - minutesOf(before.startTime);
   if (span > 0 && before?.isAllDay === false && start !== undefined && end !== undefined) {
-    return { endDate: day(span), endTime: end };
+    if (draftLength >= DAY_MINUTES) {
+      return { endDate: day(span), endTime: end };
+    }
+    // One that only ran past midnight runs past it again where the new end is before the new start, however long.
+    if (end < startTime) {
+      return { endDate: day(1), endTime: end };
+    }
   }
   if (start !== undefined && end !== undefined && end < startTime && pastMidnight(startTime, end)) {
     return { endDate: day(1), endTime: end };
