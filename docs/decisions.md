@@ -1179,6 +1179,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   #302, #303 and the repeat, title and words entries below) bar one
   day check. Rejected: the rules over Apple's model, llama.cpp in the
   Swift helper, node-llama-cpp. Open: todo.md.
+- **A to-do's alerts from the Assistant** (2026-11-13, #315) — "remind me
+  to call the bank tomorrow at 9, 10 minutes before" gives the to-do an
+  alert: the model wrote it, the thread dropped it. A to-do's
+  notifications are its Reminders alerts, shown to the model as minutes
+  before the due time (never a calendar's default); the picker names one
+  its presets lack. Like the time, kept only on a Reminders list: a turn
+  adding one on a Google list is refused, the card shows none. Rejected:
+  the nearest preset (not what was said), moving the to-do to Reminders.
+  Open: a to-do's repeat from the Assistant (todo.md).
 - **The editor's two views: Assistant and Form** (2026-11-12, #308) —
   the assistant is its own view, a conversation whose answers are the
   item as a card with what changed marked, and the form a second view of
