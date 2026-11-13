@@ -625,8 +625,9 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   while the edge scrolls). Open: slot drawing, paging days at the side
   edges, the speed (8 h/s at the edge) felt on a device.
 - **Screen-sharing privacy** — the desktop window is excluded from
-  captures by default; "Visible for 10 min" is runtime-only and fails
-  closed on restart; "Always visible" persists. **The capture hint**
+  captures while Hidden is on (the default until #314); "Visible for
+  10 min" is runtime-only and fails closed on restart; "Always visible"
+  persists. **The capture hint**
   (2026-10-11): a window left out of a screenshot or recording says so
   on screen, with the 10-minute pause one click away. The signal is the
   `screencapture` process every ⌘⇧3/4/5 runs (probed: the screenshot UI
@@ -634,6 +635,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   toolbar indicator (always-on noise, #178), a stand-in window behind
   the main one, a Spotlight toast after the file lands. Third-party
   capture tools stay unannounced (#179).
+- **Screen-sharing privacy starts off** (2026-11-13, #314) — a profile
+  with no stored choice shows its windows in captures; Hidden in
+  Settings › Screen Sharing turns protection on, and a stored choice is
+  kept. A settings file's `"hidden"` imported while hidden was the
+  default was never stored, so it reads as unchosen and the write-back
+  turns it to `"visible"`. Rejected: a migration (a file the app wrote
+  itself says `"hidden"` too, so it would pin every file user to Hidden).
+  The `CALENDAR_CAPTURE` screenshot hook, the one exception to
+  protection, had no callers and went with it.
 - **Per-calendar colors** — optimistic local update, write-back through
   `calendarList.patch?colorRgbFormat=true` as a `calendarColor` op kind
   coalescing per account; invalid hex rejected, 4xx dropped.
