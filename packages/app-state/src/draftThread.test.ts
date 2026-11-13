@@ -1490,7 +1490,7 @@ describe('notes and notifications from the words', () => {
     expect(state.drafts[0]?.extras).toEqual({
       attendees: [],
       description: '',
-      reminder: { alarms: [-30], repeat: seedRepeatFields(undefined), url: '' },
+      reminder: { alarms: [-30], alarmsOnly: true, repeat: seedRepeatFields(undefined), url: '' },
       reminders: undefined,
       taskNotes: 'about the invoice',
     });
@@ -1878,6 +1878,7 @@ describe('a to-do’s alerts', () => {
     );
     expect(state.drafts[0]?.extras?.reminder).toEqual({
       alarms: [-10],
+      alarmsOnly: true,
       repeat: seedRepeatFields(undefined),
       url: '',
     });

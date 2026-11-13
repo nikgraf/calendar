@@ -57,6 +57,10 @@ export interface TaskEditorChanges {
   readonly url?: string | null;
 }
 
+/** Alerts as a set: the same ones in another order are the same. */
+const alarmsKey = (alarms: ReadonlyArray<number>): string =>
+  [...alarms].sort((a, b) => a - b).join(',');
+
 const sameRecurrence = (a: TaskRecurrence | undefined, b: TaskRecurrence | undefined) =>
   a === b ||
   (a !== undefined &&
@@ -111,10 +115,8 @@ export const taskEditorChanges = ({
   }
   const undated = current.dueDate === undefined;
   const dayTakenAway = undated && initial.dueDate !== undefined;
-  if (
-    current.alarms.length !== initial.alarms.length ||
-    current.alarms.some((offset, index) => offset !== initial.alarms[index])
-  ) {
+  // The same alerts in another order are no change (a turn takes one off and adds it back).
+  if (alarmsKey(current.alarms) !== alarmsKey(initial.alarms)) {
     changes.alarms = current.alarms.length === 0 ? null : current.alarms;
   }
   // The time goes with the day.

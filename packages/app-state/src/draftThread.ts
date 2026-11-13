@@ -379,8 +379,10 @@ const withAlarms = (
   change: ReminderChange,
 ): { readonly draft: Draft; readonly said: ReadonlyArray<string> } => {
   const extras = draft.extras ?? BLANK_EXTRAS;
+  // Fields the form never held: only the alarms are this turn's (`alarmsOnly`).
   const fields = extras.reminder ?? {
     alarms: [],
+    alarmsOnly: true,
     repeat: seedRepeatFields(undefined),
     url: '',
   };

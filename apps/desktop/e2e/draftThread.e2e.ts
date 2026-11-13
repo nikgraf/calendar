@@ -125,6 +125,7 @@ const pickPriority = (label: string) =>
   `[...document.querySelectorAll('[aria-label="Priority"] [role="radio"]')].find((option) => option.textContent === ${JSON.stringify(label)}).click()`;
 const asked = `!!document.querySelector('[data-testid="move-confirm"]')`;
 const ALERT = '[data-testid="reminder-alarm"]';
+const REPEAT = 'select[aria-label="Repeat"]';
 const alertLabel = `document.querySelector('${ALERT} option:checked')?.textContent ?? ''`;
 const status = `(document.querySelector('[data-testid="quick-add-status"]')?.textContent ?? '')`;
 const disabled = (testId: string) =>
@@ -483,6 +484,12 @@ describe('The draft thread', () => {
     const { cdp } = app;
     await cdp.eval(COMMAND_N);
     await cdp.waitFor(headingIs('New event'));
+    // A repeat picked by hand before the phrase: the switch to a reminder
+    // carries it over, and the phrase's alert must not take it away.
+    await cdp.showEditorView('form');
+    await cdp.eval(setSelect(REPEAT, 'weekly'));
+    await cdp.waitFor(`${valueOf(REPEAT)} === 'weekly'`);
+    await cdp.showEditorView('assistant');
     // The fixture's extras: the model answers the to-do with an alert 10 minutes before.
     await cdp.say('todo: Call the bank | +1 | 09:00 | | remind 10');
     await cdp.waitFor(`${card('alert')} === '10 minutes before'`);
@@ -492,6 +499,7 @@ describe('The draft thread', () => {
     await cdp.waitFor(headingIs('New reminder'));
     expect(await cdp.eval<string>(valueOf(ALERT))).toBe('-10');
     expect(await cdp.eval<string>(alertLabel)).toBe('10 minutes before');
+    expect(await cdp.eval<string>(valueOf(REPEAT))).toBe('weekly');
     await cdp.clickButtonWithText('Save');
     await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);
     await expect
@@ -499,9 +507,9 @@ describe('The draft thread', () => {
         const call = (await readTasks(app.userDataDir)).find(
           (task) => task.title === 'Call the bank',
         );
-        return [call?.listId, call?.dueTime, call?.alarms];
+        return [call?.listId, call?.dueTime, call?.alarms, call?.recurrence?.freq];
       })
-      .toEqual(['ek-groceries', '09:00', [-10]]);
+      .toEqual(['ek-groceries', '09:00', [-10], 'weekly']);
 
     // On the Google list a to-do keeps no alert: a turn that adds one is
     // refused, and nothing of it lands.

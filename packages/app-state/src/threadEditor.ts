@@ -534,7 +534,10 @@ export const useThreadEditor = ({
           if (listKey !== '') {
             taskModel.setListKey(listKey);
           }
-          if (extras?.reminder) {
+          if (extras?.reminder?.alarmsOnly) {
+            // Only a turn's alert: what the switch of kind carried stays.
+            taskModel.restoreAlarms(extras.reminder.alarms);
+          } else if (extras?.reminder) {
             taskModel.restoreReminderFields(extras.reminder);
           }
           taskModel.setNotes(extras?.taskNotes ?? '');

@@ -110,6 +110,8 @@ describe('taskEditorChanges', () => {
     expect(diff({ alarms: [-15, -1440, -60] })).toEqual({ alarms: [-15, -1440, -60] });
     expect(diff({ alarms: [] })).toEqual({ alarms: null });
     expect(diff({ alarms: [-15] })).toEqual({ alarms: [-15] });
+    // The same alerts in another order are no change.
+    expect(diff({ alarms: [-1440, -15] })).toEqual({});
   });
 
   it('clearing the only alarm sends null', () => {

@@ -76,6 +76,12 @@ const listKeyOf = (accountId: string, listId: string) => `${accountId}:${listId}
 export interface ReminderFields {
   /** Minutes relative to the due time, the form's own first. */
   readonly alarms: ReadonlyArray<number>;
+  /**
+   * Made by a turn's alert for a to-do the form never held as one: only
+   * the alarms are the turn's, the rest are blanks. The form takes the
+   * alarms and keeps what a switch of kind carried over (a repeat, a link).
+   */
+  readonly alarmsOnly?: true | undefined;
   readonly priority?: TaskPriority | undefined;
   /** The repeat fields as typed, so an invalid number stays one: Save would refuse it. */
   readonly repeat: RepeatFields;
@@ -242,7 +248,9 @@ export const useTaskEditorModel = ({
   const readOnly = existing !== undefined && isTaskReadOnly(existing);
   /** Any writable task can move: to another Reminders list, account or provider. */
   const canMoveList = existing !== undefined && !readOnly;
-  const alarms = () => [...(alarm === undefined ? [] : [alarm]), ...extraAlarms];
+  // The picker sets the first alert; one it equals among the rest is not kept twice.
+  const alarms = () =>
+    alarm === undefined ? extraAlarms : [alarm, ...extraAlarms.filter((each) => each !== alarm)];
   /** The form's fields as a create/move draft for the selected provider. */
   const draft = (): TaskDraft => {
     const spec = repeatSpec();
@@ -318,6 +326,12 @@ export const useTaskEditorModel = ({
     repeat: repeatState.repeatFields,
     url,
   });
+
+  /** A turn's alerts on the to-do the form shows, the rest of its fields kept. */
+  const restoreAlarms = (next: ReadonlyArray<number>) => {
+    setAlarm(next[0]);
+    setExtraAlarms(next.slice(1));
+  };
 
   /**
    * Another draft's Reminders-only fields take the form over (undefined: a
@@ -604,6 +618,7 @@ export const useTaskEditorModel = ({
     reminderFields,
     remove: () => write.run(remove),
     ...repeatState,
+    restoreAlarms,
     restoreReminderFields,
     save: () => write.run(save),
     setAlarm,
