@@ -1469,7 +1469,8 @@ describe('calendar desktop e2e', () => {
 
   it('controls screen-sharing privacy from the settings window', async () => {
     const cdp = await app.openSettings('sharing');
-    const pauseStatus = `document.querySelector('[data-testid="sharing-pause-status"]')?.textContent ?? null`;
+    // Parenthesized: it is compared with `===`, which binds tighter than `??`.
+    const pauseStatus = `(document.querySelector('[data-testid="sharing-pause-status"]')?.textContent ?? null)`;
     const stored = () => readSettings(app.userDataDir)['screenPrivacy'];
 
     // Visible is the default, nothing is persisted yet, and there is
