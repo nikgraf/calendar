@@ -215,9 +215,14 @@ function StepAnswer({
  * model it says why, with Check Again. What to say next is the bar's,
  * under it (`AssistantBar`).
  */
+/** Under the demo's answers: what they are. */
+const DEMO_NOTE =
+  'A demo answer, kept in the app: it answers the lesson’s phrases only. Save keeps the event, as with the real thing.';
+
 export function AssistantView({
   banner,
   calendars,
+  demo = false,
   editor,
   note,
   notice,
@@ -228,6 +233,8 @@ export function AssistantView({
   /** Above the conversation: the lesson's frame. */
   readonly banner?: ReactNode;
   readonly calendars: ReadonlyArray<CalendarInfo>;
+  /** The Create lesson's demo is on (no model yet): its own hint, and a line under its answers. */
+  readonly demo?: boolean | undefined;
   readonly editor: ReturnType<typeof useThreadEditor>;
   /** A caveat about the drafts (the shared text was cut short). */
   readonly note?: string | undefined;
@@ -289,11 +296,13 @@ export function AssistantView({
       {banner}
       {unavailable ? <View testID="assistant-unavailable">{notice}</View> : null}
       {!started && assistant === 'new' && !pending && !unavailable ? (
-        <View style={styles.empty}>
+        <View style={styles.empty} testID={demo ? 'assistant-demo-empty' : undefined}>
           <SymbolView name="sparkles" size={22} tintColor={colors['text-secondary']} />
-          <Text style={styles.emptyTitle}>Say what to add</Text>
+          <Text style={styles.emptyTitle}>{demo ? 'Try the demo' : 'Say what to add'}</Text>
           <Text style={styles.emptyHint}>
-            “Lunch with Sarah tomorrow at 1”, then change it the same way: “at 12:30”, “invite Tom”.
+            {demo
+              ? 'Send the phrase below. The answer is the event as a card, the same the Assistant gives once its model is here.'
+              : '“Lunch with Sarah tomorrow at 1”, then change it the same way: “at 12:30”, “invite Tom”.'}
           </Text>
         </View>
       ) : null}
@@ -335,6 +344,11 @@ export function AssistantView({
           )}
         </View>
       ))}
+      {demo && started && !pending ? (
+        <Text style={styles.demoNote} testID="assistant-demo-note">
+          {DEMO_NOTE}
+        </Text>
+      ) : null}
       {pending ? (
         <Text style={[styles.said, styles.dimmed]} testID="assistant-pending">
           {pending}
@@ -359,6 +373,12 @@ const makeStyles = (colors: ThemeColors) =>
       paddingBottom: 12,
       paddingHorizontal: 16,
       paddingTop: 8,
+    },
+    demoNote: {
+      color: colors['text-secondary'],
+      fontSize: 13,
+      lineHeight: 18,
+      paddingHorizontal: 4,
     },
     dimmed: {
       opacity: 0.5,

@@ -75,24 +75,3 @@ export const desktopAssistantModel: LanguageModel = {
     return assistantStatusOf(current) ?? 'not-ready';
   },
 };
-
-let asked = false;
-
-const askNow = () => void window.calendarBridge.assistantAsk().catch(() => undefined);
-
-/**
- * The question at launch, once the first-run setup is out of the way and
- * the window is in front: main asks only while the model was never
- * answered for its version, and once a launch.
- */
-export const askForAssistantModel = (): void => {
-  if (asked) {
-    return;
-  }
-  asked = true;
-  if (document.hasFocus()) {
-    askNow();
-    return;
-  }
-  window.addEventListener('focus', askNow, { once: true });
-};

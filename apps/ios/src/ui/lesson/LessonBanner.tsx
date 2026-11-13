@@ -16,15 +16,21 @@ const HINTS: Partial<Record<LessonId, string>> = {
  * surface itself is the real thing; nothing else changes.
  */
 export function LessonBanner({
+  action,
   id,
   note,
   onSkip,
+  progress,
 }: {
+  /** What the note asks for (the Create lesson's download of the Assistant's model). */
+  action?: { readonly label: string; readonly onPress: () => void } | undefined;
   id: LessonId;
-  /** In place of the hint: why the lesson cannot run as drawn (the model is not ready). */
+  /** In place of the hint: the Create lesson without the Assistant's model, and the demo standing in. */
   note?: string | undefined;
   /** Absent once the lesson was tried: the hint stays, Skip has nothing left to skip. */
   onSkip?: (() => void) | undefined;
+  /** How far the model's download is, in percent, while it runs. */
+  progress?: number | undefined;
 }) {
   const styles = useStyles(makeStyles);
   const { colors } = useTheme();
@@ -36,7 +42,29 @@ export function LessonBanner({
         <Text style={styles.title}>
           Getting started · {lessonPosition(id)} of {LESSON_COUNT} — {copy.title}
         </Text>
-        <Text style={styles.hint}>{note ?? HINTS[id] ?? copy.intro}</Text>
+        <Text style={styles.hint} testID="lesson-banner-note">
+          {note ?? HINTS[id] ?? copy.intro}
+        </Text>
+        {progress === undefined ? null : (
+          <View
+            accessibilityLabel={`${String(progress)} percent downloaded`}
+            accessibilityRole="progressbar"
+            style={styles.track}
+            testID="lesson-model-progress"
+          >
+            <View style={[styles.fill, { width: `${String(progress)}%` }]} />
+          </View>
+        )}
+        {action === undefined ? null : (
+          <Pressable
+            accessibilityRole="button"
+            onPress={action.onPress}
+            style={({ pressed }) => [styles.action, pressed && styles.pressed]}
+            testID="lesson-model-action"
+          >
+            <Text style={styles.actionLabel}>{action.label}</Text>
+          </Pressable>
+        )}
       </View>
       {onSkip ? (
         <Pressable
@@ -55,6 +83,22 @@ export function LessonBanner({
 
 const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
+    /** The download, in the ink of an action, under the note. */
+    action: {
+      alignItems: 'center',
+      alignSelf: 'flex-start',
+      backgroundColor: colors.primary,
+      borderRadius: 22,
+      justifyContent: 'center',
+      marginTop: 8,
+      minHeight: 44,
+      paddingHorizontal: 18,
+    },
+    actionLabel: {
+      color: colors['on-primary'],
+      fontSize: 15,
+      fontWeight: '600',
+    },
     banner: {
       alignItems: 'flex-start',
       backgroundColor: colors.surface,
@@ -65,6 +109,11 @@ const makeStyles = (colors: ThemeColors) =>
       marginHorizontal: 16,
       paddingHorizontal: 14,
       paddingVertical: 10,
+    },
+    fill: {
+      backgroundColor: colors.primary,
+      borderRadius: 2,
+      height: 4,
     },
     hint: {
       color: colors['text-secondary'],
@@ -86,5 +135,12 @@ const makeStyles = (colors: ThemeColors) =>
       color: colors.text,
       fontSize: 13,
       fontWeight: '600',
+    },
+    track: {
+      backgroundColor: colors.fill,
+      borderRadius: 2,
+      height: 4,
+      marginTop: 8,
+      overflow: 'hidden',
     },
   });

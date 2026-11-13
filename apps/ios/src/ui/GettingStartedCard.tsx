@@ -1,3 +1,4 @@
+import { createRowNote } from '@calendar/ai';
 import { useAccountCount, useOnboarding, useUpdateOnboarding } from '@calendar/app-state';
 import {
   cardVisible,
@@ -10,11 +11,31 @@ import {
 import { MenuView } from '@expo/ui/community/menu';
 import { useRouter } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useAssistantModelState } from '../assistantRuntime.ts';
+import { modelFixture } from '../model.ts';
 import { useOnboardingEnabled } from '../onboarding.ts';
 import { useEditorHost } from './EditorHost.tsx';
 import { Glyph } from './GroupedList.tsx';
 import { openLesson } from './lessons.ts';
 import { BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme } from './theme.ts';
+
+/**
+ * What a row says under its title: the lesson's line until it is ticked,
+ * and the Create row's download once it is asked for (running, waiting
+ * or failed), ticked or not.
+ */
+const rowLine = (
+  ticked: boolean,
+  subtitle: string,
+  note: ReturnType<typeof createRowNote>,
+): { readonly progress?: number; readonly text: string } | undefined => {
+  if (note?.asked === true) {
+    return note.progress === undefined
+      ? { text: note.subtitle }
+      : { progress: note.progress, text: note.subtitle };
+  }
+  return ticked ? undefined : { text: note?.subtitle ?? subtitle };
+};
 
 /**
  * The Getting started card at the top of the Calendar tab: one row per
@@ -35,6 +56,13 @@ export function GettingStartedCard({ timeZone }: { timeZone: string }) {
   const update = useUpdateOnboarding();
   // Null until read: the empty fallback would draw "Add your accounts" for a beat.
   const accountCount = useAccountCount();
+  // The Create row says where the Assistant's model stands until it is
+  // ready (the fixture model always is): the download shows here, not in an alert.
+  const model = useAssistantModelState();
+  const createNote =
+    modelFixture && model.kind === 'unsupported'
+      ? undefined
+      : createRowNote(model, { device: 'iPhone' });
   if (!enabled || state === null || !cardVisible(state) || accountCount === null) {
     return null;
   }
@@ -124,9 +152,10 @@ export function GettingStartedCard({ timeZone }: { timeZone: string }) {
       {rows.map((row) => {
         const copy = lessonCopy(row.id, 'iphone');
         const ticked = row.mark !== undefined;
+        const line = rowLine(ticked, copy.subtitle, row.id === 'create' ? createNote : undefined);
         return (
           <Pressable
-            accessibilityLabel={`${copy.title}${ticked ? ', done' : ''}`}
+            accessibilityLabel={`${copy.title}${ticked ? ', done' : ''}${line === undefined ? '' : `, ${line.text}`}`}
             accessibilityRole="button"
             key={row.id}
             onPress={() => open(row.id)}
@@ -147,10 +176,19 @@ export function GettingStartedCard({ timeZone }: { timeZone: string }) {
               <Text numberOfLines={1} style={[styles.rowTitle, ticked && styles.rowTicked]}>
                 {copy.title}
               </Text>
-              {ticked ? null : (
-                <Text numberOfLines={1} style={styles.rowSubtitle}>
-                  {copy.subtitle}
+              {line === undefined ? null : (
+                <Text
+                  numberOfLines={1}
+                  style={styles.rowSubtitle}
+                  testID={`getting-started-subtitle-${row.id}`}
+                >
+                  {line.text}
                 </Text>
+              )}
+              {line?.progress === undefined ? null : (
+                <View style={styles.rowTrack} testID="getting-started-create-progress">
+                  <View style={[styles.fill, { width: `${String(line.progress)}%` }]} />
+                </View>
               )}
             </View>
           </Pressable>
@@ -235,6 +273,7 @@ const makeStyles = (colors: ThemeColors) =>
       color: colors['text-secondary'],
       fontSize: 13,
     },
+    /** The model's download, under the Create row's line. */
     rowText: {
       flex: 1,
     },
@@ -246,6 +285,13 @@ const makeStyles = (colors: ThemeColors) =>
       color: colors.text,
       fontSize: 15,
       fontWeight: '500',
+    },
+    rowTrack: {
+      backgroundColor: colors.fill,
+      borderRadius: 2,
+      height: 3,
+      marginTop: 5,
+      overflow: 'hidden',
     },
     title: {
       color: colors.text,

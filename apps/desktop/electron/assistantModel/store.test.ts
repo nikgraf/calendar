@@ -117,7 +117,7 @@ describe('createAssistantStore', () => {
     expect(store.getState().kind).toBe('ready');
   });
 
-  it('keeps "Not Now", and asks again for a new version', async () => {
+  it('keeps an old "Not Now" for its version, and a new version starts unasked', async () => {
     const { disk, files } = memoryFiles({ answer: { answer: 'declined', version: 'v1' } });
     const { fetch, starts } = fakeFetch(disk);
     const declined = createAssistantStore({ fetch, files, manifest: MANIFEST });
@@ -175,7 +175,7 @@ describe('createAssistantStore', () => {
     expect(calls).toBe(2);
   });
 
-  it('stops a transfer without calling it a failure, and declining stops one too', async () => {
+  it('stops a transfer without calling it a failure', async () => {
     const { files } = memoryFiles({});
     let release: (() => void) | undefined;
     const fetch: Fetch = ({ signal }) =>
@@ -189,10 +189,6 @@ describe('createAssistantStore', () => {
     store.stop();
     await agreed;
     expect(store.getState().kind).toBe('downloading');
-    const again = store.agree();
-    store.decline();
-    await again;
-    expect(store.getState()).toEqual({ kind: 'declined' });
     release?.();
   });
 

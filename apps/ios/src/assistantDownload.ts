@@ -13,7 +13,10 @@ import type {
  * file is used once its size and SHA-256 match the manifest.
  */
 
-/** The person's answer, kept per model version: a new version asks again. */
+/**
+ * The person's answer, kept per model version (a new version starts
+ * unasked); "declined" is the old launch question's "Not Now".
+ */
 export type DownloadAnswer = 'declined' | 'mobile' | 'wifi';
 
 export type TransferNetwork = 'any' | 'wifi';
@@ -80,9 +83,8 @@ export interface AssistantDownload {
   readonly allowMobileData: () => Promise<void>;
   /** At app start, while it is active: picks up where the last launch left off. */
   readonly boot: () => Promise<void>;
-  readonly decline: () => void;
   readonly getState: () => AssistantModelState;
-  /** The network now, for the question's wording. */
+  /** The network now, for the offer's wording. */
   readonly network: () => NetworkReading | undefined;
   readonly retry: () => Promise<void>;
   /** The size to say: the manifest's. */
@@ -114,7 +116,6 @@ export const createAssistantDownload = (deps: AssistantDownloadDeps): AssistantD
       agree: async () => undefined,
       allowMobileData: async () => undefined,
       boot: async () => undefined,
-      decline: () => undefined,
       getState: () => state,
       network: () => undefined,
       retry: async () => undefined,
@@ -324,11 +325,6 @@ export const createAssistantDownload = (deps: AssistantDownloadDeps): AssistantD
         return;
       }
       await begin();
-    },
-    decline: () => {
-      files.writeAnswer({ answer: 'declined', version: manifest.version });
-      void transfer.cancel(files.destination).catch(() => undefined);
-      set({ kind: 'declined' });
     },
     getState: () => state,
     network: () => path,

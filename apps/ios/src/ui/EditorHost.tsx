@@ -35,6 +35,7 @@ import {
   useState,
 } from 'react';
 import { AppState, Linking } from 'react-native';
+import { showAssistantAbsent } from '../assistantRuntime.ts';
 import { backendClient } from '../backend.ts';
 import { fixtureShareFromUrl, settingsCodeOf, takeIncomingShare } from '../incomingShare.ts';
 import { launchUrl } from '../launchUrl.ts';
@@ -360,8 +361,13 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
   // state back to a fresh install's, onboarding switched on for this
   // launch whatever the bundle says, and the setup presented — over any
   // sheet, as a share is.
-  const onOnboardingFixture = useEffectEvent(() => {
+  const onOnboardingFixture = useEffectEvent((url: string) => {
     forceOnboarding();
+    // `?assistant=absent`: as on a device without the Assistant's model yet,
+    // so the Create lesson runs its demo (flow 28).
+    if (/[?&]assistant=absent\b/i.test(url)) {
+      showAssistantAbsent();
+    }
     setSheet(NONE);
     // Guarded: a failed reset is a toast, and the setup still goes up.
     void updateOnboarding({ reset: 'all' }).then(() => router.push('/setup'));
@@ -387,7 +393,7 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
         return;
       }
       if (modelFixture && isOnboardingFixtureUrl(url)) {
-        onOnboardingFixture();
+        onOnboardingFixture(url);
         return;
       }
       const fixtureSource = modelFixture ? fixtureShareFromUrl(url) : undefined;

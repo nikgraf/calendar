@@ -16,6 +16,8 @@ import {
   type BirthdayOccurrence,
   type CalendarInfo,
   type ItemKind,
+  lessonDemoNext,
+  type LessonId,
   type TaskListInfo,
   type TaskRecord,
 } from '@calendar/core';
@@ -39,10 +41,19 @@ import Animated, { type AnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { appleSpeech } from '../appleSpeech.ts';
 import { backendClient } from '../backend.ts';
-import { type AssistantModelState, type ModelStatus, statusOf } from '@calendar/ai';
+import {
+  type AssistantModelState,
+  lessonDemoModel,
+  lessonModelCopy,
+  type ModelStatus,
+  PUBLISHED_MODEL,
+  statusOf,
+  tunedReader,
+} from '@calendar/ai';
+import type { AssistantDownload } from '../assistantDownload.ts';
 import { assistantDownload, assistantReader, useAssistantModelState } from '../assistantRuntime.ts';
 import { languageModel, modelFixture } from '../model.ts';
-import { AssistantBar } from './assistant/AssistantBar.tsx';
+import { AssistantBar, type BarDemo, demoHoldsBar } from './assistant/AssistantBar.tsx';
 import { AssistantModelNotice } from './assistant/AssistantModelNotice.tsx';
 import { AssistantView } from './assistant/AssistantView.tsx';
 import { DraftPager } from './assistant/DraftPager.tsx';
@@ -387,6 +398,7 @@ const useScreenReader = (): boolean => {
  * older step on show or under VoiceOver).
  */
 const capsuleShown = ({
+  demoBar,
   keyboard,
   previewing,
   screenReader,
@@ -395,6 +407,8 @@ const capsuleShown = ({
   tucked,
   typing,
 }: {
+  /** The Create lesson's demo holds the bar (its phrase, or the way on to the Form). */
+  readonly demoBar: boolean;
   readonly keyboard: number;
   readonly previewing: boolean;
   readonly screenReader: boolean;
@@ -404,7 +418,9 @@ const capsuleShown = ({
   readonly typing: boolean;
 }): boolean =>
   keyboard === 0 &&
-  (shown === 'assistant' ? status !== null && !typing : !tucked || previewing || screenReader);
+  (shown === 'assistant'
+    ? status !== null && !typing && !demoBar
+    : !tucked || previewing || screenReader);
 
 /**
  * One of the two views, filling the editor below its header. While the
@@ -564,19 +580,104 @@ function FormView({
  * the next.
  */
 
-/** The Create lesson's note while the Assistant's model is not on this iPhone yet. */
-const lessonNoteOf = (state: AssistantModelState): string => {
-  switch (state.kind) {
-    case 'unsupported':
-      return 'This iPhone cannot run the Assistant’s model — the form still makes an event.';
-    case 'unasked':
-    case 'declined':
-      return 'Describing an event needs the Assistant’s model, a one-time download — the form still makes one.';
-    case 'failed':
-      return 'The Assistant’s model did not download — Try Again in the Assistant; the form still makes an event.';
-    default:
-      return 'The Assistant’s model is still downloading — the form still makes an event.';
+/**
+ * The Create lesson while the Assistant's model is not on this iPhone:
+ * the real editor over v1's answers to the lesson's two phrases
+ * (`lessonDemo.ts`), until the model is ready.
+ */
+const demoReader = tunedReader(lessonDemoModel);
+
+/** The model's one action, from the Assistant's notice or the lesson's banner. */
+const runModelAction = (download: AssistantDownload, action: 'download' | 'mobile' | 'retry') => {
+  if (action === 'download') {
+    void download.agree('wifi');
+  } else if (action === 'mobile') {
+    void download.allowMobileData();
+  } else {
+    void download.retry();
   }
+};
+
+/**
+ * A lesson's frame, over either view. In the Create lesson without the
+ * model (`model`, its state, given then and once the model came during
+ * the demo) it says what the Assistant is and offers the download, the
+ * demo standing in; once the model is here, that it is.
+ */
+function LessonFrame({
+  download,
+  id,
+  model,
+  onSkip,
+}: {
+  readonly download: AssistantDownload;
+  readonly id: LessonId;
+  readonly model: AssistantModelState | undefined;
+  readonly onSkip: (() => void) | undefined;
+}) {
+  const copy =
+    model === undefined
+      ? undefined
+      : lessonModelCopy(model, {
+          device: 'iPhone',
+          network: download.network(),
+          // The release's own size where the download cannot say (a build without the module).
+          size: download.size() ?? PUBLISHED_MODEL.bytes,
+        });
+  const offer = copy?.action;
+  return (
+    <LessonBanner
+      action={
+        offer === undefined
+          ? undefined
+          : { label: offer.label, onPress: () => runModelAction(download, offer.kind) }
+      }
+      id={id}
+      note={copy?.text}
+      onSkip={onSkip}
+      progress={copy?.progress}
+    />
+  );
+}
+
+type StepLine = ReturnType<typeof useThreadEditor>['steps']['line'];
+
+/** The phrases the thread has taken so far, oldest first (the demo goes by them). */
+const saidSoFar = (line: StepLine) =>
+  line.flatMap(({ step }) => (step.kind === 'phrase' ? [step.utterance] : []));
+
+/**
+ * The Create lesson's demo in the bar (`BarDemo`), while it runs: what
+ * it answers next — the lesson's phrase, then its change — kept in the
+ * field once the last one is taken (the first comes with the lesson's
+ * seed), so the pending line shows it as said.
+ */
+const useDemoBar = ({
+  demo,
+  formOnly,
+  line,
+  onForm,
+  setPhrase,
+}: {
+  readonly demo: boolean;
+  readonly formOnly: boolean;
+  readonly line: StepLine;
+  readonly onForm: () => void;
+  readonly setPhrase: (phrase: string) => void;
+}): BarDemo | undefined => {
+  const next = demo ? lessonDemoNext(saidSoFar(line)) : undefined;
+  useEffect(() => {
+    if (next !== undefined) {
+      setPhrase(next);
+    }
+  }, [next, setPhrase]);
+  if (!demo) {
+    return undefined;
+  }
+  if (next !== undefined) {
+    return { kind: 'phrase', phrase: next };
+  }
+  return formOnly ? { kind: 'form', onForm } : { kind: 'wait' };
 };
 
 export function EventEditSheet({
@@ -625,6 +726,14 @@ export function EventEditSheet({
         ? 'event'
         : 'new';
   const lesson = useLessonTry(seed.lesson);
+  // The Assistant runs on its own model (`assistantRuntime.ts`), whose state
+  // is known at once; the fixture model (e2e) is always ready, unless a
+  // flow says it is absent.
+  const own = useAssistantModelState();
+  const status: ModelStatus | null =
+    modelFixture && own.kind === 'unsupported' ? 'ready' : statusOf(own);
+  // The Create lesson without the model: its demo, on the real editor.
+  const demo = seed.lesson === 'create' && status !== null && status !== 'ready';
   const editor = useThreadEditor({
     backend: backendClient,
     calendars,
@@ -636,7 +745,7 @@ export function EventEditSheet({
       lesson.done();
       onSaved?.();
     },
-    reader: assistantReader(),
+    reader: demo ? demoReader : assistantReader(),
     seed,
     sourceKind,
     task,
@@ -659,24 +768,27 @@ export function EventEditSheet({
   const [typing, setTyping] = useState(seed.quickAddText !== undefined);
   const [tucked, setTucked] = useState(false);
   const shown: EditorView = assists ? viewShown(switcher.state) : 'form';
-  // The model answers a moment after the editor opened. Not ready, and
-  // nothing said or typed yet: the form is what there is to work with,
-  // once — the Assistant says why and is a tap away.
-  // The Assistant runs on its own model (`assistantRuntime.ts`), whose state
-  // is known at once; the fixture model (e2e) is always ready.
-  const own = useAssistantModelState();
-  const status: ModelStatus | null = modelFixture ? 'ready' : statusOf(own);
+  // The model's state known: not ready, and nothing said or typed yet, the
+  // form is what there is to work with, once — the Assistant says why and
+  // is a tap away. Not for the Create lesson, whose demo is the Assistant.
   const answered = useRef(false);
   useEffect(() => {
     if (status === null || answered.current) {
       return;
     }
     answered.current = true;
-    if (status !== 'ready' && steps.of === 0) {
+    if (status !== 'ready' && steps.of === 0 && !demo) {
       switcher.snap('form');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the first answer only
   }, [status]);
+  // The demo went on until the model came: the banner says it is here.
+  const [demoed, setDemoed] = useState(demo);
+  useEffect(() => {
+    if (demo) {
+      setDemoed(true);
+    }
+  }, [demo]);
   // Nothing to say a phrase to (no model, an older step on show), or the
   // form at rest (the Assistant gone, its field with it: it comes back
   // with the bar, not a keyboard rising under the switch): the field closes.
@@ -688,31 +800,23 @@ export function EventEditSheet({
     }
   }, [atForm, barOff]);
   const download = assistantDownload();
+  // The lesson's banner offers the model in the demo; the notice would say it twice.
   const notice =
-    status === null || status === 'ready' ? undefined : (
+    status === null || status === 'ready' || demo ? undefined : (
       <AssistantModelNotice
         network={download.network()}
-        onAction={(action) => {
-          if (action === 'download') {
-            void download.agree('wifi');
-          } else if (action === 'mobile') {
-            void download.allowMobileData();
-          } else {
-            void download.retry();
-          }
-        }}
+        onAction={(action) => runModelAction(download, action)}
         size={download.size()}
         state={own}
       />
     );
 
-  // The Create lesson's frame, over either view. Where the model is not
-  // ready the editor has fallen back to its form: the banner says why the
-  // lesson is not as drawn.
+  // The Create lesson's frame, over either view.
   const lessonBanner = seed.lesson ? (
-    <LessonBanner
+    <LessonFrame
+      download={download}
       id={seed.lesson}
-      note={status === null || status === 'ready' ? undefined : lessonNoteOf(own)}
+      model={demo || demoed ? own : undefined}
       onSkip={lesson.open ? onClose : undefined}
     />
   ) : null;
@@ -736,6 +840,13 @@ export function EventEditSheet({
       return message;
     },
     speech: appleSpeech,
+  });
+  const barDemo = useDemoBar({
+    demo,
+    formOnly: status === 'unsupported',
+    line: steps.line,
+    onForm: () => switcher.flip('form', keyboard > 0),
+    setPhrase: quick.setPhrase,
   });
 
   const { noun, verb } = editorTitle({
@@ -780,6 +891,7 @@ export function EventEditSheet({
                 <AssistantView
                   banner={lessonBanner}
                   calendars={calendars}
+                  demo={demo}
                   editor={editor}
                   note={seed.thread?.note}
                   notice={notice}
@@ -801,6 +913,7 @@ export function EventEditSheet({
                   </Text>
                 ) : null}
                 <AssistantBar
+                  demo={barDemo}
                   hasDrafts={drafts.length > 0}
                   micStyle={switcher.micStyle}
                   onTyping={setTyping}
@@ -835,6 +948,7 @@ export function EventEditSheet({
                 }
                 progress={switcher.progress}
                 shown={capsuleShown({
+                  demoBar: demoHoldsBar(barDemo, previewing),
                   keyboard,
                   previewing,
                   screenReader,

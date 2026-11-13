@@ -5,16 +5,16 @@ import {
   type AssistantModelState,
   assistantModelManifest,
   makeFixtureLanguageModel,
-  sizeLabel,
 } from '@calendar/ai';
-import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain } from 'electron';
 import { modelFolder, nodeFetch, nodeModelFiles } from './files.ts';
 import { createLlamaServer, reapLeftovers, socketPathFor } from './server.ts';
 import { type AssistantStore, createAssistantStore } from './store.ts';
 
 /**
  * The Assistant's own model on the Mac (the release `@calendar/ai` names,
- * the iPhone's too): downloaded into the profile after the person agrees,
+ * the iPhone's too): downloaded into the profile once the person asks for
+ * it (the Create lesson's banner, the Assistant's notice, Settings),
  * run by the bundled `llama-server`, asked over `assistant:generate` by the
  * renderer's tuned reader. Apple's model and a served one keep answering
  * find a time, search and capture (`model:*`, modelHelper.ts).
@@ -22,10 +22,11 @@ import { type AssistantStore, createAssistantStore } from './store.ts';
  * Switches: CALENDAR_MODEL=fixture answers with the deterministic model
  * from @calendar/ai and reports ready (the e2e harness);
  * CALENDAR_ASSISTANT_MODEL=off leaves it out (the harness's default:
- * no question at launch, nothing downloaded). For a run from source,
+ * nothing offered, nothing downloaded). For a run from source,
  * CALENDAR_ASSISTANT_MODEL_FILE=<gguf> uses a file in place of the
- * download, and CALENDAR_ASSISTANT_MANIFEST=<json> fetches another file
- * (one served from this Mac).
+ * download, CALENDAR_ASSISTANT_MANIFEST=<json> fetches another file
+ * (one served from this Mac), and CALENDAR_LLAMA_SERVER=<binary> stands
+ * in for the built llama-server (a spec on a build without one).
  */
 
 /** Room for the tuned prompt: the day list, a draft with short notes, six earlier turns. */
@@ -35,9 +36,11 @@ const fixture =
   process.env['CALENDAR_MODEL'] === 'fixture' ? makeFixtureLanguageModel() : undefined;
 
 const llamaServerPath = (): string | null => {
+  // A run from source may name another binary (an e2e spec's stand-in, never started).
+  const named = app.isPackaged ? undefined : process.env['CALENDAR_LLAMA_SERVER']?.trim();
   const candidate = app.isPackaged
     ? join(process.resourcesPath, 'llama-server')
-    : join(__dirname, '..', 'llama', '.build', 'llama-server');
+    : named || join(__dirname, '..', 'llama', '.build', 'llama-server');
   return existsSync(candidate) ? candidate : null;
 };
 
@@ -107,8 +110,6 @@ export const registerAssistantModel = (userDataDir: string): void => {
     }
   };
   follow(stateNow());
-  /** Asked once a launch: a question the person left open (the app quit) comes back next time. */
-  let asked = false;
 
   if (source.kind === 'store') {
     source.store.subscribe((state) => {
@@ -121,29 +122,6 @@ export const registerAssistantModel = (userDataDir: string): void => {
   }
 
   ipcMain.handle('assistant:state', () => stateNow());
-  ipcMain.handle('assistant:ask', async (event) => {
-    if (source.kind !== 'store' || asked || source.store.getState().kind !== 'unasked') {
-      return;
-    }
-    asked = true;
-    const window = BrowserWindow.fromWebContents(event.sender);
-    const options = {
-      buttons: ['Download', 'Not Now'],
-      cancelId: 1,
-      defaultId: 0,
-      detail: `The Assistant reads what you say with a model that runs on this Mac, so your words stay on it. It is a one-time download of ${sizeLabel(assistantModelManifest(process.env['CALENDAR_ASSISTANT_MANIFEST']).bytes)}.`,
-      message: 'Download the Assistant?',
-      type: 'question' as const,
-    };
-    const { response } = await (window
-      ? dialog.showMessageBox(window, options)
-      : dialog.showMessageBox(options));
-    if (response === 0) {
-      void source.store.agree();
-    } else {
-      source.store.decline();
-    }
-  });
   ipcMain.handle('assistant:download', () => {
     if (source.kind === 'store') {
       void source.store.agree();
