@@ -1,5 +1,5 @@
-import type { AssistantDownload, NetworkReading } from './assistantDownload.ts';
-import { sizeLabel } from './assistantModelManifest.ts';
+import { type NetworkReading, sizeLabel } from '@calendar/ai';
+import type { AssistantDownload } from './assistantDownload.ts';
 
 /**
  * The question at app start (App Review guideline 4.2.3: say the size and

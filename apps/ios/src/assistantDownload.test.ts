@@ -4,12 +4,10 @@ import {
   createAssistantDownload,
   type DownloadAnswer,
   type ModelFiles,
-  type NetworkReading,
-  statusOf,
   type TransferNetwork,
   type TransferPort,
 } from './assistantDownload.ts';
-import type { AssistantModelManifest } from './assistantModelManifest.ts';
+import { type AssistantModelManifest, type NetworkReading, statusOf } from '@calendar/ai';
 
 const MANIFEST: AssistantModelManifest = {
   bytes: 1000,

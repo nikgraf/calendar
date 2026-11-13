@@ -4,13 +4,13 @@ import {
   remindersStatusCopy,
   useModelAvailability,
 } from '@calendar/app-state';
+import { noticeCopy } from '@calendar/ai';
 import { Effect } from 'effect';
 import { useEffect, useState } from 'react';
 import { AccessibilityInfo, Platform } from 'react-native';
 import { appleLanguageModel } from '../../appleModel.ts';
 import { appleSpeech } from '../../appleSpeech.ts';
 import { assistantDownload, useAssistantModelState } from '../../assistantRuntime.ts';
-import { noticeCopy } from '../../assistantModelCopy.ts';
 import { clearLastRenderError, readLastRenderError } from '../../crashLog.ts';
 import {
   availabilityDetails,
@@ -38,6 +38,7 @@ export function DiagnosticsPage() {
   const assistant = useAssistantModelState();
   const download = assistantDownload();
   const assistantCopy = noticeCopy(assistant, {
+    device: 'iPhone',
     network: download.network(),
     size: download.size(),
   });

@@ -1,18 +1,22 @@
-import { type PhraseReader, tunedReader } from '@calendar/ai';
+import {
+  type AssistantModelManifest,
+  type AssistantModelState,
+  assistantModelManifest,
+  type PhraseReader,
+  tunedReader,
+} from '@calendar/ai';
 import { useSyncExternalStore } from 'react';
 import { loadModelDownloadModule } from '../modules/solunivo-model-download/index.ts';
 import { loadProcessMemoryModule } from '../modules/solunivo-process-memory/index.ts';
 import {
   type AssistantDownload,
   type AssistantDownloadDeps,
-  type AssistantModelState,
   createAssistantDownload,
   type DownloadAnswer,
   type ModelFiles,
   type TransferPort,
 } from './assistantDownload.ts';
 import { type AssistantModel, createAssistantModel } from './assistantModel.ts';
-import { type AssistantModelManifest, assistantModelManifest } from './assistantModelManifest.ts';
 import { offerOnce } from './assistantModelOffer.ts';
 import { modelFixture } from './model.ts';
 import { loadOpenModelRuntime } from './openModel.ts';

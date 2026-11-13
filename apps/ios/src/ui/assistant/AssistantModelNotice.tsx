@@ -1,6 +1,5 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import type { AssistantModelState, NetworkReading } from '../../assistantDownload.ts';
-import { noticeCopy } from '../../assistantModelCopy.ts';
+import { type AssistantModelState, type NetworkReading, noticeCopy } from '@calendar/ai';
 import { BOX_FONT_SCALE, type ThemeColors, useStyles } from '../theme.ts';
 
 /**
@@ -22,7 +21,7 @@ export function AssistantModelNotice({
   state: AssistantModelState;
 }) {
   const styles = useStyles(makeStyles);
-  const copy = noticeCopy(state, { network, size });
+  const copy = noticeCopy(state, { device: 'iPhone', network, size });
   return (
     <View style={styles.notice} testID="assistant-model-notice">
       {copy.lines.map((line, index) => (

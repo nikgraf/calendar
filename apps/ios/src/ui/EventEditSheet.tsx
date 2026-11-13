@@ -34,8 +34,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { onAppActive } from '../appActive.ts';
 import { appleSpeech } from '../appleSpeech.ts';
 import { backendClient } from '../backend.ts';
-import type { LanguageModel, ModelStatus } from '@calendar/ai';
-import { type AssistantModelState, statusOf } from '../assistantDownload.ts';
+import {
+  type AssistantModelState,
+  type LanguageModel,
+  type ModelStatus,
+  statusOf,
+} from '@calendar/ai';
 import { assistantDownload, assistantReader, useAssistantModelState } from '../assistantRuntime.ts';
 import { languageModel } from '../model.ts';
 import { AssistantBar } from './assistant/AssistantBar.tsx';

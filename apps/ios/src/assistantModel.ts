@@ -1,5 +1,5 @@
 import type { LanguageModel, ModelStatus } from '@calendar/ai';
-import { type AssistantModelState, statusOf } from './assistantDownload.ts';
+import { type AssistantModelState, statusOf } from '@calendar/ai';
 import { letGoLlama, takeLlama } from './llamaOwner.ts';
 import {
   loadOpenModel,

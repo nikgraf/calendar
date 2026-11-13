@@ -1,44 +1,20 @@
-import type { AssistantModelManifest } from './assistantModelManifest.ts';
+import type {
+  AssistantModelManifest,
+  AssistantModelState,
+  NetworkReading,
+  UnsupportedReason,
+} from '@calendar/ai';
 
 /**
- * Where the Assistant's model stands on this iPhone, one state at a time.
- * Nothing is fetched before the person agrees (`agree`, or the
- * Assistant's own Download button); the transfer then goes over Wi-Fi
- * without Low Data Mode only, unless they allowed mobile data. A file is
- * used once its size and SHA-256 match the manifest.
+ * The Assistant's model on this iPhone (`AssistantModelState`, shared with
+ * the Mac in `@calendar/ai`). Nothing is fetched before the person agrees
+ * (`agree`, or the Assistant's own Download button); the transfer then goes
+ * over Wi-Fi without Low Data Mode only, unless they allowed mobile data. A
+ * file is used once its size and SHA-256 match the manifest.
  */
-export type AssistantModelState =
-  | { readonly kind: 'declined' }
-  | { readonly kind: 'downloading'; readonly received: number; readonly total: number }
-  | { readonly kind: 'failed'; readonly message: string }
-  | { readonly kind: 'ready'; readonly path: string }
-  | { readonly kind: 'unasked' }
-  | { readonly kind: 'unsupported'; readonly reason: UnsupportedReason }
-  | { readonly kind: 'verifying' }
-  | {
-      /** What the transfer waits for: Wi-Fi (on mobile data or in Low Data Mode), or any connection. */
-      readonly for: 'network' | 'wifi';
-      readonly kind: 'waiting';
-      readonly received: number;
-      readonly total: number;
-    };
-
-/**
- * Why this build or device has no Assistant model: the fixture model
- * runs (e2e), a simulator without a file to fetch, no llama runtime in
- * the binary, an iPhone with too little memory, or a binary without the
- * download or file module.
- */
-export type UnsupportedReason = 'fixture' | 'memory' | 'module' | 'runtime' | 'simulator';
 
 /** The person's answer, kept per model version: a new version asks again. */
 export type DownloadAnswer = 'declined' | 'mobile' | 'wifi';
-
-export interface NetworkReading {
-  readonly constrained: boolean;
-  readonly expensive: boolean;
-  readonly satisfied: boolean;
-}
 
 export type TransferNetwork = 'any' | 'wifi';
 
@@ -329,7 +305,3 @@ export const createAssistantDownload = (deps: AssistantDownloadDeps): AssistantD
     },
   };
 };
-
-/** The status the Assistant's model reports to the thread: ready only with a checked file. */
-export const statusOf = (state: AssistantModelState): 'not-ready' | 'ready' | 'unsupported' =>
-  state.kind === 'ready' ? 'ready' : state.kind === 'unsupported' ? 'unsupported' : 'not-ready';

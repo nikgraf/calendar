@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vite-plus/test';
-import type { AssistantModelState } from './assistantDownload.ts';
+import type { AssistantModelState } from '@calendar/ai';
 import { createAssistantModel } from './assistantModel.ts';
 import { letGoLlama, llamaHolder, takeLlama } from './llamaOwner.ts';
 import type { OpenModelContext, OpenModelRuntime } from './openModel.ts';

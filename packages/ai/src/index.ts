@@ -23,3 +23,4 @@ export * from './said.ts';
 export * from './tuned.ts';
 export * from './tunedResult.ts';
 export * from './phraseReader.ts';
+export * from './assistantModel.ts';
