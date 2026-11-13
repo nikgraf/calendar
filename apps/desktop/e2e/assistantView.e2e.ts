@@ -410,8 +410,8 @@ describe('The editor’s Assistant and Form views', () => {
     const cardTop = await cdp.eval<number>(topOf('editor-assistant'));
 
     // To the form: its title starts on the card's, well below its own
-    // place, and the conversation is drawn over it, out of reach, until
-    // the motion ends.
+    // place, and the conversation stays drawn under it, out of reach,
+    // until the motion ends.
     await cdp.clickTestId('editor-view-form');
     await cdp.waitFor(settled);
     const [start, end] =

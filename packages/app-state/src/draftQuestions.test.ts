@@ -2,6 +2,7 @@ import { Contact, GeoLocation, type PlaceCandidate } from '@calendar/core';
 import { describe, expect, it } from 'vite-plus/test';
 import {
   askedAfterTurn,
+  editorQuestions,
   isPlaceQuestion,
   openQuestions,
   questionsAsked,
@@ -91,35 +92,88 @@ describe('openQuestions', () => {
 describe('questionsAsked', () => {
   const open = openQuestions(twoPlaces, [toms]);
 
+  const both = { guests: 1, places: 1 };
+
   it('numbers the one on show among those asked together', () => {
-    expect(questionsAsked(2, open)).toEqual({ current: open[0], number: 1, of: 2 });
-    expect(questionsAsked(2, open.slice(1))).toEqual({ current: open[1], number: 2, of: 2 });
-    expect(questionsAsked(2, [])).toMatchObject({ current: undefined });
+    expect(questionsAsked(both, open)).toEqual({ current: open[0], number: 1, of: 2 });
+    expect(questionsAsked(both, open.slice(1))).toEqual({ current: open[1], number: 2, of: 2 });
+    expect(questionsAsked(both, [])).toMatchObject({ current: undefined });
   });
 
   it('counts the open ones where the draft kept no count', () => {
     expect(questionsAsked(undefined, open)).toMatchObject({ number: 1, of: 2 });
-    expect(questionsAsked(1, open)).toMatchObject({ number: 1, of: 2 });
+    expect(questionsAsked({ guests: 0, places: 1 }, open)).toMatchObject({ number: 1, of: 2 });
+  });
+
+  it('leaves the names out where the calendar cannot invite: the place is 1 of 1', () => {
+    const place = openQuestions(twoPlaces, []);
+    expect(questionsAsked(both, place, { guests: false })).toMatchObject({ number: 1, of: 1 });
+  });
+});
+
+describe('editorQuestions', () => {
+  const both = { guests: 1, places: 1 };
+  const base = {
+    applying: false,
+    asked: both,
+    canInvite: true,
+    draftPlace: twoPlaces,
+    event: true,
+    guests: [toms],
+    livePlace: twoPlaces,
+  };
+
+  it('asks the place the field reads, then the names', () => {
+    expect(editorQuestions(base)).toMatchObject({
+      current: { choice: twoPlaces, kind: 'place' },
+      number: 1,
+      of: 2,
+    });
+  });
+
+  it('asks the draft’s place while the form is still taking the turn in, not the next question first', () => {
+    // The field still reads the draft before: the place is not live yet.
+    expect(editorQuestions({ ...base, applying: true, livePlace: undefined })).toMatchObject({
+      current: { kind: 'place' },
+      number: 1,
+    });
+    expect(editorQuestions({ ...base, livePlace: undefined })).toMatchObject({
+      current: { kind: 'guest' },
+      number: 2,
+    });
+  });
+
+  it('leaves out names on a calendar that cannot invite: the place is 1 of 1', () => {
+    expect(editorQuestions({ ...base, canInvite: false, guests: [] })).toMatchObject({
+      number: 1,
+      of: 1,
+    });
   });
 });
 
 describe('askedAfterTurn', () => {
   it('starts again when a turn brings a question, and keeps the count when it brings none', () => {
-    const before = { asked: 2, inviteeChoices: [toms] };
+    const before = { asked: { guests: 2, places: 0 }, inviteeChoices: [toms] };
     // A phrase about the time: Tom still asked, "2 of 2" stays.
-    expect(askedAfterTurn(before, { inviteeChoices: [toms] })).toBe(2);
+    expect(askedAfterTurn(before, { inviteeChoices: [toms] })).toEqual({ guests: 2, places: 0 });
     // A new place to choose: the two open now are asked together.
-    expect(askedAfterTurn(before, { inviteeChoices: [toms], placeChoice: twoPlaces })).toBe(2);
+    expect(askedAfterTurn(before, { inviteeChoices: [toms], placeChoice: twoPlaces })).toEqual({
+      guests: 1,
+      places: 1,
+    });
     // A new name only.
     const anna = { contacts: toms.contacts, name: 'Anna' };
-    expect(askedAfterTurn(before, { inviteeChoices: [toms, anna] })).toBe(2);
+    expect(askedAfterTurn(before, { inviteeChoices: [toms, anna] })).toEqual({
+      guests: 2,
+      places: 0,
+    });
     expect(askedAfterTurn(undefined, { inviteeChoices: [nobody] })).toBeUndefined();
   });
 });
 
 describe('a draft asks its questions one at a time', () => {
   it('counts what the first phrase asked', () => {
-    expect(asking().drafts[0]?.asked).toBe(2);
+    expect(asking().drafts[0]?.asked).toEqual({ guests: 1, places: 1 });
   });
 
   it('moves on as each is answered: a place picked, then a contact', () => {
@@ -179,6 +233,6 @@ describe('a draft asks its questions one at a time', () => {
       prefill: { ...dinner.prefill, endTime: '21:00', startTime: '20:00' },
     };
     const moved = refineThread(state, 'an hour later', [{ id: 'd1', item: later }], ids());
-    expect(moved.drafts[0]?.asked).toBe(2);
+    expect(moved.drafts[0]?.asked).toEqual({ guests: 1, places: 1 });
   });
 });

@@ -46,19 +46,59 @@ export const openQuestions = (
 ];
 
 /**
+ * The questions a turn asked together, by kind: the editor counts only
+ * those it can ask (no names on a calendar that cannot invite).
+ */
+export interface Asked {
+  readonly guests: number;
+  readonly places: number;
+}
+
+/**
  * The first open question and where it stands: "Question 2 of 2" after
  * one was answered, not "1 of 1". `asked` is how many came together (a
- * draft's `asked`); fewer open means the rest were answered, skipped or
- * left behind by an edit. More open than asked (an older draft, or one
- * the count never reached) counts the open ones.
+ * draft's `asked`, the names counted only when `guests` are asked);
+ * fewer open means the rest were answered, skipped or left behind by an
+ * edit. More open than asked (an older draft, or one the count never
+ * reached) counts the open ones.
  */
 export const questionsAsked = (
-  asked: number | undefined,
+  asked: Asked | undefined,
   open: ReadonlyArray<DraftQuestion>,
+  { guests = true }: { readonly guests?: boolean } = {},
 ): QuestionsAsked => {
-  const of = Math.max(asked ?? 0, open.length);
+  const count = asked === undefined ? 0 : asked.places + (guests ? asked.guests : 0);
+  const of = Math.max(count, open.length);
   return { current: open[0], number: of - open.length + 1, of };
 };
+
+/**
+ * What the editor asks about its draft: the place its field still reads
+ * (`livePlace`) — or, while the form is still taking a turn in (its field
+ * reads the draft before, and the count would show the next question
+ * first for a frame), the event draft's own — then the names, counted
+ * only where the calendar can invite (`guests` is empty there).
+ */
+export const editorQuestions = ({
+  applying,
+  asked,
+  canInvite,
+  draftPlace,
+  event,
+  guests,
+  livePlace,
+}: {
+  readonly applying: boolean;
+  readonly asked: Asked | undefined;
+  readonly canInvite: boolean;
+  readonly draftPlace: PlaceChoice | undefined;
+  readonly event: boolean;
+  readonly guests: ReadonlyArray<InviteeChoice>;
+  readonly livePlace: PlaceChoice | undefined;
+}): QuestionsAsked =>
+  questionsAsked(asked, openQuestions(applying && event ? draftPlace : livePlace, guests), {
+    guests: canInvite,
+  });
 
 /**
  * A draft's own questions, as its state holds them (the editor narrows
@@ -79,7 +119,7 @@ const questionsOf = (draft: {
 export const askedAfterTurn = (
   before:
     | {
-        readonly asked?: number | undefined;
+        readonly asked?: Asked | undefined;
         readonly inviteeChoices?: ReadonlyArray<InviteeChoice> | undefined;
         readonly placeChoice?: PlaceChoice | undefined;
       }
@@ -88,7 +128,7 @@ export const askedAfterTurn = (
     readonly inviteeChoices?: ReadonlyArray<InviteeChoice> | undefined;
     readonly placeChoice?: PlaceChoice | undefined;
   },
-): number | undefined => {
+): Asked | undefined => {
   const now = questionsOf(after);
   const brought = now.some((question) =>
     question.kind === 'place'
@@ -98,7 +138,8 @@ export const askedAfterTurn = (
   if (now.length === 0) {
     return undefined;
   }
-  return brought ? now.length : before?.asked;
+  const places = now.filter((question) => question.kind === 'place').length;
+  return brought ? { guests: now.length - places, places } : before?.asked;
 };
 
 /** What the card asks: "Which place for “Figlmüller”?", "Which Tom?". */

@@ -11,7 +11,7 @@ import {
 } from '@calendar/app-state';
 import type { CalendarInfo, TaskListInfo } from '@calendar/core';
 import { SymbolView } from 'expo-symbols';
-import { type ReactNode, useRef } from 'react';
+import { type ReactNode, use, useRef } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -23,6 +23,7 @@ import {
 import { BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme } from '../theme.ts';
 import { AssistantCard } from './AssistantCard.tsx';
 import { DraftQuestions } from './DraftQuestions.tsx';
+import { SwitchAnchorContext } from './useViewSwitch.ts';
 
 /**
  * A step that is not the one on show, in one line: which version it left,
@@ -242,6 +243,7 @@ export function AssistantView({
   const { colors } = useTheme();
   const { assistant, labels, steps } = editor;
   const scroller = useRef<ScrollViewInstance>(null);
+  const anchors = use(SwitchAnchorContext);
   // The newest row is the one to read: the conversation sits at its end,
   // whichever of the two changed — what it holds, or the room it has (the
   // keyboard and the field coming and going). `scrollToEnd` does nothing
@@ -276,7 +278,11 @@ export function AssistantView({
         sizes.current.view = event.nativeEvent.layout.height;
         toEnd(false);
       }}
-      ref={scroller}
+      ref={(instance) => {
+        scroller.current = instance;
+        // The switch reads where the newest card will be once this is at its end.
+        anchors?.conversation(instance);
+      }}
       style={styles.thread}
       testID="assistant-thread"
     >

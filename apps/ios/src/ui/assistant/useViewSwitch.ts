@@ -1,9 +1,10 @@
 import { createContext, useLayoutEffect, useReducer, useRef, useState } from 'react';
-import { type HostInstance, useWindowDimensions } from 'react-native';
+import { type HostInstance, type ScrollViewInstance, useWindowDimensions } from 'react-native';
 import {
   Easing,
   Extrapolation,
   interpolate,
+  ReduceMotion,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
@@ -11,7 +12,13 @@ import {
 } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 import { BAR_LIFT } from './SwitchCapsule.tsx';
-import { anchorOffset, type EditorView, viewSwitchAfter } from '@calendar/app-state';
+import {
+  anchorOffset,
+  type EditorView,
+  type Span,
+  topAtEnd,
+  viewSwitchAfter,
+} from '@calendar/app-state';
 
 /** How long a switch takes, and under Reduce Motion (a crossfade only). */
 const SWITCH_MS = 280;
@@ -32,21 +39,24 @@ const MIC_ARRIVES = 0.6;
 
 /**
  * The two titles the form rises between: the newest card's, in the
- * Assistant, and the form's own title field. The card and the forms take
- * their ref from here; outside the editor's route there is none.
+ * Assistant, and the form's own title field; and the conversation the
+ * card is in. The card, the conversation and the forms take their ref
+ * from here; outside the editor's route there is none.
  */
 export interface SwitchAnchors {
   readonly card: (element: HostInstance | null) => void;
+  readonly conversation: (scroller: ScrollViewInstance | null) => void;
   readonly form: (element: HostInstance | null) => void;
 }
 
 export const SwitchAnchorContext = createContext<SwitchAnchors | null>(null);
 
-/** An element's top in the window, as laid out (transforms included), if it is there. */
-const topOf = (element: HostInstance | null): number | undefined => {
+/** An element's box in the window, as laid out (transforms included), if it is there. */
+const spanOf = (element: HostInstance | null | undefined): Span | undefined => {
   const rect = element?.getBoundingClientRect();
-  return rect === undefined || rect.height === 0 ? undefined : rect.y;
+  return rect === undefined || rect.height === 0 ? undefined : { height: rect.height, top: rect.y };
 };
+const topOf = (element: HostInstance | null): number | undefined => spanOf(element)?.top;
 
 /**
  * The switch between the Assistant and the Form (`viewSwitch.ts`): the
@@ -71,14 +81,27 @@ export const useViewSwitch = (initial: EditorView) => {
   // How far below its place the form's content sits at the Assistant's end.
   const offset = useSharedValue(0);
   const card = useRef<HostInstance | null>(null);
+  const conversation = useRef<ScrollViewInstance | null>(null);
   const form = useRef<HostInstance | null>(null);
   const anchors: SwitchAnchors = {
     card: (element) => {
       card.current = element;
     },
+    conversation: (scroller) => {
+      conversation.current = scroller;
+    },
     form: (element) => {
       form.current = element;
     },
+  };
+  /**
+   * The card's title where it will be: the conversation comes in at its
+   * start and scrolls to its end only once it has laid out, after this
+   * is measured.
+   */
+  const cardAtEnd = () => {
+    const scroller = conversation.current;
+    return topAtEnd(topOf(card.current), spanOf(scroller?.getInnerViewRef()), spanOf(scroller));
   };
   const frame = useRef<HostInstance | null>(null);
   // Measured at the tap, read once the other view has laid out.
@@ -86,8 +109,10 @@ export const useViewSwitch = (initial: EditorView) => {
     plain: false,
     top: undefined,
   });
-  // The flight under way, from the first frame on; none at rest.
-  const running = useRef<string | undefined>(undefined);
+  // The run under way, from its first frame on (a turn round is a run of
+  // its own); none at rest. Its end settles only while it is the one.
+  const running = useRef<number | undefined>(undefined);
+  const runs = useRef(0);
   // The form a flip mounts does not take the focus: the keyboard would
   // rise under the motion.
   const [flipped, setFlipped] = useState(false);
@@ -109,7 +134,11 @@ export const useViewSwitch = (initial: EditorView) => {
     dispatch({ to, type: 'flip' });
   };
 
-  const settle = (view: EditorView) => {
+  const settle = (view: EditorView, run: number) => {
+    // A run turned round meanwhile (a tap between its last frame and this): the new one goes on.
+    if (running.current !== run) {
+      return;
+    }
     running.current = undefined;
     // At rest on the Assistant the form is gone: it comes back from where it is measured next.
     if (view === 'assistant') {
@@ -126,6 +155,7 @@ export const useViewSwitch = (initial: EditorView) => {
     dispatch({ to, type: 'snap' });
   };
 
+  // The flight under way: a turn round is another (and runs again).
   const flight = state.kind === 'flight' ? `${state.from}>${state.to}` : undefined;
   useLayoutEffect(() => {
     if (state.kind !== 'flight') {
@@ -136,7 +166,7 @@ export const useViewSwitch = (initial: EditorView) => {
       // From rest: the view coming in has laid out, unmoved (at rest on
       // the Assistant the offset is 0, and at the Form's end it is not applied).
       const { plain, top } = leaving.current;
-      const arriving = topOf(state.to === 'form' ? form.current : card.current);
+      const arriving = state.to === 'form' ? topOf(form.current) : cardAtEnd();
       const rect = frame.current?.getBoundingClientRect();
       const [cardTop, formTop] = state.to === 'form' ? [top, arriving] : [arriving, top];
       offset.set(
@@ -145,7 +175,9 @@ export const useViewSwitch = (initial: EditorView) => {
           : anchorOffset(cardTop, formTop, rect && { bottom: rect.y + rect.height, top: rect.y }),
       );
     }
-    running.current = flight;
+    runs.current += 1;
+    const run = runs.current;
+    running.current = run;
     const plain = leaving.current.plain;
     const left = Math.abs(target - progress.get());
     const to = state.to;
@@ -155,11 +187,14 @@ export const useViewSwitch = (initial: EditorView) => {
         {
           duration: Math.max(60, Math.round((plain ? FADE_MS : SWITCH_MS) * left)),
           easing: plain ? Easing.out(Easing.quad) : MOVE,
+          // Reduce Motion is this hook's own (the crossfade above), not
+          // Reanimated's: under it the system's setting would cut straight to the end.
+          reduceMotion: ReduceMotion.Never,
         },
         (finished) => {
           'worklet';
           if (finished) {
-            scheduleOnRN(settle, to);
+            scheduleOnRN(settle, to, run);
           }
         },
       ),

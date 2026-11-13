@@ -46,7 +46,7 @@ import {
   resolveInvitees,
 } from './draftInvitees.ts';
 import { type PlaceChange, type PlaceChoice, settlePlace } from './draftPlaces.ts';
-import { askedAfterTurn } from './draftQuestions.ts';
+import { type Asked, askedAfterTurn } from './draftQuestions.ts';
 import type { EventEditorPrefill } from './editorModel.ts';
 import { convertQuickAddItem, type QuickAddItem } from './quickAddItem.ts';
 import { recurrenceKey } from './repeatState.ts';
@@ -92,13 +92,13 @@ export interface DraftExtras {
 }
 
 export interface Draft {
-  /** Set once the form held the draft (or a turn gave it guests); absent for a draft the form never showed. */
   /**
    * How many questions the turn that brought the open ones asked together
-   * (`askedAfterTurn`): what "Question 2 of 2" counts against once the
-   * first was answered. Absent with nothing to ask.
+   * (`askedAfterTurn`), by kind: what "Question 2 of 2" counts against
+   * once the first was answered. Absent with nothing to ask.
    */
-  readonly asked?: number | undefined;
+  readonly asked?: Asked | undefined;
+  /** Set once the form held the draft (or a turn gave it guests); absent for a draft the form never showed. */
   readonly extras?: DraftExtras | undefined;
   readonly id: string;
   /**
@@ -309,6 +309,13 @@ const withGuests = (
   };
 };
 
+/** The draft with its count of questions as a turn leaves it (`askedAfterTurn`). */
+const withAsked = (before: Draft | undefined, after: Draft): Draft => {
+  const { asked: _asked, ...rest } = after;
+  const asked = askedAfterTurn(before, after);
+  return asked === undefined ? rest : { ...rest, asked };
+};
+
 /**
  * A turn's place folded into a draft: the best one that resembles the
  * text becomes the location, pin and all (its text replaces what was
@@ -318,13 +325,6 @@ const withGuests = (
  * places" beside the place taken, "which “Kaffee Sperl”?" for a choice
  * alone.
  */
-/** The draft with its count of questions as a turn leaves it (`askedAfterTurn`). */
-const withAsked = (before: Draft | undefined, after: Draft): Draft => {
-  const { asked: _asked, ...rest } = after;
-  const asked = askedAfterTurn(before, after);
-  return asked === undefined ? rest : { ...rest, asked };
-};
-
 const withPlace = (
   draft: Draft,
   change: PlaceChange | undefined,

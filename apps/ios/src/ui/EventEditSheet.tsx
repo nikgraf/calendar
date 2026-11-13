@@ -677,13 +677,16 @@ export function EventEditSheet({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the first answer only
   }, [status]);
-  // Nothing to say a phrase to (no model, an older step on show): the field closes.
+  // Nothing to say a phrase to (no model, an older step on show), or the
+  // form at rest (the Assistant gone, its field with it: it comes back
+  // with the bar, not a keyboard rising under the switch): the field closes.
   const barOff = (status !== null && status !== 'ready') || previewing;
+  const atForm = switcher.state.kind === 'rest' && switcher.state.view === 'form';
   useEffect(() => {
-    if (barOff) {
+    if (barOff || atForm) {
       setTyping(false);
     }
-  }, [barOff]);
+  }, [atForm, barOff]);
   const download = assistantDownload();
   const notice =
     status === null || status === 'ready' ? undefined : (

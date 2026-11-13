@@ -1410,9 +1410,11 @@ gateway carries all of it. Details, limits and the threat model:
   (`EditorPanel`). Switching, the form rises out of the newest card —
   its title starts on the card's — and folds back into it (Web
   Animations, `panel/useViewSwitch.ts`, the anchor rule shared with the
-  iPhone: `viewSwitch.ts`); the pane leaving stays drawn over the other,
-  `inert`, until the motion ends (`data-switching`), and a click back
-  mid-way turns it round; under Reduce Motion it is a crossfade. "+ New",
+  iPhone: `viewSwitch.ts`); the pane leaving stays drawn under the one
+  arriving, `inert`, until the motion ends (`data-switching`), the
+  conversation scrolled to its end before its card is measured, and a
+  click back mid-way turns it round; under Reduce Motion it is a
+  crossfade. "+ New",
   ⌘N, ⌘K and a capture open on the Assistant —
   falling back to the Form once when the model turns out not to be ready
   before anything was said — a slot, a to-do and a saved item on the

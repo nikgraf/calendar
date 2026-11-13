@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vite-plus/test';
 import {
   anchorOffset,
+  leftAfterTurn,
   PLAIN_RISE,
+  topAtEnd,
   type ViewSwitch,
   viewMounted,
   viewShown,
@@ -51,6 +53,33 @@ describe('what is mounted and shown', () => {
     expect(viewMounted(toForm, 'assistant')).toBe(true);
     expect(viewMounted(toForm, 'form')).toBe(true);
     expect(viewShown(toForm)).toBe('form');
+  });
+});
+
+describe('topAtEnd', () => {
+  const viewport = { height: 600, top: 100 };
+
+  it('moves a row up by what is left to scroll in a conversation that came in at its start', () => {
+    // 900 of content at offset 0: 300 left to scroll.
+    expect(topAtEnd(850, { height: 900, top: 100 }, viewport)).toBe(550);
+  });
+
+  it('leaves a row where it is in a conversation at its end, or one that fits', () => {
+    expect(topAtEnd(550, { height: 900, top: -200 }, viewport)).toBe(550);
+    expect(topAtEnd(500, { height: 600, top: 100 }, viewport)).toBe(500);
+  });
+
+  it('takes it as it is without the boxes', () => {
+    expect(topAtEnd(500, undefined, viewport)).toBe(500);
+    expect(topAtEnd(undefined, { height: 900, top: 100 }, viewport)).toBeUndefined();
+  });
+});
+
+describe('leftAfterTurn', () => {
+  it('runs back as long as it ran, or forward for what it had left', () => {
+    expect(leftAfterTurn(270, -1, 280)).toBe(270);
+    expect(leftAfterTurn(10, 1, 280)).toBe(270);
+    expect(leftAfterTurn(300, 1, 280)).toBe(0);
   });
 });
 

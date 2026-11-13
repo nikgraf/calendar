@@ -8,6 +8,7 @@ import Animated, {
   interpolateColor,
   type SharedValue,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
@@ -60,16 +61,27 @@ export function SwitchCapsule({
     visible.set(withTiming(shown ? 1 : 0, { duration: SHOW_MS }));
   }, [shown, visible]);
   const ground = listening ? colors.danger : colors['surface-raised'];
-  const plate = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(progress.get(), [0, 1], [colors.surface, ground]),
-    opacity: visible.get(),
-    // The bar's quiet shadow in the bar, the floating pill's over the form.
-    shadowOffset: { height: interpolate(progress.get(), [0, 1], [2, 6]), width: 0 },
-    shadowOpacity: interpolate(progress.get(), [0, 1], [0.1, 0.18]),
-    shadowRadius: interpolate(progress.get(), [0, 1], [8, 18]),
-    transform: [{ translateY: -BAR_LIFT * (1 - progress.get()) + (1 - visible.get()) * BAR_LIFT }],
-    width: interpolate(progress.get(), [0, 1], [BAR_CAPSULE_WIDTH, pillWidth], Extrapolation.CLAMP),
-  }));
+  const reduced = useReducedMotion();
+  const plate = useAnimatedStyle(() => {
+    const p = progress.get();
+    // Under Reduce Motion nothing slides or grows: the plate changes at
+    // the midpoint, where neither word shows.
+    const moved = reduced ? Math.round(p) : p;
+    return {
+      backgroundColor: interpolateColor(p, [0, 1], [colors.surface, ground]),
+      opacity: visible.get(),
+      // The bar's quiet shadow in the bar, the floating pill's over the form.
+      shadowOffset: { height: interpolate(moved, [0, 1], [2, 6]), width: 0 },
+      shadowOpacity: interpolate(moved, [0, 1], [0.1, 0.18]),
+      shadowRadius: interpolate(moved, [0, 1], [8, 18]),
+      transform: [
+        {
+          translateY: -BAR_LIFT * (1 - moved) + (reduced ? 0 : (1 - visible.get()) * BAR_LIFT),
+        },
+      ],
+      width: interpolate(moved, [0, 1], [BAR_CAPSULE_WIDTH, pillWidth], Extrapolation.CLAMP),
+    };
+  });
   const formLabel = useAnimatedStyle(() => ({
     opacity: interpolate(progress.get(), [0, 0.5], [1, 0], Extrapolation.CLAMP),
   }));

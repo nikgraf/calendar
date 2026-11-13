@@ -42,7 +42,7 @@ import {
 import { useEditorKinds } from './editorKinds.ts';
 import type { EditorSourceKind } from './editorSwitch.ts';
 import { livePlaceChoice } from './draftPlaces.ts';
-import { openQuestions, questionsAsked } from './draftQuestions.ts';
+import { editorQuestions } from './draftQuestions.ts';
 import { rescheduledEventExclusion } from './findTimeModel.ts';
 import { useBackendMutations } from './hooks.ts';
 import { useOneWrite } from './oneWrite.ts';
@@ -805,7 +805,15 @@ export const useThreadEditor = ({
    * names, numbered among those its turn brought. An answer is a pick
    * above; Skip leaves the form as it is and moves on to the next.
    */
-  const questions = questionsAsked(focusedDraft?.asked, openQuestions(placeChoice, inviteeChoices));
+  const questions = editorQuestions({
+    applying,
+    asked: focusedDraft?.asked,
+    canInvite: eventModel.canInvite,
+    draftPlace: focusedDraft?.placeChoice,
+    event: mode === 'event',
+    guests: inviteeChoices,
+    livePlace: placeChoice,
+  });
   const skipQuestion = () => {
     const { current } = questions;
     if (current?.kind === 'place') {

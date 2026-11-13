@@ -1,4 +1,4 @@
-import { anchorOffset, type EditorView } from '@calendar/app-state';
+import { anchorOffset, type EditorView, leftAfterTurn } from '@calendar/app-state';
 import { useLayoutEffect, useRef, useState } from 'react';
 
 /** How long a switch takes, and under Reduce Motion (a crossfade only). */
@@ -9,7 +9,7 @@ const MOVE = 'cubic-bezier(0.77, 0, 0.175, 1)';
 /** How long past its length a switch may run before it is ended anyway (a window drawing no frames). */
 const GRACE_MS = 120;
 
-/** A switch under way: both panes are shown, the one leaving over the other, out of reach. */
+/** A switch under way: both panes are shown, the one leaving under the other, out of reach. */
 export interface Flight {
   readonly from: EditorView;
   readonly to: EditorView;
@@ -68,13 +68,19 @@ export const useViewSwitch = (initial: EditorView) => {
     }
     const run = running.current;
     if (flight !== null && run !== null) {
-      // Mid-way: back from where it is, as long as it took to get there.
+      // Mid-way: back from where it is, as long as it took to get there
+      // (or, turned round twice, on for what it had left).
       for (const animation of run.animations) {
         animation.reverse();
       }
-      const elapsed = Number(run.animations[0]?.currentTime ?? 0);
+      const first = run.animations[0];
+      const left = leftAfterTurn(
+        Number(first?.currentTime ?? 0),
+        first?.playbackRate ?? -1,
+        Number(first?.effect?.getTiming().duration ?? SWITCH_MS),
+      );
       clearTimeout(run.timer);
-      run.timer = setTimeout(settle, elapsed + GRACE_MS);
+      run.timer = setTimeout(settle, left + GRACE_MS);
       setFlight({ from: flight.to, to: flight.from });
       setView(to);
       return;

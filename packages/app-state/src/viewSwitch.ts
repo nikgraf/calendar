@@ -50,6 +50,35 @@ export const viewMounted = (state: ViewSwitch, view: EditorView): boolean =>
 /** How far below its place the form starts when there is no card to rise from. */
 export const PLAIN_RISE = 24;
 
+/** A box's top and height, in the window. */
+export interface Span {
+  readonly height: number;
+  readonly top: number;
+}
+
+/**
+ * Where a row's top will be once its conversation is at its end (it goes
+ * there as it comes in, after it is first measured): the row's place in
+ * the content, less what is left to scroll. Whatever the conversation is
+ * scrolled to now; without the boxes, where it is.
+ */
+export const topAtEnd = (
+  top: number | undefined,
+  content: Span | undefined,
+  viewport: Span | undefined,
+): number | undefined =>
+  top === undefined || content === undefined || viewport === undefined
+    ? top
+    : viewport.top + (top - content.top) - Math.max(0, content.height - viewport.height);
+
+/**
+ * How long a motion turned round has left to run: what it played so far
+ * when it now runs back (`rate` below 0), what it had left when it runs
+ * forward again.
+ */
+export const leftAfterTurn = (current: number, rate: number, duration: number): number =>
+  Math.max(0, rate < 0 ? current : duration - current);
+
 /**
  * How far below its place the form starts so that its title sits on the
  * card's (the form rises out of the card, and folds back into it): the
