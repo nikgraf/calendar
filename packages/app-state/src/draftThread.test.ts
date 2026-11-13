@@ -1050,6 +1050,21 @@ describe('landPlacement — the finder turn lands on the draft it was asked for'
     expect(undoTurn(landed).drafts[0]?.extras?.undated).toBe(true);
   });
 
+  it('gives a to-do the alert said with the finder phrase (refused where its list keeps none)', () => {
+    const todo: QuickAddItem = {
+      kind: 'task',
+      prefill: { date: '2026-08-28', title: 'Call the bank' },
+    };
+    const state = startThread([todo], 'x', { id: ids() });
+    const landed = landPlacement(state, {
+      reminders: { add: [10], clear: false, remove: [] },
+      slots,
+      targetId: 'd1',
+      utterance: 'find a slot tomorrow morning, remind me 10 minutes before',
+    });
+    expect(landed.drafts[0]?.extras?.reminder?.alarms).toEqual([-10]);
+  });
+
   it('is a no-op for a draft that left the thread, or no slot', () => {
     const state = startThread([dinner], 'x', { id: ids() });
     expect(landPlacement(state, { slots, targetId: 'gone', utterance: 'x' })).toBe(state);

@@ -1567,7 +1567,14 @@ export const useDraftThread = ({
         );
         return undefined;
       }
-      const refused = refuse?.(target, itemAtSlot(target.item, best, result.title), false, false);
+      // The notifications said with it land on the draft too: a to-do's
+      // alert counts, where its list keeps none.
+      const refused = refuse?.(
+        target,
+        itemAtSlot(target.item, best, result.title),
+        false,
+        (reminders?.add.length ?? 0) > 0,
+      );
       if (refused !== undefined) {
         return refused;
       }

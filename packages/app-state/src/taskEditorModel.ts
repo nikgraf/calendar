@@ -213,7 +213,7 @@ export const useTaskEditorModel = ({
   const [initial] = useState<TaskEditorValues | undefined>(() =>
     existing
       ? {
-          alarm: initialAlarms[0],
+          alarms: initialAlarms,
           dueDate: existing.dueDate,
           dueTime: existing.dueTime,
           listId: existing.listId,
@@ -393,7 +393,7 @@ export const useTaskEditorModel = ({
 
   /** The form as an update compares it with what it opened with (`taskEditorChanges`). */
   const currentValues = (taskListId: string): TaskEditorValues => ({
-    alarm,
+    alarms: alarms(),
     dueDate: dated ? dueDate : undefined,
     dueTime: dated && timed ? dueTime : undefined,
     listId: taskListId,
@@ -498,7 +498,6 @@ export const useTaskEditorModel = ({
         const changes = taskEditorChanges({
           current: currentValues(taskListId),
           initial,
-          initialAlarms,
           provider,
           recurrenceUnsupported,
         });

@@ -26,8 +26,12 @@ export const offeredTaskLists = (
 
 /** The editor's fields in their submitted form (trimmed, timed-or-not resolved). */
 export interface TaskEditorValues {
-  /** The first relative alert (minutes); undefined = none. */
-  readonly alarm: number | undefined;
+  /**
+   * Every relative alert (minutes, negative before the due time), the
+   * form's own first: the form edits that one, a turn of the Assistant may
+   * add or take off others. Empty: none.
+   */
+  readonly alarms: ReadonlyArray<number>;
   /** Undefined while the task has no due day. */
   readonly dueDate: string | undefined;
   /** Undefined when the reminder is all-day. */
@@ -73,19 +77,18 @@ const sameRecurrence = (a: TaskRecurrence | undefined, b: TaskRecurrence | undef
  * field the user never touched stays untouched whatever happened to it
  * meanwhile.
  *
- * `initialAlarms` is the whole alert list at open: the form edits the
- * first relative alert and any further alerts ride along unchanged.
+ * The alerts compare as the whole list: one the form never showed (a
+ * second alert set in Reminders.app) is sent again only when the list
+ * changed — by the form's first, or by a turn that added or took one off.
  */
 export const taskEditorChanges = ({
   current,
   initial,
-  initialAlarms,
   provider,
   recurrenceUnsupported,
 }: {
   readonly current: TaskEditorValues;
   readonly initial: TaskEditorValues;
-  readonly initialAlarms: ReadonlyArray<number>;
   readonly provider: TaskProvider;
   readonly recurrenceUnsupported: boolean;
 }): TaskEditorChanges => {
@@ -108,12 +111,11 @@ export const taskEditorChanges = ({
   }
   const undated = current.dueDate === undefined;
   const dayTakenAway = undated && initial.dueDate !== undefined;
-  if (current.alarm !== initial.alarm) {
-    const alarms = [
-      ...(current.alarm === undefined ? [] : [current.alarm]),
-      ...initialAlarms.slice(1),
-    ];
-    changes.alarms = alarms.length === 0 ? null : alarms;
+  if (
+    current.alarms.length !== initial.alarms.length ||
+    current.alarms.some((offset, index) => offset !== initial.alarms[index])
+  ) {
+    changes.alarms = current.alarms.length === 0 ? null : current.alarms;
   }
   // The time goes with the day.
   if (!undated && current.dueTime !== initial.dueTime) {

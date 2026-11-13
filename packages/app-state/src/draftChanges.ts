@@ -266,8 +266,9 @@ const remindersText = (reminders: EventReminders | undefined, isAllDay: boolean)
     : overrides.map((override) => reminderLabel(override.minutes, isAllDay)).join(', ');
 };
 
-const alertText = (offset: number | undefined): string =>
-  offset === undefined ? 'None' : reminderAlarmLabel(offset);
+/** A reminder's alerts, every one ("10 minutes before, 1 hour before"), or "None". */
+const alertsText = (alarms: ReadonlyArray<number> | undefined): string =>
+  alarms === undefined || alarms.length === 0 ? 'None' : alarms.map(reminderAlarmLabel).join(', ');
 
 const priorityText = (priority: string | undefined): string =>
   priority === undefined ? 'None' : priority.charAt(0).toUpperCase() + priority.slice(1);
@@ -410,9 +411,9 @@ const reminderChanges = (before: Draft | undefined, after: Draft): ReadonlyArray
     ),
     ...differs(
       'alert',
-      [was.alarms[0], now.alarms[0]],
-      alertText(was.alarms[0]),
-      alertText(now.alarms[0]),
+      [was.alarms.join(','), now.alarms.join(',')],
+      alertsText(was.alarms),
+      alertsText(now.alarms),
     ),
     ...differs(
       'url',
@@ -546,7 +547,7 @@ export const cardLines = (
       : []),
     ...line('priority', priorityText(reminder?.priority), reminder?.priority !== undefined),
     ...(keeps.alerts
-      ? line('alert', alertText(reminder?.alarms[0]), reminder?.alarms[0] !== undefined)
+      ? line('alert', alertsText(reminder?.alarms), (reminder?.alarms.length ?? 0) > 0)
       : []),
     ...line('url', reminder?.url.trim() || 'No link', (reminder?.url.trim() ?? '') !== ''),
     ...line('notes', notes || 'No notes', notes !== ''),

@@ -292,6 +292,16 @@ describe('cardLines', () => {
     });
     expect(cardLines(alerted).map((line) => line.field)).toEqual(['date', 'time', 'alert']);
     expect(cardLines(alerted, [], dayOnly).map((line) => line.field)).toEqual(['date']);
+    // Every alert is listed, not only the form's first.
+    const twice = draft(call, {
+      reminder: { alarms: [-10, -60], repeat: seedRepeatFields(undefined), url: '' },
+    });
+    expect(cardLines(twice).find((line) => line.field === 'alert')?.text).toBe(
+      '10 minutes before, 1 hour before',
+    );
+    expect(draftChanges(alerted, twice)).toEqual([
+      { field: 'alert', from: '10 minutes before', to: '10 minutes before, 1 hour before' },
+    ]);
     // A to-do without a time has no line for one.
     expect(
       cardLines(draft({ kind: 'task', prefill: { date: '2026-08-25', title: 'Call' } })).map(
