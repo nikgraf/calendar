@@ -83,6 +83,22 @@ describe('screen-sharing privacy', () => {
     expect(existsSync(join(dir, 'settings.json'))).toBe(false);
   });
 
+  it('Visible during a pause ends it, timer and all', async () => {
+    vi.useFakeTimers();
+    try {
+      const { privacy, stored } = await launch();
+      privacy.setPrivacyChoice('hidden');
+      privacy.setPrivacyChoice('pause10m');
+      expect(vi.getTimerCount()).toBe(1);
+      expect(privacy.setPrivacyChoice('visible')).toEqual({ mode: 'visible' });
+      expect(vi.getTimerCount()).toBe(0);
+      expect(window.protected).toBe(false);
+      expect(stored()).toBe('visible');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('turned off again, it stays off after a restart', async () => {
     const first = await launch();
     first.privacy.setPrivacyChoice('hidden');

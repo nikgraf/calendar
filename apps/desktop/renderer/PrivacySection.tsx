@@ -72,7 +72,7 @@ export function PrivacySection() {
       />
       {state.mode === 'hidden' ? (
         <div className="mt-3 flex items-center justify-between gap-3 border-t border-hairline pt-3 text-sm text-ink-secondary">
-          <span data-testid="sharing-pause-status">
+          <span data-testid="sharing-pause-status" role="status">
             {paused ? `Visible to others · ${minutesLeft} min left` : 'Sharing briefly?'}
           </span>
           {paused ? (
