@@ -42,6 +42,7 @@ import {
 import { useEditorKinds } from './editorKinds.ts';
 import type { EditorSourceKind } from './editorSwitch.ts';
 import { livePlaceChoice } from './draftPlaces.ts';
+import { editorQuestions } from './draftQuestions.ts';
 import { rescheduledEventExclusion } from './findTimeModel.ts';
 import { useBackendMutations } from './hooks.ts';
 import { useOneWrite } from './oneWrite.ts';
@@ -779,7 +780,9 @@ export const useThreadEditor = ({
    * the field reads marked — while it reads that text or one of them
    * (`livePlaceChoice`). A pick makes a place the form's, pin and all,
    * as a hand edit; "as said" gives the text back as it was said, pin
-   * gone; the row stays until dismissed.
+   * gone. Either settles the choice (the step that records it takes it
+   * off the draft, so going back over it asks again), as dismissing it
+   * does.
    */
   const placeChoice =
     mode === 'event' ? livePlaceChoice(focusedDraft?.placeChoice, eventModel.location) : undefined;
@@ -802,6 +805,29 @@ export const useThreadEditor = ({
   const dismissPlace = () => {
     if (settled) {
       thread.dropPlace(focused);
+    }
+  };
+
+  /**
+   * What the Assistant asks about the focused draft, one at a time
+   * (`draftQuestions.ts`): the place the field still reads, then the
+   * names, numbered among those its turn brought. An answer is a pick
+   * above; Skip leaves the form as it is and moves on to the next.
+   */
+  const questions = editorQuestions({
+    applying,
+    canInvite: eventModel.canInvite,
+    draft: focusedDraft,
+    event: mode === 'event',
+    guests: inviteeChoices,
+    livePlace: placeChoice,
+  });
+  const skipQuestion = () => {
+    const { current } = questions;
+    if (current?.kind === 'place') {
+      dismissPlace();
+    } else if (current?.kind === 'guest') {
+      dismissInvitee(current.choice.name);
     }
   };
 
@@ -1089,9 +1115,13 @@ export const useThreadEditor = ({
     placeChoice,
     /** The coordinates the form vouches for now: which chip is held, if any. */
     placeGeo,
+    /** The question asked now and its number (`questionsAsked`). */
+    questions,
     /** An older step is on show: the form is locked and Save is off until it is kept or left. */
     previewing,
     settled,
+    /** The question on show let go of: the form stays as it is. */
+    skipQuestion,
     /** The thread's steps and the way through them. */
     steps,
     switchFocus,

@@ -200,6 +200,9 @@ const wasAt = (start: string) =>
   `!!document.querySelector('[data-testid="draft-was"][data-draft-start="${start}"]')`;
 const traces = `document.querySelectorAll('[data-testid="draft-was"]').length`;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+/** The top of the title a pane's switch is anchored on (`data-switch-anchor`). */
+const topOf = (pane: string) =>
+  `document.querySelector('[data-testid="${pane}"] [data-switch-anchor]').getBoundingClientRect().top`;
 
 describe('The editor’s Assistant and Form views', () => {
   let app: App;
@@ -256,20 +259,30 @@ describe('The editor’s Assistant and Form views', () => {
     // The grid: the block where it is now, a dashed outline where it was.
     await cdp.waitFor(blockAt('12:30'));
     await cdp.waitFor(wasAt('13:00'));
-    await cdp.waitFor(exists('draft-invitee-choices'));
-    expect(await cdp.eval<string>(textOf('draft-invitee-choice-0'))).toContain('Which Tom?');
+    // Two questions, asked one at a time: the place the first phrase left
+    // open (two Figlmüllers), then which Tom.
+    await cdp.waitFor(`${textOf('draft-question-count')} === 'Question 1 of 2'`);
+    expect(await cdp.eval<string>(textOf('draft-question'))).toContain(
+      'Which place for “Figlmüller”?',
+    );
     // One phrase is one step: the form taking the draft in adds none.
     await sleep(500);
     expect(await cdp.eval<string>(stepPosition)).toBe('2 of 2');
     expect(await cdp.eval<number>(said)).toBe(2);
     expect(await cdp.eval<number>(versions)).toBe(1);
+    // Skipped, the place stays as taken, and the next question is up.
+    await cdp.clickTestId('draft-question-skip');
+    await cdp.waitFor(`${textOf('draft-question-count')} === 'Question 2 of 2'`);
+    expect(await cdp.eval<string>(textOf('draft-invitee-choice-0'))).toContain('Which Tom?');
+    expect(await cdp.eval<string>(stepPosition)).toBe('2 of 2');
 
     // The answer is a step of its own: the guest who joined is the one marked.
     await cdp.clickTestId('draft-invitee-pick-0-0');
     await cdp.waitFor(`${stepPosition} === '3 of 3'`);
     await cdp.waitFor(`${card('guests')} === 'Sarah Keller, Tom Brandt'`);
     expect(await cdp.eval<string>(changed)).toBe('Changed: guests');
-    expect(await cdp.eval<boolean>(exists('draft-invitee-choices'))).toBe(false);
+    // Nothing left to ask.
+    expect(await cdp.eval<boolean>(exists('draft-question'))).toBe(false);
     // This step moved nothing: the outline is the step's, and goes with it.
     await cdp.waitFor(`${traces} === 0`);
 
@@ -327,10 +340,12 @@ describe('The editor’s Assistant and Form views', () => {
     await cdp.clickTestId('step-forward');
     await cdp.waitFor(`${stepPosition} === '2 of 3'`);
 
-    // "Use this": the step is kept, the pick after it gone — and asked again.
+    // "Use this": the step is kept, the pick after it gone — and asked
+    // again, still the second of the two.
     await cdp.clickTestId('step-use');
     await cdp.waitFor(`${stepPosition} === '2 of 2'`);
-    await cdp.waitFor(exists('draft-invitee-choices'));
+    await cdp.waitFor(`${textOf('draft-question-count')} === 'Question 2 of 2'`);
+    expect(await cdp.eval<string>(textOf('draft-invitee-choice-0'))).toContain('Which Tom?');
     expect(await cdp.eval<boolean>(exists('step-preview'))).toBe(false);
     expect(await cdp.eval<string>(card('guests'))).toBe('Sarah Keller');
 
@@ -356,6 +371,104 @@ describe('The editor’s Assistant and Form views', () => {
         location: 'Figlmüller, Wollzeile 5, 1010 Wien',
         startUtc: at(12, 30, tomorrow),
       });
+  });
+
+  it('raises the form out of the card and folds it back, the pane leaving out of reach until it ends', async () => {
+    const { cdp } = app;
+    // What each switch did, read as it starts: the form pane's first frame.
+    const watch = `(() => {
+      window.__switches = [];
+      const editor = document.querySelector('[data-testid="editor"]');
+      new MutationObserver(() => {
+        const [first] = document
+          .querySelector('[data-testid="editor-form"]')
+          .getAnimations()
+          .map((animation) => animation.effect.getKeyframes()[0]);
+        const frame = document.querySelector('[data-testid="editor-form"]').parentElement;
+        window.__switches.push({
+          clipped: getComputedStyle(frame).overflowY === 'hidden',
+          leaving: [...document.querySelectorAll('[inert]')].map((pane) => pane.dataset.testid),
+          start: first?.transform ?? null,
+          switching: editor.hasAttribute('data-switching'),
+        });
+      }).observe(editor, { attributeFilter: ['data-switching'], attributes: true });
+    })()`;
+    const switches = `window.__switches`;
+    const settled = `!document.querySelector('[data-testid="editor"]').hasAttribute('data-switching')`;
+    const reducedMotion = async (value: 'no-preference' | 'reduce') => {
+      await cdp.send('Emulation.setEmulatedMedia', {
+        features: [{ name: 'prefers-reduced-motion', value }],
+      });
+      // A background window takes emulated media only once it draws a frame.
+      await cdp.send('Page.captureScreenshot');
+      await cdp.waitFor(`matchMedia('(prefers-reduced-motion: ${value})').matches`);
+    };
+
+    try {
+      // The machine's own setting may ask for reduced motion (CI's macOS
+      // runner does): the motion is asked for here, as in flows.e2e.ts.
+      await reducedMotion('no-preference');
+      await cdp.eval(COMMAND_N);
+      await cdp.waitFor(headingIs('New event'));
+      await cdp.say('Coffee | +1 | 10:00-11:00');
+      await cdp.waitFor(`${card('title')} === 'Coffee'`);
+      await cdp.eval(watch);
+      const cardTop = await cdp.eval<number>(topOf('editor-assistant'));
+
+      // To the form: its title starts on the card's, well below its own
+      // place, and the conversation stays drawn under it, out of reach,
+      // until the motion ends; the form rides inside the panes' frame,
+      // never over the footer.
+      await cdp.clickTestId('editor-view-form');
+      await cdp.waitFor(settled);
+      const [start, end] = await cdp.eval<
+        Array<{
+          clipped: boolean;
+          leaving: Array<string>;
+          start: string | null;
+          switching: boolean;
+        }>
+      >(switches);
+      expect(start).toMatchObject({
+        clipped: true,
+        leaving: ['editor-assistant'],
+        switching: true,
+      });
+      const offset = Number(/translateY\((-?[\d.]+)px\)/.exec(start?.start ?? '')?.[1]);
+      expect(end).toMatchObject({ clipped: false, leaving: [], switching: false });
+      // Its first frame put the form's title on the card's.
+      const formTop = await cdp.eval<number>(topOf('editor-form'));
+      expect(cardTop).toBeGreaterThan(formTop);
+      expect(Math.abs(offset - (cardTop - formTop))).toBeLessThan(1);
+      expect(await cdp.eval<string>(view)).toBe('form');
+      expect(
+        await cdp.eval<boolean>(
+          exists('editor-assistant') +
+            ` && document.querySelector('[data-testid="editor-assistant"]').classList.contains('hidden')`,
+        ),
+      ).toBe(true);
+
+      // Back: the form leaves, out of reach, folding down.
+      await cdp.eval(`window.__switches = []`);
+      await cdp.clickTestId('editor-view-assistant');
+      await cdp.waitFor(settled);
+      expect((await cdp.eval<Array<{ leaving: Array<string> }>>(switches))[0]?.leaving).toEqual([
+        'editor-form',
+      ]);
+      expect(await cdp.eval<string>(view)).toBe('assistant');
+
+      // Under Reduce Motion nothing moves: a crossfade.
+      await reducedMotion('reduce');
+      await cdp.eval(`window.__switches = []`);
+      await cdp.clickTestId('editor-view-form');
+      await cdp.waitFor(settled);
+      expect((await cdp.eval<Array<{ start: string | null }>>(switches))[0]?.start).toBe(
+        'translateY(0px)',
+      );
+    } finally {
+      // Back to the machine's own setting for the specs after this one.
+      await cdp.send('Emulation.setEmulatedMedia', { features: [] });
+    }
   });
 
   it('says in the Assistant why a save did nothing; in the form the form says it', async () => {

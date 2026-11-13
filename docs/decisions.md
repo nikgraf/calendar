@@ -1198,6 +1198,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   (#190, #191), the fleeting flash for a lasting mark, #188's half sheet
   and drafts behind it. Rejected: read-back, tracked changes, editing on
   the calendar. Open: the follow-ups in todo.md (Tier 3).
+- **The form rises out of the card; one question at a time** (2026-11-13,
+  #313) — switching views, the form's title starts on the newest card's
+  and rides up (Web Animations on the Mac; one shared value on the
+  iPhone, whose bar and pills share one capsule that changes its word);
+  a tap back turns it round, Reduce Motion crossfades. A question is a
+  real choice (two places, a name's contacts), numbered among those the
+  phrase brought, with Skip. Type is a capsule like Form. Rejected: View
+  Transitions, a sideways slide, every value travelling, chips, dots.
+  Open: haptics, answering by voice (todo.md).
 - **Show only the latest query by default** (2026-11-05) — the create and
   search threads keep the turn with Undo visible on both apps. Earlier
   queries open on demand, leaving more room for the form or results.

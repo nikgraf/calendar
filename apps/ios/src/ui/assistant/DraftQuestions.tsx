@@ -1,7 +1,8 @@
 import {
-  choiceLabel,
   choiceQuestion,
   isAtSlot,
+  isGuestQuestion,
+  isPlaceQuestion,
   pickedCandidate,
   readsAsSaid,
   SCOPE_OPTIONS,
@@ -12,15 +13,17 @@ import { SymbolView } from 'expo-symbols';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SegmentedControl } from '../SegmentedControl.tsx';
 import { BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme } from '../theme.ts';
+import { QuestionCard } from './QuestionCard.tsx';
 
 /**
  * What the assistant asks under its newest card, left out while there is
  * nothing to ask: a caveat the drafts came with, for a saved series what
  * a change applies to, the free slots a finder phrase offered (the one
- * the form sits in selected; a tap moves the draft), the places a text
- * could mean, and the names the words invited that need a contact picked
- * (a tap on one makes it a guest, ✕ lets the name go). An answer is a
- * step: going back over it asks again. The same test ids as the
+ * the form sits in selected; a tap moves the draft), then its questions
+ * one at a time (`QuestionCard`: which place a text means, which contact
+ * a name). Not asked, a row each: a lone place that was taken (the text
+ * as said a tap away), a name no contact has (✕ lets it go). An answer
+ * is a step: going back over it asks again. The same test ids as the
  * desktop's panel.
  */
 export function DraftQuestions({
@@ -45,7 +48,6 @@ export function DraftQuestions({
     kinds,
     liveItem,
     moveToSlot,
-    pickInvitee,
     pickPlaceChoice,
     placeChoice,
     placeGeo,
@@ -58,7 +60,10 @@ export function DraftQuestions({
       : undefined;
   // A saved series: a phrase changes it at the scope the form is at.
   const scoped = assistant === 'saved' && kinds.mode === 'event' && eventModel.isRecurring;
-  if (!(threadNote || slots || scoped || inviteeChoices.length > 0 || placeChoice)) {
+  // A lone place taken, and names nobody has: told, not asked.
+  const lonePlace = placeChoice && !isPlaceQuestion(placeChoice) ? placeChoice : undefined;
+  const notes = inviteeChoices.filter((choice) => !isGuestQuestion(choice));
+  if (!(threadNote || slots || scoped || editor.questions.current || lonePlace || notes.length)) {
     return null;
   }
   return (
@@ -118,10 +123,11 @@ export function DraftQuestions({
           })}
         </ScrollView>
       ) : null}
-      {placeChoice ? (
+      <QuestionCard editor={editor} />
+      {lonePlace ? (
         <View style={styles.choice} testID="draft-place-choices">
           <View style={styles.choiceHeader}>
-            <Text style={[styles.note, styles.choiceQuestion]}>Place for “{placeChoice.text}”</Text>
+            <Text style={[styles.note, styles.choiceQuestion]}>Place for “{lonePlace.text}”</Text>
             <Pressable
               accessibilityLabel="Hide the places"
               accessibilityRole="button"
@@ -144,9 +150,9 @@ export function DraftQuestions({
               label wrapped and stretched every pill to two lines, and the
               first filled the row with the rest out of sight. */}
           <View style={styles.placeChips}>
-            {placeChoice.candidates.map((candidate, index) => {
+            {lonePlace.candidates.map((candidate, index) => {
               const chosen =
-                pickedCandidate(placeChoice, eventModel.location, placeGeo) === candidate;
+                pickedCandidate(lonePlace, eventModel.location, placeGeo) === candidate;
               return (
                 <Pressable
                   accessibilityHint={candidate.geo.name ?? candidate.geo.source}
@@ -171,7 +177,7 @@ export function DraftQuestions({
               accessibilityRole="button"
               accessibilityState={{
                 disabled: !settled,
-                selected: readsAsSaid(placeChoice, eventModel.location, placeGeo),
+                selected: readsAsSaid(lonePlace, eventModel.location, placeGeo),
               }}
               disabled={!settled}
               onPress={keepPlace}
@@ -179,21 +185,22 @@ export function DraftQuestions({
               testID="draft-place-keep"
             >
               <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.secondary}>
-                As said: “{placeChoice.text}”
+                As said: “{lonePlace.text}”
               </Text>
             </Pressable>
           </View>
         </View>
       ) : null}
-      {inviteeChoices.length > 0 ? (
+      {notes.length > 0 ? (
         <View style={styles.choices} testID="draft-invitee-choices">
-          {inviteeChoices.map((choice, index) => (
-            <View
-              key={choice.name}
-              style={styles.choice}
-              testID={`draft-invitee-choice-${String(index)}`}
-            >
-              <View style={styles.choiceHeader}>
+          {notes.map((choice) => {
+            const index = String(inviteeChoices.indexOf(choice));
+            return (
+              <View
+                key={choice.name}
+                style={[styles.choice, styles.choiceHeader]}
+                testID={`draft-invitee-choice-${index}`}
+              >
                 <Text style={[styles.note, styles.choiceQuestion]}>{choiceQuestion(choice)}</Text>
                 <Pressable
                   accessibilityLabel={`Don’t invite ${choice.name}`}
@@ -202,7 +209,7 @@ export function DraftQuestions({
                   hitSlop={8}
                   onPress={() => dismissInvitee(choice.name)}
                   style={!settled && styles.disabled}
-                  testID={`draft-invitee-dismiss-${String(index)}`}
+                  testID={`draft-invitee-dismiss-${index}`}
                 >
                   <SymbolView
                     name="xmark"
@@ -212,34 +219,8 @@ export function DraftQuestions({
                   />
                 </Pressable>
               </View>
-              {choice.contacts.length > 0 ? (
-                <ScrollView
-                  contentContainerStyle={styles.chips}
-                  horizontal
-                  keyboardShouldPersistTaps="handled"
-                  showsHorizontalScrollIndicator={false}
-                  style={styles.chipScroller}
-                >
-                  {choice.contacts.map((contact, at) => (
-                    <Pressable
-                      accessibilityHint={contact.email}
-                      accessibilityRole="button"
-                      accessibilityState={{ disabled: !settled }}
-                      disabled={!settled}
-                      key={contact.email}
-                      onPress={() => pickInvitee(choice.name, contact)}
-                      style={styles.chip}
-                      testID={`draft-invitee-pick-${String(index)}-${String(at)}`}
-                    >
-                      <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.chipLabel}>
-                        {choiceLabel(contact, choice)}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </ScrollView>
-              ) : null}
-            </View>
-          ))}
+            );
+          })}
         </View>
       ) : null}
     </View>

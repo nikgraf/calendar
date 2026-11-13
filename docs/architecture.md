@@ -1410,7 +1410,15 @@ gateway carries all of it. Details, limits and the threat model:
   keys: T = today, ←/→ step the view; ⌘, opens Settings from the menu.
   The editor is a thread of drafts (`useDraftThread`,
   `packages/app-state/src/draftThread.ts`) with two views, both mounted
-  (`EditorPanel`): "+ New", ⌘N, ⌘K and a capture open on the Assistant —
+  (`EditorPanel`). Switching, the form rises out of the newest card —
+  its title starts on the card's — and folds back into it (Web
+  Animations, `panel/useViewSwitch.ts`, the anchor rule shared with the
+  iPhone: `viewSwitch.ts`); the pane leaving stays drawn under the one
+  arriving, `inert`, until the motion ends (`data-switching`), the
+  conversation scrolled to its end before its card is measured, and a
+  click back mid-way turns it round; under Reduce Motion it is a
+  crossfade. "+ New",
+  ⌘N, ⌘K and a capture open on the Assistant —
   falling back to the Form once when the model turns out not to be ready
   before anything was said — a slot, a to-do and a saved item on the
   Form; a read-only item and a conversion have the Form alone.
@@ -1422,9 +1430,11 @@ gateway carries all of it. Details, limits and the threat model:
   card (`AssistantCard`, its lines from `cardLines`) with what the step
   changed marked and the old value struck through; a step not on show
   is a row with Restore; what the assistant has to ask sits under the
-  newest card (`DraftQuestions`: the places a text could mean, the names
-  that need a contact picked, free slots, for a saved series what a
-  change applies to); what it is doing, and why a phrase failed, is a
+  newest card (`DraftQuestions`: free slots, for a saved series what a
+  change applies to, then its questions one at a time in a
+  `QuestionCard` — which place a text means, which contact a name —
+  numbered among those its phrase brought, "Question 1 of 2", with
+  Skip; `draftQuestions.ts`); what it is doing, and why a phrase failed, is a
   line under the field, the failed words kept in it. **Form** is the
   fields as captioned sections — the Event | Task | Reminder control
   (`useEditorKinds`, only the kinds something can hold; on an existing
@@ -1559,15 +1569,25 @@ gateway carries all of it. Details, limits and the threat model:
   tapped reminder whose detail opens. The sheet is a header (Cancel ·
   title · Save, the two as 44 pt capsules), the pager when there are
   several drafts (`assistant/DraftPager`), then one of two views, one
-  mounted at a time. The **Assistant** is the desktop's conversation
+  mounted at rest; switching, both are, the form rising out of the
+  newest card and folding back into it on one shared value on the UI
+  thread (`assistant/useViewSwitch.ts`: the two titles measured where
+  nothing moves them, the one leaving out of touch and VoiceOver's
+  reach, a tap back mid-way turning it round, a crossfade under Reduce
+  Motion or with the keyboard up); the way between them is one capsule
+  at the bottom right that stays put and changes its word
+  (`SwitchCapsule`), the bar's microphone shrinking into its glyph. The
+  **Assistant** is the desktop's conversation
   (`assistant/AssistantView`, `AssistantCard`, `DraftQuestions`) over a
   bar at the bottom by the thumb (`AssistantBar`: Type · the microphone ·
-  Form). Speaking is the way in; Type swaps the bar for a field with a
+  Form, the two words as quiet capsules either side of the one loud
+  control). Speaking is the way in; Type swaps the bar for a field with a
   send button that pads itself above the keyboard (`useKeyboardInset`,
   over `keyboardOverlap`), and the field giving up the focus brings the
   bar back, its words kept. The **Form** is the kind control and the
   form rendering `bare` in one scroll view (`FormScroll`); over its
-  bottom edge float the steps (`StepPill`), the way back (`ViewPill`)
+  bottom edge float the steps (`StepPill`), the way back (the sheet's
+  one `SwitchCapsule`, which is Form in the bar and Assistant here)
   and an older step's "Use this" (`UseStepCard`) — not while the
   keyboard is up, and out of the way while the form is scrolled down,
   back on a scroll up (`pillTuck.ts`, `TuckAway`; never under

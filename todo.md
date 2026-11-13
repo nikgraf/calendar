@@ -154,8 +154,12 @@ the served model (#184) and slot proposals (#185) are in
       `docs/decisions.md` → AI): the Search thread on steps too (it keeps
       its turns and Undo); ⌘Z / ⇧⌘Z through the steps on the Mac; a live
       transcript or a level meter while dictating; haptics on the iPhone's
-      bar (a native build); a question before a swipe down discards a
-      thread with steps in it.
+      bar and on the switch between the views (a native build); a
+      question before a swipe down discards a thread with steps in it;
+      answering the Assistant's question by voice ("the first one", a
+      model task with bench cases, not a word list); every value
+      travelling from the card to its field in the switch, and the
+      title's type size with it.
 - [ ] Served-model follow-ups (shipped in #184,
       `docs/decisions.md` → AI) — the model's own context from Ollama's
       `/api/show` instead of the fixed `num_ctx`; image input for a served

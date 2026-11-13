@@ -12,7 +12,7 @@ import {
   versionLabel,
 } from '@calendar/app-state';
 import type { CalendarInfo, TaskListInfo } from '@calendar/core';
-import { type ReactNode, type RefObject, useEffect, useRef } from 'react';
+import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef } from 'react';
 import { assistantFieldCopy } from '../../ai/assistantModel.ts';
 import { desktopSpeech } from '../../ai/desktopSpeech.ts';
 import { requestCodeImport } from '../../settingsCode/codeImportRequests.ts';
@@ -169,8 +169,11 @@ export function AssistantView({
   }, [active, focusSignal, unavailable]);
 
   // The newest row is the one to read: the conversation follows it.
+  // Before the panel's own layout effects: the switch back to the
+  // Assistant measures the newest card where this leaves it (a pane back
+  // from `display: none` starts at its top).
   const rows = steps.line.length;
-  useEffect(() => {
+  useLayoutEffect(() => {
     const thread = threadRef.current;
     if (active && thread) {
       thread.scrollTop = thread.scrollHeight;

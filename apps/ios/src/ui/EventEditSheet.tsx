@@ -2,11 +2,15 @@ import {
   type EditorConfirmRequest,
   type EditorSeed,
   type EditorSourceKind,
+  type EditorView,
   editorTitle,
   useMarkLesson,
   useQuickAddModel,
   useThreadEditor,
   type TaskEditorSeed,
+  type ViewSwitch,
+  viewMounted,
+  viewShown,
 } from '@calendar/app-state';
 import {
   type BirthdayOccurrence,
@@ -26,9 +30,12 @@ import {
   Pressable,
   SafeAreaView,
   ScrollView,
+  StyleSheet,
   Text,
   View,
+  type ViewStyle,
 } from 'react-native';
+import Animated, { type AnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { appleSpeech } from '../appleSpeech.ts';
 import { backendClient } from '../backend.ts';
@@ -44,7 +51,8 @@ import { StepPill } from './assistant/StepPill.tsx';
 import { TuckAway } from './assistant/TuckAway.tsx';
 import { useKeyboardInset } from './assistant/useKeyboardInset.ts';
 import { UseStepCard } from './assistant/UseStepCard.tsx';
-import { ViewPill } from './assistant/ViewPill.tsx';
+import { SwitchAnchorContext, useViewSwitch } from './assistant/useViewSwitch.ts';
+import { SwitchCapsule } from './assistant/SwitchCapsule.tsx';
 import { BirthdayDetail } from './BirthdayDetail.tsx';
 import { useSheetStyles } from './editSheetShared.ts';
 import { EventEditForm } from './EventEditForm.tsx';
@@ -60,8 +68,7 @@ import { BOX_FONT_SCALE, groupedGround, useTheme } from './theme.ts';
 /** An existing item, a prefilled slot, or a thread of drafts (a capture's events). */
 export type EditSeed = EditorSeed;
 
-/** The editor's two views of one draft: the conversation, and the fields. */
-export type EditorView = 'assistant' | 'form';
+export type { EditorView } from '@calendar/app-state';
 
 /** How far above the sheet's bottom edge the form's pills float, over the home indicator. */
 const PILL_GAP = 10;
@@ -284,6 +291,7 @@ function EditorForm({
   bare,
   birthday,
   editor,
+  flipped,
   sourceKind,
   task,
   timeZone,
@@ -291,6 +299,8 @@ function EditorForm({
   readonly bare: boolean;
   readonly birthday: BirthdayOccurrence | undefined;
   readonly editor: Editor;
+  /** Mounted by a switch from the Assistant: the keyboard must not rise under the motion. */
+  readonly flipped: boolean;
   readonly sourceKind: EditorSourceKind;
   readonly task: TaskRecord | undefined;
   readonly timeZone: string;
@@ -307,7 +317,7 @@ function EditorForm({
         { onPress: () => resolve(true), style: 'destructive', text: completionTitle },
       ]);
     });
-  const autoFocusTitle = sourceKind !== 'new';
+  const autoFocusTitle = sourceKind !== 'new' && !flipped;
   const fields = birthday ? (
     <BirthdayDetail occurrence={birthday} timeZone={timeZone} />
   ) : kinds.mode !== 'todo' ? (
@@ -370,6 +380,63 @@ const useScreenReader = (): boolean => {
 };
 
 /**
+ * Whether the capsule between the views has room: never with the
+ * keyboard up; in the Assistant once the model's state is known (the bar
+ * is there then) and while its field is closed; over the form while its
+ * pills are (they tuck away while it is scrolled down, but not with an
+ * older step on show or under VoiceOver).
+ */
+const capsuleShown = ({
+  keyboard,
+  previewing,
+  screenReader,
+  shown,
+  status,
+  tucked,
+  typing,
+}: {
+  readonly keyboard: number;
+  readonly previewing: boolean;
+  readonly screenReader: boolean;
+  readonly shown: EditorView;
+  readonly status: ModelStatus | null;
+  readonly tucked: boolean;
+  readonly typing: boolean;
+}): boolean =>
+  keyboard === 0 &&
+  (shown === 'assistant' ? status !== null && !typing : !tucked || previewing || screenReader);
+
+/**
+ * One of the two views, filling the editor below its header. While the
+ * switch runs both are there, one over the other; the one leaving takes
+ * no touch and is out of VoiceOver's reach (the outgoing title has been
+ * measured by then).
+ */
+function SwitchLayer({
+  children,
+  state,
+  style,
+  view,
+}: {
+  readonly children: ReactNode;
+  readonly state: ViewSwitch;
+  readonly style: AnimatedStyle<ViewStyle>;
+  readonly view: EditorView;
+}) {
+  const leaving = state.kind === 'flight' && state.from === view;
+  return (
+    <Animated.View
+      accessibilityElementsHidden={leaving}
+      importantForAccessibility={leaving ? 'no-hide-descendants' : 'auto'}
+      pointerEvents={leaving ? 'none' : 'auto'}
+      style={[StyleSheet.absoluteFill, style]}
+    >
+      {children}
+    </Animated.View>
+  );
+}
+
+/**
  * The form as the route's view: the fields scrolling, and over their
  * bottom edge, by the thumb, the steps on the left, the way back to the
  * Assistant on the right and, above them, an older step on show with
@@ -385,18 +452,19 @@ function FormView({
   assists,
   banner,
   children,
+  contentStyle,
   editor,
-  listening,
-  onAssistant,
+  onTucked,
 }: {
   readonly assists: boolean;
   /** Above the fields: the lesson's frame (without the model, the form is where the lesson opens). */
   readonly banner: ReactNode;
   readonly children: ReactNode;
+  /** The switch's motion for the fields (`useViewSwitch`): they ride, the pills over them stay put. */
+  readonly contentStyle: AnimatedStyle<ViewStyle>;
   readonly editor: Editor;
-  /** Dictation is still listening behind the form. */
-  readonly listening: boolean;
-  readonly onAssistant: () => void;
+  /** The pills went out of the way, or came back: the sheet's capsule goes with them. */
+  readonly onTucked: (tucked: boolean) => void;
 }) {
   const styles = useSheetStyles();
   const { colors } = useTheme();
@@ -418,20 +486,25 @@ function FormView({
       contentSize.height - layoutMeasurement.height,
     );
     setTucked(tuck.current.tucked);
+    onTucked(tuck.current.tucked);
   };
+  // The next form starts at its top, its pills shown.
+  useEffect(() => () => onTucked(false), [onTucked]);
   return (
     <View style={styles.route}>
-      <ScrollView
-        automaticallyAdjustKeyboardInsets
-        contentContainerStyle={floating ? styles.floatingRoom : undefined}
-        keyboardShouldPersistTaps="handled"
-        onScroll={onScroll}
-        scrollEventThrottle={16}
-      >
-        {banner}
-        {/* An older step on show is looked at, not edited. */}
-        <View pointerEvents={previewing ? 'none' : 'auto'}>{children}</View>
-      </ScrollView>
+      <Animated.View style={[styles.route, contentStyle]}>
+        <ScrollView
+          automaticallyAdjustKeyboardInsets
+          contentContainerStyle={floating ? styles.floatingRoom : undefined}
+          keyboardShouldPersistTaps="handled"
+          onScroll={onScroll}
+          scrollEventThrottle={16}
+        >
+          {banner}
+          {/* An older step on show is looked at, not edited. */}
+          <View pointerEvents={previewing ? 'none' : 'auto'}>{children}</View>
+        </ScrollView>
+      </Animated.View>
       {floating ? (
         <TuckAway tucked={tucked && !previewing && !screenReader}>
           {/* The rows under the pills recede into the ground, so the pills read. */}
@@ -449,9 +522,6 @@ function FormView({
             <UseStepCard bottom={pillBottom + PILL_HEIGHT + 12} editor={editor} />
           ) : null}
           <StepPill bottom={pillBottom} steps={steps} />
-          {assists ? (
-            <ViewPill bottom={pillBottom} listening={listening} onPress={onAssistant} />
-          ) : null}
         </TuckAway>
       ) : null}
     </View>
@@ -472,9 +542,11 @@ function FormView({
  * the kinds something can hold) and the grouped cards of EventEditForm /
  * TaskEditForm / ReminderEditForm, with the way back to the Assistant
  * and the steps floating over its bottom edge, out of the way while the
- * form is scrolled down. One view is mounted at a
- * time; the draft is the thread's, so nothing is lost in a flip, and
- * dictation goes on behind the form until a field is edited by hand.
+ * form is scrolled down. The form rises out of the newest card and folds
+ * back into it (`useViewSwitch`): at rest one view is mounted, while the
+ * switch runs both are. The draft is the thread's, so nothing is lost in
+ * a flip, and dictation goes on behind the form until a field is edited
+ * by hand.
  *
  * The calendar's "+", a share and the Create lesson open on the
  * Assistant — unless the model turns out not to be ready before anything
@@ -577,8 +649,16 @@ export function EventEditSheet({
   // The two views. Without an Assistant (a read-only item, a birthday, a
   // conversion) there is the form alone.
   const assists = editor.assistant !== 'none' && presentation === 'route';
-  const [view, setView] = useState<EditorView>(assists ? opensOn : 'form');
-  const shown: EditorView = assists ? view : 'form';
+  const switcher = useViewSwitch(assists ? opensOn : 'form');
+  const insets = useSafeAreaInsets();
+  const keyboard = useKeyboardInset();
+  const screenReader = useScreenReader();
+  // The Assistant's field, open in place of its bar; the form's pills out
+  // of the way while it is scrolled down. The capsule between the views
+  // leaves with either.
+  const [typing, setTyping] = useState(seed.quickAddText !== undefined);
+  const [tucked, setTucked] = useState(false);
+  const shown: EditorView = assists ? viewShown(switcher.state) : 'form';
   // The model answers a moment after the editor opened. Not ready, and
   // nothing said or typed yet: the form is what there is to work with,
   // once — the Assistant says why and is a tap away.
@@ -593,10 +673,20 @@ export function EventEditSheet({
     }
     answered.current = true;
     if (status !== 'ready' && steps.of === 0) {
-      setView('form');
+      switcher.snap('form');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the first answer only
   }, [status]);
+  // Nothing to say a phrase to (no model, an older step on show), or the
+  // form at rest (the Assistant gone, its field with it: it comes back
+  // with the bar, not a keyboard rising under the switch): the field closes.
+  const barOff = (status !== null && status !== 'ready') || previewing;
+  const atForm = switcher.state.kind === 'rest' && switcher.state.view === 'form';
+  useEffect(() => {
+    if (barOff || atForm) {
+      setTyping(false);
+    }
+  }, [atForm, barOff]);
   const download = assistantDownload();
   const notice =
     status === null || status === 'ready' ? undefined : (
@@ -670,6 +760,7 @@ export function EventEditSheet({
       bare={presentation === 'route'}
       birthday={birthday}
       editor={editor}
+      flipped={switcher.flipped}
       sourceKind={sourceKind}
       task={task}
       timeZone={timeZone}
@@ -682,52 +773,81 @@ export function EventEditSheet({
       <View style={styles.route} testID={`editor-${shown}`}>
         <View style={styles.sheetHeader}>{header}</View>
         <DraftPager editor={editor} />
-        {shown === 'assistant' ? (
-          <>
-            <AssistantView
-              banner={lessonBanner}
-              calendars={calendars}
-              editor={editor}
-              note={seed.thread?.note}
-              notice={notice}
-              onEdit={() => setView('form')}
-              pending={quick.busy && quick.phrase.trim() !== '' ? quick.phrase : undefined}
-              taskLists={taskLists}
-            />
-            {previewing ? <UseStepCard editor={editor} /> : null}
-            {/* Why Save did nothing: the form shows it among its rows, and is not on screen here. */}
-            {saveError ? (
-              <Text
-                accessibilityLiveRegion="assertive"
-                accessibilityRole="alert"
-                selectable
-                style={styles.formError}
-                testID="editor-error"
-              >
-                {saveError}
-              </Text>
+        <SwitchAnchorContext value={switcher.anchors}>
+          <View ref={switcher.frame} style={styles.route}>
+            {assists && viewMounted(switcher.state, 'assistant') ? (
+              <SwitchLayer state={switcher.state} style={switcher.assistantStyle} view="assistant">
+                <AssistantView
+                  banner={lessonBanner}
+                  calendars={calendars}
+                  editor={editor}
+                  note={seed.thread?.note}
+                  notice={notice}
+                  onEdit={() => switcher.flip('form', keyboard > 0)}
+                  pending={quick.busy && quick.phrase.trim() !== '' ? quick.phrase : undefined}
+                  taskLists={taskLists}
+                />
+                {previewing ? <UseStepCard editor={editor} /> : null}
+                {/* Why Save did nothing: the form shows it among its rows, and is not on screen here. */}
+                {saveError ? (
+                  <Text
+                    accessibilityLiveRegion="assertive"
+                    accessibilityRole="alert"
+                    selectable
+                    style={styles.formError}
+                    testID="editor-error"
+                  >
+                    {saveError}
+                  </Text>
+                ) : null}
+                <AssistantBar
+                  hasDrafts={drafts.length > 0}
+                  micStyle={switcher.micStyle}
+                  onTyping={setTyping}
+                  previewing={previewing}
+                  quick={quick}
+                  startTyping={seed.quickAddText !== undefined}
+                  status={status}
+                  typing={typing}
+                />
+              </SwitchLayer>
             ) : null}
-            <AssistantBar
-              hasDrafts={drafts.length > 0}
-              onForm={() => setView('form')}
-              previewing={previewing}
-              quick={quick}
-              startTyping={seed.quickAddText !== undefined}
-              status={status}
-            />
-          </>
-        ) : (
-          <FormView
-            assists={assists}
-            banner={lessonBanner}
-            editor={editor}
-            listening={quick.handsFree}
-            onAssistant={() => setView('assistant')}
-          >
-            {kindControl}
-            {form}
-          </FormView>
-        )}
+            {!assists || viewMounted(switcher.state, 'form') ? (
+              <SwitchLayer state={switcher.state} style={switcher.formStyle} view="form">
+                <FormView
+                  assists={assists}
+                  banner={lessonBanner}
+                  contentStyle={switcher.formContentStyle}
+                  editor={editor}
+                  onTucked={setTucked}
+                >
+                  {kindControl}
+                  {form}
+                </FormView>
+              </SwitchLayer>
+            ) : null}
+            {assists ? (
+              <SwitchCapsule
+                bottom={insets.bottom + PILL_GAP}
+                listening={quick.handsFree}
+                onPress={() =>
+                  switcher.flip(shown === 'assistant' ? 'form' : 'assistant', keyboard > 0)
+                }
+                progress={switcher.progress}
+                shown={capsuleShown({
+                  keyboard,
+                  previewing,
+                  screenReader,
+                  shown,
+                  status,
+                  tucked,
+                  typing,
+                })}
+                target={shown === 'assistant' ? 'form' : 'assistant'}
+              />
+            ) : null}
+          </View>
+        </SwitchAnchorContext>
       </View>
     );
   }

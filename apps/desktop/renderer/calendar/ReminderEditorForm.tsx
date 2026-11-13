@@ -49,6 +49,7 @@ export function ReminderEditorForm({
         <input
           autoFocus={!task}
           className={`${FIELD_CLASS} py-2 text-base`}
+          data-switch-anchor
           onChange={(input) => taskModel.setTitle(input.target.value)}
           placeholder="Title"
           ref={titleFlash}
