@@ -204,3 +204,90 @@ export const noticeCopy = (
       return { lines: [] };
   }
 };
+
+/**
+ * What the Create lesson says about the model, in its banner, while the
+ * model is not on the device yet: what the Assistant is and what the
+ * download is, the demo standing in meanwhile, and the notice's one
+ * action and progress (`noticeCopy`). Ready, it says the Assistant now
+ * takes any words.
+ */
+export const lessonModelCopy = (
+  state: AssistantModelState,
+  options: {
+    readonly device: AssistantDevice;
+    readonly network: NetworkReading | undefined;
+    readonly size: number | undefined;
+  },
+): {
+  readonly action?: { readonly kind: 'download' | 'mobile' | 'retry'; readonly label: string };
+  readonly progress?: number;
+  readonly text: string;
+} => {
+  const { device, size } = options;
+  const { action, progress } = noticeCopy(state, options);
+  const meanwhile = 'Meanwhile the demo shows how it works.';
+  const text = ((): string => {
+    switch (state.kind) {
+      case 'unasked':
+      case 'declined':
+        return `Solunivo reads what you say with an Assistant of its own: a small model trained on calendar phrases, running on this ${device}, so your words stay on it. It is a one-time download${size === undefined ? '' : ` of ${sizeLabel(size)}`}${device === 'iPhone' ? ', over Wi-Fi' : ''}. Until then, the demo below shows how it works.`;
+      case 'downloading':
+        return `Downloading the Assistant’s model · ${String(progress ?? 0)} %. It goes on if you leave. ${meanwhile}`;
+      case 'verifying':
+        return `Checking the downloaded model… ${meanwhile}`;
+      case 'waiting':
+        return state.for === 'network'
+          ? `The Assistant’s model downloads once this ${device} is online. ${meanwhile}`
+          : `The Assistant’s model downloads when this ${device} is on Wi-Fi. ${meanwhile}`;
+      case 'failed':
+        return `The download of the Assistant’s model did not finish: ${state.message} Try again and it goes on from where it stopped. ${meanwhile}`;
+      case 'unsupported':
+        return state.reason === 'memory'
+          ? `This ${device} can’t run the Assistant’s model: it needs 8 GB of memory. The demo shows what it does; the Form makes your events.`
+          : `${UNSUPPORTED[device][state.reason]} The demo shows what the Assistant does.`;
+      case 'ready':
+        return `The Assistant is ready, on this ${device}. Say it your way now: “make it Thursday”, “an hour longer”.`;
+    }
+  })();
+  return {
+    ...(action === undefined ? {} : { action }),
+    ...(progress === undefined ? {} : { progress }),
+    text,
+  };
+};
+
+/**
+ * The Create lesson's row on the Getting started card while the model is
+ * not ready: where the download stands, and the demo to try meanwhile.
+ * Undefined once it is ready (the row says what it always said).
+ */
+export const createRowNote = (
+  state: AssistantModelState,
+  { device }: { readonly device: AssistantDevice },
+): { readonly progress?: number; readonly subtitle: string } | undefined => {
+  switch (state.kind) {
+    case 'unasked':
+    case 'declined':
+      return { subtitle: 'Try the demo · the Assistant downloads once' };
+    case 'downloading': {
+      const percent = percentOf(state.received, state.total);
+      return { progress: percent, subtitle: `Downloading the Assistant · ${String(percent)} %` };
+    }
+    case 'verifying':
+      return { progress: 100, subtitle: 'Checking the Assistant’s model' };
+    case 'waiting':
+      return {
+        subtitle:
+          state.for === 'network'
+            ? 'The Assistant downloads once online · try the demo'
+            : 'The Assistant downloads on Wi-Fi · try the demo',
+      };
+    case 'failed':
+      return { subtitle: 'The download did not finish · try the demo' };
+    case 'unsupported':
+      return { subtitle: `See it in a demo · this ${device} uses the Form` };
+    case 'ready':
+      return undefined;
+  }
+};

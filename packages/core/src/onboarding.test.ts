@@ -5,9 +5,12 @@ import {
   canonicalOnboardingState,
   cardVisible,
   DEFAULT_ONBOARDING_STATE,
+  LESSON_CREATE_CHANGE,
+  LESSON_CREATE_PHRASE,
   LESSON_COUNT,
   LESSON_IDS,
   lessonCopy,
+  lessonDemoNext,
   lessonPosition,
   lessonProgress,
   lessonRows,
@@ -178,5 +181,18 @@ describe('lessonCopy', () => {
       expect(copy.subtitle.length).toBeGreaterThan(0);
       expect(copy.intro.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('lessonDemoNext', () => {
+  it('offers the lesson’s phrase, then its change, then nothing', () => {
+    expect(lessonDemoNext([])).toBe(LESSON_CREATE_PHRASE);
+    expect(lessonDemoNext([LESSON_CREATE_PHRASE])).toBe(LESSON_CREATE_CHANGE);
+    expect(lessonDemoNext([LESSON_CREATE_PHRASE, LESSON_CREATE_CHANGE])).toBeUndefined();
+  });
+
+  it('stops once anything else was said: the model took over', () => {
+    expect(lessonDemoNext(['Dinner with Anna'])).toBeUndefined();
+    expect(lessonDemoNext([LESSON_CREATE_PHRASE, 'make it Thursday'])).toBeUndefined();
   });
 });
