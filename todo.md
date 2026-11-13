@@ -194,7 +194,12 @@ the served model (#184) and slot proposals (#185) are in
       measure those first.
 - [ ] The Assistant's own model, follow-ups (#307): find a time, search
       sentences and capture still need Apple's model (data and a tuned
-      prompt each; capture's schema leaves the time and place optional,
+      prompt each). The finder bench (#316) measures find a time: Apple's
+      model 12/40 with the word rules and 0/40 without, 13 phrases
+      unanswered (10 written until its context ran out, 2 past 180 s, 1
+      guardrail); DeepSeek V4
+      Flash 39/40 without the rules. Search and capture have no bench yet
+      (capture's schema leaves the time and place optional,
       and Apple's model filled no optional field on any quick-add phrase
       in the bench, 2026-11-11, unmeasured for capture); a model for
       6 GB iPhones (Q4_K_M, 1.2 GB loaded, or a smaller base); "next

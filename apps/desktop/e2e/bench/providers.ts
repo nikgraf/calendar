@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { type LanguageModel, transcriptFromSegments } from '@calendar/ai';
@@ -523,3 +523,83 @@ export interface OpenAiUsage {
   readonly prompt_cache_miss_tokens?: number;
   readonly prompt_tokens?: number;
 }
+
+/** The commit the bench ran on; `-dirty` when the tree is not the commit. */
+export const gitSha = (root: string): string => {
+  try {
+    // `-dirty` when the tree is not the commit: a report must not name code that did not make it.
+    return execFileSync('git', ['describe', '--always', '--dirty', '--abbrev=8'], {
+      cwd: root,
+      encoding: 'utf8',
+    }).trim();
+  } catch {
+    return 'unknown';
+  }
+};
+
+/** A model to bench, as the MODEL_BENCH_* variables name it. */
+export interface BenchProvider {
+  /** What the provider puts around the recorded model, so the report keeps what was sent and what came. */
+  readonly around?: ((model: LanguageModel) => LanguageModel) | undefined;
+  readonly model: LanguageModel;
+  readonly name: string;
+  /** What the run set that the name does not say; the report keeps it. */
+  readonly settings?: string | undefined;
+}
+
+/**
+ * The models the MODEL_BENCH_* variables name: Apple's through the
+ * helper (unless MODEL_BENCH_APPLE=0), Ollama's, and any behind an
+ * OpenAI-compatible endpoint. Both benches ask the same ones.
+ */
+export const benchProviders = async (
+  helper: HelperClient | undefined,
+  log: (line: string) => void,
+): Promise<ReadonlyArray<BenchProvider>> => {
+  const list: Array<BenchProvider> = [];
+  if (helper !== undefined && process.env['MODEL_BENCH_APPLE'] !== '0') {
+    let status: string;
+    try {
+      status = await helperStatus(helper);
+    } catch (error) {
+      status = `not answering (${error instanceof Error ? error.message : String(error)})`;
+    }
+    if (status === 'ready') {
+      list.push({ model: helperModel(helper), name: 'apple' });
+      if (process.env['MODEL_BENCH_APPLE_REQUIRED'] === '1') {
+        list.push({
+          around: requiringEveryField,
+          model: helperModel(helper),
+          name: 'apple-required',
+        });
+      }
+    } else {
+      log(`Apple's model is ${status}; left out.`);
+    }
+  }
+  const ollamaUrl = process.env['MODEL_BENCH_OLLAMA_URL'] ?? 'http://localhost:11434';
+  for (const name of (process.env['MODEL_BENCH_OLLAMA'] ?? '').split(',').filter(Boolean)) {
+    list.push({ model: ollamaModel(ollamaUrl, name.trim()), name: `ollama:${name.trim()}` });
+  }
+  const openAi = (process.env['MODEL_BENCH_OPENAI'] ?? '').split(',').filter(Boolean);
+  if (openAi.length > 0) {
+    const openAiUrl = process.env['MODEL_BENCH_OPENAI_URL'] ?? 'http://localhost:1234/v1';
+    const extra = openAiExtra(process.env['MODEL_BENCH_OPENAI_EXTRA']);
+    const jsonMode = openAiJsonMode(process.env['MODEL_BENCH_OPENAI_JSON']);
+    for (const name of openAi) {
+      list.push({
+        model: openAiModel(openAiUrl, name.trim(), process.env['MODEL_BENCH_OPENAI_KEY'], extra, {
+          jsonMode,
+        }),
+        name: `openai:${name.trim()}`,
+        // The endpoint and what joined each request: thinking on and thinking off are two results.
+        settings: [
+          openAiUrl,
+          ...(Object.keys(extra).length === 0 ? [] : [JSON.stringify(extra)]),
+          ...(jsonMode === 'object' ? ['json-object'] : []),
+        ].join(' '),
+      });
+    }
+  }
+  return list;
+};

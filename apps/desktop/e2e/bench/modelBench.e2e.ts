@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,18 +22,12 @@ import {
 } from './check.ts';
 import { plainTurn } from './plain.ts';
 import {
+  benchProviders,
   connectHelper,
   findHelper,
-  type HelperClient,
-  helperModel,
+  gitSha,
   helperSpeech,
-  helperStatus,
-  ollamaModel,
-  openAiExtra,
-  openAiJsonMode,
-  openAiModel,
   recording,
-  requiringEveryField,
   type Speech,
 } from './providers.ts';
 import {
@@ -274,79 +267,6 @@ const runCase = async (
   };
 };
 
-const gitSha = (): string => {
-  try {
-    // `-dirty` when the tree is not the commit: a report must not name code that did not make it.
-    return execFileSync('git', ['describe', '--always', '--dirty', '--abbrev=8'], {
-      cwd: ROOT,
-      encoding: 'utf8',
-    }).trim();
-  } catch {
-    return 'unknown';
-  }
-};
-
-interface Provider {
-  /** What the provider puts around the recorded model, so the report keeps what was sent and what came. */
-  readonly around?: ((model: LanguageModel) => LanguageModel) | undefined;
-  readonly model: LanguageModel;
-  readonly name: string;
-  /** What the run set that the name does not say; the report keeps it. */
-  readonly settings?: string | undefined;
-}
-
-const providers = async (
-  helper: HelperClient | undefined,
-  log: (line: string) => void,
-): Promise<ReadonlyArray<Provider>> => {
-  const list: Array<Provider> = [];
-  if (helper !== undefined && process.env['MODEL_BENCH_APPLE'] !== '0') {
-    let status: string;
-    try {
-      status = await helperStatus(helper);
-    } catch (error) {
-      status = `not answering (${error instanceof Error ? error.message : String(error)})`;
-    }
-    if (status === 'ready') {
-      list.push({ model: helperModel(helper), name: 'apple' });
-      if (process.env['MODEL_BENCH_APPLE_REQUIRED'] === '1') {
-        list.push({
-          around: requiringEveryField,
-          model: helperModel(helper),
-          name: 'apple-required',
-        });
-      }
-    } else {
-      log(`Apple's model is ${status}; left out.`);
-    }
-  }
-  const ollamaUrl = process.env['MODEL_BENCH_OLLAMA_URL'] ?? 'http://localhost:11434';
-  for (const name of (process.env['MODEL_BENCH_OLLAMA'] ?? '').split(',').filter(Boolean)) {
-    list.push({ model: ollamaModel(ollamaUrl, name.trim()), name: `ollama:${name.trim()}` });
-  }
-  const openAi = (process.env['MODEL_BENCH_OPENAI'] ?? '').split(',').filter(Boolean);
-  if (openAi.length > 0) {
-    const openAiUrl = process.env['MODEL_BENCH_OPENAI_URL'] ?? 'http://localhost:1234/v1';
-    const extra = openAiExtra(process.env['MODEL_BENCH_OPENAI_EXTRA']);
-    const jsonMode = openAiJsonMode(process.env['MODEL_BENCH_OPENAI_JSON']);
-    for (const name of openAi) {
-      list.push({
-        model: openAiModel(openAiUrl, name.trim(), process.env['MODEL_BENCH_OPENAI_KEY'], extra, {
-          jsonMode,
-        }),
-        name: `openai:${name.trim()}`,
-        // The endpoint and what joined each request: thinking on and thinking off are two results.
-        settings: [
-          openAiUrl,
-          ...(Object.keys(extra).length === 0 ? [] : [JSON.stringify(extra)]),
-          ...(jsonMode === 'object' ? ['json-object'] : []),
-        ].join(' '),
-      });
-    }
-  }
-  return list;
-};
-
 /** What runs around the model, per MODEL_BENCH_PIPELINE: the tuned path unless it names others. */
 const pipelines = (): ReadonlyArray<Pipeline> => {
   const asked = (process.env['MODEL_BENCH_PIPELINE'] ?? '')
@@ -382,7 +302,7 @@ const reportsToRescore = (value: string): ReadonlyArray<string> =>
 describe.skipIf(process.env['MODEL_BENCH'] !== '1')('model bench', () => {
   it('runs the cases on each model and writes a report', { timeout: 120 * 60_000 }, async () => {
     const today = Temporal.Now.plainDateISO(TIME_ZONE).toString();
-    const sha = gitSha();
+    const sha = gitSha(ROOT);
     const lines: Array<string> = [`\nMODEL BENCH — today ${today}, ${TIME_ZONE}, ${sha}\n`];
     const log = (line: string) => {
       lines.push(line);
@@ -418,7 +338,7 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('model bench', () => {
         }
         return;
       }
-      const available = await providers(helper, log);
+      const available = await benchProviders(helper, log);
       if (available.length === 0) {
         log(
           'No model to bench: build the desktop helper (pnpm --filter @calendar/desktop build:helper), point MODEL_BENCH_HELPER at one, or name a served model (MODEL_BENCH_OLLAMA, MODEL_BENCH_OPENAI).',
