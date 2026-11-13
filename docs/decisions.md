@@ -1160,15 +1160,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
 
 ## AI
 
-- **The Assistant's own model on the iPhone** (2026-11-13, #307) — a
-  Qwen3.5 0.8B trained on the tuned prompt reads the Assistant's
-  phrases on the iPhone, run in the app by llama.rn (both variants),
-  downloaded once from GitHub after asking: Wi-Fi only unless mobile data
-  is allowed (App Review 4.2.3, Low Data Mode). Its data is DeepSeek V4's
-  (MIT; its API terms allow distillation): Anthropic's Usage Policy
-  forbids training on Claude's outputs, so the Claude-made rounds were
-  set aside. Rejected: Apple's model with the rules, Gemma 4 E2B (does not
-  fit). Open: todo.md (the Mac, the other AI features, 6 GB iPhones).
+- **The Assistant's own model, on both apps** (2026-11-13, #307) — a
+  Qwen3.5 0.8B trained on the tuned prompt reads the Assistant's phrases,
+  run by llama.cpp (llama.rn on the iPhone; on the Mac a bundled static
+  `llama-server` on a UNIX socket) and downloaded once from GitHub after
+  asking, the iPhone over Wi-Fi only unless allowed (App Review 4.2.3).
+  Data from DeepSeek V4 (MIT, distillation allowed); Anthropic forbids
+  training on Claude's outputs. The phrase rules went (#182, #248,
+  #302, #303 and the repeat, title and words entries below) bar one
+  day check. Rejected: the rules over Apple's model, llama.cpp in the
+  Swift helper, node-llama-cpp. Open: todo.md.
 - **The editor's two views: Assistant and Form** (2026-11-12, #308) —
   the assistant is its own view, a conversation whose answers are the
   item as a card with what changed marked, and the form a second view of
@@ -1228,7 +1229,7 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   and the two prompts are tuned apart. Timed reminders still do not
   count as busy, and guests' free/busy is not fetched — the finder is
   where both would go.
-- **The phrase grounds the model's answer** (2026-10-11, #182) — probed
+- **The phrase grounds the model's answer** (2026-10-11, #182; superseded by #307) — probed
   on device, the ~3B model filled
   every optional field: 13:00 for "dinner", 00:00 with isAllDay false for
   a timeless phrase, "task" for a lunch, a Thursday for "next Friday", a
@@ -1246,7 +1247,7 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   forbade inventing), asking the model where a value came from. Open:
   capture items (no phrase per item), German "morgen" (also "morning"),
   an "assumed" badge for the default times — with the draft thread.
-- **The title holds only the phrase's words** (2026-10-24, #248) — "lunch with
+- **The title holds only the phrase's words** (2026-10-24, #248; superseded by #307) — "lunch with
   tom tomorrow" came back "Lunch with Sarah": the model copies a prompt's
   example title into any phrase of its shape. The prompt lost its examples;
   `groundTitle` keeps the model's title only when its words are the
@@ -1256,7 +1257,7 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   leaves for its field, and a when or company is no place. Rejected: the
   example behind the check, a rule-only prompt, a code-only title. Open:
   mid-title when-words, "tomorrow lunch with tom" → "Lunch".
-- **A spoken command is not the title** (2026-11-08, #302) — the iPhone's
+- **A spoken command is not the title** (2026-11-08, #302; superseded by #307) — the iPhone's
   model echoes a dictated phrase ("Add an event to have lunch with
   Stefan"), and the phrase stands in when a title fails `groundTitle`.
   `withoutCommand` takes the frame off first: a wish, a request with a
@@ -1266,7 +1267,7 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   `trimWhen` takes the when before the company too ("lunch tomorrow with
   Stefan"). Rejected: a prompt rule, an opener as evidence, any "…
   eintragen". Open: "block <when> for <event>", a place before the object.
-- **A bare turn leans on the draft** (2026-11-09, #303) — "it's in Vienna"
+- **A bare turn leans on the draft** (2026-11-09, #303; superseded by #307) — "it's in Vienna"
   after "Cafe Meek" put "Vienna" over the place or changed nothing, and
   "with Stefan" landed in the location: a model asked for the whole event
   back answers such a turn its own way. `bareTurns.ts` reads the two
@@ -1302,7 +1303,7 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   by side — the evidence a Gemma download on iOS would need. Open: a
   per-model context from `/api/show`, image input for a served model,
   the `ModelInfo` capability record beyond the context.
-- **A page that measures an open model on the iPhone** (2026-11-11, #307)
+- **A page that measures an open model on the iPhone** (2026-11-11, #307; it now measures the tuned models only)
   — the development variant can load a GGUF model into the app (llama.rn,
   compiled from the sources its npm package ships, linked into that variant
   alone) and run the bench's first phrases through quick-add (Settings ›
@@ -1446,7 +1447,7 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   Intelligence switches itself off on a Siri-vs-Mac language mismatch); a
   not-ready model is re-polled; no "Open System Settings" button, the
   tooltip names the pane.
-- **iOS quick add says why the model is unavailable** (2026-10-16) — a
+- **iOS quick add says why the model is unavailable** (2026-10-16; the Assistant's part superseded by #307) — a
   local Expo module reads Foundation Models' reason, since the package
   answers only yes/no and patching it was declined (#31); generation stays
   in the package. A failed or timed-out check is worded as a check that
@@ -1478,7 +1479,7 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   exact-JSON snapshots (wording and dates drift), prompt variants as a
   parameter (two runs on two commits do), a CI gate (no model there).
   Open: the gaps the baseline shows, listed in todo.md (Tier 3).
-- **Quick-add repeats are the phrase's** (2026-10-26, `todo/quick-add-repeat`)
+- **Quick-add repeats are the phrase's** (2026-10-26, `todo/quick-add-repeat`; superseded by #307)
   — `statedRepeat` (`grounding.ts`) reads kind, gap, days, ordinal
   weekday, count and span from the words; `recurrenceFromParse` builds
   the rule from that, in quick add and over a draft's rule in a
@@ -1489,7 +1490,7 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   invented end a week on would have stayed). Open: "twice a week", "2nd
   and 4th Tuesday".
 - **The title's trim knows the repeat forms** (2026-10-26,
-  `todo/title-repeat-forms`) — `WHEN_AT_END` takes the forms `statedRepeat`
+  `todo/title-repeat-forms`; superseded by #307) — `WHEN_AT_END` takes the forms `statedRepeat`
   reads, a repeat said first ("Jeden Dienstag um 18 Uhr Fußball" is
   "Fußball"), and a repeat's end, count or span after it — those only
   behind a repeat in the title or the phrase, so "Vacation until Friday"
@@ -1498,7 +1499,7 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   the title; any other holds its words ("Ruby Tuesday"). Rejected: trimming
   a frequency word said first ("Weekly sync" is a name). Open: nouns read
   as repeats ("Ski weekends", "McKinsey Quarterly"), an end said first.
-- **Days a repeat rules out** (2026-10-26, `todo/negated-days`) — "every
+- **Days a repeat rules out** (2026-10-26, `todo/negated-days`; superseded by #307: the model writes `except`) — "every
   day except Sunday", "jeden Werktag außer Freitag", "every morning except
   Saturday and Sunday": the days named after the negation come off the
   rule's days (all seven for a daily one) and the rule turns weekly on
@@ -1510,7 +1511,7 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   Monday") or sits on a rule without days ("weekly except Friday"). The
   finder's day reader keeps leaving a negation to the model.
 - **Notes and notifications from the words** (2026-10-26,
-  `todo/quick-add-notes-notifications`) — `extras.ts` reads the offsets
+  `todo/quick-add-notes-notifications`; the Assistant's part superseded by #307, a finder phrase keeps it) — `extras.ts` reads the offsets
   ("remind me 30 minutes before", "eine Stunde vorher", "the day before",
   "no reminder") and the note ("note: …", "notier, dass …", "add to the
   notes: …") from the phrase and takes the clauses off the words the

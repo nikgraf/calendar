@@ -5,11 +5,12 @@ Apple Calendar (EventKit) calendars and Apple Reminders: an Expo iOS app
 and an Electron macOS app over a shared, Effect-v4-first TypeScript core.
 No backend: data syncs directly against the Google Calendar/Tasks REST
 APIs with syncToken (events) and updatedMin-watermark (tasks) polling
-plus an offline-tolerant pending-op queue. On-device AI (Apple Foundation
-Models + SpeechAnalyzer + Vision) powers quick-add parsing, find-a-time,
-dictation and capture from text or photo; on the iPhone the Assistant's
-phrases run on a model of the app's own (a fine-tuned Qwen3.5 0.8B,
-downloaded once, run by llama.rn).
+plus an offline-tolerant pending-op queue. The editor's Assistant reads
+what is said with a model of the app's own on both platforms (a
+fine-tuned Qwen3.5 0.8B, downloaded once after asking, run by llama.cpp:
+llama.rn on the iPhone, a bundled `llama-server` on the Mac); Apple's
+on-device AI (Foundation Models + SpeechAnalyzer + Vision) powers
+find-a-time, search sentences, dictation and capture from text or photo.
 
 ## Monorepo map
 
@@ -35,7 +36,9 @@ downloaded once, run by llama.rn).
   task and birthday reminders, one merged OS schedule) over a platform
   `NotificationSink`.
 - `packages/ai` — the on-device AI seams (`LanguageModel`,
-  `SpeechToText`, `TextRecognizer`), the quick-add, find-time and
+  `SpeechToText`, `TextRecognizer`), the Assistant's tuned path
+  (`phraseReader.ts`, `tuned.ts`, `tunedResult.ts`, `said.ts`) and its
+  model's release (`assistantModel.ts`), the find-time, search and
   capture prompt/normalize/parse pipelines, and the deterministic
   fixture model both e2e suites run on. Pure TypeScript; platform
   adapters live in the apps. Its one Swift source
@@ -69,7 +72,10 @@ downloaded once, run by llama.rn).
   watch over stdio; process owned by `electron/helperProcess.ts`); macOS 27
   is the floor of both (`LSMinimumSystemVersion` in `forge.config.cjs`,
   `.macOS(.v27)` in `helper/Package.swift`), so neither guards on the OS
-  version; the agent gateway host
+  version; the Assistant's own model (`electron/assistantModel/`: the
+  download into the profile, asked for at launch, and the bundled
+  `llama-server` on a UNIX socket, built by `scripts/build-llama-server.sh`);
+  the agent gateway host
   (`electron/agent/`: Unix socket, MCP server, CLI runner) and its relay
   `solunivo-cli` (`electron/cli.ts`, a third `pack` entry in
   `vite.config.ts`).
@@ -81,7 +87,8 @@ downloaded once, run by llama.rn).
   `src/settingsCodeInbox.ts` hands a code that arrives from outside to a
   reader); `@expo/ui` for
   drop-in native controls; zero-hop direct backend; @react-native-ai/apple
-  for on-device model access; llama.rn for the Assistant's own model
+  for Apple's on-device model (find a time, search, capture); llama.rn for
+  the Assistant's own model
   (`src/assistantRuntime.ts`: the download, asked for at launch, Wi-Fi
   only unless mobile data is allowed; the Model Spike page measures with
   the same runtime, in both variants); the local Expo modules under `modules/`;
@@ -157,10 +164,11 @@ deliberately.
   to match CI's bundle). Flow
   conventions: `docs/google-sync-and-testing.md`, "iOS e2e".
 - `MODEL_BENCH=1 E2E=1 pnpm exec vp test run apps/desktop/e2e/bench/modelBench.e2e.ts`
-  — the model bench: the quick-add and refine cases under
+  — the model bench: the Assistant's cases under
   `apps/desktop/e2e/bench/cases/` (text, or recordings with transcripts)
-  on Apple's model and any served one, scored by where a person would
-  put the event; a table and a report under `output/bench/`, never a
+  through the tuned path on any served model (the app's file on
+  `llama-server`, a teacher on the plain arm), scored by where a person
+  would put the event; a table and a report under `output/bench/`, never a
   gate. Format and variables: `apps/desktop/e2e/bench/README.md`.
 - `GOOGLE_LIVE=1 pnpm exec vp test run` — the live Google suite
   (`packages/sync/src/live/*.live.ts`) against the dedicated test account
@@ -302,7 +310,10 @@ deliberately.
   model is real by default too; `CALENDAR_MODEL=fixture` (desktop, a
   spec's `model: 'fixture'`) / `EXPO_PUBLIC_CALENDAR_MODEL=fixture` (iOS
   bundle, on in CI) answer with the deterministic model and text
-  recognizer from `@calendar/ai` instead. `…=live` signs
+  recognizer from `@calendar/ai` instead, the Assistant's tuned prompt
+  included (its grammar: `docs/google-sync-and-testing.md`); the
+  harness also sets `CALENDAR_ASSISTANT_MODEL=off`, so no run asks to
+  download the Assistant's model unless a spec points it at a file. `…=live` signs
   the real API in as the dedicated live test account — only the opt-in
   live suites use it (`GOOGLE_LIVE=1` Node files, `CALENDAR_E2E_GOOGLE=live`
   desktop spec, `apps/ios/e2e/live` flows; `google-live.yml` nightly),

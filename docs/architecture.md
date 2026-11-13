@@ -37,153 +37,107 @@ SQLite (node:sqlite / op-sqlite)
 **AI** (all on-device, no cloud): prompts, JSON schemas, normalization and
 parsing live in `packages/ai` behind the `LanguageModel`, `SpeechToText`
 and `TextRecognizer` seams. The Assistant reads a phrase through a
-`PhraseReader` (`phraseReader.ts`): on the Mac (and under the fixture
-model) the app's pipeline with its grounding over Apple's model or a
-served one (`rulesReader`, below); on the iPhone the tuned path
-(`tunedReader`, `tuned.ts`), a Qwen3.5 0.8B trained for these prompts
-(`apps/desktop/e2e/bench/train/`) and run in the app by llama.rn. The
-tuned prompt is the days, the draft and the words; the answer is the
-whole draft, a far day and a ruled-out weekday written as said and
-worked out by code (`said.ts`), and `answerResult` (`tunedResult.ts`)
-checks shapes and fills a form's defaults without reading the words. The
-iPhone downloads the model once, after asking, over Wi-Fi unless mobile
-data is allowed (`apps/ios/src/assistantDownload.ts`, a background
-`URLSession` in the `solunivo-model-download` module), checks its size
-and SHA-256, loads it on the first question and lets it go when the app
-leaves the screen (`assistantModel.ts`). Find a time, search sentences
-and capture keep Apple's model; the pure `findFreeSlots` solver
-(`packages/core/src/scheduling/`) computes free slots from the
-already-synced local events — busy is what `blocksTime` says (timed, not
-cancelled, not marked free, not declined), the rule the agent gateway's
-free/busy shares. The model extracts, the code decides:
-`packages/ai/src/grounding.ts` reads the phrase itself — clock times,
-meal and part-of-day words (one table: quick-add defaults and the
-finder's bounds), weekdays, to-do cues, the finder's windows and
-durations, a repeat's frequency, gap, days, count and span — and the
-normalizers keep a model value only where the phrase supports it,
-correct one it contradicts and drop the rest (a phrase without a time is
-an all-day event, whatever the model returned; one without a repeat word
-has no repeat, and one with has the repeat the words say, the model's
-end kept only behind an until word). The
-title too is only the phrase's words — one naming anything else gives way
-to the phrase — with the words about when taken off its ends; no prompt
-shows an example title, since the model copies it. A
-refinement (`refine.ts`) is one more bounded prompt — the draft as a
-line of JSON and the change — merged by the same rules with the draft as
-the anchor (an open "at 8" reads next to the draft's own start); the
-model keeps no session, so a turn works the same over every provider
-and the fixture model plays it in its grammar. Who a phrase or a turn
-invites is a question of its own (`invitees.ts`, `readPeople`), asked
-beside the extraction and only when the words hold an invitation cue
-("invite", "add … as a guest", "lade … ein", "einladen"; "don't
-invite", "remove", "ohne", "ausladen" take a guest off): the code keeps
-a name only in such a cue's guest list — nothing but people, commas and
-list words between them, so "with Sarah", "invite Tom to lunch with
-Sarah", "but not Tom" and an address for another instruction invite no
-one — in the words' own spelling (a misspelled name is matched back by
-its consonants), reads addresses itself (masked before the words are
-read), and cuts the invitation out of the title. A noun is no request
-unless it says for whom ("an invite to Tom", not "the invitation from
-Tom"), and a negation elsewhere in a cue's clause leaves it no opinion.
-A note and notifications the words ask for (`extras.ts`, `readExtras`:
-"remind me 30 minutes before", "erinnere mich eine Stunde vorher", "the
-day before", "no reminder"; "note: …", "notier, dass …", "add to the
-notes: …") are read by the code alone — no field in the schema, since an
-offset is a small grammar and a note is the phrase's own words — and the
-clauses leave the phrase before the model and the grounding see it, so
-"remind me … before" is no to-do cue and "15 minutes before" no length;
-they come back beside the prefill (`notes`, `reminders`), and a turn
-about nothing else calls no model. Nor does a turn that is one bare
-phrase leaning on the draft (`bareTurns.ts`): only where its place is
-("it's in Vienna", "the one in Berlin", "es ist in Wien" — "the one" and
-what leads to where, or "in" and a bare name) or only who it is with
-("with Stefan", "mit Anna und Tom": people joined by "and", a word or
-two each). Bare means bare — a second clause, a sentence break, a when,
-a verb, a hedge ("I think"), a venue with its article ("in the office"),
-a replacement ("in Vienna instead") or a word of the module's lists
-("in person", "with a reminder") leaves the turn to the model, as
-before; only a polite last word ("please", "auch") is heard through.
-Where is added to the place as the words said it — the thread passes
-that text (`placeAsSaid`: the words a taken place was found for, not its
-address) and the words that made or changed this draft (`turnsOf`: a
-turn records the drafts it changed) — so "Cafe Meek" becomes "Cafe Meek,
-Vienna" and is looked up again, a name and where it is (`saysWhere`
-takes what follows a comma for the where, `placeMatch` hears the whole
-name without it). A second where takes the place of the one an earlier
-bare turn gave, and a correction ("no, in Graz") of the one the place
-was said with. Company joins the title as in a first phrase — into the
-company it ends in, a fuller name for the shorter, the old company given
-up after "no" — and invites no one. The thread folds them into the
-draft's extras (`draftExtras.ts`: a note on a line of its own, popups
-beside the draft's own, a replacement or a clearing alone) and the form
-flashes the rows. The thread (app-state `draftInvitees.ts`) looks each name
-up through `contactsNamed` — every contact whose folded words the name
-begins (core `nameMatch`), never a typeahead page, so "one person" is
-decided over all of them: a name that is one contact's (the only one by
-that exact name or address, else the only one whose words it says whole
-— "Tom", "T Baker", not "Ann" for Anna) joins the draft's guests; any
-other waits on the draft as a choice — the contacts it might be, or none
-— until the user picks one, lets it go, or a later turn says it again. A
-turn that takes a guest off matches the guests the same way. A phrase that asks for
-free time ("find 90 min for focus next week, mornings", "wann habe ich
-Zeit für …") is routed by code (`slotProposals.ts`, `isFinderPhrase`:
-English and German cues) to the finder prompt instead, so the two
-prompts stay tuned apart; the solver then places each gap's slot at the
-named part of the day (`preferredTime`, the middle of the bounds the
-finder settled on) and `rankSlotsAround` orders the slots by distance
-from it, half an hour counting the same, soonest first among equals —
-without a named period they stay in the solver's chronological order.
-Desktop: renderer → preload IPC (the `model:*` channels: status, info,
-generate, prepare-speech, transcribe, recognize-text) → main → the
-active provider (`apps/desktop/electron/modelProvider.ts`): by default
-the Swift helper child process (`apps/desktop/helper`, Foundation
-Models + SpeechAnalyzer + Vision over newline-JSON stdio; spawned lazily
-and supervised with restart backoff by
-`apps/desktop/electron/helperProcess.ts`), or — picked in Settings ›
-AI Model — a model served over HTTP on this Mac: Ollama's own API (the
-JSON schema as `format`, `num_ctx` per call, `keep_alive`) or any
-OpenAI-compatible endpoint (`response_format: json_schema`; LM Studio,
-llama-server). Only `generateJson` and `status` have that second home;
-dictation and text recognition stay with the helper. `ModelInfo`
-(`LanguageModel.info`) says the model's context, and capture sizes its
-text by it (`captureTextBudget`). A served model's failure is worded by
-server (`modelUnavailableCopy`), and a host that is not loopback gets a
-notice in Settings: text typed into the AI fields leaves the Mac then.
-The model bench (`apps/desktop/e2e/bench/`, run by path with
-`MODEL_BENCH=1 E2E=1`) runs its cases — a phrase and the changes a
-thread would make to it, as text or recordings — through the same
-pipelines on Apple's model and any served one, side by side (its README;
-docs/google-sync-and-testing.md → Unit tests). iOS reaches the same models via
-`@react-native-ai/apple` and Vision through the `solunivo-ocr` Expo
-module; why the model cannot run comes from the `solunivo-model-availability`
-module (Foundation Models' reason, bounded to 5 s — the package answers
-only yes/no, and a binary without the module falls back to that and says
-so). Both hosts map the reason through `APPLE_REASON_STATUS`
-(packages/ai); `LanguageModel.availability` carries it with a failed
-check's error beside the status. Every AI entry point checks through
-`useModelAvailability` (app-state): one check at a time (a request while
-one is out runs once more after it), a re-check on returning to the app,
-a 30 s poll while 'not-ready', and every Check Again answered even when
-nothing changed. On iOS the Assistant's conversation shows
-`ModelAvailabilityNotice` (the reason, Check Again, collapsed technical
-details) and its bar leaves only Form, worded by `modelAvailabilityCopy.ts` like Settings ›
-Diagnostics, which always asks the device's model, never the e2e
-fixture. Dictation audio is captured by the UI layer (renderer
-`getUserMedia` → 16 kHz WAV) and only transcribed natively. Dictation
-is hands-free: each adapter reads the level as it records (the
-worklet's blocks on the desktop; on iOS the expo-audio recorder's
-`getStatus().metering`, on a recorder prepared before it records —
-unprepared, `record()` starts nothing and the meter reads digital
-silence) and
-`createEndpointer` (`packages/ai/src/endpointer.ts`) hears a phrase
-begin and the pause that ends it, against the room's own floor.
-`useQuickAddModel`
-sends each phrase at its pause and listens again (`voiceLoop.ts`) once
-the form has taken the last one in (`useThreadEditor().applying`), until
-the microphone is pressed (which sends what was recorded, heard or
-not), the field is typed into, the form is edited
-by hand (`userEdits`, counted by the setters the forms receive and a
-picked free slot, never by a turn's own fills) or 30 s pass with nobody speaking.
+`PhraseReader` (`phraseReader.ts`), on both platforms the tuned path
+(`tunedReader`, `tuned.ts`): a Qwen3.5 0.8B trained for these prompts
+(`apps/desktop/e2e/bench/train/`), the release both apps fetch named in
+`assistantModel.ts` (calendar-models v1). The tuned prompt is the days,
+the draft and the words; the answer is the whole draft, a far day and a
+ruled-out weekday written as said and worked out by code (`said.ts`),
+and `answerResult` (`tunedResult.ts`) checks shapes and fills a form's
+defaults without reading the words. One word check is left: whether a
+phrase named a day at all (`statesDay`: `groundDate`, `mentionsDate`,
+`defersDate`), since the model writes today's date for "Lunch at 1" and
+only the words tell it from "Lunch today at 1"; it goes once a model
+leaves the date out. Each device downloads the model once, after asking,
+checks its size and SHA-256, and loads it on the first question. The
+iPhone fetches over Wi-Fi unless mobile data is allowed
+(`apps/ios/src/assistantDownload.ts`, a background `URLSession` in the
+`solunivo-model-download` module), runs it with llama.rn and lets it go
+when the app leaves the screen (`assistantModel.ts`). The Mac fetches it
+into the profile (`apps/desktop/electron/assistantModel/`: `fetch`,
+resumed with `Range`) and runs it with the bundled `llama-server` (the
+same llama.cpp commit as llama.rn's), started on the first question on
+a UNIX socket with a key made for each start, one question at a time,
+its memory let go after ten idle minutes; the renderer asks over
+`assistant:*` IPC. The draft thread (app-state) does the rest: the
+names an answer invites are looked up (`draftInvitees.ts`) through
+`contactsNamed` — every contact whose folded words the name begins
+(core `nameMatch`), so "one person" is decided over all of them: a name
+that is one contact's joins the draft's guests; any other waits on the
+draft as a choice until the user picks one, lets it go, or a later turn
+says it again; a place the answer changes is looked up among past
+places and MapKit (`draftPlaces.ts`, `settlePlace`); a note and
+notifications fold into the draft's extras (`draftExtras.ts`) and the
+form flashes the rows.
+
+Find a time, search sentences and capture keep Apple's model (or a
+served one on the Mac): the model extracts, the code decides.
+`grounding.ts` reads the finder's and search's words itself — meal and
+part-of-day words, weekdays, windows, bounds and durations — and keeps a
+model value only where the words support it. A phrase said to the
+Assistant that asks for free time ("find 90 min for focus next week,
+mornings", "wann habe ich Zeit für …") is routed by code
+(`slotProposals.ts`, `isFinderPhrase`) to the finder prompt instead, a
+note or notification said with it read by `extras.ts`; the pure
+`findFreeSlots` solver (`packages/core/src/scheduling/`) computes free
+slots from the already-synced local events — busy is what `blocksTime`
+says (timed, not cancelled, not marked free, not declined), the rule the
+agent gateway's free/busy shares — places each gap's slot at the named
+part of the day (`preferredTime`) and `rankSlotsAround` orders them by
+distance from it. Capture normalizes each item the model found
+(`normalizeQuickAdd`, `capture.ts`). Desktop: renderer → preload IPC
+(the `model:*` channels: status, info, generate, prepare-speech,
+transcribe, recognize-text) → main → the active provider
+(`apps/desktop/electron/modelProvider.ts`): by default the Swift helper
+child process (`apps/desktop/helper`, Foundation Models + SpeechAnalyzer
+
+- Vision over newline-JSON stdio; spawned lazily and supervised with
+  restart backoff by `apps/desktop/electron/helperProcess.ts`), or —
+  picked in Settings › AI Model — a model served over HTTP on this Mac:
+  Ollama's own API (the JSON schema as `format`, `num_ctx` per call,
+  `keep_alive`) or any OpenAI-compatible endpoint
+  (`response_format: json_schema`; LM Studio, llama-server). Only
+  `generateJson` and `status` have that second home; dictation and text
+  recognition stay with the helper. `ModelInfo` (`LanguageModel.info`)
+  says the model's context, and capture sizes its text by it
+  (`captureTextBudget`). A served model's failure is worded by server
+  (`modelUnavailableCopy`), and a host that is not loopback gets a notice
+  in Settings: text pasted into capture leaves the Mac then. The model
+  bench (`apps/desktop/e2e/bench/`, run by path with `MODEL_BENCH=1 E2E=1`)
+  runs the Assistant's cases — a phrase and the changes a thread would
+  make to it, as text or recordings — through the tuned path on any served
+  model, the app's file on `llama-server` included (its README;
+  docs/google-sync-and-testing.md → Unit tests). iOS reaches Apple's models via
+  `@react-native-ai/apple` and Vision through the `solunivo-ocr` Expo
+  module; why the model cannot run comes from the `solunivo-model-availability`
+  module (Foundation Models' reason, bounded to 5 s — the package answers
+  only yes/no, and a binary without the module falls back to that and says
+  so). Both hosts map the reason through `APPLE_REASON_STATUS`
+  (packages/ai); `LanguageModel.availability` carries it with a failed
+  check's error beside the status. Every AI entry point checks through
+  `useModelAvailability` (app-state): one check at a time (a request while
+  one is out runs once more after it), a re-check on returning to the app,
+  a 30 s poll while 'not-ready', and every Check Again answered even when
+  nothing changed. On iOS the Assistant's conversation shows
+  `ModelAvailabilityNotice` (the reason, Check Again, collapsed technical
+  details) and its bar leaves only Form, worded by `modelAvailabilityCopy.ts` like Settings ›
+  Diagnostics, which always asks the device's model, never the e2e
+  fixture. Dictation audio is captured by the UI layer (renderer
+  `getUserMedia` → 16 kHz WAV) and only transcribed natively. Dictation
+  is hands-free: each adapter reads the level as it records (the
+  worklet's blocks on the desktop; on iOS the expo-audio recorder's
+  `getStatus().metering`, on a recorder prepared before it records —
+  unprepared, `record()` starts nothing and the meter reads digital
+  silence) and
+  `createEndpointer` (`packages/ai/src/endpointer.ts`) hears a phrase
+  begin and the pause that ends it, against the room's own floor.
+  `useQuickAddModel`
+  sends each phrase at its pause and listens again (`voiceLoop.ts`) once
+  the form has taken the last one in (`useThreadEditor().applying`), until
+  the microphone is pressed (which sends what was recorded, heard or
+  not), the field is typed into, the form is edited
+  by hand (`userEdits`, counted by the setters the forms receive and a
+  picked free slot, never by a turn's own fills) or 30 s pass with nobody speaking.
 
 **Native bridges** (`packages/reminders`, `packages/apple-calendar`,
 `packages/contacts`, `packages/geo`): each is one JSON protocol spoken by
@@ -1459,7 +1413,9 @@ gateway carries all of it. Details, limits and the threat model:
   Form; a read-only item and a conversion have the Form alone.
   **Assistant** (`assistant/AssistantView.tsx`) is a conversation: a
   phrase, typed and sent with Return or dictated hands-free, makes the
-  draft(s) or changes them (`parseRefine`); each answer is the item as a
+  draft(s) or changes them (the Assistant's own model, `tunedReader`;
+  while it is not on the Mac the notice shows its download,
+  `AssistantModelNotice`); each answer is the item as a
   card (`AssistantCard`, its lines from `cardLines`) with what the step
   changed marked and the old value struck through; a step not on show
   is a row with Restore; what the assistant has to ask sits under the

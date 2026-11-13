@@ -108,7 +108,7 @@ const privacyPoints = [
     title: 'Hidden from screen shares',
   },
   {
-    body: "Quick add runs on a model of its own on the iPhone, and on Apple's on-device models on the Mac, as do find a time, dictation and capture. Nothing is uploaded for them unless you point the Mac at a model server you choose.",
+    body: "Quick add runs on a model of its own, on the iPhone and the Mac; find a time, dictation and capture run on Apple's on-device models. Nothing is uploaded for them unless you point the Mac at a model server you choose.",
     title: 'AI on the device',
   },
 ];
