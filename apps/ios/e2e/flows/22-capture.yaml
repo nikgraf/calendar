@@ -103,6 +103,8 @@ tags:
             id: 'event-title'
             text: 'Standup'
           timeout: 10000
+      - waitForAnimationToEnd:
+          timeout: 3000
       - assertVisible:
           id: 'draft-position'
           text: '1 of 2'

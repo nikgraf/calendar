@@ -1,3 +1,4 @@
+import { use } from 'react';
 import {
   calendarGroups,
   RSVP_OPTIONS,
@@ -34,6 +35,7 @@ import { ReminderChips } from './ReminderChips.tsx';
 import { RepeatRuleChips } from './RepeatRuleChips.tsx';
 import { SegmentedControl } from './SegmentedControl.tsx';
 import { ZoneLines } from './ZoneLines.tsx';
+import { SwitchAnchorContext } from './assistant/useViewSwitch.ts';
 
 /** Which account (or, for Apple, which EventKit source) a calendar belongs to. */
 const groupLabel = (calendar: CalendarInfo, emailOf: (accountId: string) => string): string =>
@@ -58,6 +60,8 @@ export function EventEditForm({
   model: ReturnType<typeof useEventEditorModel>;
 }) {
   const styles = useSheetStyles();
+  // The title the form rises to from the Assistant's card (`useViewSwitch`).
+  const anchors = use(SwitchAnchorContext);
   const accounts = useAccounts();
   const { secondary: secondaryZones } = useTimeZones();
   const emailOf = (accountId: string) =>
@@ -194,6 +198,7 @@ export function EventEditForm({
             editable={!readOnly}
             onChangeText={setTitle}
             placeholder="Title"
+            ref={anchors?.form}
             testID="event-title"
             value={title}
           />

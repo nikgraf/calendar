@@ -6,9 +6,10 @@ import {
   type FieldChange,
 } from '@calendar/app-state';
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
-import type { ReactNode } from 'react';
+import { type ReactNode, use } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme } from '../theme.ts';
+import { SwitchAnchorContext } from './useViewSwitch.ts';
 
 const ICONS: Partial<Record<CardLine['field'], SymbolViewProps['name']>> = {
   alert: 'bell',
@@ -91,6 +92,8 @@ export function AssistantCard({
 }) {
   const styles = useStyles(makeStyles);
   const { colors } = useTheme();
+  // The title the form rises out of (`useViewSwitch`).
+  const anchors = use(SwitchAnchorContext);
   const lines = cardLines(draft, changes, keeps);
   const when = lines.filter((line) => line.field === 'date' || line.field === 'time');
   const rest = lines.filter((line) => line.field !== 'date' && line.field !== 'time');
@@ -109,7 +112,7 @@ export function AssistantCard({
           {label.toUpperCase()}
         </Text>
       </View>
-      <Text style={styles.title} testID="assistant-card-title">
+      <Text ref={anchors?.card} style={styles.title} testID="assistant-card-title">
         <Text style={retitled ? styles.mark : null}>{retitled ? ` ${title} ` : title}</Text>
       </Text>
       <View style={styles.line}>

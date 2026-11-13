@@ -24,3 +24,7 @@ name: Open the editor's form on a new event from the "+" button (shared)
           visible:
             id: 'editor-view-assistant'
           timeout: 5000
+      # The form rises out of the conversation (280 ms): a tap taken
+      # while it moves lands where a field was.
+      - waitForAnimationToEnd:
+          timeout: 3000

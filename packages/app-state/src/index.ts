@@ -45,3 +45,4 @@ export * from './threadTurns.ts';
 export * from './today.ts';
 export * from './viewPreferences.ts';
 export * from './voiceLoop.ts';
+export * from './viewSwitch.ts';

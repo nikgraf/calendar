@@ -109,6 +109,9 @@ tags:
                   id: 'event-title'
                   text: 'Lunch with Sarah'
                 timeout: 5000
+            # The form rises out of the card: settled before the pill is tapped.
+            - waitForAnimationToEnd:
+                timeout: 3000
             - assertVisible:
                 id: 'step-position'
                 text: '2 of 2'
@@ -139,6 +142,8 @@ tags:
                   id: 'assistant-card-time'
                   text: '.*13:00.14:00.*'
                 timeout: 5000
+            - waitForAnimationToEnd:
+                timeout: 3000
             - runFlow:
                 file: ../common/apply-quick-add.yaml
                 env:

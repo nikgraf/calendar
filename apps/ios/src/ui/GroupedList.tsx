@@ -8,6 +8,7 @@ import {
   createContext,
   isValidElement,
   type ReactNode,
+  type Ref,
   useContext,
   useState,
 } from 'react';
@@ -21,6 +22,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  type TextInputInstance,
   type TextInputProps,
   View,
 } from 'react-native';
@@ -153,9 +155,10 @@ export function Rows({ children, first }: { children: ReactNode; first?: boolean
  */
 export function FieldRow({
   multiline = false,
+  ref,
   style,
   ...input
-}: TextInputProps & { multiline?: boolean }) {
+}: TextInputProps & { multiline?: boolean; ref?: Ref<TextInputInstance> | undefined }) {
   const styles = useStyles(makeStyles);
   const { colors } = useTheme();
   const first = useContext(FirstRowContext);
@@ -165,6 +168,7 @@ export function FieldRow({
         placeholderTextColor={colors['text-secondary']}
         {...input}
         multiline={multiline}
+        ref={ref}
         style={[styles.field, multiline && styles.fieldMultiline, style]}
       />
     </View>
