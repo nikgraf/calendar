@@ -21,6 +21,7 @@ import {
 } from '@calendar/core';
 import { useState } from 'react';
 import { deleteTaskQuestion } from './deleteQuestion.ts';
+import { reminderAlarmLabel } from './draftExtras.ts';
 import type { EditorConfirmRequest } from './editorModel.ts';
 import { CONVERT_SCOPE_HINT } from './editorOptions.ts';
 import { useBackendMutations, useTaskReadOnlyLookup } from './hooks.ts';
@@ -101,6 +102,25 @@ export const REMINDER_ALARM_OPTIONS: ReadonlyArray<{ label: string; value: numbe
   { label: '1 hour before', value: -60 },
   { label: '1 day before', value: -1440 },
 ];
+
+/**
+ * The alerts the form offers, with the one a reminder holds where the
+ * presets lack it (one the Assistant set, or Reminders.app did) in its
+ * place by time: the picker shows the alert that will be written.
+ */
+export const reminderAlarmOptions = (
+  alarm: number | undefined,
+): ReadonlyArray<{ label: string; value: number | undefined }> => {
+  if (alarm === undefined || REMINDER_ALARM_OPTIONS.some((option) => option.value === alarm)) {
+    return REMINDER_ALARM_OPTIONS;
+  }
+  const own = { label: reminderAlarmLabel(alarm), value: alarm };
+  const later = REMINDER_ALARM_OPTIONS.findIndex(
+    (option) => option.value !== undefined && option.value < alarm,
+  );
+  const at = later === -1 ? REMINDER_ALARM_OPTIONS.length : later;
+  return [...REMINDER_ALARM_OPTIONS.slice(0, at), own, ...REMINDER_ALARM_OPTIONS.slice(at)];
+};
 
 export const REMINDER_PRIORITY_OPTIONS: ReadonlyArray<{
   label: string;

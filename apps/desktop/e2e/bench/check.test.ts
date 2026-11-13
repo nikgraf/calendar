@@ -468,6 +468,25 @@ describe('applyResult', () => {
     expect(outcome.kind === 'draft' && outcome.draft.guests).toEqual([]);
   });
 
+  it('keeps a to-do’s alerts, from a first phrase and a later turn', async () => {
+    const first = await applyResult(
+      undefined,
+      {
+        kind: 'task',
+        prefill: { date: FRIDAY, time: '09:00', title: 'Call the bank' },
+        reminders: { add: [10], clear: false, remove: [] },
+      },
+      BOOK,
+    );
+    expect(first.kind === 'draft' && first.draft.reminders).toEqual([10]);
+    const later = await applyResult(
+      { ...task({ time: '09:00' }), reminders: [10] },
+      parsedWith({ reminders: { add: [60], clear: false, remove: [] } }),
+      BOOK,
+    );
+    expect(later.kind === 'draft' && later.draft.reminders).toEqual([10, 60]);
+  });
+
   it('passes a to-do and a rejection through, and carries notes and notifications along', async () => {
     expect(
       await applyResult(
@@ -545,7 +564,7 @@ describe('applyResult — notes and notifications', () => {
       notes: 'bring the contract\nand the slides',
       reminders: [30, 60],
     });
-    // A to-do takes the note, not the notifications.
+    // A to-do takes the note, and the notifications as its alerts.
     const todo = await applyResult(
       task(),
       parsedWith({
@@ -558,6 +577,6 @@ describe('applyResult — notes and notifications', () => {
       item: { kind: 'task' },
       notes: 'ask about the fee',
     });
-    expect(todo.kind === 'draft' && todo.draft.reminders).toBeUndefined();
+    expect(todo.kind === 'draft' && todo.draft.reminders).toEqual([10]);
   });
 });

@@ -1,7 +1,7 @@
 import { SegmentedControl } from '../ui/SegmentedControl.tsx';
 import {
-  REMINDER_ALARM_OPTIONS,
   REMINDER_PRIORITY_OPTIONS,
+  reminderAlarmOptions,
   type useTaskEditorModel,
 } from '@calendar/app-state';
 import type { TaskRecord } from '@calendar/core';
@@ -122,12 +122,13 @@ export function ReminderEditorForm({
         Alert
         <select
           className={`${FIELD_CLASS} mt-1`}
+          data-testid="reminder-alarm"
           onChange={(input) =>
             taskModel.setAlarm(input.target.value === '' ? undefined : Number(input.target.value))
           }
           value={taskModel.alarm === undefined ? '' : String(taskModel.alarm)}
         >
-          {REMINDER_ALARM_OPTIONS.map((option) => (
+          {reminderAlarmOptions(taskModel.alarm).map((option) => (
             <option
               key={option.label}
               value={option.value === undefined ? '' : String(option.value)}

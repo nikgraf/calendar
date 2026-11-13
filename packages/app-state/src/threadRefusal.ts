@@ -53,6 +53,21 @@ export const todoTimeRefusal = (
     : undefined;
 
 /**
+ * Why a turn that gives a to-do an alert cannot be taken where its list
+ * keeps none, or undefined. Only a Reminders list holds alerts: a Google
+ * task's Save sends none, so a card that showed one would promise what is
+ * never written. A turn that only takes alerts off promises nothing.
+ */
+export const todoAlertRefusal = (
+  after: QuickAddItem,
+  alerts: boolean,
+  keepsAlerts: boolean,
+): string | undefined =>
+  alerts && !keepsAlerts && after.kind === 'task'
+    ? 'This list keeps no alerts — an alert can’t be saved here.'
+    : undefined;
+
+/**
  * Why a turn that changes the guests cannot be taken where the calendar
  * takes no guest list, or undefined: invited or taken off, either is a
  * list such a calendar's write refuses — and its form shows none, so a

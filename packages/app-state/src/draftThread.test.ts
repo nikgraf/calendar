@@ -39,6 +39,7 @@ import {
   ReminderOverride,
 } from '@calendar/core';
 import { livePlaceChoice, pickedCandidate, readsAsSaid } from './draftPlaces.ts';
+import { seedRepeatFields } from './repeatState.ts';
 import type { QuickAddItem } from './quickAddItem.ts';
 
 const dinner: QuickAddItem = {
@@ -1464,7 +1465,7 @@ describe('notes and notifications from the words', () => {
     });
   });
 
-  it('gives a to-do its note as its own notes, and no notifications', () => {
+  it('gives a to-do its note as its own notes, and its notifications as its alerts', () => {
     const todo: QuickAddItem = { kind: 'task', prefill: { date: '2026-08-28', title: 'Call Tom' } };
     const state = startThread([todo], 'call Tom, note: about the invoice', {
       id: ids(),
@@ -1474,10 +1475,13 @@ describe('notes and notifications from the words', () => {
     expect(state.drafts[0]?.extras).toEqual({
       attendees: [],
       description: '',
+      reminder: { alarms: [-30], repeat: seedRepeatFields(undefined), url: '' },
       reminders: undefined,
       taskNotes: 'about the invoice',
     });
-    expect(phraseSteps(state)[0]?.summary).toBe('Call Tom · Fri, Aug 28 · adds a note');
+    expect(phraseSteps(state)[0]?.summary).toBe(
+      'Call Tom · Fri, Aug 28 · adds a note · alerts 30 minutes before',
+    );
   });
 
   it('lands a turn’s note and notifications on the form as it is now, says so, and Undo takes them back', () => {
@@ -1830,6 +1834,91 @@ describe('turnDraftOf', () => {
       turnDraftOf({ id: 'd5', item: { kind: 'event', prefill } }, prefill, [10]),
     ).toMatchObject({ defaultReminders: [10], reminders: undefined });
     expect(turnDraftOf({ id: 'd6', item: { kind: 'event', prefill } }, prefill)).not.toHaveProperty(
+      'defaultReminders',
+    );
+  });
+});
+
+describe('a to-do’s alerts', () => {
+  const todo: QuickAddItem = {
+    kind: 'task',
+    prefill: { date: '2026-11-14', time: '09:00', title: 'Call the bank' },
+  };
+  const prefill = {
+    date: '2026-11-14',
+    endTime: '10:00',
+    isAllDay: false,
+    startTime: '09:00',
+    title: 'Call the bank',
+  };
+
+  it('keeps the alerts a first phrase sets on a to-do, and says so', () => {
+    const state = startThread(
+      [todo],
+      'remind me to call the bank tomorrow at 9, 10 minutes before',
+      {
+        id: ids(),
+        reminders: { add: [10], clear: false, remove: [] },
+      },
+    );
+    expect(state.drafts[0]?.extras?.reminder).toEqual({
+      alarms: [-10],
+      repeat: seedRepeatFields(undefined),
+      url: '',
+    });
+    expect(phraseSteps(state)[0]?.summary).toBe(
+      'Call the bank · Sat, Nov 14 · 09:00 · alerts 10 minutes before',
+    );
+  });
+
+  it('changes a to-do’s alerts on a later turn, keeping its other Reminders fields', () => {
+    const id = ids();
+    const fields = {
+      alarms: [-10],
+      priority: 'high' as const,
+      repeat: seedRepeatFields(undefined),
+      url: 'https://example.com',
+    };
+    const started = startThread([todo], 'x', {
+      extras: { attendees: [], description: '', reminder: fields, reminders: undefined },
+      id,
+    });
+    const more = refineThread(
+      started,
+      'and an hour before as well',
+      [{ id: 'd1', item: todo, reminders: { add: [60], clear: false, remove: [] } }],
+      id,
+    );
+    expect(more.drafts[0]?.extras?.reminder).toEqual({ ...fields, alarms: [-10, -60] });
+    expect(phraseSteps(more).at(-1)?.summary).toContain('alerts 1 hour before');
+    const none = refineThread(
+      more,
+      'no reminder',
+      [{ id: 'd1', item: todo, reminders: { add: [], clear: true, remove: [] } }],
+      id,
+    );
+    expect(none.drafts[0]?.extras?.reminder?.alarms).toEqual([]);
+    expect(phraseSteps(none).at(-1)?.summary).toContain('no alerts');
+  });
+
+  it('shows a reader a to-do’s own alerts, never a calendar’s default', () => {
+    const fields = { alarms: [-10, 30], repeat: seedRepeatFields(undefined), url: '' };
+    const turn = turnDraftOf(
+      {
+        extras: { attendees: [], description: '', reminder: fields, reminders: undefined },
+        id: 'd1',
+        item: todo,
+      },
+      prefill,
+      [30],
+    );
+    // The alert after the due time has no "minutes before": not shown.
+    expect(turn).toMatchObject({ kind: 'task', reminders: [10] });
+    expect(turn).not.toHaveProperty('defaultReminders');
+    expect(turnDraftOf({ id: 'd2', item: todo }, prefill, [30])).toMatchObject({
+      reminders: undefined,
+    });
+    expect(turnDraftOf({ id: 'd2', item: todo }, prefill, [30])).not.toHaveProperty(
       'defaultReminders',
     );
   });

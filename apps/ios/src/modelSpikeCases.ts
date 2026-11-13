@@ -63,6 +63,7 @@ export const SPIKE_CASES: ReadonlyArray<SpikeCase> = [
   { id: 'flow-place-the-one', lang: 'en', text: 'Dinner on Friday at 7' },
   { id: 'flow-shift', lang: 'en', text: 'Yoga today at 5:30pm' },
   { id: 'flow-standup-repeat', lang: 'en', text: 'Standup Monday at 9' },
+  { id: 'flow-task-alert', lang: 'en', text: 'remind me to call the bank tomorrow at 9' },
   { id: 'flow-task', lang: 'en', text: 'remind me to call the bank tomorrow' },
   { id: 'flow-with-company', lang: 'en', text: 'Lunch tomorrow at 1' },
   { id: 'flow-zahnarzt', lang: 'de', text: 'Zahnarzt nächsten Dienstag um halb drei' },
@@ -135,6 +136,11 @@ export const SPIKE_CASES: ReadonlyArray<SpikeCase> = [
     id: 'put-lunch-on-calendar',
     lang: 'en',
     text: 'Put lunch with Stefan on my calendar for tomorrow at 1',
+  },
+  {
+    id: 'remind-call-bank-10-before',
+    lang: 'en',
+    text: 'remind me to call the bank tomorrow at 9, 10 minutes before',
   },
   { id: 'remind-call-bank-tue-930', lang: 'en', text: 'remind me to call the bank tue 9:30' },
   {

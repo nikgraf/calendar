@@ -124,6 +124,9 @@ const PRIORITY = `document.querySelector('[aria-label="Priority"] [role="radio"]
 const pickPriority = (label: string) =>
   `[...document.querySelectorAll('[aria-label="Priority"] [role="radio"]')].find((option) => option.textContent === ${JSON.stringify(label)}).click()`;
 const asked = `!!document.querySelector('[data-testid="move-confirm"]')`;
+const ALERT = '[data-testid="reminder-alarm"]';
+const alertLabel = `document.querySelector('${ALERT} option:checked')?.textContent ?? ''`;
+const status = `(document.querySelector('[data-testid="quick-add-status"]')?.textContent ?? '')`;
 const disabled = (testId: string) =>
   `document.querySelector('[data-testid="${testId}"]')?.disabled === true`;
 const colorAt = (start: string) =>
@@ -474,5 +477,51 @@ describe('The draft thread', () => {
     await cdp.clickTestId('draft-next');
     await cdp.waitFor(titleIs('Retro'));
     await cdp.waitFor(headingIs('New event'));
+  });
+
+  it('gives a to-do the alert the phrase says, writes it on a Reminders list, and refuses one where the list keeps none', async () => {
+    const { cdp } = app;
+    await cdp.eval(COMMAND_N);
+    await cdp.waitFor(headingIs('New event'));
+    // The fixture's extras: the model answers the to-do with an alert 10 minutes before.
+    await cdp.say('todo: Call the bank | +1 | 09:00 | | remind 10');
+    await cdp.waitFor(`${card('alert')} === '10 minutes before'`);
+    await cdp.showEditorView('form');
+    // A to-do goes to the Reminders list (over the Google one): its alert is in the picker,
+    // named though the presets lack it.
+    await cdp.waitFor(headingIs('New reminder'));
+    expect(await cdp.eval<string>(valueOf(ALERT))).toBe('-10');
+    expect(await cdp.eval<string>(alertLabel)).toBe('10 minutes before');
+    await cdp.clickButtonWithText('Save');
+    await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);
+    await expect
+      .poll(async () => {
+        const call = (await readTasks(app.userDataDir)).find(
+          (task) => task.title === 'Call the bank',
+        );
+        return [call?.listId, call?.dueTime, call?.alarms];
+      })
+      .toEqual(['ek-groceries', '09:00', [-10]]);
+
+    // On the Google list a to-do keeps no alert: a turn that adds one is
+    // refused, and nothing of it lands.
+    await cdp.eval(COMMAND_N);
+    await cdp.waitFor(headingIs('New event'));
+    await cdp.say('todo: Post the letter | +1');
+    await cdp.waitFor(titleIs('Post the letter'));
+    await cdp.showEditorView('form');
+    await cdp.clickTestId('mode-task');
+    await cdp.waitFor(`${headingIs('New task')} || ${asked}`);
+    if (await cdp.eval<boolean>(asked)) {
+      await cdp.clickTestId('move-confirm-yes');
+    }
+    await cdp.waitFor(headingIs('New task'));
+    await cdp.showEditorView('assistant');
+    // The phrase and the switch by hand are the steps so far.
+    const steps = await cdp.eval<string>(stepPosition);
+    await cdp.say('remind 10');
+    await cdp.waitFor(`${status} === 'This list keeps no alerts — an alert can’t be saved here.'`);
+    expect(await cdp.eval<string>(stepPosition)).toBe(steps);
+    expect(await cdp.eval<string>(card('alert'))).toBe('');
   });
 });
