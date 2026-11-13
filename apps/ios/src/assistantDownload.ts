@@ -26,16 +26,10 @@ export type AssistantModelState =
 /**
  * Why this build or device has no Assistant model: the fixture model
  * runs (e2e), a simulator without a file to fetch, no llama runtime in
- * the binary, an iPhone with too little memory, no model published, or a
- * binary without the download module.
+ * the binary, an iPhone with too little memory, or a binary without the
+ * download or file module.
  */
-export type UnsupportedReason =
-  | 'fixture'
-  | 'memory'
-  | 'module'
-  | 'runtime'
-  | 'simulator'
-  | 'unpublished';
+export type UnsupportedReason = 'fixture' | 'memory' | 'module' | 'runtime' | 'simulator';
 
 /** The person's answer, kept per model version: a new version asks again. */
 export type DownloadAnswer = 'declined' | 'mobile' | 'wifi';

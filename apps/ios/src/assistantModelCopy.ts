@@ -17,7 +17,6 @@ const UNSUPPORTED: Readonly<Record<UnsupportedReason, string>> = {
   module: 'This build cannot download the Assistant’s model; the next TestFlight build can.',
   runtime: 'This build cannot run the Assistant’s model; the next TestFlight build can.',
   simulator: 'The simulator downloads the Assistant’s model only from a file it is pointed at.',
-  unpublished: 'The Assistant’s model is not available yet. The form still makes an event.',
 };
 
 const percentOf = (received: number, total: number): number =>

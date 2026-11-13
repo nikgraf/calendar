@@ -15,8 +15,14 @@ export interface AssistantModelManifest {
   readonly version: string;
 }
 
-/** Not yet published: the store calls the model unavailable until it is. */
-export const PUBLISHED_MODEL: AssistantModelManifest | undefined = undefined;
+/** Release v1 of `nikgraf/calendar-models`. */
+export const PUBLISHED_MODEL: AssistantModelManifest = {
+  bytes: 833_592_288,
+  file: 'solunivo-assistant-q8_0.gguf',
+  sha256: '954ca95027feb405e2f98ef26fdeb0814d2fdbf4bd2ebddbeb9e9c321ba838d3',
+  url: 'https://github.com/nikgraf/calendar-models/releases/download/v1/solunivo-assistant-q8_0.gguf',
+  version: 'v1',
+};
 
 const isManifest = (value: unknown): value is AssistantModelManifest => {
   if (typeof value !== 'object' || value === null) {
@@ -39,8 +45,8 @@ const isManifest = (value: unknown): value is AssistantModelManifest => {
  */
 export const assistantModelManifest = (
   override: string | undefined,
-  published: AssistantModelManifest | undefined = PUBLISHED_MODEL,
-): AssistantModelManifest | undefined => {
+  published: AssistantModelManifest = PUBLISHED_MODEL,
+): AssistantModelManifest => {
   if (override?.trim()) {
     try {
       const parsed: unknown = JSON.parse(override);

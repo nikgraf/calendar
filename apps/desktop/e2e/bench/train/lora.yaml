@@ -24,9 +24,9 @@ val_batches: 20
 save_every: 200
 seed: 7
 # Cosine decay over the optimizer's steps: half the iterations of a
-# three-pass run over 5,988 examples (4,491 iterations).
+# three-pass run over 5,994 examples (4,496 iterations).
 lr_schedule:
   name: cosine_decay
   warmup: 50
   warmup_init: 1.0e-6
-  arguments: [2.0e-5, 2246, 2.0e-6]
+  arguments: [2.0e-5, 2248, 2.0e-6]

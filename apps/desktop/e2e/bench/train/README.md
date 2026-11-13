@@ -86,7 +86,7 @@ its number and no thread its "today".
 python3 -m venv .venv && .venv/bin/pip install mlx-lm
 .venv/bin/mlx_lm.lora -c apps/desktop/e2e/bench/train/lora.yaml \
   --model <model dir> --train --data output/bench/finetune/data \
-  --iters 4491 --adapter-path <adapter dir>
+  --iters 4496 --adapter-path <adapter dir>
 ```
 
 `<model dir>` is a model in Hugging Face format (`Qwen/Qwen3.5-0.8B`,

@@ -217,7 +217,19 @@ the served model (#184) and slot proposals (#185) are in
       search sentences and capture still need Apple's model (data and a
       tuned prompt each); a model for 6 GB iPhones (Q4_K_M, 1.2 GB
       loaded, or a smaller base); "next Friday" and deadlines ("before
-      Friday") are read as the teacher read them, which wavers.
+      Friday") are read as the teacher read them, which wavers; the data
+      has no turn that turns notifications off ("no reminder", a first
+      phrase or a later turn) and the export drops an empty list, so a
+      first phrase cannot say none (briefs for it, and `reminders: []`
+      kept in the answer); notes over 200 characters or on several lines
+      are not shown to the model, so the Assistant only adds to them.
+      v1 scores 57 of 70 and misses mostly follow-ups (time arithmetic
+      such as "30 minutes later" as `17:60`, "stop repeating", "remove
+      Tom", "all day instead"): a v2 with more follow-up turns in the
+      data (a third of v1's), and a new release with its own version.
+      A version whose file has another name leaves the old file in the
+      caches folder until iOS clears it: remove the files the manifest
+      no longer names.
 
 - [ ] Find-a-time follow-ups — the finder keeps a whole Apple series
       busy through a series edit (its rows are read through EventKit, no

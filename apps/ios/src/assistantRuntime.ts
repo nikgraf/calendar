@@ -150,8 +150,8 @@ const depsOf = (): AssistantDownloadDeps => {
   }
   const manifest = assistantModelManifest(override);
   const fs = loadFiles();
-  if (manifest === undefined || fs === undefined) {
-    return { reason: 'unpublished', supported: false };
+  if (fs === undefined) {
+    return { reason: 'module', supported: false };
   }
   return {
     files: deviceFiles(fs, manifest),
