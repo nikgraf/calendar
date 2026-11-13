@@ -1,14 +1,10 @@
 import {
   MicrophoneDeniedError,
-  parseQuickAdd,
   SpeechUnsupportedError,
-  type LanguageModel,
   type SpeechEvent,
   type SpeechToText,
 } from '@calendar/ai';
-import { Temporal } from '@calendar/core';
 import { useEffect, useRef, useState } from 'react';
-import type { QuickAddItem } from './quickAddItem.ts';
 import { micPress, shouldListen } from './voiceLoop.ts';
 
 /** A phrase that never pauses is sent after this long rather than recorded until the app dies. */
@@ -24,13 +20,10 @@ export interface QuickAddModelOptions {
    * there, since the user has taken over.
    */
   readonly editKey?: number | undefined;
-  /** Undated phrases land on this day (the day being viewed, or the editor's). */
-  readonly fallbackDate?: string | undefined;
   /** The form is still taking the last phrase in: hands-free waits before listening again. */
   readonly hold?: boolean | undefined;
   /** What the field holds on open (the Create lesson's phrase); empty otherwise. */
   readonly initialText?: string | undefined;
-  readonly model: LanguageModel;
   /**
    * There is nothing to say a phrase to (the editor shows an older step):
    * hands-free dictation ends as this turns true — a microphone must not
@@ -38,24 +31,17 @@ export interface QuickAddModelOptions {
    */
   readonly off?: boolean | undefined;
   /**
-   * Receives what the phrase was understood as: the editor below the
-   * field fills its form from it. The phrase stays in the field, so what
-   * was read can be compared with what the form shows.
+   * The editor's thread reads the words as a first phrase or a change
+   * (`useDraftThread`). Resolves an error message, or nothing when the
+   * phrase was taken; the field is cleared then.
    */
-  readonly onApply: (item: QuickAddItem) => void;
-  /**
-   * Takes the phrase over instead of `parseQuickAdd` + `onApply`: a thread
-   * reads it as a first phrase or a refinement. Resolves an error message,
-   * or nothing when the phrase was taken; the field is cleared then.
-   */
-  readonly onPhrase?: ((text: string) => Promise<string | undefined>) | undefined;
+  readonly onPhrase: (text: string) => Promise<string | undefined>;
   readonly speech: SpeechToText;
-  readonly timeZone: string;
 }
 
 /**
  * The state machine behind the editors' quick-add field on both
- * platforms: phrase, submit (parse) and the dictation lifecycle (find a
+ * platforms: phrase, submit (to the thread) and the dictation lifecycle (find a
  * time is the event form's own tool, `useFindTimeModel`). Dictation is
  * hands-free: one press of the microphone listens, a pause sends what
  * was said as a phrase, and it listens again — until the microphone is
@@ -70,15 +56,11 @@ export interface QuickAddModelOptions {
  */
 export const useQuickAddModel = ({
   editKey,
-  fallbackDate,
   hold = false,
   initialText,
-  model,
   off = false,
-  onApply,
   onPhrase,
   speech,
-  timeZone,
 }: QuickAddModelOptions) => {
   const [phrase, setPhrase] = useState(initialText ?? '');
   const [busy, setBusy] = useState(false);
@@ -94,11 +76,7 @@ export const useQuickAddModel = ({
     handsFreeRef.current = on;
     setHandsFree(on);
   };
-  // A parse takes seconds; the kind may be flipped meanwhile. The result
-  // goes to the latest render's apply, which sees the editor as it is
-  // then, not to the one submit was called from.
-  const applyRef = useRef(onApply);
-  applyRef.current = onApply;
+  // A reading takes seconds: the words go to the latest render's thread.
   const phraseRef = useRef(onPhrase);
   phraseRef.current = onPhrase;
 
@@ -122,32 +100,13 @@ export const useQuickAddModel = ({
     setBusy(true);
     setError(null);
     try {
-      const takeOver = phraseRef.current;
-      if (takeOver) {
-        const message = await takeOver(text);
-        if (message === undefined) {
-          // A thread keeps the words as a turn: the field is free for the next one.
-          setPhrase('');
-        } else {
-          setError(message);
-        }
-        return;
+      const message = await phraseRef.current(text);
+      if (message === undefined) {
+        // A thread keeps the words as a turn: the field is free for the next one.
+        setPhrase('');
+      } else {
+        setError(message);
       }
-      const result = await parseQuickAdd(model, {
-        ...(fallbackDate === undefined ? {} : { fallbackDate }),
-        phrase: text,
-        referenceDate: Temporal.Now.plainDateISO(timeZone).toString(),
-        timeZone,
-      });
-      if (result.kind === 'rejected') {
-        setError(result.reason);
-        return;
-      }
-      applyRef.current(
-        result.kind === 'task'
-          ? { kind: 'task', prefill: result.prefill }
-          : { kind: 'event', prefill: result.prefill },
-      );
     } catch {
       setError('On-device model unavailable.');
     } finally {

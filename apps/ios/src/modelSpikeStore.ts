@@ -1,6 +1,4 @@
-import { buildQuickAddPrompt, type LanguageModel, QUICK_ADD_JSON_SCHEMA } from '@calendar/ai';
 import {
-  APPLE_MODEL,
   runSpike,
   SPIKE_MODELS,
   SPIKE_TIME_ZONE,
@@ -12,7 +10,7 @@ import {
 import type { SpikeCase } from './modelSpikeCases.ts';
 import { letGoLlama, takeLlama } from './llamaOwner.ts';
 import { loadOpenModel, type OpenModelRuntime } from './openModel.ts';
-import { fileEngine, type SpikeEngine, systemEngine } from './spikeEngine.ts';
+import { fileEngine, type SpikeEngine } from './spikeEngine.ts';
 
 /**
  * The Model Spike page's state and what its buttons do, kept apart from
@@ -69,8 +67,6 @@ export interface SpikeDeps {
   readonly runtime: OpenModelRuntime | undefined;
   /** A simulator runs the app: its timings are not a phone's. */
   readonly simulator: boolean;
-  /** Apple's own model as the app has it; undefined where the page has none to offer. */
-  readonly system: LanguageModel | undefined;
   /** Today in `SPIKE_TIME_ZONE`, `YYYY-MM-DD`. */
   readonly today: () => string;
 }
@@ -115,16 +111,6 @@ export interface SpikeState {
 
 const messageOf = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
-
-/**
- * The phrase Apple's model is asked once before a run, with the app's own
- * quick-add prompt and schema: a request the app is known to make. The
- * first call after a while pays for iOS bringing the model up; taken here,
- * as a file's load is, the first measured phrase does not carry it. Asked
- * directly, not through the pipeline, which would turn a failure into
- * "couldn't be read" and lose why.
- */
-const WARM_UP_PHRASE = 'Lunch tomorrow at 1';
 
 /** Takes a model out of memory; what went wrong, if anything. */
 const release = async (engine: SpikeEngine): Promise<string | undefined> => {
@@ -274,67 +260,6 @@ export const createSpikeStore = (deps: SpikeDeps) => {
       }
     },
 
-    /**
-     * Makes Apple's own model the one to run: checked, asked once to bring
-     * it up (timed, as a load is), then ready like a loaded file.
-     */
-    loadSystem: async (): Promise<void> => {
-      const { system } = deps;
-      if (!system || state.step.kind !== 'idle') {
-        return;
-      }
-      leftWhileLoading = false;
-      set({ notice: undefined, step: { kind: 'loading', model: APPLE_MODEL, percent: 0 } });
-      const footprintBefore = deps.memory()?.footprint ?? 0;
-      try {
-        const status = await system.status();
-        if (status !== 'ready') {
-          set({
-            notice: `Apple’s model cannot run here: ${status}.`,
-            step: { kind: 'idle' },
-          });
-          return;
-        }
-        const started = deps.now();
-        await system.generateJson({
-          jsonSchema: QUICK_ADD_JSON_SCHEMA,
-          prompt: buildQuickAddPrompt({
-            phrase: WARM_UP_PHRASE,
-            referenceDate: deps.today(),
-            timeZone: SPIKE_TIME_ZONE,
-          }),
-        });
-        const loadMs = deps.now() - started;
-        if (leftWhileLoading) {
-          set({
-            notice:
-              'The app left the screen while Apple’s model was being brought up. Use it once more and stay on the page.',
-            step: { kind: 'idle' },
-          });
-          return;
-        }
-        const memory = deps.memory();
-        set({
-          memory,
-          step: {
-            kind: 'loaded',
-            loaded: {
-              engine: systemEngine(system, deps.now),
-              footprintBefore,
-              loadMs,
-              memory,
-              model: APPLE_MODEL,
-            },
-          },
-        });
-      } catch (error) {
-        set({
-          notice: `Apple’s model did not answer: ${messageOf(error)}`,
-          step: { kind: 'idle' },
-        });
-      }
-    },
-
     /** What the page shows before any button: the files that are here, the memory now. */
     refresh: (): void => {
       set({ memory: deps.memory(), stored: storedNow() });
@@ -408,7 +333,6 @@ export const createSpikeStore = (deps: SpikeDeps) => {
       let failure: string | undefined;
       try {
         rows = await runSpike({
-          arm: loaded.model.arm,
           cases,
           discarded: () => interrupted,
           modelFor: (onCall) => loaded.engine.modelFor(onCall, () => interrupted),

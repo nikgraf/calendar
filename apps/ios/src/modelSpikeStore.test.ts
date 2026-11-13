@@ -4,6 +4,15 @@ import { createSpikeStore, type SpikeDeps, type SpikeFiles } from './modelSpikeS
 import type { OpenModelContext, OpenModelRuntime } from './openModel.ts';
 
 const [LFM] = SPIKE_MODELS as [SpikeModel];
+/** A second model, served from the Mac (`EXPO_PUBLIC_SPIKE_TUNED`). */
+const OTHER: SpikeModel = {
+  bytes: 1_280_835_840,
+  file: 'tuned-Q4_K_M.gguf',
+  licence: 'Apache-2.0',
+  name: 'Tuned Q4',
+  quantizedBy: 'this project',
+  url: 'http://mac.local:8091/tuned-Q4_K_M.gguf',
+};
 
 const noop = (): void => undefined;
 
@@ -108,7 +117,6 @@ const device = (over: Partial<SpikeDeps> = {}, gate?: Gate) => {
     platform: 'ios 27.1',
     runtime,
     simulator: true,
-    system: undefined,
     today: () => '2026-11-11',
     ...over,
   });
@@ -147,7 +155,7 @@ describe('createSpikeStore', () => {
           footprintPeak: 1_402_000_000,
           physical: 8_000_000_000,
         },
-        model: { name: 'LFM3 1.7B' },
+        model: { name: LFM.name },
         modelDescription: 'LFM3 1.7B Q4_K_M',
         platform: 'ios 27.1',
         rows: [{ id: 'dinner', result: { kind: 'parsed' } }],
@@ -168,7 +176,10 @@ describe('createSpikeStore', () => {
 
     await store.share();
     expect(log.at(-1)).toMatch(
-      /^shared model-spike-LFM3-1\.7B-Q4_K_M\.gguf-\d{8}T\d{6}\.json true$/u,
+      new RegExp(
+        `^shared model-spike-${LFM.file.replaceAll('.', String.raw`\.`)}-\\d{8}T\\d{6}\\.json true$`,
+        'u',
+      ),
     );
     await store.unload();
     expect(log.at(-1)).toBe('released');
@@ -193,7 +204,7 @@ describe('createSpikeStore', () => {
 
   it('keeps the loaded model through a download nobody may start, and unloads once', async () => {
     const { log, store } = device();
-    const [, qwen] = SPIKE_MODELS as [SpikeModel, SpikeModel];
+    const qwen = OTHER;
     await store.load(LFM);
     // One model at a time: a download would take the step and lose the context without releasing it.
     await store.fetchModel(qwen);
@@ -368,81 +379,6 @@ describe('createSpikeStore', () => {
     expect(store.getState().step.kind).toBe('loaded');
   });
 
-  it('runs Apple’s own model like a loaded one: asked once to bring it up, then the phrases', async () => {
-    const asked: Array<string> = [];
-    const { log, store } = device({
-      system: {
-        generateJson: async ({ prompt }) => {
-          asked.push(prompt.split('\n').at(-1) ?? '');
-          return { date: '2026-11-13', startTime: '19:00', title: 'Dinner with Teo' };
-        },
-        status: async () => 'ready',
-      },
-    });
-    await store.loadSystem();
-    expect(store.getState().step).toMatchObject({
-      kind: 'loaded',
-      // The warm-up call, timed as a file's load is.
-      loaded: { loadMs: 1000, model: { name: 'Apple’s model' } },
-    });
-    // One phrase of the app's own kind, before anything is measured.
-    expect(asked).toHaveLength(1);
-    expect(asked[0]).toContain('Lunch tomorrow at 1');
-
-    await store.run(1);
-    expect(store.getState()).toMatchObject({
-      report: {
-        model: { file: 'apple-foundation-models' },
-        modelDescription: 'Apple Foundation Models',
-        rows: [
-          {
-            // No tokens are counted: the call is its time alone.
-            calls: [{ answerMs: 1000, answerTokens: 0, promptTokens: 0, readTokens: 0 }],
-            id: 'dinner',
-            result: { kind: 'parsed' },
-          },
-        ],
-        summary: { answerTokensPerSecond: 0, cachedShare: 0, parsed: 1, promptTokensPerSecond: 0 },
-      },
-      step: { kind: 'loaded' },
-    });
-    expect(store.getState().report?.gpu).toBeUndefined();
-    // Nothing of it is the app's to take out of memory.
-    await store.unload();
-    expect(store.getState().step).toEqual({ kind: 'idle' });
-    expect(log).toEqual(['awake true', 'awake false']);
-  });
-
-  it('says why Apple’s model cannot be used, and uses none while a file is loaded', async () => {
-    const off = device({
-      system: { generateJson: async () => ({}), status: async () => 'disabled' },
-    });
-    await off.store.loadSystem();
-    expect(off.store.getState()).toMatchObject({
-      notice: 'Apple’s model cannot run here: disabled.',
-      step: { kind: 'idle' },
-    });
-    const silent = device({
-      system: {
-        generateJson: async () => {
-          throw new Error('Generation timed out.');
-        },
-        status: async () => 'ready',
-      },
-    });
-    await silent.store.loadSystem();
-    expect(silent.store.getState()).toMatchObject({
-      notice: 'Apple’s model did not answer: Generation timed out.',
-      step: { kind: 'idle' },
-    });
-    const busy = device({
-      system: { generateJson: async () => ({ ready: true }), status: async () => 'ready' },
-    });
-    await busy.store.load(LFM);
-    await busy.store.loadSystem();
-    expect(busy.store.getState().step).toMatchObject({ kind: 'loaded', loaded: { model: LFM } });
-  });
-
   it('lets the screen lock again and keeps the model when a run throws', async () => {
     const { log, store } = device({
       today: () => {
@@ -486,12 +422,11 @@ describe('createSpikeStore', () => {
         },
       },
     });
-    const [, qwen] = SPIKE_MODELS as [SpikeModel, SpikeModel];
+    const qwen = OTHER;
     await store.fetchModel(qwen);
     expect(store.getState()).toMatchObject({
       notice: `${qwen.file} is ${String(qwen.bytes - 1)} bytes, not the ${String(qwen.bytes)} expected: the file at that address changed, or the download was cut short.`,
       step: { kind: 'idle' },
-      stored: { [qwen.file]: qwen.bytes - 1 },
     });
     await store.load(LFM);
     expect(store.getState()).toMatchObject({

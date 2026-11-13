@@ -6,7 +6,6 @@ import {
   draftCalendarKey,
   draftListKey,
   type FieldChange,
-  type QuickAddItem,
   stepSummary,
   useQuickAddModel,
   type useThreadEditor,
@@ -15,7 +14,6 @@ import {
 import type { CalendarInfo, TaskListInfo } from '@calendar/core';
 import { type ReactNode, type RefObject, useEffect, useRef } from 'react';
 import { assistantFieldCopy } from '../../ai/assistantModel.ts';
-import { desktopLanguageModel } from '../../ai/desktopModel.ts';
 import { desktopSpeech } from '../../ai/desktopSpeech.ts';
 import { requestCodeImport } from '../../settingsCode/codeImportRequests.ts';
 import { Button } from '../../ui/Button.tsx';
@@ -110,11 +108,9 @@ export function AssistantView({
   calendars,
   editKey,
   editor,
-  fallbackDate,
   focusSignal,
   initialText,
   note,
-  onApply,
   onCapture,
   onEdit,
   onPhrase,
@@ -134,15 +130,12 @@ export function AssistantView({
   /** Moves at each edit made by hand in the form: hands-free dictation ends. */
   readonly editKey: number;
   readonly editor: ReturnType<typeof useThreadEditor>;
-  /** Undated phrases land on this day (the editor's). */
-  readonly fallbackDate: string;
   /** ⌘K focuses the field: bumped per press. */
   readonly focusSignal: number;
   /** What the field holds on open, selected (the Create lesson's phrase). */
   readonly initialText?: string | undefined;
   /** A caveat about the drafts (the pasted text was cut short). */
   readonly note?: string | undefined;
-  readonly onApply: (item: QuickAddItem) => void;
   /** A pasted email or image is not a phrase: it goes to capture. */
   readonly onCapture: (source: CaptureSource) => void;
   /** To the form, on the same draft. */
@@ -156,16 +149,12 @@ export function AssistantView({
   const threadRef = useRef<HTMLDivElement>(null);
   const quick = useQuickAddModel({
     editKey,
-    fallbackDate,
     hold: editor.applying,
     initialText,
-    model: desktopLanguageModel,
     // An older step on show: nothing is listened for, and listening ends.
     off: previewing,
-    onApply,
     onPhrase,
     speech: desktopSpeech,
-    timeZone,
   });
   const unavailable = availability.status !== null && availability.status !== 'ready';
   const { busy, phrase } = quick;

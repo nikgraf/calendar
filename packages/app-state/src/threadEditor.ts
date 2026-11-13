@@ -329,8 +329,8 @@ export const useThreadEditor = ({
   readonly onClose: () => void;
   /** Save went through, as an event or a task. */
   readonly onSaved?: (() => void) | undefined;
-  /** How the Assistant reads a phrase (`PhraseReader`): the app's pipeline over `model` unless given. */
-  readonly reader?: PhraseReader | undefined;
+  /** How the Assistant reads a phrase: its own model, through `tunedReader`. */
+  readonly reader: PhraseReader;
   readonly seed: EditorSeed;
   readonly sourceKind: EditorSourceKind;
   /** Present when the editor was opened from a task (task edit mode). */

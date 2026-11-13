@@ -1,6 +1,5 @@
 import type { LanguageModel } from './model.ts';
-import type { QuickAddResult } from './normalizeQuickAdd.ts';
-import type { RefineResult } from './refine.ts';
+import type { QuickAddResult, RefineResult } from './normalizeQuickAdd.ts';
 import { worked } from './said.ts';
 import { upcomingDays } from './shared.ts';
 import { answerResult, type DraftState, draftState, type TurnDraft } from './tunedResult.ts';

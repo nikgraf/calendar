@@ -2,14 +2,7 @@ import { Temporal } from '@calendar/core';
 import { useEffect, useSyncExternalStore } from 'react';
 import { AppState, Platform, StyleSheet, Text, View } from 'react-native';
 import { loadProcessMemoryModule } from '../../../modules/solunivo-process-memory/index.ts';
-import { appleLanguageModel } from '../../appleModel.ts';
-import {
-  APPLE_MODEL,
-  describeAnswer,
-  SPIKE_MODELS,
-  SPIKE_TIME_ZONE,
-  summarize,
-} from '../../modelSpike.ts';
+import { describeAnswer, SPIKE_MODELS, SPIKE_TIME_ZONE, summarize } from '../../modelSpike.ts';
 import { SPIKE_CASES } from '../../modelSpikeCases.ts';
 import { createSpikeStore, type SpikeFiles, type SpikeStore } from '../../modelSpikeStore.ts';
 import { loadOpenModelRuntime } from '../../openModel.ts';
@@ -105,7 +98,6 @@ const makeStore = (): SpikeStore => {
     runtime: loadOpenModelRuntime(),
     simulator: probe?.isSimulator() ?? false,
     // The real one, whatever the bundle's fixture switch says: this page measures it.
-    system: appleLanguageModel,
     today: () => Temporal.Now.plainDateISO(SPIKE_TIME_ZONE).toString(),
   });
   AppState.addEventListener('change', (state) => {
@@ -127,10 +119,10 @@ const megabytes = (bytes: number): string => `${String(Math.round(bytes / 1_000_
 const seconds = (ms: number): string => `${(ms / 1000).toFixed(1)} s`;
 
 /**
- * Measures a small open model on this device: fetch a model file, load it
- * into the app, send the model bench's first phrases through the app's
- * own quick-add pipeline, and read the time, the tokens per second and the
- * memory. The report it shares is scored on the Mac with the bench's
+ * Measures the Assistant's model (and others trained for it) on this
+ * device: fetch a model file, load it into the app, send the model bench's
+ * first phrases through the Assistant's tuned path, and read the time, the
+ * tokens per second and the memory. The report it shares is scored on the Mac with the bench's
  * checks (`apps/desktop/e2e/bench/phoneReport.ts`). For internal
  * measuring only: the page is listed where the binary has the runtime
  * (both variants). Nothing it does touches the calendar.
@@ -155,7 +147,6 @@ export function ModelSpikePage() {
   // Whose phrases these are: the run under way, or the last one that ended (its model may be unloaded since).
   const measured = step.kind === 'running' ? step.loaded.model.name : report?.model.name;
   const hasRuntime = loadOpenModelRuntime() !== undefined;
-  // Apple's model counts none: its rows have times alone.
   const countsTokens = summary.answerTokensPerSecond > 0 || summary.promptTokensPerSecond > 0;
 
   return (
@@ -164,7 +155,7 @@ export function ModelSpikePage() {
         footer={
           <>
             <Footer>
-              Measures a small open model inside this app on the model bench’s first phrases. For
+              Measures the Assistant’s model inside this app on the model bench’s first phrases. For
               internal testing: nothing here reads or changes the calendar.
             </Footer>
             {notice ? (
@@ -191,20 +182,6 @@ export function ModelSpikePage() {
             />
           </>
         ) : null}
-      </Section>
-
-      <Section
-        footer="The model the app uses today, asked as the app asks it: the baseline on this device. It runs in iOS, so it has no file, counts no tokens, and its memory is not the app’s."
-        header={APPLE_MODEL.name}
-      >
-        <ActionRow
-          disabled={step.kind !== 'idle'}
-          onPress={() => void store.loadSystem()}
-          testID="model-spike-use-apple"
-          title={
-            step.kind === 'loading' && step.model.file === APPLE_MODEL.file ? 'Asking…' : 'Use'
-          }
-        />
       </Section>
 
       {SPIKE_MODELS.map((model) => {

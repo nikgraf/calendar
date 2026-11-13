@@ -169,7 +169,7 @@ export function EditorPanel({
   });
   const { eventModel, kinds, marks, onPhrase, previewing, steps, taskModel, userEdits } = editor;
   const { joinUrl } = eventModel;
-  const { apply, available, convertBlocked, kind, mode, switchTo } = kinds;
+  const { available, convertBlocked, kind, mode, switchTo } = kinds;
   // A step that made the item the other kind: the control stays marked.
   const kindMark = useFlash<HTMLDivElement>(marks?.fields.has('kind') ? marks.key : null, true);
 
@@ -273,14 +273,9 @@ export function EditorPanel({
             calendars={calendars}
             editKey={userEdits}
             editor={editor}
-            fallbackDate={seed.initialDate.toString()}
             focusSignal={quickAddFocus}
             initialText={seed.quickAddText}
             note={seed.thread?.note}
-            onApply={(item) => {
-              lessonDone();
-              void apply(item);
-            }}
             onCapture={onCapture}
             onEdit={() => setView('form')}
             onPhrase={async (text) => {

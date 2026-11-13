@@ -1,22 +1,16 @@
 import { validateEventDraft } from '@calendar/core';
 import { defersDate, groundDate, mentionsDate } from './grounding.ts';
 import { type LanguageModel, ModelUnavailableError } from './model.ts';
-import type { QuickAddResult } from './normalizeQuickAdd.ts';
-import { parseQuickAdd } from './parseQuickAdd.ts';
-import { parseRefine, type RefineResult } from './refine.ts';
+import type { QuickAddResult, RefineResult } from './normalizeQuickAdd.ts';
 import { tunedTurn } from './tuned.ts';
 import type { TurnDraft } from './tunedResult.ts';
 
 /**
- * How the Assistant reads what is said, whichever model reads it: a first
- * phrase that makes an item, or words that change one. The draft thread
- * (app-state) asks a reader and does the rest itself: guests looked up,
- * places found, what an item cannot hold refused, the step written.
- *
- * - `rulesReader`: the app's own pipeline (`parseQuickAdd`, `parseRefine`)
- *   with its grounding, over a general model (Apple's, a served one).
- * - `tunedReader`: the tuned path (`tuned.ts`) over a model trained for it,
- *   which needs none of the grounding.
+ * How the Assistant reads what is said: a first phrase that makes an item,
+ * or words that change one, read by the app's own model through the tuned
+ * path (`tuned.ts`). The draft thread (app-state) asks a reader and does
+ * the rest itself: guests looked up, places found, what an item cannot
+ * hold refused, the step written.
  */
 
 export interface FirstPhrase {
@@ -29,10 +23,6 @@ export interface FirstPhrase {
 
 export interface ChangePhrase {
   readonly draft: TurnDraft;
-  /** Whether words about people are about guests: a to-do's are its title's. */
-  readonly guests?: boolean | undefined;
-  /** The place as said, for a turn that only says where it is. */
-  readonly placeSaid?: string | undefined;
   readonly referenceDate: string;
   /** The words of the earlier turns that made or changed this draft, oldest first. */
   readonly said: ReadonlyArray<string>;
@@ -44,21 +34,6 @@ export interface PhraseReader {
   readonly change: (input: ChangePhrase) => Promise<RefineResult>;
   readonly first: (input: FirstPhrase) => Promise<QuickAddResult>;
 }
-
-/** The app's pipeline with its grounding: what the draft thread used before readers. */
-export const rulesReader = (model: LanguageModel): PhraseReader => ({
-  change: ({ draft, guests, placeSaid, referenceDate, said, timeZone, utterance }) =>
-    parseRefine(model, {
-      draft: draft.prefill,
-      guests,
-      placeSaid,
-      referenceDate,
-      said,
-      timeZone,
-      utterance,
-    }),
-  first: (input) => parseQuickAdd(model, input),
-});
 
 /** Earlier turns a later one is shown, newest kept: the model was trained on short threads. */
 const SAID_BEFORE = 6;
@@ -80,7 +55,13 @@ const unavailable = async (model: LanguageModel): Promise<void> => {
   }
 };
 
-/** Whether the words name a day the code can read ("today", a weekday) or mention one. */
+/**
+ * Whether the words name a day the code can read ("today", a weekday) or
+ * mention one. The one word check the Assistant keeps: the model writes
+ * today's date for words that name no day ("Lunch at 1"), so only the
+ * words tell that from "Lunch today at 1". It goes once a model leaves
+ * the date out where none was said (todo.md).
+ */
 const statesDay = (words: string, referenceDate: string): boolean =>
   groundDate(undefined, { phrase: words, referenceDate }) !== undefined ||
   mentionsDate(words) ||

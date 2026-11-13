@@ -2,14 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import {
-  type LanguageModel,
-  parseQuickAdd,
-  parseRefine,
-  type QuickAddResult,
-  type RefineResult,
-} from '@calendar/ai';
-import { convertQuickAddItem } from '@calendar/app-state/quickAddItem';
+import { type LanguageModel, type QuickAddResult, type RefineResult } from '@calendar/ai';
 import { type Contact, Temporal } from '@calendar/core';
 import { describe, expect, it } from 'vite-plus/test';
 import {
@@ -44,7 +37,6 @@ import {
   requiringEveryField,
   type Speech,
 } from './providers.ts';
-import { rawTurn } from './raw.ts';
 import {
   type BenchReport,
   type CaseReport,
@@ -58,14 +50,13 @@ import { rescore } from './rescore.ts';
 import { tunedTurn } from './tuned.ts';
 
 /**
- * The model bench: the cases under `cases/` through the quick-add and
- * refine pipelines on real models, side by side, scored by where a person
- * would put the event. Not a gate — it prints a table, writes a report
- * and passes — and never part of `pnpm test` or the e2e suite: it skips
- * itself unless MODEL_BENCH=1, and runs against whatever is on this
- * machine. On the `app` arm the grounding runs on every answer, as in
- * the app, so its table measures the whole pipeline; the report keeps
- * the raw answers for telling the model's errors from the grounding's.
+ * The model bench: the cases under `cases/` through the Assistant's tuned
+ * path (the app's own code, `@calendar/ai` `tunedTurn`) on real models,
+ * side by side, scored by where a person would put the event. Not a gate
+ * — it prints a table, writes a report and passes — and never part of
+ * `pnpm test` or the e2e suite: it skips itself unless MODEL_BENCH=1, and
+ * runs against whatever is on this machine. The report keeps the raw
+ * answers.
  *
  *   MODEL_BENCH=1 E2E=1 pnpm exec vp test run apps/desktop/e2e/bench/modelBench.e2e.ts
  *
@@ -79,11 +70,10 @@ import { tunedTurn } from './tuned.ts';
  * request body), MODEL_BENCH_OPENAI_JSON=object for a server with JSON mode
  * only (the schema then goes into the prompt: DeepSeek's API).
  * MODEL_BENCH_PIPELINE lists what runs around the model, comma-separated:
- * `app` (the default: the app's pipeline with its grounding), `raw` (the
- * app's prompts, the answer never held against the words: `raw.ts`),
- * `plain` (one prompt that states the conventions, no code that reads the
- * words: `plain.ts`) and `tuned` (the plain arm without the conventions,
- * for a model trained on its answers: `tuned.ts`). MODEL_BENCH_RESCORE names earlier reports (files or
+ * `tuned` (the default: the app's prompt for a model trained on it,
+ * `tuned.ts`) and `plain` (one prompt that states the conventions and
+ * the schema, for a general model: `plain.ts`, the arm the training data's
+ * teacher answers). MODEL_BENCH_RESCORE names earlier reports (files or
  * a folder of them) to score again by the checks as they are now, without
  * asking any model (`rescore.ts`).
  * MODEL_BENCH_CASES picks cases by id part or tag ("flow,de");
@@ -156,7 +146,7 @@ const hear = async (
   };
 };
 
-const PIPELINES = ['app', 'raw', 'plain', 'tuned'] as const;
+const PIPELINES = ['tuned', 'plain'] as const;
 type Pipeline = (typeof PIPELINES)[number];
 
 /** One turn through the pipeline the thread would use: the first phrase, or a change to the draft. */
@@ -176,28 +166,7 @@ const runTurn = async (
       timeZone: TIME_ZONE,
     });
   }
-  if (pipeline === 'tuned') {
-    return tunedTurn(model, { draft, earlier: said, referenceDate: today, text });
-  }
-  if (pipeline === 'raw') {
-    return rawTurn(model, { draft, referenceDate: today, text, timeZone: TIME_ZONE });
-  }
-  if (draft === undefined) {
-    return parseQuickAdd(model, { phrase: text, referenceDate: today, timeZone: TIME_ZONE });
-  }
-  // A to-do is refined as the event it would be, and read back as a to-do.
-  const asEvent = convertQuickAddItem(draft.item, 'event');
-  if (asEvent.kind !== 'event') {
-    return { kind: 'rejected', reason: 'not an event' };
-  }
-  return parseRefine(model, {
-    draft: asEvent.prefill,
-    guests: draft.item.kind === 'event',
-    referenceDate: today,
-    said,
-    timeZone: TIME_ZONE,
-    utterance: text,
-  });
+  return tunedTurn(model, { draft, earlier: said, referenceDate: today, text });
 };
 
 const runCase = async (
@@ -378,7 +347,7 @@ const providers = async (
   return list;
 };
 
-/** What runs around the model, per MODEL_BENCH_PIPELINE: the app's pipeline unless it names others. */
+/** What runs around the model, per MODEL_BENCH_PIPELINE: the tuned path unless it names others. */
 const pipelines = (): ReadonlyArray<Pipeline> => {
   const asked = (process.env['MODEL_BENCH_PIPELINE'] ?? '')
     .split(',')
@@ -392,7 +361,7 @@ const pipelines = (): ReadonlyArray<Pipeline> => {
     );
   }
   const known = PIPELINES.filter((pipeline) => asked.includes(pipeline));
-  return known.length === 0 ? ['app'] : known;
+  return known.length === 0 ? ['tuned'] : known;
 };
 
 /** The reports MODEL_BENCH_RESCORE names: files, or every report in a folder. */
@@ -459,8 +428,7 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('model bench', () => {
         pipelines().map((pipeline) => ({
           around: provider.around,
           model: provider.model,
-          // The app's pipeline keeps the provider's bare name: earlier reports compare with it.
-          name: pipeline === 'app' ? provider.name : `${provider.name}+${pipeline}`,
+          name: `${provider.name}+${pipeline}`,
           pipeline,
           settings: provider.settings,
         })),

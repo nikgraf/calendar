@@ -44,7 +44,7 @@ const clock = () => {
 };
 
 describe('runSpike', () => {
-  it('sends each phrase through the quick-add pipeline and keeps its result, time and calls', async () => {
+  it('sends each phrase through the tuned path and keeps its result, time and calls', async () => {
     const seen: Array<number> = [];
     const rows = await runSpike({
       cases: CASES.slice(0, 2),
@@ -64,10 +64,9 @@ describe('runSpike', () => {
     expect(seen).toEqual([1, 2]);
   });
 
-  it('asks a tuned model with the tuned arm: the short prompt, no schema, no rules after it', async () => {
+  it('asks with the tuned prompt: the days and the words, no schema', async () => {
     const asked: Array<{ readonly jsonSchema: unknown; readonly prompt: string }> = [];
     const rows = await runSpike({
-      arm: 'tuned',
       cases: CASES.slice(0, 1),
       modelFor: () => ({
         generateJson: async (request) => {
@@ -130,10 +129,9 @@ describe('runSpike', () => {
     let asked = 0;
     const rows = await runSpike({
       cases: CASES,
-      modelFor: () => ({
-        generateJson: async () => ({}),
-        status: async () => 'unavailable',
-      }),
+      modelFor: () => {
+        throw new Error('The model is not loaded.');
+      },
       now: clock(),
       referenceDate: '2026-11-11',
       stopped: () => {
@@ -219,14 +217,13 @@ describe('describeAnswer', () => {
 });
 
 describe('tunedModels', () => {
-  it('lists the models the variable names, each asked with the tuned arm', () => {
+  it('lists the models the variable names', () => {
     expect(
       tunedModels(
         '[{"name":"Tuned Q4","url":"http://mac.local:8091/tuned-Q4_K_M.gguf","bytes":541903840}]',
       ),
     ).toEqual([
       expect.objectContaining({
-        arm: 'tuned',
         bytes: 541_903_840,
         file: 'tuned-Q4_K_M.gguf',
         name: 'Tuned Q4',
@@ -249,12 +246,13 @@ describe('tunedModels', () => {
 });
 
 describe('SPIKE_MODELS', () => {
-  it('names a file, its size and where it comes from, each once', () => {
+  it('lists the Assistant’s published model first, with its file, size and release', () => {
     expect(new Set(SPIKE_MODELS.map((model) => model.file)).size).toBe(SPIKE_MODELS.length);
-    for (const model of SPIKE_MODELS) {
-      expect(model.url).toMatch(/^https:\/\/huggingface\.co\/.+\.gguf$/u);
-      expect(model.url.endsWith(model.file)).toBe(true);
-      expect(model.bytes).toBeGreaterThan(1_000_000_000);
-    }
+    const [published] = SPIKE_MODELS;
+    expect(published?.url).toMatch(
+      /^https:\/\/github\.com\/nikgraf\/calendar-models\/releases\/download\/.+\.gguf$/u,
+    );
+    expect(published?.url.endsWith(published.file)).toBe(true);
+    expect(published?.bytes).toBeGreaterThan(100_000_000);
   });
 });

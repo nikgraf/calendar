@@ -4,10 +4,10 @@ import {
   addHour,
   type QuickAddPrefill,
   type QuickAddResult,
-  recurrenceFromParse,
+  recurrenceFromModel,
+  type RefineResult,
   startOnRule,
 } from './normalizeQuickAdd.ts';
-import type { RefineResult } from './refine.ts';
 
 /**
  * A draft as a turn of the tuned path sees it, whoever holds it: the app's
@@ -135,8 +135,8 @@ const byDayOf = (value: unknown): ReadonlyArray<ByDay> => {
 
 /**
  * The repeat as the editor holds it, and the day it starts on. The rule
- * is validated as the app validates a model's (`recurrenceFromParse`
- * without a phrase): a real frequency, "repeats once" being none, an end
+ * is validated as the app validates a model's (`recurrenceFromModel`):
+ * a real frequency, "repeats once" being none, an end
  * on or after the day. Days the editor would refuse on Save are not kept
  * ("monthly on Wednesday" without saying which).
  */
@@ -147,7 +147,7 @@ const repeatOf = (
   if (!isRecord(raw)) {
     return { date, recurrence: undefined };
   }
-  const rule = recurrenceFromParse(
+  const rule = recurrenceFromModel(
     {
       count: typeof raw['count'] === 'number' ? raw['count'] : undefined,
       freq: FREQS.find((known) => known === raw['freq']),

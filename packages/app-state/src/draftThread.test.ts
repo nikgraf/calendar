@@ -38,7 +38,7 @@ import {
   type PlaceCandidate,
   ReminderOverride,
 } from '@calendar/core';
-import { livePlaceChoice, pickedCandidate, placeAsSaid, readsAsSaid } from './draftPlaces.ts';
+import { livePlaceChoice, pickedCandidate, readsAsSaid } from './draftPlaces.ts';
 import type { QuickAddItem } from './quickAddItem.ts';
 
 const dinner: QuickAddItem = {
@@ -1216,34 +1216,6 @@ describe('guests from the words', () => {
     );
     expect(found.drafts[0]?.extras?.attendees).toEqual([sarah]);
     expect(found.drafts[0]).not.toHaveProperty('inviteeChoices');
-  });
-
-  it('knows the place as the words said it, for a turn that says more of it', () => {
-    const choice = {
-      candidates: [figl('Figlmüller, Wollzeile 5, 1010 Vienna, Austria')],
-      text: 'Figlmüller',
-    };
-    const [taken] = choice.candidates;
-    // A place taken for the words: the words, not its address.
-    expect(placeAsSaid(choice, taken!.geo.source, taken!.geo)).toBe('Figlmüller');
-    // The text as said needs no other.
-    expect(placeAsSaid(choice, 'Figlmüller', undefined)).toBeUndefined();
-    expect(placeAsSaid(undefined, 'Figlmüller', undefined)).toBeUndefined();
-    expect(placeAsSaid(choice, undefined, undefined)).toBeUndefined();
-    // A place picked by hand, its choice gone: the name it is written with.
-    const picked = new GeoLocation({
-      lat: 48.2,
-      lng: 16.35,
-      name: 'Kaffemik',
-      source: 'Kaffemik, Zollergasse 5, 1070 Vienna, Austria',
-    });
-    expect(placeAsSaid(undefined, picked.source, picked)).toBe('Kaffemik');
-    // A pin whose text is not written with its name, or is no longer the form's: the text.
-    const renamed = new GeoLocation({ ...picked, source: 'Praxis Dr. Huber' });
-    expect(placeAsSaid(undefined, renamed.source, renamed)).toBeUndefined();
-    expect(placeAsSaid(undefined, 'Zollergasse 5', picked)).toBeUndefined();
-    // A choice the form moved away from says nothing of the new text.
-    expect(placeAsSaid(choice, 'Plachutta', undefined)).toBeUndefined();
   });
 
   it('drops a choice settled by hand, without a turn or a version', () => {

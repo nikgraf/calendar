@@ -20,9 +20,9 @@ import type { BenchDraft } from './check.ts';
  * all day without a start), holds a repeat to the editor's own rules (it
  * starts on a day of its rule, an end that has passed is next year's)
  * and tells what changed from the draft before. It never looks at the
- * phrase. Run beside the app's pipeline
- * (`MODEL_BENCH_PIPELINE`), the two say what the grounding buys on a
- * model, and what a model does without it.
+ * phrase. It is the arm the training data's teacher answers
+ * (`train/`), and a general model's measure beside the tuned arm
+ * (`MODEL_BENCH_PIPELINE`).
  */
 
 /**

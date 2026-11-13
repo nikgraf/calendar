@@ -8,7 +8,6 @@ import {
   type QuickAddPrefill,
   readExtras,
   type ReminderChange,
-  rulesReader,
   type TurnDraft,
 } from '@calendar/ai';
 import {
@@ -46,7 +45,7 @@ import {
   type InviteeChoice,
   resolveInvitees,
 } from './draftInvitees.ts';
-import { placeAsSaid, type PlaceChange, type PlaceChoice, settlePlace } from './draftPlaces.ts';
+import { type PlaceChange, type PlaceChoice, settlePlace } from './draftPlaces.ts';
 import type { EventEditorPrefill } from './editorModel.ts';
 import { convertQuickAddItem, type QuickAddItem } from './quickAddItem.ts';
 import { recurrenceKey } from './repeatState.ts';
@@ -1269,17 +1268,17 @@ export const useDraftThread = ({
   backend,
   defaultRemindersOf,
   model,
-  reader = rulesReader(model),
+  reader,
   timeZone,
 }: {
   /** The events a finder phrase searches between. */
   backend: BackendClient;
   /** The default notifications of the calendar a draft would go to (minutes before), where known. */
   defaultRemindersOf?: ((draft: Draft) => ReadonlyArray<number> | undefined) | undefined;
-  /** The model a finder phrase is read with, and the reader's where none is given. */
+  /** The model a finder phrase is read with (find a time keeps Apple's, or a served one). */
   model: LanguageModel;
-  /** How a phrase and a change are read: the app's pipeline over `model` unless another is given. */
-  reader?: PhraseReader | undefined;
+  /** How a phrase and a change are read: the Assistant's own model, through `tunedReader`. */
+  reader: PhraseReader;
   timeZone: string;
 }) => {
   const [state, setState] = useState<DraftThreadState>(EMPTY_THREAD);
@@ -1371,14 +1370,6 @@ export const useDraftThread = ({
             asEvent.kind === 'event'
               ? await reader.change({
                   draft: turnDraftOf(draft, asEvent.prefill, defaultRemindersOf?.(draft)),
-                  // A to-do's words about people are its title's.
-                  guests: draft.item.kind === 'event',
-                  // What a turn that only says where the place is adds to.
-                  placeSaid: placeAsSaid(
-                    draft.placeChoice,
-                    asEvent.prefill.location,
-                    draft.extras?.geo,
-                  ),
                   referenceDate,
                   said: turnsOf(current, draft.id),
                   timeZone,

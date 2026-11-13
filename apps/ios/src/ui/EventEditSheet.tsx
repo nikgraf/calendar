@@ -632,16 +632,10 @@ export function EventEditSheet({
   // edit by hand there does (`editKey`).
   const quick = useQuickAddModel({
     editKey: editor.userEdits,
-    fallbackDate: seed.initialDate.toString(),
     hold: editor.applying,
     initialText: seed.quickAddText,
-    model: languageModel,
     // An older step on show: nothing is listened for, and listening ends.
     off: previewing,
-    onApply: (item) => {
-      lesson.done();
-      void kinds.apply(item);
-    },
     onPhrase: async (text) => {
       const message = await onPhrase(text);
       if (message === undefined) {
@@ -652,7 +646,6 @@ export function EventEditSheet({
       return message;
     },
     speech: appleSpeech,
-    timeZone,
   });
 
   const { noun, verb } = editorTitle({
