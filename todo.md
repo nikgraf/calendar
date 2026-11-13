@@ -210,7 +210,9 @@ the served model (#184) and slot proposals (#185) are in
       instead"): a v2 with more follow-up turns in the data (a third of
       v1's) that also leaves `date` out where no day was said, so the
       tuned reader's one word check (`statesDay`) can go, and a new
-      release with its own version. Not checked on a device: the
+      release with its own version (and its answers to the Create
+      lesson's demo recorded again, `lessonDemo.ts`). Not checked on a
+      device: the
       iPhone's transfer across a quit and a network change.
 
 - [ ] Find-a-time follow-ups — the finder keeps a whole Apple series

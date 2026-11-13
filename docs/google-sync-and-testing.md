@@ -805,7 +805,10 @@ to the copied step; the lesson's reveal ticking it); `qrReader` (CI's
 to two pixels a module); `onboarding` (a fresh profile through the setup dialog
 with a fixture sign-in, the card's lessons and their ticks, fold and
 Hide, Settings › Getting Started; Skip's "Add your accounts" row; no
-setup with an account or the switch off); `mirrors`; `edgeScroll` (task, event and resize drags held at the grid's edges,
+setup with an account or the switch off; the Create lesson's demo with
+the Assistant's model not asked for — a manifest whose host refuses —
+its two phrases answered on the real editor and the download offered,
+then failed); `mirrors`; `edgeScroll` (task, event and resize drags held at the grid's edges,
 the lane chip that enters without scrolling, a wheel scroll mid-drag);
 `taskConvert` (Google writes left queued) and
 `taskConvertGoogle` (the fake Google API, so pushes land; the rail's
@@ -1046,9 +1049,10 @@ are no-ops unless Metro was started with
 fixture's task due today is scheduled and iOS asks for notification
 permission over whatever flow runs next) and
 `EXPO_PUBLIC_CALENDAR_ONBOARDING=off` likewise (else the
-Getting started card sits over the calendar the flows tap; flows 26 and
-27 turn onboarding on for their own launch through the
-`onboarding-fixture` link, under the fixture model, and since the
+Getting started card sits over the calendar the flows tap; flows 26,
+27 and 28 turn onboarding on for their own launch through the
+`onboarding-fixture` link, under the fixture model — 28 with
+`?assistant=absent`, so the Create lesson runs its demo — and since the
 simulator has no camera, 27 hands the setup's copy door the Mac's
 settings code through the `capture-fixture` link, as a share would),
 and the Reminders flows (09, 17)
