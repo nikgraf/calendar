@@ -70,7 +70,8 @@ Calendar, Apple Reminders and your address book, for the same purposes.
   receives what those features work on: the sentence you type, the text
   read from a paste or a screenshot, today's date and your time zone,
   and, for a search, the names of your calendars and lists. It is off
-  your Mac only if you point it there. The Assistant never uses it. Dictation and text
+  your Mac only if you point it there. The Assistant uses it only when
+  you ask it to find a time. Dictation and text
   recognition themselves stay on the device either way.
 - **Goes where you send it.** Settings can be exported as a file, and the
   Mac can keep a settings file in your home folder. That file lists your

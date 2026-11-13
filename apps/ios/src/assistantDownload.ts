@@ -200,6 +200,9 @@ export const createAssistantDownload = (deps: AssistantDownloadDeps): AssistantD
    * file: `start` keeps one of the same address and destination and
    * replaces any other (a file name from before the version was in it,
    * whose finish would never be taken), then the network the answer allows.
+   * A transfer that finished after `current` saw it and before `start` looked
+   * left its file in place: the one `start` began is not needed, and the
+   * file is checked (once, whether its finish is heard first or later).
    */
   const reconcile = async () => {
     try {
@@ -208,6 +211,13 @@ export const createAssistantDownload = (deps: AssistantDownloadDeps): AssistantD
         files.destination,
         networkOf(),
       );
+      if (started && files.exists()) {
+        await transfer.cancel(files.destination).catch(() => undefined);
+        if (isMoving(state)) {
+          await verify();
+        }
+        return;
+      }
       if (started) {
         progress = { received: 0, total: manifest.bytes };
         if (isMoving(state)) {

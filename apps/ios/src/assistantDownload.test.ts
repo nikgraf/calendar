@@ -184,6 +184,35 @@ describe('the Assistant model’s download', () => {
     expect(store.getState().kind).toBe('ready');
   });
 
+  it('takes a transfer that finishes between reading it and starting, and fetches nothing again', async () => {
+    for (const heard of ['before', 'after'] as const) {
+      const files = fakeFiles({ answer: { answer: 'wifi', version: 'v1' } });
+      const fake = fakeTransfer({ running: 'wifi' });
+      const cancelled: Array<string> = [];
+      const store = storeOf(files.files, {
+        ...fake.transfer,
+        cancel: async (destination) => {
+          cancelled.push(destination);
+        },
+        // `current` saw it running; by `start` it had finished into place, so `start` began another.
+        start: async (_url, destination, network) => {
+          files.land();
+          if (heard === 'before') {
+            fake.emit().onFinish({ path: destination });
+          }
+          return { network, started: true };
+        },
+      });
+      await store.boot();
+      if (heard === 'after') {
+        fake.emit().onFinish({ path: files.files.destination });
+      }
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(store.getState().kind, heard).toBe('ready');
+      expect(cancelled, heard).toEqual([files.files.destination]);
+    }
+  });
+
   it('is ready once the file’s size and checksum match, and remembers that', async () => {
     const files = fakeFiles();
     const { emit, transfer } = fakeTransfer();
