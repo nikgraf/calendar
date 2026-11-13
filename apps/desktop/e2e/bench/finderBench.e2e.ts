@@ -1,14 +1,16 @@
 import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildFindTimePrompt, FIND_TIME_JSON_SCHEMA } from '@calendar/ai';
+import { buildFindTimePrompt, buildTunedFinderPrompt, FIND_TIME_JSON_SCHEMA } from '@calendar/ai';
 import { Temporal } from '@calendar/core';
 import { describe, expect, it } from 'vite-plus/test';
 import {
   ARMS,
   FINDER_FIELDS,
+  FINDER_PIPELINES,
   type FinderCase,
   type FinderCaseReport,
+  type FinderPipeline,
   type FinderReport,
   floorOf,
   loadFinderCases,
@@ -36,6 +38,10 @@ import { benchProviders, connectHelper, findHelper, gitSha, recording } from './
  * daily bounds, what the time is for. Measured, never gated: it prints a
  * table, writes a report under output/bench/finder/ and passes.
  *
+ * MODEL_BENCH_PIPELINE=tuned asks the Assistant's own model instead:
+ * its prompt (`buildTunedFinderPrompt`), no schema; the app reads its
+ * answer as the `raw` arm does, a length left out where none was said.
+ *
  *   MODEL_BENCH=1 E2E=1 pnpm exec vp test run apps/desktop/e2e/bench/finderBench.e2e.ts
  */
 
@@ -52,10 +58,25 @@ const median = (values: ReadonlyArray<number>): number => {
   return sorted.length % 2 === 0 ? (sorted[middle - 1]! + sorted[middle]!) / 2 : sorted[middle]!;
 };
 
+/** How the models are asked, per MODEL_BENCH_PIPELINE: the app's finder prompt unless it says `tuned`. */
+const pipelineOf = (): FinderPipeline => {
+  const asked = (process.env['MODEL_BENCH_PIPELINE'] ?? '').trim();
+  if (asked === '') {
+    return 'app';
+  }
+  const known = FINDER_PIPELINES.find((pipeline) => pipeline === asked);
+  if (known === undefined) {
+    throw new Error(
+      `MODEL_BENCH_PIPELINE names no finder pipeline "${asked}": ${FINDER_PIPELINES.join(', ')}`,
+    );
+  }
+  return known;
+};
+
 const formatReport = (report: FinderReport): string => {
   const { total } = report.score;
   const lines = [
-    `== ${report.provider}${report.settings ? ` (${report.settings})` : ''}${
+    `== ${report.provider}${report.pipeline === 'tuned' ? ' [tuned]' : ''}${report.settings ? ` (${report.settings})` : ''}${
       report.rescored ? ` — the answers of ${report.rescored.sha}, ${report.rescored.when}` : ''
     }`,
     `   median ${(median(report.cases.map((each) => each.ms)) / 1000).toFixed(1)}s per phrase${
@@ -98,7 +119,7 @@ const writeReport = (dir: string, report: FinderReport): string => {
     : '';
   const path = join(
     dir,
-    `finder-${stampOf(report.when)}-${report.sha}-${slug(report.provider)}${source}.json`,
+    `finder-${stampOf(report.when)}-${report.sha}-${slug(report.provider)}${report.pipeline === 'tuned' ? '-tuned' : ''}${source}.json`,
   );
   writeFileSync(path, `${JSON.stringify(report, null, 2)}\n`);
   return path;
@@ -146,6 +167,7 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('finder bench', () => {
         lines.push(line);
       };
       const cases = selected(loadFinderCases(join(BENCH_DIR, 'finder.json')));
+      const pipeline = pipelineOf();
       const helperBinary = findHelper();
       const helper = helperBinary === undefined ? undefined : connectHelper(helperBinary);
       // Beside, not among, the Assistant bench's reports: a folder of those is rescored as one.
@@ -185,17 +207,23 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('finder bench', () => {
             provider.around === undefined ? recorded.model : provider.around(recorded.model);
           const reports: Array<FinderCaseReport> = [];
           for (const finderCase of cases) {
-            const prompt = buildFindTimePrompt({
-              phrase: finderCase.text,
-              referenceDate: today,
-              timeZone: TIME_ZONE,
-            });
+            const prompt =
+              pipeline === 'tuned'
+                ? buildTunedFinderPrompt({ phrase: finderCase.text, referenceDate: today })
+                : buildFindTimePrompt({
+                    phrase: finderCase.text,
+                    referenceDate: today,
+                    timeZone: TIME_ZONE,
+                  });
             const calls = recorded.begin();
             const started = Date.now();
             let read: unknown;
             let error: string | undefined;
             try {
-              read = await model.generateJson({ jsonSchema: FIND_TIME_JSON_SCHEMA, prompt });
+              read = await model.generateJson({
+                jsonSchema: pipeline === 'tuned' ? undefined : FIND_TIME_JSON_SCHEMA,
+                prompt,
+              });
             } catch (error_) {
               error = error_ instanceof Error ? error_.message : String(error_);
             }
@@ -203,7 +231,7 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('finder bench', () => {
             const answer = call === undefined ? read : call.answer;
             reports.push({
               answer,
-              arms: readAnswer(read, finderCase, today),
+              arms: readAnswer(read, finderCase, today, { pipeline }),
               ...(error === undefined ? {} : { error }),
               id: finderCase.id,
               lang: finderCase.lang,
@@ -216,6 +244,7 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('finder bench', () => {
           const report: FinderReport = {
             cases: reports,
             floor: floorOf(cases, today),
+            pipeline,
             provider: provider.name,
             score: scoreOf(reports),
             settings: provider.settings,

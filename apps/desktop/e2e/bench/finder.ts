@@ -351,10 +351,20 @@ export interface ArmScore {
   readonly fields: Readonly<Record<FinderField, number>>;
 }
 
+export const FINDER_PIPELINES = ['app', 'tuned'] as const;
+export type FinderPipeline = (typeof FINDER_PIPELINES)[number];
+
 export interface FinderReport {
   readonly cases: ReadonlyArray<FinderCaseReport>;
   /** What an empty answer scores in each arm on these cases: the floor the code's defaults give. */
   readonly floor?: Readonly<Record<Arm, number>> | undefined;
+  /**
+   * How the model was asked: the app's finder prompt with its schema
+   * (`app`, absent in reports from before), or the Assistant's model's
+   * own (`tuned`, `buildTunedFinderPrompt`), whose answer the app reads
+   * as the `raw` arm does.
+   */
+  readonly pipeline?: FinderPipeline | undefined;
   readonly provider: string;
   /**
    * A report scored again (`MODEL_BENCH_RESCORE`): the run whose answers it
@@ -392,33 +402,31 @@ const normalized = (parse: FindTimeParse, options: Parameters<typeof normalizeFi
 /**
  * One answer, read by each arm. Without the rules the code's defaults
  * still fill what the model leaves out: the coming week for a window, the
- * finder's own length for a length; and a case whose words give no length
- * passes any, since the schema has the model write one.
+ * finder's own length for a length. Asked as the app asks, a case whose
+ * words give no length passes any, since the schema has the model write
+ * one; the Assistant's model is asked without one and has to leave it
+ * out.
  */
 export const readAnswer = (
   answer: unknown,
   finderCase: FinderCase,
   today: string,
+  { pipeline = 'app' }: { readonly pipeline?: FinderPipeline | undefined } = {},
 ): Record<Arm, ArmResult> => {
   const parse =
     typeof answer === 'object' && answer !== null ? (answer as FindTimeParse) : undefined;
   const read = (arm: Arm): FindTimeResult =>
     parse === undefined
       ? NO_ANSWER
-      : normalized(
-          arm === 'rules'
-            ? parse
-            : { ...parse, durationMinutes: parse.durationMinutes ?? FALLBACK_MINUTES },
-          arm === 'rules'
-            ? {
-                fallbackDurationMinutes: FALLBACK_MINUTES,
-                phrase: finderCase.text,
-                referenceDate: today,
-              }
-            : { referenceDate: today },
-        );
+      : normalized(parse, {
+          fallbackDurationMinutes: FALLBACK_MINUTES,
+          ...(arm === 'rules' ? { phrase: finderCase.text } : {}),
+          referenceDate: today,
+        });
   return {
-    raw: checkFinder(finderCase.expect, read('raw'), today, { anyLengthUnsaid: true }),
+    raw: checkFinder(finderCase.expect, read('raw'), today, {
+      anyLengthUnsaid: pipeline === 'app',
+    }),
     rules: checkFinder(finderCase.expect, read('rules'), today),
   };
 };
@@ -464,7 +472,10 @@ export const rescoreFinder = (
       left.push(old.id);
       continue;
     }
-    kept.push({ ...old, arms: readAnswer(old.read ?? old.answer, now, before.today) });
+    kept.push({
+      ...old,
+      arms: readAnswer(old.read ?? old.answer, now, before.today, { pipeline: before.pipeline }),
+    });
   }
   const scored = cases.filter((each) => kept.some((report) => report.id === each.id));
   return {
