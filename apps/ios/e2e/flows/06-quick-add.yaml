@@ -36,7 +36,7 @@ tags:
       - runFlow:
           file: ../common/apply-quick-add.yaml
           env:
-            PHRASE: 'Lunch with Sarah next Tuesday at 1pm'
+            PHRASE: 'Lunch with Sarah | +1 | 13:00-14:00'
       # Generation runs locally and takes a few seconds. A simulator whose
       # host has no usable model (CI runners: Apple Intelligence is not
       # enabled) passes the availability check and then fails to
@@ -65,9 +65,9 @@ tags:
           commands:
             - assertVisible: 'That couldn.t be read.*'
       # The thread, under the fixture model (CI's bundle; a real model skips
-      # the steps below). The fixture makes the whole phrase the title, and
-      # the normalizer takes "next Tuesday at 1pm" off its end, as off any
-      # model's. A change in the fixture's grammar (empty parts unchanged)
+      # the steps below). The fixture answers the tuned prompt in its
+      # grammar (`packages/ai/src/fixtureModel.ts`): title, a day from today
+      # and the times. A change in the same grammar (empty parts unchanged)
       # moves the times: the card marks them, the hours before struck
       # through after them, and the first answer becomes a row above. The
       # form shows the same draft; its pill steps back to the first answer,
@@ -86,7 +86,7 @@ tags:
                 text: 'Lunch with Sarah'
             - assertVisible:
                 id: 'assistant-said'
-                text: 'Lunch with Sarah next Tuesday at 1pm'
+                text: 'Lunch with Sarah \| \+1 \| 13:00-14:00'
             - runFlow:
                 file: ../common/apply-quick-add.yaml
                 env:

@@ -4,7 +4,6 @@ import {
   type EditorSourceKind,
   editorTitle,
   useMarkLesson,
-  useModelAvailability,
   useQuickAddModel,
   useThreadEditor,
   type TaskEditorSeed,
@@ -31,17 +30,11 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { onAppActive } from '../appActive.ts';
 import { appleSpeech } from '../appleSpeech.ts';
 import { backendClient } from '../backend.ts';
-import {
-  type AssistantModelState,
-  type LanguageModel,
-  type ModelStatus,
-  statusOf,
-} from '@calendar/ai';
+import { type AssistantModelState, type ModelStatus, statusOf } from '@calendar/ai';
 import { assistantDownload, assistantReader, useAssistantModelState } from '../assistantRuntime.ts';
-import { languageModel } from '../model.ts';
+import { languageModel, modelFixture } from '../model.ts';
 import { AssistantBar } from './assistant/AssistantBar.tsx';
 import { AssistantModelNotice } from './assistant/AssistantModelNotice.tsx';
 import { AssistantView } from './assistant/AssistantView.tsx';
@@ -58,7 +51,6 @@ import { EventEditForm } from './EventEditForm.tsx';
 import { FieldFlashContext, FlashView } from './FlashView.tsx';
 import { Row, Section } from './GroupedList.tsx';
 import { LessonBanner } from './lesson/LessonBanner.tsx';
-import { ModelAvailabilityNotice } from './ModelAvailabilityNotice.tsx';
 import { ReminderEditForm } from './ReminderEditForm.tsx';
 import { SegmentedControl } from './SegmentedControl.tsx';
 import { TaskCheck } from './TaskCheck.tsx';
@@ -500,14 +492,6 @@ function FormView({
  * the next.
  */
 
-/** A model that is never asked: the Assistant's own runs, and Apple's is not checked for it. */
-const NO_CHECK: LanguageModel = {
-  generateJson: async () => {
-    throw new Error('Not asked: the Assistant runs on its own model.');
-  },
-  status: async () => 'ready',
-};
-
 /** The Create lesson's note while the Assistant's model is not on this iPhone yet. */
 const lessonNoteOf = (state: AssistantModelState): string => {
   switch (state.kind) {
@@ -599,11 +583,9 @@ export function EventEditSheet({
   // nothing said or typed yet: the form is what there is to work with,
   // once — the Assistant says why and is a tap away.
   // The Assistant runs on its own model (`assistantRuntime.ts`), whose state
-  // is known at once; Apple's is asked only under the fixture model (e2e).
-  const ownModel = assistantReader() !== undefined;
-  const appleAvailability = useModelAvailability(ownModel ? NO_CHECK : languageModel, onAppActive);
+  // is known at once; the fixture model (e2e) is always ready.
   const own = useAssistantModelState();
-  const status: ModelStatus | null = ownModel ? statusOf(own) : appleAvailability.status;
+  const status: ModelStatus | null = modelFixture ? 'ready' : statusOf(own);
   const answered = useRef(false);
   useEffect(() => {
     if (status === null || answered.current) {
@@ -617,7 +599,7 @@ export function EventEditSheet({
   }, [status]);
   const download = assistantDownload();
   const notice =
-    status === null || status === 'ready' ? undefined : ownModel ? (
+    status === null || status === 'ready' ? undefined : (
       <AssistantModelNotice
         network={download.network()}
         onAction={(action) => {
@@ -632,15 +614,7 @@ export function EventEditSheet({
         size={download.size()}
         state={own}
       />
-    ) : appleAvailability.availability ? (
-      <ModelAvailabilityNotice
-        availability={appleAvailability.availability}
-        checkedAt={appleAvailability.checkedAt}
-        lastManualCheck={appleAvailability.lastManualCheck}
-        manualChecking={appleAvailability.manualChecking}
-        onCheckAgain={appleAvailability.retry}
-      />
-    ) : undefined;
+    );
 
   // The Create lesson's frame, over either view. Where the model is not
   // ready the editor has fallen back to its form: the banner says why the
@@ -648,13 +622,7 @@ export function EventEditSheet({
   const lessonBanner = seed.lesson ? (
     <LessonBanner
       id={seed.lesson}
-      note={
-        status === null || status === 'ready'
-          ? undefined
-          : ownModel
-            ? lessonNoteOf(own)
-            : 'Describing an event needs Apple Intelligence, which is not ready on this iPhone — the form still makes one.'
-      }
+      note={status === null || status === 'ready' ? undefined : lessonNoteOf(own)}
       onSkip={lesson.open ? onClose : undefined}
     />
   ) : null;

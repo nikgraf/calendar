@@ -205,19 +205,18 @@ describe('Places from a quick-add phrase', () => {
     await cdp.waitFor(`!${choices}`);
   });
 
-  it('adds where a later turn says the place is to the place as said, and the company to the title', async () => {
+  it('looks up a place a later turn changes, and keeps it through a turn about the title', async () => {
     const { cdp } = app;
     await openNew();
     await phrase('Lunch | +0 | 12:00-13:00 | Figlmüller');
     await cdp.waitFor(`${location} === 'Figlmüller, Wollzeile 5, 1010 Wien'`);
-    // Said of the place as the words named it, not of the address taken
-    // for it — and read without the model: the fixture's grammar has no
-    // such sentence.
-    await phrase('the one in Bäckerstraße');
+    // The model answers where the turn says it is ("the one in
+    // Bäckerstraße"); the thread looks that up and takes the best match.
+    await phrase('| | | Figlmüller, Bäckerstraße');
     await cdp.waitFor(`${location} === 'Figlmüller, Bäckerstraße 6, 1010 Wien'`);
     expect(await cdp.eval<string>(pressed)).toBe('draft-place-pick-0');
-    // Who it is with joins the title; the place stays where it is.
-    await phrase('with Stefan');
+    // A turn about the title only: the place stays where it is.
+    await phrase('Lunch with Stefan | | |');
     await cdp.waitFor(`${title} === 'Lunch with Stefan'`);
     expect(await cdp.eval<string>(location)).toBe('Figlmüller, Bäckerstraße 6, 1010 Wien');
   });

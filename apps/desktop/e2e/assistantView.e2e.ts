@@ -508,11 +508,10 @@ describe('The editor’s Assistant and Form views', () => {
     expect(await cdp.eval<boolean>(exists('step-control'))).toBe(false);
 
     // Today: the day the to-do is shown on, and the placeholder its form
-    // holds. The words state it (the normalizer reads "today" for every
-    // model; the fixture leaves the draft as it is), so it is dated —
-    // though the day reads as it did.
+    // holds. The words state it (`+0` in the fixture's grammar), so it is
+    // dated — though the day reads as it did.
     await cdp.eval(`${INPUT}.select()`);
-    await cdp.say('due today');
+    await cdp.say('due +0');
     await cdp.waitFor(`${stepPosition} === '1 of 1'`);
     // The row to go back to names the to-do as it was saved: without a day.
     expect(await cdp.eval<string>(textOf('assistant-version'))).toContain('No due date');
@@ -549,13 +548,13 @@ describe('The editor’s Assistant and Form views', () => {
     await cdp.openEditor('[title^="Design review"]');
     await cdp.showEditorView('assistant');
     await cdp.waitFor(`${card('title')} === 'Design review'`);
-    await cdp.say('every week');
+    await cdp.say('repeat weekly');
     await cdp.waitFor(
       `${textOf('quick-add-status')} === 'How this event repeats can’t be changed here.'`,
     );
     // Nothing landed, and the words are still there to change.
     expect(await cdp.eval<boolean>(exists('step-control'))).toBe(false);
-    expect(await cdp.eval<string>(`${INPUT}.value`)).toBe('every week');
+    expect(await cdp.eval<string>(`${INPUT}.value`)).toBe('repeat weekly');
     await cdp.pressEscape();
     await cdp.pressEscape();
     await cdp.waitFor(`!${exists('editor')}`);
@@ -566,7 +565,7 @@ describe('The editor’s Assistant and Form views', () => {
     await cdp.waitFor(`${card('title')} === 'Daily sync'`);
     // The scope a phrase applies at is asked under the card.
     expect(await cdp.eval<boolean>(exists('draft-scope'))).toBe(true);
-    await cdp.say('every week');
+    await cdp.say('repeat weekly');
     await cdp.waitFor(
       `${textOf('quick-add-status')} === 'Choose “All events” or “This and following” to change how it repeats.'`,
     );

@@ -18,7 +18,7 @@ import {
 } from './assistantDownload.ts';
 import { type AssistantModel, createAssistantModel } from './assistantModel.ts';
 import { offerOnce } from './assistantModelOffer.ts';
-import { modelFixture } from './model.ts';
+import { languageModel, modelFixture } from './model.ts';
 import { loadOpenModelRuntime } from './openModel.ts';
 import { whenSetupClosed } from './settingsCodeInbox.ts';
 
@@ -168,8 +168,8 @@ const depsOf = (): AssistantDownloadDeps => {
 interface AssistantRuntime {
   readonly download: AssistantDownload;
   readonly model: AssistantModel;
-  /** The Assistant's reader: the tuned path over the app's own model; none under the fixture model. */
-  readonly reader: PhraseReader | undefined;
+  /** The Assistant's reader: the tuned path over the app's own model, or over the fixture model (e2e). */
+  readonly reader: PhraseReader;
   started: boolean;
 }
 
@@ -185,8 +185,8 @@ const makeRuntime = (): AssistantRuntime => {
   return {
     download,
     model,
-    // The fixture model keeps the app's pipeline: the e2e flows feed it its own grammar.
-    reader: modelFixture ? undefined : tunedReader(model),
+    // The fixture model answers the tuned prompt in its own grammar (e2e).
+    reader: tunedReader(modelFixture ? languageModel : model),
     started: false,
   };
 };
@@ -196,8 +196,8 @@ const runtime = (): AssistantRuntime => (holder.solunivoAssistantModel ??= makeR
 
 export const assistantDownload = (): AssistantDownload => runtime().download;
 export const assistantModel = (): AssistantModel => runtime().model;
-/** How the Assistant reads what is said: the tuned path, or (none) the app's pipeline over the fixture model. */
-export const assistantReader = (): PhraseReader | undefined => runtime().reader;
+/** How the Assistant reads what is said: the tuned path. */
+export const assistantReader = (): PhraseReader => runtime().reader;
 
 /** The download's state, for a screen that shows it. */
 export const useAssistantModelState = (): AssistantModelState => {

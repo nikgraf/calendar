@@ -139,8 +139,140 @@ const searchTurn = (
   };
 };
 
+/** The tuned prompt's today: the day list's entry marked "(today)". */
+const TUNED_TODAY = /Days: \w+ (\d{4}-\d{2}-\d{2}) \(today\)/;
+
+/** A day in the fixture grammar: `+N` days from today. */
+const tunedDay = (token: string, today: string): string | undefined => {
+  const relative = /^([+-]\d+)$/.exec(token.trim());
+  return relative
+    ? Temporal.PlainDate.from(today)
+        .add({ days: Number(relative[1]) })
+        .toString()
+    : undefined;
+};
+
+const names = (text: string): ReadonlyArray<string> =>
+  text
+    .split(/\s*,\s*|\s+and\s+/)
+    .map((name) => name.trim())
+    .filter((name) => name !== '');
+
+/**
+ * The extras a turn names, comma-separated: `invite A and B`, `remove A`,
+ * `remind N` (minutes), `note: text` (to the end), `due +N`,
+ * `repeat weekly` / `repeat none`. Applied to the answer so far.
+ */
+const withExtras = (
+  answer: Record<string, unknown>,
+  text: string,
+  today: string,
+): Record<string, unknown> => {
+  let next = { ...answer };
+  let rest = text.trim();
+  while (rest !== '') {
+    const note = /^note:\s*(.*)$/is.exec(rest);
+    if (note) {
+      const said = (note[1] ?? '').trim();
+      const notes = typeof next['notes'] === 'string' ? next['notes'] : '';
+      next = { ...next, notes: notes === '' ? said : `${notes}\n${said}` };
+      break;
+    }
+    const comma = rest.indexOf(',');
+    const part = (comma === -1 ? rest : rest.slice(0, comma)).trim();
+    rest = comma === -1 ? '' : rest.slice(comma + 1).trim();
+    const invite = /^invite\s+(.+)$/i.exec(part);
+    const remove = /^(?:remove|uninvite)\s+(.+)$/i.exec(part);
+    const remind = /^remind\s+(\d+)$/i.exec(part);
+    const due = /^due\s+([+-]\d+)$/i.exec(part);
+    const repeat = /^repeat\s+(daily|weekly|monthly|yearly|none)$/i.exec(part);
+    if (invite?.[1]) {
+      // The rest of the turn, commas and all, names the people.
+      next = { ...next, invite: names([invite[1], rest].filter(Boolean).join(', ')) };
+      rest = '';
+    } else if (remove?.[1]) {
+      next = { ...next, uninvite: names([remove[1], rest].filter(Boolean).join(', ')) };
+      rest = '';
+    } else if (remind?.[1]) {
+      const reminders = Array.isArray(next['reminders']) ? next['reminders'] : [];
+      next = { ...next, reminders: [...reminders, Number(remind[1])] };
+    } else if (due?.[1]) {
+      const date = tunedDay(due[1], today);
+      next = date ? { ...next, date } : next;
+    } else if (repeat?.[1]) {
+      const freq = repeat[1].toLowerCase();
+      const { repeat: _old, ...without } = next;
+      next = freq === 'none' ? without : { ...without, repeat: { freq } };
+    }
+  }
+  return next;
+};
+
+/**
+ * A `Title | +N | HH:MM-HH:MM | Location | extras` line laid over the
+ * answer so far: an empty part leaves its field as it is.
+ */
+const withGrammar = (
+  answer: Record<string, unknown>,
+  line: string,
+  today: string,
+): Record<string, unknown> => {
+  const [title = '', when = '', time = '', location = '', ...extras] = line
+    .split('|')
+    .map((part) => part.trim());
+  const date = tunedDay(when, today);
+  const range = TIME_RANGE.exec(time);
+  const { endTime: _end, ...withoutEnd } = answer;
+  const timed = range?.[1]
+    ? { ...withoutEnd, startTime: range[1], ...(range[2] ? { endTime: range[2] } : {}) }
+    : answer;
+  return withExtras(
+    {
+      ...timed,
+      ...(title ? { title } : {}),
+      ...(date ? { date } : {}),
+      ...(location ? { location } : {}),
+    },
+    extras.join('|'),
+    today,
+  );
+};
+
+/**
+ * The tuned prompt (`tuned.ts`), answered the way the trained model
+ * answers: the whole draft after the turn, written short. A first phrase
+ * in the grammar makes an event (`todo:` in front makes a to-do); any
+ * other phrase is a title on today. A later turn starts from the draft it
+ * was shown, unchanged where the turn says nothing — the grammar line, or
+ * one extra (`invite Tom`, `remind 60`, `note: …`, `due +0`,
+ * `repeat weekly`).
+ */
+const tunedFixtureAnswer = (prompt: string): Record<string, unknown> => {
+  const today = TUNED_TODAY.exec(prompt)?.[1];
+  if (today === undefined) {
+    throw new Error('fixture model: the tuned prompt names no day as today');
+  }
+  const draftLine = /^Draft: (.*)$/m.exec(prompt)?.[1];
+  if (draftLine === undefined) {
+    const phrase = textAfter(prompt, 'Phrase: ').trim();
+    const task = /^todo:\s*/i.test(phrase);
+    const words = phrase.replace(/^todo:\s*/i, '');
+    const base = { date: today, kind: task ? 'task' : 'event', title: words };
+    return words.includes('|') ? withGrammar(base, words, today) : base;
+  }
+  const draft = JSON.parse(draftLine) as Record<string, unknown>;
+  const change = textAfter(prompt, 'Now: ').trim();
+  return change.includes('|')
+    ? withGrammar(draft, change, today)
+    : withExtras(draft, change, today);
+};
+
 export const makeFixtureLanguageModel = (): LanguageModel => ({
   generateJson: async ({ jsonSchema, prompt }) => {
+    // The tuned path asks without a schema.
+    if (jsonSchema === undefined && prompt.startsWith('Calendar entry as JSON')) {
+      return tunedFixtureAnswer(prompt);
+    }
     const properties = isRecord(jsonSchema) ? jsonSchema.properties : undefined;
     // Who a phrase invites: the one question without a reference date.
     if (isRecord(properties) && 'people' in properties && !('terms' in properties)) {
