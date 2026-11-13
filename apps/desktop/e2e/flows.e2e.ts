@@ -286,6 +286,10 @@ const editorTimes = (): Promise<Array<string>> =>
     `[...document.querySelectorAll('input[type="time"]')].map((input) => input.value)`,
   );
 
+/** Whether Settings › Screen Sharing has `label` chosen. */
+const sharingChoiceIs = (label: string): string =>
+  `[...document.querySelectorAll('[role="radio"]')].some(b => b.textContent === ${JSON.stringify(label)} && b.getAttribute('aria-checked') === 'true')`;
+
 /** Whether a window's screen-capture hint is in `phase` (`off`, `capturing` or `after`). */
 const captureHintIs = (phase: string): string =>
   `document.querySelector('[data-testid="capture-hint"]')?.dataset.phase === ${JSON.stringify(phase)}`;
@@ -1466,22 +1470,17 @@ describe('calendar desktop e2e', () => {
   it('controls screen-sharing privacy from the settings window', async () => {
     const cdp = await app.openSettings('sharing');
 
-    // Hidden is the default and nothing is persisted yet.
-    await cdp.waitFor(
-      `[...document.querySelectorAll('[role="radio"]')].some(b => b.textContent === 'Hidden' && b.getAttribute('aria-checked') === 'true')`,
-    );
+    // Always visible is the default and nothing is persisted yet.
+    await cdp.waitFor(sharingChoiceIs('Always visible'));
     expect(readSettings(app.userDataDir)['screenPrivacy']).toBeUndefined();
 
-    // Always visible persists.
-    await cdp.clickButtonWithText('Always visible');
-    const deadline = Date.now() + 10_000;
-    while (readSettings(app.userDataDir)['screenPrivacy'] !== 'visible' && Date.now() < deadline) {
-      await new Promise((resolve) => setTimeout(resolve, 200));
-    }
-    expect(readSettings(app.userDataDir)['screenPrivacy']).toBe('visible');
+    // Hidden persists.
+    await cdp.clickButtonWithText('Hidden');
+    await expect
+      .poll(() => readSettings(app.userDataDir)['screenPrivacy'], { timeout: 10_000 })
+      .toBe('hidden');
 
     // The 10-minute pause is runtime-only: mode stays hidden on disk.
-    await cdp.clickButtonWithText('Hidden');
     await cdp.clickButtonWithText('Visible for 10 min');
     const state = await cdp.eval<{ mode: string; visibleUntil?: number }>(
       `window.calendarBridge.privacyGet()`,
@@ -1491,11 +1490,12 @@ describe('calendar desktop e2e', () => {
     await cdp.waitFor(`document.body.textContent.includes('min left')`);
     expect(readSettings(app.userDataDir)['screenPrivacy']).toBe('hidden');
 
-    // Back to the default for the remaining flows.
-    await cdp.clickButtonWithText('Hidden');
-    await cdp.waitFor(
-      `[...document.querySelectorAll('[role="radio"]')].some(b => b.textContent === 'Hidden' && b.getAttribute('aria-checked') === 'true')`,
-    );
+    // Back to the default for the remaining flows: Always visible persists too.
+    await cdp.clickButtonWithText('Always visible');
+    await cdp.waitFor(sharingChoiceIs('Always visible'));
+    await expect
+      .poll(() => readSettings(app.userDataDir)['screenPrivacy'], { timeout: 10_000 })
+      .toBe('visible');
     await app.closeSettings();
   });
 
@@ -1591,8 +1591,9 @@ describe('calendar desktop e2e', () => {
         timeoutMs,
       );
 
-    // Hidden (the default): the hint shows during a capture and lingers
-    // after it — ⌘⇧3 is over before anything can be drawn — then goes.
+    // Hidden: the hint shows during a capture and lingers after it — ⌘⇧3
+    // is over before anything can be drawn — then goes.
+    await cdp.eval(`window.calendarBridge.privacySet('hidden')`);
     await waitForPhase('off');
     app.setCapturing(true);
     await waitForPhase('capturing');
@@ -1620,12 +1621,13 @@ describe('calendar desktop e2e', () => {
     app.setCapturing(false);
 
     // Back to the default for the remaining flows.
-    await cdp.eval(`window.calendarBridge.privacySet('hidden')`);
+    await cdp.eval(`window.calendarBridge.privacySet('visible')`);
   });
 
   it('keeps the capture hint true in every window, the one opened mid-capture included', async () => {
     const { cdp } = app;
     // Settings opened while a capture runs is left out of it too, and says so.
+    await cdp.eval(`window.calendarBridge.privacySet('hidden')`);
     app.setCapturing(true);
     await cdp.waitFor(captureHintIs('capturing'));
     const settings = await app.openSettings('sharing');
@@ -1639,7 +1641,7 @@ describe('calendar desktop e2e', () => {
     app.setCapturing(false);
 
     // Back to the default for the remaining flows.
-    await cdp.eval(`window.calendarBridge.privacySet('hidden')`);
+    await cdp.eval(`window.calendarBridge.privacySet('visible')`);
     await app.closeSettings();
   });
 
