@@ -625,9 +625,9 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   while the edge scrolls). Open: slot drawing, paging days at the side
   edges, the speed (8 h/s at the edge) felt on a device.
 - **Screen-sharing privacy** — the desktop window is excluded from
-  captures while Hidden is on (the default until #314); "Visible for
-  10 min" is runtime-only and fails closed on restart; "Always visible"
-  persists. **The capture hint**
+  captures while Hidden is on (the default until #314); the 10-minute
+  pause is runtime-only and fails closed on restart; Visible persists
+  (it was "Always visible" until #317). **The capture hint**
   (2026-10-11): a window left out of a screenshot or recording says so
   on screen, with the 10-minute pause one click away. The signal is the
   `screencapture` process every ⌘⇧3/4/5 runs (probed: the screenshot UI
@@ -644,6 +644,13 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   itself says `"hidden"` too, so it would pin every file user to Hidden).
   The `CALENDAR_CAPTURE` screenshot hook, the one exception to
   protection, had no callers and went with it.
+- **The pause is a button under Hidden** (2026-11-13, #317) — Settings ›
+  Screen Sharing is Hidden | Visible, the two values the setting stores;
+  while Hidden, "Show for 10 min" (and, paused, "Hide now") sits below,
+  as on the capture hint, and a pause while visible changes nothing.
+  Rejected: a checkbox for the setting (option A of the two drawn), and
+  the pause as a third segment (beside the default Visible it only
+  counted down). Open: the pause timer runs late after the Mac sleeps.
 - **Per-calendar colors** — optimistic local update, write-back through
   `calendarList.patch?colorRgbFormat=true` as a `calendarColor` op kind
   coalescing per account; invalid hex rejected, 4xx dropped.

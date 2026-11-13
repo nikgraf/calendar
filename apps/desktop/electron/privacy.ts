@@ -71,6 +71,10 @@ const persist = () => {
 };
 
 export const setPrivacyChoice = (choice: PrivacyChoice): PrivacyState => {
+  if (choice === 'pause10m' && mode === 'visible') {
+    // Nothing is hidden to show: a pause would only start a countdown.
+    return getPrivacyState();
+  }
   if (pauseTimer) {
     clearTimeout(pauseTimer);
     pauseTimer = null;
