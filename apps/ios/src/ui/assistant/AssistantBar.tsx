@@ -200,10 +200,11 @@ export function AssistantBar({
             accessibilityState={{ disabled: off }}
             disabled={off}
             onPress={() => setTyping(true)}
-            style={[styles.type, off && styles.disabled]}
+            style={[styles.capsule, off && styles.disabled]}
             testID="quick-add-type"
           >
-            <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.typeLabel}>
+            <SymbolView name="keyboard" size={18} tintColor={colors.text} weight="medium" />
+            <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.capsuleLabel}>
               Type
             </Text>
           </Pressable>
@@ -247,7 +248,7 @@ export function AssistantBar({
             accessibilityLabel="Form"
             accessibilityRole="button"
             onPress={onForm}
-            style={styles.form}
+            style={styles.capsule}
             testID="editor-view-form"
           >
             <SymbolView
@@ -256,7 +257,7 @@ export function AssistantBar({
               tintColor={colors.text}
               weight="medium"
             />
-            <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.formLabel}>
+            <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.capsuleLabel}>
               Form
             </Text>
           </Pressable>
@@ -286,7 +287,8 @@ const makeStyles = (colors: ThemeColors) =>
       paddingLeft: 16,
       paddingRight: 6,
     },
-    form: {
+    /** Type and Form: two quiet capsules either side of the microphone, the one loud control. */
+    capsule: {
       alignItems: 'center',
       backgroundColor: colors.surface,
       borderRadius: 22,
@@ -300,7 +302,7 @@ const makeStyles = (colors: ThemeColors) =>
       shadowRadius: 8,
       width: 104,
     },
-    formLabel: {
+    capsuleLabel: {
       color: colors.text,
       fontSize: 15,
       fontWeight: '600',
@@ -352,15 +354,5 @@ const makeStyles = (colors: ThemeColors) =>
     },
     statusError: {
       color: colors.danger,
-    },
-    type: {
-      justifyContent: 'center',
-      minHeight: 44,
-      width: 104,
-    },
-    typeLabel: {
-      color: colors.text,
-      fontSize: 15,
-      fontWeight: '600',
     },
   });
