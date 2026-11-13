@@ -482,7 +482,7 @@ describe('Create with AI before the Assistant’s model is here: the demo, and t
     // Through: the field waits for the model.
     await cdp.waitFor(`${input}.disabled`);
     expect(await cdp.eval<string>(`${input}.placeholder`)).toBe(
-      'The Assistant answers anything once its model is here',
+      'Your own words once the model is here',
     );
 
     // The download, asked for from the banner: this host refuses, and the

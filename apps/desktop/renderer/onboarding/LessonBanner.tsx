@@ -69,6 +69,7 @@ export function LessonBanner({
             data-testid="lesson-model-action"
             onClick={action.onClick}
             size="sm"
+            variant="primary"
           >
             {action.label}
           </Button>

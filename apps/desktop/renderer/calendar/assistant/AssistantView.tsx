@@ -33,7 +33,7 @@ export const QUICK_ADD_PLACEHOLDER = 'Lunch with Sarah tomorrow at 1';
 /** The field once there is something to change. */
 const CHANGE_PLACEHOLDER = 'Type a change';
 /** The field once the Create lesson's demo is through, the model still on its way. */
-const DEMO_WAIT = 'The Assistant answers anything once its model is here';
+const DEMO_WAIT = 'Your own words once the model is here';
 
 /**
  * The Create lesson's demo, while the Assistant's model is not on this

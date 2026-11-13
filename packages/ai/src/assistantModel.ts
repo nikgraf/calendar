@@ -247,7 +247,7 @@ export const lessonModelCopy = (
           ? `This ${device} can’t run the Assistant’s model: it needs 8 GB of memory. The demo shows what it does; the Form makes your events.`
           : `${UNSUPPORTED[device][state.reason]} The demo shows what the Assistant does.`;
       case 'ready':
-        return `The Assistant is ready, on this ${device}. Say it your way now: “make it Thursday”, “an hour longer”.`;
+        return `The Assistant is ready, on this ${device}. Say it your way now: “make it Thursday”, “an hour later”.`;
     }
   })();
   return {
