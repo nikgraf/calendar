@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
@@ -73,6 +73,14 @@ describe('screen-sharing privacy', () => {
     expect(privacy.isProtected()).toBe(true);
     // The first launch's 10-minute timer goes with its pause.
     first.privacy.setPrivacyChoice('hidden');
+  });
+
+  it('a pause while visible changes nothing: no countdown, nothing stored', async () => {
+    const { dir, privacy } = await launch();
+    expect(privacy.setPrivacyChoice('pause10m')).toEqual({ mode: 'visible' });
+    expect(privacy.getPrivacyState()).toEqual({ mode: 'visible' });
+    expect(window.protected).toBeNull();
+    expect(existsSync(join(dir, 'settings.json'))).toBe(false);
   });
 
   it('turned off again, it stays off after a restart', async () => {

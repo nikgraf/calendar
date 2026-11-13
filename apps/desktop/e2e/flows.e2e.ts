@@ -1469,33 +1469,46 @@ describe('calendar desktop e2e', () => {
 
   it('controls screen-sharing privacy from the settings window', async () => {
     const cdp = await app.openSettings('sharing');
+    const pauseStatus = `document.querySelector('[data-testid="sharing-pause-status"]')?.textContent ?? null`;
+    const stored = () => readSettings(app.userDataDir)['screenPrivacy'];
 
-    // Always visible is the default and nothing is persisted yet.
-    await cdp.waitFor(sharingChoiceIs('Always visible'));
-    expect(readSettings(app.userDataDir)['screenPrivacy']).toBeUndefined();
+    // Visible is the default, nothing is persisted yet, and there is
+    // nothing to pause.
+    await cdp.waitFor(sharingChoiceIs('Visible'));
+    expect(stored()).toBeUndefined();
+    expect(await cdp.eval<string | null>(pauseStatus)).toBeNull();
 
-    // Hidden persists.
+    // Hidden persists and offers the pause.
     await cdp.clickButtonWithText('Hidden');
-    await expect
-      .poll(() => readSettings(app.userDataDir)['screenPrivacy'], { timeout: 10_000 })
-      .toBe('hidden');
+    await expect.poll(stored, { timeout: 10_000 }).toBe('hidden');
+    await cdp.waitFor(`${pauseStatus} === 'Sharing briefly?'`);
 
-    // The 10-minute pause is runtime-only: mode stays hidden on disk.
-    await cdp.clickButtonWithText('Visible for 10 min');
+    // The 10-minute pause is runtime-only: Hidden stays the choice, on
+    // disk too, and the countdown starts from the click.
+    await cdp.clickTestId('sharing-show-briefly');
+    await cdp.waitFor(`${pauseStatus} === 'Visible to others · 10 min left'`);
     const state = await cdp.eval<{ mode: string; visibleUntil?: number }>(
       `window.calendarBridge.privacyGet()`,
     );
     expect(state.mode).toBe('hidden');
     expect(state.visibleUntil).toBeGreaterThan(Date.now());
-    await cdp.waitFor(`document.body.textContent.includes('min left')`);
-    expect(readSettings(app.userDataDir)['screenPrivacy']).toBe('hidden');
+    expect(await cdp.eval<boolean>(sharingChoiceIs('Hidden'))).toBe(true);
+    expect(stored()).toBe('hidden');
 
-    // Back to the default for the remaining flows: Always visible persists too.
-    await cdp.clickButtonWithText('Always visible');
-    await cdp.waitFor(sharingChoiceIs('Always visible'));
-    await expect
-      .poll(() => readSettings(app.userDataDir)['screenPrivacy'], { timeout: 10_000 })
-      .toBe('visible');
+    // Hide now ends it early.
+    await cdp.clickTestId('sharing-hide-now');
+    await cdp.waitFor(`${pauseStatus} === 'Sharing briefly?'`);
+    expect(
+      (await cdp.eval<{ visibleUntil?: number }>(`window.calendarBridge.privacyGet()`))
+        .visibleUntil,
+    ).toBeUndefined();
+
+    // Back to the default for the remaining flows: Visible persists too,
+    // and the pause goes with Hidden.
+    await cdp.clickButtonWithText('Visible');
+    await cdp.waitFor(sharingChoiceIs('Visible'));
+    await cdp.waitFor(`${pauseStatus} === null`);
+    await expect.poll(stored, { timeout: 10_000 }).toBe('visible');
     await app.closeSettings();
   });
 
