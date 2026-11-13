@@ -85,9 +85,14 @@ The 2026-10-02 review's findings are closed in `docs/decisions.md`
       Apple bridge does not read availability, so "marked free" is Google
       only; definitions could sync through iCloud key-value storage
       instead of the settings file (a new entitlement in every build).
-- [ ] Reminders follow-ups — subtasks/flags/tags; location alarms;
-      multiple editable alarms (`alarms` is already `number[]` end to
-      end); yearly positional rules, several rules, day-of-month lists and
+- [ ] Reminders follow-ups — subtasks/flags/tags; location alarms (the
+      bridge reads one as offset 0, "At time", and any alert write keeps
+      only absolute alarms, so it is replaced: `RemindersBridge.swift`'s
+      DTO and `apply`); multiple editable alarms in the form (`alarms` is
+      `number[]` end to end, and the Assistant changes every one since
+      #315, but the picker only the first); an alert said for an undated
+      reminder (a relative alarm with no due date never fires); yearly
+      positional rules, several rules, day-of-month lists and
       a monthly rule on a plain weekday without an ordinal still
       round-trip as `{unsupported:true}` (weekly by-day and monthly
       ordinals ship since 2026-09-20); creating/deleting Reminders lists
