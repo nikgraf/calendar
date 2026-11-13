@@ -53,8 +53,8 @@ module.exports = {
     // resource seal.
     // llama-server (llama.cpp, built static by scripts/build-llama-server.sh)
     // runs the Assistant's own model for electron/assistantModel/; osx-sign
-    // signs it like the helper, under the hardened runtime, with no
-    // entitlements.
+    // signs it under the hardened runtime with an empty entitlements list
+    // (optionsForFile below): it needs neither JIT nor any device.
     // solunivo-cli is the agent relay's wrapper script (a sealed resource,
     // not a Mach-O: nothing to sign). It execs the app's own binary with
     // ELECTRON_RUN_AS_NODE, so the RunAsNode fuse must stay enabled.
@@ -139,11 +139,15 @@ module.exports = {
             // Hardened runtime needs these access entitlements even though
             // this is not a sandboxed Mac App Store build. Leave Electron's
             // renderer/GPU/framework signing defaults intact.
+            // llama-server gets none: an empty list, not osx-sign's default
+            // plist (JIT, camera, microphone, …), which `{}` would give it.
             optionsForFile: (filePath) =>
               filePath.endsWith('/Solunivo.app') ||
               filePath.endsWith('/Contents/Resources/solunivo-model-helper')
                 ? { entitlements: join(__dirname, 'entitlements.mac.plist') }
-                : {},
+                : filePath.endsWith('/Contents/Resources/llama-server')
+                  ? { entitlements: [] }
+                  : {},
           },
         }
       : {}),

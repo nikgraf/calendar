@@ -60,6 +60,15 @@ export const assistantModelManifest = (
   return published;
 };
 
+/**
+ * The model's name on a device, its version in front: a release that keeps
+ * the file's name ("solunivo-assistant-q8_0.gguf") never finds the last
+ * one's file in its place, and a device can tell another version's files
+ * from its own.
+ */
+export const storedFileName = (manifest: AssistantModelManifest): string =>
+  `${manifest.version.replaceAll(/[^\w.-]/gu, '_')}-${manifest.file}`;
+
 /** The size as a person reads it: "834 MB". */
 export const sizeLabel = (bytes: number): string =>
   bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${String(Math.round(bytes / 1e6))} MB`;

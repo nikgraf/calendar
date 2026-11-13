@@ -58,6 +58,16 @@ describe('the fixture model on the tuned prompt', () => {
     });
   });
 
+  it('reads a day written out', async () => {
+    await expect(
+      reader.first({
+        phrase: 'Trip | 2026-12-04 | 08:00-09:00',
+        referenceDate: TODAY,
+        timeZone: ZONE,
+      }),
+    ).resolves.toMatchObject({ prefill: { date: '2026-12-04', startTime: '08:00' } });
+  });
+
   it('makes a to-do from "todo:", and a title on the day from any other phrase', async () => {
     await expect(
       reader.first({ phrase: 'todo: Call the bank', referenceDate: TODAY, timeZone: ZONE }),

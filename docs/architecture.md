@@ -89,55 +89,55 @@ distance from it. Capture normalizes each item the model found
 (the `model:*` channels: status, info, generate, prepare-speech,
 transcribe, recognize-text) → main → the active provider
 (`apps/desktop/electron/modelProvider.ts`): by default the Swift helper
-child process (`apps/desktop/helper`, Foundation Models + SpeechAnalyzer
-
-- Vision over newline-JSON stdio; spawned lazily and supervised with
-  restart backoff by `apps/desktop/electron/helperProcess.ts`), or —
-  picked in Settings › AI Model — a model served over HTTP on this Mac:
-  Ollama's own API (the JSON schema as `format`, `num_ctx` per call,
-  `keep_alive`) or any OpenAI-compatible endpoint
-  (`response_format: json_schema`; LM Studio, llama-server). Only
-  `generateJson` and `status` have that second home; dictation and text
-  recognition stay with the helper. `ModelInfo` (`LanguageModel.info`)
-  says the model's context, and capture sizes its text by it
-  (`captureTextBudget`). A served model's failure is worded by server
-  (`modelUnavailableCopy`), and a host that is not loopback gets a notice
-  in Settings: text pasted into capture leaves the Mac then. The model
-  bench (`apps/desktop/e2e/bench/`, run by path with `MODEL_BENCH=1 E2E=1`)
-  runs the Assistant's cases — a phrase and the changes a thread would
-  make to it, as text or recordings — through the tuned path on any served
-  model, the app's file on `llama-server` included (its README;
-  docs/google-sync-and-testing.md → Unit tests). iOS reaches Apple's models via
-  `@react-native-ai/apple` and Vision through the `solunivo-ocr` Expo
-  module; why the model cannot run comes from the `solunivo-model-availability`
-  module (Foundation Models' reason, bounded to 5 s — the package answers
-  only yes/no, and a binary without the module falls back to that and says
-  so). Both hosts map the reason through `APPLE_REASON_STATUS`
-  (packages/ai); `LanguageModel.availability` carries it with a failed
-  check's error beside the status. Every AI entry point checks through
-  `useModelAvailability` (app-state): one check at a time (a request while
-  one is out runs once more after it), a re-check on returning to the app,
-  a 30 s poll while 'not-ready', and every Check Again answered even when
-  nothing changed. On iOS the Assistant's conversation shows
-  `ModelAvailabilityNotice` (the reason, Check Again, collapsed technical
-  details) and its bar leaves only Form, worded by `modelAvailabilityCopy.ts` like Settings ›
-  Diagnostics, which always asks the device's model, never the e2e
-  fixture. Dictation audio is captured by the UI layer (renderer
-  `getUserMedia` → 16 kHz WAV) and only transcribed natively. Dictation
-  is hands-free: each adapter reads the level as it records (the
-  worklet's blocks on the desktop; on iOS the expo-audio recorder's
-  `getStatus().metering`, on a recorder prepared before it records —
-  unprepared, `record()` starts nothing and the meter reads digital
-  silence) and
-  `createEndpointer` (`packages/ai/src/endpointer.ts`) hears a phrase
-  begin and the pause that ends it, against the room's own floor.
-  `useQuickAddModel`
-  sends each phrase at its pause and listens again (`voiceLoop.ts`) once
-  the form has taken the last one in (`useThreadEditor().applying`), until
-  the microphone is pressed (which sends what was recorded, heard or
-  not), the field is typed into, the form is edited
-  by hand (`userEdits`, counted by the setters the forms receive and a
-  picked free slot, never by a turn's own fills) or 30 s pass with nobody speaking.
+child process (`apps/desktop/helper`, Foundation Models, SpeechAnalyzer
+and Vision over newline-JSON stdio; spawned lazily and supervised with
+restart backoff by `apps/desktop/electron/helperProcess.ts`), or —
+picked in Settings › AI Model — a model served over HTTP on this Mac:
+Ollama's own API (the JSON schema as `format`, `num_ctx` per call,
+`keep_alive`) or any OpenAI-compatible endpoint
+(`response_format: json_schema`; LM Studio, llama-server). Only
+`generateJson` and `status` have that second home; dictation and text
+recognition stay with the helper. `ModelInfo` (`LanguageModel.info`)
+says the model's context, and capture sizes its text by it
+(`captureTextBudget`). A served model's failure is worded by server
+(`modelUnavailableCopy`), and a host that is not loopback gets a notice
+in Settings: text pasted into capture leaves the Mac then. The model
+bench (`apps/desktop/e2e/bench/`, run by path with `MODEL_BENCH=1 E2E=1`)
+runs the Assistant's cases — a phrase and the changes a thread would
+make to it, as text or recordings — through the tuned path on any served
+model, the app's file on `llama-server` included (its README;
+docs/google-sync-and-testing.md → Unit tests). iOS reaches Apple's models via
+`@react-native-ai/apple` and Vision through the `solunivo-ocr` Expo
+module; why the model cannot run comes from the `solunivo-model-availability`
+module (Foundation Models' reason, bounded to 5 s — the package answers
+only yes/no, and a binary without the module falls back to that and says
+so). Both hosts map the reason through `APPLE_REASON_STATUS`
+(packages/ai); `LanguageModel.availability` carries it with a failed
+check's error beside the status. Every entry point on Apple's model (find
+a time, search, capture) checks through `useModelAvailability` (app-state): one check at a time (a request while
+one is out runs once more after it), a re-check on returning to the app,
+a 30 s poll while 'not-ready', and every Check Again answered even when
+nothing changed; Settings › Diagnostics (iOS) words it with
+`modelAvailabilityCopy.ts` and always asks the device's model, never the
+e2e fixture. The Assistant's own model has its own state on both apps
+(`AssistantModelState`): while it is not here the conversation shows
+`AssistantModelNotice` (the download, its progress, Try Again) and the
+editor opens on the Form. Dictation audio is captured by the UI layer (renderer
+`getUserMedia` → 16 kHz WAV) and only transcribed natively. Dictation
+is hands-free: each adapter reads the level as it records (the
+worklet's blocks on the desktop; on iOS the expo-audio recorder's
+`getStatus().metering`, on a recorder prepared before it records —
+unprepared, `record()` starts nothing and the meter reads digital
+silence) and
+`createEndpointer` (`packages/ai/src/endpointer.ts`) hears a phrase
+begin and the pause that ends it, against the room's own floor.
+`useQuickAddModel`
+sends each phrase at its pause and listens again (`voiceLoop.ts`) once
+the form has taken the last one in (`useThreadEditor().applying`), until
+the microphone is pressed (which sends what was recorded, heard or
+not), the field is typed into, the form is edited
+by hand (`userEdits`, counted by the setters the forms receive and a
+picked free slot, never by a turn's own fills) or 30 s pass with nobody speaking.
 
 **Native bridges** (`packages/reminders`, `packages/apple-calendar`,
 `packages/contacts`, `packages/geo`): each is one JSON protocol spoken by

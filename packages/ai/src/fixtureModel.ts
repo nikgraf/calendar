@@ -128,14 +128,16 @@ const searchTurn = (
 /** The tuned prompt's today: the day list's entry marked "(today)". */
 const TUNED_TODAY = /Days: \w+ (\d{4}-\d{2}-\d{2}) \(today\)/;
 
-/** A day in the fixture grammar: `+N` days from today. */
+/** A day in the fixture grammar: `+N` days from today, or `YYYY-MM-DD`. */
 const tunedDay = (token: string, today: string): string | undefined => {
-  const relative = /^([+-]\d+)$/.exec(token.trim());
-  return relative
-    ? Temporal.PlainDate.from(today)
-        .add({ days: Number(relative[1]) })
-        .toString()
-    : undefined;
+  const day = token.trim();
+  const relative = /^([+-]\d+)$/.exec(day);
+  if (relative) {
+    return Temporal.PlainDate.from(today)
+      .add({ days: Number(relative[1]) })
+      .toString();
+  }
+  return /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : undefined;
 };
 
 const names = (text: string): ReadonlyArray<string> =>

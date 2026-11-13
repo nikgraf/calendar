@@ -5,6 +5,7 @@ import {
   noticeCopy,
   PUBLISHED_MODEL,
   sizeLabel,
+  storedFileName,
 } from './assistantModel.ts';
 
 describe('assistantModelManifest', () => {
@@ -16,6 +17,13 @@ describe('assistantModelManifest', () => {
     );
     expect(PUBLISHED_MODEL.sha256).toMatch(/^[0-9a-f]{64}$/);
     expect(sizeLabel(PUBLISHED_MODEL.bytes)).toBe('834 MB');
+  });
+
+  it('names a version’s file with the version in front, safe as a file name', () => {
+    expect(storedFileName(PUBLISHED_MODEL)).toBe('v1-solunivo-assistant-q8_0.gguf');
+    expect(storedFileName({ ...PUBLISHED_MODEL, version: 'v2/beta 1' })).toBe(
+      'v2_beta_1-solunivo-assistant-q8_0.gguf',
+    );
   });
 
   it('takes a valid override, and the published release for one that is not', () => {

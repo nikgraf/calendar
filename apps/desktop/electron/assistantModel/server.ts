@@ -1,7 +1,8 @@
-import { type ChildProcess, spawn } from 'node:child_process';
+import { type ChildProcess, execFileSync, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { rmSync } from 'node:fs';
+import { readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { request } from 'node:http';
+import { join } from 'node:path';
 
 /**
  * llama.cpp's server (bundled, `scripts/build-llama-server.sh`) running the
@@ -21,6 +22,60 @@ export const ANSWER_LIMIT_MS = 30_000;
 const START_LIMIT_MS = 60_000;
 const IDLE_SECONDS = 600;
 const MAX_ANSWER_TOKENS = 512;
+
+/** This launch's socket: short, since a UNIX socket's path holds at most 104 bytes. */
+export const socketPathFor = (folder: string, pid: number): string =>
+  join(folder, `solunivo-llama-${String(pid)}.sock`);
+
+const alive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * What a launch that crashed or was force-quit left (no `will-quit`): its
+ * llama-server, still holding the model's memory, and its socket file.
+ * The server goes only when the recorded pid still runs this binary (a
+ * pid is reused); a socket goes when the launch that made it is gone.
+ */
+export const reapLeftovers = ({
+  binary,
+  pidFile,
+  socketFolder,
+}: {
+  readonly binary: string;
+  readonly pidFile: string;
+  readonly socketFolder: string;
+}): void => {
+  try {
+    const pid = Number(readFileSync(pidFile, 'utf8').trim());
+    if (Number.isInteger(pid) && pid > 0 && alive(pid)) {
+      const command = execFileSync('ps', ['-o', 'command=', '-p', String(pid)], {
+        encoding: 'utf8',
+      });
+      if (command.startsWith(binary)) {
+        process.kill(pid);
+      }
+    }
+  } catch {
+    // No leftover, or none that can be told apart: nothing to stop.
+  }
+  rmSync(pidFile, { force: true });
+  try {
+    for (const name of readdirSync(socketFolder)) {
+      const owner = /^solunivo-llama-(\d+)\.sock$/u.exec(name)?.[1];
+      if (owner !== undefined && !alive(Number(owner))) {
+        rmSync(join(socketFolder, name), { force: true });
+      }
+    }
+  } catch {
+    // An unreadable folder keeps its files.
+  }
+};
 
 export interface LlamaServer {
   /** The model's answer text for one prompt (the JSON starts at its first brace). */
@@ -87,9 +142,12 @@ export const contentOf = (reply: Reply): string => {
 
 export const createLlamaServer = ({
   binary,
+  pidFile,
   socketPath,
 }: {
   readonly binary: string;
+  /** Where the running server's pid is kept, for the next launch to reap (`reapLeftovers`). */
+  readonly pidFile: string;
   readonly socketPath: string;
 }): LlamaServer & { readonly use: (modelPath: string) => void } => {
   let modelPath: string | undefined;
@@ -103,6 +161,7 @@ export const createLlamaServer = ({
     child = undefined;
     starting = undefined;
     rmSync(socketPath, { force: true });
+    rmSync(pidFile, { force: true });
   };
 
   const start = (path: string): Promise<void> => {
@@ -133,12 +192,19 @@ export const createLlamaServer = ({
       { stdio: 'ignore' },
     );
     child = server;
-    server.on('exit', () => {
+    const gone = () => {
       if (child === server) {
         child = undefined;
         starting = undefined;
       }
-    });
+    };
+    server.on('exit', gone);
+    // A binary that cannot start (not executable, gone, no processes left)
+    // emits this and no 'exit'; unheard, it would end the app.
+    server.on('error', gone);
+    if (server.pid !== undefined) {
+      writeFileSync(pidFile, String(server.pid));
+    }
     const ready = (async () => {
       const deadline = Date.now() + START_LIMIT_MS;
       while (Date.now() < deadline) {

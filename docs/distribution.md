@@ -113,7 +113,8 @@ useful after adding/rotating secrets.
   system, and keeps a build whose commit and script are unchanged.
   `LLAMA_CPP_SRC=<checkout>` builds from a local clone. CI caches only the
   binary, keyed on the script and `apps/ios/package.json`. osx-sign signs it
-  under the hardened runtime with no entitlements. Both packaging jobs run
+  under the hardened runtime with an empty entitlements list
+  (`optionsForFile`), not osx-sign's default plist. Both packaging jobs run
   `llama-server --version` from the app.
 - The Developer ID cert lives only in a temporary keychain created from the
   secret for the duration of the job and is deleted in an `always()` step.

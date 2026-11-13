@@ -238,7 +238,8 @@ deliberately.
   the rule off inline: `scripts/complexityCap.test.ts` fails on a
   directive that names it.
 - Window-level concerns (screen privacy, logging, open-external, the five
-  `model:*` AI-helper channels, the `reminders:*` / `contacts:*` /
+  `model:*` AI-helper channels, `assistant:*` (the Assistant's own model:
+  its state, the download, a prompt), the `reminders:*` / `contacts:*` /
   `appleCalendar:*` permission-status channels, `appleCalendar:open`
   (brings Calendar.app forward), `settings:open`,
   `settingsFile:*`, `auth:cancel` (stops a sign-in waiting on the

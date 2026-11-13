@@ -70,33 +70,58 @@ describe('nodeFetch and nodeModelFiles', () => {
     const folder = mkdtempSync(join(tmpdir(), 'assistant-files-'));
     const resuming = await serve(true);
     const manifest = manifestFor(resuming.url);
-    writeFileSync(join(folder, 'model.gguf.part'), BODY.subarray(0, 1200));
+    writeFileSync(join(folder, 'v1-model.gguf.part'), BODY.subarray(0, 1200));
     await run(folder, manifest, 1200);
     expect(resuming.ranges).toEqual(['bytes=1200-']);
-    expect(readFileSync(join(folder, 'model.gguf.part')).equals(BODY)).toBe(true);
+    expect(readFileSync(join(folder, 'v1-model.gguf.part')).equals(BODY)).toBe(true);
     server?.close();
 
     const whole = await serve(false);
     const other = manifestFor(whole.url);
-    writeFileSync(join(folder, 'model.gguf.part'), BODY.subarray(0, 1200));
+    writeFileSync(join(folder, 'v1-model.gguf.part'), BODY.subarray(0, 1200));
     await run(folder, other, 1200);
-    expect(readFileSync(join(folder, 'model.gguf.part')).equals(BODY)).toBe(true);
+    expect(readFileSync(join(folder, 'v1-model.gguf.part')).equals(BODY)).toBe(true);
   });
 
-  it('keeps the answer and the current files, and removes another version’s', async () => {
+  it('keeps the answer and this version’s files, and removes another version’s of the same name', async () => {
     const folder = mkdtempSync(join(tmpdir(), 'assistant-files-'));
     const files = nodeModelFiles(folder, manifestFor('http://127.0.0.1:1/model.gguf'));
+    expect(files.destination).toBe(join(folder, 'v1-model.gguf'));
     files.writeAnswer({ answer: 'agreed', version: 'v1' });
     files.writeVerified({ sha256: 'x', version: 'v1' });
-    writeFileSync(join(folder, 'model.gguf'), 'm');
-    writeFileSync(join(folder, 'old-model.gguf'), 'o');
-    writeFileSync(join(folder, 'old-model.gguf.verified.json'), '{}');
+    writeFileSync(join(folder, 'v1-model.gguf'), 'm');
+    // The last release's file, same name: it must never pass for this one.
+    writeFileSync(join(folder, 'v0-model.gguf'), 'o');
+    writeFileSync(join(folder, 'v0-model.gguf.part'), 'o');
+    writeFileSync(join(folder, 'model.gguf'), 'o');
     await files.removeOthers();
     expect(readdirSync(folder).toSorted()).toEqual([
       'answer.json',
-      'model.gguf',
-      'model.gguf.verified.json',
+      'v1-model.gguf',
+      'v1-model.gguf.verified.json',
     ]);
     expect(files.readAnswer()).toEqual({ answer: 'agreed', version: 'v1' });
+  });
+
+  it('starts over when the server finds nothing past the part (416)', async () => {
+    const folder = mkdtempSync(join(tmpdir(), 'assistant-files-'));
+    const ranges: Array<string | undefined> = [];
+    server = createServer((request, response) => {
+      ranges.push(request.headers.range);
+      if (request.headers.range) {
+        response.writeHead(416);
+        response.end();
+        return;
+      }
+      response.writeHead(200, { 'Content-Length': BODY.length });
+      response.end(BODY);
+    });
+    await new Promise<void>((resolve) => server?.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as AddressInfo;
+    const manifest = manifestFor(`http://127.0.0.1:${String(port)}/model.gguf`);
+    writeFileSync(join(folder, 'v1-model.gguf.part'), Buffer.concat([BODY, BODY.subarray(0, 10)]));
+    await run(folder, manifest, BODY.length + 10);
+    expect(ranges).toEqual([`bytes=${String(BODY.length + 10)}-`, undefined]);
+    expect(readFileSync(join(folder, 'v1-model.gguf.part')).equals(BODY)).toBe(true);
   });
 });

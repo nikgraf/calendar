@@ -13,7 +13,7 @@ import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { ReadableStream as WebReadableStream } from 'node:stream/web';
-import type { AssistantModelManifest } from '@calendar/ai';
+import { type AssistantModelManifest, storedFileName } from '@calendar/ai';
 import type { Fetch, MacAnswer, ModelFiles } from './store.ts';
 
 /**
@@ -44,7 +44,8 @@ const sizeOf = (path: string): number | undefined => {
 export const modelFolder = (userDataDir: string): string => join(userDataDir, 'assistant-model');
 
 export const nodeModelFiles = (folder: string, manifest: AssistantModelManifest): ModelFiles => {
-  const destination = join(folder, manifest.file);
+  const name = storedFileName(manifest);
+  const destination = join(folder, name);
   const part = `${destination}.part`;
   const verifiedNote = `${destination}.verified.json`;
   const answerNote = join(folder, 'answer.json');
@@ -52,7 +53,8 @@ export const nodeModelFiles = (folder: string, manifest: AssistantModelManifest)
     mkdirSync(folder, { recursive: true });
     writeFileSync(path, JSON.stringify(value));
   };
-  const keep = new Set([manifest.file, `${manifest.file}.part`, `${manifest.file}.verified.json`]);
+  // Only this version's files stay: another version's (or one from before names held the version) go.
+  const keep = new Set([name, `${name}.part`, `${name}.verified.json`]);
   return {
     destination,
     exists: () => existsSync(destination),
@@ -104,17 +106,20 @@ const PROGRESS_EVERY_MS = 250;
  * The download into the partial file: GitHub's release link redirects to
  * its asset host, which honours `Range`, so a launch goes on from the
  * bytes the last one fetched. A server that answers the whole file (200)
- * starts the file over.
+ * starts the file over, and so does one that finds nothing past the bytes
+ * there are (416: a part that is whole, or longer than the file).
  */
 export const nodeFetch =
   (folder: string, manifest: AssistantModelManifest): Fetch =>
   async ({ from, onProgress, signal, url }) => {
     mkdirSync(folder, { recursive: true });
-    const part = join(folder, `${manifest.file}.part`);
-    const response = await fetch(url, {
-      headers: from > 0 ? { Range: `bytes=${String(from)}-` } : {},
-      signal,
-    });
+    const part = join(folder, `${storedFileName(manifest)}.part`);
+    const ask = (start: number) =>
+      fetch(url, { headers: start > 0 ? { Range: `bytes=${String(start)}-` } : {}, signal });
+    let response = await ask(from);
+    if (response.status === 416 && from > 0) {
+      response = await ask(0);
+    }
     if (!response.ok || response.body === null) {
       throw new Error(`The server answered ${String(response.status)}.`);
     }

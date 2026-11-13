@@ -195,4 +195,38 @@ describe('createAssistantStore', () => {
     expect(store.getState()).toEqual({ kind: 'declined' });
     release?.();
   });
+
+  it('takes a part that is already whole without asking for more (a server answers 416 past the end)', async () => {
+    const { disk, files } = memoryFiles({
+      answer: { answer: 'agreed', version: 'v1' },
+      part: 1000,
+    });
+    const starts: Array<number> = [];
+    const store = createAssistantStore({
+      fetch: async ({ from }) => {
+        starts.push(from);
+        throw new Error('The server answered 416.');
+      },
+      files,
+      manifest: MANIFEST,
+    });
+    await store.boot();
+    expect(starts).toEqual([]);
+    expect(store.getState().kind).toBe('ready');
+    expect(disk.model).toBe(1000);
+  });
+
+  it('throws away a part longer than the file, so Try Again fetches it from the start', async () => {
+    const { disk, files } = memoryFiles({
+      answer: { answer: 'agreed', version: 'v1' },
+      part: 1200,
+    });
+    const { fetch, starts } = fakeFetch(disk);
+    const store = createAssistantStore({ fetch, files, manifest: MANIFEST });
+    await store.boot();
+    expect(store.getState()).toEqual({ kind: 'failed', message: 'The download was incomplete.' });
+    await store.retry();
+    expect(starts).toEqual([0]);
+    expect(store.getState().kind).toBe('ready');
+  });
 });

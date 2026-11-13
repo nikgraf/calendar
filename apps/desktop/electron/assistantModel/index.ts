@@ -9,7 +9,7 @@ import {
 } from '@calendar/ai';
 import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import { modelFolder, nodeFetch, nodeModelFiles } from './files.ts';
-import { createLlamaServer } from './server.ts';
+import { createLlamaServer, reapLeftovers, socketPathFor } from './server.ts';
 import { type AssistantStore, createAssistantStore } from './store.ts';
 
 /**
@@ -87,13 +87,17 @@ const jsonOf = (text: string): string => {
 export const registerAssistantModel = (userDataDir: string): void => {
   const source = sourceOf(userDataDir);
   const binary = llamaServerPath();
+  const pidFile = join(userDataDir, 'llama-server.pid');
+  if (binary !== null) {
+    reapLeftovers({ binary, pidFile, socketFolder: tmpdir() });
+  }
   const server =
     binary === null
       ? undefined
       : createLlamaServer({
           binary,
-          // Short: a UNIX socket's path holds at most 104 bytes.
-          socketPath: join(tmpdir(), `solunivo-llama-${String(process.pid)}.sock`),
+          pidFile,
+          socketPath: socketPathFor(tmpdir(), process.pid),
         });
   const stateNow = (): AssistantModelState =>
     source.kind === 'fixed' ? source.state : source.store.getState();
@@ -159,8 +163,15 @@ export const registerAssistantModel = (userDataDir: string): void => {
         json: JSON.stringify(await fixture.generateJson({ jsonSchema: undefined, prompt })),
       };
     }
-    if (stateNow().kind !== 'ready' || server === undefined) {
+    const state = stateNow();
+    if (state.kind !== 'ready' || server === undefined) {
       throw new Error('The Assistant’s model is not on this Mac yet.');
+    }
+    // The file went (removed by hand, a cleaner): the store looks again,
+    // and fetches it once more where the person had agreed.
+    if (source.kind === 'store' && !existsSync(state.path)) {
+      void source.store.boot();
+      throw new Error('The Assistant’s model is not on this Mac any more.');
     }
     return { json: jsonOf(await server.ask(prompt)) };
   });

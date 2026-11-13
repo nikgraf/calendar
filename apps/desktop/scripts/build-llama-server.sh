@@ -36,7 +36,9 @@ fi
   || { echo "$SRC is not at llama.cpp $COMMIT" >&2; exit 1; }
 
 # Static (no dylibs beside it), Metal embedded (no .metallib), not tuned to
-# the build Mac's CPU, and nothing that downloads at build or run time.
+# the build Mac's CPU, and nothing that downloads at build or run time. A
+# fresh build folder: CMake refuses a cache made from another checkout.
+rm -rf "$OUT/cmake"
 cmake -S "$SRC" -B "$OUT/cmake" \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_OSX_ARCHITECTURES=arm64 \

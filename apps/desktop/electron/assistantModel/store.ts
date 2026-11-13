@@ -127,16 +127,21 @@ export const createAssistantStore = ({
     const from = files.partSize();
     set({ kind: 'downloading', received: from, total: manifest.bytes });
     try {
-      await fetch({
-        from,
-        onProgress: (received, total) => {
-          if (transfer === controller) {
-            set({ kind: 'downloading', received, total: total > 0 ? total : manifest.bytes });
-          }
-        },
-        signal: controller.signal,
-        url: manifest.url,
-      });
+      // A part that is whole was fetched before the app quit, not yet moved:
+      // nothing to ask for (a server answers 416 past the end). The check
+      // tells a longer one, or a wrong one, from the model.
+      if (from < manifest.bytes) {
+        await fetch({
+          from,
+          onProgress: (received, total) => {
+            if (transfer === controller) {
+              set({ kind: 'downloading', received, total: total > 0 ? total : manifest.bytes });
+            }
+          },
+          signal: controller.signal,
+          url: manifest.url,
+        });
+      }
       await files.finish();
     } catch (error) {
       if (transfer === controller) {

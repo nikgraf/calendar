@@ -3,6 +3,7 @@ import {
   type AssistantModelState,
   assistantModelManifest,
   type PhraseReader,
+  storedFileName,
   tunedReader,
 } from '@calendar/ai';
 import { useSyncExternalStore } from 'react';
@@ -62,8 +63,21 @@ const deviceFiles = (
   if (!folder.exists) {
     folder.create();
   }
-  const model = new File(folder, manifest.file);
-  const verifiedNote = new File(folder, `${manifest.file}.verified.json`);
+  const name = storedFileName(manifest);
+  const model = new File(folder, name);
+  const verifiedNote = new File(folder, `${name}.verified.json`);
+  // Only this version's files stay (the model, its note, the transfer's
+  // resume data beside it): another version's would take the room for good.
+  const keep = new Set([name, `${name}.verified.json`, `${name}.resume`, `${name}.resume-url`]);
+  try {
+    for (const entry of folder.list()) {
+      if (!keep.has(entry.name)) {
+        entry.delete();
+      }
+    }
+  } catch {
+    // A file that cannot go stays; the next launch tries again.
+  }
   const answerNote = new File(Paths.document, 'assistant-model.json');
   const readJson = (file: InstanceType<typeof File>): unknown => {
     try {
