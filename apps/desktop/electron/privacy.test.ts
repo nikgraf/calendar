@@ -1,7 +1,7 @@
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it, vi } from 'vite-plus/test';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 
 // One window, recording what content protection it was told last.
 const window = {
@@ -16,8 +16,21 @@ vi.mock('electron', () => ({
   ipcMain: { handle: () => {} },
 }));
 
+const profiles: Array<string> = [];
+const newProfile = () => {
+  const dir = mkdtempSync(join(tmpdir(), 'solunivo-privacy-'));
+  profiles.push(dir);
+  return dir;
+};
+
+afterEach(() => {
+  for (const dir of profiles.splice(0)) {
+    rmSync(dir, { force: true, recursive: true });
+  }
+});
+
 /** The module on a fresh launch over `dir` (a new profile unless one is passed). */
-const launch = async (dir = mkdtempSync(join(tmpdir(), 'solunivo-privacy-'))) => {
+const launch = async (dir = newProfile()) => {
   vi.resetModules();
   window.protected = null;
   const privacy = await import('./privacy.ts');
@@ -58,6 +71,8 @@ describe('screen-sharing privacy', () => {
 
     const { privacy } = await launch(first.dir);
     expect(privacy.isProtected()).toBe(true);
+    // The first launch's 10-minute timer goes with its pause.
+    first.privacy.setPrivacyChoice('hidden');
   });
 
   it('turned off again, it stays off after a restart', async () => {
@@ -72,7 +87,7 @@ describe('screen-sharing privacy', () => {
   });
 
   it('reads an unreadable settings file as off', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'solunivo-privacy-'));
+    const dir = newProfile();
     writeFileSync(join(dir, 'settings.json'), '{ "screenPrivacy": "hid');
     const { privacy } = await launch(dir);
     expect(privacy.getPrivacyState()).toEqual({ mode: 'visible' });

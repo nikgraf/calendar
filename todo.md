@@ -42,8 +42,9 @@ The 2026-10-02 review's findings are closed in `docs/decisions.md`
       runs one spec by name with CDP `Page.startScreencast` in
       `apps/desktop/e2e/harness.ts` — OS-level capture is blanked by
       `setContentProtection` whenever screen privacy is on, so the
-      compositor path is the one that works on any profile; `ws.onmessage` (`harness.ts:181`) currently drops id-less
-      events, so add an event map + `Page.screencastFrameAck` — frames →
+      compositor path is the one that works on any profile;
+      `ws.onmessage` (`harness.ts:181`) currently drops id-less events,
+      so add an event map + `Page.screencastFrameAck` — frames →
       `ffmpeg -framerate 15 … libx264`. CI: a `record` PR label (same
       trigger shape as the `testflight` label, `ios.yml:227-234`) records
       flows tagged `record` inside the existing `e2e`/`ios-e2e` jobs and
