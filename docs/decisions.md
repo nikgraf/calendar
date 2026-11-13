@@ -1198,6 +1198,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   phrase brought, with Skip. Type is a capsule like Form. Rejected: View
   Transitions, a sideways slide, every value travelling, chips, dots.
   Open: haptics, answering by voice (todo.md).
+- **Create with AI runs a demo until the model is here** (2026-11-13,
+  #319) — nothing asks for the model at launch; the Create lesson says
+  what the Assistant is and offers the download, the card's row shows its
+  progress. Meanwhile the lesson runs the real editor over v1's recorded
+  answers to its phrase and one change ("at 1 instead"); an iPhone that
+  cannot run the model gets the demo, then the Form. Rejected: a setup
+  step for the download, the lesson moved into the setup, a scripted
+  animation, a Form lesson. Open: how a new model version reaches
+  someone who had the last one, Search on the app's model (todo.md).
 - **Show only the latest query by default** (2026-11-05) — the create and
   search threads keep the turn with Undo visible on both apps. Earlier
   queries open on demand, leaving more room for the form or results.
