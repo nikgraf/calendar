@@ -1,5 +1,6 @@
 import type { ModelStatus } from '@calendar/ai';
 import type { useQuickAddModel } from '@calendar/app-state';
+import { LESSON_DEMO_PHRASES } from '@calendar/core';
 import { SymbolView } from 'expo-symbols';
 import { useEffect, useRef } from 'react';
 import {
@@ -53,6 +54,113 @@ const barStatus = ({
 };
 
 /**
+ * The Create lesson's demo, while the Assistant's model is not on this
+ * iPhone: the phrase it answers next, and the way on once it said both.
+ */
+export interface BarDemo {
+  /** This iPhone cannot run the model: after the demo, the way on is the Form. */
+  readonly formOnly: boolean;
+  /** The phrase the demo answers next; none once it said both. */
+  readonly next: string | undefined;
+  readonly onForm: () => void;
+}
+
+/**
+ * Whether the demo takes the bar's place: its next phrase, or the Form
+ * once it is through on an iPhone that cannot run the model (the sheet's
+ * capsule leaves meanwhile). Not while an older step is on show.
+ */
+export const demoHoldsBar = (demo: BarDemo | undefined, previewing: boolean): boolean =>
+  demo !== undefined && !previewing && (demo.next !== undefined || demo.formOnly);
+
+/** Said once the demo is through and the model is still on its way. */
+const DEMO_WAIT = 'The Assistant answers anything once its model is here.';
+
+/** The line over the bar: an older step on show, what it is doing, or the demo through and waiting. */
+const barLine = ({
+  demo,
+  demoBar,
+  previewing,
+  status,
+}: {
+  readonly demo: BarDemo | undefined;
+  readonly demoBar: boolean;
+  readonly previewing: boolean;
+  readonly status: string | undefined;
+}): string => {
+  if (previewing) {
+    return 'An earlier step is on show';
+  }
+  return status ?? (demo !== undefined && !demoBar ? DEMO_WAIT : '');
+};
+
+/**
+ * The demo's part of the bar: its next phrase in a field that sends it as
+ * the field would (the words are the lesson's, not to be typed over), or,
+ * on an iPhone that cannot run the model, the Form once both were said.
+ */
+function DemoBar({
+  demo,
+  onSend,
+  working,
+}: {
+  readonly demo: BarDemo;
+  readonly onSend: (phrase: string) => void;
+  readonly working: boolean;
+}) {
+  const styles = useStyles(makeStyles);
+  const { colors } = useTheme();
+  const { next } = demo;
+  if (next === undefined) {
+    return (
+      <Pressable
+        accessibilityRole="button"
+        onPress={demo.onForm}
+        style={({ pressed }) => [styles.formButton, pressed && styles.pressed]}
+        testID="lesson-open-form"
+      >
+        <SymbolView name="rectangle.grid.1x2" size={18} tintColor={colors['on-primary']} />
+        <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.formButtonLabel}>
+          Open in the Form
+        </Text>
+      </Pressable>
+    );
+  }
+  return (
+    <View style={styles.demo}>
+      <Text style={styles.demoLabel}>
+        {next === LESSON_DEMO_PHRASES[0] ? 'DEMO · THIS PHRASE' : 'DEMO · NOW A CHANGE TO IT'}
+      </Text>
+      <View style={styles.field} testID="quick-add-demo">
+        <Text style={styles.demoPhrase} testID="quick-add-demo-phrase">
+          {next}
+        </Text>
+        <Pressable
+          accessibilityLabel="Send"
+          accessibilityRole="button"
+          accessibilityState={{ busy: working, disabled: working }}
+          disabled={working}
+          onPress={() => onSend(next)}
+          style={[styles.send, working && styles.disabled]}
+          testID="quick-add-demo-send"
+        >
+          {working ? (
+            <ActivityIndicator color={colors['on-primary']} size="small" />
+          ) : (
+            <SymbolView
+              name="arrow.up"
+              size={18}
+              tintColor={colors['on-primary']}
+              weight="semibold"
+            />
+          )}
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+/**
  * The Assistant's bar, at the bottom by the thumb: Type, the microphone,
  * Form. Speaking is the way in — one tap of the microphone listens, each
  * pause sends what was said and it listens again, until it is tapped
@@ -69,6 +177,7 @@ const barStatus = ({
  * which model (the flows wait for it).
  */
 export function AssistantBar({
+  demo,
   hasDrafts,
   micStyle,
   onTyping,
@@ -78,6 +187,8 @@ export function AssistantBar({
   status: modelStatus,
   typing: typingAsked,
 }: {
+  /** The Create lesson's demo, while the model is not here (`BarDemo`). */
+  readonly demo?: BarDemo | undefined;
   readonly hasDrafts: boolean;
   /** The switch's motion for the microphone: it shrinks into the capsule's on the way to the form. */
   readonly micStyle: AnimatedStyle<ViewStyle>;
@@ -134,6 +245,10 @@ export function AssistantBar({
   }, [statusText]);
   // An older step put on show while typing: the field has nothing to send to.
   const typing = typingAsked && !off;
+  // The demo's phrase, or its way on to the Form, in place of the bar;
+  // through and waiting for the model, the bar as it is without one.
+  const demoBar = demoHoldsBar(demo, previewing);
+  const line = barLine({ demo, demoBar, previewing, status: status?.text });
 
   if (modelStatus === null) {
     return null;
@@ -149,9 +264,11 @@ export function AssistantBar({
         style={[styles.status, status?.tone === 'error' && styles.statusError]}
         testID="quick-add-status"
       >
-        {previewing ? 'An earlier step is on show' : (status?.text ?? '')}
+        {line}
       </Text>
-      {typing ? (
+      {demo !== undefined && demoBar ? (
+        <DemoBar demo={demo} onSend={(text) => void submit(text)} working={working} />
+      ) : typing ? (
         <View style={styles.field}>
           <TextInput
             accessibilityLabel={hasDrafts ? 'Describe a change' : 'Describe what to add'}
@@ -267,9 +384,27 @@ const makeStyles = (colors: ThemeColors) =>
       paddingHorizontal: 16,
       paddingTop: 4,
     },
+    /** The demo's label over its field. */
+    demo: {
+      gap: 6,
+    },
+    demoLabel: {
+      color: colors['text-secondary'],
+      fontSize: 12,
+      fontWeight: '600',
+      letterSpacing: 0.3,
+      paddingHorizontal: 8,
+    },
+    demoPhrase: {
+      color: colors.text,
+      flex: 1,
+      fontSize: 17,
+      paddingVertical: 12,
+    },
     disabled: {
       opacity: 0.35,
     },
+    /** Past the demo on an iPhone that cannot run the model: the way on, in the ink of an action. */
     field: {
       alignItems: 'center',
       backgroundColor: colors.surface,
@@ -279,6 +414,23 @@ const makeStyles = (colors: ThemeColors) =>
       minHeight: 48,
       paddingLeft: 16,
       paddingRight: 6,
+    },
+    formButton: {
+      alignItems: 'center',
+      backgroundColor: colors.primary,
+      borderRadius: 25,
+      flexDirection: 'row',
+      gap: 8,
+      justifyContent: 'center',
+      minHeight: 50,
+    },
+    formButtonLabel: {
+      color: colors['on-primary'],
+      fontSize: 16,
+      fontWeight: '600',
+    },
+    pressed: {
+      opacity: 0.7,
     },
     /** Type and Form: two quiet capsules either side of the microphone, the one loud control. */
     capsule: {

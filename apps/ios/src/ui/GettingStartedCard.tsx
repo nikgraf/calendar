@@ -1,3 +1,4 @@
+import { createRowNote } from '@calendar/ai';
 import { useAccountCount, useOnboarding, useUpdateOnboarding } from '@calendar/app-state';
 import {
   cardVisible,
@@ -10,6 +11,8 @@ import {
 import { MenuView } from '@expo/ui/community/menu';
 import { useRouter } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useAssistantModelState } from '../assistantRuntime.ts';
+import { modelFixture } from '../model.ts';
 import { useOnboardingEnabled } from '../onboarding.ts';
 import { useEditorHost } from './EditorHost.tsx';
 import { Glyph } from './GroupedList.tsx';
@@ -35,6 +38,13 @@ export function GettingStartedCard({ timeZone }: { timeZone: string }) {
   const update = useUpdateOnboarding();
   // Null until read: the empty fallback would draw "Add your accounts" for a beat.
   const accountCount = useAccountCount();
+  // The Create row says where the Assistant's model stands until it is
+  // ready (the fixture model always is): the download shows here, not in an alert.
+  const model = useAssistantModelState();
+  const createNote =
+    modelFixture && model.kind === 'unsupported'
+      ? undefined
+      : createRowNote(model, { device: 'iPhone' });
   if (!enabled || state === null || !cardVisible(state) || accountCount === null) {
     return null;
   }
@@ -124,6 +134,7 @@ export function GettingStartedCard({ timeZone }: { timeZone: string }) {
       {rows.map((row) => {
         const copy = lessonCopy(row.id, 'iphone');
         const ticked = row.mark !== undefined;
+        const note = row.id === 'create' ? createNote : undefined;
         return (
           <Pressable
             accessibilityLabel={`${copy.title}${ticked ? ', done' : ''}`}
@@ -148,9 +159,18 @@ export function GettingStartedCard({ timeZone }: { timeZone: string }) {
                 {copy.title}
               </Text>
               {ticked ? null : (
-                <Text numberOfLines={1} style={styles.rowSubtitle}>
-                  {copy.subtitle}
+                <Text
+                  numberOfLines={1}
+                  style={styles.rowSubtitle}
+                  testID={`getting-started-subtitle-${row.id}`}
+                >
+                  {note?.subtitle ?? copy.subtitle}
                 </Text>
+              )}
+              {ticked || note?.progress === undefined ? null : (
+                <View style={styles.rowTrack} testID="getting-started-create-progress">
+                  <View style={[styles.fill, { width: `${String(note.progress)}%` }]} />
+                </View>
               )}
             </View>
           </Pressable>
@@ -235,6 +255,7 @@ const makeStyles = (colors: ThemeColors) =>
       color: colors['text-secondary'],
       fontSize: 13,
     },
+    /** The model's download, under the Create row's line. */
     rowText: {
       flex: 1,
     },
@@ -246,6 +267,13 @@ const makeStyles = (colors: ThemeColors) =>
       color: colors.text,
       fontSize: 15,
       fontWeight: '500',
+    },
+    rowTrack: {
+      backgroundColor: colors.fill,
+      borderRadius: 2,
+      height: 3,
+      marginTop: 5,
+      overflow: 'hidden',
     },
     title: {
       color: colors.text,
