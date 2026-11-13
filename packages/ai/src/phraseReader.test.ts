@@ -174,6 +174,25 @@ describe('tunedReader, a later turn', () => {
 });
 
 describe('answerResult', () => {
+  it('keeps the alerts a first phrase sets on a to-do, as minutes before its due time', () => {
+    expect(
+      answerResult(
+        {
+          date: '2026-11-14',
+          kind: 'task',
+          reminders: [10],
+          startTime: '09:00',
+          title: 'Call the bank',
+        },
+        { draft: undefined, referenceDate: TODAY },
+      ),
+    ).toEqual({
+      kind: 'task',
+      prefill: { date: '2026-11-14', time: '09:00', title: 'Call the bank' },
+      reminders: { add: [10], clear: false, remove: [] },
+    });
+  });
+
   it('takes off and adds notifications one by one, never clearing what it was not shown', () => {
     const result = answerResult(
       { ...dinner.prefill, kind: 'event', reminders: [60] },

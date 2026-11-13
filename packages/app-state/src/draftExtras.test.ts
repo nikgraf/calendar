@@ -1,10 +1,14 @@
 import { EventReminders, ReminderOverride } from '@calendar/core';
 import { describe, expect, it } from 'vite-plus/test';
 import {
+  alertMinutesOf,
+  applyAlarmChange,
   applyNotesChange,
   applyReminderChange,
+  describeAlarmChange,
   describeNotesChange,
   describeReminderChange,
+  reminderAlarmLabel,
 } from './draftExtras.ts';
 
 const popup = (minutes: number) => new ReminderOverride({ method: 'popup', minutes });
@@ -156,5 +160,71 @@ describe('the words of a change', () => {
     ).toEqual(['at most 5 notifications']);
     // A replacement with nothing fit to stand in clears nothing and says why.
     expect(said(only(50_000))).toEqual(['at most 4 weeks before']);
+  });
+});
+
+const alertsSaid = (
+  current: ReadonlyArray<number>,
+  change: Parameters<typeof applyAlarmChange>[1],
+): ReadonlyArray<string> => describeAlarmChange(applyAlarmChange(current, change));
+
+describe('a to-do’s alerts', () => {
+  it('shows the model the alerts before the due time, as minutes before', () => {
+    expect(alertMinutesOf(undefined)).toBeUndefined();
+    expect(alertMinutesOf([])).toBeUndefined();
+    // An alert after the due time has no words in minutes before: left out.
+    expect(alertMinutesOf([-10, 0, 30, -1440])).toEqual([10, 0, 1440]);
+  });
+
+  it('adds, takes off and clears alerts as Reminders alarms', () => {
+    expect(applyAlarmChange([], adds(10))).toEqual({
+      added: [10],
+      alarms: [-10],
+      cleared: false,
+      removed: [],
+    });
+    expect(applyAlarmChange([-15], adds(60, 15)).alarms).toEqual([-15, -60]);
+    expect(applyAlarmChange([-15, -60], takesOff(15))).toEqual({
+      added: [],
+      alarms: [-60],
+      cleared: false,
+      removed: [15],
+    });
+    // At the due time is 0, never -0.
+    expect(Object.is(applyAlarmChange([], adds(0)).alarms[0], 0)).toBe(true);
+    // A removal leaves an alert after the due time; a clearing takes it too.
+    expect(applyAlarmChange([-15, 30], takesOff(15)).alarms).toEqual([30]);
+    expect(applyAlarmChange([-15, 30], only())).toEqual({
+      added: [],
+      alarms: [],
+      cleared: true,
+      removed: [],
+    });
+    expect(applyAlarmChange([-15], only(5)).alarms).toEqual([-5]);
+  });
+
+  it('leaves the alerts as they were when nothing takes effect', () => {
+    const alarms = [-15];
+    expect(applyAlarmChange(alarms, adds(15)).alarms).toBe(alarms);
+    expect(applyAlarmChange(alarms, takesOff(60)).alarms).toBe(alarms);
+    expect(applyAlarmChange([], only()).cleared).toBe(false);
+    expect(applyAlarmChange(alarms, adds(-5, 2.5)).alarms).toBe(alarms);
+  });
+
+  it('says what the turn did to them', () => {
+    expect(alertsSaid([], adds(10))).toEqual(['alerts 10 minutes before']);
+    expect(alertsSaid([], adds(0, 1440))).toEqual(['alerts at the due time, 1 day before']);
+    expect(alertsSaid([-15], only(60))).toEqual(['alerts only 1 hour before']);
+    expect(alertsSaid([-15], takesOff(15))).toEqual(['no longer alerts 15 minutes before']);
+    expect(alertsSaid([-15], only())).toEqual(['no alerts']);
+    expect(alertsSaid([-15], adds(15))).toEqual([]);
+  });
+
+  it('names an alert as the form does', () => {
+    expect(reminderAlarmLabel(0)).toBe('At time');
+    expect(reminderAlarmLabel(-10)).toBe('10 minutes before');
+    expect(reminderAlarmLabel(-120)).toBe('2 hours before');
+    expect(reminderAlarmLabel(-1440)).toBe('1 day before');
+    expect(reminderAlarmLabel(30)).toBe('30 minutes after');
   });
 });

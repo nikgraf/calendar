@@ -6,6 +6,7 @@ import {
   reminderLabel,
   Temporal,
 } from '@calendar/core';
+import { reminderAlarmLabel } from './draftExtras.ts';
 import { guestLabel } from './draftInvitees.ts';
 import { remindersKey, vouchedGeo } from './eventEditorChanges.ts';
 import type { Draft } from './draftThread.ts';
@@ -204,15 +205,17 @@ const timeless = (item: QuickAddItem): QuickAddItem => {
 /**
  * What of a draft is saved where it goes — its calendar or list. A card
  * or a row shows only that: guests on a calendar that takes no guest
- * list, or a to-do's time on a list that keeps a due day only, would be
- * shown and then not written.
+ * list, or a to-do's time or alerts on a list that keeps a due day only,
+ * would be shown and then not written.
  */
 export interface DraftKeeps {
+  /** A to-do's alerts: only a Reminders list holds them. */
+  readonly alerts: boolean;
   readonly guests: boolean;
   readonly time: boolean;
 }
 
-const KEEPS_ALL: DraftKeeps = { guests: true, time: true };
+const KEEPS_ALL: DraftKeeps = { alerts: true, guests: true, time: true };
 
 /**
  * A draft in one line, for a row that only names it (`describeDraftItem`).
@@ -263,8 +266,9 @@ const remindersText = (reminders: EventReminders | undefined, isAllDay: boolean)
     : overrides.map((override) => reminderLabel(override.minutes, isAllDay)).join(', ');
 };
 
-const alertText = (minutes: number | undefined): string =>
-  minutes === undefined ? 'None' : reminderLabel(minutes, false);
+/** A reminder's alerts, every one ("10 minutes before, 1 hour before"), or "None". */
+const alertsText = (alarms: ReadonlyArray<number> | undefined): string =>
+  alarms === undefined || alarms.length === 0 ? 'None' : alarms.map(reminderAlarmLabel).join(', ');
 
 const priorityText = (priority: string | undefined): string =>
   priority === undefined ? 'None' : priority.charAt(0).toUpperCase() + priority.slice(1);
@@ -407,9 +411,9 @@ const reminderChanges = (before: Draft | undefined, after: Draft): ReadonlyArray
     ),
     ...differs(
       'alert',
-      [was.alarms[0], now.alarms[0]],
-      alertText(was.alarms[0]),
-      alertText(now.alarms[0]),
+      [was.alarms.join(','), now.alarms.join(',')],
+      alertsText(was.alarms),
+      alertsText(now.alarms),
     ),
     ...differs(
       'url',
@@ -542,7 +546,9 @@ export const cardLines = (
       ? line('reminders', remindersText(reminders, isAllDay), remindersKey(reminders) !== 'default')
       : []),
     ...line('priority', priorityText(reminder?.priority), reminder?.priority !== undefined),
-    ...line('alert', alertText(reminder?.alarms[0]), reminder?.alarms[0] !== undefined),
+    ...(keeps.alerts
+      ? line('alert', alertsText(reminder?.alarms), (reminder?.alarms.length ?? 0) > 0)
+      : []),
     ...line('url', reminder?.url.trim() || 'No link', (reminder?.url.trim() ?? '') !== ''),
     ...line('notes', notes || 'No notes', notes !== ''),
   ];

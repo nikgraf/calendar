@@ -33,8 +33,11 @@ import {
   summarizeChange,
 } from './draftChanges.ts';
 import {
+  alertMinutesOf,
+  applyAlarmChange,
   applyNotesChange,
   applyReminderChange,
+  describeAlarmChange,
   describeNotesChange,
   describeReminderChange,
 } from './draftExtras.ts';
@@ -48,7 +51,7 @@ import {
 import { type PlaceChange, type PlaceChoice, settlePlace } from './draftPlaces.ts';
 import type { EventEditorPrefill } from './editorModel.ts';
 import { convertQuickAddItem, type QuickAddItem } from './quickAddItem.ts';
-import { recurrenceKey } from './repeatState.ts';
+import { recurrenceKey, seedRepeatFields } from './repeatState.ts';
 import type { ReminderFields } from './taskEditorModel.ts';
 
 /**
@@ -366,17 +369,49 @@ const withNotes = (
 };
 
 /**
- * A turn's notifications folded into an event draft (a to-do takes
- * none): popups at the minutes said, on the draft's own or in place of
- * them (`applyReminderChange`). What it says: "notifies 30 minutes
- * before".
+ * A turn's alerts folded into a to-do draft: its Reminders alarms
+ * (`applyAlarmChange`), kept with its other Reminders-only fields, which
+ * only a Reminders list writes, as it does the due time. What it says:
+ * "alerts 10 minutes before".
+ */
+const withAlarms = (
+  draft: Draft,
+  change: ReminderChange,
+): { readonly draft: Draft; readonly said: ReadonlyArray<string> } => {
+  const extras = draft.extras ?? BLANK_EXTRAS;
+  // Fields the form never held: only the alarms are this turn's (`alarmsOnly`).
+  const fields = extras.reminder ?? {
+    alarms: [],
+    alarmsOnly: true,
+    repeat: seedRepeatFields(undefined),
+    url: '',
+  };
+  const applied = applyAlarmChange(fields.alarms, change);
+  const said = describeAlarmChange(applied);
+  if (applied.alarms === fields.alarms) {
+    return { draft, said };
+  }
+  return {
+    draft: { ...draft, extras: { ...extras, reminder: { ...fields, alarms: applied.alarms } } },
+    said,
+  };
+};
+
+/**
+ * A turn's notifications folded into an event draft: popups at the
+ * minutes said, on the draft's own or in place of them
+ * (`applyReminderChange`). What it says: "notifies 30 minutes before".
+ * A to-do's are its alerts (`withAlarms`).
  */
 const withReminders = (
   draft: Draft,
   change: ReminderChange | undefined,
 ): { readonly draft: Draft; readonly said: ReadonlyArray<string> } => {
-  if (change === undefined || draft.item.kind !== 'event') {
+  if (change === undefined) {
     return { draft, said: [] };
+  }
+  if (draft.item.kind === 'task') {
+    return withAlarms(draft, change);
   }
   const extras = draft.extras ?? BLANK_EXTRAS;
   const applied = applyReminderChange(extras.reminders, change);
@@ -1188,12 +1223,18 @@ export const firstDraftExtras = (extras: DraftExtras | undefined): DraftExtras |
 
 /**
  * Why a turn cannot be taken, or undefined: what the item being changed
- * cannot hold (a stored event's limits — `turnRefusal`; a time on a list
- * that keeps none — `todoTimeRefusal`), given the draft before the turn,
- * its item after it, and whether the turn changes its guests (invites
- * someone or takes someone off).
+ * cannot hold (a stored event's limits — `turnRefusal`; a time or an
+ * alert on a list that keeps none — `todoTimeRefusal`, `todoAlertRefusal`),
+ * given the draft before the turn, its item after it, whether the turn
+ * changes its guests (invites someone or takes someone off), and whether
+ * it adds notifications (a to-do's alerts).
  */
-export type Refuse = (draft: Draft, after: QuickAddItem, guests: boolean) => string | undefined;
+export type Refuse = (
+  draft: Draft,
+  after: QuickAddItem,
+  guests: boolean,
+  alerts: boolean,
+) => string | undefined;
 
 /** What a phrase is said with. */
 export interface PhraseOptions {
@@ -1245,17 +1286,23 @@ const popupMinutesOf = (
 /**
  * A draft as a reader's turn sees it (`TurnDraft`): the item as the event
  * it would be, the addresses already invited, its notes and notifications
- * — the calendar's default ones (`defaults`) where the draft keeps to them.
+ * — the calendar's default ones (`defaults`) where an event keeps to them;
+ * a to-do's notifications are its own alerts, and it has no default.
  */
 export const turnDraftOf = (
   draft: Draft,
   prefill: QuickAddPrefill,
   defaults?: ReadonlyArray<number> | undefined,
 ): TurnDraft => {
-  const notes = draft.item.kind === 'task' ? draft.extras?.taskNotes : draft.extras?.description;
-  const reminders = popupMinutesOf(draft.extras?.reminders);
+  const task = draft.item.kind === 'task';
+  const notes = task ? draft.extras?.taskNotes : draft.extras?.description;
+  const reminders = task
+    ? alertMinutesOf(draft.extras?.reminder?.alarms)
+    : popupMinutesOf(draft.extras?.reminders);
   return {
-    ...(reminders === undefined && defaults !== undefined ? { defaultReminders: defaults } : {}),
+    ...(!task && reminders === undefined && defaults !== undefined
+      ? { defaultReminders: defaults }
+      : {}),
     guests: (draft.extras?.attendees ?? []).map((attendee) => attendee.email),
     kind: draft.item.kind,
     notes: notes?.trim() ? notes : undefined,
@@ -1433,7 +1480,12 @@ export const useDraftThread = ({
           const draft = current.drafts.find((each) => each.id === change.id);
           return draft === undefined
             ? undefined
-            : refuse?.(draft, change.item, changesGuests(change.guests));
+            : refuse?.(
+                draft,
+                change.item,
+                changesGuests(change.guests),
+                (change.reminders?.add.length ?? 0) > 0,
+              );
         })
         .find((message) => message !== undefined);
       if (refused !== undefined) {
@@ -1517,7 +1569,14 @@ export const useDraftThread = ({
         );
         return undefined;
       }
-      const refused = refuse?.(target, itemAtSlot(target.item, best, result.title), false);
+      // The notifications said with it land on the draft too: a to-do's
+      // alert counts, where its list keeps none.
+      const refused = refuse?.(
+        target,
+        itemAtSlot(target.item, best, result.title),
+        false,
+        (reminders?.add.length ?? 0) > 0,
+      );
       if (refused !== undefined) {
         return refused;
       }
@@ -1604,7 +1663,7 @@ export const useDraftThread = ({
         guests,
         ...(result.notes ? { notes: result.notes } : {}),
         place: placeFound,
-        ...(result.kind === 'parsed' && result.reminders ? { reminders: result.reminders } : {}),
+        ...(result.reminders ? { reminders: result.reminders } : {}),
       },
     );
     return undefined;

@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vite-plus/test';
 import type { QuickAddItem } from './quickAddItem.ts';
-import { guestsRefusal, todoTimeRefusal, type TurnLimits, turnRefusal } from './threadRefusal.ts';
+import {
+  guestsRefusal,
+  todoAlertRefusal,
+  todoTimeRefusal,
+  type TurnLimits,
+  turnRefusal,
+} from './threadRefusal.ts';
 
 const standup: QuickAddItem = {
   kind: 'event',
@@ -159,5 +165,30 @@ describe('guestsRefusal', () => {
     expect(guestsRefusal(true, false)).toBe('This calendar’s guests can’t be changed here.');
     expect(guestsRefusal(true, true)).toBeUndefined();
     expect(guestsRefusal(false, false)).toBeUndefined();
+  });
+});
+
+describe('todoAlertRefusal', () => {
+  const call: QuickAddItem = { kind: 'task', prefill: { date: '2026-08-28', title: 'Call' } };
+  const sentence = 'This list keeps no alerts — an alert can’t be saved here.';
+
+  it('refuses an alert given to a to-do whose list keeps none, and only there', () => {
+    expect(todoAlertRefusal(call, true, false)).toBe(sentence);
+    expect(todoAlertRefusal(call, true, true)).toBeUndefined();
+  });
+
+  it('takes a turn that adds no alert, and an event’s notifications', () => {
+    expect(todoAlertRefusal(call, false, false)).toBeUndefined();
+    const dinner: QuickAddItem = {
+      kind: 'event',
+      prefill: {
+        date: '2026-08-28',
+        endTime: '20:00',
+        isAllDay: false,
+        startTime: '19:00',
+        title: 'Dinner',
+      },
+    };
+    expect(todoAlertRefusal(dinner, true, false)).toBeUndefined();
   });
 });
