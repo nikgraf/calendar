@@ -158,6 +158,37 @@ that flipped and the fields that moved, and says when the two runs were
 not set up alike (a served model's endpoint and extra request body, the
 report's `settings`).
 
+## Finder bench
+
+Find a time reads a sentence ("find 90 min for focus next week,
+mornings", "wann habe ich morgen Nachmittag eine Stunde Zeit?") into
+the constraints the solver searches with. `finderBench.e2e.ts` runs the
+cases in `finder.json` through the app's finder prompt and schema on the
+same models (the MODEL_BENCH_* variables above), and reads each answer
+two ways:
+
+- `rules`: as the app does today, held to the words by the code
+  (`normalizeFindTime` given the phrase, `grounding.ts`), the finder's
+  own length where the words say none;
+- `raw`: the model's answer alone (`normalizeFindTime` without the
+  phrase), what a model has to get right once the rules go.
+
+```bash
+MODEL_BENCH=1 E2E=1 pnpm exec vp test run apps/desktop/e2e/bench/finderBench.e2e.ts
+```
+
+A case states every part a person means (`finder.ts` says how):
+the length (`"default"`: the finder's own, 60), the window by its name
+(`"nextWeek"`, `{ "weekday": 4 }`, …, so a case holds on any day), the
+weekdays, the daily bounds (a meal's or a part of the day's window by
+name, or clock times) and what the time is for. The window and the
+weekdays are scored together, as the dates searched: the coming
+Wednesday and the coming week on Wednesdays are the same search.
+`MODEL_BENCH_CASES` picks cases by id part or language ("de"). The
+report, `output/bench/finder-<yyyymmdd-hhmm>-<sha>-<provider>.json`,
+keeps each prompt, the answer as it came, and each arm's parts with what
+they read.
+
 ## Recordings
 
 `audio/README.md` lists the clips the cases ask for and how to record

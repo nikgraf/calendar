@@ -1,0 +1,549 @@
+[
+  {
+    "id": "focus-90-next-week-mornings",
+    "lang": "en",
+    "text": "Find 90 min for focus next week, mornings",
+    "expect": {
+      "duration": 90,
+      "window": "nextWeek",
+      "days": null,
+      "bounds": {
+        "period": "morning"
+      },
+      "title": ["focus"]
+    }
+  },
+  {
+    "id": "call-anna-tomorrow-afternoon",
+    "lang": "en",
+    "text": "When can I fit a 30 minute call with Anna tomorrow afternoon?",
+    "expect": {
+      "duration": 30,
+      "window": "tomorrow",
+      "days": null,
+      "bounds": {
+        "period": "afternoon"
+      },
+      "title": ["call with anna", "a call with anna"]
+    }
+  },
+  {
+    "id": "walk-hour-today",
+    "lang": "en",
+    "text": "Find an hour for a walk today",
+    "expect": {
+      "duration": 60,
+      "window": "today",
+      "days": null,
+      "bounds": null,
+      "title": ["walk", "a walk"]
+    }
+  },
+  {
+    "id": "two-hours-this-week",
+    "lang": "en",
+    "text": "Find 2 hours this week",
+    "expect": {
+      "duration": 120,
+      "window": "thisWeek",
+      "days": null,
+      "bounds": null,
+      "title": null
+    }
+  },
+  {
+    "id": "half-hour-lunch-thursday",
+    "lang": "en",
+    "text": "Half an hour at lunch on Thursday",
+    "expect": {
+      "duration": 30,
+      "window": {
+        "weekday": 4
+      },
+      "days": null,
+      "bounds": {
+        "period": "lunch"
+      },
+      "title": null
+    }
+  },
+  {
+    "id": "dinner-tom-next-week",
+    "lang": "en",
+    "text": "When can I have dinner with Tom next week?",
+    "expect": {
+      "duration": "default",
+      "window": "nextWeek",
+      "days": null,
+      "bounds": {
+        "period": "dinner"
+      },
+      "title": ["dinner with tom"]
+    }
+  },
+  {
+    "id": "run-weekdays-after-5",
+    "lang": "en",
+    "text": "Find 45 minutes on weekdays after 5pm for a run",
+    "expect": {
+      "duration": 45,
+      "window": "default",
+      "days": [1, 2, 3, 4, 5],
+      "bounds": {
+        "earliest": "17:00"
+      },
+      "title": ["run", "a run"]
+    }
+  },
+  {
+    "id": "two-hours-weekend-morning",
+    "lang": "en",
+    "text": "Two hours on the weekend, in the morning",
+    "expect": {
+      "duration": 120,
+      "window": "default",
+      "days": [6, 7],
+      "bounds": {
+        "period": "morning"
+      },
+      "title": null
+    }
+  },
+  {
+    "id": "tuesday-or-thursday-next-week",
+    "lang": "en",
+    "text": "45 min on Tuesday or Thursday next week",
+    "expect": {
+      "duration": 45,
+      "window": "nextWeek",
+      "days": [2, 4],
+      "bounds": null,
+      "title": null
+    }
+  },
+  {
+    "id": "twenty-min-tomorrow-before-10",
+    "lang": "en",
+    "text": "Find 20 minutes tomorrow before 10",
+    "expect": {
+      "duration": 20,
+      "window": "tomorrow",
+      "days": null,
+      "bounds": {
+        "latest": "10:00"
+      },
+      "title": null
+    }
+  },
+  {
+    "id": "hour-between-2-and-4",
+    "lang": "en",
+    "text": "Find an hour between 2 and 4pm this week",
+    "expect": {
+      "duration": 60,
+      "window": "thisWeek",
+      "days": null,
+      "bounds": {
+        "earliest": "14:00",
+        "latest": "16:00"
+      },
+      "title": null
+    }
+  },
+  {
+    "id": "review-next-two-weeks",
+    "lang": "en",
+    "text": "Find 90 minutes in the next two weeks for the quarterly review",
+    "expect": {
+      "duration": 90,
+      "window": "fortnight",
+      "days": null,
+      "bounds": null,
+      "title": ["quarterly review", "the quarterly review"]
+    }
+  },
+  {
+    "id": "guitar-evening",
+    "lang": "en",
+    "text": "When can I practice guitar for 40 minutes in the evening?",
+    "expect": {
+      "duration": 40,
+      "window": "default",
+      "days": null,
+      "bounds": {
+        "period": "evening"
+      },
+      "title": ["guitar", "practice guitar", "guitar practice"]
+    }
+  },
+  {
+    "id": "breakfast-sarah-this-week",
+    "lang": "en",
+    "text": "Find time for breakfast with Sarah this week",
+    "expect": {
+      "duration": "default",
+      "window": "thisWeek",
+      "days": null,
+      "bounds": {
+        "period": "breakfast"
+      },
+      "title": ["breakfast with sarah"]
+    }
+  },
+  {
+    "id": "free-hour-day-after-tomorrow",
+    "lang": "en",
+    "text": "Find a free hour the day after tomorrow",
+    "expect": {
+      "duration": 60,
+      "window": "dayAfterTomorrow",
+      "days": null,
+      "bounds": null,
+      "title": null
+    }
+  },
+  {
+    "id": "thirty-min-except-friday",
+    "lang": "en",
+    "text": "Find 30 minutes any day except Friday",
+    "expect": {
+      "duration": 30,
+      "window": "default",
+      "days": [1, 2, 3, 4, 6, 7],
+      "bounds": null,
+      "title": null
+    }
+  },
+  {
+    "id": "workout-one-and-a-half-hours",
+    "lang": "en",
+    "text": "Find 1.5 hours for a workout this week",
+    "expect": {
+      "duration": 90,
+      "window": "thisWeek",
+      "days": null,
+      "bounds": null,
+      "title": ["workout", "a workout"]
+    }
+  },
+  {
+    "id": "deep-work-weekday-mornings",
+    "lang": "en",
+    "text": "3 hours of deep work on weekday mornings next week",
+    "expect": {
+      "duration": 180,
+      "window": "nextWeek",
+      "days": [1, 2, 3, 4, 5],
+      "bounds": {
+        "period": "morning"
+      },
+      "title": ["deep work"]
+    }
+  },
+  {
+    "id": "sync-tom-15-today",
+    "lang": "en",
+    "text": "Find 15 minutes for a sync with Tom today",
+    "expect": {
+      "duration": 15,
+      "window": "today",
+      "days": null,
+      "bounds": null,
+      "title": ["sync with tom", "a sync with tom"]
+    }
+  },
+  {
+    "id": "lunch-anna-next-week",
+    "lang": "en",
+    "text": "When could I do lunch with Anna next week?",
+    "expect": {
+      "duration": "default",
+      "window": "nextWeek",
+      "days": null,
+      "bounds": {
+        "period": "lunch"
+      },
+      "title": ["lunch with anna"]
+    }
+  },
+  {
+    "id": "hour-after-lunch-tomorrow",
+    "lang": "en",
+    "text": "Find an hour after lunch tomorrow",
+    "expect": {
+      "duration": 60,
+      "window": "tomorrow",
+      "days": null,
+      "bounds": {
+        "earliest": "14:00"
+      },
+      "title": null
+    }
+  },
+  {
+    "id": "workshop-2h-monday",
+    "lang": "en",
+    "text": "Find time for a 2h workshop on Monday",
+    "expect": {
+      "duration": 120,
+      "window": {
+        "weekday": 1
+      },
+      "days": null,
+      "bounds": null,
+      "title": ["workshop", "a workshop"]
+    }
+  },
+  {
+    "id": "haircut-saturday-morning",
+    "lang": "en",
+    "text": "I need 25 minutes for a haircut on Saturday morning",
+    "expect": {
+      "duration": 25,
+      "window": {
+        "weekday": 6
+      },
+      "days": null,
+      "bounds": {
+        "period": "morning"
+      },
+      "title": ["haircut", "a haircut"]
+    }
+  },
+  {
+    "id": "fifty-min-wednesday-afternoon",
+    "lang": "en",
+    "text": "When am I free for 50 minutes on Wednesday afternoon?",
+    "expect": {
+      "duration": 50,
+      "window": {
+        "weekday": 3
+      },
+      "days": null,
+      "bounds": {
+        "period": "afternoon"
+      },
+      "title": null
+    }
+  },
+  {
+    "id": "fokus-90-naechste-woche-vormittags",
+    "lang": "de",
+    "text": "Finde 90 Minuten für Fokuszeit nächste Woche vormittags",
+    "expect": {
+      "duration": 90,
+      "window": "nextWeek",
+      "days": null,
+      "bounds": {
+        "period": "morning"
+      },
+      "title": ["fokuszeit"]
+    }
+  },
+  {
+    "id": "stunde-morgen-nachmittag",
+    "lang": "de",
+    "text": "Wann habe ich morgen Nachmittag eine Stunde Zeit?",
+    "expect": {
+      "duration": 60,
+      "window": "tomorrow",
+      "days": null,
+      "bounds": {
+        "period": "afternoon"
+      },
+      "title": null
+    }
+  },
+  {
+    "id": "sport-eineinhalb-stunden",
+    "lang": "de",
+    "text": "Eineinhalb Stunden für Sport diese Woche",
+    "expect": {
+      "duration": 90,
+      "window": "thisWeek",
+      "days": null,
+      "bounds": null,
+      "title": ["sport"]
+    }
+  },
+  {
+    "id": "anna-telefonieren-uebermorgen",
+    "lang": "de",
+    "text": "Wann kann ich übermorgen 30 Minuten mit Anna telefonieren?",
+    "expect": {
+      "duration": 30,
+      "window": "dayAfterTomorrow",
+      "days": null,
+      "bounds": null,
+      "title": [
+        "mit anna telefonieren",
+        "telefonieren mit anna",
+        "telefonat mit anna",
+        "anruf mit anna"
+      ]
+    }
+  },
+  {
+    "id": "zwei-stunden-wochenende",
+    "lang": "de",
+    "text": "Zwei Stunden am Wochenende",
+    "expect": {
+      "duration": 120,
+      "window": "default",
+      "days": [6, 7],
+      "bounds": null,
+      "title": null
+    }
+  },
+  {
+    "id": "werktags-nach-18",
+    "lang": "de",
+    "text": "Finde 45 Minuten werktags nach 18 Uhr",
+    "expect": {
+      "duration": 45,
+      "window": "default",
+      "days": [1, 2, 3, 4, 5],
+      "bounds": {
+        "earliest": "18:00"
+      },
+      "title": null
+    }
+  },
+  {
+    "id": "abendessen-tom-naechste-woche",
+    "lang": "de",
+    "text": "Wann passt ein Abendessen mit Tom nächste Woche?",
+    "expect": {
+      "duration": "default",
+      "window": "nextWeek",
+      "days": null,
+      "bounds": {
+        "period": "dinner"
+      },
+      "title": ["abendessen mit tom"]
+    }
+  },
+  {
+    "id": "lesen-heute-abend",
+    "lang": "de",
+    "text": "Eine Stunde heute Abend für Lesen",
+    "expect": {
+      "duration": 60,
+      "window": "today",
+      "days": null,
+      "bounds": {
+        "period": "evening"
+      },
+      "title": ["lesen"]
+    }
+  },
+  {
+    "id": "zwanzig-minuten-morgen-vor-10",
+    "lang": "de",
+    "text": "Finde 20 Minuten morgen vor 10 Uhr",
+    "expect": {
+      "duration": 20,
+      "window": "tomorrow",
+      "days": null,
+      "bounds": {
+        "latest": "10:00"
+      },
+      "title": null
+    }
+  },
+  {
+    "id": "mittagessen-sarah-halbe-stunde",
+    "lang": "de",
+    "text": "Mittagessen mit Sarah diese Woche, eine halbe Stunde",
+    "expect": {
+      "duration": 30,
+      "window": "thisWeek",
+      "days": null,
+      "bounds": {
+        "period": "lunch"
+      },
+      "title": ["mittagessen mit sarah"]
+    }
+  },
+  {
+    "id": "spaziergang-donnerstag",
+    "lang": "de",
+    "text": "Zeit für einen Spaziergang am Donnerstag",
+    "expect": {
+      "duration": "default",
+      "window": {
+        "weekday": 4
+      },
+      "days": null,
+      "bounds": null,
+      "title": ["spaziergang", "einen spaziergang"]
+    }
+  },
+  {
+    "id": "steuererklaerung-zwei-wochen",
+    "lang": "de",
+    "text": "Finde 2 Stunden in den nächsten zwei Wochen für die Steuererklärung",
+    "expect": {
+      "duration": 120,
+      "window": "fortnight",
+      "days": null,
+      "bounds": null,
+      "title": ["steuererklarung", "die steuererklarung"]
+    }
+  },
+  {
+    "id": "dienstags-donnerstags-naechste-woche",
+    "lang": "de",
+    "text": "Dienstags oder donnerstags eine Stunde nächste Woche",
+    "expect": {
+      "duration": 60,
+      "window": "nextWeek",
+      "days": [2, 4],
+      "bounds": null,
+      "title": null
+    }
+  },
+  {
+    "id": "zwischen-14-und-16-naechste-woche",
+    "lang": "de",
+    "text": "Wann habe ich nächste Woche zwischen 14 und 16 Uhr eine Stunde frei?",
+    "expect": {
+      "duration": 60,
+      "window": "nextWeek",
+      "days": null,
+      "bounds": {
+        "earliest": "14:00",
+        "latest": "16:00"
+      },
+      "title": null
+    }
+  },
+  {
+    "id": "dreissig-minuten-ausser-montag",
+    "lang": "de",
+    "text": "Finde 30 Minuten außer Montag",
+    "expect": {
+      "duration": 30,
+      "window": "default",
+      "days": [2, 3, 4, 5, 6, 7],
+      "bounds": null,
+      "title": null
+    }
+  },
+  {
+    "id": "fruehstueck-anna-samstag",
+    "lang": "de",
+    "text": "Frühstück mit Anna am Samstag",
+    "expect": {
+      "duration": "default",
+      "window": {
+        "weekday": 6
+      },
+      "days": null,
+      "bounds": {
+        "period": "breakfast"
+      },
+      "title": ["fruhstuck mit anna"]
+    }
+  }
+]
