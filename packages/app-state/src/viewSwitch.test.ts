@@ -77,9 +77,9 @@ describe('topAtEnd', () => {
 
 describe('leftAfterTurn', () => {
   it('runs back as long as it ran, or forward for what it had left', () => {
-    expect(leftAfterTurn(270, -1, 280)).toBe(270);
-    expect(leftAfterTurn(10, 1, 280)).toBe(270);
-    expect(leftAfterTurn(300, 1, 280)).toBe(0);
+    expect(leftAfterTurn(270, true, 280)).toBe(270);
+    expect(leftAfterTurn(10, false, 280)).toBe(270);
+    expect(leftAfterTurn(300, false, 280)).toBe(0);
   });
 });
 

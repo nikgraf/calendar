@@ -1,6 +1,7 @@
 import { type Contact, type PlaceCandidate, preselectedPlace } from '@calendar/core';
 import { choiceQuestion, type InviteeChoice } from './draftInvitees.ts';
-import type { PlaceChoice } from './draftPlaces.ts';
+import { livePlaceChoice, type PlaceChoice } from './draftPlaces.ts';
+import type { QuickAddItem } from './quickAddItem.ts';
 
 /**
  * What the Assistant asks about a draft, one at a time under its newest
@@ -73,41 +74,60 @@ export const questionsAsked = (
 };
 
 /**
+ * A draft's place choice while its own location still reads it
+ * (`livePlaceChoice`): a location edited by hand left the choice behind.
+ * Without the item, as it is.
+ */
+export const draftPlace = (draft: {
+  readonly item?: QuickAddItem | undefined;
+  readonly placeChoice?: PlaceChoice | undefined;
+}): PlaceChoice | undefined =>
+  draft.item === undefined
+    ? draft.placeChoice
+    : livePlaceChoice(
+        draft.placeChoice,
+        draft.item.kind === 'event' ? (draft.item.prefill.location ?? '') : '',
+      );
+
+/**
  * What the editor asks about its draft: the place its field still reads
  * (`livePlace`) — or, while the form is still taking a turn in (its field
  * reads the draft before, and the count would show the next question
- * first for a frame), the event draft's own — then the names, counted
- * only where the calendar can invite (`guests` is empty there).
+ * first for a frame), the one the event draft's own location reads —
+ * then the names, counted only where the calendar can invite (`guests`
+ * is empty there).
  */
 export const editorQuestions = ({
   applying,
-  asked,
   canInvite,
-  draftPlace,
+  draft,
   event,
   guests,
   livePlace,
 }: {
   readonly applying: boolean;
-  readonly asked: Asked | undefined;
   readonly canInvite: boolean;
-  readonly draftPlace: PlaceChoice | undefined;
+  readonly draft:
+    | {
+        readonly asked?: Asked | undefined;
+        readonly item?: QuickAddItem | undefined;
+        readonly placeChoice?: PlaceChoice | undefined;
+      }
+    | undefined;
   readonly event: boolean;
   readonly guests: ReadonlyArray<InviteeChoice>;
   readonly livePlace: PlaceChoice | undefined;
-}): QuestionsAsked =>
-  questionsAsked(asked, openQuestions(applying && event ? draftPlace : livePlace, guests), {
-    guests: canInvite,
-  });
+}): QuestionsAsked => {
+  const place = applying && event && draft !== undefined ? draftPlace(draft) : livePlace;
+  return questionsAsked(draft?.asked, openQuestions(place, guests), { guests: canInvite });
+};
 
-/**
- * A draft's own questions, as its state holds them (the editor narrows
- * the place to the one the form still reads, `livePlaceChoice`).
- */
+/** A draft's own questions, its place as its own location reads it. */
 const questionsOf = (draft: {
   readonly inviteeChoices?: ReadonlyArray<InviteeChoice> | undefined;
+  readonly item?: QuickAddItem | undefined;
   readonly placeChoice?: PlaceChoice | undefined;
-}): ReadonlyArray<DraftQuestion> => openQuestions(draft.placeChoice, draft.inviteeChoices ?? []);
+}): ReadonlyArray<DraftQuestion> => openQuestions(draftPlace(draft), draft.inviteeChoices ?? []);
 
 /**
  * How many questions a draft has asked, after a turn: when the turn
@@ -126,6 +146,7 @@ export const askedAfterTurn = (
     | undefined,
   after: {
     readonly inviteeChoices?: ReadonlyArray<InviteeChoice> | undefined;
+    readonly item?: QuickAddItem | undefined;
     readonly placeChoice?: PlaceChoice | undefined;
   },
 ): Asked | undefined => {

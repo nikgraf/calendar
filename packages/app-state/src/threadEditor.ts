@@ -807,9 +807,8 @@ export const useThreadEditor = ({
    */
   const questions = editorQuestions({
     applying,
-    asked: focusedDraft?.asked,
     canInvite: eventModel.canInvite,
-    draftPlace: focusedDraft?.placeChoice,
+    draft: focusedDraft,
     event: mode === 'event',
     guests: inviteeChoices,
     livePlace: placeChoice,

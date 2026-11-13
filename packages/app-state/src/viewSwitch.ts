@@ -73,11 +73,10 @@ export const topAtEnd = (
 
 /**
  * How long a motion turned round has left to run: what it played so far
- * when it now runs back (`rate` below 0), what it had left when it runs
- * forward again.
+ * when it now runs back, what it had left when it runs forward again.
  */
-export const leftAfterTurn = (current: number, rate: number, duration: number): number =>
-  Math.max(0, rate < 0 ? current : duration - current);
+export const leftAfterTurn = (current: number, backwards: boolean, duration: number): number =>
+  Math.max(0, backwards ? current : duration - current);
 
 /**
  * How far below its place the form starts so that its title sits on the

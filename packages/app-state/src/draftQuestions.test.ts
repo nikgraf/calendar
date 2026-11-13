@@ -115,9 +115,8 @@ describe('editorQuestions', () => {
   const both = { guests: 1, places: 1 };
   const base = {
     applying: false,
-    asked: both,
     canInvite: true,
-    draftPlace: twoPlaces,
+    draft: { asked: both, item: dinner, placeChoice: twoPlaces },
     event: true,
     guests: [toms],
     livePlace: twoPlaces,
@@ -149,6 +148,17 @@ describe('editorQuestions', () => {
       of: 1,
     });
   });
+
+  it('does not bring back a place the location was edited away from while a turn goes in', () => {
+    const edited: QuickAddItem = {
+      kind: 'event',
+      prefill: { ...dinner.prefill, location: 'Plachutta' },
+    };
+    const draft = { asked: { guests: 1, places: 0 }, item: edited, placeChoice: twoPlaces };
+    expect(editorQuestions({ ...base, applying: true, draft, livePlace: undefined })).toMatchObject(
+      { current: { kind: 'guest' }, number: 1, of: 1 },
+    );
+  });
 });
 
 describe('askedAfterTurn', () => {
@@ -168,6 +178,20 @@ describe('askedAfterTurn', () => {
       places: 0,
     });
     expect(askedAfterTurn(undefined, { inviteeChoices: [nobody] })).toBeUndefined();
+  });
+
+  it('does not count a place the location was edited away from', () => {
+    const edited: QuickAddItem = {
+      kind: 'event',
+      prefill: { ...dinner.prefill, location: 'Plachutta' },
+    };
+    // The place still on the draft, the location typed over: only Tom is asked, "1 of 1".
+    expect(
+      askedAfterTurn(
+        { inviteeChoices: [], placeChoice: twoPlaces },
+        { inviteeChoices: [toms], item: edited, placeChoice: twoPlaces },
+      ),
+    ).toEqual({ guests: 1, places: 0 });
   });
 });
 

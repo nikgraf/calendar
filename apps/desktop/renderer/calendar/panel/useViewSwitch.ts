@@ -45,6 +45,8 @@ export const useViewSwitch = (initial: EditorView) => {
   const leavingTop = useRef<number | undefined>(undefined);
   const running = useRef<{
     readonly animations: ReadonlyArray<Animation>;
+    /** Turned round an odd number of times: running back to where it started. */
+    backwards: boolean;
     timer: ReturnType<typeof setTimeout>;
   } | null>(null);
   // The animations of a switch that ended, let go of once the pane that
@@ -69,16 +71,16 @@ export const useViewSwitch = (initial: EditorView) => {
     const run = running.current;
     if (flight !== null && run !== null) {
       // Mid-way: back from where it is, as long as it took to get there
-      // (or, turned round twice, on for what it had left).
+      // (or, turned round twice, on for what it had left). The direction
+      // is kept here: `playbackRate` reads the old one until the next frame.
+      const first = run.animations[0];
+      const current = Number(first?.currentTime ?? 0);
+      const duration = Number(first?.effect?.getTiming().duration ?? SWITCH_MS);
       for (const animation of run.animations) {
         animation.reverse();
       }
-      const first = run.animations[0];
-      const left = leftAfterTurn(
-        Number(first?.currentTime ?? 0),
-        first?.playbackRate ?? -1,
-        Number(first?.effect?.getTiming().duration ?? SWITCH_MS),
-      );
+      run.backwards = !run.backwards;
+      const left = leftAfterTurn(current, run.backwards, duration);
       clearTimeout(run.timer);
       run.timer = setTimeout(settle, left + GRACE_MS);
       setFlight({ from: flight.to, to: flight.from });
@@ -145,6 +147,7 @@ export const useViewSwitch = (initial: EditorView) => {
     ];
     running.current = {
       animations,
+      backwards: false,
       timer: setTimeout(settle, Number(options.duration) + GRACE_MS),
     };
     // A reversed run finishes too, back at its start: either end settles.
