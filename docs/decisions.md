@@ -1192,10 +1192,10 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   cases state what a person means (length, window by name, weekdays,
   bounds, what for); the app's finder prompt on each model, read with the
   word rules (`grounding.ts`) and without, window and weekdays scored as
-  the dates searched. Baseline: Apple's model as the app asks it 11/40
-  with the rules, 0/40 without, 13 unanswered (10 ran out of context, about
-  170 s each); every field required 19/40; DeepSeek V4 Flash 39/40 either
-  way. Rejected: scoring the slots found (they depend on a calendar),
+  the dates searched. Baseline: Apple's model as the app asks it 12/40
+  with the rules (an empty answer scores 8), 0/40 without, 13 unanswered
+  (10 ran out of context, about 170 s each); every field required 20/40;
+  DeepSeek V4 Flash 39/40 either way. Rejected: scoring the slots found (they depend on a calendar),
   window and weekdays apart. Open: search and capture have no bench.
 - **The editor's two views: Assistant and Form** (2026-11-12, #308) —
   the assistant is its own view, a conversation whose answers are the

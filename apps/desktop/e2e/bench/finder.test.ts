@@ -66,6 +66,18 @@ describe('expectedWindows', () => {
       FRIDAY,
       '2026-11-20',
     ]);
+    // The weekend: the coming one; begun, what is left of it or the next.
+    expect(one('weekend')).toEqual([
+      { windowEndDate: '2026-11-15', windowStartDate: '2026-11-14' },
+    ]);
+    expect(expectedWindows('weekend', '2026-11-15')).toEqual([
+      { windowEndDate: '2026-11-15', windowStartDate: '2026-11-15' },
+      { windowEndDate: '2026-11-22', windowStartDate: '2026-11-21' },
+    ]);
+    expect(expectedWindows('weekend', '2026-11-14')[0]).toEqual({
+      windowEndDate: '2026-11-15',
+      windowStartDate: '2026-11-14',
+    });
   });
 });
 
@@ -75,12 +87,15 @@ describe('datesSearched and expectedBounds', () => {
     expect(datesSearched(week, [6, 7])).toBe('2026-11-14,2026-11-15');
     expect(datesSearched(week, undefined).split(',')).toHaveLength(7);
     expect(datesSearched(week, [8])).toBe('-');
-    expect(expectedBounds({ period: 'morning' })).toEqual({
-      earliestTime: '08:00',
-      latestTime: '12:00',
-    });
-    expect(expectedBounds({ earliest: '17:00' })).toEqual({ earliestTime: '17:00' });
-    expect(expectedBounds(null)).toEqual({});
+    expect(expectedBounds({ period: 'morning' })).toEqual([
+      { earliestTime: '08:00', latestTime: '12:00' },
+    ]);
+    expect(expectedBounds({ earliest: '17:00' })).toEqual([{ earliestTime: '17:00' }]);
+    expect(expectedBounds([{ earliest: '13:00' }, { period: 'afternoon' }])).toEqual([
+      { earliestTime: '13:00' },
+      { earliestTime: '12:00', latestTime: '17:00' },
+    ]);
+    expect(expectedBounds(null)).toEqual([{}]);
   });
 });
 
@@ -132,6 +147,35 @@ describe('checkFinder', () => {
         FRIDAY,
       ).failed,
     ).toEqual(['duration', 'bounds', 'title']);
+  });
+
+  it('scores bounds as the solver searches them, its daytime filling an unset end', () => {
+    const beforeTen = expectation({ bounds: { latest: '10:00' } });
+    expect(checkFinder(beforeTen, parsed({ latestTime: '10:00' }), FRIDAY).failed).toEqual([]);
+    expect(
+      checkFinder(beforeTen, parsed({ earliestTime: '08:00', latestTime: '10:00' }), FRIDAY).failed,
+    ).toEqual([]);
+    expect(checkFinder(beforeTen, parsed({ latestTime: '11:00' }), FRIDAY).failed).toEqual([
+      'bounds',
+    ]);
+    // Any of the readings a case lists.
+    const afterLunch = expectation({ bounds: [{ earliest: '13:00' }, { earliest: '14:00' }] });
+    expect(checkFinder(afterLunch, parsed({ earliestTime: '14:00' }), FRIDAY).failed).toEqual([]);
+  });
+
+  it('accepts no title where a case lists "", and any length unsaid for the raw arm', () => {
+    const lunch = expectation({ title: ['', 'lunch'] });
+    expect(checkFinder(lunch, parsed({}), FRIDAY).failed).toEqual([]);
+    expect(checkFinder(lunch, parsed({}, 'Lunch'), FRIDAY).failed).toEqual([]);
+    expect(checkFinder(lunch, parsed({}, 'Meeting'), FRIDAY).failed).toEqual(['title']);
+    const unsaid = parsed({ durationMinutes: 90 });
+    expect(checkFinder(expectation({}), unsaid, FRIDAY).failed).toEqual(['duration']);
+    expect(checkFinder(expectation({}), unsaid, FRIDAY, { anyLengthUnsaid: true }).failed).toEqual(
+      [],
+    );
+    expect(
+      checkFinder(expectation({ duration: 45 }), unsaid, FRIDAY, { anyLengthUnsaid: true }).failed,
+    ).toEqual(['duration']);
   });
 
   it('gets every part wrong for a refused answer', () => {

@@ -16,17 +16,23 @@ import { fold } from './check.ts';
  *   `"default"` (the coming week, the finder's own), `"today"`,
  *   `"tomorrow"`, `"dayAfterTomorrow"`, `"thisWeek"` (to the coming
  *   Sunday), `"nextWeek"` (Monday to Sunday after), `"fortnight"` (two
- *   weeks from today), or one weekday (`{ "weekday": 4 }`, the coming one);
+ *   weeks from today), `"weekend"` (the coming one; on a weekend day, the
+ *   rest of it or the next), or one weekday (`{ "weekday": 4 }`, the
+ *   coming one; today's may mean today or a week on);
  * - `days`: the weekdays (ISO, Monday 1), or `null` for any;
  * - `bounds`: a meal's or a part of the day's window by its name
  *   (`{ "period": "morning" }`), clock times (`{ "earliest": "17:00" }`),
- *   or `null` for none;
+ *   a list of readings a person would accept, or `null` for none;
  * - `title`: what the time is for, as a person would accept it (any of
- *   them, compared folded), or `null` when the words say nothing.
+ *   them, compared folded; `""` accepts none), or `null` when the words
+ *   say nothing.
  *
  * The window and the weekdays are scored together, as the dates the
  * finder searches: "Wednesday" as the coming Wednesday's window and as
- * the coming week on Wednesdays searches the same day.
+ * the coming week on Wednesdays searches the same day. The bounds are
+ * scored as the solver searches them, its own daytime (08:00–20:00) where
+ * one is not said: "before 10" as 08:00–10:00 and as latest 10:00 is one
+ * search.
  */
 
 /** The length the finder searches for when the words say none. */
@@ -34,6 +40,10 @@ export const FALLBACK_MINUTES = 60;
 
 /** The finder's own window when the words name none: today and the six days after. */
 const DEFAULT_WINDOW_DAYS = 7;
+
+/** The solver's daytime where a phrase sets no bound (`findSlots.ts`). */
+const SOLVER_EARLIEST = '08:00';
+const SOLVER_LATEST = '20:00';
 
 const NamedWindow = Schema.Literals([
   'dayAfterTomorrow',
@@ -43,6 +53,7 @@ const NamedWindow = Schema.Literals([
   'thisWeek',
   'today',
   'tomorrow',
+  'weekend',
 ]);
 
 const PeriodName = Schema.Literals([
@@ -56,16 +67,18 @@ const PeriodName = Schema.Literals([
   'night',
 ]);
 
+const Bound = Schema.Union([
+  Schema.Struct({ period: PeriodName }),
+  Schema.Struct({
+    earliest: Schema.optional(Schema.String),
+    latest: Schema.optional(Schema.String),
+  }),
+]);
+
+type Bound = typeof Bound.Type;
+
 const FinderExpectation = Schema.Struct({
-  bounds: Schema.NullOr(
-    Schema.Union([
-      Schema.Struct({ period: PeriodName }),
-      Schema.Struct({
-        earliest: Schema.optional(Schema.String),
-        latest: Schema.optional(Schema.String),
-      }),
-    ]),
-  ),
+  bounds: Schema.NullOr(Schema.Union([Bound, Schema.Array(Bound)])),
   days: Schema.NullOr(Schema.Array(Schema.Number)),
   duration: Schema.Union([Schema.Number, Schema.Literal('default')]),
   title: Schema.NullOr(Schema.Array(Schema.String)),
@@ -113,9 +126,25 @@ const day = (today: string, days: number): string =>
 
 const single = (date: string): Window => ({ windowEndDate: date, windowStartDate: date });
 
+const span = (today: string, from: number, to: number): Window => ({
+  windowEndDate: day(today, to),
+  windowStartDate: day(today, from),
+});
+
+/** The coming weekend; on a weekend day, what is left of it, or the next one. */
+const weekends = (today: string): ReadonlyArray<Window> => {
+  const weekday = Temporal.PlainDate.from(today).dayOfWeek;
+  const nextSaturday = 13 - weekday;
+  if (weekday <= 5) {
+    return [span(today, 6 - weekday, 7 - weekday)];
+  }
+  return [span(today, 0, 7 - weekday), span(today, nextSaturday, nextSaturday + 1)];
+};
+
 /**
  * The windows a case's window may be on `today`: one, but a weekday that
- * is today may mean today or the same day next week.
+ * is today may mean today or the same day next week, and a weekend that
+ * has begun what is left of it or the next.
  */
 export const expectedWindows = (
   window: FinderExpectation['window'],
@@ -129,7 +158,7 @@ export const expectedWindows = (
     case 'dayAfterTomorrow':
       return [single(day(today, 2))];
     case 'default':
-      return [{ windowEndDate: day(today, DEFAULT_WINDOW_DAYS - 1), windowStartDate: today }];
+      return [span(today, 0, DEFAULT_WINDOW_DAYS - 1)];
     case 'fortnight':
       return [finderWindowDates('fortnight', today)];
     case 'nextWeek':
@@ -140,25 +169,34 @@ export const expectedWindows = (
       return [single(today)];
     case 'tomorrow':
       return [single(day(today, 1))];
+    case 'weekend':
+      return weekends(today);
   }
 };
 
-/** The daily bounds a case's bounds are: a period's window, or the clock times it names. */
-export const expectedBounds = (
-  bounds: FinderExpectation['bounds'],
-): { readonly earliestTime?: string; readonly latestTime?: string } => {
-  if (bounds === null) {
-    return {};
-  }
-  if ('period' in bounds) {
-    const { earliestTime, latestTime } = periodTimes(bounds.period as Period);
+interface Bounds {
+  readonly earliestTime?: string | undefined;
+  readonly latestTime?: string | undefined;
+}
+
+const boundsOf = (bound: Bound): Bounds => {
+  if ('period' in bound) {
+    const { earliestTime, latestTime } = periodTimes(bound.period as Period);
     return { earliestTime, latestTime };
   }
   return {
-    ...(bounds.earliest === undefined ? {} : { earliestTime: bounds.earliest }),
-    ...(bounds.latest === undefined ? {} : { latestTime: bounds.latest }),
+    ...(bound.earliest === undefined ? {} : { earliestTime: bound.earliest }),
+    ...(bound.latest === undefined ? {} : { latestTime: bound.latest }),
   };
 };
+
+/** The daily bounds a case accepts: a period's window or clock times, any of a list; none for `null`. */
+export const expectedBounds = (bounds: FinderExpectation['bounds']): ReadonlyArray<Bounds> =>
+  bounds === null
+    ? [{}]
+    : Array.isArray(bounds)
+      ? bounds.map(boundsOf)
+      : [boundsOf(bounds as Bound)];
 
 /** What an answer gave for each part, as a report shows it. */
 export type FinderGot = Readonly<Record<FinderField, string>>;
@@ -169,10 +207,6 @@ export interface FinderCheck {
 }
 
 const NONE = '-';
-
-/** A window and its weekdays, the way a report shows them. */
-const whenText = (window: Window, days: ReadonlyArray<number> | undefined): string =>
-  `${window.windowStartDate}..${window.windowEndDate}${days === undefined || days.length === 0 ? '' : ` on ${sortedDays(days)}`}`;
 
 /** The dates a window and its weekdays search (no weekdays: every day of the window). */
 export const datesSearched = (window: Window, days: ReadonlyArray<number> | undefined): string => {
@@ -193,13 +227,28 @@ export const datesSearched = (window: Window, days: ReadonlyArray<number> | unde
 const sortedDays = (days: ReadonlyArray<number> | undefined): string =>
   days === undefined || days.length === 0 ? NONE : [...days].sort((a, b) => a - b).join(',');
 
-const boundsText = (bounds: {
-  readonly earliestTime?: string | undefined;
-  readonly latestTime?: string | undefined;
-}): string =>
+/** A window and its weekdays, the way a report shows them. */
+const whenText = (window: Window, days: ReadonlyArray<number> | undefined): string =>
+  `${window.windowStartDate}..${window.windowEndDate}${days === undefined || days.length === 0 ? '' : ` on ${sortedDays(days)}`}`;
+
+/** Bounds as written, for the report. */
+const boundsText = (bounds: Bounds): string =>
   bounds.earliestTime === undefined && bounds.latestTime === undefined
     ? NONE
     : `${bounds.earliestTime ?? ''}–${bounds.latestTime ?? ''}`;
+
+/** Bounds as the solver searches them: its own daytime where one is not set. */
+const searchedBounds = (bounds: Bounds): string =>
+  `${bounds.earliestTime ?? SOLVER_EARLIEST}–${bounds.latestTime ?? SOLVER_LATEST}`;
+
+export interface CheckOptions {
+  /**
+   * A case whose words give no length passes any length (the raw arm: the
+   * schema has the model write one, and only the words' reader knows none
+   * was said). Without it, only the finder's own (`FALLBACK_MINUTES`).
+   */
+  readonly anyLengthUnsaid?: boolean | undefined;
+}
 
 /**
  * An answer held against its case: each part right or wrong, and what it
@@ -210,30 +259,32 @@ export const checkFinder = (
   expect: FinderExpectation,
   result: FindTimeResult,
   today: string,
+  { anyLengthUnsaid = false }: CheckOptions = {},
 ): FinderCheck => {
   if (result.kind === 'rejected') {
     const got = `refused: ${result.reason}`;
     return { failed: FINDER_FIELDS, got: { bounds: got, dates: got, duration: got, title: got } };
   }
   const { constraints, title } = result;
-  const duration = expect.duration === 'default' ? FALLBACK_MINUTES : expect.duration;
+  const lengthRight =
+    expect.duration === 'default'
+      ? anyLengthUnsaid || constraints.durationMinutes === FALLBACK_MINUTES
+      : constraints.durationMinutes === expect.duration;
   const dates = datesSearched(constraints, constraints.daysOfWeek);
   const expectedDates = expectedWindows(expect.window, today).map((window) =>
     datesSearched(window, expect.days ?? undefined),
   );
-  const bounds = boundsText(constraints);
-  const said = title === undefined ? NONE : fold(title);
-  const accepted = expect.title?.map(fold);
+  const said = title === undefined ? '' : fold(title);
   const right: Readonly<Record<FinderField, boolean>> = {
-    bounds: bounds === boundsText(expectedBounds(expect.bounds)),
+    bounds: expectedBounds(expect.bounds).map(searchedBounds).includes(searchedBounds(constraints)),
     dates: expectedDates.includes(dates),
-    duration: constraints.durationMinutes === duration,
-    title: accepted === undefined ? said === NONE : accepted.includes(said),
+    duration: lengthRight,
+    title: expect.title === null ? said === '' : expect.title.map(fold).includes(said),
   };
   return {
     failed: FINDER_FIELDS.filter((field) => !right[field]),
     got: {
-      bounds,
+      bounds: boundsText(constraints),
       dates: whenText(constraints, constraints.daysOfWeek),
       duration: String(constraints.durationMinutes),
       title: title ?? NONE,

@@ -64,7 +64,7 @@
       "bounds": {
         "period": "lunch"
       },
-      "title": null
+      "title": ["", "lunch"]
     }
   },
   {
@@ -101,7 +101,7 @@
     "text": "Two hours on the weekend, in the morning",
     "expect": {
       "duration": 120,
-      "window": "default",
+      "window": "weekend",
       "days": [6, 7],
       "bounds": {
         "period": "morning"
@@ -274,9 +274,21 @@
       "duration": 60,
       "window": "tomorrow",
       "days": null,
-      "bounds": {
-        "earliest": "14:00"
-      },
+      "bounds": [
+        {
+          "earliest": "13:00"
+        },
+        {
+          "earliest": "13:30"
+        },
+        {
+          "earliest": "14:00"
+        },
+        {
+          "earliest": "14:00",
+          "latest": "17:00"
+        }
+      ],
       "title": null
     }
   },
@@ -337,7 +349,7 @@
       "bounds": {
         "period": "morning"
       },
-      "title": ["fokuszeit"]
+      "title": ["fokuszeit", "fokus"]
     }
   },
   {
@@ -389,7 +401,7 @@
     "text": "Zwei Stunden am Wochenende",
     "expect": {
       "duration": 120,
-      "window": "default",
+      "window": "weekend",
       "days": [6, 7],
       "bounds": null,
       "title": null
