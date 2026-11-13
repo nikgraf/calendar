@@ -18,8 +18,8 @@ Claude model. The data is made with DeepSeek V4 over DeepSeek's own API:
 MIT weights, and its Open Platform terms (effective 2026-04-29, section
 4.2(3)) name "training other models (such as model distillation)" as a
 permitted use. The first rounds of 2026-11-11 and 2026-11-12 were made
-with Claude and are set aside in `output/bench/finetune/claude-made/`;
-nothing in there is trained on or shipped.
+with Claude; nothing of them was trained on for a published model or
+shipped, and their data and runs left the training folder on 2026-11-13.
 
 ## 1. The data
 
