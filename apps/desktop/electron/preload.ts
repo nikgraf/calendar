@@ -13,8 +13,7 @@ contextBridge.exposeInMainWorld('calendarBridge', {
   /** Brings Calendar.app forward (false under the e2e fixture, which opens nothing). */
   appleCalendarOpen: () => ipcRenderer.invoke('appleCalendar:open'),
   appleCalendarStatus: () => ipcRenderer.invoke('appleCalendar:status'),
-  /** The question at launch (once, while the Assistant's model was never answered for its version). */
-  /** The Assistant's Download button: the person agrees, the download starts. */
+  /** The Create lesson's or the Assistant's Download button: the person agrees, the download starts. */
   assistantDownload: () => ipcRenderer.invoke('assistant:download'),
   /** One prompt to the Assistant's own model (assistantModel/), its JSON answer back. */
   assistantGenerate: (prompt: string) => ipcRenderer.invoke('assistant:generate', prompt),

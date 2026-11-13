@@ -3,8 +3,10 @@
  * Qwen3.5 0.8B trained for the tuned path (`tuned.ts`), one GGUF file
  * (Q8_0) published on GitHub (`nikgraf/calendar-models`, its README says
  * how it was made and from what). Each device downloads it once, after
- * asking, and checks it by size and SHA-256 before it is loaded. A new
- * version is a new release: the version changes, and the app asks again.
+ * the person asks for it (the Create lesson, the Assistant's notice), and
+ * checks it by size and SHA-256 before it is loaded. A new version is a
+ * new release: the version changes, and it starts unasked (todo.md: how
+ * it reaches someone who had the last one).
  */
 export interface AssistantModelManifest {
   readonly bytes: number;
@@ -205,6 +207,12 @@ export const noticeCopy = (
   }
 };
 
+/** A message as a sentence: its own full stop, or one added. */
+const sentence = (message: string): string => {
+  const trimmed = message.trim();
+  return /[.!?…]$/u.test(trimmed) ? trimmed : `${trimmed}.`;
+};
+
 /**
  * What the Create lesson says about the model, in its banner, while the
  * model is not on the device yet: what the Assistant is and what the
@@ -237,11 +245,15 @@ export const lessonModelCopy = (
       case 'verifying':
         return `Checking the downloaded model… ${meanwhile}`;
       case 'waiting':
-        return state.for === 'network'
-          ? `The Assistant’s model downloads once this ${device} is online. ${meanwhile}`
-          : `The Assistant’s model downloads when this ${device} is on Wi-Fi. ${meanwhile}`;
+        if (state.for === 'network') {
+          return `The Assistant’s model downloads once this ${device} is online. ${meanwhile}`;
+        }
+        // As the notice tells them apart: on Wi-Fi in Low Data Mode, or on mobile data.
+        return options.network?.expensive === true || options.network?.constrained !== true
+          ? `The Assistant’s model downloads when this ${device} is on Wi-Fi. ${meanwhile}`
+          : `The Assistant’s model waits while Low Data Mode is on. ${meanwhile}`;
       case 'failed':
-        return `The download of the Assistant’s model did not finish: ${state.message} Try again and it goes on from where it stopped. ${meanwhile}`;
+        return `The download of the Assistant’s model did not finish: ${sentence(state.message)} ${meanwhile}`;
       case 'unsupported':
         return state.reason === 'memory'
           ? `This ${device} can’t run the Assistant’s model: it needs 8 GB of memory. The demo shows what it does; the Form makes your events.`

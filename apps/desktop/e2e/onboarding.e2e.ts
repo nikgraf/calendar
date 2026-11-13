@@ -427,7 +427,12 @@ describe('Create with AI before the Assistant’s model is here: the demo, and t
         ],
         events: [],
       },
-      { assistantModel: { manifest }, onboarding: 'on' },
+      {
+        // A stand-in for llama-server, which CI's build has none of: never
+        // started, since the download fails before there is a model to run.
+        assistantModel: { llamaServer: '/usr/bin/true', manifest },
+        onboarding: 'on',
+      },
     );
   });
 

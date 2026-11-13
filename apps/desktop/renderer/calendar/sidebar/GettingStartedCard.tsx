@@ -17,6 +17,21 @@ import { CheckCircleIcon, ChevronDownIcon, ChevronRightIcon, MoreIcon } from '..
 import { Popover } from '../../ui/Popover.tsx';
 
 /**
+ * What a row says under its title: the lesson's line until it is ticked,
+ * and the Create row's download while it runs, ticked or not.
+ */
+const rowLine = (
+  ticked: boolean,
+  subtitle: string,
+  note: ReturnType<typeof createRowNote>,
+): { readonly progress?: number; readonly text: string } | undefined => {
+  if (note?.progress !== undefined) {
+    return { progress: note.progress, text: note.subtitle };
+  }
+  return ticked ? undefined : { text: note?.subtitle ?? subtitle };
+};
+
+/**
  * The Getting started card in the sidebar, between the mini month and
  * the calendars: one row per lesson, tried or skipped rows ticked, the
  * progress in the header. A row opens its lesson in the side panel (the
@@ -116,7 +131,7 @@ export function GettingStartedCard({
         {rows.map((row) => {
           const copy = lessonCopy(row.id, 'mac');
           const ticked = row.mark !== undefined;
-          const note = row.id === 'create' ? createNote : undefined;
+          const line = rowLine(ticked, copy.subtitle, row.id === 'create' ? createNote : undefined);
           return (
             <li key={row.id}>
               <button
@@ -139,22 +154,22 @@ export function GettingStartedCard({
                   >
                     {copy.title}
                   </span>
-                  {ticked ? null : (
+                  {line === undefined ? null : (
                     <span
                       className="block truncate text-[11px] text-ink-secondary"
                       data-testid={`getting-started-subtitle-${row.id}`}
                     >
-                      {note?.subtitle ?? copy.subtitle}
+                      {line.text}
                     </span>
                   )}
-                  {ticked || note?.progress === undefined ? null : (
+                  {line?.progress === undefined ? null : (
                     <span
                       className="mt-1 block h-[3px] overflow-hidden rounded-full bg-fill"
                       data-testid="getting-started-create-progress"
                     >
                       <span
                         className="block h-full rounded-full bg-primary"
-                        style={{ width: `${String(note.progress)}%` }}
+                        style={{ width: `${String(line.progress)}%` }}
                       />
                     </span>
                   )}

@@ -671,7 +671,13 @@ const useDemoBar = ({
       setPhrase(next);
     }
   }, [next, setPhrase]);
-  return demo ? { formOnly, next, onForm } : undefined;
+  if (!demo) {
+    return undefined;
+  }
+  if (next !== undefined) {
+    return { kind: 'phrase', phrase: next };
+  }
+  return formOnly ? { kind: 'form', onForm } : { kind: 'wait' };
 };
 
 export function EventEditSheet({

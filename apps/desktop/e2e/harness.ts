@@ -876,7 +876,12 @@ const assistantModelEnv = (
     ? { CALENDAR_ASSISTANT_MODEL: 'off' }
     : 'file' in choice
       ? { CALENDAR_ASSISTANT_MODEL_FILE: choice.file }
-      : { CALENDAR_ASSISTANT_MANIFEST: choice.manifest };
+      : {
+          CALENDAR_ASSISTANT_MANIFEST: choice.manifest,
+          ...(choice.llamaServer === undefined
+            ? {}
+            : { CALENDAR_LLAMA_SERVER: choice.llamaServer }),
+        };
 
 export interface LaunchOptions {
   /**
@@ -892,14 +897,18 @@ export interface LaunchOptions {
    */
   readonly appleCalendar?: 'off' | 'real' | { readonly fixture: AppleCalendarFixture };
   /**
-   * 'off' (default): the Assistant's own model is left out — no question
-   * at launch, nothing downloaded (`CALENDAR_ASSISTANT_MODEL=off`); under
+   * 'off' (default): the Assistant's own model is left out — nothing
+   * offered, nothing downloaded (`CALENDAR_ASSISTANT_MODEL=off`); under
    * `model: 'fixture'` the fixture answers it anyway. `{ file }`: that
    * GGUF in place of the download, run by the built llama-server.
    * `{ manifest }`: the download from that manifest (a file served from
-   * this Mac).
+   * this Mac); `llamaServer` stands in for the built llama-server, which
+   * CI's build has none of (`CALENDAR_LLAMA_SERVER`).
    */
-  readonly assistantModel?: 'off' | { readonly file: string } | { readonly manifest: string };
+  readonly assistantModel?:
+    | 'off'
+    | { readonly file: string }
+    | { readonly llamaServer?: string; readonly manifest: string };
   /**
    * Absent (default): no camera (CALENDAR_CAMERA=off) — the settings-code
    * reader offers its paste field only and nothing asks TCC. Present: the

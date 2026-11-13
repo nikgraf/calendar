@@ -3,13 +3,14 @@ import type { AssistantModelManifest, AssistantModelState } from '@calendar/ai';
 /**
  * The Assistant's model on this Mac, one state at a time (the shape the
  * iPhone uses, `@calendar/ai`'s `AssistantModelState`, without its network
- * waits). Nothing is fetched before the person agrees: the question at
- * launch or the Assistant's Download button. Once agreed, every launch
+ * waits). Nothing is fetched before the person agrees: the Create
+ * lesson's or the Assistant's Download button. Once agreed, every launch
  * goes on where the last one stopped. A file is used once its size and
- * SHA-256 match the manifest. A new version asks again.
+ * SHA-256 match the manifest. A new version starts unasked; a "Not Now"
+ * from the launch question there used to be reads as declined.
  */
 
-/** The person's answer, kept per model version. */
+/** The person's answer, kept per model version ("declined": the old launch question's "Not Now"). */
 export type MacAnswer = 'agreed' | 'declined';
 
 /** The files the store keeps under the profile's `assistant-model/` folder. */
@@ -42,11 +43,10 @@ export type Fetch = (request: {
 }) => Promise<void>;
 
 export interface AssistantStore {
-  /** The person said yes: the question at launch, or the Assistant's Download button. */
+  /** The person said yes: the Create lesson's or the Assistant's Download button. */
   readonly agree: () => Promise<void>;
   /** At launch: picks up where the last launch left off. */
   readonly boot: () => Promise<void>;
-  readonly decline: () => void;
   readonly getState: () => AssistantModelState;
   readonly retry: () => Promise<void>;
   /** Stops a transfer (the app quits): the partial file stays for the next launch. */
@@ -184,12 +184,6 @@ export const createAssistantStore = ({
         return;
       }
       await download();
-    },
-    decline: () => {
-      files.writeAnswer({ answer: 'declined', version: manifest.version });
-      transfer?.abort();
-      transfer = undefined;
-      set({ kind: 'declined' });
     },
     getState: () => state,
     retry: async () => {

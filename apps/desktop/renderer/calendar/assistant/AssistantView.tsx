@@ -467,6 +467,45 @@ const inputStatus = ({
     : null;
 };
 
+/** The line under the field while the demo holds a phrase: which of the two it is. */
+const demoStatus = (
+  phrase: string | undefined,
+): { readonly text: string; readonly tone: 'hint' } | null =>
+  phrase === undefined
+    ? null
+    : {
+        text:
+          phrase === LESSON_DEMO_PHRASES[0] ? 'Demo · this phrase' : 'Demo · now a change to it',
+        tone: 'hint',
+      };
+
+/**
+ * The field's words when it is empty: why it is locked (an older step on
+ * show; the model not here — the demo's wait for it, unless this Mac cannot
+ * run it), or what to type.
+ */
+const fieldPlaceholder = ({
+  demo,
+  fieldCopy,
+  hasDrafts,
+  previewing,
+  status,
+}: {
+  readonly demo: boolean;
+  readonly fieldCopy: string;
+  readonly hasDrafts: boolean;
+  readonly previewing: boolean;
+  readonly status: ModelStatus | null;
+}): string => {
+  if (previewing) {
+    return 'An earlier step is on show';
+  }
+  if (status !== null && status !== 'ready') {
+    return demo && status !== 'unsupported' ? DEMO_WAIT : fieldCopy;
+  }
+  return hasDrafts ? CHANGE_PLACEHOLDER : QUICK_ADD_PLACEHOLDER;
+};
+
 /**
  * The field to type a phrase into and the microphone beside it, with a
  * line under them for what is going on. Return sends; a paste that is an
@@ -509,28 +548,17 @@ function AssistantInput({
   const unavailable = modelStatus !== null && modelStatus !== 'ready';
   const working = busy || voice === 'transcribing';
   // The demo's phrase: read-only, sent by Return or Send though the model is not here.
-  const demoPhrase = demo?.next;
+  // Not while an older step is on show: nothing is said to it.
+  const demoPhrase = previewing ? undefined : demo?.next;
   const locked = unavailable && demoPhrase === undefined;
-  const status =
-    inputStatus(quick) ??
-    (demoPhrase === undefined
-      ? null
-      : {
-          text:
-            demoPhrase === LESSON_DEMO_PHRASES[0]
-              ? 'Demo · this phrase'
-              : 'Demo · now a change to it',
-          tone: 'hint' as const,
-        });
-  const placeholder = unavailable
-    ? demo === undefined
-      ? fieldCopy
-      : DEMO_WAIT
-    : previewing
-      ? 'An earlier step is on show'
-      : hasDrafts
-        ? CHANGE_PLACEHOLDER
-        : QUICK_ADD_PLACEHOLDER;
+  const status = inputStatus(quick) ?? demoStatus(demoPhrase);
+  const placeholder = fieldPlaceholder({
+    demo: demo !== undefined,
+    fieldCopy,
+    hasDrafts,
+    previewing,
+    status: modelStatus,
+  });
   return (
     <div className="flex shrink-0 flex-col gap-1 px-4 pt-1 pb-2" data-testid="quick-add">
       <div className="flex items-center gap-2">

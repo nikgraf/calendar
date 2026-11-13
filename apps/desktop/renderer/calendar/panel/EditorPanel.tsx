@@ -392,7 +392,7 @@ export function EditorPanel({
           inert={leaving === 'form'}
           ref={switcher.formPane}
         >
-          {/* The lesson's frame is over the form too: without the model, the form is where it opens. */}
+          {/* The lesson's frame is over the form too: the lesson goes on there after the Assistant. */}
           {lessonBanner}
           {/* An older step on show is looked at, not edited. */}
           <fieldset className="contents" disabled={previewing}>

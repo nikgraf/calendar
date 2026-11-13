@@ -55,15 +55,13 @@ const barStatus = ({
 
 /**
  * The Create lesson's demo, while the Assistant's model is not on this
- * iPhone: the phrase it answers next, and the way on once it said both.
+ * iPhone: the phrase it answers next; once it said both, the Form (an
+ * iPhone that cannot run the model) or the wait for the model.
  */
-export interface BarDemo {
-  /** This iPhone cannot run the model: after the demo, the way on is the Form. */
-  readonly formOnly: boolean;
-  /** The phrase the demo answers next; none once it said both. */
-  readonly next: string | undefined;
-  readonly onForm: () => void;
-}
+export type BarDemo =
+  | { readonly kind: 'form'; readonly onForm: () => void }
+  | { readonly kind: 'phrase'; readonly phrase: string }
+  | { readonly kind: 'wait' };
 
 /**
  * Whether the demo takes the bar's place: its next phrase, or the Form
@@ -71,7 +69,7 @@ export interface BarDemo {
  * capsule leaves meanwhile). Not while an older step is on show.
  */
 export const demoHoldsBar = (demo: BarDemo | undefined, previewing: boolean): boolean =>
-  demo !== undefined && !previewing && (demo.next !== undefined || demo.formOnly);
+  demo !== undefined && !previewing && demo.kind !== 'wait';
 
 /** Said once the demo is through and the model is still on its way. */
 const DEMO_WAIT = 'The Assistant answers anything once its model is here.';
@@ -79,19 +77,17 @@ const DEMO_WAIT = 'The Assistant answers anything once its model is here.';
 /** The line over the bar: an older step on show, what it is doing, or the demo through and waiting. */
 const barLine = ({
   demo,
-  demoBar,
   previewing,
   status,
 }: {
   readonly demo: BarDemo | undefined;
-  readonly demoBar: boolean;
   readonly previewing: boolean;
   readonly status: string | undefined;
 }): string => {
   if (previewing) {
     return 'An earlier step is on show';
   }
-  return status ?? (demo !== undefined && !demoBar ? DEMO_WAIT : '');
+  return status ?? (demo?.kind === 'wait' ? DEMO_WAIT : '');
 };
 
 /**
@@ -104,14 +100,13 @@ function DemoBar({
   onSend,
   working,
 }: {
-  readonly demo: BarDemo;
+  readonly demo: Exclude<BarDemo, { readonly kind: 'wait' }>;
   readonly onSend: (phrase: string) => void;
   readonly working: boolean;
 }) {
   const styles = useStyles(makeStyles);
   const { colors } = useTheme();
-  const { next } = demo;
-  if (next === undefined) {
+  if (demo.kind === 'form') {
     return (
       <Pressable
         accessibilityRole="button"
@@ -126,6 +121,7 @@ function DemoBar({
       </Pressable>
     );
   }
+  const next = demo.phrase;
   return (
     <View style={styles.demo}>
       <Text style={styles.demoLabel}>
@@ -247,8 +243,7 @@ export function AssistantBar({
   const typing = typingAsked && !off;
   // The demo's phrase, or its way on to the Form, in place of the bar;
   // through and waiting for the model, the bar as it is without one.
-  const demoBar = demoHoldsBar(demo, previewing);
-  const line = barLine({ demo, demoBar, previewing, status: status?.text });
+  const line = barLine({ demo, previewing, status: status?.text });
 
   if (modelStatus === null) {
     return null;
@@ -266,7 +261,7 @@ export function AssistantBar({
       >
         {line}
       </Text>
-      {demo !== undefined && demoBar ? (
+      {demo !== undefined && demo.kind !== 'wait' && !previewing ? (
         <DemoBar demo={demo} onSend={(text) => void submit(text)} working={working} />
       ) : typing ? (
         <View style={styles.field}>

@@ -227,7 +227,7 @@ export const assistantModel = (): AssistantModel => runtime().model;
 export const assistantReader = (): PhraseReader => runtime().reader;
 
 /**
- * The e2e flows' Assistant without its model (flow 26 reaches the Create
+ * The e2e flows' Assistant without its model (flow 28 reaches the Create
  * lesson's demo this way under the fixture bundle, whose model is always
  * there): the state reads as not asked for; the fixture still answers
  * every other reader. Set by the `onboarding-fixture?assistant=absent`

@@ -153,6 +153,27 @@ describe('lessonModelCopy', () => {
     const failed = lessonModelCopy({ kind: 'failed', message: 'The connection was lost.' }, iPhone);
     expect(failed.action).toEqual({ kind: 'retry', label: 'Try Again' });
     expect(failed.text).toContain('the demo');
+    // A message without its own full stop gets one.
+    expect(
+      lessonModelCopy({ kind: 'failed', message: 'fetch failed' }, { ...iPhone, device: 'Mac' })
+        .text,
+    ).toContain('did not finish: fetch failed. Meanwhile');
+  });
+
+  it('tells waiting for Wi-Fi from waiting out Low Data Mode, as the notice does', () => {
+    const waiting = { for: 'wifi' as const, kind: 'waiting' as const, received: 0, total: SIZE };
+    expect(
+      lessonModelCopy(waiting, {
+        ...iPhone,
+        network: { constrained: false, expensive: true, satisfied: true },
+      }).text,
+    ).toContain('downloads when this iPhone is on Wi-Fi');
+    expect(
+      lessonModelCopy(waiting, {
+        ...iPhone,
+        network: { constrained: true, expensive: false, satisfied: true },
+      }).text,
+    ).toContain('waits while Low Data Mode is on');
   });
 
   it('points an iPhone that cannot run it to the Form, and says when the model is ready', () => {

@@ -20,6 +20,21 @@ import { openLesson } from './lessons.ts';
 import { BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme } from './theme.ts';
 
 /**
+ * What a row says under its title: the lesson's line until it is ticked,
+ * and the Create row's download while it runs, ticked or not.
+ */
+const rowLine = (
+  ticked: boolean,
+  subtitle: string,
+  note: ReturnType<typeof createRowNote>,
+): { readonly progress?: number; readonly text: string } | undefined => {
+  if (note?.progress !== undefined) {
+    return { progress: note.progress, text: note.subtitle };
+  }
+  return ticked ? undefined : { text: note?.subtitle ?? subtitle };
+};
+
+/**
  * The Getting started card at the top of the Calendar tab: one row per
  * lesson, tried or skipped rows ticked, the progress in the header. A
  * row opens its lesson in place; "Add your accounts" leads the list
@@ -134,10 +149,10 @@ export function GettingStartedCard({ timeZone }: { timeZone: string }) {
       {rows.map((row) => {
         const copy = lessonCopy(row.id, 'iphone');
         const ticked = row.mark !== undefined;
-        const note = row.id === 'create' ? createNote : undefined;
+        const line = rowLine(ticked, copy.subtitle, row.id === 'create' ? createNote : undefined);
         return (
           <Pressable
-            accessibilityLabel={`${copy.title}${ticked ? ', done' : ''}`}
+            accessibilityLabel={`${copy.title}${ticked ? ', done' : ''}${line === undefined ? '' : `, ${line.text}`}`}
             accessibilityRole="button"
             key={row.id}
             onPress={() => open(row.id)}
@@ -158,18 +173,18 @@ export function GettingStartedCard({ timeZone }: { timeZone: string }) {
               <Text numberOfLines={1} style={[styles.rowTitle, ticked && styles.rowTicked]}>
                 {copy.title}
               </Text>
-              {ticked ? null : (
+              {line === undefined ? null : (
                 <Text
                   numberOfLines={1}
                   style={styles.rowSubtitle}
                   testID={`getting-started-subtitle-${row.id}`}
                 >
-                  {note?.subtitle ?? copy.subtitle}
+                  {line.text}
                 </Text>
               )}
-              {ticked || note?.progress === undefined ? null : (
+              {line?.progress === undefined ? null : (
                 <View style={styles.rowTrack} testID="getting-started-create-progress">
-                  <View style={[styles.fill, { width: `${String(note.progress)}%` }]} />
+                  <View style={[styles.fill, { width: `${String(line.progress)}%` }]} />
                 </View>
               )}
             </View>

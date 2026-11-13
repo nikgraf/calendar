@@ -68,7 +68,7 @@ declare global {
       /** Brings Calendar.app forward; false when nothing opened (the e2e fixture). */
       appleCalendarOpen: () => Promise<boolean>;
       appleCalendarStatus: () => Promise<string>;
-      /** The question at launch about the Assistant's model, once, while it was never answered. */
+      /** The person agrees to the Assistant's model: its download starts. */
       assistantDownload: () => Promise<void>;
       assistantGenerate: (prompt: string) => Promise<{ json: string }>;
       assistantRetry: () => Promise<void>;

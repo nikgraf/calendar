@@ -364,7 +364,7 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
   const onOnboardingFixture = useEffectEvent((url: string) => {
     forceOnboarding();
     // `?assistant=absent`: as on a device without the Assistant's model yet,
-    // so the Create lesson runs its demo (flow 26).
+    // so the Create lesson runs its demo (flow 28).
     if (/[?&]assistant=absent\b/i.test(url)) {
       showAssistantAbsent();
     }
