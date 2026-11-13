@@ -15,7 +15,8 @@
  * developer's simulator and dev client keep their data) and each flow
  * starts from its own fresh launch. The live flows' items on Google
  * outlive any reset, so the second run gives them titles of their own
- * (`runEnvironment`): a flow cut short never meets its own leftovers.
+ * (`runEnvironment`): a flow cut short never matches its own leftovers by
+ * title (a parked conflict's banner or badge can still fail it).
  *
  * e2e/ci/package.json marks these files as ES modules for Node: the app's
  * own package.json is part of the native fingerprint.
@@ -226,11 +227,13 @@ const main = async (): Promise<number> => {
   // The flow the driver died in (or the screen went black in, or the
   // simulator dropped a touch in) stopped halfway: what it had changed (a
   // primary time zone in the app's data, a reminder in the device's
-  // EventKit) would break its own first check. On CI the second run starts
-  // from an erased simulator with the app installed and set up again, as
-  // the first did. The reboot also brings up a fresh SpringBoard and
-  // backboardd: a relaunch alone is where the black screen began on run
-  // 39159977263, and backboardd is what dropped run 40265233306's touch.
+  // EventKit) would break its own first check. With E2E_APP (ios-e2e) the
+  // second run starts from an erased simulator with the app installed and
+  // set up again, as the first did. The reboot also brings up a fresh
+  // SpringBoard and backboardd: a relaunch alone is where the black screen
+  // began on run 39159977263, and backboardd is what dropped run
+  // 40265233306's touch. The live job has no E2E_APP: its second run gets
+  // only fresh titles (`runEnvironment`) and each flow's own launch.
   const app = process.env['E2E_APP'];
   if (app) {
     const prepared = spawnSync(
