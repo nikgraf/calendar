@@ -56,11 +56,15 @@ const fakeFiles = (
   };
 };
 
-const fakeTransfer = (start: { path?: NetworkReading; running?: TransferNetwork } = {}) => {
+const fakeTransfer = (
+  start: { path?: NetworkReading; running?: TransferNetwork; runningTo?: string } = {},
+) => {
   const starts: Array<TransferNetwork> = [];
   const moves: Array<TransferNetwork> = [];
   let handlers: Parameters<TransferPort['subscribe']>[0] | undefined;
   let running = start.running;
+  // Where the running transfer writes: this store's file unless told otherwise.
+  let runningTo = start.runningTo;
   const transfer: TransferPort = {
     cancel: async () => undefined,
     current: async () =>
@@ -68,11 +72,13 @@ const fakeTransfer = (start: { path?: NetworkReading; running?: TransferNetwork 
         ? { state: 'none' }
         : { expected: 1000, network: running, received: 400, state: 'running' },
     path: () => start.path ?? WIFI,
-    start: async (_url, _destination, network) => {
-      if (running !== undefined) {
+    start: async (_url, destination, network) => {
+      if (running !== undefined && (runningTo === undefined || runningTo === destination)) {
         return { network: running, started: false };
       }
+      // Another destination's transfer is cancelled and this one begun (the module's `start`).
       running = network;
+      runningTo = destination;
       starts.push(network);
       return { network, started: true };
     },
@@ -160,6 +166,22 @@ describe('the Assistant model’s download', () => {
     expect(starts).toEqual([]);
     expect(moves).toEqual(['any']);
     expect(store.getState()).toEqual({ kind: 'downloading', received: 400, total: 1000 });
+  });
+
+  it('replaces a transfer that writes another file (a name from before the version was in it)', async () => {
+    const files = fakeFiles({ answer: { answer: 'wifi', version: 'v1' } });
+    const { emit, starts, transfer } = fakeTransfer({
+      running: 'wifi',
+      runningTo: 'file:///caches/solunivo-assistant-q8_0.gguf',
+    });
+    const store = storeOf(files.files, transfer);
+    await store.boot();
+    expect(starts).toEqual(['wifi']);
+    expect(store.getState()).toEqual({ kind: 'downloading', received: 0, total: 1000 });
+    files.land();
+    emit().onFinish({ path: files.files.destination });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(store.getState().kind).toBe('ready');
   });
 
   it('is ready once the file’s size and checksum match, and remembers that', async () => {

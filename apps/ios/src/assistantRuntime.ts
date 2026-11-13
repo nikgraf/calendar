@@ -69,6 +69,21 @@ const deviceFiles = (
   // Only this version's files stay (the model, its note, the transfer's
   // resume data beside it): another version's would take the room for good.
   const keep = new Set([name, `${name}.verified.json`, `${name}.resume`, `${name}.resume-url`]);
+  // A file from before the version was in its name, which its note says is
+  // this version's: renamed, never fetched again (834 MB).
+  try {
+    const legacy = new File(folder, manifest.file);
+    const legacyNote = new File(folder, `${manifest.file}.verified.json`);
+    const note = legacyNote.exists
+      ? (JSON.parse(legacyNote.textSync()) as { version?: unknown })
+      : undefined;
+    if (legacy.exists && !model.exists && note?.version === manifest.version) {
+      legacy.moveSync(model);
+      legacyNote.moveSync(verifiedNote);
+    }
+  } catch {
+    // Left as it is: it goes below, and the model is fetched again.
+  }
   try {
     for (const entry of folder.list()) {
       if (!keep.has(entry.name)) {

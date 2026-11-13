@@ -195,6 +195,33 @@ export const createAssistantDownload = (deps: AssistantDownloadDeps): AssistantD
     }
   };
 
+  /**
+   * A transfer an earlier launch left is kept only where it fetches this
+   * file: `start` keeps one of the same address and destination and
+   * replaces any other (a file name from before the version was in it,
+   * whose finish would never be taken), then the network the answer allows.
+   */
+  const reconcile = async () => {
+    try {
+      const { network, started } = await transfer.start(
+        manifest.url,
+        files.destination,
+        networkOf(),
+      );
+      if (started) {
+        progress = { received: 0, total: manifest.bytes };
+        if (isMoving(state)) {
+          set(moving());
+        }
+      }
+      if (network !== networkOf()) {
+        await transfer.useNetwork(networkOf());
+      }
+    } catch (error) {
+      set({ kind: 'failed', message: error instanceof Error ? error.message : String(error) });
+    }
+  };
+
   const handlers = {
     onFail: ({ message }: { readonly message: string }) => {
       set({ kind: 'failed', message });
@@ -272,9 +299,7 @@ export const createAssistantDownload = (deps: AssistantDownloadDeps): AssistantD
           total: running.expected > 0 ? running.expected : manifest.bytes,
         };
         set(moving());
-        if (running.network !== networkOf()) {
-          await transfer.useNetwork(networkOf());
-        }
+        await reconcile();
         return;
       }
       // Finished while the app was not running: the delegate moved it into place.
