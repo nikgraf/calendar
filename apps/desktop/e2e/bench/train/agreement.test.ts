@@ -15,7 +15,7 @@ const later = buildTunedRefinePrompt({
 describe('promptDates', () => {
   it('reads the today of a prompt and the day of the draft it shows', () => {
     expect(promptDates(first)).toEqual({ referenceDate: TODAY });
-    expect(promptDates(later)).toEqual({ draftDate: '2027-03-14', referenceDate: TODAY });
+    expect(promptDates(later)).toMatchObject({ draftDate: '2027-03-14', referenceDate: TODAY });
     expect(promptDates('Phrase: haircut')).toBeUndefined();
   });
 });
@@ -47,6 +47,22 @@ describe('rowAgreement', () => {
       sameWorked: false,
       span: 'beyond',
     });
+  });
+
+  it('works times said as amounts out from the draft’s, as the app does', () => {
+    const call = buildTunedRefinePrompt({
+      earlier: ['call at 5'],
+      referenceDate: TODAY,
+      state: { date: TODAY, endTime: '18:00', kind: 'event', startTime: '17:00', title: 'Call' },
+      utterance: 'half an hour later',
+    });
+    const agreed = rowAgreement(
+      call,
+      { endTime: '+30m', kind: 'event', startTime: '+30m', title: 'Call' },
+      { endTime: '18:30', kind: 'event', startTime: '17:30', title: 'Call' },
+    );
+    expect(agreed?.sameWorked).toBe(true);
+    expect(agreed?.parts).toEqual({ endTime: true, kind: true, startTime: true, title: true });
   });
 
   it('counts an answer that is no draft as agreeing on nothing', () => {

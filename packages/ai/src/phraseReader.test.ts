@@ -165,6 +165,28 @@ describe('tunedReader, a later turn', () => {
     });
     expect(shortened).toMatchObject({ prefill: { date: '2026-11-13', endTime: '00:15' } });
     expect(shortened).toMatchObject({ prefill: { endDate: '2026-11-14' } });
+    // A length said is kept whatever day it ends on: past midnight, or no longer a span of days.
+    const trip = {
+      ...dinner,
+      prefill: { ...dinner.prefill, endDate: '2026-11-14', endTime: '10:00', startTime: '09:00' },
+    };
+    const { date: _trip, endDate: _tripEnd, ...tripTimes } = trip.prefill;
+    const brief = modelOf({ ...tripTimes, endTime: '45m', kind: 'event', startTime: '09:00' });
+    const briefer = await tunedReader(brief.model).change({
+      ...input,
+      draft: trip,
+      utterance: 'make it 45 minutes',
+    });
+    expect(briefer).toMatchObject({ prefill: { endTime: '09:45', startTime: '09:00' } });
+    expect(briefer).not.toHaveProperty('prefill.endDate');
+    const long = modelOf({ endTime: '20h', kind: 'event', startTime: '09:00', title: 'Shift' });
+    await expect(
+      tunedReader(long.model).first({
+        phrase: 'shift from 9 for 20 hours',
+        referenceDate: TODAY,
+        timeZone: ZONE,
+      }),
+    ).resolves.toMatchObject({ prefill: { endDate: '2026-11-13', endTime: '05:00' } });
     // A shift of a draft with no times is turned down, not made a day long.
     const allDay = { ...dinner, prefill: { ...dinner.prefill, isAllDay: true } };
     await expect(

@@ -1,5 +1,6 @@
 import { type ByDay, byDayError, Temporal, type Weekday } from '@calendar/core';
 import type { NotesChange, ReminderChange } from './extras.ts';
+import { LENGTH_KEY } from './said.ts';
 import {
   addHour,
   type QuickAddPrefill,
@@ -264,16 +265,20 @@ const clockOf = (minutes: number): string =>
  * - An end before the start reads as past midnight for a night of up to
  *   twelve hours (a party "10pm to 2am"): the next day.
  * - Without an end, or one that reads as no night, an hour.
+ * - A length said (`LENGTH_KEY`, from `workedTimes`) is kept over all of
+ *   these: the end is that long after the start, on whatever day.
  */
 const timesOf = (
   before: QuickAddPrefill | undefined,
   {
     date,
     end,
+    length,
     start,
   }: {
     readonly date: string;
     readonly end: string | undefined;
+    readonly length?: number | undefined;
     readonly start: string | undefined;
   },
 ): { readonly endDate?: string; readonly endTime: string } => {
@@ -283,6 +288,11 @@ const timesOf = (
       ? 0
       : Temporal.PlainDate.from(before.date).until(before.endDate).days;
   const day = (days: number) => Temporal.PlainDate.from(date).add({ days }).toString();
+  if (start !== undefined && length !== undefined && length > 0) {
+    const ends = minutesOf(start) + length;
+    const days = Math.floor(ends / DAY_MINUTES);
+    return { ...(days > 0 ? { endDate: day(days) } : {}), endTime: clockOf(ends % DAY_MINUTES) };
+  }
   const sameTimes =
     before !== undefined &&
     (start === undefined) === before.isAllDay &&
@@ -364,7 +374,13 @@ export const answerResult = (
   const end = timeOf(answer['endTime']);
   const startTime = start ?? '00:00';
   const { date, recurrence } = repeatOf(answer['repeat'], said);
-  const { endDate, endTime } = timesOf(before, { date, end, start });
+  const length = answer[LENGTH_KEY];
+  const { endDate, endTime } = timesOf(before, {
+    date,
+    end,
+    length: typeof length === 'number' ? length : undefined,
+    start,
+  });
   const location = textOf(answer['location']);
   const invite = namesOf(answer['invite']);
   const uninvite = namesOf(answer['uninvite']);

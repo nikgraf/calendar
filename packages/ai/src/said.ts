@@ -225,6 +225,9 @@ export const writtenAmount = (minutes: number, { shift }: { readonly shift: bool
   return `${sign}${size > 0 && size % 60 === 0 ? `${String(size / 60)}h` : `${String(size)}m`}`;
 };
 
+/** Where `workedTimes` keeps a length said in minutes: no key a model writes. */
+export const LENGTH_KEY = 'lengthMinutes';
+
 /** The times of the draft a later turn changes. */
 export interface DraftTimes {
   readonly date: string;
@@ -238,7 +241,9 @@ export interface DraftTimes {
  * shift ("+30m", "-1h") is the draft's start moved by it, an end written
  * as a shift the draft's end moved, an end written as a length ("45m")
  * that long after the start. A start moved past midnight moves the day
- * with it. Clock times and anything else are left as written. Undefined,
+ * with it. An end written as a length also stays beside it as minutes
+ * (`LENGTH_KEY`), so the result ends that long after the start whatever
+ * day that is. Clock times and anything else are left as written. Undefined,
  * an answer to turn down, where an amount cannot be worked out: a shift
  * without a timed draft or that reads as none, a length without a start,
  * a start as a length, or a day or more.
@@ -297,6 +302,8 @@ export const workedTimes = (
     ...answer,
     ...(date === undefined ? {} : { date }),
     ...(endMinutes === undefined ? {} : { endTime: clockOf(endMinutes) }),
+    // The length as said: a clock time alone cannot say on which day it ends.
+    ...(end !== undefined && !end.shift ? { [LENGTH_KEY]: end.minutes } : {}),
     ...(start === undefined || startMinutes === undefined
       ? {}
       : { startTime: clockOf(startMinutes) }),

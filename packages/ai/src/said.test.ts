@@ -187,14 +187,17 @@ describe('workedTimes', () => {
   it('ends a length after the start: the draft’s, one written or one moved', () => {
     expect(workedTimes({ endTime: '45m', startTime: '17:00' }, { draft })).toEqual({
       endTime: '17:45',
+      lengthMinutes: 45,
       startTime: '17:00',
     });
     expect(workedTimes({ endTime: '2h', startTime: '09:30' }, {})).toEqual({
       endTime: '11:30',
+      lengthMinutes: 120,
       startTime: '09:30',
     });
     expect(workedTimes({ endTime: '90m', startTime: '+1h' }, { draft })).toEqual({
       endTime: '19:30',
+      lengthMinutes: 90,
       startTime: '18:00',
     });
   });
