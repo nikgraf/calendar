@@ -141,6 +141,12 @@ contextBridge.exposeInMainWorld('calendarBridge', {
     ipcRenderer.on('rpc', wrapped);
     return () => ipcRenderer.off('rpc', wrapped);
   },
+  /** A phrase lost with the helper that listened to it. */
+  onSpeechLost: (listener: (lost: unknown) => void) => {
+    const wrapped = (_event: unknown, lost: unknown) => listener(lost);
+    ipcRenderer.on('model:speech-lost', wrapped);
+    return () => ipcRenderer.off('model:speech-lost', wrapped);
+  },
   /** The words of the phrase being listened to, each recogniser's so far, as they change. */
   onSettingsFileChanged: (listener: (status: unknown) => void) => {
     const wrapped = (_event: unknown, status: unknown) => listener(status);

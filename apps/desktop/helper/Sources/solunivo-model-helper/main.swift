@@ -224,22 +224,25 @@ func sessionId(_ params: [String: JSONValue]) -> Int? {
   return Int(value)
 }
 
-func handleSpeechStart(_ id: Int, _ params: [String: JSONValue]) async {
+/// Queued on the stdin reader, in the order the lines came (speech.start,
+/// .finish and .cancel alike); answered from a task once its turn ran.
+func handleSpeechStart(_ id: Int, _ params: [String: JSONValue]) {
   guard let session = sessionId(params) else {
     emitError(id, HelperError.badRequest("session required").message)
     return
   }
   let localeId = params["locale"]?.stringValue ?? Locale.current.identifier
-  do {
-    let sources = try await SpeechSessions.shared.start(id: session, locale: localeId) {
-      source, text in
-      emit(["event": "speech.words", "session": session, "source": source, "text": text])
+  let task = SpeechSessions.shared.start(id: session, locale: localeId) { source, text in
+    emit(["event": "speech.words", "session": session, "source": source, "text": text])
+  }
+  Task.detached {
+    do {
+      emitResult(id, ["sources": try await task.value])
+    } catch let error as SpeechBridgeError {
+      emitError(id, HelperError.unavailable(error.message).message)
+    } catch {
+      emitError(id, "speech start failed: \(error.localizedDescription)")
     }
-    emitResult(id, ["sources": sources])
-  } catch let error as SpeechBridgeError {
-    emitError(id, HelperError.unavailable(error.message).message)
-  } catch {
-    emitError(id, "speech start failed: \(error.localizedDescription)")
   }
 }
 
@@ -269,24 +272,32 @@ func handleSpeechAudio(_ id: Int, _ params: [String: JSONValue]) {
   emitResult(id, [:])
 }
 
-func handleSpeechFinish(_ id: Int, _ params: [String: JSONValue]) async {
+func handleSpeechFinish(_ id: Int, _ params: [String: JSONValue]) {
   guard let session = sessionId(params) else {
     emitError(id, HelperError.badRequest("session required").message)
     return
   }
-  do {
-    let segments = try await SpeechSessions.shared.finish(id: session) ?? []
-    emitResult(id, ["segments": segments.map(\.json)])
-  } catch {
-    emitError(id, "transcription failed: \(error.localizedDescription)")
+  let task = SpeechSessions.shared.finish(id: session)
+  Task.detached {
+    do {
+      let segments = try await task.value ?? []
+      emitResult(id, ["segments": segments.map(\.json)])
+    } catch {
+      emitError(id, "transcription failed: \(error.localizedDescription)")
+    }
   }
 }
 
-func handleSpeechCancel(_ id: Int, _ params: [String: JSONValue]) async {
-  if let session = sessionId(params) {
-    await SpeechSessions.shared.cancel(id: session)
+func handleSpeechCancel(_ id: Int, _ params: [String: JSONValue]) {
+  guard let session = sessionId(params) else {
+    emitResult(id, [:])
+    return
   }
-  emitResult(id, [:])
+  let task = SpeechSessions.shared.cancel(id: session)
+  Task.detached {
+    _ = await task.result
+    emitResult(id, [:])
+  }
 }
 
 func handleTranscribe(_ id: Int, _ params: [String: JSONValue]) async {
@@ -385,9 +396,23 @@ func handleLine(_ line: String) {
   // (NSTimeZone.h), and the bridges speak device-local wall clock: the
   // helper outlives a flight, so every request reads the zone afresh.
   NSTimeZone.resetSystemTimeZone()
-  if request.method == "speech.audio" {
+  // Dictation's steps keep the order their lines came in: queued here,
+  // on the reader, not in tasks of their own that may run in any order.
+  switch request.method {
+  case "speech.audio":
     handleSpeechAudio(request.id, params)
     return
+  case "speech.start":
+    handleSpeechStart(request.id, params)
+    return
+  case "speech.finish":
+    handleSpeechFinish(request.id, params)
+    return
+  case "speech.cancel":
+    handleSpeechCancel(request.id, params)
+    return
+  default:
+    break
   }
   Task.detached {
     switch request.method {
@@ -395,9 +420,6 @@ func handleLine(_ line: String) {
     case "generateJson": await handleGenerate(request.id, params)
     case "prepareSpeech": await handlePrepareSpeech(request.id, params)
     case "transcribe": await handleTranscribe(request.id, params)
-    case "speech.start": await handleSpeechStart(request.id, params)
-    case "speech.finish": await handleSpeechFinish(request.id, params)
-    case "speech.cancel": await handleSpeechCancel(request.id, params)
     case "capture.watch":
       do {
         emitResult(request.id, try CaptureWatchDispatch.invoke(params: params))

@@ -4,6 +4,7 @@ type Handler = (event: { sender: Sender }, ...args: Array<unknown>) => unknown;
 interface Sender {
   readonly destroy: () => void;
   readonly isDestroyed: () => boolean;
+  readonly lost: Array<unknown>;
   readonly once: (name: 'destroyed', listener: () => void) => void;
   readonly send: (channel: string, payload: unknown) => void;
   readonly sent: Array<unknown>;
@@ -11,6 +12,7 @@ interface Sender {
 
 const main = vi.hoisted(() => ({
   calls: [] as Array<{ method: string; params: unknown }>,
+  exits: [] as Array<() => void>,
   handlers: new Map<string, Handler>(),
   helperEvents: new Map<string, (body: Record<string, unknown>) => void>(),
 }));
@@ -35,6 +37,10 @@ vi.mock('./helperProcess.ts', () => ({
     main.helperEvents.set(name, listener);
     return () => undefined;
   },
+  onHelperExit: (listener: () => void) => {
+    main.exits.push(listener);
+    return () => undefined;
+  },
   registerHelperLifecycle: () => undefined,
 }));
 
@@ -50,6 +56,7 @@ vi.mock('./modelProvider.ts', () => ({
 
 const sender = (): Sender => {
   const sent: Array<unknown> = [];
+  const lost: Array<unknown> = [];
   const closing: Array<() => void> = [];
   let destroyed = false;
   return {
@@ -60,10 +67,11 @@ const sender = (): Sender => {
       }
     },
     isDestroyed: () => destroyed,
+    lost,
     once: (_name, listener) => {
       closing.push(listener);
     },
-    send: (_channel, payload) => sent.push(payload),
+    send: (channel, payload) => (channel === 'model:speech-lost' ? lost : sent).push(payload),
     sent,
   };
 };
@@ -80,6 +88,7 @@ const helperSays = (body: Record<string, unknown>) => main.helperEvents.get('spe
 
 beforeEach(async () => {
   main.calls.length = 0;
+  main.exits.length = 0;
   main.handlers.clear();
   main.helperEvents.clear();
   vi.resetModules();
@@ -162,5 +171,17 @@ describe('dictation in main', () => {
     helperSays({ session: 1, source: 'quick', text: 'Lunch' });
     expect(window.sent).toEqual([{ session: 1, source: 'quick', text: 'Lunch' }]);
     expect(main.calls.map((entry) => entry.method)).toEqual(['speech.start']);
+  });
+
+  it('tells the window its phrase was lost when the helper exits', async () => {
+    const window = sender();
+    await call('model:speech-start', window, 'en-US');
+    for (const exit of main.exits) {
+      exit();
+    }
+    expect(window.lost).toEqual([{ session: 1 }]);
+    // Gone with it: a new helper's late words or a later finish find nothing here.
+    helperSays({ session: 1, source: 'quick', text: 'Lunch' });
+    expect(window.sent).toEqual([]);
   });
 });

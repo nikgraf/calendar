@@ -290,7 +290,9 @@ private func joined(_ done: String, _ text: String) -> String {
 /// The one phrase listened to at a time, by the id its caller gave it: a
 /// start replaces (and drops) the phrase before, and a late call about an
 /// older phrase does nothing. Starts, finishes and cancels run one after
-/// another in the order they were asked for, so two bars that start and
+/// another in the order they were called: each is queued synchronously,
+/// as the call arrives (the helper's stdin reader, the iOS module's serial
+/// queue), and its task is what the caller awaits. Two bars that start and
 /// give up at the same moment cannot leave the older phrase listening.
 /// A host that owns the microphone (iOS) opens and closes it inside those
 /// steps (`open`, `close`), so it follows the same order. A start closes
@@ -302,15 +304,15 @@ final class SpeechSessions: @unchecked Sendable {
 
   private let lock = NSLock()
   private var current: (id: Int, listening: SpeechListening)?
-  /// The step asked for last: the next one waits for it.
+  /// The step queued last: the next one waits for it.
   private var tail: Task<Void, Never>?
 
-  /// The recognisers that listen to the phrase.
+  /// Queues a start; its task answers the recognisers that listen.
   func start(
     id: Int, locale: String, onWords: @escaping SpeechListening.Words,
     open: (@Sendable () throws -> Void)? = nil, close: (@Sendable () -> Void)? = nil
-  ) async throws -> [String] {
-    try await serial {
+  ) -> Task<[String], Error> {
+    serial {
       close?()
       await self.take(nil)?.cancel()
       let listening = try await SpeechListening.start(locale: locale, onWords: onWords)
@@ -330,25 +332,27 @@ final class SpeechSessions: @unchecked Sendable {
     listening?.append(buffer)
   }
 
-  /// Nil when `id` is not the phrase listened to (dropped, or replaced).
-  func finish(id: Int, close: (@Sendable () -> Void)? = nil) async throws -> [SpeechSegment]? {
-    try await serial {
+  /// Queues a finish; nil when `id` is not the phrase listened to (dropped, or replaced).
+  func finish(id: Int, close: (@Sendable () -> Void)? = nil) -> Task<[SpeechSegment]?, Error> {
+    serial {
       guard let listening = self.take(id) else { return nil }
       close?()
       return try await listening.finish()
     }
   }
 
-  /// Drops whatever phrase is listened to: its host went away (a reload).
-  func cancelAll(close: (@Sendable () -> Void)? = nil) async {
-    _ = try? await serial {
+  /// Queues dropping whatever phrase is listened to: its host went away (a reload).
+  @discardableResult
+  func cancelAll(close: (@Sendable () -> Void)? = nil) -> Task<Void, Error> {
+    serial {
       close?()
       await self.take(nil)?.cancel()
     }
   }
 
-  func cancel(id: Int, close: (@Sendable () -> Void)? = nil) async {
-    _ = try? await serial {
+  @discardableResult
+  func cancel(id: Int, close: (@Sendable () -> Void)? = nil) -> Task<Void, Error> {
+    serial {
       guard let listening = self.take(id) else { return }
       close?()
       await listening.cancel()
@@ -365,10 +369,11 @@ final class SpeechSessions: @unchecked Sendable {
     }
   }
 
-  private func serial<T: Sendable>(_ work: @escaping @Sendable () async throws -> T) async throws
-    -> T
-  {
-    let task = lock.withLock {
+  /// Queues `work` behind the step before, now, in the caller's order.
+  private func serial<T: Sendable>(_ work: @escaping @Sendable () async throws -> T) -> Task<
+    T, Error
+  > {
+    lock.withLock {
       let previous = tail
       let task = Task<T, Error> {
         await previous?.value
@@ -377,6 +382,5 @@ final class SpeechSessions: @unchecked Sendable {
       tail = Task { _ = try? await task.value }
       return task
     }
-    return try await task.value
   }
 }

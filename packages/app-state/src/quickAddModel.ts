@@ -208,6 +208,18 @@ export const useQuickAddModel = ({
   const wordsRef = useRef(onWords);
   wordsRef.current = onWords;
 
+  /** The phrase went with its recognisers: nothing will end it, so it ends here. */
+  const onLost = () => {
+    if (!ear.current) {
+      return;
+    }
+    starting.current = null;
+    void speech.cancel();
+    failed('Dictation stopped — try again.');
+  };
+  const lostRef = useRef(onLost);
+  lostRef.current = onLost;
+
   const listen = async () => {
     const controller = new AbortController();
     starting.current = controller;
@@ -260,6 +272,11 @@ export const useQuickAddModel = ({
       };
       try {
         const started = await speech.start({
+          onLost: () => {
+            if (starting.current === controller && !controller.signal.aborted) {
+              lostRef.current();
+            }
+          },
           onWords: (source, text) => {
             // Only this recording's words: a later one has its own ear.
             if (starting.current === controller && !controller.signal.aborted) {

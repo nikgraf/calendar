@@ -7,17 +7,25 @@ import Foundation
 /// words go to JS as `onWords` while the phrase is said. JS decides when
 /// the phrase ended (packages/ai `listenForPhrase`) and asks for it read
 /// whole (`finish`). Nothing is written to disk.
+///
+/// The session's steps are queued as the calls arrive, on Expo's serial
+/// queue for async functions, so they run in the order JS made them.
 public class SolunivoSpeechModule: Module {
+  /// Off once the module is torn down: a start still on its way is refused.
+  private let alive = Alive()
+
   public func definition() -> ModuleDefinition {
     Name("SolunivoSpeech")
 
     Events("onWords")
 
     // JS reloaded (or the app's host went away) mid-phrase: nothing is
-    // left to finish it, so the microphone closes and the phrase goes.
-    OnDestroy {
+    // left to finish it, so the microphone closes and the phrase goes, and
+    // a start that was still on its way opens nothing.
+    OnDestroy { [alive] in
+      alive.end()
       if #available(iOS 26.0, *) {
-        Task { await SpeechSessions.shared.cancelAll { Microphone.shared.close() } }
+        SpeechSessions.shared.cancelAll { Microphone.shared.close() }
       }
     }
 
@@ -50,23 +58,30 @@ public class SolunivoSpeechModule: Module {
     // calls about it carry. `voiceProcessing`: the microphone's echo
     // cancellation and noise suppression (Settings › Advanced).
     AsyncFunction("start") {
-      (session: Int, locale: String, voiceProcessing: Bool, promise: Promise) in
+      [alive] (session: Int, locale: String, voiceProcessing: Bool, promise: Promise) in
       guard #available(iOS 26.0, *) else {
         promise.reject("SpeechError", SpeechBridgeError.unsupported("needs iOS 26").message)
         return
       }
+      guard alive.value else {
+        promise.reject("SpeechError", SpeechBridgeError.failed("torn down").message)
+        return
+      }
       let module = WeakModule(self)
+      let task = SpeechSessions.shared.start(
+        id: session, locale: locale,
+        onWords: { source, text in
+          module.value?.sendEvent(
+            "onWords", ["session": session, "source": source, "text": text])
+        },
+        open: {
+          guard alive.value else { throw SpeechBridgeError.failed("torn down") }
+          try Microphone.shared.open(session: session, voiceProcessing: voiceProcessing)
+        },
+        close: { Microphone.shared.close() })
       Task {
         do {
-          let sources = try await SpeechSessions.shared.start(
-            id: session, locale: locale,
-            onWords: { source, text in
-              module.value?.sendEvent(
-                "onWords", ["session": session, "source": source, "text": text])
-            },
-            open: { try Microphone.shared.open(session: session, voiceProcessing: voiceProcessing) },
-            close: { Microphone.shared.close() })
-          promise.resolve(["sources": sources])
+          promise.resolve(["sources": try await task.value])
         } catch {
           promise.reject("SpeechError", Self.message(error))
         }
@@ -78,11 +93,10 @@ public class SolunivoSpeechModule: Module {
         promise.resolve(nil)
         return
       }
+      let task = SpeechSessions.shared.finish(id: session) { Microphone.shared.close() }
       Task {
         do {
-          let segments = try await SpeechSessions.shared.finish(id: session) {
-            Microphone.shared.close()
-          }
+          let segments = try await task.value
           promise.resolve(segments.map { ["segments": $0.map(\.json)] })
         } catch {
           promise.reject("SpeechError", Self.message(error))
@@ -95,8 +109,9 @@ public class SolunivoSpeechModule: Module {
         promise.resolve(nil)
         return
       }
+      let task = SpeechSessions.shared.cancel(id: session) { Microphone.shared.close() }
       Task {
-        await SpeechSessions.shared.cancel(id: session) { Microphone.shared.close() }
+        _ = await task.result
         promise.resolve(nil)
       }
     }
@@ -164,6 +179,18 @@ private final class Microphone: @unchecked Sendable {
     engine.inputNode.removeTap(onBus: 0)
     engine.stop()
     try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+  }
+}
+
+/// Whether the module still stands: read from the session's steps.
+private final class Alive: @unchecked Sendable {
+  private let lock = NSLock()
+  private var standing = true
+
+  var value: Bool { lock.withLock { standing } }
+
+  func end() {
+    lock.withLock { standing = false }
   }
 }
 

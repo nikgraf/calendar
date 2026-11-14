@@ -63,8 +63,10 @@ export interface SpeechToText {
   /**
    * Starts listening, asking for the microphone if needed. Throws
    * MicrophoneDeniedError when refused. `onWords` gets each recogniser's
-   * words so far whenever they change. Resolves with the recognisers
-   * that listen, or nothing when given up.
+   * words so far whenever they change; `onLost`, that the phrase is gone
+   * (the recognisers went away with their process) and nothing will
+   * finish it. Resolves with the recognisers that listen, or nothing when
+   * given up.
    *
    * A call whose `signal` is aborted before it finishes stops whatever it
    * opened and resolves without becoming the current phrase. A caller
@@ -73,6 +75,7 @@ export interface SpeechToText {
    * belong to a newer caller.
    */
   readonly start: (options: {
+    readonly onLost?: (() => void) | undefined;
     readonly onWords: (source: WordsSource, text: string) => void;
     readonly signal?: AbortSignal | undefined;
   }) => Promise<SpeechStart | undefined>;

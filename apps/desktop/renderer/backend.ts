@@ -124,6 +124,7 @@ declare global {
       onPrivacyChanged: (listener: (state: PrivacyState) => void) => () => void;
       onRpcMessage: (listener: (data: string | Uint8Array) => void) => () => void;
       onSettingsFileChanged: (listener: (status: SettingsFileStatus) => void) => () => void;
+      onSpeechLost: (listener: (lost: { session: number }) => void) => () => void;
       onSpeechWords: (
         listener: (words: { session: number; source: WordsSource; text: string }) => void,
       ) => () => void;

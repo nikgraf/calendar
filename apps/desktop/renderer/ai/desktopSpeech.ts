@@ -112,7 +112,7 @@ export const desktopSpeech: SpeechToText = {
     }
   },
 
-  start: async ({ onWords, signal }) => {
+  start: async ({ onLost, onWords, signal }) => {
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({
@@ -148,11 +148,27 @@ export const desktopSpeech: SpeechToText = {
       return undefined;
     }
     const phrase = started.session;
-    const unsubscribe = window.calendarBridge.onSpeechWords((words) => {
+    const stopWords = window.calendarBridge.onSpeechWords((words) => {
       if (words.session === phrase) {
         onWords(words.source, words.text);
       }
     });
+    const stopLost = window.calendarBridge.onSpeechLost((lost) => {
+      if (lost.session !== phrase) {
+        return;
+      }
+      // Main dropped it: the microphone goes, and nothing is left to finish.
+      const active = listening;
+      if (active?.session === phrase) {
+        listening = null;
+        close(active);
+      }
+      onLost?.();
+    });
+    const unsubscribe = () => {
+      stopWords();
+      stopLost();
+    };
     const source = context.createMediaStreamSource(stream);
     const collector = new AudioWorkletNode(context, 'pcm-collector');
     const blockSize = (SAMPLE_RATE * BLOCK_MS) / 1000;

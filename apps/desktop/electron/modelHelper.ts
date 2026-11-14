@@ -1,6 +1,11 @@
 import { fixtureTextRecognizer, makeFixtureLanguageModel, type WordsSource } from '@calendar/ai';
 import { ipcMain, systemPreferences, type WebContents } from 'electron';
-import { callHelper, onHelperEvent, registerHelperLifecycle } from './helperProcess.ts';
+import {
+  callHelper,
+  onHelperEvent,
+  onHelperExit,
+  registerHelperLifecycle,
+} from './helperProcess.ts';
 import { fixtureListening, microphoneFixture } from './microphoneFixture.ts';
 import {
   getModelProvider,
@@ -186,6 +191,19 @@ const ownedBy = (session: number, sender: WebContents) =>
  * from `microphoneFixture.ts`.
  */
 const registerSpeech = () => {
+  // The helper went away mid-phrase, its recognisers and the audio with
+  // it: a new one knows nothing of the phrase, so the window is told
+  // rather than left listening to nothing.
+  onHelperExit(() => {
+    const current = listening;
+    if (!current || microphoneFixture) {
+      return;
+    }
+    listening = null;
+    if (!current.owner.isDestroyed()) {
+      current.owner.send('model:speech-lost', { session: current.session });
+    }
+  });
   onHelperEvent('speech.words', (body) => {
     const { session, source, text } = body;
     if (

@@ -72,6 +72,7 @@ const bridge = () => {
   const cancelled: Array<number> = [];
   const finished: Array<number> = [];
   const listeners = new Set<(words: { session: number; source: string; text: string }) => void>();
+  const losers = new Set<(lost: { session: number }) => void>();
   let sessions = 0;
   let segments: ReadonlyArray<{ text: string }> = [{ text: 'Lunch with Anna' }];
   /** Set: the next start waits until the test lets it answer. */
@@ -94,6 +95,10 @@ const bridge = () => {
         await held;
         return { session, sources: ['accurate', 'quick'] };
       },
+      onSpeechLost: (listener: (lost: { session: number }) => void) => {
+        losers.add(listener);
+        return () => losers.delete(listener);
+      },
       onSpeechWords: (
         listener: (words: { session: number; source: string; text: string }) => void,
       ) => {
@@ -108,6 +113,12 @@ const bridge = () => {
     finished,
     hearNothing: () => {
       segments = [];
+    },
+    /** Main dropped this phrase: its helper went away. */
+    lose: (session: number) => {
+      for (const listener of losers) {
+        listener({ session });
+      }
     },
     /** How many sessions main was asked to start. */
     started: () => sessions,
@@ -277,6 +288,29 @@ describe('desktopSpeech streaming', () => {
     await speech.finish();
     main.words(1, 'quick', 'Lunch with Anna');
     expect(heard).toEqual(['quick: Lunch', 'accurate: Lunch with']);
+  });
+
+  it('stops the microphone and says so when main loses the phrase', async () => {
+    const main = bridge();
+    const speech = await loadSpeech();
+    let lost = 0;
+    const stream = fakeStream();
+    const start = speech.start({
+      onLost: () => {
+        lost += 1;
+      },
+      onWords: noWords,
+    });
+    grants[0]?.(stream);
+    await start;
+    main.lose(7);
+    expect(lost).toBe(0);
+    main.lose(1);
+    expect(lost).toBe(1);
+    expect(stream.stopped).toBe(true);
+    // Nothing is left to finish.
+    await expect(speech.finish()).resolves.toBeUndefined();
+    expect(main.finished).toEqual([]);
   });
 
   it('reads nothing as nothing', async () => {
