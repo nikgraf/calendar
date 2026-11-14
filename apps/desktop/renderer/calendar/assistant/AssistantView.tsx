@@ -229,7 +229,7 @@ export function AssistantView({
         {unavailable && availability.state && demo === undefined ? (
           <AssistantModelNotice state={availability.state} />
         ) : null}
-        {!started && demo !== undefined && !busy ? (
+        {!started && demo !== undefined && !saying ? (
           <div
             className="flex flex-1 flex-col items-center justify-center gap-1 px-4 text-center"
             data-testid="assistant-demo-empty"
@@ -242,7 +242,7 @@ export function AssistantView({
             </p>
           </div>
         ) : null}
-        {!started && assistant === 'new' && !busy && !unavailable ? (
+        {!started && assistant === 'new' && !saying && !unavailable ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-1 px-4 text-center">
             <SparkleIcon className="text-ink-secondary" size={18} />
             <p className="text-sm font-medium">Say or type what to add</p>
