@@ -23,8 +23,11 @@ export const microphoneFixture = phrases !== undefined;
 
 /** The harness's tone plays at about -23 dBFS over a room at about -60. */
 const TONE_DB = -40;
-/** Blocks of tone per word written: a word about every 200 ms. */
-const BLOCKS_PER_WORD = 2;
+/**
+ * The harness's tone in the renderer's 100 ms blocks (e2e/harness.ts,
+ * `DICTATION_LOOP_MS.phrase`): a phrase's words are spread over it.
+ */
+const TONE_BLOCKS = 12;
 
 type Words = (source: WordsSource, text: string) => void;
 
@@ -63,9 +66,13 @@ export const fixtureListening = {
     const words = phrase.split(' ');
     if (level > TONE_DB) {
       current.toneBlocks += 1;
-      // The last word waits for the tone's end: however short the phrase,
-      // it never ends while the tone still plays.
-      const count = Math.min(words.length - 1, Math.ceil(current.toneBlocks / BLOCKS_PER_WORD));
+      // Spread over the tone, the last word at its end: no gap between
+      // words is as long as the pause that ends a phrase, so however
+      // short the phrase, it never ends while the tone still plays.
+      const count = Math.min(
+        words.length - 1,
+        Math.floor((current.toneBlocks * words.length) / TONE_BLOCKS),
+      );
       if (count > current.shown) {
         current.shown = count;
         show(words, count, current.onWords);

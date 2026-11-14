@@ -150,13 +150,23 @@ describe('createPhraseEnd', () => {
     expect(ear.check(accuratePauseMs)).toBe('end');
   });
 
-  it('ends a one-word phrase when only the accurate recogniser listens', () => {
-    // "Tomorrow" as a change, the quick recogniser not installed.
+  it('ends a one-word phrase when only the accurate recogniser listens, after a longer pause', () => {
+    // "Tomorrow" as a change, the quick recogniser not installed. A lone
+    // word waits longer: a crowd's "Mm" stood 2.9 s before the phrase.
+    const { lonePauseMs } = PHRASE_END_DEFAULTS;
     const ear = createPhraseEnd();
     ear.listensWith(['accurate']);
-    ear.words('accurate', 'Tomorrow.', 0);
-    expect(ear.check(accuratePauseMs - 50)).toBeUndefined();
-    expect(ear.check(accuratePauseMs)).toBe('end');
+    ear.words('accurate', 'Mm', 0);
+    expect(ear.check(2900)).toBeUndefined();
+    ear.words('accurate', 'Mm Tomorrow', 2900);
+    expect(ear.check(2900 + accuratePauseMs - 50)).toBeUndefined();
+    expect(ear.check(2900 + accuratePauseMs)).toBe('end');
+
+    const lone = createPhraseEnd();
+    lone.listensWith(['accurate']);
+    lone.words('accurate', 'Tomorrow.', 0);
+    expect(lone.check(lonePauseMs - 50)).toBeUndefined();
+    expect(lone.check(lonePauseMs)).toBe('end');
   });
 
   it('takes a word the accurate recogniser alone heard for the room while both listen', () => {

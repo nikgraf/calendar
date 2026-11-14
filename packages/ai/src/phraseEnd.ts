@@ -14,6 +14,12 @@ export interface PhraseEndOptions {
    * phrase ends, when it has heard more than the quick one.
    */
   readonly accuratePauseMs: number;
+  /**
+   * Without the quick recogniser, how long a lone word must stand still:
+   * a crowd's "Mm" before anyone speaks stood 2.9 s in the recordings,
+   * and must not end the phrase, while a one-word turn ("Tomorrow") must.
+   */
+  readonly lonePauseMs: number;
   /** How long the quick recogniser's words must stand still before the phrase ends. */
   readonly quickPauseMs: number;
 }
@@ -27,6 +33,7 @@ export interface PhraseEndOptions {
  */
 export const PHRASE_END_DEFAULTS: PhraseEndOptions = {
   accuratePauseMs: 1200,
+  lonePauseMs: 3000,
   quickPauseMs: 900,
 };
 
@@ -116,7 +123,9 @@ export const createPhraseEnd = (overrides: Partial<PhraseEndOptions> = {}): Phra
     const agree = (accurate?.count ?? 0) <= (quick?.count ?? 0) + 1;
     let done: boolean;
     if (!quickListens) {
-      done = accurateQuiet >= options.accuratePauseMs;
+      done =
+        accurate !== undefined &&
+        accurateQuiet >= (accurate.count > 1 ? options.accuratePauseMs : options.lonePauseMs);
     } else if (agree) {
       // A word the accurate recogniser alone heard before the quick one
       // wrote anything is the room, not yet the phrase.
