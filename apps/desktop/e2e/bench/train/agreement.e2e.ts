@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vite-plus/test';
 import { openAiModel } from '../providers.ts';
-import { type RowAgreement, rowAgreement, totalsOf } from './agreement.ts';
+import { isFinderPrompt, type RowAgreement, rowAgreement, totalsOf } from './agreement.ts';
 
 /**
  * A trained model against the held-back turns (`valid.jsonl`): how often
@@ -17,7 +17,8 @@ import { type RowAgreement, rowAgreement, totalsOf } from './agreement.ts';
  * file written that way instead of asking, so an earlier model's answers
  * can be held against today's data. TRAIN_AGREE_ROWS names such a file
  * too and keeps only the turns it holds: two models on the same turns.
- * TRAIN_DIR is where `valid.jsonl` is. Never part of `pnpm test`.
+ * TRAIN_DIR is where `valid.jsonl` is. Find a time's held-back sentences
+ * are counted apart, field by field. Never part of `pnpm test`.
  */
 
 const ROOT = fileURLToPath(new URL('../../../../..', import.meta.url));
@@ -62,6 +63,7 @@ describe.skipIf(!process.env['TRAIN_AGREE'])('a trained model on the held-back t
     const answered: Array<Answered & { readonly want: unknown }> = [];
     const first: Array<RowAgreement> = [];
     const later: Array<RowAgreement> = [];
+    const finder: Array<RowAgreement> = [];
     for (const example of examples) {
       const prompt = example.messages[0].content;
       if (
@@ -84,7 +86,7 @@ describe.skipIf(!process.env['TRAIN_AGREE'])('a trained model on the held-back t
       answered.push({ got, prompt, want });
       const row = rowAgreement(prompt, want, got);
       if (row !== undefined) {
-        (prompt.includes('\nPhrase: ') ? first : later).push(row);
+        (isFinderPrompt(prompt) ? finder : prompt.includes('\nPhrase: ') ? first : later).push(row);
       }
     }
     const outPath = process.env['TRAIN_AGREE_OUT'];
@@ -92,6 +94,7 @@ describe.skipIf(!process.env['TRAIN_AGREE'])('a trained model on the held-back t
       writeFileSync(outPath, `${answered.map((row) => JSON.stringify(row)).join('\n')}\n`);
     }
     const all = totalsOf([...first, ...later]);
+    const found = totalsOf(finder);
     const lines = [
       `\nHELD-BACK TURNS — ${given === undefined ? url : (answersPath ?? '')}`,
       `turns ${String(all.rows)} of ${String(examples.length)} · the same once worked out ${String(all.sameWorked)} · as written ${String(all.same)}`,
@@ -101,6 +104,14 @@ describe.skipIf(!process.env['TRAIN_AGREE'])('a trained model on the held-back t
       ...Object.entries(all.byPart)
         .sort(([, a], [, b]) => b.rows - a.rows)
         .map(([part, tally]) => `  ${part.padEnd(18)} ${share(tally)}`),
+      ...(finder.length === 0
+        ? []
+        : [
+            `find a time: ${String(found.same)}/${String(found.rows)} sentences the same`,
+            ...Object.entries(found.byPart)
+              .sort(([, a], [, b]) => b.rows - a.rows)
+              .map(([part, tally]) => `  ${part.padEnd(18)} ${share(tally)}`),
+          ]),
     ];
     process.stdout.write(`${lines.join('\n')}\n`);
   });

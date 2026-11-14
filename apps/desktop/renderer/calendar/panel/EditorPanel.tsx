@@ -53,7 +53,7 @@ import { FieldFlashContext, useFlash } from '../../ui/useFlash.ts';
 const assistantReader = tunedReader(desktopAssistantModel);
 /**
  * The Create lesson while the Assistant's model is not on this Mac: the
- * real editor over v1's answers to the lesson's two phrases
+ * real editor over v2's answers to the lesson's two phrases
  * (`lessonDemo.ts`), until the model is ready.
  */
 const demoReader = tunedReader(lessonDemoModel);

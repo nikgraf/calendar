@@ -1,5 +1,5 @@
 import { Temporal } from '@calendar/core';
-import { type DraftTimes, LENGTH_KEY, worked, workedTimes } from '@calendar/ai';
+import { type DraftTimes, LENGTH_KEY, TUNED_FINDER_LINE, worked, workedTimes } from '@calendar/ai';
 import { TUNED_DRAFT_MARKER } from '../tuned.ts';
 
 /**
@@ -29,6 +29,9 @@ const ordered = (value: unknown): unknown => {
 };
 
 const textOf = (value: unknown): string => JSON.stringify(ordered(value)) ?? '';
+
+/** A finder sentence's prompt (`tunedFinder.ts`): its answer has nothing to work out. */
+export const isFinderPrompt = (prompt: string): boolean => prompt.startsWith(TUNED_FINDER_LINE);
 
 /** The "today" a tuned prompt was written for, and the day and times of the draft it shows. */
 export const promptDates = (
@@ -126,8 +129,9 @@ export const rowAgreement = (
   if (dates === undefined) {
     return undefined;
   }
-  const wanted = workedOut(want, dates);
-  const given = workedOut(got, dates);
+  const finder = isFinderPrompt(prompt);
+  const wanted = finder ? want : workedOut(want, dates);
+  const given = finder ? got : workedOut(got, dates);
   const wantedParts = isRecord(wanted) ? wanted : {};
   const givenParts = isRecord(given) ? given : {};
   const parts = Object.fromEntries(

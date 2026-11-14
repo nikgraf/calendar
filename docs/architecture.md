@@ -40,7 +40,7 @@ and `TextRecognizer` seams. The Assistant reads a phrase through a
 `PhraseReader` (`phraseReader.ts`), on both platforms the tuned path
 (`tunedReader`, `tuned.ts`): a Qwen3.5 0.8B trained for these prompts
 (`apps/desktop/e2e/bench/train/`), the release both apps fetch named in
-`assistantModel.ts` (calendar-models v1). The tuned prompt is the days,
+`assistantModel.ts` (calendar-models v2). The tuned prompt is the days,
 the draft and the words; the answer is the whole draft, a far day, a
 ruled-out weekday and a time said as an amount ("+30m" for "half an
 hour later", "45m" for "for 45 minutes") written as said and worked out
@@ -48,10 +48,11 @@ by code (`said.ts`), and `answerResult` (`tunedResult.ts`) checks shapes
 and fills a form's defaults without reading the words. The answer has a
 day only where the words gave one: a first phrase without one lands on
 the day on show, a later turn keeps the draft's. Each device downloads
-the model once, when the
-person asks for it (the Create lesson's banner, the Assistant's notice,
-the Mac's Settings › AI Model; nothing asks at launch),
-checks its size and SHA-256, and loads it on the first question. The
+the model once, when the person asks for it (the Create lesson's
+banner, the Assistant's notice, the Mac's Settings › AI Model; nothing
+asks at launch; a new version is offered as an update where an earlier
+one was agreed to), checks its size and SHA-256, and loads it on the
+first question. The
 iPhone fetches over Wi-Fi unless mobile data is allowed
 (`apps/ios/src/assistantDownload.ts`, a background `URLSession` in the
 `solunivo-model-download` module), runs it with llama.rn and lets it go
@@ -75,9 +76,15 @@ form flashes the rows. A to-do's notifications are its Reminders alerts
 negative offsets): a turn is shown the to-do's own, never a calendar's
 default, and the alert picker names one the presets lack.
 
-Find a time, search sentences and capture keep Apple's model (or a
-served one on the Mac): the model extracts, the code decides.
-`grounding.ts` reads the finder's and search's words itself — meal and
+Find a time runs on the same model once it is on the device
+(`tunedFinder.ts`, picked by each app's `useFinder`): told the job by
+the prompt's first line ("Free time as JSON."), asked without a schema,
+its answer the finder's fields the words state, each read only where it
+has its type; what it leaves out is the code's default (the coming week,
+the finder's own length), and no word rule reads the sentence. Until
+then, and for search sentences and capture, Apple's model (or a served
+one on the Mac): the model extracts, the code decides. `grounding.ts`
+reads those finder's and search's words itself — meal and
 part-of-day words, weekdays, windows, bounds and durations — and keeps a
 model value only where the words support it. A phrase said to the
 Assistant that asks for free time ("find 90 min for focus next week,
@@ -1288,10 +1295,11 @@ gateway carries all of it. Details, limits and the threat model:
   iPhone opens on) under a `LessonBanner`. Without the Assistant's model
   (not asked for, downloading, failed, or a device that cannot run it)
   it runs a demo on the same editor instead of the Form: the reader is
-  `tunedReader(lessonDemoModel)` (`@calendar/ai` `lessonDemo.ts`: model
-  v1's recorded answers to `LESSON_DEMO_PHRASES`, the phrase and "at 1
-  instead", a day written as a count from today so it holds on any
-  date; anything else refused), the field holds the next of them
+  `tunedReader(lessonDemoModel)` (`@calendar/ai` `lessonDemo.ts`: the
+  published model's recorded answers to `LESSON_DEMO_PHRASES`, the
+  phrase and "at 1 instead", a day written as a count from today so it
+  holds on any date, recorded again with each version; anything else
+  refused), the field holds the next of them
   (`lessonDemoNext`) to send as typed words are, and the banner says
   what the Assistant is and offers the download, then its progress
   (`lessonModelCopy`); the card's Create row says where the download

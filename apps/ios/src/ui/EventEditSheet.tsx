@@ -587,7 +587,7 @@ function FormView({
 
 /**
  * The Create lesson while the Assistant's model is not on this iPhone:
- * the real editor over v1's answers to the lesson's two phrases
+ * the real editor over v2's answers to the lesson's two phrases
  * (`lessonDemo.ts`), until the model is ready.
  */
 const demoReader = tunedReader(lessonDemoModel);

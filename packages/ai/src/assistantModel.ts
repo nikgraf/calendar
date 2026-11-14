@@ -17,13 +17,13 @@ export interface AssistantModelManifest {
   readonly version: string;
 }
 
-/** Release v1 of `nikgraf/calendar-models`. */
+/** Release v2 of `nikgraf/calendar-models`: the Assistant and find a time. */
 export const PUBLISHED_MODEL: AssistantModelManifest = {
   bytes: 833_592_288,
   file: 'solunivo-assistant-q8_0.gguf',
-  sha256: '954ca95027feb405e2f98ef26fdeb0814d2fdbf4bd2ebddbeb9e9c321ba838d3',
-  url: 'https://github.com/nikgraf/calendar-models/releases/download/v1/solunivo-assistant-q8_0.gguf',
-  version: 'v1',
+  sha256: 'cfae339ce992836c607e123fc2108d21ab02f79ede77f409ec08309888f38230',
+  url: 'https://github.com/nikgraf/calendar-models/releases/download/v2/solunivo-assistant-q8_0.gguf',
+  version: 'v2',
 };
 
 const isManifest = (value: unknown): value is AssistantModelManifest => {

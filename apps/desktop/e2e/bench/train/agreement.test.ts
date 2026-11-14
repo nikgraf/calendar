@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
+import { buildTunedFinderPrompt } from '@calendar/ai';
 import { buildTunedPrompt, buildTunedRefinePrompt } from '../tuned.ts';
 import { promptDates, rowAgreement, totalsOf } from './agreement.ts';
 
@@ -74,6 +75,21 @@ describe('rowAgreement', () => {
       writtenAsSaid: false,
     });
     expect(rowAgreement('no prompt', {}, {})).toBeUndefined();
+  });
+
+  it('holds a finder sentence’s answer as written, field by field', () => {
+    const prompt = buildTunedFinderPrompt({ phrase: 'an hour tomorrow', referenceDate: TODAY });
+    const row = rowAgreement(
+      prompt,
+      { durationMinutes: 60, windowEndDate: '2026-11-13', windowStartDate: '2026-11-13' },
+      { durationMinutes: 90, windowEndDate: '2026-11-13', windowStartDate: '2026-11-13' },
+    );
+    expect(row).toMatchObject({
+      parts: { durationMinutes: false, windowEndDate: true, windowStartDate: true },
+      same: false,
+      sameWorked: false,
+      writtenAsSaid: false,
+    });
   });
 
   it('does not mind the order an answer’s parts come in', () => {

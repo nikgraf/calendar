@@ -22,7 +22,7 @@ describe('assistantModelManifest', () => {
   });
 
   it('names a version’s file with the version in front, safe as a file name', () => {
-    expect(storedFileName(PUBLISHED_MODEL)).toBe('v1-solunivo-assistant-q8_0.gguf');
+    expect(storedFileName(PUBLISHED_MODEL)).toBe('v2-solunivo-assistant-q8_0.gguf');
     expect(storedFileName({ ...PUBLISHED_MODEL, version: 'v2/beta 1' })).toBe(
       'v2_beta_1-solunivo-assistant-q8_0.gguf',
     );

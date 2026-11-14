@@ -192,37 +192,25 @@ the served model (#184) and slot proposals (#185) are in
       `reasoning_effort: "none"`. A served model now answers only find a
       time, search sentences and capture, which no bench measures:
       measure those first.
-- [ ] The Assistant's own model, follow-ups (#307): find a time, search
+- [ ] The Assistant's own model, follow-ups (#307, v2 in #NNN) — search
       sentences and capture still need Apple's model (data and a tuned
-      prompt each). The finder bench (#316) measures find a time: Apple's
-      model 12/40 with the word rules and 0/40 without, 13 phrases
-      unanswered (10 written until its context ran out, 2 past 180 s, 1
-      guardrail); DeepSeek V4
-      Flash 39/40 without the rules. Search and capture have no bench yet
-      (capture's schema leaves the time and place optional,
+      prompt each, in the next version's one training run); they have no
+      bench yet (capture's schema leaves the time and place optional,
       and Apple's model filled no optional field on any quick-add phrase
-      in the bench, 2026-11-11, unmeasured for capture); a model for
-      6 GB iPhones (Q4_K_M, 1.2 GB loaded, or a smaller base); "next
-      Friday" and deadlines ("before Friday") are
-      read as the teacher read them, which wavers; the data has no turn
-      that turns notifications off ("no reminder", a first phrase or a
-      later turn) and the export drops an empty list, so a first phrase
-      cannot say none (briefs for it, and `reminders: []` kept in the
-      answer); notes over 200 characters or on several lines are not
-      shown to the model, so the Assistant only adds to them. v1 scores
-      57 of 70 and misses mostly follow-ups (time arithmetic such as "30
-      minutes later" as `17:60`, "stop repeating", "remove Tom", "all day
-      instead"): a v2 with more follow-up turns in the data (a third of
-      v1's) that also leaves `date` out where no day was said, so the
-      tuned reader's one word check (`statesDay`) can go, and a new
-      release with its own version (and its answers to the Create
-      lesson's demo recorded again, `lessonDemo.ts`). Nothing asks at
-      launch any more (#319), so a new version reaches someone who had
-      the last one only through the Assistant's notice: decide whether it
-      downloads on the terms agreed for the last one, or is offered again
-      (the answer is kept per version, and the old file is removed). Not
-      checked on a device: the
-      iPhone's transfer across a quit and a network change.
+      in the bench, 2026-11-11, unmeasured for capture). v2 reads 60 of
+      72 bench cases and misses: a place narrowed to its city ("it's in
+      Vienna" after a venue writes the city alone; the data has no such
+      turn, only real replacements), a long phrase's note, "Call
+      tomorrow at 4, invite Max" as a to-do, a title that keeps "event
+      for". Also open: a model for 6 GB iPhones (Q4_K_M, 1.2 GB loaded,
+      or a smaller base); "next Friday" and deadlines ("before Friday")
+      are read as the teacher read them, which wavers; notes over 200
+      characters or on several lines are not shown to the model, so the
+      Assistant only adds to them; a new version removes the last one's
+      file at launch, so someone who had it has no Assistant until they
+      tap Update (keeping it until the new one is checked costs a second
+      834 MB). Not checked on a device: the iPhone's transfer across a
+      quit and a network change.
 
 - [ ] Find-a-time follow-ups — the finder keeps a whole Apple series
       busy through a series edit (its rows are read through EventKit, no
