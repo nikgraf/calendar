@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { buildFindTimePrompt, FIND_TIME_JSON_SCHEMA } from './findTime.ts';
+import { buildFindTimePrompt, FIND_TIME_JSON_SCHEMA, parseFindTime } from './findTime.ts';
 import { fixtureTextRecognizer, makeFixtureLanguageModel } from './fixtureModel.ts';
 import { buildSearchQueryPrompt, SEARCH_QUERY_JSON_SCHEMA } from './searchQuery.ts';
+import { buildTunedFinderPrompt, tunedFindTime } from './tunedFinder.ts';
 
 const CONTEXT = { referenceDate: '2026-09-20', timeZone: 'Europe/Vienna' };
 
@@ -25,6 +26,27 @@ describe('makeFixtureLanguageModel', () => {
         prompt: buildFindTimePrompt({ phrase: 'find a slot tomorrow', ...CONTEXT }),
       }),
     ).resolves.toEqual({ durationMinutes: 60 });
+  });
+
+  it('answers the Assistant’s finder prompt as the word rules read the sentence: the same search', async () => {
+    const phrase = 'find 30 min tomorrow morning | Focus';
+    const answer = await model.generateJson({
+      jsonSchema: undefined,
+      prompt: buildTunedFinderPrompt({ phrase, referenceDate: CONTEXT.referenceDate }),
+    });
+    expect(answer).toMatchObject({ durationMinutes: 30, title: 'Focus' });
+    // Read without the rules, it searches what the rules read from the app's own prompt.
+    const tuned = await tunedFindTime(model, { fallbackDurationMinutes: 45, phrase, ...CONTEXT });
+    const rules = await parseFindTime(model, { fallbackDurationMinutes: 45, phrase, ...CONTEXT });
+    expect(tuned).toEqual(rules);
+    // No length said: the finder's own.
+    await expect(
+      tunedFindTime(model, {
+        fallbackDurationMinutes: 45,
+        phrase: 'find a slot tomorrow',
+        ...CONTEXT,
+      }),
+    ).resolves.toMatchObject({ constraints: { durationMinutes: 45 } });
   });
 
   /** A search turn put to the fixture as the app puts it. */

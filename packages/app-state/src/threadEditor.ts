@@ -1,4 +1,4 @@
-import { type LanguageModel, ModelUnavailableError, type PhraseReader } from '@calendar/ai';
+import { type FinderReader, ModelUnavailableError, type PhraseReader } from '@calendar/ai';
 import {
   type BackendClient,
   type CalendarInfo,
@@ -314,8 +314,8 @@ export const useThreadEditor = ({
   backend,
   calendars,
   confirm,
+  finder,
   initialKind,
-  model,
   onClose,
   onSaved,
   reader,
@@ -330,9 +330,10 @@ export const useThreadEditor = ({
   readonly backend: BackendClient;
   readonly calendars: ReadonlyArray<CalendarInfo>;
   readonly confirm: (request: EditorConfirmRequest) => Promise<boolean>;
+  /** How a finder phrase is read (`tunedFinder` or `rulesFinder`). */
+  readonly finder: FinderReader;
   /** The kind to open on: a to-do for a "+" that wants one, or Convert. */
   readonly initialKind?: ItemKind | undefined;
-  readonly model: LanguageModel;
   readonly onClose: () => void;
   /** Save went through, as an event or a task. */
   readonly onSaved?: (() => void) | undefined;
@@ -354,7 +355,7 @@ export const useThreadEditor = ({
     backend,
     defaultRemindersOf: (draft) =>
       defaultMinutesOf(calendars, draftCalendarKey(draft, calendars, formCalendar.current)),
-    model,
+    finder,
     reader,
     timeZone,
   });

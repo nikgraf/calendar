@@ -11,7 +11,7 @@ import {
   FINDER_WINDOWS,
   formatSlotLabel,
 } from '@calendar/core';
-import { desktopLanguageModel } from '../ai/desktopModel.ts';
+import { useFinder } from '../ai/assistantModel.ts';
 import { backend } from '../backend.ts';
 import { Button } from '../ui/Button.tsx';
 import { FIELD_CLASS, LABEL_CLASS } from '../ui/fieldStyles.ts';
@@ -21,12 +21,13 @@ import { onWindowFocus } from '../ai/modelFocus.ts';
 /**
  * "Find a time" beside the event's date and times: a few presets over
  * the pure solver (window, hours, days, duration), a Search, and the
- * free slots as buttons — a pick moves the event there. With the
- * on-device model a phrase fills the presets; without it the finder
- * works the same. The duration starts as the form's own.
+ * free slots as buttons — a pick moves the event there. With a model (the
+ * Assistant's once it is here) a phrase fills the presets; without one
+ * the finder works the same. The duration starts as the form's own.
  */
 export function FindTimeFields({ model }: { model: ReturnType<typeof useEventEditorModel> }) {
-  const { status } = useModelAvailability(desktopLanguageModel, onWindowFocus);
+  const reads = useFinder();
+  const { status } = useModelAvailability(reads.model, onWindowFocus);
   const { existing, scope } = model;
   const finder = useFindTimeModel({
     backend,
@@ -34,7 +35,7 @@ export function FindTimeFields({ model }: { model: ReturnType<typeof useEventEdi
     durationMinutes: model.durationMinutes,
     // What the save will move or drop is not in its own way.
     excludeEvent: rescheduledEventExclusion(existing, scope, model.masterSeries),
-    model: desktopLanguageModel,
+    finder: reads.finder,
     onTitle: (title) => {
       if (model.title.trim() === '') {
         model.setTitle(title);

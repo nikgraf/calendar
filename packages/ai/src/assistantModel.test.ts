@@ -22,7 +22,7 @@ describe('assistantModelManifest', () => {
   });
 
   it('names a version’s file with the version in front, safe as a file name', () => {
-    expect(storedFileName(PUBLISHED_MODEL)).toBe('v1-solunivo-assistant-q8_0.gguf');
+    expect(storedFileName(PUBLISHED_MODEL)).toBe('v2-solunivo-assistant-q8_0.gguf');
     expect(storedFileName({ ...PUBLISHED_MODEL, version: 'v2/beta 1' })).toBe(
       'v2_beta_1-solunivo-assistant-q8_0.gguf',
     );
@@ -53,6 +53,20 @@ describe('noticeCopy', () => {
         lines: [expect.stringContaining('one-time download of 834 MB, over Wi-Fi')],
       });
     }
+  });
+
+  it('offers a new version as an update where an earlier one was downloaded', () => {
+    expect(
+      noticeCopy(
+        { kind: 'unasked', update: true },
+        { device: 'Mac', network: undefined, size: SIZE },
+      ),
+    ).toMatchObject({
+      action: { kind: 'download', label: 'Update (834 MB)' },
+      lines: [
+        'A new version of the Assistant’s model is ready. It runs on this Mac and is a download of 834 MB.',
+      ],
+    });
   });
 
   it('shows the progress and that the Assistant will be available soon', () => {

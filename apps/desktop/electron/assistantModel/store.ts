@@ -82,6 +82,13 @@ export const createAssistantStore = ({
     const said = files.readAnswer();
     return said?.version === manifest.version ? said.answer : undefined;
   };
+  /** Not asked for this version: an update where an earlier version was agreed to. */
+  const unasked = (): AssistantModelState => {
+    const said = files.readAnswer();
+    return said !== undefined && said.version !== manifest.version && said.answer === 'agreed'
+      ? { kind: 'unasked', update: true }
+      : { kind: 'unasked' };
+  };
 
   const verified = (): boolean => {
     const note = files.readVerified();
@@ -169,7 +176,7 @@ export const createAssistantStore = ({
       }
       const said = answer();
       if (said !== 'agreed') {
-        set({ kind: said === 'declined' ? 'declined' : 'unasked' });
+        set(said === 'declined' ? { kind: 'declined' } : unasked());
         return;
       }
       // Fetched before the app quit, not yet checked: the check runs now.

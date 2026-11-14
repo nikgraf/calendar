@@ -1,5 +1,4 @@
 import { validateEventDraft } from '@calendar/core';
-import { defersDate, groundDate, mentionsDate } from './grounding.ts';
 import { type LanguageModel, ModelUnavailableError } from './model.ts';
 import type { QuickAddResult, RefineResult } from './normalizeQuickAdd.ts';
 import { tunedTurn } from './tuned.ts';
@@ -55,18 +54,6 @@ const unavailable = async (model: LanguageModel): Promise<void> => {
   }
 };
 
-/**
- * Whether the words name a day the code can read ("today", a weekday) or
- * mention one. The one word check the Assistant keeps: the model writes
- * today's date for words that name no day ("Lunch at 1"), so only the
- * words tell that from "Lunch today at 1". It goes once a model leaves
- * the date out where none was said (todo.md).
- */
-const statesDay = (words: string, referenceDate: string): boolean =>
-  groundDate(undefined, { phrase: words, referenceDate }) !== undefined ||
-  mentionsDate(words) ||
-  defersDate(words);
-
 /** A refusal for a day and times no calendar can hold (a time that does not exist that day). */
 const invalidIn = (result: QuickAddResult, timeZone: string): string | undefined =>
   result.kind === 'parsed'
@@ -84,23 +71,34 @@ const invalidIn = (result: QuickAddResult, timeZone: string): string | undefined
       ) ?? undefined)
     : undefined;
 
+/** Whether an answer wrote a day: the model writes one only where the words gave it. */
+const writesDay = (answer: unknown): boolean =>
+  typeof answer === 'object' &&
+  answer !== null &&
+  (answer as { date?: unknown }).date !== undefined;
+
 /**
  * The tuned path as a reader. What it adds to the bench's turn is what
  * the app's path gives the thread: the model's readiness checked first;
- * the day on show for words that name no day (the model writes today's,
- * as it was taught); whether a later turn's words gave the day; the
- * calendar's own check of the result; and notes shown only when short.
+ * the day on show for words that name no day (the model then writes
+ * none); whether a later turn's words gave the day; the calendar's own
+ * check of the result; and notes shown only when short.
  */
 export const tunedReader = (model: LanguageModel): PhraseReader => ({
   change: async ({ draft, referenceDate, said, timeZone, utterance }) => {
     await unavailable(model);
     const shown: TurnDraft = { ...draft, notes: shownNotes(draft.notes) };
-    const result = await tunedTurn(model, {
-      draft: shown,
-      earlier: said.slice(-SAID_BEFORE),
-      referenceDate,
-      text: utterance,
-    });
+    let saidDay = false;
+    const result = await tunedTurn(
+      model,
+      { draft: shown, earlier: said.slice(-SAID_BEFORE), referenceDate, text: utterance },
+      {
+        adjust: (answer) => {
+          saidDay = writesDay(answer);
+          return answer;
+        },
+      },
+    );
     if (result.kind !== 'parsed') {
       return result.kind === 'task'
         ? { kind: 'rejected', reason: 'Nothing to change was understood.' }
@@ -110,21 +108,19 @@ export const tunedReader = (model: LanguageModel): PhraseReader => ({
     if (invalid !== undefined) {
       return { kind: 'rejected', reason: invalid };
     }
-    return statesDay(utterance, referenceDate) ? { ...result, saidDay: true } : result;
+    return saidDay ? { ...result, saidDay: true } : result;
   },
   first: async ({ fallbackDate, phrase, referenceDate, timeZone }) => {
     await unavailable(model);
-    // No day in the words: the day on show, not today. Set before the
-    // result is made, so a repeat starts and a night ends from that day.
-    const onShow = (answer: unknown): unknown => {
-      if (fallbackDate === undefined || typeof answer !== 'object' || answer === null) {
-        return answer;
-      }
-      const { date } = answer as { readonly date?: unknown };
-      return (date === undefined || date === referenceDate) && !statesDay(phrase, referenceDate)
-        ? { ...answer, date: fallbackDate }
-        : answer;
-    };
+    // No day written: the day on show, not today. Set before the result
+    // is made, so a repeat starts and a night ends from that day.
+    const onShow = (answer: unknown): unknown =>
+      fallbackDate === undefined ||
+      typeof answer !== 'object' ||
+      answer === null ||
+      writesDay(answer)
+        ? answer
+        : { ...answer, date: fallbackDate };
     const result = await tunedTurn(
       model,
       { draft: undefined, earlier: [], referenceDate, text: phrase },

@@ -1253,6 +1253,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   step for the download, the lesson moved into the setup, a scripted
   animation, a Form lesson. Open: how a new model version reaches
   someone who had the last one, Search on the app's model (todo.md).
+- **Model v2: one model for the Assistant and find a time** (2026-11-14,
+  #321) — one training run, one 834 MB release; the prompt's first line
+  names the job ("Free time as JSON."). Times are written as said
+  ("+30m", "45m") and a date only where a day was said, so code does the
+  arithmetic and `statesDay` went; "no reminder" clears the default.
+  Bench: Assistant 60/72 (v1 59), find a time 36/40 without word rules
+  (Apple's model 12/40). A new version is an Update in the notice, never
+  fetched unasked. Rejected: two models (two downloads, one loaded),
+  adapters per job (the fallback), the lowest-loss checkpoint (a tie; it
+  read "at 1" as 13:30), auto-update. Open: todo.md.
 - **Show only the latest query by default** (2026-11-05) — the create and
   search threads keep the turn with Undo visible on both apps. Earlier
   queries open on demand, leaving more room for the form or results.

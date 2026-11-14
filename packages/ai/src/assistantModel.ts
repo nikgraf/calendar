@@ -17,13 +17,13 @@ export interface AssistantModelManifest {
   readonly version: string;
 }
 
-/** Release v1 of `nikgraf/calendar-models`. */
+/** Release v2 of `nikgraf/calendar-models`: the Assistant and find a time. */
 export const PUBLISHED_MODEL: AssistantModelManifest = {
   bytes: 833_592_288,
   file: 'solunivo-assistant-q8_0.gguf',
-  sha256: '954ca95027feb405e2f98ef26fdeb0814d2fdbf4bd2ebddbeb9e9c321ba838d3',
-  url: 'https://github.com/nikgraf/calendar-models/releases/download/v1/solunivo-assistant-q8_0.gguf',
-  version: 'v1',
+  sha256: 'cfae339ce992836c607e123fc2108d21ab02f79ede77f409ec08309888f38230',
+  url: 'https://github.com/nikgraf/calendar-models/releases/download/v2/solunivo-assistant-q8_0.gguf',
+  version: 'v2',
 };
 
 const isManifest = (value: unknown): value is AssistantModelManifest => {
@@ -94,7 +94,8 @@ export type AssistantModelState =
   | { readonly kind: 'downloading'; readonly received: number; readonly total: number }
   | { readonly kind: 'failed'; readonly message: string }
   | { readonly kind: 'ready'; readonly path: string }
-  | { readonly kind: 'unasked' }
+  /** `update`: an earlier version was agreed to, so the notice offers this one as new. */
+  | { readonly kind: 'unasked'; readonly update?: true }
   | { readonly kind: 'unsupported'; readonly reason: UnsupportedReason }
   | { readonly kind: 'verifying' }
   | {
@@ -167,12 +168,19 @@ export const noticeCopy = (
   switch (state.kind) {
     case 'unasked':
     case 'declined':
-      return {
-        action: { kind: 'download', label: `Download${sized}` },
-        lines: [
-          `The Assistant reads what you say with a model that runs on this ${device}. It needs a one-time download${size === undefined ? '' : ` of ${sizeLabel(size)}`}${device === 'iPhone' ? ', over Wi-Fi' : ''}.`,
-        ],
-      };
+      return state.kind === 'unasked' && state.update === true
+        ? {
+            action: { kind: 'download', label: `Update${sized}` },
+            lines: [
+              `A new version of the Assistant’s model is ready. It runs on this ${device} and is a download${size === undefined ? '' : ` of ${sizeLabel(size)}`}${device === 'iPhone' ? ', over Wi-Fi' : ''}.`,
+            ],
+          }
+        : {
+            action: { kind: 'download', label: `Download${sized}` },
+            lines: [
+              `The Assistant reads what you say with a model that runs on this ${device}. It needs a one-time download${size === undefined ? '' : ` of ${sizeLabel(size)}`}${device === 'iPhone' ? ', over Wi-Fi' : ''}.`,
+            ],
+          };
     case 'waiting':
       if (state.for === 'network') {
         return { lines: ['Waiting for a connection to download the Assistant’s model.', soon] };
