@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { transcriptFromSegments } from './speech.ts';
+import { heardFromSegments, transcriptFromSegments } from './speech.ts';
 
 describe('transcriptFromSegments', () => {
   it('joins segments into one phrase', () => {
@@ -23,5 +23,22 @@ describe('transcriptFromSegments', () => {
     expect(transcriptFromSegments([{ text: 'Zahnarzt nächsten Dienstag' }])).toBe(
       'Zahnarzt nächsten Dienstag',
     );
+  });
+});
+
+describe('heardFromSegments', () => {
+  it('keeps the segments and their other readings beside the phrase', () => {
+    const segments = [
+      { alternatives: ['Stefan at'], text: 'Coffee with Stefan had' },
+      { text: 'Kaffemik' },
+    ];
+    expect(heardFromSegments(segments)).toEqual({
+      segments,
+      text: 'Coffee with Stefan had Kaffemik',
+    });
+  });
+
+  it('is nothing for silence', () => {
+    expect(heardFromSegments([{ text: '  ' }])).toBeUndefined();
   });
 });

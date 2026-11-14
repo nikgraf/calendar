@@ -6,7 +6,7 @@ import { Context, Effect, Fiber, Layer, ManagedRuntime, Stream } from 'effect';
 import { RpcClient, RpcSerialization } from 'effect/rpc';
 import type { RpcClientError } from 'effect/rpc/RpcClientError';
 import type { SettingsPaneId } from './settingsPanes.ts';
-import type { AssistantModelState } from '@calendar/ai';
+import type { AssistantModelState, WordsSource } from '@calendar/ai';
 
 export interface PrivacyState {
   readonly mode: 'hidden' | 'visible';
@@ -100,11 +100,13 @@ declare global {
         kind: ModelProviderKind;
       }) => Promise<EndpointProbe>;
       modelRecognizeText: (imageBase64: string) => Promise<{ text: string }>;
+      modelSpeechAudio: (session: number, pcm: Uint8Array) => void;
+      modelSpeechCancel: (session: number) => Promise<unknown>;
+      modelSpeechFinish: (session: number) => Promise<{
+        segments: ReadonlyArray<{ alternatives?: ReadonlyArray<string>; text: string }>;
+      }>;
+      modelSpeechStart: (locale: string) => Promise<{ session: number }>;
       modelStatus: () => Promise<ModelStatusReply>;
-      modelTranscribe: (
-        audioBase64: string,
-        locale: string,
-      ) => Promise<{ segments: ReadonlyArray<{ text: string }> }>;
       onAgentsChanged: (listener: () => void) => () => void;
       /** Where the Assistant's own model stands: the state now, then every change. */
       onAssistantModel: (listener: (state: AssistantModelState) => void) => () => void;
@@ -120,6 +122,9 @@ declare global {
       onPrivacyChanged: (listener: (state: PrivacyState) => void) => () => void;
       onRpcMessage: (listener: (data: string | Uint8Array) => void) => () => void;
       onSettingsFileChanged: (listener: (status: SettingsFileStatus) => void) => () => void;
+      onSpeechWords: (
+        listener: (words: { session: number; source: WordsSource; text: string }) => void,
+      ) => () => void;
       /** Opens a Getting started lesson in the calendar window, bringing it forward. */
       openLesson: (id: LessonId) => Promise<void>;
       /** Opens the settings window (or focuses it), on `pane` when given. */

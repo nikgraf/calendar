@@ -39,10 +39,8 @@ const barStatus = ({
   if (voice === 'preparing') {
     return { text: 'Preparing dictation…', tone: 'hint' };
   }
-  if (voice === 'transcribing') {
-    return { text: 'Transcribing…', tone: 'hint' };
-  }
-  if (busy) {
+  // The phrase is read once more, then by the model: one step to the eye.
+  if (busy || voice === 'transcribing') {
     return { text: 'Reading…', tone: 'hint' };
   }
   if (error) {

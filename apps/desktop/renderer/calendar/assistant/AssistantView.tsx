@@ -171,7 +171,7 @@ export function AssistantView({
     speech: desktopSpeech,
   });
   const unavailable = availability.status !== null && availability.status !== 'ready';
-  const { busy, phrase, setPhrase } = quick;
+  const { busy, setPhrase } = quick;
   // The demo's next phrase in the field once the last one is taken (the
   // first comes with the lesson's seed).
   const demoNext = demo?.next;
@@ -197,12 +197,14 @@ export function AssistantView({
   // Assistant measures the newest card where this leaves it (a pane back
   // from `display: none` starts at its top).
   const rows = steps.line.length;
+  // A phrase being said shows below the newest card: in view while it grows.
+  const saying = quick.pending !== undefined;
   useLayoutEffect(() => {
     const thread = threadRef.current;
     if (active && thread) {
       thread.scrollTop = thread.scrollHeight;
     }
-  }, [active, rows, steps.at, busy, drafts.length]);
+  }, [active, rows, steps.at, busy, saying, drafts.length]);
 
   const answer = (
     <StepAnswer
@@ -298,11 +300,11 @@ export function AssistantView({
             event, as with the real thing.
           </p>
         ) : null}
-        {busy && phrase.trim() !== '' ? (
+        {quick.pending === undefined ? null : (
           <p className={`${SAID} opacity-60`} data-testid="assistant-pending">
-            {phrase}
+            {quick.pending}
           </p>
-        ) : null}
+        )}
       </div>
 
       <AssistantInput
@@ -453,10 +455,8 @@ const inputStatus = ({
   if (voice === 'preparing') {
     return { text: 'Preparing dictation…', tone: 'hint' };
   }
-  if (voice === 'transcribing') {
-    return { text: 'Transcribing…', tone: 'hint' };
-  }
-  if (busy) {
+  // The phrase is read once more, then by the model: one step to the eye.
+  if (busy || voice === 'transcribing') {
     return { text: 'Reading…', tone: 'hint' };
   }
   if (error) {

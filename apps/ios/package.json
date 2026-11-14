@@ -29,7 +29,6 @@
     "@react-native-community/datetimepicker": "9.2.2",
     "effect": "catalog:",
     "expo": "~58.0.23",
-    "expo-audio": "~58.0.11",
     "expo-auth-session": "~58.0.17",
     "expo-background-task": "~58.0.12",
     "expo-camera": "~58.0.14",

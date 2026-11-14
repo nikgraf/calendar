@@ -39,9 +39,16 @@ contextBridge.exposeInMainWorld('calendarBridge', {
   modelProviderTest: (candidate: unknown) => ipcRenderer.invoke('model:provider-test', candidate),
   modelRecognizeText: (imageBase64: string) =>
     ipcRenderer.invoke('model:recognize-text', imageBase64),
+  /** Drops the phrase being listened to. */
+  modelSpeechCancel: (session: number) => ipcRenderer.invoke('model:speech-cancel', session),
+  /** Stops listening and reads the phrase whole: its segments. */
+  modelSpeechFinish: (session: number) => ipcRenderer.invoke('model:speech-finish', session),
+  /** One block of the microphone (16 kHz mono Int16), in the order it was recorded. */
+  modelSpeechAudio: (session: number, pcm: Uint8Array) =>
+    ipcRenderer.send('model:speech-audio', session, pcm),
+  /** Starts listening to one phrase: its session, which the other calls and the words name. */
+  modelSpeechStart: (locale: string) => ipcRenderer.invoke('model:speech-start', locale),
   modelStatus: () => ipcRenderer.invoke('model:status'),
-  modelTranscribe: (audioBase64: string, locale: string) =>
-    ipcRenderer.invoke('model:transcribe', audioBase64, locale),
   onAgentsChanged: (listener: () => void) => {
     const wrapped = () => listener();
     ipcRenderer.on('agents:changed', wrapped);
@@ -134,10 +141,16 @@ contextBridge.exposeInMainWorld('calendarBridge', {
     ipcRenderer.on('rpc', wrapped);
     return () => ipcRenderer.off('rpc', wrapped);
   },
+  /** The words of the phrase being listened to, each recogniser's so far, as they change. */
   onSettingsFileChanged: (listener: (status: unknown) => void) => {
     const wrapped = (_event: unknown, status: unknown) => listener(status);
     ipcRenderer.on('settingsFile:changed', wrapped);
     return () => ipcRenderer.off('settingsFile:changed', wrapped);
+  },
+  onSpeechWords: (listener: (words: unknown) => void) => {
+    const wrapped = (_event: unknown, words: unknown) => listener(words);
+    ipcRenderer.on('model:speech-words', wrapped);
+    return () => ipcRenderer.off('model:speech-words', wrapped);
   },
   /** Opens a Getting started lesson in the calendar window (Settings › Getting Started › Open). */
   openLesson: (id: string) => ipcRenderer.invoke('lesson:open', id),

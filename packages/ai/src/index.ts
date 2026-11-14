@@ -13,7 +13,7 @@ export * from './textRecognition.ts';
 export * from './capture.ts';
 export * from './parseCapture.ts';
 export * from './fixtureModel.ts';
-export * from './endpointer.ts';
+export * from './level.ts';
 export * from './phraseEnd.ts';
 export * from './strictSchema.ts';
 export * from './said.ts';

@@ -39,7 +39,7 @@ import {
 } from 'react-native';
 import Animated, { type AnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { appleSpeech } from '../appleSpeech.ts';
+import { speech } from '../speech.ts';
 import { backendClient } from '../backend.ts';
 import {
   type AssistantModelState,
@@ -845,7 +845,7 @@ export function EventEditSheet({
       }
       return message;
     },
-    speech: appleSpeech,
+    speech,
   });
   const barDemo = useDemoBar({
     demo,
@@ -902,7 +902,7 @@ export function EventEditSheet({
                   note={seed.thread?.note}
                   notice={notice}
                   onEdit={() => switcher.flip('form', keyboard > 0)}
-                  pending={quick.busy && quick.phrase.trim() !== '' ? quick.phrase : undefined}
+                  pending={quick.pending}
                   taskLists={taskLists}
                 />
                 {previewing ? <UseStepCard editor={editor} /> : null}

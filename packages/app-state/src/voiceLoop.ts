@@ -12,7 +12,7 @@ export interface VoiceLoopState {
  * - `listen` — off: hands-free starts.
  * - `send` — recording: what was said is sent at once, and nothing more
  *   is listened for (the tap is "that's all"). Also before a phrase was
- *   heard — the level can miss a quiet one, and the press must not lose
+ *   heard — the recognisers can miss a quiet one, and the press must not lose
  *   it; a recording of nothing reads as nothing, without a message.
  * - `end` — preparing, or reading a phrase: hands-free ends (a phrase
  *   being read still lands).
@@ -34,3 +34,23 @@ export const shouldListen = ({
   readonly hold: boolean;
   readonly voice: VoiceState;
 }): boolean => handsFree && !hold && voice === 'idle';
+
+/**
+ * What the thread shows for the phrase on its way, if anything: a typed
+ * or dictated phrase while the model reads it, else the words of the one
+ * being spoken (kept through the moment it is read once more).
+ */
+export const pendingLine = ({
+  busy,
+  live,
+  phrase,
+}: {
+  readonly busy: boolean;
+  readonly live: string;
+  readonly phrase: string;
+}): string | undefined => {
+  if (busy && phrase.trim() !== '') {
+    return phrase;
+  }
+  return live.trim() === '' ? undefined : live;
+};
