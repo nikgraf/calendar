@@ -55,6 +55,7 @@ vi.mock('expo', () => ({
       start: async (session: number, _locale: string, voiceProcessing: boolean) => {
         native.calls.push(`start ${session} ${voiceProcessing ? 'processed' : 'plain'}`);
         await native.held;
+        return { sources: ['accurate'] };
       },
     };
   },
@@ -119,7 +120,10 @@ describe('appleSpeech', () => {
   it('passes on its own phrase’s words, and reads the phrase whole at the end', async () => {
     const speech = await loadSpeech();
     const heard: Array<string> = [];
-    await speech.start({ onWords: (source, text) => heard.push(`${source}: ${text}`) });
+    // Only the accurate recogniser listens: the quick one's assets are missing.
+    await expect(
+      speech.start({ onWords: (source, text) => heard.push(`${source}: ${text}`) }),
+    ).resolves.toEqual({ sources: ['accurate'] });
     expect(native.calls).toEqual(['start 1 plain']);
     say({ session: 1, source: 'quick', text: 'Lunch' });
     say({ session: 9, source: 'quick', text: 'someone else' });
@@ -160,7 +164,7 @@ describe('appleSpeech', () => {
     await Promise.resolve();
     closed.abort();
     release?.();
-    await start;
+    await expect(start).resolves.toBeUndefined();
     expect(native.calls).toEqual(['start 1 plain', 'cancel 1']);
     expect(native.listeners.size).toBe(0);
     // Not the current phrase: nothing to finish.

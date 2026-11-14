@@ -84,7 +84,7 @@ export const appleSpeech: SpeechToText = {
       throw new MicrophoneDeniedError({ message: 'Microphone access was declined.' });
     }
     if (signal?.aborted) {
-      return;
+      return undefined;
     }
     sessions += 1;
     const session = sessions;
@@ -97,8 +97,9 @@ export const appleSpeech: SpeechToText = {
     const remove = () => {
       subscription.remove();
     };
+    let sources: ReadonlyArray<'accurate' | 'quick'>;
     try {
-      await native.start(session, locale(), voiceProcessing.get());
+      ({ sources } = await native.start(session, locale(), voiceProcessing.get()));
     } catch (error) {
       remove();
       throw error;
@@ -108,10 +109,11 @@ export const appleSpeech: SpeechToText = {
     if (signal?.aborted) {
       remove();
       await native.cancel(session).catch(() => undefined);
-      return;
+      return undefined;
     }
     // The module dropped the phrase before when this one started.
     current?.remove();
     current = { remove, session };
+    return { sources };
   },
 };

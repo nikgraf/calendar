@@ -197,14 +197,15 @@ export function AssistantView({
   // Assistant measures the newest card where this leaves it (a pane back
   // from `display: none` starts at its top).
   const rows = steps.line.length;
-  // A phrase being said shows below the newest card: in view while it grows.
+  // A phrase being said shows below the newest card: in view while it
+  // grows, a line longer included.
   const saying = quick.pending !== undefined;
   useLayoutEffect(() => {
     const thread = threadRef.current;
     if (active && thread) {
       thread.scrollTop = thread.scrollHeight;
     }
-  }, [active, rows, steps.at, busy, saying, drafts.length]);
+  }, [active, rows, steps.at, busy, quick.pending, drafts.length]);
 
   const answer = (
     <StepAnswer

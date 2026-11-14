@@ -28,8 +28,12 @@ export interface SolunivoSpeechNative {
   readonly prepare: (locale: string) => Promise<void>;
   /** Asks for the microphone if iOS has not yet; whether it may be used. */
   readonly requestMicrophone: () => Promise<boolean>;
-  /** Opens the microphone for a phrase; a newer start replaces it. */
-  readonly start: (session: number, locale: string, voiceProcessing: boolean) => Promise<void>;
+  /** Opens the microphone for a phrase; a newer start replaces it. Answers the recognisers that listen. */
+  readonly start: (
+    session: number,
+    locale: string,
+    voiceProcessing: boolean,
+  ) => Promise<{ readonly sources: ReadonlyArray<'accurate' | 'quick'> }>;
 }
 
 /**

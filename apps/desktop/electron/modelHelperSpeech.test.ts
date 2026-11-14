@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 type Handler = (event: { sender: Sender }, ...args: Array<unknown>) => unknown;
 interface Sender {
+  readonly destroy: () => void;
   readonly isDestroyed: () => boolean;
+  readonly once: (name: 'destroyed', listener: () => void) => void;
   readonly send: (channel: string, payload: unknown) => void;
   readonly sent: Array<unknown>;
 }
@@ -24,7 +26,10 @@ vi.mock('electron', () => ({
 vi.mock('./helperProcess.ts', () => ({
   callHelper: async (method: string, params: unknown) => {
     main.calls.push({ method, params });
-    return method === 'speech.finish' ? { segments: [{ alternatives: [], text: 'Lunch' }] } : {};
+    if (method === 'speech.finish') {
+      return { segments: [{ alternatives: [], text: 'Lunch' }] };
+    }
+    return method === 'speech.start' ? { sources: ['accurate', 'quick'] } : {};
   },
   onHelperEvent: (name: string, listener: (body: Record<string, unknown>) => void) => {
     main.helperEvents.set(name, listener);
@@ -45,7 +50,22 @@ vi.mock('./modelProvider.ts', () => ({
 
 const sender = (): Sender => {
   const sent: Array<unknown> = [];
-  return { isDestroyed: () => false, send: (_channel, payload) => sent.push(payload), sent };
+  const closing: Array<() => void> = [];
+  let destroyed = false;
+  return {
+    destroy: () => {
+      destroyed = true;
+      for (const listener of closing.splice(0)) {
+        listener();
+      }
+    },
+    isDestroyed: () => destroyed,
+    once: (_name, listener) => {
+      closing.push(listener);
+    },
+    send: (_channel, payload) => sent.push(payload),
+    sent,
+  };
 };
 
 const call = (channel: string, from: Sender, ...args: Array<unknown>) => {
@@ -70,7 +90,10 @@ beforeEach(async () => {
 describe('dictation in main', () => {
   it('starts a phrase on the helper and gives the window its session', async () => {
     const window = sender();
-    await expect(call('model:speech-start', window, 'en-US')).resolves.toEqual({ session: 1 });
+    await expect(call('model:speech-start', window, 'en-US')).resolves.toEqual({
+      session: 1,
+      sources: ['accurate', 'quick'],
+    });
     expect(main.calls).toEqual([
       { method: 'speech.start', params: { locale: 'en-US', session: 1 } },
     ]);
@@ -119,5 +142,14 @@ describe('dictation in main', () => {
     expect(first.sent).toEqual([]);
     expect(second.sent).toEqual([{ session: 2, source: 'quick', text: 'Dinner' }]);
     expect(main.calls.at(-1)).toEqual({ method: 'speech.cancel', params: { session: 1 } });
+  });
+
+  it('drops the phrase of a window closed mid-phrase', async () => {
+    const window = sender();
+    await call('model:speech-start', window, 'en-US');
+    window.destroy();
+    expect(main.calls.at(-1)).toEqual({ method: 'speech.cancel', params: { session: 1 } });
+    helperSays({ session: 1, source: 'quick', text: 'Lunch' });
+    expect(window.sent).toEqual([]);
   });
 });

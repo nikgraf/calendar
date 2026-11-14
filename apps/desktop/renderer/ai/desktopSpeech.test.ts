@@ -92,7 +92,7 @@ const bridge = () => {
         sessions += 1;
         const session = sessions;
         await held;
-        return { session };
+        return { session, sources: ['accurate', 'quick'] };
       },
       onSpeechWords: (
         listener: (words: { session: number; source: string; text: string }) => void,
@@ -109,6 +109,8 @@ const bridge = () => {
     hearNothing: () => {
       segments = [];
     },
+    /** How many sessions main was asked to start. */
+    started: () => sessions,
     /** Holds the next start's answer; call the result to let it through. */
     holdStart: () => {
       let release: (() => void) | undefined;
@@ -195,6 +197,28 @@ describe('desktopSpeech listening ownership', () => {
     expect(newer.stopped).toBe(true);
   });
 
+  it('starts no session for a start given up while the worklet loads', async () => {
+    const main = bridge();
+    const speech = await loadSpeech();
+    let loaded: (() => void) | undefined;
+    addModule = () =>
+      new Promise<void>((resolve) => {
+        loaded = resolve;
+      });
+    const closed = new AbortController();
+    const start = speech.start({ onWords: noWords, signal: closed.signal });
+    const stream = fakeStream();
+    grants[0]?.(stream);
+    await settle();
+    // Given up while the worklet loaded: a session started now would drop
+    // a newer caller's in the helper.
+    closed.abort();
+    loaded?.();
+    await expect(start).resolves.toBeUndefined();
+    expect(main.started()).toBe(0);
+    expect(stream.stopped).toBe(true);
+  });
+
   it('releases the microphone when the worklet fails to load', async () => {
     bridge();
     const speech = await loadSpeech();
@@ -224,7 +248,7 @@ describe('desktopSpeech streaming', () => {
     const speech = await loadSpeech();
     const start = speech.start({ onWords: noWords });
     grants[0]?.(fakeStream());
-    await start;
+    await expect(start).resolves.toEqual({ sources: ['accurate', 'quick'] });
     post(250);
     // 1,664 samples a block (13 of the worklet's 128), 3,328 bytes.
     expect(main.audio).toEqual([

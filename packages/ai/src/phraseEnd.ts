@@ -38,6 +38,11 @@ export interface PhraseEnd {
   readonly check: (atMs: number) => 'end' | undefined;
   /** A first word was heard: a phrase worth reading. */
   readonly heard: () => boolean;
+  /**
+   * Which recognisers listen to this phrase (both unless told otherwise).
+   * Without the quick one, the accurate words alone decide, however few.
+   */
+  readonly listensWith: (sources: ReadonlyArray<WordsSource>) => void;
   /** The words so far, as one line to show while the phrase is spoken. */
   readonly text: () => string;
   /**
@@ -76,6 +81,7 @@ interface Heard {
 export const createPhraseEnd = (overrides: Partial<PhraseEndOptions> = {}): PhraseEnd => {
   const options = { ...PHRASE_END_DEFAULTS, ...overrides };
   const heardBy: Partial<Record<WordsSource, Heard>> = {};
+  let quickListens = true;
   let started = false;
   let ended = false;
 
@@ -108,9 +114,16 @@ export const createPhraseEnd = (overrides: Partial<PhraseEndOptions> = {}): Phra
     const accurateQuiet = accurate ? atMs - accurate.at : Number.POSITIVE_INFINITY;
     // One word of difference is the two writing at different moments.
     const agree = (accurate?.count ?? 0) <= (quick?.count ?? 0) + 1;
-    const done = agree
-      ? quick !== undefined && quickQuiet >= options.quickPauseMs
-      : quickQuiet >= options.quickPauseMs && accurateQuiet >= options.accuratePauseMs;
+    let done: boolean;
+    if (!quickListens) {
+      done = accurateQuiet >= options.accuratePauseMs;
+    } else if (agree) {
+      // A word the accurate recogniser alone heard before the quick one
+      // wrote anything is the room, not yet the phrase.
+      done = quick !== undefined && quickQuiet >= options.quickPauseMs;
+    } else {
+      done = quickQuiet >= options.quickPauseMs && accurateQuiet >= options.accuratePauseMs;
+    }
     if (!done) {
       return undefined;
     }
@@ -130,7 +143,11 @@ export const createPhraseEnd = (overrides: Partial<PhraseEndOptions> = {}): Phra
     return [...accurate, ...quick.slice(accurate.length)].join(' ');
   };
 
-  return { check, heard: () => started, text, words };
+  const listensWith = (sources: ReadonlyArray<WordsSource>) => {
+    quickListens = sources.includes('quick');
+  };
+
+  return { check, heard: () => started, listensWith, text, words };
 };
 
 /** How often the listening ear asks whether the phrase ended. */
@@ -138,6 +155,7 @@ export const PHRASE_CHECK_MS = 50;
 
 export interface PhraseListener {
   readonly heard: () => boolean;
+  readonly listensWith: (sources: ReadonlyArray<WordsSource>) => void;
   /** No more asking: the recording was sent, dropped or ended by hand. */
   readonly stop: () => void;
   readonly text: () => string;
@@ -164,6 +182,7 @@ export const listenForPhrase = (
   }, PHRASE_CHECK_MS);
   return {
     heard: ear.heard,
+    listensWith: ear.listensWith,
     stop: () => {
       clearInterval(timer);
     },

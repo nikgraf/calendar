@@ -100,6 +100,8 @@ final class SpeechListening: @unchecked Sendable {
   /// Audio kept beyond this is dropped: the app sends a phrase after 60 s.
   private static let maxSeconds = 90.0
 
+  /// The recognisers listening: "accurate", and "quick" when its assets are here.
+  let sources: [String]
   private let analyzer: SpeechAnalyzer
   private let format: AVAudioFormat
   private let input: AsyncStream<AnalyzerInput>.Continuation
@@ -113,8 +115,10 @@ final class SpeechListening: @unchecked Sendable {
 
   private init(
     analyzer: SpeechAnalyzer, format: AVAudioFormat,
-    input: AsyncStream<AnalyzerInput>.Continuation, locale: Locale, readers: [Task<Void, Never>]
+    input: AsyncStream<AnalyzerInput>.Continuation, locale: Locale, readers: [Task<Void, Never>],
+    sources: [String]
   ) {
+    self.sources = sources
     self.analyzer = analyzer
     self.format = format
     self.input = input
@@ -173,7 +177,8 @@ final class SpeechListening: @unchecked Sendable {
         })
     }
     return SpeechListening(
-      analyzer: analyzer, format: format, input: input, locale: locale, readers: readers)
+      analyzer: analyzer, format: format, input: input, locale: locale, readers: readers,
+      sources: quick == nil ? ["accurate"] : ["accurate", "quick"])
   }
 
   /// The microphone's audio, in whatever format it comes. The buffer is the
@@ -298,10 +303,11 @@ final class SpeechSessions: @unchecked Sendable {
   /// The step asked for last: the next one waits for it.
   private var tail: Task<Void, Never>?
 
+  /// The recognisers that listen to the phrase.
   func start(
     id: Int, locale: String, onWords: @escaping SpeechListening.Words,
     open: (@Sendable () throws -> Void)? = nil
-  ) async throws {
+  ) async throws -> [String] {
     try await serial {
       await self.take(nil)?.cancel()
       let listening = try await SpeechListening.start(locale: locale, onWords: onWords)
@@ -312,6 +318,7 @@ final class SpeechSessions: @unchecked Sendable {
         await self.take(id)?.cancel()
         throw error
       }
+      return listening.sources
     }
   }
 

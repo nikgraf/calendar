@@ -150,6 +150,22 @@ describe('createPhraseEnd', () => {
     expect(ear.check(accuratePauseMs)).toBe('end');
   });
 
+  it('ends a one-word phrase when only the accurate recogniser listens', () => {
+    // "Tomorrow" as a change, the quick recogniser not installed.
+    const ear = createPhraseEnd();
+    ear.listensWith(['accurate']);
+    ear.words('accurate', 'Tomorrow.', 0);
+    expect(ear.check(accuratePauseMs - 50)).toBeUndefined();
+    expect(ear.check(accuratePauseMs)).toBe('end');
+  });
+
+  it('takes a word the accurate recogniser alone heard for the room while both listen', () => {
+    // The crowd's "Mm" before anyone spoke to the app.
+    const ear = createPhraseEnd();
+    ear.words('accurate', 'Mm', 0);
+    expect(ear.check(10_000)).toBeUndefined();
+  });
+
   it('shows the accurate words, then the quick ones beyond them', () => {
     const ear = createPhraseEnd();
     ear.words('quick', 'Lunch with Sara tomorrow at', 0);

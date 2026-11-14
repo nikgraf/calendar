@@ -52,7 +52,7 @@ export const fixtureSpeech: SpeechToText = {
   start: async ({ onWords, signal }) => {
     clear();
     if (signal?.aborted) {
-      return;
+      return undefined;
     }
     listening = true;
     const words = SCRIPT[turn]?.said.split(' ') ?? [];
@@ -70,5 +70,6 @@ export const fixtureSpeech: SpeechToText = {
         ),
       );
     }
+    return { sources: ['accurate', 'quick'] };
   },
 };

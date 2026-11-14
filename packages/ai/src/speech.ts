@@ -13,6 +13,11 @@ export interface Heard {
   readonly text: string;
 }
 
+/** A phrase listened to: the recognisers that listen (the quick one needs its own assets). */
+export interface SpeechStart {
+  readonly sources: ReadonlyArray<WordsSource>;
+}
+
 /** The device or locale cannot transcribe at all — stop offering it. */
 export class SpeechUnsupportedError extends Data.TaggedError('SpeechUnsupportedError')<{
   readonly message: string;
@@ -58,7 +63,8 @@ export interface SpeechToText {
   /**
    * Starts listening, asking for the microphone if needed. Throws
    * MicrophoneDeniedError when refused. `onWords` gets each recogniser's
-   * words so far whenever they change.
+   * words so far whenever they change. Resolves with the recognisers
+   * that listen, or nothing when given up.
    *
    * A call whose `signal` is aborted before it finishes stops whatever it
    * opened and resolves without becoming the current phrase. A caller
@@ -69,7 +75,7 @@ export interface SpeechToText {
   readonly start: (options: {
     readonly onWords: (source: WordsSource, text: string) => void;
     readonly signal?: AbortSignal | undefined;
-  }) => Promise<void>;
+  }) => Promise<SpeechStart | undefined>;
 }
 
 /**

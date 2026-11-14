@@ -146,6 +146,21 @@ export const registerModelHelper = (): void => {
  */
 let listening: { readonly owner: WebContents; readonly session: number } | null = null;
 let sessions = 0;
+/** Windows whose closing is watched: a phrase they leave behind is dropped, audio and all. */
+const watched = new WeakSet<WebContents>();
+
+const dropLeftBehind = (owner: WebContents) => {
+  const current = listening;
+  if (current?.owner !== owner) {
+    return;
+  }
+  listening = null;
+  if (microphoneFixture) {
+    fixtureListening.cancel(current.session);
+  } else {
+    callHelper('speech.cancel', { session: current.session }).catch(() => undefined);
+  }
+};
 
 const sendWords = (session: number, source: WordsSource, text: string) => {
   const current = listening;
@@ -183,13 +198,24 @@ const registerSpeech = () => {
     }
     sessions += 1;
     const session = sessions;
-    listening = { owner: event.sender, session };
+    const owner = event.sender;
+    listening = { owner, session };
+    // Closed mid-phrase, the window's own cleanup never runs: main drops it.
+    if (!watched.has(owner)) {
+      watched.add(owner);
+      owner.once('destroyed', () => dropLeftBehind(owner));
+    }
     if (microphoneFixture) {
       fixtureListening.start(session, (source, text) => sendWords(session, source, text));
-    } else {
-      await callHelper('speech.start', { locale, session });
+      return { session, sources: ['accurate', 'quick'] };
     }
-    return { session };
+    const started = (await callHelper('speech.start', { locale, session })) as {
+      readonly sources?: unknown;
+    };
+    const sources = Array.isArray(started.sources)
+      ? started.sources.filter((source) => source === 'accurate' || source === 'quick')
+      : ['accurate'];
+    return { session, sources };
   });
   ipcMain.on('model:speech-audio', (event, session: unknown, pcm: unknown) => {
     if (

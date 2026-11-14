@@ -231,10 +231,11 @@ func handleSpeechStart(_ id: Int, _ params: [String: JSONValue]) async {
   }
   let localeId = params["locale"]?.stringValue ?? Locale.current.identifier
   do {
-    try await SpeechSessions.shared.start(id: session, locale: localeId) { source, text in
+    let sources = try await SpeechSessions.shared.start(id: session, locale: localeId) {
+      source, text in
       emit(["event": "speech.words", "session": session, "source": source, "text": text])
     }
-    emitResult(id, [:])
+    emitResult(id, ["sources": sources])
   } catch let error as SpeechBridgeError {
     emitError(id, HelperError.unavailable(error.message).message)
   } catch {

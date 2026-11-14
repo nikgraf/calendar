@@ -105,7 +105,9 @@ declare global {
       modelSpeechFinish: (session: number) => Promise<{
         segments: ReadonlyArray<{ alternatives?: ReadonlyArray<string>; text: string }>;
       }>;
-      modelSpeechStart: (locale: string) => Promise<{ session: number }>;
+      modelSpeechStart: (
+        locale: string,
+      ) => Promise<{ session: number; sources: ReadonlyArray<WordsSource> }>;
       modelStatus: () => Promise<ModelStatusReply>;
       onAgentsChanged: (listener: () => void) => () => void;
       /** Where the Assistant's own model stands: the state now, then every change. */

@@ -259,7 +259,7 @@ export const useQuickAddModel = ({
         }
       };
       try {
-        await speech.start({
+        const started = await speech.start({
           onWords: (source, text) => {
             // Only this recording's words: a later one has its own ear.
             if (starting.current === controller && !controller.signal.aborted) {
@@ -270,10 +270,11 @@ export const useQuickAddModel = ({
         });
         // Ended while the microphone was being granted: the adapter has
         // already stopped what this start opened.
-        if (controller.signal.aborted) {
+        if (controller.signal.aborted || !started) {
           drop();
           return;
         }
+        listening.listensWith(started.sources);
         setVoice('recording');
       } catch (error) {
         drop();

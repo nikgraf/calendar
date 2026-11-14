@@ -1,6 +1,7 @@
 import {
   heardFromSegments,
   MicrophoneDeniedError,
+  type SpeechStart,
   SpeechUnsupportedError,
   type SpeechToText,
 } from '@calendar/ai';
@@ -121,13 +122,17 @@ export const desktopSpeech: SpeechToText = {
       throw new MicrophoneDeniedError({ message: 'Microphone access was declined.' });
     }
     let context: AudioContext | undefined;
-    let session: number | undefined;
+    let started: { readonly session: number; readonly sources: SpeechStart['sources'] } | undefined;
     try {
       if (!signal?.aborted) {
         // Chromium resamples the microphone to the rate asked for here.
         context = new AudioContext({ sampleRate: SAMPLE_RATE });
         await context.audioWorklet.addModule(WORKLET_URL);
-        ({ session } = await window.calendarBridge.modelSpeechStart(locale()));
+        // Given up while the worklet loaded: starting a session now would
+        // drop a newer caller's in the helper.
+        if (!signal?.aborted) {
+          started = await window.calendarBridge.modelSpeechStart(locale());
+        }
       }
     } catch (error) {
       stopStream(stream, context);
@@ -135,14 +140,14 @@ export const desktopSpeech: SpeechToText = {
     }
     // Given up while the microphone was being granted: stop this stream
     // and drop this session only. The current one may be a newer caller's.
-    if (!context || session === undefined || signal?.aborted) {
+    if (!context || started === undefined || signal?.aborted) {
       stopStream(stream, context);
-      if (session !== undefined) {
-        void window.calendarBridge.modelSpeechCancel(session).catch(() => undefined);
+      if (started !== undefined) {
+        void window.calendarBridge.modelSpeechCancel(started.session).catch(() => undefined);
       }
-      return;
+      return undefined;
     }
-    const phrase = session;
+    const phrase = started.session;
     const unsubscribe = window.calendarBridge.onSpeechWords((words) => {
       if (words.session === phrase) {
         onWords(words.source, words.text);
@@ -176,5 +181,6 @@ export const desktopSpeech: SpeechToText = {
       close(replaced);
       void window.calendarBridge.modelSpeechCancel(replaced.session).catch(() => undefined);
     }
+    return { sources: started.sources };
   },
 };

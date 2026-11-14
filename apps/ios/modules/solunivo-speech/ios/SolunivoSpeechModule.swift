@@ -50,14 +50,14 @@ public class SolunivoSpeechModule: Module {
       let module = WeakModule(self)
       Task {
         do {
-          try await SpeechSessions.shared.start(
+          let sources = try await SpeechSessions.shared.start(
             id: session, locale: locale,
             onWords: { source, text in
               module.value?.sendEvent(
                 "onWords", ["session": session, "source": source, "text": text])
             },
             open: { try Microphone.shared.open(session: session, voiceProcessing: voiceProcessing) })
-          promise.resolve(nil)
+          promise.resolve(["sources": sources])
         } catch {
           promise.reject("SpeechError", Self.message(error))
         }
@@ -116,22 +116,28 @@ private final class Microphone: @unchecked Sendable {
     try audio.setActive(true)
     let engine = AVAudioEngine()
     let input = engine.inputNode
-    if voiceProcessing {
-      try input.setVoiceProcessingEnabled(true)
-    }
-    let format = input.outputFormat(forBus: 0)
-    guard format.sampleRate > 0, format.channelCount > 0 else {
-      try? audio.setActive(false, options: .notifyOthersOnDeactivation)
-      throw SpeechBridgeError.failed("no microphone")
-    }
-    input.installTap(onBus: 0, bufferSize: 4096, format: format) { buffer, _ in
-      SpeechSessions.shared.append(id: session, buffer)
-    }
-    engine.prepare()
+    var tapped = false
+    // Anything that fails once the session is active gives it back: other
+    // apps' audio must not stay interrupted for a dictation that never ran.
     do {
+      if voiceProcessing {
+        try input.setVoiceProcessingEnabled(true)
+      }
+      let format = input.outputFormat(forBus: 0)
+      guard format.sampleRate > 0, format.channelCount > 0 else {
+        throw SpeechBridgeError.failed("no microphone")
+      }
+      input.installTap(onBus: 0, bufferSize: 4096, format: format) { buffer, _ in
+        SpeechSessions.shared.append(id: session, buffer)
+      }
+      tapped = true
+      engine.prepare()
       try engine.start()
     } catch {
-      input.removeTap(onBus: 0)
+      if tapped {
+        input.removeTap(onBus: 0)
+      }
+      engine.stop()
       try? audio.setActive(false, options: .notifyOthersOnDeactivation)
       throw error
     }
