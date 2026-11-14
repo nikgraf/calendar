@@ -2,11 +2,12 @@ import { Account, CalendarInfo } from '@calendar/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
 import { type App, DICTATION_LOOP_MS, launchApp } from './harness.ts';
 
-// Hands-free dictation: one click of the microphone, then every pause
-// sends the phrase and it listens again. The microphone is the harness's
-// fixture — a looping file of a phrase-long tone between stretches of
-// quiet room — so the renderer's real recording and pause detection run
-// on known audio; each transcription answers the next phrase below, in
+// Hands-free dictation: one click of the microphone, then every phrase
+// is sent when its words stop and it listens again. The microphone is the
+// harness's fixture — a looping file of a phrase-long tone between
+// stretches of quiet room — so the renderer's real streaming and the rule
+// that ends a phrase on its words run on known audio; the tone writes the
+// next phrase below word by word, and each reading answers it, in
 // the fixture model's grammar (`Title | +N | HH:MM-HH:MM`, empty parts
 // in a change meaning "unchanged").
 const seed = {
@@ -50,6 +51,8 @@ const startIs = (time: string) =>
   `document.querySelector(${JSON.stringify(START)})?.value === ${JSON.stringify(time)}`;
 const MIC = `document.querySelector('[data-testid="quick-add-mic"]')`;
 const dictating = `${MIC}?.getAttribute('aria-pressed') === 'true'`;
+/** The words of the phrase being said, while it is: nothing once it is sent. */
+const listeningTo = `(${MIC}?.dataset.listening === 'speech' ? (document.querySelector('[data-testid="assistant-pending"]')?.textContent ?? '') : '')`;
 /** Long enough for the fixture microphone to say one more phrase and pause after it. */
 const ONE_LOOP_MS =
   DICTATION_LOOP_MS.quietBefore + DICTATION_LOOP_MS.phrase + DICTATION_LOOP_MS.quietAfter + 1000;
@@ -72,6 +75,8 @@ describe('Hands-free dictation', () => {
 
     // One click: the first phrase makes the draft, the second moves it — no click between.
     await cdp.clickTestId('quick-add-mic');
+    // Its words show in the thread while it is said, before it is sent.
+    await cdp.waitFor(`${listeningTo}.startsWith('Dinner')`, 20_000);
     await cdp.waitFor(`(${titleValue}) === 'Dinner'`, 20_000);
     await cdp.waitFor(startIs('19:00'));
     expect(await cdp.eval<boolean>(dictating)).toBe(true);

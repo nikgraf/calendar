@@ -951,9 +951,10 @@ export interface LaunchOptions {
   /**
    * Absent (default): dictation is the Mac's — its microphone, its speech
    * models. Present: the page's microphone plays a loop of a phrase-long
-   * tone between stretches of quiet room (`dictationAudio`), and each
-   * transcription answers the next of `phrases` — a spec dictates in the
-   * fixture model's grammar, with no TCC prompt and no developer's room.
+   * tone between stretches of quiet room (`dictationAudio`); while the
+   * tone plays, main writes the next of `phrases` word by word, and the
+   * phrase is read as it — a spec dictates in the fixture model's
+   * grammar, with no TCC prompt and no developer's room.
    * (Chromium's fake audio device never opens under Electron here, so
    * `getUserMedia` itself is stood in for, in the page.)
    */
