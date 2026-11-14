@@ -192,7 +192,7 @@ the served model (#184) and slot proposals (#185) are in
       `reasoning_effort: "none"`. A served model now answers only find a
       time, search sentences and capture, which no bench measures:
       measure those first.
-- [ ] The Assistant's own model, follow-ups (#307, v2 in #NNN) — search
+- [ ] The Assistant's own model, follow-ups (#307, v2 in #321) — search
       sentences and capture still need Apple's model (data and a tuned
       prompt each, in the next version's one training run); they have no
       bench yet (capture's schema leaves the time and place optional,

@@ -1254,7 +1254,7 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   animation, a Form lesson. Open: how a new model version reaches
   someone who had the last one, Search on the app's model (todo.md).
 - **Model v2: one model for the Assistant and find a time** (2026-11-14,
-  #NNN) — one training run, one 834 MB release; the prompt's first line
+  #321) — one training run, one 834 MB release; the prompt's first line
   names the job ("Free time as JSON."). Times are written as said
   ("+30m", "45m") and a date only where a day was said, so code does the
   arithmetic and `statesDay` went; "no reminder" clears the default.
