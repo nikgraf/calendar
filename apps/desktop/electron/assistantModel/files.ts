@@ -65,11 +65,7 @@ export const nodeModelFiles = (folder: string, manifest: AssistantModelManifest)
       return isRecord(note) &&
         (note['answer'] === 'agreed' || note['answer'] === 'declined') &&
         typeof note['version'] === 'string'
-        ? {
-            answer: note['answer'] as MacAnswer,
-            ...(note['update'] === true ? { update: true as const } : {}),
-            version: note['version'],
-          }
+        ? { answer: note['answer'] as MacAnswer, version: note['version'] }
         : undefined;
     },
     readVerified: () => {

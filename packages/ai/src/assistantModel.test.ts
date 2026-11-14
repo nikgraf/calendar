@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vite-plus/test';
 
 import {
   assistantModelManifest,
+  createRowNote,
+  lessonModelCopy,
   noticeCopy,
   PUBLISHED_MODEL,
   sizeLabel,
@@ -137,5 +139,92 @@ describe('noticeCopy', () => {
         { device: 'Mac', network: undefined, size: SIZE },
       ).lines[0],
     ).toContain('switched off');
+  });
+});
+
+describe('lessonModelCopy', () => {
+  const iPhone = { device: 'iPhone' as const, network: WIFI, size: SIZE };
+
+  it('says what the Assistant is and what the download is, with the notice’s action', () => {
+    const copy = lessonModelCopy({ kind: 'unasked' }, iPhone);
+    expect(copy.text).toContain(
+      'a small model trained on calendar phrases, running on this iPhone',
+    );
+    expect(copy.text).toContain('a one-time download of 834 MB, over Wi-Fi');
+    expect(copy.action).toEqual({ kind: 'download', label: 'Download (834 MB)' });
+    expect(lessonModelCopy({ kind: 'unasked' }, { ...iPhone, device: 'Mac' }).text).not.toContain(
+      'Wi-Fi',
+    );
+  });
+
+  it('counts the download, and keeps the demo in reach while it waits or failed', () => {
+    const downloading = lessonModelCopy(
+      { kind: 'downloading', received: 350_000_000, total: SIZE },
+      iPhone,
+    );
+    expect(downloading).toMatchObject({ progress: 41 });
+    expect(downloading.text).toContain('41 %');
+    const failed = lessonModelCopy({ kind: 'failed', message: 'The connection was lost.' }, iPhone);
+    expect(failed.action).toEqual({ kind: 'retry', label: 'Try Again' });
+    expect(failed.text).toContain('the demo');
+    // A message without its own full stop gets one.
+    expect(
+      lessonModelCopy({ kind: 'failed', message: 'fetch failed' }, { ...iPhone, device: 'Mac' })
+        .text,
+    ).toContain('did not finish: fetch failed. Meanwhile');
+  });
+
+  it('tells waiting for Wi-Fi from waiting out Low Data Mode, as the notice does', () => {
+    const waiting = { for: 'wifi' as const, kind: 'waiting' as const, received: 0, total: SIZE };
+    expect(
+      lessonModelCopy(waiting, {
+        ...iPhone,
+        network: { constrained: false, expensive: true, satisfied: true },
+      }).text,
+    ).toContain('downloads when this iPhone is on Wi-Fi');
+    expect(
+      lessonModelCopy(waiting, {
+        ...iPhone,
+        network: { constrained: true, expensive: false, satisfied: true },
+      }).text,
+    ).toContain('waits while Low Data Mode is on');
+  });
+
+  it('points an iPhone that cannot run it to the Form, and says when the model is ready', () => {
+    expect(lessonModelCopy({ kind: 'unsupported', reason: 'memory' }, iPhone).text).toBe(
+      'This iPhone can’t run the Assistant’s model: it needs 8 GB of memory. The demo shows what it does; the Form makes your events.',
+    );
+    expect(lessonModelCopy({ kind: 'ready', path: '/m' }, iPhone).text).toContain(
+      'The Assistant is ready, on this iPhone.',
+    );
+  });
+});
+
+describe('createRowNote', () => {
+  it('says where the download stands on the Create row, nothing once the model is ready', () => {
+    expect(createRowNote({ kind: 'unasked' }, { device: 'iPhone' })?.subtitle).toBe(
+      'Try the demo · the Assistant downloads once',
+    );
+    expect(
+      createRowNote({ kind: 'downloading', received: SIZE / 2, total: SIZE }, { device: 'Mac' }),
+    ).toEqual({ asked: true, progress: 50, subtitle: 'Downloading the Assistant · 50 %' });
+    expect(
+      createRowNote({ kind: 'unsupported', reason: 'memory' }, { device: 'iPhone' })?.subtitle,
+    ).toBe('See it in a demo · this iPhone uses the Form');
+    expect(createRowNote({ kind: 'ready', path: '/m' }, { device: 'iPhone' })).toBeUndefined();
+  });
+
+  it('keeps a download that was asked for on the row, though it waits or failed', () => {
+    expect(
+      createRowNote(
+        { for: 'wifi', kind: 'waiting', received: 0, total: SIZE },
+        { device: 'iPhone' },
+      ),
+    ).toEqual({ asked: true, subtitle: 'The Assistant downloads on Wi-Fi · try the demo' });
+    expect(createRowNote({ kind: 'failed', message: 'Offline' }, { device: 'Mac' })).toEqual({
+      asked: true,
+      subtitle: 'The download did not finish · try the demo',
+    });
+    expect(createRowNote({ kind: 'declined' }, { device: 'iPhone' })?.asked).toBe(false);
   });
 });

@@ -1,4 +1,11 @@
-import { type CaptureSource, tunedReader } from '@calendar/ai';
+import {
+  type AssistantModelState,
+  type CaptureSource,
+  lessonDemoModel,
+  lessonModelCopy,
+  PUBLISHED_MODEL,
+  tunedReader,
+} from '@calendar/ai';
 import {
   CONVERT_SCOPE_HINT,
   type EditorSeed,
@@ -15,6 +22,8 @@ import {
 import {
   type CalendarInfo,
   type ItemKind,
+  lessonDemoNext,
+  type LessonId,
   type TaskListInfo,
   type TaskRecord,
 } from '@calendar/core';
@@ -42,6 +51,58 @@ import { FieldFlashContext, useFlash } from '../../ui/useFlash.ts';
 
 /** The Assistant reads phrases with its own model (electron/assistantModel/), as on the iPhone. */
 const assistantReader = tunedReader(desktopAssistantModel);
+/**
+ * The Create lesson while the Assistant's model is not on this Mac: the
+ * real editor over v1's answers to the lesson's two phrases
+ * (`lessonDemo.ts`), until the model is ready.
+ */
+const demoReader = tunedReader(lessonDemoModel);
+
+/** The banner's action: download the Assistant's model (the person agrees), or try again. */
+const runModelAction = (kind: 'download' | 'mobile' | 'retry') => {
+  void (kind === 'retry'
+    ? window.calendarBridge.assistantRetry()
+    : window.calendarBridge.assistantDownload());
+};
+
+/** What the demo answers next, from the thread's phrases: the lesson's phrase, then its change. */
+const demoNextOf = (line: ReturnType<typeof useThreadEditor>['steps']['line']) =>
+  lessonDemoNext(line.flatMap(({ step }) => (step.kind === 'phrase' ? [step.utterance] : [])));
+
+/**
+ * A lesson's frame, over either view. In the Create lesson without the
+ * model (`model`, its state, given then and once the model came during
+ * the demo) it says what the Assistant is and offers the download, the
+ * demo standing in; once the model is here, that it is.
+ */
+function LessonFrame({
+  id,
+  model,
+  onSkip,
+}: {
+  readonly id: LessonId;
+  readonly model: AssistantModelState | undefined;
+  readonly onSkip: (() => void) | undefined;
+}) {
+  const copy =
+    model === undefined
+      ? undefined
+      : lessonModelCopy(model, { device: 'Mac', network: undefined, size: PUBLISHED_MODEL.bytes });
+  const offer = copy?.action;
+  return (
+    <LessonBanner
+      action={
+        offer === undefined
+          ? undefined
+          : { label: offer.label, onClick: () => runModelAction(offer.kind) }
+      }
+      id={id}
+      note={copy?.text}
+      onSkip={onSkip}
+      progress={copy?.progress}
+    />
+  );
+}
 
 const KIND_LABELS: Record<ItemKind, string> = {
   event: 'Event',
@@ -150,6 +211,12 @@ export function EditorPanel({
   });
   useEffect(() => () => leaveLesson(), []);
   const { finder } = useFinder();
+  // Where the Assistant's own model stands; null until main has answered.
+  const modelState = useAssistantModelState();
+  const availability = { state: modelState, status: assistantStatusOf(modelState) };
+  // The Create lesson without the model: its demo, on the real editor.
+  const demo =
+    lesson === 'create' && availability.status !== null && availability.status !== 'ready';
   const editor = useThreadEditor({
     backend,
     calendars,
@@ -161,7 +228,7 @@ export function EditorPanel({
       lessonDone();
       onSaved?.();
     },
-    reader: assistantReader,
+    reader: demo ? demoReader : assistantReader,
     seed,
     sourceKind,
     task,
@@ -187,31 +254,31 @@ export function EditorPanel({
   const arriving = leaving ? 'relative z-10' : '';
   // The model answers a moment after the editor opened. Not ready, and
   // nothing said or typed yet: the form is what there is to work with,
-  // once — the Assistant says why and is a tab away.
-  const modelState = useAssistantModelState();
-  const availability = { state: modelState, status: assistantStatusOf(modelState) };
+  // once — the Assistant says why and is a tab away. Not for the Create
+  // lesson, whose demo is the Assistant.
   const answered = useRef(false);
   useEffect(() => {
     if (availability.status === null || answered.current) {
       return;
     }
     answered.current = true;
-    if (availability.status !== 'ready' && steps.of === 0) {
+    if (availability.status !== 'ready' && steps.of === 0 && !demo) {
       switcher.snap('form');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the first answer only
   }, [availability.status]);
-  // The Create lesson's frame, over either view. Where the model is not
-  // ready the editor has fallen back to its form: the banner says why the
-  // lesson is not as drawn.
+  // The demo went on until the model came: the banner says it is here.
+  const [demoed, setDemoed] = useState(demo);
+  useEffect(() => {
+    if (demo) {
+      setDemoed(true);
+    }
+  }, [demo]);
+  // The Create lesson's frame, over either view.
   const lessonBanner = lesson ? (
-    <LessonBanner
+    <LessonFrame
       id={lesson}
-      note={
-        availability.status !== null && availability.status !== 'ready'
-          ? 'Describing an event needs the Assistant’s model, which is not on this Mac yet — the form still makes one.'
-          : undefined
-      }
+      model={demo || demoed ? modelState : undefined}
       onSkip={lessonOpen ? onClose : undefined}
     />
   ) : null;
@@ -293,6 +360,7 @@ export function EditorPanel({
               availability={availability}
               banner={lessonBanner}
               calendars={calendars}
+              demo={demo ? { next: demoNextOf(steps.line) } : undefined}
               editKey={userEdits}
               editor={editor}
               focusSignal={quickAddFocus}
@@ -325,7 +393,7 @@ export function EditorPanel({
           inert={leaving === 'form'}
           ref={switcher.formPane}
         >
-          {/* The lesson's frame is over the form too: without the model, the form is where it opens. */}
+          {/* The lesson's frame is over the form too: the lesson goes on there after the Assistant. */}
           {lessonBanner}
           {/* An older step on show is looked at, not edited. */}
           <fieldset className="contents" disabled={previewing}>

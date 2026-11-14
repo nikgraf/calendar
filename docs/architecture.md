@@ -48,7 +48,9 @@ by code (`said.ts`), and `answerResult` (`tunedResult.ts`) checks shapes
 and fills a form's defaults without reading the words. The answer has a
 day only where the words gave one: a first phrase without one lands on
 the day on show, a later turn keeps the draft's. Each device downloads
-the model once, after asking,
+the model once, when the
+person asks for it (the Create lesson's banner, the Assistant's notice,
+the Mac's Settings › AI Model; nothing asks at launch),
 checks its size and SHA-256, and loads it on the first question. The
 iPhone fetches over Wi-Fi unless mobile data is allowed
 (`apps/ios/src/assistantDownload.ts`, a background `URLSession` in the
@@ -1283,7 +1285,20 @@ gateway carries all of it. Details, limits and the threat model:
   lesson is ticked. A lesson is an existing surface plus a frame: Create
   with AI is the editor's Assistant seeded with `quickAddText` + `lesson`
   (`EditorSeed`; the phrase waits in the Assistant's field, which the
-  iPhone opens on) under a `LessonBanner`; Search with AI is search with its sentence read (the
+  iPhone opens on) under a `LessonBanner`. Without the Assistant's model
+  (not asked for, downloading, failed, or a device that cannot run it)
+  it runs a demo on the same editor instead of the Form: the reader is
+  `tunedReader(lessonDemoModel)` (`@calendar/ai` `lessonDemo.ts`: model
+  v1's recorded answers to `LESSON_DEMO_PHRASES`, the phrase and "at 1
+  instead", a day written as a count from today so it holds on any
+  date; anything else refused), the field holds the next of them
+  (`lessonDemoNext`) to send as typed words are, and the banner says
+  what the Assistant is and offers the download, then its progress
+  (`lessonModelCopy`); the card's Create row says where the download
+  stands (`createRowNote`). Once the model is ready the reader is the
+  model's and the banner says so; a device that cannot run it gets the
+  demo, then the Form. A new model version needs the demo's answers
+  recorded again. Search with AI is search with its sentence read (the
   desktop panel's thread, iOS route params on the Search tab); Alerts,
   Contacts, Time zones and "Set up your Mac/iPhone" frame the Settings
   sections (iOS `app/lesson/` modal, desktop `PanelState` `lesson`; "Set
@@ -1304,8 +1319,10 @@ gateway carries all of it. Details, limits and the threat model:
   `EXPO_PUBLIC_CALENDAR_ONBOARDING=off` (the CI and live iOS bundles) keep
   the setup and the card away whatever the state says. Under the fixture
   model the iOS `onboarding-fixture` deep link resets the state and forces
-  both on for that launch (flow 26), and under the fake Google API
-  "Add Google Account" signs the fixture in (`fixtureSignIn`).
+  both on for that launch (flow 26); `?assistant=absent` on it has the
+  Assistant's model read as not asked for, for that launch, so the
+  Create lesson runs its demo (flow 28). Under the fake Google API "Add
+  Google Account" signs the fixture in (`fixtureSignIn`).
 
 ## Platform seams
 
@@ -1420,7 +1437,8 @@ gateway carries all of it. Details, limits and the threat model:
   crossfade. "+ New",
   ⌘N, ⌘K and a capture open on the Assistant —
   falling back to the Form once when the model turns out not to be ready
-  before anything was said — a slot, a to-do and a saved item on the
+  before anything was said (not the Create lesson, which runs its demo,
+  see Onboarding) — a slot, a to-do and a saved item on the
   Form; a read-only item and a conversion have the Form alone.
   **Assistant** (`assistant/AssistantView.tsx`) is a conversation: a
   phrase, typed and sent with Return or dictated hands-free, makes the
@@ -1598,7 +1616,7 @@ gateway carries all of it. Details, limits and the threat model:
   over the bar: the form that says so is not mounted then. The
   calendar's "+", a share and the Create lesson open on the
   Assistant (`EditSheet.opensOn`), falling back to the Form once when
-  the model is not ready; a slot drawn on the grid, a to-do's "+" and a
+  the model is not ready (not the Create lesson: its demo); a slot drawn on the grid, a to-do's "+" and a
   saved item open on the Form. The rows the step on show changed stay
   marked (`FlashView`, `lasting`). The sheet covers the calendar, which
   draws no drafts on the phone; it still goes to the focused draft's

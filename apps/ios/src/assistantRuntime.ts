@@ -23,10 +23,8 @@ import {
   type TransferPort,
 } from './assistantDownload.ts';
 import { type AssistantModel, createAssistantModel } from './assistantModel.ts';
-import { offerOnce } from './assistantModelOffer.ts';
 import { languageModel, modelFixture } from './model.ts';
 import { loadOpenModelRuntime } from './openModel.ts';
-import { whenSetupClosed } from './settingsCodeInbox.ts';
 
 /**
  * The Assistant's model on this device: the download (`assistantDownload`),
@@ -116,17 +114,11 @@ const deviceFiles = (
     destination: model.uri,
     exists: () => model.exists,
     readAnswer: () => {
-      const note = readJson(answerNote) as
-        | { answer?: unknown; update?: unknown; version?: unknown }
-        | undefined;
+      const note = readJson(answerNote) as { answer?: unknown; version?: unknown } | undefined;
       const answer = note?.answer;
       return (answer === 'declined' || answer === 'mobile' || answer === 'wifi') &&
         typeof note?.version === 'string'
-        ? {
-            answer: answer satisfies DownloadAnswer,
-            ...(note.update === true ? { update: true as const } : {}),
-            version: note.version,
-          }
+        ? { answer: answer satisfies DownloadAnswer, version: note.version }
         : undefined;
     },
     readVerified: () => {
@@ -252,11 +244,40 @@ export const assistantModel = (): AssistantModel => runtime().model;
 /** How the Assistant reads what is said: the tuned path. */
 export const assistantReader = (): PhraseReader => runtime().reader;
 
-/** The download's state, for a screen that shows it. */
-export const useAssistantModelState = (): AssistantModelState => {
-  const { download } = runtime();
-  return useSyncExternalStore(download.subscribe, download.getState);
+/**
+ * The e2e flows' Assistant without its model (flow 28 reaches the Create
+ * lesson's demo this way under the fixture bundle, whose model is always
+ * there): the state reads as not asked for; the fixture still answers
+ * every other reader. Set by the `onboarding-fixture?assistant=absent`
+ * link, under the fixture model only.
+ */
+const ABSENT: AssistantModelState = { kind: 'unasked' };
+let absent = false;
+const absentListeners = new Set<() => void>();
+
+export const showAssistantAbsent = (): void => {
+  if (!modelFixture || absent) {
+    return;
+  }
+  absent = true;
+  for (const listener of absentListeners) {
+    listener();
+  }
 };
+
+const subscribeState = (listener: () => void): (() => void) => {
+  const off = runtime().download.subscribe(listener);
+  absentListeners.add(listener);
+  return () => {
+    off();
+    absentListeners.delete(listener);
+  };
+};
+const stateNow = (): AssistantModelState => (absent ? ABSENT : runtime().download.getState());
+
+/** The download's state, for a screen that shows it. */
+export const useAssistantModelState = (): AssistantModelState =>
+  useSyncExternalStore(subscribeState, stateNow);
 
 /**
  * How find a time reads a sentence on this iPhone: with the Assistant's
@@ -272,11 +293,12 @@ export const useFinder = (): FinderChoice => {
 
 /**
  * At launch (from CalendarScreen): picks up a transfer and a file the last
- * launch left, once the app is in front; asks the question once the setup
- * is out of the way; lets the model go when the app leaves the screen,
- * and when iOS warns of memory while no question is answered.
+ * launch left, once the app is in front; lets the model go when the app
+ * leaves the screen, and when iOS warns of memory. Nothing is asked here:
+ * the Getting started card's Create lesson and the Assistant's notice
+ * offer the download.
  */
-export const startAssistantModel = (ask: Parameters<typeof offerOnce>[1]): void => {
+export const startAssistantModel = (): void => {
   const current = runtime();
   if (current.started) {
     return;
@@ -284,9 +306,7 @@ export const startAssistantModel = (ask: Parameters<typeof offerOnce>[1]): void 
   current.started = true;
   const appState = loadAppState();
   const begin = () => {
-    void current.download.boot().then(() => {
-      whenSetupClosed(() => offerOnce(current.download, ask));
-    });
+    void current.download.boot();
   };
   if (appState === undefined || appState.currentState === 'active') {
     begin();

@@ -650,7 +650,17 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   as on the capture hint, and a pause while visible changes nothing.
   Rejected: a checkbox for the setting (option A of the two drawn), and
   the pause as a third segment (beside the default Visible it only
-  counted down). Open: the pause timer runs late after the Mac sleeps.
+  counted down).
+- **A pause ends on wake** (2026-11-13, #318) — a pause is over at
+  whichever clock reaches ten minutes first: `performance.now()` (counts
+  sleep, ignores clock changes) or the wall clock Settings counts down on.
+  It is re-checked on its timer, on wake and unlock, and on any read that
+  finds it over. After a sleep the timer was due at once, but Electron's
+  poll thread waited out a timeout macOS stops in sleep (5 s today, the
+  settings-file poll). Rejected: the wall clock alone (a clock set back
+  stretches the pause), ending the pause on sleep or lock (a short lock
+  would end one still wanted), polling. Open: a pause woken before its end
+  still ends by timer; App Nap is unmeasured.
 - **Per-calendar colors** — optimistic local update, write-back through
   `calendarList.patch?colorRgbFormat=true` as a `calendarColor` op kind
   coalescing per account; invalid hex rejected, 4xx dropped.
@@ -1234,6 +1244,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   phrase brought, with Skip. Type is a capsule like Form. Rejected: View
   Transitions, a sideways slide, every value travelling, chips, dots.
   Open: haptics, answering by voice (todo.md).
+- **Create with AI runs a demo until the model is here** (2026-11-13,
+  #319) — nothing asks for the model at launch; the Create lesson says
+  what the Assistant is and offers the download, the card's row shows its
+  progress. Meanwhile the lesson runs the real editor over v1's recorded
+  answers to its phrase and one change ("at 1 instead"); an iPhone that
+  cannot run the model gets the demo, then the Form. Rejected: a setup
+  step for the download, the lesson moved into the setup, a scripted
+  animation, a Form lesson. Open: how a new model version reaches
+  someone who had the last one, Search on the app's model (todo.md).
 - **Show only the latest query by default** (2026-11-05) — the create and
   search threads keep the turn with Undo visible on both apps. Earlier
   queries open on demand, leaving more room for the form or results.

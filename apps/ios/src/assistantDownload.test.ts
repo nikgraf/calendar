@@ -107,19 +107,19 @@ const storeOf = (files: ModelFiles, transfer: TransferPort) =>
   } satisfies AssistantDownloadDeps);
 
 describe('the Assistant model’s download', () => {
-  it('fetches nothing before the person agrees, and asks once a version', async () => {
+  it('fetches nothing before the person agrees; an old "Not Now" stands for its version', async () => {
     const files = fakeFiles();
     const { starts, transfer } = fakeTransfer();
     const store = storeOf(files.files, transfer);
     await store.boot();
     expect(store.getState()).toEqual({ kind: 'unasked' });
     expect(starts).toEqual([]);
-    store.decline();
-    expect(store.getState()).toEqual({ kind: 'declined' });
+    // The old launch question's "Not Now".
+    files.files.writeAnswer({ answer: 'declined', version: MANIFEST.version });
     const again = storeOf(files.files, transfer);
     await again.boot();
     expect(again.getState()).toEqual({ kind: 'declined' });
-    // A new version asks again.
+    // A new version starts unasked.
     const newer = createAssistantDownload({
       files: files.files,
       manifest: { ...MANIFEST, version: 'v2' },
@@ -130,7 +130,7 @@ describe('the Assistant model’s download', () => {
     expect(newer.getState()).toEqual({ kind: 'unasked' });
   });
 
-  it('asks a new version as an update where an earlier one was downloaded', async () => {
+  it('offers a new version as an update where an earlier one was agreed to, and fetches nothing unasked', async () => {
     const files = fakeFiles();
     const { starts, transfer } = fakeTransfer();
     const store = storeOf(files.files, transfer);
@@ -145,8 +145,7 @@ describe('the Assistant model’s download', () => {
     await newer.boot();
     expect(newer.getState()).toEqual({ kind: 'unasked', update: true });
     expect(starts).toHaveLength(before);
-    newer.decline();
-    expect(newer.getState()).toEqual({ kind: 'declined', update: true });
+    // The next launch still offers it as an update.
     const again = createAssistantDownload({
       files: files.files,
       manifest: { ...MANIFEST, version: 'v2' },
@@ -154,7 +153,8 @@ describe('the Assistant model’s download', () => {
       transfer,
     });
     await again.boot();
-    expect(again.getState()).toEqual({ kind: 'declined', update: true });
+    expect(again.getState()).toEqual({ kind: 'unasked', update: true });
+    expect(starts).toHaveLength(before);
   });
 
   it('goes over Wi-Fi only when agreed so, and waits on mobile data', async () => {
@@ -340,24 +340,15 @@ describe('the Assistant model’s download', () => {
     expect(starts).toEqual(['wifi']);
   });
 
-  it('ignores another file’s finish, and cancels a transfer when the person declines', async () => {
+  it('ignores another file’s finish', async () => {
     const files = fakeFiles();
-    const cancelled: Array<string> = [];
     const { emit, transfer } = fakeTransfer();
-    const store = storeOf(files.files, {
-      ...transfer,
-      cancel: async (destination) => {
-        cancelled.push(destination);
-      },
-    });
+    const store = storeOf(files.files, transfer);
     await store.boot();
     await store.agree('wifi');
     files.land();
     emit().onFinish({ path: 'file:///caches/older.gguf' });
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(store.getState().kind).toBe('downloading');
-    store.decline();
-    expect(store.getState()).toEqual({ kind: 'declined' });
-    expect(cancelled.at(-1)).toBe('file:///caches/assistant.gguf');
   });
 });

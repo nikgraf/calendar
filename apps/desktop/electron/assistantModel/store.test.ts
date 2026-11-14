@@ -117,7 +117,7 @@ describe('createAssistantStore', () => {
     expect(store.getState().kind).toBe('ready');
   });
 
-  it('keeps "Not Now", and asks again for a new version', async () => {
+  it('keeps an old "Not Now" for its version, and a new version starts unasked', async () => {
     const { disk, files } = memoryFiles({ answer: { answer: 'declined', version: 'v1' } });
     const { fetch, starts } = fakeFetch(disk);
     const declined = createAssistantStore({ fetch, files, manifest: MANIFEST });
@@ -129,19 +129,18 @@ describe('createAssistantStore', () => {
     expect(starts).toEqual([]);
   });
 
-  it('asks a new version as an update where an earlier one was downloaded', async () => {
+  it('offers a new version as an update where an earlier one was agreed to, and fetches nothing unasked', async () => {
     const { disk, files } = memoryFiles({ answer: { answer: 'agreed', version: 'v1' } });
     const { fetch, starts } = fakeFetch(disk);
     const next = createAssistantStore({ fetch, files, manifest: { ...MANIFEST, version: 'v2' } });
     await next.boot();
     expect(next.getState()).toEqual({ kind: 'unasked', update: true });
     expect(starts).toEqual([]);
-    next.decline();
-    expect(next.getState()).toEqual({ kind: 'declined', update: true });
     // The next launch still offers it as an update.
     const again = createAssistantStore({ fetch, files, manifest: { ...MANIFEST, version: 'v2' } });
     await again.boot();
-    expect(again.getState()).toEqual({ kind: 'declined', update: true });
+    expect(again.getState()).toEqual({ kind: 'unasked', update: true });
+    expect(starts).toEqual([]);
   });
 
   it('throws a wrong file away, and does not fetch it again by itself at the next launch', async () => {
@@ -190,7 +189,7 @@ describe('createAssistantStore', () => {
     expect(calls).toBe(2);
   });
 
-  it('stops a transfer without calling it a failure, and declining stops one too', async () => {
+  it('stops a transfer without calling it a failure', async () => {
     const { files } = memoryFiles({});
     let release: (() => void) | undefined;
     const fetch: Fetch = ({ signal }) =>
@@ -204,10 +203,6 @@ describe('createAssistantStore', () => {
     store.stop();
     await agreed;
     expect(store.getState().kind).toBe('downloading');
-    const again = store.agree();
-    store.decline();
-    await again;
-    expect(store.getState()).toEqual({ kind: 'declined' });
     release?.();
   });
 

@@ -13,7 +13,10 @@ import type {
  * file is used once its size and SHA-256 match the manifest.
  */
 
-/** The person's answer, kept per model version: a new version asks again. */
+/**
+ * The person's answer, kept per model version (a new version starts
+ * unasked); "declined" is the old launch question's "Not Now".
+ */
 export type DownloadAnswer = 'declined' | 'mobile' | 'wifi';
 
 export type TransferNetwork = 'any' | 'wifi';
@@ -50,9 +53,8 @@ export interface ModelFiles {
   /** The file's URI under the app's caches. */
   readonly destination: string;
   readonly exists: () => boolean;
-  /** `update`: "Not Now" said to a version that followed one downloaded before. */
   readonly readAnswer: () =>
-    | { readonly answer: DownloadAnswer; readonly update?: true; readonly version: string }
+    | { readonly answer: DownloadAnswer; readonly version: string }
     | undefined;
   readonly readVerified: () => { readonly sha256: string; readonly version: string } | undefined;
   readonly remove: () => void;
@@ -60,7 +62,6 @@ export interface ModelFiles {
   readonly size: () => number | undefined;
   readonly writeAnswer: (answer: {
     readonly answer: DownloadAnswer;
-    readonly update?: true;
     readonly version: string;
   }) => void;
   readonly writeVerified: (verified: { readonly sha256: string; readonly version: string }) => void;
@@ -82,9 +83,8 @@ export interface AssistantDownload {
   readonly allowMobileData: () => Promise<void>;
   /** At app start, while it is active: picks up where the last launch left off. */
   readonly boot: () => Promise<void>;
-  readonly decline: () => void;
   readonly getState: () => AssistantModelState;
-  /** The network now, for the question's wording. */
+  /** The network now, for the offer's wording. */
   readonly network: () => NetworkReading | undefined;
   readonly retry: () => Promise<void>;
   /** The size to say: the manifest's. */
@@ -116,7 +116,6 @@ export const createAssistantDownload = (deps: AssistantDownloadDeps): AssistantD
       agree: async () => undefined,
       allowMobileData: async () => undefined,
       boot: async () => undefined,
-      decline: () => undefined,
       getState: () => state,
       network: () => undefined,
       retry: async () => undefined,
@@ -135,18 +134,13 @@ export const createAssistantDownload = (deps: AssistantDownloadDeps): AssistantD
     const said = files.readAnswer();
     return said?.version === manifest.version ? said.answer : undefined;
   };
-  /** Not answered for this version, or declined: an update where an earlier version was downloaded. */
-  const isUpdate = (): boolean => {
+  /** Not asked for this version: an update where an earlier version was agreed to. */
+  const unasked = (): AssistantModelState => {
     const said = files.readAnswer();
-    return (
-      said !== undefined &&
-      (said.version === manifest.version
-        ? said.update === true
-        : said.answer !== 'declined' || said.update === true)
-    );
+    return said !== undefined && said.version !== manifest.version && said.answer !== 'declined'
+      ? { kind: 'unasked', update: true }
+      : { kind: 'unasked' };
   };
-  const unanswered = (kind: 'declined' | 'unasked'): AssistantModelState =>
-    isUpdate() ? { kind, update: true } : { kind };
   const networkOf = (): TransferNetwork => (answer() === 'mobile' ? 'any' : 'wifi');
 
   /** Downloading, or waiting for what the transfer may use. */
@@ -306,7 +300,7 @@ export const createAssistantDownload = (deps: AssistantDownloadDeps): AssistantD
       if (said === undefined || said === 'declined') {
         // A transfer of another version, or one declined since, goes.
         await transfer.cancel(files.destination).catch(() => undefined);
-        set(unanswered(said === undefined ? 'unasked' : 'declined'));
+        set(said === undefined ? unasked() : { kind: 'declined' });
         return;
       }
       booting = true;
@@ -338,17 +332,6 @@ export const createAssistantDownload = (deps: AssistantDownloadDeps): AssistantD
         return;
       }
       await begin();
-    },
-    decline: () => {
-      // "Not Now" to an update is still one: the notice keeps saying so.
-      const update = isUpdate();
-      files.writeAnswer({
-        answer: 'declined',
-        ...(update ? { update: true as const } : {}),
-        version: manifest.version,
-      });
-      void transfer.cancel(files.destination).catch(() => undefined);
-      set(unanswered('declined'));
     },
     getState: () => state,
     network: () => path,

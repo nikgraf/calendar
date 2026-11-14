@@ -7,7 +7,7 @@ No backend: data syncs directly against the Google Calendar/Tasks REST
 APIs with syncToken (events) and updatedMin-watermark (tasks) polling
 plus an offline-tolerant pending-op queue. The editor's Assistant reads
 what is said with a model of the app's own on both platforms (a
-fine-tuned Qwen3.5 0.8B, downloaded once after asking, run by llama.cpp:
+fine-tuned Qwen3.5 0.8B, downloaded once when asked for, run by llama.cpp:
 llama.rn on the iPhone, a bundled `llama-server` on the Mac); Apple's
 on-device AI (Foundation Models + SpeechAnalyzer + Vision) powers
 find-a-time, search sentences, dictation and capture from text or photo.
@@ -73,7 +73,8 @@ find-a-time, search sentences, dictation and capture from text or photo.
   is the floor of both (`LSMinimumSystemVersion` in `forge.config.cjs`,
   `.macOS(.v27)` in `helper/Package.swift`), so neither guards on the OS
   version; the Assistant's own model (`electron/assistantModel/`: the
-  download into the profile, asked for at launch, and the bundled
+  download into the profile, offered by the Create lesson and the
+  Assistant's notice, and the bundled
   `llama-server` on a UNIX socket, built by `scripts/build-llama-server.sh`);
   the agent gateway host
   (`electron/agent/`: Unix socket, MCP server, CLI runner) and its relay
@@ -89,7 +90,8 @@ find-a-time, search sentences, dictation and capture from text or photo.
   drop-in native controls; zero-hop direct backend; @react-native-ai/apple
   for Apple's on-device model (find a time, search, capture); llama.rn for
   the Assistant's own model
-  (`src/assistantRuntime.ts`: the download, asked for at launch, Wi-Fi
+  (`src/assistantRuntime.ts`: the download, offered by the Create lesson
+  and the Assistant's notice, Wi-Fi
   only unless mobile data is allowed; the Model Spike page measures with
   the same runtime, in both variants); the local Expo modules under `modules/`;
   `expo-maps` draws the editor map.
