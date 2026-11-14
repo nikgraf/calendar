@@ -14,6 +14,7 @@ export * from './capture.ts';
 export * from './parseCapture.ts';
 export * from './fixtureModel.ts';
 export * from './endpointer.ts';
+export * from './phraseEnd.ts';
 export * from './strictSchema.ts';
 export * from './said.ts';
 export * from './tuned.ts';
