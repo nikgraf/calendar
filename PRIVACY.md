@@ -54,9 +54,10 @@ Calendar, Apple Reminders and your address book, for the same purposes.
   copies carry an opaque marker so the app can find them again; it names
   nothing about the original.
 - **Stays on your device, too:** the Assistant reads what you type or say
-  with a model of its own that runs on your iPhone or Mac; for find-a-time
-  suggestions, search sentences, dictation, and reading events out of a
-  pasted text or a shared screenshot, the app uses Apple's on-device
+  with a model of its own that runs on your iPhone or Mac, and find a time
+  reads its sentence with it too; for search sentences, dictation, reading
+  events out of a pasted text or a shared screenshot, and find a time until
+  the Assistant's model is downloaded, the app uses Apple's on-device
   models and text recognition by default. Your voice and images never
   leave the device for this, and the text is sent only to a model server
   you choose on the Mac (next point).
@@ -66,13 +67,13 @@ Calendar, Apple Reminders and your address book, for the same purposes.
   data. Nothing you say is sent anywhere to use it.
 - **Goes to a model server you choose (Mac only).** Under Settings → AI
   Model you can pick Ollama or any OpenAI-compatible server instead of
-  Apple's models for find a time, search and capture. That server then
-  receives what those features work on: the sentence you type, the text
-  read from a paste or a screenshot, today's date and your time zone,
-  and, for a search, the names of your calendars and lists. It is off
-  your Mac only if you point it there. The Assistant uses it only when
-  you ask it to find a time. Dictation and text
-  recognition themselves stay on the device either way.
+  Apple's models for search and capture, and for find a time until the
+  Assistant's model is downloaded. That server then receives what those
+  features work on: the sentence you type, the text read from a paste or
+  a screenshot, today's date and your time zone, and, for a search, the
+  names of your calendars and lists. It is off your Mac only if you point
+  it there. The Assistant never uses it. Dictation and text recognition
+  themselves stay on the device either way.
 - **Goes where you send it.** Settings can be exported as a file, and the
   Mac can keep a settings file in your home folder. That file lists your
   connected accounts' email addresses and calendar names, never passwords

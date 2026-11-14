@@ -1,6 +1,6 @@
 import {
   isFinderPhrase,
-  type LanguageModel,
+  type FinderReader,
   NO_SLOT_FITS,
   type NotesChange,
   type PhraseReader,
@@ -1340,7 +1340,7 @@ export const turnDraftOf = (
 export const useDraftThread = ({
   backend,
   defaultRemindersOf,
-  model,
+  finder,
   reader,
   timeZone,
 }: {
@@ -1348,8 +1348,8 @@ export const useDraftThread = ({
   backend: BackendClient;
   /** The default notifications of the calendar a draft would go to (minutes before), where known. */
   defaultRemindersOf?: ((draft: Draft) => ReadonlyArray<number> | undefined) | undefined;
-  /** The model a finder phrase is read with (find a time keeps Apple's, or a served one). */
-  model: LanguageModel;
+  /** How a finder phrase is read: the Assistant's model once it is ready, else Apple's or a served one with the word rules. */
+  finder: FinderReader;
   /** How a phrase and a change are read: the Assistant's own model, through `tunedReader`. */
   reader: PhraseReader;
   timeZone: string;
@@ -1561,7 +1561,7 @@ export const useDraftThread = ({
     setBusy(true);
     searching.current = mine;
     try {
-      const result = await proposeSlots(model, backend, {
+      const result = await proposeSlots(finder, backend, {
         ...(exclude ? { exclude } : {}),
         fallbackDurationMinutes: length > 0 ? length : DEFAULT_SLOT_MINUTES,
         phrase: rest,

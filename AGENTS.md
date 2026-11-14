@@ -8,9 +8,10 @@ APIs with syncToken (events) and updatedMin-watermark (tasks) polling
 plus an offline-tolerant pending-op queue. The editor's Assistant reads
 what is said with a model of the app's own on both platforms (a
 fine-tuned Qwen3.5 0.8B, downloaded once when asked for, run by llama.cpp:
-llama.rn on the iPhone, a bundled `llama-server` on the Mac); Apple's
-on-device AI (Foundation Models + SpeechAnalyzer + Vision) powers
-find-a-time, search sentences, dictation and capture from text or photo.
+llama.rn on the iPhone, a bundled `llama-server` on the Mac), and with
+it find a time once it is downloaded; Apple's on-device AI (Foundation
+Models + SpeechAnalyzer + Vision) powers find-a-time until then, search
+sentences, dictation and capture from text or photo.
 
 ## Monorepo map
 
@@ -88,8 +89,9 @@ find-a-time, search sentences, dictation and capture from text or photo.
   `src/settingsCodeInbox.ts` hands a code that arrives from outside to a
   reader); `@expo/ui` for
   drop-in native controls; zero-hop direct backend; @react-native-ai/apple
-  for Apple's on-device model (find a time, search, capture); llama.rn for
-  the Assistant's own model
+  for Apple's on-device model (search, capture, find a time until the
+  Assistant's model is here); llama.rn for the Assistant's own model,
+  which then finds a time too
   (`src/assistantRuntime.ts`: the download, offered by the Create lesson
   and the Assistant's notice, Wi-Fi
   only unless mobile data is allowed; the Model Spike page measures with

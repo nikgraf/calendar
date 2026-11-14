@@ -13,7 +13,7 @@ import {
 } from '@calendar/core';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { backendClient } from '../backend.ts';
-import { languageModel } from '../model.ts';
+import { useFinder } from '../assistantRuntime.ts';
 import { Chip } from './Chip.tsx';
 import { ActionRow, RowSlot } from './GroupedList.tsx';
 import { onAppActive } from '../appActive.ts';
@@ -23,14 +23,15 @@ import { BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme } from './theme.t
  * "Find a time" at the foot of the event's dates card: a row that opens
  * the finder in its place — a few preset chip rows over the pure solver
  * (window, hours, days, duration), a Search, and the free slots as chips,
- * a tap moving the event there. With the on-device model a phrase fills
- * the presets; without it the finder works the same. The duration starts
- * as the form's own.
+ * a tap moving the event there. With an on-device model (the
+ * Assistant's once it is here) a phrase fills the presets; without one
+ * the finder works the same. The duration starts as the form's own.
  */
 export function FindTimeFields({ model }: { model: ReturnType<typeof useEventEditorModel> }) {
   const styles = useStyles(makeStyles);
   const { colors } = useTheme();
-  const { status } = useModelAvailability(languageModel, onAppActive);
+  const reads = useFinder();
+  const { status } = useModelAvailability(reads.model, onAppActive);
   const { existing, scope } = model;
   const finder = useFindTimeModel({
     backend: backendClient,
@@ -38,7 +39,7 @@ export function FindTimeFields({ model }: { model: ReturnType<typeof useEventEdi
     durationMinutes: model.durationMinutes,
     // What the save will move or drop is not in its own way.
     excludeEvent: rescheduledEventExclusion(existing, scope, model.masterSeries),
-    model: languageModel,
+    finder: reads.finder,
     onTitle: (title) => {
       if (model.title.trim() === '') {
         model.setTitle(title);

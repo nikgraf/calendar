@@ -47,8 +47,8 @@ describe('tunedReader, a first phrase', () => {
     expect(prompts).toEqual([]);
   });
 
-  it('puts words that name no day on the day on show', async () => {
-    const { model } = modelOf({ date: TODAY, kind: 'event', startTime: '13:00', title: 'Lunch' });
+  it('puts an answer that writes no day on the day on show', async () => {
+    const { model } = modelOf({ kind: 'event', startTime: '13:00', title: 'Lunch' });
     const result = await tunedReader(model).first({
       fallbackDate: '2026-11-20',
       phrase: 'Lunch at 1',
@@ -58,7 +58,7 @@ describe('tunedReader, a first phrase', () => {
     expect(result).toMatchObject({ kind: 'parsed', prefill: { date: '2026-11-20' } });
   });
 
-  it('keeps today where the words say it, and a day the model gave for other words', async () => {
+  it('keeps a day the answer writes: today where the words said it, another day', async () => {
     const today = modelOf({ date: TODAY, kind: 'event', startTime: '13:00', title: 'Lunch' });
     await expect(
       tunedReader(today.model).first({
@@ -80,7 +80,6 @@ describe('tunedReader, a first phrase', () => {
   });
   it('starts a repeat and ends a night from the day on show', async () => {
     const gym = modelOf({
-      date: TODAY,
       kind: 'event',
       repeat: { byDay: ['TU', 'TH'], freq: 'weekly' },
       startTime: '19:00',
@@ -95,7 +94,6 @@ describe('tunedReader, a first phrase', () => {
     // The Sunday on show is no day of the rule: it starts on the Tuesday after.
     expect(repeat).toMatchObject({ prefill: { date: '2026-11-17' } });
     const party = modelOf({
-      date: TODAY,
       endTime: '02:00',
       kind: 'event',
       startTime: '22:00',
@@ -113,26 +111,110 @@ describe('tunedReader, a first phrase', () => {
 });
 
 describe('tunedReader, a later turn', () => {
-  it('marks a turn whose words gave the day, even where it is the draft’s', async () => {
+  const input = {
+    draft: dinner,
+    referenceDate: TODAY,
+    said: ['Dinner tomorrow at 7'],
+    timeZone: ZONE,
+  };
+  const { date: _day, ...undated } = dinner.prefill;
+
+  it('marks a turn whose answer writes the day, even where it is the draft’s', async () => {
     const { model } = modelOf({
       ...dinner.prefill,
       kind: 'event',
       notes: 'window table',
       reminders: [30],
     });
-    const reader = tunedReader(model);
-    const input = {
-      draft: dinner,
-      referenceDate: TODAY,
-      said: ['Dinner tomorrow at 7'],
-      timeZone: ZONE,
+    await expect(
+      tunedReader(model).change({ ...input, utterance: 'on Friday' }),
+    ).resolves.toMatchObject({ saidDay: true });
+    const none = modelOf({ ...undated, kind: 'event', notes: 'window table', reminders: [30] });
+    const withTeo = await tunedReader(none.model).change({ ...input, utterance: 'with Teo' });
+    expect(withTeo).not.toHaveProperty('saidDay');
+    // No day written keeps the draft's.
+    expect(withTeo).toMatchObject({ prefill: { date: dinner.prefill.date } });
+  });
+
+  it('works out times written as amounts from the draft’s', async () => {
+    const later = modelOf({ ...undated, endTime: '+30m', kind: 'event', startTime: '+30m' });
+    await expect(
+      tunedReader(later.model).change({ ...input, utterance: '30 minutes later' }),
+    ).resolves.toMatchObject({ prefill: { endTime: '20:30', startTime: '19:30' } });
+    const shorter = modelOf({ ...undated, endTime: '45m', kind: 'event', startTime: '19:00' });
+    await expect(
+      tunedReader(shorter.model).change({ ...input, utterance: 'make it 45 minutes' }),
+    ).resolves.toMatchObject({ prefill: { endTime: '19:45', startTime: '19:00' } });
+    // A draft that only runs past midnight is no span of days: moved or shortened, it gains no day.
+    const late = {
+      ...dinner,
+      prefill: { ...dinner.prefill, endDate: '2026-11-14', endTime: '00:30', startTime: '23:30' },
     };
-    await expect(reader.change({ ...input, utterance: 'on Friday' })).resolves.toMatchObject({
-      saidDay: true,
+    const { date: _late, endDate: _end, ...lateTimes } = late.prefill;
+    const pushed = modelOf({ ...lateTimes, endTime: '+1h', kind: 'event', startTime: '+1h' });
+    await expect(
+      tunedReader(pushed.model).change({ ...input, draft: late, utterance: 'an hour later' }),
+    ).resolves.toMatchObject({
+      prefill: { date: '2026-11-14', endTime: '01:30', startTime: '00:30' },
     });
-    await expect(reader.change({ ...input, utterance: 'with Teo' })).resolves.not.toHaveProperty(
-      'saidDay',
-    );
+    const short = modelOf({ ...lateTimes, endTime: '45m', kind: 'event', startTime: '23:30' });
+    const shortened = await tunedReader(short.model).change({
+      ...input,
+      draft: late,
+      utterance: 'make it 45 minutes',
+    });
+    expect(shortened).toMatchObject({ prefill: { date: '2026-11-13', endTime: '00:15' } });
+    expect(shortened).toMatchObject({ prefill: { endDate: '2026-11-14' } });
+    // A length said is kept whatever day it ends on: past midnight, or no longer a span of days.
+    const trip = {
+      ...dinner,
+      prefill: { ...dinner.prefill, endDate: '2026-11-14', endTime: '10:00', startTime: '09:00' },
+    };
+    const { date: _trip, endDate: _tripEnd, ...tripTimes } = trip.prefill;
+    const brief = modelOf({ ...tripTimes, endTime: '45m', kind: 'event', startTime: '09:00' });
+    const briefer = await tunedReader(brief.model).change({
+      ...input,
+      draft: trip,
+      utterance: 'make it 45 minutes',
+    });
+    expect(briefer).toMatchObject({ prefill: { endTime: '09:45', startTime: '09:00' } });
+    expect(briefer).not.toHaveProperty('prefill.endDate');
+    // A shifted end keeps the day it falls on, the draft's days counted.
+    const night = {
+      ...dinner,
+      prefill: { ...dinner.prefill, endDate: '2026-11-14', endTime: '08:00', startTime: '09:00' },
+    };
+    const { date: _night, endDate: _nightEnd, ...nightTimes } = night.prefill;
+    const longer = modelOf({ ...nightTimes, endTime: '+1h', kind: 'event', startTime: '09:00' });
+    await expect(
+      tunedReader(longer.model).change({ ...input, draft: night, utterance: 'an hour longer' }),
+    ).resolves.toMatchObject({
+      prefill: { date: '2026-11-13', endDate: '2026-11-14', endTime: '09:00', startTime: '09:00' },
+    });
+    const days = {
+      ...dinner,
+      prefill: { ...dinner.prefill, endDate: '2026-11-15', endTime: '00:30', startTime: '23:30' },
+    };
+    const { date: _days, endDate: _daysEnd, ...daysTimes } = days.prefill;
+    const moved = modelOf({ ...daysTimes, endTime: '+1h', kind: 'event', startTime: '+1h' });
+    await expect(
+      tunedReader(moved.model).change({ ...input, draft: days, utterance: 'an hour later' }),
+    ).resolves.toMatchObject({
+      prefill: { date: '2026-11-14', endDate: '2026-11-15', endTime: '01:30', startTime: '00:30' },
+    });
+    const long = modelOf({ endTime: '20h', kind: 'event', startTime: '09:00', title: 'Shift' });
+    await expect(
+      tunedReader(long.model).first({
+        phrase: 'shift from 9 for 20 hours',
+        referenceDate: TODAY,
+        timeZone: ZONE,
+      }),
+    ).resolves.toMatchObject({ prefill: { endDate: '2026-11-13', endTime: '05:00' } });
+    // A shift of a draft with no times is turned down, not made a day long.
+    const allDay = { ...dinner, prefill: { ...dinner.prefill, isAllDay: true } };
+    await expect(
+      tunedReader(later.model).change({ ...input, draft: allDay, utterance: '30 minutes later' }),
+    ).resolves.toMatchObject({ kind: 'rejected' });
   });
 
   it('shows no long notes, so the answer’s lack of them changes nothing', async () => {
@@ -191,6 +273,20 @@ describe('answerResult', () => {
       prefill: { date: '2026-11-14', time: '09:00', title: 'Call the bank' },
       reminders: { add: [10], clear: false, remove: [] },
     });
+  });
+
+  it('gives up the calendar’s default for a first phrase’s empty list, and keeps it for none', () => {
+    const lunch = { kind: 'event', startTime: '13:00', title: 'Lunch' };
+    expect(
+      answerResult({ ...lunch, reminders: [] }, { draft: undefined, referenceDate: TODAY }),
+    ).toMatchObject({ reminders: { add: [], clear: true, remove: [] } });
+    expect(answerResult(lunch, { draft: undefined, referenceDate: TODAY })).not.toHaveProperty(
+      'reminders',
+    );
+    // A list of nothing readable says nothing: the default stays.
+    expect(
+      answerResult({ ...lunch, reminders: ['10', -5] }, { draft: undefined, referenceDate: TODAY }),
+    ).not.toHaveProperty('reminders');
   });
 
   it('takes off and adds notifications one by one, never clearing what it was not shown', () => {

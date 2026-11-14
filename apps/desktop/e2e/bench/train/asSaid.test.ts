@@ -1,20 +1,27 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { worked } from '@calendar/ai';
+import { worked, workedTimes } from '@calendar/ai';
 import { asSaid, buildSaidPrompt, type Said, saidOf } from './asSaid.ts';
 
 const other: Said = { day: { how: 'other' }, except: [] };
 
 describe('saidOf', () => {
   it('holds a second answer to what it may say', () => {
-    expect(saidOf({ dayOfMonth: 14, except: [], how: 'number' })).toEqual({
+    // No time said: neither a start nor an end.
+    expect(saidOf({ dayOfMonth: 14, except: [], how: 'number' })).toMatchObject({
+      end: { how: 'other' },
+      start: { how: 'other' },
+    });
+    expect(saidOf({ dayOfMonth: 14, except: [], how: 'number' })).toMatchObject({
       day: { dayOfMonth: 14, how: 'number' },
       except: [],
     });
-    expect(saidOf({ dayOfMonth: 14, except: ['SU', 'XX'], how: 'number', month: 3 })).toEqual({
-      day: { dayOfMonth: 14, how: 'number', month: 3 },
-      except: ['SU'],
-    });
-    expect(saidOf({ amount: 2, except: [], how: 'offset', unit: 'week' })).toEqual({
+    expect(saidOf({ dayOfMonth: 14, except: ['SU', 'XX'], how: 'number', month: 3 })).toMatchObject(
+      {
+        day: { dayOfMonth: 14, how: 'number', month: 3 },
+        except: ['SU'],
+      },
+    );
+    expect(saidOf({ amount: 2, except: [], how: 'offset', unit: 'week' })).toMatchObject({
       day: { amount: 2, how: 'offset', unit: 'w' },
       except: [],
     });
@@ -177,6 +184,126 @@ describe('asSaid', () => {
     expect(asSaid(weekly, exceptFriday, context)).toEqual({ answer: weekly, forms: [] });
     const once = { date: '2026-11-12', title: 'Club' };
     expect(asSaid(once, exceptFriday, context)).toEqual({ answer: once, forms: [] });
+  });
+});
+
+const said = (over: Partial<Said>): Said => ({ ...other, ...over });
+
+describe('asSaid, no day and times', () => {
+  it('reads the second answer’s times: an amount later or earlier, a length, nothing else', () => {
+    expect(
+      saidOf({ end: 'other', except: [], how: 'none', start: 'later', startMinutes: 30 }),
+    ).toEqual({
+      day: { how: 'none' },
+      end: { how: 'other' },
+      except: [],
+      noAlert: false,
+      start: { how: 'shift', minutes: 30 },
+    });
+    expect(
+      saidOf({ end: 'shorter', endMinutes: 15, except: [], how: 'other', start: 'clock' }),
+    ).toMatchObject({ end: { how: 'shift', minutes: -15 }, start: { how: 'other' } });
+    expect(
+      saidOf({ end: 'length', endMinutes: 45, except: [], how: 'other', start: 'other' }),
+    ).toMatchObject({ end: { how: 'length', minutes: 45 } });
+    // An amount without its minutes, or a day or more, is no amount.
+    expect(
+      saidOf({ end: 'length', except: [], how: 'other', start: 'earlier', startMinutes: 1440 }),
+    ).toMatchObject({ end: { how: 'other' }, start: { how: 'other' } });
+  });
+
+  it('leaves the day out where none was said and the teacher’s is the one the code takes', () => {
+    const lunch = { date: '2026-11-13', kind: 'event', startTime: '13:00', title: 'Lunch' };
+    const first = asSaid(lunch, said({ day: { how: 'none' } }), { referenceDate: '2026-11-13' });
+    expect(first.answer).toEqual({ kind: 'event', startTime: '13:00', title: 'Lunch' });
+    expect(first.forms).toEqual(['noDay']);
+    // A teacher that put an unsaid day elsewhere keeps it: the code would not find it.
+    const elsewhere = asSaid(lunch, said({ day: { how: 'none' } }), {
+      referenceDate: '2026-11-12',
+    });
+    expect(elsewhere.answer).toEqual(lunch);
+    // A later turn: the draft's day.
+    const later = asSaid(lunch, said({ day: { how: 'none' } }), {
+      draftDate: '2026-11-13',
+      referenceDate: '2026-11-01',
+    });
+    expect(later.answer).not.toHaveProperty('date');
+    // A day said is kept, even today.
+    expect(asSaid(lunch, other, { referenceDate: '2026-11-13' }).answer).toEqual(lunch);
+  });
+
+  it('writes a shift of a later turn as said, the end with it where it moved as far', () => {
+    const draftTimes = { endTime: '18:00', startTime: '17:00' };
+    const moved = {
+      date: '2026-11-13',
+      endTime: '18:30',
+      kind: 'event',
+      startTime: '17:30',
+      title: 'Call',
+    };
+    const { answer, forms } = asSaid(moved, said({ start: { how: 'shift', minutes: 30 } }), {
+      draftDate: '2026-11-13',
+      draftTimes,
+      referenceDate: '2026-11-13',
+    });
+    expect(answer).toMatchObject({ endTime: '+30m', startTime: '+30m' });
+    expect(forms).toEqual(['shift']);
+    // The code moves the draft's times back to the teacher's.
+    expect(
+      workedTimes(answer, { draft: { date: '2026-11-13', isAllDay: false, ...draftTimes } }),
+    ).toMatchObject({ endTime: '18:30', startTime: '17:30' });
+    // An amount that is not the teacher's move stays a clock time.
+    const wrong = asSaid(moved, said({ start: { how: 'shift', minutes: 60 } }), {
+      draftTimes,
+      referenceDate: '2026-11-13',
+    });
+    expect(wrong.answer).toEqual(moved);
+  });
+
+  it('writes a length after the start, and an end moved with the start kept', () => {
+    const first = asSaid(
+      { endTime: '17:45', kind: 'event', startTime: '17:00', title: 'Run' },
+      said({ end: { how: 'length', minutes: 45 } }),
+      { referenceDate: '2026-11-13' },
+    );
+    expect(first.answer).toMatchObject({ endTime: '45m', startTime: '17:00' });
+    expect(first.forms).toEqual(['length']);
+    const longer = asSaid(
+      { endTime: '18:10', kind: 'event', startTime: '17:00', title: 'Run' },
+      said({ end: { how: 'shift', minutes: 10 } }),
+      { draftTimes: { endTime: '18:00', startTime: '17:00' }, referenceDate: '2026-11-13' },
+    );
+    expect(longer.answer).toMatchObject({ endTime: '+10m', startTime: '17:00' });
+    // A length the teacher's times do not span stays a clock time.
+    const off = asSaid(
+      { endTime: '18:00', kind: 'event', startTime: '17:00', title: 'Run' },
+      said({ end: { how: 'length', minutes: 45 } }),
+      { referenceDate: '2026-11-13' },
+    );
+    expect(off.answer['endTime']).toBe('18:00');
+  });
+});
+
+describe('asSaid, notifications', () => {
+  const lunch = { kind: 'event', startTime: '13:00', title: 'Lunch' };
+
+  it('writes an empty list where the words ask for no notification, and only there', () => {
+    const none = asSaid(lunch, said({ noAlert: true }), { referenceDate: '2026-11-13' });
+    expect(none.answer).toEqual({ ...lunch, reminders: [] });
+    expect(none.forms).toEqual(['noAlert']);
+    // A teacher's empty list for words that say nothing about notifications goes.
+    expect(
+      asSaid({ ...lunch, reminders: [] }, other, { referenceDate: '2026-11-13' }).answer,
+    ).toEqual(lunch);
+    expect(
+      asSaid({ ...lunch, reminders: [] }, undefined, { referenceDate: '2026-11-13' }).answer,
+    ).toEqual(lunch);
+    // A list the teacher filled stays, whatever the second answer says.
+    expect(
+      asSaid({ ...lunch, reminders: [30] }, said({ noAlert: true }), {
+        referenceDate: '2026-11-13',
+      }).answer,
+    ).toEqual({ ...lunch, reminders: [30] });
   });
 });
 

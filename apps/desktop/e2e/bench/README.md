@@ -180,6 +180,13 @@ two ways:
 MODEL_BENCH=1 E2E=1 pnpm exec vp test run apps/desktop/e2e/bench/finderBench.e2e.ts
 ```
 
+`MODEL_BENCH_PIPELINE=tuned` asks the Assistant's own model instead, on
+its finder prompt (`buildTunedFinderPrompt`: "Free time as JSON.", the
+days and the sentence) without a schema. The app reads that answer as
+the `raw` arm does, so `raw` is the app's path there, and a length the
+words do not give has to be left out (the finder then searches its
+own). The report's name ends in `-tuned`.
+
 A case states every part a person means (`finder.ts` says how):
 the length (`"default"`: the finder's own, 60), the window by its name
 (`"nextWeek"`, `{ "weekday": 4 }`, …, so a case holds on any day), the

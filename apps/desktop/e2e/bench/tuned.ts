@@ -65,7 +65,7 @@ export interface TunedExample {
  */
 export const tunedExample = (turn: TunedTurn, teacherAnswer: unknown): TunedExample | undefined => {
   const prompt = tunedPrompt(turn);
-  const answer = tunedAnswer(teacherAnswer);
+  const answer = tunedAnswer(teacherAnswer, { first: turn.draft === undefined });
   return prompt === undefined || answer === undefined
     ? undefined
     : {

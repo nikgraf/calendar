@@ -3,18 +3,23 @@ import { Temporal } from '@calendar/core';
 import { describe, expect, it } from 'vite-plus/test';
 import { loadCases, loadContacts } from '../cases.ts';
 import { fold } from '../check.ts';
+import { loadFinderCases } from '../finder.ts';
 import {
   bookOf,
   BRIEF_EXAMPLES,
   BRIEFS,
+  buildFinderGeneratorPrompt,
   buildGeneratorPrompt,
+  FINDER_BRIEFS,
   FIRST_ROUND_BRIEFS,
   type Names,
   namesOf,
   nearBench,
   referenceDateOf,
   repeatsBriefExample,
+  sentencesOf,
   threadsOf,
+  V1_BRIEFS,
 } from './phrases.ts';
 
 // Names as the generator would write them; the tests only need a few.
@@ -41,14 +46,20 @@ const NAMES: Names = {
   ],
 };
 
-const benchPhrases = loadCases(fileURLToPath(new URL('../cases', import.meta.url))).flatMap(
-  (benchCase) =>
+const benchPhrases = [
+  ...loadCases(fileURLToPath(new URL('../cases', import.meta.url))).flatMap((benchCase) =>
     benchCase.turns.map((turn) => ('text' in turn.input ? turn.input.text : turn.input.transcript)),
-);
+  ),
+  ...loadFinderCases(fileURLToPath(new URL('../finder.json', import.meta.url))).map(
+    (finderCase) => finderCase.text,
+  ),
+];
 
 describe('the generator briefs', () => {
   it('cover every language, way of writing and focus once', () => {
-    expect(BRIEFS).toHaveLength(2 * 5 * 16);
+    expect(BRIEFS).toHaveLength(2 * 5 * 22);
+    expect(FINDER_BRIEFS).toHaveLength(2 * 5 * 8);
+    expect(new Set(FINDER_BRIEFS.map((brief) => JSON.stringify(brief))).size).toBe(80);
     expect(new Set(BRIEFS.map((brief) => JSON.stringify(brief))).size).toBe(BRIEFS.length);
   });
 
@@ -57,17 +68,33 @@ describe('the generator briefs', () => {
     expect(FIRST_ROUND_BRIEFS).toBe(140);
     expect(BRIEFS[0]).toEqual({ focus: 'allDay', language: 'en', register: 'command' });
     expect(BRIEFS[139]).toEqual({ focus: 'short', language: 'de', register: 'todo' });
-    const later = new Set(BRIEFS.slice(FIRST_ROUND_BRIEFS).map((brief) => brief.focus));
+    const later = new Set(BRIEFS.slice(FIRST_ROUND_BRIEFS, V1_BRIEFS).map((brief) => brief.focus));
     expect([...later].sort()).toEqual(['farDays', 'ruledOut']);
     expect(BRIEFS.slice(0, FIRST_ROUND_BRIEFS).filter((brief) => later.has(brief.focus))).toEqual(
       [],
     );
+    // v1's 160 briefs stay where they were; v2's come after them.
+    expect(V1_BRIEFS).toBe(160);
+    expect(BRIEFS[159]).toEqual({ focus: 'ruledOut', language: 'de', register: 'todo' });
+    const v2 = new Set(BRIEFS.slice(V1_BRIEFS).map((brief) => brief.focus));
+    expect([...v2].sort()).toEqual([
+      'alertEdits',
+      'guestEdits',
+      'kindSwitch',
+      'renames',
+      'repeatEdits',
+      'shifts',
+    ]);
+    expect(BRIEFS.slice(0, V1_BRIEFS).filter((brief) => v2.has(brief.focus))).toEqual([]);
   });
 
   it('show the generator no phrase of the bench', () => {
-    const prompts = BRIEFS.map((brief, index) =>
-      fold(buildGeneratorPrompt(brief, index, 30, NAMES)),
-    );
+    const prompts = [
+      ...BRIEFS.map((brief, index) => fold(buildGeneratorPrompt(brief, index, 30, NAMES))),
+      ...FINDER_BRIEFS.map((brief, index) =>
+        fold(buildFinderGeneratorPrompt(brief, index, 20, NAMES)),
+      ),
+    ];
     // One word is no phrase ("tomorrow"); two and more would be a case given away.
     const phrases = benchPhrases.map(fold).filter((phrase) => phrase.split(' ').length > 1);
     const shown = phrases.filter((phrase) => prompts.some((prompt) => prompt.includes(phrase)));
@@ -118,8 +145,9 @@ describe('the names', () => {
 });
 
 describe('the briefs’ examples', () => {
-  it('are the quoted phrases of two words or more', () => {
+  it('are the quoted phrases of three words or more', () => {
     expect(BRIEF_EXAMPLES).toContain('haircut wed 4pm');
+    expect(BRIEF_EXAMPLES).not.toContain('all day');
     expect(BRIEF_EXAMPLES.some((example) => example.includes('…'))).toBe(false);
   });
 
@@ -127,6 +155,12 @@ describe('the briefs’ examples', () => {
     expect(repeatsBriefExample('Haircut Wed 4pm')).toBe(true);
     expect(repeatsBriefExample('haircut wed 4pm at the salon')).toBe(true);
     expect(repeatsBriefExample('haircut thursday 4pm')).toBe(false);
+    // A short way of saying something is what a brief asks for, and a long phrase only holds one.
+    expect(repeatsBriefExample('make it all day')).toBe(false);
+    expect(repeatsBriefExample('Verschieb es um anderthalb Stunden nach hinten')).toBe(false);
+    expect(repeatsBriefExample('can we find an hour in the morning sometime next week')).toBe(
+      false,
+    );
   });
 });
 
@@ -191,5 +225,15 @@ describe('referenceDateOf', () => {
     expect(weekdays.size).toBe(7);
     expect(new Set(days).size).toBe(70);
     expect(referenceDateOf(3)).toBe(referenceDateOf(3));
+  });
+});
+
+describe('sentencesOf', () => {
+  it('keeps the sentences of a finder answer, trimmed, none empty', () => {
+    expect(sentencesOf({ sentences: [' an hour  tomorrow ', '', 3, 'zwei Stunden'] })).toEqual([
+      'an hour tomorrow',
+      'zwei Stunden',
+    ]);
+    expect(sentencesOf({ threads: [] })).toEqual([]);
   });
 });

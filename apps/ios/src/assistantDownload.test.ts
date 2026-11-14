@@ -130,6 +130,33 @@ describe('the Assistant model’s download', () => {
     expect(newer.getState()).toEqual({ kind: 'unasked' });
   });
 
+  it('offers a new version as an update where an earlier one was agreed to, and fetches nothing unasked', async () => {
+    const files = fakeFiles();
+    const { starts, transfer } = fakeTransfer();
+    const store = storeOf(files.files, transfer);
+    await store.agree('wifi');
+    const newer = createAssistantDownload({
+      files: files.files,
+      manifest: { ...MANIFEST, version: 'v2' },
+      supported: true,
+      transfer,
+    });
+    const before = starts.length;
+    await newer.boot();
+    expect(newer.getState()).toEqual({ kind: 'unasked', update: true });
+    expect(starts).toHaveLength(before);
+    // The next launch still offers it as an update.
+    const again = createAssistantDownload({
+      files: files.files,
+      manifest: { ...MANIFEST, version: 'v2' },
+      supported: true,
+      transfer,
+    });
+    await again.boot();
+    expect(again.getState()).toEqual({ kind: 'unasked', update: true });
+    expect(starts).toHaveLength(before);
+  });
+
   it('goes over Wi-Fi only when agreed so, and waits on mobile data', async () => {
     const { emit, starts, transfer } = fakeTransfer({ path: MOBILE });
     const store = storeOf(fakeFiles().files, transfer);

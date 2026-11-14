@@ -1,5 +1,12 @@
 import { Temporal } from '@calendar/core';
-import { worked } from '@calendar/ai';
+import {
+  type DraftTimes,
+  LENGTH_KEY,
+  TUNED_FINDER_LINE,
+  timesOf,
+  worked,
+  workedTimes,
+} from '@calendar/ai';
 import { TUNED_DRAFT_MARKER } from '../tuned.ts';
 
 /**
@@ -30,10 +37,19 @@ const ordered = (value: unknown): unknown => {
 
 const textOf = (value: unknown): string => JSON.stringify(ordered(value)) ?? '';
 
-/** The "today" a tuned prompt was written for, and the day of the draft it shows. */
+/** A finder sentence's prompt (`tunedFinder.ts`): its answer has nothing to work out. */
+export const isFinderPrompt = (prompt: string): boolean => prompt.startsWith(TUNED_FINDER_LINE);
+
+/** The "today" a tuned prompt was written for, and the day and times of the draft it shows. */
 export const promptDates = (
   prompt: string,
-): { readonly draftDate?: string; readonly referenceDate: string } | undefined => {
+):
+  | {
+      readonly draftDate?: string;
+      readonly draftTimes?: DraftTimes;
+      readonly referenceDate: string;
+    }
+  | undefined => {
   const today = /(\d{4}-\d{2}-\d{2}) \(today\)/u.exec(prompt)?.[1];
   if (today === undefined) {
     return undefined;
@@ -48,7 +64,56 @@ export const promptDates = (
   }
   const draftDate =
     isRecord(draft) && typeof draft['date'] === 'string' ? draft['date'] : undefined;
-  return { ...(draftDate === undefined ? {} : { draftDate }), referenceDate: today };
+  const startTime = isRecord(draft) ? draft['startTime'] : undefined;
+  const endTime = isRecord(draft) ? draft['endTime'] : undefined;
+  const draftTimes: DraftTimes | undefined =
+    draftDate === undefined
+      ? undefined
+      : typeof startTime === 'string' && typeof endTime === 'string'
+        ? { date: draftDate, endTime, isAllDay: false, startTime }
+        : { date: draftDate, endTime: '00:00', isAllDay: true, startTime: '00:00' };
+  return {
+    ...(draftDate === undefined ? {} : { draftDate }),
+    ...(draftTimes === undefined ? {} : { draftTimes }),
+    referenceDate: today,
+  };
+};
+
+const FULL_DATE = /^\d{4}-\d{2}-\d{2}$/u;
+
+/**
+ * An answer worked out as the app does: its day and repeat, then its
+ * times, the end as the app makes it (`timesOf`: its day too, a length
+ * said kept), without the length's note.
+ */
+const workedOut = (
+  answer: unknown,
+  dates: NonNullable<ReturnType<typeof promptDates>>,
+): unknown => {
+  const timed = workedTimes(worked(answer, dates), { draft: dates.draftTimes });
+  if (!isRecord(timed)) {
+    return timed;
+  }
+  const { [LENGTH_KEY]: length, ...rest } = timed;
+  const start = typeof rest['startTime'] === 'string' ? rest['startTime'] : undefined;
+  const end = typeof rest['endTime'] === 'string' ? rest['endTime'] : undefined;
+  const date =
+    typeof rest['date'] === 'string' ? rest['date'] : (dates.draftDate ?? dates.referenceDate);
+  if (start === undefined || (end === undefined && length === undefined) || !FULL_DATE.test(date)) {
+    return rest;
+  }
+  // The end as the app makes it: a length said and a clock time that only reads the same differ.
+  const times = timesOf(dates.draftTimes, {
+    date,
+    end,
+    length: typeof length === 'number' ? length : undefined,
+    start,
+  });
+  return {
+    ...rest,
+    ...(times.endDate === undefined ? {} : { endDate: times.endDate }),
+    endTime: times.endTime,
+  };
 };
 
 /** Where a worked-out date lies from the prompt's today. */
@@ -95,8 +160,9 @@ export const rowAgreement = (
   if (dates === undefined) {
     return undefined;
   }
-  const wanted = worked(want, dates);
-  const given = worked(got, dates);
+  const finder = isFinderPrompt(prompt);
+  const wanted = finder ? want : workedOut(want, dates);
+  const given = finder ? got : workedOut(got, dates);
   const wantedParts = isRecord(wanted) ? wanted : {};
   const givenParts = isRecord(given) ? given : {};
   const parts = Object.fromEntries(

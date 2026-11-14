@@ -156,9 +156,9 @@ export function ModelSection() {
   return (
     <section className="rounded-popover bg-surface-subtle p-4" data-testid="model-section">
       <p className="text-sm text-ink-secondary">
-        What finds a time, reads a search sentence and turns a paste or an image into events. Apple
-        Intelligence runs on this Mac with nothing to set up; Ollama or another server on this Mac
-        can run a larger model, such as Gemma 4.
+        What reads a search sentence and turns a paste or an image into events, and finds a time
+        until the Assistant’s model is on this Mac. Apple Intelligence runs on this Mac with nothing
+        to set up; Ollama or another server on this Mac can run a larger model, such as Gemma 4.
       </p>
       <SegmentedControl
         className="mt-3 w-full"

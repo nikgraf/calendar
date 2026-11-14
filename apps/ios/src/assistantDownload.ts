@@ -134,6 +134,13 @@ export const createAssistantDownload = (deps: AssistantDownloadDeps): AssistantD
     const said = files.readAnswer();
     return said?.version === manifest.version ? said.answer : undefined;
   };
+  /** Not asked for this version: an update where an earlier version was agreed to. */
+  const unasked = (): AssistantModelState => {
+    const said = files.readAnswer();
+    return said !== undefined && said.version !== manifest.version && said.answer !== 'declined'
+      ? { kind: 'unasked', update: true }
+      : { kind: 'unasked' };
+  };
   const networkOf = (): TransferNetwork => (answer() === 'mobile' ? 'any' : 'wifi');
 
   /** Downloading, or waiting for what the transfer may use. */
@@ -293,7 +300,7 @@ export const createAssistantDownload = (deps: AssistantDownloadDeps): AssistantD
       if (said === undefined || said === 'declined') {
         // A transfer of another version, or one declined since, goes.
         await transfer.cancel(files.destination).catch(() => undefined);
-        set({ kind: said === undefined ? 'unasked' : 'declined' });
+        set(said === undefined ? unasked() : { kind: 'declined' });
         return;
       }
       booting = true;

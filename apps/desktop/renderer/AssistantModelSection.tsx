@@ -18,8 +18,8 @@ export function AssistantModelSection() {
       <p className="text-sm font-medium">Assistant</p>
       <p className="mt-1 text-sm text-ink-secondary">
         The Assistant reads what you say to the editor with a model of Solunivo’s own that runs on
-        this Mac, and those words stay on it. Asked to find a time, it uses the model chosen below,
-        as the Form does.
+        this Mac, and those words stay on it. Find a time reads its sentence with it too; until it
+        is here, find a time uses the model chosen below.
       </p>
       <div className="mt-3">
         {state === undefined ? null : state.kind === 'ready' ? (

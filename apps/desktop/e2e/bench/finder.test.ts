@@ -249,6 +249,19 @@ describe('readAnswer and rescoreFinder', () => {
     expect(readAnswer(undefined, unsaid, FRIDAY).raw.failed).toHaveLength(4);
   });
 
+  it('holds the Assistant’s own model to leaving an unsaid length out', () => {
+    const length = { durationMinutes: 30 };
+    expect(readAnswer(length, unsaid, FRIDAY).raw.failed).toEqual([]);
+    expect(readAnswer(length, unsaid, FRIDAY, { pipeline: 'tuned' }).raw.failed).toEqual([
+      'duration',
+    ]);
+    expect(readAnswer({}, unsaid, FRIDAY, { pipeline: 'tuned' }).raw.failed).toEqual([]);
+    // Read as the app reads it: a length of nothing is none.
+    expect(
+      readAnswer({ durationMinutes: 0 }, unsaid, FRIDAY, { pipeline: 'tuned' }).raw.failed,
+    ).toEqual([]);
+  });
+
   it('names the run it came from however often it is scored again, and the cases left out', () => {
     const cases = [
       {

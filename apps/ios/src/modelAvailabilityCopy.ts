@@ -1,10 +1,14 @@
 import type { ModelAvailability } from '@calendar/ai';
 
+/** What Apple's model reads: find a time moves to the Assistant's model once it is here. */
+const NEEDS =
+  'Search sentences and capture need Apple Intelligence, and so does find a time until the Assistant’s model is here';
+
 /**
  * What Diagnostics (and, under the fixture model, the Assistant's notice)
- * say about Apple's on-device model, which find a time, search sentences
- * and capture use; the Assistant runs on a model of its own
- * (`assistantRuntime.ts`). One wording for both, so a screenshot of
+ * say about Apple's on-device model, which search sentences and capture
+ * use, and find a time until the Assistant's model is downloaded; the
+ * Assistant runs on a model of its own (`assistantRuntime.ts`). One wording for both, so a screenshot of
  * either names the same cause. Each answer says what the user can do, or that there is nothing
  * to do, and never more than iOS reported: 'not-ready' may be a download,
  * but iOS does not say so.
@@ -18,10 +22,10 @@ export const availabilityGuidance = (
   }
   switch (availability.status) {
     case 'ready':
-      return 'Apple Intelligence is ready: find a time, search sentences and capture can read text.';
+      return 'Apple Intelligence is ready: search sentences and capture can read text, and find a time until the Assistant’s model is here.';
     case 'disabled':
       return (
-        'Find a time, search sentences and capture need Apple Intelligence. Turn it on in Settings → Apple Intelligence & Siri. ' +
+        `${NEEDS}. Turn it on in Settings → Apple Intelligence & Siri. ` +
         "If it is already on, Siri's language has to match the iPhone's."
       );
     case 'not-ready':
@@ -31,12 +35,12 @@ export const availabilityGuidance = (
       );
     case 'unsupported':
       return availability.nativeReason === 'osTooOld'
-        ? `Find a time, search sentences and capture need Apple Intelligence, which needs iOS 26 or later. This iPhone runs iOS ${iosVersion}.`
+        ? `${NEEDS}. Apple Intelligence needs iOS 26 or later; this iPhone runs iOS ${iosVersion}.`
         : availability.nativeReason === 'deviceNotEligible'
-          ? "Find a time, search sentences and capture need Apple Intelligence, which this iPhone doesn't support."
-          : "iOS reports that this iPhone can't run Apple Intelligence, which find a time, search sentences and capture need.";
+          ? `${NEEDS}, and this iPhone doesn't support it.`
+          : `iOS reports that this iPhone can't run Apple Intelligence. ${NEEDS}.`;
     case 'missing-module':
-      return "This build of Solunivo doesn't include Apple Intelligence support, so find a time, search sentences and capture can't read text in it.";
+      return "This build of Solunivo doesn't include Apple Intelligence support, so search sentences and capture can't read text in it, nor find a time until the Assistant’s model is here.";
     case 'unavailable':
       return availability.reasonsUnavailable
         ? "iOS reports Apple Intelligence as unavailable, but this build of Solunivo can't read why. A newer build shows the reason."

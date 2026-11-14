@@ -89,6 +89,16 @@ describe('tunedAnswer', () => {
     );
   });
 
+  it('keeps a first phrase’s empty list of notifications, and only a first phrase’s', () => {
+    const none = { kind: 'event', reminders: [], startTime: '13:00', title: 'Lunch' };
+    expect(JSON.stringify(tunedAnswer(none, { first: true }))).toBe(
+      '{"kind":"event","title":"Lunch","startTime":"13:00","reminders":[]}',
+    );
+    expect(JSON.stringify(tunedAnswer(none))).toBe(
+      '{"kind":"event","title":"Lunch","startTime":"13:00"}',
+    );
+  });
+
   it('leaves a flag that is off and a repeat that is none out', () => {
     expect(
       JSON.stringify(

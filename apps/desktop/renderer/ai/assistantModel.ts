@@ -1,16 +1,21 @@
 import {
   type AssistantModelState,
+  type FinderReader,
   type LanguageModel,
   type ModelStatus,
+  rulesFinder,
   statusOf,
+  tunedFinder,
 } from '@calendar/ai';
 import { useSyncExternalStore } from 'react';
+import { desktopLanguageModel } from './desktopModel.ts';
 
 /**
  * The Assistant's own model as this window sees it (electron/assistantModel/):
  * where it stands, followed over `onAssistantModel`, and the
- * `LanguageModel` the Assistant's tuned reader asks. Apple's model and a
- * served one stay `desktopLanguageModel` (find a time, search, capture).
+ * `LanguageModel` the Assistant's tuned reader asks. Find a time asks it
+ * too once it is here (`useFinder`); Apple's model and a served one stay
+ * `desktopLanguageModel` (search, capture, and find a time until then).
  */
 
 let state: AssistantModelState | undefined;
@@ -75,3 +80,27 @@ export const desktopAssistantModel: LanguageModel = {
     return assistantStatusOf(current) ?? 'not-ready';
   },
 };
+
+/** Find a time on a model: how a sentence is read, and the model whose status says whether it can be now. */
+export interface FinderChoice {
+  readonly finder: FinderReader;
+  readonly model: LanguageModel;
+}
+
+const ON_ASSISTANT: FinderChoice = {
+  finder: tunedFinder(desktopAssistantModel),
+  model: desktopAssistantModel,
+};
+const WITH_RULES: FinderChoice = {
+  finder: rulesFinder(desktopLanguageModel),
+  model: desktopLanguageModel,
+};
+
+/**
+ * How find a time reads a sentence on this Mac: with the Assistant's
+ * model once it is here (the test model too), so the words stay on the
+ * Mac; until then with Apple's or the served model, held to the words by
+ * the rules.
+ */
+export const useFinder = (): FinderChoice =>
+  assistantStatusOf(useAssistantModelState()) === 'ready' ? ON_ASSISTANT : WITH_RULES;

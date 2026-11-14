@@ -81,7 +81,9 @@ describe('built website', () => {
   });
 
   it('says quick add runs on a model of its own on both devices', () => {
-    expect(home).toContain('Quick add runs on a model of its own, on the iPhone and the Mac');
+    expect(home).toContain(
+      'Quick add and find a time run on a model of their own, on the iPhone and the Mac',
+    );
   });
 
   it('says Outlook and CalDAV work through Apple Calendar, and native support is on the roadmap', () => {

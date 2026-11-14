@@ -1,4 +1,4 @@
-import { findSlotsFor, parseFindTime, type LanguageModel } from '@calendar/ai';
+import { type FinderReader, findSlotsFor } from '@calendar/ai';
 import {
   type BackendClient,
   defaultFinderConstraints,
@@ -106,7 +106,7 @@ export const useFindTimeModel = ({
   contextKey,
   durationMinutes,
   excludeEvent,
-  model,
+  finder,
   onTitle,
   timeZone,
 }: {
@@ -120,7 +120,8 @@ export const useFindTimeModel = ({
   readonly durationMinutes: number;
   /** Rows that are not busy time: the event being rescheduled (`rescheduledEventExclusion`). */
   readonly excludeEvent?: ((event: EventRecord) => boolean) | undefined;
-  readonly model: LanguageModel;
+  /** How a phrase is read: the Assistant's model once it is ready, else Apple's or a served one with the word rules. */
+  readonly finder: FinderReader;
   /** A phrase named what the time is for: the form may take it as its title. */
   readonly onTitle?: ((title: string) => void) | undefined;
   readonly timeZone: string;
@@ -208,7 +209,7 @@ export const useFindTimeModel = ({
     setError(null);
     try {
       // A phrase that does not say how long searches for the duration on show.
-      const parsed = await parseFindTime(model, {
+      const parsed = await finder({
         fallbackDurationMinutes: constraints.durationMinutes,
         phrase,
         referenceDate: today,

@@ -1,5 +1,6 @@
 import { type ByDay, byDayError, Temporal, type Weekday } from '@calendar/core';
 import type { NotesChange, ReminderChange } from './extras.ts';
+import { LENGTH_KEY } from './said.ts';
 import {
   addHour,
   type QuickAddPrefill,
@@ -195,7 +196,9 @@ const notesChange = (answer: unknown, before: string | undefined): NotesChange |
  * list after the turn (the model writes back the ones it was shown), so
  * what it lacks is taken off and what is new is added. An answer with
  * none takes them all off, an email one too; a draft that kept to the
- * calendar's default gets the answer's list in its place.
+ * calendar's default gets the answer's list in its place. A first
+ * phrase's empty list ("no reminder") gives up the calendar's default,
+ * where no list at all keeps to it.
  */
 const remindersChange = (
   answer: unknown,
@@ -209,6 +212,10 @@ const remindersChange = (
       )
     : [];
   const had = before ?? [];
+  // Only a list written empty says "none": one whose every entry was unreadable says nothing.
+  if (draft === undefined && Array.isArray(answer) && answer.length === 0) {
+    return { add: [], clear: true, remove: [] };
+  }
   if (sameNumbers(now, had)) {
     return undefined;
   }
@@ -251,20 +258,32 @@ const clockOf = (minutes: number): string =>
  * - A start that moved while the end stayed as the draft had it (or was
  *   left out) keeps the draft's length, across midnight too.
  * - A draft that spans days keeps its span when the turn gives both times
- *   anew (an hour later on Friday 09:00 – Saturday 10:00).
+ *   anew (an hour later on Friday 09:00 – Saturday 10:00); one that only
+ *   runs past midnight (Friday 23:30 – Saturday 00:30) is no span of days:
+ *   it runs past midnight again where its new end is before its new start
+ *   (a night shift an hour later), and ends on its day where it is not.
  * - An end before the start reads as past midnight for a night of up to
  *   twelve hours (a party "10pm to 2am"): the next day.
  * - Without an end, or one that reads as no night, an hour.
+ * - A length said (`LENGTH_KEY`, from `workedTimes`) is kept over all of
+ *   these: the end is that long after the start, on whatever day.
+ *
+ * Exported for the held-back agreement, which compares ends as the app
+ * makes them.
  */
-const timesOf = (
-  before: QuickAddPrefill | undefined,
+export const timesOf = (
+  before:
+    | Pick<QuickAddPrefill, 'date' | 'endDate' | 'endTime' | 'isAllDay' | 'startTime'>
+    | undefined,
   {
     date,
     end,
+    length,
     start,
   }: {
     readonly date: string;
     readonly end: string | undefined;
+    readonly length?: number | undefined;
     readonly start: string | undefined;
   },
 ): { readonly endDate?: string; readonly endTime: string } => {
@@ -274,6 +293,11 @@ const timesOf = (
       ? 0
       : Temporal.PlainDate.from(before.date).until(before.endDate).days;
   const day = (days: number) => Temporal.PlainDate.from(date).add({ days }).toString();
+  if (start !== undefined && length !== undefined && length > 0) {
+    const ends = minutesOf(start) + length;
+    const days = Math.floor(ends / DAY_MINUTES);
+    return { ...(days > 0 ? { endDate: day(days) } : {}), endTime: clockOf(ends % DAY_MINUTES) };
+  }
   const sameTimes =
     before !== undefined &&
     (start === undefined) === before.isAllDay &&
@@ -298,8 +322,18 @@ const timesOf = (
     return { ...(days > 0 ? { endDate: day(days) } : {}), endTime: clockOf(ends % DAY_MINUTES) };
   }
   // A timed draft that spans days keeps its span when the turn gives both times anew.
+  const draftLength =
+    before === undefined
+      ? 0
+      : minutesOf(before.endTime) + span * DAY_MINUTES - minutesOf(before.startTime);
   if (span > 0 && before?.isAllDay === false && start !== undefined && end !== undefined) {
-    return { endDate: day(span), endTime: end };
+    if (draftLength >= DAY_MINUTES) {
+      return { endDate: day(span), endTime: end };
+    }
+    // One that only ran past midnight runs past it again where the new end is before the new start, however long.
+    if (end < startTime) {
+      return { endDate: day(1), endTime: end };
+    }
   }
   if (start !== undefined && end !== undefined && end < startTime && pastMidnight(startTime, end)) {
     return { endDate: day(1), endTime: end };
@@ -345,7 +379,13 @@ export const answerResult = (
   const end = timeOf(answer['endTime']);
   const startTime = start ?? '00:00';
   const { date, recurrence } = repeatOf(answer['repeat'], said);
-  const { endDate, endTime } = timesOf(before, { date, end, start });
+  const length = answer[LENGTH_KEY];
+  const { endDate, endTime } = timesOf(before, {
+    date,
+    end,
+    length: typeof length === 'number' ? length : undefined,
+    start,
+  });
   const location = textOf(answer['location']);
   const invite = namesOf(answer['invite']);
   const uninvite = namesOf(answer['uninvite']);

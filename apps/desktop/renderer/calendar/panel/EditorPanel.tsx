@@ -32,8 +32,8 @@ import {
   assistantStatusOf,
   desktopAssistantModel,
   useAssistantModelState,
+  useFinder,
 } from '../../ai/assistantModel.ts';
-import { desktopLanguageModel } from '../../ai/desktopModel.ts';
 import { backend } from '../../backend.ts';
 import { LessonBanner } from '../../onboarding/LessonBanner.tsx';
 import { Button } from '../../ui/Button.tsx';
@@ -53,7 +53,7 @@ import { FieldFlashContext, useFlash } from '../../ui/useFlash.ts';
 const assistantReader = tunedReader(desktopAssistantModel);
 /**
  * The Create lesson while the Assistant's model is not on this Mac: the
- * real editor over v1's answers to the lesson's two phrases
+ * real editor over v2's answers to the lesson's two phrases
  * (`lessonDemo.ts`), until the model is ready.
  */
 const demoReader = tunedReader(lessonDemoModel);
@@ -210,6 +210,7 @@ export function EditorPanel({
     }
   });
   useEffect(() => () => leaveLesson(), []);
+  const { finder } = useFinder();
   // Where the Assistant's own model stands; null until main has answered.
   const modelState = useAssistantModelState();
   const availability = { state: modelState, status: assistantStatusOf(modelState) };
@@ -220,8 +221,8 @@ export function EditorPanel({
     backend,
     calendars,
     confirm: moveConfirmation.request,
+    finder,
     initialKind,
-    model: desktopLanguageModel,
     onClose,
     onSaved: () => {
       lessonDone();

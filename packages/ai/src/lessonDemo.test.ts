@@ -11,7 +11,7 @@ const today = Temporal.Now.plainDateISO(timeZone).toString();
 const tomorrow = Temporal.PlainDate.from(today).add({ days: 1 }).toString();
 
 describe('the Create lesson’s demo', () => {
-  it('answers the lesson’s phrase as v1 did, tomorrow from any day', async () => {
+  it('answers the lesson’s phrase as v2 did, tomorrow from any day', async () => {
     for (const referenceDate of [today, '2026-12-31', '2028-02-28']) {
       const result = await reader.first({ phrase: LESSON_CREATE_PHRASE, referenceDate, timeZone });
       expect(result).toMatchObject({
@@ -28,7 +28,7 @@ describe('the Create lesson’s demo', () => {
     }
   });
 
-  it('moves the lunch to one for the change, the rest of the draft as it was', async () => {
+  it('moves the lunch to one for the change, on the draft’s day, the rest as it was', async () => {
     const first = await reader.first({
       phrase: LESSON_CREATE_PHRASE,
       referenceDate: today,
@@ -54,6 +54,8 @@ describe('the Create lesson’s demo', () => {
         title: 'Lunch with Sam',
       },
     });
+    // The answer names no day, as v2's did: the draft's stays, not one said.
+    expect(changed).not.toHaveProperty('saidDay');
   });
 
   it('reads nothing else: other words are refused', async () => {

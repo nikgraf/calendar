@@ -6,17 +6,18 @@ import { TUNED_CHANGE_MARKER, TUNED_DRAFT_MARKER, TUNED_PHRASE_MARKER } from './
  * The Create lesson's demo, while the Assistant's model is not on the
  * device (not asked for yet, downloading, or a device that cannot run
  * it): a stand-in for the model that knows the lesson's two phrases and
- * nothing else. Its answers are the ones model v1 gave to them, kept in
+ * nothing else. Its answers are the ones model v2 gave to them, kept in
  * the app, so the real editor turns them into the real card, the form
- * and Save as it would the model's (recorded 2026-11-13 on three days,
+ * and Save as it would the model's (recorded 2026-11-14 on three days,
  * through `llama-server` as the Mac asks it). Two things are written so
- * they hold on any day: the day v1 looked up for "tomorrow" in the days
+ * they hold on any day: the day v2 looked up for "tomorrow" in the days
  * it is shown, as a count from today ("+1d", worked out by `said.ts`);
- * and the change as the draft it is shown with the new hours, which is
- * all v1 changed (the reminders and the rest it wrote back as shown).
+ * and the change as the draft it is shown with the new hours and without
+ * its date, which is all v2 changed (the change names no day, so the
+ * draft keeps its own; the reminders and the rest it wrote back as shown).
  */
 
-/** v1's answer to `LESSON_CREATE_PHRASE`: no end, which the form gives an hour. */
+/** v2's answer to `LESSON_CREATE_PHRASE`: no end, which the form gives an hour. */
 export const LESSON_DEMO_FIRST = {
   date: '+1d',
   kind: 'event',
@@ -25,7 +26,7 @@ export const LESSON_DEMO_FIRST = {
   title: 'Lunch with Sam',
 } as const;
 
-/** The hours v1 gave the draft for `LESSON_CREATE_CHANGE`. */
+/** The hours v2 gave the draft for `LESSON_CREATE_CHANGE`. */
 export const LESSON_DEMO_CHANGE = { endTime: '14:00', startTime: '13:00' } as const;
 
 /** Why anything else is refused: only the model reads other words. */
@@ -60,7 +61,11 @@ export const lessonDemoModel: LanguageModel = {
     }
     const draft = draftOf(lineAfter(prompt, TUNED_DRAFT_MARKER));
     if (lineAfter(prompt, TUNED_CHANGE_MARKER) === LESSON_CREATE_CHANGE && draft !== undefined) {
-      return { ...draft, ...LESSON_DEMO_CHANGE };
+      // No day was said, so the answer has none: the draft keeps its own.
+      return {
+        ...Object.fromEntries(Object.entries(draft).filter(([key]) => key !== 'date')),
+        ...LESSON_DEMO_CHANGE,
+      };
     }
     throw new Error(LESSON_DEMO_ONLY);
   },

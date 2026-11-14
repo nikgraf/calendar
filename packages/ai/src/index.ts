@@ -17,6 +17,7 @@ export * from './endpointer.ts';
 export * from './strictSchema.ts';
 export * from './said.ts';
 export * from './tuned.ts';
+export * from './tunedFinder.ts';
 export * from './tunedResult.ts';
 export * from './phraseReader.ts';
 export * from './assistantModel.ts';

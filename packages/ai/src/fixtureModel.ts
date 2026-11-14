@@ -1,6 +1,7 @@
 import { Temporal } from '@calendar/core';
 import { CAPTURE_TEXT_MARKER, type CaptureItemParse, type CaptureParse } from './capture.ts';
 import { FIND_TIME_PHRASE_MARKER, type FindTimeParse } from './findTime.ts';
+import { durationMinutesOf, groundBounds, groundDays, windowOf } from './grounding.ts';
 import type { LanguageModel } from './model.ts';
 import {
   SEARCH_QUERY_CURRENT_MARKER,
@@ -21,14 +22,19 @@ import { TextRecognitionError, type ImageInput, type TextRecognizer } from './te
  * - The Assistant's tuned prompt (`tuned.ts`, asked without a schema): a
  *   first phrase in the grammar, with extras after a fifth bar
  *   (`invite A and B`, `remind N`, `note: …`), makes an event; `todo:` in
- *   front makes a to-do; any other phrase is a title on today. A later
- *   turn answers the draft it was shown, changed only by what the turn
- *   names: the grammar with empty parts unchanged (`| | 10:00-11:00`), or
- *   one extra (`invite Tom`, `remove Anna`, `remind 60`, `note: …`,
- *   `due +0`, `repeat weekly`, `repeat none`).
+ *   front makes a to-do; any other phrase is a title. A later turn
+ *   answers the draft it was shown, changed only by what the turn names:
+ *   the grammar with empty parts unchanged (`| | 10:00-11:00`), or one
+ *   extra (`invite Tom`, `remove Anna`, `remind 60`, `note: …`, `due +0`,
+ *   `repeat weekly`, `repeat none`). As the trained model does, it writes
+ *   a day only where the words give one (`+N`, `due +N`): the app puts
+ *   the rest on the day on show, or keeps the draft's.
  * - Capture: one event per line of the grammar.
  * - A finder sentence (`find 30 min tomorrow morning | Focus`): the title
  *   after the bar and an hour; the finder reads the rest from the words.
+ *   Asked as the Assistant's model is (`Free time as JSON.`, no schema),
+ *   it answers what the finder's word rules read in the sentence, its
+ *   length only where one is said: the same search either way.
  * - A search turn: `terms | from..to | location | people | calendar |
  *   kind` — days as `+N`, `-N` or ISO, a single day alone, people and
  *   calendars comma-separated, kind `tasks` or `events` — applied to the
@@ -228,12 +234,12 @@ const withGrammar = (
 
 /**
  * The tuned prompt (`tuned.ts`), answered the way the trained model
- * answers: the whole draft after the turn, written short. A first phrase
- * in the grammar makes an event (`todo:` in front makes a to-do); any
- * other phrase is a title on today. A later turn starts from the draft it
- * was shown, unchanged where the turn says nothing — the grammar line, or
- * one extra (`invite Tom`, `remind 60`, `note: …`, `due +0`,
- * `repeat weekly`).
+ * answers: the whole draft after the turn, written short, its day only
+ * where the words give one. A first phrase in the grammar makes an event
+ * (`todo:` in front makes a to-do); any other phrase is a title. A later
+ * turn starts from the draft it was shown, unchanged where the turn says
+ * nothing — the grammar line, or one extra (`invite Tom`, `remind 60`,
+ * `note: …`, `due +0`, `repeat weekly`).
  */
 const tunedFixtureAnswer = (prompt: string): Record<string, unknown> => {
   const today = TUNED_TODAY.exec(prompt)?.[1];
@@ -245,14 +251,37 @@ const tunedFixtureAnswer = (prompt: string): Record<string, unknown> => {
     const phrase = textAfter(prompt, 'Phrase: ').trim();
     const task = /^todo:\s*/i.test(phrase);
     const words = phrase.replace(/^todo:\s*/i, '');
-    const base = { date: today, kind: task ? 'task' : 'event', title: words };
+    const base = { kind: task ? 'task' : 'event', title: words };
     return words.includes('|') ? withGrammar(base, words, today) : base;
   }
-  const draft = JSON.parse(draftLine) as Record<string, unknown>;
+  // The draft's day stays unwritten unless the turn gives one.
+  const { date: _shown, ...draft } = JSON.parse(draftLine) as Record<string, unknown>;
   const change = textAfter(prompt, 'Now: ').trim();
   return change.includes('|')
     ? withGrammar(draft, change, today)
     : withExtras(draft, change, today);
+};
+
+/** The Assistant's model's finder prompt (`tunedFinder.ts`), answered with what the word rules read. */
+const tunedFinderAnswer = (prompt: string): FindTimeParse => {
+  const today = TUNED_TODAY.exec(prompt)?.[1];
+  if (today === undefined) {
+    throw new Error('fixture model: the finder prompt names no day as today');
+  }
+  const phrase = textAfter(prompt, FIND_TIME_PHRASE_MARKER).trim();
+  const title = phrase.split('|')[1]?.trim();
+  const durationMinutes = durationMinutesOf(phrase);
+  const window = windowOf(phrase, today);
+  const { earliestTime, latestTime } = groundBounds({}, phrase);
+  const daysOfWeek = groundDays(undefined, phrase);
+  return {
+    ...(daysOfWeek === undefined ? {} : { daysOfWeek }),
+    ...(durationMinutes === undefined ? {} : { durationMinutes }),
+    ...(earliestTime === undefined ? {} : { earliestTime }),
+    ...(latestTime === undefined ? {} : { latestTime }),
+    ...(title ? { title } : {}),
+    ...window,
+  };
 };
 
 export const makeFixtureLanguageModel = (): LanguageModel => ({
@@ -260,6 +289,9 @@ export const makeFixtureLanguageModel = (): LanguageModel => ({
     // The tuned path asks without a schema.
     if (jsonSchema === undefined && prompt.startsWith('Calendar entry as JSON')) {
       return tunedFixtureAnswer(prompt);
+    }
+    if (jsonSchema === undefined && prompt.startsWith('Free time as JSON.')) {
+      return tunedFinderAnswer(prompt);
     }
     const properties = isRecord(jsonSchema) ? jsonSchema.properties : undefined;
     const referenceDate = referenceDateOf(prompt);

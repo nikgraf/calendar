@@ -513,12 +513,17 @@ change there.
   Assistant's tuned prompt as the trained model does, the whole draft
   after the turn: a first phrase in the grammar, extras after a fifth
   bar (`invite Anna Lee and Tom`, `remind 30`, `note: bring the card`),
-  `todo:` in front for a to-do, any other phrase a title on today; a
-  later turn is the draft it was shown, changed only by what the turn
-  names — the grammar with empty parts unchanged (`| | 10:00-11:00`
+  `todo:` in front for a to-do, any other phrase a title on the day on
+  show; a later turn is the draft it was shown, changed only by what the
+  turn names — the grammar with empty parts unchanged (`| | 10:00-11:00`
   moves the times only) or one extra (`invite Tom`, `remove Anna`,
   `remind 60`, `note: …`, `due +0`, `repeat weekly`, `repeat none`); any
-  other sentence changes nothing. Real models are measured, never gated:
+  other sentence changes nothing. Like the trained model it writes a day
+  only where the words give one. A find-a-time sentence (`find 30 min
+  tomorrow morning | Focus`, the title after the bar) is answered on the
+  Assistant's finder prompt with what the finder's word rules read in it,
+  so the search is the one the app's own prompt gives on Apple's model.
+  Real models are measured, never gated:
   the model bench (`apps/desktop/e2e/bench/`, `MODEL_BENCH=1 E2E=1 pnpm
   exec vp test run apps/desktop/e2e/bench/modelBench.e2e.ts`) runs the
   cases under `cases/` — a phrase, then the changes a thread would make

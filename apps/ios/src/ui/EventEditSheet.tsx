@@ -51,8 +51,13 @@ import {
   tunedReader,
 } from '@calendar/ai';
 import type { AssistantDownload } from '../assistantDownload.ts';
-import { assistantDownload, assistantReader, useAssistantModelState } from '../assistantRuntime.ts';
-import { languageModel, modelFixture } from '../model.ts';
+import {
+  assistantDownload,
+  assistantReader,
+  useAssistantModelState,
+  useFinder,
+} from '../assistantRuntime.ts';
+import { modelFixture } from '../model.ts';
 import { AssistantBar, type BarDemo, demoHoldsBar } from './assistant/AssistantBar.tsx';
 import { AssistantModelNotice } from './assistant/AssistantModelNotice.tsx';
 import { AssistantView } from './assistant/AssistantView.tsx';
@@ -582,7 +587,7 @@ function FormView({
 
 /**
  * The Create lesson while the Assistant's model is not on this iPhone:
- * the real editor over v1's answers to the lesson's two phrases
+ * the real editor over v2's answers to the lesson's two phrases
  * (`lessonDemo.ts`), until the model is ready.
  */
 const demoReader = tunedReader(lessonDemoModel);
@@ -726,6 +731,7 @@ export function EventEditSheet({
         ? 'event'
         : 'new';
   const lesson = useLessonTry(seed.lesson);
+  const { finder } = useFinder();
   // The Assistant runs on its own model (`assistantRuntime.ts`), whose state
   // is known at once; the fixture model (e2e) is always ready, unless a
   // flow says it is absent.
@@ -738,8 +744,8 @@ export function EventEditSheet({
     backend: backendClient,
     calendars,
     confirm: confirmEditorRequest,
+    finder,
     initialKind,
-    model: languageModel,
     onClose,
     onSaved: () => {
       lesson.done();
