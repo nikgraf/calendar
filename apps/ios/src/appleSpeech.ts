@@ -5,6 +5,7 @@ import {
   type SpeechToText,
 } from '@calendar/ai';
 import { loadSpeechModule } from '../modules/solunivo-speech/index.ts';
+import { voiceProcessing } from './voiceProcessing.ts';
 
 /** Locale for recognition, so dictating German transcribes German. */
 const locale = (): string => {
@@ -97,7 +98,7 @@ export const appleSpeech: SpeechToText = {
       subscription.remove();
     };
     try {
-      await native.start(session, locale(), false);
+      await native.start(session, locale(), voiceProcessing.get());
     } catch (error) {
       remove();
       throw error;
