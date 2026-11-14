@@ -202,7 +202,9 @@ the served model (#184) and slot proposals (#185) are in
       Vienna" after a venue writes the city alone; the data has no such
       turn, only real replacements), a long phrase's note, "Call
       tomorrow at 4, invite Max" as a to-do, a title that keeps "event
-      for". Also open: a model for 6 GB iPhones (Q4_K_M, 1.2 GB loaded,
+      for"; find a time (36 of 40) titles a sentence that names no
+      purpose with its own words ("Find 30 minutes") and reads "the next
+      two weeks" as next week. Also open: a model for 6 GB iPhones (Q4_K_M, 1.2 GB loaded,
       or a smaller base); "next Friday" and deadlines ("before Friday")
       are read as the teacher read them, which wavers; notes over 200
       characters or on several lines are not shown to the model, so the

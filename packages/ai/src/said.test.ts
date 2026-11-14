@@ -162,24 +162,50 @@ describe('worked', () => {
 describe('workedTimes', () => {
   const draft = { date: TODAY, endTime: '18:00', isAllDay: false, startTime: '17:00' };
 
-  it('moves a start or an end written as a shift from the draft’s', () => {
+  it('moves a start or an end written as a shift from the draft’s, and keeps how long it runs', () => {
     expect(workedTimes({ endTime: '+30m', startTime: '+30m' }, { draft })).toEqual({
       endTime: '18:30',
+      lengthMinutes: 60,
       startTime: '17:30',
     });
     expect(workedTimes({ endTime: '-1h', startTime: '-1h' }, { draft })).toEqual({
       endTime: '17:00',
+      lengthMinutes: 60,
       startTime: '16:00',
     });
     expect(workedTimes({ endTime: '+1h30m', startTime: '17:00' }, { draft })).toEqual({
       endTime: '19:30',
+      lengthMinutes: 150,
       startTime: '17:00',
     });
+    // An end shifted to before the start is no length: left to the clock times.
+    expect(workedTimes({ endTime: '-2h', startTime: '17:00' }, { draft })).toEqual({
+      endTime: '16:00',
+      startTime: '17:00',
+    });
+  });
+
+  it('counts a draft’s days when its end is shifted', () => {
+    const night = { ...draft, endDate: '2026-11-13', endTime: '08:00', startTime: '09:00' };
+    expect(workedTimes({ endTime: '+1h', startTime: '09:00' }, { draft: night })).toEqual({
+      endTime: '09:00',
+      lengthMinutes: 24 * 60,
+      startTime: '09:00',
+    });
+    // A start or a day of the answer's own: the clock times as written.
+    expect(workedTimes({ endTime: '+1h', startTime: '10:00' }, { draft: night })).toEqual({
+      endTime: '09:00',
+      startTime: '10:00',
+    });
+    expect(
+      workedTimes({ date: '2026-11-20', endTime: '+1h', startTime: '09:00' }, { draft: night }),
+    ).toEqual({ date: '2026-11-20', endTime: '09:00', startTime: '09:00' });
   });
 
   it('reads minutes written as "min" too', () => {
     expect(workedTimes({ endTime: '+30min', startTime: '+30min' }, { draft })).toEqual({
       endTime: '18:30',
+      lengthMinutes: 60,
       startTime: '17:30',
     });
   });
@@ -207,6 +233,7 @@ describe('workedTimes', () => {
     expect(workedTimes({ endTime: '+1h', startTime: '+1h' }, { draft: late })).toEqual({
       date: '2026-11-13',
       endTime: '00:59',
+      lengthMinutes: 29,
       startTime: '00:30',
     });
     // A day as a shift is no time this reads: turned down.

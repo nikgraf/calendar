@@ -1,5 +1,12 @@
 import { Temporal } from '@calendar/core';
-import { type DraftTimes, LENGTH_KEY, TUNED_FINDER_LINE, worked, workedTimes } from '@calendar/ai';
+import {
+  type DraftTimes,
+  LENGTH_KEY,
+  TUNED_FINDER_LINE,
+  timesOf,
+  worked,
+  workedTimes,
+} from '@calendar/ai';
 import { TUNED_DRAFT_MARKER } from '../tuned.ts';
 
 /**
@@ -72,7 +79,13 @@ export const promptDates = (
   };
 };
 
-/** An answer worked out as the app does: its day and repeat, then its times, without the length's note. */
+const FULL_DATE = /^\d{4}-\d{2}-\d{2}$/u;
+
+/**
+ * An answer worked out as the app does: its day and repeat, then its
+ * times, the end as the app makes it (`timesOf`: its day too, a length
+ * said kept), without the length's note.
+ */
 const workedOut = (
   answer: unknown,
   dates: NonNullable<ReturnType<typeof promptDates>>,
@@ -81,8 +94,26 @@ const workedOut = (
   if (!isRecord(timed)) {
     return timed;
   }
-  const { [LENGTH_KEY]: _length, ...rest } = timed;
-  return rest;
+  const { [LENGTH_KEY]: length, ...rest } = timed;
+  const start = typeof rest['startTime'] === 'string' ? rest['startTime'] : undefined;
+  const end = typeof rest['endTime'] === 'string' ? rest['endTime'] : undefined;
+  const date =
+    typeof rest['date'] === 'string' ? rest['date'] : (dates.draftDate ?? dates.referenceDate);
+  if (start === undefined || (end === undefined && length === undefined) || !FULL_DATE.test(date)) {
+    return rest;
+  }
+  // The end as the app makes it: a length said and a clock time that only reads the same differ.
+  const times = timesOf(dates.draftTimes, {
+    date,
+    end,
+    length: typeof length === 'number' ? length : undefined,
+    start,
+  });
+  return {
+    ...rest,
+    ...(times.endDate === undefined ? {} : { endDate: times.endDate }),
+    endTime: times.endTime,
+  };
 };
 
 /** Where a worked-out date lies from the prompt's today. */

@@ -231,19 +231,53 @@ export const LENGTH_KEY = 'lengthMinutes';
 /** The times of the draft a later turn changes. */
 export interface DraftTimes {
   readonly date: string;
+  /** The day it ends on, where that is a later one. */
+  readonly endDate?: string | undefined;
   readonly endTime: string;
   readonly isAllDay: boolean;
   readonly startTime: string;
 }
 
 /**
+ * How long an event runs once its end is shifted ("+1h"): from its start,
+ * as the answer moves it, to the draft's end moved, the draft's days
+ * counted, since a clock time alone cannot say on which day the end falls
+ * (a 23-hour draft an hour longer ends on the next day). Undefined where
+ * the answer gives a start or a day of its own, or the end would not come
+ * after the start.
+ */
+const shiftedLength = (
+  answer: Readonly<Record<string, unknown>>,
+  draft: DraftTimes,
+  { end, start }: { readonly end: number; readonly start: number },
+): number | undefined => {
+  const from = clockMinutes(draft.startTime);
+  const to = clockMinutes(draft.endTime);
+  const ownStart =
+    typeof answer['startTime'] === 'string' &&
+    amountOf(answer['startTime']) === undefined &&
+    answer['startTime'] !== draft.startTime;
+  const ownDay = answer['date'] !== undefined && answer['date'] !== draft.date;
+  if (from === undefined || to === undefined || ownStart || ownDay) {
+    return undefined;
+  }
+  const days =
+    draft.endDate === undefined
+      ? 0
+      : Temporal.PlainDate.from(draft.date).until(Temporal.PlainDate.from(draft.endDate)).days;
+  const length = days * DAY_MINUTES + to + end - (from + start);
+  return length > 0 ? length : undefined;
+};
+
+/**
  * A tuned model's answer with its times worked out: a start written as a
  * shift ("+30m", "-1h") is the draft's start moved by it, an end written
  * as a shift the draft's end moved, an end written as a length ("45m")
  * that long after the start. A start moved past midnight moves the day
- * with it. An end written as a length also stays beside it as minutes
- * (`LENGTH_KEY`), so the result ends that long after the start whatever
- * day that is. Clock times and anything else are left as written. Undefined,
+ * with it. An end written as a length or a shift also stays beside it as
+ * minutes from the start (`LENGTH_KEY`, `shiftedLength`), so the result
+ * ends that long after the start whatever day that is. Clock times and
+ * anything else are left as written. Undefined,
  * an answer to turn down, where an amount cannot be worked out: a shift
  * without a timed draft or that reads as none, a length without a start,
  * a start as a length, or a day or more.
@@ -289,6 +323,14 @@ export const workedTimes = (
     }
     endMinutes = from + end.minutes;
   }
+  const length =
+    end === undefined
+      ? undefined
+      : !end.shift
+        ? end.minutes
+        : timed === undefined
+          ? undefined
+          : shiftedLength(answer, timed, { end: end.minutes, start: start?.minutes ?? 0 });
   let date: string | undefined;
   if (days !== 0) {
     const on = answer['date'] === undefined ? timed?.date : answer['date'];
@@ -302,8 +344,8 @@ export const workedTimes = (
     ...answer,
     ...(date === undefined ? {} : { date }),
     ...(endMinutes === undefined ? {} : { endTime: clockOf(endMinutes) }),
-    // The length as said: a clock time alone cannot say on which day it ends.
-    ...(end !== undefined && !end.shift ? { [LENGTH_KEY]: end.minutes } : {}),
+    // How long it runs: a clock time alone cannot say on which day it ends.
+    ...(length === undefined ? {} : { [LENGTH_KEY]: length }),
     ...(start === undefined || startMinutes === undefined
       ? {}
       : { startTime: clockOf(startMinutes) }),

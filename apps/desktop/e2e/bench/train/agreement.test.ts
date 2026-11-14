@@ -66,6 +66,24 @@ describe('rowAgreement', () => {
     expect(agreed?.parts).toEqual({ endTime: true, kind: true, startTime: true, title: true });
   });
 
+  it('holds a length said apart from a clock time that only reads the same', () => {
+    // From 09:00, "20h" ends at 05:00 the next day; "05:00" written as a clock is an hour (no night).
+    const shift = buildTunedPrompt({ phrase: 'shift from 9 for 20 hours', referenceDate: TODAY });
+    const row = rowAgreement(
+      shift,
+      { endTime: '20h', kind: 'event', startTime: '09:00', title: 'Shift' },
+      { endTime: '05:00', kind: 'event', startTime: '09:00', title: 'Shift' },
+    );
+    expect(row?.sameWorked).toBe(false);
+    expect(row?.parts).toMatchObject({ endDate: false, endTime: false });
+    const same = rowAgreement(
+      shift,
+      { endTime: '20h', kind: 'event', startTime: '09:00', title: 'Shift' },
+      { endTime: '1200m', kind: 'event', startTime: '09:00', title: 'Shift' },
+    );
+    expect(same?.sameWorked).toBe(true);
+  });
+
   it('counts an answer that is no draft as agreeing on nothing', () => {
     const row = rowAgreement(first, { date: '2026-11-13', title: 'Haircut' }, 'no');
     expect(row).toMatchObject({

@@ -267,9 +267,14 @@ const clockOf = (minutes: number): string =>
  * - Without an end, or one that reads as no night, an hour.
  * - A length said (`LENGTH_KEY`, from `workedTimes`) is kept over all of
  *   these: the end is that long after the start, on whatever day.
+ *
+ * Exported for the held-back agreement, which compares ends as the app
+ * makes them.
  */
-const timesOf = (
-  before: QuickAddPrefill | undefined,
+export const timesOf = (
+  before:
+    | Pick<QuickAddPrefill, 'date' | 'endDate' | 'endTime' | 'isAllDay' | 'startTime'>
+    | undefined,
   {
     date,
     end,

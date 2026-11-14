@@ -179,6 +179,29 @@ describe('tunedReader, a later turn', () => {
     });
     expect(briefer).toMatchObject({ prefill: { endTime: '09:45', startTime: '09:00' } });
     expect(briefer).not.toHaveProperty('prefill.endDate');
+    // A shifted end keeps the day it falls on, the draft's days counted.
+    const night = {
+      ...dinner,
+      prefill: { ...dinner.prefill, endDate: '2026-11-14', endTime: '08:00', startTime: '09:00' },
+    };
+    const { date: _night, endDate: _nightEnd, ...nightTimes } = night.prefill;
+    const longer = modelOf({ ...nightTimes, endTime: '+1h', kind: 'event', startTime: '09:00' });
+    await expect(
+      tunedReader(longer.model).change({ ...input, draft: night, utterance: 'an hour longer' }),
+    ).resolves.toMatchObject({
+      prefill: { date: '2026-11-13', endDate: '2026-11-14', endTime: '09:00', startTime: '09:00' },
+    });
+    const days = {
+      ...dinner,
+      prefill: { ...dinner.prefill, endDate: '2026-11-15', endTime: '00:30', startTime: '23:30' },
+    };
+    const { date: _days, endDate: _daysEnd, ...daysTimes } = days.prefill;
+    const moved = modelOf({ ...daysTimes, endTime: '+1h', kind: 'event', startTime: '+1h' });
+    await expect(
+      tunedReader(moved.model).change({ ...input, draft: days, utterance: 'an hour later' }),
+    ).resolves.toMatchObject({
+      prefill: { date: '2026-11-14', endDate: '2026-11-15', endTime: '01:30', startTime: '00:30' },
+    });
     const long = modelOf({ endTime: '20h', kind: 'event', startTime: '09:00', title: 'Shift' });
     await expect(
       tunedReader(long.model).first({
