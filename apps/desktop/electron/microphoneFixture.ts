@@ -63,7 +63,9 @@ export const fixtureListening = {
     const words = phrase.split(' ');
     if (level > TONE_DB) {
       current.toneBlocks += 1;
-      const count = Math.min(words.length, Math.ceil(current.toneBlocks / BLOCKS_PER_WORD));
+      // The last word waits for the tone's end: however short the phrase,
+      // it never ends while the tone still plays.
+      const count = Math.min(words.length - 1, Math.ceil(current.toneBlocks / BLOCKS_PER_WORD));
       if (count > current.shown) {
         current.shown = count;
         show(words, count, current.onWords);
@@ -79,11 +81,16 @@ export const fixtureListening = {
       listening = undefined;
     }
   },
-  /** The next phrase "heard", as the helper's final reading answers; nothing once they run out. */
+  /**
+   * The next phrase "heard", as the helper's final reading answers;
+   * nothing once they run out, and nothing for a phrase no longer
+   * listened to (as the helper answers it).
+   */
   finish: (session: number): { segments: ReadonlyArray<{ text: string }> } => {
-    if (listening?.session === session) {
-      listening = undefined;
+    if (listening?.session !== session) {
+      return { segments: [] };
     }
+    listening = undefined;
     const text = nextPhrase();
     transcribed += 1;
     return { segments: text === undefined ? [] : [{ text }] };

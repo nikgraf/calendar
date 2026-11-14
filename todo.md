@@ -191,7 +191,11 @@ the served model (#184) and slot proposals (#185) are in
       only) — the pauses (900 / 1,200 ms) and Settings › Advanced ›
       Voice Processing tried on a phone in real rooms (a café, a
       street); real-room recordings in the bench, replayed through the
-      session and the rule; English and German in one phrase (one
+      session and the rule (and whether a quick recogniser that goes
+      deaf one word behind the accurate one ever cuts a phrase short:
+      the rule ends on the quick words then, a case constructed in
+      review but never seen in the recordings, where both cures cost
+      more than they saved, #322); English and German in one phrase (one
       locale per recogniser today); a person talking nearby (their
       words count: voice processing measured first, then a speaker
       match learned from phrases already said); Siri as a way in (an

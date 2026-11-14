@@ -293,7 +293,9 @@ private func joined(_ done: String, _ text: String) -> String {
 /// another in the order they were asked for, so two bars that start and
 /// give up at the same moment cannot leave the older phrase listening.
 /// A host that owns the microphone (iOS) opens and closes it inside those
-/// steps (`open`, `close`), so it follows the same order.
+/// steps (`open`, `close`), so it follows the same order. A start closes
+/// it first, so a phrase it replaces cannot leave it on, even when the new
+/// one then fails to start.
 @available(iOS 26.0, macOS 26.0, *)
 final class SpeechSessions: @unchecked Sendable {
   static let shared = SpeechSessions()
@@ -306,9 +308,10 @@ final class SpeechSessions: @unchecked Sendable {
   /// The recognisers that listen to the phrase.
   func start(
     id: Int, locale: String, onWords: @escaping SpeechListening.Words,
-    open: (@Sendable () throws -> Void)? = nil
+    open: (@Sendable () throws -> Void)? = nil, close: (@Sendable () -> Void)? = nil
   ) async throws -> [String] {
     try await serial {
+      close?()
       await self.take(nil)?.cancel()
       let listening = try await SpeechListening.start(locale: locale, onWords: onWords)
       self.lock.withLock { self.current = (id, listening) }
@@ -333,6 +336,14 @@ final class SpeechSessions: @unchecked Sendable {
       guard let listening = self.take(id) else { return nil }
       close?()
       return try await listening.finish()
+    }
+  }
+
+  /// Drops whatever phrase is listened to: its host went away (a reload).
+  func cancelAll(close: (@Sendable () -> Void)? = nil) async {
+    _ = try? await serial {
+      close?()
+      await self.take(nil)?.cancel()
     }
   }
 

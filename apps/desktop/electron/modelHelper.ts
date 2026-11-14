@@ -172,6 +172,10 @@ const sendWords = (session: number, source: WordsSource, text: string) => {
 const isSession = (value: unknown): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
 
+/** Only the window listening ends its phrase; an older phrase is nobody's, and ending it does nothing. */
+const ownedBy = (session: number, sender: WebContents) =>
+  listening?.session !== session || listening.owner === sender;
+
 /**
  * Dictation, one phrase at a time: the renderer owns the microphone and
  * streams it here (`model:speech-audio`, 16 kHz mono Int16 blocks); the
@@ -237,8 +241,8 @@ const registerSpeech = () => {
       session,
     }).catch(() => undefined);
   });
-  ipcMain.handle('model:speech-finish', (_event, session: unknown) => {
-    if (!isSession(session)) {
+  ipcMain.handle('model:speech-finish', (event, session: unknown) => {
+    if (!isSession(session) || !ownedBy(session, event.sender)) {
       return invalid('session');
     }
     if (listening?.session === session) {
@@ -248,8 +252,8 @@ const registerSpeech = () => {
       ? fixtureListening.finish(session)
       : callHelper('speech.finish', { session });
   });
-  ipcMain.handle('model:speech-cancel', async (_event, session: unknown) => {
-    if (!isSession(session)) {
+  ipcMain.handle('model:speech-cancel', async (event, session: unknown) => {
+    if (!isSession(session) || !ownedBy(session, event.sender)) {
       return invalid('session');
     }
     if (listening?.session === session) {

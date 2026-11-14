@@ -13,6 +13,14 @@ public class SolunivoSpeechModule: Module {
 
     Events("onWords")
 
+    // JS reloaded (or the app's host went away) mid-phrase: nothing is
+    // left to finish it, so the microphone closes and the phrase goes.
+    OnDestroy {
+      if #available(iOS 26.0, *) {
+        Task { await SpeechSessions.shared.cancelAll { Microphone.shared.close() } }
+      }
+    }
+
     AsyncFunction("prepare") { (locale: String, promise: Promise) in
       guard #available(iOS 26.0, *) else {
         promise.reject("SpeechError", SpeechBridgeError.unsupported("needs iOS 26").message)
@@ -56,7 +64,8 @@ public class SolunivoSpeechModule: Module {
               module.value?.sendEvent(
                 "onWords", ["session": session, "source": source, "text": text])
             },
-            open: { try Microphone.shared.open(session: session, voiceProcessing: voiceProcessing) })
+            open: { try Microphone.shared.open(session: session, voiceProcessing: voiceProcessing) },
+            close: { Microphone.shared.close() })
           promise.resolve(["sources": sources])
         } catch {
           promise.reject("SpeechError", Self.message(error))

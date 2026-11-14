@@ -152,4 +152,15 @@ describe('dictation in main', () => {
     helperSays({ session: 1, source: 'quick', text: 'Lunch' });
     expect(window.sent).toEqual([]);
   });
+
+  it('lets only the window listening end its phrase', async () => {
+    const window = sender();
+    const other = sender();
+    await call('model:speech-start', window, 'en-US');
+    await expect(call('model:speech-finish', other, 1)).rejects.toThrow('invalid session');
+    await expect(call('model:speech-cancel', other, 1)).rejects.toThrow('invalid session');
+    helperSays({ session: 1, source: 'quick', text: 'Lunch' });
+    expect(window.sent).toEqual([{ session: 1, source: 'quick', text: 'Lunch' }]);
+    expect(main.calls.map((entry) => entry.method)).toEqual(['speech.start']);
+  });
 });
