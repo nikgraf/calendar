@@ -98,8 +98,9 @@ agent gateway's free/busy shares — places each gap's slot at the named
 part of the day (`preferredTime`) and `rankSlotsAround` orders them by
 distance from it. Capture normalizes each item the model found
 (`normalizeQuickAdd`, `capture.ts`). Desktop: renderer → preload IPC
-(the `model:*` channels: status, info, generate, prepare-speech,
-transcribe, recognize-text) → main → the active provider
+(the `model:*` channels: status, info, generate, prepare-speech, the
+`speech-*` ones dictation streams over, recognize-text) → main → the
+active provider
 (`apps/desktop/electron/modelProvider.ts`): by default the Swift helper
 child process (`apps/desktop/helper`, Foundation Models, SpeechAnalyzer
 and Vision over newline-JSON stdio; spawned lazily and supervised with
@@ -134,17 +135,24 @@ nothing changed; Settings › Diagnostics (iOS) words it with
 e2e fixture. The Assistant's own model has its own state on both apps
 (`AssistantModelState`): while it is not here the conversation shows
 `AssistantModelNotice` (the download, its progress, Try Again) and the
-editor opens on the Form. Dictation audio is captured by the UI layer (renderer
-`getUserMedia` → 16 kHz WAV) and only transcribed natively. Dictation
-is hands-free: each adapter reads the level as it records (the
-worklet's blocks on the desktop; on iOS the expo-audio recorder's
-`getStatus().metering`, on a recorder prepared before it records —
-unprepared, `record()` starts nothing and the meter reads digital
-silence) and
-`createEndpointer` (`packages/ai/src/endpointer.ts`) hears a phrase
-begin and the pause that ends it, against the room's own floor.
-`useQuickAddModel`
-sends each phrase at its pause and listens again (`voiceLoop.ts`) once
+editor opens on the Form. Dictation streams each phrase, as it is
+recorded, into one speech session (`packages/ai/swift/SpeechBridge.swift`,
+symlinked into the helper and the iOS module `solunivo-speech`): on the
+desktop the renderer's `getUserMedia` worklet sends 100 ms blocks of
+16 kHz Int16 (`model:speech-audio`), on iOS the module records with
+AVAudioEngine (voice processing when Settings › Advanced asks for it).
+Two recognisers write the words as they are said — DictationTranscriber
+("quick", word by word) and SpeechTranscriber ("accurate", in bursts) —
+and they come back as `speech.words` events (the module's `onWords`);
+finishing reads the phrase once more, whole, with plain
+SpeechTranscriber, alternatives kept. The audio stays in memory and
+goes with the phrase. The phrase ends on its words, not its loudness:
+`listenForPhrase` (`packages/ai/src/phraseEnd.ts`) ends it when the
+quick words have stood still for 900 ms, or, while the accurate ones
+are ahead of them, when those have for 1,200 ms; until then the words
+show in the thread's pending line (`pendingLine`). Dictation is
+hands-free: `useQuickAddModel`
+sends each phrase when its words stop and listens again (`voiceLoop.ts`) once
 the form has taken the last one in (`useThreadEditor().applying`), until
 the microphone is pressed (which sends what was recorded, heard or
 not), the field is typed into, the form is edited

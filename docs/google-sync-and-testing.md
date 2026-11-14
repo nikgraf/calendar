@@ -745,8 +745,10 @@ profile) so a spec acts while a save or delete waits for EventKit.
 `microphone` stands in for the page's
 `getUserMedia` with a Web Audio loop of quiet room and a phrase-long
 tone (Chromium's fake audio device never opens under Electron), and
-`CALENDAR_MICROPHONE=fixture` answers each transcription with the
-spec's next phrase, nothing asked or installed. `camera` likewise: the
+under `CALENDAR_MICROPHONE=fixture` main answers the audio streamed to
+it: while the tone plays, the spec's next phrase comes back word by
+word as both recognisers' words, and finishing reads it as that phrase,
+nothing asked or installed. `camera` likewise: the
 page's `getUserMedia` answers a drawn canvas stream, the camera counts as
 granted with no TCC prompt (`CALENDAR_CAMERA=fixture`, else `off`: no
 camera, the paste field only), and every frame reads as the spec's code
@@ -758,7 +760,8 @@ move/resize/cancel, slot drag, recurring scopes, RSVP, visibility,
 calendar color, month view, task lane and editor, the sync footer, the
 privacy modal, the settings window, the inspector and inline editor, ⌘K);
 `capture` (paste-to-drafts on the fixture model); `handsFree` (one
-click of the microphone: two phrases land at their pauses, the form
+click of the microphone: the first phrase's words show while it is
+said, two phrases land when their words stop, the form
 brought forward does not end the dictation, a typed title does, the
 next phrase keeps that title, an older step put on show ends it too);
 `assistantView` (the editor's two views:
