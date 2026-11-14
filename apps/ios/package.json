@@ -51,7 +51,7 @@
     "expo-task-manager": "~58.0.13",
     "expo-updates": "~58.0.21",
     "expo-web-browser": "~58.0.7",
-    "llama.rn": "0.13.0-rc.9",
+    "llama.rn": "0.13.0-rc.10",
     "react": "catalog:",
     "react-native": "0.88.1",
     "react-native-gesture-handler": "~3.3.0",
@@ -62,14 +62,14 @@
     "rrule-temporal": "catalog:"
   },
   "devDependencies": {
-    "@babel/core": "^7.29.7",
+    "@babel/core": "^7.29.13",
     "@babel/plugin-transform-modules-commonjs": "^7.29.7",
     "@babel/preset-typescript": "^7.29.7",
     "@expo/repack-app": "^0.10.4",
     "@types/babel__core": "^7.20.5",
     "@types/node": "^26.6.6",
     "@types/react": "catalog:",
-    "eas-cli": "^27.4.1",
+    "eas-cli": "^27.7.2",
     "typescript": "catalog:"
   }
 }
