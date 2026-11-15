@@ -54,8 +54,7 @@ const makeWorld = (initial: { file?: string; state?: SettingsDocument } = {}) =>
     mtime: 1,
     /** Where the path resolves to; differs from PATH for a symlinked file. */
     real: PATH,
-    state:
-      initial.state ?? ({ version: 1, view: { allDayLaneCollapsed: false } } as SettingsDocument),
+    state: initial.state ?? { version: 1, view: { allDayLaneCollapsed: false } },
     watchers: [] as Array<{ dir: string; onChange: (file: string | null) => void }>,
     writePaths: [] as Array<string>,
     writes: [] as Array<string>,

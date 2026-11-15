@@ -57,13 +57,7 @@ export {
   liveWireLayer,
   seedLiveAccount,
 } from './liveWire.ts';
-export {
-  LIVE_CALENDAR_SCOPE,
-  type LiveCalendarListEntry,
-  type LiveEvent,
-  type LiveTask,
-  parseScratchName,
-} from './liveScratchRest.ts';
+export { type LiveCalendarListEntry, type LiveEvent, type LiveTask } from './liveScratchRest.ts';
 
 /**
  * The live Google suites: the real clients, request core, engine and

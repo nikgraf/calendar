@@ -33,7 +33,11 @@ export function Copyable({
     <div className="mt-2">
       <div className="flex items-center justify-between">
         <span className="text-xs font-medium text-ink-secondary">{label}</span>
-        <button className={`text-xs ${TEXT_ACTION_CLASS.primary}`} onClick={copy} type="button">
+        <button
+          className={`text-xs ${TEXT_ACTION_CLASS.primary}`}
+          onClick={() => void copy()}
+          type="button"
+        >
           {copied ? 'Copied' : 'Copy'}
         </button>
       </div>

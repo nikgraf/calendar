@@ -256,6 +256,26 @@ describe('the Assistant model’s download', () => {
     expect(next.getState().kind).toBe('ready');
   });
 
+  it('is ready when the checked file’s note cannot be written', async () => {
+    const files = fakeFiles();
+    const { emit, transfer } = fakeTransfer();
+    const store = storeOf(
+      {
+        ...files.files,
+        writeVerified: () => {
+          throw new Error('disk full');
+        },
+      },
+      transfer,
+    );
+    await store.boot();
+    await store.agree('wifi');
+    files.land();
+    emit().onFinish({ path: files.files.destination });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(store.getState()).toEqual({ kind: 'ready', path: 'file:///caches/assistant.gguf' });
+  });
+
   it('checks a transfer that finishes while the launch reads its state', async () => {
     const files = fakeFiles({ answer: { answer: 'wifi', version: 'v1' } });
     const { emit, starts, transfer } = fakeTransfer({ running: 'wifi' });

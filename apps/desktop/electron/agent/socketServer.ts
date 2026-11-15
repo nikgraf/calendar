@@ -51,7 +51,13 @@ const DEFAULT_MAX_CONNECTIONS = 32;
 const DEFAULT_MAX_PER_AGENT = 8;
 const FINISH_LINGER_MS = 2000;
 
-const isHello = (value: unknown): value is AgentHello => {
+/**
+ * A hello of the right shape, its version not checked yet: an older or
+ * newer CLI gets VersionMismatch, not BadRequest.
+ */
+type ReceivedHello = Omit<AgentHello, 'v'> & { readonly v: unknown };
+
+const isHello = (value: unknown): value is ReceivedHello => {
   if (typeof value !== 'object' || value === null) {
     return false;
   }

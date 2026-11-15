@@ -47,7 +47,7 @@ export function PrivacySection() {
     return null;
   }
 
-  const minutesLeft = paused ? Math.max(1, Math.ceil((state.visibleUntil! - now) / 60_000)) : 0;
+  const minutesLeft = paused ? Math.max(1, Math.ceil((state.visibleUntil - now) / 60_000)) : 0;
   const choose = (choice: 'hidden' | 'pause10m' | 'visible') => {
     void window.calendarBridge.privacySet(choice).then(take);
   };

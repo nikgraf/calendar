@@ -10,8 +10,7 @@ const STATUS_DOT: Record<Attendee['responseStatus'], string> = {
   tentative: 'bg-warning',
 };
 
-const contactsStatus = (): Promise<string> =>
-  window.calendarBridge.contactsStatus() as Promise<string>;
+const contactsStatus = (): Promise<string> => window.calendarBridge.contactsStatus();
 
 /**
  * Guest chips + a typeahead over device and Google contacts. Hand-rolled

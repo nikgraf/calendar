@@ -30,7 +30,7 @@ describe('conflictTimeLabel', () => {
   it('prints an all-day span with its last day inclusive', () => {
     const allDay = event({ endDate: '2026-09-25', isAllDay: true, startDate: '2026-09-22' });
     expect(conflictTimeLabel(allDay, TZ)).toBe('Tue, Sep 22 – Thu, Sep 24');
-    expect(conflictTimeLabel({ ...allDay, endDate: '2026-09-23' } as EventRecord, TZ)).toBe(
+    expect(conflictTimeLabel({ ...allDay, endDate: '2026-09-23' }, TZ)).toBe(
       'Tue, Sep 22 (all day)',
     );
   });

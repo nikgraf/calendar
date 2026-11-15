@@ -57,8 +57,6 @@ import {
 } from './threadRefusal.ts';
 import { movedFrom, shownMarks } from './threadSteps.ts';
 
-export type { DraftFocusRequest } from './draftAtoms.ts';
-
 /** Drafts an editor opens with already made — a capture's events, as one thread. */
 export interface ThreadSeed {
   readonly items: ReadonlyArray<QuickAddItem>;

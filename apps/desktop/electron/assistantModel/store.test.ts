@@ -83,6 +83,24 @@ describe('createAssistantStore', () => {
     expect(disk.removedOthers).toBe(1);
   });
 
+  it('is ready when the checked file’s note cannot be written', async () => {
+    const { disk, files } = memoryFiles({});
+    const { fetch } = fakeFetch(disk);
+    const store = createAssistantStore({
+      fetch,
+      files: {
+        ...files,
+        writeVerified: () => {
+          throw new Error('disk full');
+        },
+      },
+      manifest: MANIFEST,
+    });
+    await store.boot();
+    await store.agree();
+    expect(store.getState()).toEqual({ kind: 'ready', path: files.destination });
+  });
+
   it('is ready at launch with a checked file, and fetches nothing', async () => {
     const { disk, files } = memoryFiles({
       answer: { answer: 'agreed', version: 'v1' },

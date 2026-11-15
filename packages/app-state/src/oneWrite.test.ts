@@ -87,11 +87,12 @@ describe('runOneWrite', () => {
       () => pending.promise,
       (value) => busy.push(value),
     );
-    runOneWrite(
+    const joined = runOneWrite(
       slot,
       () => pending.promise,
       (value) => busy.push(value),
     );
+    expect(joined).toBe(running);
     expect(busy).toEqual([true]);
     pending.settle.resolve();
     await running;

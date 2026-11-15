@@ -13,7 +13,6 @@ import {
   type EventRecord,
   formatPlainTime,
   type RecurringScope,
-  type RsvpResponse,
   seriesConvertsAt,
   Temporal,
   utcMsToPlainDate,
@@ -190,7 +189,7 @@ export function EventDetailSheet({
                         accessibilityRole="button"
                         accessibilityState={{ selected: active }}
                         key={option.value}
-                        onPress={() => void respond(option.value as RsvpResponse)}
+                        onPress={() => void respond(option.value)}
                         style={[styles.chip, active && styles.chipActive]}
                         testID={`rsvp-${option.value}`}
                       >

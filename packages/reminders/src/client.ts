@@ -1,5 +1,5 @@
 import { type BridgeTransport, bridgeMessage, changesFromSubscription } from '@calendar/core';
-import { Context, Data, Effect, Layer, Schema, Stream } from 'effect';
+import { Context, Data, Effect, Schema, Stream } from 'effect';
 import {
   ListListsResult,
   type ReminderJson,
@@ -210,7 +210,7 @@ export const unavailableRemindersClient = (reason: string): RemindersClientShape
 export const REMINDERS_CHANGED_EVENT = 'reminders.changed';
 
 /**
- * One layer per host from the transport it has — or from the reason it
+ * One client per host from the transport it has — or from the reason it
  * has none (no helper binary, an older dev client, a kill switch), in
  * which case every call reports 'unavailable' instead of failing.
  */
@@ -223,7 +223,3 @@ export const remindersClientFrom = (
         source.invoke,
         changesFromSubscription((listener) => source.subscribe(REMINDERS_CHANGED_EVENT, listener)),
       );
-
-export const remindersLayer = (
-  source: BridgeTransport | { readonly unavailable: string },
-): Layer.Layer<RemindersClient> => Layer.succeed(RemindersClient, remindersClientFrom(source));

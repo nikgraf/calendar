@@ -337,5 +337,5 @@ export const parseSearchQuery = async (
   if (typeof raw !== 'object' || raw === null) {
     return { kind: 'rejected', reason: "That couldn't be read — try rephrasing." };
   }
-  return normalizeSearchQuery(raw as SearchQueryParse, input);
+  return normalizeSearchQuery(raw, input);
 };
