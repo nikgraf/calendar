@@ -205,6 +205,22 @@ describe('Discarding an editor that holds something', () => {
     await cdp.pressEscape();
     await closesAtOnce();
 
+    // Its repeat taken away is a change, though the rule is not in the reading until it is.
+    await cdp.openEditor(`[data-day="${today.toString()}"] [title^="Daily sync"]`);
+    await cdp.waitFor(`document.querySelector('select[aria-label="Repeat"]')?.value === 'daily'`);
+    await cdp.eval(`(() => {
+      const select = document.querySelector('select[aria-label="Repeat"]');
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set;
+      setter.call(select, 'none');
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    })()`);
+    await cdp.waitFor(`document.querySelector('select[aria-label="Repeat"]')?.value === 'none'`);
+    await cdp.pressEscape();
+    await cdp.waitFor(exists('discard-confirm'));
+    expect(await cdp.eval<string>(textOf('discard-confirm'))).toContain('discard your changes');
+    await cdp.answerDiscard(true);
+    await cdp.waitFor(`!${exists('editor')}`);
+
     // A title typed, then made a task: the title goes along, and is asked about.
     await openNewForm();
     await setTitle('Half written');

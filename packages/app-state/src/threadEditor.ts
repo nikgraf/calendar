@@ -16,7 +16,7 @@ import {
   type TaskRecord,
   Temporal,
 } from '@calendar/core';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { draftCalendarKey, draftListKey, planAddAll } from './addAll.ts';
 import { useDraftFocusRequest, useRevealDraftDay, useSetDraftPreviews } from './draftAtoms.ts';
 import {
@@ -396,8 +396,23 @@ export const useThreadEditor = ({
     onClose();
   };
 
+  // A write's own question (a lossy move, a delete) is no write yet:
+  // while it is asked, leaving would lose what the form holds (`writing`).
+  const [asking, setAsking] = useState(0);
+  const askFirst = useCallback(
+    async (request: EditorConfirmRequest): Promise<boolean> => {
+      setAsking((open) => open + 1);
+      try {
+        return await confirm(request);
+      } finally {
+        setAsking((open) => open - 1);
+      }
+    },
+    [confirm],
+  );
+
   const taskModel = useTaskEditorModel({
-    confirm,
+    confirm: askFirst,
     onClose: close,
     onSaved: saved,
     seed: {
@@ -413,7 +428,7 @@ export const useThreadEditor = ({
   });
   const eventModel = useEventEditorModel({
     calendars,
-    confirm,
+    confirm: askFirst,
     onClose: close,
     onSaved: saved,
     seed: { ...seed, convertFromTask: task },
@@ -422,7 +437,7 @@ export const useThreadEditor = ({
   formCalendar.current = eventModel.calendarKey;
   const kinds = useEditorKinds({
     calendars,
-    confirm,
+    confirm: askFirst,
     eventModel,
     initialKind,
     previewEventToTask: mutations.previewEventToTask,
@@ -507,8 +522,7 @@ export const useThreadEditor = ({
   const assistant: 'new' | 'none' | 'saved' =
     sourceKind === 'new' ? 'new' : savedOpen ? 'saved' : 'none';
   const seedReady = assistant === 'saved' && (sourceKind === 'task' || eventModel.ruleAnswered);
-  // The form as one reading, against how it opened (`useFormChanged`): a
-  // saved item's opening is read when the thread opens on it (`seedReady`).
+  // The form as one reading, against how it opened (`useFormChanged`).
   const formChanged = useFormChanged({
     isNew: sourceKind === 'new',
     kind: kinds.kind,
@@ -518,7 +532,6 @@ export const useThreadEditor = ({
       item: currentItem(),
       ruleDirty: eventModel.repeatDirty,
     }),
-    settled: sourceKind === 'new' || seedReady,
   });
   const { open } = thread;
   useEffect(() => {
@@ -1125,7 +1138,7 @@ export const useThreadEditor = ({
     readOnly: { event: eventModel.readOnly, todo: taskModel.readOnly },
     sourceKind,
     userEdits,
-    writing,
+    writing: writing && asking === 0,
   });
 
   return {
@@ -1195,7 +1208,10 @@ export const useThreadEditor = ({
     /** Moves at each edit made by hand in the form (the phrase field's `editKey`: dictation ends). */
     userEdits,
     write,
-    /** A Save, a delete or "Add all" is under way: leaving loses nothing then. */
-    writing,
+    /**
+     * A Save, a delete or "Add all" is being written, its question (if
+     * any) answered: what the form shows lands whether the editor stays.
+     */
+    writing: writing && asking === 0,
   };
 };

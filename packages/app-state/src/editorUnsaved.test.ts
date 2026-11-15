@@ -15,6 +15,7 @@ const unsaved = (over: Partial<Parameters<typeof editorUnsaved>[0]>) =>
     formChanged: false,
     previewing: false,
     userEdits: 0,
+    writing: false,
     ...over,
   });
 
@@ -39,7 +40,6 @@ const step = (over: Partial<Parameters<typeof formChange>[0]>) =>
     mode: 'event',
     opened: { event: 'seed' },
     reading: 'seed',
-    settled: true,
     switched: false,
     untouched: true,
     ...over,
@@ -132,6 +132,14 @@ describe('editorDiscard', () => {
     expect(discard({ draftKinds: ['event'], formChanged: true, writing: true }).unsaved).toBe(
       false,
     );
+    expect(
+      discard({ assistant: 'saved', formChanged: true, sourceKind: 'event', writing: true })
+        .unsaved,
+    ).toBe(false);
+  });
+
+  it("still asks about a capture's other drafts while one of them is saved", () => {
+    expect(discard({ draftKinds: ['event', 'event'], writing: true }).unsaved).toBe(true);
   });
 
   it('never asks for a birthday', () => {
@@ -160,11 +168,7 @@ describe('formChange', () => {
     expect(step({ reading: 'typed' })).toEqual({ changed: true, open: false });
   });
 
-  it("reads a saved item's opening once it is settled, and no change before", () => {
-    expect(step({ isNew: false, opened: {}, reading: 'saved', settled: false })).toEqual({
-      changed: false,
-      open: false,
-    });
+  it("reads a saved item's opening as the editor opens", () => {
     expect(step({ isNew: false, opened: {}, reading: 'saved' })).toEqual({
       changed: false,
       open: true,
@@ -225,6 +229,12 @@ describe('formReading', () => {
   it("leaves a series' rule out until it is the person's: one that arrives late is no change", () => {
     expect(formReading({ extras: {}, item: event({ freq: 'weekly' }), ruleDirty: false })).toBe(
       formReading({ extras: {}, item: event(), ruleDirty: false }),
+    );
+  });
+
+  it('reads a rule the person took away: "Does not repeat" is a change', () => {
+    expect(formReading({ extras: {}, item: event(), ruleDirty: true })).not.toBe(
+      formReading({ extras: {}, item: event({ freq: 'weekly' }), ruleDirty: false }),
     );
   });
 

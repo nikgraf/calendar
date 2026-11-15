@@ -17,6 +17,7 @@ export const editorUnsaved = ({
   formChanged,
   previewing,
   userEdits,
+  writing,
 }: {
   /** The editor's thread (`useThreadEditor`): a new item, a saved one, or none (a conversion). */
   readonly assistant: 'new' | 'none' | 'saved';
@@ -30,9 +31,18 @@ export const editorUnsaved = ({
   readonly previewing: boolean;
   /** Edits made by hand, counted (the one measure a Convert editor has: its form fills as it opens). */
   readonly userEdits: number;
+  /**
+   * What the form shows is being written, with nothing asked first (a
+   * lossy move's question is no write yet): it lands whether the editor
+   * stays or not, so it is no loss. A thread's other drafts still are.
+   */
+  readonly writing: boolean;
 }): boolean => {
   if (!canSave) {
     return false;
+  }
+  if (writing) {
+    return assistant === 'new' && drafts > 1;
   }
   if (previewing) {
     return true;
@@ -104,11 +114,7 @@ export const editorDiscard = ({
   readonly readOnly: { readonly event: boolean; readonly todo: boolean };
   readonly sourceKind: EditorSourceKind;
   readonly userEdits: number;
-  /**
-   * A Save or "Add all" is under way: it lands whether the editor stays
-   * or not (another chip opened meanwhile keeps its own editor), so
-   * leaving loses nothing.
-   */
+  /** What the form shows is being written, nothing asked first (`editorUnsaved`). */
   readonly writing: boolean;
 }): { readonly question: string; readonly unsaved: boolean } => {
   const isNew = sourceKind === 'new';
@@ -121,11 +127,12 @@ export const editorDiscard = ({
     }),
     unsaved: editorUnsaved({
       assistant,
-      canSave: sourceKind !== 'birthday' && !readOnly[mode] && !writing,
+      canSave: sourceKind !== 'birthday' && !readOnly[mode],
       drafts: draftKinds.length,
       formChanged,
       previewing,
       userEdits,
+      writing,
     }),
   };
 };
@@ -136,9 +143,9 @@ type OpenedReadings = { readonly [Mode in EditorMode]?: string };
 /**
  * The form as one reading to compare (`useFormChanged`): the item and
  * what it holds beyond it. An event's rule is in it only once it is
- * another than the form was seeded with (`ruleDirty`): a series' rule
- * that arrives after the editor opened, or changes elsewhere, re-seeds
- * the form, and is no change of the person's.
+ * another than the form was seeded with (`ruleDirty`), a rule taken away
+ * as none: a series' rule that arrives after the editor opened, or
+ * changes elsewhere, re-seeds the form, and is no change of the person's.
  */
 export const formReading = ({
   extras,
@@ -152,15 +159,16 @@ export const formReading = ({
   JSON.stringify({
     extras,
     item:
-      item.kind === 'event' && !ruleDirty
+      item.kind === 'event'
         ? { ...item, prefill: { ...item.prefill, recurrence: undefined } }
         : item,
+    rule: item.kind === 'event' && ruleDirty ? (item.prefill.recurrence ?? null) : undefined,
   });
 
 /**
  * One step of `useFormChanged`: whether the form reads otherwise than it
- * opened, and whether to read its opening now — the first, once the form
- * is settled, and a new item's after its kind was switched while it read
+ * opened, and whether to read its opening now — the first, as the editor
+ * opens, and a new item's after its kind was switched while it read
  * as it opened: the other form (or the same one round again, or the other
  * list's) opens afresh, since the switch alone loses nothing. A saved item
  * switched to another kind is a conversion waiting for Save, and changed;
@@ -172,7 +180,6 @@ export const formChange = ({
   mode,
   opened,
   reading,
-  settled,
   switched,
   untouched,
 }: {
@@ -180,15 +187,13 @@ export const formChange = ({
   readonly mode: EditorMode;
   readonly opened: OpenedReadings;
   readonly reading: string;
-  /** The form holds all the item opened with (a saved series waits for its rule). */
-  readonly settled: boolean;
   /** The kind on show is another than at the last commit. */
   readonly switched: boolean;
   /** At the last commit, the form read as it opened. */
   readonly untouched: boolean;
 }): { readonly changed: boolean; readonly open: boolean } => {
   const anyOpened = Object.keys(opened).length > 0;
-  if (settled && (!anyOpened || (isNew && switched && untouched))) {
+  if (!anyOpened || (isNew && switched && untouched)) {
     return { changed: false, open: true };
   }
   const baseline = opened[mode];
@@ -197,24 +202,21 @@ export const formChange = ({
 
 /**
  * Whether the form reads otherwise than it opened (`formChange`): a field
- * put back reads as it did. A new item's opening is its seed; a saved
- * one's is read once it is `settled`. Read as the form renders: a pass
- * another hook adjusts as it renders (a series' rule seeding its fields)
- * reads the same, since an unchanged rule is not in the reading
- * (`formReading`).
+ * put back reads as it did. The opening is read as the editor opens, a
+ * saved series' too: its rule, which arrives later (`useEventMaster`) and
+ * seeds itself, is not in the reading until the person changes it
+ * (`formReading`), so an edit made before it lands is still a change.
  */
 export const useFormChanged = ({
   isNew,
   kind,
   mode,
   reading,
-  settled,
 }: {
   readonly isNew: boolean;
   readonly kind: ItemKind;
   readonly mode: EditorMode;
   readonly reading: string;
-  readonly settled: boolean;
 }): boolean => {
   const [opened, setOpened] = useState<OpenedReadings>({});
   // As last rendered: the kind on show, and whether the form read as it opened.
@@ -224,7 +226,6 @@ export const useFormChanged = ({
     mode,
     opened,
     reading,
-    settled,
     switched: kind !== last.kind,
     untouched: last.untouched,
   });
