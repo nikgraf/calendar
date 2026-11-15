@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type LanguageModel, type QuickAddResult, type RefineResult } from '@calendar/ai';
-import { type Contact, Temporal } from '@calendar/core';
+import type { Contact } from '@calendar/core';
 import { describe, expect, it } from 'vite-plus/test';
 import {
   type BenchCase,
@@ -23,6 +23,7 @@ import {
 import { plainTurn } from './plain.ts';
 import {
   benchProviders,
+  benchToday,
   connectHelper,
   findHelper,
   gitSha,
@@ -302,7 +303,7 @@ const reportsToRescore = (value: string): ReadonlyArray<string> =>
 
 describe.skipIf(process.env['MODEL_BENCH'] !== '1')('model bench', () => {
   it('runs the cases on each model and writes a report', { timeout: 120 * 60_000 }, async () => {
-    const today = Temporal.Now.plainDateISO(TIME_ZONE).toString();
+    const today = benchToday(TIME_ZONE);
     const sha = gitSha(ROOT);
     const lines: Array<string> = [`\nMODEL BENCH — today ${today}, ${TIME_ZONE}, ${sha}\n`];
     const log = (line: string) => {

@@ -2,7 +2,6 @@ import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'n
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildFindTimePrompt, buildTunedFinderPrompt, FIND_TIME_JSON_SCHEMA } from '@calendar/ai';
-import { Temporal } from '@calendar/core';
 import { describe, expect, it } from 'vite-plus/test';
 import {
   compareFinderReports,
@@ -18,7 +17,14 @@ import {
   rescoreFinder,
   scoreOf,
 } from './finder.ts';
-import { benchProviders, connectHelper, findHelper, gitSha, recording } from './providers.ts';
+import {
+  benchProviders,
+  benchToday,
+  connectHelper,
+  findHelper,
+  gitSha,
+  recording,
+} from './providers.ts';
 
 /**
  * The finder bench: find a time's sentences (`finder.json`) through the
@@ -117,7 +123,7 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('finder bench', () => {
     'reads each finder phrase on each model, with and without the rules',
     { timeout: 120 * 60_000 },
     async () => {
-      const today = Temporal.Now.plainDateISO(TIME_ZONE).toString();
+      const today = benchToday(TIME_ZONE);
       const sha = gitSha(ROOT);
       const lines: Array<string> = [`\nFINDER BENCH — today ${today}, ${TIME_ZONE}, ${sha}\n`];
       const log = (line: string) => {
