@@ -144,26 +144,31 @@ export const useEditorKinds = ({
    * the other kind switches the editor first — a to-do lands on the kind
    * a new to-do would open in — with the switch's own question about a
    * loss; declined, or with that kind unavailable, the phrase is read as
-   * the kind the editor shows. Resolves to the item as the form took it.
+   * the kind the editor shows. Returns the item as the form took it: at
+   * once when the kind stays, so a caller in a layout effect has it on
+   * screen with whatever brought it; once the switch has settled when
+   * the kind changes.
    */
-  const apply = async (item: QuickAddItem): Promise<QuickAddItem> => {
+  const apply = (item: QuickAddItem): Promise<QuickAddItem> | QuickAddItem => {
     const wanted: ItemKind =
       item.kind === 'event'
         ? 'event'
         : mode === 'todo'
           ? kind
           : defaultTodoKind(taskModel.offeredLists);
-    let target = available.includes(wanted) ? wanted : kind;
-    if (target !== kind && !(await switchTo(target))) {
-      target = kind;
-    }
-    const read = convertQuickAddItem(item, target === 'event' ? 'event' : 'task');
-    if (read.kind === 'event') {
-      eventModel.applyPrefill(read.prefill);
-    } else {
-      taskModel.applyPrefill(read.prefill);
-    }
-    return read;
+    const target = available.includes(wanted) ? wanted : kind;
+    const fill = (into: ItemKind): QuickAddItem => {
+      const read = convertQuickAddItem(item, into === 'event' ? 'event' : 'task');
+      if (read.kind === 'event') {
+        eventModel.applyPrefill(read.prefill);
+      } else {
+        taskModel.applyPrefill(read.prefill);
+      }
+      return read;
+    };
+    return target === kind
+      ? fill(kind)
+      : switchTo(target).then((switched) => fill(switched ? target : kind));
   };
 
   /**

@@ -869,6 +869,14 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   Reproduce such races with the renderer throttled
   (`Emulation.setCPUThrottlingRate`, 6× or 12×) and never commit the
   throttle.
+- **A step that keeps the kind is in the form the moment it shows.** A
+  spec reads the form right after `waitFor` on `step-position`, never
+  waits for the form. A turn that switches the kind is the exception:
+  the form follows once the switch settles (`applying`), so a spec waits
+  for the field it reads. An `eval` sees the page only after a task
+  boundary, which on a fast host hides a form one task behind;
+  `cdp.noteWhen(condition, read)` reads in the microtask after the
+  change that made `condition` true and catches it on any host (#329).
 - **Measure layout only once the last write is drawn.** SQLite has a
   reminder's move before the all-day lane redraws it, and the lane's
   height moves the grid below it; a test whose successor measures

@@ -177,6 +177,8 @@ const INPUT = `document.querySelector('[data-testid="quick-add-input"]')`;
 const TITLE = 'input[placeholder="Title"]';
 const START = 'input[aria-label="Start time"]';
 const exists = (testId: string) => `!!document.querySelector('[data-testid="${testId}"]')`;
+const disabled = (testId: string) =>
+  `document.querySelector('[data-testid="${testId}"]')?.disabled === true`;
 const textOf = (testId: string) =>
   `(document.querySelector('[data-testid="${testId}"]')?.textContent ?? '')`;
 const headingIs = (text: string) => `${textOf('editor-title')} === ${JSON.stringify(text)}`;
@@ -589,11 +591,21 @@ describe('The editor’s Assistant and Form views', () => {
     await cdp.openEditor('[title^="Design review"]');
     await cdp.showEditorView('assistant');
     await cdp.waitFor(`${card('time')} === '16:00–17:00'`);
+    // The form holds each step from the moment the step control shows it,
+    // a turn's and an Undo's alike: never a step behind, however briefly —
+    // nor the steps still locked, which dropped an Undo clicked at once.
+    const atTurn = await cdp.noteWhen<[string, boolean]>(
+      `${stepPosition} === '1 of 1'`,
+      `[${valueOf(TITLE)}, ${disabled('assistant-undo')}]`,
+    );
     await cdp.say('Design review (moved) | | 18:00-19:00');
     await cdp.waitFor(`${stepPosition} === '1 of 1'`);
+    expect(await atTurn()).toEqual(['Design review (moved)', false]);
+    const atStart = await cdp.noteWhen<string>(`${stepPosition} === 'Start'`, valueOf(TITLE));
     await cdp.clickTestId('assistant-undo');
     await cdp.waitFor(`${stepPosition} === 'Start'`);
     expect(await cdp.eval<string>(textOf('step-name'))).toBe('As saved');
+    expect(await atStart()).toBe('Design review');
     expect(await cdp.eval<string>(valueOf(TITLE))).toBe('Design review');
     await cdp.clickTestId('step-use');
     await cdp.waitFor(`!${exists('step-control')}`);
@@ -656,9 +668,14 @@ describe('The editor’s Assistant and Form views', () => {
     await cdp.waitFor(exists('task-no-due-date'));
     await cdp.showEditorView('assistant');
     await cdp.waitFor(`${card('title')} === 'Loose end'`);
+    const undatedAtStep = await cdp.noteWhen<boolean>(
+      `${stepPosition} === '1 of 1'`,
+      exists('task-no-due-date'),
+    );
     await cdp.say('| +1');
     await cdp.waitFor(`${stepPosition} === '1 of 1'`);
-    await cdp.waitFor(`!${exists('task-no-due-date')}`);
+    expect(await undatedAtStep()).toBe(false);
+    expect(await cdp.eval<boolean>(exists('task-no-due-date'))).toBe(false);
     await cdp.clickButtonWithText('Save');
     await cdp.waitFor(`!${exists('editor')}`);
     await expect.poll(dueDate).toBe(today.add({ days: 1 }).toString());
