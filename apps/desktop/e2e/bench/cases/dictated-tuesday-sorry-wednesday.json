@@ -1,0 +1,10 @@
+{
+  "lang": "en",
+  "tags": ["dictated", "correction"],
+  "turns": [
+    {
+      "input": { "text": "dentist on tuesday sorry wednesday at nine" },
+      "expect": { "title": "dentist", "weekday": 3, "startTime": "09:00", "endTime": "10:00" }
+    }
+  ]
+}

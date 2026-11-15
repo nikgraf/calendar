@@ -1,0 +1,16 @@
+{
+  "lang": "en",
+  "tags": ["time", "allday"],
+  "turns": [
+    {
+      "input": { "text": "Karaoke Saturday at 11pm for two hours" },
+      "expect": {
+        "title": "karaoke",
+        "weekday": 6,
+        "startTime": "23:00",
+        "endTime": "01:00",
+        "spanDays": 1
+      }
+    }
+  ]
+}

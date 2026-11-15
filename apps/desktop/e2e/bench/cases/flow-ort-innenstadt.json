@@ -1,0 +1,24 @@
+{
+  "lang": "de",
+  "tags": ["flow", "location", "follow-up", "de"],
+  "turns": [
+    {
+      "input": { "text": "Mittagessen morgen um 12" },
+      "expect": {
+        "title": "mittagessen",
+        "dayOffset": 1,
+        "startTime": "12:00",
+        "endTime": "13:00",
+        "location": null
+      }
+    },
+    {
+      "input": { "text": "im Vapiano" },
+      "expect": { "location": "vapiano" }
+    },
+    {
+      "input": { "text": "das in der Innenstadt" },
+      "expect": { "locationIs": "vapiano, innenstadt" }
+    }
+  ]
+}

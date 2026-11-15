@@ -1,0 +1,17 @@
+{
+  "blind": true,
+  "lang": "en",
+  "tags": ["typed", "title"],
+  "turns": [
+    {
+      "input": { "text": "lunch w/ sarah fri 12:30" },
+      "expect": {
+        "title": ["lunch w/ sarah", "lunch with sarah"],
+        "weekday": 5,
+        "startTime": "12:30",
+        "endTime": "13:30",
+        "guests": {}
+      }
+    }
+  ]
+}

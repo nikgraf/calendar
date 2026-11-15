@@ -1,0 +1,18 @@
+{
+  "lang": "en",
+  "tags": ["flow", "notes"],
+  "turns": [
+    {
+      "input": { "text": "Interview Wednesday at 2" },
+      "expect": { "title": "interview", "weekday": 3, "startTime": "14:00", "endTime": "15:00" }
+    },
+    {
+      "input": { "text": "note: ask about the notice period" },
+      "expect": { "notes": "notice period" }
+    },
+    {
+      "input": { "text": "add to the notes: bring the CV" },
+      "expect": { "notes": "bring the cv" }
+    }
+  ]
+}

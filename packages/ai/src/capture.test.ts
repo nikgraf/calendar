@@ -115,7 +115,7 @@ describe('normalizeCapture', () => {
       CONTEXT,
     );
     expect(drafts).toHaveLength(1);
-    expect(normalizeCapture({} as never, CONTEXT)).toEqual([]);
+    expect(normalizeCapture({}, CONTEXT)).toEqual([]);
   });
 
   it('caps the number of events', () => {

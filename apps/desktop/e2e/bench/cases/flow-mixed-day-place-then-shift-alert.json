@@ -1,0 +1,24 @@
+{
+  "lang": "en",
+  "tags": ["flow", "mixed", "location", "notifications"],
+  "turns": [
+    {
+      "input": { "text": "Lunch with Tom Thursday at 12:30" },
+      "expect": {
+        "title": "lunch with tom",
+        "weekday": 4,
+        "startTime": "12:30",
+        "endTime": "13:30",
+        "guests": {}
+      }
+    },
+    {
+      "input": { "text": "Friday instead, at Bar Centrale" },
+      "expect": { "weekday": 5, "location": "bar centrale" }
+    },
+    {
+      "input": { "text": "an hour later and remind me 15 minutes before" },
+      "expect": { "startTime": "13:30", "endTime": "14:30", "reminders": [15] }
+    }
+  ]
+}

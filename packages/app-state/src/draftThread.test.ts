@@ -1576,7 +1576,7 @@ describe('a turn on a to-do the form holds undated', () => {
     refineThread(open(), 'x', [
       {
         id: 'd1',
-        item: { kind: 'task', prefill: { ...todo.prefill, ...prefill } } as QuickAddItem,
+        item: { kind: 'task', prefill: { ...todo.prefill, ...prefill } },
       },
     ]);
 

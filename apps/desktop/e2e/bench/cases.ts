@@ -11,7 +11,8 @@ import { Schema } from 'effect';
  * through the helper's SpeechAnalyzer and the transcript tells the
  * recogniser's errors from the parser's. Expectations say where a person
  * would put the event — never a literal date, since the bench runs on
- * "today": a weekday, an offset from today, a time, folded text.
+ * "today": a weekday, an offset from today, a day of the month, a time,
+ * folded text.
  */
 
 const Guests = Schema.Struct({
@@ -22,8 +23,13 @@ const Guests = Schema.Struct({
 });
 
 const Repeat = Schema.Struct({
-  /** The weekdays a weekly rule falls on, in any order ("every weekday": MO–FR). */
-  byDay: Schema.optional(Schema.Array(Schema.Literals(['FR', 'MO', 'SA', 'SU', 'TH', 'TU', 'WE']))),
+  /**
+   * The weekdays a weekly rule falls on, in any order ("every weekday":
+   * MO–FR), or a monthly rule's weekday with its place in the month in
+   * front: `1TU` the first Tuesday, `-1FR` the last Friday. The place is
+   * part of what is checked: the first Friday is not the last one.
+   */
+  byDay: Schema.optional(Schema.Array(Schema.String)),
   count: Schema.optional(Schema.Number),
   freq: Schema.Literals(['daily', 'monthly', 'weekly', 'yearly']),
   /** Absent reads as 1. */
@@ -35,6 +41,13 @@ const Repeat = Schema.Struct({
 export const Expectation = Schema.Struct({
   /** The times came from a meal or part of the day, not a stated clock time. */
   assumedTime: Schema.optional(Schema.Boolean),
+  /**
+   * The day of the month (1–31) a date said by its number lands on ("the
+   * 23rd", "Oct 20"): never a year. The date is then also held to the
+   * next such day from today on; a later turn may keep the month of the
+   * draft it changes instead.
+   */
+  dayOfMonth: Schema.optional(Schema.Number),
   /** Days from today the draft lands on (0 today, 1 tomorrow). */
   dayOffset: Schema.optional(Schema.Number),
   /** `HH:MM`; a task has no end. */
@@ -46,6 +59,8 @@ export const Expectation = Schema.Struct({
   location: Schema.optional(Schema.NullOr(Schema.String)),
   /** The whole location, compared folded: for a turn that must not keep what was there. */
   locationIs: Schema.optional(Schema.String),
+  /** The month (1–12) a date said with its month lands in: the next such month, like `dayOfMonth`. */
+  month: Schema.optional(Schema.Number),
   /** Folded text the notes must contain. */
   notes: Schema.optional(Schema.String),
   /** The turn must be refused (an empty phrase, an end before its start). */
@@ -54,6 +69,8 @@ export const Expectation = Schema.Struct({
   reminders: Schema.optional(Schema.Array(Schema.Number)),
   /** `null` for no repeat at all. */
   repeat: Schema.optional(Schema.NullOr(Repeat)),
+  /** Days from the day it starts to the day it ends: 1 for an event that ends after midnight, 0 for one day. */
+  spanDays: Schema.optional(Schema.Number),
   /** `HH:MM`; a task's own time. */
   startTime: Schema.optional(Schema.String),
   /** The whole title, compared folded (case, accents, ß); several are the titles a person would accept. */
@@ -85,6 +102,12 @@ const Turn = Schema.Struct({
 export type BenchTurn = typeof Turn.Type;
 
 const CaseFile = Schema.Struct({
+  /**
+   * A blind case: every score counts it and no table names it, so its
+   * misses are not read while briefs or prompts are written and it stays
+   * a test nobody tuned to. The README says how the set is kept.
+   */
+  blind: Schema.optional(Schema.Boolean),
   /** The address book (a key in contacts.json) names are looked up in. */
   contacts: Schema.optional(Schema.String),
   lang: Schema.Literals(['de', 'en']),
@@ -94,7 +117,8 @@ const CaseFile = Schema.Struct({
   turns: Schema.Array(Turn),
 });
 
-export interface BenchCase extends Omit<typeof CaseFile.Type, 'contacts' | 'tags'> {
+export interface BenchCase extends Omit<typeof CaseFile.Type, 'blind' | 'contacts' | 'tags'> {
+  readonly blind: boolean;
   readonly contacts: string;
   /** The file's name. */
   readonly id: string;
@@ -105,6 +129,20 @@ export const DEFAULT_BOOK = 'team';
 
 const decodeCase = Schema.decodeUnknownSync(CaseFile);
 
+/** A weekday code as an expectation writes it: `MO`, or with its place in the month, `1MO`, `-1FR`. */
+const BY_DAY = /^(?:-1|[1-5])?(?:MO|TU|WE|TH|FR|SA|SU)$/u;
+
+/** A case's repeat days are weekday codes: a typo there would be a case no answer can pass. */
+const checkByDay = (parsed: typeof CaseFile.Type): void => {
+  for (const turn of parsed.turns) {
+    for (const code of turn.expect.repeat?.byDay ?? []) {
+      if (!BY_DAY.test(code)) {
+        throw new Error(`repeat.byDay "${code}" is no weekday code (MO, 1TU, -1FR)`);
+      }
+    }
+  }
+};
+
 /** Every `cases/*.json`, by file name. A file that does not parse names itself. */
 export const loadCases = (dir: string): ReadonlyArray<BenchCase> =>
   readdirSync(dir)
@@ -114,6 +152,7 @@ export const loadCases = (dir: string): ReadonlyArray<BenchCase> =>
       let parsed: typeof CaseFile.Type;
       try {
         parsed = decodeCase(JSON.parse(readFileSync(join(dir, file), 'utf8')));
+        checkByDay(parsed);
       } catch (error) {
         throw new Error(`${file}: ${error instanceof Error ? error.message : String(error)}`, {
           cause: error,
@@ -128,6 +167,7 @@ export const loadCases = (dir: string): ReadonlyArray<BenchCase> =>
           : [{ ...first, expect: { kind: 'event' as const, ...first.expect } }, ...rest];
       return {
         ...parsed,
+        blind: parsed.blind ?? false,
         contacts: parsed.contacts ?? DEFAULT_BOOK,
         id: basename(file, '.json'),
         tags: parsed.tags ?? [],
@@ -137,11 +177,14 @@ export const loadCases = (dir: string): ReadonlyArray<BenchCase> =>
 
 /**
  * The cases a comma-separated selection names: each term is part of an
- * id or a whole tag ("flow,de"). No selection, every case.
+ * id or a whole tag ("flow,de"). No selection, every case. A selection
+ * names open cases only, unless the blind ones are shown: a run of a few
+ * cases would give a blind one's outcome away by its counts.
  */
 export const filterCases = (
   cases: ReadonlyArray<BenchCase>,
   selection: string | undefined,
+  { showBlind = false }: { readonly showBlind?: boolean | undefined } = {},
 ): ReadonlyArray<BenchCase> => {
   const terms = (selection ?? '')
     .split(',')
@@ -150,12 +193,14 @@ export const filterCases = (
   if (terms.length === 0) {
     return cases;
   }
-  return cases.filter((benchCase) =>
-    terms.some(
-      (term) =>
-        benchCase.id.toLowerCase().includes(term) ||
-        benchCase.tags.some((tag) => tag.toLowerCase() === term),
-    ),
+  return cases.filter(
+    (benchCase) =>
+      (showBlind || !benchCase.blind) &&
+      terms.some(
+        (term) =>
+          benchCase.id.toLowerCase().includes(term) ||
+          benchCase.tags.some((tag) => tag.toLowerCase() === term),
+      ),
   );
 };
 

@@ -1,0 +1,10 @@
+{
+  "lang": "en",
+  "tags": ["date"],
+  "turns": [
+    {
+      "input": { "text": "Dentist on the 23rd at 10" },
+      "expect": { "title": "dentist", "dayOfMonth": 23, "startTime": "10:00", "endTime": "11:00" }
+    }
+  ]
+}

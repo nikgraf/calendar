@@ -1,0 +1,20 @@
+{
+  "lang": "de",
+  "tags": ["long", "location", "notifications", "de"],
+  "turns": [
+    {
+      "input": {
+        "text": "Zahnarzt am Montag um 8 in der Praxis Dr. Huber, erinnere mich einen Tag vorher und 30 Minuten vorher"
+      },
+      "expect": {
+        "kind": "event",
+        "title": "zahnarzt",
+        "weekday": 1,
+        "startTime": "08:00",
+        "endTime": "09:00",
+        "location": "praxis dr. huber",
+        "reminders": [1440, 30]
+      }
+    }
+  ]
+}

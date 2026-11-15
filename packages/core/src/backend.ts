@@ -9,6 +9,7 @@ import {
 import { EventToTaskPreview, TaskToEventLoss } from './editor/convertLoss.ts';
 import { MoveLoss } from './editor/moveLoss.ts';
 import { TaskMoveLoss } from './editor/taskMoveLoss.ts';
+import { failureText } from './failureText.ts';
 import { PlaceCandidate } from './geo/candidates.ts';
 import { PlaceSuggestion } from './geo/location.ts';
 import { MirrorCalendarRef, MirrorDefinition } from './mirror/definition.ts';
@@ -965,9 +966,10 @@ export const mapToBackendError = <A, R>(
     }
     const tag =
       typeof error === 'object' && error !== null && '_tag' in error
-        ? String((error as { _tag: unknown })._tag)
+        ? String(error._tag)
         : 'UnknownError';
-    return Effect.fail(new BackendError({ message: String(error ?? cause), tag }));
+    const message = error === undefined || error === null ? String(cause) : failureText(error);
+    return Effect.fail(new BackendError({ message, tag }));
   });
 
 /**
@@ -985,8 +987,7 @@ export const makeDirectBackendClient = <R>(
           error instanceof BackendError
             ? error
             : new BackendError({ message: String(error), tag: 'UnknownError' }),
-        try: () =>
-          run(mapToBackendError(handlers[name](payload as never))) as Promise<BackendSuccess<M>>,
+        try: () => run(mapToBackendError(handlers[name](payload as never))),
       });
   };
   // Derived record: per-method types are guaranteed by `method` itself; the

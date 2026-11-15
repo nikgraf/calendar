@@ -1,0 +1,21 @@
+{
+  "lang": "en",
+  "tags": ["long", "date", "location", "repeat", "notifications"],
+  "turns": [
+    {
+      "input": {
+        "text": "Book club at the library on the 14th at 7:30pm, every month, remind me a day before"
+      },
+      "expect": {
+        "kind": "event",
+        "title": "book club",
+        "dayOfMonth": 14,
+        "startTime": "19:30",
+        "endTime": "20:30",
+        "location": "library",
+        "repeat": { "freq": "monthly" },
+        "reminders": [1440]
+      }
+    }
+  ]
+}

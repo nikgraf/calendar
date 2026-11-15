@@ -1,0 +1,23 @@
+{
+  "lang": "en",
+  "tags": ["flow", "day"],
+  "turns": [
+    {
+      "input": { "text": "Design review today at 4" },
+      "expect": {
+        "title": "design review",
+        "dayOffset": 0,
+        "startTime": "16:00",
+        "endTime": "17:00"
+      }
+    },
+    {
+      "input": { "text": "push it to tomorrow" },
+      "expect": { "dayOffset": 1 }
+    },
+    {
+      "input": { "text": "same time on Friday" },
+      "expect": { "weekday": 5 }
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "lang": "de",
+  "tags": ["date", "de"],
+  "turns": [
+    {
+      "input": { "text": "Friseur übermorgen um 16 Uhr" },
+      "expect": { "title": "friseur", "dayOffset": 2, "startTime": "16:00", "endTime": "17:00" }
+    }
+  ]
+}

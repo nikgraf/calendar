@@ -1,0 +1,11 @@
+{
+  "blind": true,
+  "lang": "en",
+  "tags": ["dictated", "correction"],
+  "turns": [
+    {
+      "input": { "text": "lunch at one no wait two tomorrow" },
+      "expect": { "title": "lunch", "dayOffset": 1, "startTime": "14:00", "endTime": "15:00" }
+    }
+  ]
+}

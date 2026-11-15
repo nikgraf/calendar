@@ -1,0 +1,18 @@
+{
+  "blind": true,
+  "lang": "de",
+  "tags": ["task", "notifications", "de"],
+  "turns": [
+    {
+      "input": { "text": "Friseur Donnerstag um 14 Uhr, erinnere mich 30 Minuten vorher" },
+      "expect": {
+        "kind": "event",
+        "title": "friseur",
+        "weekday": 4,
+        "startTime": "14:00",
+        "endTime": "15:00",
+        "reminders": [30]
+      }
+    }
+  ]
+}

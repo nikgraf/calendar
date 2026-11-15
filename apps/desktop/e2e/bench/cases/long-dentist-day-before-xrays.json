@@ -1,0 +1,22 @@
+{
+  "blind": true,
+  "lang": "en",
+  "tags": ["long", "location", "notes", "notifications"],
+  "turns": [
+    {
+      "input": {
+        "text": "Put a dentist appointment on Monday at 8:30 at Praxis Dr. Huber, remind me the day before and note that I should bring the x-rays"
+      },
+      "expect": {
+        "kind": "event",
+        "title": "dentist appointment",
+        "weekday": 1,
+        "startTime": "08:30",
+        "endTime": "09:30",
+        "location": "praxis dr. huber",
+        "reminders": [1440],
+        "notes": "x-rays"
+      }
+    }
+  ]
+}

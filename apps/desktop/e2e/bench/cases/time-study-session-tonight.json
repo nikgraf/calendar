@@ -1,0 +1,17 @@
+{
+  "blind": true,
+  "lang": "en",
+  "tags": ["time"],
+  "turns": [
+    {
+      "input": { "text": "Study session tonight" },
+      "expect": {
+        "title": "study session",
+        "dayOffset": 0,
+        "startTime": "18:00",
+        "endTime": "19:00",
+        "assumedTime": true
+      }
+    }
+  ]
+}

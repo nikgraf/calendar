@@ -1,0 +1,15 @@
+{
+  "lang": "de",
+  "tags": ["date", "de"],
+  "turns": [
+    {
+      "input": { "text": "Kontrolltermin in vier Wochen um 8 Uhr" },
+      "expect": {
+        "title": "kontrolltermin",
+        "dayOffset": 28,
+        "startTime": "08:00",
+        "endTime": "09:00"
+      }
+    }
+  ]
+}

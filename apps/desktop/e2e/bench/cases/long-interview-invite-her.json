@@ -1,0 +1,20 @@
+{
+  "lang": "en",
+  "tags": ["long", "guests", "notifications"],
+  "turns": [
+    {
+      "input": {
+        "text": "Set up a one-hour interview with Sarah Novak on Thursday at 11, invite her, and remind me 10 minutes before"
+      },
+      "expect": {
+        "kind": "event",
+        "title": "interview with sarah novak",
+        "weekday": 4,
+        "startTime": "11:00",
+        "endTime": "12:00",
+        "guests": { "emails": ["sarah.novak@example.com"] },
+        "reminders": [10]
+      }
+    }
+  ]
+}

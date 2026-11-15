@@ -1,0 +1,24 @@
+{
+  "lang": "en",
+  "tags": ["flow", "guests"],
+  "turns": [
+    {
+      "input": { "text": "Kickoff Monday at 2pm, invite Tom Baker" },
+      "expect": {
+        "title": "kickoff",
+        "weekday": 1,
+        "startTime": "14:00",
+        "endTime": "15:00",
+        "guests": { "emails": ["tom.baker@example.com"] }
+      }
+    },
+    {
+      "input": { "text": "also invite Jörg Müller" },
+      "expect": { "guests": { "emails": ["tom.baker@example.com", "joerg.mueller@example.com"] } }
+    },
+    {
+      "input": { "text": "take Tom off the list" },
+      "expect": { "guests": { "emails": ["joerg.mueller@example.com"] } }
+    }
+  ]
+}

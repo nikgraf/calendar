@@ -1,0 +1,11 @@
+{
+  "blind": true,
+  "lang": "en",
+  "tags": ["task"],
+  "turns": [
+    {
+      "input": { "text": "Don't forget to book the flights tomorrow" },
+      "expect": { "kind": "task", "title": ["book the flights", "book flights"], "dayOffset": 1 }
+    }
+  ]
+}

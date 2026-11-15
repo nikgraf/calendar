@@ -1,0 +1,16 @@
+{
+  "lang": "en",
+  "tags": ["allday"],
+  "turns": [
+    {
+      "input": {
+        "text": "Out of office on Wednesday"
+      },
+      "expect": {
+        "title": "out of office",
+        "weekday": 3,
+        "isAllDay": true
+      }
+    }
+  ]
+}

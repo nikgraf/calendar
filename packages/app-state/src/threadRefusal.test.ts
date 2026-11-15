@@ -18,8 +18,10 @@ const standup: QuickAddItem = {
     title: 'Standup',
   },
 };
-const with_ = (prefill: Record<string, unknown>): QuickAddItem =>
-  ({ kind: 'event', prefill: { ...standup.prefill, ...prefill } }) as QuickAddItem;
+const with_ = (prefill: Record<string, unknown>): QuickAddItem => ({
+  kind: 'event',
+  prefill: { ...standup.prefill, ...prefill },
+});
 const weekly = with_({ recurrence: { freq: 'weekly' } });
 const opened = { date: '2026-08-28', endDate: '2026-08-28', isAllDay: false };
 

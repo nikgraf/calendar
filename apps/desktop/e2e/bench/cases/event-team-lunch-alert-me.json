@@ -1,0 +1,17 @@
+{
+  "lang": "en",
+  "tags": ["task", "notifications"],
+  "turns": [
+    {
+      "input": { "text": "Team lunch Friday at 12, alert me 10 minutes before" },
+      "expect": {
+        "kind": "event",
+        "title": "team lunch",
+        "weekday": 5,
+        "startTime": "12:00",
+        "endTime": "13:00",
+        "reminders": [10]
+      }
+    }
+  ]
+}

@@ -196,6 +196,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   the flow (it would hide an app that drops a tap), any drop in the flow
   (one Maestro tapped past is not the failure). Open: nothing ties the
   failure to the drop (Opus review); older lost-tap flakes (logs expired).
+- **The Assistant spec on a Sunday** (2026-11-15, `todo/assistant-e2e-today`)
+  — the desktop e2e went red on the first Sunday since #308 added the
+  spec: its tests draft on `+1`, the grid keeps a draft's day on show once
+  the editor closes, saved or not, and on a Sunday that day is next week,
+  so the three tests that then open today's Design review or inbox to-do
+  found neither on screen. Each test now starts with a click on `today`.
+  Rejected: drafting on `+0` (the next test on `+1` breaks the same way),
+  and sending the grid back as the editor closes (a saved item is meant
+  to stay in view). Open: the spec's `today` is read once, so a run across
+  local midnight still fails.
 - **Live flows rerun under titles of their own** (2026-11-13,
   `todo/live-retry-fresh-titles`) — nightly 43358802870 went red on a black
   display in live flow 02 (no touch reached the app; flow 03's launch drew
@@ -301,6 +311,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   review alone, and behaviour fixes stayed out. Open: the three
   components are checked only by the e2e suites (the iOS mic button by
   none); what the splitting turned up is listed in #298.
+- **Type-aware lint and knip in the gate** (2026-11-15, #326) — seven
+  typed oxlint rules (tsgolint, on TypeScript 7) for what tsc accepts;
+  their first run found three Expo SDK 58 `File.write` callers nobody
+  awaited. knip reports only dead code (an export its own file uses
+  passes) and includes the packages' entry exports, which `"./*"` hid.
+  Rejected: knip's strict exports (~110 spare `export`s), dependency-cruiser
+  (no runtime cycles, every layer rule holds), Effect diagnostics via
+  `@effect/tsgo` (0 errors), sherif, jscpd (0.14 %). Open:
+  `no-base-to-string` skips `unknown` (~115 `String(error)` sites), 78
+  `no-unnecessary-condition` hits untriaged.
 
 ## Architecture and sync path
 
@@ -1280,6 +1300,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   phrase brought, with Skip. Type is a capsule like Form. Rejected: View
   Transitions, a sideways slide, every value travelling, chips, dots.
   Open: haptics, answering by voice (todo.md).
+- **The form holds a step from the moment it shows** (2026-11-15, #329)
+  — the form took a step in from a passive effect, a task after a turn's
+  commit: "1 of 1" showed with the title a step behind and Undo still
+  locked, and an Undo's agreed only because the day it reveals (a store
+  write) pulled the form into one render; the e2e caught both under load.
+  The take-in is a layout effect, and a to-do's own fields land with its
+  item. Rejected: a wait in the spec (it hides the race), drawing the
+  step control from the form's last step (a second copy of the thread).
+  Open: a kind switch that asks nothing still lands a task later.
 - **Create with AI runs a demo until the model is here** (2026-11-13,
   #319) — nothing asks for the model at launch; the Create lesson says
   what the Assistant is and offers the download, the card's row shows its
@@ -1299,6 +1328,17 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   fetched unasked. Rejected: two models (two downloads, one loaded),
   adapters per job (the fallback), the lowest-loss checkpoint (a tie; it
   read "at 1" as 13:30), auto-update. Open: todo.md.
+- **A larger model bench with a blind third** (2026-11-15, #327) — 72
+  cases could not say whether a model version is better: v1 to v2 was 8
+  fixed and 7 broke. Now 305 Assistant cases and 124 find-a-time
+  sentences, every third new one blind (counted, never named), a score
+  per tag, an exact sign test on the cases that flipped, and a run can
+  name its day. v1 to v2 is 237 to 263 with 40 fixed and 14 broke (p =
+  0.001). Rejected: phrases from real use only (too slow to steer v3;
+  they join as they come, tagged `phone`), a held-out folder outside the
+  repo (not reproducible), cases for an event of several days (no phrase
+  can make one). Open: three conventions the teacher reads differently
+  (todo.md), recordings for the new cases.
 - **Show only the latest query by default** (2026-11-05) — the create and
   search threads keep the turn with Undo visible on both apps. Earlier
   queries open on demand, leaving more room for the form or results.

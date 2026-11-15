@@ -1,0 +1,16 @@
+{
+  "lang": "de",
+  "tags": ["dictated", "de"],
+  "turns": [
+    {
+      "input": { "text": "treffen mit sarah morgen um vierzehn uhr" },
+      "expect": {
+        "title": "treffen mit sarah",
+        "dayOffset": 1,
+        "startTime": "14:00",
+        "endTime": "15:00",
+        "guests": {}
+      }
+    }
+  ]
+}

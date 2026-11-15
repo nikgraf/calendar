@@ -1,0 +1,18 @@
+{
+  "lang": "en",
+  "tags": ["notifications"],
+  "turns": [
+    {
+      "input": {
+        "text": "Flight Sunday at 7am, remind me the day before and two hours before"
+      },
+      "expect": {
+        "title": "flight",
+        "weekday": 7,
+        "startTime": "07:00",
+        "endTime": "08:00",
+        "reminders": [1440, 120]
+      }
+    }
+  ]
+}

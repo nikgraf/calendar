@@ -1,0 +1,17 @@
+{
+  "blind": true,
+  "lang": "de",
+  "tags": ["time", "de"],
+  "turns": [
+    {
+      "input": { "text": "Telefonat mit Sarah morgen um 9, eine Viertelstunde" },
+      "expect": {
+        "title": "telefonat mit sarah",
+        "dayOffset": 1,
+        "startTime": "09:00",
+        "endTime": "09:15",
+        "guests": {}
+      }
+    }
+  ]
+}

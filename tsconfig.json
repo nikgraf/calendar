@@ -1,0 +1,8 @@
+{
+  // The root's own TypeScript (vite.config.ts, knip.config.ts, scripts/):
+  // `pnpm typecheck` checks it, and type-aware lint reads it with the
+  // repo's strict options instead of TypeScript's defaults.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": { "types": ["node"] },
+  "include": ["*.ts", "scripts"]
+}

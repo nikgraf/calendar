@@ -2,23 +2,30 @@ import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'n
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildFindTimePrompt, buildTunedFinderPrompt, FIND_TIME_JSON_SCHEMA } from '@calendar/ai';
-import { Temporal } from '@calendar/core';
 import { describe, expect, it } from 'vite-plus/test';
 import {
-  ARMS,
-  FINDER_FIELDS,
+  compareFinderReports,
   FINDER_PIPELINES,
   type FinderCase,
   type FinderCaseReport,
   type FinderPipeline,
   type FinderReport,
   floorOf,
+  formatFinderReport,
   loadFinderCases,
   readAnswer,
   rescoreFinder,
   scoreOf,
 } from './finder.ts';
-import { benchProviders, connectHelper, findHelper, gitSha, recording } from './providers.ts';
+import { namedCases } from './flips.ts';
+import {
+  benchProviders,
+  benchToday,
+  connectHelper,
+  findHelper,
+  gitSha,
+  recording,
+} from './providers.ts';
 
 /**
  * The finder bench: find a time's sentences (`finder.json`) through the
@@ -49,15 +56,6 @@ const TIME_ZONE = 'Europe/Vienna';
 const BENCH_DIR = import.meta.dirname;
 const ROOT = fileURLToPath(new URL('../../../..', import.meta.url));
 
-const median = (values: ReadonlyArray<number>): number => {
-  if (values.length === 0) {
-    return 0;
-  }
-  const sorted = [...values].sort((a, b) => a - b);
-  const middle = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 0 ? (sorted[middle - 1]! + sorted[middle]!) / 2 : sorted[middle]!;
-};
-
 /** How the models are asked, per MODEL_BENCH_PIPELINE: the app's finder prompt unless it says `tuned`. */
 const pipelineOf = (): FinderPipeline => {
   const asked = (process.env['MODEL_BENCH_PIPELINE'] ?? '').trim();
@@ -71,40 +69,6 @@ const pipelineOf = (): FinderPipeline => {
     );
   }
   return known;
-};
-
-const formatReport = (report: FinderReport): string => {
-  const { total } = report.score;
-  const lines = [
-    `== ${report.provider}${report.pipeline === 'tuned' ? ' [tuned]' : ''}${report.settings ? ` (${report.settings})` : ''}${
-      report.rescored ? ` — the answers of ${report.rescored.sha}, ${report.rescored.when}` : ''
-    }`,
-    `   median ${(median(report.cases.map((each) => each.ms)) / 1000).toFixed(1)}s per phrase${
-      report.floor
-        ? ` · an empty answer: rules ${String(report.floor.rules)}, raw ${String(report.floor.raw)}`
-        : ''
-    }`,
-  ];
-  for (const arm of ARMS) {
-    const score = report.score[arm];
-    lines.push(
-      `   ${arm.padEnd(5)}  cases ${String(score.cases)}/${String(total)} · ${FINDER_FIELDS.map(
-        (field) => `${field} ${String(score.fields[field])}/${String(total)}`,
-      ).join(' · ')}`,
-    );
-  }
-  for (const each of report.cases) {
-    const wrong = ARMS.filter((arm) => each.arms[arm].failed.length > 0);
-    if (wrong.length === 0) {
-      continue;
-    }
-    lines.push(`   ✗ ${each.id}  "${each.text}"`);
-    for (const arm of wrong) {
-      const { failed, got } = each.arms[arm];
-      lines.push(`       ${arm}: ${failed.map((field) => `${field}=${got[field]}`).join(' · ')}`);
-    }
-  }
-  return lines.join('\n');
 };
 
 const slug = (text: string): string => text.replaceAll(/[^\w.-]+/gu, '-').replaceAll(/^-|-$/gu, '');
@@ -125,18 +89,27 @@ const writeReport = (dir: string, report: FinderReport): string => {
   return path;
 };
 
-/** The cases MODEL_BENCH_CASES names: a language ("de", "en"), or a part of an id. */
-const selected = (cases: ReadonlyArray<FinderCase>): ReadonlyArray<FinderCase> => {
+/**
+ * The cases MODEL_BENCH_CASES names: a language ("de", "en"), or a part of
+ * an id. A selection names open cases only, unless the blind ones are
+ * shown: a run of a few cases would give a blind one's outcome away.
+ */
+const selected = (
+  cases: ReadonlyArray<FinderCase>,
+  { showBlind }: { readonly showBlind: boolean },
+): ReadonlyArray<FinderCase> => {
   const terms = (process.env['MODEL_BENCH_CASES'] ?? '')
     .split(',')
     .map((term) => term.trim())
     .filter(Boolean);
   return terms.length === 0
     ? cases
-    : cases.filter((each) =>
-        terms.some((term) =>
-          term === 'de' || term === 'en' ? each.lang === term : each.id.includes(term),
-        ),
+    : cases.filter(
+        (each) =>
+          (showBlind || each.blind !== true) &&
+          terms.some((term) =>
+            term === 'de' || term === 'en' ? each.lang === term : each.id.includes(term),
+          ),
       );
 };
 
@@ -160,13 +133,12 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('finder bench', () => {
     'reads each finder phrase on each model, with and without the rules',
     { timeout: 120 * 60_000 },
     async () => {
-      const today = Temporal.Now.plainDateISO(TIME_ZONE).toString();
+      const today = benchToday(TIME_ZONE);
       const sha = gitSha(ROOT);
       const lines: Array<string> = [`\nFINDER BENCH — today ${today}, ${TIME_ZONE}, ${sha}\n`];
       const log = (line: string) => {
         lines.push(line);
       };
-      const cases = selected(loadFinderCases(join(BENCH_DIR, 'finder.json')));
       const pipeline = pipelineOf();
       const helperBinary = findHelper();
       const helper = helperBinary === undefined ? undefined : connectHelper(helperBinary);
@@ -176,6 +148,14 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('finder bench', () => {
         'finder',
       );
       const toRescore = process.env['MODEL_BENCH_RESCORE'];
+      // Blind cases are counted, never named, unless an expectation is being fixed.
+      const table = { showBlind: process.env['MODEL_BENCH_BLIND'] === 'show' };
+      const cases = selected(loadFinderCases(join(BENCH_DIR, 'finder.json')), table);
+      const compareWith = process.env['MODEL_BENCH_COMPARE'];
+      const earlier =
+        compareWith === undefined
+          ? undefined
+          : (JSON.parse(readFileSync(compareWith, 'utf8')) as FinderReport);
       try {
         if (toRescore) {
           // Every case, whatever MODEL_BENCH_CASES says: a report is scored whole.
@@ -186,9 +166,21 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('finder bench', () => {
               sha,
               when: new Date().toISOString(),
             });
-            log(formatReport(report));
+            log(formatFinderReport(report, table));
+            log(compareFinderReports(before, report, table));
             if (left.length > 0) {
-              log(`   left out (gone, or other words now): ${left.join(', ')}`);
+              // A case that is blind now, or was when the model answered, is counted, not named.
+              const blind = new Set(
+                [...all, ...before.cases]
+                  .filter((each) => each.blind === true)
+                  .map((each) => each.id),
+              );
+              log(
+                `   left out (gone, or other words now): ${namedCases(
+                  left.map((id) => ({ blind: blind.has(id), id })),
+                  table,
+                )}`,
+              );
             }
             log(`   report: ${writeReport(outDir, report)}\n`);
           }
@@ -232,6 +224,7 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('finder bench', () => {
             reports.push({
               answer,
               arms: readAnswer(read, finderCase, today, { pipeline }),
+              blind: finderCase.blind === true,
               ...(error === undefined ? {} : { error }),
               id: finderCase.id,
               lang: finderCase.lang,
@@ -253,7 +246,16 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('finder bench', () => {
             today,
             when: new Date().toISOString(),
           };
-          log(formatReport(report));
+          log(formatFinderReport(report, table));
+          // One model beside its own earlier run, or the run's only model beside another.
+          if (
+            earlier !== undefined &&
+            (earlier.provider === provider.name || available.length === 1)
+          ) {
+            log(compareFinderReports(earlier, report, table));
+          } else if (earlier !== undefined) {
+            log(`   (MODEL_BENCH_COMPARE is a ${earlier.provider} report; not compared)`);
+          }
           log(`   report: ${writeReport(outDir, report)}\n`);
         }
       } finally {

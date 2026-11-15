@@ -1,0 +1,17 @@
+{
+  "blind": true,
+  "lang": "de",
+  "tags": ["dictated", "de"],
+  "turns": [
+    {
+      "input": { "text": "essen mit jörg am sonntag um achtzehn uhr dreißig" },
+      "expect": {
+        "title": "essen mit jörg",
+        "weekday": 7,
+        "startTime": "18:30",
+        "endTime": "19:30",
+        "guests": {}
+      }
+    }
+  ]
+}

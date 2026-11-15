@@ -1,0 +1,24 @@
+{
+  "lang": "en",
+  "tags": ["flow", "correction", "title"],
+  "turns": [
+    {
+      "input": { "text": "Call with Jo tomorrow at 3" },
+      "expect": {
+        "title": "call with jo",
+        "dayOffset": 1,
+        "startTime": "15:00",
+        "endTime": "16:00",
+        "guests": {}
+      }
+    },
+    {
+      "input": { "text": "scratch that, 4:30" },
+      "expect": { "startTime": "16:30", "endTime": "17:30" }
+    },
+    {
+      "input": { "text": "and it's with Teo, not Jo" },
+      "expect": { "title": "call with teo", "guests": {} }
+    }
+  ]
+}

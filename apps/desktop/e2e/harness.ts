@@ -389,6 +389,7 @@ export type SettingsPane =
 
 export class Cdp {
   private nextId = 0;
+  private notes = 0;
   private readonly pending = new Map<
     number,
     { reject: (error: Error) => void; resolve: (value: unknown) => void }
@@ -492,6 +493,54 @@ export class Cdp {
       throw new Error(`eval failed: ${result.exceptionDetails.text}`);
     }
     return result.result.value;
+  }
+
+  /**
+   * Notes what `read` evaluates to at the first change of the page after
+   * which `condition` holds — in the microtask that change queues, before
+   * any other task runs — and returns a reader for that value. `waitFor`
+   * and an `eval` after it see two commits a task apart as one on a fast
+   * host and apart only on a slow one; this tells them apart on any. The
+   * condition must be made true by a change of the DOM (a text, a node,
+   * an attribute): an input's value is no such change, but can be read.
+   * It must not hold yet: the next change, whatever it is, would note it.
+   */
+  async noteWhen<T>(condition: string, read: string): Promise<() => Promise<T>> {
+    const key = JSON.stringify(`noted${String(++this.notes)}`);
+    const watching = await this.eval<boolean>(`(() => {
+      if (${condition}) {
+        return false;
+      }
+      const noted = (window.__noted ??= {});
+      const observer = new MutationObserver(() => {
+        try {
+          if (!(${condition})) {
+            return;
+          }
+          noted[${key}] = { value: ${read} };
+        } catch (error) {
+          noted[${key}] = { error: String(error) };
+        }
+        observer.disconnect();
+      });
+      observer.observe(document.body, { attributes: true, characterData: true, childList: true, subtree: true });
+      return true;
+    })()`);
+    if (!watching) {
+      throw new Error(`noteWhen: the page already reads ${condition.slice(0, 120)}`);
+    }
+    return async () => {
+      const noted = await this.eval<{ error?: string; value?: T } | null>(
+        `window.__noted?.[${key}] ?? null`,
+      );
+      if (noted === null) {
+        throw new Error(`noteWhen: the page never changed into ${condition.slice(0, 120)}`);
+      }
+      if (noted.error !== undefined) {
+        throw new Error(`noteWhen: reading failed: ${noted.error}`);
+      }
+      return noted.value as T;
+    };
   }
 
   /**

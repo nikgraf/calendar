@@ -332,9 +332,7 @@ export interface EventRow {
 const attendeesJson = Schema.Array(Attendee);
 
 const stringArray = (value: unknown): Array<string> | undefined =>
-  Array.isArray(value) && value.every((entry) => typeof entry === 'string')
-    ? (value as Array<string>)
-    : undefined;
+  Array.isArray(value) && value.every((entry) => typeof entry === 'string') ? value : undefined;
 
 /**
  * A row's zones are read in the spelling this engine accepts: rows pulled

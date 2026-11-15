@@ -1,0 +1,24 @@
+{
+  "lang": "en",
+  "tags": ["flow", "repeat"],
+  "turns": [
+    {
+      "input": { "text": "Swimming Saturday at 10, every week" },
+      "expect": {
+        "title": "swimming",
+        "weekday": 6,
+        "startTime": "10:00",
+        "endTime": "11:00",
+        "repeat": { "freq": "weekly" }
+      }
+    },
+    {
+      "input": { "text": "until the end of August" },
+      "expect": { "repeat": { "freq": "weekly", "untilMonth": 8 } }
+    },
+    {
+      "input": { "text": "at 11 instead" },
+      "expect": { "startTime": "11:00", "endTime": "12:00" }
+    }
+  ]
+}

@@ -1,5 +1,4 @@
 import {
-  addDaysToPlainDate,
   applyWallClockDelta,
   changesFromSubscription,
   expandRecurringEvent,
@@ -677,6 +676,3 @@ export const makeFakeAppleCalendarClient = (
   };
   return { bridge, client: withSeriesIdentity(bridge), state };
 };
-
-/** A fixture day as 'YYYY-MM-DD' → the exclusive end day of a one-day all-day event. */
-export const nextDay = (isoDate: string): string => addDaysToPlainDate(isoDate, 1);

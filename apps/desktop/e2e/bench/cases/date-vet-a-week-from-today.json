@@ -1,0 +1,15 @@
+{
+  "lang": "en",
+  "tags": ["date"],
+  "turns": [
+    {
+      "input": { "text": "Vet appointment a week from today at 10" },
+      "expect": {
+        "title": "vet appointment",
+        "dayOffset": 7,
+        "startTime": "10:00",
+        "endTime": "11:00"
+      }
+    }
+  ]
+}

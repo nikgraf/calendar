@@ -1503,9 +1503,14 @@ gateway carries all of it. Details, limits and the threat model:
   gives a day or a time — also the day it already reads, where the
   words state it (a refinement's `saidDay`). A place is its text and
   its pin: another point picked under the same text, or the pin let go
-  of, is a step too (`draftChanges`). While the form is between two
-  states of a draft (`applying`: a phrase being taken in, a kind switch
-  asking its question, by phrase or by hand) the steps are locked and
+  of, is a step too (`draftChanges`). The form takes each step in from a
+  layout effect, in the commit right after the one that draws it, in the
+  same task and before paint (a to-do's own fields land with its item):
+  the screen, and anything reading the page from another task, show the
+  step control, the card and the form at one step, the steps unlocked.
+  Only a kind switch, by phrase or by hand, leaves the form between two
+  states of a draft (`applying`: its question asked, its fields carried
+  over); meanwhile the steps are locked and
   the pager, Remove and "Add all" wait (`draftsSettled`); a reading of
   the form names the draft it is of (`FormSnapshot.shown`), so it never
   lands on the one focused meanwhile.

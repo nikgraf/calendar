@@ -1,0 +1,27 @@
+{
+  "lang": "en",
+  "tags": ["flow", "notifications"],
+  "turns": [
+    {
+      "input": { "text": "Flight check-in Friday at 6am" },
+      "expect": {
+        "title": "flight check-in",
+        "weekday": 5,
+        "startTime": "06:00",
+        "endTime": "07:00"
+      }
+    },
+    {
+      "input": { "text": "remind me 2 hours before" },
+      "expect": { "reminders": [120] }
+    },
+    {
+      "input": { "text": "and the day before as well" },
+      "expect": { "reminders": [120, 1440] }
+    },
+    {
+      "input": { "text": "drop the two hour one" },
+      "expect": { "reminders": [1440] }
+    }
+  ]
+}

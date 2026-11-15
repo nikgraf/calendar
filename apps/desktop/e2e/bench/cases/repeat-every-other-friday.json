@@ -1,0 +1,16 @@
+{
+  "lang": "en",
+  "tags": ["repeat"],
+  "turns": [
+    {
+      "input": { "text": "Date night every other Friday at 7" },
+      "expect": {
+        "title": "date night",
+        "weekday": 5,
+        "startTime": "19:00",
+        "endTime": "20:00",
+        "repeat": { "freq": "weekly", "interval": 2 }
+      }
+    }
+  ]
+}

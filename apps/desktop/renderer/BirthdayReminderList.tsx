@@ -138,7 +138,7 @@ export function BirthdayReminderList({
                 aria-label={`Remind ${label.toLowerCase()}`}
                 checked={reminder !== undefined}
                 onChange={(change) =>
-                  onChange(
+                  void onChange(
                     change.target.checked
                       ? addBirthdayReminder(reminders, lead)
                       : removeBirthdayReminder(reminders, lead),

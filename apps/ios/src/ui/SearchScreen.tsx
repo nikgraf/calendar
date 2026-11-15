@@ -411,7 +411,7 @@ function SearchResultsList({
             {section.title}
           </Text>
         )}
-        sections={sections as Array<Section>}
+        sections={sections}
         stickySectionHeadersEnabled={false}
         testID="search-list"
       />

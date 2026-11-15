@@ -1,0 +1,17 @@
+{
+  "blind": true,
+  "lang": "en",
+  "tags": ["date"],
+  "turns": [
+    {
+      "input": { "text": "Board meeting on the 8th of April at 2pm" },
+      "expect": {
+        "title": "board meeting",
+        "dayOfMonth": 8,
+        "month": 4,
+        "startTime": "14:00",
+        "endTime": "15:00"
+      }
+    }
+  ]
+}

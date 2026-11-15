@@ -1,0 +1,17 @@
+{
+  "blind": true,
+  "lang": "en",
+  "tags": ["guests", "title"],
+  "turns": [
+    {
+      "input": { "text": "Sync Tuesday at 2 with the design team, invite max@example.com" },
+      "expect": {
+        "title": "sync with the design team",
+        "weekday": 2,
+        "startTime": "14:00",
+        "endTime": "15:00",
+        "guests": { "emails": ["max@example.com"] }
+      }
+    }
+  ]
+}

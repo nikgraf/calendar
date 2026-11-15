@@ -1,0 +1,11 @@
+{
+  "blind": true,
+  "lang": "en",
+  "tags": ["typed"],
+  "turns": [
+    {
+      "input": { "text": "TEAM SYNC TUE 10AM" },
+      "expect": { "title": "team sync", "weekday": 2, "startTime": "10:00", "endTime": "11:00" }
+    }
+  ]
+}

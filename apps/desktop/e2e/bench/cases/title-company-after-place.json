@@ -1,0 +1,18 @@
+{
+  "blind": true,
+  "lang": "en",
+  "tags": ["title", "location"],
+  "turns": [
+    {
+      "input": { "text": "Coffee at 3 at the office with Jo" },
+      "expect": {
+        "title": "coffee with jo",
+        "dayOffset": 0,
+        "startTime": "15:00",
+        "endTime": "16:00",
+        "location": "office",
+        "guests": {}
+      }
+    }
+  ]
+}

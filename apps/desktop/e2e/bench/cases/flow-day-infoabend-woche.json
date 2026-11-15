@@ -1,0 +1,18 @@
+{
+  "lang": "de",
+  "tags": ["flow", "day", "de"],
+  "turns": [
+    {
+      "input": { "text": "Infoabend morgen um 19 Uhr" },
+      "expect": { "title": "infoabend", "dayOffset": 1, "startTime": "19:00", "endTime": "20:00" }
+    },
+    {
+      "input": { "text": "eine Woche später" },
+      "expect": { "dayOffset": 8 }
+    },
+    {
+      "input": { "text": "um halb acht" },
+      "expect": { "startTime": "19:30", "endTime": "20:30" }
+    }
+  ]
+}

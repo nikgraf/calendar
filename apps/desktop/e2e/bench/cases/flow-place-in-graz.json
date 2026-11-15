@@ -1,0 +1,25 @@
+{
+  "blind": true,
+  "lang": "en",
+  "tags": ["flow", "location", "follow-up"],
+  "turns": [
+    {
+      "input": { "text": "Drinks Friday at 7" },
+      "expect": {
+        "title": "drinks",
+        "weekday": 5,
+        "startTime": "19:00",
+        "endTime": "20:00",
+        "location": null
+      }
+    },
+    {
+      "input": { "text": "at Bar Centrale" },
+      "expect": { "location": "bar centrale" }
+    },
+    {
+      "input": { "text": "it's in Graz" },
+      "expect": { "locationIs": "bar centrale, graz" }
+    }
+  ]
+}

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vite-plus/test';
 import { loadCases, loadContacts } from './cases.ts';
+import { namedCases } from './flips.ts';
 import { comparePhone, type PhoneReport, scorePhoneReport } from './phoneReport.ts';
 import { type BenchReport, formatReport, writeReport } from './report.ts';
 
@@ -38,9 +39,10 @@ const phonePath = process.env['MODEL_BENCH_PHONE'];
 describe.skipIf(phonePath === undefined || phonePath === '')('phone report', () => {
   it('scores the phone’s first phrases and writes a report', async () => {
     const phone = JSON.parse(readFileSync(phonePath!, 'utf8')) as PhoneReport;
+    const cases = loadCases(join(BENCH_DIR, 'cases'));
     const { left, report } = await scorePhoneReport(
       phone,
-      loadCases(join(BENCH_DIR, 'cases')),
+      cases,
       loadContacts(join(BENCH_DIR, 'contacts.json')),
       gitSha(),
     );
@@ -49,7 +51,13 @@ describe.skipIf(phonePath === undefined || phonePath === '')('phone report', () 
       formatReport(report),
     ];
     if (left.length > 0) {
-      lines.push(`   not scored (the case is gone or says other words now): ${left.join(', ')}`);
+      // The phone is given no blind case; one that turned blind since is counted, not named.
+      const blind = new Set(cases.filter((each) => each.blind).map((each) => each.id));
+      lines.push(
+        `   not scored (the case is gone or says other words now): ${namedCases(
+          left.map((id) => ({ blind: blind.has(id), id })),
+        )}`,
+      );
     }
     const compareWith = process.env['MODEL_BENCH_COMPARE'];
     if (compareWith) {

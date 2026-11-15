@@ -1,0 +1,15 @@
+{
+  "lang": "en",
+  "tags": ["title"],
+  "turns": [
+    {
+      "input": { "text": "Lunch and learn Thursday at noon" },
+      "expect": {
+        "title": "lunch and learn",
+        "weekday": 4,
+        "startTime": "12:00",
+        "endTime": "13:00"
+      }
+    }
+  ]
+}
