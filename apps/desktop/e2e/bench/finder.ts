@@ -11,7 +11,7 @@ import { finderWindowDates, Temporal } from '@calendar/core';
 import { Schema } from 'effect';
 import { fold } from './check.ts';
 import { type Flip, flipLines } from './flips.ts';
-import { earlierRun } from './report.ts';
+import { earlierRun, otherDay } from './report.ts';
 
 /**
  * The finder bench's cases: what find a time is told ("find 90 min for
@@ -555,6 +555,19 @@ const setLines = (cases: ReadonlyArray<FinderCaseReport>): ReadonlyArray<string>
 };
 
 /**
+ * On a Saturday or Sunday "this week" has no weekday left: a case that
+ * asks for one this week is then scored on a search of no dates, which
+ * an answer that searches nothing passes. A run meant to be compared
+ * names a weekday.
+ */
+const weekendNote = (today: string): ReadonlyArray<string> =>
+  Temporal.PlainDate.from(today).dayOfWeek >= 6
+    ? [
+        '   read on a weekend day: "this week" has no weekday left, so cases that ask for one search no dates; name a weekday (MODEL_BENCH_TODAY)',
+      ]
+    : [];
+
+/**
  * The run as a table: each arm's score, the open and the blind cases
  * apart where the report holds blind ones, then every case an arm got
  * wrong with what it read. A blind case has no line of its own.
@@ -575,6 +588,7 @@ export const formatFinderReport = (
     }`,
     ...ARMS.map((arm) => armLine(arm.padEnd(5), report.score[arm], total)),
     ...setLines(report.cases),
+    ...weekendNote(report.today),
   ];
   for (const each of report.cases) {
     const wrong = ARMS.filter((arm) => each.arms[arm].failed.length > 0);
@@ -609,6 +623,12 @@ export const compareFinderReports = (
     ...((before.pipeline ?? 'app') === (after.pipeline ?? 'app')
       ? []
       : [`   asked differently: ${before.pipeline ?? 'app'} → ${after.pipeline ?? 'app'}`]),
+    ...(before.settings === after.settings
+      ? []
+      : [
+          `   settings: ${before.settings ?? 'not recorded'} → ${after.settings ?? 'not recorded'}`,
+        ]),
+    ...otherDay(before, after),
   ];
   for (const arm of ARMS) {
     const fixed: Array<Flip> = [];

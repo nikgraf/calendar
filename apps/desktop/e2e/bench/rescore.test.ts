@@ -195,6 +195,19 @@ describe('rescore', () => {
     });
   });
 
+  it('takes the blind flag of a case it leaves alone from the case as it is now', () => {
+    // A report from before the flag, of a case that says other turns now and is blind.
+    const before = report([turn({ draft: draft(), kind: 'draft' })]);
+    const [left] = rescore(
+      before,
+      [{ ...benchCase([{ title: 'dinner' }, { title: 'team dinner' }]), blind: true }],
+      NOW,
+    ).cases;
+    expect(left).toMatchObject({ blind: true, id: 'dinner' });
+    // A case that is gone keeps what the report said of it.
+    expect(rescore(before, [], NOW).cases[0]?.blind).toBeUndefined();
+  });
+
   it('leaves a case alone whose words are no longer the ones the model answered', () => {
     const answered = { draft: draft({ startTime: '20:00' }), kind: 'draft' };
     // The report's turn heard "Dinner at 8"; the case says "words" now, and expects 19:00.

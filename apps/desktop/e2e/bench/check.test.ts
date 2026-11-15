@@ -48,6 +48,9 @@ const task = (prefill: { date?: string; time?: string; title?: string } = {}): B
 
 const drafted = (draft: BenchDraft) => ({ draft, kind: 'draft' as const });
 
+/** The fixture event on another day. */
+const on = (date: string) => drafted(event({ date }));
+
 const contact = (displayName: string, email: string): Contact =>
   new Contact({ displayName, email, id: `device:${email}`, source: 'device' });
 
@@ -133,6 +136,34 @@ describe('check', () => {
     expect(
       check({ dayOfMonth: 22 }, drafted(event({ date: TODAY })), undefined, TODAY).failed,
     ).toEqual([]);
+  });
+
+  it('takes the next such day only, not the same day a year on', () => {
+    // With its month, the one next such day.
+    expect(check({ dayOfMonth: 5, month: 12 }, on('2026-12-05'), undefined, TODAY).failed).toEqual(
+      [],
+    );
+    expect(check({ dayOfMonth: 5, month: 12 }, on('2027-12-05'), undefined, TODAY)).toMatchObject({
+      failed: ['date'],
+      notes: ['day=2027-12-05 (not the next)'],
+    });
+    // A month that has passed this year is next year's.
+    expect(check({ dayOfMonth: 3, month: 2 }, on('2027-02-03'), undefined, TODAY).failed).toEqual(
+      [],
+    );
+    // A day of the month alone: the next, or the one after it (a later turn
+    // keeps the draft's month), and no further.
+    expect(check({ dayOfMonth: 23 }, on('2026-08-23'), undefined, TODAY).failed).toEqual([]);
+    expect(check({ dayOfMonth: 23 }, on('2026-09-23'), undefined, TODAY).failed).toEqual([]);
+    expect(check({ dayOfMonth: 23 }, on('2026-10-23'), undefined, TODAY).notes).toEqual([
+      'day=2026-10-23 (not the next)',
+    ]);
+    // The 14th has passed in August: September's and October's.
+    expect(check({ dayOfMonth: 14 }, on('2026-09-14'), undefined, TODAY).failed).toEqual([]);
+    expect(check({ dayOfMonth: 14 }, on('2026-10-14'), undefined, TODAY).failed).toEqual([]);
+    // A 31st skips the months that have none.
+    expect(check({ dayOfMonth: 31 }, on('2026-10-31'), undefined, TODAY).failed).toEqual([]);
+    expect(check({ dayOfMonth: 31 }, on('2026-12-31'), undefined, TODAY).failed).toEqual(['date']);
   });
 
   it('counts the days an event runs past its first', () => {

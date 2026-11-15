@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { type Field, FIELDS } from './check.ts';
-import { type Flip, flipLines } from './flips.ts';
+import { type Flip, flipLines, namedCases } from './flips.ts';
 import type { ModelCall } from './providers.ts';
 
 /**
@@ -230,7 +230,9 @@ const fieldSummary = (score: Score): string =>
     .join(' · ');
 
 const setLine = (name: string, score: Score): string =>
-  `   ${name}: cases ${ratio(score.cases)} · turns ${ratio(score.turns)} · ${fieldSummary(score)}`;
+  `   ${name}: ${[`cases ${ratio(score.cases)}`, `turns ${ratio(score.turns)}`, fieldSummary(score)]
+    .filter(Boolean)
+    .join(' · ')}`;
 
 /** The open and the blind cases apart, once a report holds blind ones: the blind by their counts alone. */
 const setLines = (cases: ReadonlyArray<CaseReport>): ReadonlyArray<string> => {
@@ -245,16 +247,19 @@ const setLines = (cases: ReadonlyArray<CaseReport>): ReadonlyArray<string> => {
 
 /**
  * The run as a table: one line per case with its failing turns, then the
- * score, the cases passed per tag and, where the report holds blind
- * cases, the two sets apart. A blind case has no line of its own.
+ * score, the open cases passed per tag and, where the report holds blind
+ * cases, the two sets apart. A blind case has no line of its own, is
+ * counted under no tag (a tag with one blind case would give its outcome
+ * away) and is never named among the cases a rescore left alone.
  */
 export const formatReport = (
   report: BenchReport,
   { showBlind = false }: TableOptions = {},
 ): string => {
+  const shown = report.cases.filter((benchCase) => showBlind || benchCase.blind !== true);
   const lines: Array<string> = [
     `== ${report.provider}${report.settings === undefined ? '' : ` (${report.settings})`}`,
-    ...report.cases.filter((benchCase) => showBlind || benchCase.blind !== true).map(caseLine),
+    ...shown.map(caseLine),
   ];
   const { score } = report;
   lines.push(
@@ -262,15 +267,21 @@ export const formatReport = (
     `   cases ${ratio(score.cases)} · turns ${ratio(score.turns)} · median ${seconds(score.medianMs)} per turn`,
     `   ${fieldSummary(score)}`,
   );
-  const tags = tagScores(report.cases);
+  const tags = tagScores(shown);
   if (tags.length > 0) {
     lines.push(`   tags: ${tags.map(([tag, counter]) => `${tag} ${ratio(counter)}`).join(' · ')}`);
   }
   lines.push(...setLines(report.cases));
   const stale = report.rescored?.stale ?? [];
   if (stale.length > 0) {
+    const blind = new Set(
+      report.cases.filter((benchCase) => benchCase.blind === true).map((benchCase) => benchCase.id),
+    );
     lines.push(
-      `   not scored again (gone, or other turns or words than the report): ${stale.join(', ')}`,
+      `   not scored again (gone, or other turns or words than the report): ${namedCases(
+        stale.map((id) => ({ blind: blind.has(id), id })),
+        { showBlind },
+      )}`,
     );
   }
   if (score.recordings !== undefined) {
@@ -297,6 +308,15 @@ export const earlierRun = (
   after: { readonly provider: string },
 ): string =>
   `${before.provider === after.provider ? '' : `${before.provider} at `}${before.sha} (${before.when.slice(0, 16)})`;
+
+/** Says when two runs read on two days: what "this week" and "Friday" mean moved between them. */
+export const otherDay = (
+  before: { readonly today: string },
+  after: { readonly today: string },
+): ReadonlyArray<string> =>
+  before.today === after.today
+    ? []
+    : [`   read on two days, ${before.today} → ${after.today}: name one (MODEL_BENCH_TODAY)`];
 
 /**
  * The report as the before/after of a change: what moved, case by case
@@ -334,6 +354,7 @@ export const compareReports = (
       : [
           `   settings: ${before.settings ?? 'not recorded'} → ${after.settings ?? 'not recorded'}`,
         ]),
+    ...otherDay(before, after),
     ...flipLines({ broke, fixed }, options),
     ...FIELDS.map(moved)
       .filter((line): line is string => line !== undefined)

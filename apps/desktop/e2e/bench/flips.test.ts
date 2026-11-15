@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { flipLines, signTest } from './flips.ts';
+import { flipLines, namedCases, signTest } from './flips.ts';
 
 const flips = (count: number, prefix: string, blind = false) =>
   Array.from({ length: count }, (_, index) => ({ blind, id: `${prefix}${String(index + 1)}` }));
@@ -26,6 +26,24 @@ describe('signTest', () => {
     expect(p).toBeGreaterThan(0);
     expect(p).toBeLessThan(0.001);
   });
+
+  it('does not underflow for thousands of flips', () => {
+    // A half to the power of 1,200 is 0 in a double: an even split must still be 1.
+    expect(signTest(600, 600)).toBe(1);
+    expect(signTest(700, 500)).toBeGreaterThan(0);
+    expect(signTest(700, 500)).toBeLessThan(0.001);
+    expect(signTest(601, 599)).toBeGreaterThan(0.9);
+  });
+});
+
+describe('namedCases', () => {
+  it('names the open cases and counts the blind ones', () => {
+    const cases = [...flips(2, 'a'), ...flips(2, 'sealed', true)];
+    expect(namedCases(cases)).toBe('a1, a2 · 2 blind');
+    expect(namedCases(cases, { showBlind: true })).toBe('a1, a2, sealed1, sealed2');
+    expect(namedCases(flips(1, 'sealed', true))).toBe('1 blind');
+    expect(namedCases([])).toBe('');
+  });
 });
 
 describe('flipLines', () => {
@@ -50,10 +68,23 @@ describe('flipLines', () => {
     const blind = { broke: [], fixed: flips(10, 'x', true) };
     expect(flipLines(blind)).toEqual([
       '   fixed: 10 blind',
-      '   10 fixed, 0 broke: by chance alone p < 0.01, more than chance',
+      '   10 fixed, 0 broke: by chance alone p = 0.002, more than chance',
     ]);
     expect(flipLines(blind, { showBlind: true })[0]).toBe(
       '   fixed: x1, x2, x3, x4, x5, x6, x7, x8, x9, x10',
+    );
+  });
+
+  it('writes a p near the line to three places, so it reads on the side it is on', () => {
+    // 16 against 6 is p = 0.052: not below the line, and not printed as 0.05.
+    expect(flipLines({ broke: flips(6, 'b'), fixed: flips(16, 'f') }).at(-1)).toBe(
+      '   16 fixed, 6 broke: by chance alone p = 0.052, not told apart from chance',
+    );
+    expect(flipLines({ broke: flips(5, 'b'), fixed: flips(16, 'f') }).at(-1)).toBe(
+      '   16 fixed, 5 broke: by chance alone p = 0.027, more than chance',
+    );
+    expect(flipLines({ broke: [], fixed: flips(20, 'f') }).at(-1)).toBe(
+      '   20 fixed, 0 broke: by chance alone p < 0.001, more than chance',
     );
   });
 });

@@ -1185,9 +1185,9 @@
     }
   },
   {
-    "id": "clock-half-hour-before-9",
+    "id": "clock-half-an-hour-before-9",
     "lang": "en",
-    "text": "A free half hour before 9 tomorrow",
+    "text": "Is there half an hour free before 9 tomorrow?",
     "expect": {
       "duration": 30,
       "window": "tomorrow",
@@ -1356,9 +1356,9 @@
     }
   },
   {
-    "id": "purpose-brunch-anna-sunday",
+    "id": "purpose-dinner-anna-sunday",
     "lang": "en",
-    "text": "Brunch with Anna on Sunday",
+    "text": "Dinner with Anna on Sunday",
     "expect": {
       "duration": "default",
       "window": {
@@ -1366,9 +1366,9 @@
       },
       "days": null,
       "bounds": {
-        "period": "brunch"
+        "period": "dinner"
       },
-      "title": ["brunch with anna"]
+      "title": ["dinner with anna"]
     }
   },
   {
@@ -1508,9 +1508,9 @@
     }
   },
   {
-    "id": "zweck-yoga-morgens",
+    "id": "zweck-yoga-vormittags",
     "lang": "de",
-    "text": "40 Minuten Yoga morgens",
+    "text": "40 Minuten Yoga vormittags",
     "expect": {
       "duration": 40,
       "window": "default",
@@ -1523,9 +1523,9 @@
   },
   {
     "blind": true,
-    "id": "zweck-brunch-anna-sonntag",
+    "id": "zweck-abendessen-anna-sonntag",
     "lang": "de",
-    "text": "Brunch mit Anna am Sonntag",
+    "text": "Abendessen mit Anna am Sonntag",
     "expect": {
       "duration": "default",
       "window": {
@@ -1533,9 +1533,9 @@
       },
       "days": null,
       "bounds": {
-        "period": "brunch"
+        "period": "dinner"
       },
-      "title": ["brunch mit anna"]
+      "title": ["abendessen mit anna"]
     }
   },
   {
@@ -1618,9 +1618,15 @@
       "duration": 45,
       "window": "default",
       "days": [1, 2, 3, 4, 5],
-      "bounds": {
-        "earliest": "18:00"
-      },
+      "bounds": [
+        {
+          "earliest": "18:00"
+        },
+        {
+          "earliest": "18:00",
+          "latest": "21:00"
+        }
+      ],
       "title": ["gym", "the gym"]
     }
   },

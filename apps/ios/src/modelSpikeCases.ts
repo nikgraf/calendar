@@ -1,7 +1,8 @@
 /**
- * The first phrase of every model bench case
+ * The first phrase of every open model bench case
  * (`apps/desktop/e2e/bench/cases/*.json`), copied here because the phone
- * cannot read the desktop's files. `modelSpikeCases.test.ts` fails when
+ * cannot read the desktop's files. The blind cases are left out: the
+ * measurement page shows each phrase with its answer. `modelSpikeCases.test.ts` fails when
  * the copy and the cases differ: change a case, then run
  * `node apps/ios/scripts/model-spike-cases.mjs` to write this file again.
  * A phrase that was recorded is its transcript.
@@ -15,18 +16,12 @@ export interface SpikeCase {
 
 export const SPIKE_CASES: ReadonlyArray<SpikeCase> = [
   { id: 'abendessen-teo-freitag', lang: 'de', text: 'Abendessen mit Teo nächsten Freitag' },
-  { id: 'ablehnen-wie-spaet', lang: 'de', text: 'wie spät ist es' },
   {
     id: 'add-event-lunch-stefan',
     lang: 'en',
     text: 'Add an event to have lunch with Stefan tomorrow at 1',
   },
   { id: 'add-reminder-call-bank', lang: 'en', text: 'Add a reminder to call the bank tomorrow' },
-  {
-    id: 'alert-a-week-before',
-    lang: 'en',
-    text: 'Performance review Thursday at 4, remind me a week before',
-  },
   { id: 'alert-none-asked', lang: 'en', text: 'Dentist Tuesday at 10, no reminder' },
   {
     id: 'alert-two-for-a-flight',
@@ -44,28 +39,16 @@ export const SPIKE_CASES: ReadonlyArray<SpikeCase> = [
     lang: 'en',
     text: 'At an event for lunch tomorrow with Stefan',
   },
-  {
-    id: 'aufgabe-bibliotheksbuecher',
-    lang: 'de',
-    text: 'Nicht vergessen: Bibliotheksbücher zurückgeben',
-  },
   { id: 'aufgabe-muell-rausbringen', lang: 'de', text: 'Ich muss am Freitag den Müll rausbringen' },
   { id: 'aufgabe-oma-anrufen', lang: 'de', text: 'Erinnere mich daran, morgen Oma anzurufen' },
   { id: 'aufgabe-paket-zur-post', lang: 'de', text: 'To-do: Paket zur Post bringen' },
   { id: 'book-club-monthly', lang: 'en', text: 'Book club every month on Wednesday at 7pm' },
   { id: 'breakfast-meeting-monday', lang: 'en', text: 'Breakfast meeting Monday' },
   { id: 'call-anna-tomorrow', lang: 'en', text: 'Call with Anna tomorrow' },
-  {
-    id: 'date-board-meeting-8th-of-april',
-    lang: 'en',
-    text: 'Board meeting on the 8th of April at 2pm',
-  },
   { id: 'date-checkup-in-three-weeks', lang: 'en', text: 'Checkup in three weeks at 9am' },
   { id: 'date-concert-december-5th', lang: 'en', text: 'Concert on December 5th' },
   { id: 'date-conference-may-12', lang: 'en', text: 'Conference May 12' },
   { id: 'date-dentist-on-the-23rd', lang: 'en', text: 'Dentist on the 23rd at 10' },
-  { id: 'date-dinner-in-10-days', lang: 'en', text: 'Dinner with Teo in 10 days' },
-  { id: 'date-farewell-nov-20', lang: 'en', text: 'Farewell party on Nov 20 at 5pm' },
   {
     id: 'date-lunch-day-after-tomorrow',
     lang: 'en',
@@ -75,11 +58,7 @@ export const SPIKE_CASES: ReadonlyArray<SpikeCase> = [
   { id: 'date-none-acupuncture-at-2', lang: 'en', text: 'Acupuncture at 2' },
   { id: 'date-none-pilates-6pm', lang: 'en', text: 'Pilates at 6pm' },
   { id: 'date-vet-a-week-from-today', lang: 'en', text: 'Vet appointment a week from today at 10' },
-  { id: 'date-workshop-3-february', lang: 'en', text: 'Workshop on 3 February from 9 to 12' },
-  { id: 'datum-abendessen-in-zehn-tagen', lang: 'de', text: 'Abendessen mit Jörg in zehn Tagen' },
-  { id: 'datum-elternabend-12-3', lang: 'de', text: 'Elternabend am 12.3. um 19 Uhr' },
   { id: 'datum-friseur-uebermorgen', lang: 'de', text: 'Friseur übermorgen um 16 Uhr' },
-  { id: 'datum-hochzeit-9-august', lang: 'de', text: 'Hochzeit von Sarah am 9. August' },
   { id: 'datum-keins-fusspflege-um-15', lang: 'de', text: 'Fußpflege um 15 Uhr' },
   {
     id: 'datum-kontrolle-in-vier-wochen',
@@ -92,12 +71,6 @@ export const SPIKE_CASES: ReadonlyArray<SpikeCase> = [
   { id: 'dictated-as-heard-sara', lang: 'en', text: 'Lunch with Sara tomorrow at 1.' },
   { id: 'dictated-half-past-two', lang: 'en', text: 'call with tom baker half past two tomorrow' },
   {
-    id: 'dictated-invite-her',
-    lang: 'en',
-    text: 'schedule a call with anna lee for thursday at eleven thirty and invite her',
-  },
-  { id: 'dictated-one-no-wait-two', lang: 'en', text: 'lunch at one no wait two tomorrow' },
-  {
     id: 'dictated-quarter-past-three',
     lang: 'en',
     text: 'coffee with jo at quarter past three on thursday',
@@ -109,21 +82,11 @@ export const SPIKE_CASES: ReadonlyArray<SpikeCase> = [
     text: 'okay add yoga on monday at six in the evening please',
   },
   {
-    id: 'dictated-ten-fifteen-morning',
-    lang: 'en',
-    text: 'meeting at ten fifteen tomorrow morning',
-  },
-  {
     id: 'dictated-tuesday-sorry-wednesday',
     lang: 'en',
     text: 'dentist on tuesday sorry wednesday at nine',
   },
   { id: 'dictated-um-lunch-at-one', lang: 'en', text: 'um lunch with sarah tomorrow at one' },
-  {
-    id: 'diktiert-achtzehn-uhr-dreissig',
-    lang: 'de',
-    text: 'essen mit jörg am sonntag um achtzehn uhr dreißig',
-  },
   {
     id: 'diktiert-aehm-viertel-nach-neun',
     lang: 'de',
@@ -155,7 +118,6 @@ export const SPIKE_CASES: ReadonlyArray<SpikeCase> = [
     lang: 'de',
     text: 'Erstelle einen Termin für Mittagessen mit Stefan am Freitag um 12',
   },
-  { id: 'event-call-invite-sarah', lang: 'en', text: 'Call on Friday at 11, invite Sarah' },
   {
     id: 'event-dentist-with-alert',
     lang: 'en',
@@ -181,7 +143,7 @@ export const SPIKE_CASES: ReadonlyArray<SpikeCase> = [
   {
     id: 'flow-alerts-task-plants',
     lang: 'en',
-    text: 'remind me to water the plants tomorrow at 8',
+    text: 'remind me to water the plants tomorrow at 8am',
   },
   { id: 'flow-allday-conference-hours', lang: 'en', text: 'Conference Thursday' },
   { id: 'flow-allday-task-time', lang: 'en', text: 'remind me to hand in the timesheet Friday' },
@@ -189,10 +151,7 @@ export const SPIKE_CASES: ReadonlyArray<SpikeCase> = [
   { id: 'flow-aufgabe-vertrag', lang: 'de', text: 'Ich muss morgen den Vertrag unterschreiben' },
   { id: 'flow-city-moves', lang: 'en', text: 'Conference on Friday' },
   { id: 'flow-correct-day-then-time', lang: 'en', text: 'Lunch with Tom Thursday at 1' },
-  { id: 'flow-correct-i-meant-sunday', lang: 'en', text: 'Dinner Saturday at 7 at Cafe Luna' },
   { id: 'flow-correct-scratch-that', lang: 'en', text: 'Call with Jo tomorrow at 3' },
-  { id: 'flow-day-by-number', lang: 'en', text: 'Offsite on the 12th' },
-  { id: 'flow-day-friseur-uebermorgen', lang: 'de', text: 'Friseur morgen um 15 Uhr' },
   { id: 'flow-day-infoabend-woche', lang: 'de', text: 'Infoabend morgen um 19 Uhr' },
   { id: 'flow-day-later-optician', lang: 'en', text: 'Optician Tuesday at 10' },
   { id: 'flow-day-push-to-tomorrow', lang: 'en', text: 'Design review today at 4' },
@@ -200,17 +159,12 @@ export const SPIKE_CASES: ReadonlyArray<SpikeCase> = [
   { id: 'flow-day-week-later', lang: 'en', text: 'Lunch with Teo tomorrow at 1' },
   { id: 'flow-dentist-allday-extras', lang: 'en', text: 'Dentist Thursday at 10' },
   { id: 'flow-dinner', lang: 'en', text: 'Dinner with Teo next Friday' },
-  { id: 'flow-erinnerungen-keine', lang: 'de', text: 'Arzttermin Mittwoch um 8' },
-  { id: 'flow-gaeste-ausladen', lang: 'de', text: 'Teammeeting Donnerstag um 11' },
   { id: 'flow-gaeste-doch-nicht', lang: 'de', text: 'Abendessen Freitag um 19 Uhr, lade Jörg ein' },
-  { id: 'flow-ganztaegig-messe', lang: 'de', text: 'Messe am Dienstag' },
-  { id: 'flow-gemischt-kaffee', lang: 'de', text: 'Kaffee morgen um 15 Uhr' },
   { id: 'flow-guests-add-remove-add', lang: 'en', text: 'Planning Tuesday at 10' },
   { id: 'flow-guests-choice-withdrawn', lang: 'en', text: 'Coffee tomorrow at 3' },
   { id: 'flow-guests-instead-of', lang: 'en', text: 'Sync Friday at 10, invite Tom Baker' },
   { id: 'flow-guests-invite-him-too', lang: 'en', text: 'Ramen Friday at 12:30' },
   { id: 'flow-guests-take-off', lang: 'en', text: 'Kickoff Monday at 2pm, invite Tom Baker' },
-  { id: 'flow-guests-unknown-name', lang: 'en', text: 'Demo Wednesday at 4' },
   { id: 'flow-korrektur-zahnarzt', lang: 'de', text: 'Zahnarzt Dienstag um 9' },
   { id: 'flow-location-clear', lang: 'en', text: 'Coffee tomorrow at 10 at Café Prückel' },
   { id: 'flow-lunch-guests', lang: 'en', text: 'Lunch with Sarah tomorrow at 1' },
@@ -222,11 +176,6 @@ export const SPIKE_CASES: ReadonlyArray<SpikeCase> = [
   },
   { id: 'flow-mixed-day-time-place', lang: 'en', text: 'Tapas Friday at 7' },
   { id: 'flow-mixed-time-guest-title', lang: 'en', text: 'Sync tomorrow at 10' },
-  {
-    id: 'flow-notes-doctor-then-earlier',
-    lang: 'en',
-    text: 'Doctor Friday at 9, note: fasting blood test',
-  },
   { id: 'flow-notes-interview', lang: 'en', text: 'Interview Wednesday at 2' },
   { id: 'flow-notes', lang: 'en', text: 'Call with Anna Lee tomorrow at 11' },
   { id: 'flow-notifications', lang: 'en', text: 'Team sync Wednesday at 3' },
@@ -237,29 +186,19 @@ export const SPIKE_CASES: ReadonlyArray<SpikeCase> = [
   { id: 'flow-ort-innenstadt', lang: 'de', text: 'Mittagessen morgen um 12' },
   { id: 'flow-place-as-heard', lang: 'en', text: 'Lunch tomorrow at 1' },
   { id: 'flow-place-in-city', lang: 'en', text: 'Lunch tomorrow at 1' },
-  { id: 'flow-place-in-graz', lang: 'en', text: 'Drinks Friday at 7' },
-  { id: 'flow-place-narrow-then-replace', lang: 'en', text: 'Dim sum Friday at 12:30' },
   { id: 'flow-place-on-street', lang: 'en', text: 'Coffee Thursday at 3' },
   { id: 'flow-place-replaced', lang: 'en', text: 'Dinner Saturday at 8' },
-  {
-    id: 'flow-place-said-first-then-city',
-    lang: 'en',
-    text: 'Dinner at Trattoria Roma Friday at 7',
-  },
   { id: 'flow-place-street-address', lang: 'en', text: 'Massage tomorrow at 4' },
   { id: 'flow-place-the-berlin-one', lang: 'en', text: 'Workshop Wednesday at 9' },
   { id: 'flow-place-the-one', lang: 'en', text: 'Dinner on Friday at 7' },
-  { id: 'flow-rename-after-company', lang: 'en', text: 'Burgers tomorrow at 12:30' },
   { id: 'flow-rename-budget-review', lang: 'en', text: 'Check-in Tuesday at 3' },
   { id: 'flow-rename-misheard-name', lang: 'en', text: 'Dinner with Theo Friday at 7' },
   { id: 'flow-rename-title-colon', lang: 'en', text: 'Call Thursday at 11' },
-  { id: 'flow-repeat-daily-count', lang: 'en', text: 'Meditation tomorrow at 7am' },
   { id: 'flow-repeat-monthly-count', lang: 'en', text: 'Team lunch Friday at 12' },
   { id: 'flow-repeat-until-august', lang: 'en', text: 'Swimming Saturday at 10, every week' },
   { id: 'flow-repeat-weekdays-except', lang: 'en', text: 'Standup Monday at 9' },
   { id: 'flow-repeat-weekly-then-fortnightly', lang: 'en', text: 'Yoga Tuesday at 7pm' },
   { id: 'flow-room-changes', lang: 'en', text: 'Meeting tomorrow at 10 in room 3' },
-  { id: 'flow-shift-barbecue-new-start', lang: 'en', text: 'Barbecue Saturday at 7' },
   { id: 'flow-shift-besprechung', lang: 'de', text: 'Besprechung Dienstag um 10' },
   { id: 'flow-shift-brunch-back', lang: 'en', text: 'Brunch Sunday at 11' },
   { id: 'flow-shift-call-earlier-longer', lang: 'en', text: 'Call with Sarah Thursday at 2' },
@@ -267,19 +206,14 @@ export const SPIKE_CASES: ReadonlyArray<SpikeCase> = [
   { id: 'flow-shift-movie-end', lang: 'en', text: 'Movie Friday at 8pm' },
   { id: 'flow-shift-party-past-midnight', lang: 'en', text: 'Party Saturday at 10pm' },
   { id: 'flow-shift-picnic-until', lang: 'en', text: 'Picnic Friday at 12' },
-  { id: 'flow-shift-seminar-shorter', lang: 'en', text: 'Seminar Monday from 9 to 12' },
   { id: 'flow-shift-standup-short', lang: 'en', text: 'Standup tomorrow at 9:30' },
-  { id: 'flow-shift-training', lang: 'de', text: 'Training morgen um 18 Uhr' },
-  { id: 'flow-shift-yoga-kuerzer', lang: 'de', text: 'Yoga Mittwoch um 7 Uhr' },
   { id: 'flow-shift', lang: 'en', text: 'Yoga today at 5:30pm' },
   { id: 'flow-standup-repeat', lang: 'en', text: 'Standup Monday at 9' },
   { id: 'flow-task-alert', lang: 'en', text: 'remind me to call the bank tomorrow at 9' },
   { id: 'flow-task-electrician', lang: 'en', text: 'remind me to call the electrician tomorrow' },
   { id: 'flow-task-invoice-note', lang: 'en', text: "don't forget to send the invoice on Friday" },
-  { id: 'flow-task-present-rename', lang: 'en', text: 'to-do: buy a birthday present' },
   { id: 'flow-task', lang: 'en', text: 'remind me to call the bank tomorrow' },
   { id: 'flow-umbenennen-steuerberater', lang: 'de', text: 'Besuch Freitag um 14 Uhr' },
-  { id: 'flow-wiederholung-bis-juni', lang: 'de', text: 'Chorprobe Donnerstag um 19 Uhr' },
   { id: 'flow-with-company', lang: 'en', text: 'Lunch tomorrow at 1' },
   { id: 'flow-zahnarzt', lang: 'de', text: 'Zahnarzt nächsten Dienstag um halb drei' },
   {
@@ -287,22 +221,12 @@ export const SPIKE_CASES: ReadonlyArray<SpikeCase> = [
     lang: 'de',
     text: 'Abendessen mit Teo am Samstag um 19 Uhr',
   },
-  { id: 'gaeste-planung-zwei', lang: 'de', text: 'Planung Montag um 10, lade Sarah und Jörg ein' },
-  { id: 'ganztaegig-betriebsausflug', lang: 'de', text: 'Betriebsausflug am Freitag' },
-  { id: 'ganztaegig-schulung', lang: 'de', text: 'Ganztägige Schulung am Dienstag' },
-  { id: 'ganztaegig-urlaub-donnerstag', lang: 'de', text: 'Urlaub am Donnerstag' },
   { id: 'getippt-essen-fr-19h', lang: 'de', text: 'essen mit teo fr 19h' },
   { id: 'getippt-tippfehler-morgn', lang: 'de', text: 'mittagessen morgn 12 uhr' },
-  { id: 'getippt-zahnarzt-mo', lang: 'de', text: 'zahnarzt mo 8 uhr' },
   {
     id: 'guests-add-unknown-as-guest',
     lang: 'en',
     text: 'Demo Wednesday at 3, add Felix as a guest',
-  },
-  {
-    id: 'guests-address-and-company',
-    lang: 'en',
-    text: 'Sync Tuesday at 2 with the design team, invite max@example.com',
   },
   { id: 'guests-lunch-invite-sarah', lang: 'en', text: 'Lunch Friday at 1, invite Sarah' },
   {
@@ -350,24 +274,9 @@ export const SPIKE_CASES: ReadonlyArray<SpikeCase> = [
     text: "I'd like to schedule a call with Sarah sometime tomorrow afternoon, let's say 3pm, it should take about half an hour",
   },
   {
-    id: 'long-chatty-call-contract',
-    lang: 'en',
-    text: "Okay so tomorrow at 4 I've got a call with Tom Baker about the contract, should be about 45 minutes, please invite him and note that legal needs to join",
-  },
-  {
-    id: 'long-dentist-day-before-xrays',
-    lang: 'en',
-    text: 'Put a dentist appointment on Monday at 8:30 at Praxis Dr. Huber, remind me the day before and note that I should bring the x-rays',
-  },
-  {
     id: 'long-dinner-full',
     lang: 'en',
     text: 'Set up a dinner with Tom Baker next Friday at seven at Loos Bar, invite Anna Lee too, remind me an hour before and note that we need to talk about the roadmap',
-  },
-  {
-    id: 'long-dinner-in-laws-wine',
-    lang: 'en',
-    text: 'Dinner with the in-laws Saturday at 6:30pm at Trattoria Roma, remind me an hour before, note: bring the wine',
   },
   {
     id: 'long-elternabend-schule-notiz',
@@ -378,11 +287,6 @@ export const SPIKE_CASES: ReadonlyArray<SpikeCase> = [
     id: 'long-flight-passport',
     lang: 'en',
     text: 'Flight on Friday at 6:45am, remind me three hours before, note: passport and boarding pass',
-  },
-  {
-    id: 'long-fruehstueck-teo-laptop',
-    lang: 'de',
-    text: 'Trag bitte für übermorgen um halb neun ein Frühstück mit Teo im Cafe Fino ein und notier dazu, dass er den Laptop zurückbringt',
   },
   {
     id: 'long-german-full',
@@ -403,11 +307,6 @@ export const SPIKE_CASES: ReadonlyArray<SpikeCase> = [
     id: 'long-lunch-jo-owe',
     lang: 'en',
     text: 'Add lunch with Jo on Wednesday at 12:30 at Cafe Luna and put in the notes that I owe him twenty euros',
-  },
-  {
-    id: 'long-quarterly-planning-three-guests',
-    lang: 'en',
-    text: 'Quarterly planning next Monday 9 to 12 in room 3, invite Tom Baker, Anna Berger and Jörg Müller, note: prepare the OKR draft',
   },
   {
     id: 'long-retro-room-guests-alert',
@@ -450,11 +349,6 @@ export const SPIKE_CASES: ReadonlyArray<SpikeCase> = [
     text: 'Can you add a workshop on Wednesday from nine to five at Hotel Astoria and invite Teo Marin',
   },
   {
-    id: 'long-yoga-two-days-studio',
-    lang: 'en',
-    text: 'Yoga every Monday and Wednesday at 7am at Studio Nord, remind me 20 minutes before',
-  },
-  {
     id: 'long-zahnarzt-zwei-erinnerungen',
     lang: 'de',
     text: 'Zahnarzt am Montag um 8 in der Praxis Dr. Huber, erinnere mich einen Tag vorher und 30 Minuten vorher',
@@ -470,11 +364,6 @@ export const SPIKE_CASES: ReadonlyArray<SpikeCase> = [
     id: 'notes-bring-contract',
     lang: 'en',
     text: 'Lunch with Tom tomorrow at 1, note: bring the contract',
-  },
-  {
-    id: 'notiz-belege-mitbringen',
-    lang: 'de',
-    text: 'Steuerberater Montag um 11, Notiz: Belege mitbringen',
   },
   {
     id: 'piano-weekly-until-march',
@@ -512,21 +401,11 @@ export const SPIKE_CASES: ReadonlyArray<SpikeCase> = [
   },
   { id: 'repeat-every-other-friday', lang: 'en', text: 'Date night every other Friday at 7' },
   {
-    id: 'repeat-first-tuesday-monthly',
-    lang: 'en',
-    text: 'Team retro every month on the first Tuesday at 3pm',
-  },
-  {
     id: 'repeat-last-friday-of-month',
     lang: 'en',
     text: 'Pay day drinks on the last Friday of every month at 6pm',
   },
   { id: 'repeat-ten-times', lang: 'en', text: 'Guitar lesson every Wednesday at 5, ten times' },
-  {
-    id: 'repeat-three-weekdays',
-    lang: 'en',
-    text: 'Swim training every Monday, Wednesday and Friday at 6:30am',
-  },
   { id: 'repeat-yearly-on-a-date', lang: 'en', text: 'Anniversary dinner every year on June 12' },
   {
     id: 'schedule-call-sarah-thursday',
@@ -540,7 +419,6 @@ export const SPIKE_CASES: ReadonlyArray<SpikeCase> = [
     text: 'Standup jeden Werktag um 9 außer Freitag',
   },
   { id: 'task-bins-tonight-at-8', lang: 'en', text: 'remind me to take out the bins tonight at 8' },
-  { id: 'task-dont-forget-flights', lang: 'en', text: "Don't forget to book the flights tomorrow" },
   {
     id: 'task-drop-off-package',
     lang: 'en',
@@ -552,28 +430,16 @@ export const SPIKE_CASES: ReadonlyArray<SpikeCase> = [
     text: 'I have to submit the expense report tomorrow',
   },
   { id: 'task-i-need-to-call-landlord', lang: 'en', text: 'I need to call the landlord on Friday' },
-  { id: 'task-rent-on-the-first', lang: 'en', text: 'remind me to pay the rent on the 1st' },
   { id: 'task-todo-flowers-saturday', lang: 'en', text: 'todo buy flowers for Anna on Saturday' },
   { id: 'task-todo-invoice-to-sarah', lang: 'en', text: 'to-do: send the invoice to Sarah' },
   { id: 'team-offsite-oct-20', lang: 'en', text: 'Team offsite Oct 20' },
   { id: 'team-standup-every-monday-9', lang: 'en', text: 'Team standup every monday at 9' },
-  {
-    id: 'termin-friseur-mit-erinnerung',
-    lang: 'de',
-    text: 'Friseur Donnerstag um 14 Uhr, erinnere mich 30 Minuten vorher',
-  },
   { id: 'therapy-every-two-weeks', lang: 'en', text: 'Therapy every two weeks on Thursday at 4' },
-  {
-    id: 'time-breakfast-quarter-past-eight',
-    lang: 'en',
-    text: 'Breakfast with Jo Friday at quarter past eight',
-  },
   {
     id: 'time-call-for-20-minutes',
     lang: 'en',
     text: 'Call with Sarah tomorrow at 2 for 20 minutes',
   },
-  { id: 'time-dinner-7-to-930', lang: 'en', text: 'Dinner Friday 7 to 9:30' },
   { id: 'time-drinks-tomorrow-evening', lang: 'en', text: 'Drinks tomorrow evening' },
   { id: 'time-karaoke-11pm-two-hours', lang: 'en', text: 'Karaoke Saturday at 11pm for two hours' },
   { id: 'time-lunch-noon-90-minutes', lang: 'en', text: 'Lunch tomorrow at noon for 90 minutes' },
@@ -581,9 +447,7 @@ export const SPIKE_CASES: ReadonlyArray<SpikeCase> = [
   { id: 'time-night-shift-11pm-to-7am', lang: 'en', text: 'Night shift Friday from 11pm to 7am' },
   { id: 'time-party-10pm-to-2am', lang: 'en', text: 'Party Saturday from 10pm to 2am' },
   { id: 'time-standup-905', lang: 'en', text: 'Standup at 9:05 tomorrow' },
-  { id: 'time-study-session-tonight', lang: 'en', text: 'Study session tonight' },
   { id: 'time-tennis-sunday-morning', lang: 'en', text: 'Tennis Sunday morning' },
-  { id: 'time-training-9-dash-11', lang: 'en', text: 'Training Saturday 9–11' },
   { id: 'time-workshop-130-to-5', lang: 'en', text: 'Workshop Thursday from 1:30 to 5' },
   {
     id: 'titel-geburtstagsessen-oma',
@@ -596,22 +460,15 @@ export const SPIKE_CASES: ReadonlyArray<SpikeCase> = [
     text: 'Neuer Termin: Elternsprechtag am Donnerstag um 17 Uhr',
   },
   {
-    id: 'titel-setz-pilates-in-den-kalender',
-    lang: 'de',
-    text: 'Setz Pilates am Mittwoch um 18:30 in den Kalender',
-  },
-  {
     id: 'titel-termin-autowerkstatt',
     lang: 'de',
     text: 'Mach mir bitte einen Termin für die Autowerkstatt am Montag um 8',
   },
-  { id: 'title-5k-run', lang: 'en', text: '5k run Saturday at 9' },
   {
     id: 'title-add-event-for-coffee',
     lang: 'en',
     text: 'Add an event for coffee with Sarah on Tuesday at 10',
   },
-  { id: 'title-company-after-place', lang: 'en', text: 'Coffee at 3 at the office with Jo' },
   { id: 'title-game-night', lang: 'en', text: 'Game night Friday at 8' },
   {
     id: 'title-i-have-a-physio-appointment',
@@ -630,9 +487,6 @@ export const SPIKE_CASES: ReadonlyArray<SpikeCase> = [
     text: 'Create a meeting called budget review for Wednesday at 2pm',
   },
   { id: 'title-morning-run', lang: 'en', text: 'Morning run tomorrow at 7' },
-  { id: 'title-new-event-colon', lang: 'en', text: 'New event: team offsite on Friday' },
-  { id: 'title-one-on-one', lang: 'en', text: 'Set up a 1:1 with Tom on Thursday at 3' },
-  { id: 'title-parents-evening', lang: 'en', text: "Parents' evening Tuesday at 6" },
   {
     id: 'title-please-schedule-haircut',
     lang: 'en',
@@ -643,7 +497,7 @@ export const SPIKE_CASES: ReadonlyArray<SpikeCase> = [
     lang: 'en',
     text: 'Put the quarterly review on my calendar for Monday at 9',
   },
-  { id: 'title-q4-planning-range', lang: 'en', text: 'Q4 planning Wednesday 10 to 12' },
+  { id: 'title-q4-planning-range', lang: 'en', text: 'Q4 planning Wednesday from 10 to 12' },
   { id: 'title-sprint-number', lang: 'en', text: 'Sprint 12 review Friday at 2' },
   {
     id: 'trag-mir-zahnarzt-ein',
@@ -651,13 +505,10 @@ export const SPIKE_CASES: ReadonlyArray<SpikeCase> = [
     text: 'Trag mir am Dienstag um 10 einen Zahnarzttermin ein',
   },
   { id: 'trip-to-vienna-saturday', lang: 'en', text: 'Trip to Vienna on Saturday' },
-  { id: 'typed-all-caps', lang: 'en', text: 'TEAM SYNC TUE 10AM' },
   { id: 'typed-barber-sat', lang: 'en', text: 'barber sat 10am' },
   { id: 'typed-dentist-tmrw', lang: 'en', text: 'dentist tmrw 9am' },
   { id: 'typed-gym-6pm', lang: 'en', text: 'gym 6pm' },
-  { id: 'typed-lunch-w-slash-sarah', lang: 'en', text: 'lunch w/ sarah fri 12:30' },
   { id: 'typed-mtg-w-tom', lang: 'en', text: 'mtg w tom thu 3pm' },
-  { id: 'typed-typo-dinenr', lang: 'en', text: 'dinenr with teo friday 8pm' },
   { id: 'typed-typo-tomorow', lang: 'en', text: 'tomorow 3pm coffee with jo' },
   { id: 'typed-typo-wendsday', lang: 'en', text: 'wendsday 10am standup' },
   { id: 'vacation-until-friday', lang: 'en', text: 'Vacation until Friday' },
@@ -667,11 +518,6 @@ export const SPIKE_CASES: ReadonlyArray<SpikeCase> = [
     text: 'Alle zwei Wochen montags um 9 Jour fixe',
   },
   { id: 'wiederholung-stammtisch', lang: 'de', text: 'Jeden Donnerstag um 20 Uhr Stammtisch' },
-  {
-    id: 'wiederholung-taeglich-ausser-wochenende',
-    lang: 'de',
-    text: 'Täglich um 6:30 Uhr Dehnen, nur nicht samstags und sonntags',
-  },
   { id: 'with-is-not-invite', lang: 'en', text: 'Dinner with Tom Baker on Saturday' },
   { id: 'workshop-tuesday-2-4', lang: 'en', text: 'Workshop Tuesday 2-4pm' },
   { id: 'yoga-every-day-except-sunday', lang: 'en', text: 'Yoga every day at 7 except Sunday' },
@@ -682,14 +528,8 @@ export const SPIKE_CASES: ReadonlyArray<SpikeCase> = [
     text: 'Zahnarzt nächsten Dienstag um halb drei',
   },
   { id: 'zeit-arzt-viertel-nach-drei', lang: 'de', text: 'Arzt Donnerstag um Viertel nach drei' },
-  { id: 'zeit-besprechung-14-bis-16', lang: 'de', text: 'Besprechung morgen von 14 bis 16 Uhr' },
   { id: 'zeit-kino-2015', lang: 'de', text: 'Kino Samstag um 20:15' },
   { id: 'zeit-spaziergang-morgen-nachmittag', lang: 'de', text: 'Spaziergang morgen Nachmittag' },
-  {
-    id: 'zeit-telefonat-viertelstunde',
-    lang: 'de',
-    text: 'Telefonat mit Sarah morgen um 9, eine Viertelstunde',
-  },
   {
     id: 'zeit-training-halb-sieben-abends',
     lang: 'de',

@@ -231,9 +231,11 @@ describe('formatReport — tags and blind cases', () => {
     const text = formatReport(report(BLIND));
     expect(text).not.toContain('sealed');
     expect(text).not.toContain('Lunch at');
-    // Every case counts in the score and in its tag.
+    // Every case counts in the score. A tag counts the open cases only: a
+    // tag with one blind case would give that case's outcome away.
     expect(text).toContain('cases 2/4 · turns 3/5');
-    expect(text).toContain('   tags: flow 0/2');
+    expect(text).toContain('   tags: flow 0/1');
+    expect(text).not.toContain('flow 0/2');
     // The two sets apart, the blind one by its counts alone.
     expect(text).toContain(
       '   open: cases 1/2 · turns 2/3 · title 2/2 · date 2/2 · time 0/1 · unchanged 1/1',
@@ -248,6 +250,24 @@ describe('formatReport — tags and blind cases', () => {
     expect(text).toContain('sealed-lunch (blind)  →  title=Lunch at');
     expect(text).toContain('sealed-call (blind)');
     expect(text).not.toContain('dinner (blind)');
+    expect(text).toContain('   tags: flow 0/2');
+  });
+
+  it('counts a blind case a rescore left alone, and names the open ones', () => {
+    const rescored = report(BLIND, {
+      rescored: { sha: 'old0000', stale: ['dinner', 'sealed-lunch'], when: '2026-08-21T09:00' },
+    });
+    expect(formatReport(rescored)).toContain(
+      '   not scored again (gone, or other turns or words than the report): dinner · 1 blind',
+    );
+    expect(formatReport(rescored, { showBlind: true })).toContain('dinner, sealed-lunch');
+  });
+
+  it('prints a set of cases without fields without a dangling separator', () => {
+    const bare: CaseReport = { blind: true, id: 'sealed', ok: true, tags: [], turns: [] };
+    expect(formatReport(report([CASES[0]!, bare])).split('\n')).toContain(
+      '   blind: cases 1/1 · turns 0/0',
+    );
   });
 });
 
@@ -310,6 +330,15 @@ describe('compareReports', () => {
     );
     expect(compareReports(report(CASES), quiet)).toContain('   settings: not recorded → ');
     expect(compareReports(quiet, quiet)).not.toContain('settings');
+  });
+
+  it('says when the two runs read on two days', () => {
+    const sunday = report(CASES, { today: '2026-11-15' });
+    const wednesday = report(CASES, { today: '2026-11-18' });
+    expect(compareReports(sunday, wednesday)).toContain(
+      '   read on two days, 2026-11-15 → 2026-11-18: name one (MODEL_BENCH_TODAY)',
+    );
+    expect(compareReports(sunday, sunday)).not.toContain('read on two days');
   });
 
   it('names the earlier run’s model where the two runs are of two models', () => {

@@ -17,6 +17,7 @@ import {
   rescoreFinder,
   scoreOf,
 } from './finder.ts';
+import { namedCases } from './flips.ts';
 import {
   benchProviders,
   benchToday,
@@ -88,18 +89,27 @@ const writeReport = (dir: string, report: FinderReport): string => {
   return path;
 };
 
-/** The cases MODEL_BENCH_CASES names: a language ("de", "en"), or a part of an id. */
-const selected = (cases: ReadonlyArray<FinderCase>): ReadonlyArray<FinderCase> => {
+/**
+ * The cases MODEL_BENCH_CASES names: a language ("de", "en"), or a part of
+ * an id. A selection names open cases only, unless the blind ones are
+ * shown: a run of a few cases would give a blind one's outcome away.
+ */
+const selected = (
+  cases: ReadonlyArray<FinderCase>,
+  { showBlind }: { readonly showBlind: boolean },
+): ReadonlyArray<FinderCase> => {
   const terms = (process.env['MODEL_BENCH_CASES'] ?? '')
     .split(',')
     .map((term) => term.trim())
     .filter(Boolean);
   return terms.length === 0
     ? cases
-    : cases.filter((each) =>
-        terms.some((term) =>
-          term === 'de' || term === 'en' ? each.lang === term : each.id.includes(term),
-        ),
+    : cases.filter(
+        (each) =>
+          (showBlind || each.blind !== true) &&
+          terms.some((term) =>
+            term === 'de' || term === 'en' ? each.lang === term : each.id.includes(term),
+          ),
       );
 };
 
@@ -129,7 +139,6 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('finder bench', () => {
       const log = (line: string) => {
         lines.push(line);
       };
-      const cases = selected(loadFinderCases(join(BENCH_DIR, 'finder.json')));
       const pipeline = pipelineOf();
       const helperBinary = findHelper();
       const helper = helperBinary === undefined ? undefined : connectHelper(helperBinary);
@@ -141,6 +150,7 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('finder bench', () => {
       const toRescore = process.env['MODEL_BENCH_RESCORE'];
       // Blind cases are counted, never named, unless an expectation is being fixed.
       const table = { showBlind: process.env['MODEL_BENCH_BLIND'] === 'show' };
+      const cases = selected(loadFinderCases(join(BENCH_DIR, 'finder.json')), table);
       const compareWith = process.env['MODEL_BENCH_COMPARE'];
       const earlier =
         compareWith === undefined
@@ -159,7 +169,18 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('finder bench', () => {
             log(formatFinderReport(report, table));
             log(compareFinderReports(before, report, table));
             if (left.length > 0) {
-              log(`   left out (gone, or other words now): ${left.join(', ')}`);
+              // A case that is blind now, or was when the model answered, is counted, not named.
+              const blind = new Set(
+                [...all, ...before.cases]
+                  .filter((each) => each.blind === true)
+                  .map((each) => each.id),
+              );
+              log(
+                `   left out (gone, or other words now): ${namedCases(
+                  left.map((id) => ({ blind: blind.has(id), id })),
+                  table,
+                )}`,
+              );
             }
             log(`   report: ${writeReport(outDir, report)}\n`);
           }

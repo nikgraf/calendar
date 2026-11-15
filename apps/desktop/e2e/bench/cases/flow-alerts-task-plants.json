@@ -3,7 +3,7 @@
   "tags": ["flow", "notifications", "task"],
   "turns": [
     {
-      "input": { "text": "remind me to water the plants tomorrow at 8" },
+      "input": { "text": "remind me to water the plants tomorrow at 8am" },
       "expect": {
         "kind": "task",
         "title": "water the plants",

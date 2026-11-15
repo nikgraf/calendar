@@ -387,6 +387,25 @@ describe('formatFinderReport and compareFinderReports', () => {
     expect(compareFinderReports(before, before).split('\n')).toHaveLength(1);
   });
 
+  it('says when two runs were not set up alike or read on two days', () => {
+    const before = reportOf([answered(walk, right)], { settings: 'http://localhost:8091/v1' });
+    const after = reportOf([answered(walk, right)], {
+      settings: 'http://localhost:8093/v1',
+      today: '2026-11-18',
+    });
+    const text = compareFinderReports(before, after);
+    expect(text).toContain('   settings: http://localhost:8091/v1 → http://localhost:8093/v1');
+    expect(text).toContain('   read on two days, 2026-11-13 → 2026-11-18');
+  });
+
+  it('warns that a weekend day leaves "this week" without weekdays', () => {
+    const friday = reportOf([answered(walk, right)]);
+    expect(formatFinderReport(friday)).not.toContain('weekend day');
+    expect(formatFinderReport({ ...friday, today: '2026-11-15' })).toContain(
+      '   read on a weekend day: "this week" has no weekday left',
+    );
+  });
+
   it('scores a report again with the cases’ blind flags as they are now', () => {
     const run = reportOf([{ ...answered(walk, right), blind: undefined }]);
     const { report } = rescoreFinder(run, [{ ...walk, blind: true }], {

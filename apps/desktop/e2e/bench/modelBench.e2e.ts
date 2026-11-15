@@ -309,9 +309,12 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('model bench', () => {
     const log = (line: string) => {
       lines.push(line);
     };
+    // Blind cases are counted, never named, unless an expectation is being fixed.
+    const table = { showBlind: process.env['MODEL_BENCH_BLIND'] === 'show' };
     const cases = filterCases(
       loadCases(join(BENCH_DIR, 'cases')),
       process.env['MODEL_BENCH_CASES'],
+      table,
     );
     const books = loadContacts(join(BENCH_DIR, 'contacts.json'));
     const helperBinary = findHelper();
@@ -327,8 +330,6 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('model bench', () => {
         : (JSON.parse(readFileSync(compareWith, 'utf8')) as BenchReport);
     const outDir = process.env['MODEL_BENCH_OUT'] ?? join(ROOT, 'output', 'bench');
     const toRescore = process.env['MODEL_BENCH_RESCORE'];
-    // Blind cases are counted, never named, unless an expectation is being fixed.
-    const table = { showBlind: process.env['MODEL_BENCH_BLIND'] === 'show' };
     try {
       if (toRescore) {
         // Every case, whatever MODEL_BENCH_CASES says: a report is scored whole.

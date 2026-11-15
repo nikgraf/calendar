@@ -156,11 +156,14 @@ export const loadCases = (dir: string): ReadonlyArray<BenchCase> =>
 
 /**
  * The cases a comma-separated selection names: each term is part of an
- * id or a whole tag ("flow,de"). No selection, every case.
+ * id or a whole tag ("flow,de"). No selection, every case. A selection
+ * names open cases only, unless the blind ones are shown: a run of a few
+ * cases would give a blind one's outcome away by its counts.
  */
 export const filterCases = (
   cases: ReadonlyArray<BenchCase>,
   selection: string | undefined,
+  { showBlind = false }: { readonly showBlind?: boolean | undefined } = {},
 ): ReadonlyArray<BenchCase> => {
   const terms = (selection ?? '')
     .split(',')
@@ -169,12 +172,14 @@ export const filterCases = (
   if (terms.length === 0) {
     return cases;
   }
-  return cases.filter((benchCase) =>
-    terms.some(
-      (term) =>
-        benchCase.id.toLowerCase().includes(term) ||
-        benchCase.tags.some((tag) => tag.toLowerCase() === term),
-    ),
+  return cases.filter(
+    (benchCase) =>
+      (showBlind || !benchCase.blind) &&
+      terms.some(
+        (term) =>
+          benchCase.id.toLowerCase().includes(term) ||
+          benchCase.tags.some((tag) => tag.toLowerCase() === term),
+      ),
   );
 };
 

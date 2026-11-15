@@ -108,6 +108,19 @@ describe('filterCases', () => {
     // A tag matches whole: 'flo' is no tag, and no id holds it either.
     expect(filterCases(cases, 'gue')).toHaveLength(0);
   });
+
+  it('leaves blind cases out of a selection, and in a run of every case', () => {
+    const withBlind = loadCases(
+      caseDir({
+        'flow-open.json': { lang: 'en', tags: ['flow'], turns: [] },
+        'flow-sealed.json': { blind: true, lang: 'en', tags: ['flow'], turns: [] },
+      }),
+    );
+    expect(filterCases(withBlind, undefined)).toHaveLength(2);
+    expect(filterCases(withBlind, 'flow').map((benchCase) => benchCase.id)).toEqual(['flow-open']);
+    expect(filterCases(withBlind, 'sealed')).toHaveLength(0);
+    expect(filterCases(withBlind, 'flow', { showBlind: true })).toHaveLength(2);
+  });
 });
 
 describe('loadContacts', () => {

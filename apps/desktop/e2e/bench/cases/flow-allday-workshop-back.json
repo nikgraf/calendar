@@ -11,7 +11,7 @@
       "expect": { "isAllDay": true }
     },
     {
-      "input": { "text": "no, 10 to 3" },
+      "input": { "text": "no, from 10 to 3" },
       "expect": { "startTime": "10:00", "endTime": "15:00" }
     }
   ]

@@ -32,33 +32,48 @@ export const signTest = (fixed: number, broke: number): number => {
     return 1;
   }
   const larger = Math.max(fixed, broke);
-  // P(exactly i of total), from i = total down to the larger side.
-  let exactly = 0.5 ** total;
-  let tail = 0;
-  for (let i = total; i >= larger; i -= 1) {
-    tail += exactly;
-    exactly = (exactly * i) / (total - i + 1);
+  // The weight of each split against the even one's, which is 1: no power
+  // of a half to underflow, however many cases flipped.
+  const middle = Math.floor(total / 2);
+  const weights: Array<number> = Array.from({ length: total + 1 }, () => 0);
+  weights[middle] = 1;
+  for (let i = middle + 1; i <= total; i += 1) {
+    weights[i] = (weights[i - 1]! * (total - i + 1)) / i;
   }
-  return Math.min(1, 2 * tail);
+  for (let i = middle - 1; i >= 0; i -= 1) {
+    weights[i] = (weights[i + 1]! * (i + 1)) / (total - i);
+  }
+  const all = weights.reduce((sum, weight) => sum + weight, 0);
+  const tail = weights.slice(larger).reduce((sum, weight) => sum + weight, 0);
+  return Math.min(1, (2 * tail) / all);
 };
 
 /** Below this a split is called more than chance. */
 const CHANCE = 0.05;
 
-const probability = (p: number): string => (p < 0.005 ? 'p < 0.01' : `p = ${p.toFixed(2)}`);
+/** Three places near the line, so a p never reads the same on both sides of it. */
+const probability = (p: number): string =>
+  p < 0.0005 ? 'p < 0.001' : `p = ${p.toFixed(p < 0.1 ? 3 : 2)}`;
+
+/** Cases by name, the blind ones as a count: what any list of cases prints. */
+export const namedCases = (
+  cases: ReadonlyArray<Flip>,
+  { showBlind = false }: { readonly showBlind?: boolean | undefined } = {},
+): string => {
+  const open = cases.filter((each) => showBlind || !each.blind).map((each) => each.id);
+  const hidden = cases.length - open.length;
+  return [
+    ...(open.length === 0 ? [] : [open.join(', ')]),
+    ...(hidden === 0 ? [] : [`${String(hidden)} blind`]),
+  ].join(' · ');
+};
 
 const named = (
   label: string,
   flips: ReadonlyArray<Flip>,
   showBlind: boolean,
-): string | undefined => {
-  if (flips.length === 0) {
-    return undefined;
-  }
-  const open = flips.filter((flip) => showBlind || !flip.blind).map((flip) => flip.id);
-  const hidden = flips.length - open.length;
-  return `   ${label}: ${[...(open.length === 0 ? [] : [open.join(', ')]), ...(hidden === 0 ? [] : [`${String(hidden)} blind`])].join(' · ')}`;
-};
+): string | undefined =>
+  flips.length === 0 ? undefined : `   ${label}: ${namedCases(flips, { showBlind })}`;
 
 /** The flips as a comparison prints them: the open ones by name, the blind ones counted, then the test. */
 export const flipLines = (
