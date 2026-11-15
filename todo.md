@@ -155,8 +155,7 @@ the served model (#184) and slot proposals (#185) are in
       `docs/decisions.md` → AI): the Search thread on steps too (it keeps
       its turns and Undo); ⌘Z / ⇧⌘Z through the steps on the Mac;
       haptics on the iPhone's
-      bar and on the switch between the views (a native build); a
-      question before a swipe down discards a thread with steps in it;
+      bar and on the switch between the views (a native build);
       answering the Assistant's question by voice ("the first one", a
       model task with bench cases, not a word list); every value
       travelling from the card to its field in the switch, and the
