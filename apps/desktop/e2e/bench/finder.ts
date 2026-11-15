@@ -11,6 +11,7 @@ import { finderWindowDates, Temporal } from '@calendar/core';
 import { Schema } from 'effect';
 import { fold } from './check.ts';
 import { type Flip, flipLines } from './flips.ts';
+import { earlierRun } from './report.ts';
 
 /**
  * The finder bench's cases: what find a time is told ("find 90 min for
@@ -601,7 +602,7 @@ export const compareFinderReports = (
 ): string => {
   const earlier = new Map(before.cases.map((each) => [each.id, each]));
   const lines = [
-    `   vs ${before.sha} (${before.when.slice(0, 16)}): ${ARMS.map(
+    `   vs ${earlierRun(before, after)}: ${ARMS.map(
       (arm) =>
         `${arm} ${String(before.score[arm].cases)}/${String(before.score.total)} → ${String(after.score[arm].cases)}/${String(after.score.total)}`,
     ).join(', ')}`,

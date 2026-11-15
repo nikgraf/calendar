@@ -226,7 +226,11 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('finder bench', () => {
             when: new Date().toISOString(),
           };
           log(formatFinderReport(report, table));
-          if (earlier !== undefined && earlier.provider === provider.name) {
+          // One model beside its own earlier run, or the run's only model beside another.
+          if (
+            earlier !== undefined &&
+            (earlier.provider === provider.name || available.length === 1)
+          ) {
             log(compareFinderReports(earlier, report, table));
           } else if (earlier !== undefined) {
             log(`   (MODEL_BENCH_COMPARE is a ${earlier.provider} report; not compared)`);

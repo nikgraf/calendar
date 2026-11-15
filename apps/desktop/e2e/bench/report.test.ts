@@ -311,6 +311,15 @@ describe('compareReports', () => {
     expect(compareReports(report(CASES), quiet)).toContain('   settings: not recorded → ');
     expect(compareReports(quiet, quiet)).not.toContain('settings');
   });
+
+  it('names the earlier run’s model where the two runs are of two models', () => {
+    const v1 = report(CASES, { provider: 'openai:assistant-v1+tuned', sha: 'old0000' });
+    const v2 = report(CASES, { provider: 'openai:assistant-v2+tuned' });
+    expect(compareReports(v1, v2)).toContain(
+      '   vs openai:assistant-v1+tuned at old0000 (2026-08-22T10:20): cases 1/2 → 1/2',
+    );
+    expect(compareReports(v1, v1)).toContain('   vs old0000 (2026-08-22T10:20): cases');
+  });
 });
 
 describe('writeReport', () => {

@@ -291,6 +291,13 @@ export const formatReport = (
   return lines.join('\n');
 };
 
+/** The earlier run as a comparison names it: by its model too, where the two runs are of two models. */
+export const earlierRun = (
+  before: { readonly provider: string; readonly sha: string; readonly when: string },
+  after: { readonly provider: string },
+): string =>
+  `${before.provider === after.provider ? '' : `${before.provider} at `}${before.sha} (${before.when.slice(0, 16)})`;
+
 /**
  * The report as the before/after of a change: what moved, case by case
  * and in the score, and whether chance alone would move as much
@@ -319,7 +326,7 @@ export const compareReports = (
       : `${field} ${ratio(was)} → ${ratio(is)}`;
   };
   return [
-    `   vs ${before.sha} (${before.when.slice(0, 16)}): cases ${ratio(before.score.cases)} → ${ratio(
+    `   vs ${earlierRun(before, after)}: cases ${ratio(before.score.cases)} → ${ratio(
       after.score.cases,
     )}, turns ${ratio(before.score.turns)} → ${ratio(after.score.turns)}`,
     ...(before.settings === after.settings
