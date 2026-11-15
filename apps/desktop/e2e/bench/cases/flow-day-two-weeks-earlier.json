@@ -1,0 +1,23 @@
+{
+  "lang": "en",
+  "tags": ["flow", "day", "location"],
+  "turns": [
+    {
+      "input": { "text": "Team dinner in two weeks at 7pm" },
+      "expect": {
+        "title": "team dinner",
+        "dayOffset": 14,
+        "startTime": "19:00",
+        "endTime": "20:00"
+      }
+    },
+    {
+      "input": { "text": "one day earlier" },
+      "expect": { "dayOffset": 13 }
+    },
+    {
+      "input": { "text": "at Trattoria Roma" },
+      "expect": { "location": "trattoria roma" }
+    }
+  ]
+}

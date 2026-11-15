@@ -1,0 +1,24 @@
+{
+  "lang": "en",
+  "tags": ["flow", "location", "follow-up"],
+  "turns": [
+    {
+      "input": { "text": "Workshop Wednesday at 9" },
+      "expect": {
+        "title": "workshop",
+        "weekday": 3,
+        "startTime": "09:00",
+        "endTime": "10:00",
+        "location": null
+      }
+    },
+    {
+      "input": { "text": "at WeWork" },
+      "expect": { "location": "wework" }
+    },
+    {
+      "input": { "text": "the Berlin one" },
+      "expect": { "locationIs": "wework, berlin" }
+    }
+  ]
+}

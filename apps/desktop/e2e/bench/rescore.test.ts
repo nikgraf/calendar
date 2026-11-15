@@ -46,6 +46,7 @@ const report = (turns: ReadonlyArray<TurnReport>, id = 'dinner'): BenchReport =>
 const benchCase = (
   expectations: ReadonlyArray<BenchCase['turns'][number]['expect']>,
 ): BenchCase => ({
+  blind: false,
   contacts: 'team',
   id: 'dinner',
   lang: 'en',
@@ -192,6 +193,19 @@ describe('rescore', () => {
       sha: 'aaaaaaaa',
       when: '2026-11-10T12:00:00.000Z',
     });
+  });
+
+  it('takes the blind flag of a case it leaves alone from the case as it is now', () => {
+    // A report from before the flag, of a case that says other turns now and is blind.
+    const before = report([turn({ draft: draft(), kind: 'draft' })]);
+    const [left] = rescore(
+      before,
+      [{ ...benchCase([{ title: 'dinner' }, { title: 'team dinner' }]), blind: true }],
+      NOW,
+    ).cases;
+    expect(left).toMatchObject({ blind: true, id: 'dinner' });
+    // A case that is gone keeps what the report said of it.
+    expect(rescore(before, [], NOW).cases[0]?.blind).toBeUndefined();
   });
 
   it('leaves a case alone whose words are no longer the ones the model answered', () => {

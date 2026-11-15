@@ -1,0 +1,29 @@
+{
+  "blind": true,
+  "lang": "de",
+  "tags": ["flow", "repeat", "de"],
+  "turns": [
+    {
+      "input": { "text": "Chorprobe Donnerstag um 19 Uhr" },
+      "expect": {
+        "title": "chorprobe",
+        "weekday": 4,
+        "startTime": "19:00",
+        "endTime": "20:00",
+        "repeat": null
+      }
+    },
+    {
+      "input": { "text": "jede Woche" },
+      "expect": { "repeat": { "freq": "weekly" } }
+    },
+    {
+      "input": { "text": "bis Juni" },
+      "expect": { "repeat": { "freq": "weekly", "untilMonth": 6 } }
+    },
+    {
+      "input": { "text": "doch keine Wiederholung" },
+      "expect": { "repeat": null }
+    }
+  ]
+}

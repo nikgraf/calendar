@@ -1,0 +1,16 @@
+{
+  "lang": "en",
+  "tags": ["dictated"],
+  "turns": [
+    {
+      "input": { "text": "call with tom baker half past two tomorrow" },
+      "expect": {
+        "title": "call with tom baker",
+        "dayOffset": 1,
+        "startTime": "14:30",
+        "endTime": "15:30",
+        "guests": {}
+      }
+    }
+  ]
+}

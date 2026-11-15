@@ -1,0 +1,21 @@
+{
+  "lang": "de",
+  "tags": ["long", "guests", "location", "notifications", "de"],
+  "turns": [
+    {
+      "input": {
+        "text": "Erstelle für Freitag um 18 Uhr ein Abendessen mit Sarah im Gasthaus Adler, lade Jörg Müller ein und erinnere mich zwei Stunden vorher"
+      },
+      "expect": {
+        "kind": "event",
+        "title": "abendessen mit sarah",
+        "weekday": 5,
+        "startTime": "18:00",
+        "endTime": "19:00",
+        "location": "gasthaus adler",
+        "guests": { "emails": ["joerg.mueller@example.com"] },
+        "reminders": [120]
+      }
+    }
+  ]
+}

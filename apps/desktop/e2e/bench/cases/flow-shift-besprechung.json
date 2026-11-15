@@ -1,0 +1,18 @@
+{
+  "lang": "de",
+  "tags": ["flow", "shift", "de"],
+  "turns": [
+    {
+      "input": { "text": "Besprechung Dienstag um 10" },
+      "expect": { "title": "besprechung", "weekday": 2, "startTime": "10:00", "endTime": "11:00" }
+    },
+    {
+      "input": { "text": "mach 45 Minuten draus" },
+      "expect": { "startTime": "10:00", "endTime": "10:45" }
+    },
+    {
+      "input": { "text": "um halb elf" },
+      "expect": { "startTime": "10:30", "endTime": "11:15" }
+    }
+  ]
+}

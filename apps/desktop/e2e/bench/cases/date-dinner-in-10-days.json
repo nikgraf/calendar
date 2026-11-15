@@ -1,0 +1,18 @@
+{
+  "blind": true,
+  "lang": "en",
+  "tags": ["date"],
+  "turns": [
+    {
+      "input": { "text": "Dinner with Teo in 10 days" },
+      "expect": {
+        "title": "dinner with teo",
+        "dayOffset": 10,
+        "startTime": "19:00",
+        "endTime": "20:00",
+        "assumedTime": true,
+        "guests": {}
+      }
+    }
+  ]
+}

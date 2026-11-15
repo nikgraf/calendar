@@ -1,0 +1,16 @@
+{
+  "lang": "de",
+  "tags": ["time", "de"],
+  "turns": [
+    {
+      "input": { "text": "Spaziergang morgen Nachmittag" },
+      "expect": {
+        "title": "spaziergang",
+        "dayOffset": 1,
+        "startTime": "14:00",
+        "endTime": "15:00",
+        "assumedTime": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "blind": true,
+  "lang": "en",
+  "tags": ["long", "location", "repeat", "notifications"],
+  "turns": [
+    {
+      "input": {
+        "text": "Yoga every Monday and Wednesday at 7am at Studio Nord, remind me 20 minutes before"
+      },
+      "expect": {
+        "kind": "event",
+        "title": "yoga",
+        "startTime": "07:00",
+        "endTime": "08:00",
+        "location": "studio nord",
+        "repeat": { "freq": "weekly", "byDay": ["MO", "WE"] },
+        "reminders": [20]
+      }
+    }
+  ]
+}

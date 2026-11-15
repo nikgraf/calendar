@@ -1,0 +1,18 @@
+{
+  "lang": "en",
+  "tags": ["flow", "shift"],
+  "turns": [
+    {
+      "input": { "text": "Movie Friday at 8pm" },
+      "expect": { "title": "movie", "weekday": 5, "startTime": "20:00", "endTime": "21:00" }
+    },
+    {
+      "input": { "text": "it ends at 11" },
+      "expect": { "startTime": "20:00", "endTime": "23:00" }
+    },
+    {
+      "input": { "text": "half an hour earlier" },
+      "expect": { "startTime": "19:30", "endTime": "22:30" }
+    }
+  ]
+}

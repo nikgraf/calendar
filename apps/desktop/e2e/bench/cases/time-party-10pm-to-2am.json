@@ -1,0 +1,16 @@
+{
+  "lang": "en",
+  "tags": ["time", "allday"],
+  "turns": [
+    {
+      "input": { "text": "Party Saturday from 10pm to 2am" },
+      "expect": {
+        "title": "party",
+        "weekday": 6,
+        "startTime": "22:00",
+        "endTime": "02:00",
+        "spanDays": 1
+      }
+    }
+  ]
+}

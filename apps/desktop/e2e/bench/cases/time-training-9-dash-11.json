@@ -1,0 +1,11 @@
+{
+  "blind": true,
+  "lang": "en",
+  "tags": ["time"],
+  "turns": [
+    {
+      "input": { "text": "Training Saturday 9–11" },
+      "expect": { "title": "training", "weekday": 6, "startTime": "09:00", "endTime": "11:00" }
+    }
+  ]
+}

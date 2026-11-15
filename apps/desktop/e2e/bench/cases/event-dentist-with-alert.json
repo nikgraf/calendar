@@ -1,0 +1,17 @@
+{
+  "lang": "en",
+  "tags": ["task", "notifications"],
+  "turns": [
+    {
+      "input": { "text": "Dentist tomorrow at 9, remind me 15 minutes before" },
+      "expect": {
+        "kind": "event",
+        "title": "dentist",
+        "dayOffset": 1,
+        "startTime": "09:00",
+        "endTime": "10:00",
+        "reminders": [15]
+      }
+    }
+  ]
+}

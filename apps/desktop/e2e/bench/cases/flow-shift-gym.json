@@ -1,0 +1,18 @@
+{
+  "lang": "en",
+  "tags": ["flow", "shift"],
+  "turns": [
+    {
+      "input": { "text": "Gym tomorrow at 6pm" },
+      "expect": { "title": "gym", "dayOffset": 1, "startTime": "18:00", "endTime": "19:00" }
+    },
+    {
+      "input": { "text": "an hour later" },
+      "expect": { "startTime": "19:00", "endTime": "20:00" }
+    },
+    {
+      "input": { "text": "make it 90 minutes" },
+      "expect": { "startTime": "19:00", "endTime": "20:30" }
+    }
+  ]
+}

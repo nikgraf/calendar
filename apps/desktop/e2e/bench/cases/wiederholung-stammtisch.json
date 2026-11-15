@@ -1,0 +1,16 @@
+{
+  "lang": "de",
+  "tags": ["repeat", "de"],
+  "turns": [
+    {
+      "input": { "text": "Jeden Donnerstag um 20 Uhr Stammtisch" },
+      "expect": {
+        "title": "stammtisch",
+        "weekday": 4,
+        "startTime": "20:00",
+        "endTime": "21:00",
+        "repeat": { "freq": "weekly" }
+      }
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "lang": "en",
+  "tags": ["task", "time"],
+  "turns": [
+    {
+      "input": { "text": "remind me to take out the bins tonight at 8" },
+      "expect": {
+        "kind": "task",
+        "title": "take out the bins",
+        "dayOffset": 0,
+        "startTime": "20:00"
+      }
+    }
+  ]
+}

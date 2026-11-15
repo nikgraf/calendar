@@ -99,7 +99,7 @@ describe('switchEditorMode', () => {
       next: 'reminder',
       previewEventToTask: () => Promise.reject(new Error('unused')),
       sourceKind: 'new',
-      taskModel: { ...model, offeredLists: lists.slice(1) } as typeof model,
+      taskModel: { ...model, offeredLists: lists.slice(1) },
       timeZone: 'UTC',
     });
     expect(switched).toBe(false);

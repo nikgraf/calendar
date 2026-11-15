@@ -1,0 +1,21 @@
+{
+  "lang": "en",
+  "tags": ["long", "location", "notes"],
+  "turns": [
+    {
+      "input": {
+        "text": "Add lunch with Jo on Wednesday at 12:30 at Cafe Luna and put in the notes that I owe him twenty euros"
+      },
+      "expect": {
+        "kind": "event",
+        "title": "lunch with jo",
+        "weekday": 3,
+        "startTime": "12:30",
+        "endTime": "13:30",
+        "location": "cafe luna",
+        "guests": {},
+        "notes": "owe"
+      }
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "lang": "en",
+  "tags": ["title"],
+  "turns": [
+    {
+      "input": { "text": "Sprint 12 review Friday at 2" },
+      "expect": {
+        "title": "sprint 12 review",
+        "weekday": 5,
+        "startTime": "14:00",
+        "endTime": "15:00"
+      }
+    }
+  ]
+}

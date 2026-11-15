@@ -1,0 +1,11 @@
+{
+  "blind": true,
+  "lang": "en",
+  "tags": ["task", "date"],
+  "turns": [
+    {
+      "input": { "text": "remind me to pay the rent on the 1st" },
+      "expect": { "kind": "task", "title": "pay the rent", "dayOfMonth": 1 }
+    }
+  ]
+}

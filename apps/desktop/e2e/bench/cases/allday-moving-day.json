@@ -1,0 +1,10 @@
+{
+  "lang": "en",
+  "tags": ["allday"],
+  "turns": [
+    {
+      "input": { "text": "Moving day Saturday" },
+      "expect": { "title": "moving day", "weekday": 6, "isAllDay": true }
+    }
+  ]
+}

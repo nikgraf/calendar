@@ -4,7 +4,7 @@ import {
   type GeoRegion,
   type PlaceSuggestion,
 } from '@calendar/core';
-import { Context, Data, Effect, Layer, Schema } from 'effect';
+import { Context, Data, Effect, Schema } from 'effect';
 import {
   GEO_METHODS,
   type GeoPlaceJson,
@@ -147,12 +147,8 @@ const oneLineAddress = (place: GeoPlaceJson): GeoPlaceJson => {
   return { ...place, address };
 };
 
-/** One layer per host — see contactsLayer for the shape. No change events. */
+/** One client per host — see remindersClientFrom for the shape. No change events. */
 export const geoClientFrom = (
   source: BridgeTransport | { readonly unavailable: string },
 ): GeoClientShape =>
   'unavailable' in source ? unavailableGeoClient(source.unavailable) : makeGeoClient(source.invoke);
-
-export const geoLayer = (
-  source: BridgeTransport | { readonly unavailable: string },
-): Layer.Layer<GeoClient> => Layer.succeed(GeoClient, geoClientFrom(source));

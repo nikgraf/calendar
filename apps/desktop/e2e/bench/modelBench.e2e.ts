@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type LanguageModel, type QuickAddResult, type RefineResult } from '@calendar/ai';
-import { type Contact, Temporal } from '@calendar/core';
+import type { Contact } from '@calendar/core';
 import { describe, expect, it } from 'vite-plus/test';
 import {
   type BenchCase,
@@ -23,6 +23,7 @@ import {
 import { plainTurn } from './plain.ts';
 import {
   benchProviders,
+  benchToday,
   connectHelper,
   findHelper,
   gitSha,
@@ -260,6 +261,7 @@ const runCase = async (
     }
   }
   return {
+    blind: benchCase.blind,
     id: benchCase.id,
     ok: turns.every((turn) => turn.failed.length === 0),
     tags: benchCase.tags,
@@ -301,15 +303,18 @@ const reportsToRescore = (value: string): ReadonlyArray<string> =>
 
 describe.skipIf(process.env['MODEL_BENCH'] !== '1')('model bench', () => {
   it('runs the cases on each model and writes a report', { timeout: 120 * 60_000 }, async () => {
-    const today = Temporal.Now.plainDateISO(TIME_ZONE).toString();
+    const today = benchToday(TIME_ZONE);
     const sha = gitSha(ROOT);
     const lines: Array<string> = [`\nMODEL BENCH — today ${today}, ${TIME_ZONE}, ${sha}\n`];
     const log = (line: string) => {
       lines.push(line);
     };
+    // Blind cases are counted, never named, unless an expectation is being fixed.
+    const table = { showBlind: process.env['MODEL_BENCH_BLIND'] === 'show' };
     const cases = filterCases(
       loadCases(join(BENCH_DIR, 'cases')),
       process.env['MODEL_BENCH_CASES'],
+      table,
     );
     const books = loadContacts(join(BENCH_DIR, 'contacts.json'));
     const helperBinary = findHelper();
@@ -332,8 +337,8 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('model bench', () => {
         for (const path of reportsToRescore(toRescore)) {
           const before = JSON.parse(readFileSync(path, 'utf8')) as BenchReport;
           const after = rescore(before, all, { sha, when: new Date().toISOString() });
-          log(formatReport(after));
-          log(compareReports(before, after));
+          log(formatReport(after, table));
+          log(compareReports(before, after, table));
           log(`   report: ${writeReport(outDir, after)}\n`);
         }
         return;
@@ -387,9 +392,10 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('model bench', () => {
           today,
           when: new Date().toISOString(),
         };
-        log(formatReport(report));
-        if (earlier !== undefined && earlier.provider === provider.name) {
-          log(compareReports(earlier, report));
+        log(formatReport(report, table));
+        // One model beside its own earlier run, or the run's only model beside another (v2, then v3).
+        if (earlier !== undefined && (earlier.provider === provider.name || arms.length === 1)) {
+          log(compareReports(earlier, report, table));
         } else if (earlier !== undefined) {
           log(`   (MODEL_BENCH_COMPARE is a ${earlier.provider} report; not compared)`);
         }

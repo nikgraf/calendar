@@ -1,0 +1,24 @@
+{
+  "lang": "en",
+  "tags": ["flow", "repeat"],
+  "turns": [
+    {
+      "input": { "text": "Team lunch Friday at 12" },
+      "expect": {
+        "title": "team lunch",
+        "weekday": 5,
+        "startTime": "12:00",
+        "endTime": "13:00",
+        "repeat": null
+      }
+    },
+    {
+      "input": { "text": "repeat it monthly" },
+      "expect": { "repeat": { "freq": "monthly" } }
+    },
+    {
+      "input": { "text": "only six times" },
+      "expect": { "repeat": { "freq": "monthly", "count": 6 } }
+    }
+  ]
+}

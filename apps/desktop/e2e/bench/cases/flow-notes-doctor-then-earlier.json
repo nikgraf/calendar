@@ -1,0 +1,25 @@
+{
+  "blind": true,
+  "lang": "en",
+  "tags": ["flow", "notes", "shift"],
+  "turns": [
+    {
+      "input": { "text": "Doctor Friday at 9, note: fasting blood test" },
+      "expect": {
+        "title": "doctor",
+        "weekday": 5,
+        "startTime": "09:00",
+        "endTime": "10:00",
+        "notes": "fasting blood test"
+      }
+    },
+    {
+      "input": { "text": "also note the referral letter" },
+      "expect": { "notes": "referral letter" }
+    },
+    {
+      "input": { "text": "30 minutes earlier" },
+      "expect": { "startTime": "08:30", "endTime": "09:30" }
+    }
+  ]
+}

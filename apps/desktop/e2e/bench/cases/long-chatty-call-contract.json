@@ -1,0 +1,21 @@
+{
+  "blind": true,
+  "lang": "en",
+  "tags": ["long", "guests", "notes"],
+  "turns": [
+    {
+      "input": {
+        "text": "Okay so tomorrow at 4 I've got a call with Tom Baker about the contract, should be about 45 minutes, please invite him and note that legal needs to join"
+      },
+      "expect": {
+        "kind": "event",
+        "title": ["call with tom baker", "call with tom baker about the contract"],
+        "dayOffset": 1,
+        "startTime": "16:00",
+        "endTime": "16:45",
+        "guests": { "emails": ["tom.baker@example.com"] },
+        "notes": "legal"
+      }
+    }
+  ]
+}

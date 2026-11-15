@@ -1,0 +1,18 @@
+{
+  "lang": "de",
+  "tags": ["flow", "title", "de"],
+  "turns": [
+    {
+      "input": { "text": "Besuch Freitag um 14 Uhr" },
+      "expect": { "title": "besuch", "weekday": 5, "startTime": "14:00", "endTime": "15:00" }
+    },
+    {
+      "input": { "text": "nenn es Steuerberater" },
+      "expect": { "title": "steuerberater" }
+    },
+    {
+      "input": { "text": "mit Frau Berger" },
+      "expect": { "title": "steuerberater mit frau berger", "guests": {} }
+    }
+  ]
+}

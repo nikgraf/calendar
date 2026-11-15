@@ -1,0 +1,10 @@
+{
+  "lang": "en",
+  "tags": ["date"],
+  "turns": [
+    {
+      "input": { "text": "Lunch the day after tomorrow at 12:30" },
+      "expect": { "title": "lunch", "dayOffset": 2, "startTime": "12:30", "endTime": "13:30" }
+    }
+  ]
+}

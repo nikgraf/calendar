@@ -1,0 +1,17 @@
+{
+  "blind": true,
+  "lang": "en",
+  "tags": ["date"],
+  "turns": [
+    {
+      "input": { "text": "Workshop on 3 February from 9 to 12" },
+      "expect": {
+        "title": "workshop",
+        "dayOfMonth": 3,
+        "month": 2,
+        "startTime": "09:00",
+        "endTime": "12:00"
+      }
+    }
+  ]
+}

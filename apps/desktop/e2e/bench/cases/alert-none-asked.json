@@ -1,0 +1,16 @@
+{
+  "lang": "en",
+  "tags": ["notifications", "title"],
+  "turns": [
+    {
+      "input": { "text": "Dentist Tuesday at 10, no reminder" },
+      "expect": {
+        "title": "dentist",
+        "weekday": 2,
+        "startTime": "10:00",
+        "endTime": "11:00",
+        "reminders": []
+      }
+    }
+  ]
+}

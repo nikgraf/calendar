@@ -1,0 +1,10 @@
+{
+  "lang": "en",
+  "tags": ["typed"],
+  "turns": [
+    {
+      "input": { "text": "wendsday 10am standup" },
+      "expect": { "title": "standup", "weekday": 3, "startTime": "10:00", "endTime": "11:00" }
+    }
+  ]
+}

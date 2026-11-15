@@ -1,0 +1,16 @@
+{
+  "lang": "en",
+  "tags": ["title", "command"],
+  "turns": [
+    {
+      "input": { "text": "Put the quarterly review on my calendar for Monday at 9" },
+      "expect": {
+        "kind": "event",
+        "title": "quarterly review",
+        "weekday": 1,
+        "startTime": "09:00",
+        "endTime": "10:00"
+      }
+    }
+  ]
+}

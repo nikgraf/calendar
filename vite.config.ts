@@ -36,6 +36,10 @@ export default defineConfig({
       'apps/ios/ios/',
       'vite.config.ts.timestamp-*',
     ],
+    // Type-aware rules (tsgolint, on the same TypeScript 7 compiler as
+    // `pnpm typecheck`) for what the type checker accepts but is still
+    // wrong: a promise nobody waits for, `[object Object]` in a message.
+    options: { typeAware: true },
     overrides: [
       {
         env: { node: true },
@@ -100,6 +104,15 @@ export default defineConfig({
       // `scripts/complexityCap.test.ts` fails on a directive that names the
       // rule, and `unicorn/no-abusive-eslint-disable` on one that names none.
       complexity: ['error', { max: 40 }],
+      'typescript/await-thenable': 'error',
+      'typescript/no-base-to-string': 'error',
+      // A write left running: Expo SDK 58's File.write turned async and three
+      // callers kept using it as if it were writeSync.
+      'typescript/no-floating-promises': 'error',
+      'typescript/no-misused-promises': 'error',
+      'typescript/no-unnecessary-type-assertion': 'error',
+      'typescript/only-throw-error': 'error',
+      'typescript/restrict-template-expressions': 'error',
     },
   },
   staged: {

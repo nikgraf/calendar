@@ -1,0 +1,19 @@
+{
+  "blind": true,
+  "lang": "en",
+  "tags": ["flow", "task", "title"],
+  "turns": [
+    {
+      "input": { "text": "to-do: buy a birthday present" },
+      "expect": { "kind": "task", "title": "buy a birthday present" }
+    },
+    {
+      "input": { "text": "on Saturday" },
+      "expect": { "weekday": 6 }
+    },
+    {
+      "input": { "text": "call it gift for Anna" },
+      "expect": { "title": "gift for anna" }
+    }
+  ]
+}

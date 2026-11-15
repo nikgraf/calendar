@@ -211,7 +211,5 @@ const makeSheetStyles = (colors: ThemeColors) =>
     },
   });
 
-export type SheetStyles = ReturnType<typeof makeSheetStyles>;
-
 /** The edit sheets' shared styles, in the current appearance. */
 export const useSheetStyles = () => useStyles(makeSheetStyles);

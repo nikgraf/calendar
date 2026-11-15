@@ -1,0 +1,24 @@
+{
+  "lang": "en",
+  "tags": ["flow", "shift"],
+  "turns": [
+    {
+      "input": { "text": "Party Saturday at 10pm" },
+      "expect": {
+        "title": "party",
+        "weekday": 6,
+        "startTime": "22:00",
+        "endTime": "23:00",
+        "spanDays": 0
+      }
+    },
+    {
+      "input": { "text": "two hours longer" },
+      "expect": { "startTime": "22:00", "endTime": "01:00", "spanDays": 1 }
+    },
+    {
+      "input": { "text": "make it Friday" },
+      "expect": { "weekday": 5 }
+    }
+  ]
+}

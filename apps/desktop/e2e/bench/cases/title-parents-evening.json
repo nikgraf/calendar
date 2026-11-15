@@ -1,0 +1,17 @@
+{
+  "blind": true,
+  "lang": "en",
+  "tags": ["title"],
+  "turns": [
+    {
+      "input": { "text": "Parents' evening Tuesday at 6" },
+      "expect": {
+        "title": "parents' evening",
+        "weekday": 2,
+        "startTime": "18:00",
+        "endTime": "19:00",
+        "assumedTime": false
+      }
+    }
+  ]
+}

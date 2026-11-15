@@ -1,0 +1,23 @@
+{
+  "lang": "en",
+  "tags": ["flow", "title", "location"],
+  "turns": [
+    {
+      "input": { "text": "Dinner with Theo Friday at 7" },
+      "expect": {
+        "title": "dinner with theo",
+        "weekday": 5,
+        "startTime": "19:00",
+        "endTime": "20:00"
+      }
+    },
+    {
+      "input": { "text": "it's Teo, not Theo" },
+      "expect": { "title": "dinner with teo" }
+    },
+    {
+      "input": { "text": "at Cafe Luna" },
+      "expect": { "location": "cafe luna" }
+    }
+  ]
+}

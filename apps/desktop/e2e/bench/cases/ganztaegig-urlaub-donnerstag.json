@@ -1,0 +1,17 @@
+{
+  "blind": true,
+  "lang": "de",
+  "tags": ["allday", "de"],
+  "turns": [
+    {
+      "input": {
+        "text": "Urlaub am Donnerstag"
+      },
+      "expect": {
+        "title": "urlaub",
+        "weekday": 4,
+        "isAllDay": true
+      }
+    }
+  ]
+}

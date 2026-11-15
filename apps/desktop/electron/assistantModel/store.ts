@@ -100,6 +100,16 @@ export const createAssistantStore = ({
     );
   };
 
+  // The note only spares the next launch a checksum (or a second fetch of a
+  // wrong file): one that cannot be written never holds up the outcome.
+  const noteVerified = (verified: { readonly sha256: string; readonly version: string }) => {
+    try {
+      files.writeVerified(verified);
+    } catch {
+      // The next launch checks the file again.
+    }
+  };
+
   const verify = async () => {
     set({ kind: 'verifying' });
     if (files.size() !== manifest.bytes) {
@@ -117,11 +127,11 @@ export const createAssistantStore = ({
     if (sha256.toLowerCase() !== manifest.sha256.toLowerCase()) {
       await files.remove();
       // Kept, so the next launch does not fetch the same wrong file by itself.
-      files.writeVerified({ sha256, version: manifest.version });
+      noteVerified({ sha256, version: manifest.version });
       set({ kind: 'failed', message: MISMATCH });
       return;
     }
-    files.writeVerified({ sha256: manifest.sha256, version: manifest.version });
+    noteVerified({ sha256: manifest.sha256, version: manifest.version });
     set({ kind: 'ready', path: files.destination });
   };
 

@@ -1,0 +1,17 @@
+{
+  "blind": true,
+  "lang": "en",
+  "tags": ["notifications"],
+  "turns": [
+    {
+      "input": { "text": "Performance review Thursday at 4, remind me a week before" },
+      "expect": {
+        "title": "performance review",
+        "weekday": 4,
+        "startTime": "16:00",
+        "endTime": "17:00",
+        "reminders": [10080]
+      }
+    }
+  ]
+}

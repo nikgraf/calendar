@@ -1,0 +1,16 @@
+{
+  "lang": "en",
+  "tags": ["title"],
+  "turns": [
+    {
+      "input": { "text": "I have a physio appointment on Thursday at 4" },
+      "expect": {
+        "kind": "event",
+        "title": "physio appointment",
+        "weekday": 4,
+        "startTime": "16:00",
+        "endTime": "17:00"
+      }
+    }
+  ]
+}

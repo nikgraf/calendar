@@ -1,0 +1,10 @@
+{
+  "lang": "de",
+  "tags": ["time", "de"],
+  "turns": [
+    {
+      "input": { "text": "Training Dienstag um halb sieben abends" },
+      "expect": { "title": "training", "weekday": 2, "startTime": "18:30", "endTime": "19:30" }
+    }
+  ]
+}

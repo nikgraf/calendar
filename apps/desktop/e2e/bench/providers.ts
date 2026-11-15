@@ -2,6 +2,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { type LanguageModel, transcriptFromSegments } from '@calendar/ai';
+import { Temporal } from '@calendar/core';
 import { strictSchema, withoutNulls } from '../../electron/strictSchema.ts';
 
 /**
@@ -424,7 +425,7 @@ export const openAiRequest = ({
     messages: [{ content: prompt, role: 'user' }],
     model,
     response_format: {
-      json_schema: { name: 'answer', schema: strictSchema(jsonSchema as object), strict: true },
+      json_schema: { name: 'answer', schema: strictSchema(jsonSchema), strict: true },
       type: 'json_schema',
     },
     temperature: 0,
@@ -523,6 +524,27 @@ export interface OpenAiUsage {
   readonly prompt_cache_miss_tokens?: number;
   readonly prompt_tokens?: number;
 }
+
+/**
+ * The day a run reads its phrases on: the clock's, or the one
+ * MODEL_BENCH_TODAY names (`YYYY-MM-DD`). What "this week" and "Friday"
+ * mean moves with the day, so two runs stand beside each other only when
+ * they read on the same one: a named day lets a later run do that.
+ */
+export const benchToday = (
+  timeZone: string,
+  named: string | undefined = process.env['MODEL_BENCH_TODAY'],
+): string => {
+  const asked = (named ?? '').trim();
+  if (asked === '') {
+    return Temporal.Now.plainDateISO(timeZone).toString();
+  }
+  try {
+    return Temporal.PlainDate.from(asked, { overflow: 'reject' }).toString();
+  } catch {
+    throw new Error(`MODEL_BENCH_TODAY is no day: "${asked}" (YYYY-MM-DD)`);
+  }
+};
 
 /** The commit the bench ran on; `-dirty` when the tree is not the commit. */
 export const gitSha = (root: string): string => {

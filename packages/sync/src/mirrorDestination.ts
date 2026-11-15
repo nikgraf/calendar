@@ -200,7 +200,7 @@ export const googleMirrorDestination = (
           );
           if (live && marker !== undefined && marker.tag === stamp.tag) {
             if (marker.rev > stamp.rev) {
-              return { kind: 'newer', rev: marker.rev } as Outcome;
+              return { kind: 'newer', rev: marker.rev };
             }
             if (marker.contentHash === op.copy.contentHash) {
               // The same copy, written by the other device: take it as is.

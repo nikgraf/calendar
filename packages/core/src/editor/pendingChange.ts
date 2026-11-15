@@ -197,18 +197,17 @@ const taskLines = (
   linesBetween(before ? taskPairs(before) : null, after ? taskPairs(after) : null);
 
 /** The task a createTask op inserts, from the fields it carries. */
-const createdTask = (op: PendingOp): TaskRecord =>
-  ({
-    accountId: op.accountId,
-    dueDate: op.taskDue ?? undefined,
-    id: op.eventId,
-    listId: op.taskListId ?? op.calendarId,
-    notes: op.taskNotes,
-    provider: 'google',
-    status: 'needsAction',
-    title: op.taskTitle ?? '',
-    updatedAt: op.createdAt,
-  }) as TaskRecord;
+const createdTask = (op: PendingOp): TaskRecord => ({
+  accountId: op.accountId,
+  dueDate: op.taskDue ?? undefined,
+  id: op.eventId,
+  listId: op.taskListId ?? op.calendarId,
+  notes: op.taskNotes,
+  provider: 'google',
+  status: 'needsAction',
+  title: op.taskTitle ?? '',
+  updatedAt: op.createdAt,
+});
 
 /** What a queued change does, or undefined when there is nothing to compare it against. */
 export const pendingOpDiff = (

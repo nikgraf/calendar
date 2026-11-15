@@ -2,7 +2,6 @@ import { createRowNote } from '@calendar/ai';
 import { useAccountCount, useOnboarding, useUpdateOnboarding } from '@calendar/app-state';
 import {
   cardVisible,
-  type LessonId,
   type LessonRowId,
   lessonCopy,
   lessonProgress,
@@ -72,7 +71,7 @@ export function GettingStartedCard({ timeZone }: { timeZone: string }) {
     if (id === 'accounts') {
       router.push('/setup/sources');
     } else {
-      openLesson(id as LessonId, host, { from: 'calendar', timeZone });
+      openLesson(id, host, { from: 'calendar', timeZone });
     }
   };
 

@@ -235,6 +235,18 @@ const VIEW_KEYS = [
 ] as const;
 type ViewKey = (typeof VIEW_KEYS)[number];
 
+/** Days from the day a draft starts to the day it ends: 0 for a to-do and for one day. */
+const spanDaysOf = (item: QuickAddItem): number =>
+  item.kind !== 'event' || item.prefill.endDate === undefined
+    ? 0
+    : Temporal.PlainDate.from(item.prefill.date).until(item.prefill.endDate).days;
+
+/** The span as the time view writes it: nothing for one day, so a day moved keeps the view. */
+const spanText = (item: QuickAddItem): string => {
+  const days = spanDaysOf(item);
+  return days === 0 ? '' : ` +${String(days)}d`;
+};
+
 const viewOf = (draft: BenchDraft): Readonly<Record<ViewKey, string>> => {
   const { item } = draft;
   return {
@@ -251,7 +263,7 @@ const viewOf = (draft: BenchDraft): Readonly<Record<ViewKey, string>> => {
       item.kind === 'event'
         ? item.prefill.isAllDay
           ? 'all day'
-          : `${item.prefill.startTime}-${item.prefill.endTime}`
+          : `${item.prefill.startTime}-${item.prefill.endTime}${spanText(item)}`
         : (item.prefill.time ?? 'no time'),
     title: fold(item.prefill.title),
   };
@@ -269,8 +281,8 @@ const ABOUT: ReadonlyArray<{
 }> = [
   { field: 'kind', keys: ['kind'], view: 'kind' },
   { field: 'title', keys: ['title', 'titleIncludes'], view: 'title' },
-  { field: 'date', keys: ['weekday', 'dayOffset'], view: 'date' },
-  { field: 'time', keys: ['startTime', 'endTime', 'assumedTime'], view: 'time' },
+  { field: 'date', keys: ['weekday', 'dayOffset', 'dayOfMonth', 'month'], view: 'date' },
+  { field: 'time', keys: ['startTime', 'endTime', 'assumedTime', 'spanDays'], view: 'time' },
   { field: 'allDay', keys: ['isAllDay'], view: 'time' },
   { field: 'location', keys: ['location', 'locationIs'], view: 'location' },
   { field: 'repeat', keys: ['repeat'], view: 'repeat' },
@@ -315,11 +327,59 @@ const checkTitle = (expectation: Expectation, item: QuickAddItem, fail: Fail): v
   }
 };
 
-/** Whether the date falls on the expected weekday and that many days after today. */
+/** How far ahead the next such day is looked for: a 29th of February is eight years off at most. */
+const DAYS_AHEAD = 366 * 8;
+
+/**
+ * The days a date said by its number may land on. From today on, the
+ * first day that is the said day of the said month: one day, or with a
+ * month said alone every day of that month. A later turn may also keep
+ * the month of the draft it changes, as the app does ("the 14th instead"
+ * said in November to a draft in December stays in December); a first
+ * phrase has no draft, so a month late is a miss.
+ */
+const nextSuchDays = (
+  { dayOfMonth, month }: Pick<Expectation, 'dayOfMonth' | 'month'>,
+  today: string,
+  draftDate: string | undefined,
+): ReadonlyArray<string> => {
+  const from = Temporal.PlainDate.from(today);
+  const days: Array<string> = [];
+  for (let ahead = 0; ahead <= DAYS_AHEAD; ahead += 1) {
+    const day = from.add({ days: ahead });
+    if (
+      (dayOfMonth === undefined || day.day === dayOfMonth) &&
+      (month === undefined || day.month === month)
+    ) {
+      days.push(day.toString());
+      // One day where a day was said; the rest of the month where only the month was.
+      if (dayOfMonth !== undefined || day.day === day.daysInMonth) {
+        break;
+      }
+    } else if (days.length > 0) {
+      break;
+    }
+  }
+  if (dayOfMonth !== undefined && month === undefined && draftDate !== undefined) {
+    const draft = Temporal.PlainDate.from(draftDate);
+    if (dayOfMonth <= draft.daysInMonth) {
+      days.push(draft.with({ day: dayOfMonth }).toString());
+    }
+  }
+  return days;
+};
+
+/**
+ * Whether the date falls on the expected weekday, that many days after
+ * today, and on the day of the month and in the month that were said: a
+ * date said by its number is the next such day, never one that has
+ * passed and never the same day a month or a year on. `previous` is the
+ * draft a later turn changes, whose month such a turn may keep.
+ */
 const checkDate = (
   expectation: Expectation,
   item: QuickAddItem,
-  today: string,
+  { previous, today }: { readonly previous: BenchDraft | undefined; readonly today: string },
   fail: Fail,
 ): void => {
   const date = Temporal.PlainDate.from(item.prefill.date);
@@ -331,6 +391,21 @@ const checkDate = (
     Temporal.PlainDate.from(today).until(date).days !== expectation.dayOffset
   ) {
     fail('date', `day=${item.prefill.date}`);
+  }
+  if (expectation.dayOfMonth === undefined && expectation.month === undefined) {
+    return;
+  }
+  if (
+    (expectation.dayOfMonth !== undefined && date.day !== expectation.dayOfMonth) ||
+    (expectation.month !== undefined && date.month !== expectation.month)
+  ) {
+    fail('date', `day=${item.prefill.date}`);
+  } else if (Temporal.PlainDate.compare(date, Temporal.PlainDate.from(today)) < 0) {
+    fail('date', `day=${item.prefill.date} (passed)`);
+  } else if (
+    !nextSuchDays(expectation, today, previous?.item.prefill.date).includes(date.toString())
+  ) {
+    fail('date', `day=${item.prefill.date} (not the next)`);
   }
 };
 
@@ -349,6 +424,9 @@ const checkTime = (expectation: Expectation, item: QuickAddItem, fail: Fail): vo
   }
   if (expectation.endTime !== undefined && end !== expectation.endTime) {
     fail('time', `end=${end ?? '-'}`);
+  }
+  if (expectation.spanDays !== undefined && spanDaysOf(item) !== expectation.spanDays) {
+    fail('time', `span=${String(spanDaysOf(item))}d`);
   }
   const assumed = item.kind === 'event' && item.prefill.assumedTime === true;
   if (expectation.assumedTime !== undefined && assumed !== expectation.assumedTime) {
@@ -381,8 +459,9 @@ const checkLocation = (expectation: Expectation, item: QuickAddItem, fail: Fail)
 
 /**
  * Whether the draft has no repeat when none is expected, or the expected
- * one: its frequency and gap, and its weekdays, count and end month where
- * the expectation names them.
+ * one: its frequency and gap, and its weekdays (a monthly rule's with
+ * their place in the month), count and end month where the expectation
+ * names them.
  */
 const checkRepeat = (expectation: Expectation, item: QuickAddItem, fail: Fail): void => {
   const repeat = item.kind === 'event' ? item.prefill.recurrence : undefined;
@@ -398,7 +477,10 @@ const checkRepeat = (expectation: Expectation, item: QuickAddItem, fail: Fail): 
       repeat.freq === wanted.freq &&
       (repeat.interval ?? 1) === (wanted.interval ?? 1) &&
       (wanted.byDay === undefined ||
-        sortedText((repeat.byDay ?? []).map((day) => day.weekday)) === sortedText(wanted.byDay)) &&
+        // Each weekday with its place in the month, where the rule has one: "1TU", "-1FR".
+        sortedText(
+          (repeat.byDay ?? []).map((day) => `${String(day.ordinal ?? '')}${day.weekday}`),
+        ) === sortedText(wanted.byDay)) &&
       (wanted.count === undefined || repeat.count === wanted.count) &&
       (wanted.untilMonth === undefined || untilMonth === wanted.untilMonth);
     if (!matches) {
@@ -525,7 +607,7 @@ export const check = (
 
   checkKind(expectation, item, fail);
   checkTitle(expectation, item, fail);
-  checkDate(expectation, item, today, fail);
+  checkDate(expectation, item, { previous, today }, fail);
   checkTime(expectation, item, fail);
   checkLocation(expectation, item, fail);
   checkRepeat(expectation, item, fail);

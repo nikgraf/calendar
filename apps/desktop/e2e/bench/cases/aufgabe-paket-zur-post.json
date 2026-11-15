@@ -1,0 +1,10 @@
+{
+  "lang": "de",
+  "tags": ["task", "de"],
+  "turns": [
+    {
+      "input": { "text": "To-do: Paket zur Post bringen" },
+      "expect": { "kind": "task", "titleIncludes": "paket" }
+    }
+  ]
+}

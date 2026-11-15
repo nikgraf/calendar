@@ -1,0 +1,25 @@
+{
+  "blind": true,
+  "lang": "de",
+  "tags": ["flow", "mixed", "location", "notifications", "de"],
+  "turns": [
+    {
+      "input": { "text": "Kaffee morgen um 15 Uhr" },
+      "expect": {
+        "title": "kaffee",
+        "dayOffset": 1,
+        "startTime": "15:00",
+        "endTime": "16:00",
+        "location": null
+      }
+    },
+    {
+      "input": { "text": "um 16 Uhr im Cafe Fino" },
+      "expect": { "startTime": "16:00", "endTime": "17:00", "location": "cafe fino" }
+    },
+    {
+      "input": { "text": "mit Jörg, und erinnere mich 10 Minuten vorher" },
+      "expect": { "title": "kaffee mit jörg", "reminders": [10], "guests": {} }
+    }
+  ]
+}

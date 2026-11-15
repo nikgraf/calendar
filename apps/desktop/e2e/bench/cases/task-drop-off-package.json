@@ -1,0 +1,14 @@
+{
+  "lang": "en",
+  "tags": ["task", "title"],
+  "turns": [
+    {
+      "input": { "text": "remind me to drop off the package at the post office tomorrow" },
+      "expect": {
+        "kind": "task",
+        "title": "drop off the package at the post office",
+        "dayOffset": 1
+      }
+    }
+  ]
+}

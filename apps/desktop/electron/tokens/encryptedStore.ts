@@ -1,4 +1,4 @@
-import { TokenSet } from '@calendar/core';
+import { failureText, TokenSet } from '@calendar/core';
 import type { TokenStore } from '@calendar/google';
 import { Effect, Schema } from 'effect';
 
@@ -30,7 +30,7 @@ const attempt = <A>(run: () => Promise<A>) =>
 const logWriteFailure = (error: unknown) =>
   error === undefined
     ? Effect.void
-    : Effect.logError('token store write failed', { error: String(error) });
+    : Effect.logError('token store write failed', { error: failureText(error) });
 
 /**
  * TokenSets encrypted with the OS keychain-backed key, persisted as base64

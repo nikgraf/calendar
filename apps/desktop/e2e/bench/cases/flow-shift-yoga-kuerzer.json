@@ -1,0 +1,19 @@
+{
+  "blind": true,
+  "lang": "de",
+  "tags": ["flow", "shift", "de"],
+  "turns": [
+    {
+      "input": { "text": "Yoga Mittwoch um 7 Uhr" },
+      "expect": { "title": "yoga", "weekday": 3, "startTime": "07:00", "endTime": "08:00" }
+    },
+    {
+      "input": { "text": "20 Minuten kürzer" },
+      "expect": { "startTime": "07:00", "endTime": "07:40" }
+    },
+    {
+      "input": { "text": "eine Viertelstunde später" },
+      "expect": { "startTime": "07:15", "endTime": "07:55" }
+    }
+  ]
+}

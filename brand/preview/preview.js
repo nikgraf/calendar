@@ -11,20 +11,21 @@ themeButtons.forEach((button) =>
 
 const status = document.querySelector('#copy-status');
 let statusTimer;
-document.querySelectorAll('[data-color]').forEach((button) =>
-  button.addEventListener('click', async () => {
-    const color = button.dataset.color;
-    try {
-      await navigator.clipboard.writeText(color);
-      status.textContent = `Copied ${color}`;
-    } catch {
-      status.textContent = `Color: ${color} — select the hex value to copy it.`;
-    }
-    status.classList.add('visible');
-    clearTimeout(statusTimer);
-    statusTimer = setTimeout(() => status.classList.remove('visible'), 2800);
-  }),
-);
+const copyColor = async (button) => {
+  const color = button.dataset.color;
+  try {
+    await navigator.clipboard.writeText(color);
+    status.textContent = `Copied ${color}`;
+  } catch {
+    status.textContent = `Color: ${color} — select the hex value to copy it.`;
+  }
+  status.classList.add('visible');
+  clearTimeout(statusTimer);
+  statusTimer = setTimeout(() => status.classList.remove('visible'), 2800);
+};
+document
+  .querySelectorAll('[data-color]')
+  .forEach((button) => button.addEventListener('click', () => void copyColor(button)));
 
 const mini = document.querySelector('.mini-calendar');
 // Monday-first September 2026: Sep 1 is Tuesday.

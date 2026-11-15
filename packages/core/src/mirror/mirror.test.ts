@@ -270,11 +270,11 @@ describe('mirror items', () => {
     // York one as the 12th. The copy must not depend on which device runs.
     const instant = at('2026-03-13', '00:30', 'UTC');
     const berlin = taskMirrorItem(
-      { ...task({ dueDate: '2026-03-13', dueTime: '01:30' }), dueUtc: instant } as never,
+      { ...task({ dueDate: '2026-03-13', dueTime: '01:30' }), dueUtc: instant },
       options,
     );
     const newYork = taskMirrorItem(
-      { ...task({ dueDate: '2026-03-12', dueTime: '19:30' }), dueUtc: instant } as never,
+      { ...task({ dueDate: '2026-03-12', dueTime: '19:30' }), dueUtc: instant },
       options,
     );
     expect(newYork).toEqual(berlin);
@@ -288,7 +288,7 @@ describe('mirror items', () => {
     // A reminder that carries a zone keeps its own instant.
     const instant = at('2026-03-12', '16:30', 'UTC');
     const zoned = taskMirrorItem(
-      { ...task({ dueDate: '2026-03-12', dueTime: '17:30' }), dueUtc: instant } as never,
+      { ...task({ dueDate: '2026-03-12', dueTime: '17:30' }), dueUtc: instant },
       options,
     );
     expect(zoned.startUtc).toBe(instant);

@@ -1,0 +1,18 @@
+{
+  "lang": "en",
+  "tags": ["flow", "title"],
+  "turns": [
+    {
+      "input": { "text": "Call Thursday at 11" },
+      "expect": { "title": "call", "weekday": 4, "startTime": "11:00", "endTime": "12:00" }
+    },
+    {
+      "input": { "text": "title: vendor call" },
+      "expect": { "title": "vendor call" }
+    },
+    {
+      "input": { "text": "change the title to supplier call" },
+      "expect": { "title": "supplier call" }
+    }
+  ]
+}

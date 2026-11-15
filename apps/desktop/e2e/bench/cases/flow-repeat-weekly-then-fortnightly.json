@@ -1,0 +1,28 @@
+{
+  "lang": "en",
+  "tags": ["flow", "repeat"],
+  "turns": [
+    {
+      "input": { "text": "Yoga Tuesday at 7pm" },
+      "expect": {
+        "title": "yoga",
+        "weekday": 2,
+        "startTime": "19:00",
+        "endTime": "20:00",
+        "repeat": null
+      }
+    },
+    {
+      "input": { "text": "make it weekly" },
+      "expect": { "repeat": { "freq": "weekly" } }
+    },
+    {
+      "input": { "text": "every two weeks instead" },
+      "expect": { "repeat": { "freq": "weekly", "interval": 2 } }
+    },
+    {
+      "input": { "text": "don't repeat it" },
+      "expect": { "repeat": null }
+    }
+  ]
+}

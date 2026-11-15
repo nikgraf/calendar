@@ -1,0 +1,18 @@
+{
+  "lang": "en",
+  "tags": ["flow", "allday"],
+  "turns": [
+    {
+      "input": { "text": "Conference Thursday" },
+      "expect": { "title": "conference", "weekday": 4, "isAllDay": true }
+    },
+    {
+      "input": { "text": "from 9 to 5" },
+      "expect": { "startTime": "09:00", "endTime": "17:00" }
+    },
+    {
+      "input": { "text": "all day after all" },
+      "expect": { "isAllDay": true }
+    }
+  ]
+}

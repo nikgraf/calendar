@@ -1,0 +1,10 @@
+{
+  "lang": "en",
+  "tags": ["refuse"],
+  "turns": [
+    {
+      "input": { "text": "asdf qwer" },
+      "expect": { "rejected": true }
+    }
+  ]
+}

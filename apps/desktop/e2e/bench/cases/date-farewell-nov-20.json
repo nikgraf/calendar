@@ -1,0 +1,17 @@
+{
+  "blind": true,
+  "lang": "en",
+  "tags": ["date"],
+  "turns": [
+    {
+      "input": { "text": "Farewell party on Nov 20 at 5pm" },
+      "expect": {
+        "title": "farewell party",
+        "dayOfMonth": 20,
+        "month": 11,
+        "startTime": "17:00",
+        "endTime": "18:00"
+      }
+    }
+  ]
+}
