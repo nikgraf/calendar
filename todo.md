@@ -188,16 +188,20 @@ the served model (#184) and slot proposals (#185) are in
       ask MapKit.
 - [ ] Dictation follow-ups (`docs/decisions.md` → AI, "Dictation ends
       on its words, and shows them"; measured on synthetic phrases
-      only) — the pauses (900 / 1,200 ms) and Settings › Advanced ›
-      Voice Processing tried on a phone in real rooms (a café, a
-      street); real-room recordings in the bench, replayed through the
-      session and the rule (and whether a quick recogniser that goes
+      only) — the pauses (900 / 1,200 ms), Reduce Background Noise and
+      Mic Mode's Voice Isolation (Settings › Dictation) measured on a
+      phone in real rooms (a café, a street); iOS's Mic Mode picker
+      offered from the bar while it listens
+      (`AVCaptureDevice.showSystemUserInterface`; Settings only shows the
+      mode, since iOS offers the modes while recording, #325);
+      real-room recordings in the bench, replayed through the session
+      and the rule (and whether a quick recogniser that goes
       deaf one word behind the accurate one ever cuts a phrase short:
       the rule ends on the quick words then, a case constructed in
       review but never seen in the recordings, where both cures cost
       more than they saved, #322); English and German in one phrase (one
       locale per recogniser today); a person talking nearby (their
-      words count: voice processing measured first, then a speaker
+      words count: Voice Isolation measured first, then a speaker
       match learned from phrases already said); Siri as a way in (an
       App Shortcut that asks for the phrase; iOS 27's calendar schema
       where Siri AI is available, not in the EU nor in German as of

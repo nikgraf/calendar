@@ -35,6 +35,11 @@ export const SETTINGS_PANES = [
     label: 'AI Model',
   },
   {
+    id: 'dictation',
+    keywords: ['microphone', 'voice', 'noise', 'echo', 'speech', 'language'],
+    label: 'Dictation',
+  },
+  {
     id: 'sharing',
     keywords: ['privacy', 'screen', 'hide', 'recording', 'screenshot', 'zoom', 'meeting'],
     label: 'Screen Sharing',

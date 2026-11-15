@@ -21,6 +21,8 @@ const fakeStream = (): FakeStream => {
 
 /** Each pending microphone request, granted by the test in any order. */
 const grants: Array<(stream: FakeStream) => void> = [];
+/** What each microphone request asked of Chromium. */
+const asked: Array<{ readonly audio: Readonly<Record<string, unknown>> }> = [];
 /** Each worklet node created, for the test to post blocks through. */
 const nodes: Array<{ port: { onmessage: ((message: { data: Float32Array }) => void) | null } }> =
   [];
@@ -36,7 +38,10 @@ beforeEach(() => {
   vi.stubGlobal('navigator', {
     language: 'en-US',
     mediaDevices: {
-      getUserMedia: () => new Promise<FakeStream>((resolve) => grants.push(resolve)),
+      getUserMedia: (constraints: { readonly audio: Readonly<Record<string, unknown>> }) => {
+        asked.push(constraints);
+        return new Promise<FakeStream>((resolve) => grants.push(resolve));
+      },
     },
   });
   vi.stubGlobal(
@@ -61,6 +66,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  asked.length = 0;
   grants.length = 0;
   nodes.length = 0;
   addModule = async () => undefined;
@@ -146,6 +152,30 @@ const settle = async () => {
 };
 
 const noWords = () => undefined;
+
+describe('desktopSpeech microphone', () => {
+  it('asks for Chromium’s voice processing unless Settings › Dictation turned it off', async () => {
+    bridge();
+    const stored = new Map<string, string>();
+    Object.assign(window, { localStorage: { getItem: (key: string) => stored.get(key) ?? null } });
+    const speech = await loadSpeech();
+    // Nothing chosen on this Mac yet.
+    void speech.start({ onWords: noWords });
+    stored.set('dictation.reduceNoise', 'off');
+    void speech.start({ onWords: noWords });
+    await settle();
+    expect(
+      asked.map(({ audio }) => [
+        audio.autoGainControl,
+        audio.echoCancellation,
+        audio.noiseSuppression,
+      ]),
+    ).toEqual([
+      [true, true, true],
+      [false, false, false],
+    ]);
+  });
+});
 
 describe('desktopSpeech listening ownership', () => {
   it('a start given up while the microphone is granted stops only its own stream', async () => {

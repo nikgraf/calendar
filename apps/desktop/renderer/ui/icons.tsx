@@ -235,6 +235,12 @@ export const PANE_ICON_PATHS = {
       <path d="M3 9.5h18M8 3v3.5M16 3v3.5M15 9.5V20" />
     </>
   ),
+  dictation: (
+    <>
+      <rect height="12" rx="3" width="6" x="9" y="3" />
+      <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
+    </>
+  ),
   file: (
     <>
       <path d="M13.5 3.5h-6a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V8.5z" />

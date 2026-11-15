@@ -7,8 +7,8 @@ import {
 import { loadSpeechModule } from '../modules/solunivo-speech/index.ts';
 import { voiceProcessing } from './voiceProcessing.ts';
 
-/** Locale for recognition, so dictating German transcribes German. */
-const locale = (): string => {
+/** Locale for recognition, so dictating German transcribes German. Settings › Dictation names it. */
+export const dictationLocale = (): string => {
   try {
     return Intl.DateTimeFormat().resolvedOptions().locale || 'en-US';
   } catch {
@@ -63,7 +63,7 @@ export const appleSpeech: SpeechToText = {
     }
     try {
       // Installs the locale's models; a no-op once present.
-      await native.prepare(locale());
+      await native.prepare(dictationLocale());
     } catch (error) {
       // Distinguish "this device or locale never will" from "that attempt
       // failed" — installing models needs the network, and a download
@@ -99,7 +99,7 @@ export const appleSpeech: SpeechToText = {
     };
     let sources: ReadonlyArray<'accurate' | 'quick'>;
     try {
-      ({ sources } = await native.start(session, locale(), voiceProcessing.get()));
+      ({ sources } = await native.start(session, dictationLocale(), voiceProcessing.get()));
     } catch (error) {
       remove();
       throw error;
