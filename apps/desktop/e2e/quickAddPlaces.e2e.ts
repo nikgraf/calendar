@@ -8,6 +8,9 @@ import { type App, launchApp, readEvents } from './harness.ts';
 // fixture's places in MapKit's stead. The best one that resembles the
 // text is taken at once, text and pin, and the rest wait as chips under
 // the field, the taken one pressed; a text nobody knows stays as said.
+// A dictated name is looked for as the recogniser's other readings of it
+// have it too, when it names nothing nearby itself: what they find is
+// offered, never taken unasked.
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 const CENTRAL = new GeoLocation({
@@ -80,7 +83,9 @@ const geo = {
       {
         lat: 48.212,
         lng: 16.379,
-        misspellings: ['Figlmüller, Bäckerstraße'],
+        // The search reads "Figelmuller", one of dictation's readings of a
+        // "Figlmüller" it wrote "Figelmiller", as this one (as MapKit does).
+        misspellings: ['Figlmüller, Bäckerstraße', 'Figelmuller'],
         name: 'Figlmüller',
         subtitle: 'Bäckerstraße 6, 1010 Wien',
         title: 'Figlmüller Bäckerstrasse',
@@ -99,12 +104,25 @@ const geo = {
   },
 };
 
+// One dictated phrase, as the recogniser read it in segments: the name
+// ("Figlmüller", said) a segment of its own, with the readings it weighed.
+const DICTATED = {
+  segments: [
+    // Tomorrow: a saved event that has begun would be a past place for the tests after it.
+    { text: 'Dinner | +1 | 19:00-20:00 |' },
+    { alternatives: [' Figelmiller', ' Feigelmiller', ' Figelmuller'], text: ' Figelmiller' },
+  ],
+};
+
 const title = `(document.querySelector('input[placeholder="Title"]')?.value ?? '')`;
 const COMMAND_N = `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', metaKey: true }))`;
 const location = `(document.querySelector('input[aria-label="Location"]')?.value ?? '')`;
 const choices = `!!document.querySelector('[data-testid="draft-place-choices"]')`;
 const pressed = `(document.querySelector('[data-testid="draft-place-choices"] [aria-pressed="true"]')?.dataset.testid ?? '')`;
 const picks = `document.querySelectorAll('[data-testid^="draft-place-pick-"]').length`;
+const pickText = (index: number) =>
+  `(document.querySelector('[data-testid="draft-place-pick-${String(index)}"]')?.textContent ?? '')`;
+const dictating = `document.querySelector('[data-testid="quick-add-mic"]')?.getAttribute('aria-pressed') === 'true'`;
 const count = `(document.querySelector('[data-testid="draft-question-count"]')?.textContent ?? '')`;
 const preview = `!!document.querySelector('[data-testid="step-preview"]')`;
 // The place on the Assistant's newest card.
@@ -113,7 +131,7 @@ const cardPlace = `(document.querySelector('[data-testid="assistant-card-locatio
 describe('Places from a quick-add phrase', () => {
   let app: App;
   beforeAll(async () => {
-    app = await launchApp(seed, { geo, model: 'fixture' });
+    app = await launchApp(seed, { geo, microphone: { phrases: [DICTATED] }, model: 'fixture' });
   }, 60_000);
   afterAll(async () => {
     await app.stop();
@@ -164,6 +182,32 @@ describe('Places from a quick-add phrase', () => {
     // Still one click away, for the trip the words did not name.
     await cdp.clickTestId('draft-place-pick-0');
     await cdp.waitFor(`${location} === 'Meek Café, 9 10th Avenue, Benoni, South Africa'`);
+  });
+
+  it('offers what another reading of a dictated name finds, taken only when picked', async () => {
+    const { cdp } = app;
+    await openNew();
+    await cdp.clickTestId('quick-add-mic');
+    // "Figelmiller" finds nothing; the reading "Figelmuller" finds Figlmüller.
+    await cdp.waitFor(choices, 20_000);
+    await cdp.clickTestId('quick-add-mic');
+    await cdp.waitFor(`!(${dictating})`);
+    expect(await cdp.eval<string>(title)).toBe('Dinner');
+    expect(await cdp.eval<string>(location)).toBe('Figelmiller');
+    expect(await cdp.eval<string>(count)).toBe('Question 1 of 1');
+    expect(await cdp.eval<number>(picks)).toBe(1);
+    expect(await cdp.eval<string>(pickText(0))).toBe('FiglmüllerBäckerstraße 6, 1010 Wien');
+    expect(await cdp.eval<string>(pressed)).toBe('draft-place-keep');
+    await cdp.clickTestId('draft-place-pick-0');
+    await cdp.waitFor(`${location} === 'Figlmüller, Bäckerstraße 6, 1010 Wien'`);
+    await cdp.clickButtonWithText('Save');
+    await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);
+    // Picked, the place is vouched for: its coordinates are saved with it.
+    await expect
+      .poll(async () =>
+        (await readEvents(app.userDataDir)).find((event) => event.title === 'Dinner'),
+      )
+      .toMatchObject({ geo: { lat: 48.212, lng: 16.379 } });
   });
 
   it('asks which of two search hits, the first taken, and settles it by a pick, the text as said or Skip', async () => {

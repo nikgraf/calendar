@@ -21,6 +21,7 @@ import {
   agentStoreLayer,
   hashToken,
 } from '@calendar/agent';
+import type { TranscriptSegment } from '@calendar/ai';
 import type { AppleCalendarJson, FakeEventSeed } from '@calendar/apple-calendar';
 import type { DeviceBirthdayJson, DeviceContactJson } from '@calendar/contacts';
 import type { FakePlace } from '@calendar/geo';
@@ -1004,11 +1005,17 @@ export interface LaunchOptions {
    * tone between stretches of quiet room (`dictationAudio`); while the
    * tone plays, main writes the next of `phrases` word by word, and the
    * phrase is read as it — a spec dictates in the fixture model's
-   * grammar, with no TCC prompt and no developer's room.
+   * grammar, with no TCC prompt and no developer's room. A phrase given as
+   * segments is read as them, the other readings the recogniser weighed
+   * for each included.
    * (Chromium's fake audio device never opens under Electron here, so
    * `getUserMedia` itself is stood in for, in the page.)
    */
-  readonly microphone?: { readonly phrases: ReadonlyArray<string> };
+  readonly microphone?: {
+    readonly phrases: ReadonlyArray<
+      string | { readonly segments: ReadonlyArray<TranscriptSegment> }
+    >;
+  };
   /**
    * Absent (default): the real helper, so the ⌘K bar shows whatever this
    * machine's Apple Intelligence allows. 'fixture': the deterministic model

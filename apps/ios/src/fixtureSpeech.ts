@@ -1,13 +1,28 @@
-import { heardFromSegments, type SpeechToText } from '@calendar/ai';
+import { heardFromSegments, type SpeechToText, type TranscriptSegment } from '@calendar/ai';
 
 /**
  * What the fixture hears, phrase by phrase: the words as they are said
  * (shown while listening), and the phrase as read once it ends — in the
- * fixture model's grammar, so the Assistant answers it.
+ * fixture model's grammar, so the Assistant answers it — in segments, as
+ * the recogniser reads one. The first names a place the way dictation
+ * misheard "Figlmüller" (macOS 27.2, 2026-11-15), with the other readings
+ * it weighed: MapKit finds the place for one of them.
  */
-const SCRIPT: ReadonlyArray<{ readonly heard: string; readonly said: string }> = [
-  { heard: 'Lunch with Sarah | +1 | 13:00-14:00', said: 'Lunch with Sarah tomorrow at one' },
-  { heard: '| | 14:00-15:00', said: 'Make it two instead' },
+const SCRIPT: ReadonlyArray<{
+  readonly heard: ReadonlyArray<TranscriptSegment>;
+  readonly said: string;
+}> = [
+  {
+    heard: [
+      { text: 'Lunch with Sarah | +1 | 13:00-14:00 |' },
+      {
+        alternatives: [' Figelmiller', ' Feigelmiller', ' Figelmuller', ' Figlemiller'],
+        text: ' Figelmiller',
+      },
+    ],
+    said: 'Lunch with Sarah tomorrow at one at Figlmüller',
+  },
+  { heard: [{ text: '| | 14:00-15:00' }], said: 'Make it two instead' },
 ];
 /** The room before the first word. */
 const LEAD_MS = 600;
@@ -45,7 +60,7 @@ export const fixtureSpeech: SpeechToText = {
     listening = false;
     const line = SCRIPT[turn];
     turn += 1;
-    return line ? heardFromSegments([{ text: line.heard }]) : undefined;
+    return line ? heardFromSegments(line.heard) : undefined;
   },
   isSupported: async () => true,
   prepare: async () => undefined,

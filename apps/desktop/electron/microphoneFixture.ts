@@ -1,5 +1,10 @@
 import { readFileSync } from 'node:fs';
-import { levelOf, type WordsSource } from '@calendar/ai';
+import {
+  levelOf,
+  type TranscriptSegment,
+  transcriptFromSegments,
+  type WordsSource,
+} from '@calendar/ai';
 
 /**
  * CALENDAR_MICROPHONE=fixture: dictation without the Mac's speech
@@ -9,14 +14,21 @@ import { levelOf, type WordsSource } from '@calendar/ai';
  * helper, and the tone stands in for speech: while it plays, the next
  * phrase's words come back one by one, as both recognisers'; once it
  * stops, the whole phrase. The renderer's own streaming and the rule that
- * ends a phrase on its words run on it. Nothing is asked or installed.
+ * ends a phrase on its words run on it. Nothing is asked or installed. A
+ * phrase given as segments is read as them, the other readings each
+ * weighed included, as the helper's final reading answers.
  */
-const phrases = ((): ReadonlyArray<string> | undefined => {
+const phrases = ((): ReadonlyArray<ReadonlyArray<TranscriptSegment>> | undefined => {
   const path = process.env['CALENDAR_MICROPHONE_FIXTURE'];
   if (process.env['CALENDAR_MICROPHONE'] !== 'fixture' || !path) {
     return undefined;
   }
-  return (JSON.parse(readFileSync(path, 'utf8')) as { phrases: ReadonlyArray<string> }).phrases;
+  const given = (
+    JSON.parse(readFileSync(path, 'utf8')) as {
+      phrases: ReadonlyArray<string | { readonly segments: ReadonlyArray<TranscriptSegment> }>;
+    }
+  ).phrases;
+  return given.map((phrase) => (typeof phrase === 'string' ? [{ text: phrase }] : phrase.segments));
 })();
 
 export const microphoneFixture = phrases !== undefined;
@@ -41,7 +53,7 @@ let listening:
     }
   | undefined;
 
-const nextPhrase = (): string | undefined => phrases?.[transcribed];
+const nextPhrase = (): ReadonlyArray<TranscriptSegment> | undefined => phrases?.[transcribed];
 
 const show = (words: ReadonlyArray<string>, count: number, onWords: Words) => {
   const text = words.slice(0, count).join(' ');
@@ -63,7 +75,7 @@ export const fixtureListening = {
       (_, index) => view.getInt16(index * 2, true) / 32_768,
     );
     const level = levelOf(samples);
-    const words = phrase.split(' ');
+    const words = (transcriptFromSegments(phrase) ?? '').split(' ');
     if (level > TONE_DB) {
       current.toneBlocks += 1;
       // Spread over the tone, the last word at its end: no gap between
@@ -93,14 +105,14 @@ export const fixtureListening = {
    * nothing once they run out, and nothing for a phrase no longer
    * listened to (as the helper answers it).
    */
-  finish: (session: number): { segments: ReadonlyArray<{ text: string }> } => {
+  finish: (session: number): { segments: ReadonlyArray<TranscriptSegment> } => {
     if (listening?.session !== session) {
       return { segments: [] };
     }
     listening = undefined;
-    const text = nextPhrase();
+    const segments = nextPhrase();
     transcribed += 1;
-    return { segments: text === undefined ? [] : [{ text }] };
+    return { segments: segments ?? [] };
   },
   start: (session: number, onWords: Words) => {
     listening = { onWords, session, shown: 0, toneBlocks: 0 };

@@ -723,10 +723,17 @@ export class AppBackendRpcs extends RpcGroup.make(
    * Not cached — for offering a choice, where `resolveLocation` gives the
    * one best guess. Empty when the text is not a place or nothing
    * resembles it; without a bridge the past places alone.
+   * `alternatives`: the text as dictation's other readings of the words
+   * have it, the likeliest first (`alternativesFor`). Asked only when the
+   * text itself names nothing nearby, the places they name come first,
+   * each marked with its reading and never taken unasked.
    */
   Rpc.make('placeCandidates', {
     error: BackendError,
-    payload: { location: Schema.String },
+    payload: {
+      alternatives: Schema.optional(Schema.Array(Schema.String)),
+      location: Schema.String,
+    },
     success: Schema.Array(PlaceCandidate),
   }),
   /**

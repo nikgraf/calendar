@@ -1,6 +1,8 @@
 import {
+  alternativesFor,
   isFinderPhrase,
   type FinderReader,
+  type Heard,
   NO_SLOT_FITS,
   type NotesChange,
   type PhraseReader,
@@ -1273,6 +1275,12 @@ export interface PhraseOptions {
   readonly exclude?: ((event: EventRecord) => boolean) | undefined;
   /** Where an undated first phrase lands (the day being viewed). */
   readonly fallbackDate: string;
+  /**
+   * The phrase as dictation read it, with the other readings it weighed:
+   * a place it names that finds nothing is looked for as they read it too
+   * (`alternativesFor`). None for words typed.
+   */
+  readonly heard?: Heard | undefined;
   readonly read?: ReadForm | undefined;
   readonly refuse?: Refuse | undefined;
 }
@@ -1390,17 +1398,25 @@ export const useDraftThread = ({
    * first (`placeCandidates`). None for no text; a failed or overlong
    * lookup is none found — the text stays as said, and the draft's
    * title and times never wait on a search (the handler bounds MapKit
-   * itself; this bounds the call as a whole).
+   * itself; this bounds the call as a whole). A dictated turn's text
+   * goes with the other readings of its words (`heard`), asked only when
+   * the text itself names nothing nearby.
    */
-  const placesOf = async (location: string | undefined): Promise<PlaceChange | undefined> => {
+  const placesOf = async (
+    location: string | undefined,
+    heard: Heard | undefined,
+  ): Promise<PlaceChange | undefined> => {
     if (location === undefined || location.trim() === '') {
       return undefined;
     }
+    const alternatives = heard === undefined ? [] : alternativesFor(heard, location);
     const candidates = await Effect.runPromise(
-      backend.placeCandidates({ location }).pipe(
-        Effect.timeout(PLACE_LOOKUP_TIMEOUT),
-        Effect.orElseSucceed((): ReadonlyArray<PlaceCandidate> => []),
-      ),
+      backend
+        .placeCandidates({ ...(alternatives.length > 0 ? { alternatives } : {}), location })
+        .pipe(
+          Effect.timeout(PLACE_LOOKUP_TIMEOUT),
+          Effect.orElseSucceed((): ReadonlyArray<PlaceCandidate> => []),
+        ),
     );
     return { candidates, text: location };
   };
@@ -1420,6 +1436,7 @@ export const useDraftThread = ({
     utterance: string,
     read?: ReadForm,
     refuse?: Refuse,
+    heard?: Heard,
   ): Promise<string | undefined> => {
     // A draft focused meanwhile is not where the answer lands (`landRefinement`).
     const mine = ++request.current;
@@ -1455,6 +1472,19 @@ export const useDraftThread = ({
       if (mine !== request.current) {
         return undefined;
       }
+      // One lookup per place text in a turn: "both at Figlmüller" for two
+      // drafts asks MapKit once (it throttles searches).
+      const lookups = new Map<string, Promise<PlaceChange | undefined>>();
+      const placesOnce = (location: string | undefined): Promise<PlaceChange | undefined> => {
+        const key = location ?? '';
+        const known = lookups.get(key);
+        if (known !== undefined) {
+          return known;
+        }
+        const looked = placesOf(location, heard);
+        lookups.set(key, looked);
+        return looked;
+      };
       // Guests for the events among the drafts: a to-do has none.
       const changes = await Promise.all(
         results.flatMap(({ draft, result }) =>
@@ -1472,7 +1502,7 @@ export const useDraftThread = ({
                     normalizeLocationKey(after ?? '') !== normalizeLocationKey(before ?? '');
                   const [guests, placeFound] = await Promise.all([
                     isEvent ? guestsOf(result.invite, result.uninvite) : undefined,
-                    moved ? placesOf(after).then((found) => found ?? NO_PLACE) : undefined,
+                    moved ? placesOnce(after).then((found) => found ?? NO_PLACE) : undefined,
                   ]);
                   return {
                     ...(guests ? { guests } : {}),
@@ -1640,7 +1670,7 @@ export const useDraftThread = ({
    */
   const phrase = async (
     text: string,
-    { canStart, exclude, fallbackDate, read, refuse }: PhraseOptions,
+    { canStart, exclude, fallbackDate, heard, read, refuse }: PhraseOptions,
   ): Promise<string | undefined> => {
     // The finder's cue is read in the words about the event, not in a
     // note or a notification said with them.
@@ -1649,7 +1679,7 @@ export const useDraftThread = ({
       return place(text, read, extras, { canStart, exclude, refuse });
     }
     if (state.drafts.length > 0) {
-      return refine(text, read, refuse);
+      return refine(text, read, refuse, heard);
     }
     // A saved item's thread has its draft from the start (`openThread`):
     // words that arrive before it has are not a new item's.
@@ -1672,7 +1702,10 @@ export const useDraftThread = ({
     }
     const [guests, placeFound] =
       result.kind === 'parsed'
-        ? await Promise.all([guestsOf(result.invite, undefined), placesOf(result.prefill.location)])
+        ? await Promise.all([
+            guestsOf(result.invite, undefined),
+            placesOf(result.prefill.location, heard),
+          ])
         : [undefined, undefined];
     if (mine !== request.current) {
       return undefined;

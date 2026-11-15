@@ -1,4 +1,9 @@
-import { type FinderReader, ModelUnavailableError, type PhraseReader } from '@calendar/ai';
+import {
+  type FinderReader,
+  type Heard,
+  ModelUnavailableError,
+  type PhraseReader,
+} from '@calendar/ai';
 import {
   type BackendClient,
   type CalendarInfo,
@@ -963,7 +968,7 @@ export const useThreadEditor = ({
       eventModel.resetRepeat(kept.recurrence);
     }
   });
-  const onPhrase = async (text: string): Promise<string | undefined> => {
+  const onPhrase = async (text: string, heard?: Heard): Promise<string | undefined> => {
     if (previewing) {
       return 'An earlier step is on show — use it or go forward first.';
     }
@@ -987,6 +992,7 @@ export const useThreadEditor = ({
               )
             : undefined,
         fallbackDate: seed.initialDate.toString(),
+        heard,
         read: readForm,
         refuse: (draft, after, guests, alerts) =>
           todoTimeRefusal(draft.item, after, keepsTime(draft)) ??

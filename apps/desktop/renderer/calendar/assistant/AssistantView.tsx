@@ -1,4 +1,4 @@
-import type { AssistantModelState, CaptureSource, ModelStatus } from '@calendar/ai';
+import type { AssistantModelState, CaptureSource, Heard, ModelStatus } from '@calendar/ai';
 import {
   changedLine,
   describeDraft,
@@ -154,7 +154,7 @@ export function AssistantView({
   readonly onCapture: (source: CaptureSource) => void;
   /** To the form, on the same draft. */
   readonly onEdit: () => void;
-  readonly onPhrase: (text: string) => Promise<string | undefined>;
+  readonly onPhrase: (text: string, heard?: Heard) => Promise<string | undefined>;
   readonly taskLists: ReadonlyArray<TaskListInfo>;
   readonly timeZone: string;
 }) {

@@ -491,6 +491,14 @@ describe('preselectedPlace', () => {
     expect(preselectedPlace([found('Kaffeeweg', 'search')])).toBeUndefined();
     expect(preselectedPlace([])).toBeUndefined();
   });
+
+  it('takes nothing another reading of the words found, however alike', () => {
+    const byReading = { ...found('Figlmüller', 'phonetic'), alternative: 'Figelmuller' };
+    expect(preselectedPlace([byReading, found('Figl', 'words')])).toBeUndefined();
+    expect(
+      preselectedPlace([{ ...history('Kaffemik', 'phonetic'), alternative: 'Kaffamek' }]),
+    ).toBeUndefined();
+  });
 });
 
 describe('placeCandidateLabel', () => {

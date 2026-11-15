@@ -148,7 +148,10 @@ Two recognisers write the words as they are said — DictationTranscriber
 ("quick", word by word) and SpeechTranscriber ("accurate", in bursts) —
 and they come back as `speech.words` events (the module's `onWords`);
 finishing reads the phrase once more, whole, with plain
-SpeechTranscriber, alternatives kept. The audio stays in memory and
+SpeechTranscriber, alternatives kept: each segment of the reading comes
+with the readings the recogniser weighed for it (the first is the
+segment itself), and the dictated phrase goes to the thread with them
+(`Heard`), for the place lookup below. The audio stays in memory and
 goes with the phrase. The phrase ends on its words, not its loudness:
 `listenForPhrase` (`packages/ai/src/phraseEnd.ts`) ends it when the
 quick words have stood still for 900 ms, or, while the accurate ones
@@ -1755,7 +1758,29 @@ gateway carries all of it. Details, limits and the threat model:
   natural-language search and the completer's rows resolved; the nearby
   hits that do not resemble the text and one far namesake follow as
   `search`, offered and never taken, and any other far hit is left out),
-  best first and uncached. The draft thread (app-state `draftPlaces.ts`) asks for them
+  best first and uncached. A dictated turn's place goes with
+  dictation's other readings of it (ai `alternativesFor`): its words are
+  found among the phrase's (local alignment over words, each pair scored
+  by edit distance over letters, so a place the model spelled its own
+  way word by word or began in an earlier turn still finds the words
+  said now; a name split or joined another way does not), each segment
+  they stand in is lined up word by word with each of its alternatives,
+  and the alternative's words in that span replace them — a word only
+  the alternative has joins the span at its edge when the word beyond is
+  read the same, and beside a word that changed too the alternative is
+  left out rather than searched in part — combined across segments, the
+  likeliest first, four at most, never the text again; words said twice
+  are read in both places, and words holding fewer than four letters
+  ("at", "6") stand for nothing. Only when the text itself names nothing
+  nearby (no candidate `preselectedPlace` would take) does the handler
+  ask them: the past places each names, then one MapKit search each,
+  kept when it resembles its reading and is nearby or where it says,
+  within what is left of 4 s since the lookup began (1.5 s at most; none
+  left, the past places alone) — a second short of the turn's 5 s, past
+  which every candidate would be dropped. Three at most come first,
+  marked with their reading (`alternative`), the text's own after them,
+  and none is taken unasked. A refine turn looks each place text up
+  once, however many drafts it sets it on. The draft thread (app-state `draftPlaces.ts`) asks for them
   whenever a turn sets a place: the best resembling one is taken at once
   (`preselectedPlace`) — its text becomes the location and its pin counts
   as a pick (`applyPlace`) — and the candidates stay on the draft as

@@ -1,4 +1,5 @@
 import {
+  type Heard,
   listenForPhrase,
   MicrophoneDeniedError,
   type PhraseListener,
@@ -35,9 +36,11 @@ export interface QuickAddModelOptions {
   /**
    * The editor's thread reads the words as a first phrase or a change
    * (`useDraftThread`). Resolves an error message, or nothing when the
-   * phrase was taken; the field is cleared then.
+   * phrase was taken; the field is cleared then. `heard`: the dictated
+   * phrase as the recogniser read it, its other readings with it; none
+   * for words typed.
    */
-  readonly onPhrase: (text: string) => Promise<string | undefined>;
+  readonly onPhrase: (text: string, heard?: Heard) => Promise<string | undefined>;
   readonly speech: SpeechToText;
 }
 
@@ -96,15 +99,15 @@ export const useQuickAddModel = ({
     };
   }, [speech]);
 
-  /** Reads the phrase (Enter, Apply, or the end of a dictation) and hands it on. */
-  const submit = async (text: string = phrase) => {
+  /** Reads the phrase (Enter, Apply, or the end of a dictation, `heard`) and hands it on. */
+  const submit = async (text: string = phrase, heard?: Heard) => {
     if (!text.trim()) {
       return;
     }
     setBusy(true);
     setError(null);
     try {
-      const message = await phraseRef.current(text);
+      const message = await phraseRef.current(text, heard);
       if (message === undefined) {
         // A thread keeps the words as a turn: the field is free for the next one.
         setPhrase('');
@@ -168,7 +171,8 @@ export const useQuickAddModel = ({
     setVoice('transcribing');
     setHeard(false);
     try {
-      const text = (await speech.finish())?.text;
+      const heard = await speech.finish();
+      const text = heard?.text;
       // The words heard give way to the phrase as read, in one render.
       setLive('');
       if (!text) {
@@ -179,7 +183,7 @@ export const useQuickAddModel = ({
         return;
       }
       setPhrase(text);
-      await submit(text);
+      await submit(text, heard);
     } catch {
       switchHandsFree(false);
       setError('Could not transcribe that.');
