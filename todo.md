@@ -153,8 +153,8 @@ the served model (#184) and slot proposals (#185) are in
       draft.
 - [ ] Assistant view follow-ups (the editor's two views shipped,
       `docs/decisions.md` → AI): the Search thread on steps too (it keeps
-      its turns and Undo); ⌘Z / ⇧⌘Z through the steps on the Mac; a live
-      transcript or a level meter while dictating; haptics on the iPhone's
+      its turns and Undo); ⌘Z / ⇧⌘Z through the steps on the Mac;
+      haptics on the iPhone's
       bar and on the switch between the views (a native build); a
       question before a swipe down discards a thread with steps in it;
       answering the Assistant's question by voice ("the first one", a
@@ -179,10 +179,29 @@ the served model (#184) and slot proposals (#185) are in
       dictation mishears and the user has never been to finds nothing
       (MapKit's search reads a doubled letter, not "Cafe Meek" for
       Kaffemik, and the Assistant's model keeps the name as heard) —
-      recognizer vocabulary from contacts and past places, which needs
-      an own speech module on iOS (`@react-native-ai/apple` takes audio
-      and a locale), with MapKit's structured city/region/country
-      fields in the same native build; bench cases that ask MapKit.
+      the final reading's alternatives (kept since the speech module,
+      `SpeechBridge.swift`: "Cafe Meek" had "Meek" among them) tried
+      against MapKit, and given to the model with past places and
+      contacts; vocabulary itself reaches only DictationTranscriber,
+      whose words are shown, not sent. MapKit's structured
+      city/region/country fields in a native build; bench cases that
+      ask MapKit.
+- [ ] Dictation follow-ups (`docs/decisions.md` → AI, "Dictation ends
+      on its words, and shows them"; measured on synthetic phrases
+      only) — the pauses (900 / 1,200 ms) and Settings › Advanced ›
+      Voice Processing tried on a phone in real rooms (a café, a
+      street); real-room recordings in the bench, replayed through the
+      session and the rule (and whether a quick recogniser that goes
+      deaf one word behind the accurate one ever cuts a phrase short:
+      the rule ends on the quick words then, a case constructed in
+      review but never seen in the recordings, where both cures cost
+      more than they saved, #322); English and German in one phrase (one
+      locale per recogniser today); a person talking nearby (their
+      words count: voice processing measured first, then a speaker
+      match learned from phrases already said); Siri as a way in (an
+      App Shortcut that asks for the phrase; iOS 27's calendar schema
+      where Siri AI is available, not in the EU nor in German as of
+      2026-10); Parakeet TDT v3 as a recogniser arm on the Mac bench.
 - [ ] Served models: no thinking, and the strict schema on Ollama — the
       app sends Ollama the schema as `format` (only the title required)
       and turns thinking off on neither route. On Assistant phrases (the

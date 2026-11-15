@@ -1196,6 +1196,33 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
 
 ## AI
 
+- **Dictation ends on its words, and shows them** (2026-11-14, #322) —
+  each phrase streams, as it is recorded, into one speech session
+  (`SpeechBridge.swift`, shared by the Mac helper and the new iOS module
+  `solunivo-speech`): DictationTranscriber and SpeechTranscriber write its
+  words as it is said, shown in the thread's pending line, and
+  `listenForPhrase` sends it when the quick recogniser's words have stood
+  still for 900 ms (the accurate one's for 1,200 ms while it has heard
+  more). The text sent is the phrase read once more, whole, by plain
+  SpeechTranscriber (the recogniser and the accuracy phrases always
+  had), alternatives kept. Measured on synthetic phrases (eight macOS
+  voices' phrases mixed with noise at set ratios, streamed at the
+  microphone's pace on the Mac, then through the built helper): the
+  loudness rule ended 8 of 8 phrases in quiet and with steady noise or a
+  crowd 10 dB under the voice, 0 of 8 at 3 dB under it (never heard, so
+  never sent); the words rule ended 8 of 8 in all five rooms, 1.0–2.5 s
+  after the last word, the final reading taking about 0.1 s. A person
+  talking nearby is not solved: 2–4 of 8, their words count too. iOS
+  drops expo-audio and the temp file; Settings › Advanced › Voice
+  Processing records through AVAudioEngine's voice processing, off by
+  default, to compare on a phone. Rejected: loudness as the judge; the
+  live recognisers' words as the text sent (the quick one mishears more
+  in noise: 59% of the words wrong in a loud crowd against 30%); native
+  capture on the Mac (a new permission prompt, and the e2e fixture
+  lost); vocabulary hints (only DictationTranscriber takes
+  `contextualStrings` — names kept 6 → 9 of 14 in quiet — and its words
+  are not the ones sent); Siri (no API for its recognizer in an app's
+  own screen). Open: todo.md, "Dictation follow-ups".
 - **The Assistant's own model, on both apps** (2026-11-13, #307) — a
   Qwen3.5 0.8B trained on the tuned prompt reads the Assistant's phrases,
   run by llama.cpp (llama.rn on the iPhone; on the Mac a bundled static
@@ -1520,7 +1547,9 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   partial words (a new iOS module and a helper push channel), recording
   while a phrase is read (words said then would queue against a form
   still changing). Open: the pause length and margins by ear on real
-  rooms, a live transcript, saying "undo". Fixed (2026-10-18, #224): on an
+  rooms, a live transcript, saying "undo" (the pause and the live
+  transcript: "Dictation ends on its words, and shows them", which
+  streams after all). Fixed (2026-10-18, #224): on an
   iPhone no recording had ever started or been transcribed — expo-audio's
   `record()` starts nothing on an unprepared recorder, and its file is the
   `uri` property, not a `getURI()`; the adapter now prepares first, reads

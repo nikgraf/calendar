@@ -66,14 +66,96 @@ afterEach(() => {
   addModule = async () => undefined;
 });
 
-describe('desktopSpeech recording ownership', () => {
+/** What main was asked, and the words listener the adapter subscribed. */
+const bridge = () => {
+  const audio: Array<{ readonly bytes: number; readonly session: number }> = [];
+  const cancelled: Array<number> = [];
+  const finished: Array<number> = [];
+  const listeners = new Set<(words: { session: number; source: string; text: string }) => void>();
+  const losers = new Set<(lost: { session: number }) => void>();
+  let sessions = 0;
+  let segments: ReadonlyArray<{ text: string }> = [{ text: 'Lunch with Anna' }];
+  /** Set: the next start waits until the test lets it answer. */
+  let held: Promise<void> | undefined;
+  vi.stubGlobal('window', {
+    calendarBridge: {
+      modelSpeechAudio: (session: number, pcm: Uint8Array) => {
+        audio.push({ bytes: pcm.byteLength, session });
+      },
+      modelSpeechCancel: async (session: number) => {
+        cancelled.push(session);
+      },
+      modelSpeechFinish: async (session: number) => {
+        finished.push(session);
+        return { segments };
+      },
+      modelSpeechStart: async () => {
+        sessions += 1;
+        const session = sessions;
+        await held;
+        return { session, sources: ['accurate', 'quick'] };
+      },
+      onSpeechLost: (listener: (lost: { session: number }) => void) => {
+        losers.add(listener);
+        return () => losers.delete(listener);
+      },
+      onSpeechWords: (
+        listener: (words: { session: number; source: string; text: string }) => void,
+      ) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+    },
+  });
+  return {
+    audio,
+    cancelled,
+    finished,
+    hearNothing: () => {
+      segments = [];
+    },
+    /** Main dropped this phrase: its helper went away. */
+    lose: (session: number) => {
+      for (const listener of losers) {
+        listener({ session });
+      }
+    },
+    /** How many sessions main was asked to start. */
+    started: () => sessions,
+    /** Holds the next start's answer; call the result to let it through. */
+    holdStart: () => {
+      let release: (() => void) | undefined;
+      held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return () => release?.();
+    },
+    words: (session: number, source: string, text: string) => {
+      for (const listener of listeners) {
+        listener({ session, source, text });
+      }
+    },
+  };
+};
+
+/** Lets the promises queued so far settle. */
+const settle = async () => {
+  for (let turn = 0; turn < 5; turn += 1) {
+    await Promise.resolve();
+  }
+};
+
+const noWords = () => undefined;
+
+describe('desktopSpeech listening ownership', () => {
   it('a start given up while the microphone is granted stops only its own stream', async () => {
+    const main = bridge();
     const speech = await loadSpeech();
     // ⌘K closed while the first bar waited for the microphone, then reopened.
     const closed = new AbortController();
-    const first = speech.startRecording({ signal: closed.signal });
+    const first = speech.start({ onWords: noWords, signal: closed.signal });
     closed.abort();
-    const second = speech.startRecording();
+    const second = speech.start({ onWords: noWords });
     const current = fakeStream();
     const late = fakeStream();
     grants[1]?.(current);
@@ -83,33 +165,78 @@ describe('desktopSpeech recording ownership', () => {
 
     expect(late.stopped).toBe(true);
     expect(current.stopped).toBe(false);
-    await speech.cancelRecording();
+    await speech.cancel();
     expect(current.stopped).toBe(true);
+    expect(main.cancelled).toEqual([1]);
   });
 
-  it('a newer recording stops the one it replaces', async () => {
+  it('drops the session of a start given up once it had one', async () => {
+    const main = bridge();
     const speech = await loadSpeech();
-    const first = speech.startRecording();
-    const second = speech.startRecording();
+    const release = main.holdStart();
+    const closed = new AbortController();
+    const start = speech.start({ onWords: noWords, signal: closed.signal });
+    const stream = fakeStream();
+    grants[0]?.(stream);
+    await settle();
+    // Given up while main was starting the session: it has one by then.
+    closed.abort();
+    release();
+    await start;
+    expect(stream.stopped).toBe(true);
+    await settle();
+    expect(main.cancelled).toEqual([1]);
+    expect(await speech.finish()).toBeUndefined();
+  });
+
+  it('a newer phrase stops the one it replaces', async () => {
+    const main = bridge();
+    const speech = await loadSpeech();
+    const first = speech.start({ onWords: noWords });
     const older = fakeStream();
-    const newer = fakeStream();
     grants[0]?.(older);
     await first;
+    const second = speech.start({ onWords: noWords });
+    const newer = fakeStream();
     grants[1]?.(newer);
     await second;
 
     expect(older.stopped).toBe(true);
     expect(newer.stopped).toBe(false);
-    await speech.cancelRecording();
+    expect(main.cancelled).toEqual([1]);
+    await speech.cancel();
     expect(newer.stopped).toBe(true);
   });
 
+  it('starts no session for a start given up while the worklet loads', async () => {
+    const main = bridge();
+    const speech = await loadSpeech();
+    let loaded: (() => void) | undefined;
+    addModule = () =>
+      new Promise<void>((resolve) => {
+        loaded = resolve;
+      });
+    const closed = new AbortController();
+    const start = speech.start({ onWords: noWords, signal: closed.signal });
+    const stream = fakeStream();
+    grants[0]?.(stream);
+    await settle();
+    // Given up while the worklet loaded: a session started now would drop
+    // a newer caller's in the helper.
+    closed.abort();
+    loaded?.();
+    await expect(start).resolves.toBeUndefined();
+    expect(main.started()).toBe(0);
+    expect(stream.stopped).toBe(true);
+  });
+
   it('releases the microphone when the worklet fails to load', async () => {
+    bridge();
     const speech = await loadSpeech();
     addModule = async () => {
       throw new Error('worklet blocked');
     };
-    const start = speech.startRecording();
+    const start = speech.start({ onWords: noWords });
     const stream = fakeStream();
     grants[0]?.(stream);
 
@@ -118,67 +245,84 @@ describe('desktopSpeech recording ownership', () => {
   });
 });
 
-/** Posts `ms` of audio at this amplitude through the worklet, in its 128-sample blocks. */
-const post = (amplitude: number, ms: number) => {
+/** Posts `ms` of audio through the worklet, in its 128-sample blocks. */
+const post = (ms: number) => {
   const node = nodes.at(-1);
   for (let sample = 0; sample < (16_000 * ms) / 1000; sample += 128) {
-    node?.port.onmessage?.({ data: new Float32Array(128).fill(amplitude) });
+    node?.port.onmessage?.({ data: new Float32Array(128).fill(0.1) });
   }
 };
 
-describe('desktopSpeech hands-free listening', () => {
-  const transcribe = vi.fn(async () => ({ segments: [{ text: 'Lunch with Anna' }] }));
-
-  beforeEach(() => {
-    transcribe.mockClear();
-    vi.stubGlobal('window', { calendarBridge: { modelTranscribe: transcribe } });
+describe('desktopSpeech streaming', () => {
+  it('sends the microphone in 100 ms blocks of 16-bit samples, the rest when it finishes', async () => {
+    const main = bridge();
+    const speech = await loadSpeech();
+    const start = speech.start({ onWords: noWords });
+    grants[0]?.(fakeStream());
+    await expect(start).resolves.toEqual({ sources: ['accurate', 'quick'] });
+    post(250);
+    // 1,664 samples a block (13 of the worklet's 128), 3,328 bytes.
+    expect(main.audio).toEqual([
+      { bytes: 3328, session: 1 },
+      { bytes: 3328, session: 1 },
+    ]);
+    expect(await speech.finish()).toEqual({
+      segments: [{ text: 'Lunch with Anna' }],
+      text: 'Lunch with Anna',
+    });
+    // The worklet sent 32 blocks of 128: 768 samples were left over.
+    expect(main.audio.at(-1)?.bytes).toBe((32 * 128 - 2 * 1664) * 2);
+    expect(main.finished).toEqual([1]);
   });
 
-  it('reports the phrase starting and ending from the level alone', async () => {
+  it('passes on its own phrase’s words only', async () => {
+    const main = bridge();
     const speech = await loadSpeech();
-    const events: Array<string> = [];
-    const start = speech.startRecording({ onSpeech: (event) => events.push(event) });
+    const heard: Array<string> = [];
+    const start = speech.start({ onWords: (source, text) => heard.push(`${source}: ${text}`) });
     grants[0]?.(fakeStream());
     await start;
-    // A quiet room (-60 dBFS), a phrase (-20 dBFS), then quiet again.
-    post(0.001, 1000);
-    expect(events).toEqual([]);
-    post(0.1, 1000);
-    expect(events).toEqual(['start']);
-    post(0.001, 1000);
-    expect(events).toEqual(['start']);
-    post(0.001, 500);
-    expect(events).toEqual(['start', 'end']);
-
-    expect(await speech.stopRecording()).toBe('Lunch with Anna');
-    expect(transcribe).toHaveBeenCalledTimes(1);
+    main.words(1, 'quick', 'Lunch');
+    main.words(7, 'quick', 'someone else');
+    main.words(1, 'accurate', 'Lunch with');
+    await speech.finish();
+    main.words(1, 'quick', 'Lunch with Anna');
+    expect(heard).toEqual(['quick: Lunch', 'accurate: Lunch with']);
   });
 
-  it('reports nothing when nobody spoke, and a stop still transcribes what it holds', async () => {
+  it('stops the microphone and says so when main loses the phrase', async () => {
+    const main = bridge();
     const speech = await loadSpeech();
-    const events: Array<string> = [];
-    const start = speech.startRecording({ onSpeech: (event) => events.push(event) });
+    let lost = 0;
+    const stream = fakeStream();
+    const start = speech.start({
+      onLost: () => {
+        lost += 1;
+      },
+      onWords: noWords,
+    });
+    grants[0]?.(stream);
+    await start;
+    main.lose(7);
+    expect(lost).toBe(0);
+    main.lose(1);
+    expect(lost).toBe(1);
+    expect(stream.stopped).toBe(true);
+    // Nothing is left to finish.
+    await expect(speech.finish()).resolves.toBeUndefined();
+    expect(main.finished).toEqual([]);
+  });
+
+  it('reads nothing as nothing', async () => {
+    const main = bridge();
+    main.hearNothing();
+    const speech = await loadSpeech();
+    const start = speech.start({ onWords: noWords });
     const stream = fakeStream();
     grants[0]?.(stream);
     await start;
-    post(0.001, 3000);
-    expect(events).toEqual([]);
-
-    // The level can miss a quiet phrase: a press of the microphone must not lose it.
-    expect(await speech.stopRecording()).toBe('Lunch with Anna');
-    expect(transcribe).toHaveBeenCalledTimes(1);
+    expect(await speech.finish()).toBeUndefined();
     expect(stream.stopped).toBe(true);
-  });
-
-  it('a tap-to-stop recording transcribes whatever it holds', async () => {
-    const speech = await loadSpeech();
-    const start = speech.startRecording();
-    grants[0]?.(fakeStream());
-    await start;
-    post(0.001, 500);
-
-    expect(await speech.stopRecording()).toBe('Lunch with Anna');
-    expect(transcribe).toHaveBeenCalledTimes(1);
   });
 });
 

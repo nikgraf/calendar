@@ -42,10 +42,11 @@ sentences, dictation and capture from text or photo.
   model's release (`assistantModel.ts`), the find-time, search and
   capture prompt/normalize/parse pipelines, and the deterministic
   fixture model both e2e suites run on. Pure TypeScript; platform
-  adapters live in the apps. Its one Swift source
-  (`swift/OcrBridge.swift`, Vision text recognition) is symlinked into
-  the desktop helper and the `solunivo-ocr` iOS Expo module like the
-  other bridges.
+  adapters live in the apps. Its two Swift sources
+  (`swift/OcrBridge.swift`, Vision text recognition;
+  `swift/SpeechBridge.swift`, dictation streamed into SpeechAnalyzer)
+  are symlinked into the desktop helper and the `solunivo-ocr` /
+  `solunivo-speech` iOS Expo modules like the other bridges.
 - `packages/reminders`, `packages/apple-calendar`, `packages/contacts`,
   `packages/geo` — one seam each over a native bridge, all the same
   shape: a `Context.Service` client (`reminders.*`, `calendar.*`,
@@ -243,8 +244,9 @@ deliberately.
   not into numbered parts, and into pieces of 40 or less. Never switch
   the rule off inline: `scripts/complexityCap.test.ts` fails on a
   directive that names it.
-- Window-level concerns (screen privacy, logging, open-external, the five
-  `model:*` AI-helper channels, `assistant:*` (the Assistant's own model:
+- Window-level concerns (screen privacy, logging, open-external, the
+  `model:*` AI-helper channels (dictation's `model:speech-*` among them),
+  `assistant:*` (the Assistant's own model:
   its state, the download, a prompt), the `reminders:*` / `contacts:*` /
   `appleCalendar:*` permission-status channels, `appleCalendar:open`
   (brings Calendar.app forward), `settings:open`,

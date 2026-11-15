@@ -47,6 +47,7 @@ const TIMEOUTS_MS: Record<string, number> = {
   // Vision on a full-resolution screenshot; local, but a document pass is not instant.
   'ocr.recognizeText': 60_000,
   prepareSpeech: 600_000,
+  // A phrase as it is said: the recognisers load on the first, then answer at once.
   'reminders.create': 15_000,
   'reminders.delete': 15_000,
   'reminders.list': 30_000,
@@ -55,6 +56,10 @@ const TIMEOUTS_MS: Record<string, number> = {
   'reminders.setCompleted': 15_000,
   'reminders.status': 10_000,
   'reminders.update': 15_000,
+  'speech.audio': 10_000,
+  'speech.cancel': 10_000,
+  'speech.finish': 60_000,
+  'speech.start': 30_000,
   status: 10_000,
   transcribe: 120_000,
 };
@@ -81,8 +86,9 @@ type Helper = ChildProcessByStdio<Writable, Readable, null>;
 /** The running helper and the requests in flight to it. */
 let child: { readonly process: Helper; readonly requests: HelperRequests } | null = null;
 let lastSpawnFailedAt = 0;
-/** Subscribers to the helper's unsolicited `{"event": name}` lines. */
-const eventListeners = new Map<string, Set<() => void>>();
+/** Subscribers to the helper's unsolicited `{"event": name}` lines, given the line's other fields. */
+type EventListener = (body: Readonly<Record<string, unknown>>) => void;
+const eventListeners = new Map<string, Set<EventListener>>();
 /** Subscribers to the helper's exit: state it held (a running watch) is gone with it. */
 const exitListeners = new Set<() => void>();
 
@@ -93,8 +99,8 @@ export const onHelperExit = (listener: () => void): (() => void) => {
   };
 };
 
-export const onHelperEvent = (name: string, listener: () => void): (() => void) => {
-  const listeners = eventListeners.get(name) ?? new Set<() => void>();
+export const onHelperEvent = (name: string, listener: EventListener): (() => void) => {
+  const listeners = eventListeners.get(name) ?? new Set<EventListener>();
   listeners.add(listener);
   eventListeners.set(name, listeners);
   return () => {
@@ -140,8 +146,8 @@ const ensureHelper = (): HelperRequests | null => {
   createInterface({ input: spawned.stdout }).on('line', (line) => {
     const event = requests.receive(line);
     if (event !== undefined) {
-      for (const listener of eventListeners.get(event) ?? []) {
-        listener();
+      for (const listener of eventListeners.get(event.name) ?? []) {
+        listener(event.body);
       }
     }
   });

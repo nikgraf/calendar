@@ -9,7 +9,7 @@ import { Effect } from 'effect';
 import { useEffect, useState } from 'react';
 import { AccessibilityInfo, Platform } from 'react-native';
 import { appleLanguageModel } from '../../appleModel.ts';
-import { appleSpeech } from '../../appleSpeech.ts';
+import { speech } from '../../speech.ts';
 import { assistantDownload, useAssistantModelState } from '../../assistantRuntime.ts';
 import { clearLastRenderError, readLastRenderError } from '../../crashLog.ts';
 import {
@@ -55,7 +55,7 @@ export function DiagnosticsPage() {
 
   useEffect(() => {
     let cancelled = false;
-    void appleSpeech
+    void speech
       .isSupported()
       .then((value) => {
         if (!cancelled) {

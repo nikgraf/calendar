@@ -14,7 +14,7 @@ import { Alert, Share } from 'react-native';
  * Native modules are loaded lazily and inside a try: a static import of a
  * module whose pod is missing crashes the app at launch on a binary built
  * before this feature — which is what an OTA preview runs on. See
- * appleSpeech.ts for the same rule.
+ * modules/solunivo-speech/index.ts for the same rule.
  */
 const load = () => {
   try {

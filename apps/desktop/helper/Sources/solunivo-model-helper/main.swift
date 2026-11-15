@@ -3,7 +3,11 @@
 // Protocol: newline-delimited JSON, one request per line in, one response
 // per line out. {"id","method","params"} -> {"id","result"} | {"id","error"}.
 // Methods: status | generateJson {schema,prompt} | prepareSpeech {locale} |
-// transcribe {audioBase64,locale} | reminders.* (see RemindersBridge.swift,
+// transcribe {audioBase64,locale} (a recording, read whole: the bench) |
+// speech.start {session,locale} / speech.audio {session,pcmBase64} /
+// speech.finish {session} / speech.cancel {session} (one phrase as it is
+// said, its words as speech.words events: SpeechBridge.swift, shared with
+// the iOS Expo module) | reminders.* (see RemindersBridge.swift,
 // shared with the iOS Expo module) | contacts.* (ContactsBridge.swift) |
 // geo.* (GeoBridge.swift: MapKit place search, geocoding, map images) |
 // calendar.* (AppleCalendarBridge.swift: EventKit calendars and events) |
@@ -201,33 +205,98 @@ func handleGenerate(_ id: Int, _ params: [String: JSONValue]) async {
 func handlePrepareSpeech(_ id: Int, _ params: [String: JSONValue]) async {
   let localeId = params["locale"]?.stringValue ?? Locale.current.identifier
   do {
-    guard
-      let locale = await SpeechTranscriber.supportedLocale(
-        equivalentTo: Locale(identifier: localeId))
-    else {
-      emitError(id, HelperError.unavailable("locale not supported: \(localeId)").message)
-      return
-    }
-    let transcriber = SpeechTranscriber(
-      locale: locale, preset: .timeIndexedTranscriptionWithAlternatives)
-    let status = await AssetInventory.status(forModules: [transcriber])
-    switch status {
-    case .installed:
-      emitResult(id, ["prepared": true])
-    case .supported, .downloading:
-      if let request = try? await AssetInventory.assetInstallationRequest(
-        supporting: [transcriber])
-      {
-        try await request.downloadAndInstall()
-      }
-      emitResult(id, ["prepared": true])
-    case .unsupported:
-      emitError(id, HelperError.unavailable("assets unsupported for \(localeId)").message)
-    @unknown default:
-      emitError(id, HelperError.unavailable("unknown asset status").message)
-    }
+    try await SpeechAssets.prepare(locale: localeId)
+    emitResult(id, ["prepared": true])
+  } catch let error as SpeechBridgeError {
+    emitError(id, HelperError.unavailable(error.message).message)
   } catch {
     emitError(id, "prepare failed: \(error.localizedDescription)")
+  }
+}
+
+/// The renderer's microphone: 16 kHz mono Int16 little-endian, as
+/// desktopSpeech.ts sends it.
+let speechAudioFormat = AVAudioFormat(
+  commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: false)!
+
+func sessionId(_ params: [String: JSONValue]) -> Int? {
+  guard case .number(let value)? = params["session"] else { return nil }
+  return Int(value)
+}
+
+/// Queued on the stdin reader, in the order the lines came (speech.start,
+/// .finish and .cancel alike); answered from a task once its turn ran.
+func handleSpeechStart(_ id: Int, _ params: [String: JSONValue]) {
+  guard let session = sessionId(params) else {
+    emitError(id, HelperError.badRequest("session required").message)
+    return
+  }
+  let localeId = params["locale"]?.stringValue ?? Locale.current.identifier
+  let task = SpeechSessions.shared.start(id: session, locale: localeId) { source, text in
+    emit(["event": "speech.words", "session": session, "source": source, "text": text])
+  }
+  Task.detached {
+    do {
+      emitResult(id, ["sources": try await task.value])
+    } catch let error as SpeechBridgeError {
+      emitError(id, HelperError.unavailable(error.message).message)
+    } catch {
+      emitError(id, "speech start failed: \(error.localizedDescription)")
+    }
+  }
+}
+
+/// Runs on the stdin reader, not in a task of its own: the blocks reach
+/// the recognisers in the order they were said.
+func handleSpeechAudio(_ id: Int, _ params: [String: JSONValue]) {
+  guard let session = sessionId(params),
+    let base64 = params["pcmBase64"]?.stringValue,
+    let data = Data(base64Encoded: base64)
+  else {
+    emitError(id, HelperError.badRequest("session and pcmBase64 required").message)
+    return
+  }
+  let frames = AVAudioFrameCount(data.count / 2)
+  guard frames > 0,
+    let buffer = AVAudioPCMBuffer(pcmFormat: speechAudioFormat, frameCapacity: frames),
+    let channel = buffer.int16ChannelData?[0]
+  else {
+    emitResult(id, [:])
+    return
+  }
+  buffer.frameLength = frames
+  data.withUnsafeBytes { bytes in
+    _ = bytes.copyBytes(to: UnsafeMutableRawBufferPointer(start: channel, count: Int(frames) * 2))
+  }
+  SpeechSessions.shared.append(id: session, buffer)
+  emitResult(id, [:])
+}
+
+func handleSpeechFinish(_ id: Int, _ params: [String: JSONValue]) {
+  guard let session = sessionId(params) else {
+    emitError(id, HelperError.badRequest("session required").message)
+    return
+  }
+  let task = SpeechSessions.shared.finish(id: session)
+  Task.detached {
+    do {
+      let segments = try await task.value ?? []
+      emitResult(id, ["segments": segments.map(\.json)])
+    } catch {
+      emitError(id, "transcription failed: \(error.localizedDescription)")
+    }
+  }
+}
+
+func handleSpeechCancel(_ id: Int, _ params: [String: JSONValue]) {
+  guard let session = sessionId(params) else {
+    emitResult(id, [:])
+    return
+  }
+  let task = SpeechSessions.shared.cancel(id: session)
+  Task.detached {
+    _ = await task.result
+    emitResult(id, [:])
   }
 }
 
@@ -327,6 +396,24 @@ func handleLine(_ line: String) {
   // (NSTimeZone.h), and the bridges speak device-local wall clock: the
   // helper outlives a flight, so every request reads the zone afresh.
   NSTimeZone.resetSystemTimeZone()
+  // Dictation's steps keep the order their lines came in: queued here,
+  // on the reader, not in tasks of their own that may run in any order.
+  switch request.method {
+  case "speech.audio":
+    handleSpeechAudio(request.id, params)
+    return
+  case "speech.start":
+    handleSpeechStart(request.id, params)
+    return
+  case "speech.finish":
+    handleSpeechFinish(request.id, params)
+    return
+  case "speech.cancel":
+    handleSpeechCancel(request.id, params)
+    return
+  default:
+    break
+  }
   Task.detached {
     switch request.method {
     case "status": handleStatus(request.id)

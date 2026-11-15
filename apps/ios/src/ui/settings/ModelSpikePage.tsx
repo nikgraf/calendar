@@ -12,7 +12,7 @@ import { type ThemeColors, useStyles } from '../theme.ts';
 /**
  * Native modules are loaded lazily and inside a try: a static import of a
  * module whose pod is missing crashes the app at launch on a binary built
- * before it. See appleSpeech.ts for the same rule.
+ * before it. See modules/solunivo-speech/index.ts for the same rule.
  */
 const loadNative = () => {
   try {

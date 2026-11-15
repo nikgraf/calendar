@@ -1,11 +1,13 @@
 import {
+  listenForPhrase,
   MicrophoneDeniedError,
+  type PhraseListener,
   SpeechUnsupportedError,
-  type SpeechEvent,
   type SpeechToText,
+  type WordsSource,
 } from '@calendar/ai';
 import { useEffect, useRef, useState } from 'react';
-import { micPress, shouldListen } from './voiceLoop.ts';
+import { micPress, pendingLine, shouldListen } from './voiceLoop.ts';
 
 /** A phrase that never pauses is sent after this long rather than recorded until the app dies. */
 const MAX_RECORDING_MS = 60_000;
@@ -43,8 +45,8 @@ export interface QuickAddModelOptions {
  * The state machine behind the editors' quick-add field on both
  * platforms: phrase, submit (to the thread) and the dictation lifecycle (find a
  * time is the event form's own tool, `useFindTimeModel`). Dictation is
- * hands-free: one press of the microphone listens, a pause sends what
- * was said as a phrase, and it listens again — until the microphone is
+ * hands-free: one press of the microphone listens, the words stopping
+ * sends what was said as a phrase (`listenForPhrase`), and it listens again — until the microphone is
  * pressed, the form or the field is edited by hand, or nobody speaks for
  * a while (see `voiceLoop.ts` for the press). The two shells
  * re-implemented this separately
@@ -69,6 +71,8 @@ export const useQuickAddModel = ({
   const [voiceAvailable, setVoiceAvailable] = useState(false);
   const [handsFree, setHandsFree] = useState(false);
   const [heard, setHeard] = useState(false);
+  /** The words of the phrase being spoken, as the recognisers write them. */
+  const [live, setLive] = useState('');
   // Read after awaits: a phrase that finishes reading must know whether
   // hands-free ended meanwhile.
   const handsFreeRef = useRef(false);
@@ -128,8 +132,18 @@ export const useQuickAddModel = ({
   const prepared = useRef(false);
   /** A recording is being stopped and read: its ear's late "end", the cap and a press ask once. */
   const stopping = useRef(false);
+  /** The ear of the phrase being listened to: its words so far, and when it ends. */
+  const ear = useRef<PhraseListener | null>(null);
+
+  /** The phrase is dropped: its ear stops, its words go. */
+  const closeEar = () => {
+    ear.current?.stop();
+    ear.current = null;
+    setLive('');
+  };
 
   const failed = (message: string) => {
+    closeEar();
     switchHandsFree(false);
     setHeard(false);
     setVoice('idle');
@@ -146,13 +160,17 @@ export const useQuickAddModel = ({
       return;
     }
     stopping.current = true;
-    // Its ear is done: a block still queued in the worklet may report an
-    // "end" after the press — it must not stop the next recording.
+    // Its ear is done: words still on their way after the press must not
+    // reach the next recording. They stay on show until the phrase is read.
     starting.current = null;
+    ear.current?.stop();
+    ear.current = null;
     setVoice('transcribing');
     setHeard(false);
     try {
-      const text = await speech.stopRecording();
+      const text = (await speech.finish())?.text;
+      // The words heard give way to the phrase as read, in one render.
+      setLive('');
       if (!text) {
         // Hands-free hears noise as often as words: it just listens again.
         if (!handsFreeRef.current && !quiet) {
@@ -167,22 +185,40 @@ export const useQuickAddModel = ({
       setError('Could not transcribe that.');
     } finally {
       stopping.current = false;
+      setLive('');
       setVoice('idle');
     }
   };
+  const stopRef = useRef(stopRecording);
+  stopRef.current = stopRecording;
 
-  /** What the recording's ear says, handled by the latest render. */
-  const onSpeech = (event: SpeechEvent) => {
-    if (event === 'start') {
+  /** A recogniser's words, handled by the latest render. */
+  const onWords = (source: WordsSource, text: string) => {
+    const listening = ear.current;
+    if (!listening) {
+      return;
+    }
+    if (listening.words(source, text) === 'start') {
       setHeard(true);
       // Speaking again is the answer to the last phrase's message.
       setError(null);
-    } else {
-      void stopRecording();
     }
+    setLive(listening.text());
   };
-  const speechRef = useRef(onSpeech);
-  speechRef.current = onSpeech;
+  const wordsRef = useRef(onWords);
+  wordsRef.current = onWords;
+
+  /** The phrase went with its recognisers: nothing will end it, so it ends here. */
+  const onLost = () => {
+    if (!ear.current) {
+      return;
+    }
+    starting.current = null;
+    void speech.cancel();
+    failed('Dictation stopped — try again.');
+  };
+  const lostRef = useRef(onLost);
+  lostRef.current = onLost;
 
   const listen = async () => {
     const controller = new AbortController();
@@ -220,23 +256,45 @@ export const useQuickAddModel = ({
           return;
         }
       }
+      // The phrase ends when its words stop: the ear sends it then.
+      const listening = listenForPhrase(() => {
+        if (ear.current === listening) {
+          void stopRef.current();
+        }
+      });
+      ear.current = listening;
+      /** This start came to nothing: its ear goes, a newer one stays. */
+      const drop = () => {
+        listening.stop();
+        if (ear.current === listening) {
+          closeEar();
+        }
+      };
       try {
-        await speech.startRecording({
-          onSpeech: (event) => {
-            // Only this recording's ear: a later one has its own.
+        const started = await speech.start({
+          onLost: () => {
             if (starting.current === controller && !controller.signal.aborted) {
-              speechRef.current(event);
+              lostRef.current();
+            }
+          },
+          onWords: (source, text) => {
+            // Only this recording's words: a later one has its own ear.
+            if (starting.current === controller && !controller.signal.aborted) {
+              wordsRef.current(source, text);
             }
           },
           signal: controller.signal,
         });
         // Ended while the microphone was being granted: the adapter has
-        // already stopped this start's stream.
-        if (controller.signal.aborted) {
+        // already stopped what this start opened.
+        if (controller.signal.aborted || !started) {
+          drop();
           return;
         }
+        listening.listensWith(started.sources);
         setVoice('recording');
       } catch (error) {
+        drop();
         if (controller.signal.aborted) {
           return;
         }
@@ -264,7 +322,8 @@ export const useQuickAddModel = ({
     if (voice === 'preparing' || voice === 'recording' || arming.current) {
       starting.current?.abort();
       arming.current = false;
-      void speech.cancelRecording();
+      closeEar();
+      void speech.cancel();
       setVoice('idle');
     }
   };
@@ -346,7 +405,8 @@ export const useQuickAddModel = ({
   useEffect(
     () => () => {
       starting.current?.abort();
-      void speech.cancelRecording();
+      ear.current?.stop();
+      void speech.cancel();
     },
     [speech],
   );
@@ -360,8 +420,13 @@ export const useQuickAddModel = ({
     error,
     /** Hands-free dictation is on, between phrases included. */
     handsFree,
-    /** The phrase being recorded has begun. */
+    /** A first word of the phrase being recorded was heard. */
     heard,
+    /**
+     * The thread's line for the phrase on its way: its words while it is
+     * spoken, then the phrase while it is read.
+     */
+    pending: pendingLine({ busy, live, phrase }),
     phrase,
     setPhrase,
     submit,

@@ -31,6 +31,7 @@
         "NSLocationWhenInUseUsageDescription": "Solunivo uses your location only to show nearby results when you search for an event's location.",
         "NSRemindersFullAccessUsageDescription": "Solunivo shows your Reminders next to your calendar and lets you edit them here. Nothing leaves your device.",
         "NSRemindersUsageDescription": "Solunivo shows your Reminders next to your calendar and lets you edit them here. Nothing leaves your device.",
+        "NSMicrophoneUsageDescription": "Solunivo uses the microphone to turn what you say into an event. Audio is transcribed on your device and never uploaded.",
         "NSSpeechRecognitionUsageDescription": "Solunivo transcribes what you say into an event entirely on this device."
       },
       "icon": "./assets/icon.png"
@@ -38,12 +39,6 @@
     "plugins": [
       "expo-web-browser",
       "expo-secure-store",
-      [
-        "expo-audio",
-        {
-          "microphonePermission": "Solunivo uses the microphone to turn what you say into an event. Audio is transcribed on your device and never uploaded."
-        }
-      ],
       "@react-native-community/datetimepicker",
       "expo-background-task",
       "expo-router",

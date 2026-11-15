@@ -1,7 +1,12 @@
-import { fixtureTextRecognizer, makeFixtureLanguageModel } from '@calendar/ai';
-import { ipcMain, systemPreferences } from 'electron';
-import { callHelper, registerHelperLifecycle } from './helperProcess.ts';
-import { microphoneFixture, nextFixturePhrase } from './microphoneFixture.ts';
+import { fixtureTextRecognizer, makeFixtureLanguageModel, type WordsSource } from '@calendar/ai';
+import { ipcMain, systemPreferences, type WebContents } from 'electron';
+import {
+  callHelper,
+  onHelperEvent,
+  onHelperExit,
+  registerHelperLifecycle,
+} from './helperProcess.ts';
+import { fixtureListening, microphoneFixture } from './microphoneFixture.ts';
 import {
   getModelProvider,
   providerGenerate,
@@ -29,8 +34,8 @@ import {
 const MAX_SCHEMA_CHARS = 64_000;
 /** Room for capture's largest budget (60k characters of a paste) plus the prompt's own words. */
 const MAX_PROMPT_CHARS = 80_000;
-/** ~18 MB of 16 kHz mono 16-bit WAV, several minutes of dictation. */
-const MAX_AUDIO_BASE64_CHARS = 24_000_000;
+/** One block of the microphone: the renderer sends 100 ms (3,200 bytes); a second is plenty. */
+const MAX_AUDIO_BLOCK_BYTES = 32_000;
 /** ~18 MB of image: a full Retina screenshot as PNG is a few. */
 const MAX_IMAGE_BASE64_CHARS = 24_000_000;
 const LOCALE = /^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/;
@@ -116,18 +121,7 @@ export const registerModelHelper = (): void => {
     }
     return callHelper('prepareSpeech', { locale });
   });
-  ipcMain.handle('model:transcribe', (_event, audioBase64: unknown, locale: unknown) => {
-    if (typeof audioBase64 !== 'string' || audioBase64.length > MAX_AUDIO_BASE64_CHARS) {
-      return invalid('audio');
-    }
-    if (typeof locale !== 'string' || !LOCALE.test(locale)) {
-      return invalid('locale');
-    }
-    if (microphoneFixture) {
-      return nextFixturePhrase();
-    }
-    return callHelper('transcribe', { audioBase64, locale });
-  });
+  registerSpeech();
   // Bytes only: the renderer never names a path, so the helper reads
   // nothing but what was pasted.
   ipcMain.handle('model:recognize-text', async (_event, imageBase64: unknown) => {
@@ -149,4 +143,144 @@ export const registerModelHelper = (): void => {
     testModelProvider(candidate),
   );
   registerHelperLifecycle();
+};
+
+/**
+ * The phrase being listened to, and the window listening: its words go
+ * there only, and audio from anywhere else is not taken.
+ */
+let listening: { readonly owner: WebContents; readonly session: number } | null = null;
+let sessions = 0;
+/** Windows whose closing is watched: a phrase they leave behind is dropped, audio and all. */
+const watched = new WeakSet<WebContents>();
+
+const dropLeftBehind = (owner: WebContents) => {
+  const current = listening;
+  if (current?.owner !== owner) {
+    return;
+  }
+  listening = null;
+  if (microphoneFixture) {
+    fixtureListening.cancel(current.session);
+  } else {
+    callHelper('speech.cancel', { session: current.session }).catch(() => undefined);
+  }
+};
+
+const sendWords = (session: number, source: WordsSource, text: string) => {
+  const current = listening;
+  if (current?.session === session && !current.owner.isDestroyed()) {
+    current.owner.send('model:speech-words', { session, source, text });
+  }
+};
+
+const isSession = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
+
+/** Only the window listening ends its phrase; an older phrase is nobody's, and ending it does nothing. */
+const ownedBy = (session: number, sender: WebContents) =>
+  listening?.session !== session || listening.owner === sender;
+
+/**
+ * Dictation, one phrase at a time: the renderer owns the microphone and
+ * streams it here (`model:speech-audio`, 16 kHz mono Int16 blocks); the
+ * helper's recognisers write the words as they are said
+ * (`model:speech-words`, pushed to the window listening); the renderer
+ * decides when the phrase ended and asks for it read whole
+ * (`model:speech-finish`). Under the e2e fixture the same calls answer
+ * from `microphoneFixture.ts`.
+ */
+const registerSpeech = () => {
+  // The helper went away mid-phrase, its recognisers and the audio with
+  // it: a new one knows nothing of the phrase, so the window is told
+  // rather than left listening to nothing.
+  onHelperExit(() => {
+    const current = listening;
+    if (!current || microphoneFixture) {
+      return;
+    }
+    listening = null;
+    if (!current.owner.isDestroyed()) {
+      current.owner.send('model:speech-lost', { session: current.session });
+    }
+  });
+  onHelperEvent('speech.words', (body) => {
+    const { session, source, text } = body;
+    if (
+      isSession(session) &&
+      (source === 'accurate' || source === 'quick') &&
+      typeof text === 'string'
+    ) {
+      sendWords(session, source, text);
+    }
+  });
+  ipcMain.handle('model:speech-start', async (event, locale: unknown) => {
+    if (typeof locale !== 'string' || !LOCALE.test(locale)) {
+      return invalid('locale');
+    }
+    sessions += 1;
+    const session = sessions;
+    const owner = event.sender;
+    listening = { owner, session };
+    // Closed mid-phrase, the window's own cleanup never runs: main drops it.
+    if (!watched.has(owner)) {
+      watched.add(owner);
+      owner.once('destroyed', () => dropLeftBehind(owner));
+    }
+    if (microphoneFixture) {
+      fixtureListening.start(session, (source, text) => sendWords(session, source, text));
+      return { session, sources: ['accurate', 'quick'] };
+    }
+    const started = (await callHelper('speech.start', { locale, session })) as {
+      readonly sources?: unknown;
+    };
+    const sources = Array.isArray(started.sources)
+      ? started.sources.filter((source) => source === 'accurate' || source === 'quick')
+      : ['accurate'];
+    return { session, sources };
+  });
+  ipcMain.on('model:speech-audio', (event, session: unknown, pcm: unknown) => {
+    if (
+      !isSession(session) ||
+      listening?.session !== session ||
+      listening.owner !== event.sender ||
+      !ArrayBuffer.isView(pcm) ||
+      pcm.byteLength > MAX_AUDIO_BLOCK_BYTES
+    ) {
+      return;
+    }
+    const bytes = new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength);
+    if (microphoneFixture) {
+      fixtureListening.audio(session, bytes);
+      return;
+    }
+    callHelper('speech.audio', {
+      pcmBase64: Buffer.from(bytes).toString('base64'),
+      session,
+    }).catch(() => undefined);
+  });
+  ipcMain.handle('model:speech-finish', (event, session: unknown) => {
+    if (!isSession(session) || !ownedBy(session, event.sender)) {
+      return invalid('session');
+    }
+    if (listening?.session === session) {
+      listening = null;
+    }
+    return microphoneFixture
+      ? fixtureListening.finish(session)
+      : callHelper('speech.finish', { session });
+  });
+  ipcMain.handle('model:speech-cancel', async (event, session: unknown) => {
+    if (!isSession(session) || !ownedBy(session, event.sender)) {
+      return invalid('session');
+    }
+    if (listening?.session === session) {
+      listening = null;
+    }
+    if (microphoneFixture) {
+      fixtureListening.cancel(session);
+      return {};
+    }
+    return callHelper('speech.cancel', { session });
+  });
 };
