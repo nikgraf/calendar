@@ -6,7 +6,7 @@ import {
   TaskListInfo,
   TaskRecord,
 } from '@calendar/core';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vite-plus/test';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test';
 import {
   type App,
   launchApp,
@@ -22,6 +22,8 @@ import {
 // against what the grid showed before the drag.
 
 const HOUR_HEIGHT = 48;
+/** Where the grid opens (WeekView): 7:30 at the top. */
+const OPEN_SCROLL_TOP = 7.5 * HOUR_HEIGHT;
 const isoToday = localIsoDaysAgo(0);
 const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
@@ -163,6 +165,11 @@ describe('A drag held at the grid edge scrolls it', () => {
   afterEach(async (context) => {
     if (context.task.result?.state === 'fail') {
       await app.dump(context.task.name);
+      // A failed attempt can leave its chip or block held, and one held at
+      // the edge goes on scrolling the grid under the retry: Escape lets go
+      // of it without a drop, then the button comes up.
+      await app.cdp.pressEscape();
+      await app.cdp.mouse('mouseReleased', 1, 1);
     }
   });
   afterAll(async () => {
@@ -196,6 +203,31 @@ describe('A drag held at the grid edge scrolls it', () => {
     }
     throw new Error('the grid kept scrolling');
   };
+  // A lane chip's test measures the grid as it finds it (locating the chip
+  // scrolls only the lane), so every test starts where the grid opens, not
+  // where the one before it, or a failed attempt of its own, left it: one
+  // left at the bottom has nothing below to scroll to. The hook outlasts
+  // `waitFor`'s own wait, so a grid that never shows fails there.
+  beforeEach(async () => {
+    await app.cdp.waitFor(`(() => {
+      const scroller = ${SCROLLER};
+      if (scroller) {
+        scroller.scrollTop = ${OPEN_SCROLL_TOP};
+      }
+      return !!scroller;
+    })()`);
+    expect((await settled()).scrollTop).toBe(OPEN_SCROLL_TOP);
+  }, 20_000);
+  /**
+   * Waits until the lane has let go of a dropped chip and the grid shows its
+   * block. The lane learns of a drop only after the write, so a check of
+   * the stored task passes first; until then the lane keeps the chip's row,
+   * and once that row goes the grid grows by it and scrolls less far.
+   */
+  const shownInGrid = (id: string) =>
+    app.cdp.waitFor(
+      `!document.querySelector('[data-testid="all-day-task-${id}"]') && !!document.querySelector('[data-testid="timed-task-${id}"]')`,
+    );
   const taskById = async (id: string) =>
     (await readTasks(app.userDataDir)).find((task) => task.id === id);
   const eventById = async (id: string) =>
@@ -225,6 +257,7 @@ describe('A drag held at the grid edge scrolls it', () => {
     await expect
       .poll(() => taskById('ek-edge-enter'), POLL)
       .toMatchObject({ dueDate: isoToday, dueTime: clock(snap(minutesTo(middle, after))) });
+    await shownInGrid('ek-edge-enter');
   });
 
   it('scrolls down while a chip is held at the bottom edge and drops it below what was on screen', async () => {
@@ -247,6 +280,7 @@ describe('A drag held at the grid edge scrolls it', () => {
     await expect
       .poll(() => taskById('ek-edge-lane'), POLL)
       .toMatchObject({ dueDate: isoToday, dueTime: clock(minute) });
+    await shownInGrid('ek-edge-lane');
   });
 
   it('scrolls up while a timed reminder is held at the top edge and moves it before what was on screen', async () => {
