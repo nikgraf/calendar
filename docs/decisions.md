@@ -1271,6 +1271,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   phrase brought, with Skip. Type is a capsule like Form. Rejected: View
   Transitions, a sideways slide, every value travelling, chips, dots.
   Open: haptics, answering by voice (todo.md).
+- **The form holds a step from the moment it shows** (2026-11-15, #329)
+  — the form took a step in from a passive effect, a task after a turn's
+  commit: "1 of 1" showed with the title a step behind and Undo still
+  locked, and an Undo's agreed only because the day it reveals (a store
+  write) pulled the form into one render; the e2e caught both under load.
+  The take-in is a layout effect, and a to-do's own fields land with its
+  item. Rejected: a wait in the spec (it hides the race), drawing the
+  step control from the form's last step (a second copy of the thread).
+  Open: a kind switch that asks nothing still lands a task later.
 - **Create with AI runs a demo until the model is here** (2026-11-13,
   #319) — nothing asks for the model at launch; the Create lesson says
   what the Assistant is and offers the download, the card's row shows its

@@ -125,6 +125,7 @@ const pickPriority = (label: string) =>
   `[...document.querySelectorAll('[aria-label="Priority"] [role="radio"]')].find((option) => option.textContent === ${JSON.stringify(label)}).click()`;
 const asked = `!!document.querySelector('[data-testid="move-confirm"]')`;
 const ALERT = '[data-testid="reminder-alarm"]';
+const NOTES = 'textarea[placeholder="Add notes"]';
 const REPEAT = 'select[aria-label="Repeat"]';
 const alertLabel = `document.querySelector('${ALERT} option:checked')?.textContent ?? ''`;
 const status = `(document.querySelector('[data-testid="quick-add-status"]')?.textContent ?? '')`;
@@ -493,6 +494,12 @@ describe('The draft thread', () => {
     // The fixture's extras: the model answers the to-do with an alert 10 minutes before.
     await cdp.say('todo: Call the bank | +1 | 09:00 | | remind 10');
     await cdp.waitFor(`${card('alert')} === '10 minutes before'`);
+    // A later turn keeps the kind: the form holds all of the step — a
+    // to-do's own notes too — from the moment the step control shows it.
+    const notesAtStep = await cdp.noteWhen<string>(`${stepPosition} === '2 of 2'`, valueOf(NOTES));
+    await cdp.say('note: ask about the fees');
+    await cdp.waitFor(`${stepPosition} === '2 of 2'`);
+    expect(await notesAtStep()).toBe('ask about the fees');
     await cdp.showEditorView('form');
     // A to-do goes to the Reminders list (over the Google one): its alert is in the picker,
     // named though the presets lack it.

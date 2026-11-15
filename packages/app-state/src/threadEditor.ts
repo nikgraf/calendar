@@ -11,7 +11,7 @@ import {
   type TaskRecord,
   Temporal,
 } from '@calendar/core';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { draftCalendarKey, draftListKey, planAddAll } from './addAll.ts';
 import { useDraftFocusRequest, useRevealDraftDay, useSetDraftPreviews } from './draftAtoms.ts';
 import {
@@ -516,44 +516,58 @@ export const useThreadEditor = ({
   const undated = useRef<{ readonly date: string } | null>(null);
 
   /**
+   * A to-do's own, once the form holds its item: its list and
+   * Reminders-only fields where the form had held it as one, its notes,
+   * and a day the form had let go of — unless the thread dated it itself
+   * (a slot placement says so in the extras; a retained time says
+   * nothing, a reminder keeps its time while undated).
+   */
+  const applyTodoFields = (draft: Draft) => {
+    const { extras, item } = draft;
+    if (item.kind === 'task') {
+      const listKey = draftListKey(draft, taskLists, '');
+      if (listKey !== '') {
+        taskModel.setListKey(listKey);
+      }
+      if (extras?.reminder?.alarmsOnly) {
+        // Only a turn's alert: what the switch of kind carried stays.
+        taskModel.restoreAlarms(extras.reminder.alarms);
+      } else if (extras?.reminder) {
+        taskModel.restoreReminderFields(extras.reminder);
+      }
+      taskModel.setNotes(extras?.taskNotes ?? '');
+      const placed = extras?.undated === false;
+      if (!placed && (extras?.undated || undated.current?.date === item.prefill.date)) {
+        taskModel.clearDueDate?.();
+      }
+    }
+    undated.current = null;
+  };
+
+  /**
    * The draft the form shows, changed by a phrase, or the first one: the
    * form takes its item through the kind control's `apply` (a phrase read
    * as the other kind switches, with the switch's question), and what the
-   * form holds beyond the item follows the draft. What the step changed
-   * is marked from the thread itself (`shownMarks`), not from here.
+   * form holds beyond the item follows the draft — all of it at once,
+   * with the take-in below, while the kind stays. When it changes, the
+   * item and a to-do's own fields follow once the switch has settled,
+   * the apply held open until then; the event form's extras at once.
+   * What the step changed is marked from the thread itself
+   * (`shownMarks`), not from here.
    */
-  const applyDraft = (draft: Draft, done: () => void) => {
-    const { extras, item } = draft;
-    void apply(item)
-      .then(() => {
-        if (item.kind === 'task') {
-          // A to-do's own: its list and Reminders-only fields where the form
-          // had held it as one, its notes, and a day the form had let go of —
-          // unless the thread dated it itself (a slot placement says so in
-          // the extras; a retained time says nothing, a reminder keeps its
-          // time while undated).
-          const listKey = draftListKey(draft, taskLists, '');
-          if (listKey !== '') {
-            taskModel.setListKey(listKey);
-          }
-          if (extras?.reminder?.alarmsOnly) {
-            // Only a turn's alert: what the switch of kind carried stays.
-            taskModel.restoreAlarms(extras.reminder.alarms);
-          } else if (extras?.reminder) {
-            taskModel.restoreReminderFields(extras.reminder);
-          }
-          taskModel.setNotes(extras?.taskNotes ?? '');
-          const placed = extras?.undated === false;
-          if (!placed && (extras?.undated || undated.current?.date === item.prefill.date)) {
-            taskModel.clearDueDate?.();
-          }
-        }
-        undated.current = null;
-      })
-      .finally(done);
+  const applyDraft = (draft: Draft) => {
+    const taken = apply(draft.item);
     // The form starts clean for a draft it never held: nothing typed
     // for another draft — guests, notes, notifications — follows it.
-    eventModel.restoreExtras(extras);
+    eventModel.restoreExtras(draft.extras);
+    if (isThenable(taken)) {
+      setOpenApplies((open) => open + 1);
+      void Promise.resolve(taken)
+        .then(() => applyTodoFields(draft))
+        .finally(() => setOpenApplies((open) => open - 1));
+    } else {
+      applyTodoFields(draft);
+    }
   };
 
   /**
@@ -584,6 +598,17 @@ export const useThreadEditor = ({
   // switch the kind and ask about a loss. The thread emptied (the first
   // turn undone): the form goes back to the blank it opened as, so
   // nothing undone can still be saved.
+  // A layout effect: what it sets renders in the commit right after the
+  // one that shows the step in the step control and the card, in the
+  // same task and before paint, so nothing on screen or reading the page
+  // sees them a step apart — only that first commit's own effects still
+  // do: its layout effects, and its passive ones, which React flushes
+  // before the follow-up render. A passive take-in ran a task after a
+  // turn's commit, the step drawn and the form a step behind (the steps
+  // locked meanwhile), and an Undo's agreed only because the day revealed
+  // here (a store write, rendered at once) pulled the form's updates into
+  // the same render. Only a kind switch takes longer — it may ask first —
+  // and it holds an apply open until it has settled (`applying`).
   const applied = useRef(0);
   const wasPreviewing = useRef(false);
   // The draft the form shows, by id; none before the first and after the last.
@@ -594,7 +619,7 @@ export const useThreadEditor = ({
   // version, and applies can settle out of order.
   const [seenVersion, setSeenVersion] = useState(version);
   const [openApplies, setOpenApplies] = useState(0);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (version === applied.current) {
       return;
     }
@@ -612,8 +637,7 @@ export const useThreadEditor = ({
       if (another || restored) {
         showDraft(focusedDraft);
       } else {
-        setOpenApplies((open) => open + 1);
-        applyDraft(focusedDraft, () => setOpenApplies((open) => open - 1));
+        applyDraft(focusedDraft);
       }
       // A day the form cleared is stored as '' until repaired: nothing to show.
       try {
