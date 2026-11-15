@@ -108,7 +108,7 @@ const deviceFiles = (
     if (!file.exists) {
       file.create();
     }
-    file.write(JSON.stringify(value));
+    file.writeSync(JSON.stringify(value));
   };
   return {
     destination: model.uri,

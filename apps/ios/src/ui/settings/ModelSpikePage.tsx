@@ -68,7 +68,7 @@ const deviceFiles = (): SpikeFiles | undefined => {
         file.delete();
       }
       file.create();
-      file.write(text);
+      await file.write(text);
       await native.sharing.shareAsync(file.uri, { mimeType: 'application/json' });
     },
     sizeOf: (model) => {
