@@ -64,13 +64,16 @@ export const CANDIDATE_SEARCH_TIMEOUT = '3 seconds';
  */
 export const ALTERNATIVE_SEARCH_MS = 1500;
 /**
- * The candidates answer within this of being asked, readings included: a
- * second short of the turn's own wait for its places (5 s,
- * `draftThread.ts`), which drops everything once passed. The readings get
- * what is left of it, up to `ALTERNATIVE_SEARCH_MS` — none once the past
- * places and the words as written took it all.
+ * MapKit is asked for the readings only within this of the lookup being
+ * asked: a second short of the turn's own wait for its places (5 s,
+ * `draftThread.ts`), which drops every candidate once passed. The
+ * readings' searches get what is left of it, up to
+ * `ALTERNATIVE_SEARCH_MS`; once the past places and the words as written
+ * took it all, only the past places the readings name are offered.
  */
 export const CANDIDATES_BUDGET_MS = 4000;
+/** Of the places offered, the readings' at most: the words as written keep the rest. */
+export const ALTERNATIVES_OFFERED = 3;
 /** Other readings asked at most: each is one search of MapKit's budget. */
 export const ALTERNATIVE_SEARCHES = 4;
 /**
@@ -143,23 +146,24 @@ const foundAs =
  * that resemble a reading and are nearby or where it says — a place the
  * user has been to beats any search hit, and the far namesakes and the
  * hits that resemble nothing are no one's guess here. Each marked with
- * its reading, so it is offered and never taken. The readings are asked
- * side by side within `wait`, each kept as it answers.
+ * its reading, so it is offered and never taken. MapKit is asked for
+ * the readings side by side within `wait`, each kept as it answers; with
+ * no wait left, not at all.
  */
 const alternativeCandidates = (
   readings: ReadonlyArray<string>,
   places: ReadonlyArray<PastPlace>,
   region: GeoRegion | undefined,
-  wait: Duration.Duration,
+  wait: Duration.Duration | undefined,
 ) =>
   Effect.gen(function* () {
     const geo = yield* GeoClient;
     const asked = readings.filter(isMappableLocation).slice(0, ALTERNATIVE_SEARCHES);
     const found = yield* Effect.forEach(
-      asked,
+      wait === undefined ? [] : asked,
       (reading) =>
         geo.resolve({ limit: CANDIDATE_LIMIT, query: reading, region }).pipe(
-          Effect.timeout(wait),
+          Effect.timeout(wait ?? 0),
           Effect.catch(() => Effect.succeed([])),
           Effect.map((hits) =>
             rankFoundPlaces(reading, hits, region)
@@ -345,16 +349,17 @@ export const locationHandlers: Pick<
       // Asked since `now`: the readings get what is left of the budget.
       const elapsed = (yield* Clock.currentTimeMillis) - now;
       const left = Math.min(ALTERNATIVE_SEARCH_MS, CANDIDATES_BUDGET_MS - elapsed);
-      if ((alternatives ?? []).length === 0 || preselectedPlace(heard) !== undefined || left <= 0) {
+      if ((alternatives ?? []).length === 0 || preselectedPlace(heard) !== undefined) {
         return heard;
       }
       const others = yield* alternativeCandidates(
         alternatives ?? [],
         places,
         region,
-        Duration.millis(left),
+        left > 0 ? Duration.millis(left) : undefined,
       );
-      return mergePlaceCandidates([], [...others, ...heard]);
+      // First, each once, but never all: the words as written keep a place or two.
+      return mergePlaceCandidates(mergePlaceCandidates([], others, ALTERNATIVES_OFFERED), heard);
     }),
 
   resolveLocation: ({ location, suggestion }) =>

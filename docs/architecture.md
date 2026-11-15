@@ -1752,22 +1752,25 @@ gateway carries all of it. Details, limits and the threat model:
   best first and uncached. A dictated turn's place goes with
   dictation's other readings of it (ai `alternativesFor`): its words are
   found among the phrase's (local alignment over words, each pair scored
-  by edit distance over letters, so a place the model wrote its own way
-  or began in an earlier turn still finds the words said now), each
-  segment they stand in is lined up word by word with each of its
-  alternatives, and the alternative's words in that span replace them —
-  a word only the alternative has joins the span at its edge when the
-  word beyond is read the same — combined across segments, the
+  by edit distance over letters, so a place the model spelled its own
+  way word by word or began in an earlier turn still finds the words
+  said now; a name split or joined another way does not), each segment
+  they stand in is lined up word by word with each of its alternatives,
+  and the alternative's words in that span replace them — a word only
+  the alternative has joins the span at its edge when the word beyond is
+  read the same, and beside a word that changed too the alternative is
+  left out rather than searched in part — combined across segments, the
   likeliest first, four at most, never the text again; words said twice
   are read in both places, and words holding fewer than four letters
   ("at", "6") stand for nothing. Only when the text itself names nothing
   nearby (no candidate `preselectedPlace` would take) does the handler
   ask them: the past places each names, then one MapKit search each,
   kept when it resembles its reading and is nearby or where it says,
-  within what is left of 4 s since the lookup began (1.5 s at most) — a
-  second short of the turn's 5 s, past which every candidate would be
-  dropped. They come first, marked with their reading (`alternative`),
-  and are never taken unasked. A refine turn looks each place text up
+  within what is left of 4 s since the lookup began (1.5 s at most; none
+  left, the past places alone) — a second short of the turn's 5 s, past
+  which every candidate would be dropped. Three at most come first,
+  marked with their reading (`alternative`), the text's own after them,
+  and none is taken unasked. A refine turn looks each place text up
   once, however many drafts it sets it on. The draft thread (app-state `draftPlaces.ts`) asks for them
   whenever a turn sets a place: the best resembling one is taken at once
   (`preselectedPlace`) — its text becomes the location and its pin counts

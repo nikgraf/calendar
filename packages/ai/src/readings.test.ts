@@ -69,6 +69,20 @@ describe('findWords', () => {
     ]);
   });
 
+  it('keeps the longer of two runs as alike', () => {
+    // Review: "Kathamek" is half like "Kaffemik", so "cafe" alone scored the same.
+    expect(findWords(wordsOf('Café Kaffemik'), wordsOf('Lunch at the cafe Kathamek'))).toEqual([
+      { heard: [3, 5], words: [0, 2] },
+    ]);
+  });
+
+  it('looks past a short word for the name', () => {
+    // Review: the exact "5" outscored the name, then stood for nothing.
+    expect(
+      findWords(wordsOf('Figlmüller, Wollzeile 5'), wordsOf('Dinner at Figelmiller at 5')),
+    ).toEqual([{ heard: [2, 3], words: [0, 1] }]);
+  });
+
   it('finds nothing for words nobody said, or a short word alone', () => {
     expect(findWords(wordsOf('Office'), wordsOf('Lunch tomorrow at one'))).toEqual([]);
     expect(findWords(wordsOf(''), wordsOf('Lunch'))).toEqual([]);
@@ -82,7 +96,7 @@ describe('findWords', () => {
 /** The words of `alternative` that read `segment`'s words `run`. */
 const at = (segment: string, alternative: string, run: readonly [number, number]) => {
   const words = wordsOf(alternative);
-  return wordsAt(alignWords(wordsOf(segment), words), run).map((index) => words[index]!.text);
+  return wordsAt(alignWords(wordsOf(segment), words), run)?.map((index) => words[index]!.text);
 };
 
 describe('wordsAt', () => {
@@ -98,9 +112,10 @@ describe('wordsAt', () => {
     expect(at('at Meek', 'at Kaffe Mik', [1, 2])).toEqual(['Kaffe', 'Mik']);
   });
 
-  it('leaves a word added beside a word that changed too', () => {
-    // "to" could as well be the start of "morrow".
-    expect(at('Meek tomorrow', 'Mik to morrow', [0, 1])).toEqual(['Mik']);
+  it('reads nothing where a word added at the edge could as well be its neighbour’s', () => {
+    // "to" could as well be the start of "morrow"; "Figel" the end of "a".
+    expect(at('Meek tomorrow', 'Mik to morrow', [0, 1])).toBeUndefined();
+    expect(at('Dinner at Figelmiller', 'Dinner a Figel Miller', [2, 3])).toBeUndefined();
   });
 
   it('takes nothing where the alternative has no words', () => {
@@ -231,6 +246,26 @@ describe('alternativesFor', () => {
     // Review: "Café" in NFD lost its mark to the text after the span ("Kaffeé").
     const cafe = heard([{ alternatives: ['Café', 'Kaffee'], text: 'Café' }]);
     expect(alternativesFor(cafe, 'Cafe\u0301')).toEqual(['Kaffee']);
+  });
+
+  it('searches no part of an alternative', () => {
+    // Review: "Miller" alone was searched, and a nearby Miller offered first.
+    const split = heard([
+      {
+        alternatives: ['Dinner at Figelmiller', 'Dinner a Figel Miller'],
+        text: 'Dinner at Figelmiller',
+      },
+    ]);
+    expect(alternativesFor(split, 'Figelmiller')).toEqual([]);
+  });
+
+  it('reads both words of a place that only together are alike', () => {
+    const cafe = heard([
+      { text: 'Lunch at the cafe' },
+      { alternatives: [' Kathamek.', ' Kaffemik.', ' Kafamek.'], text: ' Kathamek.' },
+    ]);
+    // "cafe Kaffemik" is the text itself, asked already.
+    expect(alternativesFor(cafe, 'Café Kaffemik')).toEqual(['cafe Kafamek']);
   });
 
   it('skips an alternative that drops the words', () => {

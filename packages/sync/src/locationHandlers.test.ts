@@ -34,7 +34,7 @@ import { Deferred, Duration, Effect, Fiber, Layer } from 'effect';
 import { TestClock } from 'effect/testing';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
 import { describe } from 'vite-plus/test';
-import { appleCalendarServicesLayer } from './appleCalendarEvents.ts';
+import { AppleCalendarEvents, appleCalendarServicesLayer } from './appleCalendarEvents.ts';
 import { writeTimeZoneSettings } from './deviceSettings.ts';
 import {
   ALTERNATIVE_SEARCH_MS,
@@ -1003,6 +1003,14 @@ describe('nearby first', () => {
   });
 });
 
+/** A café in Vienna's first district, `at` a few hundred meters apart from the next. */
+const nearCafe = (name: string, at: number) => ({
+  address: `${name}gasse 1, 1010 Vienna, Austria`,
+  lat: 48.2 + at / 1000,
+  lng: 16.37,
+  name,
+});
+
 describe('dictation’s other readings', () => {
   // As MapKit answered the readings of a dictated "Figlmüller" (2026-11-15):
   // the words as written found a place nearby that they do not name.
@@ -1165,6 +1173,74 @@ describe('dictation’s other readings', () => {
       expect(candidates.map((c) => [c.source, c.geo.name, c.alternative])).toEqual([
         ['history', 'Café Central', 'Cafe Zentral'],
         ['mapkit', 'Figlmüller', 'Figelmuller'],
+      ]);
+    }).pipe(Effect.provide(setup(client)));
+  });
+
+  it.effect('offers the past places the readings name when no time is left to search', () => {
+    // Review: a lookup that ran out of time dropped the readings' past
+    // places too, which need no search.
+    const { calls, client } = mapkit({ found: { Kaffamek: [figlmueller] } });
+    // Reading the user's events (EventKit's among them) takes the whole budget.
+    const slowEvents = {
+      eventsInRange: () =>
+        TestClock.adjust(Duration.millis(CANDIDATES_BUDGET_MS)).pipe(Effect.as([])),
+      eventsInRangeOrFail: () => Effect.succeed([]),
+      invalidate: Effect.void,
+    };
+    return Effect.gen(function* () {
+      yield* seedPlaced([
+        placedEvent('home', 1, VIENNA),
+        new EventRecord({
+          ...placedEvent('coffee', 30, kaffemik),
+          geo: new GeoLocation({
+            lat: kaffemik.lat,
+            lng: kaffemik.lng,
+            name: 'Kaffemik',
+            source: 'Kaffemik, Zollergasse 5, 1070 Vienna, Austria',
+          }),
+          location: 'Kaffemik, Zollergasse 5, 1070 Vienna, Austria',
+        }),
+      ]);
+      const candidates = yield* locationHandlers
+        .placeCandidates({ alternatives: ['Kaffamek'], location: 'Kathamek' })
+        .pipe(Effect.provideService(AppleCalendarEvents, slowEvents));
+      expect(candidates.map((c) => [c.source, c.geo.name, c.alternative])).toEqual([
+        ['history', 'Kaffemik', 'Kaffamek'],
+      ]);
+      expect(calls).toContain('resolve:Kathamek');
+      expect(calls).not.toContain('resolve:Kaffamek');
+    }).pipe(Effect.provide(setup(client)));
+  });
+
+  it.effect('leaves the words as written a place or two among the candidates', () => {
+    const rahm = {
+      address: 'Am Rahm 4, 3400 Weidling, Austria',
+      lat: 48.3,
+      lng: 16.3,
+      name: 'Am Rahm 4',
+    };
+    const { client } = mapkit({
+      found: {
+        Figelmiller: [bleier, rahm],
+        Hawelka: [nearCafe('Hawelka', 1)],
+        Landtmann: [nearCafe('Landtmann', 2)],
+        Prückel: [nearCafe('Prückel', 3)],
+        Sperl: [nearCafe('Sperl', 4)],
+      },
+    });
+    return Effect.gen(function* () {
+      yield* inVienna;
+      const candidates = yield* locationHandlers.placeCandidates({
+        alternatives: ['Hawelka', 'Landtmann', 'Prückel', 'Sperl'],
+        location: 'Figelmiller',
+      });
+      expect(candidates.map((c) => [c.geo.name, c.alternative])).toEqual([
+        ['Hawelka', 'Hawelka'],
+        ['Landtmann', 'Landtmann'],
+        ['Prückel', 'Prückel'],
+        ['Bleier-Figlmüller', undefined],
+        ['Am Rahm 4', undefined],
       ]);
     }).pipe(Effect.provide(setup(client)));
   });

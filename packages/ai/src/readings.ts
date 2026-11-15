@@ -157,14 +157,20 @@ const runTo = (
   return { heard: [start.j - 1, end.j], words: [start.i - 1, end.i] };
 };
 
+/** The letters and digits of a run's heard words. */
+const lettersOf = (run: Found, heard: ReadonlyArray<Word>): number =>
+  heard.slice(run.heard[0], run.heard[1]).reduce((sum, word) => sum + word.key.length, 0);
+
 /**
  * Where some words stand among the words heard: the runs most alike
  * (local alignment), so words the model took from an earlier turn ("Cafe
- * Meek, Vienna" when only "Vienna" was said now) or wrote another way
- * ("Café Prückel" for "Cafe Pruckle") still find the ones that were said.
- * Every run as alike as the best, in the order they were said: words
- * said twice stand in both places. None when no run is alike enough, or
- * its heard words hold too few letters to be more than a short word.
+ * Meek, Vienna" when only "Vienna" was said now) or spelled its own way
+ * word by word ("Café Prückel" for "Cafe Pruckle") still find the ones
+ * that were said; a name split or joined another way ("Figel Miller" for
+ * "Figelmiller") does not. A run whose heard words hold too few letters
+ * ("at", "6") stands for nothing, however alike. Every run as alike as
+ * the best one, in the order they were said: words said twice stand in
+ * both places; of two that overlap, the one holding more letters.
  */
 export const findWords = (
   words: ReadonlyArray<Word>,
@@ -173,43 +179,38 @@ export const findWords = (
   const score = Array.from({ length: words.length + 1 }, () =>
     Array.from({ length: heard.length + 1 }, () => 0),
   );
-  let best = 0;
   for (let i = 1; i <= words.length; i += 1) {
     for (let j = 1; j <= heard.length; j += 1) {
-      const value = Math.max(
+      score[i]![j] = Math.max(
         0,
         score[i - 1]![j - 1]! + pairScore(words[i - 1]!, heard[j - 1]!),
         score[i - 1]![j]! + GAP_SCORE,
         score[i]![j - 1]! + GAP_SCORE,
       );
-      score[i]![j] = value;
-      best = Math.max(best, value);
     }
   }
-  if (best < FOUND_SCORE) {
-    return [];
-  }
-  const runs: Array<Found> = [];
+  const runs: Array<{ readonly letters: number; readonly run: Found; readonly score: number }> = [];
   for (let i = 1; i <= words.length; i += 1) {
     for (let j = 1; j <= heard.length; j += 1) {
-      if (Math.abs(score[i]![j]! - best) < 1e-9) {
-        runs.push(runTo(score, words, heard, { i, j }));
+      if (score[i]![j]! >= FOUND_SCORE) {
+        const run = runTo(score, words, heard, { i, j });
+        const letters = lettersOf(run, heard);
+        if (letters >= FOUND_LETTERS) {
+          runs.push({ letters, run, score: score[i]![j]! });
+        }
       }
     }
   }
+  const best = Math.max(0, ...runs.map((each) => each.score));
   const once: Array<Found> = [];
-  for (const run of runs.sort((a, b) => a.heard[0] - b.heard[0])) {
-    const letters = heard
-      .slice(run.heard[0], run.heard[1])
-      .reduce((sum, word) => sum + word.key.length, 0);
-    const overlaps = once.some(
-      (kept) => run.heard[0] < kept.heard[1] && kept.heard[0] < run.heard[1],
-    );
-    if (letters >= FOUND_LETTERS && !overlaps) {
+  for (const { run } of runs
+    .filter((each) => Math.abs(each.score - best) < 1e-9)
+    .sort((a, b) => b.letters - a.letters || a.run.heard[0] - b.run.heard[0])) {
+    if (!once.some((kept) => run.heard[0] < kept.heard[1] && kept.heard[0] < run.heard[1])) {
       once.push(run);
     }
   }
-  return once;
+  return once.sort((a, b) => a.heard[0] - b.heard[0]);
 };
 
 /** Whether a step belongs to the words `[from, to)` of its segment. */
@@ -221,31 +222,36 @@ const inside = (step: Step | undefined, [from, to]: readonly [number, number]): 
  * the ones lined up with them, and the ones only the alternative has
  * between them. A word only the alternative has at the edge of the run
  * ("Kaffe" in "at Kaffe Mik" for "at Meek") joins it when the word on its
- * other side is read the same in both (or there is none): beside a word
- * that changed too, it could as well be that word's. Nothing when the
- * alternative has no words there.
+ * other side is read the same in both (or there is none); beside a word
+ * that changed too it could as well be that word's, and the alternative
+ * is no reading of the run at all (undefined) — a part of it ("Miller"
+ * of "a Figel Miller" for "at Figelmiller") would be searched as a name.
+ * Empty when the alternative has no words there.
  */
 export const wordsAt = (
   steps: ReadonlyArray<Step>,
   run: readonly [number, number],
-): ReadonlyArray<number> => {
+): ReadonlyArray<number> | undefined => {
   const taken: Array<number> = [];
-  steps.forEach((step, at) => {
+  const same = (other: Step | undefined) => other === undefined || other.kind === 'same';
+  for (const [at, step] of steps.entries()) {
     if (step.kind === 'added') {
       const before = steps.slice(0, at).findLast((each) => each.kind !== 'added');
       const after = steps.slice(at + 1).find((each) => each.kind !== 'added');
-      const edge = (other: Step | undefined) => other === undefined || other.kind === 'same';
-      if (
-        (inside(before, run) && inside(after, run)) ||
-        (inside(after, run) && !inside(before, run) && edge(before)) ||
-        (inside(before, run) && !inside(after, run) && edge(after))
-      ) {
+      const enters = inside(after, run) && !inside(before, run);
+      const leaves = inside(before, run) && !inside(after, run);
+      if (inside(before, run) && inside(after, run)) {
+        taken.push(step.to);
+      } else if (enters || leaves) {
+        if (!same(enters ? before : after)) {
+          return undefined;
+        }
         taken.push(step.to);
       }
     } else if (step.kind !== 'dropped' && inside(step, run)) {
       taken.push(step.to);
     }
-  });
+  }
   return taken;
 };
 
@@ -277,7 +283,7 @@ const partReadings = (
   ];
   for (const alternative of segment.alternatives ?? []) {
     const words = wordsOf(alternative);
-    const taken = wordsAt(alignWords(own, words), run).map((at) => words[at]!);
+    const taken = (wordsAt(alignWords(own, words), run) ?? []).map((at) => words[at]!);
     const keys = taken.map((word) => word.key).join(' ');
     if (taken.length > 0 && !readings.some((reading) => reading.keys === keys)) {
       readings.push({ keys, rank: readings.length, words: taken.map((word) => word.text) });
