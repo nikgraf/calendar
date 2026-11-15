@@ -10,7 +10,7 @@
         "weekday": 2,
         "startTime": "15:00",
         "endTime": "16:00",
-        "repeat": { "freq": "monthly", "byDay": ["TU"] }
+        "repeat": { "freq": "monthly", "byDay": ["1TU"] }
       }
     }
   ]

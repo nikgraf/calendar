@@ -453,8 +453,9 @@ const checkLocation = (expectation: Expectation, item: QuickAddItem, fail: Fail)
 
 /**
  * Whether the draft has no repeat when none is expected, or the expected
- * one: its frequency and gap, and its weekdays, count and end month where
- * the expectation names them.
+ * one: its frequency and gap, and its weekdays (a monthly rule's with
+ * their place in the month), count and end month where the expectation
+ * names them.
  */
 const checkRepeat = (expectation: Expectation, item: QuickAddItem, fail: Fail): void => {
   const repeat = item.kind === 'event' ? item.prefill.recurrence : undefined;
@@ -470,7 +471,10 @@ const checkRepeat = (expectation: Expectation, item: QuickAddItem, fail: Fail): 
       repeat.freq === wanted.freq &&
       (repeat.interval ?? 1) === (wanted.interval ?? 1) &&
       (wanted.byDay === undefined ||
-        sortedText((repeat.byDay ?? []).map((day) => day.weekday)) === sortedText(wanted.byDay)) &&
+        // Each weekday with its place in the month, where the rule has one: "1TU", "-1FR".
+        sortedText(
+          (repeat.byDay ?? []).map((day) => `${String(day.ordinal ?? '')}${day.weekday}`),
+        ) === sortedText(wanted.byDay)) &&
       (wanted.count === undefined || repeat.count === wanted.count) &&
       (wanted.untilMonth === undefined || untilMonth === wanted.untilMonth);
     if (!matches) {

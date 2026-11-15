@@ -13,7 +13,7 @@
         "startTime": "18:00",
         "endTime": "19:00",
         "location": "gasthaus adler",
-        "repeat": { "freq": "monthly", "byDay": ["MO"] },
+        "repeat": { "freq": "monthly", "byDay": ["1MO"] },
         "guests": { "emails": ["jo@example.com"] }
       }
     }

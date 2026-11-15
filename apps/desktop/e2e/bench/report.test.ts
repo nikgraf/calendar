@@ -279,7 +279,11 @@ describe('compareReports', () => {
     ]);
     const after = report([
       CASES[0]!,
-      { ...CASES[1]!, ok: true, turns: [turn(), turn({ checked: ['time', 'unchanged'] })] },
+      {
+        ...CASES[1]!,
+        ok: true,
+        turns: [turn(), turn({ checked: ['time', 'unchanged'], input: 'make it late' })],
+      },
       { blind: true, id: 'sealed', ok: true, tags: [], turns: [turn()] },
     ]);
     const text = compareReports(before, after);
@@ -299,7 +303,11 @@ describe('compareReports', () => {
     const before = report(CASES, { sha: 'old0000', when: '2026-08-21T09:00:00.000Z' });
     const after = report([
       { ...CASES[0]!, ok: false, turns: [turn({ failed: ['title'], notes: ['title=Sarah'] })] },
-      { ...CASES[1]!, ok: true, turns: [turn(), turn({ checked: ['time', 'unchanged'] })] },
+      {
+        ...CASES[1]!,
+        ok: true,
+        turns: [turn(), turn({ checked: ['time', 'unchanged'], input: 'make it late' })],
+      },
     ]);
     const text = compareReports(before, after);
     expect(text).toContain('vs old0000 (2026-08-21T09:00): cases 1/2 → 1/2, turns 2/3 → 2/3');
@@ -330,6 +338,28 @@ describe('compareReports', () => {
     );
     expect(compareReports(report(CASES), quiet)).toContain('   settings: not recorded → ');
     expect(compareReports(quiet, quiet)).not.toContain('settings');
+  });
+
+  it('leaves a case out of the flips when the two runs read other words', () => {
+    const before = report(CASES);
+    const reworded: CaseReport = {
+      ...CASES[1]!,
+      ok: true,
+      turns: [turn({ input: 'Dinner with Teo on Friday' }), turn({ checked: ['time'] })],
+    };
+    const text = compareReports(before, report([CASES[0]!, reworded]));
+    // It passes now, but to another phrase: no flip, and no test on it.
+    expect(text).not.toContain('fixed');
+    expect(text).not.toContain('chance');
+    expect(text).toContain('   not compared (other words in the two runs): flow-dinner');
+    // A blind one is counted, not named.
+    const sealed = { ...reworded, blind: true };
+    expect(compareReports(before, report([CASES[0]!, sealed]))).toContain(
+      '   not compared (other words in the two runs): 1 blind',
+    );
+    // Another number of turns is other words too.
+    const shorter = { ...CASES[1]!, ok: true, turns: [turn({ ms: 2000 })] };
+    expect(compareReports(before, report([CASES[0]!, shorter]))).toContain('not compared');
   });
 
   it('says when the two runs read on two days', () => {

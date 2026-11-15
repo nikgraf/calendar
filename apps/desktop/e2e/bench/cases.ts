@@ -23,8 +23,13 @@ const Guests = Schema.Struct({
 });
 
 const Repeat = Schema.Struct({
-  /** The weekdays a weekly rule falls on, in any order ("every weekday": MO–FR). */
-  byDay: Schema.optional(Schema.Array(Schema.Literals(['FR', 'MO', 'SA', 'SU', 'TH', 'TU', 'WE']))),
+  /**
+   * The weekdays a weekly rule falls on, in any order ("every weekday":
+   * MO–FR), or a monthly rule's weekday with its place in the month in
+   * front: `1TU` the first Tuesday, `-1FR` the last Friday. The place is
+   * part of what is checked: the first Friday is not the last one.
+   */
+  byDay: Schema.optional(Schema.Array(Schema.String)),
   count: Schema.optional(Schema.Number),
   freq: Schema.Literals(['daily', 'monthly', 'weekly', 'yearly']),
   /** Absent reads as 1. */
@@ -123,6 +128,20 @@ export const DEFAULT_BOOK = 'team';
 
 const decodeCase = Schema.decodeUnknownSync(CaseFile);
 
+/** A weekday code as an expectation writes it: `MO`, or with its place in the month, `1MO`, `-1FR`. */
+const BY_DAY = /^(?:-1|[1-5])?(?:MO|TU|WE|TH|FR|SA|SU)$/u;
+
+/** A case's repeat days are weekday codes: a typo there would be a case no answer can pass. */
+const checkByDay = (parsed: typeof CaseFile.Type): void => {
+  for (const turn of parsed.turns) {
+    for (const code of turn.expect.repeat?.byDay ?? []) {
+      if (!BY_DAY.test(code)) {
+        throw new Error(`repeat.byDay "${code}" is no weekday code (MO, 1TU, -1FR)`);
+      }
+    }
+  }
+};
+
 /** Every `cases/*.json`, by file name. A file that does not parse names itself. */
 export const loadCases = (dir: string): ReadonlyArray<BenchCase> =>
   readdirSync(dir)
@@ -132,6 +151,7 @@ export const loadCases = (dir: string): ReadonlyArray<BenchCase> =>
       let parsed: typeof CaseFile.Type;
       try {
         parsed = decodeCase(JSON.parse(readFileSync(join(dir, file), 'utf8')));
+        checkByDay(parsed);
       } catch (error) {
         throw new Error(`${file}: ${error instanceof Error ? error.message : String(error)}`, {
           cause: error,

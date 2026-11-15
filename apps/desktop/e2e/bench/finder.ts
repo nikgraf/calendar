@@ -11,7 +11,7 @@ import { finderWindowDates, Temporal } from '@calendar/core';
 import { Schema } from 'effect';
 import { fold } from './check.ts';
 import { type Flip, flipLines } from './flips.ts';
-import { earlierRun, otherDay } from './report.ts';
+import { earlierRun, notCompared, otherDay } from './report.ts';
 
 /**
  * The finder bench's cases: what find a time is told ("find 90 min for
@@ -607,7 +607,8 @@ export const formatFinderReport = (
 /**
  * Two runs side by side, arm by arm: the cases that flipped (a blind one
  * counted, not named) and whether chance alone would move as many
- * (`flips.ts`). Cases only one report holds are left out.
+ * (`flips.ts`). Cases only one report holds are left out, and so are
+ * the ones whose sentence is not the same in both.
  */
 export const compareFinderReports = (
   before: FinderReport,
@@ -630,13 +631,25 @@ export const compareFinderReports = (
         ]),
     ...otherDay(before, after),
   ];
+  // A sentence reworded between the runs is no pair of answers to one sentence.
+  const apart = after.cases
+    .filter((each) => {
+      const previous = earlier.get(each.id);
+      return previous !== undefined && previous.text !== each.text;
+    })
+    .map((each) => ({ blind: each.blind === true, id: each.id }));
+  lines.push(...notCompared(apart, options));
   for (const arm of ARMS) {
     const fixed: Array<Flip> = [];
     const broke: Array<Flip> = [];
     for (const each of after.cases) {
       const previous = earlier.get(each.id);
       const ok = each.arms[arm].failed.length === 0;
-      if (previous === undefined || (previous.arms[arm].failed.length === 0) === ok) {
+      if (
+        previous === undefined ||
+        previous.text !== each.text ||
+        (previous.arms[arm].failed.length === 0) === ok
+      ) {
         continue;
       }
       (ok ? fixed : broke).push({ blind: each.blind === true, id: each.id });

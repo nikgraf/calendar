@@ -48,6 +48,11 @@ const task = (prefill: { date?: string; time?: string; title?: string } = {}): B
 
 const drafted = (draft: BenchDraft) => ({ draft, kind: 'draft' as const });
 
+/** A monthly repeat on these days, as an expectation. */
+const monthly = (byDay: ReadonlyArray<string>) => ({
+  repeat: { byDay, freq: 'monthly' as const },
+});
+
 /** The fixture event on another day. */
 const on = (date: string) => drafted(event({ date }));
 
@@ -298,6 +303,26 @@ describe('check', () => {
     expect(check({ repeat: { freq: 'daily' } }, drafted(event()), undefined, TODAY).notes).toEqual([
       'repeat=-',
     ]);
+  });
+
+  it('a monthly rule’s weekday is held to its place in the month', () => {
+    const lastFriday = drafted(
+      event({ recurrence: { byDay: [{ ordinal: -1, weekday: 'FR' }], freq: 'monthly' } }),
+    );
+    expect(check(monthly(['-1FR']), lastFriday, undefined, TODAY).failed).toEqual([]);
+    // The first Friday is another schedule, and so is a Friday without a place.
+    expect(check(monthly(['1FR']), lastFriday, undefined, TODAY).notes).toEqual([
+      'repeat=monthly on -1FR',
+    ]);
+    expect(check(monthly(['FR']), lastFriday, undefined, TODAY).failed).toEqual(['repeat']);
+    expect(
+      check(
+        monthly(['-1FR']),
+        drafted(event({ recurrence: { byDay: [{ weekday: 'FR' }], freq: 'monthly' } })),
+        undefined,
+        TODAY,
+      ).failed,
+    ).toEqual(['repeat']);
   });
 
   it('guests are the list and the open choices, as sets; absent means none', () => {

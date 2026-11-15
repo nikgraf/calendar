@@ -387,6 +387,18 @@ describe('formatFinderReport and compareFinderReports', () => {
     expect(compareFinderReports(before, before).split('\n')).toHaveLength(1);
   });
 
+  it('leaves a reworded sentence out of the flips', () => {
+    const before = reportOf([answered(walk, wrong), answered(sealed, wrong)]);
+    const reworded = { ...walk, text: 'Find an hour for a walk' };
+    const after = reportOf([answered(reworded, right), answered(sealed, right)]);
+    const text = compareFinderReports(before, after);
+    expect(text).toContain('   not compared (other words in the two runs): walk');
+    // Only the blind case, read in the same words, is a flip.
+    expect(text).toContain('   raw:\n   fixed: 1 blind');
+    expect(text).not.toContain('fixed: walk');
+    expect(text).toContain('1 fixed, 0 broke');
+  });
+
   it('says when two runs were not set up alike or read on two days', () => {
     const before = reportOf([answered(walk, right)], { settings: 'http://localhost:8091/v1' });
     const after = reportOf([answered(walk, right)], {

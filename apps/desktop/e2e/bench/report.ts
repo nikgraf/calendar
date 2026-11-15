@@ -318,10 +318,29 @@ export const otherDay = (
     ? []
     : [`   read on two days, ${before.today} → ${after.today}: name one (MODEL_BENCH_TODAY)`];
 
+/** Whether two runs of a case read the same words, turn by turn. */
+const sameWords = (before: CaseReport, after: CaseReport): boolean =>
+  before.turns.length === after.turns.length &&
+  before.turns.every((turn, index) => turn.input === after.turns[index]?.input);
+
+/**
+ * The cases two runs read in other words (a case reworded between them,
+ * a recording heard differently): no pair of answers to one phrase, so
+ * they are named and left out of the flips and of the test on them.
+ */
+export const notCompared = (
+  apart: ReadonlyArray<Flip>,
+  options: TableOptions = {},
+): ReadonlyArray<string> =>
+  apart.length === 0
+    ? []
+    : [`   not compared (other words in the two runs): ${namedCases(apart, options)}`];
+
 /**
  * The report as the before/after of a change: what moved, case by case
  * and in the score, and whether chance alone would move as much
- * (`flips.ts`). A blind case that flipped is counted, not named.
+ * (`flips.ts`). A blind case that flipped is counted, not named, and a
+ * case the two runs read in other words is no flip at all.
  */
 export const compareReports = (
   before: BenchReport,
@@ -331,12 +350,18 @@ export const compareReports = (
   const earlier = new Map(before.cases.map((benchCase) => [benchCase.id, benchCase]));
   const fixed: Array<Flip> = [];
   const broke: Array<Flip> = [];
+  const apart: Array<Flip> = [];
   for (const benchCase of after.cases) {
     const previous = earlier.get(benchCase.id);
-    if (previous === undefined || previous.ok === benchCase.ok) {
+    if (previous === undefined) {
       continue;
     }
-    (benchCase.ok ? fixed : broke).push({ blind: benchCase.blind === true, id: benchCase.id });
+    const flip = { blind: benchCase.blind === true, id: benchCase.id };
+    if (!sameWords(previous, benchCase)) {
+      apart.push(flip);
+    } else if (previous.ok !== benchCase.ok) {
+      (benchCase.ok ? fixed : broke).push(flip);
+    }
   }
   const moved = (field: Field): string | undefined => {
     const was = before.score.fields[field];
@@ -356,6 +381,7 @@ export const compareReports = (
         ]),
     ...otherDay(before, after),
     ...flipLines({ broke, fixed }, options),
+    ...notCompared(apart, options),
     ...FIELDS.map(moved)
       .filter((line): line is string => line !== undefined)
       .map((line) => `   ${line}`),

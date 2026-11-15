@@ -9,7 +9,7 @@
         "weekday": 5,
         "startTime": "18:00",
         "endTime": "19:00",
-        "repeat": { "freq": "monthly", "byDay": ["FR"] }
+        "repeat": { "freq": "monthly", "byDay": ["-1FR"] }
       }
     }
   ]

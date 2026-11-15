@@ -124,7 +124,9 @@ thread does. The report keeps the raw model answers per turn.
   `titleIncludes`; `location` (folded part, or `null` for
   none) or `locationIs` (whole, folded: a turn that must not keep what
   was there); `repeat` (`freq`, `interval`, `count`, `untilMonth`, `byDay` as
-  weekday codes for a weekly rule, or `null`);
+  weekday codes for a weekly rule and with their place in the month for
+  a monthly one, `1TU` the first Tuesday and `-1FR` the last Friday, or
+  `null`);
   `guests` (`emails` after the turn and `choices` still to pick from,
   both as sets, absent meaning none); `notes` (folded part); `reminders`
   (minutes before, any order); `rejected: true` when the turn must be
@@ -223,7 +225,9 @@ A prompt, data or model change is judged by two runs on two commits:
 `MODEL_BENCH_COMPARE=<earlier report>` prints the cases that flipped and
 the fields that moved, and says when the two runs were not set up alike
 (a served model's endpoint and extra request body, the report's
-`settings`) or read on two days. Its last line about the flips says
+`settings`) or read on two days. A case the two runs read in other
+words (reworded between them, or a recording heard differently) is
+named and left out of the flips: it is no pair of answers to one phrase. Its last line about the flips says
 whether they are more than chance: an exact sign test, how often a fair coin splits that many
 flips at least as unevenly. Cases that read the same in both runs say
 nothing about which is better, so the flips are a sharper measure than

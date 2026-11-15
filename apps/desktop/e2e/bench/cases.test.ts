@@ -72,6 +72,19 @@ describe('loadCases', () => {
         caseDir({ 'x.json': { lang: 'en', turns: [{ expect: {}, input: { audio: 'a' } }] } }),
       ),
     ).toThrow(/^x\.json: /);
+    // A repeat's days are weekday codes, a monthly rule's with their place in the month.
+    const repeating = (byDay: ReadonlyArray<string>) =>
+      caseDir({
+        'r.json': {
+          lang: 'en',
+          turns: [{ expect: { repeat: { byDay, freq: 'monthly' } }, input: { text: 'x' } }],
+        },
+      });
+    expect(() => loadCases(repeating(['Friday']))).toThrow(
+      /^r\.json: repeat\.byDay "Friday" is no weekday code/,
+    );
+    expect(() => loadCases(repeating(['6FR']))).toThrow(/^r\.json: /);
+    expect(loadCases(repeating(['-1FR', '1TU', 'MO']))).toHaveLength(1);
   });
 
   it('loads the repository cases', () => {
