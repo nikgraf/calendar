@@ -260,6 +260,7 @@ const runCase = async (
     }
   }
   return {
+    blind: benchCase.blind,
     id: benchCase.id,
     ok: turns.every((turn) => turn.failed.length === 0),
     tags: benchCase.tags,
@@ -325,6 +326,8 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('model bench', () => {
         : (JSON.parse(readFileSync(compareWith, 'utf8')) as BenchReport);
     const outDir = process.env['MODEL_BENCH_OUT'] ?? join(ROOT, 'output', 'bench');
     const toRescore = process.env['MODEL_BENCH_RESCORE'];
+    // Blind cases are counted, never named, unless an expectation is being fixed.
+    const table = { showBlind: process.env['MODEL_BENCH_BLIND'] === 'show' };
     try {
       if (toRescore) {
         // Every case, whatever MODEL_BENCH_CASES says: a report is scored whole.
@@ -332,8 +335,8 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('model bench', () => {
         for (const path of reportsToRescore(toRescore)) {
           const before = JSON.parse(readFileSync(path, 'utf8')) as BenchReport;
           const after = rescore(before, all, { sha, when: new Date().toISOString() });
-          log(formatReport(after));
-          log(compareReports(before, after));
+          log(formatReport(after, table));
+          log(compareReports(before, after, table));
           log(`   report: ${writeReport(outDir, after)}\n`);
         }
         return;
@@ -387,9 +390,9 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('model bench', () => {
           today,
           when: new Date().toISOString(),
         };
-        log(formatReport(report));
+        log(formatReport(report, table));
         if (earlier !== undefined && earlier.provider === provider.name) {
-          log(compareReports(earlier, report));
+          log(compareReports(earlier, report, table));
         } else if (earlier !== undefined) {
           log(`   (MODEL_BENCH_COMPARE is a ${earlier.provider} report; not compared)`);
         }

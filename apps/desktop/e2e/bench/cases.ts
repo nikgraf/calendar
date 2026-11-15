@@ -96,6 +96,12 @@ const Turn = Schema.Struct({
 export type BenchTurn = typeof Turn.Type;
 
 const CaseFile = Schema.Struct({
+  /**
+   * A blind case: every score counts it and no table names it, so its
+   * misses are not read while briefs or prompts are written and it stays
+   * a test nobody tuned to. The README says how the set is kept.
+   */
+  blind: Schema.optional(Schema.Boolean),
   /** The address book (a key in contacts.json) names are looked up in. */
   contacts: Schema.optional(Schema.String),
   lang: Schema.Literals(['de', 'en']),
@@ -105,7 +111,8 @@ const CaseFile = Schema.Struct({
   turns: Schema.Array(Turn),
 });
 
-export interface BenchCase extends Omit<typeof CaseFile.Type, 'contacts' | 'tags'> {
+export interface BenchCase extends Omit<typeof CaseFile.Type, 'blind' | 'contacts' | 'tags'> {
+  readonly blind: boolean;
   readonly contacts: string;
   /** The file's name. */
   readonly id: string;
@@ -139,6 +146,7 @@ export const loadCases = (dir: string): ReadonlyArray<BenchCase> =>
           : [{ ...first, expect: { kind: 'event' as const, ...first.expect } }, ...rest];
       return {
         ...parsed,
+        blind: parsed.blind ?? false,
         contacts: parsed.contacts ?? DEFAULT_BOOK,
         id: basename(file, '.json'),
         tags: parsed.tags ?? [],

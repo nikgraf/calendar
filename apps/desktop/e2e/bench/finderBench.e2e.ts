@@ -5,14 +5,14 @@ import { buildFindTimePrompt, buildTunedFinderPrompt, FIND_TIME_JSON_SCHEMA } fr
 import { Temporal } from '@calendar/core';
 import { describe, expect, it } from 'vite-plus/test';
 import {
-  ARMS,
-  FINDER_FIELDS,
+  compareFinderReports,
   FINDER_PIPELINES,
   type FinderCase,
   type FinderCaseReport,
   type FinderPipeline,
   type FinderReport,
   floorOf,
+  formatFinderReport,
   loadFinderCases,
   readAnswer,
   rescoreFinder,
@@ -49,15 +49,6 @@ const TIME_ZONE = 'Europe/Vienna';
 const BENCH_DIR = import.meta.dirname;
 const ROOT = fileURLToPath(new URL('../../../..', import.meta.url));
 
-const median = (values: ReadonlyArray<number>): number => {
-  if (values.length === 0) {
-    return 0;
-  }
-  const sorted = [...values].sort((a, b) => a - b);
-  const middle = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 0 ? (sorted[middle - 1]! + sorted[middle]!) / 2 : sorted[middle]!;
-};
-
 /** How the models are asked, per MODEL_BENCH_PIPELINE: the app's finder prompt unless it says `tuned`. */
 const pipelineOf = (): FinderPipeline => {
   const asked = (process.env['MODEL_BENCH_PIPELINE'] ?? '').trim();
@@ -71,40 +62,6 @@ const pipelineOf = (): FinderPipeline => {
     );
   }
   return known;
-};
-
-const formatReport = (report: FinderReport): string => {
-  const { total } = report.score;
-  const lines = [
-    `== ${report.provider}${report.pipeline === 'tuned' ? ' [tuned]' : ''}${report.settings ? ` (${report.settings})` : ''}${
-      report.rescored ? ` — the answers of ${report.rescored.sha}, ${report.rescored.when}` : ''
-    }`,
-    `   median ${(median(report.cases.map((each) => each.ms)) / 1000).toFixed(1)}s per phrase${
-      report.floor
-        ? ` · an empty answer: rules ${String(report.floor.rules)}, raw ${String(report.floor.raw)}`
-        : ''
-    }`,
-  ];
-  for (const arm of ARMS) {
-    const score = report.score[arm];
-    lines.push(
-      `   ${arm.padEnd(5)}  cases ${String(score.cases)}/${String(total)} · ${FINDER_FIELDS.map(
-        (field) => `${field} ${String(score.fields[field])}/${String(total)}`,
-      ).join(' · ')}`,
-    );
-  }
-  for (const each of report.cases) {
-    const wrong = ARMS.filter((arm) => each.arms[arm].failed.length > 0);
-    if (wrong.length === 0) {
-      continue;
-    }
-    lines.push(`   ✗ ${each.id}  "${each.text}"`);
-    for (const arm of wrong) {
-      const { failed, got } = each.arms[arm];
-      lines.push(`       ${arm}: ${failed.map((field) => `${field}=${got[field]}`).join(' · ')}`);
-    }
-  }
-  return lines.join('\n');
 };
 
 const slug = (text: string): string => text.replaceAll(/[^\w.-]+/gu, '-').replaceAll(/^-|-$/gu, '');
@@ -176,6 +133,13 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('finder bench', () => {
         'finder',
       );
       const toRescore = process.env['MODEL_BENCH_RESCORE'];
+      // Blind cases are counted, never named, unless an expectation is being fixed.
+      const table = { showBlind: process.env['MODEL_BENCH_BLIND'] === 'show' };
+      const compareWith = process.env['MODEL_BENCH_COMPARE'];
+      const earlier =
+        compareWith === undefined
+          ? undefined
+          : (JSON.parse(readFileSync(compareWith, 'utf8')) as FinderReport);
       try {
         if (toRescore) {
           // Every case, whatever MODEL_BENCH_CASES says: a report is scored whole.
@@ -186,7 +150,8 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('finder bench', () => {
               sha,
               when: new Date().toISOString(),
             });
-            log(formatReport(report));
+            log(formatFinderReport(report, table));
+            log(compareFinderReports(before, report, table));
             if (left.length > 0) {
               log(`   left out (gone, or other words now): ${left.join(', ')}`);
             }
@@ -232,6 +197,7 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('finder bench', () => {
             reports.push({
               answer,
               arms: readAnswer(read, finderCase, today, { pipeline }),
+              blind: finderCase.blind === true,
               ...(error === undefined ? {} : { error }),
               id: finderCase.id,
               lang: finderCase.lang,
@@ -253,7 +219,12 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('finder bench', () => {
             today,
             when: new Date().toISOString(),
           };
-          log(formatReport(report));
+          log(formatFinderReport(report, table));
+          if (earlier !== undefined && earlier.provider === provider.name) {
+            log(compareFinderReports(earlier, report, table));
+          } else if (earlier !== undefined) {
+            log(`   (MODEL_BENCH_COMPARE is a ${earlier.provider} report; not compared)`);
+          }
           log(`   report: ${writeReport(outDir, report)}\n`);
         }
       } finally {

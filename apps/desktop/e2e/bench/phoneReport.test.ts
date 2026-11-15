@@ -9,6 +9,7 @@ const TODAY = '2026-11-11';
 
 const benchCase = (id: string, text: string, expect: BenchCase['turns'][number]['expect']) =>
   ({
+    blind: false,
     contacts: 'team',
     id,
     lang: 'en',
@@ -205,6 +206,25 @@ describe('comparePhone', () => {
         '   first phrases both answered: phone 1/2, openai:lfm3:1.7b-q4_K_M on the Mac 1/2 (d42f52f6)',
         '   right on the Mac only: dinner',
         '   right on the phone only: lunch',
+      ].join('\n'),
+    );
+  });
+
+  it('counts a blind case only one of the two got right, without naming it', async () => {
+    const phoneRun = await scored('18:00', '13:00');
+    const sealed = {
+      ...phoneRun,
+      cases: phoneRun.cases.map((each) => ({ ...each, blind: each.id === 'lunch' })),
+    };
+    const mac = macReport([
+      { id: 'dinner', ok: true, tags: [], turns: [turn('Dinner on Friday at 7pm', [])] },
+      { id: 'lunch', ok: false, tags: [], turns: [turn('Lunch on Friday at 1pm', ['title'])] },
+    ]);
+    expect(comparePhone(sealed, mac)).toBe(
+      [
+        '   first phrases both answered: phone 1/2, openai:lfm3:1.7b-q4_K_M on the Mac 1/2 (d42f52f6)',
+        '   right on the Mac only: dinner',
+        '   right on the phone only: 1 blind',
       ].join('\n'),
     );
   });

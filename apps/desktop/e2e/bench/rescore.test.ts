@@ -46,6 +46,7 @@ const report = (turns: ReadonlyArray<TurnReport>, id = 'dinner'): BenchReport =>
 const benchCase = (
   expectations: ReadonlyArray<BenchCase['turns'][number]['expect']>,
 ): BenchCase => ({
+  blind: false,
   contacts: 'team',
   id: 'dinner',
   lang: 'en',

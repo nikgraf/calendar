@@ -86,7 +86,13 @@ export const rescore = (
         said,
       };
     });
-    return { ...caseReport, ok: turns.every((turn) => turn.failed.length === 0), turns };
+    return {
+      ...caseReport,
+      // Blind as the case is now, whatever it was when the model answered.
+      blind: benchCase.blind,
+      ok: turns.every((turn) => turn.failed.length === 0),
+      turns,
+    };
   });
   return {
     ...report,

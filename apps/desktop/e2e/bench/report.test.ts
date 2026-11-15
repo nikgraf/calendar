@@ -8,6 +8,7 @@ import {
   compareReports,
   formatReport,
   scoreOf,
+  tagScores,
   type TurnReport,
   writeReport,
 } from './report.ts';
@@ -184,7 +185,96 @@ describe('formatReport', () => {
   });
 });
 
+const tagged = (id: string, ok: boolean, tags: ReadonlyArray<string>): CaseReport => ({
+  id,
+  ok,
+  tags,
+  turns: [turn()],
+});
+
+describe('tagScores', () => {
+  it('counts the cases passed per tag, the largest tag first and ties by name', () => {
+    expect(
+      tagScores([
+        tagged('a', true, ['flow', 'de']),
+        tagged('b', false, ['flow']),
+        tagged('c', true, ['basic']),
+        tagged('d', true, []),
+      ]),
+    ).toEqual([
+      ['flow', { ok: 1, total: 2 }],
+      ['basic', { ok: 1, total: 1 }],
+      ['de', { ok: 1, total: 1 }],
+    ]);
+  });
+});
+
+describe('formatReport — tags and blind cases', () => {
+  const BLIND: ReadonlyArray<CaseReport> = [
+    ...CASES,
+    {
+      blind: true,
+      id: 'sealed-lunch',
+      ok: false,
+      tags: ['flow'],
+      turns: [turn({ failed: ['title'], notes: ['title=Lunch at'] })],
+    },
+    { blind: true, id: 'sealed-call', ok: true, tags: [], turns: [turn()] },
+  ];
+
+  it('prints the cases passed per tag, and no tag line for cases without tags', () => {
+    expect(formatReport(report(CASES))).toContain('   tags: flow 0/1');
+    expect(formatReport(report([CASES[0]!]))).not.toContain('tags:');
+  });
+
+  it('counts a blind case in every score and gives it no line of its own', () => {
+    const text = formatReport(report(BLIND));
+    expect(text).not.toContain('sealed');
+    expect(text).not.toContain('Lunch at');
+    // Every case counts in the score and in its tag.
+    expect(text).toContain('cases 2/4 · turns 3/5');
+    expect(text).toContain('   tags: flow 0/2');
+    // The two sets apart, the blind one by its counts alone.
+    expect(text).toContain(
+      '   open: cases 1/2 · turns 2/3 · title 2/2 · date 2/2 · time 0/1 · unchanged 1/1',
+    );
+    expect(text).toContain('   blind: cases 1/2 · turns 1/2 · title 1/2 · date 2/2');
+    // A report without blind cases says nothing of sets.
+    expect(formatReport(report(CASES))).not.toContain('open:');
+  });
+
+  it('names blind cases only when asked to', () => {
+    const text = formatReport(report(BLIND), { showBlind: true });
+    expect(text).toContain('sealed-lunch (blind)  →  title=Lunch at');
+    expect(text).toContain('sealed-call (blind)');
+    expect(text).not.toContain('dinner (blind)');
+  });
+});
+
 describe('compareReports', () => {
+  it('counts a blind case that flipped without naming it, and says what chance would do', () => {
+    const before = report([
+      ...CASES,
+      { blind: true, id: 'sealed', ok: false, tags: [], turns: [turn({ failed: ['title'] })] },
+    ]);
+    const after = report([
+      CASES[0]!,
+      { ...CASES[1]!, ok: true, turns: [turn(), turn({ checked: ['time', 'unchanged'] })] },
+      { blind: true, id: 'sealed', ok: true, tags: [], turns: [turn()] },
+    ]);
+    const text = compareReports(before, after);
+    expect(text).toContain('   fixed: flow-dinner · 1 blind');
+    expect(text).not.toContain('sealed');
+    expect(text).toContain(
+      '   2 fixed, 0 broke: by chance alone p = 0.50, not told apart from chance',
+    );
+    expect(compareReports(before, after, { showBlind: true })).toContain(
+      '   fixed: flow-dinner, sealed',
+    );
+    // Nothing flipped: no line about chance.
+    expect(compareReports(before, before)).not.toContain('chance');
+  });
+
   it('names the cases that flipped and the fields that moved', () => {
     const before = report(CASES, { sha: 'old0000', when: '2026-08-21T09:00:00.000Z' });
     const after = report([
