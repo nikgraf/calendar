@@ -227,7 +227,7 @@ the served model (#184) and slot proposals (#185) are in
       end said on its own ("it ends at 11", "from 10pm to 2am"); a long
       phrase's note; a typo in the day ("tomorow", "wendsday"); "Call
       tomorrow at 4, invite Max" as a to-do; a title that keeps "event
-      for". Find a time (107 of 124) titles a sentence that names no
+      for". Find a time (109 of 124) titles a sentence that names no
       purpose with its own words ("Find 30 minutes") and reads "the next
       two weeks" as starting next Monday. Three conventions need a
       decision before the next labels are made, since the teacher and
