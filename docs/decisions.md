@@ -196,6 +196,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   the flow (it would hide an app that drops a tap), any drop in the flow
   (one Maestro tapped past is not the failure). Open: nothing ties the
   failure to the drop (Opus review); older lost-tap flakes (logs expired).
+- **The Assistant spec on a Sunday** (2026-11-15, `todo/assistant-e2e-today`)
+  — the desktop e2e went red on the first Sunday since #308 added the
+  spec: its tests draft on `+1`, the grid keeps a draft's day on show once
+  the editor closes, saved or not, and on a Sunday that day is next week,
+  so the three tests that then open today's Design review or inbox to-do
+  found neither on screen. Each test now starts with a click on `today`.
+  Rejected: drafting on `+0` (the next test on `+1` breaks the same way),
+  and sending the grid back as the editor closes (a saved item is meant
+  to stay in view). Open: the spec's `today` is read once, so a run across
+  local midnight still fails.
 - **Live flows rerun under titles of their own** (2026-11-13,
   `todo/live-retry-fresh-titles`) — nightly 43358802870 went red on a black
   display in live flow 02 (no touch reached the app; flow 03's launch drew
