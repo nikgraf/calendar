@@ -48,6 +48,7 @@ import { useEditorKinds } from './editorKinds.ts';
 import type { EditorSourceKind } from './editorSwitch.ts';
 import { livePlaceChoice } from './draftPlaces.ts';
 import { editorQuestions } from './draftQuestions.ts';
+import { editorDiscard, useFormChanged } from './editorUnsaved.ts';
 import { rescheduledEventExclusion } from './findTimeModel.ts';
 import { useBackendMutations } from './hooks.ts';
 import { useOneWrite } from './oneWrite.ts';
@@ -506,6 +507,14 @@ export const useThreadEditor = ({
   const assistant: 'new' | 'none' | 'saved' =
     sourceKind === 'new' ? 'new' : savedOpen ? 'saved' : 'none';
   const seedReady = assistant === 'saved' && (sourceKind === 'task' || eventModel.ruleAnswered);
+  // The form as one reading, against how it opened (`useFormChanged`): a
+  // saved item's opening is read when the thread opens on it (`seedReady`).
+  const formChanged = useFormChanged({
+    isNew: sourceKind === 'new',
+    mode,
+    reading: JSON.stringify({ extras: currentExtras(), item: currentItem() }),
+    settled: sourceKind === 'new' || seedReady,
+  });
   const { open } = thread;
   useEffect(() => {
     if (seedReady) {
@@ -1099,6 +1108,21 @@ export const useThreadEditor = ({
       }
     });
 
+  // Closing now would lose something put in here (`editorUnsaved`):
+  // Cancel, a swipe down and another item opened over the editor ask first.
+  const discard = editorDiscard({
+    assistant,
+    draftKinds: drafts.map((draft) => draft.item.kind),
+    formChanged,
+    kind: kinds.kind,
+    mode,
+    previewing,
+    readOnly: { event: eventModel.readOnly, todo: taskModel.readOnly },
+    sourceKind,
+    userEdits,
+    writing,
+  });
+
   return {
     addAll,
     /** The form is still taking the thread's last change in: the next phrase waits. */
@@ -1156,6 +1180,13 @@ export const useThreadEditor = ({
     switchFocus,
     taskModel: reportingEdits(taskModel, TASK_EDITS, edited),
     thread,
+    /**
+     * Closing now would lose something put in here: a new item's drafts,
+     * or a form that differs from how it opened (`editorUnsaved`).
+     */
+    unsaved: discard.unsaved,
+    /** What Cancel, a swipe down or another item opened over the editor asks while it is `unsaved`. */
+    unsavedQuestion: discard.question,
     /** Moves at each edit made by hand in the form (the phrase field's `editKey`: dictation ends). */
     userEdits,
     write,

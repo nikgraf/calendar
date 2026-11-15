@@ -7,7 +7,7 @@ import {
   type SpeechToText,
   type WordsSource,
 } from '@calendar/ai';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { micPress, pendingLine, shouldListen } from './voiceLoop.ts';
 
 /** A phrase that never pauses is sent after this long rather than recorded until the app dies. */
@@ -68,6 +68,14 @@ export const useQuickAddModel = ({
   speech,
 }: QuickAddModelOptions) => {
   const [phrase, setPhrase] = useState(initialText ?? '');
+  // What the editor itself put in the field (the Create lesson's phrase,
+  // its demo's next one): not words of the person's, so not `held`.
+  const [given, setGiven] = useState(initialText ?? '');
+  // Stable: the demo puts its next phrase in from an effect keyed on it.
+  const give = useCallback((text: string) => {
+    setGiven(text);
+    setPhrase(text);
+  }, []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [voice, setVoice] = useState<VoiceState>('idle');
@@ -422,10 +430,17 @@ export const useQuickAddModel = ({
     /** Hands-free ends (a key typed into the field: the user took over). */
     endVoice,
     error,
+    /** The editor puts words in the field itself (a demo's phrase): they are not the person's. */
+    give,
     /** Hands-free dictation is on, between phrases included. */
     handsFree,
     /** A first word of the phrase being recorded was heard. */
     heard,
+    /**
+     * Words typed or dictated into the field and not sent yet: closing
+     * the editor would lose them (`editorUnsaved`).
+     */
+    held: live.trim() !== '' || (phrase.trim() !== '' && phrase !== given),
     /**
      * The thread's line for the phrase on its way: its words while it is
      * spoken, then the phrase while it is read.

@@ -15,6 +15,7 @@ export * from './draftThread.ts';
 export * from './editorKinds.ts';
 export * from './editorOptions.ts';
 export * from './editorSwitch.ts';
+export * from './editorUnsaved.ts';
 export * from './findTimeModel.ts';
 export * from './eventReadout.ts';
 export * from './hooks.ts';
