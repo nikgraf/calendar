@@ -53,10 +53,13 @@ tags:
     notVisible:
       id: 'event-detail'
     timeout: 10000
-# Convert is live at "This event" (it was off there) and opens the to-do
-# form; Cancel leaves the series as it is. What the form carries for one
-# occurrence is the desktop convert spec's and the unit tests' to check:
-# a Google task's form looks the same for one occurrence and a series.
+# Convert is live at "This event" (it was off there) and turns the detail
+# into the to-do form, in the same sheet; Cancel turns it back and leaves
+# the series as it is. What the form carries for one occurrence is the
+# desktop convert spec's and the unit tests' to check: a Google task's
+# form looks the same for one occurrence and a series. The form goes by
+# its id: its title "Convert to Task" matches the detail's own "Convert
+# to task" button too.
 - tapOn: 'Kolkata series.*'
 - extendedWaitUntil:
     visible:
@@ -65,13 +68,26 @@ tags:
 - tapOn:
     id: 'event-convert'
 - extendedWaitUntil:
-    visible: 'Convert to (Task|Reminder)'
+    visible:
+      id: 'editor-form'
     timeout: 10000
 - waitForAnimationToEnd:
     timeout: 5000
 - tapOn: 'Cancel'
 - extendedWaitUntil:
-    notVisible: 'Convert to (Task|Reminder)'
+    visible:
+      id: 'event-detail-title'
+      text: 'Kolkata series'
+    timeout: 10000
+- extendedWaitUntil:
+    notVisible:
+      id: 'editor-form'
+    timeout: 10000
+- tapOn:
+    id: 'event-detail-close'
+- extendedWaitUntil:
+    notVisible:
+      id: 'event-detail'
     timeout: 10000
 # A task opens its editor.
 - runFlow:

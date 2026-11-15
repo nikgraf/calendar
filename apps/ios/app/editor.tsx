@@ -3,8 +3,10 @@ import { useEditorHost } from '../src/ui/EditorHost.tsx';
 
 /**
  * The editor as a page sheet over the tabs (`_layout.tsx`), at full
- * height. The host owns what it shows (`EditorHost`); this route only
- * says when it is up. A swipe down dismisses it, which is Cancel.
+ * height, and the event detail that Edit turns into it in the same sheet.
+ * The host owns what it shows (`EditorHost`); this route only says when
+ * it is up. A swipe down dismisses it, which closes the detail and is
+ * the editor's Cancel — of the whole sheet, the detail too.
  */
 export default function EditorRoute() {
   const host = useEditorHost();
@@ -13,5 +15,5 @@ export default function EditorRoute() {
     onEditorShown();
     return () => onEditorDismissed();
   }, [onEditorDismissed, onEditorShown]);
-  return host.renderEditor();
+  return host.renderRoute();
 }

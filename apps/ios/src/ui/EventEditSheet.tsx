@@ -689,6 +689,7 @@ export function EventEditSheet({
   birthday,
   calendars,
   initialKind,
+  onCancel,
   onClose,
   onSaved,
   opensOn = 'form',
@@ -704,6 +705,13 @@ export function EventEditSheet({
   calendars: ReadonlyArray<CalendarInfo>;
   /** The kind to open on: a to-do for the Tasks tab's "+", or the detail sheet's Convert. */
   initialKind?: ItemKind | undefined;
+  /**
+   * Cancel, where it does more than close: the editor the detail's Edit
+   * or Convert turned the detail into turns back into it. `onClose`
+   * otherwise.
+   */
+  onCancel?: (() => void) | undefined;
+  /** Closes the editor: Save and Delete once the write is through, and Cancel without `onCancel`. */
   onClose: () => void;
   /** Save went through, as an event or a task (capture marks its row added). */
   onSaved?: (() => void) | undefined;
@@ -864,7 +872,7 @@ export function EventEditSheet({
     <EditorHeader
       birthday={birthday !== undefined}
       editor={editor}
-      onClose={onClose}
+      onClose={onCancel ?? onClose}
       title={birthday ? 'Birthday' : `${verb} ${capitalize(noun)}`}
     />
   );

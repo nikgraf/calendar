@@ -1,6 +1,18 @@
 import { BirthdayOccurrence, BirthdayRecord, EventRecord, Temporal } from '@calendar/core';
 import { describe, expect, it } from 'vite-plus/test';
-import { captureMayOpen, closeDeleted, closeEditor, NONE, type Sheet } from './sheets.ts';
+import {
+  cancelEditor,
+  captureMayOpen,
+  closeDeleted,
+  closeEditor,
+  inRoute,
+  NONE,
+  routeDismissed,
+  type RouteSheet,
+  type Sheet,
+  routeKey,
+  routeMove,
+} from './sheets.ts';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -37,14 +49,25 @@ const occurrence = (week: number, overrides: Partial<EventRecord> = {}) =>
   });
 
 /** The editor on a new item ("+", a slot drawn on the grid, a capture's thread). */
-const newItem = (opening: number): Sheet => ({ kind: 'edit', opening, seed: { initialDate: day } });
-/** The editor on an existing event: the detail's Edit, or its Convert. */
-const editing = (opening: number, edited: EventRecord): Sheet => ({
+const newItem = (opening: number): RouteSheet => ({
+  kind: 'edit',
+  opening,
+  seed: { initialDate: day },
+});
+/** The editor on an existing event, opened elsewhere than its detail (a notification's task, a capture). */
+const editing = (opening: number, edited: EventRecord): RouteSheet => ({
   kind: 'edit',
   opening,
   seed: { event: edited, initialDate: day },
 });
-const detail = (shown: EventRecord): Sheet => ({ event: shown, kind: 'detail' });
+/** The editor the detail's Edit or Convert turned the detail into. */
+const fromDetail = (opening: number, edited: EventRecord): RouteSheet => ({
+  backTo: edited,
+  kind: 'edit',
+  opening,
+  seed: { event: edited, initialDate: day },
+});
+const detail = (shown: EventRecord): RouteSheet => ({ event: shown, kind: 'detail' });
 const birthday: Sheet = {
   birthday: new BirthdayOccurrence({
     date: '2026-10-05',
@@ -76,6 +99,103 @@ describe('closeEditor', () => {
     expect(closeEditor(2)(reopened)).toBe(reopened);
     expect(closeEditor(2)(NONE)).toBe(NONE);
   });
+
+  it('closes the whole sheet on a save from the editor the detail turned into', () => {
+    expect(closeEditor(4)(fromDetail(4, event()))).toBe(NONE);
+  });
+});
+
+// Cancel is applied the same way, to the sheet as it is when it is pressed.
+describe('cancelEditor', () => {
+  it('turns the editor back into the detail its Edit or Convert came from', () => {
+    expect(cancelEditor(1)(fromDetail(1, event({ title: 'Dentist (moved)' })))).toEqual(
+      detail(event({ title: 'Dentist (moved)' })),
+    );
+  });
+
+  it('closes an editor opened anywhere else', () => {
+    expect(cancelEditor(1)(newItem(1))).toBe(NONE);
+    expect(cancelEditor(2)(editing(2, event()))).toBe(NONE);
+  });
+
+  it('leaves what was opened since: another editor, a detail, nothing', () => {
+    const drawn = newItem(2);
+    const tapped = detail(event({ id: 'lunch', title: 'Lunch' }));
+    expect(cancelEditor(1)(drawn)).toBe(drawn);
+    expect(cancelEditor(1)(tapped)).toBe(tapped);
+    expect(cancelEditor(1)(NONE)).toBe(NONE);
+  });
+  it("leaves the detail it went back to when the editor's save answers after", () => {
+    const back = cancelEditor(3)(fromDetail(3, event()));
+    expect(closeEditor(3)(back)).toBe(back);
+  });
+});
+
+// The host pushes the editor route for these and pops it for the rest.
+describe('inRoute', () => {
+  it('holds the detail and the editor, not the page sheets or nothing', () => {
+    expect([detail(event()), newItem(1), fromDetail(2, event())].every(inRoute)).toBe(true);
+    expect([NONE, birthday].some(inRoute)).toBe(false);
+  });
+});
+
+// The host's push/pop effect asks on every change of the sheet, and again
+// once the route's old sheet has gone.
+describe('routeMove', () => {
+  const up = { leaving: false, presented: true };
+  const down = { leaving: false, presented: false };
+  const going = { leaving: true, presented: false };
+
+  it('pushes the route for a detail or an editor, and pops it for anything else', () => {
+    expect(routeMove(detail(event()), down)).toBe('push');
+    expect(routeMove(newItem(1), down)).toBe('push');
+    expect(routeMove(NONE, up)).toBe('pop');
+    expect(routeMove(birthday, up)).toBe('pop');
+  });
+
+  it('only swaps the content between a detail and its editor', () => {
+    expect(routeMove(fromDetail(2, event()), up)).toBe('stay');
+    expect(routeMove(detail(event()), up)).toBe('stay');
+  });
+
+  it("waits with a reminder's detail asked for while the old sheet is still leaving", () => {
+    expect(routeMove(detail(event({ id: 'lunch', title: 'Lunch' })), going)).toBe('wait');
+    expect(routeMove(NONE, going)).toBe('stay');
+  });
+});
+
+// The old route's dismissal is applied to the sheet as it is by then.
+describe('routeDismissed', () => {
+  it('closes the detail or editor a swipe down took away', () => {
+    expect(routeDismissed(true)(detail(event()))).toBe(NONE);
+    expect(routeDismissed(true)(fromDetail(3, event()))).toBe(NONE);
+  });
+
+  it("keeps what was asked for after the host's own pop, and a page sheet either way", () => {
+    const tapped = detail(event({ id: 'lunch', title: 'Lunch' }));
+    expect(routeDismissed(false)(tapped)).toBe(tapped);
+    expect(routeDismissed(true)(birthday)).toBe(birthday);
+  });
+});
+
+// The route's content is keyed by it: a new key cross-fades, the same one stays put.
+describe('routeKey', () => {
+  it('keeps a detail on a refreshed row of its event, also an occurrence edited since under a new id', () => {
+    expect(routeKey(detail(event({ title: 'Dentist (moved)' })))).toBe(routeKey(detail(event())));
+    expect(routeKey(detail(occurrence(1, { id: 'standup-exception' })))).toBe(
+      routeKey(detail(occurrence(1))),
+    );
+  });
+
+  it('tells a detail from the editor it turns into, another event, and one opening from the next', () => {
+    const keys = [
+      routeKey(detail(event())),
+      routeKey(detail(event({ id: 'lunch', title: 'Lunch' }))),
+      routeKey(fromDetail(1, event())),
+      routeKey(fromDetail(2, event())),
+    ];
+    expect(new Set(keys).size).toBe(keys.length);
+  });
 });
 
 describe('closeDeleted', () => {
@@ -93,6 +213,7 @@ describe('closeDeleted', () => {
 
   it('closes an editor that Edit or Convert opened on the event while it deleted', () => {
     expect(closeDeleted(event(), 'instance')(editing(4, event()))).toBe(NONE);
+    expect(closeDeleted(event(), 'instance')(fromDetail(5, event()))).toBe(NONE);
   });
 
   it('leaves the detail of another event opened after the sheet was swiped away mid-delete', () => {

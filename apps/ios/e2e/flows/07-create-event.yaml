@@ -103,6 +103,18 @@ tags:
             text: 'Bring the agenda'
           timeout: 10000
       - runFlow: ../common/open-event-editor.yaml
+      # Edit turned the detail into the editor in the same sheet; Cancel
+      # turns it back (the editor fades out, so wait for it to go).
+      - tapOn: 'Cancel'
+      - extendedWaitUntil:
+          visible:
+            id: 'event-detail-notes'
+            text: 'Bring the agenda'
+          timeout: 10000
+      - extendedWaitUntil:
+          notVisible: 'Edit Event'
+          timeout: 10000
+      - runFlow: ../common/open-event-editor.yaml
       # Delete is the form's last card: scroll it into reach.
       - scrollUntilVisible:
           element:
