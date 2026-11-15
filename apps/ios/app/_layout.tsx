@@ -44,8 +44,9 @@ export default function RootLayout() {
                   for an existing one, like Settings — not a form sheet,
                   which lays out a header and one scroll view and nothing
                   else, so it could hold neither a bar at its bottom nor
-                  two views. Its forms are grouped cards, so the sheet
-                  takes the grouped ground. */}
+                  two views. An event's detail is this sheet too, so Edit
+                  turns it into the editor in place. Its forms are grouped
+                  cards, so the sheet takes the grouped ground. */}
               <Stack.Screen
                 name="editor"
                 options={{

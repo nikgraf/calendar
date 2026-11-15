@@ -1581,7 +1581,7 @@ gateway carries all of it. Details, limits and the threat model:
   opens a new event, the Tasks tab's an undated to-do in the filtered
   list). `EditorHost.tsx` owns every sheet — event detail, the editor
   (`EventEditSheet`, the same thread as the desktop, `useThreadEditor`,
-  in the same two views), the birthday detail — and the capture model behind the share
+  in the same two views), the birthday detail, a fold chip's list — and the capture model behind the share
   sheet and deep links, whose events open the editor as one thread of
   drafts; each opening is keyed by its own number; screens ask it
   through `useEditorHost()`. The detail follows its event as the
@@ -1590,20 +1590,30 @@ gateway carries all of it. Details, limits and the threat model:
   `useCurrentEvent` — `findCurrentEvent`'s lookup as an atom
   (`currentEvent`), read again whenever events change — shows that
   record (`eventReadout`), seeds Edit and Convert from it and closes once
-  the event is gone; a failed read keeps it up. The editor is the `editor` route
-  (`app/editor.tsx`), a page sheet at full height like Settings — a form
-  sheet lays out a header and one scroll view and nothing else, so it
-  could hold neither a bar at its bottom nor two views; the host pushes
-  the route and pops it on Cancel or Save, and a swipe that dismisses it
-  is Cancel. The editor's own close (Cancel, or Save and Delete once the
+  the event is gone; a failed read keeps it up. The detail and the editor
+  share the `editor` route (`app/editor.tsx`), a page sheet at full
+  height like Settings — a form sheet lays out a header and one scroll
+  view and nothing else, so it could hold neither a bar at its bottom nor
+  two views. The host pushes the route when either opens and pops it when
+  the state leaves both; from one to the other only the content changes,
+  the old fading out as the new fades in (`RouteFade`, a fade under
+  Reduce Motion too, none while the sheet slides): Edit and Convert turn
+  the detail into its editor, the editor's Cancel turns it back
+  (`cancelEditor` over the editor's `backTo`), Save and Delete close the
+  sheet, and a swipe that dismisses it closes the detail and the editor
+  alike. Only a swipe closes them as the route goes: after the host's
+  own pop the state has moved on, and a detail asked for while the old
+  sheet leaves (a tapped reminder) goes up once it has gone
+  (`routeMove`, `routeDismissed`). The editor's
+  own close (Cancel, or Save and Delete once the
   write answers) applies only while the sheet still holds its opening,
   and the detail's Delete only while the sheet shows an event that
   delete took (`sheets.ts`, over `deleteTakes`), so a reply landing
   after the user moved on leaves what was opened since. UIKit presents
-  one sheet at a time, so the push waits for a page sheet (detail,
-  birthday) to slide away, and a page sheet asked for as the editor
-  closes waits for its sheet (the route unmounts as its sheet starts to
-  leave, not after). Nothing stacks on the editor: it closes before
+  one sheet at a time, so the push waits for a page sheet (birthday, a
+  fold's list) or the route's previous sheet to slide away, and a page
+  sheet asked for as the route closes waits for its sheet (the route
+  unmounts as its sheet starts to leave, not after). Nothing stacks on the editor: it closes before
   Settings opens, so the host's pop is always the editor's. A capture
   runs under a banner that blocks nothing; its thread never replaces
   what the user opened meanwhile (an editor, a detail, a birthday,
