@@ -7,6 +7,9 @@ export interface SpeechWordsEvent {
   readonly text: string;
 }
 
+/** iOS's Mic Mode for the app, as the user picked it in Control Center. */
+export type MicrophoneMode = 'standard' | 'voiceIsolation' | 'wideSpectrum';
+
 export interface SolunivoSpeechNative {
   readonly addListener: (
     name: 'onWords',
@@ -24,6 +27,14 @@ export interface SolunivoSpeechNative {
       readonly text: string;
     }>;
   } | null>;
+  /**
+   * A locale's language in English, the app's own ("German (Austria)"); the
+   * id when it has no name. Absent on a binary built before it (a stale
+   * local dev client: OTA updates never reach another fingerprint).
+   */
+  readonly languageName?: (locale: string) => string;
+  /** The Mic Mode picked for this app (applied only while recording with voice processing); absent like `languageName`. */
+  readonly microphoneMode?: () => MicrophoneMode;
   /** Installs the locale's speech assets; rejects with "unsupported: …" where it never will. */
   readonly prepare: (locale: string) => Promise<void>;
   /** Asks for the microphone if iOS has not yet; whether it may be used. */

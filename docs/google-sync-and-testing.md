@@ -764,7 +764,9 @@ privacy modal, the settings window, the inspector and inline editor, ⌘K);
 click of the microphone: the first phrase's words show while it is
 said, two phrases land when their words stop, the form
 brought forward does not end the dictation, a typed title does, the
-next phrase keeps that title, an older step put on show ends it too);
+next phrase keeps that title, an older step put on show ends it too;
+Settings › Dictation reduces background noise until it is switched off,
+a choice both windows read);
 `assistantView` (the editor's two views:
 a phrase answered with the item as a card, a change marked with the old
 value struck through, two questions asked one at a time and numbered,
@@ -882,6 +884,11 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   reminder's move before the all-day lane redraws it, and the lane's
   height moves the grid below it; a test whose successor measures
   geometry waits for its own result on screen.
+- **A retry starts where its failed attempt stopped**: same app, no
+  `beforeAll`. A test that takes the grid as it finds it gets a known
+  offset in `beforeEach`, and a failure lets go of a held drag (Escape,
+  then the button) before the retry, or its edge scroll moves the grid on
+  (`edgeScroll.e2e.ts`).
 - React inputs need the native value setter + `input`/`change` event
   dispatch; `<select>` likewise. The invitee combobox is driven through
   `input[aria-label="Invitees"]`, synthetic `keydown` for ArrowDown /

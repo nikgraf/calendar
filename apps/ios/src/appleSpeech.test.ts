@@ -61,10 +61,17 @@ vi.mock('expo', () => ({
   },
 }));
 
-// Voice Processing is off: no note on this iPhone.
+/** Reduce Background Noise's note on this iPhone: none until it is switched. */
+const note = vi.hoisted(() => ({ text: undefined as string | undefined }));
+
 vi.mock('expo-file-system', () => ({
   File: class {
-    exists = false;
+    get exists() {
+      return note.text !== undefined;
+    }
+    textSync() {
+      return note.text ?? '';
+    }
   },
   Paths: { document: '/documents' },
 }));
@@ -95,6 +102,7 @@ beforeEach(() => {
   native.listeners.clear();
   native.microphone = true;
   native.prepareError = undefined;
+  note.text = undefined;
 });
 
 describe('appleSpeech without the native module', () => {
@@ -124,7 +132,7 @@ describe('appleSpeech', () => {
     await expect(
       speech.start({ onWords: (source, text) => heard.push(`${source}: ${text}`) }),
     ).resolves.toEqual({ sources: ['accurate'] });
-    expect(native.calls).toEqual(['start 1 plain']);
+    expect(native.calls).toEqual(['start 1 processed']);
     say({ session: 1, source: 'quick', text: 'Lunch' });
     say({ session: 9, source: 'quick', text: 'someone else' });
     say({ session: 1, source: 'accurate', text: 'Lunch with' });
@@ -135,7 +143,7 @@ describe('appleSpeech', () => {
     });
     say({ session: 1, source: 'quick', text: 'Lunch with Sarah' });
     expect(heard).toEqual(['quick: Lunch', 'accurate: Lunch with']);
-    expect(native.calls).toEqual(['start 1 plain', 'finish 1']);
+    expect(native.calls).toEqual(['start 1 processed', 'finish 1']);
     expect(native.listeners.size).toBe(0);
   });
 
@@ -165,7 +173,7 @@ describe('appleSpeech', () => {
     closed.abort();
     release?.();
     await expect(start).resolves.toBeUndefined();
-    expect(native.calls).toEqual(['start 1 plain', 'cancel 1']);
+    expect(native.calls).toEqual(['start 1 processed', 'cancel 1']);
     expect(native.listeners.size).toBe(0);
     // Not the current phrase: nothing to finish.
     await expect(speech.finish()).resolves.toBeUndefined();
@@ -181,7 +189,20 @@ describe('appleSpeech', () => {
     say({ session: 2, source: 'quick', text: 'Dinner' });
     expect(heard).toEqual(['Dinner']);
     await speech.cancel();
-    expect(native.calls).toEqual(['start 1 plain', 'start 2 plain', 'cancel 2']);
+    expect(native.calls).toEqual(['start 1 processed', 'start 2 processed', 'cancel 2']);
+  });
+
+  it('records through voice processing unless this iPhone switched it off', async () => {
+    note.text = JSON.stringify({ on: false });
+    const plain = await loadSpeech();
+    await plain.start({ onWords: noWords });
+    note.text = 'not json';
+    const unreadable = await loadSpeech();
+    await unreadable.start({ onWords: noWords });
+    note.text = JSON.stringify({ on: true });
+    const processed = await loadSpeech();
+    await processed.start({ onWords: noWords });
+    expect(native.calls).toEqual(['start 1 plain', 'start 1 processed', 'start 1 processed']);
   });
 
   it('tells a locale that never will from a download that failed', async () => {

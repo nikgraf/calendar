@@ -1,12 +1,11 @@
 import { useBackendMutations } from '@calendar/app-state';
-import { useState, useSyncExternalStore } from 'react';
+import { useState } from 'react';
 import { loadOpenModelRuntime } from '../../openModel.ts';
-import { voiceProcessing } from '../../voiceProcessing.ts';
-import { ActionRow, Footer, NavRow, Section, SettingsPage, SwitchRow } from '../GroupedList.tsx';
+import { ActionRow, Footer, NavRow, Section, SettingsPage } from '../GroupedList.tsx';
 
 /**
- * Advanced: the location cache, as on the Mac, how dictation records, then
- * troubleshooting a build — Diagnostics and PR Preview. The settings file has its own page
+ * Advanced: the location cache, as on the Mac, then troubleshooting a
+ * build — Diagnostics and PR Preview. The settings file has its own page
  * (SettingsFilePage). Model Spike is listed where the binary can run a
  * model of its own: both variants since llama.rn is linked in both, so a
  * TestFlight build measures too, as PR Preview loads a pull request there.
@@ -14,7 +13,6 @@ import { ActionRow, Footer, NavRow, Section, SettingsPage, SwitchRow } from '../
 export function AdvancedPage() {
   const { clearLocationCache } = useBackendMutations();
   const [cache, setCache] = useState<'busy' | 'cleared' | 'idle'>('idle');
-  const processing = useSyncExternalStore(voiceProcessing.subscribe, voiceProcessing.get);
 
   const clearCache = async () => {
     setCache('busy');
@@ -50,17 +48,6 @@ export function AdvancedPage() {
           onPress={() => void clearCache()}
           testID="clear-location-cache"
           title="Clear Location Cache"
-        />
-      </Section>
-      <Section
-        footer="Records through the iPhone’s echo cancellation and noise suppression. Try it where dictation misses words in a loud room; turn it off again if it misses more."
-        header="Dictation"
-      >
-        <SwitchRow
-          onValueChange={voiceProcessing.set}
-          switchTestID="voice-processing"
-          title="Voice Processing"
-          value={processing}
         />
       </Section>
       <Section

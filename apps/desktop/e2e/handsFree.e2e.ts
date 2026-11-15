@@ -118,4 +118,22 @@ describe('Hands-free dictation', () => {
     await cdp.clickTestId('quick-add-mic');
     await cdp.waitFor(`!(${dictating})`);
   }, 90_000);
+
+  it('reduces background noise until Settings › Dictation turns it off, for both windows', async () => {
+    const settings = await app.openSettings('dictation');
+    const box = `document.querySelector('[data-testid="reduce-background-noise"]')`;
+    // From nothing chosen, also on a retry: the calendar window clears the
+    // choice and the Settings window hears of it (a `storage` event).
+    await app.cdp.eval(`localStorage.removeItem('dictation.reduceNoise')`);
+    await settings.waitFor(`${box}?.checked === true`);
+    expect(
+      await settings.eval<string>(
+        `document.querySelector('[data-testid="dictation-language"]')?.textContent ?? ''`,
+      ),
+    ).toContain('this Mac’s language');
+    await settings.eval(`${box}.click()`);
+    await settings.waitFor(`${box}.checked === false`);
+    // The calendar window opens the microphone: the choice reaches it.
+    await app.cdp.waitFor(`localStorage.getItem('dictation.reduceNoise') === 'off'`);
+  });
 });

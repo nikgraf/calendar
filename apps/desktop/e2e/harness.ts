@@ -379,6 +379,7 @@ export type SettingsPane =
   | 'advanced'
   | 'agents'
   | 'calendar'
+  | 'dictation'
   | 'file'
   | 'gettingstarted'
   | 'mirrors'
