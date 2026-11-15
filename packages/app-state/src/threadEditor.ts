@@ -473,16 +473,15 @@ export const useThreadEditor = ({
    * calendar picked for an event — or a to-do's list, notes, undated state
    * and Reminders-only fields.
    */
+  const todoExtras = () => ({
+    listKey: taskModel.listKey,
+    reminder: taskModel.reminderFields(),
+    taskNotes: taskModel.notes,
+    undated: !taskModel.dated,
+  });
   const currentExtras = (): DraftExtras => ({
     ...eventModel.extras(),
-    ...(mode === 'event'
-      ? { calendarKey: eventModel.calendarKey }
-      : {
-          listKey: taskModel.listKey,
-          reminder: taskModel.reminderFields(),
-          taskNotes: taskModel.notes,
-          undated: !taskModel.dated,
-        }),
+    ...(mode === 'event' ? { calendarKey: eventModel.calendarKey } : todoExtras()),
   });
   // The latest render's readers, for a turn that reads the form after an await.
   // The draft whose fields the form holds as rendered: set with the fields
@@ -527,8 +526,10 @@ export const useThreadEditor = ({
     isNew: sourceKind === 'new',
     kind: kinds.kind,
     mode,
+    // The form on show only: a to-do's notes carried into the hidden event
+    // form on a round trip through Event are no change of the to-do's.
     reading: formReading({
-      extras: currentExtras(),
+      extras: mode === 'event' ? currentExtras() : todoExtras(),
       item: currentItem(),
       ruleDirty: eventModel.repeatDirty,
     }),

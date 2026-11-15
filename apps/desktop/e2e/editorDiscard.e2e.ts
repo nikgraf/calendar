@@ -1,4 +1,11 @@
-import { Account, CalendarInfo, EventRecord, TaskListInfo, Temporal } from '@calendar/core';
+import {
+  Account,
+  CalendarInfo,
+  EventRecord,
+  TaskListInfo,
+  TaskRecord,
+  Temporal,
+} from '@calendar/core';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test';
 import { type App, launchApp, readEvents } from './harness.ts';
 
@@ -70,6 +77,19 @@ const seed = {
       isVisible: true,
       provider: 'google',
       title: 'My Tasks',
+    }),
+  ],
+  tasks: [
+    new TaskRecord({
+      accountId: 'acc-e2e',
+      dueDate: today.toString(),
+      id: 'task-water',
+      listId: 'list-e2e',
+      notes: 'Bring the can',
+      provider: 'google',
+      status: 'needsAction',
+      title: 'Water plants',
+      updatedAt: 1,
     }),
   ],
 };
@@ -245,6 +265,23 @@ describe('Discarding an editor that holds something', () => {
     await cdp.clickButtonWithText('Save');
     await closesAtOnce();
     await cdp.waitFor(`!!document.querySelector('[title^="Lunch plan moved"]')`);
+  });
+
+  it('lets a saved to-do taken through Event and back close at once', async () => {
+    const { cdp } = app;
+    await cdp.clickTaskChip('[title="Water plants"]');
+    await cdp.waitFor(headingIs('Edit task'));
+    // Its notes go into the hidden event form on the way: no change of the to-do's.
+    await cdp.clickTestId('mode-event');
+    await cdp.waitFor(`${headingIs('Convert to event')} || ${exists('move-confirm')}`);
+    if (await cdp.eval<boolean>(exists('move-confirm'))) {
+      await cdp.clickTestId('move-confirm-yes');
+      await cdp.waitFor(headingIs('Convert to event'));
+    }
+    await cdp.clickTestId('mode-task');
+    await cdp.waitFor(headingIs('Edit task'));
+    await cdp.pressEscape();
+    await closesAtOnce();
   });
 
   it("asks about the Assistant's draft, and about words in its field not sent yet", async () => {
