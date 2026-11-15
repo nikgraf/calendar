@@ -327,40 +327,43 @@ const checkTitle = (expectation: Expectation, item: QuickAddItem, fail: Fail): v
   }
 };
 
-/** How far ahead the next such day is looked for: a 29th of February is four years off at most. */
-const MONTHS_AHEAD = 12 * 8;
+/** How far ahead the next such day is looked for: a 29th of February is eight years off at most. */
+const DAYS_AHEAD = 366 * 8;
 
 /**
- * The days a date said by its number may land on: with a month, the next
- * such day from today on; a day of the month alone, the next such day or
- * the one after it, since a later turn keeps the draft's month ("the
- * 14th instead" said in November to a draft in December) and that month
- * is at most one further than today's next.
+ * The days a date said by its number may land on. From today on, the
+ * first day that is the said day of the said month: one day, or with a
+ * month said alone every day of that month. A later turn may also keep
+ * the month of the draft it changes, as the app does ("the 14th instead"
+ * said in November to a draft in December stays in December); a first
+ * phrase has no draft, so a month late is a miss.
  */
 const nextSuchDays = (
   { dayOfMonth, month }: Pick<Expectation, 'dayOfMonth' | 'month'>,
   today: string,
+  draftDate: string | undefined,
 ): ReadonlyArray<string> => {
   const from = Temporal.PlainDate.from(today);
-  const wanted = month === undefined ? 2 : 1;
   const days: Array<string> = [];
-  for (let ahead = 0; ahead <= MONTHS_AHEAD && days.length < wanted; ahead += 1) {
-    const first = from.with({ day: 1 }).add({ months: ahead });
-    if (month !== undefined && first.month !== month) {
-      continue;
+  for (let ahead = 0; ahead <= DAYS_AHEAD; ahead += 1) {
+    const day = from.add({ days: ahead });
+    if (
+      (dayOfMonth === undefined || day.day === dayOfMonth) &&
+      (month === undefined || day.month === month)
+    ) {
+      days.push(day.toString());
+      // One day where a day was said; the rest of the month where only the month was.
+      if (dayOfMonth !== undefined || day.day === day.daysInMonth) {
+        break;
+      }
+    } else if (days.length > 0) {
+      break;
     }
-    // Every day of the month that was said, or the one day of it.
-    const inMonth = Array.from({ length: first.daysInMonth }, (_, index) =>
-      first.add({ days: index }),
-    );
-    const next = inMonth.find(
-      (day) =>
-        (dayOfMonth === undefined || day.day === dayOfMonth) &&
-        Temporal.PlainDate.compare(day, from) >= 0,
-    );
-    if (next !== undefined) {
-      // A month said alone holds for any day of it that is still to come.
-      days.push(...(dayOfMonth === undefined ? inMonth.map(String) : [next.toString()]));
+  }
+  if (dayOfMonth !== undefined && month === undefined && draftDate !== undefined) {
+    const draft = Temporal.PlainDate.from(draftDate);
+    if (dayOfMonth <= draft.daysInMonth) {
+      days.push(draft.with({ day: dayOfMonth }).toString());
     }
   }
   return days;
@@ -370,12 +373,13 @@ const nextSuchDays = (
  * Whether the date falls on the expected weekday, that many days after
  * today, and on the day of the month and in the month that were said: a
  * date said by its number is the next such day, never one that has
- * passed and never the same day a year or two on.
+ * passed and never the same day a month or a year on. `previous` is the
+ * draft a later turn changes, whose month such a turn may keep.
  */
 const checkDate = (
   expectation: Expectation,
   item: QuickAddItem,
-  today: string,
+  { previous, today }: { readonly previous: BenchDraft | undefined; readonly today: string },
   fail: Fail,
 ): void => {
   const date = Temporal.PlainDate.from(item.prefill.date);
@@ -398,7 +402,9 @@ const checkDate = (
     fail('date', `day=${item.prefill.date}`);
   } else if (Temporal.PlainDate.compare(date, Temporal.PlainDate.from(today)) < 0) {
     fail('date', `day=${item.prefill.date} (passed)`);
-  } else if (!nextSuchDays(expectation, today).includes(date.toString())) {
+  } else if (
+    !nextSuchDays(expectation, today, previous?.item.prefill.date).includes(date.toString())
+  ) {
     fail('date', `day=${item.prefill.date} (not the next)`);
   }
 };
@@ -601,7 +607,7 @@ export const check = (
 
   checkKind(expectation, item, fail);
   checkTitle(expectation, item, fail);
-  checkDate(expectation, item, today, fail);
+  checkDate(expectation, item, { previous, today }, fail);
   checkTime(expectation, item, fail);
   checkLocation(expectation, item, fail);
   checkRepeat(expectation, item, fail);

@@ -156,19 +156,41 @@ describe('check', () => {
     expect(check({ dayOfMonth: 3, month: 2 }, on('2027-02-03'), undefined, TODAY).failed).toEqual(
       [],
     );
-    // A day of the month alone: the next, or the one after it (a later turn
-    // keeps the draft's month), and no further.
+    // A day of the month alone, in a first phrase: the next such day and no other.
     expect(check({ dayOfMonth: 23 }, on('2026-08-23'), undefined, TODAY).failed).toEqual([]);
-    expect(check({ dayOfMonth: 23 }, on('2026-09-23'), undefined, TODAY).failed).toEqual([]);
-    expect(check({ dayOfMonth: 23 }, on('2026-10-23'), undefined, TODAY).notes).toEqual([
-      'day=2026-10-23 (not the next)',
+    expect(check({ dayOfMonth: 23 }, on('2026-09-23'), undefined, TODAY).notes).toEqual([
+      'day=2026-09-23 (not the next)',
     ]);
-    // The 14th has passed in August: September's and October's.
+    // The 14th has passed in August: September's.
     expect(check({ dayOfMonth: 14 }, on('2026-09-14'), undefined, TODAY).failed).toEqual([]);
-    expect(check({ dayOfMonth: 14 }, on('2026-10-14'), undefined, TODAY).failed).toEqual([]);
+    expect(check({ dayOfMonth: 14 }, on('2026-10-14'), undefined, TODAY).failed).toContain('date');
     // A 31st skips the months that have none.
-    expect(check({ dayOfMonth: 31 }, on('2026-10-31'), undefined, TODAY).failed).toEqual([]);
-    expect(check({ dayOfMonth: 31 }, on('2026-12-31'), undefined, TODAY).failed).toEqual(['date']);
+    expect(check({ dayOfMonth: 31 }, on('2026-08-31'), undefined, TODAY).failed).toEqual([]);
+    expect(check({ dayOfMonth: 31 }, on('2026-10-31'), undefined, TODAY).failed).toContain('date');
+  });
+
+  it('lets a later turn keep the month of the draft it changes', () => {
+    // "The 23rd instead", said to a draft in October: October's, or the next from today.
+    const october = event({ date: '2026-10-12' });
+    const moved = (date: string) =>
+      check({ dayOfMonth: 23 }, drafted(event({ date })), october, TODAY).failed;
+    expect(moved('2026-10-23')).toEqual([]);
+    expect(moved('2026-08-23')).toEqual([]);
+    expect(moved('2026-09-23')).toEqual(['date']);
+    expect(moved('2026-11-23')).toEqual(['date']);
+    // A draft in a month without that day adds nothing: the next 31st from today only.
+    const september = event({ date: '2026-09-10' });
+    expect(
+      check({ dayOfMonth: 31 }, drafted(event({ date: '2026-10-31' })), september, TODAY).failed,
+    ).toEqual(['date']);
+    expect(
+      check({ dayOfMonth: 31 }, drafted(event({ date: '2026-08-31' })), september, TODAY).failed,
+    ).toEqual([]);
+    // With its month said, the draft's month is nothing to keep.
+    expect(
+      check({ dayOfMonth: 23, month: 9 }, drafted(event({ date: '2026-10-23' })), october, TODAY)
+        .failed,
+    ).toEqual(['date']);
   });
 
   it('counts the days an event runs past its first', () => {
