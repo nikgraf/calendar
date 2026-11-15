@@ -122,6 +122,9 @@ describe('Hands-free dictation', () => {
   it('reduces background noise until Settings › Dictation turns it off, for both windows', async () => {
     const settings = await app.openSettings('dictation');
     const box = `document.querySelector('[data-testid="reduce-background-noise"]')`;
+    // From nothing chosen, also on a retry: the calendar window clears the
+    // choice and the Settings window hears of it (a `storage` event).
+    await app.cdp.eval(`localStorage.removeItem('dictation.reduceNoise')`);
     await settings.waitFor(`${box}?.checked === true`);
     expect(
       await settings.eval<string>(
@@ -130,9 +133,7 @@ describe('Hands-free dictation', () => {
     ).toContain('this Mac’s language');
     await settings.eval(`${box}.click()`);
     await settings.waitFor(`${box}.checked === false`);
-    // The calendar window opens the microphone: it reads the same choice.
-    expect(await app.cdp.eval<string | null>(`localStorage.getItem('dictation.reduceNoise')`)).toBe(
-      'off',
-    );
+    // The calendar window opens the microphone: the choice reaches it.
+    await app.cdp.waitFor(`localStorage.getItem('dictation.reduceNoise') === 'off'`);
   });
 });
