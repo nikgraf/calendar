@@ -1,0 +1,17 @@
+{
+  "blind": true,
+  "lang": "en",
+  "tags": ["typed", "title"],
+  "turns": [
+    {
+      "input": { "text": "dinenr with teo friday 8pm" },
+      "expect": {
+        "title": ["dinner with teo", "dinenr with teo"],
+        "weekday": 5,
+        "startTime": "20:00",
+        "endTime": "21:00",
+        "guests": {}
+      }
+    }
+  ]
+}

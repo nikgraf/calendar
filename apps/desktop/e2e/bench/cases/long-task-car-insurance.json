@@ -1,0 +1,17 @@
+{
+  "lang": "en",
+  "tags": ["long", "task", "date", "notes"],
+  "turns": [
+    {
+      "input": {
+        "text": "Add a reminder to renew the car insurance on the 20th, and note the policy number is in the glovebox"
+      },
+      "expect": {
+        "kind": "task",
+        "title": "renew the car insurance",
+        "dayOfMonth": 20,
+        "notes": "glovebox"
+      }
+    }
+  ]
+}

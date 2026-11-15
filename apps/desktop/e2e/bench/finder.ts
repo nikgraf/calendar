@@ -9,6 +9,8 @@ import {
 import { finderWindowDates, Temporal } from '@calendar/core';
 import { Schema } from 'effect';
 import { fold } from './check.ts';
+import { type Flip, flipLines } from './flips.ts';
+import { earlierRun, notCompared, otherDay } from './report.ts';
 
 /**
  * The finder bench's cases: what find a time is told ("find 90 min for
@@ -94,6 +96,8 @@ const FinderExpectation = Schema.Struct({
 export type FinderExpectation = typeof FinderExpectation.Type;
 
 const FinderCase = Schema.Struct({
+  /** A blind case: counted in every score, named in no table (the README's blind set). */
+  blind: Schema.optional(Schema.Boolean),
   expect: FinderExpectation,
   id: Schema.String,
   lang: Schema.Literals(['de', 'en']),
@@ -336,6 +340,8 @@ export interface FinderCaseReport {
   /** The model's answer as it came. */
   readonly answer: unknown;
   readonly arms: Readonly<Record<Arm, ArmResult>>;
+  /** A blind case: absent in reports from before there were any. */
+  readonly blind?: boolean | undefined;
   readonly error?: string | undefined;
   readonly id: string;
   readonly lang: string;
@@ -480,6 +486,8 @@ export const rescoreFinder = (
     kept.push({
       ...old,
       arms: readAnswer(old.read ?? old.answer, now, before.today, { pipeline: before.pipeline }),
+      // Blind as the case is now, whatever it was when the model answered.
+      blind: now.blind === true,
     });
   }
   const scored = cases.filter((each) => kept.some((report) => report.id === each.id));
@@ -500,4 +508,155 @@ export const rescoreFinder = (
       when: stamp.when,
     },
   };
+};
+
+export interface FinderTableOptions {
+  /**
+   * Name the blind cases like the open ones. For fixing an expectation,
+   * never for writing briefs or prompts.
+   */
+  readonly showBlind?: boolean | undefined;
+}
+
+const median = (values: ReadonlyArray<number>): number => {
+  if (values.length === 0) {
+    return 0;
+  }
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[middle - 1]! + sorted[middle]!) / 2 : sorted[middle]!;
+};
+
+const armLine = (label: string, score: ArmScore, total: number): string =>
+  `   ${label}  cases ${String(score.cases)}/${String(total)} · ${FINDER_FIELDS.map(
+    (field) => `${field} ${String(score.fields[field])}/${String(total)}`,
+  ).join(' · ')}`;
+
+/** The open and the blind cases apart, once a report holds blind ones: one line per arm each. */
+const setLines = (cases: ReadonlyArray<FinderCaseReport>): ReadonlyArray<string> => {
+  const blind = cases.filter((each) => each.blind === true);
+  if (blind.length === 0) {
+    return [];
+  }
+  const lines = (name: string, set: ReadonlyArray<FinderCaseReport>): ReadonlyArray<string> => {
+    const score = scoreOf(set);
+    return ARMS.map((arm) =>
+      armLine(`${name.padEnd(5)} ${arm.padEnd(5)}`, score[arm], score.total),
+    );
+  };
+  return [
+    ...lines(
+      'open',
+      cases.filter((each) => each.blind !== true),
+    ),
+    ...lines('blind', blind),
+  ];
+};
+
+/**
+ * On a Saturday or Sunday "this week" has no weekday left: a case that
+ * asks for one this week is then scored on a search of no dates, which
+ * an answer that searches nothing passes. A run meant to be compared
+ * names a weekday.
+ */
+const weekendNote = (today: string): ReadonlyArray<string> =>
+  Temporal.PlainDate.from(today).dayOfWeek >= 6
+    ? [
+        '   read on a weekend day: "this week" has no weekday left, so cases that ask for one search no dates; name a weekday (MODEL_BENCH_TODAY)',
+      ]
+    : [];
+
+/**
+ * The run as a table: each arm's score, the open and the blind cases
+ * apart where the report holds blind ones, then every case an arm got
+ * wrong with what it read. A blind case has no line of its own.
+ */
+export const formatFinderReport = (
+  report: FinderReport,
+  { showBlind = false }: FinderTableOptions = {},
+): string => {
+  const { total } = report.score;
+  const lines = [
+    `== ${report.provider}${report.pipeline === 'tuned' ? ' [tuned]' : ''}${report.settings ? ` (${report.settings})` : ''}${
+      report.rescored ? ` — the answers of ${report.rescored.sha}, ${report.rescored.when}` : ''
+    }`,
+    `   median ${(median(report.cases.map((each) => each.ms)) / 1000).toFixed(1)}s per phrase${
+      report.floor
+        ? ` · an empty answer: rules ${String(report.floor.rules)}, raw ${String(report.floor.raw)}`
+        : ''
+    }`,
+    ...ARMS.map((arm) => armLine(arm.padEnd(5), report.score[arm], total)),
+    ...setLines(report.cases),
+    ...weekendNote(report.today),
+  ];
+  for (const each of report.cases) {
+    const wrong = ARMS.filter((arm) => each.arms[arm].failed.length > 0);
+    if (wrong.length === 0 || (each.blind === true && !showBlind)) {
+      continue;
+    }
+    lines.push(`   ✗ ${each.id}${each.blind === true ? ' (blind)' : ''}  "${each.text}"`);
+    for (const arm of wrong) {
+      const { failed, got } = each.arms[arm];
+      lines.push(`       ${arm}: ${failed.map((field) => `${field}=${got[field]}`).join(' · ')}`);
+    }
+  }
+  return lines.join('\n');
+};
+
+/**
+ * Two runs side by side, arm by arm: the cases that flipped (a blind one
+ * counted, not named) and whether chance alone would move as many
+ * (`flips.ts`). Cases only one report holds are left out, and so are
+ * the ones whose sentence is not the same in both.
+ */
+export const compareFinderReports = (
+  before: FinderReport,
+  after: FinderReport,
+  options: FinderTableOptions = {},
+): string => {
+  const earlier = new Map(before.cases.map((each) => [each.id, each]));
+  const lines = [
+    `   vs ${earlierRun(before, after)}: ${ARMS.map(
+      (arm) =>
+        `${arm} ${String(before.score[arm].cases)}/${String(before.score.total)} → ${String(after.score[arm].cases)}/${String(after.score.total)}`,
+    ).join(', ')}`,
+    ...((before.pipeline ?? 'app') === (after.pipeline ?? 'app')
+      ? []
+      : [`   asked differently: ${before.pipeline ?? 'app'} → ${after.pipeline ?? 'app'}`]),
+    ...(before.settings === after.settings
+      ? []
+      : [
+          `   settings: ${before.settings ?? 'not recorded'} → ${after.settings ?? 'not recorded'}`,
+        ]),
+    ...otherDay(before, after),
+  ];
+  // A sentence reworded between the runs is no pair of answers to one sentence.
+  const apart = after.cases
+    .filter((each) => {
+      const previous = earlier.get(each.id);
+      return previous !== undefined && previous.text !== each.text;
+    })
+    .map((each) => ({ blind: each.blind === true, id: each.id }));
+  lines.push(...notCompared(apart, options));
+  for (const arm of ARMS) {
+    const fixed: Array<Flip> = [];
+    const broke: Array<Flip> = [];
+    for (const each of after.cases) {
+      const previous = earlier.get(each.id);
+      const ok = each.arms[arm].failed.length === 0;
+      if (
+        previous === undefined ||
+        previous.text !== each.text ||
+        (previous.arms[arm].failed.length === 0) === ok
+      ) {
+        continue;
+      }
+      (ok ? fixed : broke).push({ blind: each.blind === true, id: each.id });
+    }
+    const flipped = flipLines({ broke, fixed }, options);
+    if (flipped.length > 0) {
+      lines.push(`   ${arm}:`, ...flipped);
+    }
+  }
+  return lines.join('\n');
 };

@@ -1,0 +1,10 @@
+{
+  "lang": "de",
+  "tags": ["typed", "de"],
+  "turns": [
+    {
+      "input": { "text": "mittagessen morgn 12 uhr" },
+      "expect": { "title": "mittagessen", "dayOffset": 1, "startTime": "12:00", "endTime": "13:00" }
+    }
+  ]
+}

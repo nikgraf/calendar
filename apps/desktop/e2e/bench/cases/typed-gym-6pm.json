@@ -1,0 +1,10 @@
+{
+  "lang": "en",
+  "tags": ["typed", "date"],
+  "turns": [
+    {
+      "input": { "text": "gym 6pm" },
+      "expect": { "title": "gym", "dayOffset": 0, "startTime": "18:00", "endTime": "19:00" }
+    }
+  ]
+}

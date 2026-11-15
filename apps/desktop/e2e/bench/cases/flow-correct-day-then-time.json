@@ -1,0 +1,24 @@
+{
+  "lang": "en",
+  "tags": ["flow", "correction"],
+  "turns": [
+    {
+      "input": { "text": "Lunch with Tom Thursday at 1" },
+      "expect": {
+        "title": "lunch with tom",
+        "weekday": 4,
+        "startTime": "13:00",
+        "endTime": "14:00",
+        "guests": {}
+      }
+    },
+    {
+      "input": { "text": "no, Friday" },
+      "expect": { "weekday": 5 }
+    },
+    {
+      "input": { "text": "sorry, at 12" },
+      "expect": { "startTime": "12:00", "endTime": "13:00" }
+    }
+  ]
+}

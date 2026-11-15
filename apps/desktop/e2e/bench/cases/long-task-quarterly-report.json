@@ -1,0 +1,19 @@
+{
+  "lang": "en",
+  "tags": ["long", "task", "notes", "notifications"],
+  "turns": [
+    {
+      "input": {
+        "text": "Remind me to send the quarterly report to Sarah on Friday at 9, alert me 30 minutes before, and add a note that the numbers are in the shared folder"
+      },
+      "expect": {
+        "kind": "task",
+        "title": "send the quarterly report to sarah",
+        "weekday": 5,
+        "startTime": "09:00",
+        "reminders": [30],
+        "notes": "shared folder"
+      }
+    }
+  ]
+}

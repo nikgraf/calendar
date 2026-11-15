@@ -72,6 +72,7 @@ export const scorePhoneReport = async (
         : await applyResult(undefined, row.result, books[benchCase.contacts] ?? []);
     const { checked, failed, notes } = check(first.expect, outcome, undefined, phone.today);
     scored.push({
+      blind: benchCase.blind,
       id: row.id,
       ok: failed.length === 0,
       tags: benchCase.tags,
@@ -94,8 +95,15 @@ export const scorePhoneReport = async (
   };
 };
 
-const ids = (list: ReadonlyArray<CaseReport>): string =>
-  list.map((benchCase) => benchCase.id).join(', ');
+/** The open cases by name and the blind ones as a count: a blind case is never named. */
+const ids = (list: ReadonlyArray<CaseReport>): string => {
+  const open = list.filter((benchCase) => benchCase.blind !== true);
+  const hidden = list.length - open.length;
+  return [
+    ...(open.length === 0 ? [] : [open.map((benchCase) => benchCase.id).join(', ')]),
+    ...(hidden === 0 ? [] : [`${String(hidden)} blind`]),
+  ].join(' · ');
+};
 
 /**
  * The phone beside the Mac, over the first phrases both answered: the same

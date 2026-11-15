@@ -1,0 +1,10 @@
+{
+  "lang": "en",
+  "tags": ["task", "typed"],
+  "turns": [
+    {
+      "input": { "text": "todo buy flowers for Anna on Saturday" },
+      "expect": { "kind": "task", "title": "buy flowers for anna", "weekday": 6 }
+    }
+  ]
+}

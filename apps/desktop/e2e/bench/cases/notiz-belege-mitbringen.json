@@ -1,0 +1,17 @@
+{
+  "blind": true,
+  "lang": "de",
+  "tags": ["notes", "de"],
+  "turns": [
+    {
+      "input": { "text": "Steuerberater Montag um 11, Notiz: Belege mitbringen" },
+      "expect": {
+        "title": "steuerberater",
+        "weekday": 1,
+        "startTime": "11:00",
+        "endTime": "12:00",
+        "notes": "belege"
+      }
+    }
+  ]
+}

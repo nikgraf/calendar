@@ -1,0 +1,28 @@
+{
+  "lang": "en",
+  "tags": ["flow", "guests"],
+  "turns": [
+    {
+      "input": { "text": "Planning Tuesday at 10" },
+      "expect": {
+        "title": "planning",
+        "weekday": 2,
+        "startTime": "10:00",
+        "endTime": "11:00",
+        "guests": {}
+      }
+    },
+    {
+      "input": { "text": "invite Sarah and Teo" },
+      "expect": { "guests": { "emails": ["sarah.novak@example.com", "teo.marin@example.com"] } }
+    },
+    {
+      "input": { "text": "remove Sarah" },
+      "expect": { "guests": { "emails": ["teo.marin@example.com"] } }
+    },
+    {
+      "input": { "text": "add Jo Winter" },
+      "expect": { "guests": { "emails": ["teo.marin@example.com", "jo@example.com"] } }
+    }
+  ]
+}

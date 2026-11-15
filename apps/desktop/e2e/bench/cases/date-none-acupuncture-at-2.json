@@ -1,0 +1,10 @@
+{
+  "lang": "en",
+  "tags": ["date"],
+  "turns": [
+    {
+      "input": { "text": "Acupuncture at 2" },
+      "expect": { "title": "acupuncture", "dayOffset": 0, "startTime": "14:00", "endTime": "15:00" }
+    }
+  ]
+}

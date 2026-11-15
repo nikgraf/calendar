@@ -2,6 +2,7 @@ import { QUICK_ADD_JSON_SCHEMA } from '@calendar/ai';
 import { describe, expect, it } from 'vite-plus/test';
 import { strictSchema } from '../../electron/strictSchema.ts';
 import {
+  benchToday,
   openAiExtra,
   openAiJsonMode,
   openAiRequest,
@@ -12,6 +13,20 @@ import {
 } from './providers.ts';
 
 const noop = (): void => undefined;
+
+describe('benchToday', () => {
+  it('is the day a run names, else the clock’s', () => {
+    expect(benchToday('Europe/Vienna', '2026-11-18')).toBe('2026-11-18');
+    expect(benchToday('Europe/Vienna', ' 2026-11-18 ')).toBe('2026-11-18');
+    expect(benchToday('Europe/Vienna', '')).toMatch(/^\d{4}-\d{2}-\d{2}$/u);
+    expect(benchToday('Europe/Vienna', undefined)).toMatch(/^\d{4}-\d{2}-\d{2}$/u);
+  });
+
+  it('refuses what is no day', () => {
+    expect(() => benchToday('Europe/Vienna', 'Wednesday')).toThrow(/MODEL_BENCH_TODAY is no day/u);
+    expect(() => benchToday('Europe/Vienna', '2026-02-30')).toThrow(/MODEL_BENCH_TODAY is no day/u);
+  });
+});
 
 describe('recording', () => {
   it('lands a call in the turn it started in, however late it finishes', async () => {

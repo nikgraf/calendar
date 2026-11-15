@@ -216,14 +216,30 @@ the served model (#184) and slot proposals (#185) are in
       prompt each, in the next version's one training run); they have no
       bench yet (capture's schema leaves the time and place optional,
       and Apple's model filled no optional field on any quick-add phrase
-      in the bench, 2026-11-11, unmeasured for capture). v2 reads 60 of
-      72 bench cases and misses: a place narrowed to its city ("it's in
-      Vienna" after a venue writes the city alone; the data has no such
-      turn, only real replacements), a long phrase's note, "Call
-      tomorrow at 4, invite Max" as a to-do, a title that keeps "event
-      for"; find a time (36 of 40) titles a sentence that names no
+      in the bench, 2026-11-11, unmeasured for capture). v2 reads 263 of
+      305 bench cases (v1 237; the bench as it grew on 2026-11-15, #327) and
+      misses, heaviest first: a place narrowed to its city or street
+      (eight flows: "it's in Vienna" after a venue writes the city
+      alone; the data has no such turn, only real replacements); guests
+      in a later turn ("invite Sarah instead of Tom", "Jörg doch nicht",
+      "invite him too", two names joined by "and") and in a long phrase;
+      "a week later" counted from today, not from the draft's day; an
+      end said on its own ("it ends at 11", "from 10pm to 2am"); a long
+      phrase's note; a typo in the day ("tomorow", "wendsday"); "Call
+      tomorrow at 4, invite Max" as a to-do; a title that keeps "event
+      for". Find a time (109 of 124) titles a sentence that names no
       purpose with its own words ("Find 30 minutes") and reads "the next
-      two weeks" as next week. Also open: a model for 6 GB iPhones (Q4_K_M, 1.2 GB loaded,
+      two weeks" as starting next Monday. Three conventions need a
+      decision before the next labels are made, since the teacher and
+      the bench differ and a model trained on the teacher fails the
+      bench's case: a destination ("Trip to Vienna": the title, or the
+      place), a to-do's place ("pick up the keys at reception": the
+      teacher drops it, and a to-do has no place to hold it), and
+      "Vacation until Friday" (the title keeps it, because no phrase
+      can make a draft of several days: the answer has no end day). In
+      the thread, a full name does not close an open choice of guests
+      ("invite Anna", then "invite Anna Lee" leaves Anna to pick from:
+      `flow-lunch-guests` fails on it for every model). Also open: a model for 6 GB iPhones (Q4_K_M, 1.2 GB loaded,
       or a smaller base); "next Friday" and deadlines ("before Friday")
       are read as the teacher read them, which wavers; notes over 200
       characters or on several lines are not shown to the model, so the

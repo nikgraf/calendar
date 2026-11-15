@@ -1,0 +1,23 @@
+{
+  "blind": true,
+  "lang": "de",
+  "tags": ["flow", "notifications", "de"],
+  "turns": [
+    {
+      "input": { "text": "Arzttermin Mittwoch um 8" },
+      "expect": { "title": "arzttermin", "weekday": 3, "startTime": "08:00", "endTime": "09:00" }
+    },
+    {
+      "input": { "text": "erinnere mich 15 Minuten vorher" },
+      "expect": { "reminders": [15] }
+    },
+    {
+      "input": { "text": "und auch einen Tag vorher" },
+      "expect": { "reminders": [15, 1440] }
+    },
+    {
+      "input": { "text": "keine Erinnerungen" },
+      "expect": { "reminders": [] }
+    }
+  ]
+}

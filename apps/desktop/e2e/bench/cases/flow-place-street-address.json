@@ -1,0 +1,24 @@
+{
+  "lang": "en",
+  "tags": ["flow", "location", "follow-up"],
+  "turns": [
+    {
+      "input": { "text": "Massage tomorrow at 4" },
+      "expect": {
+        "title": "massage",
+        "dayOffset": 1,
+        "startTime": "16:00",
+        "endTime": "17:00",
+        "location": null
+      }
+    },
+    {
+      "input": { "text": "at Studio Nord" },
+      "expect": { "location": "studio nord" }
+    },
+    {
+      "input": { "text": "it's at Linzer Straße 12" },
+      "expect": { "locationIs": "studio nord, linzer straße 12" }
+    }
+  ]
+}

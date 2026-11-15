@@ -1,0 +1,11 @@
+{
+  "blind": true,
+  "lang": "en",
+  "tags": ["time"],
+  "turns": [
+    {
+      "input": { "text": "Dinner Friday 7 to 9:30" },
+      "expect": { "title": "dinner", "weekday": 5, "startTime": "19:00", "endTime": "21:30" }
+    }
+  ]
+}

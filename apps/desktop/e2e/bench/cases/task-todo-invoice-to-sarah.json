@@ -1,0 +1,10 @@
+{
+  "lang": "en",
+  "tags": ["task", "title"],
+  "turns": [
+    {
+      "input": { "text": "to-do: send the invoice to Sarah" },
+      "expect": { "kind": "task", "title": "send the invoice to sarah" }
+    }
+  ]
+}

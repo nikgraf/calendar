@@ -1,0 +1,16 @@
+{
+  "lang": "en",
+  "tags": ["time"],
+  "turns": [
+    {
+      "input": { "text": "Call with Sarah tomorrow at 2 for 20 minutes" },
+      "expect": {
+        "title": "call with sarah",
+        "dayOffset": 1,
+        "startTime": "14:00",
+        "endTime": "14:20",
+        "guests": {}
+      }
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "lang": "en",
+  "tags": ["refuse"],
+  "turns": [
+    {
+      "input": { "text": "what's the weather tomorrow" },
+      "expect": { "rejected": true }
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "lang": "de",
+  "tags": ["task", "de"],
+  "turns": [
+    {
+      "input": { "text": "Erinnere mich daran, morgen Oma anzurufen" },
+      "expect": { "kind": "task", "titleIncludes": "oma", "dayOffset": 1 }
+    }
+  ]
+}

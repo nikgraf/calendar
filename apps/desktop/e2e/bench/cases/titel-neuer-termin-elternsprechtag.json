@@ -1,0 +1,16 @@
+{
+  "lang": "de",
+  "tags": ["title", "command", "de"],
+  "turns": [
+    {
+      "input": { "text": "Neuer Termin: Elternsprechtag am Donnerstag um 17 Uhr" },
+      "expect": {
+        "kind": "event",
+        "title": "elternsprechtag",
+        "weekday": 4,
+        "startTime": "17:00",
+        "endTime": "18:00"
+      }
+    }
+  ]
+}

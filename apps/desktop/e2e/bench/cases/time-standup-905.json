@@ -1,0 +1,10 @@
+{
+  "lang": "en",
+  "tags": ["time"],
+  "turns": [
+    {
+      "input": { "text": "Standup at 9:05 tomorrow" },
+      "expect": { "title": "standup", "dayOffset": 1, "startTime": "09:05", "endTime": "10:05" }
+    }
+  ]
+}

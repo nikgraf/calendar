@@ -1,0 +1,10 @@
+{
+  "lang": "en",
+  "tags": ["date"],
+  "turns": [
+    {
+      "input": { "text": "Checkup in three weeks at 9am" },
+      "expect": { "title": "checkup", "dayOffset": 21, "startTime": "09:00", "endTime": "10:00" }
+    }
+  ]
+}

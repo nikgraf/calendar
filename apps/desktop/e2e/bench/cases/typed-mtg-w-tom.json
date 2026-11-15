@@ -1,0 +1,16 @@
+{
+  "lang": "en",
+  "tags": ["typed", "title"],
+  "turns": [
+    {
+      "input": { "text": "mtg w tom thu 3pm" },
+      "expect": {
+        "title": ["mtg w tom", "mtg with tom", "meeting with tom"],
+        "weekday": 4,
+        "startTime": "15:00",
+        "endTime": "16:00",
+        "guests": {}
+      }
+    }
+  ]
+}

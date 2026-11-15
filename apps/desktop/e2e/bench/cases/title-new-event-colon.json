@@ -1,0 +1,11 @@
+{
+  "blind": true,
+  "lang": "en",
+  "tags": ["title", "command", "allday"],
+  "turns": [
+    {
+      "input": { "text": "New event: team offsite on Friday" },
+      "expect": { "kind": "event", "title": "team offsite", "weekday": 5, "isAllDay": true }
+    }
+  ]
+}

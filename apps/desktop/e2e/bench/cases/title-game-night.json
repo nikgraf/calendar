@@ -1,0 +1,16 @@
+{
+  "lang": "en",
+  "tags": ["title"],
+  "turns": [
+    {
+      "input": { "text": "Game night Friday at 8" },
+      "expect": {
+        "title": "game night",
+        "weekday": 5,
+        "startTime": "20:00",
+        "endTime": "21:00",
+        "assumedTime": false
+      }
+    }
+  ]
+}

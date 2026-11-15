@@ -1,0 +1,16 @@
+{
+  "lang": "en",
+  "tags": ["guests", "title"],
+  "turns": [
+    {
+      "input": { "text": "Coffee with Tom tomorrow at 10 and invite Anna Berger" },
+      "expect": {
+        "title": "coffee with tom",
+        "dayOffset": 1,
+        "startTime": "10:00",
+        "endTime": "11:00",
+        "guests": { "emails": ["anna.berger@example.com"] }
+      }
+    }
+  ]
+}

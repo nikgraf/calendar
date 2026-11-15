@@ -48,6 +48,14 @@ const task = (prefill: { date?: string; time?: string; title?: string } = {}): B
 
 const drafted = (draft: BenchDraft) => ({ draft, kind: 'draft' as const });
 
+/** A monthly repeat on these days, as an expectation. */
+const monthly = (byDay: ReadonlyArray<string>) => ({
+  repeat: { byDay, freq: 'monthly' as const },
+});
+
+/** The fixture event on another day. */
+const on = (date: string) => drafted(event({ date }));
+
 const contact = (displayName: string, email: string): Contact =>
   new Contact({ displayName, email, id: `device:${email}`, source: 'device' });
 
@@ -115,6 +123,97 @@ describe('check', () => {
       'weekday=5 (2026-08-28)',
     ]);
     expect(check({ dayOffset: 1 }, draft, undefined, TODAY).notes).toEqual(['day=2026-08-28']);
+  });
+
+  it('reads a date said by its number as the next such day', () => {
+    // TODAY is the 22nd of August, the draft's day the 28th.
+    const draft = drafted(event());
+    expect(check({ dayOfMonth: 28, month: 8 }, draft, undefined, TODAY).failed).toEqual([]);
+    expect(check({ dayOfMonth: 27 }, draft, undefined, TODAY).notes).toEqual(['day=2026-08-28']);
+    expect(check({ month: 9 }, draft, undefined, TODAY).notes).toEqual(['day=2026-08-28']);
+    // The right day of the right month, a year back: it has passed.
+    const passed = drafted(event({ date: '2025-08-28' }));
+    expect(check({ dayOfMonth: 28, month: 8 }, passed, undefined, TODAY)).toMatchObject({
+      failed: ['date'],
+      notes: ['day=2025-08-28 (passed)'],
+    });
+    // Today itself is the next such day.
+    expect(
+      check({ dayOfMonth: 22 }, drafted(event({ date: TODAY })), undefined, TODAY).failed,
+    ).toEqual([]);
+  });
+
+  it('takes the next such day only, not the same day a year on', () => {
+    // With its month, the one next such day.
+    expect(check({ dayOfMonth: 5, month: 12 }, on('2026-12-05'), undefined, TODAY).failed).toEqual(
+      [],
+    );
+    expect(check({ dayOfMonth: 5, month: 12 }, on('2027-12-05'), undefined, TODAY)).toMatchObject({
+      failed: ['date'],
+      notes: ['day=2027-12-05 (not the next)'],
+    });
+    // A month that has passed this year is next year's.
+    expect(check({ dayOfMonth: 3, month: 2 }, on('2027-02-03'), undefined, TODAY).failed).toEqual(
+      [],
+    );
+    // A day of the month alone, in a first phrase: the next such day and no other.
+    expect(check({ dayOfMonth: 23 }, on('2026-08-23'), undefined, TODAY).failed).toEqual([]);
+    expect(check({ dayOfMonth: 23 }, on('2026-09-23'), undefined, TODAY).notes).toEqual([
+      'day=2026-09-23 (not the next)',
+    ]);
+    // The 14th has passed in August: September's.
+    expect(check({ dayOfMonth: 14 }, on('2026-09-14'), undefined, TODAY).failed).toEqual([]);
+    expect(check({ dayOfMonth: 14 }, on('2026-10-14'), undefined, TODAY).failed).toContain('date');
+    // A 31st skips the months that have none.
+    expect(check({ dayOfMonth: 31 }, on('2026-08-31'), undefined, TODAY).failed).toEqual([]);
+    expect(check({ dayOfMonth: 31 }, on('2026-10-31'), undefined, TODAY).failed).toContain('date');
+  });
+
+  it('lets a later turn keep the month of the draft it changes', () => {
+    // "The 23rd instead", said to a draft in October: October's, or the next from today.
+    const october = event({ date: '2026-10-12' });
+    const moved = (date: string) =>
+      check({ dayOfMonth: 23 }, drafted(event({ date })), october, TODAY).failed;
+    expect(moved('2026-10-23')).toEqual([]);
+    expect(moved('2026-08-23')).toEqual([]);
+    expect(moved('2026-09-23')).toEqual(['date']);
+    expect(moved('2026-11-23')).toEqual(['date']);
+    // A draft in a month without that day adds nothing: the next 31st from today only.
+    const september = event({ date: '2026-09-10' });
+    expect(
+      check({ dayOfMonth: 31 }, drafted(event({ date: '2026-10-31' })), september, TODAY).failed,
+    ).toEqual(['date']);
+    expect(
+      check({ dayOfMonth: 31 }, drafted(event({ date: '2026-08-31' })), september, TODAY).failed,
+    ).toEqual([]);
+    // With its month said, the draft's month is nothing to keep.
+    expect(
+      check({ dayOfMonth: 23, month: 9 }, drafted(event({ date: '2026-10-23' })), october, TODAY)
+        .failed,
+    ).toEqual(['date']);
+  });
+
+  it('counts the days an event runs past its first', () => {
+    const overnight = event({ endDate: '2026-08-29', endTime: '02:00', startTime: '22:00' });
+    expect(
+      check({ endTime: '02:00', spanDays: 1 }, drafted(overnight), undefined, TODAY).failed,
+    ).toEqual([]);
+    expect(check({ spanDays: 0 }, drafted(overnight), undefined, TODAY)).toMatchObject({
+      failed: ['time'],
+      notes: ['span=1d'],
+    });
+    expect(check({ spanDays: 1 }, drafted(event()), undefined, TODAY).notes).toEqual(['span=0d']);
+    // A later turn that moves the day keeps the span: the time reads as it did.
+    const moved = drafted(
+      event({ date: '2026-08-30', endDate: '2026-08-31', endTime: '02:00', startTime: '22:00' }),
+    );
+    expect(check({ dayOffset: 8 }, moved, overnight, TODAY).failed).toEqual([]);
+    // One that drops the second day changed the time.
+    const oneDay = drafted(event({ endTime: '02:00', startTime: '22:00' }));
+    expect(check({ title: 'dinner with teo' }, oneDay, overnight, TODAY)).toMatchObject({
+      failed: ['unchanged'],
+      notes: ['changed time: 22:00-02:00'],
+    });
   });
 
   it('holds times, all-day and assumed times apart', () => {
@@ -226,6 +325,26 @@ describe('check', () => {
     expect(check({ repeat: { freq: 'daily' } }, drafted(event()), undefined, TODAY).notes).toEqual([
       'repeat=-',
     ]);
+  });
+
+  it('a monthly rule’s weekday is held to its place in the month', () => {
+    const lastFriday = drafted(
+      event({ recurrence: { byDay: [{ ordinal: -1, weekday: 'FR' }], freq: 'monthly' } }),
+    );
+    expect(check(monthly(['-1FR']), lastFriday, undefined, TODAY).failed).toEqual([]);
+    // The first Friday is another schedule, and so is a Friday without a place.
+    expect(check(monthly(['1FR']), lastFriday, undefined, TODAY).notes).toEqual([
+      'repeat=monthly on -1FR',
+    ]);
+    expect(check(monthly(['FR']), lastFriday, undefined, TODAY).failed).toEqual(['repeat']);
+    expect(
+      check(
+        monthly(['-1FR']),
+        drafted(event({ recurrence: { byDay: [{ weekday: 'FR' }], freq: 'monthly' } })),
+        undefined,
+        TODAY,
+      ).failed,
+    ).toEqual(['repeat']);
   });
 
   it('guests are the list and the open choices, as sets; absent means none', () => {
@@ -395,6 +514,8 @@ describe('fieldsOf', () => {
       'notes',
       'reminders',
     ]);
+    expect(fieldsOf({ dayOfMonth: 3, spanDays: 1 })).toEqual(['date', 'time']);
+    expect(fieldsOf({ month: 3 })).toEqual(['date']);
     expect(fieldsOf({ rejected: true, title: 'ignored' })).toEqual(['rejected']);
   });
 });

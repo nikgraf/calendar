@@ -1,0 +1,21 @@
+{
+  "lang": "de",
+  "tags": ["title", "command", "de"],
+  "turns": [
+    {
+      "input": { "text": "Mach mir bitte einen Termin für die Autowerkstatt am Montag um 8" },
+      "expect": {
+        "kind": "event",
+        "title": [
+          "autowerkstatt",
+          "termin autowerkstatt",
+          "autowerkstatt-termin",
+          "termin für die autowerkstatt"
+        ],
+        "weekday": 1,
+        "startTime": "08:00",
+        "endTime": "09:00"
+      }
+    }
+  ]
+}

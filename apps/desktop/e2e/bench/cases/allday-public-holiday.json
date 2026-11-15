@@ -1,0 +1,10 @@
+{
+  "lang": "en",
+  "tags": ["allday"],
+  "turns": [
+    {
+      "input": { "text": "Public holiday on Monday" },
+      "expect": { "title": "public holiday", "weekday": 1, "isAllDay": true }
+    }
+  ]
+}

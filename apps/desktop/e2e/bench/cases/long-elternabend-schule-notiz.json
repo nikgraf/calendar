@@ -1,0 +1,20 @@
+{
+  "lang": "de",
+  "tags": ["long", "location", "notes", "de"],
+  "turns": [
+    {
+      "input": {
+        "text": "Neuer Termin: Elternabend am Donnerstag von 19 bis 21 Uhr in der Schule, Notiz: Formular für den Ausflug mitbringen"
+      },
+      "expect": {
+        "kind": "event",
+        "title": "elternabend",
+        "weekday": 4,
+        "startTime": "19:00",
+        "endTime": "21:00",
+        "location": "schule",
+        "notes": "formular"
+      }
+    }
+  ]
+}

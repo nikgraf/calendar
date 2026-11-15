@@ -1,0 +1,16 @@
+{
+  "lang": "en",
+  "tags": ["task"],
+  "turns": [
+    {
+      "input": { "text": "Meeting with the bank tomorrow at 9" },
+      "expect": {
+        "kind": "event",
+        "title": "meeting with the bank",
+        "dayOffset": 1,
+        "startTime": "09:00",
+        "endTime": "10:00"
+      }
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "lang": "de",
+  "tags": ["flow", "notes", "de"],
+  "turns": [
+    {
+      "input": { "text": "Elterngespräch Montag um 17 Uhr" },
+      "expect": {
+        "title": "elterngespräch",
+        "weekday": 1,
+        "startTime": "17:00",
+        "endTime": "18:00"
+      }
+    },
+    {
+      "input": { "text": "Notiz: Zeugnis mitbringen" },
+      "expect": { "notes": "zeugnis mitbringen" }
+    },
+    {
+      "input": { "text": "noch eine Notiz: Fragen zur Mathenote" },
+      "expect": { "notes": "mathenote" }
+    }
+  ]
+}

@@ -5,12 +5,14 @@ import type { FindTimeResult } from '@calendar/ai';
 import { describe, expect, it } from 'vite-plus/test';
 import {
   checkFinder,
+  compareFinderReports,
   datesSearched,
   expectedBounds,
   expectedWindows,
   type FinderCase,
   type FinderExpectation,
   type FinderReport,
+  formatFinderReport,
   loadFinderCases,
   readAnswer,
   rescoreFinder,
@@ -296,5 +298,132 @@ describe('readAnswer and rescoreFinder', () => {
     });
     expect(twice.report.rescored).toMatchObject({ sha: 'aaaa1111', when: run.when });
     expect(twice.report.sha).toBe('cccc3333');
+  });
+});
+
+const answered = (finderCase: FinderCase, answer: unknown) => ({
+  answer,
+  arms: readAnswer(answer, finderCase, FRIDAY),
+  blind: finderCase.blind === true,
+  id: finderCase.id,
+  lang: 'en',
+  ms: 400,
+  prompt: 'p',
+  text: finderCase.text,
+});
+const reportOf = (
+  cases: FinderReport['cases'],
+  over: Partial<FinderReport> = {},
+): FinderReport => ({
+  cases,
+  provider: 'openai:assistant-v2',
+  score: scoreOf(cases),
+  sha: 'aaaa1111',
+  timeZone: 'Europe/Vienna',
+  today: FRIDAY,
+  when: '2026-11-13T10:00:00.000Z',
+  ...over,
+});
+
+describe('formatFinderReport and compareFinderReports', () => {
+  const walk: FinderCase = {
+    expect: expectation({ title: ['walk'] }),
+    id: 'walk',
+    lang: 'en',
+    text: 'Find time for a walk',
+  };
+  const sealed: FinderCase = { ...walk, blind: true, id: 'sealed', text: 'Time for a walk?' };
+  const right = { title: 'Walk' };
+  const wrong = { title: 'Find time' };
+
+  it('prints each arm’s score and every case an arm got wrong', () => {
+    const text = formatFinderReport(
+      reportOf([answered(walk, wrong), answered({ ...walk, id: 'walk-2' }, right)]),
+    );
+    expect(text).toContain('== openai:assistant-v2');
+    expect(text).toContain('   median 0.4s per phrase');
+    expect(text).toContain(
+      '   raw    cases 1/2 · duration 2/2 · dates 2/2 · bounds 2/2 · title 1/2',
+    );
+    expect(text).toContain('   ✗ walk  "Find time for a walk"');
+    expect(text).toContain('       raw: title=');
+    expect(text).not.toContain('walk-2');
+    // No blind case: nothing about sets.
+    expect(text).not.toContain('   open ');
+  });
+
+  it('counts a blind case in every score and gives it no line of its own', () => {
+    const report = reportOf([answered(walk, right), answered(sealed, wrong)]);
+    const text = formatFinderReport(report);
+    expect(text).not.toContain('sealed');
+    expect(text).not.toContain('Time for a walk?');
+    expect(text).toContain('   raw    cases 1/2');
+    expect(text).toContain(
+      '   open  raw    cases 1/1 · duration 1/1 · dates 1/1 · bounds 1/1 · title 1/1',
+    );
+    expect(text).toContain(
+      '   blind raw    cases 0/1 · duration 1/1 · dates 1/1 · bounds 1/1 · title 0/1',
+    );
+    expect(formatFinderReport(report, { showBlind: true })).toContain(
+      '   ✗ sealed (blind)  "Time for a walk?"',
+    );
+  });
+
+  it('compares two runs arm by arm, a blind flip counted and not named', () => {
+    const before = reportOf([answered(walk, wrong), answered(sealed, wrong)], {
+      sha: 'old0000',
+      when: '2026-11-12T09:00:00.000Z',
+    });
+    const after = reportOf([answered(walk, right), answered(sealed, right)], {
+      pipeline: 'tuned',
+    });
+    const text = compareFinderReports(before, after);
+    expect(text).toContain('   vs old0000 (2026-11-12T09:00): rules 0/2 → 2/2, raw 0/2 → 2/2');
+    expect(text).toContain('   asked differently: app → tuned');
+    expect(text).toContain('   raw:\n   fixed: walk · 1 blind');
+    expect(text).toContain('2 fixed, 0 broke: by chance alone p = 0.50');
+    expect(text).not.toContain('sealed');
+    // Nothing moved: only the line that names the earlier run.
+    expect(compareFinderReports(before, before).split('\n')).toHaveLength(1);
+  });
+
+  it('leaves a reworded sentence out of the flips', () => {
+    const before = reportOf([answered(walk, wrong), answered(sealed, wrong)]);
+    const reworded = { ...walk, text: 'Find an hour for a walk' };
+    const after = reportOf([answered(reworded, right), answered(sealed, right)]);
+    const text = compareFinderReports(before, after);
+    expect(text).toContain('   not compared (other words in the two runs): walk');
+    // Only the blind case, read in the same words, is a flip.
+    expect(text).toContain('   raw:\n   fixed: 1 blind');
+    expect(text).not.toContain('fixed: walk');
+    expect(text).toContain('1 fixed, 0 broke');
+  });
+
+  it('says when two runs were not set up alike or read on two days', () => {
+    const before = reportOf([answered(walk, right)], { settings: 'http://localhost:8091/v1' });
+    const after = reportOf([answered(walk, right)], {
+      settings: 'http://localhost:8093/v1',
+      today: '2026-11-18',
+    });
+    const text = compareFinderReports(before, after);
+    expect(text).toContain('   settings: http://localhost:8091/v1 → http://localhost:8093/v1');
+    expect(text).toContain('   read on two days, 2026-11-13 → 2026-11-18');
+  });
+
+  it('warns that a weekend day leaves "this week" without weekdays', () => {
+    const friday = reportOf([answered(walk, right)]);
+    expect(formatFinderReport(friday)).not.toContain('weekend day');
+    expect(formatFinderReport({ ...friday, today: '2026-11-15' })).toContain(
+      '   read on a weekend day: "this week" has no weekday left',
+    );
+  });
+
+  it('scores a report again with the cases’ blind flags as they are now', () => {
+    const run = reportOf([{ ...answered(walk, right), blind: undefined }]);
+    const { report } = rescoreFinder(run, [{ ...walk, blind: true }], {
+      sha: 'bbbb2222',
+      when: '2026-11-14T10:00:00.000Z',
+    });
+    expect(report.cases[0]?.blind).toBe(true);
   });
 });

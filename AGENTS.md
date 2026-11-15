@@ -176,7 +176,10 @@ commits by staging deliberately.
   would put the event; a table and a report under `output/bench/`, never a
   gate. `finderBench.e2e.ts` beside it scores find a time's sentences
   (`finder.json`) on the same models, with the word rules and without.
-  Format and variables: `apps/desktop/e2e/bench/README.md`.
+  A case marked `"blind": true` is counted and never named: do not read
+  the blind cases or a report's answers to them while writing briefs,
+  prompts or checks. Format and variables:
+  `apps/desktop/e2e/bench/README.md`.
 - `GOOGLE_LIVE=1 pnpm exec vp test run` — the live Google suite
   (`packages/sync/src/live/*.live.ts`) against the dedicated test account
   over the real API; desktop

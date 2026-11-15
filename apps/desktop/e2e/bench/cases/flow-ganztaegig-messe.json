@@ -1,0 +1,19 @@
+{
+  "blind": true,
+  "lang": "de",
+  "tags": ["flow", "allday", "de"],
+  "turns": [
+    {
+      "input": { "text": "Messe am Dienstag" },
+      "expect": { "title": "messe", "weekday": 2, "isAllDay": true }
+    },
+    {
+      "input": { "text": "um 9 Uhr" },
+      "expect": { "startTime": "09:00", "endTime": "10:00" }
+    },
+    {
+      "input": { "text": "ganztägig" },
+      "expect": { "isAllDay": true }
+    }
+  ]
+}

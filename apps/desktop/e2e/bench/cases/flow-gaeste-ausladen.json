@@ -1,0 +1,29 @@
+{
+  "blind": true,
+  "lang": "de",
+  "tags": ["flow", "guests", "de"],
+  "turns": [
+    {
+      "input": { "text": "Teammeeting Donnerstag um 11" },
+      "expect": {
+        "title": "teammeeting",
+        "weekday": 4,
+        "startTime": "11:00",
+        "endTime": "12:00",
+        "guests": {}
+      }
+    },
+    {
+      "input": { "text": "lade Sarah Novak ein" },
+      "expect": { "guests": { "emails": ["sarah.novak@example.com"] } }
+    },
+    {
+      "input": { "text": "und Teo Marin auch" },
+      "expect": { "guests": { "emails": ["sarah.novak@example.com", "teo.marin@example.com"] } }
+    },
+    {
+      "input": { "text": "Sarah wieder ausladen" },
+      "expect": { "guests": { "emails": ["teo.marin@example.com"] } }
+    }
+  ]
+}

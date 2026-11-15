@@ -1,0 +1,16 @@
+{
+  "lang": "en",
+  "tags": ["time"],
+  "turns": [
+    {
+      "input": { "text": "Tennis Sunday morning" },
+      "expect": {
+        "title": "tennis",
+        "weekday": 7,
+        "startTime": "09:00",
+        "endTime": "10:00",
+        "assumedTime": true
+      }
+    }
+  ]
+}

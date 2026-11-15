@@ -1,0 +1,10 @@
+{
+  "lang": "en",
+  "tags": ["date", "allday"],
+  "turns": [
+    {
+      "input": { "text": "Conference May 12" },
+      "expect": { "title": "conference", "dayOfMonth": 12, "month": 5, "isAllDay": true }
+    }
+  ]
+}

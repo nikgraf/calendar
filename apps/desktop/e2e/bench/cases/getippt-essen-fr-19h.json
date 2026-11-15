@@ -1,0 +1,16 @@
+{
+  "lang": "de",
+  "tags": ["typed", "de"],
+  "turns": [
+    {
+      "input": { "text": "essen mit teo fr 19h" },
+      "expect": {
+        "title": "essen mit teo",
+        "weekday": 5,
+        "startTime": "19:00",
+        "endTime": "20:00",
+        "guests": {}
+      }
+    }
+  ]
+}

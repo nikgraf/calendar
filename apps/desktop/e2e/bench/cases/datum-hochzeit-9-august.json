@@ -1,0 +1,17 @@
+{
+  "blind": true,
+  "lang": "de",
+  "tags": ["date", "allday", "de"],
+  "turns": [
+    {
+      "input": { "text": "Hochzeit von Sarah am 9. August" },
+      "expect": {
+        "title": "hochzeit von sarah",
+        "dayOfMonth": 9,
+        "month": 8,
+        "isAllDay": true,
+        "guests": {}
+      }
+    }
+  ]
+}

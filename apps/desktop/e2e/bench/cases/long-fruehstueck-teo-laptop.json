@@ -1,0 +1,22 @@
+{
+  "blind": true,
+  "lang": "de",
+  "tags": ["long", "location", "notes", "de"],
+  "turns": [
+    {
+      "input": {
+        "text": "Trag bitte für übermorgen um halb neun ein Frühstück mit Teo im Cafe Fino ein und notier dazu, dass er den Laptop zurückbringt"
+      },
+      "expect": {
+        "kind": "event",
+        "title": "frühstück mit teo",
+        "dayOffset": 2,
+        "startTime": "08:30",
+        "endTime": "09:30",
+        "location": "cafe fino",
+        "guests": {},
+        "notes": "laptop"
+      }
+    }
+  ]
+}

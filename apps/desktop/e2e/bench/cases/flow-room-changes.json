@@ -1,0 +1,24 @@
+{
+  "lang": "en",
+  "tags": ["flow", "location"],
+  "turns": [
+    {
+      "input": { "text": "Meeting tomorrow at 10 in room 3" },
+      "expect": {
+        "title": "meeting",
+        "dayOffset": 1,
+        "startTime": "10:00",
+        "endTime": "11:00",
+        "location": "room 3"
+      }
+    },
+    {
+      "input": { "text": "room 5 instead" },
+      "expect": { "locationIs": "room 5" }
+    },
+    {
+      "input": { "text": "drop the location" },
+      "expect": { "location": null }
+    }
+  ]
+}

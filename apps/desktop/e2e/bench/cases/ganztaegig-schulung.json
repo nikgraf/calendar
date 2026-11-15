@@ -1,0 +1,11 @@
+{
+  "blind": true,
+  "lang": "de",
+  "tags": ["allday", "title", "de"],
+  "turns": [
+    {
+      "input": { "text": "Ganztägige Schulung am Dienstag" },
+      "expect": { "title": ["schulung", "ganztägige schulung"], "weekday": 2, "isAllDay": true }
+    }
+  ]
+}

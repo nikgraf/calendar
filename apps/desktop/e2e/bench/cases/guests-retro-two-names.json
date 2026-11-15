@@ -1,0 +1,16 @@
+{
+  "lang": "en",
+  "tags": ["guests"],
+  "turns": [
+    {
+      "input": { "text": "Retro Thursday at 4, invite Teo and Jo Winter" },
+      "expect": {
+        "title": "retro",
+        "weekday": 4,
+        "startTime": "16:00",
+        "endTime": "17:00",
+        "guests": { "emails": ["teo.marin@example.com", "jo@example.com"] }
+      }
+    }
+  ]
+}

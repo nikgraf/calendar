@@ -62,7 +62,9 @@ export const rescore = (
       !caseReport.turns.every((turn, index) => sameWords(turn, benchCase.turns[index]!.input))
     ) {
       stale.push(caseReport.id);
-      return caseReport;
+      // Left as the report had it, but blind as the case is now: a report
+      // from before the flag must not print a blind case's line.
+      return benchCase === undefined ? caseReport : { ...caseReport, blind: benchCase.blind };
     }
     let draft: BenchDraft | undefined;
     const turns = caseReport.turns.map((turn, index): TurnReport => {
@@ -86,7 +88,13 @@ export const rescore = (
         said,
       };
     });
-    return { ...caseReport, ok: turns.every((turn) => turn.failed.length === 0), turns };
+    return {
+      ...caseReport,
+      // Blind as the case is now, whatever it was when the model answered.
+      blind: benchCase.blind,
+      ok: turns.every((turn) => turn.failed.length === 0),
+      turns,
+    };
   });
   return {
     ...report,
