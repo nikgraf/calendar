@@ -552,7 +552,7 @@ const buildAtoms = (client: BackendClient, deviceZone: Atom.Atom<string>) => {
       (payload: BackendPayload<M>) =>
         Effect.gen(function* () {
           const backend = yield* AppBackend;
-          return (yield* backend[method](payload as never)) as BackendSuccess<M>;
+          return yield* backend[method](payload);
         }),
       { reactivityKeys },
     );
@@ -670,7 +670,7 @@ export const runMutation = async <M extends MutationName>(
   payload: BackendPayload<M>,
 ): Promise<BackendSuccess<M>> => {
   const atom = atoms.mutationCall(name);
-  registry.set(atom, payload as never);
+  registry.set(atom, payload);
   const result: Effect.Effect<BackendSuccess<M>, unknown> = AtomRegistry.getResult(registry, atom, {
     suspendOnWaiting: true,
   });

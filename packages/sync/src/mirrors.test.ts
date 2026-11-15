@@ -539,7 +539,7 @@ describe('calendar mirrors', () => {
           summary: 'Gone',
           timeZone: 'UTC',
         };
-        const destination = appleMirrorDestination(world.apple.client, calendar as never);
+        const destination = appleMirrorDestination(world.apple.client, calendar);
         const copy = {
           allDay: false,
           contentHash: '0123456789abcdef',
@@ -715,7 +715,7 @@ describe('calendar mirrors', () => {
         const reminder = (title: string, extra: Record<string, unknown> = {}) =>
           world.reminders.client.create({
             listId: 'rem-household',
-            reminder: { title, ...extra } as never,
+            reminder: { title, ...extra },
           });
         const filter = yield* reminder('Clean the filter');
         yield* reminder('Pay the plumber', { dueDate: '2025-03-14' });
