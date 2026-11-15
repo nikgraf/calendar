@@ -246,11 +246,15 @@ commits by staging deliberately.
   directive that names it.
 - Oxlint lints with type information (`lint.options.typeAware` and the
   `typescript/*` rules in `vite.config.ts`): a promise is awaited, or
-  `void`ed where the callee handles its own failure, and a failure value
-  of unknown type becomes text through `failureText` (core), never a
-  `String()` that prints a plain object as `[object Object]`. Add rules in
+  `void`ed where the callee handles its own failure. A failure value that
+  may be a plain object becomes text through `failureText` (core), not
+  `String()`, which prints `[object Object]`; `no-base-to-string` flags
+  only a value typed as an object, never one typed `unknown`. Add rules in
   `vite.config.ts`, not on the command line: `vp lint` given several
-  `--deny` flags prints nothing and exits 0.
+  `--deny` flags prints nothing and exits 0. The root's own TypeScript
+  (`vite.config.ts`, `knip.config.ts`, `scripts/`) is in the root
+  `tsconfig.json`: outside a tsconfig, tsgolint would lint with
+  TypeScript's non-strict defaults and call a needed `!` unnecessary.
 - `pnpm knip` (`knip.config.ts`) fails on a file nothing reaches, an export
   nothing reads, and a dependency nothing imports or an import nothing
   declares. Delete dead code rather than ignore it. An entry point knip

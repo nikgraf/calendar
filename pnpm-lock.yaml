@@ -241,6 +241,9 @@ importers:
       '@nkzw/oxlint-config':
         specifier: ^2.0.1
         version: 2.0.1(eslint@10.6.0(jiti@2.7.0)(supports-color@8.1.1))(oxlint@1.89.0(oxlint-tsgolint@7.0.2004)(vite-plus@1.4.0(@astrojs/compiler-rs@0.5.2)(@types/node@26.6.6)(@vitest/ui@5.0.5)(jiti@2.7.0)(terser@5.48.0)(typescript@7.0.2)(yaml@2.6.0)))(supports-color@8.1.1)(typescript@7.0.2)
+      '@types/node':
+        specifier: ^26.6.6
+        version: 26.6.6
       fflate:
         specifier: 0.8.3
         version: 0.8.3

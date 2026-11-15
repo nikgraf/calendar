@@ -49,7 +49,7 @@ const readJson = (path: string): Record<string, string> =>
 const flags = new Map<string, string>();
 const positional: Array<string> = [];
 for (let index = 2; index < process.argv.length; index++) {
-  const arg = process.argv[index];
+  const arg = process.argv[index]!;
   if (arg.startsWith('--')) {
     const next = process.argv[index + 1];
     if (next !== undefined && !next.startsWith('--')) {

@@ -14,7 +14,7 @@
     "reset:local": "bash scripts/reset-local-data.sh",
     "test": "vp test",
     "test:run": "vp test run",
-    "typecheck": "pnpm --recursive --parallel exec tsc --noEmit",
+    "typecheck": "pnpm --recursive --parallel --include-workspace-root exec tsc --noEmit",
     "test:e2e": "node apps/desktop/scripts/check-helper.mjs && E2E=1 vp test",
     "test:e2e:ios": "pnpm --filter @calendar/ios test:e2e",
     "brand:build": "node scripts/brand/build.mjs",
@@ -22,6 +22,7 @@
   },
   "devDependencies": {
     "@nkzw/oxlint-config": "^2.0.1",
+    "@types/node": "^26.6.6",
     "fflate": "0.8.3",
     "knip": "^6.45.1",
     "sharp": "0.35.5",
