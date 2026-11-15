@@ -1,0 +1,18 @@
+{
+  "lang": "de",
+  "tags": ["flow", "correction", "de"],
+  "turns": [
+    {
+      "input": { "text": "Zahnarzt Dienstag um 9" },
+      "expect": { "title": "zahnarzt", "weekday": 2, "startTime": "09:00", "endTime": "10:00" }
+    },
+    {
+      "input": { "text": "nein, Mittwoch" },
+      "expect": { "weekday": 3 }
+    },
+    {
+      "input": { "text": "ach nein, doch um 10" },
+      "expect": { "startTime": "10:00", "endTime": "11:00" }
+    }
+  ]
+}

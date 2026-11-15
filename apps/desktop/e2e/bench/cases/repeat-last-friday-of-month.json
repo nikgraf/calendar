@@ -1,0 +1,16 @@
+{
+  "lang": "en",
+  "tags": ["repeat"],
+  "turns": [
+    {
+      "input": { "text": "Pay day drinks on the last Friday of every month at 6pm" },
+      "expect": {
+        "title": "pay day drinks",
+        "weekday": 5,
+        "startTime": "18:00",
+        "endTime": "19:00",
+        "repeat": { "freq": "monthly", "byDay": ["FR"] }
+      }
+    }
+  ]
+}

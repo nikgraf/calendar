@@ -1,0 +1,11 @@
+{
+  "blind": true,
+  "lang": "de",
+  "tags": ["allday", "de"],
+  "turns": [
+    {
+      "input": { "text": "Betriebsausflug am Freitag" },
+      "expect": { "title": "betriebsausflug", "weekday": 5, "isAllDay": true }
+    }
+  ]
+}

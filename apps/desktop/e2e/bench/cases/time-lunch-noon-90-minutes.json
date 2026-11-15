@@ -1,0 +1,10 @@
+{
+  "lang": "en",
+  "tags": ["time"],
+  "turns": [
+    {
+      "input": { "text": "Lunch tomorrow at noon for 90 minutes" },
+      "expect": { "title": "lunch", "dayOffset": 1, "startTime": "12:00", "endTime": "13:30" }
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "lang": "en",
+  "tags": ["flow", "allday"],
+  "turns": [
+    {
+      "input": { "text": "Workshop Friday at 10" },
+      "expect": { "title": "workshop", "weekday": 5, "startTime": "10:00", "endTime": "11:00" }
+    },
+    {
+      "input": { "text": "make it all day" },
+      "expect": { "isAllDay": true }
+    },
+    {
+      "input": { "text": "no, 10 to 3" },
+      "expect": { "startTime": "10:00", "endTime": "15:00" }
+    }
+  ]
+}

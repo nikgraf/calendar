@@ -1,0 +1,11 @@
+{
+  "blind": true,
+  "lang": "de",
+  "tags": ["refuse", "de"],
+  "turns": [
+    {
+      "input": { "text": "wie spät ist es" },
+      "expect": { "rejected": true }
+    }
+  ]
+}

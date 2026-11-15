@@ -1,0 +1,16 @@
+{
+  "lang": "en",
+  "tags": ["time", "title", "allday"],
+  "turns": [
+    {
+      "input": { "text": "Night shift Friday from 11pm to 7am" },
+      "expect": {
+        "title": "night shift",
+        "weekday": 5,
+        "startTime": "23:00",
+        "endTime": "07:00",
+        "spanDays": 1
+      }
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "lang": "en",
+  "tags": ["flow", "location"],
+  "turns": [
+    {
+      "input": { "text": "Dinner Saturday at 8" },
+      "expect": {
+        "title": "dinner",
+        "weekday": 6,
+        "startTime": "20:00",
+        "endTime": "21:00",
+        "location": null
+      }
+    },
+    {
+      "input": { "text": "at Restaurant Sole" },
+      "expect": { "location": "restaurant sole" }
+    },
+    {
+      "input": { "text": "actually at Trattoria Roma" },
+      "expect": { "locationIs": "trattoria roma" }
+    }
+  ]
+}

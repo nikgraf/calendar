@@ -1,0 +1,20 @@
+{
+  "lang": "en",
+  "tags": ["long", "guests", "repeat"],
+  "turns": [
+    {
+      "input": {
+        "text": "Weekly sync with the design team every Tuesday at 10 for half an hour, invite Anna Lee and jo@example.com"
+      },
+      "expect": {
+        "kind": "event",
+        "title": ["weekly sync with the design team", "sync with the design team"],
+        "weekday": 2,
+        "startTime": "10:00",
+        "endTime": "10:30",
+        "repeat": { "freq": "weekly" },
+        "guests": { "emails": ["anna.lee@example.com", "jo@example.com"] }
+      }
+    }
+  ]
+}

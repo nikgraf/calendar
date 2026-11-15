@@ -1,0 +1,18 @@
+{
+  "lang": "en",
+  "tags": ["flow", "allday", "task"],
+  "turns": [
+    {
+      "input": { "text": "remind me to hand in the timesheet Friday" },
+      "expect": { "kind": "task", "title": "hand in the timesheet", "weekday": 5, "isAllDay": true }
+    },
+    {
+      "input": { "text": "at 3pm" },
+      "expect": { "startTime": "15:00" }
+    },
+    {
+      "input": { "text": "no specific time" },
+      "expect": { "isAllDay": true }
+    }
+  ]
+}

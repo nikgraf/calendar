@@ -1,0 +1,24 @@
+{
+  "lang": "en",
+  "tags": ["flow", "day"],
+  "turns": [
+    {
+      "input": { "text": "Lunch with Teo tomorrow at 1" },
+      "expect": {
+        "title": "lunch with teo",
+        "dayOffset": 1,
+        "startTime": "13:00",
+        "endTime": "14:00",
+        "guests": {}
+      }
+    },
+    {
+      "input": { "text": "a week later" },
+      "expect": { "dayOffset": 8 }
+    },
+    {
+      "input": { "text": "at 12:30" },
+      "expect": { "startTime": "12:30", "endTime": "13:30" }
+    }
+  ]
+}

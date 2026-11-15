@@ -1,0 +1,16 @@
+{
+  "lang": "de",
+  "tags": ["notifications", "de"],
+  "turns": [
+    {
+      "input": { "text": "Zahnarzt Donnerstag um 15 Uhr, erinnere mich am Tag davor" },
+      "expect": {
+        "title": "zahnarzt",
+        "weekday": 4,
+        "startTime": "15:00",
+        "endTime": "16:00",
+        "reminders": [1440]
+      }
+    }
+  ]
+}

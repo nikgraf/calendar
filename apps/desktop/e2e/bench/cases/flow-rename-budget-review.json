@@ -1,0 +1,18 @@
+{
+  "lang": "en",
+  "tags": ["flow", "title"],
+  "turns": [
+    {
+      "input": { "text": "Check-in Tuesday at 3" },
+      "expect": { "title": "check-in", "weekday": 2, "startTime": "15:00", "endTime": "16:00" }
+    },
+    {
+      "input": { "text": "call it budget review" },
+      "expect": { "title": "budget review" }
+    },
+    {
+      "input": { "text": "rename it to Q3 budget review" },
+      "expect": { "title": "q3 budget review" }
+    }
+  ]
+}

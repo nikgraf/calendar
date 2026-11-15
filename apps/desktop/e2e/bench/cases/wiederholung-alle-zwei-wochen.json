@@ -1,0 +1,16 @@
+{
+  "lang": "de",
+  "tags": ["repeat", "de"],
+  "turns": [
+    {
+      "input": { "text": "Alle zwei Wochen montags um 9 Jour fixe" },
+      "expect": {
+        "title": "jour fixe",
+        "weekday": 1,
+        "startTime": "09:00",
+        "endTime": "10:00",
+        "repeat": { "freq": "weekly", "interval": 2 }
+      }
+    }
+  ]
+}

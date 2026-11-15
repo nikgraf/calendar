@@ -1,0 +1,24 @@
+{
+  "lang": "en",
+  "tags": ["flow", "repeat"],
+  "turns": [
+    {
+      "input": { "text": "Standup Monday at 9" },
+      "expect": {
+        "title": "standup",
+        "weekday": 1,
+        "startTime": "09:00",
+        "endTime": "10:00",
+        "repeat": null
+      }
+    },
+    {
+      "input": { "text": "every weekday" },
+      "expect": { "repeat": { "freq": "weekly", "byDay": ["MO", "TU", "WE", "TH", "FR"] } }
+    },
+    {
+      "input": { "text": "except Wednesday" },
+      "expect": { "repeat": { "freq": "weekly", "byDay": ["MO", "TU", "TH", "FR"] } }
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "blind": true,
+  "lang": "en",
+  "tags": ["flow", "location", "follow-up"],
+  "turns": [
+    {
+      "input": { "text": "Dim sum Friday at 12:30" },
+      "expect": {
+        "title": "dim sum",
+        "weekday": 5,
+        "startTime": "12:30",
+        "endTime": "13:30",
+        "location": null
+      }
+    },
+    {
+      "input": { "text": "at Motto" },
+      "expect": { "location": "motto" }
+    },
+    {
+      "input": { "text": "that's in Vienna" },
+      "expect": { "locationIs": "motto, vienna" }
+    },
+    {
+      "input": { "text": "no, make it Cafe Luna" },
+      "expect": { "locationIs": "cafe luna" }
+    }
+  ]
+}

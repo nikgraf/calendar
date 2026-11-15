@@ -1,0 +1,16 @@
+{
+  "lang": "en",
+  "tags": ["dictated", "command"],
+  "turns": [
+    {
+      "input": { "text": "okay add yoga on monday at six in the evening please" },
+      "expect": {
+        "kind": "event",
+        "title": "yoga",
+        "weekday": 1,
+        "startTime": "18:00",
+        "endTime": "19:00"
+      }
+    }
+  ]
+}

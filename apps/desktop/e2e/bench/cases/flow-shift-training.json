@@ -1,0 +1,19 @@
+{
+  "blind": true,
+  "lang": "de",
+  "tags": ["flow", "shift", "de"],
+  "turns": [
+    {
+      "input": { "text": "Training morgen um 18 Uhr" },
+      "expect": { "title": "training", "dayOffset": 1, "startTime": "18:00", "endTime": "19:00" }
+    },
+    {
+      "input": { "text": "eine Stunde später" },
+      "expect": { "startTime": "19:00", "endTime": "20:00" }
+    },
+    {
+      "input": { "text": "eine halbe Stunde früher" },
+      "expect": { "startTime": "18:30", "endTime": "19:30" }
+    }
+  ]
+}

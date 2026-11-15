@@ -1,0 +1,28 @@
+{
+  "blind": true,
+  "lang": "en",
+  "tags": ["long", "guests", "location", "notes"],
+  "turns": [
+    {
+      "input": {
+        "text": "Quarterly planning next Monday 9 to 12 in room 3, invite Tom Baker, Anna Berger and Jörg Müller, note: prepare the OKR draft"
+      },
+      "expect": {
+        "kind": "event",
+        "title": "quarterly planning",
+        "weekday": 1,
+        "startTime": "09:00",
+        "endTime": "12:00",
+        "location": "room 3",
+        "guests": {
+          "emails": [
+            "tom.baker@example.com",
+            "anna.berger@example.com",
+            "joerg.mueller@example.com"
+          ]
+        },
+        "notes": "okr draft"
+      }
+    }
+  ]
+}

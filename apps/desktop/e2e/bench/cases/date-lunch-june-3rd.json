@@ -1,0 +1,17 @@
+{
+  "lang": "en",
+  "tags": ["date"],
+  "turns": [
+    {
+      "input": { "text": "Lunch with Sarah on June 3rd at 1" },
+      "expect": {
+        "title": "lunch with sarah",
+        "dayOfMonth": 3,
+        "month": 6,
+        "startTime": "13:00",
+        "endTime": "14:00",
+        "guests": {}
+      }
+    }
+  ]
+}

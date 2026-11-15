@@ -1,0 +1,16 @@
+{
+  "lang": "en",
+  "tags": ["guests"],
+  "turns": [
+    {
+      "input": { "text": "Demo Wednesday at 3, add Felix as a guest" },
+      "expect": {
+        "title": "demo",
+        "weekday": 3,
+        "startTime": "15:00",
+        "endTime": "16:00",
+        "guests": { "choices": ["Felix"] }
+      }
+    }
+  ]
+}

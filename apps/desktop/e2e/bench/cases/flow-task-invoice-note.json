@@ -1,0 +1,18 @@
+{
+  "lang": "en",
+  "tags": ["flow", "task", "notes"],
+  "turns": [
+    {
+      "input": { "text": "don't forget to send the invoice on Friday" },
+      "expect": { "kind": "task", "title": "send the invoice", "weekday": 5 }
+    },
+    {
+      "input": { "text": "note: include the PO number" },
+      "expect": { "notes": "po number" }
+    },
+    {
+      "input": { "text": "at 9" },
+      "expect": { "startTime": "09:00" }
+    }
+  ]
+}

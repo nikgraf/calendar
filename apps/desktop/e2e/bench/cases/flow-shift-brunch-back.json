@@ -1,0 +1,18 @@
+{
+  "lang": "en",
+  "tags": ["flow", "shift"],
+  "turns": [
+    {
+      "input": { "text": "Brunch Sunday at 11" },
+      "expect": { "title": "brunch", "weekday": 7, "startTime": "11:00", "endTime": "12:00" }
+    },
+    {
+      "input": { "text": "push it back 30 minutes" },
+      "expect": { "startTime": "11:30", "endTime": "12:30" }
+    },
+    {
+      "input": { "text": "and make it two hours" },
+      "expect": { "startTime": "11:30", "endTime": "13:30" }
+    }
+  ]
+}

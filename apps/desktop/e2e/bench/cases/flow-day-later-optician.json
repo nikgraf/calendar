@@ -1,0 +1,18 @@
+{
+  "lang": "en",
+  "tags": ["flow", "day"],
+  "turns": [
+    {
+      "input": { "text": "Optician Tuesday at 10" },
+      "expect": { "title": "optician", "weekday": 2, "startTime": "10:00", "endTime": "11:00" }
+    },
+    {
+      "input": { "text": "a day later" },
+      "expect": { "weekday": 3 }
+    },
+    {
+      "input": { "text": "at 11:30" },
+      "expect": { "startTime": "11:30", "endTime": "12:30" }
+    }
+  ]
+}

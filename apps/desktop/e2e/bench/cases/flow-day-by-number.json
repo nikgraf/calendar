@@ -1,0 +1,19 @@
+{
+  "blind": true,
+  "lang": "en",
+  "tags": ["flow", "day", "date"],
+  "turns": [
+    {
+      "input": { "text": "Offsite on the 12th" },
+      "expect": { "title": "offsite", "dayOfMonth": 12, "isAllDay": true }
+    },
+    {
+      "input": { "text": "the 14th instead" },
+      "expect": { "dayOfMonth": 14 }
+    },
+    {
+      "input": { "text": "from 9 to 4" },
+      "expect": { "startTime": "09:00", "endTime": "16:00" }
+    }
+  ]
+}

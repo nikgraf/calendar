@@ -1,0 +1,10 @@
+{
+  "lang": "en",
+  "tags": ["allday", "title"],
+  "turns": [
+    {
+      "input": { "text": "All-day workshop on Wednesday" },
+      "expect": { "title": ["workshop", "all-day workshop"], "weekday": 3, "isAllDay": true }
+    }
+  ]
+}

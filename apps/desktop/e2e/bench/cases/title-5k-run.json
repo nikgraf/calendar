@@ -1,0 +1,11 @@
+{
+  "blind": true,
+  "lang": "en",
+  "tags": ["title"],
+  "turns": [
+    {
+      "input": { "text": "5k run Saturday at 9" },
+      "expect": { "title": "5k run", "weekday": 6, "startTime": "09:00", "endTime": "10:00" }
+    }
+  ]
+}

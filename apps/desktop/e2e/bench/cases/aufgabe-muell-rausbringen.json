@@ -1,0 +1,10 @@
+{
+  "lang": "de",
+  "tags": ["task", "de"],
+  "turns": [
+    {
+      "input": { "text": "Ich muss am Freitag den Müll rausbringen" },
+      "expect": { "kind": "task", "titleIncludes": "müll", "weekday": 5 }
+    }
+  ]
+}

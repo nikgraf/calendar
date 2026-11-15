@@ -1,0 +1,20 @@
+{
+  "lang": "en",
+  "tags": ["long", "notes", "notifications"],
+  "turns": [
+    {
+      "input": {
+        "text": "Flight on Friday at 6:45am, remind me three hours before, note: passport and boarding pass"
+      },
+      "expect": {
+        "kind": "event",
+        "title": "flight",
+        "weekday": 5,
+        "startTime": "06:45",
+        "endTime": "07:45",
+        "reminders": [180],
+        "notes": "passport"
+      }
+    }
+  ]
+}

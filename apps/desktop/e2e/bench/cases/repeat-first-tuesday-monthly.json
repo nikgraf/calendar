@@ -1,0 +1,17 @@
+{
+  "blind": true,
+  "lang": "en",
+  "tags": ["repeat"],
+  "turns": [
+    {
+      "input": { "text": "Team retro every month on the first Tuesday at 3pm" },
+      "expect": {
+        "title": "team retro",
+        "weekday": 2,
+        "startTime": "15:00",
+        "endTime": "16:00",
+        "repeat": { "freq": "monthly", "byDay": ["TU"] }
+      }
+    }
+  ]
+}

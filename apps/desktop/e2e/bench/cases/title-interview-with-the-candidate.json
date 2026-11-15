@@ -1,0 +1,16 @@
+{
+  "lang": "en",
+  "tags": ["title"],
+  "turns": [
+    {
+      "input": { "text": "Interview with the candidate tomorrow at 3pm" },
+      "expect": {
+        "title": "interview with the candidate",
+        "dayOffset": 1,
+        "startTime": "15:00",
+        "endTime": "16:00",
+        "guests": {}
+      }
+    }
+  ]
+}

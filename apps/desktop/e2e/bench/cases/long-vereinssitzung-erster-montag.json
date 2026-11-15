@@ -1,0 +1,21 @@
+{
+  "lang": "de",
+  "tags": ["long", "guests", "location", "repeat", "de"],
+  "turns": [
+    {
+      "input": {
+        "text": "Jeden ersten Montag im Monat um 18 Uhr Vereinssitzung im Gasthaus Adler, lade Jo Winter ein"
+      },
+      "expect": {
+        "kind": "event",
+        "title": "vereinssitzung",
+        "weekday": 1,
+        "startTime": "18:00",
+        "endTime": "19:00",
+        "location": "gasthaus adler",
+        "repeat": { "freq": "monthly", "byDay": ["MO"] },
+        "guests": { "emails": ["jo@example.com"] }
+      }
+    }
+  ]
+}

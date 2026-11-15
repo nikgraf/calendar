@@ -1,0 +1,10 @@
+{
+  "lang": "en",
+  "tags": ["allday"],
+  "turns": [
+    {
+      "input": { "text": "Company anniversary tomorrow" },
+      "expect": { "title": "company anniversary", "dayOffset": 1, "isAllDay": true }
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "blind": true,
+  "lang": "de",
+  "tags": ["flow", "day", "de"],
+  "turns": [
+    {
+      "input": { "text": "Friseur morgen um 15 Uhr" },
+      "expect": { "title": "friseur", "dayOffset": 1, "startTime": "15:00", "endTime": "16:00" }
+    },
+    {
+      "input": { "text": "doch lieber übermorgen" },
+      "expect": { "dayOffset": 2 }
+    },
+    {
+      "input": { "text": "um 16 Uhr" },
+      "expect": { "startTime": "16:00", "endTime": "17:00" }
+    }
+  ]
+}

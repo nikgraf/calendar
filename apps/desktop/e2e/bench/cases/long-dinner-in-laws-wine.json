@@ -1,0 +1,22 @@
+{
+  "blind": true,
+  "lang": "en",
+  "tags": ["long", "location", "notes", "notifications"],
+  "turns": [
+    {
+      "input": {
+        "text": "Dinner with the in-laws Saturday at 6:30pm at Trattoria Roma, remind me an hour before, note: bring the wine"
+      },
+      "expect": {
+        "kind": "event",
+        "title": "dinner with the in-laws",
+        "weekday": 6,
+        "startTime": "18:30",
+        "endTime": "19:30",
+        "location": "trattoria roma",
+        "reminders": [60],
+        "notes": "bring the wine"
+      }
+    }
+  ]
+}

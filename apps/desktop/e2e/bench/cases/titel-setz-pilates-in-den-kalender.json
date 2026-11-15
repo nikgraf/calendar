@@ -1,0 +1,17 @@
+{
+  "blind": true,
+  "lang": "de",
+  "tags": ["title", "command", "de"],
+  "turns": [
+    {
+      "input": { "text": "Setz Pilates am Mittwoch um 18:30 in den Kalender" },
+      "expect": {
+        "kind": "event",
+        "title": "pilates",
+        "weekday": 3,
+        "startTime": "18:30",
+        "endTime": "19:30"
+      }
+    }
+  ]
+}

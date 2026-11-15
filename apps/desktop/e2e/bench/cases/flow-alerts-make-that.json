@@ -1,0 +1,24 @@
+{
+  "lang": "en",
+  "tags": ["flow", "notifications"],
+  "turns": [
+    {
+      "input": { "text": "Budget meeting tomorrow at 2, notify me 10 minutes before" },
+      "expect": {
+        "title": "budget meeting",
+        "dayOffset": 1,
+        "startTime": "14:00",
+        "endTime": "15:00",
+        "reminders": [10]
+      }
+    },
+    {
+      "input": { "text": "make that 30 minutes before" },
+      "expect": { "reminders": [30] }
+    },
+    {
+      "input": { "text": "plus one an hour before" },
+      "expect": { "reminders": [30, 60] }
+    }
+  ]
+}

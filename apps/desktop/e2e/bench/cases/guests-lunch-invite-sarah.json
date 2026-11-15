@@ -1,0 +1,16 @@
+{
+  "lang": "en",
+  "tags": ["guests"],
+  "turns": [
+    {
+      "input": { "text": "Lunch Friday at 1, invite Sarah" },
+      "expect": {
+        "title": "lunch",
+        "weekday": 5,
+        "startTime": "13:00",
+        "endTime": "14:00",
+        "guests": { "emails": ["sarah.novak@example.com"] }
+      }
+    }
+  ]
+}

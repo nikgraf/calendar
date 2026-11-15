@@ -1,0 +1,11 @@
+{
+  "blind": true,
+  "lang": "de",
+  "tags": ["typed", "de"],
+  "turns": [
+    {
+      "input": { "text": "zahnarzt mo 8 uhr" },
+      "expect": { "title": "zahnarzt", "weekday": 1, "startTime": "08:00", "endTime": "09:00" }
+    }
+  ]
+}
