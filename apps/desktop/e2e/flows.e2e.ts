@@ -1312,11 +1312,7 @@ describe('calendar desktop e2e', () => {
         .toBe(false);
     } finally {
       // A failure above must not strand an open sheet for later tests.
-      await cdp
-        .eval(
-          `[...document.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Cancel')?.click()`,
-        )
-        .catch(() => undefined);
+      await cdp.discardEditor().catch(() => undefined);
     }
   });
 
@@ -1870,8 +1866,8 @@ describe('calendar desktop e2e', () => {
     expect(fields.date >= nextMonday && fields.date <= nextSunday).toBe(true);
     expect(fields.start >= '08:00' && fields.start < '12:00').toBe(true);
     expect(minuteOfDay(fields.end) - minuteOfDay(fields.start)).toBe(90);
-    await cdp.pressEscape();
-    await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);
+    // The slot picked is an edit: leaving asks first.
+    await cdp.discardEditor();
   });
 
   it('reseeds the editor when another slot is clicked while it is open', async () => {
@@ -2397,6 +2393,7 @@ describe('an event that ends on a later day', () => {
     await setField('Date', day(2));
     expect(await fieldValue('End date')).toBe(day(5));
     await cdp.clickButtonWithText('Cancel');
+    await cdp.answerDiscard(true);
   });
 });
 

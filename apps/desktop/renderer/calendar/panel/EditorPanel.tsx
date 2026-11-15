@@ -42,6 +42,7 @@ import { RedoIcon, UndoIcon, VideoIcon, XIcon } from '../../ui/icons.tsx';
 import { SegmentedControl } from '../../ui/SegmentedControl.tsx';
 import { AssistantView } from '../assistant/AssistantView.tsx';
 import { EventEditorForm } from '../EventEditorForm.tsx';
+import { DiscardConfirm } from '../DiscardConfirm.tsx';
 import { MoveConfirm } from '../MoveConfirm.tsx';
 import { DraftPager } from './DraftPager.tsx';
 import { useViewSwitch } from './useViewSwitch.ts';
@@ -113,6 +114,18 @@ const KIND_LABELS: Record<ItemKind, string> = {
 export type { EditorView } from '@calendar/app-state';
 
 /**
+ * What closing the editor would lose, reported up (`onUnsaved`): the
+ * form's changes and a paste's drafts (`unsaved`), and words in the
+ * Assistant's field, which the returned setter is told about.
+ */
+const useUnsavedReport = (unsaved: boolean, onUnsaved: (unsaved: boolean) => void) => {
+  const [held, setHeld] = useState(false);
+  const holds = unsaved || held;
+  useEffect(() => onUnsaved(holds), [holds, onUnsaved]);
+  return setHeld;
+};
+
+/**
  * The side panel's editor: a header that stays put (the title, the two
  * views' tabs, Join meeting, Close), one of two views of the same draft,
  * and a footer that stays put with the steps, Delete, Cancel and Save,
@@ -153,11 +166,15 @@ export type { EditorView } from '@calendar/app-state';
  * `quick-add-*` test ids.
  */
 export function EditorPanel({
+  asked,
   calendars,
   initialKind,
+  onAnswer,
+  onCancel,
   onCapture,
   onClose,
   onSaved,
+  onUnsaved,
   opensOn = 'form',
   quickAddFocus = 0,
   seed,
@@ -166,14 +183,26 @@ export function EditorPanel({
   taskSeed,
   timeZone,
 }: {
+  /**
+   * A way out was asked for while the editor holds something (`onUnsaved`):
+   * the question shows above the footer until `onAnswer`.
+   */
+  asked?: boolean | undefined;
   calendars: ReadonlyArray<CalendarInfo>;
   /** The kind to open on: a to-do for a "+" that wants one, or Convert from the inspector. */
   initialKind?: ItemKind | undefined;
+  /** The question's answer: discard (and go where was asked), or keep editing. */
+  onAnswer: (discard: boolean) => void;
+  /** Cancel, the X and the lesson's Skip: they ask first while the editor holds something. */
+  onCancel: () => void;
   /** A paste into the assistant's field that is an email or an image goes to capture. */
   onCapture: (source: CaptureSource) => void;
+  /** The editor's own close: Save and Delete once the write is through. */
   onClose: () => void;
   /** Save went through, as an event or a task. */
   onSaved?: (() => void) | undefined;
+  /** Whether closing would lose something: the form's changes, a paste's drafts, words in the field. */
+  onUnsaved: (unsaved: boolean) => void;
   /** The view to start on, where there are two: the Assistant for "+ New", ⌘N, ⌘K and a capture. */
   opensOn?: EditorView | undefined;
   /** ⌘K: bumped to bring the Assistant forward and focus its field. */
@@ -239,6 +268,7 @@ export function EditorPanel({
   const { eventModel, kinds, marks, onPhrase, previewing, steps, taskModel, userEdits } = editor;
   const { joinUrl } = eventModel;
   const { available, convertBlocked, kind, mode, switchTo } = kinds;
+  const setHeld = useUnsavedReport(editor.unsaved, onUnsaved);
   // A step that made the item the other kind: the control stays marked.
   const kindMark = useFlash<HTMLDivElement>(marks?.fields.has('kind') ? marks.key : null, true);
 
@@ -279,7 +309,7 @@ export function EditorPanel({
     <LessonFrame
       id={lesson}
       model={demo || demoed ? modelState : undefined}
-      onSkip={lessonOpen ? onClose : undefined}
+      onSkip={lessonOpen ? onCancel : undefined}
     />
   ) : null;
   // ⌘K is for the Assistant's field: a press since this editor opened
@@ -330,7 +360,7 @@ export function EditorPanel({
             Join meeting
           </Button>
         ) : null}
-        <IconButton data-testid="editor-close" label="Close" onClick={onClose} size="sm">
+        <IconButton data-testid="editor-close" label="Close" onClick={onCancel} size="sm">
           <XIcon size={14} />
         </IconButton>
       </div>
@@ -368,6 +398,7 @@ export function EditorPanel({
               note={seed.thread?.note}
               onCapture={onCapture}
               onEdit={() => switcher.flip('form')}
+              onHeld={setHeld}
               onPhrase={async (text, heard) => {
                 const message = await onPhrase(text, heard);
                 if (message === undefined) {
@@ -440,9 +471,10 @@ export function EditorPanel({
       </div>
 
       <EditorFooter
+        discard={asked ? onAnswer : undefined}
         editor={editor}
         moveConfirmation={moveConfirmation}
-        onClose={onClose}
+        onCancel={onCancel}
         task={task}
         view={shown}
       />
@@ -528,15 +560,18 @@ function StepPreview({ editor }: { editor: ReturnType<typeof useThreadEditor> })
  * on, then the steps, Delete, Cancel and Save.
  */
 function EditorFooter({
+  discard,
   editor,
   moveConfirmation,
-  onClose,
+  onCancel,
   task,
   view,
 }: {
+  /** The question before the editor goes, while it is asked: its answer. */
+  discard: ((discard: boolean) => void) | undefined;
   editor: ReturnType<typeof useThreadEditor>;
   moveConfirmation: ReturnType<typeof useMoveConfirmation>;
-  onClose: () => void;
+  onCancel: () => void;
   task: TaskRecord | undefined;
   /** The view on show: the form says why a save failed itself, the Assistant has the footer say it. */
   view: EditorView;
@@ -579,6 +614,11 @@ function EditorFooter({
           <MoveConfirm moveConfirmation={moveConfirmation} />
         </div>
       ) : null}
+      {discard ? (
+        <div className="shrink-0 px-4 pt-2">
+          <DiscardConfirm onAnswer={discard} question={editor.unsavedQuestion} />
+        </div>
+      ) : null}
       <div className="flex shrink-0 items-center gap-2 border-t border-hairline px-4 py-3">
         {current.canDelete ? (
           <Button
@@ -592,7 +632,7 @@ function EditorFooter({
         ) : null}
         <StepControl steps={steps} />
         <div className="flex-1" />
-        <Button onClick={onClose} size="sm" variant="ghost">
+        <Button onClick={onCancel} size="sm" variant="ghost">
           Cancel
         </Button>
         {current.readOnly ? null : (

@@ -51,7 +51,16 @@ import {
   useUpdateViewPreferences,
   useViewPreferences,
 } from '@calendar/app-state';
-import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
+import {
+  type SetStateAction,
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { desktopLanguageModel } from '../ai/desktopModel.ts';
 import { backend } from '../backend.ts';
 import { desktopTextRecognizer } from '../ai/desktopTextRecognizer.ts';
@@ -229,7 +238,55 @@ function CalendarBody({
     updatePrefs({ lastView: next });
   };
 
-  const [panel, setPanel] = useState<PanelState>(RAIL);
+  const [panel, showPanel] = useState<PanelState>(RAIL);
+  // The panel as last committed, for a way out asked for later (a click, a key, a reply).
+  const panelNow = useRef(panel);
+  useLayoutEffect(() => {
+    panelNow.current = panel;
+  }, [panel]);
+  // Whether the open editor holds something (`EditorPanel`'s `onUnsaved`), by its opening.
+  const editorHolds = useRef<{ readonly opening: number; readonly unsaved: boolean } | null>(null);
+  // A panel asked for over an editor that holds something: the editor asks
+  // first (`DiscardConfirm`), and Discard goes there.
+  const [leaving, setLeaving] = useState<{
+    readonly from: number;
+    readonly next: PanelState;
+  } | null>(null);
+  /**
+   * Every way the panel changes but an editor's own close after its write
+   * (`closeEditor`, `closeDeleted`): one that would take an editor holding
+   * something off the panel — Cancel, the X, Escape, another event, slot
+   * or chip, "+ New", search, a lesson, a paste, a notification — is held
+   * while the editor asks. A change within the same editor goes through.
+   */
+  const setPanel = useCallback((update: SetStateAction<PanelState>) => {
+    const current = panelNow.current;
+    const holds =
+      'opening' in current &&
+      editorHolds.current?.opening === current.opening &&
+      editorHolds.current.unsaved;
+    if (!holds) {
+      showPanel(update);
+      return;
+    }
+    const next = typeof update === 'function' ? update(current) : update;
+    if (next === current || ('opening' in next && next.opening === current.opening)) {
+      showPanel(next);
+      return;
+    }
+    setLeaving({ from: current.opening, next });
+  }, []);
+  // The question shows while the editor it was asked over is up.
+  const asked = leaving !== null && 'opening' in panel && leaving.from === panel.opening;
+  const answerLeaving = (discard: boolean) => {
+    setLeaving(null);
+    if (discard && leaving !== null) {
+      showPanel(leaving.next);
+    }
+  };
+  const reportUnsaved = (opening: number) => (unsaved: boolean) => {
+    editorHolds.current = { opening, unsaved };
+  };
   const searching = isSearching(panel);
   const [searchFocus, setSearchFocus] = useState(0);
   const searchScroll = useRef(0);
@@ -252,7 +309,7 @@ function CalendarBody({
         opensOn: 'assistant',
         seed: { initialDate: focused, initialHour: 9 },
       }),
-    [focused],
+    [focused, setPanel],
   );
 
   // The editor's drafts, as the grid draws them: every event draft of the
@@ -348,8 +405,9 @@ function CalendarBody({
   // own Delete does.
   const inspected = panel.kind === 'inspector' ? findSameEvent(events, panel.event) : undefined;
   if (panel.kind === 'inspector' && inspected !== undefined && inspected !== panel.event) {
-    // Render-phase state adjustment (the React "derive from props" pattern).
-    setPanel({ ...panel, event: inspected });
+    // Render-phase state adjustment (the React "derive from props" pattern);
+    // an inspector, never an editor: nothing to ask.
+    showPanel({ ...panel, event: inspected });
   }
   const unlisted =
     panel.kind === 'inspector' && inspected === undefined ? eventIdentity(panel.event) : undefined;
@@ -461,6 +519,11 @@ function CalendarBody({
         // Escape leaves the panel's inspector, editor or search, from
         // anywhere in the window but a dialog (which takes its own Escape
         // first); a result opened from search goes back to the results.
+        // While an editor asks whether to discard, it answers Keep Editing.
+        if (asked) {
+          setLeaving(null);
+          return;
+        }
         if (!anyDialog && panel.kind !== 'rail') {
           setPanel(backFrom(panel));
         }
@@ -510,7 +573,7 @@ function CalendarBody({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [dialogOpen, editing, goToday, openNew, panel, step]);
+  }, [asked, dialogOpen, editing, goToday, openNew, panel, setPanel, step]);
 
   // ⌘V on the calendar itself: an email or a screenshot becomes events to
   // review; a settings code (the iPhone's, through Universal Clipboard)
@@ -546,6 +609,12 @@ function CalendarBody({
   // reply is back — only while the panel still holds its opening: a reply
   // landing after another chip, slot or event was opened leaves that one up.
   const closeEditor = (opening: number) => () =>
+    showPanel((current) =>
+      'opening' in current && current.opening === opening ? backFrom(current) : current,
+    );
+  // Cancel, the X and the lesson's Skip: the same way back, asked about
+  // while the editor holds something.
+  const cancelEditor = (opening: number) => () =>
     setPanel((current) =>
       'opening' in current && current.opening === opening ? backFrom(current) : current,
     );
@@ -554,7 +623,7 @@ function CalendarBody({
   // this one, or a sibling with a series' scope) — an inspector, or an
   // editor that Edit or Convert opened meanwhile, since the event is gone.
   const closeDeleted = (deleted: EventRecord) => (scope: RecurringScope) =>
-    setPanel((current) => {
+    showPanel((current) => {
       const shown =
         current.kind === 'inspector'
           ? current.event
@@ -810,10 +879,14 @@ function CalendarBody({
               <LessonPanel id={panel.id} onClose={() => setPanel(RAIL)} />
             ) : panel.kind === 'editEvent' ? (
               <EditorPanel
+                asked={asked}
                 calendars={calendars}
                 initialKind={panel.mode}
+                onAnswer={answerLeaving}
+                onCancel={cancelEditor(panel.opening)}
                 onCapture={capture.start}
                 onClose={closeEditor(panel.opening)}
+                onUnsaved={reportUnsaved(panel.opening)}
                 opensOn={panel.opensOn}
                 quickAddFocus={quickAddFocus}
                 seed={panel.seed}
@@ -822,9 +895,13 @@ function CalendarBody({
               />
             ) : (
               <EditorPanel
+                asked={asked}
                 calendars={calendars}
+                onAnswer={answerLeaving}
+                onCancel={cancelEditor(panel.opening)}
                 onCapture={capture.start}
                 onClose={closeEditor(panel.opening)}
+                onUnsaved={reportUnsaved(panel.opening)}
                 quickAddFocus={quickAddFocus}
                 seed={{ initialDate: focused }}
                 task={panel.task}

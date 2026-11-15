@@ -2,11 +2,12 @@ import { Account, APPLE_REMINDERS_ACCOUNT_ID, TaskListInfo, TaskRecord } from '@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vite-plus/test';
 import {
   type App,
+  CANCEL_OR_DISCARD,
+  type RemindersFixture,
   launchApp,
   localIsoDaysAgo,
   readEvents,
   readTasks,
-  type RemindersFixture,
 } from './harness.ts';
 
 // Seeded straight into SQLite: the harness launches the app with
@@ -564,9 +565,7 @@ describe('Reminder repeat rules with weekdays', () => {
       if (!(await app.cdp.eval<boolean>(EDITOR_OPEN))) {
         return;
       }
-      await app.cdp.eval(
-        `[...document.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Cancel')?.click()`,
-      );
+      await app.cdp.eval(CANCEL_OR_DISCARD);
       await new Promise((resolve) => setTimeout(resolve, 150));
     }
   });

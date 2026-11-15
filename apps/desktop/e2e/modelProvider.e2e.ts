@@ -190,7 +190,7 @@ describe('A served model', () => {
       if (!(await app.cdp.eval<boolean>(`!!document.querySelector('[data-testid="editor"]')`))) {
         return;
       }
-      await app.cdp.pressEscape();
+      await app.cdp.escapeOrDiscard();
       await new Promise((resolve) => setTimeout(resolve, 150));
     }
   });

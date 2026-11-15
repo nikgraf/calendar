@@ -135,8 +135,9 @@ describe('first run: the setup dialog, the Getting started card and its lessons'
     expect(
       await cdp.eval<boolean>(`!!document.querySelector('[data-testid="lesson-banner"]')`),
     ).toBe(true);
-    // Leaving after a try keeps it done.
+    // Leaving after a try keeps it done (the try's draft asks first).
     await cdp.clickTestId('editor-close');
+    await cdp.answerDiscard(true);
     await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);
     await sleep(300);
     expect((await onboarding(app))?.lessons.create).toBe('done');
@@ -229,8 +230,7 @@ describe('first run: the setup dialog, the Getting started card and its lessons'
     expect(
       await cdp.eval<string>(`document.querySelector('input[placeholder="Title"]')?.value`),
     ).toBe('Draft under the menu');
-    await cdp.pressEscape();
-    await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);
+    await cdp.discardEditor();
   });
 
   it('folds to one line and back, and Hide removes the card', async () => {

@@ -229,7 +229,7 @@ describe('The editor’s Assistant and Form views', () => {
       if (!(await app.cdp.eval<boolean>(exists('editor')))) {
         return;
       }
-      await app.cdp.pressEscape();
+      await app.cdp.escapeOrDiscard();
       await sleep(150);
     }
   });
@@ -499,8 +499,8 @@ describe('The editor’s Assistant and Form views', () => {
         `document.querySelector('[data-testid="editor-form"]').textContent.includes('A title and calendar are required.')`,
       ),
     ).toBe(true);
-    await cdp.pressEscape();
-    await cdp.waitFor(`!${exists('editor')}`);
+    // The draft is unsaved: leaving asks first.
+    await cdp.discardEditor();
   });
 
   it('counts an edit by hand as a step, further typing in the same field as the same one', async () => {
@@ -535,8 +535,7 @@ describe('The editor’s Assistant and Form views', () => {
         `[...document.querySelectorAll('[data-testid="assistant-version"]')].at(-1).textContent`,
       ),
     ).toContain('by hand');
-    await cdp.pressEscape();
-    await cdp.waitFor(`!${exists('editor')}`);
+    await cdp.discardEditor();
   });
 
   it('changes a saved event by phrase and sends only what differs; back at "As saved", Save sends nothing', async () => {
@@ -694,9 +693,8 @@ describe('The editor’s Assistant and Form views', () => {
     // Nothing landed, and the words are still there to change.
     expect(await cdp.eval<boolean>(exists('step-control'))).toBe(false);
     expect(await cdp.eval<string>(`${INPUT}.value`)).toBe('repeat weekly');
-    await cdp.pressEscape();
-    await cdp.pressEscape();
-    await cdp.waitFor(`!${exists('editor')}`);
+    // The words are still in the field, unsent: leaving asks first.
+    await cdp.discardEditor();
 
     // One occurrence of a series: the rule is the series', which "This event" cannot change.
     await cdp.openEditor('[title^="Daily sync"]');

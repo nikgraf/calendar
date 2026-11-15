@@ -230,7 +230,9 @@ describe('Converting between events and tasks', () => {
     await cdp.waitFor(heading('New task'));
     expect(await cdp.eval(`document.querySelector('${TITLE}').value`)).toBe('Water plants');
     expect(await cdp.eval(`!!document.querySelector('input[aria-label="Due time"]')`)).toBe(false);
+    // The title typed is unsaved: Cancel asks first.
     await cdp.clickButtonWithText('Cancel');
+    await cdp.answerDiscard(true);
     await cdp.waitFor(`!${heading('New task')}`);
   });
 

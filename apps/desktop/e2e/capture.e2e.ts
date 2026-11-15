@@ -91,7 +91,7 @@ describe('Capture from a paste', () => {
       ) {
         return;
       }
-      await app.cdp.pressEscape();
+      await app.cdp.escapeOrDiscard();
       await new Promise((resolve) => setTimeout(resolve, 150));
     }
   });
@@ -120,7 +120,9 @@ describe('Capture from a paste', () => {
     // date of the stored instant (its UTC date is yesterday's more than
     // nine hours ahead of UTC).
     expect(localIsoOf(saved.startUtc)).toBe(localIsoDaysAgo(0));
+    // The other draft is unsaved: Cancel asks first.
     await cdp.clickButtonWithText('Cancel');
+    await cdp.answerDiscard(true);
     await cdp.waitFor(`!${EDITOR}`);
     expect((await readEvents(app.userDataDir)).some((event) => event.title === 'Planning')).toBe(
       false,
@@ -138,7 +140,9 @@ describe('Capture from a paste', () => {
     expect(await cdp.eval<string>(STATE)).toBe('');
     expect(await cdp.eval<string>(position)).toBe('');
     await cdp.waitFor(`${blocks} === 1`);
+    // A capture's draft is unsaved, untouched as it is: Cancel asks first.
     await cdp.clickButtonWithText('Cancel');
+    await cdp.answerDiscard(true);
     await cdp.waitFor(`!${EDITOR}`);
     expect((await readEvents(app.userDataDir)).some((event) => event.title === 'Dentist')).toBe(
       false,
@@ -152,8 +156,7 @@ describe('Capture from a paste', () => {
     );
     await cdp.waitFor(`${position} === '1 of 2'`);
     await cdp.waitFor(titleIs('Keynote'));
-    await cdp.pressEscape();
-    await cdp.waitFor(`!${EDITOR}`);
+    await cdp.discardEditor();
   });
 
   it('leaves a single-line paste to the ⌘K input and takes a multi-line one from it', async () => {
@@ -180,7 +183,6 @@ describe('Capture from a paste', () => {
     // The field handed the paste to capture, which reopened the editor on the thread.
     await cdp.waitFor(`${position} === '1 of 2'`);
     await cdp.waitFor(titleIs('Standup'));
-    await cdp.pressEscape();
-    await cdp.waitFor(`!${EDITOR}`);
+    await cdp.discardEditor();
   });
 });

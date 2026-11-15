@@ -125,6 +125,7 @@ export function AssistantView({
   note,
   onCapture,
   onEdit,
+  onHeld,
   onPhrase,
   taskLists,
   timeZone,
@@ -154,6 +155,8 @@ export function AssistantView({
   readonly onCapture: (source: CaptureSource) => void;
   /** To the form, on the same draft. */
   readonly onEdit: () => void;
+  /** The field holds words typed or dictated and not sent: closing would lose them. */
+  readonly onHeld: (held: boolean) => void;
   readonly onPhrase: (text: string, heard?: Heard) => Promise<string | undefined>;
   readonly taskLists: ReadonlyArray<TaskListInfo>;
   readonly timeZone: string;
@@ -171,15 +174,16 @@ export function AssistantView({
     speech: desktopSpeech,
   });
   const unavailable = availability.status !== null && availability.status !== 'ready';
-  const { busy, setPhrase } = quick;
+  const { busy, give, held } = quick;
   // The demo's next phrase in the field once the last one is taken (the
-  // first comes with the lesson's seed).
+  // first comes with the lesson's seed): the editor's words, not the person's.
   const demoNext = demo?.next;
   useEffect(() => {
     if (demoNext !== undefined) {
-      setPhrase(demoNext);
+      give(demoNext);
     }
-  }, [demoNext, setPhrase]);
+  }, [demoNext, give]);
+  useEffect(() => onHeld(held), [held, onHeld]);
   const answers = !unavailable || demoNext !== undefined;
 
   // Focused on open and on ⌘K — not while the model is missing, when the
