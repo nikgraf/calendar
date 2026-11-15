@@ -30,16 +30,17 @@ import {
 } from '@calendar/geo';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
-import { Deferred, Effect, Fiber, Layer } from 'effect';
+import { Deferred, Duration, Effect, Fiber, Layer } from 'effect';
 import { TestClock } from 'effect/testing';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
 import { describe } from 'vite-plus/test';
 import { appleCalendarServicesLayer } from './appleCalendarEvents.ts';
 import { writeTimeZoneSettings } from './deviceSettings.ts';
 import {
-  ALTERNATIVE_SEARCH_TIMEOUT,
+  ALTERNATIVE_SEARCH_MS,
   ALTERNATIVE_SEARCHES,
   CANDIDATE_SEARCH_TIMEOUT,
+  CANDIDATES_BUDGET_MS,
   FILL_IN_LIMIT,
   FILL_IN_WINDOW_MS,
   LOCATION_MISS_TTL_MS,
@@ -1112,6 +1113,62 @@ describe('dictation’s other readings', () => {
     }).pipe(Effect.provide(setup(client)));
   });
 
+  it.effect('gives the readings only what is left of the turn’s time', () => {
+    // Review: a slow search and stalled readings passed the turn's 5 s,
+    // which then dropped every candidate, the heard text's too.
+    const { client } = mapkit({ found: { Figlmiller: [figlmueller] } });
+    const slow: GeoClientShape = {
+      ...client,
+      resolve: (params) =>
+        params.query === 'Figelmiller' || params.query === 'Figelmuller'
+          ? Effect.never
+          : client.resolve(params),
+      search: () => Effect.never,
+    };
+    return Effect.gen(function* () {
+      yield* inVienna;
+      const asked = yield* Effect.forkChild(
+        locationHandlers.placeCandidates({
+          alternatives: ['Figelmuller', 'Figlmiller'],
+          location: 'Figelmiller',
+        }),
+      );
+      yield* TestClock.adjust(CANDIDATE_SEARCH_TIMEOUT);
+      yield* TestClock.adjust(Duration.millis(CANDIDATES_BUDGET_MS - 3000));
+      const candidates = yield* Fiber.join(asked);
+      expect(candidates.map((c) => [c.geo.name, c.alternative])).toEqual([
+        ['Figlmüller', 'Figlmiller'],
+      ]);
+    }).pipe(Effect.provide(setup(slow)));
+  });
+
+  it.effect('lists the past places the readings name before their search hits', () => {
+    const { client } = mapkit({ found: { Figelmuller: [figlmueller] } });
+    return Effect.gen(function* () {
+      yield* seedPlaced([
+        placedEvent('home', 1, VIENNA),
+        new EventRecord({
+          ...placedEvent('coffee', 30, { lat: 48.21, lng: 16.365 }),
+          geo: new GeoLocation({
+            lat: 48.21,
+            lng: 16.365,
+            name: 'Café Central',
+            source: 'Café Central',
+          }),
+          location: 'Café Central',
+        }),
+      ]);
+      const candidates = yield* locationHandlers.placeCandidates({
+        alternatives: ['Figelmuller', 'Cafe Zentral'],
+        location: 'Figelmiller',
+      });
+      expect(candidates.map((c) => [c.source, c.geo.name, c.alternative])).toEqual([
+        ['history', 'Café Central', 'Cafe Zentral'],
+        ['mapkit', 'Figlmüller', 'Figelmuller'],
+      ]);
+    }).pipe(Effect.provide(setup(client)));
+  });
+
   it.effect('asks a few readings at most, each kept as it answers', () => {
     const { calls, client } = mapkit({
       found: { Figelmuller: [figlmueller], Figlmiller: [figlmueller] },
@@ -1131,7 +1188,7 @@ describe('dictation’s other readings', () => {
           location: 'Figelmiller',
         }),
       );
-      yield* TestClock.adjust(ALTERNATIVE_SEARCH_TIMEOUT);
+      yield* TestClock.adjust(Duration.millis(ALTERNATIVE_SEARCH_MS));
       const candidates = yield* Fiber.join(asked);
       expect(candidates.map((c) => [c.geo.name, c.alternative])).toEqual([
         ['Figlmüller', 'Figelmuller'],

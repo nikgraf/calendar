@@ -1758,13 +1758,17 @@ gateway carries all of it. Details, limits and the threat model:
   alternatives, and the alternative's words in that span replace them —
   a word only the alternative has joins the span at its edge when the
   word beyond is read the same — combined across segments, the
-  likeliest first, four at most, never the text again. Only when the
-  text itself names nothing nearby (no candidate `preselectedPlace`
-  would take) does the handler ask them: each reading's past places and
-  one MapKit search each (1.5 s for all, so the whole stays within the
-  turn's 5 s), kept when they resemble the reading and are nearby or
-  where it says; they come first, marked with their reading
-  (`alternative`), and are never taken unasked. The draft thread (app-state `draftPlaces.ts`) asks for them
+  likeliest first, four at most, never the text again; words said twice
+  are read in both places, and words holding fewer than four letters
+  ("at", "6") stand for nothing. Only when the text itself names nothing
+  nearby (no candidate `preselectedPlace` would take) does the handler
+  ask them: the past places each names, then one MapKit search each,
+  kept when it resembles its reading and is nearby or where it says,
+  within what is left of 4 s since the lookup began (1.5 s at most) — a
+  second short of the turn's 5 s, past which every candidate would be
+  dropped. They come first, marked with their reading (`alternative`),
+  and are never taken unasked. A refine turn looks each place text up
+  once, however many drafts it sets it on. The draft thread (app-state `draftPlaces.ts`) asks for them
   whenever a turn sets a place: the best resembling one is taken at once
   (`preselectedPlace`) — its text becomes the location and its pin counts
   as a pick (`applyPlace`) — and the candidates stay on the draft as

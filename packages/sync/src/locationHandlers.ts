@@ -18,7 +18,7 @@ import {
 } from '@calendar/core';
 import { type DeviceSettingsRepo, EventRepo, LocationGeoRepo } from '@calendar/db';
 import { GeoClient, type GeoPlaceJson } from '@calendar/geo';
-import { Clock, Effect, Ref } from 'effect';
+import { Clock, Duration, Effect, Ref } from 'effect';
 import type { EventRecord } from '@calendar/core';
 import type { AppleCalendarEvents } from './appleCalendarEvents.ts';
 import { readPrimaryTimeZone } from './deviceSettings.ts';
@@ -59,11 +59,18 @@ const pastPlaces = new WeakMap<
  */
 export const CANDIDATE_SEARCH_TIMEOUT = '3 seconds';
 /**
- * How long dictation's other readings wait for MapKit, all at once, after
- * the words as written found nothing nearby: the two stay within the
- * turn's own wait for its places (5 s, `draftThread.ts`).
+ * How long dictation's other readings wait for MapKit at most, all at
+ * once, after the words as written found nothing nearby.
  */
-export const ALTERNATIVE_SEARCH_TIMEOUT = '1500 millis';
+export const ALTERNATIVE_SEARCH_MS = 1500;
+/**
+ * The candidates answer within this of being asked, readings included: a
+ * second short of the turn's own wait for its places (5 s,
+ * `draftThread.ts`), which drops everything once passed. The readings get
+ * what is left of it, up to `ALTERNATIVE_SEARCH_MS` — none once the past
+ * places and the words as written took it all.
+ */
+export const CANDIDATES_BUDGET_MS = 4000;
 /** Other readings asked at most: each is one search of MapKit's budget. */
 export const ALTERNATIVE_SEARCHES = 4;
 /**
@@ -125,39 +132,48 @@ const foundCandidate =
     };
   };
 
+/** A candidate another reading of the words found, marked with that reading. */
+const foundAs =
+  (reading: string) =>
+  (candidate: PlaceCandidate): PlaceCandidate => ({ ...candidate, alternative: reading });
+
 /**
  * The places dictation's other readings of the words name (`alternatives`,
- * the likeliest first): each reading's past places, then MapKit's hits
- * that resemble it and are nearby or where it says — the far namesakes
- * and the hits that resemble nothing are no one's guess here. Each marked
- * with its reading, so it is offered and never taken. The readings are
- * asked side by side, each kept as it answers.
+ * the likeliest first): the past places each names, then MapKit's hits
+ * that resemble a reading and are nearby or where it says — a place the
+ * user has been to beats any search hit, and the far namesakes and the
+ * hits that resemble nothing are no one's guess here. Each marked with
+ * its reading, so it is offered and never taken. The readings are asked
+ * side by side within `wait`, each kept as it answers.
  */
 const alternativeCandidates = (
   readings: ReadonlyArray<string>,
   places: ReadonlyArray<PastPlace>,
   region: GeoRegion | undefined,
+  wait: Duration.Duration,
 ) =>
   Effect.gen(function* () {
     const geo = yield* GeoClient;
+    const asked = readings.filter(isMappableLocation).slice(0, ALTERNATIVE_SEARCHES);
     const found = yield* Effect.forEach(
-      readings.filter(isMappableLocation).slice(0, ALTERNATIVE_SEARCHES),
+      asked,
       (reading) =>
         geo.resolve({ limit: CANDIDATE_LIMIT, query: reading, region }).pipe(
-          Effect.timeout(ALTERNATIVE_SEARCH_TIMEOUT),
+          Effect.timeout(wait),
           Effect.catch(() => Effect.succeed([])),
           Effect.map((hits) =>
-            [
-              ...rankPastPlaces(reading, places),
-              ...rankFoundPlaces(reading, hits, region)
-                .filter(({ match }) => match !== 'search')
-                .map(foundCandidate(reading)),
-            ].map((candidate): PlaceCandidate => ({ ...candidate, alternative: reading })),
+            rankFoundPlaces(reading, hits, region)
+              .filter(({ match }) => match !== 'search')
+              .map(foundCandidate(reading))
+              .map(foundAs(reading)),
           ),
         ),
       { concurrency: 'unbounded' },
     );
-    return found.flat();
+    return [
+      ...asked.flatMap((reading) => rankPastPlaces(reading, places).map(foundAs(reading))),
+      ...found.flat(),
+    ];
   });
 
 /**
@@ -326,10 +342,18 @@ export const locationHandlers: Pick<
       // ("Figelmiller" for Figlmüller): the other readings the recogniser
       // weighed are asked too, and what they name comes first — offered
       // before a far namesake, taken only when picked.
-      if ((alternatives ?? []).length === 0 || preselectedPlace(heard) !== undefined) {
+      // Asked since `now`: the readings get what is left of the budget.
+      const elapsed = (yield* Clock.currentTimeMillis) - now;
+      const left = Math.min(ALTERNATIVE_SEARCH_MS, CANDIDATES_BUDGET_MS - elapsed);
+      if ((alternatives ?? []).length === 0 || preselectedPlace(heard) !== undefined || left <= 0) {
         return heard;
       }
-      const others = yield* alternativeCandidates(alternatives ?? [], places, region);
+      const others = yield* alternativeCandidates(
+        alternatives ?? [],
+        places,
+        region,
+        Duration.millis(left),
+      );
       return mergePlaceCandidates([], [...others, ...heard]);
     }),
 

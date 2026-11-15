@@ -52,20 +52,30 @@ describe('alignWords', () => {
 describe('findWords', () => {
   it('finds the words among the heard ones, alike or the same', () => {
     const phrase = wordsOf('Coffee at Cafe Pruckle tomorrow');
-    expect(findWords(wordsOf('Café Prückel'), phrase)).toEqual({ heard: [2, 4], words: [0, 2] });
-    expect(findWords(wordsOf('Pruckle'), phrase)).toEqual({ heard: [3, 4], words: [0, 1] });
+    expect(findWords(wordsOf('Café Prückel'), phrase)).toEqual([{ heard: [2, 4], words: [0, 2] }]);
+    expect(findWords(wordsOf('Pruckle'), phrase)).toEqual([{ heard: [3, 4], words: [0, 1] }]);
   });
 
   it('finds the part of the words said now', () => {
-    expect(findWords(wordsOf('Cafe Meek, Indiana'), wordsOf("It's in Indiana."))).toEqual({
-      heard: [2, 3],
-      words: [2, 3],
-    });
+    expect(findWords(wordsOf('Cafe Meek, Indiana'), wordsOf("It's in Indiana."))).toEqual([
+      { heard: [2, 3], words: [2, 3] },
+    ]);
   });
 
-  it('finds nothing for words nobody said', () => {
-    expect(findWords(wordsOf('Office'), wordsOf('Lunch tomorrow at one'))).toBeUndefined();
-    expect(findWords(wordsOf(''), wordsOf('Lunch'))).toBeUndefined();
+  it('finds words said twice in both places, in the order said', () => {
+    expect(findWords(wordsOf('Kathamek'), wordsOf('Kathamek or maybe Kathamek'))).toEqual([
+      { heard: [0, 1], words: [0, 1] },
+      { heard: [3, 4], words: [0, 1] },
+    ]);
+  });
+
+  it('finds nothing for words nobody said, or a short word alone', () => {
+    expect(findWords(wordsOf('Office'), wordsOf('Lunch tomorrow at one'))).toEqual([]);
+    expect(findWords(wordsOf(''), wordsOf('Lunch'))).toEqual([]);
+    // Review: a "6" said for the time stood for a whole address.
+    expect(
+      findWords(wordsOf('Figlmüller, Bäckerstraße 6, 1010 Wien'), wordsOf('Make it at 6')),
+    ).toEqual([]);
   });
 });
 
@@ -205,6 +215,22 @@ describe('alternativesFor', () => {
         'Kathamek',
       ),
     ).toEqual([]);
+  });
+
+  it('reads every place the words were said', () => {
+    // Review: the first of two equally alike places was the only one read.
+    const twice = heard([
+      { alternatives: ['Kathamek'], text: 'Kathamek' },
+      { alternatives: [' or maybe'], text: ' or maybe' },
+      { alternatives: [' Kathamek', ' Kaffamek'], text: ' Kathamek' },
+    ]);
+    expect(alternativesFor(twice, 'Kathamek')).toEqual(['Kaffamek']);
+  });
+
+  it('keeps an accent written decomposed with its letter', () => {
+    // Review: "Café" in NFD lost its mark to the text after the span ("Kaffeé").
+    const cafe = heard([{ alternatives: ['Café', 'Kaffee'], text: 'Café' }]);
+    expect(alternativesFor(cafe, 'Cafe\u0301')).toEqual(['Kaffee']);
   });
 
   it('skips an alternative that drops the words', () => {

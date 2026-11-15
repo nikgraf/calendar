@@ -24,7 +24,8 @@ interface Word {
   readonly text: string;
 }
 
-const EDGE_PUNCTUATION = /^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu;
+// A combining mark is part of its letter: "Café" written decomposed keeps its "é".
+const EDGE_PUNCTUATION = /^[^\p{L}\p{M}\p{N}]+|[^\p{L}\p{M}\p{N}]+$/gu;
 
 /** A text's words. A token with no letter or digit in it ("|", "—") is not one. */
 export const wordsOf = (text: string): ReadonlyArray<Word> =>
@@ -129,41 +130,17 @@ const pairScore = (a: Word, b: Word): number => 2 * likeness(a, b) - 1;
 const GAP_SCORE = -1;
 /** Less than this, the words are not among what was heard: one word three-quarters alike. */
 const FOUND_SCORE = 0.5;
+/** Fewer letters than this in the words found, and a short word ("at", "6") stands for them. */
+const FOUND_LETTERS = 4;
 
-/**
- * Where some words stand among the words heard: the two runs most alike
- * (local alignment), so words the model took from an earlier turn ("Cafe
- * Meek, Vienna" when only "Vienna" was said now) or wrote another way
- * ("Café Prückel" for "Cafe Pruckle") still find the ones that were said.
- * Nothing when no run is alike enough.
- */
-export const findWords = (
+/** The run that ends at the pair `end`: back to the first pair after a zero. */
+const runTo = (
+  score: ReadonlyArray<ReadonlyArray<number>>,
   words: ReadonlyArray<Word>,
   heard: ReadonlyArray<Word>,
-): Found | undefined => {
-  const score = Array.from({ length: words.length + 1 }, () =>
-    Array.from({ length: heard.length + 1 }, () => 0),
-  );
-  let best = { i: 0, j: 0, score: 0 };
-  for (let i = 1; i <= words.length; i += 1) {
-    for (let j = 1; j <= heard.length; j += 1) {
-      const value = Math.max(
-        0,
-        score[i - 1]![j - 1]! + pairScore(words[i - 1]!, heard[j - 1]!),
-        score[i - 1]![j]! + GAP_SCORE,
-        score[i]![j - 1]! + GAP_SCORE,
-      );
-      score[i]![j] = value;
-      if (value > best.score) {
-        best = { i, j, score: value };
-      }
-    }
-  }
-  if (best.score < FOUND_SCORE) {
-    return undefined;
-  }
-  // Back to where the run began: the first pair after a zero.
-  let { i, j } = best;
+  end: { readonly i: number; readonly j: number },
+): Found => {
+  let { i, j } = end;
   let start = { i, j };
   while (i > 0 && j > 0 && score[i]![j]! > 0) {
     const here = score[i]![j]!;
@@ -177,7 +154,62 @@ export const findWords = (
       j -= 1;
     }
   }
-  return { heard: [start.j - 1, best.j], words: [start.i - 1, best.i] };
+  return { heard: [start.j - 1, end.j], words: [start.i - 1, end.i] };
+};
+
+/**
+ * Where some words stand among the words heard: the runs most alike
+ * (local alignment), so words the model took from an earlier turn ("Cafe
+ * Meek, Vienna" when only "Vienna" was said now) or wrote another way
+ * ("Café Prückel" for "Cafe Pruckle") still find the ones that were said.
+ * Every run as alike as the best, in the order they were said: words
+ * said twice stand in both places. None when no run is alike enough, or
+ * its heard words hold too few letters to be more than a short word.
+ */
+export const findWords = (
+  words: ReadonlyArray<Word>,
+  heard: ReadonlyArray<Word>,
+): ReadonlyArray<Found> => {
+  const score = Array.from({ length: words.length + 1 }, () =>
+    Array.from({ length: heard.length + 1 }, () => 0),
+  );
+  let best = 0;
+  for (let i = 1; i <= words.length; i += 1) {
+    for (let j = 1; j <= heard.length; j += 1) {
+      const value = Math.max(
+        0,
+        score[i - 1]![j - 1]! + pairScore(words[i - 1]!, heard[j - 1]!),
+        score[i - 1]![j]! + GAP_SCORE,
+        score[i]![j - 1]! + GAP_SCORE,
+      );
+      score[i]![j] = value;
+      best = Math.max(best, value);
+    }
+  }
+  if (best < FOUND_SCORE) {
+    return [];
+  }
+  const runs: Array<Found> = [];
+  for (let i = 1; i <= words.length; i += 1) {
+    for (let j = 1; j <= heard.length; j += 1) {
+      if (Math.abs(score[i]![j]! - best) < 1e-9) {
+        runs.push(runTo(score, words, heard, { i, j }));
+      }
+    }
+  }
+  const once: Array<Found> = [];
+  for (const run of runs.sort((a, b) => a.heard[0] - b.heard[0])) {
+    const letters = heard
+      .slice(run.heard[0], run.heard[1])
+      .reduce((sum, word) => sum + word.key.length, 0);
+    const overlaps = once.some(
+      (kept) => run.heard[0] < kept.heard[1] && kept.heard[0] < run.heard[1],
+    );
+    if (letters >= FOUND_LETTERS && !overlaps) {
+      once.push(run);
+    }
+  }
+  return once;
 };
 
 /** Whether a step belongs to the words `[from, to)` of its segment. */
@@ -311,25 +343,29 @@ export const alternativesFor = (
     own,
     phrase.map((entry) => entry.word),
   );
-  if (found === undefined) {
-    return [];
-  }
-  const said = phrase.slice(found.heard[0], found.heard[1]);
-  // Each segment the words stand in, with the run of its words they take.
-  const parts = [...new Set(said.map((entry) => entry.segment))].map((index) => {
-    const first = phrase.findIndex((entry) => entry.segment === index);
-    const mine = said.filter((entry) => entry.segment === index);
-    return partReadings(heard.segments[index]!, [
-      mine[0]!.at - phrase[first]!.at,
-      mine.at(-1)!.at - phrase[first]!.at + 1,
-    ]);
+  // Every place the words stand, each read as its segments' alternatives
+  // have it: the likeliest of all first, the earlier place first among equals.
+  const read = found.flatMap((run) => {
+    const said = phrase.slice(run.heard[0], run.heard[1]);
+    // Each segment the words stand in, with the run of its words they take.
+    const parts = [...new Set(said.map((entry) => entry.segment))].map((index) => {
+      const first = phrase.findIndex((entry) => entry.segment === index);
+      const mine = said.filter((entry) => entry.segment === index);
+      return partReadings(heard.segments[index]!, [
+        mine[0]!.at - phrase[first]!.at,
+        mine.at(-1)!.at - phrase[first]!.at + 1,
+      ]);
+    });
+    const before = text.slice(0, own[run.words[0]]!.start);
+    const after = text.slice(own[run.words[1] - 1]!.end);
+    return combine(parts).map(({ rank, words }) => ({
+      rank,
+      reading: `${before}${words.join(' ')}${after}`,
+    }));
   });
-  const before = text.slice(0, own[found.words[0]]!.start);
-  const after = text.slice(own[found.words[1] - 1]!.end);
   const seen = new Set([own.map((word) => word.key).join(' ')]);
   const readings: Array<string> = [];
-  for (const { rank, words } of combine(parts)) {
-    const reading = `${before}${words.join(' ')}${after}`;
+  for (const { rank, reading } of read.sort((a, b) => a.rank - b.rank)) {
     const keys = wordsOf(reading)
       .map((word) => word.key)
       .join(' ');

@@ -1472,6 +1472,19 @@ export const useDraftThread = ({
       if (mine !== request.current) {
         return undefined;
       }
+      // One lookup per place text in a turn: "both at Figlmüller" for two
+      // drafts asks MapKit once (it throttles searches).
+      const lookups = new Map<string, Promise<PlaceChange | undefined>>();
+      const placesOnce = (location: string | undefined): Promise<PlaceChange | undefined> => {
+        const key = location ?? '';
+        const known = lookups.get(key);
+        if (known !== undefined) {
+          return known;
+        }
+        const looked = placesOf(location, heard);
+        lookups.set(key, looked);
+        return looked;
+      };
       // Guests for the events among the drafts: a to-do has none.
       const changes = await Promise.all(
         results.flatMap(({ draft, result }) =>
@@ -1489,7 +1502,7 @@ export const useDraftThread = ({
                     normalizeLocationKey(after ?? '') !== normalizeLocationKey(before ?? '');
                   const [guests, placeFound] = await Promise.all([
                     isEvent ? guestsOf(result.invite, result.uninvite) : undefined,
-                    moved ? placesOf(after, heard).then((found) => found ?? NO_PLACE) : undefined,
+                    moved ? placesOnce(after).then((found) => found ?? NO_PLACE) : undefined,
                   ]);
                   return {
                     ...(guests ? { guests } : {}),

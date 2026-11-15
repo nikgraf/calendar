@@ -93,7 +93,7 @@ export const locationHeard = (each: PlaceCase): boolean =>
   findWords(
     wordsOf(each.location),
     each.heard.flatMap((segment) => wordsOf(segment.text)),
-  ) !== undefined;
+  ).length > 0;
 
 /** A name as compared: folded, letters and digits only ("Loos Bar" and "Loosbar" alike). */
 const nameKey = (name: string): string =>
@@ -117,7 +117,7 @@ export interface PlaceOutcome {
     readonly name: string;
     readonly source: PlaceCandidate['source'];
   }>;
-  /** MapKit calls that failed (throttled, offline): a miss may be one of these. */
+  /** MapKit calls that failed (throttled, offline) or gave no answer in time: a miss may be one of these. */
   readonly errors: ReadonlyArray<string>;
   /** The reading the place meant was found for, when it was another reading's. */
   readonly foundAs?: string | undefined;
@@ -200,7 +200,9 @@ export const formatPlaceReport = (report: PlaceReport): string => {
     `   as written     taken ${String(score.asWritten.taken)}${of} · offered ${String(score.asWritten.offered)}${of}`,
     `   with readings  taken ${String(score.readings.taken)}${of} · offered ${String(score.readings.offered)}${of} · only by a reading ${String(score.readings.onlyByReading)}`,
     ...(score.errors > 0
-      ? [`   ${String(score.errors)} case(s) with a failed MapKit call: their misses may be that`]
+      ? [
+          `   ${String(score.errors)} case(s) with a MapKit call that failed or gave no answer in time: their misses may be that`,
+        ]
       : []),
   ];
   for (const each of report.cases) {

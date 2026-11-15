@@ -108,7 +108,8 @@ const geo = {
 // ("Figlmüller", said) a segment of its own, with the readings it weighed.
 const DICTATED = {
   segments: [
-    { text: 'Dinner | +0 | 19:00-20:00 |' },
+    // Tomorrow: a saved event that has begun would be a past place for the tests after it.
+    { text: 'Dinner | +1 | 19:00-20:00 |' },
     { alternatives: [' Figelmiller', ' Feigelmiller', ' Figelmuller'], text: ' Figelmiller' },
   ],
 };
