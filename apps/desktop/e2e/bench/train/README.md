@@ -208,9 +208,19 @@ same llama.cpp, as the phone loads.
 
 ## What a result can and cannot say
 
-The 70 cases of the bench are the test: no training phrase is one of
-them or close to one. But the practice phrases were written by a model
-that writes much like the people who wrote the cases, and follow-ups are
-short and alike by nature ("make it 9" trains, "make it 8" tests). A
-score here says the approach works on phrases of this kind, not how the
-model reads what real people say.
+The bench's cases are the test (305 for the Assistant and 124 for find a
+time since 2026-11-15, a quarter of them blind: `../README.md`): no
+training phrase is one of them or close to one, since the export drops
+those. But the practice phrases were written by a model that writes much
+like the people who wrote the cases, and follow-ups are short and alike
+by nature ("make it 9" trains, "make it 8" tests). A score here says the
+approach works on phrases of this kind, not how the model reads what
+real people say.
+
+The 233 cases added on 2026-11-15 were written after v2's data was made,
+so nothing had kept that data away from them. Held against it
+afterwards (`nearBench` over v2's threads): no first phrase is near a
+training phrase, once 27 that were had been reworded; 30 of the 153
+later turns are ("at 10", "jede Woche"), which no wording avoids. v2's
+score on those turns is the more generous for it; a version trained
+after that day has them dropped from its data.

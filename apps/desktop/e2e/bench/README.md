@@ -17,7 +17,9 @@ MODEL_BENCH=1 E2E=1 pnpm exec vp test run apps/desktop/e2e/bench/modelBench.e2e.
 | `MODEL_BENCH_PIPELINE` | What runs around the model, comma-separated: `tuned` (the default), `plain`. See Arms.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `MODEL_BENCH_CASES`    | Only the cases whose id contains a term or whose tags hold it (`flow,de`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `MODEL_BENCH_STT`      | `off`: every recording's transcript is parsed, nothing is transcribed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| `MODEL_BENCH_COMPARE`  | An earlier report (JSON) to print the difference to.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `MODEL_BENCH_COMPARE`  | An earlier report (JSON) to print the difference to: the cases that flipped, the fields that moved, and how often chance alone would flip as many cases one way. A run of several models compares each with its own earlier report; a run of one model compares it with whatever report is named, another model's too (v2 beside v3).                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `MODEL_BENCH_BLIND`    | `show`: the blind cases are printed like the open ones. For fixing an expectation, never while briefs or prompts are written (see Blind cases).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `MODEL_BENCH_TODAY`    | The day the run reads its phrases on (`YYYY-MM-DD`); default the clock's. What "this week" and "Friday" mean moves with the day, so two runs are compared on one day: name the earlier run's (its report's `today`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `MODEL_BENCH_RESCORE`  | Earlier reports (files, or a folder of them, comma-separated) scored again by the checks as they are now, without asking any model; each is written as a new report that names the run it came from, in its file name too. A recorded turn's "the transcript passes" is scored again where the report kept the transcript's outcome, and left out where it did not. A case that is gone, or has other turns or words than the model answered, stays as the report had it and is named. For a change to the checks or to an expectation alone; a changed address book or recording needs a run.                                                                                                                                                                                     |
 | `MODEL_BENCH_OUT`      | Where reports go; default `output/bench/` (gitignored).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 
@@ -111,8 +113,11 @@ thread does. The report keeps the raw model answers per turn.
   the report).
 - `expect` says where a person would put it — never a literal date, the
   bench runs on "today". `weekday` (ISO, 1 Monday) or `dayOffset` (0
-  today); `startTime`/`endTime` as `HH:MM` (a task has only a start);
-  `isAllDay`; `assumedTime` (the times came from a meal or part of the
+  today); `dayOfMonth` and `month` for a date said by its number ("the
+  23rd", "Oct 20"), which is also held to today or later, the next such
+  day; `startTime`/`endTime` as `HH:MM` (a task has only a start);
+  `spanDays` (the days it runs past its first: 1 for an end after
+  midnight); `isAllDay`; `assumedTime` (the times came from a meal or part of the
   day); `kind` (`event`/`task`; the first turn is an event unless it
   says `task`); `title` (whole, compared folded: case,
   accents, ß; a list names several a person would accept) or
@@ -144,6 +149,58 @@ thread does. The report keeps the raw model answers per turn.
 `@example.com` addresses, including two Annas (a name that is a choice)
 and a Max with two addresses (a choice too).
 
+### Tags
+
+A case's `tags` say what it exercises, and the table prints the cases
+passed per tag. `flow` is a case of several turns; `follow-up` a turn
+that leans on what the draft holds (a place narrowed to its city,
+company added, "invite him too"); `shift`, `day`, `correction` and
+`mixed` name what a later turn does. `date` is a day by its number or an
+amount of time from today, `time` a range, a length or a part of the
+day, `allday` a draft without times or one that runs past midnight.
+`typed` is written as people type (lower case, short forms, typos),
+`dictated` as a recogniser writes speech (no punctuation, numbers as
+words, a correction inside the phrase). `phone` marks a phrase from real
+use, as it was heard: those are scored apart by their tag, since the
+other cases were written at a desk.
+
+### Blind cases
+
+A case with `"blind": true` counts in every score and is named in no
+table: no line of its own, no answer, no id among the cases that
+flipped. The table prints the open and the blind cases apart, the blind
+ones by their counts alone.
+
+They are there because every open case gets read: its misses are what
+the next training round's briefs and the next prompt change are written
+from, and a bench that is read that way stops being a test of anything
+but itself. A third of the cases added on 2026-11-15 are blind, picked
+by their place in each area's list before any model had read one. The
+rules that keep them so:
+
+- Briefs, prompts and checks are written from the open cases' misses.
+  A blind case that is read for those becomes an open one: take its flag
+  off in the same change.
+- `MODEL_BENCH_BLIND=show` prints them. It is for fixing a wrong
+  expectation, which is found by the teacher's answers on the plain arm,
+  never by the Assistant's model's.
+- The report file holds every answer, a blind case's too: a rescore
+  needs them. Reading one there is reading the case.
+- The training export drops every phrase near a bench case, open or
+  blind (`nearBench`), so the blind cases stay out of training data too.
+
+What they cannot do: they were written by the person who writes the
+briefs, so they share that person's idea of what people say. Phrases
+from real use (`phone`) are the check on that.
+
+### A phrase from real use
+
+A phrase that went wrong on the phone becomes a case as it was heard,
+not as it was meant: the words the recogniser wrote, the draft before it
+for a later turn (as the turns that lead to it), and where a person
+would have put it. It is tagged `phone` and stays open, since it was
+picked for having failed.
+
 ## Report
 
 `output/bench/<yyyymmdd-hhmm>-<sha>-<provider>.json`: every turn's
@@ -152,11 +209,20 @@ draft or rejection, the fields checked and failed. The table prints
 cases, turns, each field's pass rate, the median time per turn and, for
 the recorded turns, how many were transcribed (with the mean word error
 rate), ran as their transcript for want of a file or because the
-recogniser could not read it, or were skipped. A prompt, data or model change is judged by two runs
-on two commits: `MODEL_BENCH_COMPARE=<earlier report>` prints the cases
-that flipped and the fields that moved, and says when the two runs were
-not set up alike (a served model's endpoint and extra request body, the
-report's `settings`).
+recogniser could not read it, or were skipped. Below the score it prints
+the cases passed per tag and, where the run held blind cases, the open
+and the blind ones apart.
+
+A prompt, data or model change is judged by two runs on two commits:
+`MODEL_BENCH_COMPARE=<earlier report>` prints the cases that flipped and
+the fields that moved, and says when the two runs were not set up alike
+(a served model's endpoint and extra request body, the report's
+`settings`). Its last line about the flips says whether they are more
+than chance: an exact sign test, how often a fair coin splits that many
+flips at least as unevenly. Cases that read the same in both runs say
+nothing about which is better, so the flips are a sharper measure than
+the two scores: v1 to v2 was 59 to 60 of 72 cases with 8 fixed and 7
+broke, which is what chance alone gives.
 
 ## Finder bench
 
@@ -202,7 +268,39 @@ floor the code's defaults give, 8 of 40 with the rules on most days.
 report, `output/bench/finder/finder-<yyyymmdd-hhmm>-<sha>-<provider>.json`,
 keeps each prompt and answer as the model got and gave them, and each
 arm's parts with what they read. `MODEL_BENCH_RESCORE=<report or folder>`
-scores stored answers again by the cases and code as they are now.
+scores stored answers again by the cases and code as they are now. A
+case takes `"blind": true` as the Assistant's do, and
+`MODEL_BENCH_COMPARE=<earlier finder report>` prints the cases that
+flipped in each arm with the same line about chance.
+
+## Where the models stand
+
+The bench as it grew on 2026-11-15 (305 cases and 504 turns for the
+Assistant, 69 cases blind; 124 sentences for find a time, 26 blind),
+read as of Wednesday 2026-11-18 (`MODEL_BENCH_TODAY`):
+
+| Model                     | Cases   | Turns   | Open    | Blind |
+| ------------------------- | ------- | ------- | ------- | ----- |
+| The teacher, plain arm    | 300/305 |         |         |       |
+| Assistant v1              | 237/305 | 421/504 | 185/236 | 52/69 |
+| Assistant v2              | 263/305 | 459/504 | 200/236 | 63/69 |
+| Find a time, the teacher  | 119/124 |         | 94/98   | 25/26 |
+| Find a time, Assistant v2 | 107/124 |         | 85/98   | 22/26 |
+
+- v1 to v2: 40 cases fixed, 14 broke, more than chance (p < 0.01). On
+  the 72 cases before, the same two files were 8 fixed and 7 broke.
+- The teacher (DeepSeek V4 Flash) read the Assistant's cases on
+  2026-11-15 itself, over two runs. The five it misses are conventions
+  it does not share: a to-do's title keeps its place (two cases), a
+  destination stays in the title ("Trip to Vienna"), "until Friday"
+  stays in the title, and a full name closes an open choice of guests
+  (the thread's code, not a reading).
+- Find a time is scored without the word rules: the teacher on the app's
+  prompt, v2 on its own (`MODEL_BENCH_PIPELINE=tuned`).
+
+A later version stands beside these when it reads on the same day:
+run v2's published file again with `MODEL_BENCH_TODAY=2026-11-18`, then
+the new one with that day and `MODEL_BENCH_COMPARE=<v2's report>`.
 
 ## Recordings
 
