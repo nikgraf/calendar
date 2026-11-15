@@ -836,8 +836,8 @@ export function EventEditSheet({
     initialText: seed.quickAddText,
     // An older step on show: nothing is listened for, and listening ends.
     off: previewing,
-    onPhrase: async (text) => {
-      const message = await onPhrase(text);
+    onPhrase: async (text, heard) => {
+      const message = await onPhrase(text, heard);
       if (message === undefined) {
         lesson.done();
         // Taken: the keyboard goes, so the answer is what shows.

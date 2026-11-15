@@ -20,6 +20,12 @@ import {
 export const PlaceCandidate = Schema.Struct({
   /** MapKit's address, when it has one; a past place has only its text. */
   address: Schema.optional(Schema.String),
+  /**
+   * The other reading of the words it was found for: dictation weighed
+   * "Figelmuller" where it wrote "Figelmiller", and that found it. Offered,
+   * never taken unasked — the words as written did not name it.
+   */
+  alternative: Schema.optional(Schema.String),
   /** The coordinates; `source` is the text the location field takes on a pick. */
   geo: GeoLocation,
   /**
@@ -185,13 +191,16 @@ export const rankFoundPlaces = <Place extends FoundPlace>(
  * The candidate a turn takes without asking: the best one, when it
  * resembles the text at all — a past place, or a search match by name,
  * words or sound that is nearby or where the text says. A hit that is
- * neither is offered, never taken: the text stays as said.
+ * neither, or that another reading of the words found, is offered, never
+ * taken: the text stays as said.
  */
 export const preselectedPlace = (
   candidates: ReadonlyArray<PlaceCandidate>,
 ): PlaceCandidate | undefined => {
   const [first] = candidates;
-  return first !== undefined && first.match !== 'search' ? first : undefined;
+  return first !== undefined && first.match !== 'search' && first.alternative === undefined
+    ? first
+    : undefined;
 };
 
 /** A candidate as a chip names it: a past place by its text, a search hit by its name and address. */

@@ -747,8 +747,9 @@ profile) so a spec acts while a save or delete waits for EventKit.
 tone (Chromium's fake audio device never opens under Electron), and
 under `CALENDAR_MICROPHONE=fixture` main answers the audio streamed to
 it: while the tone plays, the spec's next phrase comes back word by
-word as both recognisers' words, and finishing reads it as that phrase,
-nothing asked or installed. `camera` likewise: the
+word as both recognisers' words, and finishing reads it as that phrase
+(a phrase given as segments, as them, each with the other readings the
+spec gives it), nothing asked or installed. `camera` likewise: the
 page's `getUserMedia` answers a drawn canvas stream, the camera counts as
 granted with no TCC prompt (`CALENDAR_CAMERA=fixture`, else `off`: no
 camera, the paste field only), and every frame reads as the spec's code

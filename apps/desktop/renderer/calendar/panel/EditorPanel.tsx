@@ -368,8 +368,8 @@ export function EditorPanel({
               note={seed.thread?.note}
               onCapture={onCapture}
               onEdit={() => switcher.flip('form')}
-              onPhrase={async (text) => {
-                const message = await onPhrase(text);
+              onPhrase={async (text, heard) => {
+                const message = await onPhrase(text, heard);
                 if (message === undefined) {
                   lessonDone();
                 }

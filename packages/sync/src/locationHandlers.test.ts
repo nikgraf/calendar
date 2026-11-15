@@ -37,6 +37,8 @@ import { describe } from 'vite-plus/test';
 import { appleCalendarServicesLayer } from './appleCalendarEvents.ts';
 import { writeTimeZoneSettings } from './deviceSettings.ts';
 import {
+  ALTERNATIVE_SEARCH_TIMEOUT,
+  ALTERNATIVE_SEARCHES,
   CANDIDATE_SEARCH_TIMEOUT,
   FILL_IN_LIMIT,
   FILL_IN_WINDOW_MS,
@@ -997,5 +999,146 @@ describe('nearby first', () => {
       expect(yield* locationHandlers.resolveLocation({ location })).toEqual(picked);
       expect(calls).toEqual([]);
     }).pipe(Effect.provide(setup(client)));
+  });
+});
+
+describe('dictation’s other readings', () => {
+  // As MapKit answered the readings of a dictated "Figlmüller" (2026-11-15):
+  // the words as written found a place nearby that they do not name.
+  const bleier = {
+    address: 'Bleier-Figlmüller, 2851 Krumbach, Austria',
+    lat: 47.5246,
+    lng: 16.1867,
+    name: 'Bleier-Figlmüller',
+  };
+  const figlmueller = {
+    address: 'Bäckerstraße 6, 1010 Vienna, Austria',
+    lat: 48.2091,
+    lng: 16.3778,
+    name: 'Figlmüller',
+  };
+  const farNamesake = {
+    address: '12 Main St, Springfield, IL 62701, United States',
+    lat: 39.8017,
+    lng: -89.6437,
+    name: 'Figelmuller Diner',
+  };
+  const kaffemik = {
+    address: 'Zollergasse 5, 1070 Vienna, Austria',
+    lat: 48.2003,
+    lng: 16.3497,
+    name: 'Kaffemik',
+  };
+  const inVienna = seedPlaced([placedEvent('home', 1, VIENNA), placedEvent('work', 2, VIENNA)]);
+
+  it.effect('asks them when the words name nothing nearby, and offers what they name first', () => {
+    const { calls, client } = mapkit({
+      found: { Figelmiller: [bleier], Figelmuller: [figlmueller], Figlemiller: [] },
+    });
+    return Effect.gen(function* () {
+      yield* inVienna;
+      const candidates = yield* locationHandlers.placeCandidates({
+        alternatives: ['Figelmuller', 'Figlemiller'],
+        location: 'Figelmiller',
+      });
+      expect(candidates.map((c) => [c.geo.name, c.match, c.alternative])).toEqual([
+        ['Figlmüller', 'phonetic', 'Figelmuller'],
+        ['Bleier-Figlmüller', 'search', undefined],
+      ]);
+      // Offered, never taken: the words as written did not name it.
+      expect(preselectedPlace(candidates)).toBeUndefined();
+      expect(candidates[0]?.geo.source).toBe('Figlmüller, Bäckerstraße 6, 1010 Vienna, Austria');
+      // One search each, not the completer's rows too.
+      expect(calls.filter((call) => !call.endsWith('Figelmiller'))).toEqual([
+        'resolve:Figelmuller',
+        'resolve:Figlemiller',
+      ]);
+    }).pipe(Effect.provide(setup(client)));
+  });
+
+  it.effect('asks nothing more when the words name a place nearby', () => {
+    const { calls, client } = mapkit({
+      found: { Figelmuller: [figlmueller], Figlmüller: [figlmueller] },
+    });
+    return Effect.gen(function* () {
+      yield* inVienna;
+      const candidates = yield* locationHandlers.placeCandidates({
+        alternatives: ['Figelmuller'],
+        location: 'Figlmüller',
+      });
+      expect(candidates.map((c) => [c.geo.name, c.alternative])).toEqual([
+        ['Figlmüller', undefined],
+      ]);
+      expect(calls).not.toContain('resolve:Figelmuller');
+    }).pipe(Effect.provide(setup(client)));
+  });
+
+  it.effect('leaves out what a reading finds far away or that does not resemble it', () => {
+    const { client } = mapkit({ found: { Figelmuller: [farNamesake, bleier] } });
+    return Effect.gen(function* () {
+      yield* inVienna;
+      const candidates = yield* locationHandlers.placeCandidates({
+        alternatives: ['Figelmuller'],
+        location: 'Figelmiller',
+      });
+      expect(candidates).toEqual([]);
+    }).pipe(Effect.provide(setup(client)));
+  });
+
+  it.effect('offers a place the user has been to that another reading sounds like', () => {
+    const { client } = mapkit({});
+    return Effect.gen(function* () {
+      yield* seedPlaced([
+        placedEvent('home', 1, VIENNA),
+        new EventRecord({
+          ...placedEvent('coffee', 30, kaffemik),
+          geo: new GeoLocation({
+            lat: kaffemik.lat,
+            lng: kaffemik.lng,
+            name: 'Kaffemik',
+            source: 'Kaffemik, Zollergasse 5, 1070 Vienna, Austria',
+          }),
+          location: 'Kaffemik, Zollergasse 5, 1070 Vienna, Austria',
+        }),
+      ]);
+      const candidates = yield* locationHandlers.placeCandidates({
+        alternatives: ['Kathamic', 'Kaffamek'],
+        location: 'Kathamek',
+      });
+      expect(candidates.map((c) => [c.source, c.geo.name, c.alternative])).toEqual([
+        ['history', 'Kaffemik', 'Kaffamek'],
+      ]);
+      expect(preselectedPlace(candidates)).toBeUndefined();
+    }).pipe(Effect.provide(setup(client)));
+  });
+
+  it.effect('asks a few readings at most, each kept as it answers', () => {
+    const { calls, client } = mapkit({
+      found: { Figelmuller: [figlmueller], Figlmiller: [figlmueller] },
+    });
+    const oneStalls: GeoClientShape = {
+      ...client,
+      resolve: (params) =>
+        params.query === 'Figlmiller'
+          ? Effect.sync(() => calls.push('resolve:Figlmiller')).pipe(Effect.andThen(Effect.never))
+          : client.resolve(params),
+    };
+    return Effect.gen(function* () {
+      yield* inVienna;
+      const asked = yield* Effect.forkChild(
+        locationHandlers.placeCandidates({
+          alternatives: ['Figlmiller', 'Figelmuller', 'Figglemiller', 'Figlemiller', 'Figelmüller'],
+          location: 'Figelmiller',
+        }),
+      );
+      yield* TestClock.adjust(ALTERNATIVE_SEARCH_TIMEOUT);
+      const candidates = yield* Fiber.join(asked);
+      expect(candidates.map((c) => [c.geo.name, c.alternative])).toEqual([
+        ['Figlmüller', 'Figelmuller'],
+      ]);
+      expect(calls.filter((call) => !call.endsWith('Figelmiller'))).toHaveLength(
+        ALTERNATIVE_SEARCHES,
+      );
+    }).pipe(Effect.provide(setup(oneStalls)));
   });
 });

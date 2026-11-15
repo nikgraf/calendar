@@ -204,6 +204,60 @@ keeps each prompt and answer as the model got and gave them, and each
 arm's parts with what they read. `MODEL_BENCH_RESCORE=<report or folder>`
 scores stored answers again by the cases and code as they are now.
 
+## Place bench
+
+A dictated name the recogniser mishears finds nothing, or a namesake
+far away. `placeBench.e2e.ts` asks MapKit (the helper's) for each case
+of `places.json` through the app's own lookup (`placeCandidates`), with
+the user's two past events in the case's city: once for the place as
+written, once with dictation's other readings of it
+(`alternativesFor`), as a dictated turn asks. It scores whether the
+place meant was taken unasked, offered (its place in the list) and, in
+the second arm, through which reading.
+
+```bash
+MODEL_BENCH=1 E2E=1 pnpm exec vp test run apps/desktop/e2e/bench/placeBench.e2e.ts
+```
+
+`MODEL_BENCH_HELPER` and `MODEL_BENCH_OUT` work as above,
+`MODEL_BENCH_CASES` picks cases by a part of their id. MapKit throttles
+searches (about fifty a minute, then every one fails for a while), so
+the bench keeps to forty calls a minute, waiting between lookups: a run
+of every case takes about ten minutes. A case whose MapKit call failed
+is counted apart: its miss may be the throttle. The report goes to
+`output/bench/places/places-<yyyymmdd-hhmm>-<sha>.json`.
+
+A case is a phrase as a recogniser read it, segment by segment with the
+readings it weighed for each (the first is the segment itself), the
+place a model reads in it (`location`: the words as written), the
+city its user's places are in (`near`) and MapKit's names for the
+place meant (`names`: a hit whose name begins with one of them, folded,
+is it):
+
+```json
+{
+  "id": "figlmueller-samantha",
+  "said": "Dinner at Figlmüller on Friday",
+  "voice": "say -v Samantha (en_US)",
+  "near": "vienna",
+  "location": "Figelmiller",
+  "names": ["Figlmüller"],
+  "heard": [
+    { "alternatives": ["Dinner at"], "text": "Dinner at" },
+    { "alternatives": [" Figelmiller", " Feigelmiller", " Figelmuller"], "text": " Figelmiller" },
+    { "alternatives": [" on Friday."], "text": " on Friday." }
+  ]
+}
+```
+
+The cases so far are five macOS voices saying six Vienna places, read
+by macOS 27.2's SpeechTranscriber as the app's final reading reads
+(alternatives on, 2026-11-15): synthetic speech, so a measure of the
+lookup, not of how often a person is misheard. `places.test.ts` checks
+in the gate that every case's place is among its words. A recording's
+readings belong here as the recogniser wrote them, `voice` naming who
+said it on what.
+
 ## Recordings
 
 `audio/README.md` lists the clips the cases ask for and how to record
