@@ -112,7 +112,7 @@ pnpm --filter @calendar/desktop dev:app
 pnpm --filter @calendar/ios start
 
 # Quality gates
-pnpm test && pnpm check && pnpm typecheck
+pnpm test && pnpm check && pnpm knip && pnpm typecheck
 
 # Desktop e2e (build first)
 pnpm --filter @calendar/desktop build && pnpm test:e2e

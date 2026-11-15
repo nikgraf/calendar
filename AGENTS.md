@@ -144,11 +144,11 @@ here renders hooks in a test. One independent value stays a plain
 
 ## Commands
 
-The gate — `pnpm check`, `pnpm typecheck`, `pnpm test` — must be green
-before any commit; `pnpm fix` (`vp check --fix`) applies lint and format
-fixes. A pre-commit hook (`vp config`, installed by `pnpm install`) runs
-`vp staged` and commits the whole index, so split commits by staging
-deliberately.
+The gate — `pnpm check`, `pnpm knip`, `pnpm typecheck`, `pnpm test` —
+must be green before any commit; `pnpm fix` (`vp check --fix`) applies
+lint and format fixes. A pre-commit hook (`vp config`, installed by
+`pnpm install`) runs `vp staged` and commits the whole index, so split
+commits by staging deliberately.
 
 - `pnpm test` — vitest via vite-plus, unit tests against in-memory
   SQLite; Effect code uses `@effect/vitest` with TestClock.
@@ -244,6 +244,19 @@ deliberately.
   not into numbered parts, and into pieces of 40 or less. Never switch
   the rule off inline: `scripts/complexityCap.test.ts` fails on a
   directive that names it.
+- Oxlint lints with type information (`lint.options.typeAware` and the
+  `typescript/*` rules in `vite.config.ts`): a promise is awaited, or
+  `void`ed where the callee handles its own failure, and a failure value
+  of unknown type becomes text through `failureText` (core), never a
+  `String()` that prints a plain object as `[object Object]`. Add rules in
+  `vite.config.ts`, not on the command line: `vp lint` given several
+  `--deny` flags prints nothing and exits 0.
+- `pnpm knip` (`knip.config.ts`) fails on a file nothing reaches, an export
+  nothing reads, and a dependency nothing imports or an import nothing
+  declares. Delete dead code rather than ignore it. An entry point knip
+  cannot see (a `vp pack` entry, a spec or script run only under an env
+  var, by hand or by Maestro) goes into `knip.config.ts`, and every ignore
+  there says why.
 - Window-level concerns (screen privacy, logging, open-external, the
   `model:*` AI-helper channels (dictation's `model:speech-*` among them),
   `assistant:*` (the Assistant's own model:
