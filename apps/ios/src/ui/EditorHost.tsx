@@ -528,6 +528,9 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
         initialKind={shown.initialKind}
         onCancel={() => setSheet(cancelEditor(shown.opening))}
         onClose={() => setSheet(closeEditor(shown.opening))}
+        // Its swipe guard holds only while the sheet names this opening:
+        // the host's own close (Save, Delete, a share) goes through.
+        open={sheet.kind === 'edit' && sheet.opening === shown.opening}
         opensOn={shown.opensOn}
         presentation="route"
         seed={shown.seed}

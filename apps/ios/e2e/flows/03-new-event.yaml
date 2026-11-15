@@ -126,6 +126,8 @@ tags:
       id: 'invitee-chip'
     timeout: 5000
 - assertVisible: 'bob@example.com'
-# Nothing is saved: leave the sheet as we found it.
+# Nothing is saved: leave the sheet as we found it. It holds edits, so
+# Cancel asks first.
 - tapOn: 'Cancel'
+- tapOn: 'Discard Changes'
 - assertVisible: 'Today'

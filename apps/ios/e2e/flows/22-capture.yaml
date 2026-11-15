@@ -168,5 +168,7 @@ tags:
           when:
             true: ${output.sheetClosed !== true}
           commands:
+            # The capture's drafts are unsaved: Cancel asks before they go.
             - tapOn: 'Cancel'
+            - tapOn: 'Discard Changes'
             - assertVisible: 'Today'
