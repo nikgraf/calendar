@@ -54,9 +54,30 @@ public class SolunivoSpeechModule: Module {
       }
     }
 
+    // The Mic Mode the user picked for this app in Control Center. iOS
+    // applies it only to audio recorded through voice processing, and no
+    // app may pick one itself.
+    Function("microphoneMode") { () -> String in
+      switch AVCaptureDevice.preferredMicrophoneMode {
+      case .voiceIsolation: return "voiceIsolation"
+      case .wideSpectrum: return "wideSpectrum"
+      default: return "standard"
+      }
+    }
+
+    // iOS's own Mic Mode picker, opened for this app.
+    AsyncFunction("showMicrophoneModes") {
+      AVCaptureDevice.showSystemUserInterface(.microphoneModes)
+    }.runOnQueue(.main)
+
+    // A locale's language in the user's own: "English (United States)".
+    Function("languageName") { (identifier: String) -> String in
+      Locale.current.localizedString(forIdentifier: identifier) ?? identifier
+    }
+
     // `session`: the caller's id for the phrase, which its words and the
     // calls about it carry. `voiceProcessing`: the microphone's echo
-    // cancellation and noise suppression (Settings › Advanced).
+    // cancellation and noise suppression (Settings › Dictation).
     AsyncFunction("start") {
       [alive] (session: Int, locale: String, voiceProcessing: Bool, promise: Promise) in
       guard #available(iOS 26.0, *) else {

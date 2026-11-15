@@ -5,6 +5,7 @@ import {
   SpeechUnsupportedError,
   type SpeechToText,
 } from '@calendar/ai';
+import { dictationLocale, noiseReduction } from './dictationSettings.ts';
 import { toPcm16 } from './pcm16.ts';
 
 /** What the helper's recognisers take: 16 kHz mono. */
@@ -62,8 +63,6 @@ const join = (chunks: ReadonlyArray<Float32Array>, length: number): Float32Array
   return joined;
 };
 
-const locale = () => navigator.language || 'en-US';
-
 export const desktopSpeech: SpeechToText = {
   cancel: async () => {
     const active = listening;
@@ -103,7 +102,7 @@ export const desktopSpeech: SpeechToText = {
   },
 
   prepare: async () => {
-    const result = await window.calendarBridge.modelPrepareSpeech(locale());
+    const result = await window.calendarBridge.modelPrepareSpeech(dictationLocale());
     if (result.denied) {
       throw new MicrophoneDeniedError({ message: 'Microphone access was declined.' });
     }
@@ -114,9 +113,17 @@ export const desktopSpeech: SpeechToText = {
 
   start: async ({ onLost, onWords, signal }) => {
     let stream: MediaStream;
+    // Chromium's own voice processing, as Settings › Dictation asks.
+    const processed = noiseReduction.get();
     try {
       stream = await navigator.mediaDevices.getUserMedia({
-        audio: { channelCount: 1, sampleRate: SAMPLE_RATE },
+        audio: {
+          autoGainControl: processed,
+          channelCount: 1,
+          echoCancellation: processed,
+          noiseSuppression: processed,
+          sampleRate: SAMPLE_RATE,
+        },
       });
     } catch {
       throw new MicrophoneDeniedError({ message: 'Microphone access was declined.' });
@@ -131,7 +138,7 @@ export const desktopSpeech: SpeechToText = {
         // Given up while the worklet loaded: starting a session now would
         // drop a newer caller's in the helper.
         if (!signal?.aborted) {
-          started = await window.calendarBridge.modelSpeechStart(locale());
+          started = await window.calendarBridge.modelSpeechStart(dictationLocale());
         }
       }
     } catch (error) {

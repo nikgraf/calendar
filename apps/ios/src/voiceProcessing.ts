@@ -1,11 +1,12 @@
 import { File, Paths } from 'expo-file-system';
 
 /**
- * Settings › Advanced › Voice Processing: whether dictation records through
- * the iPhone's own echo cancellation and noise suppression. Off unless
- * turned on: nothing measured yet says whether it helps the recognisers or
- * hurts them, so this is the switch to compare the two with in a loud room.
- * This iPhone's choice alone, kept beside the app's other notes.
+ * Settings › Dictation › Reduce Background Noise: whether dictation records
+ * through the iPhone's voice processing (echo cancellation, noise
+ * suppression, gain), which also lets iOS offer its Mic Mode (Voice
+ * Isolation) for the app. On unless turned off, as the Mac's microphone
+ * is. This iPhone's choice alone, kept beside the app's other notes; a
+ * choice is always written out, so an "off" stays off whatever the default.
  */
 const file = () => new File(Paths.document, 'voice-processing.json');
 
@@ -15,9 +16,9 @@ const listeners = new Set<() => void>();
 const read = (): boolean => {
   try {
     const target = file();
-    return target.exists && (JSON.parse(target.textSync()) as { on?: unknown }).on === true;
+    return !target.exists || (JSON.parse(target.textSync()) as { on?: unknown }).on !== false;
   } catch {
-    return false;
+    return true;
   }
 };
 

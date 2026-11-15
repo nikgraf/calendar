@@ -140,7 +140,10 @@ recorded, into one speech session (`packages/ai/swift/SpeechBridge.swift`,
 symlinked into the helper and the iOS module `solunivo-speech`): on the
 desktop the renderer's `getUserMedia` worklet sends 100 ms blocks of
 16 kHz Int16 (`model:speech-audio`), on iOS the module records with
-AVAudioEngine (voice processing when Settings › Advanced asks for it).
+AVAudioEngine. Both record through the platform's voice processing
+(Chromium's echo cancellation, noise suppression and gain; AVAudioEngine's,
+which also lets iOS apply the Mic Mode picked for the app) unless
+Settings › Dictation turns it off, a choice kept on the device.
 Two recognisers write the words as they are said — DictationTranscriber
 ("quick", word by word) and SpeechTranscriber ("accurate", in bursts) —
 and they come back as `speech.words` events (the module's `onWords`);

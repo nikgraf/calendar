@@ -7,6 +7,9 @@ export interface SpeechWordsEvent {
   readonly text: string;
 }
 
+/** iOS's Mic Mode for the app, as the user picked it in Control Center. */
+export type MicrophoneMode = 'standard' | 'voiceIsolation' | 'wideSpectrum';
+
 export interface SolunivoSpeechNative {
   readonly addListener: (
     name: 'onWords',
@@ -24,10 +27,16 @@ export interface SolunivoSpeechNative {
       readonly text: string;
     }>;
   } | null>;
+  /** A locale's language in the user's own ("English (United States)"); the id when it has no name. */
+  readonly languageName: (locale: string) => string;
+  /** The Mic Mode picked for this app; it applies only while recording with voice processing. */
+  readonly microphoneMode: () => MicrophoneMode;
   /** Installs the locale's speech assets; rejects with "unsupported: …" where it never will. */
   readonly prepare: (locale: string) => Promise<void>;
   /** Asks for the microphone if iOS has not yet; whether it may be used. */
   readonly requestMicrophone: () => Promise<boolean>;
+  /** Opens iOS's Mic Mode picker: no app may pick the mode itself. */
+  readonly showMicrophoneModes: () => Promise<void>;
   /** Opens the microphone for a phrase; a newer start replaces it. Answers the recognisers that listen. */
   readonly start: (
     session: number,
