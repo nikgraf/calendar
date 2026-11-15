@@ -56,29 +56,52 @@ const CALLS_PER_MINUTE = 40;
 const CALLS_PER_LOOKUP = 11;
 const MINUTE_MS = 60_000;
 
-/** MapKit over the helper, its calls counted, and the ones that failed kept for the report. */
+/**
+ * MapKit over the helper, its calls counted, each kept with the lookup
+ * that made it: a call that failed, or had not answered when its lookup
+ * did (the lookup's own timeout let it go), is that lookup's to report.
+ */
 const mapkit = (helper: HelperClient) => {
   const started: Array<number> = [];
-  let failed: Array<string> = [];
+  const calls: Array<{
+    error?: string;
+    readonly lookup: string;
+    readonly method: string;
+    settled: boolean;
+  }> = [];
+  let current = '';
   const client = geoClientFrom({
     invoke: async (method, params) => {
       started.push(Date.now());
+      const call: (typeof calls)[number] = { lookup: current, method, settled: false };
+      calls.push(call);
       try {
         return await helper.request(method, params ?? {});
       } catch (error) {
-        failed.push(`${method}: ${error instanceof Error ? error.message : String(error)}`);
+        call.error = `${method}: ${error instanceof Error ? error.message : String(error)}`;
         throw error;
+      } finally {
+        call.settled = true;
       }
     },
     subscribe: () => () => {},
   });
   return {
     client,
-    /** The calls that failed since the last time. */
-    failures: () => {
-      const taken = failed;
-      failed = [];
-      return taken;
+    /** The calls the lookup made that failed or gave no answer in time. */
+    failures: (lookup: string): ReadonlyArray<string> =>
+      calls
+        .filter((call) => call.lookup === lookup)
+        .flatMap((call) =>
+          call.error !== undefined
+            ? [call.error]
+            : call.settled
+              ? []
+              : [`${call.method}: no answer in time`],
+        ),
+    /** Names the lookup the calls from now on belong to. */
+    lookup: (name: string) => {
+      current = name;
     },
     /** Waits until a whole lookup fits in the last minute's calls. */
     room: async () => {
@@ -196,28 +219,24 @@ describe.skipIf(process.env['MODEL_BENCH'] !== '1')('place bench', () => {
           const heard = heardFromSegments(each.heard);
           const alternatives = heard === undefined ? [] : alternativesFor(heard, each.location);
           const ask = async (
+            arm: string,
             payload: Parameters<typeof locationHandlers.placeCandidates>[0],
-          ): Promise<ReadonlyArray<PlaceCandidate>> => {
+          ) => {
             await geo.room();
-            return Effect.runPromise(
+            const name = `${each.id}:${arm}`;
+            geo.lookup(name);
+            const candidates: ReadonlyArray<PlaceCandidate> = await Effect.runPromise(
               locationHandlers
                 .placeCandidates(payload)
                 .pipe(Effect.provide(layerFor(each, geo.client))),
             );
+            return outcomeOf(candidates, each.names, geo.failures(name));
           };
-          const asWritten = outcomeOf(
-            await ask({ location: each.location }),
-            each.names,
-            geo.failures(),
-          );
-          const readings = outcomeOf(
-            await ask({
-              ...(alternatives.length > 0 ? { alternatives } : {}),
-              location: each.location,
-            }),
-            each.names,
-            geo.failures(),
-          );
+          const asWritten = await ask('as-written', { location: each.location });
+          const readings = await ask('readings', {
+            ...(alternatives.length > 0 ? { alternatives } : {}),
+            location: each.location,
+          });
           reports.push({
             alternatives,
             asWritten,
