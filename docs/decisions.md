@@ -980,6 +980,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   for both groups, dropping the collapsed mode (its "+N more" names the
   day), a draggable divider. Open: the month cell still lists the
   backlog; late completions still add struck chips on today.
+- **iOS Edit keeps the sheet** (2026-11-15, #332) — the detail lives in
+  the editor's route, and Edit or Convert cross-fades it into the editor
+  in place; Cancel goes back to the detail, Save and Delete close the
+  sheet as on the Mac. The fade waits for the editor's layout: one
+  started with the mount was over before its first frame. Rejected:
+  stacking the editor's sheet on the detail's (two to close), a push
+  inside the sheet (a drill-in, not an edit), Save back to the detail (a
+  save under a new id closes it a moment later). Open: the birthday
+  detail and a fold's list still hand over sheet to sheet.
 
 ## Invitees, contacts and birthdays
 
