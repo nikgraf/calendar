@@ -217,7 +217,7 @@ the served model (#184) and slot proposals (#185) are in
       bench yet (capture's schema leaves the time and place optional,
       and Apple's model filled no optional field on any quick-add phrase
       in the bench, 2026-11-11, unmeasured for capture). v2 reads 263 of
-      305 bench cases (v1 237; the bench as it grew on 2026-11-15) and
+      305 bench cases (v1 237; the bench as it grew on 2026-11-15, #327) and
       misses, heaviest first: a place narrowed to its city or street
       (eight flows: "it's in Vienna" after a venue writes the city
       alone; the data has no such turn, only real replacements); guests

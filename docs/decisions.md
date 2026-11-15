@@ -1290,6 +1290,17 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   fetched unasked. Rejected: two models (two downloads, one loaded),
   adapters per job (the fallback), the lowest-loss checkpoint (a tie; it
   read "at 1" as 13:30), auto-update. Open: todo.md.
+- **A larger model bench with a blind third** (2026-11-15, #327) — 72
+  cases could not say whether a model version is better: v1 to v2 was 8
+  fixed and 7 broke. Now 305 Assistant cases and 124 find-a-time
+  sentences, every third new one blind (counted, never named), a score
+  per tag, an exact sign test on the cases that flipped, and a run can
+  name its day. v1 to v2 is 237 to 263 with 40 fixed and 14 broke (p =
+  0.001). Rejected: phrases from real use only (too slow to steer v3;
+  they join as they come, tagged `phone`), a held-out folder outside the
+  repo (not reproducible), cases for an event of several days (no phrase
+  can make one). Open: three conventions the teacher reads differently
+  (todo.md), recordings for the new cases.
 - **Show only the latest query by default** (2026-11-05) — the create and
   search threads keep the turn with Undo visible on both apps. Earlier
   queries open on demand, leaving more room for the form or results.
