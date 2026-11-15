@@ -11,7 +11,8 @@ import { Schema } from 'effect';
  * through the helper's SpeechAnalyzer and the transcript tells the
  * recogniser's errors from the parser's. Expectations say where a person
  * would put the event — never a literal date, since the bench runs on
- * "today": a weekday, an offset from today, a time, folded text.
+ * "today": a weekday, an offset from today, a day of the month, a time,
+ * folded text.
  */
 
 const Guests = Schema.Struct({
@@ -35,6 +36,12 @@ const Repeat = Schema.Struct({
 export const Expectation = Schema.Struct({
   /** The times came from a meal or part of the day, not a stated clock time. */
   assumedTime: Schema.optional(Schema.Boolean),
+  /**
+   * The day of the month (1–31) a date said by its number lands on ("the
+   * 23rd", "Oct 20"): never a year. The date is then also held to today
+   * or later, the next such day.
+   */
+  dayOfMonth: Schema.optional(Schema.Number),
   /** Days from today the draft lands on (0 today, 1 tomorrow). */
   dayOffset: Schema.optional(Schema.Number),
   /** `HH:MM`; a task has no end. */
@@ -46,6 +53,8 @@ export const Expectation = Schema.Struct({
   location: Schema.optional(Schema.NullOr(Schema.String)),
   /** The whole location, compared folded: for a turn that must not keep what was there. */
   locationIs: Schema.optional(Schema.String),
+  /** The month (1–12) a date said with its month lands in; held to today or later like `dayOfMonth`. */
+  month: Schema.optional(Schema.Number),
   /** Folded text the notes must contain. */
   notes: Schema.optional(Schema.String),
   /** The turn must be refused (an empty phrase, an end before its start). */
@@ -54,6 +63,8 @@ export const Expectation = Schema.Struct({
   reminders: Schema.optional(Schema.Array(Schema.Number)),
   /** `null` for no repeat at all. */
   repeat: Schema.optional(Schema.NullOr(Repeat)),
+  /** Days from the day it starts to the day it ends: 1 for an event that ends after midnight, 0 for one day. */
+  spanDays: Schema.optional(Schema.Number),
   /** `HH:MM`; a task's own time. */
   startTime: Schema.optional(Schema.String),
   /** The whole title, compared folded (case, accents, ß); several are the titles a person would accept. */

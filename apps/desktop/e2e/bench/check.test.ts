@@ -117,6 +117,47 @@ describe('check', () => {
     expect(check({ dayOffset: 1 }, draft, undefined, TODAY).notes).toEqual(['day=2026-08-28']);
   });
 
+  it('reads a date said by its number as the next such day', () => {
+    // TODAY is the 22nd of August, the draft's day the 28th.
+    const draft = drafted(event());
+    expect(check({ dayOfMonth: 28, month: 8 }, draft, undefined, TODAY).failed).toEqual([]);
+    expect(check({ dayOfMonth: 27 }, draft, undefined, TODAY).notes).toEqual(['day=2026-08-28']);
+    expect(check({ month: 9 }, draft, undefined, TODAY).notes).toEqual(['day=2026-08-28']);
+    // The right day of the right month, a year back: it has passed.
+    const passed = drafted(event({ date: '2025-08-28' }));
+    expect(check({ dayOfMonth: 28, month: 8 }, passed, undefined, TODAY)).toMatchObject({
+      failed: ['date'],
+      notes: ['day=2025-08-28 (passed)'],
+    });
+    // Today itself is the next such day.
+    expect(
+      check({ dayOfMonth: 22 }, drafted(event({ date: TODAY })), undefined, TODAY).failed,
+    ).toEqual([]);
+  });
+
+  it('counts the days an event runs past its first', () => {
+    const overnight = event({ endDate: '2026-08-29', endTime: '02:00', startTime: '22:00' });
+    expect(
+      check({ endTime: '02:00', spanDays: 1 }, drafted(overnight), undefined, TODAY).failed,
+    ).toEqual([]);
+    expect(check({ spanDays: 0 }, drafted(overnight), undefined, TODAY)).toMatchObject({
+      failed: ['time'],
+      notes: ['span=1d'],
+    });
+    expect(check({ spanDays: 1 }, drafted(event()), undefined, TODAY).notes).toEqual(['span=0d']);
+    // A later turn that moves the day keeps the span: the time reads as it did.
+    const moved = drafted(
+      event({ date: '2026-08-30', endDate: '2026-08-31', endTime: '02:00', startTime: '22:00' }),
+    );
+    expect(check({ dayOffset: 8 }, moved, overnight, TODAY).failed).toEqual([]);
+    // One that drops the second day changed the time.
+    const oneDay = drafted(event({ endTime: '02:00', startTime: '22:00' }));
+    expect(check({ title: 'dinner with teo' }, oneDay, overnight, TODAY)).toMatchObject({
+      failed: ['unchanged'],
+      notes: ['changed time: 22:00-02:00'],
+    });
+  });
+
   it('holds times, all-day and assumed times apart', () => {
     const allDay = drafted(event({ endTime: '01:00', isAllDay: true, startTime: '00:00' }));
     expect(check({ isAllDay: false, startTime: '19:00' }, allDay, undefined, TODAY)).toMatchObject({
@@ -395,6 +436,8 @@ describe('fieldsOf', () => {
       'notes',
       'reminders',
     ]);
+    expect(fieldsOf({ dayOfMonth: 3, spanDays: 1 })).toEqual(['date', 'time']);
+    expect(fieldsOf({ month: 3 })).toEqual(['date']);
     expect(fieldsOf({ rejected: true, title: 'ignored' })).toEqual(['rejected']);
   });
 });
