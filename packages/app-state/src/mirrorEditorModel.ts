@@ -5,7 +5,6 @@ import {
   isAppleCalendarAccount,
   isAppleRemindersAccount,
   isCalendarWritable,
-  isTaskListWritable,
   MIRROR_DEFAULT_BUSY_LABEL,
   MIRROR_DEFAULT_MONTHS,
   MIRROR_PRESETS,
@@ -148,8 +147,6 @@ export const googleAccountsForNewCalendar = (
 ): ReadonlyArray<Account> =>
   accounts.filter((account) => account.provider === 'google' && account.status === 'ok');
 
-export const canWriteTaskList = isTaskListWritable;
-
 export const newMirrorDraft = (timeZone: string): MirrorDraft => ({
   busyLabel: MIRROR_DEFAULT_BUSY_LABEL,
   destination: undefined,
@@ -209,18 +206,6 @@ export const refLabel = (ref: MirrorSourceRef): string => {
       return ref.title ?? ref.listId;
     case 'reminders':
       return ref.title;
-  }
-};
-
-export const refGroup = (ref: MirrorSourceRef): string => {
-  switch (ref.kind) {
-    case 'apple':
-      return ref.source;
-    case 'google':
-    case 'googleTasks':
-      return ref.email;
-    case 'reminders':
-      return 'Reminders';
   }
 };
 

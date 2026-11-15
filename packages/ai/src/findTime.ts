@@ -209,7 +209,7 @@ export const parseFindTime = async (
   if (typeof raw !== 'object' || raw === null) {
     return { kind: 'rejected', reason: "That couldn't be read — try rephrasing." };
   }
-  return normalizeFindTime(raw as FindTimeParse, {
+  return normalizeFindTime(raw, {
     fallbackDurationMinutes,
     phrase,
     referenceDate,

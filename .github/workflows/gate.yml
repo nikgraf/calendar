@@ -26,6 +26,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
+      # Unused files, exports and dependencies (knip.config.ts).
+      - run: pnpm knip
       - run: pnpm typecheck
       # The website render tests build the production site and check its HTML and assets.
       - run: pnpm test

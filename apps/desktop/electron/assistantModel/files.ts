@@ -14,7 +14,7 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import { type AssistantModelManifest, storedFileName } from '@calendar/ai';
-import type { Fetch, MacAnswer, ModelFiles } from './store.ts';
+import type { Fetch, ModelFiles } from './store.ts';
 
 /**
  * The store's files under `<userData>/assistant-model/`: the model, its
@@ -65,7 +65,7 @@ export const nodeModelFiles = (folder: string, manifest: AssistantModelManifest)
       return isRecord(note) &&
         (note['answer'] === 'agreed' || note['answer'] === 'declined') &&
         typeof note['version'] === 'string'
-        ? { answer: note['answer'] as MacAnswer, version: note['version'] }
+        ? { answer: note['answer'], version: note['version'] }
         : undefined;
     },
     readVerified: () => {

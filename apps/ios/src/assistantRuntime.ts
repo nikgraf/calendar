@@ -28,8 +28,8 @@ import { loadOpenModelRuntime } from './openModel.ts';
 
 /**
  * The Assistant's model on this device: the download (`assistantDownload`),
- * the model the Assistant asks (`assistantModel`), and their start at
- * launch. Made once for as long as the JavaScript lives (kept on
+ * how the Assistant reads with it (`assistantReader`), and their start
+ * at launch. Made once for as long as the JavaScript lives (kept on
  * `globalThis` through a Fast Refresh, as the native transfer's listeners
  * must not be added twice).
  */
@@ -108,7 +108,7 @@ const deviceFiles = (
     if (!file.exists) {
       file.create();
     }
-    file.write(JSON.stringify(value));
+    file.writeSync(JSON.stringify(value));
   };
   return {
     destination: model.uri,
@@ -240,7 +240,6 @@ const holder = globalThis as typeof globalThis & { solunivoAssistantModel?: Assi
 const runtime = (): AssistantRuntime => (holder.solunivoAssistantModel ??= makeRuntime());
 
 export const assistantDownload = (): AssistantDownload => runtime().download;
-export const assistantModel = (): AssistantModel => runtime().model;
 /** How the Assistant reads what is said: the tuned path. */
 export const assistantReader = (): PhraseReader => runtime().reader;
 

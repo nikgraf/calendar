@@ -4,7 +4,6 @@ import {
   captureTextBudget,
   normalizeCapture,
   prepareCaptureText,
-  type CaptureParse,
 } from './capture.ts';
 import { ModelUnavailableError, type LanguageModel } from './model.ts';
 import type { QuickAddPrefill } from './normalizeQuickAdd.ts';
@@ -89,7 +88,7 @@ export const parseCapture = async (
   if (typeof parsed !== 'object' || parsed === null) {
     return { kind: 'rejected', reason: UNREADABLE };
   }
-  const drafts = normalizeCapture(parsed as CaptureParse, {
+  const drafts = normalizeCapture(parsed, {
     referenceDate,
     sourceText: text,
     timeZone,

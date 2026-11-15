@@ -55,7 +55,7 @@ const mergeEventTime = (stored: EventTime, patch: unknown): EventTime => {
       delete merged[key];
     }
   }
-  return merged as EventTime;
+  return merged;
 };
 
 const invalidTime = (time: EventTime): boolean =>

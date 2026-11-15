@@ -196,6 +196,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   the flow (it would hide an app that drops a tap), any drop in the flow
   (one Maestro tapped past is not the failure). Open: nothing ties the
   failure to the drop (Opus review); older lost-tap flakes (logs expired).
+- **The Assistant spec on a Sunday** (2026-11-15, `todo/assistant-e2e-today`)
+  — the desktop e2e went red on the first Sunday since #308 added the
+  spec: its tests draft on `+1`, the grid keeps a draft's day on show once
+  the editor closes, saved or not, and on a Sunday that day is next week,
+  so the three tests that then open today's Design review or inbox to-do
+  found neither on screen. Each test now starts with a click on `today`.
+  Rejected: drafting on `+0` (the next test on `+1` breaks the same way),
+  and sending the grid back as the editor closes (a saved item is meant
+  to stay in view). Open: the spec's `today` is read once, so a run across
+  local midnight still fails.
 - **Live flows rerun under titles of their own** (2026-11-13,
   `todo/live-retry-fresh-titles`) — nightly 43358802870 went red on a black
   display in live flow 02 (no touch reached the app; flow 03's launch drew
@@ -301,6 +311,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   review alone, and behaviour fixes stayed out. Open: the three
   components are checked only by the e2e suites (the iOS mic button by
   none); what the splitting turned up is listed in #298.
+- **Type-aware lint and knip in the gate** (2026-11-15, #326) — seven
+  typed oxlint rules (tsgolint, on TypeScript 7) for what tsc accepts;
+  their first run found three Expo SDK 58 `File.write` callers nobody
+  awaited. knip reports only dead code (an export its own file uses
+  passes) and includes the packages' entry exports, which `"./*"` hid.
+  Rejected: knip's strict exports (~110 spare `export`s), dependency-cruiser
+  (no runtime cycles, every layer rule holds), Effect diagnostics via
+  `@effect/tsgo` (0 errors), sherif, jscpd (0.14 %). Open:
+  `no-base-to-string` skips `unknown` (~115 `String(error)` sites), 78
+  `no-unnecessary-condition` hits untriaged.
 
 ## Architecture and sync path
 

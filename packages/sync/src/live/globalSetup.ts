@@ -1,3 +1,4 @@
+import { failureText } from '@calendar/core/failureText';
 import type { TestProject } from 'vite-plus/test/node';
 import { liveGoogleConfigFromEnv, scratchName } from '../testing/liveGoogle.ts';
 import {
@@ -77,7 +78,7 @@ export default async function setup(project: TestProject): Promise<() => Promise
     // With the cause: a failed fetch says only "fetch failed" without it.
     const reason = error instanceof Error ? error.message : String(error);
     const cause =
-      error instanceof Error && error.cause !== undefined ? ` (${String(error.cause)})` : '';
+      error instanceof Error && error.cause !== undefined ? ` (${failureText(error.cause)})` : '';
     // eslint-disable-next-line no-console -- the only place the reason is printed
     console.error(`live setup failed: ${reason}${cause}`);
     throw error;

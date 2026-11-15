@@ -2,6 +2,7 @@ import {
   Attendee,
   contrastingTextColor,
   EventRecord,
+  failureText,
   normalizeHexColor,
   PendingOp,
   placedTask,
@@ -107,7 +108,7 @@ const describeFailure = (value: unknown): string => {
   if (value && typeof value === 'object') {
     const error = value as { _tag?: string; cause?: unknown; message?: string; name?: string };
     const tag = error._tag ?? error.name ?? 'Error';
-    const detail = error.message || (error.cause === undefined ? '' : String(error.cause));
+    const detail = error.message || (error.cause === undefined ? '' : failureText(error.cause));
     return detail ? `${tag}: ${detail}` : tag;
   }
   return String(value);
@@ -199,7 +200,7 @@ const changedFields = (before: EventRecord, payload: EventRecord): Partial<Event
       patch[key] = was[key];
     }
   }
-  return patch as Partial<EventRecord>;
+  return patch;
 };
 
 /**

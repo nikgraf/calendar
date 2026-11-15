@@ -265,10 +265,10 @@ describe('EventMutations', () => {
       insertEvent: ({ event }) => {
         inserted.push(event.id ?? '');
         return Effect.succeed({
-          end: event.end as GcalEvent['end'],
+          end: event.end,
           etag: '"server-1"',
           id: event.id ?? 'server-id',
-          start: event.start as GcalEvent['start'],
+          start: event.start,
           status: 'confirmed',
           summary: event.summary,
         });
@@ -429,16 +429,16 @@ describe('EventMutations', () => {
     const client = stubClient({
       insertEvent: ({ event }) =>
         Effect.succeed({
-          end: event.end as GcalEvent['end'],
+          end: event.end,
           etag: '"server-1"',
           id: event.id ?? 'x',
           location: event.location,
-          start: event.start as GcalEvent['start'],
+          start: event.start,
           status: 'confirmed',
           summary: event.summary,
         }),
       patchEvent: ({ event }) => {
-        patched.push(event as Record<string, unknown>);
+        patched.push(event);
         return Effect.succeed({
           end: storedTime(event.end),
           etag: '"server-2"',
@@ -483,12 +483,12 @@ describe('EventMutations', () => {
     const client = stubClient({
       insertEvent: ({ event }) =>
         Effect.succeed({
-          end: event.end as GcalEvent['end'],
+          end: event.end,
           etag: '"server-1"',
           extendedProperties: event.extendedProperties as GcalEvent['extendedProperties'],
           id: event.id ?? 'x',
           location: event.location,
-          start: event.start as GcalEvent['start'],
+          start: event.start,
           status: 'confirmed',
           summary: event.summary,
         }),
@@ -759,10 +759,10 @@ describe('EventMutations', () => {
     const client = stubClient({
       insertEvent: ({ event }) =>
         Effect.succeed({
-          end: event.end as GcalEvent['end'],
+          end: event.end,
           etag: '"server-1"',
           id: event.id ?? 'x',
-          start: event.start as GcalEvent['start'],
+          start: event.start,
           status: 'confirmed',
           summary: event.summary,
         }),
@@ -809,10 +809,10 @@ describe('EventMutations', () => {
     const client = stubClient({
       insertEvent: ({ event }) =>
         Effect.succeed({
-          end: event.end as GcalEvent['end'],
+          end: event.end,
           etag: '"server-1"',
           id: event.id ?? 'x',
-          start: event.start as GcalEvent['start'],
+          start: event.start,
           status: 'confirmed',
           summary: event.summary,
         }),
@@ -862,10 +862,10 @@ describe('EventMutations', () => {
     const client = stubClient({
       insertEvent: ({ event }) =>
         Effect.succeed({
-          end: event.end as GcalEvent['end'],
+          end: event.end,
           etag: '"server-1"',
           id: event.id ?? 'x',
-          start: event.start as GcalEvent['start'],
+          start: event.start,
           status: 'confirmed',
           summary: event.summary,
         }),
@@ -1416,10 +1416,10 @@ describe('EventMutations', () => {
       },
       insertEvent: ({ event }) =>
         Effect.succeed({
-          end: event.end as GcalEvent['end'],
+          end: event.end,
           etag: '"server-9"',
           id: event.id ?? 'x',
-          start: event.start as GcalEvent['start'],
+          start: event.start,
           status: 'confirmed',
           summary: event.summary,
         }),
@@ -1456,10 +1456,10 @@ describe('discarding a change puts the row back', () => {
     deleteEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
     insertEvent: ({ event }) =>
       Effect.succeed({
-        end: event.end as GcalEvent['end'],
+        end: event.end,
         etag: '"server-1"',
         id: event.id ?? 'x',
-        start: event.start as GcalEvent['start'],
+        start: event.start,
         status: 'confirmed',
         summary: event.summary,
       }),

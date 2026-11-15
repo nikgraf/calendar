@@ -33,7 +33,7 @@ export const voiceProcessing = {
       if (!target.exists) {
         target.create();
       }
-      target.write(JSON.stringify({ on }));
+      target.writeSync(JSON.stringify({ on }));
     } catch {
       // Kept for this launch even when the note cannot be written.
     }

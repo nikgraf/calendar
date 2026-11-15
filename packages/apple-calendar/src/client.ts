@@ -1,5 +1,5 @@
 import { type BridgeTransport, bridgeMessage, changesFromSubscription } from '@calendar/core';
-import { Context, Effect, Layer, Schema, Stream } from 'effect';
+import { Context, Effect, Schema, Stream } from 'effect';
 import {
   AppleCalendarAccessError,
   type AppleCalendarError,
@@ -317,8 +317,3 @@ export const appleCalendarClientFrom = (
           source.subscribe(APPLE_CALENDAR_CHANGED_EVENT, listener),
         ),
       );
-
-export const appleCalendarLayer = (
-  source: BridgeTransport | { readonly unavailable: string },
-): Layer.Layer<AppleCalendarClient> =>
-  Layer.succeed(AppleCalendarClient, appleCalendarClientFrom(source));

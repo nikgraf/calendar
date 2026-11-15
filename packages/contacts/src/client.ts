@@ -1,5 +1,5 @@
 import { type BridgeTransport, bridgeMessage, changesFromSubscription } from '@calendar/core';
-import { Context, Data, Effect, Layer, Schema, Stream } from 'effect';
+import { Context, Data, Effect, Schema, Stream } from 'effect';
 import {
   BirthdaysResult,
   CONTACTS_CHANGED_EVENT,
@@ -134,7 +134,7 @@ export const unavailableContactsClient = (reason: string): ContactsClientShape =
   };
 };
 
-/** One layer per host — see remindersLayer for the shape. */
+/** One client per host — see remindersClientFrom for the shape. */
 export const contactsClientFrom = (
   source: BridgeTransport | { readonly unavailable: string },
 ): ContactsClientShape =>
@@ -144,7 +144,3 @@ export const contactsClientFrom = (
         source.invoke,
         changesFromSubscription((listener) => source.subscribe(CONTACTS_CHANGED_EVENT, listener)),
       );
-
-export const contactsLayer = (
-  source: BridgeTransport | { readonly unavailable: string },
-): Layer.Layer<ContactsClient> => Layer.succeed(ContactsClient, contactsClientFrom(source));

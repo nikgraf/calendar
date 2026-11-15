@@ -12,7 +12,7 @@ interface RecordedRequest {
 }
 
 const requestBodyText = (body: HttpBody.HttpBody): string =>
-  body._tag === 'Uint8Array' ? new TextDecoder().decode(body.body as Uint8Array) : '';
+  body._tag === 'Uint8Array' ? new TextDecoder().decode(body.body) : '';
 
 /** An HttpClient whose responses come from a queue; records each request. */
 const stubHttp = (

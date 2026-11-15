@@ -142,7 +142,7 @@ describe('eventMatchesQuery', () => {
     expect(eventMatchesQuery(placed, { location: 'cafe central', terms: [] }, VIENNA)).toBe(true);
     expect(eventMatchesQuery(placed, { location: 'Graz', terms: [] }, VIENNA)).toBe(false);
     const named = event({
-      geo: { lat: 0, lng: 0, name: 'Hafen Wien', source: 'x' } as EventRecord['geo'],
+      geo: { lat: 0, lng: 0, name: 'Hafen Wien', source: 'x' },
     });
     expect(eventMatchesQuery(named, { location: 'hafen', terms: [] }, VIENNA)).toBe(true);
     const guests = event({

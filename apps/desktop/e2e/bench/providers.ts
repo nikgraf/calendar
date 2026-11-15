@@ -425,7 +425,7 @@ export const openAiRequest = ({
     messages: [{ content: prompt, role: 'user' }],
     model,
     response_format: {
-      json_schema: { name: 'answer', schema: strictSchema(jsonSchema as object), strict: true },
+      json_schema: { name: 'answer', schema: strictSchema(jsonSchema), strict: true },
       type: 'json_schema',
     },
     temperature: 0,

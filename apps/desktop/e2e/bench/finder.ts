@@ -3,7 +3,6 @@ import {
   type FindTimeParse,
   type FindTimeResult,
   normalizeFindTime,
-  type Period,
   periodTimes,
   tunedFinderParse,
 } from '@calendar/ai';
@@ -209,7 +208,7 @@ interface Bounds {
 
 const boundsOf = (bound: Bound): Bounds => {
   if ('period' in bound) {
-    const { earliestTime, latestTime } = periodTimes(bound.period as Period);
+    const { earliestTime, latestTime } = periodTimes(bound.period);
     return { earliestTime, latestTime };
   }
   return {
