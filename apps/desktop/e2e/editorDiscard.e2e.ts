@@ -198,7 +198,8 @@ describe('Discarding an editor that holds something', () => {
     await closesAtOnce();
 
     // A series' occurrence: its rule arrives after the editor opened, and is no change.
-    await cdp.openEditor('[title^="Daily sync"]');
+    // Today's, not the first: an occurrence row has no rule of its own.
+    await cdp.openEditor(`[data-day="${today.toString()}"] [title^="Daily sync"]`);
     await cdp.waitFor(`document.querySelector('select[aria-label="Repeat"]')?.value === 'daily'`);
     await sleep(300);
     await cdp.pressEscape();
