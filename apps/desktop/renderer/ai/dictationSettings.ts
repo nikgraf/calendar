@@ -1,10 +1,16 @@
 /** What dictation listens in: the Mac's language, as Chromium reports it. */
 export const dictationLocale = (): string => navigator.language || 'en-US';
 
-/** A locale's language in its own words: "English (United States)"; the id when it has no name. */
+/**
+ * A locale's language in English, the app's own: "German (Austria)", not
+ * Chromium's "Austrian German"; the id when it has none.
+ */
 export const languageName = (locale: string): string => {
   try {
-    return new Intl.DisplayNames([locale], { type: 'language' }).of(locale) ?? locale;
+    return (
+      new Intl.DisplayNames(['en'], { languageDisplay: 'standard', type: 'language' }).of(locale) ??
+      locale
+    );
   } catch {
     return locale;
   }

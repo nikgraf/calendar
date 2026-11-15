@@ -190,8 +190,12 @@ the served model (#184) and slot proposals (#185) are in
       on its words, and shows them"; measured on synthetic phrases
       only) — the pauses (900 / 1,200 ms), Reduce Background Noise and
       Mic Mode's Voice Isolation (Settings › Dictation) measured on a
-      phone in real rooms (a café, a street); real-room recordings in the bench, replayed through the
-      session and the rule (and whether a quick recogniser that goes
+      phone in real rooms (a café, a street); iOS's Mic Mode picker
+      offered from the bar while it listens
+      (`AVCaptureDevice.showSystemUserInterface`; Settings only shows the
+      mode, since iOS offers the modes while recording, #325);
+      real-room recordings in the bench, replayed through the session
+      and the rule (and whether a quick recogniser that goes
       deaf one word behind the accurate one ever cuts a phrase short:
       the rule ends on the quick words then, a case constructed in
       review but never seen in the recordings, where both cures cost

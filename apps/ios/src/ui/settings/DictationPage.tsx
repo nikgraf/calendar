@@ -3,7 +3,7 @@ import { AppState } from 'react-native';
 import { type MicrophoneMode, loadSpeechModule } from '../../../modules/solunivo-speech/index.ts';
 import { dictationLocale } from '../../appleSpeech.ts';
 import { voiceProcessing } from '../../voiceProcessing.ts';
-import { Chevron, Footer, Row, Section, SettingsPage, SwitchRow } from '../GroupedList.tsx';
+import { Footer, Row, Section, SettingsPage, SwitchRow } from '../GroupedList.tsx';
 
 const MODE_LABELS: Record<MicrophoneMode, string> = {
   standard: 'Standard',
@@ -13,15 +13,15 @@ const MODE_LABELS: Record<MicrophoneMode, string> = {
 
 /**
  * The Mic Mode picked for the app, read again whenever the app comes back:
- * the picker is iOS's own, so a choice made there arrives with no event.
+ * it is chosen in Control Center, so a change arrives with no event.
  */
 const useMicrophoneMode = (): MicrophoneMode | undefined => {
   const native = loadSpeechModule();
-  const [mode, setMode] = useState(() => native?.microphoneMode());
+  const [mode, setMode] = useState(() => native?.microphoneMode?.());
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
-        setMode(loadSpeechModule()?.microphoneMode());
+        setMode(loadSpeechModule()?.microphoneMode?.());
       }
     });
     return () => subscription.remove();
@@ -31,7 +31,8 @@ const useMicrophoneMode = (): MicrophoneMode | undefined => {
 
 /**
  * Dictation: how the microphone records (voice processing, on by default,
- * and iOS's Mic Mode on top of it), and the language it listens in, which
+ * and iOS's Mic Mode on top of it, shown but chosen in Control Center while
+ * dictating, where iOS offers it), and the language it listens in, which
  * is the iPhone's own.
  */
 export function DictationPage() {
@@ -48,8 +49,8 @@ export function DictationPage() {
             <Footer>Filters out background noise and echo while you dictate.</Footer>
             {reduceNoise && mode !== undefined ? (
               <Footer>
-                In Mic Mode, Voice Isolation also keeps out other voices, such as someone talking
-                next to you.
+                Voice Isolation also keeps out other voices, such as someone talking next to you. To
+                choose it, open Control Center while you dictate and tap Mic Mode.
               </Footer>
             ) : null}
           </>
@@ -62,10 +63,8 @@ export function DictationPage() {
           value={reduceNoise}
         />
         {/* Mic Mode applies only to audio recorded through voice processing. */}
-        {reduceNoise && native && mode !== undefined ? (
+        {reduceNoise && mode !== undefined ? (
           <Row
-            accessory={<Chevron />}
-            onPress={() => void native.showMicrophoneModes()}
             testID="dictation-mic-mode"
             title="Mic Mode"
             value={MODE_LABELS[mode]}
@@ -77,7 +76,7 @@ export function DictationPage() {
         <Row
           testID="dictation-language"
           title="Language"
-          value={native?.languageName(locale) ?? locale}
+          value={native?.languageName?.(locale) ?? locale}
         />
       </Section>
     </SettingsPage>

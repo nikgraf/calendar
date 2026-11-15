@@ -1378,8 +1378,9 @@ gateway carries all of it. Details, limits and the threat model:
   (`showSettingsWindow`: one at most, fixed 780×560, not minimizable or
   maximizable). Settings opens from the application menu (`menu.ts`:
   Settings…, ⌘,) — also with no main window — or over `settings:open`. It
-  is a sidebar of panes (Accounts, Notifications, Time Zones, AI Model,
-  Screen Sharing, Settings File, Getting Started, Advanced, then Mirrors
+  is a sidebar of panes (Accounts, Calendar, Notifications, Time Zones,
+  AI Model, Dictation, Screen Sharing, Settings File, Getting Started,
+  Advanced, then Mirrors
   and Agents under
   an "Experimental" heading) with a search field (`filterPanes`). The pane is the URL hash (`#settings/<pane>`): the main
   process moves an open window by navigating the hash, the page only ever

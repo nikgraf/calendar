@@ -1196,6 +1196,18 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
 
 ## AI
 
+- **Dictation reduces background noise by default, on a page of its own**
+  (2026-11-15, #325) — Settings › Dictation on both apps: Reduce
+  Background Noise, on unless turned off (the iPhone records through
+  AVAudioEngine's voice processing; the Mac asks Chromium for echo
+  cancellation, noise suppression and gain, its default all along), the
+  iPhone's Mic Mode for the app (shown; chosen in Control Center while
+  dictating, as iOS offers it only then), and the language dictation
+  listens in, the device's. The choice stays on the device, out of the
+  settings document. Evidence: one person's phone in real rooms, no
+  numbers. Rejected: off by default (only the iPhone lacked it); a switch
+  in Advanced; a Mic Mode picker in Settings (may offer nothing while the
+  microphone is off). Open: todo.md, "Dictation follow-ups".
 - **Dictation ends on its words, and shows them** (2026-11-14, #322) —
   each phrase streams, as it is recorded, into one speech session
   (`SpeechBridge.swift`, shared by the Mac helper and the new iOS module
@@ -1215,7 +1227,7 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   talking nearby is not solved: 2–4 of 8, their words count too. iOS
   drops expo-audio and the temp file; Settings › Advanced › Voice
   Processing records through AVAudioEngine's voice processing, off by
-  default, to compare on a phone. Rejected: loudness as the judge; the
+  default, to compare on a phone (on by default since #325). Rejected: loudness as the judge; the
   live recognisers' words as the text sent (the quick one mishears more
   in noise: 59% of the words wrong in a loud crowd against 30%); native
   capture on the Mac (a new permission prompt, and the e2e fixture

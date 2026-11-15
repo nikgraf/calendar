@@ -56,7 +56,9 @@ public class SolunivoSpeechModule: Module {
 
     // The Mic Mode the user picked for this app in Control Center. iOS
     // applies it only to audio recorded through voice processing, and no
-    // app may pick one itself.
+    // app may pick one itself. No picker is offered from Settings: iOS
+    // offers the modes while the app records, so a picker opened with the
+    // microphone off may have none to give.
     Function("microphoneMode") { () -> String in
       switch AVCaptureDevice.preferredMicrophoneMode {
       case .voiceIsolation: return "voiceIsolation"
@@ -65,14 +67,9 @@ public class SolunivoSpeechModule: Module {
       }
     }
 
-    // iOS's own Mic Mode picker, opened for this app.
-    AsyncFunction("showMicrophoneModes") {
-      AVCaptureDevice.showSystemUserInterface(.microphoneModes)
-    }.runOnQueue(.main)
-
-    // A locale's language in the user's own: "English (United States)".
+    // A locale's language in English, the app's own: "German (Austria)".
     Function("languageName") { (identifier: String) -> String in
-      Locale.current.localizedString(forIdentifier: identifier) ?? identifier
+      Locale(identifier: "en").localizedString(forIdentifier: identifier) ?? identifier
     }
 
     // `session`: the caller's id for the phrase, which its words and the

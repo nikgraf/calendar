@@ -156,9 +156,12 @@ const noWords = () => undefined;
 describe('desktopSpeech microphone', () => {
   it('asks for Chromium’s voice processing unless Settings › Dictation turned it off', async () => {
     bridge();
+    const stored = new Map<string, string>();
+    Object.assign(window, { localStorage: { getItem: (key: string) => stored.get(key) ?? null } });
     const speech = await loadSpeech();
+    // Nothing chosen on this Mac yet.
     void speech.start({ onWords: noWords });
-    Object.assign(window, { localStorage: { getItem: () => 'off' } });
+    stored.set('dictation.reduceNoise', 'off');
     void speech.start({ onWords: noWords });
     await settle();
     expect(
