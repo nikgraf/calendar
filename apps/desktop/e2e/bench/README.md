@@ -114,8 +114,9 @@ thread does. The report keeps the raw model answers per turn.
 - `expect` says where a person would put it — never a literal date, the
   bench runs on "today". `weekday` (ISO, 1 Monday) or `dayOffset` (0
   today); `dayOfMonth` and `month` for a date said by its number ("the
-  23rd", "Oct 20"), which is also held to today or later, the next such
-  day; `startTime`/`endTime` as `HH:MM` (a task has only a start);
+  23rd", "Oct 20"), which is also held to the next such day from today
+  on (a later turn may keep the month of the draft it changes instead,
+  as the app does); `startTime`/`endTime` as `HH:MM` (a task has only a start);
   `spanDays` (the days it runs past its first: 1 for an end after
   midnight); `isAllDay`; `assumedTime` (the times came from a meal or part of the
   day); `kind` (`event`/`task`; the first turn is an event unless it

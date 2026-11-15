@@ -43,8 +43,9 @@ export const Expectation = Schema.Struct({
   assumedTime: Schema.optional(Schema.Boolean),
   /**
    * The day of the month (1–31) a date said by its number lands on ("the
-   * 23rd", "Oct 20"): never a year. The date is then also held to today
-   * or later, the next such day.
+   * 23rd", "Oct 20"): never a year. The date is then also held to the
+   * next such day from today on; a later turn may keep the month of the
+   * draft it changes instead.
    */
   dayOfMonth: Schema.optional(Schema.Number),
   /** Days from today the draft lands on (0 today, 1 tomorrow). */
@@ -58,7 +59,7 @@ export const Expectation = Schema.Struct({
   location: Schema.optional(Schema.NullOr(Schema.String)),
   /** The whole location, compared folded: for a turn that must not keep what was there. */
   locationIs: Schema.optional(Schema.String),
-  /** The month (1–12) a date said with its month lands in; held to today or later like `dayOfMonth`. */
+  /** The month (1–12) a date said with its month lands in: the next such month, like `dayOfMonth`. */
   month: Schema.optional(Schema.Number),
   /** Folded text the notes must contain. */
   notes: Schema.optional(Schema.String),
