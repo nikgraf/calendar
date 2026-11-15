@@ -1547,12 +1547,16 @@ gateway carries all of it. Details, limits and the threat model:
   and everything between, and whether closing now would lose something
   (`unsaved`, `editorUnsaved.ts`): a new item's drafts — a share's
   untouched ones too — or a form that reads otherwise than it opened
-  (`useFormChanged`, one JSON reading of the form's item and extras, so
-  a field put back is no change; a saved item's opening is read once
-  the form has settled, and a new item switched to another kind before
-  anything was put in opens that form afresh). An editor opened to
-  convert counts its edits by hand instead, since its form fills as it
-  opens; a birthday and a read-only item never hold anything; the calendar and the editor exchange drafts, a
+  (`useFormChanged`, one JSON reading of the form on show, so a field
+  put back is no change; read as the editor opens, with an event's rule
+  in it only once the person changed it — a series' rule arrives after
+  the editor opens and seeds itself — and a new item switched to another
+  kind, or round again, before anything was put in opens that form
+  afresh). An editor opened to convert counts its edits by hand
+  instead, since its form fills as it opens; a birthday and a read-only
+  item never hold anything; a Save, delete or "Add all" being written,
+  its question answered (`askFirst`), excuses the draft on show, not a
+  capture's others. The calendar and the editor exchange drafts, a
   day to show and a clicked draft through kept-alive atoms
   (`draftAtoms.ts`: `useDraftPreviews`, `useOnDraftReveal`,
   `useRequestDraftFocus`). The panel never
