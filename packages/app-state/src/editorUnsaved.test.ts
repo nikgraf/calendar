@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { discardQuestion, editorDiscard, editorUnsaved, formChange } from './editorUnsaved.ts';
+import {
+  discardQuestion,
+  editorDiscard,
+  editorUnsaved,
+  formChange,
+  formReading,
+} from './editorUnsaved.ts';
 
 const unsaved = (over: Partial<Parameters<typeof editorUnsaved>[0]>) =>
   editorUnsaved({
@@ -34,6 +40,7 @@ const step = (over: Partial<Parameters<typeof formChange>[0]>) =>
     opened: { event: 'seed' },
     reading: 'seed',
     settled: true,
+    switched: false,
     untouched: true,
     ...over,
   });
@@ -164,18 +171,66 @@ describe('formChange', () => {
     });
   });
 
-  it("opens a new item's other kind afresh when it was switched to untouched", () => {
-    expect(step({ mode: 'todo', reading: 'task' })).toEqual({ changed: false, open: true });
+  it("opens a new item's form afresh after an untouched kind switch, round trips and lists too", () => {
+    // Event → Task: the to-do form's first opening.
+    expect(step({ mode: 'todo', reading: 'task', switched: true })).toEqual({
+      changed: false,
+      open: true,
+    });
+    // Task → Event: the event form again, as the to-do's values made it.
+    expect(
+      step({ opened: { event: 'seed', todo: 'task' }, reading: 'adopted', switched: true }),
+    ).toEqual({ changed: false, open: true });
+    // Task → Reminder: the same mode, another list.
+    expect(
+      step({ mode: 'todo', opened: { todo: 'task' }, reading: 'reminder', switched: true }),
+    ).toEqual({ changed: false, open: true });
   });
 
   it('counts a switch after something was put in, and a saved item switched, as changed', () => {
-    expect(step({ mode: 'todo', reading: 'task', untouched: false })).toEqual({
+    expect(step({ mode: 'todo', reading: 'task', switched: true, untouched: false })).toEqual({
       changed: true,
       open: false,
     });
-    expect(step({ isNew: false, mode: 'todo', reading: 'task' })).toEqual({
+    expect(step({ isNew: false, mode: 'todo', reading: 'task', switched: true })).toEqual({
       changed: true,
       open: false,
     });
+    expect(
+      step({
+        isNew: false,
+        mode: 'todo',
+        opened: { todo: 'task' },
+        reading: 'reminder',
+        switched: true,
+      }),
+    ).toEqual({ changed: true, open: false });
+  });
+});
+
+const event = (recurrence?: { readonly freq: 'weekly' }) =>
+  ({
+    kind: 'event',
+    prefill: {
+      date: '2026-11-16',
+      endTime: '10:00',
+      isAllDay: false,
+      startTime: '09:00',
+      title: 'Standup',
+      ...(recurrence ? { recurrence } : {}),
+    },
+  }) as const;
+
+describe('formReading', () => {
+  it("leaves a series' rule out until it is the person's: one that arrives late is no change", () => {
+    expect(formReading({ extras: {}, item: event({ freq: 'weekly' }), ruleDirty: false })).toBe(
+      formReading({ extras: {}, item: event(), ruleDirty: false }),
+    );
+  });
+
+  it('reads a rule the person changed', () => {
+    expect(formReading({ extras: {}, item: event({ freq: 'weekly' }), ruleDirty: true })).not.toBe(
+      formReading({ extras: {}, item: event(), ruleDirty: false }),
+    );
   });
 });

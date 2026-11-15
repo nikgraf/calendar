@@ -116,11 +116,15 @@ export type { EditorView } from '@calendar/app-state';
 /**
  * What closing the editor would lose, reported up (`onUnsaved`): the
  * form's changes and a paste's drafts (`unsaved`), and words in the
- * Assistant's field, which the returned setter is told about.
+ * Assistant's field, which the returned setter is told about — not while
+ * a Save or delete is under way, which lands either way.
  */
-const useUnsavedReport = (unsaved: boolean, onUnsaved: (unsaved: boolean) => void) => {
+const useUnsavedReport = (
+  { unsaved, writing }: { readonly unsaved: boolean; readonly writing: boolean },
+  onUnsaved: (unsaved: boolean) => void,
+) => {
   const [held, setHeld] = useState(false);
-  const holds = unsaved || held;
+  const holds = unsaved || (held && !writing);
   useEffect(() => onUnsaved(holds), [holds, onUnsaved]);
   return setHeld;
 };
@@ -268,7 +272,7 @@ export function EditorPanel({
   const { eventModel, kinds, marks, onPhrase, previewing, steps, taskModel, userEdits } = editor;
   const { joinUrl } = eventModel;
   const { available, convertBlocked, kind, mode, switchTo } = kinds;
-  const setHeld = useUnsavedReport(editor.unsaved, onUnsaved);
+  const setHeld = useUnsavedReport(editor, onUnsaved);
   // A step that made the item the other kind: the control stays marked.
   const kindMark = useFlash<HTMLDivElement>(marks?.fields.has('kind') ? marks.key : null, true);
 

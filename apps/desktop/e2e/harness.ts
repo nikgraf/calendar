@@ -50,12 +50,6 @@ const require = createRequire(import.meta.url);
 /* eslint-disable no-console -- harness diagnostics are wanted in e2e output */
 
 /**
- * The *local* ISO date `days` before today (negative = ahead), for
- * date-only seeds: the app places a task on the day in the machine's zone,
- * and between local midnight and UTC midnight the UTC date is still
- * yesterday (CI runs in UTC; dev does not).
- */
-/**
  * For a cleanup loop that leaves an editor by its Cancel, in one eval:
  * Discard Changes while the editor asks (`DiscardConfirm`), else Cancel.
  */
@@ -68,6 +62,12 @@ export const CANCEL_OR_DISCARD = `(() => {
   [...document.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Cancel')?.click();
 })()`;
 
+/**
+ * The *local* ISO date `days` before today (negative = ahead), for
+ * date-only seeds: the app places a task on the day in the machine's zone,
+ * and between local midnight and UTC midnight the UTC date is still
+ * yesterday (CI runs in UTC; dev does not).
+ */
 export const localIsoDaysAgo = (days: number): string => {
   const date = new Date();
   date.setDate(date.getDate() - days);

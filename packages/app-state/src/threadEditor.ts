@@ -48,7 +48,7 @@ import { useEditorKinds } from './editorKinds.ts';
 import type { EditorSourceKind } from './editorSwitch.ts';
 import { livePlaceChoice } from './draftPlaces.ts';
 import { editorQuestions } from './draftQuestions.ts';
-import { editorDiscard, useFormChanged } from './editorUnsaved.ts';
+import { editorDiscard, formReading, useFormChanged } from './editorUnsaved.ts';
 import { rescheduledEventExclusion } from './findTimeModel.ts';
 import { useBackendMutations } from './hooks.ts';
 import { useOneWrite } from './oneWrite.ts';
@@ -511,8 +511,13 @@ export const useThreadEditor = ({
   // saved item's opening is read when the thread opens on it (`seedReady`).
   const formChanged = useFormChanged({
     isNew: sourceKind === 'new',
+    kind: kinds.kind,
     mode,
-    reading: JSON.stringify({ extras: currentExtras(), item: currentItem() }),
+    reading: formReading({
+      extras: currentExtras(),
+      item: currentItem(),
+      ruleDirty: eventModel.repeatDirty,
+    }),
     settled: sourceKind === 'new' || seedReady,
   });
   const { open } = thread;
@@ -1190,5 +1195,7 @@ export const useThreadEditor = ({
     /** Moves at each edit made by hand in the form (the phrase field's `editKey`: dictation ends). */
     userEdits,
     write,
+    /** A Save, a delete or "Add all" is under way: leaving loses nothing then. */
+    writing,
   };
 };

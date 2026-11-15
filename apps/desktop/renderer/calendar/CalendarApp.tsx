@@ -249,6 +249,8 @@ function CalendarBody({
   // A panel asked for over an editor that holds something: the editor asks
   // first (`DiscardConfirm`), and Discard goes there.
   const [leaving, setLeaving] = useState<{
+    /** What goes with the change once it is made (the grid's day, a capture let go). */
+    readonly after: (() => void) | undefined;
     readonly from: number;
     readonly next: PanelState;
   } | null>(null);
@@ -258,8 +260,10 @@ function CalendarBody({
    * something off the panel — Cancel, the X, Escape, another event, slot
    * or chip, "+ New", search, a lesson, a paste, a notification — is held
    * while the editor asks. A change within the same editor goes through.
+   * `after` goes with the change, only once it is made: Keep Editing
+   * leaves the grid's day and a capture under way as they were.
    */
-  const setPanel = useCallback((update: SetStateAction<PanelState>) => {
+  const setPanel = useCallback((update: SetStateAction<PanelState>, after?: () => void) => {
     const current = panelNow.current;
     const holds =
       'opening' in current &&
@@ -267,14 +271,16 @@ function CalendarBody({
       editorHolds.current.unsaved;
     if (!holds) {
       showPanel(update);
+      after?.();
       return;
     }
     const next = typeof update === 'function' ? update(current) : update;
     if (next === current || ('opening' in next && next.opening === current.opening)) {
       showPanel(next);
+      after?.();
       return;
     }
-    setLeaving({ from: current.opening, next });
+    setLeaving({ after, from: current.opening, next });
   }, []);
   // The question shows while the editor it was asked over is up.
   const asked = leaving !== null && 'opening' in panel && leaving.from === panel.opening;
@@ -282,6 +288,7 @@ function CalendarBody({
     setLeaving(null);
     if (discard && leaving !== null) {
       showPanel(leaving.next);
+      leaving.after?.();
     }
   };
   const reportUnsaved = (opening: number) => (unsaved: boolean) => {
@@ -327,16 +334,18 @@ function CalendarBody({
     if (!first) {
       return;
     }
-    goToDay(Temporal.PlainDate.from(first.prefill.date));
-    setPanel({
-      kind: 'editEvent',
-      opening: nextOpening(),
-      opensOn: 'assistant',
-      seed: {
-        initialDate: Temporal.PlainDate.from(first.prefill.date),
-        thread: { items, ...(note ? { note } : {}), utterance },
+    setPanel(
+      {
+        kind: 'editEvent',
+        opening: nextOpening(),
+        opensOn: 'assistant',
+        seed: {
+          initialDate: Temporal.PlainDate.from(first.prefill.date),
+          thread: { items, ...(note ? { note } : {}), utterance },
+        },
       },
-    });
+      () => goToDay(Temporal.PlainDate.from(first.prefill.date)),
+    );
   };
   // Several events found: the same thread, with a draft each (the review
   // list the dialog used to show), and its warning when the text was cut.
@@ -364,17 +373,17 @@ function CalendarBody({
       // A clicked task reminder opens the task's editor, done or not; one gone since opens nothing.
       void findNotificationTask(backend, target).then((task) => {
         if (task) {
-          capture.dismiss();
-          setPanel({ kind: 'editTask', opening: nextOpening(), task });
+          setPanel({ kind: 'editTask', opening: nextOpening(), task }, capture.dismiss);
         }
       });
       return;
     }
     void findNotificationEvent(backend, target).then((event) => {
       if (event) {
-        capture.dismiss();
-        goToDay(eventStartDay(event, timeZone));
-        setPanel({ event, kind: 'inspector' });
+        setPanel({ event, kind: 'inspector' }, () => {
+          capture.dismiss();
+          goToDay(eventStartDay(event, timeZone));
+        });
       }
     });
   });
@@ -520,7 +529,7 @@ function CalendarBody({
         // anywhere in the window but a dialog (which takes its own Escape
         // first); a result opened from search goes back to the results.
         // While an editor asks whether to discard, it answers Keep Editing.
-        if (asked) {
+        if (asked && !anyDialog) {
           setLeaving(null);
           return;
         }
@@ -646,28 +655,31 @@ function CalendarBody({
     switch (id) {
       case 'create': {
         const day = Temporal.PlainDate.from(today);
-        goToDay(day);
-        setPanel({
-          kind: 'editEvent',
-          opening: nextOpening(),
-          opensOn: 'assistant',
-          seed: {
-            initialDate: day,
-            initialHour: 12,
-            lesson: 'create',
-            quickAddText: LESSON_CREATE_PHRASE,
+        setPanel(
+          {
+            kind: 'editEvent',
+            opening: nextOpening(),
+            opensOn: 'assistant',
+            seed: {
+              initialDate: day,
+              initialHour: 12,
+              lesson: 'create',
+              quickAddText: LESSON_CREATE_PHRASE,
+            },
           },
-        });
+          () => goToDay(day),
+        );
         return;
       }
       case 'search': {
         // A fresh thread, whatever an earlier search left. Without the
         // model the words search as plain words; the banner says why.
-        void searchThread.startWith(LESSON_SEARCH_PHRASE, {
-          read: searchModel.status === 'ready',
+        setPanel({ kind: 'search', lesson: nextOpening(), selectText: false }, () => {
+          void searchThread.startWith(LESSON_SEARCH_PHRASE, {
+            read: searchModel.status === 'ready',
+          });
+          setSearchFocus((count) => count + 1);
         });
-        setPanel({ kind: 'search', lesson: nextOpening(), selectText: false });
-        setSearchFocus((count) => count + 1);
         return;
       }
       default:

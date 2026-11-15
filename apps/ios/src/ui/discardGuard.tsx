@@ -56,6 +56,7 @@ export const useDiscard = ({
   open,
   question,
   unsaved,
+  writing,
 }: {
   readonly held: boolean;
   readonly onCancel: () => void;
@@ -63,8 +64,10 @@ export const useDiscard = ({
   readonly open: boolean;
   readonly question: string;
   readonly unsaved: boolean;
+  /** A Save or delete is under way: it lands either way, so nothing is lost by leaving. */
+  readonly writing: boolean;
 }) => {
-  const holds = unsaved || held;
+  const holds = unsaved || (held && !writing);
   // One question at a time: a second tap while the sheet asks is no second question.
   const asking = useRef(false);
   const ask = async (then: () => void) => {

@@ -1,6 +1,7 @@
 import type { ItemKind } from '@calendar/core';
 import { useState } from 'react';
 import type { EditorMode, EditorSourceKind } from './editorSwitch.ts';
+import type { QuickAddItem } from './quickAddItem.ts';
 
 /**
  * Whether closing the editor now would lose something put into it — the
@@ -129,16 +130,42 @@ export const editorDiscard = ({
   };
 };
 
-/** The form's readings as it opened, per kind: the event form, the to-do form. */
+/** The form's readings as it opened, per mode: the event form, the to-do form. */
 type OpenedReadings = { readonly [Mode in EditorMode]?: string };
 
 /**
+ * The form as one reading to compare (`useFormChanged`): the item and
+ * what it holds beyond it. An event's rule is in it only once it is
+ * another than the form was seeded with (`ruleDirty`): a series' rule
+ * that arrives after the editor opened, or changes elsewhere, re-seeds
+ * the form, and is no change of the person's.
+ */
+export const formReading = ({
+  extras,
+  item,
+  ruleDirty,
+}: {
+  readonly extras: unknown;
+  readonly item: QuickAddItem;
+  readonly ruleDirty: boolean;
+}): string =>
+  JSON.stringify({
+    extras,
+    item:
+      item.kind === 'event' && !ruleDirty
+        ? { ...item, prefill: { ...item.prefill, recurrence: undefined } }
+        : item,
+  });
+
+/**
  * One step of `useFormChanged`: whether the form reads otherwise than it
- * opened, and whether to take the reading now as an opening — the first,
- * once the form is settled, and the kind a new item was switched to while
- * it held nothing, whose form then opens afresh: the switch alone loses
- * nothing. A saved item switched to another kind is a conversion waiting
- * for Save, and changed.
+ * opened, and whether to read its opening now — the first, once the form
+ * is settled, and a new item's after its kind was switched while it read
+ * as it opened: the other form (or the same one round again, or the other
+ * list's) opens afresh, since the switch alone loses nothing. A saved item
+ * switched to another kind is a conversion waiting for Save, and changed;
+ * so is a new one switched after something was put in, whose other form
+ * has no opening of its own.
  */
 export const formChange = ({
   isNew,
@@ -146,6 +173,7 @@ export const formChange = ({
   opened,
   reading,
   settled,
+  switched,
   untouched,
 }: {
   readonly isNew: boolean;
@@ -154,44 +182,58 @@ export const formChange = ({
   readonly reading: string;
   /** The form holds all the item opened with (a saved series waits for its rule). */
   readonly settled: boolean;
+  /** The kind on show is another than at the last commit. */
+  readonly switched: boolean;
   /** At the last commit, the form read as it opened. */
   readonly untouched: boolean;
 }): { readonly changed: boolean; readonly open: boolean } => {
-  const baseline = opened[mode];
-  if (baseline !== undefined) {
-    return { changed: reading !== baseline, open: false };
-  }
   const anyOpened = Object.keys(opened).length > 0;
-  const open = settled && (!anyOpened || (isNew && untouched));
-  return { changed: anyOpened && !open, open };
+  if (settled && (!anyOpened || (isNew && switched && untouched))) {
+    return { changed: false, open: true };
+  }
+  const baseline = opened[mode];
+  return { changed: baseline === undefined ? anyOpened : reading !== baseline, open: false };
 };
 
 /**
- * Whether the form reads otherwise than it opened (`formChange`), from one
- * reading of it — a field put back reads as it did. A new item's opening
- * is its seed, read at once; a saved one's is read once it is `settled`.
+ * Whether the form reads otherwise than it opened (`formChange`): a field
+ * put back reads as it did. A new item's opening is its seed; a saved
+ * one's is read once it is `settled`. Read as the form renders: a pass
+ * another hook adjusts as it renders (a series' rule seeding its fields)
+ * reads the same, since an unchanged rule is not in the reading
+ * (`formReading`).
  */
 export const useFormChanged = ({
   isNew,
+  kind,
   mode,
   reading,
   settled,
 }: {
   readonly isNew: boolean;
+  readonly kind: ItemKind;
   readonly mode: EditorMode;
   readonly reading: string;
   readonly settled: boolean;
 }): boolean => {
-  const [opened, setOpened] = useState<OpenedReadings>(() => (settled ? { [mode]: reading } : {}));
-  // Whether the form read as it opened, as last rendered.
-  const [untouched, setUntouched] = useState(true);
-  const { changed, open } = formChange({ isNew, mode, opened, reading, settled, untouched });
+  const [opened, setOpened] = useState<OpenedReadings>({});
+  // As last rendered: the kind on show, and whether the form read as it opened.
+  const [last, setLast] = useState({ kind, untouched: true });
+  const { changed, open } = formChange({
+    isNew,
+    mode,
+    opened,
+    reading,
+    settled,
+    switched: kind !== last.kind,
+    untouched: last.untouched,
+  });
   // Render-phase state adjustment (React's "derive from props" pattern).
   if (open) {
     setOpened({ ...opened, [mode]: reading });
   }
-  if (untouched === changed) {
-    setUntouched(!changed);
+  if (last.kind !== kind || last.untouched === changed) {
+    setLast({ kind, untouched: !changed });
   }
   return changed;
 };

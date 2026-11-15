@@ -14,7 +14,7 @@ const at = (hour: number): number =>
   today.toZonedDateTime({ plainTime: new Temporal.PlainTime(hour), timeZone: TZ }).toInstant()
     .epochMilliseconds;
 
-const stored = (id: string, title: string, hour: number) =>
+const stored = (id: string, title: string, hour: number, extra: Partial<EventRecord> = {}) =>
   new EventRecord({
     accountId: 'acc-e2e',
     calendarId: 'cal-e2e',
@@ -29,6 +29,7 @@ const stored = (id: string, title: string, hour: number) =>
     syncStatus: 'synced',
     title,
     updatedAt: 1,
+    ...extra,
   });
 
 const seed = {
@@ -56,7 +57,12 @@ const seed = {
       timeZone: TZ,
     }),
   ],
-  events: [stored('evt-coffee', 'Coffee chat', 9), stored('evt-lunch', 'Lunch plan', 12)],
+  events: [
+    stored('evt-coffee', 'Coffee chat', 9),
+    stored('evt-lunch', 'Lunch plan', 12),
+    // A series: its occurrences' editor reads the rule from the master after it opens.
+    stored('evt-daily', 'Daily sync', 15, { recurrence: ['RRULE:FREQ=DAILY;COUNT=14'] }),
+  ],
   taskLists: [
     new TaskListInfo({
       accountId: 'acc-e2e',
@@ -179,6 +185,22 @@ describe('Discarding an editor that holds something', () => {
     await openNewForm();
     await cdp.clickTestId('mode-task');
     await cdp.waitFor(headingIs('New task'));
+    await cdp.pressEscape();
+    await closesAtOnce();
+
+    // And back: the event form the task's values made opens afresh too.
+    await openNewForm();
+    await cdp.clickTestId('mode-task');
+    await cdp.waitFor(headingIs('New task'));
+    await cdp.clickTestId('mode-event');
+    await cdp.waitFor(headingIs('New event'));
+    await cdp.pressEscape();
+    await closesAtOnce();
+
+    // A series' occurrence: its rule arrives after the editor opened, and is no change.
+    await cdp.openEditor('[title^="Daily sync"]');
+    await cdp.waitFor(`document.querySelector('select[aria-label="Repeat"]')?.value === 'daily'`);
+    await sleep(300);
     await cdp.pressEscape();
     await closesAtOnce();
 

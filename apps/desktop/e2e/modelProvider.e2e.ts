@@ -339,7 +339,8 @@ describe('A served model', () => {
     expect(JSON.stringify(completion.response_format.json_schema.schema)).toContain(
       '"location":{"type":["string","null"]}',
     );
-    await cdp.pressEscape();
+    // The paste's drafts are unsaved: leaving asks first.
+    await cdp.discardEditor();
 
     // Back to Ollama for the tests below.
     const again = await app.openSettings('model');

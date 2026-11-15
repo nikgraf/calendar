@@ -878,6 +878,7 @@ export function EventEditSheet({
     open,
     question: editor.unsavedQuestion,
     unsaved: editor.unsaved,
+    writing: editor.writing,
   });
 
   const { noun, verb } = editorTitle({
