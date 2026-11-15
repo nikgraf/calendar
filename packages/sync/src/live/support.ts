@@ -24,8 +24,6 @@ import { LiveScratchError } from '../testing/liveScratchRest.ts';
 
 export const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
-/** Older than this, a scratch calendar belongs to a run that never cleaned up. */
-export const SWEEP_MAX_AGE_MS = 6 * HOUR;
 
 /** A whole hour at least `hours` out — never in today's past, never a DST literal. */
 export const hoursFromNow = (hours: number): number =>

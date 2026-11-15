@@ -66,8 +66,6 @@ import { useRepeatState } from './repeatState.ts';
  * Fields a parsed phrase can prefill. Structural on purpose so app-state
  * stays independent of the AI package.
  */
-export type { RepeatEnds } from './repeatState.ts';
-
 export interface EventEditorPrefill {
   /** The times came from a meal or part-of-day word, not a stated clock time: shown as assumed until set. */
   readonly assumedTime?: boolean | undefined;
@@ -124,8 +122,6 @@ let lastUsedCalendarKey: string | null = null;
 export const rememberCalendar = (calendarKey: string): void => {
   lastUsedCalendarKey = calendarKey;
 };
-/** The calendar a new event will default to (a quick-add review names it). */
-export const getLastUsedCalendarKey = (): string | null => lastUsedCalendarKey;
 
 /**
  * `key` while it names a calendar a new event can go to, else `fallback`:

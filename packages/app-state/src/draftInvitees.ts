@@ -166,12 +166,3 @@ export const choiceQuestion = (choice: InviteeChoice): string =>
   choice.contacts.length > 0
     ? `Which ${choice.name}?`
     : `No contact named “${choice.name}” — add an address under Invitees.`;
-
-/** A contact as a choice offers it: its name, with the address when another one there has the same name. */
-export const choiceLabel = (contact: Contact, choice: InviteeChoice): string => {
-  if (contact.displayName === undefined) {
-    return contact.email;
-  }
-  const shared = choice.contacts.filter((other) => other.displayName === contact.displayName);
-  return shared.length > 1 ? `${contact.displayName} · ${contact.email}` : contact.displayName;
-};

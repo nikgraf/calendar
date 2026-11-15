@@ -65,9 +65,6 @@ export const actionText = (colors: ThemeColors): { color: string; fontWeight: '6
   fontWeight: '600',
 });
 
-/** Shared radii, matching the desktop's `--radius-*` tokens. */
-export const RADIUS = { control: 8, event: 6, popover: 12 } as const;
-
 /**
  * The largest Dynamic Type scale for text whose box cannot grow — passed as
  * `maxFontSizeMultiplier`: event and task blocks on the grid, all-day chips
