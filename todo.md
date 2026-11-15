@@ -175,17 +175,18 @@ the served model (#184) and slot proposals (#185) are in
       first whether v1 writes one for a to-do.
 - [ ] Dictated place names (two iPhone recordings, 2026-11-06,
       `docs/decisions.md` → "Calendar: editing, gestures, views",
-      "Places nearby first"; each its own PR, in this order) — a name
-      dictation mishears and the user has never been to finds nothing
-      (MapKit's search reads a doubled letter, not "Cafe Meek" for
-      Kaffemik, and the Assistant's model keeps the name as heard) —
-      the final reading's alternatives (kept since the speech module,
-      `SpeechBridge.swift`: "Cafe Meek" had "Meek" among them) tried
-      against MapKit, and given to the model with past places and
-      contacts; vocabulary itself reaches only DictationTranscriber,
-      whose words are shown, not sent. MapKit's structured
-      city/region/country fields in a native build; bench cases that
-      ask MapKit.
+      "Places nearby first", "A misheard place is looked for as its other
+      readings"; each its own PR, in this order) — a name dictation
+      mishears and the user has never been to finds nothing (MapKit's
+      search reads a doubled letter, not "Cafe Meek" for Kaffemik, and
+      the Assistant's model keeps the name as heard). The final reading's
+      alternatives are searched too since #324, which found two more of
+      the place bench's 34 synthetic cases and Kaffemik in none of its
+      seven: real recordings in `places.json` (the iPhone's "Cafe Meek"
+      had "Meek" among them), then the readings given to the model with
+      past places and contacts, measured there; vocabulary itself reaches
+      only DictationTranscriber, whose words are shown, not sent.
+      MapKit's structured city/region/country fields in a native build.
 - [ ] Dictation follow-ups (`docs/decisions.md` → AI, "Dictation ends
       on its words, and shows them"; measured on synthetic phrases
       only) — the pauses (900 / 1,200 ms) and Settings › Advanced ›
