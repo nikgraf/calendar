@@ -6,8 +6,11 @@ import { misreadFallbacks, refuseMisreadFallback } from './fallbackPrecedence';
 
 const root = join(import.meta.dirname, '../../..');
 
-/** These two files spell the shapes out on purpose. */
-const OWN = ['fallbackPrecedence.ts', 'fallbackPrecedence.test.ts'].map(
+/**
+ * These spell the shapes out on purpose: this guard's own files, and the
+ * typed page functions' (`page.test.ts` holds that they do not compile).
+ */
+const OWN = ['fallbackPrecedence.ts', 'fallbackPrecedence.test.ts', 'page.ts', 'page.test.ts'].map(
   (file) => `apps/desktop/e2e/${file}`,
 );
 
