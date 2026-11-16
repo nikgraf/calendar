@@ -322,6 +322,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   `@effect/tsgo` (0 errors), sherif, jscpd (0.14 %). Open:
   `no-base-to-string` skips `unknown` (~115 `String(error)` sites), 78
   `no-unnecessary-condition` hits untriaged.
+- **The PR workflow in the repo** (2026-11-16, #337) — sessions start on
+  fresh machines, so the rules and recipes one Mac's agent memory held
+  moved in: the `ship-pr` skill with a self-check from 1,072 review
+  findings, `scripts/review.sh` pinning both reviewers (Nik's order
+  kept), and `PR complete`, failing a ready PR that owes a review stage,
+  screenshots or its record. Rejected: syncing the memory folder (no
+  project setting for its path, VMs would share files, mostly PR
+  history); round 1 of both reviewers in parallel. Open: making the check
+  required, the sync-queue sequence test the self-check asks for.
 
 ## Architecture and sync path
 
