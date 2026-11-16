@@ -2,7 +2,7 @@ import { Account, APPLE_REMINDERS_ACCOUNT_ID, TaskListInfo, TaskRecord } from '@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vite-plus/test';
 import {
   type App,
-  CANCEL_OR_DISCARD,
+  cancelOrDiscard,
   type RemindersFixture,
   launchApp,
   localIsoDaysAgo,
@@ -565,7 +565,7 @@ describe('Reminder repeat rules with weekdays', () => {
       if (!(await app.cdp.eval<boolean>(EDITOR_OPEN))) {
         return;
       }
-      await app.cdp.eval(CANCEL_OR_DISCARD);
+      await app.cdp.evaluate(cancelOrDiscard);
       await new Promise((resolve) => setTimeout(resolve, 150));
     }
   });
