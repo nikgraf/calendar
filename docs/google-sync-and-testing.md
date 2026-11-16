@@ -835,6 +835,18 @@ unless `CALENDAR_E2E_REMINDERS=real` / `CALENDAR_E2E_APPLE_CALENDAR=real`);
 screenshots, `describe.skipIf` unless `SHOT_OUT` names a folder; see
 distribution.md → Website).
 
+A spec's CDP expressions are JavaScript in template strings, where
+neither tsc nor the lint looks. A `??` fallback is parenthesised whenever
+a comparison follows it, or a member access follows a literal fallback:
+`(x ?? null) === 'v'`, never `x ?? null === 'v'`, which reads as
+`x ?? (null === 'v')` and let two waits pass on any text (#230, #317) —
+usually through a constant ending in `?? null` interpolated before
+`=== 'v'`; `(x ?? '').includes('v')`, never `x ?? ''.includes('v')`.
+`Cdp.eval`, and `waitFor` before its first try, refuse an expression with
+either shape as it is sent (`fallbackPrecedence.ts`), and
+`fallbackPrecedence.test.ts`, in `pnpm test`, fails on one written out in
+the e2e sources.
+
 Flakiness lessons (each caused a real CI failure — keep them enforced):
 
 - **Integer coordinates only** for `Input.dispatchMouseEvent` — the app

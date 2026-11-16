@@ -131,7 +131,7 @@ export default defineConfig({
         ? ['packages/sync/src/live/**/*.live.ts']
         : [
             'packages/*/src/**/*.test.{ts,tsx}',
-            'apps/desktop/e2e/bench/**/*.test.ts',
+            'apps/desktop/e2e/**/*.test.ts',
             'apps/desktop/electron/**/*.test.{ts,tsx}',
             'apps/desktop/renderer/**/*.test.{ts,tsx}',
             'apps/ios/src/**/*.test.{ts,tsx}',
