@@ -2174,9 +2174,26 @@ describe('pending-op queue: what the sequences found', () => {
           taskId: 't2',
           taskListId: 'list-2',
         });
+        // A move of the copy replaces its delete too (its subtasks' own
+        // deletes follow it to the other list).
+        yield* mutations.deleteTask({ accountId: ACCOUNT_ID, taskId: 'p', taskListId: 'list-1' });
+        google.now += MINUTE;
+        yield* TestClock.adjust('1 minute');
+        yield* engine.syncAll();
+        yield* mutations.moveTask({
+          accountId: ACCOUNT_ID,
+          draft: { dueDate: due(5).slice(0, 10), title: 'Trip' },
+          target: { accountId: ACCOUNT_ID, taskListId: 'list-2' },
+          taskId: 'p',
+          taskListId: 'list-1',
+        });
         network.down = false;
-        yield* mutations.retryPendingOps();
-        yield* mutations.processPendingOps();
+        for (let round = 0; round < 3; round += 1) {
+          yield* mutations.retryPendingOps();
+          yield* mutations.processPendingOps();
+        }
+        expect(google.taskOf('list-2', 'p')).toMatchObject({ title: 'Trip' });
+        expect(google.taskOf('list-2', 'p')?.deleted).toBeUndefined();
         expect(google.taskOf('list-1', 't1')).toMatchObject({ status: 'completed' });
         expect(google.taskOf('list-1', 't1')?.deleted).toBeUndefined();
         expect(google.taskOf('list-2', 't2')).toMatchObject({ title: 'Call back' });
