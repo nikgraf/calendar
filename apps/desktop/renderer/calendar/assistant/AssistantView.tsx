@@ -122,7 +122,11 @@ function NoChangeReply({
 }) {
   const readings = dimmed ? [] : turn.readings;
   return (
-    <div className="flex flex-col gap-2" data-testid="assistant-no-change">
+    <div
+      className="flex flex-col gap-2"
+      data-dimmed={dimmed ? '' : undefined}
+      data-testid="assistant-no-change"
+    >
       <p className={`${SAID} ${dimmed ? 'opacity-55' : ''}`} data-testid="assistant-said">
         {turn.utterance}
       </p>

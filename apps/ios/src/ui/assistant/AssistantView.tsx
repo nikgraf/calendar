@@ -99,11 +99,10 @@ function NoChangeReply({
       </Text>
       <View
         style={[styles.reply, readings.length > 0 && styles.replyWide, dimmed && styles.dimmed]}
-        testID="assistant-reply"
       >
         <View style={styles.replyLine}>
           <SymbolView name="equal.circle" size={20} tintColor={colors['text-secondary']} />
-          <Text style={styles.replyText}>
+          <Text style={styles.replyText} testID="assistant-reply">
             <Text style={styles.replyLead}>Nothing changed.</Text>
             {readings.length > 0 ? ' Did you mean' : ''}
           </Text>

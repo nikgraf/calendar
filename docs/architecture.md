@@ -1485,7 +1485,17 @@ gateway carries all of it. Details, limits and the threat model:
   pins over a MapKit image of exactly that rect (`mapSnapshot` with
   `rect`, `usePlaceMap`), and the iPhone opens it full height as a live
   map (`PlaceMapSheet`). What it is doing, and why a phrase failed, is a
-  line under the field, the failed words kept in it. **Form** is the
+  line under the field, the failed words kept in it. Words the model
+  read that leave every draft as it was (`leftAlone`: no field the card
+  or the form shows, no question opened or settled, no day for an
+  undated to-do, no free slots of their own, an assumed time still
+  assumed) make no step: they stay in the conversation after the step
+  they followed, answered "Nothing changed." (`NoChangeTurn`,
+  `noChangeLines`), and go when that step is let go of. Dictated ones
+  then try the recogniser's other readings in the background, one model
+  turn each (`otherReadings`), and offer those that would change
+  something with what they would do; one is said, as typed words, only
+  when picked. **Form** is the
   fields as captioned sections — the Event | Task | Reminder control
   (`useEditorKinds`, only the kinds something can hold; on an existing
   item it converts), When, Where, Invitees, Notifications, Notes

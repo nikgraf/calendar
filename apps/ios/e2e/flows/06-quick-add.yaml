@@ -101,6 +101,18 @@ tags:
                 text: 'Changed: time'
             - assertVisible:
                 id: 'assistant-version'
+            # The same hours said again change nothing: the words are
+            # answered in the conversation, and make no version (the form's
+            # pill still counts two steps below).
+            - runFlow:
+                file: ../common/apply-quick-add.yaml
+                env:
+                  PHRASE: '| | 20:00-21:00'
+            - extendedWaitUntil:
+                visible:
+                  id: 'assistant-reply'
+                  text: 'Nothing changed.*'
+                timeout: 20000
             # The form: the same draft, two steps under it.
             - tapOn:
                 id: 'assistant-edit'
