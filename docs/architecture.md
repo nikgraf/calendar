@@ -546,6 +546,30 @@ it whenever a kind is added. Rules that keep the queue correct:
   not decode (the write landed) and an op without a snapshot (a delete a
   pull confirmed), which can only be marked synced.
 
+Rules a change to the queue keeps (each broke once):
+
+- Ops of one item are not all ordered: the drain does not hold an
+  occurrence delete behind its series delete, so "the occurrence delete
+  landed first" is an order to handle and to test.
+- A 404 on a retried write can mean the first attempt landed and its
+  answer was lost: check where it would have landed (as a move does,
+  `settleOrRevertTaskMove` for tasks), never read it as "never made".
+- Work done when an op lands runs on every landing path (a 2xx, the
+  412 match in `park`, a 2xx whose body did not decode) and never
+  overtakes ops queued after it, which a lost answer lets land first. A
+  new `pending_ops` column gets a backfill for the ops queued before the
+  upgrade.
+- An op the user undid never stays queued across a wait for the drain's
+  gate: the undo takes it out in its own transaction and the drain
+  decides (a discarded cut, left queued, was sent by a drain already
+  waiting). The one exception is a move that was already sent: it stays
+  queued until `settleDiscardedMove` settles it under the gate.
+- A fix to one queue path checks every producer of the op it touches,
+  a reviewer's included: cuts and rule changes both produce
+  `dropOverridesFrom`, and a fallback keyed on it broke rule changes.
+- Snapshots rewritten per record inside a page's transaction are
+  quadratic (1,000 exceptions took 1.9 s; batched, 20 ms).
+
 ## Sync engine (packages/sync/src/engine.ts)
 
 - Poll every 90 s (`SyncInterval`, a `Context.Reference`) plus kicks on
@@ -586,7 +610,9 @@ it whenever a kind is added. Rules that keep the queue correct:
   blanking the window.
 - Incremental pulls use syncTokens; a 410 forces a full resync, after which
   `deleteStale` purges rows the server no longer returns (pending rows are
-  protected by sync_status). Local writes mark their row `pending`; pulls
+  protected by sync_status). A page's deletions are not: `applyPage`
+  deletes by id whatever the row's status, so a pending row with no op
+  for an event Google deleted lasts only until the next pull. Local writes mark their row `pending`; pulls
   write in `mode: 'pull'`, which skips pending rows, so a queued edit is
   never clobbered by a page carrying the server's older copy. A queued
   delete leaves no row to skip: a page answered before it reached Google
@@ -1872,8 +1898,12 @@ gateway carries all of it. Details, limits and the threat model:
   subset travels in `SettingsDocument` (core): Export/Import on both apps
   and the desktop's watched `~/.solunivo/solunivo.jsonc`, two-way (file →
   app through a directory watch plus a periodic stat; app → file through
-  `jsonc-parser` edits so comments survive). Accounts are a sign-in
-  checklist, never tokens; an import never removes anything and never
+  `jsonc-parser` edits so comments survive). An import writes a section
+  only where it differs from what the device holds, so a choice equal to
+  the default is never stored: when a default flips, such choices read as
+  unchosen and the file's write-back rewrites them (Screen Sharing's,
+  decisions.md), so a default flip says what it does to them. Accounts
+  are a sign-in checklist, never tokens; an import never removes anything and never
   connects an Apple provider; visibility for rows not synced yet is
   parked in `importedVisibility` and applied after each list pass. Of
   `viewPreferences` only `PortableViewPreferences` travels (the lane cap,
