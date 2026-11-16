@@ -291,6 +291,7 @@ const DEMO_NOTE =
 export function AssistantView({
   banner,
   calendars,
+  canSay = true,
   demo = false,
   editor,
   note,
@@ -303,6 +304,8 @@ export function AssistantView({
   /** Above the conversation: the lesson's frame. */
   readonly banner?: ReactNode;
   readonly calendars: ReadonlyArray<CalendarInfo>;
+  /** No phrase is on its way: a reading may be said (`maySay`). */
+  readonly canSay?: boolean | undefined;
   /** The Create lesson's demo is on (no model yet): its own hint, and a line under its answers. */
   readonly demo?: boolean | undefined;
   readonly editor: ReturnType<typeof useThreadEditor>;
@@ -349,7 +352,7 @@ export function AssistantView({
   const replies = (position: number) =>
     (steps.noChange.get(position) ?? []).map((line) => (
       <NoChangeReply
-        disabled={steps.locked || pending !== undefined}
+        disabled={steps.locked || pending !== undefined || !canSay}
         key={line.turn.id}
         line={line}
         onReading={onReading}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { micPress, pendingLine, shouldListen } from './voiceLoop.ts';
+import { maySay, micPress, pendingLine, shouldListen } from './voiceLoop.ts';
 
 describe('micPress', () => {
   it('starts hands-free when dictation is off', () => {
@@ -54,5 +54,17 @@ describe('pendingLine', () => {
   it('shows nothing between phrases', () => {
     expect(pendingLine({ busy: false, live: '', phrase: '' })).toBeUndefined();
     expect(pendingLine({ busy: false, live: '  ', phrase: 'typed, not sent' })).toBeUndefined();
+  });
+});
+
+describe('maySay', () => {
+  it('lets offered words be said only while no phrase is heard, read again or read', () => {
+    expect(maySay({ busy: false, live: '', voice: 'idle' })).toBe(true);
+    // Listening with nothing heard yet: saying them ends hands-free.
+    expect(maySay({ busy: false, live: '', voice: 'recording' })).toBe(true);
+    expect(maySay({ busy: false, live: 'make it', voice: 'recording' })).toBe(false);
+    // Stopped before a word showed: the phrase is still on its way.
+    expect(maySay({ busy: false, live: '', voice: 'transcribing' })).toBe(false);
+    expect(maySay({ busy: true, live: '', voice: 'idle' })).toBe(false);
   });
 });

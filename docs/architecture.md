@@ -1490,8 +1490,9 @@ gateway carries all of it. Details, limits and the threat model:
   or the form shows, no question opened or settled, no day for an
   undated to-do, no free slots of their own, an assumed time still
   assumed) make no step: they stay in the conversation after the step
-  they followed, answered "Nothing changed." (`NoChangeTurn`,
-  `noChangeLines`), and go when that step is let go of. Dictated ones
+  they followed, answered "Nothing changed." — with why, where they
+  asked for what the draft cannot hold ("At most 5 notifications.") —
+  (`NoChangeTurn`, `noChangeLines`), and go when that step is let go of. Dictated ones
   then try the recogniser's other readings in the background, one model
   turn each (`otherReadings`), and offer those that would change
   something with what they would do; one is said, as typed words, only

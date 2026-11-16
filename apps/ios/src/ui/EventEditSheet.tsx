@@ -924,6 +924,7 @@ export function EventEditSheet({
                 <AssistantView
                   banner={lessonBanner}
                   calendars={calendars}
+                  canSay={quick.canSay}
                   demo={demo}
                   editor={editor}
                   note={seed.thread?.note}

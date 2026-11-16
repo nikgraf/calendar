@@ -54,3 +54,20 @@ export const pendingLine = ({
   }
   return live.trim() === '' ? undefined : live;
 };
+
+/**
+ * Whether words the editor offers (another reading, `say`) may be said
+ * now: not while a phrase is heard (its words on show), read once more
+ * (`transcribing`, before any word may have shown) or read by the
+ * thread — the phrase on its way would land after them and take their
+ * place.
+ */
+export const maySay = ({
+  busy,
+  live,
+  voice,
+}: {
+  readonly busy: boolean;
+  readonly live: string;
+  readonly voice: VoiceState;
+}): boolean => !busy && live.trim() === '' && voice !== 'transcribing';

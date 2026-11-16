@@ -8,7 +8,7 @@ import {
   type WordsSource,
 } from '@calendar/ai';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { micPress, pendingLine, shouldListen } from './voiceLoop.ts';
+import { maySay, micPress, pendingLine, shouldListen } from './voiceLoop.ts';
 
 /** A phrase that never pauses is sent after this long rather than recorded until the app dies. */
 const MAX_RECORDING_MS = 60_000;
@@ -351,10 +351,11 @@ export const useQuickAddModel = ({
    * Words the editor offers to say (another reading of dictated words),
    * sent as typed words are: they show as the phrase on its way, and
    * hands-free ends, as it does for words typed. The field keeps what it
-   * holds. Not while a phrase is heard or read.
+   * holds. Not while a phrase is on its way (`maySay`).
    */
+  const canSay = maySay({ busy, live, voice });
   const say = (text: string) => {
-    if (busy || live.trim() !== '') {
+    if (!canSay) {
       return;
     }
     endVoice();
@@ -470,6 +471,8 @@ export const useQuickAddModel = ({
     phrase,
     /** Words the editor offers, said as if typed (`say`). */
     say,
+    /** Offered words may be said now: no phrase is on its way (`maySay`). */
+    canSay,
     setPhrase,
     submit,
     toggleVoice,
