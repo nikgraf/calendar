@@ -7,7 +7,12 @@ import {
   type useEventEditorModel,
   useTimeZones,
 } from '@calendar/app-state';
-import { type CalendarInfo, draftZoneRanges, type RsvpResponse } from '@calendar/core';
+import {
+  type CalendarInfo,
+  draftZoneRanges,
+  nameWithAddress,
+  type RsvpResponse,
+} from '@calendar/core';
 import { InviteeCombobox } from './InviteeCombobox.tsx';
 import { FIELD_CLASS as field } from '../ui/fieldStyles.ts';
 import { useFieldFlash } from '../ui/useFlash.ts';
@@ -262,7 +267,7 @@ export function EventEditorForm({ model }: { model: ReturnType<typeof useEventEd
           {hasGuests ? (
             <ul className="text-sm text-ink-secondary" data-testid="event-guests-read-only">
               {existing?.attendees?.map((attendee) => (
-                <li key={attendee.email}>{attendee.displayName ?? attendee.email}</li>
+                <li key={attendee.email}>{nameWithAddress(attendee)}</li>
               ))}
             </ul>
           ) : null}
@@ -278,8 +283,7 @@ export function EventEditorForm({ model }: { model: ReturnType<typeof useEventEd
                 // Guests the form holds (typed, or said in a phrase) for
                 // another calendar: kept, but not sent from this one.
                 <p className="text-xs text-ink-secondary" data-testid="event-invitees-held">
-                  Not invited from this calendar:{' '}
-                  {attendees.map((attendee) => attendee.displayName ?? attendee.email).join(', ')}
+                  Not invited from this calendar: {attendees.map(nameWithAddress).join(', ')}
                 </p>
               ) : null}
               <p className="text-xs text-ink-secondary">

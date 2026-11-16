@@ -62,6 +62,9 @@ const seed = {
 // CDP key events don't carry macOS meta reliably: dispatch ⌘N to the app's own window listener.
 const COMMAND_N = `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', metaKey: true }))`;
 const chips = `[...document.querySelectorAll('[data-invitee]')].map((el) => el.getAttribute('data-invitee'))`;
+// A chip as it reads: the name, the address in parentheses (and its remove button's ×).
+const chipText = (email: string) =>
+  `document.querySelector('[data-invitee="${email}"]')?.textContent ?? ''`;
 // The Assistant's newest card: its guests, and what its step changed.
 const cardGuests = `(document.querySelector('[data-testid="assistant-card-guests"]')?.textContent ?? '')`;
 const changed = `(document.querySelector('[data-testid="assistant-changed"]')?.textContent ?? '')`;
@@ -100,25 +103,35 @@ describe('Invitees from a quick-add phrase', () => {
     // Anna Lee is one contact: a guest. Tom is two: a question, nothing picked.
     await cdp.waitFor(`${chips}.includes('anna@example.com')`);
     expect(await cdp.eval<Array<string>>(chips)).toEqual(['anna@example.com']);
+    expect(await cdp.eval<string>(chipText('anna@example.com'))).toContain(
+      'Anna Lee (anna@example.com)',
+    );
     await cdp.waitFor(hasChoices);
     expect(await cdp.eval<string>(choiceText(0))).toContain('Which Tom?');
     expect(await cdp.eval<string>(choiceText(0))).toContain('Tom Baker');
     expect(await cdp.eval<string>(choiceText(0))).toContain('Tom Lee');
-    expect(await cdp.eval<string>(cardGuests)).toBe('Anna Lee');
+    expect(await cdp.eval<string>(cardGuests)).toBe('Anna Lee (anna@example.com)');
 
     // A pick makes that contact a guest; the question goes, and the card marks who joined.
     await cdp.clickTestId('draft-invitee-pick-0-0');
     await cdp.waitFor(`${chips}.includes('tom.baker@example.com')`);
+    expect(await cdp.eval<string>(chipText('tom.baker@example.com'))).toContain(
+      'Tom Baker (tom.baker@example.com)',
+    );
     await cdp.waitFor(`!${hasChoices}`);
     await cdp.waitFor(`${changed} === 'Changed: guests'`);
-    expect(await cdp.eval<string>(cardGuests)).toBe('Anna Lee, Tom Baker');
+    expect(await cdp.eval<string>(cardGuests)).toBe(
+      'Anna Lee (anna@example.com), Tom Baker (tom.baker@example.com)',
+    );
 
     // A later phrase takes a guest off by name.
     await phrase('remove Anna');
     await cdp.waitFor(`!${chips}.includes('anna@example.com')`);
     expect(await cdp.eval<Array<string>>(chips)).toEqual(['tom.baker@example.com']);
     // The card: who is left, and the list as it was struck through after it.
-    await cdp.waitFor(`${cardGuests} === 'Tom BakerAnna Lee, Tom Baker'`);
+    await cdp.waitFor(
+      `${cardGuests} === 'Tom Baker (tom.baker@example.com)Anna Lee (anna@example.com), Tom Baker (tom.baker@example.com)'`,
+    );
 
     await cdp.clickButtonWithText('Save');
     await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);

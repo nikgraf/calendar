@@ -5,6 +5,7 @@ import {
   fieldName,
   type StepField,
 } from './draftChanges.ts';
+import { guestLabel } from './draftInvitees.ts';
 import {
   type Draft,
   type DraftThreadState,
@@ -114,6 +115,19 @@ export const versionLabel = (line: StepLine): string =>
   `Version ${String(line.position)}${line.step.kind === 'phrase' ? '' : ' · by hand'}`;
 
 /**
+ * What a changed field reads now, in a row. Guests go by name, as a
+ * phrase's own summary names them: the row is one line, and the card
+ * beside it has their addresses.
+ */
+const rowValue = (change: FieldChange, draft: Draft | undefined): string => {
+  const guests =
+    change.field === 'guests' && draft?.item.kind === 'event'
+      ? (draft.extras?.attendees ?? [])
+      : [];
+  return guests.length > 0 ? guests.map(guestLabel).join(', ') : (change.to ?? 'none');
+};
+
+/**
  * What a step did, in the one line of its row: a phrase's own summary,
  * else the fields changed by hand with what they read now.
  */
@@ -122,9 +136,10 @@ export const stepSummary = (line: StepLine, labels?: ChangeLabels): string => {
     return line.step.summary;
   }
   const changes = lineChanges(line, undefined, labels);
+  const shown = line.after.drafts[line.after.focused];
   return changes.length === 0
     ? stepName(line)
-    : changes.map((change) => `${fieldName(change.field)}: ${change.to ?? 'none'}`).join(' · ');
+    : changes.map((change) => `${fieldName(change.field)}: ${rowValue(change, shown)}`).join(' · ');
 };
 
 /** What a card says its step changed, under the fields: "Changed: time, guests", or nothing. */

@@ -1,6 +1,12 @@
 import { Contact } from '@calendar/core';
 import { describe, expect, it } from 'vite-plus/test';
-import { applyGuestChange, guestsNamed, pickContact, resolveInvitees } from './draftInvitees.ts';
+import {
+  applyGuestChange,
+  guestLabel,
+  guestsNamed,
+  pickContact,
+  resolveInvitees,
+} from './draftInvitees.ts';
 
 const contact = (displayName: string | undefined, email: string): Contact =>
   new Contact({
@@ -111,5 +117,15 @@ describe('guestsNamed and applyGuestChange', () => {
     ]);
     // Mia's old choice gives way to the new one; Bo's goes with the removal.
     expect(result.choices).toEqual([{ contacts: [tomBaker], name: 'mia' }]);
+  });
+});
+
+describe('guestLabel', () => {
+  it('names a guest by the contact’s name, else by the address', () => {
+    expect(guestLabel({ displayName: 'Tom Baker', email: 'tom.baker@example.com' })).toBe(
+      'Tom Baker',
+    );
+    expect(guestLabel({ email: ' bob@example.com ' })).toBe('bob@example.com');
+    expect(guestLabel({ displayName: ' ', email: 'bob@example.com' })).toBe('bob@example.com');
   });
 });

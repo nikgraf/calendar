@@ -157,9 +157,12 @@ export const applyGuestChange = (
   };
 };
 
-/** A guest by name, for a summary: the name the contact gave, else the address. */
+/**
+ * A guest by name, for a summary: the name the contact gave, else the
+ * address. The form and the card show the address too (`nameWithAddress`).
+ */
 export const guestLabel = (attendee: AttendeeInput): string =>
-  attendee.displayName ?? attendee.email;
+  attendee.displayName?.trim() || attendee.email.trim();
 
 /** What a choice asks: which of the contacts, or that none has the name. */
 export const choiceQuestion = (choice: InviteeChoice): string =>

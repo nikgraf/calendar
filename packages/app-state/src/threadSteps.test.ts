@@ -179,6 +179,28 @@ describe('versionLabel, stepSummary and changedLine', () => {
     expect(stepSummary(typed!)).toBe('Place: Figlmüller, Wollzeile 5');
   });
 
+  it('names the guests of a step by hand, as a phrase’s summary does', () => {
+    const id = ids();
+    const started = startThread([lunch], 'Lunch with Sarah tomorrow at one', { id });
+    const invited = foldForm(
+      started,
+      {
+        extras: {
+          attendees: [
+            { displayName: 'Sarah Keller', email: 'sarah@example.com' },
+            { email: 'tom@example.com' },
+          ],
+          description: '',
+          reminders: undefined,
+        },
+        item: lunch,
+      },
+      { kind: 'edit' },
+      id,
+    );
+    expect(stepSummary(threadLine(invited).at(-1)!)).toBe('Guests: Sarah Keller, tom@example.com');
+  });
+
   it('lists what a step changed in a line, and says nothing for none', () => {
     const [, moved] = threadLine(story());
     expect(changedLine(lineChanges(moved!))).toBe('Changed: time');

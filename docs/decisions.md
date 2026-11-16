@@ -1069,6 +1069,14 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   user picks or lets it go; the words' spelling wins ("Järg Möller" was
   returned for "Jörg Müller"). Rejected: a contacts tool for the model,
   taking the top-ranked contact. Open: pronouns ("invite her"), capture.
+- **A guest's address in sight** (2026-11-16) — wherever the editor or
+  the Assistant's card shows a guest it reads "Anna Lee
+  (anna@example.com)" (`nameWithAddress`), so the address a picked or
+  said name stands for can be checked before Save; an address alone, or
+  a name that is only the address, reads once. The one-line summaries (a
+  phrase's "invites Anna Lee", a version row) keep the name alone.
+  Rejected: the address as a subtitle or a tooltip (a chip is one line).
+  Open: the inspector and the iOS detail still show the name alone.
 
 ## Google Tasks and Apple Reminders
 

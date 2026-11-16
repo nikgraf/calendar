@@ -188,10 +188,11 @@ tags:
                 notVisible:
                   id: 'draft-question'
                 timeout: 5000
+            # Each guest with the address the name stands for.
             - extendedWaitUntil:
                 visible:
                   id: 'assistant-card-guests'
-                  text: '.*Anna Lee.*Tom Lee.*'
+                  text: '.*Anna Lee \(anna@example\.com\).*Tom Lee \(tlee@example\.com\).*'
                 timeout: 5000
             # A phrase that sets a place: the fixture takes the location
             # part as written, and the thread finds it among the past

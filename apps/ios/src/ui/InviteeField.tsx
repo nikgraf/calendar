@@ -1,5 +1,11 @@
 import { useInviteeField } from '@calendar/app-state';
-import { emailKey, isValidEmail, type Attendee, type AttendeeInput } from '@calendar/core';
+import {
+  emailKey,
+  isValidEmail,
+  nameWithAddress,
+  type Attendee,
+  type AttendeeInput,
+} from '@calendar/core';
 import { Effect } from 'effect';
 import { useEffect } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -90,7 +96,9 @@ export function InviteeField({
                       },
                     ]}
                   />
-                  <Text style={styles.chipLabel}>{attendee.displayName ?? attendee.email}</Text>
+                  <Text numberOfLines={1} style={styles.chipLabel}>
+                    {nameWithAddress(attendee)}
+                  </Text>
                   {status?.isOrganizer ? (
                     <Text style={styles.chipMeta}>organizer</Text>
                   ) : (
@@ -175,6 +183,7 @@ const makeStyles = (colors: ThemeColors) =>
       borderRadius: 999,
       flexDirection: 'row',
       gap: 6,
+      maxWidth: '100%',
       paddingHorizontal: 10,
       paddingVertical: 5,
     },
@@ -183,8 +192,10 @@ const makeStyles = (colors: ThemeColors) =>
       height: 8,
       width: 8,
     },
+    // A long name and address shrinks to one line, never past the row.
     chipLabel: {
       color: colors.text,
+      flexShrink: 1,
       fontSize: 15,
     },
     chipMeta: {
