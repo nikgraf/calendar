@@ -1,6 +1,7 @@
 import {
   asSaidOption,
   contactOption,
+  type PlaceChoice,
   pickedCandidate,
   placeOptions,
   questionCount,
@@ -30,7 +31,8 @@ const MAP_HEIGHT = 150;
  */
 export function QuestionCard({ editor }: { readonly editor: ReturnType<typeof useThreadEditor> }) {
   const styles = useStyles(makeStyles);
-  const [expanded, setExpanded] = useState(false);
+  // The choice whose map is open full height: a later question's is not.
+  const [expanded, setExpanded] = useState<PlaceChoice | undefined>(undefined);
   const {
     eventModel,
     inviteeChoices,
@@ -92,7 +94,7 @@ export function QuestionCard({ editor }: { readonly editor: ReturnType<typeof us
               height={MAP_HEIGHT}
               names={labels.map((label) => label.title)}
               numbered
-              onExpand={AppleMaps ? () => setExpanded(true) : undefined}
+              onExpand={AppleMaps ? () => setExpanded(place) : undefined}
               onPick={(at) => {
                 const candidate = place.candidates[at];
                 if (candidate !== undefined) {
@@ -126,11 +128,11 @@ export function QuestionCard({ editor }: { readonly editor: ReturnType<typeof us
               disabled={disabled}
               held={held}
               keptAsSaid={keptAsSaid}
-              onClose={() => setExpanded(false)}
+              onClose={() => setExpanded(undefined)}
               onKeep={keepPlace}
               onPick={pickPlaceChoice}
               question={questionText(question)}
-              visible={expanded}
+              visible={expanded === place}
             />
           </>
         ) : null}

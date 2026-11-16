@@ -70,11 +70,17 @@ const COLLIDE = 32;
 /** How far pins on legs stand from their spot, and from each other: a tap target's width. */
 const LEG_RISE = 34;
 const LEG_SPACING = 44;
-/** An edge tag keeps clear of the corners by this much along its side. */
+/**
+ * An edge tag keeps clear of the corners by this much along its side —
+ * of the expand button at the top right and Apple's logo at the bottom
+ * left, a tag being up to 100 points wide and 30 high.
+ */
 const EDGE_CLEAR_SIDE = 22;
-const EDGE_CLEAR_ENDS = 70;
-/** Two edge tags on one side keep this far apart. */
+const EDGE_CLEAR_ENDS = 96;
+const EDGE_CLEAR_LOGO = 116;
+/** Two edge tags on one side keep this far apart: a tag's height on a side, its width on the top or bottom. */
 const EDGE_STACK = 34;
+const EDGE_STACK_WIDE = 104;
 
 const EARTH_CIRCUMFERENCE_METERS = 40_075_016.686;
 
@@ -181,33 +187,94 @@ const collisions = (
 };
 
 /**
- * Pins that would hide each other, side by side on legs from the middle
- * of their spots: above it, or below where the map's top is too near,
- * moved in from the sides as a row.
+ * Pins that would hide each other, side by side in a row above the middle
+ * of their spots — below it where the map's top is too near, moved in
+ * from the sides — each on a leg from its own place.
  */
 const onLegs = (
   members: ReadonlyArray<{ readonly index: number; readonly x: number; readonly y: number }>,
   width: number,
   height: number,
 ): ReadonlyArray<PlaceMapPin> => {
-  const spot = {
-    x: round(members.reduce((sum, pin) => sum + pin.x, 0) / members.length),
-    y: round(members.reduce((sum, pin) => sum + pin.y, 0) / members.length),
+  const middle = {
+    x: members.reduce((sum, pin) => sum + pin.x, 0) / members.length,
+    y: members.reduce((sum, pin) => sum + pin.y, 0) / members.length,
   };
-  const up = spot.y - LEG_RISE >= PAD || spot.y + LEG_RISE > height - PAD_BOTTOM;
-  const y = up ? spot.y - LEG_RISE : spot.y + LEG_RISE;
+  const up = middle.y - LEG_RISE >= PAD || middle.y + LEG_RISE > height - PAD_BOTTOM;
+  const y = up ? middle.y - LEG_RISE : middle.y + LEG_RISE;
   const row = (members.length - 1) * LEG_SPACING;
-  const left = Math.min(Math.max(spot.x - row / 2, PAD), Math.max(width - PAD - row, PAD));
+  const left = Math.min(Math.max(middle.x - row / 2, PAD), Math.max(width - PAD - row, PAD));
   return [...members]
     .sort((a, b) => a.index - b.index)
-    .map((pin, at) => ({ index: pin.index, spot, x: round(left + at * LEG_SPACING), y: round(y) }));
+    .map((pin, at) => ({
+      index: pin.index,
+      spot: { x: pin.x, y: pin.y },
+      x: round(left + at * LEG_SPACING),
+      y: round(y),
+    }));
 };
 
 /**
- * Where a ray from the map's middle toward a point leaves the map: the
- * side, and how far along it — kept off the corners, where a tag would
- * cover the map's own buttons.
+ * The pins as they stand: each crowd on legs; a crowd whose row lands a
+ * pin on another pin takes that one's crowd in, until none does — each
+ * merge leaves one crowd fewer, so it ends.
  */
+const settle = (
+  placed: ReadonlyArray<{ readonly index: number; readonly x: number; readonly y: number }>,
+  width: number,
+  height: number,
+): ReadonlyArray<PlaceMapPin> => {
+  let crowds = collisions(placed).map((set) => set.flatMap((position) => placed[position] ?? []));
+  for (;;) {
+    const stands = crowds.map((crowd) =>
+      crowd.length > 1
+        ? onLegs(crowd, width, height)
+        : crowd.map(({ index, x, y }) => ({ index, x, y })),
+    );
+    const owner = (stand: number, at: number) =>
+      stands.findIndex(
+        (other, which) => which !== stand && other.some((pin) => near(pin, stands[stand]?.[at])),
+      );
+    const clash = stands.flatMap((stand, which) =>
+      stand.flatMap((_, at) => {
+        const other = owner(which, at);
+        return other === -1 ? [] : [[which, other] as const];
+      }),
+    )[0];
+    if (clash === undefined) {
+      return stands.flat().sort((a, b) => a.index - b.index);
+    }
+    const [a, b] = clash;
+    crowds = [
+      ...crowds.filter((_, which) => which !== a && which !== b),
+      [...(crowds[a] ?? []), ...(crowds[b] ?? [])],
+    ];
+  }
+};
+
+/** Two pins nearer than they can both be seen and tapped. */
+const near = (
+  a: { readonly x: number; readonly y: number },
+  b: { readonly x: number; readonly y: number } | undefined,
+): boolean => b !== undefined && Math.hypot(a.x - b.x, a.y - b.y) < COLLIDE;
+
+/**
+ * Where along a side a tag may stand: off the corners, where it would
+ * cover the expand button or Apple's logo, and above the logo's strip.
+ */
+const sideRange = (
+  side: PlaceMapEdge['side'],
+  width: number,
+  height: number,
+): { readonly from: number; readonly to: number } => {
+  if (side === 'left' || side === 'right') {
+    return { from: EDGE_CLEAR_SIDE, to: Math.max(height - PAD_BOTTOM - 8, EDGE_CLEAR_SIDE) };
+  }
+  const from = side === 'bottom' ? EDGE_CLEAR_LOGO : EDGE_CLEAR_ENDS;
+  return { from, to: Math.max(width - EDGE_CLEAR_ENDS, from) };
+};
+
+/** Where a ray from the map's middle toward a point leaves the map: the side, and how far along it. */
 const edgeOf = (
   dx: number,
   dy: number,
@@ -219,30 +286,37 @@ const edgeOf = (
   // How far the ray goes, in its own lengths, before each pair of sides.
   const toSides = dx === 0 ? Infinity : halfW / Math.abs(dx);
   const toEnds = dy === 0 ? Infinity : halfH / Math.abs(dy);
-  if (toSides <= toEnds) {
-    const at = halfH + dy * toSides;
-    return {
-      at: round(Math.min(Math.max(at, EDGE_CLEAR_SIDE), height - PAD_BOTTOM)),
-      side: dx < 0 ? 'left' : 'right',
-    };
-  }
-  const at = halfW + dx * toEnds;
-  return {
-    at: round(Math.min(Math.max(at, EDGE_CLEAR_ENDS), width - EDGE_CLEAR_ENDS)),
-    side: dy < 0 ? 'top' : 'bottom',
-  };
+  const side: PlaceMapEdge['side'] =
+    toSides <= toEnds ? (dx < 0 ? 'left' : 'right') : dy < 0 ? 'top' : 'bottom';
+  const at = toSides <= toEnds ? halfH + dy * toSides : halfW + dx * toEnds;
+  const { from, to } = sideRange(side, width, height);
+  return { at: round(Math.min(Math.max(at, from), to)), side };
 };
 
-/** Tags on one side, moved apart along it in the order they lie. */
-const stacked = (edges: ReadonlyArray<PlaceMapEdge>): ReadonlyArray<PlaceMapEdge> => {
+/**
+ * Tags on one side, moved apart along it in the order they lie and kept
+ * within its range: pushed on from the first, then back from the end.
+ * More than a side holds overlap at its start.
+ */
+const stacked = (
+  edges: ReadonlyArray<PlaceMapEdge>,
+  width: number,
+  height: number,
+): ReadonlyArray<PlaceMapEdge> => {
   const out: Array<PlaceMapEdge> = [];
   for (const side of ['left', 'right', 'top', 'bottom'] as const) {
-    let last = -Infinity;
-    for (const edge of edges.filter((each) => each.side === side).sort((a, b) => a.at - b.at)) {
-      const at = round(Math.max(edge.at, last + EDGE_STACK));
-      out.push({ ...edge, at });
-      last = at;
+    const gap = side === 'left' || side === 'right' ? EDGE_STACK : EDGE_STACK_WIDE;
+    const { from, to } = sideRange(side, width, height);
+    const row = edges.filter((each) => each.side === side).sort((a, b) => a.at - b.at);
+    const ats = row.map((edge) => edge.at);
+    ats.forEach((at, i) => {
+      ats[i] = i === 0 ? at : Math.max(at, (ats[i - 1] ?? at) + gap);
+    });
+    for (let i = ats.length - 1; i >= 0; i -= 1) {
+      const next = ats[i + 1];
+      ats[i] = Math.max(Math.min(ats[i] ?? 0, next === undefined ? to : next - gap), from);
     }
+    row.forEach((edge, i) => out.push({ ...edge, at: round(ats[i] ?? edge.at) }));
   }
   return out.sort((a, b) => a.index - b.index);
 };
@@ -265,7 +339,7 @@ export const offMapMeters = (
 
 /**
  * The map for `places` (best first) at `width` × `height` points; none
- * for no places or no room. A single place sits in the middle, a little
+ * for no places or no room, or a stretch MapKit cannot draw (across 180°). A single place sits in the middle, a little
  * above it for the room the logo takes.
  */
 export const placeMapLayout = (
@@ -294,17 +368,17 @@ export const placeMapLayout = (
     x: middle.x - width / scale / 2,
     y: middle.y - (PAD + (height - PAD - PAD_BOTTOM) / 2) / scale,
   };
+  // MapKit renders no image of a street-sized stretch across 180° (it
+  // fails after a minute), nor one past the world's top or bottom.
+  if (rect.x < 0 || rect.x + rect.width > 1 || rect.y < 0 || rect.y + rect.height > 1) {
+    return undefined;
+  }
   const at = (point: { readonly x: number; readonly y: number }) => ({
     x: round((point.x - rect.x) * scale),
     y: round((point.y - rect.y) * scale),
   });
   const placed = members.map((index) => ({ index, ...at(world[index] ?? middle) }));
-  const pins = collisions(placed)
-    .flatMap((set) => {
-      const crowd = set.flatMap((position) => placed[position] ?? []);
-      return crowd.length > 1 ? onLegs(crowd, width, height) : crowd;
-    })
-    .sort((a, b) => a.index - b.index);
+  const pins = settle(placed, width, height);
   const meters = offMapMeters(places);
   const edges = places.flatMap((_, index) => {
     const point = world[index];
@@ -316,7 +390,7 @@ export const placeMapLayout = (
     const { at: along, side } = edgeOf(x - width / 2, y - height / 2, width, height);
     return [{ at: along, index, meters: off, side }];
   });
-  return { edges: stacked(edges), pins, rect };
+  return { edges: stacked(edges, width, height), pins, rect };
 };
 
 /**

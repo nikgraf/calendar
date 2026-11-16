@@ -231,6 +231,13 @@ export type PlaceMapState =
   | { readonly image: string; readonly kind: 'ready'; readonly layout: PlaceMap }
   | { readonly kind: 'none' };
 
+/**
+ * A native side from before rects answered with its own fixed map: it
+ * always will, so later maps ask nothing, rather than each showing a box
+ * that comes and goes.
+ */
+let rectsUnanswered = false;
+
 export const usePlaceMap = (
   places: ReadonlyArray<GeoPoint>,
   {
@@ -247,7 +254,8 @@ export const usePlaceMap = (
     readonly width: number;
   },
 ): PlaceMapState => {
-  const layout = width > 0 ? placeMapLayout(places, { height, width }) : undefined;
+  const layout =
+    width > 0 && !rectsUnanswered ? placeMapLayout(places, { height, width }) : undefined;
   const [first] = places;
   const snapshot = useMapSnapshot(
     layout && first
@@ -262,6 +270,12 @@ export const usePlaceMap = (
         }
       : null,
   );
+  const unfitted = !snapshot.loading && snapshot.pngBase64 !== null && !snapshot.fitted;
+  useEffect(() => {
+    if (unfitted) {
+      rectsUnanswered = true;
+    }
+  }, [unfitted]);
   if (layout === undefined) {
     return { kind: 'none' };
   }

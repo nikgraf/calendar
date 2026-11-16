@@ -77,16 +77,17 @@ describe('placeMapLayout', () => {
     const map = layout([WOLLZEILE, BAECKERSTRASSE, GRINZING]);
     expect(map.edges).toEqual([]);
     const [one, two, three] = map.pins;
-    expect(one?.spot).toBeDefined();
-    expect(two?.spot).toEqual(one?.spot);
-    // Side by side, a tap target apart, above their spot, in their order.
+    // Side by side, a tap target apart, above their places, in their order.
     expect(one?.y).toBe(two?.y);
     expect((two?.x ?? 0) - (one?.x ?? 0)).toBe(44);
     expect(one?.y).toBeLessThan(one?.spot?.y ?? 0);
-    // The spot is where the two are, between them.
+    // Each leg starts where its own place is.
     const a = projected(map, WOLLZEILE);
     const b = projected(map, BAECKERSTRASSE);
-    expect(one?.spot?.x).toBeCloseTo((a.x + b.x) / 2, 1);
+    expect(one?.spot?.x).toBeCloseTo(a.x, 1);
+    expect(one?.spot?.y).toBeCloseTo(a.y, 1);
+    expect(two?.spot?.x).toBeCloseTo(b.x, 1);
+    expect(two?.spot?.y).toBeCloseTo(b.y, 1);
     expect(three?.spot).toBeUndefined();
     expect(map.pins.every(inside)).toBe(true);
   });
@@ -113,6 +114,17 @@ describe('placeMapLayout', () => {
     expect(salzburg?.at).toBeGreaterThan(SIZE.height / 2);
   });
 
+  it('keeps tags off the corners: the expand button, Apple’s logo', () => {
+    // Bologna lies south-west of Vienna: a tag on the bottom, moved right
+    // of the logo; Prague north-west: on the top, left of the button.
+    const south = layout([SACHER, SACHER_ECK, { lat: 44.4949, lng: 11.3426 }]).edges[0];
+    expect(south?.side).toBe('bottom');
+    expect(south?.at).toBe(116);
+    const north = layout([SACHER, SACHER_ECK, PRAGUE]).edges[0];
+    expect(north?.side).toBe('top');
+    expect(north?.at).toBeLessThanOrEqual(SIZE.width - 96);
+  });
+
   it('fits the larger group, whichever came first', () => {
     const map = layout([SALZBURG, SACHER, SACHER_ECK]);
     expect(map.pins.map((pin) => pin.index)).toEqual([1, 2]);
@@ -125,22 +137,64 @@ describe('placeMapLayout', () => {
     expect(map.edges.map((edge) => [edge.index, edge.side])).toEqual([[1, 'right']]);
   });
 
-  it('moves tags on one side apart', () => {
+  it('moves tags on the top apart by their width', () => {
     const map = layout([SACHER, SACHER_ECK, PRAGUE, { lat: 50.1, lng: 14.5 }]);
     const sides = map.edges.map((edge) => edge.side);
     expect(sides).toEqual(['top', 'top']);
     const [a, b] = map.edges;
-    expect(Math.abs((a?.at ?? 0) - (b?.at ?? 0))).toBeGreaterThan(33.99);
+    expect(Math.abs((a?.at ?? 0) - (b?.at ?? 0))).toBeGreaterThan(103.99);
   });
 
-  it('keeps places either side of 180° together', () => {
+  it('keeps a stack of tags on a side within it', () => {
+    const map = layout([SACHER, { lat: 47, lng: 10 }, { lat: 46, lng: 4 }, { lat: 45, lng: -2 }]);
+    const ats = map.edges.map((edge) => edge.at).sort((a, b) => a - b);
+    expect(map.edges.every((edge) => edge.side === 'left')).toBe(true);
+    expect(ats.every((at) => at >= 22 && at <= SIZE.height - 34 - 8)).toBe(true);
+    expect((ats[1] ?? 0) - (ats[0] ?? 0)).toBeGreaterThan(33.99);
+    expect((ats[2] ?? 0) - (ats[1] ?? 0)).toBeGreaterThan(33.99);
+  });
+
+  it('puts no pin on legs over another pin', () => {
+    // Two that crowd stand on legs; the row must not land on the third.
     const map = layout([
-      { lat: -16.78, lng: 179.99 },
-      { lat: -16.79, lng: -179.99 },
+      { lat: 48.20475, lng: 16.36869 },
+      { lat: 48.20444, lng: 16.36835 },
+      { lat: 48.2052, lng: 16.36809 },
     ]);
-    expect(map.edges).toEqual([]);
+    for (const a of map.pins) {
+      for (const b of map.pins) {
+        if (a.index < b.index) {
+          expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeGreaterThanOrEqual(32);
+        }
+      }
+    }
+  });
+
+  it('keeps places either side of 180° together, and draws no map across it', () => {
+    // Together: the far one is no tag, though its longitude is 360° off.
+    expect(
+      offMapMeters([
+        { lat: -16.78, lng: 179.99 },
+        { lat: -16.79, lng: -179.99 },
+      ]),
+    ).toEqual([undefined, undefined]);
+    // MapKit renders no street across 180°: no map rather than a minute's wait.
+    expect(
+      placeMapLayout(
+        [
+          { lat: -16.78, lng: 179.99 },
+          { lat: -16.79, lng: -179.99 },
+        ],
+        SIZE,
+      ),
+    ).toBeUndefined();
+    // Just short of it, a map as anywhere.
+    const map = layout([
+      { lat: -16.78, lng: 179.97 },
+      { lat: -16.79, lng: 179.98 },
+    ]);
     expect(map.pins.every(inside)).toBe(true);
-    expect(map.rect.width).toBeLessThan(0.001);
+    expect(map.rect.x + map.rect.width).toBeLessThanOrEqual(1);
   });
 
   it('has no map for no places or no room', () => {

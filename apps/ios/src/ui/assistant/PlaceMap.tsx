@@ -118,9 +118,11 @@ function EdgeTag({
  * the layout says. Numbered pins answer the Assistant's "which place?"
  * (a tap takes that place, as its row does); pins too near each other
  * stand on legs from their spot, and a place off the map is a tag on the
- * edge it lies beyond. Without `numbered`, one place's dot and its name:
- * the card's map, whose tap opens Maps. Nothing at all where the platform
- * draws no map; until the image is here, a quiet box of its size.
+ * edge it lies beyond; a tap anywhere else opens the map full height
+ * (`onExpand`, its icon in the corner). Without `numbered`, one place's
+ * dot and its name: the card's map, whose tap opens Maps. Nothing at all
+ * where the platform draws no map; until the image is here, a quiet box
+ * of its size.
  */
 export function PlaceMap({
   disabled = false,
@@ -163,9 +165,18 @@ export function PlaceMap({
     />
   );
   if (map.kind === 'none') {
-    // Measured still: a card that grows wider gets its map.
-    return width === 0 ? <View style={[styles.box, { height }]}>{measured}</View> : measured;
+    // Measured still, in the frame it has with a map (the same width): a
+    // card that grows wider gets its map.
+    return (
+      <View>
+        {measured}
+        {width === 0 ? <View style={[styles.box, { height }]} /> : null}
+      </View>
+    );
   }
+  // The map's ground: a tap anywhere a pin or a tag is not opens it full
+  // height (the question) or in Maps (the card).
+  const onGround = onExpand ?? onOpen;
   const { layout } = map;
   const pins = (
     <>
@@ -237,52 +248,44 @@ export function PlaceMap({
       ))}
     </>
   );
-  const box = (
-    <View style={[styles.box, { height }]} testID={testID}>
-      {map.kind === 'ready' ? (
-        <>
-          <Image
-            accessibilityIgnoresInvertColors
-            source={{ uri: `data:image/png;base64,${map.image}` }}
-            style={StyleSheet.absoluteFill}
-          />
-          {pins}
-        </>
-      ) : null}
-      {onExpand && map.kind === 'ready' ? (
-        <Pressable
-          accessibilityLabel="Show the map full height"
-          accessibilityRole="button"
-          onPress={onExpand}
-          style={styles.expand}
-          testID={`${testID}-expand`}
-        >
-          <View style={styles.expandFace}>
-            <SymbolView
-              name="arrow.up.left.and.arrow.down.right"
-              size={13}
-              tintColor={colors.text}
-              weight="semibold"
-            />
-          </View>
-        </Pressable>
-      ) : null}
-    </View>
-  );
   return (
     <View>
       {measured}
-      {onOpen ? (
-        <Pressable
-          accessibilityLabel={`Open ${label ?? ''} in Maps`}
-          accessibilityRole="button"
-          onPress={onOpen}
-        >
-          {box}
-        </Pressable>
-      ) : (
-        box
-      )}
+      <View style={[styles.box, { height }]} testID={testID}>
+        {map.kind === 'ready' ? (
+          <>
+            <Pressable
+              accessibilityLabel={
+                onExpand ? 'Show the map full height' : `Open ${label ?? ''} in Maps`
+              }
+              accessibilityRole="button"
+              disabled={onGround === undefined}
+              onPress={onGround}
+              style={StyleSheet.absoluteFill}
+            >
+              <Image
+                accessibilityIgnoresInvertColors
+                source={{ uri: `data:image/png;base64,${map.image}` }}
+                style={StyleSheet.absoluteFill}
+              />
+            </Pressable>
+            {/* Under the pins: a pin or a tag in its corner is still theirs to tap. */}
+            {onExpand ? (
+              <View pointerEvents="none" style={styles.expand} testID={`${testID}-expand`}>
+                <View style={styles.expandFace}>
+                  <SymbolView
+                    name="arrow.up.left.and.arrow.down.right"
+                    size={13}
+                    tintColor={colors.text}
+                    weight="semibold"
+                  />
+                </View>
+              </View>
+            ) : null}
+            {pins}
+          </>
+        ) : null}
+      </View>
     </View>
   );
 }

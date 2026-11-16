@@ -1068,8 +1068,9 @@ billed macOS minutes, so a new check joins the flow that already reaches
 its screen. Flows carry `tags`: the ones CI shards are `ci`;
 `00-devclient-bootstrap` (`ci-bootstrap`, the live job's dev-client
 launch) and `04a-device-permissions` (`ci-permissions`) run as their own
-steps and `pnpm test:e2e:ios` excludes them; `14-location` has no tag
-(real MapKit needs the network) and runs only locally. Maestro runs a
+steps and `pnpm test:e2e:ios` excludes them; `14-location` and
+`30-place-map` have no tag (real MapKit needs the network) and run only
+locally. Maestro runs a
 directory's flows in a non-deterministic order, so every flow must be
 independent of what ran before. Locally the flows run against the dev
 client and Metro (`pnpm --filter @calendar/ios start`); the Google halves

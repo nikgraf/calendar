@@ -2,6 +2,7 @@ import {
   asSaidOption,
   contactOption,
   type OptionLabel,
+  type PlaceChoice,
   pickedCandidate,
   placeOptions,
   questionCount,
@@ -93,7 +94,11 @@ function Option({
  * its pin. The answers keep the ids the rows of choices had.
  */
 export function QuestionCard({ editor }: { readonly editor: ReturnType<typeof useThreadEditor> }) {
-  const [hovered, setHovered] = useState<number | undefined>(undefined);
+  // The place under the pointer, of the choice it was over: a pick takes
+  // the row away with no pointer leaving, and a later question starts clear.
+  const [pointer, setPointer] = useState<
+    { readonly choice: PlaceChoice; readonly index: number } | undefined
+  >(undefined);
   const {
     eventModel,
     inviteeChoices,
@@ -138,6 +143,9 @@ export function QuestionCard({ editor }: { readonly editor: ReturnType<typeof us
     const { choice } = question;
     const held = pickedCandidate(choice, eventModel.location, placeGeo);
     const labels = placeOptions(choice);
+    const hovered = pointer?.choice === choice ? pointer.index : undefined;
+    const setHovered = (index: number | undefined) =>
+      setPointer(index === undefined ? undefined : { choice, index });
     return (
       <section
         className="flex flex-col gap-1.5 rounded-popover bg-fill p-2.5"
