@@ -93,6 +93,13 @@ export const CloudUpIcon = (props: IconProps) => (
     <path d="M12 16v-5M9.5 13.5 12 11l2.5 2.5" />
   </Icon>
 );
+/** Nothing changed: the same as before. */
+export const EqualCircleIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M8 10h8M8 14h8" />
+  </Icon>
+);
 export const EyeOffIcon = (props: IconProps) => (
   <Icon {...props}>
     <path d="M9.9 5.8A9.4 9.4 0 0 1 12 5.5c6 0 9.5 6.5 9.5 6.5a17 17 0 0 1-2.6 3.4M14.1 14.2a3 3 0 0 1-4.2-4.2M6.6 7.6A16.4 16.4 0 0 0 2.5 12s3.5 6.5 9.5 6.5a9.2 9.2 0 0 0 5.4-1.6" />

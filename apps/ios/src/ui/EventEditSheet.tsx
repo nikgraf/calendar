@@ -924,11 +924,13 @@ export function EventEditSheet({
                 <AssistantView
                   banner={lessonBanner}
                   calendars={calendars}
+                  canSay={quick.canSay}
                   demo={demo}
                   editor={editor}
                   note={seed.thread?.note}
                   notice={notice}
                   onEdit={() => switcher.flip('form', keyboard > 0)}
+                  onReading={quick.say}
                   pending={quick.pending}
                   taskLists={taskLists}
                 />

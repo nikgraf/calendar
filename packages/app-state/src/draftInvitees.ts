@@ -106,7 +106,7 @@ export const guestsNamed = (
 };
 
 /** A choice by its name, as said: the same person said twice is one choice. */
-const sameChoice = (a: string, b: string): boolean => fold(a) === fold(b);
+export const sameChoice = (a: string, b: string): boolean => fold(a) === fold(b);
 
 /**
  * A draft's guests and open choices after a turn: the guests the turn

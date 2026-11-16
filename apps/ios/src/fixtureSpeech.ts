@@ -6,7 +6,8 @@ import { heardFromSegments, type SpeechToText, type TranscriptSegment } from '@c
  * fixture model's grammar, so the Assistant answers it — in segments, as
  * the recogniser reads one. The first names a place the way dictation
  * misheard "Figlmüller" (macOS 27.2, 2026-11-15), with the other readings
- * it weighed: MapKit finds the place for one of them.
+ * it weighed: MapKit finds the place for one of them. The last changes
+ * nothing, and one of its other readings would.
  */
 const SCRIPT: ReadonlyArray<{
   readonly heard: ReadonlyArray<TranscriptSegment>;
@@ -23,6 +24,15 @@ const SCRIPT: ReadonlyArray<{
     said: 'Lunch with Sarah tomorrow at one at Figlmüller',
   },
   { heard: [{ text: '| | 14:00-15:00' }], said: 'Make it two instead' },
+  // "Invite Tom", misheard: nothing changes, and the Assistant offers
+  // the reading that would.
+  {
+    heard: [
+      { alternatives: ['In white', 'Invite', 'In wide'], text: 'In white' },
+      { text: ' Tom' },
+    ],
+    said: 'In white Tom',
+  },
 ];
 /** The room before the first word. */
 const LEAD_MS = 600;

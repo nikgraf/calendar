@@ -1,10 +1,20 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { foldForm, refineThread, startThread, stepTo, threadLine } from './draftThread.ts';
+import {
+  EMPTY_THREAD,
+  focusDraft,
+  foldForm,
+  openThread,
+  refineThread,
+  startThread,
+  stepTo,
+  threadLine,
+} from './draftThread.ts';
 import type { QuickAddItem } from './quickAddItem.ts';
 import {
   changedLine,
   lineChanges,
   movedFrom,
+  noChangeLines,
   shownMarks,
   stepName,
   stepSource,
@@ -205,5 +215,70 @@ describe('versionLabel, stepSummary and changedLine', () => {
     const [, moved] = threadLine(story());
     expect(changedLine(lineChanges(moved!))).toBe('Changed: time');
     expect(changedLine([])).toBe('');
+  });
+});
+
+/** Stable ids: n1, n2, … in the order they are asked for. */
+const noChangeIds = () => {
+  let count = 0;
+  return () => {
+    count += 1;
+    return `n${String(count)}`;
+  };
+};
+/** Each position's words, dimmed ones marked. */
+const saidAt = (lines: ReturnType<typeof noChangeLines>) =>
+  [...lines].map(([position, turns]) => [
+    position,
+    turns.map(({ dimmed, turn }) => `${turn.utterance}${dimmed ? ' (dimmed)' : ''}`),
+  ]);
+
+describe('noChangeLines', () => {
+  it('lists words that changed nothing after the step they followed, only the newest undimmed', () => {
+    const id = noChangeIds();
+    const first = startThread([lunch], 'Lunch with Sarah tomorrow at one', { id });
+    const idle = refineThread(first, 'make it at one', [{ id: 'n1', item: lunch }], id);
+    expect(saidAt(noChangeLines(idle))).toEqual([[1, ['make it at one']]]);
+    const thanks = refineThread(idle, 'thanks', [{ id: 'n1', item: lunch }], id);
+    expect(saidAt(noChangeLines(thanks))).toEqual([[1, ['make it at one (dimmed)', 'thanks']]]);
+    // A step after them: history, all of it.
+    const moved = refineThread(thanks, 'half past twelve', [{ id: 'n1', item: earlier }], id);
+    expect(saidAt(noChangeLines(moved))).toEqual([
+      [1, ['make it at one (dimmed)', 'thanks (dimmed)']],
+    ]);
+    // An older step on show dims what was said after the newest.
+    const after = refineThread(moved, 'yes', [{ id: 'n1', item: earlier }], id);
+    expect(saidAt(noChangeLines(after)).at(-1)).toEqual([2, ['yes']]);
+    expect(saidAt(noChangeLines(stepTo(after, 1))).at(-1)).toEqual([2, ['yes (dimmed)']]);
+    expect(noChangeLines(EMPTY_THREAD).size).toBe(0);
+  });
+
+  it('dims the newest words while another draft is in the form: their readings are not its', () => {
+    const id = noChangeIds();
+    const first = startThread([lunch, standup], 'lunch and the standup', { id });
+    const idle = refineThread(first, 'invite Tom', [{ id: 'n1', item: lunch }], id);
+    expect(saidAt(noChangeLines(idle))).toEqual([[1, ['invite Tom']]]);
+    expect(saidAt(noChangeLines(focusDraft(idle, 1)))).toEqual([[1, ['invite Tom (dimmed)']]]);
+    // Words said to both drafts are no one draft's.
+    const both = refineThread(
+      idle,
+      'both at one',
+      [
+        { id: 'n1', item: lunch },
+        { id: 'n2', item: standup },
+      ],
+      id,
+    );
+    expect(saidAt(noChangeLines(focusDraft(both, 1))).at(-1)).toEqual([
+      1,
+      ['invite Tom (dimmed)', 'both at one'],
+    ]);
+  });
+
+  it('puts words said to a saved item before any step at 0', () => {
+    const id = noChangeIds();
+    const opened = openThread({ item: lunch }, id);
+    const idle = refineThread(opened, 'at one', [{ id: 'n1', item: lunch }], id);
+    expect(saidAt(noChangeLines(idle))).toEqual([[0, ['at one']]]);
   });
 });

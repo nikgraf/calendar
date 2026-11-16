@@ -16,6 +16,7 @@ import {
   mergeRefinement,
   openThread,
   phraseSteps,
+  readingDoes,
   refineTargets,
   refineThread,
   removeDraft,
@@ -30,6 +31,7 @@ import {
   turnsOf,
   undoTurn,
   updateDraft,
+  withReadings,
 } from './draftThread.ts';
 import {
   Contact,
@@ -326,17 +328,19 @@ describe('turnsOf', () => {
     );
     expect(turnsOf(second, 'd1')).toEqual(['two things', 'at 8']);
     expect(turnsOf(second, 'd2')).toEqual(['two things', 'in Vienna']);
-    // A turn that changed nothing is nobody's: its words added nothing to lean on.
+    // A turn that changed nothing is no step: its words added nothing to lean on.
     const idle = refineThread(
       second,
       'in Vienna',
       [{ id: 'd2', item: second.drafts[1]!.item }],
       id,
     );
-    expect(idle.steps.at(-1)?.drafts).toEqual([]);
+    expect(idle.steps).toBe(second.steps);
     expect(turnsOf(idle, 'd2')).toEqual(['two things', 'in Vienna']);
-    // Undo takes the words back.
-    expect(turnsOf(undoTurn(undoTurn(idle)), 'd2')).toEqual(['two things']);
+    // Undo takes the words back, and the ones said after them.
+    const undone = undoTurn(idle);
+    expect(turnsOf(undone, 'd2')).toEqual(['two things']);
+    expect(undone.noChange).toEqual([]);
     expect(turnsOf(idle, 'gone')).toEqual([]);
   });
 });
@@ -1551,7 +1555,7 @@ describe('notes and notifications from the words', () => {
     expect(phraseSteps(placed).at(-1)?.summary).toContain('notifies 10 minutes before');
   });
 
-  it('says nothing for a removal that finds nothing to take off', () => {
+  it('makes no step of a removal that finds nothing to take off', () => {
     const started = startThread([dinner], 'dinner', { id: ids() });
     const moved = refineThread(
       started,
@@ -1559,8 +1563,9 @@ describe('notes and notifications from the words', () => {
       [{ id: 'd1', item: dinner, reminders: { add: [], clear: false, remove: [15] } }],
       ids(),
     );
-    expect(moved.drafts[0]).not.toHaveProperty('extras');
-    expect(phraseSteps(moved).at(-1)?.summary).toBe('no change');
+    expect(moved.drafts).toBe(started.drafts);
+    expect(moved.steps).toBe(started.steps);
+    expect(moved.noChange.map((turn) => turn.utterance)).toEqual(['remove the 15 minute reminder']);
   });
 });
 
@@ -1937,5 +1942,299 @@ describe('a to-do’s alerts', () => {
     expect(turnDraftOf({ id: 'd2', item: todo }, prefill, [30])).not.toHaveProperty(
       'defaultReminders',
     );
+  });
+});
+
+describe('words that change nothing', () => {
+  const slot = { date: '2026-08-28', endTime: '20:00', startTime: '19:00' };
+  const other = { date: '2026-08-28', endTime: '21:00', startTime: '20:00' };
+
+  it('make no step: the drafts stay exactly as they were, the words follow the newest step', () => {
+    const id = ids();
+    const started = startThread([dinner], 'dinner', { id, slots: [slot, other] });
+    const idle = refineThread(started, 'make it at seven', [{ id: 'd1', item: dinner }], id);
+    // The slots the finder found stay: a turn of no consequence drops nothing.
+    expect(idle.drafts).toBe(started.drafts);
+    expect(idle.history).toBe(started.history);
+    expect(idle.steps).toBe(started.steps);
+    expect(idle.version).toBe(started.version);
+    expect(idle.noChange).toEqual([
+      {
+        after: 'd2',
+        draft: 'd1',
+        id: 'd3',
+        note: undefined,
+        readings: [],
+        utterance: 'make it at seven',
+      },
+    ]);
+    // The next turn that changes something is the next step; the words stay where they were said.
+    const moved = refineThread(idle, 'at 8', [{ id: 'd1', item: later }], id);
+    expect(moved.steps).toHaveLength(2);
+    expect(moved.noChange).toEqual(idle.noChange);
+  });
+
+  it('say what they could not do: a notification past the limit', () => {
+    const id = ids();
+    const five = new EventReminders({
+      overrides: [5, 10, 15, 30, 60].map((minutes) => popup(minutes)),
+      useDefault: false,
+    });
+    const started = startThread([dinner], 'dinner', {
+      extras: { attendees: [], description: '', reminders: five },
+      id,
+    });
+    const idle = refineThread(
+      started,
+      'remind me 2 hours before',
+      [{ id: 'd1', item: dinner, reminders: { add: [120], clear: false, remove: [] } }],
+      id,
+    );
+    expect(idle.steps).toBe(started.steps);
+    expect(idle.noChange[0]?.note).toBe('At most 5 notifications.');
+    // Nothing to say: no note.
+    const plain = refineThread(started, 'thanks', [{ id: 'd1', item: dinner }], id);
+    expect(plain.noChange.at(-1)?.note).toBeUndefined();
+  });
+
+  it('a restated item with nothing new, as the model writes it back, is no change', () => {
+    const id = ids();
+    const started = startThread([dinner], 'dinner', { id });
+    const restated: QuickAddItem = { kind: 'event', prefill: { ...dinner.prefill } };
+    const idle = landRefinement(started, {
+      changes: [{ id: 'd1', item: restated, saidDay: true }],
+      fresh: { item: dinner },
+      submitted: { item: dinner },
+      targetId: 'd1',
+      utterance: 'on Friday',
+    });
+    expect(idle.steps).toBe(started.steps);
+    expect(idle.noChange.map((turn) => turn.utterance)).toEqual(['on Friday']);
+  });
+
+  it('is a step still when the words only ask something, or settle what the form asked', () => {
+    const id = ids();
+    const started = startThread([dinner], 'dinner', { id });
+    // "Which Mia?": nothing on the card moved, and yet there is a question to go back over.
+    const asked = refineThread(
+      started,
+      'invite Mia',
+      [
+        {
+          guests: {
+            add: [],
+            choices: [{ contacts: [], name: 'Mia' }],
+            invited: ['Mia'],
+            remove: [],
+          },
+          id: 'd1',
+          item: dinner,
+        },
+      ],
+      id,
+    );
+    expect(asked.steps).toHaveLength(2);
+    // The same question asked again is no change.
+    const again = refineThread(
+      asked,
+      'invite Mia',
+      [
+        {
+          guests: {
+            add: [],
+            choices: [{ contacts: [], name: 'Mia' }],
+            invited: ['Mia'],
+            remove: [],
+          },
+          id: 'd1',
+          item: dinner,
+        },
+      ],
+      id,
+    );
+    expect(again.steps).toBe(asked.steps);
+    // A time the form only assumed, said: it stops asking for one.
+    const assumed: QuickAddItem = {
+      kind: 'event',
+      prefill: { ...dinner.prefill, assumedTime: true },
+    };
+    const said = refineThread(
+      startThread([assumed], 'dinner', { id: ids() }),
+      'at 7',
+      [{ id: 'd1', item: dinner }],
+      ids(),
+    );
+    expect(said.steps).toHaveLength(2);
+  });
+
+  it('is a step when a finder turn brings slots of its own, though the draft sits where it was', () => {
+    const id = ids();
+    const started = startThread([dinner], 'dinner', { id });
+    const placed = landPlacement(started, {
+      slots: [slot, other],
+      targetId: 'd1',
+      utterance: 'find an hour Friday evening',
+    });
+    expect(placed.steps).toHaveLength(2);
+    // The same slots found again change nothing.
+    const again = landPlacement(placed, {
+      slots: [slot, other],
+      targetId: 'd1',
+      utterance: 'find an hour Friday evening',
+    });
+    expect(again.steps).toBe(placed.steps);
+    expect(again.noChange).toHaveLength(1);
+  });
+
+  it('is a step when a to-do the form never held gets an alert', () => {
+    const todo: QuickAddItem = {
+      kind: 'task',
+      prefill: { date: '2026-11-14', time: '09:00', title: 'Call the bank' },
+    };
+    const id = ids();
+    const started = startThread([todo], 'call the bank', { id });
+    const reminded = refineThread(
+      started,
+      '10 minutes before',
+      [{ id: 'd1', item: todo, reminders: { add: [10], clear: false, remove: [] } }],
+      id,
+    );
+    expect(reminded.steps).toHaveLength(2);
+  });
+
+  it('go with the step they followed when it is let go of, and stay while it is only stepped over', () => {
+    const id = ids();
+    const first = startThread([dinner], 'dinner', { id });
+    const moved = refineThread(first, 'at 8', [{ id: 'd1', item: later }], id);
+    const idle = refineThread(moved, 'at 8 please', [{ id: 'd1', item: later }], id);
+    // Stepped back over: still there, to go forward to.
+    const back = stepTo(idle, 1);
+    expect(back.noChange).toEqual(idle.noChange);
+    expect(stepTo(back, 2).noChange).toEqual(idle.noChange);
+    // Version 1 kept: the version they were said to is gone, and so are they.
+    expect(keepShown(back).noChange).toEqual([]);
+    expect(undoTurn(idle).noChange).toEqual([]);
+    // Said to the first step: they stay when a later one goes.
+    const early = refineThread(first, 'at 7', [{ id: 'd1', item: dinner }], id);
+    const then = refineThread(early, 'at 8', [{ id: 'd1', item: later }], id);
+    expect(undoTurn(then).noChange).toEqual(early.noChange);
+  });
+
+  it('follow the step before one that leaves the line', () => {
+    const id = ids();
+    const first = startThread([dinner, planning], 'two things', { id });
+    const renamed: QuickAddItem = {
+      kind: 'event',
+      prefill: { ...planning.prefill, title: 'Planning call' },
+    };
+    // An edit by hand on the second draft, then words that change nothing.
+    const edited = foldForm(focusDraft(first, 1), { item: renamed }, { kind: 'edit' }, id);
+    const idle = refineThread(edited, 'thanks', [{ id: 'd2', item: renamed }], id);
+    expect(idle.noChange[0]?.after).toBe(edited.steps.at(-1)?.id);
+    // The edit undone by hand after the words: a step of its own, not the
+    // first edit joined and gone — the words stand between them.
+    const back = foldForm(idle, { item: planning }, { kind: 'edit' }, id);
+    expect(back.steps).toHaveLength(3);
+    expect(back.noChange[0]?.after).toBe(edited.steps.at(-1)?.id);
+    // The edited draft written: its edits leave the line, the words stay.
+    const written = removeDrafts(idle, ['d2']);
+    expect(written.steps).toHaveLength(1);
+    expect(written.noChange[0]?.after).toBe(first.steps[0]?.id);
+  });
+
+  it('take the readings found for them later, unless they are gone', () => {
+    const id = ids();
+    const started = startThread([dinner], 'dinner', { id });
+    const idle = refineThread(started, 'make it at too', [{ id: 'd1', item: dinner }], id);
+    const turnId = idle.noChange[0]!.id;
+    const readings = [{ does: '→ 14:00–15:00', text: 'make it at two' }];
+    const read = started.drafts[0]!;
+    expect(withReadings(idle, turnId, readings, read).noChange[0]?.readings).toEqual(readings);
+    expect(withReadings(idle, 'gone', readings, read)).toBe(idle);
+    expect(withReadings(idle, turnId, [], read)).toBe(idle);
+    // The draft reads otherwise by now (an edit landed while the model read): they were worked out for the old one.
+    const edited = updateDraft(idle, 0, later);
+    expect(withReadings(edited, turnId, readings, read)).toBe(edited);
+  });
+
+  it('say what another reading would do, or nothing where it would change nothing either', () => {
+    const started = startThread([dinner], 'dinner', { id: ids() });
+    expect(readingDoes(started, { id: 'd1', item: later }, {})?.does).toBe('→ 20:00–21:00');
+    expect(readingDoes(started, { id: 'd1', item: dinner }, {})).toBeUndefined();
+    expect(readingDoes(started, { id: 'd1', item: dinner }, { invite: ['Tom'] })?.does).toBe(
+      '→ invites Tom',
+    );
+    // Taking off a name that names no guest takes no one off.
+    expect(readingDoes(started, { id: 'd1', item: dinner }, { uninvite: ['Ana'] })).toBeUndefined();
+    // A name that already names a guest invites no one new.
+    const tom = { displayName: 'Tom Brandt', email: 'tom@example.com' };
+    const guested = updateDraft(started, 0, dinner, {
+      attendees: [tom],
+      description: '',
+      reminders: undefined,
+    });
+    expect(readingDoes(guested, { id: 'd1', item: dinner }, { invite: ['Tom'] })).toBeUndefined();
+    // A to-do has no guests: words that invite change nothing on it.
+    const todo: QuickAddItem = { kind: 'task', prefill: { date: '2026-08-28', title: 'Call Tom' } };
+    const call = startThread([todo], 'call Tom', { id: ids() });
+    expect(readingDoes(call, { id: 'd1', item: todo }, { invite: ['Tom'] })).toBeUndefined();
+    expect(
+      readingDoes(
+        guested,
+        { id: 'd1', item: later },
+        { invite: ['Tom', 'Mia'], uninvite: ['Tom', 'Ana'] },
+      )?.does,
+    ).toBe('→ 20:00–21:00 · → invites Mia · → uninvites Tom');
+    // A name still asked about ("which Mia?"): taking it off settles the
+    // question, inviting it again asks the same.
+    const asking = refineThread(
+      started,
+      'invite Mia',
+      [
+        {
+          guests: {
+            add: [],
+            choices: [{ contacts: [], name: 'Mia' }],
+            invited: ['Mia'],
+            remove: [],
+          },
+          id: 'd1',
+          item: dinner,
+        },
+      ],
+      ids(),
+    );
+    expect(readingDoes(asking, { id: 'd1', item: dinner }, { uninvite: ['mia'] })?.does).toBe(
+      '→ uninvites mia',
+    );
+    expect(readingDoes(asking, { id: 'd1', item: dinner }, { invite: ['Mia'] })).toBeUndefined();
+    // Two readings alike in words but not in what they leave: told apart.
+    const note = (text: string) =>
+      readingDoes(started, { id: 'd1', item: dinner, notes: { kind: 'add', text } }, {});
+    expect(note('meet Tom')?.does).toBe(note('meet Tim')?.does);
+    expect(note('meet Tom')?.effect).not.toBe(note('meet Tim')?.effect);
+    // A time the form only assumed, said: offered, and said so.
+    const assumed = startThread(
+      [{ kind: 'event', prefill: { ...dinner.prefill, assumedTime: true } }],
+      'dinner',
+      { id: ids() },
+    );
+    expect(readingDoes(assumed, { id: 'd1', item: dinner }, {})?.does).toBe(
+      '→ 19:00–20:00, no longer assumed',
+    );
+  });
+
+  it('stand between an edit by hand and the next one: the next edit is a step of its own', () => {
+    const id = ids();
+    const started = startThread([dinner], 'dinner', { id });
+    const renamed = (title: string): QuickAddItem => ({
+      kind: 'event',
+      prefill: { ...dinner.prefill, title },
+    });
+    const edited = foldForm(started, { item: renamed('Dinner w') }, { kind: 'edit' }, id);
+    const idle = refineThread(edited, 'thanks', [{ id: 'd1', item: renamed('Dinner w') }], id);
+    const more = foldForm(idle, { item: renamed('Dinner with Ana') }, { kind: 'edit' }, id);
+    expect(more.steps).toHaveLength(3);
+    expect(more.noChange[0]?.after).toBe(edited.steps.at(-1)?.id);
   });
 });

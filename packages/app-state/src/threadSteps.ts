@@ -10,6 +10,7 @@ import { guestLabel } from './draftInvitees.ts';
 import {
   type Draft,
   type DraftThreadState,
+  type NoChangeTurn,
   type PickKind,
   type StepLine,
   threadLine,
@@ -145,3 +146,44 @@ export const changedLine = (changes: ReadonlyArray<FieldChange>): string =>
   changes.length === 0
     ? ''
     : `Changed: ${changes.map((change) => fieldName(change.field).toLowerCase()).join(', ')}`;
+
+/** Words that changed nothing, as the conversation lists them after the step they followed. */
+export interface NoChangeLine {
+  /**
+   * Something came after them — a step, other words — or an older step
+   * is on show: they are history, and their other readings are no longer
+   * offered.
+   */
+  readonly dimmed: boolean;
+  readonly turn: NoChangeTurn;
+}
+
+/**
+ * The words that changed nothing, by the position of the step they
+ * follow (`StepLine.position`; 0 before the first), oldest first. Only
+ * the newest of all is undimmed, while no step came after it, no older
+ * step is on show and the draft it was said to is the one in the form:
+ * its readings would be said to that one.
+ */
+export const noChangeLines = (
+  state: DraftThreadState,
+): ReadonlyMap<number, ReadonlyArray<NoChangeLine>> => {
+  const line = [...state.steps, ...state.ahead.map(({ step }) => step)];
+  const positionOf = (turn: NoChangeTurn): number =>
+    turn.after === undefined ? 0 : line.findIndex((step) => step.id === turn.after) + 1;
+  const last = state.noChange.at(-1);
+  const focused = state.drafts[state.focused]?.id;
+  const live =
+    last !== undefined &&
+    state.ahead.length === 0 &&
+    positionOf(last) === line.length &&
+    (last.draft === undefined || last.draft === focused)
+      ? last
+      : undefined;
+  const lines = new Map<number, ReadonlyArray<NoChangeLine>>();
+  for (const turn of state.noChange) {
+    const position = positionOf(turn);
+    lines.set(position, [...(lines.get(position) ?? []), { dimmed: turn !== live, turn }]);
+  }
+  return lines;
+};

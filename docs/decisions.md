@@ -1261,6 +1261,17 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
 
 ## AI
 
+- **Words that change nothing are answered, not a version** (2026-11-16,
+  #336) — a phrase that leaves every draft as it was (no field shown, no
+  question, no day for an undated to-do, no slots of its own, an assumed
+  time still assumed) makes no step: its words stay after the step they
+  followed, answered "Nothing changed." (with a limit it met). Dictated
+  ones try the recogniser's other readings after the answer, three at most,
+  and offer two that would change something; said only when tapped.
+  Canvas direction A with E. Rejected: a note at the bar (B), the version
+  answering again (C), the card answering (D), naming the field ("already
+  at 13:00": the answer says only the day). Open: readings for an
+  unreadable phrase.
 - **Dictation reduces background noise by default, on a page of its own**
   (2026-11-15, #325) — Settings › Dictation: Reduce Background Noise, on
   unless turned off (AVAudioEngine's voice processing; on the Mac
