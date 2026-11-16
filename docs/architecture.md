@@ -423,10 +423,15 @@ it whenever a kind is added. Rules that keep the queue correct:
   swapped for the server task on success (`rewriteEventId` renames the
   queued op; the row is remove+upsert, never an id UPDATE — a concurrent
   pull may already have inserted the server row). Before retrying a
-  `createTask` that was already dispatched, the drain first lists recent
-  tasks and adopts an exact match — otherwise a crash between insert and
-  ack would duplicate the task. Task ops still carrying a temp id wait in
-  `applyOp` until the create swaps it.
+  `createTask` that was already dispatched, the drain first lists the
+  tasks changed since — every page — and adopts an exact match; otherwise
+  a crash between insert and ack would duplicate the task. The stamp is
+  set only while the op is still queued, in one transaction with that
+  check. Task ops still carrying a temp id wait in `applyOp` until the
+  create swaps it — a delete among them: deleting a task whose create was
+  sent keeps that create (it may have landed), and the retry then only
+  looks for what landed, for the delete to take; a create that will not
+  land takes the ops waiting on its temp id with it.
 - **Moves keep queue order**: `listDue` skips ops in backoff, so a move
   and the edits of its series (`<masterId>` and `<masterId>_<basetime>`
   instance ids, any calendar of the account) check `earlierInSeries`

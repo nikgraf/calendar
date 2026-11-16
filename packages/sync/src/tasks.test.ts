@@ -47,6 +47,47 @@ const tasksClient = (overrides: Partial<GoogleTasksClientShape>): GoogleTasksCli
   ...overrides,
 });
 
+/** A create whose first insert lands on Google with its answer lost (`landed`) or never arrives. */
+const lostInsert = (landed: boolean, overrides: Partial<GoogleTasksClientShape> = {}) => {
+  const calls: Array<string> = [];
+  const client = tasksClient({
+    deleteTask: ({ taskId }) => {
+      calls.push(`delete:${taskId}`);
+      return Effect.void;
+    },
+    insertTask: () => {
+      calls.push('insert');
+      return calls.filter((call) => call === 'insert').length === 1
+        ? Effect.fail(new ApiUnavailableError({ cause: 'connection dropped' }))
+        : Effect.die('a second insert would duplicate the task');
+    },
+    listTasks: () =>
+      Effect.succeed({
+        items: landed
+          ? [
+              {
+                due: '2026-08-30T00:00:00.000Z',
+                id: 'server-landed',
+                status: 'needsAction',
+                title: 'Pay insurance',
+                updated: '2026-08-24T10:00:00.000Z',
+              },
+            ]
+          : [],
+      }),
+    ...overrides,
+  });
+  return { calls, client };
+};
+
+/** A task changed since the stamp that is not the one looked for. */
+const otherTask = (index: number) => ({
+  id: `other-${String(index)}`,
+  status: 'completed',
+  title: `Done ${String(index)}`,
+  updated: '2026-08-24T10:00:00.000Z',
+});
+
 /** Calendar sync is exercised elsewhere; keep it inert here. */
 const inertCalendarClient: GoogleCalendarClientShape = {
   deleteEvent: () => Effect.void,
@@ -658,6 +699,117 @@ describe('completeTask', () => {
       expect(attempts).toBe(1);
       expect(patches).toEqual(['server-landed|Pay insurance now']);
       expect(yield* ops.listAll()).toHaveLength(0);
+    }).pipe(noYield, Effect.provide(testLayer(client)));
+  });
+
+  /** Creates the task and drains once: the insert goes out and its answer is lost. */
+  const createLost = Effect.gen(function* () {
+    yield* seedTasks;
+    const mutations = yield* EventMutations;
+    const temp = yield* mutations.createTask({
+      accountId: 'acc-1',
+      dueDate: '2026-08-30',
+      taskListId: 'list-1',
+      title: 'Pay insurance',
+    });
+    yield* mutations.processPendingOps();
+    const ops = yield* PendingOpRepo;
+    expect((yield* ops.listAll())[0]?.dispatchedAt).toBeDefined();
+    return temp;
+  });
+
+  /** Makes every queued op due and drains. */
+  const drainNow = Effect.gen(function* () {
+    const ops = yield* PendingOpRepo;
+    for (const op of yield* ops.listAll()) {
+      yield* ops.markFailed(op.id, op.attempts, 0, 'test');
+    }
+    yield* (yield* EventMutations).processPendingOps();
+  });
+
+  it.effect('a delete after a lost insert that landed deletes the task Google made', () => {
+    const { calls, client } = lostInsert(true);
+    return Effect.gen(function* () {
+      const temp = yield* createLost;
+      const mutations = yield* EventMutations;
+      yield* mutations.deleteTask({ accountId: 'acc-1', taskId: temp.id, taskListId: 'list-1' });
+      const ops = yield* PendingOpRepo;
+      // The sent create stays, the delete waits behind it.
+      expect((yield* ops.listAll()).map((op) => op.kind)).toEqual(['createTask', 'deleteTask']);
+      yield* drainNow;
+      expect(calls).toEqual(['insert', 'delete:server-landed']);
+      expect(yield* ops.listAll()).toHaveLength(0);
+      const window = yield* (yield* TaskRepo).getWindow('2026-08-24', '2026-08-31');
+      // Only the seeded task is left: neither the temp row nor Google's copy.
+      expect(window.map((row) => row.id)).toEqual(['t1']);
+    }).pipe(noYield, Effect.provide(testLayer(client)));
+  });
+
+  it.effect('a delete after a lost insert that never landed sends nothing more', () => {
+    const { calls, client } = lostInsert(false);
+    return Effect.gen(function* () {
+      const temp = yield* createLost;
+      const mutations = yield* EventMutations;
+      yield* mutations.deleteTask({ accountId: 'acc-1', taskId: temp.id, taskListId: 'list-1' });
+      yield* drainNow;
+      // No insert to make a task only for the delete to remove.
+      expect(calls).toEqual(['insert']);
+      expect(yield* (yield* PendingOpRepo).listAll()).toHaveLength(0);
+      const window = yield* (yield* TaskRepo).getWindow('2026-08-24', '2026-08-31');
+      // Only the seeded task is left: neither the temp row nor Google's copy.
+      expect(window.map((row) => row.id)).toEqual(['t1']);
+    }).pipe(noYield, Effect.provide(testLayer(client)));
+  });
+
+  it.effect('a discarded lost insert takes the delete waiting behind it', () => {
+    const { calls, client } = lostInsert(true);
+    return Effect.gen(function* () {
+      const temp = yield* createLost;
+      const mutations = yield* EventMutations;
+      yield* mutations.deleteTask({ accountId: 'acc-1', taskId: temp.id, taskListId: 'list-1' });
+      const ops = yield* PendingOpRepo;
+      const create = (yield* ops.listAll()).find((op) => op.kind === 'createTask');
+      yield* mutations.discardPendingOp(create!.id);
+      // Nothing waits forever for an id the create will never swap in.
+      expect(yield* ops.listAll()).toHaveLength(0);
+      expect(calls).toEqual(['insert']);
+    }).pipe(noYield, Effect.provide(testLayer(client)));
+  });
+
+  it.effect('the lookup for a lost insert reads past the first page', () => {
+    const pages: Array<string | undefined> = [];
+    const { calls, client } = lostInsert(true, {
+      // A hundred tasks changed since the stamp (a "Clear completed"
+      // hides each one): the landed task is on the second page.
+      listTasks: ({ params }) => {
+        pages.push(params.pageToken);
+        return Effect.succeed(
+          params.pageToken === undefined
+            ? {
+                items: Array.from({ length: 100 }, (_, index) => otherTask(index)),
+                nextPageToken: 'p2',
+              }
+            : {
+                items: [
+                  {
+                    due: '2026-08-30T00:00:00.000Z',
+                    id: 'server-landed',
+                    status: 'needsAction',
+                    title: 'Pay insurance',
+                    updated: '2026-08-24T10:00:00.000Z',
+                  },
+                ],
+              },
+        );
+      },
+    });
+    return Effect.gen(function* () {
+      yield* createLost;
+      yield* drainNow;
+      expect(calls).toEqual(['insert']);
+      expect(pages).toEqual([undefined, 'p2']);
+      const window = yield* (yield* TaskRepo).getWindow('2026-08-24', '2026-08-31');
+      expect(window.map((row) => row.id).sort()).toEqual(['server-landed', 't1']);
     }).pipe(noYield, Effect.provide(testLayer(client)));
   });
 
