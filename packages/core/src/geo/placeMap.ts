@@ -65,22 +65,39 @@ export const PLACE_MAP_MIN_GROUP_METERS = 250;
 const PAD = 22;
 /** More at the bottom, where Apple's Maps logo and Legal link sit on the image. */
 const PAD_BOTTOM = 34;
+/**
+ * On a side that holds a tag, room for the tag (an arrow and a number,
+ * about 52 points wide and 30 high, 6 in from the edge) and a pin beside
+ * it, so no pin is ever under a tag.
+ */
+const TAG_PAD_SIDE = 74;
+const TAG_PAD_END = 54;
 /** Pins nearer than this would hide each other (a 24-point pin and a little air). */
 const COLLIDE = 32;
 /** How far pins on legs stand from their spot, and from each other: a tap target's width. */
 const LEG_RISE = 34;
 const LEG_SPACING = 44;
 /**
- * An edge tag keeps clear of the corners by this much along its side —
- * of the expand button at the top right and Apple's logo at the bottom
- * left, a tag being up to 100 points wide and 30 high.
+ * An edge tag keeps clear of the corners by this much along its side:
+ * of the top and bottom tags' bands for a side tag, of the expand button
+ * at the top right and Apple's logo at the bottom left for the others.
  */
-const EDGE_CLEAR_SIDE = 22;
-const EDGE_CLEAR_ENDS = 96;
-const EDGE_CLEAR_LOGO = 116;
+const EDGE_CLEAR_SIDE_ENDS = 66;
+const EDGE_CLEAR_TOP_START = 60;
+const EDGE_CLEAR_BUTTON = 70;
+const EDGE_CLEAR_LOGO = 92;
+const EDGE_CLEAR_BOTTOM_END = 32;
 /** Two edge tags on one side keep this far apart: a tag's height on a side, its width on the top or bottom. */
 const EDGE_STACK = 34;
-const EDGE_STACK_WIDE = 104;
+const EDGE_STACK_WIDE = 58;
+
+/** The room kept free along each side of the map. */
+interface Pads {
+  readonly bottom: number;
+  readonly left: number;
+  readonly right: number;
+  readonly top: number;
+}
 
 const EARTH_CIRCUMFERENCE_METERS = 40_075_016.686;
 
@@ -195,15 +212,19 @@ const onLegs = (
   members: ReadonlyArray<{ readonly index: number; readonly x: number; readonly y: number }>,
   width: number,
   height: number,
+  pads: Pads,
 ): ReadonlyArray<PlaceMapPin> => {
   const middle = {
     x: members.reduce((sum, pin) => sum + pin.x, 0) / members.length,
     y: members.reduce((sum, pin) => sum + pin.y, 0) / members.length,
   };
-  const up = middle.y - LEG_RISE >= PAD || middle.y + LEG_RISE > height - PAD_BOTTOM;
+  const up = middle.y - LEG_RISE >= pads.top || middle.y + LEG_RISE > height - pads.bottom;
   const y = up ? middle.y - LEG_RISE : middle.y + LEG_RISE;
   const row = (members.length - 1) * LEG_SPACING;
-  const left = Math.min(Math.max(middle.x - row / 2, PAD), Math.max(width - PAD - row, PAD));
+  const left = Math.min(
+    Math.max(middle.x - row / 2, pads.left),
+    Math.max(width - pads.right - row, pads.left),
+  );
   return [...members]
     .sort((a, b) => a.index - b.index)
     .map((pin, at) => ({
@@ -223,12 +244,13 @@ const settle = (
   placed: ReadonlyArray<{ readonly index: number; readonly x: number; readonly y: number }>,
   width: number,
   height: number,
+  pads: Pads,
 ): ReadonlyArray<PlaceMapPin> => {
   let crowds = collisions(placed).map((set) => set.flatMap((position) => placed[position] ?? []));
   for (;;) {
     const stands = crowds.map((crowd) =>
       crowd.length > 1
-        ? onLegs(crowd, width, height)
+        ? onLegs(crowd, width, height, pads)
         : crowd.map(({ index, x, y }) => ({ index, x, y })),
     );
     const owner = (stand: number, at: number) =>
@@ -252,6 +274,18 @@ const settle = (
   }
 };
 
+/** Whether a point is in the room the padding leaves for pins. */
+const within = (
+  point: { readonly x: number; readonly y: number },
+  width: number,
+  height: number,
+  pads: Pads,
+): boolean =>
+  point.x >= pads.left &&
+  point.x <= width - pads.right &&
+  point.y >= pads.top &&
+  point.y <= height - pads.bottom;
+
 /** Two pins nearer than they can both be seen and tapped. */
 const near = (
   a: { readonly x: number; readonly y: number },
@@ -268,10 +302,14 @@ const sideRange = (
   height: number,
 ): { readonly from: number; readonly to: number } => {
   if (side === 'left' || side === 'right') {
-    return { from: EDGE_CLEAR_SIDE, to: Math.max(height - PAD_BOTTOM - 8, EDGE_CLEAR_SIDE) };
+    return {
+      from: EDGE_CLEAR_SIDE_ENDS,
+      to: Math.max(height - EDGE_CLEAR_SIDE_ENDS, EDGE_CLEAR_SIDE_ENDS),
+    };
   }
-  const from = side === 'bottom' ? EDGE_CLEAR_LOGO : EDGE_CLEAR_ENDS;
-  return { from, to: Math.max(width - EDGE_CLEAR_ENDS, from) };
+  return side === 'top'
+    ? { from: EDGE_CLEAR_TOP_START, to: Math.max(width - EDGE_CLEAR_BUTTON, EDGE_CLEAR_TOP_START) }
+    : { from: EDGE_CLEAR_LOGO, to: Math.max(width - EDGE_CLEAR_BOTTOM_END, EDGE_CLEAR_LOGO) };
 };
 
 /** Where a ray from the map's middle toward a point leaves the map: the side, and how far along it. */
@@ -294,11 +332,13 @@ const edgeOf = (
 };
 
 /**
- * Tags on one side, moved apart along it in the order they lie and kept
- * within its range: pushed on from the first, then back from the end.
- * More than a side holds overlap at its start.
+ * Tags on one side, in the order they lie, each at the place along its
+ * side nearest to where it points, within the side's range and apart from
+ * the tags placed before it; more than a side holds are spread evenly
+ * along it, in their order. The pins keep off a side that holds a tag
+ * (`TAG_PAD_SIDE`, `TAG_PAD_END`), so no tag stands on one.
  */
-const stacked = (
+const placeTags = (
   edges: ReadonlyArray<PlaceMapEdge>,
   width: number,
   height: number,
@@ -307,28 +347,34 @@ const stacked = (
   for (const side of ['left', 'right', 'top', 'bottom'] as const) {
     const gap = side === 'left' || side === 'right' ? EDGE_STACK : EDGE_STACK_WIDE;
     const { from, to } = sideRange(side, width, height);
+    const placed: Array<number> = [];
     const row = edges.filter((each) => each.side === side).sort((a, b) => a.at - b.at);
-    const ats = row.map((edge) => edge.at);
-    ats.forEach((at, i) => {
-      ats[i] = i === 0 ? at : Math.max(at, (ats[i - 1] ?? at) + gap);
-    });
-    for (let i = ats.length - 1; i >= 0; i -= 1) {
-      const next = ats[i + 1];
-      ats[i] = Math.max(Math.min(ats[i] ?? 0, next === undefined ? to : next - gap), from);
+    if (row.length > 1 && (row.length - 1) * gap > to - from) {
+      row.forEach((edge, i) => {
+        out.push({ ...edge, at: round(from + (i * (to - from)) / (row.length - 1)) });
+      });
+      continue;
     }
-    row.forEach((edge, i) => out.push({ ...edge, at: round(ats[i] ?? edge.at) }));
+    for (const edge of row) {
+      const at =
+        Array.from({ length: Math.floor(to - from) + 1 }, (_, step) => from + step)
+          .filter((spot) => placed.every((other) => Math.abs(other - spot) >= gap))
+          .sort((a, b) => Math.abs(a - edge.at) - Math.abs(b - edge.at))[0] ?? edge.at;
+      placed.push(at);
+      out.push({ ...edge, at: round(at) });
+    }
   }
   return out.sort((a, b) => a.index - b.index);
 };
 
 /**
- * How far each place lies from the map's middle when it is off the map
- * (a tag on its edge), undefined for one on it — what a row adds to its
- * address. The same for any size of map.
+ * How far each place lies from the middle of the group the map fits when
+ * it is not of that group (more than a day trip off), undefined for one
+ * of it — what a row adds to its address. The same for any size of map;
+ * on the map such a place is a tag on its edge, or a pin where the map
+ * happens to reach it.
  */
-export const offMapMeters = (
-  places: ReadonlyArray<GeoPoint>,
-): ReadonlyArray<number | undefined> => {
+export const farMeters = (places: ReadonlyArray<GeoPoint>): ReadonlyArray<number | undefined> => {
   const fitted = fit(places);
   return places.map((place, index) =>
     fitted === undefined || fitted.members.includes(index)
@@ -339,34 +385,66 @@ export const offMapMeters = (
 
 /**
  * The map for `places` (best first) at `width` × `height` points; none
- * for no places or no room, or a stretch MapKit cannot draw (across 180°). A single place sits in the middle, a little
- * above it for the room the logo takes.
+ * for no places or no room, or a stretch MapKit cannot draw (across
+ * 180°). A single place sits in the middle, a little above it for the
+ * room the logo takes. A side that holds a tag keeps the pins further
+ * off, which can move the map and send a tag to another side: laid out
+ * again until the sides with tags are the ones kept free.
  */
 export const placeMapLayout = (
   places: ReadonlyArray<GeoPoint>,
   { height, width }: { readonly height: number; readonly width: number },
 ): PlaceMap | undefined => {
   const fitted = fit(places);
-  if (fitted === undefined || width <= PAD * 2 || height <= PAD + PAD_BOTTOM) {
+  if (fitted === undefined) {
     return undefined;
   }
-  const { maxX, maxY, members, middle, minX, minY, world } = fitted;
+  let tagged = new Set<PlaceMapEdge['side']>();
+  for (let pass = 0; pass < 5; pass += 1) {
+    const pads = {
+      bottom: tagged.has('bottom') ? TAG_PAD_END : PAD_BOTTOM,
+      left: tagged.has('left') ? TAG_PAD_SIDE : PAD,
+      right: tagged.has('right') ? TAG_PAD_SIDE : PAD,
+      top: tagged.has('top') ? TAG_PAD_END : PAD,
+    };
+    const map = lay(fitted, places, { height, width }, pads);
+    const sides = new Set(map?.edges.map((edge) => edge.side));
+    if (map === undefined || [...sides].every((side) => tagged.has(side))) {
+      return map;
+    }
+    tagged = new Set([...tagged, ...sides]);
+  }
+  return undefined;
+};
+
+/** One pass of `placeMapLayout`, with the room kept along each side. */
+const lay = (
+  { maxX, maxY, members, middle, minX, minY, world }: Fit,
+  places: ReadonlyArray<GeoPoint>,
+  { height, width }: { readonly height: number; readonly width: number },
+  pads: Pads,
+): PlaceMap | undefined => {
+  const roomX = width - pads.left - pads.right;
+  const roomY = height - pads.top - pads.bottom;
+  if (roomX <= 0 || roomY <= 0) {
+    return undefined;
+  }
   // Points per world unit: the group fits inside the padding, and the
   // shorter side shows at least a street's worth.
   const latitude = fromMercator(middle).lat;
   const minMeters = members.length > 1 ? PLACE_MAP_MIN_GROUP_METERS : PLACE_MAP_MIN_METERS;
   const minWorld = minMeters / (EARTH_CIRCUMFERENCE_METERS * Math.cos((latitude * Math.PI) / 180));
   const scale = Math.min(
-    maxX > minX ? (width - PAD * 2) / (maxX - minX) : Infinity,
-    maxY > minY ? (height - PAD - PAD_BOTTOM) / (maxY - minY) : Infinity,
+    maxX > minX ? roomX / (maxX - minX) : Infinity,
+    maxY > minY ? roomY / (maxY - minY) : Infinity,
     Math.min(width, height) / minWorld,
   );
   // The group's middle at the middle of the room the padding leaves.
   const rect = {
     height: height / scale,
     width: width / scale,
-    x: middle.x - width / scale / 2,
-    y: middle.y - (PAD + (height - PAD - PAD_BOTTOM) / 2) / scale,
+    x: middle.x - (pads.left + roomX / 2) / scale,
+    y: middle.y - (pads.top + roomY / 2) / scale,
   };
   // MapKit renders no image of a street-sized stretch across 180° (it
   // fails after a minute), nor one past the world's top or bottom.
@@ -377,20 +455,33 @@ export const placeMapLayout = (
     x: round((point.x - rect.x) * scale),
     y: round((point.y - rect.y) * scale),
   });
-  const placed = members.map((index) => ({ index, ...at(world[index] ?? middle) }));
-  const pins = settle(placed, width, height);
-  const meters = offMapMeters(places);
+  // The group, and any farther place the map's stretch happens to take in
+  // (a group spread north to south shows far to its east and west).
+  const placed = places.flatMap((_, index) => {
+    const point = at(world[index] ?? middle);
+    return members.includes(index) || within(point, width, height, pads)
+      ? [{ index, ...point }]
+      : [];
+  });
+  const pins = settle(placed, width, height, pads);
+  const meters = farMeters(places);
   const edges = places.flatMap((_, index) => {
     const point = world[index];
     const off = meters[index];
-    if (off === undefined || point === undefined) {
+    if (off === undefined || point === undefined || within(at(point), width, height, pads)) {
       return [];
     }
     const { x, y } = at(point);
-    const { at: along, side } = edgeOf(x - width / 2, y - height / 2, width, height);
+    // From the middle of the room pins have: where the map seems to be.
+    const { at: along, side } = edgeOf(
+      x - (pads.left + roomX / 2),
+      y - (pads.top + roomY / 2),
+      width,
+      height,
+    );
     return [{ at: along, index, meters: off, side }];
   });
-  return { edges: stacked(edges, width, height), pins, rect };
+  return { edges: placeTags(edges, width, height), pins, rect };
 };
 
 /**

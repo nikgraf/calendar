@@ -3,7 +3,7 @@ import { formatDistance, type GeoPoint, type PlaceMapEdge, type PlaceMapPin } fr
 import { SymbolView } from 'expo-symbols';
 import { Fragment, useState } from 'react';
 import { Image, PixelRatio, Pressable, StyleSheet, Text, View } from 'react-native';
-import { BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme } from '../theme.ts';
+import { type ThemeColors, useStyles, useTheme } from '../theme.ts';
 
 /** A pin's tap target: the HIG's 44 points, its pin in the middle. */
 const TARGET = 44;
@@ -46,7 +46,10 @@ function Leg({ pin }: { readonly pin: PlaceMapPin }) {
   );
 }
 
-/** A place off the map: a tag on its side, pointing its way, with how far it is. */
+/**
+ * A place off the map: a tag on its side, pointing its way, with its
+ * number — how far it is, its row says (and VoiceOver).
+ */
 function EdgeTag({
   disabled,
   edge,
@@ -87,9 +90,6 @@ function EdgeTag({
             {number}
           </Text>
         </View>
-        <Text maxFontSizeMultiplier={BOX_FONT_SCALE} numberOfLines={1} style={styles.edgeLabel}>
-          {distance}
-        </Text>
         {edge.side === 'right' ? (
           <SymbolView name="chevron.right" size={10} tintColor={colors.text} weight="bold" />
         ) : null}
@@ -178,8 +178,19 @@ export function PlaceMap({
   // height (the question) or in Maps (the card).
   const onGround = onExpand ?? onOpen;
   const { layout } = map;
+  // Tags first: where one cannot keep off a pin, the pin is on top and keeps its tap.
   const pins = (
     <>
+      {layout.edges.map((edge) => (
+        <EdgeTag
+          disabled={disabled}
+          edge={edge}
+          key={edge.index}
+          name={names[edge.index] ?? ''}
+          number={edge.index + 1}
+          onPress={onPick ? () => onPick(edge.index) : undefined}
+        />
+      ))}
       {layout.pins.map((pin) => (
         <Leg key={`leg-${String(pin.index)}`} pin={pin} />
       ))}
@@ -236,16 +247,6 @@ export function PlaceMap({
           </Fragment>
         ),
       )}
-      {layout.edges.map((edge) => (
-        <EdgeTag
-          disabled={disabled}
-          edge={edge}
-          key={edge.index}
-          name={names[edge.index] ?? ''}
-          number={edge.index + 1}
-          onPress={onPick ? () => onPick(edge.index) : undefined}
-        />
-      ))}
     </>
   );
   return (
@@ -256,9 +257,15 @@ export function PlaceMap({
           <>
             <Pressable
               accessibilityLabel={
-                onExpand ? 'Show the map full height' : `Open ${label ?? ''} in Maps`
+                onExpand
+                  ? 'Show the map full height'
+                  : onOpen
+                    ? `Open ${label ?? ''} in Maps`
+                    : undefined
               }
-              accessibilityRole="button"
+              accessibilityRole={onGround ? 'button' : undefined}
+              // Nothing to open (no live map on this binary): not a button at all.
+              accessible={onGround !== undefined}
               disabled={onGround === undefined}
               onPress={onGround}
               style={StyleSheet.absoluteFill}
@@ -332,11 +339,6 @@ const makeStyles = (colors: ThemeColors) =>
     },
     edgeBadgeLabel: {
       fontSize: 12,
-    },
-    edgeLabel: {
-      color: colors.text,
-      fontSize: 13,
-      fontWeight: '600',
     },
     edgeTag: {
       alignItems: 'center',

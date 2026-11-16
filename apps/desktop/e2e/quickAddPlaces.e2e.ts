@@ -304,14 +304,14 @@ describe('Places from a quick-add phrase', () => {
     await cdp.waitFor(`${mapState('draft-place-map')} === 'ready'`);
     // While it asks which place, the card leaves its own map out.
     expect(await cdp.eval<string>(mapState('assistant-card-map'))).toBe('');
-    // The two in Vienna are pins; Salzburg is a tag on the map's edge, and
-    // its row says how far it is first.
+    // The two in Vienna are pins; Salzburg is a tag on the map's edge with
+    // its number, and its row says how far it is first.
     expect(await cdp.eval<number>(pins)).toBe(2);
     expect(
       await cdp.eval<string>(
-        `document.querySelector('[data-testid="draft-place-edge-2"]')?.textContent ?? ''`,
+        `document.querySelector('[data-testid="draft-place-edge-2"]')?.getAttribute('aria-label') ?? ''`,
       ),
-    ).toBe('3251 km');
+    ).toBe('Take Café Sacher Salzburg, 251 km away');
     expect(await cdp.eval<string>(pickText(2))).toBe(
       '3Café Sacher Salzburg251 km · Schwarzstraße 5–7, 5020 Salzburg',
     );

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vite-plus/test';
 import {
   formatDistance,
-  offMapMeters,
+  farMeters,
   type PlaceMap,
   placeMapCamera,
   placeMapLayout,
@@ -44,6 +44,18 @@ const inside = (pin: { x: number; y: number }) =>
   pin.x >= 12 && pin.x <= SIZE.width - 12 && pin.y >= 12 && pin.y <= SIZE.height - 22;
 /** The middle of the room left: 22 at the top, 34 at the bottom. */
 const MIDDLE_Y = 22 + (SIZE.height - 22 - 34) / 2;
+
+// A tag as drawn: an arrow and a number, 52 by 30, 6 in from its edge; a pin 28 across.
+const tagBox = (side: string, at: number) =>
+  side === 'left' || side === 'right'
+    ? {
+        x: side === 'left' ? [6, 58] : [SIZE.width - 58, SIZE.width - 6],
+        y: [at - 15, at + 15],
+      }
+    : {
+        x: [at - 26, at + 26],
+        y: side === 'top' ? [6, 36] : [SIZE.height - 36, SIZE.height - 6],
+      };
 
 describe('placeMapLayout', () => {
   it('puts one place in the middle of a street-sized map', () => {
@@ -119,10 +131,10 @@ describe('placeMapLayout', () => {
     // of the logo; Prague north-west: on the top, left of the button.
     const south = layout([SACHER, SACHER_ECK, { lat: 44.4949, lng: 11.3426 }]).edges[0];
     expect(south?.side).toBe('bottom');
-    expect(south?.at).toBe(116);
+    expect(south?.at).toBeGreaterThanOrEqual(92);
     const north = layout([SACHER, SACHER_ECK, PRAGUE]).edges[0];
     expect(north?.side).toBe('top');
-    expect(north?.at).toBeLessThanOrEqual(SIZE.width - 96);
+    expect(north?.at).toBeLessThanOrEqual(SIZE.width - 70);
   });
 
   it('fits the larger group, whichever came first', () => {
@@ -133,7 +145,8 @@ describe('placeMapLayout', () => {
 
   it('fits the first place given when no two are near each other', () => {
     const map = layout([SALZBURG, SACHER]);
-    expect(map.pins).toEqual([{ index: 0, x: SIZE.width / 2, y: MIDDLE_Y }]);
+    // In the middle of the room left once the right side holds a tag.
+    expect(map.pins).toEqual([{ index: 0, x: 22 + (SIZE.width - 22 - 74) / 2, y: MIDDLE_Y }]);
     expect(map.edges.map((edge) => [edge.index, edge.side])).toEqual([[1, 'right']]);
   });
 
@@ -142,16 +155,89 @@ describe('placeMapLayout', () => {
     const sides = map.edges.map((edge) => edge.side);
     expect(sides).toEqual(['top', 'top']);
     const [a, b] = map.edges;
-    expect(Math.abs((a?.at ?? 0) - (b?.at ?? 0))).toBeGreaterThan(103.99);
+    expect(Math.abs((a?.at ?? 0) - (b?.at ?? 0))).toBeGreaterThan(57.99);
   });
 
-  it('keeps a stack of tags on a side within it', () => {
+  it('spreads more tags than a side holds evenly along it', () => {
     const map = layout([SACHER, { lat: 47, lng: 10 }, { lat: 46, lng: 4 }, { lat: 45, lng: -2 }]);
     const ats = map.edges.map((edge) => edge.at).sort((a, b) => a - b);
     expect(map.edges.every((edge) => edge.side === 'left')).toBe(true);
-    expect(ats.every((at) => at >= 22 && at <= SIZE.height - 34 - 8)).toBe(true);
-    expect((ats[1] ?? 0) - (ats[0] ?? 0)).toBeGreaterThan(33.99);
-    expect((ats[2] ?? 0) - (ats[1] ?? 0)).toBeGreaterThan(33.99);
+    // The side's range, clear of the corners' bands: 66 to 84 on a 150 map.
+    expect(ats).toEqual([66, 75, 84]);
+  });
+
+  it('keeps a side tag below the expand button', () => {
+    const [lviv] = layout([SACHER, SACHER_ECK, { lat: 49.8397, lng: 24.0297 }]).edges;
+    expect(lviv?.side).toBe('right');
+    expect(lviv?.at).toBeGreaterThanOrEqual(60);
+  });
+
+  it('keeps every pin off every tag', () => {
+    // Three of eight Vienna places and one city farther off, every way.
+    const vienna = [
+      WOLLZEILE,
+      BAECKERSTRASSE,
+      GRINZING,
+      SACHER,
+      HIETZING,
+      NUSSDORF,
+      { lat: 48.1866, lng: 16.3126 },
+      { lat: 48.2206, lng: 16.3979 },
+    ];
+    const cities = [
+      SALZBURG,
+      PRAGUE,
+      { lat: 45.815, lng: 15.9819 },
+      { lat: 45.4408, lng: 12.3155 },
+      { lat: 48.1351, lng: 11.582 },
+      { lat: 47.4979, lng: 19.0402 },
+      { lat: 49.8397, lng: 24.0297 },
+      { lat: 44.4949, lng: 11.3426 },
+      { lat: 50.0647, lng: 19.945 },
+      { lat: 46.2044, lng: 6.1432 },
+    ];
+    let checked = 0;
+    for (let a = 0; a < vienna.length; a += 1) {
+      for (let b = a + 1; b < vienna.length; b += 1) {
+        for (let c = b + 1; c < vienna.length; c += 1) {
+          for (const city of cities) {
+            const map = placeMapLayout(
+              [vienna[a] ?? SACHER, vienna[b] ?? SACHER, vienna[c] ?? SACHER, city],
+              SIZE,
+            );
+            for (const edge of map?.edges ?? []) {
+              const { x, y } = tagBox(edge.side, edge.at);
+              for (const pin of map?.pins ?? []) {
+                checked += 1;
+                const apart =
+                  pin.x + 14 <= (x[0] ?? 0) ||
+                  pin.x - 14 >= (x[1] ?? 0) ||
+                  pin.y + 14 <= (y[0] ?? 0) ||
+                  pin.y - 14 >= (y[1] ?? 0);
+                expect(apart).toBe(true);
+              }
+            }
+          }
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(500);
+  });
+
+  it('puts a far place the map happens to reach on it as a pin', () => {
+    // Vienna twice and Graz fit a tall stretch: the map, wider than they
+    // are, takes in Linz — a pin, not a tag beyond an edge. Salzburg falls
+    // in the margin pins keep from the edge: a tag still.
+    const map = layout([
+      { lat: 48.2706, lng: 16.4441 },
+      { lat: 48.1186, lng: 16.333 },
+      { lat: 47.0379, lng: 15.4636 },
+      { lat: 48.2117, lng: 14.2459 },
+      { lat: 47.8233, lng: 13.005 },
+    ]);
+    expect(map.pins.map((pin) => pin.index)).toEqual([0, 1, 2, 3]);
+    expect(map.pins.every(inside)).toBe(true);
+    expect(map.edges.map((edge) => [edge.index, edge.side])).toEqual([[4, 'left']]);
   });
 
   it('puts no pin on legs over another pin', () => {
@@ -173,7 +259,7 @@ describe('placeMapLayout', () => {
   it('keeps places either side of 180° together, and draws no map across it', () => {
     // Together: the far one is no tag, though its longitude is 360° off.
     expect(
-      offMapMeters([
+      farMeters([
         { lat: -16.78, lng: 179.99 },
         { lat: -16.79, lng: -179.99 },
       ]),
@@ -203,13 +289,13 @@ describe('placeMapLayout', () => {
   });
 });
 
-describe('offMapMeters', () => {
+describe('farMeters', () => {
   it('says how far the places off the map are, as their tags do', () => {
     const places = [SACHER, SACHER_ECK, SALZBURG];
-    const meters = offMapMeters(places);
+    const meters = farMeters(places);
     expect(meters.slice(0, 2)).toEqual([undefined, undefined]);
     expect(meters[2]).toBe(layout(places).edges[0]?.meters);
-    expect(offMapMeters([])).toEqual([]);
+    expect(farMeters([])).toEqual([]);
   });
 });
 

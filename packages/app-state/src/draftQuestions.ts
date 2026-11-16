@@ -1,7 +1,7 @@
 import {
   type Contact,
   formatDistance,
-  offMapMeters,
+  farMeters,
   type PlaceCandidate,
   preselectedPlace,
 } from '@calendar/core';
@@ -197,7 +197,7 @@ export const placeOption = (candidate: PlaceCandidate): OptionLabel =>
  * km · Schwarzstraße 5–7, 5020 Salzburg".
  */
 export const placeOptions = (choice: PlaceChoice): ReadonlyArray<OptionLabel> => {
-  const meters = offMapMeters(choice.candidates.map((candidate) => candidate.geo));
+  const meters = farMeters(choice.candidates.map((candidate) => candidate.geo));
   return choice.candidates.map((candidate, index) => {
     const label = placeOption(candidate);
     const off = meters[index];

@@ -47,7 +47,10 @@ const useWidth = (ref: RefObject<HTMLDivElement | null>): number => {
   return width;
 };
 
-/** A place off the map: a tag on its side, pointing its way, with how far it is. */
+/**
+ * A place off the map: a tag on its side, pointing its way, with its
+ * number — how far it is, its row says (and its label).
+ */
 function EdgeTag({
   disabled,
   edge,
@@ -80,14 +83,13 @@ function EdgeTag({
       disabled={disabled || onPick === undefined}
       onClick={() => onPick?.(edge.index)}
       style={place}
-      title={name}
+      title={`${name}, ${distance} away`}
       type="button"
     >
       <Chevron size={10} />
       <span className="flex size-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-on-primary tabular-nums">
         {edge.index + 1}
       </span>
-      <span className="whitespace-nowrap">{distance}</span>
     </button>
   );
 }
@@ -145,8 +147,18 @@ export function PlaceMap({
     return <div className="w-full" ref={ref} style={{ height: width === 0 ? height : 0 }} />;
   }
   const { layout } = map;
+  // Tags first: where one cannot keep off a pin, the pin is on top and keeps its click.
   const pins = (
     <>
+      {layout.edges.map((edge) => (
+        <EdgeTag
+          disabled={disabled}
+          edge={edge}
+          key={edge.index}
+          name={names[edge.index] ?? ''}
+          onPick={onPick}
+        />
+      ))}
       <svg
         aria-hidden
         className="pointer-events-none absolute inset-0 text-primary"
@@ -223,15 +235,6 @@ export function PlaceMap({
           </span>
         );
       })}
-      {layout.edges.map((edge) => (
-        <EdgeTag
-          disabled={disabled}
-          edge={edge}
-          key={edge.index}
-          name={names[edge.index] ?? ''}
-          onPick={onPick}
-        />
-      ))}
     </>
   );
   const image =
