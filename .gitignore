@@ -31,3 +31,6 @@ apps/desktop/out/
 .claude/settings.local.json
 .claude/RESUME.md
 .vitest/
+
+# Throwaway e2e specs (PR screenshots, probes): .agents/skills/ship-pr/SCREENSHOTS.md
+apps/desktop/e2e/_*.e2e.ts
