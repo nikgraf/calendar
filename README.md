@@ -57,6 +57,26 @@ Without it the app runs fine — the AI field says why the model is
 unavailable, and the Apple connections in Settings → Accounts report the
 bridge as unavailable.
 
+### An agent's machine
+
+Agent sessions often start on a fresh macOS machine (a disposable VM,
+one session each) with nothing but a clone. Everything they need to know
+is in the repo (`AGENTS.md`, `docs/`, the skills in `.agents/skills/`); the
+machine needs the tools for the PR workflow (the `ship-pr` skill):
+
+- Xcode 27 with an iOS simulator runtime, Maestro and a JDK (see
+  `AGENTS.md` → Commands), for the iOS e2e flows and screenshots.
+- `gh` signed in to GitHub (PRs, the `pr-screenshots` branch).
+- The `claude` and `codex` CLIs signed in: `scripts/review.sh` runs the
+  review rounds with them.
+- EAS access for `apps/ios/e2e/ci/fetch-eas-build.sh`: `pnpm exec eas
+  login` in `apps/ios`, or `EXPO_TOKEN` in the environment.
+- `LANG=en_US.UTF-8` and `LC_ALL=en_US.UTF-8` in the shell: CocoaPods
+  fails on a local `expo run:ios` without them.
+- The gitignored config files only where a task needs them:
+  `apps/desktop/google-oauth.local.json` (sign-in from source) and
+  `google-live.local.json` (the live Google suite).
+
 ### Google OAuth (required for sign-in)
 
 Create a Google Cloud project once, then:

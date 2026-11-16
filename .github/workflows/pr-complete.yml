@@ -1,0 +1,41 @@
+name: PR complete
+
+# A ready PR fails this check while its body still owes something: the
+# "What changes for the user" section first, both review stages, a
+# screenshot (or a reason) for each platform whose UI it touches, and a
+# docs/decisions.md line citing its number (scripts/prComplete.ts,
+# .agents/skills/ship-pr/SKILL.md). Nik merges a green PR that looks done,
+# so what is owed has to show here, not as a note in the body.
+#
+# Editing the body re-runs it. Drafts, bots' PRs and PRs labelled
+# `skip-pr-check` pass unchecked; marking a draft ready runs it. It reads
+# the PR from the API, so a re-run sees the current body. Ubuntu only: no
+# macOS minutes.
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize, ready_for_review, labeled, unlabeled]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: pr-complete-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  complete:
+    name: PR complete
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: scripts
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: node scripts/check-pr-complete.ts "$PR_NUMBER"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}

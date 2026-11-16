@@ -421,16 +421,22 @@ commits by staging deliberately.
   them); `react` and `react-dom` pinned exactly to the React Native
   renderer's version (react-dom throws unless it equals react); the
   Expo-bound React Native stack moves only with the SDK (`npx expo install
-  --check` is the oracle); `vitest` equals the version vite-plus bundles.
+  --check` is the oracle); `vitest` equals the version vite-plus bundles;
+  Babel stays on 7 (the worklets plugin throws under 8).
   The 2-day `minimumReleaseAge` gate is never bypassed, and a
   `trustPolicyExclude` entry is added only by exact version after an audit
   (the comments in `pnpm-workspace.yaml` say how).
 - Secrets: `google-oauth.local.json` is gitignored — never commit OAuth
   client config. OAuth tokens live only in TokenStore
   (Keychain/safeStorage), never in SQLite.
-- Workflow: one commit per task on a `todo/<slug>` branch → PR to `main` →
-  CI green (gate + macOS e2e) → Nik merges. Direct pushes to main are
-  blocked. A shipped item leaves `todo.md` and gets a short record in
+- Workflow: one PR per task on a `todo/<slug>` branch off `origin/main` (a
+  feature across packages and both apps, or a batch of fixes from one
+  origin, is one PR with ordered commits, not a stack) → review rounds
+  (Claude Opus, then Codex) and screenshots before anyone can merge → CI
+  green (gate, macOS e2e, `PR complete`) → Nik merges. Direct pushes to
+  main are blocked. The whole sequence, the PR body's shape and the
+  commands: the `ship-pr` skill (`.agents/skills/ship-pr/`); follow it for
+  every PR. A shipped item leaves `todo.md` and gets a short record in
   `docs/decisions.md` under its area: the decision, the alternatives
   rejected, what it leaves open, and the PR for the detail — ten lines at
   most. The mechanism goes in the current-state doc it belongs to, never
@@ -444,11 +450,75 @@ commits by staging deliberately.
   calendar hex). Test email addresses are made up (`@example.com`), never
   a real person's. See docs/google-sync-and-testing.md.
 
+## Working here
+
+Sessions keep no memory: each may run on a fresh machine with a fresh
+clone. What the next session should know (a tool's quirk, a recipe, a rule
+Nik stated) goes into the doc, skill or test it belongs to, in the PR that
+learned it, never only into a chat or a local memory file.
+
+- Lead with the simplest correct design. A staged or optimised variant is
+  an alternative with its cost, not the recommendation.
+- A gesture tracks the input 1:1 while it lasts and settles with an
+  animation, never the accumulate-then-jump variant
+  (`packages/core/src/gestures/wheelPan.ts`,
+  `apps/desktop/renderer/calendar/useWheelPan.ts` are the pattern).
+- UI: Apple's HIG wins over discoverability (Settings is a window behind
+  ⌘,, with no gear in the toolbar), and a rarely used setting gets no
+  always-on chrome. Few borders, none on calendar items (a focus or
+  selection outline is fine); colors only from the brand tokens, never
+  invented ones. The neutral `selection` tint never carries a state alone:
+  pair it with a weight, a `primary` fill or a `focus` ring. Cancel and
+  Save are large targets (44 pt capsules on iOS). A design canvas only
+  approximates the shipped screens: it is no reason to restyle them.
+- Never describe the app by comparison to another calendar product, in
+  code, docs, the website or a PR: Nik wants no competitor's name in the
+  repo.
+- Apple's on-device models are on their way out: the app moves to its own
+  model. Paths only Apple's models use (their availability notice, the
+  "not ready" fallback, prompt workarounds for them) get no polish; name
+  such a gap and leave it, but keep them working while they still run
+  search, capture and the find-a-time fallback.
+- Build on a Google or EventKit behaviour only once it is verified: the
+  "Verified …" sections of `docs/google-sync-and-testing.md`, or a probe
+  against the live test account (ask Nik before the first live run). The
+  fake Google server models no recurrence, so a series' semantics never
+  come from it.
+- A push that moves the iOS native fingerprint makes CI request an EAS
+  build, and the month's builds are few: ask Nik before each such push.
+- When Nik forwards someone else's input and asks what you think, assess
+  it first (what improves the plan, what to push back on, a better
+  alternative) and change the plan only once he picks.
+- Dependencies: prefer the actively maintained library with the modern
+  API over the popular stale one (`rrule-temporal`, not `rrule`). Never
+  `pnpm patch` a dependency's native code: upstream it, work around it in
+  JS or live with the limit; ask before a JS-only patch. "Upgrade all
+  dependencies" means all of them (Effect, the Actions majors, pnpm
+  itself) up to the technical ceilings in the Dependencies rule above, one
+  commit per group so any one can be dropped.
+- The Assistant reads meaning with its model. No word lists that decide
+  what a phrase means (bare turns, command words, place kinds): code may
+  check and compute (dates, lookups, shapes, whether a value occurs in the
+  words), and a better reading comes from the schema, the prompt or the
+  model, measured on the bench. Closed vocabularies (dates, times,
+  repeats) may stay rules.
+- Training data for a model never holds the outputs of Claude, or of
+  another API whose terms forbid training on them: check the weights'
+  licence and the API's terms before generating any. DeepSeek V4 through
+  DeepSeek's own API is the chosen source. Measuring models with Claude
+  (the bench's arms) trains nothing and is fine.
+- CI fetches iOS builds from EAS by native fingerprint and never runs
+  `xcodebuild` on a runner. macOS minutes are limited: verify on the
+  machine first and push fixes in batches.
+
 ## Deep docs
 
 - `docs/architecture.md` — data flow, op queue, sync engine, Apple
   Calendar, mirrors, search, recurring model, platform seams.
 - `docs/effect-v4-notes.md` — the Effect v4 gotcha catalog (symptom → fix).
+- `docs/platform-notes.md` — the same for React Native, Expo, Reanimated,
+  Gesture Handler, Metro and the dev client, iOS itself, and Electron and
+  the macOS runtime.
 - `docs/google-sync-and-testing.md` — verified Google and EventKit
   semantics + testing conventions, CI and flakiness lessons.
 - `docs/distribution.md` — CI build/signing pipeline, TestFlight, EAS
@@ -458,3 +528,10 @@ commits by staging deliberately.
 - `todo.md` — ranked backlog (tiers by impact, one PR per item).
   `docs/decisions.md` — decision log: every shipped item's `[x]` entry
   with the design decisions it settled.
+
+Skills (`.agents/skills/`, linked into `.claude/skills/` and `.pi/skills/`):
+`ship-pr` for every PR (review rounds, screenshots, the body, the record);
+`ios-simulator` for hands-on simulator work (CI's iOS job run locally, a
+clean app state, Maestro by hand, race hunts, recordings, lldb, EventKit
+probes). The design and animation skills come from emilkowalski/skills
+(`skills-lock.json`).

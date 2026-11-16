@@ -376,7 +376,10 @@ iCloud or Exchange source.
   grant. Same lifecycle as Reminders: `store.reset()` after a grant, the
   status check is the account's health, the same notDetermined lag after
   a prompt (a refusal then is one failed call), `writeOnly` is not
-  enough.
+  enough. `store.reset()` invalidates the `EKCalendar` objects fetched
+  before it (a later `removeCalendar` fails with EKError 11): fetch them
+  again. A question like these is settled on the simulator's own store
+  with a throwaway binary (the `ios-simulator` skill).
 - **Bounded queries only**: `predicateForEvents(withStart:end:calendars:)`
   matches a four-year span at most, so the bridge chunks longer ranges
   and de-duplicates events spanning a chunk edge by
@@ -484,11 +487,20 @@ earlier ones before local noon, the later ones after) — and failed
 `convert` there. A spec that pins the zone the grid draws in seeds in
 that zone instead: the device zone (`env: { TZ }`, `searchFilters`) or
 the primary display zone (`deviceSettings.timeZones`, `agentGateway`),
-both UTC there. A drag moves an event by the wall clock in the zone the
+both UTC there: check for a pinned zone before "fixing" a spec's dates.
+`flows`' daily series has `startTimeZone: 'UTC'`, so its instances count
+in whole days from its start. `TZ=Pacific/Kiritimati` (UTC+14)
+reproduces date-boundary bugs, and the test process and Electron both
+inherit it. A drag moves an event by the wall clock in the zone the
 grid draws in (`moveEventTimes`; the device's in e2e, whatever the
 event's own zone), so a spec computes the expected start with Temporal
 in the device zone: a `DAY_MS` sum is an hour off on the eve of a DST
-change there.
+change there. Ask of every test: does it pass on a Monday, on a Sunday
+(today is the week's last column, so `+1` is next week and a span that
+starts today runs into the hidden columns past it), in November, next
+year? To try another weekday without touching the clock, run a throwaway
+copy of a spec with its pinned `TZ` swapped (`Etc/GMT+12` reads as
+yesterday, `Pacific/Kiritimati` as tomorrow after 10:00 UTC).
 
 ### Unit tests (`vp test`, @effect/vitest)
 
@@ -503,7 +515,23 @@ change there.
 - The engine reads `Clock`, and `it.effect` runs under `TestClock` —
   advance it between passes or `passStartedAt` never moves. Two-mutation
   queue tests pin the fiber yield point with the `noYield` helper (a
-  migration can move it and flip the test).
+  migration can move it and flip the test): `kick` forks the drain
+  detached once the write's transaction committed, Effect yields every 2048 ops, and `Effect.provide(layer)`
+  runs the migrations in the same fiber, so a new migration lets the drain
+  run between two calls and a coalescing test reads "expected 1 op, got
+  2" with nothing wrong in the code.
+- From an agent's shell vitest picks a reporter that prints nothing a
+  passing test wrote (no `Effect.log`, no `console.log`). Before
+  concluding that something never logged, rerun with
+  `--reporter=default`, which is what CI prints; a replay that must print
+  while it passes writes to `process.stderr`. A file outside the config's
+  `include` globs is skipped even when it is named on the command line.
+- An engine test's stub client models Google's delta semantics (a token
+  returns only what changed, `engine.test.ts`): a stub that sends
+  everything on every pass hid a calendar that a delta never sends again.
+- `setClock(iso)` in `localNotifications.test.ts` adjusts the
+  `TestClock` by the whole instant, so it is called once; later passes
+  move on with `TestClock.adjust`.
 - The pending-op queue has a seeded sequence test
   (`packages/sync/src/queueSequence.test.ts`): 50 seeds of 40 steps each
   against the fake below — user edits, creates, deletes and moves of
@@ -550,7 +578,9 @@ change there.
   only where the words give one. A find-a-time sentence (`find 30 min
   tomorrow morning | Focus`, the title after the bar) is answered on the
   Assistant's finder prompt with what the finder's word rules read in it,
-  so the search is the one the app's own prompt gives on Apple's model.
+  so the search is the one the app's own prompt gives on Apple's model;
+  it offers one slot per free gap per day, so a check that wants several
+  chips names a window of several days ("next week mornings").
   Real models are measured, never gated:
   the model bench (`apps/desktop/e2e/bench/`, `MODEL_BENCH=1 E2E=1 pnpm
   exec vp test run apps/desktop/e2e/bench/modelBench.e2e.ts`) runs the
@@ -612,12 +642,22 @@ watermark with deleted task tombstones, server-assigned task ids, PATCH
 merge and null-delete of private properties. The fake pages event lists
 (`pageSize`, default 2,500; the sync token rides only on the last page)
 and reports a removed calendar as a `deleted` calendarList entry on
-incremental passes. `fault` decides a request's fate before the routes
+incremental passes. It models **no recurrence**: no expansion, no
+exceptions, no new etag when a rule changes, so a series' behaviour comes
+only from the live suite (a rule change from 5 to 12 occurrences
+cancelled a moved occurrence on Google, which the fake could not show).
+Its clock starts at its own `now` (2026-08-24): a `TestClock` left before
+it makes every pull's `updatedMin` 1970, which returns everything and
+hides a watermark bug, so set the clock past it
+(`TestClock.setTime(google.now + …)`, `engine.taskOrder.test.ts`).
+The `fault` hook decides a request's fate before the routes
 see it: `refused` (a 503 that changes nothing) or `lost` (answered — the
 write lands — while the client sees the connection drop); `onAnswer`
 sees every answer and whether it was lost. `organizerEmail` makes the
 account the organizer of an event it inserts, as Google does, so a
-created event can be moved.
+created event can be moved. Its etags name their calendar
+(`"cal-1/v4"`): versions count per calendar, and a moved event's old
+etag must not match an unrelated one in its destination.
 
 Both apps can run against the same fake (`testing/googleFixture.ts`):
 desktop with `CALENDAR_GOOGLE=fixture` + `CALENDAR_GOOGLE_FIXTURE=<json>`
@@ -644,7 +684,9 @@ spec `apps/desktop/e2e/googleLive.e2e.ts` and the iOS flows under
 they take minutes. `.github/workflows/google-live.yml` runs all three
 nightly when `main` moved since the last completed run, on
 `workflow_dispatch`, and on PRs labelled `google-live`, one run at a time
-(`concurrency: google-live`). GitHub's `schedule` is best effort —
+(`concurrency: google-live`). A labelled PR runs it again on every push
+(`synchronize`): take the label off before the next push unless that
+push needs another live run. GitHub's `schedule` is best effort —
 dispatch it by hand when a night is missing. What cannot be reached on
 demand stays fake-only: 410 sync-token expiry, People
 `EXPIRED_SYNC_TOKEN`, 403 insufficient scope, 429/5xx, paging, a
@@ -661,7 +703,14 @@ guest-side RSVP (needs a second account).
   workflow reuses `GOOGLE_DESKTOP_CLIENT_ID/SECRET` and fails red when
   any is missing. The refresh token is bound to the desktop client, so
   iOS refreshes it with that client too
-  (`EXPO_PUBLIC_CALENDAR_GOOGLE_LIVE_CLIENT_ID/SECRET`).
+  (`EXPO_PUBLIC_CALENDAR_GOOGLE_LIVE_CLIENT_ID/SECRET`). A fresh clone has
+  neither gitignored file: export `GOOGLE_LIVE_EMAIL`,
+  `GOOGLE_LIVE_REFRESH_TOKEN`, `GOOGLE_DESKTOP_CLIENT_ID` and
+  `GOOGLE_DESKTOP_CLIENT_SECRET` for the command instead, as the workflow
+  does. A failure in `live/globalSetup.ts` prints `live setup failed:
+  <reason>` first; vitest then crashes printing it (`Startup Error …
+  TypeError: code.charCodeAt is not a function`, "No test files found"),
+  so look for that line.
 - **Isolation.** Every run gets its own scratch calendars and task lists,
   named `e2e-<unixSeconds>-<runTag>[-suffix]` (`GOOGLE_LIVE_RUN_TAG` —
   `gh-<run>-<attempt>` on CI, `local-<pid>` locally; a run under any
@@ -743,9 +792,18 @@ guest-side RSVP (needs a second account).
   "Reopen <title>", so 04 waits for the label to prove a pull or a tap:
   a tap the app drops fails as such, not as a pull that never came.
   Maestro has no drag command, so 02 changes the event's shape through
-  the all-day switch instead. Locally: `pnpm --filter @calendar/ios
+  the all-day switch instead. A PR's own CI never runs these flows, so a
+  change to a label or a picker the app shows greps `apps/ios/e2e/live/`
+  too and puts the `google-live` label on the PR. Locally: `pnpm --filter @calendar/ios
   test:e2e:live` (dev client installed, Metro up with the live env;
   `SIMULATOR_UDID` picks the device).
+- **Probing a semantic.** An exploratory `it.live` that logs JSON through
+  `Effect.log`, run alone with `-t <name> --reporter=default` (the agent
+  reporter hides a passing test's logs), then pinned as a test of what it
+  found. `events.list?iCalUID=…&showDeleted=true` lists a series' master
+  with every exception; calling the app's own `GoogleCalendarClient`
+  shows what the queue would get (412 → `ConflictError`, 410 →
+  `SyncTokenExpiredError`).
 - **Leaks.** Effect redacts `authorization` headers in logged causes; the
   desktop token file lives only in the temp profile; the iOS bundle on
   the CI simulator carries the secrets inlined (never shipped).
@@ -777,7 +835,8 @@ writes can be held (`App.holdEventKitWrites`, a marker file under the
 profile) so a spec acts while a save or delete waits for EventKit.
 `microphone` stands in for the page's
 `getUserMedia` with a Web Audio loop of quiet room and a phrase-long
-tone (Chromium's fake audio device never opens under Electron), and
+tone (Chromium's fake audio device never opens under Electron; the
+stand-in ignores the constraints, voice processing included), and
 under `CALENDAR_MICROPHONE=fixture` main answers the audio streamed to
 it: while the tone plays, the spec's next phrase comes back word by
 word as both recognisers' words, and finishing reads it as that phrase
@@ -886,6 +945,52 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
 - **A window behind another one renders nothing** without that
   emulation: `cdp.waitForRendered` still draws a frame (a screenshot)
   before each try.
+- **Motion specs ask for motion first.** CI's macOS runner reports
+  `prefers-reduced-motion: reduce`, so a spec that checks a transition
+  sees the reduced path there and fails while it passes locally. Emulate
+  `no-preference` before the motion and clear it with `features: []` in
+  `finally` (`flows.e2e.ts`, `assistantView.e2e.ts`); emulate `reduce` to
+  reproduce CI. A background window takes `Emulation.setEmulatedMedia`
+  (reduced motion, `prefers-color-scheme`) only once it draws a frame, so
+  send one `Page.captureScreenshot` after it before waiting on the media
+  query or `data-theme`.
+- **CI's window is 1024 px wide**; a local run opens 1280 × 800. A spec
+  that clicks by geometry is checked at CI's size with the `window`
+  launch option (`CALENDAR_E2E_WINDOW`).
+- **`cdp.eval` cannot test the CSP.** DevTools evaluation is exempt from
+  a page's eval rules, so `new Function(…)` through CDP succeeds under a
+  policy that forbids it. Probe with an injected inline `<script>` that
+  sets a flag (`flows.e2e.ts` › "runs the built renderer under the content
+  security policy").
+- **Run e2e on a quiet machine, one run at a time.** The drag tests fail
+  in a different place each run while the Mac builds (another app copy
+  included), boots a simulator or runs Maestro, and a run started while
+  an earlier one's last retry was still going failed every test: wait for
+  the previous run's exit. A "(retry x1)" failure lists both attempts and
+  the first may be listed second: read every error, and check whether
+  attempt 1 changed the state the retry then failed on.
+- **Never read editor state off `body.textContent`**: the sync footer's
+  pending-op labels hold strings like "Edit task". Locate by testid.
+- **Seed order is not what a spec expects.** Capture drafts come in date
+  order with all-day items first, not in paste order; calendars sort by
+  name, so a second seeded calendar sorts after "Work" or the first
+  test's default calendar moves.
+- **Task folds make a spec date-dependent**: one that makes a second task
+  overdue or undated folds both, and later `all-day-task-…` or
+  `[data-overdue]` lookups fail. On Sundays, drop onto today's lane.
+- **Off the grid is three weeks away**: the grid keeps two days past the
+  visible week in the DOM (`PAN_BUFFER_DAYS`), drafts included, so a
+  spec proving a draft left the grid pans three weeks.
+- **CDP cannot press a native menu's accelerator.** Check a menu item by
+  hand through the main process's inspector (`--inspect`, then
+  `Menu.getApplicationMenu()` … `.click()`).
+- **Tab through CDP** is `Input.dispatchKeyEvent` with `rawKeyDown`
+  (`cdp.pressTab`). A Chromium date input takes four Tab stops (month,
+  day, year, picker) with `activeElement` unchanged, so a focus trap
+  built on keydown breaks it; `FocusTrap`'s guard elements do not.
+- **Probe with a scratch spec.** A throwaway `apps/desktop/e2e/_probe.e2e.ts`
+  (it must match `*.e2e.ts`) can drive `launchApp` with seeds, agents and a
+  settings file; move it out before `pnpm check` and never commit it.
 - **Weekday-agnostic seeding**: recurring seeds start `today − 3 days` and
   expectations derive from the first _visible_ instance.
 - **A test that opens today's seeds after a draft on another day clicks
@@ -998,7 +1103,15 @@ Electron binary (`electron --version`) and run spec files sequentially.
   is red with tccd's own rows in the output — adjust the seed, never
   make the probe optional. Locally:
   `CALENDAR_E2E_REMINDERS=real E2E=1 pnpm exec vp test run apps/desktop/e2e/remindersReal.e2e.ts`
-  (creates and deletes reminders in _your_ database).
+  (creates and deletes reminders in _your_ database). Before pushing a new
+  step in `remindersReal` or `appleCalendarReal`, run its call sequence
+  once against the package's fake bridge in a scratch test
+  (`makeFakeAppleCalendarClient().bridge`, `makeFakeRemindersClient`), with
+  errors formatted as the spec's `callHelper` formats them (`helper
+  <method>: <message>`: the client reads `notFound:` off the start of the
+  message, and that prefix once hid it), then delete the file and say in
+  the PR that this stood in for a local run. It checks the spec's
+  plumbing, not EventKit.
 - `ios-e2e-shards` (macos-26, two shards; the required check `ios-e2e`
   passes when the shards passed or were skipped): Maestro against an
   **EAS** build with the commit's JS embedded — no Metro, no dev
@@ -1062,12 +1175,15 @@ Electron binary (`electron --version`) and run spec files sequentially.
   (`--debug-output`, flattened: otherwise the run's log lands in a hidden
   folder the artifact upload skips). A failed shard's artifact carries
   those reports, any crash report and the app's `calendar.db` as the shard
-  left it (`e2e-app-state/`). To reproduce a CI run locally: `eas build:list
-  --build-profile e2e-simulator`, `fetch-eas-build.sh <fingerprint>
-  e2e-simulator build/e2e-app`, `repack-app.sh`, a fresh simulator, then
-  `SIMULATOR_UDID=… node e2e/ci/run-flows.ts <label>` with the shard's
-  files; killing `maestro-driver-iosUITests-Runner` mid-flow exercises the
-  retry (run 38561991886 proved it on a runner).
+  left it (`e2e-app-state/`). To reproduce a CI run locally (the same EAS
+  build, the commit's JS, a fresh simulator, `run-flows.ts` per shard),
+  follow the `ios-simulator` skill (`.agents/skills/ios-simulator/`);
+  `pkill -9 -f maestro-driver-iosUITests-Runner` while a flow types
+  exercises the retry (run 38561991886 proved it on a runner; stopping the
+  app with SIGSTOP does not latch the driver). A change to the retry
+  logic is dry-run first: `run-flows.ts` with a fake `maestro` and
+  `xcrun` on PATH and HOME in a scratch folder, its first attempt
+  replaying a real diagnostics artifact.
 - `package-smoke` (xcode-27, PRs only): unsigned `package:app`,
   packaged-contents assertions, `pnpm brand:check`, `solunivo-cli
   --version`.
@@ -1093,9 +1209,96 @@ Electron binary (`electron --version`) and run spec files sequentially.
 - Log lines may stringify effect causes containing HTTP requests; effect
   redacts auth headers, so tokens cannot leak into CI logs this way.
 
+Reading a red macOS job (rerun before touching code when the signature
+matches one of these):
+
+- **Rerun only what failed, once the run has ended**: `gh run rerun <run>
+  --failed` (GitHub refuses it, and `--job`, while any job of the run is
+  still going). "iOS e2e (Maestro, real Reminders)" only reports the
+  shards' result and fails within seconds whenever one did: read the
+  shard. macOS minutes bill at ten times Linux's and are limited, so
+  reproduce first and batch fixes per push.
+- **Not a test at all**: jobs that never start, with an annotation about
+  the spending limit ("recent account payments have failed or your
+  spending limit needs to be increased"), "The job was not acquired by
+  Runner …" or a "capacity constraints … macOS arm64" notice — rerun
+  later. A shard cancelled at its 60-minute cap ran out of time and
+  uploads no diagnostics (the upload runs on `failure()`): compare its
+  per-step and per-flow times (`[Passed] … (Xm Ys)` in `gh run view --job
+  <id> --log`) with a green main run before calling the runner slow,
+  since a change that slows every launch looks the same (the `.ts` app
+  config did).
+- **Where to look**: `gh run download <run>` fetches a failed shard's
+  `ios-e2e-diagnostics-shard<n>-<attempt>`: per attempt
+  (`~/.maestro/tests/<label>-<n>/`) each flow's `commands.json`,
+  `screen-hierarchy/step-*.json`, `screenshots/` (the failed check's
+  `step-*-assertCondition-*.png` first: a garbled typed title shows
+  there), `logs/device-simulator.log` and `device-xctest.log`, plus the
+  run's `maestro.log` (every flow's commands with times, passing ones
+  too, so CI's real condition costs can be read off it instead of
+  guessed from a local run) and `console.log`; then crash reports and
+  `e2e-app-state/calendar.db`. The job summary's "Maestro retry" line
+  names anything rerun and why. Did the display die? Count
+  `SolunivoDev[<pid>].*EventDispatch` lines per pid in each flow's
+  `logs/device-simulator.log`: none for the flow's pid means the screen
+  never drew (the next flow's new pid logs hundreds). To line the app's
+  requests up with its polls, the same log's CFNetwork summaries mark a
+  write with "body S n", and a 204 is a DELETE.
+- **Driver lag (iOS)**: "No visible element found" or "… is visible"
+  false while the failure screenshot and the step's hierarchy JSON show
+  the element in place. The first XCTest hierarchy snapshot after a tap
+  took 10–16 s (`device-xctest.log`: `[Start]` to `[Done] View hierarchy
+  snapshot`; a flow's median is ~0.4 s) and used up the wait. Rerun.
+- **A lost tap without the dropped-touch signature (iOS)**: a tap right
+  after typing or right after a launch does not register — the all-day
+  switch with the keyboard up (flow 12 saves a timed 9–10 event), the
+  view menu just after launch (`common/switch-view.yaml`, now retried),
+  Done leaving the Settings root up (04a), Cancel leaving "New Task" open
+  (09). `run-flows.ts` says "no
+  retry". Rerun; if one recurs, prove that tap by its effect in a `retry`
+  block, as `switch-view.yaml` does.
+- **`simctl openurl` timed out (iOS)**: an `openLink` fails with
+  `NSPOSIXErrorDomain code=60` (the bootstrap's, flow 27's second one).
+  Not retried; rerun.
+- **System UI is slow or absent (iOS)**: the share sheet's "Save to
+  Files" and the document picker's "Browse" get 30 s (a picker that came
+  up blank was still loading); `04a`'s system Reminders prompt sometimes
+  never shows ("Connecting Reminders…" with no alert) or its "Don’t
+  Allow" tap hangs ~80 s. Rerun.
+- **An answer just past its wait (iOS)**: the element is in the failure
+  hierarchy, so late, not missing — flow 21's "Up to date" and
+  `mirror-preview`, flow 19's zone row 5 s after the pick, the onboarding
+  flow's `lesson-banner`. Raise that step's timeout when one recurs (21's
+  "Up to date" went to 60 s).
+- **A swipe that neither pages nor reveals (iOS)**: flow 02's day swipe
+  back, and its swipe on a task row right after an outdent re-rendered the
+  list. Open; before hardening the flow, check whether the app ignores a
+  swipe during its layout animation.
+- **`appleCalendarReal` › "shows an event created outside the app…"**
+  times out in `locate('[title^="Solunivo ci event"]')` (or `waitFor`), and
+  the retry then fails `expected 'Solunivo ci event' to be 'Solunivo ci
+  event edited'`: the view never repainted after the helper's
+  `EKEventStoreChanged`. Open; rerun. Hardening belongs in that repaint.
+- **Two desktop apps on one CDP port**: `launchApp` picks
+  `--remote-debugging-port` at random in 9333–9832, so an app launched
+  while another lives can get its port and the spec drives the wrong app:
+  the dump's screenshot shows another spec's seed, or both halves of
+  `onboarding`'s on/off pair (launched with `Promise.all`) fail in ~1.5 s.
+  The retry reuses `beforeAll`'s apps, so it cannot clear it. Rerun the
+  job; the fix is port 0 and reading the real port back.
+- **A reopened task shows its old due date** (`flows` › "takes a due day
+  away again"; the database and the queued op already say `due: null`):
+  the rail keeps its previous list while it refetches, and the editor
+  seeds once from that row. An app race, not reproduced locally; rerun.
+- **`googleLive` › "drags the block an hour later…"** fails with `Cannot
+  read properties of undefined (reading 'startUtc')`: the spec's direct
+  SQLite read missed the row the previous test edited, likely during the
+  10 s sync pass between them. Rerun the job.
+
 ### iOS e2e (Maestro, apps/ios/e2e/)
 
-Text/testID-based flows under `flows/`, one per area rather than one per
+Text/testID-based flows under `flows/` (no `|` in a flow's name: the
+artifact upload refuses the path), one per area rather than one per
 check: each flow costs a launch and its setup, and the CI shards are
 billed macOS minutes, so a new check joins the flow that already reaches
 its screen. Flows carry `tags`: the ones CI shards are `ci`;
@@ -1128,7 +1331,11 @@ signed-out account (`imported@example.com`, no token, never synced):
 its row makes the Settings root scroll, as it does for anyone with two
 accounts — Back to such a root once froze iOS 26 (flow 21; see
 decisions.md, "No large title in iOS Settings"). Maestro needs a JDK on PATH
-(Apple's `/usr/bin/java` stub is not one; see AGENTS.md).
+(Apple's `/usr/bin/java` stub is not one; see AGENTS.md). Step-by-step
+simulator work (CI's job run locally, a clean app state, a race hunt, a
+recording) is the `ios-simulator` skill; the React Native and Metro
+behaviour behind odd failures (a tap eaten after a row removal, stale JS
+after an edit) is in `platform-notes.md`.
 
 Those halves and the Assistant's read outcome branch on a script flag: the
 branch that ran sets `output.…`, and the other one is keyed on it
@@ -1173,8 +1380,11 @@ keyboard's Search key; the chips' × is "Remove <label>"),
 `apply-quick-add.yaml` (`PHRASE` to the Assistant: "Type"
 (`quick-add-type`) swaps its bar for the field, the phrase is typed
 until the field holds exactly that, then sent, `quick-add-apply`; a
-phrase taken puts the bar back), `confirm-open.yaml` and
-`await-shell.yaml` (the bootstrap flow's URL alert and shell wait).
+phrase taken puts the bar back), `dismiss-keyboard.yaml` (`LABEL`: two
+taps on a plain label resign the focused field; on the iOS 27 simulator
+the first only brings back a keyboard XCTest's typing hid),
+`confirm-open.yaml` and `await-shell.yaml` (the bootstrap flow's URL
+alert and shell wait).
 
 The subflows keep conditions off their common path the same way (the
 7 s rule is under the selector gotchas): a re-tap is a `retry` block, the
@@ -1212,7 +1422,14 @@ Selector gotchas (each caused a real failure):
   match, regex metacharacters in titles must be escaped, and a pressable
   row reads as one element (title, subtitle and value together), so match
   with `.*` around the text. Decorative symbols stay out of labels
-  (`Glyph`).
+  (`Glyph`). They also **ignore case**: `'Convert to (Task|Reminder)'`
+  matched the detail's own "Convert to task" button, so a wait for the
+  editor passed at once. Where a screen and the one it turns into share
+  wording, wait on testIDs (`editor-form`, `event-detail-title`).
+- The iOS status bar is in Maestro's tree, and its clock follows the
+  host's locale: "22:49" locally, "10:26 PM" on CI, so a regex for it
+  needs `(.?[AP]M)?` (`await-shell.yaml`). `below:` compares top edges
+  only, against any match.
 - A picker row (a radio `CheckRow`) reads as its title alone; the check
   mark is a `Glyph`, so a pick is proven by the row's `selected: true`
   (`checked` on a checkbox `CheckRow`), never by a "✓" in its text. Rows are picked by `id: task-list-option` /
@@ -1232,9 +1449,55 @@ Selector gotchas (each caused a real failure):
   a task's list picker); a tap on an event opens its detail sheet first.
   Flows that open a sheet `waitForAnimationToEnd` before tapping inside
   it. Maestro's visibility ignores the keyboard and clipping: dismiss the
-  keyboard before tapping a lower input, and a control clipped by a
+  keyboard before tapping a lower input (a tap "on" a covered input lands
+  on the keyboard, and the still-focused field gets the text, a
+  predictive-bar word included), and a control clipped by a
   ScrollView edge counts as visible and swallows the tap (centre rows
-  first, repeat the tap until its effect shows).
+  first, repeat the tap until its effect shows). Prefer layouts where a
+  control's frame on screen means it can be tapped: inset only a sheet's
+  header with `SafeAreaView`, let its ScrollView run to the screen's edge
+  and pad the content past the home indicator; long forms also take
+  `automaticallyAdjustKeyboardInsets` so people reach fields under the
+  keyboard. The iOS day pager lays out the neighbouring days off screen
+  (negative x), and Maestro matches a copy there first, which never
+  counts as visible: keep fixture series off the neighbouring days
+  (weekly on today's weekday, not daily).
+- Maestro's iOS `swipe` moves the whole distance in its first 0.1 s and
+  then holds for `duration`, so a recognizer that starts later sees no
+  movement. A swipe that starts in the bottom-edge region (from ~800 of
+  874 pt) waits on SpringBoard's edge pan, which on CI answered after the
+  move: start every swipe at ≤ 88 % of the screen height. A swipe that
+  "does nothing" on CI only is checked against `device-simulator.log`
+  (SpringBoard's `SBCoverSheetScreenEdgePanGestureRecognizer` lines, the
+  app's `systemGestureStateChange: 1`) before the app is blamed.
+- `scrollUntilVisible` looks once (500 ms), then swipes up from the centre
+  (~460 pt) and looks again, one way only. An element below the fold is
+  not in the tree at all, so one blind swipe is normal; but a row a tap
+  brings in on screen that reaches the tree late (a loaded runner) gets
+  carried past the top edge and is never found. Before scrolling to such
+  a row, `extendedWaitUntil: visible` it with `optional: true` (flow 09);
+  not where it always lands below the fold, where the wait costs its
+  whole timeout every run. A row scrolled out above the viewport counts
+  as visible, so `scrollUntilVisible … direction: UP` never scrolls and
+  the tap lands on nothing: a flow runs top to bottom, every scroll DOWN,
+  and its first tap on a control is a scroll DOWN plus the tap, even
+  where the control happens to be on screen on one simulator.
+- Maestro's tree lists the testIDs nested inside an accessible
+  `Pressable`, and the app's own `SwitchRow` (`GroupedList.tsx`) takes a
+  tap by its
+  `switchTestID` (flow 12's `event-all-day`). It follows that a passing
+  flow says nothing about what VoiceOver reaches: the XCUITest tree shows
+  the children of an `accessible` view, which VoiceOver does not.
+- A flow that finishes far faster than usual skipped a `when:` branch:
+  read its SKIPPED count (one gated on a fixture caption passed in 37 s,
+  doing nothing).
+- System sheets: while one is up the app's elements leave the
+  accessibility tree. The share sheet titles a file without its extension,
+  so key on its own "Save to Files"; iOS 26 gives it no Close, and a
+  `swipe: DOWN` from the screen's centre starts above a medium-detent
+  sheet, so swipe from inside it (`start: 50%, 62%`, `end: 50%, 97%`,
+  flow 20). The document picker shows "Browse", "Recents" and "Cancel";
+  open-and-cancel is as far as a simulator without seeded Files goes.
 - A native menu's items join the tree while it is still animating in,
   and Maestro aims a tap with the hierarchy it fetched before its settle
   wait: `waitForAnimationToEnd` before tapping an item, then check the
@@ -1242,11 +1505,23 @@ Selector gotchas (each caused a real failure):
   `while`/`when` condition waits up to 7 s, counted from the last tap or
   script, for its true outcome (`notVisible:` on an element that is
   there, `visible:` on one that is not), so keep that outcome off the
-  common path.
+  common path. With a native menu open the app's own elements leave the
+  tree; the menu's title row ("View") marks it open and the checked item
+  has `selected=true`.
+- Maestro engine details: `retry` takes at most 3 retries and catches only
+  Maestro's own failures; an `extendedWaitUntil` timeout also counts from
+  the last mutating command, and `evalScript` counts as one; quote a JS
+  expression that holds `: ` (`'${a ? "x" : y}'`), or the YAML breaks;
+  `output` starts empty in every flow of a multi-flow run, so a flag needs
+  no reset (test `=== true`); `eraseText: 60` takes ~2.9 s, so keep it on
+  a retry path.
 - The Search tab's field is found by its placeholder ("Events and
   tasks"); `hideKeyboard` cannot dismiss it — the field's "Close" ends
-  the search. The detail sheet's own "Delete" stays in the tree behind
-  the confirmation alert's, so the alert's is tapped `below:` its title.
+  the search. On iOS 27 the tab opens with the field active and its
+  keyboard over the tab bar, so a flow leaving Search taps the field,
+  "Close", then the next tab (flows 25, 26). The detail sheet's own
+  "Delete" stays in the tree behind the confirmation alert's, so the
+  alert's is tapped `below:` its title.
 - The Assistant flow (06) accepts the bar's "couldn't be read" outcome:
   without the fixture model a simulator has no Assistant model to answer,
   so the card is asserted only where one answers.

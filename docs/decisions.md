@@ -75,6 +75,7 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   in the settings document. Rejected: the empty state alone (explains
   nothing), a full wizard before the app, the card without a setup.
   Open: mirrors stay out of the lessons.
+  Canvas: https://claude.ai/artifact/Kk9MegMokNzf1swUP7DuYv, the hybrid.
 - **Settings code** (2026-10-24, #243) — a setup copied between iPhone
   and Mac by a QR of the settings document: in-app text `SOLUNIVO:1:` +
   base32 of deflate-raw, without what an import never reads. Base32 over
@@ -321,6 +322,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   `@effect/tsgo` (0 errors), sherif, jscpd (0.14 %). Open:
   `no-base-to-string` skips `unknown` (~115 `String(error)` sites), 78
   `no-unnecessary-condition` hits untriaged.
+- **The PR workflow in the repo** (2026-11-16, #337) — sessions start on
+  fresh machines, so the rules and recipes one Mac's agent memory held
+  moved in: the `ship-pr` skill with a self-check from 1,072 review
+  findings, `scripts/review.sh` pinning both reviewers (Nik's order
+  kept), and `PR complete`, failing a ready PR that owes a review stage,
+  screenshots or its record. Rejected: syncing the memory folder (no
+  project setting for its path, VMs would share files, mostly PR
+  history); round 1 of both reviewers in parallel. Open: making the check
+  required; mechanical guards for the self-check's classes.
 
 ## Architecture and sync path
 
@@ -627,7 +637,9 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   delta, seconds included, so a series at 09:00:30 retimed to 10:00
   starts at 10:00. Before, the fractional minute threw and the edit
   failed. Rejected: keeping the series' seconds and shifting whole
-  minutes (it would start at 10:00:30, a time nobody picked).
+  minutes (it would start at 10:00:30, a time nobody picked). Open: a
+  start written with milliseconds keeps them through a retime, since
+  expansion drops them (`icsWallTime`).
 - **Recurring editing** — scopes instance / series / following; an
   instance edit materializes an exception under Google's canonical
   instance id so the later pull upserts idempotently; following truncates
@@ -791,12 +803,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   Click = inspector, Edit = editor; the panel never joins the dialog
   stack, so a real dialog over it keeps Escape. Tasks drag from the panel
   too. Settings became a sidebar window with search.
+  Canvas (2026-10-02): https://claude.ai/artifact/C99bC2asyDjQ9LXdV7PmLB,
+  Desktop A with B's rail picked.
 - **iOS redesign** (2026-10-08, #137) — expo-router owns the screens
   (native tabs Calendar · Tasks · Search, Settings as a modal route, never
   a tab); one editor host owns every sheet so both tabs open the same
   ones; sheets stay React Native page sheets (`@expo/ui`'s BottomSheet
   would put the forms behind `RNHostView` and out of Maestro's tree);
   `@expo/ui` where it is a drop-in. The view is a menu and device taste.
+  Canvas: https://claude.ai/artifact/C99bC2asyDjQ9LXdV7PmLB, iOS B's tabs,
+  A's "+" sheet and C's detail picked.
 - **iOS Settings pages** (2026-10-08, #148) — one native stack in the
   modal, a page per Mac pane minus Agents. Rows are React Native drawn on
   the tokens, not `@expo/ui` SwiftUI (Nik's pick); the switches _are_
@@ -804,6 +820,8 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   size and drew off-centre; no header background (it hid the large
   title). Done sits on the root only. The mirror page is a summary with
   the unchanged editor sheet behind it (Nik's pick).
+  Canvas: https://claude.ai/artifact/C99bC2asyDjQ9LXdV7PmLB, its "iOS
+  Settings · Apple HIG navigation" row.
 - **Settings File, not Advanced** (2026-10-10, #171) — the Mac's
   Advanced pane held only Export & import and the watched file, so it is
   now Settings File; iOS gets a page of that name and keeps Advanced for
@@ -854,12 +872,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   account avatar at the top right, as Apple's and Google's apps do; the
   unsynced pill became its badge. Rejected: a Settings tab (the bar is
   full and tabs are navigation), an item in the view menu, a "…" menu
-  holding only Settings, the system Settings app.
+  holding only Settings, the system Settings app. Open: a Calendars sheet
+  for showing and hiding calendars (the HIG's task-specific options),
+  suggested, undecided.
 - **Task checkboxes** (2026-10-09, #158) — drawn, not typed glyphs: one
   round box on both platforms (a circle because events are rounded
   rectangles), the Reminders list color as ring and fill, a done chip
   keeps its fill at full strength and only the title fades (the whole
-  chip at 50 % hid the checked state). Designed on a canvas first.
+  chip at 50 % hid the checked state). Designed on a canvas first,
+  approved as drawn: https://claude.ai/artifact/6H211rgTzYssYk5kSYVQ8w.
 - **Add flow** (2026-10-10, #167) — "+" opens the editor with the
   quick-add field on top and an Event | Task | Reminder control: the
   editor is the review step, so iOS's three surfaces for one intent and
@@ -972,6 +993,7 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   an exact rect (a native change; an older binary shows no map). Rejected:
   a map per place, swiped or in each row (canvas B, C); a live map in the
   card (its fit can't place legs). Open: miles, a full-height map on the Mac.
+  Canvas: https://claude.ai/artifact/BjymaG3zqctm7nCAZBgK1w, A, A5, A6 picked.
 - **A save closes only its own panel** (2026-10-21, #230) — a desktop
   editor's close (Cancel, or Save and Delete once the write answers)
   applies only while the panel still holds that editor's opening; the
@@ -1386,6 +1408,7 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   step for the download, the lesson moved into the setup, a scripted
   animation, a Form lesson. Open: how a new model version reaches
   someone who had the last one, Search on the app's model (todo.md).
+  Canvas: https://claude.ai/artifact/B2YsKc69MLbwGX8dNrNAYT, A picked.
 - **Model v2: one model for the Assistant and find a time** (2026-11-14,
   #321) — one training run, one 834 MB release; the prompt's first line
   names the job ("Free time as JSON."). Times are written as said
@@ -1939,6 +1962,7 @@ first. The decisions, one line each:
   plum as-is, mauve, green / blue / warm accents, and a charcoal button with
   plum or slate signals (needs an `accent` token the apps would have to
   split from `primary`). The plum stays in the identity only.
+  Canvas: https://claude.ai/artifact/W3S5FxZcSjyBWaKgFsFYzZ, 01 Ink picked.
 - **Text actions** (2026-10-19, #228) — with `primary` at the text's
   charcoal, text that acts gets a second cue: a link inside a sentence is
   underlined in the control-boundary grey, a standalone one (Make
@@ -1961,6 +1985,7 @@ first. The decisions, one line each:
   a fixture week, the AI demo as a CSS animation. Rejected: Astro, a
   client-rendered app, drawn screens (Nik: show the real thing). Open:
   hosting and DNS, public downloads (the page says "private testing").
+  Canvas: https://claude.ai/artifact/PP491wkgu7sXvxuaEVQzHG.
 - **Outlook and CalDAV through Apple Calendar, and a roadmap** (2026-10-30,
   #266) — the site says the Outlook, Exchange and CalDAV accounts Apple
   Calendar syncs work today, invitations aside, and lists what is
