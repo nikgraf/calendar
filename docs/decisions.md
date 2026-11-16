@@ -558,6 +558,17 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   Effect we pin exactly), `AsyncResult` as the state (failed and waiting
   at once is a value there). Open: the 13 components the check lists,
   and dictation's hand-rolled machine in `quickAddModel.ts`.
+- **A seeded sequence test guards the queue** (2026-11-16, #341) — review
+  rounds found the queue's revert and ordering bugs one by one (77
+  findings in 22 PRs); `queueSequence.test.ts` runs 50 seeded sequences of
+  user, network and other-device steps on the fake and checks owned
+  pending rows, Google's version showing, no unexplained 404 or conflict,
+  and convergence after every step. It found eleven bugs, fixed here.
+  Rejected: fast-check (steps read the app's state and must read as the
+  app's words; a seed replays exactly) and a full model of the expected
+  state. Open: a pull that skips a held row loses Google's copy for an
+  abandoned op; a task move discarded after it landed; subtasks around a
+  moved or deleted parent.
 
 ## Calendar: editing, gestures, views
 
