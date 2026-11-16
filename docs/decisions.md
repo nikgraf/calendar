@@ -951,6 +951,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   5 → 7 (Figlmüller twice), Kaffemik in none. Rejected: asking the readings
   always or through the completer (MapKit's budget), a word list. Open:
   the readings for the model, real recordings, MapKit's structured fields.
+- **Places on a map** (2026-11-16, #334) — "which place?" shows its
+  places on one map, numbered like the rows; a pin takes its place. The map
+  fits the places within 150 km of each other: pins that would cover
+  each other stand on legs, a place farther off is an arrow on the edge
+  (its row says how far), pins kept clear of it. A taken place shows on
+  the card's own map. Pins are the apps' own, over a muted MapKit image of
+  an exact rect (a native change; an older binary shows no map). Rejected:
+  a map per place, swiped or in each row (canvas B, C); a live map in the
+  card (its fit can't place legs). Open: miles, a full-height map on the Mac.
 - **A save closes only its own panel** (2026-10-21, #230) — a desktop
   editor's close (Cancel, or Save and Delete once the write answers)
   applies only while the panel still holds that editor's opening; the
