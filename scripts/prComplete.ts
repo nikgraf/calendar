@@ -1,0 +1,178 @@
+/**
+ * What a pull request must hold before it is ready to merge
+ * (.agents/skills/ship-pr/SKILL.md): Nik merges a green PR that looks done,
+ * so whatever is still owed has to show as a failing check, not as a note
+ * in the body. `check-pr-complete.ts` runs this on GitHub's copy of a PR.
+ */
+
+export interface PullRequest {
+  readonly body: string;
+  /** The head branch, e.g. `todo/discard-confirm`: a record may cite it instead of the number. */
+  readonly branch: string;
+  /** The lines the PR adds to `docs/decisions.md`, one run per stretch of consecutive added lines. */
+  readonly decisionsAdded: ReadonlyArray<ReadonlyArray<string>>;
+  /** Every path the PR touches. */
+  readonly files: ReadonlyArray<string>;
+  readonly number: number;
+}
+
+type Platform = 'Desktop' | 'iOS';
+
+const USER_SECTION = 'What changes for the user';
+
+/** Files whose change a user can see, per platform; tests excluded. */
+const UI_FILES: ReadonlyArray<readonly [Platform, RegExp]> = [
+  ['iOS', /^apps\/ios\/(?:app|src\/ui)\//],
+  ['iOS', /^brand\/tokens\//],
+  ['Desktop', /^apps\/desktop\/renderer\//],
+  ['Desktop', /^brand\/tokens\//],
+];
+const TEST_FILE = /\.test\.tsx?$/;
+
+/** How a review section names each stage's reviewer. */
+const REVIEWERS = {
+  Claude: /\b(?:Claude|Opus)\b/,
+  Codex: /\b(?:Codex|gpt-6)/i,
+} as const;
+
+/** Words that mean the PR still owes something. */
+const OWED = /\b(?:still to come|still owed|(?:is|are) owed)\b|\bTBD\b|\bTODO\b/;
+
+const withoutComments = (text: string): string => text.replaceAll(/<!--[\s\S]*?-->/g, '');
+
+/** The `## ` sections in order: heading, then the text up to the next one. */
+const sections = (body: string): ReadonlyArray<{ heading: string; text: string }> =>
+  body
+    .split(/^## /m)
+    .slice(1)
+    .map((part) => {
+      const newline = part.indexOf('\n');
+      return newline === -1
+        ? { heading: part.trim(), text: '' }
+        : { heading: part.slice(0, newline).trim(), text: part.slice(newline + 1) };
+    });
+
+/** The platforms whose UI files the PR touches. */
+export const touchedPlatforms = (files: ReadonlyArray<string>): ReadonlyArray<Platform> => {
+  const platforms = new Set<Platform>();
+  for (const file of files) {
+    if (TEST_FILE.test(file)) {
+      continue;
+    }
+    for (const [platform, pattern] of UI_FILES) {
+      if (pattern.test(file)) {
+        platforms.add(platform);
+      }
+    }
+  }
+  return (['iOS', 'Desktop'] as const).filter((platform) => platforms.has(platform));
+};
+
+/** The words a "No … screenshot" line may name a platform by. */
+const PLATFORM_NAMES: Readonly<Record<Platform, string>> = {
+  Desktop: 'Desktop|Mac',
+  iOS: 'iOS|iPhone',
+};
+
+/** A platform is shown by an image of its own or explained by a line that says why not. */
+const shows = (section: string, platform: Platform): boolean => {
+  const prefix = platform === 'iOS' ? 'ios' : 'desktop';
+  return (
+    new RegExp(String.raw`pr-screenshots/[^/\s"')]+/${prefix}-`, 'i').test(section) ||
+    // "No iOS screenshot: …", "No iPhone shots: …", or "No screenshots: …" for every platform.
+    new RegExp(String.raw`\bNo (?:(?:${PLATFORM_NAMES[platform]}) )?(?:screen)?shots?\b`, 'i').test(
+      section,
+    ) ||
+    /\bNothing visible\b/i.test(section)
+  );
+};
+
+const screenshotGaps = (pr: PullRequest, userSection: string): ReadonlyArray<string> =>
+  touchedPlatforms(pr.files)
+    .filter((platform) => !shows(userSection, platform))
+    .map(
+      (platform) =>
+        `${platform} UI changed, but "${USER_SECTION}" has no ${platform} screenshot (a pr-screenshots/<branch>/${platform === 'iOS' ? 'ios' : 'desktop'}-… image) and no line "No ${platform} screenshot: <why>."`,
+    );
+
+/** The most lines a decisions record may take (AGENTS.md → Workflow). */
+const RECORD_LINES = 10;
+
+/**
+ * The records the PR adds whole: a `- **` line and the indented lines
+ * under it, within one run of added lines. Lines added to an existing
+ * record are not a record of their own.
+ */
+export const addedRecords = (
+  runs: ReadonlyArray<ReadonlyArray<string>>,
+): ReadonlyArray<ReadonlyArray<string>> =>
+  runs.flatMap((run) => {
+    const records: Array<Array<string>> = [];
+    let current: Array<string> | undefined;
+    for (const line of run) {
+      if (line.startsWith('- **')) {
+        current = [line];
+        records.push(current);
+      } else if (current !== undefined && /^\s+\S/.test(line)) {
+        current.push(line);
+      } else {
+        current = undefined;
+      }
+    }
+    return records;
+  });
+
+/** A record cites its PR by number or by branch (`todo/<slug>`), as the log has done both. */
+const decisionsGaps = (pr: PullRequest, body: string): ReadonlyArray<string> => {
+  const number = new RegExp(String.raw`#${String(pr.number)}(?!\d)`);
+  const cites = (line: string) => number.test(line) || line.includes(`\`${pr.branch}\``);
+  const cited = pr.decisionsAdded.flat().some(cites) || /\bNo decisions entry\b/i.test(body);
+  return [
+    ...(cited
+      ? []
+      : [
+          `docs/decisions.md gains no line citing #${String(pr.number)} or \`${pr.branch}\`; add the record, or say "No decisions entry: <why>." in the body.`,
+        ]),
+    ...addedRecords(pr.decisionsAdded)
+      .filter((record) => record.length > RECORD_LINES)
+      .map(
+        (record) =>
+          `The decisions record "${/^- \*\*(.+?)\*\*/.exec(record[0] ?? '')?.[1] ?? ''}" is ${String(record.length)} lines; a record is ${String(RECORD_LINES)} at most (the mechanism goes in the doc it belongs to).`,
+      ),
+  ];
+};
+
+/** Everything the PR still lacks, as sentences for the check's output; empty when it is complete. */
+export const missingParts = (pr: PullRequest): ReadonlyArray<string> => {
+  const body = withoutComments(pr.body).replaceAll('\r\n', '\n');
+  const parts = sections(body);
+  const opening = body.split(/^## /m)[0]?.trim() ?? '';
+  const user = parts.find(({ heading }) => heading === USER_SECTION);
+  // "## After review (Claude Opus 5.5, xhigh)" per reviewer, or one
+  // "## After review" / "## Reviews" section naming both.
+  const reviews = parts
+    .filter(({ heading }) => /^(?:After review|Reviews?)\b/i.test(heading))
+    .map(({ heading, text }) => `${heading}\n${text}`)
+    .join('\n');
+  const reviewedBy = (reviewer: keyof typeof REVIEWERS) => REVIEWERS[reviewer].test(reviews);
+  const owed = body.split('\n').find((line) => OWED.test(line));
+  return [
+    ...(opening === ''
+      ? [`The body opens with a line on what the PR does, before "## ${USER_SECTION}".`]
+      : []),
+    ...(user === undefined
+      ? [`No "## ${USER_SECTION}" section.`]
+      : parts[0]?.heading === USER_SECTION
+        ? []
+        : [`"## ${USER_SECTION}" is the first section.`]),
+    ...(reviewedBy('Claude')
+      ? []
+      : ['No "## After review (Claude Opus …)" section: the Opus rounds are owed.']),
+    ...(reviewedBy('Codex')
+      ? []
+      : ['No "## After review (Codex …)" section: at least one Codex round is owed.']),
+    ...(owed === undefined ? [] : [`The body says something is still owed: "${owed.trim()}"`]),
+    ...screenshotGaps(pr, user?.text ?? ''),
+    ...decisionsGaps(pr, body),
+  ];
+};
