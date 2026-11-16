@@ -102,6 +102,41 @@ describe('page functions', () => {
       }),
     ).toEqual(['Math', 'Promise', 'String', 'setTimeout', 'window']);
     expect(names(() => TITLE + name)).toEqual(['TITLE', 'name']);
+    // Bound in one callback, used free beside it: the page would read `window.name`.
+    expect(
+      names(($: PageKit) =>
+        $.all('h1')
+          .map((name) => name.textContent)
+          .join()
+          .includes(name),
+      ),
+    ).toEqual(['name']);
+    // A helper may call one declared after it; a block's binding stays in it.
+    expect(
+      names(() => {
+        const first = () => second();
+        const second = (): number => {
+          for (const status of [1]) {
+            return status;
+          }
+          return 0;
+        };
+        return first() + status;
+      }),
+    ).toEqual(['status']);
+    expect(
+      names(function named(this: unknown, { [TITLE]: title = name }: Record<string, string> = {}) {
+        class Box {
+          static size = Box.name;
+          value = title;
+        }
+        try {
+          return new Box().value + named.length;
+        } catch {
+          return '';
+        }
+      }),
+    ).toEqual(['TITLE', 'name']);
   });
 
   it('wait on a boolean, so a fallback that takes in a comparison does not compile', () => {

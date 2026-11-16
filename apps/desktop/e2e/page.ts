@@ -151,96 +151,150 @@ const isNode = (value: unknown): value is AstNode =>
 const nodesIn = (value: unknown): ReadonlyArray<AstNode> =>
   Array.isArray(value) ? value.filter(isNode) : isNode(value) ? [value] : [];
 
+/** One lexical scope: what it binds, and the scope around it. */
+interface Scope {
+  /** A function's own scope (where `var` and function declarations land), or the whole source's. */
+  readonly function: boolean;
+  readonly names: Set<string>;
+  readonly parent: Scope | null;
+}
+
+const inner = (parent: Scope, isFunction = false): Scope => ({
+  function: isFunction,
+  names: new Set(),
+  parent,
+});
+
+const functionScope = (scope: Scope): Scope =>
+  scope.function || !scope.parent ? scope : functionScope(scope.parent);
+
+const binds = (scope: Scope | null, name: string): boolean =>
+  scope !== null && (scope.names.has(name) || binds(scope.parent, name));
+
 /**
- * The names a function's source uses without binding them anywhere in it.
- * Scopes are not told apart: a name bound in one helper counts as bound in
- * all of it, which can only let a name through, never refuse a bound one.
+ * The names a function's source uses where no scope around the use binds
+ * them. Bindings are gathered for the whole source before any use is
+ * resolved, so a helper may call one declared after it.
  */
 export const freeNames = (source: string): ReadonlySet<string> => {
-  const bound = new Set<string>();
-  const used = new Set<string>();
-  const visit = (node: AstNode): void => {
-    switch (node.type) {
-      case 'Identifier':
-        used.add(node['name'] as string);
-        return;
-      case 'MemberExpression':
-        nodesIn(node['object']).forEach(visit);
-        if (node['computed']) {
-          nodesIn(node['property']).forEach(visit);
-        }
-        return;
-      case 'Property':
-      case 'PropertyDefinition':
-      case 'MethodDefinition':
-        if (node['computed']) {
-          nodesIn(node['key']).forEach(visit);
-        }
-        nodesIn(node['value']).forEach(visit);
-        return;
-      case 'LabeledStatement':
-        nodesIn(node['body']).forEach(visit);
-        return;
-      case 'BreakStatement':
-      case 'ContinueStatement':
-      case 'MetaProperty':
-        return;
-      case 'VariableDeclarator':
-        nodesIn(node['id']).forEach(bind);
-        nodesIn(node['init']).forEach(visit);
-        return;
-      case 'ArrowFunctionExpression':
-      case 'FunctionDeclaration':
-      case 'FunctionExpression':
-      case 'ClassDeclaration':
-      case 'ClassExpression':
-      case 'CatchClause':
-        nodesIn(node['id']).forEach(bind);
-        nodesIn(node['params']).forEach(bind);
-        nodesIn(node['param']).forEach(bind);
-        nodesIn(node['superClass']).forEach(visit);
-        nodesIn(node['body']).forEach(visit);
-        return;
-      default:
-        for (const value of Object.values(node)) {
-          nodesIn(value).forEach(visit);
-        }
+  const uses: Array<{ name: string; scope: Scope }> = [];
+  const walk = (node: AstNode, scope: Scope): void => {
+    const handle = HANDLERS[node.type];
+    if (handle) {
+      handle(node, scope);
+      return;
+    }
+    for (const value of Object.values(node)) {
+      nodesIn(value).forEach((child) => walk(child, scope));
     }
   };
-  // A binding pattern: its names are bound, its defaults and computed keys are used.
-  const bind = (pattern: AstNode): void => {
+  const walkAll = (value: unknown, scope: Scope) =>
+    nodesIn(value).forEach((child) => walk(child, scope));
+  // A binding pattern: its names go into `target`, its defaults and computed keys are uses.
+  const bind = (pattern: AstNode, target: Scope, scope: Scope): void => {
+    const bindAll = (value: unknown) =>
+      nodesIn(value).forEach((child) => bind(child, target, scope));
     switch (pattern.type) {
       case 'Identifier':
-        bound.add(pattern['name'] as string);
+        target.names.add(pattern['name'] as string);
         return;
       case 'ObjectPattern':
         for (const property of nodesIn(pattern['properties'])) {
-          if (property.type === 'RestElement') {
-            nodesIn(property['argument']).forEach(bind);
-            continue;
-          }
           if (property['computed']) {
-            nodesIn(property['key']).forEach(visit);
+            walkAll(property['key'], scope);
           }
-          nodesIn(property['value']).forEach(bind);
+          bindAll(property.type === 'RestElement' ? property['argument'] : property['value']);
         }
         return;
       case 'ArrayPattern':
-        nodesIn(pattern['elements']).forEach(bind);
+        bindAll(pattern['elements']);
         return;
       case 'AssignmentPattern':
-        nodesIn(pattern['left']).forEach(bind);
-        nodesIn(pattern['right']).forEach(visit);
+        bindAll(pattern['left']);
+        walkAll(pattern['right'], scope);
         return;
       case 'RestElement':
-        nodesIn(pattern['argument']).forEach(bind);
+        bindAll(pattern['argument']);
         return;
       default:
-        visit(pattern);
+        walk(pattern, scope);
     }
   };
-  parseAst(`(${source})`).body.forEach((statement) => visit(statement as unknown as AstNode));
-  return new Set([...used].filter((name) => !bound.has(name)));
+  const fn = (node: AstNode, scope: Scope) => {
+    const own = inner(scope, true);
+    if (node.type === 'FunctionDeclaration') {
+      nodesIn(node['id']).forEach((id) => bind(id, functionScope(scope), scope));
+    } else {
+      nodesIn(node['id']).forEach((id) => bind(id, own, own));
+    }
+    nodesIn(node['params']).forEach((param) => bind(param, own, own));
+    walkAll(node['body'], own);
+  };
+  const cls = (node: AstNode, scope: Scope) => {
+    const own = inner(scope);
+    nodesIn(node['id']).forEach((id) =>
+      bind(id, node.type === 'ClassDeclaration' ? scope : own, scope),
+    );
+    walkAll(node['superClass'], scope);
+    walkAll(node['body'], own);
+  };
+  const block = (node: AstNode, scope: Scope) => {
+    const own = inner(scope);
+    for (const value of Object.values(node)) {
+      walkAll(value, own);
+    }
+  };
+  const keyed = (node: AstNode, scope: Scope) => {
+    if (node['computed']) {
+      walkAll(node['key'], scope);
+    }
+    walkAll(node['value'], scope);
+  };
+  const skip = () => {};
+  const HANDLERS: Readonly<Record<string, (node: AstNode, scope: Scope) => void>> = {
+    ArrowFunctionExpression: fn,
+    BlockStatement: block,
+    BreakStatement: skip,
+    CatchClause: (node, scope) => {
+      const own = inner(scope);
+      nodesIn(node['param']).forEach((param) => bind(param, own, own));
+      walkAll(node['body'], own);
+    },
+    ClassDeclaration: cls,
+    ClassExpression: cls,
+    ContinueStatement: skip,
+    ForInStatement: block,
+    ForOfStatement: block,
+    ForStatement: block,
+    FunctionDeclaration: fn,
+    FunctionExpression: fn,
+    Identifier: (node, scope) => {
+      uses.push({ name: node['name'] as string, scope });
+    },
+    LabeledStatement: (node, scope) => walkAll(node['body'], scope),
+    MemberExpression: (node, scope) => {
+      walkAll(node['object'], scope);
+      if (node['computed']) {
+        walkAll(node['property'], scope);
+      }
+    },
+    MetaProperty: skip,
+    MethodDefinition: keyed,
+    Property: keyed,
+    PropertyDefinition: keyed,
+    StaticBlock: block,
+    SwitchStatement: block,
+    VariableDeclaration: (node, scope) => {
+      const target = node['kind'] === 'var' ? functionScope(scope) : scope;
+      for (const declarator of nodesIn(node['declarations'])) {
+        nodesIn(declarator['id']).forEach((id) => bind(id, target, scope));
+        walkAll(declarator['init'], scope);
+      }
+    },
+  };
+  const root: Scope = { function: true, names: new Set(), parent: null };
+  walkAll(parseAst(`(${source})`).body, root);
+  return new Set(uses.filter(({ name, scope }) => !binds(scope, name)).map(({ name }) => name));
 };
 
 /** Sources already checked: a wait sends the same one on every try. */
