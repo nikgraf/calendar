@@ -156,6 +156,13 @@ Pro, the adapter saved every 200). Things that cost time to find out:
   turns and 82 of 104 finder sentences for the last adapter, 358 and 81
   for 5,600. Pick by that, never by the bench (v2 benched 5,600 first;
   its lunch misses there are how the probe above was found).
+- **Size is not the limit.** Qwen3.5 2B trained the same way scored level
+  with the 0.8B (61 against 62 of 70, held-back 198 against 197) at twice
+  the time and two and a half times the size.
+- **mlx-lm 0.32.2 has no LFM3 model file**: LFM3 needs PyTorch and its
+  own code.
+- **Scrub `adapter_config.json` before publishing an adapter**: mlx-lm
+  writes absolute paths into it, the user name included.
 
 ## 3. Scoring
 
@@ -167,7 +174,10 @@ MODEL_BENCH=1 E2E=1 MODEL_BENCH_APPLE=0 MODEL_BENCH_PIPELINE=tuned \
 ```
 
 `serve.py` answers greedily and holds no schema over the answer, so an
-answer that is not JSON counts against the model.
+answer that is not JSON counts against the model. If `mlx_lm.server` is
+used instead, it loads whatever model a request's `model` field names
+unless that is its `default_model`: keep `HF_HUB_OFFLINE=1` so nothing is
+downloaded.
 
 The held-back turns say how well a model learned its teacher, part by
 part, and the date by where the day lies (inside the two listed weeks,
@@ -201,6 +211,10 @@ or the build fetches a web UI.
 llama.cpp/build/bin/llama-quantize tuned-bf16.gguf tuned-Q4_K_M.gguf Q4_K_M
 llama.cpp/build/bin/llama-server -m tuned-Q4_K_M.gguf -c 4096 -np 1 --port 8090 --offline --reasoning off
 ```
+
+Q8_0 is close to lossless against MLX at full precision (62 of 70,
+held-back 193 against 197 folded); Q4_K_M costs a little (61, held-back
+178), and MLX's own 4-bit is not GGUF's Q4_K_M. The app ships Q8_0.
 
 The bench scores the served file like any OpenAI-compatible model
 (`MODEL_BENCH_OPENAI_URL=http://127.0.0.1:8090/v1`): the same file, on the

@@ -163,7 +163,10 @@ ios` in `apps/ios` on the branch and on `origin/main`, then compare the
 `.sources` lists (`jq '.sources'`); the one that differs names the
 culprit. Seen so far: an edit to any `apps/ios/package.json` script (in a
 JS-only PR, leave a dead flag there rather than edit it), and a `.ts` app
-config, which pulled Babel's modules in as loaded sources.
+config, which pulled Babel's modules in as loaded sources. The `balanced`
+preset leaves out a _string_ `runtimeVersion` but hashes app.json's
+`{ "policy": "fingerprint" }` object, so pinning that moves the
+fingerprint too.
 
 `expo-notifications`' config plugin adds the `aps-environment` (push)
 entitlement, which the App Store profile does not carry. Notifications are
@@ -341,6 +344,10 @@ the failed jobs (`gh run rerun <run> --failed`; one right after accepting
 still got the 403, so give it a few minutes). Each failed attempt still
 takes a build number from EAS's remote counter, which is harmless.
 
+eas-cli 27 also stops `eas build` when pulling the project's EAS
+environment variables fails (24 went on without them); the reasons are on
+stderr.
+
 ## Costs / quotas
 
 EAS free tier: ~30 cloud builds/month; OTA updates are effectively free at
@@ -448,6 +455,21 @@ locale, which is what an agent's shell often has: `export
 LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8` first. A build that crashes before
 any JS on iOS 27 is the scene check (`platform-notes.md`).
 
+A new local module needs its pods before the build (`expo run:ios` does
+not install them again): in `apps/ios`, `APP_VARIANT=development npx expo
+prebuild --platform ios --no-install`, `pod install` in `ios/`, then
+`APP_VARIANT=development npx expo run:ios --device <simulator> --no-bundler`,
+about 15 minutes clean since llama.rn compiles from source. To install a
+build without touching the client already on the simulator (a "before"
+to keep), build with `xcodebuild -workspace ios/<Name>.xcworkspace -scheme
+<Name> -configuration Debug -sdk iphonesimulator -derivedDataPath
+<scratch>/dd build` (about 6 minutes incremental) and `xcrun simctl
+install` the `.app` from there.
+
+An iOS module's Swift can be typechecked without CocoaPods: `swiftc
+-typecheck` against a stub `ExpoModulesCore` module. Swift 6 makes
+`NSLock.lock()` unavailable in async code; use `withLock`.
+
 # Website (solunivo.com)
 
 `apps/web` is the public site: the landing page and `/privacy`, which is
@@ -485,6 +507,14 @@ bytes and preloads it. Astro serves the full font in development. Anything in
 one. It also stops on a rendered class no CSS rule selects and on a CSS
 variable nothing defines, which is how a token renamed in `tokens.json`
 but not in `brand/tokens/tailwind.css` shows up.
+
+Checking the built page in headless Chrome: it keeps a window at least
+about 500 px wide, so a phone width needs CDP's
+`Emulation.setDeviceMetricsOverride`; each concurrent run needs its own
+`--user-data-dir`, or it exposes no page target; and it never focuses the
+page, so `:focus` styles are checked with a forced style. Two Tailwind
+`leading-*` classes on one element resolve by their order in the CSS,
+not in the class list.
 
 ## Adding a help article
 

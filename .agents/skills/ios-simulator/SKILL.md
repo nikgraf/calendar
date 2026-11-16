@@ -199,6 +199,13 @@ screenshot for leftover data before suspecting the app:
 
 Clean up through the UI with a scratch flow, or take step 1 or 3.
 
+**Seeding rows by hand.** With the app terminated, a throwaway
+`apps/desktop/e2e/_seed.e2e.ts` (never committed) can call the desktop
+harness's `seedDatabase(<app container>/Library, seed)`: the iOS app reads
+the same `calendar.db` schema. The fixture Google account has one task
+list ("Mock Tasks"); a check that needs a second one (the Tasks tab's
+filter chips) connects Reminders.
+
 The fixture Google API lives in the app's JS runtime and starts over at
 each launch: a write to an event created before a relaunch drops that
 event (it looks like a vanish). Create test events after the last
@@ -217,13 +224,18 @@ relaunch; the fixture's recurring instances revert after any drag.
 - The live screen with every element's bounds: `maestro --device "$UDID"
   hierarchy` (JSON). It once bounced the dev client to its launcher:
   reopen the Metro URL.
-- `takeScreenshot` takes a bare name (`takeScreenshot: probe`); a path
-  outside its run folder is refused. The file lands in
-  `~/.maestro/tests/<run>/<flow name>/takeScreenshot/probe.png`.
+- `takeScreenshot` takes a bare name written in the flow
+  (`takeScreenshot: probe`): no `-e` variable is expanded in it, and a
+  path outside its run folder is refused. The file lands in
+  `~/.maestro/tests/<run>/<flow name>/takeScreenshot/probe.png`, or under
+  the folder `--test-output-dir <dir>` names.
 - Scratch flows live in the scratchpad, never in `e2e/flows/` (CI shards
   every `ci` flow there, and a directory runs in any order). They start
   with `appId: com.solunivo.app.dev` and reach the shared subflows by
   absolute path (`runFlow: <checkout>/apps/ios/e2e/common/launch.yaml`).
+  One that drives an app already on screen starts with `launchApp: {
+  stopApp: false }`; without a launch, its "Search" tap opened Spotlight
+  on the home screen.
 - Run nothing heavy beside a Maestro run whose result matters: next to the
   desktop e2e suite, flows took twice as long and lost taps.
 - A hang: when the app's CPU stays above 90 % for ~18 s (`ps -axo
@@ -241,7 +253,8 @@ With a simulator tool, if the session has one, or `simctl`:
 - Screenshots lag the app by about a second: after a tap, wait 1.5 s,
   then `xcrun simctl io "$UDID" screenshot`. A tap that looks ignored has
   often landed. Crop with `sips -c <height> <width> --cropOffset <y> <x>
-  in.png --out out.png`.
+  in.png --out out.png`; an offset of `0 0` falls back to a centered crop,
+  so crop from the top-left corner with `--cropOffset 1 1`.
 - An `@expo/ui` SwiftUI switch ignores a plain tap; a tap held 0.15 s
   flips it. Read the outcome from `device_settings` in `calendar.db`, not
   from the screen.

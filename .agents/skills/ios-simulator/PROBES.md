@@ -39,11 +39,17 @@ lost. Then, cheapest first:
    error message, after a delay that stands in for CI's slower pass.
    Locally Maestro finds elements ~0.8 s sooner after a system alert than
    on CI, so shrink delays taken from CI logs.
-4. **Probes.** `console.warn('[dbg] …')` on repository writes and
+4. **A slow write reply.** A scratch delay in `useBackendMutations`
+   (`packages/app-state/src/hooks.ts`: `.then(reply => sleep 4 s)`), with
+   Metro started without `CI=1`, lands the write at once and holds its
+   answer, the way a loaded runner does. Before reporting that a tap did
+   nothing, check its point against the target's edges in the screenshot
+   (points are pixels × screen width in points ÷ image width).
+5. **Probes.** `console.warn('[dbg] …')` on repository writes and
    handlers, read in Metro's log (a dev bundle; Effect's logger never
    reaches Metro). For touches and the keyboard, the probe set in
    `platform-notes.md` → Touches and the responder system.
-5. **Loop the flow** with a clean state between runs (SKILL.md → Clean
+6. **Loop the flow** with a clean state between runs (SKILL.md → Clean
    state): a run killed mid-flow leaves reminders and event rows that a
    fresh fake never tombstones, and the next run matches those first.
 

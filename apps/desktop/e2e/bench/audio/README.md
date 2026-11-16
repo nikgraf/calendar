@@ -59,3 +59,6 @@ flow on the words as the recogniser wrote them.
 The address in `invite-email` and `long-run-prater` is spoken as "jo at
 example dot com"; whatever the recogniser writes is the point of those
 two. The people are fixtures (`../contacts.json`), never real contacts.
+
+The clips are committed, not gitignored (Nik's call), though the repo
+may go public: record only fixture people and places, nothing private.

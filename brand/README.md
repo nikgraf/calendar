@@ -70,6 +70,8 @@ The macOS ICNS retains the selected transparent canvas, dimensional shading and 
 
 The iOS export derives from the same master: the outer paper edges extend to fill an opaque square; the numeral and curl paths stay intact. Expo generates the required sizes from the PNG, and iOS applies its corner mask. See the [Expo icon guidance](https://docs.expo.dev/develop/user-interface/splash-screen-and-app-icon/#app-icon) and [Forge icon configuration](https://www.electronforge.io/guides/create-and-add-icons).
 
+The dev variant's icon is the dark master (`brand/icons/solunivo-dark.svg`). Its artwork covers the whole square, so a different flatten background changes nothing.
+
 The iOS adapter deliberately checks the named SVG shapes and fails if it cannot find them, so future master changes require an explicit review of the platform conversion. Changes to the Expo icon require a native rebuild; an OTA update alone cannot change the installed icon. Native dark/tinted switching and Icon Composer assets remain follow-up work.
 
 ## Colors and interface roles

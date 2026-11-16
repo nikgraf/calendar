@@ -9,6 +9,10 @@ e2e suite — it skips itself unless `MODEL_BENCH=1`.
 MODEL_BENCH=1 E2E=1 pnpm exec vp test run apps/desktop/e2e/bench/modelBench.e2e.ts
 ```
 
+Set the variables inline or `export` them: a bench whose `MODEL_BENCH`
+is not "1" skips itself without a word (`docs/platform-notes.md` → Shell
+and tooling, on zsh).
+
 | Variable               | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `MODEL_BENCH_HELPER`   | The desktop helper binary; default the package's own `helper/.build/release` build (`pnpm --filter @calendar/desktop build:helper`). `MODEL_BENCH_APPLE=0` leaves Apple's model out; `MODEL_BENCH_APPLE_REQUIRED=1` adds it a second time as `apple-required`, asked for every field (empty where the words give nothing): asked with optional fields it answers a first phrase with the title alone.                                                                                                                                                                                                                                                                                                                                                                              |
@@ -59,6 +63,12 @@ asks it:
 apps/desktop/llama/.build/llama-server -m solunivo-assistant-q8_0.gguf -c 4096 -np 1 -ngl 99 --port 8090 --offline --reasoning off
 MODEL_BENCH=1 E2E=1 MODEL_BENCH_APPLE=0 MODEL_BENCH_OPENAI_URL=http://127.0.0.1:8090/v1 MODEL_BENCH_OPENAI=assistant-v1 pnpm exec vp test run apps/desktop/e2e/bench/modelBench.e2e.ts
 ```
+
+The bundled server is the llama.cpp the phone runs: all 70 answers of
+each published file (Q4_K_M and Q8_0) on an iPhone 16 matched the same
+file's on the Mac, so the Mac's score of a GGUF stands for the phone's.
+Apple's model is the opposite: its Mac and iPhone versions answer
+differently (`docs/platform-notes.md` → On-device models).
 
 General models on the plain arm run through Ollama's OpenAI-compatible
 endpoint, so they get the strict schema, with thinking switched off (a
@@ -148,6 +158,13 @@ thread does. The report keeps the raw model answers per turn.
 - Notes and notifications are what the model's answer says, folded
   into the draft as the thread does it.
 
+German cases name a weekday for the day, never "morgen", which is also
+"morning".
+
+A quick probe is a few `probe-*.json` cases dropped into `cases/`, run
+with `MODEL_BENCH_CASES=probe-` and `MODEL_BENCH_OUT=<scratch>`, then
+deleted.
+
 `contacts.json` holds the fixture address books: made-up people with
 `@example.com` addresses, including two Annas (a name that is a choice)
 and a Max with two addresses (a choice too).
@@ -208,7 +225,8 @@ A phrase that went wrong on the phone becomes a case as it was heard,
 not as it was meant: the words the recogniser wrote, the draft before it
 for a later turn (as the turns that lead to it), and where a person
 would have put it. It is tagged `phone` and stays open, since it was
-picked for having failed.
+picked for having failed. A new misreading becomes a case like this,
+never an example in the prompt.
 
 ## Report
 
@@ -222,7 +240,11 @@ recogniser could not read it, or were skipped. Below the score it prints
 the open cases passed per tag and, where the run held blind cases, the
 open and the blind ones apart.
 
-A prompt, data or model change is judged by two runs on two commits:
+Every wording of a prompt goes through the bench before it is kept, a
+reviewer's included: a model at temperature 0 answers alike run after
+run, so a score change is the change (a "clearer" rewording a reviewer
+asked for cost five cases). A prompt, data or model change is judged by
+two runs on two commits:
 `MODEL_BENCH_COMPARE=<earlier report>` prints the cases that flipped and
 the fields that moved, and says when the two runs were not set up alike
 (a served model's endpoint and extra request body, the report's
