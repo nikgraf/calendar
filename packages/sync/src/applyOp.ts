@@ -1051,11 +1051,29 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       return taken.size > 0;
     });
 
-  /** A copy that will not land: the next copy takes its source over, or the source stays. */
+  /**
+   * A copy that will not land: the next copy takes its source over, or the
+   * source stays — unless the user deleted the copy (or moved it back to
+   * Apple, which deletes it here) while its create was out: then the
+   * source goes as they meant, the deletes it held free to go.
+   */
   const abandonCopy = (op: PendingOp): Effect.Effect<void, SqlError> =>
     Effect.gen(function* () {
-      if (!(yield* handOn(op))) {
-        yield* releaseCopySource(op);
+      if (yield* handOn(op)) {
+        return;
+      }
+      const deleted = (yield* pendingOpRepo.listForEvent({
+        accountId: op.accountId,
+        calendarId: op.calendarId,
+        eventId: op.eventId,
+      })).some((other) => other.kind === 'delete' || other.kind === 'deleteTask');
+      if (!deleted) {
+        return yield* releaseCopySource(op);
+      }
+      if (op.copySource?.kind === 'held') {
+        for (const opId of op.copySource.opIds) {
+          yield* pendingOpRepo.makeDue(opId);
+        }
       }
     });
 
@@ -2007,6 +2025,27 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
     });
 
   /**
+   * Whether a match is the task this create's lost attempt made, as far
+   * as Google can tell: what is adopted for a delete is deleted next, so a
+   * twin of the user's must not pass. Open as Google made it (an insert
+   * makes no completed task), made within two minutes of the stamp — no
+   * request outlives that; a task changed since was changed elsewhere,
+   * and its delete is no longer ours to send — and not a task a row here
+   * already holds.
+   */
+  const madeBy = (op: PendingOp, dispatchedAt: number, taskListId: string, match: GcalTask) =>
+    Effect.gen(function* () {
+      const updated = match.updated === undefined ? Number.NaN : Date.parse(match.updated);
+      if (
+        match.status !== 'needsAction' ||
+        !(updated >= dispatchedAt - 60_000 && updated <= dispatchedAt + 120_000)
+      ) {
+        return false;
+      }
+      return (yield* taskRepo.get(op.accountId, taskListId, match.id)) === undefined;
+    });
+
+  /**
    * The deletes queued behind a task's create: the user deleted the task
    * while its create was out (taskMutations deleteOne keeps a sent create).
    */
@@ -2097,10 +2136,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         const deleted = (yield* deletesBehind(op.accountId, taskListId, op.eventId)).length > 0;
         const matches: Array<GcalTask> = [];
         for (const match of yield* findLanded(op, taskListId, op.dispatchedAt)) {
-          // Deleted meanwhile, what is adopted is deleted next: a match a
-          // row here already holds is a task the user has, not one this
-          // create made unseen — its twin, which the delete must not take.
-          if (!deleted || !(yield* taskRepo.get(op.accountId, taskListId, match.id))) {
+          if (!deleted || (yield* madeBy(op, op.dispatchedAt, taskListId, match))) {
             matches.push(match);
           }
         }

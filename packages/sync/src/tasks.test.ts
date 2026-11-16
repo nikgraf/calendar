@@ -61,7 +61,9 @@ const lostInsert = (landed: boolean, overrides: Partial<GoogleTasksClientShape> 
         ? Effect.fail(new ApiUnavailableError({ cause: 'connection dropped' }))
         : Effect.die('a second insert would duplicate the task');
     },
-    listTasks: () =>
+    // Made by the first attempt: Google stamps it when the insert lands,
+    // a moment after the dispatch stamp (the lookup asks from a minute before).
+    listTasks: ({ params }) =>
       Effect.succeed({
         items: landed
           ? [
@@ -70,7 +72,7 @@ const lostInsert = (landed: boolean, overrides: Partial<GoogleTasksClientShape> 
                 id: 'server-landed',
                 status: 'needsAction',
                 title: 'Pay insurance',
-                updated: '2026-08-24T10:00:00.000Z',
+                updated: new Date(Date.parse(params.updatedMin!) + 61_000).toISOString(),
               },
             ]
           : [],
@@ -780,6 +782,41 @@ describe('completeTask', () => {
       expect(window.map((row) => row.id)).toEqual(['t1']);
     }).pipe(noYield, Effect.provide(testLayer(client)));
   });
+
+  // Nothing landed. A task with the same fields another device made a while
+  // after the stamp, or one ticked in the window, is not what the insert
+  // made: the delete must not take it.
+  for (const [name, twin] of [
+    ['made elsewhere since', { minutes: 10, status: 'needsAction' }],
+    ['ticked in the window', { minutes: 1, status: 'completed' }],
+  ] as const) {
+    it.effect(`a delete after a lost insert takes no twin ${name}`, () => {
+      const { calls, client } = lostInsert(false, {
+        listTasks: ({ params }) =>
+          Effect.succeed({
+            items: [
+              {
+                due: '2026-08-30T00:00:00.000Z',
+                id: 'twin',
+                status: twin.status,
+                title: 'Pay insurance',
+                updated: new Date(
+                  Date.parse(params.updatedMin!) + 60_000 + twin.minutes * 60_000,
+                ).toISOString(),
+              },
+            ],
+          }),
+      });
+      return Effect.gen(function* () {
+        const temp = yield* createLost;
+        const mutations = yield* EventMutations;
+        yield* mutations.deleteTask({ accountId: 'acc-1', taskId: temp.id, taskListId: 'list-1' });
+        yield* drainNow;
+        expect(calls).toEqual(['insert']);
+        expect(yield* (yield* PendingOpRepo).listAll()).toHaveLength(0);
+      }).pipe(noYield, Effect.provide(testLayer(client)));
+    });
+  }
 
   it.effect('a delete after a lost insert that never landed sends nothing more', () => {
     const { calls, client } = lostInsert(false);

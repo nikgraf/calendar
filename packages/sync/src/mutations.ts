@@ -862,7 +862,11 @@ const make: Effect.Effect<
     Effect.gen(function* () {
       const queued = yield* pendingOpRepo.getById(opId);
       const splits = queued !== undefined && (yield* waitingSplits(taken, queued));
-      const sent = yield* discard(opId);
+      // A copy's discard puts its source back: under the drain's gate, so
+      // a refusal the drain is putting back meanwhile cannot do it twice.
+      const sent = yield* queued?.copySource === undefined
+        ? discard(opId)
+        : gate.withPermits(1)(discard(opId));
       if (splits) {
         yield* kick;
       }

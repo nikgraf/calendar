@@ -430,8 +430,10 @@ it whenever a kind is added. Rules that keep the queue correct:
   check. Task ops still carrying a temp id wait in `applyOp` until the
   create swaps it — a delete among them: deleting a task whose create was
   sent keeps that create (it may have landed), and the retry then only
-  looks for what landed, for the delete to take; a create that will not
-  land takes the ops waiting on its temp id with it.
+  looks for what landed, for the delete to take — only a task Google
+  made open within two minutes of the stamp that no row here holds, never
+  the user's own twin — and the swap to Google's id is one transaction; a create that will not land takes the ops waiting on its
+  temp id with it.
 - **Moves keep queue order**: `listDue` skips ops in backoff, so a move
   and the edits of its series (`<masterId>` and `<masterId>_<basetime>`
   instance ids, any calendar of the account) check `earlierInSeries`
@@ -926,14 +928,21 @@ it whenever a kind is added. Rules that keep the queue correct:
   once no copy holding them is queued (`copyGate`), and makes them due
   when it lands — while a copy that will not land takes them back, which
   puts the source back as Google has it (`releaseCopySource`). An Apple
-  source leaves EventKit at once and rides on the copy as it was
+  source leaves EventKit once the copy is queued — the drain's gate held
+  until EventKit answered, so no pass sends the copy first — and rides on
+  the copy as it was
   (`appleEvent` with its URL, `reminder`); a copy that will not land
   makes it again — a new identifier, a series without its changed
   occurrences. A copy the user deletes before it goes leaves the queue
-  without that: the source goes as moved. A copy moved on before it
+  without that: the source goes as moved; one deleted (or moved back to
+  Apple) while its create was out is not undone by a later refusal
+  either. A copy's discard waits for the drain's gate, so a refusal
+  being put back meanwhile is not put back twice. A copy moved on before it
   landed hands its `copySource` to the next copy — at once when its
   create was unsent, when it turns out not to have landed when it was
-  sent (`handOn`). Removing an account, which deletes its queued ops
+  sent (`handOn`); once a later copy lands, an earlier one it was moved
+  on from no longer puts anything back (`settleHeld`). Removing an
+  account, which deletes its queued ops
   without the drain, first releases the sources of the copies queued
   there (`releaseAccountCopies`). Copies
   never carry guests; a Google conference link becomes the Apple event's

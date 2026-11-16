@@ -1137,6 +1137,19 @@ describe('moveTask across providers', () => {
 });
 
 /** Google answers every new task with a 404: the list is gone there. */
+/** list-1 loses the first insert's answer, then is gone; everything else answers. */
+const lostThenGone = (calls: Array<string>): GoogleTasksClientShape => ({
+  ...recordingTasks(calls),
+  insertTask: (params) => {
+    if (params.taskListId !== 'list-1') {
+      return recordingTasks(calls).insertTask(params);
+    }
+    calls.push(`insert ${params.taskListId}/${params.task.title}`);
+    return Effect.fail(new ApiUnavailableError({ cause: 'connection dropped' }));
+  },
+  listTasks: () => Effect.fail(new NotFoundError({ resource: 'task list' })),
+});
+
 /** Makes every queued op due and drains. */
 const drainNow = Effect.gen(function* () {
   const ops = yield* PendingOpRepo;
@@ -1390,9 +1403,13 @@ describe('what a task copy came from, past the paths that end it', () => {
         const [copy] = yield* (yield* PendingOpRepo).listAll();
         const drain = yield* Effect.forkChild(mutations.processPendingOps());
         yield* Deferred.await(sent);
-        yield* mutations.discardPendingOp(copy!.id);
+        // The discard waits for the drain: the 404 puts the reminder back
+        // once, and the discard then finds nothing left to put back.
+        const discard = yield* Effect.forkChild(mutations.discardPendingOp(copy!.id));
+        yield* Effect.yieldNow;
         yield* Deferred.succeed(answer, undefined);
         yield* Fiber.join(drain);
+        yield* Fiber.join(discard);
         expect(
           [...fake.state.reminders.values()].filter((reminder) => reminder.title === 'Call mom'),
         ).toHaveLength(1);
@@ -1436,6 +1453,86 @@ describe('what a task copy came from, past the paths that end it', () => {
         yield* mutations.processPendingOps();
         expect(calls).toEqual(['insert list-1/Call mom']);
       }).pipe(Effect.provide(testLayer(reminders, recordingTasks(calls))));
+    });
+  });
+
+  it.effect('a copy the user deleted while it was out is not undone by its refusal', () => {
+    const fake = fakeWith();
+    const calls: Array<string> = [];
+    return Effect.gen(function* () {
+      yield* seed;
+      const copy = yield* move([APPLE, 'list-a', 'rem-timed'], ['acc-1', 'list-1'], {
+        dueDate: tomorrow,
+        title: 'Call mom',
+      });
+      const mutations = yield* EventMutations;
+      yield* mutations.processPendingOps();
+      yield* mutations.deleteTask({ accountId: 'acc-1', taskId: copy.id, taskListId: 'list-1' });
+      yield* drainNow;
+      expect(yield* queued).toEqual([]);
+      expect(
+        [...fake.state.reminders.values()].filter((reminder) => reminder.title === 'Call mom'),
+      ).toHaveLength(0);
+    }).pipe(noYield, Effect.provide(testLayer(fake.client, lostThenGone(calls))));
+  });
+
+  it.effect('a copy moved back to Reminders while it was out is not made twice', () => {
+    const fake = fakeWith();
+    const calls: Array<string> = [];
+    return Effect.gen(function* () {
+      yield* seed;
+      const copy = yield* move([APPLE, 'list-a', 'rem-timed'], ['acc-1', 'list-1'], {
+        dueDate: tomorrow,
+        title: 'Call mom',
+      });
+      yield* (yield* EventMutations).processPendingOps();
+      yield* move(['acc-1', 'list-1', copy.id], [APPLE, 'list-b'], {
+        dueDate: tomorrow,
+        title: 'Call mom',
+      });
+      yield* drainNow;
+      expect(yield* queued).toEqual([]);
+      const remade = [...fake.state.reminders.values()].filter(
+        (reminder) => reminder.title === 'Call mom',
+      );
+      expect(remade.map((reminder) => reminder.listId)).toEqual(['list-b']);
+    }).pipe(noYield, Effect.provide(testLayer(fake.client, lostThenGone(calls))));
+  });
+
+  it.effect('a discard while a refusal puts the reminder back puts it back once', () => {
+    const fake = fakeWith();
+    const calls: Array<string> = [];
+    return Effect.gen(function* () {
+      const restoring = yield* Deferred.make<void>();
+      const go = yield* Deferred.make<void>();
+      const reminders: RemindersClientShape = {
+        ...fake.client,
+        create: (params) =>
+          Effect.gen(function* () {
+            yield* Deferred.succeed(restoring, undefined);
+            yield* Deferred.await(go);
+            return yield* fake.client.create(params);
+          }),
+      };
+      yield* Effect.gen(function* () {
+        yield* seed;
+        yield* move([APPLE, 'list-a', 'rem-timed'], ['acc-1', 'list-1'], {
+          dueDate: tomorrow,
+          title: 'Call mom',
+        });
+        const mutations = yield* EventMutations;
+        const [copy] = yield* (yield* PendingOpRepo).listAll();
+        const drain = yield* Effect.forkChild(mutations.processPendingOps());
+        yield* Deferred.await(restoring);
+        const discard = yield* Effect.forkChild(mutations.discardPendingOp(copy!.id));
+        yield* Effect.yieldNow;
+        yield* Deferred.succeed(go, undefined);
+        yield* Fiber.join(drain);
+        yield* Fiber.join(discard);
+        expect(
+          [...fake.state.reminders.values()].filter((reminder) => reminder.title === 'Call mom'),
+        ).toHaveLength(1);
+      }).pipe(Effect.provide(testLayer(reminders, listGone(calls))));
     });
   });
 
