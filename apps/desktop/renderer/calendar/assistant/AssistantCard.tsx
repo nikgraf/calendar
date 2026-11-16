@@ -5,6 +5,7 @@ import {
   type DraftKeeps,
   type FieldChange,
 } from '@calendar/app-state';
+import { geoMatches, openInMapsUrl } from '@calendar/core';
 import type { ReactNode } from 'react';
 import {
   AlertIcon,
@@ -17,6 +18,10 @@ import {
   RepeatIcon,
   UsersIcon,
 } from '../../ui/icons.tsx';
+import { PlaceMap } from './PlaceMap.tsx';
+
+/** The card's map: a street around the place, short enough to keep the card a card. */
+const MAP_HEIGHT = 120;
 
 /** What a step changed, on the card: the `highlight` tint the form marks its fields with. */
 const MARK = 'rounded bg-highlight px-1 font-semibold';
@@ -67,7 +72,10 @@ function Value({ line }: { readonly line: CardLine }) {
  * An item as the assistant answers with it: where it goes, its title, the
  * day and the hours, then whatever else it holds (`cardLines`) — each
  * field the step changed marked, the old value struck through beside it.
- * `label` names the version; `footer` holds what can be done about it.
+ * With `map`, the place it holds on a map under them, a click away from
+ * Maps — kept out while the Assistant asks which place, whose own map
+ * shows them all. `label` names the version; `footer` holds what can be
+ * done about it.
  */
 export function AssistantCard({
   changes,
@@ -77,6 +85,7 @@ export function AssistantCard({
   footer,
   keeps,
   label,
+  map = false,
 }: {
   /** What the step the card is of did to the draft; empty marks nothing. */
   readonly changes: ReadonlyArray<FieldChange>;
@@ -89,11 +98,18 @@ export function AssistantCard({
   /** What is saved where the draft goes (`DraftKeeps`): the card shows no time or guests that are not. */
   readonly keeps?: DraftKeeps | undefined;
   readonly label: string;
+  /** Show the place the draft holds on a map (none while its place is asked about). */
+  readonly map?: boolean | undefined;
 }) {
   const lines = cardLines(draft, changes, keeps);
   const when = lines.filter((line) => line.field === 'date' || line.field === 'time');
   const rest = lines.filter((line) => line.field !== 'date' && line.field !== 'time');
   const retitled = changes.some((change) => change.field === 'title');
+  const geo = draft.item.kind === 'event' ? draft.extras?.geo : undefined;
+  const place =
+    map && draft.item.kind === 'event' && geoMatches(geo, draft.item.prefill.location)
+      ? geo
+      : undefined;
   return (
     <div
       className="flex flex-col gap-2 rounded-popover bg-surface p-3 shadow-sm ring-1 ring-hairline"
@@ -150,6 +166,17 @@ export function AssistantCard({
           </div>
         );
       })}
+      {place ? (
+        <PlaceMap
+          height={MAP_HEIGHT}
+          label={place.name ?? place.source}
+          names={[place.name ?? place.source]}
+          numbered={false}
+          onOpen={() => window.open(openInMapsUrl(place), '_blank', 'noopener')}
+          places={[place]}
+          testId="assistant-card-map"
+        />
+      ) : null}
       {footer}
     </div>
   );

@@ -90,6 +90,29 @@ const geo = {
         subtitle: 'Bäckerstraße 6, 1010 Wien',
         title: 'Figlmüller Bäckerstrasse',
       },
+      // Two Café Sachers a door apart in Vienna and one in Salzburg, 251 km
+      // off: one map cannot show all three, so Salzburg is a tag on its edge.
+      {
+        lat: 48.20393,
+        lng: 16.36968,
+        name: 'Café Sacher Wien',
+        subtitle: 'Philharmoniker Straße 4, 1010 Wien',
+        title: 'Café Sacher',
+      },
+      {
+        lat: 48.20341,
+        lng: 16.37014,
+        name: 'Sacher Eck Wien',
+        subtitle: 'Kärntner Straße 38, 1010 Wien',
+        title: 'Café Sacher Eck',
+      },
+      {
+        lat: 47.80447,
+        lng: 13.04402,
+        name: 'Café Sacher Salzburg',
+        subtitle: 'Schwarzstraße 5–7, 5020 Salzburg',
+        title: 'Café Sacher Salzburg',
+      },
       // A namesake on another continent: what a search answers for a
       // dictated name it does not know nearby ("Cafe Meek" for Kaffemik).
       {
@@ -127,6 +150,10 @@ const count = `(document.querySelector('[data-testid="draft-question-count"]')?.
 const preview = `!!document.querySelector('[data-testid="step-preview"]')`;
 // The place on the Assistant's newest card.
 const cardPlace = `(document.querySelector('[data-testid="assistant-card-location"]')?.textContent ?? '')`;
+// A map's state: '' while there is none, 'loading', then 'ready' (the geo fixture's image).
+const mapState = (testId: string) =>
+  `(document.querySelector('[data-testid="${testId}"]')?.dataset.mapState ?? '')`;
+const pins = `document.querySelectorAll('[data-testid^="draft-place-pin-"]').length`;
 
 describe('Places from a quick-add phrase', () => {
   let app: App;
@@ -196,7 +223,8 @@ describe('Places from a quick-add phrase', () => {
     expect(await cdp.eval<string>(location)).toBe('Figelmiller');
     expect(await cdp.eval<string>(count)).toBe('Question 1 of 1');
     expect(await cdp.eval<number>(picks)).toBe(1);
-    expect(await cdp.eval<string>(pickText(0))).toBe('FiglmüllerBäckerstraße 6, 1010 Wien');
+    // Its row leads with its pin's number on the map.
+    expect(await cdp.eval<string>(pickText(0))).toBe('1FiglmüllerBäckerstraße 6, 1010 Wien');
     expect(await cdp.eval<string>(pressed)).toBe('draft-place-keep');
     await cdp.clickTestId('draft-place-pick-0');
     await cdp.waitFor(`${location} === 'Figlmüller, Bäckerstraße 6, 1010 Wien'`);
@@ -265,6 +293,41 @@ describe('Places from a quick-add phrase', () => {
       input.dispatchEvent(new Event('input', { bubbles: true }));
     })()`);
     await cdp.waitFor(`!${choices}`);
+  });
+
+  it('shows the places on one map: a pin takes its place, one in another city is a tag on its edge', async () => {
+    const { cdp } = app;
+    await openNew();
+    await phrase('Coffee | +1 | 15:00-16:00 | Café Sacher');
+    await cdp.waitFor(choices);
+    expect(await cdp.eval<number>(picks)).toBe(3);
+    await cdp.waitFor(`${mapState('draft-place-map')} === 'ready'`);
+    // While it asks which place, the card leaves its own map out.
+    expect(await cdp.eval<string>(mapState('assistant-card-map'))).toBe('');
+    // The two in Vienna are pins; Salzburg is a tag on the map's edge, and
+    // its row says how far it is first.
+    expect(await cdp.eval<number>(pins)).toBe(2);
+    expect(
+      await cdp.eval<string>(
+        `document.querySelector('[data-testid="draft-place-edge-2"]')?.textContent ?? ''`,
+      ),
+    ).toBe('3251 km');
+    expect(await cdp.eval<string>(pickText(2))).toBe(
+      '3Café Sacher Salzburg251 km · Schwarzstraße 5–7, 5020 Salzburg',
+    );
+    // A pin takes its place as its row does; the card then shows it on its map.
+    await cdp.clickTestId('draft-place-pin-1');
+    await cdp.waitFor(`${location} === 'Sacher Eck Wien, Kärntner Straße 38, 1010 Wien'`);
+    await cdp.waitFor(`!${choices}`);
+    await cdp.waitFor(`${mapState('assistant-card-map')} === 'ready'`);
+    // Asked again, the tag takes the place in Salzburg.
+    await cdp.clickTestId('assistant-undo');
+    await cdp.waitFor(preview);
+    await cdp.clickTestId('step-use');
+    await cdp.waitFor(`!${preview}`);
+    await cdp.waitFor(choices);
+    await cdp.clickTestId('draft-place-edge-2');
+    await cdp.waitFor(`${location} === 'Café Sacher Salzburg, Schwarzstraße 5–7, 5020 Salzburg'`);
   });
 
   it('looks up a place a later turn changes, and keeps it through a turn about the title', async () => {

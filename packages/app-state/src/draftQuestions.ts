@@ -1,4 +1,10 @@
-import { type Contact, type PlaceCandidate, preselectedPlace } from '@calendar/core';
+import {
+  type Contact,
+  formatDistance,
+  offMapMeters,
+  type PlaceCandidate,
+  preselectedPlace,
+} from '@calendar/core';
 import { choiceQuestion, type InviteeChoice } from './draftInvitees.ts';
 import { livePlaceChoice, type PlaceChoice } from './draftPlaces.ts';
 import type { QuickAddItem } from './quickAddItem.ts';
@@ -184,6 +190,24 @@ export const placeOption = (candidate: PlaceCandidate): OptionLabel =>
   candidate.source === 'history'
     ? { detail: 'A place you used before', title: candidate.geo.source }
     : { detail: candidate.address ?? '', title: candidate.geo.name ?? candidate.geo.source };
+
+/**
+ * A choice's places as its rows show them, numbered like their pins: one
+ * too far off for the map (a tag on its edge) says how far first — "250
+ * km · Schwarzstraße 5–7, 5020 Salzburg".
+ */
+export const placeOptions = (choice: PlaceChoice): ReadonlyArray<OptionLabel> => {
+  const meters = offMapMeters(choice.candidates.map((candidate) => candidate.geo));
+  return choice.candidates.map((candidate, index) => {
+    const label = placeOption(candidate);
+    const off = meters[index];
+    if (off === undefined) {
+      return label;
+    }
+    const distance = formatDistance(off);
+    return { ...label, detail: label.detail ? `${distance} · ${label.detail}` : distance };
+  });
+};
 
 /** The text as said, kept: no place on the map. */
 export const asSaidOption = (choice: PlaceChoice): OptionLabel => ({
