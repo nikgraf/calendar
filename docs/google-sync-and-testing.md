@@ -805,6 +805,8 @@ Save, the wording when the server is down); `reminders` and
 EventKit, read-only viewer, moves both ways); `location` (the picker and
 map over the geo fixture); `birthdays` (device-contacts fixture, chip,
 detail, device-only reminder settings); `eventReminders`; `timeZones`;
+`sharedCalendar` (one calendar under two accounts: each block draws,
+selects and opens its own account's copy);
 `settingsFile`; `settingsCode` (the Settings File card's code behind
 Show Code, decoded in the spec to the seeded state; a code pasted in
 "Copy from iPhone…" previewed and imported, its unknown account left to

@@ -719,7 +719,7 @@ function CalendarBody({
       : panel.kind === 'editEvent'
         ? panel.seed.event
         : undefined;
-  const selectedKey = selectedEvent ? `${selectedEvent.calendarId}:${selectedEvent.id}` : undefined;
+  const selectedKey = selectedEvent ? eventIdentity(selectedEvent) : undefined;
   const panelKey =
     panel.kind === 'inspector'
       ? // By identity: an occurrence edited on its own keeps its inspector.
