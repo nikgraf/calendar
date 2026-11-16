@@ -558,6 +558,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   Effect we pin exactly), `AsyncResult` as the state (failed and waiting
   at once is a value there). Open: the 13 components the check lists,
   and dictation's hand-rolled machine in `quickAddModel.ts`.
+- **A copy toward Google keeps its source until it lands** (2026-11-16, #338) — the
+  queued copy carries `PendingOp.copySource`: a Google source's deletes
+  are held until it lands and put back if it does not; an Apple source
+  leaves EventKit at once and is made again from its snapshot. Rejected:
+  keeping the Apple source until the copy lands (hidden from the
+  read-through and the mirror meanwhile, and every path dropping an
+  unsent copy would owe the EventKit delete); recreating a Google source
+  (new id, guests invited again). Open: a remade Apple item has a new
+  identifier and no changed occurrences; one refused subtask copy brings
+  the whole source back beside the landed ones.
 
 ## Calendar: editing, gestures, views
 
@@ -1017,6 +1027,12 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   inside the sheet (a drill-in, not an edit), Save back to the detail (a
   save under a new id closes it a moment later). Open: the birthday
   detail and a fold's list still hand over sheet to sheet.
+- **One calendar under two accounts draws twice** (2026-11-16, #338) — the
+  views key events by core `eventIdentity` (account, calendar, id; an
+  occurrence by its series and slot), not `calendar:id`, which gave both
+  blocks one account's copy. Rejected: a new `account:calendar:id`
+  string (an edited occurrence would change key). Open: iOS has no e2e
+  for it; its fixture signs in one Google account.
 
 ## Invitees, contacts and birthdays
 
@@ -1216,6 +1232,14 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   following" does not convert (the cut plus a rule of its own for the
   rest). The delete by slot of an Apple occurrence moved over 31 days,
   open here, is #289 (Apple Calendar).
+- **A lost task create and a delete** (2026-11-16, #338) — deleting a task
+  whose create was sent keeps that create, the delete waiting on its temp
+  id; the retry adopts what landed (reading every page) or, finding
+  nothing, inserts nothing. The stamp is set only while the create is
+  queued; for a delete only a task Google made open within two minutes
+  of it, that no row here holds, is adopted (never the user's twin).
+  Rejected: sending the create again, then the delete (a task made only
+  to be removed). Open: a landed copy a pull already brought in stays.
 
 ## Apple Calendar
 
