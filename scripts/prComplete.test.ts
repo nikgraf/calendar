@@ -1,5 +1,13 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vite-plus/test';
-import { addedRecords, missingParts, type PullRequest, touchedPlatforms } from './prComplete.ts';
+import {
+  addedRecords,
+  missingParts,
+  PLACEHOLDERS,
+  type PullRequest,
+  touchedPlatforms,
+} from './prComplete.ts';
 
 const shot = (file: string) =>
   `<img width="300" src="https://github.com/nikgraf/calendar/blob/pr-screenshots/todo-x/${file}?raw=true">`;
@@ -100,6 +108,26 @@ describe('missingParts', () => {
     expect(
       missingParts({ ...complete, body: `${opusOnly}\n## Tests again\n\nCodex ran nothing.\n` }),
     ).toHaveLength(1);
+  });
+
+  it('fails a body that keeps the template’s placeholders or an empty review section', () => {
+    const template = readFileSync(
+      join(import.meta.dirname, '..', '.github', 'pull_request_template.md'),
+      'utf8',
+    );
+    // Every placeholder is the template's, so a template edit can't leave the check behind.
+    for (const text of PLACEHOLDERS) {
+      expect(template).toContain(text);
+    }
+    expect(
+      missingParts({ ...complete, body: template, files: [] }).filter((part) =>
+        part.startsWith('The body still holds'),
+      ),
+    ).toHaveLength(PLACEHOLDERS.length);
+    const emptyCodex = complete.body.replace(/(## After review \(Codex[^\n]*\n)[\s\S]*$/, '$1\n');
+    expect(missingParts({ ...complete, body: emptyCodex })).toEqual([
+      '"## After review (Codex, gpt-6-astra, xhigh)" is empty: say what each round found.',
+    ]);
   });
 
   it('fails a body that says something is still owed', () => {

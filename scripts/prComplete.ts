@@ -38,6 +38,15 @@ const REVIEWERS = {
 /** Words that mean the PR still owes something. */
 const OWED = /\b(?:still to come|still owed|(?:is|are) owed)\b|\bTBD\b|\bTODO\b/;
 
+/** Text of `.github/pull_request_template.md` that a finished body has replaced. */
+export const PLACEHOLDERS = [
+  'One or two sentences on what this PR does.',
+  'The change as the user meets it',
+  'The decision.** Why. Rejected: the alternative',
+  'the new and changed tests, and what each proves',
+  'found … Fixed in `<sha>`',
+] as const;
+
 const withoutComments = (text: string): string => text.replaceAll(/<!--[\s\S]*?-->/g, '');
 
 /** The `## ` sections in order: heading, then the text up to the next one. */
@@ -143,6 +152,23 @@ const decisionsGaps = (pr: PullRequest, body: string): ReadonlyArray<string> => 
 };
 
 /** Everything the PR still lacks, as sentences for the check's output; empty when it is complete. */
+/** Text still to be written: the template's placeholders, an empty review section, a line saying something is owed. */
+const unfinished = (
+  body: string,
+  parts: ReadonlyArray<{ heading: string; text: string }>,
+): ReadonlyArray<string> => {
+  const owed = body.split('\n').find((line) => OWED.test(line));
+  return [
+    ...PLACEHOLDERS.filter((text) => body.includes(text)).map(
+      (text) => `The body still holds the template's "${text}".`,
+    ),
+    ...parts
+      .filter(({ heading, text }) => /^After review\b/i.test(heading) && text.trim() === '')
+      .map(({ heading }) => `"## ${heading}" is empty: say what each round found.`),
+    ...(owed === undefined ? [] : [`The body says something is still owed: "${owed.trim()}"`]),
+  ];
+};
+
 export const missingParts = (pr: PullRequest): ReadonlyArray<string> => {
   const body = withoutComments(pr.body).replaceAll('\r\n', '\n');
   const parts = sections(body);
@@ -155,7 +181,6 @@ export const missingParts = (pr: PullRequest): ReadonlyArray<string> => {
     .map(({ heading, text }) => `${heading}\n${text}`)
     .join('\n');
   const reviewedBy = (reviewer: keyof typeof REVIEWERS) => REVIEWERS[reviewer].test(reviews);
-  const owed = body.split('\n').find((line) => OWED.test(line));
   return [
     ...(opening === ''
       ? [`The body opens with a line on what the PR does, before "## ${USER_SECTION}".`]
@@ -171,7 +196,7 @@ export const missingParts = (pr: PullRequest): ReadonlyArray<string> => {
     ...(reviewedBy('Codex')
       ? []
       : ['No "## After review (Codex …)" section: at least one Codex round is owed.']),
-    ...(owed === undefined ? [] : [`The body says something is still owed: "${owed.trim()}"`]),
+    ...unfinished(body, parts),
     ...screenshotGaps(pr, user?.text ?? ''),
     ...decisionsGaps(pr, body),
   ];
