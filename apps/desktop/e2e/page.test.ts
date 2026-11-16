@@ -137,6 +137,22 @@ describe('page functions', () => {
         }
       }),
     ).toEqual(['TITLE', 'name']);
+    // A catch clause's binding, and a block's, stay in them: `status` after
+    // the block is the page's (`window.status`), which tsc lets through.
+    expect(
+      names(($: PageKit) => {
+        try {
+          $.el('h1')!.click();
+        } catch (error) {
+          return String(error);
+        }
+        if ($.has('h2')) {
+          const status = $.text('h2');
+          return status;
+        }
+        return status;
+      }),
+    ).toEqual(['String', 'status']);
   });
 
   it('wait on a boolean, so a fallback that takes in a comparison does not compile', () => {

@@ -839,8 +839,8 @@ Page code is a TypeScript function (`page.ts`), sent as its source with
 its arguments as JSON: `cdp.evaluate(fn, ...args)` returns what it
 returns (JSON, so never a DOM node), `waitUntil(fn, ...args)` and
 `waitUntilRendered` poll a predicate typed to return a boolean, and
-`waitForValue` polls until it returns something other than null (never a
-boolean, so a misread fallback is refused there too); a wait
+`waitForValue` polls until it returns something other than null or ''
+(never a boolean, so a misread fallback is refused there too); a wait
 takes `{ timeoutMs }` first when 15 s is not enough. So tsc and the lint
 read it like any other code, and a `??` fallback that takes in what
 follows it is a type error in a wait (`no-constant-binary-expression`

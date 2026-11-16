@@ -72,10 +72,11 @@ export const pageKit = () => {
       if (!field) {
         throw new Error(`setValue: nothing matches ${selector}`);
       }
-      Object.getOwnPropertyDescriptor(Object.getPrototypeOf(field), 'value')?.set?.call(
-        field,
-        value,
-      );
+      const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(field), 'value')?.set;
+      if (!setter) {
+        throw new Error(`setValue: ${selector} is no field`);
+      }
+      setter.call(field, value);
       field.dispatchEvent(
         new Event(field.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true }),
       );
@@ -100,10 +101,14 @@ const NATIVE = /\{\s*\[native code\]\s*\}$/;
 /** An arrow or a function expression: what can be called where it is written. */
 const CALLABLE = /^(?:async\s*)?(?:function\b|\(|[\w$]+\s*=>)/;
 
-/** JavaScript's own globals, as a fresh V8 context has them (`Math`, `JSON`, `undefined`, …). */
-const SCRIPT_GLOBALS: ReadonlyArray<string> = runInNewContext(
-  'Object.getOwnPropertyNames(globalThis)',
-) as Array<string>;
+/**
+ * JavaScript's own globals, as a fresh V8 context has them (`Math`, `JSON`,
+ * `undefined`, …), but for the legacy words a spec could have named a
+ * helper of its own (`escape`) and `eval`.
+ */
+const SCRIPT_GLOBALS: ReadonlyArray<string> = (
+  runInNewContext('Object.getOwnPropertyNames(globalThis)') as Array<string>
+).filter((name) => !['escape', 'eval', 'unescape'].includes(name));
 
 /**
  * The page's own globals a page function may name bare. Never a word a
@@ -114,6 +119,7 @@ const SCRIPT_GLOBALS: ReadonlyArray<string> = runInNewContext(
 const PAGE_GLOBALS = new Set([
   ...SCRIPT_GLOBALS,
   'AudioContext',
+  'AudioWorkletNode',
   'CSS',
   'DataTransfer',
   'DOMRect',
@@ -121,6 +127,7 @@ const PAGE_GLOBALS = new Set([
   'MutationObserver',
   'Node',
   'ResizeObserver',
+  'URL',
   'arguments',
   'atob',
   'btoa',
@@ -130,6 +137,8 @@ const PAGE_GLOBALS = new Set([
   'console',
   'document',
   'getComputedStyle',
+  'localStorage',
+  'matchMedia',
   'navigator',
   'performance',
   'requestAnimationFrame',
@@ -320,7 +329,7 @@ export const pageSource = (page: (...args: never) => unknown): string => {
     );
     if (outside.length > 0) {
       throw new Error(
-        `A page function names ${outside.map((name) => `\`${name}\``).join(', ')}, which is not its own and not a page global it may use: pass the value as an argument (the page's own property as \`window.${String(outside[0])}\`, or list a page global in PAGE_GLOBALS): ${source.slice(0, 160)}`,
+        `A page function names ${outside.map((name) => `\`${name}\``).join(', ')}, which is not its own and not a page global it may use: pass a value as an argument, define a helper inside the page function, read the page's own property as \`window.${String(outside[0])}\`, or list a page global in PAGE_GLOBALS: ${source.slice(0, 160)}`,
       );
     }
     checked.add(source);

@@ -587,8 +587,9 @@ export class Cdp {
   }
 
   /**
-   * Polls a page function until it returns something other than null or
-   * undefined, and returns that. Never a boolean: a condition is
+   * Polls a page function until it returns something other than null,
+   * undefined or '' (the kit's text of nothing), and returns that. Never
+   * a boolean: a condition is
    * `waitUntil`'s, and the type refuses a function that returns a value
    * or a boolean, which is what a misread `??` fallback returns.
    */
@@ -602,7 +603,11 @@ export class Cdp {
     ...args: A
   ): Promise<R>;
   async waitForValue(...call: WaitCall): Promise<unknown> {
-    return this.pollPage(call, false, (value) => value !== null && value !== undefined);
+    return this.pollPage(
+      call,
+      false,
+      (value) => value !== null && value !== undefined && value !== '',
+    );
   }
 
   private async pollPage(
