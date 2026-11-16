@@ -107,7 +107,8 @@ function VersionRow({
 /**
  * Words that changed nothing, answered: what was said on the right, as
  * any phrase is, and under it that nothing changed — no card, no version
- * to go back to. Dictated words the recogniser could have read another
+ * to go back to — and why, where the words asked for what the draft
+ * cannot hold ("At most 5 notifications."). Dictated words the recogniser could have read another
  * way offer the readings that would change something, while they are
  * the newest thing said; a click says one (`onReading`).
  */
@@ -140,6 +141,7 @@ function NoChangeReply({
           <EqualCircleIcon className="mt-0.5 shrink-0 text-ink-secondary" />
           <span>
             <span className="font-semibold">Nothing changed.</span>
+            {turn.note === undefined ? '' : ` ${turn.note}`}
             {readings.length > 0 ? ' Did you mean' : ''}
           </span>
         </p>

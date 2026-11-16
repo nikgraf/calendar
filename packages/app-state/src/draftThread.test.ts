@@ -1959,12 +1959,42 @@ describe('words that change nothing', () => {
     expect(idle.steps).toBe(started.steps);
     expect(idle.version).toBe(started.version);
     expect(idle.noChange).toEqual([
-      { after: 'd2', draft: 'd1', id: 'd3', readings: [], utterance: 'make it at seven' },
+      {
+        after: 'd2',
+        draft: 'd1',
+        id: 'd3',
+        note: undefined,
+        readings: [],
+        utterance: 'make it at seven',
+      },
     ]);
     // The next turn that changes something is the next step; the words stay where they were said.
     const moved = refineThread(idle, 'at 8', [{ id: 'd1', item: later }], id);
     expect(moved.steps).toHaveLength(2);
     expect(moved.noChange).toEqual(idle.noChange);
+  });
+
+  it('say what they could not do: a notification past the limit', () => {
+    const id = ids();
+    const five = new EventReminders({
+      overrides: [5, 10, 15, 30, 60].map((minutes) => popup(minutes)),
+      useDefault: false,
+    });
+    const started = startThread([dinner], 'dinner', {
+      extras: { attendees: [], description: '', reminders: five },
+      id,
+    });
+    const idle = refineThread(
+      started,
+      'remind me 2 hours before',
+      [{ id: 'd1', item: dinner, reminders: { add: [120], clear: false, remove: [] } }],
+      id,
+    );
+    expect(idle.steps).toBe(started.steps);
+    expect(idle.noChange[0]?.note).toBe('At most 5 notifications.');
+    // Nothing to say: no note.
+    const plain = refineThread(started, 'thanks', [{ id: 'd1', item: dinner }], id);
+    expect(plain.noChange.at(-1)?.note).toBeUndefined();
   });
 
   it('a restated item with nothing new, as the model writes it back, is no change', () => {
@@ -2129,9 +2159,9 @@ describe('words that change nothing', () => {
 
   it('say what another reading would do, or nothing where it would change nothing either', () => {
     const started = startThread([dinner], 'dinner', { id: ids() });
-    expect(readingDoes(started, { id: 'd1', item: later }, {})).toBe('→ 20:00–21:00');
+    expect(readingDoes(started, { id: 'd1', item: later }, {})?.does).toBe('→ 20:00–21:00');
     expect(readingDoes(started, { id: 'd1', item: dinner }, {})).toBeUndefined();
-    expect(readingDoes(started, { id: 'd1', item: dinner }, { invite: ['Tom'] })).toBe(
+    expect(readingDoes(started, { id: 'd1', item: dinner }, { invite: ['Tom'] })?.does).toBe(
       '→ invites Tom',
     );
     // Taking off a name that names no guest takes no one off.
@@ -2153,8 +2183,45 @@ describe('words that change nothing', () => {
         guested,
         { id: 'd1', item: later },
         { invite: ['Tom', 'Mia'], uninvite: ['Tom', 'Ana'] },
-      ),
+      )?.does,
     ).toBe('→ 20:00–21:00 · → invites Mia · → uninvites Tom');
+    // A name still asked about ("which Mia?"): taking it off settles the
+    // question, inviting it again asks the same.
+    const asking = refineThread(
+      started,
+      'invite Mia',
+      [
+        {
+          guests: {
+            add: [],
+            choices: [{ contacts: [], name: 'Mia' }],
+            invited: ['Mia'],
+            remove: [],
+          },
+          id: 'd1',
+          item: dinner,
+        },
+      ],
+      ids(),
+    );
+    expect(readingDoes(asking, { id: 'd1', item: dinner }, { uninvite: ['mia'] })?.does).toBe(
+      '→ uninvites mia',
+    );
+    expect(readingDoes(asking, { id: 'd1', item: dinner }, { invite: ['Mia'] })).toBeUndefined();
+    // Two readings alike in words but not in what they leave: told apart.
+    const note = (text: string) =>
+      readingDoes(started, { id: 'd1', item: dinner, notes: { kind: 'add', text } }, {});
+    expect(note('meet Tom')?.does).toBe(note('meet Tim')?.does);
+    expect(note('meet Tom')?.effect).not.toBe(note('meet Tim')?.effect);
+    // A time the form only assumed, said: offered, and said so.
+    const assumed = startThread(
+      [{ kind: 'event', prefill: { ...dinner.prefill, assumedTime: true } }],
+      'dinner',
+      { id: ids() },
+    );
+    expect(readingDoes(assumed, { id: 'd1', item: dinner }, {})?.does).toBe(
+      '→ 19:00–20:00, no longer assumed',
+    );
   });
 
   it('stand between an edit by hand and the next one: the next edit is a step of its own', () => {

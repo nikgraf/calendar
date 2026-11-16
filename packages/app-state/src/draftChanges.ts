@@ -67,7 +67,8 @@ export const describeDraftItem = (item: QuickAddItem): string => {
   return item.prefill.isAllDay ? day : `${day} · ${item.prefill.startTime}–${item.prefill.endTime}`;
 };
 
-const timesOf = (item: QuickAddItem): string =>
+/** An item's hours as a summary says them: "19:00–20:00", "all day", a to-do's time. */
+export const timesOf = (item: QuickAddItem): string =>
   item.kind === 'task'
     ? (item.prefill.time ?? 'no time')
     : item.prefill.isAllDay

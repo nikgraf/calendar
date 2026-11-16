@@ -33,6 +33,7 @@ import {
   lastDayOf,
   type StepField,
   summarizeChange,
+  timesOf,
 } from './draftChanges.ts';
 import {
   alertMinutesOf,
@@ -48,13 +49,14 @@ import {
   type GuestChange,
   guestLabel,
   guestsNamed,
+  sameChoice,
   type InviteeChoice,
   resolveInvitees,
 } from './draftInvitees.ts';
 import { type PlaceChange, type PlaceChoice, settlePlace } from './draftPlaces.ts';
 import { type Asked, askedAfterTurn } from './draftQuestions.ts';
 import type { EventEditorPrefill } from './editorModel.ts';
-import { type OtherReading, otherReadings } from './otherReadings.ts';
+import { type OtherReading, otherReadings, type ReadingOutcome } from './otherReadings.ts';
 import { convertQuickAddItem, type QuickAddItem } from './quickAddItem.ts';
 import { recurrenceKey, seedRepeatFields } from './repeatState.ts';
 import type { ReminderFields } from './taskEditorModel.ts';
@@ -231,6 +233,11 @@ export interface NoChangeTurn {
   /** The one draft they were said to, by id; undefined for words said to several. */
   readonly draft: string | undefined;
   readonly id: string;
+  /**
+   * What the turn could not do, in a sentence for the answer ("At most 5
+   * notifications."): its words asked for what the draft cannot hold.
+   */
+  readonly note: string | undefined;
   /** For dictated words: the recogniser's other readings that would change something. */
   readonly readings: ReadonlyArray<OtherReading>;
   readonly utterance: string;
@@ -613,6 +620,12 @@ const datedBy = (draft: Draft, change: DraftChange): Pick<Draft, 'extras'> | und
     : undefined;
 };
 
+/** What a turn that changed nothing said of its draft (a limit it met), as a sentence: "At most 5 notifications.". */
+const noteOf = (said: ReadonlyArray<string>): string | undefined => {
+  const text = said.join(', ');
+  return text === '' ? undefined : `${text.charAt(0).toUpperCase()}${text.slice(1)}.`;
+};
+
 /** Two values that read the same as JSON: open choices and slots, compared by what they hold. */
 const sameJson = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
 
@@ -643,6 +656,18 @@ const alike = (before: Draft, after: Draft): boolean =>
   sameJson(before.inviteeChoices, after.inviteeChoices) &&
   sameJson(before.placeChoice, after.placeChoice) &&
   assumedOf(before) === assumedOf(after);
+
+/**
+ * What a turn changed of the focused draft's fields, in words
+ * (`summarizeChange`) — and an assumed time the words said, though the
+ * hours read as they did: "→ 19:00–20:00, no longer assumed".
+ */
+const confirmedTimes = (before: Draft, after: Draft): string => {
+  const said = summarizeChange(before.item, after.item);
+  return said === 'no change' && assumedOf(before) && !assumedOf(after)
+    ? `→ ${timesOf(after.item)}, no longer assumed`
+    : said;
+};
 
 /**
  * A turn's results folded in: the changed drafts replace their old
@@ -730,6 +755,7 @@ export const refineThread = (
           after: state.steps.at(-1)?.id,
           draft: changes.length === 1 ? changes[0]?.id : undefined,
           id: id(),
+          note: noteOf(invited),
           readings: [],
           utterance,
         },
@@ -743,8 +769,7 @@ export const refineThread = (
       : [],
   );
   const focusedChange = focused ? changed.get(focused.id) : undefined;
-  const fieldsSaid =
-    focused && focusedAfter ? summarizeChange(focused.item, focusedAfter.item) : '';
+  const fieldsSaid = focused && focusedAfter ? confirmedTimes(focused, focusedAfter) : '';
   const said =
     invited.length === 0
       ? fieldsSaid
@@ -797,12 +822,13 @@ export const withReadings = (
 };
 
 /**
- * What another reading of the words would do, in words — the summary of
- * the step it would make, and whom it would invite or take off (looked
- * up only once it is taken: a name that already names a guest invites
- * no one new, one that names none takes no one off, as `guestsNamed`
- * reads names when the turn lands) — or undefined where it would change
- * nothing either.
+ * What another reading of the words would do — the summary of the step
+ * it would make, and whom it would invite or take off (looked up only
+ * once it is taken: a name that already names a guest, or is already
+ * asked about, invites no one new; one that names neither takes no one
+ * off, as `guestsNamed` and the open choices read names when the turn
+ * lands) — with the draft as it would leave it, to tell two readings'
+ * effects apart. Undefined where it would change nothing either.
  */
 export const readingDoes = (
   state: DraftThreadState,
@@ -814,21 +840,36 @@ export const readingDoes = (
     readonly invite?: ReadonlyArray<string> | undefined;
     readonly uninvite?: ReadonlyArray<string> | undefined;
   },
-): string | undefined => {
+): ReadingOutcome | undefined => {
   const after = refineThread(state, '', [change], () => 'reading');
   const step = after.steps.length > state.steps.length ? after.steps.at(-1) : undefined;
   const draft = state.drafts.find((each) => each.id === change.id);
   // Only an event has guests: a turn leaves a to-do's alone.
   const event = draft?.item.kind === 'event';
   const guests = draft?.extras?.attendees ?? [];
-  const joins = event ? invite.filter((name) => guestsNamed(name, guests).length === 0) : [];
-  const leaves = event ? uninvite.filter((name) => guestsNamed(name, guests).length > 0) : [];
+  const asked = (name: string) =>
+    (draft?.inviteeChoices ?? []).some((choice) => sameChoice(choice.name, name));
+  const joins = event
+    ? invite.filter((name) => guestsNamed(name, guests).length === 0 && !asked(name))
+    : [];
+  const leaves = event
+    ? uninvite.filter((name) => guestsNamed(name, guests).length > 0 || asked(name))
+    : [];
   const said = [
     ...(step?.kind === 'phrase' && step.summary !== 'no change' ? [step.summary] : []),
     ...(joins.length > 0 ? [`→ invites ${joins.join(', ')}`] : []),
     ...(leaves.length > 0 ? [`→ uninvites ${leaves.join(', ')}`] : []),
   ];
-  return said.length === 0 ? undefined : said.join(' · ');
+  return said.length === 0
+    ? undefined
+    : {
+        does: said.join(' · '),
+        effect: JSON.stringify({
+          draft: after.drafts.find((each) => each.id === change.id),
+          joins,
+          leaves,
+        }),
+      };
 };
 
 /**

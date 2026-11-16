@@ -9,6 +9,16 @@ const heard = heardFromSegments([
 ])!;
 
 describe('otherReadings', () => {
+  it('offers two readings that read alike but leave the draft otherwise both', async () => {
+    const readings = await otherReadings({
+      heard,
+      stillAsked: () => true,
+      utterance: heard.text,
+      would: async (text) => ({ does: '→ adds a note', effect: text }),
+    });
+    expect(readings.map((reading) => reading.text)).toEqual(['Make it at two', 'Make it at ten']);
+  });
+
   it('offers the readings that would change something, the likeliest first, each once', async () => {
     const asked: Array<string> = [];
     const readings = await otherReadings({
@@ -17,11 +27,12 @@ describe('otherReadings', () => {
       utterance: heard.text,
       would: async (text) => {
         asked.push(text);
-        return text.endsWith('two')
+        const does = text.endsWith('two')
           ? '→ 14:00–15:00'
           : text.endsWith('ten')
             ? '→ 10:00–11:00'
             : undefined;
+        return does === undefined ? undefined : { does, effect: does };
       },
     });
     expect(asked).toEqual(['Make it at two', 'Make it at ten']);
@@ -31,7 +42,7 @@ describe('otherReadings', () => {
     ]);
   });
 
-  it('offers two readings that would do the same once, and passes over one the model could not read', async () => {
+  it('offers two readings that would leave the draft the same once, and passes over one the model could not read', async () => {
     const readings = await otherReadings({
       heard,
       stillAsked: () => true,
@@ -40,7 +51,7 @@ describe('otherReadings', () => {
         if (text.endsWith('ten')) {
           throw new Error('model gone');
         }
-        return '→ 14:00–15:00';
+        return { does: '→ 14:00–15:00', effect: '14:00' };
       },
     });
     expect(readings).toEqual([{ does: '→ 14:00–15:00', text: 'Make it at two' }]);
@@ -66,7 +77,7 @@ describe('otherReadings', () => {
         heard: plain,
         stillAsked: () => true,
         utterance: plain.text,
-        would: async () => 'x',
+        would: async () => ({ does: 'x', effect: 'x' }),
       }),
     ).resolves.toEqual([]);
   });
