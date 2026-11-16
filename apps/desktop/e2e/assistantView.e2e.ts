@@ -254,7 +254,7 @@ describe('The editor’s Assistant and Form views', () => {
     await cdp.waitFor(`${stepPosition} === '1 of 1'`);
     expect(await cdp.eval<string>(card('time'))).toBe('13:00–14:00');
     expect(await cdp.eval<string>(card('location'))).toBe('Figlmüller, Wollzeile 5, 1010 Wien');
-    expect(await cdp.eval<string>(card('guests'))).toBe('Sarah Keller');
+    expect(await cdp.eval<string>(card('guests'))).toBe('Sarah Keller (sarah@example.com)');
     // The step made the item: all of it is new, nothing "changed" — and
     // on the grid a block, with nowhere it was before.
     expect(await cdp.eval<string>(changed)).toBe('');
@@ -290,7 +290,9 @@ describe('The editor’s Assistant and Form views', () => {
     // The answer is a step of its own: the guest who joined is the one marked.
     await cdp.clickTestId('draft-invitee-pick-0-0');
     await cdp.waitFor(`${stepPosition} === '3 of 3'`);
-    await cdp.waitFor(`${card('guests')} === 'Sarah Keller, Tom Brandt'`);
+    await cdp.waitFor(
+      `${card('guests')} === 'Sarah Keller (sarah@example.com), Tom Brandt (tom.brandt@example.com)'`,
+    );
     expect(await cdp.eval<string>(changed)).toBe('Changed: guests');
     // Nothing left to ask.
     expect(await cdp.eval<boolean>(exists('draft-question'))).toBe(false);
@@ -358,7 +360,7 @@ describe('The editor’s Assistant and Form views', () => {
     await cdp.waitFor(`${textOf('draft-question-count')} === 'Question 2 of 2'`);
     expect(await cdp.eval<string>(textOf('draft-invitee-choice-0'))).toContain('Which Tom?');
     expect(await cdp.eval<boolean>(exists('step-preview'))).toBe(false);
-    expect(await cdp.eval<string>(card('guests'))).toBe('Sarah Keller');
+    expect(await cdp.eval<string>(card('guests'))).toBe('Sarah Keller (sarah@example.com)');
 
     // Save writes what is shown: 12:30, Sarah alone.
     await cdp.clickButtonWithText('Save');

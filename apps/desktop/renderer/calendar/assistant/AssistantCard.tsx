@@ -156,7 +156,7 @@ export function AssistantCard({
           <div className="flex items-start gap-2 text-sm" key={line.field}>
             <LineIcon className="mt-0.5 shrink-0 text-ink-secondary" size={15} />
             <span
-              className={`flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 ${
+              className={`flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 [overflow-wrap:anywhere] ${
                 line.field === 'notes' ? 'line-clamp-2' : ''
               }`}
               data-testid={`assistant-card-${line.field}`}

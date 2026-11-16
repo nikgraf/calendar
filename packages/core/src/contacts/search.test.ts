@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { Contact } from '../types.ts';
-import { isValidEmail } from './email.ts';
+import { isValidEmail, nameWithAddress } from './email.ts';
 import { contactsNamed, nameMatch, rankContacts } from './search.ts';
 
 const contact = (overrides: Partial<Contact> & { readonly email: string }): Contact =>
@@ -61,6 +61,23 @@ describe('isValidEmail', () => {
     expect(isValidEmail('bob@example')).toBe(false);
     expect(isValidEmail('bob')).toBe(false);
     expect(isValidEmail('bob @example.com')).toBe(false);
+  });
+});
+
+describe('nameWithAddress', () => {
+  it('shows the address beside a name, and an address alone once', () => {
+    expect(nameWithAddress({ displayName: 'Anna Lee', email: 'anna@example.com' })).toBe(
+      'Anna Lee (anna@example.com)',
+    );
+    expect(nameWithAddress({ email: 'bob@example.com' })).toBe('bob@example.com');
+    expect(nameWithAddress({ displayName: '', email: 'bob@example.com' })).toBe('bob@example.com');
+    expect(nameWithAddress({ displayName: ' ', email: 'bob@example.com' })).toBe('bob@example.com');
+    expect(nameWithAddress({ displayName: ' Anna Lee ', email: ' anna@example.com ' })).toBe(
+      'Anna Lee (anna@example.com)',
+    );
+    expect(nameWithAddress({ displayName: 'Bob@Example.com', email: 'bob@example.com' })).toBe(
+      'bob@example.com',
+    );
   });
 });
 

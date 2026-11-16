@@ -1,5 +1,11 @@
 import { useAccounts, useInviteeField } from '@calendar/app-state';
-import { emailKey, isValidEmail, type Attendee, type AttendeeInput } from '@calendar/core';
+import {
+  emailKey,
+  isValidEmail,
+  nameWithAddress,
+  type Attendee,
+  type AttendeeInput,
+} from '@calendar/core';
 import { useEffect, useId, useState } from 'react';
 import { SuggestionList } from './SuggestionList.tsx';
 
@@ -98,15 +104,15 @@ export function InviteeCombobox({
           const status = attendeeStatus(attendee.email);
           return (
             <span
-              className="inline-flex items-center gap-1 rounded-md bg-fill px-2 py-0.5 text-xs"
+              className="inline-flex max-w-full items-center gap-1 rounded-md bg-fill px-2 py-0.5 text-xs"
               data-invitee={attendee.email}
               key={emailKey(attendee.email)}
               title={`${attendee.email}${status ? ` · ${status.responseStatus}` : ''}`}
             >
               <span
-                className={`inline-block size-1.5 rounded-full ${STATUS_DOT[status?.responseStatus ?? 'needsAction']}`}
+                className={`inline-block size-1.5 shrink-0 rounded-full ${STATUS_DOT[status?.responseStatus ?? 'needsAction']}`}
               />
-              <span className="select-text">{attendee.displayName ?? attendee.email}</span>
+              <span className="min-w-0 truncate select-text">{nameWithAddress(attendee)}</span>
               {status?.isOrganizer ? (
                 <span className="text-ink-secondary">organizer</span>
               ) : (

@@ -3,11 +3,11 @@ import {
   canonicalReminders,
   emailKey,
   type EventReminders,
+  nameWithAddress,
   reminderLabel,
   Temporal,
 } from '@calendar/core';
 import { reminderAlarmLabel } from './draftExtras.ts';
-import { guestLabel } from './draftInvitees.ts';
 import { remindersKey, vouchedGeo } from './eventEditorChanges.ts';
 import type { Draft } from './draftThread.ts';
 import type { QuickAddItem } from './quickAddItem.ts';
@@ -168,12 +168,12 @@ export const fieldName = (field: StepField): string => FIELD_NAMES[field];
 
 /** One field a step changed, in words: what it read before and what it reads now. */
 export interface FieldChange {
-  /** The guests the step invited, by label. */
+  /** The guests the step invited, as the card shows them (`nameWithAddress`). */
   readonly added?: ReadonlyArray<string> | undefined;
   readonly field: StepField;
   /** Undefined: there was nothing (no place, no draft yet). */
   readonly from: string | undefined;
-  /** The guests the step took off, by label. */
+  /** The guests the step took off, as the card shows them (`nameWithAddress`). */
   readonly removed?: ReadonlyArray<string> | undefined;
   /** Undefined: there is nothing now (the place was cleared). */
   readonly to: string | undefined;
@@ -246,7 +246,7 @@ const repeatText = (draft: Draft): string | undefined => {
 };
 
 /** An event's guests; a to-do has none. */
-const guestsOf = (draft: Draft | undefined): ReadonlyArray<AttendeeInput> =>
+export const guestsOf = (draft: Draft | undefined): ReadonlyArray<AttendeeInput> =>
   draft?.item.kind === 'event' ? (draft.extras?.attendees ?? []) : [];
 
 /** The notes the form holds for the draft as the kind it is. */
@@ -352,8 +352,8 @@ const guestChanges = (before: Draft | undefined, after: Draft): ReadonlyArray<Fi
   const now = guestsOf(after);
   const had = new Set(was.map((guest) => emailKey(guest.email)));
   const has = new Set(now.map((guest) => emailKey(guest.email)));
-  const added = now.filter((guest) => !had.has(emailKey(guest.email))).map(guestLabel);
-  const removed = was.filter((guest) => !has.has(emailKey(guest.email))).map(guestLabel);
+  const added = now.filter((guest) => !had.has(emailKey(guest.email))).map(nameWithAddress);
+  const removed = was.filter((guest) => !has.has(emailKey(guest.email))).map(nameWithAddress);
   if (added.length === 0 && removed.length === 0) {
     return [];
   }
@@ -361,9 +361,9 @@ const guestChanges = (before: Draft | undefined, after: Draft): ReadonlyArray<Fi
     {
       added,
       field: 'guests',
-      from: was.length === 0 ? undefined : was.map(guestLabel).join(', '),
+      from: was.length === 0 ? undefined : was.map(nameWithAddress).join(', '),
       removed,
-      to: now.length === 0 ? undefined : now.map(guestLabel).join(', '),
+      to: now.length === 0 ? undefined : now.map(nameWithAddress).join(', '),
     },
   ];
 };
@@ -517,7 +517,7 @@ export const cardLines = (
       : [];
   };
   const place = placeOf(item);
-  const guests = keeps.guests ? guestsOf(draft).map(guestLabel) : [];
+  const guests = keeps.guests ? guestsOf(draft).map(nameWithAddress) : [];
   const repeat = repeatText(draft);
   const notes = notesOf(draft);
   const isAllDay = item.kind === 'event' && item.prefill.isAllDay;

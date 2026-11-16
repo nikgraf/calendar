@@ -7,7 +7,7 @@ import {
   type useEventEditorModel,
   useTimeZones,
 } from '@calendar/app-state';
-import { type CalendarInfo, draftZoneRanges } from '@calendar/core';
+import { type CalendarInfo, draftZoneRanges, nameWithAddress } from '@calendar/core';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Linking, Pressable, Text, View } from 'react-native';
 import { Chip } from './Chip.tsx';
@@ -297,8 +297,7 @@ export function EventEditForm({
         <Section header="Invitees" testID="event-invitees-held" tight>
           <RowSlot>
             <Text style={styles.hint}>
-              Not invited from this calendar:{' '}
-              {attendees.map((attendee) => attendee.displayName ?? attendee.email).join(', ')}
+              Not invited from this calendar: {attendees.map(nameWithAddress).join(', ')}
             </Text>
           </RowSlot>
         </Section>
@@ -306,7 +305,7 @@ export function EventEditForm({
         // EventKit cannot write guests: shown as they are, never edited.
         <Section header="Guests" testID="event-guests-read-only" tight>
           {guests.map((attendee) => (
-            <Row key={attendee.email} title={attendee.displayName ?? attendee.email} />
+            <Row key={attendee.email} title={nameWithAddress(attendee)} />
           ))}
         </Section>
       ) : null}

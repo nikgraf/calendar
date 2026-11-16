@@ -80,11 +80,11 @@ describe('draftChanges', () => {
       { field: 'time', from: undefined, to: '13:00–14:00' },
       { field: 'location', from: undefined, to: 'Figlmüller' },
       {
-        added: ['Sarah Keller'],
+        added: ['Sarah Keller (sarah@example.com)'],
         field: 'guests',
         from: undefined,
         removed: [],
-        to: 'Sarah Keller',
+        to: 'Sarah Keller (sarah@example.com)',
       },
     ]);
     expect([...changedFields(made)]).toEqual(['title', 'date', 'time', 'location', 'guests']);
@@ -122,11 +122,11 @@ describe('draftChanges', () => {
       draftChanges(draft(lunch, { attendees: [sarah] }), draft(lunch, { attendees: [sarah, tom] })),
     ).toEqual([
       {
-        added: ['Tom Brandt'],
+        added: ['Tom Brandt (tom.brandt@example.com)'],
         field: 'guests',
-        from: 'Sarah Keller',
+        from: 'Sarah Keller (sarah@example.com)',
         removed: [],
-        to: 'Sarah Keller, Tom Brandt',
+        to: 'Sarah Keller (sarah@example.com), Tom Brandt (tom.brandt@example.com)',
       },
     ]);
     expect(
@@ -135,11 +135,25 @@ describe('draftChanges', () => {
       {
         added: [],
         field: 'guests',
-        from: 'Sarah Keller, Tom Brandt',
-        removed: ['Sarah Keller'],
-        to: 'Tom Brandt',
+        from: 'Sarah Keller (sarah@example.com), Tom Brandt (tom.brandt@example.com)',
+        removed: ['Sarah Keller (sarah@example.com)'],
+        to: 'Tom Brandt (tom.brandt@example.com)',
       },
     ]);
+  });
+
+  it('tells two guests of one name apart by address, and marks only the one that joined', () => {
+    const tomToo = { displayName: 'Tom Brandt', email: 'tom@example.org' };
+    const before = draft(lunch, { attendees: [tom] });
+    const after = draft(lunch, { attendees: [tom, tomToo] });
+    expect(cardLines(after, draftChanges(before, after)).at(-1)).toEqual({
+      added: ['Tom Brandt (tom@example.org)'],
+      changed: true,
+      field: 'guests',
+      names: ['Tom Brandt (tom.brandt@example.com)', 'Tom Brandt (tom@example.org)'],
+      text: 'Tom Brandt (tom.brandt@example.com), Tom Brandt (tom@example.org)',
+      was: 'Tom Brandt (tom.brandt@example.com)',
+    });
   });
 
   it('takes the same guests in another order, or another case, as no change', () => {
@@ -321,12 +335,12 @@ describe('cardLines', () => {
       { changed: true, field: 'time', text: '12:30–13:30', was: '13:00–14:00' },
       { changed: true, field: 'location', text: 'Figlmüller' },
       {
-        added: ['Tom Brandt'],
+        added: ['Tom Brandt (tom.brandt@example.com)'],
         changed: true,
         field: 'guests',
-        names: ['Sarah Keller', 'Tom Brandt'],
-        text: 'Sarah Keller, Tom Brandt',
-        was: 'Sarah Keller',
+        names: ['Sarah Keller (sarah@example.com)', 'Tom Brandt (tom.brandt@example.com)'],
+        text: 'Sarah Keller (sarah@example.com), Tom Brandt (tom.brandt@example.com)',
+        was: 'Sarah Keller (sarah@example.com)',
       },
       { changed: true, field: 'reminders', text: '1 hour before', was: 'Calendar default' },
       { changed: true, field: 'notes', text: 'Bring the menu' },
@@ -345,7 +359,7 @@ describe('cardLines', () => {
         .map((line) => [line.field, line.text, line.was]),
     ).toEqual([
       ['location', 'No place', 'Figlmüller'],
-      ['guests', 'No guests', 'Sarah Keller'],
+      ['guests', 'No guests', 'Sarah Keller (sarah@example.com)'],
     ]);
     expect(cardLines(bare).map((line) => line.field)).toEqual(['date', 'time']);
   });
