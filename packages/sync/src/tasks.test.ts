@@ -745,6 +745,42 @@ describe('completeTask', () => {
     }).pipe(noYield, Effect.provide(testLayer(client)));
   });
 
+  it.effect('a delete after a lost insert does not take a twin the list already had', () => {
+    // Nothing landed, but the list holds a task with the same fields that
+    // changed since: it is the user's own, not what the insert made.
+    const { calls, client } = lostInsert(false, {
+      listTasks: () =>
+        Effect.succeed({
+          items: [
+            {
+              due: '2026-08-30T00:00:00.000Z',
+              id: 't1',
+              status: 'needsAction',
+              title: 'Pay rent',
+              updated: '2026-08-24T10:00:00.000Z',
+            },
+          ],
+        }),
+    });
+    return Effect.gen(function* () {
+      yield* seedTasks;
+      const mutations = yield* EventMutations;
+      const temp = yield* mutations.createTask({
+        accountId: 'acc-1',
+        dueDate: '2026-08-30',
+        taskListId: 'list-1',
+        title: 'Pay rent',
+      });
+      yield* mutations.processPendingOps();
+      yield* mutations.deleteTask({ accountId: 'acc-1', taskId: temp.id, taskListId: 'list-1' });
+      yield* drainNow;
+      expect(calls).toEqual(['insert']);
+      expect(yield* (yield* PendingOpRepo).listAll()).toHaveLength(0);
+      const window = yield* (yield* TaskRepo).getWindow('2026-08-24', '2026-08-31');
+      expect(window.map((row) => row.id)).toEqual(['t1']);
+    }).pipe(noYield, Effect.provide(testLayer(client)));
+  });
+
   it.effect('a delete after a lost insert that never landed sends nothing more', () => {
     const { calls, client } = lostInsert(false);
     return Effect.gen(function* () {

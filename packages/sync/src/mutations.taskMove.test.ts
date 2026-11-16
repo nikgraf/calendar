@@ -1329,6 +1329,116 @@ describe('what a task copy came from, past the paths that end it', () => {
     }).pipe(noYield, Effect.provide(testLayer(fake.client, tasks)));
   });
 
+  it.effect('a later copy that lands settles the move before the first one fails', () => {
+    const fake = fakeWith();
+    const calls: Array<string> = [];
+    const tasks: GoogleTasksClientShape = {
+      ...recordingTasks(calls),
+      insertTask: (params) =>
+        params.taskListId === 'list-1'
+          ? Effect.fail(new ApiUnavailableError({ cause: 'connection dropped' }))
+          : recordingTasks(calls).insertTask(params),
+      // By the first copy's retry its list is gone.
+      listTasks: () => Effect.fail(new NotFoundError({ resource: 'task list' })),
+    };
+    return Effect.gen(function* () {
+      yield* seed;
+      const first = yield* move([APPLE, 'list-a', 'rem-timed'], ['acc-1', 'list-1'], {
+        dueDate: tomorrow,
+        title: 'Call mom',
+      });
+      const mutations = yield* EventMutations;
+      yield* mutations.processPendingOps();
+      yield* move(['acc-1', 'list-1', first.id], ['acc-2', 'list-x'], {
+        dueDate: tomorrow,
+        title: 'Call mom',
+      });
+      // The first copy is in backoff: only the second goes, and lands.
+      yield* mutations.processPendingOps();
+      expect(calls).toEqual(['insert list-x/Call mom']);
+      yield* drainNow;
+      expect(yield* queued).toEqual([]);
+      // Moved, not doubled: the reminder is not made again.
+      expect(
+        [...fake.state.reminders.values()].filter((reminder) => reminder.title === 'Call mom'),
+      ).toHaveLength(0);
+    }).pipe(noYield, Effect.provide(testLayer(fake.client, tasks)));
+  });
+
+  it.effect('a copy discarded while its insert is out is released once', () => {
+    const fake = fakeWith();
+    const calls: Array<string> = [];
+    return Effect.gen(function* () {
+      const sent = yield* Deferred.make<void>();
+      const answer = yield* Deferred.make<void>();
+      const tasks: GoogleTasksClientShape = {
+        ...recordingTasks(calls),
+        insertTask: () =>
+          Effect.gen(function* () {
+            yield* Deferred.succeed(sent, undefined);
+            yield* Deferred.await(answer);
+            return yield* Effect.fail(new NotFoundError({ resource: 'task list' }));
+          }),
+      };
+      yield* Effect.gen(function* () {
+        yield* seed;
+        yield* move([APPLE, 'list-a', 'rem-timed'], ['acc-1', 'list-1'], {
+          dueDate: tomorrow,
+          title: 'Call mom',
+        });
+        const mutations = yield* EventMutations;
+        const [copy] = yield* (yield* PendingOpRepo).listAll();
+        const drain = yield* Effect.forkChild(mutations.processPendingOps());
+        yield* Deferred.await(sent);
+        yield* mutations.discardPendingOp(copy!.id);
+        yield* Deferred.succeed(answer, undefined);
+        yield* Fiber.join(drain);
+        expect(
+          [...fake.state.reminders.values()].filter((reminder) => reminder.title === 'Call mom'),
+        ).toHaveLength(1);
+      }).pipe(Effect.provide(testLayer(fake.client, tasks)));
+    });
+  });
+
+  it.effect('the drain waits for the Apple delete before it sends the copy', () => {
+    const fake = fakeWith();
+    const calls: Array<string> = [];
+    return Effect.gen(function* () {
+      const deleting = yield* Deferred.make<void>();
+      const deleted = yield* Deferred.make<void>();
+      const reminders: RemindersClientShape = {
+        ...fake.client,
+        delete: (params) =>
+          Effect.gen(function* () {
+            yield* Deferred.succeed(deleting, undefined);
+            yield* Deferred.await(deleted);
+            return yield* fake.client.delete(params);
+          }),
+      };
+      yield* Effect.gen(function* () {
+        yield* seed;
+        const mutations = yield* EventMutations;
+        const moving = yield* Effect.forkChild(
+          move([APPLE, 'list-a', 'rem-timed'], ['acc-1', 'list-1'], {
+            dueDate: tomorrow,
+            title: 'Call mom',
+          }),
+        );
+        yield* Deferred.await(deleting);
+        // A sync pass drains meanwhile: the copy must not go yet.
+        const drain = yield* Effect.forkChild(mutations.processPendingOps());
+        yield* Effect.yieldNow;
+        yield* Effect.yieldNow;
+        expect(calls).toEqual([]);
+        yield* Deferred.succeed(deleted, undefined);
+        yield* Fiber.join(moving);
+        yield* Fiber.join(drain);
+        yield* mutations.processPendingOps();
+        expect(calls).toEqual(['insert list-1/Call mom']);
+      }).pipe(Effect.provide(testLayer(reminders, recordingTasks(calls))));
+    });
+  });
+
   it.effect('a copy whose list is gone takes its subtask copies with it', () => {
     const fake = fakeWith();
     const calls: Array<string> = [];

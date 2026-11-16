@@ -1352,8 +1352,12 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       // A create whose calendar or list is gone will not land: it goes as a
       // refused one does — its row, the subtasks and ops waiting on its
       // temp id, and what a copy holds of its source goes back.
+      // Discarded while its request was out, its discard released it
+      // already: released again, an Apple source was made twice.
       if (op.kind === 'create' || op.kind === 'createTask') {
-        yield* releaseRow(op);
+        if (yield* Effect.orElseSucceed(pendingOpRepo.getById(op.id), () => op)) {
+          yield* releaseRow(op);
+        }
         return 'done' as const;
       }
       // Deleted remotely — drop the local copy too. (For deleteTask
@@ -1969,12 +1973,12 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
     });
 
   /**
-   * The task an earlier attempt of a create landed, when Google has
-   * exactly one match: same title, day, notes and parent, changed since
-   * the stamp (a minute's slack for clocks). Every page is read: where
-   * many tasks changed since — a "Clear completed" hides each one, an app
-   * closed for days between attempts — the first page held other tasks
-   * and the retry inserted a duplicate.
+   * The tasks an earlier attempt of a create may have landed: same title,
+   * day, notes and parent, changed since the stamp (a minute's slack for
+   * clocks). Every page is read: where many tasks changed since — a
+   * "Clear completed" hides each one, an app closed for days between
+   * attempts — the first page held other tasks and the retry inserted a
+   * duplicate.
    */
   const findLanded = (op: PendingOp, taskListId: string, dispatchedAt: number) =>
     Effect.gen(function* () {
@@ -1999,7 +2003,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         }
         pageToken = page.nextPageToken;
       } while (pageToken !== undefined);
-      return matches.length === 1 ? matches[0] : undefined;
+      return matches;
     });
 
   /**
@@ -2090,7 +2094,17 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       // the same window elsewhere (and is benign); a miss is merely
       // the old behavior.
       if (op.dispatchedAt !== undefined) {
-        const adopted = yield* findLanded(op, taskListId, op.dispatchedAt);
+        const deleted = (yield* deletesBehind(op.accountId, taskListId, op.eventId)).length > 0;
+        const matches: Array<GcalTask> = [];
+        for (const match of yield* findLanded(op, taskListId, op.dispatchedAt)) {
+          // Deleted meanwhile, what is adopted is deleted next: a match a
+          // row here already holds is a task the user has, not one this
+          // create made unseen — its twin, which the delete must not take.
+          if (!deleted || !(yield* taskRepo.get(op.accountId, taskListId, match.id))) {
+            matches.push(match);
+          }
+        }
+        const adopted = matches.length === 1 ? matches[0] : undefined;
         if (adopted) {
           const now = yield* Clock.currentTimeMillis;
           yield* swapInTask(op, taskListId, adopted, (record) =>
@@ -2122,8 +2136,9 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       // Stamped only while still queued, in one transaction with the
       // check: a delete that came first took the unsent create with it,
       // and inserting it anyway left the deleted task on Google. A delete
-      // after the stamp sees it sent and waits behind it.
-      if (!(yield* stampIfQueued(op))) {
+      // after the stamp sees it sent and waits behind it. A retry keeps
+      // the first stamp: what that attempt made is still in the window.
+      if (op.dispatchedAt === undefined && !(yield* stampIfQueued(op))) {
         return 'done' as const;
       }
       const inserted = yield* tasksClient.insertTask({

@@ -619,27 +619,32 @@ const make: Effect.Effect<
         }),
       );
     }
-    // The drain is kicked only once EventKit answered: a copy Google turned
-    // down at once made the source again before its delete ran, and a
-    // delete that then failed left two of it.
-    return Effect.gen(function* () {
-      const { copy, created } = yield* sql.withTransaction(
+    // The drain waits until EventKit answered — its gate is held, since a
+    // kick from elsewhere or a sync pass would send the copy too: one Google
+    // turned down at once made the source again before its delete ran, and
+    // a delete that then failed left two of it.
+    return gate
+      .withPermits(1)(
         Effect.gen(function* () {
-          const before = yield* queuedIds;
-          const created = yield* create;
-          // The item's own create; a completion queued behind it is no copy.
-          const [copy] = yield* queuedSince(before, COPY_KINDS);
-          if (copy && from.kept) {
-            yield* pendingOpRepo.setCopySource([copy.id], from.kept);
-          }
-          return { copy, created };
+          const { copy, created } = yield* sql.withTransaction(
+            Effect.gen(function* () {
+              const before = yield* queuedIds;
+              const created = yield* create;
+              // The item's own create; a completion queued behind it is no copy.
+              const [copy] = yield* queuedSince(before, COPY_KINDS);
+              if (copy && from.kept) {
+                yield* pendingOpRepo.setCopySource([copy.id], from.kept);
+              }
+              return { copy, created };
+            }),
+          );
+          yield* Effect.tapError(remove, () =>
+            copy ? Effect.ignore(pendingOpRepo.setCopySource([copy.id], undefined)) : Effect.void,
+          );
+          return created;
         }),
-      );
-      yield* Effect.tapError(remove, () =>
-        copy ? Effect.ignore(pendingOpRepo.setCopySource([copy.id], undefined)) : Effect.void,
-      );
-      return created;
-    }).pipe(Effect.ensuring(kick));
+      )
+      .pipe(Effect.ensuring(kick));
   };
 
   const loadMaster = (accountId: string, calendarId: string, masterId: string) =>
@@ -758,6 +763,40 @@ const make: Effect.Effect<
     transaction: sql.withTransaction,
   });
 
+  /**
+   * A copy landed, so the source deletes it held may go now. One may wait
+   * behind the sent create of an earlier copy — the item was moved on
+   * before that create was answered: this copy landing settles the move,
+   * so that create no longer puts its own source back if it then fails
+   * (two of it), and the source deletes it held go too.
+   */
+  const settleHeld = (opIds: ReadonlyArray<string>) =>
+    Effect.gen(function* () {
+      for (const opId of opIds) {
+        const held = yield* pendingOpRepo.getById(opId);
+        if (!held) {
+          continue;
+        }
+        const earlier = (yield* pendingOpRepo.listForEvent({
+          accountId: held.accountId,
+          calendarId: held.calendarId,
+          eventId: held.eventId,
+        })).filter((other) => COPY_KINDS.has(other.kind) && other.copySource !== undefined);
+        yield* pendingOpRepo.setCopySource(
+          earlier.map((other) => other.id),
+          undefined,
+        );
+        for (const other of earlier) {
+          if (other.copySource?.kind === 'held') {
+            for (const sourceDelete of other.copySource.opIds) {
+              yield* pendingOpRepo.makeDue(sourceDelete);
+            }
+          }
+        }
+        yield* pendingOpRepo.makeDue(opId);
+      }
+    });
+
   const processPendingOps = (): Effect.Effect<void> =>
     gate
       .withPermits(1)(
@@ -779,9 +818,7 @@ const make: Effect.Effect<
               // The source deletes this copy held may go now (applyOp
               // copyGate); a copy that did not land took them back.
               if (op.copySource?.kind === 'held') {
-                for (const opId of op.copySource.opIds) {
-                  yield* pendingOpRepo.makeDue(opId);
-                }
+                yield* settleHeld(op.copySource.opIds);
               }
               // A series split off this one waits for it no more (splitSeries.ts).
               if (holdsSplit(op)) {
