@@ -75,6 +75,8 @@ const SEEDS: ReadonlyArray<number> = (() => {
 const STEPS = envNumber('QUEUE_SEQUENCE_STEPS') ?? 40;
 /** Every step's requests in the report, not only the failing step's. */
 const VERBOSE = process.env['QUEUE_SEQUENCE_VERBOSE'] === '1';
+/** Run the seeds KNOWN_FAILING skips (to check a change that closes their gap). */
+const RUN_KNOWN = process.env['QUEUE_SEQUENCE_KNOWN'] === '1';
 
 const noYield = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
   Effect.provideService(effect, Scheduler.MaxOpsBeforeYield, Number.MAX_SAFE_INTEGER);
@@ -134,11 +136,15 @@ const timed = (id: string, day: number, hour: number, summary: string): GcalEven
 const due = (day: number): string =>
   `${new Date(START + day * DAY).toISOString().slice(0, 10)}T00:00:00.000Z`;
 
-const newFake = (): FakeGoogle => {
+/** The fake the sequences run against; `cal-3` only for a scripted test that needs three. */
+const newFake = (options: { readonly thirdCalendar?: boolean } = {}): FakeGoogle => {
   const google = new FakeGoogle({
     calendars: [
       { accessRole: 'owner', id: 'cal-1', primary: true, summary: 'Personal' },
       { accessRole: 'owner', id: 'cal-2', summary: 'Work' },
+      ...(options.thirdCalendar === true
+        ? [{ accessRole: 'owner', id: 'cal-3', summary: 'Family' }]
+        : []),
     ],
     organizerEmail: EMAIL,
     taskLists: [
@@ -348,8 +354,12 @@ interface World {
   /** Items another device changed, or a write of ours whose answer was lost touched. */
   readonly disturbed: Set<string>;
   readonly google: FakeGoogle;
-  /** Slots (`container|id`) Google sent this step: true when an answer the client applies carried it. */
-  readonly heard: Map<string, boolean>;
+  /**
+   * Slots (`container|id`) Google sent this step, with the copy last sent
+   * (JSON, `null` for gone) and whether an answer the client applies
+   * carried it.
+   */
+  readonly heard: Map<string, { readonly applied: boolean; readonly json: string }>;
   /** Items an op held at the end of the step before. */
   held: ReadonlySet<string>;
   /**
@@ -357,10 +367,11 @@ interface World {
    * creation) while an op held their row: the pull skips such a row and
    * its token moves past, so an op abandoned later (a discard, a refusal,
    * a move released after a 404) leaves what it found, or its older
-   * snapshot, for good — the known gap the skipped tests below show. A
-   * difference there is listed, not failed; one anywhere else fails.
+   * snapshot, for good — the known gap the skipped tests below show. Per
+   * slot, what that copy shows (JSON): while Google's still shows it, a
+   * difference there is listed, not failed; any other difference fails.
    */
-  readonly heldTold: Set<string>;
+  readonly heldTold: Map<string, string>;
   readonly intents: Map<string, Intent>;
   readonly knownGaps: Array<string>;
   network: { readonly lost: number; readonly name: string; readonly refused: number };
@@ -428,6 +439,16 @@ const keyOfSlot = (slot: string): string => {
   return isCalendar(container) ? eventKey(id) : taskKey(id);
 };
 
+/** What the client would show of Google's copy (JSON; `null` for none): a renumbered position is no change. */
+const shownJson = (container: string, item: GcalEvent | GcalTask | null): string =>
+  JSON.stringify(
+    item === null
+      ? null
+      : isCalendar(container)
+        ? (gcalEventFields(container, item) ?? null)
+        : (gcalTaskFields(container, item) ?? null),
+  );
+
 const remember = (
   world: World,
   container: string,
@@ -436,7 +457,10 @@ const remember = (
   applied: boolean,
 ) => {
   const slot = `${container}|${id}`;
-  world.heard.set(slot, applied || (world.heard.get(slot) ?? false));
+  world.heard.set(slot, {
+    applied: applied || (world.heard.get(slot)?.applied ?? false),
+    json: shownJson(container, item),
+  });
   if (applied) {
     world.told.set(slot, { item, json: JSON.stringify(item) });
   }
@@ -503,7 +527,7 @@ const makeWorld = (seed: number, google: FakeGoogle): World => {
     google,
     heard: new Map(),
     held: new Set(),
-    heldTold: new Set(),
+    heldTold: new Map(),
     intents: new Map(),
     knownGaps: [],
     network: { lost: 0, name: 'good', refused: 0 },
@@ -748,14 +772,20 @@ const checkShown = (world: World, snapshot: Snapshot) => {
 };
 
 /**
- * A difference from Google: the known gap when Google sent a newer state
- * of that slot (or, for an item, of any of its slots) while an op held
- * the row, else a failure.
+ * A difference from Google: the known gap when Google's copy of that slot
+ * (or, for an item, of any of its slots) is still the one it sent while an
+ * op held the row, else a failure.
  */
 const staleOrBroken = (world: World, slotOrKey: string, message: string) => {
-  const known = slotOrKey.includes('|')
-    ? world.heldTold.has(slotOrKey)
-    : [...world.heldTold].some((slot) => keyOfSlot(slot) === slotOrKey);
+  const stillThatCopy = (slot: string, json: string) => {
+    const [container = '', id = ''] = slot.split('|');
+    return shownJson(container, googleNow(world, container, id)) === json;
+  };
+  const known = [...world.heldTold].some(
+    ([slot, json]) =>
+      (slotOrKey.includes('|') ? slot === slotOrKey : keyOfSlot(slot) === slotOrKey) &&
+      stillThatCopy(slot, json),
+  );
   if (known) {
     world.knownGaps.push(`#${world.step} ${message}`);
   } else {
@@ -786,10 +816,10 @@ const heldItems = (snapshot: Snapshot): Set<string> => {
 /** Which copies Google sent this step reached a row an op held (see World.heldTold). */
 const noteHeldCopies = (world: World, snapshot: Snapshot) => {
   const held = heldItems(snapshot);
-  for (const [slot, applied] of world.heard) {
+  for (const [slot, { applied, json }] of world.heard) {
     const key = keyOfSlot(slot);
     if (world.held.has(key) || held.has(key)) {
-      world.heldTold.add(slot);
+      world.heldTold.set(slot, json);
     } else if (applied) {
       world.heldTold.delete(slot);
     }
@@ -1554,7 +1584,6 @@ const runSequence = (seed: number) => {
  * every sequence, so search again rather than trust these after one.
  */
 const KNOWN_FAILING: ReadonlyMap<number, string> = new Map([
-  [157, 'subtasks around a parent moved and deleted'],
   [208, 'a task move discarded after it landed'],
   [248, 'an event move discarded after it landed'],
   [281, 'a task move discarded after it landed'],
@@ -1573,7 +1602,7 @@ const KNOWN_FAILING: ReadonlyMap<number, string> = new Map([
 describe('pending-op queue: seeded random sequences', () => {
   for (const seed of new Set([...SEEDS, ...KNOWN_FAILING.keys()])) {
     const known = KNOWN_FAILING.get(seed);
-    if (known === undefined) {
+    if (known === undefined || RUN_KNOWN) {
       it.effect(`sequence ${seed}`, () => runSequence(seed));
     } else {
       it.effect.skip(`sequence ${seed} (open: ${known})`, () => runSequence(seed));
@@ -1623,6 +1652,128 @@ const writes = (google: FakeGoogle): Array<string> =>
     });
 
 describe('pending-op queue: what the sequences found', () => {
+  it.effect('a move released keeps the etag a later edit is checked against', () => {
+    // Review of the fix below (Codex, Opus): with the moved rows' etag
+    // cleared, a discarded move left the row without one, and an edit after
+    // another device's change overwrote that change without a conflict.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const ops = yield* PendingOpRepo;
+        network.down = true;
+        yield* mutations.moveEvent({
+          accountId: ACCOUNT_ID,
+          calendarId: 'cal-1',
+          eventId: 'e1',
+          target: { accountId: ACCOUNT_ID, calendarId: 'cal-2' },
+        });
+        yield* mutations.processPendingOps();
+        const [move] = yield* ops.listAll();
+        yield* mutations.discardPendingOp(move!.id);
+        google.putEvent('cal-1', {
+          ...google.eventOf('cal-1', 'e1')!,
+          summary: 'Renamed elsewhere',
+        });
+        yield* mutations.updateEvent({
+          accountId: ACCOUNT_ID,
+          calendarId: 'cal-1',
+          changes: { description: 'Agenda' },
+          eventId: 'e1',
+        });
+        network.down = false;
+        yield* mutations.retryPendingOps();
+        yield* mutations.processPendingOps();
+        expect(google.eventOf('cal-1', 'e1')?.summary).toBe('Renamed elsewhere');
+        const [parked] = yield* ops.listAll();
+        expect(parked?.conflictAt).toBeDefined();
+      }),
+    );
+  });
+
+  it.effect('a discarded create takes a chain of moves along, and the rows at its end', () => {
+    // Review (Codex, Opus): created, refused, moved cal-1 → cal-2 → cal-3,
+    // the create discarded: only the first move's destination was cleared,
+    // and the event stayed in cal-3, pending with no op, for good.
+    const google = newFake({ thirdCalendar: true });
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const ops = yield* PendingOpRepo;
+        network.down = true;
+        const created = yield* mutations.createEvent({
+          accountId: ACCOUNT_ID,
+          calendarId: 'cal-1',
+          endUtc: START + 9 * DAY + 11 * HOUR,
+          isAllDay: false,
+          startTimeZone: 'UTC',
+          startUtc: START + 9 * DAY + 10 * HOUR,
+          title: 'Dentist',
+        });
+        yield* mutations.processPendingOps();
+        for (const [from, to] of [
+          ['cal-1', 'cal-2'],
+          ['cal-2', 'cal-3'],
+        ] as const) {
+          yield* mutations.moveEvent({
+            accountId: ACCOUNT_ID,
+            calendarId: from,
+            eventId: created.id,
+            target: { accountId: ACCOUNT_ID, calendarId: to },
+          });
+        }
+        const create = (yield* ops.listAll()).find((op) => op.kind === 'create')!;
+        yield* mutations.discardPendingOp(create.id);
+        expect(yield* ops.listAll()).toEqual([]);
+        expect(
+          yield* (yield* SqlClient)`SELECT calendar_id FROM events WHERE id = ${created.id}`,
+        ).toEqual([]);
+      }),
+    );
+  });
+
+  it.effect("discarding the first of a task's moves there and back sends nothing", () => {
+    // Review (Opus): the move back was re-keyed to leave from the list it
+    // went to — a move into its own list, whose answer took the row away.
+    // It has nothing left to move, as an event's move back does.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const ops = yield* PendingOpRepo;
+        const move = (from: string, to: string) =>
+          mutations.moveTask({
+            accountId: ACCOUNT_ID,
+            draft: { dueDate: due(7).slice(0, 10), title: 'Call' },
+            target: { accountId: ACCOUNT_ID, taskListId: to },
+            taskId: 't2',
+            taskListId: from,
+          });
+        network.down = true;
+        yield* move('list-2', 'list-1');
+        yield* move('list-1', 'list-2');
+        const [first] = yield* ops.listAll();
+        yield* mutations.discardPendingOp(first!.id);
+        expect(yield* ops.listAll()).toEqual([]);
+        network.down = false;
+        google.requests.length = 0;
+        yield* mutations.processPendingOps();
+        expect(writes(google)).toEqual([]);
+        const rows = yield* (yield* SqlClient)<{
+          readonly list_id: string;
+          readonly sync_status: string;
+        }>`SELECT list_id, sync_status FROM tasks WHERE id = 't2'`;
+        expect(rows).toEqual([{ list_id: 'list-2', sync_status: 'synced' }]);
+      }),
+    );
+  });
+
   it.effect('a task deleted after moving away and back keeps the moves ahead of its delete', () => {
     // Sequence 920: list-2 → list-1 → list-2 → delete, offline. The delete
     // dropped everything queued for the task in its list, the first move

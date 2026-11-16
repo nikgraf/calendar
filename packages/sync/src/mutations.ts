@@ -346,6 +346,9 @@ interface SettledSeriesEdit {
   readonly unsentCreate: PendingOp | undefined;
 }
 
+/** The op kinds that send If-Match. */
+const IF_MATCH_KINDS: ReadonlySet<PendingOp['kind']> = new Set(['delete', 'rsvp', 'update']);
+
 const make: Effect.Effect<
   EventMutationsShape,
   never,
@@ -380,7 +383,30 @@ const make: Effect.Effect<
   const opsForEvent = (accountId: string, calendarId: string, eventId: string) =>
     pendingOpRepo.listForEvent({ accountId, calendarId, eventId });
 
-  const enqueue = (op: PendingOp) => pendingOpRepo.enqueue(op);
+  /**
+   * Queues an op. An edit, answer or delete of a series a queued move is
+   * taking into this calendar goes without If-Match, as a re-keyed one does
+   * (googleServerMove `rekey`): events.move gives the event a new etag, and
+   * the row still holds the one before, which met a 412 and parked a
+   * conflict nobody caused. The row keeps it for a move Google never makes,
+   * and for the carried text, which compares etags.
+   */
+  const enqueue = (op: PendingOp) =>
+    Effect.gen(function* () {
+      if (op.baseEtag === undefined || !IF_MATCH_KINDS.has(op.kind)) {
+        return yield* pendingOpRepo.enqueue(op);
+      }
+      const moving = (yield* pendingOpRepo.listAll()).some(
+        (queued) =>
+          queued.kind === 'move' &&
+          queued.accountId === op.accountId &&
+          queued.targetCalendarId === op.calendarId &&
+          (queued.eventId === op.eventId ||
+            (op.eventId.startsWith(`${queued.eventId}_`) &&
+              /\d/.test(op.eventId.charAt(queued.eventId.length + 1)))),
+      );
+      yield* pendingOpRepo.enqueue(moving ? new PendingOp({ ...op, baseEtag: undefined }) : op);
+    });
 
   /**
    * The queued create of an event, while it was never sent (no dispatch
@@ -1938,11 +1964,6 @@ const make: Effect.Effect<
           new EventRecord({
             ...row,
             calendarId: target.calendarId,
-            // The move gives the event a new etag: an edit, answer or delete
-            // made while it waits must not send this one as its If-Match (it
-            // met a 412 and parked a conflict nobody caused). The move's
-            // answer, or the first op after it, brings Google's.
-            etag: null,
             syncStatus: pulledCopy ? row.syncStatus : 'pending',
           }),
         ]);

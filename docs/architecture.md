@@ -245,11 +245,13 @@ it whenever a kind is added. Rules that keep the queue correct:
   Google has, so the row stops being `pending`. A `delete` answered 404
   or 410 is done and leaves the local state alone (for one occurrence
   that is the cancelled override that keeps it away). A create dropped
-  for good or discarded takes a move queued behind it along, with the rows
-  it already put at the destination, and what was queued behind both (an
-  edit, an answer, a delete), putting nothing back: built on an event
-  Google may never have had, a delete discarded later restored it as one.
-  One the create landed after all comes back with the next pull.
+  for good or discarded takes what was queued behind it on the event
+  along, putting nothing back — an edit, an answer, a delete (built on an
+  event Google may never have had, a delete discarded later restored it
+  as one), a move with the rows it already put at its destination, and
+  what followed that move there, a further move's destination in turn.
+  One the create landed after all comes back with the next pull; one that
+  landed with an answer that did not decode keeps them.
 - **412 Conflict** (only `update` and `delete` park): the op is **parked**,
   never dropped — unless Google's copy already yields exactly the PATCH
   body the update would send (`updateBody`: our own earlier attempt
@@ -334,7 +336,10 @@ it whenever a kind is added. Rules that keep the queue correct:
   back, with what was queued behind the move (a subtask deleted since
   included; what was queued before it — an earlier move out of the
   destination — stays, so a discard releases the move while it is still
-  queued) — unless the 404 answers a retry whose first attempt landed:
+  queued; the task's next move out of the destination ends what goes
+  back: onwards, it now leaves from the source, and back to the source it
+  goes, having nothing left to move) — unless the 404 answers a retry
+  whose first attempt landed:
   then the task is in the destination already and the move settles
   there; a destination Google does not answer for keeps the move queued,
   and one that is gone puts it back. A discard does not ask Google
@@ -342,6 +347,8 @@ it whenever a kind is added. Rules that keep the queue correct:
   goes back to the source for good (an open gap, below). An edit,
   toggle or move of a task whose delete is still queued — the copy a
   pull put back meanwhile — replaces that delete, as an event edit does.
+  Open: a subtask's parent deleted with it keeps its own delete queued,
+  which still takes the subtask along on Google.
   Mirrors count a queued move for both lists. Every other route —
   Reminders ↔ Google, another Google account — creates the task in the
   target from the editor's draft, then its subtasks (nested under the
@@ -459,10 +466,11 @@ it whenever a kind is added. Rules that keep the queue correct:
   create there; a sent one stays in the source with the move behind it; a
   delete of the moved event is dropped instead, see Sync engine; an
   earlier move out of the source — the event left and came back — stays
-  where it is and goes first). The rows it takes carry no etag until it
-  lands: events.move gives the event a new one, so neither a re-queued
-  edit nor one made while the move waits sends the old one as its
-  If-Match (it met a 412 and parked a conflict nobody caused).
+  where it is and goes first). A re-queued edit goes without If-Match,
+  and so does an edit, answer or delete of the series queued while a move
+  into its calendar waits: events.move gives the event a new etag, and the
+  old one met a 412 and parked a conflict nobody caused. The rows keep it,
+  for a move Google never makes and for the carried text.
   A move's 404 (or 410) first asks the destination for the event: an
   earlier attempt may have landed with its answer lost, and found there
   the move settles as landed (a lookup with no answer retries); a 2xx

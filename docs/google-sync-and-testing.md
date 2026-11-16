@@ -529,8 +529,8 @@ change there.
   gap the skipped tests at its end show (docs/architecture.md → An op
   remembers what it replaced): it is listed with the failure, not failed.
   Seeds past the gate's that still fail are listed in `KNOWN_FAILING`,
-  skipped; a change to the steps reshuffles every sequence, so search
-  again after one. A bug a sequence finds gets a scripted test of its own
+  skipped (`QUEUE_SEQUENCE_KNOWN=1` runs them); a change to the steps
+  reshuffles every sequence, so search again after one. A bug a sequence finds gets a scripted test of its own
   beside them (`writesDown` holds every write at a 503).
 - AI pipelines never hit a real model: the seams take a fake
   `LanguageModel`/`SpeechToText`/`TextRecognizer` returning canned JSON

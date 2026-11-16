@@ -93,6 +93,14 @@ const mergeExtendedProperties = (
   return Object.keys(merged).length > 0 ? merged : undefined;
 };
 
+/**
+ * An event version's etag. Versions count per calendar (sync tokens are
+ * per calendar); the etag names the calendar too, so a moved event's old
+ * etag never matches another calendar's, as on Google, where etags are
+ * unique.
+ */
+const etagOf = (calendarId: string, version: number): string => `"${calendarId}/v${version}"`;
+
 /** A stored task on the wire: `updated` is the RFC 3339 form of its stamp. */
 const wire = (entry: StoredTask): GcalTask => ({
   ...entry.task,
@@ -198,7 +206,7 @@ export class FakeGoogle {
   putEvent(calendarId: string, event: GcalEvent): void {
     const version = this.bump(calendarId);
     this.storeOf(calendarId).set(event.id, {
-      event: { ...event, etag: `"v${version}"` },
+      event: { ...event, etag: etagOf(calendarId, version) },
       version,
     });
   }
@@ -206,7 +214,7 @@ export class FakeGoogle {
   cancelEvent(calendarId: string, eventId: string): void {
     const version = this.bump(calendarId);
     this.storeOf(calendarId).set(eventId, {
-      event: { etag: `"v${version}"`, id: eventId, status: 'cancelled' },
+      event: { etag: etagOf(calendarId, version), id: eventId, status: 'cancelled' },
       version,
     });
   }

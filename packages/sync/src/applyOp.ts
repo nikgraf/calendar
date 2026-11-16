@@ -673,10 +673,15 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       // deleted since has no row; its delete names its parent. What was
       // queued before it stays where it is — an earlier move out of the
       // destination (the task was there, left, and came back) re-keyed here
-      // became a move into its own source.
+      // became a move into its own source. The task's next move out of the
+      // destination ends what goes back, as for an event (releaseMove): it
+      // now leaves from the source, or, back to the source, has nothing left
+      // to move and goes — re-keyed, it was a move into its own list, whose
+      // answer took the task's row away.
       const all = yield* pendingOpRepo.listAll();
       const at = all.findIndex((queued) => queued.id === op.id);
       const owned = new Set<string>();
+      let cameBack = false;
       for (const other of at === -1 ? all : all.slice(at + 1)) {
         if (
           other.id === op.id ||
@@ -685,6 +690,12 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
           !(ids.has(other.eventId) || other.beforeTask?.parentId === op.eventId)
         ) {
           continue;
+        }
+        const movesOn = other.kind === 'moveTask' && other.eventId === op.eventId;
+        if (movesOn && other.targetTaskListId === to) {
+          yield* pendingOpRepo.remove(other.id);
+          cameBack = true;
+          break;
         }
         owned.add(other.eventId);
         yield* pendingOpRepo.remove(other.id);
@@ -698,6 +709,9 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
             taskListId: to,
           }),
         );
+        if (movesOn) {
+          break;
+        }
       }
       // Moved on or deleted since: the later ops own the task's row.
       const now = yield* Clock.currentTimeMillis;
@@ -717,6 +731,27 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         );
         if (owned.has(row.id)) {
           yield* taskRepo.markPending(op.accountId, to, row.id);
+        }
+      }
+      // Back in the source already: its rows are Google's there, unless an
+      // op queued since owns one.
+      if (cameBack) {
+        const stays = new Set(
+          (yield* pendingOpRepo.listAll())
+            .filter(
+              (queued) =>
+                queued.id !== op.id &&
+                queued.accountId === op.accountId &&
+                queued.calendarId === to,
+            )
+            .map((queued) => queued.eventId),
+        );
+        const back = yield* taskRepo.get(op.accountId, to, op.eventId);
+        const backSubtasks = yield* taskRepo.listSubtasks(op.accountId, to, op.eventId);
+        for (const row of back ? [back, ...backSubtasks] : backSubtasks) {
+          if (!stays.has(row.id)) {
+            yield* taskRepo.markSynced(op.accountId, to, row.id);
+          }
         }
       }
     });
@@ -840,6 +875,58 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
    * pending rows, so it would render forever as something Google never
    * had). An op without a snapshot can only mark its row synced.
    */
+  /**
+   * What was queued behind a create Google never got (discarded, or refused
+   * for good) goes with it and puts nothing back. The event's edits,
+   * answers and delete were built on an event Google may never have had: a
+   * delete discarded later restored it as one. A move (mutations.ts
+   * googleServerMove) already put the rows at its destination, where its
+   * 404 would put them back in the source as synced: the move goes, and so
+   * do the rows and whatever followed it there — another move included,
+   * whose destination is followed in turn, since a chain of moves leaves
+   * the rows at its end (left there, pending with no op, nothing ever
+   * collected them). One the create landed after all comes back with the
+   * next pull, as Google has it.
+   */
+  const dropCreateFollowers = (op: PendingOp) =>
+    Effect.gen(function* () {
+      const seen = new Set<string>();
+      const calendars = [op.calendarId];
+      for (
+        let calendarId = calendars.pop();
+        calendarId !== undefined;
+        calendarId = calendars.pop()
+      ) {
+        if (seen.has(calendarId)) {
+          continue;
+        }
+        seen.add(calendarId);
+        for (const queued of yield* pendingOpRepo.listForEvent({
+          accountId: op.accountId,
+          calendarId,
+          eventId: op.eventId,
+        })) {
+          if (queued.id === op.id) {
+            continue;
+          }
+          yield* pendingOpRepo.remove(queued.id);
+          if (queued.kind === 'move' && queued.targetCalendarId !== undefined) {
+            calendars.push(queued.targetCalendarId);
+          }
+        }
+        if (calendarId !== op.calendarId) {
+          for (const override of yield* eventRepo.listOverrides(
+            op.accountId,
+            calendarId,
+            op.eventId,
+          )) {
+            yield* eventRepo.deleteEvent(op.accountId, calendarId, override.id);
+          }
+          yield* eventRepo.deleteEvent(op.accountId, calendarId, op.eventId);
+        }
+      }
+    });
+
   const releaseRow = (op: PendingOp, options: ReleaseOptions = {}): Effect.Effect<void> => {
     const revert = options.revert ?? true;
     switch (op.kind) {
@@ -856,51 +943,9 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         return Effect.ignore(
           Effect.gen(function* () {
             yield* eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
-            // The edits, answers and delete queued behind a sent create were
-            // built on an event Google may never have had: they go with it
-            // and put nothing back — a delete discarded later restored its
-            // snapshot as an event Google never had. One the create landed
-            // after all comes back with the next pull, as Google has it.
+            // One that landed (a 2xx that did not decode) keeps what follows it.
             if (revert) {
-              for (const queued of yield* pendingOpRepo.listForEvent(op)) {
-                if (queued.id !== op.id && queued.kind !== 'move') {
-                  yield* pendingOpRepo.remove(queued.id);
-                }
-              }
-            }
-            // A move queued behind a sent create (mutations.ts
-            // googleServerMove) already put the rows at its destination.
-            // With the create gone it moves nothing: its 404 would put
-            // them back in the source as synced — an event Google never
-            // had. Drop the move and those rows instead.
-            for (const queued of yield* pendingOpRepo.listAll()) {
-              if (
-                queued.kind !== 'move' ||
-                queued.accountId !== op.accountId ||
-                queued.calendarId !== op.calendarId ||
-                queued.eventId !== op.eventId ||
-                queued.targetCalendarId === undefined
-              ) {
-                continue;
-              }
-              yield* pendingOpRepo.remove(queued.id);
-              const destination = queued.targetCalendarId;
-              // And what followed the move there: it would 404 and be dropped.
-              for (const follower of yield* pendingOpRepo.listForEvent({
-                accountId: op.accountId,
-                calendarId: destination,
-                eventId: op.eventId,
-              })) {
-                yield* pendingOpRepo.remove(follower.id);
-              }
-              for (const override of yield* eventRepo.listOverrides(
-                op.accountId,
-                destination,
-                op.eventId,
-              )) {
-                yield* eventRepo.deleteEvent(op.accountId, destination, override.id);
-              }
-              yield* eventRepo.deleteEvent(op.accountId, destination, op.eventId);
+              yield* dropCreateFollowers(op);
             }
           }),
         );
