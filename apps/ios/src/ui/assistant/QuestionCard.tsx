@@ -1,79 +1,36 @@
 import {
   asSaidOption,
   contactOption,
-  type OptionLabel,
   pickedCandidate,
-  placeOption,
+  placeOptions,
   questionCount,
   questionText,
   readsAsSaid,
   type useThreadEditor,
 } from '@calendar/app-state';
-import { SymbolView } from 'expo-symbols';
+import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme } from '../theme.ts';
+import { AppleMaps } from '../LocationMap.tsx';
+import { BOX_FONT_SCALE, type ThemeColors, useStyles } from '../theme.ts';
+import { PlaceMap } from './PlaceMap.tsx';
+import { PlaceMapSheet } from './PlaceMapSheet.tsx';
+import { QuestionOption } from './QuestionOption.tsx';
 
-/**
- * One answer, a full-width row: what it is over what tells it apart,
- * and "Taken" on the one the draft holds now.
- */
-function Option({
-  disabled,
-  label,
-  onPress,
-  selected,
-  testID,
-}: {
-  readonly disabled: boolean;
-  readonly label: OptionLabel;
-  readonly onPress: () => void;
-  readonly selected: boolean;
-  readonly testID: string;
-}) {
-  const styles = useStyles(makeStyles);
-  const { colors } = useTheme();
-  return (
-    <Pressable
-      accessibilityHint={label.detail || undefined}
-      accessibilityLabel={label.title}
-      accessibilityRole="button"
-      accessibilityState={{ disabled, selected }}
-      disabled={disabled}
-      onPress={onPress}
-      style={({ pressed }) => [styles.option, pressed && styles.pressed, disabled && styles.off]}
-      testID={testID}
-    >
-      <View style={styles.optionText}>
-        <Text maxFontSizeMultiplier={BOX_FONT_SCALE} numberOfLines={2} style={styles.title}>
-          {label.title}
-        </Text>
-        {label.detail ? (
-          <Text maxFontSizeMultiplier={BOX_FONT_SCALE} numberOfLines={1} style={styles.detail}>
-            {label.detail}
-          </Text>
-        ) : null}
-      </View>
-      {selected ? (
-        <View style={styles.taken}>
-          <SymbolView name="checkmark" size={13} tintColor={colors.text} weight="semibold" />
-          <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.takenLabel}>
-            Taken
-          </Text>
-        </View>
-      ) : null}
-    </Pressable>
-  );
-}
+/** The question map's height: the question with it fits a 6.1″ iPhone whole. */
+const MAP_HEIGHT = 150;
 
 /**
  * What the Assistant asks, one question at a time under its newest card
  * (`questionsAsked`): its number among those its turn brought, the
  * question, the answers as rows and Skip. An answer is a step (going back
- * over it asks again); Skip leaves the form as it is. The desktop's
- * card, with the same test ids.
+ * over it asks again); Skip leaves the form as it is. "Which place?"
+ * shows its places on one map above the rows, numbered like them: a pin
+ * takes its place as its row does, and the map opens full height
+ * (`PlaceMapSheet`). The desktop's card, with the same test ids.
  */
 export function QuestionCard({ editor }: { readonly editor: ReturnType<typeof useThreadEditor> }) {
   const styles = useStyles(makeStyles);
+  const [expanded, setExpanded] = useState(false);
   const {
     eventModel,
     inviteeChoices,
@@ -95,6 +52,8 @@ export function QuestionCard({ editor }: { readonly editor: ReturnType<typeof us
   // The ids count the draft's names, as the rows of choices did.
   const index = guest === undefined ? -1 : inviteeChoices.indexOf(guest);
   const held = place ? pickedCandidate(place, eventModel.location, placeGeo) : undefined;
+  const keptAsSaid = place ? readsAsSaid(place, eventModel.location, placeGeo) : false;
+  const labels = place ? placeOptions(place) : [];
   return (
     <View style={styles.card} testID="draft-question">
       <View style={styles.header}>
@@ -128,28 +87,56 @@ export function QuestionCard({ editor }: { readonly editor: ReturnType<typeof us
         </Text>
         {place ? (
           <>
+            <PlaceMap
+              disabled={disabled}
+              height={MAP_HEIGHT}
+              names={labels.map((label) => label.title)}
+              numbered
+              onExpand={AppleMaps ? () => setExpanded(true) : undefined}
+              onPick={(at) => {
+                const candidate = place.candidates[at];
+                if (candidate !== undefined) {
+                  pickPlaceChoice(candidate);
+                }
+              }}
+              places={place.candidates.map((candidate) => candidate.geo)}
+              testID="draft-place-map"
+            />
             {place.candidates.map((candidate, at) => (
-              <Option
+              <QuestionOption
                 disabled={disabled}
                 key={`${candidate.source}:${candidate.geo.source}:${String(at)}`}
-                label={placeOption(candidate)}
+                label={labels[at] ?? { detail: '', title: '' }}
+                lead={at + 1}
                 onPress={() => pickPlaceChoice(candidate)}
                 selected={held === candidate}
                 testID={`draft-place-pick-${String(at)}`}
               />
             ))}
-            <Option
+            <QuestionOption
               disabled={disabled}
               label={asSaidOption(place)}
+              lead="none"
               onPress={keepPlace}
-              selected={readsAsSaid(place, eventModel.location, placeGeo)}
+              selected={keptAsSaid}
               testID="draft-place-keep"
+            />
+            <PlaceMapSheet
+              choice={place}
+              disabled={disabled}
+              held={held}
+              keptAsSaid={keptAsSaid}
+              onClose={() => setExpanded(false)}
+              onKeep={keepPlace}
+              onPick={pickPlaceChoice}
+              question={questionText(question)}
+              visible={expanded}
             />
           </>
         ) : null}
         {guest
           ? guest.contacts.map((contact, at) => (
-              <Option
+              <QuestionOption
                 disabled={disabled}
                 key={contact.email}
                 label={contactOption(contact)}
@@ -184,11 +171,6 @@ const makeStyles = (colors: ThemeColors) =>
       fontWeight: '600',
       letterSpacing: 0.3,
     },
-    detail: {
-      color: colors['text-secondary'],
-      fontSize: 13,
-      lineHeight: 17,
-    },
     header: {
       alignItems: 'center',
       flexDirection: 'row',
@@ -197,26 +179,6 @@ const makeStyles = (colors: ThemeColors) =>
     },
     off: {
       opacity: 0.35,
-    },
-    option: {
-      alignItems: 'center',
-      backgroundColor: colors.surface,
-      borderColor: colors.border,
-      borderRadius: 14,
-      borderWidth: StyleSheet.hairlineWidth,
-      flexDirection: 'row',
-      gap: 12,
-      justifyContent: 'space-between',
-      minHeight: 52,
-      paddingHorizontal: 12,
-      paddingVertical: 7,
-    },
-    optionText: {
-      flexShrink: 1,
-      gap: 1,
-    },
-    pressed: {
-      opacity: 0.7,
     },
     question: {
       color: colors.text,
@@ -235,22 +197,5 @@ const makeStyles = (colors: ThemeColors) =>
       color: colors['text-secondary'],
       fontSize: 15,
       fontWeight: '600',
-    },
-    taken: {
-      alignItems: 'center',
-      flexDirection: 'row',
-      flexShrink: 0,
-      gap: 4,
-    },
-    takenLabel: {
-      color: colors.text,
-      fontSize: 13,
-      fontWeight: '600',
-    },
-    title: {
-      color: colors.text,
-      fontSize: 16,
-      fontWeight: '600',
-      lineHeight: 21,
     },
   });

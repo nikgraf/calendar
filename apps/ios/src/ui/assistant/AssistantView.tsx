@@ -195,6 +195,8 @@ function StepAnswer({
             keeps={editor.keeps(draft)}
             key={draft.id}
             label={label}
+            // The question's map shows the places while it asks which one.
+            map={previewing || editor.questions.current?.kind !== 'place'}
           />
         );
       })}

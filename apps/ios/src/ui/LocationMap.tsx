@@ -20,7 +20,8 @@ const loadAppleMaps = (): typeof import('expo-maps').AppleMaps | undefined => {
     return undefined;
   }
 };
-const AppleMaps = loadAppleMaps();
+/** Apple Maps' SwiftUI view, or none on this OS or binary (`loadAppleMaps`). */
+export const AppleMaps = loadAppleMaps();
 
 /**
  * A small Apple Maps view of the event's place with a marker, plus an

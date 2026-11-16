@@ -5,11 +5,16 @@ import {
   type DraftKeeps,
   type FieldChange,
 } from '@calendar/app-state';
+import { geoMatches, openInMapsUrl } from '@calendar/core';
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 import { type ReactNode, use } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Linking, StyleSheet, Text, View } from 'react-native';
 import { BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme } from '../theme.ts';
+import { PlaceMap } from './PlaceMap.tsx';
 import { SwitchAnchorContext } from './useViewSwitch.ts';
+
+/** The card's map: a street around the place, short enough to keep the card a card. */
+const MAP_HEIGHT = 132;
 
 const ICONS: Partial<Record<CardLine['field'], SymbolViewProps['name']>> = {
   alert: 'bell',
@@ -65,9 +70,11 @@ function Value({ line }: { readonly line: CardLine }) {
  * An item as the assistant answers with it: where it goes, its title, the
  * day and the hours, then whatever else it holds (`cardLines`) — each
  * field the step changed marked in the `highlight` tint the form marks
- * its rows with, the old value struck through beside it. `label` names
- * the version; `footer` holds what can be done about it. The desktop's
- * card, with the same test ids.
+ * its rows with, the old value struck through beside it. With `map`,
+ * the place it holds on a map under them, a tap away from Maps — kept
+ * out while the Assistant asks which place, whose own map shows them
+ * all. `label` names the version; `footer` holds what can be done about
+ * it. The desktop's card, with the same test ids.
  */
 export function AssistantCard({
   changes,
@@ -77,6 +84,7 @@ export function AssistantCard({
   footer,
   keeps,
   label,
+  map = false,
 }: {
   /** What the step the card is of did to the draft; empty marks nothing. */
   readonly changes: ReadonlyArray<FieldChange>;
@@ -89,6 +97,8 @@ export function AssistantCard({
   /** What is saved where the draft goes (`DraftKeeps`): the card shows no time or guests that are not. */
   readonly keeps?: DraftKeeps | undefined;
   readonly label: string;
+  /** Show the place the draft holds on a map (none while its place is asked about). */
+  readonly map?: boolean | undefined;
 }) {
   const styles = useStyles(makeStyles);
   const { colors } = useTheme();
@@ -99,6 +109,11 @@ export function AssistantCard({
   const rest = lines.filter((line) => line.field !== 'date' && line.field !== 'time');
   const retitled = changes.some((change) => change.field === 'title');
   const title = draft.item.prefill.title || 'Untitled';
+  const geo = draft.item.kind === 'event' ? draft.extras?.geo : undefined;
+  const place =
+    map && draft.item.kind === 'event' && geoMatches(geo, draft.item.prefill.location)
+      ? geo
+      : undefined;
   return (
     <View style={styles.card} testID="assistant-card">
       <View style={styles.top}>
@@ -143,6 +158,17 @@ export function AssistantCard({
           </View>
         </View>
       ))}
+      {place ? (
+        <PlaceMap
+          height={MAP_HEIGHT}
+          label={place.name ?? place.source}
+          names={[place.name ?? place.source]}
+          numbered={false}
+          onOpen={() => void Linking.openURL(openInMapsUrl(place))}
+          places={[place]}
+          testID="assistant-card-map"
+        />
+      ) : null}
       {footer}
     </View>
   );
