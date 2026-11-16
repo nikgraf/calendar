@@ -30,6 +30,7 @@ export * from './failureText.ts';
 export * from './geo/candidates.ts';
 export * from './geo/location.ts';
 export * from './geo/phonetic.ts';
+export * from './geo/placeMap.ts';
 export * from './geo/regions.ts';
 export * from './geo/resemblance.ts';
 export * from './gestures/edgeScroll.ts';

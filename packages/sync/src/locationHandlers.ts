@@ -252,18 +252,19 @@ export const locationHandlers: Pick<
 > = {
   clearLocationCache: () => Effect.flatMap(LocationGeoRepo, (cache) => cache.clear()),
 
-  mapSnapshot: ({ appearance, height, lat, lng, scale, width }) =>
+  mapSnapshot: ({ appearance, height, lat, lng, rect, scale, width }) =>
     Effect.gen(function* () {
       const geo = yield* GeoClient;
-      const pngBase64 = yield* geo.snapshot({
+      const { fitted, pngBase64 } = yield* geo.snapshot({
         appearance,
         height: Math.round(clamp(height, 1, 1200)),
         lat,
         lng,
+        rect,
         scale: clamp(scale, 1, 3),
         width: Math.round(clamp(width, 1, 1200)),
       });
-      return { pngBase64 };
+      return fitted === true && rect !== undefined ? { fitted, pngBase64 } : { pngBase64 };
     }),
 
   placeCandidates: ({ alternatives, location }) =>

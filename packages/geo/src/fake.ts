@@ -94,10 +94,12 @@ export const makeFakeGeoClient = (
           );
         return rows.slice(0, limit ?? 6);
       }),
-    snapshot: () =>
+    snapshot: ({ rect }) =>
       Effect.sync(() => {
         state.calls.push('snapshot');
-        return FAKE_MAP_PNG_BASE64;
+        return rect === undefined
+          ? { pngBase64: FAKE_MAP_PNG_BASE64 }
+          : { fitted: true, pngBase64: FAKE_MAP_PNG_BASE64 };
       }),
   };
 

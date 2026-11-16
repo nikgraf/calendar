@@ -1475,7 +1475,16 @@ gateway carries all of it. Details, limits and the threat model:
   change applies to, then its questions one at a time in a
   `QuestionCard` — which place a text means, which contact a name —
   numbered among those its phrase brought, "Question 1 of 2", with
-  Skip; `draftQuestions.ts`); what it is doing, and why a phrase failed, is a
+  Skip; `draftQuestions.ts`). Which place shows its places on one map
+  above the rows, numbered like them; the card shows the place it holds
+  on a map of its own once nothing asks which. Core's `placeMapLayout`
+  fits the places within a day trip of each other, stands pins that would
+  cover each other on legs from their places, and makes a place farther
+  off a tag on the map's edge (its row says how far, `farMeters`), the
+  pins kept clear of a side that holds one; both apps draw their own
+  pins over a MapKit image of exactly that rect (`mapSnapshot` with
+  `rect`, `usePlaceMap`), and the iPhone opens it full height as a live
+  map (`PlaceMapSheet`). What it is doing, and why a phrase failed, is a
   line under the field, the failed words kept in it. **Form** is the
   fields as captioned sections — the Event | Task | Reminder control
   (`useEditorKinds`, only the kinds something can hold; on an existing

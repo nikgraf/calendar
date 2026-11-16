@@ -1,0 +1,62 @@
+appId: com.solunivo.app.dev
+name: The Assistant shows the places it asks about on one map, and the one taken on its card
+# No `ci` tag: the places and the map image come from real MapKit on the
+# simulator (CI's bundle sets EXPO_PUBLIC_CALENDAR_GEO=off), so this flow
+# needs the network, as 14-location does. Run it locally with
+# `pnpm test:e2e:ios`; offline, MapKit finds no Plachutta, nothing is
+# asked, and the map steps are skipped.
+---
+- runFlow: ../common/launch.yaml
+- runFlow: ../common/open-new-item.yaml
+- extendedWaitUntil:
+    visible:
+      id: 'quick-add-type'
+    timeout: 30000
+# Plachutta has branches across Vienna (the fixture's past coffee puts
+# the search there): the Assistant takes the first and asks which one.
+- runFlow:
+    file: ../common/apply-quick-add.yaml
+    env:
+      PHRASE: 'Lunch with Sarah | +1 | 13:00-14:00 | Plachutta'
+- extendedWaitUntil:
+    visible:
+      id: 'draft-place-pin-1'
+    timeout: 20000
+    optional: true
+- runFlow:
+    when:
+      visible:
+        id: 'draft-place-pin-1'
+    commands:
+      # While it asks which place, the card leaves its own map out.
+      - assertNotVisible:
+          id: 'assistant-card-map'
+      # The map full height, the same rows under it; Done leaves it as it was.
+      - tapOn:
+          id: 'draft-place-map-expand'
+      - extendedWaitUntil:
+          visible:
+            id: 'draft-place-sheet-pick-1'
+          timeout: 5000
+      - tapOn:
+          id: 'draft-place-sheet-done'
+      - extendedWaitUntil:
+          notVisible:
+            id: 'draft-place-sheet'
+          timeout: 5000
+      # A pin takes its place as its row does: the question is answered,
+      # and the card shows the place on its own map.
+      - tapOn:
+          id: 'draft-place-pin-1'
+      - extendedWaitUntil:
+          notVisible:
+            id: 'draft-place-map'
+          timeout: 5000
+      - extendedWaitUntil:
+          visible:
+            id: 'assistant-card-map'
+          timeout: 10000
+- tapOn: 'Cancel'
+# The phrase made a draft: Cancel asks before it goes.
+- tapOn: 'Discard Changes'
+- assertVisible: 'Today'

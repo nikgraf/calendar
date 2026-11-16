@@ -207,9 +207,12 @@ final class GeoSession: NSObject, MKLocalSearchCompleterDelegate {
   // MARK: Map image
 
   /// A ~700 m map centered on the coordinate with a pin drawn at the
-  /// center, as base64 PNG at width×scale by height×scale pixels.
+  /// center, as base64 PNG at width×scale by height×scale pixels. Given
+  /// `rect`, exactly that stretch of the world instead and no pin: the
+  /// caller draws its own pins where its projection puts them.
   func snapshot(
-    lat: Double, lng: Double, width: Double, height: Double, scale: Double, dark: Bool
+    lat: Double, lng: Double, rect: MKMapRect?, width: Double, height: Double, scale: Double,
+    dark: Bool
   ) async throws -> String {
     let center = CLLocationCoordinate2D(latitude: lat, longitude: lng)
     guard CLLocationCoordinate2DIsValid(center) else {
@@ -217,10 +220,24 @@ final class GeoSession: NSObject, MKLocalSearchCompleterDelegate {
     }
     let size = CGSize(width: width, height: height)
     let options = MKMapSnapshotter.Options()
-    options.region = MKCoordinateRegion(
-      center: center, latitudinalMeters: 700, longitudinalMeters: 700)
+    if let rect {
+      options.mapRect = rect
+      // The caller's pins are the point: no shops or museums beside them,
+      // and the map's own colors muted under them.
+      options.pointOfInterestFilter = .excludingAll
+      if #available(iOS 17.0, macOS 14.0, *) {
+        // A configuration carries its own filter, which wins over the options'.
+        let configuration = MKStandardMapConfiguration(
+          elevationStyle: .flat, emphasisStyle: .muted)
+        configuration.pointOfInterestFilter = .excludingAll
+        options.preferredConfiguration = configuration
+      }
+    } else {
+      options.region = MKCoordinateRegion(
+        center: center, latitudinalMeters: 700, longitudinalMeters: 700)
+      options.pointOfInterestFilter = .includingAll
+    }
     options.size = size
-    options.pointOfInterestFilter = .includingAll
     #if os(macOS)
       options.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
     #else
@@ -238,7 +255,7 @@ final class GeoSession: NSObject, MKLocalSearchCompleterDelegate {
     }
     // The region is centered on the coordinate, so the pin sits at the
     // image center — no flipped-coordinate conversion needed per platform.
-    let pin = CGPoint(x: width / 2, y: height / 2)
+    let pin = rect == nil ? CGPoint(x: width / 2, y: height / 2) : nil
     guard let png = Self.render(snapshot.image, size: size, scale: scale, pin: pin) else {
       throw GeoBridgeError.failed("could not encode the map image")
     }
@@ -249,7 +266,7 @@ final class GeoSession: NSObject, MKLocalSearchCompleterDelegate {
   private static let pinStroke: CGFloat = 3
 
   #if os(macOS)
-    private static func render(_ image: NSImage, size: CGSize, scale: Double, pin: CGPoint) -> Data? {
+    private static func render(_ image: NSImage, size: CGSize, scale: Double, pin: CGPoint?) -> Data? {
       guard
         let rep = NSBitmapImageRep(
           bitmapDataPlanes: nil, pixelsWide: Int(size.width * scale),
@@ -264,17 +281,17 @@ final class GeoSession: NSObject, MKLocalSearchCompleterDelegate {
       NSGraphicsContext.saveGraphicsState()
       NSGraphicsContext.current = context
       image.draw(in: CGRect(origin: .zero, size: size))
-      drawPin(at: pin, in: context.cgContext)
+      if let pin { drawPin(at: pin, in: context.cgContext) }
       NSGraphicsContext.restoreGraphicsState()
       return rep.representation(using: .png, properties: [:])
     }
   #else
-    private static func render(_ image: UIImage, size: CGSize, scale: Double, pin: CGPoint) -> Data? {
+    private static func render(_ image: UIImage, size: CGSize, scale: Double, pin: CGPoint?) -> Data? {
       let format = UIGraphicsImageRendererFormat()
       format.scale = scale
       return UIGraphicsImageRenderer(size: size, format: format).pngData { context in
         image.draw(in: CGRect(origin: .zero, size: size))
-        drawPin(at: pin, in: context.cgContext)
+        if let pin { drawPin(at: pin, in: context.cgContext) }
       }
     }
   #endif
@@ -328,9 +345,11 @@ enum GeoDispatch {
       else { throw GeoBridgeError.badRequest("snapshot needs lat, lng, width and height") }
       let scale = min(max(number(params["scale"]) ?? 2, 1), 3)
       let dark = (params["appearance"] as? String) == "dark"
+      let rect = mapRect(params["rect"])
       let png = try await GeoSession.shared.snapshot(
-        lat: lat, lng: lng, width: width, height: height, scale: scale, dark: dark)
-      return ["pngBase64": png]
+        lat: lat, lng: lng, rect: rect, width: width, height: height, scale: scale, dark: dark)
+      // `fitted`: the image is the rect asked for, pins are the caller's.
+      return rect == nil ? ["pngBase64": png] : ["pngBase64": png, "fitted": true]
     default:
       throw GeoBridgeError.badRequest("unknown geo method: \(method)")
     }
@@ -349,6 +368,17 @@ enum GeoDispatch {
       let lng = number(raw["lng"]), let radius = number(raw["radiusMeters"])
     else { return nil }
     return GeoRegionDTO(lat: lat, lng: lng, radiusMeters: radius)
+  }
+
+  /// A stretch of the world in fractions of it (x, y, width, height in
+  /// [0, 1] of `MKMapSize.world`), when the params carry a valid one.
+  private static func mapRect(_ value: Any?) -> MKMapRect? {
+    guard let raw = value as? [String: Any], let x = number(raw["x"]), let y = number(raw["y"]),
+      let width = number(raw["width"]), let height = number(raw["height"]),
+      x.isFinite, y.isFinite, width > 0, height > 0, width <= 1, height <= 1
+    else { return nil }
+    let world = MKMapSize.world.width
+    return MKMapRect(x: x * world, y: y * world, width: width * world, height: height * world)
   }
 
   /// JSON numbers arrive as Int, Double or NSNumber depending on the host.

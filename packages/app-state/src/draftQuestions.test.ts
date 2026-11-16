@@ -5,6 +5,7 @@ import {
   editorQuestions,
   isPlaceQuestion,
   openQuestions,
+  placeOptions,
   questionsAsked,
 } from './draftQuestions.ts';
 import {
@@ -70,6 +71,32 @@ const asking = () =>
     id: ids(),
     place: twoPlaces,
   });
+
+/** A Café Sacher at a place, with MapKit's address when it gave one. */
+const sacher = (lat: number, lng: number, address?: string): PlaceCandidate => ({
+  ...(address === undefined ? {} : { address }),
+  geo: new GeoLocation({ lat, lng, name: 'Café Sacher', source: 'Café Sacher' }),
+  match: 'words',
+  source: 'mapkit',
+});
+
+describe('placeOptions', () => {
+  it('says how far a place off the map is before its address', () => {
+    const options = placeOptions({
+      candidates: [
+        sacher(48.20393, 16.36968, 'Philharmoniker Straße 4, 1010 Wien'),
+        sacher(48.20341, 16.37014),
+        sacher(47.80447, 13.04402, 'Schwarzstraße 5–7, 5020 Salzburg'),
+      ],
+      text: 'Café Sacher',
+    });
+    expect(options.map((option) => option.detail)).toEqual([
+      'Philharmoniker Straße 4, 1010 Wien',
+      '',
+      '251 km · Schwarzstraße 5–7, 5020 Salzburg',
+    ]);
+  });
+});
 
 describe('openQuestions', () => {
   it('asks about a place with more than one candidate, or with none taken', () => {
