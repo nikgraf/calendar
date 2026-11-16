@@ -1216,8 +1216,9 @@ matches one of these):
 - **A lost tap without the dropped-touch signature (iOS)**: a tap right
   after typing or right after a launch does not register — the all-day
   switch with the keyboard up (flow 12 saves a timed 9–10 event), the
-  Week segment just after launch (16), Done leaving the Settings root up
-  (04a), Cancel leaving "New Task" open (09). `run-flows.ts` says "no
+  view menu just after launch (`common/switch-view.yaml`, now retried),
+  Done leaving the Settings root up (04a), Cancel leaving "New Task" open
+  (09). `run-flows.ts` says "no
   retry". Rerun; if one recurs, prove that tap by its effect in a `retry`
   block, as `switch-view.yaml` does.
 - **`simctl openurl` timed out (iOS)**: an `openLink` fails with
@@ -1233,8 +1234,8 @@ matches one of these):
   `mirror-preview`, flow 19's zone row 5 s after the pick, the onboarding
   flow's `lesson-banner`. Raise that step's timeout when one recurs (21's
   "Up to date" went to 60 s).
-- **A swipe that neither pages nor reveals (iOS)**: flow 05's swipe back,
-  flow 02's swipe on a task row right after an outdent re-rendered the
+- **A swipe that neither pages nor reveals (iOS)**: flow 02's day swipe
+  back, and its swipe on a task row right after an outdent re-rendered the
   list. Open; before hardening the flow, check whether the app ignores a
   swipe during its layout animation.
 - **`appleCalendarReal` › "shows an event created outside the app…"**

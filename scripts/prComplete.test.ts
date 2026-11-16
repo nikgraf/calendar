@@ -130,7 +130,55 @@ describe('missingParts', () => {
     ]);
   });
 
+  it('counts a reviewer only by a heading or a round that names it', () => {
+    const together = (lines: string) =>
+      complete.body.replace(/## After review \(Claude[\s\S]*$/, `## After review\n\n${lines}\n`);
+    // The forms older PRs used.
+    for (const lines of [
+      '- **Opus (xhigh), round 1:** ten findings.\n- **Codex gpt-6-astra (xhigh), round 1:** one.',
+      '**Claude Opus 5.5 (xhigh) and Codex (gpt-6-astra, xhigh), round 1.** All fixed.',
+      '- Opus-level self round (xhigh): 11 findings, all fixed.\n- Codex round 2: 5 P2, all fixed.',
+    ]) {
+      expect(missingParts({ ...complete, body: together(lines) })).toEqual([]);
+    }
+    // A mention is no round.
+    expect(
+      missingParts({
+        ...complete,
+        body: together('**Claude Opus 5.5 (xhigh), round 1.** Clean. Codex has not run yet.'),
+      }),
+    ).toEqual(['No "## After review (Codex …)" section: at least one Codex round is owed.']);
+    const codexOnly = complete.body.replace(
+      /## After review \(Claude[\s\S]*$/,
+      '## After review (Codex, gpt-6-astra, xhigh)\n\n- **Round 1** found nothing. The Opus round is pending.\n',
+    );
+    expect(missingParts({ ...complete, body: codexOnly })).toEqual([
+      'No "## After review (Claude Opus …)" section: the Opus rounds are owed.',
+    ]);
+  });
+
   it('fails a body that says something is still owed', () => {
+    // The line REVIEW.md tells an author to write when Codex hit its limit.
+    const limit = complete.body.replace(
+      /(## After review \(Codex[^\n]*\n\n)[\s\S]*$/,
+      '$1Codex round owed: usage limit until 15:00.\n',
+    );
+    expect(missingParts({ ...complete, body: limit })).toEqual([
+      'The body says something is still owed: "Codex round owed: usage limit until 15:00."',
+    ]);
+    // Owed words in inline code, and a TODO anywhere, are a finding's subject, not owed work.
+    expect(
+      missingParts({
+        ...complete,
+        body: `${complete.body}\nA library call is marked as a TODO in its source.\n`,
+      }),
+    ).toEqual([]);
+    expect(
+      missingParts({
+        ...complete,
+        body: `${complete.body}\nRound 2 found a stale \`TODO\` comment. Fixed.\n`,
+      }),
+    ).toEqual([]);
     expect(
       missingParts({ ...complete, body: `${complete.body}\niOS screenshots still to come.\n` }),
     ).toEqual(['The body says something is still owed: "iOS screenshots still to come."']);

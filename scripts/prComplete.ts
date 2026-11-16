@@ -35,8 +35,22 @@ const REVIEWERS = {
   Codex: /\b(?:Codex|gpt-6)/i,
 } as const;
 
-/** Words that mean the PR still owes something. */
-const OWED = /\b(?:still to come|still owed|(?:is|are) owed)\b|\bTBD\b|\bTODO\b/;
+/** Words that mean the PR still owes something (inline code aside; a `TODO` is too often a finding's subject). */
+const OWED = /\b(?:[Oo]wed|[Ss]till to come)\b|\bTBD\b/;
+
+/**
+ * The part of a review line that says whose round it is: a leading bold
+ * span ("**Codex (gpt-6-astra, xhigh), round 1.**") or the text before the
+ * first colon ("- Codex round 2: …").
+ */
+const roundHead = (line: string): string => {
+  const rest = line.replace(/^\s*-\s+/, '');
+  return /^\*\*(.+?)\*\*/.exec(rest)?.[1] ?? rest.split(':')[0] ?? '';
+};
+
+/** A round's lead names its reviewer first; "The Opus round is pending." is no round. */
+const leadsRound = (head: string): boolean =>
+  /^(?:Claude|Opus|Codex|gpt-6)/i.test(head) && /\bround\b/i.test(head);
 
 /** Text of `.github/pull_request_template.md` that a finished body has replaced. */
 export const PLACEHOLDERS = [
@@ -157,7 +171,7 @@ const unfinished = (
   body: string,
   parts: ReadonlyArray<{ heading: string; text: string }>,
 ): ReadonlyArray<string> => {
-  const owed = body.split('\n').find((line) => OWED.test(line));
+  const owed = body.split('\n').find((line) => OWED.test(line.replaceAll(/`[^`]*`/g, '')));
   return [
     ...PLACEHOLDERS.filter((text) => body.includes(text)).map(
       (text) => `The body still holds the template's "${text}".`,
@@ -174,13 +188,20 @@ export const missingParts = (pr: PullRequest): ReadonlyArray<string> => {
   const parts = sections(body);
   const opening = body.split(/^## /m)[0]?.trim() ?? '';
   const user = parts.find(({ heading }) => heading === USER_SECTION);
-  // "## After review (Claude Opus 5.5, xhigh)" per reviewer, or one
-  // "## After review" / "## Reviews" section naming both.
-  const reviews = parts
-    .filter(({ heading }) => /^(?:After review|Reviews?)\b/i.test(heading))
-    .map(({ heading, text }) => `${heading}\n${text}`)
-    .join('\n');
-  const reviewedBy = (reviewer: keyof typeof REVIEWERS) => REVIEWERS[reviewer].test(reviews);
+  // A reviewer counts when a review section's heading names it ("## After
+  // review (Claude Opus 5.5, xhigh)"), or a round's lead line in one
+  // "## After review" / "## Reviews" section does. A mention elsewhere
+  // ("Codex has not run yet.") is no round.
+  const reviews = parts.filter(({ heading }) => /^(?:After review|Reviews?)\b/i.test(heading));
+  const reviewedBy = (reviewer: keyof typeof REVIEWERS) =>
+    reviews.some(
+      ({ heading, text }) =>
+        REVIEWERS[reviewer].test(heading) ||
+        text
+          .split('\n')
+          .map(roundHead)
+          .some((head) => leadsRound(head) && REVIEWERS[reviewer].test(head)),
+    );
   return [
     ...(opening === ''
       ? [`The body opens with a line on what the PR does, before "## ${USER_SECTION}".`]

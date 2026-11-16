@@ -74,12 +74,15 @@ The repacked e2e build with this branch's JS, the same way CI runs it
    `--wait-only` never requests a build. No build for a new fingerprint
    means the PR changed native code: ask Nik before requesting one
    (`docs/distribution.md` → Simulator dev client).
-3. Embed this branch's JS with the fixture switches CI uses:
-   `EXPO_PUBLIC_CALENDAR_GOOGLE=fixture EXPO_PUBLIC_CALENDAR_MODEL=fixture EXPO_PUBLIC_CALENDAR_ONBOARDING=off EXPO_PUBLIC_CALENDAR_NOTIFICATIONS=off bash e2e/ci/repack-app.sh <scratch>/eas/Solunivo.app <scratch>/repacked/Solunivo.app`.
+3. Embed this branch's JS with the switches CI uses (its "Embed this
+   commit's JS" step in `.github/workflows/ci.yml` is the reference):
+   `EXPO_PUBLIC_CALENDAR_GEO=off EXPO_PUBLIC_CALENDAR_GOOGLE=fixture EXPO_PUBLIC_CALENDAR_MODEL=fixture EXPO_PUBLIC_CALENDAR_ONBOARDING=off EXPO_PUBLIC_CALENDAR_NOTIFICATIONS=off bash e2e/ci/repack-app.sh <scratch>/eas/Solunivo.app <scratch>/repacked/Solunivo.app`.
    The values are inlined into the bundle: change one, repack again.
+   Leave `EXPO_PUBLIC_CALENDAR_GEO` out only for a shot of a live map.
 4. Install on the booted simulator (uninstall what is there first):
-   `xcrun simctl uninstall booted com.solunivo.app.dev`, then
-   `bash e2e/ci/prepare-simulator.sh install <scratch>/repacked/Solunivo.app`
+   `UDID=$(xcrun simctl list devices booted -j | jq -r '[.devices[][]] | .[0].udid')`,
+   `xcrun simctl uninstall "$UDID" com.solunivo.app.dev`, then
+   `SIMULATOR_UDID=$UDID bash e2e/ci/prepare-simulator.sh install <scratch>/repacked/Solunivo.app`
    (grants Reminders, Contacts and Calendars, quiets the keyboard).
 5. Drive to the state with the PR's Maestro flow or the simulator tool,
    then `xcrun simctl io booted screenshot <scratch>/ios-after.png`. A
