@@ -297,7 +297,7 @@ export function AssistantView({
   const replies = (position: number) =>
     (steps.noChange.get(position) ?? []).map((line) => (
       <NoChangeReply
-        disabled={steps.locked || busy}
+        disabled={steps.locked || quick.pending !== undefined}
         key={line.turn.id}
         line={line}
         onReading={quick.say}

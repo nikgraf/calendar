@@ -1959,7 +1959,7 @@ describe('words that change nothing', () => {
     expect(idle.steps).toBe(started.steps);
     expect(idle.version).toBe(started.version);
     expect(idle.noChange).toEqual([
-      { after: 'd2', id: 'd3', readings: [], utterance: 'make it at seven' },
+      { after: 'd2', draft: 'd1', id: 'd3', readings: [], utterance: 'make it at seven' },
     ]);
     // The next turn that changes something is the next step; the words stay where they were said.
     const moved = refineThread(idle, 'at 8', [{ id: 'd1', item: later }], id);
@@ -2101,11 +2101,12 @@ describe('words that change nothing', () => {
     const edited = foldForm(focusDraft(first, 1), { item: renamed }, { kind: 'edit' }, id);
     const idle = refineThread(edited, 'thanks', [{ id: 'd2', item: renamed }], id);
     expect(idle.noChange[0]?.after).toBe(edited.steps.at(-1)?.id);
-    // The edit undone by hand: it was no step after all.
+    // The edit undone by hand after the words: a step of its own, not the
+    // first edit joined and gone — the words stand between them.
     const back = foldForm(idle, { item: planning }, { kind: 'edit' }, id);
-    expect(back.steps).toHaveLength(1);
-    expect(back.noChange[0]?.after).toBe(first.steps[0]?.id);
-    // The edited draft written: its edit leaves the line, the words stay.
+    expect(back.steps).toHaveLength(3);
+    expect(back.noChange[0]?.after).toBe(edited.steps.at(-1)?.id);
+    // The edited draft written: its edits leave the line, the words stay.
     const written = removeDrafts(idle, ['d2']);
     expect(written.steps).toHaveLength(1);
     expect(written.noChange[0]?.after).toBe(first.steps[0]?.id);
@@ -2129,12 +2130,36 @@ describe('words that change nothing', () => {
     expect(readingDoes(started, { id: 'd1', item: dinner }, { invite: ['Tom'] })).toBe(
       '→ invites Tom',
     );
+    // Taking off a name that names no guest takes no one off.
+    expect(readingDoes(started, { id: 'd1', item: dinner }, { uninvite: ['Ana'] })).toBeUndefined();
+    // A name that already names a guest invites no one new.
+    const tom = { displayName: 'Tom Brandt', email: 'tom@example.com' };
+    const guested = updateDraft(started, 0, dinner, {
+      attendees: [tom],
+      description: '',
+      reminders: undefined,
+    });
+    expect(readingDoes(guested, { id: 'd1', item: dinner }, { invite: ['Tom'] })).toBeUndefined();
     expect(
       readingDoes(
-        started,
+        guested,
         { id: 'd1', item: later },
-        { invite: ['Tom', 'Mia'], uninvite: ['Ana'] },
+        { invite: ['Tom', 'Mia'], uninvite: ['Tom', 'Ana'] },
       ),
-    ).toBe('→ 20:00–21:00 · → invites Tom, Mia · → uninvites Ana');
+    ).toBe('→ 20:00–21:00 · → invites Mia · → uninvites Tom');
+  });
+
+  it('stand between an edit by hand and the next one: the next edit is a step of its own', () => {
+    const id = ids();
+    const started = startThread([dinner], 'dinner', { id });
+    const renamed = (title: string): QuickAddItem => ({
+      kind: 'event',
+      prefill: { ...dinner.prefill, title },
+    });
+    const edited = foldForm(started, { item: renamed('Dinner w') }, { kind: 'edit' }, id);
+    const idle = refineThread(edited, 'thanks', [{ id: 'd1', item: renamed('Dinner w') }], id);
+    const more = foldForm(idle, { item: renamed('Dinner with Ana') }, { kind: 'edit' }, id);
+    expect(more.steps).toHaveLength(3);
+    expect(more.noChange[0]?.after).toBe(edited.steps.at(-1)?.id);
   });
 });

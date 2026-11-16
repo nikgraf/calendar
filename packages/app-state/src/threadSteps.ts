@@ -148,8 +148,9 @@ export interface NoChangeLine {
 /**
  * The words that changed nothing, by the position of the step they
  * follow (`StepLine.position`; 0 before the first), oldest first. Only
- * the newest of all is undimmed, while no step came after it and no
- * older step is on show.
+ * the newest of all is undimmed, while no step came after it, no older
+ * step is on show and the draft it was said to is the one in the form:
+ * its readings would be said to that one.
  */
 export const noChangeLines = (
   state: DraftThreadState,
@@ -158,8 +159,12 @@ export const noChangeLines = (
   const positionOf = (turn: NoChangeTurn): number =>
     turn.after === undefined ? 0 : line.findIndex((step) => step.id === turn.after) + 1;
   const last = state.noChange.at(-1);
+  const focused = state.drafts[state.focused]?.id;
   const live =
-    last !== undefined && state.ahead.length === 0 && positionOf(last) === line.length
+    last !== undefined &&
+    state.ahead.length === 0 &&
+    positionOf(last) === line.length &&
+    (last.draft === undefined || last.draft === focused)
       ? last
       : undefined;
   const lines = new Map<number, ReadonlyArray<NoChangeLine>>();

@@ -107,40 +107,35 @@ export const useQuickAddModel = ({
     };
   }, [speech]);
 
-  /** Reads the phrase (Enter, Apply, or the end of a dictation, `heard`) and hands it on. */
-  const submit = async (text: string = phrase, heard?: Heard) => {
+  /** The words being read, while they are: the phrase on its way (`pendingLine`). */
+  const [sending, setSending] = useState<string | null>(null);
+
+  /**
+   * Reads the phrase (Enter, Apply, or the end of a dictation, `heard`)
+   * and hands it on. `field`: the words are the field's, which a turn
+   * taken leaves empty; words the editor offered (`say`) leave it as it is.
+   */
+  const submit = async (text: string = phrase, heard?: Heard, { field = true } = {}) => {
     if (!text.trim()) {
       return;
     }
     setBusy(true);
+    setSending(text);
     setError(null);
     try {
       const message = await phraseRef.current(text, heard);
-      if (message === undefined) {
+      if (message !== undefined) {
+        setError(message);
+      } else if (field) {
         // A thread keeps the words as a turn: the field is free for the next one.
         setPhrase('');
-      } else {
-        setError(message);
       }
     } catch {
       setError('On-device model unavailable.');
     } finally {
       setBusy(false);
+      setSending(null);
     }
-  };
-
-  /**
-   * Words the editor offers to say (another reading of dictated words):
-   * sent as typed words are, through the field — so they show as the
-   * phrase on its way, and stay there with the message if they fail. Not
-   * while a phrase is read.
-   */
-  const say = (text: string) => {
-    if (busy) {
-      return;
-    }
-    setPhrase(text);
-    void submit(text);
   };
 
   /**
@@ -354,6 +349,20 @@ export const useQuickAddModel = ({
     }
   };
 
+  /**
+   * Words the editor offers to say (another reading of dictated words),
+   * sent as typed words are: they show as the phrase on its way, and
+   * hands-free ends, as it does for words typed. The field keeps what it
+   * holds. Not while a phrase is heard or read.
+   */
+  const say = (text: string) => {
+    if (busy || live.trim() !== '') {
+      return;
+    }
+    endVoice();
+    void submit(text, undefined, { field: false });
+  };
+
   /** The microphone button. */
   const toggleVoice = () => {
     switch (micPress({ handsFree, voice })) {
@@ -459,7 +468,7 @@ export const useQuickAddModel = ({
      * The thread's line for the phrase on its way: its words while it is
      * spoken, then the phrase while it is read.
      */
-    pending: pendingLine({ busy, live, phrase }),
+    pending: pendingLine({ busy, live, phrase: sending ?? phrase }),
     phrase,
     /** Words the editor offers, said as if typed (`say`). */
     say,

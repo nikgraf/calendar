@@ -25,7 +25,7 @@ import {
   Temporal,
 } from '@calendar/core';
 import { Effect } from 'effect';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   changedDraftFields,
   describeDraftItem,
@@ -47,6 +47,7 @@ import {
   applyGuestChange,
   type GuestChange,
   guestLabel,
+  guestsNamed,
   type InviteeChoice,
   resolveInvitees,
 } from './draftInvitees.ts';
@@ -227,6 +228,8 @@ export interface StepAhead {
 export interface NoChangeTurn {
   /** The step they followed, by id; undefined: none yet (a saved item as it opened). */
   readonly after: string | undefined;
+  /** The one draft they were said to, by id; undefined for words said to several. */
+  readonly draft: string | undefined;
   readonly id: string;
   /** For dictated words: the recogniser's other readings that would change something. */
   readonly readings: ReadonlyArray<OtherReading>;
@@ -277,9 +280,9 @@ const keptTurns = (
 
 /**
  * The words that changed nothing, once some steps left the line while
- * the rest stayed where they were (an edit that ended where it began, the
- * edits of a draft that was written): those said after a step that left
- * follow the nearest step before it that stayed.
+ * the rest stayed where they were (the edits of a draft that was
+ * written): those said after a step that left follow the nearest step
+ * before it that stayed.
  */
 const reanchored = (
   turns: ReadonlyArray<NoChangeTurn>,
@@ -717,7 +720,16 @@ export const refineThread = (
     return {
       ...state,
       ahead: [],
-      noChange: [...kept, { after: state.steps.at(-1)?.id, id: id(), readings: [], utterance }],
+      noChange: [
+        ...kept,
+        {
+          after: state.steps.at(-1)?.id,
+          draft: changes.length === 1 ? changes[0]?.id : undefined,
+          id: id(),
+          readings: [],
+          utterance,
+        },
+      ],
     };
   }
   // The drafts whose item the turn left another, or dated: the ones its words are said to.
@@ -774,8 +786,10 @@ export const withReadings = (
 /**
  * What another reading of the words would do, in words — the summary of
  * the step it would make, and whom it would invite or take off (looked
- * up only once it is taken) — or undefined where it would change nothing
- * either.
+ * up only once it is taken: a name that already names a guest invites
+ * no one new, one that names none takes no one off, as `guestsNamed`
+ * reads names when the turn lands) — or undefined where it would change
+ * nothing either.
  */
 export const readingDoes = (
   state: DraftThreadState,
@@ -790,10 +804,13 @@ export const readingDoes = (
 ): string | undefined => {
   const after = refineThread(state, '', [change], () => 'reading');
   const step = after.steps.length > state.steps.length ? after.steps.at(-1) : undefined;
+  const guests = state.drafts.find((draft) => draft.id === change.id)?.extras?.attendees ?? [];
+  const joins = invite.filter((name) => guestsNamed(name, guests).length === 0);
+  const leaves = uninvite.filter((name) => guestsNamed(name, guests).length > 0);
   const said = [
     ...(step?.kind === 'phrase' && step.summary !== 'no change' ? [step.summary] : []),
-    ...(invite.length > 0 ? [`→ invites ${invite.join(', ')}`] : []),
-    ...(uninvite.length > 0 ? [`→ uninvites ${uninvite.join(', ')}`] : []),
+    ...(joins.length > 0 ? [`→ invites ${joins.join(', ')}`] : []),
+    ...(leaves.length > 0 ? [`→ uninvites ${leaves.join(', ')}`] : []),
   ];
   return said.length === 0 ? undefined : said.join(' · ');
 };
@@ -1173,11 +1190,13 @@ export const foldForm = (
     return { ...state, drafts };
   }
   const newest = state.steps.at(-1);
+  // Words said since the newest step stand between it and this edit.
   const joins =
     how.kind === 'edit' &&
     newest?.kind === 'edit' &&
     newest.drafts[0] === draft.id &&
-    fields.every((field) => newest.fields.includes(field));
+    fields.every((field) => newest.fields.includes(field)) &&
+    !state.noChange.some((turn) => turn.after === newest.id);
   if (!joins) {
     const step: DraftStep =
       how.kind === 'pick'
@@ -1194,13 +1213,7 @@ export const foldForm = (
   const began = state.history.at(-1)?.drafts.find((each) => each.id === draft.id);
   const net = draftChanges(began, next).map((change) => change.field);
   return net.length === 0
-    ? {
-        ...state,
-        drafts,
-        history: state.history.slice(0, -1),
-        noChange: reanchored(state.noChange, state.steps, state.steps.slice(0, -1)),
-        steps: state.steps.slice(0, -1),
-      }
+    ? { ...state, drafts, history: state.history.slice(0, -1), steps: state.steps.slice(0, -1) }
     : { ...state, drafts, steps: [...state.steps.slice(0, -1), { ...newest, fields: net }] };
 };
 
@@ -1542,6 +1555,13 @@ export const useDraftThread = ({
     request.current += 1;
     setBusy(false);
   };
+  // The editor gone: other readings still to be tried are not (`offerReadings`).
+  useEffect(
+    () => () => {
+      request.current += 1;
+    },
+    [],
+  );
 
   /** Whom a turn invited or took off, as guests: each invited name looked up in the contacts. */
   const guestsOf = async (

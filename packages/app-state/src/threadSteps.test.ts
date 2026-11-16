@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vite-plus/test';
 import {
   EMPTY_THREAD,
+  focusDraft,
   foldForm,
   openThread,
   refineThread,
@@ -228,6 +229,28 @@ describe('noChangeLines', () => {
     expect(saidAt(noChangeLines(after)).at(-1)).toEqual([2, ['yes']]);
     expect(saidAt(noChangeLines(stepTo(after, 1))).at(-1)).toEqual([2, ['yes (dimmed)']]);
     expect(noChangeLines(EMPTY_THREAD).size).toBe(0);
+  });
+
+  it('dims the newest words while another draft is in the form: their readings are not its', () => {
+    const id = noChangeIds();
+    const first = startThread([lunch, standup], 'lunch and the standup', { id });
+    const idle = refineThread(first, 'invite Tom', [{ id: 'n1', item: lunch }], id);
+    expect(saidAt(noChangeLines(idle))).toEqual([[1, ['invite Tom']]]);
+    expect(saidAt(noChangeLines(focusDraft(idle, 1)))).toEqual([[1, ['invite Tom (dimmed)']]]);
+    // Words said to both drafts are no one draft's.
+    const both = refineThread(
+      idle,
+      'both at one',
+      [
+        { id: 'n1', item: lunch },
+        { id: 'n2', item: standup },
+      ],
+      id,
+    );
+    expect(saidAt(noChangeLines(focusDraft(both, 1))).at(-1)).toEqual([
+      1,
+      ['invite Tom (dimmed)', 'both at one'],
+    ]);
   });
 
   it('puts words said to a saved item before any step at 0', () => {
