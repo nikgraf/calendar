@@ -315,6 +315,8 @@ export const retargetOp = (op: PendingOp, calendarId: string): PendingOp => {
 
 export interface ApplyOp {
   readonly apply: (op: PendingOp) => Effect.Effect<ApplyOutcome>;
+  /** An account about to go: what its queued copies were copied from stays. */
+  readonly releaseAccountCopies: (accountId: string) => Effect.Effect<void, SqlError>;
   /** Puts back what an abandoned op changed locally and hands its row to sync (also used by discard). */
   readonly releaseRow: (op: PendingOp, options?: ReleaseOptions) => Effect.Effect<void>;
   /**
@@ -881,7 +883,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         return Effect.ignore(
           Effect.gen(function* () {
             if (revert) {
-              yield* releaseCopySource(op);
+              yield* abandonCopy(op);
             }
             yield* eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
             // A move queued behind a sent create (mutations.ts
@@ -918,7 +920,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
           ? Effect.ignore(
               Effect.gen(function* () {
                 if (revert) {
-                  yield* releaseCopySource(op);
+                  yield* abandonCopy(op);
                 }
                 yield* taskRepo.removeTask(op.accountId, listId, op.eventId);
                 yield* retireFollowers(op, listId);
@@ -1003,6 +1005,80 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         if (held) {
           yield* pendingOpRepo.remove(opId);
           yield* releaseRow(held);
+        }
+      }
+    });
+
+  /**
+   * A create that will not land, whose item the user moved on meanwhile:
+   * its sent create stayed, with the move's delete queued behind it, and
+   * the next copy holds that delete. That copy takes over what this one
+   * was copied from, in place of the delete, which goes — it would delete
+   * nothing, and released later it would put back a row Google never had.
+   * Whether a copy took it over.
+   */
+  const handOn = (op: PendingOp): Effect.Effect<boolean, SqlError> =>
+    Effect.gen(function* () {
+      const behind = new Set(
+        (yield* pendingOpRepo.listForEvent({
+          accountId: op.accountId,
+          calendarId: op.calendarId,
+          eventId: op.eventId,
+        }))
+          .filter((other) => other.kind === 'delete' || other.kind === 'deleteTask')
+          .map((other) => other.id),
+      );
+      const taken = new Set<string>();
+      for (const holder of yield* pendingOpRepo.listAll()) {
+        const held = holder.copySource;
+        if (held?.kind !== 'held' || !held.opIds.some((opId) => behind.has(opId))) {
+          continue;
+        }
+        const rest = held.opIds.filter((opId) => !behind.has(opId));
+        yield* pendingOpRepo.setCopySource(
+          [holder.id],
+          rest.length > 0 ? { kind: 'held', opIds: rest } : op.copySource,
+        );
+        for (const opId of held.opIds) {
+          if (behind.has(opId)) {
+            taken.add(opId);
+          }
+        }
+      }
+      for (const opId of taken) {
+        yield* pendingOpRepo.remove(opId);
+      }
+      return taken.size > 0;
+    });
+
+  /** A copy that will not land: the next copy takes its source over, or the source stays. */
+  const abandonCopy = (op: PendingOp): Effect.Effect<void, SqlError> =>
+    Effect.gen(function* () {
+      if (!(yield* handOn(op))) {
+        yield* releaseCopySource(op);
+      }
+    });
+
+  /**
+   * An account about to go takes its queued ops with it, without the drain:
+   * a copy queued there never lands, so what it was copied from stays
+   * (or a copy it was moved on to takes it over), as for any copy that
+   * will not land.
+   */
+  const releaseAccountCopies = (accountId: string): Effect.Effect<void, SqlError> =>
+    Effect.gen(function* () {
+      const copies = (yield* pendingOpRepo.listAll()).filter(
+        (op) =>
+          op.accountId === accountId &&
+          (op.kind === 'create' || op.kind === 'createTask') &&
+          op.copySource !== undefined,
+      );
+      for (const { id } of copies) {
+        // Read again: one released before may have handed its source on to it.
+        const op = yield* pendingOpRepo.getById(id);
+        if (op) {
+          yield* pendingOpRepo.remove(id);
+          yield* abandonCopy(op);
         }
       }
     });
@@ -1273,24 +1349,24 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       if (op.kind === 'reorderTask') {
         return yield* drop(op, 'the task or its new neighbours are gone on Google');
       }
+      // A create whose calendar or list is gone will not land: it goes as a
+      // refused one does — its row, the subtasks and ops waiting on its
+      // temp id, and what a copy holds of its source goes back.
+      if (op.kind === 'create' || op.kind === 'createTask') {
+        yield* releaseRow(op);
+        return 'done' as const;
+      }
       // Deleted remotely — drop the local copy too. (For deleteTask
       // this is simply "already gone".)
       if (TASK_KINDS.has(op.kind)) {
         if (op.taskListId) {
           yield* taskRepo.removeTask(op.accountId, op.taskListId, op.eventId);
-          if (op.kind === 'createTask') {
-            yield* retireFollowers(op, op.taskListId);
-            yield* releaseCopySource(op);
-          }
         }
         if (op.kind === 'deleteTask') {
           yield* retireSubtaskDeletes(op);
         }
       } else {
         yield* eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
-        if (op.kind === 'create') {
-          yield* releaseCopySource(op);
-        }
       }
       return 'done' as const;
     });
@@ -1913,7 +1989,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         for (const candidate of page.items ?? []) {
           if (
             !candidate.deleted &&
-            candidate.title === op.taskTitle &&
+            (candidate.title ?? '') === op.taskTitle &&
             (candidate.due?.slice(0, 10) ?? undefined) === (op.taskDue ?? undefined) &&
             (candidate.notes ?? undefined) === op.taskNotes &&
             (candidate.parent ?? undefined) === op.taskParent
@@ -1962,13 +2038,47 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
     });
 
   /**
+   * Swaps the temp id for Google's (`task`, inserted or adopted) everywhere
+   * it can appear: the row itself and any ops queued behind this create
+   * (processPendingOps drains oldest-first, so they run after). In one
+   * transaction: a delete made between the swap and the row's write found
+   * no create on the temp id, waited there forever and the task showed
+   * again. Remove-then-upsert rather than UPDATE ... SET id: a poll may
+   * already have upserted the server row, and a PK conflict here would
+   * retry the op — re-running an insert the Tasks API cannot deduplicate
+   * (ids are server-assigned, unlike events). The same non-idempotency
+   * means a crash between the insert response and op removal can
+   * duplicate a task; that window is accepted, this one is not.
+   */
+  const swapInTask = (
+    op: PendingOp,
+    taskListId: string,
+    task: GcalTask,
+    show: (record: TaskRecord) => Effect.Effect<void, SqlError>,
+  ) =>
+    transaction(
+      Effect.gen(function* () {
+        yield* pendingOpRepo.rewriteEventId(op.accountId, taskListId, op.eventId, task.id);
+        yield* taskRepo.replaceParent(op.accountId, op.eventId, task.id);
+        const record = mapGcalTask(task, { accountId: op.accountId, taskListId });
+        if (record) {
+          return yield* settleCreatedTask(op, taskListId, task.id, show(record));
+        }
+        // Unreachable in practice (a task Google just made is never a
+        // tombstone) — keep the row addressable under the server id.
+        yield* taskRepo.replaceId(op.accountId, taskListId, op.eventId, task.id);
+      }),
+    );
+
+  /**
    * A new task: adopts the one an earlier attempt landed, or inserts it,
-   * then swaps the temp id for Google's.
+   * then swaps the temp id for Google's. A blank title is a title: Google
+   * holds tasks without one, and a moved subtask without one went nowhere.
    */
   const sendCreateTask = (op: PendingOp) =>
     Effect.gen(function* () {
-      const { taskListId } = op;
-      if (!taskListId || !op.taskTitle) {
+      const { taskListId, taskTitle } = op;
+      if (!taskListId || taskTitle === undefined) {
         return 'done' as const;
       }
       // A set dispatch stamp means an earlier attempt's insert may
@@ -1982,30 +2092,30 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       if (op.dispatchedAt !== undefined) {
         const adopted = yield* findLanded(op, taskListId, op.dispatchedAt);
         if (adopted) {
-          yield* pendingOpRepo.rewriteEventId(op.accountId, taskListId, op.eventId, adopted.id);
-          yield* taskRepo.replaceParent(op.accountId, op.eventId, adopted.id);
-          const adoptedRecord = mapGcalTask(adopted, {
-            accountId: op.accountId,
-            taskListId,
-          });
-          if (adoptedRecord) {
-            yield* settleCreatedTask(
-              op,
-              taskListId,
-              adopted.id,
-              taskRepo.upsertTasks([adoptedRecord], yield* Clock.currentTimeMillis),
-            );
-          }
+          const now = yield* Clock.currentTimeMillis;
+          yield* swapInTask(op, taskListId, adopted, (record) =>
+            taskRepo.upsertTasks([record], now),
+          );
           return 'done' as const;
         }
         // Deleted meanwhile, and it never landed: the delete behind it has
         // nothing to take, and inserting it now would only make a task
-        // for that delete to remove.
-        const deletes = yield* deletesBehind(op.accountId, taskListId, op.eventId);
-        if (deletes.length > 0) {
-          for (const queued of deletes) {
-            yield* pendingOpRepo.remove(queued.id);
-          }
+        // for that delete to remove. Moved on meanwhile, the copy it was
+        // moved to takes over what it was copied from.
+        const settled = yield* transaction(
+          Effect.gen(function* () {
+            const deletes = yield* deletesBehind(op.accountId, taskListId, op.eventId);
+            if (deletes.length === 0) {
+              return false;
+            }
+            yield* handOn(op);
+            for (const queued of deletes) {
+              yield* pendingOpRepo.remove(queued.id);
+            }
+            return true;
+          }),
+        );
+        if (settled) {
           return 'done' as const;
         }
       }
@@ -2013,8 +2123,56 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       // check: a delete that came first took the unsent create with it,
       // and inserting it anyway left the deleted task on Google. A delete
       // after the stamp sees it sent and waits behind it.
+      if (!(yield* stampIfQueued(op))) {
+        return 'done' as const;
+      }
+      const inserted = yield* tasksClient.insertTask({
+        accountId: op.accountId,
+        parent: op.taskParent,
+        task: {
+          title: taskTitle,
+          ...(op.taskDue ? { due: `${op.taskDue}T00:00:00.000Z` } : {}),
+          ...(op.taskNotes ? { notes: op.taskNotes } : {}),
+        },
+        taskListId,
+      });
+      yield* swapInTask(op, taskListId, inserted, (record) =>
+        Effect.gen(function* () {
+          // Google put it first among its siblings and renumbered them
+          // without bumping their `updated`: here they still hold their
+          // old places, and its "…00" would tie with the first one's.
+          // It goes first here too until the next pass, which sees the
+          // list's `updated` move and reads the order back.
+          const siblings = (yield* taskRepo.listSiblings(
+            op.accountId,
+            taskListId,
+            record.parentId,
+          )).filter((sibling) => sibling.id !== record.id);
+          yield* taskRepo.upsertTasks(
+            [
+              placedTask(record, {
+                ...(record.parentId === undefined ? {} : { parentId: record.parentId }),
+                position: provisionalPosition(siblings, undefined),
+              }),
+            ],
+            yield* Clock.currentTimeMillis,
+          );
+        }),
+      );
+      return 'done' as const;
+    });
+
+  /**
+   * Stamps a create as sent, only while it is still queued — in one
+   * transaction with that check. A delete (or an edit that replaced it)
+   * that came between the drain's read and the stamp took the unsent
+   * create; inserting it anyway put back on Google what the user deleted,
+   * or sent the stale fields. Whether it was stamped.
+   */
+  const stampIfQueued = (op: PendingOp): Effect.Effect<boolean, SqlError> =>
+    Effect.gen(function* () {
       const now = yield* Clock.currentTimeMillis;
-      const stamped = yield* transaction(
+      return yield* transaction(
         Effect.gen(function* () {
           if (!(yield* pendingOpRepo.getById(op.id))) {
             return false;
@@ -2023,70 +2181,6 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
           return true;
         }),
       );
-      if (!stamped) {
-        return 'done' as const;
-      }
-      const inserted = yield* tasksClient.insertTask({
-        accountId: op.accountId,
-        parent: op.taskParent,
-        task: {
-          title: op.taskTitle,
-          ...(op.taskDue ? { due: `${op.taskDue}T00:00:00.000Z` } : {}),
-          ...(op.taskNotes ? { notes: op.taskNotes } : {}),
-        },
-        taskListId,
-      });
-      // Swap the temp id for the server one everywhere it can appear:
-      // the row itself and any ops queued behind this create
-      // (processPendingOps drains oldest-first, so they run after).
-      // Remove-then-upsert rather than UPDATE ... SET id: a concurrent
-      // poll may already have upserted the server row, and a PK
-      // conflict here would retry the op — re-running an insert the
-      // Tasks API cannot deduplicate (ids are server-assigned, unlike
-      // events). The same non-idempotency means a crash between the
-      // insert response and op removal can duplicate a task; that
-      // window is accepted, this one is not.
-      yield* pendingOpRepo.rewriteEventId(op.accountId, taskListId, op.eventId, inserted.id);
-      yield* taskRepo.replaceParent(op.accountId, op.eventId, inserted.id);
-      const insertedRecord = mapGcalTask(inserted, {
-        accountId: op.accountId,
-        taskListId,
-      });
-      if (insertedRecord) {
-        yield* settleCreatedTask(
-          op,
-          taskListId,
-          inserted.id,
-          Effect.gen(function* () {
-            // Google put it first among its siblings and renumbered them
-            // without bumping their `updated`: here they still hold their
-            // old places, and its "…00" would tie with the first one's.
-            // It goes first here too until the next pass, which sees the
-            // list's `updated` move and reads the order back.
-            const siblings = (yield* taskRepo.listSiblings(
-              op.accountId,
-              taskListId,
-              insertedRecord.parentId,
-            )).filter((sibling) => sibling.id !== insertedRecord.id);
-            yield* taskRepo.upsertTasks(
-              [
-                placedTask(insertedRecord, {
-                  ...(insertedRecord.parentId === undefined
-                    ? {}
-                    : { parentId: insertedRecord.parentId }),
-                  position: provisionalPosition(siblings, undefined),
-                }),
-              ],
-              yield* Clock.currentTimeMillis,
-            );
-          }),
-        );
-      } else {
-        // Unreachable in practice (a just-inserted task is never a
-        // tombstone) — keep the row addressable under the server id.
-        yield* taskRepo.replaceId(op.accountId, taskListId, op.eventId, inserted.id);
-      }
-      return 'done' as const;
     });
 
   /** A new event: stamped as sent, inserted, and settled with Google's copy. */
@@ -2101,8 +2195,8 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       // never arrives (its retry then answers 409, which counts as
       // done): a later edit must not fold into this create, nor a
       // delete simply drop it (mutations.ts unsentCreateOf).
-      if (op.dispatchedAt === undefined) {
-        yield* pendingOpRepo.markDispatched(op.id, yield* Clock.currentTimeMillis);
+      if (op.dispatchedAt === undefined && !(yield* stampIfQueued(op))) {
+        return 'done' as const;
       }
       const response = yield* client.insertEvent({
         accountId: op.accountId,
@@ -2463,5 +2557,5 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
 
   const settleDiscardedMove = (op: PendingOp) => Effect.asVoid(settleOrReleaseMove(op, 'release'));
 
-  return { apply, releaseRow, settleDiscardedMove };
+  return { apply, releaseAccountCopies, releaseRow, settleDiscardedMove };
 };

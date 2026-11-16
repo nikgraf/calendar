@@ -619,8 +619,11 @@ const make: Effect.Effect<
         }),
       );
     }
+    // The drain is kicked only once EventKit answered: a copy Google turned
+    // down at once made the source again before its delete ran, and a
+    // delete that then failed left two of it.
     return Effect.gen(function* () {
-      const { copy, created } = yield* transactional(
+      const { copy, created } = yield* sql.withTransaction(
         Effect.gen(function* () {
           const before = yield* queuedIds;
           const created = yield* create;
@@ -636,7 +639,7 @@ const make: Effect.Effect<
         copy ? Effect.ignore(pendingOpRepo.setCopySource([copy.id], undefined)) : Effect.void,
       );
       return created;
-    });
+    }).pipe(Effect.ensuring(kick));
   };
 
   const loadMaster = (accountId: string, calendarId: string, masterId: string) =>
@@ -738,6 +741,7 @@ const make: Effect.Effect<
 
   const {
     apply: applyOp,
+    releaseAccountCopies,
     releaseRow,
     settleDiscardedMove,
   } = makeApplyOp({
@@ -1621,6 +1625,10 @@ const make: Effect.Effect<
     discardPendingOp,
 
     processPendingOps,
+
+    // Under the drain's gate: a copy whose request is out settles first.
+    releaseAccountCopies: (accountId) =>
+      gate.withPermits(1)(sql.withTransaction(releaseAccountCopies(accountId))),
 
     resolveConflict,
 

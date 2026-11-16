@@ -930,8 +930,12 @@ it whenever a kind is added. Rules that keep the queue correct:
   (`appleEvent` with its URL, `reminder`); a copy that will not land
   makes it again — a new identifier, a series without its changed
   occurrences. A copy the user deletes before it goes leaves the queue
-  without that: the source goes as moved. A Google source that is itself
-  an unsent copy hands its `copySource` on to the next copy. Copies
+  without that: the source goes as moved. A copy moved on before it
+  landed hands its `copySource` to the next copy — at once when its
+  create was unsent, when it turns out not to have landed when it was
+  sent (`handOn`). Removing an account, which deletes its queued ops
+  without the drain, first releases the sources of the copies queued
+  there (`releaseAccountCopies`). Copies
   never carry guests; a Google conference link becomes the Apple event's
   URL, an Apple URL is appended to the Google description; modified
   occurrences are dropped. The editor asks `previewMove` first and
