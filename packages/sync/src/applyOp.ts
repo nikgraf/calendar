@@ -670,9 +670,14 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       const ids = new Set([op.eventId, ...subtasks.map((subtask) => subtask.id)]);
       // What was queued for them behind the move (edits, a further move)
       // goes back with them: Google still has them in the source. A subtask
-      // deleted since has no row; its delete names its parent.
+      // deleted since has no row; its delete names its parent. What was
+      // queued before it stays where it is — an earlier move out of the
+      // destination (the task was there, left, and came back) re-keyed here
+      // became a move into its own source.
+      const all = yield* pendingOpRepo.listAll();
+      const at = all.findIndex((queued) => queued.id === op.id);
       const owned = new Set<string>();
-      for (const other of yield* pendingOpRepo.listAll()) {
+      for (const other of at === -1 ? all : all.slice(at + 1)) {
         if (
           other.id === op.id ||
           other.accountId !== op.accountId ||
@@ -851,6 +856,18 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         return Effect.ignore(
           Effect.gen(function* () {
             yield* eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
+            // The edits, answers and delete queued behind a sent create were
+            // built on an event Google may never have had: they go with it
+            // and put nothing back — a delete discarded later restored its
+            // snapshot as an event Google never had. One the create landed
+            // after all comes back with the next pull, as Google has it.
+            if (revert) {
+              for (const queued of yield* pendingOpRepo.listForEvent(op)) {
+                if (queued.id !== op.id && queued.kind !== 'move') {
+                  yield* pendingOpRepo.remove(queued.id);
+                }
+              }
+            }
             // A move queued behind a sent create (mutations.ts
             // googleServerMove) already put the rows at its destination.
             // With the create gone it moves nothing: its 404 would put
@@ -868,6 +885,14 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
               }
               yield* pendingOpRepo.remove(queued.id);
               const destination = queued.targetCalendarId;
+              // And what followed the move there: it would 404 and be dropped.
+              for (const follower of yield* pendingOpRepo.listForEvent({
+                accountId: op.accountId,
+                calendarId: destination,
+                eventId: op.eventId,
+              })) {
+                yield* pendingOpRepo.remove(follower.id);
+              }
               for (const override of yield* eventRepo.listOverrides(
                 op.accountId,
                 destination,
@@ -885,6 +910,18 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
           ? Effect.ignore(
               Effect.gen(function* () {
                 yield* taskRepo.removeTask(op.accountId, listId, op.eventId);
+                // What was queued for it behind the create (an edit, a toggle,
+                // a delete) names its temp id: it would wait for the server
+                // id for good.
+                for (const queued of yield* pendingOpRepo.listForEvent({
+                  accountId: op.accountId,
+                  calendarId: listId,
+                  eventId: op.eventId,
+                })) {
+                  if (queued.id !== op.id) {
+                    yield* pendingOpRepo.remove(queued.id);
+                  }
+                }
                 // Subtasks a move carried along under it wait for its server
                 // id, which it will never get: they go with it.
                 for (const subtask of yield* taskRepo.listSubtasks(
@@ -1618,7 +1655,8 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
   /**
    * Whether a task op waits behind the task ops queued before it: a move
    * into its list, earlier changes in the list it moves or reorders in, a
-   * reorder in the list it deletes from, the subtask created before it.
+   * reorder or a move out of the list it deletes from, the subtask created
+   * before it.
    */
   const taskOrderGate = (op: PendingOp): Effect.Effect<ApplyOutcome | undefined, SqlError> =>
     Effect.gen(function* () {
@@ -1654,6 +1692,14 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         earlier.some((other) => other.kind === 'reorderTask' && other.calendarId === op.calendarId)
       ) {
         return retry('waiting for the reorder ahead of it');
+      }
+      // Google deletes a parent's subtasks with it: one the user moved out
+      // of it first, its move waiting out a backoff, went along with it.
+      if (
+        op.kind === 'deleteTask' &&
+        earlier.some((other) => other.kind === 'moveTask' && other.calendarId === op.calendarId)
+      ) {
+        return retry('waiting for the move ahead of it');
       }
       // Google inserts a subtask first among its siblings: they are
       // queued last to first, and each waits for the one before it so a

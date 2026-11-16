@@ -741,6 +741,13 @@ const make: Effect.Effect<
           yield* pendingOpRepo.remove(opId);
           return undefined;
         }
+        // A task move, too, is released while still queued: what goes back
+        // with it is what was queued behind it.
+        if (op?.kind === 'moveTask') {
+          yield* releaseRow(op);
+          yield* pendingOpRepo.remove(opId);
+          return undefined;
+        }
         yield* pendingOpRepo.remove(opId);
         while (op) {
           yield* releaseRow(op);
@@ -1931,13 +1938,23 @@ const make: Effect.Effect<
           new EventRecord({
             ...row,
             calendarId: target.calendarId,
+            // The move gives the event a new etag: an edit, answer or delete
+            // made while it waits must not send this one as its If-Match (it
+            // met a 412 and parked a conflict nobody caused). The move's
+            // answer, or the first op after it, brings Google's.
+            etag: null,
             syncStatus: pulledCopy ? row.syncStatus : 'pending',
           }),
         ]);
       }
       const pendingCreate = inSeries.find((op) => op.kind === 'create' && op.eventId === master.id);
       const sentCreate = pendingCreate?.dispatchedAt === undefined ? undefined : pendingCreate;
-      const queued = inSeries.filter((op) => op !== sentCreate);
+      // An earlier move out of this calendar (the event was here before,
+      // left, and came back with a move still queued) stays as it is: it
+      // runs before this one. Re-keyed as a follower it became a move to
+      // its own destination, queued behind this one, and the move back
+      // between them went first, met a 404 and counted as landed.
+      const queued = inSeries.filter((op) => op !== sentCreate && op.kind !== 'move');
       for (const op of queued) {
         yield* pendingOpRepo.remove(op.id);
       }

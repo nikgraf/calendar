@@ -245,8 +245,11 @@ it whenever a kind is added. Rules that keep the queue correct:
   Google has, so the row stops being `pending`. A `delete` answered 404
   or 410 is done and leaves the local state alone (for one occurrence
   that is the cancelled override that keeps it away). A create dropped
-  for good takes a move queued behind it along, with the rows it already
-  put at the destination.
+  for good or discarded takes a move queued behind it along, with the rows
+  it already put at the destination, and what was queued behind both (an
+  edit, an answer, a delete), putting nothing back: built on an event
+  Google may never have had, a delete discarded later restored it as one.
+  One the create landed after all comes back with the next pull.
 - **412 Conflict** (only `update` and `delete` park): the op is **parked**,
   never dropped — unless Google's copy already yields exactly the PATCH
   body the update would send (`updateBody`: our own earlier attempt
@@ -315,10 +318,13 @@ it whenever a kind is added. Rules that keep the queue correct:
   they were, and the task leaves a parent it had. The form's edits are
   queued first; the rows move at once and every op queued for the task or
   its subtasks is re-queued in the destination behind the move (an
-  earlier move out of that list stays where it is). An op
+  earlier move out of that list stays where it is, and so it does when
+  the task is deleted there). An op
   addressing a list a queued move goes into (a move onwards included)
-  waits for it, and a move waits for what was queued before it in its
-  source list (`earlierTaskOps`). While a move waits, a pull of the source
+  waits for it, a move waits for what was queued before it in its
+  source list (`earlierTaskOps`), and a delete for a move out of its list
+  queued before it: Google deletes a parent's subtasks with it, one the
+  user moved out first included. While a move waits, a pull of the source
   does not put its rows back (Google sends no tombstone when a task leaves
   a list): a Google list's pull holds the drain (`whileQueueHeld`), so no
   move lands while its request is out, and reads the queued moves after
@@ -326,10 +332,16 @@ it whenever a kind is added. Rules that keep the queue correct:
   in flight refuses the move (`TaskCreatePendingError`); an unsent one is
   simply created in the destination. A discard or a 404 puts the rows
   back, with what was queued behind the move (a subtask deleted since
-  included) — unless the 404 answers a retry whose first attempt landed:
+  included; what was queued before it — an earlier move out of the
+  destination — stays, so a discard releases the move while it is still
+  queued) — unless the 404 answers a retry whose first attempt landed:
   then the task is in the destination already and the move settles
   there; a destination Google does not answer for keeps the move queued,
-  and one that is gone puts it back.
+  and one that is gone puts it back. A discard does not ask Google
+  first, as an event move's does: one that landed with its answer lost
+  goes back to the source for good (an open gap, below). An edit,
+  toggle or move of a task whose delete is still queued — the copy a
+  pull put back meanwhile — replaces that delete, as an event edit does.
   Mirrors count a queued move for both lists. Every other route —
   Reminders ↔ Google, another Google account — creates the task in the
   target from the editor's draft, then its subtasks (nested under the
@@ -426,7 +438,8 @@ it whenever a kind is added. Rules that keep the queue correct:
   `createTask` that was already dispatched, the drain first lists recent
   tasks and adopts an exact match — otherwise a crash between insert and
   ack would duplicate the task. Task ops still carrying a temp id wait in
-  `applyOp` until the create swaps it.
+  `applyOp` until the create swaps it; a discarded or dropped create takes
+  them along, since nothing would ever swap it.
 - **Moves keep queue order**: `listDue` skips ops in backoff, so a move
   and the edits of its series (`<masterId>` and `<masterId>_<basetime>`
   instance ids, any calendar of the account) check `earlierInSeries`
@@ -444,7 +457,12 @@ it whenever a kind is added. Rules that keep the queue correct:
   `moveEvent` re-queues pending edits of the series _behind_ the
   move, re-keyed to the destination (a never-sent create simply becomes a
   create there; a sent one stays in the source with the move behind it; a
-  delete of the moved event is dropped instead, see Sync engine).
+  delete of the moved event is dropped instead, see Sync engine; an
+  earlier move out of the source — the event left and came back — stays
+  where it is and goes first). The rows it takes carry no etag until it
+  lands: events.move gives the event a new one, so neither a re-queued
+  edit nor one made while the move waits sends the old one as its
+  If-Match (it met a 412 and parked a conflict nobody caused).
   A move's 404 (or 410) first asks the destination for the event: an
   earlier attempt may have landed with its answer lost, and found there
   the move settles as landed (a lookup with no answer retries); a 2xx
@@ -535,7 +553,16 @@ it whenever a kind is added. Rules that keep the queue correct:
   an op replaced while its request was in flight puts nothing back when
   that request is refused — the replacement owns the row. Known gap: a
   full re-list after an expired sync token confirms a deletion only by
-  absence, which clears no snapshot. A snapshot
+  absence, which clears no snapshot. Open gap, found by the sequence test
+  (`queueSequence.test.ts`, its skipped tests): a pull skips a row a
+  queued edit, create or move holds and its token moves past Google's
+  copy, so an op abandoned later — discarded, refused, a move released
+  after a 404, a task move discarded after it landed with its answer
+  lost — leaves its older snapshot, or nothing, as Google's for good: an
+  edit's discard shows the version before another device's change, a
+  landed create's discard hides an event Google has, a released move
+  brings back an event Google deleted. Only a queued delete takes the
+  pulled copy today (`rememberPulled`, `forgetDeleted`). A snapshot
   built while other ops of the item are replaced, or under a queued
   series edit, is assembled from theirs (a series delete takes each
   exception's acknowledged state, an occurrence edit or delete the
@@ -693,7 +720,11 @@ it whenever a kind is added. Rules that keep the queue correct:
   (`restoreTakenExceptions`). A
   series move still carries an exception's delete (a this-and-following
   cut) along, one that owns no row too, and moves that exception's pulled
-  copy as synced so the delete takes it when it lands. Each calendar's events
+  copy as synced so the delete takes it when it lands. A page leaves out a
+  series a queued move takes out of its calendar, as a task list's pull
+  does a moving task: Google lists it there until the move lands, and a
+  copy written then showed it in both calendars, the user's edit or
+  delete of that copy meeting a 404. Each calendar's events
   pass holds the drain (`whileQueueHeld`) like a task list's, so a delete
   cannot land between a request and the page that would put the row
   back after it, and lets out what was queued meanwhile before the next

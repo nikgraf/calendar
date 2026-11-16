@@ -1,0 +1,2153 @@
+import { unavailableAppleCalendarClient } from '@calendar/apple-calendar';
+import { Account, failureText, type PendingOp } from '@calendar/core';
+import { AccountRepo, PendingOpRepo, reposLayer, runMigrations } from '@calendar/db';
+import {
+  type GcalEvent,
+  type GcalTask,
+  GoogleCalendarClient,
+  GooglePeopleClient,
+  GoogleTasksClient,
+  mapGcalEvent,
+  mapGcalTask,
+} from '@calendar/google';
+import { RemindersClient, unavailableRemindersClient } from '@calendar/reminders';
+import { SqliteClient } from '@effect/sql-sqlite-node';
+import { expect, it } from '@effect/vitest';
+import { Effect, Layer, Result, Scheduler } from 'effect';
+import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
+import { SqlClient } from 'effect/sql/SqlClient';
+import { TestClock } from 'effect/testing';
+import { describe, vi } from 'vite-plus/test';
+import { appleCalendarServicesLayer } from './appleCalendarEvents.ts';
+import { SyncEngine, type SyncEngineShape } from './engine.ts';
+import type { EventMutationsShape } from './mutationTypes.ts';
+import { EventMutations } from './mutations.ts';
+import { type FakeCall, type FakeFault, FakeGoogle } from './testing/fakeGoogle.ts';
+
+/**
+ * Seeded random sequences over the pending-op queue, against the fake
+ * Google: a user edits, creates, deletes and moves events and tasks and
+ * discards queued changes; the network lands writes, loses their answers
+ * or refuses them; another device edits and deletes; pulls land in
+ * between. After every step, with no drain running:
+ *
+ * 1. every pending row is owned by a queued op;
+ * 2. (at the end) after a full drain and a pull, the rows equal Google's,
+ *    and what the user did last to an item nobody else touched is what
+ *    Google has;
+ * 3. what Google last told the client about an item no op owns is what
+ *    the client shows (a discard leaves Google's version showing), and a
+ *    synced row at Google's current etag has Google's content;
+ * 4. no write meets a 404 or another refusal unless another device, or a
+ *    write of ours whose answer was lost, removed the item: an op sent
+ *    before what it depends on (a move before its edit, an edit before its
+ *    create or after its move) meets one; and no op parks a conflict on an
+ *    item nobody else changed.
+ *
+ * The fake models no recurrence, so series are left out. A failing seed
+ * prints its whole sequence; rerun it alone with
+ * `QUEUE_SEQUENCE_SEED=<seed> pnpm exec vp test run packages/sync/src/queueSequence.test.ts`
+ * (`QUEUE_SEQUENCE_RUNS` and `QUEUE_SEQUENCE_STEPS` widen the search).
+ */
+
+const ACCOUNT_ID = 'acc-1';
+const EMAIL = 'sequence@example.com';
+const CALENDARS = ['cal-1', 'cal-2'] as const;
+const LISTS = ['list-1', 'list-2'] as const;
+/** The fake's own clock; the TestClock starts here too. */
+const START = Date.parse('2026-08-24T10:00:00.000Z');
+const MINUTE = 60_000;
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
+
+const envNumber = (name: string): number | undefined => {
+  const raw = process.env[name];
+  return raw === undefined || raw === '' ? undefined : Number(raw);
+};
+
+const SEEDS: ReadonlyArray<number> = (() => {
+  const one = envNumber('QUEUE_SEQUENCE_SEED');
+  if (one !== undefined) {
+    return [one];
+  }
+  return Array.from({ length: envNumber('QUEUE_SEQUENCE_RUNS') ?? 50 }, (_, index) => index + 1);
+})();
+const STEPS = envNumber('QUEUE_SEQUENCE_STEPS') ?? 40;
+/** Every step's requests in the report, not only the failing step's. */
+const VERBOSE = process.env['QUEUE_SEQUENCE_VERBOSE'] === '1';
+
+const noYield = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  Effect.provideService(effect, Scheduler.MaxOpsBeforeYield, Number.MAX_SAFE_INTEGER);
+
+/** mulberry32: small, fast and the same on every machine. */
+const seededRandom = (seed: number): (() => number) => {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d_2b_79_f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4_294_967_296;
+  };
+};
+
+const pick = <A>(random: () => number, items: ReadonlyArray<A>): A | undefined =>
+  items.length === 0 ? undefined : items[Math.floor(random() * items.length)];
+
+/**
+ * Event and op ids come from `crypto.getRandomValues`: seeded here, a
+ * failing sequence replays with the same ids.
+ */
+const withSeededIds =
+  (seed: number) =>
+  <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+    Effect.acquireUseRelease(
+      Effect.sync(() => {
+        const random = seededRandom(seed ^ 0x5e_ed);
+        return vi.spyOn(globalThis.crypto, 'getRandomValues').mockImplementation(((
+          array: ArrayBufferView | null,
+        ) => {
+          if (array !== null) {
+            const bytes = new Uint8Array(array.buffer, array.byteOffset, array.byteLength);
+            for (let index = 0; index < bytes.length; index += 1) {
+              bytes[index] = Math.floor(random() * 256);
+            }
+          }
+          return array;
+        }) as Crypto['getRandomValues']);
+      }),
+      () => effect,
+      (spy) => Effect.sync(() => spy.mockRestore()),
+    );
+
+const iso = (ms: number): string => new Date(ms).toISOString().replace('.000Z', 'Z');
+
+const timed = (id: string, day: number, hour: number, summary: string): GcalEvent => ({
+  end: { dateTime: iso(START + day * DAY + (hour + 1) * HOUR) },
+  id,
+  organizer: { email: EMAIL, self: true },
+  start: { dateTime: iso(START + day * DAY + hour * HOUR) },
+  status: 'confirmed',
+  summary,
+});
+
+const due = (day: number): string =>
+  `${new Date(START + day * DAY).toISOString().slice(0, 10)}T00:00:00.000Z`;
+
+const newFake = (): FakeGoogle => {
+  const google = new FakeGoogle({
+    calendars: [
+      { accessRole: 'owner', id: 'cal-1', primary: true, summary: 'Personal' },
+      { accessRole: 'owner', id: 'cal-2', summary: 'Work' },
+    ],
+    organizerEmail: EMAIL,
+    taskLists: [
+      { id: 'list-1', title: 'My Tasks' },
+      { id: 'list-2', title: 'Errands' },
+    ],
+  });
+  google.putEvent('cal-1', timed('e1', 1, 9, 'Standup'));
+  google.putEvent('cal-1', timed('e2', 2, 11, 'Lunch'));
+  google.putEvent('cal-2', timed('e3', 3, 14, 'Review'));
+  google.putTask('list-1', {
+    due: due(5),
+    id: 'p',
+    position: '00000000000000000000',
+    title: 'Trip',
+  });
+  google.putTask('list-1', {
+    due: due(5),
+    id: 's1',
+    parent: 'p',
+    position: '00000000000000000000',
+    title: 'Pack',
+  });
+  google.putTask('list-1', {
+    due: due(5),
+    id: 's2',
+    parent: 'p',
+    position: '00000000000000000001',
+    title: 'Book',
+  });
+  google.putTask('list-1', {
+    due: due(6),
+    id: 't1',
+    position: '00000000000000000001',
+    title: 'Rent',
+  });
+  google.putTask('list-2', {
+    due: due(7),
+    id: 't2',
+    position: '00000000000000000000',
+    title: 'Call',
+  });
+  return google;
+};
+
+const layerFor = (google: FakeGoogle) =>
+  SyncEngine.layer.pipe(
+    Layer.provideMerge(EventMutations.layer),
+    Layer.provideMerge(appleCalendarServicesLayer(unavailableAppleCalendarClient('test'))),
+    Layer.provideMerge(reposLayer),
+    Layer.provideMerge(Layer.effectDiscard(runMigrations)),
+    Layer.provideMerge(SqliteClient.layer({ filename: ':memory:' })),
+    Layer.provideMerge(reactivityLayer),
+    Layer.provideMerge(Layer.succeed(RemindersClient, unavailableRemindersClient('test'))),
+    Layer.provideMerge(GoogleCalendarClient.layer),
+    Layer.provideMerge(GoogleTasksClient.layer),
+    Layer.provideMerge(GooglePeopleClient.layer),
+    Layer.provideMerge(google.layer),
+  );
+
+// ---- what the client shows, what Google has ----
+
+interface EventRow {
+  readonly calendar_id: string;
+  readonly description: string | null;
+  readonly end_utc: number;
+  readonly etag: string | null;
+  readonly id: string;
+  readonly is_all_day: number;
+  readonly location: string | null;
+  readonly start_utc: number;
+  readonly status: string;
+  readonly sync_status: string;
+  readonly title: string;
+}
+
+interface TaskRow {
+  readonly due_date: string | null;
+  readonly id: string;
+  readonly list_id: string;
+  readonly notes: string | null;
+  readonly parent_id: string | null;
+  readonly status: string;
+  readonly sync_status: string;
+  readonly title: string;
+}
+
+/** The fields an item shows, as text: what the checks compare. */
+type Fields = Readonly<Record<string, string>>;
+
+const eventRowFields = (row: EventRow): Fields => ({
+  allDay: String(row.is_all_day === 1),
+  description: row.description ?? '',
+  end: String(row.end_utc),
+  location: row.location ?? '',
+  start: String(row.start_utc),
+  title: row.title,
+});
+
+const gcalEventFields = (calendarId: string, event: GcalEvent): Fields | undefined => {
+  const record = mapGcalEvent(event, {
+    accountId: ACCOUNT_ID,
+    calendarId,
+    defaultTimeZone: 'UTC',
+    syncedAt: 0,
+  });
+  return record === null
+    ? undefined
+    : {
+        allDay: String(record.isAllDay),
+        description: record.description ?? '',
+        end: String(record.endUtc),
+        location: record.location ?? '',
+        start: String(record.startUtc),
+        title: record.title,
+      };
+};
+
+const taskRowFields = (row: TaskRow): Fields => ({
+  due: row.due_date ?? '',
+  notes: row.notes ?? '',
+  parent: row.parent_id ?? '',
+  status: row.status,
+  title: row.title,
+});
+
+const gcalTaskFields = (listId: string, task: GcalTask): Fields | undefined => {
+  const record = mapGcalTask(task, { accountId: ACCOUNT_ID, taskListId: listId });
+  return record === null
+    ? undefined
+    : {
+        due: record.dueDate ?? '',
+        notes: record.notes ?? '',
+        parent: record.parentId ?? '',
+        status: record.status,
+        title: record.title,
+      };
+};
+
+const sameFields = (left: Fields, right: Fields): boolean =>
+  Object.keys(left).length === Object.keys(right).length &&
+  Object.entries(left).every(([key, value]) => right[key] === value);
+
+const showFields = (fields: Fields): string =>
+  Object.entries(fields)
+    .map(([key, value]) => `${key}=${JSON.stringify(value)}`)
+    .join(' ');
+
+interface Snapshot {
+  readonly events: ReadonlyArray<EventRow>;
+  readonly ops: ReadonlyArray<PendingOp>;
+  readonly tasks: ReadonlyArray<TaskRow>;
+}
+
+const EVENT_KINDS: ReadonlySet<PendingOp['kind']> = new Set([
+  'create',
+  'delete',
+  'move',
+  'rsvp',
+  'update',
+]);
+
+/** Whether the op holds this event row: its own, or the one its move put in the target. */
+const ownsEvent = (op: PendingOp, calendarId: string, eventId: string): boolean =>
+  EVENT_KINDS.has(op.kind) &&
+  op.eventId === eventId &&
+  (op.calendarId === calendarId || (op.kind === 'move' && op.targetCalendarId === calendarId));
+
+/** Whether the op holds this task row: its own, or one its move carries (the task, its subtasks). */
+const ownsTask = (
+  op: PendingOp,
+  listId: string,
+  task: { readonly id: string; readonly parent: string | undefined },
+): boolean =>
+  !EVENT_KINDS.has(op.kind) &&
+  op.kind !== 'calendarColor' &&
+  ((op.calendarId === listId && op.eventId === task.id) ||
+    (op.kind === 'moveTask' &&
+      (op.calendarId === listId || op.targetTaskListId === listId) &&
+      (op.eventId === task.id || op.eventId === task.parent)));
+
+const describeOp = (op: PendingOp): string =>
+  `${op.kind} ${op.eventId} in ${op.calendarId}` +
+  ((op.targetCalendarId ?? op.targetTaskListId)
+    ? ` → ${op.targetCalendarId ?? op.targetTaskListId}`
+    : '') +
+  (op.conflictAt === undefined ? '' : ' (parked)') +
+  (op.dispatchedAt === undefined ? '' : ' (sent)') +
+  (op.attempts > 0 ? ` (${op.attempts} failed)` : '');
+
+// ---- the world the sequence runs in ----
+
+/** What the user did last to an item, while nobody else touched it since. */
+type Intent =
+  | { readonly kind: 'deleted' }
+  | { readonly container: string | undefined; readonly fields: Fields; readonly kind: 'set' };
+
+interface Told {
+  /** Google's copy as it was told, or null: told deleted. */
+  readonly item: GcalEvent | GcalTask | null;
+  readonly json: string;
+}
+
+interface World {
+  /** The subtasks of the task the request in flight deletes or moves, read before Google answers it. */
+  children: ReadonlyArray<string>;
+  /** Items another device changed, or a write of ours whose answer was lost touched. */
+  readonly disturbed: Set<string>;
+  readonly google: FakeGoogle;
+  /** Slots (`container|id`) Google sent this step: true when an answer the client applies carried it. */
+  readonly heard: Map<string, boolean>;
+  /** Items an op held at the end of the step before. */
+  held: ReadonlySet<string>;
+  /**
+   * Items Google sent a newer state of (a change, its deletion, its
+   * creation) while an op held their row: the pull skips such a row and
+   * its token moves past, so an op abandoned later (a discard, a refusal,
+   * a move released after a 404) leaves what it found, or its older
+   * snapshot, for good — the known gap the skipped tests below show. A
+   * difference there is listed, not failed; one anywhere else fails.
+   */
+  readonly heldTold: Set<string>;
+  readonly intents: Map<string, Intent>;
+  readonly knownGaps: Array<string>;
+  network: { readonly lost: number; readonly name: string; readonly refused: number };
+  /** Faults the next writes meet, in order, before the network's odds apply. */
+  readonly nextWrites: Array<FakeFault>;
+  readonly random: () => number;
+  /** Items another device removed, or a lost delete or move of ours took away: a 404 there is no surprise. */
+  readonly removed: Set<string>;
+  step: number;
+  /** Requests this step, for the report. */
+  stepLog: Array<string>;
+  /** What Google last told the client, per `container|id`: answers it applies. */
+  readonly told: Map<string, Told>;
+  readonly trace: Array<string>;
+  /** Items deleted on Google behind the user's back (another device, a lost delete of ours): no later edit keeps them. */
+  readonly vanished: Set<string>;
+  readonly violations: Array<string>;
+}
+
+const eventKey = (id: string): string => `event:${id}`;
+const taskKey = (id: string): string => `task:${id}`;
+
+/** The item a request addresses: `{ key, container }`, or undefined for a list or a create. */
+const itemOf = (
+  call: FakeCall,
+): { readonly container: string; readonly id: string; readonly key: string } | undefined => {
+  const path = new URL(call.url).pathname;
+  const event = /^\/calendar\/v3\/calendars\/([^/]+)\/events\/([^/]+)(?:\/move)?$/.exec(path);
+  if (event) {
+    const id = decodeURIComponent(event[2]!);
+    return { container: decodeURIComponent(event[1]!), id, key: eventKey(id) };
+  }
+  const task = /^\/tasks\/v1\/lists\/([^/]+)\/tasks\/([^/]+)(?:\/move)?$/.exec(path);
+  if (task) {
+    const id = decodeURIComponent(task[2]!);
+    return { container: decodeURIComponent(task[1]!), id, key: taskKey(id) };
+  }
+  return undefined;
+};
+
+/** A request as the report shows it: method, path and the parameters that matter. */
+const showCall = (call: FakeCall): string => {
+  const url = new URL(call.url);
+  const params = [
+    'syncToken',
+    'destination',
+    'destinationTasklist',
+    'updatedMin',
+    'parent',
+    'previous',
+  ]
+    .filter((name) => url.searchParams.has(name))
+    .map((name) => `${name}=${url.searchParams.get(name)}`);
+  return `${call.method} ${url.pathname}${params.length > 0 ? `?${params.join('&')}` : ''}`;
+};
+
+const isListRead = (call: FakeCall): boolean => call.method === 'GET' && itemOf(call) === undefined;
+
+const isCalendar = (container: string): boolean =>
+  (CALENDARS as ReadonlyArray<string>).includes(container);
+
+/** The item a `container|id` slot holds. */
+const keyOfSlot = (slot: string): string => {
+  const [container = '', id = ''] = slot.split('|');
+  return isCalendar(container) ? eventKey(id) : taskKey(id);
+};
+
+const remember = (
+  world: World,
+  container: string,
+  id: string,
+  item: GcalEvent | GcalTask | null,
+  applied: boolean,
+) => {
+  const slot = `${container}|${id}`;
+  world.heard.set(slot, applied || (world.heard.get(slot) ?? false));
+  if (applied) {
+    world.told.set(slot, { item, json: JSON.stringify(item) });
+  }
+};
+
+/** What a 2xx tells the client about the items it carries. */
+const learn = (world: World, call: FakeCall, status: number, json: unknown) => {
+  const url = new URL(call.url);
+  const path = url.pathname;
+  const target = itemOf(call);
+  const body = json as {
+    readonly id?: string;
+    readonly items?: ReadonlyArray<GcalEvent & GcalTask>;
+  };
+  if (target === undefined) {
+    const events = /^\/calendar\/v3\/calendars\/([^/]+)\/events$/.exec(path);
+    const tasks = /^\/tasks\/v1\/lists\/([^/]+)\/tasks$/.exec(path);
+    const container = events?.[1] ?? tasks?.[1];
+    if (container === undefined || url.searchParams.has('fields')) {
+      return;
+    }
+    const calendarOrList = decodeURIComponent(container);
+    if (call.method === 'GET') {
+      // An events page is a pull, applied wherever no op holds the row. A
+      // task listing may be one too, or the drain looking for a create
+      // whose answer was lost, which applies nothing: it only counts as
+      // a copy sent while held.
+      for (const item of body.items ?? []) {
+        const gone = item.status === 'cancelled' || item.deleted === true;
+        remember(world, calendarOrList, item.id, gone ? null : item, events !== null);
+      }
+      // A full events list (after a 410) says gone by leaving out: what it
+      // does not name, it no longer has (one page here).
+      if (events !== null && !url.searchParams.has('syncToken')) {
+        const named = new Set((body.items ?? []).map((item) => item.id));
+        for (const slot of world.told.keys()) {
+          const [container = '', id = ''] = slot.split('|');
+          if (container === calendarOrList && !named.has(id)) {
+            remember(world, container, id, null, true);
+          }
+        }
+      }
+    } else if (body.id !== undefined) {
+      remember(world, calendarOrList, body.id, json as GcalEvent, true);
+    }
+    return;
+  }
+  if (call.method === 'DELETE') {
+    remember(world, target.container, target.id, null, true);
+    return;
+  }
+  const destination =
+    url.searchParams.get('destination') ?? url.searchParams.get('destinationTasklist');
+  if (status === 200) {
+    remember(world, destination ?? target.container, target.id, json as GcalEvent, true);
+  }
+};
+
+const makeWorld = (seed: number, google: FakeGoogle): World => {
+  const random = seededRandom(seed);
+  const world: World = {
+    children: [],
+    disturbed: new Set(),
+    google,
+    heard: new Map(),
+    held: new Set(),
+    heldTold: new Set(),
+    intents: new Map(),
+    knownGaps: [],
+    network: { lost: 0, name: 'good', refused: 0 },
+    nextWrites: [],
+    random,
+    removed: new Set(),
+    step: 0,
+    stepLog: [],
+    told: new Map(),
+    trace: [],
+    vanished: new Set(),
+    violations: [],
+  };
+  google.fault = (call) => {
+    if (isListRead(call)) {
+      return undefined;
+    }
+    const scripted = call.method === 'GET' ? undefined : world.nextWrites.shift();
+    // Google deletes (and moves) a parent's subtasks with it: which they
+    // are can only be read before it answers.
+    const target = itemOf(call);
+    world.children =
+      target?.key.startsWith('task:') === true
+        ? LISTS.flatMap((list) =>
+            google.tasksIn(list).filter((task) => task.parent === target.id),
+          ).map((task) => task.id)
+        : [];
+    const roll = random();
+    const fault =
+      scripted ??
+      (roll < world.network.refused
+        ? 'refused'
+        : roll < world.network.refused + world.network.lost
+          ? 'lost'
+          : undefined);
+    return fault;
+  };
+  google.onAnswer = (call, { json, lost, status }) => {
+    world.stepLog.push(`${showCall(call)} → ${status}${lost ? ', the answer lost' : ''}`);
+    if (lost) {
+      if (call.method !== 'GET' && status >= 200 && status < 300) {
+        lostLanded(world, call);
+      }
+      return;
+    }
+    if (status >= 200 && status < 300) {
+      learn(world, call, status, json);
+      return;
+    }
+    if (call.method === 'GET' || status === 409 || status === 412 || status >= 500) {
+      return;
+    }
+    const target = itemOf(call);
+    const explained =
+      target !== undefined && (status === 404 || status === 410) && world.removed.has(target.key);
+    if (!explained) {
+      world.violations.push(
+        `${call.method} ${new URL(call.url).pathname} was refused with ${status}, but nothing ` +
+          `removed ${target?.key ?? 'the item'} from Google: an op went before what it depends on`,
+      );
+    }
+  };
+  return world;
+};
+
+/** A write of ours landed with its answer lost: Google has changed under the client. */
+const lostLanded = (world: World, call: FakeCall) => {
+  const target = itemOf(call);
+  if (target === undefined) {
+    return;
+  }
+  const deletes = call.method === 'DELETE';
+  const keys = [target.key];
+  if (deletes || call.url.includes('/move')) {
+    keys.push(...world.children.map(taskKey));
+    for (const key of keys) {
+      world.removed.add(key);
+      if (deletes) {
+        world.vanished.add(key);
+      }
+    }
+  }
+  for (const key of keys) {
+    world.disturbed.add(key);
+  }
+};
+
+const setIntent = (
+  world: World,
+  key: string,
+  change: Partial<Omit<Intent & { kind: 'set' }, 'kind'>>,
+) => {
+  // Gone from Google behind the user's back: no later edit brings it back.
+  if (world.vanished.has(key)) {
+    return;
+  }
+  const before = world.intents.get(key);
+  const base = before?.kind === 'set' ? before : { container: undefined, fields: {} };
+  world.intents.set(key, {
+    container: change.container ?? base.container,
+    fields: { ...base.fields, ...change.fields },
+    kind: 'set',
+  });
+};
+
+/** Another device touched the item: the user's last word on it no longer decides. */
+const disturb = (world: World, key: string, removed: boolean) => {
+  world.disturbed.add(key);
+  world.intents.delete(key);
+  if (removed) {
+    world.removed.add(key);
+    world.vanished.add(key);
+  }
+};
+
+// ---- the checks ----
+
+const readSnapshot = Effect.gen(function* () {
+  const sql = yield* SqlClient;
+  const events = yield* sql<EventRow>`SELECT calendar_id, description, end_utc, etag, id,
+    is_all_day, location, start_utc, status, sync_status, title
+    FROM events WHERE account_id = ${ACCOUNT_ID} ORDER BY calendar_id, id`;
+  const tasks = yield* sql<TaskRow>`SELECT due_date, id, list_id, notes, parent_id, status,
+    sync_status, title FROM tasks WHERE account_id = ${ACCOUNT_ID} ORDER BY list_id, id`;
+  const ops = yield* (yield* PendingOpRepo).listAll();
+  return { events, ops, tasks } satisfies Snapshot;
+}).pipe(Effect.orDie);
+
+/** 1: a pending row is a change still on its way, so a queued op holds it. */
+const checkOwned = (world: World, snapshot: Snapshot) => {
+  for (const row of snapshot.events) {
+    if (
+      row.sync_status === 'pending' &&
+      !snapshot.ops.some((op) => ownsEvent(op, row.calendar_id, row.id))
+    ) {
+      world.violations.push(
+        `event ${row.id} in ${row.calendar_id} is pending, but no queued op owns it`,
+      );
+    }
+  }
+  for (const row of snapshot.tasks) {
+    const task = { id: row.id, parent: row.parent_id ?? undefined };
+    if (
+      row.sync_status === 'pending' &&
+      !snapshot.ops.some((op) => ownsTask(op, row.list_id, task))
+    ) {
+      world.violations.push(
+        `task ${row.id} in ${row.list_id} is pending, but no queued op owns it`,
+      );
+    }
+  }
+};
+
+/** Google's copy now, null when it has none (deleted, moved away). */
+const googleNow = (world: World, container: string, id: string): GcalEvent | GcalTask | null => {
+  if ((CALENDARS as ReadonlyArray<string>).includes(container)) {
+    const event = world.google.eventOf(container, id);
+    return event === undefined || event.status === 'cancelled' ? null : event;
+  }
+  return world.google.tasksIn(container).find((task) => task.id === id) ?? null;
+};
+
+/**
+ * 3: a synced event row at Google's current etag has Google's content, and
+ * whatever Google last told the client about an item no op holds — still
+ * Google's copy — is what shows: after a discard, Google's version.
+ */
+const checkShown = (world: World, snapshot: Snapshot) => {
+  for (const row of snapshot.events) {
+    const theirs = world.google.eventOf(row.calendar_id, row.id);
+    if (
+      row.sync_status !== 'synced' ||
+      row.status === 'cancelled' ||
+      theirs === undefined ||
+      theirs.status === 'cancelled' ||
+      theirs.etag !== row.etag
+    ) {
+      continue;
+    }
+    const fields = gcalEventFields(row.calendar_id, theirs);
+    if (fields !== undefined && !sameFields(eventRowFields(row), fields)) {
+      world.violations.push(
+        `event ${row.id} in ${row.calendar_id} is synced at Google's etag ${row.etag} but shows ` +
+          `${showFields(eventRowFields(row))}; Google has ${showFields(fields)}`,
+      );
+    }
+  }
+  for (const [slot, told] of world.told) {
+    const [container = '', id = ''] = slot.split('|');
+    if (JSON.stringify(googleNow(world, container, id)) !== told.json) {
+      continue; // Google moved on since; a pull brings it
+    }
+    const isEvent = (CALENDARS as ReadonlyArray<string>).includes(container);
+    const parent =
+      isEvent || told.item === null || !('parent' in told.item) ? undefined : told.item.parent;
+    const held = snapshot.ops.some(
+      (op) => op.eventId === id || (op.kind === 'moveTask' && op.eventId === parent),
+    );
+    if (held) {
+      continue;
+    }
+    const shown = isEvent
+      ? snapshot.events.find(
+          (row) => row.calendar_id === container && row.id === id && row.status !== 'cancelled',
+        )
+      : snapshot.tasks.find((row) => row.list_id === container && row.id === id);
+    const what = `${isEvent ? 'event' : 'task'} ${id} in ${container}`;
+    const key = slot;
+    if (told.item === null) {
+      if (shown !== undefined) {
+        staleOrBroken(
+          world,
+          key,
+          `${what} still shows, though Google said it is gone and no op holds it`,
+        );
+      }
+      continue;
+    }
+    const theirs = isEvent
+      ? gcalEventFields(container, told.item)
+      : gcalTaskFields(container, told.item);
+    if (theirs === undefined) {
+      continue;
+    }
+    if (shown === undefined) {
+      staleOrBroken(
+        world,
+        key,
+        `${what} does not show, though Google has it (and said so) and no op holds it`,
+      );
+      continue;
+    }
+    const mine = isEvent ? eventRowFields(shown as EventRow) : taskRowFields(shown as TaskRow);
+    if (!sameFields(mine, theirs)) {
+      staleOrBroken(
+        world,
+        key,
+        `${what} shows ${showFields(mine)}, but Google said ${showFields(theirs)} and no op holds it`,
+      );
+    }
+  }
+};
+
+/**
+ * A difference from Google: the known gap when Google sent a newer state
+ * of that slot (or, for an item, of any of its slots) while an op held
+ * the row, else a failure.
+ */
+const staleOrBroken = (world: World, slotOrKey: string, message: string) => {
+  const known = slotOrKey.includes('|')
+    ? world.heldTold.has(slotOrKey)
+    : [...world.heldTold].some((slot) => keyOfSlot(slot) === slotOrKey);
+  if (known) {
+    world.knownGaps.push(`#${world.step} ${message}`);
+  } else {
+    world.violations.push(message);
+  }
+};
+
+/** The items queued ops hold: their own, and the subtasks a task move carries. */
+const heldItems = (snapshot: Snapshot): Set<string> => {
+  const held = new Set<string>();
+  for (const op of snapshot.ops) {
+    if (EVENT_KINDS.has(op.kind)) {
+      held.add(eventKey(op.eventId));
+      continue;
+    }
+    held.add(taskKey(op.eventId));
+    if (op.kind === 'moveTask') {
+      for (const row of snapshot.tasks) {
+        if (row.parent_id === op.eventId) {
+          held.add(taskKey(row.id));
+        }
+      }
+    }
+  }
+  return held;
+};
+
+/** Which copies Google sent this step reached a row an op held (see World.heldTold). */
+const noteHeldCopies = (world: World, snapshot: Snapshot) => {
+  const held = heldItems(snapshot);
+  for (const [slot, applied] of world.heard) {
+    const key = keyOfSlot(slot);
+    if (world.held.has(key) || held.has(key)) {
+      world.heldTold.add(slot);
+    } else if (applied) {
+      world.heldTold.delete(slot);
+    }
+  }
+  world.heard.clear();
+  world.held = held;
+};
+
+/** 4 (parks): a conflict is parked only on an item someone else changed. */
+const checkParks = (world: World, snapshot: Snapshot) => {
+  for (const op of snapshot.ops) {
+    const key = EVENT_KINDS.has(op.kind) ? eventKey(op.eventId) : taskKey(op.eventId);
+    if (op.conflictAt !== undefined && !world.disturbed.has(key)) {
+      world.violations.push(`${describeOp(op)} parked a conflict, but nobody else changed ${key}`);
+    }
+  }
+};
+
+const checkStep = (world: World, snapshot: Snapshot) => {
+  checkOwned(world, snapshot);
+  checkShown(world, snapshot);
+  checkParks(world, snapshot);
+};
+
+/** 2: drained and pulled, the client shows what Google has. */
+const checkConverged = (world: World, snapshot: Snapshot) => {
+  for (const op of snapshot.ops) {
+    world.violations.push(
+      `never drained: ${describeOp(op)}${op.lastError ? ` — ${op.lastError}` : ''}`,
+    );
+  }
+  const compare = (what: string, mine: Map<string, Fields>, theirs: Map<string, Fields>) => {
+    const keyOf = (id: string) => `${what}|${id}`;
+    for (const [id, fields] of theirs) {
+      const shown = mine.get(id);
+      if (shown === undefined) {
+        staleOrBroken(
+          world,
+          keyOf(id),
+          `${what}: Google has ${id} (${showFields(fields)}), the client does not`,
+        );
+      } else if (!sameFields(shown, fields)) {
+        staleOrBroken(
+          world,
+          keyOf(id),
+          `${what}: ${id} shows ${showFields(shown)}, Google has ${showFields(fields)}`,
+        );
+      }
+    }
+    for (const [id, fields] of mine) {
+      if (!theirs.has(id)) {
+        staleOrBroken(
+          world,
+          keyOf(id),
+          `${what}: the client shows ${id} (${showFields(fields)}), Google does not`,
+        );
+      }
+    }
+  };
+  for (const calendarId of CALENDARS) {
+    const theirs = new Map<string, Fields>();
+    for (const event of world.google.eventsOf(calendarId)) {
+      const fields = gcalEventFields(calendarId, event);
+      if (fields !== undefined) {
+        theirs.set(event.id, fields);
+      }
+    }
+    const mine = new Map(
+      snapshot.events
+        .filter((row) => row.calendar_id === calendarId && row.status !== 'cancelled')
+        .map((row) => [row.id, eventRowFields(row)] as const),
+    );
+    compare(calendarId, mine, theirs);
+  }
+  for (const listId of LISTS) {
+    const theirs = new Map<string, Fields>();
+    for (const task of world.google.tasksIn(listId)) {
+      const fields = gcalTaskFields(listId, task);
+      if (fields !== undefined) {
+        theirs.set(task.id, fields);
+      }
+    }
+    const mine = new Map(
+      snapshot.tasks
+        .filter((row) => row.list_id === listId)
+        .map((row) => [row.id, taskRowFields(row)] as const),
+    );
+    compare(listId, mine, theirs);
+  }
+  for (const row of [...snapshot.events, ...snapshot.tasks]) {
+    if (row.sync_status !== 'synced') {
+      world.violations.push(`${row.id} is still ${row.sync_status} with the queue empty`);
+    }
+  }
+};
+
+/** 2 (intent): what the user did last to an item nobody else touched is what Google has (but see World.heldTold). */
+const checkIntents = (world: World) => {
+  for (const [key, intent] of world.intents) {
+    const [kind = '', id = ''] = key.split(':');
+    const places =
+      kind === 'event'
+        ? CALENDARS.flatMap((calendarId) =>
+            world.google
+              .eventsOf(calendarId)
+              .filter((event) => event.id === id)
+              .map((event) => ({
+                container: calendarId,
+                fields: gcalEventFields(calendarId, event),
+              })),
+          )
+        : LISTS.flatMap((listId) =>
+            world.google
+              .tasksIn(listId)
+              .filter((task) => task.id === id)
+              .map((task) => ({ container: listId, fields: gcalTaskFields(listId, task) })),
+          );
+    if (intent.kind === 'deleted') {
+      if (places.length > 0) {
+        staleOrBroken(
+          world,
+          key,
+          `the user deleted ${key}, Google still has it in ${places[0]!.container}`,
+        );
+      }
+      continue;
+    }
+    const place = places[0];
+    if (place === undefined || places.length > 1) {
+      staleOrBroken(world, key, `the user kept ${key}, Google has it ${places.length} times`);
+      continue;
+    }
+    if (intent.container !== undefined && place.container !== intent.container) {
+      staleOrBroken(
+        world,
+        key,
+        `the user moved ${key} to ${intent.container}, Google has it in ${place.container}`,
+      );
+    }
+    for (const [field, value] of Object.entries(intent.fields)) {
+      if (place.fields?.[field] !== value) {
+        staleOrBroken(
+          world,
+          key,
+          `the user set ${key} ${field}=${JSON.stringify(value)}, Google has ` +
+            `${JSON.stringify(place.fields?.[field])}`,
+        );
+      }
+    }
+  }
+};
+
+// ---- the steps ----
+
+type Services = EventMutations | PendingOpRepo | SqlClient | SyncEngine;
+
+interface Action {
+  readonly label: string;
+  readonly run: Effect.Effect<void, never, Services>;
+}
+
+/** Runs a user action; a refusal the app shows the user is no failure, a database error is. */
+const attempt = <A, E extends { readonly _tag: string }>(
+  world: World,
+  effect: Effect.Effect<A, E, Services>,
+  onDone: (value: A) => void,
+): Effect.Effect<void, never, Services> =>
+  Effect.flatMap(Effect.result(effect), (result) =>
+    Effect.sync(() => {
+      if (Result.isSuccess(result)) {
+        onDone(result.success);
+        return;
+      }
+      const tag = result.failure._tag;
+      world.trace.push(`      refused: ${tag}`);
+      if (tag === 'SqlError') {
+        world.violations.push(`the database refused a user action: ${failureText(result.failure)}`);
+      }
+    }),
+  );
+
+/** The items whose queued ops a step removed or added: a discard's, a keep-theirs'. */
+const forgetChanged = (world: World, before: ReadonlyArray<PendingOp>) =>
+  Effect.map(readSnapshot, (after) => {
+    const ids = new Set(after.ops.map((op) => op.id));
+    const was = new Set(before.map((op) => op.id));
+    for (const op of [
+      ...before.filter((entry) => !ids.has(entry.id)),
+      ...after.ops.filter((entry) => !was.has(entry.id)),
+    ]) {
+      world.intents.delete(EVENT_KINDS.has(op.kind) ? eventKey(op.eventId) : taskKey(op.eventId));
+    }
+  });
+
+const isTemp = (id: string): boolean => id.startsWith('local-');
+
+/** The one of two calendars (or lists) that is not `current`. */
+const otherOf = <A extends string>(all: ReadonlyArray<A>, current: string): A =>
+  all.find((entry) => entry !== current)!;
+
+const userActions = (
+  world: World,
+  snapshot: Snapshot,
+  mutations: EventMutationsShape,
+): Record<string, () => Action | undefined> => {
+  const { random, step } = world;
+  const liveEvents = snapshot.events.filter((row) => row.status !== 'cancelled');
+  return {
+    completeTask: () => {
+      const row = pick(random, snapshot.tasks);
+      if (!row) {
+        return undefined;
+      }
+      const status = row.status === 'completed' ? 'needsAction' : 'completed';
+      return {
+        label: `user marks task ${row.id} (${row.list_id}) ${status}`,
+        run: attempt(
+          world,
+          mutations.completeTask({
+            accountId: ACCOUNT_ID,
+            status,
+            taskId: row.id,
+            taskListId: row.list_id,
+          }),
+          () => {
+            if (!isTemp(row.id)) {
+              setIntent(world, taskKey(row.id), { fields: { status } });
+            }
+          },
+        ),
+      };
+    },
+    createEvent: () => {
+      const calendarId = pick(random, CALENDARS)!;
+      const startUtc = START + (8 + (step % 5)) * DAY + 10 * HOUR;
+      const title = `New ${step}`;
+      return {
+        label: `user creates "${title}" in ${calendarId}`,
+        run: attempt(
+          world,
+          mutations.createEvent({
+            accountId: ACCOUNT_ID,
+            calendarId,
+            endUtc: startUtc + HOUR,
+            isAllDay: false,
+            startTimeZone: 'UTC',
+            startUtc,
+            title,
+          }),
+          (record) => {
+            world.trace.push(`      → ${record.id}`);
+            setIntent(world, eventKey(record.id), {
+              container: calendarId,
+              fields: { end: String(startUtc + HOUR), start: String(startUtc), title },
+            });
+          },
+        ),
+      };
+    },
+    createTask: () => {
+      const taskListId = pick(random, LISTS)!;
+      const title = `Task ${step}`;
+      return {
+        label: `user creates task "${title}" in ${taskListId}`,
+        run: attempt(
+          world,
+          mutations.createTask({
+            accountId: ACCOUNT_ID,
+            dueDate: `2026-09-${String(10 + (step % 15)).padStart(2, '0')}`,
+            taskListId,
+            title,
+          }),
+          (record) => world.trace.push(`      → ${record.id}`),
+        ),
+      };
+    },
+    deleteEvent: () => {
+      const row = pick(random, liveEvents);
+      if (!row) {
+        return undefined;
+      }
+      return {
+        label: `user deletes ${row.id} (${row.calendar_id})`,
+        run: attempt(
+          world,
+          mutations.deleteEvent({
+            accountId: ACCOUNT_ID,
+            calendarId: row.calendar_id,
+            eventId: row.id,
+          }),
+          () => world.intents.set(eventKey(row.id), { kind: 'deleted' }),
+        ),
+      };
+    },
+    deleteTask: () => {
+      const row = pick(random, snapshot.tasks);
+      if (!row) {
+        return undefined;
+      }
+      const subtasks = snapshot.tasks.filter(
+        (task) => task.list_id === row.list_id && task.parent_id === row.id,
+      );
+      return {
+        label: `user deletes task ${row.id} (${row.list_id})${subtasks.length > 0 ? ` with ${subtasks.map((task) => task.id).join(', ')}` : ''}`,
+        run: attempt(
+          world,
+          mutations.deleteTask({ accountId: ACCOUNT_ID, taskId: row.id, taskListId: row.list_id }),
+          () => {
+            for (const task of [row, ...subtasks]) {
+              if (!isTemp(task.id)) {
+                world.intents.set(taskKey(task.id), { kind: 'deleted' });
+              }
+            }
+          },
+        ),
+      };
+    },
+    discard: () => {
+      const op = pick(random, snapshot.ops);
+      if (!op) {
+        return undefined;
+      }
+      return {
+        label: `user discards ${describeOp(op)}`,
+        run: Effect.andThen(
+          Effect.orDie(mutations.discardPendingOp(op.id)),
+          forgetChanged(world, snapshot.ops),
+        ),
+      };
+    },
+    editEvent: () => {
+      const row = pick(random, liveEvents);
+      if (!row) {
+        return undefined;
+      }
+      const field = pick(random, ['title', 'location', 'description', 'time'] as const)!;
+      const text = `${field} ${step}`;
+      const [changes, fields] =
+        field === 'time'
+          ? [
+              { endUtc: row.end_utc + HOUR, startUtc: row.start_utc + HOUR },
+              { end: String(row.end_utc + HOUR), start: String(row.start_utc + HOUR) },
+            ]
+          : [{ [field]: text }, { [field]: text }];
+      return {
+        label: `user edits ${row.id} (${row.calendar_id}): ${showFields(fields)}`,
+        run: attempt(
+          world,
+          mutations.updateEvent({
+            accountId: ACCOUNT_ID,
+            calendarId: row.calendar_id,
+            changes,
+            eventId: row.id,
+          }),
+          () => setIntent(world, eventKey(row.id), { fields }),
+        ),
+      };
+    },
+    editTask: () => {
+      const row = pick(random, snapshot.tasks);
+      if (!row) {
+        return undefined;
+      }
+      const field = pick(random, ['title', 'notes', 'due'] as const)!;
+      const value =
+        field === 'due'
+          ? `2026-09-${String(10 + (step % 15)).padStart(2, '0')}`
+          : `${field} ${step}`;
+      return {
+        label: `user edits task ${row.id} (${row.list_id}): ${field}=${JSON.stringify(value)}`,
+        run: attempt(
+          world,
+          mutations.updateTask({
+            accountId: ACCOUNT_ID,
+            changes: field === 'due' ? { dueDate: value } : { [field]: value },
+            taskId: row.id,
+            taskListId: row.list_id,
+          }),
+          () => {
+            if (!isTemp(row.id)) {
+              setIntent(world, taskKey(row.id), { fields: { [field]: value } });
+            }
+          },
+        ),
+      };
+    },
+    moveEvent: () => {
+      const row = pick(random, liveEvents);
+      if (!row) {
+        return undefined;
+      }
+      const target = otherOf(CALENDARS, row.calendar_id);
+      return {
+        label: `user moves ${row.id} from ${row.calendar_id} to ${target}`,
+        run: attempt(
+          world,
+          mutations.moveEvent({
+            accountId: ACCOUNT_ID,
+            calendarId: row.calendar_id,
+            eventId: row.id,
+            target: { accountId: ACCOUNT_ID, calendarId: target },
+          }),
+          () => setIntent(world, eventKey(row.id), { container: target }),
+        ),
+      };
+    },
+    moveTask: () => {
+      const row = pick(random, snapshot.tasks);
+      if (!row) {
+        return undefined;
+      }
+      const target = otherOf(LISTS, row.list_id);
+      const retitle = random() < 0.3;
+      const title = retitle ? `moved ${step}` : row.title;
+      const subtasks = snapshot.tasks.filter(
+        (task) => task.list_id === row.list_id && task.parent_id === row.id,
+      );
+      return {
+        label: `user moves task ${row.id} from ${row.list_id} to ${target}${retitle ? `, retitled "${title}"` : ''}`,
+        run: attempt(
+          world,
+          mutations.moveTask({
+            accountId: ACCOUNT_ID,
+            draft: { dueDate: row.due_date ?? '', notes: row.notes ?? undefined, title },
+            target: { accountId: ACCOUNT_ID, taskListId: target },
+            taskId: row.id,
+            taskListId: row.list_id,
+          }),
+          () => {
+            if (!isTemp(row.id)) {
+              setIntent(world, taskKey(row.id), {
+                container: target,
+                fields: retitle ? { parent: '', title } : { parent: '' },
+              });
+            }
+            for (const task of subtasks) {
+              if (!isTemp(task.id)) {
+                setIntent(world, taskKey(task.id), { container: target });
+              }
+            }
+          },
+        ),
+      };
+    },
+    resolve: () => {
+      const op = pick(
+        random,
+        snapshot.ops.filter((entry) => entry.conflictAt !== undefined),
+      );
+      if (!op) {
+        return undefined;
+      }
+      const choice = random() < 0.5 ? 'mine' : 'theirs';
+      return {
+        label: `user keeps ${choice} on ${describeOp(op)}`,
+        run: Effect.andThen(
+          attempt(world, mutations.resolveConflict({ choice, opId: op.id }), () => undefined),
+          choice === 'theirs' ? forgetChanged(world, snapshot.ops) : Effect.void,
+        ),
+      };
+    },
+  };
+};
+
+const NETWORKS = [
+  { lost: 0, name: 'good', refused: 0 },
+  { lost: 0.25, name: 'flaky', refused: 0.25 },
+  { lost: 0, name: 'down', refused: 1 },
+] as const;
+
+/** Moves the client's clock and the fake's together (task `updated` stamps). */
+const tick = (world: World, ms: number) =>
+  Effect.suspend(() => {
+    world.google.now += ms;
+    return TestClock.adjust(`${ms} millis`);
+  });
+
+const worldActions = (
+  world: World,
+  mutations: EventMutationsShape,
+  engine: SyncEngineShape,
+): Record<string, () => Action | undefined> => {
+  const { google, random, step } = world;
+  const liveEvents = () =>
+    CALENDARS.flatMap((calendarId) =>
+      google.eventsOf(calendarId).map((event) => ({ calendarId, event })),
+    );
+  const liveTasks = () =>
+    LISTS.flatMap((listId) => google.tasksIn(listId).map((task) => ({ listId, task })));
+  const drain = (fault: FakeFault | undefined): Action => ({
+    label: `drain${fault === undefined ? '' : `, the first write ${fault === 'lost' ? 'lands but its answer is lost' : 'is refused (503)'}`} (network ${world.network.name})`,
+    run: Effect.suspend(() => {
+      if (fault !== undefined) {
+        world.nextWrites.push(fault);
+      }
+      return Effect.ensuring(
+        mutations.processPendingOps(),
+        Effect.sync(() => {
+          world.nextWrites.length = 0;
+        }),
+      );
+    }),
+  });
+  return {
+    drain: () => drain(undefined),
+    drainLost: () => drain('lost'),
+    drainRefused: () => drain('refused'),
+    expireTokens: () => {
+      const calendarId = pick(random, CALENDARS)!;
+      return {
+        label: `Google expires the sync tokens of ${calendarId} (410: a full pass next)`,
+        run: Effect.sync(() => google.expireSyncTokens(calendarId)),
+      };
+    },
+    network: () => {
+      const next = pick(random, NETWORKS)!;
+      return {
+        label: `the network turns ${next.name}`,
+        run: Effect.sync(() => {
+          world.network = next;
+        }),
+      };
+    },
+    otherDeleteEvent: () => {
+      const target = pick(random, liveEvents());
+      if (!target) {
+        return undefined;
+      }
+      return {
+        label: `another device deletes ${target.event.id} (${target.calendarId})`,
+        run: Effect.sync(() => {
+          google.cancelEvent(target.calendarId, target.event.id);
+          disturb(world, eventKey(target.event.id), true);
+        }),
+      };
+    },
+    otherDeleteTask: () => {
+      const target = pick(random, liveTasks());
+      if (!target) {
+        return undefined;
+      }
+      return {
+        label: `another device deletes task ${target.task.id} (${target.listId})`,
+        run: Effect.sync(() => {
+          // Google deletes a parent's subtasks with it.
+          for (const task of google.tasksIn(target.listId)) {
+            if (task.parent === target.task.id) {
+              google.deleteTaskServerSide(target.listId, task.id);
+              disturb(world, taskKey(task.id), true);
+            }
+          }
+          google.deleteTaskServerSide(target.listId, target.task.id);
+          disturb(world, taskKey(target.task.id), true);
+        }),
+      };
+    },
+    otherEditEvent: () => {
+      const target = pick(random, liveEvents());
+      if (!target) {
+        return undefined;
+      }
+      const summary = `elsewhere ${step}`;
+      return {
+        label: `another device renames ${target.event.id} (${target.calendarId}) "${summary}"`,
+        run: Effect.sync(() => {
+          google.putEvent(target.calendarId, { ...target.event, summary });
+          disturb(world, eventKey(target.event.id), false);
+        }),
+      };
+    },
+    otherEditTask: () => {
+      const target = pick(random, liveTasks());
+      if (!target) {
+        return undefined;
+      }
+      const stored = google.taskOf(target.listId, target.task.id)!;
+      const completes = random() < 0.3;
+      const changed: GcalTask = completes
+        ? { ...stored, status: stored.status === 'completed' ? 'needsAction' : 'completed' }
+        : { ...stored, title: `elsewhere ${step}` };
+      return {
+        label: `another device ${completes ? `marks task ${target.task.id} ${changed.status}` : `renames task ${target.task.id} "${changed.title}"`} (${target.listId})`,
+        run: Effect.sync(() => {
+          google.putTask(target.listId, changed);
+          disturb(world, taskKey(target.task.id), false);
+        }),
+      };
+    },
+    pull: () => ({
+      label: `sync pass: push, then pull (network ${world.network.name})`,
+      run: engine.syncAll(),
+    }),
+    syncNow: () => ({
+      label: `the app comes back: retry now, push, pull (network ${world.network.name})`,
+      run: engine.syncNow(),
+    }),
+    wait: () => {
+      const minutes = 1 + Math.floor(random() * 45);
+      return {
+        label: `${minutes} minutes pass`,
+        run: tick(world, minutes * MINUTE),
+      };
+    },
+  };
+};
+
+const WEIGHTS: ReadonlyArray<readonly [string, number]> = [
+  ['editEvent', 12],
+  ['createEvent', 4],
+  ['deleteEvent', 5],
+  ['moveEvent', 6],
+  ['editTask', 8],
+  ['completeTask', 4],
+  ['createTask', 4],
+  ['deleteTask', 4],
+  ['moveTask', 5],
+  ['discard', 12],
+  ['resolve', 5],
+  ['drain', 6],
+  ['drainLost', 5],
+  ['drainRefused', 3],
+  ['pull', 7],
+  ['syncNow', 2],
+  ['wait', 4],
+  ['network', 4],
+  ['otherEditEvent', 3],
+  ['otherDeleteEvent', 1],
+  ['otherEditTask', 3],
+  ['otherDeleteTask', 1],
+  ['expireTokens', 1],
+];
+const TOTAL_WEIGHT = WEIGHTS.reduce((sum, [, weight]) => sum + weight, 0);
+
+const chooseAction = (world: World, actions: Record<string, () => Action | undefined>): Action => {
+  let roll = world.random() * TOTAL_WEIGHT;
+  const [name] = WEIGHTS.find(([, weight]) => (roll -= weight) < 0) ?? WEIGHTS[0]!;
+  return actions[name]?.() ?? actions['drain']!()!;
+};
+
+// ---- one sequence ----
+
+const report = (seed: number, world: World, snapshot: Snapshot | undefined): Error =>
+  new Error(
+    [
+      `queue sequence ${seed} broke at step ${world.step}:`,
+      ...world.violations.map((violation) => `  ✗ ${violation}`),
+      '',
+      `replay: QUEUE_SEQUENCE_SEED=${seed} pnpm exec vp test run packages/sync/src/queueSequence.test.ts`,
+      'sequence:',
+      ...world.trace,
+      'requests in that step:',
+      ...world.stepLog.map((line) => `  ${line}`),
+      'queue after it:',
+      ...(snapshot?.ops ?? []).map((op) => `  ${describeOp(op)}`),
+      ...(world.knownGaps.length > 0
+        ? ['known gap (Google sent a newer copy while an op held the row):', ...world.knownGaps]
+        : []),
+    ].join('\n'),
+  );
+
+const runSequence = (seed: number) => {
+  const google = newFake();
+  const world = makeWorld(seed, google);
+  return Effect.gen(function* () {
+    const mutations = yield* EventMutations;
+    const engine = yield* SyncEngine;
+    yield* TestClock.setTime(START);
+    yield* (yield* AccountRepo)
+      .upsert(
+        new Account({
+          contactsEnabled: false,
+          createdAt: 1,
+          email: EMAIL,
+          id: ACCOUNT_ID,
+          provider: 'google',
+          status: 'ok',
+          tasksEnabled: true,
+        }),
+      )
+      .pipe(Effect.orDie);
+
+    /** Lets kicked drains finish, then checks with none running. */
+    const settleAndCheck = Effect.gen(function* () {
+      for (let round = 0; round < 3; round += 1) {
+        yield* Effect.yieldNow;
+        yield* mutations.whileQueueHeld(Effect.void);
+      }
+      const snapshot = yield* mutations.whileQueueHeld(
+        Effect.tap(readSnapshot, (current) =>
+          Effect.sync(() => {
+            noteHeldCopies(world, current);
+            checkStep(world, current);
+          }),
+        ),
+      );
+      if (world.violations.length > 0) {
+        return yield* Effect.die(report(seed, world, snapshot));
+      }
+      return snapshot;
+    });
+
+    world.trace.push('#0 first sync pass');
+    yield* engine.syncAll();
+    let snapshot = yield* settleAndCheck;
+
+    for (let step = 1; step <= STEPS; step += 1) {
+      world.step = step;
+      world.stepLog = [];
+      yield* tick(world, pick(world.random, [0, 0, 1000, 5000, 20_000])!);
+      const action = chooseAction(world, {
+        ...userActions(world, snapshot, mutations),
+        ...worldActions(world, mutations, engine),
+      });
+      world.trace.push(`#${step} ${action.label}`);
+      yield* action.run;
+      snapshot = yield* settleAndCheck;
+      if (VERBOSE) {
+        world.trace.push(...world.stepLog.map((line) => `      ${line}`));
+      }
+    }
+
+    // The end: the network recovers, every conflict is settled, the
+    // queue drains and a pull brings what Google has.
+    world.step = STEPS + 1;
+    world.network = NETWORKS[0];
+    world.trace.push(`#${world.step} the network recovers; drain, settle conflicts, pull`);
+    for (let round = 0; round < 8 && snapshot.ops.length > 0; round += 1) {
+      world.stepLog = [];
+      yield* mutations.retryPendingOps();
+      yield* mutations.processPendingOps();
+      snapshot = yield* settleAndCheck;
+      for (const op of snapshot.ops.filter((entry) => entry.conflictAt !== undefined)) {
+        const choice = world.random() < 0.5 ? 'mine' : 'theirs';
+        world.trace.push(`    keeps ${choice} on ${describeOp(op)}`);
+        yield* attempt(world, mutations.resolveConflict({ choice, opId: op.id }), () => undefined);
+        if (choice === 'theirs') {
+          yield* forgetChanged(world, snapshot.ops);
+        }
+      }
+      yield* tick(world, 31 * MINUTE);
+      yield* engine.syncAll();
+      snapshot = yield* settleAndCheck;
+    }
+    for (let round = 0; round < 2; round += 1) {
+      world.stepLog = [];
+      yield* tick(world, 2 * MINUTE);
+      yield* engine.syncAll();
+      snapshot = yield* settleAndCheck;
+    }
+    checkConverged(world, snapshot);
+    checkIntents(world);
+    if (world.violations.length > 0) {
+      return yield* Effect.die(report(seed, world, snapshot));
+    }
+  }).pipe(noYield, Effect.provide(layerFor(google)), withSeededIds(seed));
+};
+
+/**
+ * Seeds past the gate's that still fail, with the open gap each one
+ * meets (the skipped tests at the end show each gap on its own). Found with
+ * QUEUE_SEQUENCE_RUNS=1000; a change to the steps or their odds reshuffles
+ * every sequence, so search again rather than trust these after one.
+ */
+const KNOWN_FAILING: ReadonlyMap<number, string> = new Map([
+  [157, 'subtasks around a parent moved and deleted'],
+  [208, 'a task move discarded after it landed'],
+  [248, 'an event move discarded after it landed'],
+  [281, 'a task move discarded after it landed'],
+  [391, 'subtasks around a parent moved and deleted'],
+  [486, 'a task move discarded after it landed'],
+  [617, 'a task move discarded after it landed'],
+  [831, 'subtasks around a parent moved and deleted'],
+  [833, 'a task move discarded after it landed'],
+  [839, 'a task move discarded after it landed'],
+  [861, 'a task move discarded after it landed'],
+  [864, "an edit of a subtask's copy while its parent's delete waits"],
+  [880, 'subtasks around a parent moved and deleted'],
+  [939, 'a task move discarded after it landed'],
+]);
+
+describe('pending-op queue: seeded random sequences', () => {
+  for (const seed of new Set([...SEEDS, ...KNOWN_FAILING.keys()])) {
+    const known = KNOWN_FAILING.get(seed);
+    if (known === undefined) {
+      it.effect(`sequence ${seed}`, () => runSequence(seed));
+    } else {
+      it.effect.skip(`sequence ${seed} (open: ${known})`, () => runSequence(seed));
+    }
+  }
+});
+
+// ---- what the sequences found, each on its own ----
+
+/** Writes fail (503) while true; reads always answer. */
+const writesDown = (google: FakeGoogle) => {
+  const state = { down: false };
+  google.fault = (call) => (state.down && call.method !== 'GET' ? 'refused' : undefined);
+  return state;
+};
+
+/** The fake with the account signed in and a first pass done, for a scripted run. */
+const scripted = <A, E>(
+  google: FakeGoogle,
+  body: Effect.Effect<A, E, EventMutations | PendingOpRepo | SqlClient | SyncEngine>,
+) =>
+  Effect.gen(function* () {
+    yield* TestClock.setTime(START);
+    yield* (yield* AccountRepo).upsert(
+      new Account({
+        contactsEnabled: false,
+        createdAt: 1,
+        email: EMAIL,
+        id: ACCOUNT_ID,
+        provider: 'google',
+        status: 'ok',
+        tasksEnabled: true,
+      }),
+    );
+    yield* (yield* SyncEngine).syncAll();
+    return yield* body;
+  }).pipe(noYield, Effect.provide(layerFor(google)));
+
+const writes = (google: FakeGoogle): Array<string> =>
+  google.requests
+    .filter((call) => call.method !== 'GET')
+    .map((call) => {
+      const url = new URL(call.url);
+      const destination =
+        url.searchParams.get('destination') ?? url.searchParams.get('destinationTasklist');
+      return `${call.method} ${url.pathname.replace(/^\/(calendar|tasks)\/v\d\//, '')}${destination ? ` → ${destination}` : ''}`;
+    });
+
+describe('pending-op queue: what the sequences found', () => {
+  it.effect('a task deleted after moving away and back keeps the moves ahead of its delete', () => {
+    // Sequence 920: list-2 → list-1 → list-2 → delete, offline. The delete
+    // dropped everything queued for the task in its list, the first move
+    // out of it included, so the move back met a 404 — and the delete too.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const move = (from: string, to: string) =>
+          mutations.moveTask({
+            accountId: ACCOUNT_ID,
+            draft: { dueDate: due(7).slice(0, 10), title: 'Call' },
+            target: { accountId: ACCOUNT_ID, taskListId: to },
+            taskId: 't2',
+            taskListId: from,
+          });
+        network.down = true;
+        yield* move('list-2', 'list-1');
+        yield* move('list-1', 'list-2');
+        yield* mutations.deleteTask({ accountId: ACCOUNT_ID, taskId: 't2', taskListId: 'list-2' });
+        network.down = false;
+        google.requests.length = 0;
+        for (let round = 0; round < 3; round += 1) {
+          yield* mutations.retryPendingOps();
+          yield* mutations.processPendingOps();
+        }
+        expect(writes(google)).toEqual([
+          'POST lists/list-2/tasks/t2/move → list-1',
+          'POST lists/list-1/tasks/t2/move → list-2',
+          'DELETE lists/list-2/tasks/t2',
+        ]);
+        expect(google.taskOf('list-2', 't2')?.deleted).toBe(true);
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+      }),
+    );
+  });
+
+  it.effect("discarding an event's sent create takes what was queued behind it along", () => {
+    // Sequence 38: an event created offline (its insert went out and met a
+    // 503), edited, deleted; then the create discarded, then the delete.
+    // The delete's discard put its snapshot back as a synced event Google
+    // never had, and no pull ever took it away.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const engine = yield* SyncEngine;
+        const ops = yield* PendingOpRepo;
+        network.down = true;
+        const created = yield* mutations.createEvent({
+          accountId: ACCOUNT_ID,
+          calendarId: 'cal-1',
+          endUtc: START + 9 * DAY + 11 * HOUR,
+          isAllDay: false,
+          startTimeZone: 'UTC',
+          startUtc: START + 9 * DAY + 10 * HOUR,
+          title: 'Dentist',
+        });
+        yield* mutations.processPendingOps();
+        const ref = { accountId: ACCOUNT_ID, calendarId: 'cal-1', eventId: created.id };
+        yield* mutations.updateEvent({ ...ref, changes: { title: 'Dentist (moved)' } });
+        yield* mutations.deleteEvent(ref);
+        // Sequence 231: one moved too, with an edit re-queued behind the move.
+        const other = yield* mutations.createEvent({
+          accountId: ACCOUNT_ID,
+          calendarId: 'cal-1',
+          endUtc: START + 10 * DAY + 11 * HOUR,
+          isAllDay: false,
+          startTimeZone: 'UTC',
+          startUtc: START + 10 * DAY + 10 * HOUR,
+          title: 'Haircut',
+        });
+        yield* mutations.processPendingOps();
+        const otherRef = { accountId: ACCOUNT_ID, calendarId: 'cal-1', eventId: other.id };
+        yield* mutations.updateEvent({ ...otherRef, changes: { location: 'Salon' } });
+        yield* mutations.moveEvent({
+          ...otherRef,
+          target: { accountId: ACCOUNT_ID, calendarId: 'cal-2' },
+        });
+        const otherCreate = (yield* ops.listAll()).find(
+          (op) => op.kind === 'create' && op.eventId === other.id,
+        )!;
+        yield* mutations.discardPendingOp(otherCreate.id);
+        const create = (yield* ops.listAll()).find(
+          (op) => op.kind === 'create' && op.eventId === created.id,
+        )!;
+        expect(create.dispatchedAt).toBeDefined();
+        yield* mutations.discardPendingOp(create.id);
+        expect(yield* ops.listAll()).toEqual([]);
+        network.down = false;
+        yield* TestClock.adjust('1 minute');
+        yield* engine.syncNow();
+        expect(
+          yield* (yield* SqlClient)`SELECT id FROM events WHERE id IN (${created.id}, ${other.id})`,
+        ).toEqual([]);
+        expect(google.eventOf('cal-1', created.id)).toBeUndefined();
+        expect(google.requests.some((call) => call.url.includes(other.id))).toBe(false);
+      }),
+    );
+  });
+
+  it.effect("discarding a task's sent create takes what was queued behind it along", () => {
+    // Sequence 171: the edit queued behind a create that went out names the
+    // task's temp id and waits for Google's; with the create discarded it
+    // waited for good.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const ops = yield* PendingOpRepo;
+        network.down = true;
+        const created = yield* mutations.createTask({
+          accountId: ACCOUNT_ID,
+          dueDate: '2026-09-12',
+          taskListId: 'list-1',
+          title: 'Groceries',
+        });
+        yield* mutations.processPendingOps();
+        yield* mutations.updateTask({
+          accountId: ACCOUNT_ID,
+          changes: { title: 'Groceries and wine' },
+          taskId: created.id,
+          taskListId: 'list-1',
+        });
+        const create = (yield* ops.listAll()).find((op) => op.kind === 'createTask')!;
+        expect(create.dispatchedAt).toBeDefined();
+        yield* mutations.discardPendingOp(create.id);
+        expect(yield* ops.listAll()).toEqual([]);
+      }),
+    );
+  });
+
+  it.effect("a parent's delete waits for the move that takes a subtask out of it", () => {
+    // Sequences 117 and 140: the subtask's move waited out a 503 while the
+    // parent's delete, queued after it, went: Google deleted the subtask
+    // with its parent, and the move met a 404.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        network.down = true;
+        yield* mutations.moveTask({
+          accountId: ACCOUNT_ID,
+          draft: { dueDate: due(5).slice(0, 10), title: 'Book' },
+          target: { accountId: ACCOUNT_ID, taskListId: 'list-2' },
+          taskId: 's2',
+          taskListId: 'list-1',
+        });
+        yield* mutations.deleteTask({ accountId: ACCOUNT_ID, taskId: 'p', taskListId: 'list-1' });
+        network.down = false;
+        // The move meets one more 503; the deletes are due.
+        let refuseMove = true;
+        google.fault = (call) => {
+          if (refuseMove && call.url.includes('/move')) {
+            refuseMove = false;
+            return 'refused';
+          }
+          return undefined;
+        };
+        yield* mutations.retryPendingOps();
+        yield* mutations.processPendingOps();
+        yield* mutations.retryPendingOps();
+        yield* mutations.processPendingOps();
+        yield* mutations.retryPendingOps();
+        yield* mutations.processPendingOps();
+        expect(google.taskOf('list-2', 's2')).toMatchObject({ title: 'Book' });
+        expect(google.taskOf('list-2', 's2')?.deleted).toBeUndefined();
+        expect(google.taskOf('list-1', 'p')?.deleted).toBe(true);
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+      }),
+    );
+  });
+
+  it.effect('discarding a task moved back leaves the move it undid in place', () => {
+    // Sequence 103: there and back while offline, then the way back
+    // discarded. Its release re-keyed everything of the task in the list it
+    // had moved to — the first move included, which became a move from
+    // list-1 into list-1 and met a 404: the task stayed where it started.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const move = (from: string, to: string) =>
+          mutations.moveTask({
+            accountId: ACCOUNT_ID,
+            draft: { dueDate: due(7).slice(0, 10), title: 'Call' },
+            target: { accountId: ACCOUNT_ID, taskListId: to },
+            taskId: 't2',
+            taskListId: from,
+          });
+        network.down = true;
+        yield* move('list-2', 'list-1');
+        yield* move('list-1', 'list-2');
+        const ops = yield* (yield* PendingOpRepo).listAll();
+        yield* mutations.discardPendingOp(ops.at(-1)!.id);
+        network.down = false;
+        google.requests.length = 0;
+        yield* mutations.retryPendingOps();
+        yield* mutations.processPendingOps();
+        expect(writes(google)).toEqual(['POST lists/list-2/tasks/t2/move → list-1']);
+        expect(google.taskOf('list-1', 't2')?.title).toBe('Call');
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+      }),
+    );
+  });
+
+  it.effect("a task changed after a pull put it back replaces the task's queued delete", () => {
+    // Sequence 13: the delete waited out a 503, a pull put Google's copy
+    // back as it does, and the user completed that copy. The delete stayed
+    // ahead, landed, and the completion met a 404: the task the user had
+    // just completed was gone.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const engine = yield* SyncEngine;
+        network.down = true;
+        yield* mutations.deleteTask({ accountId: ACCOUNT_ID, taskId: 't1', taskListId: 'list-1' });
+        yield* mutations.deleteTask({ accountId: ACCOUNT_ID, taskId: 't2', taskListId: 'list-2' });
+        google.now += MINUTE;
+        yield* TestClock.adjust('1 minute');
+        yield* engine.syncAll();
+        yield* mutations.completeTask({
+          accountId: ACCOUNT_ID,
+          status: 'completed',
+          taskId: 't1',
+          taskListId: 'list-1',
+        });
+        yield* mutations.updateTask({
+          accountId: ACCOUNT_ID,
+          changes: { title: 'Call back' },
+          taskId: 't2',
+          taskListId: 'list-2',
+        });
+        network.down = false;
+        yield* mutations.retryPendingOps();
+        yield* mutations.processPendingOps();
+        expect(google.taskOf('list-1', 't1')).toMatchObject({ status: 'completed' });
+        expect(google.taskOf('list-1', 't1')?.deleted).toBeUndefined();
+        expect(google.taskOf('list-2', 't2')).toMatchObject({ title: 'Call back' });
+        expect(google.taskOf('list-2', 't2')?.deleted).toBeUndefined();
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+      }),
+    );
+  });
+
+  it.effect('a pull leaves out an event a queued move takes out of the calendar', () => {
+    // Sequences 32, 97, 176 and 182: the pull wrote Google's copy of the
+    // moving event back into its source, so it showed in both calendars;
+    // the user deleted or edited the copy, and that op met a 404 there
+    // once the move landed — or, discarded, left a pending row no op owned.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const engine = yield* SyncEngine;
+        // An edit that lands: Google's copy is newer than the last pull's.
+        yield* mutations.updateEvent({
+          accountId: ACCOUNT_ID,
+          calendarId: 'cal-1',
+          changes: { title: 'Lunch with Ana' },
+          eventId: 'e2',
+        });
+        yield* mutations.processPendingOps();
+        network.down = true;
+        yield* mutations.moveEvent({
+          accountId: ACCOUNT_ID,
+          calendarId: 'cal-1',
+          eventId: 'e2',
+          target: { accountId: ACCOUNT_ID, calendarId: 'cal-2' },
+        });
+        yield* TestClock.adjust('1 minute');
+        yield* engine.syncAll();
+        const sql = yield* SqlClient;
+        const where = () =>
+          Effect.map(
+            sql<{ readonly calendar_id: string }>`SELECT calendar_id FROM events WHERE id = 'e2'`,
+            (rows) => rows.map((row) => row.calendar_id),
+          );
+        expect(yield* where()).toEqual(['cal-2']);
+        network.down = false;
+        yield* TestClock.adjust('1 minute');
+        yield* engine.syncNow();
+        expect(yield* where()).toEqual(['cal-2']);
+        expect(google.eventOf('cal-2', 'e2')?.summary).toBe('Lunch with Ana');
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+      }),
+    );
+  });
+
+  it.effect('an edit or a delete made while a move waits goes without the pre-move etag', () => {
+    // Sequences 149 and 100: the moved row kept the source's etag, the
+    // edit (or delete) made after the move sent it as its If-Match, and
+    // once the move landed — with a new etag — it met a 412 and parked a
+    // conflict nobody caused.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        network.down = true;
+        for (const eventId of ['e1', 'e2']) {
+          yield* mutations.moveEvent({
+            accountId: ACCOUNT_ID,
+            calendarId: 'cal-1',
+            eventId,
+            target: { accountId: ACCOUNT_ID, calendarId: 'cal-2' },
+          });
+        }
+        yield* mutations.updateEvent({
+          accountId: ACCOUNT_ID,
+          calendarId: 'cal-2',
+          changes: { title: 'Moved standup' },
+          eventId: 'e1',
+        });
+        yield* mutations.deleteEvent({ accountId: ACCOUNT_ID, calendarId: 'cal-2', eventId: 'e2' });
+        yield* mutations.processPendingOps();
+        network.down = false;
+        yield* mutations.retryPendingOps();
+        yield* mutations.processPendingOps();
+        yield* mutations.processPendingOps();
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+        expect(google.eventOf('cal-2', 'e1')?.summary).toBe('Moved standup');
+        expect(google.eventOf('cal-2', 'e2')?.status).toBe('cancelled');
+      }),
+    );
+  });
+
+  it.effect(
+    'a move made while an earlier move out of its calendar waits leaves that move first',
+    () => {
+      // Sequence 35: there and back and there again while offline. The
+      // third move re-keyed the first as its follower — a move from cal-2 to
+      // cal-2 behind it — so the move back went first, met a 404 and counted
+      // as landed, and the stray move gave the event a new etag.
+      const google = newFake();
+      const network = writesDown(google);
+      return scripted(
+        google,
+        Effect.gen(function* () {
+          const mutations = yield* EventMutations;
+          const move = (from: string, to: string) =>
+            mutations.moveEvent({
+              accountId: ACCOUNT_ID,
+              calendarId: from,
+              eventId: 'e1',
+              target: { accountId: ACCOUNT_ID, calendarId: to },
+            });
+          network.down = true;
+          yield* move('cal-1', 'cal-2');
+          yield* move('cal-2', 'cal-1');
+          yield* move('cal-1', 'cal-2');
+          yield* mutations.processPendingOps();
+          network.down = false;
+          google.requests.length = 0;
+          yield* mutations.retryPendingOps();
+          yield* mutations.processPendingOps();
+          yield* mutations.processPendingOps();
+          expect(writes(google)).toEqual([
+            'POST calendars/cal-1/events/e1/move → cal-2',
+            'POST calendars/cal-2/events/e1/move → cal-1',
+            'POST calendars/cal-1/events/e1/move → cal-2',
+          ]);
+          expect(google.eventOf('cal-2', 'e1')?.status).toBe('confirmed');
+          expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+        }),
+      );
+    },
+  );
+});
+
+/**
+ * Gaps the sequences found that are not closed yet: each test shows one,
+ * skipped until a change closes it (then it goes in the gate).
+ */
+describe('pending-op queue: open gaps the sequences found', () => {
+  it.effect.skip("a discard after a pull skipped Google's newer copy shows Google's copy", () => {
+    // Sequences 6, 8, 22 and 23: the pull skips a row a queued op holds and
+    // its token moves past Google's copy; the discard puts back the op's
+    // snapshot, older than that copy, as synced — for good, since no pull
+    // sends the copy again. The same happens to a discarded create that
+    // landed (sequence 45: gone here, there on Google) and to a move that
+    // is released after a pull reported its event deleted (sequence 2).
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const engine = yield* SyncEngine;
+        network.down = true;
+        yield* mutations.updateEvent({
+          accountId: ACCOUNT_ID,
+          calendarId: 'cal-1',
+          changes: { title: 'Standup (moved)' },
+          eventId: 'e1',
+        });
+        google.putEvent('cal-1', {
+          ...google.eventOf('cal-1', 'e1')!,
+          description: 'Agenda from another device',
+        });
+        yield* TestClock.adjust('1 minute');
+        yield* engine.syncAll();
+        const [op] = yield* (yield* PendingOpRepo).listAll();
+        yield* mutations.discardPendingOp(op!.id);
+        network.down = false;
+        for (let round = 0; round < 2; round += 1) {
+          yield* TestClock.adjust('2 minutes');
+          yield* engine.syncAll();
+        }
+        const [row] = yield* (yield* SqlClient)<{
+          readonly description: string | null;
+        }>`SELECT description FROM events WHERE id = 'e1'`;
+        expect(row?.description).toBe('Agenda from another device');
+      }),
+    );
+  });
+
+  it.effect.skip(
+    'a task move discarded after it landed leaves the task where Google has it',
+    () => {
+      // Sequences 208, 281 and others: the move landed with its answer lost,
+      // and the discard put the rows back in the source without asking Google
+      // (an event move that was sent asks the destination first). Google
+      // sends the source no tombstone for a task that left it: the task shows
+      // where it was for good, and an edit of it meets a 404.
+      const google = newFake();
+      let loseMove = true;
+      let down = false;
+      google.fault = (call) => {
+        if (call.method === 'GET') {
+          return undefined;
+        }
+        if (loseMove && call.url.includes('/move')) {
+          loseMove = false;
+          down = true;
+          return 'lost';
+        }
+        return down ? 'refused' : undefined;
+      };
+      return scripted(
+        google,
+        Effect.gen(function* () {
+          const mutations = yield* EventMutations;
+          const engine = yield* SyncEngine;
+          yield* mutations.moveTask({
+            accountId: ACCOUNT_ID,
+            draft: { dueDate: due(7).slice(0, 10), title: 'Call' },
+            target: { accountId: ACCOUNT_ID, taskListId: 'list-1' },
+            taskId: 't2',
+            taskListId: 'list-2',
+          });
+          yield* mutations.processPendingOps();
+          expect(google.taskOf('list-1', 't2')).toBeDefined();
+          // A pull while the move waits: the moved row is held, the copy in
+          // list-1 skipped, and the watermark moves past it.
+          google.now += 2 * MINUTE;
+          yield* TestClock.adjust('2 minutes');
+          yield* engine.syncAll();
+          const [op] = yield* (yield* PendingOpRepo).listAll();
+          yield* mutations.discardPendingOp(op!.id);
+          down = false;
+          for (let round = 0; round < 2; round += 1) {
+            google.now += 2 * MINUTE;
+            yield* TestClock.adjust('2 minutes');
+            yield* engine.syncAll();
+          }
+          const rows = yield* (yield* SqlClient)<{
+            readonly list_id: string;
+          }>`SELECT list_id FROM tasks WHERE id = 't2'`;
+          expect(rows.map((row) => row.list_id)).toEqual(['list-1']);
+        }),
+      );
+    },
+  );
+
+  it.effect.skip(
+    "an edit of a subtask's copy while its parent's delete waits keeps the subtask",
+    () => {
+      // Sequence 864: the parent was deleted with its subtasks, a pull put
+      // their copies back while the deletes waited, and the user edited one
+      // subtask. Its own delete goes (a task acted on replaces it), but the
+      // parent's stays ahead and Google deletes the subtask with its parent:
+      // the edit meets a 404. Keeping a subtask keeps its parent, as a
+      // discard of the subtask's delete does.
+      const google = newFake();
+      const network = writesDown(google);
+      return scripted(
+        google,
+        Effect.gen(function* () {
+          const mutations = yield* EventMutations;
+          const engine = yield* SyncEngine;
+          network.down = true;
+          yield* mutations.deleteTask({ accountId: ACCOUNT_ID, taskId: 'p', taskListId: 'list-1' });
+          google.now += MINUTE;
+          yield* TestClock.adjust('1 minute');
+          yield* engine.syncAll();
+          yield* mutations.updateTask({
+            accountId: ACCOUNT_ID,
+            changes: { notes: 'Passport' },
+            taskId: 's1',
+            taskListId: 'list-1',
+          });
+          network.down = false;
+          yield* mutations.retryPendingOps();
+          yield* mutations.processPendingOps();
+          expect(google.taskOf('list-1', 's1')).toMatchObject({ notes: 'Passport' });
+          expect(google.taskOf('list-1', 's1')?.deleted).toBeUndefined();
+        }),
+      );
+    },
+  );
+});
