@@ -577,6 +577,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   sync moved it) and re-seeding the open form (loses what is typed).
   Open: a split from an exception no longer carries its own notes into
   the new series; the series' text continues instead.
+- **Ask before discarding an editor** (2026-11-15, #333) — while the
+  editor holds something, Cancel, a swipe down (iOS: the sheet springs
+  back) and every other way off the Mac's panel (the X, Escape, another
+  item, slot, search, paste) ask Discard Changes or Keep Editing, an
+  action sheet on iOS as HIG → Sheets and Calendar do. It holds a new
+  item's drafts (a share's untouched ones too: getting them back means
+  sharing and reading again) or a form that reads otherwise than it
+  opened, so a field put back or a blank item's kind switch asks nothing.
+  Rejected: `userEdits` (it never goes down). Open: a share or reminder
+  over an iOS editor, and ⌘W, Reload and quit on the Mac, still don't ask.
 - **Drag to move and resize** — pointer drag on desktop, long-press pan
   plus a resize handle on iOS, shared snap math in core; gestures track
   input 1:1 and snap on release — Nik rejected discrete-step snapping

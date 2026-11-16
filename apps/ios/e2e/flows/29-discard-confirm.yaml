@@ -1,0 +1,55 @@
+appId: com.solunivo.app.dev
+name: Cancel and a swipe down ask before an edited editor goes
+tags:
+  - ci
+---
+# HIG → Sheets: a sheet with unsaved changes asks before it goes, as
+# Calendar asks — Cancel, and a swipe down, which springs the sheet back
+# first. An editor left as it opened closes at once.
+- runFlow: ../common/launch.yaml
+- runFlow: ../common/open-new-event.yaml
+- tapOn:
+    id: 'editor-cancel'
+- extendedWaitUntil:
+    notVisible: 'New Event'
+    timeout: 10000
+- assertNotVisible: 'Discard Changes'
+
+# Typed into: Cancel asks; Keep Editing leaves the editor as it is.
+- runFlow: ../common/open-new-event.yaml
+- tapOn:
+    id: 'event-title'
+# Any text will do: XCTest typing may garble it, the question is all
+# this flow reads.
+- inputText: 'Half written'
+- runFlow:
+    file: ../common/dismiss-keyboard.yaml
+    env:
+      LABEL: 'Starts'
+- tapOn:
+    id: 'editor-cancel'
+- extendedWaitUntil:
+    visible: 'Are you sure you want to discard this new event?'
+    timeout: 10000
+- tapOn: 'Keep Editing'
+- extendedWaitUntil:
+    notVisible: 'Discard Changes'
+    timeout: 5000
+- assertVisible: 'New Event'
+
+# A swipe down, started on the header (a drag on the form scrolls it):
+# the sheet springs back and asks the same — only a sheet still up can.
+# (While it asks, the sheet's own elements leave the accessibility tree.)
+# Discard Changes closes it.
+- swipe:
+    start: '50%, 12%'
+    end: '50%, 70%'
+    duration: 400
+- extendedWaitUntil:
+    visible: 'Are you sure you want to discard this new event?'
+    timeout: 10000
+- tapOn: 'Discard Changes'
+- extendedWaitUntil:
+    notVisible: 'New Event'
+    timeout: 10000
+- assertVisible: 'Today'

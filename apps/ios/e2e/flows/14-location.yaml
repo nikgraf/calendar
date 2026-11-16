@@ -33,6 +33,8 @@ name: The location field suggests places and maps a picked one
       id: 'open-in-maps'
     timeout: 15000
     optional: true
-# Nothing is saved: leave the sheet as we found it.
+# Nothing is saved: leave the sheet as we found it. The location typed is
+# an edit, so Cancel asks first.
 - tapOn: 'Cancel'
+- tapOn: 'Discard Changes'
 - assertVisible: 'Today'

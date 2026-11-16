@@ -605,8 +605,8 @@ describe('agent gateway: other agents reach the app over the CLI and MCP', () =>
     expect(
       await cdp.eval<string>(`document.querySelector('input[placeholder="Title"]')?.value ?? ''`),
     ).toBe('Half written');
-    await cdp.pressEscape();
-    await cdp.waitFor(`!document.body.textContent.includes('New event')`);
+    // The second leaves the editor, asking first: it holds the title.
+    await cdp.discardEditor();
 
     // Behind a request, the calendar's own keys do nothing.
     const second = runAgentCli(app, ASKER, newEvent(work, 'Asked dinner', 19));

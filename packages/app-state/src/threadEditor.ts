@@ -16,7 +16,7 @@ import {
   type TaskRecord,
   Temporal,
 } from '@calendar/core';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { draftCalendarKey, draftListKey, planAddAll } from './addAll.ts';
 import { useDraftFocusRequest, useRevealDraftDay, useSetDraftPreviews } from './draftAtoms.ts';
 import {
@@ -48,6 +48,7 @@ import { useEditorKinds } from './editorKinds.ts';
 import type { EditorSourceKind } from './editorSwitch.ts';
 import { livePlaceChoice } from './draftPlaces.ts';
 import { editorQuestions } from './draftQuestions.ts';
+import { editorDiscard, formReading, useFormChanged } from './editorUnsaved.ts';
 import { rescheduledEventExclusion } from './findTimeModel.ts';
 import { useBackendMutations } from './hooks.ts';
 import { useOneWrite } from './oneWrite.ts';
@@ -395,8 +396,23 @@ export const useThreadEditor = ({
     onClose();
   };
 
+  // A write's own question (a lossy move, a delete) is no write yet:
+  // while it is asked, leaving would lose what the form holds (`writing`).
+  const [asking, setAsking] = useState(0);
+  const askFirst = useCallback(
+    async (request: EditorConfirmRequest): Promise<boolean> => {
+      setAsking((open) => open + 1);
+      try {
+        return await confirm(request);
+      } finally {
+        setAsking((open) => open - 1);
+      }
+    },
+    [confirm],
+  );
+
   const taskModel = useTaskEditorModel({
-    confirm,
+    confirm: askFirst,
     onClose: close,
     onSaved: saved,
     seed: {
@@ -412,7 +428,7 @@ export const useThreadEditor = ({
   });
   const eventModel = useEventEditorModel({
     calendars,
-    confirm,
+    confirm: askFirst,
     onClose: close,
     onSaved: saved,
     seed: { ...seed, convertFromTask: task },
@@ -421,7 +437,7 @@ export const useThreadEditor = ({
   formCalendar.current = eventModel.calendarKey;
   const kinds = useEditorKinds({
     calendars,
-    confirm,
+    confirm: askFirst,
     eventModel,
     initialKind,
     previewEventToTask: mutations.previewEventToTask,
@@ -457,16 +473,15 @@ export const useThreadEditor = ({
    * calendar picked for an event — or a to-do's list, notes, undated state
    * and Reminders-only fields.
    */
+  const todoExtras = () => ({
+    listKey: taskModel.listKey,
+    reminder: taskModel.reminderFields(),
+    taskNotes: taskModel.notes,
+    undated: !taskModel.dated,
+  });
   const currentExtras = (): DraftExtras => ({
     ...eventModel.extras(),
-    ...(mode === 'event'
-      ? { calendarKey: eventModel.calendarKey }
-      : {
-          listKey: taskModel.listKey,
-          reminder: taskModel.reminderFields(),
-          taskNotes: taskModel.notes,
-          undated: !taskModel.dated,
-        }),
+    ...(mode === 'event' ? { calendarKey: eventModel.calendarKey } : todoExtras()),
   });
   // The latest render's readers, for a turn that reads the form after an await.
   // The draft whose fields the form holds as rendered: set with the fields
@@ -506,6 +521,19 @@ export const useThreadEditor = ({
   const assistant: 'new' | 'none' | 'saved' =
     sourceKind === 'new' ? 'new' : savedOpen ? 'saved' : 'none';
   const seedReady = assistant === 'saved' && (sourceKind === 'task' || eventModel.ruleAnswered);
+  // The form as one reading, against how it opened (`useFormChanged`).
+  const formChanged = useFormChanged({
+    isNew: sourceKind === 'new',
+    kind: kinds.kind,
+    mode,
+    // The form on show only: a to-do's notes carried into the hidden event
+    // form on a round trip through Event are no change of the to-do's.
+    reading: formReading({
+      extras: mode === 'event' ? currentExtras() : todoExtras(),
+      item: currentItem(),
+      ruleDirty: eventModel.repeatDirty,
+    }),
+  });
   const { open } = thread;
   useEffect(() => {
     if (seedReady) {
@@ -1099,6 +1127,21 @@ export const useThreadEditor = ({
       }
     });
 
+  // Closing now would lose something put in here (`editorUnsaved`):
+  // Cancel, a swipe down and another item opened over the editor ask first.
+  const discard = editorDiscard({
+    assistant,
+    draftKinds: drafts.map((draft) => draft.item.kind),
+    formChanged,
+    kind: kinds.kind,
+    mode,
+    previewing,
+    readOnly: { event: eventModel.readOnly, todo: taskModel.readOnly },
+    sourceKind,
+    userEdits,
+    writing: writing && asking === 0,
+  });
+
   return {
     addAll,
     /** The form is still taking the thread's last change in: the next phrase waits. */
@@ -1156,8 +1199,20 @@ export const useThreadEditor = ({
     switchFocus,
     taskModel: reportingEdits(taskModel, TASK_EDITS, edited),
     thread,
+    /**
+     * Closing now would lose something put in here: a new item's drafts,
+     * or a form that differs from how it opened (`editorUnsaved`).
+     */
+    unsaved: discard.unsaved,
+    /** What Cancel, a swipe down or another item opened over the editor asks while it is `unsaved`. */
+    unsavedQuestion: discard.question,
     /** Moves at each edit made by hand in the form (the phrase field's `editKey`: dictation ends). */
     userEdits,
     write,
+    /**
+     * A Save, a delete or "Add all" is being written, its question (if
+     * any) answered: what the form shows lands whether the editor stays.
+     */
+    writing: writing && asking === 0,
   };
 };

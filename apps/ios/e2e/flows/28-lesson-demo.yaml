@@ -107,7 +107,9 @@ tags:
       - extendedWaitUntil:
           visible: 'The Assistant answers anything once its model is here.'
           timeout: 5000
+      # The demo's phrases made a draft: Cancel asks before it goes.
       - tapOn: 'Cancel'
+      - tapOn: 'Discard Changes'
       - extendedWaitUntil:
           visible: 'Create with AI, done'
           timeout: 10000

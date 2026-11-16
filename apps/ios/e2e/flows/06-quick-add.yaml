@@ -212,4 +212,6 @@ tags:
       # visible would pass whether or not it rendered — the transcript path
       # is verified on a real device instead.
 - tapOn: 'Cancel'
+# The phrases made a draft: Cancel asks before it goes.
+- tapOn: 'Discard Changes'
 - assertVisible: 'Today'

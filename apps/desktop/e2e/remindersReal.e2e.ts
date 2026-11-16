@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vite-plus/test';
 import {
   type App,
+  CANCEL_OR_DISCARD,
   launchApp,
   localIsoDaysAgo,
   readAccounts,
@@ -77,9 +78,7 @@ describe.skipIf(!REAL)('Apple Reminders through the real helper', () => {
       if (!(await app.cdp.eval<boolean>(EDITOR_OPEN))) {
         return;
       }
-      await app.cdp.eval(
-        `[...document.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Cancel')?.click()`,
-      );
+      await app.cdp.eval(CANCEL_OR_DISCARD);
       await new Promise((resolve) => setTimeout(resolve, 150));
     }
   };

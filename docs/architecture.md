@@ -1544,7 +1544,19 @@ gateway carries all of it. Details, limits and the threat model:
   (`useCaptureModel.onMany`) rather than a review list. The panel renders
   `useThreadEditor` (`packages/app-state/src/threadEditor.ts`), which the
   iOS edit sheet shares: both editor models, the kind control, the thread
-  and everything between; the calendar and the editor exchange drafts, a
+  and everything between, and whether closing now would lose something
+  (`unsaved`, `editorUnsaved.ts`): a new item's drafts — a share's
+  untouched ones too — or a form that reads otherwise than it opened
+  (`useFormChanged`, one JSON reading of the form on show, so a field
+  put back is no change; read as the editor opens, with an event's rule
+  in it only once the person changed it — a series' rule arrives after
+  the editor opens and seeds itself — and a new item switched to another
+  kind, or round again, before anything was put in opens that form
+  afresh). An editor opened to convert counts its edits by hand
+  instead, since its form fills as it opens; a birthday and a read-only
+  item never hold anything; a Save, delete or "Add all" being written,
+  its question answered (`askFirst`), excuses the draft on show, not a
+  capture's others. The calendar and the editor exchange drafts, a
   day to show and a clicked draft through kept-alive atoms
   (`draftAtoms.ts`: `useDraftPreviews`, `useOnDraftReveal`,
   `useRequestDraftFocus`). The panel never
@@ -1560,6 +1572,15 @@ gateway carries all of it. Details, limits and the threat model:
   shows an event that delete took (`deleteTakes`: the event, or with a
   series' scope its siblings; an editor opened on one meanwhile
   included), so a late reply never closes what was opened since.
+  Every other way the panel changes goes through one gate
+  (`CalendarApp`'s `setPanel`): while the editor holds something it
+  would lose (`useThreadEditor().unsaved`, or words in the Assistant's
+  field — `EditorPanel` reports both up), a change that would take it
+  off the panel — Cancel, the X, Escape, another event, slot or chip,
+  "+ New", search, a lesson, a paste, a notification — is held and the
+  editor asks above its footer (`DiscardConfirm`: Keep Editing, which
+  has the focus and Escape, or Discard Changes, which goes where was
+  asked). Only an editor's own close after its write bypasses it.
   Notices (`NoticeStack`: failed write, discarded
   change, conflict banner) stack in one column inside the grid's area.
   Every editor write runs through one slot (`useOneWrite`); deletes ask
@@ -1607,7 +1628,19 @@ gateway carries all of it. Details, limits and the threat model:
   alike. Only a swipe closes them as the route goes: after the host's
   own pop the state has moved on, and a detail asked for while the old
   sheet leaves (a tapped reminder) goes up once it has gone
-  (`routeMove`, `routeDismissed`). The editor's
+  (`routeMove`, `routeDismissed`). While the editor holds something
+  it would lose (`unsaved`, or words in the Assistant's field), Cancel
+  and the lesson's Skip ask first with an action sheet (HIG → Sheets:
+  Discard Changes or Keep Editing), and so does a swipe down: the
+  editor holds the route with expo-router's `usePreventRemove`
+  (`discardGuard.tsx`), which sets the sheet's `isModalInPresentation`,
+  so the sheet springs back and the attempt asks; Discard closes the
+  whole sheet, as a swipe does. The guard holds only while the host's
+  state names that opening (`open`): the host's own close — Save,
+  Delete, a share, a tapped reminder — releases it in the same commit,
+  and expo-router decides a blocked pop when its reducer runs, after
+  that. A share, a reminder or a settings code arriving over an
+  editor still replaces it without asking. The editor's
   own close (Cancel, or Save and Delete once the
   write answers) applies only while the sheet still holds its opening,
   and the detail's Delete only while the sheet shows an event that

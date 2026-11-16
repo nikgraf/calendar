@@ -70,6 +70,7 @@ import { UseStepCard } from './assistant/UseStepCard.tsx';
 import { SwitchAnchorContext, useViewSwitch } from './assistant/useViewSwitch.ts';
 import { SwitchCapsule } from './assistant/SwitchCapsule.tsx';
 import { BirthdayDetail } from './BirthdayDetail.tsx';
+import { SwipeGuard, useDiscard } from './discardGuard.tsx';
 import { useSheetStyles } from './editSheetShared.ts';
 import { EventEditForm } from './EventEditForm.tsx';
 import { FieldFlashContext, FlashView } from './FlashView.tsx';
@@ -207,7 +208,12 @@ function EditorHeader({
   return (
     <View style={styles.editorHeader}>
       <View style={styles.capsuleSide}>
-        <Pressable accessibilityRole="button" onPress={onClose} style={styles.capsule}>
+        <Pressable
+          accessibilityRole="button"
+          onPress={onClose}
+          style={styles.capsule}
+          testID="editor-cancel"
+        >
           {/* A birthday's reminder chips save as they change: nothing to cancel. */}
           <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.capsuleLabel}>
             {birthday ? 'Done' : 'Cancel'}
@@ -358,14 +364,9 @@ function EditorForm({
             accessibilityState={{ checked: done }}
             disabled={busy}
             leading={<TaskCheck checked={done} size="list" />}
-            // Anything not saved yet is asked about: an edit by hand, and a
-            // step of the thread (a phrase to the Assistant changes the
-            // to-do without touching a field).
-            onPress={() =>
-              void toggleCompletion(
-                editor.userEdits > 0 || editor.steps.of > 0 ? confirmDiscard : undefined,
-              )
-            }
+            // Anything not saved yet is asked about, as Cancel asks
+            // (`unsaved`): an edit by hand, a phrase to the Assistant.
+            onPress={() => void toggleCompletion(editor.unsaved ? confirmDiscard : undefined)}
             testID="task-editor-completion"
             title={completionTitle}
           />
@@ -692,6 +693,7 @@ export function EventEditSheet({
   onCancel,
   onClose,
   onSaved,
+  open = true,
   opensOn = 'form',
   presentation = 'modal',
   seed,
@@ -715,6 +717,11 @@ export function EventEditSheet({
   onClose: () => void;
   /** Save went through, as an event or a task (capture marks its row added). */
   onSaved?: (() => void) | undefined;
+  /**
+   * The host still shows this editor: its own closes since (Save, Delete,
+   * a share) are not swipes to hold (`useDiscard`).
+   */
+  open?: boolean | undefined;
   /** The view to start on, where there are two. */
   opensOn?: EditorView | undefined;
   /**
@@ -831,7 +838,7 @@ export function EventEditSheet({
       download={download}
       id={seed.lesson}
       model={demo || demoed ? own : undefined}
-      onSkip={lesson.open ? onClose : undefined}
+      onSkip={lesson.open ? () => discard.cancel() : undefined}
     />
   ) : null;
 
@@ -860,7 +867,18 @@ export function EventEditSheet({
     formOnly: status === 'unsupported',
     line: steps.line,
     onForm: () => switcher.flip('form', keyboard > 0),
-    setPhrase: quick.setPhrase,
+    setPhrase: quick.give,
+  });
+  // Cancel, Skip and a swipe down ask first while the editor holds
+  // something: the form's changes, a share's drafts, words in the field.
+  const discard = useDiscard({
+    held: quick.held,
+    onCancel: onCancel ?? onClose,
+    onClose,
+    open,
+    question: editor.unsavedQuestion,
+    unsaved: editor.unsaved,
+    writing: editor.writing,
   });
 
   const { noun, verb } = editorTitle({
@@ -872,7 +890,7 @@ export function EventEditSheet({
     <EditorHeader
       birthday={birthday !== undefined}
       editor={editor}
-      onClose={onCancel ?? onClose}
+      onClose={discard.cancel}
       title={birthday ? 'Birthday' : `${verb} ${capitalize(noun)}`}
     />
   );
@@ -896,6 +914,7 @@ export function EventEditSheet({
   if (presentation === 'route') {
     return (
       <View style={styles.route} testID={`editor-${shown}`}>
+        <SwipeGuard guard={discard.guard} onAttempt={discard.swipe} />
         <View style={styles.sheetHeader}>{header}</View>
         <DraftPager editor={editor} />
         <SwitchAnchorContext value={switcher.anchors}>

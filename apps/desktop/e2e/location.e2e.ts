@@ -197,7 +197,9 @@ describe('location picker and map', () => {
     expect(
       await cdp.eval<string>(`document.querySelector('[data-open-in-maps]').getAttribute('href')`),
     ).toBe('https://maps.apple.com/?ll=48.2003,16.3497&q=Kaffemik');
+    // The place picked is an edit: Cancel asks first.
     await cdp.clickButtonWithText('Cancel');
+    await cdp.answerDiscard(true);
     await cdp.waitFor(`!${INPUT}`);
   });
 

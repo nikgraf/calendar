@@ -50,6 +50,19 @@ const require = createRequire(import.meta.url);
 /* eslint-disable no-console -- harness diagnostics are wanted in e2e output */
 
 /**
+ * For a cleanup loop that leaves an editor by its Cancel, in one eval:
+ * Discard Changes while the editor asks (`DiscardConfirm`), else Cancel.
+ */
+export const CANCEL_OR_DISCARD = `(() => {
+  const yes = document.querySelector('[data-testid="discard-confirm-yes"]');
+  if (yes) {
+    yes.click();
+    return;
+  }
+  [...document.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Cancel')?.click();
+})()`;
+
+/**
  * The *local* ISO date `days` before today (negative = ahead), for
  * date-only seeds: the app places a task on the day in the machine's zone,
  * and between local midnight and UTC midnight the UTC date is still
@@ -815,6 +828,42 @@ export class Cdp {
     const yes = `document.querySelector('[data-testid="move-confirm-yes"]')`;
     await this.waitFor<boolean>(`!!${yes}`);
     await this.eval(`${yes}.click()`);
+  }
+
+  /**
+   * Leaves the open editor without saving, by Escape: one that holds
+   * something (an edit, a draft, words in the Assistant's field) asks
+   * first (`DiscardConfirm`), and is answered Discard Changes.
+   */
+  async discardEditor(): Promise<void> {
+    const editor = `document.querySelector('[data-testid="editor"]')`;
+    const yes = `document.querySelector('[data-testid="discard-confirm-yes"]')`;
+    await this.pressEscape();
+    await this.waitFor<boolean>(`!${editor} || !!${yes}`);
+    await this.eval(`${yes}?.click()`);
+    await this.waitFor<boolean>(`!${editor}`);
+  }
+
+  /**
+   * One step of a cleanup loop that leaves whatever is open: Discard
+   * Changes while an editor asks (`DiscardConfirm`), else Escape — which,
+   * pressed while it asks, would answer Keep Editing instead.
+   */
+  async escapeOrDiscard(): Promise<void> {
+    const yes = `document.querySelector('[data-testid="discard-confirm-yes"]')`;
+    if (await this.eval<boolean>(`!!${yes}`)) {
+      await this.eval(`${yes}.click()`);
+      return;
+    }
+    await this.pressEscape();
+  }
+
+  /** Answers the editor's question before it goes (`DiscardConfirm`): Discard Changes, or Keep Editing. */
+  async answerDiscard(discard: boolean): Promise<void> {
+    const answer = `document.querySelector('[data-testid="discard-confirm-${discard ? 'yes' : 'no'}"]')`;
+    await this.waitFor<boolean>(`!!${answer}`);
+    await this.eval(`${answer}.click()`);
+    await this.waitFor<boolean>(`!document.querySelector('[data-testid="discard-confirm"]')`);
   }
 
   /** Clicks an event on the grid and waits for its inspector in the side panel. */
