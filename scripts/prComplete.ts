@@ -64,6 +64,9 @@ export const PLACEHOLDERS = [
   'found … Fixed in `<sha>`',
 ] as const;
 
+/** A review section's heading: one per reviewer ("After review (Codex, …)"), or one for both ("After review", "Reviews"). */
+const REVIEW_HEADING = /^(?:After review|Reviews?)\b/i;
+
 const withoutComments = (text: string): string => text.replaceAll(/<!--[\s\S]*?-->/g, '');
 
 /** The `## ` sections in order: heading, then the text up to the next one. */
@@ -183,16 +186,17 @@ const unfinished = (
   parts: ReadonlyArray<{ heading: string; text: string }>,
 ): ReadonlyArray<string> => {
   const owed = body.split('\n').find((line) => OWED.test(line.replaceAll(/`[^`]*`/g, '')));
-  const reviews = parts.filter(({ heading }) => /^(?:After review|Reviews?)\b/i.test(heading));
+  const reviews = parts.filter(({ heading }) => REVIEW_HEADING.test(heading));
+  // The heading too: "## After review (Codex round pending)".
   const notRun = reviews
-    .flatMap(({ text }) => text.split('\n'))
+    .flatMap(({ heading, text }) => [heading, ...text.split('\n')])
     .find((line) => NOT_RUN.test(line.replaceAll(/`[^`]*`/g, '')));
   return [
     ...PLACEHOLDERS.filter((text) => body.includes(text)).map(
       (text) => `The body still holds the template's "${text}".`,
     ),
-    ...parts
-      .filter(({ heading, text }) => /^After review\b/i.test(heading) && text.trim() === '')
+    ...reviews
+      .filter(({ text }) => text.trim() === '')
       .map(({ heading }) => `"## ${heading}" is empty: say what each round found.`),
     ...(owed === undefined ? [] : [`The body says something is still owed: "${owed.trim()}"`]),
     ...(notRun === undefined
@@ -212,7 +216,7 @@ export const missingParts = (pr: PullRequest): ReadonlyArray<string> => {
   // review (Claude Opus 5.5, xhigh)"), or a round's lead line in one
   // "## After review" / "## Reviews" section does. A mention elsewhere
   // ("Codex has not run yet.") is no round.
-  const reviews = parts.filter(({ heading }) => /^(?:After review|Reviews?)\b/i.test(heading));
+  const reviews = parts.filter(({ heading }) => REVIEW_HEADING.test(heading));
   const reviewedBy = (reviewer: keyof typeof REVIEWERS) =>
     reviews.some(
       ({ heading, text }) =>
@@ -231,6 +235,9 @@ export const missingParts = (pr: PullRequest): ReadonlyArray<string> => {
       : parts[0]?.heading === USER_SECTION
         ? []
         : [`"## ${USER_SECTION}" is the first section.`]),
+    ...(user !== undefined && user.text.trim() === ''
+      ? [`"## ${USER_SECTION}" is empty: a change with nothing visible says so in one line.`]
+      : []),
     ...(reviewedBy('Claude')
       ? []
       : ['No "## After review (Claude Opus …)" section: the Opus rounds are owed.']),

@@ -173,6 +173,37 @@ describe('missingParts', () => {
     ]);
   });
 
+  it('fails an empty user section and an empty review section under any review heading', () => {
+    expect(
+      missingParts({
+        ...complete,
+        body: complete.body.replace(
+          /(## What changes for the user\n)[\s\S]*?(## Decisions)/,
+          '$1\n$2',
+        ),
+      }),
+    ).toEqual([
+      '"## What changes for the user" is empty: a change with nothing visible says so in one line.',
+    ]);
+    const emptyReviews = complete.body.replace(
+      /## After review \(Claude[\s\S]*$/,
+      '## Reviews (Claude Opus, Codex)\n\n',
+    );
+    expect(missingParts({ ...complete, body: emptyReviews })).toEqual([
+      '"## Reviews (Claude Opus, Codex)" is empty: say what each round found.',
+    ]);
+  });
+
+  it('fails a review heading or line that says a round has not run', () => {
+    const pendingHeading = complete.body.replace(
+      /## After review \(Codex[\s\S]*$/,
+      '## After review (Codex round pending)\n\nUsage limit; retry tomorrow.\n',
+    );
+    expect(missingParts({ ...complete, body: pendingHeading })).toEqual([
+      'A review section says a round has not run: "After review (Codex round pending)"',
+    ]);
+  });
+
   it('fails a review section that says a round has not run', () => {
     const codexSays = (line: string) =>
       complete.body.replace(/(## After review \(Codex[^\n]*\n\n)[\s\S]*$/, `$1${line}\n`);
