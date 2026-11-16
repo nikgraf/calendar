@@ -1652,10 +1652,69 @@ const writes = (google: FakeGoogle): Array<string> =>
     });
 
 describe('pending-op queue: what the sequences found', () => {
-  it.effect('a move released keeps the etag a later edit is checked against', () => {
-    // Review of the fix below (Codex, Opus): with the moved rows' etag
-    // cleared, a discarded move left the row without one, and an edit after
-    // another device's change overwrote that change without a conflict.
+  it.effect('discarding a move a subtask came back from puts it back under its parent', () => {
+    // Review (Opus, Codex): s1 moved out to list-2 and back, offline, or
+    // its parent moved to list-2 and s1 back alone; then the first move
+    // discarded. Neither move reached Google, which still has s1 under p
+    // in list-1; the move back was re-keyed into a move into its own list
+    // (whose answer took the row away), or dropped with the row left out
+    // of p, synced — p's delete then took a task shown as one of its own.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const ops = yield* PendingOpRepo;
+        const sql = yield* SqlClient;
+        const move = (taskId: string, title: string, from: string, to: string) =>
+          mutations.moveTask({
+            accountId: ACCOUNT_ID,
+            draft: { dueDate: due(5).slice(0, 10), title },
+            target: { accountId: ACCOUNT_ID, taskListId: to },
+            taskId,
+            taskListId: from,
+          });
+        const rows = () =>
+          sql<{
+            readonly id: string;
+            readonly list_id: string;
+            readonly parent_id: string | null;
+            readonly sync_status: string;
+          }>`SELECT id, list_id, parent_id, sync_status FROM tasks
+            WHERE id IN ('p', 's1', 's2') ORDER BY id`;
+        const asGoogleHasThem = [
+          { id: 'p', list_id: 'list-1', parent_id: null, sync_status: 'synced' },
+          { id: 's1', list_id: 'list-1', parent_id: 'p', sync_status: 'synced' },
+          { id: 's2', list_id: 'list-1', parent_id: 'p', sync_status: 'synced' },
+        ];
+        network.down = true;
+        // The subtask there and back.
+        yield* move('s1', 'Pack', 'list-1', 'list-2');
+        yield* move('s1', 'Pack', 'list-2', 'list-1');
+        yield* mutations.discardPendingOp((yield* ops.listAll())[0]!.id);
+        expect(yield* ops.listAll()).toEqual([]);
+        expect(yield* rows()).toEqual(asGoogleHasThem);
+        // The parent there, the subtask back alone.
+        yield* move('p', 'Trip', 'list-1', 'list-2');
+        yield* move('s1', 'Pack', 'list-2', 'list-1');
+        yield* mutations.discardPendingOp((yield* ops.listAll())[0]!.id);
+        expect(yield* ops.listAll()).toEqual([]);
+        expect(yield* rows()).toEqual(asGoogleHasThem);
+        network.down = false;
+        google.requests.length = 0;
+        yield* mutations.processPendingOps();
+        expect(writes(google)).toEqual([]);
+      }),
+    );
+  });
+
+  it.effect('a move released keeps the etag an edit is checked against', () => {
+    // Review (Codex, Opus): with the moved rows' etag cleared, or the If-Match
+    // of an edit made while the move waited dropped, a discarded move left
+    // the edit unchecked: after another device's change it overwrote that
+    // change instead of parking a conflict. e1: edited after the discard,
+    // e2: while the move waited.
     const google = newFake();
     const network = writesDown(google);
     return scripted(
@@ -1664,19 +1723,30 @@ describe('pending-op queue: what the sequences found', () => {
         const mutations = yield* EventMutations;
         const ops = yield* PendingOpRepo;
         network.down = true;
-        yield* mutations.moveEvent({
+        for (const eventId of ['e1', 'e2']) {
+          yield* mutations.moveEvent({
+            accountId: ACCOUNT_ID,
+            calendarId: 'cal-1',
+            eventId,
+            target: { accountId: ACCOUNT_ID, calendarId: 'cal-2' },
+          });
+        }
+        yield* mutations.updateEvent({
           accountId: ACCOUNT_ID,
-          calendarId: 'cal-1',
-          eventId: 'e1',
-          target: { accountId: ACCOUNT_ID, calendarId: 'cal-2' },
+          calendarId: 'cal-2',
+          changes: { description: 'Agenda' },
+          eventId: 'e2',
         });
         yield* mutations.processPendingOps();
-        const [move] = yield* ops.listAll();
-        yield* mutations.discardPendingOp(move!.id);
-        google.putEvent('cal-1', {
-          ...google.eventOf('cal-1', 'e1')!,
-          summary: 'Renamed elsewhere',
-        });
+        for (const move of (yield* ops.listAll()).filter((op) => op.kind === 'move')) {
+          yield* mutations.discardPendingOp(move.id);
+        }
+        for (const eventId of ['e1', 'e2']) {
+          google.putEvent('cal-1', {
+            ...google.eventOf('cal-1', eventId)!,
+            summary: 'Renamed elsewhere',
+          });
+        }
         yield* mutations.updateEvent({
           accountId: ACCOUNT_ID,
           calendarId: 'cal-1',
@@ -1687,8 +1757,92 @@ describe('pending-op queue: what the sequences found', () => {
         yield* mutations.retryPendingOps();
         yield* mutations.processPendingOps();
         expect(google.eventOf('cal-1', 'e1')?.summary).toBe('Renamed elsewhere');
-        const [parked] = yield* ops.listAll();
+        expect(google.eventOf('cal-1', 'e2')?.summary).toBe('Renamed elsewhere');
+        expect((yield* ops.listAll()).map(describeOp)).toEqual([
+          'update e2 in cal-1 (parked)',
+          'update e1 in cal-1 (parked)',
+        ]);
+      }),
+    );
+  });
+
+  it.effect('a move landing under a parked conflict leaves the row its old etag', () => {
+    // Sequence 514 (review round 2's fix): another device renamed the event,
+    // the user's edit parked, the event was moved and the move landed. Had
+    // the row taken the move's etag, discarding the edit left it synced at
+    // Google's current etag with the old title.
+    const google = newFake();
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        google.putEvent('cal-1', {
+          ...google.eventOf('cal-1', 'e1')!,
+          summary: 'Renamed elsewhere',
+        });
+        yield* mutations.updateEvent({
+          accountId: ACCOUNT_ID,
+          calendarId: 'cal-1',
+          changes: { location: 'Room 4' },
+          eventId: 'e1',
+        });
+        yield* mutations.processPendingOps();
+        yield* mutations.moveEvent({
+          accountId: ACCOUNT_ID,
+          calendarId: 'cal-1',
+          eventId: 'e1',
+          target: { accountId: ACCOUNT_ID, calendarId: 'cal-2' },
+        });
+        yield* mutations.processPendingOps();
+        expect(google.eventOf('cal-2', 'e1')?.summary).toBe('Renamed elsewhere');
+        const [parked] = yield* (yield* PendingOpRepo).listAll();
         expect(parked?.conflictAt).toBeDefined();
+        yield* mutations.discardPendingOp(parked!.id);
+        const [row] = yield* (yield* SqlClient)<{
+          readonly etag: string | null;
+          readonly title: string;
+        }>`SELECT etag, title FROM events WHERE id = 'e1'`;
+        // At Google's etag only with Google's title.
+        const theirs = google.eventOf('cal-2', 'e1')!;
+        expect(row?.etag === theirs.etag && row?.title !== theirs.summary).toBe(false);
+      }),
+    );
+  });
+
+  it.effect('an edit after a move landed under a waiting edit goes on the new etag', () => {
+    // Review (Opus): the move landed while an edit made during the wait
+    // still held the row, which kept the etag from before the move; the
+    // next edit sent that one, met a 412 and parked a conflict nobody
+    // caused.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const ref = { accountId: ACCOUNT_ID, calendarId: 'cal-2', eventId: 'e1' };
+        network.down = true;
+        yield* mutations.moveEvent({
+          accountId: ACCOUNT_ID,
+          calendarId: 'cal-1',
+          eventId: 'e1',
+          target: { accountId: ACCOUNT_ID, calendarId: 'cal-2' },
+        });
+        yield* mutations.updateEvent({ ...ref, changes: { description: 'Agenda' } });
+        // The move lands; the edit meets a 503.
+        google.fault = (call) => (call.method === 'PATCH' ? 'refused' : undefined);
+        yield* mutations.retryPendingOps();
+        yield* mutations.processPendingOps();
+        expect(google.eventOf('cal-2', 'e1')).toBeDefined();
+        yield* mutations.updateEvent({ ...ref, changes: { location: 'Room 4' } });
+        google.fault = undefined;
+        yield* mutations.retryPendingOps();
+        yield* mutations.processPendingOps();
+        expect((yield* (yield* PendingOpRepo).listAll()).map(describeOp)).toEqual([]);
+        expect(google.eventOf('cal-2', 'e1')).toMatchObject({
+          description: 'Agenda',
+          location: 'Room 4',
+        });
       }),
     );
   });
@@ -2078,7 +2232,7 @@ describe('pending-op queue: what the sequences found', () => {
     );
   });
 
-  it.effect('an edit or a delete made while a move waits goes without the pre-move etag', () => {
+  it.effect("an edit or a delete made while a move waits follows the move's new etag", () => {
     // Sequences 149 and 100: the moved row kept the source's etag, the
     // edit (or delete) made after the move sent it as its If-Match, and
     // once the move landed — with a new etag — it met a 412 and parked a
@@ -2110,7 +2264,7 @@ describe('pending-op queue: what the sequences found', () => {
         yield* mutations.retryPendingOps();
         yield* mutations.processPendingOps();
         yield* mutations.processPendingOps();
-        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+        expect((yield* (yield* PendingOpRepo).listAll()).map(describeOp)).toEqual([]);
         expect(google.eventOf('cal-2', 'e1')?.summary).toBe('Moved standup');
         expect(google.eventOf('cal-2', 'e2')?.status).toBe('cancelled');
       }),

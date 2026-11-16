@@ -337,9 +337,10 @@ it whenever a kind is added. Rules that keep the queue correct:
   included; what was queued before it — an earlier move out of the
   destination — stays, so a discard releases the move while it is still
   queued; the task's next move out of the destination ends what goes
-  back: onwards, it now leaves from the source, and back to the source it
-  goes, having nothing left to move) — unless the 404 answers a retry
-  whose first attempt landed:
+  back: onwards, it now leaves from the source; a move back to the source
+  — the task's or a subtask's — goes, having nothing left to move, and
+  the row is Google's there again, under the parent Google has it under)
+  — unless the 404 answers a retry whose first attempt landed:
   then the task is in the destination already and the move settles
   there; a destination Google does not answer for keeps the move queued,
   and one that is gone puts it back. A discard does not ask Google
@@ -466,11 +467,15 @@ it whenever a kind is added. Rules that keep the queue correct:
   create there; a sent one stays in the source with the move behind it; a
   delete of the moved event is dropped instead, see Sync engine; an
   earlier move out of the source — the event left and came back — stays
-  where it is and goes first). A re-queued edit goes without If-Match,
-  and so does an edit, answer or delete of the series queued while a move
-  into its calendar waits: events.move gives the event a new etag, and the
-  old one met a 412 and parked a conflict nobody caused. The rows keep it,
-  for a move Google never makes and for the carried text.
+  where it is and goes first). A re-queued edit goes without If-Match.
+  One made while the move waits keeps the row's etag, and when the move
+  lands with nothing else changed on Google (`onlyMoved`: no op parked,
+  every queued snapshot equal to Google's copy) the ops behind it and the
+  row move to the etag it produced (`advancePastMove`): events.move gives
+  the event a new one, and the old one met a 412 and parked a conflict
+  nobody caused. With another change on Google they keep it and meet that
+  conflict; a move Google never makes leaves them theirs, still Google's
+  in the source.
   A move's 404 (or 410) first asks the destination for the event: an
   earlier attempt may have landed with its answer lost, and found there
   the move settles as landed (a lookup with no answer retries); a 2xx
