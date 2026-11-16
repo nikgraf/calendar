@@ -311,6 +311,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   review alone, and behaviour fixes stayed out. Open: the three
   components are checked only by the e2e suites (the iOS mic button by
   none); what the splitting turned up is listed in #298.
+- **A `??` fallback kept apart in e2e** (2026-11-16, #339) — CDP
+  expressions are template strings, outside tsc and the lint, and
+  `x ?? null === 'v'` let two waits pass on any text (#230, #317).
+  `Cdp.eval` and `waitFor` refuse the shape as sent, interpolations
+  resolved, and a source test fails on one written out; the refusal found
+  eight more in `draftThread`. Rejected: a JS parser dependency; the source
+  test alone (both bugs came in as `${constant} === 'v'`); expanding each
+  file's helpers into its templates in that test (a second TS reader).
+  Open: a longer fallback (`?? '' + s === 'v'`) passes unseen, and `??`
+  before a comparison inside a sent string or comment is refused.
 - **Type-aware lint and knip in the gate** (2026-11-15, #326) — seven
   typed oxlint rules (tsgolint, on TypeScript 7) for what tsc accepts;
   their first run found three Expo SDK 58 `File.write` callers nobody
