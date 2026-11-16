@@ -323,14 +323,14 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   before a comparison inside a sent string or comment is refused.
 - **e2e page code as typed functions** (2026-11-16, #342) — a function's
   source goes to the page with JSON arguments (`Cdp.evaluate`,
-  `waitUntil`, `waitForValue`), so tsc and the lint check it; a wait's
-  predicate is typed boolean, which makes both misreads above type
-  errors. Every call gets the page kit `$`, made in the page: one source,
-  nothing left in the window to outlive a reload. Rejected: helpers
-  installed once in the window, self-contained helpers (they cannot
-  compose), polling single reads from Node (a compound wait stops being
-  one snapshot), a lint rule over template strings. Open: 34 specs still
-  send strings, so #339's guard stays; how they move is Nik's call.
+  `waitUntil`), so tsc and the lint check it: a wait's boolean predicate
+  makes both misreads above type errors. Each call gets the page kit `$`,
+  made in the page; a name the function does not bind must be a listed
+  page global, so a closed-over `name` is refused, not read as
+  `window.name`. Rejected: helpers installed in the window (a reload loses
+  them), self-contained helpers (no composing), polling single reads from
+  Node (a compound wait stops being one snapshot). Open: 34 specs still
+  send strings and #339's guard stays; how they move is Nik's call.
 - **Type-aware lint and knip in the gate** (2026-11-15, #326) — seven
   typed oxlint rules (tsgolint, on TypeScript 7) for what tsc accepts;
   their first run found three Expo SDK 58 `File.write` callers nobody

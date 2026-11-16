@@ -442,8 +442,9 @@ commits by staging deliberately.
   inspector; Edit opens the editor) and locate by `data-testid`, never by
   a Tailwind class or a computed color (`data-color` carries a block's
   calendar hex). Their page code is a typed function (`cdp.evaluate`,
-  `waitUntil`; `e2e/page.ts`), never a new template string: it gets the
-  page kit and its arguments, nothing of the spec's. Test email addresses
+  `waitUntil`; `e2e/page.ts`), never a new template string: it names only
+  its own bindings, its arguments, the page kit and the page globals
+  `page.ts` lists, and is refused otherwise. Test email addresses
   are made up (`@example.com`), never a real person's. See
   docs/google-sync-and-testing.md.
 

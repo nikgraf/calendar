@@ -586,12 +586,17 @@ export class Cdp {
     await this.pollPage(call, true, (value) => value === true);
   }
 
-  /** Polls a page function until it returns something other than null or undefined, and returns that. */
-  waitForValue<A extends PageArgs, R extends PageValue>(
+  /**
+   * Polls a page function until it returns something other than null or
+   * undefined, and returns that. Never a boolean: a condition is
+   * `waitUntil`'s, and the type refuses a function that returns a value
+   * or a boolean, which is what a misread `??` fallback returns.
+   */
+  waitForValue<A extends PageArgs, R extends Exclude<PageValue, boolean>>(
     page: PageFunction<A, R | null | undefined>,
     ...args: A
   ): Promise<R>;
-  waitForValue<A extends PageArgs, R extends PageValue>(
+  waitForValue<A extends PageArgs, R extends Exclude<PageValue, boolean>>(
     options: WaitOptions,
     page: PageFunction<A, R | null | undefined>,
     ...args: A
@@ -993,7 +998,7 @@ export class Cdp {
   /** Answers an editor's delete confirmation (MoveConfirm) with Delete. */
   async confirmDelete(): Promise<void> {
     await this.waitUntil(($) => $.has('[data-testid="move-confirm-yes"]'));
-    await this.evaluate(($) => $.el('[data-testid="move-confirm-yes"]')?.click());
+    await this.evaluate(($) => $.el('[data-testid="move-confirm-yes"]')!.click());
   }
 
   /**
@@ -1030,7 +1035,7 @@ export class Cdp {
   async answerDiscard(discard: boolean): Promise<void> {
     const answer = `[data-testid="discard-confirm-${discard ? 'yes' : 'no'}"]`;
     await this.waitUntil(($, button: string) => $.has(button), answer);
-    await this.evaluate(($, button: string) => $.el(button)?.click(), answer);
+    await this.evaluate(($, button: string) => $.el(button)!.click(), answer);
     await this.waitUntil(($) => !$.has('[data-testid="discard-confirm"]'));
   }
 

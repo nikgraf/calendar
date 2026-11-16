@@ -1,7 +1,7 @@
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vite-plus/test';
 import type { Cdp } from './harness.ts';
-import { pageExpression, type PageKit, pageSource } from './page.ts';
+import { freeNames, pageExpression, type PageKit, pageSource } from './page.ts';
 
 /** What the e2e specs write: this suite runs under the same transform. */
 const typical = async ($: PageKit, selector: string, words: ReadonlyArray<string>) => {
@@ -31,7 +31,15 @@ const waits = (cdp: Cdp) => [
   cdp.waitUntil(($, count: number) => $.count('li') === count, 'two'),
   // @ts-expect-error -- A DOM node does not come back by value.
   cdp.evaluate(($) => $.el('h1')),
+  // @ts-expect-error -- A value or a boolean is no value to wait for.
+  cdp.waitForValue(($, want: string) => $.el('h1')?.textContent ?? want === 'v', 'v'),
+  cdp.waitForValue(($) => $.el('h1')?.textContent || null),
 ];
+
+/** What a spec would close over by mistake. */
+const TITLE = 'input[placeholder="Title"]';
+const name = 'Hermes';
+const status = 'Saved';
 
 describe('page functions', () => {
   it('reach the page as vitest prints them: types gone, no syntax lowered, nothing added', () => {
@@ -62,6 +70,38 @@ describe('page functions', () => {
     expect(() => pageSource(methods.shorthand)).toThrow(/arrow or a function expression/);
     expect(() => pageSource(Math.max)).toThrow(/arrow or a function expression/);
     expect(pageSource(function named() {})).toMatch(/^function named/);
+  });
+
+  it('are refused when they name a spec variable, also one the page has a global for', () => {
+    expect(() => pageSource(($: PageKit) => $.value(TITLE))).toThrow(/names `TITLE`/);
+    // `window.name` and `window.status` in the page: read without a word if sent.
+    expect(() => pageSource(($: PageKit) => $.text('h1').includes(name))).toThrow(/names `name`/);
+    expect(() => pageSource(($: PageKit) => $.text('h1') === status)).toThrow(/names `status`/);
+    expect(() => pageSource(() => window.name === '')).not.toThrow();
+  });
+
+  it('find the names a source uses without binding them', () => {
+    const names = (page: (...args: never) => unknown) => [...freeNames(page.toString())].sort();
+    expect(
+      names(async ($: PageKit, selector: string, [first = '', ...rest]: ReadonlyArray<string>) => {
+        const { left, width: span = first.length } = $.el(selector)!.getBoundingClientRect();
+        const near = (x: number) => Math.abs(x - left) < span;
+        let found = 0;
+        outer: for (const word of rest) {
+          try {
+            if (near(word.length)) {
+              found += 1;
+              break outer;
+            }
+          } catch (error) {
+            found = String(error).length;
+          }
+        }
+        await new Promise((resolve) => setTimeout(resolve, found));
+        return { found, rest, [selector]: window.innerWidth };
+      }),
+    ).toEqual(['Math', 'Promise', 'String', 'setTimeout', 'window']);
+    expect(names(() => TITLE + name)).toEqual(['TITLE', 'name']);
   });
 
   it('wait on a boolean, so a fallback that takes in a comparison does not compile', () => {

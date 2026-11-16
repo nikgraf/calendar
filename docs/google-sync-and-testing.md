@@ -839,16 +839,20 @@ Page code is a TypeScript function (`page.ts`), sent as its source with
 its arguments as JSON: `cdp.evaluate(fn, ...args)` returns what it
 returns (JSON, so never a DOM node), `waitUntil(fn, ...args)` and
 `waitUntilRendered` poll a predicate typed to return a boolean, and
-`waitForValue` polls until it returns something other than null; a wait
+`waitForValue` polls until it returns something other than null (never a
+boolean, so a misread fallback is refused there too); a wait
 takes `{ timeoutMs }` first when 15 s is not enough. So tsc and the lint
 read it like any other code, and a `??` fallback that takes in what
 follows it is a type error in a wait (`no-constant-binary-expression`
 also flags `?? null === 'v'` anywhere). Its first parameter is the page
 kit `$` (`el`, `all`, `has`, `count`, `text`, `value`, `button`,
 `setValue`), made in the page for each call; it sees nothing of the
-spec's, so a constant goes in as an argument — a closed-over variable
-throws a ReferenceError in the page, which fails a wait at once, and a
-closed-over import is refused before it is sent. A spec-local helper
+spec's, so a constant goes in as an argument. A source is parsed before
+it is sent (vite's `parseAst`), and one that names anything but its own
+bindings, JavaScript's globals and the page globals `page.ts` lists is
+refused: that includes a spec constant the page has a global of the same
+name for (`name`, `status`, `event`, an element id), which would read the
+page's value without a word — the page's own is `window.name`. A spec-local helper
 that waits is a Node function around a call (`headingIs` in
 `editorDiscard`). vitest prints the source again with the types gone and
 nothing lowered (`page.test.ts` holds it to that); coverage

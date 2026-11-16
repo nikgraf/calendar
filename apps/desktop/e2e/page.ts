@@ -8,10 +8,13 @@
  * `x ?? ''.includes('v')` are a string or a boolean (#230, #317).
  *
  * A page function runs in the page, not here: it sees the page's globals,
- * the kit below and its arguments, never a variable of the spec's. One that
- * names a spec's constant throws a ReferenceError there — `evaluate` and
- * every wait fail on it at once — and one that names an import is refused
- * before it is sent. Pass the value as an argument.
+ * the kit below and its arguments, never a variable of the spec's. So it
+ * may name only what it binds itself, JavaScript's own globals and the
+ * page's listed below (`PAGE_GLOBALS`); any other name is refused before
+ * it is sent (`freeNames`). That covers a spec constant the page also has
+ * a global for — `name`, `status`, `event`, an element's id — which would
+ * otherwise read the page's value without a word. Pass the value as an
+ * argument; the page's own property is `window.name`.
  *
  * The source is sent as vitest's transform prints it: types stripped, its
  * own quotes, no syntax lowered and no helper added (`page.test.ts` holds
@@ -20,7 +23,13 @@
  * with them is refused.
  */
 
-/** A value that travels to the page and back as JSON. */
+import { runInNewContext } from 'node:vm';
+import { parseAst } from 'vite';
+
+/**
+ * A value that travels to the page and back as JSON: `undefined` inside an
+ * array or object, and a number that is not finite, do not survive it.
+ */
 export type PageValue =
   | string
   | number
@@ -91,6 +100,152 @@ const NATIVE = /\{\s*\[native code\]\s*\}$/;
 /** An arrow or a function expression: what can be called where it is written. */
 const CALLABLE = /^(?:async\s*)?(?:function\b|\(|[\w$]+\s*=>)/;
 
+/** JavaScript's own globals, as a fresh V8 context has them (`Math`, `JSON`, `undefined`, …). */
+const SCRIPT_GLOBALS: ReadonlyArray<string> = runInNewContext(
+  'Object.getOwnPropertyNames(globalThis)',
+) as Array<string>;
+
+/**
+ * The page's own globals a page function may name bare. Never a word a
+ * spec could have meant as its own (`name`, `status`, `event`, `open`,
+ * `location`, `history`): those are read as `window.name`. Add one here
+ * when a page function needs it.
+ */
+const PAGE_GLOBALS = new Set([
+  ...SCRIPT_GLOBALS,
+  'AudioContext',
+  'CSS',
+  'DataTransfer',
+  'DOMRect',
+  'Element',
+  'MutationObserver',
+  'Node',
+  'ResizeObserver',
+  'arguments',
+  'atob',
+  'btoa',
+  'cancelAnimationFrame',
+  'clearInterval',
+  'clearTimeout',
+  'console',
+  'document',
+  'getComputedStyle',
+  'navigator',
+  'performance',
+  'requestAnimationFrame',
+  'setInterval',
+  'setTimeout',
+  'window',
+]);
+/** The element and event classes: `HTMLInputElement`, `KeyboardEvent`, `Event`. */
+const PAGE_CLASS = /^(?:(?:HTML|SVG)[A-Za-z]*Element|(?:[A-Z][a-z]+)*Event)$/;
+
+interface AstNode {
+  readonly [key: string]: unknown;
+  readonly type: string;
+}
+
+const isNode = (value: unknown): value is AstNode =>
+  typeof value === 'object' && value !== null && typeof (value as AstNode).type === 'string';
+
+const nodesIn = (value: unknown): ReadonlyArray<AstNode> =>
+  Array.isArray(value) ? value.filter(isNode) : isNode(value) ? [value] : [];
+
+/**
+ * The names a function's source uses without binding them anywhere in it.
+ * Scopes are not told apart: a name bound in one helper counts as bound in
+ * all of it, which can only let a name through, never refuse a bound one.
+ */
+export const freeNames = (source: string): ReadonlySet<string> => {
+  const bound = new Set<string>();
+  const used = new Set<string>();
+  const visit = (node: AstNode): void => {
+    switch (node.type) {
+      case 'Identifier':
+        used.add(node['name'] as string);
+        return;
+      case 'MemberExpression':
+        nodesIn(node['object']).forEach(visit);
+        if (node['computed']) {
+          nodesIn(node['property']).forEach(visit);
+        }
+        return;
+      case 'Property':
+      case 'PropertyDefinition':
+      case 'MethodDefinition':
+        if (node['computed']) {
+          nodesIn(node['key']).forEach(visit);
+        }
+        nodesIn(node['value']).forEach(visit);
+        return;
+      case 'LabeledStatement':
+        nodesIn(node['body']).forEach(visit);
+        return;
+      case 'BreakStatement':
+      case 'ContinueStatement':
+      case 'MetaProperty':
+        return;
+      case 'VariableDeclarator':
+        nodesIn(node['id']).forEach(bind);
+        nodesIn(node['init']).forEach(visit);
+        return;
+      case 'ArrowFunctionExpression':
+      case 'FunctionDeclaration':
+      case 'FunctionExpression':
+      case 'ClassDeclaration':
+      case 'ClassExpression':
+      case 'CatchClause':
+        nodesIn(node['id']).forEach(bind);
+        nodesIn(node['params']).forEach(bind);
+        nodesIn(node['param']).forEach(bind);
+        nodesIn(node['superClass']).forEach(visit);
+        nodesIn(node['body']).forEach(visit);
+        return;
+      default:
+        for (const value of Object.values(node)) {
+          nodesIn(value).forEach(visit);
+        }
+    }
+  };
+  // A binding pattern: its names are bound, its defaults and computed keys are used.
+  const bind = (pattern: AstNode): void => {
+    switch (pattern.type) {
+      case 'Identifier':
+        bound.add(pattern['name'] as string);
+        return;
+      case 'ObjectPattern':
+        for (const property of nodesIn(pattern['properties'])) {
+          if (property.type === 'RestElement') {
+            nodesIn(property['argument']).forEach(bind);
+            continue;
+          }
+          if (property['computed']) {
+            nodesIn(property['key']).forEach(visit);
+          }
+          nodesIn(property['value']).forEach(bind);
+        }
+        return;
+      case 'ArrayPattern':
+        nodesIn(pattern['elements']).forEach(bind);
+        return;
+      case 'AssignmentPattern':
+        nodesIn(pattern['left']).forEach(bind);
+        nodesIn(pattern['right']).forEach(visit);
+        return;
+      case 'RestElement':
+        nodesIn(pattern['argument']).forEach(bind);
+        return;
+      default:
+        visit(pattern);
+    }
+  };
+  parseAst(`(${source})`).body.forEach((statement) => visit(statement as unknown as AstNode));
+  return new Set([...used].filter((name) => !bound.has(name)));
+};
+
+/** Sources already checked: a wait sends the same one on every try. */
+const checked = new Set<string>();
+
 /** A function's source, refused when it could not run in the page as written. */
 export const pageSource = (page: (...args: never) => unknown): string => {
   const source = page.toString();
@@ -104,6 +259,17 @@ export const pageSource = (page: (...args: never) => unknown): string => {
     throw new Error(
       `A page function names an import (or was instrumented for coverage: \`${foreign[0]}\`), which the page does not have — pass the value as an argument: ${source.slice(0, 120)}`,
     );
+  }
+  if (!checked.has(source)) {
+    const outside = [...freeNames(source)].filter(
+      (name) => !PAGE_GLOBALS.has(name) && !PAGE_CLASS.test(name),
+    );
+    if (outside.length > 0) {
+      throw new Error(
+        `A page function names ${outside.map((name) => `\`${name}\``).join(', ')}, which is not its own and not a page global it may use: pass the value as an argument (the page's own property as \`window.${String(outside[0])}\`, or list a page global in PAGE_GLOBALS): ${source.slice(0, 160)}`,
+      );
+    }
+    checked.add(source);
   }
   return source;
 };
