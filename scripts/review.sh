@@ -91,8 +91,10 @@ if [ "$WHO" = claude ]; then
   exit 0
 fi
 
+# review_model too: a user's review_model would win over model for a review.
 (cd "$WT" && "${CODEX_BIN:-codex}" review --base "$BASE" \
-  -c "model=\"$CODEX_MODEL\"" -c "model_reasoning_effort=\"$CODEX_EFFORT\"") > "$OUT" 2>&1 ||
+  -c "model=\"$CODEX_MODEL\"" -c "review_model=\"$CODEX_MODEL\"" \
+  -c "model_reasoning_effort=\"$CODEX_EFFORT\"") > "$OUT" 2>&1 ||
   STATUS=$?
 # The findings follow Codex's last `codex` line; everything above is its log,
 # which may quote any file of the diff (this one included), so only its end
@@ -109,5 +111,11 @@ if [ "$STATUS" -ne 0 ]; then
   tail -n 30 "$OUT" >&2
   echo "The Codex review failed (exit $STATUS): this round did not happen." >&2
   exit "$STATUS"
+fi
+# Its log's header names the model that ran; a different one is no round of this rule.
+RAN="$(grep -m 1 '^model:' "$OUT" | sed 's/^model: *//' || true)"
+if [ -n "$RAN" ] && [ "$RAN" != "$CODEX_MODEL" ]; then
+  echo "Codex ran $RAN, not $CODEX_MODEL: this round does not count." >&2
+  exit 1
 fi
 printf '%s\n' "$FINDINGS"

@@ -86,11 +86,11 @@ describe('missingParts', () => {
   it('wants both review stages', () => {
     const noCodex = complete.body.replace(/## After review \(Codex[\s\S]*$/, '');
     expect(missingParts({ ...complete, body: noCodex })).toEqual([
-      'No "## After review (Codex …)" section: at least one Codex round is owed.',
+      'No Codex round recorded: at least one is owed, in "## After review (Codex …)".',
     ]);
     const noClaude = complete.body.replace('## After review (Claude Opus 5.5, xhigh)', '## Notes');
     expect(missingParts({ ...complete, body: noClaude })).toEqual([
-      'No "## After review (Claude Opus …)" section: the Opus rounds are owed.',
+      'No Claude Opus round recorded: the Opus rounds are owed, in "## After review (Claude Opus …)".',
     ]);
   });
 
@@ -102,7 +102,7 @@ describe('missingParts', () => {
     expect(missingParts({ ...complete, body: together })).toEqual([]);
     const opusOnly = together.replace(/\*\*Codex[^\n]*\n/, '');
     expect(missingParts({ ...complete, body: opusOnly })).toEqual([
-      'No "## After review (Codex …)" section: at least one Codex round is owed.',
+      'No Codex round recorded: at least one is owed, in "## After review (Codex …)".',
     ]);
     // A reviewer named outside a review section does not count.
     expect(
@@ -138,6 +138,7 @@ describe('missingParts', () => {
     ).toHaveLength(PLACEHOLDERS.length);
     const emptyCodex = complete.body.replace(/(## After review \(Codex[^\n]*\n)[\s\S]*$/, '$1\n');
     expect(missingParts({ ...complete, body: emptyCodex })).toEqual([
+      'No Codex round recorded: at least one is owed, in "## After review (Codex …)".',
       '"## After review (Codex, gpt-6-astra, xhigh)" is empty: say what each round found.',
     ]);
   });
@@ -159,16 +160,13 @@ describe('missingParts', () => {
         ...complete,
         body: together('**Claude Opus 5.5 (xhigh), round 1.** Clean. Codex has not run yet.'),
       }),
-    ).toEqual([
-      'No "## After review (Codex …)" section: at least one Codex round is owed.',
-      'A review section says a round has not run: "**Claude Opus 5.5 (xhigh), round 1.** Clean. Codex has not run yet."',
-    ]);
+    ).toEqual(['No Codex round recorded: at least one is owed, in "## After review (Codex …)".']);
     const codexOnly = complete.body.replace(
       /## After review \(Claude[\s\S]*$/,
       '## After review (Codex, gpt-6-astra, xhigh)\n\n- **Round 1** found nothing. The Opus round is pending.\n',
     );
     expect(missingParts({ ...complete, body: codexOnly })).toEqual([
-      'No "## After review (Claude Opus …)" section: the Opus rounds are owed.',
+      'No Claude Opus round recorded: the Opus rounds are owed, in "## After review (Claude Opus …)".',
       'A review section says a round has not run: "- **Round 1** found nothing. The Opus round is pending."',
     ]);
   });
@@ -190,6 +188,8 @@ describe('missingParts', () => {
       '## Reviews (Claude Opus, Codex)\n\n',
     );
     expect(missingParts({ ...complete, body: emptyReviews })).toEqual([
+      'No Claude Opus round recorded: the Opus rounds are owed, in "## After review (Claude Opus …)".',
+      'No Codex round recorded: at least one is owed, in "## After review (Codex …)".',
       '"## Reviews (Claude Opus, Codex)" is empty: say what each round found.',
     ]);
   });
@@ -200,6 +200,7 @@ describe('missingParts', () => {
       '## After review (Codex round pending)\n\nUsage limit; retry tomorrow.\n',
     );
     expect(missingParts({ ...complete, body: pendingHeading })).toEqual([
+      'No Codex round recorded: at least one is owed, in "## After review (Codex …)".',
       'A review section says a round has not run: "After review (Codex round pending)"',
     ]);
   });
@@ -207,8 +208,11 @@ describe('missingParts', () => {
   it('fails a review section that says a round has not run', () => {
     const codexSays = (line: string) =>
       complete.body.replace(/(## After review \(Codex[^\n]*\n\n)[\s\S]*$/, `$1${line}\n`);
+    // A section that records no round is no round.
+    expect(missingParts({ ...complete, body: codexSays('Codex has not run yet.') })).toEqual([
+      'No Codex round recorded: at least one is owed, in "## After review (Codex …)".',
+    ]);
     for (const line of [
-      'Codex has not run yet.',
       '- **Round 1** pending: usage limit until 15:00.',
       'The round is pending.',
     ]) {
@@ -216,6 +220,13 @@ describe('missingParts', () => {
         `A review section says a round has not run: "${line}"`,
       ]);
     }
+    // A second round is optional after a clean first one.
+    expect(
+      missingParts({
+        ...complete,
+        body: codexSays('Round 1 clean. Round 2 has not run; the first was clean.'),
+      }),
+    ).toEqual([]);
     // A round not taken is the author's call (1–2 Opus rounds).
     expect(
       missingParts({

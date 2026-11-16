@@ -31,7 +31,9 @@ prints the path.
   from the files it reads until it reports.
 - **Codex** runs `codex review --base <base>` with model `gpt-6-astra` and
   `model_reasoning_effort` `xhigh` (`REVIEW_CODEX_MODEL` overrides the
-  model). It reads `AGENTS.md` on its own. Findings follow its last
+  model). It pins `review_model` too, which would otherwise win over
+  `model` for a review, and a log whose header names another model exits
+  1: that round does not count. It reads `AGENTS.md` on its own. Findings follow its last
   `codex` line as `- [P1|P2|P3] title — path:line` plus a paragraph. It
   writes and deletes its own ad-hoc tests. Its sandbox cannot listen on
   sockets or write `node_modules/.vite-temp`, so suite runs that need a

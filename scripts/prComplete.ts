@@ -172,13 +172,19 @@ const decisionsGaps = (pr: PullRequest, body: string): ReadonlyArray<string> => 
 };
 
 /**
- * A review section's line saying a round has not run ("Codex has not run
- * yet.", "- **Round 1** pending: usage limit"). "Pending" counts only right
- * after a round: findings here talk about pending rows and ops. "I did not
- * run a second round" is a choice the rule allows, not owed work.
+ * A round marked pending ("- **Round 1** pending: usage limit", "The Opus
+ * round is pending."). Only right after a round: findings here talk about
+ * pending rows and ops.
  */
-const NOT_RUN =
-  /\b(?:has(?:n't| not)(?: yet)? (?:been )?run|not (?:been )?run yet|yet to run)\b|\bround(?: \d+)?\**:?\s+(?:is\s+)?pending\b/i;
+const NOT_RUN = /\bround(?: \d+)?\**:?\s+(?:is\s+)?pending\b/i;
+
+/**
+ * A section's text that records a round: a round named ("**Round 1** found
+ * …", "Round 2 has not run; the first was clean", a second round being
+ * optional), a finding listed ("- **…**", "1. **…**") or an outcome ("No
+ * findings."). "Codex has not run yet." records none.
+ */
+const RECORDS_ROUND = /\bround\b|^\s*(?:-|\d+\.)\s+\*\*|\b(?:no findings|clean|found)\b/im;
 
 /** Text still to be written: the template's placeholders, an empty or not-run review section, a line saying something is owed. */
 const unfinished = (
@@ -213,14 +219,14 @@ export const missingParts = (pr: PullRequest): ReadonlyArray<string> => {
   const opening = body.split(/^## /m)[0]?.trim() ?? '';
   const user = parts.find(({ heading }) => heading === USER_SECTION);
   // A reviewer counts when a review section's heading names it ("## After
-  // review (Claude Opus 5.5, xhigh)"), or a round's lead line in one
-  // "## After review" / "## Reviews" section does. A mention elsewhere
-  // ("Codex has not run yet.") is no round.
+  // review (Claude Opus 5.5, xhigh)") and its text records a round, or a
+  // round's lead line in one "## After review" / "## Reviews" section names
+  // it. A mention elsewhere ("Codex has not run yet.") is no round.
   const reviews = parts.filter(({ heading }) => REVIEW_HEADING.test(heading));
   const reviewedBy = (reviewer: keyof typeof REVIEWERS) =>
     reviews.some(
       ({ heading, text }) =>
-        REVIEWERS[reviewer].test(heading) ||
+        (REVIEWERS[reviewer].test(heading) && RECORDS_ROUND.test(text)) ||
         text
           .split('\n')
           .map(roundHead)
@@ -240,10 +246,12 @@ export const missingParts = (pr: PullRequest): ReadonlyArray<string> => {
       : []),
     ...(reviewedBy('Claude')
       ? []
-      : ['No "## After review (Claude Opus …)" section: the Opus rounds are owed.']),
+      : [
+          'No Claude Opus round recorded: the Opus rounds are owed, in "## After review (Claude Opus …)".',
+        ]),
     ...(reviewedBy('Codex')
       ? []
-      : ['No "## After review (Codex …)" section: at least one Codex round is owed.']),
+      : ['No Codex round recorded: at least one is owed, in "## After review (Codex …)".']),
     ...unfinished(body, parts),
     ...screenshotGaps(pr, user?.text ?? ''),
     ...decisionsGaps(pr, body),
