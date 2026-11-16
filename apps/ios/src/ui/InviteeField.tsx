@@ -96,7 +96,7 @@ export function InviteeField({
                       },
                     ]}
                   />
-                  <Text numberOfLines={1} style={styles.chipLabel}>
+                  <Text ellipsizeMode="middle" numberOfLines={1} style={styles.chipLabel}>
                     {nameWithAddress(attendee)}
                   </Text>
                   {status?.isOrganizer ? (
@@ -192,7 +192,8 @@ const makeStyles = (colors: ThemeColors) =>
       height: 8,
       width: 8,
     },
-    // A long name and address shrinks to one line, never past the row.
+    // A long name and address shrinks to one line, never past the row;
+    // the cut is in the middle, so the name and the domain both stay.
     chipLabel: {
       color: colors.text,
       flexShrink: 1,

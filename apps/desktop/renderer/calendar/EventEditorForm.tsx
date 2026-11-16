@@ -265,7 +265,10 @@ export function EventEditorForm({ model }: { model: ReturnType<typeof useEventEd
         // missing field reads as a bug.
         <FormSection label="Invitees" testId="event-invitees-apple">
           {hasGuests ? (
-            <ul className="text-sm text-ink-secondary" data-testid="event-guests-read-only">
+            <ul
+              className="text-sm text-ink-secondary [overflow-wrap:anywhere]"
+              data-testid="event-guests-read-only"
+            >
               {existing?.attendees?.map((attendee) => (
                 <li key={attendee.email}>{nameWithAddress(attendee)}</li>
               ))}
@@ -282,7 +285,10 @@ export function EventEditorForm({ model }: { model: ReturnType<typeof useEventEd
               {!existing && attendees.length > 0 ? (
                 // Guests the form holds (typed, or said in a phrase) for
                 // another calendar: kept, but not sent from this one.
-                <p className="text-xs text-ink-secondary" data-testid="event-invitees-held">
+                <p
+                  className="text-xs text-ink-secondary [overflow-wrap:anywhere]"
+                  data-testid="event-invitees-held"
+                >
                   Not invited from this calendar: {attendees.map(nameWithAddress).join(', ')}
                 </p>
               ) : null}

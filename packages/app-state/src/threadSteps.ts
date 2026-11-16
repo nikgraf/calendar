@@ -3,6 +3,7 @@ import {
   draftChanges,
   type FieldChange,
   fieldName,
+  guestsOf,
   type StepField,
 } from './draftChanges.ts';
 import { guestLabel } from './draftInvitees.ts';
@@ -116,16 +117,13 @@ export const versionLabel = (line: StepLine): string =>
 
 /**
  * What a changed field reads now, in a row. Guests go by name, as a
- * phrase's own summary names them: the row is one line, and the card
- * beside it has their addresses.
+ * phrase's own summary names them: the row is one line, and a card
+ * shows their addresses.
  */
-const rowValue = (change: FieldChange, draft: Draft | undefined): string => {
-  const guests =
-    change.field === 'guests' && draft?.item.kind === 'event'
-      ? (draft.extras?.attendees ?? [])
-      : [];
-  return guests.length > 0 ? guests.map(guestLabel).join(', ') : (change.to ?? 'none');
-};
+const rowValue = (change: FieldChange, draft: Draft | undefined): string =>
+  change.field === 'guests'
+    ? guestsOf(draft).map(guestLabel).join(', ') || 'none'
+    : (change.to ?? 'none');
 
 /**
  * What a step did, in the one line of its row: a phrase's own summary,

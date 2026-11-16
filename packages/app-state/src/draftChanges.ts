@@ -168,12 +168,12 @@ export const fieldName = (field: StepField): string => FIELD_NAMES[field];
 
 /** One field a step changed, in words: what it read before and what it reads now. */
 export interface FieldChange {
-  /** The guests the step invited, by label. */
+  /** The guests the step invited, as the card shows them (`nameWithAddress`). */
   readonly added?: ReadonlyArray<string> | undefined;
   readonly field: StepField;
   /** Undefined: there was nothing (no place, no draft yet). */
   readonly from: string | undefined;
-  /** The guests the step took off, by label. */
+  /** The guests the step took off, as the card shows them (`nameWithAddress`). */
   readonly removed?: ReadonlyArray<string> | undefined;
   /** Undefined: there is nothing now (the place was cleared). */
   readonly to: string | undefined;
@@ -246,7 +246,7 @@ const repeatText = (draft: Draft): string | undefined => {
 };
 
 /** An event's guests; a to-do has none. */
-const guestsOf = (draft: Draft | undefined): ReadonlyArray<AttendeeInput> =>
+export const guestsOf = (draft: Draft | undefined): ReadonlyArray<AttendeeInput> =>
   draft?.item.kind === 'event' ? (draft.extras?.attendees ?? []) : [];
 
 /** The notes the form holds for the draft as the kind it is. */
