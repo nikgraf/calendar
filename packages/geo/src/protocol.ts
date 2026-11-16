@@ -1,4 +1,4 @@
-import { type GeoRegion, PlaceSuggestion } from '@calendar/core';
+import { type GeoRegion, type MapRect, PlaceSuggestion } from '@calendar/core';
 import { Schema } from 'effect';
 
 /**
@@ -34,7 +34,15 @@ export const ResolveResult = Schema.Struct({
   place: Schema.NullOr(GeoPlaceJson),
   places: Schema.optional(Schema.Array(GeoPlaceJson)),
 });
-export const SnapshotResult = Schema.Struct({ pngBase64: Schema.String });
+/**
+ * `fitted`: the image is the `rect` asked for, with no pin of its own —
+ * absent from a native side built before rects, which drew its fixed map.
+ */
+export const SnapshotResult = Schema.Struct({
+  fitted: Schema.optional(Schema.Boolean),
+  pngBase64: Schema.String,
+});
+export type SnapshotResult = typeof SnapshotResult.Type;
 
 export interface SearchParams {
   readonly limit?: number | undefined;
@@ -57,8 +65,11 @@ export interface SnapshotParams {
   readonly appearance: 'dark' | 'light';
   /** Points; the image is rendered at height × scale pixels. */
   readonly height: number;
+  /** The center of the fixed ~700 m map with its pin, when there is no `rect`. */
   readonly lat: number;
   readonly lng: number;
+  /** Exactly this stretch of the world (`placeMapLayout`), and no pin. */
+  readonly rect?: MapRect | undefined;
   readonly scale: number;
   readonly width: number;
 }

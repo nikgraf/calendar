@@ -14,8 +14,10 @@ import type {
   EventNotificationSettings,
   EventRecord,
   GeoLocation,
+  GeoPoint,
   OnboardingState,
   PendingOpSummary,
+  PlaceMap,
   PlaceSuggestion,
   TaskListInfo,
   TaskRecord,
@@ -28,6 +30,7 @@ import {
   findBirthdayOverride,
   isCalendarWritable,
   msUntilNextMidnight,
+  placeMapLayout,
   resolveTimeZones,
   TaskNotificationSettings,
   Temporal,
@@ -198,15 +201,76 @@ export const useLocationGeo = (
   };
 };
 
-/** A static map image (desktop), base64 PNG; null while loading, failed, or not asked. */
+/**
+ * A static map image, base64 PNG; null while loading, failed, or not
+ * asked. `fitted`: it is the `rect` asked for (a native side from before
+ * rects answers with its own fixed map, which pins drawn over it would
+ * not fit).
+ */
 export const useMapSnapshot = (
   params: MapSnapshotParams | null,
-): { readonly loading: boolean; readonly pngBase64: string | null } => {
+): { readonly fitted: boolean; readonly loading: boolean; readonly pngBase64: string | null } => {
   const result = useAtomValue(useBackendAtoms().mapSnapshot(params ? mapSnapshotKey(params) : ''));
+  const value = AsyncResult.isSuccess(result) ? result.value : null;
   return {
+    fitted: value?.fitted === true,
     loading: AsyncResult.isInitial(result),
-    pngBase64: AsyncResult.isSuccess(result) ? result.value : null,
+    pngBase64: value?.pngBase64 ?? null,
   };
+};
+
+/**
+ * The Assistant's map of a few places: where they go (`placeMapLayout`)
+ * and the image of exactly that stretch of the world, for the app to draw
+ * its own pins over. `loading` until the image is here; `none` with
+ * nothing to draw — no place or no room, no map from this platform, or a
+ * native side from before rects, whose fixed map the pins would not fit.
+ */
+export type PlaceMapState =
+  | { readonly kind: 'loading'; readonly layout: PlaceMap }
+  | { readonly image: string; readonly kind: 'ready'; readonly layout: PlaceMap }
+  | { readonly kind: 'none' };
+
+export const usePlaceMap = (
+  places: ReadonlyArray<GeoPoint>,
+  {
+    appearance,
+    height,
+    scale,
+    width,
+  }: {
+    readonly appearance: 'dark' | 'light';
+    readonly height: number;
+    /** Pixels per point, 1 to 3. */
+    readonly scale: number;
+    /** Points; 0 until measured. */
+    readonly width: number;
+  },
+): PlaceMapState => {
+  const layout = width > 0 ? placeMapLayout(places, { height, width }) : undefined;
+  const [first] = places;
+  const snapshot = useMapSnapshot(
+    layout && first
+      ? {
+          appearance,
+          height,
+          lat: first.lat,
+          lng: first.lng,
+          rect: layout.rect,
+          scale: Math.min(Math.max(Math.round(scale), 1), 3),
+          width,
+        }
+      : null,
+  );
+  if (layout === undefined) {
+    return { kind: 'none' };
+  }
+  if (snapshot.loading) {
+    return { kind: 'loading', layout };
+  }
+  return snapshot.fitted && snapshot.pngBase64 !== null
+    ? { image: snapshot.pngBase64, kind: 'ready', layout }
+    : { kind: 'none' };
 };
 
 /**

@@ -293,8 +293,37 @@ describe('mapSnapshot', () => {
         width: 371.6,
       });
       expect(result.pngBase64.length).toBeGreaterThan(0);
+      expect(result.fitted).toBeUndefined();
       expect(calls).toEqual([
         { appearance: 'light', height: 1200, lat: 1, lng: 2, scale: 3, width: 372 },
+      ]);
+    }).pipe(Effect.provide(setup(recording)));
+  });
+
+  it.effect('asks for a map rect and says the image is it', () => {
+    const calls: Array<unknown> = [];
+    const { client } = makeFakeGeoClient();
+    const recording: GeoClientShape = {
+      ...client,
+      snapshot: (params) => {
+        calls.push(params);
+        return client.snapshot(params);
+      },
+    };
+    const rect = { height: 0.0001, width: 0.0002, x: 0.545, y: 0.355 };
+    return Effect.gen(function* () {
+      const result = yield* locationHandlers.mapSnapshot({
+        appearance: 'dark',
+        height: 150,
+        lat: 48.2,
+        lng: 16.37,
+        rect,
+        scale: 3,
+        width: 338,
+      });
+      expect(result.fitted).toBe(true);
+      expect(calls).toEqual([
+        { appearance: 'dark', height: 150, lat: 48.2, lng: 16.37, rect, scale: 3, width: 338 },
       ]);
     }).pipe(Effect.provide(setup(recording)));
   });
@@ -610,7 +639,7 @@ const mapkit = ({
         calls.push(`search:${query}`);
         return rows[query] ?? [];
       }),
-    snapshot: () => Effect.succeed(FAKE_MAP_PNG_BASE64),
+    snapshot: () => Effect.succeed({ pngBase64: FAKE_MAP_PNG_BASE64 }),
   };
   return { calls, client };
 };

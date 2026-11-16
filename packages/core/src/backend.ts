@@ -579,8 +579,12 @@ export class AppBackendRpcs extends RpcGroup.make(
     success: Schema.Array(AccountSyncStatus),
   }),
   /**
-   * Static map image for the event editor (desktop: MKMapSnapshotter in
-   * the Swift helper). Fails where the platform renders a live map instead.
+   * Static map image (MKMapSnapshotter in the Swift bridge): the desktop
+   * editor's ~700 m map around a place with its pin, or — given `rect` —
+   * exactly that stretch of the world with no pin, for the Assistant's
+   * maps on both platforms, which draw their own pins over it
+   * (`placeMapLayout`). `fitted` says the image is that rect: a native
+   * side from before rects answers without it.
    */
   Rpc.make('mapSnapshot', {
     error: BackendError,
@@ -589,10 +593,18 @@ export class AppBackendRpcs extends RpcGroup.make(
       height: Schema.Number,
       lat: Schema.Number,
       lng: Schema.Number,
+      rect: Schema.optional(
+        Schema.Struct({
+          height: Schema.Number,
+          width: Schema.Number,
+          x: Schema.Number,
+          y: Schema.Number,
+        }),
+      ),
       scale: Schema.Number,
       width: Schema.Number,
     },
-    success: Schema.Struct({ pngBase64: Schema.String }),
+    success: Schema.Struct({ fitted: Schema.optional(Schema.Boolean), pngBase64: Schema.String }),
   }),
   /**
    * Moves an event (a whole series: pass the master id) to another

@@ -40,8 +40,8 @@ export interface GeoClientShape {
   readonly search: (
     params: SearchParams,
   ) => Effect.Effect<ReadonlyArray<PlaceSuggestion>, GeoError>;
-  /** A map image centered on the coordinates, PNG as base64. */
-  readonly snapshot: (params: SnapshotParams) => Effect.Effect<string, GeoError>;
+  /** A map image, PNG as base64: centered on the coordinates with a pin, or exactly `rect` without one. */
+  readonly snapshot: (params: SnapshotParams) => Effect.Effect<SnapshotResult, GeoError>;
 }
 
 export class GeoClient extends Context.Service<GeoClient, GeoClientShape>()('geo/GeoClient') {}
@@ -117,8 +117,7 @@ export const makeGeoClient = (
         ),
         (r) => r.results,
       ),
-    snapshot: (params) =>
-      Effect.map(call(GEO_METHODS.snapshot, { ...params }, SnapshotResult), (r) => r.pngBase64),
+    snapshot: (params) => call(GEO_METHODS.snapshot, defined({ ...params }), SnapshotResult),
   };
 };
 
