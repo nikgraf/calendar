@@ -1,10 +1,19 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { foldForm, refineThread, startThread, stepTo, threadLine } from './draftThread.ts';
+import {
+  EMPTY_THREAD,
+  foldForm,
+  openThread,
+  refineThread,
+  startThread,
+  stepTo,
+  threadLine,
+} from './draftThread.ts';
 import type { QuickAddItem } from './quickAddItem.ts';
 import {
   changedLine,
   lineChanges,
   movedFrom,
+  noChangeLines,
   shownMarks,
   stepName,
   stepSource,
@@ -183,5 +192,48 @@ describe('versionLabel, stepSummary and changedLine', () => {
     const [, moved] = threadLine(story());
     expect(changedLine(lineChanges(moved!))).toBe('Changed: time');
     expect(changedLine([])).toBe('');
+  });
+});
+
+/** Stable ids: n1, n2, … in the order they are asked for. */
+const noChangeIds = () => {
+  let count = 0;
+  return () => {
+    count += 1;
+    return `n${String(count)}`;
+  };
+};
+/** Each position's words, dimmed ones marked. */
+const saidAt = (lines: ReturnType<typeof noChangeLines>) =>
+  [...lines].map(([position, turns]) => [
+    position,
+    turns.map(({ dimmed, turn }) => `${turn.utterance}${dimmed ? ' (dimmed)' : ''}`),
+  ]);
+
+describe('noChangeLines', () => {
+  it('lists words that changed nothing after the step they followed, only the newest undimmed', () => {
+    const id = noChangeIds();
+    const first = startThread([lunch], 'Lunch with Sarah tomorrow at one', { id });
+    const idle = refineThread(first, 'make it at one', [{ id: 'n1', item: lunch }], id);
+    expect(saidAt(noChangeLines(idle))).toEqual([[1, ['make it at one']]]);
+    const thanks = refineThread(idle, 'thanks', [{ id: 'n1', item: lunch }], id);
+    expect(saidAt(noChangeLines(thanks))).toEqual([[1, ['make it at one (dimmed)', 'thanks']]]);
+    // A step after them: history, all of it.
+    const moved = refineThread(thanks, 'half past twelve', [{ id: 'n1', item: earlier }], id);
+    expect(saidAt(noChangeLines(moved))).toEqual([
+      [1, ['make it at one (dimmed)', 'thanks (dimmed)']],
+    ]);
+    // An older step on show dims what was said after the newest.
+    const after = refineThread(moved, 'yes', [{ id: 'n1', item: earlier }], id);
+    expect(saidAt(noChangeLines(after)).at(-1)).toEqual([2, ['yes']]);
+    expect(saidAt(noChangeLines(stepTo(after, 1))).at(-1)).toEqual([2, ['yes (dimmed)']]);
+    expect(noChangeLines(EMPTY_THREAD).size).toBe(0);
+  });
+
+  it('puts words said to a saved item before any step at 0', () => {
+    const id = noChangeIds();
+    const opened = openThread({ item: lunch }, id);
+    const idle = refineThread(opened, 'at one', [{ id: 'n1', item: lunch }], id);
+    expect(saidAt(noChangeLines(idle))).toEqual([[0, ['at one']]]);
   });
 });

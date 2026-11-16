@@ -61,7 +61,7 @@ import {
   type TurnLimits,
   turnRefusal,
 } from './threadRefusal.ts';
-import { movedFrom, shownMarks } from './threadSteps.ts';
+import { movedFrom, noChangeLines, shownMarks } from './threadSteps.ts';
 
 /** Drafts an editor opens with already made — a capture's events, as one thread. */
 export interface ThreadSeed {
@@ -782,6 +782,8 @@ export const useThreadEditor = ({
     /** Every step, oldest first, the ones stepped back over dimmed. */
     line: threadLine(thread.state),
     locked: stepsLocked,
+    /** Words that changed nothing, by the position of the step they follow (`noChangeLines`). */
+    noChange: noChangeLines(thread.state),
     of: thread.state.steps.length + thread.state.ahead.length,
     show: (position: number) => {
       if (!stepsLocked) {

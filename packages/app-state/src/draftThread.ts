@@ -53,6 +53,7 @@ import {
 import { type PlaceChange, type PlaceChoice, settlePlace } from './draftPlaces.ts';
 import { type Asked, askedAfterTurn } from './draftQuestions.ts';
 import type { EventEditorPrefill } from './editorModel.ts';
+import { type OtherReading, otherReadings } from './otherReadings.ts';
 import { convertQuickAddItem, type QuickAddItem } from './quickAddItem.ts';
 import { recurrenceKey, seedRepeatFields } from './repeatState.ts';
 import type { ReminderFields } from './taskEditorModel.ts';
@@ -217,6 +218,21 @@ export interface StepAhead {
   readonly step: DraftStep;
 }
 
+/**
+ * Words said to the thread that left every draft as it was. They are
+ * answered in the conversation and make no step: there is no other
+ * version to go back to. They stand after the step that was the newest
+ * when they were said.
+ */
+export interface NoChangeTurn {
+  /** The step they followed, by id; undefined: none yet (a saved item as it opened). */
+  readonly after: string | undefined;
+  readonly id: string;
+  /** For dictated words: the recogniser's other readings that would change something. */
+  readonly readings: ReadonlyArray<OtherReading>;
+  readonly utterance: string;
+}
+
 export interface DraftThreadState extends Snapshot {
   /**
    * The steps stepped back over, nearest first. Empty unless an older step
@@ -226,6 +242,8 @@ export interface DraftThreadState extends Snapshot {
   readonly ahead: ReadonlyArray<StepAhead>;
   /** The drafts as they were before each step, oldest first: what going back restores. */
   readonly history: ReadonlyArray<Snapshot>;
+  /** Words that changed nothing, oldest first, each after the step it followed. */
+  readonly noChange: ReadonlyArray<NoChangeTurn>;
   /** What happened, oldest first: one entry per `history` snapshot. */
   readonly steps: ReadonlyArray<DraftStep>;
   /**
@@ -241,8 +259,42 @@ export const EMPTY_THREAD: DraftThreadState = {
   drafts: [],
   focused: 0,
   history: [],
+  noChange: [],
   steps: [],
   version: 0,
+};
+
+/**
+ * The words that changed nothing, without those said after a step that
+ * was let go of (Undo, "Use this" on an older one, a turn from it): they
+ * were said to a version that is gone.
+ */
+const keptTurns = (
+  turns: ReadonlyArray<NoChangeTurn>,
+  steps: ReadonlyArray<DraftStep>,
+): ReadonlyArray<NoChangeTurn> =>
+  turns.filter((turn) => turn.after === undefined || steps.some((step) => step.id === turn.after));
+
+/**
+ * The words that changed nothing, once some steps left the line while
+ * the rest stayed where they were (an edit that ended where it began, the
+ * edits of a draft that was written): those said after a step that left
+ * follow the nearest step before it that stayed.
+ */
+const reanchored = (
+  turns: ReadonlyArray<NoChangeTurn>,
+  before: ReadonlyArray<DraftStep>,
+  after: ReadonlyArray<DraftStep>,
+): ReadonlyArray<NoChangeTurn> => {
+  const stays = new Set(after.map((step) => step.id));
+  return turns.map((turn) => {
+    if (turn.after === undefined || stays.has(turn.after)) {
+      return turn;
+    }
+    const at = before.findIndex((step) => step.id === turn.after);
+    const anchor = before.slice(0, Math.max(at, 0)).findLast((step) => stays.has(step.id));
+    return { ...turn, after: anchor?.id };
+  });
 };
 
 /**
@@ -503,6 +555,7 @@ export const startThread = (
     drafts,
     focused: 0,
     history: [{ drafts: [], focused: 0 }],
+    noChange: [],
     steps: [
       { drafts: drafts.map((draft) => draft.id), id: id(), kind: 'phrase', summary, utterance },
     ],
@@ -557,6 +610,33 @@ const datedBy = (draft: Draft, change: DraftChange): Pick<Draft, 'extras'> | und
     : undefined;
 };
 
+/** Two values that read the same as JSON: open choices and slots, compared by what they hold. */
+const sameJson = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
+
+/** An event's time still reads as assumed: the form says so, and asks for one. */
+const assumedOf = (draft: Draft): boolean =>
+  draft.item.kind === 'event' && draft.item.prefill.assumedTime === true;
+
+/** A to-do's alerts, the form's or a turn's alone (`withAlarms`), as they would be saved. */
+const alarmsOf = (draft: Draft): string => (draft.extras?.reminder?.alarms ?? []).join(',');
+
+/**
+ * A turn left a draft as it was: no field its card or the form shows
+ * changed (`draftChanges`, and a to-do's alerts where the form never
+ * held it), no question was opened or settled, no day was given to a
+ * to-do held undated (`dated`), it found no free slots of its own, and
+ * an assumed time is still assumed — a time said is one the form stops
+ * asking for. The slots a turn would drop are not a change of its.
+ */
+const leftAlone = (before: Draft, after: Draft, change: DraftChange, dated: boolean): boolean =>
+  !dated &&
+  draftChanges(before, after).length === 0 &&
+  alarmsOf(before) === alarmsOf(after) &&
+  sameJson(before.inviteeChoices, after.inviteeChoices) &&
+  sameJson(before.placeChoice, after.placeChoice) &&
+  (change.slots === undefined || sameJson(before.slots, change.slots)) &&
+  assumedOf(before) === assumedOf(after);
+
 /**
  * A turn's results folded in: the changed drafts replace their old
  * selves, the rest stay, and the state before goes to the history. A
@@ -564,7 +644,9 @@ const datedBy = (draft: Draft, change: DraftChange): Pick<Draft, 'extras'> | und
  * ones were found for other words. The summary lists what changed on
  * the focused draft, or how many changed. A change for a draft that is
  * gone (removed or saved while the model answered) is nobody's; with
- * none left the turn is no step.
+ * none left the turn is no step. Nor is one that left every draft as it
+ * was (`leftAlone`): its words are kept as a turn that changed nothing,
+ * after the newest step, and the drafts stay exactly as they were.
  */
 export const refineThread = (
   state: DraftThreadState,
@@ -622,6 +704,22 @@ export const refineThread = (
     }
     return next.draft;
   });
+  // A turn from an older step leaves what came after it behind.
+  const kept = keptTurns(state.noChange, state.steps);
+  if (
+    drafts.every((draft, index) => {
+      const change = changed.get(draft.id);
+      return (
+        change === undefined || leftAlone(state.drafts[index]!, draft, change, dated.has(draft.id))
+      );
+    })
+  ) {
+    return {
+      ...state,
+      ahead: [],
+      noChange: [...kept, { after: state.steps.at(-1)?.id, id: id(), readings: [], utterance }],
+    };
+  }
   // The drafts whose item the turn left another, or dated: the ones its words are said to.
   const moved = drafts.flatMap((draft, index) =>
     dated.has(draft.id) || changedDraftFields(state.drafts[index]!.item, draft.item).length > 0
@@ -646,14 +744,58 @@ export const refineThread = (
         )
       : `${String(changes.length)} drafts changed`;
   return {
-    // A turn from an older step leaves what came after it behind.
     ahead: [],
     drafts,
     focused: state.focused,
     history: [...state.history, { drafts: state.drafts, focused: state.focused }],
+    noChange: kept,
     steps: [...state.steps, { drafts: moved, id: id(), kind: 'phrase', summary, utterance }],
     version: state.version + 1,
   };
+};
+
+/**
+ * The other readings found for words that changed nothing, put under
+ * their answer — unless the answer is gone (Undo let its step go) or
+ * was no answer of the kind (the turn changed something after all).
+ */
+export const withReadings = (
+  state: DraftThreadState,
+  turnId: string,
+  readings: ReadonlyArray<OtherReading>,
+): DraftThreadState =>
+  readings.length === 0 || !state.noChange.some((turn) => turn.id === turnId)
+    ? state
+    : {
+        ...state,
+        noChange: state.noChange.map((turn) => (turn.id === turnId ? { ...turn, readings } : turn)),
+      };
+
+/**
+ * What another reading of the words would do, in words — the summary of
+ * the step it would make, and whom it would invite or take off (looked
+ * up only once it is taken) — or undefined where it would change nothing
+ * either.
+ */
+export const readingDoes = (
+  state: DraftThreadState,
+  change: DraftChange,
+  {
+    invite = [],
+    uninvite = [],
+  }: {
+    readonly invite?: ReadonlyArray<string> | undefined;
+    readonly uninvite?: ReadonlyArray<string> | undefined;
+  },
+): string | undefined => {
+  const after = refineThread(state, '', [change], () => 'reading');
+  const step = after.steps.length > state.steps.length ? after.steps.at(-1) : undefined;
+  const said = [
+    ...(step?.kind === 'phrase' && step.summary !== 'no change' ? [step.summary] : []),
+    ...(invite.length > 0 ? [`→ invites ${invite.join(', ')}`] : []),
+    ...(uninvite.length > 0 ? [`→ uninvites ${uninvite.join(', ')}`] : []),
+  ];
+  return said.length === 0 ? undefined : said.join(' · ');
 };
 
 /**
@@ -781,6 +923,7 @@ export const landRefinement = (
   {
     changes,
     fresh,
+    id,
     submitted,
     targetId,
     utterance,
@@ -788,6 +931,8 @@ export const landRefinement = (
     readonly changes: ReadonlyArray<DraftChange>;
     /** The form now, if it was read. */
     readonly fresh?: FormSnapshot | undefined;
+    /** The turn's id, for one that must find its turn again (`withReadings`). */
+    readonly id?: (() => string) | undefined;
     /** The form when the turn was sent, if it was read. */
     readonly submitted?: FormSnapshot | undefined;
     readonly targetId: string | undefined;
@@ -796,7 +941,7 @@ export const landRefinement = (
 ): DraftThreadState => {
   const index = state.drafts.findIndex((draft) => draft.id === targetId);
   if (submitted === undefined || fresh === undefined || index === -1) {
-    return refineThread(state, utterance, changes);
+    return refineThread(state, utterance, changes, id);
   }
   const base = foldShown(state, fresh);
   const current = base.drafts[index]!.item;
@@ -808,6 +953,7 @@ export const landRefinement = (
         ? { ...change, item: mergeRefinement(current, submitted.item, change.item) }
         : change,
     ),
+    id,
   );
 };
 
@@ -874,6 +1020,7 @@ export const undoTurn = (state: DraftThreadState): DraftThreadState => {
     drafts: previous.drafts,
     focused: Math.min(previous.focused, Math.max(previous.drafts.length - 1, 0)),
     history: state.history.slice(0, at),
+    noChange: keptTurns(state.noChange, state.steps.slice(0, at)),
     steps: state.steps.slice(0, at),
     version: state.version + 1,
   };
@@ -929,6 +1076,7 @@ export const stepTo = (state: DraftThreadState, position: number): DraftThreadSt
     drafts: shown.drafts,
     focused: Math.min(shown.focused, Math.max(shown.drafts.length - 1, 0)),
     history: line.slice(0, position).map(({ before }) => before),
+    noChange: state.noChange,
     steps: line.slice(0, position).map(({ step }) => step),
     version: state.version + 1,
   };
@@ -936,7 +1084,9 @@ export const stepTo = (state: DraftThreadState, position: number): DraftThreadSt
 
 /** "Use this": the step shown is the newest from here on, and what came after it is let go. */
 export const keepShown = (state: DraftThreadState): DraftThreadState =>
-  state.ahead.length === 0 ? state : { ...state, ahead: [] };
+  state.ahead.length === 0
+    ? state
+    : { ...state, ahead: [], noChange: keptTurns(state.noChange, state.steps) };
 
 export const focusDraft = (state: DraftThreadState, index: number): DraftThreadState =>
   index >= 0 && index < state.drafts.length && index !== state.focused
@@ -1044,7 +1194,13 @@ export const foldForm = (
   const began = state.history.at(-1)?.drafts.find((each) => each.id === draft.id);
   const net = draftChanges(began, next).map((change) => change.field);
   return net.length === 0
-    ? { ...state, drafts, history: state.history.slice(0, -1), steps: state.steps.slice(0, -1) }
+    ? {
+        ...state,
+        drafts,
+        history: state.history.slice(0, -1),
+        noChange: reanchored(state.noChange, state.steps, state.steps.slice(0, -1)),
+        steps: state.steps.slice(0, -1),
+      }
     : { ...state, drafts, steps: [...state.steps.slice(0, -1), { ...newest, fields: net }] };
 };
 
@@ -1210,17 +1366,25 @@ export const removeDrafts = (
   // What was done by hand to a draft that left goes with it: there is no
   // step to go back over once its draft is written. A phrase stays, as
   // what was said.
-  const kept = state.steps.map(
-    (step) => step.kind === 'phrase' || !step.drafts.every((id) => gone.has(id)),
-  );
+  const stays = (step: DraftStep) =>
+    step.kind === 'phrase' || !step.drafts.every((id) => gone.has(id));
+  const kept = state.steps.map(stays);
+  const steps = state.steps.filter((_, at) => kept[at]);
+  const ahead = state.ahead
+    .filter(({ step }) => stays(step))
+    .map(({ after, step }) => ({ after: without(after, gone), step }));
   return {
     ...state,
     ...next,
-    ahead: state.ahead
-      .filter(({ step }) => step.kind === 'phrase' || !step.drafts.every((id) => gone.has(id)))
-      .map(({ after, step }) => ({ after: without(after, gone), step })),
+    ahead,
     history: state.history.filter((_, at) => kept[at]).map((snapshot) => without(snapshot, gone)),
-    steps: state.steps.filter((_, at) => kept[at]),
+    // Words that changed nothing stay, as what was said, after the step before.
+    noChange: reanchored(
+      state.noChange,
+      [...state.steps, ...state.ahead.map(({ step }) => step)],
+      [...steps, ...ahead.map(({ step }) => step)],
+    ),
+    steps,
     version: formChanges ? state.version + 1 : state.version,
   };
 };
@@ -1427,10 +1591,79 @@ export const useDraftThread = ({
   };
 
   /**
+   * Dictated words that changed nothing: the recogniser's other readings
+   * of them (`otherReadings`), each read as the words were, and the ones
+   * that would change the draft — and that it can hold (`refuse`) — put
+   * under the answer (`withReadings`). Offered, never taken. Let go of
+   * once anything else is asked (`request`), and so is the answer.
+   */
+  const offerReadings = async ({
+    base,
+    draft,
+    heard,
+    mine,
+    refuse,
+    turnId,
+    utterance,
+  }: {
+    readonly base: DraftThreadState;
+    readonly draft: Draft;
+    readonly heard: Heard;
+    readonly mine: number;
+    readonly refuse: Refuse | undefined;
+    readonly turnId: string;
+    readonly utterance: string;
+  }): Promise<void> => {
+    const asEvent = convertQuickAddItem(draft.item, 'event');
+    if (asEvent.kind !== 'event') {
+      return;
+    }
+    const referenceDate = Temporal.Now.plainDateISO(timeZone).toString();
+    const readings = await otherReadings({
+      heard,
+      stillAsked: () => mine === request.current,
+      utterance,
+      would: async (text) => {
+        // Words that ask for free time are another tool's.
+        if (isFinderPhrase(readExtras(text).rest)) {
+          return undefined;
+        }
+        const result = await reader.change({
+          draft: turnDraftOf(draft, asEvent.prefill, defaultRemindersOf?.(draft)),
+          referenceDate,
+          said: turnsOf(base, draft.id),
+          timeZone,
+          utterance: text,
+        });
+        if (result.kind !== 'parsed') {
+          return undefined;
+        }
+        const change: DraftChange = {
+          id: draft.id,
+          item: convertQuickAddItem({ kind: 'event', prefill: result.prefill }, draft.item.kind),
+          ...(result.notes ? { notes: result.notes } : {}),
+          ...(result.reminders ? { reminders: result.reminders } : {}),
+          ...(result.saidDay ? { saidDay: true } : {}),
+        };
+        const guests = (result.invite?.length ?? 0) + (result.uninvite?.length ?? 0) > 0;
+        const alerts = (result.reminders?.add.length ?? 0) > 0;
+        return refuse?.(draft, change.item, guests, alerts) === undefined
+          ? readingDoes(base, change, result)
+          : undefined;
+      },
+    });
+    if (mine === request.current) {
+      setState((latest) => withReadings(latest, turnId, readings));
+    }
+  };
+
+  /**
    * A turn. `read` gives the form's current item and extras: once before
    * the model call (what the turn starts from) and once after (what the
    * form holds by then), so an edit made meanwhile is kept and only what
-   * the turn changed is taken over (`mergeRefinement`).
+   * the turn changed is taken over (`mergeRefinement`). Dictated words
+   * that change nothing look for their other readings after they landed
+   * (`offerReadings`): the answer is not kept waiting on them.
    */
   const refine = async (
     utterance: string,
@@ -1548,9 +1781,26 @@ export const useDraftThread = ({
         return refused;
       }
       const fresh = read?.();
-      setState((latest) =>
-        landRefinement(latest, { changes, fresh, submitted, targetId: focusedId, utterance }),
-      );
+      const turnId = nextDraftId();
+      const landing = {
+        changes,
+        fresh,
+        id: () => turnId,
+        submitted,
+        targetId: focusedId,
+        utterance,
+      };
+      setState((latest) => landRefinement(latest, landing));
+      // One draft addressed: its readings are one turn each.
+      const [only] = targets;
+      if (
+        heard !== undefined &&
+        only !== undefined &&
+        targets.length === 1 &&
+        landRefinement(current, landing).noChange.some((turn) => turn.id === turnId)
+      ) {
+        void offerReadings({ base: current, draft: only, heard, mine, refuse, turnId, utterance });
+      }
       return undefined;
     } catch {
       return 'On-device model unavailable.';

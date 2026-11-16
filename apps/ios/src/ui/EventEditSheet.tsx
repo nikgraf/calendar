@@ -929,6 +929,7 @@ export function EventEditSheet({
                   note={seed.thread?.note}
                   notice={notice}
                   onEdit={() => switcher.flip('form', keyboard > 0)}
+                  onReading={quick.say}
                   pending={quick.pending}
                   taskLists={taskLists}
                 />

@@ -5,6 +5,7 @@ import {
   draftCalendarKey,
   draftListKey,
   type FieldChange,
+  type NoChangeLine,
   stepSummary,
   type useThreadEditor,
   versionLabel,
@@ -68,6 +69,69 @@ function VersionRow({
           Restore
         </Text>
       </Pressable>
+    </View>
+  );
+}
+
+/**
+ * Words that changed nothing, answered: what was said on the right, as
+ * any phrase is, and under it that nothing changed — no card, no version
+ * to go back to. Dictated words the recogniser could have read another
+ * way offer the readings that would change something, while they are
+ * the newest thing said; a tap says one (`onReading`).
+ */
+function NoChangeReply({
+  disabled,
+  line: { dimmed, turn },
+  onReading,
+}: {
+  readonly disabled: boolean;
+  readonly line: NoChangeLine;
+  readonly onReading: ((text: string) => void) | undefined;
+}) {
+  const styles = useStyles(makeStyles);
+  const { colors } = useTheme();
+  const readings = dimmed || onReading === undefined ? [] : turn.readings;
+  return (
+    <View style={styles.step} testID="assistant-no-change">
+      <Text selectable style={[styles.said, dimmed && styles.dimmed]} testID="assistant-said">
+        {turn.utterance}
+      </Text>
+      <View
+        style={[styles.reply, readings.length > 0 && styles.replyWide, dimmed && styles.dimmed]}
+        testID="assistant-reply"
+      >
+        <View style={styles.replyLine}>
+          <SymbolView name="equal.circle" size={20} tintColor={colors['text-secondary']} />
+          <Text style={styles.replyText}>
+            <Text style={styles.replyLead}>Nothing changed.</Text>
+            {readings.length > 0 ? ' Did you mean' : ''}
+          </Text>
+        </View>
+        {readings.map((reading) => (
+          <Pressable
+            accessibilityLabel={`“${reading.text}”, ${reading.does}`}
+            accessibilityRole="button"
+            accessibilityState={{ disabled }}
+            disabled={disabled}
+            key={reading.text}
+            onPress={() => onReading?.(reading.text)}
+            style={({ pressed }) => [
+              styles.reading,
+              pressed && styles.readingPressed,
+              disabled && styles.disabled,
+            ]}
+            testID="assistant-reading"
+          >
+            <Text numberOfLines={2} style={styles.readingText}>
+              “{reading.text}”
+            </Text>
+            <Text numberOfLines={1} style={styles.readingDoes}>
+              {reading.does}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
     </View>
   );
 }
@@ -212,7 +276,9 @@ function StepAnswer({
  * through, and under the newest whatever the assistant has to ask
  * (`DraftQuestions`). Steps that are not on show are one line each with
  * Restore, which puts that version on show ("Use this" then keeps it);
- * an edit made by hand in the form is listed among them. The newest row
+ * an edit made by hand in the form is listed among them, and words that
+ * changed nothing after the step they followed, answered in a line
+ * (`NoChangeReply`). The newest row
  * is the one to read, so the conversation sits at its end. Without the
  * model it says why, with Check Again. What to say next is the bar's,
  * under it (`AssistantBar`).
@@ -229,6 +295,7 @@ export function AssistantView({
   note,
   notice,
   onEdit,
+  onReading,
   pending,
   taskLists,
 }: {
@@ -244,6 +311,8 @@ export function AssistantView({
   readonly notice?: ReactNode;
   /** To the form, on the same draft. */
   readonly onEdit: () => void;
+  /** Another reading of dictated words that changed nothing, said as if typed. */
+  readonly onReading?: ((text: string) => void) | undefined;
   /** The words being read, until their answer lands. */
   readonly pending?: string | undefined;
   readonly taskLists: ReadonlyArray<TaskListInfo>;
@@ -275,6 +344,16 @@ export function AssistantView({
     />
   );
   const saved = steps.line[0]?.before.drafts[0];
+  // Words that changed nothing, after the step they followed (0: before the first).
+  const replies = (position: number) =>
+    (steps.noChange.get(position) ?? []).map((line) => (
+      <NoChangeReply
+        disabled={steps.locked || pending !== undefined}
+        key={line.turn.id}
+        line={line}
+        onReading={onReading}
+      />
+    ));
   return (
     <ScrollView
       contentContainerStyle={styles.content}
@@ -322,6 +401,7 @@ export function AssistantView({
           Before the first step: nothing yet.
         </Text>
       ) : null}
+      {replies(0)}
       {steps.line.map((line) => (
         <View key={line.step.id} style={styles.step}>
           {line.step.kind === 'phrase' ? (
@@ -344,6 +424,7 @@ export function AssistantView({
               summary={stepSummary(line, labels)}
             />
           )}
+          {replies(line.position)}
         </View>
       ))}
       {demo && started && !pending ? (
@@ -438,6 +519,65 @@ const makeStyles = (colors: ThemeColors) =>
       color: colors['text-secondary'],
       flexShrink: 1,
       fontSize: 13,
+    },
+    reading: {
+      alignItems: 'center',
+      backgroundColor: colors['surface-subtle'],
+      borderColor: colors.border,
+      borderRadius: 12,
+      borderWidth: StyleSheet.hairlineWidth,
+      flexDirection: 'row',
+      gap: 10,
+      justifyContent: 'space-between',
+      minHeight: 44,
+      paddingHorizontal: 14,
+      paddingVertical: 8,
+    },
+    readingDoes: {
+      color: colors['text-secondary'],
+      flexShrink: 0,
+      fontSize: 15,
+    },
+    readingPressed: {
+      opacity: 0.6,
+    },
+    readingText: {
+      color: colors.text,
+      flexShrink: 1,
+      fontSize: 16,
+      fontWeight: '600',
+    },
+    /** The answer to words that changed nothing: on the left, on the surface the cards are on. */
+    reply: {
+      alignSelf: 'flex-start',
+      backgroundColor: colors.surface,
+      borderBottomLeftRadius: 6,
+      borderBottomRightRadius: 20,
+      borderTopLeftRadius: 20,
+      borderTopRightRadius: 20,
+      gap: 8,
+      marginRight: 40,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+    },
+    replyLead: {
+      fontWeight: '600',
+    },
+    replyLine: {
+      alignItems: 'flex-start',
+      flexDirection: 'row',
+      gap: 8,
+    },
+    replyText: {
+      color: colors.text,
+      flexShrink: 1,
+      fontSize: 16,
+      lineHeight: 21,
+    },
+    /** With readings to offer, the answer takes the width they need. */
+    replyWide: {
+      alignSelf: 'stretch',
+      marginRight: 24,
     },
     /** What was said or typed: on the right, in the ink of an action. */
     said: {

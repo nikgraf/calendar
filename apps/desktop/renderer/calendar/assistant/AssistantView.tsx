@@ -6,6 +6,7 @@ import {
   draftCalendarKey,
   draftListKey,
   type FieldChange,
+  type NoChangeLine,
   stepSummary,
   useQuickAddModel,
   type useThreadEditor,
@@ -17,7 +18,13 @@ import { assistantFieldCopy } from '../../ai/assistantModel.ts';
 import { desktopSpeech } from '../../ai/desktopSpeech.ts';
 import { requestCodeImport } from '../../settingsCode/codeImportRequests.ts';
 import { Button } from '../../ui/Button.tsx';
-import { ArrowUpIcon, MicIcon, SparkleIcon, SpinnerIcon } from '../../ui/icons.tsx';
+import {
+  ArrowUpIcon,
+  EqualCircleIcon,
+  MicIcon,
+  SparkleIcon,
+  SpinnerIcon,
+} from '../../ui/icons.tsx';
 import {
   captureSourceOf,
   isCapturableInPhrase,
@@ -98,13 +105,68 @@ function VersionRow({
 }
 
 /**
+ * Words that changed nothing, answered: what was said on the right, as
+ * any phrase is, and under it that nothing changed — no card, no version
+ * to go back to. Dictated words the recogniser could have read another
+ * way offer the readings that would change something, while they are
+ * the newest thing said; a click says one (`onReading`).
+ */
+function NoChangeReply({
+  disabled,
+  line: { dimmed, turn },
+  onReading,
+}: {
+  readonly disabled: boolean;
+  readonly line: NoChangeLine;
+  readonly onReading: (text: string) => void;
+}) {
+  const readings = dimmed ? [] : turn.readings;
+  return (
+    <div className="flex flex-col gap-2" data-testid="assistant-no-change">
+      <p className={`${SAID} ${dimmed ? 'opacity-55' : ''}`} data-testid="assistant-said">
+        {turn.utterance}
+      </p>
+      <div
+        className={`flex flex-col gap-1.5 rounded-2xl rounded-bl-sm bg-surface px-3 py-2 ring-1 ring-hairline ${
+          readings.length > 0 ? 'mr-4 self-stretch' : 'mr-10 self-start'
+        } ${dimmed ? 'opacity-55' : ''}`}
+        data-testid="assistant-reply"
+      >
+        <p className="flex items-start gap-1.5 text-sm">
+          <EqualCircleIcon className="mt-0.5 shrink-0 text-ink-secondary" />
+          <span>
+            <span className="font-semibold">Nothing changed.</span>
+            {readings.length > 0 ? ' Did you mean' : ''}
+          </span>
+        </p>
+        {readings.map((reading) => (
+          <button
+            className="flex min-h-9 w-full items-center justify-between gap-2.5 rounded-control border border-hairline bg-surface-subtle px-2.5 py-1.5 text-left enabled:hover:bg-fill disabled:opacity-50"
+            data-testid="assistant-reading"
+            disabled={disabled}
+            key={reading.text}
+            onClick={() => onReading(reading.text)}
+            type="button"
+          >
+            <span className="min-w-0 text-sm font-semibold break-words">“{reading.text}”</span>
+            <span className="shrink-0 text-xs text-ink-secondary">{reading.does}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
  * The assistant's view of the editor: a conversation. What was said or
  * typed is on the right; each answer is the item as a card, with what the
  * step changed marked and the old value struck through, and under the
  * newest whatever the assistant has to ask (`DraftQuestions`). Steps
  * that are not on show are one line each with Restore, which puts that
  * version on show (the panel's footer then offers "Use this"); an edit
- * made by hand in the form is listed among them. At the bottom the field
+ * made by hand in the form is listed among them, and words that changed
+ * nothing after the step they followed, answered in a line
+ * (`NoChangeReply`). At the bottom the field
  * to type into and the microphone: a phrase is sent with Return, or by a
  * pause while dictating (hands-free: one click listens until the
  * microphone is clicked, the field typed into or the form edited by
@@ -200,7 +262,12 @@ export function AssistantView({
   // Before the panel's own layout effects: the switch back to the
   // Assistant measures the newest card where this leaves it (a pane back
   // from `display: none` starts at its top).
-  const rows = steps.line.length;
+  // Words that changed nothing count as rows, and so do the readings their
+  // answer offers, which arrive after it.
+  const rows = editor.thread.state.noChange.reduce(
+    (count, turn) => count + 1 + turn.readings.length,
+    steps.line.length,
+  );
   // A phrase being said shows below the newest card: in view while it
   // grows, a line longer included.
   const saying = quick.pending !== undefined;
@@ -222,6 +289,16 @@ export function AssistantView({
   );
 
   const started = steps.of > 0;
+  // Words that changed nothing, after the step they followed (0: before the first).
+  const replies = (position: number) =>
+    (steps.noChange.get(position) ?? []).map((line) => (
+      <NoChangeReply
+        disabled={steps.locked || busy}
+        key={line.turn.id}
+        line={line}
+        onReading={quick.say}
+      />
+    ));
   return (
     <>
       <div
@@ -275,6 +352,7 @@ export function AssistantView({
             Before the first step: nothing yet.
           </p>
         ) : null}
+        {replies(0)}
         {steps.line.map((line) => (
           <div className="flex flex-col gap-2" key={line.step.id}>
             {line.step.kind === 'phrase' ? (
@@ -297,6 +375,7 @@ export function AssistantView({
                 summary={stepSummary(line, labels)}
               />
             )}
+            {replies(line.position)}
           </div>
         ))}
         {demo !== undefined && started && !busy ? (

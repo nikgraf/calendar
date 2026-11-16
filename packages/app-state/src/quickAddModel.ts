@@ -130,6 +130,20 @@ export const useQuickAddModel = ({
   };
 
   /**
+   * Words the editor offers to say (another reading of dictated words):
+   * sent as typed words are, through the field — so they show as the
+   * phrase on its way, and stay there with the message if they fail. Not
+   * while a phrase is read.
+   */
+  const say = (text: string) => {
+    if (busy) {
+      return;
+    }
+    setPhrase(text);
+    void submit(text);
+  };
+
+  /**
    * The latest dictation start. Cancelling on unmount only stops a
    * recording that already started; one still preparing or waiting for
    * the microphone is aborted instead, and the adapter stops only what
@@ -447,6 +461,8 @@ export const useQuickAddModel = ({
      */
     pending: pendingLine({ busy, live, phrase }),
     phrase,
+    /** Words the editor offers, said as if typed (`say`). */
+    say,
     setPhrase,
     submit,
     toggleVoice,
