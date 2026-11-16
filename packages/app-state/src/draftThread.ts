@@ -633,11 +633,15 @@ const alarmsOf = (draft: Draft): string => (draft.extras?.reminder?.alarms ?? []
  */
 const leftAlone = (before: Draft, after: Draft, change: DraftChange, dated: boolean): boolean =>
   !dated &&
+  alike(before, after) &&
+  (change.slots === undefined || sameJson(before.slots, change.slots));
+
+/** Two states of a draft that read the same: its card, the form, its open questions (`leftAlone`). */
+const alike = (before: Draft, after: Draft): boolean =>
   draftChanges(before, after).length === 0 &&
   alarmsOf(before) === alarmsOf(after) &&
   sameJson(before.inviteeChoices, after.inviteeChoices) &&
   sameJson(before.placeChoice, after.placeChoice) &&
-  (change.slots === undefined || sameJson(before.slots, change.slots)) &&
   assumedOf(before) === assumedOf(after);
 
 /**
@@ -768,20 +772,29 @@ export const refineThread = (
 
 /**
  * The other readings found for words that changed nothing, put under
- * their answer — unless the answer is gone (Undo let its step go) or
- * was no answer of the kind (the turn changed something after all).
+ * their answer — unless the answer is gone (Undo let its step go), was
+ * no answer of the kind (the turn changed something after all), or the
+ * draft they were read against (`read`) reads otherwise by now (a pick
+ * or an edit landed while the model read the words): what they say they
+ * would do was worked out for it.
  */
 export const withReadings = (
   state: DraftThreadState,
   turnId: string,
   readings: ReadonlyArray<OtherReading>,
-): DraftThreadState =>
-  readings.length === 0 || !state.noChange.some((turn) => turn.id === turnId)
+  read: Draft,
+): DraftThreadState => {
+  const now = state.drafts.find((draft) => draft.id === read.id);
+  return readings.length === 0 ||
+    now === undefined ||
+    !alike(read, now) ||
+    !state.noChange.some((turn) => turn.id === turnId)
     ? state
     : {
         ...state,
         noChange: state.noChange.map((turn) => (turn.id === turnId ? { ...turn, readings } : turn)),
       };
+};
 
 /**
  * What another reading of the words would do, in words — the summary of
@@ -804,9 +817,12 @@ export const readingDoes = (
 ): string | undefined => {
   const after = refineThread(state, '', [change], () => 'reading');
   const step = after.steps.length > state.steps.length ? after.steps.at(-1) : undefined;
-  const guests = state.drafts.find((draft) => draft.id === change.id)?.extras?.attendees ?? [];
-  const joins = invite.filter((name) => guestsNamed(name, guests).length === 0);
-  const leaves = uninvite.filter((name) => guestsNamed(name, guests).length > 0);
+  const draft = state.drafts.find((each) => each.id === change.id);
+  // Only an event has guests: a turn leaves a to-do's alone.
+  const event = draft?.item.kind === 'event';
+  const guests = draft?.extras?.attendees ?? [];
+  const joins = event ? invite.filter((name) => guestsNamed(name, guests).length === 0) : [];
+  const leaves = event ? uninvite.filter((name) => guestsNamed(name, guests).length > 0) : [];
   const said = [
     ...(step?.kind === 'phrase' && step.summary !== 'no change' ? [step.summary] : []),
     ...(joins.length > 0 ? [`→ invites ${joins.join(', ')}`] : []),
@@ -1644,8 +1660,10 @@ export const useDraftThread = ({
       stillAsked: () => mine === request.current,
       utterance,
       would: async (text) => {
-        // Words that ask for free time are another tool's.
-        if (isFinderPhrase(readExtras(text).rest)) {
+        const { rest } = readExtras(text);
+        // Words that ask for free time are another tool's; words that
+        // address every draft ("both") would not be said to this one alone.
+        if (isFinderPhrase(rest) || refineTargets(base, rest).length !== 1) {
           return undefined;
         }
         const result = await reader.change({
@@ -1665,7 +1683,9 @@ export const useDraftThread = ({
           ...(result.reminders ? { reminders: result.reminders } : {}),
           ...(result.saidDay ? { saidDay: true } : {}),
         };
-        const guests = (result.invite?.length ?? 0) + (result.uninvite?.length ?? 0) > 0;
+        const guests =
+          draft.item.kind === 'event' &&
+          (result.invite?.length ?? 0) + (result.uninvite?.length ?? 0) > 0;
         const alerts = (result.reminders?.add.length ?? 0) > 0;
         return refuse?.(draft, change.item, guests, alerts) === undefined
           ? readingDoes(base, change, result)
@@ -1673,7 +1693,7 @@ export const useDraftThread = ({
       },
     });
     if (mine === request.current) {
-      setState((latest) => withReadings(latest, turnId, readings));
+      setState((latest) => withReadings(latest, turnId, readings, draft));
     }
   };
 

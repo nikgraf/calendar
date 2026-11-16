@@ -2118,9 +2118,13 @@ describe('words that change nothing', () => {
     const idle = refineThread(started, 'make it at too', [{ id: 'd1', item: dinner }], id);
     const turnId = idle.noChange[0]!.id;
     const readings = [{ does: '→ 14:00–15:00', text: 'make it at two' }];
-    expect(withReadings(idle, turnId, readings).noChange[0]?.readings).toEqual(readings);
-    expect(withReadings(idle, 'gone', readings)).toBe(idle);
-    expect(withReadings(idle, turnId, [])).toBe(idle);
+    const read = started.drafts[0]!;
+    expect(withReadings(idle, turnId, readings, read).noChange[0]?.readings).toEqual(readings);
+    expect(withReadings(idle, 'gone', readings, read)).toBe(idle);
+    expect(withReadings(idle, turnId, [], read)).toBe(idle);
+    // The draft reads otherwise by now (an edit landed while the model read): they were worked out for the old one.
+    const edited = updateDraft(idle, 0, later);
+    expect(withReadings(edited, turnId, readings, read)).toBe(edited);
   });
 
   it('say what another reading would do, or nothing where it would change nothing either', () => {
@@ -2140,6 +2144,10 @@ describe('words that change nothing', () => {
       reminders: undefined,
     });
     expect(readingDoes(guested, { id: 'd1', item: dinner }, { invite: ['Tom'] })).toBeUndefined();
+    // A to-do has no guests: words that invite change nothing on it.
+    const todo: QuickAddItem = { kind: 'task', prefill: { date: '2026-08-28', title: 'Call Tom' } };
+    const call = startThread([todo], 'call Tom', { id: ids() });
+    expect(readingDoes(call, { id: 'd1', item: todo }, { invite: ['Tom'] })).toBeUndefined();
     expect(
       readingDoes(
         guested,

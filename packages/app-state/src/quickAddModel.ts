@@ -76,7 +76,6 @@ export const useQuickAddModel = ({
     setGiven(text);
     setPhrase(text);
   }, []);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [voice, setVoice] = useState<VoiceState>('idle');
   const [voiceAvailable, setVoiceAvailable] = useState(false);
@@ -109,6 +108,7 @@ export const useQuickAddModel = ({
 
   /** The words being read, while they are: the phrase on its way (`pendingLine`). */
   const [sending, setSending] = useState<string | null>(null);
+  const busy = sending !== null;
 
   /**
    * Reads the phrase (Enter, Apply, or the end of a dictation, `heard`)
@@ -119,7 +119,6 @@ export const useQuickAddModel = ({
     if (!text.trim()) {
       return;
     }
-    setBusy(true);
     setSending(text);
     setError(null);
     try {
@@ -133,7 +132,6 @@ export const useQuickAddModel = ({
     } catch {
       setError('On-device model unavailable.');
     } finally {
-      setBusy(false);
       setSending(null);
     }
   };
