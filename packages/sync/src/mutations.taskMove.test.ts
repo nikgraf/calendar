@@ -1136,6 +1136,101 @@ describe('moveTask across providers', () => {
   });
 });
 
+/** Google answers every new task with a 404: the list is gone there. */
+const listGone = (calls: Array<string>): GoogleTasksClientShape => ({
+  ...recordingTasks(calls),
+  insertTask: ({ task, taskListId }) => {
+    calls.push(`insert ${taskListId}/${task.title}`);
+    return Effect.fail(new NotFoundError({ resource: 'task list' }));
+  },
+});
+
+describe('a task copy toward Google that does not land', () => {
+  it.effect('makes the reminder again, with what Reminders held', () => {
+    const fake = fakeWith();
+    const calls: Array<string> = [];
+    return Effect.gen(function* () {
+      yield* seed;
+      yield* move([APPLE, 'list-a', 'rem-timed'], ['acc-1', 'list-1'], {
+        dueDate: tomorrow,
+        title: 'Call mom',
+      });
+      expect(fake.state.reminders.has('rem-timed')).toBe(false);
+      yield* (yield* EventMutations).processPendingOps();
+      expect(calls).toEqual(['insert list-1/Call mom']);
+      expect(yield* queued).toEqual([]);
+      const remade = [...fake.state.reminders.values()].filter(
+        (reminder) => reminder.title === 'Call mom',
+      );
+      expect(remade).toHaveLength(1);
+      expect(remade[0]).toMatchObject({
+        alarms: [-15],
+        dueDate: tomorrow,
+        dueTime: '09:00',
+        listId: 'list-a',
+        url: 'https://example.com',
+      });
+    }).pipe(noYield, Effect.provide(testLayer(fake.client, listGone(calls))));
+  });
+
+  it.effect('a completed reminder comes back completed', () => {
+    const fake = fakeWith();
+    const calls: Array<string> = [];
+    return Effect.gen(function* () {
+      yield* seed;
+      yield* move([APPLE, 'list-a', 'rem-done'], ['acc-1', 'list-1'], {
+        dueDate: tomorrow,
+        title: 'Water plants',
+      });
+      yield* (yield* EventMutations).processPendingOps();
+      expect(yield* queued).toEqual([]);
+      const remade = [...fake.state.reminders.values()].filter(
+        (reminder) => reminder.title === 'Water plants',
+      );
+      expect(remade.map((reminder) => reminder.completed)).toEqual([true]);
+    }).pipe(noYield, Effect.provide(testLayer(fake.client, listGone(calls))));
+  });
+
+  it.effect('a Google task moved to another account stays until its copy lands', () => {
+    const fake = fakeWith();
+    const calls: Array<string> = [];
+    return Effect.gen(function* () {
+      yield* seed;
+      yield* move(['acc-1', 'list-1', 't1'], ['acc-2', 'list-x'], {
+        dueDate: tomorrow,
+        title: 'Pay rent',
+      });
+      expect(yield* rowAt('acc-1', 'list-1', 't1')).toBeUndefined();
+      const mutations = yield* EventMutations;
+      yield* mutations.processPendingOps();
+      const ops = yield* PendingOpRepo;
+      for (const op of yield* ops.listAll()) {
+        yield* ops.markFailed(op.id, op.attempts, 0, 'test');
+      }
+      yield* mutations.processPendingOps();
+      // The copy's list is gone: the source was never deleted, and is back.
+      expect(calls).toEqual(['insert list-x/Pay rent']);
+      expect(yield* queued).toEqual([]);
+      expect((yield* rowAt('acc-1', 'list-1', 't1'))?.title).toBe('Pay rent');
+    }).pipe(noYield, Effect.provide(testLayer(fake.client, listGone(calls))));
+  });
+
+  it.effect('a Google task moved to another account goes once its copy lands', () => {
+    const fake = fakeWith();
+    const calls: Array<string> = [];
+    return Effect.gen(function* () {
+      yield* seed;
+      yield* move(['acc-1', 'list-1', 't1'], ['acc-2', 'list-x'], {
+        dueDate: tomorrow,
+        title: 'Pay rent',
+      });
+      yield* (yield* EventMutations).processPendingOps();
+      expect(calls).toEqual(['insert list-x/Pay rent', 'delete list-1/t1']);
+      expect(yield* queued).toEqual([]);
+    }).pipe(noYield, Effect.provide(testLayer(fake.client, recordingTasks(calls))));
+  });
+});
+
 describe('deleting a Google parent task', () => {
   it.effect('takes its subtasks first, each a delete of its own, as Google does', () => {
     const fake = fakeWith();

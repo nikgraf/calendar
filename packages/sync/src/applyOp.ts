@@ -1,6 +1,7 @@
 import {
   Attendee,
   contrastingTextColor,
+  type CopySource,
   EventRecord,
   failureText,
   normalizeHexColor,
@@ -72,6 +73,9 @@ const sendUpdatesFor = (
  * conflict. Split out of mutations.ts —
  * the queue-correctness rules live in docs/architecture.md.
  */
+/** An Apple item a copy toward Google came from (`CopySource`): deleted from EventKit, kept as it was. */
+export type AppleCopySource = Exclude<CopySource, { readonly kind: 'held' }>;
+
 export interface ApplyOpDeps {
   readonly accountRepo: AccountRepoShape;
   readonly calendarRepo: CalendarRepoShape;
@@ -80,6 +84,12 @@ export interface ApplyOpDeps {
   /** Broadcasts that a queued change was permanently rejected (DROPPED_NOTICE_KEY). */
   readonly notifyDropped: Effect.Effect<void>;
   readonly pendingOpRepo: PendingOpRepoShape;
+  /**
+   * Makes an Apple source again, as it was when a move or a conversion
+   * copied it toward Google: the copy will not land. Logs what it cannot
+   * make; never fails.
+   */
+  readonly restoreCopySource: (source: AppleCopySource) => Effect.Effect<void>;
   readonly taskRepo: TaskRepoShape;
   readonly tasksClient: GoogleTasksClientShape;
   /**
@@ -344,6 +354,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
     eventRepo,
     notifyDropped,
     pendingOpRepo,
+    restoreCopySource,
     taskRepo,
     tasksClient,
     transaction,
@@ -869,6 +880,9 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       case 'create':
         return Effect.ignore(
           Effect.gen(function* () {
+            if (revert) {
+              yield* releaseCopySource(op);
+            }
             yield* eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
             // A move queued behind a sent create (mutations.ts
             // googleServerMove) already put the rows at its destination.
@@ -903,6 +917,9 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         return listId
           ? Effect.ignore(
               Effect.gen(function* () {
+                if (revert) {
+                  yield* releaseCopySource(op);
+                }
                 yield* taskRepo.removeTask(op.accountId, listId, op.eventId);
                 yield* retireFollowers(op, listId);
                 // Subtasks a move carried along under it wait for its server
@@ -964,6 +981,47 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         return Effect.void;
     }
   };
+
+  /**
+   * A copy that will not land (dropped, discarded, its calendar or list
+   * gone): what it was copied from stays. A Google source's deletes it
+   * held go with it, putting the source back as Google has it; an Apple
+   * source is made again. A copy the user deleted before it went left the
+   * queue without this: its source goes as moved.
+   */
+  const releaseCopySource = (op: PendingOp): Effect.Effect<void, SqlError> =>
+    Effect.gen(function* () {
+      const source = op.copySource;
+      if (source === undefined) {
+        return;
+      }
+      if (source.kind !== 'held') {
+        return yield* restoreCopySource(source);
+      }
+      for (const opId of source.opIds) {
+        const held = yield* pendingOpRepo.getById(opId);
+        if (held) {
+          yield* pendingOpRepo.remove(opId);
+          yield* releaseRow(held);
+        }
+      }
+    });
+
+  /**
+   * A move's or a conversion's delete of its source waits while a copy
+   * that holds it (`copySource`) is queued: sent first, it left nothing
+   * when Google turned the copy down.
+   */
+  const copyGate = (op: PendingOp): Effect.Effect<ApplyOutcome | undefined, SqlError> =>
+    op.kind !== 'delete' && op.kind !== 'deleteTask'
+      ? Effect.succeed(undefined)
+      : Effect.map(pendingOpRepo.listAll(), (queued) =>
+          queued.some(
+            (other) => other.copySource?.kind === 'held' && other.copySource.opIds.includes(op.id),
+          )
+            ? retry('waiting for its copy to land')
+            : undefined,
+        );
 
   /** A series' local rows (master + overrides) in one calendar. */
   const seriesRows = (accountId: string, calendarId: string, masterId: string) =>
@@ -1222,6 +1280,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
           yield* taskRepo.removeTask(op.accountId, op.taskListId, op.eventId);
           if (op.kind === 'createTask') {
             yield* retireFollowers(op, op.taskListId);
+            yield* releaseCopySource(op);
           }
         }
         if (op.kind === 'deleteTask') {
@@ -1229,6 +1288,9 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         }
       } else {
         yield* eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
+        if (op.kind === 'create') {
+          yield* releaseCopySource(op);
+        }
       }
       return 'done' as const;
     });
@@ -2302,7 +2364,8 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         tempIdGate(op) ??
         (yield* taskOrderGate(op)) ??
         (yield* seriesOrderGate(op)) ??
-        (yield* exceptionDeleteGate(op));
+        (yield* exceptionDeleteGate(op)) ??
+        (yield* copyGate(op));
       if (waiting !== undefined) {
         return waiting;
       }

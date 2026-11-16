@@ -398,9 +398,9 @@ it whenever a kind is added. Rules that keep the queue correct:
   becomes a task or a task an event by creating the other kind from the
   editor's draft and then deleting the source — the same copy-then-delete
   as a cross-provider move, through the shared `crossStore` ordering
-  (Google → Google in one transaction; toward Google the queued create
-  first, then the EventKit delete; toward Apple the EventKit create first,
-  then the queued delete). A recurring event converts as its whole series
+  (toward Apple the EventKit create first, then the queued delete; toward
+  Google the source outlasts its queued copy — see moving between
+  calendars). A recurring event converts as its whole series
   or, when the call names an `occurrence` by its slot, as that occurrence
   alone: the delete is then the instance delete "This event" runs, so the
   series skips the slot and keeps its rule and its other occurrences. The
@@ -918,7 +918,20 @@ it whenever a kind is added. Rules that keep the queue correct:
   Google → same Google account = queued `events.move` (keeps everything;
   organizer only); Apple → Apple = `event.calendar = target` saved with
   the series span; everything else = create in the target, then delete
-  the source (a failure between leaves a duplicate, never a loss). Copies
+  the source (a failure between leaves a duplicate, never a loss). A copy
+  toward Google is only queued, and Google can still turn it down (a 4xx,
+  a calendar or list gone, a discard), so its create carries what it was
+  copied from (`PendingOp.copySource`): a Google source's deletes are
+  queued in the same transaction and `held` — the drain sends them only
+  once no copy holding them is queued (`copyGate`), and makes them due
+  when it lands — while a copy that will not land takes them back, which
+  puts the source back as Google has it (`releaseCopySource`). An Apple
+  source leaves EventKit at once and rides on the copy as it was
+  (`appleEvent` with its URL, `reminder`); a copy that will not land
+  makes it again — a new identifier, a series without its changed
+  occurrences. A copy the user deletes before it goes leaves the queue
+  without that: the source goes as moved. A Google source that is itself
+  an unsent copy hands its `copySource` on to the next copy. Copies
   never carry guests; a Google conference link becomes the Apple event's
   URL, an Apple URL is appended to the Google description; modified
   occurrences are dropped. The editor asks `previewMove` first and
