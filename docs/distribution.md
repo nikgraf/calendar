@@ -157,6 +157,14 @@ The native bridges (`packages/*/swift`) reach the app through symlinks in
 `apps/ios/fingerprint.config.cjs` adds those directories as extra sources
 — without it a Swift-only change shipped the previous binary.
 
+When a fingerprint moves and nothing native changed, diff the sources:
+`APP_VARIANT=development npx expo-updates fingerprint:generate --platform
+ios` in `apps/ios` on the branch and on `origin/main`, then compare the
+`.sources` lists (`jq '.sources'`); the one that differs names the
+culprit. Seen so far: an edit to any `apps/ios/package.json` script (in a
+JS-only PR, leave a dead flag there rather than edit it), and a `.ts` app
+config, which pulled Babel's modules in as loaded sources.
+
 `expo-notifications`' config plugin adds the `aps-environment` (push)
 entitlement, which the App Store profile does not carry. Notifications are
 local only, so `apps/ios/plugins/withLocalNotificationsOnly.cjs` (listed
@@ -321,6 +329,18 @@ credentials ever need recreating:
 5. TestFlight internal testing: add yourself (and teammates) as internal
    testers in App Store Connect — internal builds need no Apple review.
 
+## When an EAS build fails before building
+
+`eas build` stopping in its credentials step with Apple's 403 "PLA
+Update available … your team's Account Holder … must agree to the latest
+Program License Agreement" (seen registering the share extension's
+bundle id) is not the code: Apple blocks the App Store Connect API until
+the Account Holder accepts the new agreement at
+developer.apple.com/account. That is Nik's action; once he has, rerun
+the failed jobs (`gh run rerun <run> --failed`; one right after accepting
+still got the 403, so give it a few minutes). Each failed attempt still
+takes a build number from EAS's remote counter, which is harmless.
+
 ## Costs / quotas
 
 EAS free tier: ~30 cloud builds/month; OTA updates are effectively free at
@@ -352,7 +372,9 @@ dragging the `.app` in.
 module, config plugin, Swift bridge change, or Expo SDK bump). JS-only
 changes reload over Metro. `apps/ios/scripts/check-devclient.mjs` (run by
 `pnpm test:e2e:ios`) warns when the installed client's fingerprint differs
-from the working tree's. A dev build loads from Metro: **Settings ›
+from the working tree's (what a stale client looks like:
+`platform-notes.md`; installing the matching build by fingerprint: the
+`ios-simulator` skill). A dev build loads from Metro: **Settings ›
 Advanced › PR Preview** still shows the channel controls there, but
 expo-updates refuses the override and the page shows its error.
 
@@ -420,6 +442,11 @@ Useful for debugging native code or working offline. First compile takes
 a weird state, rerun prebuild with `--clean`. Xcode 27 has no Simulator.app:
 `expo run:ios` and `expo start --ios` bring the device up in Device Hub
 instead (Expo CLI 57.0.28 and later), and `simctl` works as before.
+CocoaPods dies with "Unicode Normalization not appropriate for
+ASCII-8BIT" (prebuild still reports success) in a shell without a UTF-8
+locale, which is what an agent's shell often has: `export
+LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8` first. A build that crashes before
+any JS on iOS 27 is the scene check (`platform-notes.md`).
 
 # Website (solunivo.com)
 
@@ -488,7 +515,7 @@ Recapture them when the apps' look changes:
   Apple fixtures, dark through `Emulation.setEmulatedMedia`). It also
   writes the week's Google events and tasks to `google.json` for the
   iPhone capture. The spec skips without `SHOT_OUT`.
-- **iPhone:** the dev client on the dedicated simulator with Metro
+- **iPhone:** the dev client on the booted simulator with Metro
   started from the repo root as `EXPO_PUBLIC_CALENDAR_GOOGLE=fixture
   EXPO_PUBLIC_CALENDAR_MODEL=fixture EXPO_PUBLIC_CALENDAR_ONBOARDING=off
   EXPO_PUBLIC_CALENDAR_NOTIFICATIONS=off CI=1 pnpm --filter @calendar/ios
