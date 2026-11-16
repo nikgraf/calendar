@@ -330,7 +330,7 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   screenshots or its record. Rejected: syncing the memory folder (no
   project setting for its path, VMs would share files, mostly PR
   history); round 1 of both reviewers in parallel. Open: making the check
-  required, the sync-queue sequence test the self-check asks for.
+  required; mechanical guards for the self-check's classes.
 
 ## Architecture and sync path
 

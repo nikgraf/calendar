@@ -562,7 +562,8 @@ Rules a change to the queue keeps (each broke once):
 - An op the user undid never stays queued across a wait for the drain's
   gate: the undo takes it out in its own transaction and the drain
   decides (a discarded cut, left queued, was sent by a drain already
-  waiting).
+  waiting). The one exception is a move that was already sent: it stays
+  queued until `settleDiscardedMove` settles it under the gate.
 - A fix to one queue path checks every producer of the op it touches,
   a reviewer's included: cuts and rule changes both produce
   `dropOverridesFrom`, and a fallback keyed on it broke rule changes.

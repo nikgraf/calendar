@@ -158,8 +158,8 @@ thread does. The report keeps the raw model answers per turn.
 - Notes and notifications are what the model's answer says, folded
   into the draft as the thread does it.
 
-German cases name a weekday for the day, never "morgen", which is also
-"morning".
+A new German case names a weekday for the day rather than "morgen",
+which is also "morning" (some older cases still use it).
 
 A quick probe is a few `probe-*.json` cases dropped into `cases/`, run
 with `MODEL_BENCH_CASES=probe-` and `MODEL_BENCH_OUT=<scratch>`, then

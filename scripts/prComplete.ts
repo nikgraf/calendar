@@ -57,7 +57,10 @@ export const PLACEHOLDERS = [
   'One or two sentences on what this PR does.',
   'The change as the user meets it',
   'The decision.** Why. Rejected: the alternative',
+  'what this PR leaves open',
   'the new and changed tests, and what each proves',
+  'specs added or changed; what ran locally',
+  'flows added or changed; what ran locally',
   'found … Fixed in `<sha>`',
 ] as const;
 
@@ -165,13 +168,25 @@ const decisionsGaps = (pr: PullRequest, body: string): ReadonlyArray<string> => 
   ];
 };
 
-/** Everything the PR still lacks, as sentences for the check's output; empty when it is complete. */
-/** Text still to be written: the template's placeholders, an empty review section, a line saying something is owed. */
+/**
+ * A review section's line saying a round has not run ("Codex has not run
+ * yet.", "- **Round 1** pending: usage limit"). "Pending" counts only right
+ * after a round: findings here talk about pending rows and ops. "I did not
+ * run a second round" is a choice the rule allows, not owed work.
+ */
+const NOT_RUN =
+  /\b(?:has(?:n't| not)(?: yet)? (?:been )?run|not (?:been )?run yet|yet to run)\b|\bround(?: \d+)?\**:?\s+(?:is\s+)?pending\b/i;
+
+/** Text still to be written: the template's placeholders, an empty or not-run review section, a line saying something is owed. */
 const unfinished = (
   body: string,
   parts: ReadonlyArray<{ heading: string; text: string }>,
 ): ReadonlyArray<string> => {
   const owed = body.split('\n').find((line) => OWED.test(line.replaceAll(/`[^`]*`/g, '')));
+  const reviews = parts.filter(({ heading }) => /^(?:After review|Reviews?)\b/i.test(heading));
+  const notRun = reviews
+    .flatMap(({ text }) => text.split('\n'))
+    .find((line) => NOT_RUN.test(line.replaceAll(/`[^`]*`/g, '')));
   return [
     ...PLACEHOLDERS.filter((text) => body.includes(text)).map(
       (text) => `The body still holds the template's "${text}".`,
@@ -180,8 +195,13 @@ const unfinished = (
       .filter(({ heading, text }) => /^After review\b/i.test(heading) && text.trim() === '')
       .map(({ heading }) => `"## ${heading}" is empty: say what each round found.`),
     ...(owed === undefined ? [] : [`The body says something is still owed: "${owed.trim()}"`]),
+    ...(notRun === undefined
+      ? []
+      : [`A review section says a round has not run: "${notRun.trim()}"`]),
   ];
 };
+
+/** Everything the PR still lacks, as sentences for the check's output; empty when it is complete. */
 
 export const missingParts = (pr: PullRequest): ReadonlyArray<string> => {
   const body = withoutComments(pr.body).replaceAll('\r\n', '\n');

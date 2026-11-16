@@ -75,13 +75,13 @@ in the `ios-simulator` skill (`.agents/skills/ios-simulator/SKILL.md`).
 ## Gestures, Reanimated and the React Compiler
 
 - **Two `activateAfterLongPress` pans both start.** Gesture Handler
-  reports a long-press pan active (`onStart` runs) before UIKit honours
+  reports a long-press pan active (`onActivate` runs) before UIKit honours
   `requireExternalGestureToFail`, so a pan that should wait on another
-  starts too; the one UIKit fails afterwards never gets `onEnd` or
-  `onFinalize`, and whatever state it set sticks (a block stayed lifted,
+  starts too; the one UIKit fails afterwards never gets `onDeactivate`
+  or `onFinalize`, and whatever state it set sticks (a block stayed lifted,
   no drag worked until relaunch). Never pair two long-press gestures
   through wait-for: give one gesture the whole region and branch on the
-  touch-down position recorded in `onBegin` — not `onStart`'s, since a
+  touch-down position recorded in `onBegin` — not `onActivate`'s, since a
   held finger drifts up to 10 pt before activation (`DraggableEventBlock`,
   decisions.md → One pan per iOS event block).
 - **"Reading from `value` during component render", dozens of times per
@@ -134,8 +134,8 @@ in the `ios-simulator` skill (`.agents/skills/ios-simulator/SKILL.md`).
 
 - **A page pushed into Settings from outside has no Back.** `router.push`
   into a nested stack from outside it (`/settings/x` from the calendar)
-  ignores the layout's `initialRouteName` unless pushed with `{
-  withAnchor: true }` (`settingsCodeInbox.ts`).
+  ignores the layout's anchor (`unstable_settings = { anchor: 'index' }`)
+  unless pushed with `{ withAnchor: true }` (`settingsCodeInbox.ts`).
 - **`usePathname` lags one commit behind `router.push`**: the push is
   queued and dispatched in the navigation container's passive effect. A
   host rule that waits on a route keeps its own "asked" flag.
@@ -375,9 +375,10 @@ in the `ios-simulator` skill (`.agents/skills/ios-simulator/SKILL.md`).
   shared prefix, which cost 0.26 s of a 0.9 s phrase on an iPhone 16,
   where a transformer (Gemma 4 E2B) reused 92 % of the prompt. Untried:
   saving the state after the list of days.
-- **Simulator timings are not a phone's**: the simulator reports Metal
-  (`gpu: true`) and runs several times slower than the Mac itself. Never
-  quote them as a phone's.
+- **Simulator timings are not a phone's**: the simulator has no Metal for
+  llama.rn (`gpu: false`, "Metal is not supported in the simulator"), so
+  the model runs on the CPU, several times slower than the Mac itself.
+  Never quote them as a phone's.
 - **Name a schema boolean for the rare case.** A required `understood`
   came back false from small models on phrases they had read; it became
   `nothingToSchedule`.

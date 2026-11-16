@@ -515,8 +515,8 @@ yesterday, `Pacific/Kiritimati` as tomorrow after 10:00 UTC).
 - The engine reads `Clock`, and `it.effect` runs under `TestClock` —
   advance it between passes or `passStartedAt` never moves. Two-mutation
   queue tests pin the fiber yield point with the `noYield` helper (a
-  migration can move it and flip the test): `enqueueAndKick` forks the
-  drain detached, Effect yields every 2048 ops, and `Effect.provide(layer)`
+  migration can move it and flip the test): `kick` forks the drain
+  detached once the write's transaction committed, Effect yields every 2048 ops, and `Effect.provide(layer)`
   runs the migrations in the same fiber, so a new migration lets the drain
   run between two calls and a coalescing test reads "expected 1 op, got
   2" with nothing wrong in the code.
@@ -1447,7 +1447,8 @@ Selector gotchas (each caused a real failure):
   and its first tap on a control is a scroll DOWN plus the tap, even
   where the control happens to be on screen on one simulator.
 - Maestro's tree lists the testIDs nested inside an accessible
-  `Pressable`, and `@expo/ui`'s `SwitchRow` takes a tap by its
+  `Pressable`, and the app's own `SwitchRow` (`GroupedList.tsx`) takes a
+  tap by its
   `switchTestID` (flow 12's `event-all-day`). It follows that a passing
   flow says nothing about what VoiceOver reaches: the XCUITest tree shows
   the children of an `accessible` view, which VoiceOver does not.

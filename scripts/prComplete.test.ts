@@ -115,9 +115,21 @@ describe('missingParts', () => {
       join(import.meta.dirname, '..', '.github', 'pull_request_template.md'),
       'utf8',
     );
-    // Every placeholder is the template's, so a template edit can't leave the check behind.
+    // Both ways, so a template edit can't leave the check behind: every
+    // placeholder is the template's, and every template line to replace
+    // (outside comments, not a heading, not the Gate line one keeps) has one.
     for (const text of PLACEHOLDERS) {
       expect(template).toContain(text);
+    }
+    const toReplace = template
+      .replaceAll(/<!--[\s\S]*?-->/g, '')
+      .split('\n')
+      .filter((line) => line.trim() !== '' && !line.startsWith('#') && !line.includes('**Gate:**'));
+    for (const line of toReplace) {
+      expect(
+        PLACEHOLDERS.some((text) => line.includes(text)),
+        line,
+      ).toBe(true);
     }
     expect(
       missingParts({ ...complete, body: template, files: [] }).filter((part) =>
@@ -147,14 +159,46 @@ describe('missingParts', () => {
         ...complete,
         body: together('**Claude Opus 5.5 (xhigh), round 1.** Clean. Codex has not run yet.'),
       }),
-    ).toEqual(['No "## After review (Codex …)" section: at least one Codex round is owed.']);
+    ).toEqual([
+      'No "## After review (Codex …)" section: at least one Codex round is owed.',
+      'A review section says a round has not run: "**Claude Opus 5.5 (xhigh), round 1.** Clean. Codex has not run yet."',
+    ]);
     const codexOnly = complete.body.replace(
       /## After review \(Claude[\s\S]*$/,
       '## After review (Codex, gpt-6-astra, xhigh)\n\n- **Round 1** found nothing. The Opus round is pending.\n',
     );
     expect(missingParts({ ...complete, body: codexOnly })).toEqual([
       'No "## After review (Claude Opus …)" section: the Opus rounds are owed.',
+      'A review section says a round has not run: "- **Round 1** found nothing. The Opus round is pending."',
     ]);
+  });
+
+  it('fails a review section that says a round has not run', () => {
+    const codexSays = (line: string) =>
+      complete.body.replace(/(## After review \(Codex[^\n]*\n\n)[\s\S]*$/, `$1${line}\n`);
+    for (const line of [
+      'Codex has not run yet.',
+      '- **Round 1** pending: usage limit until 15:00.',
+      'The round is pending.',
+    ]) {
+      expect(missingParts({ ...complete, body: codexSays(line) })).toEqual([
+        `A review section says a round has not run: "${line}"`,
+      ]);
+    }
+    // A round not taken is the author's call (1–2 Opus rounds).
+    expect(
+      missingParts({
+        ...complete,
+        body: codexSays('- **Round 1** clean. I did not run a second round: the first was clean.'),
+      }),
+    ).toEqual([]);
+    // Findings about pending rows and ops are findings.
+    expect(
+      missingParts({
+        ...complete,
+        body: codexSays('- **Round 1** found a pending row left with no op. Fixed.'),
+      }),
+    ).toEqual([]);
   });
 
   it('fails a body that says something is still owed', () => {
