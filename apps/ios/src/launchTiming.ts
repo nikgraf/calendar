@@ -1,11 +1,11 @@
 import { File, Paths } from 'expo-file-system';
 import { loadLaunchTimingModule } from '../modules/solunivo-launch-timing/index.ts';
 import {
+  addLaunch,
   type LaunchRecord,
   type LaunchStep,
   parseLaunches,
   reachStep,
-  startLaunch,
 } from './launchTimes.ts';
 
 /**
@@ -14,9 +14,12 @@ import {
  * (see `launchTimes.ts`). Imported by `index.ts` right after the polyfill,
  * so its evaluation is when the app's JavaScript started.
  *
- * Nothing is recorded for a reload (the bundle runs again in the same
- * process, PR Preview's Load), a launch in the background (a background
- * task's), or a binary without the native module.
+ * The native side (`solunivo-launch-timing`) says when this launch began
+ * and which earlier ones were closed before their JavaScript ran; those go
+ * in as launches with no step. Nothing is recorded for a reload
+ * (the bundle runs again in the same process: PR Preview's Load), a launch
+ * in the background (no window: a background task's) or a binary without
+ * the native module.
  */
 const scriptStarted = Date.now();
 
@@ -33,11 +36,10 @@ export const readLaunchTimes = (): ReadonlyArray<LaunchRecord> => {
   }
 };
 
-/** The records this launch writes, once it was taken; undefined for one not recorded. */
+/** The records as this launch last wrote them; undefined for a launch not recorded. */
 let records: ReadonlyArray<LaunchRecord> | undefined;
 
 const write = (next: ReadonlyArray<LaunchRecord>) => {
-  records = next;
   try {
     // Synchronous: a launch closed right after this step keeps it.
     file().writeSync(JSON.stringify(next));
@@ -46,9 +48,18 @@ const write = (next: ReadonlyArray<LaunchRecord>) => {
   }
 };
 
-const launch = loadLaunchTimingModule()?.take();
-if (launch) {
-  write(startLaunch(readLaunchTimes(), launch, 'script', scriptStarted));
+const taken = loadLaunchTimingModule()?.take();
+const unfinished = taken?.unfinished ?? [];
+if (taken?.start !== undefined || unfinished.length > 0) {
+  let next = readLaunchTimes();
+  for (const start of unfinished) {
+    next = addLaunch(next, start);
+  }
+  if (taken?.start !== undefined) {
+    next = reachStep(addLaunch(next, taken.start), 'script', scriptStarted);
+    records = next;
+  }
+  write(next);
 }
 
 /** This launch reached `step`: kept the first time only. */
@@ -58,6 +69,7 @@ export const markLaunch = (step: LaunchStep): void => {
   }
   const next = reachStep(records, step, Date.now());
   if (next !== records) {
+    records = next;
     write(next);
   }
 };

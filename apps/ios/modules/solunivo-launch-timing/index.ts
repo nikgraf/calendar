@@ -1,21 +1,21 @@
 import { requireNativeModule } from 'expo';
 
 /**
- * When this launch began, in milliseconds since 1970: the process's start,
- * or UIKit's launch call for a process iOS prewarmed (`from: 'launch'`).
+ * The launches the native side saw start, in milliseconds since 1970: this
+ * one once its window's scene connected (`start`), and the earlier ones
+ * closed before their JavaScript ran, oldest first (`unfinished`).
  */
-export interface LaunchStart {
-  readonly from: 'launch' | 'process';
-  readonly start: number;
+export interface TakenLaunches {
+  readonly start?: number;
+  readonly unfinished?: ReadonlyArray<number>;
 }
 
 interface SolunivoLaunchTimingNative {
   /**
-   * The launch's start for its first reader in this process; null for a
-   * later one (a reload runs the bundle again) and for a launch in the
-   * background.
+   * The launches for this process's first reader; empty for a later one (a
+   * reload runs the bundle again in the same process).
    */
-  readonly take: () => LaunchStart | null;
+  readonly take: () => TakenLaunches;
 }
 
 /**

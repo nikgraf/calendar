@@ -2,53 +2,87 @@ import ExpoModulesCore
 import Foundation
 import UIKit
 
-/// When this launch began, for the launch times Settings › Advanced ›
+/// When each launch began, for the launch times Settings › Advanced ›
 /// Diagnostics shows. JavaScript can't see the time before its bundle
-/// runs: expo-updates' wait at launch, React Native's start and the
-/// bundle's load all happen first, and React Native's own startup marker
-/// is set only after them.
+/// runs: React Native's start and the bundle's load happen first (and
+/// React Native's own startup marker is set only after them), and a
+/// launch can hang there.
 ///
-/// The start is the process's, from the kernel, unless iOS prewarmed the
-/// process: then it may have started minutes before anyone tapped the
-/// icon, and UIKit's launch call is the start instead.
+/// A launch starts with its process, read from the kernel. A process that
+/// was running before the tap (prewarmed by iOS, or woken in the
+/// background and suspended) starts when its window's scene connects.
+/// That start is kept in the user defaults until the launch's JavaScript
+/// takes it, so launches closed before their JavaScript ran are found by
+/// the next one that gets that far.
 final class LaunchClock: @unchecked Sendable {
   static let shared = LaunchClock()
 
+  private static let pendingKey = "SolunivoLaunchTiming.pending"
+  /// A scene connects tens of milliseconds after UIKit's launch call on a
+  /// tap; one that connects later joined a process that was already there.
+  private static let promptSceneMs: Double = 5000
+
   private let lock = NSLock()
-  private var launch: (at: Double, prewarmed: Bool)?
-  private var sceneConnected = false
+  private var launchedAt: Double?
+  private var prewarmed = false
+  /// This launch's start, once its first scene connected.
+  private var current: Double?
   private var taken = false
 
   /// Called once, from the app delegate's launch call.
   func launched(at: Double, prewarmed: Bool) {
-    lock.withLock { launch = (at, prewarmed) }
-  }
-
-  /// A scene connected: the launch draws a window. Under the scene life
-  /// cycle `applicationState` reads background in the launch call of every
-  /// launch, since no scene is connected yet; a scene is what tells a
-  /// tap's launch from a background task's (as `solunivo-background-launch`
-  /// tells them apart).
-  func connectedScene() {
-    lock.withLock { sceneConnected = true }
-  }
-
-  /// The launch's start for its first reader, nil for any later one: a
-  /// reload (PR Preview's Load) runs the bundle again in the same process,
-  /// and its times would count from the process's start. Nil too for a
-  /// launch without a scene when its JavaScript starts (a background
-  /// task's), which draws nothing.
-  func take() -> [String: Any]? {
     lock.withLock {
-      defer { taken = true }
-      guard !taken, sceneConnected, let launch else {
-        return nil
-      }
-      if !launch.prewarmed, let start = Self.processStart() {
-        return ["from": "process", "start": start]
-      }
-      return ["from": "launch", "start": launch.at]
+      launchedAt = at
+      self.prewarmed = prewarmed
     }
+  }
+
+  /// A scene connected: the launch draws a window. Only the process's
+  /// first counts, and none after its JavaScript ran (a background task's
+  /// run that the user then opened draws no launch of its own).
+  func connectedScene(at now: Double) {
+    lock.withLock {
+      guard current == nil, !taken else {
+        return
+      }
+      var start = now
+      if !prewarmed, let launchedAt, now - launchedAt < Self.promptSceneMs,
+        let processStart = Self.processStart()
+      {
+        start = processStart
+      }
+      current = start
+      let pending = Self.pending() + [start]
+      UserDefaults.standard.set(Array(pending.suffix(Self.keptPending)), forKey: Self.pendingKey)
+    }
+  }
+
+  /// For the launch's first reader: its start once a scene connected
+  /// (`start`), and the earlier launches that never reached their
+  /// JavaScript, oldest first (`unfinished`; a background launch finds them
+  /// too). Empty for any later reader, since a reload (PR Preview's Load)
+  /// runs the bundle again in the same process.
+  func take() -> [String: Any] {
+    lock.withLock {
+      guard !taken else {
+        return [:]
+      }
+      taken = true
+      let unfinished = Self.pending().filter { $0 != current }
+      UserDefaults.standard.removeObject(forKey: Self.pendingKey)
+      var result: [String: Any] = ["unfinished": unfinished]
+      if let current {
+        result["start"] = current
+      }
+      return result
+    }
+  }
+
+  /// How many unfinished launches wait at most.
+  private static let keptPending = 10
+
+  private static func pending() -> [Double] {
+    UserDefaults.standard.array(forKey: pendingKey) as? [Double] ?? []
   }
 
   /// The process's start in milliseconds since 1970.
@@ -64,22 +98,26 @@ final class LaunchClock: @unchecked Sendable {
   }
 }
 
+private func nowMs() -> Double {
+  Date().timeIntervalSince1970 * 1000
+}
+
 public final class LaunchTimingAppDelegateSubscriber: ExpoAppDelegateSubscriber {
   public func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
     LaunchClock.shared.launched(
-      at: Date().timeIntervalSince1970 * 1000,
+      at: nowMs(),
       // iOS sets it in a process it started ahead of the launch.
       prewarmed: ProcessInfo.processInfo.environment["ActivePrewarm"] == "1"
     )
     // UIKit connects the launch's scene after this call returns, and the
-    // scene starts React Native, so the flag is set before the bundle runs.
+    // scene starts React Native, so the start is set before the bundle runs.
     sceneObserver = NotificationCenter.default.addObserver(
       forName: UIScene.willConnectNotification, object: nil, queue: nil
     ) { _ in
-      LaunchClock.shared.connectedScene()
+      LaunchClock.shared.connectedScene(at: nowMs())
     }
     return false
   }
@@ -92,7 +130,7 @@ public class SolunivoLaunchTimingModule: Module {
     Name("SolunivoLaunchTiming")
 
     // Synchronous: the bundle reads it as it starts, before anything waits.
-    Function("take") { () -> [String: Any]? in
+    Function("take") { () -> [String: Any] in
       LaunchClock.shared.take()
     }
   }

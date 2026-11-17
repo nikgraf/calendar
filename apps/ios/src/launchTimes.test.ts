@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
 import {
+  addLaunch,
   KEPT_LAUNCHES,
   type LaunchRecord,
   launchLine,
@@ -7,47 +8,34 @@ import {
   launchTotal,
   parseLaunches,
   reachStep,
-  startLaunch,
 } from './launchTimes.ts';
 
 /** 09:23:05 UTC on some day; every time here is formatted in UTC. */
 const START = Date.UTC(2026, 10, 17, 9, 23, 5);
 
-const launch = (steps: LaunchRecord['steps'], from: LaunchRecord['from'] = 'process') => ({
-  from,
-  start: START,
-  steps,
-});
+const launch = (steps: LaunchRecord['steps']): LaunchRecord => ({ start: START, steps });
 
-describe('startLaunch', () => {
-  it('puts the new launch first with its first step counted from its start', () => {
+describe('addLaunch', () => {
+  it('puts the new launch first, no step reached yet', () => {
     const older = launch({ calendar: 900, firstFrame: 600, script: 400 });
-    const [newest, ...rest] = startLaunch(
-      [older],
-      { from: 'process', start: 1000 },
-      'script',
-      3900,
-    );
-    expect(newest).toEqual({ from: 'process', start: 1000, steps: { script: 2900 } });
-    expect(rest).toEqual([older]);
+    expect(addLaunch([older], 1000)).toEqual([{ start: 1000, steps: {} }, older]);
   });
 
   it(`keeps the last ${String(KEPT_LAUNCHES)} launches`, () => {
-    const full = Array.from({ length: KEPT_LAUNCHES }, (_, index) => ({
-      from: 'process' as const,
-      start: index,
-      steps: {},
-    }));
-    const next = startLaunch(full, { from: 'launch', start: 99 }, 'script', 100);
+    const full = Array.from({ length: KEPT_LAUNCHES }, (_, index) => ({ start: index, steps: {} }));
+    const next = addLaunch(full, 99);
     expect(next).toHaveLength(KEPT_LAUNCHES);
     expect(next[0]?.start).toBe(99);
     expect(next.at(-1)?.start).toBe(KEPT_LAUNCHES - 2);
   });
 
-  it('never counts a step before the start (a clock set back)', () => {
-    expect(startLaunch([], { from: 'process', start: 5000 }, 'script', 4000)[0]?.steps).toEqual({
-      script: 0,
-    });
+  it('keeps a launch closed before its JavaScript ran under the one that found it', () => {
+    const next = reachStep(addLaunch(addLaunch([], 1000), 5000), 'script', 5400);
+    expect(next).toEqual([
+      { start: 5000, steps: { script: 400 } },
+      { start: 1000, steps: {} },
+    ]);
+    expect(next.map(launchLine)).toEqual(['JavaScript 0.4 s · no first frame', 'no JavaScript']);
   });
 });
 
@@ -56,7 +44,7 @@ describe('reachStep', () => {
     const older = launch({ script: 100 });
     const records = [{ ...launch({ script: 400 }), start: 1000 }, older];
     expect(reachStep(records, 'firstFrame', 1700)).toEqual([
-      { from: 'process', start: 1000, steps: { firstFrame: 700, script: 400 } },
+      { start: 1000, steps: { firstFrame: 700, script: 400 } },
       older,
     ]);
   });
@@ -68,6 +56,10 @@ describe('reachStep', () => {
 
   it('does nothing without a launch', () => {
     expect(reachStep([], 'calendar', 1)).toEqual([]);
+  });
+
+  it('never counts a step before the start (a clock set back)', () => {
+    expect(reachStep(addLaunch([], 5000), 'script', 4000)[0]?.steps).toEqual({ script: 0 });
   });
 });
 
@@ -81,12 +73,6 @@ describe('launchLine', () => {
   it('ends at the first step a launch never reached', () => {
     expect(launchLine(launch({ script: 14_200 }))).toBe('JavaScript 14.2 s · no first frame');
     expect(launchLine(launch({}))).toBe('no JavaScript');
-  });
-
-  it('says when the times count from the launch call of a prewarmed process', () => {
-    expect(launchLine(launch({ script: 500 }, 'launch'))).toBe(
-      'JavaScript 0.5 s · no first frame (prewarmed)',
-    );
   });
 });
 
@@ -105,13 +91,13 @@ describe('launchTitle', () => {
 
 describe('parseLaunches', () => {
   it('reads back what was written', () => {
-    const records = [launch({ script: 400 }), launch({ calendar: 1 }, 'launch')];
+    const records = [launch({ script: 400 }), { start: 1, steps: {} }];
     expect(parseLaunches(JSON.stringify(records))).toEqual(records);
   });
 
   it('reads anything unreadable as no launches', () => {
     expect(parseLaunches('')).toEqual([]);
-    expect(parseLaunches('{"from":"process"}')).toEqual([]);
-    expect(parseLaunches('[{"from":"elsewhere","start":1,"steps":{}},null]')).toEqual([]);
+    expect(parseLaunches('{"start":1,"steps":{}}')).toEqual([]);
+    expect(parseLaunches('[{"start":"1","steps":{}},{"start":1},null]')).toEqual([]);
   });
 });

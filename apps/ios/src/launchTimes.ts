@@ -2,8 +2,10 @@
  * The launch times Settings › Advanced › Diagnostics shows: for each of
  * the last launches, how long it took to reach each step. A slow launch on
  * a phone (a restaurant without signal) leaves its record behind, steps it
- * never reached included, so the next look tells which step took the time.
- * Pure: the file and the clocks are `launchTiming.ts`'s.
+ * never reached included (a launch closed before its JavaScript ran is
+ * recorded by the next one, from the native side's start), so the next
+ * look tells which step took the time. Pure: the file and the clocks are
+ * `launchTiming.ts`'s.
  */
 
 /** The steps of a launch, in the order a launch reaches them. */
@@ -18,11 +20,9 @@ const STEP_LABEL: Record<LaunchStep, string> = {
 
 export interface LaunchRecord {
   /**
-   * What the times count from: the process's start, or UIKit's launch call
-   * when iOS had started the process ahead of time (prewarmed).
+   * The launch's start, in milliseconds since 1970: its process's start,
+   * or its window's for a process that was running before the tap.
    */
-  readonly from: 'launch' | 'process';
-  /** The launch's start, in milliseconds since 1970. */
   readonly start: number;
   /** Milliseconds from the start to each step reached. */
   readonly steps: Partial<Record<LaunchStep, number>>;
@@ -31,16 +31,11 @@ export interface LaunchRecord {
 /** How many launches the file keeps. */
 export const KEPT_LAUNCHES = 10;
 
-/** The newest launch first, its first step taken already; the oldest falls off. */
-export const startLaunch = (
+/** A launch that started at `start`, newest first, no step reached yet; the oldest falls off. */
+export const addLaunch = (
   records: ReadonlyArray<LaunchRecord>,
-  launch: Pick<LaunchRecord, 'from' | 'start'>,
-  step: LaunchStep,
-  at: number,
-): ReadonlyArray<LaunchRecord> => [
-  { ...launch, steps: { [step]: Math.max(0, at - launch.start) } },
-  ...records.slice(0, KEPT_LAUNCHES - 1),
-];
+  start: number,
+): ReadonlyArray<LaunchRecord> => [{ start, steps: {} }, ...records.slice(0, KEPT_LAUNCHES - 1)];
 
 /** The newest launch with `step` reached at `at`; a step is taken once. */
 export const reachStep = (
@@ -62,13 +57,8 @@ const isRecord = (value: unknown): value is LaunchRecord => {
   if (typeof value !== 'object' || value === null) {
     return false;
   }
-  const { from, start, steps } = value as Record<string, unknown>;
-  return (
-    (from === 'launch' || from === 'process') &&
-    typeof start === 'number' &&
-    typeof steps === 'object' &&
-    steps !== null
-  );
+  const { start, steps } = value as Record<string, unknown>;
+  return typeof start === 'number' && typeof steps === 'object' && steps !== null;
 };
 
 /** The file's records; anything unreadable reads as none. */
@@ -98,7 +88,7 @@ export const launchLine = (record: LaunchRecord): string => {
     }
     parts.push(`${STEP_LABEL[step]} ${seconds(ms)}`);
   }
-  return `${parts.join(' · ')}${record.from === 'launch' ? ' (prewarmed)' : ''}`;
+  return parts.join(' · ');
 };
 
 /** "Nov 17, 9:23:05 AM": when the launch began, seconds included to tell quick relaunches apart. */

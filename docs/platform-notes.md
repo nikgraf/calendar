@@ -257,12 +257,17 @@ in the `ios-simulator` skill (`.agents/skills/ios-simulator/SKILL.md`).
   created, after expo-updates' wait and the bundle's load. The launch
   times in Settings › Advanced › Diagnostics count from the process's
   start instead, read from the kernel (`sysctl` with `KERN_PROC_PID`, in
-  `modules/solunivo-launch-timing`). A process iOS prewarmed
-  (`ActivePrewarm=1` in its environment) may have started minutes before
-  the tap, so its times count from UIKit's launch call. A reload in the
-  same process (PR Preview's Load) and a background launch record nothing.
-  Each step is written as it is reached, so a launch closed while it hung
-  shows the step it never got to.
+  `modules/solunivo-launch-timing`). A process that was there before the
+  tap — prewarmed by iOS (`ActivePrewarm=1` in its environment), or woken
+  in the background and suspended before React Native started — may have
+  started hours earlier, so its launch counts from its first scene's
+  connection (a scene more than 5 s after UIKit's launch call joined such
+  a process). The native side keeps that start in the user defaults until
+  the launch's JavaScript takes it, so launches closed before their
+  JavaScript ran are found by the next one that gets that far and listed
+  with no step. Each later step is written as it is reached. A reload in the same process
+  (PR Preview's Load) and a launch without a scene (a background task's)
+  record nothing.
 
 - **iOS 26 tab bar geometry** (NativeTabs, measured with `maestro
   hierarchy` on iPhone SE 3, 17e, 17 Pro and 17 Pro Max): the bar is
