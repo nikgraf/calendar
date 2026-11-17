@@ -191,17 +191,10 @@ final class GeoSession: NSObject, MKLocalSearchCompleterDelegate {
   }
 
   private static func place(from item: MKMapItem) -> GeoPlaceDTO {
-    if #available(macOS 26.0, iOS 26.0, *) {
-      let coordinate = item.location.coordinate
-      return GeoPlaceDTO(
-        lat: coordinate.latitude, lng: coordinate.longitude, name: item.name,
-        address: item.address?.fullAddress)
-    } else {
-      let coordinate = item.placemark.coordinate
-      return GeoPlaceDTO(
-        lat: coordinate.latitude, lng: coordinate.longitude, name: item.name,
-        address: item.placemark.title)
-    }
+    let coordinate = item.location.coordinate
+    return GeoPlaceDTO(
+      lat: coordinate.latitude, lng: coordinate.longitude, name: item.name,
+      address: item.address?.fullAddress)
   }
 
   // MARK: Map image
@@ -225,13 +218,11 @@ final class GeoSession: NSObject, MKLocalSearchCompleterDelegate {
       // The caller's pins are the point: no shops or museums beside them,
       // and the map's own colors muted under them.
       options.pointOfInterestFilter = .excludingAll
-      if #available(iOS 17.0, macOS 14.0, *) {
-        // A configuration carries its own filter, which wins over the options'.
-        let configuration = MKStandardMapConfiguration(
-          elevationStyle: .flat, emphasisStyle: .muted)
-        configuration.pointOfInterestFilter = .excludingAll
-        options.preferredConfiguration = configuration
-      }
+      // A configuration carries its own filter, which wins over the options'.
+      let configuration = MKStandardMapConfiguration(
+        elevationStyle: .flat, emphasisStyle: .muted)
+      configuration.pointOfInterestFilter = .excludingAll
+      options.preferredConfiguration = configuration
     } else {
       options.region = MKCoordinateRegion(
         center: center, latitudinalMeters: 700, longitudinalMeters: 700)
@@ -241,10 +232,10 @@ final class GeoSession: NSObject, MKLocalSearchCompleterDelegate {
     #if os(macOS)
       options.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
     #else
-      options.traitCollection = UITraitCollection(traitsFrom: [
-        UITraitCollection(displayScale: scale),
-        UITraitCollection(userInterfaceStyle: dark ? .dark : .light),
-      ])
+      options.traitCollection = UITraitCollection { traits in
+        traits.displayScale = scale
+        traits.userInterfaceStyle = dark ? .dark : .light
+      }
     #endif
 
     let snapshot: MKMapSnapshotter.Snapshot

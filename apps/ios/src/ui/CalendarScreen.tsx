@@ -40,7 +40,7 @@ import { markLaunch } from '../launchTiming.ts';
 import { useOnboardingEnabled } from '../onboarding.ts';
 import { setSetupPhase } from '../settingsCodeInbox.ts';
 import { AccountButton } from './AccountButton.tsx';
-import { ADD_BUTTON_CLEARANCE, AddButton } from './AddButton.tsx';
+import { AddButton } from './AddButton.tsx';
 import { AgendaView } from './AgendaView.tsx';
 import { DayTimeline } from './DayTimeline.tsx';
 import { LoadingOrb } from './LoadingOrb.tsx';
@@ -434,9 +434,9 @@ function CalendarBody({
 
       {/* A new event on the day being viewed. */}
       <AddButton onPress={() => host.openNew({ focused, kind: 'event' })} />
-      {/* The notices stand on the same row: above the tab bar on iOS 26,
-          where "+" hangs into the bar, and above the floating "+" before. */}
-      <NoticeStack offset={ADD_BUTTON_CLEARANCE + NOTICE_GAP}>
+      {/* The notices stand on the same row: above the tab bar, which "+"
+          hangs into. */}
+      <NoticeStack offset={NOTICE_GAP}>
         <MutationNoticeToast />
         <DroppedToast />
         <ConflictBanner />

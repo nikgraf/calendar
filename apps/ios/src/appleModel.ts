@@ -130,8 +130,8 @@ const deviceAvailability = (): Promise<ModelAvailability> =>
 /**
  * Apple's on-device Foundation Models as the app's LanguageModel. Nothing
  * leaves the device and there is no per-request cost; the framework needs
- * iOS 26 on Apple Intelligence hardware, so `status` gates every entry
- * point rather than letting calls fail.
+ * Apple Intelligence hardware, so `status` gates every entry point rather
+ * than letting calls fail.
  */
 export const appleLanguageModel: LanguageModel = {
   availability: deviceAvailability,

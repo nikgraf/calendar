@@ -4,13 +4,13 @@ import { Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-nati
 import { actionText, type ThemeColors, useStyles } from './theme.ts';
 
 /**
- * expo-maps' Apple Maps view is SwiftUI Map, available from iOS 17 — and
- * its module throws at import on a binary built without the native
- * dependency (a dev client from before this feature), so it is required
- * lazily and a failure degrades to the link, like loadGeoModule.
+ * expo-maps' Apple Maps view is SwiftUI Map. Its module throws at import on
+ * a binary built without the native dependency (a dev client from before
+ * this feature), so it is required lazily and a failure degrades to the
+ * link, like loadGeoModule.
  */
 const loadAppleMaps = (): typeof import('expo-maps').AppleMaps | undefined => {
-  if (Platform.OS !== 'ios' || Number.parseInt(String(Platform.Version), 10) < 17) {
+  if (Platform.OS !== 'ios') {
     return undefined;
   }
   try {
@@ -20,14 +20,14 @@ const loadAppleMaps = (): typeof import('expo-maps').AppleMaps | undefined => {
     return undefined;
   }
 };
-/** Apple Maps' SwiftUI view, or none on this OS or binary (`loadAppleMaps`). */
+/** Apple Maps' SwiftUI view, or none on this binary (`loadAppleMaps`). */
 export const AppleMaps = loadAppleMaps();
 
 /**
  * A small Apple Maps view of the event's place with a marker, plus an
  * Open in Maps link. Not interactive inside the sheet — a tap on the map
- * opens the Maps app, which is where directions live anyway. Below iOS 17
- * only the link shows.
+ * opens the Maps app, which is where directions live anyway. Without the
+ * map's module only the link shows.
  */
 export function LocationMap({ model }: { model: ReturnType<typeof useEventEditorModel> }) {
   const styles = useStyles(makeStyles);

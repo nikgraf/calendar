@@ -144,9 +144,7 @@ export function DiagnosticsPage() {
         header="On-Device Model"
       >
         <Row
-          subtitle={
-            availability ? availabilityGuidance(availability, String(Platform.Version)) : undefined
-          }
+          subtitle={availability ? availabilityGuidance(availability) : undefined}
           subtitleTestID="diagnostics-model-guidance"
           title="Apple Intelligence"
           value={status ?? 'checking…'}

@@ -11,9 +11,8 @@ import { QuestionOption } from './QuestionOption.tsx';
  * live Apple Maps view to pinch and pan — two places a street apart come
  * apart as it zooms in — with a numbered marker per place on the map, and
  * the question's rows under it. A row takes its place and closes the
- * sheet, as the small map's pins do, and so does a marker from iOS 18
- * (expo-maps reports a marker's tap from there; on iOS 17 the markers
- * only show where, and the rows answer). Done closes it as it was.
+ * sheet, as the small map's pins do, and so does a marker. Done closes it
+ * as it was.
  */
 export function PlaceMapSheet({
   choice,

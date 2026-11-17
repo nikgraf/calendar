@@ -3,13 +3,11 @@ import type { ModelStatusReply } from '../backend.ts';
 
 /**
  * The helper's `detail` when the model is unavailable: Foundation Models'
- * own reason (the table iOS reads too — its `osTooOld` row is for an iPhone
- * below iOS 26; the helper needs macOS 27 and never sends it); and a
- * served model's (modelProvider.ts): the server not
- * reachable, or the model not on it — the latter re-polled like a
- * download, since a pull ends while the app is in front. Anything else —
- * `helperUnavailable` from main, a reason a newer macOS adds — stays the
- * generic 'unavailable'.
+ * own reason (the table iOS reads too); and a served model's
+ * (modelProvider.ts): the server not reachable, or the model not on it —
+ * the latter re-polled like a download, since a pull ends while the app is
+ * in front. Anything else — `helperUnavailable` from main, a reason a newer
+ * macOS adds — stays the generic 'unavailable'.
  */
 const STATUS_BY_DETAIL: ReadonlyMap<string, ModelStatus> = new Map<string, ModelStatus>([
   ...APPLE_REASON_STATUS,

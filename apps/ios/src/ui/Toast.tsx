@@ -49,7 +49,7 @@ const InStack = createContext(false);
  * in a tab screen's SafeAreaView, whose content ends at the tab bar's top
  * edge, or right above a screen's own controls at the bottom (the Tasks
  * tab's add field). It takes no room. `offset` lifts the column further:
- * over the floating "+" below iOS 26, over the home indicator in a modal.
+ * a gap above the tab bar, over the home indicator in a modal.
  * A notice mounted on its own anchors itself the same way, so a screen
  * that shows one kind needs no stack.
  *

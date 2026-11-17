@@ -24,16 +24,10 @@ public class SolunivoSpeechModule: Module {
     // a start that was still on its way opens nothing.
     OnDestroy { [alive] in
       alive.end()
-      if #available(iOS 26.0, *) {
-        SpeechSessions.shared.cancelAll { Microphone.shared.close() }
-      }
+      SpeechSessions.shared.cancelAll { Microphone.shared.close() }
     }
 
     AsyncFunction("prepare") { (locale: String, promise: Promise) in
-      guard #available(iOS 26.0, *) else {
-        promise.reject("SpeechError", SpeechBridgeError.unsupported("needs iOS 26").message)
-        return
-      }
       Task {
         do {
           try await SpeechAssets.prepare(locale: locale)
@@ -45,13 +39,7 @@ public class SolunivoSpeechModule: Module {
     }
 
     AsyncFunction("requestMicrophone") { (promise: Promise) in
-      if #available(iOS 17.0, *) {
-        AVAudioApplication.requestRecordPermission { granted in promise.resolve(granted) }
-      } else {
-        AVAudioSession.sharedInstance().requestRecordPermission { granted in
-          promise.resolve(granted)
-        }
-      }
+      AVAudioApplication.requestRecordPermission { granted in promise.resolve(granted) }
     }
 
     // The Mic Mode the user picked for this app in Control Center. iOS
@@ -77,10 +65,6 @@ public class SolunivoSpeechModule: Module {
     // cancellation and noise suppression (Settings › Dictation).
     AsyncFunction("start") {
       [alive] (session: Int, locale: String, voiceProcessing: Bool, promise: Promise) in
-      guard #available(iOS 26.0, *) else {
-        promise.reject("SpeechError", SpeechBridgeError.unsupported("needs iOS 26").message)
-        return
-      }
       guard alive.value else {
         promise.reject("SpeechError", SpeechBridgeError.failed("torn down").message)
         return
@@ -107,10 +91,6 @@ public class SolunivoSpeechModule: Module {
     }
 
     AsyncFunction("finish") { (session: Int, promise: Promise) in
-      guard #available(iOS 26.0, *) else {
-        promise.resolve(nil)
-        return
-      }
       let task = SpeechSessions.shared.finish(id: session) { Microphone.shared.close() }
       Task {
         do {
@@ -123,10 +103,6 @@ public class SolunivoSpeechModule: Module {
     }
 
     AsyncFunction("cancel") { (session: Int, promise: Promise) in
-      guard #available(iOS 26.0, *) else {
-        promise.resolve(nil)
-        return
-      }
       let task = SpeechSessions.shared.cancel(id: session) { Microphone.shared.close() }
       Task {
         _ = await task.result
@@ -143,7 +119,6 @@ public class SolunivoSpeechModule: Module {
 /// The microphone, for one phrase at a time: its audio goes to that
 /// phrase's session as it is recorded. Opened and closed inside the
 /// session's own steps, so it follows their order.
-@available(iOS 26.0, *)
 private final class Microphone: @unchecked Sendable {
   static let shared = Microphone()
 
