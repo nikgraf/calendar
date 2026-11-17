@@ -1,0 +1,19 @@
+appId: com.solunivo.app.dev
+name: Type QUERY into the time-zone picker's search until OPTION shows (shared)
+---
+# XCTest typing can drop or move letters (flow 07; flow 19 once typed
+# "Europe" as "Epe" and the list showed Eirunepe): erase and type again
+# until the zone it looks for shows. The erase also clears an earlier
+# query, so a flow can search the open sheet twice. No condition guards
+# the action, so a pass that needs no retry waits for nothing.
+- retry:
+    maxRetries: 3
+    commands:
+      - tapOn:
+          id: 'time-zone-search'
+      - eraseText
+      - inputText: ${QUERY}
+      - extendedWaitUntil:
+          visible:
+            id: ${OPTION}
+          timeout: 5000

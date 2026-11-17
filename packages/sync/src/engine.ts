@@ -328,6 +328,21 @@ const make: Effect.Effect<
       );
     });
 
+  /** The events (series masters) queued moves take out of a calendar. */
+  const movesOutOf = (accountId: string, calendarId: string) =>
+    Effect.map(
+      pendingOpRepo.listAll(),
+      (ops) =>
+        new Set(
+          ops
+            .filter(
+              (op) =>
+                op.kind === 'move' && op.accountId === accountId && op.calendarId === calendarId,
+            )
+            .map((op) => op.eventId),
+        ),
+    );
+
   const syncEvents = (
     account: Account,
     calendarId: string,
@@ -379,9 +394,20 @@ const make: Effect.Effect<
           if (upserts.length > 0 || deletions.length > 0) {
             yield* sql.withTransaction(
               Effect.gen(function* () {
+                // A series a queued move takes out of this calendar: Google
+                // lists it here until the move lands, and a copy written
+                // now showed it in both calendars — one the user could edit
+                // or delete, whose op then met a 404 here. Read under the
+                // pass's hold on the drain, so no move lands in between (the
+                // tasks pass skips a moving task the same way).
+                const leaving = yield* movesOutOf(account.id, calendarId);
+                const staying = upserts.filter(
+                  (record) =>
+                    !leaving.has(record.id) && !leaving.has(record.recurringEventId ?? ''),
+                );
                 // An exception of a series whose delete waits with the
                 // master gone locally goes into that delete, not the table.
-                const rows = yield* holdPulledExceptions(taken, account.id, calendarId, upserts);
+                const rows = yield* holdPulledExceptions(taken, account.id, calendarId, staying);
                 yield* eventRepo.applyPage(account.id, calendarId, {
                   deletions,
                   mode: 'pull',

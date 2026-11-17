@@ -597,6 +597,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   (new id, guests invited again). Open: a remade Apple item has a new
   identifier and no changed occurrences; one refused subtask copy brings
   the whole source back beside the landed ones.
+- **A seeded sequence test guards the queue** (2026-11-16, #341) — review
+  rounds found the queue's revert and ordering bugs one at a time (77
+  findings in 22 PRs); `queueSequence.test.ts` runs seeded sequences of
+  user, network and other-device steps on the fake, checking its
+  invariants after every step, and found nine bugs, fixed here. Rejected:
+  fast-check (steps read the app's state, and a seed must replay exactly)
+  and a full model of the expected state. Open: a pull that skips a held
+  row loses Google's copy for an abandoned op; a task move discarded after
+  it landed; subtasks around a moved or deleted parent.
 
 ## Calendar: editing, gestures, views
 

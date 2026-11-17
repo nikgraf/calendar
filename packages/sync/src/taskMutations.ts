@@ -189,7 +189,10 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
       const beforeTask = current ? acknowledgedTask(queued, current, accountId) : undefined;
       let unsentCreate = false;
       for (const queuedOp of queued) {
-        if (queuedOp.accountId !== accountId) {
+        // An earlier move out of this list (the task left and came back,
+        // that move still queued) stays, as an event delete spares a move:
+        // without it the move back met a 404.
+        if (queuedOp.accountId !== accountId || queuedOp.kind === 'moveTask') {
           continue;
         }
         if (queuedOp.kind === 'createTask') {
@@ -220,6 +223,19 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
       );
     });
 
+  /**
+   * A task acted on while its delete is still queued: the user saw the
+   * copy a pull put back meanwhile, and the edit, toggle or move replaces
+   * the delete, as an event edit does (`supersedeQueued`). Left queued
+   * ahead, the delete removed the task on Google and the change met a 404.
+   */
+  const replaceQueuedDelete = (accountId: string, queued: ReadonlyArray<PendingOp>) =>
+    Effect.forEach(
+      queued.filter((op) => op.accountId === accountId && op.kind === 'deleteTask'),
+      (op) => pendingOpRepo.remove(op.id),
+      { discard: true },
+    );
+
   return {
     completeTask: ({ accountId, status, taskId, taskListId }) =>
       Effect.gen(function* () {
@@ -240,6 +256,7 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
         });
         // Only the latest toggle needs to reach Google.
         const queued = yield* opsForEvent(accountId, taskListId, taskId);
+        yield* replaceQueuedDelete(accountId, queued);
         const prior = queued.find((op) => op.accountId === accountId && op.kind === 'completeTask');
         for (const op of queued) {
           if (op.accountId === accountId && op.kind === 'completeTask') {
@@ -323,7 +340,9 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
             op.accountId === accountId &&
             op.calendarId === taskListId &&
             ids.has(op.eventId) &&
-            op.kind !== 'moveTask',
+            op.kind !== 'moveTask' &&
+            // The move replaces the task's own delete (replaceQueuedDelete).
+            !(op.kind === 'deleteTask' && op.eventId === taskId),
         );
         // A create that went out may land in the source list after the
         // move: where the task ends up is not known until Google answers.
@@ -335,6 +354,10 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
             }),
           );
         }
+        yield* replaceQueuedDelete(
+          accountId,
+          all.filter((op) => op.calendarId === taskListId && op.eventId === taskId),
+        );
         const now = yield* Clock.currentTimeMillis;
         // The rows move now: the task leaves its parent, its subtasks keep it.
         for (const row of [source, ...subtasks]) {
@@ -526,6 +549,7 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
         });
         const now = yield* Clock.currentTimeMillis;
         const queued = yield* opsForEvent(accountId, taskListId, taskId);
+        yield* replaceQueuedDelete(accountId, queued);
         const pendingCreate = queued.find(
           (queuedOp) => queuedOp.accountId === accountId && queuedOp.kind === 'createTask',
         );

@@ -93,11 +93,27 @@ const mergeExtendedProperties = (
   return Object.keys(merged).length > 0 ? merged : undefined;
 };
 
+/**
+ * An event version's etag. Versions count per calendar (sync tokens are
+ * per calendar); the etag names the calendar too, so a moved event's old
+ * etag never matches another calendar's, as on Google, where etags are
+ * unique.
+ */
+const etagOf = (calendarId: string, version: number): string => `"${calendarId}/v${version}"`;
+
 /** A stored task on the wire: `updated` is the RFC 3339 form of its stamp. */
 const wire = (entry: StoredTask): GcalTask => ({
   ...entry.task,
   updated: new Date(entry.updatedAt).toISOString(),
 });
+
+export interface FakeCall {
+  readonly method: string;
+  readonly url: string;
+}
+
+/** What `FakeGoogle.fault` can do to one request. */
+export type FakeFault = 'lost' | 'refused';
 
 export interface FakeGoogleOptions {
   /**
@@ -112,6 +128,12 @@ export interface FakeGoogleOptions {
    * a frozen 2026-08-24 stamp would never clear.
    */
   readonly live?: boolean;
+  /**
+   * The signed-in account's address: Google makes it the organizer
+   * (`self`) of an event it inserts without one, which is what lets a
+   * created event be moved later. Absent, an insert stores no organizer.
+   */
+  readonly organizerEmail?: string;
   /** Events per list page (Google's cap is 2,500); small values exercise pagination. */
   readonly pageSize?: number;
   /** Saved contacts (people.connections); otherContacts is always empty. */
@@ -146,10 +168,32 @@ export class FakeGoogle {
   failTaskPatches = 0;
   /** Runs as each request arrives, before it is answered: a change made elsewhere mid-pass. */
   onRequest: ((call: { readonly method: string; readonly url: string }) => void) | undefined;
+  /**
+   * Decides a request's fate before it reaches the routes: `refused` is a
+   * 503 that changes nothing, `lost` is answered here — the write lands —
+   * while the client sees the connection drop. Undefined: answered as usual.
+   */
+  fault: ((call: FakeCall) => FakeFault | undefined) | undefined;
+  /**
+   * Runs on every answer the fake gives, `lost` when the client never sees
+   * it (`fault`: the connection dropped after the routes answered).
+   */
+  onAnswer:
+    | ((
+        call: FakeCall,
+        answer: { readonly json: unknown; readonly lost: boolean; readonly status: number },
+      ) => void)
+    | undefined;
+  private readonly organizer: GcalEvent['organizer'];
+  private lastReply: { readonly json: unknown; readonly status: number } | undefined;
 
   constructor(options: FakeGoogleOptions) {
     this.calendars = [...options.calendars];
     this.calendarCreation = options.calendarCreation ?? 'allowed';
+    this.organizer =
+      options.organizerEmail === undefined
+        ? undefined
+        : { email: options.organizerEmail, self: true };
     this.live = options.live ?? false;
     this.pageSize = options.pageSize ?? 2500;
     this.people = [...(options.people ?? [])];
@@ -162,7 +206,7 @@ export class FakeGoogle {
   putEvent(calendarId: string, event: GcalEvent): void {
     const version = this.bump(calendarId);
     this.storeOf(calendarId).set(event.id, {
-      event: { ...event, etag: `"v${version}"` },
+      event: { ...event, etag: etagOf(calendarId, version) },
       version,
     });
   }
@@ -170,7 +214,7 @@ export class FakeGoogle {
   cancelEvent(calendarId: string, eventId: string): void {
     const version = this.bump(calendarId);
     this.storeOf(calendarId).set(eventId, {
-      event: { etag: `"v${version}"`, id: eventId, status: 'cancelled' },
+      event: { etag: etagOf(calendarId, version), id: eventId, status: 'cancelled' },
       version,
     });
   }
@@ -293,12 +337,63 @@ export class FakeGoogle {
     return this.tasksOf(listId).get(taskId)?.task;
   }
 
+  /** Every task the list holds now (deleted ones left out), as the wire sends them. */
+  tasksIn(listId: string): Array<GcalTask> {
+    return [...this.tasksOf(listId).values()].filter((entry) => !entry.task.deleted).map(wire);
+  }
+
   /** The fake as an HttpClient: the real request core and clients run on top. */
   get httpLayer(): Layer.Layer<HttpClient.HttpClient> {
     return Layer.succeed(
       HttpClient.HttpClient,
-      HttpClient.make((request) => Effect.sync(() => this.handle(request))),
+      HttpClient.make((request) => Effect.suspend(() => this.answer(request))),
     );
+  }
+
+  /** One request through `fault` and `onAnswer` (see both). */
+  private answer(
+    request: HttpClientRequest.HttpClientRequest,
+  ): Effect.Effect<HttpClientResponse.HttpClientResponse> {
+    const call = this.callOf(request);
+    const fault = this.fault?.(call);
+    if (fault === 'refused') {
+      this.requests.push(call);
+      const json = { error: { code: 503, message: 'Backend Error' } };
+      this.onAnswer?.(call, { json, lost: false, status: 503 });
+      return Effect.succeed(
+        HttpClientResponse.fromWeb(
+          request,
+          new Response(JSON.stringify(json), {
+            headers: { 'content-type': 'application/json' },
+            status: 503,
+          }),
+        ),
+      );
+    }
+    const response = this.handle(request);
+    const answered = this.takeReply();
+    if (answered !== undefined) {
+      this.onAnswer?.(call, { ...answered, lost: fault === 'lost' });
+    }
+    return fault === 'lost'
+      ? Effect.die(new Error(`connection lost after ${call.method} ${call.url} was answered`))
+      : Effect.succeed(response);
+  }
+
+  /** The status and body `handle` answered with last (once). */
+  private takeReply(): { readonly json: unknown; readonly status: number } | undefined {
+    const answered = this.lastReply;
+    this.lastReply = undefined;
+    return answered;
+  }
+
+  private callOf(request: HttpClientRequest.HttpClientRequest): FakeCall {
+    const url = new URL(request.url);
+    // `toString` unwraps Redacted values, as the real client sends them.
+    for (const [key, value] of new URLSearchParams(UrlParams.toString(request.urlParams))) {
+      url.searchParams.set(key, value);
+    }
+    return { method: request.method, url: url.toString() };
   }
 
   /** HttpClient + a TokenManager that always has a token. */
@@ -316,24 +411,22 @@ export class FakeGoogle {
   private handle(
     request: HttpClientRequest.HttpClientRequest,
   ): HttpClientResponse.HttpClientResponse {
-    const url = new URL(request.url);
-    // `toString` unwraps Redacted values, as the real client sends them.
-    for (const [key, value] of new URLSearchParams(UrlParams.toString(request.urlParams))) {
-      url.searchParams.set(key, value);
-    }
-    const call = { method: request.method, url: url.toString() };
+    const call = this.callOf(request);
+    const url = new URL(call.url);
     this.requests.push(call);
     this.onRequest?.(call);
     const body = this.bodyOf(request);
     const path = url.pathname;
-    const reply = (status: number, json?: unknown) =>
-      HttpClientResponse.fromWeb(
+    const reply = (status: number, json?: unknown) => {
+      this.lastReply = { json, status };
+      return HttpClientResponse.fromWeb(
         request,
         new Response(status === 204 ? null : JSON.stringify(json ?? {}), {
           headers: { 'content-type': 'application/json' },
           status,
         }),
       );
+    };
 
     if (url.hostname === 'www.googleapis.com') {
       if (path === '/calendar/v3/users/me/calendarList') {
@@ -425,6 +518,49 @@ export class FakeGoogle {
     return reply(404, { error: { message: `no fake route for ${request.method} ${path}` } });
   }
 
+  /** events.list: a full list, or what changed since a sync token (410 once it expired), in pages. */
+  private listRoute(
+    calendarId: string,
+    url: URL,
+    reply: (status: number, json?: unknown) => HttpClientResponse.HttpClientResponse,
+  ): HttpClientResponse.HttpClientResponse {
+    const store = this.storeOf(calendarId);
+    const syncToken = url.searchParams.get('syncToken');
+    // A token handed out after an expiry is good even when nothing was
+    // written since: it must not read as one of the expired ones.
+    const current =
+      syncToken === null &&
+      (this.expiredBelow.get(calendarId) ?? -1) >= (this.versions.get(calendarId) ?? 0)
+        ? this.bump(calendarId)
+        : (this.versions.get(calendarId) ?? 0);
+    let items: Array<GcalEvent>;
+    if (syncToken !== null) {
+      const since = Number(syncToken.split(':')[1] ?? Number.NaN);
+      if (!Number.isFinite(since) || since <= (this.expiredBelow.get(calendarId) ?? -1)) {
+        return reply(410, { error: { message: 'Sync token is no longer valid' } });
+      }
+      items = [...store.values()]
+        .filter((entry) => entry.version > since)
+        .map((entry) => entry.event);
+    } else {
+      // A full list: no timeMin is honoured because the engine never
+      // sends one — every event ever, like Google without a window.
+      items = [...store.values()]
+        .filter((entry) => entry.event.status !== 'cancelled')
+        .map((entry) => entry.event);
+    }
+    // Pages like Google: the sync token only rides on the last one.
+    const offset = Number(url.searchParams.get('pageToken') ?? 0);
+    const pageItems = items.slice(offset, offset + this.pageSize);
+    const next = offset + this.pageSize;
+    return reply(
+      200,
+      next < items.length
+        ? { items: pageItems, nextPageToken: String(next) }
+        : { items: pageItems, nextSyncToken: `${calendarId}:${current}` },
+    );
+  }
+
   private calendarRoute(
     request: HttpClientRequest.HttpClientRequest,
     url: URL,
@@ -435,34 +571,7 @@ export class FakeGoogle {
   ): HttpClientResponse.HttpClientResponse {
     const store = this.storeOf(calendarId);
     if (request.method === 'GET' && eventId === undefined) {
-      const syncToken = url.searchParams.get('syncToken');
-      const current = this.versions.get(calendarId) ?? 0;
-      let items: Array<GcalEvent>;
-      if (syncToken !== null) {
-        const since = Number(syncToken.split(':')[1] ?? Number.NaN);
-        if (!Number.isFinite(since) || since <= (this.expiredBelow.get(calendarId) ?? -1)) {
-          return reply(410, { error: { message: 'Sync token is no longer valid' } });
-        }
-        items = [...store.values()]
-          .filter((entry) => entry.version > since)
-          .map((entry) => entry.event);
-      } else {
-        // A full list: no timeMin is honoured because the engine never
-        // sends one — every event ever, like Google without a window.
-        items = [...store.values()]
-          .filter((entry) => entry.event.status !== 'cancelled')
-          .map((entry) => entry.event);
-      }
-      // Pages like Google: the sync token only rides on the last one.
-      const offset = Number(url.searchParams.get('pageToken') ?? 0);
-      const pageItems = items.slice(offset, offset + this.pageSize);
-      const next = offset + this.pageSize;
-      return reply(
-        200,
-        next < items.length
-          ? { items: pageItems, nextPageToken: String(next) }
-          : { items: pageItems, nextSyncToken: `${calendarId}:${current}` },
-      );
+      return this.listRoute(calendarId, url, reply);
     }
     if (request.method === 'POST' && eventId === undefined) {
       const id = typeof body?.['id'] === 'string' ? body['id'] : `srv-${this.bump(calendarId)}`;
@@ -477,7 +586,14 @@ export class FakeGoogle {
           },
         });
       }
-      this.putEvent(calendarId, { ...(body as GcalEvent), id });
+      const inserted = body as GcalEvent;
+      this.putEvent(calendarId, {
+        ...inserted,
+        id,
+        ...(inserted.organizer === undefined && this.organizer !== undefined
+          ? { organizer: this.organizer }
+          : {}),
+      });
       return reply(200, this.eventOf(calendarId, id));
     }
     if (eventId !== undefined) {

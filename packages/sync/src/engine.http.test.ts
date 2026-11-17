@@ -188,8 +188,8 @@ describe('SyncEngine over HTTP (fake Google)', () => {
         ...timed('mv', 9, 'Planning'),
         organizer: { email: 'nik@example.com', self: true },
       });
-      // The fake's etags count per calendar: something already in cal-2
-      // makes the moved copy's etag differ from the one cal-1 handed out.
+      // The moved copy's etag differs from the one cal-1 handed out, as
+      // on Google; something already in cal-2 moves its version count too.
       google.putEvent('cal-2', timed('other', 14, 'Other'));
       return Effect.gen(function* () {
         yield* seedAccount(false);

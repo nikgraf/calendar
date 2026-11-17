@@ -532,6 +532,34 @@ yesterday, `Pacific/Kiritimati` as tomorrow after 10:00 UTC).
 - `setClock(iso)` in `localNotifications.test.ts` adjusts the
   `TestClock` by the whole instant, so it is called once; later passes
   move on with `TestClock.adjust`.
+- The pending-op queue has a seeded sequence test
+  (`packages/sync/src/queueSequence.test.ts`): 50 seeds of 40 steps each
+  against the fake below — user edits, creates, deletes and moves of
+  events and tasks (a parent with subtasks among them), discards and
+  conflict choices; drains that land, refuse (503) or lose the answer
+  after the write landed; pulls, an expired token, time passing; another
+  device's edits and deletes — then the network recovers, every conflict
+  is settled, the queue drains and a pull runs. After every step, with no
+  drain running: every pending row is owned by a queued op; a synced row
+  at Google's etag has Google's content, and what Google last told the
+  client about an item no op holds is what shows; no write meets a 404 or
+  another 4xx unless another device, or a lost answer of ours, removed the
+  item; no conflict parks on an item nobody else changed. At the end the
+  rows equal Google's, and what the user did last to an item nobody else
+  touched is what Google has. Kicked drains run whenever the test fiber
+  suspends (setImmediate order), ids come from a seeded
+  `crypto.getRandomValues`, so a seed replays exactly; a failure prints
+  the whole sequence and the requests of the failing step.
+  `QUEUE_SEQUENCE_SEED=<n>` runs one seed, `QUEUE_SEQUENCE_RUNS` and
+  `QUEUE_SEQUENCE_STEPS` widen the search (1,000 seeds take ~30 s),
+  `QUEUE_SEQUENCE_VERBOSE=1` prints every step's requests. A difference
+  where Google sent a newer state while an op held the row is the open
+  gap the skipped tests at its end show (docs/architecture.md → An op
+  remembers what it replaced): it is listed with the failure, not failed.
+  Seeds past the gate's that still fail are listed in `KNOWN_FAILING`,
+  skipped (`QUEUE_SEQUENCE_KNOWN=1` runs them); a change to the steps
+  reshuffles every sequence, so search again after one. A bug a sequence finds gets a scripted test of its own
+  beside them (`writesDown` holds every write at a 503).
 - AI pipelines never hit a real model: the seams take a fake
   `LanguageModel`/`SpeechToText`/`TextRecognizer` returning canned JSON
   (`packages/ai/*.test.ts`). The e2e suites use the shared fixture model
@@ -622,6 +650,14 @@ Its clock starts at its own `now` (2026-08-24): a `TestClock` left before
 it makes every pull's `updatedMin` 1970, which returns everything and
 hides a watermark bug, so set the clock past it
 (`TestClock.setTime(google.now + …)`, `engine.taskOrder.test.ts`).
+The `fault` hook decides a request's fate before the routes
+see it: `refused` (a 503 that changes nothing) or `lost` (answered — the
+write lands — while the client sees the connection drop); `onAnswer`
+sees every answer and whether it was lost. `organizerEmail` makes the
+account the organizer of an event it inserts, as Google does, so a
+created event can be moved. Its etags name their calendar
+(`"cal-1/v4"`): versions count per calendar, and a moved event's old
+etag must not match an unrelated one in its destination.
 
 Both apps can run against the same fake (`testing/googleFixture.ts`):
 desktop with `CALENDAR_GOOGLE=fixture` + `CALENDAR_GOOGLE_FIXTURE=<json>`
@@ -1371,7 +1407,8 @@ done once the button reads "View: `VIEW`"),
 `notifications`, `getting-started`, `file`, `advanced`, `mirrors`,
 `unsynced`; rows `settings-row-<page>`, pages
 `settings-page-<page>`), `close-settings.yaml` (`BackButton` until the
-root shows, then Done), `search-for.yaml` (`QUERY` typed into the Search
+root shows, then Done), `search-time-zone.yaml` (`QUERY` erased and
+typed into the time-zone picker's search until the zone `OPTION` shows), `search-for.yaml` (`QUERY` typed into the Search
 tab's system field until `RESULT` shows; a sentence for the search
 thread is typed the same way and sent with `pressKey: Enter`, the
 keyboard's Search key; the chips' × is "Remove <label>"),
