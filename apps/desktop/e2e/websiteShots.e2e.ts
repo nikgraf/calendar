@@ -307,29 +307,36 @@ describe.skipIf(!OUT)('website screenshots', () => {
       'Train to Linz',
       'Pack train snacks',
     ]) {
-      await cdp.waitFor(`document.body.innerText.includes(${JSON.stringify(text)})`);
+      await cdp.waitUntil((_, want: string) => document.body.innerText.includes(want), text);
     }
     // The grid mounts neighbouring days offscreen too. Check this week's
     // seven columns so a duplicate or a pickup on the wrong day fails the capture.
     const pickupCounts = () =>
-      cdp.eval<Array<number>>(
-        `[...document.querySelectorAll('[data-testid="week-grid"] [data-day]')]
-          .filter(column => column.dataset.day >= '${day(0)}' && column.dataset.day <= '${day(6)}')
-          .map(column => column.querySelectorAll('[aria-label^="School pickup,"]').length)`,
+      cdp.evaluate(
+        ($, first: string, last: string) =>
+          $.all('[data-testid="week-grid"] [data-day]')
+            .filter((column) => column.dataset['day']! >= first && column.dataset['day']! <= last)
+            .map((column) => column.querySelectorAll('[aria-label^="School pickup,"]').length),
+        day(0),
+        day(6),
       );
     await expect.poll(pickupCounts, { timeout: 10_000 }).toEqual([1, 0, 1, 0, 1, 0, 0]);
-    await cdp.waitFor(
-      `document.querySelector('[data-day="${day(1)}"] [data-testid="timed-task-ek-bins"]')?.title === 'Bins out · 7:00 PM'`,
+    await cdp.waitUntil(
+      ($, tuesday: string) =>
+        $.el(`[data-day="${tuesday}"] [data-testid="timed-task-ek-bins"]`)?.title ===
+        'Bins out · 7:00 PM',
+      day(1),
     );
-    await cdp.waitFor(`!!document.querySelector('[data-testid="all-day-task-ek-flowers"]')`);
+    await cdp.waitUntil(($) => $.has('[data-testid="all-day-task-ek-flowers"]'));
 
     const shoot = async (theme: 'dark' | 'light') => {
       await cdp.send('Emulation.setEmulatedMedia', {
         features: [{ name: 'prefers-color-scheme', value: theme }],
       });
       // A background window takes emulated media only once it draws a frame.
-      await cdp.waitForRendered(
-        `document.documentElement.dataset.theme === ${JSON.stringify(theme)}`,
+      await cdp.waitUntilRendered(
+        (_, want: string) => document.documentElement.dataset['theme'] === want,
+        theme,
       );
       await new Promise((resolve) => setTimeout(resolve, 600));
       const shot = (await cdp.send('Page.captureScreenshot', { format: 'png' })) as {

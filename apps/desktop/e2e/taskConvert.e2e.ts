@@ -117,13 +117,6 @@ const remindersFixture: RemindersFixture = {
   ],
 };
 
-const setSelect = (selector: string, value: string) => `(() => {
-  const element = document.querySelector(${JSON.stringify(selector)});
-  const proto = window.HTMLSelectElement.prototype;
-  Object.getOwnPropertyDescriptor(proto, 'value').set.call(element, ${JSON.stringify(value)});
-  element.dispatchEvent(new Event('change', { bubbles: true }));
-})()`;
-
 const LIST_SELECT = 'select[aria-label="Task list"]';
 
 describe('Converting tasks between Google Tasks and Reminders', () => {
@@ -138,7 +131,7 @@ describe('Converting tasks between Google Tasks and Reminders', () => {
   /** Opens a task chip's editor by its body, away from the leading checkbox. */
   const open = async (testId: string, heading: string) => {
     await app.cdp.clickTaskChip(`[data-testid="${testId}"]`);
-    await app.cdp.waitFor(`document.body.textContent.includes(${JSON.stringify(heading)})`);
+    await app.cdp.waitUntil((_, want: string) => document.body.textContent.includes(want), heading);
   };
   const clickTestId = async (testId: string) => {
     const point = await app.cdp.locate(`[data-testid="${testId}"]`);
@@ -149,18 +142,25 @@ describe('Converting tasks between Google Tasks and Reminders', () => {
     const { cdp } = app;
     await open('all-day-task-task-rent', 'Edit task');
     try {
-      const groups = await cdp.waitFor<string>(
-        `JSON.stringify([...document.querySelectorAll('${LIST_SELECT} optgroup')].map(g => [g.label, [...g.querySelectorAll('option')].map(o => o.value)]))`,
-      );
+      const groups = await cdp.waitForValue(($, select: string) => {
+        const found = $.all<HTMLOptGroupElement>(`${select} optgroup`).map((g) => [
+          g.label,
+          [...g.querySelectorAll('option')].map((o) => o.value),
+        ]);
+        return found.length > 0 ? JSON.stringify(found) : null;
+      }, LIST_SELECT);
       // Lists come back sorted by title; the Reminders list is behind the
       // Reminder kind, never in a Google task's picker.
       expect(JSON.parse(groups)).toEqual([
         ['e2e@example.com', ['acc-e2e:list-errands', 'acc-e2e:list-e2e']],
       ]);
-      expect(await cdp.eval(`document.querySelector('${LIST_SELECT}').disabled`)).toBe(false);
-      expect(await cdp.eval(`!!document.querySelector('[data-testid="mode-reminder"]')`)).toBe(
-        true,
-      );
+      expect(
+        await cdp.evaluate(
+          ($, select: string) => $.el<HTMLSelectElement>(select)!.disabled,
+          LIST_SELECT,
+        ),
+      ).toBe(false);
+      expect(await cdp.evaluate(($) => $.has('[data-testid="mode-reminder"]'))).toBe(true);
     } finally {
       await cdp.clickButtonWithText('Cancel');
     }
@@ -172,13 +172,11 @@ describe('Converting tasks between Google Tasks and Reminders', () => {
     await clickTestId('mode-task');
     // The form follows the kind: the Google one has no time field, and
     // the first Google list is picked.
-    await cdp.waitFor(`document.body.textContent.includes('Move to task')`);
-    expect(await cdp.eval(`!!document.querySelector('input[aria-label="Due time"]')`)).toBe(false);
-    await cdp.eval(setSelect(LIST_SELECT, 'acc-e2e:list-e2e'));
+    await cdp.waitUntil(() => document.body.textContent.includes('Move to task'));
+    expect(await cdp.evaluate(($) => $.has('input[aria-label="Due time"]'))).toBe(false);
+    await cdp.evaluate(($, select: string) => $.setValue(select, 'acc-e2e:list-e2e'), LIST_SELECT);
     await cdp.clickButtonWithText('Save');
-    const summary = await cdp.waitFor<string>(
-      `document.querySelector('[data-testid="move-confirm"]')?.textContent ?? ''`,
-    );
+    const summary = await cdp.waitForValue(($) => $.text('[data-testid="move-confirm"]'));
     expect(summary).toContain('the due time');
     expect(summary).toContain('1 alert');
     expect(summary).toContain('the priority');
@@ -206,20 +204,23 @@ describe('Converting tasks between Google Tasks and Reminders', () => {
     expect(ops.some((op) => op.kind === 'createTask' && op.taskTitle === 'Call mom')).toBe(true);
     // Date-only now: an all-day chip, no timed block.
     expect(await cdp.locate('[title="Call mom"]')).toBeTruthy();
-    expect(await cdp.eval(`!!document.querySelector('[data-testid="timed-task-ek-rem-1"]')`)).toBe(
-      false,
-    );
+    expect(await cdp.evaluate(($) => $.has('[data-testid="timed-task-ek-rem-1"]'))).toBe(false);
   });
 
   it('moves a Google task into Reminders with a due time, no confirmation needed', async () => {
     const { cdp } = app;
     await open('all-day-task-task-rent', 'Edit task');
     await clickTestId('mode-reminder');
-    await cdp.waitFor(`document.body.textContent.includes('Move to reminder')`);
-    expect(await cdp.eval(`document.querySelector('${LIST_SELECT}').value`)).toBe(
-      `${APPLE_REMINDERS_ACCOUNT_ID}:ek-list-1`,
-    );
-    await cdp.eval(`document.querySelector('input[aria-label="At a time"]').click()`);
+    await cdp.waitUntil(() => document.body.textContent.includes('Move to reminder'));
+    expect(
+      await cdp.evaluate(
+        ($, select: string) => $.el<HTMLSelectElement>(select)!.value,
+        LIST_SELECT,
+      ),
+    ).toBe(`${APPLE_REMINDERS_ACCOUNT_ID}:ek-list-1`);
+    await cdp.evaluate(($) => {
+      $.el('input[aria-label="At a time"]')!.click();
+    });
     await cdp.clickButtonWithText('Save');
     await expect
       .poll(async () => {
@@ -233,7 +234,7 @@ describe('Converting tasks between Google Tasks and Reminders', () => {
         };
       })
       .toEqual({ gone: true, listId: 'ek-list-1', provider: 'apple', timed: true });
-    expect(await cdp.eval(`!!document.querySelector('[data-testid="move-confirm"]')`)).toBe(false);
+    expect(await cdp.evaluate(($) => $.has('[data-testid="move-confirm"]'))).toBe(false);
     const ops = await readPendingOps(app.userDataDir);
     expect(ops.some((op) => op.kind === 'deleteTask' && op.eventId === 'task-rent')).toBe(true);
     expect(await cdp.locate('[data-testid^="timed-task-"][title^="Pay rent"]')).toBeTruthy();
@@ -242,7 +243,10 @@ describe('Converting tasks between Google Tasks and Reminders', () => {
   it('moves a Google task to another Google list through the queue, keeping its id', async () => {
     const { cdp } = app;
     await open('all-day-task-task-groceries', 'Edit task');
-    await cdp.eval(setSelect(LIST_SELECT, 'acc-e2e:list-errands'));
+    await cdp.evaluate(
+      ($, select: string) => $.setValue(select, 'acc-e2e:list-errands'),
+      LIST_SELECT,
+    );
     await cdp.clickButtonWithText('Save');
     await expect
       .poll(async () => {
@@ -268,6 +272,6 @@ describe('Converting tasks between Google Tasks and Reminders', () => {
           (op.kind === 'deleteTask' && op.eventId === 'task-groceries'),
       ),
     ).toBe(false);
-    expect(await cdp.eval(`!!document.querySelector('[data-testid="move-confirm"]')`)).toBe(false);
+    expect(await cdp.evaluate(($) => $.has('[data-testid="move-confirm"]'))).toBe(false);
   });
 });

@@ -1,6 +1,7 @@
 import { Account, CalendarInfo, EventRecord, Temporal } from '@calendar/core';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vite-plus/test';
 import { type App, launchApp, readEvents } from './harness.ts';
+import type { PageKit } from './page.ts';
 
 // Slot proposals in the create thread: a phrase that asks for free time
 // goes to the finder, the draft lands in the best free slot and the others
@@ -69,20 +70,24 @@ const seed = {
 
 const TITLE = 'input[placeholder="Title"]';
 const START = 'input[aria-label="Start time"]';
-const COMMAND_N = `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', metaKey: true }))`;
-const blocks = `document.querySelectorAll('[data-testid="draft-block"]').length`;
-const candidates = `document.querySelectorAll('[data-testid="slot-candidate"]').length`;
-const blockAt = (start: string) =>
-  `!!document.querySelector('[data-testid="draft-block"][data-draft-start="${start}"]')`;
-const candidateAt = (start: string) =>
-  `!!document.querySelector('[data-testid="slot-candidate"][data-draft-start="${start}"]')`;
-const chips = `document.querySelectorAll('[data-testid^="draft-slot-"]').length`;
-const pressedChip = `[...document.querySelectorAll('[data-testid^="draft-slot-"]')].findIndex((chip) => chip.getAttribute('aria-pressed') === 'true')`;
+const commandN = () => {
+  window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', metaKey: true }));
+};
+const blocks = ($: PageKit) => $.count('[data-testid="draft-block"]');
+const candidates = ($: PageKit) => $.count('[data-testid="slot-candidate"]');
+const blockAt = ($: PageKit, start: string) =>
+  $.has(`[data-testid="draft-block"][data-draft-start="${start}"]`);
+const candidateAt = ($: PageKit, start: string) =>
+  $.has(`[data-testid="slot-candidate"][data-draft-start="${start}"]`);
+const chips = ($: PageKit) => $.count('[data-testid^="draft-slot-"]');
+const pressedChip = ($: PageKit) =>
+  $.all('[data-testid^="draft-slot-"]').findIndex(
+    (chip) => chip.getAttribute('aria-pressed') === 'true',
+  );
 // The hours on the Assistant's newest card, and where the footer's steps stand.
-const cardTime = `(document.querySelector('[data-testid="assistant-card-time"]')?.textContent ?? '')`;
-const stepPosition = `(document.querySelector('[data-testid="step-position"]')?.textContent ?? '')`;
-const titleIs = (title: string) =>
-  `document.querySelector(${JSON.stringify(TITLE)})?.value === ${JSON.stringify(title)}`;
+const cardTime = ($: PageKit) => $.text('[data-testid="assistant-card-time"]');
+const stepPosition = ($: PageKit) => $.text('[data-testid="step-position"]');
+const titleIs = ($: PageKit, field: string, title: string) => $.value(field) === title;
 
 describe('Slot proposals in the create thread', () => {
   let app: App;
@@ -94,7 +99,7 @@ describe('Slot proposals in the create thread', () => {
   });
   afterEach(async () => {
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      if (!(await app.cdp.eval<boolean>(`!!document.querySelector('[data-testid="editor"]')`))) {
+      if (!(await app.cdp.evaluate(($) => $.has('[data-testid="editor"]')))) {
         return;
       }
       await app.cdp.escapeOrDiscard();
@@ -104,21 +109,19 @@ describe('Slot proposals in the create thread', () => {
 
   it('puts the draft in the slot nearest the morning’s middle, offers the rest, moves on a chip or a candidate, drops them on a change and writes on Save', async () => {
     const { cdp } = app;
-    await cdp.eval(COMMAND_N);
-    await cdp.waitFor(
-      `document.querySelector('[data-testid="editor-title"]')?.textContent === 'New event'`,
-    );
+    await cdp.evaluate(commandN);
+    await cdp.waitUntil(($) => $.text('[data-testid="editor-title"]') === 'New event');
     await cdp.say('find 30 min tomorrow morning | Focus');
     // 09:15–10:15 holds a slot centred on 10:00; the other gaps rank after it.
-    await cdp.waitFor(blockAt('09:45'));
-    expect(await cdp.eval<number>(blocks)).toBe(1);
-    expect(await cdp.eval<boolean>(titleIs('Focus'))).toBe(true);
-    await cdp.waitFor(`${chips} === 3`);
-    expect(await cdp.eval<number>(pressedChip)).toBe(0);
-    expect(await cdp.eval<number>(candidates)).toBe(2);
-    expect(await cdp.eval<boolean>(candidateAt('10:45'))).toBe(true);
-    expect(await cdp.eval<boolean>(candidateAt('08:15'))).toBe(true);
-    expect(await cdp.eval<string>(cardTime)).toBe('09:45–10:15');
+    await cdp.waitUntil(blockAt, '09:45');
+    expect(await cdp.evaluate(blocks)).toBe(1);
+    expect(await cdp.evaluate(titleIs, TITLE, 'Focus')).toBe(true);
+    await cdp.waitUntil(($) => $.count('[data-testid^="draft-slot-"]') === 3);
+    expect(await cdp.evaluate(pressedChip)).toBe(0);
+    expect(await cdp.evaluate(candidates)).toBe(2);
+    expect(await cdp.evaluate(candidateAt, '10:45')).toBe(true);
+    expect(await cdp.evaluate(candidateAt, '08:15')).toBe(true);
+    expect(await cdp.evaluate(cardTime)).toBe('09:45–10:15');
 
     // A chip moves the draft and shows its day: with the view weeks back
     // (past the pan buffer), the draft leaves the grid until the chip
@@ -126,41 +129,51 @@ describe('Slot proposals in the create thread', () => {
     for (let week = 0; week < 3; week += 1) {
       await cdp.clickTestId('nav-prev');
     }
-    await cdp.waitFor(`${blocks} === 0 && ${candidates} === 0`);
+    await cdp.waitUntil(
+      ($) =>
+        $.count('[data-testid="draft-block"]') === 0 &&
+        $.count('[data-testid="slot-candidate"]') === 0,
+    );
     await cdp.clickTestId('draft-slot-1');
-    await cdp.waitFor(blockAt('10:45'));
-    await cdp.waitFor(`document.querySelector(${JSON.stringify(START)})?.value === '10:45'`);
-    expect(await cdp.eval<number>(pressedChip)).toBe(1);
-    await cdp.waitFor(candidateAt('09:45'));
-    expect(await cdp.eval<number>(candidates)).toBe(2);
+    await cdp.waitUntil(blockAt, '10:45');
+    await cdp.waitUntil(($, start: string) => $.value(start) === '10:45', START);
+    expect(await cdp.evaluate(pressedChip)).toBe(1);
+    await cdp.waitUntil(candidateAt, '09:45');
+    expect(await cdp.evaluate(candidates)).toBe(2);
     // A slot picked is a step: the card marks the hours, the ones before struck through.
-    await cdp.waitFor(`${cardTime} === '10:45–11:1509:45–10:15'`);
-    expect(await cdp.eval<string>(stepPosition)).toBe('2 of 2');
+    await cdp.waitUntil(
+      ($) => $.text('[data-testid="assistant-card-time"]') === '10:45–11:1509:45–10:15',
+    );
+    expect(await cdp.evaluate(stepPosition)).toBe('2 of 2');
 
     // A candidate block moves it too.
     const early = await cdp.locate('[data-testid="slot-candidate"][data-draft-start="08:15"]');
     await cdp.click(early.x, early.y);
-    await cdp.waitFor(blockAt('08:15'));
-    expect(await cdp.eval<number>(pressedChip)).toBe(2);
-    expect(await cdp.eval<number>(blocks)).toBe(1);
+    await cdp.waitUntil(blockAt, '08:15');
+    expect(await cdp.evaluate(pressedChip)).toBe(2);
+    expect(await cdp.evaluate(blocks)).toBe(1);
 
     // A change in words: the proposals were for the finder phrase, so
     // they go; the step before, shown again and kept, brings them back.
     await cdp.say('| | 13:00-13:30');
-    await cdp.waitFor(blockAt('13:00'));
-    await cdp.waitFor(`!document.querySelector('[data-testid="draft-slots"]')`);
-    expect(await cdp.eval<number>(candidates)).toBe(0);
+    await cdp.waitUntil(blockAt, '13:00');
+    await cdp.waitUntil(($) => !$.has('[data-testid="draft-slots"]'));
+    expect(await cdp.evaluate(candidates)).toBe(0);
     await cdp.clickTestId('assistant-undo');
-    await cdp.waitFor(blockAt('08:15'));
-    expect(await cdp.eval<string>(stepPosition)).toBe('3 of 4');
+    await cdp.waitUntil(blockAt, '08:15');
+    expect(await cdp.evaluate(stepPosition)).toBe('3 of 4');
     await cdp.clickTestId('step-use');
-    await cdp.waitFor(`${chips} === 3`);
-    expect(await cdp.eval<string>(stepPosition)).toBe('3 of 3');
-    expect(await cdp.eval<number>(candidates)).toBe(2);
+    await cdp.waitUntil(($) => $.count('[data-testid^="draft-slot-"]') === 3);
+    expect(await cdp.evaluate(stepPosition)).toBe('3 of 3');
+    expect(await cdp.evaluate(candidates)).toBe(2);
 
     // Save writes the draft where it sits; no candidate is left behind.
     await cdp.clickButtonWithText('Save');
-    await cdp.waitFor(`${blocks} === 0 && ${candidates} === 0`);
+    await cdp.waitUntil(
+      ($) =>
+        $.count('[data-testid="draft-block"]') === 0 &&
+        $.count('[data-testid="slot-candidate"]') === 0,
+    );
     await expect
       .poll(async () =>
         (await readEvents(app.userDataDir)).find((event) => event.title === 'Focus'),
@@ -175,22 +188,20 @@ describe('Slot proposals in the create thread', () => {
 
   it('a finder phrase as a later turn moves the draft into a slot, its title kept', async () => {
     const { cdp } = app;
-    await cdp.eval(COMMAND_N);
-    await cdp.waitFor(
-      `document.querySelector('[data-testid="editor-title"]')?.textContent === 'New event'`,
-    );
+    await cdp.evaluate(commandN);
+    await cdp.waitUntil(($) => $.text('[data-testid="editor-title"]') === 'New event');
     await cdp.say('Review | +1 | 14:00-15:00');
-    await cdp.waitFor(blockAt('14:00'));
-    expect(await cdp.eval<number>(chips)).toBe(0);
+    await cdp.waitUntil(blockAt, '14:00');
+    expect(await cdp.evaluate(chips)).toBe(0);
 
     // The draft's own length (an hour) is searched for: two morning gaps
     // hold it, 09:15–10:15 nearer the morning's middle than 10:45–11:45.
     await cdp.say('find a slot tomorrow morning');
-    await cdp.waitFor(blockAt('09:15'));
-    await cdp.waitFor(`document.querySelector(${JSON.stringify(START)})?.value === '09:15'`);
-    expect(await cdp.eval<boolean>(titleIs('Review'))).toBe(true);
-    await cdp.waitFor(`${chips} === 2`);
-    expect(await cdp.eval<boolean>(candidateAt('10:45'))).toBe(true);
-    expect(await cdp.eval<string>(cardTime)).toBe('09:15–10:1514:00–15:00');
+    await cdp.waitUntil(blockAt, '09:15');
+    await cdp.waitUntil(($, start: string) => $.value(start) === '09:15', START);
+    expect(await cdp.evaluate(titleIs, TITLE, 'Review')).toBe(true);
+    await cdp.waitUntil(($) => $.count('[data-testid^="draft-slot-"]') === 2);
+    expect(await cdp.evaluate(candidateAt, '10:45')).toBe(true);
+    expect(await cdp.evaluate(cardTime)).toBe('09:15–10:1514:00–15:00');
   });
 });

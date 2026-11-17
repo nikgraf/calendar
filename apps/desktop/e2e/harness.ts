@@ -44,24 +44,31 @@ import { SqliteClient } from '@effect/sql-sqlite-node';
 import { Effect, Layer } from 'effect';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
 import { SqlClient } from 'effect/sql/SqlClient';
-import { refuseMisreadFallback } from './fallbackPrecedence';
+import {
+  type PageArgs,
+  pageExpression,
+  type PageFunction,
+  type PageKit,
+  pageSource,
+  type PageValue,
+} from './page.ts';
 
 const require = createRequire(import.meta.url);
 
 /* eslint-disable no-console -- harness diagnostics are wanted in e2e output */
 
 /**
- * For a cleanup loop that leaves an editor by its Cancel, in one eval:
+ * For a cleanup loop that leaves an editor by its Cancel, in one call:
  * Discard Changes while the editor asks (`DiscardConfirm`), else Cancel.
  */
-export const CANCEL_OR_DISCARD = `(() => {
-  const yes = document.querySelector('[data-testid="discard-confirm-yes"]');
+export const cancelOrDiscard = ($: PageKit): void => {
+  const yes = $.el('[data-testid="discard-confirm-yes"]');
   if (yes) {
     yes.click();
     return;
   }
-  [...document.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Cancel')?.click();
-})()`;
+  $.button('Cancel')?.click();
+};
 
 /**
  * The *local* ISO date `days` before today (negative = ahead), for
@@ -387,6 +394,74 @@ export const runAgentCli = (
 
 const isSettingsUrl = (url: string): boolean => /#settings(\/|$)/.test(url);
 
+/** How long a wait keeps trying. */
+export interface WaitOptions {
+  /** Milliseconds; 15 s when absent. */
+  readonly timeoutMs?: number;
+}
+
+/** A wait's arguments: the page function and its own, after the options if any. */
+type WaitCall = ReadonlyArray<unknown>;
+
+const splitWait = (
+  call: WaitCall,
+): { args: ReadonlyArray<unknown>; page: (...args: never) => unknown; timeoutMs: number } => {
+  const [first, second, ...rest] = call;
+  return typeof first === 'function'
+    ? { args: call.slice(1), page: first as (...args: never) => unknown, timeoutMs: 15_000 }
+    : {
+        args: rest,
+        page: second as (...args: never) => unknown,
+        timeoutMs: (first as WaitOptions).timeoutMs ?? 15_000,
+      };
+};
+
+/** A page function's failure, with what the page said. */
+class PageError extends Error {
+  constructor(
+    message: string,
+    /** A name the page does not have: a spec's variable the function closed over, never a passing state. */
+    readonly unknownName: boolean,
+  ) {
+    super(message);
+  }
+}
+
+/** What `noteWhen` noted in the page, by its key: the reading, or why it failed. */
+type NotingWindow = typeof window & {
+  __noted?: Record<string, { readonly error?: string; readonly value?: PageValue }>;
+};
+
+/**
+ * `noteWhen`'s watch, set up in the page: false when `holds` already
+ * does; else, at the first change of the DOM after which it does, what
+ * `read` returns (or why it failed) under `key` in `window.__noted`.
+ */
+const watchNote = (holds: () => boolean, read: () => PageValue, key: string): boolean => {
+  if (holds()) {
+    return false;
+  }
+  const noted = ((window as NotingWindow).__noted ??= {});
+  const observer = new MutationObserver(() => {
+    try {
+      if (!holds()) {
+        return;
+      }
+      noted[key] = { value: read() };
+    } catch (error) {
+      noted[key] = { error: String(error) };
+    }
+    observer.disconnect();
+  });
+  observer.observe(document.body, {
+    attributes: true,
+    characterData: true,
+    childList: true,
+    subtree: true,
+  });
+  return true;
+};
+
 /** The settings window's panes (renderer/settingsPanes.ts). */
 export type SettingsPane =
   | 'accounts'
@@ -498,94 +573,81 @@ export class Cdp {
   }
 
   /**
-   * Evaluates an expression, returning its JSON value. One whose `??`
-   * fallback takes in a comparison after it, or a literal fallback a member
-   * access (`fallbackPrecedence.ts`), is refused before it is sent.
+   * Runs a page function in the page (page.ts): called there with the kit
+   * and `args`, each sent by value as JSON. Returns what it returns, a
+   * promise awaited — JSON too, so never a DOM node.
    */
-  async eval<T>(expression: string): Promise<T> {
-    refuseMisreadFallback(expression);
-    const result = (await this.send('Runtime.evaluate', {
-      awaitPromise: true,
-      expression,
-      returnByValue: true,
-    })) as { exceptionDetails?: { text: string }; result: { value: T } };
-    if (result.exceptionDetails) {
-      throw new Error(`eval failed: ${result.exceptionDetails.text}`);
-    }
-    return result.result.value;
+  async evaluate<A extends PageArgs, R extends PageValue | void | Promise<PageValue | void>>(
+    page: PageFunction<A, R>,
+    ...args: A
+  ): Promise<Awaited<R>> {
+    return this.run<Awaited<R>>(pageExpression(page, args));
   }
 
   /**
-   * Notes what `read` evaluates to at the first change of the page after
-   * which `condition` holds — in the microtask that change queues, before
-   * any other task runs — and returns a reader for that value. `waitFor`
-   * and an `eval` after it see two commits a task apart as one on a fast
-   * host and apart only on a slow one; this tells them apart on any. The
-   * condition must be made true by a change of the DOM (a text, a node,
-   * an attribute): an input's value is no such change, but can be read.
-   * It must not hold yet: the next change, whatever it is, would note it.
+   * Polls a page function until it returns true. A failure counts as not
+   * yet — during boot the page can still be about:blank, where
+   * `document.body` is null and the first try throws — except a name the
+   * page does not have: that is a spec's variable the function closed
+   * over, so it fails at once.
    */
-  async noteWhen<T>(condition: string, read: string): Promise<() => Promise<T>> {
-    const key = JSON.stringify(`noted${String(++this.notes)}`);
-    const watching = await this.eval<boolean>(`(() => {
-      if (${condition}) {
-        return false;
-      }
-      const noted = (window.__noted ??= {});
-      const observer = new MutationObserver(() => {
-        try {
-          if (!(${condition})) {
-            return;
-          }
-          noted[${key}] = { value: ${read} };
-        } catch (error) {
-          noted[${key}] = { error: String(error) };
-        }
-        observer.disconnect();
-      });
-      observer.observe(document.body, { attributes: true, characterData: true, childList: true, subtree: true });
-      return true;
-    })()`);
-    if (!watching) {
-      throw new Error(`noteWhen: the page already reads ${condition.slice(0, 120)}`);
-    }
-    return async () => {
-      const noted = await this.eval<{ error?: string; value?: T } | null>(
-        `window.__noted?.[${key}] ?? null`,
-      );
-      if (noted === null) {
-        throw new Error(`noteWhen: the page never changed into ${condition.slice(0, 120)}`);
-      }
-      if (noted.error !== undefined) {
-        throw new Error(`noteWhen: reading failed: ${noted.error}`);
-      }
-      return noted.value as T;
-    };
+  waitUntil<A extends PageArgs>(page: PageFunction<A, boolean>, ...args: A): Promise<void>;
+  waitUntil<A extends PageArgs>(
+    options: WaitOptions,
+    page: PageFunction<A, boolean>,
+    ...args: A
+  ): Promise<void>;
+  async waitUntil(...call: WaitCall): Promise<void> {
+    await this.pollPage(call, false, (value) => value === true);
   }
 
   /**
-   * Polls an expression until it is truthy; returns its value. Evaluation
-   * errors count as "not ready yet" and keep polling: during boot the page
-   * can still be about:blank, where `document.body` is null and the very
-   * first eval throws — a hard throw there would kill the whole run.
+   * `waitUntil`, drawing a frame before each try. A window behind another
+   * one (CI's can be) is hidden to its page, which then runs no rendering
+   * steps: a ResizeObserver reports only in one, so what the page sets from
+   * it waits for a frame that may never come. A screenshot draws one.
    */
-  async waitFor<T>(expression: string, timeoutMs = 15_000): Promise<T> {
-    return this.poll<T>(expression, timeoutMs, false);
+  waitUntilRendered<A extends PageArgs>(page: PageFunction<A, boolean>, ...args: A): Promise<void>;
+  waitUntilRendered<A extends PageArgs>(
+    options: WaitOptions,
+    page: PageFunction<A, boolean>,
+    ...args: A
+  ): Promise<void>;
+  async waitUntilRendered(...call: WaitCall): Promise<void> {
+    await this.pollPage(call, true, (value) => value === true);
   }
 
   /**
-   * `waitFor`, drawing a frame before each try. A window behind another one
-   * (CI's can be) is hidden to its page, which then runs no rendering steps:
-   * a ResizeObserver reports only in one, so what the page sets from it
-   * waits for a frame that may never come. A screenshot draws one.
+   * Polls a page function until it returns something other than null,
+   * undefined or '' (the kit's text of nothing), and returns that. Never
+   * a boolean: a condition is
+   * `waitUntil`'s, and the type refuses a function that returns a value
+   * or a boolean, which is what a misread `??` fallback returns.
    */
-  async waitForRendered<T>(expression: string, timeoutMs = 15_000): Promise<T> {
-    return this.poll<T>(expression, timeoutMs, true);
+  waitForValue<A extends PageArgs, R extends Exclude<PageValue, boolean>>(
+    page: PageFunction<A, R | null | undefined>,
+    ...args: A
+  ): Promise<R>;
+  waitForValue<A extends PageArgs, R extends Exclude<PageValue, boolean>>(
+    options: WaitOptions,
+    page: PageFunction<A, R | null | undefined>,
+    ...args: A
+  ): Promise<R>;
+  async waitForValue(...call: WaitCall): Promise<unknown> {
+    return this.pollPage(
+      call,
+      false,
+      (value) => value !== null && value !== undefined && value !== '',
+    );
   }
 
-  private async poll<T>(expression: string, timeoutMs: number, drawFrame: boolean): Promise<T> {
-    // Here too: in the loop, `eval`'s refusal would count as "not ready yet".
-    refuseMisreadFallback(expression);
+  private async pollPage(
+    call: WaitCall,
+    drawFrame: boolean,
+    done: (value: unknown) => boolean,
+  ): Promise<unknown> {
+    const { args, page, timeoutMs } = splitWait(call);
+    const expression = pageExpression(page, args);
     const deadline = Date.now() + timeoutMs;
     let lastError = '';
     for (;;) {
@@ -593,19 +655,87 @@ export class Cdp {
         if (drawFrame) {
           await this.send('Page.captureScreenshot');
         }
-        const value = await this.eval<T>(expression);
-        if (value) {
+        const value = await this.run<unknown>(expression);
+        if (done(value)) {
           return value;
         }
         lastError = '';
       } catch (error) {
-        lastError = ` (last error: ${String(error).slice(0, 120)})`;
+        if (error instanceof PageError && error.unknownName) {
+          throw error;
+        }
+        lastError = ` (last error: ${String(error).slice(0, 200)})`;
       }
       if (Date.now() > deadline) {
-        throw new Error(`waitFor timed out: ${expression.slice(0, 120)}${lastError}`);
+        throw new Error(
+          `wait timed out after ${String(timeoutMs)} ms: ${page.toString().slice(0, 200)} ${JSON.stringify(args).slice(0, 120)}${lastError}`,
+        );
       }
       await sleep(150);
     }
+  }
+
+  private async run<T>(expression: string): Promise<T> {
+    const result = (await this.send('Runtime.evaluate', {
+      awaitPromise: true,
+      expression,
+      returnByValue: true,
+    })) as {
+      exceptionDetails?: {
+        exception?: { className?: string; description?: string };
+        text: string;
+      };
+      result: { value: T };
+    };
+    const failure = result.exceptionDetails;
+    if (failure) {
+      throw new PageError(
+        `eval failed: ${failure.exception?.description ?? failure.text}`,
+        failure.exception?.className === 'ReferenceError',
+      );
+    }
+    return result.result.value;
+  }
+
+  /**
+   * Notes what `read` evaluates to at the first change of the page after
+   * which `condition` holds — in the microtask that change queues, before
+   * any other task runs — and returns a reader for that value. A wait
+   * and an `evaluate` after it see two commits a task apart as one on a fast
+   * host and apart only on a slow one; this tells them apart on any. The
+   * condition must be made true by a change of the DOM (a text, a node,
+   * an attribute): an input's value is no such change, but can be read.
+   * It must not hold yet: the next change, whatever it is, would note it.
+   * Both are page functions, called there with a fresh kit and `args`
+   * each time the observer runs.
+   */
+  async noteWhen<A extends PageArgs, R extends PageValue>(
+    condition: PageFunction<A, boolean>,
+    read: PageFunction<A, R>,
+    ...args: A
+  ): Promise<() => Promise<R>> {
+    const key = `noted${String(++this.notes)}`;
+    const called = (page: PageFunction<A, PageValue>) => `() => ${pageExpression(page, args)}`;
+    const watching = await this.run<boolean>(
+      `(${pageSource(watchNote)})(${called(condition)}, ${called(read)}, ${JSON.stringify(key)})`,
+    );
+    const said = () => `${condition.toString().slice(0, 120)} ${JSON.stringify(args).slice(0, 80)}`;
+    if (!watching) {
+      throw new Error(`noteWhen: the page already reads ${said()}`);
+    }
+    return async () => {
+      const noted = await this.evaluate(
+        (_: PageKit, key: string) => (window as NotingWindow).__noted?.[key] ?? null,
+        key,
+      );
+      if (noted === null) {
+        throw new Error(`noteWhen: the page never changed into ${said()}`);
+      }
+      if (noted.error !== undefined) {
+        throw new Error(`noteWhen: reading failed: ${noted.error}`);
+      }
+      return noted.value as R;
+    };
   }
 
   /**
@@ -630,48 +760,57 @@ export class Cdp {
     selector: string,
     options: { atBottom?: boolean; avoid?: string; index?: number } = {},
   ): Promise<{ x: number; y: number }> {
-    const point = await this.waitFor<string>(`(() => {
-      // The element's horizontal span left once the viewport and every
-      // clipping ancestor's content box (scrollbars excluded) cut it.
-      const visibleSpan = (el) => {
-        const r = el.getBoundingClientRect();
-        let left = Math.max(r.left, 0);
-        let right = Math.min(r.right, window.innerWidth);
-        for (let a = el.parentElement; a; a = a.parentElement) {
-          if (getComputedStyle(a).overflowX !== 'visible') {
-            const ar = a.getBoundingClientRect();
-            const inner = ar.left + a.clientLeft;
-            left = Math.max(left, inner);
-            right = Math.min(right, inner + a.clientWidth);
+    return this.waitForValue(
+      ($, selector: string, index: number, atBottom: boolean, avoid: string | null) => {
+        // The element's horizontal span left once the viewport and every
+        // clipping ancestor's content box (scrollbars excluded) cut it.
+        const visibleSpan = (el: Element) => {
+          const r = el.getBoundingClientRect();
+          let left = Math.max(r.left, 0);
+          let right = Math.min(r.right, window.innerWidth);
+          for (let a = el.parentElement; a; a = a.parentElement) {
+            if (getComputedStyle(a).overflowX !== 'visible') {
+              const ar = a.getBoundingClientRect();
+              const inner = ar.left + a.clientLeft;
+              left = Math.max(left, inner);
+              right = Math.min(right, inner + a.clientWidth);
+            }
           }
+          return right - left >= 8 ? { left, right } : null;
+        };
+        const el = $.all(selector).filter((candidate) => visibleSpan(candidate) !== null)[index];
+        if (!el) {
+          return null;
         }
-        return right - left >= 8 ? { left, right } : null;
-      };
-      const visible = [...document.querySelectorAll(${JSON.stringify(selector)})].filter(
-        (el) => visibleSpan(el) !== null,
-      );
-      const el = visible[${options.index ?? 0}];
-      if (!el) return '';
-      el.scrollIntoView({ block: 'center', inline: 'nearest' });
-      const span = visibleSpan(el);
-      if (!span) return '';
-      const r = el.getBoundingClientRect();
-      const y = ${options.atBottom ? 'Math.floor(r.bottom) - 3' : 'Math.floor(r.y) + 8'};
-      const avoid = ${JSON.stringify(options.avoid ?? null)};
-      // The middle of the visible part first; with \`avoid\`, further right
-      // (a chip's checkbox leads it), then left of the middle.
-      const fractions = avoid ? [0.5, 0.7, 0.85, 0.3] : [0.5];
-      for (const fraction of fractions) {
-        const x = Math.floor(span.left + (span.right - span.left) * fraction);
-        const hit = document.elementFromPoint(x, y);
-        if (!hit || !(el === hit || el.contains(hit) || hit.contains(el))) continue;
-        const blocked = avoid ? hit.closest(avoid) : null;
-        if (blocked && blocked !== el && el.contains(blocked)) continue;
-        return JSON.stringify({ x, y });
-      }
-      return '';
-    })()`);
-    return JSON.parse(point) as { x: number; y: number };
+        el.scrollIntoView({ block: 'center', inline: 'nearest' });
+        const span = visibleSpan(el);
+        if (!span) {
+          return null;
+        }
+        const r = el.getBoundingClientRect();
+        const y = atBottom ? Math.floor(r.bottom) - 3 : Math.floor(r.y) + 8;
+        // The middle of the visible part first; with `avoid`, further right
+        // (a chip's checkbox leads it), then left of the middle.
+        const fractions = avoid ? [0.5, 0.7, 0.85, 0.3] : [0.5];
+        for (const fraction of fractions) {
+          const x = Math.floor(span.left + (span.right - span.left) * fraction);
+          const hit = document.elementFromPoint(x, y);
+          if (!hit || !(el === hit || el.contains(hit) || hit.contains(el))) {
+            continue;
+          }
+          const blocked: Element | null = avoid ? hit.closest(avoid) : null;
+          if (blocked && blocked !== el && el.contains(blocked)) {
+            continue;
+          }
+          return { x, y };
+        }
+        return null;
+      },
+      selector,
+      options.index ?? 0,
+      options.atBottom ?? false,
+      options.avoid ?? null,
+    );
   }
 
   /**
@@ -729,22 +868,33 @@ export class Cdp {
     selector: string,
     options: { count: number; deltaX: number; deltaY?: number; gapMs?: number },
   ): Promise<void> {
-    await this.eval(`(async () => {
-      const target = document.querySelector(${JSON.stringify(selector)});
-      if (!target) throw new Error('wheelBurst: no element for selector');
-      const rect = target.getBoundingClientRect();
-      for (let index = 0; index < ${options.count}; index += 1) {
-        target.dispatchEvent(new WheelEvent('wheel', {
-          bubbles: true,
-          cancelable: true,
-          clientX: Math.floor(rect.x + rect.width / 2),
-          clientY: Math.floor(rect.y + rect.height / 2),
-          deltaX: ${options.deltaX},
-          deltaY: ${options.deltaY ?? 0},
-        }));
-        await new Promise((resolve) => setTimeout(resolve, ${options.gapMs ?? 20}));
-      }
-    })()`);
+    await this.evaluate(
+      async ($, selector: string, count: number, deltaX: number, deltaY: number, gapMs: number) => {
+        const target = $.el(selector);
+        if (!target) {
+          throw new Error('wheelBurst: no element for selector');
+        }
+        const rect = target.getBoundingClientRect();
+        for (let index = 0; index < count; index += 1) {
+          target.dispatchEvent(
+            new WheelEvent('wheel', {
+              bubbles: true,
+              cancelable: true,
+              clientX: Math.floor(rect.x + rect.width / 2),
+              clientY: Math.floor(rect.y + rect.height / 2),
+              deltaX,
+              deltaY,
+            }),
+          );
+          await new Promise((resolve) => setTimeout(resolve, gapMs));
+        }
+      },
+      selector,
+      options.count,
+      options.deltaX,
+      options.deltaY ?? 0,
+      options.gapMs ?? 20,
+    );
   }
 
   async click(x: number, y: number): Promise<void> {
@@ -792,7 +942,7 @@ export class Cdp {
 
   /** Focuses the element and types text into it (React-compatible). */
   async type(selector: string, text: string): Promise<void> {
-    await this.eval(`document.querySelector(${JSON.stringify(selector)})?.focus()`);
+    await this.evaluate(($, field: string) => $.el(field)?.focus(), selector);
     await this.send('Input.insertText', { text });
   }
 
@@ -823,19 +973,16 @@ export class Cdp {
    */
   async showEditorView(view: 'assistant' | 'form'): Promise<void> {
     await this.clickTestId(`editor-view-${view}`);
-    await this.waitFor<boolean>(
-      `(() => {
-        const editor = document.querySelector('[data-testid="editor"]');
-        return editor?.dataset.view === ${JSON.stringify(view)} && !editor.hasAttribute('data-switching');
-      })()`,
-    );
+    await this.waitUntil(($, shown: string) => {
+      const editor = $.el('[data-testid="editor"]');
+      return editor?.dataset['view'] === shown && !editor.hasAttribute('data-switching');
+    }, view);
   }
 
   /** Answers an editor's delete confirmation (MoveConfirm) with Delete. */
   async confirmDelete(): Promise<void> {
-    const yes = `document.querySelector('[data-testid="move-confirm-yes"]')`;
-    await this.waitFor<boolean>(`!!${yes}`);
-    await this.eval(`${yes}.click()`);
+    await this.waitUntil(($) => $.has('[data-testid="move-confirm-yes"]'));
+    await this.evaluate(($) => $.el('[data-testid="move-confirm-yes"]')!.click());
   }
 
   /**
@@ -844,12 +991,12 @@ export class Cdp {
    * first (`DiscardConfirm`), and is answered Discard Changes.
    */
   async discardEditor(): Promise<void> {
-    const editor = `document.querySelector('[data-testid="editor"]')`;
-    const yes = `document.querySelector('[data-testid="discard-confirm-yes"]')`;
     await this.pressEscape();
-    await this.waitFor<boolean>(`!${editor} || !!${yes}`);
-    await this.eval(`${yes}?.click()`);
-    await this.waitFor<boolean>(`!${editor}`);
+    await this.waitUntil(
+      ($) => !$.has('[data-testid="editor"]') || $.has('[data-testid="discard-confirm-yes"]'),
+    );
+    await this.evaluate(($) => $.el('[data-testid="discard-confirm-yes"]')?.click());
+    await this.waitUntil(($) => !$.has('[data-testid="editor"]'));
   }
 
   /**
@@ -858,45 +1005,45 @@ export class Cdp {
    * pressed while it asks, would answer Keep Editing instead.
    */
   async escapeOrDiscard(): Promise<void> {
-    const yes = `document.querySelector('[data-testid="discard-confirm-yes"]')`;
-    if (await this.eval<boolean>(`!!${yes}`)) {
-      await this.eval(`${yes}.click()`);
-      return;
+    const answered = await this.evaluate(($) => {
+      const yes = $.el('[data-testid="discard-confirm-yes"]');
+      yes?.click();
+      return yes !== null;
+    });
+    if (!answered) {
+      await this.pressEscape();
     }
-    await this.pressEscape();
   }
 
   /** Answers the editor's question before it goes (`DiscardConfirm`): Discard Changes, or Keep Editing. */
   async answerDiscard(discard: boolean): Promise<void> {
-    const answer = `document.querySelector('[data-testid="discard-confirm-${discard ? 'yes' : 'no'}"]')`;
-    await this.waitFor<boolean>(`!!${answer}`);
-    await this.eval(`${answer}.click()`);
-    await this.waitFor<boolean>(`!document.querySelector('[data-testid="discard-confirm"]')`);
+    const answer = `[data-testid="discard-confirm-${discard ? 'yes' : 'no'}"]`;
+    await this.waitUntil(($, button: string) => $.has(button), answer);
+    await this.evaluate(($, button: string) => $.el(button)!.click(), answer);
+    await this.waitUntil(($) => !$.has('[data-testid="discard-confirm"]'));
   }
 
   /** Clicks an event on the grid and waits for its inspector in the side panel. */
   async openInspector(selector: string): Promise<void> {
     const block = await this.locate(selector);
     await this.click(block.x, block.y);
-    await this.waitFor<boolean>(`!!document.querySelector('[data-testid="inspector"]')`);
+    await this.waitUntil(($) => $.has('[data-testid="inspector"]'));
   }
 
   /** Opens an event's editor: the grid click, then the inspector's Edit button. */
   async openEditor(selector: string): Promise<void> {
     await this.openInspector(selector);
     await this.clickTestId('inspector-edit');
-    await this.waitFor<boolean>(
-      `document.querySelector('[data-testid="editor-title"]')?.textContent === 'Edit event'`,
-    );
+    await this.waitUntil(($) => $.text('[data-testid="editor-title"]') === 'Edit event');
   }
 
   /** Shows the Today rail if the window is too narrow for it to be open by itself. */
   async showRail(): Promise<void> {
-    if (await this.eval<boolean>(`!!document.querySelector('[data-panel-kind="rail"]')`)) {
+    if (await this.evaluate(($) => $.has('[data-panel-kind="rail"]'))) {
       return;
     }
     await this.clickTestId('panel-toggle');
-    await this.waitFor<boolean>(`!!document.querySelector('[data-panel-kind="rail"]')`);
+    await this.waitUntil(($) => $.has('[data-panel-kind="rail"]'));
   }
 
   /** Clicks the element carrying a `data-testid`, scrolled into view and hit-tested. */
@@ -906,12 +1053,8 @@ export class Cdp {
   }
 
   async clickButtonWithText(text: string): Promise<void> {
-    await this.waitFor<boolean>(
-      `[...document.querySelectorAll('button')].some(b => b.textContent?.trim() === ${JSON.stringify(text)})`,
-    );
-    await this.eval(
-      `[...document.querySelectorAll('button')].find(b => b.textContent?.trim() === ${JSON.stringify(text)})?.click()`,
-    );
+    await this.waitUntil(($, label: string) => $.button(label) !== null, text);
+    await this.evaluate(($, label: string) => $.button(label)?.click(), text);
   }
 }
 
@@ -1152,24 +1295,21 @@ const dictationAudio = (): Float32Array => {
  * stream of one looping buffer of `dictationAudio`, played through Web
  * Audio — the same samples every run, whatever the room.
  */
-const fakeMicrophone = (): string => {
-  const samples = Buffer.from(dictationAudio().buffer).toString('base64');
-  return `(() => {
-    const context = new AudioContext({ sampleRate: ${String(DICTATION_SAMPLE_RATE)} });
-    const bytes = Uint8Array.from(atob(${JSON.stringify(samples)}), (char) => char.charCodeAt(0));
-    const samples = new Float32Array(bytes.buffer);
-    const buffer = context.createBuffer(1, samples.length, context.sampleRate);
-    buffer.copyToChannel(samples, 0);
-    const source = context.createBufferSource();
-    source.buffer = buffer;
-    source.loop = true;
-    source.start();
-    navigator.mediaDevices.getUserMedia = async () => {
-      const stream = context.createMediaStreamDestination();
-      source.connect(stream);
-      return stream.stream;
-    };
-  })()`;
+const fakeMicrophone = (_: PageKit, sampleRate: number, base64: string): void => {
+  const context = new AudioContext({ sampleRate });
+  const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
+  const samples = new Float32Array(bytes.buffer);
+  const buffer = context.createBuffer(1, samples.length, context.sampleRate);
+  buffer.copyToChannel(samples, 0);
+  const source = context.createBufferSource();
+  source.buffer = buffer;
+  source.loop = true;
+  source.start();
+  navigator.mediaDevices.getUserMedia = async () => {
+    const stream = context.createMediaStreamDestination();
+    source.connect(stream);
+    return stream.stream;
+  };
 };
 
 /**
@@ -1177,12 +1317,12 @@ const fakeMicrophone = (): string => {
  * canvas stream that keeps drawing (a frame the reader can encode); what
  * it "sees" is up to CALENDAR_CAMERA_CODE in the main process.
  */
-const fakeCamera = (): string => `(() => {
+const fakeCamera = (): void => {
   navigator.mediaDevices.getUserMedia = async () => {
     const canvas = document.createElement('canvas');
     canvas.width = 640;
     canvas.height = 480;
-    const context = canvas.getContext('2d');
+    const context = canvas.getContext('2d')!;
     let tick = 0;
     setInterval(() => {
       tick += 1;
@@ -1191,12 +1331,12 @@ const fakeCamera = (): string => `(() => {
     }, 50);
     return canvas.captureStream(20);
   };
-})()`;
+};
 
 /** One window's DOM and screenshot, for a failed test's artifacts. */
 const dumpPage = async (page: Cdp, dir: string, name: string) => {
   try {
-    const html = await page.eval<string>('document.body.outerHTML');
+    const html = await page.evaluate(() => document.body.outerHTML);
     writeFileSync(join(dir, `${name}.html`), html);
     const shot = (await page.send('Page.captureScreenshot')) as { data?: string };
     if (shot.data) {
@@ -1384,12 +1524,16 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
   try {
     cdp = await Cdp.connect(port);
     // Wait for the calendar shell to render.
-    await cdp.waitFor(`document.body.textContent.includes('Today')`);
+    await cdp.waitUntil(() => document.body.textContent.includes('Today'));
     if (options.microphone) {
-      await cdp.eval(fakeMicrophone());
+      await cdp.evaluate(
+        fakeMicrophone,
+        DICTATION_SAMPLE_RATE,
+        Buffer.from(dictationAudio().buffer).toString('base64'),
+      );
     }
     if (options.camera) {
-      await cdp.eval(fakeCamera());
+      await cdp.evaluate(fakeCamera);
     }
   } catch (error) {
     // A launch failure happens in beforeAll, where no test dump runs:
@@ -1403,7 +1547,7 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
   const settingsPage = async (): Promise<Cdp> => {
     if (!settings || settings.closed) {
       settings = await Cdp.connect(port, 'settings');
-      await settings.waitFor(`!!document.querySelector('[data-testid="settings-window"]')`);
+      await settings.waitUntil(($) => $.has('[data-testid="settings-window"]'));
     }
     return settings;
   };
@@ -1449,13 +1593,18 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
       }
     },
     openSettings: async (pane: SettingsPane) => {
-      await cdp.eval(`window.calendarBridge.openSettings(${JSON.stringify(pane)})`);
+      await cdp.evaluate(
+        (_, shown: SettingsPane) => window.calendarBridge.openSettings(shown),
+        pane,
+      );
       const page = await settingsPage();
-      await page.waitFor(
-        `document.querySelector('[data-testid="settings-pane-${pane}"]')?.hidden === false`,
+      await page.waitUntil(
+        ($, shown: SettingsPane) =>
+          $.el(`[data-testid="settings-pane-${shown}"]`)?.hidden === false,
+        pane,
       );
       if (options.camera) {
-        await page.eval(fakeCamera());
+        await page.evaluate(fakeCamera);
       }
       return page;
     },

@@ -449,8 +449,13 @@ commits by staging deliberately.
   harness's `openInspector` / `openEditor` (a grid click shows the
   inspector; Edit opens the editor) and locate by `data-testid`, never by
   a Tailwind class or a computed color (`data-color` carries a block's
-  calendar hex). Test email addresses are made up (`@example.com`), never
-  a real person's. See docs/google-sync-and-testing.md.
+  calendar hex). Their page code is a typed function (`cdp.evaluate`,
+  `waitUntil`; `e2e/page.ts`), never a string of JavaScript, also not
+  through `cdp.send('Runtime.evaluate')`: it names only its own bindings,
+  its arguments, the page kit and the page globals `page.ts` lists, and
+  `pageFunctions.test.ts` in the gate refuses anything else. Test email addresses
+  are made up (`@example.com`), never a real person's. See
+  docs/google-sync-and-testing.md.
 
 ## Working here
 

@@ -10,6 +10,7 @@ import {
 import type { GoogleFixture } from '@calendar/sync/testing/googleFixture';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test';
 import { type App, launchApp, localIsoDaysAgo, readEvents, readPendingOps } from './harness.ts';
+import { type PageKit, pageExpression } from './page.ts';
 
 // Two edits a 412 parked (Google's copy moved on while they were queued),
 // against the fake Google API: the banner names the event and shows what
@@ -107,7 +108,7 @@ const seed = {
   ],
 };
 
-const banner = `document.querySelector('[data-testid="conflict-banner"]')?.textContent ?? ''`;
+const banner = ($: PageKit) => $.text('[data-testid="conflict-banner"]');
 const eventTitle = async (app: App, id: string) =>
   (await readEvents(app.userDataDir)).find((event) => event.id === id);
 
@@ -121,8 +122,10 @@ describe('Sync conflicts', () => {
   });
 
   it('names the event, shows what differs, and take theirs loads Google’s copy', async () => {
-    await app.cdp.waitFor(`(${banner}).includes('Budget review (mine)')`);
-    const text = await app.cdp.eval<string>(banner);
+    await app.cdp.waitUntil(($) =>
+      $.text('[data-testid="conflict-banner"]').includes('Budget review (mine)'),
+    );
+    const text = await app.cdp.evaluate(banner);
     expect(text).toContain('changed on Google while your edit waited');
     expect(text).toContain('Budget review (Google)');
     expect(text).toContain('+1 more');
@@ -139,14 +142,16 @@ describe('Sync conflicts', () => {
   });
 
   it('keep mine re-sends the edit and the queue drains', async () => {
-    await app.cdp.waitFor(`(${banner}).includes('Offsite (mine)')`);
+    await app.cdp.waitUntil(($) =>
+      $.text('[data-testid="conflict-banner"]').includes('Offsite (mine)'),
+    );
     await app.cdp.clickButtonWithText('Keep mine');
     await expect.poll(async () => (await readPendingOps(app.userDataDir)).length, POLL).toBe(0);
     // The patch response acked the row with the user's title.
     await expect
       .poll(() => eventTitle(app, 'evt-mine'), POLL)
       .toMatchObject({ syncStatus: 'synced', title: 'Offsite (mine)' });
-    await app.cdp.waitFor(`!document.querySelector('[data-testid="conflict-banner"]')`);
+    await app.cdp.waitUntil(($) => !$.has('[data-testid="conflict-banner"]'));
   });
 });
 
@@ -260,9 +265,9 @@ const noticesSeed = {
  * region's first entry is the commit that inserted it: empty when it was
  * mounted ahead of its content, as a screen reader needs it to be.
  */
-const RECORD_LIVE_REGIONS = `(() => {
-  const log = (window.__liveRegions = []);
-  const seen = new WeakMap();
+const recordLiveRegions = () => {
+  const log: Array<RegionEntry> = ((window as LiveRegionWindow).__liveRegions = []);
+  const seen = new WeakMap<Element, string>();
   const scan = () => {
     for (const region of document.querySelectorAll('[role="alert"], [role="status"]')) {
       const text = region.textContent ?? '';
@@ -272,17 +277,23 @@ const RECORD_LIVE_REGIONS = `(() => {
       }
     }
   };
-  new MutationObserver(scan).observe(document, { characterData: true, childList: true, subtree: true });
-})()`;
+  new MutationObserver(scan).observe(document, {
+    characterData: true,
+    childList: true,
+    subtree: true,
+  });
+};
 
 interface RegionEntry {
   readonly first: boolean;
   readonly id: string | null;
   readonly text: string;
 }
+/** Where `recordLiveRegions` keeps its log in the page. */
+type LiveRegionWindow = Window & { __liveRegions?: Array<RegionEntry> };
 const regionLog = async (cdp: App['cdp']): Promise<ReadonlyArray<RegionEntry>> =>
   JSON.parse(
-    await cdp.eval<string>('JSON.stringify(window.__liveRegions ?? [])'),
+    await cdp.evaluate(() => JSON.stringify((window as LiveRegionWindow).__liveRegions ?? [])),
   ) as Array<RegionEntry>;
 
 interface Box {
@@ -297,18 +308,20 @@ const boxes = async (
   ids: ReadonlyArray<string>,
 ): Promise<Record<string, Box | null>> =>
   JSON.parse(
-    await cdp.eval<string>(`(() => {
-      const box = (element) => {
-        if (!element) return null;
+    await cdp.evaluate(($, wanted: ReadonlyArray<string>) => {
+      const box = (element: Element | null | undefined) => {
+        if (!element) {
+          return null;
+        }
         const { bottom, left, right, top } = element.getBoundingClientRect();
         return { bottom, left, right, top };
       };
-      const byId = (id) => document.querySelector('[data-testid="' + id + '"]');
+      const byId = (id: string) => $.el(`[data-testid="${id}"]`);
       return JSON.stringify({
-        ...Object.fromEntries(${JSON.stringify(ids)}.map((id) => [id, box(byId(id))])),
+        ...Object.fromEntries(wanted.map((id) => [id, box(byId(id))])),
         column: box(byId('notice-stack')?.parentElement),
       });
-    })()`),
+    }, ids),
   ) as Record<string, Box | null>;
 
 const overlaps = (a: Box, b: Box): boolean =>
@@ -342,12 +355,6 @@ const COMPLETE_WATER = 'button[aria-label="Complete task Water plants"]';
 const FAILED = 'Couldn’t update the task — the change was not applied.';
 const ANNOUNCED = 'Sync conflict: “Budget review (mine)” changed on Google while your edit waited.';
 
-const setSelect = (selector: string, value: string) => `(() => {
-  const element = document.querySelector(${JSON.stringify(selector)});
-  Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set.call(element, ${JSON.stringify(value)});
-  element.dispatchEvent(new Event('change', { bubbles: true }));
-})()`;
-
 describe('The notice stack', () => {
   let app: App;
   beforeAll(async () => {
@@ -367,26 +374,31 @@ describe('The notice stack', () => {
 
   it('mounts its live regions empty and tells a parked change once, politely', async () => {
     const { cdp } = app;
-    await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: RECORD_LIVE_REGIONS });
+    await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
+      source: pageExpression(recordLiveRegions, []),
+    });
     await cdp.send('Page.reload', {});
-    await cdp.waitFor(`(${banner}).includes('Budget review (mine)')`);
+    await cdp.waitUntil(($) =>
+      $.text('[data-testid="conflict-banner"]').includes('Budget review (mine)'),
+    );
     await expect
       .poll(async () => (await regionLog(cdp)).some((entry) => entry.text === ANNOUNCED), POLL)
       .toBe(true);
 
     const facts = JSON.parse(
-      await cdp.eval<string>(`(() => {
-        const role = (id) => document.querySelector('[data-testid="' + id + '"]')?.getAttribute('role');
-        const banner = document.querySelector('[data-testid="conflict-banner"]');
+      await cdp.evaluate(($) => {
+        const role = (id: string) => $.el(`[data-testid="${id}"]`)?.getAttribute('role');
+        const banner = $.el('[data-testid="conflict-banner"]');
         return JSON.stringify({
           alerts: role('notice-alerts'),
-          bannerLabel: document.getElementById(banner?.getAttribute('aria-labelledby') ?? '')?.textContent,
+          bannerLabel: document.getElementById(banner?.getAttribute('aria-labelledby') ?? '')
+            ?.textContent,
           bannerTag: banner?.tagName,
           conflict: role('conflict-status'),
-          dialogs: document.querySelectorAll('[role="alertdialog"]').length,
+          dialogs: $.count('[role="alertdialog"]'),
           status: role('notice-status'),
         });
-      })()`),
+      }),
     ) as Record<string, unknown>;
     expect(facts).toEqual({
       alerts: 'alert',
@@ -413,8 +425,10 @@ describe('The notice stack', () => {
     await cdp.openEditor('[title^="Budget review (mine)"]');
     const complete = await cdp.locate(COMPLETE_WATER);
     await cdp.click(complete.x, complete.y);
-    await cdp.waitFor(
-      `document.querySelector('[data-testid="notice-alerts"] [data-testid="mutation-toast"]')?.textContent?.includes(${JSON.stringify(FAILED)})`,
+    await cdp.waitUntil(
+      ($, failed: string) =>
+        $.text('[data-testid="notice-alerts"] [data-testid="mutation-toast"]').includes(failed),
+      FAILED,
     );
     // The failure reached the alert region that was mounted, empty, at load.
     const log = await regionLog(cdp);
@@ -428,8 +442,8 @@ describe('The notice stack', () => {
     const found = await boxes(cdp, ['mutation-toast', 'conflict-banner', 'panel', 'sidebar']);
     expectStacked(found, ['mutation-toast', 'conflict-banner']);
     expect(
-      await cdp.eval<string | null>(
-        `document.querySelector('[data-testid="panel"]')?.getAttribute('data-panel-kind') ?? null`,
+      await cdp.evaluate(
+        ($) => $.el('[data-testid="panel"]')?.getAttribute('data-panel-kind') ?? null,
       ),
     ).toBe('editEvent');
     for (const id of ['mutation-toast', 'conflict-banner']) {
@@ -442,15 +456,14 @@ describe('The notice stack', () => {
   it('tells a change Google refused politely, in the same stack as the rest', async () => {
     const { cdp } = app;
     await cdp.openEditor('[title^="Move me"]');
-    await cdp.eval(setSelect('select[aria-label="Calendar"]', 'acc-e2e:cal-other'));
+    await cdp.evaluate(($) => $.setValue('select[aria-label="Calendar"]', 'acc-e2e:cal-other'));
     await cdp.clickButtonWithText('Save');
-    await cdp.waitFor(
-      `!!document.querySelector('[data-testid="notice-status"] [data-testid="dropped-toast"]')`,
-      20_000,
+    await cdp.waitUntil({ timeoutMs: 20_000 }, ($) =>
+      $.has('[data-testid="notice-status"] [data-testid="dropped-toast"]'),
     );
     const complete = await cdp.locate(COMPLETE_WATER);
     await cdp.click(complete.x, complete.y);
-    await cdp.waitFor(`!!document.querySelector('[data-testid="mutation-toast"]')`);
+    await cdp.waitUntil(($) => $.has('[data-testid="mutation-toast"]'));
 
     expectStacked(await boxes(cdp, ['mutation-toast', 'dropped-toast', 'conflict-banner']), [
       'mutation-toast',
@@ -493,37 +506,39 @@ describe('The notice stack in a narrow window', () => {
 
   it('stays readable beside the sidebar and the open editor, clear of Cancel and Save', async () => {
     const { cdp } = app;
-    await cdp.waitFor(`(${banner}).includes('Budget review (mine)')`);
+    await cdp.waitUntil(($) =>
+      $.text('[data-testid="conflict-banner"]').includes('Budget review (mine)'),
+    );
     // The reminder's chip is out of reach once the editor squeezes the grid.
     const complete = await cdp.locate(COMPLETE_WATER);
     await cdp.click(complete.x, complete.y);
-    await cdp.waitFor(`!!document.querySelector('[data-testid="mutation-toast"]')`);
+    await cdp.waitUntil(($) => $.has('[data-testid="mutation-toast"]'));
     await cdp.openEditor('[title^="Budget review (mine)"]');
     // The stack leaves the narrowed column once its ResizeObserver reports
     // and React renders the new span (its inline width). The observer
     // reports only while the page renders, and a window behind another one,
     // as CI's can be, renders nothing until a frame is drawn: there the
     // banner was read at 29 px, and polling alone timed out.
-    await cdp.waitForRendered(
-      `!!document.querySelector('[data-testid="notice-stack"]')?.style.width`,
-    );
+    await cdp.waitUntilRendered(($) => !!$.el('[data-testid="notice-stack"]')?.style.width);
     // The editor's buttons at the panel's foot, where the notices are.
-    await cdp.eval(
-      `[...document.querySelectorAll('[data-testid="panel"] button')].find((b) => b.textContent?.trim() === 'Save')?.scrollIntoView({ block: 'end' })`,
-    );
+    await cdp.evaluate(($) => {
+      $.all('[data-testid="panel"] button')
+        .find((b) => b.textContent?.trim() === 'Save')
+        ?.scrollIntoView({ block: 'end' });
+    });
     const facts = JSON.parse(
-      await cdp.eval<string>(`(() => {
-        const box = (element) => {
-          if (!element) return null;
+      await cdp.evaluate(($) => {
+        const box = (element: Element | null | undefined) => {
+          if (!element) {
+            return null;
+          }
           const { bottom, left, right, top } = element.getBoundingClientRect();
           return { bottom, left, right, top };
         };
-        const byId = (id) => document.querySelector('[data-testid="' + id + '"]');
-        const button = (text) =>
-          [...document.querySelectorAll('[data-testid="panel"] button')].find(
-            (b) => b.textContent?.trim() === text,
-          );
-        const bannerElement = byId('conflict-banner');
+        const byId = (id: string) => $.el(`[data-testid="${id}"]`);
+        const button = (text: string) =>
+          $.all('[data-testid="panel"] button').find((b) => b.textContent?.trim() === text);
+        const bannerElement = byId('conflict-banner')!;
         const overflowing = [bannerElement, ...bannerElement.querySelectorAll('*')].filter(
           (element) => element.scrollWidth > element.clientWidth + 1,
         ).length;
@@ -535,7 +550,7 @@ describe('The notice stack in a narrow window', () => {
           toast: box(byId('mutation-toast')),
           width: window.innerWidth,
         });
-      })()`),
+      }),
     ) as {
       banner: Box;
       cancel: Box | null;

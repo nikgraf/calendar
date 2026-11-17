@@ -1,6 +1,7 @@
 import { Account, CalendarInfo, EventRecord } from '@calendar/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
 import { type App, launchApp, localDayAt } from './harness.ts';
+import type { PageKit } from './page.ts';
 
 // One shared calendar seen through two signed-in accounts: Google gives
 // the calendar and its events the same ids under both, so only the
@@ -65,9 +66,14 @@ const seed = {
   events: [copy('acc-owner'), copy('acc-reader')],
 };
 
-const BLOCKS = `[...document.querySelectorAll('[role="button"][title^="Team sync"]')]`;
-const block = (color: string) => `[role="button"][title^="Team sync"][data-color="${color}"]`;
-const READ_ONLY = `!!document.querySelector('[data-testid="event-read-only"]')`;
+const BLOCKS = '[role="button"][title^="Team sync"]';
+const SELECTED = `${BLOCKS}[data-selected]`;
+const block = (color: string) => `${BLOCKS}[data-color="${color}"]`;
+const READ_ONLY = '[data-testid="event-read-only"]';
+
+/** The calendar color of each block `selector` matches, in document order. */
+const colors = ($: PageKit, selector: string) =>
+  $.all(selector).map((el) => el.dataset.color ?? '');
 
 describe('one calendar under two accounts', () => {
   let app: App;
@@ -79,31 +85,21 @@ describe('one calendar under two accounts', () => {
   });
 
   it('draws each account’s copy in its own color', async () => {
-    await app.cdp.waitFor<boolean>(`${BLOCKS}.length === 2`);
-    expect(
-      await app.cdp.eval<Array<string>>(`${BLOCKS}.map((el) => el.dataset.color).sort()`),
-    ).toEqual([OWNER_COLOR, READER_COLOR].sort());
+    await app.cdp.waitUntil(($, selector) => $.count(selector) === 2, BLOCKS);
+    expect((await app.cdp.evaluate(colors, BLOCKS)).sort()).toEqual(
+      [OWNER_COLOR, READER_COLOR].sort(),
+    );
   });
 
   it('opens and selects the copy that was clicked, with its own permissions', async () => {
     const { cdp } = app;
     await cdp.openInspector(block(READER_COLOR));
-    await cdp.waitFor<boolean>(READ_ONLY);
-    expect(
-      await cdp.eval<Array<string>>(
-        `${BLOCKS}.filter((el) => el.hasAttribute('data-selected')).map((el) => el.dataset.color)`,
-      ),
-    ).toEqual([READER_COLOR]);
+    await cdp.waitUntil(($, selector) => $.has(selector), READ_ONLY);
+    expect(await cdp.evaluate(colors, SELECTED)).toEqual([READER_COLOR]);
 
     await cdp.openInspector(block(OWNER_COLOR));
-    await cdp.waitFor<boolean>(`!${READ_ONLY}`);
-    expect(
-      await cdp.eval<boolean>(`!!document.querySelector('[data-testid="inspector-edit"]')`),
-    ).toBe(true);
-    expect(
-      await cdp.eval<Array<string>>(
-        `${BLOCKS}.filter((el) => el.hasAttribute('data-selected')).map((el) => el.dataset.color)`,
-      ),
-    ).toEqual([OWNER_COLOR]);
+    await cdp.waitUntil(($, selector) => !$.has(selector), READ_ONLY);
+    expect(await cdp.evaluate(($) => $.has('[data-testid="inspector-edit"]'))).toBe(true);
+    expect(await cdp.evaluate(colors, SELECTED)).toEqual([OWNER_COLOR]);
   });
 });

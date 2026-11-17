@@ -95,14 +95,10 @@ const seed = {
 };
 
 // CDP key events don't carry macOS meta reliably: dispatch ⌘N to the app's own window listener.
-const COMMAND_N = `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', metaKey: true }))`;
+const commandN = () => {
+  window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', metaKey: true }));
+};
 const TITLE = 'input[placeholder="Title"]';
-const exists = (testId: string) => `!!document.querySelector('[data-testid="${testId}"]')`;
-const textOf = (testId: string) =>
-  `(document.querySelector('[data-testid="${testId}"]')?.textContent ?? '')`;
-const valueOf = (selector: string) =>
-  `(document.querySelector(${JSON.stringify(selector)})?.value ?? '')`;
-const headingIs = (text: string) => `${textOf('editor-title')} === ${JSON.stringify(text)}`;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 describe('Discarding an editor that holds something', () => {
@@ -118,33 +114,31 @@ describe('Discarding an editor that holds something', () => {
   }, 20_000);
   afterEach(async () => {
     // A failure above must not strand an editor for the next test.
-    if (await app.cdp.eval<boolean>(exists('editor'))) {
+    if (await app.cdp.evaluate(($) => $.has('[data-testid="editor"]'))) {
       await app.cdp.discardEditor();
     }
   });
 
   /** Sets the form's title as typing would, all at once. */
   const setTitle = (text: string) =>
-    app.cdp.eval(`(() => {
-      const input = document.querySelector(${JSON.stringify(TITLE)});
-      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-      setter.call(input, ${JSON.stringify(text)});
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    })()`);
+    app.cdp.evaluate(($, title: string, value: string) => $.setValue(title, value), TITLE, text);
+  /** Waits for the editor's heading to read `text`. */
+  const headingIs = (text: string) =>
+    app.cdp.waitUntil(($, want: string) => $.text('[data-testid="editor-title"]') === want, text);
   /** A new event on its form: ⌘N, then the Form tab. */
   const openNewForm = async () => {
-    await app.cdp.eval(COMMAND_N);
-    await app.cdp.waitFor(headingIs('New event'));
+    await app.cdp.evaluate(commandN);
+    await headingIs('New event');
     await app.cdp.showEditorView('form');
   };
   /** The editor is still up a moment after: nothing closed it, and no question came. */
   const staysUp = async () => {
     await sleep(300);
-    expect(await app.cdp.eval<boolean>(exists('editor'))).toBe(true);
+    expect(await app.cdp.evaluate(($) => $.has('[data-testid="editor"]'))).toBe(true);
   };
   const closesAtOnce = async () => {
-    await app.cdp.waitFor(`!${exists('editor')}`);
-    expect(await app.cdp.eval<boolean>(exists('discard-confirm'))).toBe(false);
+    await app.cdp.waitUntil(($) => !$.has('[data-testid="editor"]'));
+    expect(await app.cdp.evaluate(($) => $.has('[data-testid="discard-confirm"]'))).toBe(false);
   };
 
   it('asks before Cancel, the X or Escape drops a new event; Keep Editing keeps it, Discard closes it', async () => {
@@ -153,30 +147,30 @@ describe('Discarding an editor that holds something', () => {
     await setTitle('Half written');
 
     await cdp.clickButtonWithText('Cancel');
-    await cdp.waitFor(exists('discard-confirm'));
-    expect(await cdp.eval<string>(textOf('discard-confirm'))).toContain(
+    await cdp.waitUntil(($) => $.has('[data-testid="discard-confirm"]'));
+    expect(await cdp.evaluate(($) => $.text('[data-testid="discard-confirm"]'))).toContain(
       'Are you sure you want to discard this new event?',
     );
     // The safe answer holds the focus: Enter keeps the draft.
-    expect(
-      await cdp.eval<string>(`document.activeElement?.getAttribute('data-testid') ?? ''`),
-    ).toBe('discard-confirm-no');
+    expect(await cdp.evaluate(() => document.activeElement?.getAttribute('data-testid'))).toBe(
+      'discard-confirm-no',
+    );
     await cdp.answerDiscard(false);
     await staysUp();
-    expect(await cdp.eval<string>(valueOf(TITLE))).toBe('Half written');
+    expect(await cdp.evaluate(($, title: string) => $.value(title), TITLE)).toBe('Half written');
 
     // The X asks the same; Escape while it asks is Keep Editing.
     await cdp.clickTestId('editor-close');
-    await cdp.waitFor(exists('discard-confirm'));
+    await cdp.waitUntil(($) => $.has('[data-testid="discard-confirm"]'));
     await cdp.pressEscape();
-    await cdp.waitFor(`!${exists('discard-confirm')}`);
+    await cdp.waitUntil(($) => !$.has('[data-testid="discard-confirm"]'));
     await staysUp();
 
     // Escape asks too, and Discard Changes closes the editor with nothing written.
     await cdp.pressEscape();
-    await cdp.waitFor(exists('discard-confirm'));
+    await cdp.waitUntil(($) => $.has('[data-testid="discard-confirm"]'));
     await cdp.answerDiscard(true);
-    await cdp.waitFor(`!${exists('editor')}`);
+    await cdp.waitUntil(($) => !$.has('[data-testid="editor"]'));
     expect((await readEvents(app.userDataDir)).some((e) => e.title === 'Half written')).toBe(false);
   });
 
@@ -186,11 +180,11 @@ describe('Discarding an editor that holds something', () => {
     await setTitle('Half written');
     await cdp.openInspector('[title^="Coffee chat"]').catch(() => undefined);
     // The click asked instead of replacing the editor.
-    await cdp.waitFor(exists('discard-confirm'));
-    expect(await cdp.eval<boolean>(exists('inspector'))).toBe(false);
+    await cdp.waitUntil(($) => $.has('[data-testid="discard-confirm"]'));
+    expect(await cdp.evaluate(($) => $.has('[data-testid="inspector"]'))).toBe(false);
     await cdp.answerDiscard(true);
-    await cdp.waitFor(exists('inspector'));
-    expect(await cdp.eval<string>(textOf('inspector'))).toContain('Coffee chat');
+    await cdp.waitUntil(($) => $.has('[data-testid="inspector"]'));
+    expect(await cdp.evaluate(($) => $.text('[data-testid="inspector"]'))).toContain('Coffee chat');
     await cdp.pressEscape();
   });
 
@@ -204,53 +198,52 @@ describe('Discarding an editor that holds something', () => {
     // Made a task before anything was put in: the task form opens afresh.
     await openNewForm();
     await cdp.clickTestId('mode-task');
-    await cdp.waitFor(headingIs('New task'));
+    await headingIs('New task');
     await cdp.pressEscape();
     await closesAtOnce();
 
     // And back: the event form the task's values made opens afresh too.
     await openNewForm();
     await cdp.clickTestId('mode-task');
-    await cdp.waitFor(headingIs('New task'));
+    await headingIs('New task');
     await cdp.clickTestId('mode-event');
-    await cdp.waitFor(headingIs('New event'));
+    await headingIs('New event');
     await cdp.pressEscape();
     await closesAtOnce();
 
     // A series' occurrence: its rule arrives after the editor opened, and is no change.
     // Today's, not the first: an occurrence row has no rule of its own.
     await cdp.openEditor(`[data-day="${today.toString()}"] [title^="Daily sync"]`);
-    await cdp.waitFor(`document.querySelector('select[aria-label="Repeat"]')?.value === 'daily'`);
+    await cdp.waitUntil(($) => $.value('select[aria-label="Repeat"]') === 'daily');
     await sleep(300);
     await cdp.pressEscape();
     await closesAtOnce();
 
     // Its repeat taken away is a change, though the rule is not in the reading until it is.
     await cdp.openEditor(`[data-day="${today.toString()}"] [title^="Daily sync"]`);
-    await cdp.waitFor(`document.querySelector('select[aria-label="Repeat"]')?.value === 'daily'`);
-    await cdp.eval(`(() => {
-      const select = document.querySelector('select[aria-label="Repeat"]');
-      const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set;
-      setter.call(select, 'none');
-      select.dispatchEvent(new Event('change', { bubbles: true }));
-    })()`);
-    await cdp.waitFor(`document.querySelector('select[aria-label="Repeat"]')?.value === 'none'`);
+    await cdp.waitUntil(($) => $.value('select[aria-label="Repeat"]') === 'daily');
+    await cdp.evaluate(($) => $.setValue('select[aria-label="Repeat"]', 'none'));
+    await cdp.waitUntil(($) => $.value('select[aria-label="Repeat"]') === 'none');
     await cdp.pressEscape();
-    await cdp.waitFor(exists('discard-confirm'));
-    expect(await cdp.eval<string>(textOf('discard-confirm'))).toContain('discard your changes');
+    await cdp.waitUntil(($) => $.has('[data-testid="discard-confirm"]'));
+    expect(await cdp.evaluate(($) => $.text('[data-testid="discard-confirm"]'))).toContain(
+      'discard your changes',
+    );
     await cdp.answerDiscard(true);
-    await cdp.waitFor(`!${exists('editor')}`);
+    await cdp.waitUntil(($) => !$.has('[data-testid="editor"]'));
 
     // A title typed, then made a task: the title goes along, and is asked about.
     await openNewForm();
     await setTitle('Half written');
     await cdp.clickTestId('mode-task');
-    await cdp.waitFor(headingIs('New task'));
+    await headingIs('New task');
     await cdp.pressEscape();
-    await cdp.waitFor(exists('discard-confirm'));
-    expect(await cdp.eval<string>(textOf('discard-confirm'))).toContain('this new task');
+    await cdp.waitUntil(($) => $.has('[data-testid="discard-confirm"]'));
+    expect(await cdp.evaluate(($) => $.text('[data-testid="discard-confirm"]'))).toContain(
+      'this new task',
+    );
     await cdp.answerDiscard(true);
-    await cdp.waitFor(`!${exists('editor')}`);
+    await cdp.waitUntil(($) => !$.has('[data-testid="editor"]'));
 
     // A saved event's title changed and put back: the form reads as it opened.
     await cdp.openEditor('[title^="Coffee chat"]');
@@ -264,44 +257,50 @@ describe('Discarding an editor that holds something', () => {
     await setTitle('Lunch plan moved');
     await cdp.clickButtonWithText('Save');
     await closesAtOnce();
-    await cdp.waitFor(`!!document.querySelector('[title^="Lunch plan moved"]')`);
+    await cdp.waitUntil(($) => $.has('[title^="Lunch plan moved"]'));
   });
 
   it('lets a saved to-do taken through Event and back close at once', async () => {
     const { cdp } = app;
     await cdp.clickTaskChip('[title="Water plants"]');
-    await cdp.waitFor(headingIs('Edit task'));
+    await headingIs('Edit task');
     // Its notes go into the hidden event form on the way: no change of the to-do's.
     await cdp.clickTestId('mode-event');
-    await cdp.waitFor(`${headingIs('Convert to event')} || ${exists('move-confirm')}`);
-    if (await cdp.eval<boolean>(exists('move-confirm'))) {
+    await cdp.waitUntil(
+      ($) =>
+        $.text('[data-testid="editor-title"]') === 'Convert to event' ||
+        $.has('[data-testid="move-confirm"]'),
+    );
+    if (await cdp.evaluate(($) => $.has('[data-testid="move-confirm"]'))) {
       await cdp.clickTestId('move-confirm-yes');
-      await cdp.waitFor(headingIs('Convert to event'));
+      await headingIs('Convert to event');
     }
     await cdp.clickTestId('mode-task');
-    await cdp.waitFor(headingIs('Edit task'));
+    await headingIs('Edit task');
     await cdp.pressEscape();
     await closesAtOnce();
   });
 
   it("asks about the Assistant's draft, and about words in its field not sent yet", async () => {
     const { cdp } = app;
-    await cdp.eval(COMMAND_N);
-    await cdp.waitFor(headingIs('New event'));
+    await cdp.evaluate(commandN);
+    await headingIs('New event');
     // Typed and not sent: the words would go with the editor.
     await cdp.type('[data-testid="quick-add-input"]', 'Dinner');
     await cdp.clickButtonWithText('Cancel');
-    await cdp.waitFor(exists('discard-confirm'));
+    await cdp.waitUntil(($) => $.has('[data-testid="discard-confirm"]'));
     await cdp.answerDiscard(false);
 
     // Sent: a draft, asked about by its kind.
-    await cdp.eval(`document.querySelector('[data-testid="quick-add-input"]').select()`);
+    await cdp.evaluate(($) => $.el<HTMLInputElement>('[data-testid="quick-add-input"]')!.select());
     await cdp.say('Dinner | +0 | 19:00-20:00');
-    await cdp.waitFor(`${textOf('assistant-card-title')}.includes('Dinner')`);
+    await cdp.waitUntil(($) => $.text('[data-testid="assistant-card-title"]').includes('Dinner'));
     await cdp.clickButtonWithText('Cancel');
-    await cdp.waitFor(exists('discard-confirm'));
-    expect(await cdp.eval<string>(textOf('discard-confirm'))).toContain('this new event');
+    await cdp.waitUntil(($) => $.has('[data-testid="discard-confirm"]'));
+    expect(await cdp.evaluate(($) => $.text('[data-testid="discard-confirm"]'))).toContain(
+      'this new event',
+    );
     await cdp.answerDiscard(true);
-    await cdp.waitFor(`!${exists('editor')}`);
+    await cdp.waitUntil(($) => !$.has('[data-testid="editor"]'));
   });
 });

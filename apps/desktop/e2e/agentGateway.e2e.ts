@@ -17,6 +17,7 @@ import {
   readPendingOps,
   runAgentCli,
 } from './harness.ts';
+import type { PageKit } from './page.ts';
 
 // Other agents reach the app through the bundled relay — the real one,
 // spawned as a child process against the launched app's socket — over the
@@ -161,23 +162,17 @@ const calendarRef = async (app: App, token: string, name: string): Promise<strin
 };
 
 const click = (cdp: App['cdp'], selector: string) =>
-  cdp.eval(`document.querySelector(${JSON.stringify(selector)})?.click()`);
+  cdp.evaluate(($, target: string) => $.el(target)?.click(), selector);
 
 const SEARCH_INPUT = '[data-testid="search-input"]';
-const PANEL_KIND = `document.querySelector('[data-testid="panel"]')?.dataset.panelKind`;
 
-/** An expression for the text of the inspector's `inspector-<part>` element. */
-const inspectorText = (part: string) =>
-  `document.querySelector('[data-testid="inspector-${part}"]')?.textContent`;
+/** Whether the text of the inspector's `inspector-<part>` element is `text`. */
+const inspectorTextIs = ($: PageKit, part: string, text: string) =>
+  $.text(`[data-testid="inspector-${part}"]`) === text;
 
 /** Changes a <select> the way a user would, so React sees it. */
 const choose = (cdp: App['cdp'], selector: string, value: string) =>
-  cdp.eval(`(() => {
-    const select = document.querySelector(${JSON.stringify(selector)});
-    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set;
-    setter.call(select, ${JSON.stringify(value)});
-    select.dispatchEvent(new Event('change', { bubbles: true }));
-  })()`);
+  cdp.evaluate(($, target: string, picked: string) => $.setValue(target, picked), selector, value);
 
 const newEvent = (
   calendar: string,
@@ -324,7 +319,7 @@ describe('agent gateway: other agents reach the app over the CLI and MCP', () =>
     const ops = await readPendingOps(app.userDataDir);
     expect(ops.filter((op) => op.kind === 'create')).toHaveLength(1);
     // The open window repaints without a reload.
-    await app.cdp.waitFor(`document.body.textContent.includes('Agent dinner')`);
+    await app.cdp.waitUntil(() => document.body.textContent.includes('Agent dinner'));
 
     const log = await readAgentRequests(app.userDataDir);
     expect(log[0]).toMatchObject({
@@ -342,7 +337,7 @@ describe('agent gateway: other agents reach the app over the CLI and MCP', () =>
     const work = await calendarRef(app, WRITER, 'Work');
     json(await runAgentCli(app, WRITER, newEvent(work, title, 10)));
     await cdp.openInspector(`[title^=${JSON.stringify(title)}]`);
-    await cdp.waitFor(`${inspectorText('title')} === ${JSON.stringify(title)}`);
+    await cdp.waitUntil(inspectorTextIs, 'title', title);
     const { events } = json<{ events: ReadonlyArray<{ ref: string; title: string }> }>(
       await runAgentCli(app, WRITER, ['list_events', '--from', today.from, '--to', today.to]),
     );
@@ -363,16 +358,16 @@ describe('agent gateway: other agents reach the app over the CLI and MCP', () =>
         iso(todayAt(11)),
       ]),
     );
-    await cdp.waitFor(`${inspectorText('title')} === ${JSON.stringify(`${title} (moved)`)}`);
-    await cdp.waitFor(`${inspectorText('notes')} === 'Bring the slides'`);
+    await cdp.waitUntil(inspectorTextIs, 'title', `${title} (moved)`);
+    await cdp.waitUntil(inspectorTextIs, 'notes', 'Bring the slides');
     // Moved an hour later, the length kept: 11:00 to 12:00, no longer 10 to 11.
-    expect(
-      await cdp.eval<string>(`document.querySelector('[data-testid="inspector"]').textContent`),
-    ).toMatch(/11:00\D+12:00/u);
+    expect(await cdp.evaluate(($) => $.el('[data-testid="inspector"]')!.textContent)).toMatch(
+      /11:00\D+12:00/u,
+    );
 
     // Deleted elsewhere: the panel lets go of an event that is gone.
     json(await runAgentCli(app, WRITER, ['delete_event', '--ref', ref]));
-    await cdp.waitFor(`!document.querySelector('[data-testid="inspector"]')`);
+    await cdp.waitUntil(($) => !$.has('[data-testid="inspector"]'));
   });
 
   it('Save in an open editor keeps the notes and place an agent changed meanwhile', async () => {
@@ -387,9 +382,7 @@ describe('agent gateway: other agents reach the app over the CLI and MCP', () =>
       ),
     );
     await cdp.openEditor(`[title^=${JSON.stringify(title)}]`);
-    await cdp.waitFor(
-      `document.querySelector('[data-testid="editor-notes"]')?.value === 'Old agenda'`,
-    );
+    await cdp.waitUntil(($) => $.value('[data-testid="editor-notes"]') === 'Old agenda');
     const { events } = json<{ events: ReadonlyArray<{ ref: string; title: string }> }>(
       await runAgentCli(app, WRITER, ['list_events', '--from', today.from, '--to', today.to]),
     );
@@ -412,14 +405,12 @@ describe('agent gateway: other agents reach the app over the CLI and MCP', () =>
     await expect.poll(async () => (await row(title))?.description, POLL).toBe('New agenda');
 
     // A title-only edit: the untouched notes and location are not sent back.
-    await cdp.eval(`(() => {
-      const input = document.querySelector('input[placeholder="Title"]');
-      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-      setter.call(input, ${JSON.stringify(`${title} (renamed)`)});
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    })()`);
+    await cdp.evaluate(
+      ($, renamed: string) => $.setValue('input[placeholder="Title"]', renamed),
+      `${title} (renamed)`,
+    );
     await cdp.clickButtonWithText('Save');
-    await cdp.waitFor(`!document.querySelector('[data-testid="editor-notes"]')`);
+    await cdp.waitUntil(($) => !$.has('[data-testid="editor-notes"]'));
     await expect.poll(async () => (await row(`${title} (renamed)`))?.title, POLL).toBeDefined();
     expect(await row(`${title} (renamed)`)).toMatchObject({
       description: 'New agenda',
@@ -434,28 +425,33 @@ describe('agent gateway: other agents reach the app over the CLI and MCP', () =>
     const title = `Pier walk ${String(Date.now())}`;
     const work = await calendarRef(app, WRITER, 'Work');
     json(await runAgentCli(app, WRITER, newEvent(work, title, 15)));
-    await cdp.eval(
-      `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', metaKey: true }))`,
+    await cdp.evaluate(() =>
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', metaKey: true })),
     );
-    await cdp.waitFor(`document.activeElement === document.querySelector('${SEARCH_INPUT}')`);
+    await cdp.waitUntil(($, input: string) => document.activeElement === $.el(input), SEARCH_INPUT);
     await cdp.type(SEARCH_INPUT, title);
     // The one result the unique title matches, once the results answer it.
-    await cdp.waitFor(
-      `document.querySelector('[data-testid="search-results"]')?.getAttribute('aria-busy') === 'false' && [...document.querySelectorAll('[data-search-result] [data-testid="search-title"]')].some((cell) => cell.textContent === ${JSON.stringify(title)})`,
+    await cdp.waitUntil(
+      ($, want: string) =>
+        $.el('[data-testid="search-results"]')?.getAttribute('aria-busy') === 'false' &&
+        $.all('[data-search-result] [data-testid="search-title"]').some(
+          (cell) => cell.textContent === want,
+        ),
+      title,
     );
     const row = await cdp.locate('[data-search-result]');
     await cdp.click(row.x, row.y);
-    await cdp.waitFor(`${inspectorText('title')} === ${JSON.stringify(title)}`);
+    await cdp.waitUntil(inspectorTextIs, 'title', title);
     const { events } = json<{ events: ReadonlyArray<{ ref: string; title: string }> }>(
       await runAgentCli(app, WRITER, ['list_events', '--from', today.from, '--to', today.to]),
     );
     const { ref } = events.find((entry) => entry.title === title)!;
 
     json(await runAgentCli(app, WRITER, ['delete_event', '--ref', ref]));
-    await cdp.waitFor(`${PANEL_KIND} === 'search'`);
-    await cdp.waitFor(`!document.querySelector('[data-search-result]')`);
+    await cdp.waitUntil(($) => $.el('[data-testid="panel"]')?.dataset.panelKind === 'search');
+    await cdp.waitUntil(($) => !$.has('[data-search-result]'));
     await cdp.pressEscape();
-    await cdp.waitFor(`${PANEL_KIND} !== 'search'`);
+    await cdp.waitUntil(($) => $.el('[data-testid="panel"]')?.dataset.panelKind !== 'search');
   });
 
   it('refuses what the grant, the provider or the guests switch does not allow', async () => {
@@ -529,10 +525,8 @@ describe('agent gateway: other agents reach the app over the CLI and MCP', () =>
     const work = await calendarRef(app, ASKER, 'Work');
 
     const approved = runAgentCli(app, ASKER, newEvent(work, 'Asked breakfast', 7));
-    await cdp.waitFor(`!!document.querySelector('[data-testid="agent-approval"]')`);
-    const dialog = await cdp.eval<string>(
-      `document.querySelector('[data-testid="agent-approval"]').textContent`,
-    );
+    await cdp.waitUntil(($) => $.has('[data-testid="agent-approval"]'));
+    const dialog = await cdp.evaluate(($) => $.el('[data-testid="agent-approval"]')!.textContent);
     expect(dialog).toContain('Asker is asking');
     expect(dialog).toContain('Create event “Asked breakfast”');
     expect(dialog).toContain('Calendar: Work (e2e@example.com)');
@@ -542,21 +536,23 @@ describe('agent gateway: other agents reach the app over the CLI and MCP', () =>
     );
 
     // The buttons arm a moment after a request appears.
-    await cdp.waitFor(
-      `document.querySelector('[data-testid="agent-approve"]')?.disabled === false`,
+    await cdp.waitUntil(
+      ($) => $.el<HTMLButtonElement>('[data-testid="agent-approve"]')?.disabled === false,
     );
     await click(cdp, '[data-testid="agent-approve"]');
     expect(json<{ status: string }>(await approved).status).toBe('done');
     await expect
       .poll(async () => (await readEvents(app.userDataDir)).map((row) => row.title), POLL)
       .toContain('Asked breakfast');
-    await cdp.waitFor(`!document.querySelector('[data-testid="agent-approval"]')`);
+    await cdp.waitUntil(($) => !$.has('[data-testid="agent-approval"]'));
 
     const declined = runAgentCli(app, ASKER, newEvent(work, 'Asked brunch', 8));
-    await cdp.waitFor(
-      `document.querySelector('[data-testid="agent-approval-title"]')?.textContent.includes('Asked brunch')`,
+    await cdp.waitUntil(($) =>
+      $.text('[data-testid="agent-approval-title"]').includes('Asked brunch'),
     );
-    await cdp.waitFor(`document.querySelector('[data-testid="agent-deny"]')?.disabled === false`);
+    await cdp.waitUntil(
+      ($) => $.el<HTMLButtonElement>('[data-testid="agent-deny"]')?.disabled === false,
+    );
     await click(cdp, '[data-testid="agent-deny"]');
     const result = await declined;
     expect(result.code).toBe(1);
@@ -574,109 +570,113 @@ describe('agent gateway: other agents reach the app over the CLI and MCP', () =>
   it('Escape closes only the request on top, and the calendar ignores keys behind it', async () => {
     const { cdp } = app;
     const work = await calendarRef(app, ASKER, 'Work');
-    const key = (init: string) =>
-      cdp.eval(`void window.dispatchEvent(new KeyboardEvent('keydown', ${init}))`);
+    const key = (init: { key: string; metaKey?: boolean }) =>
+      cdp.evaluate((_, options: { key: string; metaKey?: boolean }) => {
+        window.dispatchEvent(new KeyboardEvent('keydown', options));
+      }, init);
     const declineAll = async () => {
       for (const request of (
-        await cdp.eval<{ pending: ReadonlyArray<{ id: string }> }>(
-          `window.calendarBridge.agentsState()`,
+        await cdp.evaluate((): Promise<{ pending: ReadonlyArray<{ id: string }> }> =>
+          window.calendarBridge.agentsState(),
         )
       ).pending) {
-        await cdp.eval(`window.calendarBridge.agentsDecide(${JSON.stringify(request.id)}, 'deny')`);
+        await cdp.evaluate(async (_, id: string) => {
+          await window.calendarBridge.agentsDecide(id, 'deny');
+        }, request.id);
       }
     };
 
     // A half-written event (⌘N), then a request on top of it.
-    await key(`{ key: 'n', metaKey: true }`);
-    await cdp.waitFor(`document.body.textContent.includes('New event')`);
+    await key({ key: 'n', metaKey: true });
+    await cdp.waitUntil(() => document.body.textContent.includes('New event'));
     await cdp.showEditorView('form');
-    await cdp.eval(`(() => {
-      const input = document.querySelector('input[placeholder="Title"]');
-      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-      setter.call(input, 'Half written');
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    })()`);
+    await cdp.evaluate(($) => $.setValue('input[placeholder="Title"]', 'Half written'));
     const first = runAgentCli(app, ASKER, newEvent(work, 'Asked lunch', 12));
-    await cdp.waitFor(`!!document.querySelector('[data-testid="agent-approval"]')`);
+    await cdp.waitUntil(($) => $.has('[data-testid="agent-approval"]'));
 
     // One Escape: the request goes, the draft stays.
     await cdp.pressEscape();
-    await cdp.waitFor(`!document.querySelector('[data-testid="agent-approval"]')`);
-    expect(
-      await cdp.eval<string>(`document.querySelector('input[placeholder="Title"]')?.value ?? ''`),
-    ).toBe('Half written');
+    await cdp.waitUntil(($) => !$.has('[data-testid="agent-approval"]'));
+    expect(await cdp.evaluate(($) => $.value('input[placeholder="Title"]'))).toBe('Half written');
     // The second leaves the editor, asking first: it holds the title.
     await cdp.discardEditor();
 
     // Behind a request, the calendar's own keys do nothing.
     const second = runAgentCli(app, ASKER, newEvent(work, 'Asked dinner', 19));
-    await cdp.waitFor(
-      `document.querySelector('[data-testid="agent-approval-title"]')?.textContent.includes('Asked dinner')`,
+    await cdp.waitUntil(($) =>
+      $.text('[data-testid="agent-approval-title"]').includes('Asked dinner'),
     );
-    const title = await cdp.eval<string>(`document.querySelector('h1')?.textContent ?? ''`);
-    await key(`{ key: 'ArrowRight' }`);
-    await key(`{ key: 'k', metaKey: true }`);
+    const title = await cdp.evaluate(($) => $.text('h1'));
+    await key({ key: 'ArrowRight' });
+    await key({ key: 'k', metaKey: true });
     await new Promise((resolve) => setTimeout(resolve, 400));
-    expect(await cdp.eval<string>(`document.querySelector('h1')?.textContent ?? ''`)).toBe(title);
-    expect(await cdp.eval<number>(`document.querySelectorAll('[role="dialog"]').length`)).toBe(1);
+    expect(await cdp.evaluate(($) => $.text('h1'))).toBe(title);
+    expect(await cdp.evaluate(($) => $.count('[role="dialog"]'))).toBe(1);
 
     await declineAll();
     expect((await first).code).toBe(1);
     expect((await second).code).toBe(1);
-    await cdp.waitFor(`!document.querySelector('[data-testid="agent-approval"]')`);
+    await cdp.waitUntil(($) => !$.has('[data-testid="agent-approval"]'));
   });
 
   it('focus is back in the field it left once the queued requests are answered', async () => {
     const { cdp } = app;
     const work = await calendarRef(app, ASKER, 'Work');
-    const TITLE = `document.querySelector('input[placeholder="Title"]')`;
-    const DIALOG = `document.querySelector('[data-testid="agent-approval"]')`;
+    const TITLE = 'input[placeholder="Title"]';
+    const DIALOG = '[data-testid="agent-approval"]';
     // Typing a new event's title when four requests come in.
-    await cdp.eval(
-      `void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', metaKey: true }))`,
-    );
-    await cdp.waitFor(`!!${TITLE}`);
+    await cdp.evaluate(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', metaKey: true }));
+    });
+    await cdp.waitUntil(($, title: string) => $.has(title), TITLE);
     await cdp.showEditorView('form');
-    await cdp.eval(`${TITLE}.focus()`);
-    await cdp.waitFor(`document.activeElement === ${TITLE}`);
+    await cdp.evaluate(($, title: string) => $.el(title)!.focus(), TITLE);
+    await cdp.waitUntil(($, title: string) => document.activeElement === $.el(title), TITLE);
     const asks = [12, 14, 16, 18].map((hour) =>
       runAgentCli(app, ASKER, newEvent(work, `Asked at ${String(hour)}`, hour)),
     );
     // The dialog itself counts them, so all are queued behind it, not still
     // on their way to the renderer.
-    await cdp.waitFor(`${DIALOG}?.textContent.includes('1 of 4')`);
+    await cdp.waitUntil(($, dialog: string) => $.text(dialog).includes('1 of 4'), DIALOG);
     expect(
-      await cdp.eval<boolean>(
-        `!!document.activeElement?.closest('[data-testid="agent-approval"]')`,
-      ),
+      await cdp.evaluate(() => !!document.activeElement?.closest('[data-testid="agent-approval"]')),
     ).toBe(true);
 
     // Each answer opens the next request in a dialog of its own, whichever
     // way it was given: Escape, Decline (whose click disables the button
     // and drops focus on the page) or a click on the scrim.
     await cdp.pressEscape();
-    await cdp.waitFor(`${DIALOG}?.textContent.includes('1 of 3')`);
-    await cdp.waitFor(`document.querySelector('[data-testid="agent-deny"]')?.disabled === false`);
+    await cdp.waitUntil(($, dialog: string) => $.text(dialog).includes('1 of 3'), DIALOG);
+    await cdp.waitUntil(
+      ($) => $.el<HTMLButtonElement>('[data-testid="agent-deny"]')?.disabled === false,
+    );
     await cdp.clickTestId('agent-deny');
-    await cdp.waitFor(`${DIALOG}?.textContent.includes('1 of 2')`);
+    await cdp.waitUntil(($, dialog: string) => $.text(dialog).includes('1 of 2'), DIALOG);
     await cdp.click(8, 8);
-    await cdp.waitFor(`!!${DIALOG} && !${DIALOG}.textContent.includes(' of ')`);
+    await cdp.waitUntil(
+      ($, dialog: string) => $.has(dialog) && !$.text(dialog).includes(' of '),
+      DIALOG,
+    );
     await cdp.pressEscape();
-    await cdp.waitFor(`!${DIALOG}`);
-    expect(await cdp.eval<boolean>(`document.activeElement === ${TITLE}`)).toBe(true);
+    await cdp.waitUntil(($, dialog: string) => !$.has(dialog), DIALOG);
+    expect(
+      await cdp.evaluate(($, title: string) => document.activeElement === $.el(title), TITLE),
+    ).toBe(true);
 
     for (const request of (
-      await cdp.eval<{ pending: ReadonlyArray<{ id: string }> }>(
-        `window.calendarBridge.agentsState()`,
+      await cdp.evaluate((): Promise<{ pending: ReadonlyArray<{ id: string }> }> =>
+        window.calendarBridge.agentsState(),
       )
     ).pending) {
-      await cdp.eval(`window.calendarBridge.agentsDecide(${JSON.stringify(request.id)}, 'deny')`);
+      await cdp.evaluate(async (_, id: string) => {
+        await window.calendarBridge.agentsDecide(id, 'deny');
+      }, request.id);
     }
     for (const ask of asks) {
       expect((await ask).code).toBe(1);
     }
     await cdp.pressEscape();
-    await cdp.waitFor(`!document.body.textContent.includes('New event')`);
+    await cdp.waitUntil(() => !document.body.textContent.includes('New event'));
   });
 
   it('Settings → Agents: answering one request disarms the next one sliding up', async () => {
@@ -685,22 +685,24 @@ describe('agent gateway: other agents reach the app over the CLI and MCP', () =>
     const second = runAgentCli(app, ASKER, newEvent(work, 'Asked dinner', 19));
     const settings = await app.openSettings('agents');
     try {
-      const rows = `document.querySelectorAll('[data-testid="agent-pending-row"]')`;
-      await settings.waitFor(`${rows}.length === 2`);
-      await settings.waitFor(
-        `[...document.querySelectorAll('[data-testid="agent-pending-approve"]')].every((button) => !button.disabled)`,
+      const rows = '[data-testid="agent-pending-row"]';
+      await settings.waitUntil(($, pending: string) => $.count(pending) === 2, rows);
+      await settings.waitUntil(($) =>
+        $.all<HTMLButtonElement>('[data-testid="agent-pending-approve"]').every(
+          (button) => !button.disabled,
+        ),
       );
       await click(settings, '[data-testid="agent-pending-approve"]');
       // The other request now sits where the click landed: not armed yet,
       // so a double click cannot approve it unread.
-      await settings.waitFor(`${rows}.length === 1`);
+      await settings.waitUntil(($, pending: string) => $.count(pending) === 1, rows);
       expect(
-        await settings.eval<boolean>(
-          `document.querySelector('[data-testid="agent-pending-approve"]').disabled`,
+        await settings.evaluate(
+          ($) => $.el<HTMLButtonElement>('[data-testid="agent-pending-approve"]')!.disabled,
         ),
       ).toBe(true);
-      await settings.waitFor(
-        `document.querySelector('[data-testid="agent-pending-decline"]')?.disabled === false`,
+      await settings.waitUntil(
+        ($) => $.el<HTMLButtonElement>('[data-testid="agent-pending-decline"]')?.disabled === false,
       );
       await click(settings, '[data-testid="agent-pending-decline"]');
       // One approved, one declined — whichever the pane listed first.
@@ -714,29 +716,25 @@ describe('agent gateway: other agents reach the app over the CLI and MCP', () =>
 
   it('Settings → Agents: create an agent, grant it, and remove it', async () => {
     const cdp = await app.openSettings('agents');
-    await cdp.waitFor(`!!document.querySelector('[data-testid="agents-section"]')`);
+    await cdp.waitUntil(($) => $.has('[data-testid="agents-section"]'));
     // The seeded agents are listed (a retried run may also still show its own).
-    const listed = await cdp.eval<Array<string>>(
-      `[...document.querySelectorAll('[data-testid="agent-row"]')].map(row => row.dataset.agentName)`,
+    const listed = await cdp.evaluate(($) =>
+      $.all('[data-testid="agent-row"]').map((row) => row.dataset.agentName),
     );
     expect(listed).toEqual(expect.arrayContaining(agents.map((agent) => agent.name)));
     // The activity of the earlier tests is listed, newest first.
-    await cdp.waitFor(
-      `document.querySelector('[data-testid="agent-activity"]')?.textContent.includes('Asked breakfast')`,
+    await cdp.waitUntil(($) =>
+      $.text('[data-testid="agent-activity"]').includes('Asked breakfast'),
     );
 
     // Unique per attempt, so a retry never trips over the previous one's agent.
     const name = `Hermes ${Date.now()}`;
     await cdp.type('[data-testid="agent-name"]', name);
     await click(cdp, '[data-testid="agent-create"]');
-    const token = await cdp.waitFor<string>(
-      `document.querySelector('[data-testid="agent-token"]')?.textContent`,
-    );
+    const token = await cdp.waitForValue(($) => $.text('[data-testid="agent-token"]'));
     expect(token).toMatch(/^sol_[\w-]{43}$/u);
     const config = JSON.parse(
-      await cdp.eval<string>(
-        `document.querySelector('[data-testid="agent-mcp-config"]').textContent`,
-      ),
+      await cdp.evaluate(($) => $.el('[data-testid="agent-mcp-config"]')!.textContent),
     ) as { mcpServers: Record<string, { args: Array<string>; env: Record<string, string> }> };
     // The harness runs the app unpackaged, which names itself as a dev build.
     const entry = config.mcpServers['solunivo-dev'];
@@ -749,7 +747,7 @@ describe('agent gateway: other agents reach the app over the CLI and MCP', () =>
     });
 
     // Granting takes effect on the next call — no reconnect, no restart.
-    await cdp.waitFor(`!!document.querySelector('[data-testid="agent-calendar-default"]')`);
+    await cdp.waitUntil(($) => $.has('[data-testid="agent-calendar-default"]'));
     await choose(cdp, '[data-testid="agent-calendar-default"]', 'read');
     await choose(cdp, '[data-testid="agent-calendar-cal-private"]', 'none');
     await expect
@@ -770,30 +768,36 @@ describe('agent gateway: other agents reach the app over the CLI and MCP', () =>
     const confirm = `${row} [data-testid="agent-confirm"]`;
     // A new token asks first; cancelling keeps the current one working.
     await click(cdp, `${row} [data-testid="agent-rotate"]`);
-    await cdp.waitFor(
-      `document.querySelector(${JSON.stringify(confirm)})?.textContent.includes('Replace the token for')`,
+    await cdp.waitUntil(
+      ($, dialog: string) => $.text(dialog).includes('Replace the token for'),
+      confirm,
     );
     // The question and its consequence are the dialog's accessible name and
     // description: focus lands on Cancel, so that is what is announced.
     expect(
-      await cdp.eval<Array<string | undefined>>(
-        `(() => { const dialog = document.querySelector(${JSON.stringify(confirm)}); return ['aria-labelledby', 'aria-describedby'].map((attr) => document.getElementById(dialog.getAttribute(attr) ?? '')?.textContent); })()`,
-      ),
+      await cdp.evaluate(($, target: string) => {
+        const dialog = $.el(target)!;
+        return ['aria-labelledby', 'aria-describedby'].map(
+          (attr) => document.getElementById(dialog.getAttribute(attr) ?? '')?.textContent,
+        );
+      }, confirm),
     ).toEqual([
       `Replace the token for “${name}”?`,
       `The current token stops working now: ${name} cannot connect until you give it the new one.`,
     ]);
     await click(cdp, `${row} [data-testid="agent-confirm-no"]`);
-    await cdp.waitFor(`!document.querySelector(${JSON.stringify(confirm)})`);
+    await cdp.waitUntil(($, dialog: string) => !$.has(dialog), confirm);
     expect((await runAgentCli(app, token, ['list_calendars'])).code).toBe(0);
 
     // So does a removal.
     await click(cdp, `${row} [data-testid="agent-remove"]`);
-    await cdp.waitFor(
-      `document.querySelector(${JSON.stringify(confirm)})?.textContent.includes('Remove “${name}”?')`,
+    await cdp.waitUntil(
+      ($, dialog: string, agent: string) => $.text(dialog).includes(`Remove “${agent}”?`),
+      confirm,
+      name,
     );
     await click(cdp, `${row} [data-testid="agent-confirm-yes"]`);
-    await cdp.waitFor(`!document.querySelector(${JSON.stringify(row)})`);
+    await cdp.waitUntil(($, agent: string) => !$.has(agent), row);
     const gone = await runAgentCli(app, token, ['list_calendars']);
     expect(gone.code).toBe(3);
     await app.closeSettings();

@@ -24,6 +24,7 @@ import {
   readSettings,
   readTasks,
 } from './harness.ts';
+import type { PageKit } from './page.ts';
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -246,12 +247,10 @@ const clickNth = async (selector: string, index: number): Promise<void> => {
 
 /** Types into the editor's title field, React-style. */
 const setEditorTitle = async (title: string): Promise<void> => {
-  await app.cdp.eval(`(() => {
-    const input = document.querySelector('input[placeholder="Title"]');
-    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-    setter.call(input, ${JSON.stringify(title)});
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-  })()`);
+  await app.cdp.evaluate(
+    ($, value: string) => $.setValue('input[placeholder="Title"]', value),
+    title,
+  );
 };
 
 /**
@@ -268,43 +267,52 @@ const todayGridPoint = async (
     month: 'long',
     weekday: 'long',
   });
-  return cdp.eval<{ x: number; y: number }>(`(() => {
-    const column = [...document.querySelectorAll('[role="button"][aria-label]')].find((element) =>
-      element.getAttribute('aria-label').startsWith(${JSON.stringify(`${label}:`)}),
-    );
-    const scroller = column.closest('.overflow-y-scroll');
-    const offset = (${hour * 60 + minute} / 60) * ${HOUR_HEIGHT};
-    scroller.scrollTop = offset - scroller.clientHeight / 2;
-    const rect = column.getBoundingClientRect();
-    return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + offset) };
-  })()`);
+  return cdp.evaluate(
+    ($, prefix: string, minutes: number, hourHeight: number) => {
+      const column = $.all('[role="button"][aria-label]').find((element) =>
+        element.getAttribute('aria-label')!.startsWith(prefix),
+      )!;
+      const scroller = column.closest('.overflow-y-scroll')!;
+      const offset = (minutes / 60) * hourHeight;
+      scroller.scrollTop = offset - scroller.clientHeight / 2;
+      const rect = column.getBoundingClientRect();
+      return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + offset) };
+    },
+    `${label}:`,
+    hour * 60 + minute,
+    HOUR_HEIGHT,
+  );
 };
 
 /** The open event editor's start and end time fields. */
 const editorTimes = (): Promise<Array<string>> =>
-  app.cdp.eval<Array<string>>(
-    `[...document.querySelectorAll('input[type="time"]')].map((input) => input.value)`,
+  app.cdp.evaluate(($) =>
+    $.all<HTMLInputElement>('input[type="time"]').map((input) => input.value),
   );
 
 /** Whether Settings › Screen Sharing has `label` chosen. */
-const sharingChoiceIs = (label: string): string =>
-  `[...document.querySelectorAll('[role="radio"]')].some(b => b.textContent === ${JSON.stringify(label)} && b.getAttribute('aria-checked') === 'true')`;
+const sharingChoiceIs = ($: PageKit, label: string): boolean =>
+  $.all('[role="radio"]').some(
+    (b) => b.textContent === label && b.getAttribute('aria-checked') === 'true',
+  );
+
+/** The window's screen-privacy state, as the bridge answers it. */
+const privacyState = (): Promise<{ mode: string; visibleUntil?: number }> =>
+  window.calendarBridge.privacyGet();
 
 /** Whether a window's screen-capture hint is in `phase` (`off`, `capturing` or `after`). */
-const captureHintIs = (phase: string): string =>
-  `document.querySelector('[data-testid="capture-hint"]')?.dataset.phase === ${JSON.stringify(phase)}`;
+const captureHintIs = ($: PageKit, phase: string): boolean =>
+  $.el('[data-testid="capture-hint"]')?.dataset['phase'] === phase;
 
 describe('calendar desktop e2e', () => {
   it('renders the seeded week: sidebar, calendars, events', async () => {
     const { cdp } = app;
-    await cdp.waitFor(`document.body.textContent.includes('e2e@example.com')`);
-    await cdp.waitFor(`document.body.textContent.includes('Work')`);
-    await cdp.waitFor(`!!document.querySelector('[title^="Standup meeting"]')`);
-    await cdp.waitFor(`!!document.querySelector('[title^="Gym session"]')`);
+    await cdp.waitUntil(() => document.body.textContent.includes('e2e@example.com'));
+    await cdp.waitUntil(() => document.body.textContent.includes('Work'));
+    await cdp.waitUntil(($) => $.has('[title^="Standup meeting"]'));
+    await cdp.waitUntil(($) => $.has('[title^="Gym session"]'));
     // The recurring master expands to multiple instances across the week.
-    const dailyCount = await cdp.eval<number>(
-      `document.querySelectorAll('[title^="Daily sync"]').length`,
-    );
+    const dailyCount = await cdp.evaluate(($) => $.count('[title^="Daily sync"]'));
     expect(dailyCount).toBeGreaterThan(1);
   });
 
@@ -315,50 +323,46 @@ describe('calendar desktop e2e', () => {
       // Month view: weekday header row appears, and today's cell announces
       // the seeded task. The label, not the chip: today also holds several
       // seeded events, which lead the cell and push the task into "+N more".
-      await cdp.waitFor(`document.body.textContent.includes('Mon')`);
-      await cdp.waitFor(
-        `[...document.querySelectorAll('[data-testid="month-grid"] [role="button"]')].some((cell) => (cell.getAttribute('aria-label') ?? '').includes('1 task'))`,
+      await cdp.waitUntil(() => document.body.textContent.includes('Mon'));
+      await cdp.waitUntil(($) =>
+        $.all('[data-testid="month-grid"] [role="button"]').some((cell) =>
+          (cell.getAttribute('aria-label') ?? '').includes('1 task'),
+        ),
       );
       // A chip is a real target: it opens its event's inspector, not the day.
       await cdp.openInspector('[data-testid="month-grid"] [data-color]');
-      expect(
-        await cdp.eval<boolean>(`!!document.querySelector('[data-testid="month-grid"]')`),
-      ).toBe(true);
+      expect(await cdp.evaluate(($) => $.has('[data-testid="month-grid"]'))).toBe(true);
       await cdp.pressEscape();
-      await cdp.waitFor(`!document.querySelector('[data-testid="inspector"]')`);
+      await cdp.waitUntil(($) => !$.has('[data-testid="inspector"]'));
     } finally {
       await cdp.clickTestId('view-day');
     }
-    await cdp.waitFor(`!!document.querySelector('[title^="Standup meeting"]')`);
+    await cdp.waitUntil(($) => $.has('[title^="Standup meeting"]'));
 
-    const titleBefore = await cdp.eval<string>(`document.querySelector('h1')?.textContent ?? ''`);
+    const titleBefore = await cdp.evaluate(($) => $.text('h1'));
     await cdp.clickTestId('nav-next');
-    const titleAfter = await cdp.waitFor<string>(
-      `(document.querySelector('h1')?.textContent ?? '') !== ${JSON.stringify('')} && (document.querySelector('h1')?.textContent ?? '')`,
-    );
+    const titleAfter = await cdp.waitForValue(($) => $.text('h1'));
     expect(titleAfter).not.toBe(titleBefore);
     await cdp.clickButtonWithText('Today');
     await cdp.clickTestId('view-week');
-    await cdp.waitFor(`!!document.querySelector('[title^="Standup meeting"]')`);
+    await cdp.waitUntil(($) => $.has('[title^="Standup meeting"]'));
   });
 
   it('renders an event three years back in the month view', async () => {
     const { cdp } = app;
     await cdp.clickTestId('view-month');
-    await cdp.waitFor(`document.body.textContent.includes('Mon')`);
+    await cdp.waitUntil(() => document.body.textContent.includes('Mon'));
     try {
       for (let step = 0; step < 12 * YEARS_BACK; step += 1) {
-        const before = await cdp.eval<string>(`document.querySelector('h1')?.textContent ?? ''`);
+        const before = await cdp.evaluate(($) => $.text('h1'));
         await cdp.clickTestId('nav-prev');
-        await cdp.waitFor(
-          `(document.querySelector('h1')?.textContent ?? '') !== ${JSON.stringify(before)}`,
-        );
+        await cdp.waitUntil(($, title: string) => $.text('h1') !== title, before);
       }
-      await cdp.waitFor(`document.body.textContent.includes('Ancient offsite')`);
+      await cdp.waitUntil(() => document.body.textContent.includes('Ancient offsite'));
     } finally {
       await cdp.clickButtonWithText('Today');
       await cdp.clickTestId('view-week');
-      await cdp.waitFor(`!!document.querySelector('[title^="Standup meeting"]')`);
+      await cdp.waitUntil(($) => $.has('[title^="Standup meeting"]'));
     }
   });
 
@@ -366,21 +370,22 @@ describe('calendar desktop e2e', () => {
     // The e2e app loads dist/index.html from file://, as the packaged app
     // does. An inline script must not run under script-src 'self'. (Not
     // eval: CDP's own evaluation is exempt from the page's policy.)
-    const inlineRan = await app.cdp.eval<boolean>(`(() => {
-      delete window.__cspProbe;
+    const inlineRan = await app.cdp.evaluate(() => {
+      const probed = window as Window & { __cspProbe?: boolean };
+      delete probed.__cspProbe;
       const probe = document.createElement('script');
       probe.textContent = 'window.__cspProbe = true';
       document.head.append(probe);
       probe.remove();
-      return window.__cspProbe === true;
-    })()`);
+      return probed.__cspProbe === true;
+    });
     expect(inlineRan).toBe(false);
   });
 
   it('loads the dictation worklet under that policy', async () => {
     // Where desktopSpeech.ts loads it from; a blob: worklet was blocked
     // here, so dictation failed in every built app.
-    const loaded = await app.cdp.eval<string>(`(async () => {
+    const loaded = await app.cdp.evaluate(async () => {
       const context = new AudioContext();
       try {
         await context.audioWorklet.addModule(
@@ -393,7 +398,7 @@ describe('calendar desktop e2e', () => {
       } finally {
         void context.close();
       }
-    })()`);
+    });
     expect(loaded).toBe('loaded');
   });
 
@@ -401,8 +406,8 @@ describe('calendar desktop e2e', () => {
     const settings = await app.openSettings('accounts');
     // Seeded rows and no sync_state: nothing is importing, so the line
     // reads complete.
-    await settings.waitFor(
-      `document.querySelector('[data-testid="sync-history-acc-e2e"]')?.textContent === 'History complete'`,
+    await settings.waitUntil(
+      ($) => $.text('[data-testid="sync-history-acc-e2e"]') === 'History complete',
     );
     await app.closeSettings();
   });
@@ -412,11 +417,11 @@ describe('calendar desktop e2e', () => {
     try {
       const remove = await settings.locate('[data-testid="remove-account-acc-e2e"]');
       await settings.click(remove.x, remove.y);
-      await settings.waitFor(
-        `document.querySelector('[data-testid="remove-account-confirm"]')?.textContent.includes('Remove e2e@example.com?')`,
+      await settings.waitUntil(($) =>
+        $.text('[data-testid="remove-account-confirm"]').includes('Remove e2e@example.com?'),
       );
       await settings.clickButtonWithText('Cancel');
-      await settings.waitFor(`!document.querySelector('[data-testid="remove-account-confirm"]')`);
+      await settings.waitUntil(($) => !$.has('[data-testid="remove-account-confirm"]'));
       expect((await readAccounts(app.userDataDir)).map((account) => account.id)).toContain(
         'acc-e2e',
       );
@@ -427,8 +432,8 @@ describe('calendar desktop e2e', () => {
 
   it('navigates days with a horizontal trackpad scroll', async () => {
     const { cdp } = app;
-    const h1 = `(document.querySelector('h1')?.textContent ?? '')`;
-    const scrollTop = `Math.round(document.querySelector('.overflow-y-scroll')?.scrollTop ?? -1)`;
+    const h1 = ($: PageKit) => $.text('h1');
+    const scrollTop = ($: PageKit) => Math.round($.el('.overflow-y-scroll')?.scrollTop ?? -1);
     // A sustained swipe: enough total deltaX to pan past a full day column
     // (day view columns are viewport-wide), with intra-gesture event gaps.
     const burst = { count: 12, deltaX: 240 };
@@ -437,92 +442,100 @@ describe('calendar desktop e2e', () => {
     // through every later test — always restore Today + week view.
     try {
       await cdp.clickTestId('view-day');
-      await cdp.waitFor(`!!document.querySelector('[title^="Standup meeting"]')`);
+      await cdp.waitUntil(($) => $.has('[title^="Standup meeting"]'));
       const point = await cdp.locate('.overflow-y-scroll');
 
       // Vertical control: scrolls the grid, never navigates.
-      const dayTitle = await cdp.eval<string>(h1);
-      const scrollBefore = await cdp.eval<number>(scrollTop);
+      const dayTitle = await cdp.evaluate(h1);
+      const scrollBefore = await cdp.evaluate(scrollTop);
       await cdp.wheel(point.x, point.y, 0, 120);
-      await cdp.waitFor(`${scrollTop} !== ${scrollBefore}`);
-      expect(await cdp.eval<string>(h1)).toBe(dayTitle);
+      await cdp.waitUntil(
+        ($, top: number) => Math.round($.el('.overflow-y-scroll')?.scrollTop ?? -1) !== top,
+        scrollBefore,
+      );
+      expect(await cdp.evaluate(h1)).toBe(dayTitle);
 
       // Day view: horizontal pan crosses into another day.
       await cdp.wheelBurst('.overflow-y-scroll', burst);
-      await cdp.waitFor(`${h1} !== ${JSON.stringify(dayTitle)}`);
+      await cdp.waitUntil(($, title: string) => $.text('h1') !== title, dayTitle);
 
       await cdp.clickButtonWithText('Today');
       await cdp.clickTestId('view-week');
-      const weekTitle = await cdp.waitFor<string>(h1);
+      const weekTitle = await cdp.waitForValue(h1);
 
       // Week view: horizontal pan slides the rolling 7-day window.
       await cdp.wheelBurst('.overflow-y-scroll', burst);
-      await cdp.waitFor(`${h1} !== ${JSON.stringify(weekTitle)}`);
+      await cdp.waitUntil(($, title: string) => $.text('h1') !== title, weekTitle);
 
       // No axis dead-lock: a diagonal burst pans days AND scrolls the grid in
       // the same gesture (vertical deltas are applied manually while panning).
       // Scroll upward — the earlier vertical control left scrollTop at max.
-      const scrollMid = await cdp.eval<number>(scrollTop);
-      const midTitle = await cdp.eval<string>(h1);
+      const scrollMid = await cdp.evaluate(scrollTop);
+      const midTitle = await cdp.evaluate(h1);
       await cdp.wheelBurst('.overflow-y-scroll', { count: 12, deltaX: 240, deltaY: -20 });
-      await cdp.waitFor(`${scrollTop} !== ${scrollMid}`);
-      await cdp.waitFor(`${h1} !== ${JSON.stringify(midTitle)}`);
+      await cdp.waitUntil(
+        ($, top: number) => Math.round($.el('.overflow-y-scroll')?.scrollTop ?? -1) !== top,
+        scrollMid,
+      );
+      await cdp.waitUntil(($, title: string) => $.text('h1') !== title, midTitle);
 
       // Today snaps back to the Monday-based week.
       await cdp.clickButtonWithText('Today');
-      await cdp.waitFor(`${h1} === ${JSON.stringify(weekTitle)}`);
+      await cdp.waitUntil(($, title: string) => $.text('h1') === title, weekTitle);
     } finally {
       // Unconditional restore for the rest of the suite.
       await cdp.clickButtonWithText('Today');
       await cdp.clickTestId('view-week');
-      await cdp
-        .waitFor(`!!document.querySelector('[title^="Standup meeting"]')`)
-        .catch(() => undefined);
+      await cdp.waitUntil(($) => $.has('[title^="Standup meeting"]')).catch(() => undefined);
     }
   });
 
   it('keeps the grid vertically stable and header-aligned while panning', async () => {
     const { cdp } = app;
     // The all-day lane always renders (empty row when no all-day events).
-    await cdp.waitFor(`document.body.textContent.includes('all-day')`);
-    await cdp.waitFor(`!!document.querySelector('[title="Team offsite"]')`);
+    await cdp.waitUntil(() => document.body.textContent.includes('all-day'));
+    await cdp.waitUntil(($) => $.has('[title="Team offsite"]'));
 
     // The lane's height follows its window's row count (task chips share
     // the rows), so a forward pan may legitimately resize it. What must
     // hold: the lane never unmounts mid-pan (the original regression), and
     // a round trip restores the exact geometry — no cumulative drift.
-    const gridY = `Math.round(document.querySelector('.overflow-y-scroll').getBoundingClientRect().y)`;
-    const yBefore = await cdp.eval<number>(gridY);
+    const gridY = ($: PageKit) => Math.round($.el('.overflow-y-scroll')!.getBoundingClientRect().y);
+    const yBefore = await cdp.evaluate(gridY);
     await cdp.wheelBurst('.overflow-y-scroll', { count: 12, deltaX: 240 });
-    await cdp.waitFor(`document.body.textContent.includes('all-day')`);
+    await cdp.waitUntil(() => document.body.textContent.includes('all-day'));
     await cdp.wheelBurst('.overflow-y-scroll', { count: 12, deltaX: -240 });
-    const yBack = await cdp.eval<number>(gridY);
+    const yBack = await cdp.evaluate(gridY);
     await cdp.clickButtonWithText('Today');
-    await cdp.waitFor(`!!document.querySelector('[title^="Standup meeting"]')`);
-    const yToday = await cdp.eval<number>(gridY);
+    await cdp.waitUntil(($) => $.has('[title^="Standup meeting"]'));
+    const yToday = await cdp.evaluate(gridY);
     expect(yBack).toBe(yBefore);
     expect(yToday).toBe(yBefore);
 
     // Day-header columns sit exactly over the body's day columns.
-    const maxDrift = await cdp.eval<number>(`(() => {
-      const header = document.querySelector('.overflow-hidden > .grid:not(.relative)');
-      const body = document.querySelector('.relative.grid');
+    const maxDrift = await cdp.evaluate(($) => {
+      const header = $.el('.overflow-hidden > .grid:not(.relative)')!;
+      const body = $.el('.relative.grid')!;
       let max = 0;
       for (const index of [0, 3, 6, 9]) {
-        const headerX = header.children[index].getBoundingClientRect().x;
-        const bodyX = body.children[index].getBoundingClientRect().x;
+        const headerX = header.children[index]!.getBoundingClientRect().x;
+        const bodyX = body.children[index]!.getBoundingClientRect().x;
         max = Math.max(max, Math.abs(headerX - bodyX));
       }
       return max;
-    })()`);
+    });
     expect(maxDrift).toBeLessThanOrEqual(1);
   });
 
   it('highlights the days the week shows and slides a picked mini-month day to the front', async () => {
     const { cdp } = app;
-    const h1 = `(document.querySelector('h1')?.textContent ?? '')`;
-    const panX = `document.querySelector('[data-testid="week-view"]').style.getPropertyValue('--pan-x')`;
-    const columns = `document.querySelector('[data-testid="week-grid"]').style.gridTemplateColumns`;
+    const h1 = ($: PageKit) => $.text('h1');
+    const columns = ($: PageKit) => $.el('[data-testid="week-grid"]')!.style.gridTemplateColumns;
+    /** The page's record of the offsets `watchOffsets` saw. */
+    type Watched = typeof window & {
+      __offsetObserver?: MutationObserver;
+      __offsets: Array<number>;
+    };
     const monday = weekStart(Temporal.PlainDate.from(todayLocalIso()));
     /** The window a week title names: titles are unique per first day. */
     const windowStartOf = (title: string): Temporal.PlainDate => {
@@ -535,8 +548,12 @@ describe('calendar desktop e2e', () => {
       throw new Error(`no window is titled ${title}`);
     };
     const miniDays = (filter: string) =>
-      cdp.eval<Array<string>>(
-        `[...document.querySelectorAll('[data-testid^="mini-day-"]${filter}')].map((day) => day.dataset.testid.slice('mini-day-'.length))`,
+      cdp.evaluate(
+        ($, within: string) =>
+          $.all(`[data-testid^="mini-day-"]${within}`).map((day) =>
+            day.dataset['testid']!.slice('mini-day-'.length),
+          ),
+        filter,
       );
     /** The highlight is the window's days the shown month holds — a rolled week crosses two rows. */
     const expectHighlight = async (first: Temporal.PlainDate) => {
@@ -548,22 +565,28 @@ describe('calendar desktop e2e', () => {
     };
     /** Records every `--pan-x` the week view is given from now on. */
     const watchOffsets = () =>
-      cdp.eval(`(() => {
-        const root = document.querySelector('[data-testid="week-view"]');
-        window.__offsets = [];
-        window.__offsetObserver?.disconnect();
-        window.__offsetObserver = new MutationObserver(() =>
-          window.__offsets.push(parseFloat(root.style.getPropertyValue('--pan-x')) || 0));
-        window.__offsetObserver.observe(root, { attributeFilter: ['style'], attributes: true });
-      })()`);
+      cdp.evaluate(($) => {
+        const root = $.el('[data-testid="week-view"]')!;
+        const watched = window as Watched;
+        watched.__offsets = [];
+        watched.__offsetObserver?.disconnect();
+        watched.__offsetObserver = new MutationObserver(() =>
+          watched.__offsets.push(Number.parseFloat(root.style.getPropertyValue('--pan-x')) || 0),
+        );
+        watched.__offsetObserver.observe(root, { attributeFilter: ['style'], attributes: true });
+      });
     /** Picks a mini-month day and waits for its slide to end: the strip is back to 11 columns. */
     const pick = async (day: Temporal.PlainDate): Promise<Array<number>> => {
       await watchOffsets();
       await cdp.clickTestId(`mini-day-${day.toString()}`);
-      await cdp.waitFor(`${h1} === ${JSON.stringify(weekTitle(day))}`);
-      await cdp.waitFor(`${columns} === 'repeat(11, 1fr)'`);
-      await cdp.waitFor(`${panX} === '0px'`);
-      return cdp.eval<Array<number>>('window.__offsets');
+      await cdp.waitUntil(($, title: string) => $.text('h1') === title, weekTitle(day));
+      await cdp.waitUntil(
+        ($) => $.el('[data-testid="week-grid"]')!.style.gridTemplateColumns === 'repeat(11, 1fr)',
+      );
+      await cdp.waitUntil(
+        ($) => $.el('[data-testid="week-view"]')!.style.getPropertyValue('--pan-x') === '0px',
+      );
+      return cdp.evaluate(() => (window as Watched).__offsets);
     };
     const reducedMotion = async (value: 'no-preference' | 'reduce') => {
       await cdp.send('Emulation.setEmulatedMedia', {
@@ -571,26 +594,31 @@ describe('calendar desktop e2e', () => {
       });
       // A background window takes emulated media only once it draws a frame.
       await cdp.send('Page.captureScreenshot');
-      await cdp.waitFor(`matchMedia('(prefers-reduced-motion: ${value})').matches`);
+      await cdp.waitUntil(
+        (_: PageKit, motion: string) => matchMedia(`(prefers-reduced-motion: ${motion})`).matches,
+        value,
+      );
     };
 
     try {
       await reducedMotion('no-preference');
       await cdp.clickButtonWithText('Today');
-      await cdp.waitFor(`${h1} === ${JSON.stringify(weekTitle(monday))}`);
+      await cdp.waitUntil(($, title: string) => $.text('h1') === title, weekTitle(monday));
       await expectHighlight(monday);
 
       // A short pan rolls the window off Monday: the highlight follows the
       // days on screen, not the focused day's Monday row.
       await cdp.wheelBurst('.overflow-y-scroll', { count: 4, deltaX: 100 });
-      await cdp.waitFor(`${h1} !== ${JSON.stringify(weekTitle(monday))}`);
-      await cdp.waitFor(`${panX} === '0px'`);
-      await expectHighlight(windowStartOf(await cdp.eval<string>(h1)));
+      await cdp.waitUntil(($, title: string) => $.text('h1') !== title, weekTitle(monday));
+      await cdp.waitUntil(
+        ($) => $.el('[data-testid="week-view"]')!.style.getPropertyValue('--pan-x') === '0px',
+      );
+      await expectHighlight(windowStartOf(await cdp.evaluate(h1)));
 
       // A picked day in the week leads it, slid to from the days on screen:
       // the strip starts shifted right (Monday's week where it sat) and eases home.
       await cdp.clickButtonWithText('Today');
-      await cdp.waitFor(`${h1} === ${JSON.stringify(weekTitle(monday))}`);
+      await cdp.waitUntil(($, title: string) => $.text('h1') === title, weekTitle(monday));
       const thursday = monday.add({ days: 3 });
       const near = await pick(thursday);
       await expectHighlight(thursday);
@@ -599,7 +627,9 @@ describe('calendar desktop e2e', () => {
 
       // A far day (next month's 15th) slides in forward too, from two weeks short.
       const shownMonth = Temporal.PlainYearMonth.from(thursday);
-      await cdp.eval(`document.querySelector('[aria-label="Next month"]').click()`);
+      await cdp.evaluate(($) => {
+        $.el('[aria-label="Next month"]')!.click();
+      });
       const far = shownMonth.add({ months: 1 }).toPlainDate({ day: 15 });
       const farOffsets = await pick(far);
       await expectHighlight(far);
@@ -612,39 +642,37 @@ describe('calendar desktop e2e', () => {
       expect(backOffsets[0]).toBeLessThan(0);
 
       // Header columns sit over the body's after a slide.
-      const maxDrift = await cdp.eval<number>(`(() => {
-        const header = document.querySelector('.overflow-hidden > .grid:not(.relative)');
-        const body = document.querySelector('[data-testid="week-grid"]');
+      const maxDrift = await cdp.evaluate(($) => {
+        const header = $.el('.overflow-hidden > .grid:not(.relative)')!;
+        const body = $.el('[data-testid="week-grid"]')!;
         let max = 0;
         for (const index of [2, 5, 8]) {
-          const headerX = header.children[index].getBoundingClientRect().x;
-          const bodyX = body.children[index].getBoundingClientRect().x;
+          const headerX = header.children[index]!.getBoundingClientRect().x;
+          const bodyX = body.children[index]!.getBoundingClientRect().x;
           max = Math.max(max, Math.abs(headerX - bodyX));
         }
         return max;
-      })()`);
+      });
       expect(maxDrift).toBeLessThanOrEqual(1);
 
       // Today mid-slide back to today's own Monday: the first day stays, so
       // only the cleared slide says to stop — the strip lands at once.
       await cdp.clickButtonWithText('Today');
-      await cdp.waitFor(`${h1} === ${JSON.stringify(weekTitle(monday))}`);
+      await cdp.waitUntil(($, title: string) => $.text('h1') === title, weekTitle(monday));
       await pick(thursday);
-      const cleared = await cdp.eval<{ after: string; columns: string; during: string }>(
-        `(async () => {
-          const root = document.querySelector('[data-testid="week-view"]');
-          document.querySelector('[data-testid="mini-day-${monday.toString()}"]').click();
-          await null;
-          const during = root.style.getPropertyValue('--pan-x');
-          [...document.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Today').click();
-          await null;
-          return {
-            after: root.style.getPropertyValue('--pan-x'),
-            columns: document.querySelector('[data-testid="week-grid"]').style.gridTemplateColumns,
-            during,
-          };
-        })()`,
-      );
+      const cleared = await cdp.evaluate(async ($, mondayIso: string) => {
+        const root = $.el('[data-testid="week-view"]')!;
+        $.el(`[data-testid="mini-day-${mondayIso}"]`)!.click();
+        await Promise.resolve();
+        const during = root.style.getPropertyValue('--pan-x');
+        $.button('Today')!.click();
+        await Promise.resolve();
+        return {
+          after: root.style.getPropertyValue('--pan-x'),
+          columns: $.el('[data-testid="week-grid"]')!.style.gridTemplateColumns,
+          during,
+        };
+      }, monday.toString());
       expect(cleared.during).not.toBe('0px');
       expect(cleared.after).toBe('0px');
       expect(cleared.columns).toBe('repeat(11, 1fr)');
@@ -653,44 +681,57 @@ describe('calendar desktop e2e', () => {
       // first day on screen (fractional, in days) doesn't jump. Only
       // microtasks run between the reads, never an animation frame.
       const friday = thursday.add({ days: 1 });
-      const retarget = await cdp.eval<{ after: number; before: number }>(`(async () => {
-        const position = () => {
-          const header = document.querySelector('[data-date]').parentElement;
-          const left = header.parentElement.getBoundingClientRect().x;
-          const cell = [...header.children].find((child) => {
-            const rect = child.getBoundingClientRect();
-            return rect.x <= left && left < rect.x + rect.width;
-          });
-          const rect = cell.getBoundingClientRect();
-          return Date.parse(cell.dataset.date) / 86400000 + (left - rect.x) / rect.width;
-        };
-        document.querySelector('[data-testid="mini-day-${thursday.toString()}"]').click();
-        await new Promise((resolve) => setTimeout(resolve, 100));
-        const before = position();
-        document.querySelector('[data-testid="mini-day-${friday.toString()}"]').click();
-        await null;
-        return { after: position(), before };
-      })()`);
+      const retarget = await cdp.evaluate(
+        async ($, thursdayIso: string, fridayIso: string) => {
+          const position = () => {
+            const header = $.el('[data-date]')!.parentElement!;
+            const left = header.parentElement!.getBoundingClientRect().x;
+            const cell = ([...header.children] as Array<HTMLElement>).find((child) => {
+              const rect = child.getBoundingClientRect();
+              return rect.x <= left && left < rect.x + rect.width;
+            })!;
+            const rect = cell.getBoundingClientRect();
+            return Date.parse(cell.dataset['date']!) / 86_400_000 + (left - rect.x) / rect.width;
+          };
+          $.el(`[data-testid="mini-day-${thursdayIso}"]`)!.click();
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          const before = position();
+          $.el(`[data-testid="mini-day-${fridayIso}"]`)!.click();
+          await Promise.resolve();
+          return { after: position(), before };
+        },
+        thursday.toString(),
+        friday.toString(),
+      );
       expect(Math.abs(retarget.after - retarget.before)).toBeLessThan(0.05);
-      await cdp.waitFor(`${h1} === ${JSON.stringify(weekTitle(friday))}`);
-      await cdp.waitFor(`${columns} === 'repeat(11, 1fr)'`);
+      await cdp.waitUntil(($, title: string) => $.text('h1') === title, weekTitle(friday));
+      await cdp.waitUntil(
+        ($) => $.el('[data-testid="week-grid"]')!.style.gridTemplateColumns === 'repeat(11, 1fr)',
+      );
 
       // A press held through a slide's end keeps the extra days drawn (a
       // drag holds the strip column it started in) until it comes up. The
       // hour gutter takes the press without opening anything.
-      const gutter = await cdp.eval<{ x: number; y: number }>(`(() => {
-        const rect = document.querySelector('[data-testid="week-scroller"]').getBoundingClientRect();
+      const gutter = await cdp.evaluate(($) => {
+        const rect = $.el('[data-testid="week-scroller"]')!.getBoundingClientRect();
         return { x: Math.round(rect.x + 16), y: Math.round(rect.y + 120) };
-      })()`);
+      });
       await cdp.clickTestId(`mini-day-${monday.toString()}`);
       await cdp.mouse('mousePressed', gutter.x, gutter.y);
       try {
-        await cdp.waitFor(`${h1} === ${JSON.stringify(weekTitle(monday))} && ${panX} === '0px'`);
-        expect(await cdp.eval<string>(columns)).not.toBe('repeat(11, 1fr)');
+        await cdp.waitUntil(
+          ($, title: string) =>
+            $.text('h1') === title &&
+            $.el('[data-testid="week-view"]')!.style.getPropertyValue('--pan-x') === '0px',
+          weekTitle(monday),
+        );
+        expect(await cdp.evaluate(columns)).not.toBe('repeat(11, 1fr)');
       } finally {
         await cdp.mouse('mouseReleased', gutter.x, gutter.y);
       }
-      await cdp.waitFor(`${columns} === 'repeat(11, 1fr)'`);
+      await cdp.waitUntil(
+        ($) => $.el('[data-testid="week-grid"]')!.style.gridTemplateColumns === 'repeat(11, 1fr)',
+      );
 
       // Reduced motion: the picked day leads at once, nothing slides.
       await reducedMotion('reduce');
@@ -700,9 +741,7 @@ describe('calendar desktop e2e', () => {
       await cdp.send('Emulation.setEmulatedMedia', { features: [] });
       await cdp.clickButtonWithText('Today');
       await cdp.clickTestId('view-week');
-      await cdp
-        .waitFor(`!!document.querySelector('[title^="Standup meeting"]')`)
-        .catch(() => undefined);
+      await cdp.waitUntil(($) => $.has('[title^="Standup meeting"]')).catch(() => undefined);
     }
   });
 
@@ -711,29 +750,19 @@ describe('calendar desktop e2e', () => {
     // A free slot: same column as Standup, 3 hours below its block.
     const block = await cdp.locate('[title^="Standup meeting"]');
     await cdp.click(block.x, block.y + 3 * HOUR_HEIGHT + 10);
-    await cdp.waitFor(`document.body.textContent.includes('New event')`);
-    await cdp.eval(`(() => {
-      const input = document.querySelector('input[placeholder="Title"]');
-      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-      setter.call(input, 'Coffee chat');
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    })()`);
+    await cdp.waitUntil(() => document.body.textContent.includes('New event'));
+    await cdp.evaluate(($) => $.setValue('input[placeholder="Title"]', 'Coffee chat'));
     await cdp.clickButtonWithText('Save');
-    await cdp.waitFor(`!!document.querySelector('[title^="Coffee chat"]')`);
+    await cdp.waitUntil(($) => $.has('[title^="Coffee chat"]'));
     expect(await eventStart('Coffee chat')).toBeGreaterThan(0);
   });
 
   it('edits an event title through the editor', async () => {
     const { cdp } = app;
     await cdp.openEditor('[title^="Coffee chat"]');
-    await cdp.eval(`(() => {
-      const input = document.querySelector('input[placeholder="Title"]');
-      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-      setter.call(input, 'Coffee chat (moved)');
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    })()`);
+    await cdp.evaluate(($) => $.setValue('input[placeholder="Title"]', 'Coffee chat (moved)'));
     await cdp.clickButtonWithText('Save');
-    await cdp.waitFor(`!!document.querySelector('[title^="Coffee chat (moved)"]')`);
+    await cdp.waitUntil(($) => $.has('[title^="Coffee chat (moved)"]'));
   });
 
   it('creates an event by dragging a slot on empty grid space', async () => {
@@ -742,11 +771,11 @@ describe('calendar desktop e2e', () => {
     // the slot extends to the next quarter.
     const from = await todayGridPoint(19, 5);
     await cdp.drag(from, { x: from.x, y: from.y + 1.5 * HOUR_HEIGHT });
-    await cdp.waitFor(`document.body.textContent.includes('New event')`);
+    await cdp.waitUntil(() => document.body.textContent.includes('New event'));
     expect(await editorTimes()).toEqual(['19:00', '20:45']);
     await setEditorTitle('Evening run');
     await cdp.clickButtonWithText('Save');
-    await cdp.waitFor(`!!document.querySelector('[title^="Evening run"]')`);
+    await cdp.waitUntil(($) => $.has('[title^="Evening run"]'));
     const created = await waitForEvent((event) => event.title === 'Evening run');
     expect(created).toBeDefined();
     expect(created!.endUtc - created!.startUtc).toBe(105 * 60 * 1000);
@@ -756,15 +785,15 @@ describe('calendar desktop e2e', () => {
     const { cdp } = app;
     const from = await todayGridPoint(21, 5);
     await cdp.drag(from, { x: from.x, y: from.y + HOUR_HEIGHT });
-    await cdp.waitFor(`document.body.textContent.includes('New event')`);
+    await cdp.waitUntil(() => document.body.textContent.includes('New event'));
     await setEditorTitle('Saved once');
     // Both clicks land before React re-renders the button disabled.
-    await cdp.eval(`(() => {
-      const save = [...document.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Save');
+    await cdp.evaluate(($) => {
+      const save = $.button('Save')!;
       save.click();
       save.click();
-    })()`);
-    await cdp.waitFor(`!!document.querySelector('[title^="Saved once"]')`);
+    });
+    await cdp.waitUntil(($) => $.has('[title^="Saved once"]'));
     expect(await waitForEvent((event) => event.title === 'Saved once')).toBeDefined();
     // A second create would be written right behind the first.
     await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -778,19 +807,19 @@ describe('calendar desktop e2e', () => {
     const { cdp } = app;
     const from = await todayGridPoint(23, 5);
     await cdp.drag(from, { x: from.x, y: from.y - HOUR_HEIGHT });
-    await cdp.waitFor(`document.body.textContent.includes('New event')`);
+    await cdp.waitUntil(() => document.body.textContent.includes('New event'));
     expect(await editorTimes()).toEqual(['22:00', '23:15']);
     await cdp.pressEscape();
-    await cdp.waitFor(`!document.body.textContent.includes('New event')`);
+    await cdp.waitUntil(() => !document.body.textContent.includes('New event'));
   });
 
   it("keeps the editor's date and times inside the panel", async () => {
     const { cdp } = app;
     const at = await todayGridPoint(2, 5);
     await cdp.click(at.x, at.y);
-    await cdp.waitFor(`document.body.textContent.includes('New event')`);
-    const fit = await cdp.eval<{ overflow: number; pastEdge: Array<string> }>(`(() => {
-      const editor = document.querySelector('[data-testid="editor"]');
+    await cdp.waitUntil(() => document.body.textContent.includes('New event'));
+    const fit = await cdp.evaluate(($) => {
+      const editor = $.el('[data-testid="editor"]')!;
       const edge = editor.getBoundingClientRect().right;
       const fields = editor.querySelectorAll('input[type="date"], input[type="time"]');
       return {
@@ -799,10 +828,10 @@ describe('calendar desktop e2e', () => {
           .filter((field) => field.getBoundingClientRect().right > edge)
           .map((field) => field.getAttribute('aria-label')),
       };
-    })()`);
+    });
     expect(fit).toEqual({ overflow: 0, pastEdge: [] });
     await cdp.pressEscape();
-    await cdp.waitFor(`!document.body.textContent.includes('New event')`);
+    await cdp.waitUntil(() => !document.body.textContent.includes('New event'));
   });
 
   it('cancels drawing a slot with Escape', async () => {
@@ -813,13 +842,13 @@ describe('calendar desktop e2e', () => {
       await cdp.mouse('mouseMoved', from.x, from.y + step * 10);
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
-    await cdp.waitFor(`!!document.querySelector('[data-testid="slot-selection"]')`);
+    await cdp.waitUntil(($) => $.has('[data-testid="slot-selection"]'));
     await cdp.pressEscape();
-    await cdp.waitFor(`!document.querySelector('[data-testid="slot-selection"]')`);
+    await cdp.waitUntil(($) => !$.has('[data-testid="slot-selection"]'));
     await cdp.mouse('mouseReleased', from.x, from.y + 50);
     await new Promise((resolve) => setTimeout(resolve, 800));
     // The abandoned release must not fall through to the hour click either.
-    expect(await cdp.eval<boolean>(`document.body.textContent.includes('New event')`)).toBe(false);
+    expect(await cdp.evaluate(() => document.body.textContent.includes('New event'))).toBe(false);
   });
 
   it('keeps a click that drifts sideways an hour click', async () => {
@@ -833,10 +862,10 @@ describe('calendar desktop e2e', () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
     await cdp.mouse('mouseReleased', at.x + 12, at.y);
-    await cdp.waitFor(`document.body.textContent.includes('New event')`);
+    await cdp.waitUntil(() => document.body.textContent.includes('New event'));
     expect(await editorTimes()).toEqual(['03:00', '04:00']);
     await cdp.pressEscape();
-    await cdp.waitFor(`!document.body.textContent.includes('New event')`);
+    await cdp.waitUntil(() => !document.body.textContent.includes('New event'));
   });
 
   it('drops a slot whose column leaves the page mid-drag', async () => {
@@ -847,28 +876,24 @@ describe('calendar desktop e2e', () => {
       await cdp.mouse('mouseMoved', from.x, from.y + step * 10);
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
-    await cdp.waitFor(`!!document.querySelector('[data-testid="slot-selection"]')`);
+    await cdp.waitUntil(($) => $.has('[data-testid="slot-selection"]'));
     try {
       // Two weeks while the button is still down: even Saturday/Sunday
       // leave the next week's two-day pan buffer, so the column unmounts.
       for (let step = 0; step < 2; step += 1) {
-        const before = await cdp.eval<string>(`document.querySelector('h1')?.textContent ?? ''`);
+        const before = await cdp.evaluate(($) => $.text('h1'));
         await cdp.send('Input.dispatchKeyEvent', {
           code: 'ArrowRight',
           key: 'ArrowRight',
           type: 'rawKeyDown',
           windowsVirtualKeyCode: 39,
         });
-        await cdp.waitFor(
-          `(document.querySelector('h1')?.textContent ?? '') !== ${JSON.stringify(before)}`,
-        );
+        await cdp.waitUntil(($, title: string) => $.text('h1') !== title, before);
       }
-      await cdp.waitFor(`!document.querySelector('[data-testid="slot-selection"]')`);
+      await cdp.waitUntil(($) => !$.has('[data-testid="slot-selection"]'));
       await cdp.mouse('mouseReleased', from.x, from.y + 40);
       await new Promise((resolve) => setTimeout(resolve, 800));
-      expect(await cdp.eval<boolean>(`document.body.textContent.includes('New event')`)).toBe(
-        false,
-      );
+      expect(await cdp.evaluate(() => document.body.textContent.includes('New event'))).toBe(false);
     } finally {
       await cdp.clickButtonWithText('Today');
     }
@@ -876,10 +901,10 @@ describe('calendar desktop e2e', () => {
     const again = await todayGridPoint(4, 5);
     await cdp.mouse('mousePressed', again.x, again.y);
     await cdp.mouse('mouseMoved', again.x, again.y + 30);
-    await cdp.waitFor(`!!document.querySelector('[data-testid="slot-selection"]')`);
+    await cdp.waitUntil(($) => $.has('[data-testid="slot-selection"]'));
     await cdp.pressEscape();
     await cdp.mouse('mouseReleased', again.x, again.y + 30);
-    await cdp.waitFor(`!document.querySelector('[data-testid="slot-selection"]')`);
+    await cdp.waitUntil(($) => !$.has('[data-testid="slot-selection"]'));
   });
 
   it('drags an event to a new time and day', async () => {
@@ -887,22 +912,18 @@ describe('calendar desktop e2e', () => {
     const before = await eventStart('Standup meeting');
     const from = await cdp.locate('[title^="Standup meeting"]');
     // The day strip is all equal-width day columns (buffer included).
-    const dayWidth = await cdp.eval<number>(
-      `(() => {
-        const strip = document.querySelector('.relative.grid');
-        return strip.getBoundingClientRect().width / strip.children.length;
-      })()`,
-    );
+    const dayWidth = await cdp.evaluate(($) => {
+      const strip = $.el('.relative.grid')!;
+      return strip.getBoundingClientRect().width / strip.children.length;
+    });
     // Down 2 hours, right 1 day.
     await cdp.drag(from, {
       x: Math.round(from.x + dayWidth),
       y: from.y + 2 * HOUR_HEIGHT,
     });
     // A drag that starts on an event moves it; it never draws a new slot.
-    expect(
-      await cdp.eval<boolean>(`!!document.querySelector('[data-testid="slot-selection"]')`),
-    ).toBe(false);
-    expect(await cdp.eval<boolean>(`document.body.textContent.includes('New event')`)).toBe(false);
+    expect(await cdp.evaluate(($) => $.has('[data-testid="slot-selection"]'))).toBe(false);
+    expect(await cdp.evaluate(() => document.body.textContent.includes('New event'))).toBe(false);
     // It lands on the row it was dropped on: two hours later on the next
     // day of the grid, wall clock in the device zone the grid draws in. A
     // fixed 26 h is an hour off on the eve of a DST change there.
@@ -912,7 +933,6 @@ describe('calendar desktop e2e', () => {
       .toPlainDateTime()
       .add({ days: 1, hours: 2 })
       .toZonedDateTime(zone).epochMilliseconds;
-    await cdp.waitFor(`true`);
     const deadline = Date.now() + 10_000;
     let moved = await eventStart('Standup meeting');
     while (moved !== expected && Date.now() < deadline) {
@@ -928,13 +948,17 @@ describe('calendar desktop e2e', () => {
     // resize handle, where a CI run at 15:55 UTC once found it (the locate
     // hit-test landed on the line and the resize test timed out).
     const handle = await cdp.locate('[title^="Gym session"]', { atBottom: true });
-    const reachesEvent = await cdp.eval<boolean>(`(() => {
-      const line = document.querySelector('[data-testid="now-line"]');
-      const column = line.parentElement;
-      line.style.top = ${handle.y} - column.getBoundingClientRect().top - 1 + 'px';
-      const hit = document.elementFromPoint(${handle.x}, ${handle.y});
-      return !!hit && !!hit.closest('[title^="Gym session"]');
-    })()`);
+    const reachesEvent = await cdp.evaluate(
+      ($, x: number, y: number) => {
+        const line = $.el('[data-testid="now-line"]')!;
+        const column = line.parentElement!;
+        line.style.top = y - column.getBoundingClientRect().top - 1 + 'px';
+        const hit = document.elementFromPoint(x, y);
+        return !!hit && !!hit.closest('[title^="Gym session"]');
+      },
+      handle.x,
+      handle.y,
+    );
     expect(reachesEvent).toBe(true);
   });
 
@@ -969,7 +993,7 @@ describe('calendar desktop e2e', () => {
     await new Promise((resolve) => setTimeout(resolve, 800));
     expect(await eventStart('Gym session')).toBe(before);
     // The abandoned release must not fall through to a slot click.
-    expect(await cdp.eval<boolean>(`document.body.textContent.includes('New event')`)).toBe(false);
+    expect(await cdp.evaluate(() => document.body.textContent.includes('New event'))).toBe(false);
   });
 
   it('drags a recurring instance into a single-instance override', async () => {
@@ -988,23 +1012,21 @@ describe('calendar desktop e2e', () => {
     expect(events.find((event) => event.id === 'evt-daily')!.startUtc).toBe(dailyStart);
     // Wait for the override block to render at its new time — the next test
     // clicks it, and a point computed before the re-render goes stale.
-    await cdp.waitFor(`(() => {
-      const fmt = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' })
-        .format(new Date(${expected}));
-      return [...document.querySelectorAll('[title^="Daily sync"]')]
-        .some((el) => el.title.includes(fmt));
-    })()`);
+    await cdp.waitUntil(($, at: number) => {
+      const fmt = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(
+        new Date(at),
+      );
+      return $.all('[title^="Daily sync"]').some((el) => el.title.includes(fmt));
+    }, expected);
   });
 
   it('edits a single occurrence through the editor scope selector', async () => {
     const { cdp } = app;
     // First matching block is the override created by the drag test.
     await clickNth('[title^="Daily sync"]', 0);
-    await cdp.waitFor(`document.body.textContent.includes('This and following')`);
+    await cdp.waitUntil(() => document.body.textContent.includes('This and following'));
     await cdp.clickTestId('inspector-edit');
-    await cdp.waitFor(
-      `document.querySelector('[data-testid="editor-title"]')?.textContent === 'Edit event'`,
-    );
+    await cdp.waitUntil(($) => $.text('[data-testid="editor-title"]') === 'Edit event');
     await setEditorTitle('Daily sync (solo)');
     await cdp.clickButtonWithText('Save');
 
@@ -1019,11 +1041,9 @@ describe('calendar desktop e2e', () => {
     const { cdp } = app;
     // Second matching block is a generated (non-override) instance.
     await clickNth('[title^="Daily sync"]', 1);
-    await cdp.waitFor(`document.body.textContent.includes('All events')`);
+    await cdp.waitUntil(() => document.body.textContent.includes('All events'));
     await cdp.clickTestId('inspector-edit');
-    await cdp.waitFor(
-      `document.querySelector('[data-testid="editor-title"]')?.textContent === 'Edit event'`,
-    );
+    await cdp.waitUntil(($) => $.text('[data-testid="editor-title"]') === 'Edit event');
     await cdp.clickButtonWithText('All events');
     await setEditorTitle('Daily standup');
     await cdp.clickButtonWithText('Save');
@@ -1035,7 +1055,7 @@ describe('calendar desktop e2e', () => {
     expect(master!.startUtc).toBe(dailyStart);
     // Google copies a master's changed title onto every exception, the
     // detached one included — and the app mirrors that at save.
-    await cdp.waitFor(`!document.querySelector('[title^="Daily sync (solo)"]')`);
+    await cdp.waitUntil(($) => !$.has('[title^="Daily sync (solo)"]'));
     const override = await waitForEvent(
       (event) => event.recurringEventId === 'evt-daily' && event.title === 'Daily standup',
     );
@@ -1047,11 +1067,9 @@ describe('calendar desktop e2e', () => {
     // The first "Daily standup" block is the detached override (the series
     // rename reached it); the second is the next generated instance.
     await clickNth('[title^="Daily standup"]', 1);
-    await cdp.waitFor(`document.body.textContent.includes('This and following')`);
+    await cdp.waitUntil(() => document.body.textContent.includes('This and following'));
     await cdp.clickTestId('inspector-edit');
-    await cdp.waitFor(
-      `document.querySelector('[data-testid="editor-title"]')?.textContent === 'Edit event'`,
-    );
+    await cdp.waitUntil(($) => $.text('[data-testid="editor-title"]') === 'Edit event');
     await cdp.clickButtonWithText('This and following');
     await setEditorTitle('Daily standup v2');
     await cdp.clickButtonWithText('Save');
@@ -1075,18 +1093,17 @@ describe('calendar desktop e2e', () => {
     const { cdp } = app;
     // The previous test asserts the split in the db; wait for the renamed
     // blocks to render before counting them.
-    await cdp.waitFor(`document.querySelectorAll('[title^="Daily standup v2"]').length > 0`);
-    const countBefore = await cdp.eval<number>(
-      `document.querySelectorAll('[title^="Daily standup v2"]').length`,
-    );
+    await cdp.waitUntil(($) => $.count('[title^="Daily standup v2"]') > 0);
+    const countBefore = await cdp.evaluate(($) => $.count('[title^="Daily standup v2"]'));
     const block = await cdp.locate('[title^="Daily standup v2"]');
     await cdp.click(block.x, block.y);
-    await cdp.waitFor(`document.body.textContent.includes('This event')`);
+    await cdp.waitUntil(() => document.body.textContent.includes('This event'));
     await cdp.clickButtonWithText('Delete');
     await cdp.confirmDelete();
     // One occurrence vanishes; the master survives.
-    await cdp.waitFor(
-      `document.querySelectorAll('[title^="Daily standup v2"]').length === ${countBefore - 1}`,
+    await cdp.waitUntil(
+      ($, count: number) => $.count('[title^="Daily standup v2"]') === count,
+      countBefore - 1,
     );
     const events = await readEvents(app.userDataDir);
     expect(events.some((event) => event.title === 'Daily standup v2')).toBe(true);
@@ -1095,15 +1112,15 @@ describe('calendar desktop e2e', () => {
   it('toggles calendar visibility from anywhere on its sidebar row, the swatch included', async () => {
     const { cdp } = app;
     const row = '[data-testid="sidebar-calendar-cal-personal"]';
-    const pressed = `document.querySelector('${row}')?.getAttribute('aria-pressed')`;
     // The sidebar has no color control: the swatch is the row's checkbox.
-    expect(await cdp.eval<boolean>(`!document.querySelector('[aria-label^="Change color"]')`)).toBe(
-      true,
-    );
+    expect(await cdp.evaluate(($) => !$.has('[aria-label^="Change color"]'))).toBe(true);
     const swatch = await cdp.locate(`${row} > span[aria-hidden]`);
     await cdp.click(swatch.x, swatch.y);
-    await cdp.waitFor(`${pressed} === 'false'`);
-    await cdp.waitFor(`!document.querySelector('[title^="Gym session"]')`);
+    await cdp.waitUntil(
+      ($, selector: string) => $.el(selector)?.getAttribute('aria-pressed') === 'false',
+      row,
+    );
+    await cdp.waitUntil(($) => !$.has('[title^="Gym session"]'));
     await expect
       .poll(
         async () =>
@@ -1114,7 +1131,10 @@ describe('calendar desktop e2e', () => {
 
     const name = await cdp.locate(`${row} > span:last-child`);
     await cdp.click(name.x, name.y);
-    await cdp.waitFor(`${pressed} === 'true'`);
+    await cdp.waitUntil(
+      ($, selector: string) => $.el(selector)?.getAttribute('aria-pressed') === 'true',
+      row,
+    );
     await cdp.locate('[title^="Gym session"]');
   });
 
@@ -1123,18 +1143,18 @@ describe('calendar desktop e2e', () => {
     await cdp.openEditor('[title^="Coffee chat (moved)"]');
     await cdp.clickButtonWithText('Delete');
     // Asked first, naming what goes; Keep leaves it alone.
-    const question = await cdp.waitFor<string>(
-      `document.querySelector('[data-testid="move-confirm"]')?.textContent ?? ''`,
-    );
+    const question = await cdp.waitForValue(($) => $.text('[data-testid="move-confirm"]'));
     expect(question).toContain('Delete “Coffee chat (moved)”?');
-    await cdp.eval(`document.querySelector('[data-testid="move-confirm-no"]').click()`);
-    await cdp.waitFor(`!document.querySelector('[data-testid="move-confirm"]')`);
+    await cdp.evaluate(($) => {
+      $.el('[data-testid="move-confirm-no"]')!.click();
+    });
+    await cdp.waitUntil(($) => !$.has('[data-testid="move-confirm"]'));
     expect(
       (await readEvents(app.userDataDir)).some((event) => event.title === 'Coffee chat (moved)'),
     ).toBe(true);
     await cdp.clickButtonWithText('Delete');
     await cdp.confirmDelete();
-    await cdp.waitFor(`!document.querySelector('[title^="Coffee chat (moved)"]')`);
+    await cdp.waitUntil(($) => !$.has('[title^="Coffee chat (moved)"]'));
     const events = await readEvents(app.userDataDir);
     expect(events.some((event) => event.title === 'Coffee chat (moved)')).toBe(false);
   });
@@ -1144,25 +1164,14 @@ describe('calendar desktop e2e', () => {
     // A free slot: Gym column (today), 3 hours above the block.
     const block = await cdp.locate('[title^="Gym session"]');
     await cdp.click(block.x, block.y - 3 * HOUR_HEIGHT);
-    await cdp.waitFor(`document.body.textContent.includes('New event')`);
+    await cdp.waitUntil(() => document.body.textContent.includes('New event'));
     await setEditorTitle('Yoga flow');
     // Pick "Daily", ending after 5 occurrences.
-    await cdp.eval(`(() => {
-      const setSelect = (label, value) => {
-        const select = document.querySelector('select[aria-label="' + label + '"]');
-        const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set;
-        setter.call(select, value);
-        select.dispatchEvent(new Event('change', { bubbles: true }));
-      };
-      setSelect('Repeat', 'daily');
-      setSelect('Repeat ends', 'after');
-    })()`);
-    await cdp.eval(`(() => {
-      const input = document.querySelector('input[aria-label="Occurrence count"]');
-      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-      setter.call(input, '5');
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    })()`);
+    await cdp.evaluate(($) => {
+      $.setValue('select[aria-label="Repeat"]', 'daily');
+      $.setValue('select[aria-label="Repeat ends"]', 'after');
+    });
+    await cdp.evaluate(($) => $.setValue('input[aria-label="Occurrence count"]', '5'));
     await cdp.clickButtonWithText('Save');
 
     const master = await waitForEvent(
@@ -1172,28 +1181,26 @@ describe('calendar desktop e2e', () => {
     expect(master!.recurrence).toEqual(['RRULE:FREQ=DAILY;COUNT=5']);
     // The optimistic master expands right away; late-week runs may only
     // have one in-window instance, so assert presence rather than count.
-    await cdp.waitFor(`document.querySelectorAll('[title^="Yoga flow"]').length >= 1`);
+    await cdp.waitUntil(($) => $.count('[title^="Yoga flow"]') >= 1);
   });
 
   it('creates a weekly event on chosen weekdays', async () => {
     const { cdp } = app;
     const add = await cdp.locate('button[aria-label="New event"]');
     await cdp.click(add.x, add.y);
-    await cdp.waitFor(`document.body.textContent.includes('New event')`);
+    await cdp.waitUntil(() => document.body.textContent.includes('New event'));
     // "+ New" opens on the Assistant where a model answers; the fields are the form's.
     await cdp.showEditorView('form');
     await setEditorTitle('Board game night');
-    await cdp.eval(`(() => {
-      const select = document.querySelector('select[aria-label="Repeat"]');
-      const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set;
-      setter.call(select, 'weekly');
-      select.dispatchEvent(new Event('change', { bubbles: true }));
-    })()`);
+    await cdp.evaluate(($) => $.setValue('select[aria-label="Repeat"]', 'weekly'));
     // Press Monday and Wednesday, then release whatever else the start
     // date pressed: adding first means the last-day guard never bites.
     for (const day of ['MO', 'WE']) {
-      const pressed = await cdp.eval<boolean>(
-        `document.querySelector('[data-testid="repeat-weekday-${day}"]')?.getAttribute('aria-pressed') === 'true'`,
+      const pressed = await cdp.evaluate(
+        ($, weekday: string) =>
+          $.el(`[data-testid="repeat-weekday-${weekday}"]`)?.getAttribute('aria-pressed') ===
+          'true',
+        day,
       );
       if (!pressed) {
         const button = await cdp.locate(`[data-testid="repeat-weekday-${day}"]`);
@@ -1201,9 +1208,11 @@ describe('calendar desktop e2e', () => {
       }
     }
     for (;;) {
-      const extra = await cdp.eval<string | null>(
-        `[...document.querySelectorAll('[data-testid^="repeat-weekday-"][aria-pressed="true"]')]
-          .map(b => b.dataset.testid).find(id => !id.endsWith('-MO') && !id.endsWith('-WE')) ?? null`,
+      const extra = await cdp.evaluate(
+        ($) =>
+          $.all('[data-testid^="repeat-weekday-"][aria-pressed="true"]')
+            .map((b) => b.dataset['testid']!)
+            .find((id) => !id.endsWith('-MO') && !id.endsWith('-WE')) ?? null,
       );
       if (extra === null) {
         break;
@@ -1211,29 +1220,25 @@ describe('calendar desktop e2e', () => {
       const button = await cdp.locate(`[data-testid="${extra}"]`);
       await cdp.click(button.x, button.y);
     }
-    expect(
-      await cdp.eval<string>(
-        `document.querySelector('[data-testid="repeat-summary"]')?.textContent ?? ''`,
-      ),
-    ).toBe('Weekly on Monday, Wednesday');
+    expect(await cdp.evaluate(($) => $.text('[data-testid="repeat-summary"]'))).toBe(
+      'Weekly on Monday, Wednesday',
+    );
     await cdp.clickButtonWithText('Save');
 
     const master = await waitForEvent(
       (event) => event.title === 'Board game night' && event.recurrence !== undefined,
     );
     expect(master?.recurrence).toEqual(['RRULE:FREQ=WEEKLY;BYDAY=MO,WE']);
-    await cdp.waitFor(`document.querySelectorAll('[title^="Board game night"]').length >= 1`);
+    await cdp.waitUntil(($) => $.count('[title^="Board game night"]') >= 1);
   });
 
   it('accepts an invitation through the RSVP buttons', async () => {
     const { cdp } = app;
     const block = await cdp.locate('[title^="Design review"]');
     await cdp.click(block.x, block.y);
-    await cdp.waitFor(`document.body.textContent.includes('Invitees')`);
+    await cdp.waitUntil(() => document.body.textContent.includes('Invitees'));
     // The zoom link in the location surfaces as a Join button.
-    await cdp.waitFor(
-      `[...document.querySelectorAll('button')].some(b => b.textContent?.trim() === 'Join meeting')`,
-    );
+    await cdp.waitUntil(($) => $.button('Join meeting') !== null);
     await cdp.clickButtonWithText('Accept');
 
     const updated = await waitForEvent(
@@ -1261,27 +1266,31 @@ describe('calendar desktop e2e', () => {
     // Design-review column (mid-week, never a clipped buffer column) for
     // a point that lands on the bare grid.
     const anchor = await cdp.locate('[title^="Design review"]');
-    const free = await cdp.eval<{ x: number; y: number } | null>(`(() => {
-      const scroller = document.querySelector('.overflow-y-scroll');
-      const bounds = scroller.getBoundingClientRect();
-      const x = ${anchor.x};
-      for (let y = bounds.top + 12; y < bounds.bottom - 12; y += ${HOUR_HEIGHT} / 4) {
-        const hit = document.elementFromPoint(x, y);
-        if (hit && !hit.closest('[title]')) {
-          return { x, y };
+    const free = await cdp.evaluate(
+      ($, anchorX: number, hourHeight: number) => {
+        const scroller = $.el('.overflow-y-scroll')!;
+        const bounds = scroller.getBoundingClientRect();
+        const x = anchorX;
+        for (let y = bounds.top + 12; y < bounds.bottom - 12; y += hourHeight / 4) {
+          const hit = document.elementFromPoint(x, y);
+          if (hit && !hit.closest('[title]')) {
+            return { x, y };
+          }
         }
-      }
-      return null;
-    })()`);
+        return null;
+      },
+      anchor.x,
+      HOUR_HEIGHT,
+    );
     expect(free, 'a free grid cell in the Design-review column').not.toBeNull();
     await cdp.click(free!.x, free!.y);
-    await cdp.waitFor(`document.body.textContent.includes('New event')`);
+    await cdp.waitUntil(() => document.body.textContent.includes('New event'));
     try {
       await cdp.clickButtonWithText('Task');
-      await cdp.waitFor(`document.body.textContent.includes('New task')`);
+      await cdp.waitUntil(() => document.body.textContent.includes('New task'));
       await setEditorTitle('Water plants');
       await cdp.clickButtonWithText('Save');
-      await cdp.waitFor(`!!document.querySelector('[title="Water plants"]')`);
+      await cdp.waitUntil(($) => $.has('[title="Water plants"]'));
       await expect
         .poll(async () => {
           const tasks = await readTasks(app.userDataDir);
@@ -1293,17 +1302,17 @@ describe('calendar desktop e2e', () => {
 
       // Chip body opens task edit; rename.
       await cdp.clickTaskChip('[title="Water plants"]');
-      await cdp.waitFor(`document.body.textContent.includes('Edit task')`);
+      await cdp.waitUntil(() => document.body.textContent.includes('Edit task'));
       await setEditorTitle('Water the plants');
       await cdp.clickButtonWithText('Save');
-      await cdp.waitFor(`!!document.querySelector('[title="Water the plants"]')`);
+      await cdp.waitUntil(($) => $.has('[title="Water the plants"]'));
 
       // Delete from the same sheet.
       await cdp.clickTaskChip('[title="Water the plants"]');
-      await cdp.waitFor(`document.body.textContent.includes('Edit task')`);
+      await cdp.waitUntil(() => document.body.textContent.includes('Edit task'));
       await cdp.clickButtonWithText('Delete');
       await cdp.confirmDelete();
-      await cdp.waitFor(`!document.querySelector('[title="Water the plants"]')`);
+      await cdp.waitUntil(($) => !$.has('[title="Water the plants"]'));
       await expect
         .poll(async () => {
           const tasks = await readTasks(app.userDataDir);
@@ -1320,51 +1329,41 @@ describe('calendar desktop e2e', () => {
     const { cdp } = app;
     await cdp.locate('[data-overdue][title^="Old chore"]');
     // Once in the DOM: on today, not also on its own past day.
-    expect(await cdp.eval<number>(`document.querySelectorAll('[title^="Old chore"]').length`)).toBe(
-      1,
-    );
-    const inTodayColumn = await cdp.eval<boolean>(`(() => {
-      const chip = document.querySelector('[data-overdue][title^="Old chore"]');
-      const cell = document.querySelector('[data-testid="today-header"]');
+    expect(await cdp.evaluate(($) => $.count('[title^="Old chore"]'))).toBe(1);
+    const inTodayColumn = await cdp.evaluate(($) => {
+      const chip = $.el('[data-overdue][title^="Old chore"]')!;
+      const cell = $.el('[data-testid="today-header"]')!;
       const chipRect = chip.getBoundingClientRect();
       const cellRect = cell.getBoundingClientRect();
       return chipRect.left >= cellRect.left - 1 && chipRect.right <= cellRect.right + 1;
-    })()`);
+    });
     expect(inTodayColumn).toBe(true);
     // A completed task stays on its past day without the overdue marker.
-    expect(await cdp.eval<number>(`document.querySelectorAll('[title="Done chore"]').length`)).toBe(
-      1,
-    );
-    expect(await cdp.eval(`!!document.querySelector('[data-overdue][title^="Done chore"]')`)).toBe(
-      false,
-    );
+    expect(await cdp.evaluate(($) => $.count('[title="Done chore"]'))).toBe(1);
+    expect(await cdp.evaluate(($) => $.has('[data-overdue][title^="Done chore"]'))).toBe(false);
   });
 
   it('draws an undated task on today and never gives it a due day by itself', async () => {
     const { cdp } = app;
     await cdp.locate('[data-testid="all-day-task-task-undated"]');
     // On today's column, once, and not marked overdue: it was never due.
-    expect(
-      await cdp.eval<number>(
-        `document.querySelectorAll('[data-testid="all-day-task-task-undated"]').length`,
-      ),
-    ).toBe(1);
-    const placement = await cdp.eval<{ inToday: boolean; overdue: boolean }>(`(() => {
-      const chip = document.querySelector('[data-testid="all-day-task-task-undated"]');
-      const cell = document.querySelector('[data-testid="today-header"]');
+    expect(await cdp.evaluate(($) => $.count('[data-testid="all-day-task-task-undated"]'))).toBe(1);
+    const placement = await cdp.evaluate(($) => {
+      const chip = $.el('[data-testid="all-day-task-task-undated"]')!;
+      const cell = $.el('[data-testid="today-header"]')!;
       const chipRect = chip.getBoundingClientRect();
       const cellRect = cell.getBoundingClientRect();
       return {
         inToday: chipRect.left >= cellRect.left - 1 && chipRect.right <= cellRect.right + 1,
         overdue: chip.hasAttribute('data-overdue'),
       };
-    })()`);
+    });
     expect(placement).toEqual({ inToday: true, overdue: false });
 
     // The editor says so instead of showing today as its due day, and a
     // rename leaves it undated.
     await cdp.clickTaskChip('[data-testid="all-day-task-task-undated"]');
-    await cdp.waitFor(`!!document.querySelector('[data-testid="task-no-due-date"]')`);
+    await cdp.waitUntil(($) => $.has('[data-testid="task-no-due-date"]'));
     await setEditorTitle('Loose end, renamed');
     await cdp.clickButtonWithText('Save');
     await expect
@@ -1381,12 +1380,10 @@ describe('calendar desktop e2e', () => {
     // The chip renders in the all-day lane with the checkbox leading.
     const checkbox = await cdp.locate('[title="Pay rent"] button');
     // Google tasks never repeat, so no repeat marker.
-    expect(
-      await cdp.eval<string>(`document.querySelector('[title="Pay rent"]')?.textContent ?? ''`),
-    ).not.toContain('\u21bb');
+    expect(await cdp.evaluate(($) => $.text('[title="Pay rent"]'))).not.toContain('\u21bb');
     await cdp.click(checkbox.x, checkbox.y);
 
-    await cdp.waitFor(`document.querySelector('[title="Pay rent"] [data-done]') !== null`);
+    await cdp.waitUntil(($) => $.has('[title="Pay rent"] [data-done]'));
     // The optimistic write landed and the write-back op is queued.
     await expect
       .poll(async () => {
@@ -1404,10 +1401,10 @@ describe('calendar desktop e2e', () => {
     try {
       const point = await settings.locate('[aria-label="Change color: Personal"]');
       await settings.click(point.x, point.y);
-      await settings.waitFor(`!!document.querySelector('[aria-label="Set color #16a765"]')`);
+      await settings.waitUntil(($) => $.has('[aria-label="Set color #16a765"]'));
       const swatch = await settings.locate('[aria-label="Set color #16a765"]');
       await settings.click(swatch.x, swatch.y);
-      await settings.waitFor(`!document.querySelector('[aria-label="Close color picker"]')`);
+      await settings.waitUntil(($) => !$.has('[aria-label="Close color picker"]'));
     } finally {
       await app.closeSettings();
     }
@@ -1430,9 +1427,7 @@ describe('calendar desktop e2e', () => {
     expect(colorOps).toHaveLength(1);
     expect(colorOps[0]!.colorHex).toBe('#16a765');
     // The calendar window's chip repaints from its own calendars atom.
-    await cdp.waitFor(
-      `(() => { const el = document.querySelector('[title^="Gym session"]'); return el && el.dataset.color === '#16a765'; })()`,
-    );
+    await cdp.waitUntil(($) => $.el('[title^="Gym session"]')?.dataset['color'] === '#16a765');
   });
 
   it('surfaces unsynced changes and discards a stuck op', async () => {
@@ -1440,10 +1435,12 @@ describe('calendar desktop e2e', () => {
     // Every mutation in this suite queued an op (no Google API available).
     const count = await readPendingOpsCount(app.userDataDir);
     expect(count).toBeGreaterThan(0);
-    await cdp.waitFor(`document.body.textContent.includes('unsynced change')`);
-    await cdp.eval(
-      `[...document.querySelectorAll('button')].find(b => b.textContent?.includes('unsynced change'))?.click()`,
-    );
+    await cdp.waitUntil(() => document.body.textContent.includes('unsynced change'));
+    await cdp.evaluate(($) => {
+      $.all('button')
+        .find((b) => b.textContent?.includes('unsynced change'))
+        ?.click();
+    });
     // Discard lives in a row's expanded panel. The mutation is
     // fire-and-forget in the UI; re-open and re-click if a transient
     // failure swallowed the first attempt.
@@ -1465,46 +1462,54 @@ describe('calendar desktop e2e', () => {
 
   it('controls screen-sharing privacy from the settings window', async () => {
     const cdp = await app.openSettings('sharing');
-    // Parenthesized: it is compared with `===`, which binds tighter than `??`.
-    const pauseStatus = `(document.querySelector('[data-testid="sharing-pause-status"]')?.textContent ?? null)`;
+    // Parenthesized where it is compared with `===`, which binds tighter than `??`.
+    const pauseStatus = ($: PageKit) =>
+      $.el('[data-testid="sharing-pause-status"]')?.textContent ?? null;
     const stored = () => readSettings(app.userDataDir)['screenPrivacy'];
 
     // Visible is the default, nothing is persisted yet, and there is
     // nothing to pause.
-    await cdp.waitFor(sharingChoiceIs('Visible'));
+    await cdp.waitUntil(sharingChoiceIs, 'Visible');
     expect(stored()).toBeUndefined();
-    expect(await cdp.eval<string | null>(pauseStatus)).toBeNull();
+    expect(await cdp.evaluate(pauseStatus)).toBeNull();
 
     // Hidden persists and offers the pause.
     await cdp.clickButtonWithText('Hidden');
     await expect.poll(stored, { timeout: 10_000 }).toBe('hidden');
-    await cdp.waitFor(`${pauseStatus} === 'Sharing briefly?'`);
+    await cdp.waitUntil(
+      ($) =>
+        ($.el('[data-testid="sharing-pause-status"]')?.textContent ?? null) === 'Sharing briefly?',
+    );
 
     // The 10-minute pause is runtime-only: Hidden stays the choice, on
     // disk too, and the countdown starts from the click.
     await cdp.clickTestId('sharing-show-briefly');
-    await cdp.waitFor(`${pauseStatus} === 'Visible to others · 10 min left'`);
-    const state = await cdp.eval<{ mode: string; visibleUntil?: number }>(
-      `window.calendarBridge.privacyGet()`,
+    await cdp.waitUntil(
+      ($) =>
+        ($.el('[data-testid="sharing-pause-status"]')?.textContent ?? null) ===
+        'Visible to others · 10 min left',
     );
+    const state = await cdp.evaluate(privacyState);
     expect(state.mode).toBe('hidden');
     expect(state.visibleUntil).toBeGreaterThan(Date.now());
-    expect(await cdp.eval<boolean>(sharingChoiceIs('Hidden'))).toBe(true);
+    expect(await cdp.evaluate(sharingChoiceIs, 'Hidden')).toBe(true);
     expect(stored()).toBe('hidden');
 
     // Hide now ends it early.
     await cdp.clickTestId('sharing-hide-now');
-    await cdp.waitFor(`${pauseStatus} === 'Sharing briefly?'`);
-    expect(
-      (await cdp.eval<{ visibleUntil?: number }>(`window.calendarBridge.privacyGet()`))
-        .visibleUntil,
-    ).toBeUndefined();
+    await cdp.waitUntil(
+      ($) =>
+        ($.el('[data-testid="sharing-pause-status"]')?.textContent ?? null) === 'Sharing briefly?',
+    );
+    expect((await cdp.evaluate(privacyState)).visibleUntil).toBeUndefined();
 
     // Back to the default for the remaining flows: Visible persists too,
     // and the pause goes with Hidden.
     await cdp.clickButtonWithText('Visible');
-    await cdp.waitFor(sharingChoiceIs('Visible'));
-    await cdp.waitFor(`${pauseStatus} === null`);
+    await cdp.waitUntil(sharingChoiceIs, 'Visible');
+    await cdp.waitUntil(
+      ($) => ($.el('[data-testid="sharing-pause-status"]')?.textContent ?? null) === null,
+    );
     await expect.poll(stored, { timeout: 10_000 }).toBe('visible');
     await app.closeSettings();
   });
@@ -1515,39 +1520,63 @@ describe('calendar desktop e2e', () => {
     // weekday codes: the week strip always holds every weekday, so the
     // answer is the same on any date.
     const shadedIn = (root: string) =>
-      cdp.eval<Array<string>>(
-        `[...new Set([...document.querySelectorAll('[data-testid="${root}"] [data-weekend]')].map((cell) => ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'][new Date(cell.dataset.day + 'T12:00:00').getDay()]))].sort()`,
+      cdp.evaluate(
+        ($, within: string) =>
+          [
+            ...new Set(
+              $.all(`[data-testid="${within}"] [data-weekend]`).map(
+                (cell) =>
+                  ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'][
+                    new Date(cell.dataset['day'] + 'T12:00:00').getDay()
+                  ],
+              ),
+            ),
+          ].sort(),
+        root,
       );
     const stored = () => readDeviceSetting(app.userDataDir, 'viewPreferences');
-    await cdp.waitFor(`!!document.querySelector('[data-testid="week-grid"] [data-weekend]')`);
+    await cdp.waitUntil(($) => $.has('[data-testid="week-grid"] [data-weekend]'));
     expect(await shadedIn('week-grid')).toEqual(['SA', 'SU']);
     expect(await shadedIn('all-day-lane')).toEqual(['SA', 'SU']);
 
     const settings = await app.openSettings('calendar');
     const pressed = (day: string) =>
-      settings.eval<string | null>(
-        `document.querySelector('[data-testid="weekend-day-${day}"]')?.getAttribute('aria-pressed') ?? null`,
+      settings.evaluate(
+        ($, weekday: string) =>
+          $.el(`[data-testid="weekend-day-${weekday}"]`)?.getAttribute('aria-pressed') ?? null,
+        day,
       );
     const toggleDay = async (day: string, to: boolean) => {
-      await settings.eval(`document.querySelector('[data-testid="weekend-day-${day}"]')?.click()`);
-      await settings.waitFor(
-        `document.querySelector('[data-testid="weekend-day-${day}"]')?.getAttribute('aria-pressed') === ${JSON.stringify(String(to))}`,
+      await settings.evaluate(($, weekday: string) => {
+        $.el(`[data-testid="weekend-day-${weekday}"]`)?.click();
+      }, day);
+      await settings.waitUntil(
+        ($, weekday: string, want: string) =>
+          $.el(`[data-testid="weekend-day-${weekday}"]`)?.getAttribute('aria-pressed') === want,
+        day,
+        String(to),
       );
     };
     const shadeWeekends = () =>
-      settings.eval(`document.querySelector('input[aria-label="Shade weekends"]')?.click()`);
+      settings.evaluate(($) => {
+        $.el('input[aria-label="Shade weekends"]')?.click();
+      });
     try {
       // The pane draws its days once this window's own read of the preferences lands.
-      await settings.waitFor(
-        `document.querySelector('[data-testid="weekend-day-SA"]')?.getAttribute('aria-pressed') === 'true'`,
+      await settings.waitUntil(
+        ($) => $.el('[data-testid="weekend-day-SA"]')?.getAttribute('aria-pressed') === 'true',
       );
       expect(await pressed('FR')).toBe('false');
       // Two clicks straight after each other, each its own task as a
       // person's are: the second builds on the first, so Friday stays. The
       // spec cannot hold a save's read-back, so it shows the chain, not the
       // race with a slow read-back (useSettingsEditor's tests cover that).
-      await settings.eval(`document.querySelector('[data-testid="weekend-day-FR"]').click()`);
-      await settings.eval(`document.querySelector('[data-testid="weekend-day-SU"]').click()`);
+      await settings.evaluate(($) => {
+        $.el('[data-testid="weekend-day-FR"]')!.click();
+      });
+      await settings.evaluate(($) => {
+        $.el('[data-testid="weekend-day-SU"]')!.click();
+      });
       await expect.poll(stored, { timeout: 10_000 }).toMatchObject({ weekendDays: ['FR', 'SA'] });
       expect(await pressed('FR')).toBe('true');
       expect(await pressed('SU')).toBe('false');
@@ -1563,21 +1592,21 @@ describe('calendar desktop e2e', () => {
 
       // Off: nothing is shaded, and the days stay as picked.
       await shadeWeekends();
-      await settings.waitFor(
-        `document.querySelector('[data-testid="weekend-day-FR"]')?.disabled === true`,
+      await settings.waitUntil(
+        ($) => $.el<HTMLButtonElement>('[data-testid="weekend-day-FR"]')?.disabled === true,
       );
       await expect.poll(() => shadedIn('week-grid'), { timeout: 10_000 }).toEqual([]);
       expect(await stored()).toMatchObject({ weekendDays: ['FR', 'SA'], weekendShading: false });
     } finally {
       // Back to the defaults for the remaining flows.
       if (
-        await settings.eval<boolean>(
-          `document.querySelector('input[aria-label="Shade weekends"]')?.checked === false`,
+        await settings.evaluate(
+          ($) => $.el<HTMLInputElement>('input[aria-label="Shade weekends"]')?.checked === false,
         )
       ) {
         await shadeWeekends();
-        await settings.waitFor(
-          `document.querySelector('[data-testid="weekend-day-FR"]')?.disabled === false`,
+        await settings.waitUntil(
+          ($) => $.el<HTMLButtonElement>('[data-testid="weekend-day-FR"]')?.disabled === false,
         );
       }
       if ((await pressed('FR')) === 'true') {
@@ -1593,17 +1622,19 @@ describe('calendar desktop e2e', () => {
 
   it('says so while a screen capture leaves the window out, and pauses privacy from there', async () => {
     const { cdp } = app;
-    const phase = () =>
-      cdp.eval<string>(`document.querySelector('[data-testid="capture-hint"]').dataset.phase`);
-    const waitForPhase = (expected: string, timeoutMs?: number) =>
-      cdp.waitFor(
-        `document.querySelector('[data-testid="capture-hint"]')?.dataset.phase === ${JSON.stringify(expected)}`,
-        timeoutMs,
+    const phase = () => cdp.evaluate(($) => $.el('[data-testid="capture-hint"]')!.dataset['phase']);
+    const waitForPhase = (expected: string, timeoutMs = 15_000) =>
+      cdp.waitUntil(
+        { timeoutMs },
+        ($, want: string) => $.el('[data-testid="capture-hint"]')?.dataset['phase'] === want,
+        expected,
       );
 
     // Hidden: the hint shows during a capture and lingers after it — ⌘⇧3
     // is over before anything can be drawn — then goes.
-    await cdp.eval(`window.calendarBridge.privacySet('hidden')`);
+    await cdp.evaluate(async () => {
+      await window.calendarBridge.privacySet('hidden');
+    });
     await waitForPhase('off');
     app.setCapturing(true);
     await waitForPhase('capturing');
@@ -1618,9 +1649,7 @@ describe('calendar desktop e2e', () => {
     await waitForPhase('after');
     await cdp.clickTestId('capture-hint-show');
     await waitForPhase('off');
-    const state = await cdp.eval<{ mode: string; visibleUntil?: number }>(
-      `window.calendarBridge.privacyGet()`,
-    );
+    const state = await cdp.evaluate(privacyState);
     expect(state.mode).toBe('hidden');
     expect(state.visibleUntil).toBeGreaterThan(Date.now());
 
@@ -1631,45 +1660,52 @@ describe('calendar desktop e2e', () => {
     app.setCapturing(false);
 
     // Back to the default for the remaining flows.
-    await cdp.eval(`window.calendarBridge.privacySet('visible')`);
+    await cdp.evaluate(async () => {
+      await window.calendarBridge.privacySet('visible');
+    });
   });
 
   it('keeps the capture hint true in every window, the one opened mid-capture included', async () => {
     const { cdp } = app;
     // Settings opened while a capture runs is left out of it too, and says so.
-    await cdp.eval(`window.calendarBridge.privacySet('hidden')`);
+    await cdp.evaluate(async () => {
+      await window.calendarBridge.privacySet('hidden');
+    });
     app.setCapturing(true);
-    await cdp.waitFor(captureHintIs('capturing'));
+    await cdp.waitUntil(captureHintIs, 'capturing');
     const settings = await app.openSettings('sharing');
-    await settings.waitFor(captureHintIs('capturing'));
+    await settings.waitUntil(captureHintIs, 'capturing');
 
     // Showing the windows from one hint clears the other at once: it must
     // not linger on "hidden" while the capture now includes it.
     await cdp.clickTestId('capture-hint-show');
-    await cdp.waitFor(captureHintIs('off'));
-    await settings.waitFor(captureHintIs('off'), 2000);
+    await cdp.waitUntil(captureHintIs, 'off');
+    await settings.waitUntil({ timeoutMs: 2000 }, captureHintIs, 'off');
     app.setCapturing(false);
 
     // Back to the default for the remaining flows.
-    await cdp.eval(`window.calendarBridge.privacySet('visible')`);
+    await cdp.evaluate(async () => {
+      await window.calendarBridge.privacySet('visible');
+    });
     await app.closeSettings();
   });
 
   it('opens settings as its own window: one at most, on the pane asked for', async () => {
     const { cdp } = app;
-    const title = `document.querySelector('[data-testid="settings-title"]')?.textContent`;
+    const titleIs = ($: PageKit, want: string) =>
+      $.el('[data-testid="settings-title"]')?.textContent === want;
+    /** The page's own marker: kept while the page is not reloaded. */
+    type Marked = typeof window & { __settingsMarker?: string };
     expect(await app.windowCount()).toBe(1);
 
     const settings = await app.openSettings('agents');
-    await settings.waitFor(`${title} === 'Agents'`);
-    expect(await settings.eval<string>('document.title')).toBe('Agents');
+    await settings.waitUntil(titleIs, 'Agents');
+    expect(await settings.evaluate(() => document.title)).toBe('Agents');
     expect(await app.windowCount()).toBe(2);
     // Mirrors and Agents are listed last, under "Experimental", and each
     // says so at its top; the other panes do not.
     expect(
-      await settings.eval<Array<string>>(
-        `[...document.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent)`,
-      ),
+      await settings.evaluate(($) => $.all('[role="tab"]').map((tab) => tab.textContent)),
     ).toEqual([
       'Accounts',
       'Calendar',
@@ -1685,73 +1721,76 @@ describe('calendar desktop e2e', () => {
       'Agents',
     ]);
     expect(
-      await settings.eval<string | null>(
-        `document.querySelector('[data-testid="settings-experimental-heading"]')?.nextElementSibling?.textContent ?? null`,
+      await settings.evaluate(
+        ($) =>
+          $.el('[data-testid="settings-experimental-heading"]')?.nextElementSibling?.textContent ??
+          null,
       ),
     ).toBe('MirrorsAgents');
     expect(
-      await settings.eval<Array<string>>(
-        `[...document.querySelectorAll('[data-testid="settings-experimental-note"]')].map((note) => note.closest('[role="tabpanel"]').id)`,
+      await settings.evaluate(($) =>
+        $.all('[data-testid="settings-experimental-note"]').map(
+          (note) => note.closest('[role="tabpanel"]')!.id,
+        ),
       ),
     ).toEqual(['settings-pane-mirrors', 'settings-pane-agents']);
     // The calendar is no longer covered by anything.
-    expect(await cdp.eval(`!!document.querySelector('[role="dialog"]')`)).toBe(false);
+    expect(await cdp.evaluate(($) => $.has('[role="dialog"]'))).toBe(false);
 
     // The sidebar button moves the open window to Accounts: no second
     // window, and no reload (the page's own state survives).
-    await settings.eval(`void (window.__settingsMarker = 'kept')`);
+    await settings.evaluate(() => {
+      (window as Marked).__settingsMarker = 'kept';
+    });
     await cdp.clickButtonWithText('Manage accounts…');
-    await settings.waitFor(`${title} === 'Accounts'`);
-    await settings.waitFor(
-      `document.querySelector('[data-testid="settings-pane-accounts"]')?.hidden === false && document.body.textContent.includes('Add Google Account')`,
+    await settings.waitUntil(titleIs, 'Accounts');
+    await settings.waitUntil(
+      ($) =>
+        $.el('[data-testid="settings-pane-accounts"]')?.hidden === false &&
+        document.body.textContent.includes('Add Google Account'),
     );
-    expect(await settings.eval<string>('window.__settingsMarker')).toBe('kept');
+    expect(await settings.evaluate(() => (window as Marked).__settingsMarker)).toBe('kept');
     expect(await app.windowCount()).toBe(2);
 
     // A toolbar tab switches the pane and the window's title with it.
     const tab = await settings.locate('[data-testid="settings-tab-notifications"]');
     await settings.click(tab.x, tab.y);
-    await settings.waitFor(`${title} === 'Notifications'`);
-    expect(await settings.eval<string>('document.title')).toBe('Notifications');
+    await settings.waitUntil(titleIs, 'Notifications');
+    expect(await settings.evaluate(() => document.title)).toBe('Notifications');
     expect(
-      await settings.eval(
-        `document.querySelector('[data-testid="settings-pane-accounts"]')?.hidden === true`,
+      await settings.evaluate(
+        ($) => $.el('[data-testid="settings-pane-accounts"]')?.hidden === true,
       ),
     ).toBe(true);
 
     // The sidebar's search narrows the panes by label and keyword; the
     // pane in view stays even when its tab is filtered out.
     await settings.type('[data-testid="settings-search"]', 'token');
-    await settings.waitFor(
-      `document.querySelectorAll('[role="tab"]').length === 1 && !!document.querySelector('[data-testid="settings-tab-agents"]')`,
+    await settings.waitUntil(
+      ($) => $.count('[role="tab"]') === 1 && $.has('[data-testid="settings-tab-agents"]'),
     );
-    expect(await settings.eval<string>('document.title')).toBe('Notifications');
-    await settings.eval(`(() => {
-      const input = document.querySelector('[data-testid="settings-search"]');
-      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-      setter.call(input, '');
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    })()`);
-    await settings.waitFor(`document.querySelectorAll('[role="tab"]').length === 12`);
+    expect(await settings.evaluate(() => document.title)).toBe('Notifications');
+    await settings.evaluate(($) => $.setValue('[data-testid="settings-search"]', ''));
+    await settings.waitUntil(($) => $.count('[role="tab"]') === 12);
 
     // The main process reads the pane from the window's URL, so it must
     // have followed the tab click: asking for Accounts again moves back.
     await cdp.clickButtonWithText('Manage accounts…');
-    await settings.waitFor(`${title} === 'Accounts'`);
-    expect(await settings.eval<string>('window.__settingsMarker')).toBe('kept');
+    await settings.waitUntil(titleIs, 'Accounts');
+    expect(await settings.evaluate(() => (window as Marked).__settingsMarker)).toBe('kept');
     await settings.click(tab.x, tab.y);
-    await settings.waitFor(`${title} === 'Notifications'`);
+    await settings.waitUntil(titleIs, 'Notifications');
 
     // Closed and reopened without naming a pane, as the menu item does:
     // back on the pane viewed last.
     await app.closeSettings();
     await expect.poll(() => app.windowCount(), { timeout: 10_000 }).toBe(1);
-    await cdp.eval(`window.calendarBridge.openSettings()`);
+    await cdp.evaluate(() => window.calendarBridge.openSettings());
     const reopened = await app.settingsPage();
-    await reopened.waitFor(`${title} === 'Notifications'`);
+    await reopened.waitUntil(titleIs, 'Notifications');
     await app.closeSettings();
     // The calendar window was never touched.
-    expect(await cdp.eval(`document.body.textContent.includes('Today')`)).toBe(true);
+    expect(await cdp.evaluate(() => document.body.textContent.includes('Today'))).toBe(true);
   });
   it('keeps a pane asked for while the settings window is still opening', async () => {
     const { cdp } = app;
@@ -1760,17 +1799,15 @@ describe('calendar desktop e2e', () => {
     // compare yet), while the page loads, and around the page's first
     // render. Neither request may fail, and the later one wins.
     for (const gapMs of [0, 30, 60, 90, 150]) {
-      const outcomes = await cdp.eval<Array<string>>(`(async () => {
+      const outcomes = await cdp.evaluate(async (_: PageKit, gap: number) => {
         const first = window.calendarBridge.openSettings('timezones');
-        await new Promise((resolve) => setTimeout(resolve, ${gapMs}));
+        await new Promise((resolve) => setTimeout(resolve, gap));
         const second = window.calendarBridge.openSettings('accounts');
         return (await Promise.allSettled([first, second])).map((result) => result.status);
-      })()`);
+      }, gapMs);
       expect(outcomes, `gap ${gapMs} ms`).toEqual(['fulfilled', 'fulfilled']);
       const settings = await app.settingsPage();
-      await settings.waitFor(
-        `document.querySelector('[data-testid="settings-title"]')?.textContent === 'Accounts'`,
-      );
+      await settings.waitUntil(($) => $.text('[data-testid="settings-title"]') === 'Accounts');
       expect(await app.windowCount()).toBe(2);
       await app.closeSettings();
       await expect.poll(() => app.windowCount(), { timeout: 10_000 }).toBe(1);
@@ -1792,18 +1829,15 @@ describe('calendar desktop e2e', () => {
       (event) => event.title === 'Gym session' && event.startUtc === expected,
     );
     expect(moved?.startUtc).toBe(expected);
-    expect(await cdp.eval<boolean>(`document.body.textContent.includes('Edit event')`)).toBe(false);
+    expect(await cdp.evaluate(() => document.body.textContent.includes('Edit event'))).toBe(false);
   });
 
   it('edits notes through the editor and reads them back in the inspector', async () => {
     const { cdp } = app;
     await cdp.openEditor('[title^="Gym session"]');
-    await cdp.eval(`(() => {
-      const input = document.querySelector('[data-testid="editor-notes"]');
-      const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
-      setter.call(input, 'Bring the resistance bands');
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    })()`);
+    await cdp.evaluate(($) =>
+      $.setValue('[data-testid="editor-notes"]', 'Bring the resistance bands'),
+    );
     await cdp.clickButtonWithText('Save');
     const updated = await waitForEvent(
       (event) =>
@@ -1812,52 +1846,52 @@ describe('calendar desktop e2e', () => {
     expect(updated).toBeDefined();
     // The inspector shows the notes read-first; Escape leaves it.
     await cdp.openInspector('[title^="Gym session"]');
-    await cdp.waitFor(
-      `document.querySelector('[data-testid="inspector-notes"]')?.textContent === 'Bring the resistance bands'`,
+    await cdp.waitUntil(
+      ($) => $.text('[data-testid="inspector-notes"]') === 'Bring the resistance bands',
     );
     await cdp.pressEscape();
-    await cdp.waitFor(`!document.querySelector('[data-testid="inspector"]')`);
+    await cdp.waitUntil(($) => !$.has('[data-testid="inspector"]'));
   });
 
   it('converts from the inspector with the event carried into the task form', async () => {
     const { cdp } = app;
     await cdp.openInspector('[title^="Gym session"]');
     await cdp.clickTestId('inspector-convert');
-    await cdp.waitFor(
-      `document.querySelector('[data-testid="editor-title"]')?.textContent === 'Convert to task'`,
-    );
+    await cdp.waitUntil(($) => $.text('[data-testid="editor-title"]') === 'Convert to task');
     expect(
-      await cdp.eval<string>(`document.querySelector('input[placeholder="Title"]').value`),
+      await cdp.evaluate(($) => $.el<HTMLInputElement>('input[placeholder="Title"]')!.value),
     ).toBe('Gym session');
     expect(
-      await cdp.eval<string>(`document.querySelector('textarea[placeholder="Add notes"]').value`),
+      await cdp.evaluate(
+        ($) => $.el<HTMLTextAreaElement>('textarea[placeholder="Add notes"]')!.value,
+      ),
     ).toBe('Bring the resistance bands');
     await cdp.clickButtonWithText('Cancel');
-    await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);
+    await cdp.waitUntil(($) => !$.has('[data-testid="editor"]'));
   });
 
   it('finds a free slot for a new event and moves it there', async () => {
     const { cdp } = app;
     const add = await cdp.locate('button[aria-label="New event"]');
     await cdp.click(add.x, add.y);
-    await cdp.waitFor(`document.body.textContent.includes('New event')`);
+    await cdp.waitUntil(() => document.body.textContent.includes('New event'));
     await cdp.showEditorView('form');
     await cdp.clickTestId('find-time');
-    await cdp.waitFor(`!!document.querySelector('[data-testid="find-time-fields"]')`);
+    await cdp.waitUntil(($) => $.has('[data-testid="find-time-fields"]'));
     // Next week, mornings: a window with free time whatever today is.
     await cdp.clickTestId('find-time-window-nextWeek');
     await cdp.clickTestId('find-time-bounds-mornings');
     await cdp.clickTestId('find-time-duration-90');
     await cdp.clickTestId('find-time-search');
-    await cdp.waitFor(`!!document.querySelector('[data-testid="find-time-slot-0"]')`);
+    await cdp.waitUntil(($) => $.has('[data-testid="find-time-slot-0"]'));
     await cdp.clickTestId('find-time-slot-0');
     // The pick moves the draft and closes the finder.
-    await cdp.waitFor(`!document.querySelector('[data-testid="find-time-fields"]')`);
-    const fields = await cdp.eval<{ date: string; end: string; start: string }>(`({
-      date: document.querySelector('[data-testid="editor"] input[type="date"]').value,
-      end: document.querySelectorAll('[data-testid="editor"] input[type="time"]')[1].value,
-      start: document.querySelectorAll('[data-testid="editor"] input[type="time"]')[0].value,
-    })`);
+    await cdp.waitUntil(($) => !$.has('[data-testid="find-time-fields"]'));
+    const fields = await cdp.evaluate(($) => ({
+      date: $.el<HTMLInputElement>('[data-testid="editor"] input[type="date"]')!.value,
+      end: $.all<HTMLInputElement>('[data-testid="editor"] input[type="time"]')[1]!.value,
+      start: $.all<HTMLInputElement>('[data-testid="editor"] input[type="time"]')[0]!.value,
+    }));
     // Next Monday to Sunday, in the app's local days.
     const isoWeekday = ((new Date().getDay() + 6) % 7) + 1;
     const toSunday = 7 - isoWeekday;
@@ -1879,51 +1913,58 @@ describe('calendar desktop e2e', () => {
     // Each slot is found right before its click, once today's column sits
     // inside the grid: the editor narrows the grid, and a window at the
     // back only lays the narrower columns out in a drawn frame.
-    const todayInGrid = `(() => {
-      const view = document.querySelector('[data-testid="week-grid"]').parentElement.getBoundingClientRect();
-      const header = document.querySelector('[data-testid="today-header"]').getBoundingClientRect();
+    const todayInGrid = ($: PageKit) => {
+      const view = $.el('[data-testid="week-grid"]')!.parentElement!.getBoundingClientRect();
+      const header = $.el('[data-testid="today-header"]')!.getBoundingClientRect();
       const center = header.x + header.width / 2;
       return center > view.x && center < view.x + view.width;
-    })()`;
+    };
     const emptySlot = async (fromHour: number) => {
-      await cdp.waitForRendered<boolean>(todayInGrid);
-      const slot = await cdp.eval<{ hour: number; x: number; y: number } | null>(`(() => {
-        const scroller = document.querySelector('[data-testid="week-scroller"]');
-        const header = document.querySelector('[data-testid="today-header"]').getBoundingClientRect();
-        const x = Math.round(header.x + header.width / 2);
-        for (let hour = ${fromHour}; hour < 22; hour += 1) {
-          scroller.scrollTop = hour * ${HOUR_HEIGHT} - 120;
-          const y = Math.round(
-            scroller.getBoundingClientRect().top + hour * ${HOUR_HEIGHT} - scroller.scrollTop + 10,
-          );
-          const hit = document.elementFromPoint(x, y);
-          if (hit?.closest('[data-testid="week-grid"]') && !hit.closest('[title]')) {
-            return { hour, x, y };
+      await cdp.waitUntilRendered(todayInGrid);
+      const slot = await cdp.evaluate(
+        ($, startHour: number, hourHeight: number) => {
+          const scroller = $.el('[data-testid="week-scroller"]')!;
+          const header = $.el('[data-testid="today-header"]')!.getBoundingClientRect();
+          const x = Math.round(header.x + header.width / 2);
+          for (let hour = startHour; hour < 22; hour += 1) {
+            scroller.scrollTop = hour * hourHeight - 120;
+            const y = Math.round(
+              scroller.getBoundingClientRect().top + hour * hourHeight - scroller.scrollTop + 10,
+            );
+            const hit = document.elementFromPoint(x, y);
+            if (hit?.closest('[data-testid="week-grid"]') && !hit.closest('[title]')) {
+              return { hour, x, y };
+            }
           }
-        }
-        return null;
-      })()`);
+          return null;
+        },
+        fromHour,
+        HOUR_HEIGHT,
+      );
       if (!slot) {
         throw new Error(`no empty slot in today's column from ${String(fromHour)}:00`);
       }
       return slot;
     };
-    const START = `document.querySelector('[data-testid="editor"] input[type="time"]')?.value`;
+    const START = ($: PageKit) =>
+      $.el<HTMLInputElement>('[data-testid="editor"] input[type="time"]')?.value;
     try {
       const first = await emptySlot(8);
       await cdp.click(first.x, first.y);
-      await cdp.waitFor(
-        `document.querySelector('[data-testid="editor-title"]')?.textContent === 'New event'`,
-      );
-      const firstStart = await cdp.eval<string>(START);
+      await cdp.waitUntil(($) => $.text('[data-testid="editor-title"]') === 'New event');
+      const firstStart = await cdp.evaluate(START);
       const second = await emptySlot(first.hour + 1);
       await cdp.click(second.x, second.y);
-      await cdp.waitFor(`${START} !== ${JSON.stringify(firstStart)}`);
+      await cdp.waitUntil(
+        ($, start: string | undefined) =>
+          $.el<HTMLInputElement>('[data-testid="editor"] input[type="time"]')?.value !== start,
+        firstStart,
+      );
     } finally {
       // Closed even when an attempt fails, so the retry and the next tests
       // start without an editor in the panel.
       await cdp.pressEscape();
-      await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);
+      await cdp.waitUntil(($) => !$.has('[data-testid="editor"]'));
     }
   });
 
@@ -1932,18 +1973,13 @@ describe('calendar desktop e2e', () => {
     await cdp.showRail();
     const add = await cdp.locate('button[aria-label="New event"]');
     await cdp.click(add.x, add.y);
-    await cdp.waitFor(`document.body.textContent.includes('New event')`);
+    await cdp.waitUntil(() => document.body.textContent.includes('New event'));
     await cdp.showEditorView('form');
     await cdp.clickButtonWithText('Task');
-    await cdp.waitFor(`document.body.textContent.includes('New task')`);
+    await cdp.waitUntil(() => document.body.textContent.includes('New task'));
     await cdp.clickTestId('task-remove-due-date');
-    await cdp.waitFor(`!!document.querySelector('[data-testid="task-no-due-date"]')`);
-    await cdp.eval(`(() => {
-      const input = document.querySelector('input[placeholder="Title"]');
-      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-      setter.call(input, 'Sharpen the pencils');
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    })()`);
+    await cdp.waitUntil(($) => $.has('[data-testid="task-no-due-date"]'));
+    await cdp.evaluate(($) => $.setValue('input[placeholder="Title"]', 'Sharpen the pencils'));
     await cdp.clickButtonWithText('Save');
     await expect
       .poll(async () => {
@@ -1954,8 +1990,8 @@ describe('calendar desktop e2e', () => {
       })
       .toEqual({ dueDate: null, title: 'Sharpen the pencils' });
     // It lands in the inbox's "No date" group right away.
-    await cdp.waitFor(
-      `document.querySelector('[data-testid="task-inbox"]')?.textContent.includes('Sharpen the pencils')`,
+    await cdp.waitUntil(($) =>
+      $.text('[data-testid="task-inbox"]').includes('Sharpen the pencils'),
     );
   });
 
@@ -1973,9 +2009,7 @@ describe('calendar desktop e2e', () => {
       )
       .toBe(todayLocalIso());
     // The release was a drop, not a click: no editor opened.
-    expect(await cdp.eval<boolean>(`!!document.querySelector('[data-testid="editor"]')`)).toBe(
-      false,
-    );
+    expect(await cdp.evaluate(($) => $.has('[data-testid="editor"]'))).toBe(false);
   });
 
   it('takes a due day away again: the task goes back to "No due date"', async () => {
@@ -1989,11 +2023,11 @@ describe('calendar desktop e2e', () => {
     };
     // Dated today by the drag above.
     await openFromRail();
-    await cdp.waitFor(`!!document.querySelector('[data-testid="task-remove-due-date"]')`);
+    await cdp.waitUntil(($) => $.has('[data-testid="task-remove-due-date"]'));
     await cdp.clickTestId('task-remove-due-date');
-    await cdp.waitFor(`!!document.querySelector('[data-testid="task-no-due-date"]')`);
+    await cdp.waitUntil(($) => $.has('[data-testid="task-no-due-date"]'));
     await cdp.clickButtonWithText('Save');
-    await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);
+    await cdp.waitUntil(($) => !$.has('[data-testid="editor"]'));
     await expect
       .poll(
         async () =>
@@ -2012,9 +2046,9 @@ describe('calendar desktop e2e', () => {
     });
     // Reopened, it says so.
     await openFromRail();
-    await cdp.waitFor(`!!document.querySelector('[data-testid="task-no-due-date"]')`);
+    await cdp.waitUntil(($) => $.has('[data-testid="task-no-due-date"]'));
     await cdp.clickButtonWithText('Cancel');
-    await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);
+    await cdp.waitUntil(($) => !$.has('[data-testid="editor"]'));
   });
 
   it('leaves a panel row alone when it is released inside the panel', async () => {
@@ -2031,9 +2065,7 @@ describe('calendar desktop e2e', () => {
     expect(
       (await readTasks(app.userDataDir)).find((task) => task.id === pencils.id)?.dueDate ?? null,
     ).toBeNull();
-    expect(await cdp.eval<boolean>(`!!document.querySelector('[data-testid="editor"]')`)).toBe(
-      false,
-    );
+    expect(await cdp.evaluate(($) => $.has('[data-testid="editor"]'))).toBe(false);
   });
 });
 
@@ -2060,26 +2092,28 @@ describe('Google task chips drag along the lane but never into the grid', () => 
   it('refuses a grid drop with an explanation and changes nothing', async () => {
     const { cdp } = taskApp;
     const from = await cdp.locate('[data-testid="all-day-task-task-rent"]');
-    const y = await cdp.eval<number>(`(() => {
-      const scroller = document.querySelector('.overflow-y-scroll');
-      return scroller.getBoundingClientRect().top + 10 * ${HOUR_HEIGHT} - scroller.scrollTop;
-    })()`);
+    const y = await cdp.evaluate(($, hourHeight: number) => {
+      const scroller = $.el('.overflow-y-scroll')!;
+      return scroller.getBoundingClientRect().top + 10 * hourHeight - scroller.scrollTop;
+    }, HOUR_HEIGHT);
     await cdp.drag(from, { x: from.x, y });
-    await cdp.waitFor(`document.body.textContent.includes('Google Tasks are date-only')`);
+    await cdp.waitUntil(() => document.body.textContent.includes('Google Tasks are date-only'));
     expect(await rent()).toMatchObject({ dueDate: todayLocalIso(), status: 'needsAction' });
     expect(
       (await readPendingOps(taskApp.userDataDir)).some(
         (op) => op.kind === 'updateTask' && op.eventId === 'task-rent',
       ),
     ).toBe(false);
-    expect(await cdp.eval(`document.body.textContent.includes('Edit task')`)).toBe(false);
+    expect(await cdp.evaluate(() => document.body.textContent.includes('Edit task'))).toBe(false);
     await cdp.locate('[data-testid="all-day-task-task-rent"]');
   });
 
   it('moves to another day along the lane through the op queue', async () => {
     const { cdp } = taskApp;
-    const dayWidth = await cdp.eval<number>(
-      `document.querySelector('.relative.grid').getBoundingClientRect().width / document.querySelector('.relative.grid').children.length`,
+    const dayWidth = await cdp.evaluate(
+      ($) =>
+        $.el('.relative.grid')!.getBoundingClientRect().width /
+        $.el('.relative.grid')!.children.length,
     );
     const from = await cdp.locate('[data-testid="all-day-task-task-rent"]');
     await cdp.drag(from, { x: from.x + dayWidth, y: from.y });
@@ -2120,39 +2154,33 @@ describe('the color picker in a long Settings › Accounts list', () => {
   it('opens above a low row inside the fixed window, keeps Tab inside, recolors, and closes with its pane', async () => {
     const settings = await listApp.openSettings('accounts');
     try {
-      await settings.waitFor(
-        `document.querySelectorAll('[aria-label^="Change color"]').length === 14`,
-      );
+      await settings.waitUntil(($) => $.count('[aria-label^="Change color"]') === 14);
       // The lowest well that shows unscrolled: the 560 px window has no
       // room for the picker under it.
-      const well = await settings.eval<{
-        label: string;
-        right: number;
-        top: number;
-        x: number;
-        y: number;
-      }>(`(() => {
-        const wells = [...document.querySelectorAll('[aria-label^="Change color"]')]
-          .filter((el) => el.getBoundingClientRect().bottom <= window.innerHeight);
-        const el = wells.at(-1);
+      const well = await settings.evaluate(($) => {
+        const wells = $.all('[aria-label^="Change color"]').filter(
+          (el) => el.getBoundingClientRect().bottom <= window.innerHeight,
+        );
+        const el = wells.at(-1)!;
         const r = el.getBoundingClientRect();
-        return { label: el.getAttribute('aria-label'), right: r.right, top: r.top, x: r.x + r.width / 2, y: r.y + r.height / 2 };
-      })()`);
+        return {
+          label: el.getAttribute('aria-label')!,
+          right: r.right,
+          top: r.top,
+          x: r.x + r.width / 2,
+          y: r.y + r.height / 2,
+        };
+      });
       expect(well.top).toBeGreaterThan(400);
       await settings.click(well.x, well.y);
-      const panel = `document.querySelector('[role="dialog"][aria-label^="Color of"]')`;
-      await settings.waitFor(`!!${panel}`);
-      const rect = await settings.eval<{
-        bottom: number;
-        left: number;
-        right: number;
-        top: number;
-        width: number;
-      }>(
-        `(() => { const r = ${panel}.getBoundingClientRect(); return { bottom: r.bottom, left: r.left, right: r.right, top: r.top, width: r.width }; })()`,
-      );
+      const panel = '[role="dialog"][aria-label^="Color of"]';
+      await settings.waitUntil(($, dialog: string) => $.has(dialog), panel);
+      const rect = await settings.evaluate(($, dialog: string) => {
+        const r = $.el(dialog)!.getBoundingClientRect();
+        return { bottom: r.bottom, left: r.left, right: r.right, top: r.top, width: r.width };
+      }, panel);
       expect(rect.top).toBeGreaterThanOrEqual(0);
-      expect(rect.bottom).toBeLessThanOrEqual(await settings.eval<number>('window.innerHeight'));
+      expect(rect.bottom).toBeLessThanOrEqual(await settings.evaluate(() => window.innerHeight));
       expect(rect.bottom).toBeLessThanOrEqual(well.top);
       // Hung from the well's right edge at the palette's full width (six
       // 20 px swatches, not squeezed to what is left of the window).
@@ -2163,27 +2191,34 @@ describe('the color picker in a long Settings › Accounts list', () => {
       // Focus opens on the calendar's current color. Tab and Shift+Tab go
       // round the 24 swatches and the Custom field, in order, past both
       // ends — never to the pane tabs behind the backdrop.
-      const focused = `(${panel}.contains(document.activeElement) ? document.activeElement.getAttribute('aria-label') : 'outside')`;
-      const stops = await settings.eval<Array<string>>(
-        `[...${panel}.querySelectorAll('button, input')].map((stop) => stop.getAttribute('aria-label'))`,
+      const focused = ($: PageKit, dialog: string) =>
+        $.el(dialog)!.contains(document.activeElement)
+          ? document.activeElement!.getAttribute('aria-label')
+          : 'outside';
+      const stops = await settings.evaluate(
+        ($, dialog: string) =>
+          [...$.el(dialog)!.querySelectorAll('button, input')].map((stop) =>
+            stop.getAttribute('aria-label'),
+          ),
+        panel,
       );
       expect(stops).toHaveLength(25);
       let at = stops.indexOf('Set color #4986e7');
-      expect(await settings.eval<string>(focused)).toBe(stops[at]);
+      expect(await settings.evaluate(focused, panel)).toBe(stops[at]);
       for (const step of [1, -1]) {
         for (let press = 0; press < stops.length + 2; press += 1) {
           await settings.pressTab(step === -1);
           at = (at + step + stops.length) % stops.length;
-          expect(await settings.eval<string>(focused)).toBe(stops[at]);
+          expect(await settings.evaluate(focused, panel)).toBe(stops[at]);
         }
       }
 
       const swatch = await settings.locate('[aria-label="Set color #16a765"]');
       await settings.click(swatch.x, swatch.y);
-      await settings.waitFor(`!${panel}`);
+      await settings.waitUntil(($, dialog: string) => !$.has(dialog), panel);
       // Focus is back on the well it opened from.
       expect(
-        await settings.eval<string | null>(`document.activeElement?.getAttribute('aria-label')`),
+        await settings.evaluate(() => document.activeElement?.getAttribute('aria-label')),
       ).toBe(well.label);
       const summary = well.label.replace('Change color: ', '');
       await expect
@@ -2198,10 +2233,12 @@ describe('the color picker in a long Settings › Accounts list', () => {
       // Another pane only hides Accounts: a picker left open there would
       // take the next Escape, so the pane switch closes it.
       await settings.click(well.x, well.y);
-      await settings.waitFor(`!!${panel}`);
-      await settings.eval(`location.replace('#settings/notifications')`);
-      await settings.waitFor(`!${panel}`);
-      await settings.waitFor(`!document.querySelector('[aria-label="Close color picker"]')`);
+      await settings.waitUntil(($, dialog: string) => $.has(dialog), panel);
+      await settings.evaluate(() => {
+        window.location.replace('#settings/notifications');
+      });
+      await settings.waitUntil(($, dialog: string) => !$.has(dialog), panel);
+      await settings.waitUntil(($) => !$.has('[aria-label="Close color picker"]'));
     } finally {
       await listApp.closeSettings();
     }
@@ -2250,11 +2287,11 @@ describe('an event in a read-only calendar', () => {
     });
     expect(await readPendingOps(viewerApp.userDataDir)).toEqual([]);
     // The release did not fall through to the grid as a slot click.
-    expect(await cdp.eval(`!!document.querySelector('[data-testid="editor"]')`)).toBe(false);
+    expect(await cdp.evaluate(($) => $.has('[data-testid="editor"]'))).toBe(false);
     // Still a click target: it opens the viewer.
     const block = await cdp.locate('[title^="Their review"]');
     await cdp.click(block.x, block.y);
-    await cdp.waitFor(`!!document.querySelector('[data-testid="event-read-only"]')`);
+    await cdp.waitUntil(($) => $.has('[data-testid="event-read-only"]'));
   });
 });
 
@@ -2322,17 +2359,26 @@ describe('an event that ends on a later day', () => {
   const stored = async (id: string) =>
     (await readEvents(spanApp.userDataDir)).find((event) => event.id === id);
   const fieldValue = (label: string) =>
-    spanApp.cdp.eval<string>(
-      `document.querySelector('[data-testid="editor"] input[aria-label="${label}"]')?.value ?? ''`,
+    spanApp.cdp.evaluate(
+      ($, field: string) => $.value(`[data-testid="editor"] input[aria-label="${field}"]`),
+      label,
     );
   const setField = (label: string, value: string) =>
-    spanApp.cdp.eval(`(() => {
-      const input = document.querySelector('[data-testid="editor"] input[aria-label="${label}"]')
-        ?? document.querySelector('input[placeholder="${label}"]');
-      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-      setter.call(input, ${JSON.stringify(value)});
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    })()`);
+    spanApp.cdp.evaluate(
+      ($, field: string, text: string) => {
+        const input =
+          $.el<HTMLInputElement>(`[data-testid="editor"] input[aria-label="${field}"]`) ??
+          $.el<HTMLInputElement>(`input[placeholder="${field}"]`);
+        const setter = Object.getOwnPropertyDescriptor(
+          window.HTMLInputElement.prototype,
+          'value',
+        )!.set!;
+        setter.call(input, text);
+        input!.dispatchEvent(new Event('input', { bubbles: true }));
+      },
+      label,
+      value,
+    );
 
   it('keeps a multi-day all-day event whole when only its title changes', async () => {
     const { cdp } = spanApp;
@@ -2437,26 +2483,23 @@ describe('collapsible all-day lane', () => {
   it('collapses to three rows with "+N more", persists the choice and expands again', async () => {
     const { cdp } = laneApp;
     const laneHeight = () =>
-      cdp.eval<number>(
-        `document.querySelector('[data-testid="all-day-lane"]').getBoundingClientRect().height`,
-      );
-    const visibleChores = () =>
-      cdp.eval<number>(`document.querySelectorAll('[title^="Chore "]').length`);
+      cdp.evaluate(($) => $.el('[data-testid="all-day-lane"]')!.getBoundingClientRect().height);
+    const visibleChores = () => cdp.evaluate(($) => $.count('[title^="Chore "]'));
     await cdp.locate('[title="Chore 5"]');
     // Expanded by default: every chip drawn, no "+N more", nothing to scroll.
     expect(await laneHeight()).toBe(5 * LANE_ROW + LANE_PADDING);
     expect(
-      await cdp.eval<boolean>(`(() => {
-        const scroller = document.querySelector('[data-testid="all-day-scroller"]');
+      await cdp.evaluate(($) => {
+        const scroller = $.el('[data-testid="all-day-scroller"]')!;
         return scroller.scrollHeight === scroller.clientHeight;
-      })()`),
+      }),
     ).toBe(true);
     expect(await visibleChores()).toBe(5);
-    expect(await cdp.eval(`!!document.querySelector('[data-testid="all-day-more"]')`)).toBe(false);
+    expect(await cdp.evaluate(($) => $.has('[data-testid="all-day-more"]'))).toBe(false);
 
     const toggle = () =>
-      cdp.eval<string | null>(
-        `document.querySelector('[data-testid="all-day-toggle"]')?.getAttribute('aria-expanded') ?? null`,
+      cdp.evaluate(
+        ($) => $.el('[data-testid="all-day-toggle"]')?.getAttribute('aria-expanded') ?? null,
       );
     expect(await toggle()).toBe('true');
     const less = await cdp.locate('[data-testid="all-day-toggle"]');
@@ -2464,9 +2507,7 @@ describe('collapsible all-day lane', () => {
     await expect
       .poll(() => readDeviceSetting(laneApp.userDataDir, 'viewPreferences'))
       .toEqual({ allDayLaneCollapsed: true });
-    await cdp.waitFor(
-      `document.querySelector('[data-testid="all-day-more"]')?.textContent === '+3 more'`,
-    );
+    await cdp.waitUntil(($) => $.text('[data-testid="all-day-more"]') === '+3 more');
     expect(await laneHeight()).toBe(3 * LANE_ROW + LANE_PADDING);
     expect(await visibleChores()).toBe(2);
     // The chevron stays where it was, turned down.
@@ -2477,17 +2518,17 @@ describe('collapsible all-day lane', () => {
     await expect
       .poll(() => readDeviceSetting(laneApp.userDataDir, 'viewPreferences'))
       .toEqual({ allDayLaneCollapsed: false });
-    await cdp.waitFor(`document.querySelectorAll('[title^="Chore "]').length === 5`);
+    await cdp.waitUntil(($) => $.count('[title^="Chore "]') === 5);
     expect(await laneHeight()).toBe(5 * LANE_ROW + LANE_PADDING);
-    expect(await cdp.eval(`!!document.querySelector('[data-testid="all-day-more"]')`)).toBe(false);
+    expect(await cdp.evaluate(($) => $.has('[data-testid="all-day-more"]'))).toBe(false);
 
     // The chevron collapses and expands it too.
     const down = await cdp.locate('[data-testid="all-day-toggle"]');
     await cdp.click(down.x, down.y);
-    await cdp.waitFor(`!!document.querySelector('[data-testid="all-day-more"]')`);
+    await cdp.waitUntil(($) => $.has('[data-testid="all-day-more"]'));
     const up = await cdp.locate('[data-testid="all-day-toggle"]');
     await cdp.click(up.x, up.y);
-    await cdp.waitFor(`document.querySelectorAll('[title^="Chore "]').length === 5`);
+    await cdp.waitUntil(($) => $.count('[title^="Chore "]') === 5);
     expect(await toggle()).toBe('true');
   });
 });
@@ -2538,22 +2579,21 @@ describe('a fold list in a short window', () => {
     const { cdp } = shortApp;
     const chip = await cdp.locate('[data-testid="all-day-fold-undated"]');
     await cdp.click(chip.x, chip.y);
-    await cdp.waitFor(`!!document.querySelector('[data-testid="all-day-fold-list-undated"]')`);
-    const fits = await cdp.eval<boolean>(`(() => {
-      const panel = document
-        .querySelector('[data-testid="all-day-fold-list-undated"]')
-        .closest('[role="dialog"]')
+    await cdp.waitUntil(($) => $.has('[data-testid="all-day-fold-list-undated"]'));
+    const fits = await cdp.evaluate(($) => {
+      const panel = $.el('[data-testid="all-day-fold-list-undated"]')!
+        .closest('[role="dialog"]')!
         .getBoundingClientRect();
       return panel.bottom <= window.innerHeight;
-    })()`);
+    });
     expect(fits).toBe(true);
-    const lastShown = await cdp.eval<boolean>(`(() => {
-      const rows = document.querySelectorAll('[data-testid^="fold-task-"]');
-      const last = rows[rows.length - 1];
+    const lastShown = await cdp.evaluate(($) => {
+      const rows = $.all('[data-testid^="fold-task-"]');
+      const last = rows.at(-1)!;
       last.scrollIntoView({ block: 'nearest' });
       const box = last.getBoundingClientRect();
       return rows.length === 12 && box.bottom <= window.innerHeight && box.top >= 0;
-    })()`);
+    });
     expect(lastShown).toBe(true);
     await cdp.pressEscape();
   });
@@ -2593,8 +2633,9 @@ describe("today's backlog and a long all-day lane", () => {
   });
 
   const foldText = (fold: string) =>
-    backlogApp.cdp.eval<string | null>(
-      `document.querySelector('[data-testid="all-day-fold-${fold}"]')?.textContent ?? null`,
+    backlogApp.cdp.evaluate(
+      ($, group: string) => $.el(`[data-testid="all-day-fold-${group}"]`)?.textContent ?? null,
+      fold,
     );
   const taskById = async (id: string) =>
     (await readTasks(backlogApp.userDataDir)).find((task) => task.id === id);
@@ -2605,45 +2646,32 @@ describe("today's backlog and a long all-day lane", () => {
     expect(await foldText('overdue')).toContain('3 overdue');
     expect(await foldText('undated')).toBe('2 no date');
     // No chip of their own, on today or on their past days.
-    expect(
-      await cdp.eval<number>(
-        `document.querySelectorAll('[title^="Late "], [title^="Loose "]').length`,
-      ),
-    ).toBe(0);
-    const inTodayColumn = await cdp.eval<boolean>(`(() => {
-      const cell = document.querySelector('[data-testid="today-header"]').getBoundingClientRect();
+    expect(await cdp.evaluate(($) => $.count('[title^="Late "], [title^="Loose "]'))).toBe(0);
+    const inTodayColumn = await cdp.evaluate(($) => {
+      const cell = $.el('[data-testid="today-header"]')!.getBoundingClientRect();
       return ['overdue', 'undated'].every((fold) => {
-        const chip = document
-          .querySelector('[data-testid="all-day-fold-' + fold + '"]')
-          .getBoundingClientRect();
+        const chip = $.el('[data-testid="all-day-fold-' + fold + '"]')!.getBoundingClientRect();
         return chip.left >= cell.left - 1 && chip.right <= cell.right + 1;
       });
-    })()`);
+    });
     expect(inTodayColumn).toBe(true);
   });
 
   it('caps the expanded lane at a third of the view and scrolls the rest inside it', async () => {
     const { cdp } = backlogApp;
     const geometry = () =>
-      cdp.eval<{
-        clientHeight: number;
-        grid: number;
-        lane: number;
-        scrollHeight: number;
-        scrolls: boolean;
-        view: number;
-      }>(`(() => {
-        const lane = document.querySelector('[data-testid="all-day-lane"]');
-        const scroller = document.querySelector('[data-testid="all-day-scroller"]');
+      cdp.evaluate(($) => {
+        const lane = $.el('[data-testid="all-day-lane"]')!;
+        const scroller = $.el('[data-testid="all-day-scroller"]')!;
         return {
           clientHeight: scroller.clientHeight,
-          grid: document.querySelector('[data-testid="week-scroller"]').getBoundingClientRect().height,
+          grid: $.el('[data-testid="week-scroller"]')!.getBoundingClientRect().height,
           lane: lane.getBoundingClientRect().height,
           scrollHeight: scroller.scrollHeight,
           scrolls: lane.hasAttribute('data-scrolls'),
-          view: document.querySelector('[data-testid="week-view"]').clientHeight,
+          view: $.el('[data-testid="week-view"]')!.clientHeight,
         };
-      })()`);
+      });
     const before = await geometry();
     const rows = Math.max(3, Math.floor(before.view / 3 / 24));
     // Whole rows, then half of the next chip (the hairline under it included).
@@ -2652,22 +2680,24 @@ describe("today's backlog and a long all-day lane", () => {
     expect(before.grid).toBeGreaterThan(before.view / 2);
     // The last chore scrolls into view inside the lane, not the window.
     await cdp.locate('[title="Chore 20"]');
-    const shown = await cdp.eval<boolean>(`(() => {
-      const chip = document.querySelector('[title="Chore 20"]').getBoundingClientRect();
-      const lane = document.querySelector('[data-testid="all-day-scroller"]').getBoundingClientRect();
+    const shown = await cdp.evaluate(($) => {
+      const chip = $.el('[title="Chore 20"]')!.getBoundingClientRect();
+      const lane = $.el('[data-testid="all-day-scroller"]')!.getBoundingClientRect();
       return chip.top >= lane.top && chip.bottom <= lane.bottom;
-    })()`);
+    });
     expect(shown).toBe(true);
     expect((await geometry()).lane).toBe(before.lane);
 
     // A diagonal swipe that starts a pan scrolls the lane it began over,
     // not the hours. (Synthetic events: the app's listener moves both.)
-    await cdp.eval(`document.querySelector('[data-testid="all-day-scroller"]').scrollTop = 0`);
+    await cdp.evaluate(($) => {
+      $.el('[data-testid="all-day-scroller"]')!.scrollTop = 0;
+    });
     const scrollTops = () =>
-      cdp.eval<{ grid: number; lane: number }>(`({
-        grid: document.querySelector('[data-testid="week-scroller"]').scrollTop,
-        lane: document.querySelector('[data-testid="all-day-scroller"]').scrollTop,
-      })`);
+      cdp.evaluate(($) => ({
+        grid: $.el('[data-testid="week-scroller"]')!.scrollTop,
+        lane: $.el('[data-testid="all-day-scroller"]')!.scrollTop,
+      }));
     const start = await scrollTops();
     await cdp.wheelBurst('[data-testid="all-day-scroller"]', {
       count: 2,
@@ -2679,21 +2709,23 @@ describe("today's backlog and a long all-day lane", () => {
     expect(moved.grid).toBe(start.grid);
     expect(moved.lane).toBeGreaterThan(start.lane);
     // The short pan settles back onto the same week.
-    await cdp.waitFor(
-      `getComputedStyle(document.querySelector('[data-testid="week-view"]')).getPropertyValue('--pan-x').trim() === '0px'`,
+    await cdp.waitUntil(
+      ($) =>
+        getComputedStyle($.el('[data-testid="week-view"]')!).getPropertyValue('--pan-x').trim() ===
+        '0px',
     );
-    await cdp.eval(`document.querySelector('[data-testid="all-day-scroller"]').scrollTop = 0`);
+    await cdp.evaluate(($) => {
+      $.el('[data-testid="all-day-scroller"]')!.scrollTop = 0;
+    });
   });
 
   it("lists a fold's tasks and keeps a ticked one in its place", async () => {
     const { cdp } = backlogApp;
     const chip = await cdp.locate('[data-testid="all-day-fold-overdue"]');
     await cdp.click(chip.x, chip.y);
-    await cdp.waitFor(`!!document.querySelector('[data-testid="all-day-fold-list-overdue"]')`);
+    await cdp.waitUntil(($) => $.has('[data-testid="all-day-fold-list-overdue"]'));
     const rows = () =>
-      cdp.eval<Array<string>>(
-        `[...document.querySelectorAll('[data-testid^="fold-task-"]')].map((row) => row.dataset.testid)`,
-      );
+      cdp.evaluate(($) => $.all('[data-testid^="fold-task-"]').map((row) => row.dataset['testid']));
     // Oldest due day first, as in the inbox.
     expect(await rows()).toEqual(['fold-task-late-1', 'fold-task-late-2', 'fold-task-late-3']);
     // Scoped to the list: the rail, when the window is wide enough for it,
@@ -2704,36 +2736,36 @@ describe("today's backlog and a long all-day lane", () => {
     await cdp.click(box.x, box.y);
     await expect.poll(async () => (await taskById('late-2'))?.status).toBe('completed');
     // Still listed, now to reopen; the list stays open and the chip counts two.
-    await cdp.waitFor(
-      `!!document.querySelector('[data-testid="all-day-fold-list-overdue"] [aria-label="Reopen: Late 2"]')`,
+    await cdp.waitUntil(($) =>
+      $.has('[data-testid="all-day-fold-list-overdue"] [aria-label="Reopen: Late 2"]'),
     );
     expect(await rows()).toEqual(['fold-task-late-1', 'fold-task-late-2', 'fold-task-late-3']);
     expect(await foldText('overdue')).toContain('2 overdue');
     // A row opens its task in the side panel and the list closes.
     const title = await cdp.locate('[data-testid="fold-task-late-1"] button + button');
     await cdp.click(title.x, title.y);
-    await cdp.waitFor(`!!document.querySelector('[data-testid="editor"]')`);
-    expect(
-      await cdp.eval<boolean>(
-        `!!document.querySelector('[data-testid="all-day-fold-list-overdue"]')`,
-      ),
-    ).toBe(false);
+    await cdp.waitUntil(($) => $.has('[data-testid="editor"]'));
+    expect(await cdp.evaluate(($) => $.has('[data-testid="all-day-fold-list-overdue"]'))).toBe(
+      false,
+    );
     await cdp.clickButtonWithText('Cancel');
-    await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);
+    await cdp.waitUntil(($) => !$.has('[data-testid="editor"]'));
   });
 
   it('drops nothing from a press inside the list, and Escape mid-drag only ends the drag', async () => {
     const { cdp } = backlogApp;
-    const listOpen = () =>
-      cdp.eval<boolean>(`!!document.querySelector('[data-testid="all-day-fold-list-overdue"]')`);
+    const listOpen = () => cdp.evaluate(($) => $.has('[data-testid="all-day-fold-list-overdue"]'));
     const due = (await taskById('late-3'))?.dueDate;
     const chip = await cdp.locate('[data-testid="all-day-fold-overdue"]');
     await cdp.click(chip.x, chip.y);
-    await cdp.waitFor(`!!document.querySelector('[data-testid="all-day-fold-list-overdue"]')`);
+    await cdp.waitUntil(($) => $.has('[data-testid="all-day-fold-list-overdue"]'));
     // The keyboard starts on the first row.
     expect(
-      await cdp.eval<string | null>(
-        `document.activeElement?.closest('[data-testid^="fold-task-"]')?.dataset.testid ?? null`,
+      await cdp.evaluate(
+        () =>
+          document.activeElement?.closest<HTMLElement>('[data-testid^="fold-task-"]')?.dataset[
+            'testid'
+          ] ?? null,
       ),
     ).toBe('fold-task-late-1');
 
@@ -2744,26 +2776,20 @@ describe("today's backlog and a long all-day lane", () => {
     await cdp.mouse('mouseMoved', row.x + 12, row.y + 3);
     await cdp.mouse('mouseReleased', row.x + 12, row.y + 3);
     expect(await listOpen()).toBe(true);
-    expect(await cdp.eval<boolean>(`!!document.querySelector('[data-testid="editor"]')`)).toBe(
-      false,
-    );
+    expect(await cdp.evaluate(($) => $.has('[data-testid="editor"]'))).toBe(false);
 
     // Pulled out over the grid, Escape ends the drag and the list comes back.
-    const away = await cdp.eval<{ x: number; y: number }>(`(() => {
-      const list = document
-        .querySelector('[data-testid="all-day-fold-list-overdue"]')
-        .getBoundingClientRect();
-      const grid = document.querySelector('[data-testid="week-scroller"]').getBoundingClientRect();
+    const away = await cdp.evaluate(($) => {
+      const list = $.el('[data-testid="all-day-fold-list-overdue"]')!.getBoundingClientRect();
+      const grid = $.el('[data-testid="week-scroller"]')!.getBoundingClientRect();
       return {
         x: Math.round(list.left - grid.left > 120 ? grid.left + 90 : list.right + 40),
         y: Math.round(grid.top + grid.height / 2),
       };
-    })()`);
+    });
     // A sideways wheel over the list's backdrop leaves the days where they are.
     const todayLeft = () =>
-      cdp.eval<number>(
-        `document.querySelector('[data-testid="today-header"]').getBoundingClientRect().left`,
-      );
+      cdp.evaluate(($) => $.el('[data-testid="today-header"]')!.getBoundingClientRect().left);
     const before = await todayLeft();
     await cdp.wheel(away.x, away.y, 600, 0);
     await new Promise((resolve) => setTimeout(resolve, 400));
@@ -2778,9 +2804,9 @@ describe("today's backlog and a long all-day lane", () => {
         Math.round(row.y + ((away.y - row.y) * step) / 6),
       );
     }
-    await cdp.waitFor(`!!document.querySelector('[data-testid="drag-ghost"]')`);
+    await cdp.waitUntil(($) => $.has('[data-testid="drag-ghost"]'));
     await cdp.pressEscape();
-    await cdp.waitFor(`!document.querySelector('[data-testid="drag-ghost"]')`);
+    await cdp.waitUntil(($) => !$.has('[data-testid="drag-ghost"]'));
     expect(await listOpen()).toBe(true);
     await cdp.mouse('mouseReleased', away.x, away.y);
     expect(await listOpen()).toBe(true);
@@ -2788,10 +2814,12 @@ describe("today's backlog and a long all-day lane", () => {
 
     // Escape now closes the list and gives the focus back to its chip.
     await cdp.pressEscape();
-    await cdp.waitFor(`!document.querySelector('[data-testid="all-day-fold-list-overdue"]')`);
-    expect(await cdp.eval<string | null>(`document.activeElement?.dataset.testid ?? null`)).toBe(
-      'all-day-fold-overdue',
-    );
+    await cdp.waitUntil(($) => !$.has('[data-testid="all-day-fold-list-overdue"]'));
+    expect(
+      await cdp.evaluate(
+        () => (document.activeElement as HTMLElement | null)?.dataset['testid'] ?? null,
+      ),
+    ).toBe('all-day-fold-overdue');
     expect((await taskById('late-3'))?.dueDate).toBe(due);
   });
 
@@ -2806,10 +2834,8 @@ describe("today's backlog and a long all-day lane", () => {
     await cdp.drag(row, { x: column.x, y: lane.y });
     await expect.poll(async () => (await taskById('late-3'))?.dueDate).toBe(todayLocalIso());
     // A drop, not a click: the list closed and no editor opened.
-    await cdp.waitFor(`!document.querySelector('[data-testid="all-day-fold-list-overdue"]')`);
-    expect(await cdp.eval<boolean>(`!!document.querySelector('[data-testid="editor"]')`)).toBe(
-      false,
-    );
+    await cdp.waitUntil(($) => !$.has('[data-testid="all-day-fold-list-overdue"]'));
+    expect(await cdp.evaluate(($) => $.has('[data-testid="editor"]'))).toBe(false);
     // One late task left: it is its own chip again, no fold.
     await cdp.locate('[data-overdue][title^="Late 1"]');
     expect(await foldText('overdue')).toBe(null);
@@ -2835,20 +2861,27 @@ describe('a reloaded window', () => {
 
   it('still hears about changes made elsewhere after ⌘R', async () => {
     const { cdp } = reloadApp;
-    await cdp.waitFor(`!!document.querySelector('[title^="Standup meeting"]')`);
+    await cdp.waitUntil(($) => $.has('[title^="Standup meeting"]'));
     // The reloaded page numbers its requests from 0 again. The old page's
     // invalidations stream stayed open under the same client id, and the
     // server drops a request whose id is still running — so the new
     // page's own subscription never started.
     await cdp.send('Page.reload', {});
-    await cdp.waitFor(`!!document.querySelector('[title^="Standup meeting"]')`);
+    await cdp.waitUntil(($) => $.has('[title^="Standup meeting"]'));
     // A change the window did not make: hiding Work in the Settings window
     // reaches it only through its invalidations stream.
     const settings = await reloadApp.openSettings('accounts');
-    const work = `[...document.querySelectorAll('input[type="checkbox"]')].find(b => b.parentElement?.textContent?.includes('Work') && b.checked)`;
-    await settings.waitFor(`!!${work}`);
-    await settings.eval(`${work}?.click()`);
-    await cdp.waitFor(`!document.querySelector('[title^="Standup meeting"]')`, 20_000);
+    await settings.waitUntil(($) =>
+      $.all<HTMLInputElement>('input[type="checkbox"]').some(
+        (b) => b.parentElement?.textContent?.includes('Work') && b.checked,
+      ),
+    );
+    await settings.evaluate(($) => {
+      $.all<HTMLInputElement>('input[type="checkbox"]')
+        .find((b) => b.parentElement?.textContent?.includes('Work') && b.checked)
+        ?.click();
+    });
+    await cdp.waitUntil({ timeoutMs: 20_000 }, ($) => !$.has('[title^="Standup meeting"]'));
     await reloadApp.closeSettings();
   });
 
@@ -2857,17 +2890,30 @@ describe('a reloaded window', () => {
     // main.ts refuses a navigation off the app's own page in will-navigate,
     // after Electron has already reported did-start-navigation: the
     // document stays, and so must its streams.
-    await cdp.eval(`void (window.__stillHere = true)`);
-    await cdp.eval(`void (location.href = 'https://example.com/')`);
+    /** The page's own marker: kept while the document stays. */
+    type Here = typeof window & { __stillHere?: boolean };
+    await cdp.evaluate(() => {
+      (window as Here).__stillHere = true;
+    });
+    await cdp.evaluate(() => {
+      window.location.href = 'https://example.com/';
+    });
     await new Promise((resolve) => setTimeout(resolve, 500));
-    expect(await cdp.eval<boolean>('window.__stillHere === true')).toBe(true);
+    expect(await cdp.evaluate(() => (window as Here).__stillHere === true)).toBe(true);
     // Showing Work again in Settings reaches it only through its
     // invalidations stream.
     const settings = await reloadApp.openSettings('accounts');
-    const work = `[...document.querySelectorAll('input[type="checkbox"]')].find(b => b.parentElement?.textContent?.includes('Work') && !b.checked)`;
-    await settings.waitFor(`!!${work}`);
-    await settings.eval(`${work}?.click()`);
-    await cdp.waitFor(`!!document.querySelector('[title^="Standup meeting"]')`, 20_000);
+    await settings.waitUntil(($) =>
+      $.all<HTMLInputElement>('input[type="checkbox"]').some(
+        (b) => b.parentElement?.textContent?.includes('Work') && !b.checked,
+      ),
+    );
+    await settings.evaluate(($) => {
+      $.all<HTMLInputElement>('input[type="checkbox"]')
+        .find((b) => b.parentElement?.textContent?.includes('Work') && !b.checked)
+        ?.click();
+    });
+    await cdp.waitUntil({ timeoutMs: 20_000 }, ($) => $.has('[title^="Standup meeting"]'));
     await reloadApp.closeSettings();
   });
 });
