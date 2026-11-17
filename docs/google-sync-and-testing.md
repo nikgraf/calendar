@@ -1387,7 +1387,8 @@ done once the button reads "View: `VIEW`"),
 `notifications`, `getting-started`, `file`, `advanced`, `mirrors`,
 `unsynced`; rows `settings-row-<page>`, pages
 `settings-page-<page>`), `close-settings.yaml` (`BackButton` until the
-root shows, then Done), `search-for.yaml` (`QUERY` typed into the Search
+root shows, then Done), `search-time-zone.yaml` (`QUERY` erased and
+typed into the time-zone picker's search until the zone `OPTION` shows), `search-for.yaml` (`QUERY` typed into the Search
 tab's system field until `RESULT` shows; a sentence for the search
 thread is typed the same way and sent with `pressKey: Enter`, the
 keyboard's Search key; the chips' × is "Remove <label>"),
