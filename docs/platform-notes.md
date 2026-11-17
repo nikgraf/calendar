@@ -243,6 +243,18 @@ in the `ios-simulator` skill (`.agents/skills/ios-simulator/SKILL.md`).
 
 ## iOS system behaviour
 
+- **A launch's time starts before its JavaScript.** React Native's own
+  startup marker (`APP_STARTUP_START`) is set when its instance is
+  created, after expo-updates' wait and the bundle's load. The launch
+  times in Settings › Advanced › Diagnostics count from the process's
+  start instead, read from the kernel (`sysctl` with `KERN_PROC_PID`, in
+  `modules/solunivo-launch-timing`). A process iOS prewarmed
+  (`ActivePrewarm=1` in its environment) may have started minutes before
+  the tap, so its times count from UIKit's launch call. A reload in the
+  same process (PR Preview's Load) and a background launch record nothing.
+  Each step is written as it is reached, so a launch closed while it hung
+  shows the step it never got to.
+
 - **iOS 26 tab bar geometry** (NativeTabs, measured with `maestro
   hierarchy` on iPhone SE 3, 17e, 17 Pro and 17 Pro Max): the bar is
   83 pt tall and full width on every device; its items are 62 pt tall and

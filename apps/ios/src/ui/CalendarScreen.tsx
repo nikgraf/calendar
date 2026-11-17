@@ -36,6 +36,7 @@ import { AppState, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react
 import { startAssistantModel } from '../assistantRuntime.ts';
 import { kickSync, runLocalNotifications, startSync, subscribeInvalidations } from '../backend.ts';
 import { registerBackgroundRefresh } from '../backgroundTask.ts';
+import { markLaunch } from '../launchTiming.ts';
 import { useOnboardingEnabled } from '../onboarding.ts';
 import { setSetupPhase } from '../settingsCodeInbox.ts';
 import { AccountButton } from './AccountButton.tsx';
@@ -198,6 +199,9 @@ function CalendarBody({
   const isEventReadOnly = useEventReadOnlyLookup();
   const listColorOf = useListColorLookup();
   const calendars = useCalendars();
+  useEffect(() => {
+    markLaunch('calendar');
+  }, []);
 
   const colorOf = useMemo(() => makeColorLookup(calendars), [calendars]);
 

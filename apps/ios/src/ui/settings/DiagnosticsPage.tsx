@@ -12,6 +12,8 @@ import { appleLanguageModel } from '../../appleModel.ts';
 import { speech } from '../../speech.ts';
 import { assistantDownload, useAssistantModelState } from '../../assistantRuntime.ts';
 import { clearLastRenderError, readLastRenderError } from '../../crashLog.ts';
+import { readLaunchTimes } from '../../launchTiming.ts';
+import { launchLine, launchTitle, launchTotal } from '../../launchTimes.ts';
 import {
   availabilityDetails,
   availabilityGuidance,
@@ -45,6 +47,7 @@ export function DiagnosticsPage() {
   const [dictation, setDictation] = useState('checking…');
   const [reminderListCount, setReminderListCount] = useState<number | undefined>();
   const [lastError, setLastError] = useState(readLastRenderError);
+  const [launches] = useState(readLaunchTimes);
 
   // Every answer to Check Again is read out, the same one twice included.
   useEffect(() => {
@@ -182,6 +185,22 @@ export function DiagnosticsPage() {
           title="Contacts"
         />
       </Section>
+      {launches.length > 0 ? (
+        <Section
+          footer="How long the last launches took, counted from the moment the app started: until its JavaScript ran, until the first frame, until the calendar was drawn. A launch closed while it waited ends at the step it never reached."
+          header="Launches"
+        >
+          {launches.map((record, index) => (
+            <Row
+              key={record.start}
+              subtitle={launchLine(record)}
+              subtitleTestID={index === 0 ? 'diagnostics-launch-steps' : undefined}
+              title={launchTitle(record)}
+              value={launchTotal(record)}
+            />
+          ))}
+        </Section>
+      ) : null}
       {lastError ? (
         <Section
           footer={

@@ -1,0 +1,9 @@
+{
+  "name": "solunivo-launch-timing",
+  "version": "0.1.0",
+  "private": true,
+  "description": "When this launch began (the process's start, or UIKit's launch call for a prewarmed process), for the launch times Diagnostics shows — local Expo module",
+  "license": "UNLICENSED",
+  "author": "Nik Graf",
+  "main": "index.ts"
+}
