@@ -232,6 +232,11 @@ jobs:
       # (run 39668426261); a runner that never answers still fails after
       # this and run-flows.ts runs the flows once more.
       MAESTRO_DRIVER_STARTUP_TIMEOUT: 240000
+      # Maestro's JVM takes a quarter of the RAM as its heap by default and
+      # held 420-680 MB on a 7 GB runner already short of memory (see
+      # prepare-simulator.sh's trim); 512 MB is ample for its screenshots
+      # and hierarchies.
+      MAESTRO_OPTS: -Xmx512m
     steps:
       - uses: actions/checkout@v7
       # First, in the background: a runner's first boot spends about two

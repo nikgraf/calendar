@@ -37,6 +37,10 @@ boot() {
   if [ -n "${CI:-}" ]; then
     sudo /usr/libexec/ApplicationFirewall/socketfilterfw --getglobalstate || true
     sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setglobalstate off || true
+    # No Spotlight indexing of the job's own files (the install, the app,
+    # Maestro's reports): mds_stores held ~100 MB and read the disk while
+    # the 7 GB runner had none to spare (see install's trim below).
+    sudo mdutil -a -i off > /dev/null || true
   fi
 
   # `simctl boot` itself blocks for about a minute on a fresh runner.
@@ -98,6 +102,25 @@ install() {
   if xcrun simctl spawn "$UDID" launchctl list | grep -q com.apple.apsd; then
     echo "::warning::apsd is still running on the simulator"
   fi
+  # Memory: on the 7 GB runner macOS, the simulator and Maestro leave
+  # 0.1-0.8 GB free, and the host keeps dropping file pages and reading
+  # them back (3-4 GB paged in within 4 s, runs 44083938042/44097812149).
+  # The app's main thread then waits seconds whenever UIKit touches a
+  # dropped page (the SF Symbols catalog, ICU data, fonts): CI's "main
+  # thread busy" stalls (e2e/ci/stallWatch.ts). So no simulator daemon the
+  # app never uses runs: photo and video analysis of the sample library,
+  # home-screen widgets, Mail, iTunes, App Store engagement (its log
+  # storm, run 44045125095), game controllers, Apple Pay, Home, Health and
+  # Siri's suggestions. Speech, Apple Intelligence, accounts, contacts,
+  # calendars, sharing and SpringBoard's posters stay.
+  for label in com.apple.photoanalysisd com.apple.photosface com.apple.mediaanalysisd \
+               com.apple.mediaanalysisd.service com.apple.chronod com.apple.icloudmailagent \
+               com.apple.email.maild com.apple.itunescloudd com.apple.amsengagementd \
+               com.apple.GameController.gamecontrollerd com.apple.gamecontroller.ConfigService \
+               com.apple.merchantd com.apple.homed com.apple.healthd com.apple.siriactionsd \
+               com.apple.siriinferenced; do
+    xcrun simctl spawn "$UDID" launchctl bootout "user/foreground/$label" 2> /dev/null || true
+  done
 }
 
 # Back to a fresh device: an uninstall leaves the device's Reminders and
