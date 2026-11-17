@@ -21,6 +21,10 @@ describe('addLaunch', () => {
     expect(addLaunch([older], 1000)).toEqual([{ start: 1000, steps: {} }, older]);
   });
 
+  it('keeps how long the process ran before a launch counted from its window', () => {
+    expect(addLaunch([], 1000, 7000)).toEqual([{ before: 7000, start: 1000, steps: {} }]);
+  });
+
   it(`keeps the last ${String(KEPT_LAUNCHES)} launches`, () => {
     const full = Array.from({ length: KEPT_LAUNCHES }, (_, index) => ({ start: index, steps: {} }));
     const next = addLaunch(full, 99);
@@ -76,6 +80,24 @@ describe('launchLine', () => {
   });
 });
 
+describe('launchLine for a launch counted from its window', () => {
+  it('says how long its process ran before, so a stall before the window still shows', () => {
+    const record = { ...launch({ calendar: 1200, firstFrame: 900, script: 400 }), before: 7000 };
+    expect(launchLine(record)).toBe(
+      'JavaScript 0.4 s · first frame 0.9 s · calendar 1.2 s (running 7.0 s before)',
+    );
+  });
+
+  it('reads a process woken hours earlier in minutes or hours', () => {
+    expect(launchLine({ ...launch({}), before: 12 * 60_000 })).toBe(
+      'no JavaScript (running 12 min before)',
+    );
+    expect(launchLine({ ...launch({}), before: 3 * 3_600_000 })).toBe(
+      'no JavaScript (running 3 h before)',
+    );
+  });
+});
+
 describe('launchTotal', () => {
   it('is the time to the calendar, or a dash for a launch that never drew it', () => {
     expect(launchTotal(launch({ calendar: 3649, firstFrame: 3200, script: 2900 }))).toBe('3.6 s');
@@ -91,13 +113,17 @@ describe('launchTitle', () => {
 
 describe('parseLaunches', () => {
   it('reads back what was written', () => {
-    const records = [launch({ script: 400 }), { start: 1, steps: {} }];
+    const records = [launch({ script: 400 }), { before: 5, start: 1, steps: {} }];
     expect(parseLaunches(JSON.stringify(records))).toEqual(records);
   });
 
   it('reads anything unreadable as no launches', () => {
     expect(parseLaunches('')).toEqual([]);
     expect(parseLaunches('{"start":1,"steps":{}}')).toEqual([]);
-    expect(parseLaunches('[{"start":"1","steps":{}},{"start":1},null]')).toEqual([]);
+    expect(
+      parseLaunches(
+        '[{"start":"1","steps":{}},{"start":1},{"before":"2","start":1,"steps":{}},null]',
+      ),
+    ).toEqual([]);
   });
 });

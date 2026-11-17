@@ -3,9 +3,13 @@ import { requireNativeModule } from 'expo';
 /**
  * The launches the native side saw start, in milliseconds since 1970: this
  * one once its window's scene connected (`start`), and the earlier ones
- * closed before their JavaScript ran, oldest first (`unfinished`).
+ * closed before their JavaScript ran, oldest first (`unfinished`). A
+ * launch that starts at its scene, since its process ran before (prewarmed,
+ * woken in the background, or stalled before its window), carries how long
+ * that was (`before`, in milliseconds).
  */
 export interface TakenLaunches {
+  readonly before?: number;
   readonly start?: number;
   readonly unfinished?: ReadonlyArray<number>;
 }

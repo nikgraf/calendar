@@ -262,7 +262,9 @@ in the `ios-simulator` skill (`.agents/skills/ios-simulator/SKILL.md`).
   in the background and suspended before React Native started — may have
   started hours earlier, so its launch counts from its first scene's
   connection (a scene more than 5 s after UIKit's launch call joined such
-  a process). The native side keeps that start in the user defaults until
+  a process), and Diagnostics adds how long the process ran before
+  ("running 3 h before"): a launch stalled before its window looks the
+  same from the scene's side, and its stall must still show. The native side keeps that start in the user defaults until
   the launch's JavaScript takes it, so launches closed before their
   JavaScript ran are found by the next one that gets that far and listed
   with no step. Each later step is written as it is reached. A reload in the same process

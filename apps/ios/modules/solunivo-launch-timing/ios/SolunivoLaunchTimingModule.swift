@@ -10,7 +10,10 @@ import UIKit
 ///
 /// A launch starts with its process, read from the kernel. A process that
 /// was running before the tap (prewarmed by iOS, or woken in the
-/// background and suspended) starts when its window's scene connects.
+/// background and suspended) starts when its window's scene connects, and
+/// the time its process ran before is kept beside it (`before`): a scene
+/// that connects late may also be a launch stalled before its window, and
+/// that stall must still show.
 /// That start is kept in the user defaults until the launch's JavaScript
 /// takes it, so launches closed before their JavaScript ran are found by
 /// the next one that gets that far.
@@ -19,7 +22,8 @@ final class LaunchClock: @unchecked Sendable {
 
   private static let pendingKey = "SolunivoLaunchTiming.pending"
   /// A scene connects tens of milliseconds after UIKit's launch call on a
-  /// tap; one that connects later joined a process that was already there.
+  /// tap; one that connects later joined a process that was already there,
+  /// or ends a launch stalled before its window (`before` shows it).
   private static let promptSceneMs: Double = 5000
 
   private let lock = NSLock()
@@ -27,6 +31,8 @@ final class LaunchClock: @unchecked Sendable {
   private var prewarmed = false
   /// This launch's start, once its first scene connected.
   private var current: Double?
+  /// How long the process ran before `current`, for a launch that starts at its scene.
+  private var before: Double?
   private var taken = false
 
   /// Called once, from the app delegate's launch call.
@@ -46,10 +52,12 @@ final class LaunchClock: @unchecked Sendable {
         return
       }
       var start = now
-      if !prewarmed, let launchedAt, now - launchedAt < Self.promptSceneMs,
-        let processStart = Self.processStart()
-      {
-        start = processStart
+      if let processStart = Self.processStart() {
+        if !prewarmed, let launchedAt, now - launchedAt < Self.promptSceneMs {
+          start = processStart
+        } else {
+          before = max(0, now - processStart)
+        }
       }
       current = start
       let pending = Self.pending() + [start]
@@ -58,10 +66,11 @@ final class LaunchClock: @unchecked Sendable {
   }
 
   /// For the launch's first reader: its start once a scene connected
-  /// (`start`), and the earlier launches that never reached their
-  /// JavaScript, oldest first (`unfinished`; a background launch finds them
-  /// too). Empty for any later reader, since a reload (PR Preview's Load)
-  /// runs the bundle again in the same process.
+  /// (`start`, with `before` when it is the scene's), and the earlier
+  /// launches that never reached their JavaScript, oldest first
+  /// (`unfinished`; a background launch finds them too). Empty for any
+  /// later reader, since a reload (PR Preview's Load) runs the bundle again
+  /// in the same process.
   func take() -> [String: Any] {
     lock.withLock {
       guard !taken else {
@@ -73,6 +82,9 @@ final class LaunchClock: @unchecked Sendable {
       var result: [String: Any] = ["unfinished": unfinished]
       if let current {
         result["start"] = current
+      }
+      if let before {
+        result["before"] = before
       }
       return result
     }

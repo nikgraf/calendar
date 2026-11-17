@@ -56,7 +56,7 @@ if (taken?.start !== undefined || unfinished.length > 0) {
     next = addLaunch(next, start);
   }
   if (taken?.start !== undefined) {
-    next = reachStep(addLaunch(next, taken.start), 'script', scriptStarted);
+    next = reachStep(addLaunch(next, taken.start, taken.before), 'script', scriptStarted);
     records = next;
   }
   write(next);

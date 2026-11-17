@@ -20,6 +20,12 @@ const STEP_LABEL: Record<LaunchStep, string> = {
 
 export interface LaunchRecord {
   /**
+   * How long the process ran before `start`, for a launch counted from its
+   * window: iOS prewarmed it or woke it in the background, or the launch
+   * stalled before its window. Shown, so that a stall is never hidden.
+   */
+  readonly before?: number;
+  /**
    * The launch's start, in milliseconds since 1970: its process's start,
    * or its window's for a process that was running before the tap.
    */
@@ -35,7 +41,11 @@ export const KEPT_LAUNCHES = 10;
 export const addLaunch = (
   records: ReadonlyArray<LaunchRecord>,
   start: number,
-): ReadonlyArray<LaunchRecord> => [{ start, steps: {} }, ...records.slice(0, KEPT_LAUNCHES - 1)];
+  before?: number,
+): ReadonlyArray<LaunchRecord> => [
+  { ...(before === undefined ? {} : { before }), start, steps: {} },
+  ...records.slice(0, KEPT_LAUNCHES - 1),
+];
 
 /** The newest launch with `step` reached at `at`; a step is taken once. */
 export const reachStep = (
@@ -57,8 +67,13 @@ const isRecord = (value: unknown): value is LaunchRecord => {
   if (typeof value !== 'object' || value === null) {
     return false;
   }
-  const { start, steps } = value as Record<string, unknown>;
-  return typeof start === 'number' && typeof steps === 'object' && steps !== null;
+  const { before, start, steps } = value as Record<string, unknown>;
+  return (
+    (before === undefined || typeof before === 'number') &&
+    typeof start === 'number' &&
+    typeof steps === 'object' &&
+    steps !== null
+  );
 };
 
 /** The file's records; anything unreadable reads as none. */
@@ -73,10 +88,20 @@ export const parseLaunches = (text: string): ReadonlyArray<LaunchRecord> => {
 
 const seconds = (ms: number): string => `${(ms / 1000).toFixed(1)} s`;
 
+/** A span that may be hours long: seconds under a minute, then minutes, then hours. */
+const span = (ms: number): string => {
+  if (ms < 60_000) {
+    return seconds(ms);
+  }
+  const minutes = Math.round(ms / 60_000);
+  return minutes < 60 ? `${String(minutes)} min` : `${String(Math.round(minutes / 60))} h`;
+};
+
 /**
  * One launch as Diagnostics reads it: the time to each step reached, then
  * the first step it never reached ("no first frame": it was closed, or is
- * still on its way, before that).
+ * still on its way, before that), and how long its process had run before
+ * a launch counted from its window.
  */
 export const launchLine = (record: LaunchRecord): string => {
   const parts: Array<string> = [];
@@ -88,7 +113,8 @@ export const launchLine = (record: LaunchRecord): string => {
     }
     parts.push(`${STEP_LABEL[step]} ${seconds(ms)}`);
   }
-  return parts.join(' · ');
+  const line = parts.join(' · ');
+  return record.before === undefined ? line : `${line} (running ${span(record.before)} before)`;
 };
 
 /** "Nov 17, 9:23:05 AM": when the launch began, seconds included to tell quick relaunches apart. */
