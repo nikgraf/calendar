@@ -863,7 +863,9 @@ read, ...args)` takes two page functions. `pageFunctions.test.ts`, in
 code sends, followed by name to the file that declares it, and fails on
 page code it cannot trace: so a spec only CI runs (the real Reminders and
 Calendar, the live account, the website's shots) learns of a refused
-name first.
+name first. It also fails a spec that sends code of its own through
+`cdp.send` (`Runtime.evaluate`, `Page.addScriptToEvaluateOnNewDocument`)
+rather than a page function's `pageExpression`.
 
 Flakiness lessons (each caused a real CI failure — keep them enforced):
 

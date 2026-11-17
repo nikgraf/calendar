@@ -26,6 +26,18 @@ const SOURCE_CALLS = new Set(['pageExpression', 'pageSource']);
  * name that does so fails the check, since its callers' functions are not.
  */
 const WRAPPERS = new Set(['evaluate', 'noteWhen', 'pollPage']);
+/**
+ * The CDP methods that run code in the page, by the parameter that holds
+ * it. A call that sends its own code through one, rather than a page
+ * function's `pageExpression`, fails the check: only the harness's `run`
+ * sends what the wrappers built.
+ */
+const EVALUATING = new Map([
+  ['Page.addScriptToEvaluateOnNewDocument', 'source'],
+  ['Runtime.callFunctionOn', 'functionDeclaration'],
+  ['Runtime.compileScript', 'expression'],
+  ['Runtime.evaluate', 'expression'],
+]);
 
 interface Node {
   readonly end: number;
@@ -68,14 +80,43 @@ interface Scan {
    * and its name there (`default` and `*` for a default or namespace import).
    */
   readonly imports: ReadonlyMap<string, { readonly from: string; readonly name: string }>;
+  /** CDP calls that run code in the page which no page function made (`EVALUATING`). */
+  readonly raw: ReadonlyArray<{
+    readonly method: string;
+    readonly owners: ReadonlyArray<string>;
+    readonly start: number;
+  }>;
   readonly sent: ReadonlyArray<Sent>;
   readonly source: string;
 }
+
+/**
+ * The CDP method a `send` call runs code in the page with, when that code
+ * is not a page function's `pageExpression(…)`; undefined for any other call.
+ */
+const codeNotMade = (call: Node): string | undefined => {
+  const [first, params] = (call['arguments'] as ReadonlyArray<Node>).filter(isNode);
+  const method = first?.type === 'Literal' ? String(first['value']) : '';
+  const key = EVALUATING.get(method);
+  if (key === undefined) {
+    return undefined;
+  }
+  const code =
+    params?.type === 'ObjectExpression'
+      ? (params['properties'] as ReadonlyArray<Node>).find(
+          (property) => nameOf(property['key']) === key,
+        )?.['value']
+      : undefined;
+  const made =
+    isNode(code) && code.type === 'CallExpression' && nameOf(code['callee']) === 'pageExpression';
+  return made ? undefined : method;
+};
 
 const scan = (file: string, source: string): Scan => {
   const declared = new Map<string, Array<Node>>();
   const imports = new Map<string, { from: string; name: string }>();
   const sent: Array<Sent> = [];
+  const raw: Array<{ method: string; owners: ReadonlyArray<string>; start: number }> = [];
   const declare = (name: string | undefined, node: Node) => {
     if (name !== undefined) {
       declared.set(name, [...(declared.get(name) ?? []), node]);
@@ -118,6 +159,10 @@ const scan = (file: string, source: string): Scan => {
         ? (nameOf(callee['property']) ?? '')
         : '';
     const fn = node.type === 'CallExpression' ? (nameOf(callee) ?? '') : '';
+    const unmade = method === 'send' ? codeNotMade(node) : undefined;
+    if (unmade !== undefined) {
+      raw.push({ method: unmade, owners, start: node.start });
+    }
     if (PAGE_CALLS.has(method) || PAIR_CALLS.has(method) || SOURCE_CALLS.has(fn)) {
       const args = (node['arguments'] as ReadonlyArray<Node>).filter(isNode);
       const pages = PAIR_CALLS.has(method)
@@ -146,7 +191,7 @@ const scan = (file: string, source: string): Scan => {
     children(node).forEach((child) => visit(child, inside));
   };
   visit(parseSync(file, source).program as unknown as Node, []);
-  return { declared, imports, sent, source };
+  return { declared, imports, raw, sent, source };
 };
 
 const lineOf = (source: string, offset: number): number =>
@@ -218,7 +263,16 @@ const problemsIn = async (
   scans: ReadonlyMap<string, Scan>,
 ): Promise<ReadonlyArray<string>> => {
   const { pages, unread } = pagesSentBy(file, scans);
-  const problems = [...unread];
+  const own = scans.get(file)!;
+  const problems = [
+    ...unread,
+    ...own.raw
+      .filter(({ owners }) => !(file === 'harness.ts' && owners.includes('run')))
+      .map(
+        ({ method, start }) =>
+          `${file}:${String(lineOf(own.source, start))} sends its own code through ${method}: write a page function`,
+      ),
+  ];
   for (const { file: home, node } of pages) {
     const { imports, source } = scans.get(home)!;
     const sent = await asSent(source.slice(node.start, node.end));
@@ -292,6 +346,30 @@ describe('the page functions the e2e code sends', () => {
     ]);
     // `evaluate` passes on its caller's function; another helper that does is not read.
     expect(pagesSentBy('harness.ts', scans).unread).toEqual(['harness.ts:6 sends page']);
+  });
+
+  it('refuse code sent straight through CDP, unless a page function made it', async () => {
+    const harness = `
+      class Cdp {
+        run(expression) { return this.send('Runtime.evaluate', { expression }); }
+      }
+    `;
+    const spec = `
+      await cdp.send('Runtime.evaluate', { expression: 'document.title' });
+      await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: pageExpression(record, []) });
+      const record = () => { window.__seen = []; };
+      await cdp.send('Runtime.callFunctionOn', params);
+      await cdp.send('Page.reload', {});
+    `;
+    const scans = new Map([
+      ['harness.ts', scan('harness.ts', harness)],
+      ['spec.e2e.ts', scan('spec.e2e.ts', spec)],
+    ]);
+    expect(await problemsIn('spec.e2e.ts', scans)).toEqual([
+      'spec.e2e.ts:2 sends its own code through Runtime.evaluate: write a page function',
+      'spec.e2e.ts:5 sends its own code through Runtime.callFunctionOn: write a page function',
+    ]);
+    expect(await problemsIn('harness.ts', scans)).toEqual([]);
   });
 
   it('refuse an import a page function names, also one called like a page global', async () => {
