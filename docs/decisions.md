@@ -335,6 +335,16 @@ was cut (pruned 2026-11-17).
   project setting for its path, VMs would share files, mostly PR
   history); round 1 of both reviewers in parallel. Open: making the check
   required; mechanical guards for the self-check's classes.
+- **The log keeps only what still holds** (2026-11-17, #349) — a record a
+  later PR reversed is deleted, its replacement naming the PR it took
+  over from, and an open point a later record closed is cut: twelve
+  reversed records went (the Assistant's phrase rules, the iOS half
+  sheet, the two-turn thread). The current-state docs were checked
+  statement by statement against the code and corrected. Rejected:
+  "superseded" tags in place (five records had one and still read as
+  current), an archive file (`git log -S` on a title finds the text).
+  Open: records that state a mechanism at length (find a time's is in no
+  other doc), the queue's chain of nine, the CI retry stories.
 
 ## Architecture and sync path
 
