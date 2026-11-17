@@ -19,6 +19,7 @@ import {
   readPendingOpsCount,
   readTasks,
 } from './harness.ts';
+import type { PageKit } from './page.ts';
 
 /**
  * The desktop app signed in as the live test account, against Google
@@ -39,9 +40,9 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 // No retry: E2E=1 gives the fixture specs one, and a retried create would
 // write a second event with the same title. Two minutes per test: the
 // polls below wait on Google, not on a local fake.
-/** The conflict banner's text contains `text` (a CDP expression). */
-const bannerShows = (text: string) =>
-  `(document.querySelector('[data-testid="conflict-banner"]')?.textContent ?? '').includes(${JSON.stringify(text)})`;
+/** The conflict banner's text contains `text` (a page function). */
+const bannerShows = ($: PageKit, text: string) =>
+  $.text('[data-testid="conflict-banner"]').includes(text);
 
 describe.skipIf(!LIVE)('Google live (real account)', { retry: 0, timeout: 120_000 }, () => {
   let config: LiveGoogleConfig;
@@ -75,32 +76,18 @@ describe.skipIf(!LIVE)('Google live (real account)', { retry: 0, timeout: 120_00
     (await readEvents(app.userDataDir)).find((event) => event.title === title);
 
   /** Sets a React-controlled input/select through the prototype setter. */
-  const setControl = (
-    selector: string,
-    value: string,
-    proto: 'HTMLInputElement' | 'HTMLSelectElement',
-  ) =>
-    app.cdp.eval(`(() => {
-      const control = document.querySelector(${JSON.stringify(selector)});
-      const setter = Object.getOwnPropertyDescriptor(window.${proto}.prototype, 'value').set;
-      setter.call(control, ${JSON.stringify(value)});
-      control.dispatchEvent(new Event(${proto === 'HTMLSelectElement' ? "'change'" : "'input'"}, { bubbles: true }));
-    })()`);
-  const setEditorTitle = (title: string) =>
-    setControl('input[placeholder="Title"]', title, 'HTMLInputElement');
+  const setControl = (selector: string, value: string) =>
+    app.cdp.evaluate(
+      ($, control: string, next: string) => $.setValue(control, next),
+      selector,
+      value,
+    );
+  const setEditorTitle = (title: string) => setControl('input[placeholder="Title"]', title);
   /** The editor's calendar (or task list) select: the run's own, never the account's first. */
   const pickRunCalendar = () =>
-    setControl(
-      'select[aria-label="Calendar"]',
-      `${LIVE_ACCOUNT_ID}:${calendarId}`,
-      'HTMLSelectElement',
-    );
+    setControl('select[aria-label="Calendar"]', `${LIVE_ACCOUNT_ID}:${calendarId}`);
   const pickRunList = () =>
-    setControl(
-      'select[aria-label="Task list"]',
-      `${LIVE_ACCOUNT_ID}:${listId}`,
-      'HTMLSelectElement',
-    );
+    setControl('select[aria-label="Task list"]', `${LIVE_ACCOUNT_ID}:${listId}`);
 
   /**
    * A point on today's column at a wall-clock hour with nothing on it (the
@@ -115,22 +102,27 @@ describe.skipIf(!LIVE)('Google live (real account)', { retry: 0, timeout: 120_00
       month: 'long',
       weekday: 'long',
     });
-    return app.cdp.eval<{ x: number; y: number }>(`(() => {
-      const column = [...document.querySelectorAll('[role="button"][aria-label]')].find((element) =>
-        element.getAttribute('aria-label').startsWith(${JSON.stringify(`${label}:`)}),
-      );
-      const scroller = column.closest('.overflow-y-scroll');
-      const offset = (${hour * 60 + 5} / 60) * ${HOUR_HEIGHT};
-      scroller.scrollTop = offset - scroller.clientHeight / 2;
-      const rect = column.getBoundingClientRect();
-      return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + offset) };
-    })()`);
+    return app.cdp.evaluate(
+      ($, prefix: string, minutes: number, hourHeight: number) => {
+        const column = $.all('[role="button"][aria-label]').find((element) =>
+          element.getAttribute('aria-label')!.startsWith(prefix),
+        )!;
+        const scroller = column.closest('.overflow-y-scroll')!;
+        const offset = (minutes / 60) * hourHeight;
+        scroller.scrollTop = offset - scroller.clientHeight / 2;
+        const rect = column.getBoundingClientRect();
+        return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + offset) };
+      },
+      `${label}:`,
+      hour * 60 + 5,
+      HOUR_HEIGHT,
+    );
   };
 
   const openNewEventAt = async (): Promise<void> => {
     const at = await freeSlot();
     await app.cdp.click(at.x, at.y);
-    await app.cdp.waitFor(`document.body.textContent.includes('New event')`);
+    await app.cdp.waitUntil(() => document.body.textContent.includes('New event'));
   };
 
   /** The event this file drives through create → edit → drag → conflicts → delete. */
@@ -200,7 +192,10 @@ describe.skipIf(!LIVE)('Google live (real account)', { retry: 0, timeout: 120_00
     // A dead refresh token flips the row to reauth_required on the first pass.
     const account = (await readAccounts(app.userDataDir)).find((a) => a.id === LIVE_ACCOUNT_ID);
     expect(account?.status, 'the refresh token still works').toBe('ok');
-    await app.cdp.waitFor(`document.body.textContent.includes(${JSON.stringify(calendarName)})`);
+    await app.cdp.waitUntil(
+      (_, want: string) => document.body.textContent.includes(want),
+      calendarName,
+    );
   });
 
   it('creates an event in the run calendar; it lands on Google with an etag', async () => {
@@ -208,7 +203,10 @@ describe.skipIf(!LIVE)('Google live (real account)', { retry: 0, timeout: 120_00
     await setEditorTitle(title);
     await pickRunCalendar();
     await app.cdp.clickButtonWithText('Save');
-    await app.cdp.waitFor(`!!document.querySelector('[title^=${JSON.stringify(title)}]')`);
+    await app.cdp.waitUntil(
+      ($, shown: string) => $.has(`[title^=${JSON.stringify(shown)}]`),
+      title,
+    );
     const row = await expect
       .poll(async () => {
         const event = await eventByTitle(title);
@@ -227,7 +225,10 @@ describe.skipIf(!LIVE)('Google live (real account)', { retry: 0, timeout: 120_00
     const edited = `${title} edited`;
     await setEditorTitle(edited);
     await app.cdp.clickButtonWithText('Save');
-    await app.cdp.waitFor(`!!document.querySelector('[title^=${JSON.stringify(edited)}]')`);
+    await app.cdp.waitUntil(
+      ($, shown: string) => $.has(`[title^=${JSON.stringify(shown)}]`),
+      edited,
+    );
     const row = (await eventByTitle(edited))!;
     await expect
       .poll(
@@ -276,7 +277,7 @@ describe.skipIf(!LIVE)('Google live (real account)', { retry: 0, timeout: 120_00
       await google((scratch) => scratch.patchEvent(calendarId, row.id, { summary: theirs }));
       await app.cdp.clickButtonWithText('Save');
       const parked = await app.cdp
-        .waitFor(bannerShows(mine), 15_000)
+        .waitUntil({ timeoutMs: 15_000 }, bannerShows, mine)
         .then(() => true)
         .catch(() => false);
       if (parked) {
@@ -299,7 +300,7 @@ describe.skipIf(!LIVE)('Google live (real account)', { retry: 0, timeout: 120_00
       }, POLL)
       .toBe('synced');
     await expect.poll(() => readPendingOpsCount(app.userDataDir), POLL).toBe(0);
-    await app.cdp.waitFor(`!document.querySelector('[data-testid="conflict-banner"]')`);
+    await app.cdp.waitUntil(($) => !$.has('[data-testid="conflict-banner"]'));
     title = theirs;
   });
 
@@ -314,7 +315,7 @@ describe.skipIf(!LIVE)('Google live (real account)', { retry: 0, timeout: 120_00
       )
       .toBe(mine);
     await expect.poll(() => readPendingOpsCount(app.userDataDir), POLL).toBe(0);
-    await app.cdp.waitFor(`!document.querySelector('[data-testid="conflict-banner"]')`);
+    await app.cdp.waitUntil(($) => !$.has('[data-testid="conflict-banner"]'));
     title = mine;
   });
 
@@ -323,7 +324,7 @@ describe.skipIf(!LIVE)('Google live (real account)', { retry: 0, timeout: 120_00
     await app.cdp.openEditor(`[title^=${JSON.stringify(title)}]`);
     await app.cdp.clickButtonWithText('Delete');
     await app.cdp.confirmDelete();
-    await app.cdp.waitFor(`!document.querySelector('[title^=${JSON.stringify(title)}]')`);
+    await app.cdp.waitUntil(($, gone: string) => !$.has(`[title^=${JSON.stringify(gone)}]`), title);
     await expect
       .poll(() => serverStatus(row.id), POLL)
       .toSatisfy((status: string) => ['cancelled', 'http 404', 'http 410'].includes(status));
@@ -334,11 +335,14 @@ describe.skipIf(!LIVE)('Google live (real account)', { retry: 0, timeout: 120_00
     const taskTitle = `${tag()}-task`;
     await openNewEventAt();
     await app.cdp.clickButtonWithText('Task');
-    await app.cdp.waitFor(`document.body.textContent.includes('New task')`);
+    await app.cdp.waitUntil(() => document.body.textContent.includes('New task'));
     await setEditorTitle(taskTitle);
     await pickRunList();
     await app.cdp.clickButtonWithText('Save');
-    await app.cdp.waitFor(`!!document.querySelector('[title=${JSON.stringify(taskTitle)}]')`);
+    await app.cdp.waitUntil(
+      ($, shown: string) => $.has(`[title=${JSON.stringify(shown)}]`),
+      taskTitle,
+    );
     // The temp id becomes Google's once the create lands.
     const task = await expect
       .poll(async () => {
@@ -352,8 +356,9 @@ describe.skipIf(!LIVE)('Google live (real account)', { retry: 0, timeout: 120_00
 
     const checkbox = await app.cdp.locate(`[title=${JSON.stringify(taskTitle)}] button`);
     await app.cdp.click(checkbox.x, checkbox.y);
-    await app.cdp.waitFor(
-      `document.querySelector('[title=${JSON.stringify(taskTitle)}] [data-done]') !== null`,
+    await app.cdp.waitUntil(
+      ($, task: string) => $.has(`[title=${JSON.stringify(task)}] [data-done]`),
+      taskTitle,
     );
     await expect
       .poll(() => google((scratch) => scratch.getTask(listId, task.id)).then((t) => t.status), POLL)
@@ -375,7 +380,10 @@ describe.skipIf(!LIVE)('Google live (real account)', { retry: 0, timeout: 120_00
     await expect
       .poll(async () => (await eventByTitle(pulled))?.syncStatus, { timeout: 40_000 })
       .toBe('synced');
-    await app.cdp.waitFor(`!!document.querySelector('[title^=${JSON.stringify(pulled)}]')`);
+    await app.cdp.waitUntil(
+      ($, shown: string) => $.has(`[title^=${JSON.stringify(shown)}]`),
+      pulled,
+    );
 
     // And a server-side un-complete of the task reaches the chip.
     const taskTitle = `${tag()}-task`;
