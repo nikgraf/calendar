@@ -63,6 +63,15 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   background (resets an open editor), EAS Observe, a launch-screen colour
   (expo-splash-screen sets it only with an image). Open: the 15 s offline
   hang it was built to catch.
+- **Loading orb** (2026-11-17, #351) — the slow start's spinner became an
+  orb of dots on three crossing rings beside "Opening your calendar…", a
+  light sweeping the label; inspired by libraries.dev's Thinking Orbs, not
+  copied. Reanimated over plain views on one seamless 6 s loop; Reduce
+  Motion holds the dots and breathes. Uneven rings, as even ones line up
+  into a grid. Rejected: a GIF (one size and appearance, no Reduce
+  Motion), a SwiftUI view of our own (a native build for a loading
+  state), SF Symbol effects (Apple's look). Open: the label stops growing
+  at 1.6× Dynamic Type, since its letters can't wrap.
 - **Production and dev side by side** (2026-10-01, #100) — the real
   accounts live in the production app, test accounts in a dev variant
   next to it, on the Mac (a run from source) and on the phone
