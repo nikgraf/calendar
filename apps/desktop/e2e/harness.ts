@@ -44,6 +44,7 @@ import { SqliteClient } from '@effect/sql-sqlite-node';
 import { Effect, Layer } from 'effect';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
 import { SqlClient } from 'effect/sql/SqlClient';
+import { refuseMisreadFallback } from './fallbackPrecedence';
 
 const require = createRequire(import.meta.url);
 
@@ -496,8 +497,13 @@ export class Cdp {
     });
   }
 
-  /** Evaluates an expression, returning its JSON value. */
+  /**
+   * Evaluates an expression, returning its JSON value. One whose `??`
+   * fallback takes in a comparison after it, or a literal fallback a member
+   * access (`fallbackPrecedence.ts`), is refused before it is sent.
+   */
   async eval<T>(expression: string): Promise<T> {
+    refuseMisreadFallback(expression);
     const result = (await this.send('Runtime.evaluate', {
       awaitPromise: true,
       expression,
@@ -578,6 +584,8 @@ export class Cdp {
   }
 
   private async poll<T>(expression: string, timeoutMs: number, drawFrame: boolean): Promise<T> {
+    // Here too: in the loop, `eval`'s refusal would count as "not ready yet".
+    refuseMisreadFallback(expression);
     const deadline = Date.now() + timeoutMs;
     let lastError = '';
     for (;;) {

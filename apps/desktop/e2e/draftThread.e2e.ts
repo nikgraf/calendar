@@ -112,7 +112,7 @@ const titleIs = (title: string) =>
 const headingIs = (text: string) =>
   `document.querySelector('[data-testid="editor-title"]')?.textContent === ${JSON.stringify(text)}`;
 const valueOf = (selector: string) =>
-  `document.querySelector(${JSON.stringify(selector)})?.value ?? ''`;
+  `(document.querySelector(${JSON.stringify(selector)})?.value ?? '')`;
 const CALENDAR = 'select[aria-label="Calendar"]';
 const LIST = 'select[aria-label="Task list"]';
 const setSelect = (selector: string, value: string) => `(() => {
@@ -120,7 +120,7 @@ const setSelect = (selector: string, value: string) => `(() => {
   Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set.call(element, ${JSON.stringify(value)});
   element.dispatchEvent(new Event('change', { bubbles: true }));
 })()`;
-const PRIORITY = `document.querySelector('[aria-label="Priority"] [role="radio"][aria-checked="true"]')?.textContent ?? ''`;
+const PRIORITY = `(document.querySelector('[aria-label="Priority"] [role="radio"][aria-checked="true"]')?.textContent ?? '')`;
 const pickPriority = (label: string) =>
   `[...document.querySelectorAll('[aria-label="Priority"] [role="radio"]')].find((option) => option.textContent === ${JSON.stringify(label)}).click()`;
 const asked = `!!document.querySelector('[data-testid="move-confirm"]')`;
@@ -132,7 +132,7 @@ const status = `(document.querySelector('[data-testid="quick-add-status"]')?.tex
 const disabled = (testId: string) =>
   `document.querySelector('[data-testid="${testId}"]')?.disabled === true`;
 const colorAt = (start: string) =>
-  `document.querySelector('[data-testid="draft-block"][data-draft-start="${start}"]')?.dataset.color ?? ''`;
+  `(document.querySelector('[data-testid="draft-block"][data-draft-start="${start}"]')?.dataset.color ?? '')`;
 
 /** A paste as the OS would deliver it, on the window: the text as text/plain. */
 const paste = (text: string) => `(() => {
