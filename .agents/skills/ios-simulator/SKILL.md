@@ -279,3 +279,11 @@ With a simulator tool, if the session has one, or `simctl`:
   on that slot) rather than typing a phrase.
 - A simulator a tool booted may be shut down about ten minutes after the
   tool lets go of it: `xcrun simctl boot` it again.
+- Appearance: `xcrun simctl ui "$UDID" appearance dark` (or `light`).
+  Reduce Motion: `xcrun simctl spawn "$UDID" defaults write
+  com.apple.Accessibility ReduceMotionEnabled -bool true`, then relaunch the
+  app (Reanimated's `useReducedMotion` reads it once); write `false` after.
+- Motion: stills cannot show it. `xcrun simctl io "$UDID" recordVideo
+  --codec h264 --force rec.mp4 &`, stop it with `pkill -INT -f recordVideo`,
+  then lay frames side by side with ffmpeg (`fps=6,crop=…,tile=8x3`) to read
+  them, or make a GIF for a PR (`palettegen` / `paletteuse`).
