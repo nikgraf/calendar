@@ -1,6 +1,7 @@
 import { Account, CalendarInfo, EventRecord, TaskListInfo, TaskRecord } from '@calendar/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
 import { type App, launchApp } from './harness.ts';
+import type { PageKit } from './page.ts';
 
 // Search filters: a sentence read into chips (the fixture model, so the
 // sentences are in its grammar — `terms | from..to | location | people |
@@ -97,13 +98,12 @@ const seed = {
 };
 
 const INPUT = '[data-testid="search-input"]';
-const SETTLED = `document.querySelector('[data-testid="search-results"]')?.getAttribute('aria-busy') === 'false'`;
-const PANEL_KIND = `document.querySelector('[data-testid="panel"]')?.dataset.panelKind`;
-const turns = `document.querySelectorAll('[data-testid="search-turn"]').length`;
-const has = (testId: string) => `!!document.querySelector('[data-testid="${testId}"]')`;
-const fieldIs = (text: string) =>
-  `document.querySelector(${JSON.stringify(INPUT)})?.value === ${JSON.stringify(text)}`;
-const enter = `document.querySelector(${JSON.stringify(INPUT)}).dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' }))`;
+const settled = ($: PageKit) =>
+  $.el('[data-testid="search-results"]')?.getAttribute('aria-busy') === 'false';
+const turns = ($: PageKit) => $.count('[data-testid="search-turn"]');
+const fieldIs = ($: PageKit, input: string, text: string) => $.value(input) === text;
+const enter = ($: PageKit, input: string) =>
+  $.el(input)!.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' }));
 
 describe('Search filters', () => {
   let app: App;
@@ -115,92 +115,102 @@ describe('Search filters', () => {
   });
 
   const titles = (group: 'past' | 'tasks' | 'upcoming') =>
-    app.cdp.eval<Array<string>>(
-      `[...document.querySelectorAll('[data-testid="search-group-${group}"] [data-testid="search-title"]')].map((title) => title.textContent)`,
+    app.cdp.evaluate(
+      ($, shown: string) =>
+        $.all(`[data-testid="search-group-${shown}"] [data-testid="search-title"]`).map(
+          (title) => title.textContent,
+        ),
+      group,
     );
 
   /** Types over the field; waits for the words to be in it. */
   const typeOver = async (text: string) => {
     const { cdp } = app;
-    await cdp.eval(`document.querySelector(${JSON.stringify(INPUT)}).select()`);
+    await cdp.evaluate(($, input: string) => $.el<HTMLInputElement>(input)!.select(), INPUT);
     await cdp.type(INPUT, text);
-    await cdp.waitFor(fieldIs(text));
+    await cdp.waitUntil(fieldIs, INPUT, text);
   };
 
   it('reads a sentence into a date chip, leaves its words in the field, and takes it back on Undo', async () => {
     const { cdp } = app;
-    await cdp.eval(
-      `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', metaKey: true }))`,
+    await cdp.evaluate(() =>
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', metaKey: true })),
     );
-    await cdp.waitFor(has('search-input'));
+    await cdp.waitUntil(($) => $.has('[data-testid="search-input"]'));
     await typeOver('harbour | -15..-5');
     await cdp.clickTestId('search-ask');
-    await cdp.waitFor(`${turns} === 1`);
-    await cdp.waitFor(fieldIs('harbour'));
-    await cdp.waitFor(has('search-chip-dates'));
-    await cdp.waitFor(SETTLED);
+    await cdp.waitUntil(($) => $.count('[data-testid="search-turn"]') === 1);
+    await cdp.waitUntil(fieldIs, INPUT, 'harbour');
+    await cdp.waitUntil(($) => $.has('[data-testid="search-chip-dates"]'));
+    await cdp.waitUntil(settled);
     // A week ago's standup and the retro; nothing ahead, no task due in the range.
-    await cdp.waitFor(`!${has('search-group-upcoming')} && ${has('search-group-past')}`);
+    await cdp.waitUntil(
+      ($) =>
+        !$.has('[data-testid="search-group-upcoming"]') &&
+        $.has('[data-testid="search-group-past"]'),
+    );
     expect(await titles('past')).toEqual(['Harbour standup', 'Harbour retro']);
-    expect(await cdp.eval<boolean>(has('search-group-tasks'))).toBe(false);
+    expect(await cdp.evaluate(($) => $.has('[data-testid="search-group-tasks"]'))).toBe(false);
 
     await cdp.clickTestId('search-undo');
-    await cdp.waitFor(`${turns} === 0`);
-    await cdp.waitFor(fieldIs('harbour | -15..-5'));
-    expect(await cdp.eval<boolean>(has('search-chip-dates'))).toBe(false);
+    await cdp.waitUntil(($) => $.count('[data-testid="search-turn"]') === 0);
+    await cdp.waitUntil(fieldIs, INPUT, 'harbour | -15..-5');
+    expect(await cdp.evaluate(($) => $.has('[data-testid="search-chip-dates"]'))).toBe(false);
   });
 
   it('routes Enter by the words: a filter is read, plain words open the top result', async () => {
     const { cdp } = app;
     await typeOver('harbour | | hafen');
+    expect(await cdp.evaluate(($, input: string) => $.el(input)!.dataset.routes, INPUT)).toBe(
+      'ask',
+    );
+    await cdp.evaluate(enter, INPUT);
+    await cdp.waitUntil(($) => $.has('[data-testid="search-chip-location"]'));
     expect(
-      await cdp.eval<string>(`document.querySelector(${JSON.stringify(INPUT)}).dataset.routes`),
-    ).toBe('ask');
-    await cdp.eval(enter);
-    await cdp.waitFor(has('search-chip-location'));
-    expect(
-      await cdp.eval<string>(
-        `document.querySelector('[data-testid="search-chip-location"]').textContent`,
-      ),
+      await cdp.evaluate(($) => $.el('[data-testid="search-chip-location"]')!.textContent),
     ).toBe('in hafen');
-    await cdp.waitFor(SETTLED);
-    await cdp.waitFor(`${has('search-group-upcoming')}`);
+    await cdp.waitUntil(settled);
+    await cdp.waitUntil(($) => $.has('[data-testid="search-group-upcoming"]'));
     expect(await titles('upcoming')).toEqual(['Harbour planning']);
     // A place leaves tasks out.
-    expect(await cdp.eval<boolean>(has('search-group-tasks'))).toBe(false);
+    expect(await cdp.evaluate(($) => $.has('[data-testid="search-group-tasks"]'))).toBe(false);
 
     // × takes the chip away; a person, read the same way.
-    await cdp.eval(
-      `document.querySelector('[data-testid="search-chip-location"]').parentElement.querySelector('[data-testid="search-chip-remove"]').click()`,
+    await cdp.evaluate(($) =>
+      $.el('[data-testid="search-chip-location"]')!
+        .parentElement!.querySelector<HTMLElement>('[data-testid="search-chip-remove"]')!
+        .click(),
     );
-    await cdp.waitFor(`!${has('search-chip-location')}`);
+    await cdp.waitUntil(($) => !$.has('[data-testid="search-chip-location"]'));
     await typeOver('harbour | | | anna');
-    await cdp.eval(enter);
-    await cdp.waitFor(has('search-chip-people'));
-    await cdp.waitFor(SETTLED);
-    await cdp.waitFor(
-      `document.querySelectorAll('[data-testid="search-group-upcoming"] [data-testid="search-title"]').length === 1`,
+    await cdp.evaluate(enter, INPUT);
+    await cdp.waitUntil(($) => $.has('[data-testid="search-chip-people"]'));
+    await cdp.waitUntil(settled);
+    await cdp.waitUntil(
+      ($) => $.count('[data-testid="search-group-upcoming"] [data-testid="search-title"]') === 1,
     );
     expect(await titles('upcoming')).toEqual(['Harbour walk']);
     expect(
-      await cdp.eval<string>(
+      await cdp.evaluate(
         // Newest first.
-        `document.querySelector('[data-testid="search-turn-summary"]').textContent`,
+        ($) => $.el('[data-testid="search-turn-summary"]')!.textContent,
       ),
     ).toContain('with anna');
 
     // Clear, then plain words: Enter opens the top result.
     await cdp.clickTestId('search-clear');
-    await cdp.waitFor(`${has('search-hint')} && ${turns} === 0`);
+    await cdp.waitUntil(
+      ($) => $.has('[data-testid="search-hint"]') && $.count('[data-testid="search-turn"]') === 0,
+    );
     await typeOver('harbour');
-    expect(
-      await cdp.eval<string>(`document.querySelector(${JSON.stringify(INPUT)}).dataset.routes`),
-    ).toBe('open');
-    await cdp.waitFor(SETTLED);
-    await cdp.eval(enter);
-    await cdp.waitFor(`${PANEL_KIND} === 'inspector'`);
+    expect(await cdp.evaluate(($, input: string) => $.el(input)!.dataset.routes, INPUT)).toBe(
+      'open',
+    );
+    await cdp.waitUntil(settled);
+    await cdp.evaluate(enter, INPUT);
+    await cdp.waitUntil(($) => $.el('[data-testid="panel"]')?.dataset.panelKind === 'inspector');
     await cdp.pressEscape();
-    await cdp.waitFor(`${PANEL_KIND} === 'search'`);
+    await cdp.waitUntil(($) => $.el('[data-testid="panel"]')?.dataset.panelKind === 'search');
   });
 
   it('adds a filter by hand: tasks only, then a calendar, each a chip with ×', async () => {
@@ -210,28 +220,34 @@ describe('Search filters', () => {
     await cdp.clickTestId('search-add-kind');
     await cdp.clickTestId('search-filter-kind-task');
     await cdp.pressEscape();
-    await cdp.waitFor(has('search-chip-kind'));
-    await cdp.waitFor(`${SETTLED} && !${has('search-group-upcoming')}`);
+    await cdp.waitUntil(($) => $.has('[data-testid="search-chip-kind"]'));
+    await cdp.waitUntil(
+      ($) =>
+        $.el('[data-testid="search-results"]')?.getAttribute('aria-busy') === 'false' &&
+        !$.has('[data-testid="search-group-upcoming"]'),
+    );
     expect(await titles('tasks')).toEqual(['Harbour checklist', 'Harbour fish']);
     // A chip edit is the user's own: no turn.
-    expect(await cdp.eval<number>(turns)).toBe(0);
+    expect(await cdp.evaluate(turns)).toBe(0);
 
-    await cdp.eval(
-      `document.querySelector('[data-testid="search-chip-kind"]').parentElement.querySelector('[data-testid="search-chip-remove"]').click()`,
+    await cdp.evaluate(($) =>
+      $.el('[data-testid="search-chip-kind"]')!
+        .parentElement!.querySelector<HTMLElement>('[data-testid="search-chip-remove"]')!
+        .click(),
     );
     await cdp.clickTestId('search-add-filter');
     await cdp.clickTestId('search-add-calendar');
     await cdp.clickTestId('search-filter-calendar-acc-e2e:cal-family');
     await cdp.pressEscape();
-    await cdp.waitFor(has('search-chip-calendar-acc-e2e:cal-family'));
-    await cdp.waitFor(SETTLED);
-    await cdp.waitFor(
-      `document.querySelectorAll('[data-testid="search-group-upcoming"] [data-testid="search-title"]').length === 1`,
+    await cdp.waitUntil(($) => $.has('[data-testid="search-chip-calendar-acc-e2e:cal-family"]'));
+    await cdp.waitUntil(settled);
+    await cdp.waitUntil(
+      ($) => $.count('[data-testid="search-group-upcoming"] [data-testid="search-title"]') === 1,
     );
     expect(await titles('upcoming')).toEqual(['Harbour walk']);
-    expect(await cdp.eval<boolean>(has('search-group-tasks'))).toBe(false);
+    expect(await cdp.evaluate(($) => $.has('[data-testid="search-group-tasks"]'))).toBe(false);
     await cdp.clickTestId('search-clear');
-    await cdp.waitFor(has('search-hint'));
+    await cdp.waitUntil(($) => $.has('[data-testid="search-hint"]'));
   });
 
   it('edits the dates by hand in the chip’s popover', async () => {
@@ -240,32 +256,39 @@ describe('Search filters', () => {
     await cdp.clickTestId('search-add-filter');
     await cdp.clickTestId('search-add-dates');
     const setDate = (testId: string, value: string) =>
-      cdp.eval(`(() => {
-        const input = document.querySelector('[data-testid="${testId}"]');
-        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-        setter.call(input, ${JSON.stringify(value)});
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-      })()`);
+      cdp.evaluate(
+        ($, id: string, date: string) => $.setValue(`[data-testid="${id}"]`, date),
+        testId,
+        value,
+      );
     // Picking When focuses From, as Place and People focus their field.
-    const FOCUSED = `document.activeElement?.closest('[role="dialog"]') ? document.activeElement.dataset.testid : 'outside'`;
-    await cdp.waitFor(`(${FOCUSED}) === 'search-filter-from'`);
+    const focused = () =>
+      document.activeElement?.closest('[role="dialog"]')
+        ? (document.activeElement as HTMLElement).dataset.testid
+        : 'outside';
+    await cdp.waitUntil(
+      () =>
+        (document.activeElement?.closest('[role="dialog"]')
+          ? (document.activeElement as HTMLElement).dataset.testid
+          : 'outside') === 'search-filter-from',
+    );
     await setDate('search-filter-from', utcDay(1));
-    await cdp.waitFor(has('search-chip-dates'));
+    await cdp.waitUntil(($) => $.has('[data-testid="search-chip-dates"]'));
     await setDate('search-filter-to', utcDay(2));
 
     // Tab steps through each date field's segments as Chromium does, and
     // wraps from To's last one to From — never out to the page behind.
     const press = async (shift: boolean) => {
-      const seen: Array<string> = [];
+      const seen: Array<string | undefined> = [];
       for (let count = 0; count < 16; count += 1) {
         await cdp.pressTab(shift);
-        seen.push(await cdp.eval<string>(FOCUSED));
+        seen.push(await cdp.evaluate(focused));
       }
       expect(
         seen.filter((field) => field !== 'search-filter-from' && field !== 'search-filter-to'),
       ).toEqual([]);
       // How many presses in a row each field kept, the partial first and last runs left out.
-      const runs: Array<{ field: string; length: number }> = [];
+      const runs: Array<{ field: string | undefined; length: number }> = [];
       for (const field of seen) {
         if (runs.at(-1)?.field === field) {
           runs.at(-1)!.length += 1;
@@ -289,21 +312,19 @@ describe('Search filters', () => {
     expect(backFrom.map((run) => run.length)).toEqual(backFrom.map(() => stops));
 
     await cdp.pressEscape();
-    await cdp.waitFor(SETTLED);
+    await cdp.waitUntil(settled);
     // Focus is back on "+ Filter", which opened the popover.
-    expect(await cdp.eval<string | undefined>(`document.activeElement?.dataset.testid`)).toBe(
-      'search-add-filter',
-    );
+    expect(
+      await cdp.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.testid),
+    ).toBe('search-add-filter');
     // Tomorrow's standup and the day after's planning; the tasks due on those days.
-    await cdp.waitFor(
-      `document.querySelectorAll('[data-testid="search-group-upcoming"] [data-testid="search-title"]').length === 2`,
+    await cdp.waitUntil(
+      ($) => $.count('[data-testid="search-group-upcoming"] [data-testid="search-title"]') === 2,
     );
     expect(await titles('upcoming')).toEqual(['Harbour standup', 'Harbour planning']);
     expect(await titles('tasks')).toEqual(['Harbour checklist', 'Harbour fish']);
     expect(
-      await cdp.eval<string>(
-        `document.querySelector('[data-testid="search-chip-dates"]').textContent`,
-      ),
+      await cdp.evaluate(($) => $.el('[data-testid="search-chip-dates"]')!.textContent),
     ).toContain('–');
   });
 });
