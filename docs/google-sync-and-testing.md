@@ -955,7 +955,7 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
 - **CI's window is 1024 px wide**; a local run opens 1280 × 800. A spec
   that clicks by geometry is checked at CI's size with the `window`
   launch option (`CALENDAR_E2E_WINDOW`).
-- **`cdp.eval` cannot test the CSP.** DevTools evaluation is exempt from
+- **`cdp.evaluate` cannot test the CSP.** DevTools evaluation is exempt from
   a page's eval rules, so `new Function(…)` through CDP succeeds under a
   policy that forbids it. Probe with an injected inline `<script>` that
   sets a flag (`flows.e2e.ts` › "runs the built renderer under the content
@@ -1273,7 +1273,7 @@ matches one of these):
   list. Open; before hardening the flow, check whether the app ignores a
   swipe during its layout animation.
 - **`appleCalendarReal` › "shows an event created outside the app…"**
-  times out in `locate('[title^="Solunivo ci event"]')` (or `waitFor`), and
+  times out in `locate('[title^="Solunivo ci event"]')` (or `waitUntil`), and
   the retry then fails `expected 'Solunivo ci event' to be 'Solunivo ci
   event edited'`: the view never repainted after the helper's
   `EKEventStoreChanged`. Open; rerun. Hardening belongs in that repaint.

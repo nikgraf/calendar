@@ -53,8 +53,9 @@ its windows from screen capture.
    - A phrase equal to a field's placeholder reads as typed text: pick
      another.
 3. Dark: `Emulation.setEmulatedMedia` with
-   `prefers-color-scheme: dark`, then `cdp.waitForRendered(...)` on
-   `document.documentElement.dataset.theme === 'dark'` before the capture.
+   `prefers-color-scheme: dark`, then
+   `cdp.waitUntilRendered(() => document.documentElement.dataset['theme'] === 'dark')`
+   before the capture.
    A background window takes the emulated scheme only once it draws a
    frame.
 4. Run it: `E2E=1 pnpm exec vp test run apps/desktop/e2e/_shot.e2e.ts`.
