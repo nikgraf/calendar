@@ -31,7 +31,7 @@ pnpm brand:build
 pnpm brand:check
 ```
 
-`brand:build` refreshes the two tracked app icons, `tokens/tokens.css` and `packages/core/src/theme/tokens.ts`, renders export sizes, checks 54 contrast pairs, and writes the complete distribution to `output/branding/solunivo-brand-kit/` and `output/branding/solunivo-brand-kit.zip`.
+`brand:build` refreshes the three tracked app icons (the macOS one, the iOS one and the iOS dev variant's `icon-dev.png`), `tokens/tokens.css` and `packages/core/src/theme/tokens.ts`, renders export sizes, checks the contrast pairs of both themes, and writes the complete distribution to `output/branding/solunivo-brand-kit/` and `output/branding/solunivo-brand-kit.zip`.
 
 `brand:check` regenerates those tracked files in a temporary directory and compares their bytes. It fails on stale assets or insufficient contrast without changing the working tree. When updating a master, include the regenerated app assets and CSS in the same commit.
 

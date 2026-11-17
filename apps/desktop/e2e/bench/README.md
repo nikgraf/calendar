@@ -1,6 +1,6 @@
 # Model bench
 
-The quick-add and refine pipelines on real models, side by side, scored
+The Assistant's phrases and follow-up turns on real models, side by side, scored
 by where a person would put the event. Measured, never gated: it prints
 a table, writes a report and passes. Never part of `pnpm test` or the
 e2e suite — it skips itself unless `MODEL_BENCH=1`.

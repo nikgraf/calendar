@@ -1,6 +1,6 @@
 # Desktop distribution: macOS testing builds
 
-Every push to `main` runs the `testing-build` job in `.github/workflows/ci.yml`
+Every push to `main` that changes desktop code runs the `testing-build` job in `.github/workflows/ci.yml`
 (on `xcode-27`, GitHub's macOS 27 image — the Swift helper needs the macOS
 27 SDK, and the packaged app needs macOS 27 or later: `LSMinimumSystemVersion`
 in `forge.config.cjs`, which Finder enforces with the system's own alert),
@@ -71,8 +71,8 @@ collects what changed between bumps; the decision log in
 The app needs macOS 27 or later; an older Mac refuses to open it with the
 system's own alert.
 
-1. Open the repo's **Actions** tab → latest green `CI` run on `main` (requires
-   repo read access).
+1. Open the repo's **Actions** tab → latest green `CI` run on `main` that has the
+   artifact (requires repo read access).
 2. Download the `Solunivo-testing-<sha>.zip` artifact.
 3. Unzip once to get `Solunivo.app`, then drag it to `/Applications`. It's
    notarized and stapled — no Gatekeeper hoops, first launch just works.

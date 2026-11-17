@@ -17,9 +17,12 @@ and the rules; the deep docs are listed at its end.
 - Invitee autocomplete from the device address book and Google contacts;
   contact birthdays as chips with device-local reminders; event reminders
   delivered as local notifications on both platforms.
-- On-device AI (Apple Foundation Models, no cloud): quick-add parsing,
-  "find a time", dictation, and capture of events from a pasted email
-  (⌘V on the Mac) or a shared screenshot (the iOS share sheet).
+- On-device AI, no cloud: the editor's Assistant reads what you type or
+  say with a model of the app's own (downloaded once, when asked for),
+  which also finds a time; Apple's on-device models do search sentences,
+  dictation, capture of events from a pasted email (⌘V on the Mac) or a
+  shared screenshot (the iOS share sheet), and find a time until the
+  app's model is there.
 - Search across events and tasks (⌘F on the Mac, the Search tab on iOS);
   settings export/import and a watched settings file on the Mac.
 - Experimental: calendar mirrors (share a reduced copy of your calendars)
@@ -46,16 +49,18 @@ there is no native-module rebuild step.
 
 Optional, for the desktop AI features and the Apple bridges (Reminders,
 Calendar, Contacts, Maps): build the Swift helper once (requires Xcode 27,
-for the macOS 27 SDK; the AI needs Apple Silicon with Apple Intelligence
-enabled at runtime):
+for the macOS 27 SDK; search sentences, capture and find a time's
+fallback need Apple Silicon with Apple Intelligence enabled at runtime),
+and `llama-server` for the Assistant's own model:
 
 ```sh
 pnpm --filter @calendar/desktop build:helper
+pnpm --filter @calendar/desktop build:llama
 ```
 
-Without it the app runs fine — the AI field says why the model is
-unavailable, and the Apple connections in Settings → Accounts report the
-bridge as unavailable.
+Without them the app runs fine — the AI field says why the model is
+unavailable, the Assistant says this build cannot run its model, and the Apple
+connections in Settings → Accounts report the bridge as unavailable.
 
 ### An agent's machine
 
