@@ -328,6 +328,12 @@ export interface EventMutationsShape {
   /** Drains due pending ops (serialized); safe to call concurrently. */
   readonly processPendingOps: () => Effect.Effect<void>;
   /**
+   * Before an account is removed, which takes its queued ops with it: a
+   * copy a move or a conversion queued there will never land, so what it
+   * was copied from stays — put back on Google, or made again in Apple.
+   */
+  readonly releaseAccountCopies: (accountId: string) => Effect.Effect<void, SqlError>;
+  /**
    * Places a Google task inside its list (`tasks.move` with `parent` /
    * `previous`): the row takes its new parent and a provisional position
    * at once, the move is queued, and once it lands the list's order is

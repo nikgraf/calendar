@@ -10,6 +10,7 @@ import {
   canonicalReminders,
   type ConvertEventToTaskParams,
   type ConvertTaskToEventParams,
+  type CopySource,
   type EventDraft,
   EventRecord,
   EventReminders,
@@ -54,7 +55,7 @@ import { Cause, Clock, Context, Effect, Layer, Semaphore } from 'effect';
 import { Reactivity } from 'effect/reactivity/Reactivity';
 import { SqlClient } from 'effect/sql/SqlClient';
 import type { SqlError } from 'effect/sql/SqlError';
-import { isPulledCopy, makeApplyOp, retargetOp } from './applyOp.ts';
+import { type AppleCopySource, isPulledCopy, makeApplyOp, retargetOp } from './applyOp.ts';
 import { AppleCalendarEvents, deviceTimeZone } from './appleCalendarEvents.ts';
 import { makeAppleEventMutations } from './appleEventMutations.ts';
 import { countAppleChangedOccurrences, findAppleOccurrence } from './appleOccurrence.ts';
@@ -109,6 +110,7 @@ const foldIntoCreate = (create: PendingOp, payload: EventRecord) =>
     accountId: create.accountId,
     attempts: 0,
     calendarId: create.calendarId,
+    copySource: create.copySource,
     createdAt: create.createdAt,
     eventId: create.eventId,
     id: generateEventId(),
@@ -240,6 +242,30 @@ const ensureOrganizer = (record: EventRecord, ownEmail: string | undefined, cale
 /** Which event: the source of a move or a conversion. */
 type EventRef = Pick<MoveEventParams, 'accountId' | 'calendarId' | 'eventId'>;
 
+/** The op kinds that queue a copy toward Google, and those that delete its source there. */
+const COPY_KINDS: ReadonlySet<PendingOp['kind']> = new Set(['create', 'createTask']);
+const DELETE_KINDS: ReadonlySet<PendingOp['kind']> = new Set(['delete', 'deleteTask']);
+
+/**
+ * A move's or a conversion's source (`crossStore`): where it sits — its
+ * account, calendar or list, and id — and, for an Apple one, the item as
+ * it was (`kept`), made again if its copy toward Google does not land.
+ */
+interface CopyFrom {
+  readonly accountId: string;
+  readonly containerId: string;
+  readonly id: string;
+  readonly kept: AppleCopySource | undefined;
+}
+
+/** A task as the source of a move or a conversion. */
+const taskFrom = (task: TaskRecord, provider: 'apple' | 'google'): CopyFrom => ({
+  accountId: task.accountId,
+  containerId: task.listId,
+  id: task.id,
+  kept: provider === 'apple' ? { kind: 'reminder', task } : undefined,
+});
+
 interface MoveSource {
   /** Google only: what the master's `useDefault` resolves to on its calendar. */
   readonly defaultReminders: ReadonlyArray<ReminderOverride> | undefined;
@@ -257,6 +283,25 @@ interface MoveSource {
   /** Apple only: the event's URL (non-meeting URLs are not on the record). */
   readonly url: string | undefined;
 }
+
+/** An event (the series, or one occurrence) as the source of a move or a conversion. */
+const eventFrom = (
+  params: EventRef,
+  provider: 'apple' | 'google',
+  source: MoveSource,
+): CopyFrom => ({
+  accountId: params.accountId,
+  containerId: params.calendarId,
+  id: params.eventId,
+  kept:
+    provider === 'apple'
+      ? {
+          event: source.master,
+          kind: 'appleEvent',
+          ...(source.url === undefined ? {} : { url: source.url }),
+        }
+      : undefined,
+});
 
 /** The new event a copy-move creates: never guests, links carried where they fit. */
 const copyDraft = (
@@ -517,24 +562,90 @@ const make: Effect.Effect<
     body: Effect.Effect<A, E, R>,
   ): Effect.Effect<A, E | SqlError, R> => Effect.tap(sql.withTransaction(body), () => kick);
 
+  const queuedIds = Effect.map(pendingOpRepo.listAll(), (ops) => new Set(ops.map((op) => op.id)));
+  /** The ops of `kinds` queued since `before` was read, in queue order. */
+  const queuedSince = (before: ReadonlySet<string>, kinds: ReadonlySet<PendingOp['kind']>) =>
+    Effect.map(pendingOpRepo.listAll(), (ops) =>
+      ops.filter((op) => !before.has(op.id) && kinds.has(op.kind)),
+    );
+
   /**
    * Copy, then delete, across two stores — a move or a conversion. A
-   * failure between the two leaves a duplicate, never nothing. Google →
-   * Google runs both queue writes in one transaction; toward Google the
-   * create is queued in a transaction and the EventKit delete follows;
-   * toward Apple the EventKit create comes first and the queued delete
-   * is transactional.
+   * failure between the two leaves a duplicate, never nothing. Toward
+   * Apple the EventKit create comes first and the queued delete is
+   * transactional. Toward Google the copy is only queued, and Google can
+   * still turn it down, so the source outlasts it (`copySource`): a
+   * Google source's deletes are queued in the same transaction and held
+   * until the copy lands (applyOp copyGate); an Apple source is deleted
+   * from EventKit once the copy is queued and kept on it as it was, to be
+   * made again (applyOp releaseCopySource) — unless that delete failed,
+   * and the source is still there. A Google source that is itself a copy
+   * not yet sent hands what it came from on to the new copy.
    */
   const crossStore = <A, E1, E2, R1, R2>(
     route: { readonly source: 'apple' | 'google'; readonly target: 'apple' | 'google' },
+    from: CopyFrom,
     create: Effect.Effect<A, E1, R1>,
     remove: Effect.Effect<unknown, E2, R2>,
-  ): Effect.Effect<A, E1 | E2 | SqlError, R1 | R2> =>
-    route.source === 'google' && route.target === 'google'
-      ? transactional(Effect.tap(create, () => remove))
-      : route.target === 'google'
-        ? Effect.tap(transactional(create), () => remove)
-        : Effect.tap(create, () => transactional(remove));
+  ): Effect.Effect<A, E1 | E2 | SqlError, R1 | R2> => {
+    if (route.target === 'apple') {
+      return Effect.tap(create, () => transactional(remove));
+    }
+    if (route.source === 'google') {
+      return transactional(
+        Effect.gen(function* () {
+          const before = yield* queuedIds;
+          const own = (yield* pendingOpRepo.listForEvent({
+            accountId: from.accountId,
+            calendarId: from.containerId,
+            eventId: from.id,
+          })).filter((op) => COPY_KINDS.has(op.kind) && op.copySource !== undefined);
+          const created = yield* create;
+          const copies = yield* queuedSince(before, COPY_KINDS);
+          yield* remove;
+          const deletes = yield* queuedSince(before, DELETE_KINDS);
+          const after = yield* queuedIds;
+          const source: CopySource | undefined =
+            deletes.length > 0
+              ? { kind: 'held', opIds: deletes.map((op) => op.id) }
+              : own.find((op) => !after.has(op.id))?.copySource;
+          if (source) {
+            yield* pendingOpRepo.setCopySource(
+              copies.map((op) => op.id),
+              source,
+            );
+          }
+          return created;
+        }),
+      );
+    }
+    // The drain waits until EventKit answered — its gate is held, since a
+    // kick from elsewhere or a sync pass would send the copy too: one Google
+    // turned down at once made the source again before its delete ran, and
+    // a delete that then failed left two of it.
+    return gate
+      .withPermits(1)(
+        Effect.gen(function* () {
+          const { copy, created } = yield* sql.withTransaction(
+            Effect.gen(function* () {
+              const before = yield* queuedIds;
+              const created = yield* create;
+              // The item's own create; a completion queued behind it is no copy.
+              const [copy] = yield* queuedSince(before, COPY_KINDS);
+              if (copy && from.kept) {
+                yield* pendingOpRepo.setCopySource([copy.id], from.kept);
+              }
+              return { copy, created };
+            }),
+          );
+          yield* Effect.tapError(remove, () =>
+            copy ? Effect.ignore(pendingOpRepo.setCopySource([copy.id], undefined)) : Effect.void,
+          );
+          return created;
+        }),
+      )
+      .pipe(Effect.ensuring(kick));
+  };
 
   const loadMaster = (accountId: string, calendarId: string, masterId: string) =>
     Effect.gen(function* () {
@@ -635,6 +746,7 @@ const make: Effect.Effect<
 
   const {
     apply: applyOp,
+    releaseAccountCopies,
     releaseRow,
     settleDiscardedMove,
   } = makeApplyOp({
@@ -644,10 +756,46 @@ const make: Effect.Effect<
     eventRepo,
     notifyDropped: Effect.ignore(reactivity.invalidate([DROPPED_NOTICE_KEY])),
     pendingOpRepo,
+    // Defined with the moves below; only a drain long after setup calls it.
+    restoreCopySource: (source) => Effect.suspend(() => restoreSource(source)),
     taskRepo,
     tasksClient,
     transaction: sql.withTransaction,
   });
+
+  /**
+   * A copy landed, so the source deletes it held may go now. One may wait
+   * behind the sent create of an earlier copy — the item was moved on
+   * before that create was answered: this copy landing settles the move,
+   * so that create no longer puts its own source back if it then fails
+   * (two of it), and the source deletes it held go too.
+   */
+  const settleHeld = (opIds: ReadonlyArray<string>) =>
+    Effect.gen(function* () {
+      for (const opId of opIds) {
+        const held = yield* pendingOpRepo.getById(opId);
+        if (!held) {
+          continue;
+        }
+        const earlier = (yield* pendingOpRepo.listForEvent({
+          accountId: held.accountId,
+          calendarId: held.calendarId,
+          eventId: held.eventId,
+        })).filter((other) => COPY_KINDS.has(other.kind) && other.copySource !== undefined);
+        yield* pendingOpRepo.setCopySource(
+          earlier.map((other) => other.id),
+          undefined,
+        );
+        for (const other of earlier) {
+          if (other.copySource?.kind === 'held') {
+            for (const sourceDelete of other.copySource.opIds) {
+              yield* pendingOpRepo.makeDue(sourceDelete);
+            }
+          }
+        }
+        yield* pendingOpRepo.makeDue(opId);
+      }
+    });
 
   const processPendingOps = (): Effect.Effect<void> =>
     gate
@@ -667,6 +815,11 @@ const make: Effect.Effect<
             const outcome = yield* applyOp(op);
             if (outcome === 'done') {
               yield* pendingOpRepo.remove(op.id);
+              // The source deletes this copy held may go now (applyOp
+              // copyGate); a copy that did not land took them back.
+              if (op.copySource?.kind === 'held') {
+                yield* settleHeld(op.copySource.opIds);
+              }
               // A series split off this one waits for it no more (splitSeries.ts).
               if (holdsSplit(op)) {
                 yield* releaseSplits(taken, op);
@@ -709,7 +862,11 @@ const make: Effect.Effect<
     Effect.gen(function* () {
       const queued = yield* pendingOpRepo.getById(opId);
       const splits = queued !== undefined && (yield* waitingSplits(taken, queued));
-      const sent = yield* discard(opId);
+      // A copy's discard puts its source back: under the drain's gate, so
+      // a refusal the drain is putting back meanwhile cannot do it twice.
+      const sent = yield* queued?.copySource === undefined
+        ? discard(opId)
+        : gate.withPermits(1)(discard(opId));
       if (splits) {
         yield* kick;
       }
@@ -1517,6 +1674,10 @@ const make: Effect.Effect<
 
     processPendingOps,
 
+    // Under the drain's gate: a copy whose request is out settles first.
+    releaseAccountCopies: (accountId) =>
+      gate.withPermits(1)(sql.withTransaction(releaseAccountCopies(accountId))),
+
     resolveConflict,
 
     respondToEvent: ({ accountId, calendarId, eventId, response }) =>
@@ -2070,6 +2231,7 @@ const make: Effect.Effect<
       const draft = copyDraft(source, target, route.target);
       yield* crossStore(
         route,
+        eventFrom(params, route.source, source),
         createIn(route.target, draft),
         deleteFrom(route.source, params, source.master),
       );
@@ -2084,6 +2246,49 @@ const make: Effect.Effect<
       const source = yield* loadSource(params, route.source, true);
       return moveLoss(source.master, route, source.modifiedOccurrences);
     });
+
+  /**
+   * An Apple source made again, as it was when it was copied toward
+   * Google (applyOp releaseCopySource): the copy will not land. A new
+   * item — EventKit gives it a new identifier — in the calendar or list it
+   * came from; a series without the occurrences changed on their own,
+   * which the copy did not carry either.
+   */
+  const restoreSource = (source: AppleCopySource): Effect.Effect<void> =>
+    Effect.gen(function* () {
+      if (source.kind === 'appleEvent') {
+        const { event, url } = source;
+        yield* apple.createEvent(
+          copyDraft(
+            { defaultReminders: undefined, master: event, modifiedOccurrences: 0, url },
+            { accountId: event.accountId, calendarId: event.calendarId },
+            'apple',
+          ),
+        );
+        return;
+      }
+      const { task } = source;
+      const created = yield* reminders.createTask({
+        accountId: task.accountId,
+        alarms: task.alarms,
+        dueDate: task.dueDate,
+        dueTime: task.dueTime,
+        notes: task.notes,
+        priority: task.priority,
+        recurrence: task.recurrenceUnsupported ? undefined : task.recurrence,
+        taskListId: task.listId,
+        title: task.title,
+        url: task.url,
+      });
+      yield* completedLike('apple', created, task);
+    }).pipe(
+      Effect.catchCause((cause) =>
+        Effect.logWarning('a copy did not land and its source was not made again', {
+          cause: String(Cause.squash(cause)),
+          kind: source.kind,
+        }),
+      ),
+    );
 
   /** A created task completed like its source, if that was done. */
   const completedLike = (provider: 'apple' | 'google', created: TaskRecord, like: TaskRecord) =>
@@ -2213,6 +2418,7 @@ const make: Effect.Effect<
       // The delete takes the subtasks first, as Google would with their parent.
       return yield* crossStore(
         { source: sourceProvider, target: targetProvider },
+        taskFrom(source, sourceProvider),
         createIn(targetProvider),
         deleteTaskFrom(sourceProvider, { accountId, taskId, taskListId }),
       );
@@ -2267,6 +2473,7 @@ const make: Effect.Effect<
       yield* ensureOrganizer(source.master, account?.email, calendarId);
       return yield* crossStore(
         { source: sourceProvider, target: targetProvider },
+        eventFrom(params, sourceProvider, source),
         createTaskIn(targetProvider, {
           ...draft,
           accountId: target.accountId,
@@ -2294,6 +2501,7 @@ const make: Effect.Effect<
       const targetProvider = yield* providerOf(draft.accountId);
       return yield* crossStore(
         { source: sourceProvider, target: targetProvider },
+        taskFrom(source, sourceProvider),
         createIn(targetProvider, draft),
         deleteTaskFrom(sourceProvider, { accountId, taskId, taskListId }),
       );

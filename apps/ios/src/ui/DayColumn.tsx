@@ -1,5 +1,6 @@
 import {
   calendarTaskKey,
+  eventIdentity,
   type EventRecord,
   formatPlainTime,
   layoutDayColumn,
@@ -99,7 +100,7 @@ export function DayColumn({
   const styles = useStyles(makeStyles);
   const boxes = layoutDayColumn(
     events
-      .map((event) => timedEventBox(event, `${event.calendarId}:${event.id}`, date, timeZone))
+      .map((event) => timedEventBox(event, eventIdentity(event), date, timeZone))
       .concat(
         timedTasks.flatMap((task) => {
           const slot = timedTaskSlot(task);
@@ -107,7 +108,7 @@ export function DayColumn({
         }),
       ),
   );
-  const byId = new Map(events.map((event) => [`${event.calendarId}:${event.id}`, event]));
+  const byId = new Map(events.map((event) => [eventIdentity(event), event]));
   const tasksById = new Map(timedTasks.map((task) => [calendarTaskKey(task), task]));
 
   // The slot being drawn. React state only changes when the snapped slot

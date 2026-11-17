@@ -145,7 +145,12 @@ describe('Words that change nothing', () => {
     expect(await cdp.eval<Array<boolean>>(dimmed)).toEqual([true, false]);
     expect(await cdp.eval<string>(stepPosition)).toBe('1 of 1');
 
-    // One is said only when clicked: it is a step like any phrase.
+    // One is said only when clicked: it is a step like any phrase. The
+    // readings stay disabled while the recogniser finishes after Stop (no
+    // offered words while a phrase may still come), so wait for them.
+    await cdp.waitFor(
+      `[...document.querySelectorAll('[data-testid="assistant-reading"]')].every((each) => !each.disabled)`,
+    );
     await cdp.clickTestId('assistant-reading');
     await cdp.waitFor(`${stepPosition} === '2 of 2'`);
     expect(await cdp.eval<string>(cardTime)).toBe('14:00–15:0013:00–14:00');

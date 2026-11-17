@@ -376,6 +376,26 @@ export class CarriedText extends Schema.Class<CarriedText>('CarriedText')({
   ),
 }) {}
 
+/**
+ * What a copy queued toward Google by a move or a conversion was copied
+ * from (`PendingOp.copySource`), so the source outlasts a copy Google
+ * turns down. A Google source's deletes are queued with it and `held`
+ * until the copy lands; a copy that will not land takes them back. An
+ * Apple source left EventKit when the copy was queued: it is kept as it
+ * was (`appleEvent`, with the URL EventKit does not put on the record;
+ * `reminder`) and made again.
+ */
+export const CopySource = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal('held'), opIds: Schema.Array(Schema.String) }),
+  Schema.Struct({
+    event: EventRecord,
+    kind: Schema.Literal('appleEvent'),
+    url: Schema.optional(Schema.String),
+  }),
+  Schema.Struct({ kind: Schema.Literal('reminder'), task: TaskRecord }),
+]);
+export type CopySource = Schema.Schema.Type<typeof CopySource>;
+
 export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
   accountId: Schema.String,
   attempts: Schema.Number,
@@ -422,6 +442,8 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
    * the user keeps their version or takes Google's.
    */
   conflictAt: Schema.optional(Schema.Number),
+  /** Kind 'create'/'createTask', the copy of a move or a conversion: what it was copied from. */
+  copySource: Schema.optional(CopySource),
   createdAt: Schema.Number,
   /**
    * Set just before a non-idempotent network call (createTask). A re-run

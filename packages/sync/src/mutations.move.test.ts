@@ -869,7 +869,186 @@ describe('moveEvent across accounts and providers', () => {
         'acc-2:create',
       ]);
       expect(yield* rowAt('acc-1', 'cal-1', 'evt-a')).toBeNull();
-    }).pipe(Effect.provide(testLayer(recordingGoogle([]), appleFake())));
+    }).pipe(noYield, Effect.provide(testLayer(recordingGoogle([]), appleFake())));
+  });
+});
+
+/** Google turns every new event down, as for a calendar it no longer lets us write. */
+const refusing = (calls: Array<Call>) =>
+  recordingGoogle(calls, {
+    insertEvent: ({ calendarId, event }) => {
+      calls.push({ calendarId, detail: event.summary, kind: 'insert' });
+      return Effect.fail(new GoogleApiError({ message: 'forbidden', status: 403 }));
+    },
+  });
+
+describe('a copy toward Google that does not land', () => {
+  const makeDue = Effect.gen(function* () {
+    const ops = yield* PendingOpRepo;
+    for (const op of yield* ops.listAll()) {
+      yield* ops.markFailed(op.id, op.attempts, 0, 'test');
+    }
+  });
+
+  it.effect('makes an Apple event again when Google turns its copy down', () => {
+    const apple = appleFake();
+    const calls: Array<Call> = [];
+    return Effect.gen(function* () {
+      yield* seed();
+      const mutations = yield* EventMutations;
+      yield* mutations.moveEvent(
+        move([APPLE_CALENDAR_ACCOUNT_ID, 'ek-home', 'ek-single'], ['acc-1', 'cal-2']),
+      );
+      expect(apple.state.series.has('ek-single')).toBe(false);
+      expect((yield* queued)[0]?.copySource?.kind).toBe('appleEvent');
+      yield* mutations.processPendingOps();
+      expect(calls.map((call) => call.kind)).toEqual(['insert']);
+      expect(yield* queued).toEqual([]);
+      expect(yield* rowAt('acc-1', 'cal-2', 'ek-single')).toBeNull();
+      // A new EventKit item, where it was and as it was.
+      const remade = [...apple.state.series.values()].filter(
+        (entry) => entry.event.title === 'Dentist',
+      );
+      expect(remade).toHaveLength(1);
+      expect(remade[0]?.event.calendarId).toBe('ek-home');
+      expect(remade[0]?.event.location).toBe('Dr. Weiss');
+      expect(remade[0]?.event.url).toBe('https://example.com/agenda');
+    }).pipe(noYield, Effect.provide(testLayer(refusing(calls), apple)));
+  });
+
+  it.effect('makes an Apple event again when its copy is discarded', () => {
+    const apple = appleFake();
+    return Effect.gen(function* () {
+      yield* seed();
+      const mutations = yield* EventMutations;
+      yield* mutations.moveEvent(
+        move([APPLE_CALENDAR_ACCOUNT_ID, 'ek-home', 'ek-single'], ['acc-1', 'cal-2']),
+      );
+      const [copy] = yield* queued;
+      yield* mutations.discardPendingOp(copy!.id);
+      expect(
+        [...apple.state.series.values()].filter((entry) => entry.event.title === 'Dentist'),
+      ).toHaveLength(1);
+    }).pipe(noYield, Effect.provide(testLayer(recordingGoogle([]), apple)));
+  });
+
+  it.effect('leaves an Apple event gone when the user deletes the copy before it goes', () => {
+    const apple = appleFake();
+    return Effect.gen(function* () {
+      yield* seed();
+      const mutations = yield* EventMutations;
+      yield* mutations.moveEvent(
+        move([APPLE_CALENDAR_ACCOUNT_ID, 'ek-home', 'ek-single'], ['acc-1', 'cal-2']),
+      );
+      const [copy] = yield* queued;
+      yield* mutations.deleteEvent({
+        accountId: 'acc-1',
+        calendarId: 'cal-2',
+        eventId: copy!.eventId,
+      });
+      yield* mutations.processPendingOps();
+      expect(yield* queued).toEqual([]);
+      expect(
+        [...apple.state.series.values()].filter((entry) => entry.event.title === 'Dentist'),
+      ).toHaveLength(0);
+    }).pipe(noYield, Effect.provide(testLayer(recordingGoogle([]), apple)));
+  });
+
+  it.effect('holds a Google source until its copy in another account lands', () => {
+    let up = false;
+    const calls: Array<Call> = [];
+    const google = recordingGoogle(calls, {
+      insertEvent: ({ calendarId, event }) => {
+        calls.push({ calendarId, detail: event.summary, kind: 'insert' });
+        return up
+          ? Effect.succeed({ ...(event as GcalEvent), etag: '"new"', status: 'confirmed' })
+          : Effect.fail(new ApiUnavailableError({ cause: 'offline' }));
+      },
+    });
+    return Effect.gen(function* () {
+      yield* seed([googleEvent()]);
+      const mutations = yield* EventMutations;
+      yield* mutations.moveEvent(move(['acc-1', 'cal-1', 'evt-a'], ['acc-2', 'cal-3']));
+      yield* mutations.processPendingOps();
+      // The copy did not go, so neither does the delete of the source.
+      expect(calls.map((call) => call.kind)).toEqual(['insert']);
+      expect((yield* queued).find((op) => op.kind === 'delete')?.lastError).toBe(
+        'waiting for its copy to land',
+      );
+      up = true;
+      yield* makeDue;
+      yield* mutations.processPendingOps();
+      expect(calls.map((call) => `${call.kind}:${call.calendarId}`)).toEqual([
+        'insert:cal-3',
+        'insert:cal-3',
+        'delete:cal-1',
+      ]);
+      expect(yield* queued).toEqual([]);
+    }).pipe(noYield, Effect.provide(testLayer(google, appleFake())));
+  });
+
+  it.effect('puts a Google source back when Google turns its copy down', () => {
+    const calls: Array<Call> = [];
+    return Effect.gen(function* () {
+      yield* seed([googleEvent()]);
+      const mutations = yield* EventMutations;
+      yield* mutations.moveEvent(move(['acc-1', 'cal-1', 'evt-a'], ['acc-2', 'cal-3']));
+      expect(yield* rowAt('acc-1', 'cal-1', 'evt-a')).toBeNull();
+      yield* mutations.processPendingOps();
+      yield* makeDue;
+      yield* mutations.processPendingOps();
+      // Never deleted on Google, and back here as Google has it.
+      expect(calls.map((call) => call.kind)).toEqual(['insert']);
+      expect(yield* queued).toEqual([]);
+      const source = yield* rowAt('acc-1', 'cal-1', 'evt-a');
+      expect(source?.syncStatus).toBe('synced');
+      expect(source?.title).toBe('Planning');
+    }).pipe(noYield, Effect.provide(testLayer(refusing(calls), appleFake())));
+  });
+
+  it.effect('a copy moved on before it went still holds the first source', () => {
+    const calls: Array<Call> = [];
+    return Effect.gen(function* () {
+      yield* seed([googleEvent()]);
+      const mutations = yield* EventMutations;
+      yield* mutations.moveEvent(move(['acc-1', 'cal-1', 'evt-a'], ['acc-2', 'cal-3']));
+      const copy = (yield* queued).find((op) => op.kind === 'create')!;
+      // Onwards, back into the first account: the unsent copy goes, its hold passes on.
+      yield* mutations.moveEvent(move(['acc-2', 'cal-3', copy.eventId], ['acc-1', 'cal-2']));
+      const ops = yield* queued;
+      expect(ops.map((op) => `${op.accountId}:${op.kind}`).sort()).toEqual([
+        'acc-1:create',
+        'acc-1:delete',
+      ]);
+      const sourceDelete = ops.find((op) => op.kind === 'delete')!;
+      expect(ops.find((op) => op.kind === 'create')?.copySource).toEqual({
+        kind: 'held',
+        opIds: [sourceDelete.id],
+      });
+      yield* mutations.processPendingOps();
+      yield* makeDue;
+      yield* mutations.processPendingOps();
+      expect(calls.map((call) => call.kind)).toEqual(['insert']);
+      expect((yield* rowAt('acc-1', 'cal-1', 'evt-a'))?.title).toBe('Planning');
+    }).pipe(noYield, Effect.provide(testLayer(refusing(calls), appleFake())));
+  });
+
+  it.effect('deleting the copy before it goes deletes the Google source too', () => {
+    const calls: Array<Call> = [];
+    return Effect.gen(function* () {
+      yield* seed([googleEvent()]);
+      const mutations = yield* EventMutations;
+      yield* mutations.moveEvent(move(['acc-1', 'cal-1', 'evt-a'], ['acc-2', 'cal-3']));
+      const copy = (yield* queued).find((op) => op.kind === 'create')!;
+      yield* mutations.deleteEvent({
+        accountId: 'acc-2',
+        calendarId: 'cal-3',
+        eventId: copy.eventId,
+      });
+      yield* mutations.processPendingOps();
+      expect(calls.map((call) => `${call.kind}:${call.calendarId}`)).toEqual(['delete:cal-1']);
+      expect(yield* queued).toEqual([]);
+    }).pipe(noYield, Effect.provide(testLayer(recordingGoogle(calls), appleFake())));
   });
 });
 

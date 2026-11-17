@@ -1,5 +1,6 @@
 import {
   CarriedText,
+  CopySource,
   type EventRecord,
   EventRecord as EventRecordSchema,
   type TaskRecord,
@@ -19,6 +20,9 @@ export const eventListJson = (events: ReadonlyArray<EventRecord>): unknown =>
 
 export const taskPayloadJson = (task: TaskRecord): unknown =>
   Schema.encodeSync(TaskRecordSchema)(task);
+
+export const copySourceJson = (source: CopySource): unknown =>
+  Schema.encodeSync(CopySource)(source);
 
 export const carriedTextJson = (carried: CarriedText): unknown =>
   Schema.encodeSync(CarriedText)(carried);

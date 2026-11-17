@@ -4,6 +4,7 @@ import {
   birthdayChipLabel,
   buildMonthGrid,
   calendarTaskKey,
+  eventIdentity,
   type EventRecord,
   formatClockTime,
   groupByDate,
@@ -156,12 +157,12 @@ export function MonthView({
     const color = colorOf(event);
     const tint = tintOf(color);
     const look = eventLook(event);
-    const selected = selectedKey === `${event.calendarId}:${event.id}`;
+    const selected = selectedKey === eventIdentity(event);
     return (
       <button
         className={`${CHIP} ${selected ? 'ring-2 ring-primary' : ''} ${look.declined ? 'opacity-60' : ''}`}
         data-color={color}
-        key={`${event.calendarId}:${event.id}`}
+        key={eventIdentity(event)}
         onClick={(mouse) => {
           mouse.stopPropagation();
           onEventClick(event);

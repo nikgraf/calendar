@@ -180,7 +180,11 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
       const current = yield* taskRepo.get(accountId, taskListId, taskId);
       yield* taskRepo.removeTask(accountId, taskListId, taskId);
       // Everything queued for this task is moot now — and if its create
-      // never pushed, the task never existed upstream: no server op.
+      // never pushed, the task never existed upstream: no server op. A
+      // create that went out may have landed with its answer lost: it
+      // stays, and the delete waits behind it on the temp id. Sent again,
+      // it only looks for what landed (applyOp sendCreateTask), and the
+      // delete then takes Google's id.
       const queued = yield* opsForEvent(accountId, taskListId, taskId);
       const beforeTask = current ? acknowledgedTask(queued, current, accountId) : undefined;
       let unsentCreate = false;
@@ -192,6 +196,9 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
           continue;
         }
         if (queuedOp.kind === 'createTask') {
+          if (queuedOp.dispatchedAt !== undefined) {
+            continue;
+          }
           unsentCreate = true;
         }
         yield* pendingOpRepo.remove(queuedOp.id);
