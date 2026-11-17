@@ -23,8 +23,10 @@ FP=$(APP_VARIANT=development npx expo-updates fingerprint:generate --platform io
 SCRATCH=<your scratch directory>   # logs, set-aside databases, probe files
 ```
 
-- Nothing booted: pick an iPhone from `xcrun simctl list devices
-  available`, `xcrun simctl boot <udid>`, `xcrun simctl bootstatus <udid>`.
+- Nothing booted: `bash e2e/ci/prepare-simulator.sh boot` starts the
+  one CI uses (an iPhone 18 Pro on the selected Xcode's iOS runtime; not
+  the iPhone Duo, whose runtime of its own sorts last), then
+  `UDID=<the udid it printed>` and `xcrun simctl bootstatus "$UDID"`.
   Use that one simulator for everything; erase it (Clean state) rather
   than create another.
 - The app's database is `$(xcrun simctl get_app_container "$UDID" $APP
@@ -104,11 +106,10 @@ SIMULATOR_UDID=$UDID node e2e/ci/run-flows.ts shard1 $(node e2e/ci/shard-flows.m
   $?`. Without `E2E_APP`, `run-flows.ts` reruns a lost flow without
   resetting anything; each attempt's output is in
   `~/.maestro/tests/<label>-<n>/`.
-- CI runs iOS 26.5. On an iOS 27 runtime two things differ: XCTest's
-  typing hides the keyboard while the field keeps focus
+- CI runs iOS 27.2 on an iPhone 18 Pro (Xcode 27.2), as a local run
+  does. XCTest's typing hides the keyboard while the field keeps focus
   (`common/dismiss-keyboard.yaml` taps twice for it), and the Search tab
-  opens with its field active. A failure that shows on one runtime only
-  says which in its report.
+  opens with its field active.
 
 ## Run against Metro (dev client)
 
