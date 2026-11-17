@@ -562,7 +562,7 @@ yesterday, `Pacific/Kiritimati` as tomorrow after 10:00 UTC).
   beside them (`writesDown` holds every write at a 503).
 - AI pipelines never hit a real model: the seams take a fake
   `LanguageModel`/`SpeechToText`/`TextRecognizer` returning canned JSON
-  (`packages/ai/*.test.ts`). The e2e suites use the shared fixture model
+  (`packages/ai/src/*.test.ts`). The e2e suites use the shared fixture model
   (`makeFixtureLanguageModel`, `fixtureTextRecognizer`): one event per
   line, `Title | +N or YYYY-MM-DD | HH:MM-HH:MM | Location`, with `+N`
   counted from today so no spec computes a date. It answers the
@@ -819,16 +819,17 @@ per file and run in file order — later tests must tolerate earlier
 tests' data (relative assertions, unique titles). The harness always
 sets `CALENDAR_REMINDERS=off`, `CALENDAR_CONTACTS=off`,
 `CALENDAR_APPLE_CALENDAR=off`, `CALENDAR_GEO=off`,
-`CALENDAR_CAPTURE_WATCH=off`, `CALENDAR_NOTIFICATIONS=off` and
-`CALENDAR_ONBOARDING=off`, points `CALENDAR_SETTINGS_FILE` and
+`CALENDAR_CAPTURE_WATCH=off`, `CALENDAR_NOTIFICATIONS=off`,
+`CALENDAR_ONBOARDING=off` and `CALENDAR_ASSISTANT_MODEL=off`, points `CALENDAR_SETTINGS_FILE` and
 `CALENDAR_AGENT_SOCKET` under the temp profile, sets
 `CALENDAR_E2E_INPUT=cdp`, and passes Chromium's `--use-mock-keychain`, so
 `safeStorage` (tokens, a served model's key) never touches the login
 keychain: a new Electron binary used to stop the run on macOS's keychain
 access dialog; `launchApp(seed, options)` opts a spec into a
 fixture or a real bridge (`appleCalendar`, `camera`, `captureWatch`,
-`contacts`, `geo`, `google`, `microphone`, `model`, `onboarding`,
-`reminders`, `agents`, `settingsFile`, `window`). Under the `google` fixture "Add
+`contacts`, `geo`, `google`, `microphone`, `model`, `assistantModel`,
+`modelProvider`, `onboarding`, `reminders`, `agents`, `settingsFile`,
+`window`, and `env` for anything else). Under the `google` fixture "Add
 Google Account" signs in the fixture's `signIn` account (else its first)
 with the scopes asked for, no browser. The `reminders` and `appleCalendar` fixtures'
 writes can be held (`App.holdEventKitWrites`, a marker file under the
@@ -850,8 +851,9 @@ in `qrReader`.
 
 The specs: `flows` (rendering, views, trackpad pan, editor CRUD, drag
 move/resize/cancel, slot drag, recurring scopes, RSVP, visibility,
-calendar color, month view, task lane and editor, the sync footer, the
-privacy modal, the settings window, the inspector and inline editor, ⌘K);
+calendar color, month view, task lane and editor, the sync footer,
+screen privacy in the settings window, the capture hint, the inspector
+and inline editor);
 `capture` (paste-to-drafts on the fixture model); `handsFree` (one
 click of the microphone: the first phrase's words show while it is
 said, two phrases land when their words stop, the form
@@ -927,7 +929,12 @@ and `appleCalendarReal` (CI-only real-EventKit siblings, `describe.skipIf`
 unless `CALENDAR_E2E_REMINDERS=real` / `CALENDAR_E2E_APPLE_CALENDAR=real`);
 `googleLive` (opt-in, above); `websiteShots` (the website's Mac
 screenshots, `describe.skipIf` unless `SHOT_OUT` names a folder; see
-distribution.md → Website).
+distribution.md → Website); `assistantNoChange` (words that change
+nothing are answered without a version, a dictated phrase's other
+readings offered); `editorDiscard` (the question before an edited editor
+closes); `quickAddInvitees` and `quickAddPlaces` (a phrase's guests and
+places: one match taken, two asked about, the places on one map);
+`unsynced` (a queued change's diff and discard, a parked one's choice).
 
 Page code is a TypeScript function (`page.ts`), sent as its source with
 its arguments as JSON: `cdp.evaluate(fn, ...args)` returns what it
@@ -1119,7 +1126,7 @@ skips the iOS shards) and the jobs carry `if:` guards — not
 Electron binary (`electron --version`) and run spec files sequentially.
 
 - `gate` (ubuntu, reusable `gate.yml`, also called by `ios.yml`): check +
-  typecheck + unit tests. The check is "Gate / Lint, typecheck, unit tests".
+  knip + typecheck + unit tests. The check is "Gate / Lint, typecheck, unit tests".
 - `e2e` (macos-15): desktop build → `pnpm test:e2e`.
 - `e2e-reminders` (xcode-27, GitHub's macOS 27 image: the helper is built
   for macOS 27 and runs only there): the **real** EventKit path on the
@@ -1240,6 +1247,9 @@ Electron binary (`electron --version`) and run spec files sequentially.
   titles, so the second run gives them titles of their own:
   `MAESTRO_LIVE_RUN_TAG` gains `-r2` (`runEnvironment` in
   `maestroRetry.ts`), and the step summary names the tag.
+- `pr-complete.yml` (PRs, ubuntu): `PR complete` fails a ready PR whose
+  body owes a review stage, a screenshot or its `docs/decisions.md`
+  record (`scripts/check-pr-complete.ts`); drafts pass unchecked.
 - Log lines may stringify effect causes containing HTTP requests; effect
   redacts auth headers, so tokens cannot leak into CI logs this way.
 

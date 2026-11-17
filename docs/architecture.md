@@ -41,7 +41,7 @@ and `TextRecognizer` seams. The Assistant reads a phrase through a
 (`tunedReader`, `tuned.ts`): a Qwen3.5 0.8B trained for these prompts
 (`apps/desktop/e2e/bench/train/`), the release both apps fetch named in
 `assistantModel.ts` (calendar-models v2). The tuned prompt is the days,
-the draft and the words; the answer is the whole draft, a far day, a
+the draft, what was said before (the last six turns) and the words; the answer is the whole draft, a far day, a
 ruled-out weekday and a time said as an amount ("+30m" for "half an
 hour later", "45m" for "for 45 minutes") written as said and worked out
 by code (`said.ts`), and `answerResult` (`tunedResult.ts`) checks shapes
@@ -71,7 +71,7 @@ draft as a choice until the user picks one, lets it go, or a later turn
 says it again; a place the answer changes is looked up among past
 places and MapKit (`draftPlaces.ts`, `settlePlace`); a note and
 notifications fold into the draft's extras (`draftExtras.ts`) and the
-form flashes the rows. A to-do's notifications are its Reminders alerts
+form marks the rows the step changed. A to-do's notifications are its Reminders alerts
 (`applyAlarmChange`: minutes before the due time, stored as the form's
 negative offsets): a turn is shown the to-do's own, never a calendar's
 default, and the alert picker names one the presets lack.
@@ -127,7 +127,7 @@ only yes/no, and a binary without the module falls back to that and says
 so). Both hosts map the reason through `APPLE_REASON_STATUS`
 (packages/ai); `LanguageModel.availability` carries it with a failed
 check's error beside the status. Every entry point on Apple's model (find
-a time, search, capture) checks through `useModelAvailability` (app-state): one check at a time (a request while
+a time, search, the desktop's capture dialog) checks through `useModelAvailability` (app-state): one check at a time (a request while
 one is out runs once more after it), a re-check on returning to the app,
 a 30 s poll while 'not-ready', and every Check Again answered even when
 nothing changed; Settings › Diagnostics (iOS) words it with
@@ -163,7 +163,8 @@ the form has taken the last one in (`useThreadEditor().applying`), until
 the microphone is pressed (which sends what was recorded, heard or
 not), the field is typed into, the form is edited
 by hand (`userEdits`, counted by the setters the forms receive and a
-picked free slot, never by a turn's own fills) or 30 s pass with nobody speaking.
+picked free slot, never by a turn's own fills), 30 s pass with nobody
+speaking or an older step is put on show.
 
 **Native bridges** (`packages/reminders`, `packages/apple-calendar`,
 `packages/contacts`, `packages/geo`): each is one JSON protocol spoken by
@@ -203,14 +204,16 @@ due ops oldest-first). Kinds:
 | --------------- | ----------------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | `create`        | client-generated id           | full EventRecord                 | events.insert (idempotent — 409 = already landed); attendees included; `sendUpdates=all` when guests exist                       |
 | `update`        | event id / instance id        | EventRecord + `attendeesChanged` | events.patch (If-Match when etag known); attendees only when flagged; `sendUpdates=all` when guests exist or the list was edited |
-| `delete`        | event id / instance id        | EventRecord (the deleted row)    | events.delete (If-Match when etag known); the snapshot only names a parked conflict                                              |
+| `delete`        | event id / instance id        | EventRecord (the deleted row)    | events.delete (If-Match when etag known); the snapshot names a parked conflict and ties an exception's delete to its series      |
 | `rsvp`          | event id                      | EventRecord (attendees)          | events.patch, attendees-only body; If-Match on the queued etag, resent **without** on a 412 (never parks)                        |
 | `calendarColor` | `__calendar_color__` sentinel | `colorHex`                       | calendarList.patch?colorRgbFormat=true                                                                                           |
 | `move`          | master id (source calendar)   | `targetCalendarId`               | events.move?destination= (same account; organizer only; whole series)                                                            |
 | `createTask`    | temp `local-…` id             | title/notes/due                  | tasks.insert (NOT idempotent — see below)                                                                                        |
 | `updateTask`    | task id                       | title/notes/due                  | tasks.patch                                                                                                                      |
-| `completeTask`  | task id                       | completed flag                   | tasks.patch (status + hidden reset)                                                                                              |
+| `completeTask`  | task id                       | completed flag                   | tasks.patch (status; `completed: null` when un-completing)                                                                       |
 | `deleteTask`    | task id                       | —                                | tasks.delete (404/410 = already gone)                                                                                            |
+| `moveTask`      | task id                       | `targetTaskListId`               | tasks.move?destinationTasklist= (same account; subtasks follow)                                                                  |
+| `reorderTask`   | task id                       | `taskParent` / `taskPrevious`    | tasks.move (same list), then the list's order is read back                                                                       |
 
 `PendingOpSummary` in core/backend.ts has its **own kind literal** — extend
 it whenever a kind is added. Rules that keep the queue correct:
@@ -243,8 +246,8 @@ it whenever a kind is added. Rules that keep the queue correct:
   An op queued _before_ the one that landed (in backoff while it overtook)
   keeps its etag and meets its 412. A create answered 409 fetches what
   Google has, so the row stops being `pending`. A `delete` answered 404
-  or 410 is done and leaves the local state alone (for one occurrence
-  that is the cancelled override that keeps it away). A create dropped
+  or 410 is done like one that landed (`dropPulledCopy`): an occurrence's
+  cancelled override stays, a copy a pull put back meanwhile goes. A create dropped
   for good or discarded takes what was queued behind it on the event
   along, putting nothing back — an edit, an answer, a delete (built on an
   event Google may never have had, a delete discarded later restored it
@@ -357,7 +360,8 @@ it whenever a kind is added. Rules that keep the queue correct:
   Google inserts a subtask first among its siblings, each waiting for the
   one before it so a retry cannot swap them; as reminders of their
   own in Reminders), and then deletes the source, subtasks first; a
-  failure in between leaves a duplicate, never a lost task. Completion
+  failure in between leaves a duplicate, never a lost task (toward
+  Google the source outlasts its queued copy, `PendingOp.copySource`). Completion
   follows. What a route drops — reminder fields, a subtask leaving its
   parent, subtasks Reminders cannot nest — is `previewMoveTask` (core
   `taskMoveLoss` over the stored record and its subtasks), confirmed in
@@ -467,7 +471,7 @@ it whenever a kind is added. Rules that keep the queue correct:
   series edit that replaced the change went to the back of the queue, and
   the deletes went out ahead of it, past taking back), and the create of
   a series a this-and-following edit split off for the cut of the one it
-  came from (see Recurring model).
+  came from (see Recurring events).
   `moveEvent` re-queues pending edits of the series _behind_ the
   move, re-keyed to the destination (a never-sent create simply becomes a
   create there; a sent one stays in the source with the move behind it; a
@@ -622,9 +626,9 @@ Rules a change to the queue keeps (each broke once):
   wake/unlock/window-focus (desktop `powerMonitor`) and `AppState` active
   (iOS), throttled to one per 15 s (`syncKicker.ts`).
 - `syncAll` is semaphore-serialized and always **pushes pending ops before
-  pulling** — that ordering is what protects optimistic local writes from
-  being overwritten by a pull (ops in backoff are the one exception; the
-  `calendarColor` apply upserts the patch response to self-heal that case).
+  pulling**, which keeps conflicts few; a pull never overwrites a pending
+  row whatever the order (below). A calendar's color has no such guard,
+  so the `calendarColor` apply upserts the patch response.
 - Events sync the **whole history**: a full pass (first sync of a
   calendar, or a 410 resync) lists the calendar with no `timeMin`, and the
   sync token it returns then covers every event ever. A token is bound to
@@ -716,7 +720,7 @@ Rules a change to the queue keeps (each broke once):
   answer again, pending); left, they still cancelled those occurrences
   on Google. The new series of a this-and-following edit goes the same
   way where Google still has the series uncut (`splitSeries.ts`, see
-  Recurring model). Keep-mine on
+  Recurring events). Keep-mine on
   such a delete while the master on the table draws its slot leaves the
   delete's own tombstone there, pending (`takeBackPulled`): with the copy
   gone, the slot showed until a pull. Wherever Google's master is back on
@@ -732,8 +736,7 @@ Rules a change to the queue keeps (each broke once):
   the exceptions whose slots the rule it lands no longer draws; an update
   replacing it keeps the earlier,
   and drops nothing more once one it replaced in flight landed the same
-  rule; one queued before the field existed took the earliest exception
-  its occurrences' deletes hold),
+  rule),
   and however it lands (a 2xx, a lost answer a 412 finds on Google)
   everything that still holds one of those exceptions — one the landed
   rule does not draw — forgets it (`forgetDropped`): the occurrence ops'
@@ -774,9 +777,7 @@ Rules a change to the queue keeps (each broke once):
   cannot land between a request and the page that would put the row
   back after it, and lets out what was queued meanwhile before the next
   calendar or list (`holdingQueue`), so a write never waits out a whole
-  account. Skipping such a page's rows was rejected: the token
-  never resends them, so a discarded delete would restore a stale copy
-  and a cancelled occurrence would lose its tombstone. The push
+  account. The push
   response (ack upsert), an abandoned op (`releaseRow`: the op's snapshot
   of the row goes back, or `markSynced` when it has none) or a resolved
   conflict hands the row back. Task rows work the same way
@@ -930,8 +931,7 @@ Rules a change to the queue keeps (each broke once):
   occurrence changed on its own an identifier of its own,
   `<series id>/RID=<n>`, and the Swift bridge passes identifiers on
   untouched and compares them literally. The client both apps and the
-  fake use is the bridge under this TypeScript layer; the bridge itself
-  is not touched (no native change). What is read names every
+  fake use is the bridge under this TypeScript layer. What is read names every
   occurrence by its series' id and slot, so the views, search (one hit
   per series), the agent gateway's refs and exceptions and the record id
   all see one series. A write by slot goes to the bridge as it is, which
@@ -979,10 +979,11 @@ Rules a change to the queue keeps (each broke once):
   a create is refused (`UnsupportedForProviderError`), a move drops them
   after confirmation.
 - **Capabilities**: EventKit cannot write guests or RSVPs — the editor
-  hides RSVP for Apple events and shows the invitee field disabled, with
-  existing guests read-only and a note whose "Open Calendar" brings
-  Calendar.app forward (desktop, `appleCalendar:open`; nothing opens
-  under the e2e fixture); the mutation layer rejects both. A `reader` calendar opens as a viewer, on
+  hides RSVP for Apple events and shows existing guests read-only; the
+  desktop also keeps the invitee field in sight, disabled, with a note
+  whose "Open Calendar" brings Calendar.app forward
+  (`appleCalendar:open`; nothing opens under the e2e fixture); the
+  mutation layer rejects both. A `reader` calendar opens as a viewer, on
   either provider (`writable` guard, `CalendarNotWritableError`; both
   apps also refuse to start a drag there).
 - **Moving between calendars** (`moveEvent`, always the whole series):
@@ -1049,8 +1050,8 @@ details, or Custom), so a calendar can be shared without the details.
   portable (Google ids; EventKit's external identifier, since
   `eventIdentifier` differs per device).
 - **Identity and markers.** `keyHash = sha256(mirrorId | sourceKey)`.
-  Google: the event id is `slnvmr` + keyHash (a racing second insert gets
-  409 and becomes a confirming replace), and the private property
+  Google: the event id is `slnvmr` + keyHash (a second insert of the
+  same copy gets a 409 and looks before it writes, below), and the private property
   `solunivo.mirror` holds `tag.rev.contentHash`. Apple: the URL field holds
   `x-solunivo-mirror:keyHash.tag.rev.contentHash`. A Google row is a copy
   only when id and property agree, so an event someone duplicated from a
@@ -1059,7 +1060,7 @@ details, or Custom), so a calendar can be shared without the details.
   device"); after a definition change at least one copy is restamped so
   the other device notices. Everything in a marker is opaque: the
   destination is shared with others who can read both carriers.
-- **Writes.** Google copies go through `replaceEvent` (PUT: a switched-off
+- **Writes.** A Google copy is inserted, then updated through `replaceEvent` (PUT: a switched-off
   field must leave the copy; PATCH keeps omitted fields), paced, in chunks
   acked through `applyPage(mode: 'ack')` under the engine's gate
   (`SyncEngine.exclusive`) so a pull cannot interleave. Apple copies go
@@ -1151,12 +1152,12 @@ details, or Custom), so a calendar can be shared without the details.
 - **The search thread** (`useSearchThread`, app-state `searchThread.ts`):
   the field is the words, chips are the filters, a sentence the model
   reads is a turn. Typing sets the words and a chip edit sets a filter,
-  neither a turn (the user's own edits, like the form's edits to a
-  draft); a turn sends the field's sentence with the filters as they
+  neither a turn (the user's own edits); a turn sends the field's sentence with the filters as they
   stand and no words (`parseSearchQuery`, `packages/ai/src/searchQuery.ts`)
   and leaves what is left of the words in the field; Undo restores the
-  query before the last turn; Clear empties everything. Turns list as in
-  the create thread (newest visible, "+N earlier queries"); a sentence
+  query before the last turn; Clear empties everything. Turns list
+  newest first, only the newest shown until "+N earlier queries" opens
+  the rest (`visibleTurns`); a sentence
   being read turns the desktop's ✦ and iOS's "Filters" into a spinner in
   place (no line under the field); on the desktop the turns, and why a
   sentence was not read, hang under the field as one card with it (iOS's
@@ -1171,7 +1172,7 @@ details, or Custom), so a calendar can be shared without the details.
   only when they are in the words. The router is code
   (`isSearchFilterPhrase`): the desktop's Enter opens the top result of
   plain words and reads words with a filter cue in them, ⌘↩ and ✦ always
-  read; iOS reads on the keyboard's Search key. Without a model the field
+  read; iOS's Search key reads words with a filter cue the same way. Without a model the field
   is plain search and the chips still edit by hand (desktop: a popover
   per chip; iOS: a Filters sheet). The fixture model plays a turn in the
   grammar `terms | from..to | location | people | calendar | kind`.
@@ -1189,7 +1190,7 @@ details, or Custom), so a calendar can be shared without the details.
   RDATE lines has no rule: `buildRuleString` gives it
   `RRULE:FREQ=DAILY;COUNT=1`, so it expands as DTSTART + RDATE − EXDATE
   through the same library pass as every rule.
-- The UI never sees masters directly: `assembleWindow` expands them into
+- The views never get masters: `assembleWindow` expands them into
   synthetic instances with id `<masterId>__<originalStartUtc>` carrying
   `recurringEventId` + `originalStartUtc`.
 - Editing scopes (`packages/core/src/recurrence/editing.ts` + mutations):
@@ -1267,7 +1268,8 @@ details, or Custom), so a calendar can be shared without the details.
     occurrence at a time (`RecurringAllDayMoveError`).
 - The editor reads a series' master with `getEvent` (`useEventMaster`) to
   seed its repeat fields — an occurrence row has no lines — and sends the
-  rule only when those fields were edited. A read-through Apple series
+  rule only when it is another rule than the one seeded
+  (`repeatChangedSince`). A read-through Apple series
   has no stored master, so its rule stays uneditable in the app.
 - The event form's times are two rows, Starts and Ends, each a date and
   (unless all-day) a time: `EditorTimeFields.endDate` is an all-day
@@ -1282,10 +1284,11 @@ details, or Custom), so a calendar can be shared without the details.
   following edit, so a changed end date asks for "This event" like a
   changed start date.
 - An update of an existing event sends only what the form changed
-  (`eventEditorChanges`, both apps): title, notes and location are
-  compared with what the form opened with — a snapshot, never the live
-  row — and guests, notifications and the rule go only once edited, the
-  kind (`isAllDay`) only with the times. An edit made elsewhere while the
+  (`eventEditorChanges`, both apps): title, notes, location with its
+  coordinates, guests (by address) and notifications (by what they mean)
+  are compared by value with what the form opened with — a snapshot,
+  never the live row — and the rule with the one it was seeded with; the
+  kind (`isAllDay`) goes only with the times. An edit made elsewhere while the
   form is open (another device, an agent, Google) survives a Save that
   did not touch it; a this-and-following split keeps the series' own
   text unless edited. The location and its coordinates go as a pair
@@ -1300,7 +1303,8 @@ details, or Custom), so a calendar can be shared without the details.
   ignored mid-press and a lost capture ends the drag); iOS
   `DraggableEventBlock` (250 ms long press, then drag; one pan for both,
   and a touch-down on the block's bottom 16 pt resizes instead of
-  moving). Both commit through the op queue. A move or resize is wall
+  moving). Both commit through `updateEvent` / `updateRecurring` (the op queue
+  for Google, EventKit for Apple). A move or resize is wall
   clock in the zone the grid draws in (`moveEventTimes` /
   `resizeEventEnd` take the primary zone), so the block lands on the row
   it was dropped on whatever the event's own zone, and the desktop
@@ -1310,7 +1314,8 @@ details, or Custom), so a calendar can be shared without the details.
   where the pointer is released (`dropTargetAt`) under one pure rule
   (`dropTaskChanges`: a grid drop sets day and time, a lane drop clears
   the time, a Google task dropped into the grid is `unsupported` and
-  snaps back).
+  snaps back); a timed block moved within the desktop grid commits its
+  snapped delta instead (`moveTimedTask`).
 - **Edge auto-scroll**: a task or event drag held in a band along the
   grid's top or bottom edge scrolls the grid, faster toward the edge and
   at full speed past the bottom one (`edgeScrollStep` in
@@ -1419,8 +1424,7 @@ gateway carries all of it. Details, limits and the threat model:
   (`lessonModelCopy`); the card's Create row says where the download
   stands (`createRowNote`). Once the model is ready the reader is the
   model's and the banner says so; a device that cannot run it gets the
-  demo, then the Form. A new model version needs the demo's answers
-  recorded again. Search with AI is search with its sentence read (the
+  demo, then the Form. Search with AI is search with its sentence read (the
   desktop panel's thread, iOS route params on the Search tab); Alerts,
   Contacts, Time zones and "Set up your Mac/iPhone" frame the Settings
   sections (iOS `app/lesson/` modal, desktop `PanelState` `lesson`; "Set
@@ -1512,7 +1516,8 @@ gateway carries all of it. Details, limits and the threat model:
   brand:build` writes `brand/tokens/tokens.css` (`:root` and
   `[data-theme='dark']`) and `packages/core/src/theme/tokens.ts`
   (`THEMES.light/dark`), both guarded by `brand:check`. The desktop
-  imports the CSS; `App.css` maps every variable into Tailwind's theme
+  imports the CSS; the hand-written `brand/tokens/tailwind.css` (imported
+  by `App.css` and the website) maps every variable into Tailwind's theme
   (`bg-canvas`, `bg-fill`, `text-ink`, `border-hairline`, `bg-primary`, …
   — the renderer's only colors; `themeClasses.test.ts` fails on Tailwind's
   own palette) and `renderer/theme.ts` mirrors `prefers-color-scheme` onto
@@ -1637,7 +1642,7 @@ gateway carries all of it. Details, limits and the threat model:
   the pager, Remove and "Add all" wait (`draftsSettled`); a reading of
   the form names the draft it is of (`FormSnapshot.shown`), so it never
   lands on the one focused meanwhile.
-  a phrase that asks for free time (`proposeSlots`)
+  A phrase that asks for free time (`proposeSlots`)
   puts the draft in the best free slot and keeps the others on it — a
   "Free slots" chip row under the card, the chosen one pressed, and
   fainter dotted candidate blocks tagged "Option" on the grid, either of
@@ -1680,8 +1685,7 @@ gateway carries all of it. Details, limits and the threat model:
   day to show and a clicked draft through kept-alive atoms
   (`draftAtoms.ts`: `useDraftPreviews`, `useOnDraftReveal`,
   `useRequestDraftFocus`). The panel never
-  joins the dialog stack
-  (`dialogStack.ts`: the topmost dialog alone answers Escape), so a real
+  joins the dialog stack (`dialogStack.ts`), so a real
   dialog over it keeps Escape; a panel opened from a
   search result closes back to the results. The inspector follows its
   event by identity (core `eventIdentity`), reads from the grid's current
@@ -1823,15 +1827,7 @@ gateway carries all of it. Details, limits and the threat model:
   follows Reminders' order (title and notes, list, due day and time,
   repeat, priority, alert, URL, Delete). A card's header
   renders uppercase, which is what the flows tap to dismiss a keyboard
-  ("CALENDAR", "LIST"). The calendar draws the thread's drafts from
-  `useDraftPreviews` (`DraftBlock.tsx`): dashed blocks tagged "Draft" in
-  the timeline, chips in the all-day lane, a ringed dot in the month
-  grid, the free slots as fainter dotted "Option" blocks, a ring on the
-  focused one; a tap focuses a draft or moves it to the slot
-  (`useRequestDraftFocus`). The focused draft's day is shown
-  (`useOnDraftReveal`) and the grid scrolls to it whenever its start
-  changes, padded by half a screen while drafts are drawn so an evening
-  draft clears the sheet.
+  ("LIST").
   `+native-intent.tsx` keeps non-route URLs on the calendar. The other
   sheets are React Native page sheets; `@expo/ui` is used where it is a
   drop-in.
@@ -1947,10 +1943,10 @@ gateway carries all of it. Details, limits and the threat model:
   whenever a turn sets a place: the best resembling one is taken at once
   (`preselectedPlace`) — its text becomes the location and its pin counts
   as a pick (`applyPlace`) — and the candidates stay on the draft as
-  `placeChoice`, chips under the Assistant's newest card with the one the field
-  reads pressed and "As said" beside them, until dismissed, or a turn
-  sets another place; the row shows only while the field reads the text
-  or one of them (`livePlaceChoice`). Both lookups and the typeahead carry a region hint
+  `placeChoice` until answered, skipped, dismissed or a turn sets another
+  place: a question when there is a real choice (`isPlaceQuestion`), a
+  row with "As said" for a lone taken place, live only while the field
+  reads the text or one of them (`livePlaceChoice`). Both lookups and the typeahead carry a region hint
   (`regionHint`: the densest cluster of coordinates on the last 90 days'
   events, the most recent first, else the primary time zone's city from
   a small table), which MapKit takes as a bias, never a filter — a
@@ -2009,7 +2005,7 @@ gateway carries all of it. Details, limits and the threat model:
   sends a JPEG frame a few times a second over `camera:read-qr` and the
   helper reads it with Vision (`barcode.readQr`, `BarcodeReader.swift`) —
   or a paste. A pasted or shared code never reaches the AI capture: ⌘V on
-  the Mac's calendar or in ⌘K opens the import preview
+  the Mac's calendar or in the Assistant's field opens the import preview
   (`codeImportRequests.ts`), and on iOS a code shared in, or opened from
   the Camera app's "Open in Solunivo" (it parses as a `solunivo:` URL;
   production only, the dev app owns `solunivo-dev`), waits in
@@ -2136,9 +2132,10 @@ gateway carries all of it. Details, limits and the threat model:
   `remindersChanged`, since Google replaces it and email overrides must
   survive an unrelated edit.
 - **The task editor** forks on the selected list's provider
-  (`useTaskEditorModel.provider`): Google gets title/day/notes with a
-  fixed list; Reminders get time, priority, alert, repeat (shared
-  `useRepeatState`), URL, and a movable list. "Reminder" is a kind of the
+  (`useTaskEditorModel.provider`): Google gets title/day/notes;
+  Reminders add time, priority, alert, repeat (shared `useRepeatState`)
+  and URL; on both, the list picker moves an existing task on Save
+  (`canMoveList`). "Reminder" is a kind of the
   editor's control (core `editor/itemKinds.ts`), not a list choice.
 - **Time is Temporal everywhere** (`@js-temporal/polyfill` via
   `packages/core/src/time/temporal.ts`); Hermes needs the

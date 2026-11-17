@@ -7,6 +7,11 @@ current state is `docs/architecture.md`, the rules are in `AGENTS.md`,
 and the mechanism of anything here lives there, not in this file. A new
 record is ten lines at most (see the workflow rule in `AGENTS.md`).
 
+Only decisions that still hold are kept. A PR that reverses one deletes
+its record and names the PR it replaced in its own; an open point a later
+record closed leaves with it. `git log -S` on a record's title finds what
+was cut (pruned 2026-11-17).
+
 ## Product and distribution
 
 - **App name Solunivo** (2026-08) — no trademark hits, solunivo.com
@@ -183,11 +188,10 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   `todo/live-driver-retry`) — `google-live.yml` called `maestro test`
   directly, so run 40997493433 died at `04a` when its runner wasn't up at
   120 s. Its three invocations now go through `run-flows.ts` with the 240 s
-  wait, unreset (erasing loses the dev client's Metro project). The live
-  flows retry only a driver that never started (`E2E_RETRY`): one cut
-  short leaves items on Google under the run's titles for a rerun to
-  match. Open: a bootstrap `openurl` timeout; a black display at `04a`
-  (#263's retry runs here unrebooted); a deleted event left on screen.
+  wait, unreset (erasing loses the dev client's Metro project). What a
+  live flow is rerun for: "Live flows rerun under titles of their own",
+  below. Open: a bootstrap `openurl` timeout; a deleted event left on
+  screen.
 - **The live sweep checks its account** (2026-11-05,
   `todo/live-sweep-guard`) — the sweep deleted by name with whatever
   token it was given: in another account, every calendar named
@@ -226,16 +230,6 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   unrebooted. Rejected: a reboot in between (a relaunch drew again here and
   in the five earlier sightings). Open: a leftover a rerun trips on (a
   parked conflict's badge) fails it, never passes it.
-- **Flow 06's sheet drag off the bottom edge** (2026-10-29,
-  `todo/editor-sheet-drag-race`) — the drag that raises the half-height
-  editor started at 93 %, inside SpringBoard's bottom-edge gesture region:
-  the app's pan waited on its cover-sheet edge pan, whose answer came up
-  to 0.56 s after touch-down on CI, after Maestro's 0.1 s move, so three
-  runs left the sheet at half. It now starts on the title (84 % → 51 %).
-  The app was ruled out: each failure shows the form at its top, and the
-  keyboard last hid 2.4–5.3 s before the drag. Rejected: a retry
-  while the grabber reads "Half screen" (it would pass a sheet that rises
-  only now and then). Open: how long a real finger there waits on a phone.
 - **iOS e2e without MapKit** (2026-10-15, `todo/ios-geo-off`) — CI's bundle
   sets `EXPO_PUBLIC_CALENDAR_GEO=off`, the desktop's `CALENDAR_GEO=off`:
   flow 22's "Room 4" was geocoded live on every run (once to a place named
@@ -274,9 +268,7 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   exclude is added only by exact version after an audit
   (`pnpm-workspace.yaml`). Babel stays on the major Metro's transform uses
   (the worklets closure test runs the app's plugin chain); CI's Maestro,
-  pinned by version and sha256, moves with the sweep. Electron 45's sync
-  `safeStorage` deprecation is a todo, not part of the sweep: it rewrites
-  the token store (Async safeStorage, below).
+  pinned by version and sha256, moves with the sweep.
 - **Async safeStorage** (2026-11-01, #276) — tokens and the served model's
   key use `encryptStringAsync` / `decryptStringAsync` before Electron 46
   drops the sync calls. No migration: on macOS both read the same "<app>
@@ -304,42 +296,25 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   nothing else. About 3 KB gzipped more. Unused: its GIF
   and SVG output (the 1-bit PNG is far smaller) and its decoder (Vision
   and expo-camera read the code).
-- **Complexity ceiling** (2026-11-05, #297) — oxlint's `complexity` fails
-  a function over 40. The 16 already past it (`apply` in `applyOp.ts`, at
-  89, the largest) are listed by file as their numbers, and a test holds
-  each file to exactly those, so none grows and a number comes down with
-  its function. Rejected: refactoring all 16 to pass (the sync and
-  quick-add cores, for a number); `cccc` (a second binary for the
-  cognitive metric); one ceiling per file (every function in it could
-  reach the highest). Open: numbers match by value, not by name; a PR
-  that changes one of the 16 must touch its number; Swift is not
-  measured.
-- **No exceptions to the cap** (2026-11-06, #298) — the 16 are split after
-  all, one commit per file along the seams their code names, no piece
-  over 26, and the pins and their test go; a test still fails on a
-  directive naming the rule. What made the rejected refactor safe enough:
-  each split was checked old against new on generated inputs, not by
-  review alone, and behaviour fixes stayed out. Open: the three
+- **Complexity cap of 40, no exceptions** (2026-11-06, #297, #298) —
+  oxlint's `complexity` fails a function over 40. The 16 past it (`apply`
+  in `applyOp.ts`, at 89, the largest) were pinned at their numbers for a
+  day (#297), then split, one commit per file along the seams their code
+  names, no piece over 26; a test fails on a directive naming the rule.
+  Each split was checked old against new on generated inputs, not by
+  review alone, and behaviour fixes stayed out. Rejected: `cccc` (a second
+  binary for the cognitive metric); one ceiling per file. Open: the three
   components are checked only by the e2e suites (the iOS mic button by
-  none); what the splitting turned up is listed in #298.
-- **A `??` fallback kept apart in e2e** (2026-11-16, #339) — CDP
-  expressions are template strings, outside tsc and the lint, and
-  `x ?? null === 'v'` let two waits pass on any text (#230, #317).
-  `Cdp.eval` and `waitFor` refuse the shape as sent, interpolations
-  resolved, and a source test fails on one written out; the refusal found
-  eight more in `draftThread`. Rejected: a JS parser dependency; the source
-  test alone (both bugs came in as `${constant} === 'v'`); expanding each
-  file's helpers into its templates in that test (a second TS reader).
-  Superseded by #342, which removed it with the last string.
+  none); Swift is not measured.
 - **e2e page code as typed functions** (2026-11-16, #342, landed in #344) —
   a function's source goes to the page with JSON arguments (`Cdp.evaluate`,
   `waitUntil`), so tsc and the lint check it; a boolean predicate makes
-  both misreads above type errors. Each call gets the page kit `$`; a name
-  the function does not bind must be a listed page global (a closed-over
-  `name` is refused, not read as `window.name`), checked statically in the
-  unit run too. Every spec moved at once, a commit each in #342. Rejected:
-  installed helpers (a reload loses them), self-contained ones (no
-  composing), Node-side single reads (no one snapshot), PRs per batch.
+  `x ?? null === 'v'` a type error (as a string it let two waits pass on
+  any text: #230, #317, then #339's guard). Each call gets the page kit
+  `$`; a name the function does not bind must be a listed page global (a
+  closed-over `name` is refused), checked statically in the unit run too.
+  Rejected: installed helpers (a reload loses them), self-contained ones
+  (no composing), Node-side single reads (no one snapshot), PRs per batch.
   Open: the real-EventKit specs had only the static checks before CI.
 - **Type-aware lint and knip in the gate** (2026-11-15, #326) — seven
   typed oxlint rules (tsgolint, on TypeScript 7) for what tsc accepts;
@@ -470,9 +445,7 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   live row at a waiting delete's id is now the snapshot; a discarded
   answer leaves it as it is, and an op that lands settles it. Rejected:
   any row there (a tombstone is the user's); the pull writing its copy
-  into the delete's snapshot (a second copy of the row). Open: an
-  exception a pull re-sends over an occurrence's tombstone never reaches
-  that delete's snapshot (closed by the next record).
+  into the delete's snapshot (a second copy of the row).
 - **An occurrence deleted under a waiting series delete stays deleted** (2026-10-31, #274)
   — Opus review of #270: discarding the series delete wrote the exception
   it took over the occurrence delete's tombstone, which pulls skip for
@@ -482,8 +455,7 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   delete takes its synced exceptions and its occurrences' snapshots.
   Rejected: putting all taken exceptions back (others would move on an
   unrelated edit); an exception's own queued delete as the base (a rule
-  change queues those). Open: taken exceptions show as plain occurrences
-  (closed by the next record).
+  change queues those).
 - **A series a pull puts back while its delete waits shows as on Google** (2026-11-02, #279)
   — #274's open items: that pull left the exceptions in the delete (a
   moved occurrence showed at its slot, a cancelled one came back); an
@@ -491,13 +463,11 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   dropped them. Google's copies now sit in the delete's snapshot while the
   master is gone, on the table once a pull put it back (the delete keeps
   none); keep-mine and keep-theirs follow. Rejected: the delete keeping
-  them too (an aging copy a discard could resurrect). Open: #274's cut and
-  rule-change gaps; a cut's discarded exception delete, keep-theirs on it
-  or an undone occurrence edit writes a row without its master (closed by
-  the next record).
+  them too (an aging copy a discard could resurrect).
 - **A cut's dropped occurrences follow Google's master** (2026-11-02, #280)
-  — #279's open items: those rows now go into the waiting series delete.
-  After a cut, a series back as Google has it showed the cut's moved and
+  — a cut's discarded exception delete, keep-theirs on it or an undone
+  occurrence edit wrote a row without its master (left open by #279):
+  those rows now go into the waiting series delete. After a cut, a series back as Google has it showed the cut's moved and
   cancelled occurrences at their slots, and an occurrence edit was built
   on the slot; after a rule change, a discarded edit put the dropped
   exception back. The copies a cut's or rule change's deletes hold go back
@@ -981,12 +951,9 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   (Vienna names): the natural-language search recovers "Fickelmüller",
   the completer does not; neither recovers a dictated "Cafe Zentral",
   which a Kölner Phonetik key over past places will (phase 2); "Room 4"
-  got a pin in Weidling, "the office" a bar. A model place must be in
-  the phrase, and one that is title words too only after "at", "in",
-  "bei", "im"…: "Dentist" and "Board review" were places. Rejected: a
-  location permission (the geo seam never prompts); keeping a place that
-  is the title's start ("New York trip" — the user adds it; "Dentist" was
-  the common case). Open: chips for the candidates and past places.
+  got a pin in Weidling, "the office" a bar. Rejected: a location
+  permission (the geo seam never prompts). The word rules that held a
+  model's place to the phrase went with #307.
 - **Place choices** (2026-10-18, #226) — a phrase's place is looked up
   when a turn sets it: the user's own past places first (a year of
   occurrences, matched by the text they were written as, MapKit's name,
@@ -1139,9 +1106,7 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   editor never saw the change. `useSettingsEditor` yields once it lands.
 - **Invitees from a phrase** (2026-10-17, #222) — only words that ask for
   an invitation invite; "with Sarah" never does, since an invite emails
-  them. Who is a people-only second prompt, asked when code sees a cue:
-  in a refinement Apple's model wrote the guest into the title and named
-  no one. A name becomes a guest only when it means one contact, else the
+  them. A name becomes a guest only when it means one contact, else the
   user picks or lets it go; the words' spelling wins ("Järg Möller" was
   returned for "Jörg Müller"). Rejected: a contacts tool for the model,
   taking the top-ranked contact. Open: pronouns ("invite her"), capture.
@@ -1204,9 +1169,7 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   Other routes copy the subtasks too, nested on Google, as reminders of
   their own in Reminders; `previewMoveTask` names a subtask leaving its
   parent and subtasks Reminders flattens. Rejected: refusing to move a
-  task with subtasks, and flattening them on Google. Open (todo.md):
-  drawing the hierarchy and reordering; a delete or conversion of a
-  parent did not mention its subtasks (since #203 it does, see below).
+  task with subtasks, and flattening them on Google.
 - **A parent's delete names its subtasks** (2026-10-14, #203) — Google
   deletes a parent's subtasks with it, so a Google task delete takes them
   first, each a delete of its own (discarding one keeps the parent too);
@@ -1224,9 +1187,7 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   whose parent is in another section, completed or filtered out stays a
   row where its date puts it. Rejected: pulling it under the parent (a
   late subtask would hide under an undated one) and repeating the parent
-  as a header. Display only: reordering and re-nesting through
-  `tasks.move` need a new op, an optimistic position and drag UI on both
-  apps — its own PR (todo.md).
+  as a header.
 - **Reorder and re-nest tasks** (2026-10-15, #210) — `reorderTask` queues
   a same-list `tasks.move` (`parent`/`previous`); the row shows a key
   between its new neighbours at once. Google renumbers siblings and bumps
@@ -1236,8 +1197,7 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   Top-level rows keep day/title order and no drop leaves its section (a
   date bucket of lists whose positions do not compare). Rejected: local
   renumbering, an iOS long-press drag (not drivable in Maestro). Open:
-  top-level order by position, iOS subtask reorder, creates' renumbering
-  (since #211 every renumbering, see below).
+  top-level order by position, iOS subtask reorder.
 - **Order made elsewhere** (2026-10-15, #211) — a poll reads a list's
   order when the list's own `updated`, already fetched every pass, moved
   since the last read: probed live, every insert, delete, completion and
@@ -1246,7 +1206,7 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   pass reuses its own. A landed create sorts first at once, as Google put
   it. Rejected: a read-back after each create (this device only), an order
   listing every poll or every Nth (a request per list per poll), a shorter
-  full pass. Open: a move to another list made elsewhere (next entry).
+  full pass.
 - **Moves made elsewhere** (2026-10-15, #217) — another device's move to
   another list sends the source no tombstone, but bumps its `updated`: the
   order read then names every live task, so a synced row it no longer
@@ -1261,7 +1221,7 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   a set field has no home on the other side: the end time never counts, a
   link finds a home; only a chosen time counts (the editor's default hour
   is neither carried nor asked about); a recurring event converts as its
-  whole series; a per-occurrence conversion is a follow-up.
+  whole series (one occurrence alone since #288, below).
 - **Back to "No due date"** (2026-10-13, #198) — `updateTask` takes
   `dueDate: null` on both providers and the editor offers "No due date"
   on existing tasks. A Google op carries `taskDue: null` behind a
@@ -1314,8 +1274,7 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   the mutation layer. Moves take the whole series: a server `events.move`
   inside one Google account, EventKit's own calendar change between Apple
   calendars, otherwise copy-then-delete that drops guests and modified
-  occurrences after a confirmation (`previewMove`). Open: the two
-  _(verify)_ items in `docs/google-sync-and-testing.md`.
+  occurrences after a confirmation (`previewMove`).
 - **Invitees on Apple events** (2026-10-13, #189, desktop) — the field stays in
   sight, disabled, with a note and "Open Calendar", instead of vanishing:
   a missing field read as a bug. Rejected: writing attendees through
@@ -1330,8 +1289,7 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   looks, and refuses a miss; the gateway resolves no further. Rejected: a
   wider bridge lookup (a native build; a miss stays ambiguous once the
   occurrence was detached elsewhere), a second wide read to tell gone from
-  out of reach. Open: such an occurrence cannot be edited or deleted here;
-  a detached occurrence's real id is `<series>/RID=<slot>`, not the series id.
+  out of reach.
 - **One identity per Apple series** (2026-11-05, #292) — EventKit names an
   occurrence changed on its own `<series id>/RID=<n>`; the app took that
   for a series id, so "All events" from one wrote only it, search listed
@@ -1398,10 +1356,10 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   `llama-server` on a UNIX socket) and downloaded once from GitHub after
   asking, the iPhone over Wi-Fi only unless allowed (App Review 4.2.3).
   Data from DeepSeek V4 (MIT, distillation allowed); Anthropic forbids
-  training on Claude's outputs. The phrase rules went (#182, #248,
-  #302, #303 and the repeat, title and words entries below) bar one
-  day check. Rejected: the rules over Apple's model, llama.cpp in the
-  Swift helper, node-llama-cpp. Open: todo.md.
+  training on Claude's outputs. The Assistant's phrase rules went (#182,
+  #248, #302, #303, three readers of 2026-10-26) bar one day check;
+  `grounding.ts` stays for Apple's model. Rejected: those rules over
+  Apple's model, llama.cpp in the helper, node-llama-cpp. Open: todo.md.
 - **A to-do's alerts from the Assistant** (2026-11-13, #315) — "remind me
   to call the bank tomorrow at 9, 10 minutes before" gives the to-do an
   alert: the model wrote it, the thread dropped it. A to-do's
@@ -1490,14 +1448,14 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   does the work** — which keeps the valuable logic in `packages/*`,
   unit-testable with a fake provider. iOS through `@react-native-ai/apple`,
   desktop through a Swift helper over stdio (Foundation Models is
-  Swift-only), weak-linked so the binary runs on any macOS and reports
-  unavailable below 26; the renderer owns the microphone.
+  Swift-only); the renderer owns the microphone. The Assistant has read
+  with the app's own model since #307, on the device as well.
 - **Quick add, find a time, dictation** — one shared parser and a
   prefilled-editor hand-off, never an auto-save; find-a-time parses only
   the constraint sentence and a pure solver does the rest, chronological
   ranking v1; dictation availability is decided by attempting `prepare()`
-  (the readiness flag is false until assets exist) and the recording is
-  deleted immediately. The simulator has no speech assets.
+  (the readiness flag is false until assets exist). The simulator has no
+  speech assets.
 - **Find a time is the event form's tool** (2026-10-10) — not a mode of
   the quick-add field. The two modes shared a field and a title and
   nothing else: different prompts, a calendar read and a solver only on
@@ -1519,9 +1477,10 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   and nothing of a series
   whose master is not here — an Apple series never is, its rows being
   read through EventKit, so an Apple series edit searches around its
-  own occurrences; too busy is the safe side). It works without Apple
-  Intelligence; with it, a phrase fills
-  the same presets (`parseFindTime`) — dates, hours or days outside
+  own occurrences; too busy is the safe side). It works without a
+  model; with one, a phrase fills the same presets (`parseFindTime` on
+  Apple's, `tunedFinder.ts` on the app's own since #321) — dates, hours
+  or days outside
   them show as a note with nothing selected — and a title it names
   fills an empty title. An answer landing after a constraint changed or
   the finder closed is dropped.
@@ -1529,64 +1488,13 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   and the two prompts are tuned apart. Timed reminders still do not
   count as busy, and guests' free/busy is not fetched — the finder is
   where both would go.
-- **The phrase grounds the model's answer** (2026-10-11, #182; superseded by #307) — probed
-  on device, the ~3B model filled
-  every optional field: 13:00 for "dinner", 00:00 with isAllDay false for
-  a timeless phrase, "task" for a lunch, a Thursday for "next Friday", a
-  Tuesday and 120 minutes in every finder answer. So `grounding.ts` reads
-  the phrase itself and the normalizers keep a model value only where the
-  phrase supports it: a start must be a stated clock time (corrected or
-  filled when the model disagrees or omits it) or a named meal's or part
-  of the day's default (one table, also the finder's bounds), else the
-  event is all day; the end comes only from a stated range; a named
-  weekday is where the date lands; a to-do needs a cue word, so `kind`
-  left the schema; the finder's duration is the form's unless stated,
-  its window the words' when named, its weekdays only when named.
-  Rejected: a larger model (it would guess 19:00 instead of 13:00 — a
-  better guess, still a guess), prompt-only fixes (the prompt already
-  forbade inventing), asking the model where a value came from. Open:
-  capture items (no phrase per item), German "morgen" (also "morning"),
-  an "assumed" badge for the default times — with the draft thread.
-- **The title holds only the phrase's words** (2026-10-24, #248; superseded by #307) — "lunch with
-  tom tomorrow" came back "Lunch with Sarah": the model copies a prompt's
-  example title into any phrase of its shape. The prompt lost its examples;
-  `groundTitle` keeps the model's title only when its words are the
-  phrase's (plus ones naming no one: "with"), else the phrase stands in;
-  `trimWhen` takes the when off the ends, never a span's, a name's or one
-  it half-reads ("until Friday", "Black Friday"); a place a cue leads into
-  leaves for its field, and a when or company is no place. Rejected: the
-  example behind the check, a rule-only prompt, a code-only title. Open:
-  mid-title when-words, "tomorrow lunch with tom" → "Lunch".
-- **A spoken command is not the title** (2026-11-08, #302; superseded by #307) — the iPhone's
-  model echoes a dictated phrase ("Add an event to have lunch with
-  Stefan"), and the phrase stands in when a title fails `groundTitle`.
-  `withoutCommand` takes the frame off first: a wish, a request with a
-  verb, or a calendar verb — "add"/"schedule" alone, a misheard "at an",
-  the rest beside an indefinite article, a pronoun or a tail — so "Book
-  club" and "Plan my week" stay; "an event for" goes, "a meeting" stays.
-  `trimWhen` takes the when before the company too ("lunch tomorrow with
-  Stefan"). Rejected: a prompt rule, an opener as evidence, any "…
-  eintragen". Open: "block <when> for <event>", a place before the object.
-- **A bare turn leans on the draft** (2026-11-09, #303; superseded by #307) — "it's in Vienna"
-  after "Cafe Meek" put "Vienna" over the place or changed nothing, and
-  "with Stefan" landed in the location: a model asked for the whole event
-  back answers such a turn its own way. `bareTurns.ts` reads the two
-  without it: where joins the place as said ("Cafe Meek, Vienna", looked
-  up again), company the title, inviting no one. Anything more — a second
-  clause, a when, a verb, a listed word — stays the model's. Rejected: a prompt
-  rule, telling a city by the "in" it was said after, adding to the
-  address a lookup wrote. Open: "Conference in Berlin", then "it's in
-  Vienna" reads "Berlin, Vienna"; exonyms and districts ("in Wien").
-- **The bench runs a model without the rules** (2026-11-11, #306) — whether
-  rules that read a phrase are the wrong road was argued, then measured: the
-  bench runs `app`, `raw` (the app's prompts, the answer not held against the
-  words) and `plain` (one prompt that states the conventions, no code that
-  reads the words) on Apple's model, six open models over Ollama and Claude.
-  Through the rules a 1.7B model and Opus alike score 53–62 of 70, Apple's
-  as asked today 47–48; without them Claude scores 65–66, Gemma 4 31B
-  49–61, a phone-size model 26 at most. Apple's title-only first phrase is
-  the schema's doing: optional properties are skipped, required ones filled.
-  Rejected: a plain prompt tuned per model. Open: `todo.md`, Tier 3.
+- **The bench's `plain` arm** (2026-11-11, #306) — one prompt that states
+  the conventions and asks for the whole draft, no code reading the words:
+  what a capable general model does on its own, and the arm the training
+  data's teacher answers. It was measured beside the app's phrase rules
+  (their arms, `app` and `raw`, went with #307): through the rules a 1.7B
+  model and Opus alike scored 53–62 of 70; without them Claude 65–66, a
+  phone-size model 26 at most. Rejected: a plain prompt tuned per model.
 - **A served model beside Apple's** (2026-10-12, #184)
   — the desktop can answer `generateJson` from a model served over HTTP
   on this Mac: Ollama through its own API (the schema as `format`,
@@ -1620,14 +1528,11 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   calendar's hue before anything is written; the form is the focused
   draft's view, "Add all" writes several; capture's events open as one
   such thread, its review list gone. A refinement is stateless — the
-  draft as JSON plus the change, merged by the grounding rules with the
-  draft as the anchor — not a `LanguageModelSession` transcript (4K
-  context, session state across IPC, nothing the fixture could play).
-  Rejected: letting the model resolve an open hour in a change (the
-  draft's own start decides: a dinner "at 8" is 20:00), a `draft` tint
-  variant (pattern over color — the hatch reads in both schemes).
-  Desktop first; open: the iOS sheet (todo.md), drafts in the month
-  view, a slot editor drawing its form as a draft, to-dos in "Add all".
+  draft as JSON plus the change — not a `LanguageModelSession` transcript
+  (4K context, session state across IPC, nothing the fixture could play).
+  Rejected: a `draft` tint variant (pattern over color — the hatch reads
+  in both schemes). Open: drafts in the month view, a slot editor drawing
+  its form as a draft.
 - **The draft thread on iOS, in the sheet** (2026-10-12, #187) — the
   desktop panel's logic became `useThreadEditor`, which the iOS edit
   sheet runs too: the field takes changes, the turns with Undo, the
@@ -1637,18 +1542,7 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   through kept-alive draft atoms (drafts to draw, a day to show, a click)
   instead of props, the desktop moved onto them. Rejected: a second
   iOS copy of the panel's effects (the quick-add field's two copies
-  drifted once, which is why `useQuickAddModel` exists). Open: the
-  drafts drawn behind a half-height sheet (todo.md).
-- **Drafts on the iOS calendar** (2026-10-12, #188) — the editor became a
-  form-sheet route (react-native-screens, half and full detents): a new
-  item opens at half height over the live calendar, which draws the
-  drafts dashed and tagged "Draft" (React Native has no repeating
-  gradient for the desktop's hatch), the free slots dotted, a tap
-  focusing or moving; the quick-add field leaves the focus alone so the
-  keyboard does not raise the sheet. Rejected: `@expo/ui`'s BottomSheet
-  (its SwiftUI host hides the form from Maestro, #137 — this sheet is a
-  plain presented controller), a "show on calendar" toggle on the page
-  sheet. Open: the desktop leftovers (todo.md), a detent set from code.
+  drifted once, which is why `useQuickAddModel` exists).
 - **Mixed drafts, each in its own place** (2026-10-13, #199) — a draft
   keeps its kind and the calendar or list picked for it (with a
   reminder's own fields) in its extras; "Add all" writes events and
@@ -1659,59 +1553,29 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   pinning every draft to the default calendar at creation (a pick on the
   first would stop reaching the rest — the common capture case), one
   calendar for the batch (what this replaced). Open: to-do drafts on the grid.
-- **A changed field's tint holds, then fades** (2026-10-13) — #191's
-  1.1 s fade was over before the eye reached the form: the tint now holds
-  at full for 1 s and eases out over 1.5 s (`TURN_FLASH_HOLD_MS`,
-  `TURN_FLASH_FADE_MS`), Settings' highlight on the row a link lands on.
+- **A fleeting tint holds, then fades** (2026-10-13) — a 1.1 s fade was
+  over before the eye reached it: the tint holds at full for 1 s and
+  eases out over 1.5 s (`TURN_FLASH_HOLD_MS`, `TURN_FLASH_FADE_MS`), on
+  the search chips a turn changed and the Settings row a link lands on.
   Rejected: just a longer fade (it spends its length half-faded and still
-  reads as a blink), a tint that stays until the next edit (#191 turned
-  down a lasting mark).
-- **Thread turns newest first, two shown, changes flash** (2026-10-13, #191)
-  — both threads, both apps: newest on top with Undo, wrapped, two then
-  "+N earlier queries ⌄", hung under the field as one card with it.
-  Nothing under the field moves: reading is a spinner in place, hints
-  and failures are the field's placeholder (a click restores the words).
-  Changed fields and chips tint and fade (1.1 s, kept under reduced
-  motion). Reverses #190's one-line iOS row at Nik's call. Rejected: a
-  lasting mark per field (the summary is the record), a status line
-  under the field, layout transitions in the iOS sheet header. Open:
-  long failures truncate in the field (tooltip/VoiceOver say all).
-- **A tighter iOS editor header** (2026-10-13, #190) — the sheet's fixed
-  header left the half-height form little room once a thread showed:
-  the "Describe it" label went (the placeholder says it), the thread
-  shows only its last turn, on one line with Undo (Undo takes back only
-  that one; the desktop keeps the list), and the rows sit closer — the
-  title field moved up about 100 pt. Rejected: starting at 60 % or 75 %
-  height, which buys one or three form rows and costs the calendar the
-  half sheet is for (on an iPhone 17 Pro about 3.5 or 1 hour of timeline
-  stay in view instead of 5).
+  reads as a blink). The editor's fields, which this was made for, keep a
+  lasting mark instead since #308.
 - **Editor forms as grouped cards, the header given room** (2026-10-17,
-  #223) — #190's squeeze read as bad design once the half sheet was in
-  hand. The iOS editor now draws its forms as iOS inset grouped cards on
+  #223) — the iOS editor draws its forms as iOS inset grouped cards on
   the Settings pages' rows (`GroupedList`, moved out of `settings/`), in
   Calendar's and Reminders' own order with the calendar card before the
   repeat card (picked far more often), a card's header uppercase
-  ("CALENDAR", "REPEAT", "LIST"); the fixed header keeps the Cancel ·
-  title · Save row and the quick-add field (a card on the ground, 17 pt)
-  with its thread, and the kind control scrolls with the form. The
-  desktop panel gets a header that stays (title, Close), captioned
-  sections (When, Where, Repeat, …) and a footer that stays with Delete ·
-  Cancel · Save. Rejected: a taller starting detent (#190's reasons
-  hold), a pushed calendar picker (the inline rows stay the flows'
-  targets and one tap), Repeat inside the dates card (its conditional
-  rows made it long). Open: the chips at the accessibility text sizes.
+  ("CALENDAR", "REPEAT", "LIST"); the kind control scrolls with the form
+  (the header's quick-add field and thread became the Assistant view in
+  #308). The desktop panel gets a header that stays (title, Close),
+  captioned sections (When, Where, Repeat, …) and a footer that stays
+  with Delete · Cancel · Save. Rejected: a pushed calendar picker (the
+  inline rows stay the flows' targets and one tap), Repeat inside the
+  dates card (its conditional rows made it long). Open: the chips at the
+  accessibility text sizes.
 - **Location follows the event time on iOS** (2026-11-05, #294) — the create
   and edit sheets use the desktop order. The dates and “Find a time”
   come before Location, with suggestions and the map under its field.
-- **A drag raises the half-height editor** (2026-10-26, #257) — the form
-  scrolled on its own in the strip under the header. A drag up on the
-  form or the turns now raises the sheet first, as in Maps; at half with
-  the keyboard down the form sits at its top, the only place UIKit hands
-  a drag to the sheet. The turns take a third of the sheet as it stands,
-  not 30 % of the screen. Rejected: no scrolling at half (a dead gesture
-  on a cut-off form), one scroll view for field, thread and form (the
-  field would scroll away from its replies), a taller start (#190).
-  Open: the chips, choices and pager under the turns are not capped.
 - **Slot proposals in the create thread** (2026-10-12, #185) — a phrase
   that asks for free time is routed by code (`isFinderPhrase`: English
   and German cues, a search verb or question beside a time word) to the
@@ -1731,19 +1595,11 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
 - **Hands-free dictation** (2026-10-15, #214) — one press of the microphone
   listens until the user takes over: a pause sends the phrase and it
   listens again, the form edited by hand, the field typed into, the
-  microphone or 30 s of silence ends it. The pause is heard from the
-  level alone against the room's floor (`createEndpointer`), so neither
-  adapter needed native work. Rejected: streaming SpeechAnalyzer with live
-  partial words (a new iOS module and a helper push channel), recording
-  while a phrase is read (words said then would queue against a form
-  still changing). Open: the pause length and margins by ear on real
-  rooms, a live transcript, saying "undo" (the pause and the live
-  transcript: "Dictation ends on its words, and shows them", which
-  streams after all). Fixed (2026-10-18, #224): on an
-  iPhone no recording had ever started or been transcribed — expo-audio's
-  `record()` starts nothing on an unprepared recorder, and its file is the
-  `uri` property, not a `getURI()`; the adapter now prepares first, reads
-  `uri`, and refuses to pass a recorder that did not start off as listening.
+  microphone or 30 s of silence ends it. Rejected: recording while a
+  phrase is read (words said then would queue against a form still
+  changing). Open: saying "undo". How a pause is heard (the level alone
+  at first, the words since #322): "Dictation ends on its words, and
+  shows them".
 - **The model says why it is unavailable** (2026-10-10, #168) —
   `ModelStatus` carries disabled / not-ready / unsupported (Apple
   Intelligence switches itself off on a Siri-vs-Mac language mismatch); a
@@ -1764,8 +1620,9 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   `@react-native-ai/apple` is text-only, so `TextRecognizer` is its own
   seam (the permanent OS 26 path) rather than an image field on
   `LanguageModel`. An undated item is dropped, never placed on today; a
-  past date without a stated year rolls forward. Review is a list whose
-  rows open the existing editor, so "never an auto-save" holds. Desktop
+  past date without a stated year rolls forward. Its events open in the
+  editor as drafts (a review list until #183), so "never an auto-save"
+  holds. Desktop
   entry is ⌘V (a menu item and a main-process clipboard read were not
   worth it); iOS uses `expo-sharing`'s receive support with a wrapped
   plugin. Open: the real share sheet on a device (both variants), HEIC
@@ -1773,45 +1630,14 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
 
 - **The model bench** (2026-10-25, #254) — `apps/desktop/e2e/bench/`
   grows the #184 phrase table into cases with turns (a phrase, then the
-  changes a thread would make) through `parseQuickAdd` and `parseRefine`
-  on Apple's model and any served one; a turn is text or a recording
+  changes a thread would make) through the app's own reading of a phrase
+  (the tuned path since #307); a turn is text or a recording
   with its transcript; expectations per field, by where a person would
   put the event, a later turn held to leave what it was not about; a
   JSON report to diff two commits by. Measured, never gated. Rejected:
   exact-JSON snapshots (wording and dates drift), prompt variants as a
   parameter (two runs on two commits do), a CI gate (no model there).
   Open: the gaps the baseline shows, listed in todo.md (Tier 3).
-- **Quick-add repeats are the phrase's** (2026-10-26, `todo/quick-add-repeat`; superseded by #307)
-  — `statedRepeat` (`grounding.ts`) reads kind, gap, days, ordinal
-  weekday, count and span from the words; `recurrenceFromParse` builds
-  the rule from that, in quick add and over a draft's rule in a
-  refinement. No repeat word, no rule; the model's kind only behind a
-  repeat word the code does not read, its count and gap never, its end
-  only behind an until word naming a day. A rule with chosen days starts
-  on the first of them. Rejected: sparing only the `count: 1` rule (the
-  invented end a week on would have stayed). Open: "twice a week", "2nd
-  and 4th Tuesday".
-- **The title's trim knows the repeat forms** (2026-10-26,
-  `todo/title-repeat-forms`; superseded by #307) — `WHEN_AT_END` takes the forms `statedRepeat`
-  reads, a repeat said first ("Jeden Dienstag um 18 Uhr Fußball" is
-  "Fußball"), and a repeat's end, count or span after it — those only
-  behind a repeat in the title or the phrase, so "Vacation until Friday"
-  keeps its words. A location the model made of the phrase's only weekday
-  ("Standup Monday", "Coffee Thursday") is no place and holds nothing in
-  the title; any other holds its words ("Ruby Tuesday"). Rejected: trimming
-  a frequency word said first ("Weekly sync" is a name). Open: nouns read
-  as repeats ("Ski weekends", "McKinsey Quarterly"), an end said first.
-- **Days a repeat rules out** (2026-10-26, `todo/negated-days`; superseded by #307: the model writes `except`) — "every
-  day except Sunday", "jeden Werktag außer Freitag", "every morning except
-  Saturday and Sunday": the days named after the negation come off the
-  rule's days (all seven for a daily one) and the rule turns weekly on
-  what is left; the title drops the exception with the repeat, and the
-  date reader no longer lands on a ruled-out weekday; said of a draft,
-  "not on Fridays" takes the day off the editor's days. Not read: an
-  exception that is no day ("except holidays"), one date ("except Friday
-  the 13th"), a bare "but", one that leaves none ("every Monday except
-  Monday") or sits on a rule without days ("weekly except Friday"). The
-  finder's day reader keeps leaving a negation to the model.
 - **Notes and notifications from the words** (2026-10-26,
   `todo/quick-add-notes-notifications`; the Assistant's part superseded by #307, a finder phrase keeps it) — `extras.ts` reads the offsets
   ("remind me 30 minutes before", "eine Stunde vorher", "the day before",

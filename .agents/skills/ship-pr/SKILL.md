@@ -139,8 +139,10 @@ the next number.
 2. Read its number and commit the record in `docs/decisions.md` under its
    area, citing `(#<n>)`: the decision, the alternatives rejected, what it
    leaves open — ten lines at most. The mechanism goes in the current-state
-   doc it belongs to, never the log. A shipped `todo.md` item leaves
-   `todo.md` in the same commit. A PR with nothing to record (a test fix, a
+   doc it belongs to, never the log. A record this PR reverses, and an
+   open point it closes, leave the log in the same commit (the new record
+   names the PR it replaced). A shipped `todo.md` item leaves `todo.md` in
+   the same commit. A PR with nothing to record (a test fix, a
    dependency bump) says `No decisions entry: <why>.` in its body.
 3. Push again (CI cancels the superseded run) and update the body:
    `gh pr edit <n> --body-file <body.md>`.
