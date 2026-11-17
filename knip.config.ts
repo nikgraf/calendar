@@ -41,8 +41,8 @@ export default {
     },
     'apps/ios': {
       entry: ['e2e/live/scripts/*.js', 'fingerprint.config.cjs', 'scripts/*.mjs'],
-      // Maestro is installed by the job; `sample` ships with macOS (run-flows.ts).
-      ignoreBinaries: ['maestro', 'sample'],
+      // Maestro is installed by the job; `sample` and `vm_stat` ship with macOS (run-flows.ts).
+      ignoreBinaries: ['maestro', 'sample', 'vm_stat'],
       ignoreDependencies: [
         // The JSDoc type of fingerprint.config.cjs, from expo.
         '@expo/fingerprint',

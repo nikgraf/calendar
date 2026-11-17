@@ -50,7 +50,10 @@ import {
   mainThreadLine,
   mainThreadSummary,
   observe,
+  pagingLine,
   type Stall,
+  vmStat,
+  type VmStat,
   type Waiting,
 } from './stallWatch.ts';
 
@@ -95,6 +98,10 @@ const STALL_THRESHOLD_MS = 1500;
 /** Samples per attempt at most: one stalled flow must not fill the artifact. */
 const MAX_SAMPLES = 12;
 
+/** The host's paging counters now (`vm_stat`), around a sample. */
+const readVmStat = (): VmStat | undefined =>
+  vmStat(spawnSync('vm_stat', { encoding: 'utf8' }).stdout ?? '');
+
 /**
  * Watches the app's main thread while `maestro test` runs (stallWatch.ts):
  * when an XCTest request waits STALL_THRESHOLD_MS, `sample` records every
@@ -123,6 +130,7 @@ const watchMainThread = (dir: string) => {
   let waiting: ReadonlyMap<number, Waiting> = new Map();
   const found: Array<{ file: string; stall: Stall }> = [];
   const files = new Map<number, string>();
+  const paging = new Map<string, string>();
   let sampling: Promise<unknown> | undefined;
   let taken = 0;
   let pending = '';
@@ -158,10 +166,15 @@ const watchMainThread = (dir: string) => {
     const stamp = new Date().toISOString().slice(11, 23).replaceAll(':', '-');
     const file = join(stalls, `${stamp}-${pid}.txt`);
     files.set(pid, file);
+    const before = readVmStat();
     const child = spawn('sample', [String(pid), '4', '1', '-mayDie', '-file', file], {
       stdio: 'ignore',
     });
     sampling = once(child, 'close').finally(() => {
+      const after = readVmStat();
+      if (before && after) {
+        paging.set(file, pagingLine(before, after));
+      }
       sampling = undefined;
     });
   }, 100);
@@ -171,20 +184,34 @@ const watchMainThread = (dir: string) => {
       stream.kill();
       await sampling;
       for (const { file, stall } of found) {
+        const paged = paging.get(file);
         const at = new Date(stall.since).toISOString().slice(11, 23);
+        const relative = file.slice(dir.length + 1);
+        // Timed by the app's own clock; a wait only the log stream's late
+        // delivery made long is no stall (the app had already answered).
+        const seconds = stall.seconds ?? stall.arrivalSeconds;
+        if (seconds * 1000 < STALL_THRESHOLD_MS) {
+          say(
+            `The log stream delivered XCTest's answer ${stall.arrivalSeconds.toFixed(1)} s late (the app answered within ${seconds.toFixed(1)} s); ${relative} is a sample of a responsive app`,
+          );
+          continue;
+        }
         const main = existsSync(file) ? mainThreadSummary(readFileSync(file, 'utf8')) : undefined;
         say(
-          `::warning::The app's main thread answered XCTest only after ${stall.seconds.toFixed(1)} s (asked at ${at} UTC, pid ${stall.pid}); sample: ${file}`,
+          `::warning::The app's main thread answered XCTest only after ${seconds.toFixed(1)} s (asked at ${at} UTC, pid ${stall.pid}); sample: ${file}`,
         );
         say(
-          `::group::Main thread during the ${stall.seconds.toFixed(1)} s wait: ${main ? `${main.idle}% idle in its run loop, heaviest busy path` : 'no sample'}`,
+          `::group::Main thread during the ${seconds.toFixed(1)} s wait: ${main ? `${main.idle}% idle in its run loop, heaviest busy path` : 'no sample'}`,
         );
+        if (paged) {
+          say(paged);
+        }
         for (const frame of main?.path ?? []) {
           say(frame);
         }
         say('::endgroup::');
         summary(
-          `The app's main thread answered XCTest only after ${stall.seconds.toFixed(1)} s (asked at ${at} UTC); its sample is in the diagnostics artifact (\`${file.slice(dir.length + 1)}\`).`,
+          `The app's main thread answered XCTest only after ${seconds.toFixed(1)} s (asked at ${at} UTC); its sample is in the diagnostics artifact (\`${relative}\`)${paged ? `; ${paged}` : ''}.`,
         );
       }
     },

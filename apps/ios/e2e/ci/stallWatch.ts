@@ -17,8 +17,20 @@
 /** One XCTest line of the app's log: a request to the main thread, or its start there. */
 export interface MainThreadLine {
   readonly kind: 'asked' | 'answered';
+  /**
+   * When the app logged it (ms, the line's own clock): `log stream` can
+   * deliver a line seconds late on CI, so a wait is timed by this, not by
+   * when the line arrived.
+   */
+  readonly logged: number | undefined;
   readonly pid: number;
 }
+
+/** The leading `YYYY-MM-DD HH:MM:SS.mmm` of a compact or syslog-style line, as ms (zone ignored). */
+const loggedAt = (line: string): number | undefined => {
+  const at = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}\.\d{3})/.exec(line);
+  return at ? Date.parse(`${at[1]}T${at[2]}Z`) : undefined;
+};
 
 /**
  * The XCTest main-run-loop line in one line of `log stream` output (any
@@ -30,24 +42,34 @@ export const mainThreadLine = (line: string): MainThreadLine | undefined => {
     return undefined;
   }
   if (line.includes('about to CFRunLoopPerform')) {
-    return { kind: 'asked', pid: Number(pid) };
+    return { kind: 'asked', logged: loggedAt(line), pid: Number(pid) };
   }
   if (line.includes('inside CFRunLoopPerform')) {
-    return { kind: 'answered', pid: Number(pid) };
+    return { kind: 'answered', logged: loggedAt(line), pid: Number(pid) };
   }
   return undefined;
 };
 
-/** A request the main thread has not started yet: since when, and whether it was sampled. */
+/**
+ * A request the main thread has not started yet: when it arrived (the
+ * watcher's clock, which decides when to sample), when the app logged it,
+ * and whether it was sampled.
+ */
 export interface Waiting {
+  readonly logged: number | undefined;
   readonly sampled: boolean;
   readonly since: number;
 }
 
-/** A request the main thread started only after a sample was taken. */
+/**
+ * A sampled request, once the main thread started it: how long it waited
+ * by the app's own clock (`undefined` without timestamps), and by arrival.
+ * A wait the log stream made up (late delivery) is long by arrival only.
+ */
 export interface Stall {
+  readonly arrivalSeconds: number;
   readonly pid: number;
-  readonly seconds: number;
+  readonly seconds: number | undefined;
   readonly since: number;
 }
 
@@ -63,16 +85,24 @@ export const observe = (
 ): { readonly stall: Stall | undefined; readonly waiting: ReadonlyMap<number, Waiting> } => {
   const next = new Map(waiting);
   if (line.kind === 'asked') {
-    next.set(line.pid, { sampled: false, since: now });
+    next.set(line.pid, { logged: line.logged, sampled: false, since: now });
     return { stall: undefined, waiting: next };
   }
   const open = next.get(line.pid);
   next.delete(line.pid);
+  if (open?.sampled !== true) {
+    return { stall: undefined, waiting: next };
+  }
   return {
-    stall:
-      open?.sampled === true
-        ? { pid: line.pid, seconds: (now - open.since) / 1000, since: open.since }
-        : undefined,
+    stall: {
+      arrivalSeconds: (now - open.since) / 1000,
+      pid: line.pid,
+      seconds:
+        open.logged === undefined || line.logged === undefined
+          ? undefined
+          : (line.logged - open.logged) / 1000,
+      since: open.since,
+    },
     waiting: next,
   };
 };
@@ -118,7 +148,10 @@ export const mainThreadSummary = (
   report: string,
 ): { readonly idle: number; readonly path: ReadonlyArray<string> } | undefined => {
   const lines = report.split('\n');
-  const head = lines.findIndex((line) => /^\s+\d+ Thread_\d+.*Main Thread/.test(line));
+  // `sample` names it "Main Thread" on some hosts and only by its queue on others (CI).
+  const head = lines.findIndex((line) =>
+    /^\s+\d+ Thread_\d+.*(Main Thread|com\.apple\.main-thread)/.test(line),
+  );
   if (head === -1) {
     return undefined;
   }
@@ -187,4 +220,47 @@ export const mainThreadSummary = (
       .slice(below === -1 ? path.length : below)
       .map(({ count, frame }) => `${String(share(count)).padStart(3)}% ${frame}`),
   };
+};
+
+/** The host's paging counters `vm_stat` prints, in pages, with its page size in bytes. */
+export interface VmStat {
+  readonly compressed: number;
+  readonly fileBacked: number;
+  readonly free: number;
+  readonly pageins: number;
+  readonly pageSize: number;
+  readonly swapins: number;
+}
+
+/** `vm_stat`'s output, read; `undefined` when a counter is missing. */
+export const vmStat = (text: string): VmStat | undefined => {
+  const count = (name: string): number | undefined => {
+    const value = new RegExp(`^"?${name}"?:\\s+(\\d+)`, 'm').exec(text)?.[1];
+    return value === undefined ? undefined : Number(value);
+  };
+  const pageSize = Number(/page size of (\d+) bytes/.exec(text)?.[1]);
+  const free = count('Pages free');
+  const fileBacked = count('File-backed pages');
+  const compressed = count('Pages stored in compressor');
+  const pageins = count('Pageins');
+  const swapins = count('Swapins');
+  return Number.isFinite(pageSize) &&
+    free !== undefined &&
+    fileBacked !== undefined &&
+    compressed !== undefined &&
+    pageins !== undefined &&
+    swapins !== undefined
+    ? { compressed, fileBacked, free, pageins, pageSize, swapins }
+    : undefined;
+};
+
+/**
+ * What the host paged during a sample, as one line: page-ins (files read
+ * back from disk) and swap-ins in MB, and its free, file-backed and
+ * compressed memory at the end. A main thread waiting on a cold system file
+ * (the SF Symbols catalog, ICU data, fonts) shows as page-ins.
+ */
+export const pagingLine = (before: VmStat, after: VmStat): string => {
+  const mb = (pages: number): string => `${Math.round((pages * after.pageSize) / 1_048_576)} MB`;
+  return `host paging during the sample: ${mb(after.pageins - before.pageins)} paged in, ${mb(after.swapins - before.swapins)} swapped in; then ${mb(after.free)} free, ${mb(after.fileBacked)} file-backed, ${mb(after.compressed)} compressed`;
 };

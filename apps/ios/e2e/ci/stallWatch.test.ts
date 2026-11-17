@@ -4,20 +4,23 @@ import {
   mainThreadLine,
   mainThreadSummary,
   observe,
+  pagingLine,
+  vmStat,
   type Waiting,
 } from './stallWatch.ts';
 
 /** `log stream --style compact` lines of one XCTest request, as the app logs them. */
-const line = (message: string, pid = 61_011): string =>
-  `2026-11-17 09:39:26.239 Df SolunivoDev[${pid}:71778] [com.apple.dt.xctest:Default] XCTPerformOnMainRunLoop${message}`;
+const line = (message: string, pid = 61_011, time = '09:39:26.239'): string =>
+  `2026-11-17 ${time} Df SolunivoDev[${pid}:71778] [com.apple.dt.xctest:Default] XCTPerformOnMainRunLoop${message}`;
 const ASKED = line('[not MT]: about to CFRunLoopPerform');
 const WAITING = line('[not MT]: waiting with 30.00s responsiveness timeout');
 const ANSWERED = line('[MT]: inside CFRunLoopPerform');
 
 describe('mainThreadLine', () => {
   it('reads the request and its start on the main thread, with the pid', () => {
-    expect(mainThreadLine(ASKED)).toEqual({ kind: 'asked', pid: 61_011 });
-    expect(mainThreadLine(ANSWERED)).toEqual({ kind: 'answered', pid: 61_011 });
+    const logged = Date.parse('2026-11-17T09:39:26.239Z');
+    expect(mainThreadLine(ASKED)).toEqual({ kind: 'asked', logged, pid: 61_011 });
+    expect(mainThreadLine(ANSWERED)).toEqual({ kind: 'answered', logged, pid: 61_011 });
   });
 
   it('ignores the waiting line and other processes', () => {
@@ -68,16 +71,29 @@ describe('observe', () => {
     expect(waiting.size).toBe(0);
   });
 
-  it('reports a sampled request when the main thread finally starts it', () => {
+  it('reports a sampled request when the main thread finally starts it, timed by the app', () => {
     const { stalls } = run(
       [
         [ASKED, 1000],
         [WAITING, 1001],
-        [ANSWERED, 17_420],
+        [line('[MT]: inside CFRunLoopPerform', 61_011, '09:39:42.657'), 17_500],
       ],
       3500,
     );
-    expect(stalls).toEqual([{ pid: 61_011, seconds: 16.42, since: 1000 }]);
+    expect(stalls).toEqual([{ arrivalSeconds: 16.5, pid: 61_011, seconds: 16.418, since: 1000 }]);
+  });
+
+  it('tells a late delivery from a stall: the app answered at once', () => {
+    // The log stream held the answer back 13 s (run 44076498121 had such waits
+    // with the main thread idle and serving XCTest throughout the sample).
+    const { stalls } = run(
+      [
+        [ASKED, 1000],
+        [line('[MT]: inside CFRunLoopPerform', 61_011, '09:39:26.290'), 14_000],
+      ],
+      3500,
+    );
+    expect(stalls).toEqual([{ arrivalSeconds: 13, pid: 61_011, seconds: 0.051, since: 1000 }]);
   });
 
   it('reports nothing for a wait that was never sampled', () => {
@@ -102,9 +118,9 @@ describe('observe', () => {
 describe('dueForSample', () => {
   it('names a request once it has waited the threshold, and only until it is sampled', () => {
     const waiting = new Map<number, Waiting>([
-      [1, { sampled: false, since: 0 }],
-      [2, { sampled: false, since: 1500 }],
-      [3, { sampled: true, since: 0 }],
+      [1, { logged: undefined, sampled: false, since: 0 }],
+      [2, { logged: undefined, sampled: false, since: 1500 }],
+      [3, { logged: undefined, sampled: true, since: 0 }],
     ]);
     expect(dueForSample(waiting, 2000, 2000)).toEqual([1]);
   });
@@ -157,7 +173,53 @@ describe('mainThreadSummary', () => {
     ]);
   });
 
+  it('finds a main thread named only by its queue, as sample does on CI', () => {
+    const ci = REPORT.replace(
+      'Thread_40634538: Main Thread   DispatchQueue_<multiple>',
+      'Thread_66217   DispatchQueue_1: com.apple.main-thread  (serial)',
+    );
+    expect(mainThreadSummary(ci)?.idle).toBe(79);
+  });
+
   it('is undefined for a report without a main thread', () => {
     expect(mainThreadSummary('Call graph:\n')).toBeUndefined();
+  });
+});
+
+/** `vm_stat` on a macOS host (counters cut to the ones read). */
+const VM_STAT = (
+  pageins: number,
+  free: number,
+): string => `Mach Virtual Memory Statistics: (page size of 16384 bytes)
+Pages free:                                     ${free}.
+Pages active:                                 511185.
+File-backed pages:                            65536.
+Pages stored in compressor:                  12800.
+"Translation faults":                    21033631845.
+Pageins:                                   ${pageins}.
+Pageouts:                                     753658.
+Swapins:                                   110.
+Swapouts:                                  122.
+`;
+
+describe('vmStat and pagingLine', () => {
+  it('reads the paging counters and says what a sample saw paged in', () => {
+    const before = vmStat(VM_STAT(1000, 6400));
+    const after = vmStat(VM_STAT(7400, 3200));
+    expect(before).toEqual({
+      compressed: 12_800,
+      fileBacked: 65_536,
+      free: 6400,
+      pageins: 1000,
+      pageSize: 16_384,
+      swapins: 110,
+    });
+    expect(before && after && pagingLine(before, after)).toBe(
+      'host paging during the sample: 100 MB paged in, 0 MB swapped in; then 50 MB free, 1024 MB file-backed, 200 MB compressed',
+    );
+  });
+
+  it('is undefined when a counter is missing', () => {
+    expect(vmStat('Mach Virtual Memory Statistics: (page size of 16384 bytes)\n')).toBeUndefined();
   });
 });
