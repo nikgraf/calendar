@@ -933,7 +933,6 @@ describe('calendar desktop e2e', () => {
       .toPlainDateTime()
       .add({ days: 1, hours: 2 })
       .toZonedDateTime(zone).epochMilliseconds;
-    await cdp.waitUntil(() => true);
     const deadline = Date.now() + 10_000;
     let moved = await eventStart('Standup meeting');
     while (moved !== expected && Date.now() < deadline) {
