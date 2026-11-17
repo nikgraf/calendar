@@ -321,13 +321,13 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   test alone (both bugs came in as `${constant} === 'v'`); expanding each
   file's helpers into its templates in that test (a second TS reader).
   Superseded by #342, which removed it with the last string.
-- **e2e page code as typed functions** (2026-11-16, #342) — a function's
-  source goes to the page with JSON arguments (`Cdp.evaluate`,
+- **e2e page code as typed functions** (2026-11-16, #342, landed in #344) —
+  a function's source goes to the page with JSON arguments (`Cdp.evaluate`,
   `waitUntil`), so tsc and the lint check it; a boolean predicate makes
   both misreads above type errors. Each call gets the page kit `$`; a name
   the function does not bind must be a listed page global (a closed-over
   `name` is refused, not read as `window.name`), checked statically in the
-  unit run too. Every spec moved in this PR, a commit each. Rejected:
+  unit run too. Every spec moved at once, a commit each in #342. Rejected:
   installed helpers (a reload loses them), self-contained ones (no
   composing), Node-side single reads (no one snapshot), PRs per batch.
   Open: the real-EventKit specs had only the static checks before CI.
