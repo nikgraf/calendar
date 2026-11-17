@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vite-plus/test';
 import {
   breath,
+  DOT_SIZE,
   dotLook,
   letterOpacity,
   ORB_DOTS as dots,
   orbDot,
   orbOpacity,
+  RADIUS,
   SWEEPS,
 } from './loadingOrbMotion.ts';
 const phases = Array.from({ length: 41 }, (_, n) => n / 40);
@@ -43,16 +45,20 @@ describe('orbDot', () => {
     expect(Math.hypot(later.x - start.x, later.y - start.y)).toBeGreaterThan(0.1);
   });
 
-  it('holds the dots still under Reduce Motion, apart from each other', () => {
+  it('holds the dots still under Reduce Motion, none drawn over another', () => {
     for (const { index, ring } of dots) {
       expect(orbDot(ring, index, 0.6, true)).toEqual(orbDot(ring, index, 0, true));
     }
-    const drawn = dots.map(({ index, ring }) => orbDot(ring, index, 0, true));
+    // As drawn: depth only sets a dot's size, so the gap is in the plane.
+    const drawn = dots.map(({ index, ring }) => {
+      const { depth, x, y } = orbDot(ring, index, 0, true);
+      return { radius: (DOT_SIZE * dotLook(depth).scale) / 2, x: x * RADIUS, y: y * RADIUS };
+    });
     for (const [n, dot] of drawn.entries()) {
       for (const other of drawn.slice(n + 1)) {
-        expect(
-          Math.hypot(dot.x - other.x, dot.y - other.y, dot.depth - other.depth),
-        ).toBeGreaterThan(0.05);
+        const gap = Math.hypot(dot.x - other.x, dot.y - other.y) - dot.radius - other.radius;
+        // The closest pair may just touch.
+        expect(gap).toBeGreaterThan(-0.1);
       }
     }
   });
@@ -83,9 +89,13 @@ describe('letterOpacity', () => {
   });
 
   it('jumps no letter at the seams between sweeps', () => {
-    for (const seam of [0, 1 / SWEEPS, 1]) {
-      for (const at of letters) {
-        expect(letterOpacity(at, seam, false)).toBeCloseTo(0.4, 9);
+    // The band has left the label just before a seam and not yet entered
+    // it on the seam.
+    for (const seam of [1 / SWEEPS, 2 / SWEEPS, 1]) {
+      for (const phase of [seam - 1e-9, seam]) {
+        for (const at of letters) {
+          expect(letterOpacity(at, phase, false)).toBeCloseTo(0.4, 9);
+        }
       }
     }
   });

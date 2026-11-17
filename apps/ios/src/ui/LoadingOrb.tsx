@@ -13,12 +13,15 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import {
+  DOT_SIZE,
   dotLook,
   letterOpacity,
   LOOP_MS,
   ORB_DOTS,
+  ORB_SIZE,
   orbDot,
   orbOpacity,
+  RADIUS,
 } from './loadingOrbMotion.ts';
 import { type ThemeColors, useStyles, useTheme } from './theme.ts';
 
@@ -40,11 +43,6 @@ const LOOP = {
   easing: Easing.linear,
   reduceMotion: ReduceMotion.Never,
 };
-
-const ORB_SIZE = 24;
-const DOT_SIZE = 2.1;
-/** The rings' radius: a dot at full scale stays inside the orb's box. */
-const RADIUS = (ORB_SIZE - DOT_SIZE) / 2;
 
 /**
  * A wait that is usually short, centred in what it fills: nothing for the

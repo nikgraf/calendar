@@ -20,6 +20,13 @@
 /** One loop of every motion, in milliseconds. */
 export const LOOP_MS = 6000;
 
+/** The orb's box, in points. */
+export const ORB_SIZE = 24;
+/** A dot at full scale, in points. */
+export const DOT_SIZE = 2.1;
+/** The rings' radius, in points: a dot at full scale stays inside the box. */
+export const RADIUS = (ORB_SIZE - DOT_SIZE) / 2;
+
 const TAU = Math.PI * 2;
 const degrees = (angle: number) => (angle / 360) * TAU;
 
@@ -41,8 +48,12 @@ const SPIN_TURNS = 1;
 export const ORB_DOTS: ReadonlyArray<{ readonly index: number; readonly ring: number }> =
   RING_DOTS.flatMap((dots, ring) => Array.from({ length: dots }, (_, index) => ({ index, ring })));
 
-/** Where Reduce Motion holds the dots: a phase where none of them overlap. */
-const STILL_PHASE = 0.07;
+/**
+ * Where Reduce Motion holds the dots: the phase where they lie farthest
+ * apart on screen. None leaves every pair apart; here the closest pair
+ * just touch.
+ */
+const STILL_PHASE = 0.468;
 
 /** Sweeps of the label's band, and breaths under Reduce Motion, per loop. */
 export const SWEEPS = 3;
