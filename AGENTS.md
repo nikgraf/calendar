@@ -445,7 +445,9 @@ commits by staging deliberately.
   `docs/decisions.md` under its area: the decision, the alternatives
   rejected, what it leaves open, and the PR for the detail — ten lines at
   most. The mechanism goes in the current-state doc it belongs to, never
-  in the log, and the test list goes nowhere.
+  in the log, and the test list goes nowhere. The log keeps only what
+  still holds: a PR that reverses a decision deletes that record (its own
+  names the PR it replaced), and closes an open point by cutting it.
 - e2e tests must be date- and scroll-independent: seed relative to "today
   minus N days", locate elements via `scrollIntoView` (harness `locate`),
   and assert relative counts. Desktop specs open an event through the
@@ -536,8 +538,8 @@ learned it, never only into a chat or a local memory file.
 - `docs/agent-gateway.md` — MCP/CLI access for other agents: tools,
   permission levels, ask-first, transport, storage, threat model.
 - `todo.md` — ranked backlog (tiers by impact, one PR per item).
-  `docs/decisions.md` — decision log: every shipped item's `[x]` entry
-  with the design decisions it settled.
+  `docs/decisions.md` — decision log: the decisions shipped items settled
+  that still hold, by area.
 
 Skills (`.agents/skills/`, linked into `.claude/skills/` and `.pi/skills/`):
 `ship-pr` for every PR (review rounds, screenshots, the body, the record);

@@ -49,6 +49,10 @@ file is lost with the machine.
   `--fixup=amend:<sha>` / `reword:<sha>` with `GIT_EDITOR` set to a script
   that writes the new message), then
   `GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash origin/main`.
+  Never rebuild them with `git reset --soft origin/main`: `scripts/review.sh`
+  fetches, so `origin/main` may be past your base, and the next commit
+  then undoes what `main` gained in every file it holds (#349). Reset to
+  `git merge-base origin/main HEAD`, or rebase first.
 - Once pushed, every change is a new commit: Nik squash-merges, so the
   history on the branch doesn't matter. A force-push needs Nik's yes, and
   then goes as `--force-with-lease=<branch>:<old sha>`.
@@ -139,8 +143,10 @@ the next number.
 2. Read its number and commit the record in `docs/decisions.md` under its
    area, citing `(#<n>)`: the decision, the alternatives rejected, what it
    leaves open — ten lines at most. The mechanism goes in the current-state
-   doc it belongs to, never the log. A shipped `todo.md` item leaves
-   `todo.md` in the same commit. A PR with nothing to record (a test fix, a
+   doc it belongs to, never the log. A record this PR reverses, and an
+   open point it closes, leave the log in the same commit (the new record
+   names the PR it replaced). A shipped `todo.md` item leaves `todo.md` in
+   the same commit. A PR with nothing to record (a test fix, a
    dependency bump) says `No decisions entry: <why>.` in its body.
 3. Push again (CI cancels the superseded run) and update the body:
    `gh pr edit <n> --body-file <body.md>`.

@@ -1,13 +1,10 @@
-# Backlog (ranked 2026-09-10, pruned 2026-09-11, reviewed 2026-10-02)
+# Backlog (reviewed 2026-11-17)
 
 How to read: tiers are ordered by impact, top item first within a tier.
 Each item is one `todo/<slug>` PR unless it says otherwise. When an item
 lands it leaves this file and `docs/decisions.md` gets a short record of
-the decisions it settled — this file stays a backlog. File:line evidence is from the
-2026-09-10 audit; re-verify before starting an item. The 2026-09-11
-sweep (`todo/backlog-tiers`) closed every item of the former tiers 1–6
-except the two below; their entries are in `docs/decisions.md` under
-"Backlog sweep (2026-09-11)".
+the decisions it settled — this file stays a backlog. Evidence named in an item dates from when it
+was written; re-verify before starting one.
 
 ## Tier 0 — bugs
 
@@ -32,8 +29,7 @@ The 2026-10-02 review's findings are closed in `docs/decisions.md`
 ## Tier 1 — CI and distribution
 
 - [ ] PR videos (designed, not built) — every PR with a visible change
-      attaches a short recording. `gh` ≥ 2.99.0 (2026-09-01; local is
-      2.97.0, `brew upgrade gh`) adds `--attach` to `gh pr create/edit/
+      attaches a short recording. `gh` ≥ 2.99.0 adds `--attach` to `gh pr create/edit/
   comment` for inline-playable video: 10 MB on Free plans, 100 MB paid
       — design for 10 MB (≤ 20 s clips, 720p wide, `-crf 28` ≈ 1–3 MB).
       Tooling: `pnpm record ios <flow>` wraps `maestro test` in
@@ -43,13 +39,13 @@ The 2026-10-02 review's findings are closed in `docs/decisions.md`
       `apps/desktop/e2e/harness.ts` — OS-level capture is blanked by
       `setContentProtection` whenever screen privacy is on, so the
       compositor path is the one that works on any profile;
-      `ws.onmessage` (`harness.ts:181`) currently drops id-less events,
+      `ws.onmessage` in the harness currently drops id-less events,
       so add an event map + `Page.screencastFrameAck` — frames →
       `ffmpeg -framerate 15 … libx264`. CI: a `record` PR label (same
-      trigger shape as the `testflight` label, `ios.yml:227-234`) records
+      trigger shape as the `testflight` label in `ios.yml`) records
       flows tagged `record` inside the existing `e2e`/`ios-e2e` jobs and
       posts `gh pr comment --attach` with the comment-upsert pattern from
-      `ios.yml:207-221`; ffmpeg is not on the runner images (pinned static
+      `ios.yml`; ffmpeg is not on the runner images (pinned static
       binary). PR template gains a "video attached / n.a." checkbox. Not
       possible: REST/GraphQL upload; inline playback from an Actions
       artifact or a private-repo release asset.
@@ -140,11 +136,6 @@ The 2026-10-02 review's findings are closed in `docs/decisions.md`
 
 ## Tier 3 — AI features
 
-AI redesign (agreed 2026-10-11, one PR each, in this order; the
-grounding PR that opened it, #182, the desktop draft thread (#183),
-the served model (#184) and slot proposals (#185) are in
-`docs/decisions.md` → AI, with the iOS thread in the sheet (#187) and on the calendar (#188); search filters (#186) under Search):
-
 - [ ] Draft thread leftovers on the desktop (the Mac's grid draws the
       thread; the iPhone's sheet covers its calendar, `docs/decisions.md`
       → AI): drafts in the month view, a slot or ⌘N editor without a
@@ -171,7 +162,7 @@ the served model (#184) and slot proposals (#185) are in
       (`answerResult`, `convertQuickAddItem`), so a repeat said for it is
       lost. A to-do's repeat is a Reminders field (`ReminderFields.repeat`,
       kept only on a Reminders list), as its alerts are since #315. Probe
-      first whether v1 writes one for a to-do.
+      first whether the current model writes one for a to-do.
 - [ ] Dictated place names (two iPhone recordings, 2026-11-06,
       `docs/decisions.md` → "Calendar: editing, gestures, views",
       "Places nearby first", "A misheard place is looked for as its other
@@ -212,9 +203,9 @@ the served model (#184) and slot proposals (#185) are in
       bench, 2026-11-11) Gemma 4 E2B scored 40 of 70 at 4.1 s a turn
       asked as the app asks Ollama, and 59 at 0.7 s over the
       OpenAI-compatible route with every field required and
-      `reasoning_effort: "none"`. A served model now answers only find a
-      time, search sentences and capture, which no bench measures:
-      measure those first.
+      `reasoning_effort: "none"`. A served model now answers only search
+      sentences and capture, and find a time until the Assistant's model
+      is here; search and capture have no bench: measure those first.
 - [ ] The Assistant's own model, follow-ups (#307, v2 in #321) — search
       sentences and capture still need Apple's model (data and a tuned
       prompt each, in the next version's one training run); they have no
@@ -260,9 +251,6 @@ the served model (#184) and slot proposals (#185) are in
       guests' free/busy is not fetched (Google freeBusy), which is where
       "when everyone is free" would go.
 
-Scope unchanged and all still open with zero code; the on-device-only
-decision and platform notes live in `docs/decisions.md`.
-
 - [ ] Capture follow-ups (shipped 2026-10-04, OCR-first; see
       docs/decisions.md) — **native image input on OS 27**: Foundation
       Models takes an image directly there (`Transcript.ImageAttachment`,
@@ -276,7 +264,7 @@ decision and platform notes live in `docs/decisions.md`.
       text as the event's notes (both editors have a notes field;
       capture does not fill it); shared web URLs
       (the activation rule leaves them out — nothing fetches a page);
-      multi-day events (the editor clamps an end to its start day); a
+      multi-day events (capture's schema has no end day); a
       File-menu entry if ⌘V proves undiscoverable; token counting via
       `SystemLanguageModel.contextSize` (26.4+) in place of the 6000-char
       cap.
@@ -319,7 +307,6 @@ decision and platform notes live in `docs/decisions.md`.
   - Weather (also show on the day?)
   - Food tracking (nutrition data + macros)
   - Garmin data e.g. body battery
-  - Birthdays (shown since 2026-09-12; per-person reminders since 2026-10-04, a time per reminder since 2026-10-24)
   - Different views:
     - Business view(s) with certain selected calendar
       - What can other people see e.g. impersonation of a colleage

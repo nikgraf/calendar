@@ -149,17 +149,11 @@ in the `ios-simulator` skill (`.agents/skills/ios-simulator/SKILL.md`).
   shows centred.
 - **Form sheets** (react-native-screens) lay their content out as at most
   two subviews: a header `View` with `collapsable={false}` and one
-  ScrollView, which must stay mounted across a kind switch (a ScrollView
-  swapped in lands over the header). The route unmounts about 14 ms after
-  `router.back()`, at the start of the slide-out, and UIKit silently
-  refuses a page-sheet `Modal` mounted then: hold such a sheet until the
-  form sheet is gone (`FORM_SHEET_DISMISS_MS` in `EditorHost.tsx`). The
-  keyboard raises a half sheet to full with no detent event, and the
-  sheet drops back once the keyboard hides; there is no imperative detent
-  API.
-- **Fractional detents are fractions of the full sheet's height**: on an
-  iPhone 17 Pro, 50 % leaves about 5 hours of the timeline in view, 60 %
-  about 3.5 and 75 % about 1.
+  ScrollView, which is why the editor is a page sheet (`app/_layout.tsx`).
+  A sheet's route unmounts about 14 ms after `router.back()`, at the
+  start of the slide-out, and UIKit silently refuses a page-sheet `Modal`
+  mounted then: hold such a sheet until the route's sheet is gone
+  (`FORM_SHEET_DISMISS_MS` in `EditorHost.tsx`).
 
 ## Expo, Metro and the dev client
 
