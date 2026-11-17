@@ -1214,13 +1214,24 @@ matches one of these):
   took 10–16 s (`device-xctest.log`: `[Start]` to `[Done] View hierarchy
   snapshot`; a flow's median is ~0.4 s) and used up the wait. Rerun.
 - **A lost tap without the dropped-touch signature (iOS)**: a tap right
-  after typing or right after a launch does not register — the all-day
-  switch with the keyboard up (flow 12 saves a timed 9–10 event), the
-  view menu just after launch (`common/switch-view.yaml`, now retried),
+  after typing or right after a launch does not register — the view menu
+  just after launch (`common/switch-view.yaml`, now retried),
   Done leaving the Settings root up (04a), Cancel leaving "New Task" open
   (09). `run-flows.ts` says "no
   retry". Rerun; if one recurs, prove that tap by its effect in a `retry`
   block, as `switch-view.yaml` does.
+- **Flow 12's all-day switch stays off (iOS)**: the event saves as a timed
+  9–10 block and `all-day-event-chip` is not visible. Of the three whose
+  logs were read, run 44030872709 was the stale SwiftUI frame (iOS e2e →
+  the `<switchTestID>-host` bullet): its `Tapping on element …
+  event-all-day` bounds sat at `[309,301]`, not `[309,277]`. Runs
+  43742090851 and 43964581567 aimed at the switch's centre: the touch
+  reached the app, and the app's
+  `invalid mode 'kCFRunLoopCommonModes'` line that follows a toggle
+  ~0.1 s later in `device-simulator.log` never came. Not reproduced on
+  iOS 27.2. The flow now aims at the host and taps again while the
+  switch reads off; a red flow 12 at `checked: true` after three taps
+  is new.
 - **`simctl openurl` timed out (iOS)**: an `openLink` fails with
   `NSPOSIXErrorDomain code=60` (the bootstrap's, flow 27's second one).
   Not retried; rerun.
@@ -1452,6 +1463,16 @@ Selector gotchas (each caused a real failure):
   `switchTestID` (flow 12's `event-all-day`). It follows that a passing
   flow says nothing about what VoiceOver reaches: the XCUITest tree shows
   the children of an `accessible` view, which VoiceOver does not.
+- A SwiftUI control's frame in the tree can be stale. The form rises out
+  of the Assistant on a Reanimated transform. In about one open in five,
+  SwiftUI keeps the all-day switch's accessibility frame where the rise
+  caught it, 17–24 pt below where the switch is drawn, and toggling the
+  switch does not move it back. A tap aimed by that frame lands under the
+  switch, and a retry by the same id misses the same way. React Native
+  views report where they are drawn, so `SwitchRow` gives its `Host` the
+  id `<switchTestID>-host`: aim the tap there, then prove the switch's
+  `checked: true` before going on (flow 12). Measured with an A/B
+  probe: 20/25 by the switch's id, 25/25 by the host's (2026-11-17).
 - A flow that finishes far faster than usual skipped a `when:` branch:
   read its SKIPPED count (one gated on a fixture caption passed in 37 s,
   doing nothing).

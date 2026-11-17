@@ -514,7 +514,14 @@ export function SwitchRow({
     <Row
       {...row}
       accessory={
-        <Host matchContents>
+        <Host
+          matchContents
+          // Where e2e flows aim a tap at the switch: this React Native view
+          // stays where the switch is drawn, while SwiftUI can keep the
+          // switch's own accessibility frame where a transform on an
+          // ancestor (the form rising out of the Assistant) left it.
+          testID={switchTestID === undefined ? undefined : `${switchTestID}-host`}
+        >
           <Switch
             disabled={disabled}
             label={title}
