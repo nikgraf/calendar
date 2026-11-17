@@ -51,7 +51,8 @@ Optional, for the desktop AI features and the Apple bridges (Reminders,
 Calendar, Contacts, Maps): build the Swift helper once (requires Xcode 27,
 for the macOS 27 SDK; search sentences, capture and find a time's
 fallback need Apple Silicon with Apple Intelligence enabled at runtime),
-and `llama-server` for the Assistant's own model:
+and `llama-server` for the Assistant's own model (needs CMake, e.g.
+`brew install cmake`; the script fetches llama.cpp from GitHub):
 
 ```sh
 pnpm --filter @calendar/desktop build:helper

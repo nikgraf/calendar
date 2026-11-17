@@ -961,13 +961,12 @@ was cut (pruned 2026-11-17).
   then MapKit asked two ways (the search reads a misspelling, the
   completer knows a place's branches), hits that do not resemble the
   text last. The best resembling one is taken at once — its text replaces
-  what was said and its pin is vouched, so Save sends the coordinates —
-  and every candidate stays as a chip under the quick-add field, the
-  taken one pressed, with "As said" and ×: Nik wants the top match
-  applied and the alternatives always in sight (2026-10-19; a first cut
-  asked instead of taking when two ranked the same, and hid the row once
-  one was taken). Rejected: an "assumed" tint on the field; asking the
-  model. Open: the typeahead's empty state as recent places.
+  what was said and its pin is vouched, so Save sends the coordinates:
+  Nik wants the top match applied, not asked for (2026-10-19). The
+  others were chips under the field then; since #313 a real choice is a
+  question with numbered rows, on a map since #334. Rejected: an
+  "assumed" tint on the field; asking the model. Open: the typeahead's
+  empty state as recent places.
 - **Places nearby first** (2026-11-06, #299) — a dictated "Cafe Meek"
   (Kaffemik, Vienna) took a café in South Africa: a found place is taken
   only when it resembles the text and is within 150 km of a recent placed
@@ -1357,9 +1356,9 @@ was cut (pruned 2026-11-17).
   asking, the iPhone over Wi-Fi only unless allowed (App Review 4.2.3).
   Data from DeepSeek V4 (MIT, distillation allowed); Anthropic forbids
   training on Claude's outputs. The Assistant's phrase rules went (#182,
-  #248, #302, #303, three readers of 2026-10-26) bar one day check;
-  `grounding.ts` stays for Apple's model. Rejected: those rules over
-  Apple's model, llama.cpp in the helper, node-llama-cpp. Open: todo.md.
+  #248, #302, #303 and three more) bar one day check; `grounding.ts`
+  stays for Apple's model, finder routing and `extras.ts`. Rejected: the
+  rules over Apple's model, llama.cpp in the helper, node-llama-cpp. Open: todo.md.
 - **A to-do's alerts from the Assistant** (2026-11-13, #315) — "remind me
   to call the bank tomorrow at 9, 10 minutes before" gives the to-do an
   alert: the model wrote it, the thread dropped it. A to-do's
@@ -1438,9 +1437,10 @@ was cut (pruned 2026-11-17).
   repo (not reproducible), cases for an event of several days (no phrase
   can make one). Open: three conventions the teacher reads differently
   (todo.md), recordings for the new cases.
-- **Show only the latest query by default** (2026-11-05) — the create and
-  search threads keep the turn with Undo visible on both apps. Earlier
-  queries open on demand, leaving more room for the form or results.
+- **Show only the latest query by default** (2026-11-05) — the search
+  thread keeps the turn with Undo visible on both apps; earlier queries
+  open on demand, leaving more room for the results. The create thread,
+  which it covered too, became the Assistant's conversation in #308.
 - **On-device models only** — no data leaves the device, no API keys, no
   per-request cost, works offline; this matches the app's posture. Apple's
   ~3B Foundation Models handle extraction and classification, not
@@ -1528,8 +1528,9 @@ was cut (pruned 2026-11-17).
   calendar's hue before anything is written; the form is the focused
   draft's view, "Add all" writes several; capture's events open as one
   such thread, its review list gone. A refinement is stateless — the
-  draft as JSON plus the change — not a `LanguageModelSession` transcript
-  (4K context, session state across IPC, nothing the fixture could play).
+  draft as JSON, what was said before and the change — not a
+  `LanguageModelSession` transcript (4K context, session state across
+  IPC, nothing the fixture could play).
   Rejected: a `draft` tint variant (pattern over color — the hatch reads
   in both schemes). Open: drafts in the month view, a slot editor drawing
   its form as a draft.
