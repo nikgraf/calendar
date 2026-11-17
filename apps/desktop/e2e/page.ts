@@ -306,6 +306,14 @@ export const freeNames = (source: string): ReadonlySet<string> => {
   return new Set(uses.filter(({ name, scope }) => !binds(scope, name)).map(({ name }) => name));
 };
 
+/**
+ * The names a page function's source would read from the spec rather
+ * than the page: free in it, and neither JavaScript's nor a listed page
+ * global.
+ */
+export const refusedNames = (source: string): ReadonlyArray<string> =>
+  [...freeNames(source)].filter((name) => !PAGE_GLOBALS.has(name) && !PAGE_CLASS.test(name));
+
 /** Sources already checked: a wait sends the same one on every try. */
 const checked = new Set<string>();
 
@@ -324,9 +332,7 @@ export const pageSource = (page: (...args: never) => unknown): string => {
     );
   }
   if (!checked.has(source)) {
-    const outside = [...freeNames(source)].filter(
-      (name) => !PAGE_GLOBALS.has(name) && !PAGE_CLASS.test(name),
-    );
+    const outside = refusedNames(source);
     if (outside.length > 0) {
       throw new Error(
         `A page function names ${outside.map((name) => `\`${name}\``).join(', ')}, which is not its own and not a page global it may use: pass a value as an argument, define a helper inside the page function, read the page's own property as \`window.${String(outside[0])}\`, or list a page global in PAGE_GLOBALS: ${source.slice(0, 160)}`,
