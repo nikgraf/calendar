@@ -293,7 +293,9 @@ commits by staging deliberately.
   list; guests, RSVP or an EXDATE/BYHOUR rule on an Apple event) fails
   with `UnsupportedForProviderError` — never drop it silently. Moving an
   event across accounts/providers is copy-then-delete and drops guests,
-  after the UI confirmed `previewMove`'s loss.
+  after the UI confirmed `previewMove`'s loss; toward Google the source
+  outlasts its queued copy (`PendingOp.copySource`), which Google can
+  still turn down.
 - Calendar mirrors (`packages/sync/src/mirrors.ts`, core `mirror/`) are the
   one exception to two rules above: their Google copies are written
   straight through the REST client under the engine's gate, never through

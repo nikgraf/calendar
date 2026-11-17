@@ -5,6 +5,7 @@ import {
   birthdayChipLabel,
   buildAgenda,
   calendarTaskKey,
+  eventIdentity,
   type EventRecord,
   formatClockTime,
   formatPlainTime,
@@ -66,7 +67,7 @@ export function AgendaView({
       contentContainerStyle={styles.content}
       keyExtractor={(item) =>
         item.kind === 'event'
-          ? `event:${item.event.calendarId}:${item.event.id}`
+          ? `event:${eventIdentity(item.event)}`
           : item.kind === 'task'
             ? `task:${calendarTaskKey(item.task)}`
             : `birthday:${item.birthday.record.id}:${item.birthday.date}`

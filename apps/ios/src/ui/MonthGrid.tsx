@@ -4,6 +4,7 @@ import {
   type BirthdayOccurrence,
   buildMonthGrid,
   calendarTaskKey,
+  eventIdentity,
   type EventRecord,
   groupByDate,
   groupEventsByDay,
@@ -106,7 +107,7 @@ export function MonthGrid({
             const weekend = isShadedDay(shaded, date);
             const dots: Array<Dot> = [
               ...dayEvents.map((event) => ({
-                key: `${event.calendarId}:${event.id}`,
+                key: eventIdentity(event),
                 style: { backgroundColor: colorOf(event) },
               })),
               ...dayBirthdays.map((birthday) => ({

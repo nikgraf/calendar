@@ -10,6 +10,7 @@ import {
   calendarTaskKey,
   capAllDayLane,
   dayRange,
+  eventIdentity,
   type EventRecord,
   expandedAllDayRows,
   foldTaskBacklog,
@@ -364,7 +365,7 @@ export function WeekView({
             Temporal.PlainDate.compare(endDate, strip.at(-1)!) > 0
               ? strip.length
               : Math.max(first.until(endDate).days, 0),
-          id: `${event.calendarId}:${event.id}`,
+          id: eventIdentity(event),
           startDayIndex:
             startIndex === -1 && event.startDate
               ? Math.min(first.until(Temporal.PlainDate.from(event.startDate)).days, 0)
@@ -374,9 +375,7 @@ export function WeekView({
     ),
     strip.length,
   );
-  const allDayById = new Map(
-    allDayEvents.map((event) => [`${event.calendarId}:${event.id}`, event]),
-  );
+  const allDayById = new Map(allDayEvents.map((event) => [eventIdentity(event), event]));
   // Collapsed, the lane caps at MAX_ALL_DAY_ROWS with "+N more" chips; the
   // choice is a device setting, so it survives a relaunch. Expanded by default.
   const preferences = useViewPreferences();
@@ -390,9 +389,7 @@ export function WeekView({
   );
   // Built once per render, not once per column: this component re-renders
   // on every drag pointermove, and the strip is up to 11 columns wide.
-  const eventsById = new Map(
-    timedEvents.map((event) => [`${event.calendarId}:${event.id}`, event]),
-  );
+  const eventsById = new Map(timedEvents.map((event) => [eventIdentity(event), event]));
   // The zones stack under each hour, so the gutter only widens enough for
   // the city names over it; the header and the all-day lane carry the same
   // spacer so the three stay column-aligned.
@@ -512,9 +509,7 @@ export function WeekView({
                     .filter(
                       (event) => event.startUtc < range.endUtc && event.endUtc > range.startUtc,
                     )
-                    .map((event) =>
-                      timedEventBox(event, `${event.calendarId}:${event.id}`, day, timeZone),
-                    )
+                    .map((event) => timedEventBox(event, eventIdentity(event), day, timeZone))
                     .concat(
                       timedTaskLayout.byDay.get(iso) ?? [],
                       timedDrafts

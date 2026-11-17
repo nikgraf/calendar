@@ -2,6 +2,7 @@ import {
   type BirthdayOccurrence,
   birthdayChipLabel,
   calendarTaskKey,
+  eventIdentity,
   type EventRecord,
   overdueLabel,
   type TaskBacklogEntry,
@@ -204,7 +205,7 @@ export function AllDayColumn({
           color={colorOf(event)}
           compact={compact}
           event={event}
-          key={`${event.calendarId}:${event.id}`}
+          key={eventIdentity(event)}
           onPress={onEventPress}
         />
       ))}

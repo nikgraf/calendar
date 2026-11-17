@@ -1,11 +1,17 @@
-import { type EventRecord, type PendingOp, type TaskRecord } from '@calendar/core';
+import { type CopySource, type EventRecord, type PendingOp, type TaskRecord } from '@calendar/core';
 import { Context, Effect, Layer } from 'effect';
 import { Reactivity } from 'effect/reactivity/Reactivity';
 import { SqlClient } from 'effect/sql/SqlClient';
 import type { SqlError } from 'effect/sql/SqlError';
 import { OPS_KEY } from './keys.ts';
 import { pendingOpFromRow, type PendingOpRow } from './rows.ts';
-import { carriedTextJson, eventListJson, eventPayloadJson, taskPayloadJson } from './repoShared.ts';
+import {
+  carriedTextJson,
+  copySourceJson,
+  eventListJson,
+  eventPayloadJson,
+  taskPayloadJson,
+} from './repoShared.ts';
 
 export interface PendingOpRepoShape {
   /**
@@ -235,6 +241,15 @@ export interface PendingOpRepoShape {
    */
   readonly setBeforeTask: (opId: string, before: TaskRecord) => Effect.Effect<void, SqlError>;
   /**
+   * Names what the copies a move or a conversion queued were copied from
+   * (`undefined`: nothing — an Apple source the move could not delete
+   * stays where it is, and must not be made again).
+   */
+  readonly setCopySource: (
+    opIds: ReadonlyArray<string>,
+    source: CopySource | undefined,
+  ) => Effect.Effect<void, SqlError>;
+  /**
    * Replaces where a series update's drop of exceptions starts
    * (`undefined`: it drops none): one that replaced an update in flight
    * inherited its drop, and drops nothing more once that update landed.
@@ -365,7 +380,7 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
                                    before_overrides, before_task, before_color_hex,
                                    target_task_list_id, task_parent, task_due_cleared,
                                    task_previous, drops_from, split_of, split_in,
-                                   split_at, split_check)
+                                   split_at, split_check, copy_source)
           VALUES (${op.id}, ${op.accountId}, ${op.calendarId}, ${op.kind},
                   ${op.eventId},
                   ${op.payload ? JSON.stringify(eventPayloadJson(op.payload)) : null},
@@ -386,7 +401,8 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
                   ${op.taskParent ?? null}, ${op.taskDue === null ? 1 : 0},
                   ${op.taskPrevious ?? null}, ${op.dropsFrom ?? null},
                   ${op.splitOf ?? null}, ${op.splitIn ?? null}, ${op.splitAt ?? null},
-                  ${op.splitCheck ? 1 : 0})
+                  ${op.splitCheck ? 1 : 0},
+                  ${op.copySource ? JSON.stringify(copySourceJson(op.copySource)) : null})
         `),
         ),
       getById: (opId) =>
@@ -609,6 +625,17 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
           Effect.asVoid(
             sql`UPDATE pending_ops SET before_task = ${JSON.stringify(taskPayloadJson(before))}
               WHERE id = ${opId}`,
+          ),
+        ),
+      setCopySource: (opIds, source) =>
+        invalidating(
+          Effect.forEach(
+            opIds,
+            (opId) =>
+              sql`UPDATE pending_ops
+                SET copy_source = ${source ? JSON.stringify(copySourceJson(source)) : null}
+                WHERE id = ${opId}`,
+            { discard: true },
           ),
         ),
       setDropsFrom: (opId, dropsFrom) =>
