@@ -36,12 +36,14 @@ import { AppState, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react
 import { startAssistantModel } from '../assistantRuntime.ts';
 import { kickSync, runLocalNotifications, startSync, subscribeInvalidations } from '../backend.ts';
 import { registerBackgroundRefresh } from '../backgroundTask.ts';
+import { markLaunch } from '../launchTiming.ts';
 import { useOnboardingEnabled } from '../onboarding.ts';
 import { setSetupPhase } from '../settingsCodeInbox.ts';
 import { AccountButton } from './AccountButton.tsx';
 import { ADD_BUTTON_CLEARANCE, AddButton } from './AddButton.tsx';
 import { AgendaView } from './AgendaView.tsx';
 import { DayTimeline } from './DayTimeline.tsx';
+import { DelayedSpinner } from './DelayedSpinner.tsx';
 import { useEditorHost } from './EditorHost.tsx';
 import { GettingStartedCard } from './GettingStartedCard.tsx';
 import { MonthGrid } from './MonthGrid.tsx';
@@ -94,7 +96,13 @@ export function CalendarScreen() {
   const zones = useTimeZones();
   const prefs = useViewPreferences();
   if (!zones.loaded || prefs === null) {
-    return <SafeAreaView style={styles.safeArea} />;
+    // The first read starts the backend (the database, its migrations):
+    // usually quicker than the spinner's delay, so it seldom shows.
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <DelayedSpinner />
+      </SafeAreaView>
+    );
   }
   return (
     <CalendarBody
@@ -198,6 +206,9 @@ function CalendarBody({
   const isEventReadOnly = useEventReadOnlyLookup();
   const listColorOf = useListColorLookup();
   const calendars = useCalendars();
+  useEffect(() => {
+    markLaunch('calendar');
+  }, []);
 
   const colorOf = useMemo(() => makeColorLookup(calendars), [calendars]);
 

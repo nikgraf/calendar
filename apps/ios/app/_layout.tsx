@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 import { StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { backendClient } from '../src/backend.ts';
+import { markLaunch } from '../src/launchTiming.ts';
 import { EditorHostProvider } from '../src/ui/EditorHost.tsx';
 import { ErrorBoundary } from '../src/ui/ErrorBoundary.tsx';
 import { groupedGround, useTheme } from '../src/ui/theme.ts';
@@ -27,6 +28,9 @@ function SystemBackground() {
  */
 export default function RootLayout() {
   const { colors } = useTheme();
+  useEffect(() => {
+    markLaunch('firstFrame');
+  }, []);
   return (
     <GestureHandlerRootView style={styles.root}>
       <ErrorBoundary>

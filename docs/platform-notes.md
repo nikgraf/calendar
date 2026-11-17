@@ -163,6 +163,15 @@ in the `ios-simulator` skill (`.agents/skills/ios-simulator/SKILL.md`).
 
 ## Expo, Metro and the dev client
 
+- **A cold start waited up to 3 s for an update.** With
+  `updates.fallbackToCacheTimeout` above 0, expo-updates keeps the launch
+  screen up until it has asked EAS for a newer update and downloaded it,
+  or until the timeout ends (a timer in `AppLoaderTask.swift`: a request
+  that hangs offline still costs only the timeout). CI publishes to `main`
+  on every merge, so most launches found one. It is 0 now: the app starts
+  on the bundle it has, a new update downloads in the background and runs
+  from the next cold start. `launchConfig.test.ts` keeps it at 0.
+
 - **Edits do not show up in the app.** Metro does not see a change made
   after it started when it runs with `CI=1` (no file watching) or
   without watchman (its fallback watcher missed every edit): each launch
@@ -242,6 +251,25 @@ in the `ios-simulator` skill (`.agents/skills/ios-simulator/SKILL.md`).
   test fake from the guards in the native source.
 
 ## iOS system behaviour
+
+- **A launch's time starts before its JavaScript.** React Native's own
+  startup marker (`APP_STARTUP_START`) is set when its instance is
+  created, after expo-updates' wait and the bundle's load. The launch
+  times in Settings › Advanced › Diagnostics count from the process's
+  start instead, read from the kernel (`sysctl` with `KERN_PROC_PID`, in
+  `modules/solunivo-launch-timing`). A process that was there before the
+  tap — prewarmed by iOS (`ActivePrewarm=1` in its environment), or woken
+  in the background and suspended before React Native started — may have
+  started hours earlier, so its launch counts from its first scene's
+  connection (a scene more than 5 s after UIKit's launch call joined such
+  a process), and Diagnostics adds how long the process ran before
+  ("running 3 h before"): a launch stalled before its window looks the
+  same from the scene's side, and its stall must still show. The native side keeps that start in the user defaults until
+  the launch's JavaScript takes it, so launches closed before their
+  JavaScript ran are found by the next one that gets that far and listed
+  with no step. Each later step is written as it is reached. A reload in the same process
+  (PR Preview's Load) and a launch without a scene (a background task's)
+  record nothing.
 
 - **iOS 26 tab bar geometry** (NativeTabs, measured with `maestro
   hierarchy` on iPhone SE 3, 17e, 17 Pro and 17 Pro Max): the bar is

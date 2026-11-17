@@ -17,7 +17,7 @@
     },
     "updates": {
       "checkAutomatically": "ON_LOAD",
-      "fallbackToCacheTimeout": 3000,
+      "fallbackToCacheTimeout": 0,
       "url": "https://u.expo.dev/a4112fca-bb35-4553-a6c2-0b425ca98e98"
     },
     "ios": {
