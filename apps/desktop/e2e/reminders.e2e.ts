@@ -9,6 +9,7 @@ import {
   readEvents,
   readTasks,
 } from './harness.ts';
+import type { PageKit } from './page.ts';
 
 // Seeded straight into SQLite: the harness launches the app with
 // CALENDAR_REMINDERS=off, so no EventKit sync can replace these rows and
@@ -268,9 +269,7 @@ describe('Apple Reminders UI', () => {
     const { cdp } = app;
     const chip = await cdp.locate('[data-testid="timed-task-ek-rem-1"]');
     expect(chip).toBeTruthy();
-    const label = await cdp.waitFor<string>(
-      `document.querySelector('[data-testid="timed-task-ek-rem-1"]')?.textContent ?? ''`,
-    );
+    const label = await cdp.waitForValue(($) => $.text('[data-testid="timed-task-ek-rem-1"]'));
     expect(label).toContain('!!! Call mom');
     expect(label).not.toContain('14:00');
     // A weekly reminder carries the repeat marker; a one-off does not. So
@@ -278,23 +277,22 @@ describe('Apple Reminders UI', () => {
     expect(label).toContain('\u21bb');
     for (const id of ['ek-rem-weekends', 'ek-rem-yearly']) {
       expect(
-        await cdp.eval<string>(
-          `document.querySelector('[data-testid="all-day-task-${id}"]')?.textContent ?? ''`,
+        await cdp.evaluate(
+          ($, chipId: string) => $.text(`[data-testid="all-day-task-${chipId}"]`),
+          id,
         ),
       ).toContain('\u21bb');
     }
     expect(
-      await cdp.eval<string>(
-        `document.querySelector('[data-testid="timed-task-ek-rem-ro-timed"]')?.textContent ?? ''`,
-      ),
+      await cdp.evaluate(($) => $.text('[data-testid="timed-task-ek-rem-ro-timed"]')),
     ).not.toContain('\u21bb');
-    const tooltip = await cdp.eval<string>(
-      `document.querySelector('[data-testid="timed-task-ek-rem-1"]')?.getAttribute('title') ?? ''`,
+    const tooltip = await cdp.evaluate(
+      ($) => $.el('[data-testid="timed-task-ek-rem-1"]')?.getAttribute('title') ?? '',
     );
     expect(tooltip).toMatch(/Call mom · 2:00 PM/i);
-    expect(await cdp.eval(`!!document.querySelector('[title="Call mom"]')`)).toBe(false);
+    expect(await cdp.evaluate(($) => $.has('[title="Call mom"]'))).toBe(false);
     expect(await cdp.locate('[title="Bin day"]')).toBeTruthy();
-    const sidebar = await cdp.waitFor<string>('document.body.textContent ?? ""');
+    const sidebar = await cdp.waitForValue(() => document.body.textContent ?? '');
     expect(sidebar).toContain('Apple Reminders');
   });
 
@@ -304,15 +302,13 @@ describe('Apple Reminders UI', () => {
     expect(chip).toBeTruthy();
     // Overdue chips join the all-day lane in today's column; the past day
     // keeps no timed block for it.
-    expect(
-      await cdp.eval(`!!document.querySelector('[data-testid="timed-task-ek-rem-overdue"]')`),
-    ).toBe(false);
-    expect(
-      await cdp.eval<number>(`document.querySelectorAll('[title^="Overdue call"]').length`),
-    ).toBe(1);
-    const facts = await cdp.eval<string>(`(() => {
-      const chip = document.querySelector('[data-overdue][title^="Overdue call"]');
-      const todayCell = document.querySelector('[data-testid="today-header"]');
+    expect(await cdp.evaluate(($) => $.has('[data-testid="timed-task-ek-rem-overdue"]'))).toBe(
+      false,
+    );
+    expect(await cdp.evaluate(($) => $.count('[title^="Overdue call"]'))).toBe(1);
+    const facts = await cdp.evaluate(($) => {
+      const chip = $.el('[data-overdue][title^="Overdue call"]')!;
+      const todayCell = $.el('[data-testid="today-header"]')!;
       const chipRect = chip.getBoundingClientRect();
       const cellRect = todayCell.getBoundingClientRect();
       return JSON.stringify({
@@ -320,7 +316,7 @@ describe('Apple Reminders UI', () => {
         label: chip.textContent,
         tooltip: chip.getAttribute('title'),
       });
-    })()`);
+    });
     const { inTodayColumn, label, tooltip } = JSON.parse(facts) as {
       inTodayColumn: boolean;
       label: string;
@@ -339,8 +335,10 @@ describe('Apple Reminders UI', () => {
         (await readTasks(app.userDataDir)).find((task) => task.id === 'ek-rem-overdue'),
       )
       .toMatchObject({ status: 'completed' });
-    await cdp.waitFor(`!document.querySelector('[data-overdue][title^="Overdue call"]')`);
-    expect(await cdp.eval(`document.body.textContent.includes('Edit reminder')`)).toBe(false);
+    await cdp.waitUntil(($) => !$.has('[data-overdue][title^="Overdue call"]'));
+    expect(await cdp.evaluate(() => document.body.textContent.includes('Edit reminder'))).toBe(
+      false,
+    );
   });
 
   it('completes a timed reminder from its checkbox without opening the editor', async () => {
@@ -350,7 +348,9 @@ describe('Apple Reminders UI', () => {
     await expect
       .poll(async () => (await readTasks(app.userDataDir)).find((task) => task.id === 'ek-rem-1'))
       .toMatchObject({ status: 'completed' });
-    expect(await cdp.eval(`document.body.textContent.includes('Edit reminder')`)).toBe(false);
+    expect(await cdp.evaluate(() => document.body.textContent.includes('Edit reminder'))).toBe(
+      false,
+    );
 
     const reopen = await cdp.locate('button[aria-label="Reopen reminder Call mom"]');
     await cdp.click(reopen.x, reopen.y);
@@ -374,9 +374,14 @@ describe('Apple Reminders UI', () => {
         ]) {
           const selector = `button[aria-label="${action} reminder Call mom"]`;
           await cdp.locate(selector);
-          await cdp.eval(`document.querySelector(${JSON.stringify(selector)})?.focus()`);
+          await cdp.evaluate(($, button: string) => {
+            $.el(button)?.focus();
+          }, selector);
           expect(
-            await cdp.eval(`document.activeElement?.matches(${JSON.stringify(selector)})`),
+            await cdp.evaluate(
+              (_: PageKit, button: string) => document.activeElement?.matches(button),
+              selector,
+            ),
           ).toBe(true);
           // Include the character generated by the physical key: Chromium needs
           // Enter's carriage return to perform the button's native activation.
@@ -387,17 +392,19 @@ describe('Apple Reminders UI', () => {
               (await readTasks(app.userDataDir)).find((task) => task.id === 'ek-rem-1'),
             )
             .toMatchObject({ status });
-          expect(await cdp.eval(`document.body.textContent.includes('Edit reminder')`)).toBe(false);
-          expect(await cdp.eval(`document.body.textContent.includes('New event')`)).toBe(false);
-          expect(await cdp.eval(`!!document.querySelector('[data-testid="slot-selection"]')`)).toBe(
+          expect(
+            await cdp.evaluate(() => document.body.textContent.includes('Edit reminder')),
+          ).toBe(false);
+          expect(await cdp.evaluate(() => document.body.textContent.includes('New event'))).toBe(
             false,
           );
+          expect(await cdp.evaluate(($) => $.has('[data-testid="slot-selection"]'))).toBe(false);
         }
         expect(await readEvents(app.userDataDir)).toEqual(eventsBefore);
       } finally {
         // Keep the shared fixture ready for the editor and drag tests, even if an
         // assertion fails between completing and reopening the reminder.
-        if (await cdp.eval(`document.body.textContent.includes('Edit reminder')`)) {
+        if (await cdp.evaluate(() => document.body.textContent.includes('Edit reminder'))) {
           await cdp.clickButtonWithText('Cancel');
         }
         if (
@@ -420,13 +427,16 @@ describe('Apple Reminders UI', () => {
     const { cdp } = app;
     await cdp.clickTaskChip('[data-testid="timed-task-ek-rem-1"]');
     try {
-      await cdp.waitFor(`document.body.textContent.includes('Edit reminder')`);
-      const facts = await cdp.waitFor<string>(`JSON.stringify({
-        listEnabled: !document.querySelector('select[aria-label="Task list"]')?.disabled,
-        priorityHigh: document.querySelector('[aria-label="Priority"] [role="radio"][aria-checked="true"]')?.textContent,
-        timeValue: document.querySelector('input[aria-label="Due time"]')?.value,
-        timed: document.querySelector('input[aria-label="At a time"]')?.checked,
-      })`);
+      await cdp.waitUntil(() => document.body.textContent.includes('Edit reminder'));
+      const facts = await cdp.waitForValue(($) =>
+        JSON.stringify({
+          listEnabled: !$.el<HTMLSelectElement>('select[aria-label="Task list"]')?.disabled,
+          priorityHigh: $.el('[aria-label="Priority"] [role="radio"][aria-checked="true"]')
+            ?.textContent,
+          timed: $.el<HTMLInputElement>('input[aria-label="At a time"]')?.checked,
+          timeValue: $.el<HTMLInputElement>('input[aria-label="Due time"]')?.value,
+        }),
+      );
       expect(JSON.parse(facts)).toEqual({
         listEnabled: true,
         priorityHigh: 'High',
@@ -453,39 +463,50 @@ describe('Apple Reminders UI', () => {
     );
 
     const beforeCancel = await cdp.locate('[data-testid="timed-task-ek-rem-1"]');
-    const originalTop = await cdp.eval<number>(
-      `document.querySelector('[data-testid="timed-task-ek-rem-1"]')?.getBoundingClientRect().y ?? 0`,
+    const originalTop = await cdp.evaluate(
+      ($) => $.el('[data-testid="timed-task-ek-rem-1"]')?.getBoundingClientRect().y ?? 0,
     );
-    await cdp.eval(`
-      window.__timedReminderPointerId = null;
-      document.querySelector('[data-testid="timed-task-ek-rem-1"]')?.addEventListener(
+    await cdp.evaluate(($) => {
+      const probe = window as unknown as { __timedReminderPointerId: number | null };
+      probe.__timedReminderPointerId = null;
+      $.el('[data-testid="timed-task-ek-rem-1"]')?.addEventListener(
         'pointerdown',
-        event => { window.__timedReminderPointerId = event.pointerId; },
+        (event) => {
+          probe.__timedReminderPointerId = event.pointerId;
+        },
         { once: true },
       );
-    `);
+    });
     await cdp.mouse('mousePressed', beforeCancel.x, beforeCancel.y);
     await cdp.mouse('mouseMoved', beforeCancel.x, beforeCancel.y + 48);
     await expect
       .poll(() =>
-        cdp.eval<number>(
-          `document.querySelector('[data-testid="timed-task-ek-rem-1"]')?.getBoundingClientRect().y ?? 0`,
+        cdp.evaluate(
+          ($) => $.el('[data-testid="timed-task-ek-rem-1"]')?.getBoundingClientRect().y ?? 0,
         ),
       )
       .not.toBe(originalTop);
-    await cdp.eval(`
-      const target = document.querySelector('[data-testid="timed-task-ek-rem-1"]');
-      target?.dispatchEvent(new PointerEvent('pointercancel', {
-        bubbles: true,
-        clientX: ${beforeCancel.x},
-        clientY: ${beforeCancel.y + 48},
-        pointerId: window.__timedReminderPointerId,
-      }));
-    `);
+    await cdp.evaluate(
+      ($, clientX: number, clientY: number) => {
+        const target = $.el('[data-testid="timed-task-ek-rem-1"]');
+        target?.dispatchEvent(
+          new PointerEvent('pointercancel', {
+            bubbles: true,
+            clientX,
+            clientY,
+            // Set by the pointerdown listener above.
+            pointerId: (window as unknown as { __timedReminderPointerId: number })
+              .__timedReminderPointerId,
+          }),
+        );
+      },
+      beforeCancel.x,
+      beforeCancel.y + 48,
+    );
     await expect
       .poll(() =>
-        cdp.eval<number>(
-          `document.querySelector('[data-testid="timed-task-ek-rem-1"]')?.getBoundingClientRect().y ?? 0`,
+        cdp.evaluate(
+          ($) => $.el('[data-testid="timed-task-ek-rem-1"]')?.getBoundingClientRect().y ?? 0,
         ),
       )
       .toBe(originalTop);
@@ -497,8 +518,10 @@ describe('Apple Reminders UI', () => {
       },
     );
 
-    const dayWidth = await cdp.eval<number>(
-      `document.querySelector('[data-testid="timed-task-ek-rem-1"]')?.parentElement?.getBoundingClientRect().width ?? 0`,
+    const dayWidth = await cdp.evaluate(
+      ($) =>
+        $.el('[data-testid="timed-task-ek-rem-1"]')?.parentElement?.getBoundingClientRect().width ??
+        0,
     );
     expect(dayWidth).toBeGreaterThan(0);
     const from = await cdp.locate('[data-testid="timed-task-ek-rem-1"]');
@@ -510,7 +533,7 @@ describe('Apple Reminders UI', () => {
         dueTime: '15:00',
         recurrence: { freq: 'weekly', interval: 1 },
       });
-    expect(await cdp.eval(`document.body.textContent.includes('New event')`)).toBe(false);
+    expect(await cdp.evaluate(() => document.body.textContent.includes('New event'))).toBe(false);
   });
 
   it('does not drag a timed reminder from a read-only list', async () => {
@@ -526,13 +549,16 @@ describe('Apple Reminders UI', () => {
     const { cdp } = app;
     await cdp.clickTaskChip('[title="Bin day"]');
     try {
-      await cdp.waitFor(`!!document.querySelector('[data-testid="task-read-only"]')`);
-      const facts = await cdp.waitFor<string>(`JSON.stringify({
-        buttons: [...document.querySelectorAll('button')].map(b => b.textContent?.trim())
-          .filter(t => t === 'Save' || t === 'Delete'),
-        listDisabled: document.querySelector('select[aria-label="Task list"]')?.matches(':disabled'),
-        note: document.querySelector('[data-testid="task-read-only"]')?.textContent,
-      })`);
+      await cdp.waitUntil(($) => $.has('[data-testid="task-read-only"]'));
+      const facts = await cdp.waitForValue(($) =>
+        JSON.stringify({
+          buttons: $.all('button')
+            .map((b) => b.textContent?.trim())
+            .filter((t) => t === 'Save' || t === 'Delete'),
+          listDisabled: $.el('select[aria-label="Task list"]')?.matches(':disabled'),
+          note: $.el('[data-testid="task-read-only"]')?.textContent,
+        }),
+      );
       expect(JSON.parse(facts)).toEqual({
         buttons: [],
         listDisabled: true,
@@ -552,7 +578,7 @@ describe('Reminder repeat rules with weekdays', () => {
   afterAll(async () => {
     await app.stop();
   });
-  const EDITOR_OPEN = `!!document.querySelector('[data-testid="panel"][data-panel-kind="editTask"]')`;
+  const editorOpen = ($: PageKit) => $.has('[data-testid="panel"][data-panel-kind="editTask"]');
   afterEach(async (context) => {
     if (context.task.result?.state === 'fail') {
       await app.dump(context.task.name);
@@ -562,7 +588,7 @@ describe('Reminder repeat rules with weekdays', () => {
     // is back, which can land just after the test saw the database, so
     // Cancel is found and clicked in one eval: waiting for it hung the hook.
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      if (!(await app.cdp.eval<boolean>(EDITOR_OPEN))) {
+      if (!(await app.cdp.evaluate(editorOpen))) {
         return;
       }
       await app.cdp.evaluate(cancelOrDiscard);
@@ -580,24 +606,27 @@ describe('Reminder repeat rules with weekdays', () => {
    * the week the panel narrowed, and the click lands beside it.
    */
   const openChip = async (id: string) => {
-    await app.cdp.waitFor<boolean>(`!(${EDITOR_OPEN})`);
+    await app.cdp.waitUntil(($) => !$.has('[data-testid="panel"][data-panel-kind="editTask"]'));
     await app.cdp.clickTaskChip(`[data-testid="all-day-task-${id}"]`);
-    await app.cdp.waitFor(`document.body.textContent.includes('Edit reminder')`);
+    await app.cdp.waitUntil(() => document.body.textContent.includes('Edit reminder'));
   };
   const repeatFacts = () =>
-    app.cdp.eval<string>(`JSON.stringify({
-      pressed: [...document.querySelectorAll('[data-testid^="repeat-weekday-"][aria-pressed="true"]')]
-        .map(b => b.dataset.testid.slice('repeat-weekday-'.length)),
-      repeat: document.querySelector('select[aria-label="Repeat"]')?.value ?? null,
-      summary: document.querySelector('[data-testid="repeat-summary"]')?.textContent ?? null,
-    })`);
+    app.cdp.evaluate(($) =>
+      JSON.stringify({
+        pressed: $.all('[data-testid^="repeat-weekday-"][aria-pressed="true"]').map((b) =>
+          b.dataset.testid!.slice('repeat-weekday-'.length),
+        ),
+        repeat: $.el<HTMLSelectElement>('select[aria-label="Repeat"]')?.value ?? null,
+        summary: $.el('[data-testid="repeat-summary"]')?.textContent ?? null,
+      }),
+    );
   const setSelect = (label: string, value: string) =>
-    app.cdp.eval(`(() => {
-      const select = document.querySelector('select[aria-label=${JSON.stringify(label)}]');
-      const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set;
-      setter.call(select, ${JSON.stringify(value)});
-      select.dispatchEvent(new Event('change', { bubbles: true }));
-    })()`);
+    app.cdp.evaluate(
+      ($, aria: string, picked: string) =>
+        $.setValue(`select[aria-label=${JSON.stringify(aria)}]`, picked),
+      label,
+      value,
+    );
 
   it('opens a weekend rule with Saturday and Sunday pressed', async () => {
     const { cdp } = app;
@@ -663,7 +692,7 @@ describe('Reminder repeat rules with weekdays', () => {
         summary: 'Monthly on the 2nd Tuesday',
       });
       expect(
-        await cdp.eval<string>(`document.querySelector('select[aria-label="Ordinal"]')?.value`),
+        await cdp.evaluate(($) => $.el<HTMLSelectElement>('select[aria-label="Ordinal"]')?.value),
       ).toBe('2');
     } finally {
       await cdp.clickButtonWithText('Cancel');
@@ -674,11 +703,11 @@ describe('Reminder repeat rules with weekdays', () => {
     const { cdp } = app;
     // Monthly since the test above.
     await openChip('ek-rem-milk');
-    await cdp.waitFor(`!!document.querySelector('select[aria-label="Repeat"]')`);
+    await cdp.waitUntil(($) => $.has('select[aria-label="Repeat"]'));
     await cdp.clickTestId('task-remove-due-date');
-    await cdp.waitFor(`!!document.querySelector('[data-testid="task-no-due-date"]')`);
+    await cdp.waitUntil(($) => $.has('[data-testid="task-no-due-date"]'));
     // Only a reminder with a due day repeats: the rule's row goes too.
-    expect(await cdp.eval(`!!document.querySelector('select[aria-label="Repeat"]')`)).toBe(false);
+    expect(await cdp.evaluate(($) => $.has('select[aria-label="Repeat"]'))).toBe(false);
     await cdp.clickButtonWithText('Save');
     await expect
       .poll(async () => {
@@ -692,12 +721,12 @@ describe('Reminder repeat rules with weekdays', () => {
     const { cdp } = app;
     await openChip('ek-rem-yearly');
     try {
-      expect(await cdp.eval(`document.body.textContent.includes('cannot edit')`)).toBe(true);
-      expect(await cdp.eval(`!!document.querySelector('select[aria-label="Repeat"]')`)).toBe(false);
+      expect(await cdp.evaluate(() => document.body.textContent.includes('cannot edit'))).toBe(
+        true,
+      );
+      expect(await cdp.evaluate(($) => $.has('select[aria-label="Repeat"]'))).toBe(false);
       // Nor can its day go: EventKit wants one for the rule, and the rule stays.
-      expect(
-        await cdp.eval(`!!document.querySelector('[data-testid="task-remove-due-date"]')`),
-      ).toBe(false);
+      expect(await cdp.evaluate(($) => $.has('[data-testid="task-remove-due-date"]'))).toBe(false);
     } finally {
       await cdp.clickButtonWithText('Cancel');
     }
@@ -716,18 +745,20 @@ describe('Reminder chips drag between the all-day lane and the grid', () => {
   const HOUR_HEIGHT = 48;
   /** Viewport y of a wall-clock hour inside the scrolled grid. */
   const gridY = (hour: number) =>
-    app.cdp.eval<number>(`(() => {
-      const scroller = document.querySelector('.overflow-y-scroll');
-      return scroller.getBoundingClientRect().top + ${hour * HOUR_HEIGHT} - scroller.scrollTop;
-    })()`);
+    app.cdp.evaluate(($, offset: number) => {
+      const scroller = $.el('.overflow-y-scroll')!;
+      return scroller.getBoundingClientRect().top + offset - scroller.scrollTop;
+    }, hour * HOUR_HEIGHT);
   const laneY = () =>
-    app.cdp.eval<number>(`(() => {
-      const rect = document.querySelector('[data-testid="all-day-lane"]').getBoundingClientRect();
+    app.cdp.evaluate(($) => {
+      const rect = $.el('[data-testid="all-day-lane"]')!.getBoundingClientRect();
       return rect.top + rect.height / 2;
-    })()`);
+    });
   const dayWidth = () =>
-    app.cdp.eval<number>(
-      `document.querySelector('.relative.grid').getBoundingClientRect().width / document.querySelector('.relative.grid').children.length`,
+    app.cdp.evaluate(
+      ($) =>
+        $.el('.relative.grid')!.getBoundingClientRect().width /
+        $.el('.relative.grid')!.children.length,
     );
   const taskById = async (id: string) =>
     (await readTasks(app.userDataDir)).find((task) => task.id === id);
@@ -745,10 +776,10 @@ describe('Reminder chips drag between the all-day lane and the grid', () => {
         dueTime: '10:00',
       });
     await cdp.locate('[data-testid="timed-task-ek-rem-allday"]');
-    expect(await cdp.eval(`!!document.querySelector('[data-testid="task-drop-grid"]')`)).toBe(
+    expect(await cdp.evaluate(($) => $.has('[data-testid="task-drop-grid"]'))).toBe(false);
+    expect(await cdp.evaluate(() => document.body.textContent.includes('Edit reminder'))).toBe(
       false,
     );
-    expect(await cdp.eval(`document.body.textContent.includes('Edit reminder')`)).toBe(false);
   });
 
   it('clears the time of a timed reminder dropped into the lane on another day', async () => {
@@ -759,12 +790,12 @@ describe('Reminder chips drag between the all-day lane and the grid', () => {
     // clipped pan buffer, and every other day on screen is past: dropped
     // there, the reminder would turn overdue and fold with the seeded
     // overdue one into a "2 overdue" chip, taking the next test's chip too.
-    const tomorrowShown = await cdp.eval<boolean>(`(() => {
-      const view = document.querySelector('[data-testid="week-grid"]').parentElement.getBoundingClientRect();
-      const header = document.querySelector('[data-date="${isoTomorrow}"]')?.getBoundingClientRect();
+    const tomorrowShown = await cdp.evaluate(($, tomorrow: string) => {
+      const view = $.el('[data-testid="week-grid"]')!.parentElement!.getBoundingClientRect();
+      const header = $.el(`[data-date="${tomorrow}"]`)?.getBoundingClientRect();
       const center = header ? header.x + header.width / 2 : -1;
       return center > view.x && center < view.x + view.width;
-    })()`);
+    }, isoTomorrow);
     const step = tomorrowShown ? 1 : 0;
     await cdp.drag(from, { x: from.x + step * (await dayWidth()), y: await laneY() });
     await expect
@@ -774,9 +805,7 @@ describe('Reminder chips drag between the all-day lane and the grid', () => {
         recurrence: { freq: 'weekly', interval: 1 },
       });
     expect((await taskById('ek-rem-1'))?.dueTime).toBeUndefined();
-    expect(await cdp.eval(`!!document.querySelector('[data-testid="task-drop-lane"]')`)).toBe(
-      false,
-    );
+    expect(await cdp.evaluate(($) => $.has('[data-testid="task-drop-lane"]'))).toBe(false);
     // Drawn, not just stored: see the next test.
     await cdp.locate('[data-testid="all-day-task-ek-rem-1"]');
   });
@@ -792,11 +821,14 @@ describe('Reminder chips drag between the all-day lane and the grid', () => {
     // moves the grid below it. The next test measures the grid: on CI a row
     // collapsing under its drag dropped the reminder half an hour late.
     // Wait for the chip in tomorrow's column.
-    await cdp.waitFor<boolean>(`(() => {
-      const chip = document.querySelector('[data-testid="all-day-task-ek-rem-milk"]');
-      const r = chip?.getBoundingClientRect();
-      return r !== undefined && r.x + r.width / 2 > ${from.x + width / 2};
-    })()`);
+    await cdp.waitUntil(
+      ($, middle: number) => {
+        const chip = $.el('[data-testid="all-day-task-ek-rem-milk"]');
+        const r = chip?.getBoundingClientRect();
+        return r !== undefined && r.x + r.width / 2 > middle;
+      },
+      from.x + width / 2,
+    );
   });
 
   it('re-dates an overdue reminder to today at the dropped time', async () => {
@@ -809,7 +841,7 @@ describe('Reminder chips drag between the all-day lane and the grid', () => {
         dueDate: isoToday,
         dueTime: '11:00',
       });
-    await cdp.waitFor(`!document.querySelector('[data-overdue][title^="Overdue call"]')`);
+    await cdp.waitUntil(($) => !$.has('[data-overdue][title^="Overdue call"]'));
     await cdp.locate('[data-testid="timed-task-ek-rem-overdue"]');
   });
 
@@ -819,7 +851,7 @@ describe('Reminder chips drag between the all-day lane and the grid', () => {
     await cdp.drag(from, { x: from.x, y: await gridY(10) });
     expect(await taskById('ek-rem-ro')).toMatchObject({ dueDate: isoToday });
     expect((await taskById('ek-rem-ro'))?.dueTime).toBeUndefined();
-    expect(await cdp.eval(`document.body.textContent.includes('Couldn')`)).toBe(false);
+    expect(await cdp.evaluate(() => document.body.textContent.includes('Couldn'))).toBe(false);
   });
 });
 
@@ -841,13 +873,13 @@ describe('A chip drag meets other input', () => {
   });
 
   const gridY = (hour: number) =>
-    app.cdp.eval<number>(`(() => {
-      const scroller = document.querySelector('[data-testid="week-scroller"]');
-      return scroller.getBoundingClientRect().top + ${hour * 48} - scroller.scrollTop;
-    })()`);
+    app.cdp.evaluate(($, offset: number) => {
+      const scroller = $.el('[data-testid="week-scroller"]')!;
+      return scroller.getBoundingClientRect().top + offset - scroller.scrollTop;
+    }, hour * 48);
   const taskById = async (id: string) =>
     (await readTasks(app.userDataDir)).find((task) => task.id === id);
-  const EDITOR_OPEN = `!!document.querySelector('[data-testid="panel"][data-panel-kind^="edit"]')`;
+  const editorOpen = ($: PageKit) => $.has('[data-testid="panel"][data-panel-kind^="edit"]');
 
   it('ignores Space pressed mid-drag: no editor opens, and the chip lands where it is released', async () => {
     const { cdp } = app;
@@ -876,7 +908,7 @@ describe('A chip drag meets other input', () => {
     await expect
       .poll(() => taskById('ek-rem-allday'))
       .toMatchObject({ dueDate: isoToday, dueTime: '10:00' });
-    expect(await cdp.eval<boolean>(EDITOR_OPEN)).toBe(false);
+    expect(await cdp.evaluate(editorOpen)).toBe(false);
   });
 
   it('ends a drag whose pointer capture is lost without a release', async () => {
@@ -885,7 +917,7 @@ describe('A chip drag meets other input', () => {
     const to = { x: from.x, y: await gridY(11) };
     await cdp.mouse('mousePressed', from.x, from.y);
     await cdp.mouse('mouseMoved', to.x, to.y);
-    await cdp.waitFor(`!!document.querySelector('[data-testid="task-drop-grid"]')`);
+    await cdp.waitUntil(($) => $.has('[data-testid="task-drop-grid"]'));
     // A second pointing device moves with no button down — the browser takes
     // the button as released, drops the capture, and no pointerup reaches
     // the chip. A developer's own trackpad did exactly this to a local run.
@@ -898,12 +930,12 @@ describe('A chip drag meets other input', () => {
       y: to.y + 1,
     });
     // Ended, not left lifted over the grid with its drop slot drawn.
-    await cdp.waitFor(`!document.querySelector('[data-testid="task-drop-grid"]')`, 3000);
+    await cdp.waitUntil({ timeoutMs: 3000 }, ($) => !$.has('[data-testid="task-drop-grid"]'));
     await cdp.mouse('mouseReleased', to.x, to.y);
     const task = await taskById('ek-rem-milk');
     expect(task).toMatchObject({ dueDate: isoToday });
     expect(task?.dueTime).toBeUndefined();
-    expect(await cdp.eval<boolean>(EDITOR_OPEN)).toBe(false);
+    expect(await cdp.evaluate(editorOpen)).toBe(false);
   });
 });
 
@@ -921,7 +953,7 @@ describe('Apple Reminders mutation failures', () => {
   it('keeps the stored due time when a drag cannot be saved', async () => {
     const from = await app.cdp.locate('[data-testid="timed-task-ek-rem-1"]');
     await app.cdp.drag(from, { x: from.x, y: from.y + 48 });
-    await app.cdp.waitFor(`document.body.textContent.includes('reschedule the reminder')`);
+    await app.cdp.waitUntil(() => document.body.textContent.includes('reschedule the reminder'));
     expect((await readTasks(app.userDataDir)).find((task) => task.id === 'ek-rem-1')).toMatchObject(
       {
         dueDate: isoToday,
@@ -952,8 +984,13 @@ describe('A late save reply meets the next editor', () => {
   const taskById = async (id: string) =>
     (await readTasks(app.userDataDir)).find((task) => task.id === id);
   /** The open reminder editor's title field, if a reminder editor is open. */
-  const TITLE_FIELD = `document.querySelector('[data-testid="panel"][data-panel-kind="editTask"] input[placeholder="Title"]')`;
-  const editorTitle = () => app.cdp.eval<string | null>(`${TITLE_FIELD}?.value ?? null`);
+  const TITLE_FIELD =
+    '[data-testid="panel"][data-panel-kind="editTask"] input[placeholder="Title"]';
+  const editorTitle = () =>
+    app.cdp.evaluate(
+      ($, field: string) => $.el<HTMLInputElement>(field)?.value ?? null,
+      TITLE_FIELD,
+    );
   // A title of its own per attempt: a retry finds the first one's write.
   let attempt = 0;
 
@@ -962,21 +999,28 @@ describe('A late save reply meets the next editor', () => {
     attempt += 1;
     const renamed = `Buy oat milk ${String(attempt)}`;
     await cdp.clickTaskChip('[data-testid="all-day-task-ek-rem-milk"]');
-    await cdp.waitFor<boolean>(`${TITLE_FIELD}?.value.startsWith('Buy') === true`);
-    await cdp.eval(`(() => {
-      const input = ${TITLE_FIELD};
-      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-      setter.call(input, ${JSON.stringify(renamed)});
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    })()`);
+    await cdp.waitUntil(
+      ($, field: string) => $.el<HTMLInputElement>(field)?.value.startsWith('Buy') === true,
+      TITLE_FIELD,
+    );
+    await cdp.evaluate(
+      ($, field: string, value: string) => $.setValue(field, value),
+      TITLE_FIELD,
+      renamed,
+    );
     app.holdEventKitWrites(true);
     await cdp.clickButtonWithText('Save');
     // Under way: Save dims while the write waits for EventKit.
-    await cdp.waitFor<boolean>(
-      `[...document.querySelectorAll('button')].some((b) => b.textContent?.trim() === 'Save' && b.getAttribute('aria-busy') === 'true')`,
+    await cdp.waitUntil(($) =>
+      $.all('button').some(
+        (b) => b.textContent?.trim() === 'Save' && b.getAttribute('aria-busy') === 'true',
+      ),
     );
     await cdp.clickTaskChip('[data-testid="all-day-task-ek-rem-allday"]');
-    await cdp.waitFor<boolean>(`${TITLE_FIELD}?.value === 'Water plants'`);
+    await cdp.waitUntil(
+      ($, field: string) => $.el<HTMLInputElement>(field)?.value === 'Water plants',
+      TITLE_FIELD,
+    );
     // Still held: the next editor opened before the save could answer.
     expect((await taskById('ek-rem-milk'))?.title).not.toBe(renamed);
 
@@ -987,11 +1031,13 @@ describe('A late save reply meets the next editor', () => {
     // The chip reads the new title only once the refresh the write's
     // invalidation asked for is back, and the main process answers that
     // after the save's own reply: the save has closed what it closes.
-    await cdp.waitFor<boolean>(
-      `document.querySelector('[data-testid="all-day-task-ek-rem-milk"]')?.textContent?.includes(${JSON.stringify(renamed)}) === true`,
+    await cdp.waitUntil(
+      ($, title: string) =>
+        $.el('[data-testid="all-day-task-ek-rem-milk"]')?.textContent?.includes(title) === true,
+      renamed,
     );
     expect(await editorTitle()).toBe('Water plants');
     await cdp.clickButtonWithText('Cancel');
-    await cdp.waitFor<boolean>(`!${TITLE_FIELD}`);
+    await cdp.waitUntil(($, field: string) => !$.has(field), TITLE_FIELD);
   });
 });
