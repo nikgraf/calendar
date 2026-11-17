@@ -14,6 +14,7 @@ import {
   readEvents,
   readPendingOps,
 } from './harness.ts';
+import type { PageKit } from './page.ts';
 
 // Apple events are never stored, so they come from the harness's
 // in-memory EventKit (CALENDAR_APPLE_CALENDAR=fixture): no TCC prompt and
@@ -159,13 +160,6 @@ const seed = {
   ],
 };
 
-const setField = (selector: string, value: string, kind: 'input' | 'select') => `(() => {
-  const element = document.querySelector(${JSON.stringify(selector)});
-  const proto = ${kind === 'input' ? 'window.HTMLInputElement' : 'window.HTMLSelectElement'}.prototype;
-  Object.getOwnPropertyDescriptor(proto, 'value').set.call(element, ${JSON.stringify(value)});
-  element.dispatchEvent(new Event(${JSON.stringify(kind === 'input' ? 'input' : 'change')}, { bubbles: true }));
-})()`;
-
 describe('Apple Calendar', () => {
   let app: App;
   beforeAll(async () => {
@@ -182,7 +176,7 @@ describe('Apple Calendar', () => {
   it('shows Apple events and groups the calendars by source', async () => {
     const { cdp } = app;
     expect(await cdp.locate('[title^="Apple dentist"]')).toBeTruthy();
-    const sidebar = await cdp.waitFor<string>(`document.querySelector('aside')?.textContent ?? ''`);
+    const sidebar = await cdp.waitForValue(($) => $.text('aside'));
     expect(sidebar).toContain('Apple Calendar');
     expect(sidebar).toContain('iCloud');
     expect(sidebar).toContain('Subscribed Calendars');
@@ -192,13 +186,19 @@ describe('Apple Calendar', () => {
     const { cdp } = app;
     await open('Apple dentist');
     try {
-      const facts = await cdp.eval<string>(`JSON.stringify({
-        calendarEnabled: !document.querySelector('select[aria-label="Calendar"]')?.disabled,
-        inviteesDisabled: document.querySelector('input[aria-label="Invitees"]')?.disabled,
-        note: document.querySelector('[data-testid="event-invitees-apple"]')?.textContent.includes('add them in Calendar'),
-        openCalendar: [...document.querySelectorAll('[data-testid="event-invitees-apple"] button')].some(b => b.textContent?.trim() === 'Open Calendar'),
-        rsvp: !!document.querySelector('[aria-label="RSVP"]'),
-      })`);
+      const facts = await cdp.evaluate(($) =>
+        JSON.stringify({
+          calendarEnabled: !$.el<HTMLSelectElement>('select[aria-label="Calendar"]')?.disabled,
+          inviteesDisabled: $.el<HTMLInputElement>('input[aria-label="Invitees"]')?.disabled,
+          note: $.el('[data-testid="event-invitees-apple"]')?.textContent.includes(
+            'add them in Calendar',
+          ),
+          openCalendar: $.all('[data-testid="event-invitees-apple"] button').some(
+            (b) => b.textContent?.trim() === 'Open Calendar',
+          ),
+          rsvp: $.has('[aria-label="RSVP"]'),
+        }),
+      );
       expect(JSON.parse(facts)).toEqual({
         calendarEnabled: true,
         inviteesDisabled: true,
@@ -207,26 +207,20 @@ describe('Apple Calendar', () => {
         rsvp: false,
       });
       // The button's channel reaches main, which opens nothing under the fixture.
-      expect(await cdp.eval(`window.calendarBridge.appleCalendarOpen()`)).toBe(false);
-      await cdp.eval(setField('input[placeholder="Title"]', 'Apple dentist (edited)', 'input'));
+      expect(await cdp.evaluate(() => window.calendarBridge.appleCalendarOpen())).toBe(false);
+      await cdp.evaluate(($) => $.setValue('input[placeholder="Title"]', 'Apple dentist (edited)'));
     } finally {
       await cdp.clickButtonWithText('Save');
     }
-    await cdp.waitFor(`!!document.querySelector('[title^="Apple dentist (edited)"]')`);
+    await cdp.waitUntil(($) => $.has('[title^="Apple dentist (edited)"]'));
   });
 
   it('opens events of a read-only calendar as a viewer', async () => {
     const { cdp } = app;
     await open('Holiday party');
     try {
-      expect(await cdp.eval(`!!document.querySelector('[data-testid="event-read-only"]')`)).toBe(
-        true,
-      );
-      expect(
-        await cdp.eval(
-          `[...document.querySelectorAll('button')].some(b => b.textContent?.trim() === 'Save')`,
-        ),
-      ).toBe(false);
+      expect(await cdp.evaluate(($) => $.has('[data-testid="event-read-only"]'))).toBe(true);
+      expect(await cdp.evaluate(($) => $.button('Save') !== null)).toBe(false);
     } finally {
       await cdp.clickButtonWithText('Cancel');
     }
@@ -235,13 +229,12 @@ describe('Apple Calendar', () => {
   it('moves a Google event with a guest to Apple after confirming what is dropped', async () => {
     const { cdp } = app;
     await open('Google sync');
-    await cdp.eval(
-      setField('select[aria-label="Calendar"]', `${APPLE_CALENDAR_ACCOUNT_ID}:ek-home`, 'select'),
+    await cdp.evaluate(
+      ($, calendarValue: string) => $.setValue('select[aria-label="Calendar"]', calendarValue),
+      `${APPLE_CALENDAR_ACCOUNT_ID}:ek-home`,
     );
     await cdp.clickButtonWithText('Save');
-    const summary = await cdp.waitFor<string>(
-      `document.querySelector('[data-testid="move-confirm"]')?.textContent ?? ''`,
-    );
+    const summary = await cdp.waitForValue(($) => $.text('[data-testid="move-confirm"]'));
     expect(summary).toContain('1 guest');
     await cdp.clickButtonWithText('Move anyway');
     await expect
@@ -256,7 +249,7 @@ describe('Apple Calendar', () => {
   it('moves an Apple event to Google through the queue', async () => {
     const { cdp } = app;
     await open('Apple dentist (edited)');
-    await cdp.eval(setField('select[aria-label="Calendar"]', 'acc-e2e:cal-work', 'select'));
+    await cdp.evaluate(($) => $.setValue('select[aria-label="Calendar"]', 'acc-e2e:cal-work'));
     await cdp.clickButtonWithText('Save');
     await expect
       .poll(async () =>
@@ -265,16 +258,18 @@ describe('Apple Calendar', () => {
         ),
       )
       .toBe(true);
-    expect(await cdp.eval(`!!document.querySelector('[data-testid="move-confirm"]')`)).toBe(false);
+    expect(await cdp.evaluate(($) => $.has('[data-testid="move-confirm"]'))).toBe(false);
   });
 
   it('hides an Apple calendar from the sidebar', async () => {
     const { cdp } = app;
     await cdp.locate('[title^="Google sync"]');
-    await cdp.eval(
-      `[...document.querySelectorAll('aside button')].find(b => b.textContent?.trim() === 'Home')?.click()`,
-    );
-    await cdp.waitFor(`!document.querySelector('[title^="Google sync"]')`);
+    await cdp.evaluate(($) => {
+      $.all('aside button')
+        .find((b) => b.textContent?.trim() === 'Home')
+        ?.click();
+    });
+    await cdp.waitUntil(($) => !$.has('[title^="Google sync"]'));
   });
 });
 
@@ -336,7 +331,6 @@ describe('A late delete reply meets the next inspector', () => {
     }
   });
 
-  const INSPECTOR_TITLE = `document.querySelector('[data-testid="inspector-title"]')?.textContent`;
   // An event of its own per attempt (four: two tests, a retry each): a
   // retry finds the first one deleted.
   let attempt = 0;
@@ -345,23 +339,31 @@ describe('A late delete reply meets the next inspector', () => {
     const { cdp } = app;
     attempt += 1;
     const doomed = `Apple errand ${String(attempt)}`;
-    const block = `document.querySelector(${JSON.stringify(`[title^="${doomed}"]`)})`;
     await cdp.openInspector(`[title^=${JSON.stringify(doomed)}]`);
-    await cdp.waitFor<boolean>(`${INSPECTOR_TITLE} === ${JSON.stringify(doomed)}`);
+    await cdp.waitUntil(
+      ($, title: string) => $.el('[data-testid="inspector-title"]')?.textContent === title,
+      doomed,
+    );
     app.holdEventKitWrites(true);
     await cdp.clickButtonWithText('Delete');
     await cdp.confirmDelete();
     await cdp.openInspector('[title^="Google sync"]');
-    await cdp.waitFor<boolean>(`${INSPECTOR_TITLE} === 'Google sync'`);
+    await cdp.waitUntil(
+      ($) => $.el('[data-testid="inspector-title"]')?.textContent === 'Google sync',
+    );
     // Still held: the next inspector opened before the delete could answer.
-    expect(await cdp.eval<boolean>(`!!${block}`)).toBe(true);
+    expect(await cdp.evaluate(($, title: string) => $.has(`[title^="${title}"]`), doomed)).toBe(
+      true,
+    );
 
     app.holdEventKitWrites(false);
     // The block leaves the grid only once the refresh the write's
     // invalidation asked for is back, and the main process answers that
     // after the delete's own reply: the delete has closed what it closes.
-    await cdp.waitFor<boolean>(`!${block}`);
-    expect(await cdp.eval<string | null>(`${INSPECTOR_TITLE} ?? null`)).toBe('Google sync');
+    await cdp.waitUntil(($, title: string) => !$.has(`[title^="${title}"]`), doomed);
+    expect(
+      await cdp.evaluate(($) => $.el('[data-testid="inspector-title"]')?.textContent ?? null),
+    ).toBe('Google sync');
   });
 
   it('closes an editor opened on the event while its delete ran, once the delete answers', async () => {
@@ -369,21 +371,20 @@ describe('A late delete reply meets the next inspector', () => {
     attempt += 1;
     const doomed = `Apple errand ${String(attempt)}`;
     await cdp.openInspector(`[title^=${JSON.stringify(doomed)}]`);
-    await cdp.waitFor<boolean>(`${INSPECTOR_TITLE} === ${JSON.stringify(doomed)}`);
+    await cdp.waitUntil(
+      ($, title: string) => $.el('[data-testid="inspector-title"]')?.textContent === title,
+      doomed,
+    );
     app.holdEventKitWrites(true);
     await cdp.clickButtonWithText('Delete');
     await cdp.confirmDelete();
     // Edit stays live while the delete waits: it opens the event's editor.
     await cdp.clickTestId('inspector-edit');
-    await cdp.waitFor<boolean>(
-      `document.querySelector('[data-testid="editor-title"]')?.textContent === 'Edit event'`,
-    );
+    await cdp.waitUntil(($) => $.el('[data-testid="editor-title"]')?.textContent === 'Edit event');
     app.holdEventKitWrites(false);
     // The event is gone, so the delete's reply closes its editor too.
-    await cdp.waitFor<boolean>(`!document.querySelector('[data-testid="editor"]')`);
-    await cdp.waitFor<boolean>(
-      `!document.querySelector(${JSON.stringify(`[title^="${doomed}"]`)})`,
-    );
+    await cdp.waitUntil(($) => !$.has('[data-testid="editor"]'));
+    await cdp.waitUntil(($, title: string) => !$.has(`[title^="${title}"]`), doomed);
   });
 
   let shifts = 0;
@@ -394,12 +395,18 @@ describe('A late delete reply meets the next inspector', () => {
     const blocks = `[title^=${JSON.stringify(`${title} ·`)}]`;
     const first = await cdp.locate(blocks);
     await cdp.click(first.x, first.y);
-    await cdp.waitFor<boolean>(`${INSPECTOR_TITLE} === ${JSON.stringify(title)}`);
-    await cdp.eval(
-      `[...document.querySelectorAll('[aria-label="Apply to"] [role="radio"]')].find((b) => b.textContent?.trim() === 'All events')?.click()`,
+    await cdp.waitUntil(
+      ($, want: string) => $.el('[data-testid="inspector-title"]')?.textContent === want,
+      title,
     );
-    await cdp.waitFor<boolean>(
-      `document.querySelector('[aria-label="Apply to"] [aria-checked="true"]')?.textContent?.trim() === 'All events'`,
+    await cdp.evaluate(($) => {
+      $.all('[aria-label="Apply to"] [role="radio"]')
+        .find((b) => b.textContent?.trim() === 'All events')
+        ?.click();
+    });
+    await cdp.waitUntil(
+      ($) =>
+        $.el('[aria-label="Apply to"] [aria-checked="true"]')?.textContent?.trim() === 'All events',
     );
     app.holdEventKitWrites(true);
     await cdp.clickButtonWithText('Delete');
@@ -407,17 +414,22 @@ describe('A late delete reply meets the next inspector', () => {
     // Another day's occurrence, which the series' delete takes too: its own
     // inspector (its block carries the outline), then Edit.
     const second = await cdp.locate(blocks, { index: 1 });
-    await cdp.eval(
-      `document.elementFromPoint(${String(second.x)}, ${String(second.y)})?.closest('[role="button"]')?.setAttribute('data-e2e-next', '')`,
+    await cdp.evaluate(
+      (_: PageKit, x: number, y: number) => {
+        document
+          .elementFromPoint(x, y)
+          ?.closest('[role="button"]')
+          ?.setAttribute('data-e2e-next', '');
+      },
+      second.x,
+      second.y,
     );
     await cdp.click(second.x, second.y);
-    await cdp.waitFor<boolean>(`!!document.querySelector('[data-e2e-next][data-selected]')`);
+    await cdp.waitUntil(($) => $.has('[data-e2e-next][data-selected]'));
     await cdp.clickTestId('inspector-edit');
-    await cdp.waitFor<boolean>(
-      `document.querySelector('[data-testid="editor-title"]')?.textContent === 'Edit event'`,
-    );
+    await cdp.waitUntil(($) => $.el('[data-testid="editor-title"]')?.textContent === 'Edit event');
     app.holdEventKitWrites(false);
-    await cdp.waitFor<boolean>(`!document.querySelector('[data-testid="editor"]')`);
-    await cdp.waitFor<boolean>(`!document.querySelector(${JSON.stringify(blocks)})`);
+    await cdp.waitUntil(($) => !$.has('[data-testid="editor"]'));
+    await cdp.waitUntil(($, selector: string) => !$.has(selector), blocks);
   });
 });
