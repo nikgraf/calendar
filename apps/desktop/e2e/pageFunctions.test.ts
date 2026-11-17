@@ -9,6 +9,9 @@ import { freeNames, refusedNames } from './page.ts';
  * run here over the e2e code's source: a spec that only CI runs (the real
  * Reminders and Calendar, the live Google account, the website's shots)
  * learns of a name the page would not have before it gets there.
+ *
+ * Names are traced by name within a file, not by scope: a function that
+ * shares its name with the one a call means is read in its place.
  */
 
 /** The calls that send a page function, after an optional `{ timeoutMs }`. */
@@ -17,6 +20,12 @@ const PAGE_CALLS = new Set(['evaluate', 'waitForValue', 'waitUntil', 'waitUntilR
 const PAIR_CALLS = new Set(['noteWhen']);
 /** page.ts's own, for page code sent another way (a script for every new document). */
 const SOURCE_CALLS = new Set(['pageExpression', 'pageSource']);
+/**
+ * The harness methods that pass on the page function their caller gave
+ * them (`page`): the caller's call is read instead. A helper of any other
+ * name that does so fails the check, since its callers' functions are not.
+ */
+const WRAPPERS = new Set(['evaluate', 'noteWhen', 'pollPage']);
 
 interface Node {
   readonly end: number;
@@ -42,13 +51,22 @@ const nameOf = (node: unknown): string | undefined =>
 /** What a call sends as page code: a function written there, a name, or something else. */
 type Sent =
   | { readonly kind: 'function'; readonly node: Node }
-  | { readonly kind: 'name'; readonly name: string; readonly start: number }
+  | {
+      readonly kind: 'name';
+      readonly name: string;
+      /** The named functions and methods the call is written in, outermost first. */
+      readonly owners: ReadonlyArray<string>;
+      readonly start: number;
+    }
   | { readonly end: number; readonly kind: 'other'; readonly start: number };
 
 /** A file's page code: what it sends, the functions it declares by name and what it imports. */
 interface Scan {
   readonly declared: ReadonlyMap<string, ReadonlyArray<Node>>;
-  /** Each import's local name: the file it comes from (relative to e2e/) and its name there. */
+  /**
+   * Each import's local name: the file it comes from (relative to e2e/)
+   * and its name there (`default` and `*` for a default or namespace import).
+   */
   readonly imports: ReadonlyMap<string, { readonly from: string; readonly name: string }>;
   readonly sent: ReadonlyArray<Sent>;
   readonly source: string;
@@ -58,13 +76,20 @@ const scan = (file: string, source: string): Scan => {
   const declared = new Map<string, Array<Node>>();
   const imports = new Map<string, { from: string; name: string }>();
   const sent: Array<Sent> = [];
-  const visit = (node: Node): void => {
+  const declare = (name: string | undefined, node: Node) => {
+    if (name !== undefined) {
+      declared.set(name, [...(declared.get(name) ?? []), node]);
+    }
+  };
+  const visit = (node: Node, owners: ReadonlyArray<string>): void => {
     if (node.type === 'VariableDeclarator') {
-      const name = nameOf(node['id']);
-      const init = node['init'] as Node | undefined;
-      if (name !== undefined && isNode(init) && isFunction(init)) {
-        declared.set(name, [...(declared.get(name) ?? []), init]);
+      const init = node['init'];
+      if (isNode(init) && isFunction(init)) {
+        declare(nameOf(node['id']), init);
       }
+    }
+    if (node.type === 'FunctionDeclaration') {
+      declare(nameOf(node['id']), node);
     }
     if (node.type === 'ImportDeclaration') {
       const from = join(dirname(file), String((node['source'] as Node)['value'])).replace(
@@ -73,7 +98,12 @@ const scan = (file: string, source: string): Scan => {
       );
       for (const specifier of (node['specifiers'] as ReadonlyArray<Node>).filter(isNode)) {
         const local = nameOf(specifier['local']);
-        const name = nameOf(specifier['imported']);
+        const name =
+          specifier.type === 'ImportSpecifier'
+            ? nameOf(specifier['imported'])
+            : specifier.type === 'ImportDefaultSpecifier'
+              ? 'default'
+              : '*';
         if (local !== undefined && name !== undefined) {
           imports.set(local, { from, name });
         }
@@ -102,13 +132,20 @@ const scan = (file: string, source: string): Scan => {
             ? { kind: 'function', node: page }
             : name === undefined
               ? { end: page.end, kind: 'other', start: page.start }
-              : { kind: 'name', name, start: page.start },
+              : { kind: 'name', name, owners, start: page.start },
         );
       }
     }
-    children(node).forEach(visit);
+    const owner =
+      node.type === 'MethodDefinition' || node.type === 'Property'
+        ? nameOf(node['key'])
+        : node.type === 'VariableDeclarator' || node.type === 'FunctionDeclaration'
+          ? nameOf(node['id'])
+          : undefined;
+    const inside = owner === undefined ? owners : [...owners, owner];
+    children(node).forEach((child) => visit(child, inside));
   };
-  visit(parseSync(file, source).program as unknown as Node);
+  visit(parseSync(file, source).program as unknown as Node, []);
   return { declared, imports, sent, source };
 };
 
@@ -125,7 +162,6 @@ interface Page {
  * The page functions `file` sends, each found where it is written: in the
  * call, a function the file declares, or one it imports from another
  * e2e file. Anything else it sends is `unread`: the check cannot see it.
- * The harness's wrappers pass on the function they were given (`page`).
  */
 const pagesSentBy = (
   file: string,
@@ -150,14 +186,19 @@ const pagesSentBy = (
             ?.map((node) => ({ file: imported.from, node }))
         : undefined;
       const found = local ?? there;
+      const passedOn =
+        file === 'harness.ts' &&
+        sent.name === 'page' &&
+        sent.owners.some((owner) => WRAPPERS.has(owner));
       if (found) {
         found.forEach((page) => pages.set(page.node, page));
-      } else if (!(file === 'harness.ts' && sent.name === 'page')) {
+      } else if (!passedOn) {
         unread.push(`${at(sent.start)} sends ${sent.name}`);
       }
     }
   }
-  return { pages: [...pages.values()].toSorted((a, b) => a.node.start - b.node.start), unread };
+  const order = (a: Page, b: Page) => a.file.localeCompare(b.file) || a.node.start - b.node.start;
+  return { pages: [...pages.values()].toSorted(order), unread };
 };
 
 /** The page function's source as the page gets it: types stripped. */
@@ -165,6 +206,33 @@ const asSent = async (source: string): Promise<string> =>
   (await transformWithOxc(`(${source})`, 'page.ts', { lang: 'ts', sourcemap: false })).code
     .trim()
     .replace(/;$/, '');
+
+/**
+ * What is wrong with the page code `file` sends: what the check cannot
+ * read, and each function that names what the page does not have. An
+ * import counts, even one called like a page global: the transform
+ * renames it.
+ */
+const problemsIn = async (
+  file: string,
+  scans: ReadonlyMap<string, Scan>,
+): Promise<ReadonlyArray<string>> => {
+  const { pages, unread } = pagesSentBy(file, scans);
+  const problems = [...unread];
+  for (const { file: home, node } of pages) {
+    const { imports, source } = scans.get(home)!;
+    const sent = await asSent(source.slice(node.start, node.end));
+    const refused = refusedNames(sent);
+    const names = [
+      ...refused,
+      ...[...freeNames(sent)].filter((name) => imports.has(name) && !refused.includes(name)),
+    ];
+    if (names.length > 0) {
+      problems.push(`${home}:${String(lineOf(source, node.start))} names ${names.join(', ')}`);
+    }
+  }
+  return problems;
+};
 
 const dir = import.meta.dirname;
 const files = readdirSync(dir, { encoding: 'utf8', recursive: true })
@@ -175,7 +243,10 @@ describe('the page functions the e2e code sends', () => {
   it('are found in the call, as a name the file declares, or as an import from another e2e file', () => {
     const harness = `
       export const leave = ($: PageKit) => { $.button('Cancel')?.click(); };
-      export const evaluate = (page) => run(pageExpression(page, []));
+      class Cdp {
+        evaluate(page) { return this.run(pageExpression(page, [])); }
+      }
+      export const waitThenClick = async (cdp, page) => { await cdp.waitUntil(page); };
     `;
     const spec = `
       import { leave as goAway } from './harness.ts';
@@ -188,6 +259,8 @@ describe('the page functions the e2e code sends', () => {
       await cdp.noteWhen(moved, ($, field: string) => $.value(field), 'input');
       const record = () => { window.__seen = []; };
       await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: pageExpression(record, []) });
+      function blank() { return document.title === ''; }
+      await cdp.waitUntil(blank);
       await cdp.waitForValue(passedIn);
       await cdp.waitUntil(LONG, ready);
       await cdp.evaluate(pages.ready);
@@ -210,13 +283,36 @@ describe('the page functions the e2e code sends', () => {
       `spec.e2e.ts: ($: PageKit) => $.text('h2') === 'Moved'`,
       'spec.e2e.ts: ($, field: string) => $.value(field)',
       'spec.e2e.ts: () => { window.__seen = []; }',
+      `spec.e2e.ts: function blank() { return document.title === ''; }`,
     ]);
     expect(unread).toEqual([
-      'spec.e2e.ts:12 sends passedIn',
-      'spec.e2e.ts:13 sends LONG',
-      'spec.e2e.ts:14 sends pages.ready',
+      'spec.e2e.ts:14 sends passedIn',
+      'spec.e2e.ts:15 sends LONG',
+      'spec.e2e.ts:16 sends pages.ready',
     ]);
-    expect(pagesSentBy('harness.ts', scans).unread).toEqual([]);
+    // `evaluate` passes on its caller's function; another helper that does is not read.
+    expect(pagesSentBy('harness.ts', scans).unread).toEqual(['harness.ts:6 sends page']);
+  });
+
+  it('refuse an import a page function names, also one called like a page global', async () => {
+    const harness = `
+      import { setTimeout } from 'node:timers/promises';
+      export const later = () => setTimeout(1);
+    `;
+    const spec = `
+      import { later } from '../harness.ts';
+      import console from 'node:console';
+      await cdp.evaluate(later);
+      await cdp.evaluate(() => console.log('x'));
+    `;
+    const scans = new Map([
+      ['bench/spec.e2e.ts', scan('bench/spec.e2e.ts', spec)],
+      ['harness.ts', scan('harness.ts', harness)],
+    ]);
+    expect(await problemsIn('bench/spec.e2e.ts', scans)).toEqual([
+      'bench/spec.e2e.ts:5 names console',
+      'harness.ts:3 names setTimeout',
+    ]);
   });
 
   const scans = new Map(
@@ -226,23 +322,7 @@ describe('the page functions the e2e code sends', () => {
   it.each(files)(
     '%s: sends only page functions the check can read, naming only what the page has',
     async (file) => {
-      const { pages, unread } = pagesSentBy(file, scans);
-      const refused: Array<string> = [...unread];
-      for (const { file: home, node } of pages) {
-        const { imports, source } = scans.get(home)!;
-        const sent = await asSent(source.slice(node.start, node.end));
-        const names = [
-          ...refusedNames(sent),
-          // An import the transform would rename, even one called like a page global.
-          ...[...freeNames(sent)].filter(
-            (name) => imports.has(name) && !refusedNames(sent).includes(name),
-          ),
-        ];
-        if (names.length > 0) {
-          refused.push(`${home}:${String(lineOf(source, node.start))} names ${names.join(', ')}`);
-        }
-      }
-      expect(refused).toEqual([]);
+      expect(await problemsIn(file, scans)).toEqual([]);
     },
   );
 });
