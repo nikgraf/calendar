@@ -163,6 +163,15 @@ in the `ios-simulator` skill (`.agents/skills/ios-simulator/SKILL.md`).
 
 ## Expo, Metro and the dev client
 
+- **A cold start waited up to 3 s for an update.** With
+  `updates.fallbackToCacheTimeout` above 0, expo-updates keeps the launch
+  screen up until it has asked EAS for a newer update and downloaded it,
+  or until the timeout ends (a timer in `AppLoaderTask.swift`: a request
+  that hangs offline still costs only the timeout). CI publishes to `main`
+  on every merge, so most launches found one. It is 0 now: the app starts
+  on the bundle it has, a new update downloads in the background and runs
+  from the next cold start. `launchConfig.test.ts` keeps it at 0.
+
 - **Edits do not show up in the app.** Metro does not see a change made
   after it started when it runs with `CI=1` (no file watching) or
   without watchman (its fallback watcher missed every edit): each launch

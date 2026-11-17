@@ -133,8 +133,10 @@ same hash, so equality means an OTA update reaches every install of the
 latest build.
 
 - **Unchanged** (JS/TS/docs-only merges — most of them): publishes
-  `eas update --branch main` in ~30s; installed TestFlight builds load it
-  on next launch. No cloud build, no build number.
+  `eas update --branch main` in ~30s; installed TestFlight builds download
+  it in the background on their next launch and run it from the cold start
+  after that (`updates.fallbackToCacheTimeout: 0`: a launch never waits
+  for the update check). No cloud build, no build number.
 - **Changed** (native deps, config plugins, SDK bumps, the app icon,
   `ios.infoPlist`, `apps/ios/package.json` scripts): a full EAS build and
   TestFlight submit. The fingerprint runs Expo's default `balanced` preset
