@@ -5,6 +5,7 @@ import {
   mainThreadSummary,
   observe,
   pagingLine,
+  topMemory,
   vmStat,
   type Waiting,
 } from './stallWatch.ts';
@@ -221,5 +222,28 @@ describe('vmStat and pagingLine', () => {
 
   it('is undefined when a counter is missing', () => {
     expect(vmStat('Mach Virtual Memory Statistics: (page size of 16384 bytes)\n')).toBeUndefined();
+  });
+});
+
+/** `top -l 1 -o mem -stats pid,command,mem,cmprs` on a macOS host (cut). */
+const TOP = `Processes: 612 total, 4 running, 608 sleeping, 3711 threads
+PhysMem: 6912M used (1203M wired, 2310M compressor), 87M unused.
+VM: 228T vsize, 4881M framework vsize, 0(0) swapins, 0(0) swapouts.
+
+PID    COMMAND          MEM   CMPRS
+2210   java             1840M 1203M
+4112   SolunivoDev      152M  8192K
+`;
+
+describe('topMemory', () => {
+  it('reads the PhysMem line and the biggest processes', () => {
+    expect(topMemory(TOP, 1)).toEqual([
+      'PhysMem: 6912M used (1203M wired, 2310M compressor), 87M unused.',
+      'java 1840M (1203M compressed)',
+    ]);
+  });
+
+  it('is empty for output it cannot read', () => {
+    expect(topMemory('', 5)).toEqual([]);
   });
 });

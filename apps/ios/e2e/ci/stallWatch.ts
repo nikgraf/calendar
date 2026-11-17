@@ -264,3 +264,25 @@ export const pagingLine = (before: VmStat, after: VmStat): string => {
   const mb = (pages: number): string => `${Math.round((pages * after.pageSize) / 1_048_576)} MB`;
   return `host paging during the sample: ${mb(after.pageins - before.pageins)} paged in, ${mb(after.swapins - before.swapins)} swapped in; then ${mb(after.free)} free, ${mb(after.fileBacked)} file-backed, ${mb(after.compressed)} compressed`;
 };
+
+/**
+ * The host's biggest memory users in `top -l 1 -o mem -stats pid,command,mem,cmprs`
+ * output: its `PhysMem` line, then up to `rows` processes as `<command> <mem>
+ * (<compressed> compressed)`. On CI (run 44083938042) the host paged in up to
+ * 4 GB during one 4 s sample with 8 GB in the compressor, while the app held
+ * about 150 MB: this names what holds the rest.
+ */
+export const topMemory = (text: string, rows: number): ReadonlyArray<string> => {
+  const lines = text.split('\n');
+  const physMem = lines.find((line) => line.startsWith('PhysMem:'))?.trim();
+  const header = lines.findIndex((line) => /^PID\s+COMMAND\s+MEM\s+CMPRS/.test(line));
+  const processes =
+    header === -1
+      ? []
+      : lines
+          .slice(header + 1)
+          .map((line) => /^\d+\s+(.+?)\s+(\S+)\s+(\S+)\s*$/.exec(line))
+          .flatMap((match) => (match ? [`${match[1]} ${match[2]} (${match[3]} compressed)`] : []))
+          .slice(0, rows);
+  return physMem === undefined ? processes : [physMem, ...processes];
+};

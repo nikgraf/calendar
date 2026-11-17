@@ -52,6 +52,7 @@ import {
   observe,
   pagingLine,
   type Stall,
+  topMemory,
   vmStat,
   type VmStat,
   type Waiting,
@@ -98,6 +99,15 @@ const STALL_THRESHOLD_MS = 1500;
 /** Samples per attempt at most: one stalled flow must not fill the artifact. */
 const MAX_SAMPLES = 12;
 
+/** The host's biggest memory users now (`top`), with its PhysMem line. */
+const readTopMemory = (): ReadonlyArray<string> =>
+  topMemory(
+    spawnSync('top', ['-l', '1', '-o', 'mem', '-n', '20', '-stats', 'pid,command,mem,cmprs'], {
+      encoding: 'utf8',
+    }).stdout ?? '',
+    12,
+  );
+
 /** The host's paging counters now (`vm_stat`), around a sample. */
 const readVmStat = (): VmStat | undefined =>
   vmStat(spawnSync('vm_stat', { encoding: 'utf8' }).stdout ?? '');
@@ -131,6 +141,13 @@ const watchMainThread = (dir: string) => {
   const found: Array<{ file: string; stall: Stall }> = [];
   const files = new Map<number, string>();
   const paging = new Map<string, string>();
+  const memory = new Map<string, ReadonlyArray<string>>();
+  // Where the host's memory is before the flows: CI's stalls come with heavy paging.
+  say(`::group::Host memory at the start of ${dir.slice(dir.lastIndexOf('/') + 1)}`);
+  for (const line of readTopMemory()) {
+    say(line);
+  }
+  say('::endgroup::');
   let sampling: Promise<unknown> | undefined;
   let taken = 0;
   let pending = '';
@@ -175,6 +192,7 @@ const watchMainThread = (dir: string) => {
       if (before && after) {
         paging.set(file, pagingLine(before, after));
       }
+      memory.set(file, readTopMemory());
       sampling = undefined;
     });
   }, 100);
@@ -205,6 +223,9 @@ const watchMainThread = (dir: string) => {
         );
         if (paged) {
           say(paged);
+        }
+        for (const line of memory.get(file) ?? []) {
+          say(`  ${line}`);
         }
         for (const frame of main?.path ?? []) {
           say(frame);
