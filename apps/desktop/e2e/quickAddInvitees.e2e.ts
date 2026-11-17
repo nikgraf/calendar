@@ -1,6 +1,7 @@
 import { Account, CalendarInfo, GoogleContact } from '@calendar/core';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vite-plus/test';
 import { type App, launchApp, readEvents } from './harness.ts';
+import type { PageKit } from './page.ts';
 
 // People a phrase invites: the fixture model names whoever follows
 // "invite" (or "remove"), the code keeps them only under that cue, and
@@ -60,17 +61,17 @@ const seed = {
 };
 
 // CDP key events don't carry macOS meta reliably: dispatch ⌘N to the app's own window listener.
-const COMMAND_N = `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', metaKey: true }))`;
-const chips = `[...document.querySelectorAll('[data-invitee]')].map((el) => el.getAttribute('data-invitee'))`;
+const commandN = () => {
+  window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', metaKey: true }));
+};
+const chips = ($: PageKit) => $.all('[data-invitee]').map((el) => el.getAttribute('data-invitee'));
 // A chip as it reads: the name, the address in parentheses (and its remove button's ×).
-const chipText = (email: string) =>
-  `document.querySelector('[data-invitee="${email}"]')?.textContent ?? ''`;
-// The Assistant's newest card: its guests, and what its step changed.
-const cardGuests = `(document.querySelector('[data-testid="assistant-card-guests"]')?.textContent ?? '')`;
-const changed = `(document.querySelector('[data-testid="assistant-changed"]')?.textContent ?? '')`;
-const choiceText = (index: number) =>
-  `document.querySelector('[data-testid="draft-invitee-choice-${String(index)}"]')?.textContent ?? ''`;
-const hasChoices = `!!document.querySelector('[data-testid="draft-invitee-choices"]')`;
+const chipText = ($: PageKit, email: string) => $.text(`[data-invitee="${email}"]`);
+// The Assistant's newest card: its guests.
+const cardGuests = ($: PageKit) => $.text('[data-testid="assistant-card-guests"]');
+const choiceText = ($: PageKit, index: number) =>
+  $.text(`[data-testid="draft-invitee-choice-${String(index)}"]`);
+const hasChoices = ($: PageKit) => $.has('[data-testid="draft-invitee-choices"]');
 
 describe('Invitees from a quick-add phrase', () => {
   let app: App;
@@ -83,7 +84,7 @@ describe('Invitees from a quick-add phrase', () => {
   afterEach(async () => {
     // A failure above must not strand an editor for the next test.
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      if (!(await app.cdp.eval<boolean>(`!!document.querySelector('[data-testid="editor"]')`))) {
+      if (!(await app.cdp.evaluate(($) => $.has('[data-testid="editor"]')))) {
         return;
       }
       await app.cdp.escapeOrDiscard();
@@ -95,46 +96,59 @@ describe('Invitees from a quick-add phrase', () => {
 
   it('invites the one contact a name means, asks which for two, takes a guest off, and saves them', async () => {
     const { cdp } = app;
-    await cdp.eval(COMMAND_N);
-    await cdp.waitFor(
-      `document.querySelector('[data-testid="editor-title"]')?.textContent === 'New event'`,
-    );
+    await cdp.evaluate(commandN);
+    await cdp.waitUntil(($) => $.text('[data-testid="editor-title"]') === 'New event');
     await phrase('Lunch | +2 | 13:00-14:00 | | invite Anna Lee and Tom');
     // Anna Lee is one contact: a guest. Tom is two: a question, nothing picked.
-    await cdp.waitFor(`${chips}.includes('anna@example.com')`);
-    expect(await cdp.eval<Array<string>>(chips)).toEqual(['anna@example.com']);
-    expect(await cdp.eval<string>(chipText('anna@example.com'))).toContain(
+    await cdp.waitUntil(($) =>
+      $.all('[data-invitee]')
+        .map((el) => el.getAttribute('data-invitee'))
+        .includes('anna@example.com'),
+    );
+    expect(await cdp.evaluate(chips)).toEqual(['anna@example.com']);
+    expect(await cdp.evaluate(chipText, 'anna@example.com')).toContain(
       'Anna Lee (anna@example.com)',
     );
-    await cdp.waitFor(hasChoices);
-    expect(await cdp.eval<string>(choiceText(0))).toContain('Which Tom?');
-    expect(await cdp.eval<string>(choiceText(0))).toContain('Tom Baker');
-    expect(await cdp.eval<string>(choiceText(0))).toContain('Tom Lee');
-    expect(await cdp.eval<string>(cardGuests)).toBe('Anna Lee (anna@example.com)');
+    await cdp.waitUntil(hasChoices);
+    expect(await cdp.evaluate(choiceText, 0)).toContain('Which Tom?');
+    expect(await cdp.evaluate(choiceText, 0)).toContain('Tom Baker');
+    expect(await cdp.evaluate(choiceText, 0)).toContain('Tom Lee');
+    expect(await cdp.evaluate(cardGuests)).toBe('Anna Lee (anna@example.com)');
 
     // A pick makes that contact a guest; the question goes, and the card marks who joined.
     await cdp.clickTestId('draft-invitee-pick-0-0');
-    await cdp.waitFor(`${chips}.includes('tom.baker@example.com')`);
-    expect(await cdp.eval<string>(chipText('tom.baker@example.com'))).toContain(
+    await cdp.waitUntil(($) =>
+      $.all('[data-invitee]')
+        .map((el) => el.getAttribute('data-invitee'))
+        .includes('tom.baker@example.com'),
+    );
+    expect(await cdp.evaluate(chipText, 'tom.baker@example.com')).toContain(
       'Tom Baker (tom.baker@example.com)',
     );
-    await cdp.waitFor(`!${hasChoices}`);
-    await cdp.waitFor(`${changed} === 'Changed: guests'`);
-    expect(await cdp.eval<string>(cardGuests)).toBe(
+    await cdp.waitUntil(($) => !$.has('[data-testid="draft-invitee-choices"]'));
+    await cdp.waitUntil(($) => $.text('[data-testid="assistant-changed"]') === 'Changed: guests');
+    expect(await cdp.evaluate(cardGuests)).toBe(
       'Anna Lee (anna@example.com), Tom Baker (tom.baker@example.com)',
     );
 
     // A later phrase takes a guest off by name.
     await phrase('remove Anna');
-    await cdp.waitFor(`!${chips}.includes('anna@example.com')`);
-    expect(await cdp.eval<Array<string>>(chips)).toEqual(['tom.baker@example.com']);
+    await cdp.waitUntil(
+      ($) =>
+        !$.all('[data-invitee]')
+          .map((el) => el.getAttribute('data-invitee'))
+          .includes('anna@example.com'),
+    );
+    expect(await cdp.evaluate(chips)).toEqual(['tom.baker@example.com']);
     // The card: who is left, and the list as it was struck through after it.
-    await cdp.waitFor(
-      `${cardGuests} === 'Tom Baker (tom.baker@example.com)Anna Lee (anna@example.com), Tom Baker (tom.baker@example.com)'`,
+    await cdp.waitUntil(
+      ($) =>
+        $.text('[data-testid="assistant-card-guests"]') ===
+        'Tom Baker (tom.baker@example.com)Anna Lee (anna@example.com), Tom Baker (tom.baker@example.com)',
     );
 
     await cdp.clickButtonWithText('Save');
-    await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);
+    await cdp.waitUntil(($) => !$.has('[data-testid="editor"]'));
     await expect
       .poll(async () =>
         (await readEvents(app.userDataDir))
@@ -146,22 +160,18 @@ describe('Invitees from a quick-add phrase', () => {
 
   it('says when no contact has a name, lets it go, and invites no one the words only mention', async () => {
     const { cdp } = app;
-    await cdp.eval(COMMAND_N);
-    await cdp.waitFor(
-      `document.querySelector('[data-testid="editor-title"]')?.textContent === 'New event'`,
-    );
+    await cdp.evaluate(commandN);
+    await cdp.waitUntil(($) => $.text('[data-testid="editor-title"]') === 'New event');
     await phrase('Coffee | +1 | 10:00-11:00 | | invite Sarah');
-    await cdp.waitFor(hasChoices);
-    expect(await cdp.eval<string>(choiceText(0))).toContain('No contact named “Sarah”');
-    expect(await cdp.eval<Array<string>>(chips)).toEqual([]);
+    await cdp.waitUntil(hasChoices);
+    expect(await cdp.evaluate(choiceText, 0)).toContain('No contact named “Sarah”');
+    expect(await cdp.evaluate(chips)).toEqual([]);
     await cdp.clickTestId('draft-invitee-dismiss-0');
-    await cdp.waitFor(`!${hasChoices}`);
+    await cdp.waitUntil(($) => !$.has('[data-testid="draft-invitee-choices"]'));
 
     // "with Anna Lee" names her, but invites no one.
     await phrase('| | 11:00-12:00 | Café with Anna Lee');
-    await cdp.waitFor(
-      `document.querySelector('input[aria-label="Start time"]')?.value === '11:00'`,
-    );
-    expect(await cdp.eval<Array<string>>(chips)).toEqual([]);
+    await cdp.waitUntil(($) => $.value('input[aria-label="Start time"]') === '11:00');
+    expect(await cdp.evaluate(chips)).toEqual([]);
   });
 });

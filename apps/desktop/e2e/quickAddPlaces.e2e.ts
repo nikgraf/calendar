@@ -1,6 +1,7 @@
 import { Account, CalendarInfo, EventRecord, GeoLocation } from '@calendar/core';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vite-plus/test';
 import { type App, launchApp, readEvents } from './harness.ts';
+import type { PageKit } from './page.ts';
 
 // The place a phrase names: the fixture model takes the location part of
 // its grammar as written, and the thread looks it up — the user's own
@@ -137,23 +138,28 @@ const DICTATED = {
   ],
 };
 
-const title = `(document.querySelector('input[placeholder="Title"]')?.value ?? '')`;
-const COMMAND_N = `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', metaKey: true }))`;
-const location = `(document.querySelector('input[aria-label="Location"]')?.value ?? '')`;
-const choices = `!!document.querySelector('[data-testid="draft-place-choices"]')`;
-const pressed = `(document.querySelector('[data-testid="draft-place-choices"] [aria-pressed="true"]')?.dataset.testid ?? '')`;
-const picks = `document.querySelectorAll('[data-testid^="draft-place-pick-"]').length`;
-const pickText = (index: number) =>
-  `(document.querySelector('[data-testid="draft-place-pick-${String(index)}"]')?.textContent ?? '')`;
-const dictating = `document.querySelector('[data-testid="quick-add-mic"]')?.getAttribute('aria-pressed') === 'true'`;
-const count = `(document.querySelector('[data-testid="draft-question-count"]')?.textContent ?? '')`;
-const preview = `!!document.querySelector('[data-testid="step-preview"]')`;
+const title = ($: PageKit) => $.value('input[placeholder="Title"]');
+const commandN = () => {
+  window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', metaKey: true }));
+};
+const locationText = ($: PageKit) => $.value('input[aria-label="Location"]');
+/** The location field reads `text`. */
+const locationIs = ($: PageKit, text: string) => $.value('input[aria-label="Location"]') === text;
+const choices = ($: PageKit) => $.has('[data-testid="draft-place-choices"]');
+const noChoices = ($: PageKit) => !$.has('[data-testid="draft-place-choices"]');
+const pressed = ($: PageKit) =>
+  $.el('[data-testid="draft-place-choices"] [aria-pressed="true"]')?.dataset.testid ?? '';
+const picks = ($: PageKit) => $.count('[data-testid^="draft-place-pick-"]');
+const pickText = ($: PageKit, index: number) =>
+  $.text(`[data-testid="draft-place-pick-${String(index)}"]`);
+const questionCount = ($: PageKit) => $.text('[data-testid="draft-question-count"]');
+const preview = ($: PageKit) => $.has('[data-testid="step-preview"]');
 // The place on the Assistant's newest card.
-const cardPlace = `(document.querySelector('[data-testid="assistant-card-location"]')?.textContent ?? '')`;
+const cardPlace = ($: PageKit) => $.text('[data-testid="assistant-card-location"]');
 // A map's state: '' while there is none, 'loading', then 'ready' (the geo fixture's image).
-const mapState = (testId: string) =>
-  `(document.querySelector('[data-testid="${testId}"]')?.dataset.mapState ?? '')`;
-const pins = `document.querySelectorAll('[data-testid^="draft-place-pin-"]').length`;
+const mapState = ($: PageKit, testId: string) =>
+  $.el(`[data-testid="${testId}"]`)?.dataset.mapState ?? '';
+const pins = ($: PageKit) => $.count('[data-testid^="draft-place-pin-"]');
 
 describe('Places from a quick-add phrase', () => {
   let app: App;
@@ -165,7 +171,7 @@ describe('Places from a quick-add phrase', () => {
   });
   afterEach(async () => {
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      if (!(await app.cdp.eval<boolean>(`!!document.querySelector('[data-testid="editor"]')`))) {
+      if (!(await app.cdp.evaluate(($) => $.has('[data-testid="editor"]')))) {
         return;
       }
       await app.cdp.escapeOrDiscard();
@@ -174,10 +180,8 @@ describe('Places from a quick-add phrase', () => {
   });
 
   const openNew = async () => {
-    await app.cdp.eval(COMMAND_N);
-    await app.cdp.waitFor(
-      `document.querySelector('[data-testid="editor-title"]')?.textContent === 'New event'`,
-    );
+    await app.cdp.evaluate(commandN);
+    await app.cdp.waitUntil(($) => $.text('[data-testid="editor-title"]') === 'New event');
   };
   const phrase = (text: string) => app.cdp.say(text);
 
@@ -185,12 +189,12 @@ describe('Places from a quick-add phrase', () => {
     const { cdp } = app;
     await openNew();
     await phrase('Coffee | +0 | 10:00-11:00 | Cafe Zentral');
-    await cdp.waitFor(`${location} === 'Café Central'`);
+    await cdp.waitUntil(locationIs, 'Café Central');
     // The lone place taken is a chip too, pressed, with the text as said beside it.
-    await cdp.waitFor(choices);
-    expect(await cdp.eval<string>(pressed)).toBe('draft-place-pick-0');
+    await cdp.waitUntil(choices);
+    expect(await cdp.evaluate(pressed)).toBe('draft-place-pick-0');
     await cdp.clickButtonWithText('Save');
-    await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);
+    await cdp.waitUntil(($) => !$.has('[data-testid="editor"]'));
     await expect
       .poll(async () =>
         (await readEvents(app.userDataDir)).find((event) => event.title === 'Coffee'),
@@ -203,12 +207,12 @@ describe('Places from a quick-add phrase', () => {
     await openNew();
     // The past coffee says where the user's places are: Vienna, not Benoni.
     await phrase('Lunch | +0 | 12:00-13:00 | Cafe Meek');
-    await cdp.waitFor(choices);
-    expect(await cdp.eval<string>(location)).toBe('Cafe Meek');
-    expect(await cdp.eval<string>(pressed)).toBe('draft-place-keep');
+    await cdp.waitUntil(choices);
+    expect(await cdp.evaluate(locationText)).toBe('Cafe Meek');
+    expect(await cdp.evaluate(pressed)).toBe('draft-place-keep');
     // Still one click away, for the trip the words did not name.
     await cdp.clickTestId('draft-place-pick-0');
-    await cdp.waitFor(`${location} === 'Meek Café, 9 10th Avenue, Benoni, South Africa'`);
+    await cdp.waitUntil(locationIs, 'Meek Café, 9 10th Avenue, Benoni, South Africa');
   });
 
   it('offers what another reading of a dictated name finds, taken only when picked', async () => {
@@ -216,20 +220,22 @@ describe('Places from a quick-add phrase', () => {
     await openNew();
     await cdp.clickTestId('quick-add-mic');
     // "Figelmiller" finds nothing; the reading "Figelmuller" finds Figlmüller.
-    await cdp.waitFor(choices, 20_000);
+    await cdp.waitUntil({ timeoutMs: 20_000 }, choices);
     await cdp.clickTestId('quick-add-mic');
-    await cdp.waitFor(`!(${dictating})`);
-    expect(await cdp.eval<string>(title)).toBe('Dinner');
-    expect(await cdp.eval<string>(location)).toBe('Figelmiller');
-    expect(await cdp.eval<string>(count)).toBe('Question 1 of 1');
-    expect(await cdp.eval<number>(picks)).toBe(1);
+    await cdp.waitUntil(
+      ($) => !($.el('[data-testid="quick-add-mic"]')?.getAttribute('aria-pressed') === 'true'),
+    );
+    expect(await cdp.evaluate(title)).toBe('Dinner');
+    expect(await cdp.evaluate(locationText)).toBe('Figelmiller');
+    expect(await cdp.evaluate(questionCount)).toBe('Question 1 of 1');
+    expect(await cdp.evaluate(picks)).toBe(1);
     // Its row leads with its pin's number on the map.
-    expect(await cdp.eval<string>(pickText(0))).toBe('1FiglmüllerBäckerstraße 6, 1010 Wien');
-    expect(await cdp.eval<string>(pressed)).toBe('draft-place-keep');
+    expect(await cdp.evaluate(pickText, 0)).toBe('1FiglmüllerBäckerstraße 6, 1010 Wien');
+    expect(await cdp.evaluate(pressed)).toBe('draft-place-keep');
     await cdp.clickTestId('draft-place-pick-0');
-    await cdp.waitFor(`${location} === 'Figlmüller, Bäckerstraße 6, 1010 Wien'`);
+    await cdp.waitUntil(locationIs, 'Figlmüller, Bäckerstraße 6, 1010 Wien');
     await cdp.clickButtonWithText('Save');
-    await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);
+    await cdp.waitUntil(($) => !$.has('[data-testid="editor"]'));
     // Picked, the place is vouched for: its coordinates are saved with it.
     await expect
       .poll(async () =>
@@ -243,106 +249,108 @@ describe('Places from a quick-add phrase', () => {
     await openNew();
     await phrase('Lunch | +0 | 12:00-13:00 | Figlmüller');
     // The first is taken at once; the question offers both, the taken one pressed.
-    await cdp.waitFor(`${location} === 'Figlmüller, Wollzeile 5, 1010 Wien'`);
-    await cdp.waitFor(choices);
-    expect(await cdp.eval<string>(count)).toBe('Question 1 of 1');
-    expect(await cdp.eval<number>(picks)).toBe(2);
-    expect(await cdp.eval<string>(pressed)).toBe('draft-place-pick-0');
-    expect(await cdp.eval<string>(cardPlace)).toBe('Figlmüller, Wollzeile 5, 1010 Wien');
+    await cdp.waitUntil(locationIs, 'Figlmüller, Wollzeile 5, 1010 Wien');
+    await cdp.waitUntil(choices);
+    expect(await cdp.evaluate(questionCount)).toBe('Question 1 of 1');
+    expect(await cdp.evaluate(picks)).toBe(2);
+    expect(await cdp.evaluate(pressed)).toBe('draft-place-pick-0');
+    expect(await cdp.evaluate(cardPlace)).toBe('Figlmüller, Wollzeile 5, 1010 Wien');
     // The other one: taken, and the question answered.
     await cdp.clickTestId('draft-place-pick-1');
-    await cdp.waitFor(`${location} === 'Figlmüller, Bäckerstraße 6, 1010 Wien'`);
-    await cdp.waitFor(`!${choices}`);
+    await cdp.waitUntil(locationIs, 'Figlmüller, Bäckerstraße 6, 1010 Wien');
+    await cdp.waitUntil(noChoices);
     // The pick is a step: the card marks the place, the one before struck through after it.
-    await cdp.waitFor(
-      `${cardPlace} === 'Figlmüller, Bäckerstraße 6, 1010 WienFiglmüller, Wollzeile 5, 1010 Wien'`,
+    await cdp.waitUntil(
+      ($) =>
+        $.text('[data-testid="assistant-card-location"]') ===
+        'Figlmüller, Bäckerstraße 6, 1010 WienFiglmüller, Wollzeile 5, 1010 Wien',
     );
     // Going back over the pick asks again.
     await cdp.clickTestId('assistant-undo');
-    await cdp.waitFor(preview);
+    await cdp.waitUntil(preview);
     await cdp.clickTestId('step-use');
-    await cdp.waitFor(`!${preview}`);
-    await cdp.waitFor(choices);
-    expect(await cdp.eval<string>(pressed)).toBe('draft-place-pick-0');
+    await cdp.waitUntil(($) => !$.has('[data-testid="step-preview"]'));
+    await cdp.waitUntil(choices);
+    expect(await cdp.evaluate(pressed)).toBe('draft-place-pick-0');
     // The text back as said: no place, and the question answered.
     await cdp.clickTestId('draft-place-keep');
-    await cdp.waitFor(`${location} === 'Figlmüller'`);
-    await cdp.waitFor(`!${choices}`);
+    await cdp.waitUntil(locationIs, 'Figlmüller');
+    await cdp.waitUntil(noChoices);
 
     // A later turn: a place nobody knows stays as said, nothing to pick.
     await phrase('| | | Room 9');
-    await cdp.waitFor(`${location} === 'Room 9'`);
-    expect(await cdp.eval<boolean>(choices)).toBe(false);
+    await cdp.waitUntil(locationIs, 'Room 9');
+    expect(await cdp.evaluate(choices)).toBe(false);
 
     // Asked again, and skipped: the place stays as taken.
     await phrase('| | | Figlmüller');
-    await cdp.waitFor(choices);
-    await cdp.waitFor(`${location} === 'Figlmüller, Wollzeile 5, 1010 Wien'`);
+    await cdp.waitUntil(choices);
+    await cdp.waitUntil(locationIs, 'Figlmüller, Wollzeile 5, 1010 Wien');
     await cdp.clickTestId('draft-question-skip');
-    await cdp.waitFor(`!${choices}`);
-    expect(await cdp.eval<string>(location)).toBe('Figlmüller, Wollzeile 5, 1010 Wien');
+    await cdp.waitUntil(noChoices);
+    expect(await cdp.evaluate(locationText)).toBe('Figlmüller, Wollzeile 5, 1010 Wien');
 
     // Edited by hand to something else, the question goes by itself.
     await phrase('| | | Room 9');
-    await cdp.waitFor(`${location} === 'Room 9'`);
+    await cdp.waitUntil(locationIs, 'Room 9');
     await phrase('| | | Figlmüller');
-    await cdp.waitFor(choices);
-    await cdp.eval(`(() => {
-      const input = document.querySelector('input[aria-label="Location"]');
-      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(input, 'Figlmüller Lugeck');
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    })()`);
-    await cdp.waitFor(`!${choices}`);
+    await cdp.waitUntil(choices);
+    await cdp.evaluate(($) => $.setValue('input[aria-label="Location"]', 'Figlmüller Lugeck'));
+    await cdp.waitUntil(noChoices);
   });
 
   it('shows the places on one map: a pin takes its place, one in another city is a tag on its edge', async () => {
     const { cdp } = app;
     await openNew();
     await phrase('Coffee | +1 | 15:00-16:00 | Café Sacher');
-    await cdp.waitFor(choices);
-    expect(await cdp.eval<number>(picks)).toBe(3);
-    await cdp.waitFor(`${mapState('draft-place-map')} === 'ready'`);
+    await cdp.waitUntil(choices);
+    expect(await cdp.evaluate(picks)).toBe(3);
+    await cdp.waitUntil(
+      ($) => $.el('[data-testid="draft-place-map"]')?.dataset.mapState === 'ready',
+    );
     // While it asks which place, the card leaves its own map out.
-    expect(await cdp.eval<string>(mapState('assistant-card-map'))).toBe('');
+    expect(await cdp.evaluate(mapState, 'assistant-card-map')).toBe('');
     // The two in Vienna are pins; Salzburg is a tag on the map's edge with
     // its number, and its row says how far it is first.
-    expect(await cdp.eval<number>(pins)).toBe(2);
+    expect(await cdp.evaluate(pins)).toBe(2);
     expect(
-      await cdp.eval<string>(
-        `document.querySelector('[data-testid="draft-place-edge-2"]')?.getAttribute('aria-label') ?? ''`,
+      await cdp.evaluate(
+        ($) => $.el('[data-testid="draft-place-edge-2"]')?.getAttribute('aria-label') ?? '',
       ),
     ).toBe('Take Café Sacher Salzburg, 251 km away');
-    expect(await cdp.eval<string>(pickText(2))).toBe(
+    expect(await cdp.evaluate(pickText, 2)).toBe(
       '3Café Sacher Salzburg251 km · Schwarzstraße 5–7, 5020 Salzburg',
     );
     // A pin takes its place as its row does; the card then shows it on its map.
     await cdp.clickTestId('draft-place-pin-1');
-    await cdp.waitFor(`${location} === 'Sacher Eck Wien, Kärntner Straße 38, 1010 Wien'`);
-    await cdp.waitFor(`!${choices}`);
-    await cdp.waitFor(`${mapState('assistant-card-map')} === 'ready'`);
+    await cdp.waitUntil(locationIs, 'Sacher Eck Wien, Kärntner Straße 38, 1010 Wien');
+    await cdp.waitUntil(noChoices);
+    await cdp.waitUntil(
+      ($) => $.el('[data-testid="assistant-card-map"]')?.dataset.mapState === 'ready',
+    );
     // Asked again, the tag takes the place in Salzburg.
     await cdp.clickTestId('assistant-undo');
-    await cdp.waitFor(preview);
+    await cdp.waitUntil(preview);
     await cdp.clickTestId('step-use');
-    await cdp.waitFor(`!${preview}`);
-    await cdp.waitFor(choices);
+    await cdp.waitUntil(($) => !$.has('[data-testid="step-preview"]'));
+    await cdp.waitUntil(choices);
     await cdp.clickTestId('draft-place-edge-2');
-    await cdp.waitFor(`${location} === 'Café Sacher Salzburg, Schwarzstraße 5–7, 5020 Salzburg'`);
+    await cdp.waitUntil(locationIs, 'Café Sacher Salzburg, Schwarzstraße 5–7, 5020 Salzburg');
   });
 
   it('looks up a place a later turn changes, and keeps it through a turn about the title', async () => {
     const { cdp } = app;
     await openNew();
     await phrase('Lunch | +0 | 12:00-13:00 | Figlmüller');
-    await cdp.waitFor(`${location} === 'Figlmüller, Wollzeile 5, 1010 Wien'`);
+    await cdp.waitUntil(locationIs, 'Figlmüller, Wollzeile 5, 1010 Wien');
     // The model answers where the turn says it is ("the one in
     // Bäckerstraße"); the thread looks that up and takes the best match.
     await phrase('| | | Figlmüller, Bäckerstraße');
-    await cdp.waitFor(`${location} === 'Figlmüller, Bäckerstraße 6, 1010 Wien'`);
-    expect(await cdp.eval<string>(pressed)).toBe('draft-place-pick-0');
+    await cdp.waitUntil(locationIs, 'Figlmüller, Bäckerstraße 6, 1010 Wien');
+    expect(await cdp.evaluate(pressed)).toBe('draft-place-pick-0');
     // A turn about the title only: the place stays where it is.
     await phrase('Lunch with Stefan | | |');
-    await cdp.waitFor(`${title} === 'Lunch with Stefan'`);
-    expect(await cdp.eval<string>(location)).toBe('Figlmüller, Bäckerstraße 6, 1010 Wien');
+    await cdp.waitUntil(($) => $.value('input[placeholder="Title"]') === 'Lunch with Stefan');
+    expect(await cdp.evaluate(locationText)).toBe('Figlmüller, Bäckerstraße 6, 1010 Wien');
   });
 });

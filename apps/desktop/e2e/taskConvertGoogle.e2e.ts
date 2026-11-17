@@ -10,6 +10,7 @@ import {
   readTasks,
   type RemindersFixture,
 } from './harness.ts';
+import type { PageKit } from './page.ts';
 
 // The sibling of taskConvert.e2e.ts with Google answered by the in-process
 // fake API (CALENDAR_GOOGLE=fixture): the Google lists and tasks arrive
@@ -151,13 +152,6 @@ const remindersFixture: RemindersFixture = {
   ],
 };
 
-const setSelect = (selector: string, value: string) => `(() => {
-  const element = document.querySelector(${JSON.stringify(selector)});
-  const proto = window.HTMLSelectElement.prototype;
-  Object.getOwnPropertyDescriptor(proto, 'value').set.call(element, ${JSON.stringify(value)});
-  element.dispatchEvent(new Event('change', { bubbles: true }));
-})()`;
-
 const LIST_SELECT = 'select[aria-label="Task list"]';
 const isServerId = (id: string | undefined) => id !== undefined && !id.startsWith('local-');
 
@@ -175,7 +169,10 @@ describe('Converting tasks against the fake Google API', () => {
 
   const open = async (title: string, heading: string) => {
     await app.cdp.clickTaskChip(`[title=${JSON.stringify(title)}]`);
-    await app.cdp.waitFor(`document.body.textContent.includes(${JSON.stringify(heading)})`);
+    await app.cdp.waitUntil(
+      (_: PageKit, text: string) => document.body.textContent.includes(text),
+      heading,
+    );
   };
   const clickTestId = async (testId: string) => {
     const point = await app.cdp.locate(`[data-testid="${testId}"]`);
@@ -193,17 +190,20 @@ describe('Converting tasks against the fake Google API', () => {
 
   it("the rail's inbox draws each subtask under its parent, in Google's order", async () => {
     const { cdp } = app;
-    const RAIL = `!!document.querySelector('[data-panel-kind="rail"]')`;
+    const rail = ($: PageKit) => $.has('[data-panel-kind="rail"]');
     // CI's 1024 px window hides the rail at rest: hidden again afterwards,
     // so the lane chips the later cases click keep their width.
-    const hidden = !(await cdp.eval<boolean>(RAIL));
+    const hidden = !(await cdp.evaluate(rail));
     await cdp.showRail();
     // Top to bottom; a row inside its parent's <li> is indented.
-    const rows = `[...document.querySelectorAll('[data-testid="task-inbox"] [data-testid^="panel-task-"]')].map(
-      (row) => (row.closest('li').parentElement.closest('li') ? '  ' : '') + row.dataset.testid.slice(11),
-    )`;
+    const rows = ($: PageKit) =>
+      $.all('[data-testid="task-inbox"] [data-testid^="panel-task-"]').map(
+        (row) =>
+          (row.closest('li')!.parentElement!.closest('li') ? '  ' : '') +
+          row.dataset.testid!.slice(11),
+      );
     await expect
-      .poll(() => cdp.eval<ReadonlyArray<string>>(rows))
+      .poll(() => cdp.evaluate(rows))
       .toEqual([
         'task-groceries',
         '  task-milk',
@@ -222,33 +222,36 @@ describe('Converting tasks against the fake Google API', () => {
         '  task-shirts',
         'task-umbrella',
       ]);
-    const indent = await cdp.eval<number>(`(() => {
-      const left = (id) =>
-        document.querySelector('[data-testid="panel-task-' + id + '"]').getBoundingClientRect().left;
+    const indent = await cdp.evaluate(($) => {
+      const left = (id: string) =>
+        $.el('[data-testid="panel-task-' + id + '"]')!.getBoundingClientRect().left;
       return left('task-passport') - left('task-trip');
-    })()`);
+    });
     expect(indent).toBeGreaterThan(0);
     if (hidden) {
       await clickTestId('panel-toggle');
-      await cdp.waitFor(`!${RAIL}`);
+      await cdp.waitUntil(($) => !$.has('[data-panel-kind="rail"]'));
     }
   });
 
   it("the rail reorders a subtask, nests a task and takes a subtask out, and Google's order comes back", async () => {
     const { cdp } = app;
-    const RAIL = `!!document.querySelector('[data-panel-kind="rail"]')`;
-    const hidden = !(await cdp.eval<boolean>(RAIL));
+    const rail = ($: PageKit) => $.has('[data-panel-kind="rail"]');
+    const hidden = !(await cdp.evaluate(rail));
     await cdp.showRail();
-    const ROWS = `[...document.querySelectorAll('[data-section="No date"] [data-testid^="panel-task-"]')].map(
-      (row) => (row.closest('li').parentElement.closest('li') ? '  ' : '') + row.dataset.testid.slice(11),
-    )`;
-    const LINE = `document.querySelector('[data-testid="task-drop-line"]')?.dataset.depth ?? null`;
+    const rows = ($: PageKit) =>
+      $.all('[data-section="No date"] [data-testid^="panel-task-"]').map(
+        (row) =>
+          (row.closest('li')!.parentElement!.closest('li') ? '  ' : '') +
+          row.dataset.testid!.slice(11),
+      );
+    const dropLine = ($: PageKit) => $.el('[data-testid="task-drop-line"]')?.dataset.depth ?? null;
     /** A row's horizontal middle and vertical edges, read without scrolling. */
     const box = (id: string) =>
-      cdp.eval<{ bottom: number; top: number; x: number }>(`(() => {
-        const r = document.querySelector('[data-testid="panel-task-${id}"]').getBoundingClientRect();
+      cdp.evaluate(($, task: string) => {
+        const r = $.el(`[data-testid="panel-task-${task}"]`)!.getBoundingClientRect();
         return { bottom: r.bottom, top: r.top, x: Math.floor(r.x + r.width / 2) };
-      })()`);
+      }, id);
     /** Presses a row, moves in steps to (dx, y), waits for the line it should show, releases. */
     const dragRow = async (
       id: string,
@@ -269,7 +272,7 @@ describe('Converting tasks against the fake Google API', () => {
       }
       // The line follows the pointer through a render of its own.
       await new Promise((resolve) => setTimeout(resolve, 150));
-      await expect.poll(() => cdp.eval<string | null>(LINE)).toBe(line);
+      await expect.poll(() => cdp.evaluate(dropLine)).toBe(line);
       await cdp.mouse('mouseReleased', end.x, end.y);
     };
     const synced = async () => {
@@ -286,9 +289,9 @@ describe('Converting tasks against the fake Google API', () => {
         top: under(undefined),
       };
     };
-    await cdp.eval(
-      `document.querySelector('[data-section="No date"]').scrollIntoView({ block: 'center' })`,
-    );
+    await cdp.evaluate(($) => {
+      $.el('[data-section="No date"]')!.scrollIntoView({ block: 'center' });
+    });
 
     // A reminder has no order through EventKit: dragged within the rail it shows no line.
     await dragRow('ek-rem-1', 40, async (y) => y + 2, null);
@@ -297,7 +300,7 @@ describe('Converting tasks against the fake Google API', () => {
     // Shirts above Socks: first under Pack bags.
     await dragRow('task-shirts', 0, async () => (await box('task-socks')).top + 2, '1');
     await expect
-      .poll(() => cdp.eval(ROWS))
+      .poll(() => cdp.evaluate(rows))
       .toEqual(['task-pack', '  task-shirts', '  task-socks', 'task-umbrella']);
     await expect
       .poll(synced)
@@ -312,7 +315,7 @@ describe('Converting tasks against the fake Google API', () => {
     // Socks dragged left: a task of its own again, drawn among the top-level rows by title.
     await dragRow('task-socks', -30, async (y) => y, '0');
     await expect
-      .poll(() => cdp.eval(ROWS))
+      .poll(() => cdp.evaluate(rows))
       .toEqual(['task-pack', '  task-shirts', '  task-umbrella', 'task-socks']);
     await expect
       .poll(synced)
@@ -320,7 +323,8 @@ describe('Converting tasks against the fake Google API', () => {
 
     // From the keyboard, as in Reminders: ⌘] under the row above, ⌘[ out again,
     // the focus staying on the row.
-    const FOCUSED = `document.activeElement?.closest('[data-task-key]')?.dataset.testid ?? ''`;
+    const focused = () =>
+      document.activeElement?.closest<HTMLElement>('[data-task-key]')?.dataset.testid ?? '';
     const pressCommand = async (key: ']' | '[') => {
       const code = key === ']' ? 'BracketRight' : 'BracketLeft';
       const keyCode = key === ']' ? 221 : 219;
@@ -334,9 +338,9 @@ describe('Converting tasks against the fake Google API', () => {
         });
       }
     };
-    await cdp.eval(
-      `document.querySelector('[data-testid="panel-task-task-socks"] [data-row-title]').focus()`,
-    );
+    await cdp.evaluate(($) => {
+      $.el('[data-testid="panel-task-task-socks"] [data-row-title]')!.focus();
+    });
     await pressCommand(']');
     await expect.poll(synced).toEqual({
       pack: ['task-shirts', 'task-umbrella', 'task-socks'],
@@ -345,28 +349,28 @@ describe('Converting tasks against the fake Google API', () => {
     });
     // Drawn nested — a new row — and focused there before the next key.
     await expect
-      .poll(() => cdp.eval(ROWS))
+      .poll(() => cdp.evaluate(rows))
       .toEqual(['task-pack', '  task-shirts', '  task-umbrella', '  task-socks']);
-    await expect.poll(() => cdp.eval<string>(FOCUSED)).toBe('panel-task-task-socks');
+    await expect.poll(() => cdp.evaluate(focused)).toBe('panel-task-task-socks');
     await pressCommand('[');
     await expect
       .poll(synced)
       .toEqual({ pack: ['task-shirts', 'task-umbrella'], pending: 0, top: ['task-socks'] });
     if (hidden) {
       await clickTestId('panel-toggle');
-      await cdp.waitFor(`!${RAIL}`);
+      await cdp.waitUntil(($) => !$.has('[data-panel-kind="rail"]'));
     }
   });
 
   it('a reminder moved to Google pushes and gets a server id', async () => {
     const { cdp } = app;
     await cdp.clickTaskChip('[data-testid="timed-task-ek-rem-1"]');
-    await cdp.waitFor(`document.body.textContent.includes('Edit reminder')`);
+    await cdp.waitUntil(() => document.body.textContent.includes('Edit reminder'));
     await clickTestId('mode-task');
-    await cdp.waitFor(`document.body.textContent.includes('Move to task')`);
-    await cdp.eval(setSelect(LIST_SELECT, 'acc-e2e:list-e2e'));
+    await cdp.waitUntil(() => document.body.textContent.includes('Move to task'));
+    await cdp.evaluate(($, list: string) => $.setValue(list, 'acc-e2e:list-e2e'), LIST_SELECT);
     await cdp.clickButtonWithText('Save');
-    await cdp.waitFor(`!!document.querySelector('[data-testid="move-confirm"]')`);
+    await cdp.waitUntil(($) => $.has('[data-testid="move-confirm"]'));
     await cdp.clickButtonWithText('Move anyway');
     await expect
       .poll(async () => {
@@ -387,10 +391,10 @@ describe('Converting tasks against the fake Google API', () => {
     const { cdp } = app;
     await open('Pay rent', 'Edit task');
     await clickTestId('mode-reminder');
-    await cdp.waitFor(`document.body.textContent.includes('Move to reminder')`);
-    expect(await cdp.eval(`document.querySelector('${LIST_SELECT}').value`)).toBe(
-      `${APPLE_REMINDERS_ACCOUNT_ID}:ek-list-1`,
-    );
+    await cdp.waitUntil(() => document.body.textContent.includes('Move to reminder'));
+    expect(
+      await cdp.evaluate(($, list: string) => $.el<HTMLSelectElement>(list)!.value, LIST_SELECT),
+    ).toBe(`${APPLE_REMINDERS_ACCOUNT_ID}:ek-list-1`);
     await cdp.clickButtonWithText('Save');
     await expect
       .poll(async () => {
@@ -404,13 +408,13 @@ describe('Converting tasks against the fake Google API', () => {
         };
       })
       .toEqual({ gone: true, listId: 'ek-list-1', pending: 0, provider: 'apple' });
-    expect(await cdp.eval(`!!document.querySelector('[data-testid="move-confirm"]')`)).toBe(false);
+    expect(await cdp.evaluate(($) => $.has('[data-testid="move-confirm"]'))).toBe(false);
   });
 
   it('a Google task moved to another Google list keeps its id and takes its subtask along', async () => {
     const { cdp } = app;
     await open('Buy groceries', 'Edit task');
-    await cdp.eval(setSelect(LIST_SELECT, 'acc-e2e:list-errands'));
+    await cdp.evaluate(($, list: string) => $.setValue(list, 'acc-e2e:list-errands'), LIST_SELECT);
     await cdp.clickButtonWithText('Save');
     await expect
       .poll(async () => {
@@ -427,7 +431,7 @@ describe('Converting tasks against the fake Google API', () => {
       })
       .toEqual({ groceries: 'list-errands<', milk: 'list-errands<task-groceries', pending: 0 });
     // Nothing lost, so nothing asked.
-    expect(await cdp.eval(`!!document.querySelector('[data-testid="move-confirm"]')`)).toBe(false);
+    expect(await cdp.evaluate(($) => $.has('[data-testid="move-confirm"]'))).toBe(false);
     // Still on screen: a move never loses the chip.
     expect(await cdp.locate('[title="Buy groceries"]')).toBeTruthy();
   });
@@ -435,11 +439,9 @@ describe('Converting tasks against the fake Google API', () => {
   it('a subtask moved to another list asks first, then becomes a task of its own', async () => {
     const { cdp } = app;
     await open('Milk', 'Edit task');
-    await cdp.eval(setSelect(LIST_SELECT, 'acc-e2e:list-e2e'));
+    await cdp.evaluate(($, list: string) => $.setValue(list, 'acc-e2e:list-e2e'), LIST_SELECT);
     await cdp.clickButtonWithText('Save');
-    const summary = await cdp.waitFor<string>(
-      `document.querySelector('[data-testid="move-confirm"]')?.textContent ?? ''`,
-    );
+    const summary = await cdp.waitForValue(($) => $.text('[data-testid="move-confirm"]'));
     expect(summary).toContain('It is a subtask: in the new list it becomes a task of its own.');
     await cdp.clickButtonWithText('Move anyway');
     await expect
@@ -453,7 +455,6 @@ describe('Converting tasks against the fake Google API', () => {
       .toEqual({ at: 'list-e2e<', pending: 0 });
   });
 
-  const CONFIRM = `document.querySelector('[data-testid="move-confirm"]')`;
   const remaining = async (ids: ReadonlyArray<string>) =>
     (await readTasks(app.userDataDir))
       .filter((task) => ids.includes(task.id))
@@ -464,7 +465,7 @@ describe('Converting tasks against the fake Google API', () => {
     const family = ['task-trip', 'task-passport', 'task-visa'];
     await open('Plan trip', 'Edit task');
     await cdp.clickButtonWithText('Delete');
-    const question = await cdp.waitFor<string>(`${CONFIRM}?.textContent ?? ''`);
+    const question = await cdp.waitForValue(($) => $.text('[data-testid="move-confirm"]'));
     expect(question).toContain('Delete “Plan trip” and its 2 subtasks?');
     await cdp.confirmDelete();
     // Gone here at once, and the three deletes pushed.
@@ -474,7 +475,7 @@ describe('Converting tasks against the fake Google API', () => {
         pending: await readPendingOpsCount(app.userDataDir),
       }))
       .toEqual({ left: [], pending: 0 });
-    await cdp.waitFor(`!document.querySelector('[title="Renew passport"]')`);
+    await cdp.waitUntil(($) => !$.has('[title="Renew passport"]'));
   });
 
   it('converting a parent task to an event names its subtask before deleting it', async () => {
@@ -482,14 +483,14 @@ describe('Converting tasks against the fake Google API', () => {
     const family = ['task-party', 'task-cake'];
     await open('Plan party', 'Edit task');
     await clickTestId('mode-event');
-    await cdp.waitFor(`document.body.textContent.includes('Convert to event')`);
+    await cdp.waitUntil(() => document.body.textContent.includes('Convert to event'));
     await cdp.clickButtonWithText('Save');
-    const summary = await cdp.waitFor<string>(`${CONFIRM}?.textContent ?? ''`);
+    const summary = await cdp.waitForValue(($) => $.text('[data-testid="move-confirm"]'));
     expect(summary).toContain('Converting this task to an event deletes its subtask.');
     await cdp.clickButtonWithText('Keep as task');
     expect(await remaining(family)).toEqual(expect.arrayContaining(family));
     await cdp.clickButtonWithText('Save');
-    await cdp.waitFor(`!!${CONFIRM}`);
+    await cdp.waitUntil(($) => $.has('[data-testid="move-confirm"]'));
     await cdp.clickButtonWithText('Convert anyway');
     await expect
       .poll(async () => ({

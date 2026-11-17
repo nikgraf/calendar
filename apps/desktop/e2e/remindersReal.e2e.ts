@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vite-plus/test';
 import {
   type App,
-  CANCEL_OR_DISCARD,
+  cancelOrDiscard,
   launchApp,
   localIsoDaysAgo,
   readAccounts,
@@ -12,6 +12,7 @@ import {
   readTaskLists,
   readTasks,
 } from './harness.ts';
+import type { PageKit } from './page.ts';
 
 // The real thing: no seed, the helper talks to EventKit, and the machine's
 // Reminders grant is already answered (CI seeds it — see e2e/ci/). Every
@@ -66,19 +67,19 @@ describe.skipIf(!REAL)('Apple Reminders through the real helper', () => {
   afterAll(async () => {
     await app.stop();
   });
-  const EDITOR_OPEN = `!!document.querySelector('[data-testid="editor"]')`;
+  const editorOpen = ($: PageKit) => $.has('[data-testid="editor"]');
   /**
    * Cancels an editor left open. A saved editor also closes by itself once
    * the write's reply is back, which can land just after the test saw the
-   * database, so Cancel is found and clicked in one eval: waiting for it
+   * database, so Cancel is found and clicked in one call: waiting for it
    * hung the hook.
    */
   const dismissEditor = async () => {
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      if (!(await app.cdp.eval<boolean>(EDITOR_OPEN))) {
+      if (!(await app.cdp.evaluate(editorOpen))) {
         return;
       }
-      await app.cdp.eval(CANCEL_OR_DISCARD);
+      await app.cdp.evaluate(cancelOrDiscard);
       await new Promise((resolve) => setTimeout(resolve, 150));
     }
   };
@@ -92,12 +93,10 @@ describe.skipIf(!REAL)('Apple Reminders through the real helper', () => {
   });
 
   const setTitle = async (title: string): Promise<void> => {
-    await app.cdp.eval(`(() => {
-      const input = document.querySelector('input[placeholder="Title"]');
-      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-      setter.call(input, ${JSON.stringify(title)});
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    })()`);
+    await app.cdp.evaluate(
+      ($, value: string) => $.setValue('input[placeholder="Title"]', value),
+      title,
+    );
   };
 
   /**
@@ -109,14 +108,14 @@ describe.skipIf(!REAL)('Apple Reminders through the real helper', () => {
    * which opens "New event" and narrows the next try too.
    */
   const openChip = async (title: string) => {
-    await app.cdp.waitFor<boolean>(`!(${EDITOR_OPEN})`);
+    await app.cdp.waitUntil(($) => !$.has('[data-testid="editor"]'));
     await app.cdp.clickTaskChip(`[title=${JSON.stringify(title)}]`);
-    await app.cdp.waitFor(`document.body.textContent.includes('Edit reminder')`);
+    await app.cdp.waitUntil(() => document.body.textContent.includes('Edit reminder'));
   };
 
   it('connects without a prompt and mirrors the lists', async () => {
     const { cdp } = app;
-    await cdp.waitFor(`document.body.textContent.includes('No accounts connected')`);
+    await cdp.waitUntil(() => document.body.textContent.includes('No accounts connected'));
     await cdp.clickButtonWithText('Connect Apple Reminders');
     await expect
       .poll(async () => (await readAccounts(app.userDataDir)).map((account) => account.provider))
@@ -126,7 +125,7 @@ describe.skipIf(!REAL)('Apple Reminders through the real helper', () => {
     await expect
       .poll(async () => (await readTaskLists(app.userDataDir)).length, { timeout: 30_000 })
       .toBeGreaterThan(0);
-    const sidebar = await cdp.waitFor<string>('document.body.textContent ?? ""');
+    const sidebar = await cdp.waitForValue(() => document.body.textContent ?? '');
     expect(sidebar).toContain('Apple Reminders');
   });
 
@@ -135,23 +134,25 @@ describe.skipIf(!REAL)('Apple Reminders through the real helper', () => {
     // Nothing is seeded, so any grid cell is free — but it must be today's
     // column: a date-only reminder on a past weekday rolls onto today as
     // overdue, and its tooltip then carries the due date after the title.
-    const cell = await cdp.eval<{ x: number; y: number }>(`(() => {
-      const scroller = document.querySelector('.overflow-y-scroll').getBoundingClientRect();
-      const todayCell = document.querySelector('[data-testid="today-header"]').getBoundingClientRect();
+    const cell = await cdp.evaluate(($) => {
+      const scroller = $.el('.overflow-y-scroll')!.getBoundingClientRect();
+      const todayCell = $.el('[data-testid="today-header"]')!.getBoundingClientRect();
       return { x: todayCell.left + todayCell.width / 2, y: scroller.top + 200 };
-    })()`);
+    });
     await cdp.click(cell.x, cell.y);
-    await cdp.waitFor(`document.body.textContent.includes('New event')`);
+    await cdp.waitUntil(() => document.body.textContent.includes('New event'));
     // Only Apple lists exist, so Reminder is the one to-do kind on offer.
     await cdp.clickButtonWithText('Reminder');
-    await cdp.waitFor(`document.body.textContent.includes('New reminder')`);
-    await cdp.waitFor(`!!document.querySelector('select[aria-label="Task list"]')`);
+    await cdp.waitUntil(() => document.body.textContent.includes('New reminder'));
+    await cdp.waitUntil(($) => $.has('select[aria-label="Task list"]'));
     await setTitle('Solunivo ci reminder');
-    await cdp.eval(
-      `[...document.querySelectorAll('[role="radio"]')].find(r => r.textContent.trim() === 'High').click()`,
-    );
+    await cdp.evaluate(($) => {
+      $.all('[role="radio"]')
+        .find((r) => r.textContent.trim() === 'High')!
+        .click();
+    });
     await cdp.clickButtonWithText('Save');
-    await cdp.waitFor(`!!document.querySelector('[title="Solunivo ci reminder"]')`);
+    await cdp.waitUntil(($) => $.has('[title="Solunivo ci reminder"]'));
     // EventKit assigned the id (no temp id, no queued op): the row is the
     // bridge's own answer, mirrored.
     await expect
@@ -169,12 +170,12 @@ describe.skipIf(!REAL)('Apple Reminders through the real helper', () => {
     await openChip('Solunivo ci reminder');
     await setTitle('Solunivo ci reminder edited');
     await cdp.clickButtonWithText('Save');
-    await cdp.waitFor(`!!document.querySelector('[title="Solunivo ci reminder edited"]')`);
+    await cdp.waitUntil(($) => $.has('[title="Solunivo ci reminder edited"]'));
 
     await openChip('Solunivo ci reminder edited');
     await cdp.clickButtonWithText('Delete');
     await cdp.confirmDelete();
-    await cdp.waitFor(`!document.querySelector('[title="Solunivo ci reminder edited"]')`);
+    await cdp.waitUntil(($) => !$.has('[title="Solunivo ci reminder edited"]'));
     await expect
       .poll(async () =>
         (await readTasks(app.userDataDir)).some((task) => task.title.startsWith('Solunivo ci')),
@@ -185,15 +186,18 @@ describe.skipIf(!REAL)('Apple Reminders through the real helper', () => {
   it('round-trips weekday and monthly-ordinal rules through EventKit', async () => {
     const { cdp } = app;
     const setSelect = (label: string, value: string) =>
-      cdp.eval(`(() => {
-        const select = document.querySelector('select[aria-label=${JSON.stringify(label)}]');
-        const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set;
-        setter.call(select, ${JSON.stringify(value)});
-        select.dispatchEvent(new Event('change', { bubbles: true }));
-      })()`);
+      cdp.evaluate(
+        ($, ariaLabel: string, option: string) =>
+          $.setValue(`select[aria-label=${JSON.stringify(ariaLabel)}]`, option),
+        label,
+        value,
+      );
     const pressWeekday = async (day: string) => {
-      const pressed = await cdp.eval<boolean>(
-        `document.querySelector('[data-testid="repeat-weekday-${day}"]')?.getAttribute('aria-pressed') === 'true'`,
+      const pressed = await cdp.evaluate(
+        ($, weekday: string) =>
+          $.el(`[data-testid="repeat-weekday-${weekday}"]`)?.getAttribute('aria-pressed') ===
+          'true',
+        day,
       );
       if (!pressed) {
         const button = await cdp.locate(`[data-testid="repeat-weekday-${day}"]`);
@@ -205,23 +209,25 @@ describe.skipIf(!REAL)('Apple Reminders through the real helper', () => {
     const title = `Solunivo ci weekends ${String(Date.now())}`;
     const row = async () => (await readTasks(app.userDataDir)).find((task) => task.title === title);
 
-    const cell = await cdp.eval<{ x: number; y: number }>(`(() => {
-      const scroller = document.querySelector('.overflow-y-scroll').getBoundingClientRect();
-      const todayCell = document.querySelector('[data-testid="today-header"]').getBoundingClientRect();
+    const cell = await cdp.evaluate(($) => {
+      const scroller = $.el('.overflow-y-scroll')!.getBoundingClientRect();
+      const todayCell = $.el('[data-testid="today-header"]')!.getBoundingClientRect();
       return { x: todayCell.left + todayCell.width / 2, y: scroller.top + 260 };
-    })()`);
+    });
     await cdp.click(cell.x, cell.y);
-    await cdp.waitFor(`document.body.textContent.includes('New event')`);
+    await cdp.waitUntil(() => document.body.textContent.includes('New event'));
     await cdp.clickButtonWithText('Reminder');
-    await cdp.waitFor(`!!document.querySelector('select[aria-label="Task list"]')`);
+    await cdp.waitUntil(($) => $.has('select[aria-label="Task list"]'));
     await setTitle(title);
     await setSelect('Repeat', 'weekly');
     await pressWeekday('SA');
     await pressWeekday('SU');
     for (;;) {
-      const extra = await cdp.eval<string | null>(
-        `[...document.querySelectorAll('[data-testid^="repeat-weekday-"][aria-pressed="true"]')]
-          .map(b => b.dataset.testid).find(id => !id.endsWith('-SA') && !id.endsWith('-SU')) ?? null`,
+      const extra = await cdp.evaluate(
+        ($) =>
+          $.all('[data-testid^="repeat-weekday-"][aria-pressed="true"]')
+            .map((b) => b.dataset.testid!)
+            .find((id) => !id.endsWith('-SA') && !id.endsWith('-SU')) ?? null,
       );
       if (extra === null) {
         break;
@@ -252,7 +258,7 @@ describe.skipIf(!REAL)('Apple Reminders through the real helper', () => {
       await openChip(title);
       await cdp.clickButtonWithText('Delete');
       await cdp.confirmDelete();
-      await cdp.waitFor(`!document.querySelector(${JSON.stringify(`[title="${title}"]`)})`);
+      await cdp.waitUntil(($, doomed: string) => !$.has(`[title="${doomed}"]`), title);
     }
   });
 
@@ -267,10 +273,10 @@ describe.skipIf(!REAL)('Apple Reminders through the real helper', () => {
       reminder: { dueDate: isoToday, title: 'Solunivo ci push' },
     })) as { reminder: { id: string } };
     try {
-      await cdp.waitFor(`!!document.querySelector('[title="Solunivo ci push"]')`, 15_000);
+      await cdp.waitUntil({ timeoutMs: 15_000 }, ($) => $.has('[title="Solunivo ci push"]'));
     } finally {
       await callHelper('reminders.delete', { id: created.reminder.id });
     }
-    await cdp.waitFor(`!document.querySelector('[title="Solunivo ci push"]')`, 15_000);
+    await cdp.waitUntil({ timeoutMs: 15_000 }, ($) => !$.has('[title="Solunivo ci push"]'));
   });
 });
