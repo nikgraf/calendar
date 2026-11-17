@@ -100,7 +100,7 @@ describe.skipIf(!REAL)('Apple Calendar through the real helper', () => {
 
   it('connects without a prompt and mirrors the calendars', async () => {
     const { cdp } = app;
-    await cdp.waitFor(`document.body.textContent.includes('No accounts connected')`);
+    await cdp.waitUntil(() => document.body.textContent.includes('No accounts connected'));
     await cdp.clickButtonWithText('Connect Apple Calendar');
     await expect
       .poll(async () => (await readAccounts(app.userDataDir)).map((account) => account.id))
@@ -130,12 +130,7 @@ describe.skipIf(!REAL)('Apple Calendar through the real helper', () => {
 
     // EKEventStoreChanged reaches the app's helper and repaints the view.
     await cdp.openEditor('[title^="Solunivo ci event"]');
-    await cdp.eval(`(() => {
-      const input = document.querySelector('input[placeholder="Title"]');
-      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-      setter.call(input, 'Solunivo ci event edited');
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    })()`);
+    await cdp.evaluate(($) => $.setValue('input[placeholder="Title"]', 'Solunivo ci event edited'));
     await cdp.clickButtonWithText('Save');
     await expect
       .poll(async () => (await todaysEvents()).find((entry) => entry.id === event.id)?.title)
@@ -147,7 +142,7 @@ describe.skipIf(!REAL)('Apple Calendar through the real helper', () => {
     await expect
       .poll(async () => (await todaysEvents()).some((entry) => entry.id === event.id))
       .toBe(false);
-    await cdp.waitFor(`!document.querySelector('[title^="Solunivo ci event"]')`, 15_000);
+    await cdp.waitUntil({ timeoutMs: 15_000 }, ($) => !$.has('[title^="Solunivo ci event"]'));
   });
 
   // No window involved: the identifiers are EventKit's, and this is the

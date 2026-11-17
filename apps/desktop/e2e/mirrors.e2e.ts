@@ -58,20 +58,6 @@ const seed = {
   events: [],
 };
 
-const setInput = (selector: string, value: string) => `(() => {
-  const element = document.querySelector(${JSON.stringify(selector)});
-  const proto = window.HTMLInputElement.prototype;
-  Object.getOwnPropertyDescriptor(proto, 'value').set.call(element, ${JSON.stringify(value)});
-  element.dispatchEvent(new Event('input', { bubbles: true }));
-})()`;
-
-const setSelect = (selector: string, value: string) => `(() => {
-  const element = document.querySelector(${JSON.stringify(selector)});
-  const proto = window.HTMLSelectElement.prototype;
-  Object.getOwnPropertyDescriptor(proto, 'value').set.call(element, ${JSON.stringify(value)});
-  element.dispatchEvent(new Event('change', { bubbles: true }));
-})()`;
-
 describe('Calendar mirrors (fake Google)', () => {
   let app: App;
   let settings: App['cdp'];
@@ -87,29 +73,27 @@ describe('Calendar mirrors (fake Google)', () => {
 
   it('creates a mirror from the editor and writes allow-listed copies', async () => {
     const cdp = settings;
-    await cdp.waitFor(`document.body.textContent.includes('A mirror copies events')`);
+    await cdp.waitUntil(() => document.body.textContent.includes('A mirror copies events'));
     const add = await cdp.locate('[data-testid="mirror-add"]');
     await cdp.click(add.x, add.y);
-    await cdp.eval(setInput('[data-testid="mirror-name"]', 'Family'));
+    await cdp.evaluate(($) => $.setValue('[data-testid="mirror-name"]', 'Family'));
     const source = await cdp.locate(
       '[data-testid="mirror-source-google-e2e-example-com-cal-work"]',
     );
     await cdp.click(source.x, source.y);
-    await cdp.eval(
-      setSelect('[data-testid="mirror-destination"]', 'google|e2e@example.com|cal-shared'),
+    await cdp.evaluate(($) =>
+      $.setValue('[data-testid="mirror-destination"]', 'google|e2e@example.com|cal-shared'),
     );
     // The preview says what others would see: the title and the place, nothing else.
-    await cdp.waitFor(
-      `document.querySelector('[data-testid="mirror-preview"]')?.textContent?.includes('1 event would be copied')`,
+    await cdp.waitUntil(($) =>
+      $.text('[data-testid="mirror-preview"]').includes('1 event would be copied'),
     );
     expect(
-      await cdp.eval<string>(
-        `document.querySelector('[data-testid="mirror-preview"]').textContent`,
-      ),
+      await cdp.evaluate(($) => $.el('[data-testid="mirror-preview"]')!.textContent),
     ).toContain('Planning · Room 4');
     const save = await cdp.locate('[data-testid="mirror-save"]');
     await cdp.click(save.x, save.y);
-    await cdp.waitFor(`!!document.querySelector('[data-testid^="mirror-row-"]')`);
+    await cdp.waitUntil(($) => $.has('[data-testid^="mirror-row-"]'));
 
     await expect.poll(async () => (await copies()).length, { timeout: 20_000 }).toBe(1);
     const [copy] = await copies();
@@ -120,21 +104,21 @@ describe('Calendar mirrors (fake Google)', () => {
     expect(copy?.reminders).toEqual({ overrides: [], useDefault: false });
     // Hidden from the calendar: the original is already drawn.
     expect((await readEvents(app.userDataDir)).some((event) => event.id === copy?.id)).toBe(false);
-    await cdp.waitFor(
-      `document.querySelector('[data-testid^="mirror-status-"]')?.textContent?.includes('Up to date')`,
-    );
+    await cdp.waitUntil(($) => $.text('[data-testid^="mirror-status-"]').includes('Up to date'));
   });
 
   it('a preset change rewrites the copies, and deleting the mirror removes them', async () => {
     const cdp = settings;
     const row = await cdp.locate('[data-testid^="mirror-row-"]');
-    const id = await cdp.eval<string>(
-      `document.querySelector('[data-testid^="mirror-row-"]').dataset.testid.slice('mirror-row-'.length)`,
+    const id = await cdp.evaluate(($) =>
+      $.el('[data-testid^="mirror-row-"]')!.dataset['testid']!.slice('mirror-row-'.length),
     );
     expect(row).toBeTruthy();
-    await cdp.eval(
-      `[...document.querySelectorAll('[data-testid="mirror-row-${id}"] button')].find(b => b.textContent === 'Edit').click()`,
-    );
+    await cdp.evaluate(($, rowId: string) => {
+      $.all(`[data-testid="mirror-row-${rowId}"] button`)
+        .find((b) => b.textContent === 'Edit')!
+        .click();
+    }, id);
     const availability = await cdp.locate('[data-testid="mirror-preset-availability"]');
     await cdp.click(availability.x, availability.y);
     const save = await cdp.locate('[data-testid="mirror-save"]');
@@ -149,7 +133,7 @@ describe('Calendar mirrors (fake Google)', () => {
     await cdp.click(remove.x, remove.y);
     const confirm = await cdp.locate('[data-testid="mirror-delete-confirm"]');
     await cdp.click(confirm.x, confirm.y);
-    await cdp.waitFor(`!document.querySelector('[data-testid^="mirror-row-"]')`);
+    await cdp.waitUntil(($) => !$.has('[data-testid^="mirror-row-"]'));
     await expect.poll(async () => (await copies()).length, { timeout: 20_000 }).toBe(0);
   });
 });

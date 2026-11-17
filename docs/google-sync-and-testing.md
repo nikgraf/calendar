@@ -893,17 +893,37 @@ unless `CALENDAR_E2E_REMINDERS=real` / `CALENDAR_E2E_APPLE_CALENDAR=real`);
 screenshots, `describe.skipIf` unless `SHOT_OUT` names a folder; see
 distribution.md → Website).
 
-A spec's CDP expressions are JavaScript in template strings, where
-neither tsc nor the lint looks. A `??` fallback is parenthesised whenever
-a comparison follows it, or a member access follows a literal fallback:
-`(x ?? null) === 'v'`, never `x ?? null === 'v'`, which reads as
-`x ?? (null === 'v')` and let two waits pass on any text (#230, #317) —
-usually through a constant ending in `?? null` interpolated before
-`=== 'v'`; `(x ?? '').includes('v')`, never `x ?? ''.includes('v')`.
-`Cdp.eval`, and `waitFor` before its first try, refuse an expression with
-either shape as it is sent (`fallbackPrecedence.ts`), and
-`fallbackPrecedence.test.ts`, in `pnpm test`, fails on one written out in
-the e2e sources.
+Page code is a TypeScript function (`page.ts`), sent as its source with
+its arguments as JSON: `cdp.evaluate(fn, ...args)` returns what it
+returns (JSON, so never a DOM node), `waitUntil(fn, ...args)` and
+`waitUntilRendered` poll a predicate typed to return a boolean, and
+`waitForValue` polls until it returns something other than null or ''
+(never a boolean, so a misread fallback is refused there too); a wait
+takes `{ timeoutMs }` first when 15 s is not enough. So tsc and the lint
+read it like any other code, and a `??` fallback that takes in what
+follows it is a type error in a wait (`no-constant-binary-expression`
+also flags `?? null === 'v'` anywhere). Its first parameter is the page
+kit `$` (`el`, `all`, `has`, `count`, `text`, `value`, `button`,
+`setValue`), made in the page for each call; it sees nothing of the
+spec's, so a constant goes in as an argument. A source is parsed before
+it is sent (vite's `parseAst`), and one that names anything but its own
+bindings, JavaScript's globals and the page globals `page.ts` lists is
+refused: that includes a spec constant the page has a global of the same
+name for (`name`, `status`, `event`, an element id), which would read the
+page's value without a word — the page's own is `window.name`. A spec-local helper
+that waits is a Node function around a call (`headingIs` in
+`editorDiscard`). vitest prints the source again with the types gone and
+nothing lowered (`page.test.ts` holds it to that); coverage
+instrumentation would add counters the page lacks, so the specs never
+run under it, and a source with them is refused. `noteWhen(condition,
+read, ...args)` takes two page functions. `pageFunctions.test.ts`, in
+`pnpm test`, runs the same name check over every page function the e2e
+code sends, followed by name to the file that declares it, and fails on
+page code it cannot trace: so a spec only CI runs (the real Reminders and
+Calendar, the live account, the website's shots) learns of a refused
+name first. It also fails a spec that sends code of its own through
+`cdp.send` (`Runtime.evaluate`, `Page.addScriptToEvaluateOnNewDocument`)
+rather than a page function's `pageExpression`.
 
 Flakiness lessons (each caused a real CI failure — keep them enforced):
 
@@ -921,7 +941,7 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   Consequence: `browser-window-focus` never fires in e2e, so no spec may
   count on the sync kick or the settings-file check it runs.
 - **A window behind another one renders nothing** without that
-  emulation: `cdp.waitForRendered` still draws a frame (a screenshot)
+  emulation: `cdp.waitUntilRendered` still draws a frame (a screenshot)
   before each try.
 - **Motion specs ask for motion first.** CI's macOS runner reports
   `prefers-reduced-motion: reduce`, so a spec that checks a transition
@@ -935,7 +955,7 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
 - **CI's window is 1024 px wide**; a local run opens 1280 × 800. A spec
   that clicks by geometry is checked at CI's size with the `window`
   launch option (`CALENDAR_E2E_WINDOW`).
-- **`cdp.eval` cannot test the CSP.** DevTools evaluation is exempt from
+- **`cdp.evaluate` cannot test the CSP.** DevTools evaluation is exempt from
   a page's eval rules, so `new Function(…)` through CDP succeeds under a
   policy that forbids it. Probe with an injected inline `<script>` that
   sets a flag (`flows.e2e.ts` › "runs the built renderer under the content
@@ -989,10 +1009,10 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   (`Emulation.setCPUThrottlingRate`, 6× or 12×) and never commit the
   throttle.
 - **A step that keeps the kind is in the form the moment it shows.** A
-  spec reads the form right after `waitFor` on `step-position`, never
+  spec reads the form right after `waitUntil` on `step-position`, never
   waits for the form. A turn that switches the kind is the exception:
   the form follows once the switch settles (`applying`), so a spec waits
-  for the field it reads. An `eval` sees the page only after a task
+  for the field it reads. An `evaluate` sees the page only after a task
   boundary, which on a fast host hides a form one task behind;
   `cdp.noteWhen(condition, read)` reads in the microtask after the
   change that made `condition` true and catches it on any host (#329).
@@ -1253,7 +1273,7 @@ matches one of these):
   list. Open; before hardening the flow, check whether the app ignores a
   swipe during its layout animation.
 - **`appleCalendarReal` › "shows an event created outside the app…"**
-  times out in `locate('[title^="Solunivo ci event"]')` (or `waitFor`), and
+  times out in `locate('[title^="Solunivo ci event"]')` (or `waitUntil`), and
   the retry then fails `expected 'Solunivo ci event' to be 'Solunivo ci
   event edited'`: the view never repainted after the helper's
   `EKEventStoreChanged`. Open; rerun. Hardening belongs in that repaint.

@@ -1,6 +1,7 @@
 import { Account, CalendarInfo, EventRecord, PendingOp } from '@calendar/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
 import { type App, launchApp, readEvents, readPendingOps } from './harness.ts';
+import type { PageKit } from './page.ts';
 
 // The unsynced-changes list in the sidebar footer: a row expands to what
 // the change does, field by field, and "Discard change" there puts the
@@ -99,16 +100,18 @@ const seed = {
   ],
 };
 
-const panel = `document.querySelector('[data-testid="pending-op-change"]')?.textContent ?? ''`;
+const panel = ($: PageKit) => $.text('[data-testid="pending-op-change"]');
 
 describe('Unsynced changes', () => {
   let app: App;
   beforeAll(async () => {
     app = await launchApp(seed);
-    await app.cdp.waitFor(`document.body.textContent.includes('unsynced change')`);
-    await app.cdp.eval(
-      `[...document.querySelectorAll('button')].find(b => b.textContent?.includes('unsynced change'))?.click()`,
-    );
+    await app.cdp.waitUntil(() => document.body.textContent.includes('unsynced change'));
+    await app.cdp.evaluate(($) => {
+      $.all('button')
+        .find((b) => b.textContent?.includes('unsynced change'))
+        ?.click();
+    });
   }, 60_000);
   afterAll(async () => {
     await app.stop();
@@ -116,8 +119,10 @@ describe('Unsynced changes', () => {
 
   it('a row expands to what the edit changed, and discarding it puts the event back', async () => {
     await app.cdp.clickTestId('pending-op-op-edit');
-    await app.cdp.waitFor(`(${panel}).includes('Budget review (moved)')`);
-    const text = await app.cdp.eval<string>(panel);
+    await app.cdp.waitUntil(($) =>
+      $.text('[data-testid="pending-op-change"]').includes('Budget review (moved)'),
+    );
+    const text = await app.cdp.evaluate(panel);
     // Before and after, field by field — only the fields that differ.
     expect(text).toContain('Title');
     expect(text).toContain('Budget review');
@@ -138,14 +143,16 @@ describe('Unsynced changes', () => {
       title: 'Budget review',
     });
     // The grid repaints from the restored row.
-    await app.cdp.waitFor(`!!document.querySelector('[title^="Budget review"]')`);
-    await app.cdp.waitFor(`!document.querySelector('[title^="Budget review (moved)"]')`);
+    await app.cdp.waitUntil(($) => $.has('[title^="Budget review"]'));
+    await app.cdp.waitUntil(($) => !$.has('[title^="Budget review (moved)"]'));
   });
 
   it('a parked change shows both versions and offers the choice', async () => {
     await app.cdp.clickTestId('pending-op-op-park');
-    await app.cdp.waitFor(`(${panel}).includes('Offsite (Google)')`);
-    const text = await app.cdp.eval<string>(panel);
+    await app.cdp.waitUntil(($) =>
+      $.text('[data-testid="pending-op-change"]').includes('Offsite (Google)'),
+    );
+    const text = await app.cdp.evaluate(panel);
     expect(text).toContain('Offsite (mine)');
     expect(text).toContain('Keep mine');
     expect(text).toContain('Take theirs');

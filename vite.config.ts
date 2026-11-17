@@ -75,6 +75,14 @@ export default defineConfig({
         },
       },
       {
+        // A page function (e2e/page.ts) reaches the page as its own source:
+        // a helper it defines inside has to stay inside, never be hoisted.
+        files: ['apps/desktop/e2e/**'],
+        rules: {
+          'unicorn/consistent-function-scoping': 'off',
+        },
+      },
+      {
         // The dictation worklet runs in an AudioWorkletGlobalScope:
         // registerProcessor and AudioWorkletProcessor are its globals.
         files: ['apps/desktop/public/*.worklet.js'],

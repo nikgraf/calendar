@@ -439,7 +439,7 @@ in the `ios-simulator` skill (`.agents/skills/ios-simulator/SKILL.md`).
 - **A window shown with `showInactive` emits no `'show'` event.** Listen
   for `ready-to-show` too.
 - **A `localStorage` change in one window reaches the other renderer
-  asynchronously**: in e2e, `waitFor` it, never one read.
+  asynchronously**: in e2e, `waitUntil` it, never one read.
 - **A main-window atom read once can go stale** after the Settings window
   changed its setting, while a reopen reads fresh. Open, not fixed; other
   main-window reads of Settings-window settings may share it.

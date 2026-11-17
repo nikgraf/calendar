@@ -1,6 +1,7 @@
 import { Account, CalendarInfo, EventRecord } from '@calendar/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
 import { type App, launchApp, readDeviceSetting } from './harness.ts';
+import type { PageKit } from './page.ts';
 
 /** Today at the given UTC hour. */
 const todayAt = (hour: number): number => {
@@ -60,15 +61,11 @@ const seed = {
 };
 
 const text = (cdp: App['cdp'], selector: string) =>
-  cdp.eval<string | null>(
-    `document.querySelector(${JSON.stringify(selector)})?.textContent ?? null`,
-  );
+  cdp.evaluate(($, match: string) => $.el(match)?.textContent ?? null, selector);
 
 /** Every match's text, in document order. */
 const texts = (cdp: App['cdp'], selector: string) =>
-  cdp.eval<ReadonlyArray<string>>(
-    `[...document.querySelectorAll(${JSON.stringify(selector)})].map((node) => node.textContent)`,
-  );
+  cdp.evaluate(($, match: string) => $.all(match).map((node) => node.textContent), selector);
 
 describe('time zones: a stored secondary zone', () => {
   let app: App;
@@ -90,8 +87,10 @@ describe('time zones: a stored secondary zone', () => {
     expect(await text(cdp, '[data-testid="hour-secondary-1-Asia-Tokyo"]')).toBe('10 AM');
     // The cities head the gutter in the same order, the primary first.
     expect(
-      await cdp.eval<ReadonlyArray<string>>(
-        `[...document.querySelector('[data-testid="zone-cities"]').children].map((node) => node.dataset.testid)`,
+      await cdp.evaluate(($) =>
+        [...$.el('[data-testid="zone-cities"]')!.children].map(
+          (node) => (node as HTMLElement).dataset.testid,
+        ),
       ),
     ).toEqual([
       expect.stringMatching(/^zone-city-/),
@@ -113,10 +112,10 @@ describe('time zones: a stored secondary zone', () => {
     ).toEqual(LINES);
     await cdp.clickTestId('inspector-edit');
     const EDITOR = '[data-testid="editor"]';
-    await cdp.waitFor(`!!document.querySelector('${EDITOR} input[type="time"]')`);
+    await cdp.waitUntil(($, editor: string) => $.has(`${editor} input[type="time"]`), EDITOR);
     expect(await texts(cdp, `${EDITOR} [data-testid="event-secondary-times"] > p`)).toEqual(LINES);
     await cdp.pressEscape();
-    await cdp.waitFor(`!document.querySelector('${EDITOR} input[type="time"]')`);
+    await cdp.waitUntil(($, editor: string) => !$.has(`${editor} input[type="time"]`), EDITOR);
   });
 });
 
@@ -136,48 +135,60 @@ describe('time zones: the settings section', () => {
     const { cdp: calendar } = app;
     const cdp = await app.openSettings('timezones');
     const stored = () => readDeviceSetting(app.userDataDir, 'timeZones');
-    const deviceZone = await cdp.eval<string>(`Intl.DateTimeFormat().resolvedOptions().timeZone`);
+    const deviceZone = await cdp.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone);
     const deviceCity = deviceZone.slice(deviceZone.lastIndexOf('/') + 1).replaceAll('_', ' ');
     const DEVICE_ROW = '[data-testid="time-zone-row-device"]';
     const clickButton = (label: string) =>
-      cdp.eval(`document.querySelector('button[aria-label=${JSON.stringify(label)}]')?.click()`);
+      cdp.evaluate(($, ariaLabel: string) => {
+        $.el(`button[aria-label=${JSON.stringify(ariaLabel)}]`)?.click();
+      }, label);
 
-    await cdp.waitFor(`!!document.querySelector('[data-testid="time-zones"]')`);
+    await cdp.waitUntil(($) => $.has('[data-testid="time-zones"]'));
     expect(
-      await cdp.eval<boolean>(
-        `document.querySelector('[data-testid="time-zones-device-only"]')?.textContent?.includes('Stored only on this device') ?? false`,
+      await cdp.evaluate(($) =>
+        $.text('[data-testid="time-zones-device-only"]').includes('Stored only on this device'),
       ),
     ).toBe(true);
     expect(await stored()).toBeNull();
     // Nothing stored: the device's own zone, named by the city it is in, is the primary and has no Remove.
     expect(await text(cdp, `${DEVICE_ROW} [data-testid="time-zone-city"]`)).toBe(deviceCity);
-    expect(await cdp.eval(`document.querySelector('${DEVICE_ROW}')?.dataset.primary`)).toBe('true');
+    expect(await cdp.evaluate(($, row: string) => $.el(row)?.dataset.primary, DEVICE_ROW)).toBe(
+      'true',
+    );
     expect(
-      await cdp.eval(`!!document.querySelector('${DEVICE_ROW} button[aria-label^="Remove"]')`),
+      await cdp.evaluate(
+        ($, row: string) => $.has(`${row} button[aria-label^="Remove"]`),
+        DEVICE_ROW,
+      ),
     ).toBe(false);
     // No secondary zone yet: the gutter has a single line.
-    expect(
-      await calendar.eval(`!!document.querySelector('[data-testid="hour-secondary-12"]')`),
-    ).toBe(false);
+    expect(await calendar.evaluate(($) => $.has('[data-testid="hour-secondary-12"]'))).toBe(false);
 
     // The picker opens on the whole catalog in a list that scrolls; a
     // query no zone matches says so, and Cancel brings the button back.
     const LIST = '[data-testid="time-zone-options-list"]';
     const optionCount = () =>
-      cdp.eval<number>(`document.querySelectorAll('${LIST} [role="option"]').length`);
+      cdp.evaluate(($, list: string) => $.count(`${list} [role="option"]`), LIST);
     await clickButton('Add time zone');
-    await cdp.waitFor(`!!document.querySelector('${LIST}')`);
+    await cdp.waitUntil(($, list: string) => $.has(list), LIST);
     const catalog = await optionCount();
     expect(catalog).toBeGreaterThan(300);
     expect(
-      await cdp.eval<boolean>(
-        `(() => { const list = document.querySelector('${LIST}'); return list.scrollHeight > list.clientHeight; })()`,
-      ),
+      await cdp.evaluate(($, listSelector: string) => {
+        const list = $.el(listSelector)!;
+        return list.scrollHeight > list.clientHeight;
+      }, LIST),
     ).toBe(true);
     // The arrows scroll the list to keep the highlighted row in view, and
     // only the list: the Settings pane around it stays where it was.
-    const ancestorScroll = `(() => { let sum = 0; for (let node = document.querySelector('${LIST}').parentElement; node; node = node.parentElement) sum += node.scrollTop; return sum + (document.scrollingElement?.scrollTop ?? 0); })()`;
-    const paneBefore = await cdp.eval<number>(ancestorScroll);
+    const ancestorScroll = ($: PageKit, listSelector: string) => {
+      let sum = 0;
+      for (let node = $.el(listSelector)!.parentElement; node; node = node.parentElement) {
+        sum += node.scrollTop;
+      }
+      return sum + (document.scrollingElement?.scrollTop ?? 0);
+    };
+    const paneBefore = await cdp.evaluate(ancestorScroll, LIST);
     for (let step = 0; step < 15; step += 1) {
       await cdp.send('Input.dispatchKeyEvent', {
         code: 'ArrowDown',
@@ -186,49 +197,61 @@ describe('time zones: the settings section', () => {
         windowsVirtualKeyCode: 40,
       });
     }
-    await cdp.waitFor(
-      `document.querySelector('${LIST} [role="option"][aria-selected="true"]')?.id === 'time-zone-options-15'`,
+    await cdp.waitUntil(
+      ($, list: string) =>
+        $.el(`${list} [role="option"][aria-selected="true"]`)?.id === 'time-zone-options-15',
+      LIST,
     );
     expect(
-      await cdp.eval<boolean>(
-        `(() => { const list = document.querySelector('${LIST}'); const row = document.getElementById('time-zone-options-15'); return list.scrollTop > 0 && row.offsetTop >= list.scrollTop && row.offsetTop + row.offsetHeight <= list.scrollTop + list.clientHeight; })()`,
-      ),
+      await cdp.evaluate(($, listSelector: string) => {
+        const list = $.el(listSelector)!;
+        const row = document.getElementById('time-zone-options-15')!;
+        return (
+          list.scrollTop > 0 &&
+          row.offsetTop >= list.scrollTop &&
+          row.offsetTop + row.offsetHeight <= list.scrollTop + list.clientHeight
+        );
+      }, LIST),
     ).toBe(true);
-    expect(await cdp.eval<number>(ancestorScroll)).toBe(paneBefore);
+    expect(await cdp.evaluate(ancestorScroll, LIST)).toBe(paneBefore);
     await cdp.type('input[aria-label="Search time zones"]', 'zzzz');
-    await cdp.waitFor(`!!document.querySelector('[data-testid="time-zone-no-match"]')`);
+    await cdp.waitUntil(($) => $.has('[data-testid="time-zone-no-match"]'));
     await cdp.clickTestId('time-zone-cancel');
-    await cdp.waitFor(`!!document.querySelector('button[aria-label="Add time zone"]')`);
+    await cdp.waitUntil(($) => $.has('button[aria-label="Add time zone"]'));
 
     // Add Kolkata through the search: typing narrows the list.
     await clickButton('Add time zone');
     await cdp.type('input[aria-label="Search time zones"]', 'kolk');
-    await cdp.waitFor(
-      `document.querySelectorAll('${LIST} [role="option"]').length < ${String(catalog)}`,
+    await cdp.waitUntil(
+      ($, list: string, all: number) => $.count(`${list} [role="option"]`) < all,
+      LIST,
+      catalog,
     );
     const option = await cdp.locate('[data-testid="time-zone-option-Asia-Kolkata"]');
     await cdp.click(option.x, option.y);
     await expect
       .poll(stored, { timeout: 10_000 })
       .toEqual({ primary: 'device', zones: ['device', 'Asia/Kolkata'] });
-    await cdp.waitFor(`!!document.querySelector('[data-testid="time-zone-row-Asia-Kolkata"]')`);
+    await cdp.waitUntil(($) => $.has('[data-testid="time-zone-row-Asia-Kolkata"]'));
     // The grid in the calendar window already lists it under each hour.
-    await calendar.waitFor(`!!document.querySelector('[data-testid="hour-secondary-12"]')`);
+    await calendar.waitUntil(($) => $.has('[data-testid="hour-secondary-12"]'));
 
     // Make it primary.
     await clickButton('Make Kolkata primary');
     await expect
       .poll(stored, { timeout: 10_000 })
       .toEqual({ primary: 'Asia/Kolkata', zones: ['device', 'Asia/Kolkata'] });
-    await cdp.waitFor(
-      `document.querySelector('[data-testid="time-zone-row-Asia-Kolkata"]')?.dataset.primary === 'true'`,
+    await cdp.waitUntil(
+      ($) => $.el('[data-testid="time-zone-row-Asia-Kolkata"]')?.dataset.primary === 'true',
     );
     expect(
-      await cdp.eval(`document.querySelector('${DEVICE_ROW}')?.dataset.primary`),
+      await cdp.evaluate(($, row: string) => $.el(row)?.dataset.primary, DEVICE_ROW),
     ).toBeUndefined();
     // The primary's city heads the gutter.
-    await calendar.waitFor(
-      `document.querySelector('[data-testid="zone-cities"]')?.firstElementChild?.dataset.testid === 'zone-city-Asia-Kolkata'`,
+    await calendar.waitUntil(
+      ($) =>
+        ($.el('[data-testid="zone-cities"]')?.firstElementChild as HTMLElement | null | undefined)
+          ?.dataset.testid === 'zone-city-Asia-Kolkata',
     );
 
     // Remove the primary: the device zone takes over again, the gutter's
@@ -237,11 +260,9 @@ describe('time zones: the settings section', () => {
     await expect
       .poll(stored, { timeout: 10_000 })
       .toEqual({ primary: 'device', zones: ['device'] });
-    await cdp.waitFor(`document.querySelector('${DEVICE_ROW}')?.dataset.primary === 'true'`);
-    await calendar.waitFor(`!document.querySelector('[data-testid="hour-secondary-12"]')`);
-    expect(await calendar.eval(`!!document.querySelector('[data-testid="zone-cities"]')`)).toBe(
-      false,
-    );
+    await cdp.waitUntil(($, row: string) => $.el(row)?.dataset.primary === 'true', DEVICE_ROW);
+    await calendar.waitUntil(($) => !$.has('[data-testid="hour-secondary-12"]'));
+    expect(await calendar.evaluate(($) => $.has('[data-testid="zone-cities"]'))).toBe(false);
 
     // Fill up to three: the add button switches off.
     for (const [query, slug] of [
@@ -252,13 +273,16 @@ describe('time zones: the settings section', () => {
       await cdp.type('input[aria-label="Search time zones"]', query);
       const pick = await cdp.locate(`[data-testid="time-zone-option-${slug}"]`);
       await cdp.click(pick.x, pick.y);
-      await cdp.waitFor(`!!document.querySelector('[data-testid="time-zone-row-${slug}"]')`);
+      await cdp.waitUntil(
+        ($, zoneSlug: string) => $.has(`[data-testid="time-zone-row-${zoneSlug}"]`),
+        slug,
+      );
     }
     await expect
       .poll(stored, { timeout: 10_000 })
       .toEqual({ primary: 'device', zones: ['device', 'Pacific/Honolulu', 'UTC'] });
-    await cdp.waitFor(
-      `document.querySelector('button[aria-label="Add time zone"]')?.disabled === true`,
+    await cdp.waitUntil(
+      ($) => $.el<HTMLButtonElement>('button[aria-label="Add time zone"]')?.disabled === true,
     );
     await app.closeSettings();
   });

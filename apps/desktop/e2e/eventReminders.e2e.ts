@@ -86,9 +86,7 @@ const seed = {
   ],
 };
 
-const USE_DEFAULT = `document.querySelector('input[aria-label="Use calendar default"]')`;
-const REMINDER = (index: number) =>
-  `document.querySelector('[data-testid="event-reminder-${String(index)}"]')`;
+const USE_DEFAULT = 'input[aria-label="Use calendar default"]';
 
 describe('event reminders', () => {
   let app: App;
@@ -101,33 +99,50 @@ describe('event reminders', () => {
 
   const openEvent = async (title: string) => {
     await app.cdp.openEditor(`[title^="${title}"]`);
-    await app.cdp.waitFor(`!!document.querySelector('[data-testid="event-reminders"]')`);
+    await app.cdp.waitUntil(($) => $.has('[data-testid="event-reminders"]'));
   };
   const selectMinutes = (index: number, minutes: number) =>
-    app.cdp.eval(`(() => {
-      const select = ${REMINDER(index)};
-      select.value = ${JSON.stringify(String(minutes))};
-      select.dispatchEvent(new Event('change', { bubbles: true }));
-    })()`);
+    app.cdp.evaluate(
+      ($, row: number, value: string) => {
+        const select = $.el<HTMLSelectElement>(`[data-testid="event-reminder-${String(row)}"]`)!;
+        select.value = value;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      },
+      index,
+      String(minutes),
+    );
 
   it('turns "calendar default" into explicit notifications and queues them with the update', async () => {
     const { cdp } = app;
     await openEvent('Planning');
-    await cdp.waitFor(`${USE_DEFAULT}?.checked === true`);
-    expect(await cdp.eval<boolean>(`!!${REMINDER(0)}`)).toBe(false);
-    expect(await cdp.eval<string>(`${USE_DEFAULT}.parentElement.textContent`)).toContain(
-      '10 minutes before',
+    await cdp.waitUntil(
+      ($, useDefault: string) => $.el<HTMLInputElement>(useDefault)?.checked === true,
+      USE_DEFAULT,
     );
+    expect(await cdp.evaluate(($) => $.has('[data-testid="event-reminder-0"]'))).toBe(false);
+    expect(
+      await cdp.evaluate(
+        ($, useDefault: string) => $.el(useDefault)!.parentElement!.textContent,
+        USE_DEFAULT,
+      ),
+    ).toContain('10 minutes before');
 
-    await cdp.eval(`${USE_DEFAULT}.click()`);
-    await cdp.waitFor(`${USE_DEFAULT}?.checked === false`);
-    await cdp.eval(`document.querySelector('[data-testid="event-reminder-add"]').click()`);
-    await cdp.waitFor(`!!${REMINDER(0)}`);
+    await cdp.evaluate(($, useDefault: string) => {
+      $.el(useDefault)!.click();
+    }, USE_DEFAULT);
+    await cdp.waitUntil(
+      ($, useDefault: string) => $.el<HTMLInputElement>(useDefault)?.checked === false,
+      USE_DEFAULT,
+    );
+    await cdp.evaluate(($) => {
+      $.el('[data-testid="event-reminder-add"]')!.click();
+    });
+    await cdp.waitUntil(($) => $.has('[data-testid="event-reminder-0"]'));
     await selectMinutes(0, 30);
-    await cdp.waitFor(`${REMINDER(0)}.value === '30'`);
+    await cdp.waitUntil(($) => $.value('[data-testid="event-reminder-0"]') === '30');
 
     await cdp.clickButtonWithText('Save');
-    await cdp.waitFor(`!document.querySelector('[data-testid="event-reminders"]')`);
+    await cdp.waitUntil(($) => !$.has('[data-testid="event-reminders"]'));
     await expect
       .poll(async () => {
         const ops = await readPendingOps(app.userDataDir);
@@ -145,32 +160,30 @@ describe('event reminders', () => {
 
     // Reopened: the row shows what was saved, and the default is off.
     await openEvent('Planning');
-    await cdp.waitFor(`${REMINDER(0)}?.value === '30'`);
-    expect(await cdp.eval<boolean>(`${USE_DEFAULT}.checked`)).toBe(false);
+    await cdp.waitUntil(($) => $.value('[data-testid="event-reminder-0"]') === '30');
+    expect(
+      await cdp.evaluate(
+        ($, useDefault: string) => $.el<HTMLInputElement>(useDefault)!.checked,
+        USE_DEFAULT,
+      ),
+    ).toBe(false);
     await cdp.pressEscape();
-    await cdp.waitFor(`!document.querySelector('[data-testid="event-reminders"]')`);
+    await cdp.waitUntil(($) => !$.has('[data-testid="event-reminders"]'));
   });
 
   it('shows email reminders read-only and leaves an unrelated edit without a reminders patch', async () => {
     const { cdp } = app;
     await openEvent('Review');
     // Canonical order puts the email reminder first; only the popup row (index 1) has a select.
-    await cdp.waitFor(`${REMINDER(1)}?.value === '30'`);
+    await cdp.waitUntil(($) => $.value('[data-testid="event-reminder-1"]') === '30');
     expect(
-      await cdp.eval<string>(
-        `document.querySelector('[data-testid="event-reminders"]').textContent`,
-      ),
+      await cdp.evaluate(($) => $.el('[data-testid="event-reminders"]')!.textContent),
     ).toContain('Email · 1 hour before');
-    expect(await cdp.eval<boolean>(`!!${REMINDER(0)}`)).toBe(false);
+    expect(await cdp.evaluate(($) => $.has('[data-testid="event-reminder-0"]'))).toBe(false);
 
-    await cdp.eval(`(() => {
-      const input = document.querySelector('input[placeholder="Title"]');
-      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-      setter.call(input, 'Review (renamed)');
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    })()`);
+    await cdp.evaluate(($) => $.setValue('input[placeholder="Title"]', 'Review (renamed)'));
     await cdp.clickButtonWithText('Save');
-    await cdp.waitFor(`!document.querySelector('[data-testid="event-reminders"]')`);
+    await cdp.waitUntil(($) => !$.has('[data-testid="event-reminders"]'));
     await expect
       .poll(async () => {
         const ops = await readPendingOps(app.userDataDir);
@@ -182,19 +195,24 @@ describe('event reminders', () => {
 
   it('stores the notification switches on this device only', async () => {
     const cdp = await app.openSettings('notifications');
-    await cdp.waitFor(`document.body.textContent.includes('Event notifications')`);
+    await cdp.waitUntil(() => document.body.textContent.includes('Event notifications'));
     expect(
-      await cdp.eval<boolean>(
-        `document.querySelector('[data-testid="event-notifications-device-only"]')?.textContent?.includes('Stored only on this device') ?? false`,
+      await cdp.evaluate(($) =>
+        $.text('[data-testid="event-notifications-device-only"]').includes(
+          'Stored only on this device',
+        ),
       ),
     ).toBe(true);
     // On by default, nothing stored until the first change.
     expect(await readDeviceSetting(app.userDataDir, 'eventNotifications')).toBeNull();
     const clickInput = (label: string) =>
-      cdp.eval(`document.querySelector('input[aria-label=${JSON.stringify(label)}]')?.click()`);
+      cdp.evaluate(($, ariaLabel: string) => {
+        $.el(`input[aria-label=${JSON.stringify(ariaLabel)}]`)?.click();
+      }, label);
     const stored = () => readDeviceSetting(app.userDataDir, 'eventNotifications');
-    await cdp.waitFor(
-      `document.querySelector('input[aria-label="Notify me before events"]')?.checked === true`,
+    await cdp.waitUntil(
+      ($) =>
+        $.el<HTMLInputElement>('input[aria-label="Notify me before events"]')?.checked === true,
     );
     await clickInput('Also for Apple Calendar events');
     // No "Remove When Over" in the row: the Mac has no such switch, so a
@@ -206,29 +224,36 @@ describe('event reminders', () => {
     await expect
       .poll(stored, { timeout: 10_000 })
       .toEqual({ enabled: false, includeAppleCalendar: true });
-    await cdp.waitFor(
-      `document.querySelector('input[aria-label="Also for Apple Calendar events"]')?.disabled === true`,
+    await cdp.waitUntil(
+      ($) =>
+        $.el<HTMLInputElement>('input[aria-label="Also for Apple Calendar events"]')?.disabled ===
+        true,
     );
     await app.closeSettings();
   });
   it('stores the task notification switches and time on this device only', async () => {
     const cdp = await app.openSettings('notifications');
-    await cdp.waitFor(`document.body.textContent.includes('Task notifications')`);
+    await cdp.waitUntil(() => document.body.textContent.includes('Task notifications'));
     expect(
-      await cdp.eval<boolean>(
-        `document.querySelector('[data-testid="task-notifications-device-only"]')?.textContent?.includes('Stored only on this device') ?? false`,
+      await cdp.evaluate(($) =>
+        $.text('[data-testid="task-notifications-device-only"]').includes(
+          'Stored only on this device',
+        ),
       ),
     ).toBe(true);
     // On by default, Reminders included, nothing stored until the first change.
     expect(await readDeviceSetting(app.userDataDir, 'taskNotifications')).toBeNull();
     const clickInput = (label: string) =>
-      cdp.eval(`document.querySelector('input[aria-label=${JSON.stringify(label)}]')?.click()`);
+      cdp.evaluate(($, ariaLabel: string) => {
+        $.el(`input[aria-label=${JSON.stringify(ariaLabel)}]`)?.click();
+      }, label);
     const stored = () => readDeviceSetting(app.userDataDir, 'taskNotifications');
-    await cdp.waitFor(
-      `document.querySelector('input[aria-label="Notify me about tasks"]')?.checked === true`,
+    await cdp.waitUntil(
+      ($) => $.el<HTMLInputElement>('input[aria-label="Notify me about tasks"]')?.checked === true,
     );
-    await cdp.waitFor(
-      `document.querySelector('input[aria-label="Also for Apple Reminders"]')?.checked === true`,
+    await cdp.waitUntil(
+      ($) =>
+        $.el<HTMLInputElement>('input[aria-label="Also for Apple Reminders"]')?.checked === true,
     );
     await clickInput('Also for Apple Reminders');
     // No "Remove When Done" switches here: the Mac never removes a
@@ -241,8 +266,8 @@ describe('event reminders', () => {
       .poll(stored, { timeout: 10_000 })
       .toEqual({ enabled: false, includeAppleReminders: false, time: '09:00' });
     // Disabled through its fieldset, which the `disabled` property does not show.
-    await cdp.waitFor(
-      `document.querySelector('input[aria-label="Task notification time"]')?.matches(':disabled') === true`,
+    await cdp.waitUntil(
+      ($) => $.el('input[aria-label="Task notification time"]')?.matches(':disabled') === true,
     );
     await app.closeSettings();
   });
