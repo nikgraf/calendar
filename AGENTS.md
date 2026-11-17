@@ -160,9 +160,12 @@ commits by staging deliberately.
 - `pnpm test:e2e:ios` — Maestro flows (`apps/ios/e2e/flows/`) against
   the installed dev client (`pnpm --filter @calendar/ios ios`, or the EAS
   simulator build — `docs/distribution.md`) with Metro running
-  (`pnpm --filter @calendar/ios start`). Needs the Maestro CLI
-  (`brew install mobile-dev-inc/tap/maestro`) and a JDK on PATH
-  (`brew install openjdk`, then `JAVA_HOME=$(brew --prefix openjdk)`).
+  (`pnpm --filter @calendar/ios start`). Needs the Maestro CLI at the
+  version CI pins (`MAESTRO_VERSION` in `.github/workflows/ci.yml`),
+  installed from its release zip as CI's "Install Maestro" step does
+  (Homebrew's tap installs the latest release instead), and a JDK 17 or
+  later (`JAVA_HOME` set, or `java` on PATH; with Homebrew,
+  `brew install openjdk`, then `JAVA_HOME=$(brew --prefix openjdk)`).
   Start Metro with `EXPO_PUBLIC_CALENDAR_GOOGLE=fixture` for the Google
   halves of the flows (and `EXPO_PUBLIC_CALENDAR_MODEL=fixture
   EXPO_PUBLIC_CALENDAR_ONBOARDING=off EXPO_PUBLIC_CALENDAR_NOTIFICATIONS=off`
