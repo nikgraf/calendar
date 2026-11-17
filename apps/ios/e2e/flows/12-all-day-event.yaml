@@ -19,8 +19,29 @@ tags:
       # nothing): after typing the title its keyboard covers the switch, and
       # Maestro's visibility check ignores it, so the tap landed on the
       # keyboard and the event saved as a timed 9-10 block.
-      - tapOn:
-          id: 'event-all-day'
+      # Aimed at the switch's host, not at the switch: the form rises out of
+      # the Assistant on a transform, and SwiftUI can keep the switch's
+      # accessibility frame where the rise was (17-24 pt low, about one open
+      # in five), so a tap aimed by it lands under the switch. The host is a
+      # React Native view, which stays where the switch is drawn. Proven on
+      # before anything else, and tapped again while off: on CI a tap on the
+      # right spot has left it off too.
+      - retry:
+          maxRetries: 2
+          commands:
+            - copyTextFrom:
+                id: 'event-all-day'
+            - runFlow:
+                when:
+                  true: ${maestro.copiedText !== '1'}
+                commands:
+                  - tapOn:
+                      id: 'event-all-day-host'
+            - extendedWaitUntil:
+                visible:
+                  id: 'event-all-day'
+                  checked: true
+                timeout: 3000
       - tapOn:
           id: 'event-title'
       # ASCII only — unicode through XCTest typing is a known flaky spot.
