@@ -1460,7 +1460,7 @@ Selector gotchas (each caused a real failure):
 - Maestro's tree lists the testIDs nested inside an accessible
   `Pressable`, and the app's own `SwitchRow` (`GroupedList.tsx`) takes a
   tap by its
-  `switchTestID` (flow 12's `event-all-day`). It follows that a passing
+  `switchTestID` (flow 09's `reminder-timed`). It follows that a passing
   flow says nothing about what VoiceOver reaches: the XCUITest tree shows
   the children of an `accessible` view, which VoiceOver does not.
 - A SwiftUI control's frame in the tree can be stale. The form rises out
