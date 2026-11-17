@@ -410,6 +410,17 @@ jobs:
             ~/e2e-app-state/
           retention-days: 7
           if-no-files-found: ignore
+      - name: Upload main-thread stall samples
+        # run-flows.ts samples the app whenever its main thread keeps XCTest
+        # waiting (e2e/ci/stallWatch.ts), green runs included: a stall that
+        # did not fail a flow is still a stall.
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-e2e-stalls-shard${{ matrix.shard }}-${{ github.run_attempt }}
+          path: ~/.maestro/tests/*/stalls/
+          retention-days: 7
+          if-no-files-found: ignore
 
   # The check branch protection requires, under the name the single job
   # had before it was sharded. Skipped shards (a docs-only or desktop-only

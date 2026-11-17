@@ -45,6 +45,14 @@ import {
   type RetryCause,
   runEnvironment,
 } from './maestroRetry.ts';
+import {
+  dueForSample,
+  mainThreadLine,
+  mainThreadSummary,
+  observe,
+  type Stall,
+  type Waiting,
+} from './stallWatch.ts';
 
 /** The dev variant: e2e always drives it (prepare-simulator.sh). */
 const BUNDLE_ID = 'com.solunivo.app.dev';
@@ -75,6 +83,114 @@ const filesUnder = (dir: string, matches: (name: string) => boolean): ReadonlyAr
 const readAll = (paths: ReadonlyArray<string>): string =>
   paths.map((path) => readFileSync(path, 'utf8')).join('\n');
 
+const summary = (line: string): void => {
+  const file = process.env['GITHUB_STEP_SUMMARY'];
+  if (file) {
+    appendFileSync(file, `${line}\n`);
+  }
+};
+
+/** How long XCTest's request may wait for the app's main thread before it is sampled. */
+const STALL_THRESHOLD_MS = 1500;
+/** Samples per attempt at most: one stalled flow must not fill the artifact. */
+const MAX_SAMPLES = 12;
+
+/**
+ * Watches the app's main thread while `maestro test` runs (stallWatch.ts):
+ * when an XCTest request waits STALL_THRESHOLD_MS, `sample` records every
+ * thread of the app for 4 s into `<dir>/stalls/`, one at a time. `stop`
+ * ends the watch, waits for a running sample, and prints each stall with
+ * the main thread's heaviest path to the job log.
+ */
+const watchMainThread = (dir: string) => {
+  const stalls = join(dir, 'stalls');
+  mkdirSync(stalls, { recursive: true });
+  const stream = spawn(
+    'xcrun',
+    [
+      'simctl',
+      'spawn',
+      udid,
+      'log',
+      'stream',
+      '--style',
+      'compact',
+      '--predicate',
+      'process == "SolunivoDev" AND eventMessage CONTAINS "XCTPerformOnMainRunLoop"',
+    ],
+    { stdio: ['ignore', 'pipe', 'ignore'] },
+  );
+  let waiting: ReadonlyMap<number, Waiting> = new Map();
+  const found: Array<{ file: string; stall: Stall }> = [];
+  const files = new Map<number, string>();
+  let sampling: Promise<unknown> | undefined;
+  let taken = 0;
+  let pending = '';
+  stream.stdout.on('data', (chunk: Buffer) => {
+    const lines = (pending + chunk.toString('utf8')).split('\n');
+    pending = lines.pop() ?? '';
+    for (const text of lines) {
+      const line = mainThreadLine(text);
+      if (line) {
+        const next = observe(waiting, line, Date.now());
+        waiting = next.waiting;
+        const file = files.get(line.pid);
+        if (next.stall && file) {
+          found.push({ file, stall: next.stall });
+          files.delete(line.pid);
+        }
+      }
+    }
+  });
+  const timer = setInterval(() => {
+    if (sampling || taken >= MAX_SAMPLES) {
+      return;
+    }
+    const [pid] = dueForSample(waiting, Date.now(), STALL_THRESHOLD_MS);
+    if (pid === undefined) {
+      return;
+    }
+    const open = waiting.get(pid);
+    if (open) {
+      waiting = new Map(waiting).set(pid, { ...open, sampled: true });
+    }
+    taken++;
+    const stamp = new Date().toISOString().slice(11, 23).replaceAll(':', '-');
+    const file = join(stalls, `${stamp}-${pid}.txt`);
+    files.set(pid, file);
+    const child = spawn('sample', [String(pid), '4', '1', '-mayDie', '-file', file], {
+      stdio: 'ignore',
+    });
+    sampling = once(child, 'close').finally(() => {
+      sampling = undefined;
+    });
+  }, 100);
+  return {
+    stop: async () => {
+      clearInterval(timer);
+      stream.kill();
+      await sampling;
+      for (const { file, stall } of found) {
+        const at = new Date(stall.since).toISOString().slice(11, 23);
+        const main = existsSync(file) ? mainThreadSummary(readFileSync(file, 'utf8')) : undefined;
+        say(
+          `::warning::The app's main thread answered XCTest only after ${stall.seconds.toFixed(1)} s (asked at ${at} UTC, pid ${stall.pid}); sample: ${file}`,
+        );
+        say(
+          `::group::Main thread during the ${stall.seconds.toFixed(1)} s wait: ${main ? `${main.idle}% idle in its run loop, heaviest busy path` : 'no sample'}`,
+        );
+        for (const frame of main?.path ?? []) {
+          say(frame);
+        }
+        say('::endgroup::');
+        summary(
+          `The app's main thread answered XCTest only after ${stall.seconds.toFixed(1)} s (asked at ${at} UTC); its sample is in the diagnostics artifact (\`${file.slice(dir.length + 1)}\`).`,
+        );
+      }
+    },
+  };
+};
+
 /**
  * One `maestro test` invocation; its exit status and output folder. What it
  * prints still streams to the job log and is copied to `console.log`: a
@@ -87,6 +203,7 @@ const attempt = async (number: number, attemptFlows: ReadonlyArray<string>) => {
   const report = join(dir, 'report.xml');
   const output = join(dir, 'console.log');
   const copy = createWriteStream(output);
+  const watch = watchMainThread(dir);
   const child = spawn(
     'maestro',
     [
@@ -116,16 +233,10 @@ const attempt = async (number: number, attemptFlows: ReadonlyArray<string>) => {
     copy.write(chunk);
   });
   const [code] = (await once(child, 'close')) as [number | null];
+  await watch.stop();
   copy.end();
   await once(copy, 'close');
   return { dir, output, report, status: code ?? 1 };
-};
-
-const summary = (line: string): void => {
-  const file = process.env['GITHUB_STEP_SUMMARY'];
-  if (file) {
-    appendFileSync(file, `${line}\n`);
-  }
 };
 
 /** Flow files as inline code, for the step summary. */
