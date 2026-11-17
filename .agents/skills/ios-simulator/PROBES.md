@@ -47,8 +47,15 @@ lost. Then, cheapest first:
    (points are pixels × screen width in points ÷ image width).
 5. **Probes.** `console.warn('[dbg] …')` on repository writes and
    handlers, read in Metro's log (a dev bundle; Effect's logger never
-   reaches Metro). For touches and the keyboard, the probe set in
-   `platform-notes.md` → Touches and the responder system.
+   reaches Metro). In a repacked e2e build (no Metro) `console.error`
+   reaches the device log: `xcrun simctl spawn "$UDID" log stream
+   --predicate 'process == "SolunivoDev" AND composedMessage CONTAINS
+   "[dbg]"'` (add `--level debug` and `OR composedMessage CONTAINS "send
+   gesture actions" OR composedMessage CONTAINS "send control actions"`
+   to see which of a native button and a pan took each touch: the
+   reading is in `docs/google-sync-and-testing.md` → "A swipe that
+   neither pages nor reveals"). For touches and the keyboard, the probe
+   set in `platform-notes.md` → Touches and the responder system.
 6. **Loop the flow** with a clean state between runs (SKILL.md → Clean
    state): a run killed mid-flow leaves reminders and event rows that a
    fresh fake never tombstones, and the next run matches those first.

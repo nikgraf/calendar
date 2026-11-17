@@ -1316,9 +1316,32 @@ matches one of these):
   flow's `lesson-banner`. Raise that step's timeout when one recurs (21's
   "Up to date" went to 60 s).
 - **A swipe that neither pages nor reveals (iOS)**: flow 02's day swipe
-  back, and its swipe on a task row right after an outdent re-rendered the
-  list. Open; before hardening the flow, check whether the app ignores a
-  swipe during its layout animation.
+  back and its task-row swipe right after an outdent; flow 19's swipe on
+  Honolulu's row 2.5 s after Kolkata's removal (run 44045469311, shard 1,
+  attempt 1), whose Remove tap then pressed the shut row. Both rows are a
+  `ReanimatedSwipeable` around Gesture Handler's `Pressable`, a native
+  button. XCTest plays a `swipe` as a touch-down, the whole move within
+  0.1 s, a hold and a lift at 0.5 s (testmanagerd's "Synthesizing event"
+  record lists the path). In the flow's `logs/device-simulator.log` the
+  app's `Description: send control actions` / `send gesture actions`
+  lines, one per touch event, tell three cases apart:
+  - a swipe that opened: three or four control actions (the row's button
+    tracking), then gesture actions on every event (the pan took over);
+  - flow 19's miss: control actions on all ~31 events and no gesture
+    action before the lift. The finger moved and reached the button, and
+    no recognizer began, the same as a row whose pan is switched off
+    (`enabled={false}`);
+  - a touch that never moved: `shouldSend: 0` after the down and no
+    control actions.
+
+  So the app's pan missed a real drag: not a lost touch. Nor the
+  re-render or a busy JS thread: locally (iOS 27.2, CI's build repacked)
+  62 swipes right after a removal opened, also with the JS thread held
+  3 s across the swipe and with the save landing anywhere from 0.8 s
+  before to 0.8 s after the touch-down. Not reproduced (CI runs iOS
+  26.5); rerun. If it recurs, loop flow 19 on iOS 26.5 before hardening
+  the flow.
+
 - **`appleCalendarReal` › "shows an event created outside the app…"**
   times out in `locate('[title^="Solunivo ci event"]')` (or `waitUntil`), and
   the retry then fails `expected 'Solunivo ci event' to be 'Solunivo ci
