@@ -53,6 +53,16 @@ record is ten lines at most (see the workflow rule in `AGENTS.md`).
   branch (`metadata.branchName`) and tracks the chosen channel itself,
   since `Updates.channel` is read at launch and Back to Main can change it
   without one. Open: `MAIN_CHANNEL` copies eas.json's testflight channel.
+- **No update wait at launch** (2026-11-17, #348) — a cold start held the
+  white launch screen up to 3 s for an update check, and CI publishes one
+  on every merge; `fallbackToCacheTimeout` is 0 now, so a new update runs
+  from the next cold start. A start slower than 300 ms fades in a spinner,
+  and Diagnostics lists the last ten launches step by step from the
+  process's start (kernel), launches closed before their JavaScript
+  included. Rejected: a shorter wait, applying an update in the
+  background (resets an open editor), EAS Observe, a launch-screen colour
+  (expo-splash-screen sets it only with an image). Open: the 15 s offline
+  hang it was built to catch.
 - **Production and dev side by side** (2026-10-01, #100) — the real
   accounts live in the production app, test accounts in a dev variant
   next to it, on the Mac (a run from source) and on the phone
