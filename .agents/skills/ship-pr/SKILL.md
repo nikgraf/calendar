@@ -49,6 +49,10 @@ file is lost with the machine.
   `--fixup=amend:<sha>` / `reword:<sha>` with `GIT_EDITOR` set to a script
   that writes the new message), then
   `GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash origin/main`.
+  Never rebuild them with `git reset --soft origin/main`: `scripts/review.sh`
+  fetches, so `origin/main` may be past your base, and the next commit
+  then undoes what `main` gained in every file it holds (#349). Reset to
+  `git merge-base origin/main HEAD`, or rebase first.
 - Once pushed, every change is a new commit: Nik squash-merges, so the
   history on the branch doesn't matter. A force-push needs Nik's yes, and
   then goes as `--force-with-lease=<branch>:<old sha>`.
