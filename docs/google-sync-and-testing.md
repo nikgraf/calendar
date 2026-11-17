@@ -1335,12 +1335,14 @@ matches one of these):
     control actions.
 
   So the app's pan missed a real drag: not a lost touch. Nor the
-  re-render or a busy JS thread: locally (iOS 27.2, CI's build repacked)
-  62 swipes right after a removal opened, also with the JS thread held
-  3 s across the swipe and with the save landing anywhere from 0.8 s
-  before to 0.8 s after the touch-down. Not reproduced (CI runs iOS
-  26.5); rerun. If it recurs, loop flow 19 on iOS 26.5 before hardening
-  the flow.
+  re-render or a busy JS thread: locally (CI's build repacked) 102
+  swipes right after a removal opened, 62 on iOS 27.2 and 40 runs of
+  flow 19 on iOS 26.5, CI's runtime. Each took the pan after three or
+  four button events, also with the JS thread held 3 s across the swipe
+  and with the save landing anywhere from 0.8 s before to 0.8 s after
+  the touch-down. Not reproduced; rerun. If it recurs, read its log the
+  same way, and ask Nik before a retry in the flow: it would hide the
+  app's miss.
 
 - **`appleCalendarReal` › "shows an event created outside the app…"**
   times out in `locate('[title^="Solunivo ci event"]')` (or `waitUntil`), and
