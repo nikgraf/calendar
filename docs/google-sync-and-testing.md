@@ -860,8 +860,10 @@ instrumentation would add counters the page lacks, so the specs never
 run under it, and a source with them is refused. `noteWhen(condition,
 read, ...args)` takes two page functions. `pageFunctions.test.ts`, in
 `pnpm test`, runs the same name check over every page function the e2e
-code sends, so a spec only CI runs (the real Reminders and Calendar, the
-live account, the website's shots) learns of a refused name first.
+code sends, followed by name to the file that declares it, and fails on
+page code it cannot trace: so a spec only CI runs (the real Reminders and
+Calendar, the live account, the website's shots) learns of a refused
+name first.
 
 Flakiness lessons (each caused a real CI failure — keep them enforced):
 
