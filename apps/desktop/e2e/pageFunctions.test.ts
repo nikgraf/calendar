@@ -13,6 +13,8 @@ import { refusedNames } from './page.ts';
 
 /** The calls that send a page function, after an optional `{ timeoutMs }`. */
 const PAGE_CALLS = new Set(['evaluate', 'waitForValue', 'waitUntil', 'waitUntilRendered']);
+/** The calls that send two: `noteWhen`'s condition and its reading. */
+const PAIR_CALLS = new Set(['noteWhen']);
 
 interface Node {
   readonly end: number;
@@ -48,20 +50,25 @@ const pageFunctionsIn = (source: string): ReadonlyArray<Node> => {
       }
     }
     const callee = node['callee'];
-    if (
+    const method =
       node.type === 'CallExpression' &&
       isNode(callee) &&
       callee.type === 'MemberExpression' &&
-      !callee['computed'] &&
-      PAGE_CALLS.has(nameOf(callee['property']) ?? '')
-    ) {
+      !callee['computed']
+        ? (nameOf(callee['property']) ?? '')
+        : '';
+    if (PAGE_CALLS.has(method) || PAIR_CALLS.has(method)) {
       const args = (node['arguments'] as ReadonlyArray<Node>).filter(isNode);
-      const page = args[0]?.type === 'ObjectExpression' ? args[1] : args[0];
-      const name = nameOf(page);
-      if (isFunction(page)) {
-        sent.push(page);
-      } else if (name !== undefined) {
-        sent.push(name);
+      const pages = PAIR_CALLS.has(method)
+        ? args.slice(0, 2)
+        : [args[0]?.type === 'ObjectExpression' ? args[1] : args[0]];
+      for (const page of pages) {
+        const name = nameOf(page);
+        if (isFunction(page)) {
+          sent.push(page);
+        } else if (name !== undefined) {
+          sent.push(name);
+        }
       }
     }
     children(node).forEach(visit);
@@ -93,11 +100,15 @@ describe('the page functions the e2e code sends', () => {
       await app.cdp.waitUntil({ timeoutMs: 1 }, ($, want: string) => $.text('h1') === want, 'x');
       await this.evaluate(function () { return document.title; });
       await cdp.waitForValue(passedIn);
+      const moved = ($: PageKit) => $.text('h2') === 'Moved';
+      await cdp.noteWhen(moved, ($, field: string) => $.value(field), 'input');
     `;
     expect(pageFunctionsIn(source).map((node) => source.slice(node.start, node.end))).toEqual([
       `($: PageKit) => $.has('[data-testid="ready"]')`,
       `($, want: string) => $.text('h1') === want`,
       'function () { return document.title; }',
+      `($: PageKit) => $.text('h2') === 'Moved'`,
+      '($, field: string) => $.value(field)',
     ]);
   });
 

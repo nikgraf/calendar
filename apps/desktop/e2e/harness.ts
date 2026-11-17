@@ -50,6 +50,7 @@ import {
   pageExpression,
   type PageFunction,
   type PageKit,
+  pageSource,
   type PageValue,
 } from './page.ts';
 
@@ -427,6 +428,41 @@ class PageError extends Error {
   }
 }
 
+/** What `noteWhen` noted in the page, by its key: the reading, or why it failed. */
+type NotingWindow = typeof window & {
+  __noted?: Record<string, { readonly error?: string; readonly value?: PageValue }>;
+};
+
+/**
+ * `noteWhen`'s watch, set up in the page: false when `holds` already
+ * does; else, at the first change of the DOM after which it does, what
+ * `read` returns (or why it failed) under `key` in `window.__noted`.
+ */
+const watchNote = (holds: () => boolean, read: () => PageValue, key: string): boolean => {
+  if (holds()) {
+    return false;
+  }
+  const noted = ((window as NotingWindow).__noted ??= {});
+  const observer = new MutationObserver(() => {
+    try {
+      if (!holds()) {
+        return;
+      }
+      noted[key] = { value: read() };
+    } catch (error) {
+      noted[key] = { error: String(error) };
+    }
+    observer.disconnect();
+  });
+  observer.observe(document.body, {
+    attributes: true,
+    characterData: true,
+    childList: true,
+    subtree: true,
+  });
+  return true;
+};
+
 /** The settings window's panes (renderer/settingsPanes.ts). */
 export type SettingsPane =
   | 'accounts'
@@ -675,42 +711,35 @@ export class Cdp {
    * condition must be made true by a change of the DOM (a text, a node,
    * an attribute): an input's value is no such change, but can be read.
    * It must not hold yet: the next change, whatever it is, would note it.
+   * Both are page functions, called there with a fresh kit and `args`
+   * each time the observer runs.
    */
-  async noteWhen<T>(condition: string, read: string): Promise<() => Promise<T>> {
-    const key = JSON.stringify(`noted${String(++this.notes)}`);
-    const watching = await this.eval<boolean>(`(() => {
-      if (${condition}) {
-        return false;
-      }
-      const noted = (window.__noted ??= {});
-      const observer = new MutationObserver(() => {
-        try {
-          if (!(${condition})) {
-            return;
-          }
-          noted[${key}] = { value: ${read} };
-        } catch (error) {
-          noted[${key}] = { error: String(error) };
-        }
-        observer.disconnect();
-      });
-      observer.observe(document.body, { attributes: true, characterData: true, childList: true, subtree: true });
-      return true;
-    })()`);
+  async noteWhen<A extends PageArgs, R extends PageValue>(
+    condition: PageFunction<A, boolean>,
+    read: PageFunction<A, R>,
+    ...args: A
+  ): Promise<() => Promise<R>> {
+    const key = `noted${String(++this.notes)}`;
+    const called = (page: PageFunction<A, PageValue>) => `() => ${pageExpression(page, args)}`;
+    const watching = await this.run<boolean>(
+      `(${pageSource(watchNote)})(${called(condition)}, ${called(read)}, ${JSON.stringify(key)})`,
+    );
+    const said = () => `${condition.toString().slice(0, 120)} ${JSON.stringify(args).slice(0, 80)}`;
     if (!watching) {
-      throw new Error(`noteWhen: the page already reads ${condition.slice(0, 120)}`);
+      throw new Error(`noteWhen: the page already reads ${said()}`);
     }
     return async () => {
-      const noted = await this.eval<{ error?: string; value?: T } | null>(
-        `window.__noted?.[${key}] ?? null`,
+      const noted = await this.evaluate(
+        (_: PageKit, key: string) => (window as NotingWindow).__noted?.[key] ?? null,
+        key,
       );
       if (noted === null) {
-        throw new Error(`noteWhen: the page never changed into ${condition.slice(0, 120)}`);
+        throw new Error(`noteWhen: the page never changed into ${said()}`);
       }
       if (noted.error !== undefined) {
         throw new Error(`noteWhen: reading failed: ${noted.error}`);
       }
-      return noted.value as T;
+      return noted.value as R;
     };
   }
 
