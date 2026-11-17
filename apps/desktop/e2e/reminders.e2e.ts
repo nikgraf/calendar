@@ -586,7 +586,7 @@ describe('Reminder repeat rules with weekdays', () => {
     // A failure above must not strand its editor: `openChip` waits for it
     // to close. A saved editor also closes by itself once the write's reply
     // is back, which can land just after the test saw the database, so
-    // Cancel is found and clicked in one eval: waiting for it hung the hook.
+    // Cancel is found and clicked in one call: waiting for it hung the hook.
     for (let attempt = 0; attempt < 3; attempt += 1) {
       if (!(await app.cdp.evaluate(editorOpen))) {
         return;

@@ -71,7 +71,7 @@ describe.skipIf(!REAL)('Apple Reminders through the real helper', () => {
   /**
    * Cancels an editor left open. A saved editor also closes by itself once
    * the write's reply is back, which can land just after the test saw the
-   * database, so Cancel is found and clicked in one eval: waiting for it
+   * database, so Cancel is found and clicked in one call: waiting for it
    * hung the hook.
    */
   const dismissEditor = async () => {

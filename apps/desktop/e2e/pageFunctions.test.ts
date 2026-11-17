@@ -15,6 +15,8 @@ import { refusedNames } from './page.ts';
 const PAGE_CALLS = new Set(['evaluate', 'waitForValue', 'waitUntil', 'waitUntilRendered']);
 /** The calls that send two: `noteWhen`'s condition and its reading. */
 const PAIR_CALLS = new Set(['noteWhen']);
+/** page.ts's own, for page code sent another way (a script for every new document). */
+const SOURCE_CALLS = new Set(['pageExpression', 'pageSource']);
 
 interface Node {
   readonly end: number;
@@ -57,11 +59,14 @@ const pageFunctionsIn = (source: string): ReadonlyArray<Node> => {
       !callee['computed']
         ? (nameOf(callee['property']) ?? '')
         : '';
-    if (PAGE_CALLS.has(method) || PAIR_CALLS.has(method)) {
+    const fn = node.type === 'CallExpression' ? (nameOf(callee) ?? '') : '';
+    if (PAGE_CALLS.has(method) || PAIR_CALLS.has(method) || SOURCE_CALLS.has(fn)) {
       const args = (node['arguments'] as ReadonlyArray<Node>).filter(isNode);
       const pages = PAIR_CALLS.has(method)
         ? args.slice(0, 2)
-        : [args[0]?.type === 'ObjectExpression' ? args[1] : args[0]];
+        : SOURCE_CALLS.has(fn)
+          ? args.slice(0, 1)
+          : [args[0]?.type === 'ObjectExpression' ? args[1] : args[0]];
       for (const page of pages) {
         const name = nameOf(page);
         if (isFunction(page)) {
@@ -102,6 +107,8 @@ describe('the page functions the e2e code sends', () => {
       await cdp.waitForValue(passedIn);
       const moved = ($: PageKit) => $.text('h2') === 'Moved';
       await cdp.noteWhen(moved, ($, field: string) => $.value(field), 'input');
+      const record = () => { window.__seen = []; };
+      await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: pageExpression(record, []) });
     `;
     expect(pageFunctionsIn(source).map((node) => source.slice(node.start, node.end))).toEqual([
       `($: PageKit) => $.has('[data-testid="ready"]')`,
@@ -109,6 +116,7 @@ describe('the page functions the e2e code sends', () => {
       'function () { return document.title; }',
       `($: PageKit) => $.text('h2') === 'Moved'`,
       '($, field: string) => $.value(field)',
+      '() => { window.__seen = []; }',
     ]);
   });
 

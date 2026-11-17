@@ -44,7 +44,6 @@ import { SqliteClient } from '@effect/sql-sqlite-node';
 import { Effect, Layer } from 'effect';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
 import { SqlClient } from 'effect/sql/SqlClient';
-import { refuseMisreadFallback } from './fallbackPrecedence';
 import {
   type PageArgs,
   pageExpression,
@@ -574,17 +573,6 @@ export class Cdp {
   }
 
   /**
-   * Evaluates an expression, returning its JSON value — for a spec not yet
-   * moved to page functions (`evaluate`). One whose `??` fallback takes in
-   * a comparison after it, or a literal fallback a member access
-   * (`fallbackPrecedence.ts`), is refused before it is sent.
-   */
-  async eval<T>(expression: string): Promise<T> {
-    refuseMisreadFallback(expression);
-    return this.run<T>(expression);
-  }
-
-  /**
    * Runs a page function in the page (page.ts): called there with the kit
    * and `args`, each sent by value as JSON. Returns what it returns, a
    * promise awaited — JSON too, so never a DOM node.
@@ -598,8 +586,10 @@ export class Cdp {
 
   /**
    * Polls a page function until it returns true. A failure counts as not
-   * yet, as in `waitFor`, except a name the page does not have: that is a
-   * spec's variable the function closed over, so it fails at once.
+   * yet — during boot the page can still be about:blank, where
+   * `document.body` is null and the first try throws — except a name the
+   * page does not have: that is a spec's variable the function closed
+   * over, so it fails at once.
    */
   waitUntil<A extends PageArgs>(page: PageFunction<A, boolean>, ...args: A): Promise<void>;
   waitUntil<A extends PageArgs>(
@@ -611,7 +601,12 @@ export class Cdp {
     await this.pollPage(call, false, (value) => value === true);
   }
 
-  /** `waitUntil`, drawing a frame before each try (`waitForRendered`). */
+  /**
+   * `waitUntil`, drawing a frame before each try. A window behind another
+   * one (CI's can be) is hidden to its page, which then runs no rendering
+   * steps: a ResizeObserver reports only in one, so what the page sets from
+   * it waits for a frame that may never come. A screenshot draws one.
+   */
   waitUntilRendered<A extends PageArgs>(page: PageFunction<A, boolean>, ...args: A): Promise<void>;
   waitUntilRendered<A extends PageArgs>(
     options: WaitOptions,
@@ -705,8 +700,8 @@ export class Cdp {
   /**
    * Notes what `read` evaluates to at the first change of the page after
    * which `condition` holds — in the microtask that change queues, before
-   * any other task runs — and returns a reader for that value. `waitFor`
-   * and an `eval` after it see two commits a task apart as one on a fast
+   * any other task runs — and returns a reader for that value. A wait
+   * and an `evaluate` after it see two commits a task apart as one on a fast
    * host and apart only on a slow one; this tells them apart on any. The
    * condition must be made true by a change of the DOM (a text, a node,
    * an attribute): an input's value is no such change, but can be read.
@@ -741,51 +736,6 @@ export class Cdp {
       }
       return noted.value as R;
     };
-  }
-
-  /**
-   * Polls an expression until it is truthy; returns its value. Evaluation
-   * errors count as "not ready yet" and keep polling: during boot the page
-   * can still be about:blank, where `document.body` is null and the very
-   * first eval throws — a hard throw there would kill the whole run.
-   */
-  async waitFor<T>(expression: string, timeoutMs = 15_000): Promise<T> {
-    return this.poll<T>(expression, timeoutMs, false);
-  }
-
-  /**
-   * `waitFor`, drawing a frame before each try. A window behind another one
-   * (CI's can be) is hidden to its page, which then runs no rendering steps:
-   * a ResizeObserver reports only in one, so what the page sets from it
-   * waits for a frame that may never come. A screenshot draws one.
-   */
-  async waitForRendered<T>(expression: string, timeoutMs = 15_000): Promise<T> {
-    return this.poll<T>(expression, timeoutMs, true);
-  }
-
-  private async poll<T>(expression: string, timeoutMs: number, drawFrame: boolean): Promise<T> {
-    // Here too: in the loop, `eval`'s refusal would count as "not ready yet".
-    refuseMisreadFallback(expression);
-    const deadline = Date.now() + timeoutMs;
-    let lastError = '';
-    for (;;) {
-      try {
-        if (drawFrame) {
-          await this.send('Page.captureScreenshot');
-        }
-        const value = await this.run<T>(expression);
-        if (value) {
-          return value;
-        }
-        lastError = '';
-      } catch (error) {
-        lastError = ` (last error: ${String(error).slice(0, 120)})`;
-      }
-      if (Date.now() > deadline) {
-        throw new Error(`waitFor timed out: ${expression.slice(0, 120)}${lastError}`);
-      }
-      await sleep(150);
-    }
   }
 
   /**

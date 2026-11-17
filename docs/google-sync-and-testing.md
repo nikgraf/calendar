@@ -857,21 +857,11 @@ that waits is a Node function around a call (`headingIs` in
 `editorDiscard`). vitest prints the source again with the types gone and
 nothing lowered (`page.test.ts` holds it to that); coverage
 instrumentation would add counters the page lacks, so the specs never
-run under it, and a source with them is refused. The specs move to it
-file by file; until the last string goes, `eval`, `waitFor`,
-`waitForRendered` and `noteWhen` take strings and the guard below stays.
-
-A spec not yet moved writes its CDP expressions as JavaScript in template
-strings, where neither tsc nor the lint looks. A `??` fallback is parenthesised whenever
-a comparison follows it, or a member access follows a literal fallback:
-`(x ?? null) === 'v'`, never `x ?? null === 'v'`, which reads as
-`x ?? (null === 'v')` and let two waits pass on any text (#230, #317) —
-usually through a constant ending in `?? null` interpolated before
-`=== 'v'`; `(x ?? '').includes('v')`, never `x ?? ''.includes('v')`.
-`Cdp.eval`, and `waitFor` before its first try, refuse an expression with
-either shape as it is sent (`fallbackPrecedence.ts`), and
-`fallbackPrecedence.test.ts`, in `pnpm test`, fails on one written out in
-the e2e sources.
+run under it, and a source with them is refused. `noteWhen(condition,
+read, ...args)` takes two page functions. `pageFunctions.test.ts`, in
+`pnpm test`, runs the same name check over every page function the e2e
+code sends, so a spec only CI runs (the real Reminders and Calendar, the
+live account, the website's shots) learns of a refused name first.
 
 Flakiness lessons (each caused a real CI failure — keep them enforced):
 
@@ -889,7 +879,7 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   Consequence: `browser-window-focus` never fires in e2e, so no spec may
   count on the sync kick or the settings-file check it runs.
 - **A window behind another one renders nothing** without that
-  emulation: `cdp.waitForRendered` still draws a frame (a screenshot)
+  emulation: `cdp.waitUntilRendered` still draws a frame (a screenshot)
   before each try.
 - **Weekday-agnostic seeding**: recurring seeds start `today − 3 days` and
   expectations derive from the first _visible_ instance.
@@ -911,10 +901,10 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   (`Emulation.setCPUThrottlingRate`, 6× or 12×) and never commit the
   throttle.
 - **A step that keeps the kind is in the form the moment it shows.** A
-  spec reads the form right after `waitFor` on `step-position`, never
+  spec reads the form right after `waitUntil` on `step-position`, never
   waits for the form. A turn that switches the kind is the exception:
   the form follows once the switch settles (`applying`), so a spec waits
-  for the field it reads. An `eval` sees the page only after a task
+  for the field it reads. An `evaluate` sees the page only after a task
   boundary, which on a fast host hides a form one task behind;
   `cdp.noteWhen(condition, read)` reads in the microtask after the
   change that made `condition` true and catches it on any host (#329).
