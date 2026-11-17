@@ -8,6 +8,7 @@ import {
   launchTotal,
   parseLaunches,
   reachStep,
+  recordTaken,
 } from './launchTimes.ts';
 
 /** 09:23:05 UTC on some day; every time here is formatted in UTC. */
@@ -32,14 +33,50 @@ describe('addLaunch', () => {
     expect(next[0]?.start).toBe(99);
     expect(next.at(-1)?.start).toBe(KEPT_LAUNCHES - 2);
   });
+});
 
-  it('keeps a launch closed before its JavaScript ran under the one that found it', () => {
-    const next = reachStep(addLaunch(addLaunch([], 1000), 5000), 'script', 5400);
+describe('recordTaken', () => {
+  const older = launch({ calendar: 900, firstFrame: 600, script: 400 });
+
+  it('puts the launches closed before their JavaScript ran under this one, oldest lowest', () => {
+    const next = recordTaken([older], { start: 5000, unfinished: [1000, 2000] }, 5400);
     expect(next).toEqual([
       { start: 5000, steps: { script: 400 } },
+      { start: 2000, steps: {} },
+      { start: 1000, steps: {} },
+      older,
+    ]);
+    expect(next?.map(launchLine).slice(0, 3)).toEqual([
+      'JavaScript 0.4 s · no first frame',
+      'no JavaScript',
+      'no JavaScript',
+    ]);
+  });
+
+  it('lands the later steps on this launch, not on an unfinished one', () => {
+    const next = recordTaken([], { start: 5000, unfinished: [1000] }, 5400) ?? [];
+    expect(reachStep(next, 'firstFrame', 5900)).toEqual([
+      { start: 5000, steps: { firstFrame: 900, script: 400 } },
       { start: 1000, steps: {} },
     ]);
-    expect(next.map(launchLine)).toEqual(['JavaScript 0.4 s · no first frame', 'no JavaScript']);
+  });
+
+  it('keeps how long the process ran before a launch counted from its window', () => {
+    expect(recordTaken([], { before: 7000, start: 5000, unfinished: [] }, 5400)).toEqual([
+      { before: 7000, start: 5000, steps: { script: 400 } },
+    ]);
+  });
+
+  it('lists the unfinished launches a background launch found, and nothing of its own', () => {
+    expect(recordTaken([older], { unfinished: [1000] }, 5400)).toEqual([
+      { start: 1000, steps: {} },
+      older,
+    ]);
+  });
+
+  it('writes nothing for a reload or a background launch that found nothing', () => {
+    expect(recordTaken([older], {}, 5400)).toBeUndefined();
+    expect(recordTaken([older], { unfinished: [] }, 5400)).toBeUndefined();
   });
 });
 

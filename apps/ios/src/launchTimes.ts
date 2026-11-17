@@ -8,6 +8,8 @@
  * `launchTiming.ts`'s.
  */
 
+import type { TakenLaunches } from '../modules/solunivo-launch-timing/index.ts';
+
 /** The steps of a launch, in the order a launch reaches them. */
 export const LAUNCH_STEPS = ['script', 'firstFrame', 'calendar'] as const;
 export type LaunchStep = (typeof LAUNCH_STEPS)[number];
@@ -46,6 +48,31 @@ export const addLaunch = (
   { ...(before === undefined ? {} : { before }), start, steps: {} },
   ...records.slice(0, KEPT_LAUNCHES - 1),
 ];
+
+/**
+ * The records once the native side's launches went in: the ones closed
+ * before their JavaScript ran, oldest first, with no step; then this one
+ * on top with its JavaScript started at `scriptStarted`, so the later
+ * steps land on it. Undefined when there is nothing to write (a reload, or
+ * a background launch that found no unfinished one).
+ */
+export const recordTaken = (
+  records: ReadonlyArray<LaunchRecord>,
+  taken: TakenLaunches,
+  scriptStarted: number,
+): ReadonlyArray<LaunchRecord> | undefined => {
+  const unfinished = taken.unfinished ?? [];
+  if (taken.start === undefined && unfinished.length === 0) {
+    return undefined;
+  }
+  let next = records;
+  for (const start of unfinished) {
+    next = addLaunch(next, start);
+  }
+  return taken.start === undefined
+    ? next
+    : reachStep(addLaunch(next, taken.start, taken.before), 'script', scriptStarted);
+};
 
 /** The newest launch with `step` reached at `at`; a step is taken once. */
 export const reachStep = (

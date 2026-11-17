@@ -1,11 +1,11 @@
 import { File, Paths } from 'expo-file-system';
 import { loadLaunchTimingModule } from '../modules/solunivo-launch-timing/index.ts';
 import {
-  addLaunch,
   type LaunchRecord,
   type LaunchStep,
   parseLaunches,
   reachStep,
+  recordTaken,
 } from './launchTimes.ts';
 
 /**
@@ -49,17 +49,12 @@ const write = (next: ReadonlyArray<LaunchRecord>) => {
 };
 
 const taken = loadLaunchTimingModule()?.take();
-const unfinished = taken?.unfinished ?? [];
-if (taken?.start !== undefined || unfinished.length > 0) {
-  let next = readLaunchTimes();
-  for (const start of unfinished) {
-    next = addLaunch(next, start);
-  }
+const recorded = taken ? recordTaken(readLaunchTimes(), taken, scriptStarted) : undefined;
+if (recorded) {
+  write(recorded);
   if (taken?.start !== undefined) {
-    next = reachStep(addLaunch(next, taken.start, taken.before), 'script', scriptStarted);
-    records = next;
+    records = recorded;
   }
-  write(next);
 }
 
 /** This launch reached `step`: kept the first time only. */
