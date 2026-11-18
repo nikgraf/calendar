@@ -82,6 +82,7 @@ export function TimedEventBlock({
       }`}
       data-color={color}
       data-selected={selected ? '' : undefined}
+      data-testid={`timed-event-${event.id}`}
       key={box.id}
       onKeyDown={(keyEvent) => {
         if (keyEvent.key === 'Enter' || keyEvent.key === ' ') {

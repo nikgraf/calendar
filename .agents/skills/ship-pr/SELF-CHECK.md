@@ -45,6 +45,8 @@ The class found in the most PRs (54), almost all by Opus.
 - If an e2e spec or a live flow dies at any step and is retried, does the
   rerun start clean, and does the teardown still run after a hang (a
   `finally` after a hang never ran Delete)?
+- Adding a test id: did you search existing specs for selectors that rely
+  on its absence, such as `:not([data-testid])`, and update those consumers?
 
 ## Answers that arrive late
 

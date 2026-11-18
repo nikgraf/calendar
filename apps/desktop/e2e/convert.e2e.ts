@@ -305,9 +305,8 @@ describe('Converting between events and tasks', () => {
 
   it('converts one occurrence of a series and leaves the rest of it', async () => {
     const { cdp } = app;
-    // The series' own blocks: the reminder one of them becomes has the same
-    // title, and a test id as every task chip does.
-    const series = '[title^="Daily review"]:not([data-testid])';
+    // The series' own event blocks, excluding the reminder one becomes.
+    const series = '[data-testid^="timed-event-evt-daily"]';
     const blocks = ($: PageKit, selector: string) => $.count(selector);
     await cdp.waitUntil(($, selector: string) => $.count(selector) > 1, series);
     const before = await cdp.evaluate(blocks, series);

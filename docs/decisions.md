@@ -134,6 +134,13 @@ was cut (pruned 2026-11-17).
 
 ## CI and dependencies
 
+- **Desktop UI property exploration** (2026-11-18, #354) — a bounded,
+  opt-in Bombadil run checks editor interactions and persisted results in
+  an isolated Electron profile. Keep it outside the ordinary CI gate
+  while evaluating the tool and its replay behavior; scripted desktop
+  e2e and native iOS automation remain in place. Pin the desktop-only
+  development dependency so explorer and specification APIs move together.
+
 - **CI shape** (2026-09-11) — one reusable `gate.yml` called by both
   workflows (GitHub cannot `needs:` across workflow files); docs-only
   changes skip the macOS jobs through `if:` guards, never `paths-ignore`
