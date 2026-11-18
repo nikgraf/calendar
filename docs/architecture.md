@@ -1870,12 +1870,13 @@ gateway carries all of it. Details, limits and the threat model:
   Only coordinates the user vouched for are mirrored: the event's own or
   a picked suggestion. A local edit that drops them flags its queued
   update `geoCleared`, and only that PATCH deletes the keys with nulls.
-  Events without mirrored coordinates are geocoded when the editor opens
+  Events without mirrored coordinates are geocoded when the editor or
+  detail opens
   (`resolveLocation`, cached in the device-local `location_geo` table:
   misses for 3 days, hits refreshed in the background after 14 days,
-  pruned to 2000 rows, wiped from Settings) for the map on this device
-  only; typing never geocodes — the typeahead (`searchPlaces`) and a
-  picked row do. The typeahead asks MapKit's completer, which reads only
+  pruned to 2000 rows, wiped from Settings) for its map; these lookup
+  results are never mirrored. Typing never geocodes — the typeahead
+  (`searchPlaces`) and a picked row do. The typeahead asks MapKit's completer, which reads only
   how a name begins; where it answers fewer rows than asked for and none
   is the text itself, the latest text goes to the search too, which
   reads a misspelling ("kaffeemik"), and the places it names come first
@@ -1954,7 +1955,13 @@ gateway carries all of it. Details, limits and the threat model:
   distance itself — and never a location permission. The bridge returns `places` beside
   `place`; a native side from before it answers one place. Desktop
   draws a static `MKMapSnapshotter` PNG (`mapSnapshot`); iOS a live
-  `expo-maps` view (without its module, only the Open in Maps link).
+  `expo-maps` view (without its module, only the links). The iOS event
+  detail shows the map below its address and offers Apple Maps and Google
+  Maps directions (`locationDirectionsUrls`). These HTTPS links use
+  matching coordinates when known and the address text otherwise, so
+  directions remain available while geocoding is pending or fails. The
+  Maps app chooses the origin and travel mode; no location permission is
+  needed in Solunivo.
 - **Device settings and the settings document**: `device_settings` is a
   key/value table for preferences that never sync to Google
   (`birthdayReminders`, `birthdayReminderOverrides` — keyed through

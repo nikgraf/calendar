@@ -237,7 +237,7 @@ export function EventEditForm({
       <Section tight>
         <LocationField model={model} />
       </Section>
-      <LocationMap model={model} />
+      <LocationMap place={model} />
 
       {readOnly ? null : (
         <Section header="Calendar" tight>

@@ -1,6 +1,6 @@
 # Privacy Policy
 
-_Last updated: 2026-11-13_
+_Last updated: 2026-11-18_
 
 Solunivo is a calendar and task app for macOS and iOS. It has no server
 of its own: the app talks directly from your device to Google and Apple,
@@ -29,11 +29,13 @@ Calendar, Apple Reminders and your address book, for the same purposes.
   local database on your device so the app works offline. Sign-in tokens
   are never in that database: on iOS they are stored in the Keychain, and
   on the Mac they are encrypted with a key kept in the macOS Keychain.
-- **Goes to Google** only as the changes you make: a new or edited event
+- **Goes to Google** as the changes you make: a new or edited event
   or task is written back to your own Google account. If you pick a place
   for an event's location, its coordinates are saved in that event's
   private fields in your Google Calendar so your other devices can show
-  the map.
+  the map. If you open Google Maps directions, the event's address or
+  coordinates are passed to Google Maps, including for events from Apple
+  Calendar.
 - **Goes to Apple** only when you use a feature that needs it: place
   search and maps use Apple Maps, and changes to Apple Calendar or
   Reminders items are saved through the system's own calendar and
