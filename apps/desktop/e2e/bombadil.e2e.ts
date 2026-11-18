@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { Account, CalendarInfo, EventRecord, Temporal } from '@calendar/core';
 import { expect, it } from 'vite-plus/test';
 import { launchApp, readEvents } from './harness.ts';
@@ -27,6 +27,7 @@ const runBombadil = (
   signal: AbortSignal,
 ): Promise<void> =>
   new Promise((resolve, reject) => {
+    signal.throwIfAborted();
     const child = spawn('pnpm', ['exec', 'bombadil', 'browser', 'test-external', ...args], {
       cwd: join(import.meta.dirname, '..'),
       // pnpm and the package's Node shim spawn the Rust binary. Keep them
@@ -143,7 +144,7 @@ it.runIf(process.env['BOMBADIL'] === '1')(
           '--output-path',
           output,
           ...(reproduce
-            ? ['--reproduce', reproduce]
+            ? ['--reproduce', resolve(reproduce)]
             : ['--time-limit', '45s', '--exit-on-violation']),
           origin,
           join(import.meta.dirname, 'bombadil', 'editor.ts'),
