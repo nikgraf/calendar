@@ -51,12 +51,29 @@ interface ExpectedEvent {
   readonly title: string;
 }
 
+const offline: NonNullable<FakeGoogle['fault']> = (call) =>
+  call.method === 'GET' ? undefined : 'refused';
+
 const scenario = (commands: ReadonlyArray<Command>) => {
   // New services for every evaluation, including every shrink attempt.
   const google = new FakeGoogle({
     calendars: [{ accessRole: 'owner', id: CALENDAR, primary: true, summary: 'Properties' }],
   });
   const expected = new Map<string, ExpectedEvent>();
+  const faultsSeen = { lostCreate: 0, lostDelete: 0, refusedEdit: 0 };
+  let armedFault: FakeFault | undefined;
+  google.fault = offline;
+  google.onAnswer = (call, answer) => {
+    if (armedFault === 'lost' && answer.lost && answer.status < 300 && call.method === 'POST') {
+      faultsSeen.lostCreate += 1;
+    }
+    if (armedFault === 'lost' && answer.lost && answer.status === 204 && call.method === 'DELETE') {
+      faultsSeen.lostDelete += 1;
+    }
+    if (armedFault === 'refused' && answer.status === 503 && call.method === 'PATCH') {
+      faultsSeen.refusedEdit += 1;
+    }
+  };
   let serial = 0;
 
   return Effect.gen(function* () {
@@ -78,12 +95,23 @@ const scenario = (commands: ReadonlyArray<Command>) => {
     const pending = yield* PendingOpRepo;
     yield* engine.syncAll();
 
+    const settle = Effect.gen(function* () {
+      // Mutations kick background drains. Let them reach the gate, then
+      // join it before reading rows or changing the network policy.
+      for (let round = 0; round < 3; round += 1) {
+        yield* Effect.yieldNow;
+        yield* mutations.whileQueueHeld(Effect.void);
+      }
+    });
+
     const retry = (fault: 'none' | FakeFault) =>
       Effect.gen(function* () {
-        yield* TestClock.adjust('31 minutes');
+        yield* settle;
+        const hasPending = (yield* pending.listAll()).length > 0;
         // One write is refused or lands with its response lost. Reads are
         // unaffected; later retries go through the real request/queue code.
         let remaining = fault === 'none' ? 0 : 1;
+        armedFault = fault === 'none' ? undefined : fault;
         google.fault = (call) => {
           if (call.method === 'GET' || remaining === 0 || fault === 'none') {
             return undefined;
@@ -91,9 +119,22 @@ const scenario = (commands: ReadonlyArray<Command>) => {
           remaining -= 1;
           return fault;
         };
+        // Arm before yielding to the clock: even a kicked drain must
+        // encounter this policy, rather than a clean network.
+        yield* TestClock.adjust('31 minutes');
         yield* mutations.processPendingOps();
-        google.fault = undefined;
-      });
+        yield* settle;
+        if (hasPending && fault !== 'none') {
+          expect(remaining).toBe(0);
+        }
+      }).pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            google.fault = offline;
+            armedFault = undefined;
+          }),
+        ),
+      );
 
     const apply = (command: Command) =>
       Effect.gen(function* () {
@@ -136,22 +177,32 @@ const scenario = (commands: ReadonlyArray<Command>) => {
 
     const assertLocalIntent = Effect.gen(function* () {
       const rows = (yield* events.getWindow(0, Number.MAX_SAFE_INTEGER)).singles;
-      const projected = rows.map(({ endUtc, id, startUtc, title }) => ({
-        endUtc,
-        id,
-        startUtc,
-        title,
-      }));
+      const ops = yield* pending.listAll();
+      // A pull can echo a queued delete's server copy until DELETE is
+      // acknowledged (dropPulledCopy removes it). Only that pending
+      // removal may differ from intent; after draining there are none.
+      const deleting = new Set(ops.filter((op) => op.kind === 'delete').map((op) => op.eventId));
+      const projected = rows
+        .filter((row) => !deleting.has(row.id))
+        .map(({ endUtc, id, startUtc, title }) => ({
+          endUtc,
+          id,
+          startUtc,
+          title,
+        }));
       expect(projected.sort((a, b) => a.id.localeCompare(b.id))).toEqual(
         [...expected.values()].sort((a, b) => a.id.localeCompare(b.id)),
       );
-      const ops = yield* pending.listAll();
       expect(ops.every((op) => op.conflictAt === undefined)).toBe(true);
       for (const row of rows.filter((event) => event.syncStatus === 'pending')) {
         expect(ops.some((op) => op.eventId === row.id)).toBe(true);
       }
       const serverIds = google.eventsOf(CALENDAR).map((event) => event.id);
       expect(new Set(serverIds).size).toBe(serverIds.length);
+    });
+    const check = Effect.gen(function* () {
+      yield* settle;
+      yield* mutations.whileQueueHeld(assertLocalIntent);
     });
 
     // Every case exercises an ambiguous create and a retry before its
@@ -168,9 +219,16 @@ const scenario = (commands: ReadonlyArray<Command>) => {
       { fault: 'none', kind: 'retry' },
       { kind: 'create', title: 'Survivor' },
     ];
-    for (const command of [...prefix, ...commands]) {
+    for (const command of prefix) {
       yield* apply(command);
-      yield* assertLocalIntent;
+      yield* check;
+    }
+    expect(faultsSeen.lostCreate).toBeGreaterThan(0);
+    expect(faultsSeen.lostDelete).toBeGreaterThan(0);
+    expect(faultsSeen.refusedEdit).toBeGreaterThan(0);
+    for (const command of commands) {
+      yield* apply(command);
+      yield* check;
     }
 
     // Successful connectivity eventually drains the queue. A second
@@ -179,7 +237,7 @@ const scenario = (commands: ReadonlyArray<Command>) => {
       yield* retry('none');
       yield* engine.syncAll();
     }
-    yield* assertLocalIntent;
+    yield* check;
     expect(yield* pending.listAll()).toEqual([]);
     const server = google.eventsOf(CALENDAR).map((event) => ({
       endUtc: Date.parse(event.end!.dateTime!),

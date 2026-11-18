@@ -31,9 +31,13 @@ it.prop(
   },
 );
 
-it.effect.prop(
-  'the gateway returns exactly the event details each generated grant permits',
-  { privateLevel: CalendarLevel, workLevel: CalendarLevel },
+const levels = ['none', 'freeBusy', 'read', 'ask', 'write'] as const;
+
+// Enumerate this finite space; random sampling could miss one of its 25 pairs.
+it.effect.each(
+  levels.flatMap((privateLevel) => levels.map((workLevel) => ({ privateLevel, workLevel }))),
+)(
+  'the gateway enforces work=$workLevel and private=$privateLevel',
   ({ privateLevel, workLevel }) => {
     const world = makeWorld();
     return Effect.gen(function* () {
@@ -53,5 +57,4 @@ it.effect.prop(
       expect(result.events.map((event) => event.title).sort()).toEqual(expected.sort());
     }).pipe(Effect.provide(world.layer), Effect.scoped);
   },
-  { arbitrary: { runs: 30 }, timeout: 20_000 },
 );

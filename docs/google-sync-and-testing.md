@@ -510,16 +510,21 @@ shrinker through `@effect/vitest`: `it.prop` for pure rules and
 domain values, with an independent oracle or invariant for the result.
 Recurrence walks plain dates as its reference; free-slot search checks
 busy intervals and a minute-grid oracle; ordering generates successive
-insertions; settings codes preserve portable fields; gateway reads are
-checked against generated grants.
+insertions; settings codes preserve portable fields; gateway reads check
+all 25 grant pairs, while write gates use generated capabilities.
 
 `packages/sync/src/engine.property.test.ts` generates create, edit, delete
 and retry commands over the real engine and HTTP clients. Every case
 first exercises a lost create response, a refused edit and a lost delete
-response. It compares local intent after each command, then repeatedly
+response. It compares retained items with local intent after each command, then repeatedly
 drains and pulls to check convergence and absence of extra events. Every
 evaluation, including shrinking, builds fresh in-memory SQLite and fake
 Google services; property runners do not reset mutable layers themselves.
+Writes stay offline between retry commands so automatic background drains
+cannot bypass a fault. Each forced fault must be observed, and queue
+snapshots are taken under the mutation gate after kicked drains settle.
+An acknowledged server copy may be visible while its delete is queued;
+the final comparison, with the queue empty, permits no such extra rows.
 Titles here are well-formed Unicode, as SQLite stores UTF-8 text.
 
 Run these with `pnpm exec vp test run .property.test.ts`

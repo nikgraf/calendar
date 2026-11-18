@@ -38,12 +38,14 @@ it.prop(
       if (before) {
         const next = positionBetween(undefined, first);
         expect(next < first).toBe(true);
-        expect(positionBetween(next, first) > next).toBe(true);
+        const middle = positionBetween(next, first);
+        expect(middle > next && middle < first).toBe(true);
         first = next;
       } else {
         const next = positionBetween(last, undefined);
         expect(next > last).toBe(true);
-        expect(positionBetween(last, next) < next).toBe(true);
+        const middle = positionBetween(last, next);
+        expect(middle > last && middle < next).toBe(true);
         last = next;
       }
     }
