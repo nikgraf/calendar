@@ -504,6 +504,32 @@ yesterday, `Pacific/Kiritimati` as tomorrow after 10:00 UTC).
 
 ### Unit tests (`vp test`, @effect/vitest)
 
+Property tests (`*.property.test.ts`) use Effect 4's native generators and
+shrinker through `@effect/vitest`: `it.prop` for pure rules and
+`it.effect.prop` for effects. Inputs are bounded Schemas describing valid
+domain values, with an independent oracle or invariant for the result.
+Recurrence walks plain dates as its reference; free-slot search checks
+busy intervals and a minute-grid oracle; ordering generates successive
+insertions; settings codes preserve portable fields; gateway reads are
+checked against generated grants.
+
+`packages/sync/src/engine.property.test.ts` generates create, edit, delete
+and retry commands over the real engine and HTTP clients. Every case
+first exercises a lost create response, a refused edit and a lost delete
+response. It compares local intent after each command, then repeatedly
+drains and pulls to check convergence and absence of extra events. Every
+evaluation, including shrinking, builds fresh in-memory SQLite and fake
+Google services; property runners do not reset mutable layers themselves.
+Titles here are well-formed Unicode, as SQLite stores UTF-8 text.
+
+Run these with `pnpm exec vp test run .property.test.ts`
+or as part of `pnpm test`. Failures print the shrunk input and a replay
+token. For the sync property, pass that token unchanged in
+`SYNC_PROPERTY_REPLAY` and run that file alone. Replay tokens belong to
+the pinned Effect release; keep a concrete regression example when a
+property exposes a bug. The broader seeded queue suite below remains
+separate: it also covers tasks, moves, discards and other-device writes.
+
 - Layer recipe: `EventMutations.layer` + `reposLayer` +
   `Layer.effectDiscard(runMigrations)` +
   `SqliteClient.layer({ filename: ':memory:' })` + reactivity layer +

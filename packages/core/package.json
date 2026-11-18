@@ -17,6 +17,7 @@
     "rrule-temporal": "catalog:"
   },
   "devDependencies": {
+    "@effect/vitest": "catalog:",
     "typescript": "catalog:"
   }
 }
