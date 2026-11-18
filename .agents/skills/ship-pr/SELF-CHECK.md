@@ -37,6 +37,9 @@ The class found in the most PRs (54), almost all by Opus.
 - Does the test rely on a fake behaving like the real thing (a released
   recorder that throws, EventKit's DST hours, a clock frozen through
   sleep)? Does the fake?
+- For generated fault sequences, does an assertion prove each required
+  fault reached a write? Does the model allow the engine's documented
+  intermediate states, including a conflict after our own lost write?
 - Does a seed or an assertion depend on UTC versus local time, "today", a
   weekday or the Sunday week edge, or millisecond ordering of `createdAt`?
 - If an e2e spec or a live flow dies at any step and is retried, does the
