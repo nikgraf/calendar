@@ -365,6 +365,12 @@ was cut (pruned 2026-11-17).
 
 ## Architecture and sync path
 
+- **Property testing in the shared core** (2026-11-18, #353) — use
+  Effect 4's native Schema generators and `@effect/vitest`, which fit the
+  existing Effect services and test environments. Rejected adding
+  fast-check while the native runner covers these invariants. Generated
+  checks complement the existing examples and broader seeded queue suite.
+
 - **Effect-first** — I/O, orchestration and validation are Effect
   services and Layers; pure math and React are plain TS. UI state is
   `@effect/atom-react` over Reactivity keys; the backend seam is an
