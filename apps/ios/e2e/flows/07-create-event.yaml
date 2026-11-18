@@ -131,6 +131,11 @@ tags:
       - inputText: 'Museumsplatz 1, Vienna'
       - tapOn:
           id: 'event-save'
+      # Saving closes the sheet; reopen the event to read the saved place.
+      - extendedWaitUntil:
+          notVisible: 'Edit Event'
+          timeout: 10000
+      - tapOn: 'Solunivo e2e event to delete.*'
       - extendedWaitUntil:
           visible:
             id: 'apple-maps-directions'
