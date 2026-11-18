@@ -517,7 +517,10 @@ all 25 grant pairs, while write gates use generated capabilities.
 and retry commands over the real engine and HTTP clients. Every case
 first exercises a lost create response, a refused edit and a lost delete
 response. It compares retained items with local intent after each command, then repeatedly
-drains and pulls to check convergence and absence of extra events. Every
+drains and pulls to check convergence and absence of extra events. A lost
+write can leave a later edit or delete parked on its stale etag; conflicts
+are allowed only for items with a recorded landed-but-lost write, then
+resolved with Keep mine before the final exact comparisons. Every
 evaluation, including shrinking, builds fresh in-memory SQLite and fake
 Google services; property runners do not reset mutable layers themselves.
 Writes stay offline between retry commands so automatic background drains

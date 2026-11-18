@@ -60,10 +60,24 @@ const scenario = (commands: ReadonlyArray<Command>) => {
     calendars: [{ accessRole: 'owner', id: CALENDAR, primary: true, summary: 'Properties' }],
   });
   const expected = new Map<string, ExpectedEvent>();
+  const lostWrites = new Set<string>();
   const faultsSeen = { lostCreate: 0, lostDelete: 0, refusedEdit: 0 };
   let armedFault: FakeFault | undefined;
   google.fault = offline;
   google.onAnswer = (call, answer) => {
+    if (answer.lost && answer.status >= 200 && answer.status < 300) {
+      if (
+        call.method === 'POST' &&
+        typeof answer.json === 'object' &&
+        answer.json !== null &&
+        'id' in answer.json &&
+        typeof answer.json.id === 'string'
+      ) {
+        lostWrites.add(answer.json.id);
+      } else if (call.method === 'PATCH' || call.method === 'DELETE') {
+        lostWrites.add(decodeURIComponent(new URL(call.url).pathname.split('/').at(-1)!));
+      }
+    }
     if (armedFault === 'lost' && answer.lost && answer.status < 300 && call.method === 'POST') {
       faultsSeen.lostCreate += 1;
     }
@@ -107,7 +121,7 @@ const scenario = (commands: ReadonlyArray<Command>) => {
     const retry = (fault: 'none' | FakeFault) =>
       Effect.gen(function* () {
         yield* settle;
-        const hasPending = (yield* pending.listAll()).length > 0;
+        const hasWritableOp = (yield* pending.listAll()).some((op) => op.conflictAt === undefined);
         // One write is refused or lands with its response lost. Reads are
         // unaffected; later retries go through the real request/queue code.
         let remaining = fault === 'none' ? 0 : 1;
@@ -124,7 +138,7 @@ const scenario = (commands: ReadonlyArray<Command>) => {
         yield* TestClock.adjust('31 minutes');
         yield* mutations.processPendingOps();
         yield* settle;
-        if (hasPending && fault !== 'none') {
+        if (hasWritableOp && fault !== 'none') {
           expect(remaining).toBe(0);
         }
       }).pipe(
@@ -193,7 +207,11 @@ const scenario = (commands: ReadonlyArray<Command>) => {
       expect(projected.sort((a, b) => a.id.localeCompare(b.id))).toEqual(
         [...expected.values()].sort((a, b) => a.id.localeCompare(b.id)),
       );
-      expect(ops.every((op) => op.conflictAt === undefined)).toBe(true);
+      // A later edit/delete can meet our own lost PATCH on an old etag.
+      // Only items whose writes actually landed unseen may be parked.
+      for (const op of ops.filter((entry) => entry.conflictAt !== undefined)) {
+        expect(lostWrites.has(op.eventId)).toBe(true);
+      }
       for (const row of rows.filter((event) => event.syncStatus === 'pending')) {
         expect(ops.some((op) => op.eventId === row.id)).toBe(true);
       }
@@ -231,9 +249,15 @@ const scenario = (commands: ReadonlyArray<Command>) => {
       yield* check;
     }
 
-    // Successful connectivity eventually drains the queue. A second
-    // drain/pull must be a no-op, rather than another insert or resurrection.
+    // With connectivity restored, choose the latest local intent for
+    // conflicts caused by our lost writes, as a user choosing Keep mine.
+    // Later drain/pull passes must not insert again or resurrect a delete.
     for (let pass = 0; pass < 3; pass += 1) {
+      yield* check;
+      const ops = yield* mutations.whileQueueHeld(pending.listAll());
+      for (const op of ops.filter((entry) => entry.conflictAt !== undefined)) {
+        yield* mutations.resolveConflict({ choice: 'mine', opId: op.id });
+      }
       yield* retry('none');
       yield* engine.syncAll();
     }
@@ -250,6 +274,21 @@ const scenario = (commands: ReadonlyArray<Command>) => {
     );
   }).pipe(Effect.provide(layerFor(google)), Effect.scoped);
 };
+
+it.effect.each(['edit', 'delete'] as const)(
+  'converges after a lost PATCH followed by another $0',
+  (kind) =>
+    scenario([
+      { fault: 'none', kind: 'retry' },
+      { index: 0, kind: 'edit', title: 'First edit' },
+      { fault: 'lost', kind: 'retry' },
+      kind === 'edit' ? { index: 0, kind, title: 'Second edit' } : { index: 0, kind },
+      { fault: 'none', kind: 'retry' },
+      // A parked conflict sends no write until a user resolves it.
+      { fault: 'lost', kind: 'retry' },
+      { fault: 'refused', kind: 'retry' },
+    ]),
+);
 
 it.effect.prop(
   'generated create/edit/delete/retry sequences preserve intent and converge without duplicate events',
