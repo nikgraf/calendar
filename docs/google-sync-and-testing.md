@@ -810,6 +810,29 @@ guest-side RSVP (needs a second account).
 
 ### Desktop e2e (`pnpm test:e2e`, apps/desktop/e2e/)
 
+The opt-in desktop property test runs with `pnpm test:bombadil` after
+`pnpm --filter @calendar/desktop build`. It attaches Bombadil 0.7.10 to
+the existing isolated Electron app over CDP for 45 seconds. It first
+changes an existing event's title and dates, cancels and reopens it to
+check the original fields. It then generates new-editor, date-change,
+cancel/reopen and repeated-Save actions (2, 5 or 10 immediate clicks).
+Each run must complete the existing-event cancellation and at least one
+date change and save; empty exploration cannot pass. The final SQLite
+check requires exactly one event per saved form, the requested dates and
+times, and the unchanged seed event, including records outside the visible
+week. Google writes remain queued in a profile without real tokens; native
+services and the model use the harness's off/fixture settings.
+
+`apps/desktop/e2e-artifacts/bombadil-<timestamp>/` retains the trace,
+screenshots, driver log and successful editor ledger. On failure the
+ordinary harness dump is retained too. Inspect a trace with
+`pnpm exec bombadil browser inspect <directory>`; replay it against a
+fresh isolated app with `BOMBADIL_REPRODUCE=<directory> pnpm test:bombadil`.
+Driver processes are stopped on the test's timeout or cancellation.
+Bombadil's replay and shrinking are best effort; preserve a concrete
+regression test for a discovered app bug. Ordinary `pnpm test:e2e` skips
+this bounded exploratory run, and the unit gate does not launch Electron.
+
 Raw CDP over Node's native WebSocket (no Playwright): the harness launches
 the built Electron app with `--remote-debugging-port=0` (Chromium binds a
 free port and prints it on stderr, `DevTools listening on ws://…`, which

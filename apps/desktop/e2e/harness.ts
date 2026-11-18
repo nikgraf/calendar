@@ -1081,6 +1081,8 @@ export interface App {
    * window is moved to the pane and its client reused.
    */
   readonly openSettings: (pane: SettingsPane) => Promise<Cdp>;
+  /** The isolated app's debugging endpoint, for external drivers such as Bombadil. */
+  readonly remoteDebugger: string;
   /**
    * Starts or ends a screen capture as the app sees one — needs
    * `captureWatch: 'fixture'` (captureHint.ts reads the marker file).
@@ -1611,6 +1613,7 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
         await sleep(50);
       }
     },
+    remoteDebugger: `http://127.0.0.1:${port}`,
     /** Screenshot + DOM (of each open window) + app log, for CI to upload when a test fails. */
     dump: async (label: string) => {
       const dir = join(import.meta.dirname, '..', 'e2e-artifacts');
