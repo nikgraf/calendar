@@ -97,7 +97,7 @@ sentences, dictation and capture from text or photo.
   and the Assistant's notice, Wi-Fi
   only unless mobile data is allowed; the Model Spike page measures with
   the same runtime, in both variants); the local Expo modules under `modules/`;
-  `expo-maps` draws the editor map.
+  `expo-maps` draws the editor and event detail maps.
 - `apps/web` — the website (solunivo.com): a static landing page and the
   privacy policy (rendered from the root `PRIVACY.md` at build time),
   Astro file-based pages with static React components and Tailwind on the

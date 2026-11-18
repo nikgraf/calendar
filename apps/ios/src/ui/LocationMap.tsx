@@ -6,8 +6,8 @@ import { actionText, type ThemeColors, useStyles } from './theme.ts';
 /**
  * expo-maps' Apple Maps view is SwiftUI Map. Its module throws at import on
  * a binary built without the native dependency (a dev client from before
- * this feature), so it is required lazily and a failure degrades to the
- * link, like loadGeoModule.
+ * this feature), so it is required lazily and a failure leaves the
+ * links available, like loadGeoModule.
  */
 const loadAppleMaps = (): typeof import('expo-maps').AppleMaps | undefined => {
   if (Platform.OS !== 'ios') {
@@ -46,8 +46,7 @@ export function LocationMap({
   }
   const directions = variant === 'detail' ? locationDirectionsUrls(location, mapGeo) : undefined;
   const coordinates = mapGeo ? { latitude: mapGeo.lat, longitude: mapGeo.lng } : undefined;
-  const mapUrl = directions?.apple ?? mapsUrl;
-  const open = () => mapUrl && void Linking.openURL(mapUrl);
+  const open = () => mapsUrl && void Linking.openURL(mapsUrl);
   return (
     <View style={[styles.container, variant === 'editor' && styles.editorInset]}>
       {AppleMaps && coordinates && mapGeo ? (
