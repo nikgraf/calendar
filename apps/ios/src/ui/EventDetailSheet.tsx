@@ -5,6 +5,7 @@ import {
   SCOPE_OPTIONS,
   useCurrentEvent,
   useEventEditorModel,
+  useEventPlace,
   useTimeZones,
 } from '@calendar/app-state';
 import {
@@ -20,6 +21,7 @@ import {
 import { useEffect, useEffectEvent, useState } from 'react';
 import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { confirmEditorRequest } from './EventEditSheet.tsx';
+import { LocationMap } from './LocationMap.tsx';
 import { actionText, BOX_FONT_SCALE, type ThemeColors, useEventTint, useStyles } from './theme.ts';
 import { ZoneLines } from './ZoneLines.tsx';
 
@@ -98,6 +100,7 @@ export function EventDetailSheet({
     timeZone,
   });
   const { secondary: secondaryZones } = useTimeZones();
+  const place = useEventPlace(event);
   const { canRsvp, error, isRecurring, joinUrl, readOnly, remove, respond, rsvp, scope, setScope } =
     model;
   const convertBlocked = isRecurring && !seriesConvertsAt(event, scope);
@@ -176,6 +179,7 @@ export function EventDetailSheet({
             <Text selectable style={styles.primaryLine}>
               {location}
             </Text>
+            <LocationMap place={place} variant="detail" />
           </View>
         ) : null}
         {attendees.length > 0 ? (
