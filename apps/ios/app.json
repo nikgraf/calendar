@@ -22,6 +22,7 @@
     },
     "ios": {
       "bundleIdentifier": "com.solunivo.app",
+      "deploymentTarget": "27.0",
       "supportsTablet": false,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,

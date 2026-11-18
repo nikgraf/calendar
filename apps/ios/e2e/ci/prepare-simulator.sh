@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Boot the newest available iPhone simulator, install the app and
+# Boot the iPhone 18 Pro simulator on the iOS of the selected Xcode's
+# simulator SDK, install the app and
 # pre-grant Reminders, Contacts and Calendars so no prompt appears (simctl
 # privacy is the supported way to answer TCC on a simulator), and quiet the
 # keyboard's predictions and apsd's log flood. Exports SIMULATOR_UDID for
@@ -20,16 +21,27 @@ set -euo pipefail
 
 # The dev variant (app.config.js): e2e always drives it.
 BUNDLE_ID="com.solunivo.app.dev"
+# The flows' iPhone, by name: Xcode 27 ships the iPhone Duo as a runtime of
+# its own (iOS-27-2-iPhone19-4, sorted after iOS-27-2), so "the newest
+# runtime's first iPhone" would have booted that.
+DEVICE="iPhone 18 Pro"
 
 boot() {
-  UDID=$(xcrun simctl list devices available -j | jq -r '
-    .devices | to_entries
-    | map(select(.key | test("iOS")))
-    | sort_by(.key) | last | .value
-    | map(select(.isAvailable and (.name | test("^iPhone"))))
+  # The runtime of the selected Xcode (CI pins it with DEVELOPER_DIR), so
+  # the simulator and the Xcode that runs Maestro's XCTest driver are of
+  # one release. A runtime's version may carry a patch (26.4.1 for the
+  # 26.4 SDK).
+  SDK=$(xcrun --sdk iphonesimulator --show-sdk-version)
+  UDID=$(jq -n -r --arg sdk "$SDK" --arg name "$DEVICE" \
+    --argjson runtimes "$(xcrun simctl list runtimes available -j)" \
+    --argjson devices "$(xcrun simctl list devices available -j)" '
+    [$runtimes.runtimes[]
+      | select(.platform == "iOS" and ((.version + ".") | startswith($sdk + ".")))
+      | .identifier] as $ids
+    | [$ids[] as $id | $devices.devices[$id][]? | select(.name == $name)]
     | .[0].udid // empty')
-  test -n "$UDID" || { echo "::error::no available iPhone simulator"; exit 1; }
-  echo "Simulator: $UDID"
+  test -n "$UDID" || { echo "::error::no available $DEVICE simulator on iOS $SDK"; exit 1; }
+  echo "Simulator: $DEVICE, iOS $SDK ($UDID)"
 
   # The application firewall sees the simulated app, not Simulator.app, and
   # drops its connections to a host dev server (timeouts, never refusals);

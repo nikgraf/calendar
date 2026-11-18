@@ -152,7 +152,9 @@ jobs:
     name: iOS e2e over the real API (Maestro)
     needs: [decide, live-node]
     if: ${{ !cancelled() && needs.decide.outputs.run == 'true' }}
-    runs-on: macos-26
+    # xcode-27 and Xcode 27.2, as in ci.yml's ios-e2e: iOS 27.2 on an
+    # iPhone 18 Pro.
+    runs-on: xcode-27
     # 27–35 min green (11–14 of them the live flows, which wait on Google);
     # the cap leaves room for run-flows.ts to run the permissions and the
     # live invocations once more each (up to 240 s of driver wait apiece).
@@ -162,6 +164,9 @@ jobs:
       EXPO_NO_TELEMETRY: 1
       # The dev variant, as in ci.yml's ios-e2e.
       APP_VARIANT: development
+      # As in ci.yml's ios-e2e: the image's default Xcode 27.1 has no
+      # iPhone 18 Pro on its runtime.
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
       # Pinned + checksum-verified below; keep in step with ci.yml.
       MAESTRO_VERSION: 2.12.0
       MAESTRO_SHA256: a6044a84542f522f434c5dc3d609e60c7446d423f3ed1b2ae513f5c48663ec5e

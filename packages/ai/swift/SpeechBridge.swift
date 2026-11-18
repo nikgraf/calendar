@@ -40,7 +40,6 @@ struct SpeechSegment: Sendable {
   var json: [String: Any] { ["alternatives": alternatives, "text": text] }
 }
 
-@available(iOS 26.0, macOS 26.0, *)
 enum SpeechAssets {
   /// The recogniser phrases are read with: also the one that listens as `accurate`.
   static func accurate(_ locale: Locale, live: Bool) -> SpeechTranscriber {
@@ -93,7 +92,6 @@ enum SpeechAssets {
 /// One phrase being listened to: the live recognisers, and the audio for
 /// the final reading. `append` may be called from any one thread at a
 /// time (the microphone's tap, the helper's stdin reader), in order.
-@available(iOS 26.0, macOS 26.0, *)
 final class SpeechListening: @unchecked Sendable {
   typealias Words = @Sendable (_ source: String, _ text: String) -> Void
 
@@ -298,7 +296,6 @@ private func joined(_ done: String, _ text: String) -> String {
 /// steps (`open`, `close`), so it follows the same order. A start closes
 /// it first, so a phrase it replaces cannot leave it on, even when the new
 /// one then fails to start.
-@available(iOS 26.0, macOS 26.0, *)
 final class SpeechSessions: @unchecked Sendable {
   static let shared = SpeechSessions()
 

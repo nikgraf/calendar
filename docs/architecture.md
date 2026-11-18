@@ -1954,7 +1954,7 @@ gateway carries all of it. Details, limits and the threat model:
   distance itself — and never a location permission. The bridge returns `places` beside
   `place`; a native side from before it answers one place. Desktop
   draws a static `MKMapSnapshotter` PNG (`mapSnapshot`); iOS a live
-  `expo-maps` view (iOS 17+, else only the Open in Maps link).
+  `expo-maps` view (without its module, only the Open in Maps link).
 - **Device settings and the settings document**: `device_settings` is a
   key/value table for preferences that never sync to Google
   (`birthdayReminders`, `birthdayReminderOverrides` — keyed through

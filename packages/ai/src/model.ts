@@ -16,22 +16,20 @@ export type ModelStatus =
   | 'ready'
   /** Present, but the system reports it unavailable for no reason it names — often temporary. */
   | 'unavailable'
-  /** This device or OS version cannot run the model at all. */
+  /** This device cannot run the model at all. */
   | 'unsupported';
 
 /**
  * Foundation Models' own reasons (`SystemLanguageModel.Availability
- * .UnavailableReason`), as both native hosts stringify them, plus
- * `osTooOld` from an iPhone below iOS 26 (the desktop helper needs macOS
- * 27 and never sends it) — one table for the desktop helper's `detail` and
- * the iOS availability module's `reason`. A reason a newer OS
- * adds is not here and stays 'unavailable', with its name kept for display.
+ * .UnavailableReason`), as both native hosts stringify them — one table for
+ * the desktop helper's `detail` and the iOS availability module's `reason`.
+ * A reason a newer OS adds is not here and stays 'unavailable', with its
+ * name kept for display.
  */
 export const APPLE_REASON_STATUS: ReadonlyMap<string, ModelStatus> = new Map<string, ModelStatus>([
   ['appleIntelligenceNotEnabled', 'disabled'],
   ['deviceNotEligible', 'unsupported'],
   ['modelNotReady', 'not-ready'],
-  ['osTooOld', 'unsupported'],
 ]);
 
 /**

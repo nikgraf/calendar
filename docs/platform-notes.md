@@ -265,16 +265,15 @@ in the `ios-simulator` skill (`.agents/skills/ios-simulator/SKILL.md`).
   (PR Preview's Load) and a launch without a scene (a background task's)
   record nothing.
 
-- **iOS 26 tab bar geometry** (NativeTabs, measured with `maestro
-  hierarchy` on iPhone SE 3, 17e, 17 Pro and 17 Pro Max): the bar is
-  83 pt tall and full width on every device; its items are 62 pt tall and
-  top-aligned; the Search circle sits 21 pt from the right edge
-  (`[319,791][381,853]` on the 402 × 874 pt 17 Pro). Taps in the gap
+- **Tab bar geometry** (NativeTabs, measured with `maestro hierarchy` on
+  iPhone SE 3, 17e, 17 Pro and 17 Pro Max on iOS 26.5, the same on the
+  18 Pro on iOS 27.2): the bar is 83 pt tall and full width on every
+  device; its items are 62 pt tall and top-aligned; the Search circle sits
+  21 pt from the right edge (`[319,791][381,853]` on the 402 × 874 pt
+  17 Pro and 18 Pro). Taps in the gap
   between the Calendar/Tasks pill and Search pass through to React Native
   views under the bar; anything else in the 83 pt band is under the bar
   and loses its taps (a banner at `bottom: 24` sent them to "Tasks").
-  Below iOS 26 the bar is a solid strip: gate pass-through placements on
-  `Platform.Version` ≥ 26 (`AddButton.tsx`).
 - **Safe areas inside a tab screen.** React Native's `SafeAreaView`
   inside a tab screen pads its bottom to the bar's top, so a zero-height
   last child lands exactly on the bar's top; absolute children of the
@@ -309,7 +308,6 @@ in the `ios-simulator` skill (`.agents/skills/ios-simulator/SKILL.md`).
   1e-9 pt), so pins are placed in JS (`packages/core/src/geo/placeMap.ts`).
 - **A street-level rect across 180° hangs** for 40–100 s, then fails with
   MKError 2. Never lay a map out across it (`placeMap.ts` draws none).
-- **expo-maps' `onMarkerClick` fires on iOS 18 and later only.**
 - **A search's region is a hint, not a filter**: "Cafe Meek" with a Vienna
   region returned a café 8,356 km away. A Mac with Location Services on
   biases results by its own location anyway, so the region mattered only

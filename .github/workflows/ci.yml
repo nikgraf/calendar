@@ -201,11 +201,13 @@ jobs:
   # takes seconds instead of the ~30 s a dev client needs to re-download
   # its bundle. Two shards, each on its own runner and simulator; the flows
   # do not depend on each other (shard-flows.mjs splits them).
+  # xcode-27 (GitHub's macOS 27 image, the only one with iOS 27
+  # simulators): iOS 27.2 on an iPhone 18 Pro, as local runs have it.
   ios-e2e-shards:
     name: iOS e2e shard ${{ matrix.shard }}/2
     needs: [gate, changes]
     if: needs.changes.outputs.ios == 'true'
-    runs-on: macos-26
+    runs-on: xcode-27
     # A green shard takes 25–34 min, about half of it setup. At 35 a slow
     # runner was cancelled two flows short of passing (run 37336020673),
     # throwing the whole run away; the cap is for hung jobs. It leaves room
@@ -224,6 +226,10 @@ jobs:
       # build it selects and the embedded bundle must all be computed for
       # the same variant.
       APP_VARIANT: development
+      # Xcode 27.2, not the image's default 27.1: its iOS 27.1 runtime holds
+      # only the iPhone Duo. prepare-simulator.sh boots the runtime of this
+      # Xcode's SDK, and Maestro's XCTest driver runs under it.
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
       # Pinned + checksum-verified below; bump both together.
       MAESTRO_VERSION: 2.12.0
       MAESTRO_SHA256: a6044a84542f522f434c5dc3d609e60c7446d423f3ed1b2ae513f5c48663ec5e

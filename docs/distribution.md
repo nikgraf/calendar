@@ -130,7 +130,9 @@ fingerprint (`npx expo-updates fingerprint:generate`) and compares it against
 the `runtime.version` of the latest finished main-channel build
 (`eas build:list`). With `runtimeVersion.policy: fingerprint` those are the
 same hash, so equality means an OTA update reaches every install of the
-latest build.
+latest build. The app needs iOS 27 or later (`ios.deploymentTarget` in
+`app.json`; the local modules' podspecs say the same, so their Swift has no
+OS availability checks), which the App Store and TestFlight enforce.
 
 - **Unchanged** (JS/TS/docs-only merges — most of them): publishes
   `eas update --branch main` in ~30s; installed TestFlight builds download

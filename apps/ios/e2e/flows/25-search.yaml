@@ -8,8 +8,9 @@ tags:
 # "Mock Tasks" (e2e/fixtures/google.ts). The flow creates its own event to
 # delete from the results, so it leaves the account as it found it.
 - runFlow: ../common/launch.yaml
-# The Search tab has the search role: iOS 26 draws it as its own circle
-# and, once it is open, shows its stack's search field in the tab bar.
+# The Search tab has the search role: iOS draws it as its own circle and,
+# once it is open, shows its stack's search field active, in the tab bar's
+# place.
 # Right after launch the tap can be lost like the header's (see
 # common/open-settings.yaml): re-tap while the tab's hint is missing.
 - retry:

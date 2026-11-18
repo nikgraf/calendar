@@ -129,7 +129,7 @@ real calendar:
    ```sh
    mkdir -p Probe.app
    xcrun swiftc -sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)" \
-     -target arm64-apple-ios26.0-simulator main.swift -o Probe.app/Probe
+     -target arm64-apple-ios27.0-simulator main.swift -o Probe.app/Probe
    ```
 
    (A "sysroot for macOS" clang warning is noise; `vtool -show-build

@@ -11,45 +11,42 @@ const AT = Date.UTC(2026, 0, 5, 12, 6, 34);
 
 describe('availabilityGuidance', () => {
   it('sends a disabled model to the Settings pane that switches it on', () => {
-    expect(availabilityGuidance({ status: 'disabled' }, '26.0')).toContain(
+    expect(availabilityGuidance({ status: 'disabled' })).toContain(
       'Settings → Apple Intelligence & Siri',
     );
   });
 
   it('does not claim a download for a model that is not ready', () => {
-    const text = availabilityGuidance({ status: 'not-ready' }, '26.0');
+    const text = availabilityGuidance({ status: 'not-ready' });
     expect(text).toContain('may still be downloading');
     expect(text).not.toMatch(/\bis downloading\b/);
   });
 
   it('names the limit an unsupported iPhone reported', () => {
-    expect(availabilityGuidance({ nativeReason: 'osTooOld', status: 'unsupported' }, '18.5')).toBe(
-      'Search sentences and capture need Apple Intelligence, and so does find a time until the Assistant’s model is here. Apple Intelligence needs iOS 26 or later; this iPhone runs iOS 18.5.',
-    );
     expect(
-      availabilityGuidance({ nativeReason: 'deviceNotEligible', status: 'unsupported' }, '26.0'),
+      availabilityGuidance({ nativeReason: 'deviceNotEligible', status: 'unsupported' }),
     ).toContain("this iPhone doesn't support");
   });
 
   it('blames the build when the module is missing', () => {
-    expect(availabilityGuidance({ status: 'missing-module' }, '26.0')).toContain(
+    expect(availabilityGuidance({ status: 'missing-module' })).toContain(
       "This build of Solunivo doesn't include",
     );
   });
 
   it('says when this build cannot read the reason, and when iOS gave none it knows', () => {
+    expect(availabilityGuidance({ reasonsUnavailable: true, status: 'unavailable' })).toContain(
+      "can't read why",
+    );
     expect(
-      availabilityGuidance({ reasonsUnavailable: true, status: 'unavailable' }, '26.0'),
-    ).toContain("can't read why");
-    expect(
-      availabilityGuidance({ nativeReason: 'regionNotSupported', status: 'unavailable' }, '26.0'),
+      availabilityGuidance({ nativeReason: 'regionNotSupported', status: 'unavailable' }),
     ).toContain('without a reason Solunivo recognizes');
   });
 
   it('words a failed check as a check that failed, whatever status it carries', () => {
-    expect(
-      availabilityGuidance({ checkError: 'timed out', status: 'unavailable' }, '26.0'),
-    ).toContain("couldn't find out");
+    expect(availabilityGuidance({ checkError: 'timed out', status: 'unavailable' })).toContain(
+      "couldn't find out",
+    );
   });
 });
 

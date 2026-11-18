@@ -1156,8 +1156,10 @@ Electron binary (`electron --version`) and run spec files sequentially.
   message, and that prefix once hid it), then delete the file and say in
   the PR that this stood in for a local run. It checks the spec's
   plumbing, not EventKit.
-- `ios-e2e-shards` (macos-26, two shards; the required check `ios-e2e`
-  passes when the shards passed or were skipped): Maestro against an
+- `ios-e2e-shards` (xcode-27 with Xcode 27.2 through `DEVELOPER_DIR`:
+  iOS 27.2 on an iPhone 18 Pro, which `prepare-simulator.sh boot` picks by
+  name on the selected Xcode's runtime; two shards; the required check
+  `ios-e2e` passes when the shards passed or were skipped): Maestro against an
   **EAS** build with the commit's JS embedded — no Metro, no dev
   launcher. `apps/ios/e2e/ci/fetch-eas-build.sh` looks up the
   `e2e-simulator` build for the commit's native fingerprint, requests one
@@ -1239,8 +1241,8 @@ Electron binary (`electron --version`) and run spec files sequentially.
   preview channel.
 - `google-live.yml` (nightly-if-changed, `workflow_dispatch`, the
   `google-live` PR label): `live-node` (ubuntu, `GOOGLE_LIVE=1`),
-  `live-desktop` (macos-15, the one spec) and `live-ios` (macos-26: the
-  dev client with Metro — the `development-simulator` profile fetched by
+  `live-desktop` (macos-15, the one spec) and `live-ios` (xcode-27 and
+  Xcode 27.2, as `ios-e2e-shards`: the dev client with Metro — the `development-simulator` profile fetched by
   fingerprint, the bootstrap flow — plus the sidecar's setup/teardown
   around the five flows). Its three Maestro invocations (bootstrap,
   permissions, live flows) go through `run-flows.ts` with the same 240 s
@@ -1558,7 +1560,7 @@ Selector gotchas (each caused a real failure):
   doing nothing).
 - System sheets: while one is up the app's elements leave the
   accessibility tree. The share sheet titles a file without its extension,
-  so key on its own "Save to Files"; iOS 26 gives it no Close, and a
+  so key on its own "Save to Files"; it has no Close, and a
   `swipe: DOWN` from the screen's centre starts above a medium-detent
   sheet, so swipe from inside it (`start: 50%, 62%`, `end: 50%, 97%`,
   flow 20). The document picker shows "Browse", "Recents" and "Cancel";

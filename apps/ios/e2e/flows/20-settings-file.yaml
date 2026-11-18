@@ -24,7 +24,7 @@ tags:
 - extendedWaitUntil:
     visible: 'Save to Files'
     timeout: 30000
-# No "Close" control on iOS 26: dragging the sheet down from inside it
+# The share sheet has no "Close" control: dragging it down from inside it
 # dismisses it (a swipe from the screen centre starts above the sheet).
 # The sheet gone is the proof, and a failed wait drags again, only while
 # the sheet is still up (on the page behind it a drag could close

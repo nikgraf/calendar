@@ -1,9 +1,9 @@
 # Solunivo
 
 A calendar for Google Calendar, Google Tasks, Apple Calendar and Apple
-Reminders: iOS (Expo) + macOS (Electron, macOS 27 or later), client-only, built on Effect
-v4. `AGENTS.md` has the architecture map, the commands
-and the rules; the deep docs are listed at its end.
+Reminders: iOS (Expo, iOS 27 or later) + macOS (Electron, macOS 27 or
+later), client-only, built on Effect v4. `AGENTS.md` has the architecture
+map, the commands and the rules; the deep docs are listed at its end.
 
 - Day/week/month views (plus 2 Days and an agenda on iOS) with 1:1 drag
   gestures, recurring-event editing (this/following/all), per-calendar

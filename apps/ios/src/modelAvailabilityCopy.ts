@@ -13,10 +13,7 @@ const NEEDS =
  * to do, and never more than iOS reported: 'not-ready' may be a download,
  * but iOS does not say so.
  */
-export const availabilityGuidance = (
-  availability: ModelAvailability,
-  iosVersion: string,
-): string => {
+export const availabilityGuidance = (availability: ModelAvailability): string => {
   if (availability.checkError !== undefined) {
     return "Solunivo couldn't find out from iOS whether Apple Intelligence can run. Check again in a moment.";
   }
@@ -34,11 +31,9 @@ export const availabilityGuidance = (
         'preparing, or be briefly unavailable. They work once iOS reports it ready.'
       );
     case 'unsupported':
-      return availability.nativeReason === 'osTooOld'
-        ? `${NEEDS}. Apple Intelligence needs iOS 26 or later; this iPhone runs iOS ${iosVersion}.`
-        : availability.nativeReason === 'deviceNotEligible'
-          ? `${NEEDS}, and this iPhone doesn't support it.`
-          : `iOS reports that this iPhone can't run Apple Intelligence. ${NEEDS}.`;
+      return availability.nativeReason === 'deviceNotEligible'
+        ? `${NEEDS}, and this iPhone doesn't support it.`
+        : `iOS reports that this iPhone can't run Apple Intelligence. ${NEEDS}.`;
     case 'missing-module':
       return "This build of Solunivo doesn't include Apple Intelligence support, so search sentences and capture can't read text in it, nor find a time until the Assistant’s model is here.";
     case 'unavailable':
