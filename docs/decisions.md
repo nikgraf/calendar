@@ -25,8 +25,8 @@ was cut (pruned 2026-11-17).
   and inert — update.electronjs.org serves public repos only), crash
   reporting off (privacy posture). The testing build embeds the RFC 8252
   desktop OAuth client from a secret-fed file.
-- **macOS 27 minimum** (2026-11-03, `todo/macos-27-minimum`; its iOS floor
-  note superseded by #350) — the desktop app needs macOS 27:
+- **macOS 27 minimum** (2026-11-03, `todo/macos-27-minimum`) — the
+  desktop app needs macOS 27:
   `LSMinimumSystemVersion` in the packaged Info.plist
   (Finder's own alert below it) and a helper built for 27 (`.macOS(.v27)`,
   swift-tools 6.4), so the helper's OS guards, weak links and `osTooOld`
@@ -34,7 +34,7 @@ was cut (pruned 2026-11-17).
   The helper-building jobs (e2e-reminders, package-smoke, testing-build)
   run on GitHub's `xcode-27` image (macOS 27, Xcode 27.1, a preview).
   Rejected: the plist key alone, which keeps a fallback no Mac can reach.
-  Open: the TCC seed on the new image; iOS keeps its floor.
+  Open: the TCC seed on the new image.
 - **iOS 27 minimum, CI on iOS 27** (2026-11-17, #350) — the iPhone app
   needs iOS 27 (`ios.deploymentTarget`, the local modules' podspecs), so
   the shared Swift bridges lose their OS guards and fallbacks on both
@@ -298,17 +298,14 @@ was cut (pruned 2026-11-17).
   could skip); model settings apply one change at a time. `shouldReEncrypt`
   blobs (never on macOS today) are written again. Open: a denied keychain
   prompt still reads as signed out (Electron asks once per run).
-- **Xcode 27 and Expo SDK 58** (2026-11-01, `todo/xcode-27`; its CI note
-  superseded by #350) — iOS 27 stops an app linked against its SDK at
-  launch unless it has the UIScene life
-  cycle, which SDK 57 lacks, so SDK 58 (React Native 0.88, React 19.3,
+- **Xcode 27 and Expo SDK 58** (2026-11-01, `todo/xcode-27`) — iOS 27
+  stops an app linked against its SDK at launch unless it has the UIScene
+  life cycle, which SDK 57 lacks, so SDK 58 (React Native 0.88, React 19.3,
   Gesture Handler 3, Reanimated 4.7) came now, redone on main after #241
   closed. Pans use the hook API (rejected: the deprecated builder); the
   fingerprint takes Expo's `balanced` preset, so a version bump alone needs
   a manual build. @expo/ui 58's menu takes a trigger's margin off its width:
-  triggers carry none. Local simulators run iOS 27.2; CI stays on
-  `macos-26`, iOS 26.5. Open: CI on Xcode 27; a device check of the
-  scene-less launch.
+  triggers carry none. Open: a device check of the scene-less launch.
 - **QR encoder** (2026-10-25, `todo/qr-library`) — the settings code's QR
   comes from paulmillr's `qr`, not `uqr`: actively maintained, no
   dependencies, and the same version at every code length (v1–v40, both
