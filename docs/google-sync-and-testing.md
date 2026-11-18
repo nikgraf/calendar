@@ -811,7 +811,10 @@ guest-side RSVP (needs a second account).
 ### Desktop e2e (`pnpm test:e2e`, apps/desktop/e2e/)
 
 Raw CDP over Node's native WebSocket (no Playwright): the harness launches
-the built Electron app with `--remote-debugging-port` and an isolated
+the built Electron app with `--remote-debugging-port=0` (Chromium binds a
+free port and prints it on stderr, `DevTools listening on ws://…`, which
+`launchApp` reads; a port picked at random once belonged to another spec's
+app, still running, and the spec drove that app) and an isolated
 `CALENDAR_USERDATA` profile, seeds SQLite through the app's own
 migrations/repos, drives real input events, and asserts against both the
 DOM and the database. Specs run with `retry: 1`, share one app instance
@@ -1258,7 +1261,10 @@ matches one of these):
 
 - **Rerun only what failed, once the run has ended**: `gh run rerun <run>
   --failed` (GitHub refuses it, and `--job`, while any job of the run is
-  still going). "iOS e2e (Maestro, real Reminders)" only reports the
+  still going). A token without Actions write gets "Resource not
+  accessible by personal access token": ask Nik to rerun it from the
+  run's page, since a push reruns every job. "iOS e2e (Maestro, real
+  Reminders)" only reports the
   shards' result and fails within seconds whenever one did: read the
   shard. macOS minutes bill at ten times Linux's and are limited, so
   reproduce first and batch fixes per push.
@@ -1334,13 +1340,6 @@ matches one of these):
   the retry then fails `expected 'Solunivo ci event' to be 'Solunivo ci
   event edited'`: the view never repainted after the helper's
   `EKEventStoreChanged`. Open; rerun. Hardening belongs in that repaint.
-- **Two desktop apps on one CDP port**: `launchApp` picks
-  `--remote-debugging-port` at random in 9333–9832, so an app launched
-  while another lives can get its port and the spec drives the wrong app:
-  the dump's screenshot shows another spec's seed, or both halves of
-  `onboarding`'s on/off pair (launched with `Promise.all`) fail in ~1.5 s.
-  The retry reuses `beforeAll`'s apps, so it cannot clear it. Rerun the
-  job; the fix is port 0 and reading the real port back.
 - **A reopened task shows its old due date** (`flows` › "takes a due day
   away again"; the database and the queued op already say `due: null`):
   the rail keeps its previous list while it refetches, and the editor

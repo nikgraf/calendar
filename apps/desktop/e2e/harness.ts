@@ -1098,6 +1098,40 @@ export interface App {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * The port Chromium bound for `--remote-debugging-port=0`, read from the
+ * line it prints on stderr: "DevTools listening on ws://127.0.0.1:<port>/…".
+ * Gives up when the app exits first, or after Cdp.connect's minute.
+ */
+const devToolsPort = (child: ChildProcess): Promise<number> =>
+  new Promise((resolve, reject) => {
+    let seen = '';
+    const done = () => {
+      clearTimeout(timer);
+      child.stderr?.off('data', read);
+      child.off('exit', exited);
+    };
+    const read = (chunk: Buffer) => {
+      // A chunk may end mid-line, so the match runs on everything so far.
+      seen += chunk.toString();
+      const port = /DevTools listening on ws:\/\/[^/]+:(\d+)\//.exec(seen)?.[1];
+      if (port) {
+        done();
+        resolve(Number(port));
+      }
+    };
+    const exited = (code: number | null) => {
+      done();
+      reject(new Error(`app exited (${String(code)}) before DevTools listened`));
+    };
+    const timer = setTimeout(() => {
+      done();
+      reject(new Error('DevTools never named its port'));
+    }, 60_000);
+    child.stderr?.on('data', read);
+    child.once('exit', exited);
+  });
+
 /** A fake device address book the app loads instead of the helper (no TCC, no real data). */
 export interface ContactsFixture {
   readonly birthdays?: ReadonlyArray<DeviceBirthdayJson>;
@@ -1453,7 +1487,9 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
 
   const electronPath = require('electron') as unknown as string;
   const appDir = join(import.meta.dirname, '..');
-  const port = 9333 + Math.floor(Math.random() * 500);
+  // Port 0: Chromium binds a free port and names it on stderr
+  // (devToolsPort). A port picked here at random could belong to another
+  // spec's app, still running, and the spec drove that one.
   // Chromium's mock keychain keeps safeStorage off the login keychain: a
   // run never reads a developer's "Electron Safe Storage" key, and a new
   // Electron binary never stops a run on macOS's keychain access dialog
@@ -1461,7 +1497,7 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
   // until the dialog was answered).
   const child: ChildProcess = spawn(
     electronPath,
-    [appDir, `--remote-debugging-port=${port}`, '--use-mock-keychain'],
+    [appDir, '--remote-debugging-port=0', '--use-mock-keychain'],
     {
       env: {
         ...process.env,
@@ -1519,9 +1555,12 @@ export const launchApp = async (seed?: SeedData, options: LaunchOptions = {}): P
   };
   child.stdout?.on('data', record('out'));
   child.stderr?.on('data', record('err'));
+  const announced = devToolsPort(child);
 
+  let port: number;
   let cdp: Cdp;
   try {
+    port = await announced;
     cdp = await Cdp.connect(port);
     // Wait for the calendar shell to render.
     await cdp.waitUntil(() => document.body.textContent.includes('Today'));
