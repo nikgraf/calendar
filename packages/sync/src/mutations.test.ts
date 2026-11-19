@@ -289,7 +289,9 @@ describe('EventMutations', () => {
         scope: 'following',
       });
       const queued = yield* (yield* PendingOpRepo).listAll();
-      expect(queued.findIndex((op) => op.kind === 'update')).toBeLessThan(
+      const updateIndex = queued.findIndex((op) => op.kind === 'update');
+      expect(updateIndex).toBeGreaterThanOrEqual(0);
+      expect(updateIndex).toBeLessThan(
         queued.findIndex((op) => op.kind === 'create' && op.eventId === created.id),
       );
       yield* mutations.processPendingOps();

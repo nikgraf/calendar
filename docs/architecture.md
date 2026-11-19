@@ -1231,10 +1231,11 @@ details, or Custom), so a calendar can be shared without the details.
     holds nor takes it. A
     split of a series whose create is unsent folds the cut into that
     create, which nothing undoes without the series: it names what that
-    one was split from, at the same occurrence, or nothing. Folding
-    re-enqueues the create, so occurrence edits wait for any queued create
-    of their master in that calendar, even one now behind them in queue
-    order. Whether the
+    one was split from, at the same occurrence, or nothing. Folding keeps
+    the create's timestamp but re-enqueues it behind rows sharing that
+    timestamp (a move gives the whole series one). Occurrence edits wait
+    for any queued create of their master in that calendar, regardless of
+    queue order. Whether the
     cut was undone, Google says — a discard may meet its request on the
     way or landed with the answer lost, a rejection's revert may fail,
     another device may have ended the series. After an undo (a discard or

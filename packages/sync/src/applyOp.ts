@@ -2054,9 +2054,10 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         return retry('waiting for the move ahead of it');
       }
       if (op.kind !== 'create') {
-        // Editing or splitting an unsent series folds its changes into
-        // the create, which is re-enqueued after its occurrence edits.
-        // Those edits still need the series to exist on Google first.
+        // Folding an edit into an unsent create keeps its createdAt but
+        // gives it a new rowid, behind occurrence edits with the same
+        // timestamp (a move gives the whole series one). Those edits
+        // still need the series to exist on Google first.
         const series = yield* pendingOpRepo.listForEvent({
           accountId: op.accountId,
           calendarId: op.calendarId,
