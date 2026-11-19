@@ -416,6 +416,14 @@ was cut (pruned 2026-11-17).
   (Google draws it even on a day the rule skips, outside COUNT — probed
   live). Long COUNT series were measured and left alone; revisit only if
   a profile shows expansion in a window read.
+- **Off-rule following edits** (2026-11-19, #365; found reviewing #359) —
+  refuse “This and following” from an extra date outside any RRULE,
+  even when the edit replaces or clears Repeat; suggest “This event” or
+  “All events”. Regular rule occurrences and sets of only explicit dates
+  still split. Chose the backlog's refusal option over reanchoring a rule
+  and silently changing its phase, or enumerating a bounded future into
+  explicit dates. Even safe BYDAY extras are refused conservatively;
+  preserving arbitrary recurrence phase at an off-rule start stays open.
 - **A master edit reaches the exceptions** (2026-09-26, review of
   #88/#90) — Google copies a master's _changed_ title, description or
   location onto every exception, so the app mirrors that at save as a

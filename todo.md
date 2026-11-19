@@ -11,15 +11,6 @@ was written; re-verify before starting one.
 The 2026-10-02 review's findings are closed in `docs/decisions.md`
 (Review fixes, #110–#142).
 
-- [ ] Preserve recurrence phase when splitting at an RDATE-only occurrence
-      (`remainingRecurrence`, found reviewing #359). A daily interval-2,
-      COUNT-5 series starting 2026-07-06 09:00 UTC plus an RDATE on July 7
-      expands on July 6, 7, 8, 10, 12, 14. Splitting on July 7 currently
-      restarts COUNT=4 from that date, producing July 7, 9, 11, 13. Weekly
-      rules without BYDAY and extras at a different wall time have the
-      same phase issue. Preserve the rule's schedule and remaining COUNT,
-      or explicitly disallow this split; cover timed and all-day series.
-
 - [ ] File an Expo issue (worked around here; not filed yet): under SDK
       58's scene life cycle a background launch that connects no scene
       starts no React Native, so expo-task-manager tasks
