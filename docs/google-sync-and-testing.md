@@ -1070,6 +1070,10 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   the previous run's exit. A "(retry x1)" failure lists both attempts and
   the first may be listed second: read every error, and check whether
   attempt 1 changed the state the retry then failed on.
+- **Each Assistant view test owns its seeded profile.** A retry after
+  Save must open the original event again, not the time the failed
+  attempt already stored. Resetting only the panel or today's week does
+  not undo a write. Capture diagnostics before closing the failed app.
 - **Never read editor state off `body.textContent`**: the sync footer's
   pending-op labels hold strings like "Edit task". Locate by testid.
 - **Seed order is not what a spec expects.** Capture drafts come in date

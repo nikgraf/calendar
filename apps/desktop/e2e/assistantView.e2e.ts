@@ -10,7 +10,7 @@ import {
   TaskRecord,
   Temporal,
 } from '@calendar/core';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test';
+import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test';
 import { type App, launchApp, readEvents, readPendingOps, readTasks } from './harness.ts';
 import type { PageKit } from './page.ts';
 
@@ -215,29 +215,23 @@ type Watched = typeof window & {
 
 describe('The editor’s Assistant and Form views', () => {
   let app: App;
-  beforeAll(async () => {
-    app = await launchApp(seed, { env: { TZ }, geo, model: 'fixture' });
-  }, 60_000);
-  afterAll(async () => {
-    await app.stop();
-  });
   beforeEach(async () => {
-    // Each test starts on today's week, whatever the one before it showed:
-    // a draft's day is put on show and stays there once the editor closes,
-    // saved or not, and on a Sunday an earlier test's `+1` is next week,
-    // where none of today's seeded items are on show. The hook outlasts
-    // `locate`'s own wait, so a Today it cannot click fails in `locate`,
-    // not as a bare hook timeout.
-    await app.cdp.clickTestId('today');
-  }, 20_000);
-  afterEach(async () => {
-    // A failure above must not strand an editor for the next test.
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      if (!(await app.cdp.evaluate(exists, 'editor'))) {
-        return;
+    // A failed attempt may already have saved an event or dated a task.
+    // Give every test and retry its own seeded profile, at CI's width.
+    app = await launchApp(seed, {
+      env: { TZ },
+      geo,
+      model: 'fixture',
+      window: { height: 768, width: 1024 },
+    });
+  }, 60_000);
+  afterEach(async (context) => {
+    try {
+      if (context.task.result?.state === 'fail') {
+        await app?.dump(context.task.name);
       }
-      await app.cdp.escapeOrDiscard();
-      await sleep(150);
+    } finally {
+      await app?.stop();
     }
   });
 
