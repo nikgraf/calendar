@@ -83,7 +83,9 @@ export const availabilityOfReply = (reply: unknown): ModelAvailability => {
 /** What the check reads; a binary can lack either. */
 export interface AvailabilitySources {
   /** The package's model info: there whenever generation is. */
-  readonly ai: { readonly getModelInfo: () => Promise<unknown> } | undefined;
+  readonly ai:
+    | { readonly getModelInfo: (locale?: string, model?: string) => Promise<unknown> }
+    | undefined;
   /** The local availability module: there from the build that added it. */
   readonly bridge: { readonly check: () => Promise<unknown> } | undefined;
 }
@@ -91,8 +93,9 @@ export interface AvailabilitySources {
 /**
  * Whether the model can run and why not, for `status` and `availability`
  * alike. Generation needs the package, so without it nothing else matters.
- * The reason comes from the availability module; a binary built before it
- * falls back to the package's model info, which also names the reason.
+ * The local availability module supplies the reason when it loads;
+ * otherwise the package's model info supplies it. A stale dev client
+ * without either current API reports a failed check.
  */
 export const checkAvailability = async ({
   ai,
@@ -104,7 +107,9 @@ export const checkAvailability = async ({
   if (!bridge) {
     try {
       const info = await withTimeout(
-        ai.getModelInfo(),
+        // Native promise callbacks follow these two argument slots, even
+        // when neither optional string is provided.
+        ai.getModelInfo(undefined, undefined),
         AVAILABILITY_TIMEOUT_MS,
         `iOS did not answer within ${String(AVAILABILITY_TIMEOUT_MS / 1000)} s.`,
       );

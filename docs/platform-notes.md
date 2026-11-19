@@ -361,7 +361,10 @@ in the `ios-simulator` skill (`.agents/skills/ios-simulator/SKILL.md`).
 
 - **`@react-native-ai/apple` 0.13 changed the native model API.**
   `getModelInfo()` replaces `isAvailable()` and answers asynchronously
-  with an `availability` string. `generateText()` returns `{ content,
+  with an `availability` string. Call the native method with both optional
+  arguments (`undefined, undefined` for the defaults): React Native puts
+  its promise callbacks after the arguments actually passed.
+  `generateText()` returns `{ content,
   usage }`, with text, reasoning and tool parts inside `content`;
   `appleModel.ts` joins only the text parts before parsing JSON.
 - **The Mac's and the iPhone's Apple models differ.** At temperature 0 a

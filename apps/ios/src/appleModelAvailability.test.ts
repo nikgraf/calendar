@@ -70,6 +70,16 @@ describe('checkAvailability', () => {
     });
   });
 
+  it('keeps both native argument slots before the promise callbacks', async () => {
+    const getModelInfo = vi.fn(async () => ({ availability: 'available' }));
+    await expect(checkAvailability({ ai: { getModelInfo }, bridge: undefined })).resolves.toEqual({
+      status: 'ready',
+    });
+    // React Native positions the native resolve/reject callbacks after the
+    // actual JS arguments, including these two optional strings.
+    expect(getModelInfo).toHaveBeenCalledExactlyOnceWith(undefined, undefined);
+  });
+
   it('reports model info that rejects as a failed check', async () => {
     await expect(
       checkAvailability({
