@@ -1,7 +1,16 @@
 import { type EventPlace } from '@calendar/app-state';
 import { isMappableLocation, locationDirectionsUrls } from '@calendar/core';
-import { Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
-import { actionText, type ThemeColors, useStyles } from './theme.ts';
+import { SymbolView } from 'expo-symbols';
+import {
+  Linking,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from 'react-native';
+import { actionText, type ThemeColors, useStyles, useTheme } from './theme.ts';
 
 /**
  * expo-maps' Apple Maps view is SwiftUI Map. Its module throws at import on
@@ -37,6 +46,8 @@ export function LocationMap({
   variant?: 'editor' | 'detail';
 }) {
   const styles = useStyles(makeStyles);
+  const { colors } = useTheme();
+  const { fontScale } = useWindowDimensions();
   const { location, mapGeo, mapLoading, mapsUrl } = place;
   if (!isMappableLocation(location)) {
     return null;
@@ -78,23 +89,40 @@ export function LocationMap({
         </View>
       ) : null}
       {directions ? (
-        <View style={styles.directions}>
-          <Pressable
-            accessibilityRole="link"
-            onPress={() => void Linking.openURL(directions.apple)}
-            style={styles.directionLink}
-            testID="apple-maps-directions"
-          >
-            <Text style={styles.link}>Apple Maps directions</Text>
-          </Pressable>
-          <Pressable
-            accessibilityRole="link"
-            onPress={() => void Linking.openURL(directions.google)}
-            style={styles.directionLink}
-            testID="google-maps-directions"
-          >
-            <Text style={styles.link}>Google Maps directions</Text>
-          </Pressable>
+        <View style={styles.directionGroup}>
+          <Text accessibilityElementsHidden style={styles.directionCaption}>
+            Get directions
+          </Text>
+          <View style={styles.directions}>
+            {(
+              [
+                { id: 'apple', label: 'Apple Maps', url: directions.apple },
+                { id: 'google', label: 'Google Maps', url: directions.google },
+              ] as const
+            ).map(({ id, label, url }) => (
+              <Pressable
+                accessibilityLabel={`Get directions in ${label}`}
+                accessibilityRole="link"
+                key={id}
+                onPress={() => void Linking.openURL(url)}
+                style={({ pressed }) => [
+                  styles.directionButton,
+                  { flexBasis: 140 * fontScale },
+                  pressed && styles.directionPressed,
+                ]}
+                testID={`${id}-maps-directions`}
+              >
+                <Text style={styles.directionLabel}>{label}</Text>
+                <SymbolView
+                  accessible={false}
+                  name="arrow.up.right"
+                  size={13 * fontScale}
+                  tintColor={colors.text}
+                  weight="semibold"
+                />
+              </Pressable>
+            ))}
+          </View>
         </View>
       ) : mapsUrl ? (
         <Pressable accessibilityRole="link" hitSlop={8} onPress={open} testID="open-in-maps">
@@ -111,14 +139,41 @@ const makeStyles = (colors: ThemeColors) =>
       gap: 6,
       marginTop: 8,
     },
-    directionLink: {
+    directionButton: {
+      alignItems: 'center',
+      backgroundColor: colors.fill,
+      borderRadius: 999,
+      flexDirection: 'row',
+      flexGrow: 1,
+      gap: 8,
       justifyContent: 'center',
-      minHeight: 44,
+      maxWidth: '100%',
+      minHeight: 48,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+    },
+    directionCaption: {
+      color: colors['text-secondary'],
+      fontSize: 13,
+    },
+    directionGroup: {
+      gap: 8,
+      marginTop: 6,
+    },
+    directionLabel: {
+      color: colors.text,
+      flexShrink: 1,
+      fontSize: 15,
+      fontWeight: '600',
+      textAlign: 'center',
+    },
+    directionPressed: {
+      opacity: 0.7,
     },
     directions: {
-      columnGap: 16,
       flexDirection: 'row',
       flexWrap: 'wrap',
+      gap: 8,
     },
     // Align the editor's map with the location card above it.
     editorInset: {

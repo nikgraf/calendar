@@ -844,7 +844,7 @@ guest-side RSVP (needs a second account).
 
 ### Desktop e2e (`pnpm test:e2e`, apps/desktop/e2e/)
 
-The opt-in desktop property test runs with `pnpm test:bombadil` after
+The desktop property test runs with `pnpm test:bombadil` after
 `pnpm --filter @calendar/desktop build`. It attaches Bombadil 0.7.10 to
 the existing isolated Electron app over CDP for 45 seconds. It first
 changes an existing event's title and dates, cancels and reopens it to
@@ -866,6 +866,14 @@ Driver processes are stopped on the test's timeout or cancellation.
 Bombadil's replay and shrinking are best effort; preserve a concrete
 regression test for a discovered app bug. Ordinary `pnpm test:e2e` skips
 this bounded exploratory run, and the unit gate does not launch Electron.
+CI runs it as a separate step after the standard CDP suite in the existing
+desktop job, reusing its Electron download and built app. Each exploration
+is bounded to 45 seconds; the step has a four-minute timeout and no retry.
+The job fails on a property violation or persistence mismatch. The
+`bombadil-traces-<attempt>` artifact retains traces and ledgers for seven
+days on passing and failing runs; failed harness dumps also remain in the
+ordinary e2e diagnostics. Docs-only and iOS-only changes keep the existing
+desktop-job skip behavior.
 
 Raw CDP over Node's native WebSocket (no Playwright): the harness launches
 the built Electron app with `--remote-debugging-port=0` (Chromium binds a
@@ -1070,6 +1078,12 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   the previous run's exit. A "(retry x1)" failure lists both attempts and
   the first may be listed second: read every error, and check whether
   attempt 1 changed the state the retry then failed on.
+- **Each Assistant view test owns its seeded profile.** A retry after
+  Save must open the original event again, not the time the failed
+  attempt already stored. Resetting only the panel or today's week does
+  not undo a write. Bound diagnostic capture so a stalled renderer cannot
+  prevent teardown; put the retry number before the name so the harness's
+  filename truncation keeps it.
 - **Never read editor state off `body.textContent`**: the sync footer's
   pending-op labels hold strings like "Edit task". Locate by testid.
 - **Seed order is not what a spec expects.** Capture drafts come in date
@@ -1098,8 +1112,8 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   `today` first.** The grid shows the focused draft's day and stays there
   once the editor closes, saved or not, so on a Sunday a draft on `+1`
   leaves it on next week, where nothing seeded for today is on show.
-  `assistantView.e2e.ts` clicks it before each test, since its tests
-  draft on `+1` and open today's seeds in turn.
+  This applies when tests share an app; Assistant view tests instead
+  start a fresh seeded app for every attempt.
 - **Teardown**: await the Electron process `exit` (with timeout) before
   deleting the temp profile, and `rmSync` with retries.
 - **Fire-and-forget UI mutations can silently drop**: poll for the effect
@@ -1187,7 +1201,9 @@ Electron binary (`electron --version`) and run spec files sequentially.
 
 - `gate` (ubuntu, reusable `gate.yml`, also called by `ios.yml`): check +
   knip + typecheck + unit tests. The check is "Gate / Lint, typecheck, unit tests".
-- `e2e` (macos-15): desktop build → `pnpm test:e2e`.
+- `e2e` (macos-15): desktop build → `pnpm test:e2e` →
+  `pnpm test:bombadil` (four-minute step; traces retained for seven days
+  on passing and failing runs).
 - `e2e-reminders` (xcode-27, GitHub's macOS 27 image: the helper is built
   for macOS 27 and runs only there): the **real** EventKit path on the
   desktop. Builds the helper, seeds the runner's per-user TCC database

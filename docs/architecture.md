@@ -1231,7 +1231,11 @@ details, or Custom), so a calendar can be shared without the details.
     holds nor takes it. A
     split of a series whose create is unsent folds the cut into that
     create, which nothing undoes without the series: it names what that
-    one was split from, at the same occurrence, or nothing. Whether the
+    one was split from, at the same occurrence, or nothing. Folding keeps
+    the create's timestamp but re-enqueues it behind rows sharing that
+    timestamp (a move gives the whole series one). Occurrence edits wait
+    for any queued create of their master in that calendar, regardless of
+    queue order. Whether the
     cut was undone, Google says — a discard may meet its request on the
     way or landed with the answer lost, a rejection's revert may fail,
     another device may have ended the series. After an undo (a discard or
@@ -1968,9 +1972,10 @@ gateway carries all of it. Details, limits and the threat model:
   distance itself — and never a location permission. The bridge returns `places` beside
   `place`; a native side from before it answers one place. Desktop
   draws a static `MKMapSnapshotter` PNG (`mapSnapshot`); iOS a live
-  `expo-maps` view (without its module, only the links). The iOS event
-  detail shows the map below its address and offers Apple Maps and Google
-  Maps directions (`locationDirectionsUrls`). These HTTPS links use
+  `expo-maps` view (without its module, only the links). Both apps' event
+  details show the map below its address, then a Get directions group
+  with filled Apple Maps and Google Maps buttons (`locationDirectionsUrls`).
+  These HTTPS links use
   matching coordinates when known and the address text otherwise, so
   directions remain available while geocoding is pending or fails. The
   Maps app chooses the origin and travel mode; no location permission is
