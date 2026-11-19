@@ -826,6 +826,8 @@ guest-side RSVP (needs a second account).
   go through `type-event-title.yaml`: it checks the exact field value and
   clears and retypes garbled XCTest input before Save or the other device's
   patch (run 44451283392 dropped the `i` in `live-…`).
+  Task titles use the same exact-value check in 04, erasing from the end
+  of the typed input on a retry because that field has no clear button.
   `conflict-round.yaml` retries a round whose banner a poll defused, with
   fresh titles (the same ones again change nothing on either side, so no
   412 can follow). A task chip's check reads "Complete <title>" or
