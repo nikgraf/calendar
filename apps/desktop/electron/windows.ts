@@ -33,7 +33,19 @@ export const isOwnPage = (url: string): boolean => {
   return url.startsWith(`${rendererOrigin}/`);
 };
 
+/**
+ * The e2e harness's windows take input from CDP only (`CALENDAR_E2E_INPUT=cdp`):
+ * they show without activating the app and keep the OS mouse out, so a key
+ * typed or a trackpad touched during a local run goes to whatever the
+ * developer is using, not to the test. CDP input enters below the window,
+ * at the page itself, and still arrives; the harness emulates page focus.
+ */
+const cdpInputOnly = process.env['CALENDAR_E2E_INPUT'] === 'cdp';
+
 const webPreferences = {
+  // Hidden test windows must draw their initial document before the
+  // harness can attach and emulate focus. Keep normal windows throttled.
+  backgroundThrottling: !cdpInputOnly,
   contextIsolation: true,
   nodeIntegration: false,
   preload: join(rootPath, 'dist-electron/preload.cjs'),
@@ -75,15 +87,6 @@ const windowSize = (): { readonly height: number; readonly width: number } => {
     ? { height: Number(match[2]), width: Number(match[1]) }
     : { height: 800, width: 1280 };
 };
-
-/**
- * The e2e harness's windows take input from CDP only (`CALENDAR_E2E_INPUT=cdp`):
- * they show without activating the app and keep the OS mouse out, so a key
- * typed or a trackpad touched during a local run goes to whatever the
- * developer is using, not to the test. CDP input enters below the window,
- * at the page itself, and still arrives; the harness emulates page focus.
- */
-const cdpInputOnly = process.env['CALENDAR_E2E_INPUT'] === 'cdp';
 
 /**
  * Keeps the OS mouse out of an e2e window. Ignoring mouse events passes

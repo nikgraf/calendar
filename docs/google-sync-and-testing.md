@@ -857,6 +857,25 @@ times, and the unchanged seed event, including records outside the visible
 week. Google writes remain queued in a profile without real tokens; native
 services and the model use the harness's off/fixture settings.
 
+The same command also runs `bombadilTasks.e2e.ts` for 45 seconds in a
+separate profile. It exercises Google Tasks and the isolated Reminders
+fixture: Event/Task/Reminder switches must retain title, due date and
+notes; cancelling an existing task conversion or reminder edit must keep
+the originals; cancelling a new draft must reopen empty. The prefix
+requires a cancellation, a kind round trip, a future date, and a saved
+item in each provider before random exploration. Synchronous Save bursts
+must leave exactly one task per ledger entry, with the right provider,
+list and fields, and no abandoned intermediate event in SQLite. These
+actions never use the Mac's real Reminders database. Task traces and
+ledgers use `bombadil-tasks-<timestamp>/`; replay one with
+`BOMBADIL_TASK_REPRODUCE=<directory> pnpm test:bombadil`.
+
+For a first local run, prefetch Electron with
+`pnpm --filter @calendar/desktop exec electron --version` before starting
+the timed tests; a slow binary download otherwise consumes their timeout.
+`caffeinate -di pnpm test:bombadil` keeps a local Mac and its display awake
+for the run. The fixture-backed task scenario needs no Swift helper.
+
 `apps/desktop/e2e-artifacts/bombadil-<timestamp>/` retains the trace,
 screenshots, driver log and successful editor ledger. On failure the
 ordinary harness dump is retained too. Inspect a trace with
@@ -1045,7 +1064,10 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   count on the sync kick or the settings-file check it runs.
 - **A window behind another one renders nothing** without that
   emulation: `cdp.waitUntilRendered` still draws a frame (a screenshot)
-  before each try.
+  before each try. CDP-only test windows also disable Electron's background
+  throttling before navigation, so a hidden window draws its initial
+  document before the harness can attach and emulate focus. Normal app
+  windows retain Electron's default throttling.
 - **Motion specs ask for motion first.** CI's macOS runner reports
   `prefers-reduced-motion: reduce`, so a spec that checks a transition
   sees the reduced path there and fails while it passes locally. Emulate
