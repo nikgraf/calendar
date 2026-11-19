@@ -2291,11 +2291,15 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         yield* taskRepo.replaceParent(op.accountId, op.eventId, task.id);
         const record = mapGcalTask(task, { accountId: op.accountId, taskListId });
         if (record) {
-          return yield* settleCreatedTask(op, taskListId, task.id, show(record));
+          yield* settleCreatedTask(op, taskListId, task.id, show(record));
+        } else {
+          // Unreachable in practice (a task Google just made is never a
+          // tombstone) — keep the row addressable under the server id.
+          yield* taskRepo.replaceId(op.accountId, taskListId, op.eventId, task.id);
         }
-        // Unreachable in practice (a task Google just made is never a
-        // tombstone) — keep the row addressable under the server id.
-        yield* taskRepo.replaceId(op.accountId, taskListId, op.eventId, task.id);
+        // Publish before the transaction's task invalidation reaches an open
+        // detail. If commit fails, getTask still prefers the restored temp row.
+        yield* taskRepo.rememberCreatedId(op.accountId, taskListId, op.eventId, task.id);
       }),
     );
 

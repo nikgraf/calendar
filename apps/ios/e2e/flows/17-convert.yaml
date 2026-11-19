@@ -104,6 +104,7 @@ tags:
       # Reminder → event: the toggle carries the title and time over and
       # nothing is lost, so Save asks no question.
       - tapOn: 'Solunivo e2e convert, due .*'
+      - runFlow: ../common/open-task-editor.yaml
       - assertVisible: 'Edit Reminder'
       - tapOn:
           id: 'mode-event'
@@ -135,6 +136,7 @@ tags:
           visible: 'Solunivo e2e convert, due .*'
           timeout: 10000
       - tapOn: 'Solunivo e2e convert, due .*'
+      - runFlow: ../common/open-task-editor.yaml
       - assertVisible: 'Edit Reminder'
 
       # Reminder → task: the Task kind flips to the Task form on the
@@ -158,6 +160,7 @@ tags:
       # It reopens as a Google task — the create has pushed to the fake
       # by now, so the chip's id is the server's.
       - tapOn: 'Solunivo e2e convert'
+      - runFlow: ../common/open-task-editor.yaml
       - assertVisible: 'Edit Task'
 
       # Google task → reminder: nothing is lost, so no question.
@@ -173,6 +176,7 @@ tags:
           visible: 'Solunivo e2e convert'
           timeout: 10000
       - tapOn: 'Solunivo e2e convert'
+      - runFlow: ../common/open-task-editor.yaml
       - assertVisible: 'Edit Reminder'
 
       # Leave Reminders as found.

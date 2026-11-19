@@ -1,15 +1,7 @@
 import { searchTimeZones, type TimeZoneMatch, zoneSlug } from '@calendar/core';
 import { useRef, useState } from 'react';
-import {
-  FlatList,
-  Modal,
-  Pressable,
-  SafeAreaView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { FlatList, Modal, SafeAreaView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { SheetButton } from '../SheetButton.tsx';
 import { BOX_FONT_SCALE, groupedGround, type ThemeColors, useStyles, useTheme } from '../theme.ts';
 import { CardRow, Footer, Row } from '../GroupedList.tsx';
 
@@ -53,20 +45,11 @@ export function TimeZonePickerSheet({
       <View style={styles.sheet}>
         <SafeAreaView>
           <View style={styles.header}>
-            <Pressable
-              accessibilityRole="button"
-              hitSlop={8}
-              onPress={close}
-              style={styles.headerSide}
-              testID="time-zone-cancel"
-            >
-              <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.cancel}>
-                Cancel
-              </Text>
-            </Pressable>
+            <SheetButton label="Cancel" onPress={close} testID="time-zone-cancel" />
             <Text
               accessibilityRole="header"
               maxFontSizeMultiplier={BOX_FONT_SCALE}
+              numberOfLines={1}
               style={styles.title}
             >
               Add Time Zone
@@ -125,10 +108,6 @@ export function TimeZonePickerSheet({
 
 const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
-    cancel: {
-      color: colors['text-secondary'],
-      fontSize: 17,
-    },
     header: {
       alignItems: 'center',
       flexDirection: 'row',
@@ -137,7 +116,7 @@ const makeStyles = (colors: ThemeColors) =>
       paddingVertical: 14,
     },
     headerSide: {
-      minWidth: 64,
+      minWidth: 86,
     },
     list: {
       paddingBottom: 48,
@@ -162,7 +141,9 @@ const makeStyles = (colors: ThemeColors) =>
     },
     title: {
       color: colors.text,
+      flex: 1,
       fontSize: 17,
       fontWeight: '600',
+      textAlign: 'center',
     },
   });

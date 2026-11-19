@@ -389,7 +389,7 @@ function SearchResultsList({
           ) : (
             <TaskRow
               list={lists.get(`${item.task.accountId}:${item.task.listId}`)}
-              onPress={() => host.editTask(item.task)}
+              onPress={() => host.openTask(item.task)}
               task={item.task}
               today={today}
             />

@@ -1,8 +1,9 @@
 import { asSaidOption, type PlaceChoice, placeOptions } from '@calendar/app-state';
 import { type PlaceCandidate, placeMapCamera } from '@calendar/core';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppleMaps } from '../LocationMap.tsx';
+import { SheetButton } from '../SheetButton.tsx';
 import { BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme } from '../theme.ts';
 import { QuestionOption } from './QuestionOption.tsx';
 
@@ -65,17 +66,7 @@ export function PlaceMapSheet({
           >
             {question}
           </Text>
-          <Pressable
-            accessibilityRole="button"
-            hitSlop={8}
-            onPress={onClose}
-            style={styles.done}
-            testID="draft-place-sheet-done"
-          >
-            <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.doneLabel}>
-              Done
-            </Text>
-          </Pressable>
+          <SheetButton label="Done" onPress={onClose} primary testID="draft-place-sheet-done" />
         </View>
         <View style={styles.map}>
           {AppleMaps && camera ? (
@@ -140,16 +131,6 @@ export function PlaceMapSheet({
 
 const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
-    done: {
-      justifyContent: 'center',
-      minHeight: 44,
-      paddingHorizontal: 4,
-    },
-    doneLabel: {
-      color: colors.text,
-      fontSize: 17,
-      fontWeight: '600',
-    },
     header: {
       alignItems: 'center',
       flexDirection: 'row',

@@ -1498,7 +1498,8 @@ waits for either and taps the one to the form, then waits for the
 switch's motion to end: a tap taken while the form rises lands where a
 field was; flows 06 and 22 wait the same way after their flips),
 `open-event-editor.yaml`
-(Edit on the detail sheet a tap opens), `switch-view.yaml` (the header's menu, `VIEW`;
+(Edit on an event detail sheet), `open-task-editor.yaml`
+(Edit on a task or reminder detail sheet, after asserting no form is open), `switch-view.yaml` (the header's menu, `VIEW`;
 done once the button reads "View: `VIEW`"),
 `switch-to-task.yaml`, `open-settings.yaml` (waits for `settings-root`),
 `open-settings-page.yaml` (`PAGE`: `device`, `time-zones`,
@@ -1579,7 +1580,7 @@ Selector gotchas (each caused a real failure):
   shard).
 - The kind control's segments are `mode-event` / `mode-task` /
   `mode-reminder` (a Reminders list sits behind `mode-reminder`, never in
-  a task's list picker); a tap on an event opens its detail sheet first.
+  a task's list picker); a tap on an event, task or reminder opens its detail sheet first.
   Flows that open a sheet `waitForAnimationToEnd` before tapping inside
   it. Maestro's visibility ignores the keyboard and clipping: dismiss the
   keyboard before tapping a lower input (a tap "on" a covered input lands

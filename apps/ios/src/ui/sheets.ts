@@ -1,6 +1,7 @@
 import type { TaskEditorSeed } from '@calendar/app-state';
 import {
   type BirthdayOccurrence,
+  calendarTaskKey,
   deleteTakes,
   eventIdentity,
   type EventRecord,
@@ -25,7 +26,7 @@ export interface EditSheet {
    * The detail that Edit or Convert turned into this editor: Cancel shows
    * it again (`cancelEditor`). Save and Delete close the sheet.
    */
-  readonly backTo?: EventRecord | undefined;
+  readonly backTo?: DetailSheet | TaskDetailSheet | undefined;
   readonly initialKind?: ItemKind | undefined;
   readonly kind: 'edit';
   readonly opening: number;
@@ -42,8 +43,13 @@ interface DetailSheet {
   readonly kind: 'detail';
 }
 
+interface TaskDetailSheet {
+  readonly kind: 'task-detail';
+  readonly task: TaskRecord;
+}
+
 /** What the editor's route shows: the detail or the editor. */
-export type RouteSheet = DetailSheet | EditSheet;
+export type RouteSheet = DetailSheet | TaskDetailSheet | EditSheet;
 
 export type Sheet =
   | { readonly kind: 'none' }
@@ -56,7 +62,7 @@ export const NONE: Sheet = { kind: 'none' };
 
 /** Whether the sheet is the editor route's: going from one such sheet to another swaps the route's content, the route stays up. */
 export const inRoute = (sheet: Sheet): sheet is RouteSheet =>
-  sheet.kind === 'detail' || sheet.kind === 'edit';
+  sheet.kind === 'detail' || sheet.kind === 'task-detail' || sheet.kind === 'edit';
 
 /**
  * What the editor route does for the sheet the state names (the host's
@@ -99,7 +105,9 @@ export const routeDismissed =
 export const routeKey = (sheet: RouteSheet): string =>
   sheet.kind === 'detail'
     ? `detail:${eventIdentity(sheet.event)}`
-    : `edit:${String(sheet.opening)}`;
+    : sheet.kind === 'task-detail'
+      ? `task-detail:${calendarTaskKey(sheet.task)}`
+      : `edit:${String(sheet.opening)}`;
 
 /**
  * An editor's own close — Cancel, or Save and Delete once the write's
@@ -123,7 +131,22 @@ export const cancelEditor =
     if (current.kind !== 'edit' || current.opening !== opening) {
       return current;
     }
-    return current.backTo === undefined ? NONE : { event: current.backTo, kind: 'detail' };
+    return current.backTo ?? NONE;
+  };
+
+/** Completion closes its own detail. Deletion also takes an editor on the removed task. */
+export const closeTaskDetail =
+  (task: TaskRecord, action: 'complete' | 'delete', opened: TaskDetailSheet) =>
+  (current: Sheet): Sheet => {
+    if (current === opened) {
+      return NONE;
+    }
+    if (action === 'complete') {
+      return current;
+    }
+    const shown =
+      current.kind === 'task-detail' || current.kind === 'edit' ? current.task : undefined;
+    return shown !== undefined && calendarTaskKey(shown) === calendarTaskKey(task) ? NONE : current;
   };
 
 /**

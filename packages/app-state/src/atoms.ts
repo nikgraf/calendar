@@ -104,6 +104,7 @@ export interface BackendAtoms {
   readonly calendars: ReturnType<typeof buildAtoms>['calendars'];
   readonly contactsSearch: ReturnType<typeof buildAtoms>['contactsSearch'];
   readonly currentEvent: ReturnType<typeof buildAtoms>['currentEvent'];
+  readonly currentTask: ReturnType<typeof buildAtoms>['currentTask'];
   /** The zone this device is in, re-read once a minute; what the time zones' device entry resolves to. */
   readonly deviceZone: Atom.Atom<string>;
   readonly eventById: ReturnType<typeof buildAtoms>['eventById'];
@@ -549,6 +550,23 @@ const buildAtoms = (client: BackendClient, deviceZone: Atom.Atom<string>) => {
       .pipe(Atom.withReactivity([EVENTS_KEY])),
   );
 
+  // A detail follows its task even when it is completed, undated or hidden from the calendar.
+  const currentTask = boundedAtomCache((key) =>
+    runtime
+      .atom(
+        Effect.gen(function* () {
+          const backend = yield* AppBackend;
+          const { accountId, listId, taskId } = JSON.parse(key) as {
+            accountId: string;
+            listId: string;
+            taskId: string;
+          };
+          return yield* backend.getTask({ accountId, listId, taskId });
+        }),
+      )
+      .pipe(Atom.withReactivity([TASKS_KEY])),
+  );
+
   // Desktop map images, keyed by mapSnapshotKey; '' resolves to null.
   const mapSnapshot = boundedAtomCache((key) =>
     runtime.atom(
@@ -616,6 +634,7 @@ const buildAtoms = (client: BackendClient, deviceZone: Atom.Atom<string>) => {
     calendars,
     contactsSearch,
     currentEvent,
+    currentTask,
     deviceZone,
     eventById,
     eventNotificationSettings,

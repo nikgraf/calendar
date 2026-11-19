@@ -1,5 +1,5 @@
 import { StyleSheet } from 'react-native';
-import { actionText, groupedGround, type ThemeColors, useStyles } from './theme.ts';
+import { groupedGround, type ThemeColors, useStyles } from './theme.ts';
 
 /**
  * The editor models store wall-clock strings (YYYY-MM-DD / HH:MM) shared
@@ -49,10 +49,6 @@ const makeSheetStyles = (colors: ThemeColors) =>
     /** Save and Delete while a save or delete is running (a press does nothing then). */
     busy: {
       opacity: 0.4,
-    },
-    cancel: {
-      color: colors['text-secondary'],
-      fontSize: 17,
     },
     /**
      * The editor's Cancel and Save: capsules a thumb finds, 44 pt high,
@@ -131,21 +127,6 @@ const makeSheetStyles = (colors: ThemeColors) =>
       marginHorizontal: 32,
       marginTop: 12,
     },
-    header: {
-      alignItems: 'center',
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      paddingBottom: 10,
-      paddingHorizontal: 16,
-      paddingTop: 16,
-    },
-    headerEnd: {
-      alignItems: 'flex-end',
-    },
-    /** The header's sides are as wide as each other, so the title sits centred. */
-    headerSide: {
-      minWidth: 64,
-    },
     hint: {
       color: colors['text-secondary'],
       fontSize: 13,
@@ -184,10 +165,6 @@ const makeSheetStyles = (colors: ThemeColors) =>
     },
     readOnly: {
       opacity: 0.6,
-    },
-    save: {
-      ...actionText(colors),
-      fontSize: 17,
     },
     /** The editor's route, and each of its two views: what stays put, then what takes the rest. */
     route: {

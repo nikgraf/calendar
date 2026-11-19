@@ -1,0 +1,14 @@
+appId: com.solunivo.app.dev
+---
+- extendedWaitUntil:
+    visible:
+      id: 'task-detail'
+    timeout: 10000
+- assertNotVisible:
+    id: 'editor-form'
+- tapOn:
+    id: 'task-edit'
+- extendedWaitUntil:
+    visible:
+      id: 'editor-form'
+    timeout: 10000

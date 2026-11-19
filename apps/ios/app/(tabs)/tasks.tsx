@@ -160,7 +160,7 @@ function TasksBody({ timeZone }: { timeZone: string }) {
               action.run();
             }
           }}
-          onPress={() => host.editTask(task)}
+          onPress={() => host.openTask(task)}
           style={styles.rowBody}
         >
           <Text numberOfLines={1} style={[styles.rowTitle, done && styles.rowDone]}>
