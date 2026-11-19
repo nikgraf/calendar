@@ -56,8 +56,8 @@ its windows from screen capture.
    `prefers-color-scheme: dark`, then
    `cdp.waitUntilRendered(() => document.documentElement.dataset['theme'] === 'dark')`
    before the capture.
-   A background window takes the emulated scheme only once it draws a
-   frame.
+   The forced frame applies the emulated scheme before the capture;
+   CDP-only windows keep rendering while covered.
 4. Run it: `E2E=1 pnpm exec vp test run apps/desktop/e2e/_shot.e2e.ts`.
 5. Before: the same spec in a detached worktree of `origin/main`
    (`git worktree add --detach <scratch>/main-before origin/main`,

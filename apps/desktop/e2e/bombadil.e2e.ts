@@ -1,9 +1,9 @@
-import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { Account, CalendarInfo, EventRecord, Temporal } from '@calendar/core';
 import { expect, it } from 'vite-plus/test';
 import { launchApp, readEvents } from './harness.ts';
+import { runBombadil } from './bombadil/driver.ts';
 
 interface SavedForm {
   readonly date: string;
@@ -20,54 +20,6 @@ interface Probe {
   readonly saved: ReadonlyArray<SavedForm>;
   readonly seedChecked: boolean;
 }
-
-const runBombadil = (
-  args: ReadonlyArray<string>,
-  output: string,
-  signal: AbortSignal,
-): Promise<void> =>
-  new Promise((resolve, reject) => {
-    signal.throwIfAborted();
-    const child = spawn('pnpm', ['exec', 'bombadil', 'browser', 'test-external', ...args], {
-      cwd: join(import.meta.dirname, '..'),
-      // pnpm and the package's Node shim spawn the Rust binary. Keep them
-      // in their own process group so cancellation stops the whole driver.
-      detached: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    const chunks: Array<string> = [];
-    child.stdout.on('data', (chunk: Buffer) => chunks.push(chunk.toString()));
-    child.stderr.on('data', (chunk: Buffer) => chunks.push(chunk.toString()));
-    const stop = () => {
-      if (child.pid && child.exitCode === null) {
-        try {
-          process.kill(-child.pid, 'SIGKILL');
-        } catch {
-          // The process group may already have exited.
-        }
-      }
-    };
-    const timer = setTimeout(stop, 150_000);
-    signal.addEventListener('abort', stop, { once: true });
-    const cleanup = () => {
-      clearTimeout(timer);
-      signal.removeEventListener('abort', stop);
-    };
-    child.once('error', (error) => {
-      cleanup();
-      reject(error);
-    });
-    child.once('close', (code, endedBy) => {
-      cleanup();
-      const log = chunks.join('');
-      writeFileSync(join(output, 'bombadil.log'), log);
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(new Error(`Bombadil exited ${String(code ?? endedBy)}\n${log.slice(-6000)}`));
-      }
-    });
-  });
 
 it.runIf(process.env['BOMBADIL'] === '1')(
   'Bombadil: cancelled changes stay unsaved and each burst of Save creates one event',

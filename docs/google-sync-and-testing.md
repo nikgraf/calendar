@@ -860,11 +860,34 @@ times, and the unchanged seed event, including records outside the visible
 week. Google writes remain queued in a profile without real tokens; native
 services and the model use the harness's off/fixture settings.
 
+The same command also runs `bombadilTasks.e2e.ts` for 45 seconds in a
+separate profile. It exercises Google Tasks and the isolated Reminders
+fixture: Event/Task/Reminder switches must retain title, due date and
+notes; cancelling an existing task conversion or reminder edit must keep
+the originals; cancelling a new draft must reopen empty. The prefix fills
+the event form's title, notes and future date before switching to a to-do,
+replaces title and notes on the to-do form, then edits the event date during
+a kind round trip. It requires a cancellation and a saved
+item in each provider before random exploration. Synchronous Save bursts
+must leave exactly one task per ledger entry, with the right provider,
+list and fields, and no abandoned intermediate event in SQLite. These
+actions never use the Mac's real Reminders database. Task traces and
+ledgers use `bombadil-tasks-<timestamp>/`; replay one with
+`E2E=1 BOMBADIL=1 BOMBADIL_TASK_REPRODUCE=<directory> pnpm exec vp test run apps/desktop/e2e/bombadilTasks.e2e.ts`.
+
+For a first local run, prefetch Electron with
+`pnpm --filter @calendar/desktop exec electron --version` before starting
+the timed tests; a slow binary download otherwise consumes their timeout.
+`caffeinate -di pnpm test:bombadil` keeps a local Mac and its display awake
+for the run. The fixture-backed task scenario needs no Swift helper.
+
 `apps/desktop/e2e-artifacts/bombadil-<timestamp>/` retains the trace,
 screenshots, driver log and successful editor ledger. On failure the
 ordinary harness dump is retained too. Inspect a trace with
 `pnpm exec bombadil browser inspect <directory>`; replay it against a
-fresh isolated app with `BOMBADIL_REPRODUCE=<directory> pnpm test:bombadil`.
+fresh isolated app with
+`E2E=1 BOMBADIL=1 BOMBADIL_REPRODUCE=<directory> pnpm exec vp test run apps/desktop/e2e/bombadil.e2e.ts`.
+These per-file replay commands run only the selected scenario.
 Driver processes are stopped on the test's timeout or cancellation.
 Bombadil's replay and shrinking are best effort; preserve a concrete
 regression test for a discovered app bug. Ordinary `pnpm test:e2e` skips
@@ -1049,14 +1072,17 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   them at the back without activating the app, ignores the OS mouse and
   drops the tracking-area enter/leave events macOS still sends;
   `Cdp.connect` turns on `Emulation.setFocusEmulationEnabled`, so the
-  page acts as the focused window and keeps drawing while covered. A
+  page acts as the focused window for input. A
   developer's keys and trackpad used to reach the test window (a Space
   opened the editor mid-drag, a moving trackpad dropped the capture).
   Consequence: `browser-window-focus` never fires in e2e, so no spec may
   count on the sync kick or the settings-file check it runs.
-- **A window behind another one renders nothing** without that
-  emulation: `cdp.waitUntilRendered` still draws a frame (a screenshot)
-  before each try.
+- **Covered test windows keep rendering.** CDP-only windows disable
+  Electron's background throttling before navigation, so they draw their
+  initial document before the harness attaches and emulates focus.
+  `cdp.waitUntilRendered` also draws a frame (a screenshot) before each try
+  to force fresh layout for rendering-dependent checks. Normal app windows
+  retain Electron's default throttling.
 - **Motion specs ask for motion first.** CI's macOS runner reports
   `prefers-reduced-motion: reduce`, so a spec that checks a transition
   sees the reduced path there and fails while it passes locally. Emulate
