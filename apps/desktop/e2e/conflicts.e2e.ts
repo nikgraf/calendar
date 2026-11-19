@@ -515,10 +515,9 @@ describe('The notice stack in a narrow window', () => {
     await cdp.waitUntil(($) => $.has('[data-testid="mutation-toast"]'));
     await cdp.openEditor('[title^="Budget review (mine)"]');
     // The stack leaves the narrowed column once its ResizeObserver reports
-    // and React renders the new span (its inline width). The observer
-    // reports only while the page renders, and a window behind another one,
-    // as CI's can be, renders nothing until a frame is drawn: there the
-    // banner was read at 29 px, and polling alone timed out.
+    // and React renders the new span (its inline width). Force a fresh
+    // frame for that layout read. Before background throttling was disabled,
+    // a covered window left the banner at 29 px and polling alone timed out.
     await cdp.waitUntilRendered(($) => !!$.el('[data-testid="notice-stack"]')?.style.width);
     // The editor's buttons at the panel's foot, where the notices are.
     await cdp.evaluate(($) => {

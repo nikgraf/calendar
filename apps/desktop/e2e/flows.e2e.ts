@@ -592,7 +592,7 @@ describe('calendar desktop e2e', () => {
       await cdp.send('Emulation.setEmulatedMedia', {
         features: [{ name: 'prefers-reduced-motion', value }],
       });
-      // A background window takes emulated media only once it draws a frame.
+      // Draw a fresh frame to apply emulated media before the assertion.
       await cdp.send('Page.captureScreenshot');
       await cdp.waitUntil(
         (_: PageKit, motion: string) => matchMedia(`(prefers-reduced-motion: ${motion})`).matches,

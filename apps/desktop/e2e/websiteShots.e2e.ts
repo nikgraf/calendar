@@ -333,7 +333,7 @@ describe.skipIf(!OUT)('website screenshots', () => {
       await cdp.send('Emulation.setEmulatedMedia', {
         features: [{ name: 'prefers-color-scheme', value: theme }],
       });
-      // A background window takes emulated media only once it draws a frame.
+      // Draw a fresh frame to apply emulated media before the assertion.
       await cdp.waitUntilRendered(
         (_, want: string) => document.documentElement.dataset['theme'] === want,
         theme,
