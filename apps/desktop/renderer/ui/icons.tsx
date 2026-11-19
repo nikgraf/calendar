@@ -33,6 +33,11 @@ export const ArrowUpIcon = (props: IconProps) => (
     <path d="M12 19V5M6 11l6-6 6 6" />
   </Icon>
 );
+export const ArrowUpRightIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M7 17 17 7M7 7h10v10" />
+  </Icon>
+);
 export const AlertIcon = (props: IconProps) => (
   <Icon {...props}>
     <circle cx="12" cy="12" r="9" />
