@@ -1222,6 +1222,8 @@ details, or Custom), so a calendar can be shared without the details.
     in the same edit does not bypass this check. This conservative gate
     avoids changing interval phase, implicit weekday or wall time by
     reanchoring DTSTART. Sets of only RDATE lines still split freely.
+    The agent gateway checks this before approval and returns
+    `InvalidInput` with the `instance` and `series` scope alternatives.
     Then truncate the old master's RRULE with `UNTIL = split−1s`
     (COUNT dropped, RDATE values at or after the split pruned), spawn a
     new master (COUNT recomputed from the RRULE line alone,

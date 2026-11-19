@@ -183,7 +183,9 @@ export const canSplitRecurrence = (
     .every((line) =>
       expandRecurringEvent(
         { ...master, recurrence: [line] },
-        splitOriginalStartUtc,
+        // Include the start even for a zero-duration event: membership
+        // does not depend on whether an event overlaps a visible window.
+        splitOriginalStartUtc - 1,
         splitOriginalStartUtc + 1,
       ).some((occurrence) => occurrence.originalStartUtc === splitOriginalStartUtc),
     );

@@ -114,12 +114,16 @@ The class found in the most PRs (54), almost all by Opus.
 - Does every write path (Save, Add all, an Assistant turn, a finder
   phrase, Mark as Done, a title trim) apply Save's gate:
   `UnsupportedForProviderError`, the Reminders-only fields, validation?
+- Does an agent write's new refusal happen before ask-first approval,
+  and does a refusal after approval still return an actionable error?
 - Is every part of an identity or dedupe key stable for the item's life
   and unique in its scope? Not the list, a zone-derived day, an id without
   its calendar, the original start, or a prefix.
 
 ## Dates and times
 
+- If a recurrence check needs only occurrence starts, does it still work
+  for a zero-duration event rather than relying on visible overlap?
 - Which zone does each date computation use, and is it the one its
   consumer means? Does it hold in DST's repeated hour, for all-day rows,
   at 23:59 and 24:00, and for `Etc/UTC` aliases?

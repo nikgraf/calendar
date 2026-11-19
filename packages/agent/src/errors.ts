@@ -104,6 +104,13 @@ const AGENT_TAGS: ReadonlySet<string> = new Set([
 
 const isAgentError = (error: unknown): error is AgentError => AGENT_TAGS.has(tagOf(error));
 
+/** Used both before approval and when a changed series refuses the approved write. */
+export const recurringSplitError = (): AgentInvalidInputError =>
+  new AgentInvalidInputError({
+    message:
+      'A following edit must start on the repeat rule, not an extra date. Use scope "instance" or "series".',
+  });
+
 /**
  * Backend failures as an agent sees them. Typed backend errors keep their
  * meaning; the rest carry the backend tag and no internals beyond the
@@ -136,6 +143,9 @@ export const toAgentError = (error: unknown): AgentError => {
         message:
           'This ref names a recurring series; list the events again and use the ref of an occurrence together with `scope`.',
       });
+    }
+    case 'RecurringSplitUnsupportedError': {
+      return recurringSplitError();
     }
     case 'NotAttendeeError': {
       return new AgentInvalidInputError({

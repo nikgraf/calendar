@@ -32,6 +32,25 @@ describe('recurrence editing helpers', () => {
       expect(canSplitRecurrence(master, instant('2026-07-08T14:00:00Z'))).toBe(false);
     });
 
+    it('admits rule occurrences regardless of the event duration', () => {
+      expect(
+        canSplitRecurrence({ ...master, endUtc: master.startUtc }, instant('2026-07-08T09:00:00Z')),
+      ).toBe(true);
+      expect(
+        canSplitRecurrence(
+          {
+            ...master,
+            endDate: '2026-07-06',
+            endUtc: instant('2026-07-06T00:00:00Z'),
+            isAllDay: true,
+            startDate: '2026-07-06',
+            startUtc: instant('2026-07-06T00:00:00Z'),
+          },
+          instant('2026-07-08T00:00:00Z'),
+        ),
+      ).toBe(true);
+    });
+
     it('ignores additions and exclusions when checking each RRULE', () => {
       const at = instant('2026-07-08T09:00:00Z');
       expect(
