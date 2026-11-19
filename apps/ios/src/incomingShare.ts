@@ -1,6 +1,7 @@
 import type { CaptureSource } from '@calendar/ai';
+import { publishMutationNotice } from '@calendar/app-state';
 import { extractSettingsCode } from '@calendar/core/settingsCode';
-import { File } from 'expo-file-system';
+import { File, Paths } from 'expo-file-system';
 
 /** What the share extension left for the app (expo-sharing's `SharePayload`). */
 export interface SharePayload {
@@ -60,12 +61,20 @@ export interface IncomingShare {
   readonly source: CaptureSource;
 }
 
+const deleteFile = (file: File | string | undefined): void => {
+  try {
+    (typeof file === 'string' ? new File(file) : file)?.delete();
+  } catch {
+    // Already gone, or the OS will reclaim the cached file later.
+  }
+};
+
 /**
  * Takes what the share extension left, clearing the store so a share is
- * handled once. Clearing only forgets the entry: the extension copied an
- * image into the app-group container and nothing else would ever remove
- * it, so the caller runs `discard` once the capture has ended — whatever
- * its outcome, an unavailable model included.
+ * handled once. Clearing also deletes the extension's shared files, so an
+ * image is copied into this app's cache first. The caller runs `discard`
+ * once capture has ended, whatever its outcome. A failed copy leaves the
+ * inbox intact for retry and reports the failure through the usual toast.
  */
 export const takeIncomingShare = (
   sharing: SharingModule | undefined = loadSharing(),
@@ -73,29 +82,38 @@ export const takeIncomingShare = (
   if (!sharing) {
     return undefined;
   }
-  const payloads = sharing.getSharedPayloads();
-  if (payloads.length === 0) {
-    return undefined;
-  }
-  sharing.clearSharedPayloads();
-  const files = payloads
-    .filter((payload) => payload.shareType !== 'text' && payload.shareType !== 'url')
-    .map((payload) => payload.value);
-  const discard = () => {
-    for (const uri of files) {
-      try {
-        new File(uri).delete();
-      } catch {
-        // Already gone.
+  let retained: File | undefined;
+  const discard = () => deleteFile(retained);
+  try {
+    const payloads = sharing.getSharedPayloads();
+    if (payloads.length === 0) {
+      return undefined;
+    }
+    let source = sourceFromPayloads(payloads);
+    if (source?.kind === 'image' && source.image.kind === 'uri') {
+      const original = new File(source.image.uri);
+      retained = new File(
+        Paths.cache,
+        `incoming-share-${crypto.randomUUID()}${original.extension}`,
+      );
+      // Complete the copy before clearing; File.copy() is asynchronous.
+      original.copySync(retained);
+      source = { image: { kind: 'uri', uri: retained.uri }, kind: 'image' };
+    }
+    sharing.clearSharedPayloads();
+    // Older native sharing modules only cleared metadata. Unused originals
+    // can go now, while each capture owns its uniquely named retained copy.
+    for (const payload of payloads) {
+      if (payload.shareType !== 'text' && payload.shareType !== 'url') {
+        deleteFile(payload.value);
       }
     }
-  };
-  const source = sourceFromPayloads(payloads);
-  if (!source) {
+    return source ? { discard, source } : undefined;
+  } catch {
     discard();
+    publishMutationNotice({ action: 'read the shared content', detail: 'Try sharing it again.' });
     return undefined;
   }
-  return { discard, source };
 };
 
 /** The e2e flows' stand-in for a share: `solunivo-dev://capture-fixture?text=…`, fixture model only. */

@@ -392,6 +392,15 @@ expo-updates refuses the override and the page shows its error.
 Maestro e2e (`pnpm test:e2e:ios`) runs against this dev client, so install a
 fresh one before those flows after a native change.
 
+Both simulator profiles (`development-simulator`, `e2e-simulator`) build
+only arm64 through Fastlane's `GYM_XCARGS=ARCHS=arm64`. They run on Apple
+silicon Macs, including the CI runners. `@react-native-ai/apple` 0.13's
+Spotlight tool compiles for devices and arm64 simulators but references a
+type absent from the x86_64 simulator SDK; EAS's default universal
+simulator build fails in `AppleLLMImpl.swift`. This is a build-profile
+setting, not a patch to the dependency. Check the package's Swift sources
+against both simulator architectures before restoring Intel builds.
+
 The same profile has a second consumer: the nightly `live-ios` job
 (`google-live.yml`) fetches the `development-simulator` build whose
 fingerprint matches the commit (`eas build:list --fingerprint-hash`, then

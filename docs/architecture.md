@@ -122,9 +122,10 @@ model, the app's file on `llama-server` included (its README;
 docs/google-sync-and-testing.md → Unit tests). iOS reaches Apple's models via
 `@react-native-ai/apple` and Vision through the `solunivo-ocr` Expo
 module; why the model cannot run comes from the `solunivo-model-availability`
-module (Foundation Models' reason, bounded to 5 s — the package answers
-only yes/no, and a binary without the module falls back to that and says
-so). Both hosts map the reason through `APPLE_REASON_STATUS`
+module (Foundation Models' reason, bounded to 5 s). If that module cannot
+load, the package's asynchronous `getModelInfo` supplies the availability
+and reason under the same timeout. A stale dev client without that native
+API reports a failed check. Both hosts map the reason through `APPLE_REASON_STATUS`
 (packages/ai); `LanguageModel.availability` carries it with a failed
 check's error beside the status. Every entry point on Apple's model (find
 a time, search, the desktop's capture dialog) checks through `useModelAvailability` (app-state): one check at a time (a request while

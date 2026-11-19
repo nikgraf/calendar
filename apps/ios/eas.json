@@ -18,7 +18,8 @@
       "distribution": "internal",
       "channel": "development",
       "env": {
-        "APP_VARIANT": "development"
+        "APP_VARIANT": "development",
+        "GYM_XCARGS": "ARCHS=arm64"
       },
       "ios": {
         "simulator": true
@@ -27,7 +28,8 @@
     "e2e-simulator": {
       "distribution": "internal",
       "env": {
-        "APP_VARIANT": "development"
+        "APP_VARIANT": "development",
+        "GYM_XCARGS": "ARCHS=arm64"
       },
       "ios": {
         "simulator": true

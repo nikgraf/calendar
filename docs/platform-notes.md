@@ -157,6 +157,12 @@ in the `ios-simulator` skill (`.agents/skills/ios-simulator/SKILL.md`).
 
 ## Expo, Metro and the dev client
 
+- **`expo-sharing` 58.0.23 clears shared files with the inbox.**
+  `clearSharedPayloads()` removes the app group's share cache, so capture
+  must finish copying its image into the app's own cache before clearing.
+  `incomingShare.ts` uses `copySync`, keeps a unique copy per capture, and
+  deletes that copy when capture settles; a copy failure keeps the inbox
+  for retry and reports a toast.
 - **A cold start waited up to 3 s for an update.** With
   `updates.fallbackToCacheTimeout` above 0, expo-updates keeps the launch
   screen up until it has asked EAS for a newer update and downloaded it,
@@ -359,6 +365,14 @@ in the `ios-simulator` skill (`.agents/skills/ios-simulator/SKILL.md`).
 
 ## On-device models
 
+- **`@react-native-ai/apple` 0.13 changed the native model API.**
+  `getModelInfo()` replaces `isAvailable()` and answers asynchronously
+  with an `availability` string. Call the native method with both optional
+  arguments (`undefined, undefined` for the defaults): React Native puts
+  its promise callbacks after the arguments actually passed.
+  `generateText()` returns `{ content,
+  usage }`, with text, reasoning and tool parts inside `content`;
+  `appleModel.ts` joins only the text parts before parsing JSON.
 - **The Mac's and the iPhone's Apple models differ.** At temperature 0 a
   phrase got a short title on the Mac and the whole sentence on the
   iPhone, and the bench scored 49 on the Mac against 55 on an iPhone 16:
