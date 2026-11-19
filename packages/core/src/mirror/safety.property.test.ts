@@ -218,13 +218,21 @@ const actualOf = (
 
 it.prop(
   'interrupted reconciliation converges and never touches foreign or out-of-window copies',
-  { entries: Entries, flags: Schema.Array(Int).check(Schema.isMaxLength(12)), progress: Int },
-  ({ entries, flags, progress }) => {
+  {
+    entries: Entries,
+    flags: Schema.Array(Int).check(Schema.isMaxLength(12)),
+    progress: Int,
+    revisionOnly: Schema.Boolean,
+  },
+  ({ entries, flags, progress, revisionOnly }) => {
     const desired = buildMirrorCopies(definition, itemsOf(entries), window);
     let serial = 0;
     let actual = desired.flatMap((copy, index) => {
       if (index === 0) {
         return [];
+      }
+      if (revisionOnly) {
+        return [actualOf(copy, `original-${index}`, 1)];
       }
       const flag = flags[index] ?? 0;
       if ((flag & 1) === 0) {
@@ -286,7 +294,25 @@ it.prop(
       // floating date is outside. The date owns all-day membership.
       startUtc: window.endUtc - 3_600_000,
     };
-    const protectedRows = [foreign, outside, beforeWindow, outsideDay];
+    const unwantedKey = mirrorKeyHash(definition.id, 'left-the-window');
+    const protectedRows = [
+      foreign,
+      outside,
+      beforeWindow,
+      outsideDay,
+      {
+        ...foreign,
+        keyHash: mirrorKeyHash('another-mirror', 'foreign-source'),
+        order: 'foreign-unwanted',
+        ref: 'foreign-unwanted',
+      },
+      ...[outside, beforeWindow, outsideDay].map((row) => ({
+        ...row,
+        keyHash: unwantedKey,
+        order: `${row.order}-unwanted`,
+        ref: `${row.ref}-unwanted`,
+      })),
+    ];
     const protectedRefs = new Set(protectedRows.map((row) => row.ref));
     const orphan = {
       ...actualOf(seed, 'orphan'),
@@ -295,13 +321,15 @@ it.prop(
     const stale = {
       ...actualOf(seed, 'forced-a', 1),
       marker: {
-        contentHash: mirrorContentHash(['stale', seed.contentHash]),
+        contentHash: revisionOnly
+          ? seed.contentHash
+          : mirrorContentHash(['stale', seed.contentHash]),
         rev: 1,
         tag: mirrorTag(definition.id),
       },
     };
-    // Every evaluation exercises duplicate cleanup, a stale update and
-    // removal, even when the generated flags shrink to an empty array.
+    // Every evaluation exercises duplicate cleanup and removal. Revision-only
+    // cases need a carrier update even though all desired content is current.
     actual.push(stale, { ...stale, order: 'forced-b', ref: 'forced-b' }, ...protectedRows, orphan);
     const plan = () =>
       planMirror({
@@ -317,7 +345,7 @@ it.prop(
     const limit = actual.length + desired.length + 3;
     for (let pass = 0; pass < limit; pass += 1) {
       const next = plan();
-      expect(next.foreign).toBe(1);
+      expect(next.foreign).toBe(2);
       if (next.ops.length === 0) {
         break;
       }
@@ -339,6 +367,7 @@ it.prop(
     }
     expect(plan().ops).toEqual([]);
     const managed = actual.filter((row) => !protectedRefs.has(row.ref));
+    expect(managed.some((row) => row.marker.rev === definition.updatedAt)).toBe(true);
     expect(managed.map((row) => row.keyHash).sort()).toEqual(
       desired.map((copy) => copy.keyHash).sort(),
     );
