@@ -86,7 +86,7 @@ export function LocationMap({
             ).map(({ id, label, url }) => (
               <Button
                 aria-label={`Get directions in ${label}`}
-                className="min-w-32 flex-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus active:bg-hairline"
+                className="min-w-32 flex-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus active:scale-[0.97]"
                 data-testid={`${id}-maps-directions`}
                 key={id}
                 onClick={() => window.open(url, '_blank', 'noopener')}

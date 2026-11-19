@@ -90,7 +90,9 @@ export function LocationMap({
       ) : null}
       {directions ? (
         <View style={styles.directionGroup}>
-          <Text style={styles.directionCaption}>Get directions</Text>
+          <Text accessibilityElementsHidden style={styles.directionCaption}>
+            Get directions
+          </Text>
           <View style={styles.directions}>
             {(
               [
@@ -114,7 +116,7 @@ export function LocationMap({
                 <SymbolView
                   accessible={false}
                   name="arrow.up.right"
-                  size={13}
+                  size={13 * fontScale}
                   tintColor={colors.text}
                   weight="semibold"
                 />
@@ -166,7 +168,7 @@ const makeStyles = (colors: ThemeColors) =>
       textAlign: 'center',
     },
     directionPressed: {
-      backgroundColor: colors['border-strong'],
+      opacity: 0.7,
     },
     directions: {
       flexDirection: 'row',

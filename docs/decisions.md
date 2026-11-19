@@ -629,14 +629,15 @@ was cut (pruned 2026-11-17).
 
 ## Calendar: editing, gestures, views
 
-- **Maps and directions in iOS event details** (2026-11-18, #355) —
-  show the location's map and separate Apple Maps and Google Maps
-  directions links. Use matching coordinates when available and the
-  address otherwise; opening directions never waits for geocoding.
-  Rejected: links only after a lookup succeeds (unusable offline), and
-  a map choice sheet (both choices fit beside the address). The editor
-  keeps its existing Open in Maps action; origin and travel mode stay
-  with the Maps app.
+- **Clear directions in both event details** (2026-11-18, #358;
+  replaces #355) — group equally prominent Apple Maps and Google Maps
+  buttons under Get directions, below the location map. iOS uses large
+  capsules that stack for larger text; Desktop uses its secondary buttons
+  with keyboard focus. Rejected: bare bold text (unclear as an action),
+  provider colors (unneeded emphasis), and a choice sheet (an extra step).
+  Matching coordinates choose the destination; address text works before
+  or without geocoding. Editors retain Open in Maps; origin and travel
+  mode stay with the Maps app.
 - **Editing keeps an event's span** (2026-10-13, #200) — the event form
   has an end date (Starts/Ends rows, both apps) and an update leaves
   untouched times out, so a title edit no longer cut a multi-day all-day
