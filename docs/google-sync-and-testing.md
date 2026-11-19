@@ -512,6 +512,9 @@ Recurrence walks plain dates as its reference; free-slot search checks
 busy intervals and a minute-grid oracle; ordering generates successive
 insertions; settings codes preserve portable fields; gateway reads check
 all 25 grant pairs, while write gates use generated capabilities.
+Mirror properties enumerate visibility and field policies, compare occupied
+minutes and days with an independent oracle, and replan interrupted write
+prefixes while protecting foreign and out-of-window copies.
 
 `packages/sync/src/engine.property.test.ts` generates create, edit, delete
 and retry commands over the real engine and HTTP clients. Every case
