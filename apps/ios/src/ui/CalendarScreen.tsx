@@ -367,7 +367,7 @@ function CalendarBody({
           events={events}
           onBirthdayPress={host.openBirthday}
           onEventPress={host.openEvent}
-          onTaskPress={host.editTask}
+          onTaskPress={host.openTask}
           onToggleTask={(task) =>
             void mutations.completeTask({
               accountId: task.accountId,
@@ -411,7 +411,7 @@ function CalendarBody({
               setFocused(day);
               changeView('day');
             }}
-            onTaskPress={host.editTask}
+            onTaskPress={host.openTask}
             onToggleTask={(task) =>
               void mutations.completeTask({
                 accountId: task.accountId,

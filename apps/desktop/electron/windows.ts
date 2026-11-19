@@ -33,7 +33,19 @@ export const isOwnPage = (url: string): boolean => {
   return url.startsWith(`${rendererOrigin}/`);
 };
 
+/**
+ * The e2e harness's windows take input from CDP only (`CALENDAR_E2E_INPUT=cdp`):
+ * they show without activating the app and keep the OS mouse out, so a key
+ * typed or a trackpad touched during a local run goes to whatever the
+ * developer is using, not to the test. CDP input enters below the window,
+ * at the page itself, and still arrives; the harness emulates page focus.
+ */
+const cdpInputOnly = process.env['CALENDAR_E2E_INPUT'] === 'cdp';
+
 const webPreferences = {
+  // Hidden test windows must draw their initial document before the
+  // harness can attach and emulate focus. Keep normal windows throttled.
+  backgroundThrottling: !cdpInputOnly,
   contextIsolation: true,
   nodeIntegration: false,
   preload: join(rootPath, 'dist-electron/preload.cjs'),
@@ -77,15 +89,6 @@ const windowSize = (): { readonly height: number; readonly width: number } => {
 };
 
 /**
- * The e2e harness's windows take input from CDP only (`CALENDAR_E2E_INPUT=cdp`):
- * they show without activating the app and keep the OS mouse out, so a key
- * typed or a trackpad touched during a local run goes to whatever the
- * developer is using, not to the test. CDP input enters below the window,
- * at the page itself, and still arrives; the harness emulates page focus.
- */
-const cdpInputOnly = process.env['CALENDAR_E2E_INPUT'] === 'cdp';
-
-/**
  * Keeps the OS mouse out of an e2e window. Ignoring mouse events passes
  * clicks, moves and scrolls through to the window below, but macOS still
  * tells the window when the cursor crosses it, and Chromium turns that into
@@ -112,9 +115,9 @@ const keepOsMouseOut = (window: BrowserWindow): void => {
 /** Shows a window, focused unless the e2e harness drives it (cdpInputOnly). */
 const showWindow = (window: BrowserWindow, focus: boolean): void => {
   if (cdpInputOnly) {
-    // Behind every other window (blur orders it to the back on macOS). A
-    // covered page would run no rendering steps, but the harness's focus
-    // emulation keeps it visible to itself, and it draws on.
+    // Behind every other window (blur orders it to the back on macOS).
+    // Background throttling is disabled above, so it keeps drawing even
+    // before the harness attaches and emulates focus for page input.
     window.showInactive();
     window.blur();
     return;

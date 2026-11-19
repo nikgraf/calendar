@@ -343,6 +343,17 @@ export const useCurrentEvent = (shown: EventRecord): EventRecord | null => {
   return AsyncResult.isSuccess(result) ? result.value : shown;
 };
 
+/** A task on screen as it is now; a loading or failed read keeps the last row shown. */
+export const useCurrentTask = (shown: TaskRecord): TaskRecord | null => {
+  const key = JSON.stringify({
+    accountId: shown.accountId,
+    listId: shown.listId,
+    taskId: shown.id,
+  });
+  const result = useAtomValue(useBackendAtoms().currentTask(key));
+  return AsyncResult.isSuccess(result) ? result.value : shown;
+};
+
 /** Task lists across accounts (for visibility toggles + connect rows). */
 export const useTaskLists = (): ReadonlyArray<TaskListInfo> => {
   const atoms = useBackendAtoms();

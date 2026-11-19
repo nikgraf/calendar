@@ -17,11 +17,11 @@ trustPolicyExclude:
 blockExoticSubdeps: true
 
 catalog:
-  effect: 4.1.0
-  '@effect/atom-react': 4.1.0
-  '@effect/sql-sqlite-node': 4.1.0
-  '@effect/sql-sqlite-react-native': 4.1.0
-  '@effect/vitest': 4.1.0
+  effect: 4.1.4
+  '@effect/atom-react': 4.1.4
+  '@effect/sql-sqlite-node': 4.1.4
+  '@effect/sql-sqlite-react-native': 4.1.4
+  '@effect/vitest': 4.1.4
   '@js-temporal/polyfill': ^0.5.1
   # react and react-dom are pinned exactly, for both apps, to the React
   # Native renderer's version: React Native 0.88 renders with 19.3.0 and

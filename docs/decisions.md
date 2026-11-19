@@ -134,12 +134,12 @@ was cut (pruned 2026-11-17).
 
 ## CI and dependencies
 
-- **Desktop UI property exploration** (2026-11-18, #354) — a bounded,
-  opt-in Bombadil run checks editor interactions and persisted results in
-  an isolated Electron profile. Keep it outside the ordinary CI gate
-  while evaluating the tool and its replay behavior; scripted desktop
-  e2e and native iOS automation remain in place. Pin the desktop-only
-  development dependency so explorer and specification APIs move together.
+- **Desktop UI property exploration** (2026-11-18, #356) — run bounded
+  Bombadil exploration as a required step in the existing desktop CI job,
+  replacing #354's initial opt-in CI policy after local validation.
+  Reuse the built app and isolated profile rather than another macOS job;
+  keep scripted desktop e2e and native iOS automation. Pin the desktop-only
+  dependency, bound execution, and retain traces on success and failure.
 
 - **CI shape** (2026-09-11) — one reusable `gate.yml` called by both
   workflows (GitHub cannot `needs:` across workflow files); docs-only
@@ -638,14 +638,23 @@ was cut (pruned 2026-11-17).
   reveal their date),
   or always jumping to a series' first occurrence or to today. Editing
   and conversion navigation stay as they are.
-- **Maps and directions in iOS event details** (2026-11-18, #355) —
-  show the location's map and separate Apple Maps and Google Maps
-  directions links. Use matching coordinates when available and the
-  address otherwise; opening directions never waits for geocoding.
-  Rejected: links only after a lookup succeeds (unusable offline), and
-  a map choice sheet (both choices fit beside the address). The editor
-  keeps its existing Open in Maps action; origin and travel mode stay
-  with the Maps app.
+- **Read-first iOS details and consistent sheet actions** (2026-11-19,
+  #362) — tasks and reminders open details before Edit, like events;
+  Cancel returns to those details, while Save closes the sheet. Custom
+  sheet headers share the editor's 44 pt capsule buttons. Rejected:
+  opening saved tasks directly in a form and small bare header actions.
+  Details follow saved rows through sync and act on their current list;
+  an editor draft is unnecessary for completion or deletion. Desktop
+  navigation and native Settings headers keep their existing behavior.
+- **Clear directions in both event details** (2026-11-18, #358;
+  replaces #355) — group equally prominent Apple Maps and Google Maps
+  buttons under Get directions, below the location map. iOS uses large
+  capsules that stack for larger text; Desktop uses its secondary buttons
+  with keyboard focus. Rejected: bare bold text (unclear as an action),
+  provider colors (unneeded emphasis), and a choice sheet (an extra step).
+  Matching coordinates choose the destination; address text works before
+  or without geocoding. Editors retain Open in Maps; origin and travel
+  mode stay with the Maps app.
 - **Editing keeps an event's span** (2026-10-13, #200) — the event form
   has an end date (Starts/Ends rows, both apps) and an update leaves
   untouched times out, so a title edit no longer cut a multi-day all-day

@@ -39,21 +39,22 @@ tags:
       # also proves the first one landed.
       - tapOn: 'Complete Solunivo e2e task to delete'
       - tapOn: 'Reopen Solunivo e2e task to delete'
-      # The chip title sits inside the body pressable: tapping it opens
-      # the shared editor in task mode. (The full-title pattern cannot
-      # match the checkbox's "Complete …" / "Reopen …" label.)
+      # A tap opens the detail; completion needs no form.
       - tapOn: 'Solunivo e2e task to delete'
-      # The first list may be a Google list or, once Reminders is
-      # connected, the Apple one — either editor is the right outcome.
-      - assertVisible: 'Edit (Task|Reminder)'
-      # A notification opens this same editor. Complete here, then verify
-      # the stored status on the chip and reopen from the editor.
+      - extendedWaitUntil:
+          visible:
+            id: 'task-detail-title'
+            text: 'Solunivo e2e task to delete'
+          timeout: 10000
+      - assertNotVisible:
+          id: 'editor-form'
       - tapOn:
-          id: 'task-editor-completion'
+          id: 'task-detail-complete'
       - extendedWaitUntil:
           visible: 'Reopen Solunivo e2e task to delete'
           timeout: 10000
       - tapOn: 'Solunivo e2e task to delete'
+      - runFlow: ../common/open-task-editor.yaml
       # Checking off an edited form must leave a way to keep typing.
       - tapOn: 'Notes'
       - inputText: 'Draft note'
@@ -68,17 +69,19 @@ tags:
           visible: 'Complete Solunivo e2e task to delete'
           timeout: 10000
       - tapOn: 'Solunivo e2e task to delete'
-      # The Reminders form is long, and the list picker's per-account
-      # groups push Delete below the fold (run 35591082639 tapped its
-      # cut-off edge and nothing happened): scroll first, like 09.
-      - scrollUntilVisible:
-          element:
-            id: 'task-delete'
-          direction: DOWN
+      - extendedWaitUntil:
+          visible:
+            id: 'task-detail'
+          timeout: 10000
       - tapOn:
-          id: 'task-delete'
-      # The confirmation alert (deleteQuestion).
-      - tapOn: 'Delete'
+          id: 'task-detail-delete'
+      # Both the detail and the confirmation have Delete: take the alert's button.
+      - extendedWaitUntil:
+          visible: 'Delete .Solunivo e2e task to delete.\?'
+          timeout: 10000
+      - tapOn:
+          text: 'Delete'
+          below: 'Delete .Solunivo e2e task to delete.\?'
       # Deleting an unpushed create sends nothing to Google; a pushed one
       # deletes server-side — either way the account ends clean.
       - extendedWaitUntil:

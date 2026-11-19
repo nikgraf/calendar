@@ -1231,7 +1231,11 @@ details, or Custom), so a calendar can be shared without the details.
     holds nor takes it. A
     split of a series whose create is unsent folds the cut into that
     create, which nothing undoes without the series: it names what that
-    one was split from, at the same occurrence, or nothing. Whether the
+    one was split from, at the same occurrence, or nothing. Folding keeps
+    the create's timestamp but re-enqueues it behind rows sharing that
+    timestamp (a move gives the whole series one). Occurrence edits wait
+    for any queued create of their master in that calendar, regardless of
+    queue order. Whether the
     cut was undone, Google says — a discard may meet its request on the
     way or landed with the answer lost, a rejection's revert may fail,
     another device may have ended the series. After an undo (a discard or
@@ -1737,7 +1741,7 @@ gateway carries all of it. Details, limits and the threat model:
   unsynced badge), the week strip, the timeline / month grid / agenda,
   and the "+" (`AddButton`, shared with the Tasks tab: the calendar's
   opens a new event, the Tasks tab's an undated to-do in the filtered
-  list). `EditorHost.tsx` owns every sheet — event detail, the editor
+  list). `EditorHost.tsx` owns every sheet — event, task and reminder details, the editor
   (`EventEditSheet`, the same thread as the desktop, `useThreadEditor`,
   in the same two views), the birthday detail, a fold chip's list — and the capture model behind the share
   sheet and deep links, whose events open the editor as one thread of
@@ -1748,7 +1752,20 @@ gateway carries all of it. Details, limits and the threat model:
   `useCurrentEvent` — `findCurrentEvent`'s lookup as an atom
   (`currentEvent`), read again whenever events change — shows that
   record (`eventReadout`), seeds Edit and Convert from it and closes once
-  the event is gone; a failed read keeps it up. The detail and the editor
+  the event is gone; a failed read keeps it up. Tasks and reminders also
+  open a detail first from Calendar, Tasks, Search, fold lists and notification
+  taps. Their detail reads `useCurrentTask` (`getTask`, refreshed on task
+  changes), including completed and undated records. A bounded session alias
+  follows a Google create from its temporary id to its server id; the raw
+  repository reads stay exact, so a rolled-back swap still finds its temp row.
+  Google lookups stay within that list, since another list can hold the same
+  server id. Only Reminders follow an external list move by stable EventKit id.
+  Detail actions use the saved record without a seeded editor destination; Edit starts from the
+  latest row, Cancel returns to its detail, and completion closes only its
+  originating detail. Deletion also closes an editor still showing the removed
+  task. Custom sheet header actions use
+  `SheetButton`, the editor's 44 pt neutral or primary capsule.
+  The detail and the editor
   share the `editor` route (`app/editor.tsx`), a page sheet at full
   height like Settings — a form sheet lays out a header and one scroll
   view and nothing else, so it could hold neither a bar at its bottom nor
@@ -1965,9 +1982,10 @@ gateway carries all of it. Details, limits and the threat model:
   distance itself — and never a location permission. The bridge returns `places` beside
   `place`; a native side from before it answers one place. Desktop
   draws a static `MKMapSnapshotter` PNG (`mapSnapshot`); iOS a live
-  `expo-maps` view (without its module, only the links). The iOS event
-  detail shows the map below its address and offers Apple Maps and Google
-  Maps directions (`locationDirectionsUrls`). These HTTPS links use
+  `expo-maps` view (without its module, only the links). Both apps' event
+  details show the map below its address, then a Get directions group
+  with filled Apple Maps and Google Maps buttons (`locationDirectionsUrls`).
+  These HTTPS links use
   matching coordinates when known and the address text otherwise, so
   directions remain available while geocoding is pending or fails. The
   Maps app chooses the origin and travel mode; no location permission is

@@ -204,7 +204,7 @@ export function EventInspector({
               <MapPinIcon className="mt-0.5 shrink-0 text-ink-secondary" size={14} />
               <span className="min-w-0 break-words select-text">{location}</span>
             </p>
-            <LocationMap place={place} />
+            <LocationMap place={place} variant="detail" />
           </div>
         ) : null}
         {attendees.length > 0 ? (

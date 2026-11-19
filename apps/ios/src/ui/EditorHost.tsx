@@ -46,12 +46,14 @@ import { CaptureBanner } from './CaptureBanner.tsx';
 import { EventDetailSheet } from './EventDetailSheet.tsx';
 import { EventEditSheet, type EditSeed } from './EventEditSheet.tsx';
 import { RouteFade } from './RouteFade.tsx';
+import { TaskDetailSheet } from './TaskDetailSheet.tsx';
 import { TaskFoldSheet } from './TaskFoldSheet.tsx';
 import {
   cancelEditor,
   captureMayOpen,
   closeDeleted,
   closeEditor,
+  closeTaskDetail,
   type EditSheet,
   inRoute,
   NONE,
@@ -83,8 +85,6 @@ export interface EditorHost {
   readonly closeAll: () => void;
   /** The event editor: a slot, a prefill, an existing event (a to-do `initialKind` converts). */
   readonly editEvent: (seed: EditSeed, options?: { readonly initialKind?: ItemKind }) => void;
-  /** The task editor for an existing task. */
-  readonly editTask: (task: TaskRecord) => void;
   /** The editor's route went away (Close, Cancel, Save, or a swipe down). */
   readonly onEditorDismissed: () => void;
   /** The editor's route mounted. */
@@ -96,6 +96,8 @@ export interface EditorHost {
   readonly openNew: (request: NewItemRequest) => void;
   /** Settings — after the editor, when one is up behind the calendar's avatar, has closed. */
   readonly openSettings: () => void;
+  /** The read-first task or reminder view; Edit opens its form. */
+  readonly openTask: (task: TaskRecord) => void;
   /** A fold chip's list of today's overdue or undated tasks. */
   readonly openTaskFold: (fold: TaskFold, tasks: ReadonlyArray<TaskRecord>) => void;
   /** What the editor route shows: the detail or the editor (kept while the sheet slides away). */
@@ -451,20 +453,14 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
   // could replace the detail when its run finished, or its held thread
   // once the detail closed. An event deleted since opens nothing and leaves
   // the capture alone.
-  const editTask = (task: TaskRecord) =>
-    setSheet({
-      kind: 'edit',
-      opening: nextOpening(),
-      seed: { initialDate: Temporal.Now.plainDateISO(timeZone) },
-      task,
-    });
+  const openTask = (task: TaskRecord) => setSheet({ kind: 'task-detail', task });
   const onNotificationTap = useEffectEvent((target: NotificationTarget) => {
     if (target.kind === 'task') {
-      // A task reminder opens the task's editor, checked off or not; one deleted since opens nothing.
+      // A task notification opens its detail, checked off or not; one deleted since opens nothing.
       void findNotificationTask(backendClient, target).then((task) => {
         if (task) {
           dismissCapture();
-          editTask(task);
+          openTask(task);
         }
       });
       return;
@@ -498,7 +494,7 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
           onClose={() => setSheet((current) => (current === shown ? NONE : current))}
           onConvert={(event, scope) =>
             setSheet({
-              backTo: event,
+              backTo: { event, kind: 'detail' },
               initialKind: defaultTodoKind(taskLists),
               kind: 'edit',
               opening: nextOpening(),
@@ -512,13 +508,32 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
           onDeleted={(scope) => setSheet(closeDeleted(shown.event, scope))}
           onEdit={(event) =>
             setSheet({
-              backTo: event,
+              backTo: { event, kind: 'detail' },
               kind: 'edit',
               opening: nextOpening(),
               seed: { event, initialDate: Temporal.Now.plainDateISO(timeZone) },
             })
           }
           timeZone={timeZone}
+        />
+      );
+    }
+    if (shown.kind === 'task-detail') {
+      return (
+        <TaskDetailSheet
+          onClose={() => setSheet((current) => (current === shown ? NONE : current))}
+          onCompleted={(task, action) => setSheet(closeTaskDetail(task, action, shown))}
+          onEdit={(task) =>
+            setSheet({
+              backTo: { kind: 'task-detail', task },
+              kind: 'edit',
+              opening: nextOpening(),
+              seed: { initialDate: Temporal.Now.plainDateISO(timeZone) },
+              task,
+            })
+          }
+          task={shown.task}
+          taskLists={taskLists}
         />
       );
     }
@@ -553,7 +568,6 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
         opensOn: seed.lesson === undefined ? undefined : 'assistant',
         seed,
       }),
-    editTask,
     onEditorDismissed,
     onEditorShown,
     openBirthday: (birthday) => setSheet({ birthday, kind: 'birthday' }),
@@ -572,6 +586,7 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
         taskSeed: resolved === 'event' ? undefined : { dated, listKey },
       });
     },
+    openTask,
     // Settings is a route of its own: pushed over the editor it would
     // stack on the sheet, and the editor's pop would take Settings
     // instead. So the editor closes first — Cancel — and Settings opens
@@ -622,7 +637,7 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
           fold={sheet.fold}
           key={`fold:${sheet.fold}`}
           onClose={close}
-          onEdit={host.editTask}
+          onOpen={host.openTask}
           tasks={sheet.tasks}
           timeZone={timeZone}
         />

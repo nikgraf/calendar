@@ -2053,8 +2053,19 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       if (op.kind !== 'move' && kinds.includes('move')) {
         return retry('waiting for the move ahead of it');
       }
-      if (op.kind !== 'move' && op.kind !== 'create' && kinds.includes('create')) {
-        return retry('waiting for the create ahead of it');
+      if (op.kind !== 'create') {
+        // Folding an edit into an unsent create keeps its createdAt but
+        // gives it a new rowid, behind occurrence edits with the same
+        // timestamp (a move gives the whole series one). Those edits
+        // still need the series to exist on Google first.
+        const series = yield* pendingOpRepo.listForEvent({
+          accountId: op.accountId,
+          calendarId: op.calendarId,
+          eventId: op.payload?.recurringEventId ?? op.eventId,
+        });
+        if (kinds.includes('create') || series.some((entry) => entry.kind === 'create')) {
+          return retry('waiting for the create ahead of it');
+        }
       }
       const split = yield* splitGate(op);
       if (split !== undefined) {
@@ -2280,11 +2291,15 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         yield* taskRepo.replaceParent(op.accountId, op.eventId, task.id);
         const record = mapGcalTask(task, { accountId: op.accountId, taskListId });
         if (record) {
-          return yield* settleCreatedTask(op, taskListId, task.id, show(record));
+          yield* settleCreatedTask(op, taskListId, task.id, show(record));
+        } else {
+          // Unreachable in practice (a task Google just made is never a
+          // tombstone) — keep the row addressable under the server id.
+          yield* taskRepo.replaceId(op.accountId, taskListId, op.eventId, task.id);
         }
-        // Unreachable in practice (a task Google just made is never a
-        // tombstone) — keep the row addressable under the server id.
-        yield* taskRepo.replaceId(op.accountId, taskListId, op.eventId, task.id);
+        // Publish before the transaction's task invalidation reaches an open
+        // detail. If commit fails, getTask still prefers the restored temp row.
+        yield* taskRepo.rememberCreatedId(op.accountId, taskListId, op.eventId, task.id);
       }),
     );
 

@@ -25,6 +25,7 @@ export * from './locationField.ts';
 export * from './editorModel.ts';
 export * from './mirrorEditorModel.ts';
 export * from './taskEditorModel.ts';
+export * from './taskDetailActions.ts';
 export * from './modelAvailability.ts';
 export * from './mutationGuard.ts';
 export * from './notices.ts';

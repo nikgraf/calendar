@@ -6,8 +6,9 @@ import {
   EventRecord,
   GeoLocation,
   type SearchQuery,
+  TaskRecord,
 } from '@calendar/core';
-import { ACCOUNTS_KEY, deviceSettingsKey, EVENTS_KEY } from '@calendar/db/keys';
+import { ACCOUNTS_KEY, deviceSettingsKey, EVENTS_KEY, TASKS_KEY } from '@calendar/db/keys';
 import { Effect } from 'effect';
 import { AsyncResult, Atom, AtomRegistry } from 'effect/reactivity';
 import { describe, expect, it, vi } from 'vite-plus/test';
@@ -444,6 +445,70 @@ describe('currentEvent', () => {
     unbind();
     unmount();
     registry.dispose();
+  });
+});
+
+describe('currentTask', () => {
+  it('follows an undated task through completion, distinguishes failure from deletion and addresses its own list', async () => {
+    const shown = new TaskRecord({
+      accountId: 'account|one',
+      id: 'task|one',
+      listId: 'list|one',
+      provider: 'google',
+      status: 'needsAction',
+      title: 'Call Alex',
+      updatedAt: 0,
+    });
+    let row: TaskRecord | null = shown;
+    let failing = false;
+    const getTask = vi.fn((address) => {
+      expect(address).toEqual({
+        accountId: shown.accountId,
+        listId: shown.listId,
+        taskId: shown.id,
+      });
+      return failing ? fail('database is locked') : Effect.succeed(row);
+    });
+    const atoms = makeBackendAtoms({ ...makeStubClient().client, getTask });
+    const registry = AtomRegistry.make();
+    let emit: ((keys: ReadonlyArray<unknown>) => void) | undefined;
+    const unbind = atoms.bindInvalidations(registry, (listener) => {
+      emit = listener;
+      return () => {};
+    });
+    const current = atoms.currentTask(
+      JSON.stringify({ accountId: shown.accountId, listId: shown.listId, taskId: shown.id }),
+    );
+    const unmount = registry.mount(current);
+    const read = (
+      predicate: (result: AsyncResult.AsyncResult<TaskRecord | null, unknown>) => boolean,
+    ) =>
+      waitFor(
+        () => registry.get(current),
+        (result) => !AsyncResult.isWaiting(result) && predicate(result),
+      );
+    try {
+      expect(AsyncResult.getOrThrow(await read(AsyncResult.isSuccess))).toBe(shown);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      row = new TaskRecord({ ...shown, status: 'completed', title: 'Call Alex (updated)' });
+      emit?.([TASKS_KEY]);
+      expect(
+        AsyncResult.getOrThrow(
+          await read((result) => AsyncResult.isSuccess(result) && result.value !== shown),
+        ),
+      ).toBe(row);
+      failing = true;
+      emit?.([TASKS_KEY]);
+      await read(AsyncResult.isFailure);
+      failing = false;
+      row = null;
+      emit?.([TASKS_KEY]);
+      expect(AsyncResult.getOrThrow(await read(AsyncResult.isSuccess))).toBeNull();
+    } finally {
+      unbind();
+      unmount();
+      registry.dispose();
+    }
   });
 });
 

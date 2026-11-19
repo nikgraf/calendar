@@ -512,6 +512,9 @@ Recurrence walks plain dates as its reference; free-slot search checks
 busy intervals and a minute-grid oracle; ordering generates successive
 insertions; settings codes preserve portable fields; gateway reads check
 all 25 grant pairs, while write gates use generated capabilities.
+Mirror properties enumerate visibility and field policies, compare occupied
+minutes and days with an independent oracle, and replan interrupted write
+prefixes while protecting foreign and out-of-window copies.
 
 `packages/sync/src/engine.property.test.ts` generates create, edit, delete
 and retry commands over the real engine and HTTP clients. Every case
@@ -844,7 +847,7 @@ guest-side RSVP (needs a second account).
 
 ### Desktop e2e (`pnpm test:e2e`, apps/desktop/e2e/)
 
-The opt-in desktop property test runs with `pnpm test:bombadil` after
+The desktop property test runs with `pnpm test:bombadil` after
 `pnpm --filter @calendar/desktop build`. It attaches Bombadil 0.7.10 to
 the existing isolated Electron app over CDP for 45 seconds. It first
 changes an existing event's title and dates, cancels and reopens it to
@@ -857,15 +860,46 @@ times, and the unchanged seed event, including records outside the visible
 week. Google writes remain queued in a profile without real tokens; native
 services and the model use the harness's off/fixture settings.
 
+The same command also runs `bombadilTasks.e2e.ts` for 45 seconds in a
+separate profile. It exercises Google Tasks and the isolated Reminders
+fixture: Event/Task/Reminder switches must retain title, due date and
+notes; cancelling an existing task conversion or reminder edit must keep
+the originals; cancelling a new draft must reopen empty. The prefix fills
+the event form's title, notes and future date before switching to a to-do,
+replaces title and notes on the to-do form, then edits the event date during
+a kind round trip. It requires a cancellation and a saved
+item in each provider before random exploration. Synchronous Save bursts
+must leave exactly one task per ledger entry, with the right provider,
+list and fields, and no abandoned intermediate event in SQLite. These
+actions never use the Mac's real Reminders database. Task traces and
+ledgers use `bombadil-tasks-<timestamp>/`; replay one with
+`E2E=1 BOMBADIL=1 BOMBADIL_TASK_REPRODUCE=<directory> pnpm exec vp test run apps/desktop/e2e/bombadilTasks.e2e.ts`.
+
+For a first local run, prefetch Electron with
+`pnpm --filter @calendar/desktop exec electron --version` before starting
+the timed tests; a slow binary download otherwise consumes their timeout.
+`caffeinate -di pnpm test:bombadil` keeps a local Mac and its display awake
+for the run. The fixture-backed task scenario needs no Swift helper.
+
 `apps/desktop/e2e-artifacts/bombadil-<timestamp>/` retains the trace,
 screenshots, driver log and successful editor ledger. On failure the
 ordinary harness dump is retained too. Inspect a trace with
 `pnpm exec bombadil browser inspect <directory>`; replay it against a
-fresh isolated app with `BOMBADIL_REPRODUCE=<directory> pnpm test:bombadil`.
+fresh isolated app with
+`E2E=1 BOMBADIL=1 BOMBADIL_REPRODUCE=<directory> pnpm exec vp test run apps/desktop/e2e/bombadil.e2e.ts`.
+These per-file replay commands run only the selected scenario.
 Driver processes are stopped on the test's timeout or cancellation.
 Bombadil's replay and shrinking are best effort; preserve a concrete
 regression test for a discovered app bug. Ordinary `pnpm test:e2e` skips
 this bounded exploratory run, and the unit gate does not launch Electron.
+CI runs it as a separate step after the standard CDP suite in the existing
+desktop job, reusing its Electron download and built app. Each exploration
+is bounded to 45 seconds; the step has a four-minute timeout and no retry.
+The job fails on a property violation or persistence mismatch. The
+`bombadil-traces-<attempt>` artifact retains traces and ledgers for seven
+days on passing and failing runs; failed harness dumps also remain in the
+ordinary e2e diagnostics. Docs-only and iOS-only changes keep the existing
+desktop-job skip behavior.
 
 Raw CDP over Node's native WebSocket (no Playwright): the harness launches
 the built Electron app with `--remote-debugging-port=0` (Chromium binds a
@@ -1038,14 +1072,17 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   them at the back without activating the app, ignores the OS mouse and
   drops the tracking-area enter/leave events macOS still sends;
   `Cdp.connect` turns on `Emulation.setFocusEmulationEnabled`, so the
-  page acts as the focused window and keeps drawing while covered. A
+  page acts as the focused window for input. A
   developer's keys and trackpad used to reach the test window (a Space
   opened the editor mid-drag, a moving trackpad dropped the capture).
   Consequence: `browser-window-focus` never fires in e2e, so no spec may
   count on the sync kick or the settings-file check it runs.
-- **A window behind another one renders nothing** without that
-  emulation: `cdp.waitUntilRendered` still draws a frame (a screenshot)
-  before each try.
+- **Covered test windows keep rendering.** CDP-only windows disable
+  Electron's background throttling before navigation, so they draw their
+  initial document before the harness attaches and emulates focus.
+  `cdp.waitUntilRendered` also draws a frame (a screenshot) before each try
+  to force fresh layout for rendering-dependent checks. Normal app windows
+  retain Electron's default throttling.
 - **Motion specs ask for motion first.** CI's macOS runner reports
   `prefers-reduced-motion: reduce`, so a spec that checks a transition
   sees the reduced path there and fails while it passes locally. Emulate
@@ -1070,6 +1107,12 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   the previous run's exit. A "(retry x1)" failure lists both attempts and
   the first may be listed second: read every error, and check whether
   attempt 1 changed the state the retry then failed on.
+- **Each Assistant view test owns its seeded profile.** A retry after
+  Save must open the original event again, not the time the failed
+  attempt already stored. Resetting only the panel or today's week does
+  not undo a write. Bound diagnostic capture so a stalled renderer cannot
+  prevent teardown; put the retry number before the name so the harness's
+  filename truncation keeps it.
 - **Never read editor state off `body.textContent`**: the sync footer's
   pending-op labels hold strings like "Edit task". Locate by testid.
 - **Seed order is not what a spec expects.** Capture drafts come in date
@@ -1098,8 +1141,8 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   `today` first.** The grid shows the focused draft's day and stays there
   once the editor closes, saved or not, so on a Sunday a draft on `+1`
   leaves it on next week, where nothing seeded for today is on show.
-  `assistantView.e2e.ts` clicks it before each test, since its tests
-  draft on `+1` and open today's seeds in turn.
+  This applies when tests share an app; Assistant view tests instead
+  start a fresh seeded app for every attempt.
 - **Teardown**: await the Electron process `exit` (with timeout) before
   deleting the temp profile, and `rmSync` with retries.
 - **Fire-and-forget UI mutations can silently drop**: poll for the effect
@@ -1187,7 +1230,9 @@ Electron binary (`electron --version`) and run spec files sequentially.
 
 - `gate` (ubuntu, reusable `gate.yml`, also called by `ios.yml`): check +
   knip + typecheck + unit tests. The check is "Gate / Lint, typecheck, unit tests".
-- `e2e` (macos-15): desktop build → `pnpm test:e2e`.
+- `e2e` (macos-15): desktop build → `pnpm test:e2e` →
+  `pnpm test:bombadil` (four-minute step; traces retained for seven days
+  on passing and failing runs).
 - `e2e-reminders` (xcode-27, GitHub's macOS 27 image: the helper is built
   for macOS 27 and runs only there): the **real** EventKit path on the
   desktop. Builds the helper, seeds the runner's per-user TCC database
@@ -1479,7 +1524,8 @@ waits for either and taps the one to the form, then waits for the
 switch's motion to end: a tap taken while the form rises lands where a
 field was; flows 06 and 22 wait the same way after their flips),
 `open-event-editor.yaml`
-(Edit on the detail sheet a tap opens), `switch-view.yaml` (the header's menu, `VIEW`;
+(Edit on an event detail sheet), `open-task-editor.yaml`
+(Edit on a task or reminder detail sheet, after asserting no form is open), `switch-view.yaml` (the header's menu, `VIEW`;
 done once the button reads "View: `VIEW`"),
 `switch-to-task.yaml`, `open-settings.yaml` (waits for `settings-root`),
 `open-settings-page.yaml` (`PAGE`: `device`, `time-zones`,
@@ -1560,7 +1606,7 @@ Selector gotchas (each caused a real failure):
   shard).
 - The kind control's segments are `mode-event` / `mode-task` /
   `mode-reminder` (a Reminders list sits behind `mode-reminder`, never in
-  a task's list picker); a tap on an event opens its detail sheet first.
+  a task's list picker); a tap on an event, task or reminder opens its detail sheet first.
   Flows that open a sheet `waitForAnimationToEnd` before tapping inside
   it. Maestro's visibility ignores the keyboard and clipping: dismiss the
   keyboard before tapping a lower input (a tap "on" a covered input lands

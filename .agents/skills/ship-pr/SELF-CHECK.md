@@ -34,6 +34,9 @@ The class found in the most PRs (54), almost all by Opus.
   `x ?? (null === 'v')` and passes on any text (#230, #317).
 - Which branch, ordering or failure path did you add that no test fails
   without? Name the test for each.
+- A round trip between mounted editors or models: does each side change
+  to distinct values before switching? Reusing the original values can
+  hide missing field adoption even when every assertion passes.
 - Does the test rely on a fake behaving like the real thing (a released
   recorder that throws, EventKit's DST hours, a clock frozen through
   sleep)? Does the fake?

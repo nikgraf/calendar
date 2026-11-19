@@ -22,7 +22,8 @@ import { useEffect, useEffectEvent, useState } from 'react';
 import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { confirmEditorRequest } from './EventEditSheet.tsx';
 import { LocationMap } from './LocationMap.tsx';
-import { actionText, BOX_FONT_SCALE, type ThemeColors, useEventTint, useStyles } from './theme.ts';
+import { SheetButton } from './SheetButton.tsx';
+import { BOX_FONT_SCALE, type ThemeColors, useEventTint, useStyles } from './theme.ts';
 import { ZoneLines } from './ZoneLines.tsx';
 
 const STATUS_LABEL: Record<string, string> = {
@@ -124,11 +125,7 @@ export function EventDetailSheet({
   return (
     <View style={styles.container} testID="event-detail">
       <View style={styles.header}>
-        <Pressable accessibilityRole="button" onPress={onClose} testID="event-detail-close">
-          <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.cancel}>
-            Close
-          </Text>
-        </Pressable>
+        <SheetButton label="Close" onPress={onClose} testID="event-detail-close" />
         <View style={styles.calendarPill}>
           <View style={[styles.dot, { backgroundColor: tint.edge }]} />
           <Text
@@ -139,11 +136,7 @@ export function EventDetailSheet({
             {calendar?.summary ?? 'Calendar'}
           </Text>
         </View>
-        <Pressable accessibilityRole="button" onPress={() => onEdit(event)} testID="event-edit">
-          <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.edit}>
-            Edit
-          </Text>
-        </Pressable>
+        <SheetButton label="Edit" onPress={() => onEdit(event)} primary testID="event-edit" />
       </View>
       <ScrollView contentContainerStyle={styles.content}>
         <Text selectable style={styles.title} testID="event-detail-title">
@@ -289,17 +282,15 @@ const makeStyles = (colors: ThemeColors) =>
     },
     calendarName: {
       color: colors['text-secondary'],
+      flexShrink: 1,
       fontSize: 13,
-      maxWidth: 160,
     },
     calendarPill: {
       alignItems: 'center',
+      flex: 1,
       flexDirection: 'row',
       gap: 6,
-    },
-    cancel: {
-      color: colors['text-secondary'],
-      fontSize: 16,
+      justifyContent: 'center',
     },
     chip: {
       backgroundColor: colors.fill,
@@ -344,10 +335,6 @@ const makeStyles = (colors: ThemeColors) =>
       height: 10,
       width: 10,
     },
-    edit: {
-      ...actionText(colors),
-      fontSize: 16,
-    },
     error: {
       color: colors.danger,
       fontSize: 13,
@@ -355,9 +342,10 @@ const makeStyles = (colors: ThemeColors) =>
     header: {
       alignItems: 'center',
       flexDirection: 'row',
+      gap: 8,
       justifyContent: 'space-between',
       paddingHorizontal: 16,
-      paddingVertical: 14,
+      paddingVertical: 12,
     },
     joinButton: {
       alignItems: 'center',

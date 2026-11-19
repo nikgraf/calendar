@@ -29,7 +29,6 @@ import {
   Modal,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
-  Pressable,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -80,6 +79,7 @@ import { ReminderEditForm } from './ReminderEditForm.tsx';
 import { SegmentedControl } from './SegmentedControl.tsx';
 import { TaskCheck } from './TaskCheck.tsx';
 import { TaskEditForm } from './TaskEditForm.tsx';
+import { SheetButton } from './SheetButton.tsx';
 import { BOX_FONT_SCALE, groupedGround, useTheme } from './theme.ts';
 
 /** An existing item, a prefilled slot, or a thread of drafts (a capture's events). */
@@ -208,38 +208,25 @@ function EditorHeader({
   return (
     <View style={styles.editorHeader}>
       <View style={styles.capsuleSide}>
-        <Pressable
-          accessibilityRole="button"
+        <SheetButton
+          label={birthday ? 'Done' : 'Cancel'}
           onPress={onClose}
-          style={styles.capsule}
           testID="editor-cancel"
-        >
-          {/* A birthday's reminder chips save as they change: nothing to cancel. */}
-          <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.capsuleLabel}>
-            {birthday ? 'Done' : 'Cancel'}
-          </Text>
-        </Pressable>
+        />
       </View>
       <Text maxFontSizeMultiplier={BOX_FONT_SCALE} numberOfLines={1} style={styles.title}>
         {title}
       </Text>
       <View style={styles.capsuleSide}>
         {nothingToSave ? null : (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityState={{ busy, disabled: saveOff }}
+          <SheetButton
+            busy={busy}
             disabled={saveOff}
+            label="Save"
             onPress={() => void (kinds.mode === 'todo' ? taskModel.save() : eventModel.save())}
-            style={[styles.capsule, styles.capsulePrimary, (busy || previewing) && styles.busy]}
+            primary
             testID="event-save"
-          >
-            <Text
-              maxFontSizeMultiplier={BOX_FONT_SCALE}
-              style={[styles.capsuleLabel, styles.capsulePrimaryLabel]}
-            >
-              Save
-            </Text>
-          </Pressable>
+          />
         )}
       </View>
     </View>

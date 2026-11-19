@@ -121,6 +121,17 @@ jobs:
       # install. Fetch it once, up front.
       - run: pnpm --filter @calendar/desktop exec electron --version
       - run: pnpm test:e2e
+      - name: Bombadil editor properties
+        timeout-minutes: 4
+        run: pnpm test:bombadil
+      - name: Upload Bombadil traces
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: bombadil-traces-${{ github.run_attempt }}
+          path: apps/desktop/e2e-artifacts/bombadil-*/
+          retention-days: 7
+          if-no-files-found: ignore
       - name: Upload e2e diagnostics
         if: failure()
         uses: actions/upload-artifact@v7

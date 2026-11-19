@@ -40,6 +40,7 @@ import {
   View,
 } from 'react-native';
 import { TaskCheck } from '../TaskCheck.tsx';
+import { SheetButton } from '../SheetButton.tsx';
 import { actionText, BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme } from '../theme.ts';
 
 const zoned = (ms: number, timeZone: string): Temporal.ZonedDateTime =>
@@ -189,33 +190,18 @@ export function MirrorEditSheet({
     <Modal animationType="slide" onRequestClose={onClose} presentationStyle="pageSheet" visible>
       <SafeAreaView style={styles.sheet}>
         <View style={styles.sheetHeader}>
-          <Pressable
-            accessibilityRole="button"
-            hitSlop={8}
-            onPress={onClose}
-            testID="mirror-cancel"
-          >
-            <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.cancel}>
-              Cancel
-            </Text>
-          </Pressable>
-          <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.sheetTitle}>
+          <SheetButton label="Cancel" onPress={onClose} testID="mirror-cancel" />
+          <Text maxFontSizeMultiplier={BOX_FONT_SCALE} numberOfLines={1} style={styles.sheetTitle}>
             {initial.name === '' ? 'New mirror' : 'Edit mirror'}
           </Text>
-          <Pressable
-            accessibilityRole="button"
+          <SheetButton
+            busy={work.busy}
             disabled={issue !== undefined || work.busy}
-            hitSlop={8}
+            label="Save"
             onPress={() => void save()}
+            primary
             testID="mirror-save"
-          >
-            <Text
-              maxFontSizeMultiplier={BOX_FONT_SCALE}
-              style={[styles.link, (issue !== undefined || work.busy) && styles.disabled]}
-            >
-              Save
-            </Text>
-          </Pressable>
+          />
         </View>
         <ScrollView
           automaticallyAdjustKeyboardInsets
@@ -435,10 +421,6 @@ const makeStyles = (colors: ThemeColors) =>
     addRow: {
       marginTop: 10,
     },
-    cancel: {
-      color: colors['text-secondary'],
-      fontSize: 14,
-    },
     check: {
       alignItems: 'center',
       flexDirection: 'row',
@@ -536,8 +518,10 @@ const makeStyles = (colors: ThemeColors) =>
     },
     sheetTitle: {
       color: colors.text,
+      flex: 1,
       fontSize: 16,
       fontWeight: '600',
+      textAlign: 'center',
     },
     warning: {
       backgroundColor: colors.warning,

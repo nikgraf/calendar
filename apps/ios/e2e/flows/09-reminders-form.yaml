@@ -167,6 +167,7 @@ tags:
                 direction: DOWN
                 timeout: 10000
             - tapOn: '${output.movedReminderLabel}'
+            - runFlow: ../common/open-task-editor.yaml
             - assertVisible: 'Edit Reminder'
             - waitForAnimationToEnd:
                 timeout: 5000
@@ -183,6 +184,7 @@ tags:
                 timeout: 10000
             - assertVisible: '${output.movedReminderLabel}'
       - tapOn: 'Solunivo e2e reminder to delete, due .*'
+      - runFlow: ../common/open-task-editor.yaml
       - assertVisible: 'Edit Reminder'
       - waitForAnimationToEnd:
           timeout: 5000
@@ -198,6 +200,7 @@ tags:
           visible: 'Complete reminder Solunivo e2e reminder to delete'
           timeout: 10000
       - tapOn: 'Solunivo e2e reminder to delete, due .*'
+      - runFlow: ../common/open-task-editor.yaml
       - assertVisible: 'Edit Reminder'
       # Removing the time moves the same reminder into the all-day lane.
       - scrollUntilVisible:
@@ -214,6 +217,7 @@ tags:
       - assertVisible: '!!! Solunivo e2e reminder to delete'
       # Adding the time back returns it to the time grid.
       - tapOn: '!!! Solunivo e2e reminder to delete'
+      - runFlow: ../common/open-task-editor.yaml
       - assertVisible: 'Edit Reminder'
       - waitForAnimationToEnd:
           timeout: 5000
@@ -237,6 +241,7 @@ tags:
           visible: 'Solunivo e2e reminder to delete, due .*'
           timeout: 10000
       - tapOn: 'Solunivo e2e reminder to delete, due .*'
+      - runFlow: ../common/open-task-editor.yaml
       - assertVisible: 'Edit Reminder'
       - waitForAnimationToEnd:
           timeout: 5000
@@ -307,6 +312,7 @@ tags:
           visible: 'Solunivo e2e reminder to delete, due .*'
           timeout: 10000
       - tapOn: 'Solunivo e2e reminder to delete, due .*'
+      - runFlow: ../common/open-task-editor.yaml
       - assertVisible: 'Edit Reminder'
       - waitForAnimationToEnd:
           timeout: 5000
