@@ -1456,7 +1456,8 @@ gateway carries all of it. Details, limits and the threat model:
   its saved event fields or to-do due day from `useThreadEditor` through
   `createdItem.ts`. `useCalendarNavigation` shows that date; a repeating
   event uses the occurrence nearest the visible days (one in view first,
-  later on a tie), without the fetched buffer. An undated to-do leaves
+  later on a tie), without the fetched buffer. A day already visible
+  preserves the current window; an undated to-do or an invalid due date leaves
   the view alone. Edits, conversions, deletes and failed writes do not
   publish a creation reveal; a reply after the editor unmounts is ignored.
 - **rpc vs IPC.** Calendar data crosses process boundaries **only**

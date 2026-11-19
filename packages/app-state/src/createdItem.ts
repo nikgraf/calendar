@@ -15,7 +15,12 @@ export const createdItemDay = (
   timeZone: string,
 ): Temporal.PlainDate | undefined => {
   if (item.kind === 'task') {
-    return item.date === undefined ? undefined : Temporal.PlainDate.from(item.date);
+    try {
+      return item.date === undefined ? undefined : Temporal.PlainDate.from(item.date);
+    } catch {
+      // A free-text task date may not be a valid calendar date.
+      return undefined;
+    }
   }
   const event = item.event;
   const start =

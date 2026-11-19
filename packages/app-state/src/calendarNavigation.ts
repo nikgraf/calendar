@@ -207,7 +207,10 @@ export const useCalendarNavigation = ({
     const last =
       view === 'month' ? first.with({ day: first.daysInMonth }) : first.add({ days: dayCount - 1 });
     const day = createdItemDay(item, first, last, timeZone);
-    if (day) {
+    if (
+      day &&
+      (Temporal.PlainDate.compare(day, first) < 0 || Temporal.PlainDate.compare(day, last) > 0)
+    ) {
       goToDay(day);
     }
   });

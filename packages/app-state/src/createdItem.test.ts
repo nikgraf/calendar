@@ -42,6 +42,11 @@ describe('the calendar destination after creating an item', () => {
     expect(destination({ date: undefined, kind: 'task' })).toBeUndefined();
   });
 
+  it('ignores an invalid typed task date instead of crashing after the write', () => {
+    expect(destination({ date: '2027-02-30', kind: 'task' })).toBeUndefined();
+    expect(destination({ date: '', kind: 'task' })).toBeUndefined();
+  });
+
   it('prefers an occurrence in the visible view to the series start', () => {
     expect(
       destination(event('2026-01-05', ['RRULE:FREQ=WEEKLY']), '2026-09-16', '2026-09-22'),

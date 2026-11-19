@@ -5,6 +5,7 @@ import {
   TaskListInfo,
   Temporal,
 } from '@calendar/core';
+import { titleFor } from '@calendar/app-state';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test';
 import { type App, launchApp, readEvents, readTasks } from './harness.ts';
 
@@ -170,6 +171,30 @@ describe('the calendar after creating an item', () => {
     await save();
     expect(await app.cdp.evaluate(($) => $.text('[data-testid="toolbar-title"]'))).toBe(month);
   });
+
+  it.each([false, true])(
+    'keeps a rolled week in place when the saved occurrence is already visible (repeating: %s)',
+    async (repeating) => {
+      const first = today.subtract({ days: today.dayOfWeek - 1 }).add({ days: 2 });
+      const day = first.add({ days: 5 });
+      await app.cdp.clickTestId('view-week');
+      await app.cdp.clickTestId(`mini-day-${first.toString()}`);
+      const title = titleFor('week', first, first, 'long');
+      await app.cdp.waitUntil(
+        ($, expected: string) => $.text('[data-testid="toolbar-title"]') === expected,
+        title,
+      );
+      await setEvent(
+        repeating ? 'Visible repeating event' : 'Visible event',
+        repeating ? day.subtract({ days: 70 }) : day,
+      );
+      if (repeating) {
+        await app.cdp.evaluate(($) => $.setValue('select[aria-label="Repeat"]', 'weekly'));
+      }
+      await save();
+      expect(await app.cdp.evaluate(($) => $.text('[data-testid="toolbar-title"]'))).toBe(title);
+    },
+  );
 
   it('picks the nearest occurrence before the current day instead of the series start', async () => {
     await setEvent('Weekly practice', today.subtract({ days: 72 }));
