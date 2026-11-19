@@ -228,13 +228,19 @@ describe('The editor’s Assistant and Form views', () => {
   afterEach(async (context) => {
     const attempt = app;
     app = undefined;
+    let captureTimer: ReturnType<typeof setTimeout> | undefined;
     try {
-      if (context.task.result?.state === 'fail') {
-        await attempt?.dump(
-          `${context.task.name}-retry-${String(context.task.result.retryCount ?? 0)}`,
-        );
+      if (attempt && context.task.result?.state === 'fail') {
+        // Leave time to stop Electron even when its renderer cannot answer CDP.
+        await Promise.race([
+          attempt.dump(`retry-${String(context.task.result.retryCount ?? 0)}-${context.task.name}`),
+          new Promise<void>((resolve) => {
+            captureTimer = setTimeout(resolve, 2000);
+          }),
+        ]);
       }
     } finally {
+      clearTimeout(captureTimer);
       await attempt?.stop();
     }
   });

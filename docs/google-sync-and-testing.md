@@ -1073,7 +1073,9 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
 - **Each Assistant view test owns its seeded profile.** A retry after
   Save must open the original event again, not the time the failed
   attempt already stored. Resetting only the panel or today's week does
-  not undo a write. Capture diagnostics before closing the failed app.
+  not undo a write. Bound diagnostic capture so a stalled renderer cannot
+  prevent teardown; put the retry number before the name so the harness's
+  filename truncation keeps it.
 - **Never read editor state off `body.textContent`**: the sync footer's
   pending-op labels hold strings like "Edit task". Locate by testid.
 - **Seed order is not what a spec expects.** Capture drafts come in date
