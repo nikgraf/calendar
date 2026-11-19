@@ -11,8 +11,10 @@ vi.mock('expo', () => ({
 const { AVAILABILITY_TIMEOUT_MS, availabilityOfReply, checkAvailability } =
   await import('./appleModel.ts');
 
-/** The package's yes/no, present: generation is built in. */
-const ai = (available: boolean) => ({ isAvailable: () => available });
+// The package's model info, present: generation is built in.
+const ai = (available: boolean) => ({
+  getModelInfo: async () => ({ availability: available ? 'available' : 'modelNotReady' }),
+});
 /** The availability module, answering `reply`. */
 const bridge = (reply: unknown) => ({ check: () => Promise.resolve(reply) });
 
@@ -58,21 +60,21 @@ describe('checkAvailability', () => {
     ).resolves.toEqual({ status: 'missing-module' });
   });
 
-  it('falls back to the yes/no on a build without the availability module, and says so', async () => {
+  it('falls back to model info on a build without the availability module', async () => {
     await expect(checkAvailability({ ai: ai(true), bridge: undefined })).resolves.toEqual({
       status: 'ready',
     });
     await expect(checkAvailability({ ai: ai(false), bridge: undefined })).resolves.toEqual({
-      reasonsUnavailable: true,
-      status: 'unavailable',
+      nativeReason: 'modelNotReady',
+      status: 'not-ready',
     });
   });
 
-  it('reports a yes/no that threw as a failed check', async () => {
+  it('reports model info that rejects as a failed check', async () => {
     await expect(
       checkAvailability({
         ai: {
-          isAvailable: () => {
+          getModelInfo: async () => {
             throw new Error('turbo module not ready');
           },
         },
@@ -84,6 +86,32 @@ describe('checkAvailability', () => {
       status: 'unavailable',
     });
   });
+
+  it('gives up on model info that never answers', async () => {
+    vi.useFakeTimers();
+    const result = checkAvailability({
+      ai: { getModelInfo: () => new Promise<never>(() => {}) },
+      bridge: undefined,
+    });
+    await vi.advanceTimersByTimeAsync(AVAILABILITY_TIMEOUT_MS);
+    await expect(result).resolves.toEqual({
+      checkError: 'iOS did not answer within 5 s.',
+      reasonsUnavailable: true,
+      status: 'unavailable',
+    });
+  });
+
+  it.each([null, {}, { availability: true }, { availability: '' }])(
+    'reports malformed model info as a failed check: %j',
+    async (reply) => {
+      await expect(
+        checkAvailability({ ai: { getModelInfo: async () => reply }, bridge: undefined }),
+      ).resolves.toMatchObject({
+        checkError: expect.stringContaining('Unexpected reply'),
+        status: 'unavailable',
+      });
+    },
+  );
 
   it('reports a rejected check as failed, not as an unavailable model', async () => {
     await expect(

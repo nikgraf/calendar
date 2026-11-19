@@ -359,6 +359,11 @@ in the `ios-simulator` skill (`.agents/skills/ios-simulator/SKILL.md`).
 
 ## On-device models
 
+- **`@react-native-ai/apple` 0.13 changed the native model API.**
+  `getModelInfo()` replaces `isAvailable()` and answers asynchronously
+  with an `availability` string. `generateText()` returns `{ content,
+  usage }`, with text, reasoning and tool parts inside `content`;
+  `appleModel.ts` joins only the text parts before parsing JSON.
 - **The Mac's and the iPhone's Apple models differ.** At temperature 0 a
   phrase got a short title on the Mac and the whole sentence on the
   iPhone, and the bench scored 49 on the Mac against 55 on an iPhone 16:
