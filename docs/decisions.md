@@ -629,6 +629,14 @@ was cut (pruned 2026-11-17).
 
 ## Calendar: editing, gestures, views
 
+- **Read-first iOS details and consistent sheet actions** (2026-11-19,
+  #362) — tasks and reminders open details before Edit, like events;
+  Cancel returns to those details, while Save closes the sheet. Custom
+  sheet headers share the editor's 44 pt capsule buttons. Rejected:
+  opening saved tasks directly in a form and small bare header actions.
+  Details follow saved rows through sync and act on their current list;
+  an editor draft is unnecessary for completion or deletion. Desktop
+  navigation and native Settings headers keep their existing behavior.
 - **Maps and directions in iOS event details** (2026-11-18, #355) —
   show the location's map and separate Apple Maps and Google Maps
   directions links. Use matching coordinates when available and the
