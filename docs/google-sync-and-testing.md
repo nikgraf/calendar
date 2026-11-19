@@ -844,7 +844,7 @@ guest-side RSVP (needs a second account).
 
 ### Desktop e2e (`pnpm test:e2e`, apps/desktop/e2e/)
 
-The opt-in desktop property test runs with `pnpm test:bombadil` after
+The desktop property test runs with `pnpm test:bombadil` after
 `pnpm --filter @calendar/desktop build`. It attaches Bombadil 0.7.10 to
 the existing isolated Electron app over CDP for 45 seconds. It first
 changes an existing event's title and dates, cancels and reopens it to
@@ -866,6 +866,14 @@ Driver processes are stopped on the test's timeout or cancellation.
 Bombadil's replay and shrinking are best effort; preserve a concrete
 regression test for a discovered app bug. Ordinary `pnpm test:e2e` skips
 this bounded exploratory run, and the unit gate does not launch Electron.
+CI runs it as a separate step after the standard CDP suite in the existing
+desktop job, reusing its Electron download and built app. Each exploration
+is bounded to 45 seconds; the step has a four-minute timeout and no retry.
+The job fails on a property violation or persistence mismatch. The
+`bombadil-traces-<attempt>` artifact retains traces and ledgers for seven
+days on passing and failing runs; failed harness dumps also remain in the
+ordinary e2e diagnostics. Docs-only and iOS-only changes keep the existing
+desktop-job skip behavior.
 
 Raw CDP over Node's native WebSocket (no Playwright): the harness launches
 the built Electron app with `--remote-debugging-port=0` (Chromium binds a
