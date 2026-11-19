@@ -1,4 +1,11 @@
-import { reminderAlarmLabel, useCurrentTask, useTaskEditorModel } from '@calendar/app-state';
+import {
+  reminderAlarmLabel,
+  taskDetailAction,
+  useAction,
+  useBackendMutations,
+  useCurrentTask,
+  useTaskReadOnlyLookup,
+} from '@calendar/app-state';
 import { formatPlainTime, type TaskListInfo, type TaskRecord, Temporal } from '@calendar/core';
 import { useEffect, useEffectEvent, useState } from 'react';
 import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -13,15 +20,13 @@ export function TaskDetailSheet({
   onEdit,
   task: opened,
   taskLists,
-  timeZone,
 }: {
   readonly onClose: () => void;
   /** A completion or deletion succeeded; close only a sheet still showing this task. */
-  readonly onCompleted: () => void;
+  readonly onCompleted: (task: TaskRecord) => void;
   readonly onEdit: (task: TaskRecord) => void;
   readonly task: TaskRecord;
   readonly taskLists: ReadonlyArray<TaskListInfo>;
-  readonly timeZone: string;
 }) {
   const styles = useStyles(makeStyles);
   const [task, setTask] = useState(opened);
@@ -36,12 +41,17 @@ export function TaskDetailSheet({
       close();
     }
   }, [gone]);
-  const model = useTaskEditorModel({
-    confirm: confirmEditorRequest,
-    onClose: onCompleted,
-    seed: { existing: task, initialDate: Temporal.Now.plainDateISO(timeZone).toString() },
-    taskLists,
-  });
+  const mutations = useBackendMutations();
+  const readOnly = useTaskReadOnlyLookup()(task);
+  const work = useAction();
+  const perform = (action: 'complete' | 'delete') =>
+    work.run(async () => {
+      if (
+        await taskDetailAction({ action, confirm: confirmEditorRequest, mutations, readOnly, task })
+      ) {
+        onCompleted(task);
+      }
+    });
   const list = taskLists.find(
     (item) => item.accountId === task.accountId && item.id === task.listId,
   );
@@ -119,28 +129,28 @@ export function TaskDetailSheet({
             </Text>
           </View>
         ) : null}
-        {model.readOnly ? (
+        {readOnly ? (
           <Text style={styles.secondaryLine} testID="task-read-only">
             This list is read-only in Reminders.
           </Text>
         ) : null}
-        {model.error ? <Text style={styles.error}>{model.error}</Text> : null}
-        {model.readOnly ? null : (
+        {work.error ? <Text style={styles.error}>{work.error}</Text> : null}
+        {readOnly ? null : (
           <View style={styles.actions}>
             <Pressable
               accessibilityRole="button"
-              disabled={model.busy}
-              onPress={() => void model.toggleCompletion?.()}
-              style={[styles.button, model.busy && styles.disabled]}
+              disabled={work.busy}
+              onPress={() => void perform('complete')}
+              style={[styles.button, work.busy && styles.disabled]}
               testID="task-detail-complete"
             >
               <Text style={styles.buttonLabel}>{done ? 'Mark as Incomplete' : 'Mark as Done'}</Text>
             </Pressable>
             <Pressable
               accessibilityRole="button"
-              disabled={model.busy}
-              onPress={() => void model.remove()}
-              style={[styles.button, model.busy && styles.disabled]}
+              disabled={work.busy}
+              onPress={() => void perform('delete')}
+              style={[styles.button, work.busy && styles.disabled]}
               testID="task-detail-delete"
             >
               <Text style={styles.deleteLabel}>Delete</Text>

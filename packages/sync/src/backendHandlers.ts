@@ -304,11 +304,17 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
   getTask: ({ accountId, listId, taskId }) =>
     Effect.gen(function* () {
       const repo = yield* TaskRepo;
-      return (
-        (yield* repo.get(accountId, listId, taskId)) ??
-        (yield* repo.findById(accountId, taskId)) ??
-        null
-      );
+      const original = yield* repo.get(accountId, listId, taskId);
+      if (original) {
+        return original;
+      }
+      const currentId = yield* repo.resolveCreatedId(accountId, listId, taskId);
+      // A create alias belongs to this list. Another Google list may have
+      // an unrelated task with the same server id; it is not this task moved.
+      if (currentId !== taskId) {
+        return (yield* repo.get(accountId, listId, currentId)) ?? null;
+      }
+      return (yield* repo.findById(accountId, taskId)) ?? null;
     }),
   getTaskNotificationSettings: () => readTaskNotificationSettings,
   getTasksInRange: ({ endDate, startDate }) =>

@@ -25,6 +25,7 @@ import { describe } from 'vite-plus/test';
 import { SyncEngine } from './engine.ts';
 import { EventMutations } from './mutations.ts';
 import { PendingOpRepo } from '@calendar/db';
+import { commonBackendHandlers } from './backendHandlers.ts';
 
 /**
  * Mutations fork the queue drain detached; a fiber yield between two
@@ -493,10 +494,38 @@ describe('completeTask', () => {
       expect(calls).toEqual(['insert:Buy milk', 'patch:server-1:completed']);
       expect(yield* ops.listAll()).toHaveLength(0);
       const repo = yield* TaskRepo;
+      const current = yield* commonBackendHandlers.getTask({
+        accountId: 'acc-1',
+        listId: 'list-1',
+        taskId: temp.id,
+      }) as Effect.Effect<TaskRecord | null, unknown, TaskRepo>;
+      expect(current?.id).toBe('server-1');
+      expect(current?.status).toBe('completed');
       const window = yield* repo.getWindow('2026-08-24', '2026-08-31');
       const ids = window.map((row) => row.id);
       expect(ids).toContain('server-1');
       expect(ids.some((id) => id.startsWith('local-'))).toBe(false);
+      // Google ids are list-scoped: an unrelated list may hold the same server id.
+      yield* repo.upsertLists(
+        [
+          new TaskListInfo({
+            accountId: 'acc-1',
+            id: 'other-list',
+            isVisible: true,
+            provider: 'google',
+            title: 'Other',
+          }),
+        ],
+        1,
+      );
+      yield* repo.upsertTasks([new TaskRecord({ ...current!, listId: 'other-list' })], 1);
+      yield* repo.removeTask('acc-1', 'list-1', 'server-1');
+      const deleted = yield* commonBackendHandlers.getTask({
+        accountId: 'acc-1',
+        listId: 'list-1',
+        taskId: temp.id,
+      }) as Effect.Effect<TaskRecord | null, unknown, TaskRepo>;
+      expect(deleted).toBeNull();
     }).pipe(noYield, Effect.provide(testLayer(client)));
   });
 

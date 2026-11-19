@@ -1741,7 +1741,10 @@ gateway carries all of it. Details, limits and the threat model:
   the event is gone; a failed read keeps it up. Tasks and reminders also
   open a detail first from Calendar, Tasks, Search, fold lists and notification
   taps. Their detail reads `useCurrentTask` (`getTask`, refreshed on task
-  changes), including completed and undated records; Edit starts from the
+  changes), including completed and undated records. A bounded session alias
+  follows a Google create from its temporary id to its server id; the raw
+  repository reads stay exact, so a rolled-back swap still finds its temp row.
+  Detail actions use the saved record without a seeded editor destination; Edit starts from the
   latest row, Cancel returns to its detail, and completion or deletion closes
   only the sheet still showing that task. Custom sheet header actions use
   `SheetButton`, the editor's 44 pt neutral or primary capsule.

@@ -61,6 +61,23 @@ const task = (overrides: Partial<TaskRecord> = {}): TaskRecord =>
 const pos = (n: number) => String(n).padStart(20, '0');
 
 describe('TaskRepo', () => {
+  it.effect(
+    'scopes create aliases to account and list, keeping raw storage addresses unchanged',
+    () =>
+      Effect.gen(function* () {
+        const repo = yield* TaskRepo;
+        yield* repo.upsertLists([list()], 1);
+        yield* repo.upsertTasks([task({ id: 'local-1' })], 1);
+        yield* repo.rememberCreatedId('acc-1', 'list-1', 'local-1', 'server-1');
+        expect(yield* repo.resolveCreatedId('acc-1', 'list-1', 'local-1')).toBe('server-1');
+        expect(yield* repo.resolveCreatedId('acc-2', 'list-1', 'local-1')).toBe('local-1');
+        expect(yield* repo.resolveCreatedId('acc-1', 'list-2', 'local-1')).toBe('local-1');
+        // A failed transaction can restore the temp row; the alias never changes raw reads.
+        expect((yield* repo.get('acc-1', 'list-1', 'local-1'))?.id).toBe('local-1');
+        expect(yield* repo.get('acc-1', 'list-1', 'server-1')).toBeUndefined();
+      }).pipe(Effect.provide(freshDbLayer())),
+  );
+
   it.effect('findById reads a task on whichever list it is now, the open row first', () =>
     Effect.gen(function* () {
       const repo = yield* TaskRepo;

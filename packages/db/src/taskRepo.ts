@@ -128,6 +128,13 @@ export interface TaskRepoShape {
       readonly position: string | undefined;
     }>,
   ) => Effect.Effect<void, SqlError>;
+  /** Session-only links for an open detail whose queued Google create acquired a server id. */
+  readonly rememberCreatedId: (
+    accountId: string,
+    listId: string,
+    tempId: string,
+    serverId: string,
+  ) => Effect.Effect<void>;
   readonly removeListsMissing: (
     accountId: string,
     keepIds: ReadonlyArray<string>,
@@ -179,6 +186,11 @@ export interface TaskRepoShape {
     tempId: string,
     serverId: string,
   ) => Effect.Effect<void, SqlError>;
+  readonly resolveCreatedId: (
+    accountId: string,
+    listId: string,
+    taskId: string,
+  ) => Effect.Effect<string>;
   readonly setListVisible: (
     accountId: string,
     listId: string,
@@ -234,10 +246,16 @@ export interface TaskRepoShape {
   ) => Effect.Effect<void, SqlError>;
 }
 
+const createdKey = (accountId: string, listId: string, taskId: string) =>
+  JSON.stringify([accountId, listId, taskId]);
+
 const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> = Effect.gen(
   function* () {
     const sql = yield* SqlClient;
     const reactivity = yield* Reactivity;
+    // Views do not survive a backend restart. Bound the session's create aliases,
+    // and scope them to the full key: Google ids are unique only within a list.
+    const createdIds = new Map<string, string>();
     const tasksMutation = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
       reactivity.mutation([TASKS_KEY], effect);
     const listsMutation = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
@@ -487,6 +505,16 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
                 ),
               ),
             ),
+      rememberCreatedId: (accountId, listId, tempId, serverId) =>
+        Effect.sync(() => {
+          const key = createdKey(accountId, listId, tempId);
+          createdIds.delete(key);
+          createdIds.set(key, serverId);
+          if (createdIds.size > 512) {
+            createdIds.delete(createdIds.keys().next().value!);
+          }
+        }),
+
       removeListsMissing: (accountId, keepIds) =>
         listsMutation(
           Effect.gen(function* () {
@@ -501,7 +529,6 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
               AND id NOT IN ${sql.in(keepIds)}`;
           }),
         ),
-
       removeSyncedTask: (accountId, listId, taskId) =>
         tasksMutation(
           Effect.asVoid(
@@ -590,6 +617,8 @@ const makeTaskRepo: Effect.Effect<TaskRepoShape, never, Reactivity | SqlClient> 
               WHERE account_id = ${accountId} AND parent_id = ${tempId}`,
           ),
         ),
+      resolveCreatedId: (accountId, listId, taskId) =>
+        Effect.sync(() => createdIds.get(createdKey(accountId, listId, taskId)) ?? taskId),
       setListVisible: (accountId, listId, isVisible) =>
         listsMutation(
           Effect.asVoid(

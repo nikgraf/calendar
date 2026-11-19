@@ -522,7 +522,9 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
       return (
         <TaskDetailSheet
           onClose={() => setSheet((current) => (current === shown ? NONE : current))}
-          onCompleted={() => setSheet(closeTaskDetail(shown.task))}
+          onCompleted={(task) =>
+            setSheet((current) => (current === shown ? NONE : closeTaskDetail(task)(current)))
+          }
           onEdit={(task) =>
             setSheet({
               backTo: { kind: 'task-detail', task },
@@ -534,7 +536,6 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
           }
           task={shown.task}
           taskLists={taskLists}
-          timeZone={timeZone}
         />
       );
     }
