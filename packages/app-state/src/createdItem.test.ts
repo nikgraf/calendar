@@ -1,4 +1,4 @@
-import { buildEventTimes, type EventDraft, Temporal } from '@calendar/core';
+import { buildEventTimes, type EditorTimeFields, type EventDraft, Temporal } from '@calendar/core';
 import { describe, expect, it } from 'vite-plus/test';
 import { createdItemDay, type CreatedItem } from './createdItem.ts';
 
@@ -7,6 +7,7 @@ const event = (
   recurrence?: ReadonlyArray<string>,
   isAllDay = false,
   timeZone = 'Europe/Vienna',
+  times: Partial<Pick<EditorTimeFields, 'endDate' | 'endTime' | 'startTime'>> = {},
 ): CreatedItem => ({
   event: {
     accountId: 'account',
@@ -14,7 +15,10 @@ const event = (
     isAllDay,
     recurrence,
     title: 'Created event',
-    ...buildEventTimes({ date, endTime: '10:00', isAllDay, startTime: '09:00' }, timeZone),
+    ...buildEventTimes(
+      { date, endTime: '10:00', isAllDay, startTime: '09:00', ...times },
+      timeZone,
+    ),
   } satisfies EventDraft,
   kind: 'event',
 });
@@ -103,6 +107,85 @@ describe('the calendar destination after creating an item', () => {
     expect(destination(event('2026-03-01', ['RRULE:FREQ=WEEKLY']), '2026-03-29')).toBe(
       '2026-03-29',
     );
+  });
+
+  it('keeps a repeating multi-day occurrence already overlapping the visible day', () => {
+    const spanning = event('2026-09-07', ['RRULE:FREQ=WEEKLY;INTERVAL=2'], true, 'UTC', {
+      endDate: '2026-09-18',
+    });
+    expect(destination(spanning, '2026-09-18')).toBe('2026-09-18');
+    // In the gap, yesterday's end is closer than the next start two days away.
+    expect(destination(spanning, '2026-09-19')).toBe('2026-09-07');
+  });
+
+  it('keeps one-off overnight and all-day events that are already drawn', () => {
+    expect(
+      destination(
+        event('2026-09-15', undefined, true, 'UTC', {
+          endDate: '2026-09-18',
+        }),
+        '2026-09-18',
+      ),
+    ).toBe('2026-09-18');
+    expect(
+      destination(
+        event('2026-09-17', undefined, false, 'Europe/Vienna', {
+          endDate: '2026-09-18',
+          endTime: '01:00',
+          startTime: '23:00',
+        }),
+        '2026-09-18',
+      ),
+    ).toBe('2026-09-18');
+  });
+
+  it('uses exclusive ends when deciding whether an event is still visible', () => {
+    expect(
+      destination(
+        event('2026-09-17', undefined, false, 'Europe/Vienna', {
+          endDate: '2026-09-18',
+          endTime: '00:00',
+          startTime: '23:00',
+        }),
+        '2026-09-18',
+      ),
+    ).toBe('2026-09-17');
+    expect(
+      destination(
+        event('2026-09-07', ['RRULE:FREQ=WEEKLY;INTERVAL=2'], true, 'UTC', {
+          endDate: '2026-09-17',
+        }),
+        '2026-09-18',
+      ),
+    ).toBe('2026-09-07');
+  });
+
+  it('keeps a timed recurring occurrence overlapping the day after a DST change', () => {
+    expect(
+      destination(
+        event('2026-03-21', ['RRULE:FREQ=WEEKLY'], false, 'Europe/Vienna', {
+          endDate: '2026-03-22',
+          endTime: '04:00',
+          startTime: '23:00',
+        }),
+        '2026-03-29',
+      ),
+    ).toBe('2026-03-29');
+  });
+
+  it('does not count an excluded long occurrence as already visible', () => {
+    expect(
+      destination(
+        event(
+          '2026-09-07',
+          ['RRULE:FREQ=WEEKLY;INTERVAL=2', 'EXDATE;VALUE=DATE:20260907'],
+          true,
+          'UTC',
+          { endDate: '2026-09-18' },
+        ),
+        '2026-09-18',
+      ),
+    ).toBe('2026-09-21');
   });
 
   it('falls back to the start date if a saved rule cannot be evaluated', () => {

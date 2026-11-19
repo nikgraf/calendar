@@ -129,7 +129,8 @@ The class found in the most PRs (54), almost all by Opus.
 
 - Does revealing an item already on screen preserve the current window,
   including a panned week, the second of two days and an agenda's later
-  days? A focus update can move a view whose first day follows the focus.
+  days, or an event continuing from an earlier day? A focus update can
+  move a view whose first day follows the focus.
 - Is "changed" decided by meaning (values, sets, folded text, an explicit
   value against the default), not by representation (`JSON.stringify` key
   order, a UTC `UNTIL`, alert order)? Does an edit put back read as no

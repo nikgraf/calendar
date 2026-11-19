@@ -1,4 +1,10 @@
-import { type EventDraft, nearestOccurrenceDay, Temporal, toZonedDateTime } from '@calendar/core';
+import {
+  type EventDraft,
+  isEventOnDay,
+  nearestOccurrenceDay,
+  Temporal,
+  toZonedDateTime,
+} from '@calendar/core';
 import { useAtomSet, useAtomValue } from '@effect/atom-react';
 import { Atom } from 'effect/reactivity';
 import { useEffect, useRef } from 'react';
@@ -23,6 +29,9 @@ export const createdItemDay = (
     }
   }
   const event = item.event;
+  if (!event.recurrence?.length && isEventOnDay(event, first, timeZone)) {
+    return first;
+  }
   const start =
     event.isAllDay && event.startDate
       ? Temporal.PlainDate.from(event.startDate)

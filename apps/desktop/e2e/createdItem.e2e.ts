@@ -253,6 +253,25 @@ describe('the calendar after creating an item', () => {
     await expectDay(start.add({ days: 14 }));
   });
 
+  it.each([false, true])(
+    'keeps a multi-day event already overlapping the view (repeating: %s)',
+    async (repeating) => {
+      await setEvent('Visible multi-day event', today.subtract({ days: 11 }));
+      await app.cdp.evaluate(($, end: string) => {
+        $.all<HTMLLabelElement>('label')
+          .find((label) => label.textContent?.trim() === 'All-day')!
+          .click();
+        $.setValue('input[aria-label="End date"]', end);
+      }, today.toString());
+      if (repeating) {
+        await app.cdp.evaluate(($) => $.setValue('select[aria-label="Repeat"]', 'weekly'));
+        await app.cdp.evaluate(($) => $.setValue('input[aria-label="Repeat interval"]', '2'));
+      }
+      await save();
+      await expectDay(today);
+    },
+  );
+
   it('leaves the calendar in place when an unsaved event is discarded', async () => {
     await setEvent('Discarded appointment', today.add({ days: 50 }));
     await app.cdp.discardEditor();
