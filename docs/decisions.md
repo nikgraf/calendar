@@ -629,6 +629,14 @@ was cut (pruned 2026-11-17).
 
 ## Calendar: editing, gestures, views
 
+- **Show what was just created** (2026-11-19, #363) — both apps reveal
+  a new event's date or a to-do's due day; repeats use the occurrence
+  nearest the current view, preferring one already drawn and later on a
+  tie. Keep an already-visible date in place, including the outer rows
+  of a month grid. Undated to-dos leave the view alone. Rejected: relying
+  on Assistant previews (manual form edits do not reveal their date),
+  or always jumping to a series' first occurrence or to today. Editing
+  and conversion navigation stay as they are.
 - **Maps and directions in iOS event details** (2026-11-18, #355) —
   show the location's map and separate Apple Maps and Google Maps
   directions links. Use matching coordinates when available and the
