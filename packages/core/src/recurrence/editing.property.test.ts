@@ -10,12 +10,12 @@ const dates = ['2024-02-25', '2026-03-01', '2026-10-25', '2026-01-28'] as const;
 const zones = ['UTC', 'Europe/Vienna', 'America/Los_Angeles', 'Australia/Lord_Howe'] as const;
 
 it.prop(
-  'splitting a series partitions its original occurrences without loss, overlap or count inflation',
+  'splitting at a rule occurrence partitions the series without loss, overlap or count inflation',
   {
     allDay: Schema.Boolean,
     anchor: Schema.Literals(dates),
     count: Count,
-    excluded: Schema.Array(Schema.Boolean).check(Schema.isMaxLength(20)),
+    excluded: Schema.Int.check(Schema.isBetween({ maximum: 2 ** 20 - 1, minimum: 0 })),
     extraDays: Schema.Array(Index).check(Schema.isMaxLength(8)),
     frequency: Schema.Literals(['DAILY', 'WEEKLY']),
     interval: Schema.Literals([1, 2, 7, 14]),
@@ -39,7 +39,7 @@ it.prop(
     const cut = ruleStarts[splitIndex]!;
     const extras = extraDays.map((offset) => instant(day.add({ days: offset % (count * stride) })));
     const removed = new Set(
-      ruleStarts.filter((_, index) => index !== splitIndex && excluded[index] === true),
+      ruleStarts.filter((_, index) => index !== splitIndex && (excluded & (1 << index)) !== 0),
     );
     const expected = [...new Set([...ruleStarts, ...extras])]
       .filter((start) => !removed.has(start))
