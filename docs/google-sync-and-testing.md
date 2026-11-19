@@ -863,7 +863,8 @@ fixture: Event/Task/Reminder switches must retain title, due date and
 notes; cancelling an existing task conversion or reminder edit must keep
 the originals; cancelling a new draft must reopen empty. The prefix fills
 the event form's title, notes and future date before switching to a to-do,
-then edits the date again during a kind round trip. It requires a cancellation and a saved
+replaces title and notes on the to-do form, then edits the event date during
+a kind round trip. It requires a cancellation and a saved
 item in each provider before random exploration. Synchronous Save bursts
 must leave exactly one task per ledger entry, with the right provider,
 list and fields, and no abandoned intermediate event in SQLite. These

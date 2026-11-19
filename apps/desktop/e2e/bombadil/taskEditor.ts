@@ -106,7 +106,7 @@ const assertDraft = (document: Document, draft: Draft) => {
   ) {
     throw new Error('Switching editor kind lost the title or date');
   }
-  if (draft.kind !== 'event' && input(document, notesField).value !== draft.notes) {
+  if (input(document, notesField).value !== draft.notes) {
     throw new Error('Switching editor kind lost the notes');
   }
 };
@@ -212,6 +212,13 @@ const begin = registerCustomAction(
       await setValue(document, dateField('event'), session.date);
       await setValue(document, 'input[aria-label="End date"]', session.date);
       await switchTo(document, target);
+      assertDraft(document, session);
+      // Replace text on the to-do model too: Event must adopt these new
+      // values rather than retain its own text from before the first switch.
+      session.title = `${session.title} edited as ${target}`;
+      session.notes = `${session.notes} edited as ${target}`;
+      await setValue(document, titleField, session.title);
+      await setValue(document, notesField, session.notes);
       assertDraft(document, session);
       probe.session = session;
       write(document, probe);
