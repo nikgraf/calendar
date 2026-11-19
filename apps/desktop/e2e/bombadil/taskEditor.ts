@@ -13,8 +13,8 @@ interface Draft {
   title: string;
 }
 interface Session extends Draft {
-  changedDate: boolean;
   initialDate: string;
+  roundTripDateChanged: boolean;
   switches: number;
   target: 'task' | 'reminder';
 }
@@ -193,21 +193,25 @@ const begin = registerCustomAction(
         throw new Error('A new draft retained a title');
       }
       const initialDate = input(document, dateField('event')).value;
-      await switchTo(document, target);
       const probe = read(document);
       probe.opened += 1;
       const session: Session = {
-        changedDate: false,
-        date: initialDate,
+        date: (JSON.parse(document.body.dataset['bombadilTaskDates']!) as Array<string>)[1]!,
         initialDate,
         kind: target,
         notes: `Notes for task ${probe.opened}`,
+        roundTripDateChanged: false,
         switches: 0,
         target,
         title: `Bombadil task ${probe.opened}`,
       };
+      // Start with values held only by the event model. The first switch
+      // must adopt them; a round trip with untouched fields cannot prove it.
       await setValue(document, titleField, session.title);
       await setValue(document, notesField, session.notes);
+      await setValue(document, dateField('event'), session.date);
+      await setValue(document, 'input[aria-label="End date"]', session.date);
+      await switchTo(document, target);
       assertDraft(document, session);
       probe.session = session;
       write(document, probe);
@@ -237,9 +241,9 @@ const changeDate = registerCustomAction(
       await setValue(document, dateField(session.kind), date);
       if (session.kind === 'event') {
         await setValue(document, 'input[aria-label="End date"]', date);
+        session.roundTripDateChanged = true;
       }
       session.date = date;
-      session.changedDate = true;
       assertDraft(document, session);
       write(document, probe);
     }),
@@ -333,10 +337,15 @@ export const taskEditorActions = actions(() => {
     return [changeKind('event')];
   }
   if (session.kind === 'event') {
-    return [changeKind(session.target)];
-  }
-  if (!session.changedDate) {
-    return state.dates.slice(1).map((date) => changeDate(date));
+    // The task model must adopt an edit made only on the event form;
+    // switching straight back could pass with its old mounted values.
+    const dates = state.dates.filter((date) => date !== session.date);
+    return session.roundTripDateChanged
+      ? [changeKind(session.target), ...dates.map((date) => changeDate(date))]
+      : state.dates
+          .slice(1)
+          .filter((date) => date !== session.date)
+          .map((date) => changeDate(date));
   }
   if (state.cancelled === 0) {
     return [cancelNew()];

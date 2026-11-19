@@ -534,8 +534,8 @@ export class Cdp {
           await cdp.send('Page.enable');
           // The window never takes OS focus and opens behind every other
           // (CALENDAR_E2E_INPUT=cdp). The page acts as the focused one anyway
-          // (focus events, :focus-visible, document.hasFocus()) and keeps
-          // drawing while covered.
+          // (focus events, :focus-visible, document.hasFocus()). Background
+          // rendering is enabled separately in the window preferences.
           await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
           return cdp;
         }
@@ -602,10 +602,10 @@ export class Cdp {
   }
 
   /**
-   * `waitUntil`, drawing a frame before each try. A window behind another
-   * one (CI's can be) is hidden to its page, which then runs no rendering
-   * steps: a ResizeObserver reports only in one, so what the page sets from
-   * it waits for a frame that may never come. A screenshot draws one.
+   * `waitUntil`, drawing a frame before each try. CDP-only test windows
+   * disable background throttling, including before focus emulation is
+   * attached. A screenshot also forces a fresh rendering step for layout
+   * and ResizeObserver-dependent assertions.
    */
   waitUntilRendered<A extends PageArgs>(page: PageFunction<A, boolean>, ...args: A): Promise<void>;
   waitUntilRendered<A extends PageArgs>(

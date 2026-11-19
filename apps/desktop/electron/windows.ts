@@ -115,9 +115,9 @@ const keepOsMouseOut = (window: BrowserWindow): void => {
 /** Shows a window, focused unless the e2e harness drives it (cdpInputOnly). */
 const showWindow = (window: BrowserWindow, focus: boolean): void => {
   if (cdpInputOnly) {
-    // Behind every other window (blur orders it to the back on macOS). A
-    // covered page would run no rendering steps, but the harness's focus
-    // emulation keeps it visible to itself, and it draws on.
+    // Behind every other window (blur orders it to the back on macOS).
+    // Background throttling is disabled above, so it keeps drawing even
+    // before the harness attaches and emulates focus for page input.
     window.showInactive();
     window.blur();
     return;
