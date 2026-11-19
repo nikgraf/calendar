@@ -18,6 +18,22 @@ tags:
 - tapOn:
     id: 'task-title'
 - inputText: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-task'
+# XCTest can drop letters here too. Keep the cursor at the end of the
+# input while erasing a bad attempt: this field has no native clear button.
+- evalScript: ${output.retypeLiveTaskTitle = false}
+- retry:
+    maxRetries: 3
+    commands:
+      - runFlow:
+          when:
+            true: ${output.retypeLiveTaskTitle}
+          commands:
+            - eraseText: 100
+            - inputText: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-task'
+      - evalScript: ${output.retypeLiveTaskTitle = true}
+      - copyTextFrom:
+          id: 'task-title'
+      - assertTrue: ${maestro.copiedText === 'live-' + MAESTRO_LIVE_RUN_TAG + '-ios-task'}
 - tapOn:
     id: 'event-save'
 - extendedWaitUntil:

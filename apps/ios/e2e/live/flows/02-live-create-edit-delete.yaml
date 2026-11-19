@@ -14,10 +14,11 @@ tags:
     element:
       id: 'event-title'
     direction: UP
-- tapOn:
-    id: 'event-title'
 # ASCII only: unicode through XCTest typing is a known flaky spot.
-- inputText: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-event'
+- runFlow:
+    file: ../type-event-title.yaml
+    env:
+      TITLE: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-event'
 - tapOn:
     id: 'event-save'
 - extendedWaitUntil:
@@ -43,12 +44,10 @@ tags:
     file: ../open-event.yaml
     env:
       BLOCK: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-event.*'
-- tapOn:
-    id: 'event-title'
-# The system clear button: eraseText only deletes what sits before the
-# cursor, and the tap puts the cursor mid-title.
-- tapOn: 'Clear text'
-- inputText: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-edited'
+- runFlow:
+    file: ../type-event-title.yaml
+    env:
+      TITLE: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-edited'
 - tapOn:
     id: 'event-save'
 - extendedWaitUntil:

@@ -1,0 +1,24 @@
+appId: com.solunivo.app.dev
+name: Type TITLE into the event title and verify its exact value (shared)
+---
+# XCTest can drop or move letters even in ASCII (run 44451283392 saved
+# "lve-…" instead of "live-…"). Check before Save or a server-side patch:
+# retrying only this input leaves the write and conflict assertions intact.
+- retry:
+    maxRetries: 3
+    commands:
+      - tapOn:
+          id: 'event-title'
+      - copyTextFrom:
+          id: 'event-title'
+      # An empty field reads its placeholder. The native clear button
+      # clears an existing title regardless of where the tap put the cursor.
+      - runFlow:
+          when:
+            true: ${maestro.copiedText !== 'Title'}
+          commands:
+            - tapOn: 'Clear text'
+      - inputText: ${TITLE}
+      - copyTextFrom:
+          id: 'event-title'
+      - assertTrue: ${maestro.copiedText === TITLE}
