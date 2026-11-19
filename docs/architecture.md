@@ -1727,7 +1727,7 @@ gateway carries all of it. Details, limits and the threat model:
   unsynced badge), the week strip, the timeline / month grid / agenda,
   and the "+" (`AddButton`, shared with the Tasks tab: the calendar's
   opens a new event, the Tasks tab's an undated to-do in the filtered
-  list). `EditorHost.tsx` owns every sheet — event detail, the editor
+  list). `EditorHost.tsx` owns every sheet — event, task and reminder details, the editor
   (`EventEditSheet`, the same thread as the desktop, `useThreadEditor`,
   in the same two views), the birthday detail, a fold chip's list — and the capture model behind the share
   sheet and deep links, whose events open the editor as one thread of
@@ -1738,7 +1738,14 @@ gateway carries all of it. Details, limits and the threat model:
   `useCurrentEvent` — `findCurrentEvent`'s lookup as an atom
   (`currentEvent`), read again whenever events change — shows that
   record (`eventReadout`), seeds Edit and Convert from it and closes once
-  the event is gone; a failed read keeps it up. The detail and the editor
+  the event is gone; a failed read keeps it up. Tasks and reminders also
+  open a detail first from Calendar, Tasks, Search, fold lists and notification
+  taps. Their detail reads `useCurrentTask` (`getTask`, refreshed on task
+  changes), including completed and undated records; Edit starts from the
+  latest row, Cancel returns to its detail, and completion or deletion closes
+  only the sheet still showing that task. Custom sheet header actions use
+  `SheetButton`, the editor's 44 pt neutral or primary capsule.
+  The detail and the editor
   share the `editor` route (`app/editor.tsx`), a page sheet at full
   height like Settings — a form sheet lays out a header and one scroll
   view and nothing else, so it could hold neither a bar at its bottom nor

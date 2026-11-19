@@ -12,6 +12,7 @@ import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { dateForPicker, dateStringFromPicker } from './pickerDates.ts';
 import { SegmentedControl } from './SegmentedControl.tsx';
+import { SheetButton } from './SheetButton.tsx';
 import { actionText, BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme } from './theme.ts';
 
 /**
@@ -119,11 +120,7 @@ export function SearchFiltersSheet({
             <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.title}>
               Filters
             </Text>
-            <Pressable onPress={onClose} style={styles.headerSide} testID="search-filters-done">
-              <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.done}>
-                Done
-              </Text>
-            </Pressable>
+            <SheetButton label="Done" onPress={onClose} primary testID="search-filters-done" />
           </View>
         </SafeAreaView>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
@@ -271,11 +268,6 @@ const makeStyles = (colors: ThemeColors) =>
       flexDirection: 'row',
       gap: 8,
     },
-    done: {
-      ...actionText(colors),
-      fontSize: 16,
-      textAlign: 'right',
-    },
     header: {
       alignItems: 'center',
       flexDirection: 'row',
@@ -284,7 +276,7 @@ const makeStyles = (colors: ThemeColors) =>
       paddingVertical: 12,
     },
     headerSide: {
-      minWidth: 56,
+      minWidth: 86,
     },
     input: {
       backgroundColor: colors.fill,

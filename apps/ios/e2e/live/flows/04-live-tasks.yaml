@@ -77,6 +77,7 @@ tags:
 
 # Clean up through the sheet (the Delete button sits below the fold).
 - tapOn: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-task'
+- runFlow: ../../common/open-task-editor.yaml
 - assertVisible: 'Edit Task'
 - scrollUntilVisible:
     element:

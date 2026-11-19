@@ -56,7 +56,7 @@ tags:
       id: 'task-fold-sheet-overdue'
     timeout: 5000
 
-# A row opens its task in the editor, in the list's place.
+# A row opens its task detail, in the list's place. Cancel returns from Edit.
 - tapOn:
     id: 'all-day-fold-undated'
 - extendedWaitUntil:
@@ -64,12 +64,26 @@ tags:
       id: 'task-fold-sheet-undated'
     timeout: 5000
 - tapOn: 'Sort the receipts'
+- runFlow: ../common/open-task-editor.yaml
 - extendedWaitUntil:
     visible: 'Edit (Task|Reminder)'
     timeout: 10000
 - tapOn: 'Cancel'
 - extendedWaitUntil:
     notVisible: 'Edit (Task|Reminder)'
+    timeout: 10000
+- extendedWaitUntil:
+    visible:
+      id: 'task-detail-title'
+      text: 'Sort the receipts'
+    timeout: 10000
+- assertNotVisible:
+    id: 'editor-form'
+- tapOn:
+    id: 'task-detail-close'
+- extendedWaitUntil:
+    notVisible:
+      id: 'task-detail'
     timeout: 10000
 - assertVisible:
     id: 'all-day-fold-undated'

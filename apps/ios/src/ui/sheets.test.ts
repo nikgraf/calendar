@@ -1,10 +1,17 @@
-import { BirthdayOccurrence, BirthdayRecord, EventRecord, Temporal } from '@calendar/core';
+import {
+  BirthdayOccurrence,
+  BirthdayRecord,
+  EventRecord,
+  TaskRecord,
+  Temporal,
+} from '@calendar/core';
 import { describe, expect, it } from 'vite-plus/test';
 import {
   cancelEditor,
   captureMayOpen,
   closeDeleted,
   closeEditor,
+  closeTaskDetail,
   inRoute,
   NONE,
   routeDismissed,
@@ -62,12 +69,27 @@ const editing = (opening: number, edited: EventRecord): RouteSheet => ({
 });
 /** The editor the detail's Edit or Convert turned the detail into. */
 const fromDetail = (opening: number, edited: EventRecord): RouteSheet => ({
-  backTo: edited,
+  backTo: { event: edited, kind: 'detail' },
   kind: 'edit',
   opening,
   seed: { event: edited, initialDate: day },
 });
 const detail = (shown: EventRecord): RouteSheet => ({ event: shown, kind: 'detail' });
+const task = (overrides: Partial<TaskRecord> = {}) =>
+  new TaskRecord({
+    accountId: 'account',
+    id: 'task',
+    listId: 'list',
+    provider: 'google',
+    status: 'needsAction',
+    title: 'Call Alex',
+    updatedAt: 0,
+    ...overrides,
+  });
+const taskDetail = (shown: TaskRecord): Extract<RouteSheet, { kind: 'task-detail' }> => ({
+  kind: 'task-detail',
+  task: shown,
+});
 const birthday: Sheet = {
   birthday: new BirthdayOccurrence({
     date: '2026-10-05',
@@ -107,6 +129,22 @@ describe('closeEditor', () => {
 
 // Cancel is applied the same way, to the sheet as it is when it is pressed.
 describe('cancelEditor', () => {
+  it('returns a task or reminder editor to the detail of the latest row it opened', () => {
+    for (const provider of ['google', 'apple'] as const) {
+      const shown = task({ provider, title: 'Call Alex (updated)' });
+      const back = taskDetail(shown);
+      const editor: RouteSheet = {
+        ...newItem(1),
+        backTo: back,
+        kind: 'edit',
+        opening: 1,
+        seed: { initialDate: day },
+        task: shown,
+      };
+      expect(cancelEditor(1)(editor)).toBe(back);
+      expect(closeEditor(1)(back)).toBe(back);
+    }
+  });
   it('turns the editor back into the detail its Edit or Convert came from', () => {
     expect(cancelEditor(1)(fromDetail(1, event({ title: 'Dentist (moved)' })))).toEqual(
       detail(event({ title: 'Dentist (moved)' })),
@@ -134,7 +172,9 @@ describe('cancelEditor', () => {
 // The host pushes the editor route for these and pops it for the rest.
 describe('inRoute', () => {
   it('holds the detail and the editor, not the page sheets or nothing', () => {
-    expect([detail(event()), newItem(1), fromDetail(2, event())].every(inRoute)).toBe(true);
+    expect(
+      [detail(event()), taskDetail(task()), newItem(1), fromDetail(2, event())].every(inRoute),
+    ).toBe(true);
     expect([NONE, birthday].some(inRoute)).toBe(false);
   });
 });
@@ -180,6 +220,22 @@ describe('routeDismissed', () => {
 
 // The route's content is keyed by it: a new key cross-fades, the same one stays put.
 describe('routeKey', () => {
+  it('keeps a task detail across edits and completion, distinct across accounts, lists and events', () => {
+    const shown = taskDetail(task());
+    expect(routeKey(taskDetail(task({ status: 'completed', title: 'Changed' })))).toBe(
+      routeKey(shown),
+    );
+    const keys = [
+      shown,
+      taskDetail(task({ accountId: 'other' })),
+      taskDetail(task({ listId: 'other' })),
+      detail(event({ id: 'task' })),
+    ].map(routeKey);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(routeMove(shown, { leaving: false, presented: false })).toBe('push');
+    expect(routeDismissed(true)(shown)).toBe(NONE);
+    expect(captureMayOpen(shown, { formSheetGone: true, settingsOpen: false })).toBe(false);
+  });
   it('keeps a detail on a refreshed row of its event, also an occurrence edited since under a new id', () => {
     expect(routeKey(detail(event({ title: 'Dentist (moved)' })))).toBe(routeKey(detail(event())));
     expect(routeKey(detail(occurrence(1, { id: 'standup-exception' })))).toBe(
@@ -195,6 +251,30 @@ describe('routeKey', () => {
       routeKey(fromDetail(2, event())),
     ];
     expect(new Set(keys).size).toBe(keys.length);
+  });
+});
+
+describe('closeTaskDetail', () => {
+  it('closes only the task the action completed or deleted, also in its editor', () => {
+    expect(closeTaskDetail(task())(taskDetail(task({ title: 'New title' })))).toBe(NONE);
+    expect(
+      closeTaskDetail(task())({
+        kind: 'edit',
+        opening: 1,
+        seed: { initialDate: day },
+        task: task(),
+      }),
+    ).toBe(NONE);
+    for (const other of [
+      taskDetail(task({ id: 'other' })),
+      taskDetail(task({ accountId: 'other' })),
+      taskDetail(task({ listId: 'other' })),
+      newItem(2),
+      detail(event()),
+      birthday,
+    ]) {
+      expect(closeTaskDetail(task())(other)).toBe(other);
+    }
   });
 });
 

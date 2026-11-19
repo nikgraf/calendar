@@ -90,7 +90,7 @@ tags:
     notVisible:
       id: 'event-detail'
     timeout: 10000
-# A task opens its editor.
+# A task opens its detail. Edit opens the form; Cancel returns to the detail.
 - runFlow:
     file: ../common/search-for.yaml
     env:
@@ -99,6 +99,7 @@ tags:
 - assertVisible:
     id: 'search-section-tasks'
 - tapOn: 'Fixture task.*'
+- runFlow: ../common/open-task-editor.yaml
 - extendedWaitUntil:
     visible: 'Edit (Task|Reminder)'
     timeout: 10000
@@ -107,6 +108,19 @@ tags:
 - tapOn: 'Cancel'
 - extendedWaitUntil:
     notVisible: 'Edit (Task|Reminder)'
+    timeout: 10000
+- extendedWaitUntil:
+    visible:
+      id: 'task-detail-title'
+      text: 'Fixture task'
+    timeout: 10000
+- assertNotVisible:
+    id: 'editor-form'
+- tapOn:
+    id: 'task-detail-close'
+- extendedWaitUntil:
+    notVisible:
+      id: 'task-detail'
     timeout: 10000
 # Nothing found says so.
 - runFlow:
