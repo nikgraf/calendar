@@ -23,10 +23,10 @@ name: One 412 round (shared) — edit the block to MINE while Google renames it 
           file: open-event.yaml
           env:
             BLOCK: ${BLOCK}
-      - tapOn:
-          id: 'event-title'
-      - tapOn: 'Clear text'
-      - inputText: ${output.mine}
+      - runFlow:
+          file: type-event-title.yaml
+          env:
+            TITLE: ${output.mine}
       - runScript:
           file: scripts/patchEvent.js
           env:

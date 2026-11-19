@@ -14,9 +14,10 @@ tags:
     element:
       id: 'event-title'
     direction: UP
-- tapOn:
-    id: 'event-title'
-- inputText: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-c-start'
+- runFlow:
+    file: ../type-event-title.yaml
+    env:
+      TITLE: 'live-${MAESTRO_LIVE_RUN_TAG}-ios-c-start'
 - tapOn:
     id: 'event-save'
 - extendedWaitUntil:
