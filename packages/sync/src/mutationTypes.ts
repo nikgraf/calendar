@@ -46,6 +46,14 @@ export class RecurringEditUnsupportedError extends Data.TaggedError(
   'RecurringEditUnsupportedError',
 )<{ readonly eventId: string }> {}
 
+/** An extra date cannot reanchor the rule without risking a changed schedule. */
+export class RecurringSplitUnsupportedError extends Data.TaggedError(
+  'RecurringSplitUnsupportedError',
+)<{ readonly eventId: string }> {
+  override readonly message =
+    'This occurrence cannot start “This and following” while keeping the repeat schedule. Choose “This event” or “All events”.';
+}
+
 /**
  * A repeating event keeps its kind: Google keys a series' occurrences and
  * exceptions by a date or a date-time to match it, so an edit cannot
@@ -214,11 +222,12 @@ type RecurringEditError =
   | RecurringEditUnsupportedError
   | SqlError;
 
-/** A recurring update can also refuse the edit's times (see the two errors). */
+/** A recurring update can also refuse the edit's times or an off-rule split. */
 type RecurringUpdateError =
   | RecurringAllDayMoveError
   | RecurringAllDaySwitchError
-  | RecurringEditError;
+  | RecurringEditError
+  | RecurringSplitUnsupportedError;
 
 export interface EventMutationsShape {
   /** Toggles a task's completion locally and writes it back (Google queue / EventKit). */

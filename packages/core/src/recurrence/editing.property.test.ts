@@ -1,7 +1,7 @@
 import { expect, it } from '@effect/vitest';
 import { Schema } from 'effect';
 import { Temporal } from '../time/temporal.ts';
-import { remainingRecurrence, truncateRecurrence } from './editing.ts';
+import { canSplitRecurrence, remainingRecurrence, truncateRecurrence } from './editing.ts';
 import { expandRecurringEvent, type RecurrenceMaster } from './expand.ts';
 
 const Count = Schema.Int.check(Schema.isBetween({ maximum: 20, minimum: 3 }));
@@ -72,6 +72,10 @@ it.prop(
     const starts = (record: RecurrenceMaster) =>
       expandRecurringEvent(record, from, to).map((occurrence) => occurrence.originalStartUtc);
     expect(starts(master)).toEqual(expected);
+    expect(canSplitRecurrence(master, cut)).toBe(true);
+    for (const extra of extras) {
+      expect(canSplitRecurrence(master, extra)).toBe(ruleStarts.includes(extra));
+    }
     const before = {
       ...master,
       recurrence: truncateRecurrence(master.recurrence, cut, allDay, zone),
