@@ -11,6 +11,13 @@ was written; re-verify before starting one.
 The 2026-10-02 review's findings are closed in `docs/decisions.md`
 (Review fixes, #110–#142).
 
+- [ ] Let agent refs resolve zero-duration Google series occurrences
+      (`packages/agent/src/resolve.ts`, `ruleProduces`; found reviewing
+      #365, present before it). Slot validation uses `[start, start+1)`
+      overlap, so a zero-duration event's occurrence ref returns NotFound
+      on update/delete in every scope. Check exact starts in a window
+      containing the slot, without relying on event duration.
+
 - [ ] File an Expo issue (worked around here; not filed yet): under SDK
       58's scene life cycle a background launch that connects no scene
       starts no React Native, so expo-task-manager tasks
