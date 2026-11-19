@@ -1452,6 +1452,13 @@ gateway carries all of it. Details, limits and the threat model:
 
 ## Platform seams
 
+- **After creating an item (both apps).** A successful create publishes
+  its saved event fields or to-do due day from `useThreadEditor` through
+  `createdItem.ts`. `useCalendarNavigation` shows that date; a repeating
+  event uses the occurrence nearest the visible days (one in view first,
+  later on a tie), without the fetched buffer. An undated to-do leaves
+  the view alone. Edits, conversions, deletes and failed writes do not
+  publish a creation reveal; a reply after the editor unmounts is ignored.
 - **rpc vs IPC.** Calendar data crosses process boundaries **only**
   through the typed rpc seam (Apple events, reminders and contact rows
   included). Window-level concerns use plain preload IPC

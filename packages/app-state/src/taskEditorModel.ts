@@ -21,6 +21,7 @@ import {
 } from '@calendar/core';
 import { useState } from 'react';
 import { deleteTaskQuestion } from './deleteQuestion.ts';
+import type { CreatedItem } from './createdItem.ts';
 import { reminderAlarmLabel } from './draftExtras.ts';
 import type { EditorConfirmRequest } from './editorModel.ts';
 import { CONVERT_SCOPE_HINT } from './editorOptions.ts';
@@ -175,7 +176,7 @@ export const useTaskEditorModel = ({
   confirm: (request: EditorConfirmRequest) => Promise<boolean>;
   onClose: () => void;
   /** Save went through (see the event model); not called for a delete. */
-  onSaved?: (() => void) | undefined;
+  onSaved?: ((created?: CreatedItem) => void) | undefined;
   seed: TaskEditorSeed;
   taskLists: ReadonlyArray<TaskListInfo>;
 }) => {
@@ -452,6 +453,7 @@ export const useTaskEditorModel = ({
       setError(invalid);
       return;
     }
+    let created: CreatedItem | undefined;
     try {
       const event = seed.convertFromEvent;
       if (!existing && event) {
@@ -524,10 +526,12 @@ export const useTaskEditorModel = ({
           });
         }
       } else {
-        await mutations.createTask(createInput(accountId, taskListId));
+        const input = createInput(accountId, taskListId);
+        await mutations.createTask(input);
         rememberTaskList(listKey);
+        created = { date: input.dueDate, kind: 'task' };
       }
-      onSaved?.();
+      onSaved?.(created);
       onClose();
     } catch (error) {
       setError(String(error));
