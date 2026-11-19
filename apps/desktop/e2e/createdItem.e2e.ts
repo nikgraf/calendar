@@ -172,6 +172,44 @@ describe('the calendar after creating an item', () => {
     expect(await app.cdp.evaluate(($) => $.text('[data-testid="toolbar-title"]'))).toBe(month);
   });
 
+  it.each(['leading', 'trailing', 'repeat'])(
+    'keeps the month when an occurrence is in its %s outer row',
+    async (padding) => {
+      const thisMonth = today.with({ day: 1 });
+      let first = thisMonth;
+      // Pick a nearby month with both outer rows, independent of today's weekday.
+      while (first.dayOfWeek === 1 || first.with({ day: first.daysInMonth }).dayOfWeek === 7) {
+        first = first.add({ months: 1 });
+      }
+      await app.cdp.clickTestId('view-month');
+      const steps = thisMonth.until(first, { largestUnit: 'months' }).months;
+      for (let index = 0; index < steps; index += 1) {
+        await app.cdp.clickTestId('nav-next');
+      }
+      const title = titleFor('month', first, first, 'long');
+      await app.cdp.waitUntil(
+        ($, expected: string) => $.text('[data-testid="toolbar-title"]') === expected,
+        title,
+      );
+      const day = padding === 'leading' ? first.subtract({ days: 1 }) : first.add({ months: 1 });
+      expect(
+        await app.cdp.evaluate(
+          ($, date: string) => $.has(`[data-testid="month-grid"] [data-day="${date}"]`),
+          day.toString(),
+        ),
+      ).toBe(true);
+      await setEvent(
+        `Outer row ${padding}`,
+        padding === 'repeat' ? day.subtract({ years: 1 }) : day,
+      );
+      if (padding === 'repeat') {
+        await app.cdp.evaluate(($) => $.setValue('select[aria-label="Repeat"]', 'yearly'));
+      }
+      await save();
+      expect(await app.cdp.evaluate(($) => $.text('[data-testid="toolbar-title"]'))).toBe(title);
+    },
+  );
+
   it.each([false, true])(
     'keeps a rolled week in place when the saved occurrence is already visible (repeating: %s)',
     async (repeating) => {

@@ -201,11 +201,14 @@ export const useCalendarNavigation = ({
   }, []);
 
   useOnCreatedItem((item) => {
-    // Use visible days, excluding fetched neighbours and a slide's extra
-    // days. A rolled week starts at windowStart, not focused's Monday.
-    const first = view === 'month' ? focused.with({ day: 1 }) : windowStart;
+    // Use drawn days, excluding fetched neighbours and a slide's extra
+    // days. Month grids include their outer rows; rolled weeks start at
+    // windowStart, not focused's Monday.
+    const first = view === 'month' ? weekStart(focused.with({ day: 1 })) : windowStart;
     const last =
-      view === 'month' ? first.with({ day: first.daysInMonth }) : first.add({ days: dayCount - 1 });
+      view === 'month'
+        ? weekStart(focused.with({ day: focused.daysInMonth })).add({ days: 6 })
+        : first.add({ days: dayCount - 1 });
     const day = createdItemDay(item, first, last, timeZone);
     if (
       day &&
