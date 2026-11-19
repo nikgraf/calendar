@@ -10,7 +10,7 @@ import {
   TaskRecord,
   Temporal,
 } from '@calendar/core';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test';
+import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test';
 import { type App, launchApp, readEvents, readPendingOps, readTasks } from './harness.ts';
 import type { PageKit } from './page.ts';
 
@@ -214,41 +214,45 @@ type Watched = typeof window & {
 };
 
 describe('The editor’s Assistant and Form views', () => {
-  let app: App;
-  beforeAll(async () => {
-    app = await launchApp(seed, { env: { TZ }, geo, model: 'fixture' });
-  }, 60_000);
-  afterAll(async () => {
-    await app.stop();
-  });
+  let app: App | undefined;
   beforeEach(async () => {
-    // Each test starts on today's week, whatever the one before it showed:
-    // a draft's day is put on show and stays there once the editor closes,
-    // saved or not, and on a Sunday an earlier test's `+1` is next week,
-    // where none of today's seeded items are on show. The hook outlasts
-    // `locate`'s own wait, so a Today it cannot click fails in `locate`,
-    // not as a bare hook timeout.
-    await app.cdp.clickTestId('today');
-  }, 20_000);
-  afterEach(async () => {
-    // A failure above must not strand an editor for the next test.
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      if (!(await app.cdp.evaluate(exists, 'editor'))) {
-        return;
+    // A failed attempt may already have saved an event or dated a task.
+    // Give every test and retry its own seeded profile, at CI's width.
+    app = await launchApp(seed, {
+      env: { TZ },
+      geo,
+      model: 'fixture',
+      window: { height: 768, width: 1024 },
+    });
+  }, 60_000);
+  afterEach(async (context) => {
+    const attempt = app;
+    app = undefined;
+    let captureTimer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      if (attempt && context.task.result?.state === 'fail') {
+        // Leave time to stop Electron even when its renderer cannot answer CDP.
+        await Promise.race([
+          attempt.dump(`retry-${String(context.task.result.retryCount ?? 0)}-${context.task.name}`),
+          new Promise<void>((resolve) => {
+            captureTimer = setTimeout(resolve, 2000);
+          }),
+        ]);
       }
-      await app.cdp.escapeOrDiscard();
-      await sleep(150);
+    } finally {
+      clearTimeout(captureTimer);
+      await attempt?.stop();
     }
   });
 
   /** The updates queued for one stored event. */
   const updatesOf = async (eventId: string) =>
-    (await readPendingOps(app.userDataDir)).filter(
+    (await readPendingOps(app!.userDataDir)).filter(
       (op) => op.kind === 'update' && op.eventId === eventId,
     );
 
   it('answers each phrase with the item as a card, marks what changed and asks what it must; steps back through it all, and saves the step kept with "Use this"', async () => {
-    const { cdp } = app;
+    const { cdp } = app!;
     await cdp.evaluate(commandN);
     await cdp.waitUntil(headingIs, 'New event');
     // A new item opens on the Assistant, its field ready; nothing to step through yet.
@@ -381,7 +385,7 @@ describe('The editor’s Assistant and Form views', () => {
     const tomorrow = today.add({ days: 1 });
     await expect
       .poll(async () => {
-        const lunch = (await readEvents(app.userDataDir)).find(
+        const lunch = (await readEvents(app!.userDataDir)).find(
           (event) => event.title === 'Lunch with Sarah',
         );
         return lunch
@@ -400,7 +404,7 @@ describe('The editor’s Assistant and Form views', () => {
   });
 
   it('raises the form out of the card and folds it back, the pane leaving out of reach until it ends', async () => {
-    const { cdp } = app;
+    const { cdp } = app!;
     // What each switch did, read as it starts: the form pane's first frame.
     const watch = () => {
       (window as Watched).__switches = [];
@@ -491,13 +495,13 @@ describe('The editor’s Assistant and Form views', () => {
       await cdp.waitUntil(settled);
       expect((await cdp.evaluate(switches))[0]?.start).toBe('translateY(0px)');
     } finally {
-      // Back to the machine's own setting for the specs after this one.
+      // Release the media override before this attempt's app is closed.
       await cdp.send('Emulation.setEmulatedMedia', { features: [] });
     }
   });
 
   it('says in the Assistant why a save did nothing; in the form the form says it', async () => {
-    const { cdp } = app;
+    const { cdp } = app!;
     await cdp.evaluate(commandN);
     await cdp.waitUntil(headingIs, 'New event');
     expect(await cdp.evaluate(view)).toBe('assistant');
@@ -522,7 +526,7 @@ describe('The editor’s Assistant and Form views', () => {
   });
 
   it('counts an edit by hand as a step, further typing in the same field as the same one', async () => {
-    const { cdp } = app;
+    const { cdp } = app!;
     await cdp.evaluate(commandN);
     await cdp.waitUntil(headingIs, 'New event');
     await cdp.say('Call | +1 | 10:00-10:30');
@@ -555,7 +559,7 @@ describe('The editor’s Assistant and Form views', () => {
   });
 
   it('changes a saved event by phrase and sends only what differs; back at "As saved", Save sends nothing', async () => {
-    const { cdp } = app;
+    const { cdp } = app!;
     await cdp.openEditor('[title^="Design review"]');
     // A saved item opens on its form, with the Assistant a tab away.
     expect(await cdp.evaluate(view)).toBe('form');
@@ -644,9 +648,9 @@ describe('The editor’s Assistant and Form views', () => {
   });
 
   it('gives a saved to-do without a due day the day the words say, and refuses a time its list cannot keep', async () => {
-    const { cdp } = app;
+    const { cdp } = app!;
     const dueDate = async () =>
-      (await readTasks(app.userDataDir)).find((task) => task.id === 'task-loose')?.dueDate;
+      (await readTasks(app!.userDataDir)).find((task) => task.id === 'task-loose')?.dueDate;
     const openLoose = async () => {
       await cdp.clickTaskChip('[data-testid="all-day-task-task-loose"]');
       await cdp.waitUntil(headingIs, 'Edit task');
@@ -707,7 +711,7 @@ describe('The editor’s Assistant and Form views', () => {
   });
 
   it('refuses in the conversation what a saved event cannot hold, and lands nothing', async () => {
-    const { cdp } = app;
+    const { cdp } = app!;
     // A single stored event cannot be given a rule by an update.
     await cdp.openEditor('[title^="Design review"]');
     await cdp.showEditorView('assistant');

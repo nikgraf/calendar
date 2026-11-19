@@ -1078,6 +1078,12 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   the previous run's exit. A "(retry x1)" failure lists both attempts and
   the first may be listed second: read every error, and check whether
   attempt 1 changed the state the retry then failed on.
+- **Each Assistant view test owns its seeded profile.** A retry after
+  Save must open the original event again, not the time the failed
+  attempt already stored. Resetting only the panel or today's week does
+  not undo a write. Bound diagnostic capture so a stalled renderer cannot
+  prevent teardown; put the retry number before the name so the harness's
+  filename truncation keeps it.
 - **Never read editor state off `body.textContent`**: the sync footer's
   pending-op labels hold strings like "Edit task". Locate by testid.
 - **Seed order is not what a spec expects.** Capture drafts come in date
@@ -1106,8 +1112,8 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   `today` first.** The grid shows the focused draft's day and stays there
   once the editor closes, saved or not, so on a Sunday a draft on `+1`
   leaves it on next week, where nothing seeded for today is on show.
-  `assistantView.e2e.ts` clicks it before each test, since its tests
-  draft on `+1` and open today's seeds in turn.
+  This applies when tests share an app; Assistant view tests instead
+  start a fresh seeded app for every attempt.
 - **Teardown**: await the Electron process `exit` (with timeout) before
   deleting the temp profile, and `rmSync` with retries.
 - **Fire-and-forget UI mutations can silently drop**: poll for the effect

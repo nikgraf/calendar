@@ -1959,9 +1959,10 @@ gateway carries all of it. Details, limits and the threat model:
   distance itself — and never a location permission. The bridge returns `places` beside
   `place`; a native side from before it answers one place. Desktop
   draws a static `MKMapSnapshotter` PNG (`mapSnapshot`); iOS a live
-  `expo-maps` view (without its module, only the links). The iOS event
-  detail shows the map below its address and offers Apple Maps and Google
-  Maps directions (`locationDirectionsUrls`). These HTTPS links use
+  `expo-maps` view (without its module, only the links). Both apps' event
+  details show the map below its address, then a Get directions group
+  with filled Apple Maps and Google Maps buttons (`locationDirectionsUrls`).
+  These HTTPS links use
   matching coordinates when known and the address text otherwise, so
   directions remain available while geocoding is pending or fails. The
   Maps app chooses the origin and travel mode; no location permission is

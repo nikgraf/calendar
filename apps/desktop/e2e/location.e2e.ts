@@ -71,6 +71,18 @@ const seed = {
     event({ hour: 9, id: 'evt-coffee', title: 'Coffee chat' }),
     event({ hour: 11, id: 'evt-lunch', title: 'Lunch plan' }),
     event({ geo: STORED, hour: 14, id: 'evt-mass', location: STORED.source, title: 'Mass' }),
+    event({
+      hour: 16,
+      id: 'evt-studio',
+      location: 'Unlisted studio, 42 Example Lane',
+      title: 'Studio visit',
+    }),
+    event({
+      hour: 18,
+      id: 'evt-call',
+      location: 'https://meet.google.com/abc-defg-hij',
+      title: 'Video call',
+    }),
     // Last week's, with coordinates: where the user's places are, whatever
     // zone the machine is in. Vienna is nearby, San Francisco is not.
     event({
@@ -233,6 +245,54 @@ describe('location picker and map', () => {
     await cdp.waitUntil(($) => $.has('img[data-map]'));
     await cdp.clickButtonWithText('Cancel');
     await cdp.waitUntil(($, input: string) => !$.has(input), INPUT);
+  });
+
+  it('opens either provider with the place shown in the inspector', async () => {
+    const { cdp } = app;
+    await cdp.openInspector('[title^="Mass"]');
+    await cdp.waitUntil(($) => $.has('[data-testid="apple-maps-directions"]'));
+    expect(await cdp.evaluate(($) => $.text('[data-testid="google-maps-directions"]'))).toBe(
+      'Google Maps',
+    );
+    const opened = await cdp.evaluate(($) => {
+      const urls: Array<string> = [];
+      const original = window.open;
+      window.open = (url) => {
+        urls.push(String(url));
+        return null;
+      };
+      try {
+        $.el('[data-testid="apple-maps-directions"]')!.click();
+        $.el('[data-testid="google-maps-directions"]')!.click();
+        return urls;
+      } finally {
+        window.open = original;
+      }
+    });
+    expect(opened).toEqual([
+      'https://maps.apple.com/directions?destination=48.2084%2C16.3735',
+      'https://www.google.com/maps/dir/?api=1&destination=48.2084%2C16.3735',
+    ]);
+    await cdp.clickTestId('inspector-close');
+  });
+
+  it('keeps directions after a failed lookup, but hides them without a physical place', async () => {
+    const { cdp } = app;
+    await cdp.openInspector('[title^="Studio visit"]');
+    await cdp.waitUntil(($) => $.has('[data-testid="google-maps-directions"]'));
+    await cdp.waitUntil(($) => !$.has('[data-map-state="loading"]'));
+    expect(await cdp.evaluate(($) => $.has('[data-testid="apple-maps-directions"]'))).toBe(true);
+    expect(await cdp.evaluate(($) => $.has('[data-map]'))).toBe(false);
+    await cdp.clickTestId('inspector-close');
+
+    for (const title of ['Video call', 'Lunch plan']) {
+      await cdp.openInspector(`[title^="${title}"]`);
+      expect(await cdp.evaluate(($) => $.has('[data-testid="apple-maps-directions"]'))).toBe(false);
+      expect(await cdp.evaluate(($) => $.has('[data-testid="google-maps-directions"]'))).toBe(
+        false,
+      );
+      await cdp.clickTestId('inspector-close');
+    }
   });
 
   it('clears the lookup cache from Settings', async () => {
