@@ -1,0 +1,10 @@
+{
+  "lang": "de",
+  "tags": ["date", "allday", "de"],
+  "turns": [
+    {
+      "input": { "text": "Konzert am 5. Dezember" },
+      "expect": { "title": "konzert", "dayOfMonth": 5, "month": 12, "isAllDay": true }
+    }
+  ]
+}

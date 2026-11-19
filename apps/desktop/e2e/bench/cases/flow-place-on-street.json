@@ -1,0 +1,24 @@
+{
+  "lang": "en",
+  "tags": ["flow", "location", "follow-up"],
+  "turns": [
+    {
+      "input": { "text": "Coffee Thursday at 3" },
+      "expect": {
+        "title": "coffee",
+        "weekday": 4,
+        "startTime": "15:00",
+        "endTime": "16:00",
+        "location": null
+      }
+    },
+    {
+      "input": { "text": "at Starbucks" },
+      "expect": { "location": "starbucks" }
+    },
+    {
+      "input": { "text": "the one on Main Street" },
+      "expect": { "locationIs": "starbucks, main street" }
+    }
+  ]
+}

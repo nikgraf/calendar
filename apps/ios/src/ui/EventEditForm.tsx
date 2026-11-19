@@ -1,3 +1,4 @@
+import { use } from 'react';
 import {
   calendarGroups,
   RSVP_OPTIONS,
@@ -6,7 +7,7 @@ import {
   type useEventEditorModel,
   useTimeZones,
 } from '@calendar/app-state';
-import { type CalendarInfo, draftZoneRanges } from '@calendar/core';
+import { type CalendarInfo, draftZoneRanges, nameWithAddress } from '@calendar/core';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Linking, Pressable, Text, View } from 'react-native';
 import { Chip } from './Chip.tsx';
@@ -34,6 +35,7 @@ import { ReminderChips } from './ReminderChips.tsx';
 import { RepeatRuleChips } from './RepeatRuleChips.tsx';
 import { SegmentedControl } from './SegmentedControl.tsx';
 import { ZoneLines } from './ZoneLines.tsx';
+import { SwitchAnchorContext } from './assistant/useViewSwitch.ts';
 
 /** Which account (or, for Apple, which EventKit source) a calendar belongs to. */
 const groupLabel = (calendar: CalendarInfo, emailOf: (accountId: string) => string): string =>
@@ -58,6 +60,8 @@ export function EventEditForm({
   model: ReturnType<typeof useEventEditorModel>;
 }) {
   const styles = useSheetStyles();
+  // The title the form rises to from the Assistant's card (`useViewSwitch`).
+  const anchors = use(SwitchAnchorContext);
   const accounts = useAccounts();
   const { secondary: secondaryZones } = useTimeZones();
   const emailOf = (accountId: string) =>
@@ -194,6 +198,7 @@ export function EventEditForm({
             editable={!readOnly}
             onChangeText={setTitle}
             placeholder="Title"
+            ref={anchors?.form}
             testID="event-title"
             value={title}
           />
@@ -232,7 +237,7 @@ export function EventEditForm({
       <Section tight>
         <LocationField model={model} />
       </Section>
-      <LocationMap model={model} />
+      <LocationMap place={model} />
 
       {readOnly ? null : (
         <Section header="Calendar" tight>
@@ -292,8 +297,7 @@ export function EventEditForm({
         <Section header="Invitees" testID="event-invitees-held" tight>
           <RowSlot>
             <Text style={styles.hint}>
-              Not invited from this calendar:{' '}
-              {attendees.map((attendee) => attendee.displayName ?? attendee.email).join(', ')}
+              Not invited from this calendar: {attendees.map(nameWithAddress).join(', ')}
             </Text>
           </RowSlot>
         </Section>
@@ -301,7 +305,7 @@ export function EventEditForm({
         // EventKit cannot write guests: shown as they are, never edited.
         <Section header="Guests" testID="event-guests-read-only" tight>
           {guests.map((attendee) => (
-            <Row key={attendee.email} title={attendee.displayName ?? attendee.email} />
+            <Row key={attendee.email} title={nameWithAddress(attendee)} />
           ))}
         </Section>
       ) : null}

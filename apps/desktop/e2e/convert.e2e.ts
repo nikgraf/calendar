@@ -18,6 +18,7 @@ import {
   readTasks,
   type RemindersFixture,
 } from './harness.ts';
+import type { PageKit } from './page.ts';
 
 // A Google account (no token: writes stay queued) next to the Reminders
 // fixture. The editor's Event | Task toggle carries a new draft across
@@ -153,17 +154,9 @@ const remindersFixture: RemindersFixture = {
   ],
 };
 
-const setField = (selector: string, value: string, kind: 'input' | 'select') => `(() => {
-  const element = document.querySelector(${JSON.stringify(selector)});
-  const proto = ${kind === 'input' ? 'window.HTMLInputElement' : 'window.HTMLSelectElement'}.prototype;
-  Object.getOwnPropertyDescriptor(proto, 'value').set.call(element, ${JSON.stringify(value)});
-  element.dispatchEvent(new Event(${JSON.stringify(kind === 'input' ? 'input' : 'change')}, { bubbles: true }));
-})()`;
-
 const TITLE = 'input[placeholder="Title"]';
 const LIST_SELECT = 'select[aria-label="Task list"]';
-const CONFIRM = `document.querySelector('[data-testid="move-confirm"]')`;
-const heading = (text: string) => `document.body.textContent.includes(${JSON.stringify(text)})`;
+const heading = (_: PageKit, text: string) => document.body.textContent.includes(text);
 
 describe('Converting between events and tasks', () => {
   let app: App;
@@ -186,64 +179,79 @@ describe('Converting between events and tasks', () => {
     await cdp.locate('[data-testid="timed-task-ek-rem-1"]');
     const button = await cdp.locate('[aria-label="New event"]');
     await cdp.click(button.x, button.y);
-    await cdp.waitFor(heading('New event'));
-    await cdp.eval(setField(TITLE, 'Water plants', 'input'));
+    await cdp.waitUntil(heading, 'New event');
+    // "+ New" opens on the Assistant where a model answers; the fields are the form's.
+    await cdp.showEditorView('form');
+    await cdp.evaluate(($, title: string) => $.setValue(title, 'Water plants'), TITLE);
     // A chosen time (the untouched 09:00 default is not one) follows the draft.
-    await cdp.eval(setField('input[type="time"]', '10:30', 'input'));
+    await cdp.evaluate(($) => $.setValue('input[type="time"]', '10:30'));
     // Title, day and time all fit a reminder: no question.
     await clickTestId('mode-reminder');
-    await cdp.waitFor(heading('New reminder'));
-    expect(await cdp.eval(`!!${CONFIRM}`)).toBe(false);
-    expect(await cdp.eval(`document.querySelector('${TITLE}').value`)).toBe('Water plants');
-    expect(await cdp.eval(`document.querySelector('input[aria-label="At a time"]').checked`)).toBe(
-      true,
-    );
-    expect(await cdp.eval(`document.querySelector('input[aria-label="Due time"]').value`)).toBe(
-      '10:30',
-    );
+    await cdp.waitUntil(heading, 'New reminder');
+    expect(await cdp.evaluate(($) => $.has('[data-testid="move-confirm"]'))).toBe(false);
+    expect(
+      await cdp.evaluate(($, title: string) => $.el<HTMLInputElement>(title)!.value, TITLE),
+    ).toBe('Water plants');
+    expect(
+      await cdp.evaluate(($) => $.el<HTMLInputElement>('input[aria-label="At a time"]')!.checked),
+    ).toBe(true);
+    expect(
+      await cdp.evaluate(($) => $.el<HTMLInputElement>('input[aria-label="Due time"]')!.value),
+    ).toBe('10:30');
     // Back to the event, and a location makes the next switch lossy.
     await clickTestId('mode-event');
-    await cdp.waitFor(heading('New event'));
-    await cdp.eval(setField('input[aria-label="Location"]', 'Room 4B', 'input'));
+    await cdp.waitUntil(heading, 'New event');
+    await cdp.evaluate(($) => $.setValue('input[aria-label="Location"]', 'Room 4B'));
     await clickTestId('mode-reminder');
-    const summary = await cdp.waitFor<string>(`${CONFIRM}?.textContent ?? ''`);
+    const summary = await cdp.waitForValue(($) => $.text('[data-testid="move-confirm"]'));
     expect(summary).toContain('Switching to a reminder drops the location.');
     await cdp.clickButtonWithText('Keep as event');
-    expect(await cdp.eval(heading('New event'))).toBe(true);
+    expect(await cdp.evaluate(heading, 'New event')).toBe(true);
     await clickTestId('mode-reminder');
-    await cdp.waitFor(`!!${CONFIRM}`);
+    await cdp.waitUntil(($) => $.has('[data-testid="move-confirm"]'));
     await cdp.clickButtonWithText('Switch');
-    await cdp.waitFor(heading('New reminder'));
-    expect(await cdp.eval(`document.querySelector('${TITLE}').value`)).toBe('Water plants');
+    await cdp.waitUntil(heading, 'New reminder');
+    expect(
+      await cdp.evaluate(($, title: string) => $.el<HTMLInputElement>(title)!.value, TITLE),
+    ).toBe('Water plants');
     // Reminder → Task keeps the fields; the time has no home on a Google
     // list, so it asks — and the Task form is date-only once switched.
     await clickTestId('mode-task');
-    const dropped = await cdp.waitFor<string>(`${CONFIRM}?.textContent ?? ''`);
+    const dropped = await cdp.waitForValue(($) => $.text('[data-testid="move-confirm"]'));
     expect(dropped).toContain('Switching to a task drops the due time.');
     await cdp.clickButtonWithText('Keep as reminder');
-    expect(await cdp.eval(heading('New reminder'))).toBe(true);
+    expect(await cdp.evaluate(heading, 'New reminder')).toBe(true);
     await clickTestId('mode-task');
-    await cdp.waitFor(`!!${CONFIRM}`);
+    await cdp.waitUntil(($) => $.has('[data-testid="move-confirm"]'));
     await cdp.clickButtonWithText('Switch');
-    await cdp.waitFor(heading('New task'));
-    expect(await cdp.eval(`document.querySelector('${TITLE}').value`)).toBe('Water plants');
-    expect(await cdp.eval(`!!document.querySelector('input[aria-label="Due time"]')`)).toBe(false);
+    await cdp.waitUntil(heading, 'New task');
+    expect(
+      await cdp.evaluate(($, title: string) => $.el<HTMLInputElement>(title)!.value, TITLE),
+    ).toBe('Water plants');
+    expect(await cdp.evaluate(($) => $.has('input[aria-label="Due time"]'))).toBe(false);
+    // The title typed is unsaved: Cancel asks first.
     await cdp.clickButtonWithText('Cancel');
-    await cdp.waitFor(`!${heading('New task')}`);
+    await cdp.answerDiscard(true);
+    await cdp.waitUntil(
+      (_: PageKit, text: string) => !document.body.textContent.includes(text),
+      'New task',
+    );
   });
 
   it('converts an event into a reminder without asking when nothing is lost', async () => {
     const { cdp } = app;
     await cdp.openEditor('[title^="Plain event"]');
     await clickTestId('mode-reminder');
-    await cdp.waitFor(heading('Convert to reminder'));
-    expect(await cdp.eval(`document.querySelector('${TITLE}').value`)).toBe('Plain event');
-    expect(await cdp.eval(`document.querySelector('input[aria-label="At a time"]').checked`)).toBe(
-      true,
-    );
-    expect(await cdp.eval(`document.querySelector('${LIST_SELECT}').value`)).toBe(
-      `${APPLE_REMINDERS_ACCOUNT_ID}:ek-list-1`,
-    );
+    await cdp.waitUntil(heading, 'Convert to reminder');
+    expect(
+      await cdp.evaluate(($, title: string) => $.el<HTMLInputElement>(title)!.value, TITLE),
+    ).toBe('Plain event');
+    expect(
+      await cdp.evaluate(($) => $.el<HTMLInputElement>('input[aria-label="At a time"]')!.checked),
+    ).toBe(true);
+    expect(
+      await cdp.evaluate(($, list: string) => $.el<HTMLSelectElement>(list)!.value, LIST_SELECT),
+    ).toBe(`${APPLE_REMINDERS_ACCOUNT_ID}:ek-list-1`);
     await cdp.clickButtonWithText('Save');
     await expect
       .poll(async () => {
@@ -258,7 +266,7 @@ describe('Converting between events and tasks', () => {
         };
       })
       .toEqual({ eventGone: true, listId: 'ek-list-1', provider: 'apple', timed: true });
-    expect(await cdp.eval(`!!${CONFIRM}`)).toBe(false);
+    expect(await cdp.evaluate(($) => $.has('[data-testid="move-confirm"]'))).toBe(false);
     const ops = await readPendingOps(app.userDataDir);
     expect(ops.some((op) => op.kind === 'delete' && op.eventId === 'evt-plain')).toBe(true);
     expect(await cdp.locate('[data-testid^="timed-task-"][title^="Plain event"]')).toBeTruthy();
@@ -267,18 +275,20 @@ describe('Converting between events and tasks', () => {
   it('converts a reminder into an event after confirming what it drops', async () => {
     const { cdp } = app;
     await cdp.clickTaskChip('[data-testid="timed-task-ek-rem-1"]');
-    await cdp.waitFor(heading('Edit reminder'));
+    await cdp.waitUntil(heading, 'Edit reminder');
     await clickTestId('mode-event');
-    await cdp.waitFor(heading('Convert to event'));
-    expect(await cdp.eval(`document.querySelector('${TITLE}').value`)).toBe('Call mom');
+    await cdp.waitUntil(heading, 'Convert to event');
+    expect(
+      await cdp.evaluate(($, title: string) => $.el<HTMLInputElement>(title)!.value, TITLE),
+    ).toBe('Call mom');
     await cdp.clickButtonWithText('Save');
-    const summary = await cdp.waitFor<string>(`${CONFIRM}?.textContent ?? ''`);
+    const summary = await cdp.waitForValue(($) => $.text('[data-testid="move-confirm"]'));
     expect(summary).toContain('Converting this task to an event drops the priority.');
     await cdp.clickButtonWithText('Keep as task');
-    expect(await cdp.eval(heading('Convert to event'))).toBe(true);
+    expect(await cdp.evaluate(heading, 'Convert to event')).toBe(true);
     expect((await readTasks(app.userDataDir)).some((task) => task.id === 'ek-rem-1')).toBe(true);
     await cdp.clickButtonWithText('Save');
-    await cdp.waitFor(`!!${CONFIRM}`);
+    await cdp.waitUntil(($) => $.has('[data-testid="move-confirm"]'));
     await cdp.clickButtonWithText('Convert anyway');
     await expect
       .poll(async () => {
@@ -295,30 +305,34 @@ describe('Converting between events and tasks', () => {
 
   it('converts one occurrence of a series and leaves the rest of it', async () => {
     const { cdp } = app;
-    // The series' own blocks: the reminder one of them becomes has the same
-    // title, and a test id as every task chip does.
-    const series = '[title^="Daily review"]:not([data-testid])';
-    const blocks = `document.querySelectorAll('${series}').length`;
-    await cdp.waitFor(`${blocks} > 1`);
-    const before = await cdp.eval<number>(blocks);
+    // The series' own event blocks, excluding the reminder one becomes.
+    const series = '[data-testid^="timed-event-evt-daily"]';
+    const blocks = ($: PageKit, selector: string) => $.count(selector);
+    await cdp.waitUntil(($, selector: string) => $.count(selector) > 1, series);
+    const before = await cdp.evaluate(blocks, series);
     await cdp.openInspector(series);
     // "This event" converts as it opens; "This and following" never does.
-    const convert = `document.querySelector('[data-testid="inspector-convert"]')`;
-    expect(await cdp.eval(`${convert}.disabled`)).toBe(false);
+    const disabled = ($: PageKit) =>
+      $.el<HTMLButtonElement>('[data-testid="inspector-convert"]')!.disabled;
+    expect(await cdp.evaluate(disabled)).toBe(false);
     await cdp.clickButtonWithText('This and following');
-    await cdp.waitFor(`${convert}.disabled`);
-    expect(await cdp.eval(`${convert}.title`)).toBe(
+    await cdp.waitUntil(disabled);
+    expect(await cdp.evaluate(($) => $.el('[data-testid="inspector-convert"]')!.title)).toBe(
       'Choose "This event" or "All events" to convert',
     );
     await cdp.clickButtonWithText('This event');
-    await cdp.waitFor(`!${convert}.disabled`);
-    await clickTestId('inspector-convert');
-    await cdp.waitFor(heading('Convert to reminder'));
-    expect(await cdp.eval(`document.querySelector('${TITLE}').value`)).toBe('Daily review');
-    // One occurrence becomes one reminder: the rule stays with the series.
-    expect(await cdp.eval(`document.querySelector('select[aria-label="Repeat"]').value`)).toBe(
-      'none',
+    await cdp.waitUntil(
+      ($) => !$.el<HTMLButtonElement>('[data-testid="inspector-convert"]')!.disabled,
     );
+    await clickTestId('inspector-convert');
+    await cdp.waitUntil(heading, 'Convert to reminder');
+    expect(
+      await cdp.evaluate(($, title: string) => $.el<HTMLInputElement>(title)!.value, TITLE),
+    ).toBe('Daily review');
+    // One occurrence becomes one reminder: the rule stays with the series.
+    expect(
+      await cdp.evaluate(($) => $.el<HTMLSelectElement>('select[aria-label="Repeat"]')!.value),
+    ).toBe('none');
     await cdp.clickButtonWithText('Save');
     await expect
       .poll(async () => {
@@ -344,10 +358,14 @@ describe('Converting between events and tasks', () => {
         rule: ['RRULE:FREQ=DAILY;COUNT=14'],
         skips: ['delete cancelled'],
       });
-    expect(await cdp.eval(`!!${CONFIRM}`)).toBe(false);
+    expect(await cdp.evaluate(($) => $.has('[data-testid="move-confirm"]'))).toBe(false);
     // That day's block is gone, the others stay, and the reminder shows: at
     // its time, or in today's lane when the occurrence was a past one.
-    await cdp.waitFor(`${blocks} === ${before - 1}`);
+    await cdp.waitUntil(
+      ($, selector: string, count: number) => $.count(selector) === count,
+      series,
+      before - 1,
+    );
     expect(await cdp.locate('[data-testid*="task-"][title^="Daily review"]')).toBeTruthy();
   });
 });

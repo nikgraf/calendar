@@ -1,0 +1,23 @@
+{
+  "lang": "en",
+  "tags": ["flow", "shift"],
+  "turns": [
+    {
+      "input": { "text": "Call with Sarah Thursday at 2" },
+      "expect": {
+        "title": "call with sarah",
+        "weekday": 4,
+        "startTime": "14:00",
+        "endTime": "15:00"
+      }
+    },
+    {
+      "input": { "text": "15 minutes earlier" },
+      "expect": { "startTime": "13:45", "endTime": "14:45" }
+    },
+    {
+      "input": { "text": "half an hour longer" },
+      "expect": { "startTime": "13:45", "endTime": "15:15" }
+    }
+  ]
+}

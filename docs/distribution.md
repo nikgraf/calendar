@@ -1,6 +1,6 @@
 # Desktop distribution: macOS testing builds
 
-Every push to `main` runs the `testing-build` job in `.github/workflows/ci.yml`
+Every push to `main` that changes desktop code runs the `testing-build` job in `.github/workflows/ci.yml`
 (on `xcode-27`, GitHub's macOS 27 image — the Swift helper needs the macOS
 27 SDK, and the packaged app needs macOS 27 or later: `LSMinimumSystemVersion`
 in `forge.config.cjs`, which Finder enforces with the system's own alert),
@@ -71,8 +71,8 @@ collects what changed between bumps; the decision log in
 The app needs macOS 27 or later; an older Mac refuses to open it with the
 system's own alert.
 
-1. Open the repo's **Actions** tab → latest green `CI` run on `main` (requires
-   repo read access).
+1. Open the repo's **Actions** tab → latest green `CI` run on `main` that has the
+   artifact (requires repo read access).
 2. Download the `Solunivo-testing-<sha>.zip` artifact.
 3. Unzip once to get `Solunivo.app`, then drag it to `/Applications`. It's
    notarized and stapled — no Gatekeeper hoops, first launch just works.
@@ -103,6 +103,19 @@ useful after adding/rotating secrets.
   EventKit and camera permission prompts, even without App Sandbox; usage
   descriptions in Info.plist alone (`NSCameraUsageDescription` sits in
   `forge.config.cjs`) are insufficient.
+- `llama-server` rides in Resources beside the helper. It runs the
+  Assistant's own model (`apps/desktop/electron/assistantModel/`), and it
+  is llama.cpp at the commit llama.rn vendors (`vendor/VERSIONS`), so the Mac
+  and the iPhone run the same llama.cpp. `pnpm --filter @calendar/desktop
+  build:llama` (`scripts/build-llama-server.sh`, run by `make` and
+  `package:app`) fetches that commit and builds one static arm64 binary
+  with Metal embedded. It fails if the binary links anything outside the
+  system, and keeps a build whose commit and script are unchanged.
+  `LLAMA_CPP_SRC=<checkout>` builds from a local clone. CI caches only the
+  binary, keyed on the script and `apps/ios/package.json`. osx-sign signs it
+  under the hardened runtime with an empty entitlements list
+  (`optionsForFile`), not osx-sign's default plist. Both packaging jobs run
+  `llama-server --version` from the app.
 - The Developer ID cert lives only in a temporary keychain created from the
   secret for the duration of the job and is deleted in an `always()` step.
 - Notarization adds ~2–10 minutes; the job timeout is 30.
@@ -117,11 +130,15 @@ fingerprint (`npx expo-updates fingerprint:generate`) and compares it against
 the `runtime.version` of the latest finished main-channel build
 (`eas build:list`). With `runtimeVersion.policy: fingerprint` those are the
 same hash, so equality means an OTA update reaches every install of the
-latest build.
+latest build. The app needs iOS 27 or later (`ios.deploymentTarget` in
+`app.json`; the local modules' podspecs say the same, so their Swift has no
+OS availability checks), which the App Store and TestFlight enforce.
 
 - **Unchanged** (JS/TS/docs-only merges — most of them): publishes
-  `eas update --branch main` in ~30s; installed TestFlight builds load it
-  on next launch. No cloud build, no build number.
+  `eas update --branch main` in ~30s; installed TestFlight builds download
+  it in the background on their next launch and run it from the cold start
+  after that (`updates.fallbackToCacheTimeout: 0`: a launch never waits
+  for the update check). No cloud build, no build number.
 - **Changed** (native deps, config plugins, SDK bumps, the app icon,
   `ios.infoPlist`, `apps/ios/package.json` scripts): a full EAS build and
   TestFlight submit. The fingerprint runs Expo's default `balanced` preset
@@ -143,6 +160,17 @@ The native bridges (`packages/*/swift`) reach the app through symlinks in
 `modules/*/ios`, which the fingerprint hashes without following, so
 `apps/ios/fingerprint.config.cjs` adds those directories as extra sources
 — without it a Swift-only change shipped the previous binary.
+
+When a fingerprint moves and nothing native changed, diff the sources:
+`APP_VARIANT=development npx expo-updates fingerprint:generate --platform
+ios` in `apps/ios` on the branch and on `origin/main`, then compare the
+`.sources` lists (`jq '.sources'`); the one that differs names the
+culprit. Seen so far: an edit to any `apps/ios/package.json` script (in a
+JS-only PR, leave a dead flag there rather than edit it), and a `.ts` app
+config, which pulled Babel's modules in as loaded sources. The `balanced`
+preset leaves out a _string_ `runtimeVersion` but hashes app.json's
+`{ "policy": "fingerprint" }` object, so pinning that moves the
+fingerprint too.
 
 `expo-notifications`' config plugin adds the `aps-environment` (push)
 entitlement, which the App Store profile does not carry. Notifications are
@@ -170,6 +198,18 @@ search is `MKLocalSearch`, a call to Apple's servers. It is declared
 directly rather than through expo-maps' `requestLocationPermission`
 option, which would also claim Android location permissions. `ios.infoPlist`
 feeds the fingerprint, so a change there forces a TestFlight build.
+
+llama.rn (the Assistant's model, and the Model Spike page) is linked in
+both variants and compiles llama.cpp from the sources the npm package
+ships (`plugins/withLlamaFromSource.cjs`); its postinstall, which would
+download a prebuilt framework, never runs (`allowBuilds`). The pod brings
+no privacy manifest of its own, and needs none from the app: llama.cpp
+touches two kinds of API Apple asks a reason for, file timestamps
+(`fstat` in `llama-mmap.cpp`) and boot time (`mach_absolute_time` in its
+vendored `miniaudio.h`), and the manifest Expo generates from the other
+pods already declares both. A processing mail citing ITMS-91053 after an
+upload would mean that changed. The model itself is data the app
+downloads (`solunivo-model-download`, a background `URLSession`), not code.
 
 Two comparison caveats, both fail-safe. The baseline is the latest
 _finished_ build, not "what testers run": installs still on an older
@@ -296,6 +336,22 @@ credentials ever need recreating:
 5. TestFlight internal testing: add yourself (and teammates) as internal
    testers in App Store Connect — internal builds need no Apple review.
 
+## When an EAS build fails before building
+
+`eas build` stopping in its credentials step with Apple's 403 "PLA
+Update available … your team's Account Holder … must agree to the latest
+Program License Agreement" (seen registering the share extension's
+bundle id) is not the code: Apple blocks the App Store Connect API until
+the Account Holder accepts the new agreement at
+developer.apple.com/account. That is Nik's action; once he has, rerun
+the failed jobs (`gh run rerun <run> --failed`; one right after accepting
+still got the 403, so give it a few minutes). Each failed attempt still
+takes a build number from EAS's remote counter, which is harmless.
+
+eas-cli 27 also stops `eas build` when pulling the project's EAS
+environment variables fails (24 went on without them); the reasons are on
+stderr.
+
 ## Costs / quotas
 
 EAS free tier: ~30 cloud builds/month; OTA updates are effectively free at
@@ -327,7 +383,9 @@ dragging the `.app` in.
 module, config plugin, Swift bridge change, or Expo SDK bump). JS-only
 changes reload over Metro. `apps/ios/scripts/check-devclient.mjs` (run by
 `pnpm test:e2e:ios`) warns when the installed client's fingerprint differs
-from the working tree's. A dev build loads from Metro: **Settings ›
+from the working tree's (what a stale client looks like:
+`platform-notes.md`; installing the matching build by fingerprint: the
+`ios-simulator` skill). A dev build loads from Metro: **Settings ›
 Advanced › PR Preview** still shows the channel controls there, but
 expo-updates refuses the override and the page shows its error.
 
@@ -395,6 +453,26 @@ Useful for debugging native code or working offline. First compile takes
 a weird state, rerun prebuild with `--clean`. Xcode 27 has no Simulator.app:
 `expo run:ios` and `expo start --ios` bring the device up in Device Hub
 instead (Expo CLI 57.0.28 and later), and `simctl` works as before.
+CocoaPods dies with "Unicode Normalization not appropriate for
+ASCII-8BIT" (prebuild still reports success) in a shell without a UTF-8
+locale, which is what an agent's shell often has: `export
+LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8` first. A build that crashes before
+any JS on iOS 27 is the scene check (`platform-notes.md`).
+
+A new local module needs its pods before the build (`expo run:ios` does
+not install them again): in `apps/ios`, `APP_VARIANT=development npx expo
+prebuild --platform ios --no-install`, `pod install` in `ios/`, then
+`APP_VARIANT=development npx expo run:ios --device <simulator> --no-bundler`,
+about 15 minutes clean since llama.rn compiles from source. To install a
+build without touching the client already on the simulator (a "before"
+to keep), build with `xcodebuild -workspace ios/<Name>.xcworkspace -scheme
+<Name> -configuration Debug -sdk iphonesimulator -derivedDataPath
+<scratch>/dd build` (about 6 minutes incremental) and `xcrun simctl
+install` the `.app` from there.
+
+An iOS module's Swift can be typechecked without CocoaPods: `swiftc
+-typecheck` against a stub `ExpoModulesCore` module. Swift 6 makes
+`NSLock.lock()` unavailable in async code; use `withLock`.
 
 # Website (solunivo.com)
 
@@ -434,6 +512,14 @@ one. It also stops on a rendered class no CSS rule selects and on a CSS
 variable nothing defines, which is how a token renamed in `tokens.json`
 but not in `brand/tokens/tailwind.css` shows up.
 
+Checking the built page in headless Chrome: it keeps a window at least
+about 500 px wide, so a phone width needs CDP's
+`Emulation.setDeviceMetricsOverride`; each concurrent run needs its own
+`--user-data-dir`, or it exposes no page target; and it never focuses the
+page, so `:focus` styles are checked with a forced style. Two Tailwind
+`leading-*` classes on one element resolve by their order in the CSS,
+not in the class list.
+
 ## Adding a help article
 
 Create a Markdown file under `apps/web/src/pages/help/`. For example,
@@ -463,7 +549,7 @@ Recapture them when the apps' look changes:
   Apple fixtures, dark through `Emulation.setEmulatedMedia`). It also
   writes the week's Google events and tasks to `google.json` for the
   iPhone capture. The spec skips without `SHOT_OUT`.
-- **iPhone:** the dev client on the dedicated simulator with Metro
+- **iPhone:** the dev client on the booted simulator with Metro
   started from the repo root as `EXPO_PUBLIC_CALENDAR_GOOGLE=fixture
   EXPO_PUBLIC_CALENDAR_MODEL=fixture EXPO_PUBLIC_CALENDAR_ONBOARDING=off
   EXPO_PUBLIC_CALENDAR_NOTIFICATIONS=off CI=1 pnpm --filter @calendar/ios

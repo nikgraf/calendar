@@ -39,14 +39,12 @@ const fileText = (app: App): string => readFileSync(app.settingsFilePath, 'utf8'
 /** The settings window on Settings File, where the file's card lives. */
 const openSettings = async (app: App): Promise<App['cdp']> => {
   const settings = await app.openSettings('file');
-  await settings.waitFor(`!!document.querySelector('[data-testid="settings-file"]')`);
+  await settings.waitUntil(($) => $.has('[data-testid="settings-file"]'));
   return settings;
 };
 
 const statusText = (cdp: App['cdp']) =>
-  cdp.eval<string>(
-    `document.querySelector('[data-testid="settings-file-status"]')?.textContent ?? ''`,
-  );
+  cdp.evaluate(($) => $.text('[data-testid="settings-file-status"]'));
 
 describe('settings file: applied at launch and while running, written back on edits', () => {
   let app: App;
@@ -59,7 +57,7 @@ describe('settings file: applied at launch and while running, written back on ed
         '  "version": 1,',
         '  "timeZones": { "primary": "UTC", "zones": ["device", "UTC", "Asia/Kolkata"] },',
         '  "view": { "allDayLaneCollapsed": true },',
-        '  "desktop": { "screenPrivacy": "visible" },',
+        '  "desktop": { "screenPrivacy": "hidden" },',
         '  "accounts": [',
         '    { "kind": "google", "email": "file@example.com", "calendars": [] }',
         '  ]',
@@ -83,16 +81,16 @@ describe('settings file: applied at launch and while running, written back on ed
     });
     await expect
       .poll(() => readSettings(app.userDataDir)['screenPrivacy'], { timeout: 10_000 })
-      .toBe('visible');
+      .toBe('hidden');
     // The grid draws the secondary zone under each hour.
-    await cdp.waitFor(`!!document.querySelector('[data-testid="hour-secondary-12"]')`);
+    await cdp.waitUntil(($) => $.has('[data-testid="hour-secondary-12"]'));
 
     const accounts = await readAccounts(app.userDataDir);
     const added = accounts.find((entry) => entry.email === 'file@example.com');
     expect(added?.status).toBe('reauth_required');
     expect(added?.provider).toBe('google');
-    await cdp.waitFor(`document.body.textContent.includes('file@example.com')`);
-    await cdp.waitFor(`document.body.textContent.includes('sign in again')`);
+    await cdp.waitUntil(() => document.body.textContent.includes('file@example.com'));
+    await cdp.waitUntil(() => document.body.textContent.includes('sign in again'));
 
     const applied = (await readDeviceSetting(app.userDataDir, 'settingsFile')) as {
       hash?: string;
@@ -145,12 +143,16 @@ describe('settings file: applied at launch and while running, written back on ed
   it('writes a settings change back, keeping the comments', async () => {
     // The Work checkbox in the account card (the settings window is still open).
     const cdp = await app.openSettings('accounts');
-    await cdp.waitFor(
-      `[...document.querySelectorAll('input[type="checkbox"]')].some(b => b.parentElement?.textContent?.includes('Work') && !b.checked)`,
+    await cdp.waitUntil(($) =>
+      $.all<HTMLInputElement>('input[type="checkbox"]').some(
+        (b) => b.parentElement?.textContent?.includes('Work') && !b.checked,
+      ),
     );
-    await cdp.eval(
-      `[...document.querySelectorAll('input[type="checkbox"]')].find(b => b.parentElement?.textContent?.includes('Work') && !b.checked)?.click()`,
-    );
+    await cdp.evaluate(($) => {
+      $.all<HTMLInputElement>('input[type="checkbox"]')
+        .find((b) => b.parentElement?.textContent?.includes('Work') && !b.checked)
+        ?.click();
+    });
     await expect
       .poll(
         async () =>
@@ -186,24 +188,19 @@ describe('settings file: created on request', () => {
 
     // The watched file has its own card: what it is for, what it exposes,
     // and the create button — apart from the one-off Export/Import.
-    const layout = await cdp.eval<{
-      createInFile: boolean;
-      createInTransfer: boolean;
-      exportInTransfer: boolean;
-      exposure: string;
-      purpose: string;
-    }>(`(() => {
-      const file = document.querySelector('[data-testid="settings-file"]');
-      const transfer = document.querySelector('[data-testid="settings-transfer"]');
+    const layout = await cdp.evaluate(($) => {
+      const file = $.el('[data-testid="settings-file"]');
+      const transfer = $.el('[data-testid="settings-transfer"]');
       return {
         createInFile: !!file?.querySelector('[data-testid="settings-file-create"]'),
         createInTransfer: !!transfer?.querySelector('[data-testid="settings-file-create"]'),
-        exportInTransfer: !!transfer?.querySelector('[data-testid="settings-file-export"]')
-          && !!transfer?.querySelector('[data-testid="settings-file-import"]'),
+        exportInTransfer:
+          !!transfer?.querySelector('[data-testid="settings-file-export"]') &&
+          !!transfer?.querySelector('[data-testid="settings-file-import"]'),
         exposure: file?.querySelector('[data-testid="settings-file-exposure"]')?.textContent ?? '',
         purpose: file?.textContent ?? '',
       };
-    })()`);
+    });
     expect(layout.createInFile).toBe(true);
     expect(layout.createInTransfer).toBe(false);
     expect(layout.exportInTransfer).toBe(true);
@@ -212,7 +209,9 @@ describe('settings file: created on request', () => {
     expect(layout.purpose).toContain('Set up a new Mac');
     expect(layout.purpose).toContain('coding agents');
 
-    await cdp.eval(`document.querySelector('[data-testid="settings-file-create"]')?.click()`);
+    await cdp.evaluate(($) => {
+      $.el('[data-testid="settings-file-create"]')?.click();
+    });
     await expect.poll(() => statusText(cdp), { timeout: 10_000 }).toMatch(/^Watching/);
     const created = fileText(app);
     expect(created.startsWith('// Solunivo settings.')).toBe(true);
@@ -224,12 +223,13 @@ describe('settings file: created on request', () => {
     expect(parsed.accounts).toEqual([
       expect.objectContaining({ email: 'e2e@example.com', kind: 'google' }),
     ]);
+    expect(created).toContain('"screenPrivacy": "visible"');
 
     // A later change lands in the file.
     await app.openSettings('sharing');
-    await cdp.clickButtonWithText('Always visible');
+    await cdp.clickButtonWithText('Hidden');
     await expect
       .poll(() => fileText(app), { timeout: 10_000 })
-      .toContain('"screenPrivacy": "visible"');
+      .toContain('"screenPrivacy": "hidden"');
   });
 });

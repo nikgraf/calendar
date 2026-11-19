@@ -150,3 +150,19 @@ export const decodeGeoProperties = (
  */
 export const openInMapsUrl = (geo: GeoLocation): string =>
   `https://maps.apple.com/?ll=${formatCoordinate(geo.lat)},${formatCoordinate(geo.lng)}&q=${encodeURIComponent(geo.name ?? geo.source)}`;
+
+/** Directions from the user's current location, with text as the offline fallback. */
+export const locationDirectionsUrls = (location: string, geo?: GeoLocation) => {
+  if (!isMappableLocation(location)) {
+    return undefined;
+  }
+  const destination = encodeURIComponent(
+    geoMatches(geo, location)
+      ? `${formatCoordinate(geo.lat)},${formatCoordinate(geo.lng)}`
+      : location.trim(),
+  );
+  return {
+    apple: `https://maps.apple.com/directions?destination=${destination}`,
+    google: `https://www.google.com/maps/dir/?api=1&destination=${destination}`,
+  };
+};

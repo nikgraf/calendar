@@ -5,6 +5,7 @@ import {
   SCOPE_OPTIONS,
   useCurrentEvent,
   useEventEditorModel,
+  useEventPlace,
   useTimeZones,
 } from '@calendar/app-state';
 import {
@@ -13,14 +14,14 @@ import {
   type EventRecord,
   formatPlainTime,
   type RecurringScope,
-  type RsvpResponse,
   seriesConvertsAt,
   Temporal,
   utcMsToPlainDate,
 } from '@calendar/core';
 import { useEffect, useEffectEvent, useState } from 'react';
-import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { confirmEditorRequest } from './EventEditSheet.tsx';
+import { LocationMap } from './LocationMap.tsx';
 import { actionText, BOX_FONT_SCALE, type ThemeColors, useEventTint, useStyles } from './theme.ts';
 import { ZoneLines } from './ZoneLines.tsx';
 
@@ -32,8 +33,10 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 /**
- * The read-first view of an event: a tap on the grid opens it, Edit opens
- * the editor. It answers the quick questions without a form — when,
+ * The read-first view of an event: a tap on the grid opens it, and Edit
+ * turns it into the editor in the same sheet — both are the editor
+ * route's content (`EditorHost`), and the editor's Cancel turns it back.
+ * It answers the quick questions without a form — when,
  * where, who, the meeting link, the notes — and carries the actions that
  * need no form: RSVP, Convert to task and Delete (with the series scope
  * when the event repeats).
@@ -97,6 +100,7 @@ export function EventDetailSheet({
     timeZone,
   });
   const { secondary: secondaryZones } = useTimeZones();
+  const place = useEventPlace(event);
   const { canRsvp, error, isRecurring, joinUrl, readOnly, remove, respond, rsvp, scope, setScope } =
     model;
   const convertBlocked = isRecurring && !seriesConvertsAt(event, scope);
@@ -118,157 +122,156 @@ export function EventDetailSheet({
   );
 
   return (
-    <Modal animationType="slide" onRequestClose={onClose} presentationStyle="pageSheet" visible>
-      <View style={styles.container} testID="event-detail">
-        <View style={styles.header}>
-          <Pressable accessibilityRole="button" onPress={onClose} testID="event-detail-close">
-            <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.cancel}>
-              Close
-            </Text>
-          </Pressable>
-          <View style={styles.calendarPill}>
-            <View style={[styles.dot, { backgroundColor: tint.edge }]} />
-            <Text
-              maxFontSizeMultiplier={BOX_FONT_SCALE}
-              numberOfLines={1}
-              style={styles.calendarName}
-            >
-              {calendar?.summary ?? 'Calendar'}
-            </Text>
-          </View>
-          <Pressable accessibilityRole="button" onPress={() => onEdit(event)} testID="event-edit">
-            <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.edit}>
-              Edit
-            </Text>
-          </Pressable>
-        </View>
-        <ScrollView contentContainerStyle={styles.content}>
-          <Text selectable style={styles.title} testID="event-detail-title">
-            {title}
+    <View style={styles.container} testID="event-detail">
+      <View style={styles.header}>
+        <Pressable accessibilityRole="button" onPress={onClose} testID="event-detail-close">
+          <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.cancel}>
+            Close
           </Text>
+        </Pressable>
+        <View style={styles.calendarPill}>
+          <View style={[styles.dot, { backgroundColor: tint.edge }]} />
+          <Text
+            maxFontSizeMultiplier={BOX_FONT_SCALE}
+            numberOfLines={1}
+            style={styles.calendarName}
+          >
+            {calendar?.summary ?? 'Calendar'}
+          </Text>
+        </View>
+        <Pressable accessibilityRole="button" onPress={() => onEdit(event)} testID="event-edit">
+          <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.edit}>
+            Edit
+          </Text>
+        </Pressable>
+      </View>
+      <ScrollView contentContainerStyle={styles.content}>
+        <Text selectable style={styles.title} testID="event-detail-title">
+          {title}
+        </Text>
+        <View style={styles.section}>
+          <Text style={styles.primaryLine}>{day}</Text>
+          <Text style={styles.secondaryLine}>
+            {isAllDay ? 'All day' : `${formatPlainTime(startTime)} – ${formatPlainTime(endTime)}`}
+          </Text>
+          {zoneLines ? <ZoneLines lines={zoneLines} textStyle={styles.secondaryLine} /> : null}
+          {isRecurring ? <Text style={styles.secondaryLine}>Repeating event</Text> : null}
+        </View>
+        {readOnly ? (
+          <Text style={styles.note} testID="event-read-only">
+            This calendar is read-only.
+          </Text>
+        ) : null}
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+        {joinUrl ? (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => void Linking.openURL(joinUrl)}
+            style={styles.joinButton}
+            testID="event-join"
+          >
+            <Text style={styles.joinLabel}>Join meeting</Text>
+          </Pressable>
+        ) : null}
+        {location ? (
           <View style={styles.section}>
-            <Text style={styles.primaryLine}>{day}</Text>
-            <Text style={styles.secondaryLine}>
-              {isAllDay ? 'All day' : `${formatPlainTime(startTime)} – ${formatPlainTime(endTime)}`}
+            <Text style={styles.label}>LOCATION</Text>
+            <Text selectable style={styles.primaryLine}>
+              {location}
             </Text>
-            {zoneLines ? <ZoneLines lines={zoneLines} textStyle={styles.secondaryLine} /> : null}
-            {isRecurring ? <Text style={styles.secondaryLine}>Repeating event</Text> : null}
+            <LocationMap place={place} variant="detail" />
           </View>
-          {readOnly ? (
-            <Text style={styles.note} testID="event-read-only">
-              This calendar is read-only.
+        ) : null}
+        {attendees.length > 0 ? (
+          <View style={styles.section}>
+            <Text style={styles.label}>INVITEES</Text>
+            {canRsvp ? (
+              <View style={styles.chipRow}>
+                {RSVP_OPTIONS.map((option) => {
+                  const active = rsvp === option.value;
+                  return (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: active }}
+                      key={option.value}
+                      onPress={() => void respond(option.value)}
+                      style={[styles.chip, active && styles.chipActive]}
+                      testID={`rsvp-${option.value}`}
+                    >
+                      <Text style={[styles.chipLabel, active && styles.chipLabelActive]}>
+                        {option.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ) : null}
+            {attendees.map((attendee) => (
+              <View key={attendee.email} style={styles.attendeeRow}>
+                <Text numberOfLines={1} selectable style={styles.primaryLine}>
+                  {attendee.displayName ?? attendee.email}
+                </Text>
+                <Text style={styles.secondaryLine}>{STATUS_LABEL[attendee.responseStatus]}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
+        {description ? (
+          <View style={styles.section}>
+            <Text style={styles.label}>NOTES</Text>
+            <Text selectable style={styles.primaryLine} testID="event-detail-notes">
+              {description}
             </Text>
-          ) : null}
-          {error ? <Text style={styles.error}>{error}</Text> : null}
-          {joinUrl ? (
+          </View>
+        ) : null}
+        {readOnly ? null : (
+          <View style={styles.actions}>
+            {isRecurring ? (
+              <View style={styles.chipRow}>
+                {SCOPE_OPTIONS.map((option) => {
+                  const active = scope === option.value;
+                  return (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: active }}
+                      key={option.value}
+                      onPress={() => setScope(option.value)}
+                      style={[styles.chip, active && styles.chipActive]}
+                    >
+                      <Text style={[styles.chipLabel, active && styles.chipLabelActive]}>
+                        {option.short}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ) : null}
+            {/* A series converts whole or one occurrence at a time, never "this and following". */}
+            <Pressable
+              accessibilityHint={convertBlocked ? CONVERT_SCOPE_HINT : undefined}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: convertBlocked }}
+              disabled={convertBlocked}
+              onPress={() => onConvert(event, scope)}
+              style={[styles.secondaryButton, convertBlocked && styles.disabled]}
+              testID="event-convert"
+            >
+              <Text style={styles.secondaryLabel}>
+                {convertBlocked ? 'Convert to task (This or All events)' : 'Convert to task'}
+              </Text>
+            </Pressable>
             <Pressable
               accessibilityRole="button"
-              onPress={() => void Linking.openURL(joinUrl)}
-              style={styles.joinButton}
-              testID="event-join"
+              onPress={() => void remove()}
+              style={styles.secondaryButton}
+              testID="event-delete"
             >
-              <Text style={styles.joinLabel}>Join meeting</Text>
+              <Text style={styles.deleteLabel}>Delete</Text>
             </Pressable>
-          ) : null}
-          {location ? (
-            <View style={styles.section}>
-              <Text style={styles.label}>LOCATION</Text>
-              <Text selectable style={styles.primaryLine}>
-                {location}
-              </Text>
-            </View>
-          ) : null}
-          {attendees.length > 0 ? (
-            <View style={styles.section}>
-              <Text style={styles.label}>INVITEES</Text>
-              {canRsvp ? (
-                <View style={styles.chipRow}>
-                  {RSVP_OPTIONS.map((option) => {
-                    const active = rsvp === option.value;
-                    return (
-                      <Pressable
-                        accessibilityRole="button"
-                        accessibilityState={{ selected: active }}
-                        key={option.value}
-                        onPress={() => void respond(option.value as RsvpResponse)}
-                        style={[styles.chip, active && styles.chipActive]}
-                        testID={`rsvp-${option.value}`}
-                      >
-                        <Text style={[styles.chipLabel, active && styles.chipLabelActive]}>
-                          {option.label}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              ) : null}
-              {attendees.map((attendee) => (
-                <View key={attendee.email} style={styles.attendeeRow}>
-                  <Text numberOfLines={1} selectable style={styles.primaryLine}>
-                    {attendee.displayName ?? attendee.email}
-                  </Text>
-                  <Text style={styles.secondaryLine}>{STATUS_LABEL[attendee.responseStatus]}</Text>
-                </View>
-              ))}
-            </View>
-          ) : null}
-          {description ? (
-            <View style={styles.section}>
-              <Text style={styles.label}>NOTES</Text>
-              <Text selectable style={styles.primaryLine} testID="event-detail-notes">
-                {description}
-              </Text>
-            </View>
-          ) : null}
-          {readOnly ? null : (
-            <View style={styles.actions}>
-              {isRecurring ? (
-                <View style={styles.chipRow}>
-                  {SCOPE_OPTIONS.map((option) => {
-                    const active = scope === option.value;
-                    return (
-                      <Pressable
-                        accessibilityRole="button"
-                        accessibilityState={{ selected: active }}
-                        key={option.value}
-                        onPress={() => setScope(option.value)}
-                        style={[styles.chip, active && styles.chipActive]}
-                      >
-                        <Text style={[styles.chipLabel, active && styles.chipLabelActive]}>
-                          {option.short}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              ) : null}
-              {/* A series converts whole or one occurrence at a time, never "this and following". */}
-              <Pressable
-                accessibilityHint={convertBlocked ? CONVERT_SCOPE_HINT : undefined}
-                accessibilityRole="button"
-                accessibilityState={{ disabled: convertBlocked }}
-                disabled={convertBlocked}
-                onPress={() => onConvert(event, scope)}
-                style={[styles.secondaryButton, convertBlocked && styles.disabled]}
-                testID="event-convert"
-              >
-                <Text style={styles.secondaryLabel}>
-                  {convertBlocked ? 'Convert to task (This or All events)' : 'Convert to task'}
-                </Text>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => void remove()}
-                style={styles.secondaryButton}
-                testID="event-delete"
-              >
-                <Text style={styles.deleteLabel}>Delete</Text>
-              </Pressable>
-            </View>
-          )}
-        </ScrollView>
-      </View>
-    </Modal>
+          </View>
+        )}
+      </ScrollView>
+    </View>
   );
 }
 

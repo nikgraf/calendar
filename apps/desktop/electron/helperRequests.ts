@@ -3,6 +3,12 @@ export const HELPER_TIMED_OUT = 'model helper timed out';
 /** How long the liveness probe after a timeout may take before the helper counts as wedged. */
 export const PROBE_TIMEOUT_MS = 5000;
 
+/** An unsolicited `{"event": name, …}` line: its name, and the fields beside it. */
+export interface HelperEvent {
+  readonly body: Readonly<Record<string, unknown>>;
+  readonly name: string;
+}
+
 interface PendingRequest {
   readonly reject: (error: Error) => void;
   readonly resolve: (value: unknown) => void;
@@ -16,9 +22,9 @@ export interface HelperRequests {
   readonly failAll: (message: string) => void;
   /**
    * Takes one line of the helper's stdout: an answer settles its request.
-   * Returns the name of an unsolicited `{"event": name}` line.
+   * Returns an unsolicited `{"event": name}` line, with its fields.
    */
-  readonly receive: (line: string) => string | undefined;
+  readonly receive: (line: string) => HelperEvent | undefined;
 }
 
 /**
@@ -89,7 +95,8 @@ export const makeHelperRequests = (options: {
         return undefined;
       }
       if (parsed.id === undefined) {
-        return typeof parsed.event === 'string' ? parsed.event : undefined;
+        const { event, ...body } = parsed;
+        return typeof event === 'string' ? { body, name: event } : undefined;
       }
       const request = pending.get(parsed.id);
       if (!request) {

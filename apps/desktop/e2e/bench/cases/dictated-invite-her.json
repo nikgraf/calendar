@@ -1,0 +1,20 @@
+{
+  "blind": true,
+  "lang": "en",
+  "tags": ["dictated", "guests", "command"],
+  "turns": [
+    {
+      "input": {
+        "text": "schedule a call with anna lee for thursday at eleven thirty and invite her"
+      },
+      "expect": {
+        "kind": "event",
+        "title": "call with anna lee",
+        "weekday": 4,
+        "startTime": "11:30",
+        "endTime": "12:30",
+        "guests": { "emails": ["anna.lee@example.com"] }
+      }
+    }
+  ]
+}

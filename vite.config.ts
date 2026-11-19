@@ -36,6 +36,10 @@ export default defineConfig({
       'apps/ios/ios/',
       'vite.config.ts.timestamp-*',
     ],
+    // Type-aware rules (tsgolint, on the same TypeScript 7 compiler as
+    // `pnpm typecheck`) for what the type checker accepts but is still
+    // wrong: a promise nobody waits for, `[object Object]` in a message.
+    options: { typeAware: true },
     overrides: [
       {
         env: { node: true },
@@ -53,7 +57,12 @@ export default defineConfig({
         env: {
           node: true,
         },
-        files: ['**/*.cjs', 'apps/ios/app.config.js', 'apps/ios/metro.config.js'],
+        files: [
+          '**/*.cjs',
+          'apps/ios/app.config.js',
+          'apps/ios/metro.config.js',
+          'apps/ios/react-native.config.js',
+        ],
         rules: {
           'typescript/no-require-imports': 'off',
         },
@@ -63,6 +72,14 @@ export default defineConfig({
         rules: {
           // Electron main logs to stdout by design.
           'no-console': 'off',
+        },
+      },
+      {
+        // A page function (e2e/page.ts) reaches the page as its own source:
+        // a helper it defines inside has to stay inside, never be hoisted.
+        files: ['apps/desktop/e2e/**'],
+        rules: {
+          'unicorn/consistent-function-scoping': 'off',
         },
       },
       {
@@ -95,6 +112,15 @@ export default defineConfig({
       // `scripts/complexityCap.test.ts` fails on a directive that names the
       // rule, and `unicorn/no-abusive-eslint-disable` on one that names none.
       complexity: ['error', { max: 40 }],
+      'typescript/await-thenable': 'error',
+      'typescript/no-base-to-string': 'error',
+      // A write left running: Expo SDK 58's File.write turned async and three
+      // callers kept using it as if it were writeSync.
+      'typescript/no-floating-promises': 'error',
+      'typescript/no-misused-promises': 'error',
+      'typescript/no-unnecessary-type-assertion': 'error',
+      'typescript/only-throw-error': 'error',
+      'typescript/restrict-template-expressions': 'error',
     },
   },
   staged: {
@@ -113,7 +139,7 @@ export default defineConfig({
         ? ['packages/sync/src/live/**/*.live.ts']
         : [
             'packages/*/src/**/*.test.{ts,tsx}',
-            'apps/desktop/e2e/bench/**/*.test.ts',
+            'apps/desktop/e2e/**/*.test.ts',
             'apps/desktop/electron/**/*.test.{ts,tsx}',
             'apps/desktop/renderer/**/*.test.{ts,tsx}',
             'apps/ios/src/**/*.test.{ts,tsx}',

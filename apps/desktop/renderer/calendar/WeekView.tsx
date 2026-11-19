@@ -10,10 +10,12 @@ import {
   calendarTaskKey,
   capAllDayLane,
   dayRange,
+  eventIdentity,
   type EventRecord,
   expandedAllDayRows,
   foldTaskBacklog,
   formatPlainTime,
+  type FreeSlot,
   isShadedDay,
   layoutAllDayLane,
   layoutDayColumn,
@@ -39,7 +41,7 @@ import { type RefObject, useEffect, useLayoutEffect, useMemo, useRef, useState }
 import { AllDayLane, type FoldEntry, LANE_ROW_PX } from './AllDayLane.tsx';
 import { type ColorLookup } from './colors.ts';
 import { DayHeaders } from './DayHeaders.tsx';
-import { DraftBlock } from './DraftBlock.tsx';
+import { DraftBlock, DraftTrace } from './DraftBlock.tsx';
 import { NowIndicator } from './NowIndicator.tsx';
 import { TimedEventBlock } from './TimedEventBlock.tsx';
 import { TimedTaskBlock } from './TimedTaskBlock.tsx';
@@ -163,7 +165,7 @@ export function WeekView({
   listColorOf: (task: TaskRecord) => string | undefined;
   onBirthdayClick: (birthday: BirthdayOccurrence) => void;
   /** A draft block was clicked: the editor focuses that draft — and moves it into the slot, for a candidate. */
-  onDraftClick: (draftId: string, slot?: DraftOccurrence['candidate']) => void;
+  onDraftClick: (draftId: string, slot?: FreeSlot) => void;
   onEventClick: (event: EventRecord) => void;
   onNavigate: (dayCount: number) => void;
   /** A slide to a picked first day is over: drop the days it travelled across. */
@@ -285,9 +287,18 @@ export function WeekView({
   // Drafts share the lane and the day-column layout with events, keyed
   // apart so a draft can never be mistaken for a stored row.
   const draftByKey = new Map(drafts.map((draft) => [draftKey(draft), draft]));
-  const timedDrafts = drafts.filter((draft) => !draft.isAllDay);
+  // Where a draft was is an outline over its column, never part of the
+  // layout: it would narrow the blocks beside it. All-day, it is not
+  // drawn — the lane has no room for a row that is nothing.
+  const timedDrafts = drafts.filter((draft) => !draft.isAllDay && draft.kind !== 'was');
+  const traces = drafts.filter((draft) => !draft.isAllDay && draft.kind === 'was');
   const draftSpans = drafts.flatMap((draft) => {
-    if (!draft.isAllDay || draft.startDate === undefined || draft.endDate === undefined) {
+    if (
+      draft.kind === 'was' ||
+      !draft.isAllDay ||
+      draft.startDate === undefined ||
+      draft.endDate === undefined
+    ) {
       return [];
     }
     const first = strip[0]!;
@@ -354,7 +365,7 @@ export function WeekView({
             Temporal.PlainDate.compare(endDate, strip.at(-1)!) > 0
               ? strip.length
               : Math.max(first.until(endDate).days, 0),
-          id: `${event.calendarId}:${event.id}`,
+          id: eventIdentity(event),
           startDayIndex:
             startIndex === -1 && event.startDate
               ? Math.min(first.until(Temporal.PlainDate.from(event.startDate)).days, 0)
@@ -364,9 +375,7 @@ export function WeekView({
     ),
     strip.length,
   );
-  const allDayById = new Map(
-    allDayEvents.map((event) => [`${event.calendarId}:${event.id}`, event]),
-  );
+  const allDayById = new Map(allDayEvents.map((event) => [eventIdentity(event), event]));
   // Collapsed, the lane caps at MAX_ALL_DAY_ROWS with "+N more" chips; the
   // choice is a device setting, so it survives a relaunch. Expanded by default.
   const preferences = useViewPreferences();
@@ -380,9 +389,7 @@ export function WeekView({
   );
   // Built once per render, not once per column: this component re-renders
   // on every drag pointermove, and the strip is up to 11 columns wide.
-  const eventsById = new Map(
-    timedEvents.map((event) => [`${event.calendarId}:${event.id}`, event]),
-  );
+  const eventsById = new Map(timedEvents.map((event) => [eventIdentity(event), event]));
   // The zones stack under each hour, so the gutter only widens enough for
   // the city names over it; the header and the all-day lane carry the same
   // spacer so the three stay column-aligned.
@@ -502,9 +509,7 @@ export function WeekView({
                     .filter(
                       (event) => event.startUtc < range.endUtc && event.endUtc > range.startUtc,
                     )
-                    .map((event) =>
-                      timedEventBox(event, `${event.calendarId}:${event.id}`, day, timeZone),
-                    )
+                    .map((event) => timedEventBox(event, eventIdentity(event), day, timeZone))
                     .concat(
                       timedTaskLayout.byDay.get(iso) ?? [],
                       timedDrafts
@@ -603,6 +608,24 @@ export function WeekView({
                         />
                       );
                     })}
+
+                    {traces
+                      .filter(
+                        (trace) => trace.startUtc < range.endUtc && trace.endUtc > range.startUtc,
+                      )
+                      .map((trace) => {
+                        const box = timedEventBox(trace, trace.key, day, timeZone);
+                        return (
+                          <DraftTrace
+                            endMinute={Math.min(box.endMinute, 24 * 60)}
+                            hourHeight={HOUR_HEIGHT}
+                            key={trace.key}
+                            occurrence={trace}
+                            startMinute={Math.max(box.startMinute, 0)}
+                            timeZone={timeZone}
+                          />
+                        );
+                      })}
 
                     {isToday ? <NowIndicator date={day} timeZone={timeZone} /> : null}
 

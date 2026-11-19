@@ -1,0 +1,19 @@
+{
+  "blind": true,
+  "lang": "en",
+  "tags": ["flow", "shift"],
+  "turns": [
+    {
+      "input": { "text": "Barbecue Saturday at 7" },
+      "expect": { "title": "barbecue", "weekday": 6, "startTime": "19:00", "endTime": "20:00" }
+    },
+    {
+      "input": { "text": "make it two hours" },
+      "expect": { "startTime": "19:00", "endTime": "21:00" }
+    },
+    {
+      "input": { "text": "start at 6:30 instead" },
+      "expect": { "startTime": "18:30", "endTime": "20:30" }
+    }
+  ]
+}

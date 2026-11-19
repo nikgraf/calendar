@@ -1,0 +1,28 @@
+{
+  "lang": "en",
+  "tags": ["flow", "location", "follow-up"],
+  "turns": [
+    {
+      "input": { "text": "Lunch tomorrow at 1" },
+      "expect": {
+        "title": "lunch",
+        "dayOffset": 1,
+        "startTime": "13:00",
+        "endTime": "14:00",
+        "location": null
+      }
+    },
+    {
+      "input": { "text": "at Cafe Meek" },
+      "expect": { "location": "cafe meek" }
+    },
+    {
+      "input": { "text": "It’s in Vienna." },
+      "expect": { "locationIs": "cafe meek, vienna" }
+    },
+    {
+      "input": { "text": "With Stefan." },
+      "expect": { "title": "lunch with stefan", "guests": {} }
+    }
+  ]
+}

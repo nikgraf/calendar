@@ -102,6 +102,46 @@ tags:
             id: 'event-detail-notes'
             text: 'Bring the agenda'
           timeout: 10000
+      - assertNotVisible:
+          id: 'apple-maps-directions'
+      - assertNotVisible:
+          id: 'google-maps-directions'
+      - runFlow: ../common/open-event-editor.yaml
+      # Edit turned the detail into the editor in the same sheet; Cancel
+      # turns it back (the editor fades out, so wait for it to go).
+      - tapOn: 'Cancel'
+      - extendedWaitUntil:
+          visible:
+            id: 'event-detail-notes'
+            text: 'Bring the agenda'
+          timeout: 10000
+      - extendedWaitUntil:
+          notVisible: 'Edit Event'
+          timeout: 10000
+      - runFlow: ../common/open-event-editor.yaml
+      # Free text needs no geocoder or network to offer directions. CI
+      # disables geo; this checks the detail's links before any lookup.
+      - scrollUntilVisible:
+          element:
+            id: 'location-input'
+          direction: DOWN
+          timeout: 10000
+      - tapOn:
+          id: 'location-input'
+      - inputText: 'Museumsplatz 1, Vienna'
+      - tapOn:
+          id: 'event-save'
+      # Saving closes the sheet; reopen the event to read the saved place.
+      - extendedWaitUntil:
+          notVisible: 'Edit Event'
+          timeout: 10000
+      - tapOn: 'Solunivo e2e event to delete.*'
+      - extendedWaitUntil:
+          visible:
+            id: 'apple-maps-directions'
+          timeout: 10000
+      - assertVisible:
+          id: 'google-maps-directions'
       - runFlow: ../common/open-event-editor.yaml
       # Delete is the form's last card: scroll it into reach.
       - scrollUntilVisible:

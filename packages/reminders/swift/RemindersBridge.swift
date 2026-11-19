@@ -431,26 +431,14 @@ actor RemindersBridge {
     case .notDetermined: return "notDetermined"
     case .restricted: return "restricted"
     case .denied: return "denied"
-    case .authorized: return "fullAccess"
-    default:
-      // iOS 17 / macOS 14 split the old "authorized" into two.
-      if #available(iOS 17, macOS 14, *) {
-        if status == .fullAccess { return "fullAccess" }
-        if status == .writeOnly { return "writeOnly" }
-      }
-      return "unavailable"
+    case .fullAccess: return "fullAccess"
+    case .writeOnly: return "writeOnly"
+    default: return "unavailable"
     }
   }
 
   func requestAccess() async -> Bool {
-    let granted: Bool
-    if #available(iOS 17, macOS 14, *) {
-      granted = (try? await store.requestFullAccessToReminders()) ?? false
-    } else {
-      granted = await withCheckedContinuation { continuation in
-        store.requestAccess(to: .reminder) { ok, _ in continuation.resume(returning: ok) }
-      }
-    }
+    let granted = (try? await store.requestFullAccessToReminders()) ?? false
     if granted {
       // The store was created before the grant (the pre-prompt status
       // call); a store instantiated without access can keep answering

@@ -5,12 +5,14 @@ import { makeFixtureLanguageModel } from '@calendar/ai';
 import { Account, CalendarInfo } from '@calendar/core';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vite-plus/test';
 import { type App, launchApp } from './harness.ts';
+import type { PageKit } from './page.ts';
 
 // A served model: the app's main process talks Ollama's API to a server
 // on this machine. The server here is a fake that answers like Ollama
 // (`/api/tags`, `/api/chat` with `format`) with the deterministic fixture
 // model from @calendar/ai behind it, so the whole path — Settings,
-// main-process HTTP, the quick-add field — runs without Ollama or Apple
+// main-process HTTP, a paste read into events (capture: the Assistant runs
+// the app's own model, never a served one) — runs without Ollama or Apple
 // Intelligence, and nothing depends on the date.
 const seed = {
   accounts: [
@@ -43,11 +45,17 @@ const seed = {
 const MODEL = 'fixture-model';
 /** The key the fake's /v1 routes want. */
 const SECRET = 'e2e-secret';
-const INPUT = '[data-testid="quick-add-input"]';
-const COMMAND_N = `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', metaKey: true }))`;
-const blockAt = (start: string) =>
-  `!!document.querySelector('[data-testid="draft-block"][data-draft-start="${start}"]')`;
-const placeholder = `(document.querySelector(${JSON.stringify(INPUT)})?.placeholder ?? '')`;
+const blockAt = ($: PageKit, start: string) =>
+  $.has(`[data-testid="draft-block"][data-draft-start="${start}"]`);
+/** A paste of `text` on the calendar, as the OS delivers it: capture reads it with the served model. */
+const paste = (_: PageKit, text: string) => {
+  const data = new DataTransfer();
+  data.setData('text/plain', text);
+  window.dispatchEvent(
+    new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: data }),
+  );
+};
+const captureSays = ($: PageKit, words: string) => $.text('[data-capture-state]').includes(words);
 
 interface ChatRequest {
   readonly format: unknown;
@@ -181,61 +189,56 @@ describe('A served model', () => {
   });
   afterEach(async () => {
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      if (!(await app.cdp.eval<boolean>(`!!document.querySelector('[data-testid="editor"]')`))) {
+      if (!(await app.cdp.evaluate(($) => $.has('[data-testid="editor"]')))) {
         return;
       }
-      await app.cdp.pressEscape();
+      await app.cdp.escapeOrDiscard();
       await new Promise((resolve) => setTimeout(resolve, 150));
     }
   });
 
-  it('answers the quick-add field over HTTP with a guided generation', async () => {
+  it('reads a paste over HTTP with a guided generation', async () => {
     const { cdp } = app;
-    await cdp.eval(COMMAND_N);
-    await cdp.waitFor(
-      `document.querySelector('[data-testid="editor-title"]')?.textContent === 'New event'`,
-    );
-    // Ready: the field asks for a phrase, not for Apple Intelligence.
-    await cdp.waitFor(`${placeholder}.startsWith('Lunch')`);
-    await cdp.type(INPUT, 'Dinner | +2 | 19:00-20:00');
-    await cdp.clickTestId('quick-add-apply');
-    await cdp.waitFor(blockAt('19:00'));
+    await cdp.evaluate(paste, 'Dinner | +2 | 19:00-20:00\nReview | +2 | 21:00-22:00');
+    await cdp.waitUntil(blockAt, '19:00');
     const chat = ollama.chats.at(-1)!;
     expect(chat.model).toBe(MODEL);
     expect(chat.options.temperature).toBe(0);
     expect(chat.options.num_ctx).toBe(16_384);
     // The schema travels as Ollama's `format`: grammar-constrained, like the helper.
-    expect(chat.format).toMatchObject({ properties: { startTime: {} }, type: 'object' });
+    expect(chat.format).toMatchObject({ properties: { events: {} }, type: 'object' });
     expect(chat.messages[0]?.content).toContain('Dinner | +2 | 19:00-20:00');
   });
 
   it('is set up in Settings › AI Model: the kind, a test of the server, the saved endpoint', async () => {
     const settings = await app.openSettings('model');
-    await settings.waitFor(`!!document.querySelector('[data-testid="model-section"]')`);
+    await settings.waitUntil(($) => $.has('[data-testid="model-section"]'));
     expect(
-      await settings.eval<string>(
-        `document.querySelector('[data-testid="model-kind-ollama"]')?.getAttribute('aria-checked')`,
+      await settings.evaluate(($) =>
+        $.el('[data-testid="model-kind-ollama"]')?.getAttribute('aria-checked'),
       ),
     ).toBe('true');
     expect(
-      await settings.eval<string>(`document.querySelector('[data-testid="model-url"]').value`),
+      await settings.evaluate(($) => $.el<HTMLInputElement>('[data-testid="model-url"]')!.value),
     ).toBe(`http://127.0.0.1:${String(ollama.port)}`);
 
     // Test: the fake lists its one model, and the select offers it.
     await settings.clickTestId('model-test');
-    await settings.waitFor(
-      `document.querySelector('[data-testid="model-test-result"]')?.textContent === 'Reachable · 1 model'`,
+    await settings.waitUntil(
+      ($) => $.text('[data-testid="model-test-result"]') === 'Reachable · 1 model',
     );
     expect(
-      await settings.eval<string>(
-        `[...document.querySelectorAll('[data-testid="model-name"] option')].map((o) => o.value).join(',')`,
+      await settings.evaluate(($) =>
+        $.all<HTMLOptionElement>('[data-testid="model-name"] option')
+          .map((o) => o.value)
+          .join(','),
       ),
     ).toBe(`,${MODEL}:latest`);
 
     // Apple Intelligence: the kind applies at once and lands in the file.
     await settings.clickTestId('model-kind-apple');
-    await settings.waitFor(
-      `document.querySelector('[data-testid="model-kind-apple"]')?.getAttribute('aria-checked') === 'true'`,
+    await settings.waitUntil(
+      ($) => $.el('[data-testid="model-kind-apple"]')?.getAttribute('aria-checked') === 'true',
     );
     await expect
       .poll(
@@ -248,17 +251,17 @@ describe('A served model', () => {
 
     // Back to Ollama: the kind's defaults, then the fake's address saved over them.
     await settings.clickTestId('model-kind-ollama');
-    await settings.waitFor(
-      `document.querySelector('[data-testid="model-url"]')?.value === 'http://localhost:11434'`,
+    await settings.waitUntil(
+      ($) => $.value('[data-testid="model-url"]') === 'http://localhost:11434',
     );
-    await settings.eval(`document.querySelector('[data-testid="model-url"]').focus()`);
-    await settings.eval(`document.execCommand('selectAll')`);
+    await settings.evaluate(($) => $.el('[data-testid="model-url"]')!.focus());
+    await settings.evaluate(() => document.execCommand('selectAll'));
     await settings.type('[data-testid="model-url"]', `http://127.0.0.1:${String(ollama.port)}`);
-    await settings.eval(`document.querySelector('[data-testid="model-name"]').focus()`);
-    await settings.eval(`document.execCommand('selectAll')`);
+    await settings.evaluate(($) => $.el('[data-testid="model-name"]')!.focus());
+    await settings.evaluate(() => document.execCommand('selectAll'));
     await settings.type('[data-testid="model-name"]', MODEL);
     await settings.clickTestId('model-save');
-    await settings.waitFor(`!!document.querySelector('[data-testid="model-saved"]')`);
+    await settings.waitUntil(($) => $.has('[data-testid="model-saved"]'));
     expect(
       JSON.parse(readFileSync(join(app.userDataDir, 'model-provider.json'), 'utf8')) as object,
     ).toMatchObject({
@@ -267,51 +270,52 @@ describe('A served model', () => {
       model: MODEL,
     });
     // A server on this Mac: no notice about text leaving it.
-    expect(
-      await settings.eval<boolean>(
-        `!!document.querySelector('[data-testid="model-remote-notice"]')`,
-      ),
-    ).toBe(false);
+    expect(await settings.evaluate(($) => $.has('[data-testid="model-remote-notice"]'))).toBe(
+      false,
+    );
     await app.closeSettings();
   });
 
   it('speaks the OpenAI shape to a custom endpoint, strictly, with the key bound to its origin', async () => {
     const settings = await app.openSettings('model');
-    await settings.waitFor(`!!document.querySelector('[data-testid="model-section"]')`);
+    await settings.waitUntil(($) => $.has('[data-testid="model-section"]'));
     await settings.clickTestId('model-kind-openai');
-    await settings.waitFor(`!!document.querySelector('[data-testid="model-key"]')`);
+    await settings.waitUntil(($) => $.has('[data-testid="model-key"]'));
     const base = `http://127.0.0.1:${String(ollama.port)}/v1`;
-    await settings.eval(`document.querySelector('[data-testid="model-url"]').focus()`);
-    await settings.eval(`document.execCommand('selectAll')`);
+    await settings.evaluate(($) => $.el('[data-testid="model-url"]')!.focus());
+    await settings.evaluate(() => document.execCommand('selectAll'));
     await settings.type('[data-testid="model-url"]', base);
     // Without the key the server refuses; with it, it lists its model.
     await settings.clickTestId('model-test');
-    await settings.waitFor(
-      `document.querySelector('[data-testid="model-test-result"]')?.textContent === 'The server refused the API key'`,
+    await settings.waitUntil(
+      ($) => $.text('[data-testid="model-test-result"]') === 'The server refused the API key',
     );
     await settings.type('[data-testid="model-key"]', SECRET);
     await settings.clickTestId('model-test');
-    await settings.waitFor(
-      `document.querySelector('[data-testid="model-test-result"]')?.textContent === 'Reachable · 1 model'`,
+    await settings.waitUntil(
+      ($) => $.text('[data-testid="model-test-result"]') === 'Reachable · 1 model',
     );
-    await settings.waitFor(
-      `document.querySelector('[data-testid="model-name"]')?.value === ${JSON.stringify(MODEL)}`,
+    await settings.waitUntil(
+      ($, model: string) => $.value('[data-testid="model-name"]') === model,
+      MODEL,
     );
     // The result and the server's list describe the endpoint as tested: an
     // edited URL drops both, and the model field is free text again.
-    await settings.eval(`document.querySelector('[data-testid="model-url"]').focus()`);
+    await settings.evaluate(($) => $.el('[data-testid="model-url"]')!.focus());
     await settings.type('[data-testid="model-url"]', '/');
-    await settings.waitFor(
-      `!document.querySelector('[data-testid="model-test-result"]') && document.querySelector('[data-testid="model-name"]')?.tagName === 'INPUT'`,
+    await settings.waitUntil(
+      ($) =>
+        !$.has('[data-testid="model-test-result"]') &&
+        $.el('[data-testid="model-name"]')?.tagName === 'INPUT',
     );
-    await settings.eval(`document.querySelector('[data-testid="model-url"]').focus()`);
-    await settings.eval(`document.execCommand('selectAll')`);
+    await settings.evaluate(($) => $.el('[data-testid="model-url"]')!.focus());
+    await settings.evaluate(() => document.execCommand('selectAll'));
     await settings.type('[data-testid="model-url"]', base);
-    await settings.waitFor(
-      `document.querySelector('[data-testid="model-test-result"]')?.textContent === 'Reachable · 1 model'`,
+    await settings.waitUntil(
+      ($) => $.text('[data-testid="model-test-result"]') === 'Reachable · 1 model',
     );
     await settings.clickTestId('model-save');
-    await settings.waitFor(`!!document.querySelector('[data-testid="model-saved"]')`);
+    await settings.waitUntil(($) => $.has('[data-testid="model-saved"]'));
     // The file holds the key only as ciphertext, bound to this origin.
     const stored = JSON.parse(
       readFileSync(join(app.userDataDir, 'model-provider.json'), 'utf8'),
@@ -322,43 +326,39 @@ describe('A served model', () => {
     expect(stored.apiKey).not.toContain(SECRET);
 
     // Review: the stored key must not follow a Test of another origin.
-    await settings.eval(`document.querySelector('[data-testid="model-url"]').focus()`);
-    await settings.eval(`document.execCommand('selectAll')`);
+    await settings.evaluate(($) => $.el('[data-testid="model-url"]')!.focus());
+    await settings.evaluate(() => document.execCommand('selectAll'));
     await settings.type('[data-testid="model-url"]', `http://localhost:${String(ollama.port)}/v1`);
     await settings.clickTestId('model-test');
-    await settings.waitFor(
-      `document.querySelector('[data-testid="model-test-result"]')?.textContent === 'The server refused the API key'`,
+    await settings.waitUntil(
+      ($) => $.text('[data-testid="model-test-result"]') === 'The server refused the API key',
     );
     await app.closeSettings();
 
-    // A phrase over the OpenAI shape: strict schema out, nulls stripped on the way back.
+    // A paste over the OpenAI shape: strict schema out, nulls stripped on the way back.
     const { cdp } = app;
-    await cdp.eval(COMMAND_N);
-    await cdp.waitFor(`${placeholder}.startsWith('Lunch')`);
-    await cdp.type(INPUT, 'Review | +1 | 10:00-11:00');
-    await cdp.clickTestId('quick-add-apply');
-    await cdp.waitFor(blockAt('10:00'));
+    await cdp.evaluate(paste, 'Review | +1 | 10:00-11:00\nLunch | +1 | 12:00-13:00');
+    await cdp.waitUntil(blockAt, '10:00');
     const completion = ollama.completions.at(-1)!;
     expect(completion.response_format.json_schema.strict).toBe(true);
-    expect(completion.response_format.json_schema.schema).toMatchObject({
-      properties: { location: { type: ['string', 'null'] }, title: { type: 'string' } },
-    });
-    await cdp.pressEscape();
+    expect(JSON.stringify(completion.response_format.json_schema.schema)).toContain(
+      '"location":{"type":["string","null"]}',
+    );
+    // The paste's drafts are unsaved: leaving asks first.
+    await cdp.discardEditor();
 
     // Back to Ollama for the tests below.
     const again = await app.openSettings('model');
     await again.clickTestId('model-kind-ollama');
-    await again.waitFor(
-      `document.querySelector('[data-testid="model-url"]')?.value === 'http://localhost:11434'`,
-    );
-    await again.eval(`document.querySelector('[data-testid="model-url"]').focus()`);
-    await again.eval(`document.execCommand('selectAll')`);
+    await again.waitUntil(($) => $.value('[data-testid="model-url"]') === 'http://localhost:11434');
+    await again.evaluate(($) => $.el('[data-testid="model-url"]')!.focus());
+    await again.evaluate(() => document.execCommand('selectAll'));
     await again.type('[data-testid="model-url"]', `http://127.0.0.1:${String(ollama.port)}`);
-    await again.eval(`document.querySelector('[data-testid="model-name"]').focus()`);
-    await again.eval(`document.execCommand('selectAll')`);
+    await again.evaluate(($) => $.el('[data-testid="model-name"]')!.focus());
+    await again.evaluate(() => document.execCommand('selectAll'));
     await again.type('[data-testid="model-name"]', MODEL);
     await again.clickTestId('model-save');
-    await again.waitFor(`!!document.querySelector('[data-testid="model-saved"]')`);
+    await again.waitUntil(($) => $.has('[data-testid="model-saved"]'));
     await app.closeSettings();
   });
 
@@ -366,28 +366,25 @@ describe('A served model', () => {
     // Review: a fresh Ollama lists no models at all, which used to read as ready.
     ollama.tags = [];
     const { cdp } = app;
-    await cdp.eval(COMMAND_N);
-    await cdp.waitFor(`${placeholder} === 'Model not on the server'`);
+    await cdp.evaluate(paste, 'Dinner | +2 | 19:00-20:00\nReview | +2 | 21:00-22:00');
+    await cdp.waitUntil(captureSays, `does not have "${MODEL}"`);
     await cdp.pressEscape();
     ollama.tags = [`${MODEL}:latest`];
   });
 
   it('says which server is down when the endpoint cannot be reached', async () => {
     const settings = await app.openSettings('model');
-    await settings.waitFor(`!!document.querySelector('[data-testid="model-url"]')`);
-    await settings.eval(`document.querySelector('[data-testid="model-url"]').focus()`);
-    await settings.eval(`document.execCommand('selectAll')`);
+    await settings.waitUntil(($) => $.has('[data-testid="model-url"]'));
+    await settings.evaluate(($) => $.el('[data-testid="model-url"]')!.focus());
+    await settings.evaluate(() => document.execCommand('selectAll'));
     // A port nothing listens on.
     await settings.type('[data-testid="model-url"]', 'http://127.0.0.1:9');
     await settings.clickTestId('model-save');
-    await settings.waitFor(`!!document.querySelector('[data-testid="model-saved"]')`);
+    await settings.waitUntil(($) => $.has('[data-testid="model-saved"]'));
     await app.closeSettings();
 
     const { cdp } = app;
-    await cdp.eval(COMMAND_N);
-    await cdp.waitFor(`${placeholder} === 'Ollama unreachable'`);
-    expect(
-      await cdp.eval<string>(`document.querySelector('[data-testid="quick-add-input"]').disabled`),
-    ).toBe(true);
+    await cdp.evaluate(paste, 'Dinner | +2 | 19:00-20:00\nReview | +2 | 21:00-22:00');
+    await cdp.waitUntil(captureSays, 'Ollama at http://127.0.0.1:9 is not reachable');
   });
 });

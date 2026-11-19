@@ -1,0 +1,10 @@
+{
+  "lang": "en",
+  "tags": ["typed"],
+  "turns": [
+    {
+      "input": { "text": "dentist tmrw 9am" },
+      "expect": { "title": "dentist", "dayOffset": 1, "startTime": "09:00", "endTime": "10:00" }
+    }
+  ]
+}

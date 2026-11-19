@@ -1,0 +1,16 @@
+{
+  "lang": "de",
+  "tags": ["title", "location", "de"],
+  "turns": [
+    {
+      "input": { "text": "Geburtstagsessen für Oma am Sonntag um 12 im Gasthaus Adler" },
+      "expect": {
+        "title": "geburtstagsessen für oma",
+        "weekday": 7,
+        "startTime": "12:00",
+        "endTime": "13:00",
+        "location": "gasthaus adler"
+      }
+    }
+  ]
+}

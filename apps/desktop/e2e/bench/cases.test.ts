@@ -39,7 +39,7 @@ describe('loadCases', () => {
     });
     const cases = loadCases(dir);
     expect(cases.map((benchCase) => benchCase.id)).toEqual(['a', 'b', 'c']);
-    expect(cases[0]).toMatchObject({ contacts: 'team', lang: 'en', tags: [] });
+    expect(cases[0]).toMatchObject({ blind: false, contacts: 'team', lang: 'en', tags: [] });
     // The first turn is an event unless the case says a to-do; later turns say nothing of the kind.
     expect(cases[0]?.turns[0]?.expect).toEqual({ kind: 'event', weekday: 5 });
     expect(cases[1]?.turns[0]?.expect.kind).toBe('event');
@@ -48,6 +48,16 @@ describe('loadCases', () => {
     expect(localeOf(cases[0]!)).toBe('en-US');
     expect(localeOf(cases[1]!)).toBe('de-AT');
     expect(localeOf({ ...cases[1]!, locale: undefined })).toBe('de-DE');
+  });
+
+  it('reads a blind case as one', () => {
+    const cases = loadCases(
+      caseDir({
+        'open.json': { lang: 'en', turns: [] },
+        'sealed.json': { blind: true, lang: 'en', turns: [] },
+      }),
+    );
+    expect(cases.map((benchCase) => benchCase.blind)).toEqual([false, true]);
   });
 
   it('names the file that does not parse', () => {
@@ -62,6 +72,19 @@ describe('loadCases', () => {
         caseDir({ 'x.json': { lang: 'en', turns: [{ expect: {}, input: { audio: 'a' } }] } }),
       ),
     ).toThrow(/^x\.json: /);
+    // A repeat's days are weekday codes, a monthly rule's with their place in the month.
+    const repeating = (byDay: ReadonlyArray<string>) =>
+      caseDir({
+        'r.json': {
+          lang: 'en',
+          turns: [{ expect: { repeat: { byDay, freq: 'monthly' } }, input: { text: 'x' } }],
+        },
+      });
+    expect(() => loadCases(repeating(['Friday']))).toThrow(
+      /^r\.json: repeat\.byDay "Friday" is no weekday code/,
+    );
+    expect(() => loadCases(repeating(['6FR']))).toThrow(/^r\.json: /);
+    expect(loadCases(repeating(['-1FR', '1TU', 'MO']))).toHaveLength(1);
   });
 
   it('loads the repository cases', () => {
@@ -97,6 +120,19 @@ describe('filterCases', () => {
     ]);
     // A tag matches whole: 'flo' is no tag, and no id holds it either.
     expect(filterCases(cases, 'gue')).toHaveLength(0);
+  });
+
+  it('leaves blind cases out of a selection, and in a run of every case', () => {
+    const withBlind = loadCases(
+      caseDir({
+        'flow-open.json': { lang: 'en', tags: ['flow'], turns: [] },
+        'flow-sealed.json': { blind: true, lang: 'en', tags: ['flow'], turns: [] },
+      }),
+    );
+    expect(filterCases(withBlind, undefined)).toHaveLength(2);
+    expect(filterCases(withBlind, 'flow').map((benchCase) => benchCase.id)).toEqual(['flow-open']);
+    expect(filterCases(withBlind, 'sealed')).toHaveLength(0);
+    expect(filterCases(withBlind, 'flow', { showBlind: true })).toHaveLength(2);
   });
 });
 

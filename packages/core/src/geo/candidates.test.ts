@@ -95,6 +95,9 @@ describe('pastPlaceMatch', () => {
     expect(pastPlaceMatch('Vienna, Austria', yard)).toBeUndefined();
     expect(pastPlaceMatch('Vienna', yard)).toBeUndefined();
     expect(pastPlaceMatch('Austria', kaffemik)).toBeUndefined();
+    // A misheard name with where it is after it is still that place.
+    expect(pastPlaceMatch('Cafe Meek, Vienna', kaffemik)).toBe('phonetic');
+    expect(pastPlaceMatch('Cafe Meek, Graz', kaffemik)).toBeUndefined();
     // A place written as the city itself is that text.
     const city = new GeoLocation({
       lat: 48.2,
@@ -487,6 +490,14 @@ describe('preselectedPlace', () => {
   it('takes nothing when the best is a hit that does not resemble the text', () => {
     expect(preselectedPlace([found('Kaffeeweg', 'search')])).toBeUndefined();
     expect(preselectedPlace([])).toBeUndefined();
+  });
+
+  it('takes nothing another reading of the words found, however alike', () => {
+    const byReading = { ...found('Figlmüller', 'phonetic'), alternative: 'Figelmuller' };
+    expect(preselectedPlace([byReading, found('Figl', 'words')])).toBeUndefined();
+    expect(
+      preselectedPlace([{ ...history('Kaffemik', 'phonetic'), alternative: 'Kaffamek' }]),
+    ).toBeUndefined();
   });
 });
 

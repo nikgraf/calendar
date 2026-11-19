@@ -1,0 +1,28 @@
+{
+  "lang": "en",
+  "tags": ["flow", "location", "follow-up"],
+  "turns": [
+    {
+      "input": { "audio": "flow-place-in-city-1.m4a", "transcript": "Lunch tomorrow at 1" },
+      "expect": {
+        "title": "lunch",
+        "dayOffset": 1,
+        "startTime": "13:00",
+        "endTime": "14:00",
+        "location": null
+      }
+    },
+    {
+      "input": { "audio": "flow-place-in-city-2.m4a", "transcript": "at Kaffemik" },
+      "expect": { "location": "kaffemik" }
+    },
+    {
+      "input": { "audio": "flow-place-in-city-3.m4a", "transcript": "it's in Vienna" },
+      "expect": { "locationIs": "kaffemik, vienna" }
+    },
+    {
+      "input": { "audio": "flow-place-in-city-4.m4a", "transcript": "with Stefan" },
+      "expect": { "title": "lunch with stefan", "guests": {} }
+    }
+  ]
+}

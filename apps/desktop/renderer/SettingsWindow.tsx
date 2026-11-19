@@ -5,11 +5,13 @@ import { AgentsSection } from './agents/AgentsSection.tsx';
 import { AppleCalendarSection } from './AppleCalendarSection.tsx';
 import { BirthdayRemindersSection } from './BirthdayRemindersSection.tsx';
 import { ContactsSection } from './ContactsSection.tsx';
+import { DictationSection } from './DictationSection.tsx';
 import { EventNotificationsSection } from './EventNotificationsSection.tsx';
 import { TaskNotificationsSection } from './TaskNotificationsSection.tsx';
 import { GettingStartedSection } from './GettingStartedSection.tsx';
 import { LocationsSection } from './LocationsSection.tsx';
 import { MirrorsSection } from './MirrorsSection.tsx';
+import { AssistantModelSection } from './AssistantModelSection.tsx';
 import { ModelSection } from './ModelSection.tsx';
 import { PrivacySection } from './PrivacySection.tsx';
 import { RemindersSection } from './RemindersSection.tsx';
@@ -51,6 +53,7 @@ const PANE_CONTENT: Record<SettingsPaneId, ReactNode> = {
   advanced: <LocationsSection />,
   agents: <AgentsSection />,
   calendar: <WeekendsSection />,
+  dictation: <DictationSection />,
   file: (
     <>
       <SettingsCodeSection />
@@ -60,7 +63,12 @@ const PANE_CONTENT: Record<SettingsPaneId, ReactNode> = {
   ),
   gettingstarted: <GettingStartedSection />,
   mirrors: <MirrorsSection />,
-  model: <ModelSection />,
+  model: (
+    <>
+      <AssistantModelSection />
+      <ModelSection />
+    </>
+  ),
   notifications: (
     <>
       <EventNotificationsSection />
@@ -78,6 +86,7 @@ const PANE_TINT: Record<SettingsPaneId, string> = {
   advanced: 'bg-fill text-ink-secondary',
   agents: 'bg-event-lilac text-on-event-lilac',
   calendar: 'bg-event-lilac text-on-event-lilac',
+  dictation: 'bg-event-blue text-on-event-blue',
   file: 'bg-fill text-ink-secondary',
   gettingstarted: 'bg-event-blush text-on-event-blush',
   mirrors: 'bg-event-mint text-on-event-mint',

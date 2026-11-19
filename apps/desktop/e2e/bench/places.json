@@ -1,0 +1,835 @@
+[
+  {
+    "heard": [
+      {
+        "alternatives": ["Coffee"],
+        "text": "Coffee"
+      },
+      {
+        "alternatives": [" at", " et"],
+        "text": " at"
+      },
+      {
+        "alternatives": [" cafe", " café", " Cafe"],
+        "text": " cafe"
+      },
+      {
+        "alternatives": [" prequel", " Prequel"],
+        "text": " prequel"
+      },
+      {
+        "alternatives": [" to Moreau.", " Tour Moreau.", " to Moreaux."],
+        "text": " to Moreau."
+      }
+    ],
+    "id": "cafe-prueckel-anna",
+    "location": "cafe prequel",
+    "names": ["Café Prückel"],
+    "near": "vienna",
+    "said": "Coffee at Café Prückel tomorrow",
+    "voice": "say -v Anna (de_DE)"
+  },
+  {
+    "heard": [
+      {
+        "alternatives": ["Coffee"],
+        "text": "Coffee"
+      },
+      {
+        "alternatives": [" and", " at"],
+        "text": " and"
+      },
+      {
+        "alternatives": [" cafe", " Cafe"],
+        "text": " cafe"
+      },
+      {
+        "alternatives": [" cruckle", " crackle", " Cruckle"],
+        "text": " cruckle"
+      },
+      {
+        "alternatives": [" tomorrow."],
+        "text": " tomorrow."
+      }
+    ],
+    "id": "cafe-prueckel-daniel",
+    "location": "cafe cruckle",
+    "names": ["Café Prückel"],
+    "near": "vienna",
+    "said": "Coffee at Café Prückel tomorrow",
+    "voice": "say -v Daniel (en_GB)"
+  },
+  {
+    "heard": [
+      {
+        "alternatives": ["Coffee at", "coffee at"],
+        "text": "Coffee at"
+      },
+      {
+        "alternatives": [" Cafe", " cafe"],
+        "text": " Cafe"
+      },
+      {
+        "alternatives": [" Pruckle", " Pruckl"],
+        "text": " Pruckle"
+      },
+      {
+        "alternatives": [" tomorrow.", " Tomorrow."],
+        "text": " tomorrow."
+      }
+    ],
+    "id": "cafe-prueckel-karen",
+    "location": "Cafe Pruckle",
+    "names": ["Café Prückel"],
+    "near": "vienna",
+    "said": "Coffee at Café Prückel tomorrow",
+    "voice": "say -v Karen (en_AU)"
+  },
+  {
+    "heard": [
+      {
+        "alternatives": ["Coffee at Cafe"],
+        "text": "Coffee at Cafe"
+      },
+      {
+        "alternatives": [" Cruckle", " Crackle", " Crackl", " Cruckl", " Cruckel"],
+        "text": " Cruckle"
+      },
+      {
+        "alternatives": [" tomorrow."],
+        "text": " tomorrow."
+      }
+    ],
+    "id": "cafe-prueckel-moira",
+    "location": "Cafe Cruckle",
+    "names": ["Café Prückel"],
+    "near": "vienna",
+    "said": "Coffee at Café Prückel tomorrow",
+    "voice": "say -v Moira (en_IE)"
+  },
+  {
+    "heard": [
+      {
+        "alternatives": ["Coffee, a", "Coffee a"],
+        "text": "Coffee, a"
+      },
+      {
+        "alternatives": [" cafe, cruckle", " cafe, crackle", " cafe crackle", " cafe cruckle"],
+        "text": " cafe, cruckle"
+      },
+      {
+        "alternatives": [" tomorrow."],
+        "text": " tomorrow."
+      }
+    ],
+    "id": "cafe-prueckel-samantha",
+    "location": "cafe cruckle",
+    "names": ["Café Prückel"],
+    "near": "vienna",
+    "said": "Coffee at Café Prückel tomorrow",
+    "voice": "say -v Samantha (en_US)"
+  },
+  {
+    "heard": [
+      {
+        "alternatives": ["Lunch", "Launch"],
+        "text": "Lunch"
+      },
+      {
+        "alternatives": [" at", " a"],
+        "text": " at"
+      },
+      {
+        "alternatives": [
+          " Cafe Pruckle tomorrow",
+          " cafe Pruckle tomorrow",
+          " cafe, Pruckle tomorrow",
+          " cafe, Pruckle, tomorrow"
+        ],
+        "text": " Cafe Pruckle tomorrow"
+      },
+      {
+        "alternatives": [" at"],
+        "text": " at"
+      },
+      {
+        "alternatives": [" noon.", " noon"],
+        "text": " noon."
+      }
+    ],
+    "id": "cafe-prueckel-samantha-noon",
+    "location": "Cafe Pruckle",
+    "names": ["Café Prückel"],
+    "near": "vienna",
+    "said": "Lunch at Café Prückel tomorrow at noon",
+    "voice": "say -v Samantha (en_US)"
+  },
+  {
+    "heard": [
+      {
+        "alternatives": ["Dinner at"],
+        "text": "Dinner at"
+      },
+      {
+        "alternatives": [" Figelmuller", " Figelmüller"],
+        "text": " Figelmuller"
+      },
+      {
+        "alternatives": [" on"],
+        "text": " on"
+      },
+      {
+        "alternatives": [" Friedei.", " Friedai.", " Friede.", " Friedei"],
+        "text": " Friedei."
+      }
+    ],
+    "id": "figlmueller-anna",
+    "location": "Figelmuller",
+    "names": ["Figlmüller"],
+    "near": "vienna",
+    "said": "Dinner at Figlmüller on Friday",
+    "voice": "say -v Anna (de_DE)"
+  },
+  {
+    "heard": [
+      {
+        "alternatives": ["Dinner at"],
+        "text": "Dinner at"
+      },
+      {
+        "alternatives": [
+          " Figglemiller",
+          " Figlmiller",
+          " Figelmiller",
+          " Figlemiller",
+          " Figlermiller"
+        ],
+        "text": " Figglemiller"
+      },
+      {
+        "alternatives": [" on Friday."],
+        "text": " on Friday."
+      }
+    ],
+    "id": "figlmueller-daniel",
+    "location": "Figglemiller",
+    "names": ["Figlmüller"],
+    "near": "vienna",
+    "said": "Dinner at Figlmüller on Friday",
+    "voice": "say -v Daniel (en_GB)"
+  },
+  {
+    "heard": [
+      {
+        "alternatives": ["Dinner at"],
+        "text": "Dinner at"
+      },
+      {
+        "alternatives": [
+          " Figelmiller on",
+          " Figel Miller on",
+          " Fiegel Miller on",
+          " Figal Miller on"
+        ],
+        "text": " Figelmiller on"
+      },
+      {
+        "alternatives": [" Friday.", " Friday"],
+        "text": " Friday."
+      }
+    ],
+    "id": "figlmueller-karen",
+    "location": "Figelmiller",
+    "names": ["Figlmüller"],
+    "near": "vienna",
+    "said": "Dinner at Figlmüller on Friday",
+    "voice": "say -v Karen (en_AU)"
+  },
+  {
+    "heard": [
+      {
+        "alternatives": ["Dinner at"],
+        "text": "Dinner at"
+      },
+      {
+        "alternatives": [
+          " Figelmiller on",
+          " Figgle Miller on",
+          " Figglemiller on",
+          " Figlemiller on"
+        ],
+        "text": " Figelmiller on"
+      },
+      {
+        "alternatives": [" Friday.", " Friday"],
+        "text": " Friday."
+      }
+    ],
+    "id": "figlmueller-moira",
+    "location": "Figelmiller",
+    "names": ["Figlmüller"],
+    "near": "vienna",
+    "said": "Dinner at Figlmüller on Friday",
+    "voice": "say -v Moira (en_IE)"
+  },
+  {
+    "heard": [
+      {
+        "alternatives": ["Dinner at"],
+        "text": "Dinner at"
+      },
+      {
+        "alternatives": [
+          " Figelmiller",
+          " Feigelmiller",
+          " Figelmuller",
+          " Figlemiller",
+          " Figglemiller"
+        ],
+        "text": " Figelmiller"
+      },
+      {
+        "alternatives": [" on Friday."],
+        "text": " on Friday."
+      }
+    ],
+    "id": "figlmueller-samantha",
+    "location": "Figelmiller",
+    "names": ["Figlmüller"],
+    "near": "vienna",
+    "said": "Dinner at Figlmüller on Friday",
+    "voice": "say -v Samantha (en_US)"
+  },
+  {
+    "heard": [
+      {
+        "alternatives": ["Lunch tomorrow"],
+        "text": "Lunch tomorrow"
+      },
+      {
+        "alternatives": [" et", " at"],
+        "text": " et"
+      },
+      {
+        "alternatives": [" cafemeg.", " Cafemeg.", " cafemeg?", " cafémeg."],
+        "text": " cafemeg."
+      }
+    ],
+    "id": "kaffemik-anna",
+    "location": "cafemeg",
+    "names": ["Kaffemik"],
+    "near": "vienna",
+    "said": "Lunch tomorrow at Kaffemik",
+    "voice": "say -v Anna (de_DE)"
+  },
+  {
+    "heard": [
+      {
+        "alternatives": ["Lunch tomorrow at"],
+        "text": "Lunch tomorrow at"
+      },
+      {
+        "alternatives": [" Kathmic.", " Catholic.", " Kathamek.", " Cafemek.", " Kathmek."],
+        "text": " Kathmic."
+      }
+    ],
+    "id": "kaffemik-daniel",
+    "location": "Kathmic",
+    "names": ["Kaffemik"],
+    "near": "vienna",
+    "said": "Lunch tomorrow at Kaffemik",
+    "voice": "say -v Daniel (en_GB)"
+  },
+  {
+    "heard": [
+      {
+        "alternatives": ["Lunch tomorrow at"],
+        "text": "Lunch tomorrow at"
+      },
+      {
+        "alternatives": [" Kaffamig.", " Kafamig.", " Kaffermig.", " Kaffameg.", " Kaffamig?"],
+        "text": " Kaffamig."
+      }
+    ],
+    "id": "kaffemik-karen",
+    "location": "Kaffamig",
+    "names": ["Kaffemik"],
+    "near": "vienna",
+    "said": "Lunch tomorrow at Kaffemik",
+    "voice": "say -v Karen (en_AU)"
+  },
+  {
+    "heard": [
+      {
+        "alternatives": ["Lunch tomorrow at"],
+        "text": "Lunch tomorrow at"
+      },
+      {
+        "alternatives": [" Kafameg.", " Kafamig.", " Kaffameg.", " Kaffamig.", " Kafamek."],
+        "text": " Kafameg."
+      }
+    ],
+    "id": "kaffemik-moira",
+    "location": "Kafameg",
+    "names": ["Kaffemik"],
+    "near": "vienna",
+    "said": "Lunch tomorrow at Kaffemik",
+    "voice": "say -v Moira (en_IE)"
+  },
+  {
+    "heard": [
+      {
+        "alternatives": ["Lunch tomorrow at"],
+        "text": "Lunch tomorrow at"
+      },
+      {
+        "alternatives": [" Kathamek.", " Kathamic.", " Kafamek.", " Kaffamek.", " Kathmic."],
+        "text": " Kathamek."
+      }
+    ],
+    "id": "kaffemik-samantha",
+    "location": "Kathamek",
+    "names": ["Kaffemik"],
+    "near": "vienna",
+    "said": "Lunch tomorrow at Kaffemik",
+    "voice": "say -v Samantha (en_US)"
+  },
+  {
+    "heard": [
+      {
+        "alternatives": ["At Kaffamek.", "Yeah, Kaffimic.", "At Kafemek.", "Yeah, Kafemek."],
+        "text": "At Kaffamek."
+      }
+    ],
+    "id": "kaffemik-samantha-bare",
+    "location": "Kaffamek",
+    "names": ["Kaffemik"],
+    "near": "vienna",
+    "said": "at Kaffemik",
+    "voice": "say -v Samantha (en_US)"
+  },
+  {
+    "heard": [
+      {
+        "alternatives": ["Coffee with Stefan at"],
+        "text": "Coffee with Stefan at"
+      },
+      {
+        "alternatives": [" Kaffamik", " Kafamic", " Kaffamic", " Kafamik", " Kaffamek"],
+        "text": " Kaffamik"
+      },
+      {
+        "alternatives": [" tomorrow at 10."],
+        "text": " tomorrow at 10."
+      }
+    ],
+    "id": "kaffemik-samantha-coffee",
+    "location": "Kaffamik",
+    "names": ["Kaffemik"],
+    "near": "vienna",
+    "said": "Coffee with Stefan at Kaffemik tomorrow at 10",
+    "voice": "say -v Samantha (en_US)"
+  },
+  {
+    "heard": [
+      {
+        "alternatives": ["Drinks et los bar on"],
+        "text": "Drinks et los bar on"
+      },
+      {
+        "alternatives": [" Friedei.", " friedei.", " Friede.", " Freide.", " freide."],
+        "text": " Friedei."
+      }
+    ],
+    "id": "loos-bar-anna",
+    "location": "los bar",
+    "names": ["Loos Bar", "Loosbar", "Loos American Bar"],
+    "near": "vienna",
+    "said": "Drinks at Loos Bar on Friday",
+    "voice": "say -v Anna (de_DE)"
+  },
+  {
+    "heard": [
+      {
+        "alternatives": ["Drinks at"],
+        "text": "Drinks at"
+      },
+      {
+        "alternatives": [" Loose Bar", " Lou's Bar", " loose bar", " lose bar", " Lou's bar"],
+        "text": " Loose Bar"
+      },
+      {
+        "alternatives": [" on Friday."],
+        "text": " on Friday."
+      }
+    ],
+    "id": "loos-bar-daniel",
+    "location": "Loose Bar",
+    "names": ["Loos Bar", "Loosbar", "Loos American Bar"],
+    "near": "vienna",
+    "said": "Drinks at Loos Bar on Friday",
+    "voice": "say -v Daniel (en_GB)"
+  },
+  {
+    "heard": [
+      {
+        "alternatives": ["Drinks at"],
+        "text": "Drinks at"
+      },
+      {
+        "alternatives": [" Luz Bar", " lose bar", " Lose Bar", " Lou's Bar"],
+        "text": " Luz Bar"
+      },
+      {
+        "alternatives": [" on"],
+        "text": " on"
+      },
+      {
+        "alternatives": [" Friday.", " Friday"],
+        "text": " Friday."
+      }
+    ],
+    "id": "loos-bar-karen",
+    "location": "Luz Bar",
+    "names": ["Loos Bar", "Loosbar", "Loos American Bar"],
+    "near": "vienna",
+    "said": "Drinks at Loos Bar on Friday",
+    "voice": "say -v Karen (en_AU)"
+  },
+  {
+    "heard": [
+      {
+        "alternatives": ["Drinks at"],
+        "text": "Drinks at"
+      },
+      {
+        "alternatives": [" Lou's", " Lew's", " Lu's"],
+        "text": " Lou's"
+      },
+      {
+        "alternatives": [" Bar", " bar"],
+        "text": " Bar"
+      },
+      {
+        "alternatives": [" on", " On"],
+        "text": " on"
+      },
+      {
+        "alternatives": [" Friday."],
+        "text": " Friday."
+      }
+    ],
+    "id": "loos-bar-moira",
+    "location": "Lou's Bar",
+    "names": ["Loos Bar", "Loosbar", "Loos American Bar"],
+    "near": "vienna",
+    "said": "Drinks at Loos Bar on Friday",
+    "voice": "say -v Moira (en_IE)"
+  },
+  {
+    "heard": [
+      {
+        "alternatives": ["Drinks at"],
+        "text": "Drinks at"
+      },
+      {
+        "alternatives": [" loose bar", " Loose Bar", " lose bar", " Lose Bar", " lose Bar"],
+        "text": " loose bar"
+      },
+      {
+        "alternatives": [" on Friday."],
+        "text": " on Friday."
+      }
+    ],
+    "id": "loos-bar-samantha",
+    "location": "loose bar",
+    "names": ["Loos Bar", "Loosbar", "Loos American Bar"],
+    "near": "vienna",
+    "said": "Drinks at Loos Bar on Friday",
+    "voice": "say -v Samantha (en_US)"
+  },
+  {
+    "heard": [
+      {
+        "alternatives": ["Drinks at"],
+        "text": "Drinks at"
+      },
+      {
+        "alternatives": [" Gloose", " Loose", " Glues", " glues", " loose"],
+        "text": " Gloose"
+      },
+      {
+        "alternatives": [" Bar", " bar"],
+        "text": " Bar"
+      },
+      {
+        "alternatives": [" Friday at 7."],
+        "text": " Friday at 7."
+      }
+    ],
+    "id": "loos-bar-samantha-at-7",
+    "location": "Gloose Bar",
+    "names": ["Loos Bar", "Loosbar", "Loos American Bar"],
+    "near": "vienna",
+    "said": "Drinks at Loos Bar Friday at 7",
+    "voice": "say -v Samantha (en_US)"
+  },
+  {
+    "heard": [
+      {
+        "alternatives": ["Lunch et"],
+        "text": "Lunch et"
+      },
+      {
+        "alternatives": [" clachota", " placota", " glajota"],
+        "text": " clachota"
+      },
+      {
+        "alternatives": [" on"],
+        "text": " on"
+      },
+      {
+        "alternatives": [" mondai.", " Monday.", " mondai"],
+        "text": " mondai."
+      }
+    ],
+    "id": "plachutta-anna",
+    "location": "clachota",
+    "names": ["Plachutta"],
+    "near": "vienna",
+    "said": "Lunch at Plachutta on Monday",
+    "voice": "say -v Anna (de_DE)"
+  },
+  {
+    "heard": [
+      {
+        "alternatives": ["Lunch had"],
+        "text": "Lunch had"
+      },
+      {
+        "alternatives": [
+          " played chatted",
+          " played chattered",
+          " put chatted",
+          " plug chatted",
+          " pled chatted"
+        ],
+        "text": " played chatted"
+      },
+      {
+        "alternatives": [" on Monday."],
+        "text": " on Monday."
+      }
+    ],
+    "id": "plachutta-daniel",
+    "location": "played chatted",
+    "names": ["Plachutta"],
+    "near": "vienna",
+    "said": "Lunch at Plachutta on Monday",
+    "voice": "say -v Daniel (en_GB)"
+  },
+  {
+    "heard": [
+      {
+        "alternatives": ["Lunch"],
+        "text": "Lunch"
+      },
+      {
+        "alternatives": [" at", " and"],
+        "text": " at"
+      },
+      {
+        "alternatives": [" flood shutter", " Flood Shutter", " Floodshudder", " floodshudder"],
+        "text": " flood shutter"
+      },
+      {
+        "alternatives": [" on Monday."],
+        "text": " on Monday."
+      }
+    ],
+    "id": "plachutta-karen",
+    "location": "flood shutter",
+    "names": ["Plachutta"],
+    "near": "vienna",
+    "said": "Lunch at Plachutta on Monday",
+    "voice": "say -v Karen (en_AU)"
+  },
+  {
+    "heard": [
+      {
+        "alternatives": ["Lunch", "Launch"],
+        "text": "Lunch"
+      },
+      {
+        "alternatives": [" had"],
+        "text": " had"
+      },
+      {
+        "alternatives": [" floodshot on", " bloodshot on", " floodshots on"],
+        "text": " floodshot on"
+      },
+      {
+        "alternatives": [" Monday.", " Monday"],
+        "text": " Monday."
+      }
+    ],
+    "id": "plachutta-moira",
+    "location": "floodshot",
+    "names": ["Plachutta"],
+    "near": "vienna",
+    "said": "Lunch at Plachutta on Monday",
+    "voice": "say -v Moira (en_IE)"
+  },
+  {
+    "heard": [
+      {
+        "alternatives": ["Lunch had"],
+        "text": "Lunch had"
+      },
+      {
+        "alternatives": [" flood shut on", " plug shut on", " flood shutter on", " plugged out on"],
+        "text": " flood shut on"
+      },
+      {
+        "alternatives": [" Monday."],
+        "text": " Monday."
+      }
+    ],
+    "id": "plachutta-samantha",
+    "location": "flood shut",
+    "names": ["Plachutta"],
+    "near": "vienna",
+    "said": "Lunch at Plachutta on Monday",
+    "voice": "say -v Samantha (en_US)"
+  },
+  {
+    "heard": [
+      {
+        "alternatives": ["Beer at"],
+        "text": "Beer at"
+      },
+      {
+        "alternatives": [" Schweitzerhaus", " Schweitzehaus", " Schweitzer Haus"],
+        "text": " Schweitzerhaus"
+      },
+      {
+        "alternatives": [" on"],
+        "text": " on"
+      },
+      {
+        "alternatives": [" Zatur", " zatur"],
+        "text": " Zatur"
+      },
+      {
+        "alternatives": [" Dai.", " dai."],
+        "text": " Dai."
+      }
+    ],
+    "id": "schweizerhaus-anna",
+    "location": "Schweitzerhaus",
+    "names": ["Schweizerhaus"],
+    "near": "vienna",
+    "said": "Beer at Schweizerhaus on Saturday",
+    "voice": "say -v Anna (de_DE)"
+  },
+  {
+    "heard": [
+      {
+        "alternatives": ["Beerad", "Beer at", "Beer Rad"],
+        "text": "Beerad"
+      },
+      {
+        "alternatives": [" Schweezerhorse", " Shweezerhorse", " Schweezer Horse"],
+        "text": " Schweezerhorse"
+      },
+      {
+        "alternatives": [" on Saturday."],
+        "text": " on Saturday."
+      }
+    ],
+    "id": "schweizerhaus-daniel",
+    "location": "Schweezerhorse",
+    "names": ["Schweizerhaus"],
+    "near": "vienna",
+    "said": "Beer at Schweizerhaus on Saturday",
+    "voice": "say -v Daniel (en_GB)"
+  },
+  {
+    "heard": [
+      {
+        "alternatives": ["Vera", "We're a"],
+        "text": "Vera"
+      },
+      {
+        "alternatives": [" Shweezer", " squeeze of"],
+        "text": " Shweezer"
+      },
+      {
+        "alternatives": [" was on", " horse on", " for us on", " forced on", " us on"],
+        "text": " was on"
+      },
+      {
+        "alternatives": [" Saturday.", " Saturday"],
+        "text": " Saturday."
+      }
+    ],
+    "id": "schweizerhaus-karen",
+    "location": "Shweezer",
+    "names": ["Schweizerhaus"],
+    "near": "vienna",
+    "said": "Beer at Schweizerhaus on Saturday",
+    "voice": "say -v Karen (en_AU)"
+  },
+  {
+    "heard": [
+      {
+        "alternatives": ["Beer of"],
+        "text": "Beer of"
+      },
+      {
+        "alternatives": [
+          " Schwizzahas",
+          " Schwizzahoss",
+          " Schwizerhoss",
+          " Schweizerhoss",
+          " Schwizahas"
+        ],
+        "text": " Schwizzahas"
+      },
+      {
+        "alternatives": [" on Saturday."],
+        "text": " on Saturday."
+      }
+    ],
+    "id": "schweizerhaus-moira",
+    "location": "Schwizzahas",
+    "names": ["Schweizerhaus"],
+    "near": "vienna",
+    "said": "Beer at Schweizerhaus on Saturday",
+    "voice": "say -v Moira (en_IE)"
+  },
+  {
+    "heard": [
+      {
+        "alternatives": ["Here at"],
+        "text": "Here at"
+      },
+      {
+        "alternatives": [
+          " Schweezer Hass on Saturday.",
+          " Schweezerhass on Saturday.",
+          " Schweezer, Hassan Saturday.",
+          " Schweezer, Hassan, Saturday",
+          " Schweezer, Hassan, Saturday."
+        ],
+        "text": " Schweezer Hass on Saturday."
+      }
+    ],
+    "id": "schweizerhaus-samantha",
+    "location": "Schweezer Hass",
+    "names": ["Schweizerhaus"],
+    "near": "vienna",
+    "said": "Beer at Schweizerhaus on Saturday",
+    "voice": "say -v Samantha (en_US)"
+  }
+]

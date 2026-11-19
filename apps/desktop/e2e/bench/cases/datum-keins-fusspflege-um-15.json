@@ -1,0 +1,10 @@
+{
+  "lang": "de",
+  "tags": ["date", "de"],
+  "turns": [
+    {
+      "input": { "text": "Fußpflege um 15 Uhr" },
+      "expect": { "title": "fußpflege", "dayOffset": 0, "startTime": "15:00", "endTime": "16:00" }
+    }
+  ]
+}

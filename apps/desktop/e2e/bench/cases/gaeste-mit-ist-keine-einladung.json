@@ -1,0 +1,16 @@
+{
+  "lang": "de",
+  "tags": ["guests", "de"],
+  "turns": [
+    {
+      "input": { "text": "Abendessen mit Teo am Samstag um 19 Uhr" },
+      "expect": {
+        "title": "abendessen mit teo",
+        "weekday": 6,
+        "startTime": "19:00",
+        "endTime": "20:00",
+        "guests": {}
+      }
+    }
+  ]
+}

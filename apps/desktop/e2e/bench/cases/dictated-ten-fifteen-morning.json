@@ -1,0 +1,17 @@
+{
+  "blind": true,
+  "lang": "en",
+  "tags": ["dictated"],
+  "turns": [
+    {
+      "input": { "text": "meeting at ten fifteen tomorrow morning" },
+      "expect": {
+        "title": "meeting",
+        "dayOffset": 1,
+        "startTime": "10:15",
+        "endTime": "11:15",
+        "assumedTime": false
+      }
+    }
+  ]
+}

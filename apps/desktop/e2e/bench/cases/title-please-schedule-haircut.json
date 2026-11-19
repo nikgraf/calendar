@@ -1,0 +1,16 @@
+{
+  "lang": "en",
+  "tags": ["title", "command"],
+  "turns": [
+    {
+      "input": { "text": "Please schedule a haircut for Saturday at 11" },
+      "expect": {
+        "kind": "event",
+        "title": "haircut",
+        "weekday": 6,
+        "startTime": "11:00",
+        "endTime": "12:00"
+      }
+    }
+  ]
+}

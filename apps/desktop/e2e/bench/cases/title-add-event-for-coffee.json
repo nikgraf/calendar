@@ -1,0 +1,17 @@
+{
+  "lang": "en",
+  "tags": ["title", "command"],
+  "turns": [
+    {
+      "input": { "text": "Add an event for coffee with Sarah on Tuesday at 10" },
+      "expect": {
+        "kind": "event",
+        "title": "coffee with sarah",
+        "weekday": 2,
+        "startTime": "10:00",
+        "endTime": "11:00",
+        "guests": {}
+      }
+    }
+  ]
+}

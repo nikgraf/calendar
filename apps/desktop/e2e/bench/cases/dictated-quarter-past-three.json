@@ -1,0 +1,16 @@
+{
+  "lang": "en",
+  "tags": ["dictated"],
+  "turns": [
+    {
+      "input": { "text": "coffee with jo at quarter past three on thursday" },
+      "expect": {
+        "title": "coffee with jo",
+        "weekday": 4,
+        "startTime": "15:15",
+        "endTime": "16:15",
+        "guests": {}
+      }
+    }
+  ]
+}

@@ -1,5 +1,4 @@
 import {
-  draftOccurrences,
   useGuardedMutations,
   useBackendInvalidations,
   useCalendarNavigation,
@@ -9,7 +8,6 @@ import {
   useListColorLookup,
   useOnDraftReveal,
   useOverdueTasksStable,
-  useRequestDraftFocus,
   useSetupNeeded,
   useBirthdaysInRangeStable,
   useEventReadOnlyLookup,
@@ -35,14 +33,17 @@ import { MenuView } from '@expo/ui/community/menu';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { AppState, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { startAssistantModel } from '../assistantRuntime.ts';
 import { kickSync, runLocalNotifications, startSync, subscribeInvalidations } from '../backend.ts';
 import { registerBackgroundRefresh } from '../backgroundTask.ts';
+import { markLaunch } from '../launchTiming.ts';
 import { useOnboardingEnabled } from '../onboarding.ts';
 import { setSetupPhase } from '../settingsCodeInbox.ts';
 import { AccountButton } from './AccountButton.tsx';
-import { ADD_BUTTON_CLEARANCE, AddButton } from './AddButton.tsx';
+import { AddButton } from './AddButton.tsx';
 import { AgendaView } from './AgendaView.tsx';
 import { DayTimeline } from './DayTimeline.tsx';
+import { LoadingOrb } from './LoadingOrb.tsx';
 import { useEditorHost } from './EditorHost.tsx';
 import { GettingStartedCard } from './GettingStartedCard.tsx';
 import { MonthGrid } from './MonthGrid.tsx';
@@ -80,6 +81,9 @@ export function CalendarScreen() {
   useEffect(() => {
     startSync();
     registerBackgroundRefresh();
+    // The Assistant's model: picked up where the last launch left it. The
+    // Create lesson and the Assistant's notice offer the download.
+    startAssistantModel();
     const subscription = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
         kickSync();
@@ -92,7 +96,13 @@ export function CalendarScreen() {
   const zones = useTimeZones();
   const prefs = useViewPreferences();
   if (!zones.loaded || prefs === null) {
-    return <SafeAreaView style={styles.safeArea} />;
+    // The first read starts the backend (the database, its migrations):
+    // usually quicker than the orb's delay, so it seldom shows.
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <LoadingOrb label="Opening your calendar…" />
+      </SafeAreaView>
+    );
   }
   return (
     <CalendarBody
@@ -196,25 +206,24 @@ function CalendarBody({
   const isEventReadOnly = useEventReadOnlyLookup();
   const listColorOf = useListColorLookup();
   const calendars = useCalendars();
+  useEffect(() => {
+    markLaunch('calendar');
+  }, []);
 
   const colorOf = useMemo(() => makeColorLookup(calendars), [calendars]);
 
-  // The open editor's drafts, drawn dashed in the timeline, the lane and
-  // the month grid (the free slots beside the focused one fainter); the
-  // editor asks for its focused draft's day, and a tap on a draft
-  // focuses it there (the draft atoms, shared with the desktop).
+  // The editor's sheet covers the calendar, so its drafts are not drawn
+  // here (the desktop's grid draws them). The calendar still follows the
+  // editor — to its focused draft's day (the draft atoms, shared with the
+  // desktop) and, below, to its hour — so what was saved is in view once
+  // the sheet has gone.
   const draftPreviews = useDraftPreviews();
-  const drafts = useMemo(
-    () => draftOccurrences(draftPreviews, range.startUtc, range.endUtc, timeZone),
-    [draftPreviews, range.startUtc, range.endUtc, timeZone],
-  );
-  const requestDraftFocus = useRequestDraftFocus();
   useOnDraftReveal(goToDay);
   // The focused timed draft's start, for the grid to scroll to — read off
-  // the draft itself, not an occurrence in the loaded range: a repeating
-  // draft's first loaded occurrence moves as the calendar pages.
+  // the draft itself: a repeating draft's first occurrence in the loaded
+  // range moves as the calendar pages.
   const focusedDraft = draftPreviews.find(
-    (draft) => draft.focused && !draft.isAllDay && draft.candidate === undefined,
+    (draft) => draft.focused && !draft.isAllDay && draft.kind === 'draft',
   );
   const revealMinute =
     focusedDraft === undefined
@@ -338,7 +347,6 @@ function CalendarBody({
         <MonthGrid
           birthdays={birthdays}
           colorOf={colorOf}
-          drafts={drafts}
           events={events}
           listColorOf={listColorOf}
           onSelectDay={(date) => {
@@ -388,7 +396,6 @@ function CalendarBody({
             buffer={buffer}
             colorOf={colorOf}
             days={days}
-            drafts={drafts}
             events={events}
             isEventReadOnly={isEventReadOnly}
             isTaskReadOnly={isTaskReadOnly}
@@ -397,7 +404,6 @@ function CalendarBody({
             onCreateSlot={(date, times) =>
               host.editEvent({ initialDate: date, initialTimes: times })
             }
-            onDraftPress={requestDraftFocus}
             onEventPress={host.openEvent}
             onFoldPress={host.openTaskFold}
             onNavigate={panByDays}
@@ -428,9 +434,9 @@ function CalendarBody({
 
       {/* A new event on the day being viewed. */}
       <AddButton onPress={() => host.openNew({ focused, kind: 'event' })} />
-      {/* The notices stand on the same row: above the tab bar on iOS 26,
-          where "+" hangs into the bar, and above the floating "+" before. */}
-      <NoticeStack offset={ADD_BUTTON_CLEARANCE + NOTICE_GAP}>
+      {/* The notices stand on the same row: above the tab bar, which "+"
+          hangs into. */}
+      <NoticeStack offset={NOTICE_GAP}>
         <MutationNoticeToast />
         <DroppedToast />
         <ConflictBanner />

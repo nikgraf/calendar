@@ -1,0 +1,9 @@
+{
+  "name": "solunivo-speech",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Dictation: the microphone streamed into Apple's SpeechAnalyzer, its words as they are said — local Expo module",
+  "license": "UNLICENSED",
+  "author": "Nik Graf",
+  "main": "index.ts"
+}

@@ -1,0 +1,16 @@
+{
+  "lang": "en",
+  "tags": ["time"],
+  "turns": [
+    {
+      "input": { "text": "Drinks tomorrow evening" },
+      "expect": {
+        "title": "drinks",
+        "dayOffset": 1,
+        "startTime": "18:00",
+        "endTime": "19:00",
+        "assumedTime": true
+      }
+    }
+  ]
+}

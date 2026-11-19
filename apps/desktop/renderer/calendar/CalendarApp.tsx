@@ -51,7 +51,16 @@ import {
   useUpdateViewPreferences,
   useViewPreferences,
 } from '@calendar/app-state';
-import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
+import {
+  type SetStateAction,
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { desktopLanguageModel } from '../ai/desktopModel.ts';
 import { backend } from '../backend.ts';
 import { desktopTextRecognizer } from '../ai/desktopTextRecognizer.ts';
@@ -71,7 +80,7 @@ import { EditorPanel } from './panel/EditorPanel.tsx';
 import { EventInspector } from './panel/EventInspector.tsx';
 import { LessonPanel, type PanelLessonId } from './panel/LessonPanel.tsx';
 import { SearchPanel } from './panel/SearchPanel.tsx';
-import { onWindowFocus } from './QuickAddBar.tsx';
+import { onWindowFocus } from '../ai/modelFocus.ts';
 import { TodayRail } from './panel/TodayRail.tsx';
 import { Sidebar } from './sidebar/Sidebar.tsx';
 import { Toolbar } from './Toolbar.tsx';
@@ -115,6 +124,12 @@ type PanelState =
       readonly mode?: ItemKind | undefined;
       /** Distinct per opening: a second slot click must not reuse the first draft. */
       readonly opening: number;
+      /**
+       * The view the editor starts on: the Assistant for "+ New", ⌘N, ⌘K,
+       * a capture and the Create lesson; the form (unset) for a slot
+       * picked on the grid and for a saved event.
+       */
+      readonly opensOn?: 'assistant' | undefined;
       readonly seed: EditorSeed;
     }
   | {
@@ -223,7 +238,62 @@ function CalendarBody({
     updatePrefs({ lastView: next });
   };
 
-  const [panel, setPanel] = useState<PanelState>(RAIL);
+  const [panel, showPanel] = useState<PanelState>(RAIL);
+  // The panel as last committed, for a way out asked for later (a click, a key, a reply).
+  const panelNow = useRef(panel);
+  useLayoutEffect(() => {
+    panelNow.current = panel;
+  }, [panel]);
+  // Whether the open editor holds something (`EditorPanel`'s `onUnsaved`), by its opening.
+  const editorHolds = useRef<{ readonly opening: number; readonly unsaved: boolean } | null>(null);
+  // A panel asked for over an editor that holds something: the editor asks
+  // first (`DiscardConfirm`), and Discard goes there.
+  const [leaving, setLeaving] = useState<{
+    /** What goes with the change once it is made (the grid's day, a capture let go). */
+    readonly after: (() => void) | undefined;
+    readonly from: number;
+    readonly next: PanelState;
+  } | null>(null);
+  /**
+   * Every way the panel changes but an editor's own close after its write
+   * (`closeEditor`, `closeDeleted`): one that would take an editor holding
+   * something off the panel — Cancel, the X, Escape, another event, slot
+   * or chip, "+ New", search, a lesson, a paste, a notification — is held
+   * while the editor asks. A change within the same editor goes through.
+   * `after` goes with the change, only once it is made: Keep Editing
+   * leaves the grid's day and a capture under way as they were.
+   */
+  const setPanel = useCallback((update: SetStateAction<PanelState>, after?: () => void) => {
+    const current = panelNow.current;
+    const holds =
+      'opening' in current &&
+      editorHolds.current?.opening === current.opening &&
+      editorHolds.current.unsaved;
+    if (!holds) {
+      showPanel(update);
+      after?.();
+      return;
+    }
+    const next = typeof update === 'function' ? update(current) : update;
+    if (next === current || ('opening' in next && next.opening === current.opening)) {
+      showPanel(next);
+      after?.();
+      return;
+    }
+    setLeaving({ after, from: current.opening, next });
+  }, []);
+  // The question shows while the editor it was asked over is up.
+  const asked = leaving !== null && 'opening' in panel && leaving.from === panel.opening;
+  const answerLeaving = (discard: boolean) => {
+    setLeaving(null);
+    if (discard && leaving !== null) {
+      showPanel(leaving.next);
+      leaving.after?.();
+    }
+  };
+  const reportUnsaved = (opening: number) => (unsaved: boolean) => {
+    editorHolds.current = { opening, unsaved };
+  };
   const searching = isSearching(panel);
   const [searchFocus, setSearchFocus] = useState(0);
   const searchScroll = useRef(0);
@@ -237,15 +307,16 @@ function CalendarBody({
   const editing = panel.kind === 'editEvent' || panel.kind === 'editTask';
   const openEditor = (seed: EditorSeed) =>
     setPanel({ kind: 'editEvent', opening: nextOpening(), seed });
-  /** A new item on the focused day: "+ New", ⌘N, and ⌘K into its quick-add field. */
+  /** A new item on the focused day, on the Assistant: "+ New", ⌘N, and ⌘K into its field. */
   const openNew = useCallback(
     () =>
       setPanel({
         kind: 'editEvent',
         opening: nextOpening(),
+        opensOn: 'assistant',
         seed: { initialDate: focused, initialHour: 9 },
       }),
-    [focused],
+    [focused, setPanel],
   );
 
   // The editor's drafts, as the grid draws them: every event draft of the
@@ -263,15 +334,18 @@ function CalendarBody({
     if (!first) {
       return;
     }
-    goToDay(Temporal.PlainDate.from(first.prefill.date));
-    setPanel({
-      kind: 'editEvent',
-      opening: nextOpening(),
-      seed: {
-        initialDate: Temporal.PlainDate.from(first.prefill.date),
-        thread: { items, ...(note ? { note } : {}), utterance },
+    setPanel(
+      {
+        kind: 'editEvent',
+        opening: nextOpening(),
+        opensOn: 'assistant',
+        seed: {
+          initialDate: Temporal.PlainDate.from(first.prefill.date),
+          thread: { items, ...(note ? { note } : {}), utterance },
+        },
       },
-    });
+      () => goToDay(Temporal.PlainDate.from(first.prefill.date)),
+    );
   };
   // Several events found: the same thread, with a draft each (the review
   // list the dialog used to show), and its warning when the text was cut.
@@ -299,17 +373,17 @@ function CalendarBody({
       // A clicked task reminder opens the task's editor, done or not; one gone since opens nothing.
       void findNotificationTask(backend, target).then((task) => {
         if (task) {
-          capture.dismiss();
-          setPanel({ kind: 'editTask', opening: nextOpening(), task });
+          setPanel({ kind: 'editTask', opening: nextOpening(), task }, capture.dismiss);
         }
       });
       return;
     }
     void findNotificationEvent(backend, target).then((event) => {
       if (event) {
-        capture.dismiss();
-        goToDay(eventStartDay(event, timeZone));
-        setPanel({ event, kind: 'inspector' });
+        setPanel({ event, kind: 'inspector' }, () => {
+          capture.dismiss();
+          goToDay(eventStartDay(event, timeZone));
+        });
       }
     });
   });
@@ -340,8 +414,9 @@ function CalendarBody({
   // own Delete does.
   const inspected = panel.kind === 'inspector' ? findSameEvent(events, panel.event) : undefined;
   if (panel.kind === 'inspector' && inspected !== undefined && inspected !== panel.event) {
-    // Render-phase state adjustment (the React "derive from props" pattern).
-    setPanel({ ...panel, event: inspected });
+    // Render-phase state adjustment (the React "derive from props" pattern);
+    // an inspector, never an editor: nothing to ask.
+    showPanel({ ...panel, event: inspected });
   }
   const unlisted =
     panel.kind === 'inspector' && inspected === undefined ? eventIdentity(panel.event) : undefined;
@@ -453,6 +528,11 @@ function CalendarBody({
         // Escape leaves the panel's inspector, editor or search, from
         // anywhere in the window but a dialog (which takes its own Escape
         // first); a result opened from search goes back to the results.
+        // While an editor asks whether to discard, it answers Keep Editing.
+        if (asked && !anyDialog) {
+          setLeaving(null);
+          return;
+        }
         if (!anyDialog && panel.kind !== 'rail') {
           setPanel(backFrom(panel));
         }
@@ -470,18 +550,16 @@ function CalendarBody({
       }
       if (command && key.key.toLowerCase() === 'k') {
         key.preventDefault();
-        // ⌘K goes to a new item's quick-add field: the open new-item
-        // editor's, else a fresh one — not from under a dialog, whose
-        // Escape and Enter the field would otherwise take, and not over
-        // another editor, whose draft it would drop.
+        // ⌘K goes to the Assistant's field: the open editor's (which
+        // brings that view forward, where it has one), else a new item's —
+        // not from under a dialog, whose Escape and Enter the field would
+        // otherwise take.
         if (anyDialog) {
           return;
         }
-        const newItem =
-          panel.kind === 'editEvent' && panel.seed.event === undefined && panel.mode === undefined;
-        if (newItem) {
+        if (editing) {
           setQuickAddFocus((count) => count + 1);
-        } else if (!editing) {
+        } else {
           openNew();
         }
         return;
@@ -504,7 +582,7 @@ function CalendarBody({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [dialogOpen, editing, goToday, openNew, panel, step]);
+  }, [asked, dialogOpen, editing, goToday, openNew, panel, setPanel, step]);
 
   // ⌘V on the calendar itself: an email or a screenshot becomes events to
   // review; a settings code (the iPhone's, through Universal Clipboard)
@@ -540,6 +618,12 @@ function CalendarBody({
   // reply is back — only while the panel still holds its opening: a reply
   // landing after another chip, slot or event was opened leaves that one up.
   const closeEditor = (opening: number) => () =>
+    showPanel((current) =>
+      'opening' in current && current.opening === opening ? backFrom(current) : current,
+    );
+  // Cancel, the X and the lesson's Skip: the same way back, asked about
+  // while the editor holds something.
+  const cancelEditor = (opening: number) => () =>
     setPanel((current) =>
       'opening' in current && current.opening === opening ? backFrom(current) : current,
     );
@@ -548,7 +632,7 @@ function CalendarBody({
   // this one, or a sibling with a series' scope) — an inspector, or an
   // editor that Edit or Convert opened meanwhile, since the event is gone.
   const closeDeleted = (deleted: EventRecord) => (scope: RecurringScope) =>
-    setPanel((current) => {
+    showPanel((current) => {
       const shown =
         current.kind === 'inspector'
           ? current.event
@@ -571,27 +655,31 @@ function CalendarBody({
     switch (id) {
       case 'create': {
         const day = Temporal.PlainDate.from(today);
-        goToDay(day);
-        setPanel({
-          kind: 'editEvent',
-          opening: nextOpening(),
-          seed: {
-            initialDate: day,
-            initialHour: 12,
-            lesson: 'create',
-            quickAddText: LESSON_CREATE_PHRASE,
+        setPanel(
+          {
+            kind: 'editEvent',
+            opening: nextOpening(),
+            opensOn: 'assistant',
+            seed: {
+              initialDate: day,
+              initialHour: 12,
+              lesson: 'create',
+              quickAddText: LESSON_CREATE_PHRASE,
+            },
           },
-        });
+          () => goToDay(day),
+        );
         return;
       }
       case 'search': {
         // A fresh thread, whatever an earlier search left. Without the
         // model the words search as plain words; the banner says why.
-        void searchThread.startWith(LESSON_SEARCH_PHRASE, {
-          read: searchModel.status === 'ready',
+        setPanel({ kind: 'search', lesson: nextOpening(), selectText: false }, () => {
+          void searchThread.startWith(LESSON_SEARCH_PHRASE, {
+            read: searchModel.status === 'ready',
+          });
+          setSearchFocus((count) => count + 1);
         });
-        setPanel({ kind: 'search', lesson: nextOpening(), selectText: false });
-        setSearchFocus((count) => count + 1);
         return;
       }
       default:
@@ -631,7 +719,7 @@ function CalendarBody({
       : panel.kind === 'editEvent'
         ? panel.seed.event
         : undefined;
-  const selectedKey = selectedEvent ? `${selectedEvent.calendarId}:${selectedEvent.id}` : undefined;
+  const selectedKey = selectedEvent ? eventIdentity(selectedEvent) : undefined;
   const panelKey =
     panel.kind === 'inspector'
       ? // By identity: an occurrence edited on its own keeps its inspector.
@@ -803,10 +891,15 @@ function CalendarBody({
               <LessonPanel id={panel.id} onClose={() => setPanel(RAIL)} />
             ) : panel.kind === 'editEvent' ? (
               <EditorPanel
+                asked={asked}
                 calendars={calendars}
                 initialKind={panel.mode}
+                onAnswer={answerLeaving}
+                onCancel={cancelEditor(panel.opening)}
                 onCapture={capture.start}
                 onClose={closeEditor(panel.opening)}
+                onUnsaved={reportUnsaved(panel.opening)}
+                opensOn={panel.opensOn}
                 quickAddFocus={quickAddFocus}
                 seed={panel.seed}
                 taskLists={taskLists}
@@ -814,9 +907,14 @@ function CalendarBody({
               />
             ) : (
               <EditorPanel
+                asked={asked}
                 calendars={calendars}
+                onAnswer={answerLeaving}
+                onCancel={cancelEditor(panel.opening)}
                 onCapture={capture.start}
                 onClose={closeEditor(panel.opening)}
+                onUnsaved={reportUnsaved(panel.opening)}
+                quickAddFocus={quickAddFocus}
                 seed={{ initialDate: focused }}
                 task={panel.task}
                 taskLists={taskLists}

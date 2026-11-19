@@ -1,0 +1,18 @@
+{
+  "lang": "en",
+  "tags": ["flow", "shift"],
+  "turns": [
+    {
+      "input": { "text": "Standup tomorrow at 9:30" },
+      "expect": { "title": "standup", "dayOffset": 1, "startTime": "09:30", "endTime": "10:30" }
+    },
+    {
+      "input": { "text": "make it 15 minutes" },
+      "expect": { "startTime": "09:30", "endTime": "09:45" }
+    },
+    {
+      "input": { "text": "10 minutes later" },
+      "expect": { "startTime": "09:40", "endTime": "09:55" }
+    }
+  ]
+}

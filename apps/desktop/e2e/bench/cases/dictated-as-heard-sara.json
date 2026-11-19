@@ -1,0 +1,16 @@
+{
+  "lang": "en",
+  "tags": ["dictated"],
+  "turns": [
+    {
+      "input": { "text": "Lunch with Sara tomorrow at 1." },
+      "expect": {
+        "title": "lunch with sara",
+        "dayOffset": 1,
+        "startTime": "13:00",
+        "endTime": "14:00",
+        "guests": {}
+      }
+    }
+  ]
+}

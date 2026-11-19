@@ -28,6 +28,11 @@ function Icon({ children, size = 16, ...rest }: IconProps & { readonly children:
   );
 }
 
+export const ArrowUpIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M12 19V5M6 11l6-6 6 6" />
+  </Icon>
+);
 export const AlertIcon = (props: IconProps) => (
   <Icon {...props}>
     <circle cx="12" cy="12" r="9" />
@@ -37,11 +42,6 @@ export const AlertIcon = (props: IconProps) => (
 export const BellIcon = (props: IconProps) => (
   <Icon {...props}>
     <path d="M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15zM10 21h4" />
-  </Icon>
-);
-export const CakeIcon = (props: IconProps) => (
-  <Icon {...props}>
-    <path d="M4 20h16M5 20v-7a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v7M12 11V8M12 4.5v.5" />
   </Icon>
 );
 export const CalendarIcon = (props: IconProps) => (
@@ -87,16 +87,17 @@ export const ClockIcon = (props: IconProps) => (
     <path d="M12 7v5l3 2" />
   </Icon>
 );
-export const CloudCheckIcon = (props: IconProps) => (
-  <Icon {...props}>
-    <path d="M7 18a4 4 0 0 1-.5-7.97A5.5 5.5 0 0 1 17.2 9.5 3.5 3.5 0 0 1 17 18z" />
-    <path d="M9 13.5l2 2 4-4" />
-  </Icon>
-);
 export const CloudUpIcon = (props: IconProps) => (
   <Icon {...props}>
     <path d="M7 18a4 4 0 0 1-.5-7.97A5.5 5.5 0 0 1 17.2 9.5 3.5 3.5 0 0 1 17 18z" />
     <path d="M12 16v-5M9.5 13.5 12 11l2.5 2.5" />
+  </Icon>
+);
+/** Nothing changed: the same as before. */
+export const EqualCircleIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M8 10h8M8 14h8" />
   </Icon>
 );
 export const EyeOffIcon = (props: IconProps) => (
@@ -149,16 +150,15 @@ export const PlusIcon = (props: IconProps) => (
     <path d="M12 5v14M5 12h14" />
   </Icon>
 );
+export const RedoIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="m15 14 5-5-5-5" />
+    <path d="M20 9H10a6 6 0 0 0 0 12h3" />
+  </Icon>
+);
 export const RepeatIcon = (props: IconProps) => (
   <Icon {...props}>
     <path d="M17 2l4 4-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4M21 13v2a3 3 0 0 1-3 3H3" />
-  </Icon>
-);
-export const RobotIcon = (props: IconProps) => (
-  <Icon {...props}>
-    <path d="M12 4v3" />
-    <rect height="12" rx="2" width="16" x="4" y="7" />
-    <path d="M9 13v1M15 13v1" />
   </Icon>
 );
 export const SearchIcon = (props: IconProps) => (
@@ -190,9 +190,10 @@ export const SpinnerIcon = ({ className = '', ...props }: IconProps) => (
     <path d="M21 12a9 9 0 1 1-6.2-8.56" />
   </Icon>
 );
-export const TrashIcon = (props: IconProps) => (
+export const UndoIcon = (props: IconProps) => (
   <Icon {...props}>
-    <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5M14 11v5" />
+    <path d="M9 14 4 9l5-5" />
+    <path d="M4 9h10a6 6 0 0 1 0 12h-3" />
   </Icon>
 );
 export const UsersIcon = (props: IconProps) => (
@@ -239,6 +240,12 @@ export const PANE_ICON_PATHS = {
     <>
       <rect height="15" rx="2.5" width="18" x="3" y="5" />
       <path d="M3 9.5h18M8 3v3.5M16 3v3.5M15 9.5V20" />
+    </>
+  ),
+  dictation: (
+    <>
+      <rect height="12" rx="3" width="6" x="9" y="3" />
+      <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
     </>
   ),
   file: (

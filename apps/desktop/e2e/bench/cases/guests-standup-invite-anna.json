@@ -1,0 +1,16 @@
+{
+  "lang": "en",
+  "tags": ["guests"],
+  "turns": [
+    {
+      "input": { "text": "Standup tomorrow at 9:15, invite Anna" },
+      "expect": {
+        "title": "standup",
+        "dayOffset": 1,
+        "startTime": "09:15",
+        "endTime": "10:15",
+        "guests": { "choices": ["Anna"] }
+      }
+    }
+  ]
+}

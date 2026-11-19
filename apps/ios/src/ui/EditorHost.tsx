@@ -13,7 +13,6 @@ import {
 import {
   availableItemKinds,
   type BirthdayOccurrence,
-  eventIdentity,
   type EventRecord,
   type ItemKind,
   type NotificationTarget,
@@ -35,6 +34,7 @@ import {
   useState,
 } from 'react';
 import { AppState, Linking } from 'react-native';
+import { showAssistantAbsent } from '../assistantRuntime.ts';
 import { backendClient } from '../backend.ts';
 import { fixtureShareFromUrl, settingsCodeOf, takeIncomingShare } from '../incomingShare.ts';
 import { launchUrl } from '../launchUrl.ts';
@@ -45,13 +45,20 @@ import { deliverSettingsCode } from '../settingsCodeInbox.ts';
 import { CaptureBanner } from './CaptureBanner.tsx';
 import { EventDetailSheet } from './EventDetailSheet.tsx';
 import { EventEditSheet, type EditSeed } from './EventEditSheet.tsx';
+import { RouteFade } from './RouteFade.tsx';
 import { TaskFoldSheet } from './TaskFoldSheet.tsx';
 import {
+  cancelEditor,
   captureMayOpen,
   closeDeleted,
   closeEditor,
   type EditSheet,
+  inRoute,
   NONE,
+  routeDismissed,
+  type RouteSheet,
+  routeKey,
+  routeMove,
   type Sheet,
 } from './sheets.ts';
 
@@ -78,33 +85,28 @@ export interface EditorHost {
   readonly editEvent: (seed: EditSeed, options?: { readonly initialKind?: ItemKind }) => void;
   /** The task editor for an existing task. */
   readonly editTask: (task: TaskRecord) => void;
-  /**
-   * The Create lesson's editor, while it is up: its opening's number
-   * (each opening its own). The Getting started card shows folded for it,
-   * so the draft is in view between the card and the half-height sheet.
-   */
-  readonly lessonEditor: number | undefined;
-  /** The editor's form-sheet route went away (Cancel, Save, or a swipe down). */
+  /** The editor's route went away (Close, Cancel, Save, or a swipe down). */
   readonly onEditorDismissed: () => void;
-  /** The editor's form-sheet route mounted. */
+  /** The editor's route mounted. */
   readonly onEditorShown: () => void;
   readonly openBirthday: (birthday: BirthdayOccurrence) => void;
-  /** The read-first event view; its Edit button opens the editor. */
+  /** The read-first event view; its Edit button turns it into the editor. */
   readonly openEvent: (event: EventRecord) => void;
-  /** The editor on a new item: the quick-add field on top, the kind control, the form. */
+  /** The editor on a new item: an event on the Assistant, a to-do on its form. */
   readonly openNew: (request: NewItemRequest) => void;
   /** Settings — after the editor, when one is up behind the calendar's avatar, has closed. */
   readonly openSettings: () => void;
   /** A fold chip's list of today's overdue or undated tasks. */
   readonly openTaskFold: (fold: TaskFold, tasks: ReadonlyArray<TaskRecord>) => void;
-  /** What the editor route shows: the open editor (kept while the sheet slides away). */
-  readonly renderEditor: () => ReactNode;
+  /** What the editor route shows: the detail or the editor (kept while the sheet slides away). */
+  readonly renderRoute: () => ReactNode;
 }
 
 /**
  * How long a sheet takes to slide away: UIKit presents one at a time, so
- * the editor's form sheet waits for a page sheet (detail, birthday) to
- * leave, and a page sheet for the form sheet.
+ * the editor route's sheet waits for a page sheet (birthday, a fold's
+ * list) or its own previous one to leave, and a page sheet for the
+ * route's.
  */
 const PAGE_SHEET_DISMISS_MS = 450;
 const FORM_SHEET_DISMISS_MS = 500;
@@ -131,8 +133,8 @@ export const useEditorHost = (): EditorHost => {
 };
 
 /**
- * Owns every sheet of the app — the event detail, the editor (with the
- * quick-add field and the draft thread on top of a new item), the
+ * Owns every sheet of the app — the event detail and the editor (its
+ * Assistant and its form), which share the editor route's sheet, the
  * birthday detail, a fold chip's task list — and the capture model behind the share sheet and deep
  * links, whose events open the editor as one thread of drafts, so the
  * Calendar and Tasks tabs open the same sheets without owning them.
@@ -146,48 +148,73 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
   const taskLists = useTaskLists();
   const updateOnboarding = useUpdateOnboarding();
 
-  // The editor route follows the state: pushed when an editor opens (half
-  // height for a new item, full for an existing one), popped when the
-  // state leaves the editor. The route renders `routeSheet`, which stays
-  // until the route is gone, so the sheet slides away with its content. A
-  // new editor while the route is up (a slot drawn behind a half sheet)
-  // only swaps the content.
-  const [routeSheet, setRouteSheet] = useState<EditSheet | null>(null);
+  // The editor route follows the state: pushed when a detail or an editor
+  // opens, popped when the state leaves both. The route renders
+  // `routeSheet`, which stays until the route is gone, so the sheet slides
+  // away with its content. A detail or an editor while the route is up only
+  // swaps the content (`RouteFade`): Edit turns the detail into its editor
+  // in the same sheet.
+  const [routeSheet, setRouteSheet] = useState<RouteSheet | null>(null);
   // Render-phase state adjustment (React's "derive from props" pattern):
-  // the route shows the editor the state names, and keeps it after.
-  if (sheet.kind === 'edit' && routeSheet !== sheet) {
+  // the route shows what the state names, and keeps it after.
+  if (inRoute(sheet) && routeSheet !== sheet) {
     setRouteSheet(sheet);
   }
   const presented = useRef(false);
-  const previousKind = useRef<Sheet['kind']>('none');
-  // When the last page sheet (detail, birthday, a fold's list) has slid away.
+  const previousSheet = useRef<Sheet>(NONE);
+  // When the last page sheet (birthday, a fold's list) has slid away.
   const pageSheetGone = useRef(0);
-  // A route to push once the form sheet is gone (Settings, asked for from
-  // behind a half-height editor); any sheet asked for meanwhile takes over.
+  // A route to push once the editor's sheet is gone (Settings, asked for
+  // while it is up); any sheet asked for meanwhile takes over.
   const afterFormSheet = useRef<(() => void) | undefined>(undefined);
+  // The route unmounts as its sheet starts to slide away, and the sheet
+  // takes a while more to go: a page sheet opened meanwhile (a
+  // notification's event, one tapped right after Cancel) waits until it
+  // is gone, and so does the route's next push.
+  const [formSheetLeaving, setFormSheetLeaving] = useState(false);
+  const formSheetTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(formSheetTimer.current), []);
+  const routeMounted = useRef(false);
+  // The host popped the route and it has not unmounted yet: its dismissal
+  // is the host's own, not a swipe down.
+  const popping = useRef(false);
   useEffect(() => {
-    const from = previousKind.current;
-    previousKind.current = sheet.kind;
-    if (sheet.kind !== 'none') {
-      afterFormSheet.current = undefined;
-    }
-    if (from === 'detail' || from === 'birthday' || from === 'fold') {
-      pageSheetGone.current = Date.now() + PAGE_SHEET_DISMISS_MS;
-    }
-    if (sheet.kind !== 'edit') {
-      if (presented.current) {
-        presented.current = false;
-        router.back();
+    const from = previousSheet.current;
+    if (from !== sheet) {
+      previousSheet.current = sheet;
+      if (sheet.kind !== 'none') {
+        afterFormSheet.current = undefined;
       }
+      if (from.kind === 'birthday' || from.kind === 'fold') {
+        pageSheetGone.current = Date.now() + PAGE_SHEET_DISMISS_MS;
+      }
+    }
+    const move = routeMove(sheet, {
+      leaving: popping.current || formSheetLeaving,
+      presented: presented.current,
+    });
+    if (move === 'pop') {
+      presented.current = false;
+      // A mounted route says when it has gone; one popped before it
+      // mounted never will.
+      popping.current = routeMounted.current;
+      router.back();
       return;
     }
-    if (presented.current) {
+    if (move === 'wait') {
+      // This runs again once the old sheet has gone (`formSheetLeaving`).
+      // The state moving on first (a fold's chip, a share, Settings): the
+      // route shows nothing it asked for, so `formSheetGone` can come
+      // true. A run for the same sheet restores it (render phase above).
+      const waiting = sheet;
+      return () => setRouteSheet((current) => (current === waiting ? null : current));
+    }
+    if (move !== 'push') {
       return;
     }
     presented.current = true;
     const opened = sheet;
-    const detent = opened.seed.event || opened.task ? 'full' : 'half';
-    const push = () => router.push({ params: { detent }, pathname: '/editor' });
+    const push = () => router.push('/editor');
     const wait = pageSheetGone.current - Date.now();
     if (wait <= 0) {
       push();
@@ -208,23 +235,19 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
         setRouteSheet((current) => (current === opened ? null : current));
       }
     };
-  }, [sheet]);
-  // The route unmounts as its sheet starts to slide away; a page sheet
-  // opened meanwhile (a tap on an event behind a half-height editor) waits
-  // until it is gone.
-  const [formSheetLeaving, setFormSheetLeaving] = useState(false);
-  const formSheetTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  useEffect(() => () => clearTimeout(formSheetTimer.current), []);
-  const routeMounted = useRef(false);
+  }, [formSheetLeaving, sheet]);
   const onEditorShown = useCallback(() => {
     routeMounted.current = true;
   }, []);
-  // Cancel, Save or a swipe down: the route went away, and the editor with it.
+  // Close, Cancel, Save or a swipe down: the route went away, and the
+  // detail or editor with it.
   const onEditorDismissed = useCallback(() => {
+    const swiped = !popping.current;
+    popping.current = false;
     routeMounted.current = false;
     presented.current = false;
     setRouteSheet(null);
-    setSheet((current) => (current.kind === 'edit' ? NONE : current));
+    setSheet(routeDismissed(swiped));
     setFormSheetLeaving(true);
     clearTimeout(formSheetTimer.current);
     formSheetTimer.current = setTimeout(() => {
@@ -235,10 +258,10 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
     }, FORM_SHEET_DISMISS_MS);
   }, []);
 
-  // A page sheet waits until the editor's form sheet is gone: a tap on the
-  // calendar behind a half-height editor opens the detail while the route
-  // is still sliding away, and UIKit presents one sheet at a time. A
-  // finished capture's thread waits for it too.
+  // A page sheet waits until the route's sheet is gone: a birthday asked
+  // for as the editor closes would be presented while the route is still
+  // sliding away, and UIKit presents one sheet at a time. A finished
+  // capture's thread waits for it too.
   const formSheetGone = routeSheet === null && !formSheetLeaving;
 
   // What a capture found opens the editor as one thread of drafts on the
@@ -285,6 +308,7 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
     setCaptured({
       kind: 'edit',
       opening: nextOpening(),
+      opensOn: 'assistant',
       seed: {
         initialDate: Temporal.PlainDate.from(first.date),
         thread: {
@@ -323,8 +347,8 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
   // A settings code from outside a reader: a share, or the Camera app's
   // "Open in Solunivo" (the code parses as a `solunivo:` URL). The inbox
   // brings up the right reader (settingsCodeInbox.ts) once the sheet that
-  // was open has gone: Settings › Read Code pushed over a half-height
-  // editor would be what the editor's own dismissal pops (as for
+  // was open has gone: Settings › Read Code pushed over the editor would
+  // be what the editor's own dismissal pops (as for
   // `openSettings`), and UIKit presents one sheet at a time. With nothing
   // open it still waits a task: a share's URL also sends the router to `/`
   // (`+native-intent.tsx`) from expo-router's own URL listener, and that
@@ -344,7 +368,7 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
       setSheet(NONE);
       return;
     }
-    const pageSheet = sheet.kind === 'detail' || sheet.kind === 'birthday' || sheet.kind === 'fold';
+    const pageSheet = sheet.kind === 'birthday' || sheet.kind === 'fold';
     setSheet(NONE);
     setTimeout(deliver, pageSheet ? PAGE_SHEET_DISMISS_MS : 0);
   });
@@ -367,8 +391,13 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
   // state back to a fresh install's, onboarding switched on for this
   // launch whatever the bundle says, and the setup presented — over any
   // sheet, as a share is.
-  const onOnboardingFixture = useEffectEvent(() => {
+  const onOnboardingFixture = useEffectEvent((url: string) => {
     forceOnboarding();
+    // `?assistant=absent`: as on a device without the Assistant's model yet,
+    // so the Create lesson runs its demo (flow 28).
+    if (/[?&]assistant=absent\b/i.test(url)) {
+      showAssistantAbsent();
+    }
     setSheet(NONE);
     // Guarded: a failed reset is a toast, and the setup still goes up.
     void updateOnboarding({ reset: 'all' }).then(() => router.push('/setup'));
@@ -394,7 +423,7 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
         return;
       }
       if (modelFixture && isOnboardingFixtureUrl(url)) {
-        onOnboardingFixture();
+        onOnboardingFixture(url);
         return;
       }
       const fixtureSource = modelFixture ? fixtureShareFromUrl(url) : undefined;
@@ -449,6 +478,70 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
   });
   useEffect(() => subscribeNotificationTaps((target) => onNotificationTap(target)), []);
 
+  // The detail turns into its editor in place (Edit, Convert), and the
+  // editor's Cancel turns it back (`backTo`); Save and Delete close the
+  // sheet. Keyed by `routeKey` (`RouteFade`): the detail by its event's
+  // identity, so it follows its event, and a reminder tapped for the
+  // occurrence it shows (edited on its own since, under a new id) leaves
+  // it up; an editor per opening, since it seeds its form fields (and its
+  // thread) from its seed once, on mount. An editor closes only its own
+  // opening: a write's reply can land after the sheet moved on
+  // (`closeEditor`).
+  const routeBody = (shown: RouteSheet) => {
+    if (shown.kind === 'detail') {
+      return (
+        <EventDetailSheet
+          calendars={calendars}
+          event={shown.event}
+          // Only itself: it stays mounted while the route slides away, and
+          // its event going then must not close a sheet asked for since.
+          onClose={() => setSheet((current) => (current === shown ? NONE : current))}
+          onConvert={(event, scope) =>
+            setSheet({
+              backTo: event,
+              initialKind: defaultTodoKind(taskLists),
+              kind: 'edit',
+              opening: nextOpening(),
+              seed: {
+                event,
+                initialDate: Temporal.Now.plainDateISO(timeZone),
+                initialScope: scope,
+              },
+            })
+          }
+          onDeleted={(scope) => setSheet(closeDeleted(shown.event, scope))}
+          onEdit={(event) =>
+            setSheet({
+              backTo: event,
+              kind: 'edit',
+              opening: nextOpening(),
+              seed: { event, initialDate: Temporal.Now.plainDateISO(timeZone) },
+            })
+          }
+          timeZone={timeZone}
+        />
+      );
+    }
+    return (
+      <EventEditSheet
+        calendars={calendars}
+        initialKind={shown.initialKind}
+        onCancel={() => setSheet(cancelEditor(shown.opening))}
+        onClose={() => setSheet(closeEditor(shown.opening))}
+        // Its swipe guard holds only while the sheet names this opening:
+        // the host's own close (Save, Delete, a share) goes through.
+        open={sheet.kind === 'edit' && sheet.opening === shown.opening}
+        opensOn={shown.opensOn}
+        presentation="route"
+        seed={shown.seed}
+        task={shown.task}
+        taskLists={taskLists}
+        taskSeed={shown.taskSeed}
+        timeZone={timeZone}
+      />
+    );
+  };
+
   const host: EditorHost = {
     closeAll: () => setSheet(NONE),
     editEvent: (seed, options) =>
@@ -456,10 +549,11 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
         initialKind: options?.initialKind,
         kind: 'edit',
         opening: nextOpening(),
+        // The Create lesson is the Assistant's; a slot drawn by hand, or an event, opens on its form.
+        opensOn: seed.lesson === undefined ? undefined : 'assistant',
         seed,
       }),
     editTask,
-    lessonEditor: routeSheet?.seed.lesson === undefined ? undefined : routeSheet.opening,
     onEditorDismissed,
     onEditorShown,
     openBirthday: (birthday) => setSheet({ birthday, kind: 'birthday' }),
@@ -472,14 +566,16 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
         initialKind: resolved,
         kind: 'edit',
         opening: nextOpening(),
+        // The calendar's "+" opens on the Assistant; a to-do's, on its form: a title is all it needs.
+        opensOn: resolved === 'event' ? 'assistant' : undefined,
         seed: { initialDate: focused },
         taskSeed: resolved === 'event' ? undefined : { dated, listKey },
       });
     },
-    // Settings is a route of its own: pushed over a half-height editor it
-    // would stack on the sheet, and the editor's pop would take Settings
-    // instead. The avatar closes the editor first — Cancel, as a tap on an
-    // event behind it is — and Settings opens once the sheet has gone.
+    // Settings is a route of its own: pushed over the editor it would
+    // stack on the sheet, and the editor's pop would take Settings
+    // instead. So the editor closes first — Cancel — and Settings opens
+    // once the sheet has gone.
     openSettings: () => {
       if (afterFormSheet.current) {
         return;
@@ -490,29 +586,15 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
         setSheet(NONE);
         return;
       }
-      if (sheet.kind === 'edit') {
+      if (inRoute(sheet)) {
         setSheet(NONE);
       }
       router.push('/settings');
     },
     openTaskFold: (fold, tasks) => setSheet({ fold, kind: 'fold', tasks }),
-    // Keyed per opening: an editor seeds its form fields (and its thread)
-    // from its seed once, on mount. It closes only its own opening: a
-    // write's reply can land after the sheet moved on (`closeEditor`).
-    renderEditor: () =>
+    renderRoute: () =>
       routeSheet === null ? null : (
-        <EventEditSheet
-          calendars={calendars}
-          initialKind={routeSheet.initialKind}
-          key={`edit:${String(routeSheet.opening)}`}
-          onClose={() => setSheet(closeEditor(routeSheet.opening))}
-          presentation="route"
-          seed={routeSheet.seed}
-          task={routeSheet.task}
-          taskLists={taskLists}
-          taskSeed={routeSheet.taskSeed}
-          timeZone={timeZone}
-        />
+        <RouteFade item={routeSheet} keyOf={routeKey} render={routeBody} />
       ),
   };
   const close = host.closeAll;
@@ -534,38 +616,6 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
   return (
     <EditorHostContext.Provider value={host}>
       {children}
-      {sheet.kind === 'detail' && formSheetGone ? (
-        <EventDetailSheet
-          calendars={calendars}
-          event={sheet.event}
-          // By identity: the sheet follows its event, and a reminder tapped
-          // for the occurrence it shows (edited on its own since, under a
-          // new id) leaves it up.
-          key={`detail:${eventIdentity(sheet.event)}`}
-          onClose={close}
-          onConvert={(event, scope) =>
-            setSheet({
-              initialKind: defaultTodoKind(taskLists),
-              kind: 'edit',
-              opening: nextOpening(),
-              seed: {
-                event,
-                initialDate: Temporal.Now.plainDateISO(timeZone),
-                initialScope: scope,
-              },
-            })
-          }
-          onDeleted={(scope) => setSheet(closeDeleted(sheet.event, scope))}
-          onEdit={(event) =>
-            setSheet({
-              kind: 'edit',
-              opening: nextOpening(),
-              seed: { event, initialDate: Temporal.Now.plainDateISO(timeZone) },
-            })
-          }
-          timeZone={timeZone}
-        />
-      ) : null}
       {birthdaySheet}
       {sheet.kind === 'fold' && formSheetGone ? (
         <TaskFoldSheet

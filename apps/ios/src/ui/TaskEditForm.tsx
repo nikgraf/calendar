@@ -1,3 +1,4 @@
+import { use } from 'react';
 import type { useTaskEditorModel } from '@calendar/app-state';
 import type { TaskRecord } from '@calendar/core';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -8,6 +9,7 @@ import { FormScroll } from './FormScroll.tsx';
 import { ActionRow, FieldRow, Section } from './GroupedList.tsx';
 import { DueRow, NoDueDate } from './NoDueDate.tsx';
 import { TaskListPicker } from './TaskListPicker.tsx';
+import { SwitchAnchorContext } from './assistant/useViewSwitch.ts';
 
 /**
  * The task half of EventEditSheet (mode === 'task'), as grouped cards in
@@ -27,6 +29,8 @@ export function TaskEditForm({
   taskModel: ReturnType<typeof useTaskEditorModel>;
 }) {
   const styles = useSheetStyles();
+  // The title the form rises to from the Assistant's card (`useViewSwitch`).
+  const anchors = use(SwitchAnchorContext);
   return (
     <FormScroll bare={bare} contentStyle={styles.content}>
       {taskModel.error ? (
@@ -40,6 +44,7 @@ export function TaskEditForm({
             autoFocus={autoFocusTitle && !task}
             onChangeText={taskModel.setTitle}
             placeholder="Title"
+            ref={anchors?.form}
             testID="task-title"
             value={taskModel.title}
           />

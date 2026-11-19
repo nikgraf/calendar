@@ -2,51 +2,95 @@ import {
   type EditorConfirmRequest,
   type EditorSeed,
   type EditorSourceKind,
+  type EditorView,
   editorTitle,
   useMarkLesson,
+  useQuickAddModel,
   useThreadEditor,
   type TaskEditorSeed,
+  type ViewSwitch,
+  viewMounted,
+  viewShown,
 } from '@calendar/app-state';
 import {
   type BirthdayOccurrence,
   type CalendarInfo,
   type ItemKind,
+  lessonDemoNext,
+  type LessonId,
   type TaskListInfo,
   type TaskRecord,
 } from '@calendar/core';
-import { useEffect, useEffectEvent, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useEffectEvent, useRef, useState } from 'react';
 import {
+  AccessibilityInfo,
   Alert,
   Keyboard,
   Modal,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
   Pressable,
   SafeAreaView,
   ScrollView,
+  StyleSheet,
   Text,
   View,
-  type ScrollViewInstance,
+  type ViewStyle,
 } from 'react-native';
+import Animated, { type AnimatedStyle } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { speech } from '../speech.ts';
 import { backendClient } from '../backend.ts';
-import { languageModel } from '../model.ts';
+import {
+  type AssistantModelState,
+  lessonDemoModel,
+  lessonModelCopy,
+  type ModelStatus,
+  PUBLISHED_MODEL,
+  statusOf,
+  tunedReader,
+} from '@calendar/ai';
+import type { AssistantDownload } from '../assistantDownload.ts';
+import {
+  assistantDownload,
+  assistantReader,
+  useAssistantModelState,
+  useFinder,
+} from '../assistantRuntime.ts';
+import { modelFixture } from '../model.ts';
+import { AssistantBar, type BarDemo, demoHoldsBar } from './assistant/AssistantBar.tsx';
+import { AssistantModelNotice } from './assistant/AssistantModelNotice.tsx';
+import { AssistantView } from './assistant/AssistantView.tsx';
+import { DraftPager } from './assistant/DraftPager.tsx';
+import { PILLS_SHOWN, pillTuckAfter } from './assistant/pillTuck.ts';
+import { StepPill } from './assistant/StepPill.tsx';
+import { TuckAway } from './assistant/TuckAway.tsx';
+import { useKeyboardInset } from './assistant/useKeyboardInset.ts';
+import { UseStepCard } from './assistant/UseStepCard.tsx';
+import { SwitchAnchorContext, useViewSwitch } from './assistant/useViewSwitch.ts';
+import { SwitchCapsule } from './assistant/SwitchCapsule.tsx';
 import { BirthdayDetail } from './BirthdayDetail.tsx';
-import { DraftThreadSection } from './DraftThreadSection.tsx';
+import { SwipeGuard, useDiscard } from './discardGuard.tsx';
 import { useSheetStyles } from './editSheetShared.ts';
-import { useEditorSheetAtHalf } from './editorSheet.ts';
 import { EventEditForm } from './EventEditForm.tsx';
 import { FieldFlashContext, FlashView } from './FlashView.tsx';
 import { Row, Section } from './GroupedList.tsx';
 import { LessonBanner } from './lesson/LessonBanner.tsx';
-import { QuickAddBar } from './QuickAddBar.tsx';
 import { ReminderEditForm } from './ReminderEditForm.tsx';
 import { SegmentedControl } from './SegmentedControl.tsx';
 import { TaskCheck } from './TaskCheck.tsx';
 import { TaskEditForm } from './TaskEditForm.tsx';
-import { BOX_FONT_SCALE } from './theme.ts';
+import { BOX_FONT_SCALE, groupedGround, useTheme } from './theme.ts';
 
 /** An existing item, a prefilled slot, or a thread of drafts (a capture's events). */
 export type EditSeed = EditorSeed;
 
-const CHANGE_PLACEHOLDER = 'Change it: “at 8”, “Thursday instead”…';
+export type { EditorView } from '@calendar/app-state';
+
+/** How far above the sheet's bottom edge the form's pills float, over the home indicator. */
+const PILL_GAP = 10;
+/** A pill's height, and the gap to the "Use this" card above it. */
+const PILL_HEIGHT = 44;
 
 const capitalize = (word: string) => word.charAt(0).toUpperCase() + word.slice(1);
 
@@ -107,26 +151,550 @@ export const confirmEditorRequest = (request: EditorConfirmRequest): Promise<boo
     ]);
   });
 
+type Editor = ReturnType<typeof useThreadEditor>;
+
+/** The editor is writing: its own save or delete, or a batch. */
+const isBusy = ({ eventModel, kinds, taskModel, write }: Editor): boolean =>
+  (kinds.mode === 'todo' ? taskModel.busy : eventModel.busy) || write.busy;
+
 /**
- * Modal shell for creating/editing events, tasks and reminders. The
- * header that stays put holds the Cancel · title · Save row and, for a
- * new item, the quick-add field with its thread (the turns with Undo,
- * the free slots, the pager and "Add all"); the form scrolls under it,
- * the Event | Task | Reminder control (only the kinds something can
- * hold) at its top. A new item is a thread of drafts, as on the desktop
- * (`useThreadEditor`): the first phrase makes the draft(s), every later
- * phrase in the same field changes them, and Save on one of several
- * writes it and moves to the next. The forms live in EventEditForm /
- * TaskEditForm / ReminderEditForm as grouped cards; this file owns the
- * header and the thread editor (both models stay mounted, so state
- * survives a kind flip).
+ * The Create lesson, around an editor: the first phrase taken, or a
+ * save, ticks it as done; the editor going away without either (Cancel,
+ * Skip, a swipe down) ticks it as skipped. Once tried, the banner keeps
+ * its hint over the draft but loses Skip, which closes the editor — with
+ * the draft in it.
  */
+const useLessonTry = (lesson: EditSeed['lesson']) => {
+  const markLesson = useMarkLesson();
+  const tried = useRef(false);
+  const [open, setOpen] = useState(lesson !== undefined);
+  const done = () => {
+    if (lesson && !tried.current) {
+      tried.current = true;
+      setOpen(false);
+      void markLesson(lesson, 'done');
+    }
+  };
+  const leave = useEffectEvent(() => {
+    if (lesson && !tried.current) {
+      void markLesson(lesson, 'skipped');
+    }
+  });
+  useEffect(() => () => leave(), []);
+  return { done, open };
+};
+
+/** The header that stays put: Cancel · title · Save, the two as capsules a thumb finds. */
+function EditorHeader({
+  birthday,
+  editor,
+  onClose,
+  title,
+}: {
+  readonly birthday: boolean;
+  readonly editor: Editor;
+  readonly onClose: () => void;
+  readonly title: string;
+}) {
+  const styles = useSheetStyles();
+  const { eventModel, kinds, previewing, taskModel, write } = editor;
+  const busy = isBusy(editor);
+  const nothingToSave =
+    birthday ||
+    (kinds.mode === 'todo' && taskModel.readOnly) ||
+    (kinds.mode === 'event' && eventModel.readOnly);
+  // An older step on show is kept or left before anything is written.
+  const saveOff = write.busy || previewing;
+  return (
+    <View style={styles.editorHeader}>
+      <View style={styles.capsuleSide}>
+        <Pressable
+          accessibilityRole="button"
+          onPress={onClose}
+          style={styles.capsule}
+          testID="editor-cancel"
+        >
+          {/* A birthday's reminder chips save as they change: nothing to cancel. */}
+          <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.capsuleLabel}>
+            {birthday ? 'Done' : 'Cancel'}
+          </Text>
+        </Pressable>
+      </View>
+      <Text maxFontSizeMultiplier={BOX_FONT_SCALE} numberOfLines={1} style={styles.title}>
+        {title}
+      </Text>
+      <View style={styles.capsuleSide}>
+        {nothingToSave ? null : (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ busy, disabled: saveOff }}
+            disabled={saveOff}
+            onPress={() => void (kinds.mode === 'todo' ? taskModel.save() : eventModel.save())}
+            style={[styles.capsule, styles.capsulePrimary, (busy || previewing) && styles.busy]}
+            testID="event-save"
+          >
+            <Text
+              maxFontSizeMultiplier={BOX_FONT_SCALE}
+              style={[styles.capsuleLabel, styles.capsulePrimaryLabel]}
+            >
+              Save
+            </Text>
+          </Pressable>
+        )}
+      </View>
+    </View>
+  );
+}
+
+/**
+ * Event | Task | Reminder, only the kinds something can hold, at the
+ * form's top: a choice made once, so it scrolls with the form. Left out
+ * for a birthday, a read-only item and where there is one kind.
+ */
+function KindControl({
+  birthday,
+  editor,
+  sourceKind,
+}: {
+  readonly birthday: boolean;
+  readonly editor: Editor;
+  readonly sourceKind: EditorSourceKind;
+}) {
+  const styles = useSheetStyles();
+  const { eventModel, kinds, marks, previewing, taskModel } = editor;
+  const { available, convertBlocked, kind, switchTo } = kinds;
+  const busy = isBusy(editor);
+  const show =
+    !birthday &&
+    available.length > 1 &&
+    !(sourceKind === 'event' && eventModel.readOnly) &&
+    !(sourceKind === 'task' && taskModel.readOnly);
+  if (!show) {
+    return null;
+  }
+  return (
+    <View style={styles.topControl}>
+      {/* A step that made the item the other kind: the control stays marked. */}
+      <FlashView
+        bleedX={4}
+        bleedY={4}
+        flash={marks?.fields.has('kind') ? marks.key : null}
+        lasting
+        style={styles.modeFlash}
+      >
+        <SegmentedControl
+          accessibilityLabel="Kind"
+          ground
+          grow
+          onChange={(next) => void switchTo(next)}
+          options={available.map((option) => ({
+            disabled: busy || previewing || (option !== 'event' && convertBlocked),
+            label: KIND_LABELS[option],
+            testID: `mode-${option}`,
+            value: option,
+          }))}
+          value={kind}
+        />
+      </FlashView>
+    </View>
+  );
+}
+
+/**
+ * The fields: a to-do's completion row, then the form its kind and
+ * provider pick — a Reminders list exposes time, priority, alert, repeat
+ * and URL; a Google list gets the plain title, date and notes; the kind
+ * control moves between the providers, the list picker stays within one.
+ * The fields the step on show changed stay marked (`FieldFlash` in the
+ * forms). A new item's title does not take the focus: the keyboard would
+ * cover the form the Assistant, or a tap, just brought up.
+ */
+function EditorForm({
+  bare,
+  birthday,
+  editor,
+  flipped,
+  sourceKind,
+  task,
+  timeZone,
+}: {
+  readonly bare: boolean;
+  readonly birthday: BirthdayOccurrence | undefined;
+  readonly editor: Editor;
+  /** Mounted by a switch from the Assistant: the keyboard must not rise under the motion. */
+  readonly flipped: boolean;
+  readonly sourceKind: EditorSourceKind;
+  readonly task: TaskRecord | undefined;
+  readonly timeZone: string;
+}) {
+  const { eventModel, kinds, marks, taskModel } = editor;
+  const busy = isBusy(editor);
+  const done = task?.status === 'completed';
+  const completionTitle = done ? 'Mark as Incomplete' : 'Mark as Done';
+  const { toggleCompletion } = taskModel;
+  const confirmDiscard = () =>
+    new Promise<boolean>((resolve) => {
+      Alert.alert('Discard unsaved edits?', 'Changing completion closes this editor.', [
+        { onPress: () => resolve(false), style: 'cancel', text: 'Keep Editing' },
+        { onPress: () => resolve(true), style: 'destructive', text: completionTitle },
+      ]);
+    });
+  const autoFocusTitle = sourceKind !== 'new' && !flipped;
+  const fields = birthday ? (
+    <BirthdayDetail occurrence={birthday} timeZone={timeZone} />
+  ) : kinds.mode !== 'todo' ? (
+    <EventEditForm autoFocusTitle={autoFocusTitle} bare={bare} model={eventModel} />
+  ) : taskModel.provider === 'apple' ? (
+    <ReminderEditForm
+      autoFocusTitle={autoFocusTitle}
+      bare={bare}
+      task={task}
+      taskModel={taskModel}
+    />
+  ) : (
+    <TaskEditForm autoFocusTitle={autoFocusTitle} bare={bare} task={task} taskModel={taskModel} />
+  );
+  return (
+    <FieldFlashContext value={marks}>
+      {kinds.mode === 'todo' && toggleCompletion ? (
+        <Section tight>
+          <Row
+            accessibilityLabel="Completed"
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: done }}
+            disabled={busy}
+            leading={<TaskCheck checked={done} size="list" />}
+            // Anything not saved yet is asked about, as Cancel asks
+            // (`unsaved`): an edit by hand, a phrase to the Assistant.
+            onPress={() => void toggleCompletion(editor.unsaved ? confirmDiscard : undefined)}
+            testID="task-editor-completion"
+            title={completionTitle}
+          />
+        </Section>
+      ) : null}
+      {fields}
+    </FieldFlashContext>
+  );
+}
+
+/** Whether VoiceOver is on: what hides on a gesture stays put for it. */
+const useScreenReader = (): boolean => {
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    let gone = false;
+    void AccessibilityInfo.isScreenReaderEnabled().then((enabled) => {
+      if (!gone) {
+        setOn(enabled);
+      }
+    });
+    const changed = AccessibilityInfo.addEventListener('screenReaderChanged', setOn);
+    return () => {
+      gone = true;
+      changed.remove();
+    };
+  }, []);
+  return on;
+};
+
+/**
+ * Whether the capsule between the views has room: never with the
+ * keyboard up; in the Assistant once the model's state is known (the bar
+ * is there then) and while its field is closed; over the form while its
+ * pills are (they tuck away while it is scrolled down, but not with an
+ * older step on show or under VoiceOver).
+ */
+const capsuleShown = ({
+  demoBar,
+  keyboard,
+  previewing,
+  screenReader,
+  shown,
+  status,
+  tucked,
+  typing,
+}: {
+  /** The Create lesson's demo holds the bar (its phrase, or the way on to the Form). */
+  readonly demoBar: boolean;
+  readonly keyboard: number;
+  readonly previewing: boolean;
+  readonly screenReader: boolean;
+  readonly shown: EditorView;
+  readonly status: ModelStatus | null;
+  readonly tucked: boolean;
+  readonly typing: boolean;
+}): boolean =>
+  keyboard === 0 &&
+  (shown === 'assistant'
+    ? status !== null && !typing && !demoBar
+    : !tucked || previewing || screenReader);
+
+/**
+ * One of the two views, filling the editor below its header. While the
+ * switch runs both are there, one over the other; the one leaving takes
+ * no touch and is out of VoiceOver's reach (the outgoing title has been
+ * measured by then).
+ */
+function SwitchLayer({
+  children,
+  state,
+  style,
+  view,
+}: {
+  readonly children: ReactNode;
+  readonly state: ViewSwitch;
+  readonly style: AnimatedStyle<ViewStyle>;
+  readonly view: EditorView;
+}) {
+  const leaving = state.kind === 'flight' && state.from === view;
+  return (
+    <Animated.View
+      accessibilityElementsHidden={leaving}
+      importantForAccessibility={leaving ? 'no-hide-descendants' : 'auto'}
+      pointerEvents={leaving ? 'none' : 'auto'}
+      style={[StyleSheet.absoluteFill, style]}
+    >
+      {children}
+    </Animated.View>
+  );
+}
+
+/**
+ * The form as the route's view: the fields scrolling, and over their
+ * bottom edge, by the thumb, the steps on the left, the way back to the
+ * Assistant on the right and, above them, an older step on show with
+ * "Use this". They get out of the way while the form is scrolled down
+ * and come back on a scroll up (`pillTuck.ts`), so what a scroll just
+ * brought up is in reach at once — a chip under the Assistant pill used
+ * to take the tap meant for it; not while an older step is on show
+ * (its "Use this" is the way on) and not under VoiceOver. Nothing floats
+ * while the keyboard is up: there is no room for it over the field being
+ * typed into.
+ */
+function FormView({
+  assists,
+  banner,
+  children,
+  contentStyle,
+  editor,
+  onTucked,
+}: {
+  readonly assists: boolean;
+  /** Above the fields: the lesson's frame (without the model, the form is where the lesson opens). */
+  readonly banner: ReactNode;
+  readonly children: ReactNode;
+  /** The switch's motion for the fields (`useViewSwitch`): they ride, the pills over them stay put. */
+  readonly contentStyle: AnimatedStyle<ViewStyle>;
+  readonly editor: Editor;
+  /** The pills went out of the way, or came back: the sheet's capsule goes with them. */
+  readonly onTucked: (tucked: boolean) => void;
+}) {
+  const styles = useSheetStyles();
+  const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
+  const keyboard = useKeyboardInset();
+  const screenReader = useScreenReader();
+  const { previewing, steps } = editor;
+  const pillBottom = insets.bottom + PILL_GAP;
+  const ground = groupedGround(colors);
+  const floating = keyboard === 0 && (assists || steps.of > 0);
+  // Where the scroll stands against its last turn is a ref: only a flip renders.
+  const tuck = useRef(PILLS_SHOWN);
+  const [tucked, setTucked] = useState(false);
+  const onScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    tuck.current = pillTuckAfter(
+      tuck.current,
+      contentOffset.y,
+      contentSize.height - layoutMeasurement.height,
+    );
+    setTucked(tuck.current.tucked);
+    onTucked(tuck.current.tucked);
+  };
+  // The next form starts at its top, its pills shown.
+  useEffect(() => () => onTucked(false), [onTucked]);
+  return (
+    <View style={styles.route}>
+      <Animated.View style={[styles.route, contentStyle]}>
+        <ScrollView
+          automaticallyAdjustKeyboardInsets
+          contentContainerStyle={floating ? styles.floatingRoom : undefined}
+          keyboardShouldPersistTaps="handled"
+          onScroll={onScroll}
+          scrollEventThrottle={16}
+        >
+          {banner}
+          {/* An older step on show is looked at, not edited. */}
+          <View pointerEvents={previewing ? 'none' : 'auto'}>{children}</View>
+        </ScrollView>
+      </Animated.View>
+      {floating ? (
+        <TuckAway tucked={tucked && !previewing && !screenReader}>
+          {/* The rows under the pills recede into the ground, so the pills read. */}
+          <View
+            pointerEvents="none"
+            style={[
+              styles.pillFade,
+              {
+                backgroundImage: `linear-gradient(to bottom, ${ground}00, ${ground} 62%)`,
+                height: pillBottom + PILL_HEIGHT + (previewing ? 124 : 44),
+              },
+            ]}
+          />
+          {previewing ? (
+            <UseStepCard bottom={pillBottom + PILL_HEIGHT + 12} editor={editor} />
+          ) : null}
+          <StepPill bottom={pillBottom} steps={steps} />
+        </TuckAway>
+      ) : null}
+    </View>
+  );
+}
+
+/**
+ * The shell for creating and editing events, tasks and reminders: a
+ * header that stays put (Cancel · title · Save, as capsules), then one
+ * of two views of the same draft, as on the desktop (`useThreadEditor`).
+ *
+ * Assistant is a conversation (`AssistantView`): a phrase, spoken or
+ * typed, makes the draft(s) or changes them; each answer is the item as
+ * a card with what changed marked, and what the assistant has to ask (a
+ * place, a contact, a free slot) sits under the newest card. Its bar is
+ * at the bottom by the thumb: Type · the microphone · Form. Form is the
+ * fields, and needs no model: the Event | Task | Reminder control (only
+ * the kinds something can hold) and the grouped cards of EventEditForm /
+ * TaskEditForm / ReminderEditForm, with the way back to the Assistant
+ * and the steps floating over its bottom edge, out of the way while the
+ * form is scrolled down. The form rises out of the newest card and folds
+ * back into it (`useViewSwitch`): at rest one view is mounted, while the
+ * switch runs both are. The draft is the thread's, so nothing is lost in
+ * a flip, and dictation goes on behind the form until a field is edited
+ * by hand.
+ *
+ * The calendar's "+", a share and the Create lesson open on the
+ * Assistant — unless the model turns out not to be ready before anything
+ * was said, when the editor falls back to the Form once; a slot drawn on
+ * the grid, a to-do's "+" and a saved item open on the Form. A read-only
+ * item, a birthday and an editor opened to convert have the Form alone.
+ *
+ * A phrase, an edit by hand and a picked choice are the thread's steps.
+ * The pill steps back and forward through them; an older step on show is
+ * looked at, not edited — the form does not take touches, Save is off —
+ * until "Use this" keeps it (and lets the later steps go) or the newest
+ * is shown again. The fields the step on show changed stay marked. With
+ * several drafts (a share) the pager, Remove and "Add all" sit under the
+ * header in either view; Save on one of several writes it and moves to
+ * the next.
+ */
+
+/**
+ * The Create lesson while the Assistant's model is not on this iPhone:
+ * the real editor over v2's answers to the lesson's two phrases
+ * (`lessonDemo.ts`), until the model is ready.
+ */
+const demoReader = tunedReader(lessonDemoModel);
+
+/** The model's one action, from the Assistant's notice or the lesson's banner. */
+const runModelAction = (download: AssistantDownload, action: 'download' | 'mobile' | 'retry') => {
+  if (action === 'download') {
+    void download.agree('wifi');
+  } else if (action === 'mobile') {
+    void download.allowMobileData();
+  } else {
+    void download.retry();
+  }
+};
+
+/**
+ * A lesson's frame, over either view. In the Create lesson without the
+ * model (`model`, its state, given then and once the model came during
+ * the demo) it says what the Assistant is and offers the download, the
+ * demo standing in; once the model is here, that it is.
+ */
+function LessonFrame({
+  download,
+  id,
+  model,
+  onSkip,
+}: {
+  readonly download: AssistantDownload;
+  readonly id: LessonId;
+  readonly model: AssistantModelState | undefined;
+  readonly onSkip: (() => void) | undefined;
+}) {
+  const copy =
+    model === undefined
+      ? undefined
+      : lessonModelCopy(model, {
+          device: 'iPhone',
+          network: download.network(),
+          // The release's own size where the download cannot say (a build without the module).
+          size: download.size() ?? PUBLISHED_MODEL.bytes,
+        });
+  const offer = copy?.action;
+  return (
+    <LessonBanner
+      action={
+        offer === undefined
+          ? undefined
+          : { label: offer.label, onPress: () => runModelAction(download, offer.kind) }
+      }
+      id={id}
+      note={copy?.text}
+      onSkip={onSkip}
+      progress={copy?.progress}
+    />
+  );
+}
+
+type StepLine = ReturnType<typeof useThreadEditor>['steps']['line'];
+
+/** The phrases the thread has taken so far, oldest first (the demo goes by them). */
+const saidSoFar = (line: StepLine) =>
+  line.flatMap(({ step }) => (step.kind === 'phrase' ? [step.utterance] : []));
+
+/**
+ * The Create lesson's demo in the bar (`BarDemo`), while it runs: what
+ * it answers next — the lesson's phrase, then its change — kept in the
+ * field once the last one is taken (the first comes with the lesson's
+ * seed), so the pending line shows it as said.
+ */
+const useDemoBar = ({
+  demo,
+  formOnly,
+  line,
+  onForm,
+  setPhrase,
+}: {
+  readonly demo: boolean;
+  readonly formOnly: boolean;
+  readonly line: StepLine;
+  readonly onForm: () => void;
+  readonly setPhrase: (phrase: string) => void;
+}): BarDemo | undefined => {
+  const next = demo ? lessonDemoNext(saidSoFar(line)) : undefined;
+  useEffect(() => {
+    if (next !== undefined) {
+      setPhrase(next);
+    }
+  }, [next, setPhrase]);
+  if (!demo) {
+    return undefined;
+  }
+  if (next !== undefined) {
+    return { kind: 'phrase', phrase: next };
+  }
+  return formOnly ? { kind: 'form', onForm } : { kind: 'wait' };
+};
+
 export function EventEditSheet({
   birthday,
   calendars,
   initialKind,
+  onCancel,
   onClose,
   onSaved,
+  open = true,
+  opensOn = 'form',
   presentation = 'modal',
   seed,
   task,
@@ -139,12 +707,26 @@ export function EventEditSheet({
   calendars: ReadonlyArray<CalendarInfo>;
   /** The kind to open on: a to-do for the Tasks tab's "+", or the detail sheet's Convert. */
   initialKind?: ItemKind | undefined;
+  /**
+   * Cancel, where it does more than close: the editor the detail's Edit
+   * or Convert turned the detail into turns back into it. `onClose`
+   * otherwise.
+   */
+  onCancel?: (() => void) | undefined;
+  /** Closes the editor: Save and Delete once the write is through, and Cancel without `onCancel`. */
   onClose: () => void;
   /** Save went through, as an event or a task (capture marks its row added). */
   onSaved?: (() => void) | undefined;
   /**
+   * The host still shows this editor: its own closes since (Save, Delete,
+   * a share) are not swipes to hold (`useDiscard`).
+   */
+  open?: boolean | undefined;
+  /** The view to start on, where there are two. */
+  opensOn?: EditorView | undefined;
+  /**
    * 'modal': its own page sheet (the birthday detail). 'route': the body
-   * of the editor's form-sheet route (`app/editor.tsx`), which presents it.
+   * of the editor's route (`app/editor.tsx`), which presents it.
    */
   presentation?: 'modal' | 'route' | undefined;
   seed: EditSeed;
@@ -163,39 +745,28 @@ export function EventEditSheet({
       : seed.event
         ? 'event'
         : 'new';
-  // The Create lesson: the first phrase taken, or a save, ticks it as
-  // done; the editor going away without either (Cancel, Skip, a swipe
-  // down) ticks it as skipped.
-  const lesson = seed.lesson;
-  const markLesson = useMarkLesson();
-  const lessonTried = useRef(false);
-  // Once tried, the banner keeps its hint over the draft but loses Skip,
-  // which closes the editor — with the draft in it.
-  const [lessonOpen, setLessonOpen] = useState(lesson !== undefined);
-  const lessonDone = () => {
-    if (lesson && !lessonTried.current) {
-      lessonTried.current = true;
-      setLessonOpen(false);
-      void markLesson(lesson, 'done');
-    }
-  };
-  const leaveLesson = useEffectEvent(() => {
-    if (lesson && !lessonTried.current) {
-      void markLesson(lesson, 'skipped');
-    }
-  });
-  useEffect(() => () => leaveLesson(), []);
+  const lesson = useLessonTry(seed.lesson);
+  const { finder } = useFinder();
+  // The Assistant runs on its own model (`assistantRuntime.ts`), whose state
+  // is known at once; the fixture model (e2e) is always ready, unless a
+  // flow says it is absent.
+  const own = useAssistantModelState();
+  const status: ModelStatus | null =
+    modelFixture && own.kind === 'unsupported' ? 'ready' : statusOf(own);
+  // The Create lesson without the model: its demo, on the real editor.
+  const demo = seed.lesson === 'create' && status !== null && status !== 'ready';
   const editor = useThreadEditor({
     backend: backendClient,
     calendars,
     confirm: confirmEditorRequest,
+    finder,
     initialKind,
-    model: languageModel,
     onClose,
     onSaved: () => {
-      lessonDone();
+      lesson.done();
       onSaved?.();
     },
+    reader: demo ? demoReader : assistantReader(),
     seed,
     sourceKind,
     task,
@@ -203,204 +774,230 @@ export function EventEditSheet({
     taskSeed,
     timeZone,
   });
-  const { drafts, eventModel, flash, kinds, onPhrase, taskModel, write } = editor;
-  const { apply, available, convertBlocked, kind, mode, switchTo } = kinds;
+  const { drafts, kinds, onPhrase, previewing, steps } = editor;
 
-  const showToggle =
-    !birthday &&
-    available.length > 1 &&
-    !(sourceKind === 'event' && eventModel.readOnly) &&
-    !(sourceKind === 'task' && taskModel.readOnly);
-  const busy = (mode === 'todo' ? taskModel.busy : eventModel.busy) || write.busy;
-  // A new item: the quick-add field on top takes the focus, not the title.
-  const quickAdd = sourceKind === 'new';
-  const { noun, verb } = editorTitle({ kind, sourceKind, sourceProvider: task?.provider });
-  const title = birthday ? 'Birthday' : `${verb} ${capitalize(noun)}`;
-  const nothingToSave =
-    birthday ||
-    (mode === 'todo' && taskModel.readOnly) ||
-    (mode === 'event' && eventModel.readOnly);
-
-  // The header: the Cancel · title · Save row, then for a new item the
-  // quick-add field and the thread.
-  const headerRow = (
-    <View style={styles.header}>
-      <Pressable hitSlop={8} onPress={onClose} style={styles.headerSide}>
-        {/* A birthday's reminder chips save as they change: nothing to cancel. */}
-        <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.cancel}>
-          {birthday ? 'Done' : 'Cancel'}
-        </Text>
-      </Pressable>
-      <Text maxFontSizeMultiplier={BOX_FONT_SCALE} numberOfLines={1} style={styles.title}>
-        {title}
-      </Text>
-      {nothingToSave ? (
-        <View style={styles.headerSide} />
-      ) : (
-        <Pressable
-          disabled={write.busy}
-          hitSlop={8}
-          onPress={() => void (mode === 'todo' ? taskModel.save() : eventModel.save())}
-          style={[styles.headerSide, styles.headerEnd, busy && styles.busy]}
-          testID="event-save"
-        >
-          <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.save}>
-            Save
-          </Text>
-        </Pressable>
-      )}
-    </View>
-  );
-  const headerRest =
-    sourceKind === 'new' ? (
-      <>
-        {lesson ? <LessonBanner id={lesson} onSkip={lessonOpen ? onClose : undefined} /> : null}
-        <QuickAddBar
-          // The thread's turns hang under the field (`DraftThreadSection`).
-          attached={editor.turns.length > 0}
-          autoFocus={presentation !== 'route'}
-          editKey={editor.userEdits}
-          fallbackDate={seed.initialDate.toString()}
-          hold={editor.applying}
-          initialText={seed.quickAddText}
-          onApply={(item) => {
-            lessonDone();
-            void apply(item);
-          }}
-          onPhrase={async (text) => {
-            const message = await onPhrase(text);
-            if (message === undefined) {
-              lessonDone();
-            }
-            return message;
-          }}
-          placeholder={drafts.length > 0 ? CHANGE_PLACEHOLDER : undefined}
-          timeZone={timeZone}
-        />
-        <DraftThreadSection editor={editor} note={seed.thread?.note} />
-      </>
-    ) : null;
-  // The kind control scrolls with the form, at its top: a choice made
-  // once, so it need not take room from the half-height sheet.
-  const kindControl = showToggle ? (
-    <View style={styles.topControl}>
-      {/* A turn that made the item the other kind: the control tints and fades back. */}
-      <FlashView
-        bleedX={4}
-        bleedY={4}
-        flash={flash?.fields.has('kind') ? flash.key : null}
-        style={styles.modeFlash}
-      >
-        <SegmentedControl
-          accessibilityLabel="Kind"
-          ground
-          grow
-          onChange={(next) => void switchTo(next)}
-          options={available.map((option) => ({
-            disabled: busy || (option !== 'event' && convertBlocked),
-            label: KIND_LABELS[option],
-            testID: `mode-${option}`,
-            value: option,
-          }))}
-          value={kind}
-        />
-      </FlashView>
-    </View>
-  ) : null;
-  const bare = presentation === 'route';
-  const done = task?.status === 'completed';
-  const completionTitle = done ? 'Mark as Incomplete' : 'Mark as Done';
-  const { toggleCompletion } = taskModel;
-  const confirmDiscard = () =>
-    new Promise<boolean>((resolve) => {
-      Alert.alert('Discard unsaved edits?', 'Changing completion closes this editor.', [
-        { onPress: () => resolve(false), style: 'cancel', text: 'Keep Editing' },
-        { onPress: () => resolve(true), style: 'destructive', text: completionTitle },
-      ]);
-    });
-  // The fields the last turn changed flash (`FieldFlash` in the forms).
-  const form = (
-    <FieldFlashContext value={flash}>
-      {mode === 'todo' && toggleCompletion ? (
-        <Section tight>
-          <Row
-            accessibilityLabel="Completed"
-            accessibilityRole="checkbox"
-            accessibilityState={{ checked: done }}
-            disabled={busy}
-            leading={<TaskCheck checked={done} size="list" />}
-            onPress={() => void toggleCompletion(editor.userEdits > 0 ? confirmDiscard : undefined)}
-            testID="task-editor-completion"
-            title={completionTitle}
-          />
-        </Section>
-      ) : null}
-      {birthday ? (
-        <BirthdayDetail occurrence={birthday} timeZone={timeZone} />
-      ) : mode === 'todo' ? (
-        // The selected list's provider picks the form: a Reminders list
-        // exposes time/priority/alert/repeat/URL; a Google list gets the
-        // plain title/date/notes form. The kind control moves between the
-        // providers; the list picker stays within one.
-        taskModel.provider === 'apple' ? (
-          <ReminderEditForm
-            autoFocusTitle={!quickAdd}
-            bare={bare}
-            task={task}
-            taskModel={taskModel}
-          />
-        ) : (
-          <TaskEditForm autoFocusTitle={!quickAdd} bare={bare} task={task} taskModel={taskModel} />
-        )
-      ) : (
-        <EventEditForm autoFocusTitle={!quickAdd} bare={bare} model={eventModel} />
-      )}
-    </FieldFlashContext>
-  );
-  // At half height the form shows its top under the header: UIKit hands a
-  // drag on it to the sheet, which rises, only while the form is scrolled
-  // to its top. So it goes back there, as Maps' sheets do, whenever the
-  // sheet stands at half with the keyboard down: lowered after a scroll at
-  // full height, and when the keyboard hides (it lifts a half sheet
-  // without a detent change, and a field focused in the form scrolls the
-  // form up to it). Never while the keyboard is up: the field being typed
-  // into would leave the view.
-  const formScroll = useRef<ScrollViewInstance>(null);
-  const atHalf = useEditorSheetAtHalf();
-  const formToTop = useEffectEvent(() => {
-    if (atHalf && !Keyboard.isVisible()) {
-      formScroll.current?.scrollTo({ animated: true, y: 0 });
+  // The two views. Without an Assistant (a read-only item, a birthday, a
+  // conversion) there is the form alone.
+  const assists = editor.assistant !== 'none' && presentation === 'route';
+  const switcher = useViewSwitch(assists ? opensOn : 'form');
+  const insets = useSafeAreaInsets();
+  const keyboard = useKeyboardInset();
+  const screenReader = useScreenReader();
+  // The Assistant's field, open in place of its bar; the form's pills out
+  // of the way while it is scrolled down. The capsule between the views
+  // leaves with either.
+  const [typing, setTyping] = useState(seed.quickAddText !== undefined);
+  const [tucked, setTucked] = useState(false);
+  const shown: EditorView = assists ? viewShown(switcher.state) : 'form';
+  // The model's state known: not ready, and nothing said or typed yet, the
+  // form is what there is to work with, once — the Assistant says why and
+  // is a tap away. Not for the Create lesson, whose demo is the Assistant.
+  const answered = useRef(false);
+  useEffect(() => {
+    if (status === null || answered.current) {
+      return;
     }
+    answered.current = true;
+    if (status !== 'ready' && steps.of === 0 && !demo) {
+      switcher.snap('form');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the first answer only
+  }, [status]);
+  // The demo went on until the model came: the banner says it is here.
+  const [demoed, setDemoed] = useState(demo);
+  useEffect(() => {
+    if (demo) {
+      setDemoed(true);
+    }
+  }, [demo]);
+  // Nothing to say a phrase to (no model, an older step on show), or the
+  // form at rest (the Assistant gone, its field with it: it comes back
+  // with the bar, not a keyboard rising under the switch): the field closes.
+  const barOff = (status !== null && status !== 'ready') || previewing;
+  const atForm = switcher.state.kind === 'rest' && switcher.state.view === 'form';
+  useEffect(() => {
+    if (barOff || atForm) {
+      setTyping(false);
+    }
+  }, [atForm, barOff]);
+  const download = assistantDownload();
+  // The lesson's banner offers the model in the demo; the notice would say it twice.
+  const notice =
+    status === null || status === 'ready' || demo ? undefined : (
+      <AssistantModelNotice
+        network={download.network()}
+        onAction={(action) => runModelAction(download, action)}
+        size={download.size()}
+        state={own}
+      />
+    );
+
+  // The Create lesson's frame, over either view.
+  const lessonBanner = seed.lesson ? (
+    <LessonFrame
+      download={download}
+      id={seed.lesson}
+      model={demo || demoed ? own : undefined}
+      onSkip={lesson.open ? () => discard.cancel() : undefined}
+    />
+  ) : null;
+
+  // What is said or typed to the Assistant. Here, above both views, so a
+  // flip to the form neither drops the words nor ends the listening: an
+  // edit by hand there does (`editKey`).
+  const quick = useQuickAddModel({
+    editKey: editor.userEdits,
+    hold: editor.applying,
+    initialText: seed.quickAddText,
+    // An older step on show: nothing is listened for, and listening ends.
+    off: previewing,
+    onPhrase: async (text, heard) => {
+      const message = await onPhrase(text, heard);
+      if (message === undefined) {
+        lesson.done();
+        // Taken: the keyboard goes, so the answer is what shows.
+        Keyboard.dismiss();
+      }
+      return message;
+    },
+    speech,
   });
-  useEffect(() => {
-    formToTop();
-  }, [atHalf]);
-  useEffect(() => {
-    const hidden = Keyboard.addListener('keyboardDidHide', () => formToTop());
-    return () => hidden.remove();
-  }, []);
-  // The form-sheet route (`app/editor.tsx`): react-native-screens lays a
-  // sheet out once, as at most a header and a scroll view — the header must
-  // not be flattened away (`collapsable={false}`), the scroll view follows
-  // it directly, and it stays the same view across a kind switch (the
-  // forms render bare inside it): anything wrapped around them, or a
-  // scroll view swapped in later, it places over the header.
+  const barDemo = useDemoBar({
+    demo,
+    formOnly: status === 'unsupported',
+    line: steps.line,
+    onForm: () => switcher.flip('form', keyboard > 0),
+    setPhrase: quick.give,
+  });
+  // Cancel, Skip and a swipe down ask first while the editor holds
+  // something: the form's changes, a share's drafts, words in the field.
+  const discard = useDiscard({
+    held: quick.held,
+    onCancel: onCancel ?? onClose,
+    onClose,
+    open,
+    question: editor.unsavedQuestion,
+    unsaved: editor.unsaved,
+    writing: editor.writing,
+  });
+
+  const { noun, verb } = editorTitle({
+    kind: kinds.kind,
+    sourceKind,
+    sourceProvider: task?.provider,
+  });
+  const header = (
+    <EditorHeader
+      birthday={birthday !== undefined}
+      editor={editor}
+      onClose={discard.cancel}
+      title={birthday ? 'Birthday' : `${verb} ${capitalize(noun)}`}
+    />
+  );
+  const kindControl = (
+    <KindControl birthday={birthday !== undefined} editor={editor} sourceKind={sourceKind} />
+  );
+  const saveError = kinds.mode === 'todo' ? editor.taskModel.error : editor.eventModel.error;
+  const form = (
+    <EditorForm
+      bare={presentation === 'route'}
+      birthday={birthday}
+      editor={editor}
+      flipped={switcher.flipped}
+      sourceKind={sourceKind}
+      task={task}
+      timeZone={timeZone}
+    />
+  );
+
+  // The editor's route (`app/editor.tsx`), a page sheet at full height.
   if (presentation === 'route') {
     return (
-      <>
-        <View collapsable={false} style={styles.sheetHeader}>
-          {headerRow}
-          {headerRest}
-        </View>
-        <ScrollView
-          automaticallyAdjustKeyboardInsets
-          keyboardShouldPersistTaps="handled"
-          ref={formScroll}
-        >
-          {kindControl}
-          {form}
-        </ScrollView>
-      </>
+      <View style={styles.route} testID={`editor-${shown}`}>
+        <SwipeGuard guard={discard.guard} onAttempt={discard.swipe} />
+        <View style={styles.sheetHeader}>{header}</View>
+        <DraftPager editor={editor} />
+        <SwitchAnchorContext value={switcher.anchors}>
+          <View ref={switcher.frame} style={styles.route}>
+            {assists && viewMounted(switcher.state, 'assistant') ? (
+              <SwitchLayer state={switcher.state} style={switcher.assistantStyle} view="assistant">
+                <AssistantView
+                  banner={lessonBanner}
+                  calendars={calendars}
+                  canSay={quick.canSay}
+                  demo={demo}
+                  editor={editor}
+                  note={seed.thread?.note}
+                  notice={notice}
+                  onEdit={() => switcher.flip('form', keyboard > 0)}
+                  onReading={quick.say}
+                  pending={quick.pending}
+                  taskLists={taskLists}
+                />
+                {previewing ? <UseStepCard editor={editor} /> : null}
+                {/* Why Save did nothing: the form shows it among its rows, and is not on screen here. */}
+                {saveError ? (
+                  <Text
+                    accessibilityLiveRegion="assertive"
+                    accessibilityRole="alert"
+                    selectable
+                    style={styles.formError}
+                    testID="editor-error"
+                  >
+                    {saveError}
+                  </Text>
+                ) : null}
+                <AssistantBar
+                  demo={barDemo}
+                  hasDrafts={drafts.length > 0}
+                  micStyle={switcher.micStyle}
+                  onTyping={setTyping}
+                  previewing={previewing}
+                  quick={quick}
+                  startTyping={seed.quickAddText !== undefined}
+                  status={status}
+                  typing={typing}
+                />
+              </SwitchLayer>
+            ) : null}
+            {!assists || viewMounted(switcher.state, 'form') ? (
+              <SwitchLayer state={switcher.state} style={switcher.formStyle} view="form">
+                <FormView
+                  assists={assists}
+                  banner={lessonBanner}
+                  contentStyle={switcher.formContentStyle}
+                  editor={editor}
+                  onTucked={setTucked}
+                >
+                  {kindControl}
+                  {form}
+                </FormView>
+              </SwitchLayer>
+            ) : null}
+            {assists ? (
+              <SwitchCapsule
+                bottom={insets.bottom + PILL_GAP}
+                listening={quick.handsFree}
+                onPress={() =>
+                  switcher.flip(shown === 'assistant' ? 'form' : 'assistant', keyboard > 0)
+                }
+                progress={switcher.progress}
+                shown={capsuleShown({
+                  demoBar: demoHoldsBar(barDemo, previewing),
+                  keyboard,
+                  previewing,
+                  screenReader,
+                  shown,
+                  status,
+                  tucked,
+                  typing,
+                })}
+                target={shown === 'assistant' ? 'form' : 'assistant'}
+              />
+            ) : null}
+          </View>
+        </SwitchAnchorContext>
+      </View>
     );
   }
   return (
@@ -413,8 +1010,7 @@ export function EventEditSheet({
           land on nothing (CI flows 08/16). */}
       <View style={styles.container}>
         <SafeAreaView>
-          {headerRow}
-          {headerRest}
+          {header}
           {kindControl}
         </SafeAreaView>
         {form}

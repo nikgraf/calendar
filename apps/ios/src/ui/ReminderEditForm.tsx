@@ -1,6 +1,7 @@
+import { use } from 'react';
 import {
-  REMINDER_ALARM_OPTIONS,
   REMINDER_PRIORITY_OPTIONS,
+  reminderAlarmOptions,
   type useTaskEditorModel,
 } from '@calendar/app-state';
 import type { TaskRecord } from '@calendar/core';
@@ -14,6 +15,7 @@ import { ActionRow, ChipsRow, FieldRow, Row, Section, SwitchRow } from './Groupe
 import { DueRow, NoDueDate } from './NoDueDate.tsx';
 import { RepeatRuleChips } from './RepeatRuleChips.tsx';
 import { TaskListPicker } from './TaskListPicker.tsx';
+import { SwitchAnchorContext } from './assistant/useViewSwitch.ts';
 
 /**
  * The Reminders half of the task editor — what EventKit can do that Google
@@ -37,6 +39,8 @@ export function ReminderEditForm({
   taskModel: ReturnType<typeof useTaskEditorModel>;
 }) {
   const styles = useSheetStyles();
+  // The title the form rises to from the Assistant's card (`useViewSwitch`).
+  const anchors = use(SwitchAnchorContext);
   return (
     <FormScroll
       bare={bare}
@@ -57,6 +61,7 @@ export function ReminderEditForm({
             autoFocus={autoFocusTitle && !task}
             onChangeText={taskModel.setTitle}
             placeholder="Title"
+            ref={anchors?.form}
             testID="task-title"
             value={taskModel.title}
           />
@@ -139,7 +144,7 @@ export function ReminderEditForm({
           ))}
         </ChipsRow>
         <ChipsRow label="Alert">
-          {REMINDER_ALARM_OPTIONS.map((option) => (
+          {reminderAlarmOptions(taskModel.alarm).map((option) => (
             <Chip
               key={option.label}
               label={option.label}

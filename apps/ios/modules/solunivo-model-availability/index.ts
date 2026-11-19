@@ -4,7 +4,7 @@ import { requireNativeModule } from 'expo';
  * Foundation Models' availability as the module answers it: `available`,
  * or `unavailable` with the reason stringified the way the desktop helper
  * does it (`appleIntelligenceNotEnabled`, `deviceNotEligible`,
- * `modelNotReady`; `osTooOld` below iOS 26).
+ * `modelNotReady`).
  */
 export interface ModelAvailabilityReply {
   readonly reason?: string;

@@ -1,0 +1,20 @@
+{
+  "lang": "en",
+  "tags": ["long", "guests", "location"],
+  "turns": [
+    {
+      "input": {
+        "text": "Can you add a workshop on Wednesday from nine to five at Hotel Astoria and invite Teo Marin"
+      },
+      "expect": {
+        "kind": "event",
+        "title": "workshop",
+        "weekday": 3,
+        "startTime": "09:00",
+        "endTime": "17:00",
+        "location": "hotel astoria",
+        "guests": { "emails": ["teo.marin@example.com"] }
+      }
+    }
+  ]
+}

@@ -1,18 +1,22 @@
-import { type LanguageModel, ModelUnavailableError } from '@calendar/ai';
+import {
+  type FinderReader,
+  type Heard,
+  ModelUnavailableError,
+  type PhraseReader,
+} from '@calendar/ai';
 import {
   type BackendClient,
   type CalendarInfo,
   type Contact,
-  emailKey,
-  type EventReminders,
   type FreeSlot,
   type PlaceCandidate,
   type ItemKind,
+  type RecurringScope,
   type TaskListInfo,
   type TaskRecord,
   Temporal,
 } from '@calendar/core';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { draftCalendarKey, draftListKey, planAddAll } from './addAll.ts';
 import { useDraftFocusRequest, useRevealDraftDay, useSetDraftPreviews } from './draftAtoms.ts';
 import {
@@ -20,17 +24,22 @@ import {
   type DraftPreview,
   draftPreview,
   previewOfPrefill,
+  wasPreview,
 } from './draftPreview.ts';
+import type { DraftField, DraftKeeps } from './draftChanges.ts';
 import {
-  changedDraftFields,
   type Draft,
   type DraftExtras,
-  type DraftField,
+  type FormSnapshot,
+  type HandStep,
+  stepRule,
+  threadLine,
   updateDraft,
   useDraftThread,
 } from './draftThread.ts';
 import {
   type EditorConfirmRequest,
+  type EventEditorPrefill,
   type EventEditorSeed,
   seedTimeFields,
   useEventEditorModel,
@@ -38,13 +47,21 @@ import {
 import { useEditorKinds } from './editorKinds.ts';
 import type { EditorSourceKind } from './editorSwitch.ts';
 import { livePlaceChoice } from './draftPlaces.ts';
+import { editorQuestions } from './draftQuestions.ts';
+import { editorDiscard, formReading, useFormChanged } from './editorUnsaved.ts';
+import { rescheduledEventExclusion } from './findTimeModel.ts';
 import { useBackendMutations } from './hooks.ts';
 import { useOneWrite } from './oneWrite.ts';
 import type { QuickAddItem } from './quickAddItem.ts';
 import { type TaskEditorSeed, useTaskEditorModel } from './taskEditorModel.ts';
-import { useFleetingFlash } from './threadTurns.ts';
-
-export type { DraftFocusRequest } from './draftAtoms.ts';
+import {
+  guestsRefusal,
+  todoAlertRefusal,
+  todoTimeRefusal,
+  type TurnLimits,
+  turnRefusal,
+} from './threadRefusal.ts';
+import { movedFrom, noChangeLines, shownMarks } from './threadSteps.ts';
 
 /** Drafts an editor opens with already made — a capture's events, as one thread. */
 export interface ThreadSeed {
@@ -54,31 +71,12 @@ export interface ThreadSeed {
   readonly utterance: string;
 }
 
-/** A part of the form a turn can change and flash: a draft's own fields, its guests, notes and notifications. */
-export type FlashField = DraftField | 'guests' | 'notes' | 'reminders';
-
 /**
- * The fields a turn just changed in the form, for it to flash once: `key`
- * is the turn's id, so the same turn never flashes twice and the next one
- * always does.
+ * A part of the form a step can change, which the form then marks (the
+ * editor's `marks`): a draft's own fields, its guests, notes and
+ * notifications.
  */
-export interface DraftFlash {
-  readonly fields: ReadonlySet<FlashField>;
-  readonly key: string;
-}
-
-/** A guest list by its addresses, in order: what a turn changed or not. */
-const guestKeys = (attendees: ReadonlyArray<{ readonly email: string }>): string =>
-  attendees.map((attendee) => emailKey(attendee.email)).join('\n');
-
-/** The notifications by their offsets, the calendar default apart: what a turn changed or not. */
-const reminderKeys = (reminders: EventReminders | undefined): string =>
-  reminders === undefined
-    ? ''
-    : [
-        reminders.useDefault ? 'default' : '',
-        ...reminders.overrides.map((override) => `${override.method}:${String(override.minutes)}`),
-      ].join('\n');
+export type FlashField = DraftField | 'guests' | 'notes' | 'reminders';
 
 /**
  * Existing event (edit mode), a prefilled slot (create mode), or a thread
@@ -155,10 +153,19 @@ const TASK_EDITS = [
   'toggleWeekday',
 ] as const satisfies ReadonlyArray<keyof ReturnType<typeof useTaskEditorModel>>;
 
+/** A call's result that answers later. */
+const isThenable = (value: unknown): value is PromiseLike<unknown> =>
+  typeof value === 'object' &&
+  value !== null &&
+  'then' in value &&
+  typeof value.then === 'function';
+
 /**
  * The model with each of `edits` reporting its call first — the form's
  * hand edits, as the forms receive the model; the editor's own calls go
- * to the model itself and report nothing.
+ * to the model itself and report nothing. A call that answers later (a
+ * picked place's coordinates, a kind switch that asks first) reports
+ * again once it has: what it changed is in the form only then.
  */
 export const reportingEdits = <Model extends object>(
   model: Model,
@@ -171,19 +178,33 @@ export const reportingEdits = <Model extends object>(
     if (typeof call === 'function') {
       reporting[key] = ((...args: Array<unknown>) => {
         onEdit();
-        return (call as (...args: Array<unknown>) => unknown)(...args);
+        const result = (call as (...args: Array<unknown>) => unknown)(...args);
+        if (isThenable(result)) {
+          // Either way it settles: a refusal changed nothing, which reads as nothing.
+          void Promise.resolve(result).then(onEdit, onEdit);
+        }
+        return result;
       }) as Model[typeof key];
     }
   }
   return reporting;
 };
 
+/** The same day and hours: where the calendar would draw the two is the same place. */
+const sameWhen = (one: EventEditorPrefill, other: EventEditorPrefill): boolean =>
+  one.date === other.date &&
+  (one.endDate ?? one.date) === (other.endDate ?? other.date) &&
+  one.isAllDay === other.isAllDay &&
+  (one.isAllDay || (one.startTime === other.startTime && one.endTime === other.endTime));
+
 /**
  * Every draft as the calendar draws it: the focused one from the live
  * form (`live`, an event — a to-do draws nothing) in the calendar the
- * form has picked, with the free slots offered beside it as candidates;
- * the others as the thread holds them, each in the color of the calendar
- * it would be written to (its own, else the form's — `draftCalendarKey`).
+ * form has picked, with the free slots offered beside it as candidates
+ * and, when the step on show moved it, an outline where it stood before
+ * (`movedFrom`); the others as the thread holds them, each in the color
+ * of the calendar it would be written to (its own, else the form's —
+ * `draftCalendarKey`).
  */
 export const threadPreviews = (
   drafts: ReadonlyArray<Draft>,
@@ -192,11 +213,30 @@ export const threadPreviews = (
   {
     calendarKey,
     calendars,
+    movedFrom,
+    saved,
     timeZone,
   }: {
     /** The form's calendar. */
     readonly calendarKey: string;
     readonly calendars: ReadonlyArray<CalendarInfo>;
+    /**
+     * The focused draft as it was before the step on show, when that step
+     * changed its day or hours: where it stood is outlined. Not where a
+     * saved event still stands — its own block is the trace there — and
+     * not when the form is back at that place.
+     */
+    readonly movedFrom?: Draft | undefined;
+    /**
+     * A saved event's thread: the event as it opened, and whether the form
+     * is at one occurrence of a series. The calendar draws the event
+     * itself, so its draft is drawn only once it is somewhere else — the
+     * event's own block then shows where it was — and, at one occurrence,
+     * without the series' rule.
+     */
+    readonly saved?:
+      | { readonly instance: boolean; readonly opened: QuickAddItem | undefined }
+      | undefined;
     readonly timeZone: string;
   },
 ): ReadonlyArray<DraftPreview> => {
@@ -205,18 +245,45 @@ export const threadPreviews = (
     NO_CALENDAR_COLOR;
   return drafts.flatMap((draft, index) => {
     if (index === focused) {
+      if (live.kind !== 'event') {
+        return [];
+      }
       const color = colorOf(calendarKey);
-      return live.kind === 'event'
-        ? [
-            previewOfPrefill(draft.id, live.prefill, { color, focused: true, timeZone }),
-            ...candidatePreviews(draft, live.prefill, { color }),
-          ]
-        : [];
+      const candidates = candidatePreviews(draft, live.prefill, { color });
+      if (saved?.opened?.kind === 'event' && sameWhen(saved.opened.prefill, live.prefill)) {
+        return candidates;
+      }
+      const preview = previewOfPrefill(draft.id, live.prefill, { color, focused: true, timeZone });
+      const { recurrence: _rule, ...once } = preview;
+      const was =
+        movedFrom?.item.kind === 'event' &&
+        !sameWhen(movedFrom.item.prefill, live.prefill) &&
+        !(saved?.opened?.kind === 'event' && sameWhen(saved.opened.prefill, movedFrom.item.prefill))
+          ? wasPreview(movedFrom, { color, timeZone })
+          : undefined;
+      return [saved?.instance ? once : preview, ...candidates, ...(was ? [was] : [])];
     }
     const color = colorOf(draftCalendarKey(draft, calendars, calendarKey));
     const preview = draftPreview(draft, { color, focused: false, timeZone });
     return preview ? [preview] : [];
   });
+};
+
+/**
+ * Runs `then` once each time `value` has become another one — never for
+ * the value the editor opened with. For what the thread holds that was
+ * right only under a value of the form's: the scope its free slots were
+ * searched at, the rule its states were seeded with.
+ */
+const useOnChange = (value: RecurringScope | string | undefined, then: () => void): void => {
+  const seen = useRef(value);
+  useEffect(() => {
+    if (seen.current !== value) {
+      seen.current = value;
+      then();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- a change is handled once, when it happens
+  }, [value]);
 };
 
 /**
@@ -237,14 +304,25 @@ export const threadPreviews = (
  *
  * The platforms render it: the form, the turns, the pager, the chips.
  */
+/** A calendar's default popup notifications, minutes before; undefined where it has none on record (Apple). */
+const defaultMinutesOf = (
+  calendars: ReadonlyArray<CalendarInfo>,
+  key: string,
+): ReadonlyArray<number> | undefined =>
+  calendars
+    .find((calendar) => `${calendar.accountId}:${calendar.id}` === key)
+    ?.defaultReminders?.filter((override) => override.method === 'popup')
+    .map((override) => override.minutes);
+
 export const useThreadEditor = ({
   backend,
   calendars,
   confirm,
+  finder,
   initialKind,
-  model,
   onClose,
   onSaved,
+  reader,
   seed,
   sourceKind,
   task,
@@ -256,12 +334,15 @@ export const useThreadEditor = ({
   readonly backend: BackendClient;
   readonly calendars: ReadonlyArray<CalendarInfo>;
   readonly confirm: (request: EditorConfirmRequest) => Promise<boolean>;
+  /** How a finder phrase is read (`tunedFinder` or `rulesFinder`). */
+  readonly finder: FinderReader;
   /** The kind to open on: a to-do for a "+" that wants one, or Convert. */
   readonly initialKind?: ItemKind | undefined;
-  readonly model: LanguageModel;
   readonly onClose: () => void;
   /** Save went through, as an event or a task. */
   readonly onSaved?: (() => void) | undefined;
+  /** How the Assistant reads a phrase: its own model, through `tunedReader`. */
+  readonly reader: PhraseReader;
   readonly seed: EditorSeed;
   readonly sourceKind: EditorSourceKind;
   /** Present when the editor was opened from a task (task edit mode). */
@@ -272,9 +353,21 @@ export const useThreadEditor = ({
   readonly timeZone: string;
 }) => {
   const mutations = useBackendMutations();
-  const thread = useDraftThread({ backend, model, timeZone });
+  // The form's calendar, where a draft that has none of its own would go (set below, once the form is made).
+  const formCalendar = useRef('');
+  const thread = useDraftThread({
+    backend,
+    defaultRemindersOf: (draft) =>
+      defaultMinutesOf(calendars, draftCalendarKey(draft, calendars, formCalendar.current)),
+    finder,
+    reader,
+    timeZone,
+  });
   const { drafts, focused, version } = thread.state;
   const focusedDraft = drafts[focused];
+  // An older step is on show (`stepTo`): the thread is a preview until
+  // that step is kept or the newest is shown again.
+  const previewing = thread.state.ahead.length > 0;
   const threadRef = useRef(thread.state);
   threadRef.current = thread.state;
   const reveal = useRevealDraftDay();
@@ -303,8 +396,23 @@ export const useThreadEditor = ({
     onClose();
   };
 
+  // A write's own question (a lossy move, a delete) is no write yet:
+  // while it is asked, leaving would lose what the form holds (`writing`).
+  const [asking, setAsking] = useState(0);
+  const askFirst = useCallback(
+    async (request: EditorConfirmRequest): Promise<boolean> => {
+      setAsking((open) => open + 1);
+      try {
+        return await confirm(request);
+      } finally {
+        setAsking((open) => open - 1);
+      }
+    },
+    [confirm],
+  );
+
   const taskModel = useTaskEditorModel({
-    confirm,
+    confirm: askFirst,
     onClose: close,
     onSaved: saved,
     seed: {
@@ -320,15 +428,16 @@ export const useThreadEditor = ({
   });
   const eventModel = useEventEditorModel({
     calendars,
-    confirm,
+    confirm: askFirst,
     onClose: close,
     onSaved: saved,
     seed: { ...seed, convertFromTask: task },
     timeZone,
   });
+  formCalendar.current = eventModel.calendarKey;
   const kinds = useEditorKinds({
     calendars,
-    confirm,
+    confirm: askFirst,
     eventModel,
     initialKind,
     previewEventToTask: mutations.previewEventToTask,
@@ -341,7 +450,10 @@ export const useThreadEditor = ({
   // "Add all" and a Save never overlap, and the focus stays put while
   // either runs: a draft written is the one that was shown.
   const write = useOneWrite();
-  const settled = !eventModel.busy && !taskModel.busy && !write.busy;
+  const writing = eventModel.busy || taskModel.busy || write.busy;
+  // Nothing moves by hand while a write runs, nor while an older step is
+  // on show: that one is looked at, and kept or left.
+  const settled = !writing && !previewing;
   const [batchError, setBatchError] = useState<string | null>(null);
 
   /** The form as the thread's item: what a turn starts from and what the preview draws. */
@@ -361,21 +473,29 @@ export const useThreadEditor = ({
    * calendar picked for an event — or a to-do's list, notes, undated state
    * and Reminders-only fields.
    */
+  const todoExtras = () => ({
+    listKey: taskModel.listKey,
+    reminder: taskModel.reminderFields(),
+    taskNotes: taskModel.notes,
+    undated: !taskModel.dated,
+  });
   const currentExtras = (): DraftExtras => ({
     ...eventModel.extras(),
-    ...(mode === 'event'
-      ? { calendarKey: eventModel.calendarKey }
-      : {
-          listKey: taskModel.listKey,
-          reminder: taskModel.reminderFields(),
-          taskNotes: taskModel.notes,
-          undated: !taskModel.dated,
-        }),
+    ...(mode === 'event' ? { calendarKey: eventModel.calendarKey } : todoExtras()),
   });
   // The latest render's readers, for a turn that reads the form after an await.
-  const latest = useRef({ extras: currentExtras, item: currentItem });
-  latest.current = { extras: currentExtras, item: currentItem };
-  const readForm = () => ({ extras: latest.current.extras(), item: latest.current.item() });
+  // The draft whose fields the form holds as rendered: set with the fields
+  // themselves, so a reading names the draft it is of — after the focus
+  // moved, the form shows the draft that left until it has taken the
+  // other in.
+  const [formOf, setFormOf] = useState<string | undefined>(undefined);
+  const latest = useRef({ extras: currentExtras, item: currentItem, shown: formOf });
+  latest.current = { extras: currentExtras, item: currentItem, shown: formOf };
+  const readForm = (): FormSnapshot => ({
+    extras: latest.current.extras(),
+    item: latest.current.item(),
+    ...(latest.current.shown === undefined ? {} : { shown: latest.current.shown }),
+  });
 
   // Drafts the editor opened with (a capture) start the thread once.
   const { start } = thread;
@@ -386,73 +506,99 @@ export const useThreadEditor = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the editor is keyed per opening; the seed is read once
   }, []);
 
+  // A saved item is the first state of its own thread (`openThread`): a
+  // phrase changes it, an edit by hand is a step from the start, and the
+  // state before the first step is the item as saved. It opens once the
+  // form holds all the item opened with — a series waits for its master's
+  // answer, since the rule that brings is the form's own and no edit. Not
+  // for an item that cannot be written, nor an editor opened to convert
+  // (its form switches kind as it opens).
+  const opensConverting =
+    sourceKind === 'event' && initialKind !== undefined && initialKind !== 'event';
+  const savedOpen =
+    (sourceKind === 'event' && !eventModel.readOnly && !opensConverting) ||
+    (sourceKind === 'task' && !taskModel.readOnly);
+  const assistant: 'new' | 'none' | 'saved' =
+    sourceKind === 'new' ? 'new' : savedOpen ? 'saved' : 'none';
+  const seedReady = assistant === 'saved' && (sourceKind === 'task' || eventModel.ruleAnswered);
+  // The form as one reading, against how it opened (`useFormChanged`).
+  const formChanged = useFormChanged({
+    isNew: sourceKind === 'new',
+    kind: kinds.kind,
+    mode,
+    // The form on show only: a to-do's notes carried into the hidden event
+    // form on a round trip through Event are no change of the to-do's.
+    reading: formReading({
+      extras: mode === 'event' ? currentExtras() : todoExtras(),
+      item: currentItem(),
+      ruleDirty: eventModel.repeatDirty,
+    }),
+  });
+  const { open } = thread;
+  useEffect(() => {
+    if (seedReady) {
+      open(readForm());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, when the form has settled; the readers are the latest render's
+  }, [seedReady]);
+
   // A to-do whose due date the form had cleared: a turn that leaves its
   // day alone must not put the day back (applying a prefill dates it).
   const undated = useRef<{ readonly date: string } | null>(null);
 
   /**
-   * The draft the form shows, changed by a turn or an Undo, or the first
-   * one: the form takes its item through the kind control's `apply` (a
-   * phrase read as the other kind switches, with the switch's question),
-   * the fields that changed flash, and what the form holds beyond the
-   * item follows the draft — for an Undo, as the turn found it.
+   * A to-do's own, once the form holds its item: its list and
+   * Reminders-only fields where the form had held it as one, its notes,
+   * and a day the form had let go of — unless the thread dated it itself
+   * (a slot placement says so in the extras; a retained time says
+   * nothing, a reminder keeps its time while undated).
    */
-  const applyDraft = (
-    draft: Draft,
-    landed: { readonly id: string } | undefined,
-    done: () => void,
-  ) => {
+  const applyTodoFields = (draft: Draft) => {
     const { extras, item } = draft;
-    const before = currentItem();
-    // The guests, notes and notifications the form shows now, before the draft's take over.
-    const guestsChanged =
-      item.kind === 'event' &&
-      guestKeys(eventModel.attendees) !== guestKeys(extras?.attendees ?? []);
-    const notesChanged =
-      item.kind === 'event'
-        ? eventModel.description !== (extras?.description ?? '')
-        : taskModel.notes !== (extras?.taskNotes ?? '');
-    const remindersChanged =
-      item.kind === 'event' &&
-      reminderKeys(eventModel.extras().reminders) !== reminderKeys(extras?.reminders);
-    void apply(item)
-      .then((after) => {
-        if (landed) {
-          setFlash({
-            fields: new Set<FlashField>([
-              ...changedDraftFields(before, after),
-              ...(guestsChanged ? (['guests'] as const) : []),
-              ...(notesChanged ? (['notes'] as const) : []),
-              ...(remindersChanged ? (['reminders'] as const) : []),
-            ]),
-            key: landed.id,
-          });
-        }
-        if (item.kind === 'task') {
-          // A to-do's own: its list and Reminders-only fields where the form
-          // had held it as one, its notes, and a day the form had let go of —
-          // unless the thread dated it itself (a slot placement says so in
-          // the extras; a retained time says nothing, a reminder keeps its
-          // time while undated).
-          const listKey = draftListKey(draft, taskLists, '');
-          if (listKey !== '') {
-            taskModel.setListKey(listKey);
-          }
-          if (extras?.reminder) {
-            taskModel.restoreReminderFields(extras.reminder);
-          }
-          taskModel.setNotes(extras?.taskNotes ?? '');
-          const placed = extras?.undated === false;
-          if (!placed && (extras?.undated || undated.current?.date === item.prefill.date)) {
-            taskModel.clearDueDate?.();
-          }
-        }
-        undated.current = null;
-      })
-      .finally(done);
+    if (item.kind === 'task') {
+      const listKey = draftListKey(draft, taskLists, '');
+      if (listKey !== '') {
+        taskModel.setListKey(listKey);
+      }
+      if (extras?.reminder?.alarmsOnly) {
+        // Only a turn's alert: what the switch of kind carried stays.
+        taskModel.restoreAlarms(extras.reminder.alarms);
+      } else if (extras?.reminder) {
+        taskModel.restoreReminderFields(extras.reminder);
+      }
+      taskModel.setNotes(extras?.taskNotes ?? '');
+      const placed = extras?.undated === false;
+      if (!placed && (extras?.undated || undated.current?.date === item.prefill.date)) {
+        taskModel.clearDueDate?.();
+      }
+    }
+    undated.current = null;
+  };
+
+  /**
+   * The draft the form shows, changed by a phrase, or the first one: the
+   * form takes its item through the kind control's `apply` (a phrase read
+   * as the other kind switches, with the switch's question), and what the
+   * form holds beyond the item follows the draft — all of it at once,
+   * with the take-in below, while the kind stays. When it changes, the
+   * item and a to-do's own fields follow once the switch has settled,
+   * the apply held open until then; the event form's extras at once.
+   * What the step changed is marked from the thread itself
+   * (`shownMarks`), not from here.
+   */
+  const applyDraft = (draft: Draft) => {
+    const taken = apply(draft.item);
     // The form starts clean for a draft it never held: nothing typed
     // for another draft — guests, notes, notifications — follows it.
-    eventModel.restoreExtras(extras);
+    eventModel.restoreExtras(draft.extras);
+    if (isThenable(taken)) {
+      setOpenApplies((open) => open + 1);
+      void Promise.resolve(taken)
+        .then(() => applyTodoFields(draft))
+        .finally(() => setOpenApplies((open) => open - 1));
+    } else {
+      applyTodoFields(draft);
+    }
   };
 
   /**
@@ -482,39 +628,47 @@ export const useThreadEditor = ({
   // replaces what the form held before the phrase — is applied, which may
   // switch the kind and ask about a loss. The thread emptied (the first
   // turn undone): the form goes back to the blank it opened as, so
-  // nothing undone can still be saved. A turn that landed (the list grew
-  // — an Undo shrinks it, a focus or a removal leaves it) flashes the
-  // fields it changed in the form as it stood.
+  // nothing undone can still be saved.
+  // A layout effect: what it sets renders in the commit right after the
+  // one that shows the step in the step control and the card, in the
+  // same task and before paint, so nothing on screen or reading the page
+  // sees them a step apart — only that first commit's own effects still
+  // do: its layout effects, and its passive ones, which React flushes
+  // before the follow-up render. A passive take-in ran a task after a
+  // turn's commit, the step drawn and the form a step behind (the steps
+  // locked meanwhile), and an Undo's agreed only because the day revealed
+  // here (a store write, rendered at once) pulled the form's updates into
+  // the same render. Only a kind switch takes longer — it may ask first —
+  // and it holds an apply open until it has settled (`applying`).
   const applied = useRef(0);
+  const wasPreviewing = useRef(false);
   // The draft the form shows, by id; none before the first and after the last.
   const shown = useRef<string | undefined>(undefined);
-  // A thread the editor opens with (a capture) fills a form that is only
-  // appearing: its first turn counts as seen, nothing flashes.
-  const turnsSeen = useRef(seed.thread ? 1 : 0);
-  const [flash, setFlash] = useState<DraftFlash | null>(null);
   // The form is still taking the thread in while a version is unseen here
   // or an apply is open — a kind switch's question holds one open for as
   // long as it is asked. Counted, not compared: a new thread restarts the
   // version, and applies can settle out of order.
   const [seenVersion, setSeenVersion] = useState(version);
   const [openApplies, setOpenApplies] = useState(0);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (version === applied.current) {
       return;
     }
     applied.current = version;
     setSeenVersion(version);
-    const { turns } = thread.state;
-    const landed = turns.length > turnsSeen.current ? turns.at(-1) : undefined;
-    turnsSeen.current = turns.length;
+    // A step put on show (`stepTo`: an older one, or forward again out of
+    // a preview) is taken over exactly as it was — its kind, what the form
+    // held for it — like another draft: nothing is carried over or asked.
+    const restored = previewing || wasPreviewing.current;
+    wasPreviewing.current = previewing;
     if (focusedDraft) {
       const another = shown.current !== undefined && shown.current !== focusedDraft.id;
       shown.current = focusedDraft.id;
-      if (another) {
+      setFormOf(focusedDraft.id);
+      if (another || restored) {
         showDraft(focusedDraft);
       } else {
-        setOpenApplies((open) => open + 1);
-        applyDraft(focusedDraft, landed, () => setOpenApplies((open) => open - 1));
+        applyDraft(focusedDraft);
       }
       // A day the form cleared is stored as '' until repaired: nothing to show.
       try {
@@ -522,8 +676,9 @@ export const useThreadEditor = ({
       } catch {
         // The form shows the field; the calendar stays where it is.
       }
-    } else if (version > 0) {
+    } else if (version > 0 && sourceKind === 'new') {
       shown.current = undefined;
+      setFormOf(undefined);
       const times = seedTimeFields({
         initialDate: seed.initialDate,
         ...(seed.initialHour === undefined ? {} : { initialHour: seed.initialHour }),
@@ -549,9 +704,100 @@ export const useThreadEditor = ({
   }, [version]);
 
   // Each edit made by hand in the form, counted: hands-free dictation
-  // stops listening at the first one.
+  // stops listening at the first one, and the thread reads the form once
+  // the edit has rendered — what it changed is a step one can go back
+  // over (`foldForm`). Not while the form is still taking a change of the
+  // thread's in: its fields are then between two drafts. Once it has
+  // taken one in, the form's own reading of that draft is kept as the
+  // draft (no step): the next edit by hand is told from it exactly, and
+  // not from how the thread happened to write the same values.
   const [userEdits, setUserEdits] = useState(0);
-  const edited = () => setUserEdits((count) => count + 1);
+  const unread = useRef<HandStep | undefined>(undefined);
+  const edited = (how: HandStep = { kind: 'edit' }) => {
+    // A pick and the edits it makes are one step: the pick's.
+    unread.current = unread.current?.kind === 'pick' ? unread.current : how;
+    setUserEdits((count) => count + 1);
+  };
+  const applying = seenVersion !== version || openApplies > 0;
+  const { record, update } = thread;
+  const wasApplying = useRef(false);
+  const endedPreview = useRef(false);
+  useEffect(() => {
+    const tookIn = (wasApplying.current && !applying) || (endedPreview.current && !previewing);
+    wasApplying.current = applying;
+    endedPreview.current = previewing;
+    if (applying) {
+      return;
+    }
+    const how = unread.current;
+    unread.current = undefined;
+    // An older step on show is locked: there is nothing by hand to read,
+    // and what it holds stays as the thread kept it.
+    if (previewing || threadRef.current.drafts.length === 0) {
+      return;
+    }
+    const form = readForm();
+    if (how !== undefined) {
+      record(form, how);
+    } else if (tookIn) {
+      update(threadRef.current.focused, form.item, form.extras);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the count names the edits; the readers are the latest render's
+  }, [userEdits, applying, previewing]);
+
+  // The steps: one back or forward, or to one by its position; "Use this"
+  // keeps the one on show and lets the later ones go. Not while a write
+  // runs, a phrase is being read or the form is still taking a step in.
+  const stepsLocked = thread.busy || writing || applying;
+  // Which draft the form shows, and how many there are, stays as it is
+  // while the form is between two states of one: the pager, Remove and
+  // "Add all" wait for a write, an older step on show and an apply —
+  // a kind switch's question holds one open for as long as it is asked.
+  const draftsSettled = settled && !applying;
+  // A kind switch by hand that asks first ("Switch to task?") leaves the
+  // form between two kinds until it is answered: counted as an apply like
+  // a phrase's own switch, so the focus, the steps and dictation wait.
+  // Uncounted, the answer landed on whichever draft was focused by then.
+  const switchKind: typeof kinds.switchTo = async (next) => {
+    setOpenApplies((open) => open + 1);
+    try {
+      return await kinds.switchTo(next);
+    } finally {
+      setOpenApplies((open) => open - 1);
+    }
+  };
+  const steps = {
+    /** How many steps are applied: the one on show, counted from 1 (0: before the first). */
+    at: thread.state.steps.length,
+    back: () => {
+      if (!stepsLocked) {
+        thread.stepBy(-1);
+      }
+    },
+    forward: () => {
+      if (!stepsLocked) {
+        thread.stepBy(1);
+      }
+    },
+    /** Every step, oldest first, the ones stepped back over dimmed. */
+    line: threadLine(thread.state),
+    locked: stepsLocked,
+    /** Words that changed nothing, by the position of the step they follow (`noChangeLines`). */
+    noChange: noChangeLines(thread.state),
+    of: thread.state.steps.length + thread.state.ahead.length,
+    show: (position: number) => {
+      if (!stepsLocked) {
+        thread.show(position);
+      }
+    },
+    use: () => {
+      if (!stepsLocked) {
+        thread.keep();
+        // Kept, the step on show is the newest: what lands next is a turn's, not a step put on show.
+        wasPreviewing.current = false;
+      }
+    },
+  };
 
   /**
    * The form moves into a free slot the thread offered (a chip, a
@@ -560,7 +806,7 @@ export const useThreadEditor = ({
    * by hand: it changes the date and times as the fields would.
    */
   const moveToSlot = (slot: FreeSlot) => {
-    edited();
+    edited({ kind: 'pick', pick: 'slot' });
     eventModel.applySlot(slot);
     reveal(Temporal.PlainDate.from(slot.date));
   };
@@ -568,8 +814,9 @@ export const useThreadEditor = ({
   /**
    * The names a turn invited that found no one contact, for the focused
    * event — only while its calendar can invite (an Apple calendar's form
-   * cannot hold guests). Picking a contact puts the guest in the form, as
-   * a hand edit; either way the name leaves the list.
+   * cannot hold guests). Picking a contact puts the guest in the form;
+   * the step that records it takes the name off the list, so going back
+   * over the pick asks again. A name let go of just leaves the list.
    */
   const inviteeChoices =
     mode === 'event' && eventModel.canInvite ? (focusedDraft?.inviteeChoices ?? []) : [];
@@ -577,9 +824,8 @@ export const useThreadEditor = ({
     if (!settled) {
       return;
     }
-    edited();
+    edited({ kind: 'pick', name, pick: 'guest' });
     eventModel.addAttendee({ displayName: contact.displayName, email: contact.email });
-    thread.dropChoice(focused, name);
   };
   const dismissInvitee = (name: string) => {
     if (settled) {
@@ -592,7 +838,9 @@ export const useThreadEditor = ({
    * the field reads marked — while it reads that text or one of them
    * (`livePlaceChoice`). A pick makes a place the form's, pin and all,
    * as a hand edit; "as said" gives the text back as it was said, pin
-   * gone; the row stays until dismissed.
+   * gone. Either settles the choice (the step that records it takes it
+   * off the draft, so going back over it asks again), as dismissing it
+   * does.
    */
   const placeChoice =
     mode === 'event' ? livePlaceChoice(focusedDraft?.placeChoice, eventModel.location) : undefined;
@@ -600,14 +848,14 @@ export const useThreadEditor = ({
     if (!settled) {
       return;
     }
-    edited();
+    edited({ kind: 'pick', pick: 'place' });
     eventModel.applyPlace(candidate.geo);
   };
   const keepPlace = () => {
     if (!settled || placeChoice === undefined) {
       return;
     }
-    edited();
+    edited({ kind: 'pick', pick: 'place' });
     eventModel.keepLocationText(placeChoice.text);
   };
   /** The coordinates the form vouches for now, for the chips to tell a held place from its text. */
@@ -618,9 +866,37 @@ export const useThreadEditor = ({
     }
   };
 
-  /** Another draft takes the form; the form's edits stay on the one leaving it. Not mid-write. */
+  /**
+   * What the Assistant asks about the focused draft, one at a time
+   * (`draftQuestions.ts`): the place the field still reads, then the
+   * names, numbered among those its turn brought. An answer is a pick
+   * above; Skip leaves the form as it is and moves on to the next.
+   */
+  const questions = editorQuestions({
+    applying,
+    canInvite: eventModel.canInvite,
+    draft: focusedDraft,
+    event: mode === 'event',
+    guests: inviteeChoices,
+    livePlace: placeChoice,
+  });
+  const skipQuestion = () => {
+    const { current } = questions;
+    if (current?.kind === 'place') {
+      dismissPlace();
+    } else if (current?.kind === 'guest') {
+      dismissInvitee(current.choice.name);
+    }
+  };
+
+  /**
+   * Another draft takes the form; the form's edits stay on the one leaving
+   * it. Not mid-write, and not while the form is still taking a draft in
+   * (a kind switch's question is open): its fields are between two drafts
+   * then, and the answer would land on the draft focused meanwhile.
+   */
   const switchFocus = (index: number) => {
-    if (index === focused || drafts[index] === undefined || !settled) {
+    if (index === focused || drafts[index] === undefined || !settled || applying) {
       return;
     }
     thread.update(focused, currentItem(), currentExtras());
@@ -645,7 +921,87 @@ export const useThreadEditor = ({
   // The phrase goes to the thread: the first makes the draft(s), the rest
   // change them, one that asks for free time proposes slots. The model's
   // own failure modes become the field's message.
-  const onPhrase = async (text: string): Promise<string | undefined> => {
+  // What a stored event can take from a turn (`turnRefusal`): a new item
+  // takes whatever the words say — but for a time on a to-do whose list
+  // keeps none (`keepsTime`), which goes for a saved to-do too.
+  const limits: TurnLimits | undefined =
+    sourceKind === 'event' && eventModel.existing
+      ? {
+          canInvite: eventModel.canInvite,
+          repeatEditable: eventModel.repeatLoaded,
+          series: eventModel.openedOccurrence
+            ? { opened: eventModel.openedOccurrence, scope: eventModel.scope }
+            : undefined,
+        }
+      : undefined;
+  /**
+   * Whether a draft keeps a time of day: an event does, a to-do only on a
+   * list that holds one — a Reminders list. A Google task has a due day
+   * only, and Save sends no time: a turn that gives one is refused
+   * (`todoTimeRefusal`), and the card shows none a draft carries from
+   * elsewhere (a first phrase, a list switched since).
+   */
+  const keepsTime = (draft: Draft): boolean => {
+    if (draft.item.kind !== 'task') {
+      return true;
+    }
+    if (draft.id === focusedDraft?.id) {
+      return taskModel.provider === 'apple';
+    }
+    const key = draftListKey(draft, taskLists, taskModel.listKey);
+    return taskLists.find((list) => `${list.accountId}:${list.id}` === key)?.provider === 'apple';
+  };
+  /**
+   * Whether a draft's guests are kept: an event's on a calendar that takes
+   * a guest list. An Apple calendar's form holds none and its write
+   * refuses one, so a turn that changes the guests there is refused
+   * (`guestsRefusal`) and the card lists none a first phrase invited.
+   */
+  const keepsGuests = (draft: Draft): boolean => {
+    if (draft.item.kind !== 'event' || draft.id === focusedDraft?.id) {
+      return draft.item.kind !== 'event' || eventModel.canInvite;
+    }
+    const key = draftCalendarKey(draft, calendars, eventModel.calendarKey);
+    const calendar = calendars.find((each) => `${each.accountId}:${each.id}` === key);
+    return (calendar?.provider ?? 'google') === 'google';
+  };
+  /**
+   * What of a draft is saved where it goes: what its card and row show
+   * (`cardLines`, `describeDraft`). A to-do's alerts go where its time
+   * does: only a Reminders list holds either.
+   */
+  const keeps = (draft: Draft): DraftKeeps => ({
+    alerts: keepsTime(draft),
+    guests: keepsGuests(draft),
+    time: keepsTime(draft),
+  });
+  // A saved series' free slots were searched at the scope the form was at
+  // ("All events" leaves the series' own occurrences out of the way, "This
+  // event" only the one): at another scope they no longer hold, so they
+  // are let go of, with a search still out. A new item has no scope.
+  useOnChange(eventModel.scope, thread.dropSlots);
+  // A saved series' rule that arrives after its thread opened (the master
+  // was read late, or the rule changed elsewhere): the form has seeded
+  // itself with it again by now, and the thread's states follow.
+  useOnChange(eventModel.ruleKey, () => {
+    const { item } = readForm();
+    if (assistant !== 'saved' || item.kind !== 'event') {
+      return;
+    }
+    // A step had given the item another rule than it opened with: that
+    // one is the draft's still (`reseedRule` leaves it), so the form shows
+    // it again — it seeded itself with the arrived rule, and Save would
+    // send none.
+    const kept = stepRule(threadRef.current);
+    thread.reseedRule(item.prefill.recurrence);
+    if (kept !== undefined) {
+      eventModel.resetRepeat(kept.recurrence);
+    }
+  });
+  const onPhrase = async (text: string, heard?: Heard): Promise<string | undefined> => {
+    if (previewing) {
+      return 'An earlier step is on show — use it or go forward first.';
+    }
     try {
       const item = currentItem();
       // An undated to-do: its stored day is a placeholder the form had let go of.
@@ -654,8 +1010,26 @@ export const useThreadEditor = ({
           ? { date: item.prefill.date }
           : null;
       return await thread.phrase(text, {
+        // A saved item's thread starts as that item: its words only change it.
+        canStart: sourceKind === 'new',
+        // The event being moved is not in its own way.
+        exclude:
+          sourceKind === 'event'
+            ? rescheduledEventExclusion(
+                eventModel.existing,
+                eventModel.scope,
+                eventModel.masterSeries,
+              )
+            : undefined,
         fallbackDate: seed.initialDate.toString(),
+        heard,
         read: readForm,
+        refuse: (draft, after, guests, alerts) =>
+          todoTimeRefusal(draft.item, after, keepsTime(draft)) ??
+          todoAlertRefusal(after, alerts, keepsTime(draft)) ??
+          (limits
+            ? turnRefusal(draft.item, after, guests, limits)
+            : guestsRefusal(guests, keepsGuests(draft))),
       });
     } catch (error) {
       return error instanceof ModelUnavailableError
@@ -664,12 +1038,30 @@ export const useThreadEditor = ({
     }
   };
 
+  // What the step on show changed, for the form and the cards to mark.
+  const labels = {
+    calendar: (key: string) =>
+      calendars.find((calendar) => `${calendar.accountId}:${calendar.id}` === key)?.summary ?? key,
+    list: (key: string) =>
+      taskLists.find((list) => `${list.accountId}:${list.id}` === key)?.title ?? key,
+  };
+  const marks = shownMarks(thread.state, labels);
+
   // The drafts as the calendar draws them, sent when something changed;
   // none once the editor goes.
   const liveItem = currentItem();
   const previews = threadPreviews(drafts, focused, liveItem, {
     calendarKey: eventModel.calendarKey,
     calendars,
+    movedFrom: movedFrom(thread.state, marks),
+    saved:
+      assistant === 'saved'
+        ? {
+            instance: eventModel.isRecurring && eventModel.scope === 'instance',
+            // The item as saved: the drafts before the first step, else the one there is.
+            opened: (steps.line[0]?.before.drafts[0] ?? drafts[0])?.item,
+          }
+        : undefined,
     timeZone,
   });
   const previewKey = JSON.stringify(previews);
@@ -737,12 +1129,31 @@ export const useThreadEditor = ({
       }
     });
 
-  const playing = useFleetingFlash(flash);
+  // Closing now would lose something put in here (`editorUnsaved`):
+  // Cancel, a swipe down and another item opened over the editor ask first.
+  const discard = editorDiscard({
+    assistant,
+    draftKinds: drafts.map((draft) => draft.item.kind),
+    formChanged,
+    kind: kinds.kind,
+    mode,
+    previewing,
+    readOnly: { event: eventModel.readOnly, todo: taskModel.readOnly },
+    sourceKind,
+    userEdits,
+    writing: writing && asking === 0,
+  });
 
   return {
     addAll,
     /** The form is still taking the thread's last change in: the next phrase waits. */
-    applying: seenVersion !== version || openApplies > 0,
+    applying,
+    /**
+     * Whether the assistant can work on what is open: a new item, a saved
+     * one that can be written (its thread starts as that item), or not at
+     * all (a read-only item, a birthday, an editor opened to convert).
+     */
+    assistant,
     batchError,
     canAddAll,
     /** A name let go of: no contact is picked for it. */
@@ -750,19 +1161,24 @@ export const useThreadEditor = ({
     /** The place row let go of; the field keeps what it reads. */
     dismissPlace,
     drafts,
+    /** The pager, Remove and "Add all" may act: no write, no older step on show, no apply open. */
+    draftsSettled,
     /** For the forms: the setters a person moves count as `userEdits`. */
     eventModel: reportingEdits(eventModel, EVENT_EDITS, edited),
-    /** The fields the last turn changed, for the form to flash — while the flash plays. */
-    flash: playing,
     focused,
     focusedDraft,
     /** Names the focused event's turns invited that need a contact picked. */
     inviteeChoices,
     /** The location text back as said, pin gone; the row stays. */
     keepPlace,
+    keeps,
     /** The kind control's switch counts as an edit too. */
-    kinds: reportingEdits(kinds, ['switchTo'], edited),
+    kinds: reportingEdits({ ...kinds, switchTo: switchKind }, ['switchTo'], edited),
+    /** How a calendar or a list is named in a step's changes (`lineChanges`). */
+    labels,
     liveItem,
+    /** The fields the step on show changed, marked until another step is shown. */
+    marks,
     moveToSlot,
     onPhrase,
     /** A contact picked for a name a turn invited: the guest joins the form. */
@@ -773,13 +1189,32 @@ export const useThreadEditor = ({
     placeChoice,
     /** The coordinates the form vouches for now: which chip is held, if any. */
     placeGeo,
+    /** The question asked now and its number (`questionsAsked`). */
+    questions,
+    /** An older step is on show: the form is locked and Save is off until it is kept or left. */
+    previewing,
     settled,
+    /** The question on show let go of: the form stays as it is. */
+    skipQuestion,
+    /** The thread's steps and the way through them. */
+    steps,
     switchFocus,
     taskModel: reportingEdits(taskModel, TASK_EDITS, edited),
     thread,
-    turns: thread.state.turns,
-    /** Moves at each edit made by hand in the form (`QuickAddBar`'s `editKey`). */
+    /**
+     * Closing now would lose something put in here: a new item's drafts,
+     * or a form that differs from how it opened (`editorUnsaved`).
+     */
+    unsaved: discard.unsaved,
+    /** What Cancel, a swipe down or another item opened over the editor asks while it is `unsaved`. */
+    unsavedQuestion: discard.question,
+    /** Moves at each edit made by hand in the form (the phrase field's `editKey`: dictation ends). */
     userEdits,
     write,
+    /**
+     * A Save, a delete or "Add all" is being written, its question (if
+     * any) answered: what the form shows lands whether the editor stays.
+     */
+    writing: writing && asking === 0,
   };
 };

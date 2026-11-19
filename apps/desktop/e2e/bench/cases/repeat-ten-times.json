@@ -1,0 +1,16 @@
+{
+  "lang": "en",
+  "tags": ["repeat"],
+  "turns": [
+    {
+      "input": { "text": "Guitar lesson every Wednesday at 5, ten times" },
+      "expect": {
+        "title": "guitar lesson",
+        "weekday": 3,
+        "startTime": "17:00",
+        "endTime": "18:00",
+        "repeat": { "freq": "weekly", "count": 10 }
+      }
+    }
+  ]
+}

@@ -146,8 +146,9 @@ jobs:
             --non-interactive --auto-submit \
             --message "main ${GITHUB_SHA::7}"
 
-  # The fingerprint-unchanged path: installed TestFlight builds pick the
-  # update up on next launch, the same mechanism as the PR previews.
+  # The fingerprint-unchanged path: installed TestFlight builds download the
+  # update in the background on their next launch and run it from the cold
+  # start after that (`fallbackToCacheTimeout: 0`, docs/distribution.md).
   main-update:
     name: OTA update to main (EAS)
     needs: [preflight, verify, decide]

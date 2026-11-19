@@ -1,0 +1,17 @@
+{
+  "blind": true,
+  "lang": "de",
+  "tags": ["guests", "de"],
+  "turns": [
+    {
+      "input": { "text": "Planung Montag um 10, lade Sarah und Jörg ein" },
+      "expect": {
+        "title": "planung",
+        "weekday": 1,
+        "startTime": "10:00",
+        "endTime": "11:00",
+        "guests": { "emails": ["sarah.novak@example.com", "joerg.mueller@example.com"] }
+      }
+    }
+  ]
+}

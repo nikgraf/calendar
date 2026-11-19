@@ -10,6 +10,7 @@ import {
   type PlaceCandidate,
   placeMatch,
   placeSuggestionLabel,
+  preselectedPlace,
   rankFoundPlaces,
   rankPastPlaces,
   regionForTimeZone,
@@ -17,7 +18,7 @@ import {
 } from '@calendar/core';
 import { type DeviceSettingsRepo, EventRepo, LocationGeoRepo } from '@calendar/db';
 import { GeoClient, type GeoPlaceJson } from '@calendar/geo';
-import { Clock, Effect, Ref } from 'effect';
+import { Clock, Duration, Effect, Ref } from 'effect';
 import type { EventRecord } from '@calendar/core';
 import type { AppleCalendarEvents } from './appleCalendarEvents.ts';
 import { readPrimaryTimeZone } from './deviceSettings.ts';
@@ -58,6 +59,24 @@ const pastPlaces = new WeakMap<
  */
 export const CANDIDATE_SEARCH_TIMEOUT = '3 seconds';
 /**
+ * How long dictation's other readings wait for MapKit at most, all at
+ * once, after the words as written found nothing nearby.
+ */
+export const ALTERNATIVE_SEARCH_MS = 1500;
+/**
+ * MapKit is asked for the readings only within this of the lookup being
+ * asked: a second short of the turn's own wait for its places (5 s,
+ * `draftThread.ts`), which drops every candidate once passed. The
+ * readings' searches get what is left of it, up to
+ * `ALTERNATIVE_SEARCH_MS`; once the past places and the words as written
+ * took it all, only the past places the readings name are offered.
+ */
+export const CANDIDATES_BUDGET_MS = 4000;
+/** Of the places offered, the readings' at most: the words as written keep the rest. */
+export const ALTERNATIVES_OFFERED = 3;
+/** Other readings asked at most: each is one search of MapKit's budget. */
+export const ALTERNATIVE_SEARCHES = 4;
+/**
  * How long the typeahead waits for the search that fills in where the
  * completer runs short: past it, the completer's rows are the answer.
  */
@@ -87,6 +106,79 @@ const clamp = (value: number, min: number, max: number): number =>
 
 const toGeo = (place: GeoPlaceJson, location: string): GeoLocation =>
   new GeoLocation({ lat: place.lat, lng: place.lng, name: place.name, source: location });
+
+/**
+ * A place a search found, as a candidate: with the text a pick writes,
+ * the name and address, as a picked typeahead row would (the text
+ * searched for where MapKit gives no name).
+ */
+const foundCandidate =
+  (text: string) =>
+  ({
+    match,
+    place,
+  }: {
+    readonly match: PlaceCandidate['match'];
+    readonly place: GeoPlaceJson;
+  }): PlaceCandidate => {
+    const name = place.name ?? text;
+    return {
+      ...(place.address ? { address: place.address } : {}),
+      geo: new GeoLocation({
+        lat: place.lat,
+        lng: place.lng,
+        name: place.name,
+        source: place.address ? `${name}, ${place.address}` : name,
+      }),
+      match,
+      source: 'mapkit',
+    };
+  };
+
+/** A candidate another reading of the words found, marked with that reading. */
+const foundAs =
+  (reading: string) =>
+  (candidate: PlaceCandidate): PlaceCandidate => ({ ...candidate, alternative: reading });
+
+/**
+ * The places dictation's other readings of the words name (`alternatives`,
+ * the likeliest first): the past places each names, then MapKit's hits
+ * that resemble a reading and are nearby or where it says — a place the
+ * user has been to beats any search hit, and the far namesakes and the
+ * hits that resemble nothing are no one's guess here. Each marked with
+ * its reading, so it is offered and never taken. MapKit is asked for
+ * the readings side by side within `wait`, each kept as it answers; with
+ * no wait left, not at all.
+ */
+const alternativeCandidates = (
+  readings: ReadonlyArray<string>,
+  places: ReadonlyArray<PastPlace>,
+  region: GeoRegion | undefined,
+  wait: Duration.Duration | undefined,
+) =>
+  Effect.gen(function* () {
+    const geo = yield* GeoClient;
+    const asked = readings.filter(isMappableLocation).slice(0, ALTERNATIVE_SEARCHES);
+    const found = yield* Effect.forEach(
+      wait === undefined ? [] : asked,
+      (reading) =>
+        geo.resolve({ limit: CANDIDATE_LIMIT, query: reading, region }).pipe(
+          Effect.timeout(wait ?? 0),
+          Effect.catch(() => Effect.succeed([])),
+          Effect.map((hits) =>
+            rankFoundPlaces(reading, hits, region)
+              .filter(({ match }) => match !== 'search')
+              .map(foundCandidate(reading))
+              .map(foundAs(reading)),
+          ),
+        ),
+      { concurrency: 'unbounded' },
+    );
+    return [
+      ...asked.flatMap((reading) => rankPastPlaces(reading, places).map(foundAs(reading))),
+      ...found.flat(),
+    ];
+  });
 
 /**
  * Where to look first: around the densest cluster of the coordinates on
@@ -160,21 +252,22 @@ export const locationHandlers: Pick<
 > = {
   clearLocationCache: () => Effect.flatMap(LocationGeoRepo, (cache) => cache.clear()),
 
-  mapSnapshot: ({ appearance, height, lat, lng, scale, width }) =>
+  mapSnapshot: ({ appearance, height, lat, lng, rect, scale, width }) =>
     Effect.gen(function* () {
       const geo = yield* GeoClient;
-      const pngBase64 = yield* geo.snapshot({
+      const { fitted, pngBase64 } = yield* geo.snapshot({
         appearance,
         height: Math.round(clamp(height, 1, 1200)),
         lat,
         lng,
+        rect,
         scale: clamp(scale, 1, 3),
         width: Math.round(clamp(width, 1, 1200)),
       });
-      return { pngBase64 };
+      return fitted === true && rect !== undefined ? { fitted, pngBase64 } : { pngBase64 };
     }),
 
-  placeCandidates: ({ location }) =>
+  placeCandidates: ({ alternatives, location }) =>
     Effect.gen(function* () {
       if (!isMappableLocation(location)) {
         return [];
@@ -247,22 +340,27 @@ export const locationHandlers: Pick<
         concurrency: 'unbounded',
       });
       const found = rankFoundPlaces(location, [...fromSearch, ...fromRows], region).map(
-        ({ match, place }): PlaceCandidate => {
-          const name = place.name ?? location;
-          return {
-            ...(place.address ? { address: place.address } : {}),
-            geo: new GeoLocation({
-              lat: place.lat,
-              lng: place.lng,
-              name: place.name,
-              source: place.address ? `${name}, ${place.address}` : name,
-            }),
-            match,
-            source: 'mapkit',
-          };
-        },
+        foundCandidate(location),
       );
-      return mergePlaceCandidates(history, found);
+      const heard = mergePlaceCandidates(history, found);
+      // Dictated words that name nothing nearby may have been misheard
+      // ("Figelmiller" for Figlmüller): the other readings the recogniser
+      // weighed are asked too, and what they name comes first — offered
+      // before a far namesake, taken only when picked.
+      // Asked since `now`: the readings get what is left of the budget.
+      const elapsed = (yield* Clock.currentTimeMillis) - now;
+      const left = Math.min(ALTERNATIVE_SEARCH_MS, CANDIDATES_BUDGET_MS - elapsed);
+      if ((alternatives ?? []).length === 0 || preselectedPlace(heard) !== undefined) {
+        return heard;
+      }
+      const others = yield* alternativeCandidates(
+        alternatives ?? [],
+        places,
+        region,
+        left > 0 ? Duration.millis(left) : undefined,
+      );
+      // First, each once, but never all: the words as written keep a place or two.
+      return mergePlaceCandidates(mergePlaceCandidates([], others, ALTERNATIVES_OFFERED), heard);
     }),
 
   resolveLocation: ({ location, suggestion }) =>

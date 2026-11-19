@@ -57,6 +57,7 @@ export default function SettingsLayout() {
             <Stack.Screen name="device" options={{ title: 'On This iPhone' }} />
             <Stack.Screen name="time-zones" options={{ title: 'Time Zones' }} />
             <Stack.Screen name="notifications" options={{ title: 'Notifications' }} />
+            <Stack.Screen name="dictation" options={{ title: 'Dictation' }} />
             <Stack.Screen name="getting-started" options={{ title: 'Getting Started' }} />
             <Stack.Screen name="mirrors" options={{ title: '' }} />
             <Stack.Screen name="mirror" options={{ title: '' }} />
@@ -66,6 +67,7 @@ export default function SettingsLayout() {
             <Stack.Screen name="advanced" options={{ title: 'Advanced' }} />
             <Stack.Screen name="diagnostics" options={{ title: 'Diagnostics' }} />
             <Stack.Screen name="pr-preview" options={{ title: 'PR Preview' }} />
+            <Stack.Screen name="model-spike" options={{ title: 'Model Spike' }} />
           </Stack>
         </NotificationSettingsProvider>
         <NoticeStack offset={insets.bottom + NOTICE_GAP}>

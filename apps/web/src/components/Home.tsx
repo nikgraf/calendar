@@ -104,11 +104,11 @@ const privacyPoints = [
     title: 'Local first',
   },
   {
-    body: 'The Mac window stays out of screen sharing and recordings unless you turn that off in Settings.',
-    title: 'Hidden from screen shares',
+    body: 'One setting keeps the Mac window out of screen sharing and recordings while it stays on your own display.',
+    title: 'Hide it from screen shares',
   },
   {
-    body: "Quick add, find a time, dictation and capture run on Apple's on-device models. Nothing is uploaded for them unless you point the Mac at a model server you choose.",
+    body: "Quick add and find a time run on a model of their own, on the iPhone and the Mac; dictation and capture run on Apple's on-device models. Nothing is uploaded for them unless you point the Mac at a model server you choose.",
     title: 'AI on the device',
   },
 ];
@@ -258,8 +258,9 @@ export function HomePage() {
               Get Solunivo for macOS and iPhone
             </h2>
             <p className="m-0 text-on-primary/70">
-              The AI features need Apple Intelligence, or a model server of your own on the Mac.
-              Everything else works without them.
+              Quick add on the iPhone needs one with 8 GB of memory; the other AI features need
+              Apple Intelligence, or a model server of your own on the Mac. Everything else works
+              without them.
             </p>
           </div>
           {releases.mac || releases.iphone ? (

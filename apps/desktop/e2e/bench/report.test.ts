@@ -8,6 +8,7 @@ import {
   compareReports,
   formatReport,
   scoreOf,
+  tagScores,
   type TurnReport,
   writeReport,
 } from './report.ts';
@@ -153,14 +154,160 @@ describe('formatReport', () => {
       ),
     ).toContain('recordings: 2 missing (ran as the transcript)');
   });
+
+  it('says what the run set beyond the provider, and which cases a rescore left alone', () => {
+    const text = formatReport(
+      report(CASES, {
+        provider: 'openai:lfm3',
+        rescored: { sha: 'old0000', stale: ['dinner'], when: '2026-08-21T09:00:00.000Z' },
+        settings: 'http://127.0.0.1:11434/v1 {"reasoning_effort":"none"}',
+      }),
+    );
+    expect(text).toContain(
+      '== openai:lfm3 (http://127.0.0.1:11434/v1 {"reasoning_effort":"none"})',
+    );
+    expect(text).toContain(
+      '   not scored again (gone, or other turns or words than the report): dinner',
+    );
+    expect(formatReport(report(CASES))).not.toContain('not scored again');
+  });
+
+  it('places no fault on a turn that passes, whatever a rescored report kept of the transcript', () => {
+    const passing = turn({
+      audio: 'transcribed',
+      heard: 'make it late',
+      said: { notes: ['start=19:00'], ok: false, outcome: { kind: 'rejected', reason: 'none' } },
+      wordErrorRate: 1 / 3,
+    });
+    expect(formatReport(report([{ id: 'a', ok: true, tags: [], turns: [passing] }]))).toContain(
+      '  ok    1.0s  a  →  heard "make it late" (WER 33%)',
+    );
+  });
+});
+
+const tagged = (id: string, ok: boolean, tags: ReadonlyArray<string>): CaseReport => ({
+  id,
+  ok,
+  tags,
+  turns: [turn()],
+});
+
+describe('tagScores', () => {
+  it('counts the cases passed per tag, the largest tag first and ties by name', () => {
+    expect(
+      tagScores([
+        tagged('a', true, ['flow', 'de']),
+        tagged('b', false, ['flow']),
+        tagged('c', true, ['basic']),
+        tagged('d', true, []),
+      ]),
+    ).toEqual([
+      ['flow', { ok: 1, total: 2 }],
+      ['basic', { ok: 1, total: 1 }],
+      ['de', { ok: 1, total: 1 }],
+    ]);
+  });
+});
+
+describe('formatReport — tags and blind cases', () => {
+  const BLIND: ReadonlyArray<CaseReport> = [
+    ...CASES,
+    {
+      blind: true,
+      id: 'sealed-lunch',
+      ok: false,
+      tags: ['flow'],
+      turns: [turn({ failed: ['title'], notes: ['title=Lunch at'] })],
+    },
+    { blind: true, id: 'sealed-call', ok: true, tags: [], turns: [turn()] },
+  ];
+
+  it('prints the cases passed per tag, and no tag line for cases without tags', () => {
+    expect(formatReport(report(CASES))).toContain('   tags: flow 0/1');
+    expect(formatReport(report([CASES[0]!]))).not.toContain('tags:');
+  });
+
+  it('counts a blind case in every score and gives it no line of its own', () => {
+    const text = formatReport(report(BLIND));
+    expect(text).not.toContain('sealed');
+    expect(text).not.toContain('Lunch at');
+    // Every case counts in the score. A tag counts the open cases only: a
+    // tag with one blind case would give that case's outcome away.
+    expect(text).toContain('cases 2/4 · turns 3/5');
+    expect(text).toContain('   tags: flow 0/1');
+    expect(text).not.toContain('flow 0/2');
+    // The two sets apart, the blind one by its counts alone.
+    expect(text).toContain(
+      '   open: cases 1/2 · turns 2/3 · title 2/2 · date 2/2 · time 0/1 · unchanged 1/1',
+    );
+    expect(text).toContain('   blind: cases 1/2 · turns 1/2 · title 1/2 · date 2/2');
+    // A report without blind cases says nothing of sets.
+    expect(formatReport(report(CASES))).not.toContain('open:');
+  });
+
+  it('names blind cases only when asked to', () => {
+    const text = formatReport(report(BLIND), { showBlind: true });
+    expect(text).toContain('sealed-lunch (blind)  →  title=Lunch at');
+    expect(text).toContain('sealed-call (blind)');
+    expect(text).not.toContain('dinner (blind)');
+    expect(text).toContain('   tags: flow 0/2');
+  });
+
+  it('counts a blind case a rescore left alone, and names the open ones', () => {
+    const rescored = report(BLIND, {
+      rescored: { sha: 'old0000', stale: ['dinner', 'sealed-lunch'], when: '2026-08-21T09:00' },
+    });
+    expect(formatReport(rescored)).toContain(
+      '   not scored again (gone, or other turns or words than the report): dinner · 1 blind',
+    );
+    expect(formatReport(rescored, { showBlind: true })).toContain('dinner, sealed-lunch');
+  });
+
+  it('prints a set of cases without fields without a dangling separator', () => {
+    const bare: CaseReport = { blind: true, id: 'sealed', ok: true, tags: [], turns: [] };
+    expect(formatReport(report([CASES[0]!, bare])).split('\n')).toContain(
+      '   blind: cases 1/1 · turns 0/0',
+    );
+  });
 });
 
 describe('compareReports', () => {
+  it('counts a blind case that flipped without naming it, and says what chance would do', () => {
+    const before = report([
+      ...CASES,
+      { blind: true, id: 'sealed', ok: false, tags: [], turns: [turn({ failed: ['title'] })] },
+    ]);
+    const after = report([
+      CASES[0]!,
+      {
+        ...CASES[1]!,
+        ok: true,
+        turns: [turn(), turn({ checked: ['time', 'unchanged'], input: 'make it late' })],
+      },
+      { blind: true, id: 'sealed', ok: true, tags: [], turns: [turn()] },
+    ]);
+    const text = compareReports(before, after);
+    expect(text).toContain('   fixed: flow-dinner · 1 blind');
+    expect(text).not.toContain('sealed');
+    expect(text).toContain(
+      '   2 fixed, 0 broke: by chance alone p = 0.50, not told apart from chance',
+    );
+    expect(compareReports(before, after, { showBlind: true })).toContain(
+      '   fixed: flow-dinner, sealed',
+    );
+    // Nothing flipped: no line about chance.
+    expect(compareReports(before, before)).not.toContain('chance');
+  });
+
   it('names the cases that flipped and the fields that moved', () => {
     const before = report(CASES, { sha: 'old0000', when: '2026-08-21T09:00:00.000Z' });
     const after = report([
       { ...CASES[0]!, ok: false, turns: [turn({ failed: ['title'], notes: ['title=Sarah'] })] },
-      { ...CASES[1]!, ok: true, turns: [turn(), turn({ checked: ['time', 'unchanged'] })] },
+      {
+        ...CASES[1]!,
+        ok: true,
+        turns: [turn(), turn({ checked: ['time', 'unchanged'], input: 'make it late' })],
+      },
     ]);
     const text = compareReports(before, after);
     expect(text).toContain('vs old0000 (2026-08-21T09:00): cases 1/2 → 1/2, turns 2/3 → 2/3');
@@ -179,6 +326,59 @@ describe('compareReports', () => {
     ]);
     expect(compareReports(before, after)).toContain('title 1/1 → 1/2');
   });
+
+  it('says when the two runs were not set up alike', () => {
+    const thinking = report(CASES, { provider: 'openai:lfm3', settings: 'http://localhost/v1' });
+    const quiet = report(CASES, {
+      provider: 'openai:lfm3',
+      settings: 'http://localhost/v1 {"reasoning_effort":"none"}',
+    });
+    expect(compareReports(thinking, quiet)).toContain(
+      '   settings: http://localhost/v1 → http://localhost/v1 {"reasoning_effort":"none"}',
+    );
+    expect(compareReports(report(CASES), quiet)).toContain('   settings: not recorded → ');
+    expect(compareReports(quiet, quiet)).not.toContain('settings');
+  });
+
+  it('leaves a case out of the flips when the two runs read other words', () => {
+    const before = report(CASES);
+    const reworded: CaseReport = {
+      ...CASES[1]!,
+      ok: true,
+      turns: [turn({ input: 'Dinner with Teo on Friday' }), turn({ checked: ['time'] })],
+    };
+    const text = compareReports(before, report([CASES[0]!, reworded]));
+    // It passes now, but to another phrase: no flip, and no test on it.
+    expect(text).not.toContain('fixed');
+    expect(text).not.toContain('chance');
+    expect(text).toContain('   not compared (other words in the two runs): flow-dinner');
+    // A blind one is counted, not named.
+    const sealed = { ...reworded, blind: true };
+    expect(compareReports(before, report([CASES[0]!, sealed]))).toContain(
+      '   not compared (other words in the two runs): 1 blind',
+    );
+    // Another number of turns is other words too.
+    const shorter = { ...CASES[1]!, ok: true, turns: [turn({ ms: 2000 })] };
+    expect(compareReports(before, report([CASES[0]!, shorter]))).toContain('not compared');
+  });
+
+  it('says when the two runs read on two days', () => {
+    const sunday = report(CASES, { today: '2026-11-15' });
+    const wednesday = report(CASES, { today: '2026-11-18' });
+    expect(compareReports(sunday, wednesday)).toContain(
+      '   read on two days, 2026-11-15 → 2026-11-18: name one (MODEL_BENCH_TODAY)',
+    );
+    expect(compareReports(sunday, sunday)).not.toContain('read on two days');
+  });
+
+  it('names the earlier run’s model where the two runs are of two models', () => {
+    const v1 = report(CASES, { provider: 'openai:assistant-v1+tuned', sha: 'old0000' });
+    const v2 = report(CASES, { provider: 'openai:assistant-v2+tuned' });
+    expect(compareReports(v1, v2)).toContain(
+      '   vs openai:assistant-v1+tuned at old0000 (2026-08-22T10:20): cases 1/2 → 1/2',
+    );
+    expect(compareReports(v1, v1)).toContain('   vs old0000 (2026-08-22T10:20): cases');
+  });
 });
 
 describe('writeReport', () => {
@@ -191,5 +391,23 @@ describe('writeReport', () => {
       ok: 1,
       total: 2,
     });
+  });
+
+  it('names a report scored again by its run too: a folder of them is scored in one second', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'bench-'));
+    const again = (rescored: BenchReport['rescored']): string =>
+      writeReport(
+        dir,
+        report(CASES, { rescored, sha: 'def5678-dirty', when: '2026-08-23T08:00:00.100Z' }),
+      );
+    const first = again({ sha: 'abc1234', when: '2026-08-22T10:20:30.000Z' });
+    const second = again({ sha: 'abc1234', when: '2026-08-21T09:00:00.000Z' });
+    expect(basename(first)).toBe(
+      '20260823-080000-def5678-dirty-apple-of-20260822-102030-abc1234.json',
+    );
+    expect(basename(second)).toBe(
+      '20260823-080000-def5678-dirty-apple-of-20260821-090000-abc1234.json',
+    );
+    expect(existsSync(first) && existsSync(second)).toBe(true);
   });
 });

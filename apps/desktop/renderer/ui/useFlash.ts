@@ -1,25 +1,39 @@
 import {
-  type DraftFlash,
   type FlashField,
+  type StepField,
   TURN_FLASH_FADE_MS,
   TURN_FLASH_HOLD_MS,
 } from '@calendar/app-state';
 import { createContext, type RefObject, useContext, useEffect, useRef } from 'react';
 
 /**
- * A tint behind an element a turn just changed: its background holds the
- * `highlight` token for `TURN_FLASH_HOLD_MS`, then eases back to its own
- * over `TURN_FLASH_FADE_MS` — once per `key` (a turn's id), nothing while
- * it is null. A color fade, not movement, so reduced motion keeps it. The
- * next key (or the element leaving) cancels one still running, so its own
- * color is read clean.
+ * A tint behind an element something just changed, in the `highlight`
+ * token, once per `key`, nothing while it is null. Fleeting (a search
+ * turn's chip), it holds for `TURN_FLASH_HOLD_MS` and eases back to the
+ * element's own color over `TURN_FLASH_FADE_MS`: an animation, its color
+ * read as it starts. `lasting` (the fields the editor's step on show
+ * changed), it stays until the key changes: the element carries
+ * `data-marked` and the stylesheet tints it (App.css), so the mark
+ * follows the appearance when that changes under it — a color baked into
+ * an animation stayed the light theme's on a dark form. A color change,
+ * not movement, so reduced motion keeps it. The next key (or the element
+ * leaving) ends one that is up.
  */
-export const useFlash = <T extends HTMLElement>(key: string | null): RefObject<T | null> => {
+export const useFlash = <T extends HTMLElement>(
+  key: string | null,
+  lasting = false,
+): RefObject<T | null> => {
   const ref = useRef<T>(null);
   useEffect(() => {
     const element = ref.current;
     if (key === null || element === null) {
       return undefined;
+    }
+    if (lasting) {
+      element.dataset['marked'] = '';
+      return () => {
+        delete element.dataset['marked'];
+      };
     }
     const highlight = getComputedStyle(document.documentElement)
       .getPropertyValue('--highlight')
@@ -40,17 +54,26 @@ export const useFlash = <T extends HTMLElement>(key: string | null): RefObject<T
       { duration },
     );
     return () => animation.cancel();
-  }, [key]);
+  }, [key, lasting]);
   return ref;
 };
 
-/** The editor's flash (`useThreadEditor().flash`), for its form's fields. */
-export const FieldFlashContext = createContext<DraftFlash | null>(null);
+/**
+ * What the editor's form marks: the fields the step on show changed
+ * (`useThreadEditor().marks`), kept until another step is shown.
+ */
+export interface FieldMarks {
+  readonly fields: ReadonlySet<StepField>;
+  readonly key: string;
+}
 
-/** A ref that flashes when the last turn changed `field`; null names no field (nothing flashes). */
+/** The editor's marks, for its form's fields. */
+export const FieldFlashContext = createContext<FieldMarks | null>(null);
+
+/** A ref whose element stays marked while the step on show changed `field`; null names no field. */
 export const useFieldFlash = <T extends HTMLElement>(
   field: FlashField | null,
 ): RefObject<T | null> => {
-  const flash = useContext(FieldFlashContext);
-  return useFlash<T>(flash && field !== null && flash.fields.has(field) ? flash.key : null);
+  const marks = useContext(FieldFlashContext);
+  return useFlash<T>(marks && field !== null && marks.fields.has(field) ? marks.key : null, true);
 };

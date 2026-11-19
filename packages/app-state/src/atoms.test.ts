@@ -489,11 +489,14 @@ describe('eventsInRange LRU', () => {
     expect(await settle(atoms.locationGeo(''))).toBeNull();
     expect((await settle(atoms.locationGeo('Naschmarkt')))?.source).toBe('Naschmarkt');
     expect(await settle(atoms.mapSnapshot(''))).toBeNull();
-    expect(await settle(atoms.mapSnapshot(mapSnapshotKey(params)))).toBe('png');
+    expect(await settle(atoms.mapSnapshot(mapSnapshotKey(params)))).toEqual({ pngBase64: 'png' });
+    // A map rect goes through the key and back whole.
+    const rect = { height: 0.000123, width: 0.000277, x: 0.545471, y: 0.355123 };
+    await settle(atoms.mapSnapshot(mapSnapshotKey({ ...params, rect })));
 
     expect(calls.places).toEqual(['naschmarkt']);
     expect(calls.resolved).toEqual(['Naschmarkt']);
-    expect(calls.snapshots).toEqual([params]);
+    expect(calls.snapshots).toEqual([params, { ...params, rect }]);
     for (const unmount of unmounts) {
       unmount();
     }

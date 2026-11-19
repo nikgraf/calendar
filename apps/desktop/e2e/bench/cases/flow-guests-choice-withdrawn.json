@@ -1,0 +1,24 @@
+{
+  "lang": "en",
+  "tags": ["flow", "guests"],
+  "turns": [
+    {
+      "input": { "text": "Coffee tomorrow at 3" },
+      "expect": {
+        "title": "coffee",
+        "dayOffset": 1,
+        "startTime": "15:00",
+        "endTime": "16:00",
+        "guests": {}
+      }
+    },
+    {
+      "input": { "text": "invite Anna" },
+      "expect": { "guests": { "choices": ["Anna"] } }
+    },
+    {
+      "input": { "text": "never mind, don't invite her" },
+      "expect": { "guests": {} }
+    }
+  ]
+}

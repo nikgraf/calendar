@@ -1,15 +1,23 @@
 import { Data } from 'effect';
-import type { SpeechEvent } from './endpointer.ts';
-/** One recognised span of speech. */
+import type { WordsSource } from './phraseEnd.ts';
+
+/** One recognised span of speech, with the other readings the recogniser weighed for it. */
 export interface TranscriptSegment {
+  readonly alternatives?: ReadonlyArray<string> | undefined;
   readonly text: string;
 }
 
-/**
- * On-device speech-to-text. Mirrors `LanguageModel`: platform-free, so the
- * desktop helper can implement the same shape later (macOS 26 exposes the
- * same speech API as iOS 26).
- */
+/** What a phrase was heard as, once it was read in full. */
+export interface Heard {
+  readonly segments: ReadonlyArray<TranscriptSegment>;
+  readonly text: string;
+}
+
+/** A phrase listened to: the recognisers that listen (the quick one needs its own assets). */
+export interface SpeechStart {
+  readonly sources: ReadonlyArray<WordsSource>;
+}
+
 /** The device or locale cannot transcribe at all — stop offering it. */
 export class SpeechUnsupportedError extends Data.TaggedError('SpeechUnsupportedError')<{
   readonly message: string;
@@ -20,9 +28,23 @@ export class MicrophoneDeniedError extends Data.TaggedError('MicrophoneDeniedErr
   readonly message: string;
 }> {}
 
+/**
+ * On-device speech-to-text, one phrase at a time, the same shape on both
+ * platforms (Apple's SpeechAnalyzer behind each: the iOS module, the
+ * desktop helper). Listening streams the microphone into two recognisers
+ * that write the words as they are said (`onWords`); finishing reads the
+ * whole phrase once more, with the recogniser the words were always read
+ * with, and returns that. When the phrase ends is the caller's to decide
+ * (`listenForPhrase`, from the words).
+ */
 export interface SpeechToText {
-  /** Abandons a recording without transcribing it, deleting the audio. */
-  readonly cancelRecording: () => Promise<void>;
+  /** Abandons the phrase being listened to, keeping nothing of it. */
+  readonly cancel: () => Promise<void>;
+  /**
+   * Stops listening and reads the phrase. Undefined when nothing was
+   * said. The audio is gone afterwards either way.
+   */
+  readonly finish: () => Promise<Heard | undefined>;
   /**
    * Whether transcription is worth offering at all — the native module is
    * present. Deliberately not "ready to run": the platform reports
@@ -39,28 +61,24 @@ export interface SpeechToText {
    */
   readonly prepare: () => Promise<void>;
   /**
-   * Starts recording, asking for the microphone if needed. Throws
-   * MicrophoneDeniedError when refused. Owning recording here keeps every
-   * native import — and the audio-session and temp-file lifecycle — behind
-   * one lazily loaded module.
+   * Starts listening, asking for the microphone if needed. Throws
+   * MicrophoneDeniedError when refused. `onWords` gets each recogniser's
+   * words so far whenever they change; `onLost`, that the phrase is gone
+   * (the recognisers went away with their process) and nothing will
+   * finish it. Resolves with the recognisers that listen, or nothing when
+   * given up.
    *
    * A call whose `signal` is aborted before it finishes stops whatever it
-   * opened and resolves without becoming the current recording. A caller
+   * opened and resolves without becoming the current phrase. A caller
    * that gave up (the bar closed while the microphone was being granted)
-   * must not cancel afterwards instead: by then the current recording may
+   * must not cancel afterwards instead: by then the current phrase may
    * belong to a newer caller.
-   *
-   * With `onSpeech` the recording listens for its phrase's end
-   * (`createEndpointer` over the microphone's level): 'start' once speech
-   * is confirmed, 'end' after the pause that follows it — hands-free
-   * dictation stops there instead of at a tap.
    */
-  readonly startRecording: (options?: {
-    readonly onSpeech?: (event: SpeechEvent) => void;
-    readonly signal?: AbortSignal;
-  }) => Promise<void>;
-  /** Stops, transcribes, cleans up. Undefined when nothing was said. */
-  readonly stopRecording: () => Promise<string | undefined>;
+  readonly start: (options: {
+    readonly onLost?: (() => void) | undefined;
+    readonly onWords: (source: WordsSource, text: string) => void;
+    readonly signal?: AbortSignal | undefined;
+  }) => Promise<SpeechStart | undefined>;
 }
 
 /**
@@ -79,4 +97,12 @@ export const transcriptFromSegments = (
     .replaceAll(/\s+/g, ' ')
     .trim();
   return text || undefined;
+};
+
+/** A finished phrase from the recogniser's segments; undefined for silence. */
+export const heardFromSegments = (
+  segments: ReadonlyArray<TranscriptSegment>,
+): Heard | undefined => {
+  const text = transcriptFromSegments(segments);
+  return text === undefined ? undefined : { segments, text };
 };

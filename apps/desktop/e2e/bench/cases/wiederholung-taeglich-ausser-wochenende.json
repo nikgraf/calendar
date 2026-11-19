@@ -1,0 +1,16 @@
+{
+  "blind": true,
+  "lang": "de",
+  "tags": ["repeat", "de"],
+  "turns": [
+    {
+      "input": { "text": "Täglich um 6:30 Uhr Dehnen, nur nicht samstags und sonntags" },
+      "expect": {
+        "title": "dehnen",
+        "startTime": "06:30",
+        "endTime": "07:30",
+        "repeat": { "freq": "weekly", "byDay": ["MO", "TU", "WE", "TH", "FR"] }
+      }
+    }
+  ]
+}

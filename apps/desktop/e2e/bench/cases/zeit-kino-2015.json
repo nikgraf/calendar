@@ -1,0 +1,10 @@
+{
+  "lang": "de",
+  "tags": ["time", "de"],
+  "turns": [
+    {
+      "input": { "text": "Kino Samstag um 20:15" },
+      "expect": { "title": "kino", "weekday": 6, "startTime": "20:15", "endTime": "21:15" }
+    }
+  ]
+}

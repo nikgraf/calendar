@@ -1,11 +1,14 @@
 import { useBackendMutations } from '@calendar/app-state';
 import { useState } from 'react';
+import { loadOpenModelRuntime } from '../../openModel.ts';
 import { ActionRow, Footer, NavRow, Section, SettingsPage } from '../GroupedList.tsx';
 
 /**
  * Advanced: the location cache, as on the Mac, then troubleshooting a
  * build — Diagnostics and PR Preview. The settings file has its own page
- * (SettingsFilePage).
+ * (SettingsFilePage). Model Spike is listed where the binary can run a
+ * model of its own: both variants since llama.rn is linked in both, so a
+ * TestFlight build measures too, as PR Preview loads a pull request there.
  */
 export function AdvancedPage() {
   const { clearLocationCache } = useBackendMutations();
@@ -57,6 +60,13 @@ export function AdvancedPage() {
           title="Diagnostics"
         />
         <NavRow href="/settings/pr-preview" testID="settings-row-pr-preview" title="PR Preview" />
+        {loadOpenModelRuntime() ? (
+          <NavRow
+            href="/settings/model-spike"
+            testID="settings-row-model-spike"
+            title="Model Spike"
+          />
+        ) : null}
       </Section>
     </SettingsPage>
   );

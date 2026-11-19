@@ -1,0 +1,20 @@
+{
+  "lang": "en",
+  "tags": ["flow", "title", "follow-up"],
+  "turns": [
+    {
+      "input": { "text": "Lunch tomorrow at 1" },
+      "expect": {
+        "title": "lunch",
+        "dayOffset": 1,
+        "startTime": "13:00",
+        "endTime": "14:00",
+        "location": null
+      }
+    },
+    {
+      "input": { "text": "with Stefan" },
+      "expect": { "title": "lunch with stefan", "location": null, "guests": {} }
+    }
+  ]
+}

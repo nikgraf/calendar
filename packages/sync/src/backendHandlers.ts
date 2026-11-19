@@ -500,6 +500,8 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
         const tokenStore = yield* TokenStore;
         yield* tokenStore.remove(accountId);
       }
+      // Its queued ops go with it: the sources of its queued copies stay.
+      yield* (yield* EventMutations).releaseAccountCopies(accountId);
       yield* accountRepo.remove(accountId);
       if (account) {
         // Preferences an import parked for it would otherwise keep the

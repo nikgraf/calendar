@@ -1,0 +1,25 @@
+{
+  "blind": true,
+  "lang": "en",
+  "tags": ["flow", "guests"],
+  "turns": [
+    {
+      "input": { "text": "Demo Wednesday at 4" },
+      "expect": {
+        "title": "demo",
+        "weekday": 3,
+        "startTime": "16:00",
+        "endTime": "17:00",
+        "guests": {}
+      }
+    },
+    {
+      "input": { "text": "invite Lukas" },
+      "expect": { "guests": { "choices": ["Lukas"] } }
+    },
+    {
+      "input": { "text": "and jo@example.com" },
+      "expect": { "guests": { "emails": ["jo@example.com"], "choices": ["Lukas"] } }
+    }
+  ]
+}

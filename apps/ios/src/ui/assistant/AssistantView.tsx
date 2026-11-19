@@ -1,0 +1,646 @@
+import {
+  changedLine,
+  describeDraft,
+  type Draft,
+  draftCalendarKey,
+  draftListKey,
+  type FieldChange,
+  type NoChangeLine,
+  stepSummary,
+  type useThreadEditor,
+  versionLabel,
+} from '@calendar/app-state';
+import type { CalendarInfo, TaskListInfo } from '@calendar/core';
+import { SymbolView } from 'expo-symbols';
+import { type ReactNode, use, useRef } from 'react';
+import {
+  Pressable,
+  ScrollView,
+  type ScrollViewInstance,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import { BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme } from '../theme.ts';
+import { AssistantCard } from './AssistantCard.tsx';
+import { DraftQuestions } from './DraftQuestions.tsx';
+import { SwitchAnchorContext } from './useViewSwitch.ts';
+
+/**
+ * A step that is not the one on show, in one line: which version it left,
+ * what it did, and the way to it. Later ones — stepped back over — are
+ * dimmed.
+ */
+function VersionRow({
+  dimmed = false,
+  disabled,
+  label,
+  onRestore,
+  summary,
+}: {
+  readonly dimmed?: boolean;
+  readonly disabled: boolean;
+  readonly label: string;
+  readonly onRestore: () => void;
+  readonly summary: string;
+}) {
+  const styles = useStyles(makeStyles);
+  return (
+    <View style={[styles.version, dimmed && styles.dimmed]} testID="assistant-version">
+      <View style={styles.versionText}>
+        <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.versionLabel}>
+          {label.toUpperCase()}
+        </Text>
+        <Text numberOfLines={1} style={styles.versionSummary}>
+          {summary}
+        </Text>
+      </View>
+      <Pressable
+        accessibilityLabel={`Restore ${label}`}
+        accessibilityRole="button"
+        accessibilityState={{ disabled }}
+        disabled={disabled}
+        hitSlop={6}
+        onPress={onRestore}
+        style={[styles.textButton, disabled && styles.disabled]}
+        testID="assistant-restore"
+      >
+        <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.textButtonLabel}>
+          Restore
+        </Text>
+      </Pressable>
+    </View>
+  );
+}
+
+/**
+ * Words that changed nothing, answered: what was said on the right, as
+ * any phrase is, and under it that nothing changed — no card, no version
+ * to go back to — and why, where the words asked for what the draft
+ * cannot hold ("At most 5 notifications."). Dictated words the recogniser could have read another
+ * way offer the readings that would change something, while they are
+ * the newest thing said; a tap says one (`onReading`).
+ */
+function NoChangeReply({
+  disabled,
+  line: { dimmed, turn },
+  onReading,
+}: {
+  readonly disabled: boolean;
+  readonly line: NoChangeLine;
+  readonly onReading: ((text: string) => void) | undefined;
+}) {
+  const styles = useStyles(makeStyles);
+  const { colors } = useTheme();
+  const readings = dimmed || onReading === undefined ? [] : turn.readings;
+  return (
+    <View style={styles.step} testID="assistant-no-change">
+      <Text selectable style={[styles.said, dimmed && styles.dimmed]} testID="assistant-said">
+        {turn.utterance}
+      </Text>
+      <View
+        style={[styles.reply, readings.length > 0 && styles.replyWide, dimmed && styles.dimmed]}
+      >
+        <View style={styles.replyLine}>
+          <SymbolView name="equal.circle" size={20} tintColor={colors['text-secondary']} />
+          <Text style={styles.replyText} testID="assistant-reply">
+            <Text style={styles.replyLead}>Nothing changed.</Text>
+            {turn.note === undefined ? '' : ` ${turn.note}`}
+            {readings.length > 0 ? ' Did you mean' : ''}
+          </Text>
+        </View>
+        {readings.map((reading) => (
+          <Pressable
+            accessibilityLabel={`“${reading.text}”, ${reading.does}`}
+            accessibilityRole="button"
+            accessibilityState={{ disabled }}
+            disabled={disabled}
+            key={reading.text}
+            onPress={() => onReading?.(reading.text)}
+            style={({ pressed }) => [
+              styles.reading,
+              pressed && styles.readingPressed,
+              disabled && styles.disabled,
+            ]}
+            testID="assistant-reading"
+          >
+            <Text numberOfLines={2} style={styles.readingText}>
+              “{reading.text}”
+            </Text>
+            <Text numberOfLines={1} style={styles.readingDoes}>
+              {reading.does}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+/** Under the newest card: what the step changed, in a line, then Undo (a step back) and Edit (the form). */
+function CardFooter({
+  changes,
+  onEdit,
+  steps,
+}: {
+  readonly changes: ReadonlyArray<FieldChange>;
+  readonly onEdit: () => void;
+  readonly steps: ReturnType<typeof useThreadEditor>['steps'];
+}) {
+  const styles = useStyles(makeStyles);
+  return (
+    <View style={styles.footer}>
+      <Text numberOfLines={1} style={styles.changed} testID="assistant-changed">
+        {changedLine(changes)}
+      </Text>
+      <View style={styles.footerActions}>
+        {steps.at > 0 ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ disabled: steps.locked }}
+            disabled={steps.locked}
+            onPress={steps.back}
+            style={[styles.textButton, steps.locked && styles.disabled]}
+            testID="assistant-undo"
+          >
+            <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.textButtonLabel}>
+              Undo
+            </Text>
+          </Pressable>
+        ) : null}
+        <Pressable
+          accessibilityRole="button"
+          onPress={onEdit}
+          style={styles.textButton}
+          testID="assistant-edit"
+        >
+          <Text maxFontSizeMultiplier={BOX_FONT_SCALE} style={styles.textButtonLabel}>
+            Edit
+          </Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+/**
+ * The step on show as cards: the draft the form shows open, with what the
+ * step changed marked — unless the step made it, when all of it is new
+ * and nothing is "changed" — and any other draft as a line that brings
+ * it into the form; under them, while it is the newest step, what the
+ * assistant has to ask.
+ */
+function StepAnswer({
+  calendars,
+  editor,
+  note,
+  onEdit,
+  taskLists,
+}: {
+  readonly calendars: ReadonlyArray<CalendarInfo>;
+  readonly editor: ReturnType<typeof useThreadEditor>;
+  readonly note: string | undefined;
+  readonly onEdit: () => void;
+  readonly taskLists: ReadonlyArray<TaskListInfo>;
+}) {
+  const styles = useStyles(makeStyles);
+  const { assistant, drafts, eventModel, focused, marks, previewing, steps, taskModel } = editor;
+  /** Where a draft goes, by name and color: the focused one where the form points. */
+  const containerOf = (draft: Draft, index: number) => {
+    if (draft.item.kind === 'task') {
+      const key = index === focused ? taskModel.listKey : draftListKey(draft, taskLists, '');
+      const list = taskLists.find((each) => `${each.accountId}:${each.id}` === key);
+      return { color: list?.colorHex, name: list?.title };
+    }
+    const key =
+      index === focused
+        ? eventModel.calendarKey
+        : draftCalendarKey(draft, calendars, eventModel.calendarKey);
+    const calendar = calendars.find((each) => `${each.accountId}:${each.id}` === key);
+    return { color: calendar?.colorHex, name: calendar?.summary };
+  };
+  const shown = steps.line[steps.at - 1];
+  const label =
+    steps.at === 0 ? (assistant === 'saved' ? 'As saved' : '') : `Version ${String(steps.at)}`;
+  return (
+    <>
+      {drafts.map((draft, index) => {
+        if (index !== focused) {
+          return (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ disabled: !editor.draftsSettled }}
+              disabled={!editor.draftsSettled}
+              key={draft.id}
+              onPress={() => editor.switchFocus(index)}
+              style={styles.otherDraft}
+              testID="assistant-draft"
+            >
+              <Text numberOfLines={1} style={styles.otherTitle}>
+                {draft.item.prefill.title || 'Untitled'}
+              </Text>
+              <Text numberOfLines={1} style={styles.otherWhen}>
+                {describeDraft(draft, editor.keeps(draft))}
+              </Text>
+            </Pressable>
+          );
+        }
+        const container = containerOf(draft, index);
+        const existed = shown?.before.drafts.some((each) => each.id === draft.id) ?? false;
+        const changes = existed ? (marks?.changes ?? []) : [];
+        return (
+          <AssistantCard
+            changes={changes}
+            color={container.color}
+            container={container.name}
+            draft={draft}
+            footer={
+              previewing ? null : <CardFooter changes={changes} onEdit={onEdit} steps={steps} />
+            }
+            keeps={editor.keeps(draft)}
+            key={draft.id}
+            label={label}
+            // The question's map shows the places while it asks which one.
+            map={previewing || editor.questions.current?.kind !== 'place'}
+          />
+        );
+      })}
+      {previewing ? null : <DraftQuestions editor={editor} note={note} />}
+    </>
+  );
+}
+
+/**
+ * The assistant's view of the editor: a conversation, as on the desktop.
+ * What was said or typed is on the right; each answer is the item as a
+ * card, with what the step changed marked and the old value struck
+ * through, and under the newest whatever the assistant has to ask
+ * (`DraftQuestions`). Steps that are not on show are one line each with
+ * Restore, which puts that version on show ("Use this" then keeps it);
+ * an edit made by hand in the form is listed among them, and words that
+ * changed nothing after the step they followed, answered in a line
+ * (`NoChangeReply`). The newest row
+ * is the one to read, so the conversation sits at its end. Without the
+ * model it says why, with Check Again. What to say next is the bar's,
+ * under it (`AssistantBar`).
+ */
+/** Under the demo's answers: what they are. */
+const DEMO_NOTE =
+  'A demo answer, kept in the app: it answers the lesson’s phrases only. Save keeps the event, as with the real thing.';
+
+export function AssistantView({
+  banner,
+  calendars,
+  canSay = true,
+  demo = false,
+  editor,
+  note,
+  notice,
+  onEdit,
+  onReading,
+  pending,
+  taskLists,
+}: {
+  /** Above the conversation: the lesson's frame. */
+  readonly banner?: ReactNode;
+  readonly calendars: ReadonlyArray<CalendarInfo>;
+  /** No phrase is on its way: a reading may be said (`maySay`). */
+  readonly canSay?: boolean | undefined;
+  /** The Create lesson's demo is on (no model yet): its own hint, and a line under its answers. */
+  readonly demo?: boolean | undefined;
+  readonly editor: ReturnType<typeof useThreadEditor>;
+  /** A caveat about the drafts (the shared text was cut short). */
+  readonly note?: string | undefined;
+  /** Why the Assistant cannot answer yet (its model downloading, Apple's not ready), in the conversation's place. */
+  readonly notice?: ReactNode;
+  /** To the form, on the same draft. */
+  readonly onEdit: () => void;
+  /** Another reading of dictated words that changed nothing, said as if typed. */
+  readonly onReading?: ((text: string) => void) | undefined;
+  /** The words being read, until their answer lands. */
+  readonly pending?: string | undefined;
+  readonly taskLists: ReadonlyArray<TaskListInfo>;
+}) {
+  const styles = useStyles(makeStyles);
+  const { colors } = useTheme();
+  const { assistant, labels, steps } = editor;
+  const scroller = useRef<ScrollViewInstance>(null);
+  const anchors = use(SwitchAnchorContext);
+  // The newest row is the one to read: the conversation sits at its end,
+  // whichever of the two changed — what it holds, or the room it has (the
+  // keyboard and the field coming and going). `scrollToEnd` does nothing
+  // once the rows fit again, which left them scrolled half out of view
+  // above an empty stretch, so the offset is set outright.
+  const sizes = useRef({ content: 0, view: 0 });
+  const toEnd = (animated: boolean) => {
+    const { content, view } = sizes.current;
+    scroller.current?.scrollTo({ animated, y: Math.max(content - view, 0) });
+  };
+  const unavailable = notice !== undefined && notice !== null;
+  const started = steps.of > 0;
+  const answer = (
+    <StepAnswer
+      calendars={calendars}
+      editor={editor}
+      note={note}
+      onEdit={onEdit}
+      taskLists={taskLists}
+    />
+  );
+  const saved = steps.line[0]?.before.drafts[0];
+  // Words that changed nothing, after the step they followed (0: before the first).
+  const replies = (position: number) =>
+    (steps.noChange.get(position) ?? []).map((line) => (
+      <NoChangeReply
+        disabled={steps.locked || pending !== undefined || !canSay}
+        key={line.turn.id}
+        line={line}
+        onReading={onReading}
+      />
+    ));
+  return (
+    <ScrollView
+      contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+      onContentSizeChange={(_width, height) => {
+        sizes.current.content = height;
+        toEnd(true);
+      }}
+      onLayout={(event) => {
+        sizes.current.view = event.nativeEvent.layout.height;
+        toEnd(false);
+      }}
+      ref={(instance) => {
+        scroller.current = instance;
+        // The switch reads where the newest card will be once this is at its end.
+        anchors?.conversation(instance);
+      }}
+      style={styles.thread}
+      testID="assistant-thread"
+    >
+      {banner}
+      {unavailable ? <View testID="assistant-unavailable">{notice}</View> : null}
+      {!started && assistant === 'new' && !pending && !unavailable ? (
+        <View style={styles.empty} testID={demo ? 'assistant-demo-empty' : undefined}>
+          <SymbolView name="sparkles" size={22} tintColor={colors['text-secondary']} />
+          <Text style={styles.emptyTitle}>{demo ? 'Try the demo' : 'Say what to add'}</Text>
+          <Text style={styles.emptyHint}>
+            {demo
+              ? 'Send the phrase below. The answer is the event as a card, the same the Assistant gives once its model is here.'
+              : '“Lunch with Sarah tomorrow at 1”, then change it the same way: “at 12:30”, “invite Tom”.'}
+          </Text>
+        </View>
+      ) : null}
+      {assistant === 'saved' && steps.at > 0 ? (
+        <VersionRow
+          disabled={steps.locked}
+          label="As saved"
+          onRestore={() => steps.show(0)}
+          summary={saved ? describeDraft(saved, editor.keeps(saved)) : ''}
+        />
+      ) : null}
+      {steps.at === 0 && (assistant === 'saved' || !started) ? answer : null}
+      {steps.at === 0 && assistant === 'new' && started ? (
+        <Text style={styles.start} testID="assistant-start">
+          Before the first step: nothing yet.
+        </Text>
+      ) : null}
+      {replies(0)}
+      {steps.line.map((line) => (
+        <View key={line.step.id} style={styles.step}>
+          {line.step.kind === 'phrase' ? (
+            <Text
+              selectable
+              style={[styles.said, line.dimmed && styles.dimmed]}
+              testID="assistant-said"
+            >
+              {line.step.utterance}
+            </Text>
+          ) : null}
+          {line.position === steps.at ? (
+            answer
+          ) : (
+            <VersionRow
+              dimmed={line.dimmed}
+              disabled={steps.locked}
+              label={versionLabel(line)}
+              onRestore={() => steps.show(line.position)}
+              summary={stepSummary(line, labels)}
+            />
+          )}
+          {replies(line.position)}
+        </View>
+      ))}
+      {demo && started && !pending ? (
+        <Text style={styles.demoNote} testID="assistant-demo-note">
+          {DEMO_NOTE}
+        </Text>
+      ) : null}
+      {pending ? (
+        <Text style={[styles.said, styles.dimmed]} testID="assistant-pending">
+          {pending}
+        </Text>
+      ) : null}
+    </ScrollView>
+  );
+}
+
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    changed: {
+      color: colors['text-secondary'],
+      flex: 1,
+      fontSize: 13,
+    },
+    // The rows sit at the bottom, by the bar, until they fill the view.
+    content: {
+      flexGrow: 1,
+      gap: 10,
+      justifyContent: 'flex-end',
+      paddingBottom: 12,
+      paddingHorizontal: 16,
+      paddingTop: 8,
+    },
+    demoNote: {
+      color: colors['text-secondary'],
+      fontSize: 13,
+      lineHeight: 18,
+      paddingHorizontal: 4,
+    },
+    dimmed: {
+      opacity: 0.5,
+    },
+    disabled: {
+      opacity: 0.35,
+    },
+    empty: {
+      alignItems: 'center',
+      flex: 1,
+      gap: 6,
+      justifyContent: 'center',
+      paddingHorizontal: 24,
+    },
+    emptyHint: {
+      color: colors['text-secondary'],
+      fontSize: 14,
+      lineHeight: 19,
+      textAlign: 'center',
+    },
+    emptyTitle: {
+      color: colors.text,
+      fontSize: 17,
+      fontWeight: '600',
+    },
+    footer: {
+      alignItems: 'center',
+      borderTopColor: colors.border,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      flexDirection: 'row',
+      gap: 8,
+      justifyContent: 'space-between',
+    },
+    footerActions: {
+      flexDirection: 'row',
+      gap: 4,
+    },
+    otherDraft: {
+      alignItems: 'center',
+      backgroundColor: colors.surface,
+      borderRadius: 14,
+      flexDirection: 'row',
+      gap: 10,
+      minHeight: 44,
+      paddingHorizontal: 14,
+      paddingVertical: 8,
+    },
+    otherTitle: {
+      color: colors.text,
+      flex: 1,
+      fontSize: 16,
+      fontWeight: '500',
+    },
+    otherWhen: {
+      color: colors['text-secondary'],
+      flexShrink: 1,
+      fontSize: 13,
+    },
+    reading: {
+      alignItems: 'center',
+      backgroundColor: colors['surface-subtle'],
+      borderColor: colors.border,
+      borderRadius: 12,
+      borderWidth: StyleSheet.hairlineWidth,
+      flexDirection: 'row',
+      gap: 10,
+      justifyContent: 'space-between',
+      minHeight: 44,
+      paddingHorizontal: 14,
+      paddingVertical: 8,
+    },
+    readingDoes: {
+      color: colors['text-secondary'],
+      flexShrink: 0,
+      fontSize: 15,
+    },
+    readingPressed: {
+      opacity: 0.6,
+    },
+    readingText: {
+      color: colors.text,
+      flexShrink: 1,
+      fontSize: 16,
+      fontWeight: '600',
+    },
+    /** The answer to words that changed nothing: on the left, on the surface the cards are on. */
+    reply: {
+      alignSelf: 'flex-start',
+      backgroundColor: colors.surface,
+      borderBottomLeftRadius: 6,
+      borderBottomRightRadius: 20,
+      borderTopLeftRadius: 20,
+      borderTopRightRadius: 20,
+      gap: 8,
+      marginRight: 40,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+    },
+    replyLead: {
+      fontWeight: '600',
+    },
+    replyLine: {
+      alignItems: 'flex-start',
+      flexDirection: 'row',
+      gap: 8,
+    },
+    replyText: {
+      color: colors.text,
+      flexShrink: 1,
+      fontSize: 16,
+      lineHeight: 21,
+    },
+    /** With readings to offer, the answer takes the width they need. */
+    replyWide: {
+      alignSelf: 'stretch',
+      marginRight: 24,
+    },
+    /** What was said or typed: on the right, in the ink of an action. */
+    said: {
+      alignSelf: 'flex-end',
+      backgroundColor: colors.primary,
+      borderBottomLeftRadius: 20,
+      borderBottomRightRadius: 6,
+      borderTopLeftRadius: 20,
+      borderTopRightRadius: 20,
+      color: colors['on-primary'],
+      fontSize: 16,
+      lineHeight: 21,
+      marginLeft: 48,
+      overflow: 'hidden',
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+    },
+    start: {
+      color: colors['text-secondary'],
+      fontSize: 13,
+    },
+    step: {
+      gap: 10,
+    },
+    textButton: {
+      justifyContent: 'center',
+      minHeight: 44,
+      paddingHorizontal: 10,
+    },
+    textButtonLabel: {
+      color: colors.text,
+      fontSize: 15,
+      fontWeight: '600',
+    },
+    thread: {
+      flex: 1,
+    },
+    version: {
+      alignItems: 'center',
+      backgroundColor: colors.surface,
+      borderRadius: 14,
+      flexDirection: 'row',
+      gap: 8,
+      paddingLeft: 14,
+      paddingRight: 4,
+    },
+    versionLabel: {
+      color: colors['text-secondary'],
+      fontSize: 12,
+      fontWeight: '600',
+      letterSpacing: 0.3,
+    },
+    versionSummary: {
+      color: colors['text-secondary'],
+      fontSize: 15,
+    },
+    versionText: {
+      flex: 1,
+      gap: 1,
+      paddingVertical: 8,
+    },
+  });

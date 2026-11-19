@@ -1,0 +1,10 @@
+{
+  "lang": "en",
+  "tags": ["date"],
+  "turns": [
+    {
+      "input": { "text": "Pilates at 6pm" },
+      "expect": { "title": "pilates", "dayOffset": 0, "startTime": "18:00", "endTime": "19:00" }
+    }
+  ]
+}

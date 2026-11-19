@@ -35,15 +35,16 @@ tags:
     from:
       id: 'time-zone-picker'
     direction: UP
-- tapOn:
-    id: 'time-zone-search'
-- inputText: 'Europe'
-- extendedWaitUntil:
-    visible:
-      id: 'time-zone-option-Europe-Amsterdam'
-    timeout: 5000
-- eraseText
-- inputText: 'Honolulu'
+- runFlow:
+    file: ../common/search-time-zone.yaml
+    env:
+      QUERY: 'Europe'
+      OPTION: 'time-zone-option-Europe-Amsterdam'
+- runFlow:
+    file: ../common/search-time-zone.yaml
+    env:
+      QUERY: 'Honolulu'
+      OPTION: 'time-zone-option-Pacific-Honolulu'
 - tapOn:
     id: 'time-zone-option-Pacific-Honolulu'
 - extendedWaitUntil:
@@ -59,9 +60,11 @@ tags:
     timeout: 5000
 - tapOn:
     id: 'time-zone-add'
-- tapOn:
-    id: 'time-zone-search'
-- inputText: 'Kolkata'
+- runFlow:
+    file: ../common/search-time-zone.yaml
+    env:
+      QUERY: 'Kolkata'
+      OPTION: 'time-zone-option-Asia-Kolkata'
 - tapOn:
     id: 'time-zone-option-Asia-Kolkata'
 - extendedWaitUntil:

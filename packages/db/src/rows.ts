@@ -4,6 +4,7 @@ import {
   CalendarInfo,
   CarriedText,
   Contact,
+  CopySource,
   engineRecurrenceLines,
   engineZoneId,
   EventRecord,
@@ -332,9 +333,7 @@ export interface EventRow {
 const attendeesJson = Schema.Array(Attendee);
 
 const stringArray = (value: unknown): Array<string> | undefined =>
-  Array.isArray(value) && value.every((entry) => typeof entry === 'string')
-    ? (value as Array<string>)
-    : undefined;
+  Array.isArray(value) && value.every((entry) => typeof entry === 'string') ? value : undefined;
 
 /**
  * A row's zones are read in the spelling this engine accepts: rows pulled
@@ -481,6 +480,7 @@ export interface PendingOpRow {
   readonly task_parent: string | null;
   readonly task_due_cleared: number;
   readonly task_previous: string | null;
+  readonly copy_source: string | null;
 }
 
 const eventListSchema = Schema.Array(EventRecord);
@@ -520,6 +520,7 @@ export const pendingOpFromRow = (row: PendingOpRow): PendingOp | undefined =>
         carriedText: decodeOr(CarriedText, parseJson(row.carried_text)),
         colorHex: row.color_hex ?? undefined,
         conflictAt: row.conflict_at ?? undefined,
+        copySource: decodeOr(CopySource, parseJson(row.copy_source)),
         createdAt: row.created_at,
         dispatchedAt: row.dispatched_at ?? undefined,
         dropsFrom: row.drops_from ?? undefined,

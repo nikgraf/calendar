@@ -25,7 +25,6 @@ describe('checkAvailability', () => {
     ['appleIntelligenceNotEnabled', 'disabled'],
     ['modelNotReady', 'not-ready'],
     ['deviceNotEligible', 'unsupported'],
-    ['osTooOld', 'unsupported'],
   ] as const)('maps %s onto %s and keeps the reason', async (reason, status) => {
     await expect(
       checkAvailability({ ai: ai(false), bridge: bridge({ reason, status: 'unavailable' }) }),

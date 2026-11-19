@@ -1,0 +1,20 @@
+{
+  "lang": "de",
+  "tags": ["command", "de"],
+  "turns": [
+    {
+      "input": {
+        "audio": "trag-mir-zahnarzt-ein-1.m4a",
+        "transcript": "Trag mir am Dienstag um 10 einen Zahnarzttermin ein"
+      },
+      "expect": {
+        "kind": "event",
+        "title": "zahnarzttermin",
+        "weekday": 2,
+        "startTime": "10:00",
+        "endTime": "11:00",
+        "location": null
+      }
+    }
+  ]
+}

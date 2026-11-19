@@ -20,14 +20,13 @@ import { repeatSpecFrom, seedRepeatFields } from './repeatState.ts';
  * What the calendar draws for the thread's drafts: each event draft as a
  * block in its calendar's color, every occurrence of a repeating one in
  * the visible range, the focused one marked, and the free slots a finder
- * phrase offered beside the focused draft as fainter candidates. Nothing
+ * phrase offered beside the focused draft as fainter candidates, and
+ * where the focused draft stood before the step on show moved it. Nothing
  * here is stored — the previews are derived from the drafts (and the live
  * form for the focused one) on every change.
  */
 
-export interface DraftPreview {
-  /** Set for a block that offers a free slot beside the focused draft: a click moves the draft there. */
-  readonly candidate?: FreeSlot | undefined;
+interface PreviewFields {
   /** The hex of the calendar the draft would be created in. */
   readonly color: string;
   readonly date: string;
@@ -43,10 +42,17 @@ export interface DraftPreview {
   readonly title: string;
 }
 
-/** One block to draw: a draft, one occurrence of a repeating draft, or a free slot offered beside one. */
-export interface DraftOccurrence {
-  /** The free slot this block offers; a click moves the draft (`draftId`) into it. */
-  readonly candidate?: FreeSlot | undefined;
+/**
+ * What the calendar draws for a thread, by `kind`: a `draft`; a
+ * `candidate`, a free slot offered beside the focused draft (a click
+ * moves the draft into `slot`); or `was`, where the focused draft stood
+ * before the step on show moved it — an outline, nothing to click.
+ */
+export type DraftPreview =
+  | (PreviewFields & { readonly kind: 'draft' | 'was' })
+  | (PreviewFields & { readonly kind: 'candidate'; readonly slot: FreeSlot });
+
+interface OccurrenceFields {
   readonly color: string;
   readonly draftId: string;
   readonly endDate?: string | undefined;
@@ -61,6 +67,15 @@ export interface DraftOccurrence {
   readonly startUtc: number;
   readonly title: string;
 }
+
+/**
+ * One block to draw, by `kind` as its preview's: a draft or one
+ * occurrence of a repeating draft, a free slot offered beside one (a
+ * click moves the draft, `draftId`, into `slot`), or where the draft was.
+ */
+export type DraftOccurrence =
+  | (OccurrenceFields & { readonly kind: 'draft' | 'was' })
+  | (OccurrenceFields & { readonly kind: 'candidate'; readonly slot: FreeSlot });
 
 /** The RRULE a prefill's repeat fields build, the way Save builds it. */
 export const prefillRecurrence = (
@@ -92,10 +107,31 @@ export const previewOfPrefill = (
   focused,
   id,
   isAllDay: prefill.isAllDay,
+  kind: 'draft',
   recurrence: prefillRecurrence(prefill, timeZone),
   startTime: prefill.startTime,
   title: prefill.title,
 });
+
+/**
+ * Where a draft stood before a step moved it, for the grid to outline:
+ * its day and hours then, once — a repeat is not outlined at every
+ * occurrence. A to-do drew no block, so it leaves no trace.
+ */
+export const wasPreview = (
+  before: Draft,
+  { color, timeZone }: { color: string; timeZone: string },
+): DraftPreview | undefined => {
+  if (before.item.kind !== 'event') {
+    return undefined;
+  }
+  const { recurrence: _rule, ...once } = previewOfPrefill(before.id, before.item.prefill, {
+    color,
+    focused: false,
+    timeZone,
+  });
+  return { ...once, kind: 'was' };
+};
 
 /**
  * The free slots offered beside the focused draft, as blocks: every slot
@@ -111,13 +147,14 @@ export const candidatePreviews = (
   (draft.slots ?? [])
     .filter((slot) => !isAtSlot({ kind: 'event', prefill: current }, slot))
     .map((slot) => ({
-      candidate: slot,
       color,
       date: slot.date,
       endTime: slot.endTime,
       focused: false,
       id: draft.id,
       isAllDay: false,
+      kind: 'candidate',
+      slot,
       startTime: slot.startTime,
       title: current.title,
     }));
@@ -125,7 +162,7 @@ export const candidatePreviews = (
 /**
  * The blocks to draw for a range: a draft once, a repeating draft at every
  * occurrence the range holds (through the same expander the grid uses for
- * stored series), a candidate once.
+ * stored series), a candidate and a trace once.
  */
 export const draftOccurrences = (
   previews: ReadonlyArray<DraftPreview>,
@@ -144,7 +181,9 @@ export const draftOccurrences = (
       return [];
     }
     const shared = {
-      ...(preview.candidate ? { candidate: preview.candidate } : {}),
+      ...(preview.kind === 'candidate'
+        ? { kind: preview.kind, slot: preview.slot }
+        : { kind: preview.kind }),
       color: preview.color,
       draftId: preview.id,
       endTime: preview.endTime,
@@ -160,10 +199,14 @@ export const draftOccurrences = (
               ...shared,
               ...('endDate' in times ? { endDate: times.endDate, startDate: times.startDate } : {}),
               endUtc: times.endUtc,
-              // A candidate's key names its slot: a draft can have several beside it.
-              key: preview.candidate
-                ? `${preview.id}:slot:${preview.date}T${preview.startTime}`
-                : preview.id,
+              // A candidate's key names its slot: a draft can have several
+              // beside it. A trace's says what it is: its draft is drawn too.
+              key:
+                preview.kind === 'candidate'
+                  ? `${preview.id}:slot:${preview.date}T${preview.startTime}`
+                  : preview.kind === 'was'
+                    ? `${preview.id}:was`
+                    : preview.id,
               startUtc: times.startUtc,
             },
           ]

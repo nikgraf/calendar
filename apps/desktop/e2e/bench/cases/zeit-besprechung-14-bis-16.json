@@ -1,0 +1,11 @@
+{
+  "blind": true,
+  "lang": "de",
+  "tags": ["time", "de"],
+  "turns": [
+    {
+      "input": { "text": "Besprechung morgen von 14 bis 16 Uhr" },
+      "expect": { "title": "besprechung", "dayOffset": 1, "startTime": "14:00", "endTime": "16:00" }
+    }
+  ]
+}

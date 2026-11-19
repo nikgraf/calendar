@@ -1,0 +1,18 @@
+{
+  "lang": "en",
+  "tags": ["flow", "shift"],
+  "turns": [
+    {
+      "input": { "text": "Picnic Friday at 12" },
+      "expect": { "title": "picnic", "weekday": 5, "startTime": "12:00", "endTime": "13:00" }
+    },
+    {
+      "input": { "text": "move it to 1" },
+      "expect": { "startTime": "13:00", "endTime": "14:00" }
+    },
+    {
+      "input": { "text": "until 2:30" },
+      "expect": { "startTime": "13:00", "endTime": "14:30" }
+    }
+  ]
+}

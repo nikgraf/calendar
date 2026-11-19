@@ -1,13 +1,10 @@
-# Backlog (ranked 2026-09-10, pruned 2026-09-11, reviewed 2026-10-02)
+# Backlog (reviewed 2026-11-17)
 
 How to read: tiers are ordered by impact, top item first within a tier.
 Each item is one `todo/<slug>` PR unless it says otherwise. When an item
 lands it leaves this file and `docs/decisions.md` gets a short record of
-the decisions it settled — this file stays a backlog. File:line evidence is from the
-2026-09-10 audit; re-verify before starting an item. The 2026-09-11
-sweep (`todo/backlog-tiers`) closed every item of the former tiers 1–6
-except the two below; their entries are in `docs/decisions.md` under
-"Backlog sweep (2026-09-11)".
+the decisions it settled — this file stays a backlog. Evidence named in an item dates from when it
+was written; re-verify before starting one.
 
 ## Tier 0 — bugs
 
@@ -32,8 +29,7 @@ The 2026-10-02 review's findings are closed in `docs/decisions.md`
 ## Tier 1 — CI and distribution
 
 - [ ] PR videos (designed, not built) — every PR with a visible change
-      attaches a short recording. `gh` ≥ 2.99.0 (2026-09-01; local is
-      2.97.0, `brew upgrade gh`) adds `--attach` to `gh pr create/edit/
+      attaches a short recording. `gh` ≥ 2.99.0 adds `--attach` to `gh pr create/edit/
   comment` for inline-playable video: 10 MB on Free plans, 100 MB paid
       — design for 10 MB (≤ 20 s clips, 720p wide, `-crf 28` ≈ 1–3 MB).
       Tooling: `pnpm record ios <flow>` wraps `maestro test` in
@@ -41,14 +37,15 @@ The 2026-10-02 review's findings are closed in `docs/decisions.md`
       (`kill -INT` finalizes the file); `pnpm record desktop "<it name>"`
       runs one spec by name with CDP `Page.startScreencast` in
       `apps/desktop/e2e/harness.ts` — OS-level capture is blanked by
-      `setContentProtection`, so the compositor path is the only one that
-      works; `ws.onmessage` (`harness.ts:181`) currently drops id-less
-      events, so add an event map + `Page.screencastFrameAck` — frames →
+      `setContentProtection` whenever screen privacy is on, so the
+      compositor path is the one that works on any profile;
+      `ws.onmessage` in the harness currently drops id-less events,
+      so add an event map + `Page.screencastFrameAck` — frames →
       `ffmpeg -framerate 15 … libx264`. CI: a `record` PR label (same
-      trigger shape as the `testflight` label, `ios.yml:227-234`) records
+      trigger shape as the `testflight` label in `ios.yml`) records
       flows tagged `record` inside the existing `e2e`/`ios-e2e` jobs and
       posts `gh pr comment --attach` with the comment-upsert pattern from
-      `ios.yml:207-221`; ffmpeg is not on the runner images (pinned static
+      `ios.yml`; ffmpeg is not on the runner images (pinned static
       binary). PR template gains a "video attached / n.a." checkbox. Not
       possible: REST/GraphQL upload; inline playback from an Actions
       artifact or a private-repo release asset.
@@ -85,9 +82,14 @@ The 2026-10-02 review's findings are closed in `docs/decisions.md`
       Apple bridge does not read availability, so "marked free" is Google
       only; definitions could sync through iCloud key-value storage
       instead of the settings file (a new entitlement in every build).
-- [ ] Reminders follow-ups — subtasks/flags/tags; location alarms;
-      multiple editable alarms (`alarms` is already `number[]` end to
-      end); yearly positional rules, several rules, day-of-month lists and
+- [ ] Reminders follow-ups — subtasks/flags/tags; location alarms (the
+      bridge reads one as offset 0, "At time", and any alert write keeps
+      only absolute alarms, so it is replaced: `RemindersBridge.swift`'s
+      DTO and `apply`); multiple editable alarms in the form (`alarms` is
+      `number[]` end to end, and the Assistant changes every one since
+      #315, but the picker only the first); an alert said for an undated
+      reminder (a relative alarm with no due date never fires); yearly
+      positional rules, several rules, day-of-month lists and
       a monthly rule on a plain weekday without an ordinal still
       round-trip as `{unsupported:true}` (weekly by-day and monthly
       ordinals ship since 2026-09-20); creating/deleting Reminders lists
@@ -134,52 +136,113 @@ The 2026-10-02 review's findings are closed in `docs/decisions.md`
 
 ## Tier 3 — AI features
 
-AI redesign (agreed 2026-10-11, one PR each, in this order; the
-grounding PR that opened it, #182, the desktop draft thread (#183),
-the served model (#184) and slot proposals (#185) are in
-`docs/decisions.md` → AI, with the iOS thread in the sheet (#187) and on the calendar (#188); search filters (#186) under Search):
-
-- [ ] Draft thread leftovers on the desktop (both platforms draw the
-      thread now, `docs/decisions.md` → AI): drafts in the month view, a
-      slot or ⌘N editor without a phrase drawing its form as a draft too,
-      to-do drafts on the grid (a to-do draft draws nothing yet).
+- [ ] Draft thread leftovers on the desktop (the Mac's grid draws the
+      thread; the iPhone's sheet covers its calendar, `docs/decisions.md`
+      → AI): drafts in the month view, a slot or ⌘N editor without a
+      phrase drawing its form as a draft too, to-do drafts on the grid (a
+      to-do draft draws nothing yet), the "was" outline for an all-day
+      draft.
+- [ ] Assistant view follow-ups (the editor's two views shipped,
+      `docs/decisions.md` → AI): the Search thread on steps too (it keeps
+      its turns and Undo); ⌘Z / ⇧⌘Z through the steps on the Mac;
+      haptics on the iPhone's
+      bar and on the switch between the views (a native build);
+      answering the Assistant's question by voice ("the first one", a
+      model task with bench cases, not a word list); every value
+      travelling from the card to its field in the switch, and the
+      title's type size with it.
 - [ ] Served-model follow-ups (shipped in #184,
       `docs/decisions.md` → AI) — the model's own context from Ollama's
       `/api/show` instead of the fixed `num_ctx`; image input for a served
       model (Gemma 4 takes images, so capture could skip OCR); the
       `ModelInfo` capability record beyond the context (modalities, guided
       JSON) once a feature reads it.
-- [ ] Model bench follow-ups (the bench, 2026-10-25, `docs/decisions.md`
-      → AI; each its own PR, the bench re-run in the PR body) — a bare
-      "make it 8" and the dictated "eight" are not read as a time
-      (SpeechAnalyzer writes small numbers as words); a German change
-      taken as a title ("lieber Mittwoch"); the small-hours reading of a
-      bare 1–6 (open since #248); a to-do's alarms from "remind me …
-      before" (an event's notifications are read since 2026-10-26); an
-      imperative lead kept in the title ("Set up a dinner with Tom Baker",
-      "Trag mir … ein").
-- [ ] Dictated quick-add follow-ups (two iPhone recordings, 2026-11-06;
-      the place lookup's share shipped, `docs/decisions.md` → "Calendar:
-      editing, gestures, views", "Places nearby first"; each its own PR,
-      in this order) — a spoken
-      command stays in the title ("Add an event to have lunch with
-      Stefan": the title falls back to the phrase, and nothing takes the
-      command off it; the imperative lead above is the same gap); a turn
-      that names only a city or district replaces the place instead of
-      narrowing it ("it's in Vienna" after "Cafe Meek" sets "Vienna" or
-      changes nothing, with the right transcript too), and a bare "with
-      Stefan" lands in the location; a name dictation mishears and the
-      user has never been to finds nothing (MapKit's search reads a
-      doubled letter, not "Cafe Meek" for Kaffemik, and Apple's model
-      cannot respell it) — recognizer vocabulary from contacts and past
-      places, which needs an own speech module on iOS
-      (`@react-native-ai/apple` takes audio and a locale); bench cases
-      for all of it: 1 of 55 opens with a command, none leans on the turn
-      before, none asks MapKit, and the Mac's model titles a phrase the
-      iPhone's echoes.
-- [ ] Gemma 4 on iOS — opt-in download via llama.rn (JSON schema →
-      grammar maps onto `generateJson`), load on demand, unload on
-      background; only if the bench shows the model is the bottleneck.
+- [ ] A to-do's repeat from the Assistant — "water the plants every
+      Monday" as a to-do: its result keeps only the day, time and title
+      (`answerResult`, `convertQuickAddItem`), so a repeat said for it is
+      lost. A to-do's repeat is a Reminders field (`ReminderFields.repeat`,
+      kept only on a Reminders list), as its alerts are since #315. Probe
+      first whether the current model writes one for a to-do.
+- [ ] Dictated place names (two iPhone recordings, 2026-11-06,
+      `docs/decisions.md` → "Calendar: editing, gestures, views",
+      "Places nearby first", "A misheard place is looked for as its other
+      readings"; each its own PR, in this order) — a name dictation
+      mishears and the user has never been to finds nothing (MapKit's
+      search reads a doubled letter, not "Cafe Meek" for Kaffemik, and
+      the Assistant's model keeps the name as heard). The final reading's
+      alternatives are searched too since #324, which found two more of
+      the place bench's 34 synthetic cases and Kaffemik in none of its
+      seven: real recordings in `places.json` (the iPhone's "Cafe Meek"
+      had "Meek" among them), then the readings given to the model with
+      past places and contacts, measured there; vocabulary itself reaches
+      only DictationTranscriber, whose words are shown, not sent.
+      MapKit's structured city/region/country fields in a native build.
+- [ ] Dictation follow-ups (`docs/decisions.md` → AI, "Dictation ends
+      on its words, and shows them"; measured on synthetic phrases
+      only) — the pauses (900 / 1,200 ms), Reduce Background Noise and
+      Mic Mode's Voice Isolation (Settings › Dictation) measured on a
+      phone in real rooms (a café, a street); iOS's Mic Mode picker
+      offered from the bar while it listens
+      (`AVCaptureDevice.showSystemUserInterface`; Settings only shows the
+      mode, since iOS offers the modes while recording, #325);
+      real-room recordings in the bench, replayed through the session
+      and the rule (and whether a quick recogniser that goes
+      deaf one word behind the accurate one ever cuts a phrase short:
+      the rule ends on the quick words then, a case constructed in
+      review but never seen in the recordings, where both cures cost
+      more than they saved, #322); English and German in one phrase (one
+      locale per recogniser today); a person talking nearby (their
+      words count: Voice Isolation measured first, then a speaker
+      match learned from phrases already said); Siri as a way in (an
+      App Shortcut that asks for the phrase; iOS 27's calendar schema
+      where Siri AI is available, not in the EU nor in German as of
+      2026-10); Parakeet TDT v3 as a recogniser arm on the Mac bench.
+- [ ] Served models: no thinking, and the strict schema on Ollama — the
+      app sends Ollama the schema as `format` (only the title required)
+      and turns thinking off on neither route. On Assistant phrases (the
+      bench, 2026-11-11) Gemma 4 E2B scored 40 of 70 at 4.1 s a turn
+      asked as the app asks Ollama, and 59 at 0.7 s over the
+      OpenAI-compatible route with every field required and
+      `reasoning_effort: "none"`. A served model now answers only search
+      sentences and capture, and find a time until the Assistant's model
+      is here; search and capture have no bench: measure those first.
+- [ ] The Assistant's own model, follow-ups (#307, v2 in #321) — search
+      sentences and capture still need Apple's model (data and a tuned
+      prompt each, in the next version's one training run); they have no
+      bench yet (capture's schema leaves the time and place optional,
+      and Apple's model filled no optional field on any quick-add phrase
+      in the bench, 2026-11-11, unmeasured for capture). v2 reads 263 of
+      305 bench cases (v1 237; the bench as it grew on 2026-11-15, #327) and
+      misses, heaviest first: a place narrowed to its city or street
+      (eight flows: "it's in Vienna" after a venue writes the city
+      alone; the data has no such turn, only real replacements); guests
+      in a later turn ("invite Sarah instead of Tom", "Jörg doch nicht",
+      "invite him too", two names joined by "and") and in a long phrase;
+      "a week later" counted from today, not from the draft's day; an
+      end said on its own ("it ends at 11", "from 10pm to 2am"); a long
+      phrase's note; a typo in the day ("tomorow", "wendsday"); "Call
+      tomorrow at 4, invite Max" as a to-do; a title that keeps "event
+      for". Find a time (109 of 124) titles a sentence that names no
+      purpose with its own words ("Find 30 minutes") and reads "the next
+      two weeks" as starting next Monday. Three conventions need a
+      decision before the next labels are made, since the teacher and
+      the bench differ and a model trained on the teacher fails the
+      bench's case: a destination ("Trip to Vienna": the title, or the
+      place), a to-do's place ("pick up the keys at reception": the
+      teacher drops it, and a to-do has no place to hold it), and
+      "Vacation until Friday" (the title keeps it, because no phrase
+      can make a draft of several days: the answer has no end day). In
+      the thread, a full name does not close an open choice of guests
+      ("invite Anna", then "invite Anna Lee" leaves Anna to pick from:
+      `flow-lunch-guests` fails on it for every model). Also open: a model for 6 GB iPhones (Q4_K_M, 1.2 GB loaded,
+      or a smaller base); "next Friday" and deadlines ("before Friday")
+      are read as the teacher read them, which wavers; notes over 200
+      characters or on several lines are not shown to the model, so the
+      Assistant only adds to them; a new version removes the last one's
+      file at launch, so someone who had it has no Assistant until they
+      tap Update (keeping it until the new one is checked costs a second
+      834 MB). Not checked on a device: the iPhone's transfer across a
+      quit and a network change.
 
 - [ ] Find-a-time follow-ups — the finder keeps a whole Apple series
       busy through a series edit (its rows are read through EventKit, no
@@ -187,9 +250,6 @@ the served model (#184) and slot proposals (#185) are in
       EventKit-aware exclusion; timed reminders do not count as busy;
       guests' free/busy is not fetched (Google freeBusy), which is where
       "when everyone is free" would go.
-
-Scope unchanged and all still open with zero code; the on-device-only
-decision and platform notes live in `docs/decisions.md`.
 
 - [ ] Capture follow-ups (shipped 2026-10-04, OCR-first; see
       docs/decisions.md) — **native image input on OS 27**: Foundation
@@ -204,7 +264,7 @@ decision and platform notes live in `docs/decisions.md`.
       text as the event's notes (both editors have a notes field;
       capture does not fill it); shared web URLs
       (the activation rule leaves them out — nothing fetches a page);
-      multi-day events (the editor clamps an end to its start day); a
+      multi-day events (capture's schema has no end day); a
       File-menu entry if ⌘V proves undiscoverable; token counting via
       `SystemLanguageModel.contextSize` (26.4+) in place of the 6000-char
       cap.
@@ -247,7 +307,6 @@ decision and platform notes live in `docs/decisions.md`.
   - Weather (also show on the day?)
   - Food tracking (nutrition data + macros)
   - Garmin data e.g. body battery
-  - Birthdays (shown since 2026-09-12; per-person reminders since 2026-10-04, a time per reminder since 2026-10-24)
   - Different views:
     - Business view(s) with certain selected calendar
       - What can other people see e.g. impersonation of a colleage

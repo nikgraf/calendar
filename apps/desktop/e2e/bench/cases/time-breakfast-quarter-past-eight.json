@@ -1,0 +1,17 @@
+{
+  "blind": true,
+  "lang": "en",
+  "tags": ["time"],
+  "turns": [
+    {
+      "input": { "text": "Breakfast with Jo Friday at quarter past eight" },
+      "expect": {
+        "title": "breakfast with jo",
+        "weekday": 5,
+        "startTime": "08:15",
+        "endTime": "09:15",
+        "guests": {}
+      }
+    }
+  ]
+}

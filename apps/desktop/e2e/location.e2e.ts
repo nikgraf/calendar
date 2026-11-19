@@ -116,7 +116,7 @@ const geo = {
   },
 };
 
-const INPUT = `document.querySelector('input[aria-label="Location"]')`;
+const INPUT = 'input[aria-label="Location"]';
 
 describe('location picker and map', () => {
   let app: App;
@@ -128,46 +128,55 @@ describe('location picker and map', () => {
   });
 
   const typeLocation = async (text: string) => {
-    await app.cdp.eval(`(() => {
-      const input = ${INPUT};
-      input.focus();
-      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-      setter.call(input, ${JSON.stringify(text)});
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    })()`);
+    await app.cdp.evaluate(
+      ($, input: string, value: string) => {
+        $.el(input)!.focus();
+        $.setValue(input, value);
+      },
+      INPUT,
+      text,
+    );
   };
   const pressKey = (key: string) =>
-    app.cdp.eval(
-      `${INPUT}.dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(key)}, bubbles: true, cancelable: true }))`,
+    app.cdp.evaluate(
+      ($, input: string, pressed: string) =>
+        $.el(input)!.dispatchEvent(
+          new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: pressed }),
+        ),
+      INPUT,
+      key,
     );
   const openEvent = async (title: string) => {
     await app.cdp.openEditor(`[title^="${title}"]`);
-    await app.cdp.waitFor(`!!${INPUT}`);
+    await app.cdp.waitUntil(($, input: string) => $.has(input), INPUT);
   };
 
   it('picks a suggestion, maps it, and queues the coordinates with the update', async () => {
     const { cdp } = app;
     await openEvent('Coffee chat');
-    expect(await cdp.eval(`!!document.querySelector('[data-map]')`)).toBe(false);
+    expect(await cdp.evaluate(($) => $.has('[data-map]'))).toBe(false);
 
     await typeLocation('blue');
-    await cdp.waitFor(`document.querySelectorAll('[role="option"]').length === 1`);
-    expect(
-      await cdp.eval<string>(`document.querySelector('[role="option"]').textContent`),
-    ).toContain('66 Mint St');
+    await cdp.waitUntil(($) => $.count('[role="option"]') === 1);
+    expect(await cdp.evaluate(($) => $.el('[role="option"]')!.textContent)).toContain('66 Mint St');
     await pressKey('Enter');
-    await cdp.waitFor(`${INPUT}.value === ${JSON.stringify(PICKED_LABEL)}`);
-    await cdp.waitFor(`document.querySelectorAll('[role="option"]').length === 0`);
-
-    await cdp.waitFor(
-      `document.querySelector('img[data-map]')?.getAttribute('src')?.startsWith('data:image/png;base64,') === true`,
+    await cdp.waitUntil(
+      ($, input: string, label: string) => $.value(input) === label,
+      INPUT,
+      PICKED_LABEL,
     );
-    expect(
-      await cdp.eval<string>(`document.querySelector('[data-open-in-maps]').getAttribute('href')`),
-    ).toBe('https://maps.apple.com/?ll=37.7823,-122.4076&q=Blue%20Bottle%20Coffee');
+    await cdp.waitUntil(($) => $.count('[role="option"]') === 0);
+
+    await cdp.waitUntil(
+      ($) =>
+        $.el('img[data-map]')?.getAttribute('src')?.startsWith('data:image/png;base64,') === true,
+    );
+    expect(await cdp.evaluate(($) => $.el('[data-open-in-maps]')!.getAttribute('href'))).toBe(
+      'https://maps.apple.com/?ll=37.7823,-122.4076&q=Blue%20Bottle%20Coffee',
+    );
 
     await cdp.clickButtonWithText('Save');
-    await cdp.waitFor(`!${INPUT}`);
+    await cdp.waitUntil(($, input: string) => !$.has(input), INPUT);
     await expect
       .poll(async () => {
         const ops = await readPendingOps(app.userDataDir);
@@ -184,21 +193,24 @@ describe('location picker and map', () => {
     await openEvent('Lunch plan');
     // One letter too many: the completer knows only the namesake in Berlin.
     await typeLocation('kaffeemik');
-    await cdp.waitFor(`document.querySelectorAll('[role="option"]').length === 2`);
+    await cdp.waitUntil(($) => $.count('[role="option"]') === 2);
     expect(
-      await cdp.eval<Array<string>>(
-        `[...document.querySelectorAll('[role="option"]')].map((option) => option.textContent)`,
-      ),
+      await cdp.evaluate(($) => $.all('[role="option"]').map((option) => option.textContent)),
     ).toEqual([expect.stringContaining('Zollergasse 5'), expect.stringContaining('Berlin')]);
     await pressKey('Enter');
-    await cdp.waitFor(`${INPUT}.value === 'Kaffemik, Zollergasse 5, 1070 Wien'`);
+    await cdp.waitUntil(
+      ($, input: string) => $.value(input) === 'Kaffemik, Zollergasse 5, 1070 Wien',
+      INPUT,
+    );
     // The row came with its coordinates: the map is that place.
-    await cdp.waitFor(`!!document.querySelector('img[data-map]')`);
-    expect(
-      await cdp.eval<string>(`document.querySelector('[data-open-in-maps]').getAttribute('href')`),
-    ).toBe('https://maps.apple.com/?ll=48.2003,16.3497&q=Kaffemik');
+    await cdp.waitUntil(($) => $.has('img[data-map]'));
+    expect(await cdp.evaluate(($) => $.el('[data-open-in-maps]')!.getAttribute('href'))).toBe(
+      'https://maps.apple.com/?ll=48.2003,16.3497&q=Kaffemik',
+    );
+    // The place picked is an edit: Cancel asks first.
     await cdp.clickButtonWithText('Cancel');
-    await cdp.waitFor(`!${INPUT}`);
+    await cdp.answerDiscard(true);
+    await cdp.waitUntil(($, input: string) => !$.has(input), INPUT);
   });
 
   it('maps stored coordinates on open and hides the map for a meeting link', async () => {
@@ -206,30 +218,30 @@ describe('location picker and map', () => {
     // The fixture cannot resolve this text: the map proves the stored
     // coordinates were used without a lookup.
     await openEvent('Mass');
-    await cdp.waitFor(`!!document.querySelector('img[data-map]')`);
-    expect(
-      await cdp.eval<string>(`document.querySelector('[data-open-in-maps]').getAttribute('href')`),
-    ).toContain('ll=48.2084,16.3735');
+    await cdp.waitUntil(($) => $.has('img[data-map]'));
+    expect(await cdp.evaluate(($) => $.el('[data-open-in-maps]')!.getAttribute('href'))).toContain(
+      'll=48.2084,16.3735',
+    );
 
     await typeLocation('https://meet.google.com/abc-defg-hij');
-    await cdp.waitFor(`!document.querySelector('[data-open-in-maps]')`);
-    expect(await cdp.eval(`document.querySelectorAll('[role="option"]').length`)).toBe(0);
-    expect(await cdp.eval(`!!document.querySelector('[data-map]')`)).toBe(false);
+    await cdp.waitUntil(($) => !$.has('[data-open-in-maps]'));
+    expect(await cdp.evaluate(($) => $.count('[role="option"]'))).toBe(0);
+    expect(await cdp.evaluate(($) => $.has('[data-map]'))).toBe(false);
 
     // Back to the stored text: its coordinates count again.
     await typeLocation(STORED.source);
-    await cdp.waitFor(`!!document.querySelector('img[data-map]')`);
+    await cdp.waitUntil(($) => $.has('img[data-map]'));
     await cdp.clickButtonWithText('Cancel');
-    await cdp.waitFor(`!${INPUT}`);
+    await cdp.waitUntil(($, input: string) => !$.has(input), INPUT);
   });
 
   it('clears the lookup cache from Settings', async () => {
     // The pick above cached its place.
     expect(await readLocationGeoCount(app.userDataDir)).toBeGreaterThan(0);
     const cdp = await app.openSettings('advanced');
-    await cdp.waitFor(`document.body.textContent.includes('Clear location cache')`);
+    await cdp.waitUntil(() => document.body.textContent.includes('Clear location cache'));
     await cdp.clickButtonWithText('Clear location cache');
-    await cdp.waitFor(`!!document.querySelector('[data-location-cache="cleared"]')`);
+    await cdp.waitUntil(($) => $.has('[data-location-cache="cleared"]'));
     expect(await readLocationGeoCount(app.userDataDir)).toBe(0);
   });
 });

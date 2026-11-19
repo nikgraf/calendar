@@ -1,8 +1,5 @@
 import ExpoModulesCore
-
-#if canImport(FoundationModels)
-  import FoundationModels
-#endif
+import FoundationModels
 
 /// Why Apple's on-device model can or cannot run, read from Foundation
 /// Models itself. `@react-native-ai/apple`, which does the generating,
@@ -16,19 +13,14 @@ public class SolunivoModelAvailabilityModule: Module {
 
     // Async, so it runs off the JS thread and the caller can bound it.
     AsyncFunction("check") { () -> [String: String] in
-      #if canImport(FoundationModels)
-        if #available(iOS 26, *) {
-          switch SystemLanguageModel.default.availability {
-          case .available:
-            return ["status": "available"]
-          case .unavailable(let reason):
-            return ["reason": String(describing: reason), "status": "unavailable"]
-          @unknown default:
-            return ["status": "unavailable"]
-          }
-        }
-      #endif
-      return ["reason": "osTooOld", "status": "unavailable"]
+      switch SystemLanguageModel.default.availability {
+      case .available:
+        return ["status": "available"]
+      case .unavailable(let reason):
+        return ["reason": String(describing: reason), "status": "unavailable"]
+      @unknown default:
+        return ["status": "unavailable"]
+      }
     }
   }
 }

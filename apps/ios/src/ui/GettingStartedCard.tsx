@@ -1,7 +1,7 @@
+import { createRowNote } from '@calendar/ai';
 import { useAccountCount, useOnboarding, useUpdateOnboarding } from '@calendar/app-state';
 import {
   cardVisible,
-  type LessonId,
   type LessonRowId,
   lessonCopy,
   lessonProgress,
@@ -9,13 +9,32 @@ import {
 } from '@calendar/core';
 import { MenuView } from '@expo/ui/community/menu';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useAssistantModelState } from '../assistantRuntime.ts';
+import { modelFixture } from '../model.ts';
 import { useOnboardingEnabled } from '../onboarding.ts';
 import { useEditorHost } from './EditorHost.tsx';
 import { Glyph } from './GroupedList.tsx';
 import { openLesson } from './lessons.ts';
 import { BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme } from './theme.ts';
+
+/**
+ * What a row says under its title: the lesson's line until it is ticked,
+ * and the Create row's download once it is asked for (running, waiting
+ * or failed), ticked or not.
+ */
+const rowLine = (
+  ticked: boolean,
+  subtitle: string,
+  note: ReturnType<typeof createRowNote>,
+): { readonly progress?: number; readonly text: string } | undefined => {
+  if (note?.asked === true) {
+    return note.progress === undefined
+      ? { text: note.subtitle }
+      : { progress: note.progress, text: note.subtitle };
+  }
+  return ticked ? undefined : { text: note?.subtitle ?? subtitle };
+};
 
 /**
  * The Getting started card at the top of the Calendar tab: one row per
@@ -24,9 +43,7 @@ import { BOX_FONT_SCALE, type ThemeColors, useStyles, useTheme } from './theme.t
  * while nothing is connected and opens the setup. The chevron folds the
  * card to one line, the menu removes it; it leaves by itself once every
  * row is ticked, and never re-expands on its own — Settings › Getting
- * Started brings it back. While the Create lesson's editor is up it shows
- * folded, without changing the stored fold: open, the card and the
- * half-height sheet would leave no hour of the day for the draft.
+ * Started brings it back.
  */
 export function GettingStartedCard({ timeZone }: { timeZone: string }) {
   const styles = useStyles(makeStyles);
@@ -38,36 +55,32 @@ export function GettingStartedCard({ timeZone }: { timeZone: string }) {
   const update = useUpdateOnboarding();
   // Null until read: the empty fallback would draw "Add your accounts" for a beat.
   const accountCount = useAccountCount();
-  // The Create lesson's opening the card was unfolded for by a tap on the
-  // folded bar; the next opening folds it again.
-  const [unfoldedFor, setUnfoldedFor] = useState<number | undefined>(undefined);
+  // The Create row says where the Assistant's model stands until it is
+  // ready (the fixture model always is): the download shows here, not in an alert.
+  const model = useAssistantModelState();
+  const createNote =
+    modelFixture && model.kind === 'unsupported'
+      ? undefined
+      : createRowNote(model, { device: 'iPhone' });
   if (!enabled || state === null || !cardVisible(state) || accountCount === null) {
     return null;
   }
-  const foldedForLesson = host.lessonEditor !== undefined && unfoldedFor !== host.lessonEditor;
   const progress = lessonProgress(state);
   const rows = lessonRows(state, { accountCount });
   const open = (id: LessonRowId) => {
     if (id === 'accounts') {
       router.push('/setup/sources');
     } else {
-      openLesson(id as LessonId, host, { from: 'calendar', timeZone });
+      openLesson(id, host, { from: 'calendar', timeZone });
     }
   };
 
-  if (state.card === 'collapsed' || foldedForLesson) {
+  if (state.card === 'collapsed') {
     return (
       <Pressable
         accessibilityHint="Shows the lessons"
         accessibilityRole="button"
-        onPress={() => {
-          if (foldedForLesson) {
-            setUnfoldedFor(host.lessonEditor);
-          }
-          if (state.card === 'collapsed') {
-            void update({ card: 'expanded' });
-          }
-        }}
+        onPress={() => void update({ card: 'expanded' })}
         style={({ pressed }) => [styles.bar, pressed && styles.pressed]}
         testID="getting-started"
       >
@@ -138,9 +151,10 @@ export function GettingStartedCard({ timeZone }: { timeZone: string }) {
       {rows.map((row) => {
         const copy = lessonCopy(row.id, 'iphone');
         const ticked = row.mark !== undefined;
+        const line = rowLine(ticked, copy.subtitle, row.id === 'create' ? createNote : undefined);
         return (
           <Pressable
-            accessibilityLabel={`${copy.title}${ticked ? ', done' : ''}`}
+            accessibilityLabel={`${copy.title}${ticked ? ', done' : ''}${line === undefined ? '' : `, ${line.text}`}`}
             accessibilityRole="button"
             key={row.id}
             onPress={() => open(row.id)}
@@ -161,10 +175,19 @@ export function GettingStartedCard({ timeZone }: { timeZone: string }) {
               <Text numberOfLines={1} style={[styles.rowTitle, ticked && styles.rowTicked]}>
                 {copy.title}
               </Text>
-              {ticked ? null : (
-                <Text numberOfLines={1} style={styles.rowSubtitle}>
-                  {copy.subtitle}
+              {line === undefined ? null : (
+                <Text
+                  numberOfLines={1}
+                  style={styles.rowSubtitle}
+                  testID={`getting-started-subtitle-${row.id}`}
+                >
+                  {line.text}
                 </Text>
+              )}
+              {line?.progress === undefined ? null : (
+                <View style={styles.rowTrack} testID="getting-started-create-progress">
+                  <View style={[styles.fill, { width: `${String(line.progress)}%` }]} />
+                </View>
               )}
             </View>
           </Pressable>
@@ -249,6 +272,7 @@ const makeStyles = (colors: ThemeColors) =>
       color: colors['text-secondary'],
       fontSize: 13,
     },
+    /** The model's download, under the Create row's line. */
     rowText: {
       flex: 1,
     },
@@ -260,6 +284,13 @@ const makeStyles = (colors: ThemeColors) =>
       color: colors.text,
       fontSize: 15,
       fontWeight: '500',
+    },
+    rowTrack: {
+      backgroundColor: colors.fill,
+      borderRadius: 2,
+      height: 3,
+      marginTop: 5,
+      overflow: 'hidden',
     },
     title: {
       color: colors.text,

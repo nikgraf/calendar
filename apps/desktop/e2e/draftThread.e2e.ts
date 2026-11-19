@@ -1,10 +1,14 @@
 import { Account, APPLE_REMINDERS_ACCOUNT_ID, CalendarInfo, TaskListInfo } from '@calendar/core';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vite-plus/test';
 import { type App, launchApp, readEvents, readTasks } from './harness.ts';
+import type { PageKit } from './page.ts';
 
-// The draft thread: a phrase makes drafts the grid draws hatched, every
-// later phrase changes them, Undo takes a turn back, Save writes. The model
-// is the deterministic fixture, so phrases are in its grammar —
+// The draft thread: a phrase to the editor's Assistant makes drafts the grid
+// draws hatched, every later phrase changes them, Undo shows the step
+// before (kept with "Use this"), Save writes. The form is the same draft's
+// other view: mounted behind the Assistant, so its fields are read here
+// wherever the draft is, and brought forward (`showEditorView`) before one
+// is clicked. The model is the deterministic fixture, so phrases are in its grammar —
 // `Title | +N | HH:MM-HH:MM | Location`, empty parts in a change meaning
 // "unchanged" — and nothing here depends on the date or on Apple
 // Intelligence. Two calendars (Work sorts first: the default), a Google
@@ -89,41 +93,59 @@ const INPUT = '[data-testid="quick-add-input"]';
 const TITLE = 'input[placeholder="Title"]';
 const START = 'input[aria-label="Start time"]';
 // CDP key events don't carry macOS meta reliably: dispatch ⌘N to the app's own window listener.
-const COMMAND_N = `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', metaKey: true }))`;
-const blocks = `document.querySelectorAll('[data-testid="draft-block"]').length`;
-const blockAt = (start: string) =>
-  `!!document.querySelector('[data-testid="draft-block"][data-draft-start="${start}"]')`;
-const turns = `document.querySelectorAll('[data-testid="draft-turn"]').length`;
-const more = `document.querySelector('[data-testid="draft-turns-more"]')?.textContent ?? ''`;
-// The list runs newest first: the first summary is the last turn's.
-const newestSummary = `document.querySelector('[data-testid="draft-turn-summary"]')?.textContent ?? ''`;
-const position = `(document.querySelector('[data-testid="draft-position"]')?.textContent ?? '')`;
-const titleIs = (title: string) =>
-  `document.querySelector(${JSON.stringify(TITLE)})?.value === ${JSON.stringify(title)}`;
-const headingIs = (text: string) =>
-  `document.querySelector('[data-testid="editor-title"]')?.textContent === ${JSON.stringify(text)}`;
-const valueOf = (selector: string) =>
-  `document.querySelector(${JSON.stringify(selector)})?.value ?? ''`;
+const commandN = () => {
+  window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', metaKey: true }));
+};
+const blocks = ($: PageKit) => $.count('[data-testid="draft-block"]');
+const blockAt = ($: PageKit, start: string) =>
+  $.has(`[data-testid="draft-block"][data-draft-start="${start}"]`);
+// The conversation: what was said, a row per step not on show, the card of the one that is.
+const said = ($: PageKit) => $.count('[data-testid="assistant-said"]');
+const versions = ($: PageKit) => $.count('[data-testid="assistant-version"]');
+const card = ($: PageKit, part: string) => $.text(`[data-testid="assistant-card-${part}"]`);
+const changed = ($: PageKit) => $.text('[data-testid="assistant-changed"]');
+const stepPosition = ($: PageKit) => $.text('[data-testid="step-position"]');
+const saveIsOff = ($: PageKit) => $.button('Save')?.disabled === true;
+const marked = ($: PageKit, selector: string) => $.el(selector)?.dataset.marked === '';
+const position = ($: PageKit) => $.text('[data-testid="draft-position"]');
+const titleIs = ($: PageKit, title: string, want: string) => $.value(title) === want;
+const headingIs = ($: PageKit, text: string) => $.text('[data-testid="editor-title"]') === text;
+const valueOf = ($: PageKit, selector: string) => $.value(selector);
 const CALENDAR = 'select[aria-label="Calendar"]';
 const LIST = 'select[aria-label="Task list"]';
-const setSelect = (selector: string, value: string) => `(() => {
-  const element = document.querySelector(${JSON.stringify(selector)});
-  Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set.call(element, ${JSON.stringify(value)});
+const setSelect = ($: PageKit, selector: string, value: string) => {
+  const element = $.el<HTMLSelectElement>(selector)!;
+  Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')!.set!.call(
+    element,
+    value,
+  );
   element.dispatchEvent(new Event('change', { bubbles: true }));
-})()`;
-const PRIORITY = `document.querySelector('[aria-label="Priority"] [role="radio"][aria-checked="true"]')?.textContent ?? ''`;
-const pickPriority = (label: string) =>
-  `[...document.querySelectorAll('[aria-label="Priority"] [role="radio"]')].find((option) => option.textContent === ${JSON.stringify(label)}).click()`;
-const asked = `!!document.querySelector('[data-testid="move-confirm"]')`;
-const colorAt = (start: string) =>
-  `document.querySelector('[data-testid="draft-block"][data-draft-start="${start}"]')?.dataset.color ?? ''`;
+};
+const priority = ($: PageKit) =>
+  $.text('[aria-label="Priority"] [role="radio"][aria-checked="true"]');
+const pickPriority = ($: PageKit, label: string) => {
+  $.all('[aria-label="Priority"] [role="radio"]')
+    .find((option) => option.textContent === label)!
+    .click();
+};
+const asked = ($: PageKit) => $.has('[data-testid="move-confirm"]');
+const ALERT = '[data-testid="reminder-alarm"]';
+const NOTES = 'textarea[placeholder="Add notes"]';
+const REPEAT = 'select[aria-label="Repeat"]';
+const alertLabel = ($: PageKit, alert: string) => $.text(`${alert} option:checked`);
+const disabled = ($: PageKit, testId: string) =>
+  $.el<HTMLButtonElement>(`[data-testid="${testId}"]`)?.disabled === true;
+const colorAt = ($: PageKit, start: string) =>
+  $.el(`[data-testid="draft-block"][data-draft-start="${start}"]`)?.dataset.color ?? '';
 
 /** A paste as the OS would deliver it, on the window: the text as text/plain. */
-const paste = (text: string) => `(() => {
+const paste = (_: PageKit, text: string) => {
   const data = new DataTransfer();
-  data.setData('text/plain', ${JSON.stringify(text)});
-  window.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: data }));
-})()`;
+  data.setData('text/plain', text);
+  window.dispatchEvent(
+    new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: data }),
+  );
+};
 
 describe('The draft thread', () => {
   let app: App;
@@ -136,58 +158,63 @@ describe('The draft thread', () => {
   afterEach(async () => {
     // A failure above must not strand an editor for the next test.
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      if (!(await app.cdp.eval<boolean>(`!!document.querySelector('[data-testid="editor"]')`))) {
+      if (!(await app.cdp.evaluate(($) => $.has('[data-testid="editor"]')))) {
         return;
       }
-      await app.cdp.pressEscape();
+      await app.cdp.escapeOrDiscard();
       await new Promise((resolve) => setTimeout(resolve, 150));
     }
   });
 
   it('draws a phrase as a draft, moves it on a second phrase, takes it back on Undo, and writes it on Save', async () => {
     const { cdp } = app;
-    await cdp.eval(COMMAND_N);
-    await cdp.waitFor(
-      `document.querySelector('[data-testid="editor-title"]')?.textContent === 'New event'`,
-    );
-    await cdp.type(INPUT, 'Dinner | +2 | 19:00-20:00');
-    await cdp.clickTestId('quick-add-apply');
-    // The draft is on the grid, hatched and outlined, and the form holds it.
-    await cdp.waitFor(blockAt('19:00'));
-    expect(await cdp.eval<number>(blocks)).toBe(1);
-    expect(await cdp.eval<boolean>(titleIs('Dinner'))).toBe(true);
-    expect(await cdp.eval<number>(turns)).toBe(1);
+    await cdp.evaluate(commandN);
+    await cdp.waitUntil(($) => $.text('[data-testid="editor-title"]') === 'New event');
+    await cdp.say('Dinner | +2 | 19:00-20:00');
+    // The draft is on the grid, hatched and outlined; the answer is its
+    // card, and the form behind holds it.
+    await cdp.waitUntil(blockAt, '19:00');
+    expect(await cdp.evaluate(blocks)).toBe(1);
+    await cdp.waitUntil(($) => $.text('[data-testid="assistant-card-title"]') === 'Dinner');
+    expect(await cdp.evaluate(titleIs, TITLE, 'Dinner')).toBe(true);
+    expect(await cdp.evaluate(said)).toBe(1);
+    expect(await cdp.evaluate(stepPosition)).toBe('1 of 1');
+    // The step that made the draft changed nothing of it.
+    expect(await cdp.evaluate(changed)).toBe('');
     // The field is free for the next phrase.
-    expect(await cdp.eval<string>(`document.querySelector(${JSON.stringify(INPUT)}).value`)).toBe(
-      '',
-    );
-
-    // A change: the same field, the block moves, the form follows, a turn is listed.
-    await cdp.type(INPUT, '| | 20:00-21:00');
-    await cdp.clickTestId('quick-add-apply');
-    await cdp.waitFor(blockAt('20:00'));
-    expect(await cdp.eval<number>(blocks)).toBe(1);
-    await cdp.waitFor(`document.querySelector(${JSON.stringify(START)})?.value === '20:00'`);
-    expect(await cdp.eval<number>(turns)).toBe(1);
-    expect(await cdp.eval<string>(more)).toBe('+1 earlier query');
-    // The newest turn on top, with the Undo.
-    expect(await cdp.eval<string>(newestSummary)).toContain('20:00–21:00');
     expect(
-      await cdp.eval<boolean>(
-        `!!document.querySelector('[data-testid="draft-turn"] [data-testid="draft-undo"]')`,
-      ),
-    ).toBe(true);
+      await cdp.evaluate(($, input: string) => $.el<HTMLInputElement>(input)!.value, INPUT),
+    ).toBe('');
 
-    // Undo: the turn is gone, the block and the form are back.
-    await cdp.clickTestId('draft-undo');
-    await cdp.waitFor(blockAt('19:00'));
-    await cdp.waitFor(`document.querySelector(${JSON.stringify(START)})?.value === '19:00'`);
-    expect(await cdp.eval<number>(turns)).toBe(1);
-    expect(await cdp.eval<string>(more)).toBe('');
+    // A change: the same field, the block moves, the form follows, and
+    // the card marks the time with the old one beside it.
+    await cdp.say('| | 20:00-21:00');
+    await cdp.waitUntil(blockAt, '20:00');
+    expect(await cdp.evaluate(blocks)).toBe(1);
+    await cdp.waitUntil(($, start: string) => $.value(start) === '20:00', START);
+    await cdp.waitUntil(($) => $.text('[data-testid="step-position"]') === '2 of 2');
+    expect(await cdp.evaluate(said)).toBe(2);
+    // The first step is a row above, with the way back to it.
+    expect(await cdp.evaluate(versions)).toBe(1);
+    expect(await cdp.evaluate(card, 'time')).toBe('20:00–21:0019:00–20:00');
+    expect(await cdp.evaluate(changed)).toBe('Changed: time');
+
+    // Undo shows the step before: the block and the form are back, and
+    // nothing is written while it is only looked at.
+    await cdp.clickTestId('assistant-undo');
+    await cdp.waitUntil(blockAt, '19:00');
+    await cdp.waitUntil(($, start: string) => $.value(start) === '19:00', START);
+    expect(await cdp.evaluate(stepPosition)).toBe('1 of 2');
+    expect(await cdp.evaluate(saveIsOff)).toBe(true);
+    // "Use this" keeps it and lets the later step go.
+    await cdp.clickTestId('step-use');
+    await cdp.waitUntil(($) => $.text('[data-testid="step-position"]') === '1 of 1');
+    expect(await cdp.evaluate(said)).toBe(1);
+    expect(await cdp.evaluate(blockAt, '19:00')).toBe(true);
 
     // Save writes the draft; no draft is left on the grid, the event is.
     await cdp.clickButtonWithText('Save');
-    await cdp.waitFor(`${blocks} === 0`);
+    await cdp.waitUntil(($) => $.count('[data-testid="draft-block"]') === 0);
     await expect
       .poll(async () =>
         (await readEvents(app.userDataDir)).find((event) => event.title === 'Dinner'),
@@ -196,124 +223,128 @@ describe('The draft thread', () => {
     await cdp.locate('[title^="Dinner ·"]');
   });
 
-  it('reads a note and a notification from the phrase into the form; a turn about nothing else needs no model', async () => {
+  it('reads a note and a notification from the phrase into the form, and adds to them turn by turn', async () => {
     const { cdp } = app;
-    await cdp.eval(COMMAND_N);
-    await cdp.waitFor(headingIs('New event'));
-    // The clauses leave the phrase before the (fixture) model sees it: the grammar still parses.
-    await cdp.type(
-      INPUT,
-      'Dentist | +2 | 10:00-11:00, remind me 30 minutes before, note: bring the card',
-    );
-    await cdp.clickTestId('quick-add-apply');
-    await cdp.waitFor(blockAt('10:00'));
-    expect(await cdp.eval<boolean>(titleIs('Dentist'))).toBe(true);
-    await cdp.waitFor(`${valueOf('[data-testid="editor-notes"]')} === 'bring the card'`);
-    expect(await cdp.eval<string>(valueOf('[data-testid="event-reminder-0"]'))).toBe('30');
-    expect(await cdp.eval<string>(newestSummary)).toContain('notifies 30 minutes before');
-    expect(await cdp.eval<string>(newestSummary)).toContain('adds a note');
+    await cdp.evaluate(commandN);
+    await cdp.waitUntil(headingIs, 'New event');
+    // The fixture's extras: the model answers the note and the notification with the event.
+    await cdp.say('Dentist | +2 | 10:00-11:00 | | remind 30, note: bring the card');
+    await cdp.waitUntil(blockAt, '10:00');
+    expect(await cdp.evaluate(titleIs, TITLE, 'Dentist')).toBe(true);
+    await cdp.waitUntil(($) => $.value('[data-testid="editor-notes"]') === 'bring the card');
+    expect(await cdp.evaluate(valueOf, '[data-testid="event-reminder-0"]')).toBe('30');
+    // The card lists both.
+    expect(await cdp.evaluate(card, 'reminders')).toBe('30 minutes before');
+    expect(await cdp.evaluate(card, 'notes')).toBe('bring the card');
 
-    // Words about a notification alone: no model call, the row joins and flashes.
-    await cdp.type(INPUT, 'and an hour before as well');
-    await cdp.clickTestId('quick-add-apply');
-    await cdp.waitFor(`${valueOf('[data-testid="event-reminder-1"]')} === '60'`);
-    expect(await cdp.eval<string>(valueOf('[data-testid="event-reminder-0"]'))).toBe('30');
-    expect(await cdp.eval<string>(newestSummary)).toBe('→ notifies 1 hour before');
-    await cdp.waitFor(
-      `document.querySelector('[data-testid="event-reminders"]')?.getAnimations().length === 1`,
+    // A notification alone: the row joins and is the one marked.
+    await cdp.say('remind 60');
+    await cdp.waitUntil(($) => $.value('[data-testid="event-reminder-1"]') === '60');
+    expect(await cdp.evaluate(valueOf, '[data-testid="event-reminder-0"]')).toBe('30');
+    await cdp.waitUntil(
+      ($) => $.text('[data-testid="assistant-changed"]') === 'Changed: notifications',
     );
-    // A note added by a turn joins the notes on a line of its own.
-    await cdp.type(INPUT, 'add a note: ask about the fee');
-    await cdp.clickTestId('quick-add-apply');
-    await cdp.waitFor(
-      `${valueOf('[data-testid="editor-notes"]')} === 'bring the card\\nask about the fee'`,
+    await cdp.waitUntil(marked, '[data-testid="event-reminders"]');
+    expect(await cdp.evaluate(marked, '[data-testid="editor-notes"]')).toBe(false);
+    // A note added by a step joins the notes on a line of its own.
+    await cdp.say('note: ask about the fee');
+    await cdp.waitUntil(
+      ($) => $.value('[data-testid="editor-notes"]') === 'bring the card\nask about the fee',
     );
-    expect(await cdp.eval<string>(valueOf('[data-testid="event-reminder-1"]'))).toBe('60');
-    // Undo takes the note back, the notifications with it untouched.
-    await cdp.clickTestId('draft-undo');
-    await cdp.waitFor(`${valueOf('[data-testid="editor-notes"]')} === 'bring the card'`);
-    expect(await cdp.eval<string>(valueOf('[data-testid="event-reminder-1"]'))).toBe('60');
+    expect(await cdp.evaluate(valueOf, '[data-testid="event-reminder-1"]')).toBe('60');
+    await cdp.waitUntil(marked, '[data-testid="editor-notes"]');
+    expect(await cdp.evaluate(marked, '[data-testid="event-reminders"]')).toBe(false);
+    // Undo, kept: the note is back, the notifications with it untouched.
+    await cdp.clickTestId('assistant-undo');
+    await cdp.waitUntil(($) => $.value('[data-testid="editor-notes"]') === 'bring the card');
+    await cdp.clickTestId('step-use');
+    await cdp.waitUntil(($) => $.text('[data-testid="step-position"]') === '2 of 2');
+    expect(await cdp.evaluate(valueOf, '[data-testid="editor-notes"]')).toBe('bring the card');
+    expect(await cdp.evaluate(valueOf, '[data-testid="event-reminder-1"]')).toBe('60');
   });
 
-  it('shows the newest turn, expands and collapses the earlier queries, and flashes the changed field', async () => {
+  it('lists every step in the conversation, the newest as a card, and marks what it changed in the form', async () => {
     const { cdp } = app;
-    await cdp.eval(COMMAND_N);
-    await cdp.waitFor(
-      `document.querySelector('[data-testid="editor-title"]')?.textContent === 'New event'`,
-    );
-    await cdp.type(INPUT, 'Gym | +3 | 07:00-08:00');
-    await cdp.clickTestId('quick-add-apply');
-    await cdp.waitFor(blockAt('07:00'));
+    await cdp.evaluate(commandN);
+    await cdp.waitUntil(($) => $.text('[data-testid="editor-title"]') === 'New event');
+    await cdp.say('Gym | +3 | 07:00-08:00');
+    await cdp.waitUntil(blockAt, '07:00');
     for (const [start, end] of [
       ['08:00', '09:00'],
       ['09:00', '10:00'],
       ['10:00', '11:00'],
     ] as const) {
-      await cdp.type(INPUT, `| | ${start}-${end}`);
-      await cdp.clickTestId('quick-add-apply');
-      await cdp.waitFor(blockAt(start));
+      await cdp.say(`| | ${start}-${end}`);
+      await cdp.waitUntil(blockAt, start);
     }
-    // The start time the last turn moved tints and fades back.
-    await cdp.waitFor(
-      `document.querySelector(${JSON.stringify(START)})?.getAnimations().length === 1`,
-    );
-    expect(await cdp.eval<number>(turns)).toBe(1);
-    expect(await cdp.eval<string>(newestSummary)).toContain('10:00–11:00');
-    expect(await cdp.eval<string>(more)).toBe('+3 earlier queries');
-    await cdp.clickTestId('draft-turns-more');
-    await cdp.waitFor(`${turns} === 4`);
+    // One phrase, one step: four said, three rows and the card of the fourth.
+    await cdp.waitUntil(($) => $.text('[data-testid="step-position"]') === '4 of 4');
+    expect(await cdp.evaluate(said)).toBe(4);
+    expect(await cdp.evaluate(versions)).toBe(3);
+    expect(await cdp.evaluate(card, 'time')).toBe('10:00–11:0009:00–10:00');
+    // The first row is the step that made it.
     expect(
-      await cdp.eval<string>(
-        `[...document.querySelectorAll('[data-testid="draft-turn-summary"]')].at(-1).textContent`,
-      ),
+      await cdp.evaluate(($) => $.el('[data-testid="assistant-version"]')!.textContent),
     ).toContain('Gym');
-    await cdp.clickTestId('draft-turns-less');
-    await cdp.waitFor(`${turns} === 1`);
+    // The form marks the times the last step moved, and stays marked; the title it left alone.
+    await cdp.showEditorView('form');
+    expect(await cdp.evaluate(marked, START)).toBe(true);
+    expect(await cdp.evaluate(marked, TITLE)).toBe(false);
+    // An edit by hand is a step too, and the newest: nothing is marked under the hand.
+    await cdp.type(TITLE, ' (legs)');
+    await cdp.waitUntil(($) => $.text('[data-testid="step-position"]') === '5 of 5');
+    await cdp.waitUntil(($, start: string) => !($.el(start)?.dataset.marked === ''), START);
+    // Back in the conversation it is a row's worth: the card of version 5, by hand.
+    await cdp.showEditorView('assistant');
+    expect(await cdp.evaluate(versions)).toBe(4);
+    expect(await cdp.evaluate(card, 'title')).toContain('(legs)');
   });
 
   it('opens a pasted mail as one thread of drafts: the pager and the blocks switch the form, Remove drops one, Add all writes the rest', async () => {
     const { cdp } = app;
     // All on today: a block is clicked on the grid, and a draft a day on
     // sits in next week on a Sunday, off the week on view.
-    await cdp.eval(
-      paste(
-        [
-          // All on today, so every block is on the grid together whatever the
-          // weekday: on the week's last day "+1" is next week's first.
-          'Standup | +0 | 09:00-09:30 | Room 4',
-          'Planning | +0 | 14:00-15:00',
-          'Review | +0 | 16:00-17:00',
-        ].join('\n'),
-      ),
+    await cdp.evaluate(
+      paste,
+      [
+        // All on today, so every block is on the grid together whatever the
+        // weekday: on the week's last day "+1" is next week's first.
+        'Standup | +0 | 09:00-09:30 | Room 4',
+        'Planning | +0 | 14:00-15:00',
+        'Review | +0 | 16:00-17:00',
+      ].join('\n'),
     );
-    await cdp.waitFor(`${position} === '1 of 3'`);
-    await cdp.waitFor(`${blocks} === 3`);
-    expect(await cdp.eval<boolean>(titleIs('Standup'))).toBe(true);
+    await cdp.waitUntil(($) => $.text('[data-testid="draft-position"]') === '1 of 3');
+    await cdp.waitUntil(($) => $.count('[data-testid="draft-block"]') === 3);
+    expect(await cdp.evaluate(titleIs, TITLE, 'Standup')).toBe(true);
+    // The conversation: the focused draft as a card, the others a line each.
+    expect(await cdp.evaluate(card, 'title')).toBe('Standup');
+    expect(await cdp.evaluate(($) => $.count('[data-testid="assistant-draft"]'))).toBe(2);
 
     // A click on another draft's block focuses it.
     const planning = await cdp.locate('[data-testid="draft-block"][data-draft-start="14:00"]');
     await cdp.click(planning.x, planning.y);
-    await cdp.waitFor(`${position} === '2 of 3'`);
-    await cdp.waitFor(titleIs('Planning'));
+    await cdp.waitUntil(($) => $.text('[data-testid="draft-position"]') === '2 of 3');
+    await cdp.waitUntil(titleIs, TITLE, 'Planning');
     expect(
-      await cdp.eval<boolean>(
-        `!!document.querySelector('[data-testid="draft-block"][data-draft-start="14:00"][data-focused]')`,
+      await cdp.evaluate(($) =>
+        $.has('[data-testid="draft-block"][data-draft-start="14:00"][data-focused]'),
       ),
     ).toBe(true);
 
     // The pager: next, then Remove drops the third.
     await cdp.clickTestId('draft-next');
-    await cdp.waitFor(`${position} === '3 of 3'`);
-    await cdp.waitFor(titleIs('Review'));
+    await cdp.waitUntil(($) => $.text('[data-testid="draft-position"]') === '3 of 3');
+    await cdp.waitUntil(titleIs, TITLE, 'Review');
     await cdp.clickTestId('draft-remove');
-    await cdp.waitFor(`${position} === '2 of 2'`);
-    await cdp.waitFor(`${blocks} === 2`);
-    await cdp.waitFor(titleIs('Planning'));
+    await cdp.waitUntil(($) => $.text('[data-testid="draft-position"]') === '2 of 2');
+    await cdp.waitUntil(($) => $.count('[data-testid="draft-block"]') === 2);
+    await cdp.waitUntil(titleIs, TITLE, 'Planning');
 
     // Add all: both written, the editor closed, no draft left.
     await cdp.clickTestId('draft-add-all');
-    await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);
-    await cdp.waitFor(`${blocks} === 0`);
+    await cdp.waitUntil(($) => !$.has('[data-testid="editor"]'));
+    await cdp.waitUntil(($) => $.count('[data-testid="draft-block"]') === 0);
     await expect
       .poll(async () => {
         const events = await readEvents(app.userDataDir);
@@ -330,72 +361,83 @@ describe('The draft thread', () => {
   it('keeps the kind, calendar or list picked for each draft, and Add all writes events and to-dos alike', async () => {
     const { cdp } = app;
     // The drafts come in date order, all-day first: Breakfast, Post office, Buy milk, Retro.
-    await cdp.eval(
-      paste(
-        [
-          'Breakfast | +0 | 08:00-08:30',
-          'Buy milk | +1 | 07:00-07:30',
-          'Post office | +1',
-          'Retro | +1 | 16:00-17:00',
-        ].join('\n'),
-      ),
+    await cdp.evaluate(
+      paste,
+      [
+        'Breakfast | +0 | 08:00-08:30',
+        'Buy milk | +1 | 07:00-07:30',
+        'Post office | +1',
+        'Retro | +1 | 16:00-17:00',
+      ].join('\n'),
     );
-    await cdp.waitFor(`${position} === '1 of 4'`);
-    await cdp.waitFor(titleIs('Breakfast'));
+    await cdp.waitUntil(($) => $.text('[data-testid="draft-position"]') === '1 of 4');
+    await cdp.waitUntil(titleIs, TITLE, 'Breakfast');
+    // By hand from here: the form, with the pager above it as above the conversation.
+    await cdp.showEditorView('form');
 
     // The first goes to Yoga: its block takes the color.
-    await cdp.eval(setSelect(CALENDAR, 'acc-e2e:cal-yoga'));
-    await cdp.waitFor(`${colorAt('08:00')} === ${JSON.stringify(YOGA)}`);
+    await cdp.evaluate(setSelect, CALENDAR, 'acc-e2e:cal-yoga');
+    await cdp.waitUntil(
+      ($, yoga: string) =>
+        ($.el('[data-testid="draft-block"][data-draft-start="08:00"]')?.dataset.color ?? '') ===
+        yoga,
+      YOGA,
+    );
 
     // The second becomes a task on the Google list.
     await cdp.clickTestId('draft-next');
-    await cdp.waitFor(titleIs('Post office'));
+    await cdp.waitUntil(titleIs, TITLE, 'Post office');
     await cdp.clickTestId('mode-task');
-    await cdp.waitFor(headingIs('New task'));
-    expect(await cdp.eval<string>(valueOf(LIST))).toBe('acc-e2e:list-errands');
+    await cdp.waitUntil(headingIs, 'New task');
+    expect(await cdp.evaluate(valueOf, LIST)).toBe('acc-e2e:list-errands');
 
     // The third shows as the event it is — not a task, nothing asked —
     // and becomes a high-priority reminder.
     await cdp.clickTestId('draft-next');
-    await cdp.waitFor(titleIs('Buy milk'));
-    expect(await cdp.eval<boolean>(headingIs('New event'))).toBe(true);
-    expect(await cdp.eval<boolean>(asked)).toBe(false);
+    await cdp.waitUntil(titleIs, TITLE, 'Buy milk');
+    expect(await cdp.evaluate(headingIs, 'New event')).toBe(true);
+    expect(await cdp.evaluate(asked)).toBe(false);
     await cdp.clickTestId('mode-reminder');
-    await cdp.waitFor(headingIs('New reminder'));
-    await cdp.eval(pickPriority('High'));
-    await cdp.waitFor(`${PRIORITY} === 'High'`);
+    await cdp.waitUntil(headingIs, 'New reminder');
+    await cdp.evaluate(pickPriority, 'High');
+    await cdp.waitUntil(
+      ($) => $.text('[aria-label="Priority"] [role="radio"][aria-checked="true"]') === 'High',
+    );
 
     // The fourth, never shown, starts in the calendar the form has (Yoga); it goes to Work.
     await cdp.clickTestId('draft-next');
-    await cdp.waitFor(titleIs('Retro'));
-    await cdp.waitFor(headingIs('New event'));
-    expect(await cdp.eval<string>(valueOf(CALENDAR))).toBe('acc-e2e:cal-yoga');
-    await cdp.eval(setSelect(CALENDAR, 'acc-e2e:cal-e2e'));
+    await cdp.waitUntil(titleIs, TITLE, 'Retro');
+    await cdp.waitUntil(headingIs, 'New event');
+    expect(await cdp.evaluate(valueOf, CALENDAR)).toBe('acc-e2e:cal-yoga');
+    await cdp.evaluate(setSelect, CALENDAR, 'acc-e2e:cal-e2e');
 
     // Back through them: each as it was left, and nothing asked.
     await cdp.clickTestId('draft-prev');
-    await cdp.waitFor(titleIs('Buy milk'));
-    await cdp.waitFor(headingIs('New reminder'));
-    expect(await cdp.eval<string>(PRIORITY)).toBe('High');
-    expect(await cdp.eval<string>(valueOf(LIST))).toBe(
-      `${APPLE_REMINDERS_ACCOUNT_ID}:ek-groceries`,
-    );
+    await cdp.waitUntil(titleIs, TITLE, 'Buy milk');
+    await cdp.waitUntil(headingIs, 'New reminder');
+    expect(await cdp.evaluate(priority)).toBe('High');
+    expect(await cdp.evaluate(valueOf, LIST)).toBe(`${APPLE_REMINDERS_ACCOUNT_ID}:ek-groceries`);
     await cdp.clickTestId('draft-prev');
-    await cdp.waitFor(titleIs('Post office'));
-    await cdp.waitFor(headingIs('New task'));
-    expect(await cdp.eval<string>(valueOf(LIST))).toBe('acc-e2e:list-errands');
+    await cdp.waitUntil(titleIs, TITLE, 'Post office');
+    await cdp.waitUntil(headingIs, 'New task');
+    expect(await cdp.evaluate(valueOf, LIST)).toBe('acc-e2e:list-errands');
     await cdp.clickTestId('draft-prev');
-    await cdp.waitFor(titleIs('Breakfast'));
-    await cdp.waitFor(headingIs('New event'));
-    expect(await cdp.eval<string>(valueOf(CALENDAR))).toBe('acc-e2e:cal-yoga');
-    expect(await cdp.eval<boolean>(asked)).toBe(false);
+    await cdp.waitUntil(titleIs, TITLE, 'Breakfast');
+    await cdp.waitUntil(headingIs, 'New event');
+    expect(await cdp.evaluate(valueOf, CALENDAR)).toBe('acc-e2e:cal-yoga');
+    expect(await cdp.evaluate(asked)).toBe(false);
     // Each event draft drawn in its own calendar's color.
-    await cdp.waitFor(`${colorAt('16:00')} === ${JSON.stringify(WORK)}`);
-    expect(await cdp.eval<string>(colorAt('08:00'))).toBe(YOGA);
+    await cdp.waitUntil(
+      ($, work: string) =>
+        ($.el('[data-testid="draft-block"][data-draft-start="16:00"]')?.dataset.color ?? '') ===
+        work,
+      WORK,
+    );
+    expect(await cdp.evaluate(colorAt, '08:00')).toBe(YOGA);
 
     // Add all: every draft where it was put, as what it was made.
     await cdp.clickTestId('draft-add-all');
-    await cdp.waitFor(`!document.querySelector('[data-testid="editor"]')`);
+    await cdp.waitUntil(($) => !$.has('[data-testid="editor"]'));
     await expect
       .poll(async () => {
         const events = await readEvents(app.userDataDir);
@@ -418,5 +460,108 @@ describe('The draft thread', () => {
         milk: ['apple', 'ek-groceries', 'high', '07:00'],
         post: ['google', 'list-errands'],
       });
+  });
+
+  it('keeps the drafts where they are while a kind switch asks its question', async () => {
+    const { cdp } = app;
+    await cdp.evaluate(
+      paste,
+      ['Dinner | +0 | 19:00-20:00 | Room 4', 'Retro | +1 | 16:00-17:00'].join('\n'),
+    );
+    await cdp.waitUntil(($) => $.text('[data-testid="draft-position"]') === '1 of 2');
+    await cdp.waitUntil(titleIs, TITLE, 'Dinner');
+    await cdp.showEditorView('form');
+    // A to-do has no place: the switch asks before it lets go of one.
+    await cdp.clickTestId('mode-task');
+    await cdp.waitUntil(asked);
+    // The answer is this draft's. Until it is given the form is between
+    // two kinds, and the pager and Remove wait: moved on, the answer would
+    // land on the draft focused by then.
+    expect(await cdp.evaluate(disabled, 'draft-next')).toBe(true);
+    expect(await cdp.evaluate(disabled, 'draft-remove')).toBe(true);
+    await cdp.clickTestId('move-confirm-yes');
+    await cdp.waitUntil(headingIs, 'New task');
+    expect(await cdp.evaluate(titleIs, TITLE, 'Dinner')).toBe(true);
+    expect(await cdp.evaluate(position)).toBe('1 of 2');
+    // The other draft is as it came.
+    await cdp.waitUntil(
+      ($) => !($.el<HTMLButtonElement>('[data-testid="draft-next"]')?.disabled === true),
+    );
+    await cdp.clickTestId('draft-next');
+    await cdp.waitUntil(titleIs, TITLE, 'Retro');
+    await cdp.waitUntil(headingIs, 'New event');
+  });
+
+  it('gives a to-do the alert the phrase says, writes it on a Reminders list, and refuses one where the list keeps none', async () => {
+    const { cdp } = app;
+    await cdp.evaluate(commandN);
+    await cdp.waitUntil(headingIs, 'New event');
+    // A repeat picked by hand before the phrase: the switch to a reminder
+    // carries it over, and the phrase's alert must not take it away.
+    await cdp.showEditorView('form');
+    await cdp.evaluate(setSelect, REPEAT, 'weekly');
+    await cdp.waitUntil(($, repeat: string) => $.value(repeat) === 'weekly', REPEAT);
+    await cdp.showEditorView('assistant');
+    // The fixture's extras: the model answers the to-do with an alert 10 minutes before.
+    await cdp.say('todo: Call the bank | +1 | 09:00 | | remind 10');
+    await cdp.waitUntil(
+      ($) => $.text('[data-testid="assistant-card-alert"]') === '10 minutes before',
+    );
+    // A later turn keeps the kind: the form holds all of the step — a
+    // to-do's own notes too — from the moment the step control shows it.
+    const notesAtStep = await cdp.noteWhen(
+      ($) => $.text('[data-testid="step-position"]') === '2 of 2',
+      ($, notes: string) => $.value(notes),
+      NOTES,
+    );
+    await cdp.say('note: ask about the fees');
+    await cdp.waitUntil(($) => $.text('[data-testid="step-position"]') === '2 of 2');
+    expect(await notesAtStep()).toBe('ask about the fees');
+    await cdp.showEditorView('form');
+    // A to-do goes to the Reminders list (over the Google one): its alert is in the picker,
+    // named though the presets lack it.
+    await cdp.waitUntil(headingIs, 'New reminder');
+    expect(await cdp.evaluate(valueOf, ALERT)).toBe('-10');
+    expect(await cdp.evaluate(alertLabel, ALERT)).toBe('10 minutes before');
+    expect(await cdp.evaluate(valueOf, REPEAT)).toBe('weekly');
+    await cdp.clickButtonWithText('Save');
+    await cdp.waitUntil(($) => !$.has('[data-testid="editor"]'));
+    await expect
+      .poll(async () => {
+        const call = (await readTasks(app.userDataDir)).find(
+          (task) => task.title === 'Call the bank',
+        );
+        return [call?.listId, call?.dueTime, call?.alarms, call?.recurrence?.freq];
+      })
+      .toEqual(['ek-groceries', '09:00', [-10], 'weekly']);
+
+    // On the Google list a to-do keeps no alert: a turn that adds one is
+    // refused, and nothing of it lands.
+    await cdp.evaluate(commandN);
+    await cdp.waitUntil(headingIs, 'New event');
+    await cdp.say('todo: Post the letter | +1');
+    await cdp.waitUntil(titleIs, TITLE, 'Post the letter');
+    await cdp.showEditorView('form');
+    await cdp.clickTestId('mode-task');
+    await cdp.waitUntil(
+      ($) =>
+        $.text('[data-testid="editor-title"]') === 'New task' ||
+        $.has('[data-testid="move-confirm"]'),
+    );
+    if (await cdp.evaluate(asked)) {
+      await cdp.clickTestId('move-confirm-yes');
+    }
+    await cdp.waitUntil(headingIs, 'New task');
+    await cdp.showEditorView('assistant');
+    // The phrase and the switch by hand are the steps so far.
+    const steps = await cdp.evaluate(stepPosition);
+    await cdp.say('remind 10');
+    await cdp.waitUntil(
+      ($) =>
+        $.text('[data-testid="quick-add-status"]') ===
+        'This list keeps no alerts — an alert can’t be saved here.',
+    );
+    expect(await cdp.evaluate(stepPosition)).toBe(steps);
+    expect(await cdp.evaluate(card, 'alert')).toBe('');
   });
 });

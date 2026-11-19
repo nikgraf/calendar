@@ -329,10 +329,20 @@ const splitOf = Effect.gen(function* () {
   yield* sql`ALTER TABLE pending_ops ADD COLUMN split_check INTEGER NOT NULL DEFAULT 0`;
 });
 
+// copy_source: on the create a move or a conversion queued toward Google,
+// what it was copied from (PendingOp.copySource) — the source's deletes it
+// holds back, or an Apple source as it was. A copy queued before has none
+// and goes as before: its source is already gone.
+const copySource = Effect.gen(function* () {
+  const sql = yield* SqlClient;
+  yield* sql`ALTER TABLE pending_ops ADD COLUMN copy_source TEXT`;
+});
+
 // The third tuple element is a *loader* whose result is the migration effect.
 // A migration is never renamed: the runner matches applied rows by id and name.
 export const migrations: ReadonlyArray<ResolvedMigration> = [
   [1, 'baseline-2026-10-15', Effect.succeed(baseline)],
   [2, 'pending-ops-drops-from', Effect.succeed(dropsFrom)],
   [3, 'pending-ops-split-of', Effect.succeed(splitOf)],
+  [4, 'pending-ops-copy-source', Effect.succeed(copySource)],
 ];

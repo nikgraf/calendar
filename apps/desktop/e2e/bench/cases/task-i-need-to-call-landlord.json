@@ -1,0 +1,10 @@
+{
+  "lang": "en",
+  "tags": ["task"],
+  "turns": [
+    {
+      "input": { "text": "I need to call the landlord on Friday" },
+      "expect": { "kind": "task", "title": "call the landlord", "weekday": 5 }
+    }
+  ]
+}

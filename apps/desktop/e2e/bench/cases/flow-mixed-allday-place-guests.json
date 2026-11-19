@@ -1,0 +1,21 @@
+{
+  "lang": "en",
+  "tags": ["flow", "mixed", "allday", "guests", "notes"],
+  "turns": [
+    {
+      "input": { "text": "Workshop Monday at 9" },
+      "expect": { "title": "workshop", "weekday": 1, "startTime": "09:00", "endTime": "10:00" }
+    },
+    {
+      "input": { "text": "all day, at Hotel Astoria" },
+      "expect": { "isAllDay": true, "location": "hotel astoria" }
+    },
+    {
+      "input": { "text": "invite Tom Baker and Anna Lee, and note: bring name tags" },
+      "expect": {
+        "guests": { "emails": ["tom.baker@example.com", "anna.lee@example.com"] },
+        "notes": "name tags"
+      }
+    }
+  ]
+}

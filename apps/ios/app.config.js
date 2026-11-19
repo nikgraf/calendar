@@ -68,9 +68,14 @@ module.exports = ({ config }) => {
       // expo-dev-client is applied automatically and registers
       // `exp+solunivo://` in every build. The production app has no dev
       // launcher to answer it, and next to the dev variant it would
-      // compete for the links Expo CLI opens. Listed first: the local
-      // notifications plugin has to stay last.
-      plugins: [['expo-dev-client', { addGeneratedScheme: false }], ...(config.plugins ?? [])],
+      // compete for the links Expo CLI opens. llama.rn's pod compiles from
+      // source (see the plugin). Listed first: the local notifications
+      // plugin has to stay last.
+      plugins: [
+        ['expo-dev-client', { addGeneratedScheme: false }],
+        './plugins/withLlamaFromSource.cjs',
+        ...(config.plugins ?? []),
+      ],
     };
   }
   return {
@@ -82,6 +87,9 @@ module.exports = ({ config }) => {
       icon: './assets/icon-dev.png',
     },
     name: 'Solunivo Dev',
+    // llama.rn's pod compiles from source in both variants (see the
+    // plugin). Listed first: the local notifications plugin has to stay last.
+    plugins: ['./plugins/withLlamaFromSource.cjs', ...(config.plugins ?? [])],
     scheme: ['solunivo-dev', reversedClientId(DEV_GOOGLE_IOS_CLIENT_ID)],
   };
 };

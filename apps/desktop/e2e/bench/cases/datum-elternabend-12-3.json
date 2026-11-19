@@ -1,0 +1,17 @@
+{
+  "blind": true,
+  "lang": "de",
+  "tags": ["date", "de"],
+  "turns": [
+    {
+      "input": { "text": "Elternabend am 12.3. um 19 Uhr" },
+      "expect": {
+        "title": "elternabend",
+        "dayOfMonth": 12,
+        "month": 3,
+        "startTime": "19:00",
+        "endTime": "20:00"
+      }
+    }
+  ]
+}

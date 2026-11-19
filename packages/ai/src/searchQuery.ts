@@ -306,7 +306,7 @@ export const normalizeSearchQuery = (
 /**
  * One search turn. Only the model call is impure; the prompt and the
  * merge either side of it are pure, so this runs end to end against a
- * fake model like `parseRefine`.
+ * fake model.
  */
 export const parseSearchQuery = async (
   model: LanguageModel,
@@ -337,5 +337,5 @@ export const parseSearchQuery = async (
   if (typeof raw !== 'object' || raw === null) {
     return { kind: 'rejected', reason: "That couldn't be read — try rephrasing." };
   }
-  return normalizeSearchQuery(raw as SearchQueryParse, input);
+  return normalizeSearchQuery(raw, input);
 };

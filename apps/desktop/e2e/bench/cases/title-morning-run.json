@@ -1,0 +1,16 @@
+{
+  "lang": "en",
+  "tags": ["title"],
+  "turns": [
+    {
+      "input": { "text": "Morning run tomorrow at 7" },
+      "expect": {
+        "title": "morning run",
+        "dayOffset": 1,
+        "startTime": "07:00",
+        "endTime": "08:00",
+        "assumedTime": false
+      }
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "lang": "de",
+  "tags": ["flow", "guests", "de"],
+  "turns": [
+    {
+      "input": { "text": "Abendessen Freitag um 19 Uhr, lade Jörg ein" },
+      "expect": {
+        "title": "abendessen",
+        "weekday": 5,
+        "startTime": "19:00",
+        "endTime": "20:00",
+        "guests": { "emails": ["joerg.mueller@example.com"] }
+      }
+    },
+    {
+      "input": { "text": "Jörg doch nicht" },
+      "expect": { "guests": {} }
+    },
+    {
+      "input": { "text": "dafür Sarah" },
+      "expect": { "guests": { "emails": ["sarah.novak@example.com"] } }
+    }
+  ]
+}

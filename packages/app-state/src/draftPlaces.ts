@@ -9,8 +9,8 @@ import {
  * The places a turn's location text could mean: the candidates
  * (`placeCandidates`: past places first, then MapKit's hits) and the
  * text as said. The best one that resembles the text is taken at once;
- * the row stays, the taken one marked, so another can be picked (pin and
- * all) or the text had back as said.
+ * the choice stays, the taken one marked, until one is picked (pin and
+ * all), the text had back as said, or it is let go of.
  */
 export interface PlaceChoice {
   readonly candidates: ReadonlyArray<PlaceCandidate>;

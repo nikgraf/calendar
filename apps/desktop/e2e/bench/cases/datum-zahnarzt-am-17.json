@@ -1,0 +1,10 @@
+{
+  "lang": "de",
+  "tags": ["date", "de"],
+  "turns": [
+    {
+      "input": { "text": "Zahnarzt am 17. um 9" },
+      "expect": { "title": "zahnarzt", "dayOfMonth": 17, "startTime": "09:00", "endTime": "10:00" }
+    }
+  ]
+}

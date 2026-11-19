@@ -7,10 +7,11 @@
   "scripts": {
     "build": "vp build && vp pack",
     "build:helper": "swift build -c release --package-path helper",
+    "build:llama": "bash scripts/build-llama-server.sh",
     "dev": "vp dev --host 127.0.0.1",
     "dev:app": "vp pack && ELECTRON_RENDERER_URL=http://127.0.0.1:5173 electron .",
-    "make": "pnpm build:helper && vp build && vp pack && electron-forge make",
-    "package:app": "pnpm build:helper && vp build && vp pack && electron-forge package",
+    "make": "pnpm build:helper && pnpm build:llama && vp build && vp pack && electron-forge make",
+    "package:app": "pnpm build:helper && pnpm build:llama && vp build && vp pack && electron-forge package",
     "start": "vp build && vp pack && electron ."
   },
   "dependencies": {
@@ -33,18 +34,19 @@
     "update-electron-app": "^3.3.0"
   },
   "devDependencies": {
+    "@antithesishq/bombadil": "0.7.10",
     "@electron-forge/cli": "^8.0.1",
     "@electron-forge/maker-zip": "^8.0.1",
     "@electron-forge/publisher-github": "^8.0.1",
     "@modelcontextprotocol/client": "2.4.0",
     "@rolldown/plugin-babel": "^0.3.0",
-    "@tailwindcss/vite": "^4.3.3",
+    "@tailwindcss/vite": "^4.3.4",
     "@types/react": "catalog:",
     "@types/react-dom": "~19.3.0",
-    "@vitejs/plugin-react": "^6.1.2",
+    "@vitejs/plugin-react": "^6.2.1",
     "babel-plugin-react-compiler": "^1.0.0",
-    "electron": "^45.1.0",
-    "tailwindcss": "^4.3.3",
+    "electron": "^45.2.2",
+    "tailwindcss": "^4.3.4",
     "typescript": "catalog:",
     "vite": "catalog:",
     "vite-plus": "catalog:"

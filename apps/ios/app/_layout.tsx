@@ -5,8 +5,8 @@ import { useEffect } from 'react';
 import { StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { backendClient } from '../src/backend.ts';
+import { markLaunch } from '../src/launchTiming.ts';
 import { EditorHostProvider } from '../src/ui/EditorHost.tsx';
-import { EDITOR_SHEET_DETENTS, editorDetentIndex } from '../src/ui/editorSheet.ts';
 import { ErrorBoundary } from '../src/ui/ErrorBoundary.tsx';
 import { groupedGround, useTheme } from '../src/ui/theme.ts';
 
@@ -28,6 +28,9 @@ function SystemBackground() {
  */
 export default function RootLayout() {
   const { colors } = useTheme();
+  useEffect(() => {
+    markLaunch('firstFrame');
+  }, []);
   return (
     <GestureHandlerRootView style={styles.root}>
       <ErrorBoundary>
@@ -41,27 +44,19 @@ export default function RootLayout() {
               <Stack.Screen name="setup" options={{ presentation: 'fullScreenModal' }} />
               {/* A Getting started lesson that is a page of its own (Alerts, Contacts…). */}
               <Stack.Screen name="lesson" options={{ presentation: 'modal' }} />
-              {/* The editor: a form sheet at half height for a new item (the
-                  calendar behind stays live and draws the drafts), full for
-                  an existing one; `detent` comes with the push. A drag up
-                  on the form raises a half sheet to full before the form
-                  scrolls, as Maps' and Find My's sheets do, so the form
-                  never scrolls on its own in the strip under the header.
-                  Its forms are grouped cards, so the sheet takes the
-                  grouped ground. */}
+              {/* The editor: a page sheet at full height, for a new item as
+                  for an existing one, like Settings — not a form sheet,
+                  which lays out a header and one scroll view and nothing
+                  else, so it could hold neither a bar at its bottom nor
+                  two views. An event's detail is this sheet too, so Edit
+                  turns it into the editor in place. Its forms are grouped
+                  cards, so the sheet takes the grouped ground. */}
               <Stack.Screen
                 name="editor"
-                options={({ route }) => ({
+                options={{
                   contentStyle: { backgroundColor: groupedGround(colors) },
-                  presentation: 'formSheet',
-                  sheetAllowedDetents: [...EDITOR_SHEET_DETENTS],
-                  sheetExpandsWhenScrolledToEdge: true,
-                  sheetGrabberVisible: true,
-                  sheetInitialDetentIndex: editorDetentIndex(
-                    (route.params as { detent?: string } | undefined)?.detent,
-                  ),
-                  sheetLargestUndimmedDetentIndex: 0,
-                })}
+                  presentation: 'modal',
+                }}
               />
             </Stack>
           </EditorHostProvider>

@@ -21,6 +21,7 @@ import {
 } from '@calendar/core';
 import { useState } from 'react';
 import { deleteTaskQuestion } from './deleteQuestion.ts';
+import { reminderAlarmLabel } from './draftExtras.ts';
 import type { EditorConfirmRequest } from './editorModel.ts';
 import { CONVERT_SCOPE_HINT } from './editorOptions.ts';
 import { useBackendMutations, useTaskReadOnlyLookup } from './hooks.ts';
@@ -75,6 +76,12 @@ const listKeyOf = (accountId: string, listId: string) => `${accountId}:${listId}
 export interface ReminderFields {
   /** Minutes relative to the due time, the form's own first. */
   readonly alarms: ReadonlyArray<number>;
+  /**
+   * Made by a turn's alert for a to-do the form never held as one: only
+   * the alarms are the turn's, the rest are blanks. The form takes the
+   * alarms and keeps what a switch of kind carried over (a repeat, a link).
+   */
+  readonly alarmsOnly?: true | undefined;
   readonly priority?: TaskPriority | undefined;
   /** The repeat fields as typed, so an invalid number stays one: Save would refuse it. */
   readonly repeat: RepeatFields;
@@ -101,6 +108,25 @@ export const REMINDER_ALARM_OPTIONS: ReadonlyArray<{ label: string; value: numbe
   { label: '1 hour before', value: -60 },
   { label: '1 day before', value: -1440 },
 ];
+
+/**
+ * The alerts the form offers, with the one a reminder holds where the
+ * presets lack it (one the Assistant set, or Reminders.app did) in its
+ * place by time: the picker shows the alert that will be written.
+ */
+export const reminderAlarmOptions = (
+  alarm: number | undefined,
+): ReadonlyArray<{ label: string; value: number | undefined }> => {
+  if (alarm === undefined || REMINDER_ALARM_OPTIONS.some((option) => option.value === alarm)) {
+    return REMINDER_ALARM_OPTIONS;
+  }
+  const own = { label: reminderAlarmLabel(alarm), value: alarm };
+  const later = REMINDER_ALARM_OPTIONS.findIndex(
+    (option) => option.value !== undefined && option.value < alarm,
+  );
+  const at = later === -1 ? REMINDER_ALARM_OPTIONS.length : later;
+  return [...REMINDER_ALARM_OPTIONS.slice(0, at), own, ...REMINDER_ALARM_OPTIONS.slice(at)];
+};
 
 export const REMINDER_PRIORITY_OPTIONS: ReadonlyArray<{
   label: string;
@@ -193,7 +219,7 @@ export const useTaskEditorModel = ({
   const [initial] = useState<TaskEditorValues | undefined>(() =>
     existing
       ? {
-          alarm: initialAlarms[0],
+          alarms: initialAlarms,
           dueDate: existing.dueDate,
           dueTime: existing.dueTime,
           listId: existing.listId,
@@ -222,7 +248,9 @@ export const useTaskEditorModel = ({
   const readOnly = existing !== undefined && isTaskReadOnly(existing);
   /** Any writable task can move: to another Reminders list, account or provider. */
   const canMoveList = existing !== undefined && !readOnly;
-  const alarms = () => [...(alarm === undefined ? [] : [alarm]), ...extraAlarms];
+  // The picker sets the first alert; one it equals among the rest is not kept twice.
+  const alarms = () =>
+    alarm === undefined ? extraAlarms : [alarm, ...extraAlarms.filter((each) => each !== alarm)];
   /** The form's fields as a create/move draft for the selected provider. */
   const draft = (): TaskDraft => {
     const spec = repeatSpec();
@@ -299,6 +327,12 @@ export const useTaskEditorModel = ({
     url,
   });
 
+  /** A turn's alerts on the to-do the form shows, the rest of its fields kept. */
+  const restoreAlarms = (next: ReadonlyArray<number>) => {
+    setAlarm(next[0]);
+    setExtraAlarms(next.slice(1));
+  };
+
   /**
    * Another draft's Reminders-only fields take the form over (undefined: a
    * draft the form never showed as a to-do, which starts without any).
@@ -373,7 +407,7 @@ export const useTaskEditorModel = ({
 
   /** The form as an update compares it with what it opened with (`taskEditorChanges`). */
   const currentValues = (taskListId: string): TaskEditorValues => ({
-    alarm,
+    alarms: alarms(),
     dueDate: dated ? dueDate : undefined,
     dueTime: dated && timed ? dueTime : undefined,
     listId: taskListId,
@@ -478,7 +512,6 @@ export const useTaskEditorModel = ({
         const changes = taskEditorChanges({
           current: currentValues(taskListId),
           initial,
-          initialAlarms,
           provider,
           recurrenceUnsupported,
         });
@@ -585,6 +618,7 @@ export const useTaskEditorModel = ({
     reminderFields,
     remove: () => write.run(remove),
     ...repeatState,
+    restoreAlarms,
     restoreReminderFields,
     save: () => write.run(save),
     setAlarm,

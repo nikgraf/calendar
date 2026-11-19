@@ -1,0 +1,18 @@
+{
+  "lang": "de",
+  "tags": ["command", "de"],
+  "turns": [
+    {
+      "input": { "text": "Erstelle einen Termin für Mittagessen mit Stefan am Freitag um 12" },
+      "expect": {
+        "kind": "event",
+        "title": "mittagessen mit stefan",
+        "weekday": 5,
+        "startTime": "12:00",
+        "endTime": "13:00",
+        "location": null,
+        "guests": {}
+      }
+    }
+  ]
+}

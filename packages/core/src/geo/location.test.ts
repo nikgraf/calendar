@@ -6,6 +6,7 @@ import {
   GEO_PROPERTY_KEYS,
   geoMatches,
   isMappableLocation,
+  locationDirectionsUrls,
   normalizeLocationKey,
   openInMapsUrl,
   placeSuggestionLabel,
@@ -123,6 +124,38 @@ describe('extended property codec', () => {
 });
 
 describe('links and labels', () => {
+  it('requests directions to matching coordinates without choosing an origin or travel mode', () => {
+    const links = locationDirectionsUrls(geo.source, geo)!;
+    expect(links.apple).toBe('https://maps.apple.com/directions?destination=37.7823%2C-122.4076');
+    expect(links.google).toBe(
+      'https://www.google.com/maps/dir/?api=1&destination=37.7823%2C-122.4076',
+    );
+  });
+
+  it('encodes a multiline address even before coordinates are known', () => {
+    const location = '  Cafe & Library\nMuseumsplatz 1, Wien + Österreich  ';
+    const links = locationDirectionsUrls(location)!;
+    expect(new URL(links.apple).searchParams.get('destination')).toBe(location.trim());
+    expect(new URL(links.google).searchParams.get('destination')).toBe(location.trim());
+  });
+
+  it('uses the current address instead of stale coordinates', () => {
+    const links = locationDirectionsUrls('New office', geo)!;
+    expect(new URL(links.apple).searchParams.get('destination')).toBe('New office');
+    expect(new URL(links.google).searchParams.get('destination')).toBe('New office');
+  });
+
+  it('has no directions for missing places or meeting links', () => {
+    for (const location of [
+      '',
+      '   ',
+      'https://example.com/room',
+      'Zoom: https://zoom.us/j/1234',
+    ]) {
+      expect(locationDirectionsUrls(location, geo)).toBeUndefined();
+    }
+  });
+
   it('builds an https Apple Maps link', () => {
     expect(openInMapsUrl(geo)).toBe(
       'https://maps.apple.com/?ll=37.7823,-122.4076&q=Blue%20Bottle%20Coffee',

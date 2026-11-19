@@ -88,7 +88,7 @@ actor ContactsBridge {
     default:
       // iOS 18 added partial access; a subset is still an address book.
       #if os(iOS)
-        if #available(iOS 18, *), status == .limited { return "limited" }
+        if status == .limited { return "limited" }
       #endif
       return "unavailable"
     }

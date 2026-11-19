@@ -80,7 +80,7 @@ const seed = {
   ],
 };
 
-const INPUT = `document.querySelector('input[aria-label="Invitees"]')`;
+const INPUT = 'input[aria-label="Invitees"]';
 
 describe('invitee combobox', () => {
   let app: App;
@@ -92,68 +92,72 @@ describe('invitee combobox', () => {
   });
 
   const typeInvitee = async (text: string) => {
-    await app.cdp.eval(`(() => {
-      const input = ${INPUT};
-      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-      setter.call(input, ${JSON.stringify(text)});
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    })()`);
+    await app.cdp.evaluate(
+      ($, input: string, value: string) => $.setValue(input, value),
+      INPUT,
+      text,
+    );
   };
   const pressKey = (key: string) =>
-    app.cdp.eval(
-      `${INPUT}.dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(key)}, bubbles: true, cancelable: true }))`,
+    app.cdp.evaluate(
+      ($, input: string, pressed: string) =>
+        $.el(input)!.dispatchEvent(
+          new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: pressed }),
+        ),
+      INPUT,
+      key,
     );
   const chips = () =>
-    app.cdp.eval<Array<string>>(
-      `[...document.querySelectorAll('[data-invitee]')].map((el) => el.getAttribute('data-invitee'))`,
-    );
+    app.cdp.evaluate(($) => $.all('[data-invitee]').map((el) => el.getAttribute('data-invitee')));
 
   it('suggests seeded contacts, ranks saved above other, and adds by keyboard', async () => {
     const { cdp } = app;
     await cdp.openEditor('[title^="Planning session"]');
-    await cdp.waitFor(`document.body.textContent.includes('Invitees')`);
+    await cdp.waitUntil(() => document.body.textContent.includes('Invitees'));
     // The organizer is already a chip and cannot be removed.
     expect(await chips()).toEqual(['e2e@example.com']);
-    expect(
-      await cdp.eval(`!!document.querySelector('[aria-label="Remove e2e@example.com"]')`),
-    ).toBe(false);
+    expect(await cdp.evaluate(($) => $.has('[aria-label="Remove e2e@example.com"]'))).toBe(false);
 
-    await cdp.eval(`${INPUT}.focus()`);
+    await cdp.evaluate(($, input: string) => {
+      $.el(input)!.focus();
+    }, INPUT);
     await typeInvitee('ali');
-    await cdp.waitFor(`document.querySelectorAll('[role="option"]').length === 2`);
-    const options = await cdp.eval<Array<string>>(
-      `[...document.querySelectorAll('[role="option"]')].map((el) => el.textContent)`,
-    );
+    await cdp.waitUntil(($) => $.count('[role="option"]') === 2);
+    const options = await cdp.evaluate(($) => $.all('[role="option"]').map((el) => el.textContent));
     expect(options[0]).toContain('Alice Example');
     expect(options[1]).toContain('Alistair Other');
 
     // ArrowDown moves the highlight to the second row; Enter takes it.
     await pressKey('ArrowDown');
     await pressKey('Enter');
-    await cdp.waitFor(`document.querySelectorAll('[data-invitee]').length === 2`);
+    await cdp.waitUntil(($) => $.count('[data-invitee]') === 2);
     expect(await chips()).toEqual(['e2e@example.com', 'alistair@example.com']);
     // Chosen guests drop out of the suggestions.
     await typeInvitee('ali');
-    await cdp.waitFor(`document.querySelectorAll('[role="option"]').length === 1`);
+    await cdp.waitUntil(($) => $.count('[role="option"]') === 1);
     await typeInvitee('');
   });
 
   it('accepts a free-typed address on Enter and removes chips', async () => {
     const { cdp } = app;
     await typeInvitee('bob@example.com');
-    await cdp.waitFor(`document.body.textContent.includes('Press Enter to invite this address')`);
+    await cdp.waitUntil(() =>
+      document.body.textContent.includes('Press Enter to invite this address'),
+    );
     await pressKey('Enter');
-    await cdp.waitFor(`document.querySelectorAll('[data-invitee]').length === 3`);
+    await cdp.waitUntil(($) => $.count('[data-invitee]') === 3);
     expect(await chips()).toContain('bob@example.com');
-    await cdp.eval(`document.querySelector('[aria-label="Remove alistair@example.com"]').click()`);
-    await cdp.waitFor(`document.querySelectorAll('[data-invitee]').length === 2`);
+    await cdp.evaluate(($) => {
+      $.el('[aria-label="Remove alistair@example.com"]')!.click();
+    });
+    await cdp.waitUntil(($) => $.count('[data-invitee]') === 2);
     expect(await chips()).toEqual(['e2e@example.com', 'bob@example.com']);
   });
 
   it('saves the guest list as an update op that keeps the organizer intact', async () => {
     const { cdp } = app;
     await cdp.clickButtonWithText('Save');
-    await cdp.waitFor(`!document.body.textContent.includes('Invitees')`);
+    await cdp.waitUntil(() => !document.body.textContent.includes('Invitees'));
     await expect
       .poll(async () => {
         const ops = await readPendingOps(app.userDataDir);

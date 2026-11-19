@@ -1,0 +1,10 @@
+{
+  "lang": "en",
+  "tags": ["task"],
+  "turns": [
+    {
+      "input": { "text": "I have to submit the expense report tomorrow" },
+      "expect": { "kind": "task", "title": "submit the expense report", "dayOffset": 1 }
+    }
+  ]
+}

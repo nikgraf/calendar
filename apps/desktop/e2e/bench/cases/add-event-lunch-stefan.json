@@ -1,0 +1,21 @@
+{
+  "lang": "en",
+  "tags": ["command"],
+  "turns": [
+    {
+      "input": {
+        "audio": "add-event-lunch-stefan-1.m4a",
+        "transcript": "Add an event to have lunch with Stefan tomorrow at 1"
+      },
+      "expect": {
+        "kind": "event",
+        "title": "lunch with stefan",
+        "dayOffset": 1,
+        "startTime": "13:00",
+        "endTime": "14:00",
+        "location": null,
+        "guests": {}
+      }
+    }
+  ]
+}

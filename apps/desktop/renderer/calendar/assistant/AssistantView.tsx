@@ -1,0 +1,774 @@
+import type { AssistantModelState, CaptureSource, Heard, ModelStatus } from '@calendar/ai';
+import {
+  changedLine,
+  describeDraft,
+  type Draft,
+  draftCalendarKey,
+  draftListKey,
+  type FieldChange,
+  type NoChangeLine,
+  stepSummary,
+  useQuickAddModel,
+  type useThreadEditor,
+  versionLabel,
+} from '@calendar/app-state';
+import { type CalendarInfo, LESSON_DEMO_PHRASES, type TaskListInfo } from '@calendar/core';
+import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef } from 'react';
+import { assistantFieldCopy } from '../../ai/assistantModel.ts';
+import { desktopSpeech } from '../../ai/desktopSpeech.ts';
+import { requestCodeImport } from '../../settingsCode/codeImportRequests.ts';
+import { Button } from '../../ui/Button.tsx';
+import {
+  ArrowUpIcon,
+  EqualCircleIcon,
+  MicIcon,
+  SparkleIcon,
+  SpinnerIcon,
+} from '../../ui/icons.tsx';
+import {
+  captureSourceOf,
+  isCapturableInPhrase,
+  readPaste,
+  settingsCodeOf,
+} from '../captureClipboard.ts';
+import { AssistantCard } from './AssistantCard.tsx';
+import { AssistantModelNotice } from './AssistantModelNotice.tsx';
+import { DraftQuestions } from './DraftQuestions.tsx';
+
+/** The empty field of a new item; the e2e specs find the field by it. */
+export const QUICK_ADD_PLACEHOLDER = 'Lunch with Sarah tomorrow at 1';
+/** The field once there is something to change. */
+const CHANGE_PLACEHOLDER = 'Type a change';
+/** The field once the Create lesson's demo is through, the model still on its way. */
+const DEMO_WAIT = 'Your own words once the model is here';
+
+/**
+ * The Create lesson's demo, while the Assistant's model is not on this
+ * Mac: the phrase it answers next (the field holds it, to send as typed
+ * words are), none once it said both.
+ */
+export interface AssistantDemo {
+  readonly next: string | undefined;
+}
+
+/** What was said or typed, as the conversation shows it: on the right, in the ink of an action. */
+const SAID =
+  'ml-6 max-w-full self-end rounded-2xl rounded-br-sm bg-primary px-3 py-1.5 text-sm break-words text-on-primary select-text';
+
+/**
+ * A step that is not the one on show, in one line: which version it left,
+ * what it did, and the way to it. Later ones — stepped back over — are
+ * dimmed.
+ */
+function VersionRow({
+  dimmed = false,
+  disabled,
+  label,
+  onRestore,
+  position,
+  summary,
+}: {
+  readonly dimmed?: boolean;
+  readonly disabled: boolean;
+  readonly label: string;
+  readonly onRestore: () => void;
+  readonly position: number;
+  readonly summary: string;
+}) {
+  return (
+    <div
+      className={`flex items-center gap-2 rounded-control bg-fill py-1 pr-1 pl-3 ${
+        dimmed ? 'opacity-55' : ''
+      }`}
+      data-position={position}
+      data-testid="assistant-version"
+    >
+      <div className="min-w-0 flex-1">
+        <p className="text-[11px] font-semibold tracking-wide text-ink-secondary uppercase">
+          {label}
+        </p>
+        <p className="truncate text-sm text-ink-secondary" title={summary}>
+          {summary}
+        </p>
+      </div>
+      <Button
+        data-testid="assistant-restore"
+        disabled={disabled}
+        onClick={onRestore}
+        size="sm"
+        variant="ghost"
+      >
+        Restore
+      </Button>
+    </div>
+  );
+}
+
+/**
+ * Words that changed nothing, answered: what was said on the right, as
+ * any phrase is, and under it that nothing changed — no card, no version
+ * to go back to — and why, where the words asked for what the draft
+ * cannot hold ("At most 5 notifications."). Dictated words the recogniser could have read another
+ * way offer the readings that would change something, while they are
+ * the newest thing said; a click says one (`onReading`).
+ */
+function NoChangeReply({
+  disabled,
+  line: { dimmed, turn },
+  onReading,
+}: {
+  readonly disabled: boolean;
+  readonly line: NoChangeLine;
+  readonly onReading: (text: string) => void;
+}) {
+  const readings = dimmed ? [] : turn.readings;
+  return (
+    <div
+      className="flex flex-col gap-2"
+      data-dimmed={dimmed ? '' : undefined}
+      data-testid="assistant-no-change"
+    >
+      <p className={`${SAID} ${dimmed ? 'opacity-55' : ''}`} data-testid="assistant-said">
+        {turn.utterance}
+      </p>
+      <div
+        className={`flex flex-col gap-1.5 rounded-2xl rounded-bl-sm bg-surface px-3 py-2 ring-1 ring-hairline ${
+          readings.length > 0 ? 'mr-4 self-stretch' : 'mr-10 self-start'
+        } ${dimmed ? 'opacity-55' : ''}`}
+        data-testid="assistant-reply"
+      >
+        <p className="flex items-start gap-1.5 text-sm">
+          <EqualCircleIcon className="mt-0.5 shrink-0 text-ink-secondary" />
+          <span>
+            <span className="font-semibold">Nothing changed.</span>
+            {turn.note === undefined ? '' : ` ${turn.note}`}
+            {readings.length > 0 ? ' Did you mean' : ''}
+          </span>
+        </p>
+        {readings.map((reading) => (
+          <button
+            className="flex min-h-9 w-full items-center justify-between gap-2.5 rounded-control border border-hairline bg-surface-subtle px-2.5 py-1.5 text-left enabled:hover:bg-fill disabled:opacity-50"
+            data-testid="assistant-reading"
+            disabled={disabled}
+            key={reading.text}
+            onClick={() => onReading(reading.text)}
+            type="button"
+          >
+            <span className="min-w-0 text-sm font-semibold break-words">“{reading.text}”</span>
+            <span className="shrink-0 text-xs text-ink-secondary">{reading.does}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The assistant's view of the editor: a conversation. What was said or
+ * typed is on the right; each answer is the item as a card, with what the
+ * step changed marked and the old value struck through, and under the
+ * newest whatever the assistant has to ask (`DraftQuestions`). Steps
+ * that are not on show are one line each with Restore, which puts that
+ * version on show (the panel's footer then offers "Use this"); an edit
+ * made by hand in the form is listed among them, and words that changed
+ * nothing after the step they followed, answered in a line
+ * (`NoChangeReply`). At the bottom the field
+ * to type into and the microphone: a phrase is sent with Return, or by a
+ * pause while dictating (hands-free: one click listens until the
+ * microphone is clicked, the field typed into or the form edited by
+ * hand). What it is doing, and why a phrase failed, is said in a line
+ * under the field; a failed phrase stays in the field to fix. Without the
+ * model the view says why and offers Retry; the form is one tab away.
+ */
+export function AssistantView({
+  active,
+  availability,
+  banner,
+  calendars,
+  demo,
+  editKey,
+  editor,
+  focusSignal,
+  initialText,
+  note,
+  onCapture,
+  onEdit,
+  onHeld,
+  onPhrase,
+  taskLists,
+  timeZone,
+}: {
+  /** The view is the one on show: it takes the focus and follows its newest row only then. */
+  readonly active: boolean;
+  /** The Assistant's own model: where it stands, and the status that says whether it answers. */
+  readonly availability: {
+    readonly state: AssistantModelState | undefined;
+    readonly status: ModelStatus | null;
+  };
+  /** Above the conversation: the lesson's frame. */
+  readonly banner?: ReactNode;
+  readonly calendars: ReadonlyArray<CalendarInfo>;
+  /** The Create lesson's demo, while the model is not here (`AssistantDemo`). */
+  readonly demo?: AssistantDemo | undefined;
+  /** Moves at each edit made by hand in the form: hands-free dictation ends. */
+  readonly editKey: number;
+  readonly editor: ReturnType<typeof useThreadEditor>;
+  /** ⌘K focuses the field: bumped per press. */
+  readonly focusSignal: number;
+  /** What the field holds on open, selected (the Create lesson's phrase). */
+  readonly initialText?: string | undefined;
+  /** A caveat about the drafts (the pasted text was cut short). */
+  readonly note?: string | undefined;
+  /** A pasted email or image is not a phrase: it goes to capture. */
+  readonly onCapture: (source: CaptureSource) => void;
+  /** To the form, on the same draft. */
+  readonly onEdit: () => void;
+  /** The field holds words typed or dictated and not sent: closing would lose them. */
+  readonly onHeld: (held: boolean) => void;
+  readonly onPhrase: (text: string, heard?: Heard) => Promise<string | undefined>;
+  readonly taskLists: ReadonlyArray<TaskListInfo>;
+  readonly timeZone: string;
+}) {
+  const { assistant, drafts, labels, previewing, steps } = editor;
+  const inputRef = useRef<HTMLInputElement>(null);
+  const threadRef = useRef<HTMLDivElement>(null);
+  const quick = useQuickAddModel({
+    editKey,
+    hold: editor.applying,
+    initialText,
+    // An older step on show: nothing is listened for, and listening ends.
+    off: previewing,
+    onPhrase,
+    speech: desktopSpeech,
+  });
+  const unavailable = availability.status !== null && availability.status !== 'ready';
+  const { busy, give, held } = quick;
+  // The demo's next phrase in the field once the last one is taken (the
+  // first comes with the lesson's seed): the editor's words, not the person's.
+  const demoNext = demo?.next;
+  useEffect(() => {
+    if (demoNext !== undefined) {
+      give(demoNext);
+    }
+  }, [demoNext, give]);
+  useEffect(() => onHeld(held), [held, onHeld]);
+  const answers = !unavailable || demoNext !== undefined;
+
+  // Focused on open and on ⌘K — not while the model is missing, when the
+  // form's title is the first thing to type into (the demo's phrase is,
+  // Return sends it).
+  useEffect(() => {
+    if (active && answers) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [active, answers, focusSignal]);
+
+  // The newest row is the one to read: the conversation follows it.
+  // Before the panel's own layout effects: the switch back to the
+  // Assistant measures the newest card where this leaves it (a pane back
+  // from `display: none` starts at its top).
+  // Words that changed nothing count as rows, and so do the readings their
+  // answer offers, which arrive after it.
+  const rows = editor.thread.state.noChange.reduce(
+    (count, turn) => count + 1 + turn.readings.length,
+    steps.line.length,
+  );
+  // A phrase being said shows below the newest card: in view while it
+  // grows, a line longer included.
+  const saying = quick.pending !== undefined;
+  useLayoutEffect(() => {
+    const thread = threadRef.current;
+    if (active && thread) {
+      thread.scrollTop = thread.scrollHeight;
+    }
+  }, [active, rows, steps.at, busy, quick.pending, drafts.length]);
+
+  const answer = (
+    <StepAnswer
+      calendars={calendars}
+      editor={editor}
+      note={note}
+      onEdit={onEdit}
+      taskLists={taskLists}
+    />
+  );
+
+  const started = steps.of > 0;
+  // Words that changed nothing, after the step they followed (0: before the first).
+  const replies = (position: number) =>
+    (steps.noChange.get(position) ?? []).map((line) => (
+      <NoChangeReply
+        disabled={steps.locked || !quick.canSay}
+        key={line.turn.id}
+        line={line}
+        onReading={quick.say}
+      />
+    ));
+  return (
+    <>
+      <div
+        className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-4 pt-1 pb-2"
+        data-testid="assistant-thread"
+        ref={threadRef}
+      >
+        {banner}
+        {/* The lesson's banner offers the model in the demo; the notice would say it twice. */}
+        {unavailable && availability.state && demo === undefined ? (
+          <AssistantModelNotice state={availability.state} />
+        ) : null}
+        {!started && demo !== undefined && !saying ? (
+          <div
+            className="flex flex-1 flex-col items-center justify-center gap-1 px-4 text-center"
+            data-testid="assistant-demo-empty"
+          >
+            <SparkleIcon className="text-ink-secondary" size={18} />
+            <p className="text-sm font-medium">Try the demo</p>
+            <p className="text-xs text-ink-secondary">
+              Send the phrase below. The answer is the event as a card, the same the Assistant gives
+              once its model is here.
+            </p>
+          </div>
+        ) : null}
+        {!started && assistant === 'new' && !saying && !unavailable ? (
+          <div className="flex flex-1 flex-col items-center justify-center gap-1 px-4 text-center">
+            <SparkleIcon className="text-ink-secondary" size={18} />
+            <p className="text-sm font-medium">Say or type what to add</p>
+            <p className="text-xs text-ink-secondary">
+              “Lunch with Sarah tomorrow at 1”, then change it the same way: “at 12:30”, “invite
+              Tom”.
+            </p>
+          </div>
+        ) : null}
+        {assistant === 'saved' && steps.at > 0 ? (
+          <VersionRow
+            disabled={steps.locked}
+            label="As saved"
+            onRestore={() => steps.show(0)}
+            position={0}
+            summary={(() => {
+              const saved = steps.line[0]?.before.drafts[0];
+              return saved ? describeDraft(saved, editor.keeps(saved)) : '';
+            })()}
+          />
+        ) : null}
+        {steps.at === 0 && (assistant === 'saved' || !started) ? answer : null}
+        {steps.at === 0 && assistant === 'new' && started ? (
+          <p className="text-xs text-ink-secondary" data-testid="assistant-start">
+            Before the first step: nothing yet.
+          </p>
+        ) : null}
+        {replies(0)}
+        {steps.line.map((line) => (
+          <div className="flex flex-col gap-2" key={line.step.id}>
+            {line.step.kind === 'phrase' ? (
+              <p
+                className={`${SAID} ${line.dimmed ? 'opacity-55' : ''}`}
+                data-testid="assistant-said"
+              >
+                {line.step.utterance}
+              </p>
+            ) : null}
+            {line.position === steps.at ? (
+              answer
+            ) : (
+              <VersionRow
+                dimmed={line.dimmed}
+                disabled={steps.locked}
+                label={versionLabel(line)}
+                onRestore={() => steps.show(line.position)}
+                position={line.position}
+                summary={stepSummary(line, labels)}
+              />
+            )}
+            {replies(line.position)}
+          </div>
+        ))}
+        {demo !== undefined && started && !busy ? (
+          <p className="text-xs text-ink-secondary" data-testid="assistant-demo-note">
+            A demo answer, kept in the app: it answers the lesson’s phrases only. Save keeps the
+            event, as with the real thing.
+          </p>
+        ) : null}
+        {quick.pending === undefined ? null : (
+          <p className={`${SAID} opacity-60`} data-testid="assistant-pending">
+            {quick.pending}
+          </p>
+        )}
+      </div>
+
+      <AssistantInput
+        demo={demo}
+        fieldCopy={assistantFieldCopy(availability.state)}
+        hasDrafts={drafts.length > 0}
+        inputRef={inputRef}
+        onCapture={onCapture}
+        previewing={previewing}
+        quick={quick}
+        status={availability.status}
+      />
+    </>
+  );
+}
+
+/**
+ * The step on show as cards: the draft the form shows open, with what the
+ * step changed marked — unless the step made it, when all of it is new
+ * and nothing is "changed" — and any other draft as a line that brings
+ * it into the form; under them, while it is the newest step, what the
+ * assistant has to ask.
+ */
+function StepAnswer({
+  calendars,
+  editor,
+  note,
+  onEdit,
+  taskLists,
+}: {
+  readonly calendars: ReadonlyArray<CalendarInfo>;
+  readonly editor: ReturnType<typeof useThreadEditor>;
+  readonly note: string | undefined;
+  readonly onEdit: () => void;
+  readonly taskLists: ReadonlyArray<TaskListInfo>;
+}) {
+  const { assistant, drafts, eventModel, focused, marks, previewing, steps, taskModel } = editor;
+  /** Where a draft goes, by name and color: the focused one where the form points. */
+  const containerOf = (draft: Draft, index: number) => {
+    if (draft.item.kind === 'task') {
+      const key = index === focused ? taskModel.listKey : draftListKey(draft, taskLists, '');
+      const list = taskLists.find((each) => `${each.accountId}:${each.id}` === key);
+      return { color: list?.colorHex, name: list?.title };
+    }
+    const key =
+      index === focused
+        ? eventModel.calendarKey
+        : draftCalendarKey(draft, calendars, eventModel.calendarKey);
+    const calendar = calendars.find((each) => `${each.accountId}:${each.id}` === key);
+    return { color: calendar?.colorHex, name: calendar?.summary };
+  };
+  const shown = steps.line[steps.at - 1];
+  const versionLabel =
+    steps.at === 0 ? (assistant === 'saved' ? 'As saved' : '') : `Version ${String(steps.at)}`;
+  return (
+    <>
+      {drafts.map((draft, index) => {
+        if (index !== focused) {
+          return (
+            <button
+              className="flex items-center gap-2 rounded-control bg-fill px-3 py-1.5 text-left text-sm hover:bg-hairline disabled:cursor-default"
+              data-draft={draft.id}
+              data-testid="assistant-draft"
+              disabled={!editor.draftsSettled}
+              key={draft.id}
+              onClick={() => editor.switchFocus(index)}
+              type="button"
+            >
+              <span className="min-w-0 flex-1 truncate font-medium">
+                {draft.item.prefill.title || 'Untitled'}
+              </span>
+              <span className="shrink-0 text-xs text-ink-secondary">
+                {describeDraft(draft, editor.keeps(draft))}
+              </span>
+            </button>
+          );
+        }
+        const container = containerOf(draft, index);
+        const existed = shown?.before.drafts.some((each) => each.id === draft.id) ?? false;
+        const changes = existed ? (marks?.changes ?? []) : [];
+        return (
+          <AssistantCard
+            changes={changes}
+            color={container.color}
+            container={container.name}
+            draft={draft}
+            footer={
+              previewing ? null : <CardFooter changes={changes} onEdit={onEdit} steps={steps} />
+            }
+            keeps={editor.keeps(draft)}
+            key={draft.id}
+            label={versionLabel}
+            // The question's map shows the places while it asks which one.
+            map={previewing || editor.questions.current?.kind !== 'place'}
+          />
+        );
+      })}
+      {previewing ? null : <DraftQuestions editor={editor} note={note} />}
+    </>
+  );
+}
+
+/** Under the newest card: what the step changed, in a line, then Undo (a step back) and Edit (the form). */
+function CardFooter({
+  changes,
+  onEdit,
+  steps,
+}: {
+  readonly changes: ReadonlyArray<FieldChange>;
+  readonly onEdit: () => void;
+  readonly steps: ReturnType<typeof useThreadEditor>['steps'];
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2 border-t border-hairline pt-1.5">
+      <span className="min-w-0 truncate text-xs text-ink-secondary" data-testid="assistant-changed">
+        {changedLine(changes)}
+      </span>
+      <div className="flex shrink-0 gap-1">
+        {steps.at > 0 ? (
+          <Button
+            data-testid="assistant-undo"
+            disabled={steps.locked}
+            onClick={steps.back}
+            size="sm"
+            variant="ghost"
+          >
+            Undo
+          </Button>
+        ) : null}
+        <Button data-testid="assistant-edit" onClick={onEdit} size="sm" variant="ghost">
+          Edit
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * What the field is doing, or why the last phrase failed (until the field
+ * is typed into — while listening, until the next phrase begins).
+ */
+const inputStatus = ({
+  busy,
+  error,
+  voice,
+}: Pick<ReturnType<typeof useQuickAddModel>, 'busy' | 'error' | 'voice'>): {
+  readonly text: string;
+  readonly tone: 'error' | 'hint';
+} | null => {
+  if (voice === 'preparing') {
+    return { text: 'Preparing dictation…', tone: 'hint' };
+  }
+  // The phrase is read once more, then by the model: one step to the eye.
+  if (busy || voice === 'transcribing') {
+    return { text: 'Reading…', tone: 'hint' };
+  }
+  if (error) {
+    return { text: error, tone: 'error' };
+  }
+  return voice === 'recording'
+    ? { text: 'Listening… pause to send, click the mic to stop', tone: 'hint' }
+    : null;
+};
+
+/** The line under the field while the demo holds a phrase: which of the two it is. */
+const demoStatus = (
+  phrase: string | undefined,
+): { readonly text: string; readonly tone: 'hint' } | null =>
+  phrase === undefined
+    ? null
+    : {
+        text:
+          phrase === LESSON_DEMO_PHRASES[0] ? 'Demo · this phrase' : 'Demo · now a change to it',
+        tone: 'hint',
+      };
+
+/**
+ * The field's words when it is empty: why it is locked (an older step on
+ * show; the model not here — the demo's wait for it, unless this Mac cannot
+ * run it), or what to type. None while the demo reads its phrase: the
+ * phrase is above, being answered.
+ */
+const fieldPlaceholder = ({
+  busy,
+  demo,
+  fieldCopy,
+  hasDrafts,
+  previewing,
+  status,
+}: {
+  readonly busy: boolean;
+  readonly demo: boolean;
+  readonly fieldCopy: string;
+  readonly hasDrafts: boolean;
+  readonly previewing: boolean;
+  readonly status: ModelStatus | null;
+}): string => {
+  if (previewing) {
+    return 'An earlier step is on show';
+  }
+  if (status !== null && status !== 'ready') {
+    if (demo && busy) {
+      return '';
+    }
+    return demo && status !== 'unsupported' ? DEMO_WAIT : fieldCopy;
+  }
+  return hasDrafts ? CHANGE_PLACEHOLDER : QUICK_ADD_PLACEHOLDER;
+};
+
+/**
+ * The field to type a phrase into and the microphone beside it, with a
+ * line under them for what is going on. Return sends; a paste that is an
+ * email or an image goes to capture, a settings code to its import.
+ */
+function AssistantInput({
+  demo,
+  fieldCopy,
+  hasDrafts,
+  inputRef,
+  onCapture,
+  previewing,
+  quick,
+  status: modelStatus,
+}: {
+  /** The Create lesson's demo: the field holds its phrase, Send sends it. */
+  readonly demo: AssistantDemo | undefined;
+  /** The field's words while the Assistant's model cannot answer. */
+  readonly fieldCopy: string;
+  readonly hasDrafts: boolean;
+  readonly inputRef: RefObject<HTMLInputElement | null>;
+  readonly onCapture: (source: CaptureSource) => void;
+  readonly previewing: boolean;
+  readonly quick: ReturnType<typeof useQuickAddModel>;
+  readonly status: ModelStatus | null;
+}) {
+  const {
+    busy,
+    dismissError,
+    endVoice,
+    handsFree,
+    heard,
+    phrase,
+    setPhrase,
+    submit,
+    toggleVoice,
+    voice,
+    voiceAvailable,
+  } = quick;
+  const unavailable = modelStatus !== null && modelStatus !== 'ready';
+  const working = busy || voice === 'transcribing';
+  // The demo's phrase: read-only, sent by Return or Send though the model is not here.
+  // Not while an older step is on show: nothing is said to it.
+  const demoPhrase = previewing ? undefined : demo?.next;
+  const locked = unavailable && demoPhrase === undefined;
+  const status = inputStatus(quick) ?? demoStatus(demoPhrase);
+  const placeholder = fieldPlaceholder({
+    busy,
+    demo: demo !== undefined,
+    fieldCopy,
+    hasDrafts,
+    previewing,
+    status: modelStatus,
+  });
+  return (
+    <div className="flex shrink-0 flex-col gap-1 px-4 pt-1 pb-2" data-testid="quick-add">
+      <div className="flex items-center gap-2">
+        <label
+          className={`flex h-10 min-w-0 flex-1 items-center gap-2 rounded-control bg-fill pr-2 pl-3 text-sm has-[input:focus]:ring-2 has-[input:focus]:ring-focus ${
+            locked ? 'opacity-70' : ''
+          }`}
+          title={locked ? fieldCopy : undefined}
+        >
+          <input
+            aria-label="Quick add"
+            className="min-w-0 flex-1 truncate bg-transparent text-ink outline-none placeholder:text-ink-secondary disabled:cursor-default"
+            data-testid="quick-add-input"
+            disabled={locked || previewing}
+            onChange={(input) => {
+              // Typed into while dictating: the user took over.
+              if (handsFree) {
+                endVoice();
+              }
+              // Typed into after a phrase failed: a new phrase, from the key pressed.
+              dismissError();
+              setPhrase(input.target.value);
+            }}
+            onKeyDown={(key) => {
+              if (key.key === 'Enter') {
+                key.preventDefault();
+                if (!busy) {
+                  void submit();
+                }
+              } else if (key.key === 'Escape') {
+                key.currentTarget.blur();
+              }
+            }}
+            onPaste={(event) => {
+              const pasted = readPaste(event.clipboardData);
+              // A settings code is one line, so it would paste as a phrase.
+              const code = settingsCodeOf(pasted);
+              if (code) {
+                event.preventDefault();
+                event.currentTarget.blur();
+                requestCodeImport(code);
+                return;
+              }
+              if (!isCapturableInPhrase(pasted)) {
+                return;
+              }
+              event.preventDefault();
+              event.currentTarget.blur();
+              void captureSourceOf(pasted).then((source) => {
+                if (source) {
+                  onCapture(source);
+                }
+              });
+            }}
+            placeholder={placeholder}
+            // Read-only while a phrase is read, not disabled: the field keeps
+            // the focus, so the next phrase is typed without a click. The
+            // demo's phrase is the lesson's, not to be typed over.
+            readOnly={busy || demoPhrase !== undefined}
+            ref={inputRef}
+            // Being read, the words are in the conversation above.
+            value={busy ? '' : phrase}
+          />
+          {working ? <SpinnerIcon className="shrink-0" size={14} strokeWidth={2.25} /> : null}
+        </label>
+        {demoPhrase === undefined ? null : (
+          <button
+            aria-label="Send"
+            className="inline-flex size-10 shrink-0 items-center justify-center rounded-full bg-primary text-on-primary transition-colors hover:bg-primary-hover disabled:cursor-default disabled:opacity-40"
+            data-testid="quick-add-demo-send"
+            disabled={working}
+            onClick={() => void submit(demoPhrase)}
+            title="Send"
+            type="button"
+          >
+            <ArrowUpIcon size={18} />
+          </button>
+        )}
+        {voiceAvailable && !unavailable ? (
+          <button
+            aria-label={handsFree ? 'Stop dictating' : 'Dictate'}
+            aria-pressed={handsFree}
+            className={`inline-flex size-10 shrink-0 items-center justify-center rounded-full transition-colors disabled:cursor-default disabled:opacity-40 ${
+              handsFree
+                ? 'bg-danger text-on-danger'
+                : 'bg-primary text-on-primary hover:bg-primary-hover'
+            }`}
+            data-listening={voice === 'recording' ? (heard ? 'speech' : 'quiet') : undefined}
+            data-testid="quick-add-mic"
+            // On, it always answers (to stop); off, not while a typed phrase
+            // is read or an older step is on show.
+            disabled={!handsFree && (working || previewing)}
+            onClick={toggleVoice}
+            title={handsFree ? 'Stop dictating' : 'Dictate'}
+            type="button"
+          >
+            {/* Hearing speech: the microphone breathes. */}
+            <MicIcon className={heard ? 'motion-safe:animate-pulse' : ''} size={18} />
+          </button>
+        ) : null}
+      </div>
+      <p
+        className={`min-h-4 truncate text-xs ${
+          status?.tone === 'error' ? 'text-danger' : 'text-ink-secondary'
+        }`}
+        data-testid="quick-add-status"
+        role="status"
+        title={status?.text}
+      >
+        {status?.text ?? ''}
+      </p>
+    </div>
+  );
+}

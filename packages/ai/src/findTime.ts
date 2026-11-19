@@ -122,10 +122,11 @@ export const normalizeFindTime = (
   },
 ): FindTimeResult => {
   // The phrase's own length first; the form's when it states none; the
-  // model's only without either.
+  // model's only without either. Without the phrase (a model that reads
+  // the words itself), the model's, or the form's where it gives none.
   const duration =
     phrase === undefined
-      ? parse.durationMinutes
+      ? (parse.durationMinutes ?? fallbackDurationMinutes)
       : (durationMinutesOf(phrase) ?? fallbackDurationMinutes ?? parse.durationMinutes);
   if (typeof duration !== 'number' || !Number.isFinite(duration) || duration <= 0) {
     return { kind: 'rejected', reason: 'Say how long you need — e.g. "90 min".' };
@@ -173,7 +174,7 @@ export const normalizeFindTime = (
 /**
  * One constraint sentence in, solver constraints out. Only the model call
  * is impure — prompt building and normalization are testable around a
- * fake, exactly like parseQuickAdd.
+ * fake, like capture's `parseCapture`.
  */
 export const parseFindTime = async (
   model: LanguageModel,
@@ -208,7 +209,7 @@ export const parseFindTime = async (
   if (typeof raw !== 'object' || raw === null) {
     return { kind: 'rejected', reason: "That couldn't be read — try rephrasing." };
   }
-  return normalizeFindTime(raw as FindTimeParse, {
+  return normalizeFindTime(raw, {
     fallbackDurationMinutes,
     phrase,
     referenceDate,

@@ -152,7 +152,9 @@ jobs:
     name: iOS e2e over the real API (Maestro)
     needs: [decide, live-node]
     if: ${{ !cancelled() && needs.decide.outputs.run == 'true' }}
-    runs-on: macos-26
+    # xcode-27 and Xcode 27.2, as in ci.yml's ios-e2e: iOS 27.2 on an
+    # iPhone 18 Pro.
+    runs-on: xcode-27
     # 27–35 min green (11–14 of them the live flows, which wait on Google);
     # the cap leaves room for run-flows.ts to run the permissions and the
     # live invocations once more each (up to 240 s of driver wait apiece).
@@ -162,6 +164,9 @@ jobs:
       EXPO_NO_TELEMETRY: 1
       # The dev variant, as in ci.yml's ios-e2e.
       APP_VARIANT: development
+      # As in ci.yml's ios-e2e: the image's default Xcode 27.1 has no
+      # iPhone 18 Pro on its runtime.
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
       # Pinned + checksum-verified below; keep in step with ci.yml.
       MAESTRO_VERSION: 2.12.0
       MAESTRO_SHA256: a6044a84542f522f434c5dc3d609e60c7446d423f3ed1b2ae513f5c48663ec5e
@@ -290,10 +295,13 @@ jobs:
       # Every Maestro invocation goes through run-flows.ts, as in ci.yml: a
       # driver that never started runs the invocation once more, and the
       # flows a dead driver took down, or the simulator drew black or
-      # dropped the last touch of, run again (not the live flows, below); a
-      # flow that failed on its own never runs again. Without E2E_APP
-      # nothing is reset in between, so the dev client keeps its Metro
-      # project, and a black display is not rebooted.
+      # dropped the last touch of, run again; a flow that failed on its own
+      # never runs again. Without E2E_APP nothing is reset in between, so
+      # the dev client keeps its Metro project, and a black display is not
+      # rebooted: the flow's own launch is what draws again (run
+      # 43358802870: flow 02 black, flow 03's launch drew). A live flow's
+      # second run carries titles of its own (MAESTRO_LIVE_RUN_TAG gains
+      # `-r2`), so what the first left in the run's calendar is not its.
       - name: Bootstrap the dev client onto Metro
         working-directory: apps/ios
         run: node e2e/ci/run-flows.ts bootstrap e2e/flows/00-devclient-bootstrap.yaml
@@ -311,13 +319,6 @@ jobs:
         # Explicit files keep this order (a directory's order is not
         # deterministic): the calendar must exist before anything is
         # written into it.
-        env:
-          # Only a driver that never started, before any flow, runs these
-          # again: a flow cut short (a dead driver, a black display, a
-          # dropped touch) left its items in the run's calendar under the
-          # same titles, which a rerun could match. Unless a flow failed on
-          # its own, the step summary names what cut it short.
-          E2E_RETRY: never-started
         run: |
           node e2e/ci/run-flows.ts live \
             e2e/live/flows/01-live-calendar.yaml \

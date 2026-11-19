@@ -31,7 +31,7 @@ pnpm brand:build
 pnpm brand:check
 ```
 
-`brand:build` refreshes the two tracked app icons, `tokens/tokens.css` and `packages/core/src/theme/tokens.ts`, renders export sizes, checks 54 contrast pairs, and writes the complete distribution to `output/branding/solunivo-brand-kit/` and `output/branding/solunivo-brand-kit.zip`.
+`brand:build` refreshes the three tracked app icons (the macOS one, the iOS one and the iOS dev variant's `icon-dev.png`), `tokens/tokens.css` and `packages/core/src/theme/tokens.ts`, renders export sizes, checks the contrast pairs of both themes, and writes the complete distribution to `output/branding/solunivo-brand-kit/` and `output/branding/solunivo-brand-kit.zip`.
 
 `brand:check` regenerates those tracked files in a temporary directory and compares their bytes. It fails on stale assets or insufficient contrast without changing the working tree. When updating a master, include the regenerated app assets and CSS in the same commit.
 
@@ -69,6 +69,8 @@ Light/dark lockup filenames describe their intended **background**. Both use the
 The macOS ICNS retains the selected transparent canvas, dimensional shading and folded silhouette. Forge references the committed file directly.
 
 The iOS export derives from the same master: the outer paper edges extend to fill an opaque square; the numeral and curl paths stay intact. Expo generates the required sizes from the PNG, and iOS applies its corner mask. See the [Expo icon guidance](https://docs.expo.dev/develop/user-interface/splash-screen-and-app-icon/#app-icon) and [Forge icon configuration](https://www.electronforge.io/guides/create-and-add-icons).
+
+The dev variant's icon is the dark master (`brand/icons/solunivo-dark.svg`). Its artwork covers the whole square, so a different flatten background changes nothing.
 
 The iOS adapter deliberately checks the named SVG shapes and fails if it cannot find them, so future master changes require an explicit review of the platform conversion. Changes to the Expo icon require a native rebuild; an OTA update alone cannot change the installed icon. Native dark/tinted switching and Icon Composer assets remain follow-up work.
 

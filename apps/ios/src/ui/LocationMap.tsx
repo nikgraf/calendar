@@ -1,16 +1,16 @@
-import { type useEventEditorModel } from '@calendar/app-state';
-import { isMappableLocation } from '@calendar/core';
+import { type EventPlace } from '@calendar/app-state';
+import { isMappableLocation, locationDirectionsUrls } from '@calendar/core';
 import { Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { actionText, type ThemeColors, useStyles } from './theme.ts';
 
 /**
- * expo-maps' Apple Maps view is SwiftUI Map, available from iOS 17 — and
- * its module throws at import on a binary built without the native
- * dependency (a dev client from before this feature), so it is required
- * lazily and a failure degrades to the link, like loadGeoModule.
+ * expo-maps' Apple Maps view is SwiftUI Map. Its module throws at import on
+ * a binary built without the native dependency (a dev client from before
+ * this feature), so it is required lazily and a failure leaves the
+ * links available, like loadGeoModule.
  */
 const loadAppleMaps = (): typeof import('expo-maps').AppleMaps | undefined => {
-  if (Platform.OS !== 'ios' || Number.parseInt(String(Platform.Version), 10) < 17) {
+  if (Platform.OS !== 'ios') {
     return undefined;
   }
   try {
@@ -20,32 +20,36 @@ const loadAppleMaps = (): typeof import('expo-maps').AppleMaps | undefined => {
     return undefined;
   }
 };
-const AppleMaps = loadAppleMaps();
+/** Apple Maps' SwiftUI view, or none on this binary (`loadAppleMaps`). */
+export const AppleMaps = loadAppleMaps();
 
 /**
  * A small Apple Maps view of the event's place with a marker, plus an
- * Open in Maps link. Not interactive inside the sheet — a tap on the map
- * opens the Maps app, which is where directions live anyway. Below iOS 17
- * only the link shows.
+ * Open in Maps link in the editor, or Apple / Google directions links in
+ * event details. Directions stay available before a lookup finishes or
+ * when it fails. A tap on the map opens Apple Maps.
  */
-export function LocationMap({ model }: { model: ReturnType<typeof useEventEditorModel> }) {
+export function LocationMap({
+  place,
+  variant = 'editor',
+}: {
+  place: EventPlace;
+  variant?: 'editor' | 'detail';
+}) {
   const styles = useStyles(makeStyles);
-  const { location, mapGeo, mapLoading, mapsUrl } = model;
+  const { location, mapGeo, mapLoading, mapsUrl } = place;
   if (!isMappableLocation(location)) {
     return null;
   }
-  if (!mapGeo || !mapsUrl) {
-    return mapLoading ? (
-      <View style={[styles.map, styles.placeholder]}>
-        <Text style={styles.placeholderLabel}>Locating…</Text>
-      </View>
-    ) : null;
+  if (variant === 'editor' && !mapGeo && !mapLoading) {
+    return null;
   }
-  const coordinates = { latitude: mapGeo.lat, longitude: mapGeo.lng };
-  const open = () => void Linking.openURL(mapsUrl);
+  const directions = variant === 'detail' ? locationDirectionsUrls(location, mapGeo) : undefined;
+  const coordinates = mapGeo ? { latitude: mapGeo.lat, longitude: mapGeo.lng } : undefined;
+  const open = () => mapsUrl && void Linking.openURL(mapsUrl);
   return (
-    <View style={styles.container}>
-      {AppleMaps ? (
+    <View style={[styles.container, variant === 'editor' && styles.editorInset]}>
+      {AppleMaps && coordinates && mapGeo ? (
         <Pressable
           accessibilityLabel={`Open ${mapGeo.name ?? location} in Maps`}
           accessibilityRole="button"
@@ -68,19 +72,56 @@ export function LocationMap({ model }: { model: ReturnType<typeof useEventEditor
             />
           </View>
         </Pressable>
+      ) : mapLoading ? (
+        <View style={[styles.map, styles.placeholder]}>
+          <Text style={styles.placeholderLabel}>Locating…</Text>
+        </View>
       ) : null}
-      <Pressable accessibilityRole="link" hitSlop={8} onPress={open} testID="open-in-maps">
-        <Text style={styles.link}>Open in Maps</Text>
-      </Pressable>
+      {directions ? (
+        <View style={styles.directions}>
+          <Pressable
+            accessibilityRole="link"
+            onPress={() => void Linking.openURL(directions.apple)}
+            style={styles.directionLink}
+            testID="apple-maps-directions"
+          >
+            <Text style={styles.link}>Apple Maps directions</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="link"
+            onPress={() => void Linking.openURL(directions.google)}
+            style={styles.directionLink}
+            testID="google-maps-directions"
+          >
+            <Text style={styles.link}>Google Maps directions</Text>
+          </Pressable>
+        </View>
+      ) : mapsUrl ? (
+        <Pressable accessibilityRole="link" hitSlop={8} onPress={open} testID="open-in-maps">
+          <Text style={styles.link}>Open in Maps</Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
 
 const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
-    // Align the map with the location card above it.
     container: {
       gap: 6,
+      marginTop: 8,
+    },
+    directionLink: {
+      justifyContent: 'center',
+      minHeight: 44,
+    },
+    directions: {
+      columnGap: 16,
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+    },
+    // Align the editor's map with the location card above it.
+    editorInset: {
       marginHorizontal: 16,
       marginTop: 12,
     },
@@ -97,8 +138,6 @@ const makeStyles = (colors: ThemeColors) =>
       alignItems: 'center',
       backgroundColor: colors.surface,
       justifyContent: 'center',
-      marginHorizontal: 16,
-      marginTop: 12,
     },
     placeholderLabel: {
       color: colors['text-secondary'],

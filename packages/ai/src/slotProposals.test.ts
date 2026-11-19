@@ -2,6 +2,7 @@ import { EventRecord, Temporal, type BackendClient } from '@calendar/core';
 import { Effect } from 'effect';
 import { describe, expect, it } from 'vite-plus/test';
 import type { LanguageModel } from './model.ts';
+import { rulesFinder } from './tunedFinder.ts';
 import {
   isFinderPhrase,
   MAX_SLOT_PROPOSALS,
@@ -20,10 +21,12 @@ const at = (date: Temporal.PlainDate, hour: number, minute = 0): number =>
     .toZonedDateTime({ plainTime: new Temporal.PlainTime(hour, minute), timeZone: TZ })
     .toInstant().epochMilliseconds;
 
-const model = (parse: unknown): LanguageModel => ({
-  generateJson: async () => parse,
-  status: async () => 'ready',
-});
+// Apple's or a served model with the word rules, as find a time reads without the Assistant's model.
+const model = (parse: unknown) =>
+  rulesFinder({
+    generateJson: async () => parse,
+    status: async () => 'ready',
+  } satisfies LanguageModel);
 
 const backendWith = (events: ReadonlyArray<EventRecord> | Error): BackendClient =>
   ({

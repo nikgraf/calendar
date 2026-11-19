@@ -1,0 +1,18 @@
+{
+  "lang": "en",
+  "tags": ["repeat", "date"],
+  "turns": [
+    {
+      "input": { "text": "Anniversary dinner every year on June 12" },
+      "expect": {
+        "title": "anniversary dinner",
+        "dayOfMonth": 12,
+        "month": 6,
+        "startTime": "19:00",
+        "endTime": "20:00",
+        "assumedTime": true,
+        "repeat": { "freq": "yearly" }
+      }
+    }
+  ]
+}

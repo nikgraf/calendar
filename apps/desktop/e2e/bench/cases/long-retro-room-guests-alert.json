@@ -1,0 +1,21 @@
+{
+  "lang": "en",
+  "tags": ["long", "guests", "location", "notifications"],
+  "turns": [
+    {
+      "input": {
+        "text": "Schedule a team retro next Thursday from 3 to 4:30 in the big meeting room, invite Sarah Novak and Teo Marin, and remind me 15 minutes before"
+      },
+      "expect": {
+        "kind": "event",
+        "title": "team retro",
+        "weekday": 4,
+        "startTime": "15:00",
+        "endTime": "16:30",
+        "location": "big meeting room",
+        "guests": { "emails": ["sarah.novak@example.com", "teo.marin@example.com"] },
+        "reminders": [15]
+      }
+    }
+  ]
+}

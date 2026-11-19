@@ -1,0 +1,24 @@
+{
+  "lang": "en",
+  "tags": ["flow", "guests"],
+  "turns": [
+    {
+      "input": { "text": "Sync Friday at 10, invite Tom Baker" },
+      "expect": {
+        "title": "sync",
+        "weekday": 5,
+        "startTime": "10:00",
+        "endTime": "11:00",
+        "guests": { "emails": ["tom.baker@example.com"] }
+      }
+    },
+    {
+      "input": { "text": "invite Sarah instead of Tom" },
+      "expect": { "guests": { "emails": ["sarah.novak@example.com"] } }
+    },
+    {
+      "input": { "text": "and Teo as well" },
+      "expect": { "guests": { "emails": ["sarah.novak@example.com", "teo.marin@example.com"] } }
+    }
+  ]
+}

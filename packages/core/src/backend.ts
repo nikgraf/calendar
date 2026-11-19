@@ -9,6 +9,7 @@ import {
 import { EventToTaskPreview, TaskToEventLoss } from './editor/convertLoss.ts';
 import { MoveLoss } from './editor/moveLoss.ts';
 import { TaskMoveLoss } from './editor/taskMoveLoss.ts';
+import { failureText } from './failureText.ts';
 import { PlaceCandidate } from './geo/candidates.ts';
 import { PlaceSuggestion } from './geo/location.ts';
 import { MirrorCalendarRef, MirrorDefinition } from './mirror/definition.ts';
@@ -578,8 +579,12 @@ export class AppBackendRpcs extends RpcGroup.make(
     success: Schema.Array(AccountSyncStatus),
   }),
   /**
-   * Static map image for the event editor (desktop: MKMapSnapshotter in
-   * the Swift helper). Fails where the platform renders a live map instead.
+   * Static map image (MKMapSnapshotter in the Swift bridge): the desktop
+   * editor's ~700 m map around a place with its pin, or — given `rect` —
+   * exactly that stretch of the world with no pin, for the Assistant's
+   * maps on both platforms, which draw their own pins over it
+   * (`placeMapLayout`). `fitted` says the image is that rect: a native
+   * side from before rects answers without it.
    */
   Rpc.make('mapSnapshot', {
     error: BackendError,
@@ -588,10 +593,18 @@ export class AppBackendRpcs extends RpcGroup.make(
       height: Schema.Number,
       lat: Schema.Number,
       lng: Schema.Number,
+      rect: Schema.optional(
+        Schema.Struct({
+          height: Schema.Number,
+          width: Schema.Number,
+          x: Schema.Number,
+          y: Schema.Number,
+        }),
+      ),
       scale: Schema.Number,
       width: Schema.Number,
     },
-    success: Schema.Struct({ pngBase64: Schema.String }),
+    success: Schema.Struct({ fitted: Schema.optional(Schema.Boolean), pngBase64: Schema.String }),
   }),
   /**
    * Moves an event (a whole series: pass the master id) to another
@@ -722,10 +735,17 @@ export class AppBackendRpcs extends RpcGroup.make(
    * Not cached — for offering a choice, where `resolveLocation` gives the
    * one best guess. Empty when the text is not a place or nothing
    * resembles it; without a bridge the past places alone.
+   * `alternatives`: the text as dictation's other readings of the words
+   * have it, the likeliest first (`alternativesFor`). Asked only when the
+   * text itself names nothing nearby, the places they name come first,
+   * each marked with its reading and never taken unasked.
    */
   Rpc.make('placeCandidates', {
     error: BackendError,
-    payload: { location: Schema.String },
+    payload: {
+      alternatives: Schema.optional(Schema.Array(Schema.String)),
+      location: Schema.String,
+    },
     success: Schema.Array(PlaceCandidate),
   }),
   /**
@@ -965,9 +985,10 @@ export const mapToBackendError = <A, R>(
     }
     const tag =
       typeof error === 'object' && error !== null && '_tag' in error
-        ? String((error as { _tag: unknown })._tag)
+        ? String(error._tag)
         : 'UnknownError';
-    return Effect.fail(new BackendError({ message: String(error ?? cause), tag }));
+    const message = error === undefined || error === null ? String(cause) : failureText(error);
+    return Effect.fail(new BackendError({ message, tag }));
   });
 
 /**
@@ -985,8 +1006,7 @@ export const makeDirectBackendClient = <R>(
           error instanceof BackendError
             ? error
             : new BackendError({ message: String(error), tag: 'UnknownError' }),
-        try: () =>
-          run(mapToBackendError(handlers[name](payload as never))) as Promise<BackendSuccess<M>>,
+        try: () => run(mapToBackendError(handlers[name](payload as never))),
       });
   };
   // Derived record: per-method types are guaranteed by `method` itself; the

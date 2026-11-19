@@ -1,40 +1,41 @@
 import type { ModelAvailability } from '@calendar/ai';
 
+/** What Apple's model reads: find a time moves to the Assistant's model once it is here. */
+const NEEDS =
+  'Search sentences and capture need Apple Intelligence, and so does find a time until the Assistant’s model is here';
+
 /**
- * What the quick-add notice and Diagnostics say about Apple's on-device
- * model — one wording for both, so a screenshot of either names the same
- * cause. Each answer says what the user can do, or that there is nothing
+ * What Diagnostics (and, under the fixture model, the Assistant's notice)
+ * say about Apple's on-device model, which search sentences and capture
+ * use, and find a time until the Assistant's model is downloaded; the
+ * Assistant runs on a model of its own (`assistantRuntime.ts`). One wording for both, so a screenshot of
+ * either names the same cause. Each answer says what the user can do, or that there is nothing
  * to do, and never more than iOS reported: 'not-ready' may be a download,
  * but iOS does not say so.
  */
-export const availabilityGuidance = (
-  availability: ModelAvailability,
-  iosVersion: string,
-): string => {
+export const availabilityGuidance = (availability: ModelAvailability): string => {
   if (availability.checkError !== undefined) {
     return "Solunivo couldn't find out from iOS whether Apple Intelligence can run. Check again in a moment.";
   }
   switch (availability.status) {
     case 'ready':
-      return 'Apple Intelligence is ready: quick add can read phrases.';
+      return 'Apple Intelligence is ready: search sentences and capture can read text, and find a time until the Assistant’s model is here.';
     case 'disabled':
       return (
-        'Quick add needs Apple Intelligence. Turn it on in Settings → Apple Intelligence & Siri. ' +
+        `${NEEDS}. Turn it on in Settings → Apple Intelligence & Siri. ` +
         "If it is already on, Siri's language has to match the iPhone's."
       );
     case 'not-ready':
       return (
         "Apple Intelligence is on, but its model isn't ready yet — it may still be downloading or " +
-        'preparing, or be briefly unavailable. Quick add appears here once iOS reports it ready.'
+        'preparing, or be briefly unavailable. They work once iOS reports it ready.'
       );
     case 'unsupported':
-      return availability.nativeReason === 'osTooOld'
-        ? `Quick add needs Apple Intelligence, which needs iOS 26 or later. This iPhone runs iOS ${iosVersion}.`
-        : availability.nativeReason === 'deviceNotEligible'
-          ? "Quick add needs Apple Intelligence, which this iPhone doesn't support."
-          : "iOS reports that this iPhone can't run Apple Intelligence, which quick add needs.";
+      return availability.nativeReason === 'deviceNotEligible'
+        ? `${NEEDS}, and this iPhone doesn't support it.`
+        : `iOS reports that this iPhone can't run Apple Intelligence. ${NEEDS}.`;
     case 'missing-module':
-      return "This build of Solunivo doesn't include Apple Intelligence support, so quick add can't run in it.";
+      return "This build of Solunivo doesn't include Apple Intelligence support, so search sentences and capture can't read text in it, nor find a time until the Assistant’s model is here.";
     case 'unavailable':
       return availability.reasonsUnavailable
         ? "iOS reports Apple Intelligence as unavailable, but this build of Solunivo can't read why. A newer build shows the reason."

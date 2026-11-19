@@ -5,9 +5,13 @@ Apple Calendar (EventKit) calendars and Apple Reminders: an Expo iOS app
 and an Electron macOS app over a shared, Effect-v4-first TypeScript core.
 No backend: data syncs directly against the Google Calendar/Tasks REST
 APIs with syncToken (events) and updatedMin-watermark (tasks) polling
-plus an offline-tolerant pending-op queue. On-device AI (Apple Foundation
-Models + SpeechAnalyzer + Vision) powers quick-add parsing, find-a-time,
-dictation and capture from text or photo.
+plus an offline-tolerant pending-op queue. The editor's Assistant reads
+what is said with a model of the app's own on both platforms (a
+fine-tuned Qwen3.5 0.8B, downloaded once when asked for, run by llama.cpp:
+llama.rn on the iPhone, a bundled `llama-server` on the Mac), and with
+it find a time once it is downloaded; Apple's on-device AI (Foundation
+Models + SpeechAnalyzer + Vision) powers find-a-time until then, search
+sentences, dictation and capture from text or photo.
 
 ## Monorepo map
 
@@ -33,13 +37,16 @@ dictation and capture from text or photo.
   task and birthday reminders, one merged OS schedule) over a platform
   `NotificationSink`.
 - `packages/ai` — the on-device AI seams (`LanguageModel`,
-  `SpeechToText`, `TextRecognizer`), the quick-add, find-time and
+  `SpeechToText`, `TextRecognizer`), the Assistant's tuned path
+  (`phraseReader.ts`, `tuned.ts`, `tunedResult.ts`, `said.ts`) and its
+  model's release (`assistantModel.ts`), the find-time, search and
   capture prompt/normalize/parse pipelines, and the deterministic
   fixture model both e2e suites run on. Pure TypeScript; platform
-  adapters live in the apps. Its one Swift source
-  (`swift/OcrBridge.swift`, Vision text recognition) is symlinked into
-  the desktop helper and the `solunivo-ocr` iOS Expo module like the
-  other bridges.
+  adapters live in the apps. Its two Swift sources
+  (`swift/OcrBridge.swift`, Vision text recognition;
+  `swift/SpeechBridge.swift`, dictation streamed into SpeechAnalyzer)
+  are symlinked into the desktop helper and the `solunivo-ocr` /
+  `solunivo-speech` iOS Expo modules like the other bridges.
 - `packages/reminders`, `packages/apple-calendar`, `packages/contacts`,
   `packages/geo` — one seam each over a native bridge, all the same
   shape: a `Context.Service` client (`reminders.*`, `calendar.*`,
@@ -67,7 +74,11 @@ dictation and capture from text or photo.
   watch over stdio; process owned by `electron/helperProcess.ts`); macOS 27
   is the floor of both (`LSMinimumSystemVersion` in `forge.config.cjs`,
   `.macOS(.v27)` in `helper/Package.swift`), so neither guards on the OS
-  version; the agent gateway host
+  version; the Assistant's own model (`electron/assistantModel/`: the
+  download into the profile, offered by the Create lesson and the
+  Assistant's notice, and the bundled
+  `llama-server` on a UNIX socket, built by `scripts/build-llama-server.sh`);
+  the agent gateway host
   (`electron/agent/`: Unix socket, MCP server, CLI runner) and its relay
   `solunivo-cli` (`electron/cli.ts`, a third `pack` entry in
   `vite.config.ts`).
@@ -79,8 +90,14 @@ dictation and capture from text or photo.
   `src/settingsCodeInbox.ts` hands a code that arrives from outside to a
   reader); `@expo/ui` for
   drop-in native controls; zero-hop direct backend; @react-native-ai/apple
-  for on-device model access; the local Expo modules under `modules/`;
-  `expo-maps` draws the editor map.
+  for Apple's on-device model (search, capture, find a time until the
+  Assistant's model is here); llama.rn for the Assistant's own model,
+  which then finds a time too
+  (`src/assistantRuntime.ts`: the download, offered by the Create lesson
+  and the Assistant's notice, Wi-Fi
+  only unless mobile data is allowed; the Model Spike page measures with
+  the same runtime, in both variants); the local Expo modules under `modules/`;
+  `expo-maps` draws the editor and event detail maps.
 - `apps/web` — the website (solunivo.com): a static landing page and the
   privacy policy (rendered from the root `PRIVACY.md` at build time),
   Astro file-based pages with static React components and Tailwind on the
@@ -127,11 +144,11 @@ here renders hooks in a test. One independent value stays a plain
 
 ## Commands
 
-The gate — `pnpm check`, `pnpm typecheck`, `pnpm test` — must be green
-before any commit; `pnpm fix` (`vp check --fix`) applies lint and format
-fixes. A pre-commit hook (`vp config`, installed by `pnpm install`) runs
-`vp staged` and commits the whole index, so split commits by staging
-deliberately.
+The gate — `pnpm check`, `pnpm knip`, `pnpm typecheck`, `pnpm test` —
+must be green before any commit; `pnpm fix` (`vp check --fix`) applies
+lint and format fixes. A pre-commit hook (`vp config`, installed by
+`pnpm install`) runs `vp staged` and commits the whole index, so split
+commits by staging deliberately.
 
 - `pnpm test` — vitest via vite-plus, unit tests against in-memory
   SQLite; Effect code uses `@effect/vitest` with TestClock.
@@ -143,20 +160,29 @@ deliberately.
 - `pnpm test:e2e:ios` — Maestro flows (`apps/ios/e2e/flows/`) against
   the installed dev client (`pnpm --filter @calendar/ios ios`, or the EAS
   simulator build — `docs/distribution.md`) with Metro running
-  (`pnpm --filter @calendar/ios start`). Needs the Maestro CLI
-  (`brew install mobile-dev-inc/tap/maestro`) and a JDK on PATH
-  (`brew install openjdk`, then `JAVA_HOME=$(brew --prefix openjdk)`).
+  (`pnpm --filter @calendar/ios start`). Needs the Maestro CLI at the
+  version CI pins (`MAESTRO_VERSION` in `.github/workflows/ci.yml`),
+  installed from its release zip as CI's "Install Maestro" step does
+  (Homebrew's tap installs the latest release instead), and a JDK 17 or
+  later (`JAVA_HOME` set, or `java` on PATH; with Homebrew,
+  `brew install openjdk`, then `JAVA_HOME=$(brew --prefix openjdk)`).
   Start Metro with `EXPO_PUBLIC_CALENDAR_GOOGLE=fixture` for the Google
   halves of the flows (and `EXPO_PUBLIC_CALENDAR_MODEL=fixture
   EXPO_PUBLIC_CALENDAR_ONBOARDING=off EXPO_PUBLIC_CALENDAR_NOTIFICATIONS=off`
   to match CI's bundle). Flow
   conventions: `docs/google-sync-and-testing.md`, "iOS e2e".
 - `MODEL_BENCH=1 E2E=1 pnpm exec vp test run apps/desktop/e2e/bench/modelBench.e2e.ts`
-  — the model bench: the quick-add and refine cases under
+  — the model bench: the Assistant's cases under
   `apps/desktop/e2e/bench/cases/` (text, or recordings with transcripts)
-  on Apple's model and any served one, scored by where a person would
-  put the event; a table and a report under `output/bench/`, never a
-  gate. Format and variables: `apps/desktop/e2e/bench/README.md`.
+  through the tuned path on any served model (the app's file on
+  `llama-server`, a teacher on the plain arm), scored by where a person
+  would put the event; a table and a report under `output/bench/`, never a
+  gate. `finderBench.e2e.ts` beside it scores find a time's sentences
+  (`finder.json`) on the same models, with the word rules and without.
+  A case marked `"blind": true` is counted and never named: do not read
+  the blind cases or a report's answers to them while writing briefs,
+  prompts or checks. Format and variables:
+  `apps/desktop/e2e/bench/README.md`.
 - `GOOGLE_LIVE=1 pnpm exec vp test run` — the live Google suite
   (`packages/sync/src/live/*.live.ts`) against the dedicated test account
   over the real API; desktop
@@ -224,8 +250,27 @@ deliberately.
   not into numbered parts, and into pieces of 40 or less. Never switch
   the rule off inline: `scripts/complexityCap.test.ts` fails on a
   directive that names it.
-- Window-level concerns (screen privacy, logging, open-external, the five
-  `model:*` AI-helper channels, the `reminders:*` / `contacts:*` /
+- Oxlint lints with type information (`lint.options.typeAware` and the
+  `typescript/*` rules in `vite.config.ts`): a promise is awaited, or
+  `void`ed where the callee handles its own failure. A failure value that
+  may be a plain object becomes text through `failureText` (core), not
+  `String()`, which prints `[object Object]`; `no-base-to-string` flags
+  only a value typed as an object, never one typed `unknown`. Add rules in
+  `vite.config.ts`, not on the command line: `vp lint` given several
+  `--deny` flags prints nothing and exits 0. The root's own TypeScript
+  (`vite.config.ts`, `knip.config.ts`, `scripts/`) is in the root
+  `tsconfig.json`: outside a tsconfig, tsgolint would lint with
+  TypeScript's non-strict defaults and call a needed `!` unnecessary.
+- `pnpm knip` (`knip.config.ts`) fails on a file nothing reaches, an export
+  nothing reads, and a dependency nothing imports or an import nothing
+  declares. Delete dead code rather than ignore it. An entry point knip
+  cannot see (a `vp pack` entry, a spec or script run only under an env
+  var, by hand or by Maestro) goes into `knip.config.ts`, and every ignore
+  there says why.
+- Window-level concerns (screen privacy, logging, open-external, the
+  `model:*` AI-helper channels (dictation's `model:speech-*` among them),
+  `assistant:*` (the Assistant's own model:
+  its state, the download, a prompt), the `reminders:*` / `contacts:*` /
   `appleCalendar:*` permission-status channels, `appleCalendar:open`
   (brings Calendar.app forward), `settings:open`,
   `settingsFile:*`, `auth:cancel` (stops a sign-in waiting on the
@@ -251,7 +296,9 @@ deliberately.
   list; guests, RSVP or an EXDATE/BYHOUR rule on an Apple event) fails
   with `UnsupportedForProviderError` — never drop it silently. Moving an
   event across accounts/providers is copy-then-delete and drops guests,
-  after the UI confirmed `previewMove`'s loss.
+  after the UI confirmed `previewMove`'s loss; toward Google the source
+  outlasts its queued copy (`PendingOp.copySource`), which Google can
+  still turn down.
 - Calendar mirrors (`packages/sync/src/mirrors.ts`, core `mirror/`) are the
   one exception to two rules above: their Google copies are written
   straight through the REST client under the engine's gate, never through
@@ -297,7 +344,10 @@ deliberately.
   model is real by default too; `CALENDAR_MODEL=fixture` (desktop, a
   spec's `model: 'fixture'`) / `EXPO_PUBLIC_CALENDAR_MODEL=fixture` (iOS
   bundle, on in CI) answer with the deterministic model and text
-  recognizer from `@calendar/ai` instead. `…=live` signs
+  recognizer from `@calendar/ai` instead, the Assistant's tuned prompt
+  included (its grammar: `docs/google-sync-and-testing.md`); the
+  harness also sets `CALENDAR_ASSISTANT_MODEL=off`, so no run asks to
+  download the Assistant's model unless a spec points it at a file. `…=live` signs
   the real API in as the dedicated live test account — only the opt-in
   live suites use it (`GOOGLE_LIVE=1` Node files, `CALENDAR_E2E_GOOGLE=live`
   desktop spec, `apps/ios/e2e/live` flows; `google-live.yml` nightly),
@@ -376,34 +426,111 @@ deliberately.
   them); `react` and `react-dom` pinned exactly to the React Native
   renderer's version (react-dom throws unless it equals react); the
   Expo-bound React Native stack moves only with the SDK (`npx expo install
-  --check` is the oracle); `vitest` equals the version vite-plus bundles.
+  --check` is the oracle); `vitest` equals the version vite-plus bundles;
+  Babel stays on 7 (the worklets plugin throws under 8).
   The 2-day `minimumReleaseAge` gate is never bypassed, and a
   `trustPolicyExclude` entry is added only by exact version after an audit
   (the comments in `pnpm-workspace.yaml` say how).
 - Secrets: `google-oauth.local.json` is gitignored — never commit OAuth
   client config. OAuth tokens live only in TokenStore
   (Keychain/safeStorage), never in SQLite.
-- Workflow: one commit per task on a `todo/<slug>` branch → PR to `main` →
-  CI green (gate + macOS e2e) → Nik merges. Direct pushes to main are
-  blocked. A shipped item leaves `todo.md` and gets a short record in
+- Workflow: one PR per task on a `todo/<slug>` branch off `origin/main` (a
+  feature across packages and both apps, or a batch of fixes from one
+  origin, is one PR with ordered commits, not a stack) → review rounds
+  (Claude Opus, then Codex) and screenshots before anyone can merge → CI
+  green (gate, macOS e2e, `PR complete`) → Nik merges. Direct pushes to
+  main are blocked. The whole sequence, the PR body's shape and the
+  commands: the `ship-pr` skill (`.agents/skills/ship-pr/`); follow it for
+  every PR. A shipped item leaves `todo.md` and gets a short record in
   `docs/decisions.md` under its area: the decision, the alternatives
   rejected, what it leaves open, and the PR for the detail — ten lines at
   most. The mechanism goes in the current-state doc it belongs to, never
-  in the log, and the test list goes nowhere.
+  in the log, and the test list goes nowhere. The log keeps only what
+  still holds: a PR that reverses a decision deletes that record (its own
+  names the PR it replaced), and closes an open point by cutting it.
 - e2e tests must be date- and scroll-independent: seed relative to "today
   minus N days", locate elements via `scrollIntoView` (harness `locate`),
   and assert relative counts. Desktop specs open an event through the
   harness's `openInspector` / `openEditor` (a grid click shows the
   inspector; Edit opens the editor) and locate by `data-testid`, never by
   a Tailwind class or a computed color (`data-color` carries a block's
-  calendar hex). Test email addresses are made up (`@example.com`), never
-  a real person's. See docs/google-sync-and-testing.md.
+  calendar hex). Their page code is a typed function (`cdp.evaluate`,
+  `waitUntil`; `e2e/page.ts`), never a string of JavaScript, also not
+  through `cdp.send('Runtime.evaluate')`: it names only its own bindings,
+  its arguments, the page kit and the page globals `page.ts` lists, and
+  `pageFunctions.test.ts` in the gate refuses anything else. Test email addresses
+  are made up (`@example.com`), never a real person's. See
+  docs/google-sync-and-testing.md.
+
+## Working here
+
+Sessions keep no memory: each may run on a fresh machine with a fresh
+clone. What the next session should know (a tool's quirk, a recipe, a rule
+Nik stated) goes into the doc, skill or test it belongs to, in the PR that
+learned it, never only into a chat or a local memory file.
+
+- Lead with the simplest correct design. A staged or optimised variant is
+  an alternative with its cost, not the recommendation.
+- A gesture tracks the input 1:1 while it lasts and settles with an
+  animation, never the accumulate-then-jump variant
+  (`packages/core/src/gestures/wheelPan.ts`,
+  `apps/desktop/renderer/calendar/useWheelPan.ts` are the pattern).
+- UI: Apple's HIG wins over discoverability (Settings is a window behind
+  ⌘,, with no gear in the toolbar), and a rarely used setting gets no
+  always-on chrome. Few borders, none on calendar items (a focus or
+  selection outline is fine); colors only from the brand tokens, never
+  invented ones. The neutral `selection` tint never carries a state alone:
+  pair it with a weight, a `primary` fill or a `focus` ring. Cancel and
+  Save are large targets (44 pt capsules on iOS). A design canvas only
+  approximates the shipped screens: it is no reason to restyle them.
+- Never describe the app by comparison to another calendar product, in
+  code, docs, the website or a PR: Nik wants no competitor's name in the
+  repo.
+- Apple's on-device models are on their way out: the app moves to its own
+  model. Paths only Apple's models use (their availability notice, the
+  "not ready" fallback, prompt workarounds for them) get no polish; name
+  such a gap and leave it, but keep them working while they still run
+  search, capture and the find-a-time fallback.
+- Build on a Google or EventKit behaviour only once it is verified: the
+  "Verified …" sections of `docs/google-sync-and-testing.md`, or a probe
+  against the live test account (ask Nik before the first live run). The
+  fake Google server models no recurrence, so a series' semantics never
+  come from it.
+- A push that moves the iOS native fingerprint makes CI request an EAS
+  build, and the month's builds are few: ask Nik before each such push.
+- When Nik forwards someone else's input and asks what you think, assess
+  it first (what improves the plan, what to push back on, a better
+  alternative) and change the plan only once he picks.
+- Dependencies: prefer the actively maintained library with the modern
+  API over the popular stale one (`rrule-temporal`, not `rrule`). Never
+  `pnpm patch` a dependency's native code: upstream it, work around it in
+  JS or live with the limit; ask before a JS-only patch. "Upgrade all
+  dependencies" means all of them (Effect, the Actions majors, pnpm
+  itself) up to the technical ceilings in the Dependencies rule above, one
+  commit per group so any one can be dropped.
+- The Assistant reads meaning with its model. No word lists that decide
+  what a phrase means (bare turns, command words, place kinds): code may
+  check and compute (dates, lookups, shapes, whether a value occurs in the
+  words), and a better reading comes from the schema, the prompt or the
+  model, measured on the bench. Closed vocabularies (dates, times,
+  repeats) may stay rules.
+- Training data for a model never holds the outputs of Claude, or of
+  another API whose terms forbid training on them: check the weights'
+  licence and the API's terms before generating any. DeepSeek V4 through
+  DeepSeek's own API is the chosen source. Measuring models with Claude
+  (the bench's arms) trains nothing and is fine.
+- CI fetches iOS builds from EAS by native fingerprint and never runs
+  `xcodebuild` on a runner. macOS minutes are limited: verify on the
+  machine first and push fixes in batches.
 
 ## Deep docs
 
 - `docs/architecture.md` — data flow, op queue, sync engine, Apple
   Calendar, mirrors, search, recurring model, platform seams.
 - `docs/effect-v4-notes.md` — the Effect v4 gotcha catalog (symptom → fix).
+- `docs/platform-notes.md` — the same for React Native, Expo, Reanimated,
+  Gesture Handler, Metro and the dev client, iOS itself, and Electron and
+  the macOS runtime.
 - `docs/google-sync-and-testing.md` — verified Google and EventKit
   semantics + testing conventions, CI and flakiness lessons.
 - `docs/distribution.md` — CI build/signing pipeline, TestFlight, EAS
@@ -411,5 +538,12 @@ deliberately.
 - `docs/agent-gateway.md` — MCP/CLI access for other agents: tools,
   permission levels, ask-first, transport, storage, threat model.
 - `todo.md` — ranked backlog (tiers by impact, one PR per item).
-  `docs/decisions.md` — decision log: every shipped item's `[x]` entry
-  with the design decisions it settled.
+  `docs/decisions.md` — decision log: the decisions shipped items settled
+  that still hold, by area.
+
+Skills (`.agents/skills/`, linked into `.claude/skills/` and `.pi/skills/`):
+`ship-pr` for every PR (review rounds, screenshots, the body, the record);
+`ios-simulator` for hands-on simulator work (CI's iOS job run locally, a
+clean app state, Maestro by hand, race hunts, recordings, lldb, EventKit
+probes). The design and animation skills come from emilkowalski/skills
+(`skills-lock.json`).

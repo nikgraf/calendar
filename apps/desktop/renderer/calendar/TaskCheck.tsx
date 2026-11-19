@@ -1,5 +1,5 @@
 import { contrastingTextColor } from '@calendar/core';
-import type { ComponentProps, CSSProperties } from 'react';
+import type { ComponentProps } from 'react';
 
 /**
  * Box diameter, the button's hit square and the tick's stroke (in the
@@ -48,12 +48,7 @@ export function TaskCheckMark({
     vars['--task-check-ring'] = 'var(--danger)';
   }
   return (
-    <span
-      aria-hidden
-      className="task-check"
-      data-done={checked ? '' : undefined}
-      style={vars as CSSProperties}
-    >
+    <span aria-hidden className="task-check" data-done={checked ? '' : undefined} style={vars}>
       <svg viewBox="0 0 16 16">
         <path d="M4.6 8.3 7 10.7 11.5 5.6" />
       </svg>

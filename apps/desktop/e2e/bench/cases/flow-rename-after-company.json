@@ -1,0 +1,19 @@
+{
+  "blind": true,
+  "lang": "en",
+  "tags": ["flow", "title"],
+  "turns": [
+    {
+      "input": { "text": "Burgers tomorrow at 12:30" },
+      "expect": { "title": "burgers", "dayOffset": 1, "startTime": "12:30", "endTime": "13:30" }
+    },
+    {
+      "input": { "text": "with Sarah" },
+      "expect": { "title": "burgers with sarah", "guests": {} }
+    },
+    {
+      "input": { "text": "name it team lunch" },
+      "expect": { "title": "team lunch" }
+    }
+  ]
+}

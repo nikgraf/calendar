@@ -1,0 +1,20 @@
+{
+  "lang": "de",
+  "tags": ["long", "location", "notes", "de"],
+  "turns": [
+    {
+      "input": {
+        "text": "Ich hab am Mittwoch um 15 Uhr ein Gespräch mit dem Vermieter in der Hauptstraße 5, schreib dazu, dass ich die Nebenkostenabrechnung brauche"
+      },
+      "expect": {
+        "kind": "event",
+        "titleIncludes": "vermieter",
+        "weekday": 3,
+        "startTime": "15:00",
+        "endTime": "16:00",
+        "location": "hauptstraße 5",
+        "notes": "nebenkostenabrechnung"
+      }
+    }
+  ]
+}

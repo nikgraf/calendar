@@ -1,0 +1,16 @@
+{
+  "blind": true,
+  "lang": "en",
+  "tags": ["repeat"],
+  "turns": [
+    {
+      "input": { "text": "Swim training every Monday, Wednesday and Friday at 6:30am" },
+      "expect": {
+        "title": "swim training",
+        "startTime": "06:30",
+        "endTime": "07:30",
+        "repeat": { "freq": "weekly", "byDay": ["MO", "WE", "FR"] }
+      }
+    }
+  ]
+}

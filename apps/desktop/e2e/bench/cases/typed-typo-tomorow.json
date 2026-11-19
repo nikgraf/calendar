@@ -1,0 +1,16 @@
+{
+  "lang": "en",
+  "tags": ["typed"],
+  "turns": [
+    {
+      "input": { "text": "tomorow 3pm coffee with jo" },
+      "expect": {
+        "title": "coffee with jo",
+        "dayOffset": 1,
+        "startTime": "15:00",
+        "endTime": "16:00",
+        "guests": {}
+      }
+    }
+  ]
+}

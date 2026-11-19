@@ -1,9 +1,9 @@
 # Solunivo
 
 A calendar for Google Calendar, Google Tasks, Apple Calendar and Apple
-Reminders: iOS (Expo) + macOS (Electron, macOS 27 or later), client-only, built on Effect
-v4. `AGENTS.md` has the architecture map, the commands
-and the rules; the deep docs are listed at its end.
+Reminders: iOS (Expo, iOS 27 or later) + macOS (Electron, macOS 27 or
+later), client-only, built on Effect v4. `AGENTS.md` has the architecture
+map, the commands and the rules; the deep docs are listed at its end.
 
 - Day/week/month views (plus 2 Days and an agenda on iOS) with 1:1 drag
   gestures, recurring-event editing (this/following/all), per-calendar
@@ -17,9 +17,12 @@ and the rules; the deep docs are listed at its end.
 - Invitee autocomplete from the device address book and Google contacts;
   contact birthdays as chips with device-local reminders; event reminders
   delivered as local notifications on both platforms.
-- On-device AI (Apple Foundation Models, no cloud): quick-add parsing,
-  "find a time", dictation, and capture of events from a pasted email
-  (⌘V on the Mac) or a shared screenshot (the iOS share sheet).
+- On-device AI, no cloud: the editor's Assistant reads what you type or
+  say with a model of the app's own (downloaded once, when asked for),
+  which also finds a time; Apple's on-device models do search sentences,
+  dictation, capture of events from a pasted email (⌘V on the Mac) or a
+  shared screenshot (the iOS share sheet), and find a time until the
+  app's model is there.
 - Search across events and tasks (⌘F on the Mac, the Search tab on iOS);
   settings export/import and a watched settings file on the Mac.
 - Experimental: calendar mirrors (share a reduced copy of your calendars)
@@ -27,9 +30,9 @@ and the rules; the deep docs are listed at its end.
 
 **Brand:** [Brand assets and usage](brand/README.md) covers the logo, app icons,
 Inter fonts, color tokens, and `pnpm brand:build` exports. **Privacy:**
-[PRIVACY.md](PRIVACY.md); the desktop window is hidden from screen shares
-and recordings by default (Settings → Screen Sharing), and says so on screen when a
-screenshot leaves it out. **Website:** `apps/web` is solunivo.com, a static
+[PRIVACY.md](PRIVACY.md); the desktop window can be hidden from screen shares
+and recordings (Settings → Screen Sharing, off by default), and then says so on screen
+when a screenshot leaves it out. **Website:** `apps/web` is solunivo.com, a static
 page plus the privacy policy, built with `pnpm --filter @calendar/web build`
 (see `docs/distribution.md` → Website).
 
@@ -46,16 +49,39 @@ there is no native-module rebuild step.
 
 Optional, for the desktop AI features and the Apple bridges (Reminders,
 Calendar, Contacts, Maps): build the Swift helper once (requires Xcode 27,
-for the macOS 27 SDK; the AI needs Apple Silicon with Apple Intelligence
-enabled at runtime):
+for the macOS 27 SDK; search sentences, capture and find a time's
+fallback need Apple Silicon with Apple Intelligence enabled at runtime),
+and `llama-server` for the Assistant's own model (needs CMake, e.g.
+`brew install cmake`; the script fetches llama.cpp from GitHub):
 
 ```sh
 pnpm --filter @calendar/desktop build:helper
+pnpm --filter @calendar/desktop build:llama
 ```
 
-Without it the app runs fine — the AI field says why the model is
-unavailable, and the Apple connections in Settings → Accounts report the
-bridge as unavailable.
+Without them the app runs fine — the AI field says why the model is
+unavailable, the Assistant says this build cannot run its model, and the Apple
+connections in Settings → Accounts report the bridge as unavailable.
+
+### An agent's machine
+
+Agent sessions often start on a fresh macOS machine (a disposable VM,
+one session each) with nothing but a clone. Everything they need to know
+is in the repo (`AGENTS.md`, `docs/`, the skills in `.agents/skills/`); the
+machine needs the tools for the PR workflow (the `ship-pr` skill):
+
+- Xcode 27 with an iOS simulator runtime, Maestro and a JDK (see
+  `AGENTS.md` → Commands), for the iOS e2e flows and screenshots.
+- `gh` signed in to GitHub (PRs, the `pr-screenshots` branch).
+- The `claude` and `codex` CLIs signed in: `scripts/review.sh` runs the
+  review rounds with them.
+- EAS access for `apps/ios/e2e/ci/fetch-eas-build.sh`: `pnpm exec eas
+  login` in `apps/ios`, or `EXPO_TOKEN` in the environment.
+- `LANG=en_US.UTF-8` and `LC_ALL=en_US.UTF-8` in the shell: CocoaPods
+  fails on a local `expo run:ios` without them.
+- The gitignored config files only where a task needs them:
+  `apps/desktop/google-oauth.local.json` (sign-in from source) and
+  `google-live.local.json` (the live Google suite).
 
 ### Google OAuth (required for sign-in)
 
@@ -112,7 +138,7 @@ pnpm --filter @calendar/desktop dev:app
 pnpm --filter @calendar/ios start
 
 # Quality gates
-pnpm test && pnpm check && pnpm typecheck
+pnpm test && pnpm check && pnpm knip && pnpm typecheck
 
 # Desktop e2e (build first)
 pnpm --filter @calendar/desktop build && pnpm test:e2e

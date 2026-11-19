@@ -1,0 +1,24 @@
+{
+  "lang": "en",
+  "tags": ["flow", "notifications"],
+  "turns": [
+    {
+      "input": { "text": "Dentist Monday at 9, remind me 30 minutes before" },
+      "expect": {
+        "title": "dentist",
+        "weekday": 1,
+        "startTime": "09:00",
+        "endTime": "10:00",
+        "reminders": [30]
+      }
+    },
+    {
+      "input": { "text": "no reminder after all" },
+      "expect": { "reminders": [] }
+    },
+    {
+      "input": { "text": "actually, 10 minutes before" },
+      "expect": { "reminders": [10] }
+    }
+  ]
+}

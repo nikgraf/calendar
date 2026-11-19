@@ -35,7 +35,7 @@ export function CaptureBanner({
         : state.kind === 'extracting'
           ? 'Looking for events…'
           : state.message === CAPTURE_MODEL_UNAVAILABLE
-            ? 'The on-device model is unavailable — Solunivo’s AI features need iOS 26 with Apple Intelligence.'
+            ? 'The on-device model is unavailable — Solunivo’s AI features need Apple Intelligence.'
             : state.message;
   const error = state.kind === 'error';
   useEffect(() => {

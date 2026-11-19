@@ -1,0 +1,25 @@
+{
+  "blind": true,
+  "lang": "en",
+  "tags": ["flow", "repeat"],
+  "turns": [
+    {
+      "input": { "text": "Meditation tomorrow at 7am" },
+      "expect": {
+        "title": "meditation",
+        "dayOffset": 1,
+        "startTime": "07:00",
+        "endTime": "08:00",
+        "repeat": null
+      }
+    },
+    {
+      "input": { "text": "every day" },
+      "expect": { "repeat": { "freq": "daily" } }
+    },
+    {
+      "input": { "text": "just ten times" },
+      "expect": { "repeat": { "freq": "daily", "count": 10 } }
+    }
+  ]
+}

@@ -1,5 +1,10 @@
-import type { QuickAddResult, RefineResult } from '@calendar/ai';
-import { applyNotesChange, applyReminderChange } from '@calendar/app-state/draftExtras';
+import type { QuickAddResult, RefineResult, ReminderChange } from '@calendar/ai';
+import {
+  alertMinutesOf,
+  applyAlarmChange,
+  applyNotesChange,
+  applyReminderChange,
+} from '@calendar/app-state/draftExtras';
 import {
   applyGuestChange,
   type InviteeChoice,
@@ -52,7 +57,9 @@ export type Field =
   | 'time'
   | 'title'
   /** A later turn left every field it was not about as it was. */
-  | 'unchanged';
+  | 'unchanged'
+  /** A first phrase put nothing in the draft that the expectation does not name. */
+  | 'unsaid';
 
 /** In the order the score prints them. */
 export const FIELDS: ReadonlyArray<Field> = [
@@ -66,6 +73,7 @@ export const FIELDS: ReadonlyArray<Field> = [
   'guests',
   'notes',
   'reminders',
+  'unsaid',
   'unchanged',
   'rejected',
 ];
@@ -101,11 +109,29 @@ const remindersOf = (minutes: ReadonlyArray<number> | undefined): EventReminders
       });
 
 /**
+ * A to-do's alerts after a turn, as minutes before its due time: the
+ * thread's own rule (`applyAlarmChange`) on its Reminders alarms.
+ */
+const alertsAfter = (
+  minutes: ReadonlyArray<number> | undefined,
+  change: ReminderChange | undefined,
+): ReadonlyArray<number> | undefined =>
+  change === undefined
+    ? minutes
+    : alertMinutesOf(
+        applyAlarmChange(
+          (minutes ?? []).map((offset) => (offset === 0 ? 0 : -offset)),
+          change,
+        ).alarms,
+      );
+
+/**
  * The draft after a turn's result: the first turn makes it, a later one
  * changes it as the thread would — the kind kept, the guests the words
  * invite looked up in the address book (`resolveInvitees`, every match
  * of `contactsNamed`), the ones they take off removed, a note added to
- * the notes, the notifications said added to the draft's.
+ * the notes, the notifications said added to the draft's (a to-do's as
+ * its alerts, `applyAlarmChange`).
  */
 export const applyResult = async (
   previous: BenchDraft | undefined,
@@ -126,7 +152,7 @@ export const applyResult = async (
         guests: [],
         item: { kind: 'task', prefill: result.prefill },
         notes,
-        reminders: previous?.reminders,
+        reminders: alertsAfter(previous?.reminders, result.reminders),
       },
       kind: 'draft',
     };
@@ -150,11 +176,13 @@ export const applyResult = async (
     choices = applied.choices;
   }
   const reminders =
-    result.reminders === undefined || item.kind !== 'event'
-      ? previous?.reminders
-      : minutesOf(
-          applyReminderChange(remindersOf(previous?.reminders), result.reminders).reminders,
-        );
+    item.kind === 'task'
+      ? alertsAfter(previous?.reminders, result.reminders)
+      : result.reminders === undefined
+        ? previous?.reminders
+        : minutesOf(
+            applyReminderChange(remindersOf(previous?.reminders), result.reminders).reminders,
+          );
   return {
     draft: { choices, guests, item, notes, reminders },
     kind: 'draft',
@@ -207,6 +235,18 @@ const VIEW_KEYS = [
 ] as const;
 type ViewKey = (typeof VIEW_KEYS)[number];
 
+/** Days from the day a draft starts to the day it ends: 0 for a to-do and for one day. */
+const spanDaysOf = (item: QuickAddItem): number =>
+  item.kind !== 'event' || item.prefill.endDate === undefined
+    ? 0
+    : Temporal.PlainDate.from(item.prefill.date).until(item.prefill.endDate).days;
+
+/** The span as the time view writes it: nothing for one day, so a day moved keeps the view. */
+const spanText = (item: QuickAddItem): string => {
+  const days = spanDaysOf(item);
+  return days === 0 ? '' : ` +${String(days)}d`;
+};
+
 const viewOf = (draft: BenchDraft): Readonly<Record<ViewKey, string>> => {
   const { item } = draft;
   return {
@@ -223,7 +263,7 @@ const viewOf = (draft: BenchDraft): Readonly<Record<ViewKey, string>> => {
       item.kind === 'event'
         ? item.prefill.isAllDay
           ? 'all day'
-          : `${item.prefill.startTime}-${item.prefill.endTime}`
+          : `${item.prefill.startTime}-${item.prefill.endTime}${spanText(item)}`
         : (item.prefill.time ?? 'no time'),
     title: fold(item.prefill.title),
   };
@@ -241,10 +281,10 @@ const ABOUT: ReadonlyArray<{
 }> = [
   { field: 'kind', keys: ['kind'], view: 'kind' },
   { field: 'title', keys: ['title', 'titleIncludes'], view: 'title' },
-  { field: 'date', keys: ['weekday', 'dayOffset'], view: 'date' },
-  { field: 'time', keys: ['startTime', 'endTime', 'assumedTime'], view: 'time' },
+  { field: 'date', keys: ['weekday', 'dayOffset', 'dayOfMonth', 'month'], view: 'date' },
+  { field: 'time', keys: ['startTime', 'endTime', 'assumedTime', 'spanDays'], view: 'time' },
   { field: 'allDay', keys: ['isAllDay'], view: 'time' },
-  { field: 'location', keys: ['location'], view: 'location' },
+  { field: 'location', keys: ['location', 'locationIs'], view: 'location' },
   { field: 'repeat', keys: ['repeat'], view: 'repeat' },
   { field: 'guests', keys: ['guests'], view: 'guests' },
   { field: 'notes', keys: ['notes'], view: 'notes' },
@@ -287,11 +327,59 @@ const checkTitle = (expectation: Expectation, item: QuickAddItem, fail: Fail): v
   }
 };
 
-/** Whether the date falls on the expected weekday and that many days after today. */
+/** How far ahead the next such day is looked for: a 29th of February is eight years off at most. */
+const DAYS_AHEAD = 366 * 8;
+
+/**
+ * The days a date said by its number may land on. From today on, the
+ * first day that is the said day of the said month: one day, or with a
+ * month said alone every day of that month. A later turn may also keep
+ * the month of the draft it changes, as the app does ("the 14th instead"
+ * said in November to a draft in December stays in December); a first
+ * phrase has no draft, so a month late is a miss.
+ */
+const nextSuchDays = (
+  { dayOfMonth, month }: Pick<Expectation, 'dayOfMonth' | 'month'>,
+  today: string,
+  draftDate: string | undefined,
+): ReadonlyArray<string> => {
+  const from = Temporal.PlainDate.from(today);
+  const days: Array<string> = [];
+  for (let ahead = 0; ahead <= DAYS_AHEAD; ahead += 1) {
+    const day = from.add({ days: ahead });
+    if (
+      (dayOfMonth === undefined || day.day === dayOfMonth) &&
+      (month === undefined || day.month === month)
+    ) {
+      days.push(day.toString());
+      // One day where a day was said; the rest of the month where only the month was.
+      if (dayOfMonth !== undefined || day.day === day.daysInMonth) {
+        break;
+      }
+    } else if (days.length > 0) {
+      break;
+    }
+  }
+  if (dayOfMonth !== undefined && month === undefined && draftDate !== undefined) {
+    const draft = Temporal.PlainDate.from(draftDate);
+    if (dayOfMonth <= draft.daysInMonth) {
+      days.push(draft.with({ day: dayOfMonth }).toString());
+    }
+  }
+  return days;
+};
+
+/**
+ * Whether the date falls on the expected weekday, that many days after
+ * today, and on the day of the month and in the month that were said: a
+ * date said by its number is the next such day, never one that has
+ * passed and never the same day a month or a year on. `previous` is the
+ * draft a later turn changes, whose month such a turn may keep.
+ */
 const checkDate = (
   expectation: Expectation,
   item: QuickAddItem,
-  today: string,
+  { previous, today }: { readonly previous: BenchDraft | undefined; readonly today: string },
   fail: Fail,
 ): void => {
   const date = Temporal.PlainDate.from(item.prefill.date);
@@ -303,6 +391,21 @@ const checkDate = (
     Temporal.PlainDate.from(today).until(date).days !== expectation.dayOffset
   ) {
     fail('date', `day=${item.prefill.date}`);
+  }
+  if (expectation.dayOfMonth === undefined && expectation.month === undefined) {
+    return;
+  }
+  if (
+    (expectation.dayOfMonth !== undefined && date.day !== expectation.dayOfMonth) ||
+    (expectation.month !== undefined && date.month !== expectation.month)
+  ) {
+    fail('date', `day=${item.prefill.date}`);
+  } else if (Temporal.PlainDate.compare(date, Temporal.PlainDate.from(today)) < 0) {
+    fail('date', `day=${item.prefill.date} (passed)`);
+  } else if (
+    !nextSuchDays(expectation, today, previous?.item.prefill.date).includes(date.toString())
+  ) {
+    fail('date', `day=${item.prefill.date} (not the next)`);
   }
 };
 
@@ -322,6 +425,9 @@ const checkTime = (expectation: Expectation, item: QuickAddItem, fail: Fail): vo
   if (expectation.endTime !== undefined && end !== expectation.endTime) {
     fail('time', `end=${end ?? '-'}`);
   }
+  if (expectation.spanDays !== undefined && spanDaysOf(item) !== expectation.spanDays) {
+    fail('time', `span=${String(spanDaysOf(item))}d`);
+  }
   const assumed = item.kind === 'event' && item.prefill.assumedTime === true;
   if (expectation.assumedTime !== undefined && assumed !== expectation.assumedTime) {
     fail('time', `assumed=${String(assumed)}`);
@@ -331,7 +437,7 @@ const checkTime = (expectation: Expectation, item: QuickAddItem, fail: Fail): vo
   }
 };
 
-/** Whether the draft has no location when none is expected, or one holding the expected text. */
+/** Whether the draft has no location when none is expected, or one holding (or being) the expected text. */
 const checkLocation = (expectation: Expectation, item: QuickAddItem, fail: Fail): void => {
   const location = item.kind === 'event' ? item.prefill.location : undefined;
   if (expectation.location === null && location !== undefined) {
@@ -343,12 +449,19 @@ const checkLocation = (expectation: Expectation, item: QuickAddItem, fail: Fail)
   ) {
     fail('location', `location=${location ?? '-'}`);
   }
+  if (
+    expectation.locationIs !== undefined &&
+    fold(location ?? '') !== fold(expectation.locationIs)
+  ) {
+    fail('location', `location=${location ?? '-'}`);
+  }
 };
 
 /**
  * Whether the draft has no repeat when none is expected, or the expected
- * one: its frequency and gap, and its weekdays, count and end month where
- * the expectation names them.
+ * one: its frequency and gap, and its weekdays (a monthly rule's with
+ * their place in the month), count and end month where the expectation
+ * names them.
  */
 const checkRepeat = (expectation: Expectation, item: QuickAddItem, fail: Fail): void => {
   const repeat = item.kind === 'event' ? item.prefill.recurrence : undefined;
@@ -364,7 +477,10 @@ const checkRepeat = (expectation: Expectation, item: QuickAddItem, fail: Fail): 
       repeat.freq === wanted.freq &&
       (repeat.interval ?? 1) === (wanted.interval ?? 1) &&
       (wanted.byDay === undefined ||
-        sortedText((repeat.byDay ?? []).map((day) => day.weekday)) === sortedText(wanted.byDay)) &&
+        // Each weekday with its place in the month, where the rule has one: "1TU", "-1FR".
+        sortedText(
+          (repeat.byDay ?? []).map((day) => `${String(day.ordinal ?? '')}${day.weekday}`),
+        ) === sortedText(wanted.byDay)) &&
       (wanted.count === undefined || repeat.count === wanted.count) &&
       (wanted.untilMonth === undefined || untilMonth === wanted.untilMonth);
     if (!matches) {
@@ -426,13 +542,41 @@ const checkUnchanged = (
   }
 };
 
+/** What each part a phrase may leave out reads as when the draft has none. */
+const EMPTY_VIEW: Readonly<Partial<Record<ViewKey, string>>> = {
+  guests: '|',
+  location: '',
+  notes: '',
+  reminders: '',
+  repeat: '-',
+};
+
+/**
+ * The unsaid rule: a first phrase makes a place, a repeat, guests, a note
+ * or a notification only where the expectation names one. The app's
+ * pipeline cannot invent these (the grounding holds them against the
+ * words); a model taken at its word can, and a draft at "nichts", every
+ * year, with an hour's notice is not the event that was said.
+ */
+const checkUnsaid = (expectation: Expectation, draft: BenchDraft, fail: Fail): void => {
+  const covered = coveredViews(expectation);
+  const view = viewOf(draft);
+  for (const key of VIEW_KEYS) {
+    const empty = EMPTY_VIEW[key];
+    if (empty !== undefined && view[key] !== empty && !covered.has(key)) {
+      fail('unsaid', `unsaid ${key}: ${view[key]}`);
+    }
+  }
+};
+
 /**
  * Which of the expectation the outcome meets. A turn after the first is
  * also held to the unchanged rule: every part of the draft the
  * expectation is not about must read as it did before the turn — the
  * failure a refinement is most prone to is changing what it was not
- * asked to. A rejection fails every field the expectation named, unless
- * it was the expectation.
+ * asked to. A first phrase is held to the unsaid rule instead: nothing
+ * in the draft that the expectation does not name. A rejection fails
+ * every field the expectation named, unless it was the expectation.
  */
 export const check = (
   expectation: Expectation,
@@ -441,8 +585,8 @@ export const check = (
   today: string,
 ): TurnCheck => {
   const checked: Array<Field> = [...fieldsOf(expectation)];
-  if (previous !== undefined && !expectation.rejected) {
-    checked.push('unchanged');
+  if (!expectation.rejected) {
+    checked.push(previous === undefined ? 'unsaid' : 'unchanged');
   }
   if (expectation.rejected) {
     return outcome.kind === 'rejected'
@@ -463,18 +607,37 @@ export const check = (
 
   checkKind(expectation, item, fail);
   checkTitle(expectation, item, fail);
-  checkDate(expectation, item, today, fail);
+  checkDate(expectation, item, { previous, today }, fail);
   checkTime(expectation, item, fail);
   checkLocation(expectation, item, fail);
   checkRepeat(expectation, item, fail);
   checkGuests(expectation, draft, fail);
   checkNotes(expectation, draft, fail);
   checkReminders(expectation, draft, fail);
-  if (previous !== undefined) {
+  if (previous === undefined) {
+    checkUnsaid(expectation, draft, fail);
+  } else {
     checkUnchanged(expectation, previous, draft, fail);
   }
 
   return { checked, failed: [...failed], notes };
+};
+
+const withoutUnsaid = (fields: ReadonlyArray<Field>): ReadonlyArray<Field> =>
+  fields.filter((field) => field !== 'unsaid');
+
+/**
+ * A later turn the first phrase left no draft for: it fails what its
+ * expectation named. Neither rule is counted, since it is no first phrase
+ * and there is no draft it could have changed.
+ */
+export const checkWithoutDraft = (expectation: Expectation, today: string): TurnCheck => {
+  const result = check(expectation, { kind: 'rejected', reason: 'no draft' }, undefined, today);
+  return {
+    checked: withoutUnsaid(result.checked),
+    failed: withoutUnsaid(result.failed),
+    notes: result.notes,
+  };
 };
 
 /** Words as the recogniser is held to them: folded, without the punctuation around them. */

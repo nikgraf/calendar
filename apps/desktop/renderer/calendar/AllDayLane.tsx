@@ -2,6 +2,7 @@ import {
   type BirthdayOccurrence,
   birthdayChipLabel,
   calendarTaskKey,
+  eventIdentity,
   type EventRecord,
   MAX_ALL_DAY_ROWS,
   overdueLabel,
@@ -469,7 +470,7 @@ export function AllDayLane({
               const color = colorOf(event);
               const tint = tintOf(color);
               const look = eventLook(event);
-              const selected = selectedKey === `${event.calendarId}:${event.id}`;
+              const selected = selectedKey === eventIdentity(event);
               return (
                 <div
                   className={`absolute flex cursor-pointer items-center gap-1 truncate rounded-event px-1.5 text-xs leading-5 ${

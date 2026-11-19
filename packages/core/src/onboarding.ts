@@ -180,6 +180,28 @@ export const otherDevice = (device: OnboardingDevice): string =>
 
 /** The phrase the Create lesson opens the quick-add field with. */
 export const LESSON_CREATE_PHRASE = 'Lunch with Sam tomorrow at 12:30 at Mercato';
+/** The change the Create lesson's demo makes to its event, the second turn. */
+export const LESSON_CREATE_CHANGE = 'at 1 instead';
+
+/**
+ * What the Create lesson's demo has to say, in order: the phrase, then a
+ * change to it. It runs while the Assistant's model is not on the device
+ * (`lessonDemo.ts` in `@calendar/ai` holds the answers).
+ */
+export const LESSON_DEMO_PHRASES: ReadonlyArray<string> = [
+  LESSON_CREATE_PHRASE,
+  LESSON_CREATE_CHANGE,
+];
+
+/**
+ * The demo's next phrase after what the thread has said so far (its
+ * phrase steps, oldest first): undefined once both were said, or once
+ * anything else was (the model came and took over).
+ */
+export const lessonDemoNext = (said: ReadonlyArray<string>): string | undefined =>
+  said.every((words, index) => words === LESSON_DEMO_PHRASES[index])
+    ? LESSON_DEMO_PHRASES[said.length]
+    : undefined;
 /** The sentence the Search lesson opens the search with. */
 export const LESSON_SEARCH_PHRASE = 'meetings with Sam last month';
 
@@ -204,8 +226,8 @@ export const lessonCopy = (id: LessonRowId, device: OnboardingDevice): LessonCop
       };
     case 'create':
       return {
-        intro: `Describe an event the way you would say it. Solunivo reads the words on ${here} and drafts it — dashed until you save. Change it in the same field: “at 1 instead”, “make it Thursday”.`,
-        subtitle: 'Describe an event; a draft lands on the calendar',
+        intro: `Describe an event the way you would say it. Solunivo reads the words on ${here} and answers with the event, ready to save. Change it the same way: “at 1 instead”, “make it Thursday”.`,
+        subtitle: 'Describe an event; get it back ready to save',
         title: 'Create with AI',
       };
     case 'search':

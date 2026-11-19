@@ -75,9 +75,15 @@ describe('makeHelperRequests', () => {
     const second = helper.requests.call('reminders.listLists');
     helper.requests.receive(JSON.stringify({ error: 'denied', id: helper.written[1]!.id }));
     await expect(second).rejects.toThrow('denied');
-    expect(helper.requests.receive(JSON.stringify({ event: 'reminders.changed' }))).toBe(
-      'reminders.changed',
-    );
+    expect(helper.requests.receive(JSON.stringify({ event: 'reminders.changed' }))).toEqual({
+      body: {},
+      name: 'reminders.changed',
+    });
+    expect(
+      helper.requests.receive(
+        JSON.stringify({ event: 'speech.words', session: 3, source: 'quick', text: 'Lunch' }),
+      ),
+    ).toEqual({ body: { session: 3, source: 'quick', text: 'Lunch' }, name: 'speech.words' });
     expect(helper.requests.receive('not json')).toBeUndefined();
     helper.answer('reminders.list', []);
     await expect(first).resolves.toEqual([]);

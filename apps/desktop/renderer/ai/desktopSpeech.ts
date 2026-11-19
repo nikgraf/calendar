@@ -1,23 +1,25 @@
 import {
-  createEndpointer,
-  levelOf,
+  heardFromSegments,
   MicrophoneDeniedError,
+  type SpeechStart,
   SpeechUnsupportedError,
-  transcriptFromSegments,
   type SpeechToText,
 } from '@calendar/ai';
-import { encodeWav } from './wavEncoder.ts';
+import { dictationLocale, noiseReduction } from './dictationSettings.ts';
+import { toPcm16 } from './pcm16.ts';
 
+/** What the helper's recognisers take: 16 kHz mono. */
 const SAMPLE_RATE = 16_000;
-/** Hands-free listening reads the level this often: the worklet's 8 ms blocks are noisier than speech. */
-const LEVEL_WINDOW_MS = 50;
+/** The audio goes to the helper in blocks this long: the worklet's 8 ms ones would flood the pipe. */
+const BLOCK_MS = 100;
 
 /**
  * Desktop dictation: the renderer owns the microphone (getUserMedia +
- * an inline AudioWorklet collecting mono PCM), the Swift helper owns
- * transcription (SpeechAnalyzer). Same seam and philosophy as
- * apps/ios/src/appleSpeech.ts: availability is decided by attempting
- * prepare, and the audio never outlives the request.
+ * an inline AudioWorklet collecting mono PCM) and streams it to the Swift
+ * helper as it is recorded; the helper's recognisers send the words back
+ * as they are said, and read the phrase whole when it is finished. Same
+ * seam as apps/ios/src/appleSpeech.ts: availability is decided by
+ * attempting prepare, and the audio never outlives the phrase.
  */
 /**
  * The worklet that collects PCM blocks: public/pcm-collector.worklet.js,
@@ -27,13 +29,16 @@ const LEVEL_WINDOW_MS = 50;
  */
 const WORKLET_URL = new URL('pcm-collector.worklet.js', document.baseURI).href;
 
-interface Recording {
-  readonly chunks: Array<Float32Array>;
+interface Listening {
   readonly context: AudioContext;
+  /** Sends what is left of the last block. */
+  readonly flush: () => void;
+  readonly session: number;
   readonly stream: MediaStream;
+  readonly unsubscribe: () => void;
 }
 
-let recording: Recording | null = null;
+let listening: Listening | null = null;
 
 const stopStream = (stream: MediaStream, context?: AudioContext) => {
   for (const track of stream.getTracks()) {
@@ -42,9 +47,14 @@ const stopStream = (stream: MediaStream, context?: AudioContext) => {
   void context?.close();
 };
 
-const collectSamples = (chunks: ReadonlyArray<Float32Array>): Float32Array => {
-  const total = chunks.reduce((length, chunk) => length + chunk.length, 0);
-  const joined = new Float32Array(total);
+/** The microphone and the words stop; the session is the caller's to finish or drop. */
+const close = (active: Listening) => {
+  active.unsubscribe();
+  stopStream(active.stream, active.context);
+};
+
+const join = (chunks: ReadonlyArray<Float32Array>, length: number): Float32Array => {
+  const joined = new Float32Array(length);
   let offset = 0;
   for (const chunk of chunks) {
     joined.set(chunk, offset);
@@ -53,21 +63,26 @@ const collectSamples = (chunks: ReadonlyArray<Float32Array>): Float32Array => {
   return joined;
 };
 
-const toBase64 = (bytes: Uint8Array): string => {
-  let binary = '';
-  const CHUNK = 0x80_00;
-  for (let index = 0; index < bytes.length; index += CHUNK) {
-    binary += String.fromCharCode(...bytes.subarray(index, index + CHUNK));
-  }
-  return btoa(binary);
-};
-
 export const desktopSpeech: SpeechToText = {
-  cancelRecording: async () => {
-    if (recording) {
-      stopStream(recording.stream, recording.context);
-      recording = null;
+  cancel: async () => {
+    const active = listening;
+    listening = null;
+    if (active) {
+      close(active);
+      await window.calendarBridge.modelSpeechCancel(active.session).catch(() => undefined);
     }
+  },
+
+  finish: async () => {
+    const active = listening;
+    listening = null;
+    if (!active) {
+      return undefined;
+    }
+    active.flush();
+    close(active);
+    const result = await window.calendarBridge.modelSpeechFinish(active.session);
+    return heardFromSegments(result.segments);
   },
 
   isSupported: async () => {
@@ -87,7 +102,7 @@ export const desktopSpeech: SpeechToText = {
   },
 
   prepare: async () => {
-    const result = await window.calendarBridge.modelPrepareSpeech(navigator.language || 'en-US');
+    const result = await window.calendarBridge.modelPrepareSpeech(dictationLocale());
     if (result.denied) {
       throw new MicrophoneDeniedError({ message: 'Microphone access was declined.' });
     }
@@ -96,85 +111,99 @@ export const desktopSpeech: SpeechToText = {
     }
   },
 
-  startRecording: async ({ onSpeech, signal } = {}) => {
+  start: async ({ onLost, onWords, signal }) => {
     let stream: MediaStream;
+    // Chromium's own voice processing, as Settings › Dictation asks.
+    const processed = noiseReduction.get();
     try {
       stream = await navigator.mediaDevices.getUserMedia({
-        audio: { channelCount: 1, sampleRate: SAMPLE_RATE },
+        audio: {
+          autoGainControl: processed,
+          channelCount: 1,
+          echoCancellation: processed,
+          noiseSuppression: processed,
+          sampleRate: SAMPLE_RATE,
+        },
       });
     } catch {
       throw new MicrophoneDeniedError({ message: 'Microphone access was declined.' });
     }
     let context: AudioContext | undefined;
+    let started: { readonly session: number; readonly sources: SpeechStart['sources'] } | undefined;
     try {
       if (!signal?.aborted) {
+        // Chromium resamples the microphone to the rate asked for here.
         context = new AudioContext({ sampleRate: SAMPLE_RATE });
         await context.audioWorklet.addModule(WORKLET_URL);
+        // Given up while the worklet loaded: starting a session now would
+        // drop a newer caller's in the helper.
+        if (!signal?.aborted) {
+          started = await window.calendarBridge.modelSpeechStart(dictationLocale());
+        }
       }
     } catch (error) {
       stopStream(stream, context);
       throw error;
     }
     // Given up while the microphone was being granted: stop this stream
-    // only. The current recording may already be a newer caller's.
-    if (!context || signal?.aborted) {
+    // and drop this session only. The current one may be a newer caller's.
+    if (!context || started === undefined || signal?.aborted) {
       stopStream(stream, context);
-      return;
+      if (started !== undefined) {
+        void window.calendarBridge.modelSpeechCancel(started.session).catch(() => undefined);
+      }
+      return undefined;
     }
+    const phrase = started.session;
+    const stopWords = window.calendarBridge.onSpeechWords((words) => {
+      if (words.session === phrase) {
+        onWords(words.source, words.text);
+      }
+    });
+    const stopLost = window.calendarBridge.onSpeechLost((lost) => {
+      if (lost.session !== phrase) {
+        return;
+      }
+      // Main dropped it: the microphone goes, and nothing is left to finish.
+      const active = listening;
+      if (active?.session === phrase) {
+        listening = null;
+        close(active);
+      }
+      onLost?.();
+    });
+    const unsubscribe = () => {
+      stopWords();
+      stopLost();
+    };
     const source = context.createMediaStreamSource(stream);
     const collector = new AudioWorkletNode(context, 'pcm-collector');
-    const chunks: Array<Float32Array> = [];
-    const endpointer = onSpeech ? createEndpointer() : undefined;
-    // The level is read per window of samples, timed by the samples
-    // themselves: the clock is the audio's, not the page's.
-    const rate = context.sampleRate || SAMPLE_RATE;
-    const blockSize = (rate * LEVEL_WINDOW_MS) / 1000;
+    const blockSize = (SAMPLE_RATE * BLOCK_MS) / 1000;
     let block: Array<Float32Array> = [];
     let blockLength = 0;
-    let samplesIn = 0;
-    collector.port.onmessage = (message: MessageEvent<Float32Array>) => {
-      chunks.push(message.data);
-      if (!endpointer || !onSpeech) {
-        return;
+    const flush = () => {
+      if (blockLength > 0) {
+        window.calendarBridge.modelSpeechAudio(phrase, toPcm16(join(block, blockLength)));
       }
-      block.push(message.data);
-      blockLength += message.data.length;
-      samplesIn += message.data.length;
-      if (blockLength < blockSize) {
-        return;
-      }
-      const event = endpointer.push(levelOf(collectSamples(block)), (samplesIn / rate) * 1000);
       block = [];
       blockLength = 0;
-      if (event) {
-        onSpeech(event);
+    };
+    collector.port.onmessage = (message: MessageEvent<Float32Array>) => {
+      block.push(message.data);
+      blockLength += message.data.length;
+      if (blockLength >= blockSize) {
+        flush();
       }
     };
     source.connect(collector);
-    // One recording at a time: replacing one without stopping it would
-    // leave that microphone stream on for good.
-    if (recording) {
-      stopStream(recording.stream, recording.context);
+    // One phrase at a time: replacing one without stopping it would leave
+    // that microphone stream on for good.
+    const replaced = listening;
+    listening = { context, flush, session: phrase, stream, unsubscribe };
+    if (replaced) {
+      close(replaced);
+      void window.calendarBridge.modelSpeechCancel(replaced.session).catch(() => undefined);
     }
-    recording = { chunks, context, stream };
-  },
-
-  stopRecording: async () => {
-    const active = recording;
-    recording = null;
-    if (!active) {
-      return undefined;
-    }
-    stopStream(active.stream, active.context);
-    const samples = collectSamples(active.chunks);
-    if (samples.length === 0) {
-      return undefined;
-    }
-    const wav = encodeWav(samples, active.context.sampleRate || SAMPLE_RATE);
-    const result = await window.calendarBridge.modelTranscribe(
-      toBase64(wav),
-      navigator.language || 'en-US',
-    );
-    return transcriptFromSegments(result.segments);
+    return { sources: started.sources };
   },
 };

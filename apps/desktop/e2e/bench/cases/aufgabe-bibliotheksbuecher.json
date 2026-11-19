@@ -1,0 +1,11 @@
+{
+  "blind": true,
+  "lang": "de",
+  "tags": ["task", "de"],
+  "turns": [
+    {
+      "input": { "text": "Nicht vergessen: Bibliotheksbücher zurückgeben" },
+      "expect": { "kind": "task", "titleIncludes": "bibliotheksbücher" }
+    }
+  ]
+}

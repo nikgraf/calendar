@@ -59,6 +59,10 @@ export const registerBackgroundRefresh = (): void => {
     });
 };
 
-/** Development only: runs the registered task now (debug builds). */
+/**
+ * Development only: runs the registered task now (debug builds; see
+ * docs/architecture.md on exercising background refresh).
+ * @public
+ */
 export const triggerBackgroundRefreshForTesting = (): Promise<boolean> =>
   modules ? modules.background.triggerTaskWorkerForTestingAsync() : Promise.resolve(false);

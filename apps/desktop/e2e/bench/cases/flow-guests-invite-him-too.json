@@ -1,0 +1,24 @@
+{
+  "lang": "en",
+  "tags": ["flow", "guests", "follow-up"],
+  "turns": [
+    {
+      "input": { "text": "Ramen Friday at 12:30" },
+      "expect": {
+        "title": "ramen",
+        "weekday": 5,
+        "startTime": "12:30",
+        "endTime": "13:30",
+        "guests": {}
+      }
+    },
+    {
+      "input": { "text": "with Tom Baker" },
+      "expect": { "title": "ramen with tom baker", "guests": {} }
+    },
+    {
+      "input": { "text": "invite him too" },
+      "expect": { "guests": { "emails": ["tom.baker@example.com"] } }
+    }
+  ]
+}

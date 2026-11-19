@@ -1,0 +1,18 @@
+{
+  "blind": true,
+  "lang": "en",
+  "tags": ["title", "command"],
+  "turns": [
+    {
+      "input": { "text": "Set up a 1:1 with Tom on Thursday at 3" },
+      "expect": {
+        "kind": "event",
+        "title": "1:1 with tom",
+        "weekday": 4,
+        "startTime": "15:00",
+        "endTime": "16:00",
+        "guests": {}
+      }
+    }
+  ]
+}

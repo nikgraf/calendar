@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { type Field, FIELDS } from './check.ts';
+import { type Flip, flipLines, namedCases } from './flips.ts';
 import type { ModelCall } from './providers.ts';
 
 /**
@@ -26,12 +27,27 @@ export interface TurnReport {
   readonly notes: ReadonlyArray<string>;
   /** The draft after the turn, or the rejection. */
   readonly outcome: unknown;
-  /** The transcript's own parse, run when the recogniser erred and the turn failed: whose fault it was. */
-  readonly said?: { readonly notes: ReadonlyArray<string>; readonly ok: boolean } | undefined;
+  /**
+   * The transcript's own parse, run when the recogniser erred and the turn
+   * failed: whose fault it was. Its outcome is kept, so the verdict can be
+   * scored again with the turn's (`rescore.ts`).
+   */
+  readonly said?:
+    | {
+        readonly notes: ReadonlyArray<string>;
+        readonly ok: boolean;
+        readonly outcome?: unknown;
+      }
+    | undefined;
   readonly wordErrorRate?: number | undefined;
 }
 
 export interface CaseReport {
+  /**
+   * A blind case (`cases.ts`): counted in every score, named in no table.
+   * Absent in reports from before there were any.
+   */
+  readonly blind?: boolean | undefined;
   readonly id: string;
   readonly ok: boolean;
   readonly tags: ReadonlyArray<string>;
@@ -66,7 +82,26 @@ export interface Score {
 export interface BenchReport {
   readonly cases: ReadonlyArray<CaseReport>;
   readonly provider: string;
+  /**
+   * The run this report was scored again from (`rescore.ts`), however
+   * often: its commit and its time. `stale` names the cases the scoring
+   * left as the report had them, because the case is gone or has other
+   * turns or words than the model answered.
+   */
+  readonly rescored?:
+    | {
+        readonly sha: string;
+        readonly stale?: ReadonlyArray<string> | undefined;
+        readonly when: string;
+      }
+    | undefined;
   readonly score: Score;
+  /**
+   * What the run set that the provider's name does not say: a served
+   * model's endpoint and MODEL_BENCH_OPENAI_EXTRA. Two reports of one name
+   * with other settings are two results.
+   */
+  readonly settings?: string | undefined;
   readonly sha: string;
   readonly timeZone: string;
   readonly today: string;
@@ -131,48 +166,124 @@ const seconds = (ms: number): string => `${(ms / 1000).toFixed(1)}s`;
 const percent = (rate: number): string => `${String(Math.round(rate * 100))}%`;
 const ratio = (counter: Counter): string => `${String(counter.ok)}/${String(counter.total)}`;
 
-/** The run as a table: one line per case with its failing turns, then the score. */
-export const formatReport = (report: BenchReport): string => {
-  const lines: Array<string> = [`== ${report.provider}`];
-  for (const benchCase of report.cases) {
-    const total = benchCase.turns.reduce((sum, turn) => sum + (turn.ms ?? 0), 0);
-    const details: Array<string> = [];
-    for (const [index, turn] of benchCase.turns.entries()) {
-      const label = benchCase.turns.length > 1 ? `[${String(index + 1)}] ` : '';
-      if (turn.notes.length > 0) {
-        details.push(`${label}${turn.notes.join(', ')}`);
-      }
-      if (
-        turn.audio === 'transcribed' &&
-        turn.wordErrorRate !== undefined &&
-        turn.wordErrorRate > 0
-      ) {
-        details.push(
-          `${label}heard "${turn.heard ?? ''}" (WER ${percent(turn.wordErrorRate)}${
-            turn.said === undefined
-              ? ''
-              : turn.said.ok
-                ? ', the transcript passes'
-                : ', the transcript fails too'
-          })`,
-        );
-      }
+export interface TableOptions {
+  /**
+   * Name the blind cases like the open ones. For fixing an expectation,
+   * never for writing briefs or prompts: a blind case read for those is
+   * an open one.
+   */
+  readonly showBlind?: boolean | undefined;
+}
+
+/** Cases passed per tag, the tags with the most cases first. */
+export const tagScores = (
+  cases: ReadonlyArray<CaseReport>,
+): ReadonlyArray<readonly [tag: string, score: Counter]> => {
+  const tags = new Map<string, { ok: number; total: number }>();
+  for (const benchCase of cases) {
+    for (const tag of benchCase.tags) {
+      const counter = tags.get(tag) ?? { ok: 0, total: 0 };
+      counter.total += 1;
+      counter.ok += benchCase.ok ? 1 : 0;
+      tags.set(tag, counter);
     }
-    lines.push(
-      `  ${benchCase.ok ? 'ok ' : '-- '} ${seconds(total).padStart(6)}  ${benchCase.id}${
-        details.length === 0 ? '' : `  →  ${details.join(' · ')}`
-      }`,
-    );
   }
-  const { score } = report;
-  const fieldSummary = FIELDS.filter((field) => score.fields[field] !== undefined)
+  return [...tags].sort(
+    ([a, scoreA], [b, scoreB]) => scoreB.total - scoreA.total || a.localeCompare(b),
+  );
+};
+
+/** One case's line: how it went, how long it took, and what its failing turns gave. */
+const caseLine = (benchCase: CaseReport): string => {
+  const total = benchCase.turns.reduce((sum, turn) => sum + (turn.ms ?? 0), 0);
+  const details: Array<string> = [];
+  for (const [index, turn] of benchCase.turns.entries()) {
+    const label = benchCase.turns.length > 1 ? `[${String(index + 1)}] ` : '';
+    if (turn.notes.length > 0) {
+      details.push(`${label}${turn.notes.join(', ')}`);
+    }
+    if (
+      turn.audio === 'transcribed' &&
+      turn.wordErrorRate !== undefined &&
+      turn.wordErrorRate > 0
+    ) {
+      details.push(
+        `${label}heard "${turn.heard ?? ''}" (WER ${percent(turn.wordErrorRate)}${
+          // Whose fault it was is a failing turn's question.
+          turn.said === undefined || turn.failed.length === 0
+            ? ''
+            : turn.said.ok
+              ? ', the transcript passes'
+              : ', the transcript fails too'
+        })`,
+      );
+    }
+  }
+  return `  ${benchCase.ok ? 'ok ' : '-- '} ${seconds(total).padStart(6)}  ${benchCase.id}${
+    benchCase.blind === true ? ' (blind)' : ''
+  }${details.length === 0 ? '' : `  →  ${details.join(' · ')}`}`;
+};
+
+const fieldSummary = (score: Score): string =>
+  FIELDS.filter((field) => score.fields[field] !== undefined)
     .map((field) => `${field} ${ratio(score.fields[field]!)}`)
     .join(' · ');
+
+const setLine = (name: string, score: Score): string =>
+  `   ${name}: ${[`cases ${ratio(score.cases)}`, `turns ${ratio(score.turns)}`, fieldSummary(score)]
+    .filter(Boolean)
+    .join(' · ')}`;
+
+/** The open and the blind cases apart, once a report holds blind ones: the blind by their counts alone. */
+const setLines = (cases: ReadonlyArray<CaseReport>): ReadonlyArray<string> => {
+  const blind = cases.filter((benchCase) => benchCase.blind === true);
+  return blind.length === 0
+    ? []
+    : [
+        setLine('open', scoreOf(cases.filter((benchCase) => benchCase.blind !== true))),
+        setLine('blind', scoreOf(blind)),
+      ];
+};
+
+/**
+ * The run as a table: one line per case with its failing turns, then the
+ * score, the open cases passed per tag and, where the report holds blind
+ * cases, the two sets apart. A blind case has no line of its own, is
+ * counted under no tag (a tag with one blind case would give its outcome
+ * away) and is never named among the cases a rescore left alone.
+ */
+export const formatReport = (
+  report: BenchReport,
+  { showBlind = false }: TableOptions = {},
+): string => {
+  const shown = report.cases.filter((benchCase) => showBlind || benchCase.blind !== true);
+  const lines: Array<string> = [
+    `== ${report.provider}${report.settings === undefined ? '' : ` (${report.settings})`}`,
+    ...shown.map(caseLine),
+  ];
+  const { score } = report;
   lines.push(
     '',
     `   cases ${ratio(score.cases)} · turns ${ratio(score.turns)} · median ${seconds(score.medianMs)} per turn`,
-    `   ${fieldSummary}`,
+    `   ${fieldSummary(score)}`,
   );
+  const tags = tagScores(shown);
+  if (tags.length > 0) {
+    lines.push(`   tags: ${tags.map(([tag, counter]) => `${tag} ${ratio(counter)}`).join(' · ')}`);
+  }
+  lines.push(...setLines(report.cases));
+  const stale = report.rescored?.stale ?? [];
+  if (stale.length > 0) {
+    const blind = new Set(
+      report.cases.filter((benchCase) => benchCase.blind === true).map((benchCase) => benchCase.id),
+    );
+    lines.push(
+      `   not scored again (gone, or other turns or words than the report): ${namedCases(
+        stale.map((id) => ({ blind: blind.has(id), id })),
+        { showBlind },
+      )}`,
+    );
+  }
   if (score.recordings !== undefined) {
     const { failed, missing, skipped, transcribed, wordErrorRate } = score.recordings;
     lines.push(
@@ -191,17 +302,66 @@ export const formatReport = (report: BenchReport): string => {
   return lines.join('\n');
 };
 
-/** The report as the before/after of a change: what moved, case by case and in the score. */
-export const compareReports = (before: BenchReport, after: BenchReport): string => {
+/** The earlier run as a comparison names it: by its model too, where the two runs are of two models. */
+export const earlierRun = (
+  before: { readonly provider: string; readonly sha: string; readonly when: string },
+  after: { readonly provider: string },
+): string =>
+  `${before.provider === after.provider ? '' : `${before.provider} at `}${before.sha} (${before.when.slice(0, 16)})`;
+
+/** Says when two runs read on two days: what "this week" and "Friday" mean moved between them. */
+export const otherDay = (
+  before: { readonly today: string },
+  after: { readonly today: string },
+): ReadonlyArray<string> =>
+  before.today === after.today
+    ? []
+    : [`   read on two days, ${before.today} → ${after.today}: name one (MODEL_BENCH_TODAY)`];
+
+/** Whether two runs of a case read the same words, turn by turn. */
+const sameWords = (before: CaseReport, after: CaseReport): boolean =>
+  before.turns.length === after.turns.length &&
+  before.turns.every((turn, index) => turn.input === after.turns[index]?.input);
+
+/**
+ * The cases two runs read in other words (a case reworded between them,
+ * a recording heard differently): no pair of answers to one phrase, so
+ * they are named and left out of the flips and of the test on them.
+ */
+export const notCompared = (
+  apart: ReadonlyArray<Flip>,
+  options: TableOptions = {},
+): ReadonlyArray<string> =>
+  apart.length === 0
+    ? []
+    : [`   not compared (other words in the two runs): ${namedCases(apart, options)}`];
+
+/**
+ * The report as the before/after of a change: what moved, case by case
+ * and in the score, and whether chance alone would move as much
+ * (`flips.ts`). A blind case that flipped is counted, not named, and a
+ * case the two runs read in other words is no flip at all.
+ */
+export const compareReports = (
+  before: BenchReport,
+  after: BenchReport,
+  options: TableOptions = {},
+): string => {
   const earlier = new Map(before.cases.map((benchCase) => [benchCase.id, benchCase]));
-  const fixed: Array<string> = [];
-  const broke: Array<string> = [];
+  const fixed: Array<Flip> = [];
+  const broke: Array<Flip> = [];
+  const apart: Array<Flip> = [];
   for (const benchCase of after.cases) {
     const previous = earlier.get(benchCase.id);
-    if (previous === undefined || previous.ok === benchCase.ok) {
+    if (previous === undefined) {
       continue;
     }
-    (benchCase.ok ? fixed : broke).push(benchCase.id);
+    const flip = { blind: benchCase.blind === true, id: benchCase.id };
+    if (!sameWords(previous, benchCase)) {
+      apart.push(flip);
+    } else if (previous.ok !== benchCase.ok) {
+      (benchCase.ok ? fixed : broke).push(flip);
+    }
   }
   const moved = (field: Field): string | undefined => {
     const was = before.score.fields[field];
@@ -211,11 +371,17 @@ export const compareReports = (before: BenchReport, after: BenchReport): string 
       : `${field} ${ratio(was)} → ${ratio(is)}`;
   };
   return [
-    `   vs ${before.sha} (${before.when.slice(0, 16)}): cases ${ratio(before.score.cases)} → ${ratio(
+    `   vs ${earlierRun(before, after)}: cases ${ratio(before.score.cases)} → ${ratio(
       after.score.cases,
     )}, turns ${ratio(before.score.turns)} → ${ratio(after.score.turns)}`,
-    ...(fixed.length === 0 ? [] : [`   fixed: ${fixed.join(', ')}`]),
-    ...(broke.length === 0 ? [] : [`   broke: ${broke.join(', ')}`]),
+    ...(before.settings === after.settings
+      ? []
+      : [
+          `   settings: ${before.settings ?? 'not recorded'} → ${after.settings ?? 'not recorded'}`,
+        ]),
+    ...otherDay(before, after),
+    ...flipLines({ broke, fixed }, options),
+    ...notCompared(apart, options),
     ...FIELDS.map(moved)
       .filter((line): line is string => line !== undefined)
       .map((line) => `   ${line}`),
@@ -225,14 +391,27 @@ export const compareReports = (before: BenchReport, after: BenchReport): string 
 const slug = (text: string): string =>
   text.replaceAll(/[^a-z0-9]+/gi, '-').replaceAll(/^-|-$/g, '');
 
-/** Writes the report under `dir` and returns its path. */
-export const writeReport = (dir: string, report: BenchReport): string => {
-  mkdirSync(dir, { recursive: true });
-  const stamp = report.when
+const stampOf = (when: string): string =>
+  when
     .slice(0, 19)
     .replaceAll(/[-:T]/g, '')
     .replace(/(\d{8})(\d{6})/, '$1-$2');
-  const path = join(dir, `${stamp}-${report.sha}-${slug(report.provider)}.json`);
+
+/**
+ * Writes the report under `dir` and returns its path. A report scored
+ * again names the run it came from too: a folder of them is scored within
+ * one second, and two of one provider would land on one name.
+ */
+export const writeReport = (dir: string, report: BenchReport): string => {
+  mkdirSync(dir, { recursive: true });
+  const source =
+    report.rescored === undefined
+      ? ''
+      : `-of-${stampOf(report.rescored.when)}-${report.rescored.sha}`;
+  const path = join(
+    dir,
+    `${stampOf(report.when)}-${report.sha}-${slug(report.provider)}${source}.json`,
+  );
   writeFileSync(path, `${JSON.stringify(report, null, 2)}\n`);
   return path;
 };

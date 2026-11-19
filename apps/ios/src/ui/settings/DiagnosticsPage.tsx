@@ -4,19 +4,23 @@ import {
   remindersStatusCopy,
   useModelAvailability,
 } from '@calendar/app-state';
+import { noticeCopy } from '@calendar/ai';
 import { Effect } from 'effect';
 import { useEffect, useState } from 'react';
 import { AccessibilityInfo, Platform } from 'react-native';
 import { appleLanguageModel } from '../../appleModel.ts';
-import { appleSpeech } from '../../appleSpeech.ts';
+import { speech } from '../../speech.ts';
+import { assistantDownload, useAssistantModelState } from '../../assistantRuntime.ts';
 import { clearLastRenderError, readLastRenderError } from '../../crashLog.ts';
+import { readLaunchTimes } from '../../launchTiming.ts';
+import { launchLine, launchTitle, launchTotal } from '../../launchTimes.ts';
 import {
   availabilityDetails,
   availabilityGuidance,
   checkResultLine,
 } from '../../modelAvailabilityCopy.ts';
 import { iosRemindersClient } from '../../remindersClient.ts';
-import { onAppActive } from '../QuickAddBar.tsx';
+import { onAppActive } from '../../appActive.ts';
 import { ActionRow, Footer, Row, Section, SettingsPage } from '../GroupedList.tsx';
 import { IOS_SETTINGS_PATH, useSettingsConnections } from './SettingsContext.tsx';
 
@@ -33,9 +37,17 @@ export function DiagnosticsPage() {
   // the real answer must still show. Same checks and words as the notice.
   const { availability, checkedAt, lastManualCheck, manualChecking, retry, status } =
     useModelAvailability(appleLanguageModel, onAppActive);
+  const assistant = useAssistantModelState();
+  const download = assistantDownload();
+  const assistantCopy = noticeCopy(assistant, {
+    device: 'iPhone',
+    network: download.network(),
+    size: download.size(),
+  });
   const [dictation, setDictation] = useState('checking…');
   const [reminderListCount, setReminderListCount] = useState<number | undefined>();
   const [lastError, setLastError] = useState(readLastRenderError);
+  const [launches] = useState(readLaunchTimes);
 
   // Every answer to Check Again is read out, the same one twice included.
   useEffect(() => {
@@ -46,7 +58,7 @@ export function DiagnosticsPage() {
 
   useEffect(() => {
     let cancelled = false;
-    void appleSpeech
+    void speech
       .isSupported()
       .then((value) => {
         if (!cancelled) {
@@ -95,6 +107,32 @@ export function DiagnosticsPage() {
           value={typeof globalThis.crypto?.getRandomValues === 'function' ? 'ok' : 'missing'}
         />
       </Section>
+      <Section header="Assistant Model">
+        <Row
+          subtitle={assistantCopy.lines.join(' ') || undefined}
+          title="Download"
+          value={
+            assistant.kind === 'unsupported' ? `unsupported (${assistant.reason})` : assistant.kind
+          }
+          valueTestID="diagnostics-assistant-model"
+        />
+        {assistantCopy.action ? (
+          <ActionRow
+            onPress={() => {
+              const kind = assistantCopy.action?.kind;
+              if (kind === 'download') {
+                void download.agree('wifi');
+              } else if (kind === 'mobile') {
+                void download.allowMobileData();
+              } else {
+                void download.retry();
+              }
+            }}
+            testID="diagnostics-assistant-model-action"
+            title={assistantCopy.action.label}
+          />
+        ) : null}
+      </Section>
       <Section
         footer={
           availability ? (
@@ -106,9 +144,7 @@ export function DiagnosticsPage() {
         header="On-Device Model"
       >
         <Row
-          subtitle={
-            availability ? availabilityGuidance(availability, String(Platform.Version)) : undefined
-          }
+          subtitle={availability ? availabilityGuidance(availability) : undefined}
           subtitleTestID="diagnostics-model-guidance"
           title="Apple Intelligence"
           value={status ?? 'checking…'}
@@ -147,6 +183,22 @@ export function DiagnosticsPage() {
           title="Contacts"
         />
       </Section>
+      {launches.length > 0 ? (
+        <Section
+          footer="How long the last launches took, counted from the moment the app started: until its JavaScript ran, until the first frame, until the calendar was drawn. A launch closed while it waited ends at the step it never reached."
+          header="Launches"
+        >
+          {launches.map((record, index) => (
+            <Row
+              key={record.start}
+              subtitle={launchLine(record)}
+              subtitleTestID={index === 0 ? 'diagnostics-launch-steps' : undefined}
+              title={launchTitle(record)}
+              value={launchTotal(record)}
+            />
+          ))}
+        </Section>
+      ) : null}
       {lastError ? (
         <Section
           footer={

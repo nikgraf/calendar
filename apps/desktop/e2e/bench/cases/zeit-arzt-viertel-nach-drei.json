@@ -1,0 +1,10 @@
+{
+  "lang": "de",
+  "tags": ["time", "de"],
+  "turns": [
+    {
+      "input": { "text": "Arzt Donnerstag um Viertel nach drei" },
+      "expect": { "title": "arzt", "weekday": 4, "startTime": "15:15", "endTime": "16:15" }
+    }
+  ]
+}

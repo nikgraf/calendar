@@ -6,7 +6,7 @@ import {
   TaskListInfo,
   TaskRecord,
 } from '@calendar/core';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vite-plus/test';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test';
 import {
   type App,
   launchApp,
@@ -22,6 +22,8 @@ import {
 // against what the grid showed before the drag.
 
 const HOUR_HEIGHT = 48;
+/** Where the grid opens (WeekView): 7:30 at the top. */
+const OPEN_SCROLL_TOP = 7.5 * HOUR_HEIGHT;
 const isoToday = localIsoDaysAgo(0);
 const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
@@ -146,7 +148,7 @@ interface Grid {
   readonly top: number;
 }
 
-const SCROLLER = `document.querySelector('[data-testid="week-scroller"]')`;
+const SCROLLER = '[data-testid="week-scroller"]';
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 /** Minutes as the 15-minute drag step rounds them. */
 const snap = (minutes: number) => Math.round(minutes / 15) * 15;
@@ -163,6 +165,11 @@ describe('A drag held at the grid edge scrolls it', () => {
   afterEach(async (context) => {
     if (context.task.result?.state === 'fail') {
       await app.dump(context.task.name);
+      // A failed attempt can leave its chip or block held, and one held at
+      // the edge goes on scrolling the grid under the retry: Escape lets go
+      // of it without a drop, then the button comes up.
+      await app.cdp.pressEscape();
+      await app.cdp.mouse('mouseReleased', 1, 1);
     }
   });
   afterAll(async () => {
@@ -170,8 +177,8 @@ describe('A drag held at the grid edge scrolls it', () => {
   });
 
   const grid = () =>
-    app.cdp.eval<Grid>(`(() => {
-      const scroller = ${SCROLLER};
+    app.cdp.evaluate(($, selector: string) => {
+      const scroller = $.el(selector)!;
       const rect = scroller.getBoundingClientRect();
       return {
         bottom: rect.bottom,
@@ -179,15 +186,29 @@ describe('A drag held at the grid edge scrolls it', () => {
         scrollTop: scroller.scrollTop,
         top: rect.top,
       };
-    })()`);
-  /** Waits, drawing frames, until the grid's offset (`top`) passes the check. */
-  const scrolledUntil = (check: string) =>
-    app.cdp.waitForRendered(`(() => { const top = ${SCROLLER}.scrollTop; return ${check}; })()`);
+    }, SCROLLER);
+  /** Waits, drawing frames, until the grid's offset (`top`) passes the check: `top <check> bound`. */
+  const scrolledUntil = (check: '<=' | '===' | '>=', bound: number) =>
+    app.cdp.waitUntilRendered(
+      ($, selector: string, op: string, value: number) => {
+        const top = $.el(selector)!.scrollTop;
+        if (op === '<=') {
+          return top <= value;
+        }
+        if (op === '>=') {
+          return top >= value;
+        }
+        return top === value;
+      },
+      SCROLLER,
+      check,
+      bound,
+    );
   /** The grid once its offset holds still across a drawn frame: the edge scroll has stopped. */
   const settled = async (): Promise<Grid> => {
     let last = await grid();
     for (let frame = 0; frame < 50; frame += 1) {
-      await app.cdp.waitForRendered('true');
+      await app.cdp.waitUntilRendered(() => true);
       const next = await grid();
       if (next.scrollTop === last.scrollTop) {
         return next;
@@ -196,6 +217,38 @@ describe('A drag held at the grid edge scrolls it', () => {
     }
     throw new Error('the grid kept scrolling');
   };
+  // A lane chip's test measures the grid as it finds it (locating the chip
+  // scrolls only the lane), so every test starts where the grid opens, not
+  // where the one before it, or a failed attempt of its own, left it: one
+  // left at the bottom has nothing below to scroll to. The hook outlasts
+  // `waitUntil`'s own wait, so a grid that never shows fails there.
+  beforeEach(async () => {
+    await app.cdp.waitUntil(
+      ($, selector: string, openTop: number) => {
+        const scroller = $.el(selector);
+        if (scroller) {
+          scroller.scrollTop = openTop;
+        }
+        return !!scroller;
+      },
+      SCROLLER,
+      OPEN_SCROLL_TOP,
+    );
+    expect((await settled()).scrollTop).toBe(OPEN_SCROLL_TOP);
+  }, 20_000);
+  /**
+   * Waits until the lane has let go of a dropped chip and the grid shows its
+   * block. The lane learns of a drop only after the write, so a check of
+   * the stored task passes first; until then the lane keeps the chip's row,
+   * and once that row goes the grid grows by it and scrolls less far.
+   */
+  const shownInGrid = (id: string) =>
+    app.cdp.waitUntil(
+      ($, task: string) =>
+        !$.has(`[data-testid="all-day-task-${task}"]`) &&
+        $.has(`[data-testid="timed-task-${task}"]`),
+      id,
+    );
   const taskById = async (id: string) =>
     (await readTasks(app.userDataDir)).find((task) => task.id === id);
   const eventById = async (id: string) =>
@@ -218,13 +271,14 @@ describe('A drag held at the grid edge scrolls it', () => {
     // Down into the grid and back up: now the edge scrolls.
     await cdp.mouse('mouseMoved', from.x, middle);
     await cdp.mouse('mouseMoved', from.x, inZone);
-    await scrolledUntil(`top <= ${before.scrollTop - HOUR_HEIGHT}`);
+    await scrolledUntil('<=', before.scrollTop - HOUR_HEIGHT);
     await cdp.mouse('mouseMoved', from.x, middle);
     const after = await settled();
     await cdp.mouse('mouseReleased', from.x, middle);
     await expect
       .poll(() => taskById('ek-edge-enter'), POLL)
       .toMatchObject({ dueDate: isoToday, dueTime: clock(snap(minutesTo(middle, after))) });
+    await shownInGrid('ek-edge-enter');
   });
 
   it('scrolls down while a chip is held at the bottom edge and drops it below what was on screen', async () => {
@@ -237,7 +291,7 @@ describe('A drag held at the grid edge scrolls it', () => {
     await cdp.mouse('mouseMoved', from.x, from.y + 6);
     await cdp.mouse('mouseMoved', from.x, middle);
     await cdp.mouse('mouseMoved', from.x, Math.round(before.bottom) - 2);
-    await scrolledUntil(`top >= ${before.max - 1}`);
+    await scrolledUntil('>=', before.max - 1);
     const release = Math.round(before.bottom) - 60;
     await cdp.mouse('mouseMoved', from.x, release);
     const after = await settled();
@@ -247,6 +301,7 @@ describe('A drag held at the grid edge scrolls it', () => {
     await expect
       .poll(() => taskById('ek-edge-lane'), POLL)
       .toMatchObject({ dueDate: isoToday, dueTime: clock(minute) });
+    await shownInGrid('ek-edge-lane');
   });
 
   it('scrolls up while a timed reminder is held at the top edge and moves it before what was on screen', async () => {
@@ -258,7 +313,7 @@ describe('A drag held at the grid edge scrolls it', () => {
     await cdp.mouse('mousePressed', from.x, from.y);
     await cdp.mouse('mouseMoved', from.x, from.y + 6);
     await cdp.mouse('mouseMoved', from.x, Math.round(before.top) + 2);
-    await scrolledUntil('top === 0');
+    await scrolledUntil('===', 0);
     const release = Math.round(before.top) + 60;
     await cdp.mouse('mouseMoved', from.x, release);
     const after = await settled();
@@ -281,7 +336,7 @@ describe('A drag held at the grid edge scrolls it', () => {
     await cdp.mouse('mousePressed', from.x, from.y);
     await cdp.mouse('mouseMoved', from.x, from.y + 6);
     await cdp.mouse('mouseMoved', from.x, Math.round(before.bottom) - 2);
-    await scrolledUntil(`top >= ${before.max - 1}`);
+    await scrolledUntil('>=', before.max - 1);
     const release = Math.round(before.bottom) - 60;
     await cdp.mouse('mouseMoved', from.x, release);
     const after = await settled();
@@ -304,7 +359,7 @@ describe('A drag held at the grid edge scrolls it', () => {
     await cdp.mouse('mousePressed', from.x, from.y);
     await cdp.mouse('mouseMoved', from.x, from.y + 6);
     await cdp.wheel(from.x, from.y + 6, 0, 2 * HOUR_HEIGHT);
-    await scrolledUntil(`top >= ${before.scrollTop + HOUR_HEIGHT}`);
+    await scrolledUntil('>=', before.scrollTop + HOUR_HEIGHT);
     const after = await settled();
     await cdp.mouse('mouseReleased', from.x, from.y + 6);
     const deltaMinutes = snap(((6 + after.scrollTop - before.scrollTop) / HOUR_HEIGHT) * 60);
@@ -324,7 +379,7 @@ describe('A drag held at the grid edge scrolls it', () => {
     // the press itself was clear of the edge.
     await cdp.mouse('mousePressed', from.x, from.y);
     await cdp.mouse('mouseMoved', from.x, Math.round(before.bottom) - 2);
-    await scrolledUntil(`top >= ${before.scrollTop + HOUR_HEIGHT}`);
+    await scrolledUntil('>=', before.scrollTop + HOUR_HEIGHT);
     const release = Math.round(before.bottom) - 60;
     await cdp.mouse('mouseMoved', from.x, release);
     const after = await settled();
@@ -346,7 +401,7 @@ describe('A drag held at the grid edge scrolls it', () => {
     await cdp.mouse('mousePressed', handle.x, handle.y);
     await cdp.mouse('mouseMoved', handle.x, handle.y + 6);
     await cdp.mouse('mouseMoved', handle.x, Math.round(before.bottom) - 2);
-    await scrolledUntil(`top >= ${before.max - 1}`);
+    await scrolledUntil('>=', before.max - 1);
     const release = Math.round(before.bottom) - 60;
     await cdp.mouse('mouseMoved', handle.x, release);
     const after = await settled();

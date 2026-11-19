@@ -1,0 +1,16 @@
+{
+  "lang": "en",
+  "tags": ["title", "command"],
+  "turns": [
+    {
+      "input": { "text": "Create a meeting called budget review for Wednesday at 2pm" },
+      "expect": {
+        "kind": "event",
+        "title": "budget review",
+        "weekday": 3,
+        "startTime": "14:00",
+        "endTime": "15:00"
+      }
+    }
+  ]
+}

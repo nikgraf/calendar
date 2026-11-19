@@ -1,4 +1,4 @@
-import { formatClockTime, type PositionedBox } from '@calendar/core';
+import { formatClockTime, type FreeSlot, type PositionedBox } from '@calendar/core';
 import type { DraftOccurrence } from '@calendar/app-state';
 import { useTint } from './tint.ts';
 
@@ -26,7 +26,7 @@ export function DraftBlock({
   hourHeight: number;
   occurrence: DraftOccurrence;
   /** The draft to focus, and for a candidate the slot to move it into. */
-  onClick: (draftId: string, slot?: DraftOccurrence['candidate']) => void;
+  onClick: (draftId: string, slot?: FreeSlot) => void;
   timeZone: string;
 }) {
   const tint = useTint()(occurrence.color);
@@ -34,7 +34,7 @@ export function DraftBlock({
   const pixelHeight = box.height * dayMinutes * (hourHeight / 60);
   const compact = pixelHeight < 28;
   const times = `${formatClockTime(occurrence.startUtc, timeZone)} – ${formatClockTime(occurrence.endUtc, timeZone)}`;
-  const { candidate } = occurrence;
+  const candidate = occurrence.kind === 'candidate' ? occurrence.slot : undefined;
   const pick = () => onClick(occurrence.draftId, candidate);
   return (
     <div
@@ -126,6 +126,48 @@ export function DraftChip({
       <span className="shrink-0 rounded-sm px-1 text-[9px] uppercase opacity-80 ring-1 ring-current">
         Draft
       </span>
+    </div>
+  );
+}
+
+/**
+ * Where the focused draft stood before the step on show moved it: a
+ * dashed outline in the calendar's hue, nothing inside but "Was" and the
+ * hours. It is drawn over the column, not laid out in it, so it never
+ * narrows a real block, and takes no click: the press goes to what is
+ * under it.
+ */
+export function DraftTrace({
+  endMinute,
+  hourHeight,
+  occurrence,
+  startMinute,
+  timeZone,
+}: {
+  endMinute: number;
+  hourHeight: number;
+  occurrence: DraftOccurrence;
+  startMinute: number;
+  timeZone: string;
+}) {
+  const tint = useTint()(occurrence.color);
+  const times = `${formatClockTime(occurrence.startUtc, timeZone)} – ${formatClockTime(occurrence.endUtc, timeZone)}`;
+  return (
+    <div
+      aria-label={`Was: ${times}`}
+      className="pointer-events-none absolute inset-x-0.5 z-[5] overflow-hidden rounded-event border border-dashed px-1.5 py-0.5"
+      data-draft={occurrence.draftId}
+      data-draft-start={occurrence.startTime}
+      data-testid="draft-was"
+      role="img"
+      style={{
+        borderColor: tint.edge,
+        color: tint.text,
+        height: Math.max(((endMinute - startMinute) / 60) * hourHeight, 14),
+        top: (startMinute / 60) * hourHeight,
+      }}
+    >
+      <p className="truncate text-[10px] leading-4 opacity-80">Was {times}</p>
     </div>
   );
 }

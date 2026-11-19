@@ -1,0 +1,10 @@
+{
+  "lang": "en",
+  "tags": ["time"],
+  "turns": [
+    {
+      "input": { "text": "Meeting at 14:30 on Wednesday" },
+      "expect": { "title": "meeting", "weekday": 3, "startTime": "14:30", "endTime": "15:30" }
+    }
+  ]
+}

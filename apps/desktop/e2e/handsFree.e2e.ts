@@ -1,12 +1,14 @@
 import { Account, CalendarInfo } from '@calendar/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
 import { type App, DICTATION_LOOP_MS, launchApp } from './harness.ts';
+import type { PageKit } from './page.ts';
 
-// Hands-free dictation: one click of the microphone, then every pause
-// sends the phrase and it listens again. The microphone is the harness's
-// fixture — a looping file of a phrase-long tone between stretches of
-// quiet room — so the renderer's real recording and pause detection run
-// on known audio; each transcription answers the next phrase below, in
+// Hands-free dictation: one click of the microphone, then every phrase
+// is sent when its words stop and it listens again. The microphone is the
+// harness's fixture — a looping file of a phrase-long tone between
+// stretches of quiet room — so the renderer's real streaming and the rule
+// that ends a phrase on its words run on known audio; the tone writes the
+// next phrase below word by word, and each reading answers it, in
 // the fixture model's grammar (`Title | +N | HH:MM-HH:MM`, empty parts
 // in a change meaning "unchanged").
 const seed = {
@@ -39,16 +41,26 @@ const seed = {
 const PHRASES = ['Dinner | +2 | 19:00-20:00', '| | 20:00-21:00', '| | 21:00-22:00'];
 
 // CDP key events don't carry macOS meta reliably: dispatch ⌘N to the app's own window listener.
-const COMMAND_N = `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', metaKey: true }))`;
+const commandN = () => {
+  window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', metaKey: true }));
+};
 const TITLE = 'input[placeholder="Title"]';
 const START = 'input[aria-label="Start time"]';
-const titleValue = `document.querySelector(${JSON.stringify(TITLE)})?.value ?? ''`;
-const earlierQueries = `document.querySelector('[data-testid="draft-turns-more"]')?.textContent`;
-const newestSummary = `document.querySelector('[data-testid="draft-turn-summary"]')?.textContent ?? ''`;
-const startIs = (time: string) =>
-  `document.querySelector(${JSON.stringify(START)})?.value === ${JSON.stringify(time)}`;
-const MIC = `document.querySelector('[data-testid="quick-add-mic"]')`;
-const dictating = `${MIC}?.getAttribute('aria-pressed') === 'true'`;
+const titleValue = ($: PageKit, title: string) => $.value(title);
+// What the Assistant's conversation holds: a line per phrase taken.
+const said = ($: PageKit) => $.count('[data-testid="assistant-said"]');
+const startIs = ($: PageKit, start: string, time: string) => $.value(start) === time;
+const dictating = ($: PageKit) =>
+  $.el('[data-testid="quick-add-mic"]')?.getAttribute('aria-pressed') === 'true';
+/**
+ * The words of the phrase being said, while it is (nothing once it is
+ * sent), begin with `words`.
+ */
+const listeningStartsWith = ($: PageKit, words: string) =>
+  ($.el('[data-testid="quick-add-mic"]')?.dataset.listening === 'speech'
+    ? $.text('[data-testid="assistant-pending"]')
+    : ''
+  ).startsWith(words);
 /** Long enough for the fixture microphone to say one more phrase and pause after it. */
 const ONE_LOOP_MS =
   DICTATION_LOOP_MS.quietBefore + DICTATION_LOOP_MS.phrase + DICTATION_LOOP_MS.quietAfter + 1000;
@@ -64,38 +76,95 @@ describe('Hands-free dictation', () => {
 
   it('sends each phrase at its pause and listens on, until the form is edited by hand', async () => {
     const { cdp } = app;
-    await cdp.eval(COMMAND_N);
-    await cdp.waitFor(
-      `document.querySelector('[data-testid="editor-title"]')?.textContent === 'New event'`,
-    );
+    await cdp.evaluate(commandN);
+    await cdp.waitUntil(($) => $.text('[data-testid="editor-title"]') === 'New event');
 
     // One click: the first phrase makes the draft, the second moves it — no click between.
     await cdp.clickTestId('quick-add-mic');
-    await cdp.waitFor(`(${titleValue}) === 'Dinner'`, 20_000);
-    await cdp.waitFor(startIs('19:00'));
-    expect(await cdp.eval<boolean>(dictating)).toBe(true);
-    await cdp.waitFor(`${earlierQueries} === '+1 earlier query'`, 20_000);
-    await cdp.waitFor(startIs('20:00'));
-    expect(await cdp.eval<boolean>(dictating)).toBe(true);
+    // Its words show in the thread while it is said, before it is sent.
+    await cdp.waitUntil({ timeoutMs: 20_000 }, listeningStartsWith, 'Dinner');
+    await cdp.waitUntil(
+      { timeoutMs: 20_000 },
+      ($, title: string) => $.value(title) === 'Dinner',
+      TITLE,
+    );
+    await cdp.waitUntil(startIs, START, '19:00');
+    expect(await cdp.evaluate(dictating)).toBe(true);
+    await cdp.waitUntil(
+      { timeoutMs: 20_000 },
+      ($) => $.count('[data-testid="assistant-said"]') === 2,
+    );
+    await cdp.waitUntil(startIs, START, '20:00');
+    expect(await cdp.evaluate(dictating)).toBe(true);
 
-    // A hand edit — the title typed over: dictation hands over, and nothing more is sent.
-    await cdp.eval(`document.querySelector(${JSON.stringify(TITLE)}).select()`);
+    // The form brought forward does not end it; a hand edit there — the
+    // title typed over — does: dictation hands over, and nothing more is sent.
+    await cdp.showEditorView('form');
+    expect(await cdp.evaluate(dictating)).toBe(true);
+    await cdp.evaluate(($, title: string) => {
+      $.el<HTMLInputElement>(title)!.select();
+    }, TITLE);
     await cdp.type(TITLE, 'Late dinner');
-    await cdp.waitFor(`!(${dictating})`);
-    expect(await cdp.eval<string>(titleValue)).toBe('Late dinner');
+    await cdp.waitUntil(
+      ($) => $.el('[data-testid="quick-add-mic"]')?.getAttribute('aria-pressed') !== 'true',
+    );
+    expect(await cdp.evaluate(titleValue, TITLE)).toBe('Late dinner');
     await new Promise((resolve) => setTimeout(resolve, ONE_LOOP_MS));
-    expect(await cdp.eval<string>(earlierQueries)).toBe('+1 earlier query');
-    expect(await cdp.eval<boolean>(startIs('20:00'))).toBe(true);
+    expect(await cdp.evaluate(said)).toBe(2);
+    expect(await cdp.evaluate(startIs, START, '20:00')).toBe(true);
 
-    // On again: the next phrase changes the time and keeps the title typed meanwhile.
+    // On again, in the Assistant: the next phrase changes the time and keeps the title typed meanwhile.
+    await cdp.showEditorView('assistant');
     await cdp.clickTestId('quick-add-mic');
-    await cdp.waitFor(`(${newestSummary}).includes('21:00')`, 20_000);
-    await cdp.waitFor(startIs('21:00'));
-    expect(await cdp.eval<string>(titleValue)).toBe('Late dinner');
+    await cdp.waitUntil({ timeoutMs: 20_000 }, ($) =>
+      $.text('[data-testid="assistant-card-time"]').includes('21:00'),
+    );
+    await cdp.waitUntil(startIs, START, '21:00');
+    expect(await cdp.evaluate(titleValue, TITLE)).toBe('Late dinner');
+
+    // An older step put on show ends it too: there is nothing to say a
+    // phrase to, and the microphone must not stay open behind a control
+    // that is off.
+    await cdp.waitUntil(dictating);
+    await cdp.clickTestId('assistant-undo');
+    await cdp.waitUntil(
+      ($) => $.el('[data-testid="quick-add-mic"]')?.getAttribute('aria-pressed') !== 'true',
+    );
+    await cdp.clickTestId('step-forward');
+    await cdp.waitUntil(($) => !$.has('[data-testid="step-preview"]'));
 
     // The microphone ends it.
-    await cdp.waitFor(dictating);
     await cdp.clickTestId('quick-add-mic');
-    await cdp.waitFor(`!(${dictating})`);
+    await cdp.waitUntil(dictating);
+    await cdp.clickTestId('quick-add-mic');
+    await cdp.waitUntil(
+      ($) => $.el('[data-testid="quick-add-mic"]')?.getAttribute('aria-pressed') !== 'true',
+    );
   }, 90_000);
+
+  it('reduces background noise until Settings › Dictation turns it off, for both windows', async () => {
+    const settings = await app.openSettings('dictation');
+    const box = '[data-testid="reduce-background-noise"]';
+    // From nothing chosen, also on a retry: the calendar window clears the
+    // choice and the Settings window hears of it (a `storage` event).
+    await app.cdp.evaluate(() => {
+      localStorage.removeItem('dictation.reduceNoise');
+    });
+    await settings.waitUntil(
+      ($, checkbox: string) => $.el<HTMLInputElement>(checkbox)?.checked === true,
+      box,
+    );
+    expect(await settings.evaluate(($) => $.text('[data-testid="dictation-language"]'))).toContain(
+      'this Mac’s language',
+    );
+    await settings.evaluate(($, checkbox: string) => {
+      $.el(checkbox)!.click();
+    }, box);
+    await settings.waitUntil(
+      ($, checkbox: string) => $.el<HTMLInputElement>(checkbox)!.checked === false,
+      box,
+    );
+    // The calendar window opens the microphone: the choice reaches it.
+    await app.cdp.waitUntil(() => localStorage.getItem('dictation.reduceNoise') === 'off');
+  });
 });

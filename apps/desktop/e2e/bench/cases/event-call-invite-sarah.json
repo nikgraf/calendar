@@ -1,0 +1,18 @@
+{
+  "blind": true,
+  "lang": "en",
+  "tags": ["task", "guests"],
+  "turns": [
+    {
+      "input": { "text": "Call on Friday at 11, invite Sarah" },
+      "expect": {
+        "kind": "event",
+        "title": "call",
+        "weekday": 5,
+        "startTime": "11:00",
+        "endTime": "12:00",
+        "guests": { "emails": ["sarah.novak@example.com"] }
+      }
+    }
+  ]
+}

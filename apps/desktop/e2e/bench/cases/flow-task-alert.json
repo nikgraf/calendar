@@ -1,0 +1,26 @@
+{
+  "lang": "en",
+  "tags": ["flow", "notifications", "task"],
+  "turns": [
+    {
+      "input": {
+        "text": "remind me to call the bank tomorrow at 9"
+      },
+      "expect": {
+        "kind": "task",
+        "title": "call the bank",
+        "dayOffset": 1,
+        "startTime": "09:00"
+      }
+    },
+    {
+      "input": {
+        "text": "remind me 10 minutes before"
+      },
+      "expect": {
+        "kind": "task",
+        "reminders": [10]
+      }
+    }
+  ]
+}

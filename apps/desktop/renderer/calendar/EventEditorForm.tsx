@@ -7,7 +7,12 @@ import {
   type useEventEditorModel,
   useTimeZones,
 } from '@calendar/app-state';
-import { type CalendarInfo, draftZoneRanges, type RsvpResponse } from '@calendar/core';
+import {
+  type CalendarInfo,
+  draftZoneRanges,
+  nameWithAddress,
+  type RsvpResponse,
+} from '@calendar/core';
 import { InviteeCombobox } from './InviteeCombobox.tsx';
 import { FIELD_CLASS as field } from '../ui/fieldStyles.ts';
 import { useFieldFlash } from '../ui/useFlash.ts';
@@ -120,6 +125,7 @@ export function EventEditorForm({ model }: { model: ReturnType<typeof useEventEd
         <input
           autoFocus
           className={`${field} py-2 text-base`}
+          data-switch-anchor
           onChange={(changeEvent) => setTitle(changeEvent.target.value)}
           placeholder="Title"
           ref={titleFlash}
@@ -227,7 +233,7 @@ export function EventEditorForm({ model }: { model: ReturnType<typeof useEventEd
       {model.repeatLoaded ? <RepeatRuleFields anchorDate={date} state={model} /> : null}
 
       {canInvite ? (
-        <FormSection label="Invitees" ref={guestsFlash}>
+        <FormSection label="Invitees" ref={guestsFlash} testId="event-invitees">
           {canRsvp ? (
             <SegmentedControl
               className="w-full"
@@ -259,9 +265,12 @@ export function EventEditorForm({ model }: { model: ReturnType<typeof useEventEd
         // missing field reads as a bug.
         <FormSection label="Invitees" testId="event-invitees-apple">
           {hasGuests ? (
-            <ul className="text-sm text-ink-secondary" data-testid="event-guests-read-only">
+            <ul
+              className="text-sm text-ink-secondary [overflow-wrap:anywhere]"
+              data-testid="event-guests-read-only"
+            >
               {existing?.attendees?.map((attendee) => (
-                <li key={attendee.email}>{attendee.displayName ?? attendee.email}</li>
+                <li key={attendee.email}>{nameWithAddress(attendee)}</li>
               ))}
             </ul>
           ) : null}
@@ -276,9 +285,11 @@ export function EventEditorForm({ model }: { model: ReturnType<typeof useEventEd
               {!existing && attendees.length > 0 ? (
                 // Guests the form holds (typed, or said in a phrase) for
                 // another calendar: kept, but not sent from this one.
-                <p className="text-xs text-ink-secondary" data-testid="event-invitees-held">
-                  Not invited from this calendar:{' '}
-                  {attendees.map((attendee) => attendee.displayName ?? attendee.email).join(', ')}
+                <p
+                  className="text-xs text-ink-secondary [overflow-wrap:anywhere]"
+                  data-testid="event-invitees-held"
+                >
+                  Not invited from this calendar: {attendees.map(nameWithAddress).join(', ')}
                 </p>
               ) : null}
               <p className="text-xs text-ink-secondary">

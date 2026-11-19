@@ -54,15 +54,33 @@ export type MapSnapshotParams = BackendPayload<'mapSnapshot'>;
 
 /** Atom key for a map image request; one key per image the UI can show. */
 export const mapSnapshotKey = (params: MapSnapshotParams): string =>
-  [params.appearance, params.width, params.height, params.scale, params.lat, params.lng].join('|');
+  [
+    params.appearance,
+    params.width,
+    params.height,
+    params.scale,
+    params.lat,
+    params.lng,
+    ...(params.rect ? [params.rect.x, params.rect.y, params.rect.width, params.rect.height] : []),
+  ].join('|');
 
 const parseMapSnapshotKey = (key: string): MapSnapshotParams => {
-  const [appearance, width, height, scale, lat, lng] = key.split('|');
+  const [appearance, width, height, scale, lat, lng, x, y, rectWidth, rectHeight] = key.split('|');
   return {
     appearance: appearance === 'dark' ? 'dark' : 'light',
     height: Number(height),
     lat: Number(lat),
     lng: Number(lng),
+    ...(x === undefined
+      ? {}
+      : {
+          rect: {
+            height: Number(rectHeight),
+            width: Number(rectWidth),
+            x: Number(x),
+            y: Number(y),
+          },
+        }),
     scale: Number(scale),
     width: Number(width),
   };
@@ -538,8 +556,7 @@ const buildAtoms = (client: BackendClient, deviceZone: Atom.Atom<string>) => {
         ? Effect.succeed(null)
         : Effect.gen(function* () {
             const backend = yield* AppBackend;
-            const result = yield* backend.mapSnapshot(parseMapSnapshotKey(key));
-            return result.pngBase64;
+            return yield* backend.mapSnapshot(parseMapSnapshotKey(key));
           }),
     ),
   );
@@ -552,7 +569,7 @@ const buildAtoms = (client: BackendClient, deviceZone: Atom.Atom<string>) => {
       (payload: BackendPayload<M>) =>
         Effect.gen(function* () {
           const backend = yield* AppBackend;
-          return (yield* backend[method](payload as never)) as BackendSuccess<M>;
+          return yield* backend[method](payload);
         }),
       { reactivityKeys },
     );
@@ -670,7 +687,7 @@ export const runMutation = async <M extends MutationName>(
   payload: BackendPayload<M>,
 ): Promise<BackendSuccess<M>> => {
   const atom = atoms.mutationCall(name);
-  registry.set(atom, payload as never);
+  registry.set(atom, payload);
   const result: Effect.Effect<BackendSuccess<M>, unknown> = AtomRegistry.getResult(registry, atom, {
     suspendOnWaiting: true,
   });

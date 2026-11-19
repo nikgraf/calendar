@@ -97,6 +97,34 @@ describe('makeGeoClient', () => {
     expect(result._tag === 'Failure' && result.failure._tag).toBe('GeoRequestError');
   });
 
+  it('sends a map rect and reads whether the image is it', async () => {
+    const calls: Array<[string, unknown]> = [];
+    const answers = [{ fitted: true, pngBase64: 'png' }, { pngBase64: 'old' }];
+    const client = makeGeoClient((method, params) => {
+      calls.push([method, params]);
+      return Promise.resolve(answers.shift());
+    });
+    const rect = { height: 0.0001, width: 0.0002, x: 0.545, y: 0.355 };
+    const base = {
+      appearance: 'light',
+      height: 150,
+      lat: 48.2,
+      lng: 16.37,
+      scale: 3,
+      width: 338,
+    } as const;
+    expect(await Effect.runPromise(client.snapshot({ ...base, rect }))).toEqual({
+      fitted: true,
+      pngBase64: 'png',
+    });
+    // A native side from before rects answers with its own map, unfitted.
+    expect(await Effect.runPromise(client.snapshot(base))).toEqual({ pngBase64: 'old' });
+    expect(calls).toEqual([
+      ['geo.snapshot', { ...base, rect }],
+      ['geo.snapshot', base],
+    ]);
+  });
+
   it('fails every method when unavailable', async () => {
     const client = unavailableGeoClient('no helper');
     const result = await Effect.runPromise(
@@ -129,15 +157,20 @@ describe('makeFakeGeoClient', () => {
       [{ lat: 48.2, name: 'Naschmarkt' }],
     );
     expect(await Effect.runPromise(client.resolve({ query: 'Atlantis' }))).toEqual([]);
+    const map = { appearance: 'light', height: 1, lat: 0, lng: 0, scale: 1, width: 1 } as const;
+    expect(await Effect.runPromise(client.snapshot(map))).toEqual({
+      pngBase64: FAKE_MAP_PNG_BASE64,
+    });
     expect(
       await Effect.runPromise(
-        client.snapshot({ appearance: 'light', height: 1, lat: 0, lng: 0, scale: 1, width: 1 }),
+        client.snapshot({ ...map, rect: { height: 0.1, width: 0.1, x: 0.5, y: 0.5 } }),
       ),
-    ).toBe(FAKE_MAP_PNG_BASE64);
+    ).toEqual({ fitted: true, pngBase64: FAKE_MAP_PNG_BASE64 });
     expect(state.calls).toEqual([
       'search:MINT',
       'resolve:lunch at naschmarkt',
       'resolve:Atlantis',
+      'snapshot',
       'snapshot',
     ]);
   });

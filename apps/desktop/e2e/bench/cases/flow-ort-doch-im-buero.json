@@ -1,0 +1,24 @@
+{
+  "lang": "de",
+  "tags": ["flow", "location", "de"],
+  "turns": [
+    {
+      "input": { "text": "Kaffee Freitag um 10" },
+      "expect": {
+        "title": "kaffee",
+        "weekday": 5,
+        "startTime": "10:00",
+        "endTime": "11:00",
+        "location": null
+      }
+    },
+    {
+      "input": { "text": "im Cafe Fino" },
+      "expect": { "location": "cafe fino" }
+    },
+    {
+      "input": { "text": "doch lieber im Büro" },
+      "expect": { "locationIs": "büro" }
+    }
+  ]
+}

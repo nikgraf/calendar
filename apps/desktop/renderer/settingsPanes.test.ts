@@ -12,6 +12,8 @@ describe('filterPanes', () => {
     expect(filterPanes('weekend').map((pane) => pane.id)).toEqual(['calendar']);
     expect(filterPanes('time zone').map((pane) => pane.id)).toEqual(['timezones']);
     expect(filterPanes('ollama').map((pane) => pane.id)).toEqual(['model']);
+    expect(filterPanes('microphone').map((pane) => pane.id)).toEqual(['dictation']);
+    expect(filterPanes('noise').map((pane) => pane.id)).toEqual(['dictation']);
     expect(filterPanes('privacy').map((pane) => pane.id)).toEqual(['sharing']);
     expect(filterPanes('location').map((pane) => pane.id)).toEqual(['advanced']);
     expect(filterPanes('settings file').map((pane) => pane.id)).toEqual(['file']);
@@ -36,6 +38,7 @@ describe('filterPanes', () => {
 describe('isExperimentalPane', () => {
   it('lists mirrors and agents last, after every other pane', () => {
     expect(SETTINGS_PANES.map((pane) => isExperimentalPane(pane.id))).toEqual([
+      false,
       false,
       false,
       false,

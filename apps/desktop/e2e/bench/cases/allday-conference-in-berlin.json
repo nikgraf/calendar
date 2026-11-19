@@ -1,0 +1,10 @@
+{
+  "lang": "en",
+  "tags": ["allday", "location"],
+  "turns": [
+    {
+      "input": { "text": "Conference in Berlin on Thursday" },
+      "expect": { "title": "conference", "weekday": 4, "isAllDay": true, "location": "berlin" }
+    }
+  ]
+}

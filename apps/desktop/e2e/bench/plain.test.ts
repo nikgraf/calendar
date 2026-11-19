@@ -1,0 +1,286 @@
+import { describe, expect, it } from 'vite-plus/test';
+import type { BenchDraft } from './check.ts';
+import { buildPlainPrompt, buildPlainRefinePrompt, plainResult, plainState } from './plain.ts';
+
+// A Tuesday; the tests only ever compare against it.
+const TODAY = '2026-11-10';
+
+const first = (answer: unknown) => plainResult(answer, { draft: undefined, referenceDate: TODAY });
+
+const draftOf = (
+  prefill: Partial<Extract<BenchDraft['item'], { kind: 'event' }>['prefill']>,
+  rest: Partial<BenchDraft> = {},
+): BenchDraft => ({
+  choices: [],
+  guests: [],
+  item: {
+    kind: 'event',
+    prefill: {
+      date: TODAY,
+      endTime: '20:00',
+      isAllDay: false,
+      startTime: '19:00',
+      title: 'Dinner',
+      ...prefill,
+    },
+  },
+  ...rest,
+});
+
+describe('plainResult, a first phrase', () => {
+  it('fills what a form would: today, all day without a start, an hour without an end', () => {
+    expect(first({ kind: 'event', nothingToSchedule: false, title: 'Offsite' })).toEqual({
+      kind: 'parsed',
+      prefill: {
+        date: TODAY,
+        endTime: '01:00',
+        isAllDay: true,
+        startTime: '00:00',
+        title: 'Offsite',
+      },
+    });
+    expect(
+      first({
+        date: '2026-11-13',
+        kind: 'event',
+        location: ' Blue Door ',
+        nothingToSchedule: false,
+        startTime: '9:30',
+        timeAssumed: true,
+        title: 'Breakfast',
+      }),
+    ).toEqual({
+      kind: 'parsed',
+      prefill: {
+        assumedTime: true,
+        date: '2026-11-13',
+        endTime: '10:30',
+        isAllDay: false,
+        location: 'Blue Door',
+        startTime: '09:30',
+        title: 'Breakfast',
+      },
+    });
+  });
+
+  it('keeps a stated end, and drops one that is not after the start or not a time', () => {
+    const answer = { kind: 'event', nothingToSchedule: false, startTime: '14:00', title: 'Review' };
+    expect(first({ ...answer, endTime: '15:30' })).toMatchObject({ prefill: { endTime: '15:30' } });
+    expect(first({ ...answer, endTime: '13:00' })).toMatchObject({ prefill: { endTime: '15:00' } });
+    expect(first({ ...answer, endTime: '25:00' })).toMatchObject({ prefill: { endTime: '15:00' } });
+  });
+
+  it('takes a date that is none as today', () => {
+    const answer = { kind: 'event', nothingToSchedule: false, title: 'Review' };
+    expect(first({ ...answer, date: '2026-02-30' })).toMatchObject({ prefill: { date: TODAY } });
+    expect(first({ ...answer, date: 'Friday' })).toMatchObject({ prefill: { date: TODAY } });
+  });
+
+  it('makes a to-do with its time and its note', () => {
+    expect(
+      first({
+        kind: 'task',
+        notes: 'the blue folder',
+        nothingToSchedule: false,
+        startTime: '17:00',
+        title: 'Call the bank',
+      }),
+    ).toEqual({
+      kind: 'task',
+      notes: { kind: 'add', text: 'the blue folder' },
+      prefill: { date: TODAY, time: '17:00', title: 'Call the bank' },
+    });
+  });
+
+  it('refuses what was not understood, and an answer without a title', () => {
+    expect(first({ kind: 'event', nothingToSchedule: true, title: 'x' }).kind).toBe('rejected');
+    expect(first({ kind: 'event', nothingToSchedule: false, title: '  ' }).kind).toBe('rejected');
+    expect(first('nonsense').kind).toBe('rejected');
+  });
+
+  it('reads a repeat: one weekday of a weekly rule is the date, several are listed', () => {
+    const answer = { kind: 'event', nothingToSchedule: false, title: 'Standup' };
+    expect(first({ ...answer, repeat: { byDay: ['TH'], freq: 'weekly' } })).toMatchObject({
+      prefill: { date: '2026-11-12', recurrence: { freq: 'weekly' } },
+    });
+    expect(
+      first({ ...answer, repeat: { byDay: ['mo', 'WE'], freq: 'weekly', interval: 2 } }),
+    ).toMatchObject({
+      prefill: {
+        date: '2026-11-11',
+        recurrence: {
+          byDay: [{ weekday: 'MO' }, { weekday: 'WE' }],
+          freq: 'weekly',
+          interval: 2,
+        },
+      },
+    });
+    expect(
+      first({ ...answer, repeat: { byDay: ['-1FR'], count: 5, freq: 'monthly', interval: 1 } }),
+    ).toMatchObject({
+      prefill: {
+        recurrence: { byDay: [{ ordinal: -1, weekday: 'FR' }], count: 5, freq: 'monthly' },
+      },
+    });
+    expect(first({ ...answer, repeat: { freq: 'sometimes' } })).not.toHaveProperty(
+      'prefill.recurrence',
+    );
+  });
+
+  it('keeps no rule that repeats once, and no days the editor would refuse', () => {
+    const answer = { kind: 'event', nothingToSchedule: false, title: 'Book club' };
+    expect(first({ ...answer, repeat: { count: 1, freq: 'weekly' } })).not.toHaveProperty(
+      'prefill.recurrence',
+    );
+    // "Every month on Wednesday" names no week: the rule stays, on the day of the month.
+    expect(first({ ...answer, repeat: { byDay: ['WE'], freq: 'monthly' } })).toMatchObject({
+      prefill: { date: TODAY, recurrence: { freq: 'monthly' } },
+    });
+    expect(first({ ...answer, repeat: { byDay: ['WE'], freq: 'monthly' } })).not.toHaveProperty(
+      'prefill.recurrence.byDay',
+    );
+    expect(
+      first({ ...answer, repeat: { byDay: ['2TU', 'TH'], freq: 'weekly' } }),
+    ).not.toHaveProperty('prefill.recurrence.byDay');
+    expect(first({ ...answer, repeat: { byDay: ['MO'], freq: 'daily' } })).toMatchObject({
+      prefill: { date: TODAY, recurrence: { freq: 'daily' } },
+    });
+    // An end that has passed is next year's, as the app reads a model's.
+    expect(first({ ...answer, repeat: { freq: 'weekly', untilDate: '2026-01-01' } })).toMatchObject(
+      { prefill: { recurrence: { freq: 'weekly', untilDate: '2027-01-01' } } },
+    );
+  });
+
+  it('passes on who is invited, the notifications and the note', () => {
+    expect(
+      first({
+        invite: ['Ben', ' '],
+        kind: 'event',
+        notes: 'bring the contract',
+        nothingToSchedule: false,
+        reminders: [60, 10, -5, 2.5],
+        title: 'Review',
+        uninvite: [],
+      }),
+    ).toMatchObject({
+      invite: ['Ben'],
+      notes: { kind: 'add', text: 'bring the contract' },
+      reminders: { add: [60, 10], clear: false, remove: [] },
+    });
+  });
+});
+
+describe('plainResult, a change to the draft', () => {
+  const draft = draftOf({ location: 'Blue Door' }, { notes: 'window table', reminders: [30] });
+  const kept = {
+    date: TODAY,
+    endTime: '20:00',
+    kind: 'event',
+    location: 'Blue Door',
+    notes: 'window table',
+    nothingToSchedule: false,
+    reminders: [30],
+    startTime: '19:00',
+    title: 'Dinner',
+  };
+  const change = (answer: unknown) => plainResult(answer, { draft, referenceDate: '2026-11-01' });
+
+  it('changes nothing when the answer is the draft', () => {
+    expect(change(kept)).toEqual({
+      kind: 'parsed',
+      prefill: {
+        date: TODAY,
+        endTime: '20:00',
+        isAllDay: false,
+        location: 'Blue Door',
+        startTime: '19:00',
+        title: 'Dinner',
+      },
+    });
+  });
+
+  it('keeps the day of the draft when the answer names none', () => {
+    const { date: _date, ...rest } = kept;
+    expect(change(rest)).toMatchObject({ prefill: { date: TODAY } });
+  });
+
+  it('removes what the answer leaves out', () => {
+    const { location: _location, notes: _notes, reminders: _reminders, ...rest } = kept;
+    const result = change(rest);
+    expect(result).toMatchObject({
+      notes: { kind: 'clear' },
+      // An answer with none takes them all off, one the model was never shown too.
+      reminders: { add: [], clear: true, remove: [] },
+    });
+    expect(result).not.toHaveProperty('prefill.location');
+  });
+
+  it('replaces the note, and adds the notifications the answer has anew', () => {
+    expect(change({ ...kept, notes: 'by the door', reminders: [30, 60] })).toMatchObject({
+      notes: { kind: 'replace', text: 'by the door' },
+      reminders: { add: [60], clear: false, remove: [] },
+    });
+  });
+});
+
+describe('the plain prompts', () => {
+  it('give the phrase, today and the conventions', () => {
+    const prompt = buildPlainPrompt({
+      phrase: 'Dinner Friday',
+      referenceDate: TODAY,
+      timeZone: 'Europe/Vienna',
+    });
+    expect(prompt).toContain('Phrase: Dinner Friday');
+    expect(prompt).toContain(`Tue ${TODAY} (today)`);
+    expect(prompt).toContain('Fri 2026-11-13');
+    // A notification asked for in German is no to-do cue.
+    expect(prompt).toContain('"erinnere mich eine Stunde vorher" are 60');
+    expect(prompt).not.toContain('"erinnere mich …"');
+  });
+
+  it('give a change the draft in the terms of the answer, and what was said before', () => {
+    const state = plainState(
+      draftOf(
+        {
+          isAllDay: true,
+          recurrence: { byDay: [{ ordinal: 2, weekday: 'TU' }], freq: 'monthly' },
+        },
+        { guests: [{ email: 'ben@example.com' }], notes: 'window table', reminders: [30] },
+      ),
+    );
+    expect(state).toEqual({
+      date: TODAY,
+      guests: ['ben@example.com'],
+      kind: 'event',
+      notes: 'window table',
+      reminders: [30],
+      repeat: { byDay: ['2TU'], freq: 'monthly' },
+      title: 'Dinner',
+    });
+    const prompt = buildPlainRefinePrompt({
+      earlier: ['Dinner tonight'],
+      referenceDate: TODAY,
+      state: state!,
+      timeZone: 'Europe/Vienna',
+      utterance: 'make it 8',
+    });
+    expect(prompt).toContain(`Draft: ${JSON.stringify(state)}`);
+    expect(prompt).toContain('Said before: ["Dinner tonight"]');
+    expect(prompt).toContain('Now: make it 8');
+  });
+
+  it('reads a to-do as the event it would be, and says it is one', () => {
+    const state = plainState({
+      choices: [],
+      guests: [],
+      item: { kind: 'task', prefill: { date: TODAY, time: '17:00', title: 'Call the bank' } },
+    });
+    expect(state).toEqual({
+      date: TODAY,
+      endTime: '18:00',
+      kind: 'task',
+      startTime: '17:00',
+      title: 'Call the bank',
+    });
+  });
+});

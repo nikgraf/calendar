@@ -1,0 +1,18 @@
+{
+  "blind": true,
+  "lang": "de",
+  "tags": ["date", "de"],
+  "turns": [
+    {
+      "input": { "text": "Abendessen mit Jörg in zehn Tagen" },
+      "expect": {
+        "title": "abendessen mit jörg",
+        "dayOffset": 10,
+        "startTime": "19:00",
+        "endTime": "20:00",
+        "assumedTime": true,
+        "guests": {}
+      }
+    }
+  ]
+}
