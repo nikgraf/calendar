@@ -1744,9 +1744,12 @@ gateway carries all of it. Details, limits and the threat model:
   changes), including completed and undated records. A bounded session alias
   follows a Google create from its temporary id to its server id; the raw
   repository reads stay exact, so a rolled-back swap still finds its temp row.
+  Google lookups stay within that list, since another list can hold the same
+  server id. Only Reminders follow an external list move by stable EventKit id.
   Detail actions use the saved record without a seeded editor destination; Edit starts from the
-  latest row, Cancel returns to its detail, and completion or deletion closes
-  only the sheet still showing that task. Custom sheet header actions use
+  latest row, Cancel returns to its detail, and completion closes only its
+  originating detail. Deletion also closes an editor still showing the removed
+  task. Custom sheet header actions use
   `SheetButton`, the editor's 44 pt neutral or primary capsule.
   The detail and the editor
   share the `editor` route (`app/editor.tsx`), a page sheet at full

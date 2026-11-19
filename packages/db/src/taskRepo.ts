@@ -21,9 +21,10 @@ export interface TaskRepoShape {
     syncedAt: number,
   ) => Effect.Effect<void, SqlError>;
   /**
-   * One task by account and id, on whichever list it is now — a move
-   * keeps the id, for both providers — or undefined; an open row first,
-   * should a move's copy and its original overlap.
+   * One task by account and id, on whichever list it is now, or undefined;
+   * an open row first, should a move's copy and its original overlap.
+   * Google ids are list-scoped: callers must not infer that a different
+   * list's row is the same task without tracking the move.
    */
   readonly findById: (
     accountId: string,

@@ -299,8 +299,8 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       return yield* taskRepo.getOverdue(before);
     }),
 
-  // By its list first, then by id alone: a tapped notification names the
-  // list the task was on, and a move keeps the id.
+  // Google ids belong to their list. Only EventKit's stable reminder id
+  // can follow a move by looking on another list.
   getTask: ({ accountId, listId, taskId }) =>
     Effect.gen(function* () {
       const repo = yield* TaskRepo;
@@ -314,7 +314,8 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
       if (currentId !== taskId) {
         return (yield* repo.get(accountId, listId, currentId)) ?? null;
       }
-      return (yield* repo.findById(accountId, taskId)) ?? null;
+      const moved = yield* repo.findById(accountId, taskId);
+      return moved?.provider === 'apple' ? moved : null;
     }),
   getTaskNotificationSettings: () => readTaskNotificationSettings,
   getTasksInRange: ({ endDate, startDate }) =>

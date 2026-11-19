@@ -22,8 +22,8 @@ export function TaskDetailSheet({
   taskLists,
 }: {
   readonly onClose: () => void;
-  /** A completion or deletion succeeded; close only a sheet still showing this task. */
-  readonly onCompleted: (task: TaskRecord) => void;
+  /** Completion belongs to this detail; deletion also removes an editor on the task. */
+  readonly onCompleted: (task: TaskRecord, action: 'complete' | 'delete') => void;
   readonly onEdit: (task: TaskRecord) => void;
   readonly task: TaskRecord;
   readonly taskLists: ReadonlyArray<TaskListInfo>;
@@ -49,7 +49,7 @@ export function TaskDetailSheet({
       if (
         await taskDetailAction({ action, confirm: confirmEditorRequest, mutations, readOnly, task })
       ) {
-        onCompleted(task);
+        onCompleted(task, action);
       }
     });
   const list = taskLists.find(

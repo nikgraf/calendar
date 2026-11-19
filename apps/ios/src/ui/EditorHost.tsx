@@ -522,9 +522,7 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
       return (
         <TaskDetailSheet
           onClose={() => setSheet((current) => (current === shown ? NONE : current))}
-          onCompleted={(task) =>
-            setSheet((current) => (current === shown ? NONE : closeTaskDetail(task)(current)))
-          }
+          onCompleted={(task, action) => setSheet(closeTaskDetail(task, action, shown))}
           onEdit={(task) =>
             setSheet({
               backTo: { kind: 'task-detail', task },

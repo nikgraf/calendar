@@ -33,6 +33,7 @@ import { SqlError, UnknownError } from 'effect/sql/SqlError';
 import { describe } from 'vite-plus/test';
 import { SyncEngine } from './engine.ts';
 import { EventMutations } from './mutations.ts';
+import { commonBackendHandlers } from './backendHandlers.ts';
 
 const inertCalendarClient: GoogleCalendarClientShape = {
   deleteEvent: () => Effect.void,
@@ -560,6 +561,12 @@ describe('reminder mutations', () => {
       expect(moved?.priority).toBeUndefined();
       expect(moved?.dueTime).toBeUndefined();
       expect(rows.filter((task) => task.id === 'rem-timed').length).toBe(1);
+      const fromOldList = yield* commonBackendHandlers.getTask({
+        accountId: APPLE_REMINDERS_ACCOUNT_ID,
+        listId: 'list-a',
+        taskId: 'rem-timed',
+      }) as Effect.Effect<unknown, unknown, TaskRepo>;
+      expect(fromOldList).toMatchObject({ listId: 'list-b', title: 'Call mum' });
     }).pipe(Effect.provide(testLayer(fake)));
   });
 

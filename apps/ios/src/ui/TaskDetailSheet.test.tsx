@@ -89,5 +89,5 @@ it('completes the current reminder after its list changes while its detail is op
     taskId: 'reminder',
     taskListId: 'work',
   });
-  expect(onCompleted).toHaveBeenCalledWith(task);
+  expect(onCompleted).toHaveBeenCalledWith(task, 'complete');
 });

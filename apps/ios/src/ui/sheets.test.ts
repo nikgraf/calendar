@@ -255,10 +255,33 @@ describe('routeKey', () => {
 });
 
 describe('closeTaskDetail', () => {
-  it('closes only the task the action completed or deleted, also in its editor', () => {
-    expect(closeTaskDetail(task())(taskDetail(task({ title: 'New title' })))).toBe(NONE);
+  it('keeps a newer editor or reopened detail when completion answers late', () => {
+    const opened = taskDetail(task());
+    const editor: RouteSheet = {
+      kind: 'edit',
+      opening: 2,
+      seed: { initialDate: day },
+      task: task(),
+    };
+    const reopened = taskDetail(task());
+    expect(closeTaskDetail(task(), 'complete', opened)(editor)).toBe(editor);
+    expect(closeTaskDetail(task(), 'complete', opened)(reopened)).toBe(reopened);
+    expect(closeTaskDetail(task(), 'complete', opened)(opened)).toBe(NONE);
+  });
+
+  it('closes its own detail after id promotion and a reminder list move', () => {
+    const opened = taskDetail(task({ id: 'local-1', listId: 'old-list' }));
+    for (const action of ['complete', 'delete'] as const) {
+      expect(closeTaskDetail(task(), action, opened)(opened)).toBe(NONE);
+    }
+  });
+
+  it('closes only the task deleted, also in its editor', () => {
+    const opened = taskDetail(task());
+    const close = closeTaskDetail(task(), 'delete', opened);
+    expect(close(taskDetail(task({ title: 'New title' })))).toBe(NONE);
     expect(
-      closeTaskDetail(task())({
+      close({
         kind: 'edit',
         opening: 1,
         seed: { initialDate: day },
@@ -273,7 +296,7 @@ describe('closeTaskDetail', () => {
       detail(event()),
       birthday,
     ]) {
-      expect(closeTaskDetail(task())(other)).toBe(other);
+      expect(close(other)).toBe(other);
     }
   });
 });

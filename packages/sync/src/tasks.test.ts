@@ -526,6 +526,14 @@ describe('completeTask', () => {
         taskId: temp.id,
       }) as Effect.Effect<TaskRecord | null, unknown, TaskRepo>;
       expect(deleted).toBeNull();
+      // The detail has adopted the promoted row by now, so its next read
+      // uses the server id rather than the original temporary id.
+      const deletedPromoted = yield* commonBackendHandlers.getTask({
+        accountId: 'acc-1',
+        listId: 'list-1',
+        taskId: current!.id,
+      }) as Effect.Effect<TaskRecord | null, unknown, TaskRepo>;
+      expect(deletedPromoted).toBeNull();
     }).pipe(noYield, Effect.provide(testLayer(client)));
   });
 

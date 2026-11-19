@@ -134,10 +134,16 @@ export const cancelEditor =
     return current.backTo ?? NONE;
   };
 
-/** A finished task action closes only the same task, including an editor opened meanwhile. */
+/** Completion closes its own detail. Deletion also takes an editor on the removed task. */
 export const closeTaskDetail =
-  (task: TaskRecord) =>
+  (task: TaskRecord, action: 'complete' | 'delete', opened: TaskDetailSheet) =>
   (current: Sheet): Sheet => {
+    if (current === opened) {
+      return NONE;
+    }
+    if (action === 'complete') {
+      return current;
+    }
     const shown =
       current.kind === 'task-detail' || current.kind === 'edit' ? current.task : undefined;
     return shown !== undefined && calendarTaskKey(shown) === calendarTaskKey(task) ? NONE : current;
