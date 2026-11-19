@@ -214,7 +214,7 @@ type Watched = typeof window & {
 };
 
 describe('The editor’s Assistant and Form views', () => {
-  let app: App;
+  let app: App | undefined;
   beforeEach(async () => {
     // A failed attempt may already have saved an event or dated a task.
     // Give every test and retry its own seeded profile, at CI's width.
@@ -226,23 +226,27 @@ describe('The editor’s Assistant and Form views', () => {
     });
   }, 60_000);
   afterEach(async (context) => {
+    const attempt = app;
+    app = undefined;
     try {
       if (context.task.result?.state === 'fail') {
-        await app?.dump(context.task.name);
+        await attempt?.dump(
+          `${context.task.name}-retry-${String(context.task.result.retryCount ?? 0)}`,
+        );
       }
     } finally {
-      await app?.stop();
+      await attempt?.stop();
     }
   });
 
   /** The updates queued for one stored event. */
   const updatesOf = async (eventId: string) =>
-    (await readPendingOps(app.userDataDir)).filter(
+    (await readPendingOps(app!.userDataDir)).filter(
       (op) => op.kind === 'update' && op.eventId === eventId,
     );
 
   it('answers each phrase with the item as a card, marks what changed and asks what it must; steps back through it all, and saves the step kept with "Use this"', async () => {
-    const { cdp } = app;
+    const { cdp } = app!;
     await cdp.evaluate(commandN);
     await cdp.waitUntil(headingIs, 'New event');
     // A new item opens on the Assistant, its field ready; nothing to step through yet.
@@ -375,7 +379,7 @@ describe('The editor’s Assistant and Form views', () => {
     const tomorrow = today.add({ days: 1 });
     await expect
       .poll(async () => {
-        const lunch = (await readEvents(app.userDataDir)).find(
+        const lunch = (await readEvents(app!.userDataDir)).find(
           (event) => event.title === 'Lunch with Sarah',
         );
         return lunch
@@ -394,7 +398,7 @@ describe('The editor’s Assistant and Form views', () => {
   });
 
   it('raises the form out of the card and folds it back, the pane leaving out of reach until it ends', async () => {
-    const { cdp } = app;
+    const { cdp } = app!;
     // What each switch did, read as it starts: the form pane's first frame.
     const watch = () => {
       (window as Watched).__switches = [];
@@ -485,13 +489,13 @@ describe('The editor’s Assistant and Form views', () => {
       await cdp.waitUntil(settled);
       expect((await cdp.evaluate(switches))[0]?.start).toBe('translateY(0px)');
     } finally {
-      // Back to the machine's own setting for the specs after this one.
+      // Release the media override before this attempt's app is closed.
       await cdp.send('Emulation.setEmulatedMedia', { features: [] });
     }
   });
 
   it('says in the Assistant why a save did nothing; in the form the form says it', async () => {
-    const { cdp } = app;
+    const { cdp } = app!;
     await cdp.evaluate(commandN);
     await cdp.waitUntil(headingIs, 'New event');
     expect(await cdp.evaluate(view)).toBe('assistant');
@@ -516,7 +520,7 @@ describe('The editor’s Assistant and Form views', () => {
   });
 
   it('counts an edit by hand as a step, further typing in the same field as the same one', async () => {
-    const { cdp } = app;
+    const { cdp } = app!;
     await cdp.evaluate(commandN);
     await cdp.waitUntil(headingIs, 'New event');
     await cdp.say('Call | +1 | 10:00-10:30');
@@ -549,7 +553,7 @@ describe('The editor’s Assistant and Form views', () => {
   });
 
   it('changes a saved event by phrase and sends only what differs; back at "As saved", Save sends nothing', async () => {
-    const { cdp } = app;
+    const { cdp } = app!;
     await cdp.openEditor('[title^="Design review"]');
     // A saved item opens on its form, with the Assistant a tab away.
     expect(await cdp.evaluate(view)).toBe('form');
@@ -638,9 +642,9 @@ describe('The editor’s Assistant and Form views', () => {
   });
 
   it('gives a saved to-do without a due day the day the words say, and refuses a time its list cannot keep', async () => {
-    const { cdp } = app;
+    const { cdp } = app!;
     const dueDate = async () =>
-      (await readTasks(app.userDataDir)).find((task) => task.id === 'task-loose')?.dueDate;
+      (await readTasks(app!.userDataDir)).find((task) => task.id === 'task-loose')?.dueDate;
     const openLoose = async () => {
       await cdp.clickTaskChip('[data-testid="all-day-task-task-loose"]');
       await cdp.waitUntil(headingIs, 'Edit task');
@@ -701,7 +705,7 @@ describe('The editor’s Assistant and Form views', () => {
   });
 
   it('refuses in the conversation what a saved event cannot hold, and lands nothing', async () => {
-    const { cdp } = app;
+    const { cdp } = app!;
     // A single stored event cannot be given a rule by an update.
     await cdp.openEditor('[title^="Design review"]');
     await cdp.showEditorView('assistant');

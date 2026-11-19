@@ -1102,8 +1102,8 @@ Flakiness lessons (each caused a real CI failure — keep them enforced):
   `today` first.** The grid shows the focused draft's day and stays there
   once the editor closes, saved or not, so on a Sunday a draft on `+1`
   leaves it on next week, where nothing seeded for today is on show.
-  `assistantView.e2e.ts` clicks it before each test, since its tests
-  draft on `+1` and open today's seeds in turn.
+  This applies when tests share an app; Assistant view tests instead
+  start a fresh seeded app for every attempt.
 - **Teardown**: await the Electron process `exit` (with timeout) before
   deleting the temp profile, and `rmSync` with retries.
 - **Fire-and-forget UI mutations can silently drop**: poll for the effect
