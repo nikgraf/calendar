@@ -2053,8 +2053,18 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       if (op.kind !== 'move' && kinds.includes('move')) {
         return retry('waiting for the move ahead of it');
       }
-      if (op.kind !== 'move' && op.kind !== 'create' && kinds.includes('create')) {
-        return retry('waiting for the create ahead of it');
+      if (op.kind !== 'create') {
+        // Editing or splitting an unsent series folds its changes into
+        // the create, which is re-enqueued after its occurrence edits.
+        // Those edits still need the series to exist on Google first.
+        const series = yield* pendingOpRepo.listForEvent({
+          accountId: op.accountId,
+          calendarId: op.calendarId,
+          eventId: op.payload?.recurringEventId ?? op.eventId,
+        });
+        if (kinds.includes('create') || series.some((entry) => entry.kind === 'create')) {
+          return retry('waiting for the create ahead of it');
+        }
       }
       const split = yield* splitGate(op);
       if (split !== undefined) {
