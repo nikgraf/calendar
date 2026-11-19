@@ -449,6 +449,100 @@ describe('EventMutations recurring scopes', () => {
     }).pipe(Effect.provide(testLayer)),
   );
 
+  for (const allDay of [false, true]) {
+    for (const rule of [
+      'RRULE:FREQ=DAILY;INTERVAL=2;COUNT=5',
+      'RRULE:FREQ=WEEKLY;COUNT=5',
+      'RRULE:FREQ=DAILY;INTERVAL=2;UNTIL=20260720T090000Z',
+      'RRULE:FREQ=WEEKLY',
+    ]) {
+      it.effect(
+        `refuses an RDATE-only following split without writing (${allDay ? 'all-day' : 'timed'}, ${rule})`,
+        () =>
+          Effect.gen(function* () {
+            yield* seedMaster;
+            const events = yield* EventRepo;
+            const start = Date.parse(`2026-07-06T${allDay ? '00' : '09'}:00:00Z`);
+            const split = start + 86_400_000;
+            const record = new EventRecord({
+              ...master,
+              ...(allDay ? { endDate: '2026-07-07', startDate: '2026-07-06' } : {}),
+              endUtc: start + (allDay ? 86_400_000 : 3_600_000),
+              isAllDay: allDay,
+              recurrence: [
+                allDay ? rule.replace('20260720T090000Z', '20260720') : rule,
+                allDay ? 'RDATE;VALUE=DATE:20260707' : 'RDATE:20260707T090000Z',
+              ],
+              startUtc: start,
+            });
+            yield* events.upsertMany([record]);
+            const mutations = yield* EventMutations;
+            const error = yield* Effect.flip(
+              mutations.updateRecurring({
+                ...target,
+                changes: { title: 'Changed' },
+                originalStartUtc: split,
+                scope: 'following',
+              }),
+            );
+            expect(error._tag).toBe('RecurringSplitUnsupportedError');
+            expect(error.message).toContain('This event');
+            expect(yield* rowOf('master1')).toEqual(record);
+            expect(yield* listOps).toEqual([]);
+            const window = yield* events.getWindow(start - 1, Date.parse('2027-01-01T00:00:00Z'));
+            expect(window.masters).toEqual([record]);
+            expect(window.overrides).toEqual([]);
+            expect(window.singles).toEqual([]);
+          }).pipe(Effect.provide(testLayer)),
+      );
+    }
+  }
+
+  it.effect('refusing a different-wall-time split preserves queued edits and overrides', () =>
+    Effect.gen(function* () {
+      yield* seedMaster;
+      const events = yield* EventRepo;
+      yield* events.upsertMany([
+        new EventRecord({
+          ...master,
+          recurrence: ['RRULE:FREQ=DAILY;COUNT=10', 'RDATE:20260704T140000Z'],
+        }),
+      ]);
+      const mutations = yield* EventMutations;
+      yield* mutations.updateRecurring({
+        ...target,
+        changes: { title: 'Only here' },
+        scope: 'instance',
+      });
+      const before = yield* events.getWindow(0, plainDateToUtcMs('2030-01-01'));
+      const queued = yield* listOps;
+      expect(queued).toHaveLength(1);
+      for (const recurrence of [undefined, null, ['RRULE:FREQ=WEEKLY;COUNT=2']]) {
+        const error = yield* Effect.flip(
+          mutations.updateRecurring({
+            ...target,
+            changes: { recurrence, title: 'Changed' },
+            originalStartUtc: Date.parse('2026-07-04T14:00:00Z'),
+            scope: 'following',
+          }),
+        );
+        expect(error._tag).toBe('RecurringSplitUnsupportedError');
+        expect(yield* events.getWindow(0, plainDateToUtcMs('2030-01-01'))).toEqual(before);
+        expect(yield* listOps).toEqual(queued);
+      }
+      // The offered alternatives still work at that same extra occurrence.
+      for (const scope of ['instance', 'series'] as const) {
+        yield* mutations.updateRecurring({
+          ...target,
+          changes: { title: `Changed ${scope}` },
+          originalStartUtc: Date.parse('2026-07-04T14:00:00Z'),
+          scope,
+        });
+      }
+      expect((yield* rowOf('master1'))?.title).toBe('Changed series');
+    }).pipe(Effect.provide(testLayer), noYield),
+  );
+
   it.effect('following update on the last RDATE value creates a single event', () =>
     Effect.gen(function* () {
       yield* seedMaster;

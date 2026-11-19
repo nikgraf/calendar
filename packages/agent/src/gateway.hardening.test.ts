@@ -1,12 +1,21 @@
-import { APPLE_CALENDAR_ACCOUNT_ID, Attendee, EventRecord, plainDateToUtcMs } from '@calendar/core';
+import {
+  APPLE_CALENDAR_ACCOUNT_ID,
+  Attendee,
+  compactUtc,
+  EventRecord,
+  plainDateToUtcMs,
+} from '@calendar/core';
 import { EventRepo, PendingOpRepo } from '@calendar/db';
 import { expect, it } from '@effect/vitest';
 import { Effect, Fiber } from 'effect';
 import { TestClock } from 'effect/testing';
 import { describe } from 'vite-plus/test';
 import type { EventDto } from './dto.ts';
+import { toAgentError } from './errors.ts';
 import { callTool, decideRequest } from './gateway.ts';
 import { createAgent } from './manage.ts';
+import { planUpdateEvent } from './ops/events.ts';
+import { loadDirectory } from './resolve.ts';
 import { type AgentPolicy, EMPTY_POLICY } from './policy.ts';
 import { AgentRepo, AgentRequestRepo } from './store.ts';
 import { activity, failureOf, untilAsked, watchApprovals } from './testing/calls.ts';
@@ -301,6 +310,45 @@ const titlesAt = (events: ReadonlyArray<EventDto>, start: number) =>
   events.filter((event) => Date.parse(event.start ?? '') === start).map((event) => event.title);
 
 describe('recurring events', () => {
+  it('keeps a late split refusal actionable at the agent boundary', () => {
+    expect(toAgentError({ _tag: 'RecurringSplitUnsupportedError' })).toMatchObject({
+      _tag: 'InvalidInput',
+      message: expect.stringContaining('scope "instance" or "series"'),
+    });
+  });
+
+  it.effect('rejects an extra-date following edit before making a write or approval plan', () => {
+    const world = makeWorld();
+    return Effect.gen(function* () {
+      const record = new EventRecord({
+        ...(yield* master),
+        recurrence: ['RRULE:FREQ=WEEKLY;COUNT=4', `RDATE:${compactUtc(seriesStart + DAY)}`],
+      });
+      yield* (yield* EventRepo).upsertMany([record]);
+      for (const level of ['ask', 'write'] as const) {
+        const agent = writer({ calendars: [grantCalendar('work', level)] });
+        const directory = yield* loadDirectory(agent.policy);
+        const result = yield* Effect.result(
+          planUpdateEvent(agent.policy, directory, {
+            ref: refs.occurrence('work', 'weekly', seriesStart + DAY),
+            scope: 'following',
+            title: 'Changed',
+          }),
+        );
+        expect(result).toMatchObject({
+          _tag: 'Failure',
+          failure: {
+            _tag: 'InvalidInput',
+            message: expect.stringContaining('scope "instance" or "series"'),
+          },
+        });
+      }
+      expect(yield* master).toEqual(record);
+      expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+      expect(yield* activity).toEqual([]);
+    }).pipe(Effect.provide(world.layer));
+  });
+
   it.effect('a series-wide change made from a moved occurrence does not drag the series', () => {
     const world = makeWorld();
     return Effect.gen(function* () {

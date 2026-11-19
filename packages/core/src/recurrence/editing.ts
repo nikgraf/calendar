@@ -1,6 +1,11 @@
 import { plainDateToUtcMs } from '../time/convert.ts';
 import { Temporal } from '../time/temporal.ts';
-import { DTSTART_ONLY_RULE, type RecurrenceMaster, ruleOccurrencesBefore } from './expand.ts';
+import {
+  DTSTART_ONLY_RULE,
+  expandRecurringEvent,
+  type RecurrenceMaster,
+  ruleOccurrencesBefore,
+} from './expand.ts';
 
 /**
  * Helpers for editing recurring series the way Google Calendar does it:
@@ -163,7 +168,32 @@ const pruneForTruncation = (
   });
 
 /**
+ * A split can reanchor each RRULE only at an occurrence that rule generates.
+ * An extra date could change its interval, implicit weekday or wall time.
+ * Conservatively refuse such splits even when a particular BYDAY rule would
+ * survive; sets of only RDATE lines have no phase to lose. Check each rule
+ * alone, without the set's additions or exclusions.
+ */
+export const canSplitRecurrence = (
+  master: RecurrenceMaster,
+  splitOriginalStartUtc: number,
+): boolean =>
+  master.recurrence
+    .filter((line) => line.toUpperCase().startsWith('RRULE:'))
+    .every((line) =>
+      expandRecurringEvent(
+        { ...master, recurrence: [line] },
+        // Include the start even for a zero-duration event: membership
+        // does not depend on whether an event overlaps a visible window.
+        splitOriginalStartUtc - 1,
+        splitOriginalStartUtc + 1,
+      ).some((occurrence) => occurrence.originalStartUtc === splitOriginalStartUtc),
+    );
+
+/**
  * Recurrence lines for the new master created by a this-and-following split.
+ * Callers must first pass canSplitRecurrence before using these lines to
+ * reanchor the original schedule at a later DTSTART.
  * COUNT rules keep only the remaining occurrences: COUNT counts what the
  * rule generates before any exclusion (RFC 5545), so the consumed part is
  * the RRULE alone expanded up to the split — RDATE values add to it and

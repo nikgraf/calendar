@@ -158,6 +158,10 @@ const main = async (): Promise<number> => {
     return existsSync(path) ? readFileSync(path, 'utf8') : '';
   };
   const decision = decideRetry({
+    commandLog: (testCase) => {
+      const path = join(first.dir, debugFolderName(testCase), 'commands.json');
+      return existsSync(path) ? readFileSync(path, 'utf8') : '';
+    },
     flows,
     output: readFileSync(first.output, 'utf8'),
     report: existsSync(first.report) ? readFileSync(first.report, 'utf8') : undefined,

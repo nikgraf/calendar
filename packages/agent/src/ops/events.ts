@@ -1,5 +1,6 @@
 import {
   type AttendeeInput,
+  canSplitRecurrence,
   type EventDraft,
   type EventRecord,
   isAppleCalendarAccount,
@@ -10,6 +11,7 @@ import { EventMutations, type UpdateEventParams } from '@calendar/sync';
 import { Effect } from 'effect';
 import type { ToolInput } from '../contract.ts';
 import { otherGuests, toEventDto } from '../dto.ts';
+import { recurringSplitError } from '../errors.ts';
 import { type AgentPolicy, decideWrite } from '../policy.ts';
 import {
   invalid,
@@ -322,6 +324,27 @@ export const planUpdateEvent = (
         ? (resolved.slotBase ?? resolved.base)
         : resolved.base;
     const edit = yield* checkUpdate(input, ref, scope, base, directory.timeZone);
+    const series = resolved.series;
+    if (
+      ref.kind === 'occurrence' &&
+      scope === 'following' &&
+      !isAppleCalendarAccount({ id: ref.accountId }) &&
+      series?.recurrence &&
+      ref.originalStartUtc > series.startUtc
+    ) {
+      const source = {
+        ...series,
+        recurrence: series.recurrence,
+        startTimeZone: series.startTimeZone ?? 'UTC',
+      };
+      const canSplit = yield* Effect.try({
+        catch: recurringSplitError,
+        try: () => canSplitRecurrence(source, ref.originalStartUtc),
+      });
+      if (!canSplit) {
+        return yield* Effect.fail(recurringSplitError());
+      }
+    }
     const { attendees, times, title } = edit;
     const changes: UpdateEventParams['changes'] = {
       ...(attendees === undefined ? {} : { attendees }),

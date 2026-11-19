@@ -185,12 +185,18 @@ was cut (pruned 2026-11-17).
   driver dies mid-run, Maestro fails every later flow in that invocation as
   unreachable; `run-flows.ts` runs exactly those flows once more on an
   erased simulator (a cut-short flow leaves state in the app and in
-  EventKit). Only `DeviceUnreachableException` with the latch in the run
-  log qualifies; a flow failing on its own blocks the retry, so an app race
+  EventKit). A proven driver loss with the latch in the run log
+  qualifies; a flow failing on its own blocks the retry, so an app race
   still turns the job red. Rejected: a blanket rerun like desktop's
   per-spec retry, and Maestro's `retry` command (it retries assertions and
   cannot outlive the latch). Simulator prep turns keyboard predictions off
   and boots out apsd's log flood. Open: whether the keyboard hang gets rarer.
+- **A launch whose JUnit error lost its type** (2026-11-19, #365) —
+  extend #205's proof to the captured command evidence when JUnit reports
+  `Unknown error` for an initial launch. Keep the one retry on an erased
+  simulator. Rejected: retrying every unknown error or changing the app
+  for a driver failure before the flow's app commands. Conflicting or
+  missing evidence still fails; later unknown failures remain unsupported.
 - **Maestro driver that never starts** (2026-10-22) — four shard-1 runs
   failed before any flow: Maestro gave up on its XCTest runner while
   opening the session and wrote no report, so #205's retry never applied.
@@ -416,6 +422,14 @@ was cut (pruned 2026-11-17).
   (Google draws it even on a day the rule skips, outside COUNT — probed
   live). Long COUNT series were measured and left alone; revisit only if
   a profile shows expansion in a window read.
+- **Off-rule following edits** (2026-11-19, #365; found reviewing #359) —
+  refuse “This and following” from an extra date outside any RRULE,
+  even when the edit replaces or clears Repeat; suggest “This event” or
+  “All events”. Regular rule occurrences and sets of only explicit dates
+  still split. Chose the backlog's refusal option over reanchoring a rule
+  and silently changing its phase, or enumerating a bounded future into
+  explicit dates. Even safe BYDAY extras are refused conservatively;
+  preserving arbitrary recurrence phase at an off-rule start stays open.
 - **A master edit reaches the exceptions** (2026-09-26, review of
   #88/#90) — Google copies a master's _changed_ title, description or
   location onto every exception, so the app mirrors that at save as a

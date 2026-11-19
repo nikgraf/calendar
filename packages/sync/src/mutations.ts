@@ -8,6 +8,7 @@ import {
   applyWallClockDelta,
   Attendee,
   canonicalReminders,
+  canSplitRecurrence,
   type ConvertEventToTaskParams,
   type ConvertTaskToEventParams,
   type CopySource,
@@ -72,6 +73,7 @@ import {
   RecurringAllDayMoveError,
   RecurringAllDaySwitchError,
   RecurringEditUnsupportedError,
+  RecurringSplitUnsupportedError,
   retryDelayMs,
   TaskNotFoundError,
   UnsupportedForProviderError,
@@ -1348,19 +1350,24 @@ const make: Effect.Effect<
     Effect.gen(function* () {
       // this-and-following: truncate the old series before the occurrence
       // and start a new master at the (possibly re-timed) occurrence.
-      const newRecurrence = remainingRecurrence(
-        {
-          endDate: master.endDate,
-          endUtc: master.endUtc,
-          id: master.id,
-          isAllDay: master.isAllDay,
-          recurrence,
-          startDate: master.startDate,
-          startTimeZone: master.startTimeZone ?? 'UTC',
-          startUtc: master.startUtc,
-        },
-        originalStartUtc,
-      );
+      const source = {
+        endDate: master.endDate,
+        endUtc: master.endUtc,
+        id: master.id,
+        isAllDay: master.isAllDay,
+        recurrence,
+        startDate: master.startDate,
+        startTimeZone: master.startTimeZone ?? 'UTC',
+        startUtc: master.startUtc,
+      };
+      const canSplit = yield* Effect.try({
+        catch: () => new RecurringSplitUnsupportedError({ eventId: masterId }),
+        try: () => canSplitRecurrence(source, originalStartUtc),
+      });
+      if (!canSplit) {
+        return yield* Effect.fail(new RecurringSplitUnsupportedError({ eventId: masterId }));
+      }
+      const newRecurrence = remainingRecurrence(source, originalStartUtc);
       const truncated = new EventRecord({
         ...master,
         recurrence: truncateRecurrence(

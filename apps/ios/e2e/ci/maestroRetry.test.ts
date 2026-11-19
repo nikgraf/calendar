@@ -100,6 +100,19 @@ const LATCHED_LOG =
   '21:26:01.540 [ERROR] xcuitest.XCTestDriverClient.transportCall: Transport unreachable while processing inputText, latching\n' +
   '21:26:01.719 [ERROR] device.IOSDevice.runDeviceCall: Device unreachable while processing inputText command\n';
 
+const unknownLaunch = (commandLog: string, failure = 'Unknown error', runLog = LATCHED_LOG) =>
+  decideRetry({
+    commandLog: () => commandLog,
+    flows: FLOWS,
+    output: '',
+    report: report(
+      testCase(FLOWS[0] ?? '', 'ERROR', failure),
+      testCase(FLOWS[1] ?? '', 'SUCCESS'),
+      testCase(FLOWS[2] ?? '', 'SUCCESS'),
+    ),
+    runLog,
+  });
+
 describe('parseJUnit', () => {
   it('reads each flow with its status and unescaped failure text', () => {
     const cases = parseJUnit(
@@ -121,6 +134,29 @@ describe('parseJUnit', () => {
 });
 
 describe('decideRetry', () => {
+  it('retries a launch whose JUnit error lost the driver failure preserved in command metadata', () => {
+    // Run 44530502462, shard 1: JUnit said Unknown error for the first
+    // flow; commands.json kept the failed launch's transport error. The
+    // fixture retains command kinds, statuses and errors from that file.
+    expect(
+      decideRetry({
+        commandLog: (flow) =>
+          flow.file === FLOWS[0] ? fixture('launch-driver-died.commands.json') : '',
+        flows: FLOWS,
+        output: '',
+        report: report(
+          testCase(FLOWS[0] ?? '', 'ERROR', 'Unknown error'),
+          testCase(FLOWS[1] ?? '', 'ERROR', UNREACHABLE),
+          testCase(FLOWS[2] ?? '', 'ERROR', UNREACHABLE),
+        ),
+        runLog: LATCHED_LOG,
+      }),
+    ).toEqual({
+      flows: FLOWS.map((file) => ({ cause: 'died', file })),
+      kind: 'retry',
+    });
+  });
+
   it("retries what Maestro's own report says a dead driver took down", () => {
     expect(
       decideRetry({
@@ -319,6 +355,72 @@ describe('decideRetry', () => {
       kind: 'fail',
       reason: `no driver failure in the run log, no black screen and no dropped touch: ${FLOWS[1]}`,
     });
+  });
+});
+
+describe('decideRetry with an unknown JUnit launch error', () => {
+  const evidence = fixture('launch-driver-died.commands.json');
+  const entries = JSON.parse(evidence) as Array<unknown>;
+
+  it('requires complete, readable command evidence with the exact transport error', () => {
+    for (const commandLog of [
+      '',
+      'not json',
+      'null',
+      '{}',
+      '[]',
+      '[null]',
+      '[{"command":null,"metadata":{}}]',
+      evidence.replace('"launchAppCommand": {}', '"launchAppCommand": null'),
+      evidence.replaceAll('terminateApp', 'inputText'),
+      evidence.replaceAll('FAILED', 'CANCELED'),
+      evidence.replace('launchAppCommand', 'runFlowCommand'),
+    ]) {
+      expect(unknownLaunch(commandLog).kind).toBe('fail');
+    }
+    expect(unknownLaunch(evidence, 'Unknown error', '').kind).toBe('fail');
+  });
+
+  it('does not replace an actual assertion failure with a retry', () => {
+    for (const failure of [
+      'Assertion is false: "Today" is visible',
+      'Element not found: Id matching regex: event-save',
+    ]) {
+      expect(unknownLaunch(evidence, failure).kind).toBe('fail');
+    }
+    const failedAssertion = {
+      command: { assertConditionCommand: {} },
+      metadata: { error: { message: 'Assertion is false' }, status: 'FAILED' },
+    };
+    expect(unknownLaunch(JSON.stringify([...entries, failedAssertion])).kind).toBe('fail');
+  });
+
+  it('requires the loss before any app command ran', () => {
+    for (const command of [
+      { tapOnElement: {} },
+      { launchAppCommand: {} },
+      { inputTextCommand: {} },
+    ]) {
+      expect(
+        unknownLaunch(JSON.stringify([{ command, metadata: { status: 'COMPLETED' } }, ...entries]))
+          .kind,
+      ).toBe('fail');
+    }
+  });
+
+  it('never borrows launch evidence from another flow with a colliding debug folder', () => {
+    expect(
+      decideRetry({
+        commandLog: () => evidence,
+        flows: FLOWS.slice(0, 2),
+        output: '',
+        report: report(
+          `<testcase name="Launch/Settings" file="${FLOWS[0]}" status="ERROR"><failure>Unknown error</failure></testcase>`,
+          `<testcase name="launch_settings" file="${FLOWS[1]}" status="ERROR"><failure>Unknown error</failure></testcase>`,
+        ),
+        runLog: LATCHED_LOG,
+      }).kind,
+    ).toBe('fail');
   });
 });
 

@@ -1301,7 +1301,14 @@ Electron binary (`electron --version`) and run spec files sequentially.
   died on and whether XCTest found the app's main thread busy. A flow that
   failed on its own (an assertion, an element not found, anything but
   `DeviceUnreachableException`) fails the job without a retry, even beside
-  a dead driver, and so does a second death. A driver that never starts
+  a dead driver, and so does a second death. One narrow exception: Maestro
+  2.12 can report a launch's transport loss as `Unknown error` in JUnit
+  (run 44530502462). Its own `commands.json` must show the failed launch
+  and any failed subflow wrappers all naming `Device became unreachable
+  while processing terminateApp`, with only configuration/variable setup
+  completed before it. Any other app command, failure, missing evidence
+  or colliding debug folder blocks that recovery. The same one retry on
+  an erased simulator applies. A driver that never starts
   gets the same single retry for every flow of the invocation: Maestro
   gives up on its runner while opening the session, before any flow, and
   writes no report (runs 39144942743: XCTest timed out waiting for
