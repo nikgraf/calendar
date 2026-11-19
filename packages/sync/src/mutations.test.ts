@@ -259,6 +259,46 @@ const attempt = (status: number) =>
   );
 
 describe('EventMutations', () => {
+  it.effect('keeps occurrence edits behind a re-enqueued unsent series create', () => {
+    const patched: Array<string> = [];
+    const client = stubClient({
+      insertEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
+      patchEvent: ({ eventId }) => {
+        patched.push(eventId);
+        return Effect.fail(new ApiUnavailableError({ cause: 'offline' }));
+      },
+    });
+    return Effect.gen(function* () {
+      yield* seedCalendar;
+      const mutations = yield* EventMutations;
+      const created = yield* mutations.createEvent({
+        ...draft,
+        recurrence: ['RRULE:FREQ=DAILY;COUNT=5'],
+      });
+      const at = { accountId: 'acc-1', calendarId: 'cal-1', masterId: created.id };
+      yield* mutations.updateRecurring({
+        ...at,
+        changes: { title: 'Pilates' },
+        originalStartUtc: Date.parse('2026-07-04T10:00:00Z'),
+        scope: 'instance',
+      });
+      yield* mutations.updateRecurring({
+        ...at,
+        changes: { title: 'Run' },
+        originalStartUtc: Date.parse('2026-07-05T10:00:00Z'),
+        scope: 'following',
+      });
+      const queued = yield* (yield* PendingOpRepo).listAll();
+      const updateIndex = queued.findIndex((op) => op.kind === 'update');
+      expect(updateIndex).toBeGreaterThanOrEqual(0);
+      expect(updateIndex).toBeLessThan(
+        queued.findIndex((op) => op.kind === 'create' && op.eventId === created.id),
+      );
+      yield* mutations.processPendingOps();
+      expect(patched).toEqual([]);
+    }).pipe(noYield, Effect.provide(mutationsLayer(client)));
+  });
+
   it.effect('createEvent writes optimistically and syncs through the queue', () => {
     const inserted: Array<string> = [];
     const client = stubClient({

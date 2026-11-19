@@ -1,6 +1,6 @@
 # Effect v4 notes
 
-Every `effect*` package is pinned exactly to **4.1.0** through the pnpm
+Every `effect*` package is pinned exactly to **4.1.4** through the pnpm
 catalog, and Dependabot ignores them: the modules this app leans on
 hardest (rpc, sql, http, reactivity) are still tagged `@stability
 unstable` and may break in a minor release, so every bump is a deliberate,

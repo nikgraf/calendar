@@ -102,8 +102,10 @@ const isoDate = (epochMs: number): string => new Date(epochMs).toISOString().sli
 /**
  * An edit of an event Google has not seen yet rides in its unsent create
  * (`unsentCreateOf`): patching it would 404, and the NotFound arm would
- * delete the local row. The create keeps its place in the queue, so the
- * occurrence edits queued after it still wait for it (applyOp).
+ * delete the local row. The create keeps its createdAt, but re-enqueuing
+ * gives it a new rowid, behind occurrence edits sharing that timestamp
+ * (a move gives the whole series one timestamp). They still wait for
+ * the create regardless of its queue position (applyOp).
  */
 const foldIntoCreate = (create: PendingOp, payload: EventRecord) =>
   new PendingOp({
