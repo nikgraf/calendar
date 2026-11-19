@@ -157,6 +157,12 @@ in the `ios-simulator` skill (`.agents/skills/ios-simulator/SKILL.md`).
 
 ## Expo, Metro and the dev client
 
+- **`expo-sharing` 58.0.23 clears shared files with the inbox.**
+  `clearSharedPayloads()` removes the app group's share cache, so capture
+  must finish copying its image into the app's own cache before clearing.
+  `incomingShare.ts` uses `copySync`, keeps a unique copy per capture, and
+  deletes that copy when capture settles; a copy failure keeps the inbox
+  for retry and reports a toast.
 - **A cold start waited up to 3 s for an update.** With
   `updates.fallbackToCacheTimeout` above 0, expo-updates keeps the launch
   screen up until it has asked EAS for a newer update and downloaded it,

@@ -1,13 +1,39 @@
-import { describe, expect, it, vi } from 'vite-plus/test';
+import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
-const deleted: Array<string> = [];
+const disk = vi.hoisted(() => ({
+  copyFails: false,
+  deleted: [] as Array<string>,
+  files: new Map<string, string>(),
+  notices: [] as Array<{ action: string; detail: string }>,
+}));
+vi.mock('@calendar/app-state', () => ({
+  publishMutationNotice: (notice: { action: string; detail: string }) => disk.notices.push(notice),
+}));
 vi.mock('expo-file-system', () => ({
   File: class {
-    constructor(private readonly uri: string) {}
+    readonly uri: string;
+    constructor(...parts: Array<string>) {
+      this.uri = parts.join('/');
+    }
+    get extension() {
+      return /\.[^./]+$/.exec(this.uri)?.[0] ?? '';
+    }
+    copySync(destination: { uri: string }) {
+      const contents = disk.files.get(this.uri);
+      if (contents === undefined) {
+        throw new Error('The shared image no longer exists.');
+      }
+      disk.files.set(destination.uri, contents);
+      if (disk.copyFails) {
+        throw new Error('Not enough storage.');
+      }
+    }
     delete() {
-      deleted.push(this.uri);
+      disk.deleted.push(this.uri);
+      disk.files.delete(this.uri);
     }
   },
+  Paths: { cache: 'file:///cache' },
 }));
 
 // A binary built before expo-sharing was a dependency: the package throws
@@ -19,9 +45,21 @@ vi.mock('expo-sharing', () => {
 /** The native store as the share extension leaves it. */
 const storeWith = (payloads: Array<SharePayload>): SharingModule => {
   let stored = payloads;
+  for (const payload of payloads) {
+    if (payload.shareType !== 'text' && payload.shareType !== 'url') {
+      disk.files.set(payload.value, `contents of ${payload.value}`);
+    }
+  }
   return {
     clearSharedPayloads: () => {
       stored = [];
+      // expo-sharing 58.0.23 clears the entire app-group share cache,
+      // including files whose capture may still be running.
+      for (const uri of disk.files.keys()) {
+        if (uri.startsWith('file:///g/')) {
+          disk.files.delete(uri);
+        }
+      }
     },
     getSharedPayloads: () => stored,
   };
@@ -31,6 +69,13 @@ const { fixtureShareFromUrl, settingsCodeOf, sourceFromPayloads, takeIncomingSha
   await import('./incomingShare.ts');
 type SharePayload = import('./incomingShare.ts').SharePayload;
 type SharingModule = import('./incomingShare.ts').SharingModule;
+
+beforeEach(() => {
+  disk.copyFails = false;
+  disk.deleted.length = 0;
+  disk.files.clear();
+  disk.notices.length = 0;
+});
 
 describe('sourceFromPayloads', () => {
   it('prefers the image and ignores a text part beside it', () => {
@@ -62,28 +107,96 @@ describe('takeIncomingShare', () => {
     expect(takeIncomingShare()).toBeUndefined();
   });
 
-  it('takes the payload once and deletes the copied file only on discard', () => {
+  it('keeps the image readable after clearing the inbox and deletes its copy on discard', () => {
     const store = storeWith([
       { mimeType: 'image/png', shareType: 'image', value: 'file:///g/IMG.png' },
     ]);
-    deleted.length = 0;
     const share = takeIncomingShare(store);
+    const uri =
+      share?.source.kind === 'image' && share.source.image.kind === 'uri'
+        ? share.source.image.uri
+        : '';
     expect(share?.source).toEqual({
-      image: { kind: 'uri', uri: 'file:///g/IMG.png' },
+      image: { kind: 'uri', uri },
       kind: 'image',
     });
     expect(takeIncomingShare(store)).toBeUndefined();
-    expect(deleted).toEqual([]);
+    expect(disk.files.has('file:///g/IMG.png')).toBe(false);
+    expect(disk.files.get(uri)).toBe('contents of file:///g/IMG.png');
+    expect(uri).toMatch(/^file:\/\/\/cache\/incoming-share-.+\.png$/);
     share?.discard();
-    expect(deleted).toEqual(['file:///g/IMG.png']);
+    expect(disk.files.has(uri)).toBe(false);
+    expect(() => share?.discard()).not.toThrow();
   });
 
   it('discards a file it cannot use right away', () => {
-    deleted.length = 0;
     expect(
       takeIncomingShare(storeWith([{ shareType: 'video', value: 'file:///g/clip.mov' }])),
     ).toBeUndefined();
-    expect(deleted).toEqual(['file:///g/clip.mov']);
+    expect(disk.files.size).toBe(0);
+  });
+
+  it('keeps overlapping captures independent when another inbox is cleared', () => {
+    const first = takeIncomingShare(
+      storeWith([{ shareType: 'image', value: 'file:///g/IMG.png' }]),
+    );
+    const second = takeIncomingShare(
+      storeWith([{ shareType: 'image', value: 'file:///g/IMG.png' }]),
+    );
+    const uriOf = (share: typeof first) =>
+      share?.source.kind === 'image' && share.source.image.kind === 'uri'
+        ? share.source.image.uri
+        : '';
+    const firstUri = uriOf(first);
+    const secondUri = uriOf(second);
+    expect(firstUri).not.toBe(secondUri);
+    expect(disk.files.has(firstUri)).toBe(true);
+    expect(disk.files.has(secondUri)).toBe(true);
+    first?.discard();
+    expect(disk.files.has(firstUri)).toBe(false);
+    expect(disk.files.has(secondUri)).toBe(true);
+    second?.discard();
+    expect(disk.files.size).toBe(0);
+  });
+
+  it('cleans up a partial copy and keeps the inbox for retry when copying fails', () => {
+    const store = storeWith([{ shareType: 'image', value: 'file:///g/IMG.png' }]);
+    disk.copyFails = true;
+    expect(takeIncomingShare(store)).toBeUndefined();
+    expect(store.getSharedPayloads()).toHaveLength(1);
+    expect([...disk.files.keys()]).toEqual(['file:///g/IMG.png']);
+    expect(disk.notices).toEqual([
+      { action: 'read the shared content', detail: 'Try sharing it again.' },
+    ]);
+    disk.copyFails = false;
+    const share = takeIncomingShare(store);
+    expect(share?.source.kind).toBe('image');
+    share?.discard();
+    expect(disk.files.size).toBe(0);
+  });
+
+  it('cleans up the retained copy if clearing the native inbox fails', () => {
+    const store = storeWith([{ shareType: 'image', value: 'file:///g/IMG.png' }]);
+    expect(
+      takeIncomingShare({
+        ...store,
+        clearSharedPayloads: () => {
+          throw new Error('Native failure');
+        },
+      }),
+    ).toBeUndefined();
+    expect([...disk.files.keys()]).toEqual(['file:///g/IMG.png']);
+    expect(store.getSharedPayloads()).toHaveLength(1);
+    expect(disk.notices).toHaveLength(1);
+  });
+
+  it('takes shared text without copying any file', () => {
+    const store = storeWith([{ shareType: 'text', value: 'Lunch tomorrow' }]);
+    const share = takeIncomingShare(store);
+    expect(share?.source).toEqual({ kind: 'text', text: 'Lunch tomorrow' });
+    expect(takeIncomingShare(store)).toBeUndefined();
+    share?.discard();
+    expect(disk.deleted).toEqual([]);
   });
 });
 
