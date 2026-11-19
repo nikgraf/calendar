@@ -56,6 +56,7 @@ export * from './recurrence/byDay.ts';
 export * from './recurrence/editing.ts';
 export * from './recurrence/expand.ts';
 export * from './recurrence/label.ts';
+export * from './recurrence/nearest.ts';
 export * from './recurrence/structured.ts';
 export * from './recurrence/taskRecurrence.ts';
 export * from './recurrence/window.ts';

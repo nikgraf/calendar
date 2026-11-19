@@ -12,7 +12,7 @@ import type { EventRecord } from '../types.ts';
  * exclusive, per Google); timed events use the local day window.
  */
 export const isEventOnDay = (
-  event: EventRecord,
+  event: Pick<EventRecord, 'endDate' | 'endUtc' | 'isAllDay' | 'startDate' | 'startUtc'>,
   date: Temporal.PlainDate,
   timeZone: string,
 ): boolean => {

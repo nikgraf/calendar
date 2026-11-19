@@ -19,6 +19,7 @@ import {
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { draftCalendarKey, draftListKey, planAddAll } from './addAll.ts';
 import { useDraftFocusRequest, useRevealDraftDay, useSetDraftPreviews } from './draftAtoms.ts';
+import { type CreatedItem, useRevealCreatedItem } from './createdItem.ts';
 import {
   candidatePreviews,
   type DraftPreview,
@@ -371,6 +372,7 @@ export const useThreadEditor = ({
   const threadRef = useRef(thread.state);
   threadRef.current = thread.state;
   const reveal = useRevealDraftDay();
+  const revealCreated = useRevealCreatedItem();
   const setPreviews = useSetDraftPreviews();
   const focusRequest = useDraftFocusRequest();
 
@@ -380,7 +382,10 @@ export const useThreadEditor = ({
   // removed is the one that was written.
   const keepOpen = useRef(false);
   const closingAll = useRef(false);
-  const saved = () => {
+  const saved = (created?: CreatedItem) => {
+    if (created) {
+      revealCreated(created);
+    }
     onSaved?.();
     const current = threadRef.current;
     if (current.drafts.length > 1 && !closingAll.current) {

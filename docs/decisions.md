@@ -629,6 +629,15 @@ was cut (pruned 2026-11-17).
 
 ## Calendar: editing, gestures, views
 
+- **Show what was just created** (2026-11-19, #363) — both apps reveal
+  a new event's date or a to-do's due day; repeats use the occurrence
+  nearest the current view, preferring one already drawn and later on a
+  tie. Keep the current window when any part of an item is visible,
+  including a month grid's outer rows. Undated to-dos leave the view
+  alone. Rejected: relying on Assistant previews (manual form edits do not
+  reveal their date),
+  or always jumping to a series' first occurrence or to today. Editing
+  and conversion navigation stay as they are.
 - **Read-first iOS details and consistent sheet actions** (2026-11-19,
   #362) — tasks and reminders open details before Edit, like events;
   Cancel returns to those details, while Save closes the sheet. Custom

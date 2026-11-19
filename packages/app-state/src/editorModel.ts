@@ -61,6 +61,7 @@ import {
 import { useAccounts, useBackendMutations, useEventMaster, useLocationGeo } from './hooks.ts';
 import { useOneWrite } from './oneWrite.ts';
 import { useRepeatState } from './repeatState.ts';
+import type { CreatedItem } from './createdItem.ts';
 
 /**
  * Fields a parsed phrase can prefill. Structural on purpose so app-state
@@ -476,7 +477,7 @@ export const useEventEditorModel = ({
    * caller can tell a saved editor from a dismissed one (capture marks its
    * row as added). Not called for a delete.
    */
-  onSaved?: (() => void) | undefined;
+  onSaved?: ((created?: CreatedItem) => void) | undefined;
   seed: EventEditorSeed;
   timeZone: string;
 }) => {
@@ -1101,6 +1102,7 @@ export const useEventEditorModel = ({
       string,
     ];
     const built = buildEventTimes(fields, timeZone);
+    let created: CreatedItem | undefined;
     try {
       const move = calendarMove(accountId, calendarId);
       if (move) {
@@ -1159,6 +1161,7 @@ export const useEventEditorModel = ({
           });
         } else {
           await mutations.createEvent(draft);
+          created = { event: draft, kind: 'event' };
         }
         rememberCalendar(calendarKey);
       }
@@ -1166,7 +1169,7 @@ export const useEventEditorModel = ({
         // Update, then move: the move carries the saved fields along.
         await mutations.moveEvent(move);
       }
-      onSaved?.();
+      onSaved?.(created);
       onClose();
     } catch (error) {
       setError(String(error));

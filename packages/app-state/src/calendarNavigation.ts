@@ -11,6 +11,7 @@ import {
   weekStart,
 } from '@calendar/core';
 import { useCallback, useMemo, useState } from 'react';
+import { createdItemDay, useOnCreatedItem } from './createdItem.ts';
 
 export type { CalendarViewKind } from '@calendar/core';
 
@@ -198,6 +199,24 @@ export const useCalendarNavigation = ({
     setWeekWindowStart(null);
     setSlide(NO_SLIDE);
   }, []);
+
+  useOnCreatedItem((item) => {
+    // Use drawn days, excluding fetched neighbours and a slide's extra
+    // days. Month grids include their outer rows; rolled weeks start at
+    // windowStart, not focused's Monday.
+    const first = view === 'month' ? weekStart(focused.with({ day: 1 })) : windowStart;
+    const last =
+      view === 'month'
+        ? weekStart(focused.with({ day: focused.daysInMonth })).add({ days: 6 })
+        : first.add({ days: dayCount - 1 });
+    const day = createdItemDay(item, first, last, timeZone);
+    if (
+      day &&
+      (Temporal.PlainDate.compare(day, first) < 0 || Temporal.PlainDate.compare(day, last) > 0)
+    ) {
+      goToDay(day);
+    }
+  });
 
   /**
    * A day picked to lead the strip (the desktop's mini month): it becomes
