@@ -185,12 +185,18 @@ was cut (pruned 2026-11-17).
   driver dies mid-run, Maestro fails every later flow in that invocation as
   unreachable; `run-flows.ts` runs exactly those flows once more on an
   erased simulator (a cut-short flow leaves state in the app and in
-  EventKit). Only `DeviceUnreachableException` with the latch in the run
-  log qualifies; a flow failing on its own blocks the retry, so an app race
+  EventKit). A proven driver loss with the latch in the run log
+  qualifies; a flow failing on its own blocks the retry, so an app race
   still turns the job red. Rejected: a blanket rerun like desktop's
   per-spec retry, and Maestro's `retry` command (it retries assertions and
   cannot outlive the latch). Simulator prep turns keyboard predictions off
   and boots out apsd's log flood. Open: whether the keyboard hang gets rarer.
+- **A launch whose JUnit error lost its type** (2026-11-19, #365) —
+  extend #205's proof to the captured command evidence when JUnit reports
+  `Unknown error` for an initial launch. Keep the one retry on an erased
+  simulator. Rejected: retrying every unknown error or changing the app
+  for a driver failure before the flow's app commands. Conflicting or
+  missing evidence still fails; later unknown failures remain unsupported.
 - **Maestro driver that never starts** (2026-10-22) — four shard-1 runs
   failed before any flow: Maestro gave up on its XCTest runner while
   opening the session and wrote no report, so #205's retry never applied.

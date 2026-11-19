@@ -1,0 +1,48 @@
+[
+  {
+    "command": {
+      "defineVariablesCommand": {}
+    },
+    "metadata": {
+      "status": "COMPLETED"
+    }
+  },
+  {
+    "command": {
+      "applyConfigurationCommand": {}
+    },
+    "metadata": {
+      "status": "COMPLETED"
+    }
+  },
+  {
+    "command": {
+      "runFlowCommand": {}
+    },
+    "metadata": {
+      "status": "FAILED",
+      "error": {
+        "message": "Device became unreachable while processing terminateApp"
+      }
+    }
+  },
+  {
+    "command": {
+      "applyConfigurationCommand": {}
+    },
+    "metadata": {
+      "status": "COMPLETED"
+    }
+  },
+  {
+    "command": {
+      "launchAppCommand": {}
+    },
+    "metadata": {
+      "status": "FAILED",
+      "error": {
+        "message": "Device became unreachable while processing terminateApp"
+      }
+    }
+  }
+]

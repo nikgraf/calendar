@@ -6,7 +6,9 @@
  *   UIKit's keyboard queue starved its snapshot for 90 s on run
  *   38466668240). Maestro then latches the device as unreachable, and every
  *   later flow in that invocation fails within seconds. Those flows never
- *   ran, so a fresh invocation runs them once.
+ *   ran, so a fresh invocation runs them once. A launch may appear as
+ *   Unknown error in JUnit; only its command metadata proving the exact
+ *   transport loss before any app command can recover that missing type.
  * - The driver never started: Maestro gave up waiting for the runner while
  *   opening its session, before any flow, and wrote no report (runs
  *   39144942743 and 39668426261: the runner came up after Maestro's wait,
@@ -30,8 +32,8 @@
  *   That flow runs once more.
  *
  * A failure the app caused (an assertion on a drawn screen, an element not
- * found, anything unknown) is never retried: it fails the job as before, so
- * a retry cannot hide an app race.
+ * found, an unknown error without that launch evidence) is never retried:
+ * it fails the job as before, so a retry cannot hide an app race.
  *
  * Free of workspace imports on purpose: Node 24 runs `run-flows.ts` (and
  * this file with it) as-is, by type stripping.
@@ -317,16 +319,73 @@ export const droppedLastTouch = (simulatorLog: string): boolean => {
 const passed = (testCase: JUnitCase): boolean =>
   PASSED.has(testCase.status) && testCase.failure === undefined;
 
+const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/**
+ * Maestro 2.12 can write Unknown error to JUnit for a launch whose command
+ * metadata still identifies the lost transport (run 44530502462). Accept
+ * only a failed launch and its failed subflow wrappers, before any app
+ * command ran; configuration and variable setup are harmless. Every
+ * failed entry must name that same transport failure. Missing, malformed
+ * or contradictory command evidence stays an ordinary failure.
+ */
+const lostAtLaunch = (commandLog: string): boolean => {
+  try {
+    const entries: unknown = JSON.parse(commandLog);
+    if (!Array.isArray(entries)) {
+      return false;
+    }
+    let launchFailed = false;
+    for (const entry of entries) {
+      if (!isRecord(entry) || !isRecord(entry.command) || !isRecord(entry.metadata)) {
+        return false;
+      }
+      const kinds = Object.keys(entry.command);
+      if (kinds.length !== 1) {
+        return false;
+      }
+      const [kind] = kinds;
+      if (kind === undefined || !isRecord(entry.command[kind])) {
+        return false;
+      }
+      const { error, status } = entry.metadata;
+      if (
+        status === 'COMPLETED' &&
+        (kind === 'applyConfigurationCommand' || kind === 'defineVariablesCommand')
+      ) {
+        continue;
+      }
+      if (
+        status !== 'FAILED' ||
+        !isRecord(error) ||
+        error.message !== 'Device became unreachable while processing terminateApp'
+      ) {
+        return false;
+      }
+      if (kind === 'launchAppCommand') {
+        launchFailed = true;
+      } else if (kind !== 'runFlowCommand') {
+        return false;
+      }
+    }
+    return launchFailed;
+  } catch {
+    return false;
+  }
+};
+
 /**
  * What to do after a failed run of `flows`. Fails closed: the run retries
  * only when the driver never started (no report, and the output shows the
  * session never opened), or when the report accounts for every flow and
  * every failed flow was lost to a dead driver (its death in the run log, its
- * exception in the flow's failure), to a black screen (every screenshot
- * of the flow black) or to a dropped touch (its last one, in the flow's
- * simulator log).
+ * exception in the flow's failure or its initial launch metadata), to a
+ * black screen (every screenshot of the flow black) or to a dropped touch
+ * (its last one, in the flow's simulator log).
  */
 export const decideRetry = ({
+  commandLog = () => '',
   flows,
   output,
   report,
@@ -334,6 +393,8 @@ export const decideRetry = ({
   screenshots = () => [],
   simulatorLog = () => '',
 }: {
+  /** The flow's commands.json; empty when it was not saved. */
+  readonly commandLog?: (testCase: JUnitCase) => string;
   readonly flows: ReadonlyArray<string>;
   /** What Maestro printed (stdout and stderr). */
   readonly output: string;
@@ -378,6 +439,13 @@ export const decideRetry = ({
     }
     if (shared.has(debugFolderName(testCase).toLowerCase())) {
       return undefined;
+    }
+    if (
+      latched &&
+      testCase.failure?.trim() === 'Unknown error' &&
+      lostAtLaunch(commandLog(testCase))
+    ) {
+      return 'died';
     }
     if (blackScreen(screenshots(testCase))) {
       return 'black-screen';
