@@ -45,7 +45,11 @@ tags:
       - tapOn:
           id: 'event-title'
       # ASCII only — unicode through XCTest typing is a known flaky spot.
-      - inputText: 'Solunivo e2e all-day to delete'
+      - runFlow:
+          file: ../common/type-text.yaml
+          env:
+            FIELD: 'event-title'
+            TEXT: 'Solunivo e2e all-day to delete'
       - tapOn:
           id: 'event-save'
       - extendedWaitUntil:

@@ -24,7 +24,11 @@ tags:
       # to the server id the moment the createTask op pushes — ids are
       # unstable mid-flow, the title is not. ASCII only: unicode through
       # XCTest typing is a known flaky spot.
-      - inputText: 'Solunivo e2e task to delete'
+      - runFlow:
+          file: ../common/type-text.yaml
+          env:
+            FIELD: 'task-title'
+            TEXT: 'Solunivo e2e task to delete'
       - tapOn:
           id: 'event-save'
       - extendedWaitUntil:

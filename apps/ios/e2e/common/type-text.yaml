@@ -1,0 +1,33 @@
+appId: com.solunivo.app.dev
+name: Type TEXT into the focused field FIELD until it holds all of it (shared)
+---
+# The field (`FIELD`, a testID) is already focused. XCTest's typing can
+# lose letters, worst when the keys arrive while the field's keyboard is
+# still coming up: on CI, flow 09's title became "So e2e …" and "Svo e2e …"
+# and flow 17's "S2e convert" (runs 44403894983, 44525665276,
+# 44507168863), the first letter kept and the next several gone
+# (docs/google-sync-and-testing.md, CI). Type again until the field
+# holds the whole text, so the flow tests what it is about rather than
+# the typing.
+#
+# The field's value proves the typing (`copyTextFrom` reads a filled
+# field's value, compared as a string, so any text will do) and a failed
+# check erases and types again; the flag keeps the first pass from typing
+# twice and is reset here because one flow may type several fields. A
+# `while: notVisible:` loop would wait up to 7 s on every exit with the
+# text right.
+- evalScript: ${output.textTyped = false}
+- inputText: ${TEXT}
+- retry:
+    maxRetries: 3
+    commands:
+      - runFlow:
+          when:
+            true: ${output.textTyped}
+          commands:
+            - eraseText: 60
+            - inputText: ${TEXT}
+      - evalScript: ${output.textTyped = true}
+      - copyTextFrom:
+          id: ${FIELD}
+      - assertTrue: ${maestro.copiedText === TEXT}

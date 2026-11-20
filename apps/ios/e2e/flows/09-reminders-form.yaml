@@ -66,7 +66,11 @@ tags:
       - tapOn:
           id: 'task-title'
       # ASCII only: unicode through XCTest typing is a known flaky spot.
-      - inputText: 'Solunivo e2e reminder to delete'
+      - runFlow:
+          file: ../common/type-text.yaml
+          env:
+            FIELD: 'task-title'
+            TEXT: 'Solunivo e2e reminder to delete'
       # The title's keyboard covers the lower rows: the List card's header
       # dismisses it first.
       - runFlow:
