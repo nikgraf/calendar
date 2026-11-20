@@ -170,7 +170,8 @@ was cut (pruned 2026-11-17).
   06's quick-add outcome check, 07's notes retype and the dismiss loops
   in 20 and 22 waited 5–8 s each on CI's path, over a minute per run. The
   branch that ran now sets an `output` flag the other is keyed on; a loop
-  is `retry` + `extendedWaitUntil` on its effect. Rejected: flipping the
+  is `retry` + a check on its effect (`extendedWaitUntil`, or a typed
+  field's value compared as a string). Rejected: flipping the
   conditions (a condition false on the common path waits either way).
   Open: 22's stacked-alert retry ran only on a stand-in (the simulator
   stopped showing the alert).
