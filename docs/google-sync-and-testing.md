@@ -1462,8 +1462,8 @@ matches one of these):
   destination`, all in one burst, then sent `textAccepted`, and the word
   was back to the one letter the keyboard had known. Every key was
   inserted and none deleted by a key. Not reproduced on a Mac, even
-  under full CPU load. A field a later step matches goes through
-  `common/type-text.yaml`, which retypes until it holds the text.
+  under full CPU load. A title or address a later step matches goes
+  through `common/type-text.yaml`, which retypes until it holds the text.
 - **A swipe that neither pages nor reveals (iOS)**: flow 02's day swipe
   back, and its swipe on a task row right after an outdent re-rendered the
   list. Open; before hardening the flow, check whether the app ignores a
