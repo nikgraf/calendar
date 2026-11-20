@@ -8,12 +8,13 @@ name: PR complete
 # so what is owed has to show here, not as a note in the body.
 #
 # The verdict is a commit status named `PR complete` on the PR's head,
-# posted by the job; the job itself passes. GitHub counts every check run
-# on a commit, earlier ones too, so a run that failed before the body was
-# fixed (#352), or one cancelled by the next event (#347), kept the PR red
-# after a later run passed. A status replaces the one before it under the
-# same name. So nothing cancels a run either: each reads the PR from the
-# API, and the one the latest event started posts what the PR holds now.
+# posted by the job; the job itself passes (a fork's PR excepted, below).
+# GitHub counts every check run on a commit, earlier ones too, so a run
+# that failed before the body was fixed (#352), or one cancelled by the
+# next event (#347), kept the PR red after a later run passed. A status
+# replaces the one before it under the same name. So nothing cancels a
+# run either: each reads the PR from the API, and the one the latest event
+# started posts what the PR holds now.
 #
 # Editing the body re-runs it. Drafts, bots' PRs and PRs labelled
 # `skip-pr-check` pass unchecked; marking a draft ready runs it. Ubuntu
@@ -39,7 +40,10 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
-      - run: node scripts/check-pr-complete.ts "$PR_NUMBER" --status
+      # A fork's PR gets a read-only token that can't set a status: there
+      # the job's own result is the verdict, as before.
+      - run: node scripts/check-pr-complete.ts "$PR_NUMBER" $STATUS_FLAG
         env:
           GITHUB_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          STATUS_FLAG: ${{ github.event.pull_request.head.repo.full_name == github.repository && '--status' || '' }}

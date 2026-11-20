@@ -1375,7 +1375,8 @@ Electron binary (`electron --version`) and run spec files sequentially.
   event, kept the PR red after a later run passed (#347, #352). A status
   replaces the one before it under the same name, so nothing cancels a
   run. A red `Post PR complete` is the run itself breaking (the API), not
-  the body: rerun it.
+  the body: rerun it. A fork's PR is the exception: its read-only token
+  can't set a status, so there the job's own result is the verdict.
 - Log lines may stringify effect causes containing HTTP requests; effect
   redacts auth headers, so tokens cannot leak into CI logs this way.
 

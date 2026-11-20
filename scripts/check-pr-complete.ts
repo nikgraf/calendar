@@ -145,15 +145,14 @@ const check = async (): Promise<number> => {
     number,
   });
 
-  if (postsStatus) {
-    await postStatus(pull.head.sha, completeStatus({ missing }));
-  }
-
   const summary = process.env['GITHUB_STEP_SUMMARY'];
   if (missing.length === 0) {
     console.log(`#${String(number)} is complete.`);
     if (summary !== undefined) {
       appendFileSync(summary, `#${String(number)} is complete.\n`);
+    }
+    if (postsStatus) {
+      await postStatus(pull.head.sha, completeStatus({ missing }));
     }
     return 0;
   }
@@ -177,7 +176,12 @@ const check = async (): Promise<number> => {
       ].join('\n'),
     );
   }
-  return postsStatus ? 0 : 1;
+  if (!postsStatus) {
+    return 1;
+  }
+  // After the list, so a post that fails still leaves it in the log.
+  await postStatus(pull.head.sha, completeStatus({ missing }));
+  return 0;
 };
 
 // The exit code, not process.exit: output still on its way down a pipe is kept.
