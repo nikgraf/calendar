@@ -366,14 +366,14 @@ was cut (pruned 2026-11-17).
   history); round 1 of both reviewers in parallel. Open: making the check
   required; mechanical guards for the self-check's classes.
 - **`PR complete` is a commit status** (2026-11-20, #368) — the job posts
-  the verdict on the PR's head and passes itself, with no concurrency
-  group: GitHub counts every check run on a commit, so a run cancelled by
-  the next event, or one that failed before the body was fixed, kept a
-  PR red after a later run passed (#347, #352), while a status replaces
-  the one before it. Rejected: only dropping `cancel-in-progress` (the
-  failed run stays), a passing run rerunning the stale ones (`actions:
-  write`, more runs). Open: a red `Post PR complete` (API failure) stays
-  until rerun.
+  the verdict on the PR's head and passes, with no concurrency group:
+  GitHub counts every check run on a commit, so a run cancelled by the
+  next event, or one that failed before the body was fixed, kept a PR red
+  after a later run passed (#347, #352); a status replaces the one before
+  it. Rejected: only dropping `cancel-in-progress` (the failed run
+  stays), a passing run rerunning the stale ones (`actions: write`, more
+  runs). Open: a fork's PR (read-only token) keeps the job's verdict,
+  stale failures included; a red `Post PR complete` stays until rerun.
 - **The log keeps only what still holds** (2026-11-17, #349) — a record a
   later PR reversed is deleted, its replacement naming the PR it took
   over from, and an open point a later record closed is cut: twelve

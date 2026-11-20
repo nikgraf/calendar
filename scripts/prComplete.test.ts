@@ -415,4 +415,13 @@ describe('completeStatus', () => {
     expect(description).toHaveLength(140);
     expect(description.endsWith('…')).toBe(true);
   });
+
+  it('never cuts a character in half where it shortens a quote from the body', () => {
+    // "Owes: " is 6 characters, so the cut after 139 falls inside the emojis.
+    for (const pad of [130, 131, 132, 133]) {
+      const { description } = completeStatus({ missing: [`${'x'.repeat(pad)}${'📸'.repeat(10)}`] });
+      expect(Array.from(description)).toHaveLength(140);
+      expect(description).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/u);
+    }
+  });
 });

@@ -267,8 +267,13 @@ export interface CompleteStatus {
 /** The longest description GitHub keeps on a commit status. */
 const DESCRIPTION_MAX = 140;
 
-const clip = (text: string): string =>
-  text.length <= DESCRIPTION_MAX ? text : `${text.slice(0, DESCRIPTION_MAX - 1)}…`;
+/** Cut by characters, not UTF-16 units: the text quotes the body, and half an emoji would reach the API. */
+const clip = (text: string): string => {
+  const characters = Array.from(text);
+  return characters.length <= DESCRIPTION_MAX
+    ? text
+    : `${characters.slice(0, DESCRIPTION_MAX - 1).join('')}…`;
+};
 
 /**
  * The status for a PR left unchecked (`skipped` says why: a draft, a bot's)
