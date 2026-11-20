@@ -880,6 +880,31 @@ actions never use the Mac's real Reminders database. Task traces and
 ledgers use `bombadil-tasks-<timestamp>/`; replay one with
 `E2E=1 BOMBADIL=1 BOMBADIL_TASK_REPRODUCE=<directory> pnpm exec vp test run apps/desktop/e2e/bombadilTasks.e2e.ts`.
 
+`bombadilRecurring.e2e.ts` runs a third 45-second exploration on a seeded
+daily Google series (UTC, two weeks before today's week, never ending):
+it opens occurrences in the visible week with each scope a third of the
+time, then edits times, moves one occurrence a day or a month, switches
+scope, cancels and reopens (the form must read as it opened, on This
+event), or saves in a burst. A fixed opening first cancels a full edit,
+then saves one of each scope: an occurrence retimed alone, a split, a
+rename of the original series (whose edited occurrence must take the new
+title, as Google copies it) and a retime of the new one. The page keeps a
+ledger of every save, and the spec replays it through its own model of
+the documented scopes (docs/architecture.md → Recurring events): "This
+event" stores one exception per slot, "All events" takes the title, and
+the form's times whenever they are sent, "This and following" ends the
+series the day before the cut, drops its exceptions from there and
+starts a new one (at a series' first occurrence it is "All events"). It
+compares every occurrence the stored rows draw (`assembleWindow`) from
+the series' first day to seven weeks past today, one stored master and
+one queued create per split, and one exception row per slot edited
+alone. Generation stays on documented ground: a series or split never
+changes the date, a moved occurrence is edited alone, and a series with
+exceptions is not retimed (an exception keeps its slot through a series
+retime, unverified on Google). Ledgers and the drawn and expected lists
+use `bombadil-recurring-<timestamp>/`; replay one with
+`E2E=1 BOMBADIL=1 BOMBADIL_RECURRING_REPRODUCE=<directory> pnpm exec vp test run apps/desktop/e2e/bombadilRecurring.e2e.ts`.
+
 For a first local run, prefetch Electron with
 `pnpm --filter @calendar/desktop exec electron --version` before starting
 the timed tests; a slow binary download otherwise consumes their timeout.
