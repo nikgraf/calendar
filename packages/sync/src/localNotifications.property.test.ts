@@ -1089,7 +1089,22 @@ const scenario = (kind: SinkKind, setup: Setup, commands: ReadonlyArray<Command>
       })),
       { ...task, kind: 'addTask', on: day, timing: 'floating' },
       { ...task, kind: 'addTask', on: day, timing: 'google' },
+      // Delivered at 02:30, then moved to 09:00 the same day: on iOS the
+      // delivered one leaves, since its instant no longer holds.
+      { ...task, kind: 'addTask', on: on(-1), time: '02:30', timing: 'zoned' },
+      // On iOS, a task far past the 60th soonest: it must not take a slot.
+      ...(kind === 'scheduled'
+        ? [{ ...task, kind: 'addTask', on: on(3), timing: 'google' } as const]
+        : []),
       { at: zonedInstant(on(-1), '08:01', home), kind: 'wakeAt' },
+      {
+        day: 0,
+        index: model.tasks.size + 2,
+        kind: 'editTask',
+        stamp: 'now',
+        time: '09:00',
+        title: 'Flight',
+      },
       { at: zonedInstant(on(-1), '09:31', home), kind: 'wakeAt' },
       { at: zonedInstant(day, '23:30', home), kind: 'wakeAt' },
       // The floating reminder above: the first task this script adds.
