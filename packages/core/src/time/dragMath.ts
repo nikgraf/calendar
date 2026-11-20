@@ -1,6 +1,8 @@
 import type { EpochMs } from './convert.ts';
 import { Temporal } from './temporal.ts';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 const MINUTE_MS = 60 * 1000;
 export const DRAG_SNAP_MINUTES = 15;
 const MIN_DURATION_MS = DRAG_SNAP_MINUTES * MINUTE_MS;
@@ -83,11 +85,11 @@ export const applyWallClockDelta = (
 };
 
 /**
- * `applyWallClockDelta` without the delta's whole days: the base keeps its
- * date and moves by the change in time of day alone. A series' UNTIL moves
- * so: retimed, its last day keeps its occurrence and the day after does
- * not draw one; moved to another date, the series still ends on its day
- * (a cut stays before the split, an "Ends Dec 31" stays Dec 31).
+ * `applyWallClockDelta` without the delta's whole days: the wall-clock
+ * change between two instants (in `timeZone`), split at the nearest whole
+ * day, applied to a third by its time part alone (within ±12 hours). An
+ * hour earlier stays an hour earlier where it crosses the zone's midnight
+ * (00:30 → 23:30 the evening before), and a move by a day moves nothing.
  */
 export const applyTimeOfDayDelta = (
   baseUtc: EpochMs,
@@ -95,14 +97,13 @@ export const applyTimeOfDayDelta = (
   fromUtc: EpochMs,
   toUtc: EpochMs,
 ): EpochMs => {
-  const from = Temporal.Instant.fromEpochMilliseconds(fromUtc).toZonedDateTimeISO(timeZone);
-  const to = Temporal.Instant.fromEpochMilliseconds(toUtc).toZonedDateTimeISO(timeZone);
-  return applyWallClockDelta(
-    baseUtc,
-    timeZone,
-    fromUtc,
-    from.withPlainTime(to.toPlainTime()).epochMilliseconds,
-  );
+  const wall = (utc: EpochMs) =>
+    Temporal.Instant.fromEpochMilliseconds(utc).toZonedDateTimeISO(timeZone).toPlainDateTime();
+  const delta = wall(fromUtc)
+    .until(wall(toUtc), { largestUnit: 'hours' })
+    .total({ unit: 'milliseconds' });
+  const timeOfDay = delta - Math.round(delta / DAY_MS) * DAY_MS;
+  return wall(baseUtc).add({ milliseconds: timeOfDay }).toZonedDateTime(timeZone).epochMilliseconds;
 };
 
 /**

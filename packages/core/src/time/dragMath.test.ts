@@ -229,6 +229,16 @@ describe('applyTimeOfDayDelta', () => {
     );
   });
 
+  it('splits the change at the nearest day, so an hour across midnight stays an hour', () => {
+    // Los Angeles: 00:30 PDT moved to 23:30 the evening before, and back.
+    const zone = 'America/Los_Angeles';
+    const base = Date.parse('2026-07-04T07:29:59Z');
+    const half = Date.parse('2026-07-02T07:30:00Z');
+    const eve = Date.parse('2026-07-02T06:30:00Z');
+    expect(applyTimeOfDayDelta(base, zone, half, eve)).toBe(base - 3_600_000);
+    expect(applyTimeOfDayDelta(base, zone, eve, half)).toBe(base + 3_600_000);
+  });
+
   it('reads the times of day on the series clock across a transition', () => {
     // Vienna: 09:00 CET on March 27, the base after the clocks moved forward.
     const base = Date.parse('2026-03-31T06:59:59Z'); // 08:59:59 CEST

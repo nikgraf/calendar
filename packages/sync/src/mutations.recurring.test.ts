@@ -438,7 +438,7 @@ describe('EventMutations recurring scopes', () => {
       days: ['2026-07-01T11:00', '2026-07-02T11:00', '2026-07-03T11:00'],
       label: 'two hours later',
       to: '2026-07-02T11:00',
-      until: '20260704T105959Z',
+      until: '20260704T085959Z',
     },
     {
       days: ['2026-07-02T09:00', '2026-07-03T09:00'],
@@ -490,6 +490,73 @@ describe('EventMutations recurring scopes', () => {
     }).pipe(Effect.provide(testLayer)),
   );
 
+  // A series on another zone's clock, retimed by an hour across that
+  // zone's midnight: still an hour, not a day less or more. Los Angeles,
+  // daily at 00:30 PDT (07:30Z) moved to 23:30 the evening before, and
+  // daily at 23:30 PDT (06:30Z) moved to 00:30 the morning after.
+  it.effect.each([
+    {
+      cut: '2026-07-04T07:30:00Z',
+      days: ['2026-07-01T06:30', '2026-07-02T06:30', '2026-07-03T06:30'],
+      label: 'an hour earlier, to the evening before',
+      start: '2026-07-01T07:30:00Z',
+      to: '2026-07-02T06:30',
+      until: '20260704T062959Z',
+    },
+    {
+      cut: '2026-07-04T06:30:00Z',
+      days: ['2026-07-01T07:30', '2026-07-02T07:30', '2026-07-03T07:30'],
+      label: 'an hour later, to the morning after',
+      start: '2026-07-01T06:30:00Z',
+      to: '2026-07-02T07:30',
+      until: '20260704T062959Z',
+    },
+  ])(
+    'a Los Angeles series cut by a split and moved $label keeps to its days',
+    ({ cut, days, start, to, until }) =>
+      Effect.gen(function* () {
+        yield* seedMaster;
+        const events = yield* EventRepo;
+        const startUtc = Date.parse(start);
+        yield* events.upsertMany([
+          new EventRecord({
+            ...master,
+            endUtc: startUtc + 1_800_000,
+            startTimeZone: 'America/Los_Angeles',
+            startUtc,
+          }),
+        ]);
+        const mutations = yield* EventMutations;
+        yield* mutations.updateRecurring({
+          ...target,
+          changes: { title: 'Talks' },
+          originalStartUtc: Date.parse(cut),
+          scope: 'following',
+        });
+        const opened = startUtc + 86_400_000;
+        yield* mutations.updateRecurring({
+          ...target,
+          changes: {
+            endUtc: Date.parse(`${to}:00Z`) + 1_800_000,
+            startUtc: Date.parse(`${to}:00Z`),
+          },
+          originalStartUtc: opened,
+          scope: 'series',
+        });
+
+        const moved = yield* events.getById('acc-1', 'cal-1', 'master1');
+        expect(moved!.recurrence).toEqual([`RRULE:FREQ=DAILY;UNTIL=${until}`]);
+        expect(drawsFrom(moved!, Date.parse(cut))).toBe(false);
+        const from = Date.parse('2026-06-30T00:00:00Z');
+        const end = Date.parse('2026-07-12T00:00:00Z');
+        expect(
+          assembleWindow(yield* events.getWindow(from, end), from, end)
+            .filter((event) => event.recurringEventId === 'master1')
+            .map((event) => new Date(event.startUtc).toISOString()),
+        ).toEqual(days.map((day) => `${day}:00.000Z`));
+      }).pipe(Effect.provide(testLayer)),
+  );
+
   // The same bound on the other path: a series an earlier split ended,
   // split again and moved to another time, took the remainder's UNTIL as
   // it was and drew the first split's day too.
@@ -504,7 +571,7 @@ describe('EventMutations recurring scopes', () => {
       days: ['2026-07-03T11:00', '2026-07-04T11:00', '2026-07-05T11:00'],
       label: 'two hours later',
       to: '2026-07-03T11:00',
-      until: '20260706T105959Z',
+      until: '20260706T085959Z',
     },
     {
       days: ['2026-07-04T09:00', '2026-07-05T09:00'],

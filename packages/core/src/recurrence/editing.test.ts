@@ -5,14 +5,20 @@ import {
   googleInstanceId,
   isRecurringSet,
   remainingRecurrence,
-  shiftUntil,
+  retimedRecurrence,
   truncateRecurrence,
 } from './editing.ts';
 import { expandRecurringEvent, type RecurrenceMaster } from './expand.ts';
 
 const instant = (iso: string): number => Date.parse(iso);
-/** A series retimed an hour earlier. */
-const earlier = (utc: number): number => utc - 3_600_000;
+/** A Los Angeles series at 00:30 PDT moved to 23:30 the evening before. */
+const la = (rule: string) =>
+  retimedRecurrence(
+    [rule],
+    'America/Los_Angeles',
+    instant('2026-07-02T07:30:00Z'),
+    instant('2026-07-02T06:30:00Z'),
+  );
 
 describe('recurrence editing helpers', () => {
   describe('split admission', () => {
@@ -99,29 +105,55 @@ describe('recurrence editing helpers', () => {
     ).toEqual(['RRULE:FREQ=DAILY;UNTIL=20260706T085959Z']);
   });
 
-  it('moves a date-time UNTIL with the starts and leaves every other bound', () => {
-    expect(
-      shiftUntil(
-        [
-          'RRULE:FREQ=DAILY;UNTIL=20260706T085959Z',
-          'EXDATE:20260703T090000Z',
-          'RDATE:20260710T090000Z',
-        ],
-        earlier,
-      ),
-    ).toEqual([
-      'RRULE:FREQ=DAILY;UNTIL=20260706T075959Z',
-      'EXDATE:20260703T090000Z',
-      'RDATE:20260710T090000Z',
-    ]);
-    // A day, a count or no bound at all: nothing to move.
-    for (const line of [
-      'RRULE:FREQ=DAILY;UNTIL=20260706',
-      'RRULE:FREQ=WEEKLY;COUNT=4',
-      'RRULE:FREQ=MONTHLY',
-    ]) {
-      expect(shiftUntil([line], earlier)).toEqual([line]);
-    }
+  describe('retimedRecurrence', () => {
+    const cut = 'RRULE:FREQ=DAILY;UNTIL=20260706T085959Z';
+    const from = instant('2026-07-02T09:00:00Z');
+
+    it('moves a date-time UNTIL earlier with an earlier time of day, and nothing else', () => {
+      expect(
+        retimedRecurrence(
+          [cut, 'EXDATE:20260703T090000Z', 'RDATE:20260710T090000Z'],
+          'UTC',
+          from,
+          instant('2026-07-02T08:00:00Z'),
+        ),
+      ).toEqual([
+        'RRULE:FREQ=DAILY;UNTIL=20260706T075959Z',
+        'EXDATE:20260703T090000Z',
+        'RDATE:20260710T090000Z',
+      ]);
+    });
+
+    it('leaves the bound for a later time of day or a move by days', () => {
+      for (const to of ['2026-07-02T11:00:00Z', '2026-07-03T09:00:00Z', '2026-07-01T09:00:00Z']) {
+        expect(retimedRecurrence([cut], 'UTC', from, instant(to))).toEqual([cut]);
+      }
+      expect(retimedRecurrence([cut], 'UTC', from, instant('2026-07-03T08:00:00Z'))).toEqual([
+        'RRULE:FREQ=DAILY;UNTIL=20260706T075959Z',
+      ]);
+    });
+
+    it('reads an hour earlier as an hour across the zone midnight', () => {
+      expect(la('RRULE:FREQ=DAILY;UNTIL=20260704T072959Z')).toEqual([
+        'RRULE:FREQ=DAILY;UNTIL=20260704T062959Z',
+      ]);
+      // "Ends Jul 9" (its end of day there) still ends Jul 9.
+      expect(la('RRULE:FREQ=DAILY;UNTIL=20260710T065959Z')).toEqual([
+        'RRULE:FREQ=DAILY;UNTIL=20260710T055959Z',
+      ]);
+    });
+
+    it('has no bound to move in a date, a count or an open rule', () => {
+      for (const line of [
+        'RRULE:FREQ=DAILY;UNTIL=20260706',
+        'RRULE:FREQ=WEEKLY;COUNT=4',
+        'RRULE:FREQ=MONTHLY',
+      ]) {
+        expect(retimedRecurrence([line], 'UTC', from, instant('2026-07-02T08:00:00Z'))).toEqual([
+          line,
+        ]);
+      }
+    });
   });
 
   it('replaces an existing UNTIL and keeps EXDATE lines untouched', () => {

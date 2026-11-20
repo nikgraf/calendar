@@ -1,4 +1,5 @@
 import { plainDateToUtcMs } from '../time/convert.ts';
+import { applyTimeOfDayDelta } from '../time/dragMath.ts';
 import { Temporal } from '../time/temporal.ts';
 import {
   DTSTART_ONLY_RULE,
@@ -109,14 +110,7 @@ const parseDateList = (
   return { params, values };
 };
 
-/**
- * A recurrence whose date-time UNTIL moved by `shift` — for a series
- * retimed, the change in time of day (`applyTimeOfDayDelta`), so the
- * bound keeps its day. Left in place, a cut's `UNTIL = split − 1s` under a
- * start moved earlier drew the split day as well. A date-only UNTIL bounds
- * a day and stays, as do COUNT and the RDATE/EXDATE lines.
- */
-export const shiftUntil = (
+const shiftUntil = (
   recurrence: ReadonlyArray<string>,
   shift: (epochMs: number) => number,
 ): Array<string> =>
@@ -137,6 +131,28 @@ export const shiftUntil = (
       parts.set('UNTIL', compactUtc(shift(until)));
     });
   });
+
+/**
+ * The recurrence of a series whose occurrences moved as one from `fromUtc`
+ * to `toUtc` (a series edit's or a split's new times, on the series' own
+ * clock). A date-time UNTIL bounds instants: moved to an earlier time of
+ * day, the series' occurrence on the bound's day would fall before it, so
+ * the bound moves earlier by as much (`applyTimeOfDayDelta`) — left in
+ * place, a cut's `UNTIL = split − 1s` drew the split day as well. A later
+ * time of day, or a move by whole days, leaves it: the day after still
+ * draws nothing before it, and a cut stays before its split (a bound moved
+ * past it would make the old series draw from the split again). A date-only
+ * UNTIL, COUNT and RDATE/EXDATE values stay.
+ */
+export const retimedRecurrence = (
+  recurrence: ReadonlyArray<string>,
+  timeZone: string,
+  fromUtc: number,
+  toUtc: number,
+): Array<string> =>
+  shiftUntil(recurrence, (until) =>
+    Math.min(until, applyTimeOfDayDelta(until, timeZone, fromUtc, toUtc)),
+  );
 
 /**
  * Truncates a recurrence so its last occurrence falls strictly before
