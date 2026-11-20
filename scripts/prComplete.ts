@@ -307,9 +307,8 @@ export interface VerdictInputs {
 
 /**
  * Whether the PR changed in anything its verdict reads between two reads
- * of it. Each such change starts a run of its own (the workflow's
- * triggers), so a run that sees one leaves the status to that run rather
- * than post a verdict on what the PR no longer holds.
+ * of it: a run that sees one after posting checks and posts again. Each
+ * such change also starts a run of its own (the workflow's triggers).
  */
 export const verdictInputsChanged = (before: VerdictInputs, after: VerdictInputs): boolean => {
   const labels = (pull: VerdictInputs) =>

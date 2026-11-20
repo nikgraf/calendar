@@ -13,10 +13,10 @@ name: PR complete
 # that failed before the body was fixed (#352), or one cancelled by the
 # next event (#347), kept the PR red after a later run passed. A status
 # replaces the one before it under the same name. So nothing cancels a
-# run either: each reads the PR from the API, and reads it again before it
-# posts; if the body, head, labels or draft state changed in between, the
-# run that change started posts instead. Every such change is a trigger
-# below, `converted_to_draft` too.
+# run either: each reads the PR from the API, posts, and reads it again;
+# if the body, head, labels or draft state changed meanwhile, it checks
+# and posts again, so a stalled run's older verdict can't be the last to
+# land. Every such change is a trigger below, `converted_to_draft` too.
 #
 # Editing the body re-runs it. Drafts, bots' PRs and PRs labelled
 # `skip-pr-check` pass unchecked; marking a draft ready runs it. Ubuntu

@@ -67,21 +67,8 @@ const runUrl = (): string | undefined => {
     : `${process.env['GITHUB_SERVER_URL'] ?? 'https://github.com'}/${repo}/actions/runs/${runId}`;
 };
 
-/**
- * Sets the `PR complete` status on the head this run read the body and
- * files of, unless the PR changed since `read`: runs overlap now that none
- * is cancelled, and one that stalled on the API would otherwise post its
- * older verdict over a newer run's (green over an unfinished body, too).
- */
-const postStatus = async (read: PullResponse, status: CompleteStatus): Promise<void> => {
-  const now = await api<PullResponse>(`/pulls/${String(number)}`);
-  if (verdictInputsChanged(read, now)) {
-    console.log(
-      `#${String(number)} changed while this run read it: the run that change started posts the status.`,
-    );
-    return;
-  }
-  const sha = read.head.sha;
+/** Sets the `PR complete` status on `sha`. */
+const postStatus = async (sha: string, status: CompleteStatus): Promise<void> => {
   const target = runUrl();
   const response = await fetch(`https://api.github.com/repos/${repo}/statuses/${sha}`, {
     body: JSON.stringify({
@@ -98,6 +85,8 @@ const postStatus = async (read: PullResponse, status: CompleteStatus): Promise<v
   }
   console.log(`Posted "${STATUS_CONTEXT}" ${status.state} on ${sha}: ${status.description}`);
 };
+
+const readPull = () => api<PullResponse>(`/pulls/${String(number)}`);
 
 /** Every file of the PR; GitHub pages them 100 at a time, up to 3000. */
 const allFiles = async (): Promise<ReadonlyArray<FileResponse>> => {
@@ -127,13 +116,10 @@ const addedRuns = (patch: string): ReadonlyArray<ReadonlyArray<string>> => {
   return runs.filter((run) => run.length > 0);
 };
 
-/** The exit code: 0 when complete, unchecked or posted as a status; 1 when something is owed; 2 on a bad call. */
-const check = async (): Promise<number> => {
-  if (!Number.isInteger(number) || number <= 0) {
-    console.error('usage: check-pr-complete.ts <number> [--ready] [--status]');
-    return 2;
-  }
-  const pull = await api<PullResponse>(`/pulls/${String(number)}`);
+type Verdict = { readonly missing: ReadonlyArray<string> } | { readonly skipped: string };
+
+/** Why the PR goes unchecked, or what it still lacks, from one read of it. */
+const evaluate = async (pull: PullResponse): Promise<Verdict> => {
   const skip =
     pull.user.type === 'Bot'
       ? 'opened by a bot'
@@ -143,36 +129,37 @@ const check = async (): Promise<number> => {
           ? 'a draft (marking it ready runs the check)'
           : undefined;
   if (skip !== undefined) {
-    console.log(`#${String(number)} is ${skip}: not checked.`);
-    if (postsStatus) {
-      await postStatus(pull, completeStatus({ skipped: skip }));
-    }
-    return 0;
+    return { skipped: skip };
   }
-
   const files = await allFiles();
-
   const decisionsAdded = addedRuns(
     files.find(({ filename }) => filename === 'docs/decisions.md')?.patch ?? '',
   );
-  const missing = missingParts({
-    body: pull.body ?? '',
-    branch: pull.head.ref,
-    decisionsAdded,
-    files: files.map(({ filename }) => filename),
-    number,
-  });
+  return {
+    missing: missingParts({
+      body: pull.body ?? '',
+      branch: pull.head.ref,
+      decisionsAdded,
+      files: files.map(({ filename }) => filename),
+      number,
+    }),
+  };
+};
 
+/** Prints the verdict (and the step summary on Actions); true when the PR still lacks something. */
+const report = (verdict: Verdict): boolean => {
+  if ('skipped' in verdict) {
+    console.log(`#${String(number)} is ${verdict.skipped}: not checked.`);
+    return false;
+  }
+  const { missing } = verdict;
   const summary = process.env['GITHUB_STEP_SUMMARY'];
   if (missing.length === 0) {
     console.log(`#${String(number)} is complete.`);
     if (summary !== undefined) {
       appendFileSync(summary, `#${String(number)} is complete.\n`);
     }
-    if (postsStatus) {
-      await postStatus(pull, completeStatus({ missing }));
-    }
-    return 0;
+    return false;
   }
   for (const part of missing) {
     // An annotation only where the run itself fails: with --status the job
@@ -194,11 +181,53 @@ const check = async (): Promise<number> => {
       ].join('\n'),
     );
   }
-  if (!postsStatus) {
-    return 1;
+  return true;
+};
+
+/** How many times a run posts again because the PR kept changing under it; later runs carry on. */
+const MAX_POSTS = 5;
+
+/**
+ * Posts the verdict, then reads the PR again: if what the verdict was read
+ * from changed meanwhile, it evaluates and posts again. Runs overlap now
+ * that none is cancelled, and a stalled run's older post can land after a
+ * newer run's (green over an unfinished body, too); the last post to land
+ * is then one whose run saw the PR unchanged after it, or a run started by
+ * a later change posts after it.
+ */
+const postUntilSettled = async (first: PullResponse, firstVerdict: Verdict): Promise<void> => {
+  let read = first;
+  let verdict = firstVerdict;
+  for (let post = 1; post <= MAX_POSTS; post++) {
+    await postStatus(read.head.sha, completeStatus(verdict));
+    const now = await readPull();
+    if (!verdictInputsChanged(read, now)) {
+      return;
+    }
+    console.log(`#${String(number)} changed while this run checked it: checking again.`);
+    read = now;
+    verdict = await evaluate(read);
+    report(verdict);
   }
-  // After the list, so a post that fails still leaves it in the log.
-  await postStatus(pull, completeStatus({ missing }));
+  console.log(
+    `#${String(number)} kept changing: the runs its changes started post after this one.`,
+  );
+};
+
+/** The exit code: 0 when complete, unchecked or posted as a status; 1 when something is owed; 2 on a bad call. */
+const check = async (): Promise<number> => {
+  if (!Number.isInteger(number) || number <= 0) {
+    console.error('usage: check-pr-complete.ts <number> [--ready] [--status]');
+    return 2;
+  }
+  const pull = await readPull();
+  const verdict = await evaluate(pull);
+  // Printed before the post, so a post that fails still leaves it in the log.
+  const lacking = report(verdict);
+  if (!postsStatus) {
+    return lacking ? 1 : 0;
+  }
+  await postUntilSettled(pull, verdict);
   return 0;
 };
 
