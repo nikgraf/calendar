@@ -341,8 +341,16 @@ was cut (pruned 2026-11-17).
   statement by statement against the code and corrected. Rejected:
   "superseded" tags in place (five records had one and still read as
   current), an archive file (`git log -S` on a title finds the text).
-  Open: records that state a mechanism at length (find a time's is in no
-  other doc), the queue's chain of nine, the CI retry stories.
+- **A chain of records is one record** (2026-11-20, #369) — where several
+  records told one mechanism in steps (the ios-e2e retries, the live
+  nightly's reruns, the queue's chain #265–#285), they are merged: the
+  decisions, what was rejected and every point still open stay, the
+  mechanism is the current-state docs'. Find a time's mechanism, which
+  only its record held, moved to `docs/architecture.md`. With it went the
+  backlog's shipped and doubled items and tracked clutter. Rejected:
+  dropping `tslib` (added for the EAS cloud install, #22, which nothing
+  local tests). Open: records still past ten lines (dictation #322,
+  mirrors, the agent gateway).
 
 ## Architecture and sync path
 
