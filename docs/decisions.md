@@ -199,8 +199,8 @@ was cut (pruned 2026-11-17).
   leaves its items on Google for a rerun to match, so the second run tags
   its titles `<tag>-r2` and reruns for every cause `ios-e2e`'s flows do,
   unrebooted. Rejected: a reboot in between (a relaunch drew again in all
-  six sightings). Open: a bootstrap `openurl` timeout; a leftover a rerun
-  trips on (a parked conflict's badge) fails it, never passes it.
+  six sightings). Open: a bootstrap `openurl` timeout; a deleted event
+  left on screen; a leftover a rerun trips on fails it, never passes it.
 - **The live sweep checks its account** (2026-11-05,
   `todo/live-sweep-guard`) — the sweep deleted by name with whatever
   token it was given: in another account, every calendar named
@@ -452,16 +452,23 @@ was cut (pruned 2026-11-17).
   every taken exception back; the delete keeping copies too (an aging one
   a discard could resurrect); telling the deletes apart by the queue or
   the master's rule.
-- **A cut or a new rule and what it drops** (2026-11-03, #281, #284,
-  #285) — probed live: Google keeps an exception whose slot the new rule
-  draws and cancels the rest, so only those drop, their deletes behind
-  the PATCH whose landing takes them off the queue. Undone (a discard,
-  keep-theirs, a refusal), the change takes those deletes along, and a
-  split's new series waits for its cut and goes with it while unsent
-  (both Nik's choice); the user's own occurrence delete stays. Rejected:
-  deletes without If-Match, a marker column, asking at undo time,
-  deciding by the local copy. Open: a discarded exception delete shows
-  past a waiting cut; kept beside another device's split, a series shows twice.
+- **A new rule keeps the exceptions it still draws** (2026-11-03, #281) —
+  probed live: Google keeps an exception whose slot the new rule draws
+  and cancels the rest, with new etags all round. So only skipped
+  exceptions drop, their deletes wait behind the PATCH whose landing
+  takes them off the queue, and a later rule drawing a slot again takes
+  its delete back. Rejected: sending them without If-Match (a request
+  for nothing).
+- **An undone cut or rule change takes what it queued along** (2026-11-03,
+  #284, #285) — Nik's choice for both: its exception deletes (on a
+  discard, keep-theirs or refusal of it, or of a series delete that
+  replaced it) and, while unsent, the new series a this-and-following
+  edit split off; the user's own occurrence delete stays, and Google's
+  copy decides whether the new series goes. Rejected: a marker column,
+  keeping the series, asking at undo time, deciding by the local copy (a
+  cut can land unseen). Open: a series delete that replaced the cut lets
+  both out (todo.md, Tier 0); a discarded exception delete shows past a
+  waiting cut; beside another device's split a kept series shows twice.
 - **Re-auth and sync kicks** — a 401 flags the account `reauth_required`
   and keeps its ops queued for after the reconnect (same id, by email);
   wake/unlock/focus/foreground kick a sync, throttled to one per 15 s,

@@ -8,6 +8,18 @@ was written; re-verify before starting one.
 
 ## Tier 0 — bugs
 
+- [ ] A series delete that replaced a cut lets the cut's leftovers out
+      (open since #284 and #285; reproduced in review, 2026-11-20). Edit
+      "this and following", then delete the whole series; while that
+      delete waits a pull puts Google's uncut series back, and the user
+      renames it. The rename's update carries no `dropsFrom`
+      (`mutations.ts` copies it only from a queued update, not from the
+      delete that replaced the cut), so nothing holds the split's create
+      (`holdsSplit`) or the cut's exception deletes
+      (`exceptionDeleteGate`): the new series lands beside the uncut one
+      and Google shows those days twice. The replacing delete also lets
+      the cut's exception deletes out ahead of itself.
+
 - [ ] Let agent refs resolve zero-duration Google series occurrences
       (`packages/agent/src/resolve.ts`, `ruleProduces`; found reviewing
       #365, present before it). Slot validation uses `[start, start+1)`
@@ -295,4 +307,4 @@ was written; re-verify before starting one.
   Apple Calendar; the website's roadmap lists this, Microsoft and the
   three platforms here)
 - Windows support (Copilot support?)
-- Prefetch a week either side in the desktop's range LRU (the iPhone already loads seven days each side)
+- Prefetch week±1 in the range LRU (noted when the LRU landed; today the iPhone's week view loads seven days each side, its day views one or two, the desktop two)
