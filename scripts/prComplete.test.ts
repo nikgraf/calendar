@@ -8,6 +8,8 @@ import {
   PLACEHOLDERS,
   type PullRequest,
   touchedPlatforms,
+  type VerdictInputs,
+  verdictInputsChanged,
 } from './prComplete.ts';
 
 const shot = (file: string) =>
@@ -423,5 +425,30 @@ describe('completeStatus', () => {
       expect(Array.from(description)).toHaveLength(140);
       expect(description).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/u);
     }
+  });
+});
+
+describe('verdictInputsChanged', () => {
+  const read: VerdictInputs = {
+    body: 'Done.',
+    draft: false,
+    head: { sha: 'abc' },
+    labels: [{ name: 'ios' }, { name: 'docs' }],
+  };
+
+  it('sees no change between two reads of the same PR, labels in any order', () => {
+    expect(
+      verdictInputsChanged(read, { ...read, labels: [{ name: 'docs' }, { name: 'ios' }] }),
+    ).toBe(false);
+  });
+
+  it('sees each change that starts a run of its own', () => {
+    expect(verdictInputsChanged(read, { ...read, body: 'Done, now with screenshots.' })).toBe(true);
+    expect(verdictInputsChanged(read, { ...read, draft: true })).toBe(true);
+    expect(verdictInputsChanged(read, { ...read, head: { sha: 'def' } })).toBe(true);
+    expect(
+      verdictInputsChanged(read, { ...read, labels: [...read.labels, { name: 'skip-pr-check' }] }),
+    ).toBe(true);
+    expect(verdictInputsChanged(read, { ...read, labels: [{ name: 'ios' }] })).toBe(true);
   });
 });

@@ -15,7 +15,12 @@
  * stay on the commit. GITHUB_REPOSITORY defaults to nikgraf/calendar.
  */
 import { appendFileSync } from 'node:fs';
-import { type CompleteStatus, completeStatus, missingParts } from './prComplete.ts';
+import {
+  type CompleteStatus,
+  completeStatus,
+  missingParts,
+  verdictInputsChanged,
+} from './prComplete.ts';
 
 interface PullResponse {
   readonly body: string | null;
@@ -62,8 +67,21 @@ const runUrl = (): string | undefined => {
     : `${process.env['GITHUB_SERVER_URL'] ?? 'https://github.com'}/${repo}/actions/runs/${runId}`;
 };
 
-/** Sets the `PR complete` status on `sha`, the head this run read the body and files of. */
-const postStatus = async (sha: string, status: CompleteStatus): Promise<void> => {
+/**
+ * Sets the `PR complete` status on the head this run read the body and
+ * files of, unless the PR changed since `read`: runs overlap now that none
+ * is cancelled, and one that stalled on the API would otherwise post its
+ * older verdict over a newer run's (green over an unfinished body, too).
+ */
+const postStatus = async (read: PullResponse, status: CompleteStatus): Promise<void> => {
+  const now = await api<PullResponse>(`/pulls/${String(number)}`);
+  if (verdictInputsChanged(read, now)) {
+    console.log(
+      `#${String(number)} changed while this run read it: the run that change started posts the status.`,
+    );
+    return;
+  }
+  const sha = read.head.sha;
   const target = runUrl();
   const response = await fetch(`https://api.github.com/repos/${repo}/statuses/${sha}`, {
     body: JSON.stringify({
@@ -127,7 +145,7 @@ const check = async (): Promise<number> => {
   if (skip !== undefined) {
     console.log(`#${String(number)} is ${skip}: not checked.`);
     if (postsStatus) {
-      await postStatus(pull.head.sha, completeStatus({ skipped: skip }));
+      await postStatus(pull, completeStatus({ skipped: skip }));
     }
     return 0;
   }
@@ -152,7 +170,7 @@ const check = async (): Promise<number> => {
       appendFileSync(summary, `#${String(number)} is complete.\n`);
     }
     if (postsStatus) {
-      await postStatus(pull.head.sha, completeStatus({ missing }));
+      await postStatus(pull, completeStatus({ missing }));
     }
     return 0;
   }
@@ -180,7 +198,7 @@ const check = async (): Promise<number> => {
     return 1;
   }
   // After the list, so a post that fails still leaves it in the log.
-  await postStatus(pull.head.sha, completeStatus({ missing }));
+  await postStatus(pull, completeStatus({ missing }));
   return 0;
 };
 

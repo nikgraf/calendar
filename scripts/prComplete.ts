@@ -296,3 +296,31 @@ export const completeStatus = (
     state: 'failure',
   };
 };
+
+/** What a PR's verdict is read from, as GitHub's API gives it. */
+export interface VerdictInputs {
+  readonly body: string | null;
+  readonly draft: boolean;
+  readonly head: { readonly sha: string };
+  readonly labels: ReadonlyArray<{ readonly name: string }>;
+}
+
+/**
+ * Whether the PR changed in anything its verdict reads between two reads
+ * of it. Each such change starts a run of its own (the workflow's
+ * triggers), so a run that sees one leaves the status to that run rather
+ * than post a verdict on what the PR no longer holds.
+ */
+export const verdictInputsChanged = (before: VerdictInputs, after: VerdictInputs): boolean => {
+  const labels = (pull: VerdictInputs) =>
+    pull.labels
+      .map(({ name }) => name)
+      .toSorted()
+      .join('\n');
+  return (
+    before.body !== after.body ||
+    before.draft !== after.draft ||
+    before.head.sha !== after.head.sha ||
+    labels(before) !== labels(after)
+  );
+};

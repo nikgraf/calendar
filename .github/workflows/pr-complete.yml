@@ -13,15 +13,25 @@ name: PR complete
 # that failed before the body was fixed (#352), or one cancelled by the
 # next event (#347), kept the PR red after a later run passed. A status
 # replaces the one before it under the same name. So nothing cancels a
-# run either: each reads the PR from the API, and the one the latest event
-# started posts what the PR holds now.
+# run either: each reads the PR from the API, and reads it again before it
+# posts; if the body, head, labels or draft state changed in between, the
+# run that change started posts instead. Every such change is a trigger
+# below, `converted_to_draft` too.
 #
 # Editing the body re-runs it. Drafts, bots' PRs and PRs labelled
 # `skip-pr-check` pass unchecked; marking a draft ready runs it. Ubuntu
 # only: no macOS minutes.
 on:
   pull_request:
-    types: [opened, edited, reopened, synchronize, ready_for_review, labeled, unlabeled]
+    types:
+      - opened
+      - edited
+      - reopened
+      - synchronize
+      - ready_for_review
+      - converted_to_draft
+      - labeled
+      - unlabeled
 
 permissions:
   contents: read
