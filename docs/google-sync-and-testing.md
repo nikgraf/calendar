@@ -549,8 +549,9 @@ due since its last pass or whose row (for tasks, also the settings save)
 predates its moment, while it is still worth showing, once per key and
 moment. A fixed script around the zone's other transition then makes
 every case notify on both sides of it and at 09:00 on the 23- or 25-hour
-day, catch up on a pulled row, test both edges of that day's expiry and
-clear a delivered event and task. A series' oracle omits an occurrence
+day, catch up on a pulled row, test both edges of that day's expiry,
+clear a delivered event and task and, on iOS, hold more than 60 plans
+ahead, so the soonest must win the slots. A series' oracle omits an occurrence
 whose wall time a transition skips, as the expander does (architecture
 → Recurring events).
 

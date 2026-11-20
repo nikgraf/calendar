@@ -829,6 +829,8 @@ const applySettings = (model: Model, command: Extract<Command, { readonly kind: 
 
 /** What a run reached, so a short or shrunk tail cannot pass by doing nothing. */
 interface Reached {
+  /** The most notifications ahead at any iOS pass: past the slots, the cap is tested. */
+  ahead: number;
   readonly caughtUp: Array<number>;
   readonly delivered: Array<number>;
   readonly dismissedEvents: Array<string>;
@@ -858,7 +860,13 @@ const scenario = (kind: SinkKind, setup: Setup, commands: ReadonlyArray<Command>
   const sink = kind === 'immediate' ? immediate.sink : scheduled.sink;
   const lastShown = new Map<string, number>();
   let missing = new Map<string, number>();
-  const reached: Reached = { caughtUp: [], delivered: [], dismissedEvents: [], dismissedTasks: [] };
+  const reached: Reached = {
+    ahead: 0,
+    caughtUp: [],
+    delivered: [],
+    dismissedEvents: [],
+    dismissedTasks: [],
+  };
 
   const checkImmediate = (
     now: number,
@@ -893,10 +901,9 @@ const scenario = (kind: SinkKind, setup: Setup, commands: ReadonlyArray<Command>
     dismissed: ReadonlyArray<string>,
   ) => {
     // Pending: exactly what is still ahead, the soonest first, in the slots there are.
-    const ahead = plansAt(model, now)
-      .filter((plan) => plan.fireAt > now)
-      .slice(0, SCHEDULE_SLOTS);
-    expect(projected(scheduled.os.pending)).toEqual(projected(ahead));
+    const ahead = plansAt(model, now).filter((plan) => plan.fireAt > now);
+    reached.ahead = Math.max(reached.ahead, ahead.length);
+    expect(projected(scheduled.os.pending)).toEqual(projected(ahead.slice(0, SCHEDULE_SLOTS)));
     expect(new Set(scheduled.os.pending.map((plan) => plan.key)).size).toBe(
       scheduled.os.pending.length,
     );
@@ -1070,6 +1077,16 @@ const scenario = (kind: SinkKind, setup: Setup, commands: ReadonlyArray<Command>
         time: '09:00',
         title: 'Dentist',
       },
+      // On iOS, three series of five reminders each: past its slots, so
+      // the soonest across events and tasks must win them.
+      ...(kind === 'scheduled' ? (['00:00', '02:30', '23:30'] as const) : []).map((time): Step => ({
+        ...meeting,
+        day: 0,
+        on: on(-1),
+        reminders: [0, 10, 60, 420, 900],
+        repeat: true,
+        time,
+      })),
       { ...task, kind: 'addTask', on: day, timing: 'floating' },
       { ...task, kind: 'addTask', on: day, timing: 'google' },
       { at: zonedInstant(on(-1), '08:01', home), kind: 'wakeAt' },
@@ -1128,6 +1145,7 @@ const scenario = (kind: SinkKind, setup: Setup, commands: ReadonlyArray<Command>
     } else {
       expect(reached.dismissedEvents.length).toBeGreaterThan(0);
       expect(reached.dismissedTasks.length).toBeGreaterThan(0);
+      expect(reached.ahead).toBeGreaterThan(SCHEDULE_SLOTS);
     }
   }).pipe(Effect.provide(layerFor(sink, model)), Effect.scoped);
 };
