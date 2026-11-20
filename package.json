@@ -16,7 +16,7 @@
     "test:run": "vp test run",
     "typecheck": "pnpm --recursive --parallel --include-workspace-root exec tsc --noEmit",
     "test:e2e": "node apps/desktop/scripts/check-helper.mjs && E2E=1 vp test",
-    "test:bombadil": "node apps/desktop/scripts/check-helper.mjs && E2E=1 BOMBADIL=1 vp test run apps/desktop/e2e/bombadil.e2e.ts apps/desktop/e2e/bombadilTasks.e2e.ts",
+    "test:bombadil": "node apps/desktop/scripts/check-helper.mjs && E2E=1 BOMBADIL=1 vp test run apps/desktop/e2e/bombadil.e2e.ts apps/desktop/e2e/bombadilTasks.e2e.ts apps/desktop/e2e/bombadilRecurring.e2e.ts",
     "test:e2e:ios": "pnpm --filter @calendar/ios test:e2e",
     "brand:build": "node scripts/brand/build.mjs",
     "brand:check": "node scripts/brand/build.mjs --check"

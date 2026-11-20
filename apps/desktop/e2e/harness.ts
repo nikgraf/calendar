@@ -296,6 +296,31 @@ export const readEvents = async (userDataDir: string): Promise<ReadonlyArray<Eve
   );
 };
 
+/**
+ * The stored rows a range is drawn from, as the views read them: masters,
+ * their exceptions (cancelled ones included, in any range) and singles.
+ * Pair with `assembleWindow` to see what the grid would draw.
+ */
+export const readEventWindow = async (
+  userDataDir: string,
+  rangeStartUtc: number,
+  rangeEndUtc: number,
+): Promise<{
+  readonly masters: ReadonlyArray<EventRecord>;
+  readonly overrides: ReadonlyArray<EventRecord>;
+  readonly singles: ReadonlyArray<EventRecord>;
+}> => {
+  const dbLayer = reposLayer.pipe(
+    Layer.provideMerge(SqliteClient.layer({ filename: join(userDataDir, 'calendar.db') })),
+    Layer.provideMerge(reactivityLayer),
+  );
+  return Effect.runPromise(
+    Effect.flatMap(EventRepo, (events) => events.getWindow(rangeStartUtc, rangeEndUtc)).pipe(
+      Effect.provide(dbLayer),
+    ),
+  );
+};
+
 // ---------------------------------------------------------------------------
 // Agents: the gateway's own store (agents.db), seeded and read like the rest.
 // ---------------------------------------------------------------------------
