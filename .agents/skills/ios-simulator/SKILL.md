@@ -74,7 +74,7 @@ button) and its onboarding sheets, and turns keyboard predictions and
 autocorrect off. Run it with bash: its `defaults write` loops fail under
 zsh ("Rep argument is not a dictionary").
 
-Is the installed dev client current? `pnpm check:devclient` compares its
+Is the installed dev client current? `pnpm --filter @calendar/ios check:devclient` compares its
 fingerprint with the working tree's. A stale one crashes at bundle load
 or misses a module (`platform-notes.md` → Expo, Metro and the dev client).
 
