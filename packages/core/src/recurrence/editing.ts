@@ -110,6 +110,36 @@ const parseDateList = (
 };
 
 /**
+ * A recurrence for a series whose starts all moved by `shift` (a series
+ * edit's wall-clock delta): a date-time UNTIL bounds instants, so it moves
+ * with them and the series keeps its days. Left in place, a cut's
+ * `UNTIL = split − 1s` under a start moved earlier drew the split day as
+ * well. A date-only UNTIL bounds a day and stays, as do COUNT and the
+ * RDATE/EXDATE lines.
+ */
+export const shiftUntil = (
+  recurrence: ReadonlyArray<string>,
+  shift: (epochMs: number) => number,
+): Array<string> =>
+  recurrence.map((line) => {
+    if (!line.toUpperCase().startsWith('RRULE:')) {
+      return line;
+    }
+    const match = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/.exec(
+      parseRuleParts(line).get('UNTIL') ?? '',
+    );
+    if (!match) {
+      return line;
+    }
+    const until = Temporal.Instant.from(
+      `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${match[6]}Z`,
+    ).epochMilliseconds;
+    return rewriteRule(line, (parts) => {
+      parts.set('UNTIL', compactUtc(shift(until)));
+    });
+  });
+
+/**
  * Truncates a recurrence so its last occurrence falls strictly before
  * `splitOriginalStartUtc` (UNTIL = split − 1s; any COUNT is dropped —
  * UNTIL and COUNT are mutually exclusive per RFC 5545). RDATE lines are

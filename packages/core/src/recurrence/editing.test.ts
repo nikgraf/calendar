@@ -5,11 +5,14 @@ import {
   googleInstanceId,
   isRecurringSet,
   remainingRecurrence,
+  shiftUntil,
   truncateRecurrence,
 } from './editing.ts';
 import { expandRecurringEvent, type RecurrenceMaster } from './expand.ts';
 
 const instant = (iso: string): number => Date.parse(iso);
+/** A series retimed an hour earlier. */
+const earlier = (utc: number): number => utc - 3_600_000;
 
 describe('recurrence editing helpers', () => {
   describe('split admission', () => {
@@ -94,6 +97,31 @@ describe('recurrence editing helpers', () => {
     expect(
       truncateRecurrence(['RRULE:FREQ=DAILY;COUNT=10'], instant('2026-07-06T09:00:00Z'), false),
     ).toEqual(['RRULE:FREQ=DAILY;UNTIL=20260706T085959Z']);
+  });
+
+  it('moves a date-time UNTIL with the starts and leaves every other bound', () => {
+    expect(
+      shiftUntil(
+        [
+          'RRULE:FREQ=DAILY;UNTIL=20260706T085959Z',
+          'EXDATE:20260703T090000Z',
+          'RDATE:20260710T090000Z',
+        ],
+        earlier,
+      ),
+    ).toEqual([
+      'RRULE:FREQ=DAILY;UNTIL=20260706T075959Z',
+      'EXDATE:20260703T090000Z',
+      'RDATE:20260710T090000Z',
+    ]);
+    // A day, a count or no bound at all: nothing to move.
+    for (const line of [
+      'RRULE:FREQ=DAILY;UNTIL=20260706',
+      'RRULE:FREQ=WEEKLY;COUNT=4',
+      'RRULE:FREQ=MONTHLY',
+    ]) {
+      expect(shiftUntil([line], earlier)).toEqual([line]);
+    }
   });
 
   it('replaces an existing UNTIL and keeps EXDATE lines untouched', () => {
