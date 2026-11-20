@@ -182,6 +182,16 @@ was cut (pruned 2026-11-17).
   field's value as a string, erase and retype until it matches, then
   Apply. Rejected: an `extendedWaitUntil` regex like 03 and 07 (the
   phrases' `|` would need escaping in every pattern).
+- **Typed titles retyped in one subflow** (2026-11-20, #370) — flows 09
+  and 17 failed three times on main with titles saved as "So e2e …",
+  "S2e convert": the field's keyboard was still connecting when XCTest
+  typed past the first letter, and the word went back to that letter.
+  `common/type-text.yaml` types, compares the field's value as a string
+  and retypes; every title or address a later step matches goes through
+  it (03, 07 and 25 dropped their own loops). Rejected: `autoCorrect`
+  off on titles (changes the app for a harness race), waiting for the
+  keyboard (Maestro cannot see it connect). Open: why the keyboard takes
+  0.7 s right after connecting Reminders.
 - **Dead Maestro driver retried** (2026-10-14, #205) — when the XCTest
   driver dies mid-run, Maestro fails every later flow in that invocation as
   unreachable; `run-flows.ts` runs exactly those flows once more on an
