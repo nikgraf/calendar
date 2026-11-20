@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vite-plus/test';
 import {
   addedRecords,
+  completeStatus,
   missingParts,
   PLACEHOLDERS,
   type PullRequest,
@@ -384,5 +385,34 @@ describe('touchedPlatforms', () => {
     expect(
       touchedPlatforms(['apps/desktop/renderer/editor.test.ts', 'packages/core/src/a.ts']),
     ).toEqual([]);
+  });
+});
+
+describe('completeStatus', () => {
+  it('passes a PR that owes nothing', () => {
+    expect(completeStatus({ missing: [] })).toEqual({ description: 'Complete', state: 'success' });
+  });
+
+  it('passes an unchecked PR and says why', () => {
+    expect(completeStatus({ skipped: 'opened by a bot' })).toEqual({
+      description: 'Not checked: opened by a bot',
+      state: 'success',
+    });
+  });
+
+  it('fails a PR that owes something and names the first part', () => {
+    expect(completeStatus({ missing: ['No Codex round recorded.'] })).toEqual({
+      description: 'Owes: No Codex round recorded.',
+      state: 'failure',
+    });
+    expect(
+      completeStatus({ missing: ['No Codex round recorded.', 'No "## Tests" section.'] }),
+    ).toEqual({ description: 'Owes 2, first: No Codex round recorded.', state: 'failure' });
+  });
+
+  it('keeps the description within the 140 characters GitHub stores', () => {
+    const { description } = completeStatus({ missing: ['x'.repeat(300)] });
+    expect(description).toHaveLength(140);
+    expect(description.endsWith('…')).toBe(true);
   });
 });

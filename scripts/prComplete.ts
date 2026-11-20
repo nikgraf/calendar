@@ -257,3 +257,37 @@ export const missingParts = (pr: PullRequest): ReadonlyArray<string> => {
     ...decisionsGaps(pr, body),
   ];
 };
+
+/** The `PR complete` commit status: its state and its line of text. */
+export interface CompleteStatus {
+  readonly description: string;
+  readonly state: 'failure' | 'success';
+}
+
+/** The longest description GitHub keeps on a commit status. */
+const DESCRIPTION_MAX = 140;
+
+const clip = (text: string): string =>
+  text.length <= DESCRIPTION_MAX ? text : `${text.slice(0, DESCRIPTION_MAX - 1)}…`;
+
+/**
+ * The status for a PR left unchecked (`skipped` says why: a draft, a bot's)
+ * or one that owes `missing`, complete when that is empty. The run's log
+ * lists every part; the description names the first.
+ */
+export const completeStatus = (
+  verdict: { readonly missing: ReadonlyArray<string> } | { readonly skipped: string },
+): CompleteStatus => {
+  if ('skipped' in verdict) {
+    return { description: clip(`Not checked: ${verdict.skipped}`), state: 'success' };
+  }
+  const [first] = verdict.missing;
+  if (first === undefined) {
+    return { description: 'Complete', state: 'success' };
+  }
+  const count = verdict.missing.length;
+  return {
+    description: clip(count === 1 ? `Owes: ${first}` : `Owes ${String(count)}, first: ${first}`),
+    state: 'failure',
+  };
+};
