@@ -191,6 +191,11 @@ describe('recurrence editing helpers', () => {
       ]);
     });
 
+    it('leaves a rule it cannot read as it is', () => {
+      const line = 'RRULE:FREQ=SOMETIMES;UNTIL=20260704T085959Z';
+      expect(retime(line, '2026-07-01T09:00:00Z', -HOUR)).toBe(line);
+    });
+
     it('leaves a rule whose parts fix the time, a date, a count and an open rule', () => {
       for (const line of [
         'RRULE:FREQ=DAILY;BYHOUR=9;UNTIL=20260703T090000Z',

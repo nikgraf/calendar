@@ -118,6 +118,8 @@ export const ruleOccurrencesBefore = (
  * One RRULE line's occurrence nearest `atUtc` on one side — `previous`, at
  * or before it; `next`, strictly after — with DTSTART only where the rule
  * generates it and none of the set's RDATE/EXDATE lines. Timed series.
+ * Undefined when there is none, or when the rule cannot be read or runs
+ * past the expansion's limit: the caller then leaves the rule as it is.
  */
 export const ruleOccurrenceNear = (
   master: RecurrenceMaster,
@@ -125,14 +127,19 @@ export const ruleOccurrenceNear = (
   atUtc: EpochMs,
   side: 'next' | 'previous',
 ): EpochMs | undefined => {
-  const rule = new RRuleTemporal({
-    maxIterations: EXPANSION_MAX_ITERATIONS,
-    rruleString: `${dtstartLine(master)}\n${ruleLine}`,
-    temporal: Temporal,
-  });
-  const at = toZonedDateTime(atUtc, master.startTimeZone);
-  return (side === 'next' ? rule.next(at, false) : rule.previous(at, true))?.toInstant()
-    .epochMilliseconds;
+  try {
+    const rule = new RRuleTemporal({
+      maxIterations: EXPANSION_MAX_ITERATIONS,
+      rruleString: `${dtstartLine(master)}\n${ruleLine}`,
+      temporal: Temporal,
+    });
+    const at = toZonedDateTime(atUtc, master.startTimeZone);
+    return (side === 'next' ? rule.next(at, false) : rule.previous(at, true))?.toInstant()
+      .epochMilliseconds;
+  } catch {
+    // An unreadable rule, or one past the expansion's limit.
+    return undefined;
+  }
 };
 
 /**
