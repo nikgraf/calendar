@@ -120,23 +120,22 @@ const utcUntil = (value: string | undefined): number | undefined => {
     : undefined;
 };
 
-/** Rule parts that fix the clock time of the occurrences, whatever DTSTART says. */
-const CLOCK_PARTS = ['BYHOUR', 'BYMINUTE', 'BYSECOND'] as const;
-
 /**
  * The recurrence of a timed series moved as a whole: `series` as it is,
  * its first occurrence moving to `movedStartUtc` and every occurrence as
  * `move` says (a series edit's or a split's wall-clock delta). A date-time
  * UNTIL bounds instants, and is read against the occurrences, not the
- * move: when the last occurrence, moved, still falls under the bound but
- * the next one would now fall under it too — an earlier time of day, so a
- * cut's `UNTIL = split − 1s` drew the split day twice — the bound moves to
- * just before that next one. Otherwise it stays: a later time of day keeps
- * the next occurrence past it, and a last occurrence moved past it (a move
- * by days, past an end date) is left out, so a cut stays before its split
- * and "Ends Dec 31" stays Dec 31. Round trips and a zone's midnight change
- * nothing it reads. A rule whose BYHOUR/BYMINUTE/BYSECOND fix its times,
- * a date-only UNTIL, COUNT and the RDATE/EXDATE lines stay as they are.
+ * move. When the series' last occurrence, moved, is one the moved rule
+ * draws and still falls under the bound, but the rule's next one would
+ * fall under it too — an earlier time of day, so a cut's `UNTIL =
+ * split − 1s` drew the split day twice — the bound moves to just before
+ * that next one. Otherwise it stays: a later time of day keeps the next
+ * occurrence past it; a last occurrence moved past it (a move by days,
+ * past an end date) is left out, so a cut stays before its split and
+ * "Ends Dec 31" stays Dec 31; and a rule whose own parts fix its days or
+ * times (BYDAY Fridays, BYHOUR=9) did not move with the start. Round trips
+ * and a zone's midnight change nothing it reads. A date-only UNTIL, COUNT
+ * and the RDATE/EXDATE lines stay as they are.
  */
 export const retimedRecurrence = (
   series: RecurrenceMaster,
@@ -147,24 +146,26 @@ export const retimedRecurrence = (
     if (series.isAllDay || !line.toUpperCase().startsWith('RRULE:')) {
       return line;
     }
-    const parts = parseRuleParts(line);
-    const until = utcUntil(parts.get('UNTIL'));
-    if (until === undefined || CLOCK_PARTS.some((part) => parts.has(part))) {
+    const until = utcUntil(parseRuleParts(line).get('UNTIL'));
+    if (until === undefined) {
       return line;
     }
     const open = rewriteRule(line, (rule) => {
       rule.delete('UNTIL');
     });
     const last = ruleOccurrenceNear(series, open, until, 'previous');
-    if (last === undefined || move(last) > until) {
+    const moved = { ...series, startUtc: movedStartUtc };
+    const movedLast = last === undefined ? undefined : move(last);
+    if (
+      movedLast === undefined ||
+      movedLast > until ||
+      // The whole series moved with its start only if its last occurrence
+      // did: a rule fixing its days or times draws elsewhere.
+      ruleOccurrenceNear(moved, open, movedLast, 'previous') !== movedLast
+    ) {
       return line;
     }
-    const next = ruleOccurrenceNear(
-      { ...series, startUtc: movedStartUtc },
-      open,
-      move(last),
-      'next',
-    );
+    const next = ruleOccurrenceNear(moved, open, movedLast, 'next');
     return next === undefined || next > until
       ? line
       : rewriteRule(line, (rule) => {

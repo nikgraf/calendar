@@ -191,6 +191,13 @@ describe('recurrence editing helpers', () => {
       ]);
     });
 
+    it('leaves a rule whose days do not follow the start', () => {
+      // Fridays from Wednesday July 1, moved a day earlier: still Fridays,
+      // so July 31 stays the last.
+      const fridays = 'RRULE:FREQ=WEEKLY;BYDAY=FR;UNTIL=20260731T235959Z';
+      expect(retime(fridays, '2026-07-01T09:00:00Z', -24 * HOUR)).toBe(fridays);
+    });
+
     it('leaves a rule it cannot read as it is', () => {
       const line = 'RRULE:FREQ=SOMETIMES;UNTIL=20260704T085959Z';
       expect(retime(line, '2026-07-01T09:00:00Z', -HOUR)).toBe(line);

@@ -1211,9 +1211,11 @@ details, or Custom), so a calendar can be shared without the details.
     and a last occurrence moved past it (a move by days, past an end date)
     is left out, so a cut stays before its split (one that drew from the
     split again would read as undone when the split is pushed) and an end
-    date stays its day. Round trips and a zone's midnight change nothing
-    it reads. A rule whose BYHOUR/BYMINUTE/BYSECOND fix its times, a
-    date-only UNTIL, COUNT and RDATE/EXDATE values stay. A split moved to
+    date stays its day. It moves only when the moved last occurrence is
+    one the moved rule draws: a rule whose own parts fix its days or times
+    (BYDAY Fridays, BYHOUR=9) did not move with the start. Round trips and
+    a zone's midnight change nothing it reads. A date-only UNTIL, COUNT
+    and RDATE/EXDATE values stay. A split moved to
     another time treats the remainder's UNTIL the same way. A new rule (`changes.recurrence`, RFC 5545 lines)
     replaces the master's and drops the exceptions whose slots it no
     longer draws, as Google does with the PATCH; one whose slot it still
