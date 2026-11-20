@@ -11,14 +11,6 @@ import {
 import { expandRecurringEvent, type RecurrenceMaster } from './expand.ts';
 
 const instant = (iso: string): number => Date.parse(iso);
-/** A Los Angeles series at 00:30 PDT moved to 23:30 the evening before. */
-const la = (rule: string) =>
-  retimedRecurrence(
-    [rule],
-    'America/Los_Angeles',
-    instant('2026-07-02T07:30:00Z'),
-    instant('2026-07-02T06:30:00Z'),
-  );
 
 describe('recurrence editing helpers', () => {
   describe('split admission', () => {
@@ -106,52 +98,107 @@ describe('recurrence editing helpers', () => {
   });
 
   describe('retimedRecurrence', () => {
-    const cut = 'RRULE:FREQ=DAILY;UNTIL=20260706T085959Z';
-    const from = instant('2026-07-02T09:00:00Z');
+    const HOUR = 3_600_000;
+    /** Daily from July 1 at `time` in `zone`, with `rule`, moved by `by`: its new rule. */
+    const retime = (rule: string, start: string, by: number, zone = 'UTC') => {
+      const startUtc = instant(start);
+      return retimedRecurrence(
+        {
+          endUtc: startUtc + HOUR / 2,
+          id: 'series',
+          isAllDay: false,
+          recurrence: [rule, 'EXDATE:20260702T090000Z', 'RDATE:20260710T090000Z'],
+          startTimeZone: zone,
+          startUtc,
+        },
+        startUtc + by,
+        (utc) => utc + by,
+      )[0];
+    };
+    // Cut at July 4, 09:00: three occurrences, July 1–3.
+    const cut = 'RRULE:FREQ=DAILY;UNTIL=20260704T085959Z';
 
-    it('moves a date-time UNTIL earlier with an earlier time of day, and nothing else', () => {
+    it('moves the bound to just before an occurrence an earlier time brings under it', () => {
+      expect(retime(cut, '2026-07-01T09:00:00Z', -HOUR)).toBe(
+        'RRULE:FREQ=DAILY;UNTIL=20260704T075959Z',
+      );
+      // A day earlier: the same three, the bound before the moved fourth.
+      expect(retime(cut, '2026-07-01T09:00:00Z', -24 * HOUR)).toBe(
+        'RRULE:FREQ=DAILY;UNTIL=20260703T085959Z',
+      );
+    });
+
+    it('leaves the bound when the next occurrence stays past it or the last moves past it', () => {
+      expect(retime(cut, '2026-07-01T09:00:00Z', 8 * HOUR)).toBe(cut);
+      // A day later: July 3's occurrence would reach the split; it goes.
+      expect(retime(cut, '2026-07-01T09:00:00Z', 24 * HOUR)).toBe(cut);
+      // "Ends July 3" at 08:00, moved to 22:00 the same day: July 3 stays.
+      const ends = 'RRULE:FREQ=DAILY;UNTIL=20260703T235959Z';
+      expect(retime(ends, '2026-07-01T08:00:00Z', 14 * HOUR)).toBe(ends);
+    });
+
+    it('comes back to the same bound after a round trip', () => {
+      let rule = cut;
+      let start = '2026-07-01T09:00:00Z';
+      for (let trip = 0; trip < 3; trip += 1) {
+        rule = retime(rule, start, 8 * HOUR)!;
+        start = new Date(instant(start) + 8 * HOUR).toISOString();
+        rule = retime(rule, start, -8 * HOUR)!;
+        start = new Date(instant(start) - 8 * HOUR).toISOString();
+      }
+      expect(rule).toBe(cut);
+    });
+
+    it('reads an hour across the zone midnight as the hour it is', () => {
+      // Los Angeles, 00:30 PDT moved to 23:30 the evening before, and back.
+      expect(
+        retime(
+          'RRULE:FREQ=DAILY;UNTIL=20260704T072959Z',
+          '2026-07-01T07:30:00Z',
+          -HOUR,
+          'America/Los_Angeles',
+        ),
+      ).toBe('RRULE:FREQ=DAILY;UNTIL=20260704T062959Z');
+      expect(
+        retime(
+          'RRULE:FREQ=DAILY;UNTIL=20260704T062959Z',
+          '2026-07-01T06:30:00Z',
+          HOUR,
+          'America/Los_Angeles',
+        ),
+      ).toBe('RRULE:FREQ=DAILY;UNTIL=20260704T062959Z');
+    });
+
+    it('passes RDATE and EXDATE lines through as they are', () => {
+      const startUtc = instant('2026-07-01T09:00:00Z');
       expect(
         retimedRecurrence(
-          [cut, 'EXDATE:20260703T090000Z', 'RDATE:20260710T090000Z'],
-          'UTC',
-          from,
-          instant('2026-07-02T08:00:00Z'),
+          {
+            endUtc: startUtc + HOUR / 2,
+            id: 'series',
+            isAllDay: false,
+            recurrence: [cut, 'EXDATE:20260702T090000Z', 'RDATE:20260710T090000Z'],
+            startTimeZone: 'UTC',
+            startUtc,
+          },
+          startUtc - HOUR,
+          (utc) => utc - HOUR,
         ),
       ).toEqual([
-        'RRULE:FREQ=DAILY;UNTIL=20260706T075959Z',
-        'EXDATE:20260703T090000Z',
+        'RRULE:FREQ=DAILY;UNTIL=20260704T075959Z',
+        'EXDATE:20260702T090000Z',
         'RDATE:20260710T090000Z',
       ]);
     });
 
-    it('leaves the bound for a later time of day or a move by days', () => {
-      for (const to of ['2026-07-02T11:00:00Z', '2026-07-03T09:00:00Z', '2026-07-01T09:00:00Z']) {
-        expect(retimedRecurrence([cut], 'UTC', from, instant(to))).toEqual([cut]);
-      }
-      expect(retimedRecurrence([cut], 'UTC', from, instant('2026-07-03T08:00:00Z'))).toEqual([
-        'RRULE:FREQ=DAILY;UNTIL=20260706T075959Z',
-      ]);
-    });
-
-    it('reads an hour earlier as an hour across the zone midnight', () => {
-      expect(la('RRULE:FREQ=DAILY;UNTIL=20260704T072959Z')).toEqual([
-        'RRULE:FREQ=DAILY;UNTIL=20260704T062959Z',
-      ]);
-      // "Ends Jul 9" (its end of day there) still ends Jul 9.
-      expect(la('RRULE:FREQ=DAILY;UNTIL=20260710T065959Z')).toEqual([
-        'RRULE:FREQ=DAILY;UNTIL=20260710T055959Z',
-      ]);
-    });
-
-    it('has no bound to move in a date, a count or an open rule', () => {
+    it('leaves a rule whose parts fix the time, a date, a count and an open rule', () => {
       for (const line of [
+        'RRULE:FREQ=DAILY;BYHOUR=9;UNTIL=20260703T090000Z',
         'RRULE:FREQ=DAILY;UNTIL=20260706',
         'RRULE:FREQ=WEEKLY;COUNT=4',
         'RRULE:FREQ=MONTHLY',
       ]) {
-        expect(retimedRecurrence([line], 'UTC', from, instant('2026-07-02T08:00:00Z'))).toEqual([
-          line,
-        ]);
+        expect(retime(line, '2026-07-01T09:00:00Z', -HOUR)).toBe(line);
       }
     });
   });

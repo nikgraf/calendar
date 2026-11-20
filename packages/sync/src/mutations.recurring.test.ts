@@ -447,10 +447,11 @@ describe('EventMutations recurring scopes', () => {
       until: '20260704T085959Z',
     },
     {
-      days: ['2026-07-02T08:00', '2026-07-03T08:00'],
+      // July 3's occurrence moves to July 4, 08:00: still before the cut.
+      days: ['2026-07-02T08:00', '2026-07-03T08:00', '2026-07-04T08:00'],
       label: 'a day later and an hour earlier',
       to: '2026-07-03T08:00',
-      until: '20260704T075959Z',
+      until: '20260704T085959Z',
     },
   ])('a series cut by a split and moved $label keeps to its days', ({ days, to, until }) =>
     Effect.gen(function* () {

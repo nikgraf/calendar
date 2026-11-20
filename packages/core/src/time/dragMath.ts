@@ -1,8 +1,6 @@
 import type { EpochMs } from './convert.ts';
 import { Temporal } from './temporal.ts';
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-
 const MINUTE_MS = 60 * 1000;
 export const DRAG_SNAP_MINUTES = 15;
 const MIN_DURATION_MS = DRAG_SNAP_MINUTES * MINUTE_MS;
@@ -82,28 +80,6 @@ export const applyWallClockDelta = (
   const delta = from.toPlainDateTime().until(to.toPlainDateTime());
   // The pass of a repeated hour the occurrence was moved into, not the base's.
   return shiftWallClock(baseUtc, timeZone, [delta], to.offset);
-};
-
-/**
- * `applyWallClockDelta` without the delta's whole days: the wall-clock
- * change between two instants (in `timeZone`), split at the nearest whole
- * day, applied to a third by its time part alone (within ±12 hours). An
- * hour earlier stays an hour earlier where it crosses the zone's midnight
- * (00:30 → 23:30 the evening before), and a move by a day moves nothing.
- */
-export const applyTimeOfDayDelta = (
-  baseUtc: EpochMs,
-  timeZone: string,
-  fromUtc: EpochMs,
-  toUtc: EpochMs,
-): EpochMs => {
-  const wall = (utc: EpochMs) =>
-    Temporal.Instant.fromEpochMilliseconds(utc).toZonedDateTimeISO(timeZone).toPlainDateTime();
-  const delta = wall(fromUtc)
-    .until(wall(toUtc), { largestUnit: 'hours' })
-    .total({ unit: 'milliseconds' });
-  const timeOfDay = delta - Math.round(delta / DAY_MS) * DAY_MS;
-  return wall(baseUtc).add({ milliseconds: timeOfDay }).toZonedDateTime(timeZone).epochMilliseconds;
 };
 
 /**

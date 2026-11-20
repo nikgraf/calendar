@@ -38,6 +38,7 @@ import {
   toZonedDateTime,
   type ReminderOverride,
   toRRuleLines,
+  recurrenceMasterOf,
   retimedRecurrence,
   toStructuredRules,
   truncateRecurrence,
@@ -1272,14 +1273,14 @@ const make: Effect.Effect<
           ? undefined
           : (utc: number) => applyWallClockDelta(utc, zone, originalStartUtc, movedTo);
       const startUtc = shift ? shift(master.startUtc) : master.startUtc;
-      // A date-time UNTIL moves earlier with an earlier time of day, or a
+      // A date-time UNTIL is read against the moved occurrences, or a
       // cut's would draw the split day (`retimedRecurrence`). A new rule
       // from the edit is taken as given.
       const recurrence =
         changes.recurrence !== undefined
           ? (changes.recurrence ?? undefined)
-          : movedTo !== undefined && master.recurrence
-            ? retimedRecurrence(master.recurrence, zone, originalStartUtc, movedTo)
+          : shift && master.recurrence
+            ? retimedRecurrence(recurrenceMasterOf(master), startUtc, shift)
             : master.recurrence;
       const merged = withConsistentGeo(
         new EventRecord({
@@ -1411,10 +1412,15 @@ const make: Effect.Effect<
         ? master.isAllDay || startUtc === originalStartUtc
           ? newRecurrence
           : retimedRecurrence(
-              newRecurrence,
-              master.startTimeZone ?? 'UTC',
-              originalStartUtc,
+              // The remainder as drawn from the split occurrence's own slot.
+              {
+                ...source,
+                endUtc: originalStartUtc + duration,
+                recurrence: newRecurrence,
+                startUtc: originalStartUtc,
+              },
               startUtc,
+              (utc) => applyWallClockDelta(utc, source.startTimeZone, originalStartUtc, startUtc),
             )
         : undefined;
       // An all-day split starts on the occurrence's slot (updateRecurring

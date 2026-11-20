@@ -1202,16 +1202,19 @@ details, or Custom), so a calendar can be shared without the details.
   - **series** — patch the master; time edits apply the occurrence's
     wall-clock delta (`applyWallClockDelta` in `time/dragMath.ts`,
     DST-safe, seconds included: a series at 09:00:30 retimed to 10:00
-    starts at 10:00). A date-time UNTIL moves only earlier, by as much
-    as an earlier time of day (`retimedRecurrence`; the change is split
-    at the nearest whole day, so an hour across the zone's midnight stays
-    an hour): left in place, a cut's `UNTIL = split−1s` under a start
-    moved earlier drew the split day too. A later time of day or a move
-    by whole days leaves it: moved later or by a day, a cut would make the
-    old series draw from the split again, which the split's push reads as
-    an undone cut. An end date stays its day; a date-only UNTIL, COUNT and
-    RDATE/EXDATE values stay. A split moved to another time moves the
-    remainder's UNTIL the same way. A new rule (`changes.recurrence`, RFC 5545 lines)
+    starts at 10:00). A date-time UNTIL is read against the moved
+    occurrences (`retimedRecurrence`): when the series' last occurrence,
+    moved, still falls under the bound but the next one would too (an
+    earlier time of day), the bound moves to just before that next one —
+    left in place, a cut's `UNTIL = split−1s` drew the split day twice.
+    Otherwise it stays: a later time keeps the next occurrence past it,
+    and a last occurrence moved past it (a move by days, past an end date)
+    is left out, so a cut stays before its split (one that drew from the
+    split again would read as undone when the split is pushed) and an end
+    date stays its day. Round trips and a zone's midnight change nothing
+    it reads. A rule whose BYHOUR/BYMINUTE/BYSECOND fix its times, a
+    date-only UNTIL, COUNT and RDATE/EXDATE values stay. A split moved to
+    another time treats the remainder's UNTIL the same way. A new rule (`changes.recurrence`, RFC 5545 lines)
     replaces the master's and drops the exceptions whose slots it no
     longer draws, as Google does with the PATCH; one whose slot it still
     draws stays as it is, moved or cancelled (verified live, see

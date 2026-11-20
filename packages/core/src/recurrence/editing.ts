@@ -1,10 +1,10 @@
 import { plainDateToUtcMs } from '../time/convert.ts';
-import { applyTimeOfDayDelta } from '../time/dragMath.ts';
 import { Temporal } from '../time/temporal.ts';
 import {
   DTSTART_ONLY_RULE,
   expandRecurringEvent,
   type RecurrenceMaster,
+  ruleOccurrenceNear,
   ruleOccurrencesBefore,
 } from './expand.ts';
 
@@ -110,49 +110,67 @@ const parseDateList = (
   return { params, values };
 };
 
-const shiftUntil = (
-  recurrence: ReadonlyArray<string>,
-  shift: (epochMs: number) => number,
-): Array<string> =>
-  recurrence.map((line) => {
-    if (!line.toUpperCase().startsWith('RRULE:')) {
-      return line;
-    }
-    const match = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/.exec(
-      parseRuleParts(line).get('UNTIL') ?? '',
-    );
-    if (!match) {
-      return line;
-    }
-    const until = Temporal.Instant.from(
-      `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${match[6]}Z`,
-    ).epochMilliseconds;
-    return rewriteRule(line, (parts) => {
-      parts.set('UNTIL', compactUtc(shift(until)));
-    });
-  });
+/** A date-time UNTIL (`20260704T085959Z`) as epoch ms, or undefined for any other form. */
+const utcUntil = (value: string | undefined): number | undefined => {
+  const match = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/.exec(value ?? '');
+  return match
+    ? Temporal.Instant.from(
+        `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${match[6]}Z`,
+      ).epochMilliseconds
+    : undefined;
+};
+
+/** Rule parts that fix the clock time of the occurrences, whatever DTSTART says. */
+const CLOCK_PARTS = ['BYHOUR', 'BYMINUTE', 'BYSECOND'] as const;
 
 /**
- * The recurrence of a series whose occurrences moved as one from `fromUtc`
- * to `toUtc` (a series edit's or a split's new times, on the series' own
- * clock). A date-time UNTIL bounds instants: moved to an earlier time of
- * day, the series' occurrence on the bound's day would fall before it, so
- * the bound moves earlier by as much (`applyTimeOfDayDelta`) — left in
- * place, a cut's `UNTIL = split − 1s` drew the split day as well. A later
- * time of day, or a move by whole days, leaves it: the day after still
- * draws nothing before it, and a cut stays before its split (a bound moved
- * past it would make the old series draw from the split again). A date-only
- * UNTIL, COUNT and RDATE/EXDATE values stay.
+ * The recurrence of a timed series moved as a whole: `series` as it is,
+ * its first occurrence moving to `movedStartUtc` and every occurrence as
+ * `move` says (a series edit's or a split's wall-clock delta). A date-time
+ * UNTIL bounds instants, and is read against the occurrences, not the
+ * move: when the last occurrence, moved, still falls under the bound but
+ * the next one would now fall under it too — an earlier time of day, so a
+ * cut's `UNTIL = split − 1s` drew the split day twice — the bound moves to
+ * just before that next one. Otherwise it stays: a later time of day keeps
+ * the next occurrence past it, and a last occurrence moved past it (a move
+ * by days, past an end date) is left out, so a cut stays before its split
+ * and "Ends Dec 31" stays Dec 31. Round trips and a zone's midnight change
+ * nothing it reads. A rule whose BYHOUR/BYMINUTE/BYSECOND fix its times,
+ * a date-only UNTIL, COUNT and the RDATE/EXDATE lines stay as they are.
  */
 export const retimedRecurrence = (
-  recurrence: ReadonlyArray<string>,
-  timeZone: string,
-  fromUtc: number,
-  toUtc: number,
+  series: RecurrenceMaster,
+  movedStartUtc: number,
+  move: (epochMs: number) => number,
 ): Array<string> =>
-  shiftUntil(recurrence, (until) =>
-    Math.min(until, applyTimeOfDayDelta(until, timeZone, fromUtc, toUtc)),
-  );
+  series.recurrence.map((line) => {
+    if (series.isAllDay || !line.toUpperCase().startsWith('RRULE:')) {
+      return line;
+    }
+    const parts = parseRuleParts(line);
+    const until = utcUntil(parts.get('UNTIL'));
+    if (until === undefined || CLOCK_PARTS.some((part) => parts.has(part))) {
+      return line;
+    }
+    const open = rewriteRule(line, (rule) => {
+      rule.delete('UNTIL');
+    });
+    const last = ruleOccurrenceNear(series, open, until, 'previous');
+    if (last === undefined || move(last) > until) {
+      return line;
+    }
+    const next = ruleOccurrenceNear(
+      { ...series, startUtc: movedStartUtc },
+      open,
+      move(last),
+      'next',
+    );
+    return next === undefined || next > until
+      ? line
+      : rewriteRule(line, (rule) => {
+          rule.set('UNTIL', compactUtc(next - 1000));
+        });
+  });
 
 /**
  * Truncates a recurrence so its last occurrence falls strictly before
