@@ -1191,6 +1191,13 @@ details, or Custom), so a calendar can be shared without the details.
   RDATE lines has no rule: `buildRuleString` gives it
   `RRULE:FREQ=DAILY;COUNT=1`, so it expands as DTSTART + RDATE − EXDATE
   through the same library pass as every rule.
+- A generated occurrence whose wall time a transition skips (a daily 02:30
+  on the spring-forward day) does not exist: rrule-temporal leaves it out
+  and does not count it toward COUNT (RFC 5545 §3.3.10, since its 2.2.6),
+  so a five-time series ends a day later; a repeated time is the earlier
+  instant. DTSTART in a skipped hour keeps the later reading, and every
+  day then repeats that. Whether Google draws that day the same way is
+  not verified.
 - The views never get masters: `assembleWindow` expands them into
   synthetic instances with id `<masterId>__<originalStartUtc>` carrying
   `recurringEventId` + `originalStartUtc`.

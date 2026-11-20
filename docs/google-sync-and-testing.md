@@ -533,10 +533,33 @@ An acknowledged server copy may be visible while its delete is queued;
 the final comparison, with the queue empty, permits no such extra rows.
 Titles here are well-formed Unicode, as SQLite stores UTF-8 text.
 
+`packages/sync/src/localNotifications.property.test.ts` drives the real
+`LocalNotifications` pass, once per sink: the Mac's immediate one and
+iOS's schedule, with a fake OS that delivers pending notifications as
+time passes. Each case starts up to 60 hours before a home zone's
+transition (New York, Santiago, Sydney, Vienna; forward or back) and
+generates event, series and task edits, completions and deletions, rows
+pulled from another device, settings saves, waits, sleeps and trips to
+another zone, with a pass after each. An oracle restates the rules from
+the stored intent, reading wall clocks through `Intl` rather than
+Temporal: after every pass iOS holds exactly the plans still ahead (the
+soonest 60, current titles and deadlines), each delivered notification
+leaves exactly when its switch says, and the Mac shows exactly what came
+due since its last pass or whose row (for tasks, also the settings save)
+predates its moment, while it is still worth showing, once per key and
+moment. A fixed script around the zone's other transition then makes
+every case notify on both sides of it and at 09:00 on the 23- or 25-hour
+day, catch up on a pulled row, test both edges of that day's expiry and
+clear a delivered event and task. A series' oracle omits an occurrence
+whose wall time a transition skips, as the expander does (architecture
+→ Recurring events).
+
 Run these with `pnpm exec vp test run .property.test.ts`
 or as part of `pnpm test`. Failures print the shrunk input and a replay
 token. For the sync property, pass that token unchanged in
-`SYNC_PROPERTY_REPLAY` and run that file alone. Replay tokens belong to
+`SYNC_PROPERTY_REPLAY` and run that file alone; for the notification
+properties, `NOTIFICATION_PROPERTY_REPLAY` with the failing test's name
+in `-t`. Replay tokens belong to
 the pinned Effect release; keep a concrete regression example when a
 property exposes a bug. The broader seeded queue suite below remains
 separate: it also covers tasks, moves, discards and other-device writes.
