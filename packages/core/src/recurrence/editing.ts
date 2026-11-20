@@ -110,12 +110,11 @@ const parseDateList = (
 };
 
 /**
- * A recurrence for a series whose starts all moved by `shift` (a series
- * edit's wall-clock delta): a date-time UNTIL bounds instants, so it moves
- * with them and the series keeps its days. Left in place, a cut's
- * `UNTIL = split − 1s` under a start moved earlier drew the split day as
- * well. A date-only UNTIL bounds a day and stays, as do COUNT and the
- * RDATE/EXDATE lines.
+ * A recurrence whose date-time UNTIL moved by `shift` — for a series
+ * retimed, the change in time of day (`applyTimeOfDayDelta`), so the
+ * bound keeps its day. Left in place, a cut's `UNTIL = split − 1s` under a
+ * start moved earlier drew the split day as well. A date-only UNTIL bounds
+ * a day and stays, as do COUNT and the RDATE/EXDATE lines.
  */
 export const shiftUntil = (
   recurrence: ReadonlyArray<string>,

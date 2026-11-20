@@ -5,6 +5,7 @@ import {
 } from '@calendar/apple-calendar';
 import {
   appendLink,
+  applyTimeOfDayDelta,
   applyWallClockDelta,
   Attendee,
   canonicalReminders,
@@ -1272,13 +1273,16 @@ const make: Effect.Effect<
           ? undefined
           : (utc: number) => applyWallClockDelta(utc, zone, originalStartUtc, movedTo);
       const startUtc = shift ? shift(master.startUtc) : master.startUtc;
-      // The rule's own date-time bound moves with the starts (a cut's
-      // UNTIL, `shiftUntil`); a new rule from the edit is taken as given.
+      // The rule's own date-time bound moves with the time of day, never
+      // the date (`shiftUntil`): a cut's UNTIL stays before the split, an
+      // end date stays its day. A new rule from the edit is taken as given.
       const recurrence =
         changes.recurrence !== undefined
           ? (changes.recurrence ?? undefined)
-          : shift && master.recurrence && startUtc !== master.startUtc
-            ? shiftUntil(master.recurrence, shift)
+          : movedTo !== undefined && master.recurrence
+            ? shiftUntil(master.recurrence, (utc) =>
+                applyTimeOfDayDelta(utc, zone, originalStartUtc, movedTo),
+              )
             : master.recurrence;
       const merged = withConsistentGeo(
         new EventRecord({
@@ -1403,14 +1407,15 @@ const make: Effect.Effect<
       const projected = projectInstance(master, originalStartUtc, now);
       const startUtc =
         !master.isAllDay && changes.startUtc !== undefined ? changes.startUtc : projected.startUtc;
-      // The new series starts where the occurrence moved to, and so does
-      // every later one: the remainder's date-time UNTIL moves with them
-      // (`shiftUntil`), or a bound an earlier split left draws its day too.
+      // The new series starts at the occurrence's new time of day, and so
+      // does every later one: the remainder's date-time UNTIL moves with
+      // that time, never the date (`shiftUntil`), or a bound an earlier
+      // split left draws that split's day too.
       const remainder = isRecurringSet(newRecurrence)
         ? master.isAllDay || startUtc === originalStartUtc
           ? newRecurrence
           : shiftUntil(newRecurrence, (utc) =>
-              applyWallClockDelta(utc, master.startTimeZone ?? 'UTC', originalStartUtc, startUtc),
+              applyTimeOfDayDelta(utc, master.startTimeZone ?? 'UTC', originalStartUtc, startUtc),
             )
         : undefined;
       // An all-day split starts on the occurrence's slot (updateRecurring

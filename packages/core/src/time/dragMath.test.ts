@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { applyWallClockDelta, moveEventTimes, resizeEventEnd, snapMinutes } from './dragMath.ts';
+import {
+  applyTimeOfDayDelta,
+  applyWallClockDelta,
+  moveEventTimes,
+  resizeEventEnd,
+  snapMinutes,
+} from './dragMath.ts';
 
 const HOUR = 60 * 60 * 1000;
 const event = {
@@ -202,5 +208,37 @@ describe('DST-aware shifts', () => {
       Date.parse('2026-07-06T08:30:00Z'), // -> 10:30
     );
     expect(shifted).toBe(Date.parse('2026-01-05T09:30:00Z')); // Jan 5, 10:30 Vienna
+  });
+});
+
+describe('applyTimeOfDayDelta', () => {
+  // A cut's UNTIL one second before a 09:00 split on July 4.
+  const until = Date.parse('2026-07-04T08:59:59Z');
+  const from = Date.parse('2026-07-02T09:00:00Z');
+
+  it('moves the base by the change in time of day', () => {
+    expect(applyTimeOfDayDelta(until, 'UTC', from, Date.parse('2026-07-02T08:00:00Z'))).toBe(
+      Date.parse('2026-07-04T07:59:59Z'),
+    );
+  });
+
+  it('keeps the base on its date when the move changes the date', () => {
+    expect(applyTimeOfDayDelta(until, 'UTC', from, Date.parse('2026-07-03T09:00:00Z'))).toBe(until);
+    expect(applyTimeOfDayDelta(until, 'UTC', from, Date.parse('2026-07-01T11:00:00Z'))).toBe(
+      Date.parse('2026-07-04T10:59:59Z'),
+    );
+  });
+
+  it('reads the times of day on the series clock across a transition', () => {
+    // Vienna: 09:00 CET on March 27, the base after the clocks moved forward.
+    const base = Date.parse('2026-03-31T06:59:59Z'); // 08:59:59 CEST
+    expect(
+      applyTimeOfDayDelta(
+        base,
+        'Europe/Vienna',
+        Date.parse('2026-03-27T08:00:00Z'), // 09:00 CET
+        Date.parse('2026-03-28T07:00:00Z'), // 08:00 CET, a day later
+      ),
+    ).toBe(Date.parse('2026-03-31T05:59:59Z')); // 07:59:59 CEST
   });
 });

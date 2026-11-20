@@ -881,7 +881,7 @@ ledgers use `bombadil-tasks-<timestamp>/`; replay one with
 `E2E=1 BOMBADIL=1 BOMBADIL_TASK_REPRODUCE=<directory> pnpm exec vp test run apps/desktop/e2e/bombadilTasks.e2e.ts`.
 
 `bombadilRecurring.e2e.ts` runs a third 45-second exploration on a seeded
-daily Google series (UTC, two weeks before today's week, never ending):
+daily Google series (UTC, from two weeks before today, never ending):
 it opens occurrences in the visible week with each scope a third of the
 time, then edits times, moves one occurrence a day or a month, switches
 scope, cancels and reopens (the form must read as it opened, on This

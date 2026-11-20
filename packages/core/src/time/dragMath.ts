@@ -83,6 +83,29 @@ export const applyWallClockDelta = (
 };
 
 /**
+ * `applyWallClockDelta` without the delta's whole days: the base keeps its
+ * date and moves by the change in time of day alone. A series' UNTIL moves
+ * so: retimed, its last day keeps its occurrence and the day after does
+ * not draw one; moved to another date, the series still ends on its day
+ * (a cut stays before the split, an "Ends Dec 31" stays Dec 31).
+ */
+export const applyTimeOfDayDelta = (
+  baseUtc: EpochMs,
+  timeZone: string,
+  fromUtc: EpochMs,
+  toUtc: EpochMs,
+): EpochMs => {
+  const from = Temporal.Instant.fromEpochMilliseconds(fromUtc).toZonedDateTimeISO(timeZone);
+  const to = Temporal.Instant.fromEpochMilliseconds(toUtc).toZonedDateTimeISO(timeZone);
+  return applyWallClockDelta(
+    baseUtc,
+    timeZone,
+    fromUtc,
+    from.withPlainTime(to.toPlainTime()).epochMilliseconds,
+  );
+};
+
+/**
  * Adjusts only the end by a (snapped) minute delta, wall clock in `timeZone`
  * like a move, clamped so the event keeps at least one snap step of duration.
  */

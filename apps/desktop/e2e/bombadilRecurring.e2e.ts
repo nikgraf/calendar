@@ -184,8 +184,8 @@ it.runIf(process.env['BOMBADIL'] === '1')(
   { retry: 0, timeout: 180_000 },
   async ({ signal }) => {
     const today = Temporal.Now.plainDateISO('UTC').toString();
-    // Two weeks of the series before today's week, so a split or a rename
-    // has occurrences outside the visible week to leave alone or reach.
+    // From two weeks before today (8 to 14 days before the visible week),
+    // so a split or a rename has occurrences outside it to leave alone or reach.
     const firstDay = day(today, -14);
     const seedSeries = new EventRecord({
       accountId: 'acc-bombadil-recurring',
