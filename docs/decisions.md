@@ -181,16 +181,25 @@ was cut (pruned 2026-11-17).
   field's value as a string, erase and retype until it matches, then
   Apply. Rejected: an `extendedWaitUntil` regex like 03 and 07 (the
   phrases' `|` would need escaping in every pattern).
-- **One retry for what the simulator did, none for the app** (2026-10-14
-  to 2026-11-19, #205, #365) — `run-flows.ts` reruns a flow once, on an
-  erased simulator, only on proof the failure was not the app's: a driver
-  that died mid-run or never started, a launch whose JUnit error lost its
-  type, a display gone black, a last touch the simulator dropped
-  (`maestroRetry.ts` holds each proof). A flow failing on its own blocks
-  it, so an app race still turns the job red. Rejected: a blanket rerun
-  like desktop's per-spec retry, Maestro's `retry` (it cannot outlive the
-  latch), a retry for any missing report or unknown error, a relaunch
-  alone, retapping in the flow. Open: nothing ties a failure to a drop.
+- **One retry for a Maestro driver that died or never started** (2026-10-14
+  to 2026-11-19, #205, #365) — `run-flows.ts` reruns the flows lost that
+  way once, on an erased simulator, only on proof (`maestroRetry.ts`):
+  the latch in the run log, a timeout whose stack passes session
+  creation, or the captured command evidence when a launch's JUnit error
+  lost its type. A flow failing on its own blocks it, so an app race
+  still turns the job red. Rejected: a blanket rerun like desktop's
+  per-spec retry, Maestro's `retry` (it cannot outlive the latch), a
+  retry for any missing report or unknown error. Open: whether the
+  keyboard hang gets rarer, and whether the cold-runner case returns.
+- **One retry for a display gone black or a touch the simulator dropped**
+  (2026-10-30, 2026-10-31) — a failed flow whose screenshots are all
+  solid black, or whose last touch backboardd took down and then skipped,
+  reruns once on an erased simulator like a lost driver's; a flow failing
+  on a drawn screen still blocks it. Rejected: a relaunch-only retry (a
+  black screen began at one, and half-made state stays), a recovery in
+  the shared sub-flows, a near-black threshold, retapping in the flow (it
+  would hide an app that drops a tap). Open: whether the reboot always
+  brings the display back; nothing ties a failure to the drop.
 - **The live nightly's flows rerun too, under titles of their own**
   (2026-10-30 `todo/live-driver-retry`, 2026-11-13
   `todo/live-retry-fresh-titles`) — `google-live.yml`'s three Maestro
