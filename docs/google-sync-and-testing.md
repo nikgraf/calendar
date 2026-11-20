@@ -924,7 +924,8 @@ regression test for a discovered app bug. Ordinary `pnpm test:e2e` skips
 this bounded exploratory run, and the unit gate does not launch Electron.
 CI runs it as a separate step after the standard CDP suite in the existing
 desktop job, reusing its Electron download and built app. Each exploration
-is bounded to 45 seconds; the step has a four-minute timeout and no retry.
+is bounded to 45 seconds; the three run in sequence (about 2.5 minutes on
+a local Mac), and the step has a six-minute timeout and no retry.
 The job fails on a property violation or persistence mismatch. The
 `bombadil-traces-<attempt>` artifact retains traces and ledgers for seven
 days on passing and failing runs; failed harness dumps also remain in the
@@ -1261,7 +1262,7 @@ Electron binary (`electron --version`) and run spec files sequentially.
 - `gate` (ubuntu, reusable `gate.yml`, also called by `ios.yml`): check +
   knip + typecheck + unit tests. The check is "Gate / Lint, typecheck, unit tests".
 - `e2e` (macos-15): desktop build → `pnpm test:e2e` →
-  `pnpm test:bombadil` (four-minute step; traces retained for seven days
+  `pnpm test:bombadil` (six-minute step; traces retained for seven days
   on passing and failing runs).
 - `e2e-reminders` (xcode-27, GitHub's macOS 27 image: the helper is built
   for macOS 27 and runs only there): the **real** EventKit path on the
