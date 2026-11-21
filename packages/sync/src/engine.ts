@@ -5,6 +5,7 @@ import {
   type GoogleContact,
   isAppleCalendarAccount,
   isAppleRemindersAccount,
+  type PendingOp,
   SyncState,
   tasksScope,
   type Account,
@@ -333,6 +334,22 @@ const make: Effect.Effect<
     });
 
   /** The events (series masters) queued moves take out of a calendar. */
+  /**
+   * The move each event of the account goes with next: its first queued
+   * one. What a page reports of the event is of Google before that move,
+   * or after it landed — never of a move queued behind it.
+   */
+  const nextMoves = (accountId: string) =>
+    Effect.map(pendingOpRepo.listAll(), (ops) => {
+      const next = new Map<string, PendingOp>();
+      for (const op of ops) {
+        if (op.kind === 'move' && op.accountId === accountId && !next.has(op.eventId)) {
+          next.set(op.eventId, op);
+        }
+      }
+      return next;
+    });
+
   const movesOutOf = (accountId: string, calendarId: string) =>
     Effect.map(
       pendingOpRepo.listAll(),
@@ -356,6 +373,9 @@ const make: Effect.Effect<
       const scope = eventsScope(calendarId);
       const state = yield* syncStateRepo.get(account.id, scope);
       const passStartedAt = yield* Clock.currentTimeMillis;
+      // The events a queued move takes out of this calendar that this
+      // pass's pages listed here all the same.
+      const listedLeaving = new Set<string>();
 
       const applyItems = (items: ReadonlyArray<GcalEvent>, pageTimeZone: string | undefined) =>
         Effect.gen(function* () {
@@ -393,6 +413,47 @@ const make: Effect.Effect<
           // notification planner and the calendar mirrors all recompute on
           // EVENTS_KEY, and none of them has anything to recompute.
           if (upserts.length > 0 || deletions.length > 0) {
+            // A queued create whose event the page brings, or a queued move
+            // into this calendar of one it brings: that write landed, and
+            // its answer was lost. Settled with the page's record once the
+            // page is in (`landedInPull`); left queued, a discard took back
+            // what Google has, for good — the token has moved past it.
+            const queued = (yield* pendingOpRepo.listAll()).filter(
+              (op) => op.accountId === account.id,
+            );
+            const moving = yield* nextMoves(account.id);
+            const landed = upserts.flatMap((record) => {
+              if (record.status === 'cancelled') {
+                return [];
+              }
+              const move = moving.get(record.id);
+              return queued
+                .filter(
+                  (op) =>
+                    op.eventId === record.id &&
+                    ((op.kind === 'create' && op.calendarId === calendarId) ||
+                      (op.id === move?.id && op.targetCalendarId === calendarId)),
+                )
+                .map((op) => ({ opId: op.id, record }));
+            });
+            // An event a queued move brings into this calendar that the page
+            // reports gone from it: the event left here before (an earlier
+            // move out, which that report is of) and the move brings it
+            // back. Its rows here are the move's, and stay.
+            const arriving = new Set(
+              queued
+                .filter((op) => op.kind === 'move' && op.targetCalendarId === calendarId)
+                .map((op) => op.eventId),
+            );
+            const gone = deletions.filter((id) => !arriving.has(id));
+            // One the page reports gone from here that its next move takes
+            // out of here: the move landed, or another device deleted the
+            // event. Released later, the move must not put it back
+            // (`PendingOp.sourceGone`).
+            const left = deletions.flatMap((id) => {
+              const move = moving.get(id);
+              return move?.calendarId === calendarId ? [move.id] : [];
+            });
             yield* sql.withTransaction(
               Effect.gen(function* () {
                 // A series a queued move takes out of this calendar: Google
@@ -406,6 +467,12 @@ const make: Effect.Effect<
                   (record) =>
                     !leaving.has(record.id) && !leaving.has(record.recurringEventId ?? ''),
                 );
+                for (const record of upserts) {
+                  if (leaving.has(record.id)) {
+                    listedLeaving.add(record.id);
+                  }
+                }
+                yield* pendingOpRepo.markSourceGone(left);
                 // An exception of a series whose delete waits with the
                 // master gone locally goes into that delete, not the table.
                 const kept = yield* holdPulledExceptions(taken, account.id, calendarId, staying);
@@ -414,21 +481,24 @@ const make: Effect.Effect<
                 // is lost. The rest are Google's rows.
                 const rows = yield* heldEvents.receive(account.id, calendarId, kept);
                 yield* eventRepo.applyPage(account.id, calendarId, {
-                  deletions,
+                  deletions: gone,
                   mode: 'pull',
                   upserts: rows,
                 });
                 // Google has these no more: a queued delete of one has
                 // nothing left to put back.
-                yield* pendingOpRepo.forgetDeleted(account.id, calendarId, deletions);
+                yield* pendingOpRepo.forgetDeleted(account.id, calendarId, gone);
                 // A master put back at its waiting delete brings back what
                 // the delete took; a series deleted on Google takes it away.
                 yield* settlePulledSeries(taken, account.id, calendarId, {
-                  deletions,
+                  deletions: gone,
                   written: rows,
                 });
               }),
             );
+            if (landed.length > 0) {
+              yield* mutations.landedInPull(landed);
+            }
           }
           // A full list of a big calendar is many pages: let rpc handlers
           // and the UI interleave between them.
@@ -496,6 +566,12 @@ const make: Effect.Effect<
         // Rows not touched by this pass no longer exist upstream; local
         // pending edits are preserved.
         yield* eventRepo.deleteStale(account.id, calendarId, passStartedAt);
+        // An event a queued move takes out of here that the full list no
+        // longer names is gone from here too.
+        const absent = [...(yield* nextMoves(account.id)).values()].filter(
+          (move) => move.calendarId === calendarId && !listedLeaving.has(move.eventId),
+        );
+        yield* pendingOpRepo.markSourceGone(absent.map((move) => move.id));
       }
 
       yield* writeState('idle', nextSyncToken, fullPass);

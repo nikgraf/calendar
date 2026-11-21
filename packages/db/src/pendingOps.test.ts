@@ -283,6 +283,19 @@ describe('PendingOpRepo', () => {
     }).pipe(Effect.provide(freshDbLayer())),
   );
 
+  it.effect('a move remembers that a pull found its event gone from the source', () =>
+    Effect.gen(function* () {
+      const repo = yield* PendingOpRepo;
+      yield* repo.enqueue(op('move', { eventId: 'e1', kind: 'move', targetCalendarId: 'cal-2' }));
+      yield* repo.enqueue(op('edit', { eventId: 'e1' }));
+      expect((yield* repo.getById('move'))?.sourceGone).toBeUndefined();
+      yield* repo.markSourceGone(['move', 'edit']);
+      expect((yield* repo.getById('move'))?.sourceGone).toBe(true);
+      // Only a move has a source to be gone from.
+      expect((yield* repo.getById('edit'))?.sourceGone).toBeUndefined();
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
   it.effect('listDeletes: the queued deletes of one calendar', () =>
     Effect.gen(function* () {
       const repo = yield* PendingOpRepo;

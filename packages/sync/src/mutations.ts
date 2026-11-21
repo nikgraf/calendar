@@ -750,6 +750,7 @@ const make: Effect.Effect<
     });
 
   const {
+    acknowledge,
     apply: applyOp,
     releaseAccountCopies,
     releaseRow,
@@ -802,6 +803,37 @@ const make: Effect.Effect<
       }
     });
 
+  /** An op is done: it leaves the queue, and what waited for it may go. */
+  const finish = (op: PendingOp) =>
+    Effect.gen(function* () {
+      yield* pendingOpRepo.remove(op.id);
+      // The source deletes this copy held may go now (applyOp
+      // copyGate); a copy that did not land took them back.
+      if (op.copySource?.kind === 'held') {
+        yield* settleHeld(op.copySource.opIds);
+      }
+      // A series split off this one waits for it no more (splitSeries.ts).
+      if (holdsSplit(op)) {
+        yield* releaseSplits(taken, op);
+      }
+    });
+
+  const landedInPull: EventMutationsShape['landedInPull'] = (landed) =>
+    Effect.ignore(
+      Effect.forEach(
+        landed,
+        ({ opId, record }) =>
+          Effect.gen(function* () {
+            // Re-read: an earlier one of the page may have settled it.
+            const op = yield* pendingOpRepo.getById(opId);
+            if (op && (yield* acknowledge(op, record))) {
+              yield* finish(op);
+            }
+          }),
+        { discard: true },
+      ),
+    );
+
   const processPendingOps = (): Effect.Effect<void> =>
     gate
       .withPermits(1)(
@@ -819,16 +851,7 @@ const make: Effect.Effect<
             }
             const outcome = yield* applyOp(op);
             if (outcome === 'done') {
-              yield* pendingOpRepo.remove(op.id);
-              // The source deletes this copy held may go now (applyOp
-              // copyGate); a copy that did not land took them back.
-              if (op.copySource?.kind === 'held') {
-                yield* settleHeld(op.copySource.opIds);
-              }
-              // A series split off this one waits for it no more (splitSeries.ts).
-              if (holdsSplit(op)) {
-                yield* releaseSplits(taken, op);
-              }
+              yield* finish(op);
             } else if ('conflict' in outcome) {
               // Parked until the user chooses (resolveConflict), with the
               // user's version on screen. Google's is the event's copy
@@ -1704,6 +1727,8 @@ const make: Effect.Effect<
       }),
 
     discardPendingOp,
+
+    landedInPull,
 
     processPendingOps,
 

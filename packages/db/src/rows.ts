@@ -465,6 +465,7 @@ export interface PendingOpRow {
   readonly dispatched_at: number | null;
   readonly drops_from: number | null;
   readonly split_at: number | null;
+  readonly source_gone: number;
   readonly split_check: number;
   readonly split_in: string | null;
   readonly split_of: string | null;
@@ -542,6 +543,7 @@ export const pendingOpFromRow = (row: PendingOpRow): PendingOp | undefined =>
         payload: decodeOr(EventRecord, parseJson(row.payload)),
         recurrenceCleared: row.recurrence_cleared === 1 ? true : undefined,
         remindersChanged: row.reminders_changed === 1 ? true : undefined,
+        sourceGone: row.source_gone === 1 ? true : undefined,
         splitAt: row.split_at ?? undefined,
         splitCheck: row.split_check === 1 ? true : undefined,
         splitIn: row.split_in ?? undefined,

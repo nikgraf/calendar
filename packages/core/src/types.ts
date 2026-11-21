@@ -503,6 +503,13 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
    */
   remindersChanged: Schema.optional(Schema.Boolean),
   /**
+   * A move only: a pull reported the event deleted in the calendar the
+   * move takes it from (or a full list no longer named it). Google has it
+   * there no more — the move landed, or another device deleted it — so a
+   * move Google turns out never to have made puts nothing back there.
+   */
+  sourceGone: Schema.optional(Schema.Boolean),
+  /**
    * The create of a series a this-and-following edit split off: the
    * original start of the occurrence it starts at (`splitAt`) in the series
    * it came from (`splitOf`, in calendar `splitIn`, which follows a move of

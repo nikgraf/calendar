@@ -613,17 +613,23 @@ interface World {
    * (JSON, `null` for gone) and whether an answer the client applies
    * carried it.
    */
-  readonly heard: Map<string, { readonly applied: boolean; readonly json: string }>;
+  readonly heard: Map<
+    string,
+    { readonly applied: boolean; readonly json: string; readonly shownOnly: boolean }
+  >;
   /** Items an op held at the end of the step before (see heldItems). */
   held: ReadonlySet<string>;
   /**
-   * Items Google sent a newer state of (a change, its deletion, its
-   * creation) while an op held their row: the pull skips such a row and
-   * its token moves past, so an op abandoned later (a discard, a refusal,
-   * a move released after a 404) leaves what it found, or its older
-   * snapshot, for good — the known gap the skipped tests below show. Per
-   * slot, what that copy shows (JSON): while Google's still shows it, a
-   * difference there is listed, not failed; any other difference fails.
+   * Items Google showed the client a newer state of while an op held
+   * their row, in an answer the client keeps nothing of: an event it
+   * asked for by id (the fetch after a 412 when the op has left the queue
+   * by then, a split-off series asking where its source ends), or a task
+   * listing, which may be the drain looking for a create whose answer was
+   * lost. The next pull brings that state, so until then a difference is
+   * listed, not failed — per slot, what that copy shows (JSON), while
+   * Google's still shows it. A pull's events page is no such answer: what
+   * it brings for a held event becomes the event's copy, and shows once
+   * the op is gone.
    */
   readonly heldTold: Map<string, string>;
   readonly intents: Map<string, Intent>;
@@ -760,11 +766,13 @@ const remember = (
   id: string,
   item: GcalEvent | GcalTask | null,
   applied: boolean,
+  shownOnly = false,
 ) => {
   const slot = `${container}|${id}`;
   world.heard.set(slot, {
     applied: applied || (world.heard.get(slot)?.applied ?? false),
     json: shownJson(container, item),
+    shownOnly,
   });
   if (applied) {
     world.told.set(slot, { item, json: JSON.stringify(item) });
@@ -821,7 +829,14 @@ const learn = (world: World, call: FakeCall, status: number, json: unknown) => {
         if (gone && tookExceptions.has(slot) && !world.deletedSlots.has(slot)) {
           world.unjudged.add(slot);
         }
-        remember(world, calendarOrList, item.id, gone ? null : item, events !== null);
+        remember(
+          world,
+          calendarOrList,
+          item.id,
+          gone ? null : item,
+          events !== null,
+          events === null,
+        );
       }
       // A full events list (after a 410) says gone by leaving out: what it
       // does not name, it no longer has (one page here).
@@ -855,7 +870,14 @@ const learn = (world: World, call: FakeCall, status: number, json: unknown) => {
     // looked at (a split-off series asking where its source ends), not
     // written to the row.
     const applied = call.method !== 'GET' || isHeld(world.held, target.key);
-    remember(world, destination ?? target.container, target.id, json as GcalEvent, applied);
+    remember(
+      world,
+      destination ?? target.container,
+      target.id,
+      json as GcalEvent,
+      applied,
+      call.method === 'GET',
+    );
     if (url.searchParams.has('destination')) {
       // The event left its calendar: the answer to the move says so.
       world.told.set(`${target.container}|${target.id}`, { item: null, json: 'null' });
@@ -1271,12 +1293,12 @@ const heldItems = (snapshot: Snapshot): Set<string> => {
   return held;
 };
 
-/** Which copies Google sent this step reached a row an op held (see World.heldTold). */
+/** Which copies Google only showed this step reached a row an op held (see World.heldTold). */
 const noteHeldCopies = (world: World, snapshot: Snapshot) => {
   const held = heldItems(snapshot);
-  for (const [slot, { applied, json }] of world.heard) {
+  for (const [slot, { applied, json, shownOnly }] of world.heard) {
     const key = keyOfSlot(slot);
-    if (isHeld(world.held, key) || isHeld(held, key)) {
+    if (shownOnly && (isHeld(world.held, key) || isHeld(held, key))) {
       world.heldTold.set(slot, json);
     } else if (applied) {
       world.heldTold.delete(slot);
@@ -2623,6 +2645,7 @@ const GAP = {
   ahead: 'a series change that went back behind an occurrence change made under it',
   dropped: 'the deletes a rule change queued, sent after a delete replaced it',
   givenUp: 'an occurrence changed under a new rule that was given up',
+  moving: 'news of a series a queued move takes out of its calendar',
   ownText: "an occurrence's own text under a later edit of its series",
 } as const;
 
@@ -2632,6 +2655,14 @@ const GAP = {
  * QUEUE_SEQUENCE_RUNS=1000; a change to the steps, their odds or the
  * requests the app sends reshuffles every sequence, so search again rather
  * than trust these after one.
+ *
+ * `moving` has no test of its own: a page leaves out a series a queued
+ * move takes out of its calendar (Google lists it there until the move
+ * lands, and a copy written then showed it in both calendars), so what
+ * another device did to the series meanwhile goes with it and the page's
+ * token moves on. In sequence 981 that is one occurrence cancelled, under
+ * a move out and a move back in behind it. A move holds no copy of the
+ * series as Google has it, as a task's move does.
  */
 const KNOWN_FAILING: ReadonlyMap<number, string> = new Map([
   [77, GAP.ahead],
@@ -2639,6 +2670,7 @@ const KNOWN_FAILING: ReadonlyMap<number, string> = new Map([
   [524, GAP.ownText],
   [565, GAP.ahead],
   [576, GAP.dropped],
+  [981, GAP.moving],
 ]);
 
 describe('pending-op queue: seeded random sequences', () => {
@@ -3836,6 +3868,153 @@ const drawnOnGoogle = (google: FakeGoogle, calendarId: string, masterId: string)
   google
     .instancesOf(calendarId, masterId, WINDOW_FROM, WINDOW_TO)
     .map((instance) => Date.parse(instance.start?.dateTime ?? ''));
+
+/** Where the client shows an event: `calendar status`, one entry per row. */
+const shownAt = (eventId: string) =>
+  Effect.gen(function* () {
+    const rows = yield* (yield* SqlClient)<{
+      readonly calendar_id: string;
+      readonly sync_status: string;
+    }>`SELECT calendar_id, sync_status FROM events WHERE id = ${eventId} ORDER BY calendar_id`;
+    return rows.map((row) => `${row.calendar_id} ${row.sync_status}`);
+  });
+
+/** Discards whatever is still queued. */
+const discardAll = (mutations: EventMutationsShape) =>
+  Effect.gen(function* () {
+    for (const op of yield* (yield* PendingOpRepo).listAll()) {
+      yield* mutations.discardPendingOp(op.id);
+    }
+  });
+
+const moveE1 = (mutations: EventMutationsShape, from: string, to: string) =>
+  mutations.moveEvent({
+    accountId: ACCOUNT_ID,
+    calendarId: from,
+    eventId: 'e1',
+    target: { accountId: ACCOUNT_ID, calendarId: to },
+  });
+
+/** The first write of this kind lands with its answer lost; every later one is refused (503). */
+const lostThenRefused = (google: FakeGoogle, matches: (call: FakeCall) => boolean) => {
+  let lose = true;
+  google.fault = (call) => {
+    if (!matches(call)) {
+      return undefined;
+    }
+    const fault = lose ? 'lost' : 'refused';
+    lose = false;
+    return fault;
+  };
+};
+
+describe('pending-op queue: what a pull tells of a queued create or move', () => {
+  it.effect('a create that landed is settled by the page that brings its event', () => {
+    // The gap the first sequences named "a landed create's discard hides
+    // an event Google has": the create's answer was lost, a pull brought
+    // the event and skipped the pending row, and its token moved on. A
+    // discard then took the row away for good.
+    const google = newFake();
+    lostThenRefused(google, (call) => call.method === 'POST');
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const created = yield* mutations.createEvent({
+          accountId: ACCOUNT_ID,
+          calendarId: 'cal-1',
+          endUtc: START + 9 * DAY + 11 * HOUR,
+          isAllDay: false,
+          startTimeZone: 'UTC',
+          startUtc: START + 9 * DAY + 10 * HOUR,
+          title: 'Dentist',
+        });
+        yield* mutations.processPendingOps();
+        yield* TestClock.adjust('1 minute');
+        yield* (yield* SyncEngine).syncAll();
+        expect((yield* (yield* PendingOpRepo).listAll()).map(describeOp)).toEqual([]);
+        yield* discardAll(mutations);
+        expect(yield* shownAt(created.id)).toEqual(['cal-1 synced']);
+        expect(google.eventOf('cal-1', created.id)?.summary).toBe('Dentist');
+      }),
+    );
+  });
+
+  it.effect('a move that landed is settled by the page of the calendar it went to', () => {
+    // A move's answer was lost, both pages told of it (gone here, there
+    // now) and were skipped, and a discard that Google did not answer put
+    // the event back in its source, where Google has it no more.
+    const google = newFake();
+    lostThenRefused(
+      google,
+      (call) => call.url.includes('/move') || /\/events\/e1$/.test(new URL(call.url).pathname),
+    );
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        yield* moveE1(mutations, 'cal-1', 'cal-2');
+        yield* mutations.processPendingOps();
+        yield* TestClock.adjust('1 minute');
+        yield* (yield* SyncEngine).syncAll();
+        expect((yield* (yield* PendingOpRepo).listAll()).map(describeOp)).toEqual([]);
+        yield* discardAll(mutations);
+        expect(yield* shownAt('e1')).toEqual(['cal-2 synced']);
+      }),
+    );
+  });
+
+  it.effect('a move Google never makes puts nothing back where a pull found the event gone', () => {
+    // Another device deleted the event while its move waited: the source's
+    // page said so and its token moved on. The move then met a 404, the
+    // destination had no such event either, and the rows went back to the
+    // source as Google's, for good.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        network.down = true;
+        yield* moveE1(mutations, 'cal-1', 'cal-2');
+        google.deleteEventServerSide('cal-1', 'e1');
+        yield* TestClock.adjust('1 minute');
+        yield* (yield* SyncEngine).syncAll();
+        network.down = false;
+        yield* drainAll(mutations);
+        expect((yield* (yield* PendingOpRepo).listAll()).map(describeOp)).toEqual([]);
+        expect(yield* shownAt('e1')).toEqual([]);
+      }),
+    );
+  });
+
+  it.effect('a move back keeps its rows when a page tells of the move out before it', () => {
+    // The event went to another calendar and comes back while offline. The
+    // page of the calendar it comes back to still reports it gone (the
+    // first move); that deleted the rows the move back had put there, and
+    // its landing found none to settle.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        yield* moveE1(mutations, 'cal-1', 'cal-2');
+        yield* mutations.processPendingOps();
+        network.down = true;
+        yield* moveE1(mutations, 'cal-2', 'cal-1');
+        yield* TestClock.adjust('1 minute');
+        yield* (yield* SyncEngine).syncAll();
+        expect(yield* shownAt('e1')).toEqual(['cal-1 pending']);
+        network.down = false;
+        yield* drainAll(mutations);
+        expect((yield* (yield* PendingOpRepo).listAll()).map(describeOp)).toEqual([]);
+        expect(yield* shownAt('e1')).toEqual(['cal-1 synced']);
+        expect(google.eventOf('cal-1', 'e1')?.summary).toBe('Standup');
+      }),
+    );
+  });
+});
 
 describe('pending-op queue: an occurrence changed under a queued change of its series', () => {
   it.effect("an occurrence's change waits for the retime of its series it was made under", () => {

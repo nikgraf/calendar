@@ -130,6 +130,8 @@ const baseline = Effect.gen(function* () {
   //   a this-and-following edit split off, the series it came from and its
   //   calendar, the original start of the occurrence it starts at, and
   //   whether it asks Google for that series before it goes.
+  // - source_gone: on a move, that a pull found the event gone from the
+  //   calendar it leaves (PendingOp.sourceGone).
   // - copy_source: on the create a move or a conversion queued toward
   //   Google, what it was copied from (PendingOp.copySource) — the
   //   source's deletes it holds back, or an Apple source as it was.
@@ -163,6 +165,7 @@ const baseline = Effect.gen(function* () {
       split_in TEXT,
       split_at INTEGER,
       split_check INTEGER NOT NULL DEFAULT 0,
+      source_gone INTEGER NOT NULL DEFAULT 0,
       copy_source TEXT,
       color_hex TEXT,
       task_list_id TEXT,

@@ -92,19 +92,20 @@ suite). When touching sync code, treat these as invariants.
   the calendar itself (`organizer.self`), so the app refuses an RSVP
   there (`NotAttendeeError`).
 - **412 (etag mismatch)**: we use If-Match on content updates/deletes and
-  RSVPs when an etag is known; on 412 an update or delete is parked with
-  Google's copy (`events.get`) and the user keeps theirs (re-sent without
-  If-Match) or takes Google's (re-fetched live); an RSVP is resent
-  unchecked. A stale-etag PATCH of a deleted event and a stale If-Match
+  RSVPs when an etag is known; on 412 Google's copy is fetched
+  (`events.get`) and an update is laid over it: sent again when the two
+  changed different things, parked when they changed the same one or the
+  update edits the guest list, for the user to keep theirs (re-sent
+  without If-Match) or take Google's (re-fetched live). A delete parks;
+  an RSVP is resent unchecked. A stale-etag PATCH of a deleted event and a stale If-Match
   DELETE are 412s too. `events.get` answers a deleted event with 404 or
   410 — the client maps both to `NotFoundError`, and a 410 on any write
   means "gone", like a 404 (never an expired sync token there). A series
   PATCH (a rename, a new rule) gives every exception a new etag, so an
   occurrence edit queued behind it meets a 412 with nothing changed
-  (verified live, `recurring.live.ts`). Such a 412 on an update, where
-  Google's copy equals what it was built on, is re-sent on Google's etag
-  instead of parked (`onlyEtagMoved`); a delete or a guest-list edit
-  still parks. An exception's own write leaves the master's etag alone:
+  (verified live, `recurring.live.ts`). Such a 412 on an update is
+  re-sent on Google's etag like any other that does not clash; a delete
+  or a guest-list edit still parks. An exception's own write leaves the master's etag alone:
   a rename queued behind it lands (verified live).
 - **events.move** (`POST …/events/{id}/move?destination=`): re-homes an
   event into another calendar _of the same account_, keeping its id,
@@ -630,14 +631,19 @@ separate: it also covers tasks, moves, discards and other-device writes.
   step.
   `QUEUE_SEQUENCE_SEED=<n>` runs one seed, `QUEUE_SEQUENCE_RUNS` and
   `QUEUE_SEQUENCE_STEPS` widen the search (1,000 seeds take about a
-  minute), `QUEUE_SEQUENCE_VERBOSE=1` prints every step's requests. A
-  difference where Google sent a newer state while an op held the row is
-  the open gap the skipped tests at its end show (docs/architecture.md →
-  An op remembers what it replaced): it is listed with the failure, not
-  failed. Seeds past the gate's that still fail are listed in
+  minute), `QUEUE_SEQUENCE_VERBOSE=1` prints every step's requests. What
+  a pull's events page brings for an item an op holds must show once the
+  op is gone (docs/architecture.md → Google's copy of a held item). Only
+  an answer the client keeps nothing of is excused until the next pull:
+  an event it asked for by id after the op left the queue, a task listing
+  that may be the drain looking for a lost create (`World.heldTold`: the
+  difference is listed with the failure, not failed). A conflict parked
+  on a delete after a PATCH of its series is the recorded decision, not a
+  failure (`World.retagged`). Seeds that still fail are listed in
   `KNOWN_FAILING` with the gap each meets, skipped
-  (`QUEUE_SEQUENCE_KNOWN=1` runs them); a change to the steps reshuffles
-  every sequence, so search again after one. A bug a sequence finds gets
+  (`QUEUE_SEQUENCE_KNOWN=1` runs them); a change to the steps, or to the
+  requests the app sends, reshuffles every sequence, so search again
+  after one. A bug a sequence finds gets
   a scripted test of its own beside them (`writesDown` holds every write
   at a 503), and a gap that stays open a skipped one ("open gaps the
   sequences found", "… in series" for what the series steps found): it

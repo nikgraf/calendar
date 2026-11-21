@@ -151,6 +151,11 @@ export interface PendingOpRepoShape {
     lastError: string,
   ) => Effect.Effect<void, SqlError>;
   /**
+   * A pull found the events these moves take out of a calendar gone from
+   * it: they have nothing to put back there (`PendingOp.sourceGone`).
+   */
+  readonly markSourceGone: (opIds: ReadonlyArray<string>) => Effect.Effect<void, SqlError>;
+  /**
    * The series `masterId` moved from calendar `from` to `to` (or a move of
    * it went back): the creates split off it follow (`splitIn`).
    */
@@ -398,7 +403,7 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
                                    before_color_hex,
                                    target_task_list_id, task_parent, task_due_cleared,
                                    task_previous, drops_from, split_of, split_in,
-                                   split_at, split_check, copy_source)
+                                   split_at, split_check, copy_source, source_gone)
           VALUES (${op.id}, ${op.accountId}, ${op.calendarId}, ${op.kind},
                   ${op.eventId},
                   ${op.payload ? JSON.stringify(eventPayloadJson(op.payload)) : null},
@@ -416,7 +421,8 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
                   ${op.taskPrevious ?? null}, ${op.dropsFrom ?? null},
                   ${op.splitOf ?? null}, ${op.splitIn ?? null}, ${op.splitAt ?? null},
                   ${op.splitCheck ? 1 : 0},
-                  ${op.copySource ? JSON.stringify(copySourceJson(op.copySource)) : null})
+                  ${op.copySource ? JSON.stringify(copySourceJson(op.copySource)) : null},
+                  ${op.sourceGone ? 1 : 0})
         `;
             // What the op replaces is Google's copy of its event, held once:
             // an op queued while another already holds the event reads the
@@ -545,6 +551,15 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
               WHERE id = ${opId}`,
           ),
         ),
+      markSourceGone: (opIds) =>
+        opIds.length === 0
+          ? Effect.void
+          : invalidating(
+              Effect.asVoid(
+                sql`UPDATE pending_ops SET source_gone = 1
+                  WHERE kind = 'move' AND id IN ${sql.in(opIds)}`,
+              ),
+            ),
       moveSplits: (accountId, masterId, from, to) =>
         invalidating(
           Effect.asVoid(

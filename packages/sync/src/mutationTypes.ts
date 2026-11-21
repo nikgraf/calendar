@@ -292,6 +292,17 @@ export interface EventMutationsShape {
    */
   readonly discardPendingOp: (opId: string) => Effect.Effect<void, SqlError>;
   /**
+   * A pull's page proved these queued writes landed, their answers lost:
+   * it brought the event a queued create inserts, or an event in the
+   * calendar a queued move takes it to. Each is settled with that record
+   * as its answer and leaves the queue, so a discard made later has
+   * nothing left to take back. Run inside `whileQueueHeld`, as the pull
+   * is: no request is out.
+   */
+  readonly landedInPull: (
+    landed: ReadonlyArray<{ readonly opId: string; readonly record: EventRecord }>,
+  ) => Effect.Effect<void>;
+  /**
    * Moves an event (the whole series for a recurring one) to another
    * calendar: a server move inside one Google account, EventKit's own
    * calendar change between Apple calendars, otherwise a copy into the

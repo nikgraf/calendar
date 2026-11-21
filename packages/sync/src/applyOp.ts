@@ -249,6 +249,14 @@ export const retargetOp = (op: PendingOp, calendarId: string): PendingOp => {
 };
 
 export interface ApplyOp {
+  /**
+   * A pull's page brought what this write made while it still waits — the
+   * event a create inserted, or the event in the calendar a move takes it
+   * to: the write landed and its answer was lost. Settled as that answer
+   * would have settled it, the op still queued; whether it was. Run with
+   * no request out (under the drain's gate).
+   */
+  readonly acknowledge: (op: PendingOp, record: EventRecord) => Effect.Effect<boolean>;
   readonly apply: (op: PendingOp) => Effect.Effect<ApplyOutcome>;
   /** An account about to go: what its queued copies were copied from stays. */
   readonly releaseAccountCopies: (accountId: string) => Effect.Effect<void, SqlError>;
@@ -1327,9 +1335,32 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         others.filter((queued) => queued.calendarId === source).map((queued) => queued.eventId),
       );
       for (const row of yield* seriesRows(accountId, source, masterId)) {
-        if (row.syncStatus === 'pending' && !owned.has(row.id)) {
+        if (owned.has(row.id)) {
+          continue;
+        }
+        if (op.sourceGone === true) {
+          // A pull found it gone from here while the move waited, and its
+          // token has moved past that: back as a synced row, it stayed for
+          // good. An op that still owns a row meets the 404 itself.
+          yield* eventRepo.deleteEvent(accountId, source, row.id);
+        } else if (row.syncStatus === 'pending') {
           yield* eventRepo.markSynced(accountId, source, row.id);
         }
+      }
+      if (op.sourceGone === true) {
+        yield* pendingOpRepo.forgetDeleted(accountId, source, [masterId]);
+        // Nothing brought it back here since: gone from here too for a
+        // move of it out of here that is queued behind this one.
+        yield* pendingOpRepo.markSourceGone(
+          others
+            .filter(
+              (queued) =>
+                queued.kind === 'move' &&
+                queued.eventId === masterId &&
+                queued.calendarId === source,
+            )
+            .map((queued) => queued.id),
+        );
       }
     });
 
@@ -1343,11 +1374,16 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
    */
   /**
    * Whether Google's copy after a move is what the ops queued behind it
-   * were built on — only the etag moved, as `onlyEtagMoved` asks of a
-   * 412: none is parked, and each snapshot equals the copy in every field
-   * we keep. Asked before `settle` moves those snapshots to the copy.
+   * were built on — only the etag moved: none is parked, and the copy
+   * each reads equals Google's in every field we keep. Asked before
+   * `settle` moves that copy on. `theirsIn` is Google's version, read
+   * with the zone an event without one takes.
    */
-  const onlyMoved = (op: PendingOp, destination: string, response: GcalEvent) =>
+  const onlyMoved = (
+    op: PendingOp,
+    destination: string,
+    theirsIn: (zone: string) => EventRecord | null,
+  ) =>
     Effect.map(
       pendingOpRepo.listForEvent({
         accountId: op.accountId,
@@ -1363,12 +1399,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
           if (!before) {
             return true;
           }
-          const theirs = mapGcalEvent(response, {
-            accountId: op.accountId,
-            calendarId: destination,
-            defaultTimeZone: before.startTimeZone ?? 'UTC',
-            syncedAt: 0,
-          });
+          const theirs = theirsIn(before.startTimeZone ?? 'UTC');
           return theirs !== null && Object.keys(changedFields(before, theirs)).length === 0;
         }),
     );
@@ -1403,22 +1434,37 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       }),
     );
 
-  const landMove = (op: PendingOp, destination: string, response: GcalEvent | undefined) =>
+  const landMove = (
+    op: PendingOp,
+    destination: string,
+    answer: GcalEvent | undefined,
+    pulled?: EventRecord,
+  ) =>
     Effect.gen(function* () {
       const local = yield* eventRepo.getById(op.accountId, destination, op.eventId);
-      const unchanged = response !== undefined && (yield* onlyMoved(op, destination, response));
+      const now = yield* Clock.currentTimeMillis;
+      // Google's version in the destination: the record a pull's page of
+      // that calendar brought (`acknowledge`), or the move's own answer.
+      const theirsIn = (zone: string): EventRecord | null =>
+        pulled ??
+        (answer === undefined
+          ? null
+          : mapGcalEvent(answer, {
+              accountId: op.accountId,
+              calendarId: destination,
+              defaultTimeZone: zone,
+              syncedAt: now,
+            }));
+      const response = pulled ?? answer;
+      const unchanged = response !== undefined && (yield* onlyMoved(op, destination, theirsIn));
       if (response) {
-        const now = yield* Clock.currentTimeMillis;
         const event = { accountId: op.accountId, calendarId: destination, eventId: op.eventId };
         const holding = (yield* pendingOpRepo.listForEvent(event)).find(
           (other) => other.id !== op.id && other.beforePayload != null,
         );
-        const synced = mapGcalEvent(response, {
-          accountId: op.accountId,
-          calendarId: destination,
-          defaultTimeZone: local?.startTimeZone ?? holding?.beforePayload?.startTimeZone ?? 'UTC',
-          syncedAt: now,
-        });
+        const synced = theirsIn(
+          local?.startTimeZone ?? holding?.beforePayload?.startTimeZone ?? 'UTC',
+        );
         if (local) {
           yield* settle(op, synced, { calendarId: destination });
         } else if (synced && holding) {
@@ -1427,8 +1473,9 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
           yield* pendingOpRepo.advanceBefore(event, synced, op);
         }
       }
-      if (unchanged && response?.etag !== undefined) {
-        yield* advancePastMove(op, destination, response.etag);
+      const produced = response?.etag ?? undefined;
+      if (unchanged && produced !== undefined) {
+        yield* advancePastMove(op, destination, produced);
       }
       const queuedIds = new Set(
         (yield* pendingOpRepo.listAll())
@@ -1448,12 +1495,14 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
    * earlier attempt landed and its answer was lost, so the retry asked
    * the source, which has nothing any more. The destination decides:
    * there, the move landed; not there (or cancelled), Google never made
-   * it, and if the event is really gone the source's next pull carries
-   * the tombstone (deleting the rows here would hide one that exists
-   * until a full resync). A lookup with no answer decides nothing: the
-   * move stays queued and asks again — unless the user discarded it
-   * (`unanswered: 'release'`): then it goes back as asked, a move that
-   * never reached Google being the likely case.
+   * it, and the rows go back to the source — unless a pull already found
+   * the event gone from there (`sourceGone`: another device deleted it,
+   * and that page's token has moved on), when nothing goes back. One the
+   * source's pull has not told of yet comes with its next page. A lookup
+   * with no answer decides nothing: the move stays queued and asks again
+   * — unless the user discarded it (`unanswered: 'release'`): then it
+   * goes back as asked, a move that never reached Google being the likely
+   * case, and one that did reach it is in the destination's next page.
    */
   const settleOrReleaseMove = (
     op: PendingOp,
@@ -2861,5 +2910,17 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         : settleOrReleaseMove(op, 'release'),
     );
 
-  return { apply, releaseAccountCopies, releaseRow, settleDiscardedMove };
+  const acknowledge = (op: PendingOp, record: EventRecord): Effect.Effect<boolean> => {
+    if (op.kind === 'create') {
+      return Effect.orElseSucceed(Effect.as(settle(op, record), true), () => false);
+    }
+    return op.kind === 'move' && op.targetCalendarId !== undefined
+      ? Effect.orElseSucceed(
+          Effect.as(landMove(op, op.targetCalendarId, undefined, record), true),
+          () => false,
+        )
+      : Effect.succeed(false);
+  };
+
+  return { acknowledge, apply, releaseAccountCopies, releaseRow, settleDiscardedMove };
 };

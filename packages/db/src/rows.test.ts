@@ -67,6 +67,7 @@ const opRow = (overrides: Partial<PendingOpRow> = {}): PendingOpRow => ({
   payload: null,
   recurrence_cleared: 0,
   reminders_changed: 0,
+  source_gone: 0,
   split_at: null,
   split_check: 0,
   split_in: null,
