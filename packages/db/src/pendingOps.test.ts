@@ -5,7 +5,6 @@ import {
   EventRecord,
   GeoLocation,
   PendingOp,
-  TaskRecord,
 } from '@calendar/core';
 import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
@@ -48,18 +47,6 @@ const eventRow = (title: string) =>
     status: 'confirmed',
     syncedAt: 1,
     syncStatus: 'synced',
-    title,
-    updatedAt: 1,
-  });
-
-/** An open task row titled `title`, the shape a task snapshot holds. */
-const taskRow = (title: string) =>
-  new TaskRecord({
-    accountId: 'acc-1',
-    id: 't-1',
-    listId: 'list-1',
-    provider: 'google',
-    status: 'needsAction',
     title,
     updatedAt: 1,
   });
@@ -118,23 +105,12 @@ describe('PendingOpRepo', () => {
           },
         ],
       });
-      const beforeTask = new TaskRecord({
-        accountId: 'acc-1',
-        dueDate: '2026-08-30',
-        id: 't-1',
-        listId: 'list-1',
-        provider: 'google',
-        status: 'needsAction',
-        title: 'Pay rent',
-        updatedAt: 1,
-      });
       yield* repo.enqueue(
         op('op-1', {
           baseEtag: '"server"',
           beforeColorHex: '#00ff00',
           beforeOverrides: [new EventRecord({ ...payload, id: 'evt-1_x', title: 'Moved' })],
           beforePayload: new EventRecord({ ...payload, title: 'Before' }),
-          beforeTask,
           carriedText,
           colorHex: '#ff0000',
           lastError: 'boom',
@@ -154,7 +130,6 @@ describe('PendingOpRepo', () => {
       expect(stored?.carriedText).toEqual(carriedText);
       expect(stored?.beforePayload?.title).toBe('Before');
       expect(stored?.beforeOverrides?.map((row) => row.title)).toEqual(['Moved']);
-      expect(stored?.beforeTask).toEqual(beforeTask);
       expect(stored?.beforeColorHex).toBe('#00ff00');
     }).pipe(Effect.provide(freshDbLayer())),
   );
@@ -229,33 +204,34 @@ describe('PendingOpRepo', () => {
     }).pipe(Effect.provide(freshDbLayer())),
   );
 
-  it.effect('advanceBeforeTask and setBefore replace one snapshot each way', () =>
+  it.effect('setBefore replaces one snapshot', () =>
     Effect.gen(function* () {
       const repo = yield* PendingOpRepo;
-      const taskOp = (id: string, kind: PendingOp['kind']) =>
-        op(id, {
-          beforeTask: taskRow('A'),
-          calendarId: 'list-1',
-          eventId: 't-1',
-          kind,
-          taskListId: 'list-1',
-        });
-      yield* repo.enqueue(taskOp('landed', 'updateTask'));
-      yield* repo.enqueue(taskOp('toggle', 'completeTask'));
       yield* repo.enqueue(op('event', { beforePayload: eventRow('A'), eventId: 'evt-1' }));
-      yield* repo.advanceBeforeTask(
-        { accountId: 'acc-1', listId: 'list-1', taskId: 't-1' },
-        taskRow('B'),
-        { id: 'landed' },
-      );
+      yield* repo.enqueue(op('other', { beforePayload: eventRow('A'), eventId: 'evt-1' }));
       yield* repo.setBefore('event', eventRow('C'));
       const stored = Object.fromEntries(
-        (yield* repo.listAll()).map((entry) => [
-          entry.id,
-          entry.beforeTask?.title ?? entry.beforePayload?.title,
-        ]),
+        (yield* repo.listAll()).map((entry) => [entry.id, entry.beforePayload?.title]),
       );
-      expect(stored).toEqual({ event: 'C', landed: 'A', toggle: 'B' });
+      expect(stored).toEqual({ event: 'C', other: 'A' });
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
+  it.effect('listForTask finds a task’s ops in every list of the account, in queue order', () =>
+    Effect.gen(function* () {
+      const repo = yield* PendingOpRepo;
+      const taskOp = (id: string, kind: PendingOp['kind'], overrides: Partial<PendingOp> = {}) =>
+        op(id, { calendarId: 'list-1', eventId: 't-1', kind, taskListId: 'list-1', ...overrides });
+      yield* repo.enqueue(taskOp('move', 'moveTask', { targetTaskListId: 'list-2' }));
+      yield* repo.enqueue(taskOp('edit', 'updateTask', { calendarId: 'list-2' }));
+      yield* repo.enqueue(taskOp('other', 'updateTask', { eventId: 't-2' }));
+      yield* repo.enqueue(taskOp('elsewhere', 'updateTask', { accountId: 'acc-2' }));
+      // An event that happens to share the id is not a task op.
+      yield* repo.enqueue(op('event', { eventId: 't-1' }));
+      expect((yield* repo.listForTask('acc-1', 't-1')).map((entry) => entry.id)).toEqual([
+        'move',
+        'edit',
+      ]);
     }).pipe(Effect.provide(freshDbLayer())),
   );
 

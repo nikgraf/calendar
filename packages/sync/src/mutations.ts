@@ -896,7 +896,10 @@ const make: Effect.Effect<
     sql.withTransaction(
       Effect.gen(function* () {
         let op = yield* pendingOpRepo.getById(opId);
-        if (op?.kind === 'move') {
+        // A move (an event's or a task's) is released while still queued:
+        // what goes back with it is what was queued behind it. One that
+        // was sent may have landed: it stays queued for the caller to ask.
+        if (op?.kind === 'move' || op?.kind === 'moveTask') {
           if (op.dispatchedAt !== undefined) {
             return op;
           }
@@ -904,19 +907,16 @@ const make: Effect.Effect<
           yield* pendingOpRepo.remove(opId);
           return undefined;
         }
-        // A task move, too, is released while still queued: what goes back
-        // with it is what was queued behind it.
-        if (op?.kind === 'moveTask') {
-          yield* releaseRow(op);
-          yield* pendingOpRepo.remove(opId);
-          return undefined;
-        }
         yield* pendingOpRepo.remove(opId);
         while (op) {
-          yield* releaseRow(op);
           // A subtask kept is a parent kept: Google deletes a parent's
-          // subtasks with it, so the parent's queued delete goes too.
-          const parentId = op.kind === 'deleteTask' ? op.beforeTask?.parentId : undefined;
+          // subtasks with it, so the parent's queued delete goes too. The
+          // parent Google has it under, read before its copy is released.
+          const parentId =
+            op.kind === 'deleteTask'
+              ? (yield* taskRepo.findCopy(op.accountId, op.eventId))?.parentId
+              : undefined;
+          yield* releaseRow(op);
           const { accountId, calendarId } = op;
           op =
             parentId === undefined

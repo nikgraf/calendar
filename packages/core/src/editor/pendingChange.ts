@@ -8,13 +8,16 @@ import { eventFieldPairs, orNone, plainDateLabel } from './conflict.ts';
 
 /**
  * What a queued change does, field by field, for the unsynced-changes
- * list: the op's `before*` snapshot against what it sends. A create lists
- * the fields it sets, a delete names what goes, an edit only what differs.
- * Undefined when the op has no snapshot (nothing to compare).
+ * list: what Google has (an event op's `before*` snapshot, a task's
+ * provider copy) against what the op sends. A create lists the fields it
+ * sets, a delete names what goes, an edit only what differs. Undefined
+ * when there is nothing to compare against.
  */
 export interface PendingOpDiffContext {
   /** A calendar's name for a move's "from → to"; ids are unique per account only. */
   readonly calendarName: (accountId: string, calendarId: string) => string | undefined;
+  /** Google's copy of a task a queued change holds: what the change is shown against. */
+  readonly taskBefore: (accountId: string, taskId: string) => TaskRecord | undefined;
   /** A task list's name, for a task move's "from → to". */
   readonly taskListName: (accountId: string, taskListId: string) => string | undefined;
   /** A task's title, for the parent and the sibling a reorder names. */
@@ -244,24 +247,31 @@ export const pendingOpDiff = (
         : [{ after: op.colorHex, before: op.beforeColorHex ?? null, label: 'Color' }];
     case 'createTask':
       return taskLines(null, createdTask(op));
-    case 'updateTask':
-      return op.beforeTask
-        ? taskLines(op.beforeTask, {
-            ...op.beforeTask,
+    case 'updateTask': {
+      const before = context.taskBefore(op.accountId, op.eventId);
+      return before
+        ? taskLines(before, {
+            ...before,
             // null: the edit took the day away.
             ...(op.taskDue === undefined ? {} : { dueDate: op.taskDue ?? undefined }),
             ...(op.taskNotes === undefined ? {} : { notes: op.taskNotes }),
             ...(op.taskTitle === undefined ? {} : { title: op.taskTitle }),
           })
         : undefined;
-    case 'completeTask':
-      return op.beforeTask && op.taskStatus
-        ? taskLines(op.beforeTask, { ...op.beforeTask, status: op.taskStatus })
+    }
+    case 'completeTask': {
+      const before = context.taskBefore(op.accountId, op.eventId);
+      return before && op.taskStatus
+        ? taskLines(before, { ...before, status: op.taskStatus })
         : undefined;
-    case 'deleteTask':
-      return op.beforeTask ? taskLines(op.beforeTask, null) : undefined;
+    }
+    case 'deleteTask': {
+      const before = context.taskBefore(op.accountId, op.eventId);
+      return before ? taskLines(before, null) : undefined;
+    }
     case 'reorderTask': {
-      if (!op.beforeTask) {
+      const before = context.taskBefore(op.accountId, op.eventId);
+      if (!before) {
         return undefined;
       }
       const listId = op.taskListId ?? op.calendarId;
@@ -270,12 +280,12 @@ export const pendingOpDiff = (
           ? 'none'
           : `“${context.taskTitle(op.accountId, listId, taskId) ?? taskId}”`;
       return [
-        ...(op.beforeTask.parentId === op.taskParent
+        ...(before.parentId === op.taskParent
           ? []
           : [
               {
                 after: named(op.taskParent),
-                before: named(op.beforeTask.parentId),
+                before: named(before.parentId),
                 label: 'Subtask of',
               },
             ]),

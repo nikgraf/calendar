@@ -338,6 +338,23 @@ const copySource = Effect.gen(function* () {
   yield* sql`ALTER TABLE pending_ops ADD COLUMN copy_source TEXT`;
 });
 
+// task_copies: Google's copy of a task while a queued change holds its row
+// (`TaskRepo.holdTasks`). The row then shows the user's version; pulls and
+// answers write what Google has here, and the row is rebuilt from the two.
+// One per task, keyed where Google has it (the source list while a move
+// waits), and gone again once nothing is queued for the task.
+const providerCopies = Effect.gen(function* () {
+  const sql = yield* SqlClient;
+  yield* sql`
+    CREATE TABLE task_copies (
+      account_id TEXT NOT NULL,
+      list_id TEXT NOT NULL,
+      id TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      PRIMARY KEY (account_id, list_id, id)
+    )`;
+});
+
 // The third tuple element is a *loader* whose result is the migration effect.
 // A migration is never renamed: the runner matches applied rows by id and name.
 export const migrations: ReadonlyArray<ResolvedMigration> = [
@@ -345,4 +362,5 @@ export const migrations: ReadonlyArray<ResolvedMigration> = [
   [2, 'pending-ops-drops-from', Effect.succeed(dropsFrom)],
   [3, 'pending-ops-split-of', Effect.succeed(splitOf)],
   [4, 'pending-ops-copy-source', Effect.succeed(copySource)],
+  [5, 'provider-copies', Effect.succeed(providerCopies)],
 ];

@@ -426,8 +426,6 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
    * mark the row synced.
    */
   beforePayload: Schema.optional(Schema.NullOr(EventRecord)),
-  /** The task row before a task edit, toggle, delete, move or reorder, for the same purposes. */
-  beforeTask: Schema.optional(TaskRecord),
   calendarId: Schema.String,
   /**
    * Set on a series update that mirrored changed text onto the local

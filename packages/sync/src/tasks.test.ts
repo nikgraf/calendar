@@ -1145,7 +1145,8 @@ describe('completeTask', () => {
       });
       const ops = yield* PendingOpRepo;
       const [op] = yield* ops.listAll();
-      expect(op?.beforeTask?.status).toBe('needsAction');
+      // Google's copy stays beside the row the toggle took.
+      expect((yield* (yield* TaskRepo).findCopy('acc-1', 't1'))?.status).toBe('needsAction');
 
       yield* mutations.discardPendingOp(op!.id);
       const row = yield* taskRow('t1');
@@ -1174,7 +1175,7 @@ describe('completeTask', () => {
       });
       const ops = yield* PendingOpRepo;
       const rename = (yield* ops.listAll()).find((op) => op.kind === 'updateTask');
-      expect(rename?.beforeTask?.title).toBe('Pay rent');
+      expect((yield* (yield* TaskRepo).findCopy('acc-1', 't1'))?.title).toBe('Pay rent');
 
       yield* mutations.discardPendingOp(rename!.id);
       const afterRename = yield* taskRow('t1');
@@ -1244,7 +1245,8 @@ describe('completeTask', () => {
         const ops = yield* PendingOpRepo;
         const [op] = yield* ops.listAll();
         expect(op?.kind).toBe('deleteTask');
-        expect(op?.beforeTask).toBeUndefined();
+        // Google has it no more: nothing is kept to put back.
+        expect(yield* (yield* TaskRepo).findCopy('acc-1', 't1')).toBeUndefined();
         yield* mutations.discardPendingOp(op!.id);
         expect(yield* taskRow('t1')).toBeUndefined();
       }).pipe(noYield, Effect.provide(testLayer(client)));
@@ -1324,7 +1326,8 @@ describe('completeTask', () => {
 
         const [op] = yield* (yield* PendingOpRepo).listAll();
         expect(op?.taskTitle).toBe('Pay rent (C)');
-        expect(op?.beforeTask?.title).toBe('Pay rent (B)');
+        // What landed is Google's copy now: what the queued rename replaces.
+        expect((yield* (yield* TaskRepo).findCopy('acc-1', 't1'))?.title).toBe('Pay rent (B)');
         yield* mutations.discardPendingOp(op!.id);
         expect((yield* taskRow('t1'))?.title).toBe('Pay rent (B)');
       }).pipe(Effect.provide(testLayer(client)));
@@ -1339,7 +1342,7 @@ describe('completeTask', () => {
       expect(yield* taskRow('t1')).toBeUndefined();
       const ops = yield* PendingOpRepo;
       const [op] = yield* ops.listAll();
-      expect(op?.beforeTask?.title).toBe('Pay rent');
+      expect((yield* (yield* TaskRepo).findCopy('acc-1', 't1'))?.title).toBe('Pay rent');
 
       yield* mutations.discardPendingOp(op!.id);
       const row = yield* taskRow('t1');
@@ -1447,7 +1450,7 @@ describe('completeTask', () => {
       });
       const ops = yield* PendingOpRepo;
       const [op] = yield* ops.listAll();
-      expect(op?.beforeTask?.dueDate).toBe('2026-08-30');
+      expect((yield* (yield* TaskRepo).findCopy('acc-1', 't1'))?.dueDate).toBe('2026-08-30');
       yield* mutations.discardPendingOp(op!.id);
       const row = yield* taskRow('t1');
       expect(row?.dueDate).toBe('2026-08-30');
