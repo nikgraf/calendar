@@ -50,8 +50,6 @@ const opRow = (overrides: Partial<PendingOpRow> = {}): PendingOpRow => ({
   attendees_changed: 0,
   base_etag: null,
   before_color_hex: null,
-  before_payload: null,
-  before_task: null,
   calendar_id: 'cal-1',
   carried_text: null,
   color_hex: null,

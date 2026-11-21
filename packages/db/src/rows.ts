@@ -475,8 +475,6 @@ export interface PendingOpRow {
   readonly conflict_at: number | null;
   readonly carried_text: string | null;
   readonly recurrence_cleared: number;
-  readonly before_payload: string | null;
-  readonly before_task: string | null;
   readonly before_color_hex: string | null;
   readonly target_task_list_id: string | null;
   readonly task_parent: string | null;

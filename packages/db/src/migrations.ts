@@ -3,11 +3,13 @@ import { SqlClient } from 'effect/sql/SqlClient';
 import type { ResolvedMigration } from 'effect/sql/Migrator';
 
 // The whole schema in one migration. The incremental migrations that
-// accreted while building were collapsed before the first release, twice
-// (2026-09-15, 2026-10-15); a database from before a collapse holds
-// migration rows this build does not know, so it refuses to open (see the
-// runner's identity guard) and is reset with `pnpm reset:local`. From here
-// on, schema changes are new migrations appended below.
+// accreted while building were collapsed before the first release, three
+// times (2026-09-15, 2026-10-15, and 2026-11-21 when Google's copy of a
+// held item replaced the snapshots each queued change kept); a database
+// from before a collapse holds migration rows this build does not know, so
+// it refuses to open (see the runner's identity guard) and is reset with
+// `pnpm reset:local`. From here on, schema changes are new migrations
+// appended below.
 const baseline = Effect.gen(function* () {
   const sql = yield* SqlClient;
 
@@ -112,18 +114,25 @@ const baseline = Effect.gen(function* () {
   // - target_calendar_id: the destination of a 'move' (a Google
   //   events.move inside one account; calendar_id stays the source);
   //   target_task_list_id the same for a task's server move.
-  // - before_*: what the op replaced — the event row (JSON EventRecord;
-  //   the JSON text `null` = there was no row, SQL NULL = no snapshot), a
-  //   series delete's exception rows, the task row and a calendar's
-  //   previous color. The unsynced-changes list diffs against them and a
-  //   discard puts them back.
-  // - conflict_at is set when a 412 parked the op (the drain skips it
-  //   until the user chooses keep-mine or take-theirs); server_payload is
-  //   Google's version fetched at park time (JSON EventRecord, NULL when
-  //   the event was deleted on Google), shown so the user can compare.
+  // - What an op of an event or a task replaced is not kept here: Google's
+  //   copy of the item is, once per item, in event_copies and task_copies
+  //   below. before_color_hex is a calendar's previous color, which a
+  //   discard of its change puts back.
+  // - conflict_at is set when the event changed on Google under the op and
+  //   the two clash (the drain skips it until the user chooses keep-mine
+  //   or take-theirs); Google's version is the event's copy.
   // - carried_text (JSON CarriedText): what a series edit mirrored onto the
   //   series' exceptions and their own text before, so abandoning the op
   //   can put that back.
+  // - drops_from: on a series update that drops exceptions on Google, the
+  //   earliest original start it drops them from (PendingOp.dropsFrom).
+  // - split_of, split_in, split_at, split_check: on the create of a series
+  //   a this-and-following edit split off, the series it came from and its
+  //   calendar, the original start of the occurrence it starts at, and
+  //   whether it asks Google for that series before it goes.
+  // - copy_source: on the create a move or a conversion queued toward
+  //   Google, what it was copied from (PendingOp.copySource) — the
+  //   source's deletes it holds back, or an Apple source as it was.
   // - task_parent: the parent a subtask's create or a same-list move nests
   //   under; task_previous the sibling a same-list move goes after.
   // - The flags say what a queued update must send beyond its payload:
@@ -146,13 +155,15 @@ const baseline = Effect.gen(function* () {
       target_calendar_id TEXT,
       payload TEXT,
       base_etag TEXT,
-      before_payload TEXT,
-      before_overrides TEXT,
-      before_task TEXT,
       before_color_hex TEXT,
       conflict_at INTEGER,
-      server_payload TEXT,
       carried_text TEXT,
+      drops_from INTEGER,
+      split_of TEXT,
+      split_in TEXT,
+      split_at INTEGER,
+      split_check INTEGER NOT NULL DEFAULT 0,
+      copy_source TEXT,
       color_hex TEXT,
       task_list_id TEXT,
       target_task_list_id TEXT,
@@ -291,61 +302,14 @@ const baseline = Effect.gen(function* () {
       geo TEXT,
       resolved_at INTEGER NOT NULL
     )`;
-});
 
-// drops_from: on a series update that drops exceptions on Google, the
-// earliest original start it drops them from (PendingOp.dropsFrom). An
-// update already queued that changes the rule takes the earliest exception
-// its occurrences' queued deletes took off the table (a cut's or a rule
-// change's: no row at their ids); landed, it would otherwise leave their
-// copies for a later master drawing those slots to bring back.
-const dropsFrom = Effect.gen(function* () {
-  const sql = yield* SqlClient;
-  yield* sql`ALTER TABLE pending_ops ADD COLUMN drops_from INTEGER`;
-  yield* sql`
-    UPDATE pending_ops SET drops_from = (
-      SELECT MIN(json_extract(d.before_payload, '$.originalStartUtc'))
-      FROM pending_ops d
-      WHERE d.kind = 'delete' AND d.account_id = pending_ops.account_id
-        AND d.calendar_id = pending_ops.calendar_id AND json_valid(d.before_payload)
-        AND json_extract(d.before_payload, '$.recurringEventId') = pending_ops.event_id
-        AND NOT EXISTS (SELECT 1 FROM events e WHERE e.account_id = d.account_id
-          AND e.calendar_id = d.calendar_id AND e.id = d.event_id))
-    WHERE kind = 'update' AND json_valid(payload) AND json_valid(before_payload)
-      AND json_extract(payload, '$.recurrence') IS NOT json_extract(before_payload, '$.recurrence')`;
-});
-
-// split_of, split_in, split_at, split_check: on the create of a series a
-// this-and-following edit split off, the series it came from and its
-// calendar, the original start of the occurrence it starts at, and whether
-// it asks Google for that series before it goes (PendingOp.splitOf,
-// splitIn, splitAt, splitCheck). A create queued before has none: it goes
-// as before.
-const splitOf = Effect.gen(function* () {
-  const sql = yield* SqlClient;
-  yield* sql`ALTER TABLE pending_ops ADD COLUMN split_of TEXT`;
-  yield* sql`ALTER TABLE pending_ops ADD COLUMN split_in TEXT`;
-  yield* sql`ALTER TABLE pending_ops ADD COLUMN split_at INTEGER`;
-  yield* sql`ALTER TABLE pending_ops ADD COLUMN split_check INTEGER NOT NULL DEFAULT 0`;
-});
-
-// copy_source: on the create a move or a conversion queued toward Google,
-// what it was copied from (PendingOp.copySource) — the source's deletes it
-// holds back, or an Apple source as it was. A copy queued before has none
-// and goes as before: its source is already gone.
-const copySource = Effect.gen(function* () {
-  const sql = yield* SqlClient;
-  yield* sql`ALTER TABLE pending_ops ADD COLUMN copy_source TEXT`;
-});
-
-// task_copies, event_copies: Google's copy of a task or an event while a
-// queued change holds its row (`TaskRepo.holdTasks`; an event op's
-// `beforePayload`). The row then shows the user's version; pulls and
-// answers write what Google has here, and the row is rebuilt from the two.
-// One per item — every queued change of it reads the same copy — keyed
-// where Google has it, and gone again once nothing is queued for the item.
-const providerCopies = Effect.gen(function* () {
-  const sql = yield* SqlClient;
+  // Google's copy of a task or an event while something queued holds its
+  // row (`TaskRepo.holdTasks`; an event op's `beforePayload`). The row
+  // then shows the user's version; pulls and answers write what Google has
+  // here, and the row is laid over it again. One per item — every queued
+  // change of it reads the same copy — keyed where Google has it, and gone
+  // again once nothing queued holds the item. A queued delete of a series
+  // holds the copies of its exceptions too.
   yield* sql`
     CREATE TABLE task_copies (
       account_id TEXT NOT NULL,
@@ -367,9 +331,5 @@ const providerCopies = Effect.gen(function* () {
 // The third tuple element is a *loader* whose result is the migration effect.
 // A migration is never renamed: the runner matches applied rows by id and name.
 export const migrations: ReadonlyArray<ResolvedMigration> = [
-  [1, 'baseline-2026-10-15', Effect.succeed(baseline)],
-  [2, 'pending-ops-drops-from', Effect.succeed(dropsFrom)],
-  [3, 'pending-ops-split-of', Effect.succeed(splitOf)],
-  [4, 'pending-ops-copy-source', Effect.succeed(copySource)],
-  [5, 'provider-copies', Effect.succeed(providerCopies)],
+  [1, 'baseline-2026-11-21', Effect.succeed(baseline)],
 ];
