@@ -1737,8 +1737,9 @@ describe('pending-op queue: what the sequences found', () => {
     // Review (Codex, Opus): with the moved rows' etag cleared, or the If-Match
     // of an edit made while the move waited dropped, a discarded move left
     // the edit unchecked: after another device's change it overwrote that
-    // change instead of parking a conflict. e1: edited after the discard,
-    // e2: while the move waited.
+    // change. Checked, the edit meets Google's newer version and is laid
+    // over it: both changes hold. e1: edited after the discard, e2: while
+    // the move waited.
     const google = newFake();
     const network = writesDown(google);
     return scripted(
@@ -1780,19 +1781,20 @@ describe('pending-op queue: what the sequences found', () => {
         network.down = false;
         yield* mutations.retryPendingOps();
         yield* mutations.processPendingOps();
-        expect(google.eventOf('cal-1', 'e1')?.summary).toBe('Renamed elsewhere');
-        expect(google.eventOf('cal-1', 'e2')?.summary).toBe('Renamed elsewhere');
-        expect((yield* ops.listAll()).map(describeOp)).toEqual([
-          'update e2 in cal-1 (parked)',
-          'update e1 in cal-1 (parked)',
-        ]);
+        for (const eventId of ['e1', 'e2']) {
+          expect(google.eventOf('cal-1', eventId)).toMatchObject({
+            description: 'Agenda',
+            summary: 'Renamed elsewhere',
+          });
+        }
+        expect(yield* ops.listAll()).toEqual([]);
       }),
     );
   });
 
-  it.effect('a move landing under a parked conflict leaves the row its old etag', () => {
+  it.effect('a move landing under a parked conflict leaves the row Google’s version', () => {
     // Sequence 514 (review round 2's fix): another device renamed the event,
-    // the user's edit parked, the event was moved and the move landed. Had
+    // the user's rename parked, the event was moved and the move landed. Had
     // the row taken the move's etag, discarding the edit left it synced at
     // Google's current etag with the old title.
     const google = newFake();
@@ -1807,7 +1809,7 @@ describe('pending-op queue: what the sequences found', () => {
         yield* mutations.updateEvent({
           accountId: ACCOUNT_ID,
           calendarId: 'cal-1',
-          changes: { location: 'Room 4' },
+          changes: { title: 'Renamed here' },
           eventId: 'e1',
         });
         yield* mutations.processPendingOps();

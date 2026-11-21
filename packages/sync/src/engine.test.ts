@@ -1134,7 +1134,12 @@ describe('SyncEngine', () => {
           }
           return Effect.fail(new ApiUnavailableError({ cause: 'offline' }));
         },
-        getEvent: () => Effect.succeed(movedOccurrence('Moved again', '"x-2"')),
+        getEvent: () =>
+          Effect.succeed(
+            answered
+              ? invitedOccurrence('Moved again', '"x-2"', 'needsAction')
+              : movedOccurrence('Moved again', '"x-2"'),
+          ),
         patchEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
       };
       const setUp = Effect.gen(function* () {
@@ -2677,7 +2682,10 @@ describe('SyncEngine', () => {
             });
             yield* mutations.discardPendingOp((yield* seriesDelete)!.id);
             expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
-            expect(yield* shown).toEqual(googleSeries);
+            // July 3 as the 412's fetch found it on Google.
+            expect(yield* shown).toEqual(
+              googleSeries.map((line) => line.replace('Moved', 'Moved again')),
+            );
             expect(yield* strays).toEqual([]);
             online = true;
             yield* mutations.retryPendingOps();
@@ -2908,7 +2916,10 @@ describe('SyncEngine', () => {
           expect(yield* shown).toEqual([]);
           expect(yield* strays).toEqual([]);
           yield* mutations.discardPendingOp((yield* seriesDelete)!.id);
-          expect(yield* shown).toEqual(googleSeries);
+          // July 3 as the 412's fetch found it on Google.
+          expect(yield* shown).toEqual(
+            googleSeries.map((line) => line.replace('Moved', 'Moved again')),
+          );
           expect(yield* strays).toEqual([]);
         }).pipe(Effect.provide(engineLayer(client)));
       });
@@ -4153,8 +4164,9 @@ describe('SyncEngine', () => {
       }).pipe(Effect.provide(engineLayer(client)));
     });
 
-    it.effect('a change another device made meanwhile still parks', () => {
-      const google = reetagged({ ...movedOccurrence('Renamed', '"x-2"'), location: 'Room 9' });
+    it.effect('a change another device made to the same thing meanwhile still parks', () => {
+      // Another device retitled July 3 after the series rename reached it.
+      const google = reetagged(movedOccurrence('Theirs', '"x-2"'));
       return Effect.gen(function* () {
         yield* seedAccount;
         yield* (yield* SyncEngine).syncAll();
@@ -4171,7 +4183,30 @@ describe('SyncEngine', () => {
         const [parked] = yield* (yield* PendingOpRepo).listAll();
         expect(parked?.eventId).toBe(july3);
         expect(parked?.conflictAt).toBeDefined();
+        expect(parked?.serverPayload?.title).toBe('Theirs');
         expect(google.calls).toEqual(['series "evt-r"', 'july3 "x-1"']);
+      }).pipe(Effect.provide(engineLayer(google.client)));
+    });
+
+    it.effect('one made to something else holds beside the edit, and nobody is asked', () => {
+      // Another device gave July 3 a room; the edit here retitles it.
+      const google = reetagged({ ...movedOccurrence('Renamed', '"x-2"'), location: 'Room 9' });
+      return Effect.gen(function* () {
+        yield* seedAccount;
+        yield* (yield* SyncEngine).syncAll();
+        const mutations = yield* EventMutations;
+        yield* rename;
+        yield* mutations.updateRecurring({
+          ...july3At,
+          changes: { title: 'Mine' },
+          scope: 'instance',
+        });
+        google.goOnline();
+        yield* mutations.retryPendingOps();
+        yield* mutations.processPendingOps();
+        // Laid over Google's version and sent again on its etag.
+        expect(google.calls).toEqual(['series "evt-r"', 'july3 "x-1"', 'july3 "x-2"']);
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
       }).pipe(Effect.provide(engineLayer(google.client)));
     });
 

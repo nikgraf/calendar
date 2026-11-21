@@ -662,13 +662,12 @@ describe('EventMutations', () => {
       }).pipe(Effect.provide(mutationsLayer(conflictingGoogle(server, sent))));
     });
 
-    it.effect('keep mine on an untitled event clears a title Google got meanwhile', () => {
+    it.effect('keep mine on a title the user cleared clears the one Google got meanwhile', () => {
       let server: GcalEvent | undefined;
       const client = stubClient({
         getEvent: () => Effect.succeed(server!),
         insertEvent: ({ event }) => {
-          // Created untitled: Google stores no summary.
-          server = { ...echo({ end: event.end, start: event.start }, event.id ?? 'x', '"v1"') };
+          server = { ...echo(event, event.id ?? 'x', '"v1"') };
           return Effect.succeed(server);
         },
         patchEvent: ({ baseEtag, event, eventId }) =>
@@ -687,14 +686,15 @@ describe('EventMutations', () => {
       return Effect.gen(function* () {
         yield* seedCalendar;
         const mutations = yield* EventMutations;
-        const record = yield* mutations.createEvent({ ...draft, title: '(no title)' });
+        const record = yield* mutations.createEvent({ ...draft, title: 'Draft' });
         yield* mutations.processPendingOps();
-        expect((yield* rowOf(record.id))?.title).toBe('(no title)');
-        // A local time change waits while someone names the event on Google.
+        expect((yield* rowOf(record.id))?.title).toBe('Draft');
+        // The user clears the title while someone renames the event on
+        // Google: both changed the title, so the edit waits for a choice.
         yield* mutations.updateEvent({
           accountId: 'acc-1',
           calendarId: 'cal-1',
-          changes: { endUtc: draft.endUtc + 3_600_000 },
+          changes: { title: '(no title)' },
           eventId: record.id,
         });
         server = { ...server!, etag: '"v2"', summary: 'Lunch' };

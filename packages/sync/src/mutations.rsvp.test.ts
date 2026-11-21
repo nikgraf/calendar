@@ -249,27 +249,31 @@ describe('EventMutations.respondToEvent', () => {
     }).pipe(Effect.provide(makeLayer(google.client)));
   });
 
-  it.effect('an RSVP lands when Google moved on; the edit behind it still asks', () => {
-    // Another client changed the event after it was pulled.
-    const google = ifMatchGoogle('"remote"');
-    return Effect.gen(function* () {
-      yield* seed;
-      const mutations = yield* EventMutations;
-      yield* mutations.respondToEvent({ ...respond, response: 'accepted' });
-      yield* mutations.updateEvent({ ...respond, changes: { title: 'Planning v2' } });
-      yield* mutations.processPendingOps();
-      yield* mutations.processPendingOps();
+  it.effect(
+    'an RSVP lands when Google moved on; the edit behind it goes on Google’s version',
+    () => {
+      // Another client changed the event after it was pulled, in nothing
+      // the edit changes: the edit is laid over Google's version and sent
+      // again, and nobody is asked.
+      const google = ifMatchGoogle('"remote"');
+      return Effect.gen(function* () {
+        yield* seed;
+        const mutations = yield* EventMutations;
+        yield* mutations.respondToEvent({ ...respond, response: 'accepted' });
+        yield* mutations.updateEvent({ ...respond, changes: { title: 'Planning v2' } });
+        yield* mutations.processPendingOps();
+        yield* mutations.processPendingOps();
 
-      expect(google.sent).toEqual([
-        'attendees If-Match "inv-1" → 412',
-        'attendees unchecked → "w1"',
-        'summary If-Match "inv-1" → 412',
-      ]);
-      const [parked] = yield* (yield* PendingOpRepo).listAll();
-      expect(parked?.kind).toBe('update');
-      expect(parked?.conflictAt).toBeDefined();
-    }).pipe(Effect.provide(makeLayer(google.client)));
-  });
+        expect(google.sent).toEqual([
+          'attendees If-Match "inv-1" → 412',
+          'attendees unchecked → "w1"',
+          'summary If-Match "inv-1" → 412',
+          'summary If-Match "w1" → "w2"',
+        ]);
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+      }).pipe(Effect.provide(makeLayer(google.client)));
+    },
+  );
 
   it.effect('an edit queued before an RSVP that overtook it keeps its etag and asks', () => {
     // The guest-list edit carries the response the RSVP then replaced: on

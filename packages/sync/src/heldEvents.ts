@@ -1,5 +1,6 @@
 import { Attendee, EventRecord, type PendingOp, withConsistentGeo } from '@calendar/core';
 import type { EventRepoShape, PendingOpRepoShape } from '@calendar/db';
+import { toGcalAttendees } from '@calendar/google';
 import { Clock, Effect } from 'effect';
 import type { SqlError } from 'effect/sql/SqlError';
 
@@ -94,44 +95,49 @@ const withAnswers = (
 /**
  * A queued update laid over Google's newer copy of its event: `old` is
  * the copy it was made on, `theirs` the one Google has now. The fields
- * the update changed keep its values, every other field takes Google's.
- * `clash` when both changed the same thing to different values — or the
- * update edits the guest list and Google's list changed (Google replaces
- * the whole list, guest fields this app does not keep included): then the
- * user is asked. The guest list of an update that did not edit it is
- * Google's: answers belong to RSVPs.
+ * the update changed keep its values, every other field takes Google's:
+ * that is its payload either way. `clash` when both changed the same
+ * thing to different values: then the user is asked, and what they
+ * compare is that payload against Google's version — their own changes,
+ * nothing a third change made elsewhere in the event. So is an update
+ * that edits the guest list, whenever Google's version moved and does
+ * not already hold that edit: Google replaces the whole list, guest
+ * fields this app does not keep (optional, comment) included. The guest
+ * list of an update that did not edit it is Google's: answers belong to
+ * RSVPs.
  */
 export const rebaseOnto = (
   op: PendingOp,
   old: EventRecord,
   theirs: EventRecord,
-): { readonly kind: 'clash' } | { readonly kind: 'rebased'; readonly payload: EventRecord } => {
+): { readonly kind: 'clash' | 'rebased'; readonly payload: EventRecord } => {
   const payload = op.payload;
   if (!payload) {
-    return { kind: 'clash' };
+    return { kind: 'clash', payload: theirs };
   }
-  const { attendees: guestsWere, ...mine } = changedFields(old, payload);
+  const { attendees: _guestsWere, ...mine } = changedFields(old, payload);
   const editsGuests = op.attendeesChanged === true;
   const moved = Object.keys(changedFields(old, theirs));
-  if (editsGuests && moved.includes('attendees')) {
-    return { kind: 'clash' };
-  }
   const mineGroups = new Set(Object.keys(mine).map(groupOf));
   const ours = payload as unknown as Record<string, unknown>;
   const now = theirs as unknown as Record<string, unknown>;
-  for (const field of moved) {
-    if (mineGroups.has(groupOf(field)) && !same(now[field], ours[field])) {
-      return { kind: 'clash' };
-    }
-  }
+  const guestsClash =
+    editsGuests &&
+    !(
+      same(toGcalAttendees(theirs), toGcalAttendees(payload)) &&
+      Object.keys(mine).every((field) => same(now[field], ours[field]))
+    );
+  const clash =
+    guestsClash ||
+    moved.some((field) => mineGroups.has(groupOf(field)) && !same(now[field], ours[field]));
   const kept = Object.fromEntries(Object.keys(mine).map((field) => [field, ours[field]]));
   return {
-    kind: 'rebased',
+    kind: clash ? 'clash' : 'rebased',
     payload: withConsistentGeo(
       new EventRecord({
         ...theirs,
         ...kept,
-        ...(editsGuests && guestsWere !== undefined ? { attendees: payload.attendees } : {}),
+        ...(editsGuests ? { attendees: payload.attendees } : {}),
         syncStatus: 'pending',
         updatedAt: payload.updatedAt,
       }),
@@ -156,6 +162,13 @@ export interface HeldEvents {
     calendarId: string,
     records: ReadonlyArray<EventRecord>,
   ) => Effect.Effect<ReadonlyArray<EventRecord>, SqlError>;
+  /**
+   * Google's newer version of one event (a pull's, or the fetch after a
+   * refused write): it becomes the event's copy, and every queued change
+   * of the event is laid over it again, row and all. A change that
+   * clashes with it is parked for the user.
+   */
+  readonly take: (theirs: EventRecord) => Effect.Effect<void, SqlError>;
 }
 
 /** The op kinds that hold an event Google has: the ones a newer copy concerns. */
@@ -165,7 +178,7 @@ export const makeHeldEvents = (deps: HeldEventDeps): HeldEvents => {
   const { eventRepo, pendingOpRepo } = deps;
 
   /** Google's newer copy of one held event, taken in. */
-  const take = (theirs: EventRecord, ops: ReadonlyArray<PendingOp>) =>
+  const takeOver = (theirs: EventRecord, ops: ReadonlyArray<PendingOp>) =>
     Effect.gen(function* () {
       const event = {
         accountId: theirs.accountId,
@@ -204,9 +217,15 @@ export const makeHeldEvents = (deps: HeldEventDeps): HeldEvents => {
           continue;
         }
         if (op.conflictAt !== undefined) {
-          // Parked already: its preview of Google's version moves on.
+          // Parked already: its preview of Google's version moves on, and
+          // it stays the user's version on screen.
           yield* pendingOpRepo.markConflict(op.id, op.conflictAt, theirs);
-          return;
+          const kept = op.kind === 'rsvp' ? undefined : rebaseOnto(op, old, theirs).payload;
+          if (kept) {
+            row = kept;
+            yield* pendingOpRepo.setPayload(op.id, kept);
+          }
+          continue;
         }
         if (op.kind === 'rsvp') {
           row = withAnswers(row ?? theirs, op, old);
@@ -214,12 +233,11 @@ export const makeHeldEvents = (deps: HeldEventDeps): HeldEvents => {
           continue;
         }
         const rebased = rebaseOnto(op, old, theirs);
-        if (rebased.kind === 'clash') {
-          yield* pendingOpRepo.markConflict(op.id, now, theirs);
-          return;
-        }
         row = rebased.payload;
         yield* pendingOpRepo.setPayload(op.id, rebased.payload);
+        if (rebased.kind === 'clash') {
+          yield* pendingOpRepo.markConflict(op.id, now, theirs);
+        }
       }
       if (theirs.etag !== null) {
         yield* pendingOpRepo.setBaseEtag(event, theirs.etag);
@@ -250,10 +268,20 @@ export const makeHeldEvents = (deps: HeldEventDeps): HeldEvents => {
           free.push(record);
           continue;
         }
-        yield* take(record, ops);
+        yield* takeOver(record, ops);
       }
       return free;
     });
 
-  return { receive };
+  const take: HeldEvents['take'] = (theirs) =>
+    Effect.flatMap(
+      pendingOpRepo.listForEvent({
+        accountId: theirs.accountId,
+        calendarId: theirs.calendarId,
+        eventId: theirs.id,
+      }),
+      (ops) => takeOver(theirs, ops),
+    );
+
+  return { receive, take };
 };

@@ -318,13 +318,13 @@ describe('a series edit carries text onto the exceptions, undoably', () => {
         end: { dateTime: '2026-07-01T10:00:00Z', timeZone: 'UTC' },
         etag: '"m-2"',
         id: 'master1',
-        // A different room too: the same rename alone would be our own
-        // edit already on Google, which needs no choice (applyOp park).
-        location: 'Room 2',
         recurrence: [RULE],
         start: { dateTime: '2026-07-01T09:00:00Z', timeZone: 'UTC' },
         status: 'confirmed',
-        summary: 'Standup',
+        // Another rename than ours: the same one would be our own edit
+        // already on Google, and one of another field would simply hold
+        // beside ours; neither needs a choice (applyOp park).
+        summary: 'Daily sync',
       },
     };
     return Effect.gen(function* () {
@@ -332,15 +332,15 @@ describe('a series edit carries text onto the exceptions, undoably', () => {
       yield* series({ title: 'Standup' });
       yield* mutations.processPendingOps();
       const [op] = yield* masterOp;
-      // Another device made the same rename, Google carried it onto the
+      // Another device renamed the series, Google carried that onto the
       // exception, and a pull brought that version in while ours waited.
       yield* (yield* EventRepo).upsertMany(
-        [new EventRecord({ ...moved, etag: '"o-3-theirs"', title: 'Standup' })],
+        [new EventRecord({ ...moved, etag: '"o-3-theirs"', title: 'Daily sync' })],
         { mode: 'pull' },
       );
       yield* mutations.resolveConflict({ choice: 'theirs', opId: op!.id });
 
-      expect((yield* text(moved.id)).title).toBe('Standup');
+      expect((yield* text(moved.id)).title).toBe('Daily sync');
       // Not pulled yet: its own text, until Google's copy arrives.
       expect((yield* text(plain.id)).title).toBe('Daily');
     }).pipe(Effect.provide(layer(google)));

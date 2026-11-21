@@ -41,6 +41,7 @@ import {
 import { Cause, Clock, Effect } from 'effect';
 import type { SqlError } from 'effect/sql/SqlError';
 import { restoreCarriedText } from './carriedText.ts';
+import { changedFields, makeHeldEvents, responseOf } from './heldEvents.ts';
 import { makeHeldTasks, withTaskChange } from './heldTasks.ts';
 import { askSplits, holdsSplit, ofSplitSeries, settleSplit } from './splitSeries.ts';
 import {
@@ -183,71 +184,6 @@ export interface ReleaseOptions {
   readonly revert?: boolean;
 }
 
-/** Row bookkeeping no edit changes: left out when looking for what an edit touched. */
-const ROW_BOOKKEEPING: ReadonlySet<string> = new Set([
-  'accountId',
-  'calendarId',
-  'etag',
-  'id',
-  'mirror',
-  'syncStatus',
-  'syncedAt',
-  'updatedAt',
-]);
-
-/**
- * The fields an edit changed, with their values before it: where what the
- * op sends differs from the row it replaced. A discard puts back only
- * these, so it cannot resurrect what another op of the event changed and
- * was discarded meanwhile (a rename discarded before the RSVP made after
- * it, whose snapshot still carries the new title).
- */
-const changedFields = (before: EventRecord, payload: EventRecord): Partial<EventRecord> => {
-  const was = before as unknown as Record<string, unknown>;
-  const sent = payload as unknown as Record<string, unknown>;
-  const patch: Record<string, unknown> = {};
-  for (const key of new Set([...Object.keys(was), ...Object.keys(sent)])) {
-    if (!ROW_BOOKKEEPING.has(key) && JSON.stringify(was[key]) !== JSON.stringify(sent[key])) {
-      patch[key] = was[key];
-    }
-  }
-  return patch;
-};
-
-/**
- * Whether Google's copy is still what an update was built on
- * (`beforePayload`) in every field we keep, those no PATCH of ours sends
- * included, and only its etag moved. A series PATCH gives every
- * exception a new etag (verified live), with any changed text carried on
- * (`advanceCarried` folds that into the snapshot). Nothing the op would
- * overwrite or remove changed: no conflict to ask about. Only a snapshot
- * of the version its If-Match names counts: one a lost answer's landing
- * advanced to Google's copy (`advanceBefore`) may hold another client's
- * change. A guest-list edit always asks: Google replaces the whole list,
- * guest fields we do not keep (optional, comment) included. So does a
- * delete: it takes along what we do not keep at all (attachments, a color).
- */
-const onlyEtagMoved = (op: PendingOp, theirs: EventRecord): boolean => {
-  const before = op.beforePayload;
-  return (
-    op.kind === 'update' &&
-    op.attendeesChanged !== true &&
-    before !== null &&
-    before !== undefined &&
-    op.baseEtag !== undefined &&
-    before.etag === op.baseEtag &&
-    theirs.etag !== null &&
-    theirs.etag !== op.baseEtag &&
-    Object.keys(changedFields(before, theirs)).length === 0
-  );
-};
-
-const responseOf = (
-  attendees: ReadonlyArray<Attendee> | undefined,
-  email: string,
-): Attendee['responseStatus'] | undefined =>
-  attendees?.find((attendee) => attendee.email === email)?.responseStatus;
-
 /**
  * What an abandoned edit or RSVP puts back, over the row as it is now.
  * An RSVP owns only the answers it changed (its snapshot may carry a
@@ -365,6 +301,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
   } = deps;
   const taken = { eventRepo, pendingOpRepo };
   const held = makeHeldTasks({ pendingOpRepo, taskRepo });
+  const heldEvents = makeHeldEvents({ eventRepo, pendingOpRepo });
 
   /**
    * Where a put-back row stands with sync: still pending while another op
@@ -1919,12 +1856,17 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
     );
 
   /**
-   * A 412: Google's copy moved on since the edit was queued. Unless only
-   * its etag moved (`onlyEtagMoved`), park the op
-   * with Google's current version so the user can compare and choose; the
-   * local row stays `pending`, so pulls keep skipping it and the user's
-   * version stays on screen. A failed fetch retries the whole op (it will
-   * 412 again and re-try the fetch).
+   * A 412: Google's copy moved on since the change was queued. Google's
+   * version is fetched and becomes the event's copy, and every queued
+   * change of the event is laid over it again (heldEvents.ts). An update
+   * that changed something else than Google did goes again at once on
+   * Google's etag, with Google's other fields in it: nobody is asked. One
+   * that Google's version already holds (an earlier attempt landed, its
+   * answer lost) is done. One that changed the same thing — or a guest
+   * list, or a delete, which takes along what this app does not keep at
+   * all — is parked with Google's version for the user to compare and
+   * choose; the user's version stays on screen. A failed fetch retries the
+   * whole op (it will 412 again and re-try the fetch).
    */
   const park = (op: PendingOp): Effect.Effect<ApplyOutcome, GoogleRequestError | SqlError> =>
     PARKABLE_KINDS.has(op.kind)
@@ -1939,51 +1881,36 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
                   defaultTimeZone: op.payload?.startTimeZone ?? 'UTC',
                   syncedAt: yield* Clock.currentTimeMillis,
                 });
-                // Google already holds exactly what this update would send:
-                // an earlier attempt landed and its response was lost, so
-                // the retry's stale If-Match met our own write. Not a
-                // conflict to ask about.
-                if (
-                  op.kind === 'update' &&
-                  op.payload &&
-                  theirs &&
-                  JSON.stringify(updateBody(op, theirs)) ===
-                    JSON.stringify(updateBody(op, op.payload))
-                ) {
-                  // Followers keep their etag: matching the fields this
-                  // update sends says nothing about the rest (another
-                  // client may have changed reminders meanwhile). Each
-                  // meets its own 412 and its own check.
-                  yield* settle(op, theirs);
+                if (theirs && op.beforePayload) {
+                  yield* transaction(heldEvents.take(theirs));
+                }
+                // Discarded or replaced while Google was asked.
+                const current = yield* pendingOpRepo.getById(op.id);
+                if (!current) {
                   return 'done' as const;
                 }
-                // Only the etag moved: sent again at once on Google's —
-                // unless the user discarded or replaced it while Google was
-                // asked. What was built on the old etag moves with it first
-                // (the row, and the content edits queued after it: a guest
-                // list or a delete keeps its 412), so it follows the
-                // re-send's landing. A second 412 there is a change to ask
-                // about.
-                const stale = op.baseEtag;
-                const fresh = theirs?.etag;
-                if (theirs && stale && fresh && onlyEtagMoved(op, theirs)) {
-                  if (!(yield* pendingOpRepo.getById(op.id))) {
-                    return 'done' as const;
-                  }
-                  const event = {
-                    accountId: op.accountId,
-                    calendarId: op.calendarId,
-                    eventId: op.eventId,
-                  };
-                  yield* transaction(
-                    Effect.gen(function* () {
-                      yield* pendingOpRepo.advanceBaseEtag(event, stale, fresh, op, {
-                        editsOnly: true,
-                      });
-                      yield* eventRepo.advanceEtag(event, stale, fresh);
-                    }),
-                  );
-                  return yield* apply(new PendingOp({ ...op, baseEtag: fresh }));
+                // Google already holds exactly what this update would send:
+                // an earlier attempt landed and its response was lost, so
+                // the retry's stale If-Match met our own write.
+                if (
+                  current.kind === 'update' &&
+                  current.payload &&
+                  theirs &&
+                  JSON.stringify(updateBody(current, theirs)) ===
+                    JSON.stringify(updateBody(current, current.payload))
+                ) {
+                  yield* settle(current, theirs);
+                  return 'done' as const;
+                }
+                // Laid over Google's version without a clash: sent again at
+                // once, on Google's etag. A second 412 there is a newer
+                // change still, and meets the same check.
+                if (
+                  current.kind === 'update' &&
+                  current.conflictAt === undefined &&
+                  current.baseEtag !== op.baseEtag
+                ) {
+                  return yield* apply(current);
                 }
                 return { conflict: theirs };
               }),
