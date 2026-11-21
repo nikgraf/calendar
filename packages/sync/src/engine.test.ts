@@ -3,7 +3,6 @@ import { appleCalendarServicesLayer } from './appleCalendarEvents.ts';
 import {
   Account,
   assembleWindow,
-  Attendee,
   EventRecord,
   eventsScope,
   PendingOp,
@@ -172,12 +171,15 @@ const seedAccount = Effect.gen(function* () {
 
 /**
  * The second pass's page waits for `release` and still names evt-1
- * (changed elsewhere since the token). Applied after a local delete, such
- * a page put the row back; the delete landed and left that copy showing
- * until the next poll's delta reported the cancellation (google-live
- * 40265233306, iOS flow 02).
+ * (changed elsewhere since the token, unless `version` says otherwise).
+ * Applied after a local delete, such a page put the row back; the delete
+ * landed and left that copy showing until the next poll's delta reported
+ * the cancellation (google-live 40265233306, iOS flow 02).
  */
-const heldPass = (deleteEvent: GoogleCalendarClientShape['deleteEvent']) => {
+const heldPass = (
+  deleteEvent: GoogleCalendarClientShape['deleteEvent'],
+  version: 'changed' | 'unchanged' = 'changed',
+) => {
   const requested = Effect.runSync(Deferred.make<void>());
   const release = Effect.runSync(Deferred.make<void>());
   let calls = 0;
@@ -193,7 +195,10 @@ const heldPass = (deleteEvent: GoogleCalendarClientShape['deleteEvent']) => {
         return Effect.succeed({ items: [timedItem('evt-1', 10)], nextSyncToken: 's1' });
       }
       if (calls === 2) {
-        const changed = { ...timedItem('evt-1', 10), etag: '"evt-1-2"', summary: 'All day' };
+        const changed =
+          version === 'changed'
+            ? { ...timedItem('evt-1', 10), etag: '"evt-1-2"', summary: 'All day' }
+            : timedItem('evt-1', 10);
         return Deferred.succeed(requested, undefined).pipe(
           Effect.andThen(Deferred.await(release)),
           Effect.as({ items: [changed], nextSyncToken: 's2' }),
@@ -225,31 +230,6 @@ const deleteDuringPass = (pass: ReturnType<typeof heldPass>) =>
     yield* Fiber.join(syncing);
     yield* Fiber.join(draining);
     return yield* (yield* EventRepo).getById('acc-1', 'cal-1', 'evt-1');
-  });
-
-/** A delete that meets a 503 first, then `then`. */
-const failingOnce = (then: Effect.Effect<void, NotFoundError>) => {
-  let attempts = 0;
-  return () =>
-    attempts++ === 0 ? Effect.fail(new ApiUnavailableError({ cause: 'offline' })) : then;
-};
-
-/**
- * Lands the delete deleteDuringPass left in backoff, after `change`
- * rewrote the copy the page put back; the row at evt-1 afterwards.
- */
-const landDeleteAfter = (change: (row: EventRecord) => EventRecord) =>
-  Effect.gen(function* () {
-    const events = yield* EventRepo;
-    const copy = yield* events.getById('acc-1', 'cal-1', 'evt-1');
-    // Until it lands Google's copy shows, as for any delete still queued.
-    expect(copy?.title).toBe('All day');
-    yield* events.upsertMany([change(copy!)]);
-    const mutations = yield* EventMutations;
-    yield* mutations.retryPendingOps();
-    yield* mutations.processPendingOps();
-    expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
-    return yield* events.getById('acc-1', 'cal-1', 'evt-1');
   });
 
 /** evt-r's July 3 occurrence, moved to 12:00 on Google. */
@@ -353,53 +333,111 @@ const inserting = (online: () => boolean) => {
 };
 
 describe('SyncEngine', () => {
-  it.effect('a pull leaves a queued local edit alone until the op is acked or abandoned', () => {
-    let patchOutcome: 'rejected' | 'transient' = 'transient';
-    const serverCopy = { ...timedItem('evt-1', 10), summary: 'Server title' };
+  it.effect(
+    'a pull lays a queued edit over Google’s newer version, and a rejection shows Google’s',
+    () => {
+      let patchOutcome: 'rejected' | 'transient' = 'transient';
+      // Another device wrote a description meanwhile.
+      const serverCopy = {
+        ...timedItem('evt-1', 10),
+        description: 'From elsewhere',
+        etag: '"evt-1-2"',
+      };
+      const client: GoogleCalendarClientShape = {
+        ...stubClient([
+          { items: [timedItem('evt-1', 10)], nextSyncToken: 's1' },
+          { items: [serverCopy], nextSyncToken: 's2' },
+        ]),
+        patchEvent: () =>
+          patchOutcome === 'transient'
+            ? Effect.fail(new ApiUnavailableError({ cause: 'offline' }))
+            : Effect.fail(new GoogleApiError({ message: 'Invalid value', status: 400 })),
+      };
+      return Effect.gen(function* () {
+        yield* seedAccount;
+        const engine = yield* SyncEngine;
+        const mutations = yield* EventMutations;
+        const events = yield* EventRepo;
+        const row = Effect.map(events.getById('acc-1', 'cal-1', 'evt-1'), (event) => [
+          event?.title,
+          event?.description,
+          event?.syncStatus,
+        ]);
+        yield* engine.syncAll();
+        const original = (yield* row)[0];
+
+        yield* mutations.updateEvent({
+          accountId: 'acc-1',
+          calendarId: 'cal-1',
+          changes: { title: 'Local title' },
+          eventId: 'evt-1',
+        });
+        // The push fails transiently: the op stays queued. The next pull
+        // carries Google's newer version: the edit still on its way out
+        // stays, and what the other device changed shows with it.
+        yield* mutations.processPendingOps();
+        yield* engine.syncAll();
+        expect(yield* row).toEqual(['Local title', 'From elsewhere', 'pending']);
+        const ops = yield* PendingOpRepo;
+        const [queued] = yield* ops.listAll();
+        // Nobody is asked: the two changed different things. The edit goes
+        // on Google's version now, and that is what it replaces.
+        expect(queued).toMatchObject({ baseEtag: '"evt-1-2"', kind: 'update' });
+        expect(queued?.conflictAt).toBeUndefined();
+        expect(queued?.payload?.description).toBe('From elsewhere');
+        expect(queued?.beforePayload?.description).toBe('From elsewhere');
+
+        // Google rejects the edit for good: the row is Google's version, the
+        // one the pull brought, at once.
+        patchOutcome = 'rejected';
+        for (const op of yield* ops.listAll()) {
+          yield* ops.markFailed(op.id, op.attempts, 0, 'test');
+        }
+        yield* mutations.processPendingOps();
+        expect(yield* ops.listAll()).toHaveLength(0);
+        expect(yield* row).toEqual([original, 'From elsewhere', 'synced']);
+      }).pipe(Effect.provide(engineLayer(client)));
+    },
+  );
+
+  it.effect('a pull whose version changed what a queued edit changed waits for the user', () => {
+    const serverCopy = { ...timedItem('evt-1', 10), etag: '"evt-1-2"', summary: 'Server title' };
     const client: GoogleCalendarClientShape = {
       ...stubClient([
         { items: [timedItem('evt-1', 10)], nextSyncToken: 's1' },
         { items: [serverCopy], nextSyncToken: 's2' },
-        { items: [serverCopy], nextSyncToken: 's3' },
       ]),
-      patchEvent: () =>
-        patchOutcome === 'transient'
-          ? Effect.fail(new ApiUnavailableError({ cause: 'offline' }))
-          : Effect.fail(new GoogleApiError({ message: 'Invalid value', status: 400 })),
+      patchEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
     };
     return Effect.gen(function* () {
       yield* seedAccount;
       const engine = yield* SyncEngine;
       const mutations = yield* EventMutations;
       const events = yield* EventRepo;
-      const title = () =>
-        Effect.map(events.getById('acc-1', 'cal-1', 'evt-1'), (event) => event?.title);
       yield* engine.syncAll();
-
       yield* mutations.updateEvent({
         accountId: 'acc-1',
         calendarId: 'cal-1',
         changes: { title: 'Local title' },
         eventId: 'evt-1',
       });
-      // The push fails transiently: the op stays queued, the row stays
-      // pending, and the next pull — carrying the server's own title —
-      // must not clobber the edit that is still on its way out.
       yield* mutations.processPendingOps();
       yield* engine.syncAll();
-      expect(yield* title()).toBe('Local title');
-
-      // Google rejects the edit for good: the row is handed back to sync
-      // and the following pull restores the server's version.
-      patchOutcome = 'rejected';
+      // The user's version stays on screen, and the edit is parked with
+      // Google's for them to choose.
+      expect((yield* events.getById('acc-1', 'cal-1', 'evt-1'))?.title).toBe('Local title');
       const ops = yield* PendingOpRepo;
-      for (const op of yield* ops.listAll()) {
-        yield* ops.markFailed(op.id, op.attempts, 0, 'test');
-      }
-      yield* mutations.processPendingOps();
-      expect(yield* ops.listAll()).toHaveLength(0);
-      yield* engine.syncAll();
-      expect(yield* title()).toBe('Server title');
+      const [parked] = yield* ops.listAll();
+      expect(parked?.conflictAt).toBeDefined();
+      expect(parked?.serverPayload?.title).toBe('Server title');
+      // Discarded, it leaves Google's version, not the one from before the pull.
+      yield* mutations.discardPendingOp(parked!.id);
+      const row = yield* events.getById('acc-1', 'cal-1', 'evt-1');
+      expect([row?.title, row?.syncStatus, row?.etag]).toEqual([
+        'Server title',
+        'synced',
+        '"evt-1-2"',
+      ]);
     }).pipe(Effect.provide(engineLayer(client)));
   });
 
@@ -425,7 +463,7 @@ describe('SyncEngine', () => {
       yield* engine.syncAll();
       const [op] = yield* ops.listAll();
       expect(op?.kind).toBe('delete');
-      expect(op?.beforePayload).toBeUndefined();
+      expect(op?.beforePayload).toBeNull();
       // Discarding it now must not bring back an event Google removed: the
       // sync token has seen the deletion and will never send it again.
       yield* mutations.discardPendingOp(op!.id);
@@ -474,7 +512,8 @@ describe('SyncEngine', () => {
 
         yield* engine.syncAll();
         const [op] = yield* ops.listAll();
-        expect(op?.beforePayload).toBeUndefined();
+        // Google's copy of the occurrence is its cancellation now.
+        expect(op?.beforePayload?.status).toBe('cancelled');
         yield* mutations.discardPendingOp(op!.id);
         // The tombstone stays: the occurrence is gone on Google for good.
         expect((yield* events.getById('acc-1', 'cal-1', instanceId))?.status).toBe('cancelled');
@@ -535,7 +574,11 @@ describe('SyncEngine', () => {
   );
 
   describe('a page answered before a delete reached Google', () => {
-    it.effect('a delete that lands meanwhile stays deleted', () => {
+    // Such a page used to put the row back: no row was there to skip. The
+    // event showed again while its delete waited, and a move or an answer
+    // made to that copy raced the delete. Google's version goes beside the
+    // row now (its copy), and the event stays deleted.
+    it.effect('leaves the event deleted, and asks: Google’s version changed', () => {
       const deleted: Array<string> = [];
       const pass = heldPass(({ eventId }) => {
         deleted.push(eventId);
@@ -543,164 +586,52 @@ describe('SyncEngine', () => {
       });
       return Effect.gen(function* () {
         expect(yield* deleteDuringPass(pass)).toBeNull();
+        // Parked with the version the user never saw, as the 412 of the
+        // delete's If-Match would have parked it.
+        expect(deleted).toEqual([]);
+        const ops = yield* PendingOpRepo;
+        const [parked] = yield* ops.listAll();
+        expect(parked).toMatchObject({ kind: 'delete' });
+        expect(parked?.conflictAt).toBeDefined();
+        expect(parked?.serverPayload?.title).toBe('All day');
+        // Kept, the delete goes.
+        const mutations = yield* EventMutations;
+        yield* mutations.resolveConflict({ choice: 'mine', opId: parked!.id });
+        yield* mutations.processPendingOps();
+        expect(deleted).toEqual(['evt-1']);
+        expect(yield* ops.listAll()).toEqual([]);
+        expect(yield* (yield* EventRepo).getById('acc-1', 'cal-1', 'evt-1')).toBeNull();
+      }).pipe(Effect.provide(engineLayer(pass.client)));
+    });
+
+    it.effect('a discard then shows the version Google has now', () => {
+      const pass = heldPass(() => Effect.void);
+      return Effect.gen(function* () {
+        expect(yield* deleteDuringPass(pass)).toBeNull();
+        const [parked] = yield* (yield* PendingOpRepo).listAll();
+        yield* (yield* EventMutations).discardPendingOp(parked!.id);
+        const row = yield* (yield* EventRepo).getById('acc-1', 'cal-1', 'evt-1');
+        expect([row?.title, row?.syncStatus, row?.etag]).toEqual([
+          'All day',
+          'synced',
+          '"evt-1-2"',
+        ]);
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+      }).pipe(Effect.provide(engineLayer(pass.client)));
+    });
+
+    it.effect('with the version the user deleted, lets the delete land', () => {
+      const deleted: Array<string> = [];
+      const pass = heldPass(({ eventId }) => {
+        deleted.push(eventId);
+        return Effect.void;
+      }, 'unchanged');
+      return Effect.gen(function* () {
+        expect(yield* deleteDuringPass(pass)).toBeNull();
         expect(deleted).toEqual(['evt-1']);
         expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+        expect(yield* (yield* EventRepo).getById('acc-1', 'cal-1', 'evt-1')).toBeNull();
       }).pipe(Effect.provide(engineLayer(pass.client)));
-    });
-
-    it.effect('a delete that waits out a 503 takes the page’s copy with it once it lands', () => {
-      const pass = heldPass(failingOnce(Effect.void));
-      return Effect.gen(function* () {
-        yield* deleteDuringPass(pass);
-        expect(yield* landDeleteAfter((row) => row)).toBeNull();
-      }).pipe(Effect.provide(engineLayer(pass.client)));
-    });
-
-    it.effect('a delete answered 404 (an earlier attempt landed) takes it too', () => {
-      const pass = heldPass(failingOnce(Effect.fail(new NotFoundError({ resource: 'evt-1' }))));
-      return Effect.gen(function* () {
-        yield* deleteDuringPass(pass);
-        expect(yield* landDeleteAfter((row) => row)).toBeNull();
-      }).pipe(Effect.provide(engineLayer(pass.client)));
-    });
-
-    it.effect('a landing delete leaves a row an op queued since owns', () => {
-      const pass = heldPass(failingOnce(Effect.void));
-      return Effect.gen(function* () {
-        yield* deleteDuringPass(pass);
-        const row = yield* landDeleteAfter(
-          (copy) => new EventRecord({ ...copy, syncStatus: 'pending' }),
-        );
-        expect(row?.syncStatus).toBe('pending');
-      }).pipe(Effect.provide(engineLayer(pass.client)));
-    });
-
-    it.effect('a landing delete leaves a cancelled override', () => {
-      const pass = heldPass(failingOnce(Effect.void));
-      return Effect.gen(function* () {
-        yield* deleteDuringPass(pass);
-        const row = yield* landDeleteAfter(
-          (copy) => new EventRecord({ ...copy, status: 'cancelled' }),
-        );
-        expect(row?.status).toBe('cancelled');
-      }).pipe(Effect.provide(engineLayer(pass.client)));
-    });
-
-    // Re-queued behind the move, the delete removed the moved event on
-    // Google after all, and its pending row showed in the target until the
-    // next pull reported the deletion.
-    it.effect('a move of the copy replaces the delete: the event lands in the target', () => {
-      let deletes = 0;
-      const moves: Array<string> = [];
-      const pass = heldPass(
-        failingOnce(
-          Effect.sync(() => {
-            deletes += 1;
-          }),
-        ),
-      );
-      const client: GoogleCalendarClientShape = {
-        ...pass.client,
-        listCalendars: () =>
-          Effect.succeed({
-            items: [
-              ...(calendarListPage.items ?? []),
-              { accessRole: 'owner', id: 'cal-2', selected: true, summary: 'Work' },
-            ],
-            nextSyncToken: 'cal-sync-1',
-          }),
-        moveEvent: ({ calendarId, destination, eventId }) =>
-          Effect.sync(() => {
-            moves.push(`${calendarId} → ${destination}`);
-            return { ...timedItem(eventId, 10), etag: '"evt-1-3"', summary: 'All day' };
-          }),
-      };
-      return Effect.gen(function* () {
-        yield* deleteDuringPass(pass);
-        const mutations = yield* EventMutations;
-        yield* mutations.moveEvent({
-          accountId: 'acc-1',
-          calendarId: 'cal-1',
-          eventId: 'evt-1',
-          target: { accountId: 'acc-1', calendarId: 'cal-2' },
-        });
-        yield* mutations.processPendingOps();
-        yield* mutations.retryPendingOps();
-        yield* mutations.processPendingOps();
-
-        expect(moves).toEqual(['cal-1 → cal-2']);
-        expect(deletes).toBe(0);
-        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
-        const events = yield* EventRepo;
-        expect(yield* events.getById('acc-1', 'cal-1', 'evt-1')).toBeNull();
-        expect((yield* events.getById('acc-1', 'cal-2', 'evt-1'))?.syncStatus).toBe('synced');
-      }).pipe(Effect.provide(engineLayer(client)));
-    });
-
-    // Sent while the delete waited out its backoff, the answer landed first
-    // and kept the row pending for the delete, which then deleted the event.
-    it.effect('an answer to the copy replaces the delete as well', () => {
-      let deletes = 0;
-      const pass = heldPass(
-        failingOnce(
-          Effect.sync(() => {
-            deletes += 1;
-          }),
-        ),
-      );
-      const client: GoogleCalendarClientShape = {
-        ...pass.client,
-        patchEvent: ({ eventId }) =>
-          Effect.succeed({
-            ...timedItem(eventId, 10),
-            attendees: [
-              { email: 'nik@example.com', responseStatus: 'accepted', self: true },
-              { email: 'host@example.com', organizer: true, responseStatus: 'accepted' },
-            ],
-            etag: '"evt-1-3"',
-            summary: 'All day',
-          }),
-      };
-      return Effect.gen(function* () {
-        yield* deleteDuringPass(pass);
-        const events = yield* EventRepo;
-        // The page's copy carries an invitation to answer.
-        const copy = yield* events.getById('acc-1', 'cal-1', 'evt-1');
-        yield* events.upsertMany([
-          new EventRecord({
-            ...copy!,
-            attendees: [
-              new Attendee({
-                email: 'nik@example.com',
-                isSelf: true,
-                responseStatus: 'needsAction',
-              }),
-              new Attendee({
-                email: 'host@example.com',
-                isOrganizer: true,
-                responseStatus: 'accepted',
-              }),
-            ],
-            organizerEmail: 'host@example.com',
-          }),
-        ]);
-        const mutations = yield* EventMutations;
-        yield* mutations.respondToEvent({
-          accountId: 'acc-1',
-          calendarId: 'cal-1',
-          eventId: 'evt-1',
-          response: 'accepted',
-        });
-        yield* mutations.processPendingOps();
-        yield* mutations.retryPendingOps();
-        yield* mutations.processPendingOps();
-
-        expect(deletes).toBe(0);
-        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
-        const row = yield* events.getById('acc-1', 'cal-1', 'evt-1');
-        expect(row?.syncStatus).toBe('synced');
-        expect(row?.attendees?.find((guest) => guest.isSelf)?.responseStatus).toBe('accepted');
-      }).pipe(Effect.provide(engineLayer(client)));
     });
   });
 
@@ -769,11 +700,25 @@ describe('SyncEngine', () => {
       });
     });
     const strays = straysOf('evt-r');
+    /** Keeps every change Google's newer version parked, and sends what is queued. */
+    const keepAllMine = Effect.gen(function* () {
+      const mutations = yield* EventMutations;
+      for (const op of yield* (yield* PendingOpRepo).listAll()) {
+        if (op.conflictAt !== undefined) {
+          yield* mutations.resolveConflict({ choice: 'mine', opId: op.id });
+        }
+      }
+      yield* mutations.retryPendingOps();
+      yield* mutations.processPendingOps();
+    });
 
-    it.effect('a pull that puts the master back brings back the exceptions the delete took', () => {
+    it.effect('a pull that sends the master again leaves the series deleted, and asks', () => {
       // An incremental pull re-sends the master, renamed on Google, and not
-      // its exceptions, which did not change: July 3 showed at 10:00 and
-      // July 4's slot showed too.
+      // its exceptions, which did not change. It used to put the master
+      // back on the table, and July 3 showed at 10:00 and July 4's slot
+      // showed too until the exceptions were put back with it. Google's
+      // master goes beside the rows now: nothing shows, and the delete
+      // waits for the user, as the 412 of its If-Match would have it.
       const client: GoogleCalendarClientShape = {
         ...stubClient([firstPage, { items: [renamed], nextSyncToken: 's2' }]),
         deleteEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
@@ -781,18 +726,25 @@ describe('SyncEngine', () => {
       return Effect.gen(function* () {
         yield* syncThenDelete;
         yield* (yield* SyncEngine).syncAll();
-        expect(yield* shown).toEqual(googleSeries);
-        // They are Google's copies now, like the master: the delete holds none.
+        expect(yield* shown).toEqual([]);
         const op = yield* seriesDelete;
-        expect(op?.beforeOverrides).toBeUndefined();
+        expect(op?.conflictAt).toBeDefined();
+        expect(op?.serverPayload?.title).toBe('Daily (Google)');
+        // The delete still holds the exceptions, as Google has them.
+        expect(op?.beforeOverrides?.map((row) => row.id).sort()).toEqual([
+          'evt-r_20260703T100000Z',
+          'evt-r_20260704T100000Z',
+        ]);
 
+        // Discarded, the series is back as Google has it now.
         yield* (yield* EventMutations).discardPendingOp(op!.id);
         expect(yield* shown).toEqual(googleSeries);
         expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+        expect(yield* strays).toEqual([]);
       }).pipe(Effect.provide(engineLayer(client)));
     });
 
-    it.effect('once that delete lands, they go with the series', () => {
+    it.effect('kept then, the delete takes the series and its exceptions', () => {
       let online = false;
       const client: GoogleCalendarClientShape = {
         ...stubClient([firstPage, { items: [renamed], nextSyncToken: 's2' }]),
@@ -802,12 +754,10 @@ describe('SyncEngine', () => {
       return Effect.gen(function* () {
         yield* syncThenDelete;
         yield* (yield* SyncEngine).syncAll();
-        expect(yield* shown).toEqual(googleSeries);
+        expect(yield* shown).toEqual([]);
 
         online = true;
-        const mutations = yield* EventMutations;
-        yield* mutations.retryPendingOps();
-        yield* mutations.processPendingOps();
+        yield* keepAllMine;
         expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
         expect(yield* shown).toEqual([]);
       }).pipe(Effect.provide(engineLayer(client)));
@@ -826,15 +776,20 @@ describe('SyncEngine', () => {
         yield* syncThenDelete;
         const engine = yield* SyncEngine;
         yield* engine.syncAll();
-        expect(yield* shown).toEqual(googleSeries);
-        // The delete waits out its backoff meanwhile.
+        expect(yield* shown).toEqual([]);
+        // The delete waits for the user meanwhile.
         yield* engine.syncAll();
         expect(yield* shown).toEqual([]);
+        // Google has it no more: discarded, the delete puts nothing back.
+        const op = yield* seriesDelete;
+        yield* (yield* EventMutations).discardPendingOp(op!.id);
+        expect(yield* shown).toEqual([]);
+        expect(yield* strays).toEqual([]);
       }).pipe(Effect.provide(engineLayer(client)));
     });
 
     it.effect(
-      'one put back while its own delete (a cut’s) waits goes when that delete lands',
+      'one a pull re-sends while its own delete (a cut’s) waits stays away, and goes with it',
       () => {
         let online = false;
         const client: GoogleCalendarClientShape = {
@@ -866,18 +821,18 @@ describe('SyncEngine', () => {
           });
           yield* engine.syncAll();
           yield* engine.syncAll();
+          // Nothing comes back while the deletes wait.
+          expect(yield* shown).toEqual([]);
 
           online = true;
-          yield* mutations.retryPendingOps();
-          yield* mutations.processPendingOps();
+          yield* keepAllMine;
           expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
-          // Put back pending, as if that delete owned the row, it stayed for good.
           expect(yield* shown).toEqual([]);
         }).pipe(Effect.provide(engineLayer(client)));
       },
     );
 
-    it.effect('one an answer and a cut’s delete both wait on goes back synced', () => {
+    it.effect('one an answer and a cut’s delete both wait on stays away too', () => {
       let online = false;
       const client: GoogleCalendarClientShape = {
         ...stubClient([
@@ -922,12 +877,11 @@ describe('SyncEngine', () => {
         });
         yield* engine.syncAll();
         yield* engine.syncAll();
+        expect(yield* shown).toEqual([]);
 
         online = true;
-        yield* mutations.retryPendingOps();
-        yield* mutations.processPendingOps();
+        yield* keepAllMine;
         expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
-        // Pending, neither the answer's ack nor the delete settled it.
         expect(yield* shown).toEqual([]);
       }).pipe(Effect.provide(engineLayer(client)));
     });
@@ -1039,134 +993,6 @@ describe('SyncEngine', () => {
       }).pipe(Effect.provide(engineLayer(client)));
     });
 
-    it.effect('a copy over an occurrence delete’s tombstone is still that delete’s', () => {
-      const client: GoogleCalendarClientShape = {
-        ...stubClient([
-          firstPage,
-          { items: [renamed], nextSyncToken: 's2' },
-          { items: [movedOccurrence('Moved again', '"x-2"')], nextSyncToken: 's3' },
-        ]),
-        deleteEvent: parkedThen(() => Effect.fail(new ApiUnavailableError({ cause: 'offline' }))),
-        getEvent: () => Effect.succeed(renamed),
-      };
-      return Effect.gen(function* () {
-        yield* syncThenDelete;
-        const engine = yield* SyncEngine;
-        const mutations = yield* EventMutations;
-        yield* engine.syncAll();
-        yield* mutations.deleteRecurring({
-          accountId: 'acc-1',
-          calendarId: 'cal-1',
-          masterId: 'evt-r',
-          originalStartUtc: Date.parse('2026-07-03T10:00:00Z'),
-          scope: 'instance',
-        });
-        yield* mutations.resolveConflict({ choice: 'mine', opId: (yield* seriesDelete)!.id });
-
-        yield* engine.syncAll();
-        const own = (yield* (yield* PendingOpRepo).listAll()).find(
-          (op) => op.eventId === 'evt-r_20260703T100000Z',
-        );
-        expect(own?.beforePayload?.title).toBe('Moved again');
-      }).pipe(Effect.provide(engineLayer(client)));
-    });
-
-    it.effect('keep-mine takes back a copy whose own delete waits', () => {
-      let online = false;
-      let parked = false;
-      const client: GoogleCalendarClientShape = {
-        ...stubClient([
-          firstPage,
-          { items: [movedOccurrence('Moved again', '"x-2"')], nextSyncToken: 's2' },
-          { items: [renamed], nextSyncToken: 's3' },
-        ]),
-        deleteEvent: ({ calendarId, eventId }) => {
-          if (eventId === 'evt-r' && !parked) {
-            parked = true;
-            return Effect.fail(new ConflictError({ calendarId, eventId }));
-          }
-          return online ? Effect.void : Effect.fail(new ApiUnavailableError({ cause: 'offline' }));
-        },
-        getEvent: () => Effect.succeed(renamed),
-      };
-      return Effect.gen(function* () {
-        yield* seedAccount;
-        const engine = yield* SyncEngine;
-        const mutations = yield* EventMutations;
-        yield* engine.syncAll();
-        const cut = { accountId: 'acc-1', calendarId: 'cal-1', masterId: 'evt-r' } as const;
-        yield* mutations.deleteRecurring({
-          ...cut,
-          originalStartUtc: Date.parse('2026-07-03T10:00:00Z'),
-          scope: 'following',
-        });
-        yield* mutations.deleteRecurring({
-          ...cut,
-          originalStartUtc: Date.parse('2026-07-02T10:00:00Z'),
-          scope: 'series',
-        });
-        yield* engine.syncAll();
-        yield* engine.syncAll();
-        expect(yield* shown).toContain('07-03T12:00 Moved again');
-
-        yield* mutations.resolveConflict({ choice: 'mine', opId: (yield* seriesDelete)!.id });
-        // Left on the table, July 3 showed without its series.
-        expect(yield* shown).toEqual([]);
-        online = true;
-        yield* mutations.retryPendingOps();
-        yield* mutations.processPendingOps();
-        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
-        expect(yield* shown).toEqual([]);
-      }).pipe(Effect.provide(engineLayer(client)));
-    });
-
-    it.effect('an occurrence edit that lands after keep-mine leaves no row behind', () => {
-      let deleteOnline = false;
-      let patchOnline = false;
-      let deletes = 0;
-      const client: GoogleCalendarClientShape = {
-        ...stubClient([firstPage, { items: [renamed], nextSyncToken: 's2' }]),
-        deleteEvent: ({ calendarId, eventId }) =>
-          deletes++ === 0
-            ? Effect.fail(new ConflictError({ calendarId, eventId }))
-            : deleteOnline
-              ? Effect.void
-              : Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
-        getEvent: () => Effect.succeed(renamed),
-        patchEvent: () =>
-          patchOnline
-            ? Effect.succeed({ ...movedOccurrence('Edited', '"x-2"') })
-            : Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
-      };
-      return Effect.gen(function* () {
-        yield* syncThenDelete;
-        yield* (yield* SyncEngine).syncAll();
-        const mutations = yield* EventMutations;
-        yield* mutations.updateRecurring({
-          accountId: 'acc-1',
-          calendarId: 'cal-1',
-          changes: { title: 'Edited' },
-          masterId: 'evt-r',
-          originalStartUtc: Date.parse('2026-07-03T10:00:00Z'),
-          scope: 'instance',
-        });
-        yield* mutations.resolveConflict({ choice: 'mine', opId: (yield* seriesDelete)!.id });
-
-        // The edit lands while the delete waits out a 503, then the delete.
-        patchOnline = true;
-        yield* mutations.retryPendingOps();
-        yield* mutations.processPendingOps();
-        expect((yield* (yield* PendingOpRepo).listAll()).map((op) => op.eventId)).toEqual([
-          'evt-r',
-        ]);
-        deleteOnline = true;
-        yield* mutations.retryPendingOps();
-        yield* mutations.processPendingOps();
-        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
-        expect(yield* shown).toEqual([]);
-      }).pipe(Effect.provide(engineLayer(client)));
-    });
-
     it.effect('an exception a pull sends while the master is gone waits in the delete', () => {
       // Renamed on Google meanwhile; written as a row of its own, it showed
       // as an event without its series. July 5 is cancelled there too.
@@ -1203,7 +1029,7 @@ describe('SyncEngine', () => {
       }).pipe(Effect.provide(engineLayer(client)));
     });
 
-    it.effect('and comes back as sent once a pull puts the master back', () => {
+    it.effect('and comes back as sent, under the master Google has now, on a discard', () => {
       const client: GoogleCalendarClientShape = {
         ...stubClient([
           firstPage,
@@ -1217,6 +1043,10 @@ describe('SyncEngine', () => {
         const engine = yield* SyncEngine;
         yield* engine.syncAll();
         yield* engine.syncAll();
+        // The master Google re-sent is its copy now; nothing shows until
+        // the delete is discarded.
+        expect(yield* shown).toEqual([]);
+        yield* (yield* EventMutations).discardPendingOp((yield* seriesDelete)!.id);
         expect(yield* shown).toEqual([
           '07-02T10:00 Daily (Google)',
           '07-03T12:00 Moved again',
@@ -1229,30 +1059,33 @@ describe('SyncEngine', () => {
       }).pipe(Effect.provide(engineLayer(client)));
     });
 
-    it.effect('keep mine takes them back with the master’s copy', () => {
-      const client: GoogleCalendarClientShape = {
-        ...stubClient([firstPage, { items: [renamed], nextSyncToken: 's2' }]),
-        deleteEvent: parkedThen(() => Effect.fail(new ApiUnavailableError({ cause: 'offline' }))),
-        getEvent: () => Effect.succeed(renamed),
-      };
-      return Effect.gen(function* () {
-        yield* syncThenDelete;
-        // The push parks the delete; the pull puts Google's series back.
-        yield* (yield* SyncEngine).syncAll();
-        const parked = yield* seriesDelete;
-        expect(parked?.conflictAt).toBeDefined();
-        expect(yield* shown).toEqual(googleSeries);
+    it.effect(
+      'keep mine sends the delete; discarded while it waits, the series is Google’s again',
+      () => {
+        const client: GoogleCalendarClientShape = {
+          ...stubClient([firstPage, { items: [renamed], nextSyncToken: 's2' }]),
+          deleteEvent: parkedThen(() => Effect.fail(new ApiUnavailableError({ cause: 'offline' }))),
+          getEvent: () => Effect.succeed(renamed),
+        };
+        return Effect.gen(function* () {
+          yield* syncThenDelete;
+          // The push parks the delete; the pull's master goes beside it.
+          yield* (yield* SyncEngine).syncAll();
+          const parked = yield* seriesDelete;
+          expect(parked?.conflictAt).toBeDefined();
+          expect(yield* shown).toEqual([]);
 
-        const mutations = yield* EventMutations;
-        yield* mutations.resolveConflict({ choice: 'mine', opId: parked!.id });
-        yield* mutations.processPendingOps();
-        expect(yield* shown).toEqual([]);
+          const mutations = yield* EventMutations;
+          yield* mutations.resolveConflict({ choice: 'mine', opId: parked!.id });
+          yield* mutations.processPendingOps();
+          expect(yield* shown).toEqual([]);
 
-        // Discarded while it waits: the series comes back as Google has it.
-        yield* mutations.discardPendingOp(parked!.id);
-        expect(yield* shown).toEqual(googleSeries);
-      }).pipe(Effect.provide(engineLayer(client)));
-    });
+          // Discarded while it waits: the series comes back as Google has it.
+          yield* mutations.discardPendingOp(parked!.id);
+          expect(yield* shown).toEqual(googleSeries);
+        }).pipe(Effect.provide(engineLayer(client)));
+      },
+    );
 
     it.effect('keep theirs, once Google deleted the series, takes them away with it', () => {
       let deletedOnGoogle = false;
@@ -1267,7 +1100,7 @@ describe('SyncEngine', () => {
       return Effect.gen(function* () {
         yield* syncThenDelete;
         yield* (yield* SyncEngine).syncAll();
-        expect(yield* shown).toEqual(googleSeries);
+        expect(yield* shown).toEqual([]);
 
         deletedOnGoogle = true;
         yield* (yield* EventMutations).resolveConflict({
@@ -1276,95 +1109,6 @@ describe('SyncEngine', () => {
         });
         expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
         expect(yield* shown).toEqual([]);
-      }).pipe(Effect.provide(engineLayer(client)));
-    });
-
-    it.effect('an occurrence edit undone after keep-mine goes back into the delete', () => {
-      const client: GoogleCalendarClientShape = {
-        ...stubClient([firstPage, { items: [renamed], nextSyncToken: 's2' }]),
-        deleteEvent: parkedThen(() => Effect.fail(new ApiUnavailableError({ cause: 'offline' }))),
-        getEvent: () => Effect.succeed(renamed),
-        patchEvent: () => Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
-      };
-      return Effect.gen(function* () {
-        yield* syncThenDelete;
-        yield* (yield* SyncEngine).syncAll();
-        const mutations = yield* EventMutations;
-        yield* mutations.updateRecurring({
-          accountId: 'acc-1',
-          calendarId: 'cal-1',
-          changes: { title: 'Edited' },
-          masterId: 'evt-r',
-          originalStartUtc: Date.parse('2026-07-03T10:00:00Z'),
-          scope: 'instance',
-        });
-        yield* mutations.resolveConflict({ choice: 'mine', opId: (yield* seriesDelete)!.id });
-        // The user's own change stays until it lands or goes.
-        expect(yield* shown).toEqual(['07-03T12:00 Edited']);
-
-        yield* mutations.discardPendingOp((yield* opOf(july3, 'update'))!.id);
-        // Written back as Google's copy, July 3 showed without its series.
-        expect(yield* shown).toEqual([]);
-        expect(yield* strays).toEqual([]);
-        yield* mutations.discardPendingOp((yield* seriesDelete)!.id);
-        expect(yield* shown).toEqual(googleSeries);
-      }).pipe(Effect.provide(engineLayer(client)));
-    });
-
-    it.effect('and one an answer still waits on goes there for that answer to settle', () => {
-      let online = false;
-      const client: GoogleCalendarClientShape = {
-        ...stubClient([
-          {
-            ...firstPage,
-            items: [series, invitedOccurrence('Moved', '"x-1"', 'needsAction'), cancelled],
-          },
-          { items: [renamed], nextSyncToken: 's2' },
-        ]),
-        deleteEvent: parkedThen(() => Effect.fail(new ApiUnavailableError({ cause: 'offline' }))),
-        getEvent: () => Effect.succeed(renamed),
-        patchEvent: () =>
-          online
-            ? Effect.succeed(invitedOccurrence('Moved', '"x-2"', 'accepted'))
-            : Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
-      };
-      return Effect.gen(function* () {
-        yield* syncThenDelete;
-        yield* (yield* SyncEngine).syncAll();
-        const mutations = yield* EventMutations;
-        yield* mutations.respondToEvent({
-          accountId: 'acc-1',
-          calendarId: 'cal-1',
-          eventId: july3,
-          response: 'accepted',
-        });
-        yield* mutations.updateRecurring({
-          accountId: 'acc-1',
-          calendarId: 'cal-1',
-          changes: { title: 'Edited' },
-          masterId: 'evt-r',
-          originalStartUtc: Date.parse('2026-07-03T10:00:00Z'),
-          scope: 'instance',
-        });
-        yield* mutations.resolveConflict({ choice: 'mine', opId: (yield* seriesDelete)!.id });
-        yield* mutations.discardPendingOp((yield* opOf(july3, 'update'))!.id);
-        // Left pending for the answer, July 3 showed without its series.
-        expect(yield* shown).toEqual([]);
-
-        // The answer lands while the delete waits: Google's copy goes there.
-        online = true;
-        yield* mutations.retryPendingOps();
-        yield* mutations.processPendingOps();
-        expect((yield* (yield* PendingOpRepo).listAll()).map((op) => op.eventId)).toEqual([
-          'evt-r',
-        ]);
-        expect(yield* shown).toEqual([]);
-        expect(yield* strays).toEqual([]);
-        yield* mutations.discardPendingOp((yield* seriesDelete)!.id);
-        expect(yield* shown).toEqual(googleSeries);
-        const row = yield* (yield* EventRepo).getById('acc-1', 'cal-1', july3);
-        expect(row?.etag).toBe('"x-2"');
-        expect(row?.attendees?.find((guest) => guest.isSelf)?.responseStatus).toBe('accepted');
       }).pipe(Effect.provide(engineLayer(client)));
     });
 
@@ -1485,7 +1229,7 @@ describe('SyncEngine', () => {
         }).pipe(Effect.provide(engineLayer(client)));
       });
 
-      it.effect('a pull that puts the master back brings back what the cut’s deletes took', () => {
+      it.effect('a pull that sends the master again brings nothing back; kept, it all goes', () => {
         let online = false;
         const client: GoogleCalendarClientShape = {
           ...stubClient([firstPage, { items: [renamed], nextSyncToken: 's2' }]),
@@ -1498,14 +1242,14 @@ describe('SyncEngine', () => {
           yield* engine.syncAll();
           yield* cutThenDelete;
           yield* engine.syncAll();
-          // July 3 showed at its slot, and the cancelled July 4 came back.
-          expect(yield* shown).toEqual(googleSeries);
+          // Put back on the table, the master showed July 3 at its slot and
+          // the cancelled July 4 again. It is Google's copy beside the
+          // delete now, and nothing shows.
+          expect(yield* shown).toEqual([]);
           expect(yield* strays).toEqual([]);
 
           online = true;
-          const mutations = yield* EventMutations;
-          yield* mutations.retryPendingOps();
-          yield* mutations.processPendingOps();
+          yield* keepAllMine;
           expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
           expect(yield* shown).toEqual([]);
           expect(yield* (yield* EventRepo).listOverrides('acc-1', 'cal-1', 'evt-r')).toEqual([]);
@@ -1533,38 +1277,46 @@ describe('SyncEngine', () => {
         }).pipe(Effect.provide(engineLayer(client)));
       });
 
-      it.effect('a cut’s delete that lands under the series back leaves Google’s tombstone', () => {
-        // A pull puts the master back while the series delete waits, then
-        // the cut's July 3 delete lands: removed, its copy left the slot
-        // showing until a pull.
-        let july3Online = false;
-        const client: GoogleCalendarClientShape = {
-          ...stubClient([firstPage, { items: [renamed], nextSyncToken: 's2' }]),
-          deleteEvent: ({ eventId }) =>
-            july3Online && eventId === july3
-              ? Effect.void
-              : Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
-        };
-        return Effect.gen(function* () {
-          yield* seedAccount;
-          const engine = yield* SyncEngine;
-          yield* engine.syncAll();
-          yield* cutThenDelete;
-          yield* engine.syncAll();
-          expect(yield* shown).toEqual(googleSeries);
-          july3Online = true;
-          const mutations = yield* EventMutations;
-          yield* mutations.retryPendingOps();
-          yield* mutations.processPendingOps();
-          expect(yield* opOf(july3, 'delete')).toBeUndefined();
-          expect(yield* shown).toEqual([
-            '07-02T10:00 Daily (Google)',
-            '07-05T10:00 Daily (Google)',
-            '07-06T10:00 Daily (Google)',
-          ]);
-          expect(yield* strays).toEqual([]);
-        }).pipe(Effect.provide(engineLayer(client)));
-      });
+      it.effect(
+        'a cut’s delete that lands while the series delete waits leaves Google’s tombstone',
+        () => {
+          // The cut's July 3 delete lands while the series delete waits (a
+          // pull brought a newer master, so it asks first): Google's copy of
+          // July 3 is its cancellation now, and a discard of the series
+          // delete must not show the slot again.
+          let july3Online = false;
+          const client: GoogleCalendarClientShape = {
+            ...stubClient([firstPage, { items: [renamed], nextSyncToken: 's2' }]),
+            deleteEvent: ({ eventId }) =>
+              july3Online && eventId === july3
+                ? Effect.void
+                : Effect.fail(new ApiUnavailableError({ cause: 'offline' })),
+          };
+          return Effect.gen(function* () {
+            yield* seedAccount;
+            const engine = yield* SyncEngine;
+            yield* engine.syncAll();
+            yield* cutThenDelete;
+            yield* engine.syncAll();
+            expect(yield* shown).toEqual([]);
+            july3Online = true;
+            const mutations = yield* EventMutations;
+            yield* mutations.retryPendingOps();
+            yield* mutations.processPendingOps();
+            expect(yield* opOf(july3, 'delete')).toBeUndefined();
+            expect(yield* shown).toEqual([]);
+            // Google cancelled July 3 with that delete: discarded, the series
+            // delete gives the series back without it.
+            yield* mutations.discardPendingOp((yield* seriesDelete)!.id);
+            expect(yield* shown).toEqual([
+              '07-02T10:00 Daily (Google)',
+              '07-05T10:00 Daily (Google)',
+              '07-06T10:00 Daily (Google)',
+            ]);
+            expect(yield* strays).toEqual([]);
+          }).pipe(Effect.provide(engineLayer(client)));
+        },
+      );
 
       it.effect('a discarded cut shows them as on Google, and an edit starts from one', () => {
         const client: GoogleCalendarClientShape = {
@@ -1775,7 +1527,10 @@ describe('SyncEngine', () => {
             scope: 'series',
           });
           yield* engine.syncAll();
-          // The moved July 3 came back over the longer series.
+          expect(yield* shown).toEqual([]);
+          // Discarded, the delete gives back the longer series, plain: the
+          // moved July 3 used to come back over it.
+          yield* mutations.discardPendingOp((yield* seriesDelete)!.id);
           expect(yield* shown).toEqual([
             '07-02T10:00 Daily (Google)',
             '07-03T10:00 Daily (Google)',
@@ -2861,26 +2616,6 @@ describe('SyncEngine', () => {
       );
 
       describe('keep-mine on the cut’s delete under the series back, then', () => {
-        it.effect('a new rule that draws July 3 again takes the delete back', () => {
-          // The tombstone made the delete look like one the user made: it
-          // stayed, and cancelled July 3, which Google keeps under the rule.
-          const { client, setUp } = parkThenKeepMine(false);
-          return Effect.gen(function* () {
-            yield* setUp;
-            yield* (yield* EventMutations).updateRecurring({
-              accountId: 'acc-1',
-              calendarId: 'cal-1',
-              changes: { recurrence: ['RRULE:FREQ=DAILY;COUNT=12'] },
-              masterId: 'evt-r',
-              originalStartUtc: Date.parse('2026-07-02T10:00:00Z'),
-              scope: 'series',
-            });
-            expect(yield* opOf(july3, 'delete')).toBeUndefined();
-            expect(yield* shown).toContain('07-03T12:00 Moved');
-            expect(yield* strays).toEqual([]);
-          }).pipe(Effect.provide(engineLayer(client)));
-        });
-
         it.effect('a discarded series delete shows July 3 with the answer still queued', () => {
           // Kept hidden by the tombstone the answer also owned; discarding
           // the answer then left a cancelled row Google never had.
@@ -3104,8 +2839,8 @@ describe('SyncEngine', () => {
       });
 
       it.effect('keep-mine on the cut’s parked delete keeps July 3 away from the series', () => {
-        // A pull puts the master back while the series delete waits; Google
-        // changed July 3, so its delete meets a 412.
+        // Google changed July 3, so its delete meets a 412, and a pull
+        // brings a newer master while the series delete waits.
         let online = false;
         let parked = false;
         const client: GoogleCalendarClientShape = {
@@ -3127,24 +2862,17 @@ describe('SyncEngine', () => {
           yield* engine.syncAll();
           yield* cutThenDelete;
           yield* engine.syncAll();
-          expect(yield* shown).toEqual(googleSeries);
+          expect(yield* shown).toEqual([]);
           const own = yield* opOf(july3, 'delete');
           expect(own?.conflictAt).toBeDefined();
 
           const mutations = yield* EventMutations;
           yield* mutations.resolveConflict({ choice: 'mine', opId: own!.id });
-          // Its copy taken off the table, July 3 showed at its slot.
-          expect(yield* shown).toEqual([
-            '07-02T10:00 Daily (Google)',
-            '07-05T10:00 Daily (Google)',
-            '07-06T10:00 Daily (Google)',
-          ]);
-          expect((yield* opOf(july3, 'delete'))?.beforePayload?.title).toBe('Moved');
+          expect(yield* shown).toEqual([]);
           expect(yield* strays).toEqual([]);
 
           online = true;
-          yield* mutations.retryPendingOps();
-          yield* mutations.processPendingOps();
+          yield* keepAllMine;
           expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
           expect(yield* shown).toEqual([]);
           expect(yield* strays).toEqual([]);
@@ -3176,6 +2904,10 @@ describe('SyncEngine', () => {
             opId: (yield* opOf(july3, 'delete'))!.id,
           });
           yield* mutations.discardPendingOp((yield* opOf(july3, 'delete'))!.id);
+          // Google's copy goes into the series delete, which still waits.
+          expect(yield* shown).toEqual([]);
+          expect(yield* strays).toEqual([]);
+          yield* mutations.discardPendingOp((yield* seriesDelete)!.id);
           expect(yield* shown).toEqual(googleSeries);
           expect(yield* strays).toEqual([]);
         }).pipe(Effect.provide(engineLayer(client)));

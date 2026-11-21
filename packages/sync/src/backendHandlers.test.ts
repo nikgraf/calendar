@@ -476,7 +476,7 @@ describe('listPendingOps', () => {
   );
 
   it.effect(
-    'says what each op does, naming calendars, and nothing for an op without a snapshot',
+    'says what each op does, naming calendars, and lists what an op made from nothing',
     () =>
       Effect.gen(function* () {
         yield* (yield* AccountRepo).upsert(googleAccount);
@@ -512,12 +512,14 @@ describe('listPendingOps', () => {
             payload: eventRow('Standup (moved)'),
           }),
         );
+        // An occurrence whose override the edit made: Google has none of it.
         yield* queue.enqueue(
           new PendingOp({
             ...base,
+            beforePayload: null,
             createdAt: 2,
-            eventId: 'evt-1',
-            id: 'no-snapshot',
+            eventId: 'evt-1_20260702T090000Z',
+            id: 'made',
             kind: 'update',
             payload: eventRow('Standup (moved)'),
           }),
@@ -536,7 +538,11 @@ describe('listPendingOps', () => {
         expect(diffs['edit']).toEqual([
           { after: 'Standup (moved)', before: 'Standup', label: 'Title' },
         ]);
-        expect(diffs['no-snapshot']).toBeUndefined();
+        expect(diffs['made']?.[0]).toEqual({
+          after: 'Standup (moved)',
+          before: null,
+          label: 'Title',
+        });
         expect(diffs['move']).toEqual([{ after: 'Home', before: 'Work', label: 'Calendar' }]);
       }).pipe(Effect.provide(queueLayer)),
   );

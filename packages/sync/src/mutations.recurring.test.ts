@@ -1734,7 +1734,7 @@ describe('an exception of a series whose delete waits', () => {
         response: 'accepted',
       });
       yield* mutations.deleteRecurring({ ...target, scope: 'instance' });
-      // A pull skips the tombstone: Google's copy, accepted on another
+      // A pull leaves the tombstone: Google's copy, accepted on another
       // device, is what the occurrence delete puts back now.
       const google = new EventRecord({
         ...invited,
@@ -1743,7 +1743,9 @@ describe('an exception of a series whose delete waits', () => {
         ),
         etag: '"o-2"',
       });
-      yield* (yield* PendingOpRepo).rememberPulled('acc-1', 'cal-1', [google]);
+      const queue = yield* PendingOpRepo;
+      const waiting = (yield* queue.listAll()).find((op) => op.kind === 'delete');
+      yield* queue.setBefore(waiting!.id, google);
       yield* mutations.deleteRecurring({ ...target, scope: 'series' });
 
       const ops = yield* listOps;

@@ -49,6 +49,7 @@ const makeAccountRepo: Effect.Effect<AccountRepoShape, never, Reactivity | SqlCl
           sql.withTransaction(
             Effect.gen(function* () {
               yield* sql`DELETE FROM events WHERE account_id = ${accountId}`;
+              yield* sql`DELETE FROM event_copies WHERE account_id = ${accountId}`;
               yield* sql`DELETE FROM contacts WHERE account_id = ${accountId}`;
               yield* sql`DELETE FROM contact_birthdays WHERE account_id = ${accountId}`;
               yield* sql`DELETE FROM tasks WHERE account_id = ${accountId}`;

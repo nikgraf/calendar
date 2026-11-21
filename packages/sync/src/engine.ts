@@ -52,6 +52,7 @@ import type { SqlError } from 'effect/sql/SqlError';
 import { AppleCalendarEvents, deviceTimeZone } from './appleCalendarEvents.ts';
 import { applyPendingVisibility as applyImportedVisibility } from './importedVisibility.ts';
 import { EventMutations } from './mutations.ts';
+import { makeHeldEvents } from './heldEvents.ts';
 import { makeHeldTasks } from './heldTasks.ts';
 import {
   makeApplyTaskOrder,
@@ -206,6 +207,7 @@ const make: Effect.Effect<
   const syncStateRepo = yield* SyncStateRepo;
   const applyTaskOrder = makeApplyTaskOrder({ pendingOpRepo, taskRepo });
   const heldTasks = makeHeldTasks({ pendingOpRepo, taskRepo });
+  const heldEvents = makeHeldEvents({ eventRepo, pendingOpRepo });
   const gate = Semaphore.makeUnsafe(1);
   // Imported visibility parked for rows that had not synced yet is applied
   // after every calendar/list pass; the repos it needs are resolved here.
@@ -368,14 +370,11 @@ const make: Effect.Effect<
           };
           const upserts: Array<EventRecord> = [];
           const deletions: Array<string> = [];
-          // Occurrences Google cancelled, kept as tombstones: gone all the same.
-          const cancelled: Array<string> = [];
           for (const item of items) {
             if (item.status === 'cancelled') {
               const tombstone = cancelledOverrideTombstone(item, context);
               if (tombstone) {
                 upserts.push(tombstone);
-                cancelled.push(item.id);
               } else {
                 deletions.push(item.id);
               }
@@ -409,24 +408,19 @@ const make: Effect.Effect<
                 );
                 // An exception of a series whose delete waits with the
                 // master gone locally goes into that delete, not the table.
-                const rows = yield* holdPulledExceptions(taken, account.id, calendarId, staying);
+                const kept = yield* holdPulledExceptions(taken, account.id, calendarId, staying);
+                // An event a queued change holds: Google's version becomes
+                // its copy and the change is laid over it again, so neither
+                // is lost. The rest are Google's rows.
+                const rows = yield* heldEvents.receive(account.id, calendarId, kept);
                 yield* eventRepo.applyPage(account.id, calendarId, {
                   deletions,
                   mode: 'pull',
                   upserts: rows,
                 });
-                // A queued delete of one of these has nothing left to put back.
-                yield* pendingOpRepo.forgetDeleted(account.id, calendarId, [
-                  ...deletions,
-                  ...cancelled,
-                ]);
-                // One the pull skipped at an occurrence delete's tombstone is
-                // what that delete puts back now.
-                yield* pendingOpRepo.rememberPulled(
-                  account.id,
-                  calendarId,
-                  rows.filter((record) => record.status !== 'cancelled'),
-                );
+                // Google has these no more: a queued delete of one has
+                // nothing left to put back.
+                yield* pendingOpRepo.forgetDeleted(account.id, calendarId, deletions);
                 // A master put back at its waiting delete brings back what
                 // the delete took; a series deleted on Google takes it away.
                 yield* settlePulledSeries(taken, account.id, calendarId, {

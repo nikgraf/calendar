@@ -2603,6 +2603,33 @@ describe('pending-op queue: task moves and the subtasks they carry', () => {
     );
   });
 
+  it.effect('a subtask Google deleted while its parent’s move waits does not stay behind', () => {
+    // Sequence 746: the pull reported the subtask deleted in the list
+    // Google had it in, while its row sat in the list the queued move
+    // shows it in. The row stayed there, pending, with nothing to settle it.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        network.down = true;
+        yield* moveOf(mutations, TRIP, 'list-1', 'list-2');
+        google.now += MINUTE;
+        google.deleteTaskServerSide('list-1', 's2');
+        google.now += MINUTE;
+        yield* TestClock.adjust('2 minutes');
+        yield* (yield* SyncEngine).syncAll();
+        expect(yield* placed).toEqual(['list-2/p', 'list-2/s1/p']);
+        network.down = false;
+        yield* drainAll(mutations);
+        expect(yield* placed).toEqual(['list-2/p', 'list-2/s1/p']);
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+        expect(yield* copies).toEqual([]);
+      }),
+    );
+  });
+
   it.effect('a move that landed and whose task was deleted there since takes the task away', () => {
     // Sequence 1800: the move landed with its answer lost and another
     // device deleted the task in its new list. The retry's 404 put the
@@ -2636,13 +2663,12 @@ describe('pending-op queue: task moves and the subtasks they carry', () => {
  * skipped until a change closes it (then it goes in the gate).
  */
 describe('pending-op queue: open gaps the sequences found', () => {
-  it.effect.skip("a discard after a pull skipped Google's newer copy shows Google's copy", () => {
-    // Sequences 6, 8, 22 and 23: the pull skips a row a queued op holds and
-    // its token moves past Google's copy; the discard puts back the op's
+  it.effect("a discard after a pull brought Google's newer copy shows Google's copy", () => {
+    // Sequences 6, 8, 22 and 23: the pull skipped a row a queued op held
+    // and its token moved past Google's copy; the discard put back the op's
     // snapshot, older than that copy, as synced — for good, since no pull
-    // sends the copy again. The same happens to a discarded create that
-    // landed (sequence 45: gone here, there on Google) and to a move that
-    // is released after a pull reported its event deleted (sequence 2).
+    // sends the copy again. Google's copy of a held event is kept beside
+    // its row now, and the pull writes it there.
     const google = newFake();
     const network = writesDown(google);
     return scripted(

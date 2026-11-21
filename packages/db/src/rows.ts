@@ -485,24 +485,26 @@ export interface PendingOpRow {
   readonly task_due_cleared: number;
   readonly task_previous: string | null;
   readonly copy_source: string | null;
+  /** Google's copy of the op's event (`event_copies`), joined in by the repo's reads. */
+  readonly copy_payload?: string | null;
 }
 
 const eventListSchema = Schema.Array(EventRecord);
 
+/** The op kinds that replace an event Google may have: the ones that read its copy. */
+export const HOLDING_KINDS: ReadonlySet<string> = new Set(['delete', 'rsvp', 'update']);
+
 /**
- * The three states of `before_payload`: SQL NULL = no snapshot (an op kind
- * that carries none, or a delete whose item a pull saw removed — see
- * `forgetDeleted`; undefined: a discard can only mark the row synced), the
- * JSON text `null` = there was no row before the change, a record otherwise.
- * Unreadable JSON degrades to undefined like every other JSON column.
+ * What an event op replaces: Google's copy of its event, kept once per
+ * event beside the row (`event_copies`) and read by every queued op of
+ * it. `null` when Google has none — an occurrence whose override the
+ * change materialized, an event a pull saw removed — and undefined for
+ * the op kinds that replace nothing.
  */
-const beforePayloadFromColumn = (text: string | null): EventRecord | null | undefined => {
-  if (text === null) {
-    return undefined;
-  }
-  const parsed = parseJson(text);
-  return parsed === null ? null : decodeOr(EventRecord, parsed);
-};
+const beforePayloadOf = (row: PendingOpRow): EventRecord | null | undefined =>
+  HOLDING_KINDS.has(row.kind)
+    ? (decodeOr(EventRecord, parseJson(row.copy_payload ?? null)) ?? null)
+    : undefined;
 
 /**
  * Undefined for a row with an unknown op kind (nothing could apply it);
@@ -518,7 +520,7 @@ export const pendingOpFromRow = (row: PendingOpRow): PendingOp | undefined =>
         baseEtag: row.base_etag ?? undefined,
         beforeColorHex: row.before_color_hex ?? undefined,
         beforeOverrides: decodeOr(eventListSchema, parseJson(row.before_overrides)),
-        beforePayload: beforePayloadFromColumn(row.before_payload),
+        beforePayload: beforePayloadOf(row),
         calendarId: row.calendar_id,
         carriedText: decodeOr(CarriedText, parseJson(row.carried_text)),
         colorHex: row.color_hex ?? undefined,

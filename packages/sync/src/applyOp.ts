@@ -460,16 +460,18 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         return;
       }
       const syncStatus = yield* releasedStatus(op);
-      // Only what this op owns goes back; the rest of the row is whatever
-      // other ops of the event (still queued, or landed) made it.
-      const restored = op.payload
-        ? ownedFields(op, current, op.beforePayload, op.payload)
-        : op.beforePayload;
+      const others = (yield* pendingOpRepo.listForEvent(op)).filter((other) => other.id !== op.id);
+      // With nothing else queued for the event the row is Google's copy
+      // again, whole: what a pull brought while this op waited included.
+      // Otherwise only what this op owns goes back, and the rest of the
+      // row is whatever the other ops of the event made it.
+      const whole = others.length === 0 || !op.payload;
       const row = new EventRecord({
-        ...current,
-        ...restored,
+        ...(whole
+          ? op.beforePayload
+          : { ...current, ...ownedFields(op, current, op.beforePayload, op.payload) }),
         calendarId: op.calendarId,
-        etag: current.etag,
+        etag: op.beforePayload.etag ?? current.etag,
         id: op.eventId,
         syncStatus,
       });
@@ -478,7 +480,6 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       // answer survives the delete), it goes into that delete as keep-mine
       // takes such a row (`takeBackPulled`), not back onto the table, where
       // it showed as an event of its own.
-      const others = (yield* pendingOpRepo.listForEvent(op)).filter((other) => other.id !== op.id);
       if (others.every((other) => other.kind === 'rsvp') && (yield* takeIntoDelete(taken, row))) {
         yield* eventRepo.deleteEvent(op.accountId, op.calendarId, op.eventId);
       } else {
@@ -949,6 +950,15 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         yield* taskRepo.removeCopies(op.accountId, copy.listId, [copy.id]);
         yield* taskRepo.putCopy(new TaskRecord({ ...copy, listId: destination }));
         yield* held.refresh(op.accountId, copy.id, op.id);
+      }
+      // A subtask's row the move took along with no copy of Google's (it
+      // has none there any more, or never had): nothing holds it now, and
+      // sync has it again.
+      const known = new Set(carried.map((copy) => copy.id));
+      for (const subtask of yield* taskRepo.listSubtasks(op.accountId, destination, op.eventId)) {
+        if (!known.has(subtask.id)) {
+          yield* held.refresh(op.accountId, subtask.id, op.id);
+        }
       }
       if (source !== undefined) {
         for (const id of [op.eventId, ...carried.map((copy) => copy.id)]) {
@@ -1459,15 +1469,25 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
     Effect.gen(function* () {
       const local = yield* eventRepo.getById(op.accountId, destination, op.eventId);
       const unchanged = response !== undefined && (yield* onlyMoved(op, destination, response));
-      if (local && response) {
+      if (response) {
         const now = yield* Clock.currentTimeMillis;
+        const event = { accountId: op.accountId, calendarId: destination, eventId: op.eventId };
+        const holding = (yield* pendingOpRepo.listForEvent(event)).find(
+          (other) => other.id !== op.id && other.beforePayload != null,
+        );
         const synced = mapGcalEvent(response, {
           accountId: op.accountId,
           calendarId: destination,
-          defaultTimeZone: local.startTimeZone ?? 'UTC',
+          defaultTimeZone: local?.startTimeZone ?? holding?.beforePayload?.startTimeZone ?? 'UTC',
           syncedAt: now,
         });
-        yield* settle(op, synced, { calendarId: destination });
+        if (local) {
+          yield* settle(op, synced, { calendarId: destination });
+        } else if (synced && holding) {
+          // Deleted here while the move waited: no row to settle, but what
+          // that delete replaces is Google's copy in the destination now.
+          yield* pendingOpRepo.advanceBefore(event, synced, op);
+        }
       }
       if (unchanged && response?.etag !== undefined) {
         yield* advancePastMove(op, destination, response.etag);
@@ -1580,6 +1600,18 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
           (yield* releasedStatus(op)) === 'synced'
         ) {
           yield* eventRepo.markSynced(op.accountId, op.calendarId, op.eventId);
+        } else if (!row) {
+          // An occurrence whose series delete waits with the master gone:
+          // Google's copy of it is its cancellation now, which that delete
+          // holds like the series' other exceptions — discarded, it must
+          // not show the slot again.
+          const copy = op.beforePayload ?? op.payload;
+          if (copy?.recurringEventId !== undefined) {
+            yield* takeIntoDelete(
+              taken,
+              new EventRecord({ ...copy, status: 'cancelled', syncStatus: 'synced' }),
+            );
+          }
         }
         yield* dropSeriesExceptions(taken, op.accountId, op.calendarId, op.eventId);
       }),

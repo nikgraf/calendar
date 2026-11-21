@@ -78,6 +78,8 @@ const makeCalendarRepo: Effect.Effect<CalendarRepoShape, never, Reactivity | Sql
                     Effect.gen(function* () {
                       yield* sql`DELETE FROM events
                         WHERE account_id = ${accountId} AND calendar_id = ${id}`;
+                      yield* sql`DELETE FROM event_copies
+                        WHERE account_id = ${accountId} AND calendar_id = ${id}`;
                       yield* sql`DELETE FROM sync_state
                         WHERE account_id = ${accountId} AND scope = ${`events:${id}`}`;
                       yield* sql`DELETE FROM calendars

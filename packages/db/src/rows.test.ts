@@ -181,18 +181,19 @@ describe('row decoders tolerate what the DB may hold', () => {
     expect(pendingOpFromRow(opRow())?.carriedText).toBeUndefined();
   });
 
-  it('pendingOpFromRow keeps the three states of before_payload apart', () => {
-    // SQL NULL: no snapshot — nothing to put back.
-    expect(pendingOpFromRow(opRow())?.beforePayload).toBeUndefined();
-    // The JSON text null: there was no row before the change.
-    expect(pendingOpFromRow(opRow({ before_payload: 'null' }))?.beforePayload).toBeNull();
+  it('pendingOpFromRow reads what an event op replaces from the event’s joined copy', () => {
+    // No copy: Google has none of the event (an occurrence whose override
+    // the change materialized, an event a pull saw removed).
+    expect(pendingOpFromRow(opRow())?.beforePayload).toBeNull();
     const before = eventFromRow(eventRow({ title: 'Before' }));
+    const copy = JSON.stringify(eventPayloadJson(before));
+    expect(pendingOpFromRow(opRow({ copy_payload: copy }))?.beforePayload?.title).toBe('Before');
+    // A kind that replaces nothing reads none.
     expect(
-      pendingOpFromRow(opRow({ before_payload: JSON.stringify(eventPayloadJson(before)) }))
-        ?.beforePayload?.title,
-    ).toBe('Before');
+      pendingOpFromRow(opRow({ copy_payload: copy, kind: 'create' }))?.beforePayload,
+    ).toBeUndefined();
     // Unreadable JSON degrades like every other JSON column.
-    expect(pendingOpFromRow(opRow({ before_payload: '{not json' }))?.beforePayload).toBeUndefined();
+    expect(pendingOpFromRow(opRow({ copy_payload: '{not json' }))?.beforePayload).toBeNull();
     expect(pendingOpFromRow(opRow({ before_overrides: '[1]' }))?.beforeOverrides).toBeUndefined();
   });
 

@@ -45,6 +45,7 @@ describe('runMigrations', () => {
         'contact_birthdays',
         'contacts',
         'device_settings',
+        'event_copies',
         'events',
         'location_geo',
         'pending_ops',

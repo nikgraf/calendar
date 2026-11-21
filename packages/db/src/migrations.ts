@@ -338,11 +338,12 @@ const copySource = Effect.gen(function* () {
   yield* sql`ALTER TABLE pending_ops ADD COLUMN copy_source TEXT`;
 });
 
-// task_copies: Google's copy of a task while a queued change holds its row
-// (`TaskRepo.holdTasks`). The row then shows the user's version; pulls and
+// task_copies, event_copies: Google's copy of a task or an event while a
+// queued change holds its row (`TaskRepo.holdTasks`; an event op's
+// `beforePayload`). The row then shows the user's version; pulls and
 // answers write what Google has here, and the row is rebuilt from the two.
-// One per task, keyed where Google has it (the source list while a move
-// waits), and gone again once nothing is queued for the task.
+// One per item — every queued change of it reads the same copy — keyed
+// where Google has it, and gone again once nothing is queued for the item.
 const providerCopies = Effect.gen(function* () {
   const sql = yield* SqlClient;
   yield* sql`
@@ -352,6 +353,14 @@ const providerCopies = Effect.gen(function* () {
       id TEXT NOT NULL,
       payload TEXT NOT NULL,
       PRIMARY KEY (account_id, list_id, id)
+    )`;
+  yield* sql`
+    CREATE TABLE event_copies (
+      account_id TEXT NOT NULL,
+      calendar_id TEXT NOT NULL,
+      id TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      PRIMARY KEY (account_id, calendar_id, id)
     )`;
 });
 

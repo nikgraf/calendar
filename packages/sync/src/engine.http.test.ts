@@ -514,37 +514,40 @@ describe('SyncEngine over HTTP (fake Google)', () => {
     }).pipe(noYield, Effect.provide(engineLayer(google)));
   });
 
-  it.effect('a parked delete: the pull brings the event back, delete anyway removes it', () => {
-    const google = newFake();
-    google.putEvent('cal-1', timed('a', 9));
-    return Effect.gen(function* () {
-      yield* seedAccount(false);
-      const engine = yield* SyncEngine;
-      const mutations = yield* EventMutations;
-      yield* engine.syncAll();
+  it.effect(
+    'a parked delete: the event stays deleted through a pull, delete anyway removes it',
+    () => {
+      const google = newFake();
+      google.putEvent('cal-1', timed('a', 9));
+      return Effect.gen(function* () {
+        yield* seedAccount(false);
+        const engine = yield* SyncEngine;
+        const mutations = yield* EventMutations;
+        yield* engine.syncAll();
 
-      google.putEvent('cal-1', timed('a', 9, 'Server 2'));
-      yield* mutations.deleteEvent({ accountId: 'acc-1', calendarId: 'cal-1', eventId: 'a' });
-      yield* mutations.processPendingOps();
-      const [op] = yield* (yield* PendingOpRepo).listAll();
-      expect(op?.kind).toBe('delete');
-      expect(op?.conflictAt).toBeDefined();
-      expect(op?.payload?.title).toBe('Event a');
+        google.putEvent('cal-1', timed('a', 9, 'Server 2'));
+        yield* mutations.deleteEvent({ accountId: 'acc-1', calendarId: 'cal-1', eventId: 'a' });
+        yield* mutations.processPendingOps();
+        const [op] = yield* (yield* PendingOpRepo).listAll();
+        expect(op?.kind).toBe('delete');
+        expect(op?.conflictAt).toBeDefined();
+        expect(op?.payload?.title).toBe('Event a');
 
-      // Nothing local protects a deleted row, so the pull re-inserts it.
-      yield* TestClock.adjust('1 minute');
-      yield* engine.syncAll();
-      expect(yield* eventTitles).toEqual(['a:Server 2']);
+        // The pull's copy goes beside the row the delete took: nothing comes back.
+        yield* TestClock.adjust('1 minute');
+        yield* engine.syncAll();
+        expect(yield* eventTitles).toEqual([]);
 
-      yield* mutations.resolveConflict({ choice: 'mine', opId: op!.id });
-      expect(yield* eventTitles).toEqual([]);
-      yield* mutations.processPendingOps();
-      expect(google.eventOf('cal-1', 'a')?.status).toBe('cancelled');
-      yield* TestClock.adjust('1 minute');
-      yield* engine.syncAll();
-      expect(yield* eventTitles).toEqual([]);
-    }).pipe(noYield, Effect.provide(engineLayer(google)));
-  });
+        yield* mutations.resolveConflict({ choice: 'mine', opId: op!.id });
+        expect(yield* eventTitles).toEqual([]);
+        yield* mutations.processPendingOps();
+        expect(google.eventOf('cal-1', 'a')?.status).toBe('cancelled');
+        yield* TestClock.adjust('1 minute');
+        yield* engine.syncAll();
+        expect(yield* eventTitles).toEqual([]);
+      }).pipe(noYield, Effect.provide(engineLayer(google)));
+    },
+  );
 
   it.effect('a timed event turns all-day and back: the unused time form is nulled', () => {
     // Google merges start/end fields on PATCH: sending only `date` kept the

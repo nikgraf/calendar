@@ -215,11 +215,16 @@ export const makeHeldTasks = (deps: HeldTaskDeps): HeldTasks => {
           if (!copy) {
             return;
           }
-          const shownIn =
-            copy.listId === listId ? listId : (yield* placeOf(accountId, taskId))?.listId;
-          if (shownIn === listId) {
-            yield* taskRepo.removeCopies(accountId, copy.listId, [taskId]);
+          const shownIn = (yield* placeOf(accountId, taskId))?.listId;
+          if (copy.listId !== listId && shownIn !== listId) {
+            return;
           }
+          // A queued move shows its row in another list than the one Google
+          // deleted it in: that row goes with the copy.
+          if (shownIn !== undefined && shownIn !== listId) {
+            yield* taskRepo.removeTask(accountId, shownIn, taskId);
+          }
+          yield* taskRepo.removeCopies(accountId, copy.listId, [taskId]);
         }),
       { discard: true },
     );
