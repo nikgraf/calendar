@@ -891,6 +891,14 @@ const stateOf = (google: FakeGoogle, days: number, calendarId = 'cal-1'): string
   return event === undefined ? 'none' : `${event.status} ${event.start?.dateTime ?? '-'}`;
 };
 
+const twoCalendars = () =>
+  new FakeGoogle({
+    calendars: [
+      { accessRole: 'owner', id: 'cal-1', primary: true, summary: 'Personal' },
+      { accessRole: 'owner', id: 'cal-2', summary: 'Work' },
+    ],
+  });
+
 const tagOf = <A, E extends { readonly _tag: string }, R>(effect: Effect.Effect<A, E, R>) =>
   effect.pipe(
     Effect.map(() => 'ok'),
@@ -1058,10 +1066,18 @@ describe('the fake Google: repeating events', () => {
     const ended = withRule(['RRULE:FREQ=DAILY;UNTIL=20260706T230000Z']);
     expect(drawnOnGoogle(ended.google)).toEqual([0]);
     const single = withRule([]);
-    for (const { google } of [skipped, ended, single]) {
+    // No rule left cancels them whatever else the PATCH changes: the app
+    // clears a rule and moves the event in one.
+    const singleAndMoved = withRule([]);
+    singleAndMoved.google.patchEventServerSide('cal-1', 'series', {
+      end: { dateTime: isoAt(SERIES_START + 3 * HOUR_MS) },
+      recurrence: [],
+      start: { dateTime: isoAt(SERIES_START + 2 * HOUR_MS) },
+    });
+    for (const { google } of [skipped, ended, single, singleAndMoved]) {
       expect([stateOf(google, 1), stateOf(google, 2)]).toEqual(['cancelled -', 'cancelled -']);
     }
-    for (const { google } of [kept, skipped, ended, single]) {
+    for (const { google } of [kept, skipped, ended, single, singleAndMoved]) {
       expect(google.unverified).toEqual([]);
     }
     return Effect.gen(function* () {
@@ -1077,12 +1093,7 @@ describe('the fake Google: repeating events', () => {
   });
 
   it.effect("a master's delete takes its exceptions; a move takes them along", () => {
-    const google = new FakeGoogle({
-      calendars: [
-        { accessRole: 'owner', id: 'cal-1', primary: true, summary: 'Personal' },
-        { accessRole: 'owner', id: 'cal-2', summary: 'Work' },
-      ],
-    });
+    const google = twoCalendars();
     putSeriesWithExceptions(google);
     return Effect.gen(function* () {
       const client = yield* GoogleCalendarClient;
@@ -1094,18 +1105,65 @@ describe('the fake Google: repeating events', () => {
       ).toBe(400);
       yield* client.moveEvent({ ...series, destination: 'cal-2', eventId: 'series' });
       expect(google.eventOf('cal-1', 'series')?.status).toBe('cancelled');
-      expect(google.exceptionsOf('cal-1', 'series')).toEqual([]);
+      // The moved occurrence left with its series; the one cancelled
+      // before stays the tombstone it was.
+      expect(stateOf(google, 1)).toBe('none');
+      expect(stateOf(google, 2)).toBe('cancelled -');
       expect(drawnOnGoogle(google, 'cal-1')).toEqual([]);
       expect(stateOf(google, 1, 'cal-2')).toBe('confirmed 2026-07-07T12:00:00Z');
       expect(stateOf(google, 2, 'cal-2')).toBe('cancelled -');
       expect(drawnOnGoogle(google, 'cal-2')).toEqual([0, 1.125, 3, 4]);
-      yield* client.deleteEvent({ accountId: 'acc-1', calendarId: 'cal-2', eventId: 'series' });
-      expect(google.exceptionsOf('cal-2', 'series')).toEqual([]);
-      expect(
-        yield* tagOf(
-          client.getEvent({ accountId: 'acc-1', calendarId: 'cal-2', eventId: occurrenceId(1) }),
-        ),
-      ).toBe('NotFoundError');
+      const there = { accountId: 'acc-1', calendarId: 'cal-2' };
+      yield* client.deleteEvent({ ...there, eventId: 'series' });
+      expect(stateOf(google, 1, 'cal-2')).toBe('none');
+      expect(yield* tagOf(client.getEvent({ ...there, eventId: occurrenceId(1) }))).toBe(
+        'NotFoundError',
+      );
+      expect(google.unverified).toEqual([]);
+    }).pipe(Effect.provide(engineLayer(google)));
+  });
+
+  it.effect('a list names a series that left with exceptions, and none of those', () => {
+    const google = twoCalendars();
+    putSeriesWithExceptions(google);
+    return Effect.gen(function* () {
+      const client = yield* GoogleCalendarClient;
+      const list = (calendarId: string, syncToken?: string | undefined) =>
+        Effect.map(
+          client.listEvents({ accountId: 'acc-1', calendarId, params: { syncToken } }),
+          (page) => ({
+            items: (page.items ?? []).map((item) => `${item.id} ${item.status}`),
+            token: page.nextSyncToken,
+          }),
+        );
+      // A full list names a live series' cancelled occurrence too.
+      const before = yield* list('cal-1');
+      expect(before.items).toEqual([
+        'series confirmed',
+        `${occurrenceId(1)} confirmed`,
+        `${occurrenceId(2)} cancelled`,
+      ]);
+      expect(google.goneWithExceptions).toEqual([]);
+      yield* client.moveEvent({ ...series, destination: 'cal-2', eventId: 'series' });
+      // What a list reports for the exceptions that went along is not
+      // recorded: the source's names the series alone, and says so.
+      expect((yield* list('cal-1', before.token)).items).toEqual(['series cancelled']);
+      expect(google.goneWithExceptions).toEqual(['cal-1|series']);
+      // The destination lists them all.
+      const there = yield* list('cal-2');
+      expect(there.items).toEqual([
+        'series confirmed',
+        `${occurrenceId(1)} confirmed`,
+        `${occurrenceId(2)} cancelled`,
+      ]);
+      // Deleted there with only a cancelled occurrence left, nothing went
+      // unreported: its tombstone was in the list before.
+      google.deleteEventServerSide('cal-2', occurrenceId(1));
+      const settled = yield* list('cal-2', there.token);
+      expect(settled.items).toEqual([`${occurrenceId(1)} cancelled`]);
+      google.deleteEventServerSide('cal-2', 'series');
+      expect((yield* list('cal-2', settled.token)).items).toEqual(['series cancelled']);
+      expect(google.goneWithExceptions).toEqual(['cal-1|series']);
       expect(google.unverified).toEqual([]);
     }).pipe(Effect.provide(engineLayer(google)));
   });
@@ -1167,7 +1225,7 @@ describe('the fake Google: repeating events', () => {
   );
 
   it.effect('says where it answered without a recorded Google behaviour', () => {
-    const google = newFake();
+    const google = twoCalendars();
     putSeriesWithExceptions(google);
     return Effect.gen(function* () {
       const client = yield* GoogleCalendarClient;
@@ -1187,10 +1245,27 @@ describe('the fake Google: repeating events', () => {
         eventId: 'series',
       });
       expect(stateOf(google, 1)).toBe('confirmed 2026-07-07T12:00:00Z');
+      // An exception that moved with its series has a new etag here, as
+      // the series has on Google; whether Google's exception has one too
+      // is not recorded, so a write on the old one says so.
+      const etagBefore = google.eventOf('cal-1', occurrenceId(1))?.etag;
+      yield* client.moveEvent({ ...series, destination: 'cal-2', eventId: 'series' });
+      const moved = { accountId: 'acc-1', calendarId: 'cal-2', eventId: occurrenceId(1) };
+      expect(yield* tagOf(client.deleteEvent({ ...moved, baseEtag: etagBefore }))).toBe(
+        'ConflictError',
+      );
       expect(google.unverified).toEqual([
         'events.patch of series_20260708T090000Z, a cancelled occurrence',
         'events.patch of series: new times for a series with exceptions',
+        'DELETE of series_20260707T090000Z on its etag from before its series moved',
       ]);
+      // Written since, its etag is its own again.
+      const patched = yield* client.patchEvent({ ...moved, event: { location: 'Room 4' } });
+      expect(yield* tagOf(client.deleteEvent({ ...moved, baseEtag: etagBefore }))).toBe(
+        'ConflictError',
+      );
+      yield* client.deleteEvent({ ...moved, baseEtag: patched.etag });
+      expect(google.unverified).toHaveLength(3);
       // A slot a rule dropped and a later one draws again is a plain
       // occurrence (verified live); what a list reports then is not.
       const redrawn = newFake();
