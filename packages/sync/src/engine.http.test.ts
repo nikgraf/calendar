@@ -743,6 +743,60 @@ describe('SyncEngine over HTTP (fake Google)', () => {
     },
   );
 
+  // A series moved a day later after a split it has not pushed yet: had
+  // the move carried the cut's UNTIL past the split, the old series would
+  // draw from the split again, the split's push would read the cut as
+  // undone and the new series would be dropped.
+  it.effect('a split pushed after its series moved a day later stays on Google', () => {
+    const google = newFake();
+    google.putEvent('cal-1', {
+      end: { dateTime: '2026-07-01T09:30:00Z', timeZone: 'UTC' },
+      id: 'daily',
+      recurrence: ['RRULE:FREQ=DAILY'],
+      start: { dateTime: '2026-07-01T09:00:00Z', timeZone: 'UTC' },
+      status: 'confirmed',
+      summary: 'Daily',
+    });
+    return Effect.gen(function* () {
+      yield* seedAccount(false);
+      const engine = yield* SyncEngine;
+      const mutations = yield* EventMutations;
+      yield* engine.syncAll();
+      const series = { accountId: 'acc-1', calendarId: 'cal-1', masterId: 'daily' };
+      yield* mutations.updateRecurring({
+        ...series,
+        changes: { title: 'Talks' },
+        originalStartUtc: Date.parse('2026-07-04T09:00:00Z'),
+        scope: 'following',
+      });
+      yield* mutations.updateRecurring({
+        ...series,
+        changes: {
+          endUtc: Date.parse('2026-07-03T09:30:00Z'),
+          startUtc: Date.parse('2026-07-03T09:00:00Z'),
+        },
+        originalStartUtc: Date.parse('2026-07-02T09:00:00Z'),
+        scope: 'series',
+      });
+      for (let round = 0; round < 6; round += 1) {
+        yield* mutations.processPendingOps();
+        yield* TestClock.adjust('5 minutes');
+      }
+      expect(
+        google
+          .eventsOf('cal-1')
+          .map((event) => event.summary)
+          .sort(),
+      ).toEqual(['Daily', 'Talks']);
+      expect(google.eventsOf('cal-1').find((event) => event.id === 'daily')?.recurrence).toEqual([
+        'RRULE:FREQ=DAILY;UNTIL=20260704T085959Z',
+      ]);
+      const masters = (yield* (yield* EventRepo).getWindow(0, Number.MAX_SAFE_INTEGER)).masters;
+      expect(masters.map((master) => master.title).sort()).toEqual(['Daily', 'Talks']);
+      expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+    }).pipe(noYield, Effect.provide(engineLayer(google)));
+  });
+
   it.effect('tasks: full pass, then a watermark pass applies a deleted tombstone', () => {
     const google = newFake();
     google.putTask('list-1', { due: '2026-08-30T00:00:00.000Z', id: 't1', title: 'Pay rent' });

@@ -35,6 +35,7 @@ export default {
         'e2e/**/*.e2e.ts',
         // Loaded by the Bombadil binary rather than an application import.
         'e2e/bombadil/editor.ts',
+        'e2e/bombadil/recurringEditor.ts',
         'e2e/bombadil/taskEditor.ts',
         'public/*.worklet.js',
       ],

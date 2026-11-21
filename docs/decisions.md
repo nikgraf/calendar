@@ -419,6 +419,15 @@ was cut (pruned 2026-11-17).
   and silently changing its phase, or enumerating a bounded future into
   explicit dates. Even safe BYDAY extras are refused conservatively;
   preserving arbitrary recurrence phase at an off-rule start stays open.
+- **A retimed series keeps to its days** (2026-11-20, #371; found by the
+  recurring Bombadil scenario) — an "All events" retime, and a split moved
+  to another time, read the date-time UNTIL against the occurrences: the
+  bound moves to just before the next one only when an earlier time would
+  bring it under, and only if the series' last occurrence moved with the
+  start. Rejected: deriving the bound from the move (by days, by the time
+  of day on the series' calendar, at the nearest day) — each failed a
+  review round; a cut written as the end of the day before the split.
+  Open: exceptions keep their slots through a series retime, unverified.
 - **A master edit reaches the exceptions** (2026-09-26, review of
   #88/#90) — Google copies a master's _changed_ title, description or
   location onto every exception, so the app mirrors that at save as a

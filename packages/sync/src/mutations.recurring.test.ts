@@ -33,6 +33,7 @@ import { Effect, Layer, Scheduler } from 'effect';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
 import { describe } from 'vite-plus/test';
 import { EventMutations } from './mutations.ts';
+import { drawsFrom } from './splitSeries.ts';
 
 // Deletes fail transiently so queued ops stay observable: enqueueAndKick
 // forks the drain, and a delete that succeeds could be removed before the
@@ -419,6 +420,201 @@ describe('EventMutations recurring scopes', () => {
       const ops = yield* listOps;
       expect(ops.map((op) => op.kind).sort()).toEqual(['create', 'update']);
     }).pipe(Effect.provide(testLayer)),
+  );
+
+  // A cut leaves the old series an UNTIL one second before the split
+  // occurrence. Retimed earlier with the UNTIL left in place, the old
+  // series drew the split day too, beside the new series' occurrence. The
+  // bound moves with the time of day only: moved to another date, the
+  // series still ends before the split (else the split reads as undone).
+  it.effect.each([
+    {
+      days: ['2026-07-01T08:00', '2026-07-02T08:00', '2026-07-03T08:00'],
+      label: 'an hour earlier',
+      to: '2026-07-02T08:00',
+      until: '20260704T075959Z',
+    },
+    {
+      days: ['2026-07-01T11:00', '2026-07-02T11:00', '2026-07-03T11:00'],
+      label: 'two hours later',
+      to: '2026-07-02T11:00',
+      until: '20260704T085959Z',
+    },
+    {
+      days: ['2026-07-02T09:00', '2026-07-03T09:00'],
+      label: 'a day later',
+      to: '2026-07-03T09:00',
+      until: '20260704T085959Z',
+    },
+    {
+      // July 3's occurrence moves to July 4, 08:00: still before the cut.
+      days: ['2026-07-02T08:00', '2026-07-03T08:00', '2026-07-04T08:00'],
+      label: 'a day later and an hour earlier',
+      to: '2026-07-03T08:00',
+      until: '20260704T085959Z',
+    },
+  ])('a series cut by a split and moved $label keeps to its days', ({ days, to, until }) =>
+    Effect.gen(function* () {
+      yield* seedMaster;
+      const mutations = yield* EventMutations;
+      yield* mutations.updateRecurring({
+        ...target,
+        changes: { title: 'Talks' },
+        scope: 'following',
+      });
+      yield* mutations.updateRecurring({
+        ...target,
+        changes: {
+          endUtc: Date.parse(`${to}:00Z`) + 3_600_000,
+          startUtc: Date.parse(`${to}:00Z`),
+        },
+        originalStartUtc: Date.parse('2026-07-02T09:00:00Z'),
+        scope: 'series',
+      });
+
+      const events = yield* EventRepo;
+      const moved = yield* events.getById('acc-1', 'cal-1', 'master1');
+      expect(moved!.recurrence).toEqual([`RRULE:FREQ=DAILY;UNTIL=${until}`]);
+      expect(drawsFrom(moved!, occurrence)).toBe(false);
+      const from = Date.parse('2026-07-01T00:00:00Z');
+      const end = Date.parse('2026-07-12T00:00:00Z');
+      expect(
+        assembleWindow(yield* events.getWindow(from, end), from, end)
+          .filter((event) => event.recurringEventId === 'master1')
+          .map((event) => new Date(event.startUtc).toISOString()),
+      ).toEqual(days.map((day) => `${day}:00.000Z`));
+      // Google gets the moved bound with the moved start.
+      const update = (yield* listOps).findLast(
+        (op) => op.kind === 'update' && op.eventId === 'master1',
+      );
+      expect(update?.payload?.recurrence).toEqual([`RRULE:FREQ=DAILY;UNTIL=${until}`]);
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  // A series on another zone's clock, retimed by an hour across that
+  // zone's midnight: still an hour, not a day less or more. Los Angeles,
+  // daily at 00:30 PDT (07:30Z) moved to 23:30 the evening before, and
+  // daily at 23:30 PDT (06:30Z) moved to 00:30 the morning after.
+  it.effect.each([
+    {
+      cut: '2026-07-04T07:30:00Z',
+      days: ['2026-07-01T06:30', '2026-07-02T06:30', '2026-07-03T06:30'],
+      label: 'an hour earlier, to the evening before',
+      start: '2026-07-01T07:30:00Z',
+      to: '2026-07-02T06:30',
+      until: '20260704T062959Z',
+    },
+    {
+      cut: '2026-07-04T06:30:00Z',
+      days: ['2026-07-01T07:30', '2026-07-02T07:30', '2026-07-03T07:30'],
+      label: 'an hour later, to the morning after',
+      start: '2026-07-01T06:30:00Z',
+      to: '2026-07-02T07:30',
+      until: '20260704T062959Z',
+    },
+  ])(
+    'a Los Angeles series cut by a split and moved $label keeps to its days',
+    ({ cut, days, start, to, until }) =>
+      Effect.gen(function* () {
+        yield* seedMaster;
+        const events = yield* EventRepo;
+        const startUtc = Date.parse(start);
+        yield* events.upsertMany([
+          new EventRecord({
+            ...master,
+            endUtc: startUtc + 1_800_000,
+            startTimeZone: 'America/Los_Angeles',
+            startUtc,
+          }),
+        ]);
+        const mutations = yield* EventMutations;
+        yield* mutations.updateRecurring({
+          ...target,
+          changes: { title: 'Talks' },
+          originalStartUtc: Date.parse(cut),
+          scope: 'following',
+        });
+        const opened = startUtc + 86_400_000;
+        yield* mutations.updateRecurring({
+          ...target,
+          changes: {
+            endUtc: Date.parse(`${to}:00Z`) + 1_800_000,
+            startUtc: Date.parse(`${to}:00Z`),
+          },
+          originalStartUtc: opened,
+          scope: 'series',
+        });
+
+        const moved = yield* events.getById('acc-1', 'cal-1', 'master1');
+        expect(moved!.recurrence).toEqual([`RRULE:FREQ=DAILY;UNTIL=${until}`]);
+        expect(drawsFrom(moved!, Date.parse(cut))).toBe(false);
+        const from = Date.parse('2026-06-30T00:00:00Z');
+        const end = Date.parse('2026-07-12T00:00:00Z');
+        expect(
+          assembleWindow(yield* events.getWindow(from, end), from, end)
+            .filter((event) => event.recurringEventId === 'master1')
+            .map((event) => new Date(event.startUtc).toISOString()),
+        ).toEqual(days.map((day) => `${day}:00.000Z`));
+      }).pipe(Effect.provide(testLayer)),
+  );
+
+  // The same bound on the other path: a series an earlier split ended,
+  // split again and moved to another time, took the remainder's UNTIL as
+  // it was and drew the first split's day too.
+  it.effect.each([
+    {
+      days: ['2026-07-03T08:00', '2026-07-04T08:00', '2026-07-05T08:00'],
+      label: 'an hour earlier',
+      to: '2026-07-03T08:00',
+      until: '20260706T075959Z',
+    },
+    {
+      days: ['2026-07-03T11:00', '2026-07-04T11:00', '2026-07-05T11:00'],
+      label: 'two hours later',
+      to: '2026-07-03T11:00',
+      until: '20260706T085959Z',
+    },
+    {
+      days: ['2026-07-04T09:00', '2026-07-05T09:00'],
+      label: 'a day later',
+      to: '2026-07-04T09:00',
+      until: '20260706T085959Z',
+    },
+  ])(
+    'a split of a series an earlier split ended, moved $label, ends where it did',
+    ({ days, to, until }) =>
+      Effect.gen(function* () {
+        yield* seedMaster;
+        const mutations = yield* EventMutations;
+        yield* mutations.updateRecurring({
+          ...target,
+          changes: { title: 'From July 6' },
+          originalStartUtc: Date.parse('2026-07-06T09:00:00Z'),
+          scope: 'following',
+        });
+        yield* mutations.updateRecurring({
+          ...target,
+          changes: {
+            endUtc: Date.parse(`${to}:00Z`) + 3_600_000,
+            startUtc: Date.parse(`${to}:00Z`),
+          },
+          originalStartUtc: Date.parse('2026-07-03T09:00:00Z'),
+          scope: 'following',
+        });
+
+        const events = yield* EventRepo;
+        const from = Date.parse('2026-07-01T00:00:00Z');
+        const end = Date.parse('2026-07-12T00:00:00Z');
+        const window = yield* events.getWindow(from, end);
+        const middle = window.masters.find((event) => event.startUtc === Date.parse(`${to}:00Z`));
+        expect(middle?.recurrence).toEqual([`RRULE:FREQ=DAILY;UNTIL=${until}`]);
+        expect(drawsFrom(middle!, Date.parse('2026-07-06T09:00:00Z'))).toBe(false);
+        expect(
+          assembleWindow(window, from, end)
+            .filter((event) => event.recurringEventId === middle?.id)
+            .map((event) => new Date(event.startUtc).toISOString()),
+        ).toEqual(days.map((day) => `${day}:00.000Z`));
+      }).pipe(Effect.provide(testLayer)),
   );
 
   it.effect('following update of a set of only RDATE lines splits its dates', () =>

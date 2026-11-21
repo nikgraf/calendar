@@ -38,6 +38,8 @@ import {
   toZonedDateTime,
   type ReminderOverride,
   toRRuleLines,
+  recurrenceMasterOf,
+  retimedRecurrence,
   toStructuredRules,
   truncateRecurrence,
   withConsistentGeo,
@@ -1264,15 +1266,22 @@ const make: Effect.Effect<
       // occurrence's wall-clock delta — immune to DST offset differences
       // between the occurrence's date and the series start. All-day
       // masters only take non-time fields.
-      const startUtc =
-        !master.isAllDay && changes.startUtc !== undefined
-          ? applyWallClockDelta(
-              master.startUtc,
-              master.startTimeZone ?? 'UTC',
-              originalStartUtc,
-              changes.startUtc,
-            )
-          : master.startUtc;
+      const zone = master.startTimeZone ?? 'UTC';
+      const movedTo = master.isAllDay ? undefined : changes.startUtc;
+      const shift =
+        movedTo === undefined
+          ? undefined
+          : (utc: number) => applyWallClockDelta(utc, zone, originalStartUtc, movedTo);
+      const startUtc = shift ? shift(master.startUtc) : master.startUtc;
+      // A date-time UNTIL is read against the moved occurrences, or a
+      // cut's would draw the split day (`retimedRecurrence`). A new rule
+      // from the edit is taken as given.
+      const recurrence =
+        changes.recurrence !== undefined
+          ? (changes.recurrence ?? undefined)
+          : shift && master.recurrence
+            ? retimedRecurrence(recurrenceMasterOf(master), startUtc, shift)
+            : master.recurrence;
       const merged = withConsistentGeo(
         new EventRecord({
           ...master,
@@ -1281,10 +1290,7 @@ const make: Effect.Effect<
           endUtc: master.isAllDay ? master.endUtc : startUtc + duration,
           geo: changes.geo === undefined ? master.geo : (changes.geo ?? undefined),
           location: changes.location ?? master.location,
-          recurrence:
-            changes.recurrence === undefined
-              ? master.recurrence
-              : (changes.recurrence ?? undefined),
+          recurrence,
           reminders: defined.reminders ?? master.reminders,
           startUtc: master.isAllDay ? master.startUtc : startUtc,
           syncStatus: 'pending',
@@ -1399,6 +1405,24 @@ const make: Effect.Effect<
       const projected = projectInstance(master, originalStartUtc, now);
       const startUtc =
         !master.isAllDay && changes.startUtc !== undefined ? changes.startUtc : projected.startUtc;
+      // The new series starts at the occurrence's new time, and so does
+      // every later one: a bound an earlier split left moves as for a
+      // series edit (`retimedRecurrence`), or it draws that split's day too.
+      const remainder = isRecurringSet(newRecurrence)
+        ? master.isAllDay || startUtc === originalStartUtc
+          ? newRecurrence
+          : retimedRecurrence(
+              // The remainder as drawn from the split occurrence's own slot.
+              {
+                ...source,
+                endUtc: originalStartUtc + duration,
+                recurrence: newRecurrence,
+                startUtc: originalStartUtc,
+              },
+              startUtc,
+              (utc) => applyWallClockDelta(utc, source.startTimeZone, originalStartUtc, startUtc),
+            )
+        : undefined;
       // An all-day split starts on the occurrence's slot (updateRecurring
       // refused a date change): the edit's dates would contradict startUtc.
       const {
@@ -1421,11 +1445,7 @@ const make: Effect.Effect<
           // a set of only RDATE lines on its last value leaves nothing to
           // repeat: the new half is a single event.
           recurrence:
-            changes.recurrence === undefined
-              ? isRecurringSet(newRecurrence)
-                ? newRecurrence
-                : undefined
-              : (changes.recurrence ?? undefined),
+            changes.recurrence === undefined ? remainder : (changes.recurrence ?? undefined),
           recurringEventId: undefined,
           startUtc,
           syncedAt: 0,
