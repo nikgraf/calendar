@@ -2620,8 +2620,7 @@ const runSequence = (seed: number) => {
  * own (and three more that only later seeds met).
  */
 const GAP = {
-  ahead: 'an occurrence change sent before the series change it was made under',
-  create: "a series' create discarded with changes of its occurrences queued",
+  ahead: 'a series change that went back behind an occurrence change made under it',
   dropped: 'the deletes a rule change queued, sent after a delete replaced it',
   givenUp: 'an occurrence changed under a new rule that was given up',
   ownText: "an occurrence's own text under a later edit of its series",
@@ -2635,13 +2634,10 @@ const GAP = {
  * than trust these after one.
  */
 const KNOWN_FAILING: ReadonlyMap<number, string> = new Map([
-  [1, GAP.ahead],
   [77, GAP.ahead],
   [215, GAP.givenUp],
-  [290, GAP.create],
-  [485, GAP.ownText],
-  [524, GAP.create],
-  [545, GAP.create],
+  [524, GAP.ownText],
+  [565, GAP.ahead],
   [576, GAP.dropped],
 ]);
 
@@ -3841,6 +3837,145 @@ const drawnOnGoogle = (google: FakeGoogle, calendarId: string, masterId: string)
     .instancesOf(calendarId, masterId, WINDOW_FROM, WINDOW_TO)
     .map((instance) => Date.parse(instance.start?.dateTime ?? ''));
 
+describe('pending-op queue: an occurrence changed under a queued change of its series', () => {
+  it.effect("an occurrence's change waits for the retime of its series it was made under", () => {
+    // Sequence 931 of the first search: all events an hour later, then the
+    // second occurrence renamed at its new time, both while offline. An
+    // occurrence's op waited for a create or a new rule of its series
+    // ahead of it, not for new times: the series' PATCH waited out one
+    // more 503, the occurrence's went first, found no such slot on Google
+    // (404), and the rename was dropped. It waits for any change of its
+    // series ahead of it now.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        network.down = true;
+        yield* mutations.updateRecurring({
+          ...R1,
+          changes: { endUtc: R1_START + 2 * HOUR, startUtc: R1_START + HOUR },
+          originalStartUtc: R1_START,
+          scope: 'series',
+        });
+        const second = R1_START + DAY + HOUR;
+        yield* mutations.updateRecurring({
+          ...R1,
+          changes: { title: 'Yoga (second)' },
+          originalStartUtc: second,
+          scope: 'instance',
+        });
+        // Back online, the series' PATCH meets one more 503.
+        let refuse = true;
+        google.fault = (call) => {
+          if (refuse && call.method === 'PATCH' && call.url.endsWith('/events/r1')) {
+            refuse = false;
+            return 'refused';
+          }
+          return undefined;
+        };
+        yield* drainAll(mutations);
+        expect(google.eventOf('cal-1', googleInstanceId('r1', second, false))?.summary).toBe(
+          'Yoga (second)',
+        );
+      }),
+    );
+  });
+
+  it.effect("an occurrence's own text goes after the text of its series set before it", () => {
+    // Sequence 1 of the search on the merged branch: all events got a
+    // location, then one occurrence its own, both while offline. The
+    // series' PATCH waited out one more 503, the occurrence's went first,
+    // and Google copied the series' location over it when that landed
+    // (verified live: a changed text goes onto every exception).
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        network.down = true;
+        yield* mutations.updateRecurring({
+          ...R1,
+          changes: { location: 'Room 1' },
+          originalStartUtc: R1_START,
+          scope: 'series',
+        });
+        const second = R1_START + DAY;
+        yield* mutations.updateRecurring({
+          ...R1,
+          changes: { location: 'Room 2' },
+          originalStartUtc: second,
+          scope: 'instance',
+        });
+        let refuse = true;
+        google.fault = (call) => {
+          if (refuse && call.method === 'PATCH' && call.url.endsWith('/events/r1')) {
+            refuse = false;
+            return 'refused';
+          }
+          return undefined;
+        };
+        yield* drainAll(mutations);
+        expect(google.eventOf('cal-1', 'r1')?.location).toBe('Room 1');
+        expect(google.eventOf('cal-1', googleInstanceId('r1', second, false))?.location).toBe(
+          'Room 2',
+        );
+      }),
+    );
+  });
+});
+
+describe("pending-op queue: a series' create that is discarded", () => {
+  it.effect("discarding a series' create takes the queued changes of its occurrences along", () => {
+    // Sequences 290, 436, 524, 545, 611, 730 and 738 of the first search:
+    // a discarded create took what was queued behind it for the event's
+    // own id. An occurrence's op has an id of its own (`<id>_<start>`):
+    // it stayed, with its row, and met a 404 once it was sent — the
+    // series a this-and-following edit splits off included.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const ops = yield* PendingOpRepo;
+        network.down = true;
+        const created = yield* mutations.createEvent({
+          accountId: ACCOUNT_ID,
+          calendarId: 'cal-1',
+          endUtc: START + 9 * DAY + 11 * HOUR,
+          isAllDay: false,
+          recurrence: ['RRULE:FREQ=DAILY;COUNT=5'],
+          startTimeZone: 'UTC',
+          startUtc: START + 9 * DAY + 10 * HOUR,
+          title: 'Physio',
+        });
+        yield* mutations.updateRecurring({
+          accountId: ACCOUNT_ID,
+          calendarId: 'cal-1',
+          changes: { title: 'Physio (second)' },
+          masterId: created.id,
+          originalStartUtc: created.startUtc + DAY,
+          scope: 'instance',
+        });
+        const create = (yield* ops.listAll()).find((op) => op.kind === 'create')!;
+        yield* mutations.discardPendingOp(create.id);
+        expect((yield* ops.listAll()).map(describeOp)).toEqual([]);
+        const rows = yield* (yield* SqlClient)<{
+          readonly id: string;
+        }>`SELECT id FROM events WHERE id LIKE ${`${created.id}%`}`;
+        expect(rows).toEqual([]);
+        network.down = false;
+        google.requests.length = 0;
+        yield* drainAll(mutations);
+        expect(writes(google)).toEqual([]);
+      }),
+    );
+  });
+});
+
 describe('pending-op queue: a delete of an occurrence that a pull confirmed', () => {
   it.effect(
     "an occurrence's delete a pull confirmed, discarded, leaves its tombstone synced",
@@ -3891,56 +4026,6 @@ describe('pending-op queue: a delete of an occurrence that a pull confirmed', ()
  */
 describe('pending-op queue: open gaps the sequences found in series', () => {
   it.effect.skip(
-    "discarding a series' create takes the queued changes of its occurrences along",
-    () => {
-      // Sequences 290, 436, 524, 545, 611, 730 and 738: a discarded create
-      // takes what was queued behind it for the event's own id. An
-      // occurrence's op has an id of its own (`<id>_<start>`): it stayed,
-      // with its row, and met a 404 once it was sent — the series a
-      // this-and-following edit splits off included.
-      const google = newFake();
-      const network = writesDown(google);
-      return scripted(
-        google,
-        Effect.gen(function* () {
-          const mutations = yield* EventMutations;
-          const ops = yield* PendingOpRepo;
-          network.down = true;
-          const created = yield* mutations.createEvent({
-            accountId: ACCOUNT_ID,
-            calendarId: 'cal-1',
-            endUtc: START + 9 * DAY + 11 * HOUR,
-            isAllDay: false,
-            recurrence: ['RRULE:FREQ=DAILY;COUNT=5'],
-            startTimeZone: 'UTC',
-            startUtc: START + 9 * DAY + 10 * HOUR,
-            title: 'Physio',
-          });
-          yield* mutations.updateRecurring({
-            accountId: ACCOUNT_ID,
-            calendarId: 'cal-1',
-            changes: { title: 'Physio (second)' },
-            masterId: created.id,
-            originalStartUtc: created.startUtc + DAY,
-            scope: 'instance',
-          });
-          const create = (yield* ops.listAll()).find((op) => op.kind === 'create')!;
-          yield* mutations.discardPendingOp(create.id);
-          expect((yield* ops.listAll()).map(describeOp)).toEqual([]);
-          const rows = yield* (yield* SqlClient)<{
-            readonly id: string;
-          }>`SELECT id FROM events WHERE id LIKE ${`${created.id}%`}`;
-          expect(rows).toEqual([]);
-          network.down = false;
-          google.requests.length = 0;
-          yield* drainAll(mutations);
-          expect(writes(google)).toEqual([]);
-        }),
-      );
-    },
-  );
-
-  it.effect.skip(
     'discarding a new rule takes along the change of an occurrence only it draws',
     () => {
       // Sequences 215 and 656: every other day draws September 1, which the
@@ -3979,53 +4064,6 @@ describe('pending-op queue: open gaps the sequences found in series', () => {
             readonly id: string;
           }>`SELECT id FROM events WHERE id = ${googleInstanceId('r1', added, false)}`;
           expect(rows).toEqual([]);
-        }),
-      );
-    },
-  );
-
-  it.effect.skip(
-    "an occurrence's change waits for the retime of its series it was made under",
-    () => {
-      // Sequence 931: all events an hour later, then the second occurrence
-      // renamed at its new time, both while offline. An occurrence's op waits
-      // for a create or a new rule of its series ahead of it, not for new
-      // times: the series' PATCH waited out one more 503 (931: a conflict
-      // parked it), the occurrence's went first, found no such slot on
-      // Google (404), and the rename was dropped.
-      const google = newFake();
-      const network = writesDown(google);
-      return scripted(
-        google,
-        Effect.gen(function* () {
-          const mutations = yield* EventMutations;
-          network.down = true;
-          yield* mutations.updateRecurring({
-            ...R1,
-            changes: { endUtc: R1_START + 2 * HOUR, startUtc: R1_START + HOUR },
-            originalStartUtc: R1_START,
-            scope: 'series',
-          });
-          const second = R1_START + DAY + HOUR;
-          yield* mutations.updateRecurring({
-            ...R1,
-            changes: { title: 'Yoga (second)' },
-            originalStartUtc: second,
-            scope: 'instance',
-          });
-          // Back online, the series' PATCH meets one more 503.
-          let refuse = true;
-          google.fault = (call) => {
-            if (refuse && call.method === 'PATCH' && call.url.endsWith('/events/r1')) {
-              refuse = false;
-              return 'refused';
-            }
-            return undefined;
-          };
-          yield* drainAll(mutations);
-          expect(google.eventOf('cal-1', googleInstanceId('r1', second, false))?.summary).toBe(
-            'Yoga (second)',
-          );
         }),
       );
     },
@@ -4167,7 +4205,8 @@ describe('pending-op queue: open gaps the sequences found in series', () => {
   );
 
   it.effect.skip('an occurrence keeps its own text through a later edit of its series', () => {
-    // Sequences 1080, 2513 and 2801 (past the first thousand): all events
+    // Sequences 485 and 524, and 1080, 2513 and 2801 past the first
+    // thousand, each its own way to the same end: all events
     // got a location, then one occurrence its own, then all events a title,
     // all while offline. The second edit of the series replaced the first
     // one's op and sends both fields in one PATCH; the location differs

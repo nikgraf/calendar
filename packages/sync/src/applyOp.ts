@@ -943,7 +943,8 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
    * What was queued behind a create Google never got (discarded, or refused
    * for good) goes with it and puts nothing back. The event's edits,
    * answers and delete were built on an event Google may never have had: a
-   * delete discarded later restored it as one. A move (mutations.ts
+   * delete discarded later restored it as one. So were the changes of a
+   * series' occurrences: sent, each met a 404. A move (mutations.ts
    * googleServerMove) already put the rows at its destination, where its
    * 404 would put them back in the source as synced: the move goes, and so
    * do the rows and whatever followed it there — another move included,
@@ -978,14 +979,25 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
             calendars.push(queued.targetCalendarId);
           }
         }
-        if (calendarId !== op.calendarId) {
-          for (const override of yield* eventRepo.listOverrides(
-            op.accountId,
-            calendarId,
-            op.eventId,
-          )) {
-            yield* eventRepo.deleteEvent(op.accountId, calendarId, override.id);
+        // A series: the changes queued for its occurrences name ids of
+        // their own (`<id>_<start>`), and go with the rows they made.
+        for (const queued of yield* pendingOpRepo.listAll()) {
+          if (
+            queued.accountId === op.accountId &&
+            queued.calendarId === calendarId &&
+            queued.payload?.recurringEventId === op.eventId
+          ) {
+            yield* pendingOpRepo.remove(queued.id);
           }
+        }
+        for (const override of yield* eventRepo.listOverrides(
+          op.accountId,
+          calendarId,
+          op.eventId,
+        )) {
+          yield* eventRepo.deleteEvent(op.accountId, calendarId, override.id);
+        }
+        if (calendarId !== op.calendarId) {
           yield* eventRepo.deleteEvent(op.accountId, calendarId, op.eventId);
         }
       }
@@ -2097,17 +2109,18 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       if (split !== undefined) {
         return split;
       }
-      // A change of the series' rule ahead of an occurrence's: once it
-      // lands it forgets the exceptions it drops (`forgetDropped`), so it
-      // goes first — an exception made under the new rule and landed
-      // while it waited out a backoff (its answer lost, say) went too.
+      // A change of the series ahead of an occurrence's goes first: the
+      // occurrence's was made under it. New times give the occurrence
+      // another id on Google, where the old one answers 404 and the
+      // change is lost; changed text is copied onto every exception, over
+      // an occurrence's own that reached Google before it (verified live);
+      // and a new rule, once it lands, forgets the exceptions it drops
+      // (`forgetDropped`) — one made under it that landed while it waited
+      // out a backoff (its answer lost, say) went too.
       if (
         op.kind !== 'move' &&
         earlier.some(
-          (entry) =>
-            entry.kind === 'update' &&
-            entry.dropsFrom !== undefined &&
-            entry.eventId !== op.eventId,
+          (entry) => entry.kind === 'update' && op.eventId.startsWith(`${entry.eventId}_`),
         )
       ) {
         return retry('waiting for the change of its series ahead of it');
