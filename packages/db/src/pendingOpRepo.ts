@@ -27,12 +27,10 @@ export interface PendingOpRepoShape {
     options?: { readonly editsOnly?: boolean },
   ) => Effect.Effect<void, SqlError>;
   /**
-   * After an op (`landed`) landed while others of the event were queued:
-   * what Google acknowledged (`synced`) is now what every one of them
-   * replaces — the ones queued after it took their snapshot with its
-   * change in, the ones before it never held that change — so their
-   * snapshots move to it; a discard must not undo the landed change along
-   * with its own. Parked ops are left alone.
+   * Google's copy of the event becomes `synced`: what Google acknowledged
+   * when an op (`landed`) landed while others of the event were queued, or
+   * what a pull's page brought. Every queued op of the event reads it, so
+   * a discard of one never undoes a landed change along with its own.
    */
   readonly advanceBefore: (
     event: { readonly accountId: string; readonly calendarId: string; readonly eventId: string },
@@ -81,10 +79,11 @@ export interface PendingOpRepoShape {
   >;
   readonly enqueue: (op: PendingOp) => Effect.Effect<void, SqlError>;
   /**
-   * A pull confirmed these events deleted upstream: a queued delete of
-   * one has nothing left to put back, so its snapshot goes — a discard
-   * would otherwise restore an event the sync token has already seen
-   * removed. (A task's provider copy goes instead: `TaskRepo.removeCopies`.)
+   * A pull confirmed these events deleted upstream: Google's copies of
+   * them go, and those of the exceptions a queued delete of one holds, so
+   * nothing is left to put back — a discard would otherwise restore an
+   * event the sync token has already seen removed. (A task's copy:
+   * `TaskRepo.removeCopies`.)
    */
   readonly forgetDeleted: (
     accountId: string,
@@ -94,9 +93,9 @@ export interface PendingOpRepoShape {
   /**
    * A series' delete landed (or found it gone): Google deleted its
    * occurrences with it, so a queued edit, answer or delete of one has no
-   * row left to put back. Their snapshots say so (`null`: a discard
-   * removes what the op shows) instead of writing an exception back
-   * without its master. An occurrence id is `<masterId>_` and a digit; a
+   * row left to put back. Their copies go (`null`: a discard removes
+   * what the op shows) instead of writing an exception back without its
+   * master. An occurrence id is `<masterId>_` and a digit; a
    * split made in Google's UI (`<masterId>_R…`) is its own series.
    */
   readonly forgetSeries: (
@@ -177,8 +176,8 @@ export interface PendingOpRepoShape {
     eventId: string,
   ) => Effect.Effect<void, SqlError>;
   /**
-   * Writes an op re-keyed to another calendar (its calendar, the event
-   * snapshots and its retry state) in place: a released move's followers
+   * Writes an op re-keyed to another calendar (its calendar, Google's
+   * copy of its event and its retry state) in place: a released move's followers
    * go back keeping their place in the queue, ties on `created_at`
    * included.
    */

@@ -8,8 +8,8 @@ import { eventFieldPairs, orNone, plainDateLabel } from './conflict.ts';
 
 /**
  * What a queued change does, field by field, for the unsynced-changes
- * list: what Google has (an event op's `before*` snapshot, a task's
- * provider copy) against what the op sends. A create lists the fields it
+ * list: what Google has (the event's copy an op reads as `beforePayload`,
+ * a task's copy) against what the op sends. A create lists the fields it
  * sets, a delete names what goes, an edit only what differs. Undefined
  * when there is nothing to compare against.
  */

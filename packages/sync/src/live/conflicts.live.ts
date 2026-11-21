@@ -107,7 +107,32 @@ describe('live Google: 412 conflicts', () => {
     }).pipe(Effect.provide(liveEngineLayer(config))),
   );
 
-  it.live('a parked delete: the pull brings the event back, delete anyway removes it', () =>
+  it.live('an edit of another field than Google changed lands beside it, unasked', () =>
+    Effect.gen(function* () {
+      const { engine, mutations, scratch: google } = yield* bootstrap(config);
+      const record = yield* mutations.createEvent(draft('merge'));
+      yield* drain(mutations);
+      yield* google.patchEvent(calendar(), record.id, { summary: `${record.title} server` });
+      yield* mutations.updateEvent({
+        accountId: LIVE_ACCOUNT_ID,
+        calendarId: calendar(),
+        changes: { location: 'Room 4' },
+        eventId: record.id,
+      });
+      // The stale etag meets a 412; laid over Google's version the edit
+      // clashes with nothing and goes again on Google's etag.
+      yield* drain(mutations);
+      expect(yield* pendingOps).toEqual([]);
+      const theirs = yield* google.getEvent(calendar(), record.id);
+      expect(theirs.summary).toBe(`${record.title} server`);
+      expect(theirs.location).toBe('Room 4');
+      expect(yield* titleOf(record.id)).toBe(`${record.title} server`);
+      yield* engine.syncAll();
+      expect(yield* titleOf(record.id)).toBe(`${record.title} server`);
+    }).pipe(Effect.provide(liveEngineLayer(config))),
+  );
+
+  it.live('a parked delete: the event stays off the table, delete anyway removes it', () =>
     Effect.gen(function* () {
       const { engine, mutations, scratch: google } = yield* bootstrap(config);
       const record = yield* mutations.createEvent(draft('parked-delete'));
@@ -124,9 +149,12 @@ describe('live Google: 412 conflicts', () => {
       expect(op?.conflictAt).toBeDefined();
       expect(op?.payload?.title).toBe(record.title);
 
-      // Nothing local protects a deleted row, so the pull re-inserts it.
+      // A pull writes no row for an event whose delete waits: Google's
+      // version is the copy the delete holds, which the banner shows.
       yield* engine.syncAll();
-      expect(yield* titleOf(record.id)).toBe(`${record.title} server 2`);
+      expect(yield* titleOf(record.id)).toBeNull();
+      const [parked] = yield* pendingOps;
+      expect(parked?.beforePayload?.title).toBe(`${record.title} server 2`);
 
       yield* mutations.resolveConflict({ choice: 'mine', opId: op!.id });
       expect(yield* titleOf(record.id)).toBeNull();

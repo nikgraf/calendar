@@ -185,7 +185,7 @@ export interface ReleaseOptions {
 
 /**
  * What an abandoned edit or RSVP puts back, over the row as it is now.
- * An RSVP owns only the answers it changed (its snapshot may carry a
+ * An RSVP owns only the answers it changed (what it sends may carry a
  * rename made between two RSVPs, which still belongs to the queued
  * edit). An edit owns the fields it changed, and the guest list only when
  * it edited it — and even then each guest's answer stays what the row
@@ -322,7 +322,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         others || earlier.some((entry) => entry.kind === 'move') ? 'pending' : 'synced',
     );
 
-  /** Today's hand-back, for an op with no snapshot: the exceptions' own text, then the flag. */
+  /** The hand-back of a change that landed after all: the exceptions' own text, then the flag. */
   const handBack = (op: PendingOp) =>
     Effect.andThen(
       Effect.ignore(restoreCarriedText(eventRepo, op)),
@@ -342,11 +342,10 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
         return yield* handBack(op);
       }
       yield* Effect.ignore(restoreCarriedText(eventRepo, op));
-      // The other queued ops of the event took their snapshots — and what
-      // they send — with this change in: it goes out of both (an RSVP
-      // rides in a guest-list edit's attendees and the other way round),
-      // and out of a queued delete's snapshot, all that is left once the
-      // row is gone.
+      // The other queued ops of the event were made with this change in
+      // what they send: it goes out of that (an RSVP rides in a guest-list
+      // edit's attendees and the other way round). Google's copy of the
+      // event never held it.
       if (op.beforePayload !== null && op.payload) {
         const before = op.beforePayload;
         const payload = op.payload;
@@ -434,9 +433,9 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
     });
 
   /**
-   * An abandoned delete: the row comes back as it was, unless a synced
-   * row sits there already (a pull put Google's copy back, or never saw
-   * it go). An instance delete's tombstone sits over its override under
+   * An abandoned delete: Google's copy of the event comes back as its
+   * row, unless a synced row sits there already (a discard or keep-theirs
+   * put Google's copy back). An instance delete's tombstone sits over its override under
    * the same id, so a pending row is the delete's own and is replaced; a
    * tombstone over a plain occurrence is simply removed.
    */
@@ -1014,12 +1013,11 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
   /**
    * The local row an abandoned op left `pending` (a discard, a permanent
    * rejection, keep-mine with nothing left to keep): what the op changed
-   * is put back from its snapshot, so the screen shows what Google has,
-   * and the row is handed back to sync — pulls skip pending rows, so
-   * without this the server's version could never land again. A dropped
-   * create takes its optimistic row with it (deleteStale never collects
-   * pending rows, so it would render forever as something Google never
-   * had). An op without a snapshot can only mark its row synced.
+   * is put back from Google's copy of the item, so the screen shows what
+   * Google has, and the row is handed back to sync — a pull never writes
+   * over a pending row. A dropped create takes its optimistic row with it
+   * (deleteStale never collects pending rows, so it would render forever
+   * as something Google never had).
    */
   const releaseRow = (op: PendingOp, options: ReleaseOptions = {}): Effect.Effect<void> => {
     const revert = options.revert ?? true;
@@ -1265,7 +1263,7 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
    * or the destination): the server still has the event in the source.
    * Its rows go back there, and so does what googleServerMove re-queued
    * behind the move — edits, a this-and-following cut's master update and
-   * exception deletes, a move onwards — snapshots and all: addressed to
+   * exception deletes, a move onwards — Google's copies with them: addressed to
    * the destination it would 404 and be dropped, while the source row
    * showed what Google never got. The series' next move out of the
    * destination ends what goes back: it now leaves from the source (one
@@ -1671,10 +1669,10 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
     );
 
   /**
-   * What landed is what the other queued ops of the event replace now. A
-   * pull's copy at a waiting delete's id (`isPulledCopy`) is Google's and
-   * takes it too: the delete owns no row, and an edit that replaces the
-   * delete takes that copy as its snapshot.
+   * What landed is Google's copy of the event now, which the other queued
+   * ops of it read. A synced row at a waiting delete's id (`isPulledCopy`)
+   * is Google's and takes it too: the delete owns no row, and an edit
+   * that replaces the delete starts from that row.
    */
   const advanceOthers = (
     op: PendingOp,
@@ -1773,8 +1771,8 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
    * queued before the series edit was built on the old text, and the
    * series edit, later, wins on what it carried (as when the two land in
    * order): its payload takes the carried text too. One queued after it
-   * takes it in each field it did not change itself (its payload holds its
-   * snapshot's value there): built on a row whose carry a landing or a
+   * takes it in each field it did not change itself (its payload holds
+   * the copy's value there): built on a row whose carry a landing or a
    * pull put Google's copy over, it held the old text. Sent as it was,
    * either put the old text back on that exception.
    */

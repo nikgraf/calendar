@@ -135,7 +135,7 @@ export const planCarry = ({
 /**
  * The exception `row` with its own text back, as if `op` (a series edit
  * that carried text onto it) had never been: what abandoning the op puts
- * back, and what a snapshot of the exception must hold while the op is
+ * back, and what Google's copy of the exception must hold while the op is
  * queued. A field the user has edited on the exception since keeps the
  * newer value, and a row a pull or push has replaced since keeps Google's
  * version. The row itself when `op` carried nothing onto it.

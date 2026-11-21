@@ -418,14 +418,15 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
    */
   beforeOverrides: Schema.optional(Schema.Array(EventRecord)),
   /**
-   * The event row as it was before this change was made locally — what the
-   * unsynced-changes list diffs against and what a discard (or a permanent
-   * rejection) puts back. Inherited when a newer edit replaces a queued op,
-   * so it always names the last state Google acknowledged. `null`: there
-   * was no row (an occurrence edit or delete materialized its override), so
-   * a discard removes the row. Absent: no snapshot (a pull confirmed the
-   * delete, `forgetDeleted`, or it did not decode) — a discard can only
-   * mark the row synced.
+   * Google's copy of the event this op holds, for an update, a delete and
+   * an RSVP: kept once per event beside its row (`event_copies`), so every
+   * queued op of the event reads the same one, and written by pulls,
+   * conflict fetches and answers as well as when the change was made.
+   * What the unsynced-changes list diffs against, what a discard (or a
+   * permanent rejection) puts back, and Google's version of a parked
+   * conflict. `null`: Google has none — an occurrence edit or delete
+   * materialized its override, or Google deleted the event — so a discard
+   * removes the row. Absent on the other op kinds.
    */
   beforePayload: Schema.optional(Schema.NullOr(EventRecord)),
   calendarId: Schema.String,
@@ -457,8 +458,8 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
    * original start it drops them from — a this-and-following cut's
    * occurrence, 0 for a new rule (Google drops them with the old one).
    * An update that replaces it keeps the earlier of the two. Once it
-   * lands, the copies and snapshots of those exceptions are Google's no
-   * more; until then they are.
+   * lands, the copies of those exceptions are Google's no more; until
+   * then they are.
    */
   dropsFrom: Schema.optional(Schema.Number),
   eventId: Schema.String,

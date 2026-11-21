@@ -405,10 +405,10 @@ const make: Effect.Effect<
               upserts.push(record);
             }
           }
-          // One transaction per page, the queued deletes' snapshots
-          // included (a discard between the two would put back what the
-          // page replaced); a pull never overwrites a row with a local
-          // edit still queued. An empty page (every quiet poll ends in
+          // One transaction per page, the copies of held items included (a
+          // discard between the two would put back what the page
+          // replaced); a pull never overwrites a row with a local edit
+          // still queued. An empty page (every quiet poll ends in
           // one) writes nothing and invalidates nothing: the views, the
           // notification planner and the calendar mirrors all recompute on
           // EVENTS_KEY, and none of them has anything to recompute.
@@ -1173,9 +1173,9 @@ const make: Effect.Effect<
       yield* Effect.forEach(
         calendars,
         (calendar) =>
-          // The pass holds the drain, like a task list's: a page answered
-          // before a delete reached Google puts the row back, and only a
-          // delete that lands after the page takes that copy away again.
+          // The pass holds the drain, like a task list's: no write lands
+          // between a request and the page that answers it, and what a
+          // page proves landed is settled under the same hold.
           holdingQueue(syncEvents(account, calendar.id, calendar.timeZone)).pipe(
             // A 404 on one calendar must not stall the account's others,
             // tasks and contacts. It is not proof of deletion either: Google

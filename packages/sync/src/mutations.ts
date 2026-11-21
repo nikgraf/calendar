@@ -130,16 +130,17 @@ const foldIntoCreate = (create: PendingOp, payload: EventRecord) =>
   });
 
 /**
- * What a new update or delete of the event diffs against and a discard
- * puts back: the before of the queued update or delete it replaces — the
- * last state Google acknowledged, also when edits pile up offline — else
- * the row as it is now (`null` when there is none: an occurrence edit
- * materializing its override). A replaced op without one leaves it
- * unknown: the row already holds that op's edit. A replaced delete hands
- * on Google's copy instead when a pull put one back while it waited
- * (`isPulledCopy`), not the snapshot it took before. An occurrence's
- * delete that took its row along (a cut's or a rule change's) holds the
- * exception as Google has it until that change lands (`dropsFrom`).
+ * Google's copy of the event for a new update or delete of it: what it
+ * diffs against and a discard puts back. The copy the queued update or
+ * delete it replaces reads — the last state Google acknowledged or a
+ * pull brought, also when edits pile up offline — else the row as it is
+ * now (`null` when there is none: an occurrence edit materializing its
+ * override). The repo keeps one copy per event, so this only matters
+ * for the first op to hold it. A synced row at a replaced delete's id is
+ * Google's copy put back while that delete waited (`isPulledCopy`) and
+ * is taken instead. An occurrence's delete that took its row along (a
+ * cut's or a rule change's) holds the exception as Google has it until
+ * that change lands (`dropsFrom`).
  */
 const inheritedBefore = (
   queued: ReadonlyArray<PendingOp>,
@@ -467,13 +468,11 @@ const make: Effect.Effect<
   const taken = { eventRepo, pendingOpRepo };
 
   /**
-   * A change of the series made while its delete is still queued (the
-   * user acts on the master a pull put back meanwhile) replaces that
-   * delete: what it took locally comes back first, as Google has it, so
-   * the change sees the series as Google does — a move, an answer, an
-   * edit, or a new delete's snapshot. The pull that put the master back
-   * put back the exceptions with it (takenExceptions.ts); a delete still
-   * holding some was left so by a pull made before it did.
+   * A change of the series made while its delete is still queued replaces
+   * that delete: the exceptions it took off the table come back first, as
+   * Google has them, so the change sees the series as Google does — a
+   * move, an answer, an edit, or what a new delete takes
+   * (takenExceptions.ts).
    */
   const restoreTakenExceptions = (accountId: string, calendarId: string, masterId: string) =>
     restoreTaken(taken, accountId, calendarId, masterId);
@@ -844,7 +843,7 @@ const make: Effect.Effect<
             // Re-read: an earlier op in this drain may have rewritten this
             // one (createTask swaps a temp task id into queued followers) —
             // or the user may have discarded it, in which case skip rather
-            // than resurrect the stale snapshot.
+            // than send what they took back.
             const op = yield* pendingOpRepo.getById(queuedOp.id);
             if (!op) {
               continue;
@@ -957,10 +956,10 @@ const make: Effect.Effect<
     );
 
   /**
-   * Keep mine: re-send without If-Match. A parked delete also takes back
-   * the copies a pull put back while it waited, into its snapshot
-   * (`takeBackPulled`; a pending row — an instance tombstone — is the
-   * user's own and stays). An edit of an event Google deleted is restored
+   * Keep mine: re-send without If-Match. A parked delete also takes any
+   * row of Google's still at its id, or of its series' exceptions, back
+   * off the table as copies it holds (`takeBackPulled`; a pending row —
+   * an instance tombstone — is the user's own and stays). An edit of an event Google deleted is restored
    * as a new event: patching it would 404 and the NotFound arm would drop
    * the edit.
    */
@@ -1057,8 +1056,8 @@ const make: Effect.Effect<
         return;
       }
       if (choice === 'mine') {
-        // Read again in the transaction: a pull page may have changed the
-        // snapshot keep-mine adds to. transactional kicks the drain once the
+        // Read again in the transaction: a pull page may have changed what
+        // the op holds, which keep-mine adds to. transactional kicks the drain once the
         // unpark committed.
         return yield* transactional(
           Effect.gen(function* () {
@@ -1638,7 +1637,7 @@ const make: Effect.Effect<
         }
 
         // A series delete or cut below replaces one still queued: what that
-        // one took is Google's, for this one's snapshot or its cut.
+        // one took is Google's, for this one to take or to cut.
         yield* restoreTakenExceptions(accountId, calendarId, masterId);
         const unsentCreate = yield* unsentCreateOf(accountId, calendarId, masterId);
         if (scope === 'series' || originalStartUtc <= master.startUtc) {

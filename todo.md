@@ -8,17 +8,32 @@ was written; re-verify before starting one.
 
 ## Tier 0 — bugs
 
-- [ ] A series delete that replaced a cut lets the cut's leftovers out
-      (open since #284 and #285; reproduced in review, 2026-11-20). Edit
-      "this and following", then delete the whole series; while that
-      delete waits a pull puts Google's uncut series back, and the user
-      renames it. The rename's update carries no `dropsFrom`
-      (`mutations.ts` copies it only from a queued update, not from the
-      delete that replaced the cut), so nothing holds the split's create
-      (`holdsSplit`) or the cut's exception deletes
-      (`exceptionDeleteGate`): the new series lands beside the uncut one
-      and Google shows those days twice. The replacing delete also lets
-      the cut's exception deletes out ahead of itself.
+- [ ] A delete that replaces a cut or a rule change lets its exception
+      deletes out ahead of itself (open since #284 and #285). Offline:
+      "does not repeat" (or "this and following"), then delete the event.
+      Online, the deletes the first change queued for the exceptions go
+      out on their own; discarding the event's delete then leaves Google
+      with the series back and those occurrences cancelled. Skipped test:
+      `queueSequence.test.ts`, "the deletes a rule change queued go with
+      it when a delete replaces it".
+- [ ] A queued event change still holds the whole event, so an edit of
+      all events replaces the series' queued change and goes to the back
+      of the queue — behind a change of one occurrence made under it. The
+      occurrence's own text is then overwritten by the series' older one
+      (Google copies a changed text onto every exception), or an
+      occurrence deleted under a new rule comes back. Needs changes that
+      hold only their own fields, several per event in order. Skipped
+      tests: "an occurrence keeps its own text through a later edit of
+      its series", "an occurrence deleted under a new rule stays deleted
+      when the series is edited again".
+- [ ] An occurrence changed under a new rule that is then given up
+      (discarded, or keep-theirs) keeps its change queued at a slot the
+      series no longer draws, and meets a 404. Skipped test: "discarding
+      a new rule takes along the change of an occurrence only it draws".
+- [ ] A queued move holds no copy of its series as Google has it: what a
+      pull brings for a series the move takes out of that calendar is
+      left out (another device's cancelled occurrence stays on screen
+      once the move lands). `queueSequence.test.ts`, `GAP.moving`.
 
 - [ ] Let agent refs resolve zero-duration Google series occurrences
       (`packages/agent/src/resolve.ts`, `ruleProduces`; found reviewing

@@ -10,15 +10,14 @@ import type { SqlError } from 'effect/sql/SqlError';
 import { withAnswers } from './heldEvents.ts';
 
 /**
- * A series delete takes the series' exceptions off the table and keeps
- * them in its snapshot (`beforeOverrides`: they queue no op of their
- * own). While it waits, Google's copies of them live in one place: in
- * that snapshot while the master is gone locally, where a discard puts
- * them back; in the table once a pull put Google's master back, as
- * Google's copies the delete owns no more than that master. Without its
- * master an exception row would show as an event of its own, and a
- * master without its exceptions shows a moved occurrence at its slot and
- * a cancelled one again.
+ * A series delete takes the series' exceptions off the table and holds
+ * Google's copy of each (`beforeOverrides`, read from `event_copies`:
+ * they queue no op of their own). While it waits with the master gone
+ * locally, what Google sends or acknowledges for one becomes that copy,
+ * and a discard puts them back with the master. Without its master an
+ * exception row would show as an event of its own, and a master without
+ * its exceptions shows a moved occurrence at its slot and a cancelled
+ * one again.
  */
 export interface TakenDeps {
   readonly eventRepo: EventRepoShape;
@@ -178,7 +177,7 @@ const isOwnDelete = (remove: PendingOp): boolean =>
 /**
  * A cut's or rule change's delete of an exception goes unsent (its change
  * was abandoned, or a later rule draws the slot again): the exception is
- * Google's copy again, the delete's snapshot. Where no row is, or the
+ * Google's copy again, the one the delete held. Where no row is, or the
  * tombstone keep-mine left (`takeBackPulled`), the copy goes on the table
  * where `master` draws its slot. An answer still waiting on it shows: put
  * back as Google's while the delete waited, the copy showed Google's
@@ -280,10 +279,10 @@ export const dropChangeDeletes = (
  * that original start on, Google cancelled every exception whose slot the
  * landed rule no longer draws (past the cut's end, or skipped by the new
  * rule) and kept the others as they were (verified live). What still holds
- * a cancelled one is Google's no more — a queued op's snapshot (an edit
- * that replaced a cut's delete) becomes `null`, nothing to put back; a
- * waiting series delete lets it go; a synced row (a pull's copy, a landed
- * delete's tombstone) goes; and the delete the cut or rule change queued
+ * a cancelled one is Google's no more — its copy goes, so a queued op of
+ * it (an edit that replaced a cut's delete) has nothing to put back and a
+ * waiting series delete holds it no more; a synced row (Google's copy a
+ * discard put back, a landed delete's tombstone) goes; and the delete the cut or rule change queued
  * for one goes with nothing left to do: the PATCH gave the exception a new
  * etag, so its If-Match would meet a 412 and park. So does one the user
  * made (it owns its pending tombstone, which Google's copy now is) unless
@@ -365,10 +364,9 @@ const withCopies = (
 
 /**
  * Google sent or acknowledged an exception of a series whose delete
- * waits with the master gone locally: the copy goes into that delete's
- * snapshot, in place of what it took there, not onto the table. A
- * discard puts it back as Google has it now, a landing leaves nothing
- * behind. Whether it went there.
+ * waits with the master gone locally: it becomes the copy that delete
+ * holds of the exception, not a row. A discard puts it back as Google
+ * has it now, a landing leaves nothing behind. Whether it went there.
  */
 export const takeIntoDelete = (
   { eventRepo, pendingOpRepo }: TakenDeps,
@@ -391,10 +389,8 @@ export const takeIntoDelete = (
   });
 
 /**
- * Google's live copy of an exception leaves the table for a series
- * delete's snapshot: the exception's own queued delete (a cut's), which
- * left that copy on the table as Google's (`isPulledCopy`), puts it back
- * too — its older snapshot would otherwise take the row's place on a
+ * Google's live copy of an exception, for the exception's own queued
+ * delete (a cut's): the copy that delete reads, and puts back on a
  * discard.
  */
 const handToOwnDeletes = (pendingOpRepo: PendingOpRepoShape, copy: EventRecord) =>
@@ -416,17 +412,15 @@ const handToOwnDeletes = (pendingOpRepo: PendingOpRepoShape, copy: EventRecord) 
  * A pull page against the deletes waiting in its calendar. An exception
  * whose series delete waits with the master gone locally, and not in the
  * page either, goes into that delete where no row is (as
- * `takeIntoDelete`, with one snapshot write per series), and is what the
- * exception's own queued delete (a cut's) puts back too, as
- * `rememberPulled` hands it at a tombstone. A live exception a queued
+ * `takeIntoDelete`, with one write per series), and is what the
+ * exception's own queued delete (a cut's) puts back too. A live exception a queued
  * series update drops (`dropsFrom`: a cut's, a rule change's), whose own
  * delete waits, goes into that delete where no row is: the update took it
  * off the table, where it showed past the cut on its own, or over the new
  * rule; a discard of the update puts it back as Google has it now
  * (`restoreDropped`), its landing forgets it (`forgetDropped`). A row at
- * its id takes the page as any row does: a synced one is overwritten, a
- * pending one skipped (`rememberPulled` sees it). The rows the table
- * takes.
+ * its id takes the page as any row does (`heldEvents.receive` next: one
+ * a queued op holds takes it into its copy). The records left for that.
  */
 export const holdPulledExceptions = (
   deps: TakenDeps,
@@ -494,8 +488,8 @@ export const holdPulledExceptions = (
       }
       kept.push(record);
     }
-    // One snapshot write per series: a full pass can page many exceptions
-    // of one before its master.
+    // One write per series: a full pass can page many exceptions of one
+    // before its master.
     for (const [masterId, copies] of held) {
       const remove = waiting.get(masterId)!;
       yield* deps.pendingOpRepo.setBeforeOverrides(
@@ -571,10 +565,11 @@ export const settlePulledSeries = (
   });
 
 /**
- * Keep-mine on a parked delete: Google's copies a pull put back go again,
- * into the delete's snapshot, for a discard to put back as Google has
- * them — the master's, and its exceptions' (synced, or pending for an
- * answer only: it survives a series delete, as when the delete was made).
+ * Keep-mine on a parked delete: rows of Google's still on the table at
+ * its id go again, as copies the delete holds, for a discard to put back
+ * as Google has them — the master's, and its exceptions' (a synced one
+ * is Google's copy; one pending for an answer only goes too, the answer's
+ * op holding Google's copy of it already).
  * A pending row an occurrence change made since owns is the user's own
  * and stays. The delete takes them when it lands. An occurrence's copy
  * whose slot the master on the table draws (a cut's delete under the
