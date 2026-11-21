@@ -1,12 +1,23 @@
 import {
   type Account,
   type CalendarInfo,
+  type DefaultCalendarPlace,
   isCalendarWritable,
   type MirrorCalendarRef,
   mirrorRefKey,
+  type NewEventSettings,
+  placeDefaultCalendar,
   portableCalendarRef,
 } from '@calendar/core';
 import { calendarGroups } from './editorModel.ts';
+import {
+  useAccounts,
+  useBackendMutations,
+  useCalendars,
+  useNewEventSettings,
+  useSettingsEditor,
+} from './hooks.ts';
+import { guardMutation } from './mutationGuard.ts';
 
 /** A calendar Settings offers as the default: one that takes new events here. */
 export interface DefaultCalendarChoice {
@@ -64,4 +75,37 @@ export const defaultCalendarGroups = (
     }),
     label: group.label,
   }));
+};
+
+/** The default calendar as Settings › Calendar edits it. */
+export interface DefaultCalendarEditor {
+  readonly choices: ReadonlyArray<DefaultCalendarChoice>;
+  /** Picks a calendar, or `lastUsed`. */
+  readonly choose: (calendar: NewEventSettings['calendar']) => void;
+  /** Where the chosen calendar is here: none chosen, a choice's key, or one this device lacks. */
+  readonly place: DefaultCalendarPlace;
+}
+
+/**
+ * The default calendar as Settings edits it; null until it loads. A
+ * `useSettingsEditor`, so the pick shows at once and an import or the
+ * settings file changing it while the page is open shows once saves have
+ * landed; a failed save is reported through the notice bus.
+ */
+export const useDefaultCalendarEditor = (): DefaultCalendarEditor | null => {
+  const stored = useNewEventSettings();
+  const accounts = useAccounts();
+  const calendars = useCalendars();
+  const { setNewEventSettings } = useBackendMutations();
+  const [current, save] = useSettingsEditor<NewEventSettings, void>(stored, (next) =>
+    setNewEventSettings({ calendar: next.calendar }),
+  );
+  if (!current) {
+    return null;
+  }
+  return {
+    choices: defaultCalendarChoices(accounts, calendars),
+    choose: (calendar) => void guardMutation('save the default calendar', save)({ calendar }),
+    place: placeDefaultCalendar({ accounts, calendars, settings: current }),
+  };
 };

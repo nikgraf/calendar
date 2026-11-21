@@ -1,6 +1,6 @@
 import { Account, APPLE_REMINDERS_ACCOUNT_ID, CalendarInfo, TaskListInfo } from '@calendar/core';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vite-plus/test';
-import { type App, launchApp, readEvents, readTasks } from './harness.ts';
+import { type App, launchApp, readDeviceSetting, readEvents, readTasks } from './harness.ts';
 import type { PageKit } from './page.ts';
 
 // The draft thread: a phrase to the editor's Assistant makes drafts the grid
@@ -563,5 +563,72 @@ describe('The draft thread', () => {
     );
     expect(await cdp.evaluate(stepPosition)).toBe(steps);
     expect(await cdp.evaluate(card, 'alert')).toBe('');
+  });
+
+  it('starts new events and the Assistant’s drafts in the default calendar Settings › Calendar picks', async () => {
+    const { cdp } = app;
+    const PICKER = '[data-testid="default-calendar-select"]';
+    const stored = () => readDeviceSetting(app.userDataDir, 'newEvents');
+    const settings = await app.openSettings('calendar');
+    try {
+      // Nothing chosen yet: Last used.
+      await settings.waitUntil(($, picker: string) => $.value(picker) === 'lastUsed', PICKER);
+      await settings.evaluate(setSelect, PICKER, 'acc-e2e:cal-yoga');
+      // Stored the portable way, as the settings file and the iPhone name it.
+      await expect.poll(stored, { timeout: 10_000 }).toEqual({
+        calendar: {
+          calendarId: 'cal-yoga',
+          email: 'e2e@example.com',
+          kind: 'google',
+          title: 'Yoga',
+        },
+      });
+
+      // The Assistant's draft starts in Yoga, drawn in its color, and Save writes it there.
+      await cdp.evaluate(commandN);
+      await cdp.waitUntil(headingIs, 'New event');
+      expect(await cdp.evaluate(valueOf, CALENDAR)).toBe('acc-e2e:cal-yoga');
+      await cdp.say('Stretch | +1 | 07:00-07:30');
+      await cdp.waitUntil(blockAt, '07:00');
+      expect(await cdp.evaluate(colorAt, '07:00')).toBe(YOGA);
+      await cdp.clickButtonWithText('Save');
+      await cdp.waitUntil(($) => !$.has('[data-testid="editor"]'));
+      await expect
+        .poll(async () =>
+          (await readEvents(app.userDataDir)).find((event) => event.title === 'Stretch'),
+        )
+        .toMatchObject({ calendarId: 'cal-yoga' });
+
+      // One saved in Work by hand: the next new event still starts in Yoga.
+      await cdp.evaluate(commandN);
+      await cdp.waitUntil(headingIs, 'New event');
+      await cdp.say('Plank | +1 | 08:00-08:30');
+      await cdp.waitUntil(titleIs, TITLE, 'Plank');
+      await cdp.showEditorView('form');
+      await cdp.evaluate(setSelect, CALENDAR, 'acc-e2e:cal-e2e');
+      await cdp.waitUntil(($, select: string) => $.value(select) === 'acc-e2e:cal-e2e', CALENDAR);
+      await cdp.clickButtonWithText('Save');
+      await cdp.waitUntil(($) => !$.has('[data-testid="editor"]'));
+      await expect
+        .poll(async () =>
+          (await readEvents(app.userDataDir)).find((event) => event.title === 'Plank'),
+        )
+        .toMatchObject({ calendarId: 'cal-e2e' });
+      await cdp.evaluate(commandN);
+      await cdp.waitUntil(headingIs, 'New event');
+      expect(await cdp.evaluate(valueOf, CALENDAR)).toBe('acc-e2e:cal-yoga');
+      await cdp.escapeOrDiscard();
+      await cdp.waitUntil(($) => !$.has('[data-testid="editor"]'));
+
+      // Back to Last used: the calendar the last event went to.
+      await settings.evaluate(setSelect, PICKER, 'lastUsed');
+      await expect.poll(stored, { timeout: 10_000 }).toEqual({ calendar: 'lastUsed' });
+      await cdp.evaluate(commandN);
+      await cdp.waitUntil(headingIs, 'New event');
+      expect(await cdp.evaluate(valueOf, CALENDAR)).toBe('acc-e2e:cal-e2e');
+    } finally {
+      await settings.evaluate(setSelect, PICKER, 'lastUsed');
+      await app.closeSettings();
+    }
   });
 });

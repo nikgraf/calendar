@@ -1,17 +1,29 @@
-import { useWeekendEditor, WEEKDAY_OPTIONS } from '@calendar/app-state';
-import { CheckRow, Section, SettingsPage, SwitchRow } from '../GroupedList.tsx';
+import { useDefaultCalendarEditor, useWeekendEditor, WEEKDAY_OPTIONS } from '@calendar/app-state';
+import { CheckRow, NavRow, Section, SettingsPage, SwitchRow } from '../GroupedList.tsx';
+import { defaultCalendarValue } from './DefaultCalendarPage.tsx';
 
 /**
- * How the calendar is drawn: which days are the weekend, and whether the
- * grids shade them. A view preference that travels in the settings file.
+ * The calendar's own settings: where new events start (the default
+ * calendar, picked on its own page), which days are the weekend and
+ * whether the grids shade them. All of it travels in the settings file.
  */
 export function CalendarViewPage() {
   const weekend = useWeekendEditor();
-  if (!weekend) {
+  const defaultCalendar = useDefaultCalendarEditor();
+  if (!weekend || !defaultCalendar) {
     return <SettingsPage testID="settings-page-calendar-view">{null}</SettingsPage>;
   }
   return (
     <SettingsPage testID="settings-page-calendar-view">
+      <Section header="New Events">
+        <NavRow
+          href="/settings/default-calendar"
+          testID="settings-row-default-calendar"
+          title="Default Calendar"
+          value={defaultCalendarValue(defaultCalendar)}
+          valueTestID="settings-default-calendar-value"
+        />
+      </Section>
       <Section
         footer="Weekend days get a light background in Day, 2 Days, Week and Month."
         header="Weekends"
