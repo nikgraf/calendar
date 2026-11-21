@@ -559,3 +559,85 @@ describe('TaskRepo', () => {
     }).pipe(Effect.provide(freshDbLayer())),
   );
 });
+
+describe('TaskRepo provider copies', () => {
+  const seed = Effect.gen(function* () {
+    const repo = yield* TaskRepo;
+    yield* repo.upsertLists([list(), list({ id: 'list-2', title: 'Errands' })], 1);
+    yield* repo.upsertTasks([task(), task({ id: 'task-2', title: 'Call bank' })], 1);
+    return repo;
+  });
+
+  it.effect('holdTasks keeps Google’s copy of a synced row, once', () =>
+    Effect.gen(function* () {
+      const repo = yield* seed;
+      yield* repo.holdTasks('acc-1', 'list-1', ['task-1']);
+      expect((yield* repo.getCopy('acc-1', 'list-1', 'task-1'))?.title).toBe('Pay rent');
+      // The row takes a local change; held again, the copy stays Google's.
+      yield* repo.updateLocal({
+        accountId: 'acc-1',
+        changes: { title: 'Pay rent today' },
+        listId: 'list-1',
+        taskId: 'task-1',
+      });
+      yield* repo.holdTasks('acc-1', 'list-1', ['task-1']);
+      expect((yield* repo.findCopy('acc-1', 'task-1'))?.title).toBe('Pay rent');
+      expect(yield* repo.getCopy('acc-1', 'list-1', 'task-2')).toBeUndefined();
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
+  it.effect('holdTasks keeps nothing for a row Google has not got yet', () =>
+    Effect.gen(function* () {
+      const repo = yield* seed;
+      yield* repo.insertLocal(task({ id: 'local-1', title: 'New here' }));
+      yield* repo.holdTasks('acc-1', 'list-1', ['local-1', 'missing']);
+      expect(yield* repo.listCopies('acc-1')).toEqual([]);
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
+  it.effect('updateCopies writes Google’s newer version to the held tasks only', () =>
+    Effect.gen(function* () {
+      const repo = yield* seed;
+      yield* repo.holdTasks('acc-1', 'list-1', ['task-1']);
+      const held = yield* repo.updateCopies([
+        task({ notes: 'by Friday' }),
+        task({ id: 'task-2', title: 'Call the bank' }),
+        // The same id in another list is another task.
+        task({ listId: 'list-2', title: 'Elsewhere' }),
+      ]);
+      expect(held.map((entry) => [entry.listId, entry.id])).toEqual([['list-1', 'task-1']]);
+      expect((yield* repo.getCopy('acc-1', 'list-1', 'task-1'))?.notes).toBe('by Friday');
+      // The rows are the caller's to write: none changed here.
+      expect((yield* repo.get('acc-1', 'list-1', 'task-2'))?.title).toBe('Call bank');
+      expect(yield* repo.updateCopies([])).toEqual([]);
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
+  it.effect('putCopy replaces a copy and removeCopies forgets it', () =>
+    Effect.gen(function* () {
+      const repo = yield* seed;
+      yield* repo.putCopy(task({ title: 'As Google has it' }));
+      yield* repo.putCopy(task({ title: 'As Google has it now' }));
+      yield* repo.putCopy(task({ id: 'task-2', listId: 'list-2' }));
+      expect((yield* repo.listCopies('acc-1')).map((entry) => entry.title)).toEqual([
+        'As Google has it now',
+        'Pay rent',
+      ]);
+      yield* repo.removeCopies('acc-1', 'list-1', ['task-1', 'missing']);
+      yield* repo.removeCopies('acc-1', 'list-1', []);
+      expect((yield* repo.listCopies('acc-1')).map((entry) => entry.id)).toEqual(['task-2']);
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+
+  it.effect('a list that goes takes its copies along', () =>
+    Effect.gen(function* () {
+      const repo = yield* seed;
+      yield* repo.putCopy(task());
+      yield* repo.putCopy(task({ id: 'task-2', listId: 'list-2' }));
+      yield* repo.removeListsMissing('acc-1', ['list-1']);
+      expect((yield* repo.listCopies('acc-1')).map((entry) => entry.listId)).toEqual(['list-1']);
+      yield* repo.removeListsMissing('acc-1', []);
+      expect(yield* repo.listCopies('acc-1')).toEqual([]);
+    }).pipe(Effect.provide(freshDbLayer())),
+  );
+});

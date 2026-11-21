@@ -52,6 +52,7 @@ import type { SqlError } from 'effect/sql/SqlError';
 import { AppleCalendarEvents, deviceTimeZone } from './appleCalendarEvents.ts';
 import { applyPendingVisibility as applyImportedVisibility } from './importedVisibility.ts';
 import { EventMutations } from './mutations.ts';
+import { makeHeldTasks } from './heldTasks.ts';
 import {
   makeApplyTaskOrder,
   readTaskOrder,
@@ -204,6 +205,7 @@ const make: Effect.Effect<
   const appleEvents = yield* AppleCalendarEvents;
   const syncStateRepo = yield* SyncStateRepo;
   const applyTaskOrder = makeApplyTaskOrder({ pendingOpRepo, taskRepo });
+  const heldTasks = makeHeldTasks({ pendingOpRepo, taskRepo });
   const gate = Semaphore.makeUnsafe(1);
   // Imported visibility parked for rows that had not synced yet is applied
   // after every calendar/list pass; the repos it needs are resolved here.
@@ -631,6 +633,19 @@ const make: Effect.Effect<
               .map((op) => op.eventId),
           ),
       );
+      // The tasks whose delete is queued, in whichever list. A move that
+      // landed with its answer lost leaves Google listing a task here
+      // while its copy still sits in the source: a row written from the
+      // listing would bring back a task the user deleted since.
+      const deletingNow = Effect.map(
+        pendingOpRepo.listAll(),
+        (ops) =>
+          new Set(
+            ops
+              .filter((op) => op.kind === 'deleteTask' && op.accountId === account.id)
+              .map((op) => op.eventId),
+          ),
+      );
       const order: Array<TaskOrderEntry> = [];
       let pageToken: string | undefined;
       do {
@@ -645,27 +660,42 @@ const make: Effect.Effect<
           }),
         );
         const leaving = yield* leavingNow;
-        const upserts = [];
+        const listed = [];
         const deletions: Array<string> = [];
         for (const item of page.items ?? []) {
           if (fullPass && !item.deleted) {
             order.push(taskOrderEntry(item));
           }
           const record = mapGcalTask(item, { accountId: account.id, taskListId });
-          if (record && (leaving.has(record.id) || leaving.has(record.parentId ?? ''))) {
-            continue;
-          }
           if (record) {
-            upserts.push(record);
+            listed.push(record);
           } else {
             deletions.push(item.id);
           }
         }
-        // A pull never overwrites a row with a local edit still queued.
+        // A task a queued change holds: Google's version goes to its copy
+        // and the row is rebuilt from that and the change, so the change is
+        // never clobbered and Google's newer copy never lost.
+        const heldNow = yield* taskRepo.updateCopies(listed);
+        const heldIds = new Set(heldNow.map((record) => record.id));
+        const deleting = yield* deletingNow;
+        const upserts = listed.filter(
+          (record) =>
+            !heldIds.has(record.id) &&
+            !deleting.has(record.id) &&
+            !leaving.has(record.id) &&
+            !leaving.has(record.parentId ?? ''),
+        );
+        // A row of a task Google has not got yet (its create is queued) is
+        // pending with no copy: a pull leaves it alone.
         yield* taskRepo.upsertTasks(upserts, passStartedAt, { mode: 'pull' });
+        yield* Effect.forEach(heldNow, (record) => heldTasks.refresh(account.id, record.id), {
+          discard: true,
+        });
         yield* taskRepo.removeTasksByIds(account.id, taskListId, deletions);
-        // A queued delete of one of these has nothing left to put back.
-        yield* pendingOpRepo.forgetDeleted(account.id, taskListId, deletions);
+        // Google has these no more: a queued delete of one has nothing left
+        // to put back.
+        yield* heldTasks.forgetDeleted(account.id, taskListId, deletions);
         pageToken = page.nextPageToken;
       } while (pageToken !== undefined);
 

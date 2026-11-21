@@ -145,7 +145,8 @@ describe('reorderTask (Google)', () => {
         taskParent: 'trip',
         taskPrevious: 'pack',
       });
-      expect(queued?.beforeTask?.position).toBe(at(2));
+      // Google's copy keeps the place it has there.
+      expect((yield* (yield* TaskRepo).findCopy('acc-1', 'visa'))?.position).toBe(at(2));
 
       yield* drain;
       expect(googleGroup(google, ALL, 'trip')).toEqual(['pack', 'visa', 'book']);
@@ -318,9 +319,8 @@ describe('reorderTask (Google)', () => {
       yield* mutations.discardPendingOp(second!.id);
       // Back under Trip after Pack, the first reorder untouched.
       expect(yield* group('trip')).toEqual(['pack', 'rent', 'book', 'visa']);
-      expect((yield* ops).map((op) => [op.id, op.beforeTask?.parentId])).toEqual([
-        [first!.id, undefined],
-      ]);
+      expect((yield* ops).map((op) => op.id)).toEqual([first!.id]);
+      expect((yield* tasks.findCopy('acc-1', 'rent'))?.parentId).toBeUndefined();
       yield* mutations.discardPendingOp(first!.id);
       const rent = yield* tasks.get('acc-1', 'list-1', 'rent');
       expect([rent?.parentId, rent?.position]).toEqual([undefined, at(1)]);
@@ -357,7 +357,7 @@ describe('reorderTask (Google)', () => {
       // own discard must now restore the place Google has.
       yield* mutations.discardPendingOp(first!.id);
       expect((yield* tasks.get('acc-1', 'list-1', 'rent'))?.parentId).toBe('party');
-      expect((yield* ops)[0]?.beforeTask?.parentId).toBeUndefined();
+      expect((yield* tasks.findCopy('acc-1', 'rent'))?.parentId).toBeUndefined();
       yield* mutations.discardPendingOp(second!.id);
       const rent = yield* tasks.get('acc-1', 'list-1', 'rent');
       expect([rent?.parentId, rent?.position]).toEqual([undefined, at(1)]);

@@ -193,7 +193,6 @@ describe('row decoders tolerate what the DB may hold', () => {
     ).toBe('Before');
     // Unreadable JSON degrades like every other JSON column.
     expect(pendingOpFromRow(opRow({ before_payload: '{not json' }))?.beforePayload).toBeUndefined();
-    expect(pendingOpFromRow(opRow({ before_task: '{"id": 1}' }))?.beforeTask).toBeUndefined();
     expect(pendingOpFromRow(opRow({ before_overrides: '[1]' }))?.beforeOverrides).toBeUndefined();
   });
 

@@ -353,6 +353,12 @@ const showFields = (fields: Fields): string =>
     .join(' ');
 
 interface Snapshot {
+  /** Google's copies of the tasks a queued change holds (`task_copies`). */
+  readonly copies: ReadonlyArray<{
+    readonly id: string;
+    readonly list_id: string;
+    readonly parent: string | null;
+  }>;
   readonly events: ReadonlyArray<EventRow>;
   readonly ops: ReadonlyArray<PendingOp>;
   readonly tasks: ReadonlyArray<TaskRow>;
@@ -1015,8 +1021,11 @@ const readSnapshot = Effect.gen(function* () {
     FROM events WHERE account_id = ${ACCOUNT_ID} ORDER BY calendar_id, id`;
   const tasks = yield* sql<TaskRow>`SELECT due_date, id, list_id, notes, parent_id, status,
     sync_status, title FROM tasks WHERE account_id = ${ACCOUNT_ID} ORDER BY list_id, id`;
+  const copies = yield* sql<Snapshot['copies'][number]>`SELECT id, list_id,
+    json_extract(payload, '$.parentId') AS parent FROM task_copies
+    WHERE account_id = ${ACCOUNT_ID} ORDER BY list_id, id`;
   const ops = yield* (yield* PendingOpRepo).listAll();
-  return { events, ops, tasks } satisfies Snapshot;
+  return { copies, events, ops, tasks } satisfies Snapshot;
 }).pipe(Effect.orDie);
 
 /** 1: a pending row is a change still on its way, so a queued op holds it. */
@@ -1039,6 +1048,22 @@ const checkOwned = (world: World, snapshot: Snapshot) => {
     ) {
       world.violations.push(
         `task ${row.id} in ${row.list_id} is pending, but no queued op owns it`,
+      );
+    }
+  }
+  // Google's copy of a task is kept only while a change of it waits: its
+  // own, in whichever list, or a move of the task Google has it under.
+  for (const copy of snapshot.copies) {
+    if (
+      !snapshot.ops.some(
+        (op) =>
+          !EVENT_KINDS.has(op.kind) &&
+          op.kind !== 'calendarColor' &&
+          (op.eventId === copy.id || (op.kind === 'moveTask' && op.eventId === copy.parent)),
+      )
+    ) {
+      world.violations.push(
+        `Google's copy of task ${copy.id} in ${copy.list_id} is kept, but no queued op holds the task`,
       );
     }
   }
@@ -1428,7 +1453,11 @@ const attempt = <A, E extends { readonly _tag: string }>(
 ): Effect.Effect<void, never, Services> =>
   attemptThen(world, effect, (value) => Effect.sync(() => onDone(value)));
 
-/** The items whose queued ops a step removed or added: a discard's, a keep-theirs'. */
+/**
+ * The items whose queued ops a step removed or added: a discard's, a
+ * keep-theirs'. A task move carried its subtasks, so undoing it is the
+ * user's last word on where they are too.
+ */
 const forgetChanged = (world: World, before: ReadonlyArray<PendingOp>) =>
   Effect.map(readSnapshot, (after) => {
     const ids = new Set(after.ops.map((op) => op.id));
@@ -1439,6 +1468,13 @@ const forgetChanged = (world: World, before: ReadonlyArray<PendingOp>) =>
     ]) {
       if (!EVENT_KINDS.has(op.kind)) {
         world.intents.delete(taskKey(op.eventId));
+        if (op.kind === 'moveTask') {
+          for (const row of after.tasks) {
+            if (row.parent_id === op.eventId) {
+              world.intents.delete(taskKey(row.id));
+            }
+          }
+        }
         continue;
       }
       // A series' change undone takes back what it did to its occurrences
@@ -2538,19 +2574,7 @@ const runSequence = (seed: number) => {
  * every sequence, so search again rather than trust these after one.
  */
 const KNOWN_FAILING: ReadonlyMap<number, string> = new Map([
-  [208, 'a task move discarded after it landed'],
   [248, 'an event move discarded after it landed'],
-  [281, 'a task move discarded after it landed'],
-  [391, 'subtasks around a parent moved and deleted'],
-  [486, 'a task move discarded after it landed'],
-  [617, 'a task move discarded after it landed'],
-  [831, 'subtasks around a parent moved and deleted'],
-  [833, 'a task move discarded after it landed'],
-  [839, 'a task move discarded after it landed'],
-  [861, 'a task move discarded after it landed'],
-  [864, "an edit of a subtask's copy while its parent's delete waits"],
-  [880, 'subtasks around a parent moved and deleted'],
-  [939, 'a task move discarded after it landed'],
 ]);
 
 describe('pending-op queue: seeded random sequences', () => {
@@ -3098,11 +3122,12 @@ describe('pending-op queue: what the sequences found', () => {
     );
   });
 
-  it.effect("a task changed after a pull put it back replaces the task's queued delete", () => {
-    // Sequence 13: the delete waited out a 503, a pull put Google's copy
-    // back as it does, and the user completed that copy. The delete stayed
-    // ahead, landed, and the completion met a 404: the task the user had
-    // just completed was gone.
+  it.effect('a task whose delete waits stays deleted through a pull', () => {
+    // Sequence 13, as it was: the delete waited out a 503, a pull put
+    // Google's copy back as a row, the user completed that copy, and the
+    // delete, still ahead, landed: the completion met a 404. Google's copy
+    // of a held task goes beside its row now, so nothing comes back to act
+    // on and the delete lands as the user left it.
     const google = newFake();
     const network = writesDown(google);
     return scripted(
@@ -3110,49 +3135,39 @@ describe('pending-op queue: what the sequences found', () => {
       Effect.gen(function* () {
         const mutations = yield* EventMutations;
         const engine = yield* SyncEngine;
+        const sql = yield* SqlClient;
+        const shown = sql<{ readonly id: string }>`
+          SELECT id FROM tasks WHERE id IN ('t1', 'p', 's1', 's2')`;
         network.down = true;
         yield* mutations.deleteTask({ accountId: ACCOUNT_ID, taskId: 't1', taskListId: 'list-1' });
-        yield* mutations.deleteTask({ accountId: ACCOUNT_ID, taskId: 't2', taskListId: 'list-2' });
-        google.now += MINUTE;
-        yield* TestClock.adjust('1 minute');
-        yield* engine.syncAll();
-        yield* mutations.completeTask({
-          accountId: ACCOUNT_ID,
-          status: 'completed',
-          taskId: 't1',
-          taskListId: 'list-1',
-        });
-        yield* mutations.updateTask({
-          accountId: ACCOUNT_ID,
-          changes: { title: 'Call back' },
-          taskId: 't2',
-          taskListId: 'list-2',
-        });
-        // A move of the copy replaces its delete too (its subtasks' own
-        // deletes follow it to the other list).
+        // A parent goes with its subtasks.
         yield* mutations.deleteTask({ accountId: ACCOUNT_ID, taskId: 'p', taskListId: 'list-1' });
         google.now += MINUTE;
         yield* TestClock.adjust('1 minute');
         yield* engine.syncAll();
-        yield* mutations.moveTask({
-          accountId: ACCOUNT_ID,
-          draft: { dueDate: due(5).slice(0, 10), title: 'Trip' },
-          target: { accountId: ACCOUNT_ID, taskListId: 'list-2' },
-          taskId: 'p',
-          taskListId: 'list-1',
-        });
+        expect(yield* shown).toEqual([]);
+        // Nothing is there to move, either.
+        const moved = yield* Effect.result(
+          mutations.moveTask({
+            accountId: ACCOUNT_ID,
+            draft: { dueDate: due(5).slice(0, 10), title: 'Trip' },
+            target: { accountId: ACCOUNT_ID, taskListId: 'list-2' },
+            taskId: 'p',
+            taskListId: 'list-1',
+          }),
+        );
+        expect(Result.isFailure(moved)).toBe(true);
         network.down = false;
         for (let round = 0; round < 3; round += 1) {
           yield* mutations.retryPendingOps();
           yield* mutations.processPendingOps();
         }
-        expect(google.taskOf('list-2', 'p')).toMatchObject({ title: 'Trip' });
-        expect(google.taskOf('list-2', 'p')?.deleted).toBeUndefined();
-        expect(google.taskOf('list-1', 't1')).toMatchObject({ status: 'completed' });
-        expect(google.taskOf('list-1', 't1')?.deleted).toBeUndefined();
-        expect(google.taskOf('list-2', 't2')).toMatchObject({ title: 'Call back' });
-        expect(google.taskOf('list-2', 't2')?.deleted).toBeUndefined();
+        expect(google.taskOf('list-1', 't1')?.deleted).toBe(true);
+        expect(google.taskOf('list-1', 'p')?.deleted).toBe(true);
         expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+        expect(yield* shown).toEqual([]);
+        // Google's copies went with the deletes that held them.
+        expect(yield* sql`SELECT id FROM task_copies`).toEqual([]);
       }),
     );
   });
@@ -3285,6 +3300,291 @@ describe('pending-op queue: what the sequences found', () => {
   );
 });
 
+describe('pending-op queue: a held task and Google’s copy of it', () => {
+  it.effect('a pull shows Google’s newer copy under a queued edit, and a discard leaves it', () => {
+    // The gap the event rows still have (below), closed for tasks: the
+    // pull used to skip a row a queued op held, its watermark moved past
+    // Google's copy, and a discard put back the older snapshot.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const engine = yield* SyncEngine;
+        const sql = yield* SqlClient;
+        const row = Effect.map(
+          sql<{
+            readonly notes: string | null;
+            readonly sync_status: string;
+            readonly title: string;
+          }>`SELECT notes, sync_status, title FROM tasks WHERE id = 't1'`,
+          (rows) => rows[0],
+        );
+        network.down = true;
+        yield* mutations.updateTask({
+          accountId: ACCOUNT_ID,
+          changes: { title: 'Call the bank' },
+          taskId: 't1',
+          taskListId: 'list-1',
+        });
+        google.now += MINUTE;
+        google.putTask('list-1', { ...google.taskOf('list-1', 't1')!, notes: 'Before noon' });
+        google.now += MINUTE;
+        yield* TestClock.adjust('2 minutes');
+        yield* engine.syncAll();
+        // Both hold: the rename made here, the notes made elsewhere.
+        expect(yield* row).toEqual({
+          notes: 'Before noon',
+          sync_status: 'pending',
+          title: 'Call the bank',
+        });
+        const [op] = yield* (yield* PendingOpRepo).listAll();
+        yield* mutations.discardPendingOp(op!.id);
+        const theirs = google.taskOf('list-1', 't1')!;
+        expect(yield* row).toEqual({
+          notes: 'Before noon',
+          sync_status: 'synced',
+          title: theirs.title,
+        });
+        expect(yield* sql`SELECT id FROM task_copies`).toEqual([]);
+      }),
+    );
+  });
+
+  it.effect('an edit sent after a pull keeps what another device changed', () => {
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const engine = yield* SyncEngine;
+        network.down = true;
+        yield* mutations.updateTask({
+          accountId: ACCOUNT_ID,
+          changes: { title: 'Call the bank' },
+          taskId: 't1',
+          taskListId: 'list-1',
+        });
+        google.now += MINUTE;
+        google.putTask('list-1', { ...google.taskOf('list-1', 't1')!, notes: 'Before noon' });
+        google.now += MINUTE;
+        yield* TestClock.adjust('2 minutes');
+        yield* engine.syncAll();
+        network.down = false;
+        yield* mutations.retryPendingOps();
+        yield* mutations.processPendingOps();
+        expect(google.taskOf('list-1', 't1')).toMatchObject({
+          notes: 'Before noon',
+          title: 'Call the bank',
+        });
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+        const sql = yield* SqlClient;
+        expect(yield* sql`SELECT notes, sync_status, title FROM tasks WHERE id = 't1'`).toEqual([
+          { notes: 'Before noon', sync_status: 'synced', title: 'Call the bank' },
+        ]);
+      }),
+    );
+  });
+});
+
+/** A move of a fixture task as its form sends it: nothing but the list changes. */
+const moveOf = (
+  mutations: EventMutationsShape,
+  task: { readonly day: number; readonly id: string; readonly title: string },
+  from: string,
+  to: string,
+) =>
+  mutations.moveTask({
+    accountId: ACCOUNT_ID,
+    draft: { dueDate: due(task.day).slice(0, 10), title: task.title },
+    target: { accountId: ACCOUNT_ID, taskListId: to },
+    taskId: task.id,
+    taskListId: from,
+  });
+const drainAll = (mutations: EventMutationsShape) =>
+  Effect.gen(function* () {
+    for (let round = 0; round < 3; round += 1) {
+      yield* mutations.retryPendingOps();
+      yield* mutations.processPendingOps();
+    }
+  });
+/** The first move lands with its answer lost; writes are refused from then on, until `up`. */
+const losingFirstMove = (google: FakeGoogle) => {
+  const state = { down: false, lost: false };
+  google.fault = (call) => {
+    if (call.method === 'GET') {
+      return undefined;
+    }
+    if (!state.lost && call.url.includes('/move')) {
+      state.lost = true;
+      state.down = true;
+      return 'lost';
+    }
+    return state.down ? 'refused' : undefined;
+  };
+  return state;
+};
+
+describe('pending-op queue: task moves and the subtasks they carry', () => {
+  const TRIP = { day: 5, id: 'p', title: 'Trip' };
+  const PACK = { day: 5, id: 's1', title: 'Pack' };
+  /** Where the rows of the trip and its subtasks are, as `list/id` (`/parent`). */
+  const placed = Effect.gen(function* () {
+    const rows = yield* (yield* SqlClient)<{
+      readonly id: string;
+      readonly list_id: string;
+      readonly parent_id: string | null;
+    }>`SELECT id, list_id, parent_id FROM tasks WHERE id IN ('p', 's1', 's2') ORDER BY id, list_id`;
+    return rows.map(
+      (row) => `${row.list_id}/${row.id}${row.parent_id === null ? '' : `/${row.parent_id}`}`,
+    );
+  });
+  const copies = Effect.flatMap(SqlClient, (sql) => sql`SELECT id FROM task_copies`);
+  it.effect('a pull shows a carried subtask where its parent’s last queued move puts it', () => {
+    // Sequence 38: the parent moved, moved back and moved again; a pull
+    // then rebuilt a subtask's row from the first of the two queued moves
+    // alone and left a second row of it in the list it had left.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        yield* moveOf(mutations, TRIP, 'list-1', 'list-2');
+        yield* mutations.processPendingOps();
+        expect(yield* placed).toEqual(['list-2/p', 'list-2/s1/p', 'list-2/s2/p']);
+        network.down = true;
+        yield* moveOf(mutations, TRIP, 'list-2', 'list-1');
+        yield* moveOf(mutations, TRIP, 'list-1', 'list-2');
+        google.now += MINUTE;
+        yield* TestClock.adjust('1 minute');
+        yield* (yield* SyncEngine).syncAll();
+        expect(yield* placed).toEqual(['list-2/p', 'list-2/s1/p', 'list-2/s2/p']);
+      }),
+    );
+  });
+
+  it.effect(
+    'a subtask’s own move undone while its parent’s move waits goes with its parent',
+    () => {
+      // Sequence 2710: the subtask went back to the source while its parent's
+      // row was already in the destination — Google takes it along once the
+      // parent's move lands — and its next move met a row of it in each list.
+      const google = newFake();
+      const network = writesDown(google);
+      return scripted(
+        google,
+        Effect.gen(function* () {
+          const mutations = yield* EventMutations;
+          network.down = true;
+          yield* moveOf(mutations, PACK, 'list-1', 'list-2');
+          yield* mutations.processPendingOps();
+          yield* moveOf(mutations, TRIP, 'list-1', 'list-2');
+          const [own] = yield* (yield* PendingOpRepo).listAll();
+          expect(own).toMatchObject({ eventId: 's1', kind: 'moveTask' });
+          yield* mutations.discardPendingOp(own!.id);
+          expect(yield* placed).toEqual(['list-2/p', 'list-2/s1/p', 'list-2/s2/p']);
+          network.down = false;
+          yield* drainAll(mutations);
+          expect(
+            google
+              .tasksIn('list-2')
+              .map((task) => task.id)
+              .sort(),
+          ).toEqual(['p', 's1', 's2', 't2']);
+          expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+          expect(yield* copies).toEqual([]);
+        }),
+      );
+    },
+  );
+
+  it.effect('a subtask back under a parent whose delete waits keeps the parent', () => {
+    // Sequence 880: the subtask moved out, its parent was deleted without
+    // it, and the move was undone. Google deletes a parent's subtasks with
+    // it: the delete went on and took the subtask the user had kept.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        network.down = true;
+        yield* moveOf(mutations, PACK, 'list-1', 'list-2');
+        yield* mutations.processPendingOps();
+        yield* mutations.deleteTask({ accountId: ACCOUNT_ID, taskId: 'p', taskListId: 'list-1' });
+        const [own] = yield* (yield* PendingOpRepo).listAll();
+        yield* mutations.discardPendingOp(own!.id);
+        expect(yield* placed).toEqual(['list-1/p', 'list-1/s1/p']);
+        network.down = false;
+        yield* drainAll(mutations);
+        expect(google.taskOf('list-1', 'p')?.deleted).toBeUndefined();
+        expect(google.taskOf('list-1', 's1')?.deleted).toBeUndefined();
+        // The subtask deleted with the parent stays deleted.
+        expect(google.taskOf('list-1', 's2')?.deleted).toBe(true);
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+      }),
+    );
+  });
+
+  it.effect('a pull leaves a deleted task gone where a move with a lost answer took it', () => {
+    // Sequence 693: the move landed with its answer lost, the user deleted
+    // the task in its new list, and a pull of that list — Google lists the
+    // task there, its copy here still in the source — wrote it back.
+    const google = newFake();
+    const network = losingFirstMove(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        yield* moveOf(mutations, TRIP, 'list-1', 'list-2');
+        yield* mutations.processPendingOps();
+        expect(google.taskOf('list-2', 'p')).toBeDefined();
+        yield* mutations.deleteTask({ accountId: ACCOUNT_ID, taskId: 'p', taskListId: 'list-2' });
+        google.now += MINUTE;
+        yield* TestClock.adjust('1 minute');
+        yield* (yield* SyncEngine).syncAll();
+        expect(yield* placed).toEqual([]);
+        network.down = false;
+        yield* drainAll(mutations);
+        expect(google.tasksIn('list-2').map((task) => task.id)).toEqual(['t2']);
+        expect(yield* placed).toEqual([]);
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+        expect(yield* copies).toEqual([]);
+      }),
+    );
+  });
+
+  it.effect('a move that landed and whose task was deleted there since takes the task away', () => {
+    // Sequence 1800: the move landed with its answer lost and another
+    // device deleted the task in its new list. The retry's 404 put the
+    // rows back in the source, where Google sends no tombstone for them.
+    const google = newFake();
+    const network = losingFirstMove(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        yield* moveOf(mutations, TRIP, 'list-1', 'list-2');
+        yield* mutations.processPendingOps();
+        // The subtask moved back on its own since, its move still queued.
+        yield* moveOf(mutations, PACK, 'list-2', 'list-1');
+        google.now += MINUTE;
+        for (const id of ['s1', 's2', 'p']) {
+          google.deleteTaskServerSide('list-2', id);
+        }
+        network.down = false;
+        yield* drainAll(mutations);
+        expect(yield* placed).toEqual([]);
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+        expect(yield* copies).toEqual([]);
+      }),
+    );
+  });
+});
+
 /**
  * Gaps the sequences found that are not closed yet: each test shows one,
  * skipped until a change closes it (then it goes in the gate).
@@ -3332,98 +3632,99 @@ describe('pending-op queue: open gaps the sequences found', () => {
     );
   });
 
-  it.effect.skip(
-    'a task move discarded after it landed leaves the task where Google has it',
-    () => {
-      // Sequences 208, 281 and others: the move landed with its answer lost,
-      // and the discard put the rows back in the source without asking Google
-      // (an event move that was sent asks the destination first). Google
-      // sends the source no tombstone for a task that left it: the task shows
-      // where it was for good, and an edit of it meets a 404.
-      const google = newFake();
-      let loseMove = true;
-      let down = false;
-      google.fault = (call) => {
-        if (call.method === 'GET') {
-          return undefined;
-        }
-        if (loseMove && call.url.includes('/move')) {
-          loseMove = false;
-          down = true;
-          return 'lost';
-        }
-        return down ? 'refused' : undefined;
-      };
-      return scripted(
-        google,
-        Effect.gen(function* () {
-          const mutations = yield* EventMutations;
-          const engine = yield* SyncEngine;
-          yield* mutations.moveTask({
-            accountId: ACCOUNT_ID,
-            draft: { dueDate: due(7).slice(0, 10), title: 'Call' },
-            target: { accountId: ACCOUNT_ID, taskListId: 'list-1' },
-            taskId: 't2',
-            taskListId: 'list-2',
-          });
-          yield* mutations.processPendingOps();
-          expect(google.taskOf('list-1', 't2')).toBeDefined();
-          // A pull while the move waits: the moved row is held, the copy in
-          // list-1 skipped, and the watermark moves past it.
+  it.effect('a task move discarded after it landed leaves the task where Google has it', () => {
+    // Sequences 208, 281 and others: the move landed with its answer lost,
+    // and the discard put the rows back in the source without asking
+    // Google. Google sends the source no tombstone for a task that left
+    // it: the task showed where it was for good, and an edit of it met a
+    // 404. A sent move's discard asks the destination first now, as an
+    // event move's does.
+    const google = newFake();
+    let loseMove = true;
+    let down = false;
+    google.fault = (call) => {
+      if (call.method === 'GET') {
+        return undefined;
+      }
+      if (loseMove && call.url.includes('/move')) {
+        loseMove = false;
+        down = true;
+        return 'lost';
+      }
+      return down ? 'refused' : undefined;
+    };
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const engine = yield* SyncEngine;
+        yield* mutations.moveTask({
+          accountId: ACCOUNT_ID,
+          draft: { dueDate: due(7).slice(0, 10), title: 'Call' },
+          target: { accountId: ACCOUNT_ID, taskListId: 'list-1' },
+          taskId: 't2',
+          taskListId: 'list-2',
+        });
+        yield* mutations.processPendingOps();
+        expect(google.taskOf('list-1', 't2')).toBeDefined();
+        // A pull while the move waits: the moved row is held, the copy in
+        // list-1 skipped, and the watermark moves past it.
+        google.now += 2 * MINUTE;
+        yield* TestClock.adjust('2 minutes');
+        yield* engine.syncAll();
+        const [op] = yield* (yield* PendingOpRepo).listAll();
+        yield* mutations.discardPendingOp(op!.id);
+        down = false;
+        for (let round = 0; round < 2; round += 1) {
           google.now += 2 * MINUTE;
           yield* TestClock.adjust('2 minutes');
           yield* engine.syncAll();
-          const [op] = yield* (yield* PendingOpRepo).listAll();
-          yield* mutations.discardPendingOp(op!.id);
-          down = false;
-          for (let round = 0; round < 2; round += 1) {
-            google.now += 2 * MINUTE;
-            yield* TestClock.adjust('2 minutes');
-            yield* engine.syncAll();
-          }
-          const rows = yield* (yield* SqlClient)<{
-            readonly list_id: string;
-          }>`SELECT list_id FROM tasks WHERE id = 't2'`;
-          expect(rows.map((row) => row.list_id)).toEqual(['list-1']);
-        }),
-      );
-    },
-  );
+        }
+        const rows = yield* (yield* SqlClient)<{
+          readonly list_id: string;
+        }>`SELECT list_id FROM tasks WHERE id = 't2'`;
+        expect(rows.map((row) => row.list_id)).toEqual(['list-1']);
+      }),
+    );
+  });
 
-  it.effect.skip(
-    "an edit of a subtask's copy while its parent's delete waits keeps the subtask",
-    () => {
-      // Sequence 864: the parent was deleted with its subtasks, a pull put
-      // their copies back while the deletes waited, and the user edited one
-      // subtask. Its own delete goes (a task acted on replaces it), but the
-      // parent's stays ahead and Google deletes the subtask with its parent:
-      // the edit meets a 404. Keeping a subtask keeps its parent, as a
-      // discard of the subtask's delete does.
-      const google = newFake();
-      const network = writesDown(google);
-      return scripted(
-        google,
-        Effect.gen(function* () {
-          const mutations = yield* EventMutations;
-          const engine = yield* SyncEngine;
-          network.down = true;
-          yield* mutations.deleteTask({ accountId: ACCOUNT_ID, taskId: 'p', taskListId: 'list-1' });
-          google.now += MINUTE;
-          yield* TestClock.adjust('1 minute');
-          yield* engine.syncAll();
-          yield* mutations.updateTask({
+  it.effect('a change to a subtask whose parent’s delete waits is refused', () => {
+    // Sequence 864, as it was: the parent was deleted with its subtasks, a
+    // pull put their copies back while the deletes waited, and the user
+    // edited one subtask. Its own delete went, the parent's stayed ahead,
+    // and Google deleted the subtask with its parent: the edit met a 404.
+    // Nothing comes back while the deletes wait now, so there is nothing
+    // to edit, and a change that names the task anyway is turned down.
+    const google = newFake();
+    const network = writesDown(google);
+    return scripted(
+      google,
+      Effect.gen(function* () {
+        const mutations = yield* EventMutations;
+        const engine = yield* SyncEngine;
+        network.down = true;
+        yield* mutations.deleteTask({ accountId: ACCOUNT_ID, taskId: 'p', taskListId: 'list-1' });
+        google.now += MINUTE;
+        yield* TestClock.adjust('1 minute');
+        yield* engine.syncAll();
+        const edited = yield* Effect.result(
+          mutations.updateTask({
             accountId: ACCOUNT_ID,
             changes: { notes: 'Passport' },
             taskId: 's1',
             taskListId: 'list-1',
-          });
-          network.down = false;
-          yield* mutations.retryPendingOps();
-          yield* mutations.processPendingOps();
-          expect(google.taskOf('list-1', 's1')).toMatchObject({ notes: 'Passport' });
-          expect(google.taskOf('list-1', 's1')?.deleted).toBeUndefined();
-        }),
-      );
-    },
-  );
+          }),
+        );
+        expect(Result.isFailure(edited) && edited.failure).toMatchObject({
+          _tag: 'TaskNotFoundError',
+        });
+        network.down = false;
+        yield* mutations.retryPendingOps();
+        yield* mutations.processPendingOps();
+        expect(google.taskOf('list-1', 'p')?.deleted).toBe(true);
+        expect(google.taskOf('list-1', 's1')?.deleted).toBe(true);
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+      }),
+    );
+  });
 });

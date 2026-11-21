@@ -734,6 +734,8 @@ describe('moveTask across providers', () => {
     const calls: Array<string> = [];
     const flaky: GoogleTasksClientShape = {
       ...recordingTasks(calls),
+      // A sent move's discard asks where the task is: not in the destination.
+      listTasks: () => Effect.succeed({ items: [] }),
       moveTask: () => Effect.fail(new ApiUnavailableError({ cause: 'try later' })),
     };
     return Effect.gen(function* () {

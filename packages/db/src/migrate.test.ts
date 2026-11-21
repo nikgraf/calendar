@@ -49,6 +49,7 @@ describe('runMigrations', () => {
         'location_geo',
         'pending_ops',
         'sync_state',
+        'task_copies',
         'task_lists',
         'tasks',
       ]);

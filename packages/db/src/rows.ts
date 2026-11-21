@@ -244,6 +244,10 @@ export const taskFromRow = (row: TaskRow): TaskRecord => {
 };
 
 /** Column encoding for the JSON task fields (shared by insert + upsert). */
+/** A task stored as JSON (a provider copy): undefined when it does not decode. */
+export const taskFromPayload = (text: string | null): TaskRecord | undefined =>
+  decodeOr(TaskRecord, parseJson(text));
+
 export const taskJsonColumns = (
   task: TaskRecord,
 ): { alarms: string | null; recurrence: string | null } => ({
@@ -515,7 +519,6 @@ export const pendingOpFromRow = (row: PendingOpRow): PendingOp | undefined =>
         beforeColorHex: row.before_color_hex ?? undefined,
         beforeOverrides: decodeOr(eventListSchema, parseJson(row.before_overrides)),
         beforePayload: beforePayloadFromColumn(row.before_payload),
-        beforeTask: decodeOr(TaskRecord, parseJson(row.before_task)),
         calendarId: row.calendar_id,
         carriedText: decodeOr(CarriedText, parseJson(row.carried_text)),
         colorHex: row.color_hex ?? undefined,

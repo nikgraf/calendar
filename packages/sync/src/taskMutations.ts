@@ -1,11 +1,5 @@
 import { generateEventId } from '@calendar/google';
-import {
-  compareTaskPosition,
-  PendingOp,
-  placedTask,
-  provisionalPosition,
-  TaskRecord,
-} from '@calendar/core';
+import { compareTaskPosition, PendingOp, provisionalPosition, TaskRecord } from '@calendar/core';
 import type { PendingOpRepoShape, TaskRepoShape } from '@calendar/db';
 import { Clock, Effect } from 'effect';
 import type { SqlError } from 'effect/sql/SqlError';
@@ -83,45 +77,6 @@ const patchFields = (source: {
 /** A task id Google has not assigned yet: its create is still queued. */
 const isTempId = (taskId: string): boolean => taskId.startsWith('local-');
 
-/**
- * The task as Google last acknowledged it, for a delete that replaces the
- * queued ops: each op's snapshot holds the acknowledged value of the
- * fields it owns — an edit's title, notes and due day (the ones it
- * carries), a toggle's status, the first reorder's place (a later one
- * was queued on the place before it) — whatever order coalescing left
- * the ops in. A field no op touched is the row's.
- */
-const acknowledgedTask = (
-  queued: ReadonlyArray<PendingOp>,
-  current: TaskRecord,
-  accountId: string,
-): TaskRecord => {
-  let acked = current;
-  let placed = false;
-  for (const op of queued) {
-    const before = op.beforeTask;
-    if (op.accountId !== accountId || !before) {
-      continue;
-    }
-    if (op.kind === 'reorderTask') {
-      if (!placed) {
-        acked = placedTask(acked, before);
-      }
-      placed = true;
-    } else if (op.kind === 'completeTask') {
-      acked = new TaskRecord({ ...acked, completedAt: before.completedAt, status: before.status });
-    } else if (op.kind === 'updateTask') {
-      acked = new TaskRecord({
-        ...acked,
-        ...(op.taskDue === undefined ? {} : { dueDate: before.dueDate }),
-        ...(op.taskNotes === undefined ? {} : { notes: before.notes }),
-        ...(op.taskTitle === undefined ? {} : { title: before.title }),
-      });
-    }
-  }
-  return acked;
-};
-
 export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
   const { enqueue, opsForEvent, pendingOpRepo, taskRepo } = deps;
 
@@ -175,9 +130,9 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
   /** One task's delete: its row goes now, the op follows (none for a task Google never had). */
   const deleteOne = (accountId: string, taskListId: string, taskId: string) =>
     Effect.gen(function* () {
-      // The row as deleted — or as it was before the queued edits this
-      // delete replaces — so a discard can put it back.
-      const current = yield* taskRepo.get(accountId, taskListId, taskId);
+      // Google's copy stays beside the row that goes (kept already while
+      // the edits this delete replaces waited): a discard puts it back.
+      yield* taskRepo.holdTasks(accountId, taskListId, [taskId]);
       yield* taskRepo.removeTask(accountId, taskListId, taskId);
       // Everything queued for this task is moot now — and if its create
       // never pushed, the task never existed upstream: no server op. A
@@ -186,7 +141,6 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
       // it only looks for what landed (applyOp sendCreateTask), and the
       // delete then takes Google's id.
       const queued = yield* opsForEvent(accountId, taskListId, taskId);
-      const beforeTask = current ? acknowledgedTask(queued, current, accountId) : undefined;
       let unsentCreate = false;
       for (const queuedOp of queued) {
         // An earlier move out of this list (the task left and came back,
@@ -211,7 +165,6 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
         new PendingOp({
           accountId,
           attempts: 0,
-          beforeTask,
           calendarId: taskListId,
           createdAt: now,
           eventId: taskId,
@@ -224,16 +177,14 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
     });
 
   /**
-   * A task acted on while its delete is still queued: the user saw the
-   * copy a pull put back meanwhile, and the edit, toggle or move replaces
-   * the delete, as an event edit does (`supersedeQueued`). Left queued
-   * ahead, the delete removed the task on Google and the change met a 404.
+   * The task's row, or TaskNotFoundError. A task whose delete is queued
+   * has none — nothing writes one while the delete waits (a pull keeps
+   * Google's copy beside it) — so a change never lands behind its own
+   * task's delete.
    */
-  const replaceQueuedDelete = (accountId: string, queued: ReadonlyArray<PendingOp>) =>
-    Effect.forEach(
-      queued.filter((op) => op.accountId === accountId && op.kind === 'deleteTask'),
-      (op) => pendingOpRepo.remove(op.id),
-      { discard: true },
+  const shown = (accountId: string, taskListId: string, taskId: string) =>
+    Effect.flatMap(taskRepo.get(accountId, taskListId, taskId), (row) =>
+      row ? Effect.succeed(row) : Effect.fail(new TaskNotFoundError({ taskId })),
     );
 
   return {
@@ -243,10 +194,10 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
         if (!window.some((list) => list.id === taskListId)) {
           return yield* Effect.fail(new TaskNotFoundError({ taskId }));
         }
+        yield* shown(accountId, taskListId, taskId);
         const now = yield* Clock.currentTimeMillis;
-        // The row before the toggle, for the diff and a discard; a replaced
-        // toggle's before stays — the row already holds that toggle.
-        const current = yield* taskRepo.get(accountId, taskListId, taskId);
+        // Google's copy stays beside the row, for the diff and a discard.
+        yield* taskRepo.holdTasks(accountId, taskListId, [taskId]);
         yield* taskRepo.setStatus({
           accountId,
           completedAt: status === 'completed' ? now : undefined,
@@ -256,8 +207,6 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
         });
         // Only the latest toggle needs to reach Google.
         const queued = yield* opsForEvent(accountId, taskListId, taskId);
-        yield* replaceQueuedDelete(accountId, queued);
-        const prior = queued.find((op) => op.accountId === accountId && op.kind === 'completeTask');
         for (const op of queued) {
           if (op.accountId === accountId && op.kind === 'completeTask') {
             yield* pendingOpRepo.remove(op.id);
@@ -267,7 +216,6 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
           new PendingOp({
             accountId,
             attempts: 0,
-            beforeTask: prior ? prior.beforeTask : current,
             // Op identity reuses the event columns as opaque ids, like
             // calendarColor's sentinel does.
             calendarId: taskListId,
@@ -311,6 +259,12 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
         const subtasks = yield* taskRepo.listSubtasks(accountId, taskListId, taskId);
         const ids = new Set([taskId, ...subtasks.map((subtask) => subtask.id)]);
         const all = yield* pendingOpRepo.listAll();
+        // The tasks Google has under it: a queued reorder may have taken one out.
+        const nested = new Set(
+          (yield* taskRepo.listCopies(accountId))
+            .filter((copy) => copy.listId === taskListId && copy.parentId === taskId)
+            .map((copy) => copy.id),
+        );
         // A reorder that nests a task under it, takes one out or places it
         // or a subtask: which tasks go along is not settled until Google
         // has it, and undoing it once the rows moved could not reach them.
@@ -320,9 +274,7 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
               op.kind === 'reorderTask' &&
               op.accountId === accountId &&
               op.calendarId === taskListId &&
-              (ids.has(op.eventId) ||
-                op.taskParent === taskId ||
-                op.beforeTask?.parentId === taskId),
+              (ids.has(op.eventId) || op.taskParent === taskId || nested.has(op.eventId)),
           )
         ) {
           return yield* Effect.fail(
@@ -340,9 +292,7 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
             op.accountId === accountId &&
             op.calendarId === taskListId &&
             ids.has(op.eventId) &&
-            op.kind !== 'moveTask' &&
-            // The move replaces the task's own delete (replaceQueuedDelete).
-            !(op.kind === 'deleteTask' && op.eventId === taskId),
+            op.kind !== 'moveTask',
         );
         // A create that went out may land in the source list after the
         // move: where the task ends up is not known until Google answers.
@@ -354,11 +304,9 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
             }),
           );
         }
-        yield* replaceQueuedDelete(
-          accountId,
-          all.filter((op) => op.calendarId === taskListId && op.eventId === taskId),
-        );
         const now = yield* Clock.currentTimeMillis;
+        // Google has them in the source until the move lands: its copies stay there.
+        yield* taskRepo.holdTasks(accountId, taskListId, [...ids]);
         // The rows move now: the task leaves its parent, its subtasks keep it.
         for (const row of [source, ...subtasks]) {
           const { parentId, ...rest } = row;
@@ -381,7 +329,6 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
             new PendingOp({
               accountId,
               attempts: 0,
-              beforeTask: source,
               calendarId: taskListId,
               createdAt: now,
               eventId: taskId,
@@ -402,9 +349,6 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
               ...op,
               ...(op.eventId === taskId ? { taskParent: undefined } : {}),
               attempts: 0,
-              ...(op.beforeTask
-                ? { beforeTask: new TaskRecord({ ...op.beforeTask, listId: targetTaskListId }) }
-                : {}),
               calendarId: targetTaskListId,
               createdAt: now + 1,
               id: generateEventId(),
@@ -507,7 +451,9 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
             .filter((op) => op.kind === 'reorderTask')
             .map((op) => op.createdAt + 1),
         );
-        // Shown where it was dropped until Google's order comes back.
+        // Shown where it was dropped until Google's order comes back;
+        // Google's copy keeps the place it has there.
+        yield* taskRepo.holdTasks(accountId, taskListId, [taskId]);
         yield* taskRepo.updateLocal({
           accountId,
           changes: {
@@ -521,7 +467,6 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
           new PendingOp({
             accountId,
             attempts: 0,
-            beforeTask: task,
             calendarId: taskListId,
             createdAt,
             eventId: taskId,
@@ -537,8 +482,9 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
 
     updateTask: ({ accountId, changes, taskId, taskListId }) =>
       Effect.gen(function* () {
-        // The row before the edit, for the diff and a discard.
-        const current = yield* taskRepo.get(accountId, taskListId, taskId);
+        yield* shown(accountId, taskListId, taskId);
+        // Google's copy stays beside the row, for the diff and a discard.
+        yield* taskRepo.holdTasks(accountId, taskListId, [taskId]);
         // Google knows title/notes/due only; the dispatcher already rejected
         // Reminders-only fields, so this narrows rather than drops.
         yield* taskRepo.updateLocal({
@@ -549,7 +495,6 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
         });
         const now = yield* Clock.currentTimeMillis;
         const queued = yield* opsForEvent(accountId, taskListId, taskId);
-        yield* replaceQueuedDelete(accountId, queued);
         const pendingCreate = queued.find(
           (queuedOp) => queuedOp.accountId === accountId && queuedOp.kind === 'createTask',
         );
@@ -581,10 +526,6 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
         // but each op carries only the fields its edit changed — a rename
         // followed by a new due day must still send the rename.
         let fields: TaskPatchFields = {};
-        // The earliest replaced edit's before: the row holds every later one.
-        const prior = queued.find(
-          (queuedOp) => queuedOp.accountId === accountId && queuedOp.kind === 'updateTask',
-        );
         for (const queuedOp of queued) {
           if (queuedOp.accountId === accountId && queuedOp.kind === 'updateTask') {
             fields = { ...fields, ...patchFields(queuedOp) };
@@ -603,7 +544,6 @@ export const makeTaskMutations = (deps: TaskMutationDeps): TaskMutations => {
           new PendingOp({
             accountId,
             attempts: 0,
-            beforeTask: prior ? prior.beforeTask : current,
             calendarId: taskListId,
             createdAt: now,
             eventId: taskId,

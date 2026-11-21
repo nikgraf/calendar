@@ -398,7 +398,7 @@ export interface EventMutationsShape {
     readonly changes: TaskWriteChanges;
     readonly taskId: string;
     readonly taskListId: string;
-  }) => Effect.Effect<void, SqlError | TaskProviderError>;
+  }) => Effect.Effect<void, SqlError | TaskNotFoundError | TaskProviderError>;
   /**
    * Runs `effect` while no drain can push: a task list's pull, which a
    * move landing while its request is out would make stale (Google sends

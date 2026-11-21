@@ -1,17 +1,11 @@
-import { type CopySource, type EventRecord, type PendingOp, type TaskRecord } from '@calendar/core';
+import { type CopySource, type EventRecord, type PendingOp } from '@calendar/core';
 import { Context, Effect, Layer } from 'effect';
 import { Reactivity } from 'effect/reactivity/Reactivity';
 import { SqlClient } from 'effect/sql/SqlClient';
 import type { SqlError } from 'effect/sql/SqlError';
 import { OPS_KEY } from './keys.ts';
 import { pendingOpFromRow, type PendingOpRow } from './rows.ts';
-import {
-  carriedTextJson,
-  copySourceJson,
-  eventListJson,
-  eventPayloadJson,
-  taskPayloadJson,
-} from './repoShared.ts';
+import { carriedTextJson, copySourceJson, eventListJson, eventPayloadJson } from './repoShared.ts';
 
 export interface PendingOpRepoShape {
   /**
@@ -43,16 +37,6 @@ export interface PendingOpRepoShape {
   readonly advanceBefore: (
     event: { readonly accountId: string; readonly calendarId: string; readonly eventId: string },
     synced: EventRecord,
-    landed: { readonly id: string },
-  ) => Effect.Effect<void, SqlError>;
-  /**
-   * The task counterpart of `advanceBefore`, for the ops of one task of
-   * one list. Reorders keep theirs: a later one holds the place an earlier
-   * one gives, and Google's order comes back through the list's read-back.
-   */
-  readonly advanceBeforeTask: (
-    task: { readonly accountId: string; readonly listId: string; readonly taskId: string },
-    synced: TaskRecord,
     landed: { readonly id: string },
   ) => Effect.Effect<void, SqlError>;
   /**
@@ -97,14 +81,14 @@ export interface PendingOpRepoShape {
   >;
   readonly enqueue: (op: PendingOp) => Effect.Effect<void, SqlError>;
   /**
-   * A pull confirmed these items deleted upstream (`containerId`: the
-   * calendar or task list): a queued delete of one has nothing left to put
-   * back, so its snapshot goes — a discard would otherwise restore an
-   * event or task the sync token has already seen removed.
+   * A pull confirmed these events deleted upstream: a queued delete of
+   * one has nothing left to put back, so its snapshot goes — a discard
+   * would otherwise restore an event the sync token has already seen
+   * removed. (A task's provider copy goes instead: `TaskRepo.removeCopies`.)
    */
   readonly forgetDeleted: (
     accountId: string,
-    containerId: string,
+    calendarId: string,
     ids: ReadonlyArray<string>,
   ) => Effect.Effect<void, SqlError>;
   /**
@@ -143,6 +127,14 @@ export interface PendingOpRepoShape {
     readonly eventId: string;
   }) => Effect.Effect<ReadonlyArray<PendingOp>, SqlError>;
   /** Makes a waiting op due now (what it waited for left the queue); a parked one stays. */
+  /**
+   * A task's queued ops in every list of the account, in queue order: a
+   * move re-queues what follows it in its destination.
+   */
+  readonly listForTask: (
+    accountId: string,
+    taskId: string,
+  ) => Effect.Effect<ReadonlyArray<PendingOp>, SqlError>;
   readonly makeDue: (opId: string) => Effect.Effect<void, SqlError>;
   /**
    * Parks an op after a 412: the drain skips it until `unpark` or removal.
@@ -235,11 +227,6 @@ export interface PendingOpRepoShape {
     opId: string,
     overrides: ReadonlyArray<EventRecord> | undefined,
   ) => Effect.Effect<void, SqlError>;
-  /**
-   * Replaces one op's task snapshot: a reorder that will not land hands
-   * the place Google still has to the reorder queued behind it.
-   */
-  readonly setBeforeTask: (opId: string, before: TaskRecord) => Effect.Effect<void, SqlError>;
   /**
    * Names what the copies a move or a conversion queued were copied from
    * (`undefined`: nothing — an Apple source the move could not delete
@@ -377,7 +364,7 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
                                    attendees_changed, geo_cleared, target_calendar_id,
                                    reminders_changed, conflict_at, server_payload,
                                    carried_text, recurrence_cleared, before_payload,
-                                   before_overrides, before_task, before_color_hex,
+                                   before_overrides, before_color_hex,
                                    target_task_list_id, task_parent, task_due_cleared,
                                    task_previous, drops_from, split_of, split_in,
                                    split_at, split_check, copy_source)
@@ -396,7 +383,6 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
                   ${op.recurrenceCleared ? 1 : 0},
                   ${beforePayloadColumn(op.beforePayload)},
                   ${op.beforeOverrides ? JSON.stringify(eventListJson(op.beforeOverrides)) : null},
-                  ${op.beforeTask ? JSON.stringify(taskPayloadJson(op.beforeTask)) : null},
                   ${op.beforeColorHex ?? null}, ${op.targetTaskListId ?? null},
                   ${op.taskParent ?? null}, ${op.taskDue === null ? 1 : 0},
                   ${op.taskPrevious ?? null}, ${op.dropsFrom ?? null},
@@ -449,24 +435,14 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
                 AND kind IN ('delete', 'rsvp', 'update') AND id != ${landed.id}`,
           ),
         ),
-      advanceBeforeTask: ({ accountId, listId, taskId }, synced, landed) =>
-        invalidating(
-          Effect.asVoid(
-            sql`UPDATE pending_ops SET before_task = ${JSON.stringify(taskPayloadJson(synced))}
-              WHERE account_id = ${accountId} AND calendar_id = ${listId}
-                AND event_id = ${taskId} AND conflict_at IS NULL
-                AND kind IN ('completeTask', 'deleteTask', 'updateTask') AND id != ${landed.id}`,
-          ),
-        ),
-      forgetDeleted: (accountId, containerId, ids) =>
+      forgetDeleted: (accountId, calendarId, ids) =>
         ids.length === 0
           ? Effect.void
           : invalidating(
               Effect.asVoid(
-                sql`UPDATE pending_ops SET before_payload = NULL, before_overrides = NULL,
-                  before_task = NULL
-                  WHERE account_id = ${accountId} AND calendar_id = ${containerId}
-                    AND event_id IN ${sql.in(ids)} AND kind IN ('delete', 'deleteTask')`,
+                sql`UPDATE pending_ops SET before_payload = NULL, before_overrides = NULL
+                  WHERE account_id = ${accountId} AND calendar_id = ${calendarId}
+                    AND event_id IN ${sql.in(ids)} AND kind = 'delete'`,
               ),
             ),
       forgetSeries: (accountId, calendarId, masterId) =>
@@ -492,6 +468,15 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
           sql<PendingOpRow>`SELECT * FROM pending_ops
             WHERE account_id = ${accountId} AND calendar_id = ${calendarId}
               AND event_id = ${eventId}
+            ORDER BY created_at, rowid`,
+          (rows) => rows.flatMap(decodedOps),
+        ),
+      listForTask: (accountId, taskId) =>
+        Effect.map(
+          sql<PendingOpRow>`SELECT * FROM pending_ops
+            WHERE account_id = ${accountId} AND event_id = ${taskId}
+              AND kind IN ('completeTask', 'createTask', 'deleteTask', 'moveTask', 'reorderTask',
+                'updateTask')
             ORDER BY created_at, rowid`,
           (rows) => rows.flatMap(decodedOps),
         ),
@@ -617,13 +602,6 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
           Effect.asVoid(
             sql`UPDATE pending_ops
               SET before_overrides = ${overrides ? JSON.stringify(eventListJson(overrides)) : null}
-              WHERE id = ${opId}`,
-          ),
-        ),
-      setBeforeTask: (opId, before) =>
-        invalidating(
-          Effect.asVoid(
-            sql`UPDATE pending_ops SET before_task = ${JSON.stringify(taskPayloadJson(before))}
               WHERE id = ${opId}`,
           ),
         ),

@@ -52,6 +52,7 @@ const makeAccountRepo: Effect.Effect<AccountRepoShape, never, Reactivity | SqlCl
               yield* sql`DELETE FROM contacts WHERE account_id = ${accountId}`;
               yield* sql`DELETE FROM contact_birthdays WHERE account_id = ${accountId}`;
               yield* sql`DELETE FROM tasks WHERE account_id = ${accountId}`;
+              yield* sql`DELETE FROM task_copies WHERE account_id = ${accountId}`;
               yield* sql`DELETE FROM task_lists WHERE account_id = ${accountId}`;
               yield* sql`DELETE FROM calendars WHERE account_id = ${accountId}`;
               yield* sql`DELETE FROM pending_ops WHERE account_id = ${accountId}`;
