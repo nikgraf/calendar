@@ -1,5 +1,14 @@
 import { unavailableAppleCalendarClient } from '@calendar/apple-calendar';
-import { Account, failureText, type PendingOp } from '@calendar/core';
+import {
+  Account,
+  type EventInstance,
+  expandRecurringEvent,
+  failureText,
+  googleInstanceId,
+  type PendingOp,
+  type RecurrenceMaster,
+  recurrenceMasterOf,
+} from '@calendar/core';
 import { AccountRepo, PendingOpRepo, reposLayer, runMigrations } from '@calendar/db';
 import {
   type GcalEvent,
@@ -44,8 +53,21 @@ import { type FakeCall, type FakeFault, FakeGoogle } from './testing/fakeGoogle.
  *    create or after its move) meets one; and no op parks a conflict on an
  *    item nobody else changed.
  *
- * The fake models no recurrence, so series are left out. A failing seed
- * prints its whole sequence; rerun it alone with
+ * Series are in: the user creates one, edits or deletes one occurrence,
+ * edits all events (their text, or the time of a series without
+ * exceptions), gives it another rule, edits "this and following", deletes
+ * it, moves it; another device renames or deletes a series, changes or
+ * cancels an occurrence. A series is judged by what it draws: every
+ * occurrence is an item under Google's id for it (`<masterId>_<original
+ * start>`), an exception by its own row and a plain one by its master's
+ * rule, on the client as on Google (`events.instances`). The sequences
+ * stay on what is recorded of Google (docs/google-sync-and-testing.md,
+ * Events & recurrence): a series with exceptions is not retimed, no rule
+ * draws a slot again that an earlier one dropped, nobody edits an
+ * occurrence Google holds cancelled — and the fake's `unverified` stays
+ * empty, or the sequence fails as one that left that ground.
+ *
+ * A failing seed prints its whole sequence; rerun it alone with
  * `QUEUE_SEQUENCE_SEED=<seed> pnpm exec vp test run packages/sync/src/queueSequence.test.ts`
  * (`QUEUE_SEQUENCE_RUNS` and `QUEUE_SEQUENCE_STEPS` widen the search).
  */
@@ -59,6 +81,9 @@ const START = Date.parse('2026-08-24T10:00:00.000Z');
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
+/** The days every series is compared over: further than any rule here reaches. */
+const WINDOW_FROM = START - 2 * DAY;
+const WINDOW_TO = START + 60 * DAY;
 
 const envNumber = (name: string): number | undefined => {
   const raw = process.env[name];
@@ -133,6 +158,20 @@ const timed = (id: string, day: number, hour: number, summary: string): GcalEven
   summary,
 });
 
+/** A daily series of `count`, UTC as the live suite's (an instance id carries the UTC instant). */
+const daily = (
+  id: string,
+  day: number,
+  hour: number,
+  count: number,
+  summary: string,
+): GcalEvent => ({
+  ...timed(id, day, hour, summary),
+  end: { dateTime: iso(START + day * DAY + (hour + 1) * HOUR), timeZone: 'UTC' },
+  recurrence: [`RRULE:FREQ=DAILY;COUNT=${count}`],
+  start: { dateTime: iso(START + day * DAY + hour * HOUR), timeZone: 'UTC' },
+});
+
 const due = (day: number): string =>
   `${new Date(START + day * DAY).toISOString().slice(0, 10)}T00:00:00.000Z`;
 
@@ -155,6 +194,16 @@ const newFake = (options: { readonly thirdCalendar?: boolean } = {}): FakeGoogle
   google.putEvent('cal-1', timed('e1', 1, 9, 'Standup'));
   google.putEvent('cal-1', timed('e2', 2, 11, 'Lunch'));
   google.putEvent('cal-2', timed('e3', 3, 14, 'Review'));
+  google.putEvent('cal-1', daily('r1', 2, 5, 6, 'Yoga'));
+  // One with exceptions already: its second occurrence three hours later,
+  // its third cancelled.
+  google.putEvent('cal-2', daily('r2', 4, 1, 5, 'Sprint'));
+  const second = START + 5 * DAY + HOUR;
+  google.patchEventServerSide('cal-2', googleInstanceId('r2', second, false), {
+    end: { dateTime: iso(second + 4 * HOUR), timeZone: 'UTC' },
+    start: { dateTime: iso(second + 3 * HOUR), timeZone: 'UTC' },
+  });
+  google.deleteEventServerSide('cal-2', googleInstanceId('r2', second + DAY, false));
   google.putTask('list-1', {
     due: due(5),
     id: 'p',
@@ -215,6 +264,11 @@ interface EventRow {
   readonly id: string;
   readonly is_all_day: number;
   readonly location: string | null;
+  readonly original_start_utc: number | null;
+  /** The rule lines, a JSON array. */
+  readonly recurrence: string | null;
+  readonly recurring_event_id: string | null;
+  readonly start_time_zone: string | null;
   readonly start_utc: number;
   readonly status: string;
   readonly sync_status: string;
@@ -235,11 +289,15 @@ interface TaskRow {
 /** The fields an item shows, as text: what the checks compare. */
 type Fields = Readonly<Record<string, string>>;
 
+const recurrenceOf = (row: EventRow): ReadonlyArray<string> =>
+  row.recurrence === null ? [] : (JSON.parse(row.recurrence) as ReadonlyArray<string>);
+
 const eventRowFields = (row: EventRow): Fields => ({
   allDay: String(row.is_all_day === 1),
   description: row.description ?? '',
   end: String(row.end_utc),
   location: row.location ?? '',
+  repeat: recurrenceOf(row).join('\n'),
   start: String(row.start_utc),
   title: row.title,
 });
@@ -258,6 +316,7 @@ const gcalEventFields = (calendarId: string, event: GcalEvent): Fields | undefin
         description: record.description ?? '',
         end: String(record.endUtc),
         location: record.location ?? '',
+        repeat: (record.recurrence ?? []).join('\n'),
         start: String(record.startUtc),
         title: record.title,
       };
@@ -307,11 +366,190 @@ const EVENT_KINDS: ReadonlySet<PendingOp['kind']> = new Set([
   'update',
 ]);
 
-/** Whether the op holds this event row: its own, or the one its move put in the target. */
+/** `<masterId>_<original start>`: one occurrence of a series (the series here are timed). */
+const OCCURRENCE_ID = /^(.+)_(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/;
+
+/** The series an occurrence's id names; undefined for any other id. */
+const masterIdOf = (id: string): string | undefined => OCCURRENCE_ID.exec(id)?.[1];
+
+const isOccurrenceOf = (id: string, masterId: string): boolean => masterIdOf(id) === masterId;
+
+/** The original start an occurrence's id names. */
+const slotOfId = (id: string): number | undefined => {
+  const match = OCCURRENCE_ID.exec(id);
+  if (!match) {
+    return undefined;
+  }
+  const [year, month, day, hour, minute, second] = match.slice(2).map(Number);
+  return Date.UTC(year ?? 0, (month ?? 1) - 1, day, hour, minute, second);
+};
+
+/**
+ * Whether the op holds this event row: its own, or the one its move put
+ * in the target — a series' move puts its exceptions there too.
+ */
 const ownsEvent = (op: PendingOp, calendarId: string, eventId: string): boolean =>
   EVENT_KINDS.has(op.kind) &&
-  op.eventId === eventId &&
-  (op.calendarId === calendarId || (op.kind === 'move' && op.targetCalendarId === calendarId));
+  ((op.eventId === eventId &&
+    (op.calendarId === calendarId || (op.kind === 'move' && op.targetCalendarId === calendarId))) ||
+    (op.kind === 'move' &&
+      op.targetCalendarId === calendarId &&
+      isOccurrenceOf(eventId, op.eventId)));
+
+// ---- what a series draws ----
+
+const isSingle = (row: EventRow): boolean =>
+  row.status !== 'cancelled' && row.recurring_event_id === null && recurrenceOf(row).length === 0;
+
+const isMaster = (row: EventRow): boolean =>
+  row.status !== 'cancelled' && row.recurring_event_id === null && recurrenceOf(row).length > 0;
+
+/** What the expansion reads of a master row, under `recurrence` (its own unless given). */
+const ruleMaster = (
+  row: EventRow,
+  recurrence: ReadonlyArray<string> = recurrenceOf(row),
+): RecurrenceMaster => ({
+  endUtc: row.end_utc,
+  id: row.id,
+  isAllDay: false,
+  recurrence,
+  startTimeZone: row.start_time_zone ?? 'UTC',
+  startUtc: row.start_utc,
+});
+
+/** The occurrences a rule draws in the window but `taken`; none when it does not expand. */
+const drawnBy = (master: RecurrenceMaster, taken?: ReadonlySet<number>): Array<EventInstance> => {
+  try {
+    return expandRecurringEvent(master, WINDOW_FROM, WINDOW_TO, taken);
+  } catch {
+    return [];
+  }
+};
+
+/** Whether the rule draws an occurrence at `slot`. */
+const drawsAt = (master: RecurrenceMaster, slot: number): boolean => {
+  try {
+    return expandRecurringEvent(master, slot - 1, slot + 1).some(
+      (instance) => instance.originalStartUtc === slot,
+    );
+  } catch {
+    return false;
+  }
+};
+
+interface Occurrence {
+  readonly end: number;
+  /** Google's id for it, whether or not a row exists. */
+  readonly id: string;
+  /** Its exception row, when it was changed on its own. */
+  readonly row: EventRow | undefined;
+  /** Its original start. */
+  readonly slot: number;
+  readonly start: number;
+}
+
+/** A series as the client has it: the master row, its exception rows, and what it draws. */
+interface ClientSeries {
+  readonly master: EventRow;
+  /** In slot order; a cancelled occurrence is not among them. */
+  readonly occurrences: ReadonlyArray<Occurrence>;
+  /** Its exception rows, cancelled ones included. */
+  readonly overrides: ReadonlyArray<EventRow>;
+}
+
+const clientSeries = (events: ReadonlyArray<EventRow>): Array<ClientSeries> =>
+  events.filter(isMaster).map((master) => {
+    const overrides = events.filter(
+      (row) => row.calendar_id === master.calendar_id && row.recurring_event_id === master.id,
+    );
+    const taken = new Set(
+      overrides.flatMap((row) => (row.original_start_utc === null ? [] : [row.original_start_utc])),
+    );
+    const occurrences: Array<Occurrence> = [
+      ...drawnBy(ruleMaster(master), taken).map((instance) => ({
+        end: instance.endUtc,
+        id: googleInstanceId(master.id, instance.originalStartUtc, false),
+        row: undefined,
+        slot: instance.originalStartUtc,
+        start: instance.startUtc,
+      })),
+      ...overrides
+        .filter((row) => row.status !== 'cancelled')
+        .map((row) => ({
+          end: row.end_utc,
+          id: row.id,
+          row,
+          slot: row.original_start_utc ?? row.start_utc,
+          start: row.start_utc,
+        })),
+    ];
+    return { master, occurrences: occurrences.sort((a, b) => a.slot - b.slot), overrides };
+  });
+
+/**
+ * What a calendar shows, by id: its single events, its series' masters
+ * (with their rule) and every occurrence a series draws.
+ */
+type View = ReadonlyMap<string, Fields>;
+
+const clientView = (events: ReadonlyArray<EventRow>, calendarId: string): View => {
+  const view = new Map<string, Fields>();
+  for (const row of events) {
+    if (row.calendar_id === calendarId && row.status !== 'cancelled') {
+      view.set(row.id, eventRowFields(row));
+    }
+  }
+  for (const { master, occurrences } of clientSeries(events)) {
+    for (const occurrence of occurrences) {
+      if (master.calendar_id === calendarId && occurrence.row === undefined) {
+        view.set(occurrence.id, {
+          ...eventRowFields(master),
+          end: String(occurrence.end),
+          repeat: '',
+          start: String(occurrence.start),
+        });
+      }
+    }
+  }
+  return view;
+};
+
+const googleView = (google: FakeGoogle, calendarId: string): View => {
+  const view = new Map<string, Fields>();
+  for (const event of google.eventsOf(calendarId)) {
+    const fields = gcalEventFields(calendarId, event);
+    if (fields !== undefined) {
+      view.set(event.id, fields);
+    }
+    for (const instance of google.instancesOf(calendarId, event.id, WINDOW_FROM, WINDOW_TO)) {
+      const drawn = gcalEventFields(calendarId, instance);
+      if (drawn !== undefined) {
+        view.set(instance.id, drawn);
+      }
+    }
+  }
+  return view;
+};
+
+/** Both sides' views of a moment, each calendar's computed once. */
+interface Views {
+  readonly client: (calendarId: string) => View;
+  readonly google: (calendarId: string) => View;
+}
+
+const memoized = (compute: (calendarId: string) => View) => {
+  const known = new Map<string, View>();
+  return (calendarId: string): View => {
+    const view = known.get(calendarId) ?? compute(calendarId);
+    known.set(calendarId, view);
+    return view;
+  };
+};
+
+const viewsOf = (google: FakeGoogle, events: ReadonlyArray<EventRow>): Views => ({
+  client: memoized((calendarId) => clientView(events, calendarId)),
+  google: memoized((calendarId) => googleView(google, calendarId)),
+});
 
 /** Whether the op holds this task row: its own, or one its move carries (the task, its subtasks). */
 const ownsTask = (
@@ -343,6 +581,8 @@ type Intent =
   | { readonly container: string | undefined; readonly fields: Fields; readonly kind: 'set' };
 
 interface Told {
+  /** Gone because its series left the calendar, not said of it alone (toldGone). */
+  readonly implied?: true;
   /** Google's copy as it was told, or null: told deleted. */
   readonly item: GcalEvent | GcalTask | null;
   readonly json: string;
@@ -351,8 +591,12 @@ interface Told {
 interface World {
   /** The subtasks of the task the request in flight deletes or moves, read before Google answers it. */
   children: ReadonlyArray<string>;
+  /** Series the answer to a delete of ours said are gone: Google took their occurrences. */
+  readonly deletedSeries: Set<string>;
   /** Items another device changed, or a write of ours whose answer was lost touched. */
   readonly disturbed: Set<string>;
+  /** The etag each exception row had when the user last moved its series (see movedSincePulled). */
+  readonly etagsAtMove: Map<string, string>;
   readonly google: FakeGoogle;
   /**
    * Slots (`container|id`) Google sent this step, with the copy last sent
@@ -360,7 +604,7 @@ interface World {
    * carried it.
    */
   readonly heard: Map<string, { readonly applied: boolean; readonly json: string }>;
-  /** Items an op held at the end of the step before. */
+  /** Items an op held at the end of the step before (see heldItems). */
   held: ReadonlySet<string>;
   /**
    * Items Google sent a newer state of (a change, its deletion, its
@@ -380,12 +624,25 @@ interface World {
   readonly random: () => number;
   /** Items another device removed, or a lost delete or move of ours took away: a 404 there is no surprise. */
   readonly removed: Set<string>;
+  /**
+   * The series a this-and-following edit split off, by id, with the id of
+   * the series it was split from: it lands, or goes, with that one's cut.
+   */
+  readonly splitSources: Map<string, string>;
   step: number;
   /** Requests this step, for the report. */
   stepLog: Array<string>;
   /** What Google last told the client, per `container|id`: answers it applies. */
   readonly told: Map<string, Told>;
   readonly trace: Array<string>;
+  /**
+   * Series (`calendar|id`) a list named gone while the client held live
+   * exceptions of them and had not been told by an answer to a write of
+   * its own. What a list reports for those exceptions is not recorded
+   * (FakeGoogle.goneWithExceptions), so what the client then shows of
+   * them is not judged.
+   */
+  readonly unjudged: Set<string>;
   /** Items deleted on Google behind the user's back (another device, a lost delete of ours): no later edit keeps them. */
   readonly vanished: Set<string>;
   readonly violations: Array<string>;
@@ -393,6 +650,21 @@ interface World {
 
 const eventKey = (id: string): string => `event:${id}`;
 const taskKey = (id: string): string => `task:${id}`;
+
+/** The series an occurrence's key belongs to, as a key; undefined for any other item. */
+const seriesKeyOf = (key: string): string | undefined => {
+  const masterId = key.startsWith('event:') ? masterIdOf(key.slice('event:'.length)) : undefined;
+  return masterId === undefined ? undefined : eventKey(masterId);
+};
+
+/**
+ * Whether the set names the item or, for an occurrence, its series: what
+ * happens to a series on Google happens to every occurrence of it.
+ */
+const touches = (set: ReadonlySet<string>, key: string): boolean => {
+  const series = seriesKeyOf(key);
+  return set.has(key) || (series !== undefined && set.has(series));
+};
 
 /** The item a request addresses: `{ key, container }`, or undefined for a list or a create. */
 const itemOf = (
@@ -463,6 +735,33 @@ const remember = (
   });
   if (applied) {
     world.told.set(slot, { item, json: JSON.stringify(item) });
+    if (item !== null) {
+      world.unjudged.delete(slot);
+      // A series back in the calendar (moved back) has its exceptions
+      // again: nothing was said of those yet.
+      for (const [other, told] of world.told) {
+        const [where = '', otherId = ''] = other.split('|');
+        if (told.implied === true && where === container && isOccurrenceOf(otherId, id)) {
+          world.told.delete(other);
+        }
+      }
+    }
+  }
+};
+
+/**
+ * The answer to a write of the client's own said the event left the
+ * calendar (deleted, or moved away): a series took its exceptions along,
+ * and the client knows.
+ */
+const toldGone = (world: World, container: string, id: string) => {
+  for (const slot of world.told.keys()) {
+    const [where = '', otherId = ''] = slot.split('|');
+    if (where === container && otherId === id) {
+      world.told.set(slot, { item: null, json: 'null' });
+    } else if (where === container && isOccurrenceOf(otherId, id)) {
+      world.told.set(slot, { implied: true, item: null, json: 'null' });
+    }
   }
 };
 
@@ -488,8 +787,16 @@ const learn = (world: World, call: FakeCall, status: number, json: unknown) => {
       // task listing may be one too, or the drain looking for a create
       // whose answer was lost, which applies nothing: it only counts as
       // a copy sent while held.
+      // A series this page names gone that took live exceptions along:
+      // told by this list, not by the answer to a write of the client's
+      // own, what it makes of those exceptions is not judged.
+      const tookExceptions = new Set(world.google.goneWithExceptions.splice(0));
       for (const item of body.items ?? []) {
         const gone = item.status === 'cancelled' || item.deleted === true;
+        const slot = `${calendarOrList}|${item.id}`;
+        if (gone && tookExceptions.has(slot) && world.told.get(slot)?.item !== null) {
+          world.unjudged.add(slot);
+        }
         remember(world, calendarOrList, item.id, gone ? null : item, events !== null);
       }
       // A full events list (after a 410) says gone by leaving out: what it
@@ -510,12 +817,23 @@ const learn = (world: World, call: FakeCall, status: number, json: unknown) => {
   }
   if (call.method === 'DELETE') {
     remember(world, target.container, target.id, null, true);
+    if (target.key.startsWith('event:') && masterIdOf(target.id) === undefined) {
+      toldGone(world, target.container, target.id);
+      world.deletedSeries.add(target.key);
+    }
     return;
   }
   const destination =
     url.searchParams.get('destination') ?? url.searchParams.get('destinationTasklist');
   if (status === 200) {
-    remember(world, destination ?? target.container, target.id, json as GcalEvent, true);
+    // An event the client asks for while no op of its own holds it is only
+    // looked at (a split-off series asking where its source ends), not
+    // written to the row.
+    const applied = call.method !== 'GET' || isHeld(world.held, target.key);
+    remember(world, destination ?? target.container, target.id, json as GcalEvent, applied);
+    if (url.searchParams.has('destination')) {
+      toldGone(world, target.container, target.id);
+    }
   }
 };
 
@@ -523,7 +841,9 @@ const makeWorld = (seed: number, google: FakeGoogle): World => {
   const random = seededRandom(seed);
   const world: World = {
     children: [],
+    deletedSeries: new Set(),
     disturbed: new Set(),
+    etagsAtMove: new Map(),
     google,
     heard: new Map(),
     held: new Set(),
@@ -534,10 +854,12 @@ const makeWorld = (seed: number, google: FakeGoogle): World => {
     nextWrites: [],
     random,
     removed: new Set(),
+    splitSources: new Map(),
     step: 0,
     stepLog: [],
     told: new Map(),
     trace: [],
+    unjudged: new Set(),
     vanished: new Set(),
     violations: [],
   };
@@ -581,8 +903,14 @@ const makeWorld = (seed: number, google: FakeGoogle): World => {
       return;
     }
     const target = itemOf(call);
+    const series = target === undefined ? undefined : seriesKeyOf(target.key);
     const explained =
-      target !== undefined && (status === 404 || status === 410) && world.removed.has(target.key);
+      target !== undefined &&
+      (status === 404 || status === 410) &&
+      (touches(world.removed, target.key) ||
+        // An occurrence's delete may follow its series' (the drain does
+        // not order the two): the series took it.
+        (call.method === 'DELETE' && series !== undefined && world.deletedSeries.has(series)));
     if (!explained) {
       world.violations.push(
         `${call.method} ${new URL(call.url).pathname} was refused with ${status}, but nothing ` +
@@ -613,6 +941,15 @@ const lostLanded = (world: World, call: FakeCall) => {
   for (const key of keys) {
     world.disturbed.add(key);
   }
+  // A PATCH of a series may have cancelled exceptions (a new rule, a cut):
+  // those are gone behind the client's back too.
+  if (call.method === 'PATCH' && target.key.startsWith('event:')) {
+    for (const exception of world.google.exceptionsOf(target.container, target.id)) {
+      if (exception.status === 'cancelled') {
+        world.removed.add(eventKey(exception.id));
+      }
+    }
+  }
 };
 
 const setIntent = (
@@ -621,7 +958,7 @@ const setIntent = (
   change: Partial<Omit<Intent & { kind: 'set' }, 'kind'>>,
 ) => {
   // Gone from Google behind the user's back: no later edit brings it back.
-  if (world.vanished.has(key)) {
+  if (touches(world.vanished, key)) {
     return;
   }
   const before = world.intents.get(key);
@@ -643,12 +980,38 @@ const disturb = (world: World, key: string, removed: boolean) => {
   }
 };
 
+/** The user's last word on a series and on each of its occurrences no longer decides. */
+const forgetSeries = (world: World, masterId: string) => {
+  world.intents.delete(eventKey(masterId));
+  for (const key of world.intents.keys()) {
+    if (seriesKeyOf(key) === eventKey(masterId)) {
+      world.intents.delete(key);
+    }
+  }
+};
+
+/** Another device touched a series: Google carries that onto its occurrences, or takes them. */
+const disturbSeries = (world: World, masterId: string, removed: boolean) => {
+  disturb(world, eventKey(masterId), removed);
+  forgetSeries(world, masterId);
+};
+
+/** The user's last word no longer names this field (the app derives it now). */
+const dropIntentField = (world: World, key: string, field: string) => {
+  const intent = world.intents.get(key);
+  if (intent?.kind === 'set' && field in intent.fields) {
+    const { [field]: _dropped, ...fields } = intent.fields;
+    world.intents.set(key, { ...intent, fields });
+  }
+};
+
 // ---- the checks ----
 
 const readSnapshot = Effect.gen(function* () {
   const sql = yield* SqlClient;
   const events = yield* sql<EventRow>`SELECT calendar_id, description, end_utc, etag, id,
-    is_all_day, location, start_utc, status, sync_status, title
+    is_all_day, location, original_start_utc, recurrence, recurring_event_id, start_time_zone,
+    start_utc, status, sync_status, title
     FROM events WHERE account_id = ${ACCOUNT_ID} ORDER BY calendar_id, id`;
   const tasks = yield* sql<TaskRow>`SELECT due_date, id, list_id, notes, parent_id, status,
     sync_status, title FROM tasks WHERE account_id = ${ACCOUNT_ID} ORDER BY list_id, id`;
@@ -690,12 +1053,18 @@ const googleNow = (world: World, container: string, id: string): GcalEvent | Gca
   return world.google.tasksIn(container).find((task) => task.id === id) ?? null;
 };
 
+/** Whether a queued op holds the event: its own, or its series' (a series op reaches every occurrence). */
+const holdsEvent = (op: PendingOp, eventId: string): boolean =>
+  EVENT_KINDS.has(op.kind) && (op.eventId === eventId || isOccurrenceOf(eventId, op.eventId));
+
 /**
  * 3: a synced event row at Google's current etag has Google's content, and
  * whatever Google last told the client about an item no op holds — still
- * Google's copy — is what shows: after a discard, Google's version.
+ * Google's copy — is what shows: after a discard, Google's version. An
+ * occurrence shows by its exception row or, without one, by its master's
+ * rule.
  */
-const checkShown = (world: World, snapshot: Snapshot) => {
+const checkShown = (world: World, snapshot: Snapshot, views: Views) => {
   for (const row of snapshot.events) {
     const theirs = world.google.eventOf(row.calendar_id, row.id);
     if (
@@ -703,7 +1072,11 @@ const checkShown = (world: World, snapshot: Snapshot) => {
       row.status === 'cancelled' ||
       theirs === undefined ||
       theirs.status === 'cancelled' ||
-      theirs.etag !== row.etag
+      theirs.etag !== row.etag ||
+      // An exception shows the text a queued edit of its series carries
+      // onto it, as Google will once that lands.
+      (row.recurring_event_id !== null &&
+        snapshot.ops.some((op) => op.eventId === row.recurring_event_id))
     ) {
       continue;
     }
@@ -720,24 +1093,25 @@ const checkShown = (world: World, snapshot: Snapshot) => {
     if (JSON.stringify(googleNow(world, container, id)) !== told.json) {
       continue; // Google moved on since; a pull brings it
     }
-    const isEvent = (CALENDARS as ReadonlyArray<string>).includes(container);
+    const isEvent = isCalendar(container);
     const parent =
       isEvent || told.item === null || !('parent' in told.item) ? undefined : told.item.parent;
-    const held = snapshot.ops.some(
-      (op) => op.eventId === id || (op.kind === 'moveTask' && op.eventId === parent),
+    const held = snapshot.ops.some((op) =>
+      isEvent
+        ? holdsEvent(op, id)
+        : op.eventId === id || (op.kind === 'moveTask' && op.eventId === parent),
     );
     if (held) {
       continue;
     }
-    const shown = isEvent
-      ? snapshot.events.find(
-          (row) => row.calendar_id === container && row.id === id && row.status !== 'cancelled',
-        )
+    const task = isEvent
+      ? undefined
       : snapshot.tasks.find((row) => row.list_id === container && row.id === id);
+    const mine = isEvent ? views.client(container).get(id) : task && taskRowFields(task);
     const what = `${isEvent ? 'event' : 'task'} ${id} in ${container}`;
     const key = slot;
     if (told.item === null) {
-      if (shown !== undefined) {
+      if (mine !== undefined) {
         staleOrBroken(
           world,
           key,
@@ -752,7 +1126,7 @@ const checkShown = (world: World, snapshot: Snapshot) => {
     if (theirs === undefined) {
       continue;
     }
-    if (shown === undefined) {
+    if (mine === undefined) {
       staleOrBroken(
         world,
         key,
@@ -760,7 +1134,6 @@ const checkShown = (world: World, snapshot: Snapshot) => {
       );
       continue;
     }
-    const mine = isEvent ? eventRowFields(shown as EventRow) : taskRowFields(shown as TaskRow);
     if (!sameFields(mine, theirs)) {
       staleOrBroken(
         world,
@@ -781,10 +1154,17 @@ const staleOrBroken = (world: World, slotOrKey: string, message: string) => {
     const [container = '', id = ''] = slot.split('|');
     return shownJson(container, googleNow(world, container, id)) === json;
   };
+  // An occurrence shows what its series' row does: a copy of the master
+  // that was skipped is why its occurrences differ too.
+  const [container = '', id = ''] = slotOrKey.split('|');
+  if (world.unjudged.has(`${container}|${masterIdOf(id) ?? ''}`)) {
+    return;
+  }
+  const names = slotOrKey.includes('|')
+    ? (slot: string) => slot === slotOrKey || slot === `${container}|${masterIdOf(id) ?? ''}`
+    : (slot: string) => keyOfSlot(slot) === slotOrKey || keyOfSlot(slot) === seriesKeyOf(slotOrKey);
   const known = [...world.heldTold].some(
-    ([slot, json]) =>
-      (slotOrKey.includes('|') ? slot === slotOrKey : keyOfSlot(slot) === slotOrKey) &&
-      stillThatCopy(slot, json),
+    ([slot, json]) => names(slot) && stillThatCopy(slot, json),
   );
   if (known) {
     world.knownGaps.push(`#${world.step} ${message}`);
@@ -793,12 +1173,27 @@ const staleOrBroken = (world: World, slotOrKey: string, message: string) => {
   }
 };
 
-/** The items queued ops hold: their own, and the subtasks a task move carries. */
+/** How heldItems names a series whose move is queued: its exceptions' rows move with it. */
+const movingKey = (masterId: string): string => `moving:${masterId}`;
+
+/** Whether the held items (heldItems) hold this one's row. */
+const isHeld = (held: ReadonlySet<string>, key: string): boolean => {
+  const masterId = key.startsWith('event:') ? masterIdOf(key.slice('event:'.length)) : undefined;
+  return held.has(key) || (masterId !== undefined && held.has(movingKey(masterId)));
+};
+
+/**
+ * The items queued ops hold: their own, the subtasks a task move carries
+ * and the exceptions a series' move carries.
+ */
 const heldItems = (snapshot: Snapshot): Set<string> => {
   const held = new Set<string>();
   for (const op of snapshot.ops) {
     if (EVENT_KINDS.has(op.kind)) {
       held.add(eventKey(op.eventId));
+      if (op.kind === 'move') {
+        held.add(movingKey(op.eventId));
+      }
       continue;
     }
     held.add(taskKey(op.eventId));
@@ -818,7 +1213,7 @@ const noteHeldCopies = (world: World, snapshot: Snapshot) => {
   const held = heldItems(snapshot);
   for (const [slot, { applied, json }] of world.heard) {
     const key = keyOfSlot(slot);
-    if (world.held.has(key) || held.has(key)) {
+    if (isHeld(world.held, key) || isHeld(held, key)) {
       world.heldTold.set(slot, json);
     } else if (applied) {
       world.heldTold.delete(slot);
@@ -832,26 +1227,40 @@ const noteHeldCopies = (world: World, snapshot: Snapshot) => {
 const checkParks = (world: World, snapshot: Snapshot) => {
   for (const op of snapshot.ops) {
     const key = EVENT_KINDS.has(op.kind) ? eventKey(op.eventId) : taskKey(op.eventId);
-    if (op.conflictAt !== undefined && !world.disturbed.has(key)) {
+    if (op.conflictAt !== undefined && !touches(world.disturbed, key)) {
       world.violations.push(`${describeOp(op)} parked a conflict, but nobody else changed ${key}`);
     }
   }
 };
 
-const checkStep = (world: World, snapshot: Snapshot) => {
-  checkOwned(world, snapshot);
-  checkShown(world, snapshot);
-  checkParks(world, snapshot);
+/** The sequence is judged by what is recorded of Google only (see FakeGoogle.unverified). */
+const checkRecorded = (world: World) => {
+  for (const request of world.google.unverified.splice(0)) {
+    world.violations.push(
+      `the sequence left what is recorded of Google: ${request} (a step to leave out, not a bug)`,
+    );
+  }
 };
 
-/** 2: drained and pulled, the client shows what Google has. */
-const checkConverged = (world: World, snapshot: Snapshot) => {
+const checkStep = (world: World, snapshot: Snapshot) => {
+  checkOwned(world, snapshot);
+  checkShown(world, snapshot, viewsOf(world.google, snapshot.events));
+  checkParks(world, snapshot);
+  checkRecorded(world);
+};
+
+/** 2: drained and pulled, the client shows what Google has, each series' occurrences included. */
+const checkConverged = (world: World, snapshot: Snapshot, views: Views) => {
   for (const op of snapshot.ops) {
     world.violations.push(
       `never drained: ${describeOp(op)}${op.lastError ? ` — ${op.lastError}` : ''}`,
     );
   }
-  const compare = (what: string, mine: Map<string, Fields>, theirs: Map<string, Fields>) => {
+  const compare = (
+    what: string,
+    mine: ReadonlyMap<string, Fields>,
+    theirs: ReadonlyMap<string, Fields>,
+  ) => {
     const keyOf = (id: string) => `${what}|${id}`;
     for (const [id, fields] of theirs) {
       const shown = mine.get(id);
@@ -880,19 +1289,7 @@ const checkConverged = (world: World, snapshot: Snapshot) => {
     }
   };
   for (const calendarId of CALENDARS) {
-    const theirs = new Map<string, Fields>();
-    for (const event of world.google.eventsOf(calendarId)) {
-      const fields = gcalEventFields(calendarId, event);
-      if (fields !== undefined) {
-        theirs.set(event.id, fields);
-      }
-    }
-    const mine = new Map(
-      snapshot.events
-        .filter((row) => row.calendar_id === calendarId && row.status !== 'cancelled')
-        .map((row) => [row.id, eventRowFields(row)] as const),
-    );
-    compare(calendarId, mine, theirs);
+    compare(calendarId, views.client(calendarId), views.google(calendarId));
   }
   for (const listId of LISTS) {
     const theirs = new Map<string, Fields>();
@@ -916,21 +1313,42 @@ const checkConverged = (world: World, snapshot: Snapshot) => {
   }
 };
 
-/** 2 (intent): what the user did last to an item nobody else touched is what Google has (but see World.heldTold). */
-const checkIntents = (world: World) => {
+/** Whether another device touched the series this one was split from, or that one's own source. */
+const sourceDisturbed = (world: World, key: string): boolean => {
+  const seen = new Set<string>();
+  let id = world.splitSources.get((seriesKeyOf(key) ?? key).slice('event:'.length));
+  while (id !== undefined && !seen.has(id)) {
+    if (world.disturbed.has(eventKey(id))) {
+      return true;
+    }
+    seen.add(id);
+    id = world.splitSources.get(id);
+  }
+  return false;
+};
+
+/**
+ * 2 (intent): what the user did last to an item nobody else touched is
+ * what Google has (but see World.heldTold). An occurrence is there when
+ * Google draws it, by an exception or by the rule.
+ */
+const checkIntents = (world: World, views: Views) => {
   for (const [key, intent] of world.intents) {
     const [kind = '', id = ''] = key.split(':');
-    const places =
+    // A split-off series lands or goes with its source's cut, which
+    // another device's change of that series may have undone.
+    if (kind === 'event' && sourceDisturbed(world, key)) {
+      continue;
+    }
+    const places: ReadonlyArray<{
+      readonly container: string;
+      readonly fields: Fields | undefined;
+    }> =
       kind === 'event'
-        ? CALENDARS.flatMap((calendarId) =>
-            world.google
-              .eventsOf(calendarId)
-              .filter((event) => event.id === id)
-              .map((event) => ({
-                container: calendarId,
-                fields: gcalEventFields(calendarId, event),
-              })),
-          )
+        ? CALENDARS.flatMap((calendarId) => {
+            const fields = views.google(calendarId).get(id);
+            return fields === undefined ? [] : [{ container: calendarId, fields }];
+          })
         : LISTS.flatMap((listId) =>
             world.google
               .tasksIn(listId)
@@ -981,25 +1399,34 @@ interface Action {
   readonly run: Effect.Effect<void, never, Services>;
 }
 
-/** Runs a user action; a refusal the app shows the user is no failure, a database error is. */
-const attempt = <A, E extends { readonly _tag: string }>(
+/**
+ * Runs a user action, then `onDone` with what it returned; a refusal the
+ * app shows the user is no failure, a database error is.
+ */
+const attemptThen = <A, E extends { readonly _tag: string }>(
   world: World,
   effect: Effect.Effect<A, E, Services>,
-  onDone: (value: A) => void,
+  onDone: (value: A) => Effect.Effect<void, never, Services>,
 ): Effect.Effect<void, never, Services> =>
-  Effect.flatMap(Effect.result(effect), (result) =>
-    Effect.sync(() => {
-      if (Result.isSuccess(result)) {
-        onDone(result.success);
-        return;
-      }
+  Effect.flatMap(Effect.result(effect), (result) => {
+    if (Result.isSuccess(result)) {
+      return onDone(result.success);
+    }
+    return Effect.sync(() => {
       const tag = result.failure._tag;
       world.trace.push(`      refused: ${tag}`);
       if (tag === 'SqlError') {
         world.violations.push(`the database refused a user action: ${failureText(result.failure)}`);
       }
-    }),
-  );
+    });
+  });
+
+const attempt = <A, E extends { readonly _tag: string }>(
+  world: World,
+  effect: Effect.Effect<A, E, Services>,
+  onDone: (value: A) => void,
+): Effect.Effect<void, never, Services> =>
+  attemptThen(world, effect, (value) => Effect.sync(() => onDone(value)));
 
 /** The items whose queued ops a step removed or added: a discard's, a keep-theirs'. */
 const forgetChanged = (world: World, before: ReadonlyArray<PendingOp>) =>
@@ -1010,11 +1437,139 @@ const forgetChanged = (world: World, before: ReadonlyArray<PendingOp>) =>
       ...before.filter((entry) => !ids.has(entry.id)),
       ...after.ops.filter((entry) => !was.has(entry.id)),
     ]) {
-      world.intents.delete(EVENT_KINDS.has(op.kind) ? eventKey(op.eventId) : taskKey(op.eventId));
+      if (!EVENT_KINDS.has(op.kind)) {
+        world.intents.delete(taskKey(op.eventId));
+        continue;
+      }
+      // A series' change undone takes back what it did to its occurrences
+      // (text it carried, exceptions it dropped), and the series a
+      // this-and-following edit split off goes or stays with its cut.
+      forgetSeries(world, op.eventId);
+      for (const [split, source] of world.splitSources) {
+        if (source === op.eventId) {
+          forgetSeries(world, split);
+        }
+      }
     }
   });
 
 const isTemp = (id: string): boolean => id.startsWith('local-');
+
+/** One occurrence of a series, as updateRecurring and deleteRecurring name it. */
+const occurrenceAt = (entry: ClientSeries, originalStartUtc: number) => ({
+  accountId: ACCOUNT_ID,
+  calendarId: entry.master.calendar_id,
+  masterId: entry.master.id,
+  originalStartUtc,
+});
+
+/** The occurrences after a series' first: at the first, "this and following" is an edit of all events. */
+const afterFirst = (entry: ClientSeries): ReadonlyArray<Occurrence> =>
+  entry.occurrences.filter((occurrence) => occurrence.slot > entry.master.start_utc);
+
+/** An event time two hours on, as a PATCH sends it. */
+const twoHoursLater = (time: GcalEvent['start']) => ({
+  dateTime: iso(Date.parse(time?.dateTime ?? '') + 2 * HOUR),
+});
+
+/** The rules a step gives a series; `lines: null` is "does not repeat". */
+const RULES: ReadonlyArray<{
+  readonly label: string;
+  readonly lines: ReadonlyArray<string> | null;
+}> = [
+  { label: 'daily, eight times', lines: ['RRULE:FREQ=DAILY;COUNT=8'] },
+  { label: 'every other day, four times', lines: ['RRULE:FREQ=DAILY;INTERVAL=2;COUNT=4'] },
+  { label: 'does not repeat', lines: null },
+];
+
+/** Google's copy of a series wherever it is, as the expansion reads it, with its exceptions. */
+const googleSeries = (world: World, masterId: string) =>
+  CALENDARS.flatMap((calendarId) => {
+    const event = world.google.eventOf(calendarId, masterId);
+    const record =
+      event === undefined || event.status === 'cancelled'
+        ? null
+        : mapGcalEvent(event, {
+            accountId: ACCOUNT_ID,
+            calendarId,
+            defaultTimeZone: 'UTC',
+            syncedAt: 0,
+          });
+    return record === null
+      ? []
+      : [
+          {
+            calendarId,
+            exceptions: world.google.exceptionsOf(calendarId, masterId),
+            master: recurrenceMasterOf(record),
+            startUtc: record.startUtc,
+          },
+        ];
+  });
+
+/**
+ * Whether the rule would draw a slot again at which Google's own rule
+ * dropped an exception: Google then shows a plain occurrence there, and
+ * what its list reports for it is not recorded.
+ */
+const redrawsDropped = (
+  world: World,
+  master: EventRow,
+  lines: ReadonlyArray<string> | null,
+): boolean =>
+  lines !== null &&
+  googleSeries(world, master.id).some((theirs) =>
+    theirs.exceptions.some((exception) => {
+      const slot = slotOfId(exception.id);
+      return (
+        slot !== undefined &&
+        exception.status === 'cancelled' &&
+        !drawsAt(theirs.master, slot) &&
+        drawsAt(ruleMaster(master, lines), slot)
+      );
+    }),
+  );
+
+/**
+ * Whether Google or the client holds an exception of the series, or a
+ * queued op would make one: what a series' new times do to its exceptions
+ * is not recorded, so such a series is not retimed.
+ */
+const hasExceptions = (world: World, snapshot: Snapshot, series: ClientSeries): boolean =>
+  series.overrides.length > 0 ||
+  snapshot.ops.some((op) => isOccurrenceOf(op.eventId, series.master.id)) ||
+  googleSeries(world, series.master.id).some((theirs) => theirs.exceptions.length > 0);
+
+/**
+ * Whether one of the series' exception rows still has the etag it had
+ * when the series moved, and Google's copy another: the move's answer
+ * names the master's new etag only, and whether Google gives the
+ * exceptions new ones (the fake does) is not recorded. Until a pull
+ * brings their copies, nothing that sends such an etag is done to the
+ * series.
+ */
+const movedSincePulled = (world: World, series: ClientSeries): boolean =>
+  series.overrides.some(
+    (row) =>
+      row.etag !== null &&
+      world.etagsAtMove.get(row.id) === row.etag &&
+      world.google.eventOf(row.calendar_id, row.id)?.etag !== row.etag,
+  );
+
+/** Whether Google holds the occurrence cancelled: what a PATCH of it does is not recorded. */
+const cancelledOnGoogle = (world: World, occurrenceId: string): boolean =>
+  CALENDARS.some(
+    (calendarId) => world.google.eventOf(calendarId, occurrenceId)?.status === 'cancelled',
+  );
+
+/** Whether a queued op of the series carries other times than Google has for it. */
+const retiming = (world: World, snapshot: Snapshot, masterId: string): boolean =>
+  googleSeries(world, masterId).some((theirs) =>
+    snapshot.ops.some(
+      (op) =>
+        op.eventId === masterId && op.payload != null && op.payload.startUtc !== theirs.startUtc,
+    ),
+  );
 
 /** The one of two calendars (or lists) that is not `current`. */
 const otherOf = <A extends string>(all: ReadonlyArray<A>, current: string): A =>
@@ -1026,8 +1581,76 @@ const userActions = (
   mutations: EventMutationsShape,
 ): Record<string, () => Action | undefined> => {
   const { random, step } = world;
-  const liveEvents = snapshot.events.filter((row) => row.status !== 'cancelled');
+  // A series' rows take their own steps: the app refuses a plain edit or
+  // delete of one, and a move takes the whole series.
+  const singles = snapshot.events.filter(isSingle);
+  const allSeries = clientSeries(snapshot.events);
+  const movable = [...singles, ...allSeries.map((entry) => entry.master)];
+  // What a step does to a series or an occurrence may send an exception's
+  // etag (see movedSincePulled).
+  const series = allSeries.filter((entry) => !movedSincePulled(world, entry));
   return {
+    changeRule: () => {
+      const entry = pick(random, series);
+      if (!entry) {
+        return undefined;
+      }
+      const { master } = entry;
+      const current = recurrenceOf(master).join('\n');
+      const rule = pick(
+        random,
+        RULES.filter(
+          (candidate) =>
+            (candidate.lines ?? []).join('\n') !== current &&
+            !redrawsDropped(world, master, candidate.lines),
+        ),
+      );
+      if (!rule) {
+        return undefined;
+      }
+      return {
+        label: `user changes the rule of ${master.id} (${master.calendar_id}): ${rule.label}`,
+        run: attempt(
+          world,
+          mutations.updateRecurring({
+            ...occurrenceAt(entry, entry.occurrences[0]?.slot ?? master.start_utc),
+            changes: { recurrence: rule.lines },
+            scope: 'series',
+          }),
+          () => {
+            setIntent(world, eventKey(master.id), {
+              fields: { repeat: (rule.lines ?? []).join('\n') },
+            });
+            // A rule that draws past a cut again undoes it, and the app
+            // then takes the series split off there back.
+            for (const [split, source] of world.splitSources) {
+              if (source === master.id) {
+                forgetSeries(world, split);
+              }
+            }
+            // An exception the new rule still draws stays as it is, a
+            // cancelled one cancelled; the others go with their slots.
+            const drawn = (id: string) => {
+              const slot = slotOfId(id);
+              return (
+                rule.lines !== null &&
+                slot !== undefined &&
+                drawsAt(ruleMaster(master, rule.lines), slot)
+              );
+            };
+            for (const [key, intent] of world.intents) {
+              const id = key.slice('event:'.length);
+              const stays =
+                intent.kind === 'set' ||
+                entry.overrides.some((row) => row.id === id && row.status === 'cancelled');
+              if (seriesKeyOf(key) === eventKey(master.id) && !(stays && drawn(id))) {
+                world.intents.delete(key);
+              }
+            }
+          },
+        ),
+      };
+    },
     completeTask: () => {
       const row = pick(random, snapshot.tasks);
       if (!row) {
@@ -1079,6 +1702,44 @@ const userActions = (
         ),
       };
     },
+    createSeries: () => {
+      // A few at a time: the sequence is about what happens to them.
+      if (allSeries.length >= 3) {
+        return undefined;
+      }
+      const calendarId = pick(random, CALENDARS)!;
+      const startUtc = START + (3 + (step % 6)) * DAY + 3 * HOUR;
+      const title = `Series ${step}`;
+      const recurrence = ['RRULE:FREQ=DAILY;COUNT=5'];
+      return {
+        label: `user creates the series "${title}" in ${calendarId} (daily, five times)`,
+        run: attempt(
+          world,
+          mutations.createEvent({
+            accountId: ACCOUNT_ID,
+            calendarId,
+            endUtc: startUtc + HOUR,
+            isAllDay: false,
+            recurrence,
+            startTimeZone: 'UTC',
+            startUtc,
+            title,
+          }),
+          (record) => {
+            world.trace.push(`      → ${record.id}`);
+            setIntent(world, eventKey(record.id), {
+              container: calendarId,
+              fields: {
+                end: String(startUtc + HOUR),
+                repeat: recurrence.join('\n'),
+                start: String(startUtc),
+                title,
+              },
+            });
+          },
+        ),
+      };
+    },
     createTask: () => {
       const taskListId = pick(random, LISTS)!;
       const title = `Task ${step}`;
@@ -1097,7 +1758,7 @@ const userActions = (
       };
     },
     deleteEvent: () => {
-      const row = pick(random, liveEvents);
+      const row = pick(random, singles);
       if (!row) {
         return undefined;
       }
@@ -1111,6 +1772,42 @@ const userActions = (
             eventId: row.id,
           }),
           () => world.intents.set(eventKey(row.id), { kind: 'deleted' }),
+        ),
+      };
+    },
+    deleteOccurrence: () => {
+      const entry = pick(
+        random,
+        series.filter((candidate) => candidate.occurrences.length > 0),
+      );
+      const occurrence = entry && pick(random, entry.occurrences);
+      if (!entry || !occurrence) {
+        return undefined;
+      }
+      return {
+        label: `user deletes the occurrence ${occurrence.id} (${entry.master.calendar_id})`,
+        run: attempt(
+          world,
+          mutations.deleteRecurring({ ...occurrenceAt(entry, occurrence.slot), scope: 'instance' }),
+          () => world.intents.set(eventKey(occurrence.id), { kind: 'deleted' }),
+        ),
+      };
+    },
+    deleteSeries: () => {
+      const entry = pick(random, series);
+      if (!entry) {
+        return undefined;
+      }
+      const { master } = entry;
+      return {
+        label: `user deletes the series ${master.id} (${master.calendar_id})`,
+        run: attempt(
+          world,
+          mutations.deleteRecurring({ ...occurrenceAt(entry, master.start_utc), scope: 'series' }),
+          () => {
+            forgetSeries(world, master.id);
+            world.intents.set(eventKey(master.id), { kind: 'deleted' });
+          },
         ),
       };
     },
@@ -1151,7 +1848,7 @@ const userActions = (
       };
     },
     editEvent: () => {
-      const row = pick(random, liveEvents);
+      const row = pick(random, singles);
       if (!row) {
         return undefined;
       }
@@ -1175,6 +1872,147 @@ const userActions = (
             eventId: row.id,
           }),
           () => setIntent(world, eventKey(row.id), { fields }),
+        ),
+      };
+    },
+    editFollowing: () => {
+      const entry = pick(
+        random,
+        series.filter((candidate) => afterFirst(candidate).length > 0),
+      );
+      const occurrence = entry && pick(random, afterFirst(entry));
+      if (!entry || !occurrence) {
+        return undefined;
+      }
+      const { master } = entry;
+      const title = `following ${step}`;
+      return {
+        label: `user renames ${master.id} (${master.calendar_id}) "${title}" from ${occurrence.id} on`,
+        run: attemptThen(
+          world,
+          mutations.updateRecurring({
+            ...occurrenceAt(entry, occurrence.slot),
+            changes: { title },
+            scope: 'following',
+          }),
+          () =>
+            Effect.map(readSnapshot, (after) => {
+              // From there on the old series draws nothing, whatever it
+              // drew or the user had made of an occurrence; the app
+              // writes its new end into the rule.
+              for (const key of [
+                ...entry.occurrences.map((drawn) => eventKey(drawn.id)),
+                ...world.intents.keys(),
+              ]) {
+                const slot = slotOfId(key.slice('event:'.length));
+                if (
+                  seriesKeyOf(key) === eventKey(master.id) &&
+                  slot !== undefined &&
+                  slot >= occurrence.slot
+                ) {
+                  world.intents.set(key, { kind: 'deleted' });
+                }
+              }
+              dropIntentField(world, eventKey(master.id), 'repeat');
+              // The new series starts at the occurrence's slot.
+              const known = new Set(snapshot.events.map((row) => row.id));
+              const split = after.events.find(
+                (row) =>
+                  !known.has(row.id) &&
+                  row.calendar_id === master.calendar_id &&
+                  row.recurring_event_id === null,
+              );
+              if (split) {
+                world.trace.push(`      → ${split.id}`);
+                world.splitSources.set(split.id, master.id);
+                setIntent(world, eventKey(split.id), {
+                  container: master.calendar_id,
+                  fields: {
+                    end: String(occurrence.slot + master.end_utc - master.start_utc),
+                    start: String(occurrence.slot),
+                    title,
+                  },
+                });
+              }
+            }),
+        ),
+      };
+    },
+    editOccurrence: () => {
+      const entry = pick(
+        random,
+        series.filter((candidate) => candidate.occurrences.length > 0),
+      );
+      const occurrence = entry && pick(random, entry.occurrences);
+      if (!entry || !occurrence || cancelledOnGoogle(world, occurrence.id)) {
+        return undefined;
+      }
+      const field = pick(random, ['title', 'location', 'description', 'time'] as const)!;
+      const text = `${field} ${step}`;
+      const [changes, fields] =
+        field === 'time'
+          ? [
+              { endUtc: occurrence.end + HOUR, startUtc: occurrence.start + HOUR },
+              { end: String(occurrence.end + HOUR), start: String(occurrence.start + HOUR) },
+            ]
+          : [{ [field]: text }, { [field]: text }];
+      return {
+        label: `user edits the occurrence ${occurrence.id} (${entry.master.calendar_id}): ${showFields(fields)}`,
+        run: attempt(
+          world,
+          mutations.updateRecurring({
+            ...occurrenceAt(entry, occurrence.slot),
+            changes,
+            scope: 'instance',
+          }),
+          () => setIntent(world, eventKey(occurrence.id), { fields }),
+        ),
+      };
+    },
+    editSeries: () => {
+      const entry = pick(random, series);
+      if (!entry) {
+        return undefined;
+      }
+      const { master } = entry;
+      const field = pick(
+        random,
+        hasExceptions(world, snapshot, entry)
+          ? (['title', 'location', 'description'] as const)
+          : (['title', 'location', 'description', 'time'] as const),
+      )!;
+      const text = `${field} ${step}`;
+      const [changes, fields] =
+        field === 'time'
+          ? [
+              { endUtc: master.end_utc + HOUR, startUtc: master.start_utc + HOUR },
+              { end: String(master.end_utc + HOUR), start: String(master.start_utc + HOUR) },
+            ]
+          : [{ [field]: text }, { [field]: text }];
+      return {
+        label: `user edits all events of ${master.id} (${master.calendar_id}): ${showFields(fields)}`,
+        run: attempt(
+          world,
+          mutations.updateRecurring({
+            ...occurrenceAt(entry, master.start_utc),
+            changes,
+            scope: 'series',
+          }),
+          () => {
+            setIntent(world, eventKey(master.id), { fields });
+            if (field === 'time') {
+              // The app moves a rule's end with its occurrences.
+              dropIntentField(world, eventKey(master.id), 'repeat');
+              return;
+            }
+            // Google copies a series' changed text onto every exception:
+            // the later word on that field, the user's too.
+            for (const [key, intent] of world.intents) {
+              if (seriesKeyOf(key) === eventKey(master.id) && intent.kind === 'set') {
+                world.intents.set(key, { ...intent, fields: { ...intent.fields, ...fields } });
+              }
+            }
+          },
         ),
       };
     },
@@ -1207,7 +2045,7 @@ const userActions = (
       };
     },
     moveEvent: () => {
-      const row = pick(random, liveEvents);
+      const row = pick(random, movable);
       if (!row) {
         return undefined;
       }
@@ -1222,7 +2060,14 @@ const userActions = (
             eventId: row.id,
             target: { accountId: ACCOUNT_ID, calendarId: target },
           }),
-          () => setIntent(world, eventKey(row.id), { container: target }),
+          () => {
+            setIntent(world, eventKey(row.id), { container: target });
+            for (const override of snapshot.events) {
+              if (override.recurring_event_id === row.id && override.etag !== null) {
+                world.etagsAtMove.set(override.id, override.etag);
+              }
+            }
+          },
         ),
       };
     },
@@ -1299,14 +2144,38 @@ const tick = (world: World, ms: number) =>
 
 const worldActions = (
   world: World,
+  snapshot: Snapshot,
   mutations: EventMutationsShape,
   engine: SyncEngineShape,
 ): Record<string, () => Action | undefined> => {
   const { google, random, step } = world;
-  const liveEvents = () =>
+  const eventsOnGoogle = () =>
     CALENDARS.flatMap((calendarId) =>
       google.eventsOf(calendarId).map((event) => ({ calendarId, event })),
     );
+  // Single events take a raw write; a series and its occurrences take
+  // Google's own semantics (the fake's server-side writes).
+  const liveEvents = () =>
+    eventsOnGoogle().filter(
+      ({ event }) => event.recurringEventId === undefined && !event.recurrence?.length,
+    );
+  const liveSeries = () =>
+    eventsOnGoogle().filter(
+      ({ event }) => event.recurringEventId === undefined && (event.recurrence?.length ?? 0) > 0,
+    );
+  /** A series another device may change an occurrence of, and one of the occurrences Google draws. */
+  const anOccurrence = () => {
+    // An exception made under a retime of ours still queued would meet
+    // it on Google: not recorded (see hasExceptions).
+    const series = pick(
+      random,
+      liveSeries().filter(({ event }) => !retiming(world, snapshot, event.id)),
+    );
+    const instance =
+      series &&
+      pick(random, google.instancesOf(series.calendarId, series.event.id, WINDOW_FROM, WINDOW_TO));
+    return series && instance ? { calendarId: series.calendarId, instance } : undefined;
+  };
   const liveTasks = () =>
     LISTS.flatMap((listId) => google.tasksIn(listId).map((task) => ({ listId, task })));
   const drain = (fault: FakeFault | undefined): Action => ({
@@ -1356,6 +2225,40 @@ const worldActions = (
         }),
       };
     },
+    otherDeleteOccurrence: () => {
+      const target = anOccurrence();
+      // A PATCH of ours on its way without an etag would meet the
+      // cancelled occurrence: not recorded (see cancelledOnGoogle).
+      if (
+        !target ||
+        snapshot.ops.some(
+          (op) =>
+            op.eventId === target.instance.id && op.kind === 'update' && op.baseEtag === undefined,
+        )
+      ) {
+        return undefined;
+      }
+      return {
+        label: `another device deletes the occurrence ${target.instance.id} (${target.calendarId})`,
+        run: Effect.sync(() => {
+          google.deleteEventServerSide(target.calendarId, target.instance.id);
+          disturb(world, eventKey(target.instance.id), true);
+        }),
+      };
+    },
+    otherDeleteSeries: () => {
+      const target = pick(random, liveSeries());
+      if (!target) {
+        return undefined;
+      }
+      return {
+        label: `another device deletes the series ${target.event.id} (${target.calendarId})`,
+        run: Effect.sync(() => {
+          google.deleteEventServerSide(target.calendarId, target.event.id);
+          disturbSeries(world, target.event.id, true);
+        }),
+      };
+    },
     otherDeleteTask: () => {
       const target = pick(random, liveTasks());
       if (!target) {
@@ -1387,6 +2290,42 @@ const worldActions = (
         run: Effect.sync(() => {
           google.putEvent(target.calendarId, { ...target.event, summary });
           disturb(world, eventKey(target.event.id), false);
+        }),
+      };
+    },
+    otherEditOccurrence: () => {
+      const target = anOccurrence();
+      if (!target) {
+        return undefined;
+      }
+      const { instance } = target;
+      const moves = random() < 0.4;
+      const summary = `elsewhere ${step}`;
+      return {
+        label: `another device ${moves ? 'moves' : 'renames'} the occurrence ${instance.id} (${target.calendarId})${moves ? ' two hours later' : ` "${summary}"`}`,
+        run: Effect.sync(() => {
+          google.patchEventServerSide(
+            target.calendarId,
+            instance.id,
+            moves
+              ? { end: twoHoursLater(instance.end), start: twoHoursLater(instance.start) }
+              : { summary },
+          );
+          disturb(world, eventKey(instance.id), false);
+        }),
+      };
+    },
+    otherEditSeries: () => {
+      const target = pick(random, liveSeries());
+      if (!target) {
+        return undefined;
+      }
+      const summary = `elsewhere ${step}`;
+      return {
+        label: `another device renames the series ${target.event.id} (${target.calendarId}) "${summary}"`,
+        run: Effect.sync(() => {
+          google.patchEventServerSide(target.calendarId, target.event.id, { summary });
+          disturbSeries(world, target.event.id, false);
         }),
       };
     },
@@ -1431,6 +2370,13 @@ const WEIGHTS: ReadonlyArray<readonly [string, number]> = [
   ['createEvent', 4],
   ['deleteEvent', 5],
   ['moveEvent', 6],
+  ['createSeries', 3],
+  ['editOccurrence', 8],
+  ['deleteOccurrence', 4],
+  ['editSeries', 6],
+  ['changeRule', 3],
+  ['editFollowing', 3],
+  ['deleteSeries', 2],
   ['editTask', 8],
   ['completeTask', 4],
   ['createTask', 4],
@@ -1447,6 +2393,10 @@ const WEIGHTS: ReadonlyArray<readonly [string, number]> = [
   ['network', 4],
   ['otherEditEvent', 3],
   ['otherDeleteEvent', 1],
+  ['otherEditSeries', 2],
+  ['otherEditOccurrence', 2],
+  ['otherDeleteOccurrence', 1],
+  ['otherDeleteSeries', 1],
   ['otherEditTask', 3],
   ['otherDeleteTask', 1],
   ['expireTokens', 1],
@@ -1531,7 +2481,7 @@ const runSequence = (seed: number) => {
       yield* tick(world, pick(world.random, [0, 0, 1000, 5000, 20_000])!);
       const action = chooseAction(world, {
         ...userActions(world, snapshot, mutations),
-        ...worldActions(world, mutations, engine),
+        ...worldActions(world, snapshot, mutations, engine),
       });
       world.trace.push(`#${step} ${action.label}`);
       yield* action.run;
@@ -1562,6 +2512,9 @@ const runSequence = (seed: number) => {
       yield* tick(world, 31 * MINUTE);
       yield* engine.syncAll();
       snapshot = yield* settleAndCheck;
+      if (VERBOSE) {
+        world.trace.push(...world.stepLog.map((line) => `      ${line}`));
+      }
     }
     for (let round = 0; round < 2; round += 1) {
       world.stepLog = [];
@@ -1569,8 +2522,9 @@ const runSequence = (seed: number) => {
       yield* engine.syncAll();
       snapshot = yield* settleAndCheck;
     }
-    checkConverged(world, snapshot);
-    checkIntents(world);
+    const views = viewsOf(world.google, snapshot.events);
+    checkConverged(world, snapshot, views);
+    checkIntents(world, views);
     if (world.violations.length > 0) {
       return yield* Effect.die(report(seed, world, snapshot));
     }

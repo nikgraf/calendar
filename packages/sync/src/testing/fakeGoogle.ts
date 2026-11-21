@@ -44,7 +44,9 @@ import { HttpClient, HttpClientResponse, UrlParams, type HttpClientRequest } fro
  * a list reports all of it. Which slots a rule draws is core's own
  * expansion, the one the app draws with. Where Google's answer is not
  * recorded the fake does not invent one: it answers as it did before it
- * knew series and says so in `unverified`.
+ * knew series and says so in `unverified` — and in `goneWithExceptions`
+ * for the one such answer a list gives (what it reports for the
+ * exceptions of a series that left the calendar).
  */
 
 interface StoredEvent {
@@ -308,6 +310,18 @@ export class FakeGoogle {
    * by the fake checks that this stays empty.
    */
   readonly unverified: Array<string> = [];
+  /**
+   * Series a list has named gone, deleted or moved away, whose live
+   * exceptions went with them, as `calendarId|masterId`. What a list
+   * reports for such exceptions is not recorded: the page named the
+   * series alone. A test that judges the app by the fake does not judge
+   * what a client that still held them shows of them afterwards.
+   */
+  readonly goneWithExceptions: Array<string> = [];
+  /** Per calendar, the series that left with live exceptions and no list named gone yet. */
+  private readonly tookExceptions = new Map<string, Set<string>>();
+  /** Exceptions (`calendarId|id`) that came with their series' move and were not written since. */
+  private readonly movedAlong = new Set<string>();
   private readonly organizer: GcalEvent['organizer'];
   private lastReply: { readonly json: unknown; readonly status: number } | undefined;
 
@@ -328,6 +342,10 @@ export class FakeGoogle {
   // ---- server-side mutations the tests drive ----
 
   putEvent(calendarId: string, event: GcalEvent): void {
+    if (event.status !== 'cancelled') {
+      this.tookExceptions.get(calendarId)?.delete(event.id);
+    }
+    this.movedAlong.delete(`${calendarId}|${event.id}`);
     const version = this.bump(calendarId);
     this.storeOf(calendarId).set(event.id, {
       event: { ...event, etag: etagOf(calendarId, version) },
@@ -744,7 +762,17 @@ export class FakeGoogle {
       items = [...store.values()]
         .filter((entry) => entry.version > since)
         .map((entry) => entry.event);
+      // What a list reports for the exceptions that went with a series
+      // is not recorded: it names the series alone, and says so.
+      const left = this.tookExceptions.get(calendarId);
+      for (const item of items) {
+        if (item.status === 'cancelled' && left?.delete(item.id)) {
+          this.goneWithExceptions.push(`${calendarId}|${item.id}`);
+        }
+      }
     } else {
+      // A full list names neither: a client drops what it does not name.
+      this.tookExceptions.delete(calendarId);
       // A full list: no timeMin is honoured because the engine never
       // sends one — every event ever, like Google without a window. A
       // series' cancelled occurrences come with it (the tombstones a full
@@ -888,10 +916,7 @@ export class FakeGoogle {
     }
     if (method === 'DELETE') {
       this.cancelEvent(calendarId, eventId);
-      // A series takes its exceptions with it.
-      for (const exception of this.exceptionsOf(calendarId, eventId)) {
-        store.delete(exception.id);
-      }
+      this.takeExceptions(calendarId, eventId);
       return { status: 204 };
     }
     return { status: 405 };
@@ -957,6 +982,11 @@ export class FakeGoogle {
       return { json: current, status: 200 };
     }
     if (ifMatch !== undefined && ifMatch !== current.etag) {
+      // events.move gives the event a new etag; whether its exceptions get
+      // one too is not recorded. Here they do, as every moved event.
+      if (this.movedAlong.has(`${calendarId}|${eventId}`)) {
+        this.unverified.push(`${method} of ${eventId} on its etag from before its series moved`);
+      }
       return { json: { error: { message: 'Precondition Failed' } }, status: 412 };
     }
     if (ifMatch !== undefined && exception === undefined) {
@@ -1026,14 +1056,17 @@ export class FakeGoogle {
         (field) => [field, after[field]],
       ),
     );
-    // Where the exceptions of a series go when its times change is not
-    // recorded: they stay as they are.
+    // No rule left cancels them all. Where the exceptions of a series
+    // that keeps one go when its times change is not recorded: they stay
+    // as they are.
+    const cleared = !after.recurrence?.length;
     const was = this.recordOf(calendarId, before);
     const now = this.recordOf(calendarId, after);
     const retimed =
-      was?.startUtc !== now?.startUtc ||
-      was?.endUtc !== now?.endUtc ||
-      was?.startTimeZone !== now?.startTimeZone;
+      !cleared &&
+      (was?.startUtc !== now?.startUtc ||
+        was?.endUtc !== now?.endUtc ||
+        was?.startTimeZone !== now?.startTimeZone);
     if (retimed) {
       this.unverified.push(`events.patch of ${after.id}: new times for a series with exceptions`);
     }
@@ -1046,7 +1079,8 @@ export class FakeGoogle {
         updated,
       };
       const slot = timeMs(exception.originalStartTime);
-      const drawn = retimed || (slot !== undefined && this.draws(calendarId, after, slot));
+      const drawn =
+        !cleared && (retimed || (slot !== undefined && this.draws(calendarId, after, slot)));
       const wasDrawn = retimed || (slot !== undefined && this.draws(calendarId, before, slot));
       if (!drawn) {
         this.putEvent(calendarId, tombstone);
@@ -1062,6 +1096,24 @@ export class FakeGoogle {
         this.putEvent(calendarId, { ...exception, ...carried, updated });
       }
     }
+  }
+
+  /**
+   * A series leaves the calendar, deleted or moved away, and its
+   * exceptions with it: the live ones are gone from here, one cancelled
+   * before stays the tombstone it was. Returns them as they were.
+   */
+  private takeExceptions(calendarId: string, masterId: string): Array<GcalEvent> {
+    const exceptions = this.exceptionsOf(calendarId, masterId);
+    const live = exceptions.filter((exception) => exception.status !== 'cancelled');
+    for (const exception of live) {
+      this.storeOf(calendarId).delete(exception.id);
+    }
+    if (live.length > 0) {
+      const left = this.tookExceptions.get(calendarId) ?? new Set();
+      this.tookExceptions.set(calendarId, left.add(masterId));
+    }
+    return exceptions;
   }
 
   /** The series by that id: a live event with a rule. */
@@ -1127,9 +1179,9 @@ export class FakeGoogle {
     this.cancelEvent(calendarId, eventId);
     this.putEvent(destination, existing.event);
     // A series' exceptions go with it, cancelled ones too.
-    for (const exception of this.exceptionsOf(calendarId, eventId)) {
-      this.storeOf(calendarId).delete(exception.id);
+    for (const exception of this.takeExceptions(calendarId, eventId)) {
       this.putEvent(destination, exception);
+      this.movedAlong.add(`${destination}|${exception.id}`);
     }
     return reply(200, this.eventOf(destination, eventId));
   }
