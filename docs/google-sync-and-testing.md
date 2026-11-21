@@ -601,27 +601,47 @@ separate: it also covers tasks, moves, discards and other-device writes.
   conflict choices; drains that land, refuse (503) or lose the answer
   after the write landed; pulls, an expired token, time passing; another
   device's edits and deletes — then the network recovers, every conflict
-  is settled, the queue drains and a pull runs. After every step, with no
-  drain running: every pending row is owned by a queued op; a synced row
-  at Google's etag has Google's content, and what Google last told the
-  client about an item no op holds is what shows; no write meets a 404 or
-  another 4xx unless another device, or a lost answer of ours, removed the
-  item; no conflict parks on an item nobody else changed. At the end the
-  rows equal Google's, and what the user did last to an item nobody else
-  touched is what Google has. Kicked drains run whenever the test fiber
-  suspends (setImmediate order), ids come from a seeded
-  `crypto.getRandomValues`, so a seed replays exactly; a failure prints
-  the whole sequence and the requests of the failing step.
+  is settled, the queue drains and a pull runs. Repeating events are in:
+  a series created, one occurrence edited (its time, its text) or
+  deleted, all events edited (text; the time only of a series without
+  exceptions), another rule or none, "this and following", the series
+  deleted or moved, each of them discarded while queued, and another
+  device renaming or deleting a series, changing or cancelling an
+  occurrence. A series is judged by what it draws: every occurrence is an
+  item under Google's id for it, shown on the client by its exception row
+  or else by its master's rule, on Google by the fake's `instancesOf`.
+  The steps keep to what is recorded of Google (Events & recurrence
+  above): a series with exceptions is not retimed, no rule draws a slot
+  again that an earlier one dropped, nobody edits an occurrence Google
+  holds cancelled, and nothing sends an exception's etag from before its
+  series moved; a sequence that leaves that ground anyway fails as such
+  (the fake's `unverified`), and what a client shows of the exceptions of
+  a series a list reported gone is not judged (`goneWithExceptions`).
+  After every step, with no drain running: every pending row is owned by
+  a queued op; a synced row at Google's etag has Google's content, and
+  what Google last told the client about an item no op holds is what
+  shows; no write meets a 404 or another 4xx unless another device, or a
+  lost answer of ours, removed the item; no conflict parks on an item
+  nobody else changed. At the end the rows equal Google's, and what the
+  user did last to an item nobody else touched is what Google has. Kicked
+  drains run whenever the test fiber suspends (setImmediate order), ids
+  come from a seeded `crypto.getRandomValues`, so a seed replays exactly;
+  a failure prints the whole sequence and the requests of the failing
+  step.
   `QUEUE_SEQUENCE_SEED=<n>` runs one seed, `QUEUE_SEQUENCE_RUNS` and
-  `QUEUE_SEQUENCE_STEPS` widen the search (1,000 seeds take ~30 s),
-  `QUEUE_SEQUENCE_VERBOSE=1` prints every step's requests. A difference
-  where Google sent a newer state while an op held the row is the open
-  gap the skipped tests at its end show (docs/architecture.md → An op
-  remembers what it replaced): it is listed with the failure, not failed.
-  Seeds past the gate's that still fail are listed in `KNOWN_FAILING`,
-  skipped (`QUEUE_SEQUENCE_KNOWN=1` runs them); a change to the steps
-  reshuffles every sequence, so search again after one. A bug a sequence finds gets a scripted test of its own
-  beside them (`writesDown` holds every write at a 503).
+  `QUEUE_SEQUENCE_STEPS` widen the search (1,000 seeds take about a
+  minute), `QUEUE_SEQUENCE_VERBOSE=1` prints every step's requests. A
+  difference where Google sent a newer state while an op held the row is
+  the open gap the skipped tests at its end show (docs/architecture.md →
+  An op remembers what it replaced): it is listed with the failure, not
+  failed. Seeds past the gate's that still fail are listed in
+  `KNOWN_FAILING` with the gap each meets, skipped
+  (`QUEUE_SEQUENCE_KNOWN=1` runs them); a change to the steps reshuffles
+  every sequence, so search again after one. A bug a sequence finds gets
+  a scripted test of its own beside them (`writesDown` holds every write
+  at a 503), and a gap that stays open a skipped one ("open gaps the
+  sequences found", "… in series" for what the series steps found): it
+  shows the gap alone and goes into the gate once a change closes it.
 - AI pipelines never hit a real model: the seams take a fake
   `LanguageModel`/`SpeechToText`/`TextRecognizer` returning canned JSON
   (`packages/ai/src/*.test.ts`). The e2e suites use the shared fixture model
@@ -704,10 +724,54 @@ watermark with deleted task tombstones, server-assigned task ids, PATCH
 merge and null-delete of private properties. The fake pages event lists
 (`pageSize`, default 2,500; the sync token rides only on the last page)
 and reports a removed calendar as a `deleted` calendarList entry on
-incremental passes. It models **no recurrence**: no expansion, no
-exceptions, no new etag when a rule changes, so a series' behaviour comes
-only from the live suite (a rule change from 5 to 12 occurrences
-cancelled a moved occurrence on Google, which the fake could not show).
+incremental passes.
+
+It models **repeating events as Events & recurrence above records them**
+and as `live/recurring.live.ts` finds them on Google, and nothing past
+that. An exception is an event of its own under `<masterId>_<original
+start>`, with `recurringEventId` and `originalStartTime`. A PATCH of that
+id makes the exception or changes it, and a DELETE cancels the
+occurrence, with or without an exception stored: 410 once it is
+cancelled, 412 on a stale If-Match, 404 for a slot the series does not
+draw; `events.get` shows a cancelled one as `status: cancelled`. Such a
+write leaves the master's etag alone. Every PATCH of the master gives
+each exception a new etag and `updated`, copies a title, description or
+location it changed onto them (one sent with its old value leaves theirs
+alone) and, by the rule it leaves, keeps the exceptions it still draws
+as they were and cancels the others. A master's DELETE takes its
+exceptions, `events.move` takes them along (an instance id is refused),
+an incremental list sends each of these and a full one names a live
+series' cancelled occurrences. Which slots a rule draws is core's own
+expansion (`expandRecurringEvent`), the one the app draws with: the fake
+and the app cannot disagree about a rule, so what Google draws for one
+still comes from the live suite. `patchEventServerSide` and
+`deleteEventServerSide` are another device's writes with these semantics
+(`putEvent` and `cancelEvent` stay raw writes, for single events),
+`instancesOf` is `events.instances`, `exceptionsOf` a series' stored
+exceptions.
+
+Where Google's answer is **not recorded**, the fake makes none up: it
+answers as it did before it knew series and names the request in
+`unverified`, which a test that judges the app by the fake keeps empty.
+Each is a probe for the live suite to settle:
+
+- a PATCH of a cancelled occurrence (the fake: 404, as for a deleted event);
+- new times for a series that has exceptions (they stay as they are; the
+  app assumes an exception keeps its slot, see decisions.md);
+- a rule that draws a slot again which an earlier rule or cut dropped: a
+  plain occurrence, as verified, but what a list then reports for the
+  exception that was there is not (the fake: nothing);
+- a write on the etag an exception had before its series moved (the
+  move gives the event a new etag; here its exceptions get one too);
+- `events.update` of an occurrence, or of a series with exceptions;
+- what a list reports for the live exceptions of a series that left the
+  calendar, deleted or moved away. The fake names the series alone and
+  says so in `goneWithExceptions`. The app drops the rows of such
+  exceptions itself only where a delete of its own is involved
+  (`dropSeriesExceptions`); told by a list alone it keeps them, so if
+  Google does not send them as cancelled too, a series another device
+  deleted leaves its changed occurrences behind as events of their own.
+
 Its clock starts at its own `now` (2026-08-24): a `TestClock` left before
 it makes every pull's `updatedMin` 1970, which returns everything and
 hides a watermark bug, so set the clock past it
