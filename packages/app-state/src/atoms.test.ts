@@ -81,6 +81,7 @@ const makeStubClient = () => {
         calls.events += 1;
         return [] as ReadonlyArray<EventRecord>;
       }),
+    getNewEventSettings: () => Effect.succeed({ calendar: 'lastUsed' as const }),
     getOnboarding: () => Effect.succeed({ card: 'expanded' as const, lessons: {} }),
     getOverdueTasks: () => Effect.succeed([]),
     getTask: () => Effect.succeed(null),
@@ -150,6 +151,7 @@ const makeStubClient = () => {
       }),
     setEventNotificationSettings: () => Effect.succeed({ notificationsGranted: true }),
     setMirrorEnabled: () => fail('not stubbed'),
+    setNewEventSettings: () => Effect.void,
     setTaskListVisible: () => Effect.void,
     setTaskNotificationSettings: () => Effect.succeed({ notificationsGranted: true }),
     setTimeZoneSettings: () => Effect.void,

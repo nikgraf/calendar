@@ -45,12 +45,14 @@ import {
   readBirthdayReminderOverrides,
   readBirthdayReminderSettings,
   readEventNotificationSettings,
+  readNewEventSettings,
   readOnboarding,
   readPrimaryTimeZone,
   readTaskNotificationSettings,
   readTimeZoneSettings,
   readViewPreferences,
   updateOnboarding,
+  writeNewEventSettings,
   writeViewPreferences,
 } from './deviceSettings.ts';
 import { NotificationSink } from './notificationSink.ts';
@@ -290,6 +292,8 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
     strictApple === true
       ? loadEventsInRangeOrFail(rangeStartUtc, rangeEndUtc)
       : loadEventsInRange(rangeStartUtc, rangeEndUtc),
+
+  getNewEventSettings: () => readNewEventSettings,
 
   getOnboarding: () => readOnboarding,
 
@@ -569,6 +573,8 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
     }),
 
   setEventNotificationSettings: (settings) => applyEventNotificationSettings(settings),
+
+  setNewEventSettings: (settings) => writeNewEventSettings(settings),
 
   setTaskListVisible: ({ accountId, isVisible, taskListId }) =>
     Effect.gen(function* () {

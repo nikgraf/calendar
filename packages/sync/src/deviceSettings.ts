@@ -10,6 +10,7 @@ import {
   DEFAULT_BIRTHDAY_REMINDER_SETTINGS,
   DEFAULT_BIRTHDAY_REMINDER_TIME,
   DEFAULT_EVENT_NOTIFICATION_SETTINGS,
+  DEFAULT_NEW_EVENT_SETTINGS,
   DEFAULT_ONBOARDING_STATE,
   DEFAULT_TASK_NOTIFICATION_SETTINGS,
   DEFAULT_TIME_ZONE_SETTINGS,
@@ -17,6 +18,7 @@ import {
   EventNotificationSettings,
   mergeEventNotificationSettings,
   mergeTaskNotificationSettings,
+  NewEventSettings,
   type OnboardingChange,
   OnboardingState,
   resolveTimeZones,
@@ -294,6 +296,30 @@ export const writeViewPreferences = (
         ? {}
         : { weekendShading: preferences.weekendShading }),
     }),
+  );
+
+/** The device_settings key for where new events start (the default calendar). */
+export const NEW_EVENTS_KEY = 'newEvents';
+
+const decodeNewEventSettings = Schema.decodeUnknownEffect(NewEventSettings);
+
+/** The stored default calendar, or "last used" when nothing (or nothing decodable) is stored. */
+export const readNewEventSettings: Effect.Effect<NewEventSettings, SqlError, DeviceSettingsRepo> =
+  Effect.gen(function* () {
+    const raw = yield* (yield* DeviceSettingsRepo).get(NEW_EVENTS_KEY);
+    if (raw === null) {
+      return DEFAULT_NEW_EVENT_SETTINGS;
+    }
+    return yield* decodeNewEventSettings(raw).pipe(
+      Effect.orElseSucceed(() => DEFAULT_NEW_EVENT_SETTINGS),
+    );
+  });
+
+export const writeNewEventSettings = (
+  settings: NewEventSettings,
+): Effect.Effect<void, SqlError, DeviceSettingsRepo> =>
+  Effect.flatMap(DeviceSettingsRepo, (repo) =>
+    repo.set(NEW_EVENTS_KEY, { calendar: settings.calendar }),
   );
 
 /**

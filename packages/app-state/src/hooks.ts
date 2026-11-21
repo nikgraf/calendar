@@ -783,6 +783,7 @@ export const useBackendMutations = () => {
       setCalendarVisible: set('setCalendarVisible'),
       setEventNotificationSettings: set('setEventNotificationSettings'),
       setMirrorEnabled: set('setMirrorEnabled'),
+      setNewEventSettings: set('setNewEventSettings'),
       setTaskListVisible: set('setTaskListVisible'),
       setTaskNotificationSettings: set('setTaskNotificationSettings'),
       setTimeZoneSettings: set('setTimeZoneSettings'),

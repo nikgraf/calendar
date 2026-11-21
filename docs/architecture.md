@@ -2024,7 +2024,7 @@ gateway carries all of it. Details, limits and the threat model:
   both read values saved before each reminder had its own time through
   `upgradeBirthdayReminderData`, as the settings document does —
   `eventNotifications`, `taskNotifications`, `timeZones`, `viewPreferences`, `onboarding`,
-  `mirrors`, `mirrors.local`, `importedVisibility`,
+  `newEvents`, `mirrors`, `mirrors.local`, `importedVisibility`,
   `localNotifications.*`), behind
   rpc because the consumer is a backend job in both hosts. The portable
   subset travels in `SettingsDocument` (core): Export/Import on both apps
@@ -2041,6 +2041,14 @@ gateway carries all of it. Details, limits and the threat model:
   `viewPreferences` only `PortableViewPreferences` travels (the lane cap,
   `weekendDays`, `weekendShading`), each field optional and imported
   only when present; the opening view and the sidebar stay on the device.
+  `newEvents` is the default calendar (Settings › Calendar): `lastUsed`
+  or a calendar named the way mirrors name one (Google by email and id,
+  Apple by source and title; `placeDefaultCalendar`, core), compared on
+  import by that name, never its title. One this device lacks stays
+  stored and named as missing in Settings, and new events take the
+  calendar used last until it is here. An editor reads it once as it
+  opens (the calendar roots wait for the read): seed, default, last
+  used this run, first writable.
 - **Settings code**: the settings document as one line a QR code carries,
   for copying a setup between the iPhone and the Mac (core
   `settingsCode.ts`): `SOLUNIVO:1:` + RFC 4648 base32 (no padding) of the
