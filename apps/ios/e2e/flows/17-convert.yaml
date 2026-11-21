@@ -67,7 +67,11 @@ tags:
       - tapOn:
           id: 'task-title'
       # ASCII only: unicode through XCTest typing is a known flaky spot.
-      - inputText: 'Solunivo e2e convert'
+      - runFlow:
+          file: ../common/type-text.yaml
+          env:
+            FIELD: 'task-title'
+            TEXT: 'Solunivo e2e convert'
       - runFlow:
           file: ../common/dismiss-keyboard.yaml
           env:

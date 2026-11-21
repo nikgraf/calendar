@@ -170,17 +170,21 @@ was cut (pruned 2026-11-17).
   06's quick-add outcome check, 07's notes retype and the dismiss loops
   in 20 and 22 waited 5–8 s each on CI's path, over a minute per run. The
   branch that ran now sets an `output` flag the other is keyed on; a loop
-  is `retry` + `extendedWaitUntil` on its effect. Rejected: flipping the
+  is `retry` + a check on its effect (`extendedWaitUntil`, or a typed
+  field's value compared as a string). Rejected: flipping the
   conditions (a condition false on the common path waits either way).
   Open: 22's stacked-alert retry ran only on a stand-in (the simulator
   stopped showing the alert).
-- **Quick-add phrases retyped** (2026-10-15, `todo/quick-add-retype`) —
-  XCTest typed flow 06's `| | 20:00-21:00` as `|0-21:00` (run
-  38734567429), and the app read what it got: 00:00–21:00. Each phrase
-  now goes through `common/apply-quick-add.yaml`: type, compare the
-  field's value as a string, erase and retype until it matches, then
-  Apply. Rejected: an `extendedWaitUntil` regex like 03 and 07 (the
-  phrases' `|` would need escaping in every pattern).
+- **Typed text retyped until the field holds it** (2026-10-15 to
+  2026-11-20, `todo/quick-add-retype`, #370) — XCTest typing loses
+  letters: flow 06's `| | 20:00-21:00` arrived as `|0-21:00` (read as
+  00:00–21:00), and flows 09 and 17 saved "So e2e …" and "S2e convert"
+  when the field's keyboard was still connecting after the first letter.
+  `common/apply-quick-add.yaml` and `common/type-text.yaml` compare the
+  field's value as a string and retype until it matches; every phrase,
+  title or address a later step matches goes through one. Rejected: a
+  regex wait (`|` needs escaping), `autoCorrect` off (changes the app for
+  a harness race). Open: why the keyboard is 0.7 s slow after Reminders.
 - **One retry for a Maestro driver that died or never started** (2026-10-14
   to 2026-11-19, #205, #365) — `run-flows.ts` reruns the flows lost that
   way once, on an erased simulator, only on proof (`maestroRetry.ts`):

@@ -1480,8 +1480,25 @@ matches one of these):
 - **An answer just past its wait (iOS)**: the element is in the failure
   hierarchy, so late, not missing — flow 21's "Up to date" and
   `mirror-preview`, flow 19's zone row 5 s after the pick, the onboarding
-  flow's `lesson-banner`. Raise that step's timeout when one recurs (21's
+  flow's `lesson-banner`, flow 09's "Reopen reminder …" after the editor's
+  completion box (run 44036785186: 45 hierarchy reads of ~0.2 s in the
+  10 s wait, none with it). Raise that step's timeout when one recurs (21's
   "Up to date" went to 60 s).
+- **A typed title keeps its first letter and loses the next few (iOS)**:
+  flow 09's "Solunivo e2e reminder to delete" saved as "So e2e …" and
+  "Svo e2e …", flow 17's "Solunivo e2e convert" as "S2e convert" (runs
+  44403894983, 44525665276, 44507168863), and the wait on the title's
+  row failed. Maestro types the first letter, then the rest ~0.75 s later.
+  In those flows the field's keyboard was still connecting to its
+  out-of-process half when the rest came (first key 0.7 s from XCTest to
+  the field, 50–400 ms in other flows): the app's keyboard took the first
+  few keys (`Keyboard receives keyEvent` in `device-simulator.log`) but
+  inserted them only once InputUI made the app its `active input
+  destination`, all in one burst, then sent `textAccepted`, and the word
+  was back to the one letter the keyboard had known. Every key was
+  inserted and none deleted by a key. Not reproduced on a Mac, even
+  under full CPU load. A title or address a later step matches goes
+  through `common/type-text.yaml`, which retypes until it holds the text.
 - **A swipe that neither pages nor reveals (iOS)**: flow 02's day swipe
   back and its task-row swipe right after an outdent; flow 19's swipe on
   Honolulu's row 2.5 s after Kolkata's removal (run 44045469311, shard 1,
@@ -1573,13 +1590,15 @@ branch that ran sets `output.…`, and the other one is keyed on it
 true (see the selector gotchas), so a "sheet still open?" check after a
 save (`visible:` on a sheet that is gone) paid that on every CI run. A
 loop that retypes or dismisses something is a `retry` block instead,
-proven by an `extendedWaitUntil` on its effect (07's notes in their
-field; 20's share sheet and picker, 22's stacked URL alerts gone). Its
+proven by an `extendedWaitUntil` on its effect (20's share sheet and
+picker, 22's stacked URL alerts gone) or an `assertTrue` on it. Its
 action sits behind a guard that is true at once on the first pass (20:
-the sheet is still up) or a flag that skips it there (07 retypes and 22
-taps Cancel only on a retry). Typed text with regex metacharacters in it
-is proven by `copyTextFrom` and an `assertTrue` string compare instead
-(`apply-quick-add.yaml`: the phrases' `|`).
+the sheet is still up) or a flag that skips it there (`type-text.yaml`
+retypes and 22 taps Cancel only on a retry). A typed field is proven by
+its value, read with `copyTextFrom` and compared as a string
+(`type-text.yaml`, `apply-quick-add.yaml`), so text with regex
+metacharacters in it (the phrases' `|`) needs no escaping; the search
+subflows prove theirs by the result each brings.
 
 Shared subflows (`common/`): `launch.yaml` (every flow starts with it:
 launch, recover the dev client if it fell back to the launcher, wait for
@@ -1609,7 +1628,9 @@ typed into the time-zone picker's search until the zone `OPTION` shows), `search
 tab's system field until `RESULT` shows; a sentence for the search
 thread is typed the same way and sent with `pressKey: Enter`, the
 keyboard's Search key; the chips' × is "Remove <label>"),
-`apply-quick-add.yaml` (`PHRASE` to the Assistant: "Type"
+`type-text.yaml` (`TEXT` typed into the focused field `FIELD` and typed
+again until its value is exactly that: every title or address a
+later step matches), `apply-quick-add.yaml` (`PHRASE` to the Assistant: "Type"
 (`quick-add-type`) swaps its bar for the field, the phrase is typed
 until the field holds exactly that, then sent, `quick-add-apply`; a
 phrase taken puts the bar back), `dismiss-keyboard.yaml` (`LABEL`: two
@@ -1672,8 +1693,8 @@ Selector gotchas (each caused a real failure):
   <title>" label, which names what a tap does and so proves one.
 - Never select by `local-…` task ids (the op push swaps them to server
   ids mid-flow); avoid non-ASCII punctuation in typed text, and retype a
-  title, an address or a quick-add phrase until the field holds all of it
-  (XCTest garbles input, and Return on a partial address takes the top
+  title or an address (`type-text.yaml`) or a quick-add phrase until the
+  field holds all of it (XCTest garbles input, and Return on a partial address takes the top
   contact suggestion once 04a has left device Contacts connected on its
   shard).
 - The kind control's segments are `mode-event` / `mode-task` /

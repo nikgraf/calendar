@@ -20,33 +20,14 @@ tags:
           id: 'event-title'
       # Named so a leftover is recognisable: this writes to the real
       # Google account the device is signed into, and is deleted below.
-      # ASCII only — unicode through XCTest typing is a known flaky spot.
-      - inputText: 'Solunivo e2e event to delete'
-      # XCTest typing can drop or move letters ("Snivo …" in run
-      # 37314663224, "Sunivo … deleteol" before): retype until the field
-      # (whose value Maestro reads as its text) holds the title, so the
-      # checks below test saving rather than typing.
-      #
-      # The field proves the typing and a failed wait retypes; the flag
-      # keeps the first pass from typing twice. A `while: notVisible:`
-      # loop did this before, but Maestro waits up to 7 s (from the last
-      # tap or typing) for a condition to come true, so its exit check,
-      # with the title right, cost that every time.
-      - retry:
-          maxRetries: 3
-          commands:
-            - runFlow:
-                when:
-                  true: ${output.retypeTitle === true}
-                commands:
-                  - tapOn: 'Clear text'
-                  - inputText: 'Solunivo e2e event to delete'
-            - evalScript: ${output.retypeTitle = true}
-            - extendedWaitUntil:
-                visible:
-                  id: 'event-title'
-                  text: 'Solunivo e2e event to delete'
-                timeout: 3000
+      # ASCII only — unicode through XCTest typing is a known flaky spot —
+      # and retyped until the field holds it ("Snivo …" in run 37314663224,
+      # "Sunivo … deleteol" before), so the checks below test saving.
+      - runFlow:
+          file: ../common/type-text.yaml
+          env:
+            FIELD: 'event-title'
+            TEXT: 'Solunivo e2e event to delete'
       # Notes sit at the bottom of the form. Dismiss the title's keyboard
       # first, or the text lands in the title.
       - runFlow:
@@ -60,26 +41,11 @@ tags:
           timeout: 10000
       - tapOn:
           id: 'event-notes'
-      - inputText: 'Bring the agenda'
-      # The field proves the typing and a failed wait retypes; the flag
-      # keeps the first pass from typing twice. A `while: notVisible:`
-      # loop would wait up to 7 s for its condition on every exit with the
-      # notes right.
-      - retry:
-          maxRetries: 3
-          commands:
-            - runFlow:
-                when:
-                  true: ${output.retypeNotes === true}
-                commands:
-                  - eraseText: 40
-                  - inputText: 'Bring the agenda'
-            - evalScript: ${output.retypeNotes = true}
-            - extendedWaitUntil:
-                visible:
-                  id: 'event-notes'
-                  text: 'Bring the agenda'
-                timeout: 3000
+      - runFlow:
+          file: ../common/type-text.yaml
+          env:
+            FIELD: 'event-notes'
+            TEXT: 'Bring the agenda'
       - tapOn:
           id: 'event-save'
       # The sheet closes only after the whole create path ran, id
