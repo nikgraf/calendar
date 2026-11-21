@@ -1,3 +1,11 @@
+import {
+  addDaysToPlainDate,
+  daysBetweenPlainDates,
+  expandRecurringEvent,
+  googleInstanceId,
+  plainDateToUtcMs,
+  recurrenceMasterOf,
+} from '@calendar/core';
 import type {
   GcalCalendarListEntry,
   GcalEvent,
@@ -5,7 +13,7 @@ import type {
   GcalTask,
   GcalTaskList,
 } from '@calendar/google';
-import { TokenManager, type TokenManagerShape } from '@calendar/google';
+import { mapGcalEvent, TokenManager, type TokenManagerShape } from '@calendar/google';
 import { Effect, Layer } from 'effect';
 import { HttpClient, HttpClientResponse, UrlParams, type HttpClientRequest } from 'effect/http';
 
@@ -20,6 +28,23 @@ import { HttpClient, HttpClientResponse, UrlParams, type HttpClientRequest } fro
  * insert, delete and move without an `updated` bump, and a list `updated`
  * that every one of those moves. Every semantic here mirrors
  * docs/google-sync-and-testing.md; before this, those were prose only.
+ *
+ * Repeating events as that document records them (Events & recurrence)
+ * and as `live/recurring.live.ts` finds them on Google: a master holds the
+ * rule lines; an occurrence changed on its own is an exception, an event
+ * of its own under `<masterId>_<original start>` with `recurringEventId`
+ * and `originalStartTime`. A PATCH of that id makes or changes the
+ * exception and a DELETE cancels the occurrence, also where no exception
+ * was stored; a DELETE of one already cancelled is a 410. Every PATCH of
+ * the master gives each exception a new etag and `updated`; a title,
+ * description or location it changed is copied onto them; a rule it sets
+ * keeps the exceptions it still draws as they are and cancels the others
+ * (a rule that skips the slot, an UNTIL before it, no rule at all). A
+ * master's DELETE takes its exceptions, events.move takes them along, and
+ * a list reports all of it. Which slots a rule draws is core's own
+ * expansion, the one the app draws with. Where Google's answer is not
+ * recorded the fake does not invent one: it answers as it did before it
+ * knew series and says so in `unverified`.
  */
 
 interface StoredEvent {
@@ -35,6 +60,98 @@ interface StoredTask {
 
 type ExtendedProperties = GcalEvent['extendedProperties'];
 type EventTime = GcalEvent['start'];
+
+/** What a route answers: the status, and the body where it has one. */
+interface Answer {
+  readonly json?: unknown;
+  readonly status: number;
+}
+
+/** One occurrence of a series, named by its id. */
+interface OccurrenceRef {
+  readonly allDay: boolean;
+  readonly masterId: string;
+  /** Its original start, epoch ms (an all-day one: its day at 00:00 UTC). */
+  readonly slot: number;
+}
+
+/**
+ * `<masterId>_<YYYYMMDDTHHMMSSZ>`, the original start in UTC, or
+ * `<masterId>_<YYYYMMDD>` for an all-day series.
+ */
+const OCCURRENCE_ID = /^(.+)_(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})Z)?$/;
+
+const occurrenceRefOf = (eventId: string): OccurrenceRef | undefined => {
+  const match = OCCURRENCE_ID.exec(eventId);
+  if (!match) {
+    return undefined;
+  }
+  const [, masterId = '', year, month, day, hour, minute, second] = match;
+  const slot = Date.UTC(
+    Number(year),
+    Number(month) - 1,
+    Number(day),
+    Number(hour ?? 0),
+    Number(minute ?? 0),
+    Number(second ?? 0),
+  );
+  return { allDay: hour === undefined, masterId, slot };
+};
+
+/** An event time as epoch ms (a date: its day at 00:00 UTC), undefined when it does not parse. */
+const timeMs = (time: EventTime): number | undefined => {
+  if (time?.dateTime !== undefined) {
+    const ms = Date.parse(time.dateTime);
+    return Number.isNaN(ms) ? undefined : ms;
+  }
+  if (time?.date === undefined) {
+    return undefined;
+  }
+  try {
+    return plainDateToUtcMs(time.date);
+  } catch {
+    return undefined;
+  }
+};
+
+const isoOf = (ms: number): string => new Date(ms).toISOString().replace('.000Z', 'Z');
+
+/**
+ * A series' occurrence as Google hands it out while nothing changed it:
+ * the master's fields at the occurrence's own times, under its id.
+ */
+const plainOccurrence = (master: GcalEvent, ref: OccurrenceRef, eventId: string): GcalEvent => {
+  const { recurrence: _recurrence, ...fields } = master;
+  if (ref.allDay) {
+    const date = new Date(ref.slot).toISOString().slice(0, 10);
+    const days =
+      master.start?.date !== undefined && master.end?.date !== undefined
+        ? daysBetweenPlainDates(master.start.date, master.end.date)
+        : 1;
+    return {
+      ...fields,
+      end: { date: addDaysToPlainDate(date, days) },
+      id: eventId,
+      originalStartTime: { date },
+      recurringEventId: master.id,
+      start: { date },
+    };
+  }
+  const length = (timeMs(master.end) ?? 0) - (timeMs(master.start) ?? 0);
+  const zone = master.start?.timeZone === undefined ? {} : { timeZone: master.start.timeZone };
+  const start = { dateTime: isoOf(ref.slot), ...zone };
+  return {
+    ...fields,
+    end: { dateTime: isoOf(ref.slot + length), ...zone },
+    id: eventId,
+    originalStartTime: start,
+    recurringEventId: master.id,
+    start,
+  };
+};
+
+/** The fields of a master Google copies onto its exceptions when a PATCH changes them. */
+const CARRIED_FIELDS = ['summary', 'description', 'location'] as const;
 
 /**
  * PATCH semantics of start/end: nested fields merge into the stored time,
@@ -184,6 +301,13 @@ export class FakeGoogle {
         answer: { readonly json: unknown; readonly lost: boolean; readonly status: number },
       ) => void)
     | undefined;
+  /**
+   * Requests the fake answered although Google's own answer to them is
+   * not recorded (docs/google-sync-and-testing.md, the live suite): it
+   * answered as it did before it knew series. A test that judges the app
+   * by the fake checks that this stays empty.
+   */
+  readonly unverified: Array<string> = [];
   private readonly organizer: GcalEvent['organizer'];
   private lastReply: { readonly json: unknown; readonly status: number } | undefined;
 
@@ -217,6 +341,30 @@ export class FakeGoogle {
       event: { etag: etagOf(calendarId, version), id: eventId, status: 'cancelled' },
       version,
     });
+  }
+
+  /**
+   * Another device's events.patch, never with If-Match: an occurrence's id
+   * makes or changes its exception, a master's does to its exceptions
+   * what Google does. Throws where Google refuses.
+   */
+  patchEventServerSide(calendarId: string, eventId: string, changes: Partial<GcalEvent>): void {
+    const answer = this.writeEvent('PATCH', calendarId, eventId, { ...changes }, undefined);
+    if (answer.status >= 400) {
+      throw new Error(`events.patch of ${eventId} in ${calendarId} was refused: ${answer.status}`);
+    }
+  }
+
+  /**
+   * Another device's events.delete, never with If-Match: an occurrence's
+   * id cancels that occurrence, a master's takes its exceptions. Throws
+   * where Google refuses.
+   */
+  deleteEventServerSide(calendarId: string, eventId: string): void {
+    const answer = this.writeEvent('DELETE', calendarId, eventId, undefined, undefined);
+    if (answer.status >= 400) {
+      throw new Error(`events.delete of ${eventId} in ${calendarId} was refused: ${answer.status}`);
+    }
   }
 
   /** Every token handed out so far for this calendar answers 410 from now on. */
@@ -331,6 +479,60 @@ export class FakeGoogle {
           b.start?.dateTime ?? b.start?.date ?? '',
         ),
       );
+  }
+
+  /** A series' exceptions as stored, cancelled ones included. */
+  exceptionsOf(calendarId: string, masterId: string): Array<GcalEvent> {
+    return [...this.storeOf(calendarId).values()]
+      .map((entry) => entry.event)
+      .filter((event) => event.recurringEventId === masterId);
+  }
+
+  /**
+   * events.instances: where a series is drawn in [fromUtc, toUtc), in
+   * start order — the occurrences its rule draws as the master has them
+   * and its exceptions as they are, cancelled ones left out.
+   */
+  instancesOf(
+    calendarId: string,
+    masterId: string,
+    fromUtc: number,
+    toUtc: number,
+  ): Array<GcalEvent> {
+    const master = this.storeOf(calendarId).get(masterId)?.event;
+    const record = master && this.recordOf(calendarId, master);
+    if (!master || !record || master.status === 'cancelled' || !master.recurrence?.length) {
+      return [];
+    }
+    const exceptions = this.exceptionsOf(calendarId, masterId);
+    const taken = new Set(
+      exceptions.flatMap((exception) => {
+        const slot = timeMs(exception.originalStartTime);
+        return slot === undefined ? [] : [slot];
+      }),
+    );
+    let plain: Array<GcalEvent> = [];
+    try {
+      plain = expandRecurringEvent(recurrenceMasterOf(record), fromUtc, toUtc, taken).map(
+        (instance) =>
+          plainOccurrence(
+            master,
+            { allDay: record.isAllDay, masterId, slot: instance.originalStartUtc },
+            googleInstanceId(masterId, instance.originalStartUtc, record.isAllDay),
+          ),
+      );
+    } catch {
+      // A rule that does not expand draws nothing.
+    }
+    const changed = exceptions.filter(
+      (exception) =>
+        exception.status !== 'cancelled' &&
+        (timeMs(exception.start) ?? 0) < toUtc &&
+        (timeMs(exception.end) ?? 0) > fromUtc,
+    );
+    return [...plain, ...changed].sort(
+      (a, b) => (timeMs(a.start) ?? 0) - (timeMs(b.start) ?? 0) || a.id.localeCompare(b.id),
+    );
   }
 
   taskOf(listId: string, taskId: string): GcalTask | undefined {
@@ -544,9 +746,16 @@ export class FakeGoogle {
         .map((entry) => entry.event);
     } else {
       // A full list: no timeMin is honoured because the engine never
-      // sends one — every event ever, like Google without a window.
+      // sends one — every event ever, like Google without a window. A
+      // series' cancelled occurrences come with it (the tombstones a full
+      // pull brings), a deleted event does not.
       items = [...store.values()]
-        .filter((entry) => entry.event.status !== 'cancelled')
+        .filter(
+          (entry) =>
+            entry.event.status !== 'cancelled' ||
+            (entry.event.recurringEventId !== undefined &&
+              this.seriesOf(calendarId, entry.event.recurringEventId) !== undefined),
+        )
         .map((entry) => entry.event);
     }
     // Pages like Google: the sync token only rides on the last one.
@@ -597,64 +806,302 @@ export class FakeGoogle {
       return reply(200, this.eventOf(calendarId, id));
     }
     if (eventId !== undefined) {
-      const existing = store.get(eventId);
-      // events.update with `status: 'confirmed'` is the one write a deleted
-      // event accepts: it comes back under its id (verified live 2026-10-02).
-      const revives =
-        request.method === 'PUT' &&
-        existing?.event.status === 'cancelled' &&
-        body?.['status'] === 'confirmed';
-      if (!existing || (existing.event.status === 'cancelled' && !revives)) {
-        return reply(404, { error: { message: 'Not Found' } });
-      }
-      if (request.method === 'GET') {
-        return reply(200, this.eventOf(calendarId, eventId));
-      }
-      const ifMatch = request.headers['if-match'];
-      if (ifMatch !== undefined && ifMatch !== existing.event.etag) {
-        return reply(412, { error: { message: 'Precondition Failed' } });
-      }
-      if (request.method === 'PATCH') {
-        const start = mergeEventTime(existing.event.start, body?.['start']);
-        const end = mergeEventTime(existing.event.end, body?.['end']);
-        if (invalidTime(start) || invalidTime(end)) {
-          return reply(400, { error: { code: 400, message: 'Invalid start time.' } });
-        }
-        this.putEvent(calendarId, {
-          ...existing.event,
-          ...(body as Partial<GcalEvent>),
-          end,
-          extendedProperties: mergeExtendedProperties(
-            existing.event.extendedProperties,
-            body?.['extendedProperties'],
-          ),
-          id: eventId,
-          start,
-        });
-        return reply(200, this.eventOf(calendarId, eventId));
-      }
-      if (request.method === 'PUT') {
-        // A full replace: whatever the body leaves out is gone, extended
-        // properties included — no merge, unlike PATCH.
-        const next = body as GcalEvent;
-        if (invalidTime(next.start) || invalidTime(next.end)) {
-          return reply(400, { error: { code: 400, message: 'Invalid start time.' } });
-        }
-        this.putEvent(calendarId, { ...next, id: eventId });
-        return reply(200, this.eventOf(calendarId, eventId));
-      }
-      if (request.method === 'DELETE') {
-        this.cancelEvent(calendarId, eventId);
-        return reply(204);
-      }
+      const answer = this.writeEvent(
+        request.method,
+        calendarId,
+        eventId,
+        body,
+        request.headers['if-match'],
+      );
+      return reply(answer.status, answer.json);
     }
     return reply(405);
   }
 
   /**
+   * One event by its id: events.get, patch, update and delete, as a
+   * request sends them or as another device does (no If-Match).
+   */
+  private writeEvent(
+    method: string,
+    calendarId: string,
+    eventId: string,
+    body: Record<string, unknown> | undefined,
+    ifMatch: string | undefined,
+  ): Answer {
+    const store = this.storeOf(calendarId);
+    const occurrence = this.occurrenceAt(calendarId, eventId);
+    if (occurrence !== undefined && method === 'PUT') {
+      this.unverified.push(`events.update of ${eventId}, one occurrence of a series`);
+    } else if (occurrence !== undefined) {
+      return this.writeOccurrence(method, calendarId, eventId, occurrence, body, ifMatch);
+    }
+    const existing = store.get(eventId);
+    // events.update with `status: 'confirmed'` is the one write a deleted
+    // event accepts: it comes back under its id (verified live 2026-10-02).
+    const revives =
+      method === 'PUT' &&
+      existing?.event.status === 'cancelled' &&
+      body?.['status'] === 'confirmed';
+    if (!existing || (existing.event.status === 'cancelled' && !revives)) {
+      return { json: { error: { message: 'Not Found' } }, status: 404 };
+    }
+    if (method === 'GET') {
+      return { json: this.eventOf(calendarId, eventId), status: 200 };
+    }
+    if (ifMatch !== undefined && ifMatch !== existing.event.etag) {
+      return { json: { error: { message: 'Precondition Failed' } }, status: 412 };
+    }
+    if (method === 'PATCH') {
+      const start = mergeEventTime(existing.event.start, body?.['start']);
+      const end = mergeEventTime(existing.event.end, body?.['end']);
+      if (invalidTime(start) || invalidTime(end)) {
+        return { json: { error: { code: 400, message: 'Invalid start time.' } }, status: 400 };
+      }
+      this.putEvent(calendarId, {
+        ...existing.event,
+        ...(body as Partial<GcalEvent>),
+        end,
+        extendedProperties: mergeExtendedProperties(
+          existing.event.extendedProperties,
+          body?.['extendedProperties'],
+        ),
+        id: eventId,
+        start,
+      });
+      const patched = this.eventOf(calendarId, eventId)!;
+      this.patchExceptions(calendarId, existing.event, patched);
+      return { json: patched, status: 200 };
+    }
+    if (method === 'PUT') {
+      // A full replace: whatever the body leaves out is gone, extended
+      // properties included — no merge, unlike PATCH.
+      const next = body as GcalEvent;
+      if (invalidTime(next.start) || invalidTime(next.end)) {
+        return { json: { error: { code: 400, message: 'Invalid start time.' } }, status: 400 };
+      }
+      if (this.exceptionsOf(calendarId, eventId).length > 0) {
+        this.unverified.push(`events.update of ${eventId}, a series with exceptions`);
+      }
+      this.putEvent(calendarId, { ...next, id: eventId });
+      return { json: this.eventOf(calendarId, eventId), status: 200 };
+    }
+    if (method === 'DELETE') {
+      this.cancelEvent(calendarId, eventId);
+      // A series takes its exceptions with it.
+      for (const exception of this.exceptionsOf(calendarId, eventId)) {
+        store.delete(exception.id);
+      }
+      return { status: 204 };
+    }
+    return { status: 405 };
+  }
+
+  /**
+   * The occurrence a request's id names, where this calendar holds its
+   * series: the master, and the exception when one is stored.
+   */
+  private occurrenceAt(
+    calendarId: string,
+    eventId: string,
+  ):
+    | {
+        readonly exception: GcalEvent | undefined;
+        readonly master: GcalEvent;
+        readonly ref: OccurrenceRef;
+      }
+    | undefined {
+    const ref = occurrenceRefOf(eventId);
+    if (ref === undefined) {
+      return undefined;
+    }
+    const store = this.storeOf(calendarId);
+    const master = store.get(ref.masterId)?.event;
+    const exception = store.get(eventId)?.event;
+    if (!master || master.status === 'cancelled') {
+      return undefined;
+    }
+    // An event that only looks like one (no series by that name, or an
+    // event of its own under the id) is answered as any other.
+    if (exception ? exception.recurringEventId !== ref.masterId : !master.recurrence?.length) {
+      return undefined;
+    }
+    return { exception, master, ref };
+  }
+
+  /**
+   * events.get, patch and delete of one occurrence. A PATCH makes the
+   * exception, or changes it, and leaves the master's etag alone; a
+   * DELETE cancels the occurrence, with or without an exception stored;
+   * one already cancelled answers a DELETE with 410. A stale If-Match is
+   * a 412 before any of that. A slot the series does not draw is no event.
+   */
+  private writeOccurrence(
+    method: string,
+    calendarId: string,
+    eventId: string,
+    occurrence: {
+      readonly exception: GcalEvent | undefined;
+      readonly master: GcalEvent;
+      readonly ref: OccurrenceRef;
+    },
+    body: Record<string, unknown> | undefined,
+    ifMatch: string | undefined,
+  ): Answer {
+    const { exception, master, ref } = occurrence;
+    if (exception === undefined && !this.draws(calendarId, master, ref.slot)) {
+      return { json: { error: { message: 'Not Found' } }, status: 404 };
+    }
+    const current = exception ?? plainOccurrence(master, ref, eventId);
+    if (method === 'GET') {
+      return { json: current, status: 200 };
+    }
+    if (ifMatch !== undefined && ifMatch !== current.etag) {
+      return { json: { error: { message: 'Precondition Failed' } }, status: 412 };
+    }
+    if (ifMatch !== undefined && exception === undefined) {
+      this.unverified.push(`${method} of ${eventId} with If-Match, no exception stored`);
+    }
+    const cancelled = current.status === 'cancelled';
+    if (method === 'DELETE') {
+      if (cancelled) {
+        return { json: { error: { message: 'Resource has been deleted' } }, status: 410 };
+      }
+      this.putEvent(calendarId, {
+        id: eventId,
+        originalStartTime: current.originalStartTime,
+        recurringEventId: ref.masterId,
+        status: 'cancelled',
+      });
+      return { status: 204 };
+    }
+    if (method !== 'PATCH') {
+      return { status: 405 };
+    }
+    if (cancelled) {
+      // What Google does with a PATCH of a cancelled occurrence is not
+      // recorded: answered as a deleted event always was here.
+      this.unverified.push(`events.patch of ${eventId}, a cancelled occurrence`);
+      return { json: { error: { message: 'Not Found' } }, status: 404 };
+    }
+    const start = mergeEventTime(current.start, body?.['start']);
+    const end = mergeEventTime(current.end, body?.['end']);
+    if (invalidTime(start) || invalidTime(end)) {
+      return { json: { error: { code: 400, message: 'Invalid start time.' } }, status: 400 };
+    }
+    const { recurrence: _recurrence, ...changes } = (body ?? {}) as Partial<GcalEvent>;
+    this.putEvent(calendarId, {
+      ...current,
+      ...changes,
+      end,
+      extendedProperties: mergeExtendedProperties(
+        current.extendedProperties,
+        body?.['extendedProperties'],
+      ),
+      id: eventId,
+      originalStartTime: current.originalStartTime,
+      recurringEventId: ref.masterId,
+      start,
+    });
+    return { json: this.eventOf(calendarId, eventId), status: 200 };
+  }
+
+  /**
+   * What a PATCH of a master does to its exceptions (verified live, see
+   * docs/google-sync-and-testing.md): each gets a new etag and `updated`;
+   * a title, description or location the PATCH changed is copied onto
+   * them, their own values included, while a field sent with its old
+   * value leaves theirs alone; and the rule it leaves keeps an exception
+   * whose slot it still draws as it was, moved or cancelled, and cancels
+   * the others.
+   */
+  private patchExceptions(calendarId: string, before: GcalEvent, after: GcalEvent): void {
+    const exceptions = this.exceptionsOf(calendarId, after.id);
+    if (exceptions.length === 0) {
+      return;
+    }
+    const updated = new Date(this.stamp()).toISOString();
+    const carried = Object.fromEntries(
+      CARRIED_FIELDS.filter((field) => (after[field] ?? '') !== (before[field] ?? '')).map(
+        (field) => [field, after[field]],
+      ),
+    );
+    // Where the exceptions of a series go when its times change is not
+    // recorded: they stay as they are.
+    const was = this.recordOf(calendarId, before);
+    const now = this.recordOf(calendarId, after);
+    const retimed =
+      was?.startUtc !== now?.startUtc ||
+      was?.endUtc !== now?.endUtc ||
+      was?.startTimeZone !== now?.startTimeZone;
+    if (retimed) {
+      this.unverified.push(`events.patch of ${after.id}: new times for a series with exceptions`);
+    }
+    for (const exception of exceptions) {
+      const tombstone = {
+        id: exception.id,
+        originalStartTime: exception.originalStartTime,
+        recurringEventId: after.id,
+        status: 'cancelled',
+        updated,
+      };
+      const slot = timeMs(exception.originalStartTime);
+      const drawn = retimed || (slot !== undefined && this.draws(calendarId, after, slot));
+      const wasDrawn = retimed || (slot !== undefined && this.draws(calendarId, before, slot));
+      if (!drawn) {
+        this.putEvent(calendarId, tombstone);
+      } else if (!wasDrawn) {
+        // A slot an earlier rule dropped and this one draws again is a
+        // plain occurrence (verified live); what a list then reports for
+        // it is not recorded, and nothing is reported here.
+        this.unverified.push(`events.patch of ${after.id}: its rule draws ${exception.id} again`);
+        this.storeOf(calendarId).delete(exception.id);
+      } else if (exception.status === 'cancelled') {
+        this.putEvent(calendarId, tombstone);
+      } else {
+        this.putEvent(calendarId, { ...exception, ...carried, updated });
+      }
+    }
+  }
+
+  /** The series by that id: a live event with a rule. */
+  private seriesOf(calendarId: string, masterId: string): GcalEvent | undefined {
+    const master = this.storeOf(calendarId).get(masterId)?.event;
+    return master && master.status !== 'cancelled' && master.recurrence?.length
+      ? master
+      : undefined;
+  }
+
+  /** The event as the app's own mapping reads it, for core's expansion. */
+  private recordOf(calendarId: string, event: GcalEvent) {
+    return mapGcalEvent(event, {
+      accountId: '',
+      calendarId,
+      defaultTimeZone: this.calendars.find((entry) => entry.id === calendarId)?.timeZone ?? 'UTC',
+      syncedAt: 0,
+    });
+  }
+
+  /** Whether the master's rule draws an occurrence at `slot`; a rule that does not expand draws nothing. */
+  private draws(calendarId: string, master: GcalEvent, slot: number): boolean {
+    const record = master.recurrence?.length ? this.recordOf(calendarId, master) : null;
+    if (!record) {
+      return false;
+    }
+    try {
+      return expandRecurringEvent(recurrenceMasterOf(record), slot - 1, slot + 1).some(
+        (instance) => instance.originalStartUtc === slot,
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * events.move: the event leaves the source (a cancelled tombstone for
-   * its sync token) and appears in the destination under the same id.
-   * Organizer only, whole events only — an instance id is refused.
+   * its sync token) and appears in the destination under the same id,
+   * a series with its exceptions. Organizer only, whole events only — an
+   * instance id is refused.
    */
   private moveRoute(
     calendarId: string,
@@ -679,6 +1126,11 @@ export class FakeGoogle {
     }
     this.cancelEvent(calendarId, eventId);
     this.putEvent(destination, existing.event);
+    // A series' exceptions go with it, cancelled ones too.
+    for (const exception of this.exceptionsOf(calendarId, eventId)) {
+      this.storeOf(calendarId).delete(exception.id);
+      this.putEvent(destination, exception);
+    }
     return reply(200, this.eventOf(destination, eventId));
   }
 
