@@ -1,4 +1,4 @@
-# Backlog (reviewed 2026-11-17)
+# Backlog (reviewed 2026-11-20)
 
 How to read: tiers are ordered by impact, top item first within a tier.
 Each item is one `todo/<slug>` PR unless it says otherwise. When an item
@@ -8,8 +8,17 @@ was written; re-verify before starting one.
 
 ## Tier 0 — bugs
 
-The 2026-10-02 review's findings are closed in `docs/decisions.md`
-(Review fixes, #110–#142).
+- [ ] A series delete that replaced a cut lets the cut's leftovers out
+      (open since #284 and #285; reproduced in review, 2026-11-20). Edit
+      "this and following", then delete the whole series; while that
+      delete waits a pull puts Google's uncut series back, and the user
+      renames it. The rename's update carries no `dropsFrom`
+      (`mutations.ts` copies it only from a queued update, not from the
+      delete that replaced the cut), so nothing holds the split's create
+      (`holdsSplit`) or the cut's exception deletes
+      (`exceptionDeleteGate`): the new series lands beside the uncut one
+      and Google shows those days twice. The replacing delete also lets
+      the cut's exception deletes out ahead of itself.
 
 - [ ] Let agent refs resolve zero-duration Google series occurrences
       (`packages/agent/src/resolve.ts`, `ruleProduces`; found reviewing
@@ -35,27 +44,12 @@ The 2026-10-02 review's findings are closed in `docs/decisions.md`
 
 ## Tier 1 — CI and distribution
 
-- [ ] PR videos (designed, not built) — every PR with a visible change
-      attaches a short recording. `gh` ≥ 2.99.0 adds `--attach` to `gh pr create/edit/
-  comment` for inline-playable video: 10 MB on Free plans, 100 MB paid
-      — design for 10 MB (≤ 20 s clips, 720p wide, `-crf 28` ≈ 1–3 MB).
-      Tooling: `pnpm record ios <flow>` wraps `maestro test` in
-      `xcrun simctl io $UDID recordVideo --codec h264 --mask black`
-      (`kill -INT` finalizes the file); `pnpm record desktop "<it name>"`
-      runs one spec by name with CDP `Page.startScreencast` in
-      `apps/desktop/e2e/harness.ts` — OS-level capture is blanked by
-      `setContentProtection` whenever screen privacy is on, so the
-      compositor path is the one that works on any profile;
-      `ws.onmessage` in the harness currently drops id-less events,
-      so add an event map + `Page.screencastFrameAck` — frames →
-      `ffmpeg -framerate 15 … libx264`. CI: a `record` PR label (same
-      trigger shape as the `testflight` label in `ios.yml`) records
-      flows tagged `record` inside the existing `e2e`/`ios-e2e` jobs and
-      posts `gh pr comment --attach` with the comment-upsert pattern from
-      `ios.yml`; ffmpeg is not on the runner images (pinned static
-      binary). PR template gains a "video attached / n.a." checkbox. Not
-      possible: REST/GraphQL upload; inline playback from an Actions
-      artifact or a private-repo release asset.
+- [ ] PR videos (designed, not built; screenshots are the proof a PR owes
+      since #337) — a short recording for a PR whose change is a motion:
+      `gh pr comment --attach` (`gh` ≥ 2.99.0; 10 MB on Free plans, so
+      ≤ 20 s at 720p), iOS through `simctl io recordVideo` around a
+      Maestro flow, the desktop through CDP `Page.startScreencast` (OS
+      capture is blanked while screen privacy is on) and a pinned ffmpeg.
 - [ ] Live suite follow-ups (review of #88/#90, 2026-09-26; the findings
       themselves shipped in `todo/review-findings`, the sweep's account
       check and the split test's occurrences in `todo/live-sweep-guard`).
@@ -132,9 +126,8 @@ The 2026-10-02 review's findings are closed in `docs/decisions.md`
 - [ ] Search follow-ups (shipped 2026-10-09, `docs/decisions.md`) — a
       `search` tool for the agent gateway (a read grant; a hidden calendar or
       list must answer nothing, as the range reads do), deliberately left out
-      of the first PR; recall beyond the two-year window (Tier 3, "Ask your
-      calendar"); calendar and list names as search text; the matched words
-      highlighted in the rows. Measure on a phone with a large calendar: on
+      of the first PR; calendar and list names as search text; the matched
+      words highlighted in the rows. Measure on a phone with a large calendar: on
       Node, 5,000 events in the window, 30 endless series and 3,000 tasks
       take 55–115 ms a search, on the JS thread on iOS — FTS (or a folded
       text column) is the way out if Hermes makes typing stutter. A list left
@@ -155,15 +148,21 @@ The 2026-10-02 review's findings are closed in `docs/decisions.md`
       haptics on the iPhone's
       bar and on the switch between the views (a native build);
       answering the Assistant's question by voice ("the first one", a
-      model task with bench cases, not a word list); every value
-      travelling from the card to its field in the switch, and the
-      title's type size with it.
-- [ ] Served-model follow-ups (shipped in #184,
-      `docs/decisions.md` → AI) — the model's own context from Ollama's
-      `/api/show` instead of the fixed `num_ctx`; image input for a served
-      model (Gemma 4 takes images, so capture could skip OCR); the
-      `ModelInfo` capability record beyond the context (modalities, guided
-      JSON) once a feature reads it.
+      model task with bench cases, not a word list).
+- [ ] Served-model follow-ups (shipped in #184, `docs/decisions.md` →
+      AI) — a served model now answers only search sentences and capture,
+      and find a time until the Assistant's model is here; search and
+      capture have no bench: measure those first. Then: no thinking and
+      the strict schema on Ollama (the app sends the schema as `format`
+      with only the title required and turns thinking off on neither
+      route; on Assistant phrases, 2026-11-11, Gemma 4 E2B scored 40 of
+      70 at 4.1 s a turn asked that way, and 59 at 0.7 s over the
+      OpenAI-compatible route with every field required and
+      `reasoning_effort: "none"`); the model's own context from Ollama's
+      `/api/show` instead of the fixed `num_ctx`; image input for a
+      served model (Gemma 4 takes images, so capture could skip OCR); the
+      `ModelInfo` capability record beyond the context (modalities,
+      guided JSON) once a feature reads it.
 - [ ] A to-do's repeat from the Assistant — "water the plants every
       Monday" as a to-do: its result keeps only the day, time and title
       (`answerResult`, `convertQuickAddItem`), so a repeat said for it is
@@ -204,15 +203,6 @@ The 2026-10-02 review's findings are closed in `docs/decisions.md`
       App Shortcut that asks for the phrase; iOS 27's calendar schema
       where Siri AI is available, not in the EU nor in German as of
       2026-10); Parakeet TDT v3 as a recogniser arm on the Mac bench.
-- [ ] Served models: no thinking, and the strict schema on Ollama — the
-      app sends Ollama the schema as `format` (only the title required)
-      and turns thinking off on neither route. On Assistant phrases (the
-      bench, 2026-11-11) Gemma 4 E2B scored 40 of 70 at 4.1 s a turn
-      asked as the app asks Ollama, and 59 at 0.7 s over the
-      OpenAI-compatible route with every field required and
-      `reasoning_effort: "none"`. A served model now answers only search
-      sentences and capture, and find a time until the Assistant's model
-      is here; search and capture have no bench: measure those first.
 - [ ] The Assistant's own model, follow-ups (#307, v2 in #321) — search
       sentences and capture still need Apple's model (data and a tuned
       prompt each, in the next version's one training run); they have no
@@ -259,23 +249,15 @@ The 2026-10-02 review's findings are closed in `docs/decisions.md`
       "when everyone is free" would go.
 
 - [ ] Capture follow-ups (shipped 2026-10-04, OCR-first; see
-      docs/decisions.md) — **native image input on OS 27**: Foundation
-      Models takes an image directly there (`Transcript.ImageAttachment`,
-      `Attachment(imageURL:)`, the `vision` capability), which reads a
-      stylised poster better than OCR text does. Shape: an optional
-      `images` field plus a capability check on `LanguageModel`, one more
-      branch in `parseCapture` (OCR stays the OS 26 path through the
-      `TextRecognizer` seam, nothing above changes), a helper method that
-      builds the attachment, and own Swift on iOS since
-      `@react-native-ai/apple` 0.12 is text-only. Also: keep the source
-      text as the event's notes (both editors have a notes field;
-      capture does not fill it); shared web URLs
-      (the activation rule leaves them out — nothing fetches a page);
-      multi-day events (capture's schema has no end day); a
-      File-menu entry if ⌘V proves undiscoverable; token counting via
-      `SystemLanguageModel.contextSize` (26.4+) in place of the 6000-char
-      cap.
-- [ ] Day briefing (iOS-first) — a short generated summary of the day; a
+      docs/decisions.md) — keep the source text as the event's notes
+      (both editors have a notes field; capture does not fill it); shared
+      web URLs (the activation rule leaves them out — nothing fetches a
+      page); multi-day events (capture's schema has no end day); a
+      File-menu entry if ⌘V proves undiscoverable. What only Apple's
+      model would gain (native image input, its own context size) is
+      left: capture moves to the app's model first (above).
+- [ ] Day briefing (iOS-first) — a short generated summary of the day
+      (its scope: the morning, evening and week notes under Later); a
       widget or Live Activity candidate once it earns its place.
 - [ ] Ask your calendar — plain search shipped (2026-10-09, see
       `docs/decisions.md` → Search): every-word matching over what the views
@@ -288,14 +270,12 @@ The 2026-10-02 review's findings are closed in `docs/decisions.md`
 - [ ] Week planning / rescheduling assistant (desktop) — "make room for 3h
       of deep work" proposes a _diff_ of moves to approve, executed through
       the op queue so it stays inspectable and undoable. Weakest fit for a
-      3B model: keep the solving deterministic (`findFreeSlots` exists).
+      small model: keep the solving deterministic (`findFreeSlots` exists).
 - [ ] Invite triage (desktop) — summarize a backlog of invitations, suggest
       accept/decline (per-event RSVP exists; no inbox view).
 
 ## Later / ideas (unranked)
 
-- Research Siri Calendar integration (no App Intents anywhere yet)
-  - Ask ChatGPT (deepresearch) about flows that exist
 - Morning briefing made with AI
   - Weather during the day and what to wear (also take other locations into account and especially weather changes)
   - Get an overview over the most important meetings
@@ -327,8 +307,4 @@ The 2026-10-02 review's findings are closed in `docs/decisions.md`
   Apple Calendar; the website's roadmap lists this, Microsoft and the
   three platforms here)
 - Windows support (Copilot support?)
-- Special sync
-  - same event in multiple calendar (how do they get identified?)
-    - special feature: automatically sync those e.g. meetup event gets synced to family calendar
-    - special feature: add in one calendar as normal even, but show in others as blocked or only share certain information
-- Prefetch week±1 in the range LRU (noted when the LRU landed)
+- Prefetch week±1 in the range LRU (noted when the LRU landed; today the iPhone's week view loads seven days each side, its day views one or two, the desktop two)
