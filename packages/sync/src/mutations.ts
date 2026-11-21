@@ -718,7 +718,6 @@ const make: Effect.Effect<
               id: generateEventId(),
               lastError: undefined,
               nextAttemptAt: 0,
-              serverPayload: undefined,
             }),
           );
           continue;
@@ -831,9 +830,11 @@ const make: Effect.Effect<
                 yield* releaseSplits(taken, op);
               }
             } else if ('conflict' in outcome) {
-              // Parked until the user chooses (resolveConflict); the local
-              // row stays pending so pulls cannot overwrite their version.
-              yield* pendingOpRepo.markConflict(op.id, now, outcome.conflict ?? undefined);
+              // Parked until the user chooses (resolveConflict), with the
+              // user's version on screen. Google's is the event's copy
+              // from here on; none, when Google has the event no more.
+              yield* pendingOpRepo.setBefore(op.id, outcome.conflict);
+              yield* pendingOpRepo.markConflict(op.id, now);
             } else {
               // The reason lands in pending_ops.last_error, which the
               // unsynced-changes panel shows next to the retry count.
@@ -946,7 +947,7 @@ const make: Effect.Effect<
         yield* takeBackPulled(taken, op);
         return yield* pendingOpRepo.unpark(op.id, now);
       }
-      if (op.serverPayload && op.serverPayload.status !== 'cancelled') {
+      if (op.beforePayload && op.beforePayload.status !== 'cancelled') {
         return yield* pendingOpRepo.unpark(op.id, now);
       }
       yield* pendingOpRepo.remove(op.id);
@@ -1632,13 +1633,16 @@ const make: Effect.Effect<
           );
           const beforeOverrides: Array<EventRecord> = [];
           for (const override of overrides) {
-            const acked = inheritedBefore(
-              yield* opsForEvent(accountId, calendarId, override.id),
-              override,
+            // Google's copy of each: the one its own queued ops hold, else
+            // the row itself, which nothing changed here.
+            const own = yield* opsForEvent(accountId, calendarId, override.id);
+            const holder = own.find(
+              (op) => op.kind === 'delete' || op.kind === 'rsvp' || op.kind === 'update',
             );
-            if (acked !== null) {
-              const own = acked ?? override;
-              beforeOverrides.push(seriesEdit ? withOwnText(own, seriesEdit) : own);
+            const acked =
+              holder === undefined || isPulledCopy(own, override) ? override : holder.beforePayload;
+            if (acked) {
+              beforeOverrides.push(seriesEdit ? withOwnText(acked, seriesEdit) : acked);
             }
             yield* pendingOpRepo.removeForEvent(accountId, calendarId, override.id);
             yield* eventRepo.deleteEvent(accountId, calendarId, override.id);

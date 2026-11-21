@@ -50,7 +50,6 @@ const opRow = (overrides: Partial<PendingOpRow> = {}): PendingOpRow => ({
   attendees_changed: 0,
   base_etag: null,
   before_color_hex: null,
-  before_overrides: null,
   before_payload: null,
   before_task: null,
   calendar_id: 'cal-1',
@@ -70,7 +69,6 @@ const opRow = (overrides: Partial<PendingOpRow> = {}): PendingOpRow => ({
   payload: null,
   recurrence_cleared: 0,
   reminders_changed: 0,
-  server_payload: null,
   split_at: null,
   split_check: 0,
   split_in: null,
@@ -194,7 +192,7 @@ describe('row decoders tolerate what the DB may hold', () => {
     ).toBeUndefined();
     // Unreadable JSON degrades like every other JSON column.
     expect(pendingOpFromRow(opRow({ copy_payload: '{not json' }))?.beforePayload).toBeNull();
-    expect(pendingOpFromRow(opRow({ before_overrides: '[1]' }))?.beforeOverrides).toBeUndefined();
+    expect(pendingOpFromRow(opRow({ taken_payload: '[1]' }))?.beforeOverrides).toBeUndefined();
   });
 
   it('pendingOpFromRow skips a row whose op kind nothing could apply', () => {

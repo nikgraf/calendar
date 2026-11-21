@@ -473,11 +473,9 @@ export interface PendingOpRow {
   readonly target_calendar_id: string | null;
   readonly reminders_changed: number;
   readonly conflict_at: number | null;
-  readonly server_payload: string | null;
   readonly carried_text: string | null;
   readonly recurrence_cleared: number;
   readonly before_payload: string | null;
-  readonly before_overrides: string | null;
   readonly before_task: string | null;
   readonly before_color_hex: string | null;
   readonly target_task_list_id: string | null;
@@ -487,6 +485,8 @@ export interface PendingOpRow {
   readonly copy_source: string | null;
   /** Google's copy of the op's event (`event_copies`), joined in by the repo's reads. */
   readonly copy_payload?: string | null;
+  /** Joined in by PendingOpRepo: the copies a series delete holds (a JSON array). */
+  readonly taken_payload?: string | null;
 }
 
 const eventListSchema = Schema.Array(EventRecord);
@@ -506,6 +506,12 @@ const beforePayloadOf = (row: PendingOpRow): EventRecord | null | undefined =>
     ? (decodeOr(EventRecord, parseJson(row.copy_payload ?? null)) ?? null)
     : undefined;
 
+/** The exceptions a series delete took: Google's copies of them, none for any other op. */
+const takenOf = (row: PendingOpRow): ReadonlyArray<EventRecord> | undefined => {
+  const taken = decodeOr(eventListSchema, parseJson(row.taken_payload ?? null));
+  return taken && taken.length > 0 ? taken : undefined;
+};
+
 /**
  * Undefined for a row with an unknown op kind (nothing could apply it);
  * an unreadable payload degrades to `payload: undefined`, which applyOp
@@ -519,7 +525,7 @@ export const pendingOpFromRow = (row: PendingOpRow): PendingOp | undefined =>
         attendeesChanged: row.attendees_changed === 1 ? true : undefined,
         baseEtag: row.base_etag ?? undefined,
         beforeColorHex: row.before_color_hex ?? undefined,
-        beforeOverrides: decodeOr(eventListSchema, parseJson(row.before_overrides)),
+        beforeOverrides: takenOf(row),
         beforePayload: beforePayloadOf(row),
         calendarId: row.calendar_id,
         carriedText: decodeOr(CarriedText, parseJson(row.carried_text)),
@@ -538,7 +544,6 @@ export const pendingOpFromRow = (row: PendingOpRow): PendingOp | undefined =>
         payload: decodeOr(EventRecord, parseJson(row.payload)),
         recurrenceCleared: row.recurrence_cleared === 1 ? true : undefined,
         remindersChanged: row.reminders_changed === 1 ? true : undefined,
-        serverPayload: decodeOr(EventRecord, parseJson(row.server_payload)),
         splitAt: row.split_at ?? undefined,
         splitCheck: row.split_check === 1 ? true : undefined,
         splitIn: row.split_in ?? undefined,

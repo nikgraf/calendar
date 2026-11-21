@@ -410,9 +410,11 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
   /** Kind 'calendarColor': the color the calendar had, so a discard puts it back. */
   beforeColorHex: Schema.optional(Schema.String),
   /**
-   * A series delete only: the exception rows it removed locally along with
-   * the master (Google cascades, so they queue no op of their own). A
-   * discard re-inserts them with the master.
+   * A series delete only: Google's copies of the exceptions it took off
+   * the table with the master (Google cascades, so they queue no op of
+   * their own). Kept per exception like any copy and read here; a discard
+   * re-inserts them with the master. One whose own delete waits is that
+   * delete's.
    */
   beforeOverrides: Schema.optional(Schema.Array(EventRecord)),
   /**
@@ -500,11 +502,6 @@ export class PendingOp extends Schema.Class<PendingOp>('PendingOp')({
    * unrelated edit must not rewrite it from a possibly stale copy.
    */
   remindersChanged: Schema.optional(Schema.Boolean),
-  /**
-   * Google's version fetched when the op was parked; absent on a parked op
-   * means the event was deleted on Google.
-   */
-  serverPayload: Schema.optional(EventRecord),
   /**
    * The create of a series a this-and-following edit split off: the
    * original start of the occurrence it starts at (`splitAt`) in the series

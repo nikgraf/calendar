@@ -429,7 +429,7 @@ describe('SyncEngine', () => {
       const ops = yield* PendingOpRepo;
       const [parked] = yield* ops.listAll();
       expect(parked?.conflictAt).toBeDefined();
-      expect(parked?.serverPayload?.title).toBe('Server title');
+      expect(parked?.beforePayload?.title).toBe('Server title');
       // Discarded, it leaves Google's version, not the one from before the pull.
       yield* mutations.discardPendingOp(parked!.id);
       const row = yield* events.getById('acc-1', 'cal-1', 'evt-1');
@@ -593,7 +593,7 @@ describe('SyncEngine', () => {
         const [parked] = yield* ops.listAll();
         expect(parked).toMatchObject({ kind: 'delete' });
         expect(parked?.conflictAt).toBeDefined();
-        expect(parked?.serverPayload?.title).toBe('All day');
+        expect(parked?.beforePayload?.title).toBe('All day');
         // Kept, the delete goes.
         const mutations = yield* EventMutations;
         yield* mutations.resolveConflict({ choice: 'mine', opId: parked!.id });
@@ -729,7 +729,7 @@ describe('SyncEngine', () => {
         expect(yield* shown).toEqual([]);
         const op = yield* seriesDelete;
         expect(op?.conflictAt).toBeDefined();
-        expect(op?.serverPayload?.title).toBe('Daily (Google)');
+        expect(op?.beforePayload?.title).toBe('Daily (Google)');
         // The delete still holds the exceptions, as Google has them.
         expect(op?.beforeOverrides?.map((row) => row.id).sort()).toEqual([
           'evt-r_20260703T100000Z',
@@ -4183,7 +4183,7 @@ describe('SyncEngine', () => {
         const [parked] = yield* (yield* PendingOpRepo).listAll();
         expect(parked?.eventId).toBe(july3);
         expect(parked?.conflictAt).toBeDefined();
-        expect(parked?.serverPayload?.title).toBe('Theirs');
+        expect(parked?.beforePayload?.title).toBe('Theirs');
         expect(google.calls).toEqual(['series "evt-r"', 'july3 "x-1"']);
       }).pipe(Effect.provide(engineLayer(google.client)));
     });

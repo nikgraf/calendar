@@ -85,7 +85,8 @@ const seed = {
       accountId: 'acc-e2e',
       attempts: 0,
       baseEtag: '"v1"',
-      beforePayload: row('evt-park', 'Offsite'),
+      // Parked: the copy is Google's newer version.
+      beforePayload: row('evt-park', 'Offsite (Google)', { etag: '"v2"' }),
       calendarId: 'cal-e2e',
       conflictAt: 20,
       createdAt: 20,
@@ -95,7 +96,6 @@ const seed = {
       lastError: 'changed on Google',
       nextAttemptAt: 0,
       payload: parkedMine,
-      serverPayload: row('evt-park', 'Offsite (Google)', { etag: '"v2"' }),
     }),
   ],
 };

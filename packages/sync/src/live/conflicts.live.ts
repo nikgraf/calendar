@@ -73,7 +73,7 @@ const parkedEdit = (name: string) =>
     );
     const [op] = yield* pendingOps;
     expect(op?.conflictAt).toBeDefined();
-    expect(op?.serverPayload?.title).toBe(`${record.title} server 2`);
+    expect(op?.beforePayload?.title).toBe(`${record.title} server 2`);
 
     // A pull while parked leaves the user's version alone.
     yield* engine.syncAll();
@@ -160,7 +160,7 @@ describe('live Google: 412 conflicts', () => {
       const [op] = yield* pendingOps;
       expect(op?.kind).toBe('update');
       expect(op?.conflictAt).toBeDefined();
-      expect(op?.serverPayload === undefined || op.serverPayload.status === 'cancelled').toBe(true);
+      expect(!op?.beforePayload || op.beforePayload.status === 'cancelled').toBe(true);
       yield* mutations.resolveConflict({ choice: 'mine', opId: op!.id });
       // Keep mine re-created the row under a fresh id before the drain ran.
       const window = yield* (yield* EventRepo).getWindow(0, Number.MAX_SAFE_INTEGER);

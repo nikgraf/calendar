@@ -628,8 +628,8 @@ describe('EventMutations', () => {
         };
         const { op, record } = yield* parkEdit;
         expect(op.eventId).toBe(record.id);
-        expect(op.serverPayload?.title).toBe('Server title');
-        expect(op.serverPayload?.etag).toBe('"server-2"');
+        expect(op.beforePayload?.title).toBe('Server title');
+        expect(op.beforePayload?.etag).toBe('"server-2"');
       }).pipe(Effect.provide(mutationsLayer(client)));
     });
 
@@ -650,7 +650,8 @@ describe('EventMutations', () => {
       return Effect.gen(function* () {
         const { mutations, op, record } = yield* parkEdit;
         // Google still has the event (the fetch said so when parking).
-        yield* (yield* PendingOpRepo).markConflict(op.id, 1, record);
+        yield* (yield* PendingOpRepo).setBefore(op.id, record);
+        yield* (yield* PendingOpRepo).markConflict(op.id, 1);
         yield* mutations.resolveConflict({ choice: 'mine', opId: op.id });
         yield* mutations.processPendingOps();
 
@@ -715,7 +716,8 @@ describe('EventMutations', () => {
       const server: { current: GcalEvent | undefined } = { current: undefined };
       return Effect.gen(function* () {
         const { mutations, op, record } = yield* parkEdit;
-        expect(op.serverPayload).toBeUndefined();
+        // Google has it no more: no copy is left.
+        expect(op.beforePayload).toBeNull();
         yield* mutations.resolveConflict({ choice: 'mine', opId: op.id });
         yield* mutations.processPendingOps();
 
@@ -783,14 +785,40 @@ describe('EventMutations', () => {
       }).pipe(Effect.provide(mutationsLayer(conflictingGoogle(server, sent))));
     });
 
-    it.effect('discarding a queued edit hands its row back to sync', () => {
+    it.effect("discarding a parked edit shows Google's version", () => {
+      const sent: Array<{ baseEtag: string | undefined; kind: string }> = [];
+      const server: { current: GcalEvent | undefined } = {
+        current: {
+          end: { dateTime: '2026-07-03T12:00:00Z' },
+          etag: '"server-2"',
+          id: 'placeholder',
+          start: { dateTime: '2026-07-03T11:00:00Z' },
+          status: 'confirmed',
+          summary: 'Conflicting title',
+        },
+      };
+      return Effect.gen(function* () {
+        const { mutations, op, record } = yield* parkEdit;
+        yield* mutations.discardPendingOp(op.id);
+        expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
+        const row = yield* rowOf(record.id);
+        expect(row?.syncStatus).toBe('synced');
+        expect(row?.title).toBe('Conflicting title');
+        expect(row?.etag).toBe('"server-2"');
+      }).pipe(Effect.provide(mutationsLayer(conflictingGoogle(server, sent))));
+    });
+
+    it.effect('discarding an edit of an event Google deleted leaves no row', () => {
       const sent: Array<{ baseEtag: string | undefined; kind: string }> = [];
       const server: { current: GcalEvent | undefined } = { current: undefined };
       return Effect.gen(function* () {
         const { mutations, op, record } = yield* parkEdit;
         yield* mutations.discardPendingOp(op.id);
         expect(yield* (yield* PendingOpRepo).listAll()).toEqual([]);
-        expect((yield* rowOf(record.id))?.syncStatus).toBe('synced');
+        // Put back as it was before the edit, it stayed for good: Google's
+        // list had already told of the delete, or tells it to a row that
+        // is not there.
+        expect(yield* rowOf(record.id)).toBeNull();
       }).pipe(Effect.provide(mutationsLayer(conflictingGoogle(server, sent))));
     });
   });

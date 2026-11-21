@@ -141,7 +141,7 @@ const parkedEdit = (google: FakeGoogle) =>
     expect(google.eventOf('cal-1', 'a')?.summary).toBe('Server 2');
     const [op] = yield* (yield* PendingOpRepo).listAll();
     expect(op?.conflictAt).toBeDefined();
-    expect(op?.serverPayload?.title).toBe('Server 2');
+    expect(op?.beforePayload?.title).toBe('Server 2');
 
     // A pull while parked leaves the user's version alone.
     yield* TestClock.adjust('1 minute');

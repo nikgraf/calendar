@@ -5,7 +5,7 @@ import { SqlClient } from 'effect/sql/SqlClient';
 import type { SqlError } from 'effect/sql/SqlError';
 import { OPS_KEY } from './keys.ts';
 import { HOLDING_KINDS, pendingOpFromRow, type PendingOpRow } from './rows.ts';
-import { carriedTextJson, copySourceJson, eventListJson, eventPayloadJson } from './repoShared.ts';
+import { carriedTextJson, copySourceJson, eventPayloadJson } from './repoShared.ts';
 
 export interface PendingOpRepoShape {
   /**
@@ -137,14 +137,11 @@ export interface PendingOpRepoShape {
   ) => Effect.Effect<ReadonlyArray<PendingOp>, SqlError>;
   readonly makeDue: (opId: string) => Effect.Effect<void, SqlError>;
   /**
-   * Parks an op after a 412: the drain skips it until `unpark` or removal.
-   * `serverPayload` is Google's version (undefined = deleted on Google).
+   * Parks an op whose event changed on Google: the drain skips it until
+   * `unpark` or removal. Google's version is the event's copy by then
+   * (`beforePayload`; none means Google deleted the event).
    */
-  readonly markConflict: (
-    opId: string,
-    at: number,
-    serverPayload: PendingOp['serverPayload'],
-  ) => Effect.Effect<void, SqlError>;
+  readonly markConflict: (opId: string, at: number) => Effect.Effect<void, SqlError>;
   /** Persists the pre-network stamp for non-idempotent calls. */
   readonly markDispatched: (opId: string, at: number) => Effect.Effect<void, SqlError>;
   readonly markFailed: (
@@ -215,9 +212,10 @@ export interface PendingOpRepoShape {
    */
   readonly setBefore: (opId: string, before: EventRecord | null) => Effect.Effect<void, SqlError>;
   /**
-   * Replaces the exceptions a series delete holds (`undefined`: none):
-   * Google's copies go into it while the master is gone locally, and out
-   * of it once a pull puts the master back.
+   * Replaces the exceptions a series delete holds (`undefined`: none),
+   * each kept as Google's copy of that exception: they go into it while
+   * the master is gone locally. A copy an op of the exception itself
+   * holds stays whatever is passed.
    */
   readonly setBeforeOverrides: (
     opId: string,
@@ -277,7 +275,16 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
      * replaces (`beforePayload`) is kept once per event in `event_copies`,
      * so every queued op of an event reads the same one.
      */
-    const selectOps = sql`SELECT p.*, c.payload AS copy_payload FROM pending_ops p
+    const selectOps = sql`SELECT p.*, c.payload AS copy_payload,
+        CASE WHEN p.kind = 'delete' THEN (
+          SELECT json_group_array(json(x.payload)) FROM event_copies x
+          WHERE x.account_id = p.account_id AND x.calendar_id = p.calendar_id
+            AND json_extract(x.payload, '$.recurringEventId') = p.event_id
+            AND NOT EXISTS (SELECT 1 FROM pending_ops d
+              WHERE d.account_id = x.account_id AND d.calendar_id = x.calendar_id
+                AND d.event_id = x.id AND d.kind = 'delete')
+        ) END AS taken_payload
+      FROM pending_ops p
       LEFT JOIN event_copies c ON c.account_id = p.account_id
         AND c.calendar_id = p.calendar_id AND c.id = p.event_id`;
     const putCopy = (accountId: string, calendarId: string, eventId: string, copy: EventRecord) =>
@@ -287,10 +294,25 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
     const dropCopy = (accountId: string, calendarId: string, eventId: string) =>
       sql`DELETE FROM event_copies WHERE account_id = ${accountId}
         AND calendar_id = ${calendarId} AND id = ${eventId}`;
-    /** A copy is kept only while an op names its event: the rest go. */
+    /**
+     * A copy is kept only while something holds its event: an op that
+     * names it, or the queued delete of its series, which took its
+     * exceptions off the table. The rest go.
+     */
     const dropIdleCopies = sql`DELETE FROM event_copies WHERE NOT EXISTS (
       SELECT 1 FROM pending_ops p WHERE p.account_id = event_copies.account_id
-        AND p.calendar_id = event_copies.calendar_id AND p.event_id = event_copies.id)`;
+        AND p.calendar_id = event_copies.calendar_id
+        AND (p.event_id = event_copies.id
+          OR (p.kind = 'delete'
+            AND p.event_id = json_extract(event_copies.payload, '$.recurringEventId'))))`;
+    /** The copies of a series' exceptions that no op of their own holds. */
+    const dropTaken = (accountId: string, calendarId: string, masterId: string) =>
+      sql`DELETE FROM event_copies WHERE account_id = ${accountId}
+        AND calendar_id = ${calendarId}
+        AND json_extract(payload, '$.recurringEventId') = ${masterId}
+        AND NOT EXISTS (SELECT 1 FROM pending_ops p
+          WHERE p.account_id = event_copies.account_id
+            AND p.calendar_id = event_copies.calendar_id AND p.event_id = event_copies.id)`;
 
     return {
       countFor: (accountId, sources) => {
@@ -371,9 +393,9 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
                                    task_list_id, task_status,
                                    task_title, task_notes, task_due, dispatched_at,
                                    attendees_changed, geo_cleared, target_calendar_id,
-                                   reminders_changed, conflict_at, server_payload,
+                                   reminders_changed, conflict_at,
                                    carried_text, recurrence_cleared,
-                                   before_overrides, before_color_hex,
+                                   before_color_hex,
                                    target_task_list_id, task_parent, task_due_cleared,
                                    task_previous, drops_from, split_of, split_in,
                                    split_at, split_check, copy_source)
@@ -387,10 +409,8 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
                   ${op.dispatchedAt ?? null}, ${op.attendeesChanged ? 1 : 0},
                   ${op.geoCleared ? 1 : 0}, ${op.targetCalendarId ?? null},
                   ${op.remindersChanged ? 1 : 0}, ${op.conflictAt ?? null},
-                  ${op.serverPayload ? JSON.stringify(eventPayloadJson(op.serverPayload)) : null},
                   ${op.carriedText ? JSON.stringify(carriedTextJson(op.carriedText)) : null},
                   ${op.recurrenceCleared ? 1 : 0},
-                  ${op.beforeOverrides ? JSON.stringify(eventListJson(op.beforeOverrides)) : null},
                   ${op.beforeColorHex ?? null}, ${op.targetTaskListId ?? null},
                   ${op.taskParent ?? null}, ${op.taskDue === null ? 1 : 0},
                   ${op.taskPrevious ?? null}, ${op.dropsFrom ?? null},
@@ -405,6 +425,10 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
               yield* sql`INSERT OR IGNORE INTO event_copies (account_id, calendar_id, id, payload)
                 VALUES (${op.accountId}, ${op.calendarId}, ${op.eventId},
                         ${JSON.stringify(eventPayloadJson(op.beforePayload))})`;
+            }
+            // The exceptions a series delete took are Google's copies too.
+            for (const taken of op.kind === 'delete' ? (op.beforeOverrides ?? []) : []) {
+              yield* putCopy(op.accountId, op.calendarId, taken.id, taken);
             }
           }),
         ),
@@ -453,9 +477,9 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
                 Effect.andThen(
                   sql`DELETE FROM event_copies WHERE account_id = ${accountId}
                     AND calendar_id = ${calendarId} AND id IN ${sql.in(ids)}`,
-                  sql`UPDATE pending_ops SET before_overrides = NULL
-                    WHERE account_id = ${accountId} AND calendar_id = ${calendarId}
-                      AND event_id IN ${sql.in(ids)} AND kind = 'delete'`,
+                  sql`DELETE FROM event_copies WHERE account_id = ${accountId}
+                    AND calendar_id = ${calendarId}
+                    AND json_extract(payload, '$.recurringEventId') IN ${sql.in(ids)}`,
                 ),
               ),
             ),
@@ -501,11 +525,10 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
               WHERE id = ${opId} AND conflict_at IS NULL`,
           ),
         ),
-      markConflict: (opId, at, serverPayload) =>
+      markConflict: (opId, at) =>
         invalidating(
           Effect.asVoid(
             sql`UPDATE pending_ops SET conflict_at = ${at},
-              server_payload = ${serverPayload ? JSON.stringify(eventPayloadJson(serverPayload)) : null},
               last_error = 'changed on Google'
               WHERE id = ${opId}`,
           ),
@@ -551,14 +574,15 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
           Effect.gen(function* () {
             yield* sql`UPDATE pending_ops SET calendar_id = ${op.calendarId},
                 payload = ${op.payload ? JSON.stringify(eventPayloadJson(op.payload)) : null},
-                server_payload = ${op.serverPayload ? JSON.stringify(eventPayloadJson(op.serverPayload)) : null},
-                before_overrides = ${op.beforeOverrides ? JSON.stringify(eventListJson(op.beforeOverrides)) : null},
                 attempts = ${op.attempts}, next_attempt_at = ${op.nextAttemptAt},
                 last_error = ${op.lastError ?? null}
               WHERE id = ${op.id}`;
             // Google's copy follows the op to the calendar it names now.
             if (op.beforePayload && HOLDING_KINDS.has(op.kind)) {
               yield* putCopy(op.accountId, op.calendarId, op.eventId, op.beforePayload);
+            }
+            for (const taken of op.kind === 'delete' ? (op.beforeOverrides ?? []) : []) {
+              yield* putCopy(op.accountId, op.calendarId, taken.id, taken);
             }
             yield* dropIdleCopies;
           }),
@@ -611,11 +635,21 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
         ),
       setBeforeOverrides: (opId, overrides) =>
         invalidating(
-          Effect.asVoid(
-            sql`UPDATE pending_ops
-              SET before_overrides = ${overrides ? JSON.stringify(eventListJson(overrides)) : null}
-              WHERE id = ${opId}`,
-          ),
+          Effect.gen(function* () {
+            const rows = yield* sql<{
+              readonly account_id: string;
+              readonly calendar_id: string;
+              readonly event_id: string;
+            }>`SELECT account_id, calendar_id, event_id FROM pending_ops WHERE id = ${opId}`;
+            const row = rows[0];
+            if (!row) {
+              return;
+            }
+            yield* dropTaken(row.account_id, row.calendar_id, row.event_id);
+            for (const taken of overrides ?? []) {
+              yield* putCopy(row.account_id, row.calendar_id, taken.id, taken);
+            }
+          }),
         ),
       setCopySource: (opIds, source) =>
         invalidating(
@@ -650,7 +684,7 @@ const makePendingOpRepo: Effect.Effect<PendingOpRepoShape, never, Reactivity | S
       unpark: (opId, now) =>
         invalidating(
           Effect.asVoid(
-            sql`UPDATE pending_ops SET conflict_at = NULL, server_payload = NULL,
+            sql`UPDATE pending_ops SET conflict_at = NULL,
               base_etag = NULL, attempts = 0, next_attempt_at = ${now}, last_error = NULL
               WHERE id = ${opId}`,
           ),

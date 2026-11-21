@@ -332,7 +332,8 @@ describe('moveEvent inside one Google account', () => {
         eventId: 'evt-a',
       });
       const [edit] = yield* queued;
-      yield* pending.markConflict(edit!.id, 1, googleEvent({ title: 'Theirs' }));
+      yield* pending.setBefore(edit!.id, googleEvent({ title: 'Theirs' }));
+      yield* pending.markConflict(edit!.id, 1);
       yield* mutations.moveEvent(move(['acc-1', 'cal-1', 'evt-a'], ['acc-1', 'cal-2']));
 
       const ops = yield* queued;
@@ -340,7 +341,7 @@ describe('moveEvent inside one Google account', () => {
       const requeued = ops[1]!;
       expect(requeued.calendarId).toBe('cal-2');
       expect(requeued.conflictAt).toBe(1);
-      expect(requeued.serverPayload?.calendarId).toBe('cal-2');
+      expect(requeued.beforePayload?.calendarId).toBe('cal-2');
 
       const refused = yield* mutations
         .resolveConflict({ choice: 'theirs', opId: requeued.id })

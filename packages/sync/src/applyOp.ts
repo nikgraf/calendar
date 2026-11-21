@@ -51,7 +51,6 @@ import {
   forgetDropped,
   putBack,
   restoreDropped,
-  reviseTaken,
   takeIntoDelete,
 } from './takenExceptions.ts';
 import { makeApplyTaskOrder, readTaskOrder } from './taskOrder.ts';
@@ -246,7 +245,6 @@ export const retargetOp = (op: PendingOp, calendarId: string): PendingOp => {
     lastError: op.conflictAt === undefined ? undefined : op.lastError,
     nextAttemptAt: 0,
     payload: op.payload ? retarget(op.payload) : undefined,
-    serverPayload: op.serverPayload ? retarget(op.serverPayload) : undefined,
   });
 };
 
@@ -370,17 +368,8 @@ export const makeApplyOp = (deps: ApplyOpDeps): ApplyOp => {
       }
       const current = yield* eventRepo.getById(op.accountId, op.calendarId, op.eventId);
       if (!current) {
-        // A waiting series delete may hold the exception instead.
-        const masterId = op.payload?.recurringEventId;
-        if (op.beforePayload && op.payload && masterId !== undefined) {
-          const before = op.beforePayload;
-          const payload = op.payload;
-          yield* reviseTaken(
-            taken,
-            { accountId: op.accountId, calendarId: op.calendarId, id: op.eventId, masterId },
-            (entry) => new EventRecord({ ...entry, ...ownedFields(op, entry, before, payload) }),
-          );
-        }
+        // A waiting series delete took the exception off the table: what
+        // it puts back is Google's copy, which never held this change.
         return;
       }
       if (isPulledCopy(yield* pendingOpRepo.listForEvent(op), current)) {

@@ -3,6 +3,7 @@ import { SqliteClient } from '@effect/sql-sqlite-node';
 import { expect, it } from '@effect/vitest';
 import { Effect, Layer } from 'effect';
 import { layer as reactivityLayer } from 'effect/reactivity/Reactivity';
+import { SqlClient } from 'effect/sql/SqlClient';
 import { describe } from 'vite-plus/test';
 import { runMigrations } from './migrate.ts';
 import { PendingOpRepo, reposLayer } from './repos.ts';
@@ -42,6 +43,17 @@ const eventRow = (title: string) =>
     syncStatus: 'synced',
     title,
     updatedAt: 1,
+  });
+
+/** An exception of series `m1`, as Google has it. */
+const exception = (id: string, title: string) =>
+  new EventRecord({ ...eventRow(title), id, originalStartUtc: 1, recurringEventId: 'm1' });
+
+/** What the op reads as the exceptions its series delete took: `id title`, sorted. */
+const taken = (opId: string) =>
+  Effect.gen(function* () {
+    const stored = yield* (yield* PendingOpRepo).getById(opId);
+    return stored?.beforeOverrides?.map((row) => `${row.id} ${row.title}`).toSorted();
   });
 
 describe('PendingOpRepo', () => {
@@ -102,7 +114,6 @@ describe('PendingOpRepo', () => {
         op('op-1', {
           baseEtag: '"server"',
           beforeColorHex: '#00ff00',
-          beforeOverrides: [new EventRecord({ ...payload, id: 'evt-1_x', title: 'Moved' })],
           beforePayload: new EventRecord({ ...payload, title: 'Before' }),
           carriedText,
           colorHex: '#ff0000',
@@ -122,7 +133,6 @@ describe('PendingOpRepo', () => {
       expect(stored?.payload?.attendees?.[0]?.email).toBe('guest@example.com');
       expect(stored?.carriedText).toEqual(carriedText);
       expect(stored?.beforePayload?.title).toBe('Before');
-      expect(stored?.beforeOverrides?.map((row) => row.title)).toEqual(['Moved']);
       expect(stored?.beforeColorHex).toBe('#00ff00');
     }).pipe(Effect.provide(freshDbLayer())),
   );
@@ -273,7 +283,7 @@ describe('PendingOpRepo', () => {
     }).pipe(Effect.provide(freshDbLayer())),
   );
 
-  it.effect('listDeletes and setBeforeOverrides: the exceptions a series delete holds', () =>
+  it.effect('listDeletes: the queued deletes of one calendar', () =>
     Effect.gen(function* () {
       const repo = yield* PendingOpRepo;
       yield* repo.enqueue(op('series', { eventId: 'm1', kind: 'delete' }));
@@ -283,15 +293,80 @@ describe('PendingOpRepo', () => {
       const [remove, ...rest] = yield* repo.listDeletes('acc-1', 'cal-1');
       expect(remove?.id).toBe('series');
       expect(rest).toEqual([]);
-
-      yield* repo.setBeforeOverrides('series', [eventRow('Moved')]);
-      expect((yield* repo.getById('series'))?.beforeOverrides?.map((row) => row.title)).toEqual([
-        'Moved',
-      ]);
-      yield* repo.setBeforeOverrides('series', undefined);
-      expect((yield* repo.getById('series'))?.beforeOverrides).toBeUndefined();
     }).pipe(Effect.provide(freshDbLayer())),
   );
+
+  describe('the exceptions a series delete holds', () => {
+    it.effect('are Google’s copies of them, read by the delete of their series', () =>
+      Effect.gen(function* () {
+        const repo = yield* PendingOpRepo;
+        yield* repo.enqueue(
+          op('series', {
+            beforeOverrides: [exception('m1_1', 'Moved'), exception('m1_2', 'Renamed')],
+            eventId: 'm1',
+            kind: 'delete',
+          }),
+        );
+        // Another series' delete, and an edit of this one, hold none of them.
+        yield* repo.enqueue(op('other', { eventId: 'm2', kind: 'delete' }));
+        yield* repo.enqueue(op('edit', { eventId: 'm1', kind: 'update' }));
+        expect(yield* taken('series')).toEqual(['m1_1 Moved', 'm1_2 Renamed']);
+        expect(yield* taken('other')).toBeUndefined();
+        expect(yield* taken('edit')).toBeUndefined();
+
+        yield* repo.setBeforeOverrides('series', [exception('m1_2', 'Renamed on Google')]);
+        expect(yield* taken('series')).toEqual(['m1_2 Renamed on Google']);
+        yield* repo.setBeforeOverrides('series', undefined);
+        expect(yield* taken('series')).toBeUndefined();
+      }).pipe(Effect.provide(freshDbLayer())),
+    );
+
+    it.effect('one is the copy an op of the exception reads too, and its own delete’s alone', () =>
+      Effect.gen(function* () {
+        const repo = yield* PendingOpRepo;
+        yield* repo.enqueue(op('answer', { eventId: 'm1_1', kind: 'rsvp' }));
+        yield* repo.enqueue(op('cut', { eventId: 'm1_2', kind: 'delete' }));
+        yield* repo.enqueue(
+          op('series', {
+            beforeOverrides: [exception('m1_1', 'Moved'), exception('m1_2', 'Past the cut')],
+            eventId: 'm1',
+            kind: 'delete',
+          }),
+        );
+        expect((yield* repo.getById('answer'))?.beforePayload?.title).toBe('Moved');
+        expect((yield* repo.getById('cut'))?.beforePayload?.title).toBe('Past the cut');
+        // The exception whose own delete waits is that delete's to put back.
+        expect(yield* taken('series')).toEqual(['m1_1 Moved']);
+        // Clearing what the series delete holds leaves what those ops hold.
+        yield* repo.setBeforeOverrides('series', undefined);
+        expect((yield* repo.getById('answer'))?.beforePayload?.title).toBe('Moved');
+        expect(yield* taken('series')).toEqual(['m1_1 Moved']);
+      }).pipe(Effect.provide(freshDbLayer())),
+    );
+
+    it.effect('go with the delete, and when a pull reports their series deleted', () =>
+      Effect.gen(function* () {
+        const repo = yield* PendingOpRepo;
+        const sql = yield* SqlClient;
+        const copies = Effect.map(
+          sql<{ readonly id: string }>`SELECT id FROM event_copies ORDER BY id`,
+          (rows) => rows.map((row) => row.id),
+        );
+        const held = [exception('m1_1', 'Moved')];
+        yield* repo.enqueue(op('series', { beforeOverrides: held, eventId: 'm1', kind: 'delete' }));
+        // Another op's removal leaves them: the series delete still waits.
+        yield* repo.enqueue(op('edit', { eventId: 'evt-9' }));
+        yield* repo.remove('edit');
+        expect(yield* copies).toEqual(['m1_1']);
+        yield* repo.remove('series');
+        expect(yield* copies).toEqual([]);
+
+        yield* repo.enqueue(op('again', { beforeOverrides: held, eventId: 'm1', kind: 'delete' }));
+        yield* repo.forgetDeleted('acc-1', 'cal-1', ['m1']);
+        expect(yield* copies).toEqual([]);
+      }).pipe(Effect.provide(freshDbLayer())),
+    );
+  });
 
   it.effect(
     'a series update keeps where its drop starts; a snapshot can say nothing was there',
@@ -489,7 +564,7 @@ describe('PendingOpRepo', () => {
       yield* repo.enqueue(op('same', { baseEtag: '"v1"', eventId: 'evt-1' }));
       yield* repo.enqueue(op('other', { baseEtag: '"v0"', eventId: 'evt-1' }));
       yield* repo.enqueue(op('parked', { baseEtag: '"v1"', eventId: 'evt-1' }));
-      yield* repo.markConflict('parked', 5, undefined);
+      yield* repo.markConflict('parked', 5);
       yield* repo.enqueue(op('elsewhere', { baseEtag: '"v1"', eventId: 'evt-2' }));
       yield* repo.advanceBaseEtag(
         { accountId: 'acc-1', calendarId: 'cal-1', eventId: 'evt-1' },
@@ -550,7 +625,7 @@ describe('PendingOpRepo', () => {
       yield* repo.enqueue(op('a1', { attempts: 6, nextAttemptAt: 9000 }));
       yield* repo.enqueue(op('b1', { accountId: 'acc-2', nextAttemptAt: 9000 }));
       yield* repo.enqueue(op('parked', { nextAttemptAt: 9000 }));
-      yield* repo.markConflict('parked', 5, undefined);
+      yield* repo.markConflict('parked', 5);
 
       yield* repo.retryNow('acc-1');
       expect((yield* repo.listDue(1)).map((entry) => entry.id)).toEqual(['a1']);

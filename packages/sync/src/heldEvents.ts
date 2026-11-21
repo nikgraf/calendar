@@ -72,7 +72,7 @@ const groupOf = (field: string): string => FIELD_GROUP[field] ?? field;
 const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
 
 /** `base` with the answers `rsvp` changed since `old` laid over its guests. */
-const withAnswers = (
+export const withAnswers = (
   base: EventRecord,
   rsvp: PendingOp,
   old: EventRecord | null | undefined,
@@ -212,14 +212,14 @@ export const makeHeldEvents = (deps: HeldEventDeps): HeldEvents => {
             op.conflictAt !== undefined ||
             (op.baseEtag !== undefined && theirs.etag !== op.baseEtag)
           ) {
-            yield* pendingOpRepo.markConflict(op.id, op.conflictAt ?? now, theirs);
+            yield* pendingOpRepo.markConflict(op.id, op.conflictAt ?? now);
           }
           continue;
         }
         if (op.conflictAt !== undefined) {
           // Parked already: its preview of Google's version moves on, and
           // it stays the user's version on screen.
-          yield* pendingOpRepo.markConflict(op.id, op.conflictAt, theirs);
+          yield* pendingOpRepo.markConflict(op.id, op.conflictAt);
           const kept = op.kind === 'rsvp' ? undefined : rebaseOnto(op, old, theirs).payload;
           if (kept) {
             row = kept;
@@ -236,7 +236,7 @@ export const makeHeldEvents = (deps: HeldEventDeps): HeldEvents => {
         row = rebased.payload;
         yield* pendingOpRepo.setPayload(op.id, rebased.payload);
         if (rebased.kind === 'clash') {
-          yield* pendingOpRepo.markConflict(op.id, now, theirs);
+          yield* pendingOpRepo.markConflict(op.id, now);
         }
       }
       if (theirs.etag !== null) {

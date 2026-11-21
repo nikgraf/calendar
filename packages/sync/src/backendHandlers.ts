@@ -433,7 +433,7 @@ export const commonBackendHandlers: Omit<BackendHandlers<CommonBackendServices>,
                 conflict: {
                   at: op.conflictAt,
                   ...(op.payload === undefined ? {} : { mine: op.payload }),
-                  theirs: op.serverPayload ?? null,
+                  theirs: op.beforePayload ?? null,
                 },
               }),
           ...(diff === undefined ? {} : { diff }),
