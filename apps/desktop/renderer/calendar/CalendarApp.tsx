@@ -49,6 +49,7 @@ import {
   useTimeZones,
   useToday,
   useUpdateViewPreferences,
+  useNewEventSettings,
   useViewPreferences,
 } from '@calendar/app-state';
 import {
@@ -177,12 +178,14 @@ const mainViewOf = (view: string | undefined): MainView =>
  * would, near midnight with a distant primary, also seed the focused day
  * and "today" with the wrong date. The view preferences resolve with the
  * same initial atoms, so the gate never shows — and the last view opens
- * without a flash of the default.
+ * without a flash of the default. So does the default calendar, which an
+ * editor reads once as it opens.
  */
 export function CalendarApp() {
   const zones = useTimeZones();
   const prefs = useViewPreferences();
-  if (!zones.loaded || prefs === null) {
+  const newEvents = useNewEventSettings();
+  if (!zones.loaded || prefs === null || newEvents === null) {
     return <div className="flex h-screen bg-canvas" />;
   }
   return (

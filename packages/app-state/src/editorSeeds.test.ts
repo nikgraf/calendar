@@ -1,6 +1,6 @@
 import { Temporal, TaskRecord, validateEventDraft } from '@calendar/core';
 import { describe, expect, it } from 'vite-plus/test';
-import { seedTimeFields } from './editorModel.ts';
+import { initialCalendarKey, seedTimeFields } from './editorModel.ts';
 import { seedDueTiming } from './taskEditorModel.ts';
 
 const initialDate = Temporal.PlainDate.from('2026-09-16');
@@ -48,6 +48,62 @@ describe('seedTimeFields', () => {
         },
       }),
     ).toEqual({ endTime: '13:00', startTime: '12:00' });
+  });
+});
+
+describe('initialCalendarKey', () => {
+  const writableKeys = ['acc:work', 'acc:home', 'apple-calendar:family'];
+
+  it('opens in the seed’s calendar, then the default, then the one used last, then the first', () => {
+    const all = {
+      defaultKey: 'acc:home',
+      lastUsedKey: 'apple-calendar:family',
+      seedKey: 'acc:work',
+      writableKeys,
+    };
+    expect(initialCalendarKey(all)).toBe('acc:work');
+    expect(initialCalendarKey({ ...all, seedKey: undefined })).toBe('acc:home');
+    expect(initialCalendarKey({ ...all, defaultKey: undefined, seedKey: undefined })).toBe(
+      'apple-calendar:family',
+    );
+    expect(
+      initialCalendarKey({
+        defaultKey: undefined,
+        lastUsedKey: null,
+        seedKey: undefined,
+        writableKeys,
+      }),
+    ).toBe('acc:work');
+  });
+
+  it('keeps the default over the calendar used last', () => {
+    expect(
+      initialCalendarKey({
+        defaultKey: 'apple-calendar:family',
+        lastUsedKey: 'acc:home',
+        seedKey: undefined,
+        writableKeys,
+      }),
+    ).toBe('apple-calendar:family');
+  });
+
+  it('passes over a key no new event can go to, and is empty with no writable calendar', () => {
+    expect(
+      initialCalendarKey({
+        defaultKey: 'acc:holidays',
+        lastUsedKey: 'acc:gone',
+        seedKey: undefined,
+        writableKeys,
+      }),
+    ).toBe('acc:work');
+    expect(
+      initialCalendarKey({
+        defaultKey: 'acc:home',
+        lastUsedKey: null,
+        seedKey: undefined,
+        writableKeys: [],
+      }),
+    ).toBe('');
   });
 });
 
