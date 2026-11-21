@@ -35,7 +35,8 @@ export function DefaultCalendarSection() {
       <h2 className="font-medium">New events</h2>
       <p className="mt-1 text-sm text-ink-secondary">
         New events and the Assistant’s drafts start in this calendar; the editor can still put one
-        in another. Last used is the one you last saved a new event in since Solunivo opened.
+        in another. Last used is the one you last saved a new event in since the calendar window
+        opened.
       </p>
       <label className={`${LABEL_CLASS} mt-3 block`}>
         Default calendar

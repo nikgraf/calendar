@@ -122,8 +122,10 @@ export interface EventEditorSeed {
 }
 
 /**
- * The calendar the last new event was saved in, until the app quits:
- * where a new event starts while Settings chooses no default calendar
+ * The calendar the last new event was saved in, kept by the editor's JS
+ * context (until the app quits on iOS; until the calendar window closes
+ * on the Mac, which reopens it with a new renderer): where a new event
+ * starts while Settings chooses no default calendar
  * ("Last used"), so a user whose primary calendar is not first need not
  * keep re-picking it. Add all ends in the form's own save: the event on
  * show counts.

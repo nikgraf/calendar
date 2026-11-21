@@ -2048,7 +2048,8 @@ gateway carries all of it. Details, limits and the threat model:
   stored and named as missing in Settings, and new events take the
   calendar used last until it is here. An editor reads it once as it
   opens (the calendar roots wait for the read): seed, default, last
-  used this run, first writable.
+  used (kept in the window's JS: lost when the Mac's calendar window
+  closes), first writable.
 - **Settings code**: the settings document as one line a QR code carries,
   for copying a setup between the iPhone and the Mac (core
   `settingsCode.ts`): `SOLUNIVO:1:` + RFC 4648 base32 (no padding) of the

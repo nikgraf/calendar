@@ -103,7 +103,8 @@ export type SettingsAccount = typeof SettingsAccount.Type;
  * The calendar a new event starts in, the Assistant's drafts included:
  * one named the way mirrors name calendars (Google by email and id, Apple
  * by source and title), or `lastUsed` — the calendar the last new event
- * was saved in since the app started, and the first one until then.
+ * was saved in while the app (on the Mac, its calendar window) stayed
+ * open, and the first one until then.
  */
 export const NewEventSettings = Schema.Struct({
   calendar: Schema.Union([Schema.Literal('lastUsed'), MirrorCalendarRef]),
