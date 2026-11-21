@@ -45,7 +45,7 @@
     "@types/react-dom": "~19.3.0",
     "@vitejs/plugin-react": "^6.3.0",
     "babel-plugin-react-compiler": "^1.0.0",
-    "electron": "^45.3.3",
+    "electron": "^45.3.4",
     "tailwindcss": "^4.3.5",
     "typescript": "catalog:",
     "vite": "catalog:",
