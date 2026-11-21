@@ -114,6 +114,7 @@ export interface BackendAtoms {
   readonly mapSnapshot: ReturnType<typeof buildAtoms>['mapSnapshot'];
   readonly mirrors: ReturnType<typeof buildAtoms>['mirrors'];
   readonly mutationCall: ReturnType<typeof buildAtoms>['mutationCall'];
+  readonly newEventSettings: ReturnType<typeof buildAtoms>['newEventSettings'];
   readonly onboarding: ReturnType<typeof buildAtoms>['onboarding'];
   readonly overdueTasks: ReturnType<typeof buildAtoms>['overdueTasks'];
   readonly pendingOps: ReturnType<typeof buildAtoms>['pendingOps'];
@@ -165,6 +166,7 @@ const MUTATION_REACTIVITY = {
     BIRTHDAY_OVERRIDES_KEY,
     deviceSettingsKey('birthdayReminders'),
     deviceSettingsKey('eventNotifications'),
+    deviceSettingsKey('newEvents'),
     deviceSettingsKey('taskNotifications'),
     deviceSettingsKey('timeZones'),
     deviceSettingsKey('viewPreferences'),
@@ -195,6 +197,7 @@ const MUTATION_REACTIVITY = {
   setCalendarVisible: [CALENDARS_KEY, EVENTS_KEY],
   setEventNotificationSettings: [deviceSettingsKey('eventNotifications')],
   setMirrorEnabled: [MIRRORS_LOCAL_KEY],
+  setNewEventSettings: [deviceSettingsKey('newEvents')],
   setTaskListVisible: [TASKLISTS_KEY, TASKS_KEY],
   setTaskNotificationSettings: [deviceSettingsKey('taskNotifications')],
   setTimeZoneSettings: [deviceSettingsKey('timeZones')],
@@ -397,6 +400,16 @@ const buildAtoms = (client: BackendClient, deviceZone: Atom.Atom<string>) => {
       }),
     )
     .pipe(Atom.withReactivity([deviceSettingsKey('timeZones')]));
+
+  // Where new events start (the default calendar); refetched only when written.
+  const newEventSettings = runtime
+    .atom(
+      Effect.gen(function* () {
+        const backend = yield* AppBackend;
+        return yield* backend.getNewEventSettings(undefined);
+      }),
+    )
+    .pipe(Atom.withReactivity([deviceSettingsKey('newEvents')]));
 
   // The first run and the Getting started card on this device; refetched
   // only when written (a tick, a collapse, Hide, Start Over).
@@ -643,6 +656,7 @@ const buildAtoms = (client: BackendClient, deviceZone: Atom.Atom<string>) => {
     mapSnapshot,
     mirrors,
     mutationCall,
+    newEventSettings,
     onboarding,
     overdueTasks,
     pendingOps,

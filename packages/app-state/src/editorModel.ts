@@ -6,6 +6,7 @@ import {
   isLossy,
   isTaskToEventLossy,
   moveLossSummary,
+  placeDefaultCalendar,
   taskRecurrenceFromLines,
   taskToEventLossSummary,
   timeFieldsChanged,
@@ -58,7 +59,13 @@ import {
   remindersKey,
   vouchedGeo,
 } from './eventEditorChanges.ts';
-import { useAccounts, useBackendMutations, useEventMaster, useLocationGeo } from './hooks.ts';
+import {
+  useAccounts,
+  useBackendMutations,
+  useEventMaster,
+  useLocationGeo,
+  useNewEventSettings,
+} from './hooks.ts';
 import { useOneWrite } from './oneWrite.ts';
 import { useRepeatState } from './repeatState.ts';
 import type { CreatedItem } from './createdItem.ts';
@@ -115,14 +122,41 @@ export interface EventEditorSeed {
 }
 
 /**
- * The calendar the last event was created in, for this session. A new
- * event used to default to the first writable calendar every time, so a
- * user whose primary calendar is not first kept re-picking it.
+ * The calendar the last new event was saved in, kept by the editor's JS
+ * context (until the app quits on iOS; until the calendar window closes
+ * on the Mac, which reopens it with a new renderer): where a new event
+ * starts while Settings chooses no default calendar
+ * ("Last used"), so a user whose primary calendar is not first need not
+ * keep re-picking it. Add all ends in the form's own save: the event on
+ * show counts.
  */
 let lastUsedCalendarKey: string | null = null;
 export const rememberCalendar = (calendarKey: string): void => {
   lastUsedCalendarKey = calendarKey;
 };
+
+/**
+ * The calendar a new event opens in: the one its seed names, then the
+ * default calendar of Settings, then the one used last this session, then
+ * the first writable one — each only while a new event can go there.
+ * `''` when no calendar can take one.
+ */
+export const initialCalendarKey = ({
+  defaultKey,
+  lastUsedKey,
+  seedKey,
+  writableKeys,
+}: {
+  readonly defaultKey: string | undefined;
+  readonly lastUsedKey: string | null;
+  readonly seedKey: string | undefined;
+  readonly writableKeys: ReadonlyArray<string>;
+}): string =>
+  [seedKey, defaultKey, lastUsedKey].find(
+    (key): key is string => key !== undefined && key !== null && writableKeys.includes(key),
+  ) ??
+  writableKeys[0] ??
+  '';
 
 /**
  * `key` while it names a calendar a new event can go to, else `fallback`:
@@ -483,6 +517,7 @@ export const useEventEditorModel = ({
 }) => {
   const mutations = useBackendMutations();
   const accounts = useAccounts();
+  const newEventSettings = useNewEventSettings();
   const existing = seed.event;
   const isRecurring = Boolean(existing && (existing.recurrence || existing.recurringEventId));
   const ownAttendee = ownAttendeeOf(existing, accounts);
@@ -501,13 +536,18 @@ export const useEventEditorModel = ({
     if (existing) {
       return `${existing.accountId}:${existing.calendarId}`;
     }
-    const writableKeys = writableCalendars.map(
-      (calendar) => `${calendar.accountId}:${calendar.id}`,
-    );
-    const preferred = [seed.calendarKey, lastUsedCalendarKey].find(
-      (key): key is string => key !== undefined && key !== null && writableKeys.includes(key),
-    );
-    return preferred ?? writableKeys[0] ?? '';
+    // Read once, as the form opens: a default chosen meanwhile in Settings
+    // (the desktop's other window) leaves an open form alone.
+    const place =
+      newEventSettings === null
+        ? undefined
+        : placeDefaultCalendar({ accounts, calendars, settings: newEventSettings });
+    return initialCalendarKey({
+      defaultKey: place?.kind === 'here' ? place.calendarKey : undefined,
+      lastUsedKey: lastUsedCalendarKey,
+      seedKey: seed.calendarKey,
+      writableKeys: writableCalendars.map((calendar) => `${calendar.accountId}:${calendar.id}`),
+    });
   });
   const openingTimes = openingTimeFields(seed, timeZone);
   const [isAllDay, setIsAllDay] = useState(openingTimes.isAllDay);

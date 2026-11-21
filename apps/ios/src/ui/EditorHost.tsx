@@ -7,6 +7,7 @@ import {
   useUpdateOnboarding,
   useCaptureModel,
   useTaskLists,
+  useNewEventSettings,
   useTimeZones,
   type EventEditorPrefill,
 } from '@calendar/app-state';
@@ -148,6 +149,8 @@ export function EditorHostProvider({ children }: { children: ReactNode }) {
   const [sheet, setSheet] = useState<Sheet>(NONE);
   const calendars = useCalendars();
   const taskLists = useTaskLists();
+  // Kept read from launch: an editor reads the default calendar once, as it opens.
+  useNewEventSettings();
   const updateOnboarding = useUpdateOnboarding();
 
   // The editor route follows the state: pushed when a detail or an editor

@@ -18,6 +18,7 @@ export * from './editor/attendees.ts';
 export * from './editor/conflict.ts';
 export * from './editor/convert.ts';
 export * from './editor/convertLoss.ts';
+export * from './editor/defaultCalendar.ts';
 export * from './editor/eventDraft.ts';
 export * from './editor/itemKinds.ts';
 export * from './editor/moveLoss.ts';

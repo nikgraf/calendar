@@ -6,10 +6,12 @@ import { describe } from 'vite-plus/test';
 import {
   readBirthdayReminderOverrides,
   readEventNotificationSettings,
+  readNewEventSettings,
   readTaskNotificationSettings,
   readTimeZoneSettings,
   readViewPreferences,
   writeBirthdayReminderOverrides,
+  writeNewEventSettings,
   writeViewPreferences,
 } from './deviceSettings.ts';
 import {
@@ -233,6 +235,51 @@ describe('importSettings', () => {
         weekendShading: false,
       });
     }).pipe(Effect.provide(layer));
+  });
+
+  it.effect('imports the default calendar by the calendar it names, here or not yet', () => {
+    const { layer } = makeSettingsTestLayer({});
+    return Effect.gen(function* () {
+      const work: SettingsDocument = {
+        newEvents: {
+          calendar: { calendarId: 'work', email: 'nik@example.com', kind: 'google', title: 'Work' },
+        },
+        version: 1,
+      };
+      // An account this device does not have yet: kept as it is, for when it syncs.
+      expect((yield* importSettings(work)).settingsChanged).toEqual(['newEvents']);
+      expect(yield* readNewEventSettings).toEqual(work.newEvents);
+      // The same calendar under another title or the email in other case is no change.
+      const renamed: SettingsDocument = {
+        newEvents: {
+          calendar: { calendarId: 'work', email: 'Nik@Example.com', kind: 'google', title: 'Job' },
+        },
+        version: 1,
+      };
+      expect((yield* previewSettingsImport(renamed)).settingsChanged).toEqual([]);
+      // A file from before the setting existed leaves it alone; "Last used" spelled out resets it.
+      expect((yield* importSettings({ version: 1 })).settingsChanged).toEqual([]);
+      expect(yield* readNewEventSettings).toEqual(work.newEvents);
+      const lastUsed: SettingsDocument = { newEvents: { calendar: 'lastUsed' }, version: 1 };
+      expect((yield* importSettings(lastUsed)).settingsChanged).toEqual(['newEvents']);
+      expect(yield* readNewEventSettings).toEqual({ calendar: 'lastUsed' });
+    }).pipe(Effect.provide(layer));
+  });
+
+  it.effect('round-trips an Apple default calendar from one device to another', () => {
+    const family = { kind: 'apple' as const, source: 'iCloud', title: 'Family' };
+    return Effect.gen(function* () {
+      const exported = yield* Effect.gen(function* () {
+        yield* writeNewEventSettings({ calendar: family });
+        return yield* buildSettingsDocument;
+      }).pipe(Effect.provide(makeSettingsTestLayer({}).layer));
+      const [summary, stored] = yield* Effect.gen(function* () {
+        const imported = yield* importSettings(exported);
+        return [imported, yield* readNewEventSettings] as const;
+      }).pipe(Effect.provide(makeSettingsTestLayer({}).layer));
+      expect(summary.settingsChanged).toContain('newEvents');
+      expect(stored).toEqual({ calendar: family });
+    });
   });
 
   it.effect(

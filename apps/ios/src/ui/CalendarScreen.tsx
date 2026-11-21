@@ -16,6 +16,7 @@ import {
   useTimeZones,
   useToday,
   useUpdateViewPreferences,
+  useNewEventSettings,
   useViewPreferences,
   type CalendarViewKind,
 } from '@calendar/app-state';
@@ -95,7 +96,9 @@ export function CalendarScreen() {
   useFirstRun();
   const zones = useTimeZones();
   const prefs = useViewPreferences();
-  if (!zones.loaded || prefs === null) {
+  // Read with them, so an editor finds the default calendar as it opens.
+  const newEvents = useNewEventSettings();
+  if (!zones.loaded || prefs === null || newEvents === null) {
     // The first read starts the backend (the database, its migrations):
     // usually quicker than the orb's delay, so it seldom shows.
     return (

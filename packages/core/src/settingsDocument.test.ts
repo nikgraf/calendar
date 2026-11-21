@@ -45,6 +45,7 @@ const full: SettingsDocument = {
   },
   desktop: { screenPrivacy: 'visible' },
   eventNotifications: { enabled: false, includeAppleCalendar: true },
+  newEvents: { calendar: { kind: 'apple', source: 'iCloud', title: 'Home' } },
   taskNotifications: {
     dismissTasksWhenDone: false,
     enabled: true,
@@ -145,6 +146,20 @@ describe('parseSettingsDocument', () => {
     );
   });
 
+  it('reads the default calendar as "last used" or a calendar named the portable way', () => {
+    expect(parse('{ "version": 1, "newEvents": { "calendar": "lastUsed" } }').newEvents).toEqual({
+      calendar: 'lastUsed',
+    });
+    expect(
+      parse(
+        '{ "version": 1, "newEvents": { "calendar": { "kind": "google", "email": "nik@example.com", "calendarId": "work" } } }',
+      ).newEvents,
+    ).toEqual({ calendar: { calendarId: 'work', email: 'nik@example.com', kind: 'google' } });
+    expect(failure('{ "version": 1, "newEvents": { "calendar": "first" } }')).toContain(
+      'newEvents',
+    );
+  });
+
   it('rejects an unknown account kind and reports the path', () => {
     expect(failure('{ "version": 1, "accounts": [{ "kind": "outlook" }] }')).toContain('accounts');
   });
@@ -229,6 +244,20 @@ describe('mergeSettingsDocument', () => {
       weekendDays: ['FR', 'SA'],
       weekendShading: false,
     });
+  });
+
+  it('writes the default calendar back as a whole, "last used" included', () => {
+    const once = mergeSettingsDocument(text, full);
+    // Choosing "Last used" again must reach the file, or the next read would bring the calendar back.
+    const merged = mergeSettingsDocument(once, { newEvents: { calendar: 'lastUsed' }, version: 1 });
+    expect(parse(merged).newEvents).toEqual({ calendar: 'lastUsed' });
+    const work = {
+      calendar: { calendarId: 'work', email: 'nik@example.com', kind: 'google' as const },
+    };
+    expect(parse(mergeSettingsDocument(merged, { newEvents: work, version: 1 })).newEvents).toEqual(
+      work,
+    );
+    expect(merged).toContain('// keep me');
   });
 
   it('replaces the per-person birthday list as a whole, keeping the comments around it', () => {

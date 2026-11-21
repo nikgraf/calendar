@@ -7,9 +7,10 @@ import {
   type useEventEditorModel,
   useTimeZones,
 } from '@calendar/app-state';
-import { type CalendarInfo, draftZoneRanges, nameWithAddress } from '@calendar/core';
+import { draftZoneRanges, nameWithAddress } from '@calendar/core';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Linking, Pressable, Text, View } from 'react-native';
+import { calendarGroupLabel } from './calendarGroupLabel.ts';
 import { Chip } from './Chip.tsx';
 import { useSheetStyles } from './editSheetShared.ts';
 import { FindTimeFields } from './FindTimeFields.tsx';
@@ -36,12 +37,6 @@ import { RepeatRuleChips } from './RepeatRuleChips.tsx';
 import { SegmentedControl } from './SegmentedControl.tsx';
 import { ZoneLines } from './ZoneLines.tsx';
 import { SwitchAnchorContext } from './assistant/useViewSwitch.ts';
-
-/** Which account (or, for Apple, which EventKit source) a calendar belongs to. */
-const groupLabel = (calendar: CalendarInfo, emailOf: (accountId: string) => string): string =>
-  calendar.provider === 'apple'
-    ? `Apple Calendar · ${calendar.sourceTitle ?? 'This iPhone'}`
-    : emailOf(calendar.accountId);
 
 /**
  * The event half of EventEditSheet (mode === 'event'). Location follows
@@ -111,7 +106,7 @@ export function EventEditForm({
     timeZone,
     secondaryZones,
   );
-  const groups = calendarGroups(writable, (calendar) => groupLabel(calendar, emailOf));
+  const groups = calendarGroups(writable, (calendar) => calendarGroupLabel(calendar, emailOf));
   const guests = existing?.attendees ?? [];
 
   /* Start and end each get a row, a day and a time: a multi-day or

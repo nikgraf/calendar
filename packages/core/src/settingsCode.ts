@@ -24,7 +24,8 @@ import { isDeviceZone } from './timeZoneSettings.ts';
  * What the import never reads is left out to keep the code small: Google
  * calendar and task-list titles (Google matches by id), Google titles in
  * mirror refs, and the Mac-only `desktop` section. Apple titles stay —
- * they are how an Apple calendar or Reminders list is matched.
+ * they are how an Apple calendar or Reminders list is matched — and so
+ * does the default calendar's: it names one the other device lacks.
  */
 export const SETTINGS_CODE_VERSION = 1;
 export const SETTINGS_CODE_PREFIX = 'SOLUNIVO';
@@ -405,6 +406,10 @@ export const describeSettingsDocument = (document: SettingsDocument): ReadonlyAr
   const mirrors = document.mirrors?.length ?? 0;
   if (mirrors > 0) {
     lines.push(`${plural(mirrors, 'calendar mirror')} — arriving switched off`);
+  }
+  const defaultCalendar = document.newEvents?.calendar;
+  if (defaultCalendar !== undefined && defaultCalendar !== 'lastUsed') {
+    lines.push('A default calendar for new events');
   }
   return lines;
 };

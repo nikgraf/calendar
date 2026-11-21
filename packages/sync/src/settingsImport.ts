@@ -10,8 +10,10 @@ import {
   isAppleRemindersAccount,
   mergeEventNotificationSettings,
   mergeTaskNotificationSettings,
+  type NewEventSettings,
   portableViewPreferences,
   sameEventNotificationSettings,
+  sameNewEventSettings,
   sameTaskNotificationSettings,
   type ScreenPrivacy,
   type SettingsDocument,
@@ -29,10 +31,12 @@ import {
   readBirthdayReminderOverrides,
   readBirthdayReminderSettings,
   readEventNotificationSettings,
+  readNewEventSettings,
   readTaskNotificationSettings,
   readTimeZoneSettings,
   readViewPreferences,
   updateBirthdayReminderOverrides,
+  writeNewEventSettings,
   writeViewPreferences,
 } from './deviceSettings.ts';
 import {
@@ -84,6 +88,7 @@ interface ImportPlan {
   readonly flips: ReadonlyArray<AccountFlips>;
   readonly googleAccountsToAdd: ReadonlyArray<string>;
   readonly mirrors?: ReturnType<typeof planMirrorImport> | undefined;
+  readonly newEvents?: NewEventSettings | undefined;
   readonly pending: PendingVisibility;
   readonly screenPrivacy?: ScreenPrivacy | undefined;
   readonly summary: SettingsImportSummary;
@@ -191,6 +196,16 @@ const planSettingsSections = (document: SettingsDocument) =>
     if (view) {
       settingsChanged.push('view');
     }
+    // The default calendar, compared by the calendar it names (a ref's
+    // title is for reading only). One this device does not have is kept
+    // as it is: new events start there once its account or calendar is here.
+    const newEvents =
+      document.newEvents && !sameNewEventSettings(document.newEvents, yield* readNewEventSettings)
+        ? document.newEvents
+        : undefined;
+    if (newEvents) {
+      settingsChanged.push('newEvents');
+    }
     // Mirrors: added or updated, never removed; an imported one is off here.
     let mirrors: ReturnType<typeof planMirrorImport> | undefined;
     if (document.mirrors !== undefined && document.mirrors.length > 0) {
@@ -222,6 +237,7 @@ const planSettingsSections = (document: SettingsDocument) =>
       birthdayReminders,
       eventNotifications,
       mirrors,
+      newEvents,
       notes,
       screenPrivacy,
       settingsChanged,
@@ -413,6 +429,9 @@ export const importSettings = (
       }
       if (plan.view) {
         yield* writeViewPreferences(plan.view);
+      }
+      if (plan.newEvents) {
+        yield* writeNewEventSettings(plan.newEvents);
       }
       if (plan.eventNotifications) {
         yield* applyEventNotificationSettings(plan.eventNotifications);
