@@ -10,7 +10,7 @@ updates:
   # take everything, so it always carried an update the platform cannot
   # take yet and never merged (#75, #87, #98, #105) — patches it could
   # take never landed either. It now holds only what can merge as is; the
-  # rest is a deliberate sweep (docs/decisions.md, "Dependency sweep").
+  # rest is a deliberate sweep (docs/decisions.md, "Dependencies").
   - package-ecosystem: npm
     directory: /
     schedule:
@@ -28,7 +28,7 @@ updates:
       # vitest vite-plus bundles: the two move together, by hand.
       - dependency-name: 'vite-plus'
       - dependency-name: 'vitest'
-      # Majors (Babel, op-sqlite — whose Effect adapter wants < 18 — and
+      # Majors (Babel, op-sqlite — whose Effect adapter names the majors it takes — and
       # the like) come with the sweep, one commit each.
       - dependency-name: '*'
         update-types: ['version-update:semver-major']

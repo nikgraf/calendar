@@ -175,66 +175,45 @@ was cut (pruned 2026-11-17).
   conditions (a condition false on the common path waits either way).
   Open: 22's stacked-alert retry ran only on a stand-in (the simulator
   stopped showing the alert).
-- **Quick-add phrases retyped** (2026-10-15, `todo/quick-add-retype`) —
-  XCTest typed flow 06's `| | 20:00-21:00` as `|0-21:00` (run
-  38734567429), and the app read what it got: 00:00–21:00. Each phrase
-  now goes through `common/apply-quick-add.yaml`: type, compare the
-  field's value as a string, erase and retype until it matches, then
-  Apply. Rejected: an `extendedWaitUntil` regex like 03 and 07 (the
-  phrases' `|` would need escaping in every pattern).
-- **Typed titles retyped in one subflow** (2026-11-20, #370) — flows 09
-  and 17 failed three times on main with titles saved as "So e2e …",
-  "S2e convert": the field's keyboard was still connecting when XCTest
-  typed past the first letter, and the word went back to that letter.
-  `common/type-text.yaml` types, compares the field's value as a string
-  and retypes; every title or address a later step matches goes through
-  it (03, 07 and 25 dropped their own loops). Rejected: `autoCorrect`
-  off on titles (changes the app for a harness race), waiting for the
-  keyboard (Maestro cannot see it connect). Open: why the keyboard takes
-  0.7 s right after connecting Reminders.
-- **Dead Maestro driver retried** (2026-10-14, #205) — when the XCTest
-  driver dies mid-run, Maestro fails every later flow in that invocation as
-  unreachable; `run-flows.ts` runs exactly those flows once more on an
-  erased simulator (a cut-short flow leaves state in the app and in
-  EventKit). A proven driver loss with the latch in the run log
-  qualifies; a flow failing on its own blocks the retry, so an app race
+- **Typed text retyped until the field holds it** (2026-10-15 to
+  2026-11-20, `todo/quick-add-retype`, #370) — XCTest typing loses
+  letters: flow 06's `| | 20:00-21:00` arrived as `|0-21:00` (read as
+  00:00–21:00), and flows 09 and 17 saved "So e2e …" and "S2e convert"
+  when the field's keyboard was still connecting after the first letter.
+  `common/apply-quick-add.yaml` and `common/type-text.yaml` compare the
+  field's value as a string and retype until it matches; every phrase,
+  title or address a later step matches goes through one. Rejected: a
+  regex wait (`|` needs escaping), `autoCorrect` off (changes the app for
+  a harness race). Open: why the keyboard is 0.7 s slow after Reminders.
+- **One retry for a Maestro driver that died or never started** (2026-10-14
+  to 2026-11-19, #205, #365) — `run-flows.ts` reruns the flows lost that
+  way once, on an erased simulator, only on proof (`maestroRetry.ts`):
+  the latch in the run log, a timeout whose stack passes session
+  creation, or the captured command evidence when a launch's JUnit error
+  lost its type. A flow failing on its own blocks it, so an app race
   still turns the job red. Rejected: a blanket rerun like desktop's
-  per-spec retry, and Maestro's `retry` command (it retries assertions and
-  cannot outlive the latch). Simulator prep turns keyboard predictions off
-  and boots out apsd's log flood. Open: whether the keyboard hang gets rarer.
-- **A launch whose JUnit error lost its type** (2026-11-19, #365) —
-  extend #205's proof to the captured command evidence when JUnit reports
-  `Unknown error` for an initial launch. Keep the one retry on an erased
-  simulator. Rejected: retrying every unknown error or changing the app
-  for a driver failure before the flow's app commands. Conflicting or
-  missing evidence still fails; later unknown failures remain unsupported.
-- **Maestro driver that never starts** (2026-10-22) — four shard-1 runs
-  failed before any flow: Maestro gave up on its XCTest runner while
-  opening the session and wrote no report, so #205's retry never applied.
-  `run-flows.ts` now copies Maestro's console to `console.log` and runs
-  every flow once more when the timeout's stack passes session creation
-  (`createMaestro`); the runner also gets 240 s
-  (`MAESTRO_DRIVER_STARTUP_TIMEOUT`). Rejected: a retry for any missing
-  report (only session creation proves no flow ran), and the longer
-  timeout alone (an XCTest that never initializes still fails). Open:
-  whether the cold-runner case returns.
-- **Black simulator screen retried** (2026-10-30, `todo/black-display-retry`)
-  — five shards failed in a shared sub-flow with every screenshot solid
-  black and no touch events reaching the app; each passed on a manual
-  rerun (~30 macOS minutes). `run-flows.ts` reruns such a flow once on an
-  erased simulator (~5 min); a flow failing on a drawn screen still blocks
-  it. Rejected: a relaunch-only retry (run 39159977263's black screen
-  began at a relaunch, and half-made state stays), a recovery in the
-  shared sub-flows, a near-black threshold. Open: whether the reboot
-  always brings the display back.
-- **The live nightly's Maestro through `run-flows.ts`** (2026-10-30,
-  `todo/live-driver-retry`) — `google-live.yml` called `maestro test`
-  directly, so run 40997493433 died at `04a` when its runner wasn't up at
-  120 s. Its three invocations now go through `run-flows.ts` with the 240 s
-  wait, unreset (erasing loses the dev client's Metro project). What a
-  live flow is rerun for: "Live flows rerun under titles of their own",
-  below. Open: a bootstrap `openurl` timeout; a deleted event left on
-  screen.
+  per-spec retry, Maestro's `retry` (it cannot outlive the latch), a
+  retry for any missing report or unknown error. Open: whether the
+  keyboard hang gets rarer, and whether the cold-runner case returns.
+- **One retry for a display gone black or a touch the simulator dropped**
+  (2026-10-30, 2026-10-31) — a failed flow whose screenshots are all
+  solid black, or whose last touch backboardd took down and then skipped,
+  reruns once on an erased simulator like a lost driver's; a flow failing
+  on a drawn screen still blocks it. Rejected: a relaunch-only retry (a
+  black screen began at one, and half-made state stays), a recovery in
+  the shared sub-flows, a near-black threshold, retapping in the flow (it
+  would hide an app that drops a tap). Open: whether the reboot always
+  brings the display back; nothing ties a failure to the drop.
+- **The live nightly's flows rerun too, under titles of their own**
+  (2026-10-30 `todo/live-driver-retry`, 2026-11-13
+  `todo/live-retry-fresh-titles`) — `google-live.yml`'s three Maestro
+  invocations go through `run-flows.ts` with the 240 s runner wait,
+  unreset (erasing loses the dev client's Metro project). A flow cut short
+  leaves its items on Google for a rerun to match, so the second run tags
+  its titles `<tag>-r2` and reruns for every cause `ios-e2e`'s flows do,
+  unrebooted. Rejected: a reboot in between (a relaunch drew again in all
+  six sightings). Open: a bootstrap `openurl` timeout; a deleted event
+  left on screen; a leftover a rerun trips on fails it, never passes it.
 - **The live sweep checks its account** (2026-11-05,
   `todo/live-sweep-guard`) — the sweep deleted by name with whatever
   token it was given: in another account, every calendar named
@@ -245,15 +224,6 @@ was cut (pruned 2026-11-17).
   pinned in the repo (it may be public), naming either address in the
   error (CI logs). Open: a token and address minted together in the wrong
   account agree; the iOS app's own token is the bundle's, unchecked.
-- **A touch the simulator dropped** (2026-10-31, `todo/dropped-touch-retry`)
-  — live nightly 40265233306's flow 04 tap made no op: backboardd handled
-  its touch-down, then skipped every later event, so the app got a down
-  and a cancel. 120 probed taps under polls and JS stalls all pressed.
-  `run-flows.ts` reruns a failed flow whose last touch went that way, as
-  for a black screen; the live job only names it. Rejected: retapping in
-  the flow (it would hide an app that drops a tap), any drop in the flow
-  (one Maestro tapped past is not the failure). Open: nothing ties the
-  failure to the drop (Opus review); older lost-tap flakes (logs expired).
 - **The Assistant spec on a Sunday** (2026-11-15, `todo/assistant-e2e-today`)
   — the desktop e2e went red on the first Sunday since #308 added the
   spec: its tests draft on `+1`, the grid keeps a draft's day on show once
@@ -264,15 +234,6 @@ was cut (pruned 2026-11-17).
   and sending the grid back as the editor closes (a saved item is meant
   to stay in view). Open: the spec's `today` is read once, so a run across
   local midnight still fails.
-- **Live flows rerun under titles of their own** (2026-11-13,
-  `todo/live-retry-fresh-titles`) — nightly 43358802870 went red on a black
-  display in live flow 02 (no touch reached the app; flow 03's launch drew
-  again), which the live job never reran: one cut short leaves its items
-  on Google for a rerun to match. A second run now tags the live titles
-  `<tag>-r2`, so they rerun for every cause `ios-e2e`'s flows do,
-  unrebooted. Rejected: a reboot in between (a relaunch drew again here and
-  in the five earlier sightings). Open: a leftover a rerun trips on (a
-  parked conflict's badge) fails it, never passes it.
 - **iOS e2e without MapKit** (2026-10-15, `todo/ios-geo-off`) — CI's bundle
   sets `EXPO_PUBLIC_CALENDAR_GEO=off`, the desktop's `CALENDAR_GEO=off`:
   flow 22's "Room 4" was geocoded live on every run (once to a place named
@@ -376,6 +337,15 @@ was cut (pruned 2026-11-17).
   project setting for its path, VMs would share files, mostly PR
   history); round 1 of both reviewers in parallel. Open: making the check
   required; mechanical guards for the self-check's classes.
+- **`PR complete` is a commit status** (2026-11-20, #368) — the job posts
+  the verdict on the PR's head and passes, with no concurrency group:
+  GitHub counts every check run on a commit, so a run cancelled by the
+  next event, or one that failed before the body was fixed, kept a PR red
+  after a later run passed (#347, #352); a status replaces the one before
+  it. Rejected: only dropping `cancel-in-progress` (the failed run
+  stays), a passing run rerunning the stale ones (`actions: write`, more
+  runs). Open: a fork's PR (read-only token) keeps the job's verdict,
+  stale failures included; a red `Post PR complete` stays until rerun.
 - **The log keeps only what still holds** (2026-11-17, #349) — a record a
   later PR reversed is deleted, its replacement naming the PR it took
   over from, and an open point a later record closed is cut: twelve
@@ -384,8 +354,16 @@ was cut (pruned 2026-11-17).
   statement by statement against the code and corrected. Rejected:
   "superseded" tags in place (five records had one and still read as
   current), an archive file (`git log -S` on a title finds the text).
-  Open: records that state a mechanism at length (find a time's is in no
-  other doc), the queue's chain of nine, the CI retry stories.
+- **A chain of records is one record** (2026-11-20, #369) — where several
+  records told one mechanism in steps (the ios-e2e retries, the live
+  nightly's reruns, the queue's chain #265–#285), they are merged: the
+  decisions, what was rejected and every point still open stay, the
+  mechanism is the current-state docs'. Find a time's mechanism, which
+  only its record held, moved to `docs/architecture.md`. With it went the
+  backlog's shipped and doubled items and tracked clutter. Rejected:
+  dropping `tslib` (added for the EAS cloud install, #22, which nothing
+  local tests). Open: records still past ten lines (dictation #322,
+  mirrors, the agent gateway).
 
 ## Architecture and sync path
 
@@ -474,25 +452,16 @@ was cut (pruned 2026-11-17).
   test polls six minutes, then skips while Google still lists the calendar
   or serves its event. Rejected: a longer budget alone (the lag has no
   known bound), a full calendarList every pass (lagging replicas list it).
-- **A delete made during a pull stays deleted** (2026-10-30, #265)
-  — live nightly 40265233306: a poll's page, answered before the delete
-  landed, put the row back until the next poll. An events pass holds the
-  drain like a task list's, and a landed delete removes a synced copy at
-  its id (events and tasks). Rejected: a pull skipping rows whose delete
-  is queued (Codex review: the token never resends them, so a discard
-  restored a stale copy and a cancelled occurrence lost its tombstone);
-  holding the drain per page. Open: a replica lagging behind a landed
-  delete. That night's flow 04 tap was the simulator's (2026-10-31, "A
-  touch the simulator dropped").
-- **Moving or answering a pulled copy replaces its delete** (2026-10-30, #267)
-  — Opus review of #265: a move of the copy a pull put back re-queued its
-  waiting delete behind it, which deleted the moved event on Google; an
-  answer did the same. Both now drop the delete, as an edit already did,
-  and a dropped series delete puts back the exceptions it took. Rejected:
-  refusing the move (the event is on screen and an edit of it works); a
-  landed delete also taking a pending row no op owns (the user's later
-  move would vanish). Open: an edit of one occurrence leaves the series'
-  queued delete in place, so the delete still wins there.
+- **A queued delete and the copy a pull puts back** (2026-10-30, #265,
+  #267, #270) — a page answered before a delete landed put the row back
+  until the next poll (live nightly 40265233306). An events pass holds the
+  drain like a task list's, a landed delete removes the synced copy at
+  its id, and acting on that copy (an edit, a move, an answer) replaces
+  the delete and takes the copy as its snapshot. Rejected: a pull skipping
+  rows whose delete is queued (the token never resends them, so a discard
+  restored a stale copy); holding the drain per page; refusing the move;
+  the pull writing into the delete's snapshot. Open: a replica lagging
+  behind a landed delete; an occurrence edit leaves a series' queued delete.
 - **A move Google never makes takes its queued edits back** (2026-10-31, #271)
   — Opus review of #267: a refused, unfound or discarded move put only
   the rows back; the edits behind it stayed addressed to the destination,
@@ -503,74 +472,33 @@ was cut (pruned 2026-11-17).
   (a 403 is no reason to lose an edit); a discard waiting for the drain
   (it sent the move meanwhile). Open: a discarded sent move with Google
   unreachable goes back; a refused sent create takes only one move along.
-- **A pulled copy is the snapshot a replaced delete hands on** (2026-10-31, #270)
-  — Opus review of #267: an edit, delete or answer of the copy a pull put
-  back while a delete waited took the delete's (or an earlier answer's)
-  older snapshot, so a discard put back stale values as synced. A synced,
-  live row at a waiting delete's id is now the snapshot; a discarded
-  answer leaves it as it is, and an op that lands settles it. Rejected:
-  any row there (a tombstone is the user's); the pull writing its copy
-  into the delete's snapshot (a second copy of the row).
-- **An occurrence deleted under a waiting series delete stays deleted** (2026-10-31, #274)
-  — Opus review of #270: discarding the series delete wrote the exception
-  it took over the occurrence delete's tombstone, which pulls skip for
-  good. The discard puts exceptions back only where no row is; occurrence
-  changes start from the live exception the waiting delete took; a pull's
-  copy at a skipped tombstone is that delete's snapshot; a landed series
-  delete takes its synced exceptions and its occurrences' snapshots.
-  Rejected: putting all taken exceptions back (others would move on an
-  unrelated edit); an exception's own queued delete as the base (a rule
-  change queues those).
-- **A series a pull puts back while its delete waits shows as on Google** (2026-11-02, #279)
-  — #274's open items: that pull left the exceptions in the delete (a
-  moved occurrence showed at its slot, a cancelled one came back); an
-  answer's ack or a pull's copy showed one without its master; keep-theirs
-  dropped them. Google's copies now sit in the delete's snapshot while the
-  master is gone, on the table once a pull put it back (the delete keeps
-  none); keep-mine and keep-theirs follow. Rejected: the delete keeping
-  them too (an aging copy a discard could resurrect).
-- **A cut's dropped occurrences follow Google's master** (2026-11-02, #280)
-  — a cut's discarded exception delete, keep-theirs on it or an undone
-  occurrence edit wrote a row without its master (left open by #279):
-  those rows now go into the waiting series delete. After a cut, a series back as Google has it showed the cut's moved and
-  cancelled occurrences at their slots, and an occurrence edit was built
-  on the slot; after a rule change, a discarded edit put the dropped
-  exception back. The copies a cut's or rule change's deletes hold go back
-  where Google's master draws their slot, and the series update records
-  where its drop starts (`dropsFrom`): its landing forgets them. Rejected:
-  telling the deletes apart by the queue (#274) or the master's rule (a
-  landed rule draws them too). Open: Google's rule-change semantics are
-  unverified live; a pull's copy past a queued cut shows alone.
+- **A waiting series delete holds Google's copies of its exceptions**
+  (2026-10-31 to 2026-11-02, #274, #279, #280) — in its snapshot while the
+  master is gone, on the table once a pull put the master back; a discard
+  puts them back only where no row is (an occurrence's own tombstone
+  stays), and a landed delete takes them. What a cut or a rule change
+  dropped goes back where Google's master draws the slot, and the series
+  update records where its drop starts (`dropsFrom`). Rejected: putting
+  every taken exception back; the delete keeping copies too (an aging one
+  a discard could resurrect); telling the deletes apart by the queue or
+  the master's rule.
 - **A new rule keeps the exceptions it still draws** (2026-11-03, #281) —
   probed live: Google keeps an exception whose slot the new rule draws
-  and cancels the rest, with new etags all round. Our rule change queued
-  a delete for every exception ahead of the PATCH, which cancelled a
-  moved occurrence on Google; a cut's deletes, sent after the truncation,
-  met a 412 and parked. Now only skipped exceptions drop, their deletes
-  wait behind the PATCH whose landing takes them off the queue, and a
-  later rule drawing a slot again takes its delete back. Rejected:
-  sending them without If-Match (a request for nothing). Open: an
-  occurrence edit queued behind any series PATCH still meets a 412.
-- **An undone series change takes its exception deletes along** (2026-11-03, #284)
-  — #280's open items. Undone, a cut or rule change left its deletes, which
-  still cancelled those occurrences on Google. Nik chose that they go with
-  it (a discard, keep-theirs or refusal of it, or of a series delete that
-  replaced it), and they wait for it wherever it sits. A user's own
-  occurrence delete stays, queued behind it. A pull's copy waits in its
-  delete; keep-mine leaves the delete's tombstone. Rejected: separate rows
-  (status quo); a marker column (the user's delete carries its tombstone).
-  Open: a discarded exception delete shows past a waiting cut; a series
-  delete that replaced the cut lets its deletes out first.
-- **An undone cut takes the new series along** (2026-11-03, #285) — #284's
-  item. A this-and-following edit's new series went out in the drain that
-  parked or refused its cut, and a discard left it queued: Google showed
-  those days twice. Nik chose that it waits for the cut and goes with it
-  while unsent (as #284's deletes do), with what is queued for it and the
-  series split off it. Google's copy decides: the create asks before it
-  goes, and stays where that ends before it. Rejected: keeping it; asking
-  at undo time; deciding by the local copy (a cut can land unseen). Open:
-  editing the series a pull put back while the delete that replaced the
-  cut waits lets it out; kept beside another device's split, it shows twice.
+  and cancels the rest, with new etags all round. So only skipped
+  exceptions drop, their deletes wait behind the PATCH whose landing
+  takes them off the queue, and a later rule drawing a slot again takes
+  its delete back. Rejected: sending them without If-Match (a request
+  for nothing).
+- **An undone cut or rule change takes what it queued along** (2026-11-03,
+  #284, #285) — Nik's choice for both: its exception deletes (on a
+  discard, keep-theirs or refusal of it, or of a series delete that
+  replaced it) and, while unsent, the new series a this-and-following
+  edit split off; the user's own occurrence delete stays, and Google's
+  copy decides whether the new series goes. Rejected: a marker column,
+  keeping the series, asking at undo time, deciding by the local copy (a
+  cut can land unseen). Open: a series delete that replaced the cut lets
+  both out (todo.md, Tier 0); a discarded exception delete shows past a
+  waiting cut; beside another device's split a kept series shows twice.
 - **Re-auth and sync kicks** — a 401 flags the account `reauth_required`
   and keeps its ops queued for after the reconnect (same id, by email);
   wake/unlock/focus/foreground kick a sync, throttled to one per 15 s,
@@ -1548,37 +1476,15 @@ was cut (pruned 2026-11-17).
   (the readiness flag is false until assets exist). The simulator has no
   speech assets.
 - **Find a time is the event form's tool** (2026-10-10) — not a mode of
-  the quick-add field. The two modes shared a field and a title and
-  nothing else: different prompts, a calendar read and a solver only on
-  one side, and results of different shapes. "Find a time" sits beside
-  the date and times (`FindTimeFields`, `useFindTimeModel`): presets
-  over the pure solver (today / this week / next week / 2 weeks;
-  daytime (08–20, the solver's default, named rather than called "any")
-  / mornings / afternoons / evenings; any day / weekdays / weekends; a
-  duration starting as the form's own), a Search, and the slots as
-  buttons — a pick moves the event there (`applySlot`; an all-day series
-  keeps its kind, so it has no finder). What the save will move or
-  drop is not its own busy time (`rescheduledEventExclusion`, read off
-  `updateRecurring`: the row for "This event"; every drawn occurrence
-  for "All events", while a stored exception keeps its times and stays
-  busy; everything from the split for "This and following", which is
-  "All events" from the first occurrence; nothing of a series with
-  fixed RDATE dates or a clock-pinning BYHOUR rule, since a drawn row
-  does not say what placed it and those stay put through both edits,
-  and nothing of a series
-  whose master is not here — an Apple series never is, its rows being
-  read through EventKit, so an Apple series edit searches around its
-  own occurrences; too busy is the safe side). It works without a
-  model; with one, a phrase fills the same presets (`parseFindTime` on
-  Apple's, `tunedFinder.ts` on the app's own since #321) — dates, hours
-  or days outside
-  them show as a note with nothing selected — and a title it names
-  fills an empty title. An answer landing after a constraint changed or
-  the finder closed is dropped.
-  Not merged into the quick-add prompt: the on-device model is small
-  and the two prompts are tuned apart. Timed reminders still do not
-  count as busy, and guests' free/busy is not fetched — the finder is
-  where both would go.
+  the quick-add field: the two shared a field and a title and nothing
+  else (different prompts, a calendar read and a solver only on one side,
+  results of different shapes). Presets over the pure solver beside the
+  date and times, the slots as buttons; it works without a model, and a
+  phrase fills the same presets. What the save itself will move is not
+  its own busy time; too busy is the safe side. Rejected: one prompt for
+  both (tuned apart; one model since #321, still two prompts). Open:
+  timed reminders do not count as busy, guests' free/busy is not fetched.
+  Mechanism: `docs/architecture.md` → Platform seams, "Find a time".
 - **The bench's `plain` arm** (2026-11-11, #306) — one prompt that states
   the conventions and asks for the whole draft, no code reading the words:
   what a capable general model does on its own, and the arm the training

@@ -533,10 +533,35 @@ An acknowledged server copy may be visible while its delete is queued;
 the final comparison, with the queue empty, permits no such extra rows.
 Titles here are well-formed Unicode, as SQLite stores UTF-8 text.
 
+`packages/sync/src/localNotifications.property.test.ts` drives the real
+`LocalNotifications` pass, once per sink: the Mac's immediate one and
+iOS's schedule, with a fake OS that delivers pending notifications as
+time passes. Each case starts up to 60 hours before a home zone's
+transition (New York, Santiago, Sydney, Vienna; forward or back) and
+generates event, series and task edits, completions and deletions, rows
+pulled from another device, settings saves, waits, sleeps and trips to
+another zone, with a pass after each. An oracle restates the rules from
+the stored intent, reading wall clocks through `Intl` rather than
+Temporal: after every pass iOS holds exactly the plans still ahead (the
+soonest 60, current titles and deadlines), each delivered notification
+leaves exactly when its switch says, and the Mac shows exactly what came
+due since its last pass or whose row (for tasks, also the settings save)
+predates its moment, while it is still worth showing, once per key and
+moment. A fixed script around the zone's other transition then makes
+every case notify on both sides of it and at 09:00 on the 23- or 25-hour
+day, catch up on a pulled row, test both edges of that day's expiry,
+clear a delivered event and task, move a delivered reminder to another
+time the same day and, on iOS, hold more than 60 plans ahead with a task
+far down the list, so the soonest must win the slots. A series' oracle omits an occurrence
+whose wall time a transition skips, as the expander does (architecture
+→ Recurring events).
+
 Run these with `pnpm exec vp test run .property.test.ts`
 or as part of `pnpm test`. Failures print the shrunk input and a replay
 token. For the sync property, pass that token unchanged in
-`SYNC_PROPERTY_REPLAY` and run that file alone. Replay tokens belong to
+`SYNC_PROPERTY_REPLAY` and run that file alone; for the notification
+properties, `NOTIFICATION_PROPERTY_REPLAY` with the failing test's name
+in `-t`. Replay tokens belong to
 the pinned Effect release; keep a concrete regression example when a
 property exposes a bug. The broader seeded queue suite below remains
 separate: it also covers tasks, moves, discards and other-device writes.
@@ -1368,7 +1393,17 @@ Electron binary (`electron --version`) and run spec files sequentially.
   `maestroRetry.ts`), and the step summary names the tag.
 - `pr-complete.yml` (PRs, ubuntu): `PR complete` fails a ready PR whose
   body owes a review stage, a screenshot or its `docs/decisions.md`
-  record (`scripts/check-pr-complete.ts`); drafts pass unchecked.
+  record (`scripts/check-pr-complete.ts`); drafts pass unchecked. It is a
+  commit status on the PR's head, which the `Post PR complete` job sets
+  and then passes: GitHub counts every check run on a commit, so a job
+  that failed before the body was fixed, or one cancelled by the next
+  event, kept the PR red after a later run passed (#347, #352). A status
+  replaces the one before it under the same name, so nothing cancels a
+  run; each reads the PR again after posting and checks and posts again
+  if it changed meanwhile, so a stalled run's older verdict can't be the
+  last to land. A red `Post PR complete` is the run itself breaking (the API), not
+  the body: rerun it. A fork's PR is the exception: its read-only token
+  can't set a status, so there the job's own result is the verdict.
 - Log lines may stringify effect causes containing HTTP requests; effect
   redacts auth headers, so tokens cannot leak into CI logs this way.
 
@@ -1465,9 +1500,34 @@ matches one of these):
   under full CPU load. A title or address a later step matches goes
   through `common/type-text.yaml`, which retypes until it holds the text.
 - **A swipe that neither pages nor reveals (iOS)**: flow 02's day swipe
-  back, and its swipe on a task row right after an outdent re-rendered the
-  list. Open; before hardening the flow, check whether the app ignores a
-  swipe during its layout animation.
+  back and its task-row swipe right after an outdent; flow 19's swipe on
+  Honolulu's row 2.5 s after Kolkata's removal (run 44045469311, shard 1,
+  attempt 1), whose Remove tap then pressed the shut row. Both rows are a
+  `ReanimatedSwipeable` around Gesture Handler's `Pressable`, a native
+  button. XCTest plays a `swipe` as a touch-down, the whole move within
+  0.1 s, a hold and a lift at 0.5 s (testmanagerd's "Synthesizing event"
+  record lists the path). In the flow's `logs/device-simulator.log` the
+  app's `Description: send control actions` / `send gesture actions`
+  lines, one per touch event, tell three cases apart:
+  - a swipe that opened: three or four control actions (the row's button
+    tracking), then gesture actions on every event (the pan took over);
+  - flow 19's miss: control actions on all ~31 events and no gesture
+    action before the lift. The finger moved and reached the button, and
+    no recognizer began, the same as a row whose pan is switched off
+    (`enabled={false}`);
+  - a touch that never moved: `shouldSend: 0` after the down and no
+    control actions.
+
+  So the app's pan missed a real drag: not a lost touch. Nor the
+  re-render or a busy JS thread: locally (CI's build repacked) 102
+  swipes right after a removal opened, 62 on iOS 27.2 and 40 runs of
+  flow 19 on iOS 26.5, CI's runtime. Each took the pan after three or
+  four button events, also with the JS thread held 3 s across the swipe
+  and with the save landing anywhere from 0.8 s before to 0.8 s after
+  the touch-down. Not reproduced; rerun. If it recurs, read its log the
+  same way, and ask Nik before a retry in the flow: it would hide the
+  app's miss.
+
 - **`appleCalendarReal` › "shows an event created outside the app…"**
   times out in `locate('[title^="Solunivo ci event"]')` (or `waitUntil`), and
   the retry then fails `expected 'Solunivo ci event' to be 'Solunivo ci

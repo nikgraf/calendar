@@ -171,14 +171,10 @@ speaking or an older step is put on show.
 `packages/contacts`, `packages/geo`): each is one JSON protocol spoken by
 one Swift source, symlinked into the desktop helper (`callHelper('x.*')`
 over stdio) and into a local Expo module (`apps/ios/modules/solunivo-*`).
-Reminders are mirrored into the tasks table by the sync pass; Apple
-calendars are mirrored into the calendars table and their events are
-**read through** (the `getEventsInRange` handler merges the Google window
-with a live EventKit query for the same range, `AppleCalendarEvents`);
-device contacts are held in memory for the invitee typeahead and never
-written to SQLite; MapKit answers typeahead, geocoding and map snapshots
-on demand. Writes go to EventKit first and mirror the result (no pending
-op — EventKit is local and synchronous). The permission asks are
+What each holds and where its data lives is AGENTS.md's map; the passes
+and the read-through are under Sync engine and Apple Calendar, below.
+Writes go to EventKit first and mirror the result (no pending op —
+EventKit is local and synchronous). The permission asks are
 window-level concerns (`reminders:status` / `contacts:status` /
 `appleCalendar:status` preload IPC on desktop, the On This iPhone page on
 iOS); rows only ever cross the rpc seam.
@@ -659,15 +655,20 @@ Rules a change to the queue keeps (each broke once):
   series are never expanded again. Expansion runs under an iteration cap
   and `assembleWindow` skips a master whose rule throws instead of
   blanking the window.
-- Incremental pulls use syncTokens; a 410 forces a full resync, after which
-  `deleteStale` purges rows the server no longer returns (pending rows are
-  protected by sync_status). A page's deletions are not: `applyPage`
-  deletes by id whatever the row's status, so a pending row with no op
-  for an event Google deleted lasts only until the next pull. Local writes mark their row `pending`; pulls
-  write in `mode: 'pull'`, which skips pending rows, so a queued edit is
-  never clobbered by a page carrying the server's older copy. A queued
-  delete leaves no row to skip: a page answered before it reached Google
-  puts Google's copy back (synced), and the delete removes that copy when
+- **Pulls and pending rows.** Incremental pulls use syncTokens; a 410
+  forces a full resync, after which `deleteStale` purges rows the server
+  no longer returns (pending rows are protected by sync_status). A page's
+  deletions are not: `applyPage` deletes by id whatever the row's status,
+  so a pending row with no op for an event Google deleted lasts only
+  until the next pull. Local writes mark their row `pending`; pulls write
+  in `mode: 'pull'`, which skips pending rows, so a queued edit is never
+  clobbered by a page carrying the server's older copy. The push response
+  (ack upsert), an abandoned op (`releaseRow`: the op's snapshot of the
+  row goes back, or `markSynced` when it has none) or a resolved conflict
+  hands the row back. Task rows work the same way (`setStatus`/`updateLocal`
+  mark pending; `upsertTasks(…, { mode: 'pull' })`).
+- **A queued delete leaves no row to skip**: a page answered before it
+  reached Google puts Google's copy back (synced), and the delete removes that copy when
   it lands or finds the item gone (a live event row, never a cancelled
   override — an occurrence whose slot its master's rule still draws
   becomes the cancelled tombstone Google now has, or the slot would show
@@ -675,8 +676,8 @@ Rules a change to the queue keeps (each broke once):
   Google's too once no other op owns it — pending, nothing settled it; a
   task row only while no op owns it), and a series delete
   also the synced rows of its exceptions (`dropSeriesExceptions`).
-  While a series delete waits, Google's copies of its exceptions live in
-  one place (`takenExceptions.ts`): in the delete's snapshot while the
+- **While a series delete waits, Google's copies of its exceptions live
+  in one place** (`takenExceptions.ts`): in the delete's snapshot while the
   master is gone locally — a pull's copy (where no row sits at its id) or
   an answer's ack of one goes there, not onto the table, where without its
   master it would show as an event of its own, and so does one a discard
@@ -694,9 +695,10 @@ Rules a change to the queue keeps (each broke once):
   master need not have re-sent them (the token sends only what changed);
   without them a moved occurrence showed at its slot and a cancelled one
   came back. A page that reports the series deleted on Google takes them
-  away again, as the delete's landing would. A this-and-following cut, or
-  a rule change, takes the exceptions it drops off the table and queues a
-  delete of each behind its master update (`dropOverridesFrom`; a rule
+  away again, as the delete's landing would.
+- **A this-and-following cut, or a rule change, takes the exceptions it
+  drops off the table** and queues a delete of each behind its master
+  update (`dropOverridesFrom`; a rule
   change drops only those whose slots the new rule no longer draws —
   Google keeps the others as they are, verified live — and first takes
   back the deletes an earlier cut or rule change queued for slots it
@@ -757,8 +759,9 @@ Rules a change to the queue keeps (each broke once):
   pending goes back with Google's answers, which the answer's ack then
   replaces (synced at a waiting delete's id, a row is Google's). Off the
   table, a moved occurrence showed at its slot, a cancelled one came
-  back, and an occurrence edit was built on the slot. Acting on
-  that copy replaces the delete: an edit (`supersedeQueued`), an answer
+  back, and an occurrence edit was built on the slot.
+- **Acting on a copy a pull put back replaces its delete**: an edit
+  (`supersedeQueued`), an answer
   (`respondToEvent`, which an occurrence sends for its series) or a move
   of it drops the queued delete. Re-queued behind the move, or overtaken
   by an answer sent while it waited out a backoff, the delete removed the
@@ -766,9 +769,9 @@ Rules a change to the queue keeps (each broke once):
   pull reported the deletion. A series delete replaced this way (by a
   move, an answer, an edit, a cut or another series delete) first puts
   back whatever exceptions it still holds, where no row is
-  (`restoreTakenExceptions`). A
-  series move still carries an exception's delete (a this-and-following
-  cut) along, one that owns no row too, and moves that exception's pulled
+  (`restoreTakenExceptions`).
+- **Moves and the drain.** A series move still carries an exception's
+  delete (a this-and-following cut) along, one that owns no row too, and moves that exception's pulled
   copy as synced so the delete takes it when it lands. A page leaves out a
   series a queued move takes out of its calendar, as a task list's pull
   does a moving task: Google lists it there until the move lands, and a
@@ -778,12 +781,7 @@ Rules a change to the queue keeps (each broke once):
   cannot land between a request and the page that would put the row
   back after it, and lets out what was queued meanwhile before the next
   calendar or list (`holdingQueue`), so a write never waits out a whole
-  account. The push
-  response (ack upsert), an abandoned op (`releaseRow`: the op's snapshot
-  of the row goes back, or `markSynced` when it has none) or a resolved
-  conflict hands the row back. Task rows work the same way
-  (`setStatus`/`updateLocal` mark pending; `upsertTasks(…, { mode:
-  'pull' })`).
+  account.
 - Cancelled events arrive as tombstones and are kept as `status:
   'cancelled'` rows when they shadow recurring instances. A pulled event
   without a zone takes its calendar's; zones are spelled for the engine
@@ -1026,11 +1024,9 @@ Rules a change to the queue keeps (each broke once):
   compares the series id with identifiers that never equal it and is 0
   on a real store). Converting an event into a task reuses the same
   source loading and series delete (`loadSource`, `deleteFrom`); one
-  occurrence is read by `loadOccurrence` — on Apple through
-  `findAppleOccurrence`, which finds what the delete finds — and leaves
-  through the instance delete (`deleteRecurring`; on Apple
-  `deleteFoundOccurrence`, the same delete without the refusal of a
-  miss).
+  occurrence is read by `loadOccurrence` and leaves through the instance
+  delete (`deleteRecurring`; on Apple as "A delete never takes a miss"
+  has it, above).
 
 ## Calendar mirrors (packages/sync/src/mirrors.ts, core mirror/)
 
@@ -1191,6 +1187,13 @@ details, or Custom), so a calendar can be shared without the details.
   RDATE lines has no rule: `buildRuleString` gives it
   `RRULE:FREQ=DAILY;COUNT=1`, so it expands as DTSTART + RDATE − EXDATE
   through the same library pass as every rule.
+- A generated occurrence whose wall time a transition skips (a daily 02:30
+  on the spring-forward day) does not exist: rrule-temporal leaves it out
+  and does not count it toward COUNT (RFC 5545 §3.3.10, since its 2.2.6),
+  so a five-time series ends a day later; a repeated time is the earlier
+  instant. DTSTART in a skipped hour keeps the later reading, and every
+  day then repeats that. Whether Google draws that day the same way is
+  not verified.
 - The views never get masters: `assembleWindow` expands them into
   synthetic instances with id `<masterId>__<originalStartUtc>` carrying
   `recurringEventId` + `originalStartUtc`.
@@ -2182,6 +2185,28 @@ gateway carries all of it. Details, limits and the threat model:
   and URL; on both, the list picker moves an existing task on Save
   (`canMoveList`). "Reminder" is a kind of the
   editor's control (core `editor/itemKinds.ts`), not a list choice.
+- **Find a time** in the event form (`FindTimeFields`,
+  `useFindTimeModel`, both apps) sits beside the date and times: presets
+  over the pure solver (core `scheduling/finder.ts`: today / this week /
+  next week / 2 weeks; daytime, 08–20 and the solver's default, /
+  mornings / afternoons / evenings; any day / weekdays / weekends; a
+  duration starting as the form's own), a Search, and the slots as
+  buttons — a pick moves the event there (`applySlot`; an all-day series
+  keeps its kind, so it has no finder). What the save will move or drop
+  is not its own busy time (`rescheduledEventExclusion`, read off
+  `updateRecurring`): the row for "This event"; every drawn occurrence
+  for "All events", while a stored exception keeps its times and stays
+  busy; everything from the split for "This and following"; nothing of a
+  series with fixed RDATE dates or a clock-pinning BYHOUR rule (a drawn
+  row does not say what placed it, and those stay put through both
+  edits), and nothing of a series whose master is not here — an Apple
+  series never is, its rows being read through EventKit, so an Apple
+  series edit searches around its own occurrences. Too busy is the safe
+  side. It works without a model; with one, a phrase fills the same
+  presets (Data flow → AI) — dates, hours or days outside them show as a
+  note with nothing selected — and a title it names fills an empty title.
+  An answer landing after a constraint changed or the finder closed is
+  dropped.
 - **Time is Temporal everywhere** (`@js-temporal/polyfill` via
   `packages/core/src/time/temporal.ts`); Hermes needs the
   `Intl.resolvedOptions` shim in `packages/core/src/time/intl-compat.ts`.

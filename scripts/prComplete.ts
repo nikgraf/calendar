@@ -257,3 +257,69 @@ export const missingParts = (pr: PullRequest): ReadonlyArray<string> => {
     ...decisionsGaps(pr, body),
   ];
 };
+
+/** The `PR complete` commit status: its state and its line of text. */
+export interface CompleteStatus {
+  readonly description: string;
+  readonly state: 'failure' | 'success';
+}
+
+/** The longest description GitHub keeps on a commit status. */
+const DESCRIPTION_MAX = 140;
+
+/** Cut by characters, not UTF-16 units: the text quotes the body, and half an emoji would reach the API. */
+const clip = (text: string): string => {
+  const characters = Array.from(text);
+  return characters.length <= DESCRIPTION_MAX
+    ? text
+    : `${characters.slice(0, DESCRIPTION_MAX - 1).join('')}…`;
+};
+
+/**
+ * The status for a PR left unchecked (`skipped` says why: a draft, a bot's)
+ * or one that owes `missing`, complete when that is empty. The run's log
+ * lists every part; the description names the first.
+ */
+export const completeStatus = (
+  verdict: { readonly missing: ReadonlyArray<string> } | { readonly skipped: string },
+): CompleteStatus => {
+  if ('skipped' in verdict) {
+    return { description: clip(`Not checked: ${verdict.skipped}`), state: 'success' };
+  }
+  const [first] = verdict.missing;
+  if (first === undefined) {
+    return { description: 'Complete', state: 'success' };
+  }
+  const count = verdict.missing.length;
+  return {
+    description: clip(count === 1 ? `Owes: ${first}` : `Owes ${String(count)}, first: ${first}`),
+    state: 'failure',
+  };
+};
+
+/** What a PR's verdict is read from, as GitHub's API gives it. */
+export interface VerdictInputs {
+  readonly body: string | null;
+  readonly draft: boolean;
+  readonly head: { readonly sha: string };
+  readonly labels: ReadonlyArray<{ readonly name: string }>;
+}
+
+/**
+ * Whether the PR changed in anything its verdict reads between two reads
+ * of it: a run that sees one after posting checks and posts again. Each
+ * such change also starts a run of its own (the workflow's triggers).
+ */
+export const verdictInputsChanged = (before: VerdictInputs, after: VerdictInputs): boolean => {
+  const labels = (pull: VerdictInputs) =>
+    pull.labels
+      .map(({ name }) => name)
+      .toSorted()
+      .join('\n');
+  return (
+    before.body !== after.body ||
+    before.draft !== after.draft ||
+    before.head.sha !== after.head.sha ||
+    labels(before) !== labels(after)
+  );
+};
