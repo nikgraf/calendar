@@ -7,16 +7,12 @@ import {
   type useEventEditorModel,
   useTimeZones,
 } from '@calendar/app-state';
-import {
-  type CalendarInfo,
-  draftZoneRanges,
-  nameWithAddress,
-  type RsvpResponse,
-} from '@calendar/core';
+import { draftZoneRanges, nameWithAddress, type RsvpResponse } from '@calendar/core';
 import { InviteeCombobox } from './InviteeCombobox.tsx';
 import { FIELD_CLASS as field } from '../ui/fieldStyles.ts';
 import { useFieldFlash } from '../ui/useFlash.ts';
 import { FindTimeFields } from './FindTimeFields.tsx';
+import { calendarGroupLabel } from './calendarGroupLabel.ts';
 import { FormSection } from './FormSection.tsx';
 import { LocationCombobox } from './LocationCombobox.tsx';
 import { LocationMap } from './LocationMap.tsx';
@@ -24,12 +20,6 @@ import { RemindersFields } from './RemindersFields.tsx';
 import { RepeatRuleFields } from './RepeatRuleFields.tsx';
 import { ZoneLines } from './ZoneLines.tsx';
 import { TEXT_LINK_CLASS } from '../ui/buttonStyles.ts';
-
-/** Calendars grouped the way the sidebar shows them: per account, Apple per source. */
-const groupLabel = (calendar: CalendarInfo, accountLabel: (accountId: string) => string): string =>
-  calendar.provider === 'apple'
-    ? `Apple Calendar — ${calendar.sourceTitle ?? 'On this Mac'}`
-    : accountLabel(calendar.accountId);
 
 /**
  * The event half of EditorPanel (mode === 'event'), extracted like the
@@ -142,7 +132,7 @@ export function EventEditorForm({ model }: { model: ReturnType<typeof useEventEd
             }
             value={calendarKey}
           >
-            {calendarGroups(writable, (calendar) => groupLabel(calendar, accountLabel)).map(
+            {calendarGroups(writable, (calendar) => calendarGroupLabel(calendar, accountLabel)).map(
               (group) => (
                 <optgroup key={group.label} label={group.label}>
                   {group.calendars.map((calendar) => (

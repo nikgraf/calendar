@@ -22,6 +22,7 @@ export * from './hooks.ts';
 export * from './inviteeField.ts';
 export * from './lessonTried.ts';
 export * from './locationField.ts';
+export * from './defaultCalendar.ts';
 export * from './editorModel.ts';
 export * from './mirrorEditorModel.ts';
 export * from './taskEditorModel.ts';

@@ -1,0 +1,89 @@
+appId: com.solunivo.app.dev
+name: Settings › Calendar picks the default calendar, and a new event starts in it
+tags:
+  - ci
+---
+- runFlow: ../common/launch.yaml
+- runFlow: ../common/open-settings.yaml
+- runFlow:
+    file: ../common/open-settings-page.yaml
+    env:
+      PAGE: calendar-view
+- tapOn:
+    id: 'settings-row-default-calendar'
+- extendedWaitUntil:
+    visible:
+      id: 'settings-page-default-calendar'
+    timeout: 5000
+- waitForAnimationToEnd:
+    timeout: 5000
+# Start from Last Used, the setting nothing has chosen yet: a run that
+# died after its pick below left the pick on the device (launchApp keeps
+# the app's data between flows).
+- tapOn:
+    id: 'default-calendar-last-used.*'
+- extendedWaitUntil:
+    visible:
+      id: 'default-calendar-last-used-on'
+    timeout: 5000
+# The fixture's second calendar: a new event opens in the first one by itself.
+- tapOn:
+    id: 'default-calendar-option'
+    text: 'Mock Shared'
+- extendedWaitUntil:
+    visible:
+      id: 'default-calendar-option-on'
+      text: 'Mock Shared'
+    timeout: 5000
+# Back on the Calendar page, the row names it.
+- tapOn:
+    id: 'BackButton'
+- extendedWaitUntil:
+    visible:
+      id: 'settings-default-calendar-value'
+      text: 'Mock Shared'
+    timeout: 5000
+- runFlow: ../common/close-settings.yaml
+
+# A new event's form starts in it.
+- runFlow: ../common/open-new-event.yaml
+- scrollUntilVisible:
+    element:
+      id: 'calendar-option'
+      text: 'Mock Shared'
+    direction: DOWN
+    timeout: 10000
+- assertVisible:
+    id: 'calendar-option'
+    text: 'Mock Shared'
+    selected: true
+- assertVisible:
+    id: 'calendar-option'
+    text: 'Mock Calendar'
+    selected: false
+- tapOn: 'Cancel'
+- extendedWaitUntil:
+    visible: 'Today'
+    timeout: 10000
+
+# Back to Last Used, so the flows after this one open where they always do.
+- runFlow: ../common/open-settings.yaml
+- runFlow:
+    file: ../common/open-settings-page.yaml
+    env:
+      PAGE: calendar-view
+- tapOn:
+    id: 'settings-row-default-calendar'
+- extendedWaitUntil:
+    visible:
+      id: 'settings-page-default-calendar'
+    timeout: 5000
+- waitForAnimationToEnd:
+    timeout: 5000
+- tapOn:
+    id: 'default-calendar-last-used'
+- extendedWaitUntil:
+    visible:
+      id: 'default-calendar-last-used-on'
+    timeout: 5000
+- runFlow: ../common/close-settings.yaml

@@ -16,7 +16,18 @@ export const SETTINGS_PANES = [
   },
   {
     id: 'calendar',
-    keywords: ['weekend', 'saturday', 'sunday', 'friday', 'shade', 'days', 'background', 'view'],
+    keywords: [
+      'default calendar',
+      'new events',
+      'weekend',
+      'saturday',
+      'sunday',
+      'friday',
+      'shade',
+      'days',
+      'background',
+      'view',
+    ],
     label: 'Calendar',
   },
   {

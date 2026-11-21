@@ -15,7 +15,7 @@ import {
   BirthdayReminderSettings,
   upgradeBirthdayReminderData,
 } from './birthdays/reminders.ts';
-import { MirrorDefinition } from './mirror/definition.ts';
+import { MirrorCalendarRef, MirrorDefinition } from './mirror/definition.ts';
 import { EventNotificationSettings, TaskNotificationSettings } from './notifications/settings.ts';
 import { canonicalZoneId, runtimeZoneId } from './time/zones.ts';
 import { isDeviceZone, TimeZoneSettings } from './timeZoneSettings.ts';
@@ -99,6 +99,20 @@ export const SettingsAccount = Schema.Union([
 ]);
 export type SettingsAccount = typeof SettingsAccount.Type;
 
+/**
+ * The calendar a new event starts in, the Assistant's drafts included:
+ * one named the way mirrors name calendars (Google by email and id, Apple
+ * by source and title), or `lastUsed` — the calendar the last new event
+ * was saved in while the app (on the Mac, its calendar window) stayed
+ * open, and the first one until then.
+ */
+export const NewEventSettings = Schema.Struct({
+  calendar: Schema.Union([Schema.Literal('lastUsed'), MirrorCalendarRef]),
+});
+export type NewEventSettings = typeof NewEventSettings.Type;
+
+export const DEFAULT_NEW_EVENT_SETTINGS: NewEventSettings = { calendar: 'lastUsed' };
+
 /** The settings only the desktop app has; iOS ignores the section on import. */
 export const DesktopSettings = Schema.Struct({
   screenPrivacy: Schema.optional(ScreenPrivacy),
@@ -122,6 +136,7 @@ export const SettingsDocument = Schema.Struct({
    * arrives switched off (on/off is each device's own).
    */
   mirrors: Schema.optional(Schema.Array(MirrorDefinition)),
+  newEvents: Schema.optional(NewEventSettings),
   taskNotifications: Schema.optional(TaskNotificationSettings),
   timeZones: Schema.optional(TimeZoneSettings),
   version: Schema.Literal(SETTINGS_DOCUMENT_VERSION),
@@ -135,6 +150,7 @@ export const SettingsSection = Schema.Literals([
   'birthdayReminders',
   'eventNotifications',
   'mirrors',
+  'newEvents',
   'screenPrivacy',
   'taskNotifications',
   'timeZones',
@@ -276,6 +292,7 @@ const SETTINGS_LEAF_PATHS: ReadonlyArray<readonly [keyof SettingsDocument, strin
   ['eventNotifications', 'dismissWhenOver'],
   ['eventNotifications', 'enabled'],
   ['eventNotifications', 'includeAppleCalendar'],
+  ['newEvents', 'calendar'],
   ['taskNotifications', 'dismissRemindersWhenDone'],
   ['taskNotifications', 'dismissTasksWhenDone'],
   ['taskNotifications', 'enabled'],
@@ -365,6 +382,7 @@ const SECTION_LABELS: Record<SettingsSection, string> = {
   birthdayReminders: 'birthday reminders',
   eventNotifications: 'event notifications',
   mirrors: 'calendar mirrors',
+  newEvents: 'default calendar',
   screenPrivacy: 'screen sharing',
   taskNotifications: 'task notifications',
   timeZones: 'time zones',

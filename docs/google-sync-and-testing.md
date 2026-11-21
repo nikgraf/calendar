@@ -822,8 +822,8 @@ guest-side RSVP (needs a second account).
   writes it into the run's temp profile, mode 600, deleted with it) and
   `CALENDAR_SYNC_INTERVAL_MS` (the spec uses 10 s so a pull lands inside
   a poll). The spec always picks the run's own calendar and list — a new
-  event defaults to the last-used or first writable calendar, which on a
-  real account is the primary. For a 412 it fills the sheet first and
+  event starts in the default calendar of Settings, else the last-used or
+  first writable one, which on a real account is the primary. For a 412 it fills the sheet first and
   patches Google just before Save (the app's own poll could otherwise
   refresh the etag and defuse the conflict), and retries the round when
   a poll still won. Run:
@@ -1032,7 +1032,10 @@ waiting while a kind switch asks its question; four phrases as four
 steps, the changed time marked in the form, an edit by hand a step too;
 a pasted mail's thread, the pager, Remove, Add all; drafts made an event
 in another calendar, a task and a reminder, each shown again as it was
-left with nothing asked, and Add all writing each where it was put);
+left with nothing asked, and Add all writing each where it was put; the
+default calendar Settings › Calendar picks, stored the portable way, for
+the Assistant's draft and for a new event after one saved elsewhere, and
+Last used again);
 `slotProposals` (a finder phrase on the fixture model against seeded
 busy blocks, TZ pinned: the draft in the best slot, the chip row and
 candidate blocks, a chip and a candidate moving it, a change dropping

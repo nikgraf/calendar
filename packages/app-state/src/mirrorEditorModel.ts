@@ -1,6 +1,5 @@
 import {
   type Account,
-  APPLE_DEFAULT_SOURCE,
   type CalendarInfo,
   isAppleCalendarAccount,
   isAppleRemindersAccount,
@@ -13,6 +12,7 @@ import {
   mirrorRefKey,
   type MirrorSourceRef,
   type MirrorView,
+  portableCalendarRef,
   type TaskListInfo,
 } from '@calendar/core';
 
@@ -44,22 +44,6 @@ const accountLabel = (account: Account): string =>
       ? 'Reminders'
       : account.email;
 
-export const calendarRefOf = (
-  calendar: CalendarInfo,
-  account: Account,
-): MirrorCalendarRef | undefined => {
-  if (isAppleCalendarAccount(account)) {
-    return {
-      kind: 'apple',
-      source: calendar.sourceTitle ?? APPLE_DEFAULT_SOURCE,
-      title: calendar.summary,
-    };
-  }
-  return account.provider === 'google'
-    ? { calendarId: calendar.id, email: account.email, kind: 'google', title: calendar.summary }
-    : undefined;
-};
-
 export const taskListRefOf = (
   list: TaskListInfo,
   account: Account,
@@ -84,7 +68,7 @@ export const mirrorSourceOptions = (input: {
   const options: Array<MirrorOption<MirrorSourceRef>> = [];
   for (const calendar of input.calendars) {
     const account = input.accounts.find((entry) => entry.id === calendar.accountId);
-    const ref = account && calendarRefOf(calendar, account);
+    const ref = account && portableCalendarRef(calendar, account);
     if (ref && account) {
       options.push({
         group: accountLabel(account),
@@ -129,7 +113,7 @@ export const mirrorDestinationOptions = (input: {
   for (const calendar of input.calendars) {
     const account = input.accounts.find((entry) => entry.id === calendar.accountId);
     const ref =
-      account && isCalendarWritable(calendar) ? calendarRefOf(calendar, account) : undefined;
+      account && isCalendarWritable(calendar) ? portableCalendarRef(calendar, account) : undefined;
     if (!ref || !account) {
       continue;
     }

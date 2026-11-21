@@ -591,6 +591,16 @@ was cut (pruned 2026-11-17).
 
 ## Calendar: editing, gestures, views
 
+- **New events start in a default calendar** (2026-11-21, #373) —
+  Settings › Calendar picks where the editor, the Assistant's drafts and
+  Add all start, or Last used (the behaviour before: the calendar last
+  saved in, kept in memory, else the first writable). A pick wins over
+  the calendar used last and travels in the settings document, named as
+  mirrors name calendars; one a device lacks stays stored, shown missing.
+  Rejected: last used first (one event elsewhere would undo the setting),
+  `accountId:id` (random per device), a per-calendar flag in `accounts`.
+  Open: the to-do list's default, a fallback preferring the primary, and
+  the calendar said in words (todo.md, for the next model run).
 - **Show what was just created** (2026-11-19, #363) — both apps reveal
   a new event's date or a to-do's due day; repeats use the occurrence
   nearest the current view, preferring one already drawn and later on a

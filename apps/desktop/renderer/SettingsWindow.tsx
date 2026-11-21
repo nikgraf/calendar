@@ -5,6 +5,7 @@ import { AgentsSection } from './agents/AgentsSection.tsx';
 import { AppleCalendarSection } from './AppleCalendarSection.tsx';
 import { BirthdayRemindersSection } from './BirthdayRemindersSection.tsx';
 import { ContactsSection } from './ContactsSection.tsx';
+import { DefaultCalendarSection } from './DefaultCalendarSection.tsx';
 import { DictationSection } from './DictationSection.tsx';
 import { EventNotificationsSection } from './EventNotificationsSection.tsx';
 import { TaskNotificationsSection } from './TaskNotificationsSection.tsx';
@@ -52,7 +53,12 @@ const PANE_CONTENT: Record<SettingsPaneId, ReactNode> = {
   ),
   advanced: <LocationsSection />,
   agents: <AgentsSection />,
-  calendar: <WeekendsSection />,
+  calendar: (
+    <>
+      <DefaultCalendarSection />
+      <WeekendsSection />
+    </>
+  ),
   dictation: <DictationSection />,
   file: (
     <>

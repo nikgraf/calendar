@@ -1,9 +1,21 @@
-import { DeviceSettingsRepo } from '@calendar/db';
+import { DeviceSettingsRepo, deviceSettingsKey, SETTINGS_DOCUMENT_KEYS } from '@calendar/db';
 import { expect, it } from '@effect/vitest';
 import { Effect } from 'effect';
 import { describe } from 'vite-plus/test';
-import { writeBirthdayReminderOverrides, writeTimeZoneSettings } from './deviceSettings.ts';
+import {
+  BIRTHDAY_REMINDER_OVERRIDES_KEY,
+  BIRTHDAY_REMINDERS_KEY,
+  EVENT_NOTIFICATIONS_KEY,
+  NEW_EVENTS_KEY,
+  TASK_NOTIFICATIONS_KEY,
+  TIME_ZONES_KEY,
+  VIEW_PREFERENCES_KEY,
+  writeBirthdayReminderOverrides,
+  writeNewEventSettings,
+  writeTimeZoneSettings,
+} from './deviceSettings.ts';
 import { IMPORTED_VISIBILITY_KEY } from './importedVisibility.ts';
+import { MIRRORS_KEY } from './mirrorSettings.ts';
 import { buildSettingsDocument } from './settingsExport.ts';
 import {
   appleCalendarAccount,
@@ -14,6 +26,26 @@ import {
   seed,
   taskList,
 } from './testing/settingsTesting.ts';
+
+describe('SETTINGS_DOCUMENT_KEYS', () => {
+  it('holds every device setting the document is built from, so a change rewrites the file', () => {
+    expect(SETTINGS_DOCUMENT_KEYS).toEqual(
+      expect.arrayContaining(
+        [
+          BIRTHDAY_REMINDER_OVERRIDES_KEY,
+          BIRTHDAY_REMINDERS_KEY,
+          EVENT_NOTIFICATIONS_KEY,
+          IMPORTED_VISIBILITY_KEY,
+          MIRRORS_KEY,
+          NEW_EVENTS_KEY,
+          TASK_NOTIFICATIONS_KEY,
+          TIME_ZONES_KEY,
+          VIEW_PREFERENCES_KEY,
+        ].map(deviceSettingsKey),
+      ),
+    );
+  });
+});
 
 describe('buildSettingsDocument', () => {
   it.effect('exports device settings, the host section and every account kind', () => {
@@ -65,6 +97,8 @@ describe('buildSettingsDocument', () => {
         weekendDays: ['SA', 'SU'],
         weekendShading: true,
       });
+      // No default calendar chosen: new events start in the one used last.
+      expect(document.newEvents).toEqual({ calendar: 'lastUsed' });
       expect(document.accounts).toEqual([
         {
           calendars: [
@@ -85,6 +119,18 @@ describe('buildSettingsDocument', () => {
         { kind: 'apple-reminders', taskLists: [{ title: 'Groceries', visible: false }] },
       ]);
       expect(JSON.stringify(document)).not.toMatch(/token/i);
+    }).pipe(Effect.provide(layer));
+  });
+
+  it.effect('exports the default calendar the portable way it is stored', () => {
+    const { layer } = makeSettingsTestLayer();
+    return Effect.gen(function* () {
+      yield* writeNewEventSettings({
+        calendar: { calendarId: 'work', email: 'nik@example.com', kind: 'google', title: 'Work' },
+      });
+      expect((yield* buildSettingsDocument).newEvents).toEqual({
+        calendar: { calendarId: 'work', email: 'nik@example.com', kind: 'google', title: 'Work' },
+      });
     }).pipe(Effect.provide(layer));
   });
 

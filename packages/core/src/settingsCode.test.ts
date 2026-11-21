@@ -75,6 +75,14 @@ const full: SettingsDocument = {
   desktop: { screenPrivacy: 'visible' },
   eventNotifications: { enabled: true, includeAppleCalendar: false },
   mirrors: [mirror],
+  newEvents: {
+    calendar: {
+      calendarId: 'work@example.com',
+      email: 'me@example.com',
+      kind: 'google',
+      title: 'Work',
+    },
+  },
   timeZones: { primary: 'device', zones: ['device', 'America/Los_Angeles'] },
   version: 1,
   view: { allDayLaneCollapsed: true },
@@ -179,6 +187,8 @@ describe('encodeSettingsCode', () => {
     });
     expect(appleCalendar).toEqual(full.accounts?.[1]);
     expect(reminders).toEqual(full.accounts?.[2]);
+    // The default calendar keeps its title: Settings names one this device lacks by it.
+    expect(carried.newEvents).toEqual(full.newEvents);
     const [carriedMirror] = carried.mirrors ?? [];
     expect(carriedMirror?.destination).toEqual({
       calendarId: 'shared@group.calendar.google.com',
@@ -353,7 +363,14 @@ describe('describeSettingsDocument', () => {
       'Event alerts and birthday reminders',
       'Birthday notice for 1 person',
       '1 calendar mirror — arriving switched off',
+      'A default calendar for new events',
     ]);
+  });
+
+  it('says nothing of new events that start in the calendar used last', () => {
+    expect(describeSettingsDocument({ newEvents: { calendar: 'lastUsed' }, version: 1 })).toEqual(
+      [],
+    );
   });
 
   it('says nothing for an empty document', () => {

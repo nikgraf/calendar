@@ -17,7 +17,7 @@ import { MirrorPreview, MirrorView } from './mirror/status.ts';
 import { EventNotificationSettings, TaskNotificationSettings } from './notifications/settings.ts';
 import { SearchQuery } from './search/query.ts';
 import { SearchResults } from './search/results.ts';
-import { SettingsDocument, SettingsImportSummary } from './settingsDocument.ts';
+import { NewEventSettings, SettingsDocument, SettingsImportSummary } from './settingsDocument.ts';
 import { AccountSyncStatus } from './syncStatus.ts';
 import {
   Account,
@@ -519,6 +519,11 @@ export class AppBackendRpcs extends RpcGroup.make(
     },
     success: Schema.Array(EventRecord),
   }),
+  /** The calendar new events start in (travels in the settings document). */
+  Rpc.make('getNewEventSettings', {
+    error: BackendError,
+    success: NewEventSettings,
+  }),
   /** The first run and the Getting started card on this device (never synced). */
   Rpc.make('getOnboarding', {
     error: BackendError,
@@ -687,6 +692,10 @@ export class AppBackendRpcs extends RpcGroup.make(
   Rpc.make('setMirrorEnabled', {
     error: BackendError,
     payload: { enabled: Schema.Boolean, id: Schema.String },
+  }),
+  Rpc.make('setNewEventSettings', {
+    error: BackendError,
+    payload: NewEventSettings,
   }),
   /** What `moveEvent` with the same payload would drop (guests, link, modified occurrences…). */
   Rpc.make('previewMove', {
